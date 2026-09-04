@@ -46,6 +46,20 @@ function extractStep3bSection(md: string): string {
   return match?.[0] ?? "";
 }
 
+describe("deploy.md — Step 2: task lookup is repo-scoped (DTL-1.1)", () => {
+  it("looks up the task via a repo-scoped /tasks?repo=...&pr={pr} query", () => {
+    // Unscoped by repo, this cross-matches a same-numbered PR in a different
+    // repo sharing the task store (PR numbers are per-repo) — confirmed live
+    // on squadron PR #119, which resolved to a marketing-site task instead of
+    // the correct squadron one, silently corrupting the deploy pipeline's
+    // task-status tracking.
+    expect(content).toContain(
+      "$SHIPWRIGHT_TASK_STORE_URL/tasks?repo={org}/{repo}&pr={pr}",
+    );
+    expect(content).not.toContain('"$SHIPWRIGHT_TASK_STORE_URL/tasks?pr={pr}"');
+  });
+});
+
 describe("deploy.md — own-PRs-only check (AC1 & AC2)", () => {
   it("contains own GH login check (AGENT_LOGIN or 'own GH login')", () => {
     const hasAgentLogin = content.includes("AGENT_LOGIN");

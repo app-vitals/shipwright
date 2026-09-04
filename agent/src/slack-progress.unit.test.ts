@@ -53,6 +53,9 @@ const THREAD_TS = "111.222";
 function makeProgress(
   overrides: {
     client?: ReturnType<typeof makeMockClient>;
+    isDM?: boolean;
+    recipientUserId?: string;
+    recipientTeamId?: string;
   } = {},
 ) {
   const client = overrides.client ?? makeMockClient();
@@ -60,6 +63,13 @@ function makeProgress(
     client,
     channel: CHANNEL,
     threadTs: THREAD_TS,
+    // CHANNEL ("D123") is a DM-shaped id — default to isDM: true so the
+    // existing DM-focused tests below keep exercising DM behavior (no
+    // recipient_team_id/recipient_user_id) unless a test explicitly opts
+    // into a channel/group scenario via the override (STS-2.1).
+    isDM: overrides.isDM ?? true,
+    recipientUserId: overrides.recipientUserId,
+    recipientTeamId: overrides.recipientTeamId,
   });
   return { progress, client };
 }
@@ -80,6 +90,43 @@ describe("SlackProgress — Thinking Steps stream", () => {
       thread_ts: THREAD_TS,
       task_display_mode: "timeline",
     });
+  });
+
+  // ─── recipient_team_id / recipient_user_id (STS-2.1) ───────────────────
+  // Slack's own SDK types document both fields as "required when starting a
+  // streaming conversation outside of a DM" — omitting them in a channel/
+  // group thread makes every chat.startStream call fail with
+  // missing_recipient_team_id, which is the root cause this task fixes.
+
+  test("start() includes recipient_team_id and recipient_user_id for a non-DM (channel/group) thread (AC #1)", async () => {
+    const { progress, client } = makeProgress({
+      isDM: false,
+      recipientUserId: "U-SENDER",
+      recipientTeamId: "T-TEAM",
+    });
+    await progress.start();
+    expect(client.chat.startStream).toHaveBeenCalledWith({
+      channel: CHANNEL,
+      thread_ts: THREAD_TS,
+      task_display_mode: "timeline",
+      recipient_team_id: "T-TEAM",
+      recipient_user_id: "U-SENDER",
+    });
+  });
+
+  test("start() omits recipient_team_id and recipient_user_id for a DM thread, even when supplied (AC #2)", async () => {
+    const { progress, client } = makeProgress({
+      isDM: true,
+      recipientUserId: "U-SENDER",
+      recipientTeamId: "T-TEAM",
+    });
+    await progress.start();
+    const call = client.chat.startStream.mock.calls[0]?.[0] as Record<
+      string,
+      unknown
+    >;
+    expect(call).not.toHaveProperty("recipient_team_id");
+    expect(call).not.toHaveProperty("recipient_user_id");
   });
 
   // AC #3: agents.sessions.setStatus is never called — chat.startStream
@@ -235,8 +282,10 @@ describe("SlackProgress — Thinking Steps stream", () => {
     };
     const chunk = taskUpdateChunk(call);
     expect(chunk?.status).toBe("complete");
-    // Completion text never ends in an ellipsis (AC #4).
+    // Completion text never ends in an ellipsis, and is empty rather than
+    // "Done" (STS-2.1 AC #4).
     expect((chunk?.title as string).endsWith("…")).toBe(false);
+    expect(chunk?.title).toBe("");
   });
 
   test("deliverContent() does not call chat.stopStream with a top-level markdown_text param", async () => {
@@ -299,7 +348,11 @@ describe("SlackProgress — Thinking Steps stream", () => {
     expect(chunk?.status).toBe("complete");
   });
 
-  test("finish() and finish({ silent: false }) still send the 'Done' title (regression)", async () => {
+  // The "Done" title on the terminal card was getting prepended to the
+  // response preview in Slack's UI, adding confusion — the non-silent
+  // completion title is now empty (STS-2.1 AC #4). SILENT_COMPLETE_TITLE
+  // ("Ack") is unchanged — see the finish({ silent: true }) test above.
+  test("finish() and finish({ silent: false }) send an empty completion title, not 'Done' (STS-2.1 AC #4)", async () => {
     for (const opts of [undefined, { silent: false }] as const) {
       const { progress, client } = makeProgress();
       await progress.start();
@@ -309,7 +362,7 @@ describe("SlackProgress — Thinking Steps stream", () => {
         chunks: Array<Record<string, unknown>>;
       };
       const chunk = taskUpdateChunk(call);
-      expect(chunk?.title).toBe("Done");
+      expect(chunk?.title).toBe("");
     }
   });
 
@@ -389,6 +442,7 @@ describe("SlackProgress — errors swallowed", () => {
       client: { agents: { sessions: { setStatus: mock(async () => {}) } } },
       channel: CHANNEL,
       threadTs: THREAD_TS,
+      isDM: true,
     });
     await expect(progress.start()).resolves.toBeUndefined();
     // startStream fails (no chat namespace), then the seed-card append also
@@ -419,6 +473,7 @@ describe("SlackProgress — errors swallowed", () => {
       client: { agents: { sessions: { setStatus: mock(async () => {}) } } },
       channel: CHANNEL,
       threadTs: THREAD_TS,
+      isDM: true,
     });
     expect(() => progress.onProgress({}, "reading")).not.toThrow();
     expect(warnCalls).toContainEqual([
@@ -443,16 +498,60 @@ describe("SlackProgress — errors swallowed", () => {
     ]);
   });
 
-  test("finish() does not throw when the client has no chat namespace, and warns", async () => {
+  // AC #3 (defense in depth): a stream that never opened (streamTs stayed
+  // undefined — here because the client has no chat namespace at all) must
+  // not fall through to a doomed chat.stopStream call (guaranteed to fail
+  // with no valid ts, per the old behavior this replaces) — finish() falls
+  // back to a direct agents.sessions.setStatus call instead, so the "is
+  // working" indicator can still be cleared.
+  test("finish() falls back to agents.sessions.setStatus when the client has no chat namespace (stream never opened) (AC #3)", async () => {
+    const setStatus = mock(async (_args: unknown) => {});
     const progress = new SlackProgress({
-      client: { agents: { sessions: { setStatus: mock(async () => {}) } } },
+      client: { agents: { sessions: { setStatus } } },
       channel: CHANNEL,
       threadTs: THREAD_TS,
+      isDM: true,
+    });
+    await expect(progress.finish()).resolves.toBeUndefined();
+    expect(setStatus).toHaveBeenCalledWith({
+      channel_id: CHANNEL,
+      thread_ts: THREAD_TS,
+      status: "active",
+    });
+  });
+
+  // Same fallback path, but the setStatus call itself also fails — must
+  // still not throw, and warns instead of silently swallowing it.
+  test("finish()'s setStatus fallback failure does not throw, and warns", async () => {
+    const setStatus = mock(async (_args: unknown) => {
+      throw new Error("setStatus down");
+    });
+    const progress = new SlackProgress({
+      client: { agents: { sessions: { setStatus } } },
+      channel: CHANNEL,
+      threadTs: THREAD_TS,
+      isDM: true,
     });
     await expect(progress.finish()).resolves.toBeUndefined();
     expect(warnCalls).toContainEqual([
-      "[slack-progress] stopStream failed:",
-      "undefined is not an object (evaluating 'this.client.chat.stopStream')",
+      "[slack-progress] setStatus fallback failed:",
+      "setStatus down",
+    ]);
+  });
+
+  // The client is missing the `agents` namespace entirely too — the fallback
+  // must not throw synchronously on the property access either.
+  test("finish()'s setStatus fallback does not throw when the client has no agents namespace at all, and warns", async () => {
+    const progress = new SlackProgress({
+      client: {},
+      channel: CHANNEL,
+      threadTs: THREAD_TS,
+      isDM: true,
+    });
+    await expect(progress.finish()).resolves.toBeUndefined();
+    expect(warnCalls).toContainEqual([
+      "[slack-progress] setStatus fallback failed:",
+      "undefined is not an object (evaluating 'this.client.agents.sessions')",
     ]);
   });
 
