@@ -1946,50 +1946,6 @@ export function renderProvisionXappTokenPage(
   });
 }
 
-// Paste form shown after OAuth callback — user enters SLACK_APP_ID and SLACK_SIGNING_SECRET
-// from the Slack App Credentials page (signing secret is not returned by Slack's OAuth API).
-export function renderProvisionPasteForm(
-  userName: string,
-  opts?: { agentId?: string; error?: string },
-): string {
-  const errorHtml = opts?.error
-    ? `<div class="alert alert-error">${escapeHtml(opts.error)}</div>`
-    : "";
-
-  return renderAdminPage({
-    title: "Complete Provisioning — Shipwright Admin",
-    body: `${renderAdminToolbar(userName, "/admin/provision")}
-  <div class="vos-page">
-    <div class="page-header">
-      <h1 class="page-title">Provision Agent</h1>
-    </div>
-    <div class="provision-steps">
-      <span class="provision-step">1. Create Slack App</span>
-      <span class="provision-step">2. Authorize</span>
-      <span class="provision-step active">3. Paste Credentials</span>
-    </div>
-    <div class="card">
-      <p style="font-size:14px;margin-bottom:16px;color:#6b7280">
-        Open your Slack App's <strong>Basic Information</strong> page and paste the credentials below.
-      </p>
-      ${errorHtml}
-      <form method="POST" action="/admin/provision/complete">
-        <input type="hidden" name="agentId" value="${escapeHtml(opts?.agentId ?? "")}" />
-        <div class="form-group">
-          <label class="form-label" for="appId">App ID</label>
-          <input id="appId" name="appId" type="text" class="form-input" placeholder="AXXXXXXXXXX" required />
-        </div>
-        <div class="form-group">
-          <label class="form-label" for="signingSecret">Signing Secret</label>
-          <input id="signingSecret" name="signingSecret" type="password" class="form-input" placeholder="Paste from App Credentials" required />
-        </div>
-        <button type="submit" class="btn btn-primary">Save Credentials →</button>
-      </form>
-    </div>
-  </div>`,
-  });
-}
-
 function statusBadgeClass(s: string): string {
   if (s === "in_progress" || s === "pr_open" || s === "approved")
     return "badge-blue";
