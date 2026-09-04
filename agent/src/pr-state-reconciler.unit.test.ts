@@ -38,6 +38,7 @@ import {
   __resetPrOpenTasksCursorForTests,
   buildProductionDeps,
   buildReviewStateProductionDeps,
+  isPrNotFoundError,
   isWorktreeStale,
   reconcilePrOpenTasks,
   reconcilePrState,
@@ -237,6 +238,50 @@ function makeRecord(overrides: Partial<PrStateRecord> = {}): PrStateRecord {
 }
 
 // ─── Tests ────────────────────────────────────────────────────────────────────
+
+describe("isPrNotFoundError", () => {
+  test("true for an Error whose message contains gh's not-found signature (PR number 9999)", () => {
+    const err = new Error(
+      "gh pr view 9999 --repo acme/example-repo --json state,mergedAt,headRefName failed (exit 1): GraphQL: Could not resolve to a PullRequest with the number of 9999. (repository.pullRequest)",
+    );
+    expect(isPrNotFoundError(err)).toBe(true);
+  });
+
+  test("true for a different PR number — not a fragile exact-string match", () => {
+    const err = new Error(
+      "gh pr view 42 --repo acme/other-repo --json state,mergedAt,headRefName failed (exit 1): GraphQL: Could not resolve to a PullRequest with the number of 42. (repository.pullRequest)",
+    );
+    expect(isPrNotFoundError(err)).toBe(true);
+  });
+
+  test("false for a generic Error (rate limit shape)", () => {
+    const err = new Error(
+      "gh pr view 5 --repo acme/example-repo --json state,mergedAt,headRefName failed (exit 1): API rate limit exceeded",
+    );
+    expect(isPrNotFoundError(err)).toBe(false);
+  });
+
+  test("false for a generic Error (502 shape)", () => {
+    const err = new Error(
+      "gh pr view 6 --repo acme/example-repo --json state,mergedAt,headRefName failed (exit 1): HTTP 502 (Bad Gateway)",
+    );
+    expect(isPrNotFoundError(err)).toBe(false);
+  });
+
+  test("false for a non-Error thrown value", () => {
+    expect(
+      isPrNotFoundError(
+        "Could not resolve to a PullRequest with the number of 9999.",
+      ),
+    ).toBe(false);
+    expect(
+      isPrNotFoundError({
+        message: "Could not resolve to a PullRequest with the number of 9999.",
+      }),
+    ).toBe(false);
+    expect(isPrNotFoundError(undefined)).toBe(false);
+  });
+});
 
 describe("reconcilePrState", () => {
   test("open on GitHub stays open — no PATCH issued", async () => {
@@ -771,6 +816,138 @@ describe("reconcilePrState", () => {
 
     expect(listCalls).toHaveLength(0);
     expect(patchCalls).toHaveLength(0);
+  });
+
+  // ─── RPS-1.2: auto-close orphaned PR records ──────────────────────────────
+
+  test("ghViewPr rejects with the not-found signature — record is PATCHed closed/blocked, no error logged", async () => {
+    const record = makeRecord({ id: "pr-orphan", prNumber: 9999 });
+    const { deps, patchCalls } = makeDeps({
+      openRecords: { "acme/example-repo": [record] },
+      ghResults: {
+        "acme/example-repo#9999": new Error(
+          "gh pr view 9999 --repo acme/example-repo --json state,mergedAt,headRefName failed (exit 1): GraphQL: Could not resolve to a PullRequest with the number of 9999. (repository.pullRequest)",
+        ),
+      },
+    });
+
+    const errorCalls: unknown[][] = [];
+    const errOriginal = console.error;
+    console.error = (...args: unknown[]) => {
+      errorCalls.push(args);
+    };
+    try {
+      await reconcilePrState(deps);
+    } finally {
+      console.error = errOriginal;
+    }
+
+    expect(patchCalls).toHaveLength(1);
+    expect(patchCalls[0].id).toBe("pr-orphan");
+    expect(patchCalls[0].fields).toMatchObject({
+      state: "closed",
+      blocked: true,
+      blockedReason:
+        "orphaned -- PR does not exist on GitHub (auto-closed by pr-state-reconciler)",
+    });
+    expect(errorCalls).toHaveLength(0);
+  });
+
+  test("ghViewPr rejects with the not-found signature — pass summary reflects closedOrphaned distinct from patched", async () => {
+    const record = makeRecord({ id: "pr-orphan", prNumber: 99999 });
+    const { deps } = makeDeps({
+      openRecords: { "acme/example-repo": [record] },
+      ghResults: {
+        "acme/example-repo#99999": new Error(
+          "gh pr view 99999 --repo acme/example-repo --json state,mergedAt,headRefName failed (exit 1): GraphQL: Could not resolve to a PullRequest with the number of 99999. (repository.pullRequest)",
+        ),
+      },
+    });
+
+    const logs: string[][] = [];
+    const logOriginal = console.log;
+    console.log = (...args: unknown[]) => {
+      logs.push(args.map((a) => (typeof a === "string" ? a : String(a))));
+    };
+    try {
+      await reconcilePrState(deps);
+    } finally {
+      console.log = logOriginal;
+    }
+
+    const summaryLine = logs.find((args) =>
+      args.some(
+        (a) =>
+          a.includes("[pr-state-reconciler]") && a.includes("pass summary"),
+      ),
+    );
+    expect(summaryLine).toBeDefined();
+    const text = summaryLine?.join(" ") ?? "";
+    expect(text).toContain("patched=0");
+    expect(text).toContain("closedOrphaned=1");
+  });
+
+  test("ghViewPr rejects with a different error (rate limit shape) — unchanged: logged, no PATCH, record left alone", async () => {
+    const record = makeRecord({ id: "pr-rate-limited", prNumber: 5 });
+    const { deps, patchCalls } = makeDeps({
+      openRecords: { "acme/example-repo": [record] },
+      ghResults: {
+        "acme/example-repo#5": new Error(
+          "gh pr view 5 --repo acme/example-repo --json state,mergedAt,headRefName failed (exit 1): API rate limit exceeded",
+        ),
+      },
+    });
+
+    const errorCalls: unknown[][] = [];
+    const errOriginal = console.error;
+    console.error = (...args: unknown[]) => {
+      errorCalls.push(args);
+    };
+    try {
+      await reconcilePrState(deps);
+    } finally {
+      console.error = errOriginal;
+    }
+
+    expect(patchCalls).toHaveLength(0);
+    expect(errorCalls.length).toBeGreaterThan(0);
+  });
+
+  test("ghViewPr rejects with a different error (502 shape) — summary tallies errored, not closedOrphaned", async () => {
+    const record = makeRecord({ id: "pr-502", prNumber: 6 });
+    const { deps } = makeDeps({
+      openRecords: { "acme/example-repo": [record] },
+      ghResults: {
+        "acme/example-repo#6": new Error(
+          "gh pr view 6 --repo acme/example-repo --json state,mergedAt,headRefName failed (exit 1): HTTP 502 (Bad Gateway)",
+        ),
+      },
+    });
+
+    const errOriginal = console.error;
+    console.error = () => {};
+    const logs: string[][] = [];
+    const logOriginal = console.log;
+    console.log = (...args: unknown[]) => {
+      logs.push(args.map((a) => (typeof a === "string" ? a : String(a))));
+    };
+    try {
+      await reconcilePrState(deps);
+    } finally {
+      console.error = errOriginal;
+      console.log = logOriginal;
+    }
+
+    const summaryLine = logs.find((args) =>
+      args.some(
+        (a) =>
+          a.includes("[pr-state-reconciler]") && a.includes("pass summary"),
+      ),
+    );
+    expect(summaryLine).toBeDefined();
+    const text = summaryLine?.join(" ") ?? "";
+    expect(text).toContain("errored=1");
+    expect(text).toContain("closedOrphaned=0");
   });
 });
 
