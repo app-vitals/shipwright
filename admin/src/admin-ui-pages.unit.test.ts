@@ -27,6 +27,7 @@ import {
   classifyTaskState,
   computeDependencyLayout,
   computeDependencyNodes,
+  heartbeatFreshness,
   partitionCronsForActivityDisplay,
   renderAgentDetailPage,
   renderAgentsPage,
@@ -4450,11 +4451,59 @@ const PR_LIST_ITEM_2: PrListItem = {
 
 const EMPTY_PR_PAGINATION = { total: 0, limit: 50, page: 1 };
 
+// ─── heartbeatFreshness (AXR-2.1) ────────────────────────────────────────────
+
+describe("heartbeatFreshness", () => {
+  test("returns null when both claimedAt and heartbeatAt are absent", () => {
+    expect(heartbeatFreshness(null, null, new Date())).toBeNull();
+  });
+
+  test("returns null when both claimedAt and heartbeatAt are undefined", () => {
+    expect(heartbeatFreshness(undefined, undefined, new Date())).toBeNull();
+  });
+
+  test("falls back to claimedAt when heartbeatAt is absent", () => {
+    const now = new Date("2026-06-01T10:05:00Z");
+    expect(heartbeatFreshness("2026-06-01T10:00:00Z", null, now)).toBe("fresh");
+  });
+
+  test("prefers heartbeatAt over claimedAt when both are present", () => {
+    const now = new Date("2026-06-01T10:05:00Z");
+    expect(
+      heartbeatFreshness(
+        "2026-01-01T00:00:00Z", // very stale on its own
+        "2026-06-01T10:00:00Z", // fresh
+        now,
+      ),
+    ).toBe("fresh");
+  });
+
+  test("returns 'fresh' well within the TTL", () => {
+    const now = new Date("2026-06-01T10:05:00Z"); // +5min
+    expect(heartbeatFreshness(null, "2026-06-01T10:00:00Z", now)).toBe("fresh");
+  });
+
+  test("returns 'aging' partway through the TTL", () => {
+    const now = new Date("2026-06-01T10:35:00Z"); // +35min
+    expect(heartbeatFreshness(null, "2026-06-01T10:00:00Z", now)).toBe("aging");
+  });
+
+  test("returns 'stale' once past the TTL", () => {
+    const now = new Date("2026-06-01T11:10:00Z"); // +70min > 65min TTL
+    expect(heartbeatFreshness(null, "2026-06-01T10:00:00Z", now)).toBe("stale");
+  });
+
+  test("does not crash on an unparseable timestamp, returns null", () => {
+    expect(heartbeatFreshness(null, "not-a-real-date", new Date())).toBeNull();
+  });
+});
+
 describe("renderPrsPage", () => {
   function render(
     prs: PrListItem[] = [],
     filters: Parameters<typeof renderPrsPage>[1] = {},
     degraded = false,
+    now?: Date,
   ): string {
     return renderPrsPage(
       prs,
@@ -4463,6 +4512,10 @@ describe("renderPrsPage", () => {
       USER_NAME,
       { "agent-001": "Alpha Agent" },
       { total: prs.length, limit: 50, page: 1 },
+      "America/Los_Angeles",
+      undefined,
+      {},
+      now,
     );
   }
 
@@ -4688,6 +4741,65 @@ describe("renderPrsPage", () => {
     const html = render([], { reviewState: "posted" });
     expect(html).toContain('value="posted" selected');
   });
+
+  // ─── AXR-2.1: shared CSS reuse, heartbeat dot, header tooltips ────────────
+
+  test("does not duplicate .badge-green / .alert-warning rule definitions already in the base stylesheet (AC1)", () => {
+    const html = render([PR_LIST_ITEM_1, PR_LIST_ITEM_2]);
+    const badgeGreenRuleCount = (html.match(/\.badge-green\s*\{/g) ?? [])
+      .length;
+    const alertWarningRuleCount = (html.match(/\.alert-warning\s*\{/g) ?? [])
+      .length;
+    expect(badgeGreenRuleCount).toBe(1);
+    expect(alertWarningRuleCount).toBe(1);
+  });
+
+  test("Review Cycles and Patch Cycles headers carry the shared header-tooltip class with a data-tip", () => {
+    const html = render([PR_LIST_ITEM_1]);
+    expect(html).toMatch(
+      /<th class="col-review-cycles"[^>]*><span class="header-tooltip" data-tip="[^"]+">Review Cycles<\/span><\/th>/,
+    );
+    expect(html).toMatch(
+      /<th class="col-patch-cycles"[^>]*><span class="header-tooltip" data-tip="[^"]+">Patch Cycles<\/span><\/th>/,
+    );
+  });
+
+  test("heartbeat-dot renders class 'fresh' when the claim is recent (AC4)", () => {
+    // PR_LIST_ITEM_1.claimedAt = 2026-06-01T10:00:00Z, heartbeatAt = null.
+    const now = new Date("2026-06-01T10:05:00Z"); // +5min
+    const html = render([PR_LIST_ITEM_1], {}, false, now);
+    expect(html).toContain('class="heartbeat-dot fresh"');
+  });
+
+  test("heartbeat-dot renders class 'aging' partway through the claim TTL (AC4)", () => {
+    const now = new Date("2026-06-01T10:35:00Z"); // +35min
+    const html = render([PR_LIST_ITEM_1], {}, false, now);
+    expect(html).toContain('class="heartbeat-dot aging"');
+  });
+
+  test("heartbeat-dot renders class 'stale' once past the claim TTL (AC4)", () => {
+    const now = new Date("2026-06-01T11:10:00Z"); // +70min, past DEFAULT_CLAIM_TTL_MS (65min)
+    const html = render([PR_LIST_ITEM_1], {}, false, now);
+    expect(html).toContain('class="heartbeat-dot stale"');
+  });
+
+  test("heartbeat-dot uses heartbeatAt over claimedAt when both are present (AC4)", () => {
+    const prWithHeartbeat: PrListItem = {
+      ...PR_LIST_ITEM_1,
+      claimedAt: "2026-06-01T00:00:00Z", // would be "stale" on its own
+      heartbeatAt: "2026-06-01T10:00:00Z", // fresh relative to `now`
+    };
+    const now = new Date("2026-06-01T10:05:00Z");
+    const html = render([prWithHeartbeat], {}, false, now);
+    expect(html).toContain('class="heartbeat-dot fresh"');
+  });
+
+  test("no heartbeat-dot renders when claimedBy/claimedAt/heartbeatAt are all null (AC4)", () => {
+    const html = render([PR_LIST_ITEM_2], {}, false, new Date());
+    // The base stylesheet always defines the .heartbeat-dot CSS rule; only
+    // check that no <span> element using it is rendered in the row markup.
+    expect(html).not.toContain('<span class="heartbeat-dot');
+  });
 });
 
 // ─── renderPrsPage — Blocked tab & HITL badge (HBV-2.2) ──────────────────────
@@ -4739,7 +4851,9 @@ describe("renderPrsPage — Blocked tab & HITL badge", () => {
   test("PR with blocked:true renders the 'Waiting: Blocked' badge in the list", () => {
     const html = render([{ ...PR_LIST_ITEM_1, blocked: true }]);
     expect(html).toContain("Waiting: Blocked");
-    expect(html).toContain("badge-blocked");
+    // AXR-2.1: reuses AXR-1.1's shared .badge-warning class instead of a
+    // page-local .badge-blocked rule.
+    expect(html).toContain("badge-warning");
   });
 
   test("PR with blocked:false does not render the badge", () => {
@@ -4902,6 +5016,42 @@ describe("renderPrsPage — org/repo multiselect filters", () => {
     expect(html).toContain('<option value="other-org">other-org</option>');
   });
 
+  // AC2/AC6: org-only filtering — Org and Repo remain independently
+  // selectable multiselects; selecting only an Org leaves every Repo option
+  // unselected (matches every repo under that org, rather than the two
+  // fields being merged into one combined scope-pill control).
+  test("org-only filter selects only the Org multiselect, leaving Repo unselected", () => {
+    const html = renderPrsPage(
+      [],
+      { org: ["app-vitals"] },
+      false,
+      USER_NAME,
+      {},
+      pagination,
+      undefined,
+      {
+        orgs: ["app-vitals"],
+        repos: ["app-vitals/repo-a", "app-vitals/repo-b"],
+      },
+    );
+    // Org and Repo stay two independent <select multiple> controls.
+    expect(html).toContain('<select name="org" multiple');
+    expect(html).toContain('<select name="repo" multiple');
+    // Org option is selected...
+    expect(html).toContain(
+      '<option value="app-vitals" selected>app-vitals</option>',
+    );
+    // ...but no Repo option is selected.
+    expect(html).toContain(
+      '<option value="app-vitals/repo-a">app-vitals/repo-a</option>',
+    );
+    expect(html).toContain(
+      '<option value="app-vitals/repo-b">app-vitals/repo-b</option>',
+    );
+    expect(html).not.toContain('<option value="app-vitals/repo-a" selected>');
+    expect(html).not.toContain('<option value="app-vitals/repo-b" selected>');
+  });
+
   test("backward compat: a single-value repo filter (string, not array) is still marked selected", () => {
     const html = renderPrsPage(
       [],
@@ -4978,6 +5128,95 @@ describe("renderPrsPage — org/repo multiselect filters", () => {
     );
     expect(html).not.toContain('<script>alert("xss")</script>');
     expect(html).toContain("&lt;script&gt;");
+  });
+
+  // AXR-2.1: secondary filters (State/Review State/Task ID) collapse behind
+  // AXR-1.1's shared <details class="more-filters"> disclosure, while Org
+  // and Repo stay always-visible primary filters (AC1/AC2).
+  test("State/Review State/Task ID filters render inside a more-filters disclosure, Org/Repo stay outside it", () => {
+    const html = renderPrsPage(
+      [],
+      {},
+      false,
+      USER_NAME,
+      {},
+      pagination,
+      undefined,
+      { orgs: ["app-vitals"], repos: ["app-vitals/repo-a"] },
+    );
+    expect(html).toContain('<details class="more-filters">');
+    expect(html).toContain('<div class="more-filters-panel">');
+    const orgSelectIndex = html.indexOf('<select name="org" multiple');
+    const detailsIndex = html.indexOf('<details class="more-filters">');
+    const stateFieldIndex = html.indexOf('name="state"');
+    const taskIdFieldIndex = html.indexOf('name="taskId"');
+    expect(orgSelectIndex).toBeGreaterThan(-1);
+    expect(detailsIndex).toBeGreaterThan(-1);
+    // Org/Repo render before (outside) the disclosure.
+    expect(orgSelectIndex).toBeLessThan(detailsIndex);
+    // State/Task ID render inside (after) the disclosure opens.
+    expect(stateFieldIndex).toBeGreaterThan(detailsIndex);
+    expect(taskIdFieldIndex).toBeGreaterThan(detailsIndex);
+  });
+
+  // AXR-2.1 review follow-up: reviewState/taskId live only inside the collapsed
+  // disclosure, so a filtered URL must not render as an unfiltered-looking page.
+  test("more-filters disclosure stays collapsed with no badge when no hidden filter is set", () => {
+    const html = renderPrsPage(
+      [],
+      { state: "open" },
+      false,
+      USER_NAME,
+      {},
+      pagination,
+    );
+    expect(html).toContain('<details class="more-filters">');
+    expect(html).toContain("<summary>More filters</summary>");
+  });
+
+  test("more-filters disclosure renders open with a count badge when reviewState is set", () => {
+    const html = renderPrsPage(
+      [],
+      { reviewState: "pending" },
+      false,
+      USER_NAME,
+      {},
+      pagination,
+    );
+    expect(html).toContain('<details class="more-filters" open>');
+    expect(html).toContain(
+      '<summary>More filters<span class="badge badge-purple">1</span></summary>',
+    );
+  });
+
+  test("more-filters disclosure renders open with a count badge when taskId is set", () => {
+    const html = renderPrsPage(
+      [],
+      { taskId: "FOO-1" },
+      false,
+      USER_NAME,
+      {},
+      pagination,
+    );
+    expect(html).toContain('<details class="more-filters" open>');
+    expect(html).toContain(
+      '<summary>More filters<span class="badge badge-purple">1</span></summary>',
+    );
+  });
+
+  test("more-filters badge counts both hidden filters when reviewState and taskId are set", () => {
+    const html = renderPrsPage(
+      [],
+      { reviewState: "posted", taskId: "FOO-1" },
+      false,
+      USER_NAME,
+      {},
+      pagination,
+    );
+    expect(html).toContain('<details class="more-filters" open>');
+    expect(html).toContain(
+      '<summary>More filters<span class="badge badge-purple">2</span></summary>',
+    );
   });
 });
 
@@ -6250,12 +6489,14 @@ describe("renderPrsPage — mobile column hiding", () => {
     );
   }
 
-  // AC2: col-review-cycles class on the Review Cycles <th>
+  // AC2: col-review-cycles class on the Review Cycles <th>. AXR-2.1 wraps
+  // the header text in a shared .header-tooltip span (data-tip), so the
+  // text is no longer the <th>'s immediate content.
   test("Review Cycles <th> has class col-review-cycles", () => {
     const html = render();
     expect(html).toContain('class="col-review-cycles"');
     expect(html).toMatch(
-      /<th[^>]*class="[^"]*col-review-cycles[^"]*"[^>]*>Review Cycles<\/th>/,
+      /<th[^>]*class="[^"]*col-review-cycles[^"]*"[^>]*>[\s\S]*?Review Cycles[\s\S]*?<\/th>/,
     );
   });
 
@@ -6264,7 +6505,7 @@ describe("renderPrsPage — mobile column hiding", () => {
     const html = render();
     expect(html).toContain('class="col-patch-cycles"');
     expect(html).toMatch(
-      /<th[^>]*class="[^"]*col-patch-cycles[^"]*"[^>]*>Patch Cycles<\/th>/,
+      /<th[^>]*class="[^"]*col-patch-cycles[^"]*"[^>]*>[\s\S]*?Patch Cycles[\s\S]*?<\/th>/,
     );
   });
 

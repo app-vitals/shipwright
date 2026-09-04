@@ -7,6 +7,7 @@
  * metrics/src/dashboard/dashboard-page.ts.
  */
 
+import { DEFAULT_CLAIM_TTL_MS } from "@shipwright/lib/claim-ttl";
 import { PROGRESS_LABELS } from "@shipwright/lib/progress-phases";
 import { renderAdminPage } from "./admin-ui-layout.ts";
 import {
@@ -3419,6 +3420,36 @@ export function renderSessionDetailPage(
   });
 }
 
+// ─── PRs page ────────────────────────────────────────────────────────────────
+
+/**
+ * Classifies claim/heartbeat recency for the shared `.heartbeat-dot`
+ * indicator (AXR-2.1, AXR-1.1's admin-ui-styles.ts). Uses `heartbeatAt` when
+ * present, else falls back to `claimedAt`; returns `null` when neither is
+ * set (the PR was never claimed) so the caller can render no dot at all.
+ *
+ * Thresholds are a display nicety, not exact stale-claim-reaper semantics:
+ * "stale" mirrors lib/claim-ttl.ts's `DEFAULT_CLAIM_TTL_MS` (the reaper's
+ * own TTL), and "aging" is half that.
+ *
+ * `now` is always caller-injected (never read internally) so render output
+ * stays deterministic in tests.
+ */
+export function heartbeatFreshness(
+  claimedAt: string | null | undefined,
+  heartbeatAt: string | null | undefined,
+  now: Date,
+): "fresh" | "aging" | "stale" | null {
+  const ts = heartbeatAt ?? claimedAt;
+  if (!ts) return null;
+  const d = new Date(ts);
+  if (Number.isNaN(d.getTime())) return null;
+  const ageMs = now.getTime() - d.getTime();
+  if (ageMs >= DEFAULT_CLAIM_TTL_MS) return "stale";
+  if (ageMs >= DEFAULT_CLAIM_TTL_MS / 2) return "aging";
+  return "fresh";
+}
+
 export function renderPrsPage(
   prs: PrListItem[],
   filters: {
@@ -3440,19 +3471,24 @@ export function renderPrsPage(
   timezone = "America/Los_Angeles",
   suggestions?: { repos?: string[]; orgs?: string[] },
   linkedTasksByPr: Record<string, TaskItem[]> = {},
+  now: Date = new Date(),
 ): string {
   const degradedHtml = degraded
     ? `<div class="alert alert-warning">PR store unavailable — data shown may be stale or empty.</div>`
     : "";
 
+  // Reuses AXR-1.1's shared badge palette (admin-ui-styles.ts) instead of
+  // page-local color rules — .badge-purple stands in for the former
+  // page-local .badge-blue, and .badge-green/.badge-gray already exist
+  // globally (AC1).
   const prStateBadgeClass = (s: string) => {
-    if (s === "open") return "badge-blue";
+    if (s === "open") return "badge-purple";
     if (s === "closed" || s === "merged") return "badge-green";
     return "badge-gray";
   };
 
   const reviewStateBadgeClass = (s: string) => {
-    if (s === "in_progress" || s === "posted") return "badge-blue";
+    if (s === "in_progress" || s === "posted") return "badge-purple";
     if (s === "approved") return "badge-green";
     return "badge-gray";
   };
@@ -3462,7 +3498,9 @@ export function renderPrsPage(
     const title = pr.blockedReason
       ? ` title="${escapeHtml(pr.blockedReason)}"`
       : "";
-    return `<span class="badge badge-blocked" style="font-size:10px;margin-left:6px"${title}>Waiting: Blocked</span>`;
+    // Reuses AXR-1.1's shared .badge-warning class instead of a page-local
+    // .badge-blocked rule (AC1).
+    return `<span class="badge badge-warning" style="font-size:10px;margin-left:6px"${title}>Waiting: Blocked</span>`;
   };
 
   const rows =
@@ -3470,11 +3508,19 @@ export function renderPrsPage(
       ? `<tr><td colspan="9" class="empty-state">No PRs found.</td></tr>`
       : prs
           .map((pr) => {
+            const freshness = heartbeatFreshness(
+              pr.claimedAt,
+              pr.heartbeatAt,
+              now,
+            );
+            const heartbeatDotHtml = freshness
+              ? `<span class="heartbeat-dot ${freshness}" title="${freshness}"></span> `
+              : "";
             const claimedCell = pr.claimedBy
-              ? agentLink(
+              ? `${heartbeatDotHtml}${agentLink(
                   pr.claimedBy,
                   agentNames[pr.claimedBy] ?? pr.claimedBy,
-                )
+                )}`
               : '<span style="color:#9ca3af">—</span>';
             const linkedTasks = linkedTasksByPr[pr.id] ?? [];
             const taskCell =
@@ -3587,15 +3633,21 @@ export function renderPrsPage(
       </div>
     </div>`;
 
+  // "More filters" disclosure state. `state` already has a visible cue via the
+  // Open/Merged/Blocked tab highlighting above, but `reviewState` and `taskId`
+  // live only inside the collapsed panel — a bookmarked/linked filtered URL
+  // would otherwise look unfiltered. Auto-expand when either is set, and keep a
+  // badge on the summary so a manually re-collapsed panel still signals it.
+  const hiddenActiveFilterCount =
+    (filters.reviewState ? 1 : 0) + (filters.taskId ? 1 : 0);
+  const moreFiltersAttrs = hiddenActiveFilterCount > 0 ? " open" : "";
+  const moreFiltersBadge =
+    hiddenActiveFilterCount > 0
+      ? `<span class="badge badge-purple">${hiddenActiveFilterCount}</span>`
+      : "";
+
   return renderAdminPage({
     title: "PRs — Shipwright Admin",
-    extraStyles: `
-    .badge-blue { background:#dbeafe;color:#1d4ed8;border:1px solid #bfdbfe; }
-    .badge-green { background:#dcfce7;color:#166534;border:1px solid #bbf7d0; }
-    .badge-red { background:#fee2e2;color:#991b1b;border:1px solid #fecaca; }
-    .badge-blocked { background:#fff7ed;color:#c2410c;border:1px solid #fed7aa; }
-    .alert-warning { background:#fefce8;color:#854d0e;border:1px solid #fde047;border-radius:6px;padding:10px 14px;margin-bottom:16px;font-size:13px; }
-  `,
     body: `${renderAdminToolbar(userName, "/admin/prs")}
   <div class="vos-page">
     <div class="page-header" style="display:flex;align-items:center;gap:16px;flex-wrap:wrap">
@@ -3609,30 +3661,35 @@ export function renderPrsPage(
           { org: filters.org, repo: filters.repo },
           { orgs: suggestions?.orgs, repos: suggestions?.repos },
         )}
-        <div class="form-group" style="margin-bottom:0">
-          <label class="form-label" style="font-size:11px">State</label>
-          <select name="state" class="form-input" style="font-size:12px;padding:4px 8px">
-            <option value="">Any</option>
-            <option value="open" ${filters.state === "open" ? "selected" : ""}>open</option>
-            <option value="merged" ${filters.state === "merged" ? "selected" : ""}>merged</option>
-          </select>
-        </div>
-        <div class="form-group" style="margin-bottom:0">
-          <label class="form-label" style="font-size:11px">Review State</label>
-          <select name="reviewState" class="form-input" style="font-size:12px;padding:4px 8px">
-            <option value="">Any</option>
-            <option value="pending" ${filters.reviewState === "pending" ? "selected" : ""}>pending</option>
-            <option value="in_progress" ${filters.reviewState === "in_progress" ? "selected" : ""}>in_progress</option>
-            <option value="posted" ${filters.reviewState === "posted" ? "selected" : ""}>posted</option>
-            <option value="approved" ${filters.reviewState === "approved" ? "selected" : ""}>approved</option>
-          </select>
-        </div>
-        <div class="form-group" style="margin-bottom:0">
-          <label class="form-label" style="font-size:11px">Task ID</label>
-          <input name="taskId" type="text" class="form-input" style="font-size:12px;padding:4px 8px" value="${escapeHtml(filters.taskId ?? "")}" placeholder="TASK-123" />
-        </div>
         <button type="submit" class="btn btn-secondary" style="font-size:12px;padding:4px 12px">Filter</button>
         <a href="/admin/prs" class="btn btn-secondary" style="font-size:12px;padding:4px 12px">Reset</a>
+        <details class="more-filters"${moreFiltersAttrs}>
+          <summary>More filters${moreFiltersBadge}</summary>
+          <div class="more-filters-panel">
+            <div class="form-group" style="margin-bottom:0">
+              <label class="form-label" style="font-size:11px">State</label>
+              <select name="state" class="form-input" style="font-size:12px;padding:4px 8px">
+                <option value="">Any</option>
+                <option value="open" ${filters.state === "open" ? "selected" : ""}>open</option>
+                <option value="merged" ${filters.state === "merged" ? "selected" : ""}>merged</option>
+              </select>
+            </div>
+            <div class="form-group" style="margin-bottom:0">
+              <label class="form-label" style="font-size:11px">Review State</label>
+              <select name="reviewState" class="form-input" style="font-size:12px;padding:4px 8px">
+                <option value="">Any</option>
+                <option value="pending" ${filters.reviewState === "pending" ? "selected" : ""}>pending</option>
+                <option value="in_progress" ${filters.reviewState === "in_progress" ? "selected" : ""}>in_progress</option>
+                <option value="posted" ${filters.reviewState === "posted" ? "selected" : ""}>posted</option>
+                <option value="approved" ${filters.reviewState === "approved" ? "selected" : ""}>approved</option>
+              </select>
+            </div>
+            <div class="form-group" style="margin-bottom:0">
+              <label class="form-label" style="font-size:11px">Task ID</label>
+              <input name="taskId" type="text" class="form-input" style="font-size:12px;padding:4px 8px" value="${escapeHtml(filters.taskId ?? "")}" placeholder="TASK-123" />
+            </div>
+          </div>
+        </details>
       </form>
     </div>
     <div class="card">
@@ -3645,8 +3702,8 @@ export function renderPrsPage(
               <th style="text-align:left;padding:8px 12px;font-size:11px;font-weight:600;color:#6b7280;border-bottom:1px solid #e5e7eb">Task</th>
               <th style="text-align:left;padding:8px 12px;font-size:11px;font-weight:600;color:#6b7280;border-bottom:1px solid #e5e7eb">State</th>
               <th style="text-align:left;padding:8px 12px;font-size:11px;font-weight:600;color:#6b7280;border-bottom:1px solid #e5e7eb">Review State</th>
-              <th class="col-review-cycles" style="text-align:left;padding:8px 12px;font-size:11px;font-weight:600;color:#6b7280;border-bottom:1px solid #e5e7eb">Review Cycles</th>
-              <th class="col-patch-cycles" style="text-align:left;padding:8px 12px;font-size:11px;font-weight:600;color:#6b7280;border-bottom:1px solid #e5e7eb">Patch Cycles</th>
+              <th class="col-review-cycles" style="text-align:left;padding:8px 12px;font-size:11px;font-weight:600;color:#6b7280;border-bottom:1px solid #e5e7eb"><span class="header-tooltip" data-tip="How many times this PR has been sent back for review">Review Cycles</span></th>
+              <th class="col-patch-cycles" style="text-align:left;padding:8px 12px;font-size:11px;font-weight:600;color:#6b7280;border-bottom:1px solid #e5e7eb"><span class="header-tooltip" data-tip="How many times a patch was applied to address review feedback">Patch Cycles</span></th>
               <th class="col-claimed-by" style="text-align:left;padding:8px 12px;font-size:11px;font-weight:600;color:#6b7280;border-bottom:1px solid #e5e7eb">Claimed By</th>
               <th style="text-align:left;padding:8px 12px;font-size:11px;font-weight:600;color:#6b7280;border-bottom:1px solid #e5e7eb">Created</th>
             </tr>

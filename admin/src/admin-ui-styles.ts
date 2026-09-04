@@ -380,6 +380,11 @@ export function baseStyles(): string {
     .more-filters[open] summary {
       color: #1a1a2e;
     }
+    /* Active-filter count badge — visible whether collapsed or open. */
+    .more-filters summary .badge {
+      margin-left: 6px;
+      vertical-align: middle;
+    }
     .more-filters-panel {
       display: flex;
       gap: 8px;
