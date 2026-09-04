@@ -99,7 +99,18 @@ let capturedMessageHandler: HandlerFn | null = null;
 let capturedMentionHandler: HandlerFn | null = null;
 let capturedReactionAddedHandler: HandlerFn | null = null;
 
+// STS-2.1: createSlackApp() resolves the bot's own team ID once via
+// app.client.auth.test() at construction — MockApp exposes the same shape
+// Bolt's real App does (a `.client` WebClient) so that resolution path is
+// exercised the same way it is in production, rather than always hitting
+// the "no auth.test at all" branch. Resolves to a stable team_id by
+// default; individual tests can reassign `.mockResolvedValueOnce`/
+// `.mockRejectedValueOnce` on `mockAuthTest` to exercise the failure path.
+const mockAuthTest = mock(async (_args?: unknown) => ({ team_id: "T-TEAM" }));
+
 class MockApp {
+  client = { auth: { test: mockAuthTest } };
+
   constructor(args: Record<string, unknown>) {
     capturedConstructorArgs = args;
     capturedMessageHandler = null;
@@ -286,6 +297,7 @@ describe("message handler — DM routing", () => {
       thread_ts: string;
       files: SlackFile[];
       blocks: Array<{ type: string; elements?: unknown[] }>;
+      user: string;
     }> = {},
   ) {
     const client = makeMockClient();
@@ -485,6 +497,25 @@ describe("message handler — DM routing", () => {
       task_display_mode: "timeline",
     });
     expect(client.chat.stopStream).toHaveBeenCalled();
+  });
+
+  // STS-2.1 AC #2: a DM omits recipient_team_id/recipient_user_id entirely,
+  // even though MockApp's client.auth.test() resolves a real team_id and the
+  // message carries a `user` — they're not required (and may not even be
+  // meaningful) for a DM, which already fully identifies the recipient.
+  test("omits recipient_team_id and recipient_user_id on chat.startStream for a DM (STS-2.1 AC #2)", async () => {
+    createSlackApp();
+    const { client } = await invokeDM({
+      channel: "D123",
+      ts: "111.222",
+      user: "U-SENDER",
+    });
+    const call = client.chat.startStream.mock.calls[0]?.[0] as Record<
+      string,
+      unknown
+    >;
+    expect(call).not.toHaveProperty("recipient_team_id");
+    expect(call).not.toHaveProperty("recipient_user_id");
   });
 
   // ─── STS2-1.1 regression: queued-message burst ──────────────────────────
@@ -953,6 +984,35 @@ describe("message handler — channel thread routing", () => {
     expect(client.chat.appendStream).toHaveBeenCalled();
   });
 
+  // STS-2.1 AC #3: when chat.startStream fails outright (e.g. the real
+  // missing_recipient_team_id error this task fixes, or any other cause),
+  // finish() must fall back to agents.sessions.setStatus directly rather
+  // than only attempting a doomed chat.stopStream call — so the "is
+  // working" indicator can still be cleared.
+  test("falls back to agents.sessions.setStatus when chat.startStream fails outright (AC #3)", async () => {
+    createSlackApp({ getSessionFn: mock(async () => "sess-abc") });
+    const client = makeMockClient();
+    client.chat.startStream.mockRejectedValueOnce(
+      new Error("missing_recipient_team_id"),
+    );
+    const say = makeSay();
+    const message = {
+      channel: "C123",
+      ts: "1.1",
+      text: "Followup message",
+      channel_type: "channel",
+      thread_ts: "1.0",
+    };
+    await capturedMessageHandler?.({ message, say, client });
+
+    expect(client.chat.stopStream).not.toHaveBeenCalled();
+    expect(client.agents.sessions.setStatus).toHaveBeenCalledWith({
+      channel_id: "C123",
+      thread_ts: "1.0",
+      status: "active",
+    });
+  });
+
   test("routes when session exists (session-based routing)", async () => {
     // Routing is exclusively via getSessionFn — no activeThreads lookup
     createSlackApp({
@@ -1279,6 +1339,7 @@ describe("app_mention handler", () => {
       channel: string;
       ts: string;
       thread_ts: string;
+      user: string;
     }> = {},
   ) {
     const client = makeMockClient();
@@ -1332,12 +1393,34 @@ describe("app_mention handler", () => {
   test("the mention handler's SlackProgress opens a Thinking Steps stream (STS-1.1)", async () => {
     createSlackApp();
     const { client } = await invokeMention({ channel: "C999", ts: "222.333" });
+    // app_mention is never a DM, so recipient_team_id is included — resolved
+    // via MockApp's client.auth.test() mock (STS-2.1 AC #1). No `user` on
+    // this event, so recipient_user_id stays undefined/omitted.
     expect(client.chat.startStream).toHaveBeenCalledWith({
       channel: "C999",
       thread_ts: "222.333",
       task_display_mode: "timeline",
+      recipient_team_id: "T-TEAM",
     });
     expect(client.chat.stopStream).toHaveBeenCalled();
+  });
+
+  // STS-2.1 AC #1: a channel mention includes both recipient fields — the
+  // triggering user's ID (from the event) and the bot's own team ID
+  // (resolved once via client.auth.test() at app construction).
+  test("includes recipient_team_id and recipient_user_id on chat.startStream (STS-2.1 AC #1)", async () => {
+    createSlackApp();
+    const { client } = await invokeMention({
+      channel: "C999",
+      ts: "222.333",
+      user: "U-MENTIONER",
+    });
+    expect(client.chat.startStream).toHaveBeenCalledWith(
+      expect.objectContaining({
+        recipient_team_id: "T-TEAM",
+        recipient_user_id: "U-MENTIONER",
+      }),
+    );
   });
 
   test("delivers the final reply as a markdown_text chunk via chat.appendStream, and skips say() (STS2-2.1 AC #4)", async () => {
@@ -2552,6 +2635,9 @@ describe("reaction_added handler", () => {
       },
       client,
     });
+    // reaction_added is gated to DM channels only (`channel.startsWith("D")`)
+    // — recipient_team_id/recipient_user_id are always omitted here even
+    // though a `user` is present on the event (STS-2.1 AC #2).
     expect(client.chat.startStream).toHaveBeenCalledWith({
       channel: "D1",
       thread_ts: "100.1",
