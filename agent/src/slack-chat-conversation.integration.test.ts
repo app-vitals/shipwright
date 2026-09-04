@@ -156,6 +156,7 @@ describe("Slack chat conversation journey — DM multi-turn continuity", () => {
       "[U1]: Hey, can you look into the failing build?",
       "D100:1000.001",
       expect.any(Function),
+      { SLACK_CHANNEL_ID: "D100", SLACK_THREAD_TS: "1000.001" },
     );
     expect(say1).toHaveBeenCalledWith({
       text: "Hi! How can I help?",
@@ -199,6 +200,7 @@ describe("Slack chat conversation journey — DM multi-turn continuity", () => {
       "[U1]: Any update?",
       establishedKey,
       expect.any(Function),
+      { SLACK_CHANNEL_ID: "D100", SLACK_THREAD_TS: "1000.001" },
     );
     expect(say2).toHaveBeenCalledWith({
       text: "Found it — the linter step is timing out.",
@@ -248,6 +250,7 @@ describe("Slack chat conversation journey — channel app_mention thread continu
       "[U2]: <@UBOT123> can you check the deploy?",
       mentionKey,
       expect.any(Function),
+      { SLACK_CHANNEL_ID: "C500", SLACK_THREAD_TS: "2000.001" },
     );
     expect(say1).toHaveBeenCalledWith({
       text: "On it — checking the deploy logs.",
@@ -288,6 +291,7 @@ describe("Slack chat conversation journey — channel app_mention thread continu
       "[Thread message — respond normally, or use [silent] if no response is needed]\n[U2]: thanks, any update?",
       mentionKey,
       expect.any(Function),
+      { SLACK_CHANNEL_ID: "C500", SLACK_THREAD_TS: "2000.001" },
     );
     expect(say2).toHaveBeenCalledWith({
       text: "Deploy looks healthy now.",

@@ -17,19 +17,11 @@ import * as Sentry from "@sentry/bun";
 import { initSentry } from "@shipwright/lib/sentry";
 import { WebClient } from "@slack/web-api";
 import nodeCron from "node-cron";
-import {
-  patchAuthorAllowlistRef,
-  resolvePatchAuthorAllowlist,
-} from "./patch-author-allowlist-ref.ts";
-import {
-  resolveReviewAuthorAllowlist,
-  reviewAuthorAllowlistRef,
-} from "./review-author-allowlist-ref.ts";
+import { agentReposRef } from "./agent-repos-ref.ts";
 import {
   agentSlackMembershipRef,
   resolveSlackMembership,
 } from "./agent-slack-membership-ref.ts";
-import { agentReposRef } from "./agent-repos-ref.ts";
 import { createChatPoller } from "./chat-poller.ts";
 import {
   HttpChatTokenReporter,
@@ -40,7 +32,11 @@ import {
   buildProductionDeps as buildClaimInvariantReconcilerDeps,
   reconcileClaimInvariant,
 } from "./claim-invariant-reconciler.ts";
-import { createRunClaude, setLiveClaudeConfig } from "./claude.ts";
+import {
+  createRunClaude,
+  type ProgressCallback,
+  setLiveClaudeConfig,
+} from "./claude.ts";
 import { SystemClock } from "./clock.ts";
 import { createConfig } from "./config.ts";
 import { reportCronFailure } from "./cron-failure-reporter.ts";
@@ -63,6 +59,10 @@ import { classifyCronJobsForScheduling } from "./loop-cron-classifier.ts";
 import type { CronJobLike } from "./loop-cron-classifier.ts";
 import { createJobsRef } from "./loop-jobs-ref.ts";
 import { createLoopOrchestratorGetter } from "./loop-orchestrator.ts";
+import {
+  patchAuthorAllowlistRef,
+  resolvePatchAuthorAllowlist,
+} from "./patch-author-allowlist-ref.ts";
 import { validatePiperVoice } from "./piper-voice.ts";
 import {
   buildProductionDeps as buildPrStateReconcilerDeps,
@@ -70,15 +70,19 @@ import {
   reconcilePrState,
   reconcileReviewState,
 } from "./pr-state-reconciler.ts";
+import {
+  resolveReviewAuthorAllowlist,
+  reviewAuthorAllowlistRef,
+} from "./review-author-allowlist-ref.ts";
 import { createFileSessionStore, threadKey } from "./sessions.ts";
 import { ensureAgentHome, installPlugins, runMiseStartup } from "./setup.ts";
 import { HttpShipwrightRuntimeClient } from "./shipwright-runtime-client.ts";
-import { createSlackApp, hasSlackCredentials } from "./slack.ts";
 import {
+  type StartableSlackApp,
   slackClientRef,
   startSlackIfPossible,
-  type StartableSlackApp,
 } from "./slack-startup.ts";
+import { createSlackApp, hasSlackCredentials } from "./slack.ts";
 import { sendBackOnlineDm } from "./startup-dm.ts";
 import { resolveDisplayName, resolveUserEmail } from "./users.ts";
 import { synthesizeSpeech } from "./voice.ts";
@@ -206,7 +210,11 @@ const cronDeps: CronHandlerDeps = {
   get slack() {
     return slackClientRef.get();
   },
-  runner: (message, onProgress) => runner(message, undefined, onProgress),
+  runner: (
+    message: string,
+    onProgress?: ProgressCallback,
+    extraEnv?: Record<string, string>,
+  ) => runner(message, undefined, onProgress, undefined, extraEnv),
   formatter: markdownToSlack,
   onSession: async (channel: string, ts: string, sessionId: string) => {
     await sessions.set(threadKey(channel, ts), sessionId);
@@ -227,7 +235,12 @@ let app: ReturnType<typeof createSlackApp> | undefined;
 
 function buildSlackApp() {
   return createSlackApp(
-    runner,
+    (
+      message: string,
+      sessionKey?: string,
+      onProgress?: ProgressCallback,
+      extraEnv?: Record<string, string>,
+    ) => runner(message, sessionKey, onProgress, undefined, extraEnv),
     markdownToSlack,
     threadKey,
     undefined, // appFactory — default Bolt App
@@ -544,7 +557,11 @@ const loopJobsRef = createJobsRef<CronJobLike>();
 // wiring cost, and its construction errors surface at fire time (logged by the
 // cron callback's try/catch) rather than crashing agent startup.
 const getLoopOrchestrator = createLoopOrchestratorGetter({
-  runner: (message, onProgress) => runner(message, undefined, onProgress),
+  runner: (
+    message: string,
+    onProgress?: ProgressCallback,
+    extraEnv?: Record<string, string>,
+  ) => runner(message, undefined, onProgress, undefined, extraEnv),
   cronRunReporter: cronRunReporter ?? new NoopCronRunReporter(),
   workQueueReporter,
   // LO-1.1: same optional-by-convention pattern as every other sentryClient

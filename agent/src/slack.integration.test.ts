@@ -387,6 +387,7 @@ describe("message handler — DM routing", () => {
       "Hello from rich text",
       "D123:111.222",
       expect.any(Function),
+      { SLACK_CHANNEL_ID: "D123", SLACK_THREAD_TS: "111.222" },
     );
   });
 
@@ -411,6 +412,7 @@ describe("message handler — DM routing", () => {
       "Plain text wins",
       "D123:111.222",
       expect.any(Function),
+      { SLACK_CHANNEL_ID: "D123", SLACK_THREAD_TS: "111.222" },
     );
   });
 
@@ -424,6 +426,7 @@ describe("message handler — DM routing", () => {
       "Do the thing",
       "D123:111.222",
       expect.any(Function),
+      { SLACK_CHANNEL_ID: "D123", SLACK_THREAD_TS: "111.222" },
     );
   });
 
@@ -433,6 +436,7 @@ describe("message handler — DM routing", () => {
       "Hello bot",
       "D456:0.9",
       expect.any(Function),
+      { SLACK_CHANNEL_ID: "D456", SLACK_THREAD_TS: "0.9" },
     );
   });
 
@@ -944,6 +948,7 @@ describe("message handler — channel thread routing", () => {
       "[Thread message — respond normally, or use [silent] if no response is needed]\nFollowup message",
       "C123:1.0",
       expect.any(Function),
+      { SLACK_CHANNEL_ID: "C123", SLACK_THREAD_TS: "1.0" },
     );
     expect(client.chat.appendStream).toHaveBeenCalled();
   });
@@ -967,6 +972,7 @@ describe("message handler — channel thread routing", () => {
       "[Thread message — respond normally, or use [silent] if no response is needed]\nFollowup message",
       "C123:1.0",
       expect.any(Function),
+      { SLACK_CHANNEL_ID: "C123", SLACK_THREAD_TS: "1.0" },
     );
     expect(client.chat.appendStream).toHaveBeenCalled();
   });
@@ -989,6 +995,7 @@ describe("message handler — channel thread routing", () => {
       "[Thread message — respond normally, or use [silent] if no response is needed]\nGood work bot",
       "C-CRON:200.0",
       expect.any(Function),
+      { SLACK_CHANNEL_ID: "C-CRON", SLACK_THREAD_TS: "200.0" },
     );
     expect(client.chat.appendStream).toHaveBeenCalled();
   });
@@ -1157,6 +1164,7 @@ describe("message handler — file handling", () => {
       "[file: /tmp/test-image.jpg]\nlook at this",
       "D1:1.1",
       expect.any(Function),
+      { SLACK_CHANNEL_ID: "D1", SLACK_THREAD_TS: "1.1" },
     );
   });
 
@@ -1181,6 +1189,7 @@ describe("message handler — file handling", () => {
       "[file: /tmp/test.pdf]",
       "D1:1.1",
       expect.any(Function),
+      { SLACK_CHANNEL_ID: "D1", SLACK_THREAD_TS: "1.1" },
     );
   });
 
@@ -1206,6 +1215,7 @@ describe("message handler — file handling", () => {
       "here is a file",
       "D1:1.1",
       expect.any(Function),
+      { SLACK_CHANNEL_ID: "D1", SLACK_THREAD_TS: "1.1" },
     );
   });
 
@@ -1233,6 +1243,7 @@ describe("message handler — file handling", () => {
       "with erroring file",
       "D1:1.1",
       expect.any(Function),
+      { SLACK_CHANNEL_ID: "D1", SLACK_THREAD_TS: "1.1" },
     );
   });
 
@@ -1288,6 +1299,7 @@ describe("app_mention handler", () => {
       "<@UBOT> do something",
       "C999:222.333",
       expect.any(Function),
+      { SLACK_CHANNEL_ID: "C999", SLACK_THREAD_TS: "222.333" },
     );
   });
 
@@ -1297,6 +1309,7 @@ describe("app_mention handler", () => {
       "<@UBOT> do something",
       "C999:1.1",
       expect.any(Function),
+      { SLACK_CHANNEL_ID: "C999", SLACK_THREAD_TS: "1.1" },
     );
   });
 
@@ -1567,6 +1580,7 @@ describe("app_mention handler — file handling", () => {
       "[file: /tmp/test-mention-image.jpg]\n<@UBOT> look at this",
       "C999:222.333",
       expect.any(Function),
+      { SLACK_CHANNEL_ID: "C999", SLACK_THREAD_TS: "222.333" },
     );
   });
 
@@ -1598,6 +1612,7 @@ describe("app_mention handler — file handling", () => {
       "<@UBOT> here is a file",
       "C999:222.333",
       expect.any(Function),
+      { SLACK_CHANNEL_ID: "C999", SLACK_THREAD_TS: "222.333" },
     );
   });
 
@@ -1615,6 +1630,7 @@ describe("app_mention handler — file handling", () => {
       "<@UBOT> with erroring file",
       "C999:222.333",
       expect.any(Function),
+      { SLACK_CHANNEL_ID: "C999", SLACK_THREAD_TS: "222.333" },
     );
   });
 
@@ -1646,6 +1662,7 @@ describe("app_mention handler — file handling", () => {
       "[file: /tmp/mention-image.jpg]\n<@UBOT> look at this",
       "C999:222.333",
       expect.any(Function),
+      { SLACK_CHANNEL_ID: "C999", SLACK_THREAD_TS: "222.333" },
     );
   });
 });
@@ -1938,6 +1955,7 @@ describe("user name context — message handler", () => {
       "[Dan]: hello",
       "D1:1.1",
       expect.any(Function),
+      { SLACK_CHANNEL_ID: "D1", SLACK_THREAD_TS: "1.1" },
     );
   });
 
@@ -1958,6 +1976,7 @@ describe("user name context — message handler", () => {
       "hello",
       "D1:1.1",
       expect.any(Function),
+      { SLACK_CHANNEL_ID: "D1", SLACK_THREAD_TS: "1.1" },
     );
   });
 });
@@ -1986,6 +2005,7 @@ describe("user name context — app_mention handler", () => {
       "[Dan]: <@UBOT> do something",
       "C999:222.333",
       expect.any(Function),
+      { SLACK_CHANNEL_ID: "C999", SLACK_THREAD_TS: "222.333" },
     );
   });
 
@@ -2005,6 +2025,7 @@ describe("user name context — app_mention handler", () => {
       "<@UBOT> do something",
       "C999:222.333",
       expect.any(Function),
+      { SLACK_CHANNEL_ID: "C999", SLACK_THREAD_TS: "222.333" },
     );
   });
 });
@@ -3740,7 +3761,8 @@ describe("thread resume after timeout — real createRunClaude wired as runner",
 
     capturedErrors = [];
     const app = _createSlackApp(
-      realRunClaude,
+      (message: string, sessionKey?: string, onProgress?: ProgressCallback) =>
+        realRunClaude(message, sessionKey, onProgress),
       mockMarkdownToSlack,
       threadKey,
       // biome-ignore lint/suspicious/noExplicitAny: mock factory for tests

@@ -259,6 +259,7 @@ export function createRunClaude(
   sessionKey?: string,
   onProgress?: ProgressCallback,
   signal?: AbortSignal,
+  extraEnv?: Record<string, string>,
 ) => Promise<ClaudeRunResult> {
   // Per-session queue: ensures messages on the same thread run serially
   const sessionQueues = new Map<string, Promise<unknown>>();
@@ -474,6 +475,7 @@ export function createRunClaude(
     args: string[],
     perCallOnProgress?: ProgressCallback,
     signal?: AbortSignal,
+    extraEnv?: Record<string, string>,
   ): Promise<ClaudeRunResult> {
     // Strip SENTRY_DSN so a spawned Claude Code session (and any `bun test`
     // it runs internally) can never construct a real Sentry client from
@@ -482,9 +484,12 @@ export function createRunClaude(
     // which runs in this parent process against its own client, unaffected
     // by the child's env.
     const { SENTRY_DSN: _sentryDsn, ...spawnEnv } = process.env;
+    // extraEnv is layered on last (after the SENTRY_DSN strip) as a per-run
+    // override point — if a caller somehow passed SENTRY_DSN in extraEnv, it
+    // would deliberately win.
     const proc = spawner(["claude", ...args], {
       cwd: workspace,
-      env: spawnEnv,
+      env: { ...spawnEnv, ...extraEnv },
       stdout: "pipe",
       stderr: "pipe",
     });
@@ -658,6 +663,7 @@ export function createRunClaude(
     sessionKey: string | undefined,
     perCallOnProgress: ProgressCallback | undefined,
     signal: AbortSignal | undefined,
+    extraEnv?: Record<string, string>,
   ): Promise<ClaudeRunResult> {
     const existingSessionId = sessionKey
       ? await sessions.get(sessionKey)
@@ -666,7 +672,7 @@ export function createRunClaude(
     const args = _buildArgs(message, existingSessionId);
 
     try {
-      const output = await _spawn(args, perCallOnProgress, signal);
+      const output = await _spawn(args, perCallOnProgress, signal, extraEnv);
       await _saveSession(sessionKey, output);
       return output;
     } catch (err) {
@@ -695,7 +701,12 @@ export function createRunClaude(
         !(err instanceof ClaudeAbortedError)
       ) {
         try {
-          const output = await _spawn(args, perCallOnProgress, signal);
+          const output = await _spawn(
+            args,
+            perCallOnProgress,
+            signal,
+            extraEnv,
+          );
           await _saveSession(sessionKey, output);
           return { ...output, recoveredFromError: true };
         } catch (retryErr) {
@@ -720,11 +731,12 @@ export function createRunClaude(
     sessionKey?: string,
     onProgress?: ProgressCallback,
     signal?: AbortSignal,
+    extraEnv?: Record<string, string>,
   ): Promise<ClaudeRunResult> {
     if (sessionKey)
       return _enqueue(sessionKey, () =>
-        _runClaude(message, sessionKey, onProgress, signal),
+        _runClaude(message, sessionKey, onProgress, signal, extraEnv),
       );
-    return _runClaude(message, undefined, onProgress, signal);
+    return _runClaude(message, undefined, onProgress, signal, extraEnv);
   };
 }
