@@ -2086,6 +2086,11 @@ export function renderTasksPage(
   },
   readOnly = false,
   timezone = "America/Los_Angeles",
+  // Joined PR data (blocked/blockedReason/claimedBy/claimedAt/heartbeatAt),
+  // keyed by task id — populated only by GET /admin/tasks (AXR-1.2). Left
+  // undefined/empty by GET /public/tasks so the read-only board never
+  // performs or renders the join (AC3).
+  prsByTaskId: Record<string, PrListItem> = {},
 ): string {
   const errorHtml = opts?.error
     ? `<div class="alert alert-error">${escapeHtml(opts.error)}</div>`
@@ -2182,7 +2187,17 @@ export function renderTasksPage(
                 )
               : '<span style="color:#9ca3af">—</span>';
             const detailHref = `/admin/tasks/${escapeHtml(t.id)}${detailHrefSuffix}`;
-            return `<tr${readOnly ? "" : ` data-href="${detailHref}" style="cursor:pointer"`}>
+            // Joined PR data attributes — rendered only when the join map
+            // has an entry for this task (i.e. only from GET /admin/tasks;
+            // GET /public/tasks always passes an empty map, so this stays
+            // absent there). Raw plumbing for AXR-1.3's board UI; not yet
+            // rendered as a visible badge here (AXR-1.2 scope is the join +
+            // bucketing function only, not the board UI itself).
+            const joinedPr = prsByTaskId[t.id];
+            const prJoinAttrs = joinedPr
+              ? ` data-pr-blocked="${joinedPr.blocked === true ? "true" : "false"}" data-pr-blocked-reason="${escapeHtml(joinedPr.blockedReason ?? "")}" data-pr-claimed-by="${escapeHtml(joinedPr.claimedBy ?? "")}" data-pr-claimed-at="${escapeHtml(joinedPr.claimedAt ?? "")}" data-pr-heartbeat-at="${escapeHtml(joinedPr.heartbeatAt ?? "")}"`
+              : "";
+            return `<tr${readOnly ? "" : ` data-href="${detailHref}" style="cursor:pointer"`}${prJoinAttrs}>
     <td class="mono" style="font-size:11px">${readOnly ? escapeHtml(t.id) : `<a href="${detailHref}" style="color:#6366f1;text-decoration:none" title="View details">${escapeHtml(t.id)}</a>`}</td>
     <td>${readOnly ? escapeHtml(t.title) : `<a href="${detailHref}" style="color:inherit;text-decoration:none">${escapeHtml(t.title)}</a>`}${blockerBadges}</td>
     <td><span class="badge ${statusBadgeClass(t.status)}">${escapeHtml(t.status)}</span></td>
@@ -2723,6 +2738,73 @@ const TASK_STATE_GROUPS: { key: TaskState; label: string }[] = [
   { key: "blocked", label: "Blocked" },
   { key: "closed", label: "Closed" },
 ];
+
+// ─── Board column bucketing (AXR-1.2) ────────────────────────────────────────
+//
+// Single source of truth for the 5-column task board — AXR-1.3 builds the
+// board UI on top of this pure function; do not duplicate this logic there.
+// Every task resolves to exactly one column. Precedence is checked top to
+// bottom below, first match wins:
+//
+//   1. done         — status is one of merged/deployed/done/deploying/
+//                      cancelled (reuses SESSION_CLOSED_STATUSES). Wins over
+//                      every other signal, including hitl:true or a blocked
+//                      joined PR, so a completed task never shows as needing
+//                      a human.
+//   2. blocked_hitl — task.status === "blocked", OR task.hitl === true, OR
+//                      the joined PR is blocked (prBlocked === true). This is
+//                      the "needs a human" bucket — task-level and PR-level
+//                      blocks both collapse into this single bucket, even
+//                      when both fire at once for the same task.
+//   3. in_progress  — status is one of in_progress/pr_open/approved, and
+//                      none of the blocked_hitl conditions above matched.
+//   4. claimed      — status "pending" with a claimedBy set (about to start,
+//                      or claimed but not yet started).
+//   5. queued       — status "pending" with no claimedBy (default
+//                      fallback — also covers any future/unrecognized status
+//                      value, so every task still lands in exactly one
+//                      column rather than "none of the above").
+export type TaskBoardColumn =
+  | "queued"
+  | "claimed"
+  | "in_progress"
+  | "blocked_hitl"
+  | "done";
+
+export const TASK_BOARD_COLUMNS: { key: TaskBoardColumn; label: string }[] = [
+  { key: "queued", label: "Queued" },
+  { key: "claimed", label: "Claimed" },
+  { key: "in_progress", label: "In Progress" },
+  { key: "blocked_hitl", label: "Blocked-HITL" },
+  { key: "done", label: "Done" },
+];
+
+/**
+ * Buckets a task into one of the 5 board columns above. `prBlocked` is the
+ * `blocked` flag from the task's joined PR (undefined/null when the task has
+ * no linked PR, or the join wasn't performed) — see the module comment above
+ * for full precedence rules.
+ */
+export function bucketTaskColumn(
+  task: Pick<TaskItem, "status" | "hitl" | "claimedBy">,
+  prBlocked?: boolean | null,
+): TaskBoardColumn {
+  if (SESSION_CLOSED_STATUSES.has(task.status)) return "done";
+  if (task.status === "blocked" || task.hitl === true || prBlocked === true) {
+    return "blocked_hitl";
+  }
+  if (
+    task.status === "in_progress" ||
+    task.status === "pr_open" ||
+    task.status === "approved"
+  ) {
+    return "in_progress";
+  }
+  if (task.status === "pending") {
+    return task.claimedBy ? "claimed" : "queued";
+  }
+  return "queued";
+}
 
 export interface DependencyNode {
   id: string;
