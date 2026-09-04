@@ -8773,6 +8773,65 @@ describe("renderQueueActivityPage — Upcoming section", () => {
   });
 });
 
+// ─── renderQueueActivityPage — agent selector (AXR-3.4) ─────────────────────
+
+describe("renderQueueActivityPage — agent selector", () => {
+  const BASE_OPTS = {
+    snapshot: null,
+    crons: [],
+    runs: [],
+    filters: {},
+    pagination: { total: 0, limit: 20, page: 1 },
+    userName: "admin@example.com",
+  };
+
+  test("admin fixture: renders every accessible agent as an option, with the viewed agent pre-selected", () => {
+    const html = renderQueueActivityPage({
+      ...BASE_OPTS,
+      agent: { id: "agent-123", name: "Test Agent" },
+      agents: [
+        { id: "agent-123", name: "Test Agent" },
+        { id: "agent-456", name: "Other Agent" },
+        { id: "agent-789", name: "Third Agent" },
+      ],
+    });
+    expect(html).toContain(
+      '<option value="agent-123" selected>Test Agent</option>',
+    );
+    expect(html).toContain('<option value="agent-456">Other Agent</option>');
+    expect(html).toContain('<option value="agent-789">Third Agent</option>');
+    expect(html).toContain(
+      '<form method="GET" action="/admin/agents/agent-123/queue-activity"',
+    );
+  });
+
+  test("non-admin/AgentMember fixture: renders only the caller's scoped agents, none of the inaccessible fleet", () => {
+    const html = renderQueueActivityPage({
+      ...BASE_OPTS,
+      agent: { id: "agent-456", name: "Other Agent" },
+      agents: [
+        { id: "agent-123", name: "Test Agent" },
+        { id: "agent-456", name: "Other Agent" },
+      ],
+    });
+    expect(html).toContain('<option value="agent-123">Test Agent</option>');
+    expect(html).toContain(
+      '<option value="agent-456" selected>Other Agent</option>',
+    );
+    expect(html).not.toContain("agent-789");
+  });
+
+  test("falls back to a single-option selector (just the viewed agent) when agents is omitted", () => {
+    const html = renderQueueActivityPage({
+      ...BASE_OPTS,
+      agent: { id: "agent-123", name: "Test Agent" },
+    });
+    expect(html).toContain(
+      '<option value="agent-123" selected>Test Agent</option>',
+    );
+  });
+});
+
 // ─── renderQueueActivityPage — sectioning (AXR-3.1) ─────────────────────────
 
 describe("renderQueueActivityPage — Upcoming/Past sectioning", () => {

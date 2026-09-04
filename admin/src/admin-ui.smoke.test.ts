@@ -1315,6 +1315,72 @@ describe("admin UI — authenticated pages", () => {
     expect(html).not.toContain("Last computed");
   });
 
+  it("authenticated GET /admin/agents/:id/queue-activity fetches the caller's accessible-agents list and renders it as the selector's options (AXR-3.4)", async () => {
+    const OTHER_AGENT_ID = "agent-other-456";
+    const app = createAdminUIApp(
+      makeMockDeps({
+        agentService: {
+          listAll: async () => [
+            {
+              id: AGENT_ID,
+              name: "Test Agent",
+              slackId: "U1",
+              selfHosted: false,
+              typeName: "coding",
+              createdAt: new Date("2024-01-01"),
+              updatedAt: new Date("2024-01-01"),
+            },
+            {
+              id: OTHER_AGENT_ID,
+              name: "Other Agent",
+              slackId: "U2",
+              selfHosted: false,
+              typeName: "coding",
+              createdAt: new Date("2024-01-01"),
+              updatedAt: new Date("2024-01-01"),
+            },
+          ],
+          listByIds: async () => [],
+          searchByName: async () => [],
+          listOptions: async () => [],
+          create: async () => {
+            throw new Error("not implemented");
+          },
+          delete: async () => {},
+          getDetail: async () => ({
+            id: AGENT_ID,
+            name: "Test Agent",
+            slackId: "U123456",
+            selfHosted: false,
+            typeName: "coding",
+            createdAt: new Date("2024-01-01"),
+            updatedAt: new Date("2024-01-01"),
+            repos: [],
+            reviewAuthorAllowlist: [],
+            patchAuthorAllowlist: [],
+            restrictSlackToMembers: false,
+            missingRequiredEnv: [],
+          }),
+          updateFields: async () => {
+            throw new Error("not implemented");
+          },
+        },
+      }),
+    );
+    const res = await app.request(`/admin/agents/${AGENT_ID}/queue-activity`, {
+      headers: { Cookie: `admin_session=${cookie}` },
+    });
+    expect(res.status).toBe(200);
+    const html = await res.text();
+    // The caller (admin) sees the full fleet, with the currently-viewed agent pre-selected.
+    expect(html).toContain(
+      `<option value="${AGENT_ID}" selected>Test Agent</option>`,
+    );
+    expect(html).toContain(
+      `<option value="${OTHER_AGENT_ID}">Other Agent</option>`,
+    );
+  });
+
   it("authenticated GET /admin/agents/:id/queue-activity renders the Upcoming section above the Past section", async () => {
     const app = createAdminUIApp(
       makeMockDeps({
