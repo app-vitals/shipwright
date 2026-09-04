@@ -2751,11 +2751,14 @@ const TASK_STATE_GROUPS: { key: TaskState; label: string }[] = [
 //                      every other signal, including hitl:true or a blocked
 //                      joined PR, so a completed task never shows as needing
 //                      a human.
-//   2. blocked_hitl — task.status === "blocked", OR task.hitl === true, OR
-//                      the joined PR is blocked (prBlocked === true). This is
-//                      the "needs a human" bucket — task-level and PR-level
-//                      blocks both collapse into this single bucket, even
-//                      when both fire at once for the same task.
+//   2. blocked_hitl — task.status === "blocked", OR task.blockedBy is
+//                      non-empty (unresolved dependency or hitl wait — same
+//                      signal classifyTaskState above treats as "blocked"),
+//                      OR task.hitl === true, OR the joined PR is blocked
+//                      (prBlocked === true). This is the "needs a human"
+//                      bucket — task-level and PR-level blocks both collapse
+//                      into this single bucket, even when several of these
+//                      fire at once for the same task.
 //   3. in_progress  — status is one of in_progress/pr_open/approved, and
 //                      none of the blocked_hitl conditions above matched.
 //   4. claimed      — status "pending" with a claimedBy set (about to start,
@@ -2786,11 +2789,16 @@ export const TASK_BOARD_COLUMNS: { key: TaskBoardColumn; label: string }[] = [
  * for full precedence rules.
  */
 export function bucketTaskColumn(
-  task: Pick<TaskItem, "status" | "hitl" | "claimedBy">,
+  task: Pick<TaskItem, "status" | "hitl" | "claimedBy" | "blockedBy">,
   prBlocked?: boolean | null,
 ): TaskBoardColumn {
   if (SESSION_CLOSED_STATUSES.has(task.status)) return "done";
-  if (task.status === "blocked" || task.hitl === true || prBlocked === true) {
+  if (
+    task.status === "blocked" ||
+    (task.blockedBy?.length ?? 0) > 0 ||
+    task.hitl === true ||
+    prBlocked === true
+  ) {
     return "blocked_hitl";
   }
   if (

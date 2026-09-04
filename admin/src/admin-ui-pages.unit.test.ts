@@ -6859,8 +6859,8 @@ describe("classifyTaskState", () => {
 // Single source of truth for the 5-column task board (Queued / Claimed /
 // In Progress / Blocked-HITL / Done), consumed later by AXR-1.3's board UI.
 // Every task must resolve to exactly one column — including the edge case
-// where both the task itself (status/hitl) and its joined PR (pr.blocked)
-// are separately blocked.
+// where both the task itself (status/hitl/blockedBy) and its joined PR
+// (pr.blocked) are separately blocked.
 
 describe("bucketTaskColumn", () => {
   const BASE: TaskItem = {
@@ -6899,6 +6899,29 @@ describe("bucketTaskColumn", () => {
   test("joined PR blocked:true buckets as blocked_hitl even when the task itself is not blocked", () => {
     const task: TaskItem = { ...BASE, status: "in_progress" };
     expect(bucketTaskColumn(task, true)).toBe("blocked_hitl");
+  });
+
+  test("non-empty blockedBy (unresolved dependency) buckets as blocked_hitl even with status pending", () => {
+    const task: TaskItem = {
+      ...BASE,
+      status: "pending",
+      blockedBy: [{ type: "dependency", id: "REL-2.2", status: "pending" }],
+    };
+    expect(bucketTaskColumn(task)).toBe("blocked_hitl");
+  });
+
+  test("non-empty blockedBy (hitl wait) buckets as blocked_hitl even with status in_progress", () => {
+    const task: TaskItem = {
+      ...BASE,
+      status: "in_progress",
+      blockedBy: [{ type: "hitl" }],
+    };
+    expect(bucketTaskColumn(task)).toBe("blocked_hitl");
+  });
+
+  test("empty blockedBy does not force blocked_hitl", () => {
+    const task: TaskItem = { ...BASE, status: "pending", blockedBy: [] };
+    expect(bucketTaskColumn(task)).toBe("queued");
   });
 
   test("both task-level blocked (status) AND PR-level blocked resolve to the single blocked_hitl bucket", () => {
