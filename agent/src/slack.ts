@@ -534,6 +534,32 @@ export function createSlackApp(
     if (key) liveStreams.delete(key);
   }
 
+  // The bot's own workspace team ID — chat.startStream()'s recipient_team_id
+  // requires it for every non-DM stream (STS-2.1; see SlackProgress.isDM).
+  // Resolved once via client.auth.test() here at app construction and cached
+  // in this closure for the life of this createSlackApp() instance — mirrors
+  // threadStatusTracker/liveStreams above (closure-scoped, never
+  // module-level, so multiple app instances in tests stay isolated).
+  // Kicked off eagerly (not lazily per-message) so the round-trip overlaps
+  // Bolt's own startup instead of adding latency to the first non-DM
+  // message. Resolves to undefined — never throws, never rejects — when the
+  // app's client lacks `auth.test` entirely (e.g. a test/mock appFactory) or
+  // the call itself fails; callers then just omit recipient_team_id, same as
+  // a DM payload.
+  const teamIdPromise: Promise<string | undefined> =
+    typeof app.client?.auth?.test === "function"
+      ? app.client.auth.test().then(
+          (resp: { team_id?: string }) => resp?.team_id,
+          (err: unknown) => {
+            console.warn(
+              "[slack] auth.test() failed — recipient_team_id unavailable for non-DM Thinking Steps streams:",
+              err instanceof Error ? err.message : String(err),
+            );
+            return undefined;
+          },
+        )
+      : Promise.resolve(undefined);
+
   // DMs: respond to every message.
   // Channels: respond only if bot has already replied in this thread.
   // biome-ignore lint/suspicious/noExplicitAny: Bolt callback params
@@ -578,10 +604,17 @@ export function createSlackApp(
     const sessionKey = getThreadKey(msg.channel, msg.thread_ts ?? msg.ts);
     const replyTs = msg.thread_ts ?? msg.ts;
 
+    // recipient_team_id is only meaningful (and only fetched) for non-DM
+    // threads — see teamIdPromise's doc comment and SlackProgress.isDM
+    // (STS-2.1).
+    const recipientTeamId = isDM ? undefined : await teamIdPromise;
     const progress = new SlackProgress({
       client,
       channel: msg.channel,
       threadTs: replyTs,
+      isDM,
+      recipientUserId: msg.user,
+      recipientTeamId,
     });
     // enter()/exit() are ALWAYS called (every enter() needs a matching
     // exit(), or the refcount leaks upward forever) — see startProgress()'s
@@ -759,10 +792,16 @@ export function createSlackApp(
       return;
     }
 
+    // app_mention never fires for a DM (mentions in a DM arrive as a plain
+    // message event, handled above) — always a channel/group thread, so
+    // recipient_team_id is always fetched here (STS-2.1).
     const progress = new SlackProgress({
       client,
       channel: ev.channel,
       threadTs: replyTs,
+      isDM: false,
+      recipientUserId: ev.user,
+      recipientTeamId: await teamIdPromise,
     });
     // enter() is ALWAYS called — see startProgress()'s doc comment for
     // what it gates (STS2-1.1 AC #5).
@@ -946,10 +985,14 @@ export function createSlackApp(
     const name = await resolveUserFn(ev.user, client).catch(() => ev.user);
     const prompt = `[${name} reacted with :${ev.reaction}: to your message]`;
 
+    // Gated above (`ev.item.channel.startsWith("D")`) — this handler only
+    // ever fires for DMs, so recipient_team_id/recipient_user_id are never
+    // fetched or needed here (STS-2.1).
     const progress = new SlackProgress({
       client,
       channel: ev.item.channel,
       threadTs: ev.item.ts,
+      isDM: true,
     });
     // enter() is ALWAYS called — see startProgress()'s doc comment for
     // what it gates (STS2-1.1 AC #5).
