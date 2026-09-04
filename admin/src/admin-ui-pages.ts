@@ -3408,6 +3408,19 @@ export function renderPrsPage(
       </div>
     </div>`;
 
+  // "More filters" disclosure state. `state` already has a visible cue via the
+  // Open/Merged/Blocked tab highlighting above, but `reviewState` and `taskId`
+  // live only inside the collapsed panel — a bookmarked/linked filtered URL
+  // would otherwise look unfiltered. Auto-expand when either is set, and keep a
+  // badge on the summary so a manually re-collapsed panel still signals it.
+  const hiddenActiveFilterCount =
+    (filters.reviewState ? 1 : 0) + (filters.taskId ? 1 : 0);
+  const moreFiltersAttrs = hiddenActiveFilterCount > 0 ? " open" : "";
+  const moreFiltersBadge =
+    hiddenActiveFilterCount > 0
+      ? `<span class="badge badge-purple">${hiddenActiveFilterCount}</span>`
+      : "";
+
   return renderAdminPage({
     title: "PRs — Shipwright Admin",
     body: `${renderAdminToolbar(userName, "/admin/prs")}
@@ -3425,8 +3438,8 @@ export function renderPrsPage(
         )}
         <button type="submit" class="btn btn-secondary" style="font-size:12px;padding:4px 12px">Filter</button>
         <a href="/admin/prs" class="btn btn-secondary" style="font-size:12px;padding:4px 12px">Reset</a>
-        <details class="more-filters">
-          <summary>More filters</summary>
+        <details class="more-filters"${moreFiltersAttrs}>
+          <summary>More filters${moreFiltersBadge}</summary>
           <div class="more-filters-panel">
             <div class="form-group" style="margin-bottom:0">
               <label class="form-label" style="font-size:11px">State</label>

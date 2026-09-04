@@ -4872,6 +4872,66 @@ describe("renderPrsPage — org/repo multiselect filters", () => {
     expect(stateFieldIndex).toBeGreaterThan(detailsIndex);
     expect(taskIdFieldIndex).toBeGreaterThan(detailsIndex);
   });
+
+  // AXR-2.1 review follow-up: reviewState/taskId live only inside the collapsed
+  // disclosure, so a filtered URL must not render as an unfiltered-looking page.
+  test("more-filters disclosure stays collapsed with no badge when no hidden filter is set", () => {
+    const html = renderPrsPage(
+      [],
+      { state: "open" },
+      false,
+      USER_NAME,
+      {},
+      pagination,
+    );
+    expect(html).toContain('<details class="more-filters">');
+    expect(html).toContain("<summary>More filters</summary>");
+  });
+
+  test("more-filters disclosure renders open with a count badge when reviewState is set", () => {
+    const html = renderPrsPage(
+      [],
+      { reviewState: "pending" },
+      false,
+      USER_NAME,
+      {},
+      pagination,
+    );
+    expect(html).toContain('<details class="more-filters" open>');
+    expect(html).toContain(
+      '<summary>More filters<span class="badge badge-purple">1</span></summary>',
+    );
+  });
+
+  test("more-filters disclosure renders open with a count badge when taskId is set", () => {
+    const html = renderPrsPage(
+      [],
+      { taskId: "FOO-1" },
+      false,
+      USER_NAME,
+      {},
+      pagination,
+    );
+    expect(html).toContain('<details class="more-filters" open>');
+    expect(html).toContain(
+      '<summary>More filters<span class="badge badge-purple">1</span></summary>',
+    );
+  });
+
+  test("more-filters badge counts both hidden filters when reviewState and taskId are set", () => {
+    const html = renderPrsPage(
+      [],
+      { reviewState: "posted", taskId: "FOO-1" },
+      false,
+      USER_NAME,
+      {},
+      pagination,
+    );
+    expect(html).toContain('<details class="more-filters" open>');
+    expect(html).toContain(
+      '<summary>More filters<span class="badge badge-purple">2</span></summary>',
+    );
+  });
 });
 
 // ─── renderPrsPage — org/repo multiselect pagination/tab round-trip (ORF-2.2) ─
