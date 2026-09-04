@@ -10,6 +10,15 @@ independent of `appVersion`. CI enforces this with
 `ct lint --check-version-increment`. Each release here must mirror the
 `artifacthub.io/changes` annotation in `Chart.yaml`.
 
+## [1.19.91] - 2026-09-04
+
+### Removed
+
+- `admin.taskStorePublicUrl` and the `SHIPWRIGHT_TASK_STORE_PUBLIC_URL` env var it
+  injected into the admin container. The admin service no longer reads this value —
+  its only consumer, `resolveTaskStoreBaseUrl()`, was removed alongside the
+  `/admin/tokens` task-store token UI.
+
 ## [1.19.90] - 2026-09-04
 
 ### Changed
