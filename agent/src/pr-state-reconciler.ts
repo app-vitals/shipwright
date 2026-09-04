@@ -501,16 +501,32 @@ export function __resetPrOpenTasksCursorForTests(): void {
 interface PassSummary {
   /** Records fetched and considered by this pass (a per-repo list-call failure does NOT add to this — the would-be count is unknown). */
   evaluated: number;
-  /** Records that received a PATCH. */
+  /** Records that received a PATCH reconciling state/mergedAt to live GitHub reality (merged/closed) — does NOT include `closedOrphaned` below, which is a causally distinct outcome (see RPS-1.2). */
   patched: number;
   /** Records skipped because `isActivelyClaimed()` returned true — always 0 for reconcilePrState's pass. */
   skippedClaimed: number;
   /** Per-record reconcile failures PLUS per-repo list-call failures (each list failure counts as 1, representing the failed call itself). */
   errored: number;
+  /**
+   * RPS-1.2: records auto-closed as orphaned because GitHub confirmed the
+   * PR doesn't exist at all (`isPrNotFoundError`) — kept distinct from
+   * `patched` (a record reconciled to a real merged/closed PR) and from
+   * `errored` (this outcome is not logged as an error; it's the expected,
+   * successful handling of a known case). Always 0 for
+   * `reconcileReviewState()`'s two passes — orphaned-PR detection only
+   * applies to `reconcilePrState()`'s `ghViewPr` call site.
+   */
+  closedOrphaned: number;
 }
 
 function newPassSummary(): PassSummary {
-  return { evaluated: 0, patched: 0, skippedClaimed: 0, errored: 0 };
+  return {
+    evaluated: 0,
+    patched: 0,
+    skippedClaimed: 0,
+    errored: 0,
+    closedOrphaned: 0,
+  };
 }
 
 /** Logs one summary line for a completed pass — see `PassSummary`'s doc comment for what each count means. */
@@ -520,7 +536,7 @@ function logPassSummary(
   summary: PassSummary,
 ): void {
   console.log(
-    `${prefix} ${label} summary: evaluated=${summary.evaluated} patched=${summary.patched} skippedClaimed=${summary.skippedClaimed} errored=${summary.errored}`,
+    `${prefix} ${label} summary: evaluated=${summary.evaluated} patched=${summary.patched} skippedClaimed=${summary.skippedClaimed} errored=${summary.errored} closedOrphaned=${summary.closedOrphaned}`,
   );
 }
 
@@ -532,6 +548,55 @@ function mapGhStateToPrState(
   if (state === "CLOSED") return "closed";
   return null; // still OPEN on GitHub — nothing to reconcile
 }
+
+/**
+ * Stable substring of `gh`'s stderr for a PR number that GitHub can't
+ * resolve at all — distinct from every other `gh pr view` failure shape
+ * (rate limit, auth, network, transient 5xx). `ghJson()`
+ * (agent/src/check-helpers.ts) wraps this text into a generic
+ * `Error(\`gh ... failed (exit N): ${stderr}\`)`, so this is matched as a
+ * substring rather than the whole message. The number itself and any
+ * trailing punctuation are deliberately excluded from the match — only the
+ * fixed prefix GitHub emits regardless of which PR number was requested.
+ */
+const GH_PR_NOT_FOUND_SIGNATURE =
+  "Could not resolve to a PullRequest with the number of";
+
+/**
+ * True when `err` is a `gh pr view` failure whose message carries GitHub's
+ * stable "no such PR" signature (`GH_PR_NOT_FOUND_SIGNATURE`) — i.e. the PR
+ * record's `repo`+`prNumber` genuinely doesn't exist on GitHub, as opposed to
+ * a transient lookup failure (rate limit, auth, network, 5xx). Isolated as
+ * its own named helper (rather than an inline `.includes()` check at the
+ * call site) so the not-found signature is unit-testable on its own and so
+ * `reconcileRecord()` below reads as "known case, then everything else" per
+ * this repo's error_handling principle. A non-`Error` throw (e.g. a raw
+ * string or object) never matches — `gh`/`ghJson()` only ever throws real
+ * `Error` instances, so anything else is unexpected and should fall through
+ * to the generic log-and-retry path rather than being guessed at.
+ */
+export function isPrNotFoundError(err: unknown): boolean {
+  return (
+    err instanceof Error && err.message.includes(GH_PR_NOT_FOUND_SIGNATURE)
+  );
+}
+
+/**
+ * Fields PATCHed onto a PR record once `isPrNotFoundError` confirms GitHub
+ * has no record of it at all (RPS-1.2) — the record was written into the
+ * task store (fixture/test data, or a stale manual entry) pointing at a
+ * `repo`+`prNumber` that never existed or has since been deleted outright
+ * (distinct from a real closed/merged PR, which `mapGhStateToPrState` above
+ * already handles via a normal `gh pr view` success response). Closing +
+ * blocking it here stops it from being re-evaluated by this same pass on
+ * every future tick forever.
+ */
+const ORPHANED_PR_PATCH_FIELDS: Record<string, unknown> = {
+  state: "closed",
+  blocked: true,
+  blockedReason:
+    "orphaned -- PR does not exist on GitHub (auto-closed by pr-state-reconciler)",
+};
 
 /**
  * List every state:"open" PR record for a repo, updated at or after
@@ -615,12 +680,29 @@ async function fetchPrOpenTasksBatch(
  * loop in `reconcilePrState()` can tally outcomes for its end-of-pass summary
  * log — purely a reporting addition, does not change which branch runs or
  * what gets written.
+ *
+ * RPS-1.2: also returns "closed-orphaned" when `deps.ghViewPr` rejects with
+ * `isPrNotFoundError(err)` true — GitHub has confirmed this repo+prNumber
+ * doesn't exist at all (as opposed to a transient lookup failure: rate
+ * limit, auth, network), so the record is PATCHed to closed/blocked instead
+ * of leaving the throw to propagate. This is deliberately its own early
+ * catch scoped ONLY to the `ghViewPr` call — every other error (a different
+ * `ghViewPr` failure shape, or any error from the PATCH/worktree-removal
+ * code below) still propagates unchanged to `reconcilePrState()`'s existing
+ * per-record catch/log/errored-tally path.
  */
 async function reconcileRecord(
   deps: PrStateReconcilerDeps,
   record: PrStateRecord,
-): Promise<"patched" | "no-op"> {
-  const ghState = await deps.ghViewPr(record.repo, record.prNumber);
+): Promise<"patched" | "no-op" | "closed-orphaned"> {
+  let ghState: GhPrView;
+  try {
+    ghState = await deps.ghViewPr(record.repo, record.prNumber);
+  } catch (err) {
+    if (!isPrNotFoundError(err)) throw err;
+    await deps.patchPrRecord(record.id, ORPHANED_PR_PATCH_FIELDS);
+    return "closed-orphaned";
+  }
   const newState = mapGhStateToPrState(ghState.state);
   if (newState === null) return "no-op"; // still open on GitHub — no-op
 
@@ -918,6 +1000,7 @@ export async function reconcilePrState(
       try {
         const outcome = await reconcileRecord(deps, record);
         if (outcome === "patched") summary.patched += 1;
+        else if (outcome === "closed-orphaned") summary.closedOrphaned += 1;
       } catch (err) {
         console.error(
           `[pr-state-reconciler] failed to reconcile ${repo}#${record.prNumber}:`,
