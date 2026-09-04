@@ -63,3 +63,12 @@ describe("SKILL.md — the dependency-bot cross-check step is retired (DBR-3.4)"
     expect(content).not.toContain("### 3d.");
   });
 });
+
+describe("SKILL.md — worktree path convention", () => {
+  it("uses SHIPWRIGHT_WORKTREE_DIR env var form instead of hardcoded ~/worktrees", () => {
+    expect(content).toContain(
+      "${SHIPWRIGHT_WORKTREE_DIR:-$HOME/worktrees}/{repo}-{branch-slug}",
+    );
+    expect(content).not.toContain("~/worktrees/{repo}-{branch-slug}");
+  });
+});
