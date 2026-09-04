@@ -292,19 +292,6 @@ export async function checkDbReady(prisma: {
 const DEFAULT_PORT = 3000;
 
 /**
- * Resolve the task-store base URL advertised in the admin mint-token env block.
- * Prefers the externally-reachable SHIPWRIGHT_TASK_STORE_PUBLIC_URL (so a
- * local/laptop agent can resolve it) and falls back to the internal
- * SHIPWRIGHT_TASK_STORE_URL when unset. The admin service's own in-cluster
- * task-store calls always use the internal URL — only the displayed value changes.
- */
-export function resolveTaskStoreBaseUrl(
-  env: Record<string, string | undefined>,
-): string | undefined {
-  return env.SHIPWRIGHT_TASK_STORE_PUBLIC_URL ?? env.SHIPWRIGHT_TASK_STORE_URL;
-}
-
-/**
  * Resolve the public read-only task board repo from the environment.
  * Reads SHIPWRIGHT_ADMIN_PUBLIC_REPO; trims whitespace so a blank/whitespace
  * value behaves like unset (returns undefined → board stays in degraded mode)
@@ -320,8 +307,8 @@ export function resolvePublicRepo(
 // preflight, constructs a real PrismaClient (live DB connection), calls
 // Bun.serve to bind an actual socket, and mounts every sub-app. This is
 // process-wiring / real-I/O by design — there is no pure logic left to
-// extract once buildProvisioner, resolveTaskStoreBaseUrl, resolvePublicRepo,
-// and runMigrations's early-return are unit-tested in isolation (see
+// extract once buildProvisioner, resolvePublicRepo, and runMigrations's
+// early-return are unit-tested in isolation (see
 // main.unit.test.ts). It is exercised in deployed environments (and via the
 // smoke/integration suites of the services it wires together), not by a unit
 // test — forcing a mock-heavy unit test here would mean re-implementing
@@ -546,42 +533,6 @@ async function startServer(): Promise<void> {
               throw new Error(`task-store GET /prs/${id} → ${res.status}`);
             return res.json();
           },
-          adminListTokens: async () => {
-            const res = await fetch(`${taskStoreUrl}/tokens`, {
-              headers: { Authorization: `Bearer ${taskStoreAdminToken}` },
-            });
-            if (!res.ok)
-              throw new Error(`task-store GET /tokens → ${res.status}`);
-            return res.json();
-          },
-          adminCreateToken: async (label?: string, agentId?: string) => {
-            const res = await fetch(`${taskStoreUrl}/tokens`, {
-              method: "POST",
-              headers: {
-                Authorization: `Bearer ${taskStoreAdminToken}`,
-                "Content-Type": "application/json",
-              },
-              body: JSON.stringify({ label, agentId }),
-            });
-            if (!res.ok)
-              throw new Error(`task-store POST /tokens → ${res.status}`);
-            return res.json();
-          },
-          adminRevokeToken: async (id: string) => {
-            const res = await fetch(`${taskStoreUrl}/tokens/${id}`, {
-              method: "DELETE",
-              headers: { Authorization: `Bearer ${taskStoreAdminToken}` },
-            });
-            if (!res.ok)
-              throw new Error(
-                `task-store DELETE /tokens/${id} → ${res.status}`,
-              );
-          },
-          // Advertised on the manual Tokens page so a self-hosted/local agent's
-          // operator can read it and configure the local task-store CLI config
-          // themselves; the in-cluster fetchers above keep using the internal
-          // SHIPWRIGHT_TASK_STORE_URL.
-          taskStoreBaseUrl: resolveTaskStoreBaseUrl(process.env),
         }
       : {};
 

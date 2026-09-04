@@ -344,18 +344,6 @@ export interface TaskItem {
   lastSkippedAt?: string | null;
 }
 
-// Token shape returned by the task-store /tokens endpoint (admin token only).
-// Mirrors TaskToken fields relevant to the admin UI; avoids cross-package coupling.
-export interface TaskStoreTokenItem {
-  id: string;
-  label: string | null;
-  agentId: string | null;
-  token: string;
-  createdAt: Date | string;
-  revokedAt: Date | string | null;
-  rawToken?: string;
-}
-
 // ─── Inline markdown renderer ─────────────────────────────────────────────────
 
 /**
@@ -1714,20 +1702,6 @@ export function renderAgentDetailPage(
         </table>
       </div>
     </div>
-
-    ${
-      agent.selfHosted
-        ? `<div class="card">
-      <div class="card-title">Local CLI Access</div>
-      <p style="font-size:13px;color:#6b7280;margin-bottom:12px">
-        This agent runs locally. Use an API token to authenticate the local agent process with the admin service.
-      </p>
-      <a href="/admin/tokens?agentId=${escapeHtml(agent.id)}" class="btn btn-secondary" style="font-size:13px">
-        Manage Tokens →
-      </a>
-    </div>`
-        : ""
-    }
 
     <div class="card">
       <div class="card-title">Plugins</div>
@@ -3960,138 +3934,6 @@ export function renderProvisionCompletePage(
     <div class="card">
       ${bodyHtml}
     </div>
-  </div>`,
-  });
-}
-
-// ─── Task-store tokens page ────────────────────────────────────────────────────
-
-export function renderTokensPage(
-  tokens: TaskStoreTokenItem[],
-  degraded: boolean,
-  userName: string,
-  activePath = "/admin/tokens",
-  rawToken?: string,
-  timezone?: string,
-  error?: string,
-  agents?: Array<{ id: string; name: string }>,
-  selectedAgentId?: string,
-  taskStoreBaseUrl?: string,
-): string {
-  const tz = timezone ?? "America/Los_Angeles";
-  const fmt = (d: Date | string | null | undefined) => {
-    if (!d) return "—";
-    const date = d instanceof Date ? d : new Date(d);
-    return date.toLocaleString("en-US", {
-      timeZone: tz,
-      dateStyle: "medium",
-      timeStyle: "short",
-    });
-  };
-
-  const degradedBanner = degraded
-    ? `<div class="alert alert-warning">Token store unavailable — configure SHIPWRIGHT_TASK_STORE_URL and SHIPWRIGHT_TASK_STORE_ADMIN_TOKEN.</div>`
-    : "";
-
-  const errorBanner = error
-    ? `<div class="alert alert-danger" style="margin-bottom:16px">${escapeHtml(error)}</div>`
-    : "";
-
-  const envBlock =
-    rawToken && taskStoreBaseUrl
-      ? `<pre style="background:#f3f4f6;border-radius:4px;padding:12px;margin-top:12px;font-size:12px;font-family:monospace;overflow-x:auto">export SHIPWRIGHT_TASK_STORE_URL=${escapeHtml(taskStoreBaseUrl)}
-export SHIPWRIGHT_TASK_STORE_TOKEN=${escapeHtml(rawToken)}</pre>`
-      : "";
-
-  const rawTokenBanner = rawToken
-    ? `<div class="alert alert-success" style="margin-bottom:16px">
-        <strong>Token created.</strong> Copy it now — it will not be shown again.<br>
-        <code id="raw-token" style="display:block;margin-top:8px;font-size:13px;word-break:break-all">${escapeHtml(rawToken)}</code>
-        <button type="button" class="btn btn-sm btn-secondary" style="margin-top:8px"
-          onclick="navigator.clipboard.writeText(document.getElementById('raw-token').textContent)">
-          Copy
-        </button>
-        ${envBlock}
-      </div>`
-    : "";
-
-  const rows =
-    tokens.length === 0
-      ? `<tr><td colspan="6" class="empty-state">No tokens found.</td></tr>`
-      : tokens
-          .map(
-            (t) => `<tr>
-          <td style="font-size:12px;color:#6b7280;font-family:monospace">${escapeHtml(t.id)}</td>
-          <td>${escapeHtml(t.label ?? "—")}</td>
-          <td style="font-size:12px;color:#6b7280;font-family:monospace">${t.agentId ? agentLink(t.agentId) : "(admin)"}</td>
-          <td>${fmt(t.createdAt)}</td>
-          <td>${t.revokedAt ? `<span style="color:#dc2626">Revoked ${fmt(t.revokedAt)}</span>` : '<span style="color:#16a34a">Active</span>'}</td>
-          <td>
-            ${
-              t.revokedAt
-                ? ""
-                : `<form method="POST" action="/admin/tokens/${encodeURIComponent(t.id)}/revoke" style="margin:0" onsubmit="return confirm('Revoke this token?')">
-                    <button type="submit" class="btn btn-sm btn-danger">Revoke</button>
-                  </form>`
-            }
-          </td>
-        </tr>`,
-          )
-          .join("");
-
-  const agentOptions = [
-    `<option value="">— admin token —</option>`,
-    ...(agents ?? []).map(
-      (a) =>
-        `<option value="${escapeHtml(a.id)}"${a.id === selectedAgentId ? " selected" : ""}>${escapeHtml(a.name)}</option>`,
-    ),
-  ].join("");
-
-  const createForm = !degraded
-    ? `<div class="card" style="margin-top:24px">
-        <h2 style="font-size:15px;font-weight:600;margin-bottom:12px">Create token</h2>
-        <form method="POST" action="/admin/tokens" style="display:flex;gap:8px;align-items:flex-end;flex-wrap:wrap">
-          <div>
-            <label style="display:block;font-size:12px;color:#6b7280;margin-bottom:4px">Label <span style="color:#dc2626">*</span></label>
-            <input type="text" name="label" placeholder="e.g. ci-pipeline" class="form-input" style="width:220px" required>
-          </div>
-          <div>
-            <label style="display:block;font-size:12px;color:#6b7280;margin-bottom:4px">Agent (optional — blank for admin token)</label>
-            <select name="agentId" class="form-input" style="width:220px">${agentOptions}</select>
-          </div>
-          <button type="submit" class="btn btn-primary">Create</button>
-        </form>
-      </div>`
-    : "";
-
-  return renderAdminPage({
-    title: "Task Store Tokens — Shipwright Admin",
-    body: `${renderAdminToolbar(userName, activePath)}
-  <div class="vos-page">
-    <div class="page-header">
-      <h1 class="page-title">Task Store Tokens</h1>
-    </div>
-    ${degradedBanner}
-    ${errorBanner}
-    ${rawTokenBanner}
-    <div class="card" style="overflow:auto">
-      <div class="data-table-wrapper">
-        <table class="data-table" style="width:100%">
-          <thead>
-            <tr>
-              <th>ID</th>
-              <th>Label</th>
-              <th>Agent</th>
-              <th>Created</th>
-              <th>Status</th>
-              <th></th>
-            </tr>
-          </thead>
-          <tbody>${rows}</tbody>
-        </table>
-      </div>
-    </div>
-    ${createForm}
   </div>`,
   });
 }

@@ -19,7 +19,6 @@ import {
   type PrListItem,
   type PullRequestItem,
   type TaskItem,
-  type TaskStoreTokenItem,
   type TokenItem,
   type ToolItem,
   type WorkQueueItem,
@@ -47,7 +46,6 @@ import {
   renderSessionDetailPage,
   renderTaskDetailPage,
   renderTasksPage,
-  renderTokensPage,
 } from "./admin-ui-pages.ts";
 import { renderAdminToolbar } from "./admin-ui-styles.ts";
 import type { ChatMessage, ChatThread } from "./http-chat-client.ts";
@@ -7735,59 +7733,6 @@ describe("computeDependencyLayout", () => {
   });
 });
 
-// ─── renderTokensPage — agent column linkability ─────────────────────────────
-
-describe("renderTokensPage — agent column linkability", () => {
-  function render(tokens: TaskStoreTokenItem[]): string {
-    return renderTokensPage(tokens, false, USER_NAME);
-  }
-
-  test("agent-scoped token links its Agent ID to the agent detail page", () => {
-    const html = render([
-      {
-        id: "tok-1",
-        label: "CI token",
-        agentId: "agent-y",
-        token: "sw_abc",
-        createdAt: "2026-06-01T10:00:00Z",
-        revokedAt: null,
-      },
-    ]);
-    expect(html).toContain('<a href="/admin/agents/agent-y"');
-  });
-
-  test("admin token (no agentId) renders '(admin)' with no agent link", () => {
-    const html = render([
-      {
-        id: "tok-2",
-        label: "Admin token",
-        agentId: null,
-        token: "sw_def",
-        createdAt: "2026-06-01T10:00:00Z",
-        revokedAt: null,
-      },
-    ]);
-    expect(html).toContain("(admin)");
-    expect(html).not.toContain("/admin/agents/");
-  });
-
-  test("table is wrapped in .data-table-wrapper", () => {
-    const html = render([
-      {
-        id: "tok-1",
-        label: "CI token",
-        agentId: "agent-y",
-        token: "sw_abc",
-        createdAt: "2026-06-01T10:00:00Z",
-        revokedAt: null,
-      },
-    ]);
-    expect(html).toMatch(
-      /<div class="data-table-wrapper">\s*<table class="data-table"/,
-    );
-  });
-});
-
 // AXR-3.1 merged the former standalone renderWorkQueuePage into
 // renderQueueActivityPage's "Upcoming" section — these cases are adapted
 // (not duplicated) from the original renderWorkQueuePage suite.
@@ -8124,7 +8069,6 @@ describe("all page renderers — single DOCTYPE and viewport meta (CFB-1.2)", ()
       "renderProvisionCompletePage",
       () => renderProvisionCompletePage(USER_NAME, { success: true }),
     ],
-    ["renderTokensPage", () => renderTokensPage([], false, USER_NAME)],
     ["renderChatPage", () => renderChatPage([], undefined, null, USER_NAME)],
     [
       "renderChatThreadPage (degraded — thread/messages null)",
@@ -8142,8 +8086,8 @@ describe("all page renderers — single DOCTYPE and viewport meta (CFB-1.2)", ()
     ],
   ];
 
-  test("all 20 render sites are covered by this loop", () => {
-    expect(renderers.length).toBe(20);
+  test("all 19 render sites are covered by this loop", () => {
+    expect(renderers.length).toBe(19);
   });
 
   for (const [name, render] of renderers) {

@@ -1,6 +1,6 @@
 ---
 title: Admin Console
-description: A tab-by-tab walkthrough of the Shipwright admin UI — Agents, Provisioning, Tasks, PRs, Chat, and Tokens.
+description: A tab-by-tab walkthrough of the Shipwright admin UI — Agents, Provisioning, Tasks, PRs, and Chat.
 section: Operations
 order: 3
 prev: "/docs/slack-integration"
@@ -11,8 +11,8 @@ next: "/docs/cron-jobs"
 
 The admin console (`admin/src/admin-ui.ts` and `admin/src/admin-ui-pages.ts`) is a server-rendered
 web UI for operating a Shipwright deployment day to day: managing agents, watching cron and work-queue
-activity, provisioning new Slack apps, browsing the task and PR queues, chatting with an agent, and
-issuing task-store API tokens. Every route below is registered under `/admin/*` in `createAdminUIApp`.
+activity, provisioning new Slack apps, browsing the task and PR queues, and chatting with an agent.
+Every route below is registered under `/admin/*` in `createAdminUIApp`.
 
 This page is a prose reference, not a tutorial — no screenshots are included (this pipeline can't
 capture live UI images), so each section describes what actually renders on the page: the columns,
@@ -30,12 +30,11 @@ development only — it's hard-blocked in production regardless of configuration
 production it only works if `ADMIN_DEV_AUTH=true` is set (off by default).
 
 Every admin page shares one toolbar (top nav) with links to **Agents**, **Provision**, **Tasks**,
-**PRs**, **Chat**, **Task Store Tokens**, and **Metrics**, plus the signed-in user's email and a
-sign-out button.
+**PRs**, **Chat**, and **Metrics**, plus the signed-in user's email and a sign-out button.
 
 Some visitors are non-admin members (an email present in `AgentMember` for a specific agent, but not
 in the admin allowlist) — they can see the Agents list and their agent's own detail page, but member
-management, the tasks/PRs/chat/tokens surfaces, and the Danger Zone all require full admin.
+management, the tasks/PRs/chat surfaces, and the Danger Zone all require full admin.
 
 ## Agents
 
@@ -116,8 +115,7 @@ date, and per-row **Enable/Disable** (`POST /admin/agents/:id/tools/:toolId/togg
 **Task Store Tokens** — a table of tokens minted for this agent (label, created date, Active/Revoked
 status) with a **Revoke** action per active token (`POST /admin/agents/:id/tokens/:tokenId/revoke`)
 and a create form (`POST /admin/agents/:id/tokens`, label optional). A freshly created token's raw
-value is shown once, inline, in a green banner — it is never displayed again. Self-hosted agents also
-get a **Local CLI Access** card here linking to `/admin/tokens?agentId=<id>` for token management.
+value is shown once, inline, in a green banner — it is never displayed again.
 
 **Plugins** — a read-only table (package name, version or "latest", enabled/disabled badge, created
 date) — plugin installs happen outside the admin UI.
@@ -280,19 +278,6 @@ message token/cost line. A compose box at the bottom (textarea + **Attach file**
 the thread via `fetch()` against `POST /admin/chat/:agentId/threads/:threadId/messages/upload`, then
 polls `GET .../messages.json` every 3 seconds (up to 90 seconds) for the assistant's reply, showing a
 "thinking…" indicator while it waits.
-
-## Tokens
-
-### Task Store Tokens — `GET /admin/tokens`
-
-Admin-only. A table of task-store API tokens (ID, Label, Agent — linked, or "(admin)" for an
-admin-scoped token, Created, Active/Revoked status) with a **Revoke** action
-(`POST /admin/tokens/:id/revoke`, confirmed via a JS dialog) per active token, and a **Create token**
-form below (Label required, Agent optional — blank mints an admin-scoped token). A freshly created
-token's raw value is shown once in a green banner with a **Copy** button and, if the task-store base
-URL is configured, a ready-to-paste `export SHIPWRIGHT_TASK_STORE_URL=…` /
-`export SHIPWRIGHT_TASK_STORE_TOKEN=…` block. If the token store isn't configured, the page shows a
-degraded-mode warning banner instead of the create form.
 
 ## See also
 

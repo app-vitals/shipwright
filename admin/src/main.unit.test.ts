@@ -12,7 +12,6 @@ import {
   buildProvisioner,
   checkDbReady,
   resolvePublicRepo,
-  resolveTaskStoreBaseUrl,
   runMigrations,
 } from "./main.ts";
 
@@ -65,34 +64,6 @@ describe("resolvePublicRepo", () => {
         SHIPWRIGHT_ADMIN_PUBLIC_REPO: "  app-vitals/shipwright  ",
       }),
     ).toBe("app-vitals/shipwright");
-  });
-});
-
-// ─── resolveTaskStoreBaseUrl ────────────────────────────────────────────────
-
-// resolveTaskStoreBaseUrl is the pure env rule feeding the admin mint-token
-// display block: prefers the externally-reachable PUBLIC url, falls back to
-// the internal one, and is undefined when neither is set.
-describe("resolveTaskStoreBaseUrl", () => {
-  it("prefers SHIPWRIGHT_TASK_STORE_PUBLIC_URL when both are set", () => {
-    expect(
-      resolveTaskStoreBaseUrl({
-        SHIPWRIGHT_TASK_STORE_PUBLIC_URL: "https://public.example.com",
-        SHIPWRIGHT_TASK_STORE_URL: "http://internal.svc.cluster.local:3002",
-      }),
-    ).toBe("https://public.example.com");
-  });
-
-  it("falls back to SHIPWRIGHT_TASK_STORE_URL when the public url is unset", () => {
-    expect(
-      resolveTaskStoreBaseUrl({
-        SHIPWRIGHT_TASK_STORE_URL: "http://internal.svc.cluster.local:3002",
-      }),
-    ).toBe("http://internal.svc.cluster.local:3002");
-  });
-
-  it("returns undefined when neither is set", () => {
-    expect(resolveTaskStoreBaseUrl({})).toBeUndefined();
   });
 });
 
