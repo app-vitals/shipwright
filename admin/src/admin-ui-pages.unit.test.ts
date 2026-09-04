@@ -3966,83 +3966,87 @@ describe("renderTasksPage — board view (AXR-1.3)", () => {
   // than a sibling top-level describe) so it can reuse this block's local
   // `renderBoard` helper.
   describe("board card age badge (TBC-1.1)", () => {
-  const NOW = new Date("2026-09-04T12:00:00.000Z");
+    const NOW = new Date("2026-09-04T12:00:00.000Z");
 
-  test("createdAt a few seconds before now renders 'just now' with the ISO timestamp in a title attribute", () => {
-    const createdAt = new Date(NOW.getTime() - 5_000).toISOString();
-    const task: TaskItem = {
-      id: "T-AGE-NOW",
-      title: "Fresh task",
-      status: "pending",
-      claimedBy: null,
-      assignee: null,
-      createdAt,
-    };
-    const html = renderBoard([task], {}, undefined, {}, NOW);
-    expect(html).toContain(`title="${createdAt}"`);
-    expect(html).toContain(">just now<");
-  });
+    test("createdAt a few seconds before now renders 'just now' with the ISO timestamp in a title attribute", () => {
+      const createdAt = new Date(NOW.getTime() - 5_000).toISOString();
+      const task: TaskItem = {
+        id: "T-AGE-NOW",
+        title: "Fresh task",
+        status: "pending",
+        claimedBy: null,
+        assignee: null,
+        createdAt,
+      };
+      const html = renderBoard([task], {}, undefined, {}, NOW);
+      expect(html).toContain(`title="${createdAt}"`);
+      expect(html).toContain(">just now<");
+    });
 
-  test("createdAt several hours before now renders 'N hours ago' with the ISO timestamp in a title attribute", () => {
-    const createdAt = new Date(NOW.getTime() - 5 * 60 * 60 * 1000).toISOString();
-    const task: TaskItem = {
-      id: "T-AGE-HOURS",
-      title: "Hours-old task",
-      status: "pending",
-      claimedBy: null,
-      assignee: null,
-      createdAt,
-    };
-    const html = renderBoard([task], {}, undefined, {}, NOW);
-    expect(html).toContain(`title="${createdAt}"`);
-    expect(html).toContain(">5 hours ago<");
-  });
+    test("createdAt several hours before now renders 'N hours ago' with the ISO timestamp in a title attribute", () => {
+      const createdAt = new Date(
+        NOW.getTime() - 5 * 60 * 60 * 1000,
+      ).toISOString();
+      const task: TaskItem = {
+        id: "T-AGE-HOURS",
+        title: "Hours-old task",
+        status: "pending",
+        claimedBy: null,
+        assignee: null,
+        createdAt,
+      };
+      const html = renderBoard([task], {}, undefined, {}, NOW);
+      expect(html).toContain(`title="${createdAt}"`);
+      expect(html).toContain(">5 hours ago<");
+    });
 
-  test("createdAt several days before now renders 'N days ago' with the ISO timestamp in a title attribute", () => {
-    const createdAt = new Date(NOW.getTime() - 3 * 24 * 60 * 60 * 1000).toISOString();
-    const task: TaskItem = {
-      id: "T-AGE-DAYS",
-      title: "Days-old task",
-      status: "pending",
-      claimedBy: null,
-      assignee: null,
-      createdAt,
-    };
-    const html = renderBoard([task], {}, undefined, {}, NOW);
-    expect(html).toContain(`title="${createdAt}"`);
-    expect(html).toContain(">3 days ago<");
-  });
+    test("createdAt several days before now renders 'N days ago' with the ISO timestamp in a title attribute", () => {
+      const createdAt = new Date(
+        NOW.getTime() - 3 * 24 * 60 * 60 * 1000,
+      ).toISOString();
+      const task: TaskItem = {
+        id: "T-AGE-DAYS",
+        title: "Days-old task",
+        status: "pending",
+        claimedBy: null,
+        assignee: null,
+        createdAt,
+      };
+      const html = renderBoard([task], {}, undefined, {}, NOW);
+      expect(html).toContain(`title="${createdAt}"`);
+      expect(html).toContain(">3 days ago<");
+    });
 
-  test("missing createdAt renders the card without throwing and without an age badge", () => {
-    const task: TaskItem = {
-      id: "T-AGE-MISSING",
-      title: "No createdAt task",
-      status: "pending",
-      claimedBy: null,
-      assignee: null,
-      createdAt: null,
-    };
-    expect(() => renderBoard([task], {}, undefined, {}, NOW)).not.toThrow();
-    const html = renderBoard([task], {}, undefined, {}, NOW);
-    expect(html).toContain("No createdAt task");
-    expect(html).not.toContain("ago<");
-    expect(html).not.toContain("just now<");
-  });
+    test("missing createdAt renders the card without throwing and without an age badge", () => {
+      const task: TaskItem = {
+        id: "T-AGE-MISSING",
+        title: "No createdAt task",
+        status: "pending",
+        claimedBy: null,
+        assignee: null,
+        createdAt: null,
+      };
+      expect(() => renderBoard([task], {}, undefined, {}, NOW)).not.toThrow();
+      const html = renderBoard([task], {}, undefined, {}, NOW);
+      expect(html).toContain("No createdAt task");
+      expect(html).not.toContain("ago<");
+      expect(html).not.toContain("just now<");
+    });
 
-  test("undefined createdAt (field entirely absent) renders the card without throwing and without an age badge", () => {
-    const task: TaskItem = {
-      id: "T-AGE-UNDEFINED",
-      title: "Undefined createdAt task",
-      status: "pending",
-      claimedBy: null,
-      assignee: null,
-    };
-    expect(() => renderBoard([task], {}, undefined, {}, NOW)).not.toThrow();
-    const html = renderBoard([task], {}, undefined, {}, NOW);
-    expect(html).toContain("Undefined createdAt task");
-    expect(html).not.toContain("ago<");
-    expect(html).not.toContain("just now<");
-  });
+    test("undefined createdAt (field entirely absent) renders the card without throwing and without an age badge", () => {
+      const task: TaskItem = {
+        id: "T-AGE-UNDEFINED",
+        title: "Undefined createdAt task",
+        status: "pending",
+        claimedBy: null,
+        assignee: null,
+      };
+      expect(() => renderBoard([task], {}, undefined, {}, NOW)).not.toThrow();
+      const html = renderBoard([task], {}, undefined, {}, NOW);
+      expect(html).toContain("Undefined createdAt task");
+      expect(html).not.toContain("ago<");
+      expect(html).not.toContain("just now<");
+    });
   });
 });
 
