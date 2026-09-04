@@ -10,6 +10,21 @@ independent of `appVersion`. CI enforces this with
 `ct lint --check-version-increment`. Each release here must mirror the
 `artifacthub.io/changes` annotation in `Chart.yaml`.
 
+## [1.19.92] - 2026-09-04
+
+### Changed
+
+- auto-bump to chart v1.19.92 triggered by release tag(s): `admin-v1.133.0`, `admin-v1.134.0`, `admin-v1.134.1`, `admin-v1.135.0`, `admin-v1.136.0`, `agent-v1.242.0`, `agent-v1.243.0`, `agent-v1.244.0`, `agent-v1.245.0`, `chat-v1.76.0`, `metrics-v1.78.0`, `task-store-v1.102.0`
+
+## [1.19.91] - 2026-09-04
+
+### Removed
+
+- `admin.taskStorePublicUrl` and the `SHIPWRIGHT_TASK_STORE_PUBLIC_URL` env var it
+  injected into the admin container. The admin service no longer reads this value —
+  its only consumer, `resolveTaskStoreBaseUrl()`, was removed alongside the
+  `/admin/tokens` task-store token UI.
+
 ## [1.19.90] - 2026-09-04
 
 ### Changed
