@@ -3498,6 +3498,40 @@ export function renderPrDetailPage(
   });
 }
 
+// ─── Cron grouping for activity display ────────────────────────────────────
+
+export interface CronGroupingInput {
+  id: string;
+  name: string | null;
+  schedule: string;
+}
+
+/**
+ * Partitions an agent's crons into the always-visible shipwright-loop cron
+ * and every other cron, which collapses by default in the Past section.
+ *
+ * Used by renderQueueActivityPage to separate runs: shipwright-loop runs
+ * stay in the primary visible table, while runs from other crons are grouped
+ * under collapsed <details> disclosure blocks.
+ */
+export function partitionCronsForActivityDisplay(crons: CronGroupingInput[]): {
+  visibleCronIds: Set<string>;
+  collapsedCronIds: Set<string>;
+} {
+  const visibleCronIds = new Set<string>();
+  const collapsedCronIds = new Set<string>();
+
+  for (const c of crons) {
+    if (c.name === "shipwright-loop") {
+      visibleCronIds.add(c.id);
+    } else {
+      collapsedCronIds.add(c.id);
+    }
+  }
+
+  return { visibleCronIds, collapsedCronIds };
+}
+
 // Inline CSS for the work-queue "Phase" column badge, keyed by the raw
 // phase value (dev-task/review/patch/deploy) — a single neutral palette
 // distinct from the outcome-style badges elsewhere on the queue & activity
@@ -3722,10 +3756,76 @@ export function renderQueueActivityPage(opts: {
     </tr>`;
   }
 
+  // Partition crons into visible (shipwright-loop) and collapsed (all others)
+  const { visibleCronIds, collapsedCronIds } =
+    partitionCronsForActivityDisplay(crons);
+
+  // Separate runs into visible (primary table) and grouped (collapsed details blocks)
+  const visibleRuns = runs.filter(
+    (r) => !r.cron || visibleCronIds.has(r.cron.id),
+  );
+
+  // Group collapsed runs by cron ID, preserving insertion order of each cron
+  const collapsedGroups = new Map<string, CronRunItem[]>();
+  const collapsedCronOrder: string[] = [];
+  for (const r of runs) {
+    if (r.cron && collapsedCronIds.has(r.cron.id)) {
+      if (!collapsedGroups.has(r.cron.id)) {
+        collapsedCronOrder.push(r.cron.id);
+        collapsedGroups.set(r.cron.id, []);
+      }
+      const group = collapsedGroups.get(r.cron.id);
+      if (group) {
+        group.push(r);
+      }
+    }
+  }
+
   const bodyRows =
-    runs.length === 0
+    visibleRuns.length === 0
       ? `<tr><td colspan="10" class="empty-state">No runs match the selected filters.</td></tr>`
-      : runs.map(row).join("\n");
+      : visibleRuns.map(row).join("\n");
+
+  // Build collapsed detail blocks for non-loop crons
+  const collapsedGroupsHtml = collapsedCronOrder
+    .map((cronId) => {
+      const groupRuns = collapsedGroups.get(cronId);
+      if (!groupRuns) return "";
+      const cron = crons.find((c) => c.id === cronId);
+      if (!cron) return "";
+
+      const cronLabel = cron.name ?? cron.schedule;
+      const escapedLabel = escapeHtml(cronLabel);
+      const groupBodyRows = groupRuns.map(row).join("\n");
+
+      return `<details class="more-filters" style="margin-top:12px">
+      <summary>${escapedLabel} (${groupRuns.length} run${groupRuns.length === 1 ? "" : "s"})</summary>
+      <div class="card" style="margin-top:8px">
+        <div class="data-table-wrapper">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>Outcome</th>
+                <th>Cron</th>
+                <th>Started</th>
+                <th>Duration</th>
+                <th class="col-tokens">Tokens</th>
+                <th class="col-model">Model</th>
+                <th>Phase</th>
+                <th>Item</th>
+                <th>Session</th>
+                <th>Detail</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${groupBodyRows}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </details>`;
+    })
+    .join("\n");
 
   // Filter form
   const cronOptions = crons
@@ -3828,6 +3928,7 @@ export function renderQueueActivityPage(opts: {
         </table>
       </div>
       ${paginationHtml}
+      ${collapsedGroupsHtml}
     </div>
   </div>`,
   });
