@@ -41,7 +41,6 @@ import {
   renderChatMessageBubble,
   renderChatPage,
   renderChatThreadPage,
-  renderCronLogsPage,
   renderGithubAppInstallPage,
   renderGithubAppInstalledPage,
   renderGithubAppManifestRedirectPage,
@@ -51,10 +50,10 @@ import {
   renderProvisionCompletePage,
   renderProvisionXappTokenPage,
   renderPrsPage,
+  renderQueueActivityPage,
   renderSessionDetailPage,
   renderTaskDetailPage,
   renderTasksPage,
-  renderWorkQueuePage,
 } from "./admin-ui-pages.ts";
 import type { AgentCronJobService } from "./agent-cron-jobs.ts";
 import type { AgentCronRunService } from "./agent-cron-runs.ts";
@@ -1612,7 +1611,7 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
     );
   });
 
-  app.get("/admin/agents/:id/cron-logs", requireAuth, async (c) => {
+  app.get("/admin/agents/:id/queue-activity", requireAuth, async (c) => {
     const agentId = c.req.param("id");
     const agent = await agentService.getDetail(agentId);
     if (!agent) {
@@ -1629,7 +1628,8 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
     const limit = 20;
     const offset = (page - 1) * limit;
 
-    const [crons, runResult] = await Promise.all([
+    const [snapshot, crons, runResult] = await Promise.all([
+      agentWorkQueueService.get(agentId),
       agentCronJobService.list(agentId),
       agentCronRunService.listForAgent(agentId, {
         cronId,
@@ -1640,8 +1640,14 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
     ]);
 
     return html(
-      renderCronLogsPage({
+      renderQueueActivityPage({
         agent: { id: agent.id, name: agent.name },
+        snapshot: snapshot
+          ? {
+              computedAt: snapshot.computedAt,
+              items: snapshot.items as unknown as WorkQueueItem[],
+            }
+          : null,
         crons: crons.map((cr) => ({
           id: cr.id,
           name: cr.name,
@@ -1652,32 +1658,6 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
         pagination: { total: runResult.total, limit, page },
         userName: c.var.userEmail,
         timezone,
-      }),
-    );
-  });
-
-  app.get("/admin/agents/:id/work-queue", requireAuth, async (c) => {
-    const agentId = c.req.param("id");
-    const agent = await agentService.getDetail(agentId);
-    if (!agent) {
-      return new Response("Agent not found", { status: 404 });
-    }
-    if (!(await assertAgentAccess(agentId, c.var.userEmail, c.var.isAdmin))) {
-      return new Response("Forbidden", { status: 403 });
-    }
-
-    const snapshot = await agentWorkQueueService.get(agentId);
-
-    return html(
-      renderWorkQueuePage({
-        agent: { id: agent.id, name: agent.name },
-        snapshot: snapshot
-          ? {
-              computedAt: snapshot.computedAt,
-              items: snapshot.items as unknown as WorkQueueItem[],
-            }
-          : null,
-        userName: c.var.userEmail,
       }),
     );
   });

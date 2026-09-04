@@ -51,3 +51,53 @@ describe("baseStyles — CFB-3.1 responsive breakpoints", () => {
     expect(formInputBase?.[1]).toContain("font-size: 14px");
   });
 });
+
+describe("baseStyles — AXR-1.1 shared explore board component classes", () => {
+  test("defines a scope-pill filter chip class", () => {
+    const css = baseStyles();
+    expect(css).toContain(".scope-pill");
+  });
+
+  test("defines the restyled pill/tag select class used by the Org/Repo multiselect fields", () => {
+    const css = baseStyles();
+    expect(css).toContain(".scope-select");
+  });
+
+  test("defines board/column layout classes for the kanban-style board pages", () => {
+    const css = baseStyles();
+    expect(css).toContain(".board");
+    expect(css).toContain(".column");
+  });
+
+  test("defines new badge variants beyond the existing badge-hitl/badge-dep", () => {
+    const css = baseStyles();
+    expect(css).toContain(".badge-purple");
+    expect(css).toContain(".badge-teal");
+  });
+
+  test("defines a header-tooltip pattern driven by a data-tip attribute", () => {
+    const css = baseStyles();
+    expect(css).toContain(".header-tooltip");
+    expect(css).toContain("data-tip");
+  });
+
+  test("defines heartbeat-dot status indicator with fresh/aging/stale modifiers", () => {
+    const css = baseStyles();
+    expect(css).toContain(".heartbeat-dot");
+    expect(css).toMatch(/\.heartbeat-dot\.fresh/);
+    expect(css).toMatch(/\.heartbeat-dot\.aging/);
+    expect(css).toMatch(/\.heartbeat-dot\.stale/);
+  });
+
+  test("defines more-filters disclosure styling", () => {
+    const css = baseStyles();
+    expect(css).toContain(".more-filters");
+  });
+
+  test("does not rename or remove existing badge/pill classes", () => {
+    const css = baseStyles();
+    expect(css).toContain(".badge-green");
+    expect(css).toContain(".badge-gray");
+    expect(css).toContain(".badge-warning");
+  });
+});

@@ -105,6 +105,13 @@ describe("dev-task.md — subagent prompt templates", () => {
       "${SHIPWRIGHT_WORKTREE_DIR:-$HOME/worktrees}/{repo-slug}-{branch-slug}/",
     );
   });
+
+  it("uses env var form in docs-refresher dispatch prompt (line 763)", () => {
+    expect(devTask).toContain(
+      "${SHIPWRIGHT_WORKTREE_DIR:-$HOME/worktrees}/{repo-slug}-{branch-slug}",
+    );
+    expect(devTask).not.toContain("Worktree:  ~/worktrees/{repo-slug}-{branch-slug}");
+  });
 });
 
 describe("patch.md — subagent prompt templates", () => {

@@ -26,7 +26,7 @@ Then print:
 ```
 ⚠ Auto-detected repo: {repo}
 This will be written to every task in the task store and used by /dev-task to
-locate the source tree (~/src/{repo-slug}). Confirm it is correct before proceeding.
+locate the source tree (${SHIPWRIGHT_REPO_DIR:-$HOME/src}/{repo-slug}). Confirm it is correct before proceeding.
 ```
 Wait for user confirmation before continuing to Step 1.
 
@@ -39,7 +39,7 @@ This is the engineering planning pass. The product spec (what and why) is alread
 
 ## Step 1: Load Context
 
-1. Read `CLAUDE.md` in the repo worktree if available, otherwise read from `~/src/{repo-slug}/`
+1. Read `CLAUDE.md` in the repo worktree if available, otherwise read from `${SHIPWRIGHT_REPO_DIR:-$HOME/src}/{repo-slug}/`
 2. Glob the repo structure to understand the codebase layout
 3. Check for any existing tasks in this session to avoid duplicates:
    ```bash

@@ -217,7 +217,7 @@ CI is failing on {workflow}. Looks like a {format/lint} fix — want me to patch
 
 If `yes`:
 1. Check out the branch into a worktree (use the workspace's worktree convention:
-   `~/worktrees/{repo}-{branch-slug}`)
+   `${SHIPWRIGHT_WORKTREE_DIR:-$HOME/worktrees}/{repo}-{branch-slug}`)
 2. Run the project's lint/format auto-fixer (per the toolchain — `bunx biome check --write`,
    `cargo fmt`, `golangci-lint run --fix`, etc.)
 3. Commit with a clear message: `fix(ci): apply lint/format auto-fix`
