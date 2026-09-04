@@ -80,8 +80,15 @@ describe("merge.md — Arguments section (AC1)", () => {
 });
 
 describe("merge.md — Step 1: Resolve Target PR (own-PRs-only + bundle gate)", () => {
-  it("looks up the task via /tasks?pr={pr}", () => {
-    expect(content).toContain("$SHIPWRIGHT_TASK_STORE_URL/tasks?pr=");
+  it("looks up the task via a repo-scoped /tasks?repo=...&pr={pr} query", () => {
+    // Unscoped by repo, this cross-matches a same-numbered PR in a different
+    // repo sharing the task store (PR numbers are per-repo) — confirmed live
+    // on squadron PR #119, which resolved to a marketing-site task instead of
+    // the correct squadron one.
+    expect(content).toContain(
+      "$SHIPWRIGHT_TASK_STORE_URL/tasks?repo={org}/{repo}&pr={pr}",
+    );
+    expect(content).not.toContain('"$SHIPWRIGHT_TASK_STORE_URL/tasks?pr={pr}"');
   });
 
   it("falls back to merge-only mode language when no task is found", () => {
