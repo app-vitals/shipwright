@@ -54,6 +54,56 @@ describe("patch.md — explicit-target-only argument contract (WLS-3.3)", () => 
   });
 });
 
+describe("patch.md — patch-author allowlist (PAS-1.1)", () => {
+  it("Step 1 fetches the agent's patchAuthorAllowlist via /agents/{id}/config, mirroring review.md's config-fetch pattern", () => {
+    const step1Idx = content.indexOf("## Step 1: Get Own GH Login");
+    expect(step1Idx).toBeGreaterThan(-1);
+    const step2Idx = content.indexOf("## Step 2: Resolve Target PR");
+    expect(step2Idx).toBeGreaterThan(-1);
+    const step1Section = content.slice(step1Idx, step2Idx);
+    expect(step1Section).toContain("CURRENT_USER=$(gh api /user -q '.login')");
+    expect(step1Section).toContain("/agents/$SHIPWRIGHT_AGENT_ID/config");
+    expect(step1Section).toContain("patchAuthorAllowlist");
+    expect(step1Section).toContain("PATCH_AUTHOR_ALLOWLIST");
+  });
+
+  it("documents fail-closed behavior: a failed config fetch or empty/absent allowlist falls back to CURRENT_USER-only", () => {
+    const step1Idx = content.indexOf("## Step 1: Get Own GH Login");
+    const step2Idx = content.indexOf("## Step 2: Resolve Target PR");
+    const step1Section = content.slice(step1Idx, step2Idx);
+    expect(step1Section).toMatch(/fail[- ]closed/i);
+    expect(step1Section).toContain("today's `CURRENT_USER`-only behavior");
+  });
+
+  it("Step 2's scope check widens to author.login == CURRENT_USER OR author.login in PATCH_AUTHOR_ALLOWLIST, preserving the pre-existing CURRENT_USER-only substring", () => {
+    const step2Idx = content.indexOf("## Step 2: Resolve Target PR");
+    const step2_5Idx = content.indexOf("## Step 2.5:");
+    const step2Section = content.slice(step2Idx, step2_5Idx);
+    // Pre-existing substring must survive (WLS-3.3's original test pins this exact string).
+    expect(step2Section).toContain("author.login != CURRENT_USER");
+    // New: the gate must also reference the allowlist as an alternative match.
+    expect(step2Section).toContain("PATCH_AUTHOR_ALLOWLIST");
+  });
+
+  it("Step 2 captures PR_AUTHOR from the gh pr view result for reuse at Step 5a.7", () => {
+    const step2Idx = content.indexOf("## Step 2: Resolve Target PR");
+    const step2_5Idx = content.indexOf("## Step 2.5:");
+    const step2Section = content.slice(step2Idx, step2_5Idx);
+    expect(step2Section).toContain("PR_AUTHOR");
+  });
+
+  it("Step 5a.7's author-reply detection threads PR_AUTHOR instead of a hardcoded CURRENT_USER-only comparison", () => {
+    const step5a7Idx = content.indexOf("### Step 5a.7: Second-Round Escalation Check (RPF-1.3)");
+    expect(step5a7Idx).toBeGreaterThan(-1);
+    const nextSectionIdx = content.indexOf("### Step 5a.8", step5a7Idx);
+    const step5a7End = nextSectionIdx > -1 ? nextSectionIdx : content.indexOf("### Step 5b", step5a7Idx);
+    expect(step5a7End).toBeGreaterThan(-1);
+    const step5a7Section = content.slice(step5a7Idx, step5a7End);
+    expect(step5a7Section).toContain("author.login == PR_AUTHOR");
+    expect(step5a7Section).not.toContain("author.login == CURRENT_USER");
+  });
+});
+
 describe("patch.md — pre-work PR claim lock (CLM-2.1)", () => {
   it("Step 4 (merge conflicts): claims the PR (phase: patch) before dispatching the conflict-resolution subagent", () => {
     const step4bIdx = content.indexOf("### Step 4b: Dispatch Conflict Resolution Subagent");

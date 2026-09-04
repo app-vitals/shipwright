@@ -23,8 +23,9 @@ addressing, or when no target PR is given.
 
 Parse `$ARGUMENTS`:
 - `org/repo#number` (e.g. `app-vitals/shipwright#123`): **required** — target a specific
-  PR. Fetch just this PR (still scoped to `CURRENT_USER` as author, per the Independence
-  Principles' "own PRs only" rule for patch) and classify it into Lists A/C/D as usual from
+  PR. Fetch just this PR (still scoped to `CURRENT_USER` as author, or an entry in the
+  agent's configured `patchAuthorAllowlist`, per the Independence Principles' "own PRs only"
+  rule for patch — see Step 1/Step 2, PAS-1.1) and classify it into Lists A/C/D as usual from
   Step 3 onward.
 - _(no arguments)_: not supported — respond `[silent]` and stop, with no GitHub scan across
   all open PRs (see Step 0).
@@ -59,6 +60,24 @@ into all subsequent commands that need it:
 CURRENT_USER=$(gh api /user -q '.login')
 ```
 
+Also resolve the agent's configured patch-author allowlist (PAS-1.1) — an additive list of
+GitHub logins, beyond `CURRENT_USER`, whose own open PRs this agent may patch. This mirrors
+`check-patch.ts`'s `patchAuthorAllowlistRef` (RAS-1.1/DBR-1.4), the same allowlist the
+server-side candidate provider already applies when building patch candidates, and follows
+`review.md`'s Step 14 config-fetch pattern (`GET /agents/{id}/config`):
+
+```bash
+PATCH_AUTHOR_ALLOWLIST=$(curl -sf -H "Authorization: Bearer $SHIPWRIGHT_AGENT_API_KEY" \
+  "$SHIPWRIGHT_API_URL/agents/$SHIPWRIGHT_AGENT_ID/config" | jq -r '.patchAuthorAllowlist // [] | join(",")')
+```
+
+**Fail-closed, not fail-open.** On any curl failure, or when `.patchAuthorAllowlist` is
+absent or an empty array, `PATCH_AUTHOR_ALLOWLIST` ends up empty — Step 2's scope check then
+falls back to exactly today's `CURRENT_USER`-only behavior. An unreachable config endpoint or
+an unsynced allowlist must never be read as "allow everyone"; it must be read as "no
+additional authors beyond `CURRENT_USER`," identical to `patchAuthorAllowlistRef`'s own
+fail-closed default on the server side.
+
 ---
 
 ## Step 2: Resolve Target PR
@@ -76,8 +95,16 @@ gh pr view {number} --repo {org}/{repo} \
   --json number,title,headRefName,headRefOid,additions,deletions,mergeStateStatus,state,author
 ```
 
-- **Not found, or `state != "OPEN"`, or `author.login != CURRENT_USER`**: this PR is not
-  workable by patch (per the Independence Principles' "own PRs only" scope). Print
+Capture `PR_AUTHOR` from this result's `author.login` field (e.g. via `jq -r '.author.login'`
+on the same JSON) — reused unchanged at Step 5a.7's author-reply detection below, mirroring
+`check-patch.ts`'s `prAuthor = data.prAuthor ?? currentUser` threading (RAS-1.1/DBR-1.4). For
+a self-authored PR, `PR_AUTHOR` naturally equals `CURRENT_USER`; for an allowlisted PR it's
+that PR's own real author.
+
+- **Not found, or `state != "OPEN"`, or (`author.login != CURRENT_USER` AND `author.login` is
+  not in `PATCH_AUTHOR_ALLOWLIST`)**: this PR is not workable by patch (per the Independence
+  Principles' "own PRs only" scope, widened by PAS-1.1 to include any agent-configured
+  `patchAuthorAllowlist` entry from Step 1). Print
   `⚠ PR {org}/{repo}#{number} not found among own open PRs.` and stop.
 - **Match found**: use it as the sole entry in the unified PR list and proceed directly to
   Step 2.5.
@@ -742,7 +769,9 @@ same disagreement.
 pre-filter, not the final gate — see Step 2 below for the decisive judgment. For each
 qualifying review from Step 3a (`state == "COMMENTED"` or `"CHANGES_REQUESTED"`, contributing
 to this PR's List A membership), check the PR-level comments already fetched in Step 3a
-(`comments.nodes`) for an author reply: a comment whose `author.login == CURRENT_USER` with
+(`comments.nodes`) for an author reply: a comment whose `author.login == PR_AUTHOR` (captured
+in Step 2 from the PR's own `author.login`, per PAS-1.1 — not a hardcoded `CURRENT_USER`
+comparison, so a genuine reply from an allowlisted PR's real author is recognized too) with
 `createdAt` **before** that review's `submittedAt`. This mirrors `check-patch.ts`'s
 `isAddressedByAuthorReply` (an author reply *after* a review marks that review addressed) as
 a shared timestamp-comparison mechanism, but checks the opposite direction — a reply dated
