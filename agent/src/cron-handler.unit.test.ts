@@ -610,3 +610,97 @@ describe("handleCronRequest — preCheck", () => {
     }
   });
 });
+
+// ─── SLACK_CHANNEL_ID extraEnv (STC-1.3) ───────────────────────────────────────
+
+describe("handleCronRequest — SLACK_CHANNEL_ID extraEnv (STC-1.3)", () => {
+  test("channel job → runner receives { SLACK_CHANNEL_ID: <channel> } extraEnv, no SLACK_THREAD_TS", async () => {
+    await handleCronRequest(
+      { jobId: "j1", prompt: "hello", channel: "C-TEST" },
+      deps,
+    );
+
+    expect(mockRunner).toHaveBeenCalledTimes(1);
+    const call = mockRunner.mock.calls[0] as unknown as [
+      string,
+      unknown,
+      Record<string, string> | undefined,
+    ];
+    expect(call[2]).toEqual({ SLACK_CHANNEL_ID: "C-TEST" });
+  });
+
+  test("user (DM) job, conversations.open succeeds → runner receives the DM channel id as SLACK_CHANNEL_ID, and post-run delivery reuses it (no second conversations.open call)", async () => {
+    await handleCronRequest(
+      { jobId: "dm-j1", prompt: "hello", user: "U-DAN" },
+      deps,
+    );
+
+    expect(mockRunner).toHaveBeenCalledTimes(1);
+    const call = mockRunner.mock.calls[0] as unknown as [
+      string,
+      unknown,
+      Record<string, string> | undefined,
+    ];
+    expect(call[2]).toEqual({ SLACK_CHANNEL_ID: "D_DM_CHANNEL" });
+
+    // Opened once (pre-run) and reused for post-run delivery — never opened twice.
+    expect(mockConversationsOpen).toHaveBeenCalledTimes(1);
+    expect(mockPostMessage).toHaveBeenCalledTimes(1);
+    expect(
+      (mockPostMessage.mock.calls as unknown as unknown[][])[0][0],
+    ).toMatchObject({ channel: "D_DM_CHANNEL" });
+  });
+
+  test("user (DM) job, conversations.open rejects → runner still called with no SLACK_CHANNEL_ID, [agent:cron] warning logged, post-run falls back to a second conversations.open call", async () => {
+    mockConversationsOpen.mockRejectedValueOnce(
+      new Error("slack network error"),
+    );
+
+    const warnMessages: string[] = [];
+    const originalWarn = console.warn;
+    console.warn = (...args: unknown[]) => {
+      warnMessages.push(args.map(String).join(" "));
+    };
+
+    try {
+      await handleCronRequest(
+        { jobId: "dm-j2", prompt: "hello", user: "U-DAN" },
+        deps,
+      );
+    } finally {
+      console.warn = originalWarn;
+    }
+
+    expect(mockRunner).toHaveBeenCalledTimes(1);
+    const call = mockRunner.mock.calls[0] as unknown as [
+      string,
+      unknown,
+      Record<string, string> | undefined,
+    ];
+    expect(call[2]).toBeUndefined();
+
+    expect(warnMessages.some((m) => m.includes("[agent:cron]"))).toBe(true);
+
+    // Pre-resolution failed — post-run falls back to opening the DM again.
+    expect(mockConversationsOpen).toHaveBeenCalledTimes(2);
+    expect(mockPostMessage).toHaveBeenCalledTimes(1);
+    expect(
+      (mockPostMessage.mock.calls as unknown as unknown[][])[0][0],
+    ).toMatchObject({ channel: "D_DM_CHANNEL" });
+  });
+
+  test("silent job with neither channel nor user → runner called with no extraEnv", async () => {
+    await handleCronRequest(
+      { jobId: "silent-j1", prompt: "hello", silent: true },
+      deps,
+    );
+
+    expect(mockRunner).toHaveBeenCalledTimes(1);
+    const call = mockRunner.mock.calls[0] as unknown as [
+      string,
+      unknown,
+      Record<string, string> | undefined,
+    ];
+    expect(call[2]).toBeUndefined();
+  });
+});

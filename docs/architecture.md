@@ -35,6 +35,8 @@ these four phases; it merges candidates from `agent/src`'s per-phase qualificati
 functions and dispatches the winning item's command with its id/PR embedded directly in the
 prompt. `merge` is currently human-invoked only. A human can invoke any of the five directly with an explicit target.
 
+The `review` command performs dependency-risk-aware analysis on pull requests that modify dependency manifests (e.g., `package.json`, `Gemfile`), analyzing the nature and scope of version changes and producing a risk assessment that informs the review verdict — see `commands/review.md` for details.
+
 The plugin is pure TypeScript with **no server, no database, and no external HTTP in production code** — only `unit` and `integration` test layers apply.
 
 A repo or team can extend this loop with its own commands, skills, or scheduled automation — via a companion marketplace plugin and/or a custom cron — without forking `plugins/shipwright/`. See **[extending.md](./extending.md)**.
