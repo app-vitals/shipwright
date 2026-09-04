@@ -1,6 +1,6 @@
 # slack-thread-context — shipwright
 
-<!-- Generated: 2026-09-03 | Source design: app-vitals/goals docs/superpowers/specs/2026-09-03-saul-podcast-workflow-design.md (private repo; shipwright section) -->
+<!-- Generated: 2026-09-03 | Source design: an internal design doc from a private sibling repo (shipwright-relevant section) -->
 
 ## Why
 
@@ -26,7 +26,7 @@ The concrete driver is a multi-stage podcast pipeline run by a marketing agent f
 - Test isolation rules in `CLAUDE.md`: inject `fetch` into `slack-say` (no `global.fetch` override), inject time via `Clock` if any is needed, no `mock.module()`.
 - Env injection must not leak into cron-originated runs' `SLACK_THREAD_TS`, and must not change `spawnEnv` behaviour for `SENTRY_DSN` stripping.
 - Public repo: no client names, no channel ids or tokens in fixtures; use `C0EXAMPLE` / `1700000000.000100` style placeholders. Run `task check-strings` and `task pre-public` before committing.
-- Plugin version bump per the `marketplace-dev` skill checklist (new script + skill file → `plugin.json` / `marketplace.json` / README in sync).
+- Versioning is owned by semantic-release (`marketplace-dev` skill) — no manual `plugin.json`/`marketplace.json` edits; a `feat:` commit is sufficient to bump the minor on merge.
 - Follow `docs/agent.md` for the env-var reference table if one exists there.
 
 ## Testing strategy
