@@ -2045,13 +2045,13 @@ export function renderRepoOrgFilterFields(
       })
       .join("");
 
-  return `<div class="form-group" style="margin-bottom:0">
+  return `<div class="form-group scope-select-group" style="margin-bottom:0">
           <label class="form-label" style="font-size:11px">Org</label>
-          <select name="org" multiple class="form-input" style="font-size:12px;padding:4px 8px">${renderOptions(orgOptionValues, activeOrgs)}</select>
+          <select name="org" multiple class="form-input scope-select" style="font-size:12px;padding:4px 8px">${renderOptions(orgOptionValues, activeOrgs)}</select>
         </div>
-        <div class="form-group" style="margin-bottom:0">
+        <div class="form-group scope-select-group" style="margin-bottom:0">
           <label class="form-label" style="font-size:11px">Repo</label>
-          <select name="repo" multiple class="form-input" style="font-size:12px;padding:4px 8px">${renderOptions(repoOptionValues, activeRepos)}</select>
+          <select name="repo" multiple class="form-input scope-select" style="font-size:12px;padding:4px 8px">${renderOptions(repoOptionValues, activeRepos)}</select>
         </div>`;
 }
 
