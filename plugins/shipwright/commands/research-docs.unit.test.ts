@@ -205,6 +205,74 @@ describe("research-docs.md — interactive mode preservation", () => {
   });
 });
 
+describe("research-docs.md — cross-cutting concerns checklist", () => {
+  const CONCERN_CATEGORIES = [
+    "business-domain/state-model",
+    "authorization/access-control",
+    "error-handling conventions",
+    "sensitive-data handling",
+    "secrets/credential rotation",
+    "logging/tracing/observability wiring",
+    "internal/third-party service dependencies",
+  ];
+
+  it("names all seven cross-cutting concern categories", () => {
+    for (const category of CONCERN_CATEGORIES) {
+      expect(content).toContain(category);
+    }
+  });
+
+  it("requires verifying a concern is materially present before proposing it", () => {
+    expect(content.toLowerCase()).toContain("materially present");
+    // Must describe checking real content, not a blind checklist dump
+    const hasRealContentLanguage =
+      content.includes("authz middleware") ||
+      content.includes("error class hierarchy") ||
+      content.includes("logging SDK init");
+    expect(hasRealContentLanguage).toBe(true);
+  });
+
+  it("skips a concern category with no real content instead of proposing it blindly", () => {
+    const hasSkipLanguage =
+      content.includes("never propose a category with no real content") ||
+      content.includes("no real content to write") ||
+      content.includes("not proposed") ||
+      content.includes("do not propose");
+    expect(hasSkipLanguage).toBe(true);
+  });
+
+  it("adds a CONCERNS: block to the DOCS AUDIT template, distinct from MISSING:", () => {
+    const auditIdx = content.indexOf("DOCS AUDIT");
+    expect(auditIdx).toBeGreaterThan(-1);
+    const proceedIdx = content.indexOf("Proceed?", auditIdx);
+    expect(proceedIdx).toBeGreaterThan(auditIdx);
+    const auditSection = content.slice(auditIdx, proceedIdx);
+    expect(auditSection).toContain("MISSING:");
+    expect(auditSection).toContain("CONCERNS:");
+    // CONCERNS: must be a distinct block, not a rename/merge of MISSING:
+    expect(auditSection.indexOf("MISSING:")).not.toBe(
+      auditSection.indexOf("CONCERNS:"),
+    );
+    // Both blocks flow into the same Proceed? gate
+    expect(auditSection.indexOf("CONCERNS:")).toBeLessThan(proceedIdx);
+  });
+
+  it("Step A7 unions a verified concern into the same missing-docs task payload, titled 'Document {concern} conventions'", () => {
+    const stepA7Idx = content.indexOf("### Step A7");
+    expect(stepA7Idx).toBeGreaterThan(-1);
+    const nextStepIdx = content.indexOf("### Step A8");
+    expect(nextStepIdx).toBeGreaterThan(stepA7Idx);
+    const stepA7Section = content.slice(stepA7Idx, nextStepIdx);
+    expect(stepA7Section).toContain("Document {concern} conventions");
+    expect(stepA7Section).toContain("docs-freshness-cron");
+    const hasUnionLanguage =
+      stepA7Section.includes("union") || stepA7Section.includes("unioned");
+    expect(hasUnionLanguage).toBe(true);
+    // Scoped to CHANGED_FILES, same as A7's existing structural check
+    expect(stepA7Section).toContain("CHANGED_FILES");
+  });
+});
+
 describe("research-docs.md — quality pass", () => {
   it("Step 6.5 exists between Step 6 and Step 7 and documents canonical-source duplication (6.5a)", () => {
     const step6_5Idx = content.indexOf("## Step 6.5: Quality Pass");
