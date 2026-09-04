@@ -44,17 +44,6 @@ Conservative defaults are set for safety. Relax them as trust grows.
 
 ---
 
-## Dependency Bot Triage Policy
-
-### Posting
-- **auto_post_dependency_bot_triage**: true
-  When true (the default), triage comments are posted to GitHub automatically.
-  When false, they are staged to `state/dependency-bot-reviews/` instead —
-  the owner must explicitly approve before the triage comment is posted to
-  GitHub.
-
----
-
 ## Worktree Cleanup
 
 - **cleanup_merged_worktrees**: true

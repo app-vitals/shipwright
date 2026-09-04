@@ -93,6 +93,42 @@ For each stale candidate, apply `references/doc-refresh-recipe.md` Part 2 (Secti
 
 Use the `Edit` tool for section-level changes; fall back to `Write` only for the `docs/testing.md` re-digest case.
 
+### Step A5.5: Auto Mode Quality Pass
+
+Run immediately after Step A5, against each doc Step A5 just touched (stale candidates that were rewritten — not the full candidate set, and never a doc Step A5 left untouched).
+
+Apply the same three checks defined in Interactive Mode Step 6.5 (Quality Pass) — 6.5a Canonical-Source Duplication, 6.5b Literal/Prose Mismatch, 6.5c Mechanism-Honesty — to each rewritten doc. Auto mode never edits based on a hit: file a task instead. Never an auto-edit.
+
+For each hit, file **one** task-store task via the same `/tasks/bulk` mechanism Step A7 already uses (the same endpoint, same auth header — do not invent a second endpoint):
+
+```bash
+curl -sf -X POST \
+  -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
+  -H "Content-Type: application/json" \
+  "$SHIPWRIGHT_TASK_STORE_URL/tasks/bulk" \
+  --data-binary @/tmp/quality-pass-tasks.json | jq .
+```
+
+Task titles, one shape per check:
+
+- 6.5a hit → `title: "Review {doc} for canonical-source duplication"`
+- 6.5b hit → `title: "Review {doc} for literal/prose mismatch"`
+- 6.5c hit → `title: "Review {doc} for convention missing named mechanism"`
+
+Each task: `layer: "CLI"`, `session: "docs-freshness-cron"`.
+
+Track a running count of tasks filed this way for the current repo — this becomes the `Quality flags tasked` figure in Step A9's per-repo summary.
+
+After the quality-pass checks above, also check the doc's resulting **line count** against the hard threshold defined in Interactive Mode Step 6.6 (Size Governance) — 200 lines. Reuse that step's threshold and section-grouping logic rather than re-deriving it here.
+
+Over 200 lines: file **one** task-store task via the same `/tasks/bulk` mechanism used above (same endpoint, same auth header — no second endpoint). Auto mode never creates a split file — only a task:
+
+- `title: "Split {doc} — exceeds {N} lines"`
+- `description`: a best-effort section-grouping suggestion — which `##`/`###` sections would move to a new sub-topic doc, grouped by topic, following the same grouping approach as Step 6.6
+- `layer: "CLI"`, `session: "docs-freshness-cron"`
+
+Track a running count of split-proposal tasks filed this way for the current repo — this becomes the `Split proposals tasked` figure in Step A9's per-repo summary.
+
 ### Step A6: Update CLAUDE.md References
 
 Check if `CLAUDE.md` has a reference or docs section (patterns: `@docs/`, `docs/`, or a "Reference" heading).
@@ -118,6 +154,8 @@ curl -sf -X POST \
 ```
 
 Each missing module produces one task with: `title: "Document {module} module"`, `layer: "CLI"`, `session: "docs-freshness-cron"`.
+
+Additionally, run the Step 3a cross-cutting concerns checklist (same seven categories, same material-presence verification procedure), scoped to `CHANGED_FILES` — the same scoping A7's structural check above already uses. For each concern category verified materially present in `CHANGED_FILES` with no matching doc, union one more task into the same `/tmp/missing-docs-tasks.json` payload before it's posted: `title: "Document {concern} conventions"`, `layer: "CLI"`, `session: "docs-freshness-cron"` — same session as the structural tasks above, so both are queryable together by downstream tooling. The `"Document {concern} conventions"` title distinguishes concern-based tasks from the structural `"Document {module} module"` tasks in the same payload. If no concern qualifies, the payload is unchanged from the structural-only set.
 
 ### Step A8: Write Sync Anchor
 
@@ -148,6 +186,8 @@ Repos processed: {N}
   Skipped (current): {list, or "none"}
   CLAUDE.md: {updated | unchanged}
   Tasks created: {N missing-doc tasks, or "none"}
+  Quality flags tasked: {N}
+  Split proposals tasked: {N}
   Sync anchor: {HEAD SHA} → state/docs-last-synced.json
 
 {org/repo-2}: skipped (no docs/ directory)
@@ -238,6 +278,22 @@ Categorize each module/topic:
 
 If `$ARGUMENTS` was provided, filter to only the specified module/topic.
 
+### Step 3a: Cross-Cutting Concerns Checklist
+
+Structural gap analysis (above) only catches what shows up as a directory, route, or schema file. Some domains cut across many modules and are easy to miss that way — a newcomer reading the code module-by-module wouldn't necessarily recognize them without someone pointing them out. Check for exactly these seven categories, no others:
+
+1. **business-domain/state-model** — the core entities and their lifecycle (status fields, state machines, transition rules)
+2. **authorization/access-control** — who can do what (middleware, decorators, role/permission checks)
+3. **error-handling conventions** — how failures are represented and propagated (error classes, error codes, response shapes)
+4. **sensitive-data handling** — PII, financial data, or other data requiring special handling (redaction, encryption-at-rest, access logging)
+5. **secrets/credential rotation** — how secrets are stored, injected, and rotated
+6. **logging/tracing/observability wiring** — structured logging, tracing SDKs, error reporting integrations
+7. **internal/third-party service dependencies** — external services the code talks to that aren't obvious from public docs alone
+
+For each category, **verify it is materially present before proposing it** — read the actual relevant config or module and confirm real content exists to write about (e.g. an authz middleware/decorator for access-control, a dedicated error class hierarchy for error-handling, a logging SDK init for observability wiring). This is not a blind checklist dump: never propose a category with no real content to write. A category with no material presence in the codebase (e.g. no sensitive-data handling in a project that doesn't touch PII) is simply skipped — do not list it, do not stub it out.
+
+Categories that pass verification become **concern candidates**, each with a suggested doc topic and a one-line note on what was found (e.g. "authorization/access-control — `requireAuth` middleware + role checks in `src/middleware/auth.ts`").
+
 Present the audit summary:
 
 ```
@@ -256,12 +312,17 @@ STALE:
 MISSING:
   ✗ {suggested filename} — {module/topic} has {N endpoints / N models / etc.}, no doc
 
+CONCERNS:
+  ✗ {suggested filename} — {concern category} verified present ({what was found}), no doc
+
 TEST-READINESS:
   ◆ docs/test-readiness/{filename} — {role} (read-only; source for docs/testing.md)
 
 Proceed? (Generate missing + update stale / Pick specific / Skip)
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 ```
+
+`CONCERNS:` is a distinct block from `MISSING:` — `MISSING:` lists structural modules/topics with no doc (Step 3); `CONCERNS:` lists verified-present cross-cutting concerns with no doc (Step 3a). Both flow into the same `Proceed?` gate and are generated the same way in Step 5 once approved. Omit the `CONCERNS:` block entirely if no concern category verified as materially present.
 
 Omit the TEST-READINESS section if `docs/test-readiness/` does not exist. Files listed there are reported for transparency only — `/research-docs` does not edit them.
 
@@ -421,6 +482,120 @@ For each stale doc the user approved, follow the procedure in `references/doc-re
 - How to report per-doc changes
 
 Use the `Edit` tool for focused section-level changes; only fall back to `Write` for the `docs/testing.md` re-digest case.
+
+---
+
+## Step 6.5: Quality Pass
+
+Run this pass against every doc drafted in Step 5 or updated in Step 6 — not against docs left untouched by this run. This is a distinct concern from the staleness checks in `references/doc-refresh-recipe.md`: staleness catches a *broken* reference; this pass catches content that is technically accurate today but structurally doomed to drift, or too vague to verify at all.
+
+Three checks, run in order:
+
+### 6.5a: Canonical-Source Duplication
+
+Scan the doc for an enumeration whose single source of truth lives elsewhere in the repo — the doc has effectively forked a copy of it. Shapes to look for:
+
+- A route/endpoint table that duplicates an OpenAPI/API spec file
+- A DB entity/migration list that duplicates the `migrations/` directory
+- An env-var table that duplicates `.env.example`
+- A codegen'd identifier list (generated types, generated clients) that duplicates its codegen source
+
+For each candidate, locate the canonical source in the repo (`Glob`/`Grep` for the spec file, migrations directory, `.env.example`, or codegen source). **If no canonical source is locatable, skip the flag — it isn't actionable.** If found, propose replacing the enumeration with a short pointer to the canonical source, keeping only the content the canonical source doesn't carry (gotchas, non-obvious wiring, why-not-what).
+
+```
+⚠ docs/api-billing.md — "API Endpoints" table (18 rows) duplicates openapi/billing.yaml
+  Proposed: replace table with a pointer to openapi/billing.yaml + keep the
+  2 gotcha notes (idempotency-key header requirement, webhook retry backoff)
+  that aren't in the spec.
+```
+
+### 6.5b: Literal/Prose Mismatch
+
+Scan the doc for a concrete literal value — a cron expression, pool size, timeout, percentage, count — that also has a prose paraphrase elsewhere in the *same* doc, and check whether the two agree. **The flag must cite the specific line/location of both the literal and the mismatched prose.**
+
+```
+⚠ docs/architecture.md:42 — states pool size `max: 10`
+  docs/architecture.md:58 — prose says "the pool scales up to 25 connections
+  under load"
+  These don't agree — confirm which is current before either is trusted.
+```
+
+### 6.5c: Mechanism-Honesty
+
+Scan the doc for a convention described only as a principle — "services validate input at the boundary," "all jobs are idempotent" — with no concrete mechanism named: the specific annotation, helper function, CLI command, or config key that actually implements it. Flag these explicitly as **low-confidence** — the doc may be accurate, but there's nothing in it a reader could verify or reuse.
+
+```
+◇ docs/development.md — "Handlers validate input at the boundary" (low-confidence)
+  No named mechanism — no schema helper, decorator, or middleware referenced.
+  Confirm the actual validation path (e.g. a `validateBody()` helper, a Zod
+  schema import) and name it, or drop the claim.
+```
+
+### Presenting flags
+
+These are **proposals for user confirmation — never automatic rewrites.** Present all hits from 6.5a-6.5c together, grouped by doc:
+
+```
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+QUALITY PASS
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+docs/api-billing.md:
+  ⚠ "API Endpoints" table duplicates openapi/billing.yaml — proposed pointer replacement
+
+docs/architecture.md:
+  ⚠ line 42 vs line 58 — pool size literal (10) vs prose paraphrase (25) disagree
+
+docs/development.md:
+  ◇ "Handlers validate input at the boundary" — no named mechanism (low-confidence)
+
+Proceed? (Apply proposed fixes / Pick specific / Skip)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+```
+
+Wait for user confirmation before applying any `Edit`. A skipped or declined flag is left as-is — do not silently apply it anyway.
+
+---
+
+## Step 6.6: Size Governance
+
+Run this pass against every doc **updated in Step 6** — not docs drafted fresh in Step 5, and not docs left untouched by this run. Run it after Step 6.5's proposed fixes have been applied or declined, so the line count reflects the doc's actual final state for this run, not an intermediate one.
+
+**Thresholds:** soft target **150 lines**, hard threshold **200 lines**, for a single generated doc. The goal is a doc that can be fully read when consulted, not a doc that keeps growing forever.
+
+Count the doc's current line count (`wc -l` or equivalent) after Step 6.5.
+
+**Under 200 lines: this step is a no-op.** The doc behaves exactly as before this step existed — no split proposal, no prompt, nothing further to do. This is the common case and requires no output beyond noting the doc is fine.
+
+**Over 200 lines: propose a split — never automatic.** Identify which `##`/`###` sections would move to one or more new sub-topic doc(s), grouped by topic (e.g. all sections about one sub-area move together). For each proposed new doc, propose a filename following the naming pattern detected in Step 4 (`{topic}.md`, `{service}-api.md`, etc. — whatever this project's existing convention is). Present the proposal and wait for confirmation before creating anything:
+
+```
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+SIZE GOVERNANCE
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+docs/architecture.md is now 238 lines (hard threshold: 200)
+
+Proposed split:
+  Keep in docs/architecture.md:
+    ## Overview
+    ## System Diagram
+    ## Core Modules
+
+  Move to docs/architecture-deployment.md (new):
+    ## Deployment Topology
+    ## Scaling Notes
+    ## Infra Dependencies
+
+docs/architecture.md would keep a pointer to the new doc under its own
+"## Deployment" heading.
+
+Proceed? (Create split / Skip)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+```
+
+- **If confirmed:** create the new sub-topic doc(s) via `Write` (moving the identified sections' content verbatim, or lightly re-headed to stand alone), then trim the original doc via `Edit` to keep only the remaining sections plus a short pointer to the new doc(s).
+- **If declined or skipped:** leave the doc as-is, oversized. It is not retried automatically on a later run — it will surface again next time this doc is updated and re-checked by this step.
 
 ---
 

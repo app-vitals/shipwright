@@ -22,7 +22,7 @@ The plugin drives the delivery loop: **spec → plan → execute → review → 
 Key surfaces (see `plugins/shipwright/README.md` and `plugins/shipwright/CLAUDE.md` for the full command/skill catalog):
 
 - **Commands** (`commands/`) — `prd`, `plan-session`, `dev-task`, `review`, `patch`, `merge`, `deploy`, the five-phase test-readiness pipeline (`test-inventory` → `test-design` → `test-migration` → `test-roadmap` → `test-fix`), `metrics`, `research`, `research-docs`, and more.
-- **Skills** (`skills/`) — autonomous behaviors including `pull-requests`, `review-staged`, `consolidation-scan`, `consolidation-fix`, `entropy-scan`, `entropy-fix`, `security-scan`, `security-fix`, `agent-admin`, `investigate-cron`, `learning-capture`, `task-store`, `test-readiness`, `test-debt`, `triage-dependency-bot-pr`, and `triage-dependency-bot-prs`.
+- **Skills** (`skills/`) — autonomous behaviors including `pull-requests`, `review-staged`, `consolidation-scan`, `consolidation-fix`, `entropy-scan`, `entropy-fix`, `security-scan`, `security-fix`, `agent-admin`, `investigate-cron`, `learning-capture`, `task-store`, `test-readiness`, and `test-debt`.
 - **Scripts** (`scripts/`) — the task-store adapters, precheck scripts for each cron (`check-docs-freshness.ts`, `check-learn-dream.ts`, etc.), and supporting tooling.
 - **References** (`references/`) — schemas and recipes (`metrics-schema.md`, `doc-refresh-recipe.md`, `reviews-schema.md`, `principles.md`, …).
 
@@ -34,6 +34,8 @@ cron (artifact **C** — see [agent.md](./agent.md)), which is the sole supporte
 these four phases; it merges candidates from `agent/src`'s per-phase qualification
 functions and dispatches the winning item's command with its id/PR embedded directly in the
 prompt. `merge` is currently human-invoked only. A human can invoke any of the five directly with an explicit target.
+
+The `review` command performs dependency-risk-aware analysis on pull requests that modify dependency manifests (e.g., `package.json`, `Gemfile`), analyzing the nature and scope of version changes and producing a risk assessment that informs the review verdict — see `commands/review.md` for details.
 
 The plugin is pure TypeScript with **no server, no database, and no external HTTP in production code** — only `unit` and `integration` test layers apply.
 

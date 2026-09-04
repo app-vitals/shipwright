@@ -5,12 +5,12 @@
  *
  * Requires DATABASE_URL_ADMIN_TEST to be set; skips otherwise.
  *
- * Mirrors agent-author-allowlist-constraint.integration.test.ts's DB-level
- * coverage and agents-api.integration.test.ts's API round-trip pattern, but
- * for the new patchAuthorAllowlist column (DBR-1.1). Unlike authorAllowlist,
- * this column was added fresh with NOT NULL DEFAULT ARRAY[]::TEXT[] from the
- * start (one migration, no backfill needed) — so there is no NULL-row /
- * NOT NULL-constraint scenario to replay here.
+ * Mirrors agents-api.integration.test.ts's API round-trip pattern, but for
+ * the patchAuthorAllowlist column (DBR-1.1). Unlike the legacy
+ * authorAllowlist column (removed in DBR-2.4), this one was added fresh with
+ * NOT NULL DEFAULT ARRAY[]::TEXT[] from the start (one migration, no backfill
+ * needed) — so there is no NULL-row / NOT NULL-constraint scenario to replay
+ * here.
  */
 
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
@@ -159,14 +159,14 @@ describeOrSkip("Agent.patchAuthorAllowlist (integration)", () => {
     expect(agent.patchAuthorAllowlist).toEqual([]);
   });
 
-  it("round-trips via PATCH /agents/:id and GET /agents/:id, independent of authorAllowlist", async () => {
+  it("round-trips via PATCH /agents/:id and GET /agents/:id, independent of reviewAuthorAllowlist", async () => {
     const agentId = await prisma.agent
       .create({ data: { name: "Round Trip Agent" } })
       .then((a) => a.id);
     const cookie = await makeSessionCookie();
     const app = createAdminApp(makeDeps(prisma));
 
-    // PATCH sets patchAuthorAllowlist, leaving authorAllowlist untouched
+    // PATCH sets patchAuthorAllowlist, leaving reviewAuthorAllowlist untouched
     const patchRes = await app.request(`/agents/${agentId}`, {
       method: "PATCH",
       body: JSON.stringify({ patchAuthorAllowlist: ["octocat"] }),
@@ -178,7 +178,7 @@ describeOrSkip("Agent.patchAuthorAllowlist (integration)", () => {
     expect(patchRes.status).toBe(200);
     const patchBody = await patchRes.json();
     expect(patchBody.patchAuthorAllowlist).toEqual(["octocat"]);
-    expect(patchBody.authorAllowlist).toEqual([]);
+    expect(patchBody.reviewAuthorAllowlist).toEqual([]);
 
     // GET confirms persisted value
     const getRes = await app.request(`/agents/${agentId}`, {
@@ -187,12 +187,12 @@ describeOrSkip("Agent.patchAuthorAllowlist (integration)", () => {
     expect(getRes.status).toBe(200);
     const getBody = await getRes.json();
     expect(getBody.patchAuthorAllowlist).toEqual(["octocat"]);
-    expect(getBody.authorAllowlist).toEqual([]);
+    expect(getBody.reviewAuthorAllowlist).toEqual([]);
 
-    // Setting authorAllowlist afterwards must not disturb patchAuthorAllowlist
+    // Setting reviewAuthorAllowlist afterwards must not disturb patchAuthorAllowlist
     const secondPatchRes = await app.request(`/agents/${agentId}`, {
       method: "PATCH",
-      body: JSON.stringify({ authorAllowlist: ["hubot"] }),
+      body: JSON.stringify({ reviewAuthorAllowlist: ["hubot"] }),
       headers: {
         "Content-Type": "application/json",
         Cookie: `admin_session=${cookie}`,
@@ -200,7 +200,7 @@ describeOrSkip("Agent.patchAuthorAllowlist (integration)", () => {
     });
     expect(secondPatchRes.status).toBe(200);
     const secondPatchBody = await secondPatchRes.json();
-    expect(secondPatchBody.authorAllowlist).toEqual(["hubot"]);
+    expect(secondPatchBody.reviewAuthorAllowlist).toEqual(["hubot"]);
     expect(secondPatchBody.patchAuthorAllowlist).toEqual(["octocat"]);
   });
 });

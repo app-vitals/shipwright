@@ -334,7 +334,7 @@ function buildMockDeps(chatClient: ChatClient | undefined): AdminUIDeps {
         createdAt: new Date("2024-01-01"),
         updatedAt: new Date("2024-01-01"),
         repos: [],
-        authorAllowlist: [],
+        reviewAuthorAllowlist: [],
         missingRequiredEnv: [],
       }),
       updateFields: async () => ({
@@ -346,7 +346,7 @@ function buildMockDeps(chatClient: ChatClient | undefined): AdminUIDeps {
         createdAt: new Date("2024-01-01"),
         updatedAt: new Date("2024-01-01"),
         repos: [],
-        authorAllowlist: [],
+        reviewAuthorAllowlist: [],
         missingRequiredEnv: [],
       }),
     },

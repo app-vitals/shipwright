@@ -23,7 +23,6 @@ const SAMPLE_CONFIG: AgentConfigResponse = {
   allowedTools: ["Read", "Bash"],
   plugins: [{ marketplace: "shipwright", plugin: "my-plugin" }],
   repos: [],
-  authorAllowlist: [],
   reviewAuthorAllowlist: [],
   patchAuthorAllowlist: [],
   restrictSlackToMembers: false,

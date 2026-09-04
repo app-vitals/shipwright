@@ -7,6 +7,7 @@
  * metrics/src/dashboard/dashboard-page.ts.
  */
 
+import { DEFAULT_CLAIM_TTL_MS } from "@shipwright/lib/claim-ttl";
 import { PROGRESS_LABELS } from "@shipwright/lib/progress-phases";
 import { renderAdminPage } from "./admin-ui-layout.ts";
 import {
@@ -216,8 +217,8 @@ export interface CronRunItem {
   sessionId?: string | null;
   /**
    * The owning cron's id/name/schedule — present on cross-cron listings (e.g.
-   * renderCronLogsPage's per-agent table) so the Cron column can be rendered
-   * without an N+1 lookup. Absent on single-cron listings.
+   * renderQueueActivityPage's per-agent Past table) so the Cron column can be
+   * rendered without an N+1 lookup. Absent on single-cron listings.
    */
   cron?: { id: string; name: string | null; schedule: string };
 }
@@ -342,18 +343,6 @@ export interface TaskItem {
   blockedBy?: BlockedByEntry[] | null;
   skipCount?: number | null;
   lastSkippedAt?: string | null;
-}
-
-// Token shape returned by the task-store /tokens endpoint (admin token only).
-// Mirrors TaskToken fields relevant to the admin UI; avoids cross-package coupling.
-export interface TaskStoreTokenItem {
-  id: string;
-  label: string | null;
-  agentId: string | null;
-  token: string;
-  createdAt: Date | string;
-  revokedAt: Date | string | null;
-  rawToken?: string;
 }
 
 // ─── Inline markdown renderer ─────────────────────────────────────────────────
@@ -551,8 +540,7 @@ export function renderAgentsPage(
     <td>${escapeHtml(new Date(a.createdAt).toLocaleDateString("en-US", { timeZone: timezone }))}</td>
     <td>
       <a href="/admin/agents/${escapeHtml(a.id)}" class="btn btn-secondary" style="font-size:12px;padding:4px 10px">Manage</a>
-      <a href="/admin/agents/${escapeHtml(a.id)}/cron-logs" class="btn btn-secondary" style="font-size:12px;padding:4px 10px;margin-left:4px">Cron Logs</a>
-      <a href="/admin/agents/${escapeHtml(a.id)}/work-queue" class="btn btn-secondary" style="font-size:12px;padding:4px 10px;margin-left:4px">Work Queue</a>
+      <a href="/admin/agents/${escapeHtml(a.id)}/queue-activity" class="btn btn-secondary" style="font-size:12px;padding:4px 10px;margin-left:4px">Queue &amp; Activity</a>
     </td>
   </tr>`,
           )
@@ -1110,7 +1098,7 @@ export function renderAgentDetailPage(
     const toggleLabel = c.enabled ? "Disable" : "Enable";
     const toggleTarget = c.enabled ? "false" : "true";
     return `
-      <a href="/admin/agents/${escapeHtml(agent.id)}/cron-logs?cronId=${escapeHtml(c.id)}" class="btn btn-secondary" style="font-size:11px;padding:3px 8px;margin-right:4px;text-decoration:none">Logs</a>
+      <a href="/admin/agents/${escapeHtml(agent.id)}/queue-activity?cronId=${escapeHtml(c.id)}" class="btn btn-secondary" style="font-size:11px;padding:3px 8px;margin-right:4px;text-decoration:none">Logs</a>
       <form method="POST" action="/admin/agents/${escapeHtml(agent.id)}/crons/${escapeHtml(c.id)}/toggle" style="display:inline">
         <input type="hidden" name="enabled" value="${toggleTarget}" />
         <button type="submit" class="btn btn-secondary" style="font-size:11px;padding:3px 8px">${toggleLabel}</button>
@@ -1716,20 +1704,6 @@ export function renderAgentDetailPage(
       </div>
     </div>
 
-    ${
-      agent.selfHosted
-        ? `<div class="card">
-      <div class="card-title">Local CLI Access</div>
-      <p style="font-size:13px;color:#6b7280;margin-bottom:12px">
-        This agent runs locally. Use an API token to authenticate the local agent process with the admin service.
-      </p>
-      <a href="/admin/tokens?agentId=${escapeHtml(agent.id)}" class="btn btn-secondary" style="font-size:13px">
-        Manage Tokens →
-      </a>
-    </div>`
-        : ""
-    }
-
     <div class="card">
       <div class="card-title">Plugins</div>
       <div class="data-table-wrapper">
@@ -1947,50 +1921,6 @@ export function renderProvisionXappTokenPage(
   });
 }
 
-// Paste form shown after OAuth callback — user enters SLACK_APP_ID and SLACK_SIGNING_SECRET
-// from the Slack App Credentials page (signing secret is not returned by Slack's OAuth API).
-export function renderProvisionPasteForm(
-  userName: string,
-  opts?: { agentId?: string; error?: string },
-): string {
-  const errorHtml = opts?.error
-    ? `<div class="alert alert-error">${escapeHtml(opts.error)}</div>`
-    : "";
-
-  return renderAdminPage({
-    title: "Complete Provisioning — Shipwright Admin",
-    body: `${renderAdminToolbar(userName, "/admin/provision")}
-  <div class="vos-page">
-    <div class="page-header">
-      <h1 class="page-title">Provision Agent</h1>
-    </div>
-    <div class="provision-steps">
-      <span class="provision-step">1. Create Slack App</span>
-      <span class="provision-step">2. Authorize</span>
-      <span class="provision-step active">3. Paste Credentials</span>
-    </div>
-    <div class="card">
-      <p style="font-size:14px;margin-bottom:16px;color:#6b7280">
-        Open your Slack App's <strong>Basic Information</strong> page and paste the credentials below.
-      </p>
-      ${errorHtml}
-      <form method="POST" action="/admin/provision/complete">
-        <input type="hidden" name="agentId" value="${escapeHtml(opts?.agentId ?? "")}" />
-        <div class="form-group">
-          <label class="form-label" for="appId">App ID</label>
-          <input id="appId" name="appId" type="text" class="form-input" placeholder="AXXXXXXXXXX" required />
-        </div>
-        <div class="form-group">
-          <label class="form-label" for="signingSecret">Signing Secret</label>
-          <input id="signingSecret" name="signingSecret" type="password" class="form-input" placeholder="Paste from App Credentials" required />
-        </div>
-        <button type="submit" class="btn btn-primary">Save Credentials →</button>
-      </form>
-    </div>
-  </div>`,
-  });
-}
-
 function statusBadgeClass(s: string): string {
   if (s === "in_progress" || s === "pr_open" || s === "approved")
     return "badge-blue";
@@ -2045,17 +1975,46 @@ export function renderRepoOrgFilterFields(
       })
       .join("");
 
-  return `<div class="form-group" style="margin-bottom:0">
+  return `<div class="form-group scope-select-group" style="margin-bottom:0">
           <label class="form-label" style="font-size:11px">Org</label>
-          <select name="org" multiple class="form-input" style="font-size:12px;padding:4px 8px">${renderOptions(orgOptionValues, activeOrgs)}</select>
+          <select name="org" multiple class="form-input scope-select" style="font-size:12px;padding:4px 8px">${renderOptions(orgOptionValues, activeOrgs)}</select>
         </div>
-        <div class="form-group" style="margin-bottom:0">
+        <div class="form-group scope-select-group" style="margin-bottom:0">
           <label class="form-label" style="font-size:11px">Repo</label>
-          <select name="repo" multiple class="form-input" style="font-size:12px;padding:4px 8px">${renderOptions(repoOptionValues, activeRepos)}</select>
+          <select name="repo" multiple class="form-input scope-select" style="font-size:12px;padding:4px 8px">${renderOptions(repoOptionValues, activeRepos)}</select>
         </div>`;
 }
 
 // ─── Tasks page ──────────────────────────────────────────────────────────────
+
+// Shared by both the board (default) and table (?view=table) layouts.
+const TASKS_PAGE_EXTRA_STYLES = `
+    .badge-blue { background:#dbeafe;color:#1d4ed8;border:1px solid #bfdbfe; }
+    .badge-green { background:#dcfce7;color:#166534;border:1px solid #bbf7d0; }
+    .badge-red { background:#fee2e2;color:#991b1b;border:1px solid #fecaca; }
+    .badge-hitl { background:#fff7ed;color:#c2410c;border:1px solid #fed7aa; }
+    .badge-dep { background:#fefce8;color:#a16207;border:1px solid #fde047; }
+    .alert-warning { background:#fefce8;color:#854d0e;border:1px solid #fde047;border-radius:6px;padding:10px 14px;margin-bottom:16px;font-size:13px; }
+    /* ─── Task board card slide-over drawer (AXR-1.4) ────────────────────── */
+    .task-drawer-toggle { position:absolute;opacity:0;width:1px;height:1px;pointer-events:none }
+    .task-drawer-scrim {
+      display:none;position:fixed;inset:0;z-index:55;
+      background:rgba(0,0,0,0.4);cursor:pointer;
+    }
+    .task-drawer-toggle:checked ~ .task-drawer-scrim { display:block }
+    .task-drawer {
+      position:fixed;top:0;right:0;bottom:0;z-index:60;
+      width:100%;max-width:400px;min-width:300px;
+      background:#fff;border-left:1px solid #e8e8ee;
+      overflow-y:auto;
+      transform:translateX(100%);
+      transition:transform 0.2s ease;
+    }
+    .task-drawer-toggle:checked ~ .task-drawer { transform:translateX(0) }
+    @media (prefers-reduced-motion: reduce) {
+      .task-drawer { transition:none }
+    }
+  `;
 
 export function renderTasksPage(
   tasks: TaskItem[],
@@ -2086,6 +2045,20 @@ export function renderTasksPage(
   },
   readOnly = false,
   timezone = "America/Los_Angeles",
+  // Joined PR data (blocked/blockedReason/claimedBy/claimedAt/heartbeatAt),
+  // keyed by task id — populated only by GET /admin/tasks (AXR-1.2). Left
+  // undefined/empty by GET /public/tasks so the read-only board never
+  // performs or renders the join (AC3).
+  prsByTaskId: Record<string, PrListItem> = {},
+  // Which layout to render. "table" is the pre-redesign dense table (the
+  // function's default, so every pre-AXR-1.3 caller — including the large
+  // existing unit-test suite that calls this positionally without a `view`
+  // argument — keeps producing byte-identical output with zero changes).
+  // GET /admin/tasks (admin-ui.ts) is the only caller that overrides this:
+  // it defaults the *page* a user sees to "board" and only passes "table"
+  // through when the request carries ?view=table (AXR-1.3 AC4). GET
+  // /public/tasks never passes a view, so it stays on the table renderer.
+  view: "board" | "table" = "table",
 ): string {
   const errorHtml = opts?.error
     ? `<div class="alert alert-error">${escapeHtml(opts.error)}</div>`
@@ -2115,6 +2088,23 @@ export function renderTasksPage(
       })
       .join("");
   };
+
+  if (view === "board") {
+    return renderTasksBoard({
+      tasks,
+      filters,
+      userName,
+      agentNames,
+      suggestions,
+      readOnly,
+      prsByTaskId,
+      errorHtml,
+      degradedHtml,
+      agentFilterHtml,
+      renderBlockerBadges,
+      page: pagination.page,
+    });
+  }
 
   // Pagination (hoisted above the row loop so row links can carry the current
   // list view as a `from` back-link param — see makePageUrl usage below).
@@ -2182,7 +2172,17 @@ export function renderTasksPage(
                 )
               : '<span style="color:#9ca3af">—</span>';
             const detailHref = `/admin/tasks/${escapeHtml(t.id)}${detailHrefSuffix}`;
-            return `<tr${readOnly ? "" : ` data-href="${detailHref}" style="cursor:pointer"`}>
+            // Joined PR data attributes — rendered only when the join map
+            // has an entry for this task (i.e. only from GET /admin/tasks;
+            // GET /public/tasks always passes an empty map, so this stays
+            // absent there). Raw plumbing for AXR-1.3's board UI; not yet
+            // rendered as a visible badge here (AXR-1.2 scope is the join +
+            // bucketing function only, not the board UI itself).
+            const joinedPr = prsByTaskId[t.id];
+            const prJoinAttrs = joinedPr
+              ? ` data-pr-blocked="${joinedPr.blocked === true ? "true" : "false"}" data-pr-blocked-reason="${escapeHtml(joinedPr.blockedReason ?? "")}" data-pr-claimed-by="${escapeHtml(joinedPr.claimedBy ?? "")}" data-pr-claimed-at="${escapeHtml(joinedPr.claimedAt ?? "")}" data-pr-heartbeat-at="${escapeHtml(joinedPr.heartbeatAt ?? "")}"`
+              : "";
+            return `<tr${readOnly ? "" : ` data-href="${detailHref}" style="cursor:pointer"`}${prJoinAttrs}>
     <td class="mono" style="font-size:11px">${readOnly ? escapeHtml(t.id) : `<a href="${detailHref}" style="color:#6366f1;text-decoration:none" title="View details">${escapeHtml(t.id)}</a>`}</td>
     <td>${readOnly ? escapeHtml(t.title) : `<a href="${detailHref}" style="color:inherit;text-decoration:none">${escapeHtml(t.title)}</a>`}${blockerBadges}</td>
     <td><span class="badge ${statusBadgeClass(t.status)}">${escapeHtml(t.status)}</span></td>
@@ -2292,14 +2292,7 @@ export function renderTasksPage(
 
   return renderAdminPage({
     title: "Tasks — Shipwright",
-    extraStyles: `
-    .badge-blue { background:#dbeafe;color:#1d4ed8;border:1px solid #bfdbfe; }
-    .badge-green { background:#dcfce7;color:#166534;border:1px solid #bbf7d0; }
-    .badge-red { background:#fee2e2;color:#991b1b;border:1px solid #fecaca; }
-    .badge-hitl { background:#fff7ed;color:#c2410c;border:1px solid #fed7aa; }
-    .badge-dep { background:#fefce8;color:#a16207;border:1px solid #fde047; }
-    .alert-warning { background:#fefce8;color:#854d0e;border:1px solid #fde047;border-radius:6px;padding:10px 14px;margin-bottom:16px;font-size:13px; }
-  `,
+    extraStyles: TASKS_PAGE_EXTRA_STYLES,
     body: `${readOnly ? "" : renderAdminToolbar(userName, "/admin/tasks")}
   <div class="vos-page">
     <div class="page-header" style="display:flex;align-items:center;gap:16px;flex-wrap:wrap">
@@ -2383,6 +2376,329 @@ export function renderTasksPage(
         }
         window.location.href = row.getAttribute("data-href");
       });
+    });
+  </script>`,
+  });
+}
+
+/**
+ * Renders the AXR-1.3 board layout for GET /admin/tasks — 5 columns
+ * (Queued/Claimed/In Progress/Blocked-HITL/Done, per TASK_BOARD_COLUMNS)
+ * bucketed via bucketTaskColumn using each task's status/hitl/blockedBy
+ * plus its joined PR's blocked flag (AXR-1.2's prsByTaskId). The default
+ * filter row shows only the Org and Repo multiselects (renderRepoOrgFilterFields,
+ * restyled with AXR-1.1's scope-select class) — the remaining status/HITL/
+ * session/source/agent filters are collapsed under a <details
+ * class="more-filters"> disclosure (AC1). Org and Repo stay two
+ * independent <select multiple> controls, exactly as on the table view —
+ * this function never merges them into one combined scope-pill selector,
+ * so selecting an org with no repo continues to match every repo under
+ * that org (AC2).
+ *
+ * Split out of renderTasksPage (rather than inlined behind an `if`) so the
+ * pre-redesign table branch above stays textually untouched — nothing here
+ * is shared by reference with that branch beyond the plain helpers passed
+ * in, so a change here can't accidentally perturb ?view=table's output.
+ */
+function renderTasksBoard(args: {
+  tasks: TaskItem[];
+  filters: {
+    status?: string;
+    state?: "ready" | "in_progress" | "blocked" | "closed";
+    session?: string;
+    repo?: string | string[];
+    org?: string | string[];
+    source?: string;
+    agent?: string;
+    hitl?: "true" | "false";
+  };
+  userName: string;
+  agentNames: Record<string, string>;
+  suggestions?: {
+    sessions?: string[];
+    repos?: string[];
+    orgs?: string[];
+    agents?: string[];
+  };
+  readOnly: boolean;
+  prsByTaskId: Record<string, PrListItem>;
+  errorHtml: string;
+  degradedHtml: string;
+  agentFilterHtml: string;
+  renderBlockerBadges: (
+    blockedBy: BlockedByEntry[] | null | undefined,
+  ) => string;
+  page: number;
+}): string {
+  const {
+    tasks,
+    filters,
+    userName,
+    agentNames,
+    suggestions,
+    readOnly,
+    prsByTaskId,
+    errorHtml,
+    degradedHtml,
+    agentFilterHtml,
+    renderBlockerBadges,
+    page,
+  } = args;
+
+  const statusOptions = [
+    "",
+    "pending",
+    "in_progress",
+    "pr_open",
+    "approved",
+    "merged",
+    "done",
+    "deploying",
+    "deployed",
+    "blocked",
+    "cancelled",
+  ]
+    .map(
+      (s) =>
+        `<option value="${escapeHtml(s)}" ${filters.status === s ? "selected" : ""}>${s === "" ? "Any status" : escapeHtml(s)}</option>`,
+    )
+    .join("");
+
+  const hitlOptions = [
+    { value: "", label: "Any" },
+    { value: "true", label: "Yes" },
+    { value: "false", label: "No" },
+  ]
+    .map(
+      (o) =>
+        `<option value="${o.value}" ${filters.hitl === o.value ? "selected" : ""}>${o.label}</option>`,
+    )
+    .join("");
+
+  // Query string for the current filter selection, mirroring the table
+  // view's makePageUrl param order/semantics (status/state, session, repo,
+  // org, source, agent, hitl, page) so a URL built here round-trips
+  // identically whether the request landed on the board or the table. The
+  // board doesn't render its own state-tab or pagination controls (its 5
+  // columns replace the Ready/In Progress/Blocked/Closed tabs, and it
+  // shows every fetched task rather than paging through them), but a
+  // bookmarked/back-linked URL carrying `state` or `page` still needs to
+  // reproduce faithfully in the task/session detail "from" back-link.
+  const currentBoardUrl = (() => {
+    const params = new URLSearchParams();
+    if (filters.status) params.set("status", filters.status);
+    else if (filters.state) params.set("state", filters.state);
+    if (filters.session) params.set("session", filters.session);
+    for (const r of toFilterArray(filters.repo)) params.append("repo", r);
+    for (const o of toFilterArray(filters.org)) params.append("org", o);
+    if (filters.source) params.set("source", filters.source);
+    if (filters.agent) params.set("agent", filters.agent);
+    if (filters.hitl) params.set("hitl", filters.hitl);
+    if (page > 1) params.set("page", String(page));
+    const qs = params.toString();
+    return `/admin/tasks${qs ? `?${qs}` : ""}`;
+  })();
+  const detailHrefSuffix =
+    currentBoardUrl === "/admin/tasks"
+      ? ""
+      : `?from=${encodeURIComponent(currentBoardUrl)}`;
+  const tableViewHref = `${currentBoardUrl}${currentBoardUrl.includes("?") ? "&" : "?"}view=table`;
+
+  const renderCard = (t: TaskItem): string => {
+    const agentId = t.claimedBy ?? t.assignee;
+    const agentCell = agentId
+      ? readOnly
+        ? escapeHtml(agentNames[agentId] ?? agentId)
+        : agentLink(agentId, agentNames[agentId] ?? agentId)
+      : "";
+    const blockerBadges = renderBlockerBadges(t.blockedBy);
+    // Same joined-PR attributes as the table row (AXR-1.2's prsByTaskId) —
+    // rendered on the card itself so the blocked/HITL state is visible
+    // inline, with no click-through required (AC3).
+    const joinedPr = prsByTaskId[t.id];
+    const prJoinAttrs = joinedPr
+      ? ` data-pr-blocked="${joinedPr.blocked === true ? "true" : "false"}" data-pr-blocked-reason="${escapeHtml(joinedPr.blockedReason ?? "")}" data-pr-claimed-by="${escapeHtml(joinedPr.claimedBy ?? "")}" data-pr-claimed-at="${escapeHtml(joinedPr.claimedAt ?? "")}" data-pr-heartbeat-at="${escapeHtml(joinedPr.heartbeatAt ?? "")}"`
+      : "";
+    const prBadge =
+      joinedPr?.blocked === true
+        ? `<span class="badge badge-hitl" style="font-size:10px;margin-left:6px">PR Blocked${joinedPr.blockedReason ? `: ${escapeHtml(joinedPr.blockedReason)}` : ""}</span>`
+        : "";
+    const prLink =
+      t.pr && t.repo
+        ? `<a href="https://github.com/${escapeHtml(t.repo)}/pull/${t.pr}" style="color:#6366f1;text-decoration:none" title="View PR">#${t.pr}</a>`
+        : t.prUrl
+          ? `<a href="${escapeHtml(t.prUrl)}" style="color:#6366f1;text-decoration:none" title="View PR">#${t.pr ?? "PR"}</a>`
+          : "";
+    const sessionLink = t.session
+      ? readOnly
+        ? escapeHtml(t.session)
+        : `<a href="/admin/sessions/${encodeURIComponent(t.session)}${detailHrefSuffix}" style="color:#6366f1;text-decoration:none">${escapeHtml(t.session)}</a>`
+      : "";
+    const detailHref = `/admin/tasks/${escapeHtml(t.id)}${detailHrefSuffix}`;
+    const releaseForm =
+      readOnly || t.status !== "in_progress"
+        ? ""
+        : `<form method="POST" action="/admin/tasks/${escapeHtml(t.id)}/release" style="display:inline;margin-top:6px">
+        <button type="submit" class="btn btn-secondary" style="font-size:11px;padding:3px 8px">Release</button>
+      </form>`;
+
+    const cardMarkup = `<div class="card"${readOnly ? "" : ` data-drawer-toggle="task-drawer-toggle-${escapeHtml(t.id)}" style="cursor:pointer"`}${prJoinAttrs}>
+        <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px">
+          <div style="font-size:13px;font-weight:600">${readOnly ? escapeHtml(t.title) : `<a href="${detailHref}" style="color:inherit;text-decoration:none">${escapeHtml(t.title)}</a>`}</div>
+          <span class="badge ${statusBadgeClass(t.status)}" style="font-size:10px;white-space:nowrap">${escapeHtml(t.status)}</span>
+        </div>
+        <div class="mono" style="font-size:11px;color:#9ca3af;margin-top:2px">${readOnly ? escapeHtml(t.id) : `<a href="${detailHref}" style="color:#6366f1;text-decoration:none">${escapeHtml(t.id)}</a>`}</div>
+        <div style="font-size:11px;color:#6b7280;margin-top:6px;display:flex;flex-wrap:wrap;gap:8px;align-items:center">
+          ${t.repo ? `<span class="mono">${escapeHtml(t.repo)}</span>` : ""}
+          ${agentCell}
+          ${sessionLink}
+          ${prLink}
+        </div>
+        ${blockerBadges}${prBadge}
+        ${releaseForm}
+      </div>`;
+
+    // For readOnly, render the card without drawer wrapper
+    if (readOnly) {
+      return cardMarkup;
+    }
+
+    // For non-readOnly, wrap card with drawer markup
+    const drawerContent = `
+      <div style="padding:20px 24px">
+        <div style="display:flex;justify-content:space-between;align-items:start;gap:12px;margin-bottom:16px">
+          <div>
+            <h2 style="font-size:16px;font-weight:600;margin-bottom:4px">${escapeHtml(t.title)}</h2>
+            <div class="mono" style="font-size:12px;color:#9ca3af">${escapeHtml(t.id)}</div>
+          </div>
+          <label for="task-drawer-toggle-${escapeHtml(t.id)}" style="cursor:pointer;color:#6b7280;font-size:20px;line-height:1">×</label>
+        </div>
+        <div style="display:flex;gap:8px;margin-bottom:16px">
+          <span class="badge ${statusBadgeClass(t.status)}">${escapeHtml(t.status)}</span>
+        </div>
+        ${t.repo ? `<div style="font-size:12px;color:#6b7280;margin-bottom:8px"><strong>Repo:</strong> ${escapeHtml(t.repo)}</div>` : ""}
+        ${t.session ? `<div style="font-size:12px;color:#6b7280;margin-bottom:8px"><strong>Session:</strong> ${escapeHtml(t.session)}</div>` : ""}
+        ${agentId ? `<div style="font-size:12px;color:#6b7280;margin-bottom:16px"><strong>Agent:</strong> ${escapeHtml(agentNames[agentId] ?? agentId)}</div>` : ""}
+        ${t.description ? `<div style="font-size:13px;color:#374151;line-height:1.6;margin-bottom:16px">${renderMarkdown(t.description)}</div>` : ""}
+        ${joinedPr ? `
+          <div style="border-top:1px solid #e8e8ee;padding-top:16px">
+            <h3 style="font-size:13px;font-weight:600;margin-bottom:8px">Pull Request</h3>
+            <div style="font-size:12px;color:#6b7280;margin-bottom:4px"><strong>Number:</strong> <a href="https://github.com/${escapeHtml(joinedPr.repo)}/pull/${joinedPr.prNumber}" style="color:#6366f1;text-decoration:none">#${joinedPr.prNumber}</a></div>
+            <div style="font-size:12px;color:#6b7280;margin-bottom:4px"><strong>State:</strong> ${escapeHtml(joinedPr.state)}</div>
+            <div style="font-size:12px;color:#6b7280;margin-bottom:4px"><strong>Review State:</strong> ${escapeHtml(joinedPr.reviewState)}</div>
+            ${joinedPr.blocked ? `<div style="font-size:12px;color:#dc2626"><strong>Blocked:</strong> ${escapeHtml(joinedPr.blockedReason ?? "Yes")}</div>` : ""}
+          </div>
+        ` : ""}
+      </div>
+    `;
+
+    return `<div class="task-card-wrap">
+      <input type="checkbox" id="task-drawer-toggle-${escapeHtml(t.id)}" class="task-drawer-toggle" aria-hidden="true" tabindex="-1">
+      ${cardMarkup}
+      <label for="task-drawer-toggle-${escapeHtml(t.id)}" class="task-drawer-scrim" aria-label="Close task detail"></label>
+      <div class="task-drawer">${drawerContent}</div>
+    </div>`;
+  };
+
+  const columnsHtml = TASK_BOARD_COLUMNS.map(({ key, label }) => {
+    const colTasks = tasks.filter(
+      (t) => bucketTaskColumn(t, prsByTaskId[t.id]?.blocked ?? null) === key,
+    );
+    const cards =
+      colTasks.length === 0
+        ? `<div class="empty-state" style="font-size:11px">No tasks</div>`
+        : colTasks.map(renderCard).join("\n");
+    return `<div class="column" data-column="${key}">
+        <div class="column-header"><span>${label}</span><span class="column-count">${colTasks.length}</span></div>
+        ${cards}
+      </div>`;
+  }).join("\n");
+
+  const filterFormHtml = readOnly
+    ? ""
+    : `<div class="card" style="margin-bottom:16px">
+      <form method="GET" action="/admin/tasks" style="display:flex;gap:8px;align-items:flex-end;flex-wrap:wrap">
+        ${renderRepoOrgFilterFields(
+          { org: filters.org, repo: filters.repo },
+          { orgs: suggestions?.orgs, repos: suggestions?.repos },
+        )}
+        <button type="submit" class="btn btn-secondary" style="font-size:12px">Filter</button>
+        <a href="/admin/tasks" class="btn btn-secondary" style="font-size:12px">Reset</a>
+        <details class="more-filters">
+          <summary>More filters</summary>
+          <div class="more-filters-panel">
+            <div class="form-group" style="margin-bottom:0">
+              <label class="form-label" style="font-size:11px">Status</label>
+              <select name="status" class="form-input" style="font-size:12px;padding:4px 8px">${statusOptions}</select>
+            </div>
+            <div class="form-group" style="margin-bottom:0">
+              <label class="form-label" style="font-size:11px">HITL</label>
+              <select name="hitl" class="form-input" style="font-size:12px;padding:4px 8px">${hitlOptions}</select>
+            </div>
+            <div class="form-group" style="margin-bottom:0">
+              <label class="form-label" style="font-size:11px">Session</label>
+              <input name="session" type="text" class="form-input" style="font-size:12px;padding:4px 8px" value="${escapeHtml(filters.session ?? "")}" placeholder="session-id"${suggestions?.sessions?.length ? ' list="sessions-list"' : ""} />
+            </div>
+            <div class="form-group" style="margin-bottom:0">
+              <label class="form-label" style="font-size:11px">Source</label>
+              <input name="source" type="text" class="form-input" style="font-size:12px;padding:4px 8px" value="${escapeHtml(filters.source ?? "")}" placeholder="source" />
+            </div>
+            <div class="form-group" style="margin-bottom:0">
+              <label class="form-label" style="font-size:11px">Agent</label>
+              <input name="agent" type="text" class="form-input" style="font-size:12px;padding:4px 8px" value="${escapeHtml(filters.agent ?? "")}" placeholder="agent name"${suggestions?.agents?.length ? ' list="agents-list"' : ""} />
+            </div>
+          </div>
+        </details>
+        ${suggestions?.sessions?.length ? `<datalist id="sessions-list">${suggestions.sessions.map((s) => `<option value="${escapeHtml(s)}">`).join("")}</datalist>` : ""}
+        ${suggestions?.agents?.length ? `<datalist id="agents-list">${suggestions.agents.map((a) => `<option value="${escapeHtml(a)}">`).join("")}</datalist>` : ""}
+      </form>
+    </div>`;
+
+  return renderAdminPage({
+    title: "Tasks — Shipwright",
+    extraStyles: TASKS_PAGE_EXTRA_STYLES,
+    body: `${readOnly ? "" : renderAdminToolbar(userName, "/admin/tasks")}
+  <div class="vos-page">
+    <div class="page-header" style="display:flex;align-items:center;gap:16px;flex-wrap:wrap;justify-content:space-between">
+      <h1 class="page-title" style="margin:0">Tasks</h1>
+      ${readOnly ? "" : `<a href="${tableViewHref}" class="btn btn-secondary" style="font-size:12px">Table view</a>`}
+    </div>
+    ${errorHtml}
+    ${degradedHtml}
+    ${agentFilterHtml}
+    ${filterFormHtml}
+    <div class="board">
+      ${columnsHtml}
+    </div>
+  </div>`,
+    bodyEnd: readOnly
+      ? ""
+      : `<script>
+    document.querySelectorAll(".column .card[data-drawer-toggle]").forEach(function(card) {
+      card.addEventListener("click", function(e) {
+        var target = e.target;
+        while (target && target !== card) {
+          if (target.tagName === "A" || target.tagName === "BUTTON" || target.tagName === "FORM" || target.tagName === "INPUT") return;
+          target = target.parentElement;
+        }
+        var toggleId = card.getAttribute("data-drawer-toggle");
+        document.querySelectorAll(".task-drawer-toggle:checked").forEach(function(openToggle) {
+          if (openToggle.id !== toggleId) openToggle.checked = false;
+        });
+        var checkbox = document.getElementById(toggleId);
+        if (checkbox) {
+          checkbox.checked = true;
+          checkbox.dispatchEvent(new Event("change", { bubbles: true }));
+        }
+      });
+    });
+    document.addEventListener("keydown", function(e) {
+      if ((e.key === "Escape" || e.key === "Esc") && document.querySelector(".task-drawer-toggle:checked")) {
+        document.querySelectorAll(".task-drawer-toggle:checked").forEach(function(toggle) {
+          toggle.checked = false;
+          toggle.dispatchEvent(new Event("change", { bubbles: true }));
+        });
+      }
     });
   </script>`,
   });
@@ -2723,6 +3039,81 @@ const TASK_STATE_GROUPS: { key: TaskState; label: string }[] = [
   { key: "blocked", label: "Blocked" },
   { key: "closed", label: "Closed" },
 ];
+
+// ─── Board column bucketing (AXR-1.2) ────────────────────────────────────────
+//
+// Single source of truth for the 5-column task board — AXR-1.3 builds the
+// board UI on top of this pure function; do not duplicate this logic there.
+// Every task resolves to exactly one column. Precedence is checked top to
+// bottom below, first match wins:
+//
+//   1. done         — status is one of merged/deployed/done/deploying/
+//                      cancelled (reuses SESSION_CLOSED_STATUSES). Wins over
+//                      every other signal, including hitl:true or a blocked
+//                      joined PR, so a completed task never shows as needing
+//                      a human.
+//   2. blocked_hitl — task.status === "blocked", OR task.blockedBy is
+//                      non-empty (unresolved dependency or hitl wait — same
+//                      signal classifyTaskState above treats as "blocked"),
+//                      OR task.hitl === true, OR the joined PR is blocked
+//                      (prBlocked === true). This is the "needs a human"
+//                      bucket — task-level and PR-level blocks both collapse
+//                      into this single bucket, even when several of these
+//                      fire at once for the same task.
+//   3. in_progress  — status is one of in_progress/pr_open/approved, and
+//                      none of the blocked_hitl conditions above matched.
+//   4. claimed      — status "pending" with a claimedBy set (about to start,
+//                      or claimed but not yet started).
+//   5. queued       — status "pending" with no claimedBy (default
+//                      fallback — also covers any future/unrecognized status
+//                      value, so every task still lands in exactly one
+//                      column rather than "none of the above").
+export type TaskBoardColumn =
+  | "queued"
+  | "claimed"
+  | "in_progress"
+  | "blocked_hitl"
+  | "done";
+
+export const TASK_BOARD_COLUMNS: { key: TaskBoardColumn; label: string }[] = [
+  { key: "queued", label: "Queued" },
+  { key: "claimed", label: "Claimed" },
+  { key: "in_progress", label: "In Progress" },
+  { key: "blocked_hitl", label: "Blocked-HITL" },
+  { key: "done", label: "Done" },
+];
+
+/**
+ * Buckets a task into one of the 5 board columns above. `prBlocked` is the
+ * `blocked` flag from the task's joined PR (undefined/null when the task has
+ * no linked PR, or the join wasn't performed) — see the module comment above
+ * for full precedence rules.
+ */
+export function bucketTaskColumn(
+  task: Pick<TaskItem, "status" | "hitl" | "claimedBy" | "blockedBy">,
+  prBlocked?: boolean | null,
+): TaskBoardColumn {
+  if (SESSION_CLOSED_STATUSES.has(task.status)) return "done";
+  if (
+    task.status === "blocked" ||
+    (task.blockedBy?.length ?? 0) > 0 ||
+    task.hitl === true ||
+    prBlocked === true
+  ) {
+    return "blocked_hitl";
+  }
+  if (
+    task.status === "in_progress" ||
+    task.status === "pr_open" ||
+    task.status === "approved"
+  ) {
+    return "in_progress";
+  }
+  if (task.status === "pending") {
+    return task.claimedBy ? "claimed" : "queued";
+  }
+  return "queued";
+}
 
 export interface DependencyNode {
   id: string;
@@ -3105,6 +3496,36 @@ export function renderSessionDetailPage(
   });
 }
 
+// ─── PRs page ────────────────────────────────────────────────────────────────
+
+/**
+ * Classifies claim/heartbeat recency for the shared `.heartbeat-dot`
+ * indicator (AXR-2.1, AXR-1.1's admin-ui-styles.ts). Uses `heartbeatAt` when
+ * present, else falls back to `claimedAt`; returns `null` when neither is
+ * set (the PR was never claimed) so the caller can render no dot at all.
+ *
+ * Thresholds are a display nicety, not exact stale-claim-reaper semantics:
+ * "stale" mirrors lib/claim-ttl.ts's `DEFAULT_CLAIM_TTL_MS` (the reaper's
+ * own TTL), and "aging" is half that.
+ *
+ * `now` is always caller-injected (never read internally) so render output
+ * stays deterministic in tests.
+ */
+export function heartbeatFreshness(
+  claimedAt: string | null | undefined,
+  heartbeatAt: string | null | undefined,
+  now: Date,
+): "fresh" | "aging" | "stale" | null {
+  const ts = heartbeatAt ?? claimedAt;
+  if (!ts) return null;
+  const d = new Date(ts);
+  if (Number.isNaN(d.getTime())) return null;
+  const ageMs = now.getTime() - d.getTime();
+  if (ageMs >= DEFAULT_CLAIM_TTL_MS) return "stale";
+  if (ageMs >= DEFAULT_CLAIM_TTL_MS / 2) return "aging";
+  return "fresh";
+}
+
 export function renderPrsPage(
   prs: PrListItem[],
   filters: {
@@ -3126,19 +3547,24 @@ export function renderPrsPage(
   timezone = "America/Los_Angeles",
   suggestions?: { repos?: string[]; orgs?: string[] },
   linkedTasksByPr: Record<string, TaskItem[]> = {},
+  now: Date = new Date(),
 ): string {
   const degradedHtml = degraded
     ? `<div class="alert alert-warning">PR store unavailable — data shown may be stale or empty.</div>`
     : "";
 
+  // Reuses AXR-1.1's shared badge palette (admin-ui-styles.ts) instead of
+  // page-local color rules — .badge-purple stands in for the former
+  // page-local .badge-blue, and .badge-green/.badge-gray already exist
+  // globally (AC1).
   const prStateBadgeClass = (s: string) => {
-    if (s === "open") return "badge-blue";
+    if (s === "open") return "badge-purple";
     if (s === "closed" || s === "merged") return "badge-green";
     return "badge-gray";
   };
 
   const reviewStateBadgeClass = (s: string) => {
-    if (s === "in_progress" || s === "posted") return "badge-blue";
+    if (s === "in_progress" || s === "posted") return "badge-purple";
     if (s === "approved") return "badge-green";
     return "badge-gray";
   };
@@ -3148,7 +3574,9 @@ export function renderPrsPage(
     const title = pr.blockedReason
       ? ` title="${escapeHtml(pr.blockedReason)}"`
       : "";
-    return `<span class="badge badge-blocked" style="font-size:10px;margin-left:6px"${title}>Waiting: Blocked</span>`;
+    // Reuses AXR-1.1's shared .badge-warning class instead of a page-local
+    // .badge-blocked rule (AC1).
+    return `<span class="badge badge-warning" style="font-size:10px;margin-left:6px"${title}>Waiting: Blocked</span>`;
   };
 
   const rows =
@@ -3156,11 +3584,19 @@ export function renderPrsPage(
       ? `<tr><td colspan="9" class="empty-state">No PRs found.</td></tr>`
       : prs
           .map((pr) => {
+            const freshness = heartbeatFreshness(
+              pr.claimedAt,
+              pr.heartbeatAt,
+              now,
+            );
+            const heartbeatDotHtml = freshness
+              ? `<span class="heartbeat-dot ${freshness}" title="${freshness}"></span> `
+              : "";
             const claimedCell = pr.claimedBy
-              ? agentLink(
+              ? `${heartbeatDotHtml}${agentLink(
                   pr.claimedBy,
                   agentNames[pr.claimedBy] ?? pr.claimedBy,
-                )
+                )}`
               : '<span style="color:#9ca3af">—</span>';
             const linkedTasks = linkedTasksByPr[pr.id] ?? [];
             const taskCell =
@@ -3273,15 +3709,21 @@ export function renderPrsPage(
       </div>
     </div>`;
 
+  // "More filters" disclosure state. `state` already has a visible cue via the
+  // Open/Merged/Blocked tab highlighting above, but `reviewState` and `taskId`
+  // live only inside the collapsed panel — a bookmarked/linked filtered URL
+  // would otherwise look unfiltered. Auto-expand when either is set, and keep a
+  // badge on the summary so a manually re-collapsed panel still signals it.
+  const hiddenActiveFilterCount =
+    (filters.reviewState ? 1 : 0) + (filters.taskId ? 1 : 0);
+  const moreFiltersAttrs = hiddenActiveFilterCount > 0 ? " open" : "";
+  const moreFiltersBadge =
+    hiddenActiveFilterCount > 0
+      ? `<span class="badge badge-purple">${hiddenActiveFilterCount}</span>`
+      : "";
+
   return renderAdminPage({
     title: "PRs — Shipwright Admin",
-    extraStyles: `
-    .badge-blue { background:#dbeafe;color:#1d4ed8;border:1px solid #bfdbfe; }
-    .badge-green { background:#dcfce7;color:#166534;border:1px solid #bbf7d0; }
-    .badge-red { background:#fee2e2;color:#991b1b;border:1px solid #fecaca; }
-    .badge-blocked { background:#fff7ed;color:#c2410c;border:1px solid #fed7aa; }
-    .alert-warning { background:#fefce8;color:#854d0e;border:1px solid #fde047;border-radius:6px;padding:10px 14px;margin-bottom:16px;font-size:13px; }
-  `,
     body: `${renderAdminToolbar(userName, "/admin/prs")}
   <div class="vos-page">
     <div class="page-header" style="display:flex;align-items:center;gap:16px;flex-wrap:wrap">
@@ -3295,30 +3737,35 @@ export function renderPrsPage(
           { org: filters.org, repo: filters.repo },
           { orgs: suggestions?.orgs, repos: suggestions?.repos },
         )}
-        <div class="form-group" style="margin-bottom:0">
-          <label class="form-label" style="font-size:11px">State</label>
-          <select name="state" class="form-input" style="font-size:12px;padding:4px 8px">
-            <option value="">Any</option>
-            <option value="open" ${filters.state === "open" ? "selected" : ""}>open</option>
-            <option value="merged" ${filters.state === "merged" ? "selected" : ""}>merged</option>
-          </select>
-        </div>
-        <div class="form-group" style="margin-bottom:0">
-          <label class="form-label" style="font-size:11px">Review State</label>
-          <select name="reviewState" class="form-input" style="font-size:12px;padding:4px 8px">
-            <option value="">Any</option>
-            <option value="pending" ${filters.reviewState === "pending" ? "selected" : ""}>pending</option>
-            <option value="in_progress" ${filters.reviewState === "in_progress" ? "selected" : ""}>in_progress</option>
-            <option value="posted" ${filters.reviewState === "posted" ? "selected" : ""}>posted</option>
-            <option value="approved" ${filters.reviewState === "approved" ? "selected" : ""}>approved</option>
-          </select>
-        </div>
-        <div class="form-group" style="margin-bottom:0">
-          <label class="form-label" style="font-size:11px">Task ID</label>
-          <input name="taskId" type="text" class="form-input" style="font-size:12px;padding:4px 8px" value="${escapeHtml(filters.taskId ?? "")}" placeholder="TASK-123" />
-        </div>
         <button type="submit" class="btn btn-secondary" style="font-size:12px;padding:4px 12px">Filter</button>
         <a href="/admin/prs" class="btn btn-secondary" style="font-size:12px;padding:4px 12px">Reset</a>
+        <details class="more-filters"${moreFiltersAttrs}>
+          <summary>More filters${moreFiltersBadge}</summary>
+          <div class="more-filters-panel">
+            <div class="form-group" style="margin-bottom:0">
+              <label class="form-label" style="font-size:11px">State</label>
+              <select name="state" class="form-input" style="font-size:12px;padding:4px 8px">
+                <option value="">Any</option>
+                <option value="open" ${filters.state === "open" ? "selected" : ""}>open</option>
+                <option value="merged" ${filters.state === "merged" ? "selected" : ""}>merged</option>
+              </select>
+            </div>
+            <div class="form-group" style="margin-bottom:0">
+              <label class="form-label" style="font-size:11px">Review State</label>
+              <select name="reviewState" class="form-input" style="font-size:12px;padding:4px 8px">
+                <option value="">Any</option>
+                <option value="pending" ${filters.reviewState === "pending" ? "selected" : ""}>pending</option>
+                <option value="in_progress" ${filters.reviewState === "in_progress" ? "selected" : ""}>in_progress</option>
+                <option value="posted" ${filters.reviewState === "posted" ? "selected" : ""}>posted</option>
+                <option value="approved" ${filters.reviewState === "approved" ? "selected" : ""}>approved</option>
+              </select>
+            </div>
+            <div class="form-group" style="margin-bottom:0">
+              <label class="form-label" style="font-size:11px">Task ID</label>
+              <input name="taskId" type="text" class="form-input" style="font-size:12px;padding:4px 8px" value="${escapeHtml(filters.taskId ?? "")}" placeholder="TASK-123" />
+            </div>
+          </div>
+        </details>
       </form>
     </div>
     <div class="card">
@@ -3331,8 +3778,8 @@ export function renderPrsPage(
               <th style="text-align:left;padding:8px 12px;font-size:11px;font-weight:600;color:#6b7280;border-bottom:1px solid #e5e7eb">Task</th>
               <th style="text-align:left;padding:8px 12px;font-size:11px;font-weight:600;color:#6b7280;border-bottom:1px solid #e5e7eb">State</th>
               <th style="text-align:left;padding:8px 12px;font-size:11px;font-weight:600;color:#6b7280;border-bottom:1px solid #e5e7eb">Review State</th>
-              <th class="col-review-cycles" style="text-align:left;padding:8px 12px;font-size:11px;font-weight:600;color:#6b7280;border-bottom:1px solid #e5e7eb">Review Cycles</th>
-              <th class="col-patch-cycles" style="text-align:left;padding:8px 12px;font-size:11px;font-weight:600;color:#6b7280;border-bottom:1px solid #e5e7eb">Patch Cycles</th>
+              <th class="col-review-cycles" style="text-align:left;padding:8px 12px;font-size:11px;font-weight:600;color:#6b7280;border-bottom:1px solid #e5e7eb"><span class="header-tooltip" data-tip="How many times this PR has been sent back for review">Review Cycles</span></th>
+              <th class="col-patch-cycles" style="text-align:left;padding:8px 12px;font-size:11px;font-weight:600;color:#6b7280;border-bottom:1px solid #e5e7eb"><span class="header-tooltip" data-tip="How many times a patch was applied to address review feedback">Patch Cycles</span></th>
               <th class="col-claimed-by" style="text-align:left;padding:8px 12px;font-size:11px;font-weight:600;color:#6b7280;border-bottom:1px solid #e5e7eb">Claimed By</th>
               <th style="text-align:left;padding:8px 12px;font-size:11px;font-weight:600;color:#6b7280;border-bottom:1px solid #e5e7eb">Created</th>
             </tr>
@@ -3499,22 +3946,161 @@ export function renderPrDetailPage(
   });
 }
 
+// ─── Cron grouping for activity display ────────────────────────────────────
+
+export interface CronGroupingInput {
+  id: string;
+  name: string | null;
+  schedule: string;
+}
+
 /**
- * Renders the unified per-agent cron-logs page: a filter form (cron dropdown +
- * outcome dropdown) and a table of runs across every cron the agent owns,
- * paginated consistently with renderPrsPage's pattern.
+ * Partitions an agent's crons into the always-visible shipwright-loop cron
+ * and every other cron, which collapses by default in the Past section.
+ *
+ * Used by renderQueueActivityPage to separate runs: shipwright-loop runs
+ * stay in the primary visible table, while runs from other crons are grouped
+ * under collapsed <details> disclosure blocks.
  */
-export function renderCronLogsPage(opts: {
+export function partitionCronsForActivityDisplay(crons: CronGroupingInput[]): {
+  visibleCronIds: Set<string>;
+  collapsedCronIds: Set<string>;
+} {
+  const visibleCronIds = new Set<string>();
+  const collapsedCronIds = new Set<string>();
+
+  for (const c of crons) {
+    if (c.name === "shipwright-loop") {
+      visibleCronIds.add(c.id);
+    } else {
+      collapsedCronIds.add(c.id);
+    }
+  }
+
+  return { visibleCronIds, collapsedCronIds };
+}
+
+// Inline CSS for the work-queue "Phase" column badge, keyed by the raw
+// phase value (dev-task/review/patch/deploy) — a single neutral palette
+// distinct from the outcome-style badges elsewhere on the queue & activity
+// page, since phase here is informational, not a pass/fail signal.
+const WORK_QUEUE_PHASE_BADGE_STYLE: Record<string, string> = {
+  "dev-task": "background:#eef2ff;color:#4338ca",
+  review: "background:#fef3c7;color:#92400e",
+  patch: "background:#fee2e2;color:#991b1b",
+  deploy: "background:#dcfce7;color:#166534",
+};
+const WORK_QUEUE_PHASE_BADGE_STYLE_DEFAULT = "background:#f3f4f6;color:#6b7280";
+
+// Shared column header row for the Past-section cron-run table — reused by
+// both the primary (shipwright-loop) table and each collapsed non-loop
+// cron's <details> table so the two stay in lockstep.
+const CRON_RUN_TABLE_HEAD = `<tr>
+  <th>Outcome</th>
+  <th>Cron</th>
+  <th>Started</th>
+  <th>Duration</th>
+  <th class="col-tokens">Tokens</th>
+  <th class="col-model">Model</th>
+  <th>Phase</th>
+  <th>Item</th>
+  <th>Session</th>
+  <th>Detail</th>
+</tr>`;
+
+// Inline type mirroring RankedWorkItem (openapi-schemas.ts) without importing
+// the zod schema itself — keeps this file's dependency surface to pure
+// string-rendering inputs.
+export interface WorkQueueItem {
+  type: "task" | "pr";
+  id: string;
+  title?: string;
+  phase: "dev-task" | "review" | "patch" | "deploy";
+  age: string;
+}
+
+export interface WorkQueueSnapshotItem {
+  computedAt: Date;
+  items: WorkQueueItem[];
+}
+
+/**
+ * Renders the merged per-agent Queue & Activity page (AXR-3.1): an "Upcoming"
+ * section showing the agent's self-reported ranked work queue (as last pushed
+ * via POST /agents/:id/work-queue), and a "Past" section — a filter form
+ * (cron dropdown + outcome dropdown) plus a table of cron runs across every
+ * cron the agent owns, paginated consistently with renderPrsPage's pattern.
+ *
+ * Supersedes the former separate renderWorkQueuePage/renderCronLogsPage
+ * pages/routes (now removed) — both existing services are composed onto one
+ * page rather than duplicated across two.
+ */
+export function renderQueueActivityPage(opts: {
   agent: { id: string; name: string };
+  snapshot: WorkQueueSnapshotItem | null;
   crons: { id: string; name: string | null; schedule: string }[];
   runs: CronRunItem[];
   filters: { cronId?: string; outcome?: string };
   pagination: { total: number; limit: number; page: number };
   userName: string;
   timezone?: string;
+  now?: Date;
 }): string {
-  const { agent, crons, runs, filters, pagination, userName } = opts;
+  const { agent, snapshot, crons, runs, filters, pagination, userName } = opts;
   const timezone = opts.timezone ?? "America/Los_Angeles";
+  const now = opts.now ?? new Date();
+
+  // ─── Upcoming (work queue snapshot) ─────────────────────────────────────
+
+  function queueRow(item: WorkQueueItem, index: number): string {
+    const typeCell = `<span class="badge" style="${ITEM_TYPE_BADGE_STYLE[item.type] ?? ITEM_TYPE_BADGE_STYLE_DEFAULT}">${escapeHtml(ITEM_TYPE_LABEL[item.type] ?? item.type)}</span>`;
+    const phaseCell = `<span class="badge" style="${WORK_QUEUE_PHASE_BADGE_STYLE[item.phase] ?? WORK_QUEUE_PHASE_BADGE_STYLE_DEFAULT}">${escapeHtml(item.phase)}</span>`;
+    const idTitleCell = item.title
+      ? `<span class="mono" style="font-size:12px">${workItemLink(item.type, item.id)}</span> — ${escapeHtml(item.title)}`
+      : `<span class="mono" style="font-size:12px">${workItemLink(item.type, item.id)}</span>`;
+    const ageDate = new Date(item.age);
+    const ageIso = ageDate.toISOString();
+    const ageCell = `<span title="${escapeHtml(ageIso)}">${escapeHtml(relativeTime(ageDate, now))}</span>`;
+
+    return `<tr>
+      <td class="mono" style="font-size:12px">${index + 1}</td>
+      <td>${typeCell}</td>
+      <td>${phaseCell}</td>
+      <td style="font-size:12px">${idTitleCell}</td>
+      <td style="font-size:12px">${ageCell}</td>
+    </tr>`;
+  }
+
+  const upcomingContent =
+    snapshot === null
+      ? `<div class="card">
+      <div class="empty-state">No work queue snapshot yet for this agent. It will appear once the agent's shipwright-loop cron ticks and reports its ranked work queue.</div>
+    </div>`
+      : `<div style="margin-bottom:12px;font-size:12px;color:#6b7280">Last computed: ${escapeHtml(relativeTime(snapshot.computedAt, now))}</div>
+    <div class="card">
+      <div class="data-table-wrapper">
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th>#</th>
+              <th>Type</th>
+              <th>Phase</th>
+              <th>Item</th>
+              <th>Age</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${
+              snapshot.items.length === 0
+                ? `<tr><td colspan="5" class="empty-state">Queue is empty — nothing pending.</td></tr>`
+                : snapshot.items.map(queueRow).join("\n")
+            }
+          </tbody>
+        </table>
+      </div>
+    </div>`;
+
+  // ─── Past (cron run history) ────────────────────────────────────────────
 
   function row(r: CronRunItem): string {
     const outcomeLabel = cronRunOutcomeLabel(r);
@@ -3529,7 +4115,7 @@ export function renderCronLogsPage(opts: {
 
     const cronLabel = r.cron ? (r.cron.name ?? r.cron.schedule) : "—";
     const cronCell = r.cron
-      ? `<a href="/admin/agents/${escapeHtml(agent.id)}/cron-logs?cronId=${escapeHtml(r.cron.id)}" style="color:#6366f1;text-decoration:none">${escapeHtml(cronLabel)}</a>`
+      ? `<a href="/admin/agents/${escapeHtml(agent.id)}/queue-activity?cronId=${escapeHtml(r.cron.id)}" style="color:#6366f1;text-decoration:none">${escapeHtml(cronLabel)}</a>`
       : escapeHtml(cronLabel);
 
     const startedIso = new Date(r.startedAt).toISOString();
@@ -3634,10 +4220,74 @@ export function renderCronLogsPage(opts: {
     </tr>`;
   }
 
+  // Partition crons into visible (shipwright-loop) and collapsed (all others).
+  // When filters.cronId narrows `runs` server-side to a single cron, the
+  // visible/collapsed split is skipped entirely — every run already belongs
+  // to the one cron the user asked to see, so splitting it into a collapsed
+  // group would falsely report the primary table as empty even though the
+  // matching runs exist (just tucked inside a closed <details> block).
+  const { visibleCronIds, collapsedCronIds } =
+    partitionCronsForActivityDisplay(crons);
+
+  const isCronFiltered = Boolean(filters.cronId);
+
+  // Separate runs into visible (primary table) and grouped (collapsed details blocks)
+  const visibleRuns = isCronFiltered
+    ? runs
+    : runs.filter((r) => !r.cron || visibleCronIds.has(r.cron.id));
+
+  // Group collapsed runs by cron ID, preserving insertion order of each cron
+  const collapsedGroups = new Map<string, CronRunItem[]>();
+  const collapsedCronOrder: string[] = [];
+  if (!isCronFiltered) {
+    for (const r of runs) {
+      if (r.cron && collapsedCronIds.has(r.cron.id)) {
+        if (!collapsedGroups.has(r.cron.id)) {
+          collapsedCronOrder.push(r.cron.id);
+          collapsedGroups.set(r.cron.id, []);
+        }
+        const group = collapsedGroups.get(r.cron.id);
+        if (group) {
+          group.push(r);
+        }
+      }
+    }
+  }
+
   const bodyRows =
-    runs.length === 0
+    visibleRuns.length === 0
       ? `<tr><td colspan="10" class="empty-state">No runs match the selected filters.</td></tr>`
-      : runs.map(row).join("\n");
+      : visibleRuns.map(row).join("\n");
+
+  // Build collapsed detail blocks for non-loop crons
+  const collapsedGroupsHtml = collapsedCronOrder
+    .map((cronId) => {
+      const groupRuns = collapsedGroups.get(cronId);
+      if (!groupRuns) return "";
+      const cron = crons.find((c) => c.id === cronId);
+      if (!cron) return "";
+
+      const cronLabel = cron.name ?? cron.schedule;
+      const escapedLabel = escapeHtml(cronLabel);
+      const groupBodyRows = groupRuns.map(row).join("\n");
+
+      return `<details class="more-filters" style="margin-top:12px">
+      <summary>${escapedLabel} (${groupRuns.length} run${groupRuns.length === 1 ? "" : "s"})</summary>
+      <div class="card" style="margin-top:8px">
+        <div class="data-table-wrapper">
+          <table class="data-table">
+            <thead>
+              ${CRON_RUN_TABLE_HEAD}
+            </thead>
+            <tbody>
+              ${groupBodyRows}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </details>`;
+    })
+    .join("\n");
 
   // Filter form
   const cronOptions = crons
@@ -3666,7 +4316,7 @@ export function renderCronLogsPage(opts: {
     if (filters.outcome) params.set("outcome", filters.outcome);
     if (p > 1) params.set("page", String(p));
     const qs = params.toString();
-    return `/admin/agents/${escapeHtml(agent.id)}/cron-logs${qs ? `?${qs}` : ""}`;
+    return `/admin/agents/${escapeHtml(agent.id)}/queue-activity${qs ? `?${qs}` : ""}`;
   };
 
   const from = pagination.total === 0 ? 0 : (page - 1) * pagination.limit + 1;
@@ -3683,17 +4333,21 @@ export function renderCronLogsPage(opts: {
     </div>`;
 
   return renderAdminPage({
-    title: `Cron Logs — ${agent.name} — Shipwright Admin`,
+    title: `Queue & Activity — ${agent.name} — Shipwright Admin`,
     extraStyles: "\n  ",
     body: `${renderAdminToolbar(userName, "/admin/agents")}
   <div class="vos-page">
     <div class="page-header" style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">
       <a href="/admin/agents/${escapeHtml(agent.id)}" style="color:#6b7280;font-size:13px;text-decoration:none">← ${escapeHtml(agent.name)}</a>
-      <h1 class="page-title" style="margin:0;flex:1">Cron Logs — ${escapeHtml(agent.name)}</h1>
+      <h1 class="page-title" style="margin:0;flex:1">Queue &amp; Activity — ${escapeHtml(agent.name)}</h1>
     </div>
 
+    <h2 class="section-title" style="font-size:14px;margin:0 0 8px">Upcoming</h2>
+    ${upcomingContent}
+
+    <h2 class="section-title" style="font-size:14px;margin:24px 0 8px">Past</h2>
     <div class="card" style="margin-bottom:16px">
-      <form method="GET" action="/admin/agents/${escapeHtml(agent.id)}/cron-logs" style="display:flex;gap:8px;align-items:flex-end;flex-wrap:wrap">
+      <form method="GET" action="/admin/agents/${escapeHtml(agent.id)}/queue-activity" style="display:flex;gap:8px;align-items:flex-end;flex-wrap:wrap">
         <div class="form-group" style="margin-bottom:0">
           <label class="form-label" style="font-size:11px">Cron</label>
           <select name="cronId" class="form-input" style="font-size:12px;padding:4px 8px">
@@ -3709,7 +4363,7 @@ export function renderCronLogsPage(opts: {
           </select>
         </div>
         <button type="submit" class="btn btn-secondary" style="font-size:12px;padding:4px 12px">Filter</button>
-        <a href="/admin/agents/${escapeHtml(agent.id)}/cron-logs" class="btn btn-secondary" style="font-size:12px;padding:4px 12px">Reset</a>
+        <a href="/admin/agents/${escapeHtml(agent.id)}/queue-activity" class="btn btn-secondary" style="font-size:12px;padding:4px 12px">Reset</a>
       </form>
     </div>
 
@@ -3717,18 +4371,7 @@ export function renderCronLogsPage(opts: {
       <div class="data-table-wrapper">
         <table class="data-table">
           <thead>
-            <tr>
-              <th>Outcome</th>
-              <th>Cron</th>
-              <th>Started</th>
-              <th>Duration</th>
-              <th class="col-tokens">Tokens</th>
-              <th class="col-model">Model</th>
-              <th>Phase</th>
-              <th>Item</th>
-              <th>Session</th>
-              <th>Detail</th>
-            </tr>
+            ${CRON_RUN_TABLE_HEAD}
           </thead>
           <tbody>
             ${bodyRows}
@@ -3736,117 +4379,8 @@ export function renderCronLogsPage(opts: {
         </table>
       </div>
       ${paginationHtml}
+      ${collapsedGroupsHtml}
     </div>
-  </div>`,
-  });
-}
-
-// Inline CSS for the work-queue "Phase" column badge, keyed by the raw
-// phase value (dev-task/review/patch/deploy) — a single neutral palette
-// distinct from the outcome-style badges elsewhere on the cron logs page,
-// since phase here is informational, not a pass/fail signal.
-const WORK_QUEUE_PHASE_BADGE_STYLE: Record<string, string> = {
-  "dev-task": "background:#eef2ff;color:#4338ca",
-  review: "background:#fef3c7;color:#92400e",
-  patch: "background:#fee2e2;color:#991b1b",
-  deploy: "background:#dcfce7;color:#166534",
-};
-const WORK_QUEUE_PHASE_BADGE_STYLE_DEFAULT = "background:#f3f4f6;color:#6b7280";
-
-// Inline type mirroring RankedWorkItem (openapi-schemas.ts) without importing
-// the zod schema itself — keeps this file's dependency surface to pure
-// string-rendering inputs.
-export interface WorkQueueItem {
-  type: "task" | "pr";
-  id: string;
-  title?: string;
-  phase: "dev-task" | "review" | "patch" | "deploy";
-  age: string;
-}
-
-export interface WorkQueueSnapshotItem {
-  computedAt: Date;
-  items: WorkQueueItem[];
-}
-
-/**
- * Renders the per-agent work-queue page: a snapshot of the agent's
- * self-reported ranked work queue (tasks/PRs across dev-task/review/patch/
- * deploy), as last pushed via POST /agents/:id/work-queue (AWQ-1.2).
- *
- * Renders a clear empty state when no snapshot exists yet — the agent has no
- * shipwright-loop cron, or hasn't ticked since this feature shipped — rather
- * than erroring.
- */
-export function renderWorkQueuePage(opts: {
-  agent: { id: string; name: string };
-  snapshot: WorkQueueSnapshotItem | null;
-  userName: string;
-  now?: Date;
-}): string {
-  const { agent, snapshot, userName } = opts;
-  const now = opts.now ?? new Date();
-
-  function row(item: WorkQueueItem, index: number): string {
-    const typeCell = `<span class="badge" style="${ITEM_TYPE_BADGE_STYLE[item.type] ?? ITEM_TYPE_BADGE_STYLE_DEFAULT}">${escapeHtml(ITEM_TYPE_LABEL[item.type] ?? item.type)}</span>`;
-    const phaseCell = `<span class="badge" style="${WORK_QUEUE_PHASE_BADGE_STYLE[item.phase] ?? WORK_QUEUE_PHASE_BADGE_STYLE_DEFAULT}">${escapeHtml(item.phase)}</span>`;
-    const idTitleCell = item.title
-      ? `<span class="mono" style="font-size:12px">${workItemLink(item.type, item.id)}</span> — ${escapeHtml(item.title)}`
-      : `<span class="mono" style="font-size:12px">${workItemLink(item.type, item.id)}</span>`;
-    const ageDate = new Date(item.age);
-    const ageIso = ageDate.toISOString();
-    const ageCell = `<span title="${escapeHtml(ageIso)}">${escapeHtml(relativeTime(ageDate, now))}</span>`;
-
-    return `<tr>
-      <td class="mono" style="font-size:12px">${index + 1}</td>
-      <td>${typeCell}</td>
-      <td>${phaseCell}</td>
-      <td style="font-size:12px">${idTitleCell}</td>
-      <td style="font-size:12px">${ageCell}</td>
-    </tr>`;
-  }
-
-  const backLink = `<a href="/admin/agents/${escapeHtml(agent.id)}" style="color:#6b7280;font-size:13px;text-decoration:none">← ${escapeHtml(agent.name)}</a>`;
-
-  const content =
-    snapshot === null
-      ? `<div class="card">
-      <div class="empty-state">No work queue snapshot yet for this agent. It will appear once the agent's shipwright-loop cron ticks and reports its ranked work queue.</div>
-    </div>`
-      : `<div style="margin-bottom:12px;font-size:12px;color:#6b7280">Last computed: ${escapeHtml(relativeTime(snapshot.computedAt, now))}</div>
-    <div class="card">
-      <div class="data-table-wrapper">
-        <table class="data-table">
-          <thead>
-            <tr>
-              <th>#</th>
-              <th>Type</th>
-              <th>Phase</th>
-              <th>Item</th>
-              <th>Age</th>
-            </tr>
-          </thead>
-          <tbody>
-            ${
-              snapshot.items.length === 0
-                ? `<tr><td colspan="5" class="empty-state">Queue is empty — nothing pending.</td></tr>`
-                : snapshot.items.map(row).join("\n")
-            }
-          </tbody>
-        </table>
-      </div>
-    </div>`;
-
-  return renderAdminPage({
-    title: `Work Queue — ${agent.name} — Shipwright Admin`,
-    body: `${renderAdminToolbar(userName, "/admin/agents")}
-  <div class="vos-page">
-    <div class="page-header" style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">
-      ${backLink}
-      <h1 class="page-title" style="margin:0;flex:1">Work Queue — ${escapeHtml(agent.name)}</h1>
-    </div>
-
-    ${content}
   </div>`,
   });
 }
@@ -3888,138 +4422,6 @@ export function renderProvisionCompletePage(
     <div class="card">
       ${bodyHtml}
     </div>
-  </div>`,
-  });
-}
-
-// ─── Task-store tokens page ────────────────────────────────────────────────────
-
-export function renderTokensPage(
-  tokens: TaskStoreTokenItem[],
-  degraded: boolean,
-  userName: string,
-  activePath = "/admin/tokens",
-  rawToken?: string,
-  timezone?: string,
-  error?: string,
-  agents?: Array<{ id: string; name: string }>,
-  selectedAgentId?: string,
-  taskStoreBaseUrl?: string,
-): string {
-  const tz = timezone ?? "America/Los_Angeles";
-  const fmt = (d: Date | string | null | undefined) => {
-    if (!d) return "—";
-    const date = d instanceof Date ? d : new Date(d);
-    return date.toLocaleString("en-US", {
-      timeZone: tz,
-      dateStyle: "medium",
-      timeStyle: "short",
-    });
-  };
-
-  const degradedBanner = degraded
-    ? `<div class="alert alert-warning">Token store unavailable — configure SHIPWRIGHT_TASK_STORE_URL and SHIPWRIGHT_TASK_STORE_ADMIN_TOKEN.</div>`
-    : "";
-
-  const errorBanner = error
-    ? `<div class="alert alert-danger" style="margin-bottom:16px">${escapeHtml(error)}</div>`
-    : "";
-
-  const envBlock =
-    rawToken && taskStoreBaseUrl
-      ? `<pre style="background:#f3f4f6;border-radius:4px;padding:12px;margin-top:12px;font-size:12px;font-family:monospace;overflow-x:auto">export SHIPWRIGHT_TASK_STORE_URL=${escapeHtml(taskStoreBaseUrl)}
-export SHIPWRIGHT_TASK_STORE_TOKEN=${escapeHtml(rawToken)}</pre>`
-      : "";
-
-  const rawTokenBanner = rawToken
-    ? `<div class="alert alert-success" style="margin-bottom:16px">
-        <strong>Token created.</strong> Copy it now — it will not be shown again.<br>
-        <code id="raw-token" style="display:block;margin-top:8px;font-size:13px;word-break:break-all">${escapeHtml(rawToken)}</code>
-        <button type="button" class="btn btn-sm btn-secondary" style="margin-top:8px"
-          onclick="navigator.clipboard.writeText(document.getElementById('raw-token').textContent)">
-          Copy
-        </button>
-        ${envBlock}
-      </div>`
-    : "";
-
-  const rows =
-    tokens.length === 0
-      ? `<tr><td colspan="6" class="empty-state">No tokens found.</td></tr>`
-      : tokens
-          .map(
-            (t) => `<tr>
-          <td style="font-size:12px;color:#6b7280;font-family:monospace">${escapeHtml(t.id)}</td>
-          <td>${escapeHtml(t.label ?? "—")}</td>
-          <td style="font-size:12px;color:#6b7280;font-family:monospace">${t.agentId ? agentLink(t.agentId) : "(admin)"}</td>
-          <td>${fmt(t.createdAt)}</td>
-          <td>${t.revokedAt ? `<span style="color:#dc2626">Revoked ${fmt(t.revokedAt)}</span>` : '<span style="color:#16a34a">Active</span>'}</td>
-          <td>
-            ${
-              t.revokedAt
-                ? ""
-                : `<form method="POST" action="/admin/tokens/${encodeURIComponent(t.id)}/revoke" style="margin:0" onsubmit="return confirm('Revoke this token?')">
-                    <button type="submit" class="btn btn-sm btn-danger">Revoke</button>
-                  </form>`
-            }
-          </td>
-        </tr>`,
-          )
-          .join("");
-
-  const agentOptions = [
-    `<option value="">— admin token —</option>`,
-    ...(agents ?? []).map(
-      (a) =>
-        `<option value="${escapeHtml(a.id)}"${a.id === selectedAgentId ? " selected" : ""}>${escapeHtml(a.name)}</option>`,
-    ),
-  ].join("");
-
-  const createForm = !degraded
-    ? `<div class="card" style="margin-top:24px">
-        <h2 style="font-size:15px;font-weight:600;margin-bottom:12px">Create token</h2>
-        <form method="POST" action="/admin/tokens" style="display:flex;gap:8px;align-items:flex-end;flex-wrap:wrap">
-          <div>
-            <label style="display:block;font-size:12px;color:#6b7280;margin-bottom:4px">Label <span style="color:#dc2626">*</span></label>
-            <input type="text" name="label" placeholder="e.g. ci-pipeline" class="form-input" style="width:220px" required>
-          </div>
-          <div>
-            <label style="display:block;font-size:12px;color:#6b7280;margin-bottom:4px">Agent (optional — blank for admin token)</label>
-            <select name="agentId" class="form-input" style="width:220px">${agentOptions}</select>
-          </div>
-          <button type="submit" class="btn btn-primary">Create</button>
-        </form>
-      </div>`
-    : "";
-
-  return renderAdminPage({
-    title: "Task Store Tokens — Shipwright Admin",
-    body: `${renderAdminToolbar(userName, activePath)}
-  <div class="vos-page">
-    <div class="page-header">
-      <h1 class="page-title">Task Store Tokens</h1>
-    </div>
-    ${degradedBanner}
-    ${errorBanner}
-    ${rawTokenBanner}
-    <div class="card" style="overflow:auto">
-      <div class="data-table-wrapper">
-        <table class="data-table" style="width:100%">
-          <thead>
-            <tr>
-              <th>ID</th>
-              <th>Label</th>
-              <th>Agent</th>
-              <th>Created</th>
-              <th>Status</th>
-              <th></th>
-            </tr>
-          </thead>
-          <tbody>${rows}</tbody>
-        </table>
-      </div>
-    </div>
-    ${createForm}
   </div>`,
   });
 }

@@ -368,7 +368,7 @@ function makeMockDeps(
         slackId: "U123456",
         selfHosted: false,
         repos: [],
-        authorAllowlist: [],
+        reviewAuthorAllowlist: [],
         patchAuthorAllowlist: [],
         restrictSlackToMembers: false,
         typeName: "coding",
@@ -386,7 +386,7 @@ function makeMockDeps(
         createdAt: new Date("2024-01-01"),
         updatedAt: new Date("2024-01-01"),
         repos: [],
-        authorAllowlist: [],
+        reviewAuthorAllowlist: [],
         patchAuthorAllowlist: [],
         restrictSlackToMembers: false,
         missingRequiredEnv: [],
@@ -400,7 +400,7 @@ function makeMockDeps(
         createdAt: new Date("2024-01-01"),
         updatedAt: new Date("2024-01-01"),
         repos: [],
-        authorAllowlist: [],
+        reviewAuthorAllowlist: [],
         patchAuthorAllowlist: [],
         restrictSlackToMembers: false,
         missingRequiredEnv: [],
@@ -467,9 +467,9 @@ describe("admin UI — unauthenticated redirects", () => {
     expect(res.headers.get("Location")).toBe("/admin/login");
   });
 
-  it("unauthenticated GET /admin/agents/:id/cron-logs redirects to /admin/login", async () => {
+  it("unauthenticated GET /admin/agents/:id/queue-activity redirects to /admin/login", async () => {
     const app = createAdminUIApp(makeMockDeps());
-    const res = await app.request(`/admin/agents/${AGENT_ID}/cron-logs`);
+    const res = await app.request(`/admin/agents/${AGENT_ID}/queue-activity`);
     expect(res.status).toBe(302);
     expect(res.headers.get("Location")).toBe("/admin/login");
   });
@@ -878,7 +878,7 @@ describe("admin UI — authenticated pages", () => {
     expect(html).toContain("Test Agent");
   });
 
-  it("authenticated GET /admin/agents includes a Work Queue link with the correct href for a rendered agent row", async () => {
+  it("authenticated GET /admin/agents includes a Queue & Activity link with the correct href for a rendered agent row", async () => {
     const app = createAdminUIApp(makeMockDeps());
     const res = await app.request("/admin/agents", {
       headers: { Cookie: `admin_session=${cookie}` },
@@ -886,8 +886,9 @@ describe("admin UI — authenticated pages", () => {
     expect(res.status).toBe(200);
     const html = await res.text();
     expect(html).toContain(
-      `<a href="/admin/agents/${AGENT_ID}/work-queue" class="btn btn-secondary"`,
+      `<a href="/admin/agents/${AGENT_ID}/queue-activity" class="btn btn-secondary"`,
     );
+    expect(html).toContain("Queue &amp; Activity</a>");
   });
 
   it("authenticated GET /admin/agents shows the session user's email in the navbar", async () => {
@@ -1298,9 +1299,9 @@ describe("admin UI — authenticated pages", () => {
     );
   });
 
-  it("authenticated GET /admin/agents/:id/cron-logs returns 200 with empty state", async () => {
+  it("authenticated GET /admin/agents/:id/queue-activity returns 200 with empty Upcoming and Past state", async () => {
     const app = createAdminUIApp(makeMockDeps());
-    const res = await app.request(`/admin/agents/${AGENT_ID}/cron-logs`, {
+    const res = await app.request(`/admin/agents/${AGENT_ID}/queue-activity`, {
       headers: { Cookie: `admin_session=${cookie}` },
     });
     expect(res.status).toBe(200);
@@ -1308,8 +1309,52 @@ describe("admin UI — authenticated pages", () => {
     expect(html).toContain("Outcome");
     expect(html).toContain("Started");
     expect(html).toContain("Duration");
-    // empty state by default in the base mock
+    // empty states by default in the base mock — no snapshot pushed, no runs
     expect(html).toContain("No runs");
+    expect(html).toContain("No work queue snapshot");
+    expect(html).not.toContain("Last computed");
+  });
+
+  it("authenticated GET /admin/agents/:id/queue-activity renders the Upcoming section above the Past section", async () => {
+    const app = createAdminUIApp(
+      makeMockDeps({
+        agentWorkQueueService: {
+          get: async () => ({
+            id: "snap-1",
+            agentId: AGENT_ID,
+            computedAt: new Date("2026-06-01T10:00:00Z"),
+            items: [
+              {
+                type: "task",
+                id: "WLS-2.2",
+                title: "Add work queue snapshot endpoints",
+                phase: "dev-task",
+                age: "2026-06-01T09:00:00Z",
+              },
+            ],
+            createdAt: new Date("2026-06-01T10:00:00Z"),
+          }),
+        },
+        agentCronRunService: {
+          listForAgent: async () => ({
+            items: [makeCronRun()],
+            total: 1,
+            limit: 20,
+            offset: 0,
+          }),
+        },
+      }),
+    );
+    const res = await app.request(`/admin/agents/${AGENT_ID}/queue-activity`, {
+      headers: { Cookie: `admin_session=${cookie}` },
+    });
+    expect(res.status).toBe(200);
+    const html = await res.text();
+    const upcomingIndex = html.indexOf("WLS-2.2");
+    const pastIndex = html.indexOf("posted");
+    expect(upcomingIndex).toBeGreaterThan(-1);
+    expect(pastIndex).toBeGreaterThan(-1);
+    expect(upcomingIndex).toBeLessThan(pastIndex);
   });
 
   function makeCronRun(
@@ -1367,9 +1412,28 @@ describe("admin UI — authenticated pages", () => {
     };
   }
 
-  it("authenticated GET /admin/agents/:id/cron-logs renders populated runs", async () => {
+  it("authenticated GET /admin/agents/:id/queue-activity renders populated runs in the Past section", async () => {
     const app = createAdminUIApp(
       makeMockDeps({
+        // AXR-3.2: only shipwright-loop crons stay visible in the primary
+        // table by default — override the cron list so this run's owning
+        // cron classifies as visible instead of collapsing into a <details>.
+        agentCronJobService: {
+          list: async () => [{ ...MOCK_CRON, name: "shipwright-loop" }],
+          listWithRunSummary: async () => [
+            { ...MOCK_CRON, name: "shipwright-loop", lastRun: null, runCountToday: 0 },
+          ],
+          get: async () => MOCK_CRON,
+          create: async () => MOCK_CRON,
+          setEnabled: async () => MOCK_CRON,
+          update: async () => MOCK_CRON,
+          delete: async () => {},
+          reconcileSystemCrons: async () => ({
+            created: 0,
+            updated: 0,
+            deleted: 0,
+          }),
+        },
         agentCronRunService: {
           listForAgent: async () => ({
             items: [makeCronRun()],
@@ -1380,7 +1444,7 @@ describe("admin UI — authenticated pages", () => {
         },
       }),
     );
-    const res = await app.request(`/admin/agents/${AGENT_ID}/cron-logs`, {
+    const res = await app.request(`/admin/agents/${AGENT_ID}/queue-activity`, {
       headers: { Cookie: `admin_session=${cookie}` },
     });
     expect(res.status).toBe(200);
@@ -1389,19 +1453,7 @@ describe("admin UI — authenticated pages", () => {
     expect(html).not.toContain("No runs");
   });
 
-  it("authenticated GET /admin/agents/:id/work-queue returns 200 with empty state", async () => {
-    const app = createAdminUIApp(makeMockDeps());
-    const res = await app.request(`/admin/agents/${AGENT_ID}/work-queue`, {
-      headers: { Cookie: `admin_session=${cookie}` },
-    });
-    expect(res.status).toBe(200);
-    const html = await res.text();
-    // empty state by default in the base mock — no snapshot pushed yet
-    expect(html).toContain("No work queue snapshot");
-    expect(html).not.toContain("Last computed");
-  });
-
-  it("authenticated GET /admin/agents/:id/work-queue renders populated snapshot", async () => {
+  it("authenticated GET /admin/agents/:id/queue-activity renders populated Upcoming snapshot", async () => {
     const app = createAdminUIApp(
       makeMockDeps({
         agentWorkQueueService: {
@@ -1430,7 +1482,7 @@ describe("admin UI — authenticated pages", () => {
         },
       }),
     );
-    const res = await app.request(`/admin/agents/${AGENT_ID}/work-queue`, {
+    const res = await app.request(`/admin/agents/${AGENT_ID}/queue-activity`, {
       headers: { Cookie: `admin_session=${cookie}` },
     });
     expect(res.status).toBe(200);
@@ -1446,7 +1498,7 @@ describe("admin UI — authenticated pages", () => {
     expect(html).toContain('<a href="/admin/tasks/WLS-2.2"');
   });
 
-  it("work queue PR item links out to GitHub using the repo#prNumber id", async () => {
+  it("queue-activity Upcoming PR item links out to GitHub using the repo#prNumber id", async () => {
     const app = createAdminUIApp(
       makeMockDeps({
         agentWorkQueueService: {
@@ -1468,7 +1520,7 @@ describe("admin UI — authenticated pages", () => {
         },
       }),
     );
-    const res = await app.request(`/admin/agents/${AGENT_ID}/work-queue`, {
+    const res = await app.request(`/admin/agents/${AGENT_ID}/queue-activity`, {
       headers: { Cookie: `admin_session=${cookie}` },
     });
     expect(res.status).toBe(200);
@@ -1478,7 +1530,7 @@ describe("admin UI — authenticated pages", () => {
     );
   });
 
-  it("authenticated GET /admin/agents/:id/cron-logs?cronId=... filters by cronId", async () => {
+  it("authenticated GET /admin/agents/:id/queue-activity?cronId=... filters the Past section by cronId", async () => {
     let capturedOpts: unknown;
     const app = createAdminUIApp(
       makeMockDeps({
@@ -1496,7 +1548,7 @@ describe("admin UI — authenticated pages", () => {
       }),
     );
     const res = await app.request(
-      `/admin/agents/${AGENT_ID}/cron-logs?cronId=${CRON_ID}`,
+      `/admin/agents/${AGENT_ID}/queue-activity?cronId=${CRON_ID}`,
       { headers: { Cookie: `admin_session=${cookie}` } },
     );
     expect(res.status).toBe(200);
@@ -1510,7 +1562,7 @@ describe("admin UI — authenticated pages", () => {
     expect(optionMatch?.[0]).toContain("selected");
   });
 
-  it("authenticated GET /admin/agents/:id/cron-logs?outcome=... filters by outcome", async () => {
+  it("authenticated GET /admin/agents/:id/queue-activity?outcome=... filters the Past section by outcome", async () => {
     let capturedOpts: unknown;
     const app = createAdminUIApp(
       makeMockDeps({
@@ -1528,14 +1580,14 @@ describe("admin UI — authenticated pages", () => {
       }),
     );
     const res = await app.request(
-      `/admin/agents/${AGENT_ID}/cron-logs?outcome=error`,
+      `/admin/agents/${AGENT_ID}/queue-activity?outcome=error`,
       { headers: { Cookie: `admin_session=${cookie}` } },
     );
     expect(res.status).toBe(200);
     expect(capturedOpts).toMatchObject({ outcome: "error" });
   });
 
-  it("authenticated GET /admin/agents/:id/cron-logs?outcome=skipped passes the skipped special-case outcome through", async () => {
+  it("authenticated GET /admin/agents/:id/queue-activity?outcome=skipped passes the skipped special-case outcome through", async () => {
     let capturedOpts: unknown;
     const app = createAdminUIApp(
       makeMockDeps({
@@ -1559,7 +1611,7 @@ describe("admin UI — authenticated pages", () => {
       }),
     );
     const res = await app.request(
-      `/admin/agents/${AGENT_ID}/cron-logs?outcome=skipped`,
+      `/admin/agents/${AGENT_ID}/queue-activity?outcome=skipped`,
       { headers: { Cookie: `admin_session=${cookie}` } },
     );
     expect(res.status).toBe(200);
@@ -1568,7 +1620,7 @@ describe("admin UI — authenticated pages", () => {
     expect(html).toContain("skipped");
   });
 
-  it("non-admin non-member gets 403 on GET /admin/agents/:id/cron-logs", async () => {
+  it("non-admin non-member gets 403 on GET /admin/agents/:id/queue-activity", async () => {
     const outsiderCookie = await makeSessionCookie(
       SESSION_SECRET,
       "google-sub-outsider",
@@ -1576,13 +1628,13 @@ describe("admin UI — authenticated pages", () => {
       false,
     );
     const app = createAdminUIApp(makeMockDeps());
-    const res = await app.request(`/admin/agents/${AGENT_ID}/cron-logs`, {
+    const res = await app.request(`/admin/agents/${AGENT_ID}/queue-activity`, {
       headers: { Cookie: `admin_session=${outsiderCookie}` },
     });
     expect(res.status).toBe(403);
   });
 
-  it("GET /admin/agents/:id/cron-logs returns 404 when agent not found", async () => {
+  it("GET /admin/agents/:id/queue-activity returns 404 when agent not found", async () => {
     const app = createAdminUIApp(
       makeMockDeps({
         agentService: {
@@ -1591,7 +1643,7 @@ describe("admin UI — authenticated pages", () => {
         },
       }),
     );
-    const res = await app.request(`/admin/agents/${AGENT_ID}/cron-logs`, {
+    const res = await app.request(`/admin/agents/${AGENT_ID}/queue-activity`, {
       headers: { Cookie: `admin_session=${cookie}` },
     });
     expect(res.status).toBe(404);
@@ -1719,7 +1771,7 @@ describe("admin UI — authenticated pages", () => {
               createdAt: new Date("2024-01-01"),
               updatedAt: new Date("2024-01-01"),
               repos: [],
-              authorAllowlist: [],
+              reviewAuthorAllowlist: [],
               patchAuthorAllowlist: [],
               restrictSlackToMembers: false,
               missingRequiredEnv: [],
@@ -1794,16 +1846,6 @@ describe("admin UI — authenticated pages", () => {
       expect(html).toContain("Bash(git:*)");
     });
 
-    it("managed agent (selfHosted=false) does NOT show Local CLI access card", async () => {
-      const app = createAdminUIApp(makeMockDeps());
-      const res = await app.request(`/admin/agents/${AGENT_ID}`, {
-        headers: { Cookie: `admin_session=${cookie}` },
-      });
-      expect(res.status).toBe(200);
-      const html = await res.text();
-      expect(html).not.toContain("Local CLI");
-    });
-
     it("self-hosted agent (selfHosted=true) does NOT show Slack info in header", async () => {
       const app = createAdminUIApp(
         makeMockDeps({
@@ -1818,7 +1860,7 @@ describe("admin UI — authenticated pages", () => {
               createdAt: new Date("2024-01-01"),
               updatedAt: new Date("2024-01-01"),
               repos: [],
-              authorAllowlist: [],
+              reviewAuthorAllowlist: [],
               patchAuthorAllowlist: [],
               restrictSlackToMembers: false,
               missingRequiredEnv: [],
@@ -1848,7 +1890,7 @@ describe("admin UI — authenticated pages", () => {
               createdAt: new Date("2024-01-01"),
               updatedAt: new Date("2024-01-01"),
               repos: [],
-              authorAllowlist: [],
+              reviewAuthorAllowlist: [],
               patchAuthorAllowlist: [],
               restrictSlackToMembers: false,
               missingRequiredEnv: [],
@@ -1889,7 +1931,7 @@ describe("admin UI — authenticated pages", () => {
               createdAt: new Date("2024-01-01"),
               updatedAt: new Date("2024-01-01"),
               repos: [],
-              authorAllowlist: [],
+              reviewAuthorAllowlist: [],
               patchAuthorAllowlist: [],
               restrictSlackToMembers: false,
               missingRequiredEnv: [],
@@ -1948,7 +1990,7 @@ describe("admin UI — authenticated pages", () => {
               createdAt: new Date("2024-01-01"),
               updatedAt: new Date("2024-01-01"),
               repos: [],
-              authorAllowlist: [],
+              reviewAuthorAllowlist: [],
               patchAuthorAllowlist: [],
               restrictSlackToMembers: false,
               missingRequiredEnv: [],
@@ -1977,40 +2019,6 @@ describe("admin UI — authenticated pages", () => {
       expect(html).toContain('<div class="card-title">Tools</div>');
       // Tools should be rendered
       expect(html).toContain("Bash(git:*)");
-    });
-
-    it("self-hosted agent (selfHosted=true) shows Local CLI access card with link to tokens", async () => {
-      const app = createAdminUIApp(
-        makeMockDeps({
-          agentService: {
-            ...makeMockDeps().agentService,
-            getDetail: async () => ({
-              id: SELFHOSTED_AGENT_ID,
-              name: "Self-Hosted Agent",
-              slackId: null,
-              selfHosted: true,
-              typeName: "coding",
-              createdAt: new Date("2024-01-01"),
-              updatedAt: new Date("2024-01-01"),
-              repos: [],
-              authorAllowlist: [],
-              patchAuthorAllowlist: [],
-              restrictSlackToMembers: false,
-              missingRequiredEnv: [],
-            }),
-          },
-        }),
-      );
-      const res = await app.request(`/admin/agents/${SELFHOSTED_AGENT_ID}`, {
-        headers: { Cookie: `admin_session=${cookie}` },
-      });
-      expect(res.status).toBe(200);
-      const html = await res.text();
-      // Local CLI card should be present
-      expect(html).toContain("Local CLI");
-      expect(html).toContain("Manage Tokens");
-      // Link should include the agent ID
-      expect(html).toContain(`/admin/tokens?agentId=${SELFHOSTED_AGENT_ID}`);
     });
   });
 });
@@ -3793,7 +3801,7 @@ describe("admin UI — GET /admin/agents/:id/connect-slack/callback", () => {
       createdAt: new Date("2024-01-01"),
       updatedAt: new Date("2024-01-01"),
       repos: [],
-      authorAllowlist: [],
+      reviewAuthorAllowlist: [],
       patchAuthorAllowlist: [],
       restrictSlackToMembers: false,
       missingRequiredEnv: [],
@@ -5041,6 +5049,185 @@ describe("admin UI — tasks page", () => {
     expect(html).toContain("Tasks");
   });
 
+  it("GET /admin/tasks with no ?view= defaults to the board layout (AXR-1.3)", async () => {
+    const app = createAdminUIApp(
+      makeMockDeps({
+        fetchTaskStoreTasks: async () => ({
+          tasks: [],
+          total: 0,
+          limit: 50,
+          offset: 0,
+        }),
+      }),
+    );
+    const res = await app.request("/admin/tasks", {
+      headers: { Cookie: `admin_session=${cookie}` },
+    });
+    expect(res.status).toBe(200);
+    const html = await res.text();
+    expect(html).toContain('class="board"');
+    expect(html).not.toContain('<table class="data-table">');
+  });
+
+  it("GET /admin/tasks?view=table renders the pre-redesign dense table (AXR-1.3)", async () => {
+    const mockTasks = [
+      {
+        id: "task-1",
+        title: "Build auth module",
+        status: "pending",
+        session: "session-abc",
+        repo: "example-org/example-repo",
+        assignee: null,
+        claimedBy: null,
+      },
+    ];
+    const app = createAdminUIApp(
+      makeMockDeps({
+        fetchTaskStoreTasks: async () => ({
+          tasks: mockTasks,
+          total: mockTasks.length,
+          limit: 50,
+          offset: 0,
+        }),
+      }),
+    );
+    const res = await app.request("/admin/tasks?view=table", {
+      headers: { Cookie: `admin_session=${cookie}` },
+    });
+    expect(res.status).toBe(200);
+    const html = await res.text();
+    expect(html).toContain('<table class="data-table">');
+    expect(html).toContain("<th>ID</th>");
+    expect(html).toContain("Build auth module");
+  });
+
+  it("GET /admin/tasks includes joined PR blocked/blockedReason/claimedBy/claimedAt/heartbeatAt for a task with an open PR (AXR-1.2)", async () => {
+    const mockTasks = [
+      {
+        id: "task-join-1",
+        title: "Task with an open PR",
+        status: "in_progress",
+        session: "session-abc",
+        repo: "org/repo",
+        pr: 200,
+        assignee: null,
+        claimedBy: null,
+      },
+    ];
+    const MOCK_JOINED_PR: PrListItem = {
+      id: "pr-join-1",
+      repo: "org/repo",
+      prNumber: 200,
+      staged: false,
+      state: "open",
+      reviewState: "pending",
+      patchCycles: 0,
+      reviewCycles: 0,
+      blocked: true,
+      blockedReason: "Waiting on CI",
+      claimedBy: "agent-join",
+      claimedAt: "2026-01-01T00:00:00.000Z",
+      heartbeatAt: "2026-01-01T00:05:00.000Z",
+    };
+    let capturedParams: URLSearchParams | null = null;
+    const app = createAdminUIApp(
+      makeMockDeps({
+        fetchTaskStoreTasks: async () => ({
+          tasks: mockTasks,
+          total: mockTasks.length,
+          limit: 50,
+          offset: 0,
+        }),
+        fetchTaskStorePrs: async (params: URLSearchParams) => {
+          capturedParams = params;
+          return { prs: [MOCK_JOINED_PR], total: 1, limit: 50, offset: 0 };
+        },
+      }),
+    );
+    const res = await app.request("/admin/tasks", {
+      headers: { Cookie: `admin_session=${cookie}` },
+    });
+    expect(res.status).toBe(200);
+    const html = await res.text();
+    expect(html).toContain('data-pr-blocked="true"');
+    expect(html).toContain('data-pr-blocked-reason="Waiting on CI"');
+    expect(html).toContain('data-pr-claimed-by="agent-join"');
+    expect(html).toContain('data-pr-claimed-at="2026-01-01T00:00:00.000Z"');
+    expect(html).toContain('data-pr-heartbeat-at="2026-01-01T00:05:00.000Z"');
+    expect(capturedParams).not.toBeNull();
+    const captured = capturedParams as unknown as URLSearchParams;
+    expect(captured.get("repo")).toBe("org/repo");
+    expect(captured.get("prNumber")).toBe("200");
+  });
+
+  it("GET /admin/tasks renders without PR join data when the task has no repo/pr set (AXR-1.2)", async () => {
+    const mockTasks = [
+      {
+        id: "task-no-pr",
+        title: "Task without a PR",
+        status: "pending",
+        session: null,
+        repo: null,
+        assignee: null,
+        claimedBy: null,
+      },
+    ];
+    const app = createAdminUIApp(
+      makeMockDeps({
+        fetchTaskStoreTasks: async () => ({
+          tasks: mockTasks,
+          total: mockTasks.length,
+          limit: 50,
+          offset: 0,
+        }),
+        fetchTaskStorePrs: async () => {
+          throw new Error("should not be called for a task with no repo/pr");
+        },
+      }),
+    );
+    const res = await app.request("/admin/tasks", {
+      headers: { Cookie: `admin_session=${cookie}` },
+    });
+    expect(res.status).toBe(200);
+    const html = await res.text();
+    expect(html).not.toContain("data-pr-blocked");
+  });
+
+  it("GET /admin/tasks renders without PR join data when fetchTaskStorePrs throws (degrade, don't fail the page) (AXR-1.2)", async () => {
+    const mockTasks = [
+      {
+        id: "task-join-err",
+        title: "Task whose PR lookup fails",
+        status: "in_progress",
+        session: null,
+        repo: "org/repo",
+        pr: 201,
+        assignee: null,
+        claimedBy: null,
+      },
+    ];
+    const app = createAdminUIApp(
+      makeMockDeps({
+        fetchTaskStoreTasks: async () => ({
+          tasks: mockTasks,
+          total: mockTasks.length,
+          limit: 50,
+          offset: 0,
+        }),
+        fetchTaskStorePrs: async () => {
+          throw new Error("task store unavailable");
+        },
+      }),
+    );
+    const res = await app.request("/admin/tasks", {
+      headers: { Cookie: `admin_session=${cookie}` },
+    });
+    expect(res.status).toBe(200);
+    const html = await res.text();
+    expect(html).toContain("Task whose PR lookup fails");
+    expect(html).not.toContain("data-pr-blocked");
+  });
+
   it("GET /admin/tasks renders degraded notice when taskStoreUrl is absent", async () => {
     const app = createAdminUIApp(
       makeMockDeps({
@@ -5882,7 +6069,6 @@ describe("admin UI — create agent with author allowlist", () => {
           createdAt: new Date("2024-01-01"),
           updatedAt: new Date("2024-01-01"),
           repos: [],
-          authorAllowlist: capturedAllowlist ?? [],
           reviewAuthorAllowlist: capturedAllowlist ?? [],
           patchAuthorAllowlist: [],
           restrictSlackToMembers: false,
@@ -6118,7 +6304,7 @@ describe("admin UI — repos mutation routes", () => {
         createdAt: new Date("2024-01-01"),
         updatedAt: new Date("2024-01-01"),
         repos: ["my-org/my-repo"],
-        authorAllowlist: [],
+        reviewAuthorAllowlist: [],
         patchAuthorAllowlist: [],
         restrictSlackToMembers: false,
         missingRequiredEnv: [],
@@ -6134,7 +6320,7 @@ describe("admin UI — repos mutation routes", () => {
           createdAt: new Date("2024-01-01"),
           updatedAt: new Date("2024-01-01"),
           repos: capturedRepos ?? [],
-          authorAllowlist: [],
+          reviewAuthorAllowlist: [],
           patchAuthorAllowlist: [],
           restrictSlackToMembers: false,
           missingRequiredEnv: [],
@@ -6279,7 +6465,6 @@ describe("admin UI — author allowlist mutation routes", () => {
         createdAt: new Date("2024-01-01"),
         updatedAt: new Date("2024-01-01"),
         repos: [],
-        authorAllowlist: ["octocat"],
         reviewAuthorAllowlist: ["octocat"],
         patchAuthorAllowlist: ["octocat"],
         restrictSlackToMembers: false,
@@ -6299,7 +6484,6 @@ describe("admin UI — author allowlist mutation routes", () => {
           createdAt: new Date("2024-01-01"),
           updatedAt: new Date("2024-01-01"),
           repos: [],
-          authorAllowlist: capturedAllowlist ?? [],
           reviewAuthorAllowlist: capturedAllowlist ?? [],
           patchAuthorAllowlist: [],
           restrictSlackToMembers: false,
@@ -6342,7 +6526,6 @@ describe("admin UI — author allowlist mutation routes", () => {
         createdAt: new Date("2024-01-01"),
         updatedAt: new Date("2024-01-01"),
         repos: [],
-        authorAllowlist: [],
         reviewAuthorAllowlist: [],
         patchAuthorAllowlist: [],
         restrictSlackToMembers: false,
@@ -6359,7 +6542,6 @@ describe("admin UI — author allowlist mutation routes", () => {
           createdAt: new Date("2024-01-01"),
           updatedAt: new Date("2024-01-01"),
           repos: [],
-          authorAllowlist: ["octocat"],
           reviewAuthorAllowlist: ["octocat"],
           patchAuthorAllowlist: [],
           restrictSlackToMembers: false,
@@ -6541,7 +6723,7 @@ describe("admin UI — patch author allowlist mutation routes", () => {
         createdAt: new Date("2024-01-01"),
         updatedAt: new Date("2024-01-01"),
         repos: [],
-        authorAllowlist: [],
+        reviewAuthorAllowlist: [],
         patchAuthorAllowlist: ["octocat"],
         restrictSlackToMembers: false,
         missingRequiredEnv: [],
@@ -6560,7 +6742,7 @@ describe("admin UI — patch author allowlist mutation routes", () => {
           createdAt: new Date("2024-01-01"),
           updatedAt: new Date("2024-01-01"),
           repos: [],
-          authorAllowlist: [],
+          reviewAuthorAllowlist: [],
           patchAuthorAllowlist: capturedAllowlist ?? [],
           restrictSlackToMembers: false,
           missingRequiredEnv: [],
@@ -6602,7 +6784,7 @@ describe("admin UI — patch author allowlist mutation routes", () => {
         createdAt: new Date("2024-01-01"),
         updatedAt: new Date("2024-01-01"),
         repos: [],
-        authorAllowlist: [],
+        reviewAuthorAllowlist: [],
         patchAuthorAllowlist: [],
         restrictSlackToMembers: false,
         missingRequiredEnv: [],
@@ -6618,7 +6800,7 @@ describe("admin UI — patch author allowlist mutation routes", () => {
           createdAt: new Date("2024-01-01"),
           updatedAt: new Date("2024-01-01"),
           repos: [],
-          authorAllowlist: [],
+          reviewAuthorAllowlist: [],
           patchAuthorAllowlist: ["octocat"],
           restrictSlackToMembers: false,
           missingRequiredEnv: [],
@@ -6674,7 +6856,7 @@ describe("admin UI — patch author allowlist mutation routes", () => {
         createdAt: new Date("2024-01-01"),
         updatedAt: new Date("2024-01-01"),
         repos: [],
-        authorAllowlist: [],
+        reviewAuthorAllowlist: [],
         patchAuthorAllowlist: ["octocat", "other-user"],
         restrictSlackToMembers: false,
         missingRequiredEnv: [],
@@ -6690,7 +6872,7 @@ describe("admin UI — patch author allowlist mutation routes", () => {
           createdAt: new Date("2024-01-01"),
           updatedAt: new Date("2024-01-01"),
           repos: [],
-          authorAllowlist: [],
+          reviewAuthorAllowlist: [],
           patchAuthorAllowlist: ["other-user"],
           restrictSlackToMembers: false,
           missingRequiredEnv: [],
@@ -6712,152 +6894,6 @@ describe("admin UI — patch author allowlist mutation routes", () => {
     );
     expect(res.status).toBe(302);
     expect(capturedInput).toEqual({ patchAuthorAllowlist: ["other-user"] });
-  });
-});
-
-// Pre-DBR-2.1 agents were written before the reviewAuthorAllowlist column
-// existed, so getDetail returns it as undefined while the legacy
-// authorAllowlist still holds the real logins. Every read site in admin-ui.ts
-// uses `reviewAuthorAllowlist ?? authorAllowlist` to keep those agents working
-// until the rename completes — these tests pin that fallback.
-describe("admin UI — review author allowlist legacy fallback (pre-DBR-2.1 agents)", () => {
-  let cookie: string;
-
-  beforeAll(async () => {
-    cookie = await makeSessionCookie();
-  });
-
-  /** getDetail for an agent that predates the reviewAuthorAllowlist column. */
-  function makeLegacyDeps(
-    authorAllowlist: string[],
-    onUpdate?: (input: { reviewAuthorAllowlist?: string[] }) => void,
-  ): AdminUIDeps {
-    const deps = makeMockDeps();
-    deps.agentService = {
-      ...deps.agentService,
-      getDetail: async () => ({
-        id: AGENT_ID,
-        name: "Test Agent",
-        slackId: "U123456",
-        selfHosted: false,
-        typeName: "coding",
-        createdAt: new Date("2024-01-01"),
-        updatedAt: new Date("2024-01-01"),
-        repos: [],
-        authorAllowlist,
-        // reviewAuthorAllowlist intentionally absent — the legacy shape.
-        reviewAuthorAllowlist: undefined,
-        patchAuthorAllowlist: [],
-        restrictSlackToMembers: false,
-        missingRequiredEnv: [],
-      }),
-      updateFields: async (
-        id: string,
-        input: { reviewAuthorAllowlist?: string[] },
-      ) => {
-        onUpdate?.(input);
-        return {
-          id,
-          name: "Test Agent",
-          slackId: "U123456",
-          selfHosted: false,
-          typeName: "coding",
-          createdAt: new Date("2024-01-01"),
-          updatedAt: new Date("2024-01-01"),
-          repos: [],
-          authorAllowlist: input.reviewAuthorAllowlist ?? [],
-          reviewAuthorAllowlist: input.reviewAuthorAllowlist ?? [],
-          patchAuthorAllowlist: [],
-          restrictSlackToMembers: false,
-          missingRequiredEnv: [],
-        };
-      },
-    };
-    return deps;
-  }
-
-  it("GET /admin/agents/:id renders legacy authorAllowlist logins when reviewAuthorAllowlist is undefined", async () => {
-    const app = createAdminUIApp(makeLegacyDeps(["octocat", "hubot"]));
-    const res = await app.request(`/admin/agents/${AGENT_ID}`, {
-      headers: { Cookie: `admin_session=${cookie}` },
-    });
-    expect(res.status).toBe(200);
-    const html = await res.text();
-    // Assert on the per-row delete form rather than the bare login — "octocat"
-    // also appears as the add-form placeholder, so it would match either way.
-    expect(html).toContain('<input type="hidden" name="login" value="octocat"');
-    expect(html).toContain('<input type="hidden" name="login" value="hubot"');
-    expect(html).not.toContain("No author allowlist entries configured.");
-  });
-
-  it("POST /admin/agents/:id/review-author-allowlist/add appends to the legacy list when reviewAuthorAllowlist is undefined", async () => {
-    let capturedAllowlist: string[] | undefined;
-    const app = createAdminUIApp(
-      makeLegacyDeps(["octocat"], (input) => {
-        capturedAllowlist = input.reviewAuthorAllowlist;
-      }),
-    );
-    const body = new URLSearchParams({ login: "hubot" });
-    const res = await app.request(
-      `/admin/agents/${AGENT_ID}/review-author-allowlist/add`,
-      {
-        method: "POST",
-        body: body.toString(),
-        headers: {
-          "Content-Type": "application/x-www-form-urlencoded",
-          Cookie: `admin_session=${cookie}`,
-        },
-      },
-    );
-    expect(res.status).toBe(302);
-    // Legacy entry must be preserved, not clobbered by an empty new-column list.
-    expect(capturedAllowlist).toEqual(["octocat", "hubot"]);
-  });
-
-  it("POST /admin/agents/:id/review-author-allowlist/add deduplicates against the legacy list", async () => {
-    let capturedAllowlist: string[] | undefined;
-    const app = createAdminUIApp(
-      makeLegacyDeps(["octocat"], (input) => {
-        capturedAllowlist = input.reviewAuthorAllowlist;
-      }),
-    );
-    const body = new URLSearchParams({ login: "octocat" });
-    const res = await app.request(
-      `/admin/agents/${AGENT_ID}/review-author-allowlist/add`,
-      {
-        method: "POST",
-        body: body.toString(),
-        headers: {
-          "Content-Type": "application/x-www-form-urlencoded",
-          Cookie: `admin_session=${cookie}`,
-        },
-      },
-    );
-    expect(res.status).toBe(302);
-    expect(capturedAllowlist).toEqual(["octocat"]);
-  });
-
-  it("POST /admin/agents/:id/review-author-allowlist/delete removes from the legacy list", async () => {
-    let capturedAllowlist: string[] | undefined;
-    const app = createAdminUIApp(
-      makeLegacyDeps(["octocat", "hubot"], (input) => {
-        capturedAllowlist = input.reviewAuthorAllowlist;
-      }),
-    );
-    const body = new URLSearchParams({ login: "octocat" });
-    const res = await app.request(
-      `/admin/agents/${AGENT_ID}/review-author-allowlist/delete`,
-      {
-        method: "POST",
-        body: body.toString(),
-        headers: {
-          "Content-Type": "application/x-www-form-urlencoded",
-          Cookie: `admin_session=${cookie}`,
-        },
-      },
-    );
-    expect(res.status).toBe(302);
-    expect(capturedAllowlist).toEqual(["hubot"]);
   });
 });
 
@@ -6930,7 +6966,7 @@ describe("admin UI — Slack access settings route (restrictSlackToMembers)", ()
         createdAt: new Date("2024-01-01"),
         updatedAt: new Date("2024-01-01"),
         repos: [],
-        authorAllowlist: [],
+        reviewAuthorAllowlist: [],
         patchAuthorAllowlist: [],
         restrictSlackToMembers: input.restrictSlackToMembers ?? false,
         missingRequiredEnv: [],
@@ -6972,7 +7008,7 @@ describe("admin UI — Slack access settings route (restrictSlackToMembers)", ()
         createdAt: new Date("2024-01-01"),
         updatedAt: new Date("2024-01-01"),
         repos: [],
-        authorAllowlist: [],
+        reviewAuthorAllowlist: [],
         patchAuthorAllowlist: [],
         restrictSlackToMembers: input.restrictSlackToMembers ?? false,
         missingRequiredEnv: [],
@@ -7890,6 +7926,70 @@ describe("admin UI — public task board", () => {
     expect(html).toContain("Blocked:");
     expect(html).toContain("agent-pub");
     expect(html).not.toContain("/admin/");
+  });
+
+  it("GET /public/tasks never includes the joined PR fields, even for a task with repo+pr set and fetchTaskStorePrs wired (AXR-1.2)", async () => {
+    let fetchTaskStorePrsCalled = false;
+    const app = createAdminUIApp(
+      makeMockDeps({
+        publicRepo: PUBLIC_REPO,
+        fetchTaskStoreTasks: async () => ({
+          tasks: [
+            {
+              id: "pub-task-4",
+              title: "Public task delta",
+              status: "in_progress",
+              session: "sess-pub",
+              repo: PUBLIC_REPO,
+              pr: 300,
+              assignee: null,
+              claimedBy: "agent-pub",
+            },
+          ],
+          total: 1,
+          limit: 50,
+          offset: 0,
+        }),
+        fetchTaskStorePrs: async () => {
+          fetchTaskStorePrsCalled = true;
+          return {
+            prs: [
+              {
+                id: "pr-pub-1",
+                repo: PUBLIC_REPO,
+                prNumber: 300,
+                staged: false,
+                state: "open",
+                reviewState: "pending",
+                patchCycles: 0,
+                reviewCycles: 0,
+                blocked: true,
+                blockedReason: "Waiting on CI",
+                claimedBy: "agent-pub",
+                claimedAt: "2026-01-01T00:00:00.000Z",
+                heartbeatAt: "2026-01-01T00:05:00.000Z",
+              },
+            ],
+            total: 1,
+            limit: 50,
+            offset: 0,
+          };
+        },
+      }),
+    );
+    const res = await app.request("/public/tasks");
+    expect(res.status).toBe(200);
+    const html = await res.text();
+    expect(html).toContain("Public task delta");
+    // The public route never calls the PR-join fetcher and never renders the
+    // joined fields — this is the read-only board, join data stays admin-only.
+    expect(fetchTaskStorePrsCalled).toBe(false);
+    expect(html).not.toContain("data-pr-blocked");
+    expect(html).not.toContain("data-pr-blocked-reason");
+    expect(html).not.toContain("data-pr-claimed-by");
+    expect(html).not.toContain("data-pr-claimed-at");
+    expect(html).not.toContain("data-pr-heartbeat-at");
+    expect(html).not.toContain("Waiting on CI");
   });
 
   it("GET /public/tasks renders 200 even when no publicRepo configured (degraded mode)", async () => {

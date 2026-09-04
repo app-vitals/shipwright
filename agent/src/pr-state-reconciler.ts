@@ -88,16 +88,15 @@
  * dozen tasks stuck at pr_open after review turnaround exceeded the window.
  * Unlike a crash/hang (the case the window was widened for), an
  * ordinary-but-slow human review is not rare enough to treat as an edge case.
- * `reconcilePrState`'s own PR-record scan and `reconcileReviewState`'s
- * pending/posted-record scans keep their existing `updatedSince` window
- * unchanged — those two passes exist specifically to heal a record stuck
- * because of a crash/hang/out-of-band write, where "the record won't be
- * touched again on its own" is the correct staleness signal; the pr_open task
- * list has no such distinction; every record in it is, by definition,
- * "waiting", so filtering by recency just means dropping tasks the pass
- * exists to serve. Each call to `reconcilePrOpenTasks()` now fetches up to
- * `RECONCILER_PR_OPEN_TASK_BATCH_SIZE` tasks (default 200, paginated in the
- * usual `DEFAULT_PAGE_LIMIT` chunks) starting at a module-level rotating
+ * `reconcileReviewState`'s pending/posted-record scans keep their existing
+ * `updatedSince` window unchanged — those scans exist specifically to heal a
+ * record stuck because of a crash/hang/out-of-band write, where "the record
+ * won't be touched again on its own" is the correct staleness signal; the
+ * pr_open task list has no such distinction; every record in it is, by
+ * definition, "waiting", so filtering by recency just means dropping tasks
+ * the pass exists to serve. Each call to `reconcilePrOpenTasks()` now fetches
+ * up to `RECONCILER_PR_OPEN_TASK_BATCH_SIZE` tasks (default 200, paginated in
+ * the usual `DEFAULT_PAGE_LIMIT` chunks) starting at a module-level rotating
  * offset cursor; when the fetched total is less than the batch size (the end
  * of the list was reached before the batch filled), the cursor wraps back to
  * 0 for the next call, so a round-robin sweep across ticks still eventually
@@ -110,6 +109,34 @@
  * resets the cursor to 0 and the round-robin starts over, which is
  * acceptable since nothing here depends on cursor continuity for
  * correctness, only for eventually covering the full list.
+ *
+ * RPS-1.1 drops `reconcilePrState`'s own open-PR-record scan's `updatedSince`
+ * window entirely (rather than porting RCB-1.1's batch/cursor machinery over)
+ * — that window turned out to have the exact same permanent-exclusion failure
+ * mode RCB-1.1 fixed for `reconcilePrOpenTasks`: nothing ever bumps a
+ * task-store PullRequest record's `updatedAt` once it's abandoned
+ * state:"open" by a crash, so a record that outlives the window is never
+ * healed again, even after it merges/closes on GitHub. Confirmed live on
+ * app-vitals/shipwright#2542 and #2570, which were genuinely MERGED on GitHub
+ * since 2026-08-11 but sat at state:"open"/phase:"patch" for three-plus
+ * weeks before being manually corrected — well past the 6h
+ * `RECONCILER_UPDATED_SINCE_WINDOW_MS` this scan used to apply. A cursor
+ * wasn't needed to fix it: unlike the pr_open task list (unbounded until a
+ * human reviews it), this scan is already bounded per-repo by the agent's own
+ * scope (WL-4.4's `getScopedRepos` intersection above) and is self-limiting —
+ * a healed record leaves state:"open" immediately on its next PATCH, so
+ * nothing here grows into an ever-larger full-table scan the way an
+ * un-cursored pr_open sweep could. The original rate-limit concern PSR-1.1
+ * introduced this window to guard against predates WL-4.4's per-repo scoping
+ * fix, which already bounds this scan's gh-call volume independently.
+ * `listOpenPrRecords`'s `updatedSince` parameter stays optional (mirroring
+ * `makeListTasksByStatus`'s own already-optional param below) rather than
+ * being removed outright, in case a future caller still wants recency
+ * filtering; `reconcilePrState`/`listAllOpenRecords` simply never pass it as
+ * of this change. `reconcileReviewState`'s separate pending-scan
+ * `updatedSince` window (directly above) is untouched — it exists for the
+ * same crash/hang reasoning PSR-1.1 originally established, and is out of
+ * scope for this change.
  */
 
 import { existsSync, statSync } from "node:fs";
@@ -190,22 +217,24 @@ export interface PrStateReconcilerDeps {
   /** Page size for listing state:"open" records; defaults to the task-store's own default (50). */
   pageLimit?: number;
   /**
-   * List one page of state:"open" PR records for a repo, updated at or after
-   * `updatedSince` (an ISO timestamp; PSR-1.1). Passed through verbatim to
-   * the task-store's own `updatedSince` query param (`gte` semantics
-   * server-side), so a record updated exactly at the cutoff is still
-   * included. The window is deliberately wide (see the module doc comment's
-   * `RECONCILER_UPDATED_SINCE_WINDOW_MS` explanation) — this pass exists to
-   * heal records stuck because nothing will ever touch their `updatedAt`
-   * again after the crash that stranded them, so the cutoff only needs to
-   * survive a missed tick or two, not exclude every record that isn't
-   * brand-new.
+   * List one page of state:"open" PR records for a repo. Deliberately NOT
+   * recency-filtered (RPS-1.1) — this scan used to require an `updatedSince`
+   * (an ISO timestamp; PSR-1.1) cutoff, but that filter had a
+   * permanent-exclusion failure mode: nothing ever bumps a record's
+   * `updatedAt` once it's abandoned state:"open" by a crash, so a record that
+   * outlived the window was never healed again even after merging/closing on
+   * GitHub (confirmed live on app-vitals/shipwright#2542 and #2570 — see the
+   * module doc comment's RPS-1.1 paragraph for the full rationale). The
+   * `updatedSince` param stays optional (mirroring `makeListTasksByStatus`'s
+   * own already-optional param) rather than being removed outright, in case a
+   * future caller still wants recency filtering; `listAllOpenRecords`/
+   * `reconcilePrState` never pass it as of RPS-1.1.
    */
   listOpenPrRecords: (
     repo: string,
     limit: number,
     offset: number,
-    updatedSince: string,
+    updatedSince?: string,
   ) => Promise<PrStateRecord[]>;
   /** PATCH a task-store PR record's fields. */
   patchPrRecord: (id: string, fields: Record<string, unknown>) => Promise<void>;
@@ -427,18 +456,20 @@ const DEFAULT_RECONCILER_DELAY_MS = Number(
 );
 
 /**
- * Recency window (PSR-1.1): a reconcile pass only re-fetches records/tasks
- * updated within this window, computed fresh once per reconcile-pass entry
- * point from the injected time source (never `Date.now()`/`new Date()`
+ * Recency window (PSR-1.1): `reconcileReviewState`'s pending-record scan only
+ * re-fetches records updated within this window, computed fresh once per
+ * pass from the injected time source (never `Date.now()`/`new Date()`
  * directly) — a single unconditional full-table gh-backed scan every tick
  * was exhausting the shared GitHub GraphQL rate limit on a long tail of
  * untouched fixture/smoke-test records. Deliberately wide — several
  * multiples of the reconciler's own 30-60 minute tick interval — so a
- * record stuck since a crash/hang (the exact case these passes exist to
- * heal) survives a missed or delayed tick rather than aging out of the
- * window permanently. Overridable via
- * SHIPWRIGHT_RECONCILER_UPDATED_SINCE_WINDOW_MS for ops tuning without a
- * code change.
+ * record stuck since a crash/hang (the exact case this pass exists to heal)
+ * survives a missed or delayed tick rather than aging out of the window
+ * permanently. Overridable via SHIPWRIGHT_RECONCILER_UPDATED_SINCE_WINDOW_MS
+ * for ops tuning without a code change. `reconcilePrState`'s open-PR-record
+ * scan and `reconcilePrOpenTasks`'s pr_open-task scan no longer use this
+ * window at all (RPS-1.1 and RCB-1.1 respectively — see the module doc
+ * comment for both).
  */
 const RECONCILER_UPDATED_SINCE_WINDOW_MS = Number(
   process.env.SHIPWRIGHT_RECONCILER_UPDATED_SINCE_WINDOW_MS ??
@@ -501,16 +532,32 @@ export function __resetPrOpenTasksCursorForTests(): void {
 interface PassSummary {
   /** Records fetched and considered by this pass (a per-repo list-call failure does NOT add to this — the would-be count is unknown). */
   evaluated: number;
-  /** Records that received a PATCH. */
+  /** Records that received a PATCH reconciling state/mergedAt to live GitHub reality (merged/closed) — does NOT include `closedOrphaned` below, which is a causally distinct outcome (see RPS-1.2). */
   patched: number;
   /** Records skipped because `isActivelyClaimed()` returned true — always 0 for reconcilePrState's pass. */
   skippedClaimed: number;
   /** Per-record reconcile failures PLUS per-repo list-call failures (each list failure counts as 1, representing the failed call itself). */
   errored: number;
+  /**
+   * RPS-1.2: records auto-closed as orphaned because GitHub confirmed the
+   * PR doesn't exist at all (`isPrNotFoundError`) — kept distinct from
+   * `patched` (a record reconciled to a real merged/closed PR) and from
+   * `errored` (this outcome is not logged as an error; it's the expected,
+   * successful handling of a known case). Always 0 for
+   * `reconcileReviewState()`'s two passes — orphaned-PR detection only
+   * applies to `reconcilePrState()`'s `ghViewPr` call site.
+   */
+  closedOrphaned: number;
 }
 
 function newPassSummary(): PassSummary {
-  return { evaluated: 0, patched: 0, skippedClaimed: 0, errored: 0 };
+  return {
+    evaluated: 0,
+    patched: 0,
+    skippedClaimed: 0,
+    errored: 0,
+    closedOrphaned: 0,
+  };
 }
 
 /** Logs one summary line for a completed pass — see `PassSummary`'s doc comment for what each count means. */
@@ -520,7 +567,7 @@ function logPassSummary(
   summary: PassSummary,
 ): void {
   console.log(
-    `${prefix} ${label} summary: evaluated=${summary.evaluated} patched=${summary.patched} skippedClaimed=${summary.skippedClaimed} errored=${summary.errored}`,
+    `${prefix} ${label} summary: evaluated=${summary.evaluated} patched=${summary.patched} skippedClaimed=${summary.skippedClaimed} errored=${summary.errored} closedOrphaned=${summary.closedOrphaned}`,
   );
 }
 
@@ -534,26 +581,71 @@ function mapGhStateToPrState(
 }
 
 /**
- * List every state:"open" PR record for a repo, updated at or after
- * `updatedSince` (PSR-1.1), paging through the task-store's default
- * 50-record page until a page returns fewer than `limit` records.
+ * Stable substring of `gh`'s stderr for a PR number that GitHub can't
+ * resolve at all — distinct from every other `gh pr view` failure shape
+ * (rate limit, auth, network, transient 5xx). `ghJson()`
+ * (agent/src/check-helpers.ts) wraps this text into a generic
+ * `Error(\`gh ... failed (exit N): ${stderr}\`)`, so this is matched as a
+ * substring rather than the whole message. The number itself and any
+ * trailing punctuation are deliberately excluded from the match — only the
+ * fixed prefix GitHub emits regardless of which PR number was requested.
+ */
+const GH_PR_NOT_FOUND_SIGNATURE =
+  "Could not resolve to a PullRequest with the number of";
+
+/**
+ * True when `err` is a `gh pr view` failure whose message carries GitHub's
+ * stable "no such PR" signature (`GH_PR_NOT_FOUND_SIGNATURE`) — i.e. the PR
+ * record's `repo`+`prNumber` genuinely doesn't exist on GitHub, as opposed to
+ * a transient lookup failure (rate limit, auth, network, 5xx). Isolated as
+ * its own named helper (rather than an inline `.includes()` check at the
+ * call site) so the not-found signature is unit-testable on its own and so
+ * `reconcileRecord()` below reads as "known case, then everything else" per
+ * this repo's error_handling principle. A non-`Error` throw (e.g. a raw
+ * string or object) never matches — `gh`/`ghJson()` only ever throws real
+ * `Error` instances, so anything else is unexpected and should fall through
+ * to the generic log-and-retry path rather than being guessed at.
+ */
+export function isPrNotFoundError(err: unknown): boolean {
+  return (
+    err instanceof Error && err.message.includes(GH_PR_NOT_FOUND_SIGNATURE)
+  );
+}
+
+/**
+ * Fields PATCHed onto a PR record once `isPrNotFoundError` confirms GitHub
+ * has no record of it at all (RPS-1.2) — the record was written into the
+ * task store (fixture/test data, or a stale manual entry) pointing at a
+ * `repo`+`prNumber` that never existed or has since been deleted outright
+ * (distinct from a real closed/merged PR, which `mapGhStateToPrState` above
+ * already handles via a normal `gh pr view` success response). Closing +
+ * blocking it here stops it from being re-evaluated by this same pass on
+ * every future tick forever.
+ */
+const ORPHANED_PR_PATCH_FIELDS: Record<string, unknown> = {
+  state: "closed",
+  blocked: true,
+  blockedReason:
+    "orphaned -- PR does not exist on GitHub (auto-closed by pr-state-reconciler)",
+};
+
+/**
+ * List every state:"open" PR record for a repo, paging through the
+ * task-store's default 50-record page until a page returns fewer than
+ * `limit` records. No longer recency-filtered (RPS-1.1) — see the module doc
+ * comment's RPS-1.1 paragraph and `listOpenPrRecords`'s own doc comment for
+ * the full rationale.
  */
 async function listAllOpenRecords(
   deps: PrStateReconcilerDeps,
   repo: string,
-  updatedSince: string,
 ): Promise<PrStateRecord[]> {
   const limit = deps.pageLimit ?? DEFAULT_PAGE_LIMIT;
   const records: PrStateRecord[] = [];
   let offset = 0;
 
   for (;;) {
-    const page = await deps.listOpenPrRecords(
-      repo,
-      limit,
-      offset,
-      updatedSince,
-    );
+    const page = await deps.listOpenPrRecords(repo, limit, offset);
     records.push(...page);
     if (page.length < limit) break;
     offset += limit;
@@ -615,12 +707,29 @@ async function fetchPrOpenTasksBatch(
  * loop in `reconcilePrState()` can tally outcomes for its end-of-pass summary
  * log — purely a reporting addition, does not change which branch runs or
  * what gets written.
+ *
+ * RPS-1.2: also returns "closed-orphaned" when `deps.ghViewPr` rejects with
+ * `isPrNotFoundError(err)` true — GitHub has confirmed this repo+prNumber
+ * doesn't exist at all (as opposed to a transient lookup failure: rate
+ * limit, auth, network), so the record is PATCHed to closed/blocked instead
+ * of leaving the throw to propagate. This is deliberately its own early
+ * catch scoped ONLY to the `ghViewPr` call — every other error (a different
+ * `ghViewPr` failure shape, or any error from the PATCH/worktree-removal
+ * code below) still propagates unchanged to `reconcilePrState()`'s existing
+ * per-record catch/log/errored-tally path.
  */
 async function reconcileRecord(
   deps: PrStateReconcilerDeps,
   record: PrStateRecord,
-): Promise<"patched" | "no-op"> {
-  const ghState = await deps.ghViewPr(record.repo, record.prNumber);
+): Promise<"patched" | "no-op" | "closed-orphaned"> {
+  let ghState: GhPrView;
+  try {
+    ghState = await deps.ghViewPr(record.repo, record.prNumber);
+  } catch (err) {
+    if (!isPrNotFoundError(err)) throw err;
+    await deps.patchPrRecord(record.id, ORPHANED_PR_PATCH_FIELDS);
+    return "closed-orphaned";
+  }
   const newState = mapGhStateToPrState(ghState.state);
   if (newState === null) return "no-op"; // still open on GitHub — no-op
 
@@ -890,11 +999,6 @@ export async function reconcilePrOpenTasks(
 export async function reconcilePrState(
   deps: PrStateReconcilerDeps,
 ): Promise<void> {
-  // Computed once per reconcile pass (PSR-1.1) — see reconcilePrOpenTasks above.
-  const updatedSince = computeUpdatedSinceCutoff(
-    new Date(deps.now()).getTime(),
-  );
-
   const scopedReposSet = new Set(deps.getScopedRepos());
   const scopedRepos = deps.repos.filter((repo) => scopedReposSet.has(repo));
 
@@ -903,7 +1007,7 @@ export async function reconcilePrState(
   for (const repo of scopedRepos) {
     let records: PrStateRecord[];
     try {
-      records = await listAllOpenRecords(deps, repo, updatedSince);
+      records = await listAllOpenRecords(deps, repo);
     } catch (err) {
       console.error(
         `[pr-state-reconciler] failed to list open PRs for ${repo}:`,
@@ -918,6 +1022,7 @@ export async function reconcilePrState(
       try {
         const outcome = await reconcileRecord(deps, record);
         if (outcome === "patched") summary.patched += 1;
+        else if (outcome === "closed-orphaned") summary.closedOrphaned += 1;
       } catch (err) {
         console.error(
           `[pr-state-reconciler] failed to reconcile ${repo}#${record.prNumber}:`,
@@ -1476,14 +1581,14 @@ export function buildProductionDeps(opts: {
       repo: string,
       limit: number,
       offset: number,
-      updatedSince: string,
+      updatedSince?: string,
     ) => {
       const params = new URLSearchParams({
         repo,
         state: "open",
         limit: String(limit),
         offset: String(offset),
-        updatedSince,
+        ...(updatedSince !== undefined ? { updatedSince } : {}),
       });
       const res = await doFetch(`${baseUrl}/prs?${params}`, { headers });
       if (!res.ok) {

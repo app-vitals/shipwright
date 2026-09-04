@@ -1,8 +1,6 @@
 {
   "$schema": "https://docs.renovatebot.com/renovate-schema.json",
   "extends": ["config:recommended"],
-  "platformAutomerge": true,
-  "automergeType": "pr",
   "dependencyDashboard": true,
   "semanticCommits": "enabled",
   "semanticCommitType": "chore",
@@ -35,8 +33,7 @@
     {
       "description": "Group routine (non-security) minor/patch bumps to cut down PR noise",
       "matchUpdateTypes": ["minor", "patch"],
-      "groupName": "routine dependency updates",
-      "automerge": true
+      "groupName": "routine dependency updates"
     }
   ]
 }

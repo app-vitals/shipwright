@@ -10,11 +10,122 @@ independent of `appVersion`. CI enforces this with
 `ct lint --check-version-increment`. Each release here must mirror the
 `artifacthub.io/changes` annotation in `Chart.yaml`.
 
-## [1.19.81] - 2026-09-03
+## [1.19.99] - 2026-09-04
 
 ### Fixed
 
 - Raise admin readinessProbe successThreshold to 2 to prevent premature Ready flip during pod initialization. Single successful DB-aware probes no longer allow still-stabilizing pods to enter Ready state, preventing traffic routing before Cloud SQL proxy sidecar connection stabilizes (prevents transient 500s bursts observed via Sentry during admin restarts).
+
+## [1.19.98] - 2026-09-04
+
+### Changed
+
+- auto-bump to chart v1.19.98 triggered by release tag(s): `agent-v1.249.0`
+
+## [1.19.97] - 2026-09-04
+
+### Changed
+
+- auto-bump to chart v1.19.97 triggered by release tag(s): `admin-v1.140.0`
+
+## [1.19.96] - 2026-09-04
+
+### Changed
+
+- auto-bump to chart v1.19.96 triggered by release tag(s): `agent-v1.248.0`
+
+## [1.19.95] - 2026-09-04
+
+### Changed
+
+- auto-bump to chart v1.19.95 triggered by release tag(s): `admin-v1.139.0`, `agent-v1.247.0`, `chat-v1.78.0`, `metrics-v1.80.0`, `task-store-v1.104.0`
+
+## [1.19.94] - 2026-09-04
+
+### Changed
+
+- auto-bump to chart v1.19.94 triggered by release tag(s): `admin-v1.138.0`
+
+## [1.19.93] - 2026-09-04
+
+### Changed
+
+- auto-bump to chart v1.19.93 triggered by release tag(s): `admin-v1.137.0`, `agent-v1.246.0`, `chat-v1.77.0`, `metrics-v1.79.0`, `task-store-v1.103.0`
+
+## [1.19.92] - 2026-09-04
+
+### Changed
+
+- auto-bump to chart v1.19.92 triggered by release tag(s): `admin-v1.133.0`, `admin-v1.134.0`, `admin-v1.134.1`, `admin-v1.135.0`, `admin-v1.136.0`, `agent-v1.242.0`, `agent-v1.243.0`, `agent-v1.244.0`, `agent-v1.245.0`, `chat-v1.76.0`, `metrics-v1.78.0`, `task-store-v1.102.0`
+
+## [1.19.91] - 2026-09-04
+
+### Removed
+
+- `admin.taskStorePublicUrl` and the `SHIPWRIGHT_TASK_STORE_PUBLIC_URL` env var it
+  injected into the admin container. The admin service no longer reads this value —
+  its only consumer, `resolveTaskStoreBaseUrl()`, was removed alongside the
+  `/admin/tokens` task-store token UI.
+
+## [1.19.90] - 2026-09-04
+
+### Changed
+
+- auto-bump to chart v1.19.90 triggered by release tag(s): `agent-v1.241.0`
+
+## [1.19.89] - 2026-09-04
+
+### Changed
+
+- auto-bump to chart v1.19.89 triggered by release tag(s): `agent-v1.240.0`
+
+## [1.19.88] - 2026-09-04
+
+### Changed
+
+- auto-bump to chart v1.19.88 triggered by release tag(s): `agent-v1.239.0`
+
+## [1.19.87] - 2026-09-04
+
+### Changed
+
+- auto-bump to chart v1.19.87 triggered by release tag(s): `agent-v1.238.2`
+
+## [1.19.86] - 2026-09-04
+
+### Changed
+
+- auto-bump to chart v1.19.86 triggered by release tag(s): `agent-v1.238.1`
+
+## [1.19.85] - 2026-09-04
+
+### Changed
+
+- auto-bump to chart v1.19.85 triggered by release tag(s): `agent-v1.238.0`
+
+## [1.19.84] - 2026-09-04
+
+### Changed
+
+- auto-bump to chart v1.19.84 triggered by release tag(s): `agent-v1.237.0`
+
+## [1.19.83] - 2026-09-03
+
+### Changed
+
+- auto-bump to chart v1.19.83 triggered by release tag(s): `agent-v1.236.0`
+
+## [1.19.82] - 2026-09-03
+
+### Changed
+
+- auto-bump to chart v1.19.82 triggered by release tag(s): `admin-v1.131.0`, `agent-v1.235.0`, `chat-v1.74.0`, `metrics-v1.76.0`, `task-store-v1.100.0`
+
+## [1.19.81] - 2026-09-03
+
+### Changed
+
+- auto-bump to chart v1.19.81 triggered by release tag(s): `admin-v1.130.1`, `agent-v1.234.0`
 
 ## [1.19.80] - 2026-09-03
 

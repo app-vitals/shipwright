@@ -88,95 +88,36 @@ describe("reviewAuthorAllowlistRef (process-wide singleton)", () => {
 });
 
 describe("resolveReviewAuthorAllowlist", () => {
-  // Regression coverage for AAL-2.3: the live config-bundle API has been
-  // observed returning authorAllowlist: null in production (Sentry issue
-  // 7633628941), even though AgentConfigResponse types it as a non-nullable
-  // string[]. syncConfig() must default this to [] before handing it to
-  // reviewAuthorAllowlistRef.set(), so downstream .length checks never throw.
-  it("defaults a null authorAllowlist (as returned by the live config-bundle API) to [] when reviewAuthorAllowlist is also absent", () => {
-    const bundle = {
-      authorAllowlist: null,
-      reviewAuthorAllowlist: undefined,
-    } as unknown as {
-      authorAllowlist: string[];
-      reviewAuthorAllowlist: string[];
-    };
-
-    expect(
-      resolveReviewAuthorAllowlist(
-        bundle.reviewAuthorAllowlist,
-        bundle.authorAllowlist,
-      ),
-    ).toEqual([]);
+  // Regression coverage for AAL-2.3 / DBR-2.4: the live config-bundle API
+  // has been observed returning a nullish reviewAuthorAllowlist in
+  // production (Sentry issue 7633628941), even though AgentConfigResponse
+  // types it as a non-nullable string[]. syncConfig() must default this to
+  // [] before handing it to reviewAuthorAllowlistRef.set(), so downstream
+  // .length checks never throw.
+  it("defaults a null reviewAuthorAllowlist to []", () => {
+    expect(resolveReviewAuthorAllowlist(null)).toEqual([]);
   });
 
-  it("defaults to [] when both fields are undefined", () => {
-    expect(resolveReviewAuthorAllowlist(undefined, undefined)).toEqual([]);
+  it("defaults an undefined reviewAuthorAllowlist to []", () => {
+    expect(resolveReviewAuthorAllowlist(undefined)).toEqual([]);
   });
 
-  it("syncing a null authorAllowlist into the ref does not throw and leaves get() as []", () => {
+  it("syncing a null reviewAuthorAllowlist into the ref does not throw and leaves get() as []", () => {
     const ref = createReviewAuthorAllowlistRef();
-    const bundle = {
-      authorAllowlist: null,
-      reviewAuthorAllowlist: undefined,
-    } as unknown as {
-      authorAllowlist: string[];
-      reviewAuthorAllowlist: string[];
-    };
 
-    expect(() =>
-      ref.set(
-        resolveReviewAuthorAllowlist(
-          bundle.reviewAuthorAllowlist,
-          bundle.authorAllowlist,
-        ),
-      ),
-    ).not.toThrow();
+    expect(() => ref.set(resolveReviewAuthorAllowlist(null))).not.toThrow();
     expect(ref.get()).toEqual([]);
     expect(ref.get().length).toBe(0);
   });
 
-  it("passes through a real authorAllowlist array unchanged when reviewAuthorAllowlist is absent (no behavior change for real values)", () => {
-    const real = ["alice", "bob"];
-    expect(resolveReviewAuthorAllowlist(undefined, real)).toEqual([
+  it("passes through a real reviewAuthorAllowlist array unchanged", () => {
+    expect(resolveReviewAuthorAllowlist(["alice", "bob"])).toEqual([
       "alice",
       "bob",
     ]);
   });
 
-  it("passes through an already-empty authorAllowlist array unchanged when reviewAuthorAllowlist is absent", () => {
-    expect(resolveReviewAuthorAllowlist(undefined, [])).toEqual([]);
-  });
-
-  // DBR-2.3: reviewAuthorAllowlist is preferred over authorAllowlist, falling
-  // back to authorAllowlist only when reviewAuthorAllowlist is absent
-  // (null/undefined) — safe to deploy before or after DBR-2.1's admin API
-  // rollout.
-  it("uses reviewAuthorAllowlist when present and non-empty, ignoring authorAllowlist", () => {
-    expect(
-      resolveReviewAuthorAllowlist(["carol"], ["alice", "bob"]),
-    ).toEqual(["carol"]);
-  });
-
-  it("uses reviewAuthorAllowlist when present but empty — an explicit [] is not treated as absent", () => {
-    expect(resolveReviewAuthorAllowlist([], ["alice", "bob"])).toEqual([]);
-  });
-
-  it("falls back to authorAllowlist when reviewAuthorAllowlist is null (older admin API)", () => {
-    expect(resolveReviewAuthorAllowlist(null, ["alice", "bob"])).toEqual([
-      "alice",
-      "bob",
-    ]);
-  });
-
-  it("falls back to authorAllowlist when reviewAuthorAllowlist is undefined (older admin API)", () => {
-    expect(
-      resolveReviewAuthorAllowlist(undefined, ["alice", "bob"]),
-    ).toEqual(["alice", "bob"]);
-  });
-
-  it("resolves to [] when reviewAuthorAllowlist is absent and authorAllowlist is also absent", () => {
-    expect(resolveReviewAuthorAllowlist(undefined, null)).toEqual([]);
-    expect(resolveReviewAuthorAllowlist(null, undefined)).toEqual([]);
+  it("passes through an already-empty reviewAuthorAllowlist array unchanged", () => {
+    expect(resolveReviewAuthorAllowlist([])).toEqual([]);
   });
 });

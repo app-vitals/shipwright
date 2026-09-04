@@ -104,7 +104,7 @@
               "my-org/my-repo"
             ]
           },
-          "authorAllowlist": {
+          "reviewAuthorAllowlist": {
             "type": "array",
             "items": {
               "type": "string"
@@ -239,12 +239,6 @@
               "type": "string"
             }
           },
-          "authorAllowlist": {
-            "type": "array",
-            "items": {
-              "type": "string"
-            }
-          },
           "reviewAuthorAllowlist": {
             "type": "array",
             "items": {
@@ -286,7 +280,6 @@
           "name",
           "selfHosted",
           "repos",
-          "authorAllowlist",
           "reviewAuthorAllowlist",
           "patchAuthorAllowlist",
           "restrictSlackToMembers",
@@ -317,15 +310,6 @@
             },
             "example": [
               "my-org/my-repo"
-            ]
-          },
-          "authorAllowlist": {
-            "type": "array",
-            "items": {
-              "type": "string"
-            },
-            "example": [
-              "octocat"
             ]
           },
           "reviewAuthorAllowlist": {
@@ -1958,15 +1942,6 @@
               "org/repo2"
             ]
           },
-          "authorAllowlist": {
-            "type": "array",
-            "items": {
-              "type": "string"
-            },
-            "example": [
-              "octocat"
-            ]
-          },
           "reviewAuthorAllowlist": {
             "type": "array",
             "items": {
@@ -2004,7 +1979,6 @@
           "allowedTools",
           "plugins",
           "repos",
-          "authorAllowlist",
           "reviewAuthorAllowlist",
           "patchAuthorAllowlist",
           "restrictSlackToMembers",

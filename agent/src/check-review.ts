@@ -442,8 +442,9 @@ export interface CheckReviewDeps {
   /**
    * Optional author allowlist hook. When set, getReviewCandidates() skips any
    * PR whose pr.author.login this returns false for. buildProductionDeps()
-   * defaults this to a closure backed by the agent's synced authorAllowlist
-   * config field (via reviewAuthorAllowlistRef) — an empty allowlist means
+   * defaults this to a closure backed by the agent's synced
+   * reviewAuthorAllowlist config field (via reviewAuthorAllowlistRef) — an
+   * empty allowlist means
    * unfiltered. Callers can still pass an explicit override (e.g.
    * scripts/hitl.ts's SHIPWRIGHT_HITL_AUTHORS env var) to bypass the
    * ref-backed default entirely.

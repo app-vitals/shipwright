@@ -642,6 +642,179 @@ describe("membership gating — reaction_added handler", () => {
   });
 });
 
+// ─── extraEnv passed to runner (STC-1.2) ───────────────────────────────────
+// Each Slack-originated runner() call should tell the run which Slack
+// channel/thread it serves via extraEnv, using exactly the same ts that was
+// used to build the session key (getThreadKey's second argument) — not
+// necessarily the raw event ts, since thread_ts wins when present.
+
+describe("extraEnv passed to runner — SLACK_CHANNEL_ID / SLACK_THREAD_TS (STC-1.2)", () => {
+  test("DM message: extraEnv uses the message channel and ts (no thread_ts)", async () => {
+    const ref = createAgentSlackMembershipRef();
+    const runner = mock(async (_msg: string, _key?: string) => ({
+      result: "ok",
+      sessionId: "sess-1",
+    }));
+    setupGatingApp({
+      membershipRef: ref,
+      resolveUserEmailFn: async () => undefined,
+      runner,
+    });
+    const client = makeMockClient();
+    const say = makeSay();
+    const message = {
+      channel: "D0EXAMPLE",
+      ts: "1700000000.000100",
+      text: "Hello bot",
+      channel_type: "im",
+      user: "U-SENDER",
+    };
+
+    await capturedMessageHandler?.({ message, say, client });
+
+    expect(runner).toHaveBeenCalledTimes(1);
+    // biome-ignore lint/suspicious/noExplicitAny: test double captures calls
+    const call = (runner as any).mock.calls[0];
+    expect(call[3]).toEqual({
+      SLACK_CHANNEL_ID: "D0EXAMPLE",
+      SLACK_THREAD_TS: "1700000000.000100",
+    });
+  });
+
+  test("channel-thread message: extraEnv uses thread_ts, not the message's own ts", async () => {
+    const ref = createAgentSlackMembershipRef();
+    const runner = mock(async (_msg: string, _key?: string) => ({
+      result: "ok",
+      sessionId: "sess-1",
+    }));
+    setupGatingApp({
+      membershipRef: ref,
+      resolveUserEmailFn: async () => undefined,
+      runner,
+      // Non-DM channel messages only run when the bot already has a tracked
+      // session for the thread (see the `if (!isDM)` gate in slack.ts).
+      getSessionFn: async () => "existing-session-id",
+    });
+    const client = makeMockClient();
+    const say = makeSay();
+    const message = {
+      channel: "C0EXAMPLE",
+      ts: "1700000000.000200",
+      thread_ts: "1700000000.000150",
+      text: "reply in thread",
+      channel_type: "channel",
+      user: "U-SENDER",
+    };
+
+    await capturedMessageHandler?.({ message, say, client });
+
+    expect(runner).toHaveBeenCalledTimes(1);
+    // biome-ignore lint/suspicious/noExplicitAny: test double captures calls
+    const call = (runner as any).mock.calls[0];
+    expect(call[3]).toEqual({
+      SLACK_CHANNEL_ID: "C0EXAMPLE",
+      SLACK_THREAD_TS: "1700000000.000150",
+    });
+  });
+
+  test("app_mention, new thread: extraEnv uses the event's own ts (no thread_ts)", async () => {
+    const ref = createAgentSlackMembershipRef();
+    const runner = mock(async (_msg: string, _key?: string) => ({
+      result: "ok",
+      sessionId: "sess-1",
+    }));
+    setupGatingApp({
+      membershipRef: ref,
+      resolveUserEmailFn: async () => undefined,
+      runner,
+    });
+    const client = makeMockClient();
+    const say = makeSay();
+    const event = {
+      text: "<@UBOT> do something",
+      channel: "C0EXAMPLE",
+      ts: "1700000000.000300",
+      user: "U-SENDER",
+    };
+
+    await capturedMentionHandler?.({ event, say, client });
+
+    expect(runner).toHaveBeenCalledTimes(1);
+    // biome-ignore lint/suspicious/noExplicitAny: test double captures calls
+    const call = (runner as any).mock.calls[0];
+    expect(call[3]).toEqual({
+      SLACK_CHANNEL_ID: "C0EXAMPLE",
+      SLACK_THREAD_TS: "1700000000.000300",
+    });
+  });
+
+  test("app_mention, existing thread: extraEnv uses thread_ts, not the event's own ts", async () => {
+    const ref = createAgentSlackMembershipRef();
+    const runner = mock(async (_msg: string, _key?: string) => ({
+      result: "ok",
+      sessionId: "sess-1",
+    }));
+    setupGatingApp({
+      membershipRef: ref,
+      resolveUserEmailFn: async () => undefined,
+      runner,
+      // No tracked session yet for this thread — otherwise the app_mention
+      // handler drops the mention entirely (the message handler already
+      // covers threads the bot is participating in).
+      getSessionFn: async () => undefined,
+    });
+    const client = makeMockClient();
+    const say = makeSay();
+    const event = {
+      text: "<@UBOT> do something else",
+      channel: "C0EXAMPLE",
+      ts: "1700000000.000450",
+      thread_ts: "1700000000.000400",
+      user: "U-SENDER",
+    };
+
+    await capturedMentionHandler?.({ event, say, client });
+
+    expect(runner).toHaveBeenCalledTimes(1);
+    // biome-ignore lint/suspicious/noExplicitAny: test double captures calls
+    const call = (runner as any).mock.calls[0];
+    expect(call[3]).toEqual({
+      SLACK_CHANNEL_ID: "C0EXAMPLE",
+      SLACK_THREAD_TS: "1700000000.000400",
+    });
+  });
+
+  test("reaction_added: extraEnv uses the reacted-to message's item.channel / item.ts", async () => {
+    const ref = createAgentSlackMembershipRef();
+    const runner = mock(async (_msg: string, _key?: string) => ({
+      result: "ok",
+      sessionId: "sess-1",
+    }));
+    setupGatingApp({
+      membershipRef: ref,
+      resolveUserEmailFn: async () => undefined,
+      runner,
+    });
+    const client = makeMockClient();
+    const event = {
+      reaction: "thumbsup",
+      item: { type: "message", channel: "D0EXAMPLE", ts: "1700000000.000500" },
+      item_user: "UBOT123",
+      user: "U-SENDER",
+    };
+
+    await capturedReactionAddedHandler?.({ event, client });
+
+    expect(runner).toHaveBeenCalledTimes(1);
+    // biome-ignore lint/suspicious/noExplicitAny: test double captures calls
+    const call = (runner as any).mock.calls[0];
+    expect(call[3]).toEqual({
+      SLACK_CHANNEL_ID: "D0EXAMPLE",
+      SLACK_THREAD_TS: "1700000000.000500",
+    });
+  });
+});
+
 // ─── agent_session_stopped handler (AGS-1.1) ───────────────────────────────
 // Slack's native Stop/session-cancellation event for the Agent Sessions API.
 // createSlackApp() keeps a closure-scoped registry (channel:ts -> live

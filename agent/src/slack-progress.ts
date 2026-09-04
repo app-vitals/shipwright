@@ -44,12 +44,22 @@
  *     stream, even when the run's reply was suppressed (e.g. a [silent]
  *     marker resolved the response and deliverContent() was never called) —
  *     otherwise the seed card's `in_progress` state is left dangling in the
- *     channel forever (STS2-3.1). The fallback title is "Done", unless the
- *     caller passes `finish({ silent: true })`, in which case it's "Ack" —
- *     a distinct, deliberately terse label so the card doesn't imply a real
- *     reply was posted, while still giving a visual signal that Bodhi
- *     processed the message and chose not to reply, rather than something
- *     having silently broken.
+ *     channel forever (STS2-3.1). The fallback title is empty (STS-2.1
+ *     AC #4 — "Done" was getting prepended to the response preview in
+ *     Slack's UI), unless the caller passes `finish({ silent: true })`, in
+ *     which case it's "Ack" — a distinct, deliberately terse label so the
+ *     card doesn't imply a real reply was posted, while still giving a
+ *     visual signal that Bodhi processed the message and chose not to
+ *     reply, rather than something having silently broken.
+ *   - `startStream()` passes `recipient_team_id`/`recipient_user_id`
+ *     whenever the conversation isn't a DM (see `SlackProgressOptions.isDM`)
+ *     — Slack's own SDK types document both as "required when starting a
+ *     streaming conversation outside of a DM"; omitting them was the
+ *     STS-2.1 root cause (`missing_recipient_team_id` on every channel/group
+ *     thread). `finish()` also falls back to a direct
+ *     `agents.sessions.setStatus` call whenever `startStream()` never
+ *     obtained a `ts`, so a stream-open failure (for any reason) can never
+ *     permanently strand the "is working" indicator.
  *
  * Repeated identical phases collapse into a single appendStream call,
  * mirroring the phase-collapse `_consumeStream` already does upstream in
@@ -80,6 +90,29 @@ export interface SlackProgressOptions {
   client: SlackClient;
   channel: string;
   threadTs: string;
+  /**
+   * True when this run's thread is a DM. Slack's own SDK types document
+   * `recipient_team_id`/`recipient_user_id` on `chat.startStream` as
+   * "required when starting a streaming conversation outside of a DM" —
+   * omitting them in a channel/group thread makes every call fail with
+   * `missing_recipient_team_id` (STS-2.1). Passing them for an actual DM
+   * isn't meaningful (the DM already fully identifies the recipient), so
+   * `startStream()` omits both fields entirely when `isDM` is true,
+   * regardless of whether `recipientTeamId`/`recipientUserId` were supplied.
+   */
+  isDM: boolean;
+  /**
+   * The triggering user's Slack ID — required by `chat.startStream()` for
+   * every non-DM stream (see `isDM`). Ignored (and may be omitted) for DMs.
+   */
+  recipientUserId?: string;
+  /**
+   * The bot's own workspace team ID. Resolved once by the caller via
+   * `client.auth.test()` and cached (see `createSlackApp()` in slack.ts) —
+   * required by `chat.startStream()` for every non-DM stream (see `isDM`).
+   * Ignored (and may be omitted) for DMs.
+   */
+  recipientTeamId?: string;
 }
 
 export interface SlackProgressStartOptions {
@@ -118,8 +151,16 @@ function seedTitle(opts: SlackProgressStartOptions | undefined): string {
   return opts?.queued ? "Queued…" : "Thinking…";
 }
 
-/** Title for the terminal task_update card. Never ends in "…" (AC #4). */
-const COMPLETE_TITLE = "Done";
+/**
+ * Title for the terminal task_update card. Never ends in "…" (AC #4).
+ * Empty — not "Done" — because the "Done" title was getting prepended to
+ * the response preview in Slack's UI, adding confusion (STS-2.1 AC #4).
+ * Slack's TaskUpdateChunk type (`@slack/types`) declares `title: string`
+ * with no documented minLength constraint, so an empty string is used
+ * directly; if Slack's live API ever proves to reject a true empty string,
+ * fall back to a single space (`" "`) instead.
+ */
+const COMPLETE_TITLE = "";
 
 /** Title for the terminal card on a thrown run (STS2-4.1 AC #1). */
 const ERROR_TITLE = "Error";
@@ -144,6 +185,9 @@ export class SlackProgress {
   private readonly client: SlackClient;
   private readonly channel: string;
   private readonly threadTs: string;
+  private readonly isDM: boolean;
+  private readonly recipientUserId: string | undefined;
+  private readonly recipientTeamId: string | undefined;
   private streamTs: string | undefined;
   private lastFiredPhase: ProgressPhase | undefined;
   // One stable id for every task_update chunk in this run's stream — a
@@ -166,6 +210,9 @@ export class SlackProgress {
     this.client = opts.client;
     this.channel = opts.channel;
     this.threadTs = opts.threadTs;
+    this.isDM = opts.isDM;
+    this.recipientUserId = opts.recipientUserId;
+    this.recipientTeamId = opts.recipientTeamId;
     this.taskId = `thinking-steps-${this.channel}-${this.threadTs}-${Date.now()}-${Math.random().toString(36).slice(2)}`;
   }
 
@@ -226,6 +273,16 @@ export class SlackProgress {
         channel: this.channel,
         thread_ts: this.threadTs,
         task_display_mode: "timeline",
+        // recipient_team_id/recipient_user_id are "required when starting a
+        // streaming conversation outside of a DM" per Slack's own SDK types
+        // — omitted entirely for DMs, where they're not required and may
+        // not even be meaningful (STS-2.1 AC #1/#2).
+        ...(this.isDM
+          ? {}
+          : {
+              recipient_team_id: this.recipientTeamId,
+              recipient_user_id: this.recipientUserId,
+            }),
       });
       this.streamTs = resp?.ts;
     } catch (err) {
@@ -366,6 +423,15 @@ export class SlackProgress {
       const title = opts?.silent ? SILENT_COMPLETE_TITLE : COMPLETE_TITLE;
       this.appendTaskUpdate(title, "complete");
     }
+    if (!this.streamTs) {
+      // startStream() never opened a stream (missing_recipient_team_id or
+      // any other failure) — chat.stopStream would just fail again with no
+      // valid `ts`, permanently stranding Slack's native "is working"
+      // indicator (STS-2.1 AC #3). Fall back to a direct
+      // agents.sessions.setStatus call instead, which needs no stream ts.
+      await this.setSessionStatusFallback(sessionStatus);
+      return;
+    }
     await this.stopStream(sessionStatus);
   }
 
@@ -383,6 +449,31 @@ export class SlackProgress {
     } catch (err) {
       console.warn(
         "[slack-progress] stopStream failed:",
+        err instanceof Error ? err.message : String(err),
+      );
+    }
+  }
+
+  /**
+   * Defense-in-depth fallback for finish() (STS-2.1 AC #3): used only when
+   * startStream() never obtained a `ts` (this.streamTs stays undefined) for
+   * any reason, so chat.stopStream is skipped entirely rather than attempted
+   * and guaranteed to fail. Mirrors the shape used by slack.ts's
+   * agent_session_stopped handler for the same API.
+   */
+  private async setSessionStatusFallback(
+    sessionStatus: "active" | "processing",
+  ): Promise<void> {
+    if (this.externallyStopped) return;
+    try {
+      await this.client.agents.sessions.setStatus({
+        channel_id: this.channel,
+        thread_ts: this.threadTs,
+        status: sessionStatus,
+      });
+    } catch (err) {
+      console.warn(
+        "[slack-progress] setStatus fallback failed:",
         err instanceof Error ? err.message : String(err),
       );
     }

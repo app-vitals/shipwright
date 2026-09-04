@@ -43,11 +43,6 @@ export interface AgentConfigResponse {
   allowedTools: string[];
   plugins: AgentPlugin[];
   repos: string[];
-  authorAllowlist: string[];
-  /**
-   * DBR-2.1: rename-in-progress twin of authorAllowlist — always returned as
-   * an identical array during the dual-read transitional phase.
-   */
   reviewAuthorAllowlist: string[];
   patchAuthorAllowlist: string[];
   restrictSlackToMembers: boolean;
@@ -79,9 +74,7 @@ interface AgentServiceLike {
   getById(agentId: string): Promise<{
     id: string;
     repos: string[];
-    authorAllowlist: string[];
-    /** DBR-2.1: rename-in-progress twin of authorAllowlist, dual-read below. */
-    reviewAuthorAllowlist?: string[];
+    reviewAuthorAllowlist: string[];
     patchAuthorAllowlist: string[];
     restrictSlackToMembers: boolean;
     memberEmails: string[];
@@ -219,12 +212,7 @@ export function createAgentRuntimeApp(deps: AgentRuntimeDeps): OpenAPIHono {
           : { plugin: p.name.slice(0, at), marketplace: p.name.slice(at + 1) };
       }),
       repos: agent.repos,
-      authorAllowlist: agent.authorAllowlist,
-      // DBR-2.1 dual-read: fall back to authorAllowlist when the service
-      // hasn't been updated to return reviewAuthorAllowlist yet, so the two
-      // response fields never diverge.
-      reviewAuthorAllowlist:
-        agent.reviewAuthorAllowlist ?? agent.authorAllowlist,
+      reviewAuthorAllowlist: agent.reviewAuthorAllowlist,
       patchAuthorAllowlist: agent.patchAuthorAllowlist,
       restrictSlackToMembers: agent.restrictSlackToMembers ?? false,
       memberEmails: agent.memberEmails ?? [],

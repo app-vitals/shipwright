@@ -18,7 +18,7 @@ The PRs API tracks review cycles for open pull requests. Where a task record dri
 | **Task** | "What code work is being done?" | `pending → in_progress → pr_open → approved → deployed` |
 | **PR record** | "Is this PR reviewed and ready?" | `pending → in_progress → posted → approved` |
 
-A task typically has one associated PR record once it reaches `pr_open`. The link is optional — either resource can exist without the other — but the `taskId` field on the PR record makes the association explicit.
+A task typically has one associated PR record once it reaches `pr_open`. The link is optional — either resource can exist without the other. There is no `taskId` field on the PR record — the association is resolved live by matching `(Task.repo, Task.pr)`, the same pairing `GET /tasks?repo=&pr=` exposes.
 
 Multiple review rounds on the same PR are represented by `reviewCycles` (how many times a review was posted) and `patchCycles` (how many times the PR was patched and re-queued).
 
@@ -81,7 +81,6 @@ List PR records. Returns `{ prs, total, limit, offset }`.
 |---|---|---|
 | `repo` | string | Filter by `org/repo` format |
 | `prNumber` | int | Filter by PR number (use with `repo` to get a specific record) |
-| `taskId` | string | Filter by linked task ID |
 | `state` | string | Filter by PR state: `open`, `merged`, `closed` |
 | `reviewState` | string | Filter by review state: `pending`, `in_progress`, `posted`, `approved` |
 | `staged` | boolean | `true` to return only staged reviews |
@@ -110,7 +109,6 @@ Atomically claim a PR for review. Returns **201** when a new record is created, 
 | `prNumber` | int | yes | GitHub PR number |
 | `commitSha` | string | yes | Current HEAD commit SHA of the PR branch |
 | `claimedBy` | string | admin tokens only | Agent ID to claim as; agent tokens use the token's own agent ID |
-| `taskId` | string | no | Associated task ID |
 
 **Claim semantics:**
 
@@ -146,7 +144,7 @@ curl -sf -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
 
 Partial update — only the provided fields are changed. Returns the updated record.
 
-**Updatable fields:** `staged`, `commitSha`, `taskId`, `agentId`, `state`, `mergedAt`, `reviewState`
+**Updatable fields:** `staged`, `commitSha`, `agentId`, `state`, `mergedAt`, `reviewState`
 
 ```bash
 # Mark review as staged (written but not yet posted)
@@ -243,7 +241,6 @@ All fields from the `PullRequest` model:
 | `id` | string | CUID assigned at creation; use for all subsequent API calls |
 | `repo` | string | `org/repo` format; required on claim |
 | `prNumber` | int | GitHub PR number; unique together with `repo` |
-| `taskId` | string? | Optional link to a task store task |
 | `agentId` | string? | ID of the agent that owns this record |
 
 ### Review tracking

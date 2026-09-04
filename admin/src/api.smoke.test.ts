@@ -35,7 +35,7 @@ interface MockAgent {
   id: string;
   name: string;
   repos: string[];
-  authorAllowlist: string[];
+  reviewAuthorAllowlist: string[];
   patchAuthorAllowlist: string[];
   restrictSlackToMembers: boolean;
   memberEmails: string[];
@@ -81,7 +81,7 @@ function makeMockAgentService(agents: Map<string, MockAgent>): {
   getById: (agentId: string) => Promise<{
     id: string;
     repos: string[];
-    authorAllowlist: string[];
+    reviewAuthorAllowlist: string[];
     patchAuthorAllowlist: string[];
     restrictSlackToMembers: boolean;
     memberEmails: string[];
@@ -91,7 +91,7 @@ function makeMockAgentService(agents: Map<string, MockAgent>): {
     async getById(agentId: string): Promise<{
       id: string;
       repos: string[];
-      authorAllowlist: string[];
+      reviewAuthorAllowlist: string[];
       patchAuthorAllowlist: string[];
       restrictSlackToMembers: boolean;
       memberEmails: string[];
@@ -101,7 +101,7 @@ function makeMockAgentService(agents: Map<string, MockAgent>): {
         ? {
             id: agent.id,
             repos: agent.repos,
-            authorAllowlist: agent.authorAllowlist,
+            reviewAuthorAllowlist: agent.reviewAuthorAllowlist,
             patchAuthorAllowlist: agent.patchAuthorAllowlist,
             restrictSlackToMembers: agent.restrictSlackToMembers,
             memberEmails: agent.memberEmails,
@@ -171,7 +171,7 @@ function buildApp(opts?: {
   plugins?: MockPlugin[];
   crons?: AgentCronJob[];
   repos?: string[];
-  authorAllowlist?: string[];
+  reviewAuthorAllowlist?: string[];
   patchAuthorAllowlist?: string[];
   restrictSlackToMembers?: boolean;
   memberEmails?: string[];
@@ -190,7 +190,7 @@ function buildApp(opts?: {
   ];
   const crons = opts?.crons ?? [makeCron(KNOWN_AGENT_ID, "cron-1")];
   const repos = opts?.repos ?? ["org/repo1", "org/repo2"];
-  const authorAllowlist = opts?.authorAllowlist ?? [];
+  const reviewAuthorAllowlist = opts?.reviewAuthorAllowlist ?? [];
   const patchAuthorAllowlist = opts?.patchAuthorAllowlist ?? [];
   const restrictSlackToMembers = opts?.restrictSlackToMembers ?? false;
   const memberEmails = opts?.memberEmails ?? [];
@@ -205,7 +205,7 @@ function buildApp(opts?: {
       id: KNOWN_AGENT_ID,
       name: "Test Agent",
       repos,
-      authorAllowlist,
+      reviewAuthorAllowlist,
       patchAuthorAllowlist,
       restrictSlackToMembers,
       memberEmails,
@@ -259,30 +259,8 @@ describe("GET /:id/config (mounted as GET /agents/:id/config from root)", () => 
     expect(body.repos).toEqual([]);
   });
 
-  test("200 returns authorAllowlist exactly as stored on the agent", async () => {
-    const app = buildApp({ authorAllowlist: ["octocat", "hubot"] });
-    const res = await app.request(`/${KNOWN_AGENT_ID}/config`, {
-      headers: { Authorization: `Bearer ${VALID_ADMIN_KEY}` },
-    });
-
-    expect(res.status).toBe(200);
-    const body = await res.json();
-    expect(body.authorAllowlist).toEqual(["octocat", "hubot"]);
-  });
-
-  test("200 returns authorAllowlist as an empty array when the agent has none", async () => {
-    const app = buildApp({ authorAllowlist: [] });
-    const res = await app.request(`/${KNOWN_AGENT_ID}/config`, {
-      headers: { Authorization: `Bearer ${VALID_ADMIN_KEY}` },
-    });
-
-    expect(res.status).toBe(200);
-    const body = await res.json();
-    expect(body.authorAllowlist).toEqual([]);
-  });
-
-  test("200 returns reviewAuthorAllowlist as an identical array to authorAllowlist (DBR-2.1 dual-read)", async () => {
-    const app = buildApp({ authorAllowlist: ["octocat", "hubot"] });
+  test("200 returns reviewAuthorAllowlist exactly as stored on the agent", async () => {
+    const app = buildApp({ reviewAuthorAllowlist: ["octocat", "hubot"] });
     const res = await app.request(`/${KNOWN_AGENT_ID}/config`, {
       headers: { Authorization: `Bearer ${VALID_ADMIN_KEY}` },
     });
@@ -290,11 +268,10 @@ describe("GET /:id/config (mounted as GET /agents/:id/config from root)", () => 
     expect(res.status).toBe(200);
     const body = await res.json();
     expect(body.reviewAuthorAllowlist).toEqual(["octocat", "hubot"]);
-    expect(body.reviewAuthorAllowlist).toEqual(body.authorAllowlist);
   });
 
   test("200 returns reviewAuthorAllowlist as an empty array when the agent has none", async () => {
-    const app = buildApp({ authorAllowlist: [] });
+    const app = buildApp({ reviewAuthorAllowlist: [] });
     const res = await app.request(`/${KNOWN_AGENT_ID}/config`, {
       headers: { Authorization: `Bearer ${VALID_ADMIN_KEY}` },
     });
@@ -302,6 +279,18 @@ describe("GET /:id/config (mounted as GET /agents/:id/config from root)", () => 
     expect(res.status).toBe(200);
     const body = await res.json();
     expect(body.reviewAuthorAllowlist).toEqual([]);
+  });
+
+  // DBR-2.4 regression: the legacy field must be gone for good.
+  test("200 config bundle does not include the removed authorAllowlist field", async () => {
+    const app = buildApp({ reviewAuthorAllowlist: ["octocat"] });
+    const res = await app.request(`/${KNOWN_AGENT_ID}/config`, {
+      headers: { Authorization: `Bearer ${VALID_ADMIN_KEY}` },
+    });
+
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body).not.toHaveProperty("authorAllowlist");
   });
 
   test("200 returns restrictSlackToMembers and memberEmails exactly as stored on the agent", async () => {
@@ -504,7 +493,7 @@ function buildCombinedApp() {
         return {
           id: COMBINED_AGENT_ID,
           repos: [],
-          authorAllowlist: [],
+          reviewAuthorAllowlist: [],
           patchAuthorAllowlist: [],
           restrictSlackToMembers: false,
           memberEmails: [],
@@ -529,7 +518,7 @@ function buildCombinedApp() {
         slackId: null,
         selfHosted: false,
         repos: [],
-        authorAllowlist: [],
+        reviewAuthorAllowlist: [],
         patchAuthorAllowlist: [],
         restrictSlackToMembers: false,
         typeName: "coding",
@@ -548,7 +537,7 @@ function buildCombinedApp() {
         slackId: null,
         selfHosted: false,
         repos: [],
-        authorAllowlist: [],
+        reviewAuthorAllowlist: [],
         patchAuthorAllowlist: [],
         restrictSlackToMembers: false,
         typeName: "coding",

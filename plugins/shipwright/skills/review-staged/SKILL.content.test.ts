@@ -27,7 +27,7 @@ describe("SKILL.md — file exists and has content", () => {
 describe("SKILL.md — Step 3b stale-check references record.reviewedCommitSha, not record.commitSha", () => {
   it("references record.reviewedCommitSha in the Stale staged review gate", () => {
     const step3bIdx = content.indexOf("### 3b. Apply skip gates");
-    const endIdx = content.indexOf("### 3c.", step3bIdx);
+    const endIdx = content.indexOf("### 3c. Present the PR", step3bIdx);
     expect(step3bIdx).toBeGreaterThan(-1);
     expect(endIdx).toBeGreaterThan(step3bIdx);
     const section = content.slice(step3bIdx, endIdx);
@@ -41,36 +41,34 @@ describe("SKILL.md — Step 3b stale-check references record.reviewedCommitSha, 
   });
 });
 
-describe("SKILL.md — Step 3c is generalized to a Dependency-bot cross-check", () => {
-  it("renames the step header from 'Dependabot cross-check' to 'Dependency-bot cross-check'", () => {
-    expect(content).toContain("### 3c. Dependency-bot cross-check");
-    expect(content).not.toContain("### 3c. Dependabot cross-check");
+describe("SKILL.md — the dependency-bot cross-check step is retired (DBR-3.4)", () => {
+  it("has no dependency-bot cross-check step", () => {
+    expect(content).not.toContain("Dependency-bot cross-check");
+    expect(content).not.toContain("Dependabot cross-check");
   });
 
-  it("widens the author check to cover app/dependabot, app/renovate, and dependabot[bot]", () => {
-    const step3cIdx = content.indexOf("### 3c. Dependency-bot cross-check");
-    const endIdx = content.indexOf("### 3d.", step3cIdx);
-    expect(step3cIdx).toBeGreaterThan(-1);
-    expect(endIdx).toBeGreaterThan(step3cIdx);
-    const section = content.slice(step3cIdx, endIdx);
-
-    expect(section).toContain("dependabot[bot]");
-    expect(section).toContain("app/dependabot");
-    expect(section).toContain("app/renovate");
-  });
-
-  it("reads state from state/dependency-bot-reviews.json and not the old dependabot-only path", () => {
-    expect(content).toContain("state/dependency-bot-reviews.json");
+  it("no longer reads the retired dependency-bot triage state file", () => {
+    expect(content).not.toContain("state/dependency-bot-reviews.json");
     expect(content).not.toContain("state/dependabot-reviews.json");
   });
 
-  it("Step 3d presentation line derives the bot label dynamically instead of hardcoding Dependabot", () => {
-    const step3dIdx = content.indexOf("### 3d. Present the PR");
-    expect(step3dIdx).toBeGreaterThan(-1);
-    const section = content.slice(step3dIdx, step3dIdx + 2000);
+  it("has no leftover dependency-bot presentation line in the Present the PR block", () => {
+    expect(content).not.toContain("*{Dependabot|Renovate}:*");
+    expect(content).not.toContain('"*Dependabot:*');
+    expect(content).not.toContain("dependency-bot-review");
+  });
 
-    expect(section).toContain("Dependabot");
-    expect(section).toContain("Renovate");
-    expect(section).not.toContain('"*Dependabot:*');
+  it("renumbers Present the PR to 3c with no numbering gap in Step 3", () => {
+    expect(content).toContain("### 3c. Present the PR");
+    expect(content).not.toContain("### 3d.");
+  });
+});
+
+describe("SKILL.md — worktree path convention", () => {
+  it("uses SHIPWRIGHT_WORKTREE_DIR env var form instead of hardcoded ~/worktrees", () => {
+    expect(content).toContain(
+      "${SHIPWRIGHT_WORKTREE_DIR:-$HOME/worktrees}/{repo}-{branch-slug}",
+    );
+    expect(content).not.toContain("~/worktrees/{repo}-{branch-slug}");
   });
 });

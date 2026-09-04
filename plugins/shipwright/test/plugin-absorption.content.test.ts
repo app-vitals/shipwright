@@ -39,13 +39,7 @@ function collectFiles(dir: string): string[] {
 // ── Skills ────────────────────────────────────────────────────────────────────
 
 describe("absorbed skills — directories and SKILL.md", () => {
-  const requiredSkills = [
-    "triage-dependency-bot-pr",
-    "triage-dependency-bot-prs",
-    "entropy-fix",
-    "entropy-scan",
-    "learning-capture",
-  ];
+  const requiredSkills = ["entropy-fix", "entropy-scan", "learning-capture"];
 
   for (const skill of requiredSkills) {
     it(`skills/${skill}/ directory exists`, () => {

@@ -730,7 +730,7 @@ describe("ensureHitlAgent", () => {
     expect(id).toBe("agent-1");
   });
 
-  test("create path: no existing agent — creates, then PATCHes authorAllowlist when non-empty", async () => {
+  test("create path: no existing agent — creates, then PATCHes reviewAuthorAllowlist when non-empty", async () => {
     const fetchDouble = makeFetchDouble([
       {
         method: "GET",
@@ -742,7 +742,7 @@ describe("ensureHitlAgent", () => {
         match: (url) => url.endsWith("/agents"),
         respond: () =>
           json(
-            { id: "agent-1", name: "hitl", repos: [], authorAllowlist: [] },
+            { id: "agent-1", name: "hitl", repos: [], reviewAuthorAllowlist: [] },
             201,
           ),
       },
@@ -754,7 +754,7 @@ describe("ensureHitlAgent", () => {
             id: "agent-1",
             name: "hitl",
             repos: [],
-            authorAllowlist: ["danmcaulay"],
+            reviewAuthorAllowlist: ["danmcaulay"],
           }),
       },
     ]);
@@ -769,11 +769,11 @@ describe("ensureHitlAgent", () => {
     ).calls;
     expect(calls.map((c) => c.method)).toEqual(["GET", "POST", "PATCH"]);
     expect(JSON.parse(calls[2].body ?? "{}")).toEqual({
-      authorAllowlist: ["danmcaulay"],
+      reviewAuthorAllowlist: ["danmcaulay"],
     });
   });
 
-  test("existing-agent-match path: authorAllowlist already matches — no PATCH issued", async () => {
+  test("existing-agent-match path: reviewAuthorAllowlist already matches — no PATCH issued", async () => {
     const fetchDouble = makeFetchDouble([
       {
         method: "GET",
@@ -789,7 +789,7 @@ describe("ensureHitlAgent", () => {
             id: "agent-1",
             name: "hitl",
             repos: ["org/repo"],
-            authorAllowlist: ["danmcaulay"],
+            reviewAuthorAllowlist: ["danmcaulay"],
           }),
       },
     ]);
@@ -803,7 +803,7 @@ describe("ensureHitlAgent", () => {
     expect(calls.map((c) => c.method)).toEqual(["GET", "GET"]);
   });
 
-  test("existing-agent-mismatch path: authorAllowlist differs (repos match) — fetches detail then PATCHes authorAllowlist", async () => {
+  test("existing-agent-mismatch path: reviewAuthorAllowlist differs (repos match) — fetches detail then PATCHes reviewAuthorAllowlist", async () => {
     const fetchDouble = makeFetchDouble([
       {
         method: "GET",
@@ -819,7 +819,7 @@ describe("ensureHitlAgent", () => {
             id: "agent-1",
             name: "hitl",
             repos: ["org/repo"],
-            authorAllowlist: ["old-user"],
+            reviewAuthorAllowlist: ["old-user"],
           }),
       },
       {
@@ -830,7 +830,7 @@ describe("ensureHitlAgent", () => {
             id: "agent-1",
             name: "hitl",
             repos: ["org/repo"],
-            authorAllowlist: ["new-user"],
+            reviewAuthorAllowlist: ["new-user"],
           }),
       },
     ]);
@@ -845,11 +845,11 @@ describe("ensureHitlAgent", () => {
     ).calls;
     expect(calls.map((c) => c.method)).toEqual(["GET", "GET", "PATCH"]);
     expect(JSON.parse(calls[2].body ?? "{}")).toEqual({
-      authorAllowlist: ["new-user"],
+      reviewAuthorAllowlist: ["new-user"],
     });
   });
 
-  test("failure path: PATCH non-ok on authorAllowlist mismatch — still returns the existing agent id", async () => {
+  test("failure path: PATCH non-ok on reviewAuthorAllowlist mismatch — still returns the existing agent id", async () => {
     const fetchDouble = makeFetchDouble([
       {
         method: "GET",
@@ -865,7 +865,7 @@ describe("ensureHitlAgent", () => {
             id: "agent-1",
             name: "hitl",
             repos: ["org/repo"],
-            authorAllowlist: ["old-user"],
+            reviewAuthorAllowlist: ["old-user"],
           }),
       },
       {
