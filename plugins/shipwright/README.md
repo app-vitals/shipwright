@@ -302,6 +302,8 @@ shipwright/
 │   │   └── SKILL.md             # Query PR records — filter by repo, state, reviewState, staged
 │   ├── review-staged/
 │   │   └── SKILL.md             # Conversational walkthrough of staged reviews
+│   ├── slack-say/
+│   │   └── SKILL.md             # Post a one-line progress ping to Slack at stage boundaries
 │   └── task-store/
 │       └── SKILL.md             # Query and update the task store — lifecycle invocations, env var config
 ├── references/

@@ -336,6 +336,18 @@ describe("runClaude", () => {
     }
   });
 
+  test("layers extraEnv on top of the spawned child's env alongside existing vars", async () => {
+    await runClaude("test", undefined, undefined, undefined, {
+      MY_VAR: "my-value",
+    });
+    const [, opts] = mockSpawn.mock.calls[0] as [
+      string[],
+      { env: Record<string, string | undefined> },
+    ];
+    expect(opts.env.MY_VAR).toBe("my-value");
+    expect(opts.env.PATH).toBe(process.env.PATH);
+  });
+
   test("passes message as last arg without identity injection", async () => {
     await runClaude("my prompt");
     const [cmd] = mockSpawn.mock.calls[0] as [string[]];
@@ -948,6 +960,52 @@ describe("resume retry", () => {
     expect(secondRIdx).toBeGreaterThan(-1);
     expect(firstCmd[firstRIdx + 1]).toBe("stale-sess-id");
     expect(secondCmd[secondRIdx + 1]).toBe("stale-sess-id");
+  });
+
+  test("passes extraEnv to both the initial attempt and the resume-retry attempt", async () => {
+    let callCount = 0;
+    const mockSpawn = mock(() => {
+      callCount++;
+      if (callCount === 1) {
+        // First call (resume) fails
+        return fakeProc("", "socket closed", 1) as ReturnType<typeof Bun.spawn>;
+      }
+      // Second call (retry, same resumed session) succeeds
+      return fakeProc(jsonOutput("recovered", "stale-sess-id")) as ReturnType<
+        typeof Bun.spawn
+      >;
+    });
+
+    mockGetSession.mockClear();
+    mockSetSession.mockClear();
+    mockClearSession.mockClear();
+    capturedMessages = [];
+    capturedExceptions = [];
+    mockGetSession.mockReturnValue("stale-sess-id");
+
+    const runClaude = createRunClaude(
+      mockSpawn as typeof Bun.spawn,
+      testSessions,
+      MODEL,
+      WORKSPACE,
+      fakeSentryClient,
+    );
+
+    await runClaude("hello", "chan:ts", undefined, undefined, {
+      MY_VAR: "retry-value",
+    });
+
+    expect(mockSpawn).toHaveBeenCalledTimes(2);
+    const [, firstOpts] = mockSpawn.mock.calls[0] as unknown as [
+      string[],
+      { env: Record<string, string | undefined> },
+    ];
+    const [, secondOpts] = mockSpawn.mock.calls[1] as unknown as [
+      string[],
+      { env: Record<string, string | undefined> },
+    ];
+    expect(firstOpts.env.MY_VAR).toBe("retry-value");
+    expect(secondOpts.env.MY_VAR).toBe("retry-value");
   });
 
   test("per-call onProgress still fires on the second _spawn attempt during a resume-retry", async () => {
