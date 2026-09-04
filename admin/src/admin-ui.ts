@@ -2903,6 +2903,48 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
       for (const a of agents) agentNames[a.id] = a.name;
     }
 
+    // Resolve each task's linked PR via a live GET /prs?repo=&prNumber=
+    // lookup, one request per distinct (repo, pr) pair on this page of
+    // tasks, run in parallel to avoid an N+1 sequential-await chain — same
+    // pattern as GET /admin/prs's linkedTasksByPr join, and the single-task
+    // version at GET /admin/tasks/:id, just batched (AXR-1.2). Falls back to
+    // no PR data per row if the fetcher is absent, a task has no repo/pr, or
+    // a lookup throws — a failed join never breaks the page.
+    const prsByTaskId: Record<string, PrListItem> = {};
+    if (fetchTaskStorePrs && tasks.length > 0) {
+      const distinctPairs = new Map<string, { repo: string; pr: number }>();
+      for (const t of tasks) {
+        if (t.repo && t.pr) {
+          distinctPairs.set(`${t.repo}#${t.pr}`, { repo: t.repo, pr: t.pr });
+        }
+      }
+      if (distinctPairs.size > 0) {
+        const pairResults = await Promise.all(
+          [...distinctPairs.entries()].map(
+            async ([key, { repo: r, pr: p }]): Promise<
+              [string, PrListItem | undefined]
+            > => {
+              try {
+                const result = await fetchTaskStorePrs(
+                  new URLSearchParams({ repo: r, prNumber: String(p) }),
+                );
+                return [key, result.prs[0]];
+              } catch {
+                return [key, undefined];
+              }
+            },
+          ),
+        );
+        const prsByPairKey = new Map(pairResults);
+        for (const t of tasks) {
+          if (t.repo && t.pr) {
+            const pr = prsByPairKey.get(`${t.repo}#${t.pr}`);
+            if (pr) prsByTaskId[t.id] = pr;
+          }
+        }
+      }
+    }
+
     // Build suggestions for autocomplete datalists only when task-store integration is active.
     // Skip the DB query entirely when fetchDistinctTaskValues is not configured.
     const suggestions =
@@ -2930,6 +2972,7 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
         suggestions,
         false,
         timezone,
+        prsByTaskId,
       ),
     );
   });
