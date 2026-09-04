@@ -1108,17 +1108,29 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
 
   // ─── Agents list ──────────────────────────────────────────────────────────
 
-  app.get("/admin/agents", requireAuth, async (c) => {
-    let agents: Awaited<ReturnType<typeof agentService.listAll>>;
-    if (c.var.isAdmin) {
-      agents = await agentService.listAll();
-    } else {
-      const memberships = await agentMemberService.listByEmail(
-        c.var.userEmail.toLowerCase(),
-      );
-      const agentIds = memberships.map((m) => m.agentId);
-      agents = await agentService.listByIds(agentIds);
+  // Access-scoping shared by the agents list and the /admin/queue-activity
+  // default-agent redirect: admins see the full fleet, non-admins see only
+  // the agents they have an AgentMember row for. No ordering/ranking beyond
+  // whatever agentService.listAll()/listByIds() already returns.
+  async function resolveAccessibleAgents(
+    userEmail: string,
+    isAdmin: boolean,
+  ): Promise<Awaited<ReturnType<typeof agentService.listAll>>> {
+    if (isAdmin) {
+      return agentService.listAll();
     }
+    const memberships = await agentMemberService.listByEmail(
+      userEmail.toLowerCase(),
+    );
+    const agentIds = memberships.map((m) => m.agentId);
+    return agentService.listByIds(agentIds);
+  }
+
+  app.get("/admin/agents", requireAuth, async (c) => {
+    const agents = await resolveAccessibleAgents(
+      c.var.userEmail,
+      c.var.isAdmin,
+    );
     const successMsg =
       c.req.query("success") === "deleted" ? "Agent deleted." : undefined;
     // Surfaced by POST /admin/agents/:id/delete after a successful
@@ -1140,6 +1152,24 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
         manualSteps,
       }),
     );
+  });
+
+  // ─── Default-agent queue-activity redirect (AXR-3.3) ─────────────────────
+  // Top-level entry point into GET /admin/agents/:id/queue-activity: resolve
+  // the caller's accessible agents with the same scoping as /admin/agents
+  // above, then jump straight to the first one's queue-activity page. Zero
+  // accessible agents falls back to the agents list rather than erroring.
+
+  app.get("/admin/queue-activity", requireAuth, async (c) => {
+    const agents = await resolveAccessibleAgents(
+      c.var.userEmail,
+      c.var.isAdmin,
+    );
+    const firstAgent = agents[0];
+    if (!firstAgent) {
+      return c.redirect("/admin/agents", 302);
+    }
+    return c.redirect(`/admin/agents/${firstAgent.id}/queue-activity`, 302);
   });
 
   // ─── Agent detail ─────────────────────────────────────────────────────────

@@ -192,6 +192,11 @@ export function renderShipwrightToolbar(
   const adminBase = opts.adminBaseUrl ?? "";
   const active = (prefix: string) =>
     activePath.startsWith(prefix) ? " active" : "";
+  // /admin/agents/:id/queue-activity starts with /admin/agents, so without
+  // this special case both "Agents" and "Queue & Activity" would highlight
+  // simultaneously on that page. Any path containing "/queue-activity"
+  // belongs to the new tab instead.
+  const isQueueActivity = activePath.includes("/queue-activity");
 
   // Public proof surface: only the read-only Metrics + Tasks views are routed and
   // reachable, so omit every /admin/* link and the sign-out form (they 404 on the
@@ -214,10 +219,11 @@ export function renderShipwrightToolbar(
   <nav class="vos-toolbar" aria-label="Site navigation">
     <a href="${adminBase}/admin/agents" class="vos-wordmark">Shipwright</a>
     <div id="vos-nav-content" class="vos-nav">
-      <a href="${adminBase}/admin/agents" class="vos-nav-link${active("/admin/agents")}">Agents</a>
+      <a href="${adminBase}/admin/agents" class="vos-nav-link${isQueueActivity ? "" : active("/admin/agents")}">Agents</a>
       <a href="${adminBase}/admin/tasks?state=ready" class="vos-nav-link${active("/admin/tasks")}">Tasks</a>
       <a href="${adminBase}/admin/prs" class="vos-nav-link${active("/admin/prs")}">PRs</a>
       <a href="${adminBase}/admin/chat" class="vos-nav-link${active("/admin/chat")}">Chat</a>
+      <a href="${adminBase}/admin/queue-activity" class="vos-nav-link${isQueueActivity ? " active" : ""}">Queue &amp; Activity</a>
       <a href="${metricsUrl}" class="vos-nav-link${active(metricsUrl)}">Metrics</a>
     </div>
     <div class="vos-user">

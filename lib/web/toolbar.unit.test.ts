@@ -59,6 +59,56 @@ describe("renderShipwrightToolbar", () => {
       expect(html).toContain("<script>");
       expect(html).toContain("change");
     });
+
+    test("contains a Queue & Activity link pointing at /admin/queue-activity", () => {
+      expect(html).toContain('href="/admin/queue-activity"');
+      expect(html).toContain("Queue &amp; Activity");
+    });
+  });
+
+  describe("active-tab highlighting: Agents vs Queue & Activity (AXR-3.3)", () => {
+    function activeHref(html: string): string | undefined {
+      const match = html.match(
+        /<a href="([^"]+)" class="vos-nav-link active">/,
+      );
+      return match?.[1];
+    }
+
+    test("/admin/agents highlights the Agents tab, not Queue & Activity", () => {
+      const html = renderShipwrightToolbar({
+        userName: "Alice",
+        activePath: "/admin/agents",
+        logoutAction: "/auth/logout",
+      });
+      expect(activeHref(html)).toBe("/admin/agents");
+      expect(html).toContain(
+        '<a href="/admin/queue-activity" class="vos-nav-link">',
+      );
+    });
+
+    test("/admin/agents/:id highlights the Agents tab, not Queue & Activity", () => {
+      const html = renderShipwrightToolbar({
+        userName: "Alice",
+        activePath: "/admin/agents/agent-123",
+        logoutAction: "/auth/logout",
+      });
+      expect(activeHref(html)).toBe("/admin/agents");
+      expect(html).toContain(
+        '<a href="/admin/queue-activity" class="vos-nav-link">',
+      );
+    });
+
+    test("/admin/agents/:id/queue-activity highlights Queue & Activity, not Agents", () => {
+      const html = renderShipwrightToolbar({
+        userName: "Alice",
+        activePath: "/admin/agents/agent-123/queue-activity",
+        logoutAction: "/auth/logout",
+      });
+      expect(activeHref(html)).toBe("/admin/queue-activity");
+      expect(html).toContain(
+        '<a href="/admin/agents" class="vos-nav-link">',
+      );
+    });
   });
 
   describe("read-only mode (readOnly=true)", () => {
