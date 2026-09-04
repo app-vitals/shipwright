@@ -172,6 +172,12 @@ See [`docs/quickstart.md`](./docs/quickstart.md) for the full onboarding prompt 
 
 Shipwright Harness is a [Claude Code](https://www.anthropic.com/claude-code) plugin through and through — built on it, for it, and used with it daily. If you already run Claude Code, Shipwright is a `/plugin install` away.
 
+## See it in the wild
+
+- **Compare it** — how Shipwright's plan → queue → loop differs from [Devin](https://app-vitals.com/blog/shipwright-vs-devin/) and from [Claude Code orchestrators](https://app-vitals.com/blog/shipwright-vs-claude-code-orchestrators/).
+- **Have us run it on your pipeline** — the [design-partner program](https://app-vitals.com/shipwright/design-partners/): the people who built Shipwright, hands-on on your codebase.
+- **Read the full story** — [shipwrightharness.com](https://shipwrightharness.com).
+
 ## Test system
 
 Shipwright enforces a four-layer test architecture (unit / integration / smoke / e2e) across all three components. Layer boundaries, per-component run commands, speed budgets, and the test-isolation contract are defined in [`docs/test-readiness/test-system.md`](./docs/test-readiness/test-system.md).
