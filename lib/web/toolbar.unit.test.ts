@@ -30,10 +30,8 @@ describe("renderShipwrightToolbar", () => {
       expect(html).toContain("Metrics");
     });
 
-    test("Slack wizard link is labeled 'Slack' (not the generic 'Provision')", () => {
-      expect(html).toContain('href="/admin/provision"');
-      expect(html).toContain(">Slack</a>");
-      expect(html).not.toContain(">Provision</a>");
+    test("does not render an /admin/provision link (removed dead nav shortcut)", () => {
+      expect(html).not.toContain('href="/admin/provision"');
     });
 
     test("active link has active class", () => {

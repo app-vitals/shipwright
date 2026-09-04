@@ -39,7 +39,6 @@ import {
   renderNewLocalAgentPage,
   renderPrDetailPage,
   renderProvisionCompletePage,
-  renderProvisionPasteForm,
   renderProvisionXappTokenPage,
   renderPrsPage,
   renderQueueActivityPage,
@@ -1870,69 +1869,6 @@ describe("renderAgentDetailPage — plugins", () => {
   });
 });
 
-// ─── renderProvisionPasteForm ─────────────────────────────────────────────────
-
-describe("renderProvisionPasteForm", () => {
-  test("returns a valid HTML document", () => {
-    const html = renderProvisionPasteForm(USER_NAME);
-    expect(html).toContain("<!DOCTYPE html>");
-    expect(html).toContain("<html");
-    expect(html).toContain("</html>");
-  });
-
-  test("form action is /admin/provision/complete", () => {
-    const html = renderProvisionPasteForm(USER_NAME);
-    expect(html).toContain('action="/admin/provision/complete"');
-  });
-
-  test("agentId in hidden input when provided", () => {
-    const html = renderProvisionPasteForm(USER_NAME, { agentId: "agent-abc" });
-    expect(html).toContain('name="agentId"');
-    expect(html).toContain('value="agent-abc"');
-  });
-
-  test("hidden agentId input empty when not provided", () => {
-    const html = renderProvisionPasteForm(USER_NAME);
-    expect(html).toContain('name="agentId"');
-    expect(html).toContain('value=""');
-  });
-
-  test("XSS: agentId in hidden input is escaped", () => {
-    const html = renderProvisionPasteForm(USER_NAME, {
-      agentId: '"><script>xss()</script>',
-    });
-    expect(html).not.toContain('"><script>xss()</script>');
-    expect(html).toContain("&lt;script&gt;");
-  });
-
-  test("no error div when no error", () => {
-    const html = renderProvisionPasteForm(USER_NAME);
-    expect(html).not.toContain('class="alert alert-error"');
-  });
-
-  test("error shown when opts.error set", () => {
-    const html = renderProvisionPasteForm(USER_NAME, {
-      error: "Missing credentials",
-    });
-    expect(html).toContain('class="alert alert-error"');
-    expect(html).toContain("Missing credentials");
-  });
-
-  test("XSS: error is escaped", () => {
-    const html = renderProvisionPasteForm(USER_NAME, {
-      error: "<script>bad()</script>",
-    });
-    expect(html).not.toContain("<script>bad()</script>");
-    expect(html).toContain("&lt;script&gt;");
-  });
-
-  test("includes App ID and Signing Secret fields", () => {
-    const html = renderProvisionPasteForm(USER_NAME);
-    expect(html).toContain('name="appId"');
-    expect(html).toContain('name="signingSecret"');
-  });
-});
-
 // ─── renderProvisionCompletePage ─────────────────────────────────────────────
 
 describe("renderProvisionCompletePage", () => {
@@ -3529,39 +3465,20 @@ describe("renderTasksPage — 4-state toggle", () => {
 // ─── renderAdminToolbar — active nav highlight ────────────────────────────────
 
 describe("renderAdminToolbar — active nav highlight", () => {
-  test("activePath /admin/agents: Agents link is active, Provision is not", () => {
+  test("activePath /admin/agents: Agents link is active", () => {
     const html = renderAdminToolbar(USER_NAME, "/admin/agents");
     expect(html).toContain('href="/admin/agents" class="vos-nav-link active"');
-    expect(html).toContain('href="/admin/provision" class="vos-nav-link"');
-    expect(html).not.toContain(
-      'href="/admin/provision" class="vos-nav-link active"',
-    );
   });
 
   test("activePath sub-path /admin/agents/agent-id: Agents link is still active (startsWith)", () => {
     const html = renderAdminToolbar(USER_NAME, "/admin/agents/agent-id");
     expect(html).toContain('href="/admin/agents" class="vos-nav-link active"');
-    expect(html).not.toContain(
-      'href="/admin/provision" class="vos-nav-link active"',
-    );
-  });
-
-  test("activePath /admin/provision: Provision link is active, Agents is not", () => {
-    const html = renderAdminToolbar(USER_NAME, "/admin/provision");
-    expect(html).toContain(
-      'href="/admin/provision" class="vos-nav-link active"',
-    );
-    expect(html).toContain('href="/admin/agents" class="vos-nav-link"');
-    expect(html).not.toContain(
-      'href="/admin/agents" class="vos-nav-link active"',
-    );
   });
 
   test("activePath '' (default): neither link is active", () => {
     const html = renderAdminToolbar(USER_NAME);
     expect(html).not.toContain('class="vos-nav-link active"');
     expect(html).toContain('href="/admin/agents" class="vos-nav-link"');
-    expect(html).toContain('href="/admin/provision" class="vos-nav-link"');
   });
 });
 
@@ -8017,7 +7934,6 @@ describe("all page renderers — single DOCTYPE and viewport meta (CFB-1.2)", ()
       "renderProvisionXappTokenPage",
       () => renderProvisionXappTokenPage(USER_NAME, { agentId: "agent-123" }),
     ],
-    ["renderProvisionPasteForm", () => renderProvisionPasteForm(USER_NAME)],
     [
       "renderTasksPage",
       () =>
