@@ -55,7 +55,7 @@ dependencies:
     repository: https://kubernetes.github.io/ingress-nginx
     condition: ingress-nginx.enabled
   - name: traefik
-    version: "41.3.0"
+    version: "41.4.0"
     repository: https://traefik.github.io/charts
     condition: traefik.enabled
   # Optional bundled cert-manager subchart (CNH-6.1), default off. Bring your
