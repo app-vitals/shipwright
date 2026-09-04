@@ -39,6 +39,10 @@ Two code fixes to `plugins/shipwright/commands/patch.md`, plus one doc line:
    today's CURRENT_USER-only behavior if the fetch fails or the list is empty/absent —
    mirrors `check-patch.ts`'s explicit non-fail-open design for this particular allowlist
    (an unsynced/empty patch allowlist means self-authored-only, never "allow everyone").
+   (This also requires updating the other spots in `patch.md` that restate the old "own
+   PRs only" invariant in prose — the frontmatter `description:`, the Arguments section,
+   and Step 2's rejection message — so the file stays internally consistent; see PAS-1.1's
+   acceptance criteria.)
 
 2. **Line ~745's author-reply detection** — currently assumes the PR author is always
    `CURRENT_USER` when deciding whether a review finding was addressed by an author reply.
@@ -97,6 +101,16 @@ hardcoded `CURRENT_USER`.
 - `PR_AUTHOR` is captured from Step 2's `gh pr view` result and threaded into the
   author-reply-detection logic (~line 745) in place of the hardcoded `CURRENT_USER`, so a
   genuine reply from an allowlisted PR's real author is recognized as addressing a finding.
+- `patch.md`'s own prose is updated everywhere it restates the old "own PRs only"
+  invariant, so the command file doesn't read as internally inconsistent after the scope
+  gate is broadened. Specifically:
+  - The YAML frontmatter `description:` field (line ~2, currently "...on a specific own
+    open PR...").
+  - The Arguments section's restatement (~line 26-27, currently "still scoped to
+    `CURRENT_USER` as author, per the Independence Principles' 'own PRs only' rule for
+    patch").
+  - Step 2's rejection message text (~line 81, the "⚠ PR {org}/{repo}#{number} not found
+    among own open PRs." print statement).
 - Test decision: content-layer only (`patch.content.test.ts`). Add assertions that Step
   2's body references the `patchAuthorAllowlist` fetch/`/agents/{id}/config` call and that
   the author-reply section threads `PR_AUTHOR` rather than a bare `CURRENT_USER`-only
