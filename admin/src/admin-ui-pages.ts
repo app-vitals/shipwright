@@ -216,8 +216,8 @@ export interface CronRunItem {
   sessionId?: string | null;
   /**
    * The owning cron's id/name/schedule — present on cross-cron listings (e.g.
-   * renderCronLogsPage's per-agent table) so the Cron column can be rendered
-   * without an N+1 lookup. Absent on single-cron listings.
+   * renderQueueActivityPage's per-agent Past table) so the Cron column can be
+   * rendered without an N+1 lookup. Absent on single-cron listings.
    */
   cron?: { id: string; name: string | null; schedule: string };
 }
@@ -551,8 +551,7 @@ export function renderAgentsPage(
     <td>${escapeHtml(new Date(a.createdAt).toLocaleDateString("en-US", { timeZone: timezone }))}</td>
     <td>
       <a href="/admin/agents/${escapeHtml(a.id)}" class="btn btn-secondary" style="font-size:12px;padding:4px 10px">Manage</a>
-      <a href="/admin/agents/${escapeHtml(a.id)}/cron-logs" class="btn btn-secondary" style="font-size:12px;padding:4px 10px;margin-left:4px">Cron Logs</a>
-      <a href="/admin/agents/${escapeHtml(a.id)}/work-queue" class="btn btn-secondary" style="font-size:12px;padding:4px 10px;margin-left:4px">Work Queue</a>
+      <a href="/admin/agents/${escapeHtml(a.id)}/queue-activity" class="btn btn-secondary" style="font-size:12px;padding:4px 10px;margin-left:4px">Queue &amp; Activity</a>
     </td>
   </tr>`,
           )
@@ -1110,7 +1109,7 @@ export function renderAgentDetailPage(
     const toggleLabel = c.enabled ? "Disable" : "Enable";
     const toggleTarget = c.enabled ? "false" : "true";
     return `
-      <a href="/admin/agents/${escapeHtml(agent.id)}/cron-logs?cronId=${escapeHtml(c.id)}" class="btn btn-secondary" style="font-size:11px;padding:3px 8px;margin-right:4px;text-decoration:none">Logs</a>
+      <a href="/admin/agents/${escapeHtml(agent.id)}/queue-activity?cronId=${escapeHtml(c.id)}" class="btn btn-secondary" style="font-size:11px;padding:3px 8px;margin-right:4px;text-decoration:none">Logs</a>
       <form method="POST" action="/admin/agents/${escapeHtml(agent.id)}/crons/${escapeHtml(c.id)}/toggle" style="display:inline">
         <input type="hidden" name="enabled" value="${toggleTarget}" />
         <button type="submit" class="btn btn-secondary" style="font-size:11px;padding:3px 8px">${toggleLabel}</button>
@@ -3499,22 +3498,111 @@ export function renderPrDetailPage(
   });
 }
 
+// Inline CSS for the work-queue "Phase" column badge, keyed by the raw
+// phase value (dev-task/review/patch/deploy) — a single neutral palette
+// distinct from the outcome-style badges elsewhere on the queue & activity
+// page, since phase here is informational, not a pass/fail signal.
+const WORK_QUEUE_PHASE_BADGE_STYLE: Record<string, string> = {
+  "dev-task": "background:#eef2ff;color:#4338ca",
+  review: "background:#fef3c7;color:#92400e",
+  patch: "background:#fee2e2;color:#991b1b",
+  deploy: "background:#dcfce7;color:#166534",
+};
+const WORK_QUEUE_PHASE_BADGE_STYLE_DEFAULT = "background:#f3f4f6;color:#6b7280";
+
+// Inline type mirroring RankedWorkItem (openapi-schemas.ts) without importing
+// the zod schema itself — keeps this file's dependency surface to pure
+// string-rendering inputs.
+export interface WorkQueueItem {
+  type: "task" | "pr";
+  id: string;
+  title?: string;
+  phase: "dev-task" | "review" | "patch" | "deploy";
+  age: string;
+}
+
+export interface WorkQueueSnapshotItem {
+  computedAt: Date;
+  items: WorkQueueItem[];
+}
+
 /**
- * Renders the unified per-agent cron-logs page: a filter form (cron dropdown +
- * outcome dropdown) and a table of runs across every cron the agent owns,
- * paginated consistently with renderPrsPage's pattern.
+ * Renders the merged per-agent Queue & Activity page (AXR-3.1): an "Upcoming"
+ * section showing the agent's self-reported ranked work queue (as last pushed
+ * via POST /agents/:id/work-queue), and a "Past" section — a filter form
+ * (cron dropdown + outcome dropdown) plus a table of cron runs across every
+ * cron the agent owns, paginated consistently with renderPrsPage's pattern.
+ *
+ * Supersedes the former separate renderWorkQueuePage/renderCronLogsPage
+ * pages/routes (now removed) — both existing services are composed onto one
+ * page rather than duplicated across two.
  */
-export function renderCronLogsPage(opts: {
+export function renderQueueActivityPage(opts: {
   agent: { id: string; name: string };
+  snapshot: WorkQueueSnapshotItem | null;
   crons: { id: string; name: string | null; schedule: string }[];
   runs: CronRunItem[];
   filters: { cronId?: string; outcome?: string };
   pagination: { total: number; limit: number; page: number };
   userName: string;
   timezone?: string;
+  now?: Date;
 }): string {
-  const { agent, crons, runs, filters, pagination, userName } = opts;
+  const { agent, snapshot, crons, runs, filters, pagination, userName } = opts;
   const timezone = opts.timezone ?? "America/Los_Angeles";
+  const now = opts.now ?? new Date();
+
+  // ─── Upcoming (work queue snapshot) ─────────────────────────────────────
+
+  function queueRow(item: WorkQueueItem, index: number): string {
+    const typeCell = `<span class="badge" style="${ITEM_TYPE_BADGE_STYLE[item.type] ?? ITEM_TYPE_BADGE_STYLE_DEFAULT}">${escapeHtml(ITEM_TYPE_LABEL[item.type] ?? item.type)}</span>`;
+    const phaseCell = `<span class="badge" style="${WORK_QUEUE_PHASE_BADGE_STYLE[item.phase] ?? WORK_QUEUE_PHASE_BADGE_STYLE_DEFAULT}">${escapeHtml(item.phase)}</span>`;
+    const idTitleCell = item.title
+      ? `<span class="mono" style="font-size:12px">${workItemLink(item.type, item.id)}</span> — ${escapeHtml(item.title)}`
+      : `<span class="mono" style="font-size:12px">${workItemLink(item.type, item.id)}</span>`;
+    const ageDate = new Date(item.age);
+    const ageIso = ageDate.toISOString();
+    const ageCell = `<span title="${escapeHtml(ageIso)}">${escapeHtml(relativeTime(ageDate, now))}</span>`;
+
+    return `<tr>
+      <td class="mono" style="font-size:12px">${index + 1}</td>
+      <td>${typeCell}</td>
+      <td>${phaseCell}</td>
+      <td style="font-size:12px">${idTitleCell}</td>
+      <td style="font-size:12px">${ageCell}</td>
+    </tr>`;
+  }
+
+  const upcomingContent =
+    snapshot === null
+      ? `<div class="card">
+      <div class="empty-state">No work queue snapshot yet for this agent. It will appear once the agent's shipwright-loop cron ticks and reports its ranked work queue.</div>
+    </div>`
+      : `<div style="margin-bottom:12px;font-size:12px;color:#6b7280">Last computed: ${escapeHtml(relativeTime(snapshot.computedAt, now))}</div>
+    <div class="card">
+      <div class="data-table-wrapper">
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th>#</th>
+              <th>Type</th>
+              <th>Phase</th>
+              <th>Item</th>
+              <th>Age</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${
+              snapshot.items.length === 0
+                ? `<tr><td colspan="5" class="empty-state">Queue is empty — nothing pending.</td></tr>`
+                : snapshot.items.map(queueRow).join("\n")
+            }
+          </tbody>
+        </table>
+      </div>
+    </div>`;
+
+  // ─── Past (cron run history) ────────────────────────────────────────────
 
   function row(r: CronRunItem): string {
     const outcomeLabel = cronRunOutcomeLabel(r);
@@ -3529,7 +3617,7 @@ export function renderCronLogsPage(opts: {
 
     const cronLabel = r.cron ? (r.cron.name ?? r.cron.schedule) : "—";
     const cronCell = r.cron
-      ? `<a href="/admin/agents/${escapeHtml(agent.id)}/cron-logs?cronId=${escapeHtml(r.cron.id)}" style="color:#6366f1;text-decoration:none">${escapeHtml(cronLabel)}</a>`
+      ? `<a href="/admin/agents/${escapeHtml(agent.id)}/queue-activity?cronId=${escapeHtml(r.cron.id)}" style="color:#6366f1;text-decoration:none">${escapeHtml(cronLabel)}</a>`
       : escapeHtml(cronLabel);
 
     const startedIso = new Date(r.startedAt).toISOString();
@@ -3666,7 +3754,7 @@ export function renderCronLogsPage(opts: {
     if (filters.outcome) params.set("outcome", filters.outcome);
     if (p > 1) params.set("page", String(p));
     const qs = params.toString();
-    return `/admin/agents/${escapeHtml(agent.id)}/cron-logs${qs ? `?${qs}` : ""}`;
+    return `/admin/agents/${escapeHtml(agent.id)}/queue-activity${qs ? `?${qs}` : ""}`;
   };
 
   const from = pagination.total === 0 ? 0 : (page - 1) * pagination.limit + 1;
@@ -3683,17 +3771,21 @@ export function renderCronLogsPage(opts: {
     </div>`;
 
   return renderAdminPage({
-    title: `Cron Logs — ${agent.name} — Shipwright Admin`,
+    title: `Queue & Activity — ${agent.name} — Shipwright Admin`,
     extraStyles: "\n  ",
     body: `${renderAdminToolbar(userName, "/admin/agents")}
   <div class="vos-page">
     <div class="page-header" style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">
       <a href="/admin/agents/${escapeHtml(agent.id)}" style="color:#6b7280;font-size:13px;text-decoration:none">← ${escapeHtml(agent.name)}</a>
-      <h1 class="page-title" style="margin:0;flex:1">Cron Logs — ${escapeHtml(agent.name)}</h1>
+      <h1 class="page-title" style="margin:0;flex:1">Queue &amp; Activity — ${escapeHtml(agent.name)}</h1>
     </div>
 
+    <h2 class="section-title" style="font-size:14px;margin:0 0 8px">Upcoming</h2>
+    ${upcomingContent}
+
+    <h2 class="section-title" style="font-size:14px;margin:24px 0 8px">Past</h2>
     <div class="card" style="margin-bottom:16px">
-      <form method="GET" action="/admin/agents/${escapeHtml(agent.id)}/cron-logs" style="display:flex;gap:8px;align-items:flex-end;flex-wrap:wrap">
+      <form method="GET" action="/admin/agents/${escapeHtml(agent.id)}/queue-activity" style="display:flex;gap:8px;align-items:flex-end;flex-wrap:wrap">
         <div class="form-group" style="margin-bottom:0">
           <label class="form-label" style="font-size:11px">Cron</label>
           <select name="cronId" class="form-input" style="font-size:12px;padding:4px 8px">
@@ -3709,7 +3801,7 @@ export function renderCronLogsPage(opts: {
           </select>
         </div>
         <button type="submit" class="btn btn-secondary" style="font-size:12px;padding:4px 12px">Filter</button>
-        <a href="/admin/agents/${escapeHtml(agent.id)}/cron-logs" class="btn btn-secondary" style="font-size:12px;padding:4px 12px">Reset</a>
+        <a href="/admin/agents/${escapeHtml(agent.id)}/queue-activity" class="btn btn-secondary" style="font-size:12px;padding:4px 12px">Reset</a>
       </form>
     </div>
 
@@ -3737,116 +3829,6 @@ export function renderCronLogsPage(opts: {
       </div>
       ${paginationHtml}
     </div>
-  </div>`,
-  });
-}
-
-// Inline CSS for the work-queue "Phase" column badge, keyed by the raw
-// phase value (dev-task/review/patch/deploy) — a single neutral palette
-// distinct from the outcome-style badges elsewhere on the cron logs page,
-// since phase here is informational, not a pass/fail signal.
-const WORK_QUEUE_PHASE_BADGE_STYLE: Record<string, string> = {
-  "dev-task": "background:#eef2ff;color:#4338ca",
-  review: "background:#fef3c7;color:#92400e",
-  patch: "background:#fee2e2;color:#991b1b",
-  deploy: "background:#dcfce7;color:#166534",
-};
-const WORK_QUEUE_PHASE_BADGE_STYLE_DEFAULT = "background:#f3f4f6;color:#6b7280";
-
-// Inline type mirroring RankedWorkItem (openapi-schemas.ts) without importing
-// the zod schema itself — keeps this file's dependency surface to pure
-// string-rendering inputs.
-export interface WorkQueueItem {
-  type: "task" | "pr";
-  id: string;
-  title?: string;
-  phase: "dev-task" | "review" | "patch" | "deploy";
-  age: string;
-}
-
-export interface WorkQueueSnapshotItem {
-  computedAt: Date;
-  items: WorkQueueItem[];
-}
-
-/**
- * Renders the per-agent work-queue page: a snapshot of the agent's
- * self-reported ranked work queue (tasks/PRs across dev-task/review/patch/
- * deploy), as last pushed via POST /agents/:id/work-queue (AWQ-1.2).
- *
- * Renders a clear empty state when no snapshot exists yet — the agent has no
- * shipwright-loop cron, or hasn't ticked since this feature shipped — rather
- * than erroring.
- */
-export function renderWorkQueuePage(opts: {
-  agent: { id: string; name: string };
-  snapshot: WorkQueueSnapshotItem | null;
-  userName: string;
-  now?: Date;
-}): string {
-  const { agent, snapshot, userName } = opts;
-  const now = opts.now ?? new Date();
-
-  function row(item: WorkQueueItem, index: number): string {
-    const typeCell = `<span class="badge" style="${ITEM_TYPE_BADGE_STYLE[item.type] ?? ITEM_TYPE_BADGE_STYLE_DEFAULT}">${escapeHtml(ITEM_TYPE_LABEL[item.type] ?? item.type)}</span>`;
-    const phaseCell = `<span class="badge" style="${WORK_QUEUE_PHASE_BADGE_STYLE[item.phase] ?? WORK_QUEUE_PHASE_BADGE_STYLE_DEFAULT}">${escapeHtml(item.phase)}</span>`;
-    const idTitleCell = item.title
-      ? `<span class="mono" style="font-size:12px">${workItemLink(item.type, item.id)}</span> — ${escapeHtml(item.title)}`
-      : `<span class="mono" style="font-size:12px">${workItemLink(item.type, item.id)}</span>`;
-    const ageDate = new Date(item.age);
-    const ageIso = ageDate.toISOString();
-    const ageCell = `<span title="${escapeHtml(ageIso)}">${escapeHtml(relativeTime(ageDate, now))}</span>`;
-
-    return `<tr>
-      <td class="mono" style="font-size:12px">${index + 1}</td>
-      <td>${typeCell}</td>
-      <td>${phaseCell}</td>
-      <td style="font-size:12px">${idTitleCell}</td>
-      <td style="font-size:12px">${ageCell}</td>
-    </tr>`;
-  }
-
-  const backLink = `<a href="/admin/agents/${escapeHtml(agent.id)}" style="color:#6b7280;font-size:13px;text-decoration:none">← ${escapeHtml(agent.name)}</a>`;
-
-  const content =
-    snapshot === null
-      ? `<div class="card">
-      <div class="empty-state">No work queue snapshot yet for this agent. It will appear once the agent's shipwright-loop cron ticks and reports its ranked work queue.</div>
-    </div>`
-      : `<div style="margin-bottom:12px;font-size:12px;color:#6b7280">Last computed: ${escapeHtml(relativeTime(snapshot.computedAt, now))}</div>
-    <div class="card">
-      <div class="data-table-wrapper">
-        <table class="data-table">
-          <thead>
-            <tr>
-              <th>#</th>
-              <th>Type</th>
-              <th>Phase</th>
-              <th>Item</th>
-              <th>Age</th>
-            </tr>
-          </thead>
-          <tbody>
-            ${
-              snapshot.items.length === 0
-                ? `<tr><td colspan="5" class="empty-state">Queue is empty — nothing pending.</td></tr>`
-                : snapshot.items.map(row).join("\n")
-            }
-          </tbody>
-        </table>
-      </div>
-    </div>`;
-
-  return renderAdminPage({
-    title: `Work Queue — ${agent.name} — Shipwright Admin`,
-    body: `${renderAdminToolbar(userName, "/admin/agents")}
-  <div class="vos-page">
-    <div class="page-header" style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">
-      ${backLink}
-      <h1 class="page-title" style="margin:0;flex:1">Work Queue — ${escapeHtml(agent.name)}</h1>
-    </div>
-
-    ${content}
   </div>`,
   });
 }

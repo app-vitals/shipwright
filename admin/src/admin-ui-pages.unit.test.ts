@@ -32,7 +32,6 @@ import {
   renderChatMessageBubble,
   renderChatPage,
   renderChatThreadPage,
-  renderCronLogsPage,
   renderGithubAppInstallPage,
   renderGithubAppInstalledPage,
   renderGithubAppManifestRedirectPage,
@@ -43,11 +42,11 @@ import {
   renderProvisionPasteForm,
   renderProvisionXappTokenPage,
   renderPrsPage,
+  renderQueueActivityPage,
   renderSessionDetailPage,
   renderTaskDetailPage,
   renderTasksPage,
   renderTokensPage,
-  renderWorkQueuePage,
 } from "./admin-ui-pages.ts";
 import { renderAdminToolbar } from "./admin-ui-styles.ts";
 import type { ChatMessage, ChatThread } from "./http-chat-client.ts";
@@ -5057,9 +5056,14 @@ describe("renderPrDetailPage", () => {
   });
 });
 
-// ─── renderCronLogsPage ──────────────────────────────────────────────────────
+// ─── renderQueueActivityPage — Past section (cron run history) ─────────────
+//
+// AXR-3.1 merged the former standalone renderCronLogsPage into
+// renderQueueActivityPage's "Past" section — outcome/skipped/skipReason/error
+// rendering is unchanged from the pre-merge implementation, so these cases
+// are adapted (not duplicated) from the original renderCronLogsPage suite.
 
-describe("renderCronLogsPage", () => {
+describe("renderQueueActivityPage — Past section", () => {
   const CRON_AGENT = { id: "agent-123", name: "Test Agent" };
   const CRON = {
     id: "cron-456",
@@ -5102,8 +5106,9 @@ describe("renderCronLogsPage", () => {
       pagination?: { total: number; limit: number; page: number };
     },
   ): string {
-    return renderCronLogsPage({
+    return renderQueueActivityPage({
       agent: CRON_AGENT,
+      snapshot: null,
       crons: [CRON, OTHER_CRON],
       runs,
       filters: opts?.filters ?? {},
@@ -5203,13 +5208,13 @@ describe("renderCronLogsPage", () => {
   test("Cron column links to the same page filtered to that cron's id", () => {
     const html = render([makeRun({ cron: CRON })]);
     expect(html).toContain(
-      `<a href="/admin/agents/${CRON_AGENT.id}/cron-logs?cronId=${CRON.id}"`,
+      `<a href="/admin/agents/${CRON_AGENT.id}/queue-activity?cronId=${CRON.id}"`,
     );
   });
 
   test("Cron column renders plain '—' with no link when the run has no cron", () => {
     const html = render([makeRun({ cron: undefined })]);
-    expect(html).not.toContain("cron-logs?cronId=");
+    expect(html).not.toContain("queue-activity?cronId=");
   });
 
   test("renders empty state when no runs match", () => {
@@ -5323,8 +5328,9 @@ describe("renderCronLogsPage", () => {
   });
 
   test("escapes XSS in the agent name", () => {
-    const html = renderCronLogsPage({
+    const html = renderQueueActivityPage({
       agent: { id: "agent-123", name: "<img src=x onerror=alert(3)>" },
+      snapshot: null,
       crons: [CRON],
       runs: [makeRun()],
       filters: {},
@@ -7669,7 +7675,10 @@ describe("renderTokensPage — agent column linkability", () => {
   });
 });
 
-describe("renderWorkQueuePage", () => {
+// AXR-3.1 merged the former standalone renderWorkQueuePage into
+// renderQueueActivityPage's "Upcoming" section — these cases are adapted
+// (not duplicated) from the original renderWorkQueuePage suite.
+describe("renderQueueActivityPage — Upcoming section", () => {
   const QUEUE_AGENT = { id: "agent-123", name: "Test Agent" };
 
   function makeItem(overrides?: Partial<WorkQueueItem>): WorkQueueItem {
@@ -7687,9 +7696,13 @@ describe("renderWorkQueuePage", () => {
     snapshot: WorkQueueSnapshotItem | null,
     opts?: { now?: Date },
   ): string {
-    return renderWorkQueuePage({
+    return renderQueueActivityPage({
       agent: QUEUE_AGENT,
       snapshot,
+      crons: [],
+      runs: [],
+      filters: {},
+      pagination: { total: 0, limit: 20, page: 1 },
       userName: "admin@example.com",
       now: opts?.now ?? new Date("2026-06-01T10:00:00Z"),
     });
@@ -7704,7 +7717,7 @@ describe("renderWorkQueuePage", () => {
     expect(html).toContain("<html");
     expect(html).toContain("</html>");
     expect(html).toContain(
-      "<title>Work Queue — Test Agent — Shipwright Admin</title>",
+      "<title>Queue &amp; Activity — Test Agent — Shipwright Admin</title>",
     );
   });
 
@@ -7770,11 +7783,82 @@ describe("renderWorkQueuePage", () => {
   });
 });
 
+// ─── renderQueueActivityPage — sectioning (AXR-3.1) ─────────────────────────
+
+describe("renderQueueActivityPage — Upcoming/Past sectioning", () => {
+  const AGENT = { id: "agent-123", name: "Test Agent" };
+  const CRON = { id: "cron-1", name: "status check", schedule: "0 * * * *" };
+
+  test("renders an 'Upcoming' heading before a 'Past' heading, with the work-queue snapshot before the cron-run table", () => {
+    const html = renderQueueActivityPage({
+      agent: AGENT,
+      snapshot: {
+        computedAt: new Date("2026-06-01T09:55:00Z"),
+        items: [
+          {
+            type: "task",
+            id: "TSK-1",
+            title: "Queued task",
+            phase: "dev-task",
+            age: "2026-06-01T09:00:00Z",
+          },
+        ],
+      },
+      crons: [CRON],
+      runs: [
+        {
+          startedAt: new Date("2026-06-01T08:00:00Z"),
+          completedAt: new Date("2026-06-01T08:00:02Z"),
+          outcome: "posted",
+          skipped: false,
+          skipReason: null,
+          error: null,
+          cron: CRON,
+        },
+      ],
+      filters: {},
+      pagination: { total: 1, limit: 20, page: 1 },
+      userName: "admin@example.com",
+      now: new Date("2026-06-01T10:00:00Z"),
+    });
+
+    const upcomingHeadingIndex = html.indexOf("Upcoming");
+    const pastHeadingIndex = html.indexOf("Past");
+    const upcomingItemIndex = html.indexOf("TSK-1");
+    const pastRunIndex = html.indexOf("posted");
+
+    expect(upcomingHeadingIndex).toBeGreaterThan(-1);
+    expect(pastHeadingIndex).toBeGreaterThan(-1);
+    expect(upcomingHeadingIndex).toBeLessThan(pastHeadingIndex);
+    expect(upcomingItemIndex).toBeGreaterThan(-1);
+    expect(pastRunIndex).toBeGreaterThan(-1);
+    // The Upcoming table's item content must appear before the Past
+    // heading, and the Past table's content must appear after it — proving
+    // the two sections aren't interleaved.
+    expect(upcomingItemIndex).toBeLessThan(pastHeadingIndex);
+    expect(pastRunIndex).toBeGreaterThan(pastHeadingIndex);
+  });
+
+  test("renders the Upcoming empty state and Past empty state independently when both are empty", () => {
+    const html = renderQueueActivityPage({
+      agent: AGENT,
+      snapshot: null,
+      crons: [],
+      runs: [],
+      filters: {},
+      pagination: { total: 0, limit: 20, page: 1 },
+      userName: "admin@example.com",
+    });
+    expect(html).toContain("No work queue snapshot yet");
+    expect(html).toContain("No runs match the selected filters.");
+  });
+});
+
 // ─── All page renderers — shared head via renderAdminPage (CFB-1.2) ─────────
 //
 // Every render*Page-style function in this file builds its <!DOCTYPE html>
 // head via the shared admin-ui-layout.ts#renderAdminPage() helper. This loop
-// calls each of the 21 render sites (20 functions — renderChatThreadPage has
+// calls each of the 20 render sites (19 functions — renderChatThreadPage has
 // two distinct DOCTYPE blocks: its degraded early-return and its main return)
 // with minimal valid fixtures and asserts each output has exactly one
 // DOCTYPE and exactly one viewport meta tag, guarding against any call site
@@ -7911,23 +7995,15 @@ describe("all page renderers — single DOCTYPE and viewport meta (CFB-1.2)", ()
     ],
     ["renderPrDetailPage", () => renderPrDetailPage(MINIMAL_PR, USER_NAME)],
     [
-      "renderCronLogsPage",
+      "renderQueueActivityPage",
       () =>
-        renderCronLogsPage({
+        renderQueueActivityPage({
           agent: { id: "agent-123", name: "Test Agent" },
+          snapshot: null,
           crons: [],
           runs: [],
           filters: {},
           pagination: { total: 0, limit: 50, page: 1 },
-          userName: USER_NAME,
-        }),
-    ],
-    [
-      "renderWorkQueuePage",
-      () =>
-        renderWorkQueuePage({
-          agent: { id: "agent-123", name: "Test Agent" },
-          snapshot: null,
           userName: USER_NAME,
         }),
     ],
@@ -7953,8 +8029,8 @@ describe("all page renderers — single DOCTYPE and viewport meta (CFB-1.2)", ()
     ],
   ];
 
-  test("all 21 render sites are covered by this loop", () => {
-    expect(renderers.length).toBe(21);
+  test("all 20 render sites are covered by this loop", () => {
+    expect(renderers.length).toBe(20);
   });
 
   for (const [name, render] of renderers) {
