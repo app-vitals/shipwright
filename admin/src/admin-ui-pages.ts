@@ -4024,6 +4024,11 @@ export interface WorkQueueSnapshotItem {
   items: WorkQueueItem[];
 }
 
+export interface AgentOption {
+  id: string;
+  name: string;
+}
+
 /**
  * Renders the merged per-agent Queue & Activity page (AXR-3.1): an "Upcoming"
  * section showing the agent's self-reported ranked work queue (as last pushed
@@ -4034,9 +4039,15 @@ export interface WorkQueueSnapshotItem {
  * Supersedes the former separate renderWorkQueuePage/renderCronLogsPage
  * pages/routes (now removed) — both existing services are composed onto one
  * page rather than duplicated across two.
+ *
+ * `agents` (AXR-3.4) drives the in-page agent-selector: the caller's full
+ * accessible-agents list (admin: full fleet; non-admin: AgentMember-scoped),
+ * with `agent` pre-selected. Defaults to `[agent]` so existing callers that
+ * don't pass it still render a valid (single-option) selector.
  */
 export function renderQueueActivityPage(opts: {
   agent: { id: string; name: string };
+  agents?: AgentOption[];
   snapshot: WorkQueueSnapshotItem | null;
   crons: { id: string; name: string | null; schedule: string }[];
   runs: CronRunItem[];
@@ -4047,8 +4058,27 @@ export function renderQueueActivityPage(opts: {
   now?: Date;
 }): string {
   const { agent, snapshot, crons, runs, filters, pagination, userName } = opts;
+  const accessibleAgents = opts.agents ?? [agent];
   const timezone = opts.timezone ?? "America/Los_Angeles";
   const now = opts.now ?? new Date();
+
+  // ─── Agent selector (AXR-3.4) ───────────────────────────────────────────
+  // GET form navigating to /admin/agents/{selected-id}/queue-activity on
+  // change, matching the app's server-rendered, no-SPA pattern — the select
+  // rewrites the form's action (the agent id lives in the path, not a query
+  // param) before submitting, same idiom as the chat page's onchange-submit
+  // agent selector.
+  const agentSelectorOptions = accessibleAgents
+    .map(
+      (a) =>
+        `<option value="${escapeHtml(a.id)}"${a.id === agent.id ? " selected" : ""}>${escapeHtml(a.name)}</option>`,
+    )
+    .join("\n");
+  const agentSelectorHtml = `<form method="GET" action="/admin/agents/${escapeHtml(agent.id)}/queue-activity" style="margin:0">
+      <select name="agentId" class="form-input" style="font-size:12px;padding:4px 8px" aria-label="Switch agent" onchange="this.form.action='/admin/agents/'+this.value+'/queue-activity';this.form.submit()">
+        ${agentSelectorOptions}
+      </select>
+    </form>`;
 
   // ─── Upcoming (work queue snapshot) ─────────────────────────────────────
 
@@ -4340,6 +4370,7 @@ export function renderQueueActivityPage(opts: {
     <div class="page-header" style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">
       <a href="/admin/agents/${escapeHtml(agent.id)}" style="color:#6b7280;font-size:13px;text-decoration:none">← ${escapeHtml(agent.name)}</a>
       <h1 class="page-title" style="margin:0;flex:1">Queue &amp; Activity — ${escapeHtml(agent.name)}</h1>
+      ${agentSelectorHtml}
     </div>
 
     <h2 class="section-title" style="font-size:14px;margin:0 0 8px">Upcoming</h2>
@@ -4427,11 +4458,6 @@ export function renderProvisionCompletePage(
 }
 
 // ─── Chat page ─────────────────────────────────────────────────────────────────
-
-export interface AgentOption {
-  id: string;
-  name: string;
-}
 
 /**
  * Renders the top-level /admin/chat page.
