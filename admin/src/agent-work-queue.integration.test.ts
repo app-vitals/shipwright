@@ -117,4 +117,88 @@ describeOrSkip("AgentWorkQueueService (integration)", () => {
     });
     expect(count).toBe(1);
   });
+
+  // ─── getMany(): batch-fetch snapshots ──────────────────────────────────────
+
+  it("getMany() returns snapshots for all agents that have pushed one", async () => {
+    // Create 3 agents: 2 with snapshots, 1 without
+    const agent1Id = await createAgent(prisma, "Agent 1");
+    const agent2Id = await createAgent(prisma, "Agent 2");
+    const agent3Id = await createAgent(prisma, "Agent 3 (no snapshot)");
+
+    const snapshot1 = await service.push(agent1Id, {
+      computedAt: new Date("2026-01-15T12:00:00.000Z"),
+      items: [{ id: "task-1", title: "Task for agent 1", score: 0.9 }],
+    });
+
+    const snapshot2 = await service.push(agent2Id, {
+      computedAt: new Date("2026-01-15T13:00:00.000Z"),
+      items: [{ id: "task-2", title: "Task for agent 2", score: 0.8 }],
+    });
+
+    // agent3Id has no snapshot pushed
+
+    // Request all three agents; should return exactly the two that have snapshots
+    const results = await service.getMany([agent1Id, agent2Id, agent3Id]);
+
+    expect(results).toHaveLength(2);
+    expect(results.map((r) => r.agentId).sort()).toEqual(
+      [agent1Id, agent2Id].sort(),
+    );
+
+    // Verify the content matches what was pushed
+    const result1 = results.find((r) => r.agentId === agent1Id);
+    expect(result1?.id).toBe(snapshot1.id);
+    expect(result1?.items).toEqual([
+      { id: "task-1", title: "Task for agent 1", score: 0.9 },
+    ]);
+
+    const result2 = results.find((r) => r.agentId === agent2Id);
+    expect(result2?.id).toBe(snapshot2.id);
+    expect(result2?.items).toEqual([
+      { id: "task-2", title: "Task for agent 2", score: 0.8 },
+    ]);
+  });
+
+  it("getMany() returns empty array when no agents have snapshots", async () => {
+    const agent1Id = await createAgent(prisma, "Agent 1");
+    const agent2Id = await createAgent(prisma, "Agent 2");
+
+    // No snapshots pushed for either agent
+
+    const results = await service.getMany([agent1Id, agent2Id]);
+
+    expect(results).toEqual([]);
+  });
+
+  it("getMany() with empty agent IDs array returns empty array", async () => {
+    const results = await service.getMany([]);
+
+    expect(results).toEqual([]);
+  });
+
+  it("getMany() omits agents with no snapshot and includes only those that have one", async () => {
+    const agentWithSnapshotId = await createAgent(prisma, "Agent with snapshot");
+    const agentWithoutSnapshotId = await createAgent(
+      prisma,
+      "Agent without snapshot",
+    );
+    const nonExistentAgentId = "nonexistent-agent-id";
+
+    await service.push(agentWithSnapshotId, {
+      computedAt: new Date("2026-01-15T12:00:00.000Z"),
+      items: [{ id: "task", title: "Some task", score: 0.5 }],
+    });
+
+    // Request mix of agent with snapshot, agent without snapshot, and non-existent
+    const results = await service.getMany([
+      agentWithSnapshotId,
+      agentWithoutSnapshotId,
+      nonExistentAgentId,
+    ]);
+
+    // Should return only the one agent with a snapshot
+    expect(results).toHaveLength(1);
+    expect(results[0]?.agentId).toBe(agentWithSnapshotId);
+  });
 });

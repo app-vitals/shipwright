@@ -54,4 +54,15 @@ export class AgentWorkQueueService {
       where: { agentId },
     });
   }
+
+  /**
+   * Get the latest work-queue snapshots for multiple agents in a single query.
+   * Returns only snapshots for agents that have pushed one, omitting agents
+   * without any snapshot rather than erroring.
+   */
+  async getMany(agentIds: string[]): Promise<AgentWorkQueueSnapshot[]> {
+    return this.prisma.agentWorkQueueSnapshot.findMany({
+      where: { agentId: { in: agentIds } },
+    });
+  }
 }

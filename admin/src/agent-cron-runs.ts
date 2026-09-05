@@ -110,6 +110,24 @@ export interface AgentCronRunListForAgent {
   offset: number;
 }
 
+/**
+ * Filter options for `listAcrossAgents()`. Mirrors `ListForAgentOptions` —
+ * the agent scoping itself comes from the `agentIds` array argument, not
+ * from an option here.
+ */
+export interface ListAcrossAgentsOptions {
+  /** Narrow to a single cron, still scoped to the given agentIds. */
+  cronId?: string;
+  /**
+   * "skipped" filters WHERE skipped = true regardless of the outcome column
+   * (same semantics as ListForAgentOptions.outcome). Any other value filters
+   * WHERE skipped = false AND outcome = value. Omitted means no filter.
+   */
+  outcome?: string;
+  limit?: number;
+  offset?: number;
+}
+
 export class AgentCronRunService {
   constructor(private prisma: PrismaClient) {}
 
@@ -299,6 +317,50 @@ export class AgentCronRunService {
     const offset = opts?.offset ?? 0;
 
     const where: Prisma.AgentCronRunWhereInput = { agentId };
+    if (opts?.cronId) {
+      where.cronId = opts.cronId;
+    }
+    if (opts?.outcome === "skipped") {
+      where.skipped = true;
+    } else if (opts?.outcome !== undefined) {
+      where.skipped = false;
+      where.outcome = opts.outcome;
+    }
+
+    const [items, total] = await this.prisma.$transaction([
+      this.prisma.agentCronRun.findMany({
+        where,
+        orderBy: { startedAt: "desc" },
+        take: limit,
+        skip: offset,
+        include: {
+          modelBreakdown: true,
+          cron: { select: { id: true, name: true, schedule: true } },
+          phaseCron: { select: { id: true, name: true } },
+        },
+      }),
+      this.prisma.agentCronRun.count({ where }),
+    ]);
+
+    return { items, total, limit, offset };
+  }
+
+  /**
+   * List runs across a set of agents, sorted descending by startedAt.
+   * Unlike `.listForAgent()`, this is scoped to a list of agent ids rather
+   * than a single one — used by fleet-wide views (e.g. an org dashboard)
+   * that need a globally-ordered feed across many agents' cron history.
+   * An empty agentIds array yields an empty result, not an error.
+   * Defaults to limit=20, offset=0.
+   */
+  async listAcrossAgents(
+    agentIds: string[],
+    opts?: ListAcrossAgentsOptions,
+  ): Promise<AgentCronRunListForAgent> {
+    const limit = opts?.limit ?? 20;
+    const offset = opts?.offset ?? 0;
+
+    const where: Prisma.AgentCronRunWhereInput = { agentId: { in: agentIds } };
     if (opts?.cronId) {
       where.cronId = opts.cronId;
     }
