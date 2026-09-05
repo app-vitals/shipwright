@@ -395,8 +395,9 @@ review and patch share an agent/session — any agent can claim either phase, an
 dependency-risk analysis is only ever persisted as text inside the GitHub-posted review
 body, never in a shared in-memory or task-store field. Store the result as
 `DEPENDENCY_RISK_FINDING` (a nullable `{recommendation, flags, reasoning}` shape) for use by
-Step 5b — this step never changes List A/C/D membership on its own; Step 3a's criteria above
-already governs that.
+Step 5b. A `"hold"` or `"review"` recommendation additionally routes the PR into **List A**
+directly — see step 3 below — because it has no ordinary review finding for Step 3a's
+criteria to catch on its own.
 
 1. **Scan the review bodies Step 3a already fetched.** For each review in `reviews.nodes[]`
    (already in memory from Step 3a's GraphQL query — do not re-fetch), check its `body` for
@@ -442,6 +443,24 @@ already governs that.
       `{recommendation, flags, reasoning}`. Set `DEPENDENCY_RISK_FINDING` from the result.
    d. **When not triggered** (no changed file matches): `DEPENDENCY_RISK_FINDING` stays
       unset for this PR.
+
+3. **Route a `hold`/`review` recommendation into List A.** When `DEPENDENCY_RISK_FINDING`
+   is set (from step 1 or step 2 above) and its `recommendation` is `"hold"` or `"review"`,
+   add this PR to **List A** — regardless of whether Step 3a's own criteria (unresolved
+   inline threads, a non-excluded COMMENTED/CHANGES_REQUESTED review body) independently
+   found a finding for this PR. A `"merge"` recommendation has nothing to remediate and does
+   not affect List A membership.
+
+   This routing is necessary because the two signals are otherwise disconnected:
+   `review.md`'s Step 9 template appends the dependency-risk clause on the same line as its
+   `Verdict: ...` output but deliberately excludes it from `compute-review-verdict.ts`'s
+   event computation (review.md:1118-1125). A dependency-bump-only PR with a `hold`/`review`
+   recommendation and no other findings therefore still gets a clean `Verdict: APPROVE` —
+   which Step 3a's own clean-APPROVE exclusion would otherwise keep out of List A
+   indefinitely. Without this rule, Step 5b's DEPENDENCY-RISK REMEDIATION PROTOCOL block is
+   unreachable for exactly the scenario it targets: a dependency-bump PR carrying a
+   hold/review recommendation with no unrelated ordinary finding to piggyback List A
+   membership on.
 
 ### Step 3b: Check for DIRTY State
 

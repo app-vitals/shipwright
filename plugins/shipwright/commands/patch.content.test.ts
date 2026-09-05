@@ -1890,6 +1890,19 @@ describe("patch.md — dependency-risk detection (DBP-1.2)", () => {
     const section = getStep3a5Section();
     expect(section).toMatch(/DEPENDENCY_RISK_FINDING.{0,40}stays\s+unset/is);
   });
+
+  it("routes a hold/review recommendation into List A directly, since a dependency-bump-only PR can still get a clean Verdict: APPROVE", () => {
+    const section = getStep3a5Section();
+    expect(section).toMatch(/route.{0,60}(?:"hold"|hold).{0,60}(?:"review"|review).{0,80}List A/is);
+    expect(section).toContain("Verdict: APPROVE");
+    expect(section).toContain("compute-review-verdict.ts");
+    expect(section.toLowerCase()).toContain("regardless of whether step 3a's own criteria");
+  });
+
+  it("a merge recommendation does not affect List A membership", () => {
+    const section = getStep3a5Section();
+    expect(section).toMatch(/"merge".{0,60}nothing to remediate and does\s+not\s+affect List A/is);
+  });
 });
 
 describe("patch.md — dependency-patch protocol injected into Step 5b (DBP-1.2)", () => {
