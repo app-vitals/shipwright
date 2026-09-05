@@ -686,10 +686,23 @@ describe("message handler — DM routing", () => {
 
   // ─── STS2-1.1: chunk schema, setStatus skip, delivery ───────────────────
 
-  test("does not call agents.sessions.setStatus at all when streaming (STS2-1.1 AC #3)", async () => {
+  test("calls agents.sessions.setStatus eagerly at start and unconditionally at finish, alongside streaming (ISW-1.1)", async () => {
     createSlackApp();
     const { client } = await invokeDM({ channel: "D123", ts: "111.222" });
-    expect(client.agents.sessions.setStatus).not.toHaveBeenCalled();
+    expect(client.agents.sessions.setStatus).toHaveBeenCalledWith({
+      channel_id: "D123",
+      thread_ts: "111.222",
+      status: "processing",
+    });
+    expect(client.agents.sessions.setStatus).toHaveBeenCalledWith({
+      channel_id: "D123",
+      thread_ts: "111.222",
+      status: "active",
+    });
+    // Independent of, not instead of, the stream's own close call.
+    expect(client.chat.stopStream).toHaveBeenCalledWith(
+      expect.objectContaining({ session_status: "active" }),
+    );
   });
 
   test("every task_update chunk uses the type/id/title/status shape, never the old {type, text} shape (STS2-1.1 AC #1)", async () => {

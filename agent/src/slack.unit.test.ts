@@ -963,6 +963,11 @@ describe("agent_session_stopped handler", () => {
     });
     await flushMicrotasks();
 
+    // start()'s own eager setStatus call (ISW-1.1) already fired above —
+    // clear it so calls[0] below refers to the agent_session_stopped
+    // handler's own call, not start()'s.
+    client.agents.sessions.setStatus.mockClear();
+
     await expect(
       capturedAgentSessionStoppedHandler?.({
         event: { channel: "D999", streaming_message_ts: "no.such.stream" },
