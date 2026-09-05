@@ -160,6 +160,29 @@ describe("onError — Sentry capture wiring", () => {
   });
 });
 
+describe("onError — malformed JSON request body", () => {
+  it("returns 400 (not 500) and does not call sentryClient.captureException", async () => {
+    const sentryClient = fakeErrorCapturingClient();
+    const app = createTaskStoreApp({
+      taskService: apiErrorTaskService(),
+      tokenService: fakeTokenService(),
+      sentryClient,
+    });
+
+    const res = await app.request("/tasks", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${VALID_TOKEN}`,
+        "Content-Type": "application/json",
+      },
+      body: "{not valid json",
+    });
+
+    expect(res.status).toBe(400);
+    expect(sentryClient.capturedErrors.length).toBe(0);
+  });
+});
+
 describe("onError — caller label logging (AOB-3.3)", () => {
   it("includes the admin caller label in the unhandled-error console.error line", async () => {
     const consoleErrorSpy = spyOn(console, "error").mockImplementation(

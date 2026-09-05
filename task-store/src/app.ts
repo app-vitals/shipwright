@@ -24,6 +24,7 @@ import {
   buildSentryInitOptions,
 } from "@shipwright/lib/sentry";
 import { Hono } from "hono";
+import { HTTPException } from "hono/http-exception";
 import { type TaskStoreAuthEnv, createBearerAuthMiddleware } from "./auth.ts";
 import { ApiError } from "./errors.ts";
 import type { PullRequestServiceLike } from "./pull-request-service.ts";
@@ -121,13 +122,24 @@ export function createTaskStoreApp(
     if (err instanceof ApiError) {
       return c.json({ error: err.message }, err.statusCode as 400);
     }
+    // hono/@hono/zod-openapi throws a bare HTTPException (not an ApiError)
+    // when the request body isn't valid JSON at all — e.g.
+    // `hono/dist/validator/validator.js`'s own `c.req.json()` parse-failure
+    // path. It already carries the correct client-error status (400), so
+    // treat it like an ApiError: no Sentry capture, respond with its own
+    // status. A >=500 HTTPException (rare — not raised by this parse path)
+    // still falls through to the generic unhandled-error handling below.
+    if (err instanceof HTTPException && err.status < 500) {
+      return c.json({ error: err.message }, err.status as 400);
+    }
     deps.sentryClient?.captureException(err);
     console.error(
       `[task-store] unhandled error (caller: ${callerLabel(c.get("caller"))}):`,
       err,
     );
     const message = err instanceof Error ? err.message : String(err);
-    return c.json({ error: message }, 500);
+    const status = err instanceof HTTPException ? err.status : 500;
+    return c.json({ error: message }, status as 500);
   });
 
   // Health checks — no auth.
