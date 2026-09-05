@@ -10,6 +10,12 @@ independent of `appVersion`. CI enforces this with
 `ct lint --check-version-increment`. Each release here must mirror the
 `artifacthub.io/changes` annotation in `Chart.yaml`.
 
+## [1.19.109] - 2026-09-05
+
+### Changed
+
+- bump traefik subchart dependency to 41.4.0 and pin the Whisper ASR image back to v1.3.0 (#2920)
+
 ## [1.19.106] - 2026-09-05
 
 ### Changed

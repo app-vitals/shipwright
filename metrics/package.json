@@ -14,7 +14,7 @@
     "@sentry/hono": "^10.63.0",
     "@shipwright/lib": "workspace:*",
     "hono": "^4.13.1",
-    "openapi-fetch": "^0.13",
+    "openapi-fetch": "^0.17.0",
     "zod": "^3"
   },
   "devDependencies": {
