@@ -2067,6 +2067,13 @@ export function renderTasksPage(
   // through when the request carries ?view=table (AXR-1.3 AC4). GET
   // /public/tasks never passes a view, so it stays on the table renderer.
   view: "board" | "table" = "table",
+  // Reference "current" time for board-card age badges (TBC-1.1). Mirrors
+  // renderPrsPage's own trailing `now` parameter: defaulted here (rather
+  // than required) so the large pre-existing positional-call unit-test
+  // suite keeps working unchanged, while the render chain itself never
+  // calls `new Date()` internally (t2_clock_injection). GET /admin/tasks
+  // passes `new Date()` explicitly at its call site.
+  now: Date = new Date(),
 ): string {
   const errorHtml = opts?.error
     ? `<div class="alert alert-error">${escapeHtml(opts.error)}</div>`
@@ -2111,6 +2118,7 @@ export function renderTasksPage(
       agentFilterHtml,
       renderBlockerBadges,
       page: pagination.page,
+      now,
     });
   }
 
@@ -2444,6 +2452,10 @@ function renderTasksBoard(args: {
     blockedBy: BlockedByEntry[] | null | undefined,
   ) => string;
   page: number;
+  // Reference "current" time for card age badges (TBC-1.1) — threaded down
+  // from renderTasksPage so renderCard (defined below) never calls
+  // `new Date()` itself (t2_clock_injection).
+  now: Date;
 }): string {
   const {
     tasks,
@@ -2458,6 +2470,7 @@ function renderTasksBoard(args: {
     agentFilterHtml,
     renderBlockerBadges,
     page,
+    now,
   } = args;
 
   const statusOptions = [
@@ -2550,6 +2563,15 @@ function renderTasksBoard(args: {
         : `<a href="/admin/sessions/${encodeURIComponent(t.session)}${detailHrefSuffix}" style="color:#6366f1;text-decoration:none">${escapeHtml(t.session)}</a>`
       : "";
     const detailHref = `/admin/tasks/${escapeHtml(t.id)}${detailHrefSuffix}`;
+    // Same <span title="{ISO}">{relative}</span> pattern as the Queue/
+    // Activity table's ageCell (~line 4108) and the cron last-run age
+    // (~line 1191). A null/missing/invalid createdAt renders no badge at
+    // all rather than passing an invalid Date into relativeTime (AC2).
+    const createdAtDate = t.createdAt ? new Date(t.createdAt) : null;
+    const ageCell =
+      createdAtDate && !Number.isNaN(createdAtDate.getTime())
+        ? `<span title="${escapeHtml(createdAtDate.toISOString())}">${escapeHtml(relativeTime(createdAtDate, now))}</span>`
+        : "";
     const releaseForm =
       readOnly || t.status !== "in_progress"
         ? ""
@@ -2568,6 +2590,7 @@ function renderTasksBoard(args: {
           ${agentCell}
           ${sessionLink}
           ${prLink}
+          ${ageCell}
         </div>
         ${blockerBadges}${prBadge}
         ${releaseForm}
