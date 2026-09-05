@@ -248,7 +248,7 @@ Default `org/repo`-formatted repos for agents of this type — like `members`, u
 
 The agent runtime always grants a fixed set of 7 **floor tools** — `Read`, `Write`, `Edit`, `Glob`, `Grep`, `Skill`, `TodoWrite` (the `FLOOR_TOOLS` constant in `agent/src/claude.ts`) — regardless of what a manifest's `tools[]` array says. This is an architectural invariant, not a manifest option: floor tools are non-revocable, cannot be removed by omitting them from `tools[]`, and are not derived from manifest content at all.
 
-A manifest's `tools[]` field is purely **additive on top of the floor set** — it's how a type requests the high-privilege tools that are *not* floor-granted (`Bash`, `WebSearch`, `WebFetch`, `Agent`). Listing a floor tool in `tools[]` is harmless but has no effect; omitting one has no effect either. See [`docs/agent.md`](./agent.md#tool-management-and-narrowing) for the full floor-tools vs. allowed-tools model.
+A manifest's `tools[]` field is purely **additive on top of the floor set** — it's how a type requests the high-privilege tools that are *not* floor-granted (`Bash`, `WebSearch`, `WebFetch`, `Agent`). Listing a floor tool in `tools[]` is harmless but has no effect; omitting one has no effect either. See [`docs/agent-ops.md`](./agent-ops.md#tool-management-and-narrowing) for the full floor-tools vs. allowed-tools model.
 
 ### Manifests never contain secret values
 

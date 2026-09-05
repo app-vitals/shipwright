@@ -165,7 +165,7 @@ curl -X PATCH "https://<admin-url>/agents/<id>/crons/<cronId>" \
   -d '{"enabled": true}'
 ```
 
-The same mechanism applies to all opt-in crons — see `docs/agent.md`'s "Default system crons" section for the full flow.
+The same mechanism applies to all opt-in crons — see `docs/agent-ops.md`'s "Default system crons" section for the full flow.
 
 ### The preCheck script
 
