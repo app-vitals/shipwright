@@ -2067,6 +2067,13 @@ export function renderTasksPage(
   // through when the request carries ?view=table (AXR-1.3 AC4). GET
   // /public/tasks never passes a view, so it stays on the table renderer.
   view: "board" | "table" = "table",
+  // Reference "current" time for board-card age badges (TBC-1.1). Mirrors
+  // renderPrsPage's own trailing `now` parameter: defaulted here (rather
+  // than required) so the large pre-existing positional-call unit-test
+  // suite keeps working unchanged, while the render chain itself never
+  // calls `new Date()` internally (t2_clock_injection). GET /admin/tasks
+  // passes `new Date()` explicitly at its call site.
+  now: Date = new Date(),
 ): string {
   const errorHtml = opts?.error
     ? `<div class="alert alert-error">${escapeHtml(opts.error)}</div>`
@@ -2111,6 +2118,7 @@ export function renderTasksPage(
       agentFilterHtml,
       renderBlockerBadges,
       page: pagination.page,
+      now,
     });
   }
 
@@ -2397,8 +2405,10 @@ export function renderTasksPage(
 }
 
 /**
- * Renders the AXR-1.3 board layout for GET /admin/tasks — 5 columns
- * (Queued/Claimed/In Progress/Blocked-HITL/Done, per TASK_BOARD_COLUMNS)
+ * Renders the AXR-1.3 board layout for GET /admin/tasks — 3 columns
+ * (Queued/In Progress/Blocked-HITL, per TASK_BOARD_COLUMNS; Claimed and Done
+ * are dropped from the default board per TBC-2.1 — both stay reachable via
+ * ?view=table's status/state filters)
  * bucketed via bucketTaskColumn using each task's status/hitl/blockedBy
  * plus its joined PR's blocked flag (AXR-1.2's prsByTaskId). The default
  * filter row shows only the Org and Repo multiselects (renderRepoOrgFilterFields,
@@ -2444,6 +2454,10 @@ function renderTasksBoard(args: {
     blockedBy: BlockedByEntry[] | null | undefined,
   ) => string;
   page: number;
+  // Reference "current" time for card age badges (TBC-1.1) — threaded down
+  // from renderTasksPage so renderCard (defined below) never calls
+  // `new Date()` itself (t2_clock_injection).
+  now: Date;
 }): string {
   const {
     tasks,
@@ -2458,8 +2472,17 @@ function renderTasksBoard(args: {
     agentFilterHtml,
     renderBlockerBadges,
     page,
+    now,
   } = args;
 
+  // The board's Status dropdown deliberately omits the closed statuses
+  // (SESSION_CLOSED_STATUSES: merged/done/deploying/deployed/cancelled).
+  // Selecting one here would set `?status=…`, which bypasses admin-ui.ts's
+  // `state=open` board default and returns tasks that bucketTaskColumn maps
+  // to the "done" column — a column TASK_BOARD_COLUMNS no longer renders
+  // (TBC-2.1), so the board would silently show "No tasks" everywhere.
+  // Those statuses stay filterable on ?view=table, whose own statusOptions
+  // list (above) is unchanged and still offers every status.
   const statusOptions = [
     "",
     "pending",
@@ -2473,6 +2496,7 @@ function renderTasksBoard(args: {
     "blocked",
     "cancelled",
   ]
+    .filter((s) => !SESSION_CLOSED_STATUSES.has(s))
     .map(
       (s) =>
         `<option value="${escapeHtml(s)}" ${filters.status === s ? "selected" : ""}>${s === "" ? "Any status" : escapeHtml(s)}</option>`,
@@ -2550,6 +2574,15 @@ function renderTasksBoard(args: {
         : `<a href="/admin/sessions/${encodeURIComponent(t.session)}${detailHrefSuffix}" style="color:#6366f1;text-decoration:none">${escapeHtml(t.session)}</a>`
       : "";
     const detailHref = `/admin/tasks/${escapeHtml(t.id)}${detailHrefSuffix}`;
+    // Same <span title="{ISO}">{relative}</span> pattern as the Queue/
+    // Activity table's ageCell (~line 4108) and the cron last-run age
+    // (~line 1191). A null/missing/invalid createdAt renders no badge at
+    // all rather than passing an invalid Date into relativeTime (AC2).
+    const createdAtDate = t.createdAt ? new Date(t.createdAt) : null;
+    const ageCell =
+      createdAtDate && !Number.isNaN(createdAtDate.getTime())
+        ? `<span title="${escapeHtml(createdAtDate.toISOString())}">${escapeHtml(relativeTime(createdAtDate, now))}</span>`
+        : "";
     const releaseForm =
       readOnly || t.status !== "in_progress"
         ? ""
@@ -2568,6 +2601,7 @@ function renderTasksBoard(args: {
           ${agentCell}
           ${sessionLink}
           ${prLink}
+          ${ageCell}
         </div>
         ${blockerBadges}${prBadge}
         ${releaseForm}
@@ -3057,8 +3091,12 @@ const TASK_STATE_GROUPS: { key: TaskState; label: string }[] = [
 
 // ─── Board column bucketing (AXR-1.2) ────────────────────────────────────────
 //
-// Single source of truth for the 5-column task board — AXR-1.3 builds the
-// board UI on top of this pure function; do not duplicate this logic there.
+// Single source of truth for the task board's 5 possible bucket values —
+// AXR-1.3 builds the board UI on top of this pure function; do not duplicate
+// this logic there. Per TBC-2.1, the default board render (TASK_BOARD_COLUMNS)
+// only shows 3 of these 5 buckets (queued/in_progress/blocked_hitl); claimed
+// and done are still valid bucketTaskColumn outputs (used by other callers)
+// but are no longer rendered as default-board columns.
 // Every task resolves to exactly one column. Precedence is checked top to
 // bottom below, first match wins:
 //
@@ -3094,8 +3132,6 @@ export const TASK_BOARD_COLUMNS: { key: TaskBoardColumn; label: string }[] = [
   { key: "queued", label: "Queued" },
   { key: "in_progress", label: "In Progress" },
   { key: "blocked_hitl", label: "Blocked-HITL" },
-  { key: "claimed", label: "Claimed" },
-  { key: "done", label: "Done" },
 ];
 
 /**

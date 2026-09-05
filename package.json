@@ -1,6 +1,6 @@
 {
   "name": "shipwright-monorepo",
-  "version": "1.251.0",
+  "version": "1.253.0",
   "private": true,
   "workspaces": [
     "lib",
@@ -27,7 +27,7 @@
   },
   "devDependencies": {
     "@biomejs/biome": "^1.9.4",
-    "openapi-fetch": "^0.13",
+    "openapi-fetch": "^0.17.0",
     "openapi-typescript": "^7",
     "@semantic-release/changelog": "^6.0.3",
     "@semantic-release/commit-analyzer": "^13.0.1",

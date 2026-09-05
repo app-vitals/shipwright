@@ -10,6 +10,42 @@ independent of `appVersion`. CI enforces this with
 `ct lint --check-version-increment`. Each release here must mirror the
 `artifacthub.io/changes` annotation in `Chart.yaml`.
 
+## [1.19.113] - 2026-09-05
+
+### Changed
+
+- auto-bump to chart v1.19.113 triggered by release tag(s): `admin-v1.145.0`
+
+## [1.19.112] - 2026-09-05
+
+### Changed
+
+- auto-bump to chart v1.19.112 triggered by release tag(s): `agent-v1.253.0`
+
+## [1.19.111] - 2026-09-05
+
+### Changed
+
+- auto-bump to chart v1.19.111 triggered by release tag(s): `admin-v1.144.0`
+
+## [1.19.110] - 2026-09-05
+
+### Changed
+
+- auto-bump to chart v1.19.110 triggered by release tag(s): `admin-v1.143.1`, `agent-v1.252.0`, `chat-v1.82.0`, `metrics-v1.84.0`, `task-store-v1.108.0`
+
+## [1.19.109] - 2026-09-05
+
+### Changed
+
+- bump traefik subchart dependency to 41.4.0 and pin the Whisper ASR image back to v1.3.0 (#2920)
+
+## [1.19.106] - 2026-09-05
+
+### Changed
+
+- auto-bump to chart v1.19.106 triggered by release tag(s): `admin-v1.143.0`
+
 ## [1.19.105] - 2026-09-05
 
 ### Changed
