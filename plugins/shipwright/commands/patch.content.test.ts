@@ -1840,3 +1840,222 @@ describe("patch.md — no-op at dispatch skip-reason tag (RVD-2.4)", () => {
     expect(hasExplanation).toBe(true);
   });
 });
+
+describe("patch.md — dependency-risk detection (DBP-1.2)", () => {
+  function getStep3a5Section() {
+    const step3a5Idx = content.indexOf("### Step 3a.5: Dependency-Risk Detection (DBP-1.2)");
+    const step3bIdx = content.indexOf("### Step 3b: Check for DIRTY State");
+    expect(step3a5Idx).toBeGreaterThan(-1);
+    expect(step3bIdx).toBeGreaterThan(step3a5Idx);
+    return content.slice(step3a5Idx, step3bIdx);
+  }
+
+  it("Step 3a.5 exists between Step 3a and Step 3b", () => {
+    const step3aIdx = content.indexOf('### Step 3a: Check for Unaddressed Review Findings');
+    const step3a5Idx = content.indexOf("### Step 3a.5: Dependency-Risk Detection (DBP-1.2)");
+    const step3bIdx = content.indexOf("### Step 3b: Check for DIRTY State");
+    expect(step3aIdx).toBeGreaterThan(-1);
+    expect(step3a5Idx).toBeGreaterThan(step3aIdx);
+    expect(step3bIdx).toBeGreaterThan(step3a5Idx);
+  });
+
+  it("does not try to recover the finding by scanning review bodies — that fast path could never match posted data", () => {
+    const section = getStep3a5Section();
+    // The full **Recommendation**/**Flags**/**Reasoning** block only ever lands in the
+    // local state/reviews/PR_REVIEW_{pr}.md narrative (review.md:782), which is never
+    // posted; the GitHub-posted body carries only a condensed one-line clause with no
+    // flags (review.md:1118-1126). So no parse step may set DEPENDENCY_RISK_FINDING from
+    // a review body — the section must explain that rather than attempt it.
+    expect(section).not.toMatch(/parse\s+`?\{recommendation, flags, reasoning\}`?\s+from/i);
+    expect(section).toContain("PR_REVIEW_{pr}.md");
+    expect(section).toContain("review.md:1118-1126");
+    expect(section).toMatch(/could never match real posted data/i);
+    expect(section).toMatch(/`flags`\s+is\s+absent from it entirely/i);
+  });
+
+  it("derives the finding from the PR's own diff, invoking resolve-dependency-watched-paths.ts and referencing dependency-risk-analysis.md by name", () => {
+    const section = getStep3a5Section();
+    expect(section).toContain("resolve-dependency-watched-paths.ts");
+    expect(section).toContain("references/dependency-risk-analysis.md");
+  });
+
+  it("derivation mirrors review.md's Step 5.8 without assuming a worktree exists yet", () => {
+    const section = getStep3a5Section();
+    expect(section).toContain("review.md");
+    expect(section).toContain("Step 5.8");
+    expect(section).toContain("gh api");
+    expect(section).toContain("gh pr diff {pr} --repo {org}/{repo} --name-only");
+  });
+
+  it("has no dependency on any review-session state ever having existed", () => {
+    const section = getStep3a5Section();
+    expect(section.toLowerCase()).toContain("independently");
+    expect(section).toContain("any agent can claim either phase");
+  });
+
+  it("when not triggered, DEPENDENCY_RISK_FINDING stays unset for the PR", () => {
+    const section = getStep3a5Section();
+    expect(section).toMatch(/DEPENDENCY_RISK_FINDING.{0,40}stays\s+unset/is);
+  });
+
+  it("routes a hold/review recommendation into List A directly, since a dependency-bump-only PR can still get a clean Verdict: APPROVE", () => {
+    const section = getStep3a5Section();
+    expect(section).toMatch(/route.{0,60}(?:"hold"|hold).{0,60}(?:"review"|review).{0,80}List A/is);
+    expect(section).toContain("Verdict: APPROVE");
+    expect(section).toContain("compute-review-verdict.ts");
+    expect(section.toLowerCase()).toContain("regardless of whether step 3a's own criteria");
+  });
+
+  it("a merge recommendation does not affect List A membership", () => {
+    const section = getStep3a5Section();
+    expect(section).toMatch(/"merge".{0,60}nothing to remediate and does\s+not\s+affect List A/is);
+  });
+
+  it("has an already-held exclusion so a held finding is not re-routed into List A every cycle", () => {
+    const section = getStep3a5Section();
+    expect(section).toMatch(/already-held exclusion/i);
+    expect(section).toContain("Independence Principle #6");
+    expect(section).toContain("Skills Are Idempotent");
+    // The exclusion must be positioned as the analogue of Step 3a's own
+    // resolved/replied/superseded state, which this finding inherently lacks.
+    expect(section).toContain("isResolved");
+    expect(section).toMatch(/synthesized fresh from the diff on every cycle/i);
+  });
+
+  it("the already-held exclusion reads the findings ledger keyed on a HEAD-SHA-scoped ref, so it self-expires on a new commit", () => {
+    const section = getStep3a5Section();
+    expect(section).toContain("$SHIPWRIGHT_TASK_STORE_URL/prs?repo={org}/{repo}&prNumber={pr}");
+    expect(section).toContain("dependency-risk@{headRefOid}");
+    expect(section).toContain('disposition == "rejected"');
+    expect(section).toMatch(/self-expiring/i);
+    // headRefOid comes from Step 3a's existing query — no extra GitHub round trip.
+    expect(section).toMatch(/no extra GitHub call/i);
+  });
+
+  it("the already-held exclusion fails open — a missing or unreadable ledger never suppresses a first-round remediation", () => {
+    const section = getStep3a5Section();
+    expect(section).toMatch(/HELD_DEP_FINDINGS.{0,120}(`0`|empty).{0,200}route normally/is);
+    expect(section).toMatch(/must never suppress a\s+first-round remediation/i);
+  });
+
+  it("an excluded already-held finding still leaves ordinary Step 3a findings free to route the PR into List A", () => {
+    const section = getStep3a5Section();
+    expect(section).toMatch(/leave its List A\s+membership entirely to Step 3a's own criteria/i);
+    expect(section).toMatch(/omit Step 5b's DEPENDENCY-RISK REMEDIATION PROTOCOL\s+block/i);
+  });
+
+  it("the already-held exclusion clears DEPENDENCY_RISK_FINDING itself, so it reaches Step 5b's gate and not just step 2's routing", () => {
+    const section = getStep3a5Section();
+    // The exclusion must act on the one variable Step 5b's protocol gate reads. Skipping
+    // only step 2's List A routing leaves the gate reading a still-set finding, which
+    // re-injects the protocol block whenever an unrelated ordinary finding put the PR in
+    // List A on its own.
+    expect(section).toMatch(
+      /clear\s+`DEPENDENCY_RISK_FINDING`\s+back to unset/i,
+    );
+    expect(section).toMatch(/single source of truth/i);
+    expect(section).toMatch(/rather than only skipping step 2's routing decision/i);
+    expect(section).toMatch(/Skipping only step 2's routing would leave/i);
+  });
+});
+
+describe("patch.md — dependency-patch protocol injected into Step 5b (DBP-1.2)", () => {
+  function getStep5bPromptSection() {
+    const step5bIdx = content.indexOf("### Step 5b: Dispatch Fix Subagent");
+    const step5cIdx = content.indexOf("### Step 5c: Handle Subagent Status");
+    expect(step5bIdx).toBeGreaterThan(-1);
+    expect(step5cIdx).toBeGreaterThan(-1);
+    return content.slice(step5bIdx, step5cIdx);
+  }
+
+  it("Step 5b's prompt includes a DEPENDENCY-RISK REMEDIATION PROTOCOL section referencing references/dependency-patch.md", () => {
+    const section = getStep5bPromptSection();
+    expect(section).toContain("DEPENDENCY-RISK REMEDIATION PROTOCOL");
+    expect(section).toContain("references/dependency-patch.md");
+  });
+
+  it("the protocol section is gated on DEPENDENCY_RISK_FINDING with recommendation review or hold, since merge has nothing to remediate", () => {
+    const section = getStep5bPromptSection();
+    expect(section).toContain("DEPENDENCY_RISK_FINDING");
+    expect(section).toMatch(/"review"\s+or\s+"hold"/);
+    expect(section.toLowerCase()).toContain("nothing to remediate");
+  });
+
+  it("the gate honors Step 3a.5's already-held exclusion, omitting the block even when an ordinary finding put the PR in List A", () => {
+    const section = getStep5bPromptSection();
+    // Both gating sites — the dispatch instruction and the rendered prompt template — must
+    // reference the exclusion, not just the raw derived value. Otherwise an already-held
+    // finding gets re-injected via an unrelated ordinary Step 3a finding.
+    expect(section).toMatch(/left\s+`DEPENDENCY_RISK_FINDING`\s+set for this PR/i);
+    expect(section).toMatch(/already-held exclusion did not clear it/i);
+    expect(section).toMatch(
+      /cleared\s+`?DEPENDENCY_RISK_FINDING`?\s+reads the same/i,
+    );
+    expect(section).toMatch(/omit the block, even when this PR is in List A on Step 3a's own criteria/i);
+    // The rendered prompt template's own gate comment must carry the same exclusion.
+    const templateGateIdx = section.indexOf(
+      "{Only present when Step 3a.5 left DEPENDENCY_RISK_FINDING set for this PR",
+    );
+    expect(templateGateIdx).toBeGreaterThan(-1);
+    expect(section.slice(templateGateIdx)).toMatch(
+      /Omit it\s+too when Step 3a\.5's step 3 already-held exclusion cleared the finding/i,
+    );
+  });
+
+  it("the protocol section is additive, ahead of the [A.5] verify/classify instructions, not a replacement", () => {
+    const section = getStep5bPromptSection();
+    expect(section).toContain("additive");
+    expect(section).toMatch(/ahead of.{0,40}\[A\.5\]/is);
+    expect(section).toMatch(/not replac/i);
+    // Confirm ordering: the protocol block precedes the [A.5] heading in the rendered prompt.
+    const protocolIdx = section.indexOf("DEPENDENCY-RISK REMEDIATION PROTOCOL");
+    const a5Idx = section.indexOf("[A.5] Verify each finding before implementing it");
+    expect(protocolIdx).toBeGreaterThan(-1);
+    expect(a5Idx).toBeGreaterThan(protocolIdx);
+  });
+
+  it("routes a verified fix through the existing [D]/[E] commit/push and thread-resolution path — no new resolution mechanism", () => {
+    const section = getStep5bPromptSection();
+    expect(section).toMatch(/same \[D\]\/\[E\] commit\/push/);
+    expect(section.toLowerCase()).toContain("no separate mechanism");
+  });
+
+  it("a finding that fails to reproduce or has no catalog strategy falls through to [A.5] classification unchanged", () => {
+    const section = getStep5bPromptSection();
+    expect(section).toContain("classify it REJECT in [A.5]");
+    expect(section).toContain("classify REJECT in [A.5]");
+    // [A.5] itself must be untouched by this feature — its own heading and body survive verbatim.
+    const a5Idx = content.indexOf("[A.5] Verify each finding before implementing it");
+    expect(a5Idx).toBeGreaterThan(-1);
+    const a5Section = content.slice(a5Idx, a5Idx + 1000);
+    expect(a5Section).toContain("Reviewers can be wrong");
+    expect(a5Section).toContain("ACCEPT");
+    expect(a5Section).toContain("MODIFY");
+    expect(a5Section).toContain("REJECT");
+  });
+
+  it("does not restate the reproduce-before-fixing protocol's mechanics — points at the reference file instead", () => {
+    const section = getStep5bPromptSection();
+    expect(section).toContain("verification command");
+    expect(section).toContain("bounded strategy catalog");
+  });
+
+  it("a REJECTed dependency-risk finding is reported under the SHA-scoped ledger ref Step 3a.5's exclusion matches on", () => {
+    const section = getStep5bPromptSection();
+    expect(section).toContain("dependency-risk@{headRefOid}");
+    expect(section).toMatch(/rather than a free-text slug/i);
+    // The ref must be tied to the REJECT exits (protocol steps 2 and 4), not the ACCEPT one.
+    expect(section).toMatch(/step 2 or step 4 above lands on REJECT/i);
+  });
+
+  it("Step 5c carries the dependency-risk ref verbatim into the findings-ledger write", () => {
+    const step5cIdx = content.indexOf("### Step 5c: Handle Subagent Status");
+    const step5c5Idx = content.indexOf("### Step 5c.5: Upsert PR Record");
+    expect(step5cIdx).toBeGreaterThan(-1);
+    expect(step5c5Idx).toBeGreaterThan(step5cIdx);
+    const section = content.slice(step5cIdx, step5c5Idx);
+    expect(section).toContain("dependency-risk@{headRefOid}");
+    expect(section).toMatch(/carry it through verbatim/i);
+    expect(section).toMatch(/Step 3a\.5's\s+already-held exclusion matches on that exact string/i);
+  });
+});
