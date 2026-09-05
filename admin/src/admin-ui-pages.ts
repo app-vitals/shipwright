@@ -4138,6 +4138,41 @@ function agentIdListCell(
   return ids.map((id) => agentLink(id, agentNames[id] ?? id)).join(", ");
 }
 
+/**
+ * Renders a Prev/Next pagination bar plus an "X–Y of Z" count, or "" when
+ * there's nothing to paginate. Shared by renderMergedQueueActivityPage's two
+ * independently-paginated tables (Upcoming's `queuePage` param, Past's `page`
+ * param, AAV-2.1) — identical layout, differing only in which query param
+ * carries the page number.
+ */
+function renderPaginationBar(opts: {
+  pagination: { total: number; limit: number; page: number };
+  basePath: string;
+  pageParam: string;
+}): string {
+  const { pagination, basePath, pageParam } = opts;
+  if (pagination.total === 0) return "";
+
+  const totalPages = Math.max(1, Math.ceil(pagination.total / pagination.limit));
+  const { page, limit, total } = pagination;
+  const from = (page - 1) * limit + 1;
+  const to = Math.min(page * limit, total);
+  const makePageUrl = (p: number) => {
+    const params = new URLSearchParams();
+    if (p > 1) params.set(pageParam, String(p));
+    const qs = params.toString();
+    return `${basePath}${qs ? `?${qs}` : ""}`;
+  };
+
+  return `<div style="display:flex;justify-content:space-between;align-items:center;padding:12px 0 0;font-size:12px;color:#6b7280">
+      <span>${from}–${to} of ${total}</span>
+      <div style="display:flex;gap:4px">
+        ${page > 1 ? `<a href="${makePageUrl(page - 1)}" class="btn btn-secondary" style="font-size:11px;padding:3px 10px">← Prev</a>` : ""}
+        ${page < totalPages ? `<a href="${makePageUrl(page + 1)}" class="btn btn-secondary" style="font-size:11px;padding:3px 10px">Next →</a>` : ""}
+      </div>
+    </div>`;
+}
+
 // ─── Agent selector (AXR-3.4 / AAV-2) ───────────────────────────────────────
 // Sentinel value for the "All agents" option: selecting it navigates to the
 // merged multi-agent view instead of a per-agent page. Shared by both
@@ -4697,35 +4732,11 @@ export function renderMergedQueueActivityPage(opts: {
     </tr>`;
   }
 
-  const queueTotalPages = Math.max(
-    1,
-    Math.ceil(workQueuePagination.total / workQueuePagination.limit),
-  );
-  const queuePage = workQueuePagination.page;
-  const makeQueuePageUrl = (p: number) => {
-    const params = new URLSearchParams();
-    if (p > 1) params.set("queuePage", String(p));
-    const qs = params.toString();
-    return `/admin/queue-activity${qs ? `?${qs}` : ""}`;
-  };
-  const queueFrom =
-    workQueuePagination.total === 0
-      ? 0
-      : (queuePage - 1) * workQueuePagination.limit + 1;
-  const queueTo = Math.min(
-    queuePage * workQueuePagination.limit,
-    workQueuePagination.total,
-  );
-  const queuePaginationHtml =
-    workQueuePagination.total === 0
-      ? ""
-      : `<div style="display:flex;justify-content:space-between;align-items:center;padding:12px 0 0;font-size:12px;color:#6b7280">
-      <span>${queueFrom}–${queueTo} of ${workQueuePagination.total}</span>
-      <div style="display:flex;gap:4px">
-        ${queuePage > 1 ? `<a href="${makeQueuePageUrl(queuePage - 1)}" class="btn btn-secondary" style="font-size:11px;padding:3px 10px">← Prev</a>` : ""}
-        ${queuePage < queueTotalPages ? `<a href="${makeQueuePageUrl(queuePage + 1)}" class="btn btn-secondary" style="font-size:11px;padding:3px 10px">Next →</a>` : ""}
-      </div>
-    </div>`;
+  const queuePaginationHtml = renderPaginationBar({
+    pagination: workQueuePagination,
+    basePath: "/admin/queue-activity",
+    pageParam: "queuePage",
+  });
 
   const upcomingContent =
     workQueuePagination.total === 0
@@ -4774,33 +4785,11 @@ export function renderMergedQueueActivityPage(opts: {
       ? `<tr><td colspan="11" class="empty-state">No runs across any accessible agent.</td></tr>`
       : runs.map(row).join("\n");
 
-  const runsTotalPages = Math.max(
-    1,
-    Math.ceil(runsPagination.total / runsPagination.limit),
-  );
-  const runsPage = runsPagination.page;
-  const makeRunsPageUrl = (p: number) => {
-    const params = new URLSearchParams();
-    if (p > 1) params.set("page", String(p));
-    const qs = params.toString();
-    return `/admin/queue-activity${qs ? `?${qs}` : ""}`;
-  };
-  const runsFrom =
-    runsPagination.total === 0 ? 0 : (runsPage - 1) * runsPagination.limit + 1;
-  const runsTo = Math.min(
-    runsPage * runsPagination.limit,
-    runsPagination.total,
-  );
-  const runsPaginationHtml =
-    runsPagination.total === 0
-      ? ""
-      : `<div style="display:flex;justify-content:space-between;align-items:center;padding:12px 0 0;font-size:12px;color:#6b7280">
-      <span>${runsFrom}–${runsTo} of ${runsPagination.total}</span>
-      <div style="display:flex;gap:4px">
-        ${runsPage > 1 ? `<a href="${makeRunsPageUrl(runsPage - 1)}" class="btn btn-secondary" style="font-size:11px;padding:3px 10px">← Prev</a>` : ""}
-        ${runsPage < runsTotalPages ? `<a href="${makeRunsPageUrl(runsPage + 1)}" class="btn btn-secondary" style="font-size:11px;padding:3px 10px">Next →</a>` : ""}
-      </div>
-    </div>`;
+  const runsPaginationHtml = renderPaginationBar({
+    pagination: runsPagination,
+    basePath: "/admin/queue-activity",
+    pageParam: "page",
+  });
 
   return renderAdminPage({
     title: "Queue & Activity — All Agents — Shipwright Admin",
