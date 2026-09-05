@@ -5010,7 +5010,26 @@ describe("admin UI — tasks page", () => {
     expect(capturedParams[0].has("status")).toBe(false);
   });
 
-  it("GET /admin/tasks with no params forwards neither state nor status", async () => {
+  it("GET /admin/tasks with no params (default board view) forwards state=open and limit=200 (TBC-2.1)", async () => {
+    const capturedParams: URLSearchParams[] = [];
+    const app = createAdminUIApp(
+      makeMockDeps({
+        fetchTaskStoreTasks: async (params) => {
+          capturedParams.push(params);
+          return { tasks: [], total: 0, limit: 200, offset: 0 };
+        },
+      }),
+    );
+    await app.request("/admin/tasks", {
+      headers: { Cookie: `admin_session=${cookie}` },
+    });
+    expect(capturedParams.length).toBe(1);
+    expect(capturedParams[0].get("state")).toBe("open");
+    expect(capturedParams[0].has("status")).toBe(false);
+    expect(capturedParams[0].get("limit")).toBe("200");
+  });
+
+  it("GET /admin/tasks?view=table with no other params forwards neither state nor status, with the standard limit=50 (TBC-2.1)", async () => {
     const capturedParams: URLSearchParams[] = [];
     const app = createAdminUIApp(
       makeMockDeps({
@@ -5020,12 +5039,13 @@ describe("admin UI — tasks page", () => {
         },
       }),
     );
-    await app.request("/admin/tasks", {
+    await app.request("/admin/tasks?view=table", {
       headers: { Cookie: `admin_session=${cookie}` },
     });
     expect(capturedParams.length).toBe(1);
     expect(capturedParams[0].has("state")).toBe(false);
     expect(capturedParams[0].has("status")).toBe(false);
+    expect(capturedParams[0].get("limit")).toBe("50");
   });
 
   it("GET /admin/tasks?hitl=true forwards hitl=true to the task store", async () => {
@@ -6089,7 +6109,7 @@ describe("admin UI — tasks page", () => {
     expect(called).toBe(false);
   });
 
-  it("GET /admin/tasks with no ?state= forwards no state to task-store (show all)", async () => {
+  it("GET /admin/tasks?view=table with no ?state= forwards no state to task-store (show all)", async () => {
     let capturedParams: URLSearchParams | null = null;
     const app = createAdminUIApp(
       makeMockDeps({
@@ -6099,7 +6119,7 @@ describe("admin UI — tasks page", () => {
         },
       }),
     );
-    const res = await app.request("/admin/tasks", {
+    const res = await app.request("/admin/tasks?view=table", {
       headers: { Cookie: `admin_session=${cookie}` },
     });
     expect(res.status).toBe(200);

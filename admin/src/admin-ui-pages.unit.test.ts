@@ -3540,19 +3540,19 @@ describe("renderTasksPage — board view (AXR-1.3)", () => {
     );
   }
 
-  test("renders all 5 board columns in order: Queued, In Progress, Blocked-HITL, Claimed, Done", () => {
+  test("renders 3 board columns in order: Queued, In Progress, Blocked-HITL (TBC-2.1)", () => {
     const html = renderBoard([]);
     expect(html).toContain('class="board"');
     expect(html).toContain("Queued");
-    expect(html).toContain("Claimed");
     expect(html).toContain("In Progress");
     expect(html).toContain("Blocked-HITL");
-    expect(html).toContain("Done");
-    // Exactly 5 column containers
-    expect((html.match(/class="column"/g) ?? []).length).toBe(5);
+    expect(html).not.toContain("Claimed");
+    expect(html).not.toContain(">Done<");
+    // Exactly 3 column containers
+    expect((html.match(/class="column"/g) ?? []).length).toBe(3);
     // Columns must render left-to-right in this exact order.
     const dataColumnSequence = [...html.matchAll(/data-column="([^"]+)"/g)].map((m) => m[1]);
-    expect(dataColumnSequence).toEqual(["queued", "in_progress", "blocked_hitl", "claimed", "done"]);
+    expect(dataColumnSequence).toEqual(["queued", "in_progress", "blocked_hitl"]);
   });
 
   function extractColumn(html: string, key: string): string {
@@ -3580,7 +3580,7 @@ describe("renderTasksPage — board view (AXR-1.3)", () => {
     expect(extractColumn(html, "claimed")).not.toContain("Queued task title");
   });
 
-  test("buckets a pending claimed task into Claimed", () => {
+  test("a pending claimed task is absent from the default board — Claimed is no longer rendered (TBC-2.1)", () => {
     const task: TaskItem = {
       id: "T-CLAIMED",
       title: "Claimed task title",
@@ -3589,8 +3589,8 @@ describe("renderTasksPage — board view (AXR-1.3)", () => {
       assignee: null,
     };
     const html = renderBoard([task]);
-    expect(extractColumn(html, "claimed")).toContain("Claimed task title");
-    expect(extractColumn(html, "queued")).not.toContain("Claimed task title");
+    expect(html).not.toContain('data-column="claimed"');
+    expect(html).not.toContain("Claimed task title");
   });
 
   test("buckets an in_progress task into In Progress", () => {
@@ -3637,7 +3637,7 @@ describe("renderTasksPage — board view (AXR-1.3)", () => {
     );
   });
 
-  test("buckets a done task into Done", () => {
+  test("a done task is absent from the default board — Done is no longer rendered (TBC-2.1)", () => {
     const task: TaskItem = {
       id: "T-DONE",
       title: "Done task title",
@@ -3646,7 +3646,8 @@ describe("renderTasksPage — board view (AXR-1.3)", () => {
       assignee: null,
     };
     const html = renderBoard([task]);
-    expect(extractColumn(html, "done")).toContain("Done task title");
+    expect(html).not.toContain('data-column="done"');
+    expect(html).not.toContain("Done task title");
   });
 
   test("a task with a blocked joined PR lands in Blocked-HITL, matching bucketTaskColumn", () => {
