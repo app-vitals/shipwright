@@ -1,0 +1,304 @@
+---
+// Shipwright vs OpenHands — the dedicated comparison page against the
+// open-source category leader in autonomous coding agents. Unlike
+// vs/devin.astro and vs/factory.astro, this is not an open-vs-commercial
+// story: OpenHands is itself MIT-licensed. The honest differentiation is
+// what's enforced by default (tests-first, plan-approval) vs. what's
+// optional, and where each project draws the line between its open-source
+// core and its own commercial offering. Every OpenHands-specific claim below
+// is sourced from OpenHands' own docs/site/repo (see `src` below) and cited
+// inline. Re-verify before any future edit — see brand/MESSAGING.md D10 for
+// the surface-scoped competitor-naming policy this page operates under, and
+// D5 for the price-free rule (no dollar figures, no tier names — "their
+// commercial offering", never "Enterprise tier" or "Cloud plan").
+import BaseLayout from "../../layouts/BaseLayout.astro";
+import ChooseWhenGrid from "../../components/ChooseWhenGrid.astro";
+import ComparisonTable from "../../components/ComparisonTable.astro";
+import TryItCta from "../../components/TryItCta.astro";
+import { escapeHtml } from "../../lib/html-escape";
+
+const verifiedDate = "September 5, 2026";
+
+// Sources — the 7 primary URLs fetched and verified for this page.
+const src = {
+  repo: "https://github.com/OpenHands/OpenHands",
+  site: "https://www.openhands.dev/",
+  automations: "https://docs.openhands.dev/openhands/usage/automations/overview",
+  qa: "https://docs.openhands.dev/openhands/usage/use-cases/qa-changes",
+  ossVsCommercial: "https://docs.openhands.dev/enterprise/enterprise-vs-oss",
+  acp: "https://docs.openhands.dev/openhands/usage/agent-canvas/acp-agents",
+  canvas: "https://www.openhands.dev/blog/introducing-agent-canvas",
+};
+
+const comparisonRows = [
+  {
+    dimension: "License",
+    shipwright: "MIT, whole harness forkable.",
+    openhands: "MIT.",
+    citation: src.repo,
+  },
+  {
+    dimension: "Deployment",
+    shipwright: "Self-host: Docker or your own Kubernetes.",
+    openhands:
+      "Local or a self-hosted VM backend by default. A managed hosting option and a separate self-hosted commercial option are also available.",
+    citation: src.ossVsCommercial,
+  },
+  {
+    dimension: "Models",
+    shipwright: "Claude Code, tuned end to end.",
+    openhands:
+      "Agnostic (100+ providers), plus ACP support that lets it launch and drive Claude Code, Codex, or Gemini CLI directly as a subprocess agent.",
+    citation: null,
+    citations: [
+      { label: "agnostic", url: src.site },
+      { label: "ACP", url: src.acp },
+    ],
+  },
+  {
+    dimension: "Task queue",
+    shipwright: "Shared, assignable task-store queue, cron-native.",
+    openhands:
+      "Automations: schedule daily / weekly / custom-interval tasks. Each run spawns a fresh sandbox with the configured LLM, secrets, and integrations already wired in.",
+    citation: src.automations,
+  },
+  {
+    dimension: "Team visibility",
+    shipwright: "Slack plus the PR trail.",
+    openhands:
+      "Agent Canvas: a dashboard for creating and managing automations. Deeper team-wide visibility — shared workflows, audit logs, cost guardrails — sits in their commercial offering, not the open-source canvas.",
+    citation: src.canvas,
+  },
+  {
+    dimension: "Policy controls",
+    shipwright: "Per-repo, per-skill.",
+    openhands:
+      "None in the open-source core. Role-based access control (RBAC) and Keycloak-based multi-user management are part of their commercial offering only.",
+    citation: src.ossVsCommercial,
+  },
+  {
+    dimension: "Tests-first",
+    shipwright:
+      "Enforced: tests land in the same PR, written first, CI-green to merge.",
+    openhands:
+      "Opt-in QA agent, invoked manually via a slash command or an optional CI automation you wire up yourself. It explicitly does not run the test suite, linters, formatters, or type-checkers — a supplementary check, never a merge-blocking gate.",
+    citation: src.qa,
+  },
+  {
+    dimension: "Slack workflow",
+    shipwright: "First-class: the whole operating loop runs in Slack.",
+    openhands:
+      "Yes — Slack, GitHub, and GitLab integration is available out of the box; a one-click setup flow is part of their commercial offering.",
+    citation: src.ossVsCommercial,
+  },
+  {
+    dimension: "Open source",
+    shipwright: "Yes, fork and audit every line.",
+    openhands:
+      "Yes, MIT-licensed core, with a separate commercial offering layered on top for hosting and team management.",
+    citation: src.repo,
+  },
+];
+
+// ComparisonTable props for the dimension table. Header/cell style strings
+// are reproduced from vs/factory.astro's dimension table. This table has no
+// "self" highlight row in the general case — values are pre-split into
+// shipwright/openhands columns instead — except for "Tests-first", which is
+// deliberately highlighted (AC8): it is the visual and rhetorical
+// centerpiece of this comparison, echoed again in the architectural-contrast
+// callout below.
+const dimensionColumns = [
+  {
+    label: "Dimension",
+    style: "text-align:left; padding:0.6rem 1rem 0.6rem 0; font-family:var(--sw-font-mono); font-size:0.8125rem; text-transform:uppercase; letter-spacing:0.06em; color:var(--sw-color-text-muted); white-space:nowrap;",
+  },
+  {
+    label: "Shipwright",
+    style: "text-align:left; padding:0.6rem 1rem; font-family:var(--sw-font-mono); font-size:0.8125rem; text-transform:uppercase; letter-spacing:0.06em; color:var(--sw-color-brand-default); white-space:nowrap;",
+  },
+  {
+    label: "OpenHands",
+    style: "text-align:left; padding:0.6rem 1rem; font-family:var(--sw-font-mono); font-size:0.8125rem; text-transform:uppercase; letter-spacing:0.06em; color:var(--sw-color-text-muted); white-space:nowrap;",
+  },
+];
+
+const dimensionRows = comparisonRows.map((row) => {
+  // "Models" carries two distinct, non-obvious claims (agnostic model count,
+  // ACP subprocess-agent support) — cited individually at their own
+  // dedicated sources, mirroring vs/factory.astro's bundled-citations pattern.
+  const citationsHtml = row.citations
+    ? row.citations
+        .map(
+          (c) =>
+            `<a href="${c.url}" class="text-sm">\n[${escapeHtml(c.label)}]\n</a>`,
+        )
+        .join(" ")
+    : row.citation
+      ? `<a href="${row.citation}" class="text-sm">\n[source]\n</a>`
+      : "";
+
+  return {
+    highlight: row.dimension === "Tests-first",
+    cells: [
+      {
+        style: "padding:0.9rem 1rem 0.9rem 0; vertical-align:top; font-family:var(--sw-font-display); font-weight:600; color:var(--sw-color-text-heading); white-space:nowrap;",
+        html: ` ${escapeHtml(row.dimension)} `,
+      },
+      {
+        style: "padding:0.9rem 1rem; vertical-align:top; color:var(--sw-color-text-body);",
+        html: ` ${escapeHtml(row.shipwright)} `,
+      },
+      {
+        style: "padding:0.9rem 1rem; vertical-align:top; color:var(--sw-color-text-body);",
+        html: citationsHtml
+          ? ` ${escapeHtml(row.openhands)}  ${citationsHtml}  `
+          : ` ${escapeHtml(row.openhands)} `,
+      },
+    ],
+  };
+});
+---
+
+<BaseLayout
+  title="Shipwright vs OpenHands: the tests-first alternative to the open-source category leader"
+  description="Shipwright vs OpenHands: a tests-first and plan-approval comparison against the open-source category leader in autonomous coding agents — where OpenHands is genuinely ahead, where it isn't, and an honest breakdown of when to choose each."
+  pagefindIgnore={true}
+>
+  <!-- Page header -->
+  <section class="relative z-10 pt-16 pb-8">
+    <p class="sw-label">Comparison</p>
+    <h1 class="sw-h1 mt-4 max-w-3xl">Shipwright vs OpenHands</h1>
+    <p class="mt-5 max-w-2xl text-lg">
+      OpenHands is the open-source category leader in autonomous coding
+      agents — MIT-licensed, model-agnostic, and it already runs a real
+      delivery pipeline: scheduled automations, PR review, and an Agent
+      Canvas dashboard to manage it all. This is not an open-vs-commercial
+      story the way Devin or Factory are — both Shipwright and OpenHands ship
+      MIT cores. The real difference is what's enforced by default versus
+      what's optional, and how much of the richer functionality lives behind
+      their commercial offering rather than in the open-source core. Here is
+      the honest, sourced comparison.
+    </p>
+    <p class="mt-4 text-sm" style="color: var(--sw-color-text-muted);">
+      Facts verified as of {verifiedDate}, from OpenHands' own primary
+      sources (linked below). Re-checked immediately before this page ships:
+      vendor terms and product surfaces change.
+    </p>
+  </section>
+
+  <!-- Dimension table (centerpiece: Tests-first is highlighted). -->
+  <section class="relative z-10 pb-16" style="border-top: 1px solid var(--sw-color-border-subtle); padding-top: 3rem;">
+    <h2>Dimension by dimension</h2>
+    <ComparisonTable columns={dimensionColumns} rows={dimensionRows} />
+  </section>
+
+  <!-- The architectural contrast -->
+  <section class="relative z-10 pb-16" style="border-top: 1px solid var(--sw-color-border-subtle); padding-top: 3rem;">
+    <h2>The architectural contrast</h2>
+    <p class="mt-3 max-w-2xl">
+      The resemblance here is closer than with any other competitor:
+      both projects are MIT, both are built to open real PRs against your
+      repository rather than hide the work in a vendor UI, and both already
+      run a scheduled, queue-driven delivery pipeline. Where they diverge is
+      what each project treats as a default versus an opt-in extra, and
+      where the line falls between the open-source core and each project's
+      own commercial offering.
+    </p>
+    <p class="mt-4 max-w-2xl">
+      Where OpenHands is ahead, plainly. Model and agent flexibility is
+      OpenHands' clearest strength: it supports 100+ providers, and its ACP
+      (Agent Client Protocol) integration goes further than most — instead of
+      calling an LLM directly, OpenHands can spawn <a href={src.acp}>Claude
+      Code, Codex, or Gemini CLI as an external subprocess agent</a> and
+      relay each turn to it, so you can literally drive Claude Code from
+      inside OpenHands. Its VCS reach is also broader today: OpenHands
+      connects to <a href={src.automations}>GitHub, GitLab, and Bitbucket</a>{" "}
+      out of the box, with <a href={src.site}>broader reach including Azure
+      Repos</a>. It also offers a managed hosting option for teams that don't
+      want to run any infrastructure themselves, and OpenHands' team{" "}
+      <a href={src.site}>publishes their own agentic-coding benchmark
+      results</a>; Shipwright does not. If model breadth, VCS coverage,
+      managed hosting, or a published benchmark matter to your decision,
+      OpenHands has them today and Shipwright does not. We are not going to
+      pretend otherwise.
+    </p>
+    <div class="sw-callout mt-6 max-w-3xl">
+      <p>
+        <strong>The centerpiece difference: tests-first is enforced in
+        Shipwright, optional in OpenHands.</strong> OpenHands ships a QA
+        agent, but it is invoked manually or through a CI automation you
+        configure yourself — and by OpenHands' own documentation, "the QA
+        agent does not run the test suite" (that's CI's job), nor does it run
+        linters, formatters, or type-checkers. It is a supplementary,
+        discretionary layer, never an enforced pre-merge gate.{" "}
+        <a href={src.qa}>Source: docs.openhands.dev QA-changes use case</a>.
+        In Shipwright, tests are not a layer you opt into: every task ships
+        its tests, written before the implementation, and CI must be green
+        before merge — on every task, with no configuration required.
+      </p>
+    </div>
+    <p class="mt-4 max-w-2xl">
+      Where Shipwright is ahead. Two things OpenHands does not enforce.
+      First, tests are not a discretionary agent you invoke — they are the
+      default path for every change, gated by CI. Second, plan approval is
+      the standard operating mode for all work: a human reviews and approves
+      the plan before the agent builds, not after it has already opened a
+      PR. And underneath both, Shipwright's control plane, task queue, and
+      review flow all run on infrastructure you own — nothing about the
+      pipeline itself depends on a commercial offering layered on top.
+    </p>
+    <p class="mt-4 max-w-2xl">
+      So the choice is not "which one is open source." Both are. It is
+      whether you want the broadest model and VCS flexibility available
+      today with a mature ecosystem behind it, or a harness that makes
+      tests-first and plan-approval the default on every task and keeps the
+      entire pipeline — not just the agent — on infrastructure you control.
+    </p>
+  </section>
+
+  <!-- Choose OpenHands when / Choose Shipwright when. -->
+  <section class="relative z-10 pb-16" style="border-top: 1px solid var(--sw-color-border-subtle); padding-top: 3rem;">
+    <h2>Choose OpenHands when</h2>
+    <ChooseWhenGrid
+      cards={[
+        {
+          label: "Choose OpenHands when",
+          labelColor: "var(--sw-color-support-patriot-bright)",
+          items: [
+            { text: "You need maximum model and agent flexibility — 100+ providers, or ACP support to drive Claude Code, Codex, or Gemini CLI directly." },
+            { text: "Your team spans GitHub, GitLab, and Bitbucket today, and you want that VCS breadth (with wider reach including Azure Repos) out of the box." },
+            { text: "You want a managed hosting option and don't want to run any infrastructure yourself." },
+            { text: "You want the most mature open-source agent ecosystem available right now, with published benchmark results to evaluate against." },
+          ],
+        },
+        {
+          label: "Choose Shipwright when",
+          labelColor: "var(--sw-color-brand-default)",
+          items: [
+            { text: "You want tests written first and enforced as a merge gate on every task, not a discretionary QA agent you invoke manually." },
+            { text: "You want plan approval as the default path on every task, not an extra step you have to configure." },
+            { text: "You have committed to Claude Code and want a pipeline tuned for it, not averaged across 100+ providers." },
+            { text: "You want the whole harness — control plane included — running on infrastructure you own, MIT throughout, with nothing behind a separate commercial offering." },
+          ],
+        },
+      ]}
+    />
+  </section>
+
+  <!-- Economics: price-free framing (D5). -->
+  <section class="relative z-10 pb-16" style="border-top: 1px solid var(--sw-color-border-subtle); padding-top: 3rem;">
+    <h2>Economics</h2>
+    <p class="mt-3 max-w-2xl">
+      Shipwright: free, MIT, no seats or paid plans. OpenHands' open-source
+      core is likewise free under MIT; broader hosting and team-management
+      capabilities are available through{" "}
+      <a href={src.ossVsCommercial}>their commercial offering</a> — see the
+      vendor's site for current terms, which change over time. Either way,
+      you bring your own model credentials and pay for the compute and model
+      usage you actually consume.
+    </p>
+  </section>
+
+  <!-- CTA -->
+  <TryItCta />
+</BaseLayout>
