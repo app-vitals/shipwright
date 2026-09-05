@@ -3737,6 +3737,77 @@ describe("renderTasksPage — board view (AXR-1.3)", () => {
     expect(repoIndex).toBeLessThan(detailsIndex);
   });
 
+  // TBC-2.1 follow-up: the board's Status dropdown must not offer a closed
+  // status. Picking one would set `?status=…`, bypassing the board's
+  // `state=open` default query, and every returned task buckets to the
+  // "done" column — which TASK_BOARD_COLUMNS no longer renders — so the
+  // board would silently show "No tasks" in all 3 columns.
+  test("board Status dropdown omits closed statuses (merged/done/deploying/deployed/cancelled) but keeps the active ones", () => {
+    const html = renderBoard([]);
+    const statusSelect = html.match(
+      /<select name="status"[^>]*>([\s\S]*?)<\/select>/,
+    );
+    expect(statusSelect).not.toBeNull();
+    const statusHtml = statusSelect ? statusSelect[1] : "";
+
+    for (const closed of [
+      "merged",
+      "done",
+      "deploying",
+      "deployed",
+      "cancelled",
+    ]) {
+      expect(statusHtml).not.toContain(`value="${closed}"`);
+    }
+
+    expect(statusHtml).toContain("Any status");
+    for (const active of [
+      "pending",
+      "in_progress",
+      "pr_open",
+      "approved",
+      "blocked",
+    ]) {
+      expect(statusHtml).toContain(`value="${active}"`);
+    }
+  });
+
+  test("table view's Status dropdown still offers every status, including the closed ones", () => {
+    const html = renderTasksPage(
+      [],
+      {},
+      false,
+      USER_NAME,
+      {},
+      BOARD_PAGINATION,
+      undefined,
+      undefined,
+      false,
+      "America/Los_Angeles",
+      {},
+      "table",
+    );
+    const statusSelect = html.match(
+      /<select name="status"[^>]*>([\s\S]*?)<\/select>/,
+    );
+    expect(statusSelect).not.toBeNull();
+    const statusHtml = statusSelect ? statusSelect[1] : "";
+    for (const status of [
+      "pending",
+      "in_progress",
+      "pr_open",
+      "approved",
+      "merged",
+      "done",
+      "deploying",
+      "deployed",
+      "blocked",
+      "cancelled",
+    ]) {
+      expect(statusHtml).toContain(`value="${status}"`);
+    }
+  });
+
   test("Org and Repo remain two independent multiselects on the board, not merged into one combined scope-pill selector", () => {
     const html = renderBoard([], {}, { orgs: ["app-vitals"], repos: ["app-vitals/repo-a"] });
     const selectCount = (html.match(/<select /g) ?? []).length;

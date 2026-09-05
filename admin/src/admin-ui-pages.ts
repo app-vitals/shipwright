@@ -2475,6 +2475,14 @@ function renderTasksBoard(args: {
     now,
   } = args;
 
+  // The board's Status dropdown deliberately omits the closed statuses
+  // (SESSION_CLOSED_STATUSES: merged/done/deploying/deployed/cancelled).
+  // Selecting one here would set `?status=…`, which bypasses admin-ui.ts's
+  // `state=open` board default and returns tasks that bucketTaskColumn maps
+  // to the "done" column — a column TASK_BOARD_COLUMNS no longer renders
+  // (TBC-2.1), so the board would silently show "No tasks" everywhere.
+  // Those statuses stay filterable on ?view=table, whose own statusOptions
+  // list (above) is unchanged and still offers every status.
   const statusOptions = [
     "",
     "pending",
@@ -2488,6 +2496,7 @@ function renderTasksBoard(args: {
     "blocked",
     "cancelled",
   ]
+    .filter((s) => !SESSION_CLOSED_STATUSES.has(s))
     .map(
       (s) =>
         `<option value="${escapeHtml(s)}" ${filters.status === s ? "selected" : ""}>${s === "" ? "Any status" : escapeHtml(s)}</option>`,
