@@ -1379,6 +1379,9 @@ describe("admin UI — authenticated pages", () => {
     expect(html).toContain(
       `<option value="${OTHER_AGENT_ID}">Other Agent</option>`,
     );
+    // The dropdown also offers a round trip back to the merged multi-agent
+    // view (AAV-2) via a sentinel option value.
+    expect(html).toContain('<option value="__all__">All agents</option>');
   });
 
   it("authenticated GET /admin/agents/:id/queue-activity renders the Upcoming section above the Past section", async () => {

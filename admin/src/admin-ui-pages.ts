@@ -4106,6 +4106,10 @@ export function renderQueueActivityPage(opts: {
   // rewrites the form's action (the agent id lives in the path, not a query
   // param) before submitting, same idiom as the chat page's onchange-submit
   // agent selector.
+  // Sentinel value for the "All agents" option (AAV-2): selecting it
+  // navigates to the merged multi-agent view instead of a per-agent page,
+  // completing the round trip between that view and any single agent's page.
+  const ALL_AGENTS_SENTINEL = "__all__";
   const agentSelectorOptions = accessibleAgents
     .map(
       (a) =>
@@ -4113,7 +4117,8 @@ export function renderQueueActivityPage(opts: {
     )
     .join("\n");
   const agentSelectorHtml = `<form method="GET" action="/admin/agents/${escapeHtml(agent.id)}/queue-activity" style="margin:0">
-      <select name="agentId" class="form-input" style="font-size:12px;padding:4px 8px" aria-label="Switch agent" onchange="this.form.action='/admin/agents/'+this.value+'/queue-activity';this.form.submit()">
+      <select name="agentId" class="form-input" style="font-size:12px;padding:4px 8px" aria-label="Switch agent" onchange="if (this.value === '${ALL_AGENTS_SENTINEL}') { this.form.action = '/admin/queue-activity'; } else { this.form.action = '/admin/agents/' + this.value + '/queue-activity'; } this.form.submit()">
+        <option value="${ALL_AGENTS_SENTINEL}">All agents</option>
         ${agentSelectorOptions}
       </select>
     </form>`;

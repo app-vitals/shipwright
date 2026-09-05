@@ -8924,6 +8924,31 @@ describe("renderQueueActivityPage — agent selector", () => {
       '<option value="agent-123" selected>Test Agent</option>',
     );
   });
+
+  test("includes an 'All agents' option that navigates to the merged /admin/queue-activity view (AAV-2)", () => {
+    const html = renderQueueActivityPage({
+      ...BASE_OPTS,
+      agent: { id: "agent-123", name: "Test Agent" },
+      agents: [
+        { id: "agent-123", name: "Test Agent" },
+        { id: "agent-456", name: "Other Agent" },
+      ],
+    });
+    expect(html).toContain('<option value="__all__">All agents</option>');
+    // Per-agent options are still rendered as before.
+    expect(html).toContain(
+      '<option value="agent-123" selected>Test Agent</option>',
+    );
+    expect(html).toContain('<option value="agent-456">Other Agent</option>');
+    // The onchange handler branches to the merged view for the sentinel...
+    expect(html).toContain(
+      "if (this.value === '__all__') { this.form.action = '/admin/queue-activity'; }",
+    );
+    // ...and still supports per-agent navigation for any other selection.
+    expect(html).toContain(
+      "this.form.action = '/admin/agents/' + this.value + '/queue-activity';",
+    );
+  });
 });
 
 // ─── renderQueueActivityPage — sectioning (AXR-3.1) ─────────────────────────
