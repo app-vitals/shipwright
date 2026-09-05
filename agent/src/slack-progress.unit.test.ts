@@ -6,9 +6,13 @@
  * cut, whose `{type: "task_update", text}` chunk shape was rejected by
  * Slack's real API on every call — see the module doc comment in
  * slack-progress.ts for the full root-cause writeup; TSD-1.1 then removed
- * the feature flag that gated it, making streaming the only mode):
- *   - start() does NOT call agents.sessions.setStatus at all — chat.startStream
- *     already flips the session status itself.
+ * the feature flag that gated it, making streaming the only mode; ISW-1.1
+ * then made agents.sessions.setStatus an eager, unconditional call rather
+ * than a stream-failure-only fallback):
+ *   - start() calls agents.sessions.setStatus({status: "processing"}) before
+ *     startStream() runs, so Slack's native "is working" indicator shows
+ *     immediately in channels too (where chat.startStream's own status
+ *     effect is gated behind opening the message's thread).
  *   - start() seeds the stream with an immediate task_update card (no blank
  *     gap before the first real phase transition).
  *   - every task_update chunk uses {type, id, title, status}, reusing one
@@ -19,7 +23,9 @@
  *     whenever delivery fails or streaming is unavailable so the caller
  *     falls back to say()/blocksConverter.
  *   - finish() closes any still-in_progress card with status:"complete",
- *     and passes session_status through to stopStream.
+ *     always calls agents.sessions.setStatus with the final session status,
+ *     and independently also passes that status through to stopStream
+ *     whenever a stream did open.
  *
  * The mock Slack client is a plain object of mock fns — no mock.module(), no
  * global overrides. No Clock injection is needed: SlackProgress does no
@@ -129,13 +135,55 @@ describe("SlackProgress — Thinking Steps stream", () => {
     expect(call).not.toHaveProperty("recipient_user_id");
   });
 
-  // AC #3: agents.sessions.setStatus is never called — chat.startStream
-  // already sets the session status to "processing" itself, so calling both
-  // would produce two overlapping "is working" indicators.
-  test("start() does NOT call setStatus (AC #3)", async () => {
-    const { progress, client } = makeProgress();
+  // ISW-1.1: agents.sessions.setStatus is called eagerly, before
+  // startStream() even runs — channel @mentions get no visible "is working"
+  // signal until chat.startStream's timeline card becomes visible (which
+  // requires opening the message's thread in a channel), but setStatus needs
+  // only channel_id/thread_ts and shows immediately for both DMs and
+  // channels.
+  test("start() calls setStatus with status:processing before startStream() runs, for a DM thread (AC #1)", async () => {
+    const callOrder: string[] = [];
+    const client = makeMockClient();
+    client.agents.sessions.setStatus.mockImplementationOnce(async () => {
+      callOrder.push("setStatus");
+    });
+    client.chat.startStream.mockImplementationOnce(async () => {
+      callOrder.push("startStream");
+      return { ts: "stream.ts.1" };
+    });
+    const { progress } = makeProgress({ client, isDM: true });
     await progress.start();
-    expect(client.agents.sessions.setStatus).not.toHaveBeenCalled();
+    expect(client.agents.sessions.setStatus).toHaveBeenCalledWith({
+      channel_id: CHANNEL,
+      thread_ts: THREAD_TS,
+      status: "processing",
+    });
+    expect(callOrder).toEqual(["setStatus", "startStream"]);
+  });
+
+  test("start() calls setStatus with status:processing before startStream() runs, for a non-DM (channel) thread (AC #1)", async () => {
+    const callOrder: string[] = [];
+    const client = makeMockClient();
+    client.agents.sessions.setStatus.mockImplementationOnce(async () => {
+      callOrder.push("setStatus");
+    });
+    client.chat.startStream.mockImplementationOnce(async () => {
+      callOrder.push("startStream");
+      return { ts: "stream.ts.1" };
+    });
+    const { progress } = makeProgress({
+      client,
+      isDM: false,
+      recipientUserId: "U-SENDER",
+      recipientTeamId: "T-TEAM",
+    });
+    await progress.start();
+    expect(client.agents.sessions.setStatus).toHaveBeenCalledWith({
+      channel_id: CHANNEL,
+      thread_ts: THREAD_TS,
+      status: "processing",
+    });
+    expect(callOrder).toEqual(["setStatus", "startStream"]);
   });
 
   // AC #4: the stream is seeded with an immediate card on open — no blank
@@ -410,12 +458,41 @@ describe("SlackProgress — Thinking Steps stream", () => {
     );
   });
 
-  // AC #3: setStatus stays unused on the finish() side too.
-  test("finish() does NOT call setStatus (AC #3)", async () => {
+  // ISW-1.1 (AC #2): finish() always calls setStatus as the authoritative
+  // resolution of the "is working" indicator — independent of whether a
+  // stream ever opened — AND still calls stopStream() whenever a stream did
+  // open (the two are independent, not either/or).
+  test("finish() always calls setStatus with session_status 'active' by default, alongside stopStream() when a stream opened (AC #2)", async () => {
     const { progress, client } = makeProgress();
     await progress.start();
     await progress.finish();
-    expect(client.agents.sessions.setStatus).not.toHaveBeenCalled();
+    expect(client.agents.sessions.setStatus).toHaveBeenCalledWith({
+      channel_id: CHANNEL,
+      thread_ts: THREAD_TS,
+      status: "active",
+    });
+    expect(client.chat.stopStream).toHaveBeenCalledWith(
+      expect.objectContaining({
+        channel: CHANNEL,
+        thread_ts: THREAD_TS,
+        ts: "stream.ts.1",
+        session_status: "active",
+      }),
+    );
+  });
+
+  test("finish({ stillInFlight: true }) calls setStatus with 'processing', alongside stopStream() when a stream opened (AC #2)", async () => {
+    const { progress, client } = makeProgress();
+    await progress.start();
+    await progress.finish({ stillInFlight: true });
+    expect(client.agents.sessions.setStatus).toHaveBeenCalledWith({
+      channel_id: CHANNEL,
+      thread_ts: THREAD_TS,
+      status: "processing",
+    });
+    expect(client.chat.stopStream).toHaveBeenCalledWith(
+      expect.objectContaining({ session_status: "processing" }),
+    );
   });
 });
 
@@ -438,15 +515,22 @@ describe("SlackProgress — errors swallowed", () => {
   });
 
   test("start() does not throw when the client has no chat namespace, and warns", async () => {
+    const setStatus = mock(async (_args: unknown) => {});
     const progress = new SlackProgress({
-      client: { agents: { sessions: { setStatus: mock(async () => {}) } } },
+      client: { agents: { sessions: { setStatus } } },
       channel: CHANNEL,
       threadTs: THREAD_TS,
       isDM: true,
     });
     await expect(progress.start()).resolves.toBeUndefined();
-    // startStream fails (no chat namespace), then the seed-card append also
-    // fails for the same reason — both are swallowed and warned.
+    // setStatus (eager, ISW-1.1) succeeds first, then startStream fails (no
+    // chat namespace), then the seed-card append also fails for the same
+    // reason — all three swallowed/warned as appropriate.
+    expect(setStatus).toHaveBeenCalledWith({
+      channel_id: CHANNEL,
+      thread_ts: THREAD_TS,
+      status: "processing",
+    });
     expect(warnCalls).toContainEqual([
       "[slack-progress] startStream failed:",
       "undefined is not an object (evaluating 'this.client.chat.startStream')",
@@ -466,6 +550,43 @@ describe("SlackProgress — errors swallowed", () => {
       "[slack-progress] startStream failed:",
       "stream down",
     ]);
+  });
+
+  // ISW-1.1 / AC #3: a setStatus failure at start() — the new eager call —
+  // must be caught and logged without preventing startStream() or the seed
+  // appendTaskUpdate from proceeding. Mirrors the existing
+  // finish()'s-setStatus-fallback-failure test pattern below.
+  test("start() does not throw when agents.sessions.setStatus rejects, and warns — startStream()/seed card still proceed (AC #3)", async () => {
+    const client = makeMockClient();
+    client.agents.sessions.setStatus.mockRejectedValueOnce(
+      new Error("setStatus down"),
+    );
+    const { progress } = makeProgress({ client });
+    await expect(progress.start()).resolves.toBeUndefined();
+    expect(warnCalls).toContainEqual([
+      "[slack-progress] setStatus failed:",
+      "setStatus down",
+    ]);
+    // startStream() and the seed card still ran despite the setStatus
+    // failure.
+    expect(client.chat.startStream).toHaveBeenCalledTimes(1);
+    expect(client.chat.appendStream).toHaveBeenCalledTimes(1);
+  });
+
+  // Same as above, but the client is missing the `agents` namespace
+  // entirely — the property access itself throws synchronously, which must
+  // also be caught without blocking startStream()/the seed card.
+  test("start() does not throw when the client has no agents namespace at all, and warns — startStream()/seed card still proceed (AC #3)", async () => {
+    const { chat } = makeMockClient();
+    const client = { chat } as unknown as ReturnType<typeof makeMockClient>;
+    const { progress } = makeProgress({ client });
+    await expect(progress.start()).resolves.toBeUndefined();
+    expect(warnCalls).toContainEqual([
+      "[slack-progress] setStatus failed:",
+      "undefined is not an object (evaluating 'this.client.agents.sessions')",
+    ]);
+    expect(client.chat.startStream).toHaveBeenCalledTimes(1);
+    expect(client.chat.appendStream).toHaveBeenCalledTimes(1);
   });
 
   test("onProgress does not throw when the client has no chat namespace, and warns", async () => {
@@ -498,13 +619,13 @@ describe("SlackProgress — errors swallowed", () => {
     ]);
   });
 
-  // AC #3 (defense in depth): a stream that never opened (streamTs stayed
-  // undefined — here because the client has no chat namespace at all) must
-  // not fall through to a doomed chat.stopStream call (guaranteed to fail
-  // with no valid ts, per the old behavior this replaces) — finish() falls
-  // back to a direct agents.sessions.setStatus call instead, so the "is
-  // working" indicator can still be cleared.
-  test("finish() falls back to agents.sessions.setStatus when the client has no chat namespace (stream never opened) (AC #3)", async () => {
+  // ISW-1.1 / AC #2: a stream that never opened (streamTs stayed undefined —
+  // here because the client has no chat namespace at all) must not fall
+  // through to a doomed chat.stopStream call (guaranteed to fail with no
+  // valid ts) — finish()'s now-unconditional agents.sessions.setStatus call
+  // still runs regardless, so the "is working" indicator can still be
+  // cleared.
+  test("finish() calls agents.sessions.setStatus when the client has no chat namespace (stream never opened) (AC #2)", async () => {
     const setStatus = mock(async (_args: unknown) => {});
     const progress = new SlackProgress({
       client: { agents: { sessions: { setStatus } } },
@@ -520,9 +641,9 @@ describe("SlackProgress — errors swallowed", () => {
     });
   });
 
-  // Same fallback path, but the setStatus call itself also fails — must
-  // still not throw, and warns instead of silently swallowing it.
-  test("finish()'s setStatus fallback failure does not throw, and warns", async () => {
+  // Same path, but the setStatus call itself also fails — must still not
+  // throw, and warns instead of silently swallowing it.
+  test("finish()'s setStatus call failure does not throw, and warns", async () => {
     const setStatus = mock(async (_args: unknown) => {
       throw new Error("setStatus down");
     });
@@ -534,14 +655,14 @@ describe("SlackProgress — errors swallowed", () => {
     });
     await expect(progress.finish()).resolves.toBeUndefined();
     expect(warnCalls).toContainEqual([
-      "[slack-progress] setStatus fallback failed:",
+      "[slack-progress] setStatus failed:",
       "setStatus down",
     ]);
   });
 
-  // The client is missing the `agents` namespace entirely too — the fallback
-  // must not throw synchronously on the property access either.
-  test("finish()'s setStatus fallback does not throw when the client has no agents namespace at all, and warns", async () => {
+  // The client is missing the `agents` namespace entirely too — must not
+  // throw synchronously on the property access either.
+  test("finish()'s setStatus call does not throw when the client has no agents namespace at all, and warns", async () => {
     const progress = new SlackProgress({
       client: {},
       channel: CHANNEL,
@@ -550,7 +671,7 @@ describe("SlackProgress — errors swallowed", () => {
     });
     await expect(progress.finish()).resolves.toBeUndefined();
     expect(warnCalls).toContainEqual([
-      "[slack-progress] setStatus fallback failed:",
+      "[slack-progress] setStatus failed:",
       "undefined is not an object (evaluating 'this.client.agents.sessions')",
     ]);
   });

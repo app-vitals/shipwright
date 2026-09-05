@@ -167,9 +167,16 @@ function makeMockDeps(
     },
     agentCronRunService: {
       listForAgent: async () => ({ items: [], total: 0, limit: 20, offset: 0 }),
+      listAcrossAgents: async () => ({
+        items: [],
+        total: 0,
+        limit: 20,
+        offset: 0,
+      }),
     },
     agentWorkQueueService: {
       get: async () => null,
+      getMany: async () => [],
     },
     agentCronJobService: {
       list: async () => [],

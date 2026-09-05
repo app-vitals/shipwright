@@ -36,6 +36,7 @@ import {
   type PullRequestItem,
   type TaskItem,
   type WorkQueueItem,
+  buildMergedWorkQueueRows,
   renderAgentDetailPage,
   renderAgentsPage,
   renderChatMessageBubble,
@@ -45,6 +46,7 @@ import {
   renderGithubAppInstalledPage,
   renderGithubAppManifestRedirectPage,
   renderLoginPage,
+  renderMergedQueueActivityPage,
   renderNewLocalAgentPage,
   renderPrDetailPage,
   renderProvisionCompletePage,
@@ -290,8 +292,11 @@ export interface AdminUIDeps {
     | "get"
     | "reconcileSystemCrons"
   >;
-  agentCronRunService: Pick<AgentCronRunService, "listForAgent">;
-  agentWorkQueueService: Pick<AgentWorkQueueService, "get">;
+  agentCronRunService: Pick<
+    AgentCronRunService,
+    "listForAgent" | "listAcrossAgents"
+  >;
+  agentWorkQueueService: Pick<AgentWorkQueueService, "get" | "getMany">;
   agentToolService: Pick<
     AgentToolService,
     "list" | "add" | "toggle" | "remove"
@@ -1170,22 +1175,71 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
     );
   });
 
-  // ─── Default-agent queue-activity redirect (AXR-3.3) ─────────────────────
-  // Top-level entry point into GET /admin/agents/:id/queue-activity: resolve
-  // the caller's accessible agents with the same scoping as /admin/agents
-  // above, then jump straight to the first one's queue-activity page. Zero
-  // accessible agents falls back to the agents list rather than erroring.
+  // ─── Merged fleet-wide queue-activity view (AAV-2.1) ─────────────────────
+  // Resolves the caller's accessible agents with the same scoping as
+  // /admin/agents above, then renders the merged cross-agent Queue &
+  // Activity view directly — superseding the former AXR-3.3 behavior of
+  // redirecting to the first accessible agent's own queue-activity page.
+  // Zero accessible agents still falls back to the agents list rather than
+  // rendering an empty merged view with no agent to switch to.
 
   app.get("/admin/queue-activity", requireAuth, async (c) => {
     const agents = await resolveAccessibleAgents(
       c.var.userEmail,
       c.var.isAdmin,
     );
-    const firstAgent = agents[0];
-    if (!firstAgent) {
+    if (agents.length === 0) {
       return c.redirect("/admin/agents", 302);
     }
-    return c.redirect(`/admin/agents/${firstAgent.id}/queue-activity`, 302);
+
+    const agentIds = agents.map((a) => a.id);
+
+    const pageRaw = c.req.query("page");
+    const page = pageRaw ? Math.max(1, Number.parseInt(pageRaw, 10) || 1) : 1;
+    const limit = 20;
+    const offset = (page - 1) * limit;
+
+    const queuePageRaw = c.req.query("queuePage");
+    const queuePage = queuePageRaw
+      ? Math.max(1, Number.parseInt(queuePageRaw, 10) || 1)
+      : 1;
+    const queueLimit = 20;
+    const queueOffset = (queuePage - 1) * queueLimit;
+
+    const [snapshots, runResult] = await Promise.all([
+      agentWorkQueueService.getMany(agentIds),
+      agentCronRunService.listAcrossAgents(agentIds, { limit, offset }),
+    ]);
+
+    const agentNames: Record<string, string> = {};
+    for (const a of agents) agentNames[a.id] = a.name;
+
+    const mergedRows = buildMergedWorkQueueRows(
+      snapshots.map((s) => ({
+        agentId: s.agentId,
+        items: s.items as unknown as WorkQueueItem[],
+      })),
+      agents.map((a) => ({ id: a.id, repos: a.repos ?? [] })),
+    );
+    const queueTotal = mergedRows.length;
+    const pagedRows = mergedRows.slice(queueOffset, queueOffset + queueLimit);
+
+    return html(
+      renderMergedQueueActivityPage({
+        agents: agents.map((a) => ({ id: a.id, name: a.name })),
+        agentNames,
+        workQueueRows: pagedRows,
+        workQueuePagination: {
+          total: queueTotal,
+          limit: queueLimit,
+          page: queuePage,
+        },
+        runs: runResult.items,
+        runsPagination: { total: runResult.total, limit, page },
+        userName: c.var.userEmail,
+        timezone,
+      }),
+    );
   });
 
   // ─── Agent detail ─────────────────────────────────────────────────────────
