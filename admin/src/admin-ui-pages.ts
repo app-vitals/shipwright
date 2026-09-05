@@ -2006,12 +2006,12 @@ const TASKS_PAGE_EXTRA_STYLES = `
     /* ─── Task board card slide-over drawer (AXR-1.4) ────────────────────── */
     .task-drawer-toggle { position:absolute;opacity:0;width:1px;height:1px;pointer-events:none }
     .task-drawer-scrim {
-      display:none;position:fixed;inset:0;z-index:55;
+      display:none;position:fixed;inset:0;z-index:101;
       background:rgba(0,0,0,0.4);cursor:pointer;
     }
     .task-drawer-toggle:checked ~ .task-drawer-scrim { display:block }
     .task-drawer {
-      position:fixed;top:0;right:0;bottom:0;z-index:60;
+      position:fixed;top:0;right:0;bottom:0;z-index:102;
       width:100%;max-width:400px;min-width:300px;
       background:#fff;border-left:1px solid #e8e8ee;
       overflow-y:auto;
@@ -4539,7 +4539,7 @@ const chatPageStyles = `
          edge by default and slid in when the checkbox is :checked. A scrim
          dims/blocks the background and closes the drawer on tap. */
       .chat-thread-sidebar {
-        position:fixed;top:0;left:0;bottom:0;z-index:60;
+        position:fixed;top:0;left:0;bottom:0;z-index:102;
         width:80%;max-width:300px;min-width:0;
         margin:0;border-radius:0;overflow-y:auto;
         transform:translateX(-100%);
@@ -4550,7 +4550,7 @@ const chatPageStyles = `
          the a11y/visibility tree when closed — Playwright's toBeVisible() (and
          assistive tech) treat an opacity:0 element as still visible. */
       .chat-drawer-scrim {
-        display:none;position:fixed;inset:0;z-index:55;
+        display:none;position:fixed;inset:0;z-index:101;
         background:rgba(0,0,0,0.4);cursor:pointer;
       }
       .chat-drawer-toggle:checked ~ .chat-drawer-scrim { display:block }

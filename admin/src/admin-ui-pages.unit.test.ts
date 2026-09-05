@@ -9069,6 +9069,86 @@ describe("renderQueueActivityPage — Upcoming/Past sectioning", () => {
   });
 });
 
+// ─── Drawer/scrim z-index vs sticky toolbar (DNZ-1.1) ─────────────────────────
+//
+// Drawers and their scrims must render above the sticky toolbar (z-index: 100)
+// so they're never obscured by the sticky top nav. Each drawer's scrim should
+// render below the drawer itself (z-index: scrim < drawer), but both must be
+// above the toolbar (z-index > 100). Toolbar z-index is 100 per lib/web/toolbar.ts.
+
+describe("drawer z-index above sticky toolbar (DNZ-1.1)", () => {
+  const TOOLBAR_ZINDEX = 100;
+
+  const THREAD: ChatThread = {
+    id: "thread-dnz-1",
+    agentId: "agent-xyz",
+    title: "DNZ-1 Thread",
+    memberId: null,
+    createdAt: "2026-06-01T09:00:00Z",
+    updatedAt: "2026-06-01T09:00:00Z",
+  };
+
+  const MSG: ChatMessage = {
+    id: "msg-dnz-1",
+    threadId: "thread-dnz-1",
+    role: "user",
+    body: "test",
+    createdAt: "2026-06-01T09:00:00Z",
+    claimedBy: null,
+    repliedAt: null,
+    tokens: null,
+    costUsd: null,
+    errorKind: null,
+    attachmentFilename: null,
+    attachmentSize: null,
+  };
+
+  test("task drawer and scrim z-indexes are above toolbar (> 100) with scrim < drawer", () => {
+    const html = renderTasksPage(
+      [TASK_ITEM],
+      {},
+      false,
+      USER_NAME,
+      {},
+      { total: 1, limit: 50, page: 1 },
+    );
+
+    const scrimMatch = html.match(/\.task-drawer-scrim\s*\{[^}]*z-index:(\d+)/);
+    const drawerMatch = html.match(/\.task-drawer\s*\{[^}]*z-index:(\d+)/);
+
+    expect(scrimMatch).not.toBeNull();
+    expect(drawerMatch).not.toBeNull();
+
+    const scrimZIndex = scrimMatch ? Number.parseInt(scrimMatch[1], 10) : 0;
+    const drawerZIndex = drawerMatch ? Number.parseInt(drawerMatch[1], 10) : 0;
+
+    expect(scrimZIndex).toBeGreaterThan(TOOLBAR_ZINDEX);
+    expect(drawerZIndex).toBeGreaterThan(TOOLBAR_ZINDEX);
+    expect(scrimZIndex).toBeLessThan(drawerZIndex);
+  });
+
+  test("chat thread sidebar and scrim z-indexes are above toolbar (> 100) with scrim < sidebar", () => {
+    const html = renderChatThreadPage("agent-xyz", THREAD, [MSG], USER_NAME);
+
+    const sidebarMatch = html.match(
+      /\.chat-thread-sidebar\s*\{[^}]*z-index:(\d+)/,
+    );
+    const scrimMatch = html.match(/\.chat-drawer-scrim\s*\{[^}]*z-index:(\d+)/);
+
+    expect(sidebarMatch).not.toBeNull();
+    expect(scrimMatch).not.toBeNull();
+
+    const sidebarZIndex = sidebarMatch
+      ? Number.parseInt(sidebarMatch[1], 10)
+      : 0;
+    const scrimZIndex = scrimMatch ? Number.parseInt(scrimMatch[1], 10) : 0;
+
+    expect(sidebarZIndex).toBeGreaterThan(TOOLBAR_ZINDEX);
+    expect(scrimZIndex).toBeGreaterThan(TOOLBAR_ZINDEX);
+    expect(scrimZIndex).toBeLessThan(sidebarZIndex);
+  });
+});
+
 // ─── All page renderers — shared head via renderAdminPage (CFB-1.2) ─────────
 //
 // Every render*Page-style function in this file builds its <!DOCTYPE html>
