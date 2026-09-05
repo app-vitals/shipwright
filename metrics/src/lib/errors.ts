@@ -16,6 +16,15 @@ export class ApiError extends Error {
     super(message);
     this.name = "ApiError";
   }
+
+  /**
+   * Alias for `statusCode` so `@sentry/hono`'s `defaultShouldHandleError`
+   * (which reads `error.status`, not `error.statusCode`) correctly recognizes
+   * already-handled 3xx/4xx responses and skips its own independent capture.
+   */
+  get status(): number {
+    return this.statusCode;
+  }
 }
 
 export class NotFoundError extends ApiError {
