@@ -1859,20 +1859,27 @@ describe("patch.md — dependency-risk detection (DBP-1.2)", () => {
     expect(step3bIdx).toBeGreaterThan(step3a5Idx);
   });
 
-  it("scans Step 3a's already-fetched review bodies for the Dependency Risk Analysis heading before falling back", () => {
+  it("does not try to recover the finding by scanning review bodies — that fast path could never match posted data", () => {
     const section = getStep3a5Section();
-    expect(section).toContain("## Dependency Risk Analysis");
-    expect(section).toContain("reviews.nodes[]");
-    expect(section).toContain("DEPENDENCY_RISK_FINDING");
+    // The full **Recommendation**/**Flags**/**Reasoning** block only ever lands in the
+    // local state/reviews/PR_REVIEW_{pr}.md narrative (review.md:782), which is never
+    // posted; the GitHub-posted body carries only a condensed one-line clause with no
+    // flags (review.md:1118-1126). So no parse step may set DEPENDENCY_RISK_FINDING from
+    // a review body — the section must explain that rather than attempt it.
+    expect(section).not.toMatch(/parse\s+`?\{recommendation, flags, reasoning\}`?\s+from/i);
+    expect(section).toContain("PR_REVIEW_{pr}.md");
+    expect(section).toContain("review.md:1118-1126");
+    expect(section).toMatch(/could never match real posted data/i);
+    expect(section).toMatch(/`flags`\s+is\s+absent from it entirely/i);
   });
 
-  it("independent fallback invokes resolve-dependency-watched-paths.ts and references dependency-risk-analysis.md by name", () => {
+  it("derives the finding from the PR's own diff, invoking resolve-dependency-watched-paths.ts and referencing dependency-risk-analysis.md by name", () => {
     const section = getStep3a5Section();
     expect(section).toContain("resolve-dependency-watched-paths.ts");
     expect(section).toContain("references/dependency-risk-analysis.md");
   });
 
-  it("fallback mirrors review.md's Step 5.8 without assuming a worktree exists yet", () => {
+  it("derivation mirrors review.md's Step 5.8 without assuming a worktree exists yet", () => {
     const section = getStep3a5Section();
     expect(section).toContain("review.md");
     expect(section).toContain("Step 5.8");
@@ -1902,6 +1909,39 @@ describe("patch.md — dependency-risk detection (DBP-1.2)", () => {
   it("a merge recommendation does not affect List A membership", () => {
     const section = getStep3a5Section();
     expect(section).toMatch(/"merge".{0,60}nothing to remediate and does\s+not\s+affect List A/is);
+  });
+
+  it("has an already-held exclusion so a held finding is not re-routed into List A every cycle", () => {
+    const section = getStep3a5Section();
+    expect(section).toMatch(/already-held exclusion/i);
+    expect(section).toContain("Independence Principle #6");
+    expect(section).toContain("Skills Are Idempotent");
+    // The exclusion must be positioned as the analogue of Step 3a's own
+    // resolved/replied/superseded state, which this finding inherently lacks.
+    expect(section).toContain("isResolved");
+    expect(section).toMatch(/synthesized fresh from the diff on every cycle/i);
+  });
+
+  it("the already-held exclusion reads the findings ledger keyed on a HEAD-SHA-scoped ref, so it self-expires on a new commit", () => {
+    const section = getStep3a5Section();
+    expect(section).toContain("$SHIPWRIGHT_TASK_STORE_URL/prs?repo={org}/{repo}&prNumber={pr}");
+    expect(section).toContain("dependency-risk@{headRefOid}");
+    expect(section).toContain('disposition == "rejected"');
+    expect(section).toMatch(/self-expiring/i);
+    // headRefOid comes from Step 3a's existing query — no extra GitHub round trip.
+    expect(section).toMatch(/no extra GitHub call/i);
+  });
+
+  it("the already-held exclusion fails open — a missing or unreadable ledger never suppresses a first-round remediation", () => {
+    const section = getStep3a5Section();
+    expect(section).toMatch(/HELD_DEP_FINDINGS.{0,120}(`0`|empty).{0,200}route normally/is);
+    expect(section).toMatch(/must never suppress a first-round remediation/i);
+  });
+
+  it("an excluded already-held finding still leaves ordinary Step 3a findings free to route the PR into List A", () => {
+    const section = getStep3a5Section();
+    expect(section).toMatch(/leave its List A membership entirely to Step 3a's own\s+criteria/i);
+    expect(section).toMatch(/omit Step 5b's DEPENDENCY-RISK REMEDIATION PROTOCOL block/i);
   });
 });
 
@@ -1963,5 +2003,24 @@ describe("patch.md — dependency-patch protocol injected into Step 5b (DBP-1.2)
     const section = getStep5bPromptSection();
     expect(section).toContain("verification command");
     expect(section).toContain("bounded strategy catalog");
+  });
+
+  it("a REJECTed dependency-risk finding is reported under the SHA-scoped ledger ref Step 3a.5's exclusion matches on", () => {
+    const section = getStep5bPromptSection();
+    expect(section).toContain("dependency-risk@{headRefOid}");
+    expect(section).toMatch(/rather than a free-text slug/i);
+    // The ref must be tied to the REJECT exits (protocol steps 2 and 4), not the ACCEPT one.
+    expect(section).toMatch(/step 2 or step 4 above lands on REJECT/i);
+  });
+
+  it("Step 5c carries the dependency-risk ref verbatim into the findings-ledger write", () => {
+    const step5cIdx = content.indexOf("### Step 5c: Handle Subagent Status");
+    const step5c5Idx = content.indexOf("### Step 5c.5: Upsert PR Record");
+    expect(step5cIdx).toBeGreaterThan(-1);
+    expect(step5c5Idx).toBeGreaterThan(step5cIdx);
+    const section = content.slice(step5cIdx, step5c5Idx);
+    expect(section).toContain("dependency-risk@{headRefOid}");
+    expect(section).toMatch(/carry it through verbatim/i);
+    expect(section).toMatch(/Step 3a\.5's\s+already-held exclusion matches on that exact string/i);
   });
 });

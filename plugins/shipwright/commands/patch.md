@@ -390,24 +390,16 @@ Step 5.
 
 ### Step 3a.5: Dependency-Risk Detection (DBP-1.2)
 
-For each PR, determine whether it has a dependency-risk finding, independently of whether
-review and patch share an agent/session — any agent can claim either phase, and a review's
-dependency-risk analysis is only ever persisted as text inside the GitHub-posted review
-body, never in a shared in-memory or task-store field. Store the result as
-`DEPENDENCY_RISK_FINDING` (a nullable `{recommendation, flags, reasoning}` shape) for use by
-Step 5b. A `"hold"` or `"review"` recommendation additionally routes the PR into **List A**
-directly — see step 3 below — because it has no ordinary review finding for Step 3a's
-criteria to catch on its own.
+For each PR, determine whether it has a dependency-risk finding, deriving it independently
+from the PR itself rather than reading it back off a prior review — any agent can claim either phase,
+and no review artifact that reaches GitHub carries the full `{recommendation, flags,
+reasoning}` shape forward to a later patch run (see "Why this is re-derived" below). Store
+the result as `DEPENDENCY_RISK_FINDING` (a nullable `{recommendation, flags, reasoning}`
+shape) for use by Step 5b. A `"hold"` or `"review"` recommendation additionally routes the
+PR into **List A** directly — see step 2 below — because it has no ordinary review finding
+for Step 3a's criteria to catch on its own.
 
-1. **Scan the review bodies Step 3a already fetched.** For each review in `reviews.nodes[]`
-   (already in memory from Step 3a's GraphQL query — do not re-fetch), check its `body` for
-   a `## Dependency Risk Analysis` section — the exact heading `review.md`'s Step 9 template
-   emits. When found, parse `{recommendation, flags, reasoning}` from that section's
-   `**Recommendation**:`, `**Flags**:`, and `**Reasoning**:` lines. Set
-   `DEPENDENCY_RISK_FINDING` from this parse and skip step 2 below — a review already did
-   this analysis, so there's nothing to re-derive.
-
-2. **Independent fallback, when no fetched review body contains the clause.** Mirror
+1. **Derive the finding from the PR's own diff.** Mirror
    `review.md`'s Step 5.8 exactly, substituting `gh` calls for that step's worktree-relative
    file reads — Step 3 runs before any worktree exists (worktree setup happens later, in
    Step 4a/5a, scoped only to PRs already classified into List C/A):
@@ -444,8 +436,8 @@ criteria to catch on its own.
    d. **When not triggered** (no changed file matches): `DEPENDENCY_RISK_FINDING` stays
       unset for this PR.
 
-3. **Route a `hold`/`review` recommendation into List A.** When `DEPENDENCY_RISK_FINDING`
-   is set (from step 1 or step 2 above) and its `recommendation` is `"hold"` or `"review"`,
+2. **Route a `hold`/`review` recommendation into List A.** When `DEPENDENCY_RISK_FINDING`
+   is set (from step 1 above) and its `recommendation` is `"hold"` or `"review"`,
    add this PR to **List A** — regardless of whether Step 3a's own criteria (unresolved
    inline threads, a non-excluded COMMENTED/CHANGES_REQUESTED review body) independently
    found a finding for this PR. A `"merge"` recommendation has nothing to remediate and does
@@ -461,6 +453,63 @@ criteria to catch on its own.
    unreachable for exactly the scenario it targets: a dependency-bump PR carrying a
    hold/review recommendation with no unrelated ordinary finding to piggyback List A
    membership on.
+
+3. **Already-held exclusion — skip the routing in step 2 when this same finding is already
+   held at this same HEAD.** Every one of Step 3a's own finding criteria carries its own
+   "this was dealt with" state (a thread's `isResolved`, an author reply post-dating a
+   review, a later clean self-review superseding an earlier one). Step 1's finding carries
+   none — it is synthesized fresh from the diff on every cycle, with no dependence on prior
+   review or reply state — so step 2 needs an exclusion of its own. Without one, a PR whose
+   fix subagent hits `references/dependency-patch.md`'s no-safe-strategy exit
+   (`outcome: held`) and classifies the finding REJECT in [A.5] gets re-added to List A next
+   cycle from the identical diff, re-running reproduce → no-safe-strategy → REJECT and
+   reposting the same rebuttal comment indefinitely — a violation of
+   `plugins/shipwright/CLAUDE.md`'s Independence Principle #6 ("Skills Are Idempotent").
+
+   Detect the already-held state from the PR record's findings ledger — Step 5c.5 writes one
+   `disposition: "rejected"` entry there for every finding REJECTed in a cycle, and
+   `GET /prs` includes each record's `findings` array:
+   ```bash
+   HELD_DEP_FINDINGS=$(curl -sf -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
+     "$SHIPWRIGHT_TASK_STORE_URL/prs?repo={org}/{repo}&prNumber={pr}" \
+     | jq -r --arg ref "dependency-risk@{headRefOid}" \
+       '[.prs[0].findings[]? | select(.ref == $ref and .disposition == "rejected")] | length')
+   ```
+   `{headRefOid}` is the SHA Step 3a already extracted — this costs no extra GitHub call.
+   Keying the ledger `ref` on the HEAD SHA is what makes the exclusion self-expiring, the
+   same way Step 3a's reply-addressed exclusion stops applying once a newer review
+   post-dates the reply: a new commit yields a ref the ledger has no entry for, so a
+   genuinely changed bump (or a human's own fix attempt) re-routes normally instead of being
+   suppressed forever.
+
+   When `HELD_DEP_FINDINGS` is non-zero, do **not** add this PR to List A on the strength of
+   `DEPENDENCY_RISK_FINDING` — leave its List A membership entirely to Step 3a's own
+   criteria, and omit Step 5b's DEPENDENCY-RISK REMEDIATION PROTOCOL block for it (a
+   still-unresolved *ordinary* finding on the same PR is still worth a fix subagent; the
+   already-held dependency-risk finding is not). When `HELD_DEP_FINDINGS` is `0` or empty,
+   or the lookup fails for any reason (non-200, no PR record yet, task store unreachable),
+   treat the finding as not yet held and route normally — a missing or unreadable ledger
+   must never suppress a first-round remediation.
+
+   Step 5b's protocol block instructs the fix subagent to identify this finding as
+   `dependency-risk@{headRefOid}` in its CONCERNS, which is the `ref` Step 5c carries into
+   `REJECTED_FINDINGS_THIS_CYCLE` and Step 5c.5 writes to the ledger — both ends of this
+   exclusion use that one identifier.
+
+**Why this is re-derived rather than parsed off a prior review's analysis.** A prior
+`review.md` run's dependency-risk analysis is not recoverable from GitHub. Its full
+`**Recommendation**:` / `**Flags**:` / `**Reasoning**:` block appears only under the
+`## Dependency Risk Analysis` heading of the local `state/reviews/PR_REVIEW_{pr}.md`
+narrative file (review.md:782), which is never posted anywhere. What actually reaches GitHub
+is `pr_review_{pr}.json`'s `body` — a condensed one-line clause appended after the
+`Verdict: ...` lead-in (review.md:1118-1126), e.g.
+`"Verdict: COMMENT — {code-review summary}; dependency risk: hold — {reasoning}"`. That
+clause encodes `recommendation` and `reasoning` only; `flags` is absent from it entirely,
+and `references/dependency-patch.md` treats `flags` (`breakingChange` above all) as a real
+input to its remediation protocol. So scanning `reviews.nodes[]` for the
+`## Dependency Risk Analysis` heading could never match real posted data, and parsing the
+condensed clause instead would hand Step 5b a finding with `flags` permanently unset.
+Re-deriving from the diff is the only path that produces the complete shape.
 
 ### Step 3b: Check for DIRTY State
 
@@ -1076,6 +1125,11 @@ protocol:
   5. If it now passes, classify ACCEPT or MODIFY in [A.5] as usual and carry it into [B]
      like any other accepted finding — it follows the same [D]/[E] commit/push and
      thread-resolution path as every other finding, no separate mechanism.
+  6. Whenever step 2 or step 4 above lands on REJECT, identify this finding in your CONCERNS
+     by the exact ref `dependency-risk@{headRefOid}` (substituted with this PR's current
+     HEAD SHA) rather than a free-text slug. That exact string is recorded to this PR's
+     findings ledger, and it is what stops a later run from re-deriving this same finding
+     from this same unchanged diff and re-reporting it forever.
 
 INSTRUCTIONS — follow in order:
 
@@ -1258,7 +1312,10 @@ Parse the subagent's STATUS:
   subagent's CONCERNS, capture:
   - **`ref`**: the same identifier already used to resolve that finding's thread in Step 5b
     Instructions [D] — the inline thread's `path:line` for inline findings, or a short slug
-    for PR-body-level findings with no inline thread.
+    for PR-body-level findings with no inline thread. For a dependency-risk finding that
+    slug is the `dependency-risk@{headRefOid}` ref Step 5b's DEPENDENCY-RISK REMEDIATION
+    PROTOCOL block told the subagent to use — carry it through verbatim, since Step 3a.5's
+    already-held exclusion matches on that exact string.
   - **`evidence`**: the rejection reason already written into the rebuttal comment for that
     finding.
 
