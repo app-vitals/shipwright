@@ -30,13 +30,7 @@ annotations:
   # entry in CHANGELOG.md (keep the two in sync on every bump).
   artifacthub.io/changes: |
     - kind: changed
-      description: "auto-bump to chart v1.19.103 triggered by release tag admin-v1.142.1"
-    - kind: changed
-      description: "auto-bump to chart v1.19.103 triggered by release tag chat-v1.81.0"
-    - kind: changed
-      description: "auto-bump to chart v1.19.103 triggered by release tag metrics-v1.83.0"
-    - kind: changed
-      description: "auto-bump to chart v1.19.103 triggered by release tag task-store-v1.107.0"
+      description: "bump traefik subchart and pin the Whisper ASR image back to v1.3.0 (#2920)"
 dependencies:
   # Bitnami PostgreSQL subchart. Pinned to a chart version whose default image tag
   # is concrete (NOT `latest`), because Bitnami's 2025 catalog change moved newer

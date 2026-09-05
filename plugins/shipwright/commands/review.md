@@ -267,28 +267,35 @@ agent tokens are scoped) or zero matching tasks (still the common case today) le
              createdAt
            }
          }
+         commits(last: 1) {
+           nodes {
+             commit { pushedDate }
+           }
+         }
        }
      }
    }')
    ```
-   Extract `HEAD_REF_OID`, `REVIEWS_JSON`, `REVIEW_THREADS_JSON`, and `COMMENTS_JSON` from the
-   response — each of the three JSON variables holds the **full connection object**
-   (`{ nodes: [...] }`), not the bare inner array, since Step 9.5 passes them straight through to
-   `compute-unaddressed-findings.ts`, which requires that shape:
+   Extract `HEAD_REF_OID`, `REVIEWS_JSON`, `REVIEW_THREADS_JSON`, `COMMENTS_JSON`, and
+   `LAST_PUSH_DATE` from the response — each of the three `_JSON` variables holds the
+   **full connection object** (`{ nodes: [...] }`), not the bare inner array, since Step 9.5
+   passes them straight through to `compute-unaddressed-findings.ts`, which requires that shape:
    ```bash
    HEAD_REF_OID=$(jq -r '.data.repository.pullRequest.headRefOid' <<< "$RESPONSE")
    REVIEWS_JSON=$(jq -c '.data.repository.pullRequest.reviews' <<< "$RESPONSE")
    REVIEW_THREADS_JSON=$(jq -c '.data.repository.pullRequest.reviewThreads' <<< "$RESPONSE")
    COMMENTS_JSON=$(jq -c '.data.repository.pullRequest.comments' <<< "$RESPONSE")
+   LAST_PUSH_DATE=$(jq -r '.data.repository.pullRequest.commits.nodes[0].commit.pushedDate' <<< "$RESPONSE")
    ```
    `REVIEWS_JSON.nodes[]` holds each review (including `commit.oid`, needed by Step 9.5's
    mechanical gate below to filter reviews at the current `headRefOid`),
    `REVIEW_THREADS_JSON.nodes[]` holds each thread (with `isResolved` and up to 20 comments per
    thread — `author.login`, `body`, `path`, `line`, and `createdAt` for each, not just the first
    comment; `createdAt` is what Step 9.5's `isThreadAddressedByAuthorReply` exclusion (URT-1.1)
-   needs to detect a PR-author reply posted after a thread's first, flagging comment), and
-   `COMMENTS_JSON.nodes[]` holds each comment — the same shape patch.md's Step 3a extracts. Used
-   below by the Unresolved Comment Check and by the unaddressed-findings gate before Step 10.
+   needs to detect a PR-author reply posted after a thread's first, flagging comment),
+   `COMMENTS_JSON.nodes[]` holds each comment — the same shape patch.md's Step 3a extracts, and
+   `LAST_PUSH_DATE` is the ISO-8601 `pushedDate` of the most recent commit at the current head.
+   Used below by the Unresolved Comment Check and by the unaddressed-findings gate before Step 10.
 
    #### Prior Qualifying Reviews for Subagent Attestation (PVD-1.2)
 
@@ -407,23 +414,52 @@ author unconditionally override all unresolved thread skip conditions. Only run 
 below for first reviews (no `lastReviewedCommit`) or when the head has not moved
 (`headRefOid == lastReviewedCommit`).
 
-Using the `reviews`, `comments`, and `reviewThreads` fetched above (no extra API call
-needed), a **substantive unresolved comment** is one where ALL of the following are true:
-- Author login does not contain `[bot]` and is not a known CI account
-- Body is not a trivial acknowledgement: not "LGTM", "+1", "thanks", "approved", or emoji-only
-- Posted after the most recent commit push date (the author has not pushed since)
+**This is computed mechanically, not freehand.** `compute-unresolved-comment-check.ts`
+(UCC-1.1) is the single exported, tested implementation of this decision, mirroring
+`compute-review-verdict.ts`'s (DRO-1.1) and `compute-unaddressed-findings.ts`'s (PVD-1.1) CLI
+pattern. It reuses `compute-unaddressed-findings.ts`'s exported
+`isAddressedByAuthorReply`/`isThreadAddressedByAuthorReply` helpers (CPF-2.3/URT-1.1) — so a
+`CHANGES_REQUESTED` review, a substantive top-level comment, or an unresolved inline thread
+that the PR author has already replied to and addressed does not count as substantive
+unresolved feedback, the same exclusion Step 9.5's hard gate below already applies. Before
+this fix, Step 5 ran this decision freehand and never applied that exclusion — since Step 5
+runs earlier and stops the pipeline (deferring the review pass silently) on a match, its
+wrong answer won even when Step 9.5's later, correct, mechanized gate would have said the
+finding was resolved. Invoke it with the `reviews`, `comments`, and `reviewThreads` fetched above (no
+extra API call needed), plus `headRefOid`, `LAST_REVIEWED_COMMIT`, `LAST_PUSH_DATE`,
+`CURRENT_USER` resolved in Step 3, and `PR_AUTHOR` as `prAuthor` (RAS-1.1) — do not decide
+`hasSubstantiveUnresolvedFeedback` by narrative judgment:
 
-If **any** of the following are true, this PR has substantive unresolved feedback:
-- Any reviewer (not `CURRENT_USER`, not a bot) has a `CHANGES_REQUESTED` review with no commits since that review
-- Any reviewer has a substantive unresolved comment with no commits since that comment
-- Any unresolved inline review thread (`isResolved == false`) exists whose first comment's
-  author is not `CURRENT_USER` and not a bot (login does not contain `[bot]` and is not a
-  known CI account) — an unresolved inline thread counts the same as a substantive
-  unresolved top-level comment/review, regardless of when it was posted relative to the
-  most recent push, since `isResolved` (not recency) is the authoritative "still needs a
-  response" signal for inline threads
+```bash
+CURRENT_USER={the login resolved in Step 3}
+```
 
-If substantive unresolved feedback is found: print
+```bash
+bun run "${CLAUDE_PLUGIN_ROOT}/scripts/compute-unresolved-comment-check.ts" \
+  "$(jq -n --arg currentUser "$CURRENT_USER" \
+    --arg prAuthor "$PR_AUTHOR" \
+    --arg headRefOid "$HEAD_REF_OID" \
+    --arg lastReviewedCommit "$LAST_REVIEWED_COMMIT" \
+    --arg lastPushDate "$LAST_PUSH_DATE" \
+    --argjson reviews "$REVIEWS_JSON" \
+    --argjson comments "$COMMENTS_JSON" \
+    --argjson reviewThreads "$REVIEW_THREADS_JSON" \
+    '{currentUser: $currentUser, prAuthor: $prAuthor, headRefOid: $headRefOid, lastReviewedCommit: (if $lastReviewedCommit == "" then null else $lastReviewedCommit end), lastPushDate: $lastPushDate, reviews: $reviews, comments: $comments, reviewThreads: $reviewThreads}')"
+# -> {"hasSubstantiveUnresolvedFeedback":true|false}
+```
+
+Assign the script's output to a shell variable:
+
+```bash
+HAS_SUBSTANTIVE_UNRESOLVED_FEEDBACK={true or false, from the script's output above}
+```
+
+This is the same computation Step 9.5's hard gate performs further down this file, applied
+here against the `reviews`, `comments`, and `reviewThreads` connections fetched above —
+`compute-unresolved-comment-check.ts`'s own unit tests are the authoritative behavioral spec
+for this definition, not this prose.
+
+If `HAS_SUBSTANTIVE_UNRESOLVED_FEEDBACK` is `true`: print
 `Skipping #{pr} — unresolved feedback from @{login} ({type} on {date}). No commits since.`,
 mark the PR as reviewed-at-this-commit (without staging) so the record is not re-evaluated at the
 same commit. Also advance `reviewedAt` to the current time (captured once as `{now}`, an

@@ -1128,8 +1128,8 @@ describe("review.md — Step 5.5 fetches reviewThreads via GraphQL (RUC-1.1)", (
   });
 });
 
-describe("review.md — Unresolved Comment Check includes unresolved inline threads (RUC-1.1)", () => {
-  it("the substantive unresolved feedback condition includes an unresolved inline review thread bullet", () => {
+describe("review.md — Unresolved Comment Check is mechanized via compute-unresolved-comment-check.ts (UCC-1.1)", () => {
+  it("the check is described as computed mechanically, not freehand, mirroring Step 9.5's framing", () => {
     const step5Idx = content.indexOf("## Step 5: Gather Context");
     const step6Idx = content.indexOf("## Step 6: Classify Changes by Domain");
     const section = content.slice(step5Idx, step6Idx);
@@ -1137,23 +1137,75 @@ describe("review.md — Unresolved Comment Check includes unresolved inline thre
     expect(unresolvedIdx).toBeGreaterThan(-1);
     const unresolvedSection = section.slice(unresolvedIdx);
 
-    expect(unresolvedSection).toContain("unresolved inline");
-    expect(unresolvedSection.toLowerCase()).toContain("thread");
+    expect(unresolvedSection).toContain(
+      "This is computed mechanically, not freehand.",
+    );
+    expect(unresolvedSection).toContain(
+      "compute-unresolved-comment-check.ts",
+    );
   });
 
-  it("the unresolved inline thread condition excludes bot authors and CURRENT_USER, matching existing filtering", () => {
+  it("invokes compute-unresolved-comment-check.ts via bun run against the plugin scripts dir and prints hasSubstantiveUnresolvedFeedback", () => {
     const step5Idx = content.indexOf("## Step 5: Gather Context");
     const step6Idx = content.indexOf("## Step 6: Classify Changes by Domain");
     const section = content.slice(step5Idx, step6Idx);
     const unresolvedIdx = section.indexOf("#### Unresolved Comment Check");
     const unresolvedSection = section.slice(unresolvedIdx);
 
-    const bulletIdx = unresolvedSection.indexOf("unresolved inline");
-    expect(bulletIdx).toBeGreaterThan(-1);
-    const bulletBlock = unresolvedSection.slice(Math.max(0, bulletIdx - 200), bulletIdx + 300);
+    expect(unresolvedSection).toContain(
+      'bun run "${CLAUDE_PLUGIN_ROOT}/scripts/compute-unresolved-comment-check.ts"',
+    );
+    expect(unresolvedSection).toContain("hasSubstantiveUnresolvedFeedback");
+    expect(unresolvedSection).toContain(
+      "HAS_SUBSTANTIVE_UNRESOLVED_FEEDBACK",
+    );
+  });
 
-    expect(bulletBlock).toContain("CURRENT_USER");
-    expect(bulletBlock.toLowerCase()).toContain("bot");
+  it("reuses isAddressedByAuthorReply and isThreadAddressedByAuthorReply from compute-unaddressed-findings.ts, the same exclusion Step 9.5 applies", () => {
+    const step5Idx = content.indexOf("## Step 5: Gather Context");
+    const step6Idx = content.indexOf("## Step 6: Classify Changes by Domain");
+    const section = content.slice(step5Idx, step6Idx);
+    const unresolvedIdx = section.indexOf("#### Unresolved Comment Check");
+    const unresolvedSection = section.slice(unresolvedIdx);
+
+    expect(unresolvedSection).toContain("isAddressedByAuthorReply");
+    expect(unresolvedSection).toContain("isThreadAddressedByAuthorReply");
+    expect(unresolvedSection).toContain("compute-unaddressed-findings.ts");
+  });
+
+  it("the invocation passes headRefOid, lastReviewedCommit, lastPushDate, currentUser, and prAuthor", () => {
+    const step5Idx = content.indexOf("## Step 5: Gather Context");
+    const step6Idx = content.indexOf("## Step 6: Classify Changes by Domain");
+    const section = content.slice(step5Idx, step6Idx);
+    const unresolvedIdx = section.indexOf("#### Unresolved Comment Check");
+    const unresolvedSection = section.slice(unresolvedIdx);
+
+    expect(unresolvedSection).toContain("--arg currentUser");
+    expect(unresolvedSection).toContain("--arg prAuthor");
+    expect(unresolvedSection).toContain("--arg headRefOid");
+    expect(unresolvedSection).toContain("--arg lastReviewedCommit");
+    expect(unresolvedSection).toContain("--arg lastPushDate");
+    expect(unresolvedSection).toContain("--argjson reviews");
+    expect(unresolvedSection).toContain("--argjson comments");
+    expect(unresolvedSection).toContain("--argjson reviewThreads");
+  });
+
+  it("still documents the head-moved override as a pre-check before invoking the script", () => {
+    const step5Idx = content.indexOf("## Step 5: Gather Context");
+    const step6Idx = content.indexOf("## Step 6: Classify Changes by Domain");
+    const section = content.slice(step5Idx, step6Idx);
+    const unresolvedIdx = section.indexOf("#### Unresolved Comment Check");
+    const unresolvedSection = section.slice(unresolvedIdx);
+
+    const overrideIdx = unresolvedSection.indexOf(
+      "skip this check\nentirely and continue",
+    );
+    const scriptIdx = unresolvedSection.indexOf(
+      "compute-unresolved-comment-check.ts",
+    );
+    expect(overrideIdx).toBeGreaterThan(-1);
+    expect(scriptIdx).toBeGreaterThan(-1);
+    expect(overrideIdx).toBeLessThan(scriptIdx);
   });
 });
 
