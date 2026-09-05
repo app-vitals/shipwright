@@ -541,6 +541,14 @@ function resolveBackHref(
 // URL, optionally followed by a query string.
 const TASK_LIST_BACK_HREF_PATTERN = /^\/admin\/tasks(\?[^\s]*)?$/;
 
+// TBC-2.1: the default (board) view of /admin/tasks queries task-store with
+// this raised cap instead of the standard 50, since it now excludes the
+// fully-closed statuses (Claimed/Done are no longer rendered board columns)
+// and needs a wider window over the remaining active statuses to avoid
+// under-filling Queued/In Progress/Blocked-HITL. ?view=table keeps the
+// standard limit of 50, unaffected by this constant.
+const BOARD_TASK_LIMIT = 200;
+
 function resolveTaskDetailBackHref(fromParam: string | undefined): string {
   return resolveBackHref(
     fromParam,
@@ -2865,7 +2873,12 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
     const error = c.req.query("error") ?? undefined;
     const pageRaw = c.req.query("page");
     const page = pageRaw ? Math.max(1, Number.parseInt(pageRaw, 10) || 1) : 1;
-    const limit = 50;
+    // TBC-2.1: the default board view scopes its outbound query to the
+    // active (non-closed) statuses and raises the cap from 50 to 200, since
+    // Claimed/Done tasks (which churn fastest) no longer share the same
+    // top-N-by-recency window as Queued/In Progress/Blocked-HITL. ?view=table
+    // is untouched — same limit, same state/status behavior as before.
+    const limit = view === "board" ? BOARD_TASK_LIMIT : 50;
     const offset = (page - 1) * limit;
 
     // When filtering by agent name, resolve matching IDs upfront so we can
@@ -2889,8 +2902,20 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
       degraded = true;
     } else {
       const params = new URLSearchParams();
-      if (status) params.set("status", status);
-      if (state) params.set("state", state);
+      if (status) {
+        params.set("status", status);
+      } else if (state) {
+        params.set("state", state);
+      } else if (view === "board") {
+        // TBC-2.1: with no explicit status/state filter, the default board
+        // query excludes the fully-closed statuses (merged/done/deploying/
+        // deployed/cancelled) so Done tasks never crowd out the shared
+        // recency window. This can't exclude "claimed" specifically at the
+        // query level — claimed and queued share the same "pending" status,
+        // distinguished only by claimedBy — so Claimed is dropped purely by
+        // no longer being a rendered TASK_BOARD_COLUMNS entry.
+        params.set("state", "open");
+      }
       if (session) params.set("session", session);
       for (const r of repo ?? []) params.append("repo", r);
       for (const o of org ?? []) params.append("org", o);

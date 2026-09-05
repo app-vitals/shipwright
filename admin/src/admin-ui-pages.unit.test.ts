@@ -3542,19 +3542,19 @@ describe("renderTasksPage — board view (AXR-1.3)", () => {
     );
   }
 
-  test("renders all 5 board columns in order: Queued, In Progress, Blocked-HITL, Claimed, Done", () => {
+  test("renders 3 board columns in order: Queued, In Progress, Blocked-HITL (TBC-2.1)", () => {
     const html = renderBoard([]);
     expect(html).toContain('class="board"');
     expect(html).toContain("Queued");
-    expect(html).toContain("Claimed");
     expect(html).toContain("In Progress");
     expect(html).toContain("Blocked-HITL");
-    expect(html).toContain("Done");
-    // Exactly 5 column containers
-    expect((html.match(/class="column"/g) ?? []).length).toBe(5);
+    expect(html).not.toContain("Claimed");
+    expect(html).not.toContain(">Done<");
+    // Exactly 3 column containers
+    expect((html.match(/class="column"/g) ?? []).length).toBe(3);
     // Columns must render left-to-right in this exact order.
     const dataColumnSequence = [...html.matchAll(/data-column="([^"]+)"/g)].map((m) => m[1]);
-    expect(dataColumnSequence).toEqual(["queued", "in_progress", "blocked_hitl", "claimed", "done"]);
+    expect(dataColumnSequence).toEqual(["queued", "in_progress", "blocked_hitl"]);
   });
 
   function extractColumn(html: string, key: string): string {
@@ -3582,7 +3582,7 @@ describe("renderTasksPage — board view (AXR-1.3)", () => {
     expect(extractColumn(html, "claimed")).not.toContain("Queued task title");
   });
 
-  test("buckets a pending claimed task into Claimed", () => {
+  test("a pending claimed task is absent from the default board — Claimed is no longer rendered (TBC-2.1)", () => {
     const task: TaskItem = {
       id: "T-CLAIMED",
       title: "Claimed task title",
@@ -3591,8 +3591,8 @@ describe("renderTasksPage — board view (AXR-1.3)", () => {
       assignee: null,
     };
     const html = renderBoard([task]);
-    expect(extractColumn(html, "claimed")).toContain("Claimed task title");
-    expect(extractColumn(html, "queued")).not.toContain("Claimed task title");
+    expect(html).not.toContain('data-column="claimed"');
+    expect(html).not.toContain("Claimed task title");
   });
 
   test("buckets an in_progress task into In Progress", () => {
@@ -3639,7 +3639,7 @@ describe("renderTasksPage — board view (AXR-1.3)", () => {
     );
   });
 
-  test("buckets a done task into Done", () => {
+  test("a done task is absent from the default board — Done is no longer rendered (TBC-2.1)", () => {
     const task: TaskItem = {
       id: "T-DONE",
       title: "Done task title",
@@ -3648,7 +3648,8 @@ describe("renderTasksPage — board view (AXR-1.3)", () => {
       assignee: null,
     };
     const html = renderBoard([task]);
-    expect(extractColumn(html, "done")).toContain("Done task title");
+    expect(html).not.toContain('data-column="done"');
+    expect(html).not.toContain("Done task title");
   });
 
   test("a task with a blocked joined PR lands in Blocked-HITL, matching bucketTaskColumn", () => {
@@ -3734,6 +3735,77 @@ describe("renderTasksPage — board view (AXR-1.3)", () => {
     expect(repoIndex).toBeGreaterThanOrEqual(0);
     expect(orgIndex).toBeLessThan(detailsIndex);
     expect(repoIndex).toBeLessThan(detailsIndex);
+  });
+
+  // TBC-2.1 follow-up: the board's Status dropdown must not offer a closed
+  // status. Picking one would set `?status=…`, bypassing the board's
+  // `state=open` default query, and every returned task buckets to the
+  // "done" column — which TASK_BOARD_COLUMNS no longer renders — so the
+  // board would silently show "No tasks" in all 3 columns.
+  test("board Status dropdown omits closed statuses (merged/done/deploying/deployed/cancelled) but keeps the active ones", () => {
+    const html = renderBoard([]);
+    const statusSelect = html.match(
+      /<select name="status"[^>]*>([\s\S]*?)<\/select>/,
+    );
+    expect(statusSelect).not.toBeNull();
+    const statusHtml = statusSelect ? statusSelect[1] : "";
+
+    for (const closed of [
+      "merged",
+      "done",
+      "deploying",
+      "deployed",
+      "cancelled",
+    ]) {
+      expect(statusHtml).not.toContain(`value="${closed}"`);
+    }
+
+    expect(statusHtml).toContain("Any status");
+    for (const active of [
+      "pending",
+      "in_progress",
+      "pr_open",
+      "approved",
+      "blocked",
+    ]) {
+      expect(statusHtml).toContain(`value="${active}"`);
+    }
+  });
+
+  test("table view's Status dropdown still offers every status, including the closed ones", () => {
+    const html = renderTasksPage(
+      [],
+      {},
+      false,
+      USER_NAME,
+      {},
+      BOARD_PAGINATION,
+      undefined,
+      undefined,
+      false,
+      "America/Los_Angeles",
+      {},
+      "table",
+    );
+    const statusSelect = html.match(
+      /<select name="status"[^>]*>([\s\S]*?)<\/select>/,
+    );
+    expect(statusSelect).not.toBeNull();
+    const statusHtml = statusSelect ? statusSelect[1] : "";
+    for (const status of [
+      "pending",
+      "in_progress",
+      "pr_open",
+      "approved",
+      "merged",
+      "done",
+      "deploying",
+      "deployed",
+      "blocked",
+      "cancelled",
+    ]) {
+      expect(statusHtml).toContain(`value="${status}"`);
+    }
   });
 
   test("Org and Repo remain two independent multiselects on the board, not merged into one combined scope-pill selector", () => {
