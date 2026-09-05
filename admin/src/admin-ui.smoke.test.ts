@@ -297,9 +297,16 @@ function makeMockDeps(
     },
     agentCronRunService: {
       listForAgent: async () => ({ items: [], total: 0, limit: 20, offset: 0 }),
+      listAcrossAgents: async () => ({
+        items: [],
+        total: 0,
+        limit: 20,
+        offset: 0,
+      }),
     },
     agentWorkQueueService: {
       get: async () => null,
+      getMany: async () => [],
     },
     agentToolService: {
       list: async () => [MOCK_TOOL],
@@ -1379,6 +1386,9 @@ describe("admin UI — authenticated pages", () => {
     expect(html).toContain(
       `<option value="${OTHER_AGENT_ID}">Other Agent</option>`,
     );
+    // The dropdown also offers a round trip back to the merged multi-agent
+    // view (AAV-2) via a sentinel option value.
+    expect(html).toContain('<option value="__all__">All agents</option>');
   });
 
   it("authenticated GET /admin/agents/:id/queue-activity renders the Upcoming section above the Past section", async () => {
@@ -1400,11 +1410,18 @@ describe("admin UI — authenticated pages", () => {
             ],
             createdAt: new Date("2026-06-01T10:00:00Z"),
           }),
+          getMany: async () => [],
         },
         agentCronRunService: {
           listForAgent: async () => ({
             items: [makeCronRun()],
             total: 1,
+            limit: 20,
+            offset: 0,
+          }),
+          listAcrossAgents: async () => ({
+            items: [],
+            total: 0,
             limit: 20,
             offset: 0,
           }),
@@ -1507,6 +1524,12 @@ describe("admin UI — authenticated pages", () => {
             limit: 20,
             offset: 0,
           }),
+          listAcrossAgents: async () => ({
+            items: [],
+            total: 0,
+            limit: 20,
+            offset: 0,
+          }),
         },
       }),
     );
@@ -1545,6 +1568,7 @@ describe("admin UI — authenticated pages", () => {
             ],
             createdAt: new Date("2026-06-01T10:00:00Z"),
           }),
+          getMany: async () => [],
         },
       }),
     );
@@ -1583,6 +1607,7 @@ describe("admin UI — authenticated pages", () => {
             ],
             createdAt: new Date("2026-06-01T10:00:00Z"),
           }),
+          getMany: async () => [],
         },
       }),
     );
@@ -1610,6 +1635,12 @@ describe("admin UI — authenticated pages", () => {
               offset: 0,
             };
           },
+          listAcrossAgents: async () => ({
+            items: [],
+            total: 0,
+            limit: 20,
+            offset: 0,
+          }),
         },
       }),
     );
@@ -1642,6 +1673,12 @@ describe("admin UI — authenticated pages", () => {
               offset: 0,
             };
           },
+          listAcrossAgents: async () => ({
+            items: [],
+            total: 0,
+            limit: 20,
+            offset: 0,
+          }),
         },
       }),
     );
@@ -1673,6 +1710,12 @@ describe("admin UI — authenticated pages", () => {
               offset: 0,
             };
           },
+          listAcrossAgents: async () => ({
+            items: [],
+            total: 0,
+            limit: 20,
+            offset: 0,
+          }),
         },
       }),
     );
@@ -2889,9 +2932,12 @@ describe("admin UI — member access control", () => {
   });
 });
 
-// ─── Default-agent queue-activity redirect (AXR-3.3) ─────────────────────────
+// ─── Merged fleet-wide queue-activity view (AAV-2.1) ─────────────────────────
+// Supersedes the former AXR-3.3 default-agent redirect: GET /admin/queue-activity
+// now renders the merged cross-agent view directly instead of bouncing to the
+// first accessible agent's own queue-activity page.
 
-describe("admin UI — GET /admin/queue-activity (default-agent redirect)", () => {
+describe("admin UI — GET /admin/queue-activity (merged fleet-wide view)", () => {
   it("unauthenticated GET /admin/queue-activity redirects to /admin/login", async () => {
     const app = createAdminUIApp(makeMockDeps());
     const res = await app.request("/admin/queue-activity");
@@ -2899,7 +2945,7 @@ describe("admin UI — GET /admin/queue-activity (default-agent redirect)", () =
     expect(res.headers.get("Location")).toBe("/admin/login");
   });
 
-  it("admin is redirected to the first agent's queue-activity page (full fleet)", async () => {
+  it("admin sees the merged view rendered directly, not a redirect (full fleet)", async () => {
     const adminCookie = await makeSessionCookie(
       SESSION_SECRET,
       "google-sub-admin",
@@ -2910,13 +2956,19 @@ describe("admin UI — GET /admin/queue-activity (default-agent redirect)", () =
     const res = await app.request("/admin/queue-activity", {
       headers: { Cookie: `admin_session=${adminCookie}` },
     });
-    expect(res.status).toBe(302);
-    expect(res.headers.get("Location")).toBe(
-      `/admin/agents/${AGENT_ID}/queue-activity`,
+    expect(res.status).toBe(200);
+    const html = await res.text();
+    expect(html).toContain(
+      "<title>Queue &amp; Activity — All Agents — Shipwright Admin</title>",
+    );
+    // "All agents" is pre-selected on the merged view's own selector.
+    expect(html).toContain('<option value="__all__" selected>All agents</option>');
+    expect(html).toContain(
+      `<option value="${AGENT_ID}">Test Agent</option>`,
     );
   });
 
-  it("non-admin AgentMember is redirected to their first accessible agent's queue-activity page", async () => {
+  it("non-admin AgentMember sees the merged view scoped to their accessible agents only", async () => {
     const MEMBER_EMAIL = "member@example.com";
     const OTHER_AGENT_ID = "agent-other-456";
     const memberCookie = await makeSessionCookie(
@@ -3009,10 +3061,12 @@ describe("admin UI — GET /admin/queue-activity (default-agent redirect)", () =
     const res = await app.request("/admin/queue-activity", {
       headers: { Cookie: `admin_session=${memberCookie}` },
     });
-    expect(res.status).toBe(302);
-    expect(res.headers.get("Location")).toBe(
-      `/admin/agents/${AGENT_ID}/queue-activity`,
-    );
+    expect(res.status).toBe(200);
+    const html = await res.text();
+    // Only the member's own accessible agent appears in the selector — the
+    // inaccessible fleet-wide "Other Agent" is never rendered.
+    expect(html).toContain('<option value="agent-test-123">My Agent</option>');
+    expect(html).not.toContain("Other Agent");
   });
 
   it("non-admin with zero accessible agents is redirected to /admin/agents instead of a queue-activity page", async () => {
@@ -3056,6 +3110,159 @@ describe("admin UI — GET /admin/queue-activity (default-agent redirect)", () =
     });
     expect(res.status).toBe(302);
     expect(res.headers.get("Location")).toBe("/admin/agents");
+  });
+
+  it("multi-agent fixture: renders the Agent, Eligible agents, and Queued by columns with expected content (AAV-2.1)", async () => {
+    const ALPHA_ID = "agent-alpha";
+    const BETA_ID = "agent-beta";
+    const adminCookie = await makeSessionCookie(
+      SESSION_SECRET,
+      "google-sub-admin",
+      "admin@example.com",
+      true,
+    );
+    const makeAgent = (id: string, name: string) => ({
+      id,
+      name,
+      slackId: null,
+      selfHosted: false,
+      typeName: "coding",
+      createdAt: new Date("2024-01-01"),
+      updatedAt: new Date("2024-01-01"),
+    });
+    const deps = makeMockDeps({
+      agentService: {
+        listAll: async () => [
+          { ...makeAgent(ALPHA_ID, "Alpha Agent"), repos: ["app-vitals/shipwright"] },
+          {
+            ...makeAgent(BETA_ID, "Beta Agent"),
+            repos: ["app-vitals/shipwright", "app-vitals/other-repo"],
+          },
+        ],
+        listByIds: async () => [],
+        searchByName: async () => [],
+        listOptions: async () => [],
+        create: async () => {
+          throw new Error("not implemented");
+        },
+        delete: async () => {},
+        getDetail: async () => null,
+        updateFields: async () => {
+          throw new Error("not implemented");
+        },
+      },
+      agentWorkQueueService: {
+        get: async () => null,
+        getMany: async () => [
+          {
+            id: "snap-alpha",
+            agentId: ALPHA_ID,
+            computedAt: new Date("2026-06-01T10:00:00Z"),
+            items: [
+              {
+                type: "pr",
+                id: "app-vitals/shipwright#100",
+                title: "Shared PR",
+                phase: "review",
+                age: "2026-06-01T08:00:00Z",
+              },
+            ],
+            createdAt: new Date("2026-06-01T10:00:00Z"),
+          },
+          {
+            id: "snap-beta",
+            agentId: BETA_ID,
+            computedAt: new Date("2026-06-01T10:00:00Z"),
+            items: [
+              {
+                type: "pr",
+                id: "app-vitals/shipwright#100",
+                title: "Shared PR",
+                phase: "review",
+                age: "2026-06-01T08:00:00Z",
+              },
+              {
+                type: "pr",
+                id: "app-vitals/other-repo#5",
+                title: "Beta-only PR",
+                phase: "patch",
+                age: "2026-06-01T07:00:00Z",
+              },
+            ],
+            createdAt: new Date("2026-06-01T10:00:00Z"),
+          },
+        ],
+      },
+      agentCronRunService: {
+        listForAgent: async () => ({
+          items: [],
+          total: 0,
+          limit: 20,
+          offset: 0,
+        }),
+        listAcrossAgents: async () => ({
+          items: [
+            {
+              id: "run-alpha",
+              cronId: "cron-alpha",
+              agentId: ALPHA_ID,
+              startedAt: new Date("2026-06-01T10:00:00Z"),
+              completedAt: new Date("2026-06-01T10:00:03Z"),
+              skipped: false,
+              skipReason: null,
+              outcome: "posted",
+              error: null,
+              itemType: null,
+              itemId: null,
+              sessionId: null,
+              phaseId: null,
+              phaseCron: null,
+              createdAt: new Date("2026-06-01T10:00:00Z"),
+              modelBreakdown: [],
+              cron: {
+                id: "cron-alpha",
+                name: "shipwright-loop",
+                schedule: "*/5 * * * *",
+              },
+            },
+          ],
+          total: 1,
+          limit: 20,
+          offset: 0,
+        }),
+      },
+    });
+    const app = createAdminUIApp(deps);
+    const res = await app.request("/admin/queue-activity", {
+      headers: { Cookie: `admin_session=${adminCookie}` },
+    });
+    expect(res.status).toBe(200);
+    const html = await res.text();
+
+    // Merged cron-run table's Agent column (AC2).
+    expect(html).toContain("<th>Agent</th>");
+    expect(html).toContain(
+      '<a href="/admin/agents/agent-alpha" style="color:#6366f1;text-decoration:none">Alpha Agent</a>',
+    );
+
+    // Merged work-queue table's Eligible agents / Queued by columns (AC3).
+    expect(html).toContain("<th>Eligible agents</th>");
+    expect(html).toContain("<th>Queued by</th>");
+
+    // Deduped shared PR: queued by both agents, eligible on both (both list
+    // "app-vitals/shipwright" in repos) — exactly one row, not two.
+    expect(
+      html.match(/app-vitals\/shipwright#100/g)?.length,
+    ).toBe(1);
+
+    // Beta-only PR: queued only by Beta, eligible only for Beta (only Beta
+    // lists "app-vitals/other-repo").
+    const betaOnlyRowIndex = html.indexOf("app-vitals/other-repo#5");
+    expect(betaOnlyRowIndex).toBeGreaterThan(-1);
+    const betaOnlyRowEnd = html.indexOf("</tr>", betaOnlyRowIndex);
+    const betaOnlyRowHtml = html.slice(betaOnlyRowIndex, betaOnlyRowEnd);
+    expect(betaOnlyRowHtml).toContain("Beta Agent");
+    expect(betaOnlyRowHtml).not.toContain("Alpha Agent");
   });
 });
 

@@ -317,9 +317,16 @@ function makeBaseDeps(overrides?: Partial<AdminUIDeps>): AdminUIDeps {
     },
     agentCronRunService: {
       listForAgent: async () => ({ items: [], total: 0, limit: 20, offset: 0 }),
+      listAcrossAgents: async () => ({
+        items: [],
+        total: 0,
+        limit: 20,
+        offset: 0,
+      }),
     },
     agentWorkQueueService: {
       get: async () => null,
+      getMany: async () => [],
     },
     agentToolService: {
       list: async () => [MOCK_TOOL],
