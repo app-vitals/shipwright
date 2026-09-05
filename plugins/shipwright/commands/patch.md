@@ -397,7 +397,8 @@ reasoning}` shape forward to a later patch run (see "Why this is re-derived" bel
 the result as `DEPENDENCY_RISK_FINDING` (a nullable `{recommendation, flags, reasoning}`
 shape) for use by Step 5b. A `"hold"` or `"review"` recommendation additionally routes the
 PR into **List A** directly — see step 2 below — because it has no ordinary review finding
-for Step 3a's criteria to catch on its own.
+for Step 3a's criteria to catch on its own, unless step 3's already-held exclusion clears
+the finding first.
 
 1. **Derive the finding from the PR's own diff.** Mirror
    `review.md`'s Step 5.8 exactly, substituting `gh` calls for that step's worktree-relative
@@ -454,8 +455,8 @@ for Step 3a's criteria to catch on its own.
    hold/review recommendation with no unrelated ordinary finding to piggyback List A
    membership on.
 
-3. **Already-held exclusion — skip the routing in step 2 when this same finding is already
-   held at this same HEAD.** Every one of Step 3a's own finding criteria carries its own
+3. **Already-held exclusion — clear `DEPENDENCY_RISK_FINDING` when this same finding is
+   already held at this same HEAD.** Every one of Step 3a's own finding criteria carries its own
    "this was dealt with" state (a thread's `isResolved`, an author reply post-dating a
    review, a later clean self-review superseding an earlier one). Step 1's finding carries
    none — it is synthesized fresh from the diff on every cycle, with no dependence on prior
@@ -482,14 +483,28 @@ for Step 3a's criteria to catch on its own.
    genuinely changed bump (or a human's own fix attempt) re-routes normally instead of being
    suppressed forever.
 
-   When `HELD_DEP_FINDINGS` is non-zero, do **not** add this PR to List A on the strength of
-   `DEPENDENCY_RISK_FINDING` — leave its List A membership entirely to Step 3a's own
-   criteria, and omit Step 5b's DEPENDENCY-RISK REMEDIATION PROTOCOL block for it (a
-   still-unresolved *ordinary* finding on the same PR is still worth a fix subagent; the
-   already-held dependency-risk finding is not). When `HELD_DEP_FINDINGS` is `0` or empty,
-   or the lookup fails for any reason (non-200, no PR record yet, task store unreachable),
-   treat the finding as not yet held and route normally — a missing or unreadable ledger
-   must never suppress a first-round remediation.
+   When `HELD_DEP_FINDINGS` is non-zero, **clear `DEPENDENCY_RISK_FINDING` back to unset for
+   this PR**, leaving it in exactly the state step 1d produces when the detection never
+   triggered at all. That variable is the single source of truth every consumer of this step
+   reads, so clearing it — rather than only skipping step 2's routing decision — is what
+   applies the exclusion at both ends. Step 2 then has no set finding to route on: do **not**
+   add this PR to List A on the strength of `DEPENDENCY_RISK_FINDING` — leave its List A
+   membership entirely to Step 3a's own criteria. And Step 5b's protocol gate, which tests
+   the same variable, will likewise omit Step 5b's DEPENDENCY-RISK REMEDIATION PROTOCOL
+   block for it.
+
+   Skipping only step 2's routing would leave a narrower repeat of the same loop open: a PR
+   that is independently in List A via a still-unresolved *ordinary* Step 3a finding reaches
+   Step 5b regardless of this step's routing decision, and a gate reading a still-set
+   `DEPENDENCY_RISK_FINDING` would hand the fix subagent the already-held finding again —
+   re-running reproduce → no-safe-strategy → REJECT and re-posting the same rebuttal. The
+   ordinary finding is still worth a fix subagent; the already-held dependency-risk finding
+   is not, and clearing the variable is what distinguishes the two.
+
+   When `HELD_DEP_FINDINGS` is `0` or empty, or the lookup fails for any reason (non-200, no
+   PR record yet, task store unreachable), leave `DEPENDENCY_RISK_FINDING` exactly as step 1
+   set it and route normally — a missing or unreadable ledger must never suppress a
+   first-round remediation.
 
    Step 5b's protocol block instructs the fix subagent to identify this finding as
    `dependency-risk@{headRefOid}` in its CONCERNS, which is the `ref` Step 5c carries into
@@ -1058,10 +1073,12 @@ curl -s -o /dev/null -X POST \
 
 Dispatch a `general-purpose` subagent via the Agent tool, passing `model: PATCH_MODEL`
 (resolved once in Step 2.1) so the fix subagent runs at the escalated tier, with this
-prompt. When Step 3a.5 set `DEPENDENCY_RISK_FINDING` for this PR with recommendation
+prompt. When Step 3a.5 left `DEPENDENCY_RISK_FINDING` set for this PR — its step 1 derived a
+finding and its step 3 already-held exclusion did not clear it — with recommendation
 `review` or `hold`, include the DEPENDENCY-RISK REMEDIATION PROTOCOL block below — it is
 additive, injected ahead of (not replacing) the existing [A.5] verify/classify
-instructions:
+instructions. A cleared `DEPENDENCY_RISK_FINDING` reads the same as one that was never
+derived: omit the block, even when this PR is in List A on Step 3a's own criteria.
 
 ```
 You are addressing review findings on a pull request. Apply fixes, validate, commit, push,
@@ -1096,11 +1113,12 @@ PR-level comments:
 PR DIFF (against base):
 {git diff output gathered above}
 
-{Only present when Step 3a.5 set DEPENDENCY_RISK_FINDING for this PR with recommendation
-"review" or "hold" — a "merge" recommendation has nothing to remediate, per
-references/dependency-patch.md's Inputs section, so omit this whole block for it. This
-section is additive, ahead of the [A.5] verify/classify instructions below — it does not
-replace them.}
+{Only present when Step 3a.5 left DEPENDENCY_RISK_FINDING set for this PR with
+recommendation "review" or "hold" — a "merge" recommendation has nothing to remediate, per
+references/dependency-patch.md's Inputs section, so omit this whole block for it. Omit it
+too when Step 3a.5's step 3 already-held exclusion cleared the finding — a cleared
+DEPENDENCY_RISK_FINDING reads the same here as one that was never derived. This section is
+additive, ahead of the [A.5] verify/classify instructions below — it does not replace them.}
 DEPENDENCY-RISK REMEDIATION PROTOCOL (references/dependency-patch.md):
 
 One of the findings above is a dependency-bump risk finding, not an ordinary code-review

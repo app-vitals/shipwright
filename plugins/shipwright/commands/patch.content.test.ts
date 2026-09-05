@@ -1935,13 +1935,27 @@ describe("patch.md — dependency-risk detection (DBP-1.2)", () => {
   it("the already-held exclusion fails open — a missing or unreadable ledger never suppresses a first-round remediation", () => {
     const section = getStep3a5Section();
     expect(section).toMatch(/HELD_DEP_FINDINGS.{0,120}(`0`|empty).{0,200}route normally/is);
-    expect(section).toMatch(/must never suppress a first-round remediation/i);
+    expect(section).toMatch(/must never suppress a\s+first-round remediation/i);
   });
 
   it("an excluded already-held finding still leaves ordinary Step 3a findings free to route the PR into List A", () => {
     const section = getStep3a5Section();
-    expect(section).toMatch(/leave its List A membership entirely to Step 3a's own\s+criteria/i);
-    expect(section).toMatch(/omit Step 5b's DEPENDENCY-RISK REMEDIATION PROTOCOL block/i);
+    expect(section).toMatch(/leave its List A\s+membership entirely to Step 3a's own criteria/i);
+    expect(section).toMatch(/omit Step 5b's DEPENDENCY-RISK REMEDIATION PROTOCOL\s+block/i);
+  });
+
+  it("the already-held exclusion clears DEPENDENCY_RISK_FINDING itself, so it reaches Step 5b's gate and not just step 2's routing", () => {
+    const section = getStep3a5Section();
+    // The exclusion must act on the one variable Step 5b's protocol gate reads. Skipping
+    // only step 2's List A routing leaves the gate reading a still-set finding, which
+    // re-injects the protocol block whenever an unrelated ordinary finding put the PR in
+    // List A on its own.
+    expect(section).toMatch(
+      /clear\s+`DEPENDENCY_RISK_FINDING`\s+back to unset/i,
+    );
+    expect(section).toMatch(/single source of truth/i);
+    expect(section).toMatch(/rather than only skipping step 2's routing decision/i);
+    expect(section).toMatch(/Skipping only step 2's routing would leave/i);
   });
 });
 
@@ -1965,6 +1979,27 @@ describe("patch.md — dependency-patch protocol injected into Step 5b (DBP-1.2)
     expect(section).toContain("DEPENDENCY_RISK_FINDING");
     expect(section).toMatch(/"review"\s+or\s+"hold"/);
     expect(section.toLowerCase()).toContain("nothing to remediate");
+  });
+
+  it("the gate honors Step 3a.5's already-held exclusion, omitting the block even when an ordinary finding put the PR in List A", () => {
+    const section = getStep5bPromptSection();
+    // Both gating sites — the dispatch instruction and the rendered prompt template — must
+    // reference the exclusion, not just the raw derived value. Otherwise an already-held
+    // finding gets re-injected via an unrelated ordinary Step 3a finding.
+    expect(section).toMatch(/left\s+`DEPENDENCY_RISK_FINDING`\s+set for this PR/i);
+    expect(section).toMatch(/already-held exclusion did not clear it/i);
+    expect(section).toMatch(
+      /cleared\s+`?DEPENDENCY_RISK_FINDING`?\s+reads the same/i,
+    );
+    expect(section).toMatch(/omit the block, even when this PR is in List A on Step 3a's own criteria/i);
+    // The rendered prompt template's own gate comment must carry the same exclusion.
+    const templateGateIdx = section.indexOf(
+      "{Only present when Step 3a.5 left DEPENDENCY_RISK_FINDING set for this PR",
+    );
+    expect(templateGateIdx).toBeGreaterThan(-1);
+    expect(section.slice(templateGateIdx)).toMatch(
+      /Omit it\s+too when Step 3a\.5's step 3 already-held exclusion cleared the finding/i,
+    );
   });
 
   it("the protocol section is additive, ahead of the [A.5] verify/classify instructions, not a replacement", () => {
