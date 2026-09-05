@@ -60,9 +60,7 @@ export class AgentWorkQueueService {
    * Returns only snapshots for agents that have pushed one, omitting agents
    * without any snapshot rather than erroring.
    */
-  async getMany(
-    agentIds: string[],
-  ): Promise<AgentWorkQueueSnapshot[]> {
+  async getMany(agentIds: string[]): Promise<AgentWorkQueueSnapshot[]> {
     return this.prisma.agentWorkQueueSnapshot.findMany({
       where: { agentId: { in: agentIds } },
     });
