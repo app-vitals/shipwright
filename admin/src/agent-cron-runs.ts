@@ -128,13 +128,6 @@ export interface ListAcrossAgentsOptions {
   offset?: number;
 }
 
-export interface AgentCronRunListAcrossAgents {
-  items: AgentCronRunWithCron[];
-  total: number;
-  limit: number;
-  offset: number;
-}
-
 export class AgentCronRunService {
   constructor(private prisma: PrismaClient) {}
 
@@ -363,7 +356,7 @@ export class AgentCronRunService {
   async listAcrossAgents(
     agentIds: string[],
     opts?: ListAcrossAgentsOptions,
-  ): Promise<AgentCronRunListAcrossAgents> {
+  ): Promise<AgentCronRunListForAgent> {
     const limit = opts?.limit ?? 20;
     const offset = opts?.offset ?? 0;
 
