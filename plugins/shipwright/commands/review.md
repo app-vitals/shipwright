@@ -1396,10 +1396,15 @@ precheck=$(gh api graphql -f query='
       }
     }
   }
-}' --arg currentUser "$CURRENT_USER" --jq '.data.repository.pullRequest as $pr | ([$pr.reviews.nodes[] | select(.commit.oid == $pr.headRefOid and ((.body | test("verdict\\**\\s*:\\s*\\**(approve|comment)\\b"; "i")) or .state == "APPROVED")) | .submittedAt] | max) as $maxTerminalSubmittedAt | {headRefOid: $pr.headRefOid, terminal: (if $maxTerminalSubmittedAt != null then ([$pr.comments.nodes[] | select(.author.login != $currentUser and (.createdAt > $maxTerminalSubmittedAt)) | .createdAt] | length == 0) else false end)}')
+}' | jq --arg currentUser "$CURRENT_USER" '.data.repository.pullRequest as $pr | ([$pr.reviews.nodes[] | select(.commit.oid == $pr.headRefOid and ((.body | test("verdict\\**\\s*:\\s*\\**(approve|comment)\\b"; "i")) or .state == "APPROVED")) | .submittedAt] | max) as $maxTerminalSubmittedAt | {headRefOid: $pr.headRefOid, terminal: (if $maxTerminalSubmittedAt != null then ([$pr.comments.nodes[] | select(.author.login != $currentUser and (.createdAt > $maxTerminalSubmittedAt)) | .createdAt] | length == 0) else false end)}')
 headRefOid=$(echo "$precheck" | jq -r '.headRefOid')
 terminal=$(echo "$precheck" | jq -r '.terminal')
 ```
+
+`gh api`'s own `--jq`/`-q` flag does not support `--arg` — that's a `jq`-binary-only
+flag for injecting external variables into a filter. Passing `--arg` to `gh api` fails
+with `unknown flag: --arg`. Pipe the raw GraphQL response into the real `jq` binary
+instead, where `--arg` is supported.
 
 This filters reviews down to only those submitted at the current `headRefOid`, then tests
 whether ANY of them is terminal — either its body matches a terminal verdict label, or its
