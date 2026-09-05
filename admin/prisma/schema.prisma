@@ -199,6 +199,7 @@ model AgentCronRun {
   @@index([cronId])
   @@index([agentId, startedAt])
   @@index([phaseId])
+  @@index([startedAt])
 }
 
 // ─── Agent Cron Run Model Breakdown ──────────────────────────────────────────
