@@ -161,8 +161,11 @@ function buildComposedApp() {
       get: notImplemented,
       reconcileSystemCrons: notImplemented,
     },
-    agentCronRunService: { listForAgent: notImplemented },
-    agentWorkQueueService: { get: notImplemented },
+    agentCronRunService: {
+      listForAgent: notImplemented,
+      listAcrossAgents: notImplemented,
+    },
+    agentWorkQueueService: { get: notImplemented, getMany: notImplemented },
     agentToolService: {
       list: notImplemented,
       add: notImplemented,

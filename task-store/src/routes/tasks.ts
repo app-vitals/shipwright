@@ -40,6 +40,7 @@ import { readJson } from "@shipwright/lib/http";
 import type { TaskStoreAuthEnv } from "../auth.ts";
 import { BadRequestError, ForbiddenError, NotFoundError } from "../errors.ts";
 import type { Prisma } from "../index.ts";
+import { CLOSED_STATUSES, OPEN_STATUSES } from "../statuses.ts";
 import {
   BulkInsertBodySchema,
   BulkInsertResponseSchema,
@@ -70,6 +71,15 @@ import { isOrgRepo } from "../validate.ts";
 // could still directly clear claimedBy/status, defeating that protection
 // outside the atomic claim path).
 const LIFECYCLE_GUARD_KEYS = ["claimedBy", "claimedAt", "heartbeatAt"] as const;
+
+// The full set of valid `TaskStatus` enum values (task-store/prisma/schema.prisma),
+// derived from the two existing single-source-of-truth exports rather than a
+// hand-written literal list, to avoid drift when new statuses are added.
+// GET /tasks?status= must validate against this before reaching
+// taskService.list() — an unrecognized value passed straight through to
+// Prisma's `where: { status: ... }` throws a PrismaClientValidationError,
+// which is not an ApiError and surfaces as a raw 500 (Sentry 7603167547).
+const VALID_STATUSES = new Set<string>([...OPEN_STATUSES, ...CLOSED_STATUSES]);
 
 // admin tokens (agentId === null) are unrestricted, mirroring the existing
 // admin-bypass convention already used by requireOwnership.
@@ -658,8 +668,13 @@ export function createTasksRoutes(
     const useAgentScope =
       agentId !== null && repos !== null && repos.length > 0;
 
+    const statusRaw = c.req.query("status");
+    if (statusRaw !== undefined && !VALID_STATUSES.has(statusRaw)) {
+      throw new BadRequestError(`invalid status: '${statusRaw}'`);
+    }
+
     const result = await taskService.list({
-      status: c.req.query("status"),
+      status: statusRaw,
       state,
       source: c.req.query("source"),
       session: c.req.query("session"),

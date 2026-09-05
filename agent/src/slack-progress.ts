@@ -10,10 +10,19 @@
  * stream; TSD-1.1 then removed the feature flag that gated it, making
  * streaming the only mode):
  *
- *   - `agents.sessions.setStatus` (Slack's Agent Sessions API) is never
- *     called — `chat.startStream` already flips the session status to
- *     "processing" itself, so calling both would produce two overlapping
- *     "is working" indicators.
+ *   - `agents.sessions.setStatus` (Slack's Agent Sessions API) is called
+ *     eagerly and unconditionally — once at the top of `start()`, before
+ *     `startStream()` even runs, and once at the end of `finish()` — rather
+ *     than treated as a stream-failure-only fallback. `chat.startStream`'s
+ *     `recipient_team_id`/`recipient_user_id` requirement (see below) gates
+ *     it from firing in channels until the user opens the message's thread,
+ *     an inherent Slack UI limitation that channel @mentions hit but DMs
+ *     don't; `setStatus` needs only `channel_id`/`thread_ts` and Slack's own
+ *     docs say to call it directly when work begins, so calling it eagerly
+ *     gets the native "is working" indicator showing immediately for both
+ *     DMs and channel mentions instead of waiting on the stream (ISW-1.1).
+ *     The two calls are independent, not either/or: `finish()` always calls
+ *     `setStatus` AND still calls `stopStream()` whenever a stream did open.
  *   - `start()` opens the stream and immediately seeds it with an
  *     `in_progress` task_update card (no blank gap before the first real
  *     phase transition), titled "Thinking…" or "Queued…" depending on the
@@ -56,10 +65,12 @@
  *     — Slack's own SDK types document both as "required when starting a
  *     streaming conversation outside of a DM"; omitting them was the
  *     STS-2.1 root cause (`missing_recipient_team_id` on every channel/group
- *     thread). `finish()` also falls back to a direct
- *     `agents.sessions.setStatus` call whenever `startStream()` never
- *     obtained a `ts`, so a stream-open failure (for any reason) can never
- *     permanently strand the "is working" indicator.
+ *     thread). `finish()` calls `agents.sessions.setStatus` unconditionally
+ *     (ISW-1.1) — not only as a fallback when `startStream()` never obtained
+ *     a `ts` — so a stream-open failure (for any reason) can never
+ *     permanently strand the "is working" indicator, and the indicator is
+ *     authoritatively resolved by `setStatus` even when a stream did open
+ *     and `stopStream()` also runs.
  *
  * Repeated identical phases collapse into a single appendStream call,
  * mirroring the phase-collapse `_consumeStream` already does upstream in
@@ -217,12 +228,20 @@ export class SlackProgress {
   }
 
   /**
-   * Call once, up front. Opens the Thinking Steps stream and seeds it with
-   * an immediate in_progress card (AC #4) — agents.sessions.setStatus is
-   * never called, since chat.startStream already flips the session status
-   * itself (AC #3).
+   * Call once, up front. Eagerly sets the session status to "processing" via
+   * agents.sessions.setStatus (ISW-1.1) before opening the Thinking Steps
+   * stream, so Slack's native "is working" indicator shows immediately —
+   * chat.startStream's recipient_team_id/recipient_user_id requirement (see
+   * SlackProgressOptions.isDM) means its own stream-status effect is gated
+   * behind the user opening the message's thread in a channel, an inherent
+   * Slack UI limitation channel @mentions hit but DMs don't. A setStatus
+   * failure here is caught and logged like every other Slack API call in
+   * this file — it must never block startStream() or the seed card below.
+   * Then opens the Thinking Steps stream and seeds it with an immediate
+   * in_progress card (AC #4).
    */
   async start(opts?: SlackProgressStartOptions): Promise<void> {
+    await this.setSessionStatus("processing");
     await this.startStream();
     this.appendTaskUpdate(seedTitle(opts), "in_progress");
   }
@@ -407,12 +426,16 @@ export class SlackProgress {
   /**
    * Call in the handler's completion path (finally block or equivalent).
    * Closes out the run's card with a final status:"complete" update (unless
-   * deliverContent() already sent one) and closes the Thinking Steps
-   * stream, passing session_status through to stopStream — stopStream's
-   * session_status defaults to "active" and is per-thread, not per-message,
-   * so the caller must pass `stillInFlight: true` for every message except
-   * the genuine last one to finish in a burst (AC #5). The fallback card is
-   * titled "Done", unless `opts.silent` signals the reply was suppressed
+   * deliverContent() already sent one), then unconditionally sets the final
+   * session status via agents.sessions.setStatus (ISW-1.1) — the
+   * authoritative resolution of Slack's native "is working" indicator,
+   * independent of whether a stream ever opened — AND, whenever a stream
+   * did open (this.streamTs is set), also closes it via stopStream, passing
+   * the same session_status through. session_status defaults to "active"
+   * and is per-thread, not per-message, so the caller must pass
+   * `stillInFlight: true` for every message except the genuine last one to
+   * finish in a burst (AC #5). The card's title is empty (COMPLETE_TITLE),
+   * unless `opts.silent` signals the reply was suppressed
    * (e.g. a [silent] marker), in which case it's titled "Ack" instead
    * (STS2-3.1) — closing the dangling in_progress card either way so no
    * in-progress indicator is left visible in the channel forever.
@@ -423,16 +446,13 @@ export class SlackProgress {
       const title = opts?.silent ? SILENT_COMPLETE_TITLE : COMPLETE_TITLE;
       this.appendTaskUpdate(title, "complete");
     }
-    if (!this.streamTs) {
-      // startStream() never opened a stream (missing_recipient_team_id or
-      // any other failure) — chat.stopStream would just fail again with no
-      // valid `ts`, permanently stranding Slack's native "is working"
-      // indicator (STS-2.1 AC #3). Fall back to a direct
-      // agents.sessions.setStatus call instead, which needs no stream ts.
-      await this.setSessionStatusFallback(sessionStatus);
-      return;
+    // Unconditional and authoritative (ISW-1.1) — no longer gated behind
+    // "only when startStream() never opened" (see setSessionStatus's doc
+    // comment). Independent of stopStream() below, not either/or.
+    await this.setSessionStatus(sessionStatus);
+    if (this.streamTs) {
+      await this.stopStream(sessionStatus);
     }
-    await this.stopStream(sessionStatus);
   }
 
   private async stopStream(
@@ -455,13 +475,22 @@ export class SlackProgress {
   }
 
   /**
-   * Defense-in-depth fallback for finish() (STS-2.1 AC #3): used only when
-   * startStream() never obtained a `ts` (this.streamTs stays undefined) for
-   * any reason, so chat.stopStream is skipped entirely rather than attempted
-   * and guaranteed to fail. Mirrors the shape used by slack.ts's
+   * Shared helper for both eager call sites (ISW-1.1): start() calls this
+   * with a fixed "processing" before startStream() even runs, so Slack's
+   * native "is working" indicator shows immediately regardless of whether
+   * chat.startStream ever succeeds; finish() calls this unconditionally
+   * (independent of whether a stream opened) as the authoritative
+   * resolution of that indicator, alongside — not instead of — stopStream()
+   * whenever a stream did open. No longer a stream-failure-only fallback.
+   * Needs only channel_id/thread_ts (no recipient_team_id/recipient_user_id,
+   * unlike chat.startStream in non-DM channels — see SlackProgressOptions.
+   * isDM), and never throws: every Slack API call in this file is wrapped in
+   * try/catch, including the property access itself (a client missing the
+   * `agents` namespace entirely throws synchronously on access, not just on
+   * a rejected call). Mirrors the shape used by slack.ts's
    * agent_session_stopped handler for the same API.
    */
-  private async setSessionStatusFallback(
+  private async setSessionStatus(
     sessionStatus: "active" | "processing",
   ): Promise<void> {
     if (this.externallyStopped) return;
@@ -473,7 +502,7 @@ export class SlackProgress {
       });
     } catch (err) {
       console.warn(
-        "[slack-progress] setStatus fallback failed:",
+        "[slack-progress] setStatus failed:",
         err instanceof Error ? err.message : String(err),
       );
     }

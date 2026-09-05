@@ -39,6 +39,16 @@ export interface AgentRecord {
   typeName: string;
   createdAt: Date;
   updatedAt: Date;
+  /**
+   * Optional here even though listAll()/listByIds()/searchByName() below
+   * always return the full Prisma row (repos included, since none of them
+   * pass a `select` clause) — kept optional so existing call sites/test
+   * doubles constructing a narrower AgentRecord literal don't need updating.
+   * Consumed by the merged fleet-wide queue-activity view (AAV-2.1) to build
+   * the repo -> agentId[] eligibility index (agent-work-queue-merge.ts's
+   * buildEligibilityIndex()).
+   */
+  repos?: string[];
 }
 
 export interface AgentSummary {
