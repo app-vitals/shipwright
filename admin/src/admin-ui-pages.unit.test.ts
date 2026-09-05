@@ -15,6 +15,7 @@ import {
   type DependencyNode,
   ERROR_KIND_LABELS,
   type MemberItem,
+  type MergedWorkQueueRow,
   type PluginItem,
   type PrListItem,
   type PullRequestItem,
@@ -24,6 +25,7 @@ import {
   type WorkQueueItem,
   type WorkQueueSnapshotItem,
   bucketTaskColumn,
+  buildMergedWorkQueueRows,
   classifyTaskState,
   computeDependencyLayout,
   computeDependencyNodes,
@@ -38,6 +40,7 @@ import {
   renderGithubAppInstalledPage,
   renderGithubAppManifestRedirectPage,
   renderLoginPage,
+  renderMergedQueueActivityPage,
   renderNewLocalAgentPage,
   renderPrDetailPage,
   renderProvisionCompletePage,
@@ -9091,6 +9094,321 @@ describe("renderQueueActivityPage — Upcoming/Past sectioning", () => {
     });
     expect(html).toContain("No work queue snapshot yet");
     expect(html).toContain("No runs match the selected filters.");
+  });
+});
+
+// ─── buildMergedWorkQueueRows (AAV-2.1) ─────────────────────────────────────
+
+describe("buildMergedWorkQueueRows", () => {
+  function prItem(overrides?: Partial<WorkQueueItem>): WorkQueueItem {
+    return {
+      type: "pr",
+      id: "app-vitals/shipwright#100",
+      title: "Shared PR",
+      phase: "review",
+      age: "2026-06-01T08:00:00Z",
+      ...overrides,
+    };
+  }
+
+  test("dedupes an item queued by multiple agents into a single row with queuedByAgentIds", () => {
+    const rows = buildMergedWorkQueueRows(
+      [
+        { agentId: "agent-a", items: [prItem()] },
+        { agentId: "agent-b", items: [prItem()] },
+      ],
+      [
+        { id: "agent-a", repos: ["app-vitals/shipwright"] },
+        { id: "agent-b", repos: ["app-vitals/shipwright"] },
+      ],
+    );
+
+    expect(rows).toHaveLength(1);
+    expect(rows[0].queuedByAgentIds).toEqual(["agent-a", "agent-b"]);
+  });
+
+  test("annotates eligibleAgentIds from each agent's repos[] via the PR item's embedded repo", () => {
+    const rows = buildMergedWorkQueueRows(
+      [{ agentId: "agent-a", items: [prItem()] }],
+      [
+        { id: "agent-a", repos: ["app-vitals/shipwright"] },
+        { id: "agent-b", repos: ["app-vitals/shipwright"] },
+        { id: "agent-c", repos: ["app-vitals/other-repo"] },
+      ],
+    );
+
+    expect(rows).toHaveLength(1);
+    expect(rows[0].eligibleAgentIds).toEqual(["agent-a", "agent-b"]);
+  });
+
+  test("a task item (no repo field available) gets zero eligible agents rather than a guessed answer", () => {
+    const rows = buildMergedWorkQueueRows(
+      [
+        {
+          agentId: "agent-a",
+          items: [
+            {
+              type: "task",
+              id: "WLS-2.2",
+              title: "A task",
+              phase: "dev-task",
+              age: "2026-06-01T08:00:00Z",
+            },
+          ],
+        },
+      ],
+      [{ id: "agent-a", repos: ["app-vitals/shipwright"] }],
+    );
+
+    expect(rows).toHaveLength(1);
+    expect(rows[0].eligibleAgentIds).toEqual([]);
+  });
+
+  test("keeps distinct (type, id) items as separate rows", () => {
+    const rows = buildMergedWorkQueueRows(
+      [
+        {
+          agentId: "agent-a",
+          items: [prItem({ id: "app-vitals/shipwright#100" })],
+        },
+        {
+          agentId: "agent-b",
+          items: [prItem({ id: "app-vitals/other-repo#5", age: "2026-06-01T07:00:00Z" })],
+        },
+      ],
+      [
+        { id: "agent-a", repos: ["app-vitals/shipwright"] },
+        { id: "agent-b", repos: ["app-vitals/other-repo"] },
+      ],
+    );
+
+    expect(rows).toHaveLength(2);
+    expect(rows.map((r) => r.id).sort()).toEqual([
+      "app-vitals/other-repo#5",
+      "app-vitals/shipwright#100",
+    ]);
+  });
+
+  test("sorts merged rows oldest-first by age, matching rankWorkItems()'s convention", () => {
+    const rows = buildMergedWorkQueueRows(
+      [
+        {
+          agentId: "agent-a",
+          items: [
+            prItem({ id: "app-vitals/shipwright#1", age: "2026-06-01T09:00:00Z" }),
+          ],
+        },
+        {
+          agentId: "agent-b",
+          items: [
+            prItem({ id: "app-vitals/shipwright#2", age: "2026-06-01T07:00:00Z" }),
+          ],
+        },
+      ],
+      [
+        { id: "agent-a", repos: [] },
+        { id: "agent-b", repos: [] },
+      ],
+    );
+
+    expect(rows.map((r) => r.id)).toEqual([
+      "app-vitals/shipwright#2",
+      "app-vitals/shipwright#1",
+    ]);
+  });
+
+  test("returns an empty array for zero agents/snapshots", () => {
+    expect(buildMergedWorkQueueRows([], [])).toEqual([]);
+  });
+});
+
+// ─── renderMergedQueueActivityPage (AAV-2.1) ────────────────────────────────
+
+describe("renderMergedQueueActivityPage", () => {
+  const AGENTS = [
+    { id: "agent-alpha", name: "Alpha Agent" },
+    { id: "agent-beta", name: "Beta Agent" },
+  ];
+  const AGENT_NAMES = { "agent-alpha": "Alpha Agent", "agent-beta": "Beta Agent" };
+
+  function mergedRow(
+    overrides?: Partial<MergedWorkQueueRow>,
+  ): MergedWorkQueueRow {
+    return {
+      type: "pr",
+      id: "app-vitals/shipwright#100",
+      title: "Shared PR",
+      phase: "review",
+      age: "2026-06-01T08:00:00Z",
+      queuedByAgentIds: ["agent-alpha", "agent-beta"],
+      eligibleAgentIds: ["agent-alpha", "agent-beta"],
+      ...overrides,
+    };
+  }
+
+  function baseRun(overrides?: Partial<CronRunItem>): CronRunItem {
+    return {
+      agentId: "agent-alpha",
+      startedAt: new Date("2026-06-01T08:00:00Z"),
+      completedAt: new Date("2026-06-01T08:00:02Z"),
+      outcome: "posted",
+      skipped: false,
+      skipReason: null,
+      error: null,
+      cron: { id: "cron-1", name: "shipwright-loop", schedule: "0 * * * *" },
+      ...overrides,
+    };
+  }
+
+  test("renders a valid HTML document titled for the merged fleet-wide view", () => {
+    const html = renderMergedQueueActivityPage({
+      agents: AGENTS,
+      agentNames: AGENT_NAMES,
+      workQueueRows: [],
+      workQueuePagination: { total: 0, limit: 20, page: 1 },
+      runs: [],
+      runsPagination: { total: 0, limit: 20, page: 1 },
+      userName: "admin@example.com",
+    });
+    expect(html).toContain("<!DOCTYPE html>");
+    expect(html).toContain(
+      "<title>Queue &amp; Activity — All Agents — Shipwright Admin</title>",
+    );
+  });
+
+  test("the agent selector defaults to 'All agents' selected and lists every accessible agent", () => {
+    const html = renderMergedQueueActivityPage({
+      agents: AGENTS,
+      agentNames: AGENT_NAMES,
+      workQueueRows: [],
+      workQueuePagination: { total: 0, limit: 20, page: 1 },
+      runs: [],
+      runsPagination: { total: 0, limit: 20, page: 1 },
+      userName: "admin@example.com",
+    });
+    expect(html).toContain(
+      '<option value="__all__" selected>All agents</option>',
+    );
+    expect(html).toContain(
+      '<option value="agent-alpha">Alpha Agent</option>',
+    );
+    expect(html).toContain('<option value="agent-beta">Beta Agent</option>');
+    // Choosing a specific agent still navigates to its own queue-activity page.
+    expect(html).toContain(
+      "this.form.action = '/admin/agents/' + this.value + '/queue-activity';",
+    );
+  });
+
+  test("renders the merged work-queue table with Eligible agents and Queued by columns populated", () => {
+    const html = renderMergedQueueActivityPage({
+      agents: AGENTS,
+      agentNames: AGENT_NAMES,
+      workQueueRows: [mergedRow()],
+      workQueuePagination: { total: 1, limit: 20, page: 1 },
+      runs: [],
+      runsPagination: { total: 0, limit: 20, page: 1 },
+      userName: "admin@example.com",
+      now: new Date("2026-06-01T10:00:00Z"),
+    });
+    expect(html).toContain("<th>Eligible agents</th>");
+    expect(html).toContain("<th>Queued by</th>");
+    expect(html).toContain(
+      '<a href="/admin/agents/agent-alpha" style="color:#6366f1;text-decoration:none">Alpha Agent</a>',
+    );
+    expect(html).toContain(
+      '<a href="/admin/agents/agent-beta" style="color:#6366f1;text-decoration:none">Beta Agent</a>',
+    );
+  });
+
+  test("renders an em-dash for Eligible agents / Queued by when both lists are empty", () => {
+    const html = renderMergedQueueActivityPage({
+      agents: AGENTS,
+      agentNames: AGENT_NAMES,
+      workQueueRows: [
+        mergedRow({ queuedByAgentIds: [], eligibleAgentIds: [] }),
+      ],
+      workQueuePagination: { total: 1, limit: 20, page: 1 },
+      runs: [],
+      runsPagination: { total: 0, limit: 20, page: 1 },
+      userName: "admin@example.com",
+    });
+    expect(html).toContain("—");
+  });
+
+  test("renders the merged cron-run table with a resolved Agent column", () => {
+    const html = renderMergedQueueActivityPage({
+      agents: AGENTS,
+      agentNames: AGENT_NAMES,
+      workQueueRows: [],
+      workQueuePagination: { total: 0, limit: 20, page: 1 },
+      runs: [baseRun({ agentId: "agent-beta" })],
+      runsPagination: { total: 1, limit: 20, page: 1 },
+      userName: "admin@example.com",
+    });
+    expect(html).toContain("<th>Agent</th>");
+    expect(html).toContain(
+      '<a href="/admin/agents/agent-beta" style="color:#6366f1;text-decoration:none">Beta Agent</a>',
+    );
+    // Cron-filter link is scoped to the run's own agent, not a single agent.
+    expect(html).toContain("/admin/agents/agent-beta/queue-activity?cronId=cron-1");
+  });
+
+  test("renders pagination controls for the Upcoming table when total exceeds one page", () => {
+    const html = renderMergedQueueActivityPage({
+      agents: AGENTS,
+      agentNames: AGENT_NAMES,
+      workQueueRows: [mergedRow()],
+      workQueuePagination: { total: 25, limit: 20, page: 1 },
+      runs: [],
+      runsPagination: { total: 0, limit: 20, page: 1 },
+      userName: "admin@example.com",
+    });
+    expect(html).toContain("1–20 of 25");
+    expect(html).toContain("Next →");
+    expect(html).toContain("/admin/queue-activity?queuePage=2");
+  });
+
+  test("Upcoming pagination Prev link appears on page 2 and not page 1", () => {
+    const page1 = renderMergedQueueActivityPage({
+      agents: AGENTS,
+      agentNames: AGENT_NAMES,
+      workQueueRows: [mergedRow()],
+      workQueuePagination: { total: 25, limit: 20, page: 1 },
+      runs: [],
+      runsPagination: { total: 0, limit: 20, page: 1 },
+      userName: "admin@example.com",
+    });
+    expect(page1).not.toContain("← Prev");
+
+    const page2 = renderMergedQueueActivityPage({
+      agents: AGENTS,
+      agentNames: AGENT_NAMES,
+      workQueueRows: [mergedRow()],
+      workQueuePagination: { total: 25, limit: 20, page: 2 },
+      runs: [],
+      runsPagination: { total: 0, limit: 20, page: 1 },
+      userName: "admin@example.com",
+    });
+    expect(page2).toContain("← Prev");
+    // Page 1 omits the queuePage param entirely (same convention as the
+    // single-agent page's makePageUrl).
+    expect(page2).toContain(
+      '<a href="/admin/queue-activity" class="btn btn-secondary"',
+    );
+  });
+
+  test("renders empty states for both sections when there is nothing across the fleet", () => {
+    const html = renderMergedQueueActivityPage({
+      agents: AGENTS,
+      agentNames: AGENT_NAMES,
+      workQueueRows: [],
+      workQueuePagination: { total: 0, limit: 20, page: 1 },
+      runs: [],
+      runsPagination: { total: 0, limit: 20, page: 1 },
+      userName: "admin@example.com",
+    });
+    expect(html).toContain("No work queue items across any accessible agent");
+    expect(html).toContain("No runs across any accessible agent");
   });
 });
 

@@ -89,8 +89,14 @@ function makeMinimalDeps(overrides?: Partial<AdminUIDeps>): AdminUIDeps {
     },
     agentCronRunService: {
       listForAgent: async () => ({ items: [], total: 0, limit: 20, offset: 0 }),
+      listAcrossAgents: async () => ({
+        items: [],
+        total: 0,
+        limit: 20,
+        offset: 0,
+      }),
     },
-    agentWorkQueueService: { get: async () => null },
+    agentWorkQueueService: { get: async () => null, getMany: async () => [] },
     agentToolService: {
       list: async () => [],
       add: async () => {

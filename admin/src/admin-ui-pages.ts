@@ -16,6 +16,11 @@ import {
   renderAdminToolbar,
 } from "./admin-ui-styles.ts";
 import type { ManualStep } from "./agent-deletion-checklist.ts";
+import {
+  annotateEligibility,
+  buildEligibilityIndex,
+  mergeWorkQueueSnapshots,
+} from "./agent-work-queue-merge.ts";
 import type { AgentTypeOption } from "./agent-type-manifest-loader.ts";
 import { parseChatMarkers } from "./chat-markers.ts";
 import type {
@@ -221,6 +226,15 @@ export interface CronRunItem {
    * rendered without an N+1 lookup. Absent on single-cron listings.
    */
   cron?: { id: string; name: string | null; schedule: string };
+  /**
+   * The agentId this run belongs to — always present on the underlying
+   * AgentCronRun row (denormalized from cron.agentId), but only rendered as
+   * its own column on the merged fleet-wide listing
+   * (renderMergedQueueActivityPage's cron-run table, AAV-2.1), which spans
+   * multiple agents. Ignored by renderQueueActivityPage's single-agent Past
+   * table, which already scopes every row to the one agent being viewed.
+   */
+  agentId?: string;
 }
 
 // Inline CSS for cron-run outcome badges, keyed by outcome string.
@@ -4043,10 +4057,11 @@ const WORK_QUEUE_PHASE_BADGE_STYLE: Record<string, string> = {
 };
 const WORK_QUEUE_PHASE_BADGE_STYLE_DEFAULT = "background:#f3f4f6;color:#6b7280";
 
-// Shared column header row for the Past-section cron-run table — reused by
-// both the primary (shipwright-loop) table and each collapsed non-loop
-// cron's <details> table so the two stay in lockstep.
-const CRON_RUN_TABLE_HEAD = `<tr>
+// Shared header cells for the Past-section cron-run table — reused by the
+// primary (shipwright-loop) table, each collapsed non-loop cron's <details>
+// table (single-agent view), and the merged fleet-wide table (AAV-2.1),
+// which prepends its own Agent column.
+const CRON_RUN_TABLE_HEAD_CELLS = `
   <th>Outcome</th>
   <th>Cron</th>
   <th>Started</th>
@@ -4057,7 +4072,12 @@ const CRON_RUN_TABLE_HEAD = `<tr>
   <th>Item</th>
   <th>Session</th>
   <th>Detail</th>
-</tr>`;
+`;
+const CRON_RUN_TABLE_HEAD = `<tr>${CRON_RUN_TABLE_HEAD_CELLS}</tr>`;
+// Merged fleet-wide variant (renderMergedQueueActivityPage, AAV-2.1): adds an
+// Agent column at the front so a cross-agent row can be attributed at a
+// glance, otherwise identical to the single-agent header.
+const MERGED_CRON_RUN_TABLE_HEAD = `<tr><th>Agent</th>${CRON_RUN_TABLE_HEAD_CELLS}</tr>`;
 
 // Inline type mirroring RankedWorkItem (openapi-schemas.ts) without importing
 // the zod schema itself — keeps this file's dependency surface to pure
@@ -4078,6 +4098,221 @@ export interface WorkQueueSnapshotItem {
 export interface AgentOption {
   id: string;
   name: string;
+}
+
+// ─── Work-queue row cell helpers ────────────────────────────────────────────
+// Shared by renderQueueActivityPage's single-agent Upcoming table and
+// renderMergedQueueActivityPage's merged Upcoming table (AAV-2.1) so both
+// render the type/phase/item/age columns identically.
+
+function workQueueTypeCell(type: WorkQueueItem["type"]): string {
+  return `<span class="badge" style="${ITEM_TYPE_BADGE_STYLE[type] ?? ITEM_TYPE_BADGE_STYLE_DEFAULT}">${escapeHtml(ITEM_TYPE_LABEL[type] ?? type)}</span>`;
+}
+
+function workQueuePhaseCell(phase: WorkQueueItem["phase"]): string {
+  return `<span class="badge" style="${WORK_QUEUE_PHASE_BADGE_STYLE[phase] ?? WORK_QUEUE_PHASE_BADGE_STYLE_DEFAULT}">${escapeHtml(phase)}</span>`;
+}
+
+function workQueueIdTitleCell(item: WorkQueueItem): string {
+  return item.title
+    ? `<span class="mono" style="font-size:12px">${workItemLink(item.type, item.id)}</span> — ${escapeHtml(item.title)}`
+    : `<span class="mono" style="font-size:12px">${workItemLink(item.type, item.id)}</span>`;
+}
+
+function workQueueAgeCell(age: string, now: Date): string {
+  const ageDate = new Date(age);
+  const ageIso = ageDate.toISOString();
+  return `<span title="${escapeHtml(ageIso)}">${escapeHtml(relativeTime(ageDate, now))}</span>`;
+}
+
+/**
+ * Renders a list of agent ids as comma-separated agentLink()s (resolved via
+ * `agentNames`), or an em-dash when the list is empty. Shared by the merged
+ * Upcoming table's "Eligible agents" and "Queued by" columns (AAV-2.1).
+ */
+function agentIdListCell(
+  ids: string[],
+  agentNames: Record<string, string>,
+): string {
+  if (ids.length === 0) return "—";
+  return ids.map((id) => agentLink(id, agentNames[id] ?? id)).join(", ");
+}
+
+// ─── Agent selector (AXR-3.4 / AAV-2) ───────────────────────────────────────
+// Sentinel value for the "All agents" option: selecting it navigates to the
+// merged multi-agent view instead of a per-agent page. Shared by both
+// renderQueueActivityPage (single-agent, a specific agent pre-selected) and
+// renderMergedQueueActivityPage (fleet-wide, "All agents" pre-selected) so
+// the two pages complete a round trip through the same dropdown component.
+const ALL_AGENTS_SENTINEL = "__all__";
+
+/**
+ * GET form navigating to /admin/agents/{selected-id}/queue-activity (or
+ * /admin/queue-activity for the "All agents" sentinel) on change, matching
+ * the app's server-rendered, no-SPA pattern — the select rewrites the form's
+ * action (the agent id lives in the path, not a query param) before
+ * submitting, same idiom as the chat page's onchange-submit agent selector.
+ *
+ * `selectedValue` is either a specific agent's id or ALL_AGENTS_SENTINEL —
+ * whichever option is currently active pre-selects in the <select>.
+ * `formAction` is the form's static `action` attribute, used only if the
+ * user resubmits without changing the selection (onchange never fires).
+ */
+function renderAgentSelector(opts: {
+  agents: AgentOption[];
+  selectedValue: string;
+  formAction: string;
+}): string {
+  const { agents, selectedValue, formAction } = opts;
+  const agentSelectorOptions = agents
+    .map(
+      (a) =>
+        `<option value="${escapeHtml(a.id)}"${a.id === selectedValue ? " selected" : ""}>${escapeHtml(a.name)}</option>`,
+    )
+    .join("\n");
+  const allAgentsSelected = selectedValue === ALL_AGENTS_SENTINEL;
+  return `<form method="GET" action="${escapeHtml(formAction)}" style="margin:0">
+      <select name="agentId" class="form-input" style="font-size:12px;padding:4px 8px" aria-label="Switch agent" onchange="if (this.value === '${ALL_AGENTS_SENTINEL}') { this.form.action = '/admin/queue-activity'; } else { this.form.action = '/admin/agents/' + this.value + '/queue-activity'; } this.form.submit()">
+        <option value="${ALL_AGENTS_SENTINEL}"${allAgentsSelected ? " selected" : ""}>All agents</option>
+        ${agentSelectorOptions}
+      </select>
+    </form>`;
+}
+
+// ─── Cron-run row helper ────────────────────────────────────────────────────
+// Shared by renderQueueActivityPage's single-agent Past table and
+// renderMergedQueueActivityPage's merged cron-run table (AAV-2.1).
+
+function renderCronRunRow(
+  r: CronRunItem,
+  opts: {
+    timezone: string;
+    now: Date;
+    /** Agent id used to build the cron-filter link's URL — the row's own
+     * agent on the merged table, the single viewed agent otherwise. */
+    cronLinkAgentId: string;
+    /** Rendered `<td>...</td>` HTML for a leading Agent column — present
+     * only on the merged fleet-wide table. */
+    agentCell?: string;
+  },
+): string {
+  const { timezone, now, cronLinkAgentId, agentCell } = opts;
+  const outcomeLabel = cronRunOutcomeLabel(r);
+  const badgeStyle = cronOutcomeStyle(outcomeLabel);
+  const badgeTitle =
+    r.skipped && r.skipReason
+      ? r.skipReason
+      : !r.skipped && r.error
+        ? r.error
+        : outcomeLabel;
+  const outcomeCell = `<span class="badge" style="${badgeStyle}" title="${escapeHtml(badgeTitle)}">${escapeHtml(outcomeLabel)}</span>`;
+
+  const cronLabel = r.cron ? (r.cron.name ?? r.cron.schedule) : "—";
+  const cronCell = r.cron
+    ? `<a href="/admin/agents/${escapeHtml(cronLinkAgentId)}/queue-activity?cronId=${escapeHtml(r.cron.id)}" style="color:#6366f1;text-decoration:none">${escapeHtml(cronLabel)}</a>`
+    : escapeHtml(cronLabel);
+
+  const startedIso = new Date(r.startedAt).toISOString();
+  const startedFmt = new Date(r.startedAt).toLocaleString("en-US", {
+    dateStyle: "medium",
+    timeStyle: "short",
+    timeZone: timezone,
+  });
+  const startedCell = `<span title="${escapeHtml(startedIso)}">${escapeHtml(startedFmt)}</span>`;
+
+  const durationCell = r.completedAt
+    ? escapeHtml(
+        fmtDuration(
+          new Date(r.completedAt).getTime() - new Date(r.startedAt).getTime(),
+        ),
+      )
+    : "—";
+
+  // Token totals are summed from the per-model breakdown rows — the sole
+  // source of cron-run token data. A run with no breakdown shows an em-dash.
+  const breakdown = r.modelBreakdown ?? [];
+  const tokensCell =
+    breakdown.length === 0
+      ? "—"
+      : (() => {
+          const input = breakdown.reduce((sum, m) => sum + m.inputTokens, 0);
+          const output = breakdown.reduce(
+            (sum, m) => sum + m.outputTokens,
+            0,
+          );
+          return `${escapeHtml(String(input))} in / ${escapeHtml(String(output))} out`;
+        })();
+
+  const modelCell =
+    r.modelBreakdown && r.modelBreakdown.length > 0
+      ? r.modelBreakdown
+          .map(
+            (m) =>
+              `<span class="badge" style="${MODEL_BADGE_STYLE}">${escapeHtml(m.model)} — $${m.costUsd.toFixed(4)}</span>`,
+          )
+          .join('<br style="line-height:6px" />')
+      : "—";
+
+  // Legacy five-job crons and runs with no phase attribution (including an
+  // agent that hasn't reconciled its phase child rows yet) never set
+  // phaseId — em-dash rather than a blank cell. Resolved by joining through
+  // phaseId to the child AgentCronJob row's name and stripping the
+  // "shipwright-" prefix to match the old string column's short-form display.
+  const phaseCell = r.phaseCron?.name
+    ? escapeHtml(r.phaseCron.name.replace(/^shipwright-/, ""))
+    : "—";
+
+  // A run with no dispatch (skipped tick, empty queue) leaves itemType/itemId
+  // null — em-dash rather than a blank cell, same convention as phaseCell.
+  // When set, render a distinctly-labeled Task/PR badge — a bare
+  // "task: WLS-2.2" string forces the reader to parse itemType to infer
+  // what kind of thing the id refers to.
+  const itemCell =
+    r.itemType && r.itemId
+      ? `<span class="badge" style="${ITEM_TYPE_BADGE_STYLE[r.itemType] ?? ITEM_TYPE_BADGE_STYLE_DEFAULT}">${escapeHtml(ITEM_TYPE_LABEL[r.itemType] ?? r.itemType)}</span> <span class="mono" style="font-size:12px">${
+          r.itemType === "task" || r.itemType === "pr"
+            ? workItemLink(r.itemType, r.itemId)
+            : escapeHtml(r.itemId)
+        }</span>`
+      : "—";
+
+  // Session cell: render truncated sessionId (first 8 chars) with full id
+  // in a title= tooltip, em-dash when null/undefined/empty string. Follows
+  // the same monospace styling convention as other id cells.
+  const sessionCell = r.sessionId?.trim()
+    ? `<span class="mono" style="font-size:12px" title="${escapeHtml(r.sessionId)}">${escapeHtml(r.sessionId.substring(0, 8))}</span>`
+    : "—";
+
+  // Detail cell: mirrors badgeTitle's priority above — skipReason wins whenever
+  // the run is skipped (even if error is also set), then falls back to error,
+  // else renders an em-dash. Multi-line/long error text is truncated for
+  // display via CSS (max-width/overflow/ellipsis) but fully present in a title
+  // attribute. When the value is the em-dash "—", no title is needed.
+  const detailCell = (() => {
+    if (r.skipped && r.skipReason) {
+      const escapedReason = escapeHtml(r.skipReason);
+      return `<span title="${escapedReason}">${escapedReason}</span>`;
+    }
+    if (r.error) {
+      const escapedError = escapeHtml(r.error);
+      return `<span title="${escapedError}">${escapedError}</span>`;
+    }
+    return "—";
+  })();
+
+  return `<tr>
+      ${agentCell !== undefined ? `<td style="font-size:12px">${agentCell}</td>` : ""}
+      <td>${outcomeCell}</td>
+      <td style="font-size:12px">${cronCell}</td>
+      <td style="font-size:12px">${startedCell}</td>
+      <td class="mono" style="font-size:12px">${durationCell}</td>
+      <td class="col-tokens mono" style="font-size:12px">${tokensCell}</td>
+      <td class="col-model" style="font-size:12px">${modelCell}</td>
+      <td style="font-size:12px">${phaseCell}</td>
+      <td style="font-size:12px">${itemCell}</td>
+      <td style="font-size:12px">${sessionCell}</td>
+      <td style="font-size:12px;max-width:280px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${detailCell}</td>
+    </tr>`;
 }
 
 /**
@@ -4113,47 +4348,22 @@ export function renderQueueActivityPage(opts: {
   const timezone = opts.timezone ?? "America/Los_Angeles";
   const now = opts.now ?? new Date();
 
-  // ─── Agent selector (AXR-3.4) ───────────────────────────────────────────
-  // GET form navigating to /admin/agents/{selected-id}/queue-activity on
-  // change, matching the app's server-rendered, no-SPA pattern — the select
-  // rewrites the form's action (the agent id lives in the path, not a query
-  // param) before submitting, same idiom as the chat page's onchange-submit
-  // agent selector.
-  // Sentinel value for the "All agents" option (AAV-2): selecting it
-  // navigates to the merged multi-agent view instead of a per-agent page,
-  // completing the round trip between that view and any single agent's page.
-  const ALL_AGENTS_SENTINEL = "__all__";
-  const agentSelectorOptions = accessibleAgents
-    .map(
-      (a) =>
-        `<option value="${escapeHtml(a.id)}"${a.id === agent.id ? " selected" : ""}>${escapeHtml(a.name)}</option>`,
-    )
-    .join("\n");
-  const agentSelectorHtml = `<form method="GET" action="/admin/agents/${escapeHtml(agent.id)}/queue-activity" style="margin:0">
-      <select name="agentId" class="form-input" style="font-size:12px;padding:4px 8px" aria-label="Switch agent" onchange="if (this.value === '${ALL_AGENTS_SENTINEL}') { this.form.action = '/admin/queue-activity'; } else { this.form.action = '/admin/agents/' + this.value + '/queue-activity'; } this.form.submit()">
-        <option value="${ALL_AGENTS_SENTINEL}">All agents</option>
-        ${agentSelectorOptions}
-      </select>
-    </form>`;
+  // ─── Agent selector (AXR-3.4 / AAV-2) ───────────────────────────────────
+  const agentSelectorHtml = renderAgentSelector({
+    agents: accessibleAgents,
+    selectedValue: agent.id,
+    formAction: `/admin/agents/${agent.id}/queue-activity`,
+  });
 
   // ─── Upcoming (work queue snapshot) ─────────────────────────────────────
 
   function queueRow(item: WorkQueueItem, index: number): string {
-    const typeCell = `<span class="badge" style="${ITEM_TYPE_BADGE_STYLE[item.type] ?? ITEM_TYPE_BADGE_STYLE_DEFAULT}">${escapeHtml(ITEM_TYPE_LABEL[item.type] ?? item.type)}</span>`;
-    const phaseCell = `<span class="badge" style="${WORK_QUEUE_PHASE_BADGE_STYLE[item.phase] ?? WORK_QUEUE_PHASE_BADGE_STYLE_DEFAULT}">${escapeHtml(item.phase)}</span>`;
-    const idTitleCell = item.title
-      ? `<span class="mono" style="font-size:12px">${workItemLink(item.type, item.id)}</span> — ${escapeHtml(item.title)}`
-      : `<span class="mono" style="font-size:12px">${workItemLink(item.type, item.id)}</span>`;
-    const ageDate = new Date(item.age);
-    const ageIso = ageDate.toISOString();
-    const ageCell = `<span title="${escapeHtml(ageIso)}">${escapeHtml(relativeTime(ageDate, now))}</span>`;
-
     return `<tr>
       <td class="mono" style="font-size:12px">${index + 1}</td>
-      <td>${typeCell}</td>
-      <td>${phaseCell}</td>
-      <td style="font-size:12px">${idTitleCell}</td>
-      <td style="font-size:12px">${ageCell}</td>
+      <td>${workQueueTypeCell(item.type)}</td>
+      <td>${workQueuePhaseCell(item.phase)}</td>
+      <td style="font-size:12px">${workQueueIdTitleCell(item)}</td>
+      <td style="font-size:12px">${workQueueAgeCell(item.age, now)}</td>
     </tr>`;
   }
 
@@ -4189,121 +4399,7 @@ export function renderQueueActivityPage(opts: {
   // ─── Past (cron run history) ────────────────────────────────────────────
 
   function row(r: CronRunItem): string {
-    const outcomeLabel = cronRunOutcomeLabel(r);
-    const badgeStyle = cronOutcomeStyle(outcomeLabel);
-    const badgeTitle =
-      r.skipped && r.skipReason
-        ? r.skipReason
-        : !r.skipped && r.error
-          ? r.error
-          : outcomeLabel;
-    const outcomeCell = `<span class="badge" style="${badgeStyle}" title="${escapeHtml(badgeTitle)}">${escapeHtml(outcomeLabel)}</span>`;
-
-    const cronLabel = r.cron ? (r.cron.name ?? r.cron.schedule) : "—";
-    const cronCell = r.cron
-      ? `<a href="/admin/agents/${escapeHtml(agent.id)}/queue-activity?cronId=${escapeHtml(r.cron.id)}" style="color:#6366f1;text-decoration:none">${escapeHtml(cronLabel)}</a>`
-      : escapeHtml(cronLabel);
-
-    const startedIso = new Date(r.startedAt).toISOString();
-    const startedFmt = new Date(r.startedAt).toLocaleString("en-US", {
-      dateStyle: "medium",
-      timeStyle: "short",
-      timeZone: timezone,
-    });
-    const startedCell = `<span title="${escapeHtml(startedIso)}">${escapeHtml(startedFmt)}</span>`;
-
-    const durationCell = r.completedAt
-      ? escapeHtml(
-          fmtDuration(
-            new Date(r.completedAt).getTime() - new Date(r.startedAt).getTime(),
-          ),
-        )
-      : "—";
-
-    // Token totals are summed from the per-model breakdown rows — the sole
-    // source of cron-run token data. A run with no breakdown shows an em-dash.
-    const breakdown = r.modelBreakdown ?? [];
-    const tokensCell =
-      breakdown.length === 0
-        ? "—"
-        : (() => {
-            const input = breakdown.reduce((sum, m) => sum + m.inputTokens, 0);
-            const output = breakdown.reduce(
-              (sum, m) => sum + m.outputTokens,
-              0,
-            );
-            return `${escapeHtml(String(input))} in / ${escapeHtml(String(output))} out`;
-          })();
-
-    const modelCell =
-      r.modelBreakdown && r.modelBreakdown.length > 0
-        ? r.modelBreakdown
-            .map(
-              (m) =>
-                `<span class="badge" style="${MODEL_BADGE_STYLE}">${escapeHtml(m.model)} — $${m.costUsd.toFixed(4)}</span>`,
-            )
-            .join('<br style="line-height:6px" />')
-        : "—";
-
-    // Legacy five-job crons and runs with no phase attribution (including an
-    // agent that hasn't reconciled its phase child rows yet) never set
-    // phaseId — em-dash rather than a blank cell. Resolved by joining through
-    // phaseId to the child AgentCronJob row's name and stripping the
-    // "shipwright-" prefix to match the old string column's short-form display.
-    const phaseCell = r.phaseCron?.name
-      ? escapeHtml(r.phaseCron.name.replace(/^shipwright-/, ""))
-      : "—";
-
-    // A run with no dispatch (skipped tick, empty queue) leaves itemType/itemId
-    // null — em-dash rather than a blank cell, same convention as phaseCell.
-    // When set, render a distinctly-labeled Task/PR badge — a bare
-    // "task: WLS-2.2" string forces the reader to parse itemType to infer
-    // what kind of thing the id refers to.
-    const itemCell =
-      r.itemType && r.itemId
-        ? `<span class="badge" style="${ITEM_TYPE_BADGE_STYLE[r.itemType] ?? ITEM_TYPE_BADGE_STYLE_DEFAULT}">${escapeHtml(ITEM_TYPE_LABEL[r.itemType] ?? r.itemType)}</span> <span class="mono" style="font-size:12px">${
-            r.itemType === "task" || r.itemType === "pr"
-              ? workItemLink(r.itemType, r.itemId)
-              : escapeHtml(r.itemId)
-          }</span>`
-        : "—";
-
-    // Session cell: render truncated sessionId (first 8 chars) with full id
-    // in a title= tooltip, em-dash when null/undefined/empty string. Follows
-    // the same monospace styling convention as other id cells.
-    const sessionCell = r.sessionId?.trim()
-      ? `<span class="mono" style="font-size:12px" title="${escapeHtml(r.sessionId)}">${escapeHtml(r.sessionId.substring(0, 8))}</span>`
-      : "—";
-
-    // Detail cell: mirrors badgeTitle's priority above — skipReason wins whenever
-    // the run is skipped (even if error is also set), then falls back to error,
-    // else renders an em-dash. Multi-line/long error text is truncated for
-    // display via CSS (max-width/overflow/ellipsis) but fully present in a title
-    // attribute. When the value is the em-dash "—", no title is needed.
-    const detailCell = (() => {
-      if (r.skipped && r.skipReason) {
-        const escapedReason = escapeHtml(r.skipReason);
-        return `<span title="${escapedReason}">${escapedReason}</span>`;
-      }
-      if (r.error) {
-        const escapedError = escapeHtml(r.error);
-        return `<span title="${escapedError}">${escapedError}</span>`;
-      }
-      return "—";
-    })();
-
-    return `<tr>
-      <td>${outcomeCell}</td>
-      <td style="font-size:12px">${cronCell}</td>
-      <td style="font-size:12px">${startedCell}</td>
-      <td class="mono" style="font-size:12px">${durationCell}</td>
-      <td class="col-tokens mono" style="font-size:12px">${tokensCell}</td>
-      <td class="col-model" style="font-size:12px">${modelCell}</td>
-      <td style="font-size:12px">${phaseCell}</td>
-      <td style="font-size:12px">${itemCell}</td>
-      <td style="font-size:12px">${sessionCell}</td>
-      <td style="font-size:12px;max-width:280px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${detailCell}</td>
-    </tr>`;
+    return renderCronRunRow(r, { timezone, now, cronLinkAgentId: agent.id });
   }
 
   // Partition crons into visible (shipwright-loop) and collapsed (all others).
@@ -4467,6 +4563,272 @@ export function renderQueueActivityPage(opts: {
       </div>
       ${paginationHtml}
       ${collapsedGroupsHtml}
+    </div>
+  </div>`,
+  });
+}
+
+// ─── Merged fleet-wide work queue (AAV-2.1) ─────────────────────────────────
+
+/**
+ * A merged, deduped work-queue row — the original WorkQueueItem fields plus
+ * every agent id that currently has it queued (`queuedByAgentIds`) and every
+ * agent id eligible to work it (`eligibleAgentIds`), both populated via
+ * AAV-1.3's pure merge/eligibility helpers (agent-work-queue-merge.ts).
+ */
+export interface MergedWorkQueueRow extends WorkQueueItem {
+  queuedByAgentIds: string[];
+  eligibleAgentIds: string[];
+}
+
+/**
+ * Derives the repo a work-queue item belongs to, for eligibility lookup via
+ * AAV-1.3's buildEligibilityIndex()/annotateEligibility() (both keyed on a
+ * `repo: string` field neither WorkQueueItem nor its source RankedWorkItem
+ * carry today — see agent-work-queue-merge.ts's own doc comment, which
+ * deliberately leaves this bridge to callers).
+ *
+ * PR items encode their repo directly in the id (`"org/repo#123"`, the same
+ * convention workItemLink() parses). Task items carry no repo field
+ * anywhere in the RankedWorkItem shape, so "" is returned — this never
+ * matches any agent's repos[] (buildEligibilityIndex only ever indexes
+ * non-empty repo strings), so a task row correctly renders zero eligible
+ * agents rather than a guessed answer.
+ */
+function deriveWorkItemRepo(item: WorkQueueItem): string {
+  if (item.type !== "pr") return "";
+  const match = item.id.match(/^(.+)#(\d+)$/);
+  return match ? match[1] : "";
+}
+
+/**
+ * Pure, no-I/O composition of AAV-1.3's merge/eligibility helpers: dedupes
+ * every accessible agent's latest work-queue snapshot by (type, id) via
+ * mergeWorkQueueSnapshots(), then annotates each surviving row with the
+ * agents eligible to work it (via buildEligibilityIndex()/
+ * annotateEligibility(), keyed on each agent's repos[]). Result is sorted
+ * oldest-first by age, mirroring rankWorkItems()'s ordering convention
+ * (agent/src/work-selector.ts) so the merged Upcoming table reads the same
+ * way a single agent's own queue does.
+ */
+export function buildMergedWorkQueueRows(
+  snapshots: { agentId: string; items: WorkQueueItem[] }[],
+  agents: { id: string; repos: string[] }[],
+): MergedWorkQueueRow[] {
+  const merged = mergeWorkQueueSnapshots(snapshots);
+  const index = buildEligibilityIndex(agents);
+  const withRepo = merged.map((item) => ({
+    ...item,
+    repo: deriveWorkItemRepo(item),
+  }));
+  const annotated = annotateEligibility(withRepo, index);
+
+  return annotated
+    .map(({ repo: _repo, ...rest }) => rest)
+    .sort((a, b) => (a.age < b.age ? -1 : a.age > b.age ? 1 : 0));
+}
+
+/**
+ * Renders the merged, fleet-wide Queue & Activity view (AAV-2.1): the
+ * destination `/admin/queue-activity` now renders directly (superseding the
+ * former AXR-3.3 default-agent redirect) rather than bouncing to the first
+ * accessible agent's own queue-activity page.
+ *
+ * Mirrors renderQueueActivityPage's two-section layout (Upcoming + Past) but
+ * spans every accessible agent instead of one:
+ *   - "Upcoming" is the deduped, cross-agent work queue (buildMergedWorkQueueRows'
+ *     output) with two extra columns — Eligible agents and Queued by — and,
+ *     unlike the single-agent page's uncapped display of one snapshot
+ *     (at most 50 items), is paginated, since a merged view can span many
+ *     agents' snapshots at once.
+ *   - "Past" is a flat cron-run table across every accessible agent (via
+ *     AgentCronRunService.listAcrossAgents(), AAV-1.1) with a leading Agent
+ *     column; no per-cron collapse/partition grouping (that grouping exists
+ *     to keep one agent's many crons legible — across a fleet, a flat,
+ *     paginated table is the simpler, still-legible choice).
+ *
+ * The in-header agent selector (shared renderAgentSelector(), same component
+ * as renderQueueActivityPage) defaults to "All agents" selected; choosing a
+ * specific agent navigates to that agent's own /admin/agents/:id/queue-activity
+ * page, completing the round trip the per-agent page's selector already
+ * supports (AAV-2.2's "All agents" dropdown option navigates back here).
+ */
+export function renderMergedQueueActivityPage(opts: {
+  agents: AgentOption[];
+  agentNames: Record<string, string>;
+  workQueueRows: MergedWorkQueueRow[];
+  workQueuePagination: { total: number; limit: number; page: number };
+  runs: CronRunItem[];
+  runsPagination: { total: number; limit: number; page: number };
+  userName: string;
+  timezone?: string;
+  now?: Date;
+}): string {
+  const {
+    agents,
+    agentNames,
+    workQueueRows,
+    workQueuePagination,
+    runs,
+    runsPagination,
+    userName,
+  } = opts;
+  const timezone = opts.timezone ?? "America/Los_Angeles";
+  const now = opts.now ?? new Date();
+
+  // ─── Agent selector (AAV-2) ──────────────────────────────────────────────
+  const agentSelectorHtml = renderAgentSelector({
+    agents,
+    selectedValue: ALL_AGENTS_SENTINEL,
+    formAction: "/admin/queue-activity",
+  });
+
+  // ─── Upcoming (merged work queue) ───────────────────────────────────────
+
+  function mergedQueueRow(item: MergedWorkQueueRow, index: number): string {
+    return `<tr>
+      <td class="mono" style="font-size:12px">${index + 1}</td>
+      <td>${workQueueTypeCell(item.type)}</td>
+      <td>${workQueuePhaseCell(item.phase)}</td>
+      <td style="font-size:12px">${workQueueIdTitleCell(item)}</td>
+      <td style="font-size:12px">${workQueueAgeCell(item.age, now)}</td>
+      <td style="font-size:12px">${agentIdListCell(item.eligibleAgentIds, agentNames)}</td>
+      <td style="font-size:12px">${agentIdListCell(item.queuedByAgentIds, agentNames)}</td>
+    </tr>`;
+  }
+
+  const queueTotalPages = Math.max(
+    1,
+    Math.ceil(workQueuePagination.total / workQueuePagination.limit),
+  );
+  const queuePage = workQueuePagination.page;
+  const makeQueuePageUrl = (p: number) => {
+    const params = new URLSearchParams();
+    if (p > 1) params.set("queuePage", String(p));
+    const qs = params.toString();
+    return `/admin/queue-activity${qs ? `?${qs}` : ""}`;
+  };
+  const queueFrom =
+    workQueuePagination.total === 0
+      ? 0
+      : (queuePage - 1) * workQueuePagination.limit + 1;
+  const queueTo = Math.min(
+    queuePage * workQueuePagination.limit,
+    workQueuePagination.total,
+  );
+  const queuePaginationHtml =
+    workQueuePagination.total === 0
+      ? ""
+      : `<div style="display:flex;justify-content:space-between;align-items:center;padding:12px 0 0;font-size:12px;color:#6b7280">
+      <span>${queueFrom}–${queueTo} of ${workQueuePagination.total}</span>
+      <div style="display:flex;gap:4px">
+        ${queuePage > 1 ? `<a href="${makeQueuePageUrl(queuePage - 1)}" class="btn btn-secondary" style="font-size:11px;padding:3px 10px">← Prev</a>` : ""}
+        ${queuePage < queueTotalPages ? `<a href="${makeQueuePageUrl(queuePage + 1)}" class="btn btn-secondary" style="font-size:11px;padding:3px 10px">Next →</a>` : ""}
+      </div>
+    </div>`;
+
+  const upcomingContent =
+    workQueuePagination.total === 0
+      ? `<div class="card">
+      <div class="empty-state">No work queue items across any accessible agent right now.</div>
+    </div>`
+      : `<div class="card">
+      <div class="data-table-wrapper">
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th>#</th>
+              <th>Type</th>
+              <th>Phase</th>
+              <th>Item</th>
+              <th>Age</th>
+              <th>Eligible agents</th>
+              <th>Queued by</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${workQueueRows.map(mergedQueueRow).join("\n")}
+          </tbody>
+        </table>
+      </div>
+      ${queuePaginationHtml}
+    </div>`;
+
+  // ─── Past (cron run history, flat across every accessible agent) ────────
+
+  function row(r: CronRunItem): string {
+    const agentId = r.agentId ?? "";
+    const agentCell = agentId
+      ? agentLink(agentId, agentNames[agentId] ?? agentId)
+      : "—";
+    return renderCronRunRow(r, {
+      timezone,
+      now,
+      cronLinkAgentId: agentId,
+      agentCell,
+    });
+  }
+
+  const bodyRows =
+    runs.length === 0
+      ? `<tr><td colspan="11" class="empty-state">No runs across any accessible agent.</td></tr>`
+      : runs.map(row).join("\n");
+
+  const runsTotalPages = Math.max(
+    1,
+    Math.ceil(runsPagination.total / runsPagination.limit),
+  );
+  const runsPage = runsPagination.page;
+  const makeRunsPageUrl = (p: number) => {
+    const params = new URLSearchParams();
+    if (p > 1) params.set("page", String(p));
+    const qs = params.toString();
+    return `/admin/queue-activity${qs ? `?${qs}` : ""}`;
+  };
+  const runsFrom =
+    runsPagination.total === 0 ? 0 : (runsPage - 1) * runsPagination.limit + 1;
+  const runsTo = Math.min(
+    runsPage * runsPagination.limit,
+    runsPagination.total,
+  );
+  const runsPaginationHtml =
+    runsPagination.total === 0
+      ? ""
+      : `<div style="display:flex;justify-content:space-between;align-items:center;padding:12px 0 0;font-size:12px;color:#6b7280">
+      <span>${runsFrom}–${runsTo} of ${runsPagination.total}</span>
+      <div style="display:flex;gap:4px">
+        ${runsPage > 1 ? `<a href="${makeRunsPageUrl(runsPage - 1)}" class="btn btn-secondary" style="font-size:11px;padding:3px 10px">← Prev</a>` : ""}
+        ${runsPage < runsTotalPages ? `<a href="${makeRunsPageUrl(runsPage + 1)}" class="btn btn-secondary" style="font-size:11px;padding:3px 10px">Next →</a>` : ""}
+      </div>
+    </div>`;
+
+  return renderAdminPage({
+    title: "Queue & Activity — All Agents — Shipwright Admin",
+    extraStyles: "\n  ",
+    body: `${renderAdminToolbar(userName, "/admin/agents")}
+  <div class="vos-page">
+    <div class="page-header" style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">
+      <a href="/admin/agents" style="color:#6b7280;font-size:13px;text-decoration:none">← Agents</a>
+      <h1 class="page-title" style="margin:0;flex:1">Queue &amp; Activity — All Agents</h1>
+      ${agentSelectorHtml}
+    </div>
+
+    <h2 class="section-title" style="font-size:14px;margin:0 0 8px">Upcoming</h2>
+    ${upcomingContent}
+
+    <h2 class="section-title" style="font-size:14px;margin:24px 0 8px">Past</h2>
+    <div class="card">
+      <div class="data-table-wrapper">
+        <table class="data-table">
+          <thead>
+            ${MERGED_CRON_RUN_TABLE_HEAD}
+          </thead>
+          <tbody>
+            ${bodyRows}
+          </tbody>
+        </table>
+      </div>
+      ${runsPaginationHtml}
     </div>
   </div>`,
   });
