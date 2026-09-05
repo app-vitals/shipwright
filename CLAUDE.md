@@ -170,7 +170,9 @@ To load additional context into a session, add `@docs/filename.md` entries here 
 - **docs/architecture.md** — the four-artifact A→B→C→D design (plugin / metrics / agent / task-store), supporting surfaces, and workspace layout
 - **docs/testing.md** — the five-layer test model (unit / integration / smoke / e2e / content), run commands, speed budgets, and the isolation contract
 - **docs/metrics.md** — metrics service (B): JSON endpoints, server-rendered dashboard, dual auth (Bearer / session), and environment
-- **docs/agent.md** — Shipwright agent (C): runtime + admin CRUD APIs, the eleven-model Prisma store, and encryption/env notes
+- **docs/agent.md** — Shipwright agent (C): run modes, HTTP surfaces (runtime + admin CRUD APIs, chat UI, task board, PWA shell), the eleven-model Prisma store, and encryption notes
+- **docs/agent-ops.md** — Shipwright agent (C) operations: tool management/narrowing (floor vs. allowed tools), default system crons, environment variables, and baked marketplaces
+- **docs/agent-key-files.md** — Shipwright agent (C) key files: per-file reference table for `admin/src` and `agent/src`
 - **docs/agent-api.md** — the admin CRUD API (D): agents, envs, crons, cron runs, tools, tokens, plugins, and chat-token-usage endpoints, plus auth paths
 - **docs/extending.md** — extending Shipwright without forking it: installing a companion plugin, command namespacing, custom crons for repo-specific automation, and the lightweight `.claude/shipwright/` override pattern
 - **docs/task-store.md** — task store service (D): the sole HTTP-service backend — tasks, PR tracking, tokens — and troubleshooting
