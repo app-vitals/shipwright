@@ -3523,6 +3523,7 @@ describe("renderTasksPage — board view (AXR-1.3)", () => {
     filters: Parameters<typeof renderTasksPage>[1] = {},
     suggestions: Parameters<typeof renderTasksPage>[7] = undefined,
     prsByTaskId: Parameters<typeof renderTasksPage>[10] = {},
+    now?: Parameters<typeof renderTasksPage>[12],
   ): string {
     return renderTasksPage(
       tasks,
@@ -3537,6 +3538,7 @@ describe("renderTasksPage — board view (AXR-1.3)", () => {
       "America/Los_Angeles",
       prsByTaskId,
       "board",
+      now,
     );
   }
 
@@ -3954,6 +3956,98 @@ describe("renderTasksPage — board view (AXR-1.3)", () => {
     ]);
     expect(html).toContain('.task-drawer-toggle:checked").forEach(function(openToggle)');
     expect(html).toContain("if (openToggle.id !== toggleId) openToggle.checked = false;");
+  });
+
+  // ─── board card age badge (TBC-1.1) ─────────────────────────────────────
+  // The board card should surface a relative age derived from createdAt,
+  // using the same <span title="{ISO}">{relative}</span> pattern as the
+  // Queue/Activity table's ageCell (~line 4108) and cron last-run age
+  // (~line 1191), driven by an explicitly-injected `now` (t2_clock_injection
+  // — no `new Date()` inside the render chain itself). Nested here (rather
+  // than a sibling top-level describe) so it can reuse this block's local
+  // `renderBoard` helper.
+  describe("board card age badge (TBC-1.1)", () => {
+    const NOW = new Date("2026-09-04T12:00:00.000Z");
+
+    test("createdAt a few seconds before now renders 'just now' with the ISO timestamp in a title attribute", () => {
+      const createdAt = new Date(NOW.getTime() - 5_000).toISOString();
+      const task: TaskItem = {
+        id: "T-AGE-NOW",
+        title: "Fresh task",
+        status: "pending",
+        claimedBy: null,
+        assignee: null,
+        createdAt,
+      };
+      const html = renderBoard([task], {}, undefined, {}, NOW);
+      expect(html).toContain(`title="${createdAt}"`);
+      expect(html).toContain(">just now<");
+    });
+
+    test("createdAt several hours before now renders 'N hours ago' with the ISO timestamp in a title attribute", () => {
+      const createdAt = new Date(
+        NOW.getTime() - 5 * 60 * 60 * 1000,
+      ).toISOString();
+      const task: TaskItem = {
+        id: "T-AGE-HOURS",
+        title: "Hours-old task",
+        status: "pending",
+        claimedBy: null,
+        assignee: null,
+        createdAt,
+      };
+      const html = renderBoard([task], {}, undefined, {}, NOW);
+      expect(html).toContain(`title="${createdAt}"`);
+      expect(html).toContain(">5 hours ago<");
+    });
+
+    test("createdAt several days before now renders 'N days ago' with the ISO timestamp in a title attribute", () => {
+      const createdAt = new Date(
+        NOW.getTime() - 3 * 24 * 60 * 60 * 1000,
+      ).toISOString();
+      const task: TaskItem = {
+        id: "T-AGE-DAYS",
+        title: "Days-old task",
+        status: "pending",
+        claimedBy: null,
+        assignee: null,
+        createdAt,
+      };
+      const html = renderBoard([task], {}, undefined, {}, NOW);
+      expect(html).toContain(`title="${createdAt}"`);
+      expect(html).toContain(">3 days ago<");
+    });
+
+    test("missing createdAt renders the card without throwing and without an age badge", () => {
+      const task: TaskItem = {
+        id: "T-AGE-MISSING",
+        title: "No createdAt task",
+        status: "pending",
+        claimedBy: null,
+        assignee: null,
+        createdAt: null,
+      };
+      expect(() => renderBoard([task], {}, undefined, {}, NOW)).not.toThrow();
+      const html = renderBoard([task], {}, undefined, {}, NOW);
+      expect(html).toContain("No createdAt task");
+      expect(html).not.toContain("ago<");
+      expect(html).not.toContain("just now<");
+    });
+
+    test("undefined createdAt (field entirely absent) renders the card without throwing and without an age badge", () => {
+      const task: TaskItem = {
+        id: "T-AGE-UNDEFINED",
+        title: "Undefined createdAt task",
+        status: "pending",
+        claimedBy: null,
+        assignee: null,
+      };
+      expect(() => renderBoard([task], {}, undefined, {}, NOW)).not.toThrow();
+      const html = renderBoard([task], {}, undefined, {}, NOW);
+      expect(html).toContain("Undefined createdAt task");
+      expect(html).not.toContain("ago<");
+      expect(html).not.toContain("just now<");
+    });
   });
 });
 
