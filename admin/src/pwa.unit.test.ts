@@ -14,6 +14,7 @@ import {
   buildServiceWorkerBody,
   getPrecacheList,
   renderPwaHeadTags,
+  sanitizeStartUrl,
   shouldCachePwaRequest,
 } from "./pwa.ts";
 
@@ -132,6 +133,90 @@ describe("buildManifest", () => {
       expect(["any", "maskable"]).toContain(icon.purpose);
     }
   });
+
+  it("uses a caller-supplied startUrl as start_url (PWA-1.1)", () => {
+    const manifest = buildManifest("/admin/tasks");
+    expect(manifest.start_url).toBe("/admin/tasks");
+  });
+
+  it("still defaults to /admin/chat when startUrl is omitted (backward compatible)", () => {
+    const manifest = buildManifest(undefined);
+    expect(manifest.start_url).toBe("/admin/chat");
+  });
+});
+
+describe("sanitizeStartUrl (PWA-1.1)", () => {
+  it("falls back to /admin/chat for null, undefined, and empty input", () => {
+    expect(sanitizeStartUrl(null)).toBe("/admin/chat");
+    expect(sanitizeStartUrl(undefined)).toBe("/admin/chat");
+    expect(sanitizeStartUrl("")).toBe("/admin/chat");
+  });
+
+  it("passes through same-origin /admin/... paths unchanged", () => {
+    expect(sanitizeStartUrl("/admin/chat")).toBe("/admin/chat");
+    expect(sanitizeStartUrl("/admin/tasks")).toBe("/admin/tasks");
+    expect(sanitizeStartUrl("/admin/agents/123")).toBe("/admin/agents/123");
+  });
+
+  it("rejects bare /admin with no trailing in-scope content", () => {
+    expect(sanitizeStartUrl("/admin")).toBe("/admin/chat");
+  });
+
+  it("rejects external absolute URLs", () => {
+    expect(sanitizeStartUrl("https://evil.com")).toBe("/admin/chat");
+    expect(sanitizeStartUrl("http://evil.com/admin/chat")).toBe("/admin/chat");
+  });
+
+  it("rejects protocol-relative URLs", () => {
+    expect(sanitizeStartUrl("//evil.com/x")).toBe("/admin/chat");
+  });
+
+  it("rejects javascript: URLs", () => {
+    expect(sanitizeStartUrl("javascript:alert(1)")).toBe("/admin/chat");
+  });
+
+  it("rejects path traversal, raw and encoded", () => {
+    expect(sanitizeStartUrl("/admin/../etc/passwd")).toBe("/admin/chat");
+    expect(sanitizeStartUrl("/admin/tasks/../../etc/passwd")).toBe(
+      "/admin/chat",
+    );
+    expect(sanitizeStartUrl("/admin/%2e%2e/etc/passwd")).toBe("/admin/chat");
+  });
+
+  it("rejects malformed percent-encoding instead of throwing", () => {
+    expect(sanitizeStartUrl("/admin/%zz")).toBe("/admin/chat");
+  });
+
+  it("rejects a path not under /admin/", () => {
+    expect(sanitizeStartUrl("/tasks")).toBe("/admin/chat");
+    expect(sanitizeStartUrl("/")).toBe("/admin/chat");
+  });
+
+  it("rejects the PWA shell's own non-navigable asset routes", () => {
+    expect(sanitizeStartUrl("/admin/manifest.webmanifest")).toBe("/admin/chat");
+    expect(sanitizeStartUrl("/admin/sw.js")).toBe("/admin/chat");
+    expect(sanitizeStartUrl("/admin/offline.html")).toBe("/admin/chat");
+    expect(sanitizeStartUrl("/admin/icons/icon-192.png")).toBe("/admin/chat");
+    expect(sanitizeStartUrl("/admin/icons/apple-touch-icon.png")).toBe(
+      "/admin/chat",
+    );
+  });
+
+  it("rejects the PWA shell's own auth routes", () => {
+    expect(sanitizeStartUrl("/admin/login")).toBe("/admin/chat");
+    expect(sanitizeStartUrl("/admin/logout")).toBe("/admin/chat");
+  });
+
+  it("rejects OAuth callback routes for every provider", () => {
+    expect(sanitizeStartUrl("/admin/auth/callback")).toBe("/admin/chat");
+    expect(sanitizeStartUrl("/admin/auth/okta/callback")).toBe("/admin/chat");
+    expect(
+      sanitizeStartUrl("/admin/agents/abc123/connect-slack/callback"),
+    ).toBe("/admin/chat");
+    expect(
+      sanitizeStartUrl("/admin/agents/abc123/connect-github/callback"),
+    ).toBe("/admin/chat");
+  });
 });
 
 describe("buildServiceWorkerBody", () => {
@@ -214,5 +299,14 @@ describe("renderPwaHeadTags", () => {
 
   it("is suppressed for a malformed/empty appBaseUrl", () => {
     expect(renderPwaHeadTags("")).toBe("");
+  });
+
+  it("gives the manifest link a stable id and rewrites its href to the current pathname on load (PWA-1.1)", () => {
+    const head = renderPwaHeadTags("https://admin.example.com");
+    expect(head).toContain('id="pwa-manifest-link"');
+    expect(head).toContain("getElementById('pwa-manifest-link')");
+    expect(head).toContain("location.pathname");
+    expect(head).toContain("?start=");
+    expect(head).toContain("encodeURIComponent");
   });
 });

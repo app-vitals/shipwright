@@ -96,6 +96,7 @@ import {
   buildServiceWorkerBody,
   getPrecacheList,
   renderPwaHeadTags,
+  sanitizeStartUrl,
 } from "./pwa.ts";
 import type { AppManifest } from "./slack-provisioning-client.ts";
 import {
@@ -880,7 +881,14 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
   // route by construction.
 
   app.get("/admin/manifest.webmanifest", (c) => {
-    return c.json(buildManifest(), 200, {
+    // PWA-1.1: renderPwaHeadTags rewrites the manifest link's href with
+    // ?start=<current pathname> on every page, so "Add to Home Screen"
+    // installs a shortcut back into whichever page the user was on.
+    // sanitizeStartUrl always returns a safe value (defaulting to
+    // /admin/chat), so this is safe to call unconditionally even when the
+    // query param is absent, malformed, or malicious.
+    const startUrl = sanitizeStartUrl(c.req.query("start"));
+    return c.json(buildManifest(startUrl), 200, {
       "Content-Type": "application/manifest+json",
     });
   });
