@@ -63,19 +63,31 @@ export interface WebAppManifest {
   icons: Array<{ src: string; sizes: string; type: string; purpose: string }>;
 }
 
+/** Fallback start_url — used whenever no (or no valid) page-specific start_url is available. */
+export const DEFAULT_START_URL = "/admin/chat";
+
 /**
- * Builds the web app manifest object. scope is /admin/ and start_url is
- * /admin/chat per the PWA shell spec — the manifest itself carries no
- * secrets and is served unauthenticated (browsers fetch it with
- * credentials:omit, so gating it behind a session would silently break
- * install).
+ * Builds the web app manifest object. scope is always /admin/ (the
+ * browser-enforced backstop against ever installing outside the admin
+ * console). start_url defaults to /admin/chat per the original PWA shell
+ * spec, but callers (see GET /admin/manifest.webmanifest in admin-ui.ts) may
+ * pass the page the user was on when they triggered "Add to Home Screen" —
+ * PWA-1.1 — so the installed shortcut launches back into that page instead
+ * of always into chat. Callers are expected to have already run the value
+ * through sanitizeStartUrl(); this function trusts its input and does not
+ * re-validate, matching every existing no-arg call site. The manifest
+ * itself carries no secrets and is served unauthenticated (browsers fetch
+ * it with credentials:omit, so gating it behind a session would silently
+ * break install).
  */
-export function buildManifest(): WebAppManifest {
+export function buildManifest(
+  startUrl: string = DEFAULT_START_URL,
+): WebAppManifest {
   return {
     name: "Shipwright Admin",
     short_name: "Shipwright",
     scope: "/admin/",
-    start_url: "/admin/chat",
+    start_url: startUrl,
     display: "standalone",
     theme_color: tokens.color.brand.default,
     background_color: tokens.color.bg.base,
@@ -88,6 +100,67 @@ export function buildManifest(): WebAppManifest {
       }),
     ),
   };
+}
+
+/**
+ * The PWA shell's own routes that a manifest start_url must never point at:
+ * they're either non-HTML assets (manifest/SW/icons), the offline shell
+ * page, or auth flows that end in a redirect rather than a page a user
+ * would want re-launched into. /admin/icons/ is a prefix (any file under
+ * it); the rest are exact matches. OAuth callback routes are matched by
+ * suffix below since each provider's path embeds a dynamic :id segment
+ * (e.g. /admin/agents/:id/connect-slack/callback) — see the route
+ * registrations in admin-ui.ts.
+ */
+const NON_NAVIGABLE_EXACT_PATHS: readonly string[] = [
+  "/admin/manifest.webmanifest",
+  "/admin/sw.js",
+  "/admin/offline.html",
+  "/admin/login",
+  "/admin/logout",
+  "/admin/auth/callback",
+  "/admin/auth/okta/callback",
+];
+
+/**
+ * Pure allowlist gate for the page a manifest's start_url may point at —
+ * PWA-1.1: renderPwaHeadTags rewrites the manifest link's href with
+ * `?start=<current pathname>` on every page load, and GET
+ * /admin/manifest.webmanifest feeds that raw, attacker-controlled query
+ * param straight through here before it ever reaches buildManifest().
+ * Same-origin, in-scope /admin/... paths pass through unchanged; anything
+ * else — external URLs, protocol-relative or javascript: values, path
+ * traversal, or one of the shell's own non-navigable asset/auth routes —
+ * falls back to DEFAULT_START_URL. Never throws: a malformed
+ * percent-encoding is treated as a rejection, not an error.
+ */
+export function sanitizeStartUrl(path: string | null | undefined): string {
+  if (typeof path !== "string" || path.length === 0) return DEFAULT_START_URL;
+
+  let decoded: string;
+  try {
+    decoded = decodeURIComponent(path);
+  } catch {
+    return DEFAULT_START_URL; // malformed %-encoding — reject, don't throw
+  }
+
+  // Check both the raw and decoded forms so a %2e%2e-style encoded
+  // traversal (or an encoded non-/admin/ prefix) can't slip past a check
+  // that only looked at one representation.
+  for (const candidate of [path, decoded]) {
+    if (!candidate.startsWith("/admin/")) return DEFAULT_START_URL;
+    if (candidate.includes("..")) return DEFAULT_START_URL;
+  }
+
+  if (
+    NON_NAVIGABLE_EXACT_PATHS.includes(decoded) ||
+    decoded.startsWith("/admin/icons/") ||
+    decoded.endsWith("/callback")
+  ) {
+    return DEFAULT_START_URL;
+  }
+
+  return path; // already validated in-scope — pass through unchanged
 }
 
 // ─── Precache allowlist ───────────────────────────────────────────────────────
@@ -274,12 +347,26 @@ export function buildOfflinePageHtml(): string {
  * silently fails (or, worse, throws in the console on every page load).
  * Returns "" when the gate fails, so callers can splice this directly into
  * <head> with no conditional of their own.
+ *
+ * PWA-1.1: the manifest <link> carries a stable id so an inline script,
+ * running immediately at parse time (not deferred to window 'load'), can
+ * rewrite its href to point at the *current* page before a user has a
+ * chance to trigger "Add to Home Screen". WebKit reads the manifest link's
+ * href fresh at the moment install is invoked — it's excluded from the
+ * service worker's cache predicate (shouldCachePwaRequest) specifically so
+ * this per-page rewrite is never served stale. GET
+ * /admin/manifest.webmanifest reads that ?start= query param back out,
+ * sanitizes it, and threads it into buildManifest().
  */
 export function renderPwaHeadTags(appBaseUrl: string): string {
   if (!appBaseUrl || !appBaseUrl.startsWith("https://")) return "";
 
   return [
-    '<link rel="manifest" href="/admin/manifest.webmanifest" />',
+    '<link rel="manifest" href="/admin/manifest.webmanifest" id="pwa-manifest-link" />',
+    "<script>",
+    "  document.getElementById('pwa-manifest-link').href =",
+    "    '/admin/manifest.webmanifest?start=' + encodeURIComponent(location.pathname);",
+    "</script>",
     '<link rel="apple-touch-icon" href="/admin/icons/apple-touch-icon.png" />',
     `<meta name="theme-color" content="${tokens.color.brand.default}" />`,
     "<script>",

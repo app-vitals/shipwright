@@ -210,6 +210,24 @@ describe("PWA shell routes — unauthenticated reachability", () => {
     expect(body.display).toBe("standalone");
   });
 
+  it("GET /admin/manifest.webmanifest?start=... honors a valid same-origin start param (PWA-1.1)", async () => {
+    const res = await app.request(
+      "/admin/manifest.webmanifest?start=%2Fadmin%2Ftasks",
+    );
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.start_url).toBe("/admin/tasks");
+  });
+
+  it("GET /admin/manifest.webmanifest?start=... falls back to /admin/chat for a malicious/invalid start param (PWA-1.1)", async () => {
+    const res = await app.request(
+      `/admin/manifest.webmanifest?start=${encodeURIComponent("https://evil.com")}`,
+    );
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.start_url).toBe("/admin/chat");
+  });
+
   it("GET /admin/sw.js is reachable without a session cookie, no-cache, correct content type", async () => {
     const res = await app.request("/admin/sw.js");
     expect(res.status).toBe(200);
