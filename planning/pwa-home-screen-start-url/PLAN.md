@@ -12,8 +12,8 @@ Before PR #2935, "Add to Home Screen" in Chrome/Safari on iOS just created a pla
 bookmark of whatever page was open. Since #2935, WebKit (the engine behind both iOS
 Safari and iOS Chrome) detects the manifest and installs a proper PWA shortcut instead —
 which always launches into `/admin/chat`, regardless of which page (e.g. `/admin/tasks`)
-the user tapped "Add to Home Screen" from. Reported by Dan: he added a shortcut from the
-tasks board and it opens chat instead.
+the user tapped "Add to Home Screen" from. Reported internally: a user added a shortcut
+from the tasks board and it opened chat instead.
 
 ## Design
 
