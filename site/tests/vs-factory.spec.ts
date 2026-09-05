@@ -145,6 +145,22 @@ test("page markets no pricing anywhere", async ({ page }) => {
   await expectNoDollarFigures(page);
 });
 
+// MESSAGING.md D5: no tier name may appear on /vs/*, for Shipwright or any
+// named competitor. Economics are framed qualitatively ("their commercial
+// offering") rather than by naming Factory's plan tiers.
+test("page names no competitor pricing tier", async ({ page }) => {
+  await page.goto("/vs/factory");
+  await expectBannedPhrasesAbsent(page, [
+    "enterprise tier",
+    "enterprise plan",
+    "enterprise-only",
+    "enterprise or max",
+    "max tier",
+    "missions-tier",
+    "premium tier",
+  ]);
+});
+
 test("CTA repeats the install command and links GitHub + discovery call", async ({
   page,
 }) => {

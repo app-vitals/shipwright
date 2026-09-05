@@ -83,6 +83,22 @@ test("page markets no pricing anywhere", async ({ page }) => {
   await expectNoDollarFigures(page);
 });
 
+// MESSAGING.md D5: no tier name may appear on /self-hosted, for Shipwright or
+// any named competitor. Gating is described qualitatively ("sales-gated")
+// instead of by naming a vendor's plan tier.
+test("page names no competitor pricing tier", async ({ page }) => {
+  await page.goto("/self-hosted");
+  await expectBannedPhrasesAbsent(page, [
+    "enterprise tier",
+    "enterprise plan",
+    "enterprise-only",
+    "enterprise-gated",
+    "enterprise sales",
+    "max tier",
+    "fully airgapped tier",
+  ]);
+});
+
 test("facts carry a verified-as-of date", async ({ page }) => {
   await page.goto("/self-hosted");
   await expect(page.getByText(/facts verified as of/i)).toBeVisible();
