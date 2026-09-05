@@ -388,6 +388,61 @@ If a PR has unaddressed findings, add it to **List A**. Store the unresolved thr
 `id` — needed for the `resolveReviewThread` mutation in Step 5) and review bodies for use in
 Step 5.
 
+### Step 3a.5: Dependency-Risk Detection (DBP-1.2)
+
+For each PR, determine whether it has a dependency-risk finding, independently of whether
+review and patch share an agent/session — any agent can claim either phase, and a review's
+dependency-risk analysis is only ever persisted as text inside the GitHub-posted review
+body, never in a shared in-memory or task-store field. Store the result as
+`DEPENDENCY_RISK_FINDING` (a nullable `{recommendation, flags, reasoning}` shape) for use by
+Step 5b — this step never changes List A/C/D membership on its own; Step 3a's criteria above
+already governs that.
+
+1. **Scan the review bodies Step 3a already fetched.** For each review in `reviews.nodes[]`
+   (already in memory from Step 3a's GraphQL query — do not re-fetch), check its `body` for
+   a `## Dependency Risk Analysis` section — the exact heading `review.md`'s Step 9 template
+   emits. When found, parse `{recommendation, flags, reasoning}` from that section's
+   `**Recommendation**:`, `**Flags**:`, and `**Reasoning**:` lines. Set
+   `DEPENDENCY_RISK_FINDING` from this parse and skip step 2 below — a review already did
+   this analysis, so there's nothing to re-derive.
+
+2. **Independent fallback, when no fetched review body contains the clause.** Mirror
+   `review.md`'s Step 5.8 exactly, substituting `gh` calls for that step's worktree-relative
+   file reads — Step 3 runs before any worktree exists (worktree setup happens later, in
+   Step 4a/5a, scoped only to PRs already classified into List C/A):
+
+   a. **Build the repo's watched-path set.** Read the two config files at the PR's head
+      branch via the GitHub API instead of `cat`:
+      ```bash
+      RENOVATE_JSON=$(gh api "repos/{org}/{repo}/contents/renovate.json?ref={branch}" \
+        --jq '.content' 2>/dev/null | base64 -d 2>/dev/null || echo "")
+      DEPENDABOT_YML=$(gh api "repos/{org}/{repo}/contents/.github/dependabot.yml?ref={branch}" \
+        --jq '.content' 2>/dev/null | base64 -d 2>/dev/null || echo "")
+      ```
+      Then resolve the watched-path set exactly as `review.md`'s Step 5.8 does:
+      ```bash
+      WATCHED_PATHS_RESULT=$(bun run "${CLAUDE_PLUGIN_ROOT}/scripts/resolve-dependency-watched-paths.ts" \
+        "$(jq -n --arg renovateJson "$RENOVATE_JSON" --arg dependabotYml "$DEPENDABOT_YML" \
+          '{renovateJson: (if $renovateJson == "" then null else $renovateJson end),
+            dependabotYml: (if $dependabotYml == "" then null else $dependabotYml end)}')")
+      # -> {"paths":["package.json","go.mod",...],"source":"renovate"|"dependabot"|"both"|"fallback"}
+      ```
+   b. **Compare against the PR's changed files**, fetched without a worktree:
+      ```bash
+      CHANGED_FILES=$(gh pr diff {pr} --repo {org}/{repo} --name-only)
+      ```
+      A changed file matches the watched-path set under the same three rules `review.md`'s
+      Step 5.8 defines (exact match, basename match for a bare-filename watched path,
+      directory-prefix match for a watched path ending in `/`) — reuse that step's rule
+      definitions rather than restating them here.
+   c. **When triggered** (at least one changed file matches): apply
+      `references/dependency-risk-analysis.md`'s heuristics — using `gh pr diff {pr} --repo
+      {org}/{repo}` for the diff, the PR's `body` and `PR_AUTHOR` (Step 2), and
+      `gh pr view {pr} --repo {org}/{repo} --json labels` for labels — to produce
+      `{recommendation, flags, reasoning}`. Set `DEPENDENCY_RISK_FINDING` from the result.
+   d. **When not triggered** (no changed file matches): `DEPENDENCY_RISK_FINDING` stays
+      unset for this PR.
+
 ### Step 3b: Check for DIRTY State
 
 For each PR, check its merge state:
@@ -935,7 +990,10 @@ curl -s -o /dev/null -X POST \
 
 Dispatch a `general-purpose` subagent via the Agent tool, passing `model: PATCH_MODEL`
 (resolved once in Step 2.1) so the fix subagent runs at the escalated tier, with this
-prompt:
+prompt. When Step 3a.5 set `DEPENDENCY_RISK_FINDING` for this PR with recommendation
+`review` or `hold`, include the DEPENDENCY-RISK REMEDIATION PROTOCOL block below — it is
+additive, injected ahead of (not replacing) the existing [A.5] verify/classify
+instructions:
 
 ```
 You are addressing review findings on a pull request. Apply fixes, validate, commit, push,
@@ -969,6 +1027,36 @@ PR-level comments:
 
 PR DIFF (against base):
 {git diff output gathered above}
+
+{Only present when Step 3a.5 set DEPENDENCY_RISK_FINDING for this PR with recommendation
+"review" or "hold" — a "merge" recommendation has nothing to remediate, per
+references/dependency-patch.md's Inputs section, so omit this whole block for it. This
+section is additive, ahead of the [A.5] verify/classify instructions below — it does not
+replace them.}
+DEPENDENCY-RISK REMEDIATION PROTOCOL (references/dependency-patch.md):
+
+One of the findings above is a dependency-bump risk finding, not an ordinary code-review
+comment:
+  Recommendation: {DEPENDENCY_RISK_FINDING.recommendation}
+  Flags: {DEPENDENCY_RISK_FINDING.flags}
+  Reasoning: {DEPENDENCY_RISK_FINDING.reasoning}
+
+Before applying [A.5]'s ACCEPT/MODIFY/REJECT classification to *this specific finding*,
+follow references/dependency-patch.md's reproduce -> attempt-catalog-fix -> re-verify
+protocol:
+  1. Extract the verification command named (or directly derivable) from the Reasoning
+     above and run it, unmodified, in this worktree. Confirm it fails the same way the
+     Reasoning describes.
+  2. If it does not reproduce as described, this finding does not have a safe fix here —
+     classify it REJECT in [A.5] with that as the reason and move on; do not guess.
+  3. If it reproduces, attempt a fix from the bounded strategy catalog in
+     references/dependency-patch.md — a transitive-dependency override/resolution pin, or a
+     removed/renamed first-party API call-site update. Nothing outside that catalog.
+  4. Re-run the exact same verification command from step 1. If it still fails, the fix
+     didn't work — classify REJECT in [A.5] (do not claim it fixed).
+  5. If it now passes, classify ACCEPT or MODIFY in [A.5] as usual and carry it into [B]
+     like any other accepted finding — it follows the same [D]/[E] commit/push and
+     thread-resolution path as every other finding, no separate mechanism.
 
 INSTRUCTIONS — follow in order:
 

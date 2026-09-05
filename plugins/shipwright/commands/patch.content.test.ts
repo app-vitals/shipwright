@@ -1840,3 +1840,115 @@ describe("patch.md — no-op at dispatch skip-reason tag (RVD-2.4)", () => {
     expect(hasExplanation).toBe(true);
   });
 });
+
+describe("patch.md — dependency-risk detection (DBP-1.2)", () => {
+  function getStep3a5Section() {
+    const step3a5Idx = content.indexOf("### Step 3a.5: Dependency-Risk Detection (DBP-1.2)");
+    const step3bIdx = content.indexOf("### Step 3b: Check for DIRTY State");
+    expect(step3a5Idx).toBeGreaterThan(-1);
+    expect(step3bIdx).toBeGreaterThan(step3a5Idx);
+    return content.slice(step3a5Idx, step3bIdx);
+  }
+
+  it("Step 3a.5 exists between Step 3a and Step 3b", () => {
+    const step3aIdx = content.indexOf('### Step 3a: Check for Unaddressed Review Findings');
+    const step3a5Idx = content.indexOf("### Step 3a.5: Dependency-Risk Detection (DBP-1.2)");
+    const step3bIdx = content.indexOf("### Step 3b: Check for DIRTY State");
+    expect(step3aIdx).toBeGreaterThan(-1);
+    expect(step3a5Idx).toBeGreaterThan(step3aIdx);
+    expect(step3bIdx).toBeGreaterThan(step3a5Idx);
+  });
+
+  it("scans Step 3a's already-fetched review bodies for the Dependency Risk Analysis heading before falling back", () => {
+    const section = getStep3a5Section();
+    expect(section).toContain("## Dependency Risk Analysis");
+    expect(section).toContain("reviews.nodes[]");
+    expect(section).toContain("DEPENDENCY_RISK_FINDING");
+  });
+
+  it("independent fallback invokes resolve-dependency-watched-paths.ts and references dependency-risk-analysis.md by name", () => {
+    const section = getStep3a5Section();
+    expect(section).toContain("resolve-dependency-watched-paths.ts");
+    expect(section).toContain("references/dependency-risk-analysis.md");
+  });
+
+  it("fallback mirrors review.md's Step 5.8 without assuming a worktree exists yet", () => {
+    const section = getStep3a5Section();
+    expect(section).toContain("review.md");
+    expect(section).toContain("Step 5.8");
+    expect(section).toContain("gh api");
+    expect(section).toContain("gh pr diff {pr} --repo {org}/{repo} --name-only");
+  });
+
+  it("has no dependency on any review-session state ever having existed", () => {
+    const section = getStep3a5Section();
+    expect(section.toLowerCase()).toContain("independently");
+    expect(section).toContain("any agent can claim either phase");
+  });
+
+  it("when not triggered, DEPENDENCY_RISK_FINDING stays unset for the PR", () => {
+    const section = getStep3a5Section();
+    expect(section).toMatch(/DEPENDENCY_RISK_FINDING.{0,40}stays\s+unset/is);
+  });
+});
+
+describe("patch.md — dependency-patch protocol injected into Step 5b (DBP-1.2)", () => {
+  function getStep5bPromptSection() {
+    const step5bIdx = content.indexOf("### Step 5b: Dispatch Fix Subagent");
+    const step5cIdx = content.indexOf("### Step 5c: Handle Subagent Status");
+    expect(step5bIdx).toBeGreaterThan(-1);
+    expect(step5cIdx).toBeGreaterThan(-1);
+    return content.slice(step5bIdx, step5cIdx);
+  }
+
+  it("Step 5b's prompt includes a DEPENDENCY-RISK REMEDIATION PROTOCOL section referencing references/dependency-patch.md", () => {
+    const section = getStep5bPromptSection();
+    expect(section).toContain("DEPENDENCY-RISK REMEDIATION PROTOCOL");
+    expect(section).toContain("references/dependency-patch.md");
+  });
+
+  it("the protocol section is gated on DEPENDENCY_RISK_FINDING with recommendation review or hold, since merge has nothing to remediate", () => {
+    const section = getStep5bPromptSection();
+    expect(section).toContain("DEPENDENCY_RISK_FINDING");
+    expect(section).toMatch(/"review"\s+or\s+"hold"/);
+    expect(section.toLowerCase()).toContain("nothing to remediate");
+  });
+
+  it("the protocol section is additive, ahead of the [A.5] verify/classify instructions, not a replacement", () => {
+    const section = getStep5bPromptSection();
+    expect(section).toContain("additive");
+    expect(section).toMatch(/ahead of.{0,40}\[A\.5\]/is);
+    expect(section).toMatch(/not replac/i);
+    // Confirm ordering: the protocol block precedes the [A.5] heading in the rendered prompt.
+    const protocolIdx = section.indexOf("DEPENDENCY-RISK REMEDIATION PROTOCOL");
+    const a5Idx = section.indexOf("[A.5] Verify each finding before implementing it");
+    expect(protocolIdx).toBeGreaterThan(-1);
+    expect(a5Idx).toBeGreaterThan(protocolIdx);
+  });
+
+  it("routes a verified fix through the existing [D]/[E] commit/push and thread-resolution path — no new resolution mechanism", () => {
+    const section = getStep5bPromptSection();
+    expect(section).toMatch(/same \[D\]\/\[E\] commit\/push/);
+    expect(section.toLowerCase()).toContain("no separate mechanism");
+  });
+
+  it("a finding that fails to reproduce or has no catalog strategy falls through to [A.5] classification unchanged", () => {
+    const section = getStep5bPromptSection();
+    expect(section).toContain("classify it REJECT in [A.5]");
+    expect(section).toContain("classify REJECT in [A.5]");
+    // [A.5] itself must be untouched by this feature — its own heading and body survive verbatim.
+    const a5Idx = content.indexOf("[A.5] Verify each finding before implementing it");
+    expect(a5Idx).toBeGreaterThan(-1);
+    const a5Section = content.slice(a5Idx, a5Idx + 1000);
+    expect(a5Section).toContain("Reviewers can be wrong");
+    expect(a5Section).toContain("ACCEPT");
+    expect(a5Section).toContain("MODIFY");
+    expect(a5Section).toContain("REJECT");
+  });
+
+  it("does not restate the reproduce-before-fixing protocol's mechanics — points at the reference file instead", () => {
+    const section = getStep5bPromptSection();
+    expect(section).toContain("verification command");
+    expect(section).toContain("bounded strategy catalog");
+  });
+});
