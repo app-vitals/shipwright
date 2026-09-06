@@ -568,12 +568,12 @@ test("the og:image asset is actually served (1280x640 PNG)", async ({
   expect(res.headers()["content-type"]).toContain("image/png");
 });
 
-test("default page title is the SEO-targeted open-source-alternative-to-Devin string", async ({
+test("default page title is the brand + category SEO string", async ({
   page,
 }) => {
   await page.goto("/");
   expect(await page.title()).toBe(
-    "Shipwright -- The open source alternative to Devin",
+    "Shipwright — Open Source Autonomous Delivery Agent",
   );
 });
 
@@ -583,7 +583,7 @@ test("og:title meta content matches the default title", async ({ page }) => {
     page.locator('head meta[property="og:title"]'),
   ).toHaveAttribute(
     "content",
-    "Shipwright -- The open source alternative to Devin",
+    "Shipwright — Open Source Autonomous Delivery Agent",
   );
 });
 

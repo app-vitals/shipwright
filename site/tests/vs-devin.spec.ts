@@ -26,11 +26,13 @@ test("vs/devin route responds 200", async ({ page }) => {
   expect(response?.status()).toBe(200);
 });
 
-test("page title targets the open-source-alternative-to-Devin query", async ({
+test("page title targets the Shipwright vs Devin comparison query", async ({
   page,
 }) => {
   await page.goto("/vs/devin");
-  expect(await page.title()).toContain("open source alternative to Devin");
+  expect(await page.title()).toBe(
+    "Shipwright vs Devin — Open Source Devin Alternative Compared",
+  );
 });
 
 test("page ships no runtime JS beyond the analytics tag", async ({ page }) => {
