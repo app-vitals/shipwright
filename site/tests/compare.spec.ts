@@ -216,6 +216,70 @@ test("CTA repeats the install command and links GitHub + discovery call", async 
   ).toHaveAttribute("href", BOOKING_URL);
 });
 
+// Re-verified 2026-09-05: 12 stale/wrong competitor cells corrected across
+// Cursor, GitHub Copilot Agent, Augment Code, and Devin (see MESSAGING.md
+// D10 verification pass). This test asserts one corrected cell per the
+// same row-locator pattern as the OpenHands correction test above.
+test("landscape table reflects corrected Cursor values (re-verified 2026-09-05)", async ({
+  page,
+}) => {
+  await page.goto("/compare");
+  const row = page.locator("table tr").filter({
+    has: page.locator("td").first().getByText("Cursor", { exact: true }),
+  });
+  const rowText = (await row.textContent()) ?? "";
+  expect(rowText).toContain("Team dashboard");
+  expect(rowText).toContain("Model/MCP/repo allowlists");
+  expect(rowText).toContain("No shared backlog");
+  expect(rowText).toContain("PR review, no plan gate");
+  // Slack workflow cell (9th column, 0-indexed 8) must now read the
+  // corrected value, not "No".
+  const cells = row.locator("td");
+  await expect(cells.nth(8)).toContainText("Yes - @cursor launches cloud agents");
+});
+
+// The page must carry a visible "facts verified as of" marker (MESSAGING.md
+// D10) — mirrors the wording pattern on vs/devin.astro and vs/factory.astro.
+test("compare page shows a verified-date marker", async ({ page }) => {
+  await page.goto("/compare");
+  const text = (await page.locator("main").textContent()) ?? "";
+  expect(text).toContain("September 5, 2026");
+  expect(text.toLowerCase()).toContain("facts verified as of");
+});
+
+// Every competitor row must link at least one primary source (MESSAGING.md
+// D10); the Shipwright Harness self-row is not a competitor and carries no
+// citation.
+test("every competitor row in the landscape table links a primary source", async ({
+  page,
+}) => {
+  await page.goto("/compare");
+  for (const tool of [
+    "Devin",
+    "Cursor",
+    "GitHub Copilot Agent",
+    "OpenHands",
+    "Augment Code",
+    "Factory",
+  ]) {
+    const row = page.locator("table tr").filter({
+      has: page.locator("td").first().getByText(tool, { exact: true }),
+    });
+    const links = row.locator("td").first().locator("a");
+    expect(await links.count()).toBeGreaterThan(0);
+  }
+});
+
+// MESSAGING.md D5 bans tier-name framing (e.g. "Enterprise (...)" as a
+// stand-in for a feature list, "premium mode", "enterprise upsell").
+test("compare page contains no tier-name framing", async ({ page }) => {
+  await page.goto("/compare");
+  const text = (await page.locator("main").textContent()) ?? "";
+  expect(text).not.toContain("Enterprise (");
+  expect(text).not.toContain("premium mode");
+  expect(text).not.toContain("enterprise upsell");
+});
+
 test("compare page markets no pricing", async ({ page }) => {
   await page.goto("/compare");
   await expectBannedPhrasesAbsent(page, [

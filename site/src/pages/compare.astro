@@ -12,6 +12,11 @@ import ComparisonTable from "../components/ComparisonTable.astro";
 import TryItCta from "../components/TryItCta.astro";
 import { escapeHtml } from "../lib/html-escape";
 
+// Every competitor cell below is re-verified against vendor primary sources
+// (see each row's `citations`) as of this date — MESSAGING.md D10 requires a
+// visible verified-date marker on any page naming competitors.
+const verifiedDate = "September 5, 2026";
+
 // Market structure: 3-pole framing of the AI coding agent space.
 // Shipwright occupies the middle pole — team AI workflow, not copilot UX
 // and not fully autonomous fire-and-forget.
@@ -48,38 +53,56 @@ const landscape = [
     models: "Proprietary",
     taskQueue: "Yes",
     teamVisibility: "Dashboard",
-    policyControls: "Basic",
+    policyControls: "Security profiles, network policy, audit logs",
     humanReviewGate: "Optional",
     cronScheduling: "Yes",
-    slackWorkflow: "Partial",
+    slackWorkflow: "Yes - Slack Code",
     testsFirst: "No",
     self: false,
+    citations: [{ label: "source", url: "https://docs.devin.ai/release-notes/2026" }],
   },
   {
     tool: "Cursor",
     license: "Commercial",
     models: "Agnostic (multi)",
-    taskQueue: "No",
-    teamVisibility: "None",
-    policyControls: "None",
-    humanReviewGate: "No",
+    taskQueue: "No shared backlog",
+    teamVisibility: "Team dashboard",
+    policyControls: "Model/MCP/repo allowlists",
+    humanReviewGate: "PR review, no plan gate",
     cronScheduling: "No",
-    slackWorkflow: "No",
+    slackWorkflow: "Yes - @cursor launches cloud agents",
     testsFirst: "No",
     self: false,
+    citations: [
+      { label: "Slack", url: "https://cursor.com/docs/integrations/slack" },
+      {
+        label: "policy controls",
+        url: "https://cursor.com/docs/enterprise/model-and-integration-management",
+      },
+    ],
   },
   {
     tool: "GitHub Copilot Agent",
     license: "Commercial",
-    models: "GPT-4o / Claude",
+    models: "Agnostic (Claude / GPT / Gemini / Grok)",
     taskQueue: "Issues-based",
     teamVisibility: "PR-level",
     policyControls: "Repo policies",
     humanReviewGate: "PR review",
-    cronScheduling: "Via Actions",
-    slackWorkflow: "No",
+    cronScheduling: "Yes - scheduled and event automations",
+    slackWorkflow: "Yes - Slack and Teams",
     testsFirst: "No",
     self: false,
+    citations: [
+      {
+        label: "coding agent",
+        url: "https://docs.github.com/en/copilot/concepts/agents/coding-agent/about-coding-agent",
+      },
+      {
+        label: "model selection",
+        url: "https://github.blog/changelog/2026-04-14-model-selection-for-claude-and-codex-agents-on-github-com/",
+      },
+    ],
   },
   {
     tool: "OpenHands",
@@ -93,6 +116,16 @@ const landscape = [
     slackWorkflow: "Yes",
     testsFirst: "No",
     self: false,
+    citations: [
+      {
+        label: "enterprise vs OSS",
+        url: "https://docs.openhands.dev/enterprise/enterprise-vs-oss",
+      },
+      {
+        label: "automations",
+        url: "https://docs.openhands.dev/openhands/usage/automations/overview",
+      },
+    ],
   },
   {
     tool: "Augment Code",
@@ -100,12 +133,13 @@ const landscape = [
     models: "Agnostic (Claude/GPT/Gemini)",
     taskQueue: "Yes — Remote Agent queue",
     teamVisibility: "Slack + PR",
-    policyControls: "Enterprise (SOC 2 / ISO 42001)",
+    policyControls: "SOC 2 Type II, ISO 42001",
     humanReviewGate: "PR review",
-    cronScheduling: "No",
-    slackWorkflow: "Yes — codebase Q&A",
+    cronScheduling: "Yes - cron, webhook, event triggers",
+    slackWorkflow: "Yes - Slack as tool and trigger",
     testsFirst: "No",
     self: false,
+    citations: [{ label: "source", url: "https://docs.augmentcode.com/cosmos/config-slack" }],
   },
   {
     tool: "Factory",
@@ -113,12 +147,15 @@ const landscape = [
     models: "Agnostic (Claude/GPT/Gemini, BYOK)",
     taskQueue: "Yes — Missions",
     teamVisibility: "Mission Control",
-    policyControls: "Enterprise (SOC 2 / ISO 27001 / ISO 42001)",
+    policyControls: "SOC 2, ISO 27001, ISO 42001",
     humanReviewGate: "Missions (plan-approval)",
     cronScheduling: "Yes",
     slackWorkflow: "Yes — @-mention task delegation",
     testsFirst: "No",
     self: false,
+    citations: [
+      { label: "source", url: "https://docs.factory.ai/features/missions/overview" },
+    ],
   },
   {
     tool: "Shipwright Harness",
@@ -140,7 +177,7 @@ const landscape = [
 const pillars = [
   {
     title: "Plan-approval by default, not by tier",
-    body: "Specs become a reviewable task queue before a line of code is written, and a human approves the plan on every task. The commercial tier is adding plan approval as a premium mode; in Shipwright it is the default path for all work, not an enterprise upsell.",
+    body: "Specs become a reviewable task queue before a line of code is written, and a human approves the plan on every task. Some competitors are adding plan approval as an optional add-on; in Shipwright it is the default path for all work, not something you have to unlock.",
   },
   {
     title: "Tests land with the code",
@@ -173,53 +210,65 @@ const landscapeColumns = tableColumns.map((col, i) => ({
   style: `text-align:left; padding:0.6rem 1rem 0.6rem ${i === 0 ? "0" : ""}; font-family:var(--sw-font-mono); font-size:0.8125rem; text-transform:uppercase; letter-spacing:0.06em; color:var(--sw-color-text-muted); white-space:nowrap;`,
 }));
 
-const landscapeRows = landscape.map((row) => ({
-  highlight: row.self,
-  cells: [
-    {
-      style: "padding:0.7rem 1rem 0.7rem 0; vertical-align:top;",
-      html: `<span style="font-family:var(--sw-font-display); font-weight:600; color:${row.self ? "var(--sw-color-brand-default)" : "var(--sw-color-text-heading)"};"> ${escapeHtml(row.tool)} </span>`,
-    },
-    {
-      style:
-        "padding:0.7rem 1rem; vertical-align:top; color:var(--sw-color-text-body); white-space:nowrap;",
-      html: escapeHtml(row.license),
-    },
-    {
-      style: "padding:0.7rem 1rem; vertical-align:top; color:var(--sw-color-text-body);",
-      html: escapeHtml(row.models),
-    },
-    {
-      style: "padding:0.7rem 1rem; vertical-align:top; color:var(--sw-color-text-body);",
-      html: escapeHtml(row.taskQueue),
-    },
-    {
-      style: "padding:0.7rem 1rem; vertical-align:top; color:var(--sw-color-text-body);",
-      html: escapeHtml(row.teamVisibility),
-    },
-    {
-      style: "padding:0.7rem 1rem; vertical-align:top; color:var(--sw-color-text-body);",
-      html: escapeHtml(row.policyControls),
-    },
-    {
-      style: "padding:0.7rem 1rem; vertical-align:top; color:var(--sw-color-text-body);",
-      html: escapeHtml(row.humanReviewGate),
-    },
-    {
-      style: "padding:0.7rem 1rem; vertical-align:top; color:var(--sw-color-text-body);",
-      html: escapeHtml(row.cronScheduling),
-    },
-    {
-      style: "padding:0.7rem 1rem; vertical-align:top; color:var(--sw-color-text-body);",
-      html: escapeHtml(row.slackWorkflow),
-    },
-    {
-      style:
-        "padding:0.7rem 0 0.7rem 1rem; vertical-align:top; color:var(--sw-color-text-body);",
-      html: escapeHtml(row.testsFirst),
-    },
-  ],
-}));
+const landscapeRows = landscape.map((row) => {
+  // Competitor rows carry a `citations` array (per-row link cluster,
+  // MESSAGING.md D10); the Shipwright Harness self-row has none since it is
+  // not a competitor claim. Mirrors vs/factory.astro's inline
+  // citationsHtml map+join pattern.
+  const citationsHtml = row.citations
+    ? row.citations
+        .map((c) => `<a href="${c.url}" class="text-sm">\n[${escapeHtml(c.label)}]\n</a>`)
+        .join(" ")
+    : "";
+
+  return {
+    highlight: row.self,
+    cells: [
+      {
+        style: "padding:0.7rem 1rem 0.7rem 0; vertical-align:top;",
+        html: `<span style="font-family:var(--sw-font-display); font-weight:600; color:${row.self ? "var(--sw-color-brand-default)" : "var(--sw-color-text-heading)"};"> ${escapeHtml(row.tool)} </span>${citationsHtml ? ` ${citationsHtml}` : ""}`,
+      },
+      {
+        style:
+          "padding:0.7rem 1rem; vertical-align:top; color:var(--sw-color-text-body); white-space:nowrap;",
+        html: escapeHtml(row.license),
+      },
+      {
+        style: "padding:0.7rem 1rem; vertical-align:top; color:var(--sw-color-text-body);",
+        html: escapeHtml(row.models),
+      },
+      {
+        style: "padding:0.7rem 1rem; vertical-align:top; color:var(--sw-color-text-body);",
+        html: escapeHtml(row.taskQueue),
+      },
+      {
+        style: "padding:0.7rem 1rem; vertical-align:top; color:var(--sw-color-text-body);",
+        html: escapeHtml(row.teamVisibility),
+      },
+      {
+        style: "padding:0.7rem 1rem; vertical-align:top; color:var(--sw-color-text-body);",
+        html: escapeHtml(row.policyControls),
+      },
+      {
+        style: "padding:0.7rem 1rem; vertical-align:top; color:var(--sw-color-text-body);",
+        html: escapeHtml(row.humanReviewGate),
+      },
+      {
+        style: "padding:0.7rem 1rem; vertical-align:top; color:var(--sw-color-text-body);",
+        html: escapeHtml(row.cronScheduling),
+      },
+      {
+        style: "padding:0.7rem 1rem; vertical-align:top; color:var(--sw-color-text-body);",
+        html: escapeHtml(row.slackWorkflow),
+      },
+      {
+        style:
+          "padding:0.7rem 0 0.7rem 1rem; vertical-align:top; color:var(--sw-color-text-body);",
+        html: escapeHtml(row.testsFirst),
+      },
+    ],
+  };
+});
 ---
 
 <BaseLayout
@@ -288,14 +337,19 @@ const landscapeRows = landscape.map((row) => ({
       Agents pull from a background task queue and land review-ready PRs, and the
       commercial tier is moving fast.
     </p>
+    <p class="mt-4 text-sm" style="color: var(--sw-color-text-muted);">
+      Facts verified as of {verifiedDate}, from each vendor's own primary
+      sources (linked in the table above). Re-checked immediately before this
+      page ships — vendor terms change.
+    </p>
     <ComparisonTable columns={landscapeColumns} rows={landscapeRows} />
     <p class="mt-6 max-w-2xl sw-editorial">
       The field is converging on the middle. Factory's Missions now approves a
       plan before its droids execute, and Augment's Remote Agents land
       review-ready PRs. So the honest question is no longer who has a review
       gate, it is whose gate is the default and what it enforces. Shipwright
-      approves a plan on every task, not just in a premium mode, and it is the
-      only tool here that writes tests first and blocks merge until they pass.
+      approves a plan on every task, not just as an optional add-on, and it is
+      the only tool here that writes tests first and blocks merge until they pass.
       That combination, not the gate alone, is the whole point.
     </p>
   </section>
