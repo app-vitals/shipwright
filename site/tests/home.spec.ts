@@ -381,6 +381,53 @@ test("differentiators names no competitors except a single linked Devin mention"
   }
 });
 
+// MKT-LADDER-NARRATIVE-1: the differentiators grid tells a three-rung ladder
+// story (start here / then change it / then outgrow it), plus a fourth
+// always-on card. Competitor names stay banned in this section.
+test("differentiators present the three-rung ladder narrative", async ({
+  page,
+}) => {
+  await page.goto("/");
+  const section = page.locator("#differentiators");
+  await expect(section).toBeVisible();
+  await expect(
+    section.getByText("Three rungs, and you decide how far up you go."),
+  ).toBeVisible();
+  for (const title of [
+    "Run our loop on day one",
+    "Swap out any phase",
+    "Leave and keep everything",
+    "Tests are not optional",
+  ]) {
+    await expect(section.getByText(title, { exact: true })).toBeVisible();
+  }
+  const text = (await section.textContent())?.toLowerCase() ?? "";
+  for (const competitor of [
+    "openhands",
+    "factory",
+    "devin",
+    "cursor",
+    "augment",
+    "copilot",
+  ]) {
+    expect(text).not.toContain(competitor);
+  }
+});
+
+// Honesty guardrail: the "Then outgrow it" card must read as "leave and keep
+// everything works", never a productized guided "build your own" / DIY path
+// (Shipwright does not ship a DIY-kit product).
+test("differentiators do not claim a guided build-your-own / DIY path", async ({
+  page,
+}) => {
+  await page.goto("/");
+  const section = page.locator("#differentiators");
+  const text = (await section.textContent())?.toLowerCase() ?? "";
+  expect(text).not.toContain("build your own");
+  expect(text).not.toContain("diy");
+  expect(text).not.toContain("assemble your own pipeline");
+});
+
 test("'Run the full stack' tab shows the task stack:up walkthrough video", async ({
   page,
 }) => {

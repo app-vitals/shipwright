@@ -357,6 +357,56 @@ test("header nav links to /compare on every page", async ({ page }) => {
   }
 });
 
+// MKT-LADDER-NARRATIVE-1: the pillars section is retired from the old
+// "Plan-approval / Tests land / Claude-native" framing to a direct-comparison
+// narrative, with citations on the two pillars that reference OpenHands/Factory.
+test("pillars section presents the retired-narrative titles and intro", async ({
+  page,
+}) => {
+  await page.goto("/compare");
+  const text = (await page.locator("main").textContent()) ?? "";
+  expect(text).toContain(
+    "Three things hold up under a direct comparison. We have retired the ones that did not.",
+  );
+  for (const title of [
+    "Tests are enforced, not offered",
+    "An opinionated loop you can take apart",
+    "Open throughout, not open core",
+  ]) {
+    expect(text).toContain(title);
+  }
+});
+
+test("pillars section links its OpenHands and Factory citations", async ({
+  page,
+}) => {
+  await page.goto("/compare");
+  const heading = page.getByRole("heading", {
+    name: /What actually makes Shipwright different/i,
+  });
+  const section = page.locator("section").filter({ has: heading });
+  await expect(
+    section.locator(
+      'a[href="https://docs.openhands.dev/openhands/usage/use-cases/qa-changes"]',
+    ),
+  ).toHaveCount(1);
+  await expect(
+    section.locator('a[href="https://docs.factory.ai/features/missions/overview"]'),
+  ).toHaveCount(1);
+  await expect(
+    section.locator('a[href="https://docs.openhands.dev/enterprise/enterprise-vs-oss"]'),
+  ).toHaveCount(1);
+});
+
+test("retired pillar copy no longer appears anywhere on /compare", async ({
+  page,
+}) => {
+  await page.goto("/compare");
+  const text = (await page.locator("main").textContent()) ?? "";
+  expect(text).not.toContain("Plan-approval by default");
+  expect(text).not.toContain("Claude-native by design");
+});
+
 test("homepage differentiators bridge into /compare (competitor-free)", async ({
   page,
 }) => {
