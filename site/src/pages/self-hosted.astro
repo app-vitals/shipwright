@@ -47,7 +47,7 @@ const architectureRows = [
   {
     tool: "OpenHands",
     license: "MIT root, time-limited PolyForm carve-out on enterprise/",
-    architecture: "Productized VPC self-host is Enterprise-gated.",
+    architecture: "Productized VPC self-host is sales-gated.",
     detail:
       "The MIT license applies to the local tier; VPC self-hosting for the delivery-pipeline features is sold, not shipped free — the vendor's own site states \"Talk to sales\" for it.",
     citation: src.openhandsPricing,
@@ -74,9 +74,9 @@ const architectureRows = [
   {
     tool: "Factory",
     license: "Proprietary",
-    architecture: "Cloud-orchestrated by default — full airgap is Enterprise-only.",
+    architecture: "Cloud-orchestrated by default — full airgap is sales-gated.",
     detail:
-      "Cloud-Managed and Hybrid both keep orchestration in Factory's cloud (Hybrid limits it to metadata). The Fully Airgapped tier genuinely removes Factory's servers from the loop at runtime, including orchestration — but it ships only through the Enterprise plan's sales-gated flow, with no self-serve path at any price point.",
+      "Cloud-Managed and Hybrid both keep orchestration in Factory's cloud (Hybrid limits it to metadata). Their fully-airgapped deployment mode genuinely removes Factory's servers from the loop at runtime, including orchestration — but it ships only through their sales-gated commercial flow, with no self-serve path.",
     citation: [src.factoryDeployment, src.factoryPricing],
     self: false,
   },
@@ -163,8 +163,8 @@ const architectureTableRows = architectureRows.map((row) => {
       Shipwright's control plane, agent runtime, and your code all run on
       infrastructure you own, at every tier — no managed-service layer in
       between. The rest of the field is either hybrid (part of the system
-      stays in the vendor's cloud) or gates full self-hosting behind an
-      Enterprise sales conversation.
+      stays in the vendor's cloud) or gates full self-hosting behind a
+      sales conversation.
     </p>
     <ComparisonTable columns={architectureColumns} rows={architectureTableRows} />
     <p class="mt-6 max-w-2xl sw-editorial">

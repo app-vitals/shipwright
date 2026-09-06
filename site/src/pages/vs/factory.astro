@@ -52,7 +52,7 @@ const comparisonRows = [
   {
     dimension: "Plan approval",
     shipwright: "Default, on every task.",
-    factory: "Missions flow (Enterprise / Max tier).",
+    factory: "Missions flow, in their commercial offering.",
     citation: src.missions,
   },
   {
@@ -227,7 +227,7 @@ const dimensionRows = comparisonRows.map((row) => {
       are not optional or a droid you opt into: every task ships its tests,
       written before the implementation, and CI must be green before merge.
       Second, plan approval is the default path for all work, not a
-      Missions-tier mode you unlock at Enterprise or Max. And underneath both,
+      Missions mode you unlock through their commercial offering. And underneath both,
       Shipwright is MIT: you can fork it, read every line, and run it with
       nothing between your repository and the agent. Factory's plan approval
       and orchestration live inside a managed product you do not control.
@@ -261,7 +261,7 @@ const dimensionRows = comparisonRows.map((row) => {
           items: [
             { text: "You have committed to Claude Code and want a pipeline tuned for it, not averaged across providers." },
             { text: "You want tests written first and landed with every change, gated by CI, enforced by the pipeline rather than left to an agent's judgment." },
-            { text: "You want plan approval on every task by default, not as a premium tier." },
+            { text: "You want plan approval on every task by default, not as a paid add-on." },
             { text: "You want MIT and self-hosted, forkable and auditable, with nothing managed between your repo and the agent." },
           ],
         },
@@ -273,8 +273,8 @@ const dimensionRows = comparisonRows.map((row) => {
   <section class="relative z-10 pb-16" style="border-top: 1px solid var(--sw-color-border-subtle); padding-top: 3rem;">
     <h2>Economics</h2>
     <p class="mt-3 max-w-2xl">
-      Factory's Missions run at the Enterprise and Max tiers, priced per the
-      managed platform with custom enterprise contracts. Shipwright is MIT: no
+      Factory's Missions are part of their commercial managed platform, sold
+      on custom contracts. Shipwright is MIT: no
       seat fees and no platform charge for the harness itself. You bring your
       own Claude Code credentials and run it on your own Docker or Kubernetes,
       so your cost is your compute plus your model usage, nothing routed
