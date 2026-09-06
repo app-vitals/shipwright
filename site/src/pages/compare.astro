@@ -175,16 +175,28 @@ const landscape = [
 
 // The three things that actually distinguish Shipwright — framed as *how* it
 // works, not as an empty-category claim.
+//
+// MESSAGING.md D10: every competitor fact stated in a pillar body carries a
+// primary-source citation on that same pillar. Pillar-source mapping
+// re-verified 2026-09-06 against each vendor's own docs — in particular,
+// Factory's Missions overview states missions run user-facing QA testing as
+// they work and self-correct, so the pillar-1 body describes Factory's QA as
+// running-but-not-merge-blocking rather than as opt-in test generation.
 const pillars = [
   {
     title: "Tests are enforced, not offered",
-    body: "Everyone in this table can generate tests. Nobody else gates on them. OpenHands is explicit that running the suite is CI's job, not the agent's; Factory, Augment and Cursor all offer test generation you opt into. Shipwright writes the failing test before the implementation and will not merge without green CI. It is the pipeline's rule, not the agent's discretion.",
+    body: "Everyone in this table can generate tests. Nobody else makes passing them the default gate. OpenHands is explicit that running the suite is CI's job, not the agent's. Factory's Missions do run QA against your app as they work and self-correct, but nothing holds the merge on a red suite. Augment generates tests when you ask for them, and Cursor's missing-test PR checks are rules you opt into. Shipwright writes the failing test before the implementation and will not merge without green CI. It is the pipeline's rule, not the agent's discretion.",
+    citations: [
+      { label: "OpenHands: QA is CI's job", url: "https://docs.openhands.dev/openhands/usage/use-cases/qa-changes" },
+      { label: "Factory Missions", url: "https://docs.factory.ai/features/missions/overview" },
+      { label: "Augment: Agent use cases", url: "https://docs.augmentcode.com/using-augment/agent" },
+      { label: "Cursor: test generation", url: "https://cursor.com/for/test-generation" },
+    ],
   },
   {
     title: "An opinionated loop you can take apart",
     body: "OpenHands gives you primitives and no opinion: you assemble the pipeline yourself. Factory gives you an opinion you cannot open. Shipwright ships the loop already opinionated, then lets you disable phases, override the review principles per repo, and bolt on your own commands and scheduled jobs. Start on rails, then change the rails.",
     citations: [
-      { label: "OpenHands: QA is CI's job", url: "https://docs.openhands.dev/openhands/usage/use-cases/qa-changes" },
       { label: "Factory Missions", url: "https://docs.factory.ai/features/missions/overview" },
     ],
   },

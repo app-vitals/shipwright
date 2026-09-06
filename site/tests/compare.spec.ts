@@ -377,7 +377,12 @@ test("pillars section presents the retired-narrative titles and intro", async ({
   }
 });
 
-test("pillars section links its OpenHands and Factory citations", async ({
+// MESSAGING.md D10: every competitor fact must be cited, and the citation
+// must sit on the pillar that actually states the fact. Assert per-card, not
+// per-section — a section-wide link count passes even when a citation is
+// attached to the wrong pillar (which is exactly how the QA-is-CI's-job link
+// ended up on the architecture pillar).
+test("each pillar cites the competitors its own body names", async ({
   page,
 }) => {
   await page.goto("/compare");
@@ -385,17 +390,53 @@ test("pillars section links its OpenHands and Factory citations", async ({
     name: /What actually makes Shipwright different/i,
   });
   const section = page.locator("section").filter({ has: heading });
+  const card = (title: string) =>
+    section.locator(".sw-card").filter({
+      has: page.getByRole("heading", { name: title }),
+    });
+
+  // Pillar 1 names OpenHands, Factory, Augment and Cursor — all four need a
+  // primary source on this card.
+  const testsPillar = card("Tests are enforced, not offered");
+  for (const url of [
+    "https://docs.openhands.dev/openhands/usage/use-cases/qa-changes",
+    "https://docs.factory.ai/features/missions/overview",
+    "https://docs.augmentcode.com/using-augment/agent",
+    "https://cursor.com/for/test-generation",
+  ]) {
+    await expect(testsPillar.locator(`a[href="${url}"]`)).toHaveCount(1);
+  }
+
+  // Pillar 2 is about architecture/extensibility, not testing — the
+  // QA-is-CI's-job link belongs on pillar 1 and must not appear here.
+  const loopPillar = card("An opinionated loop you can take apart");
   await expect(
-    section.locator(
+    loopPillar.locator(
       'a[href="https://docs.openhands.dev/openhands/usage/use-cases/qa-changes"]',
     ),
-  ).toHaveCount(1);
+  ).toHaveCount(0);
   await expect(
-    section.locator('a[href="https://docs.factory.ai/features/missions/overview"]'),
+    loopPillar.locator(
+      'a[href="https://docs.factory.ai/features/missions/overview"]',
+    ),
   ).toHaveCount(1);
+
   await expect(
-    section.locator('a[href="https://docs.openhands.dev/enterprise/enterprise-vs-oss"]'),
+    card("Open throughout, not open core").locator(
+      'a[href="https://docs.openhands.dev/enterprise/enterprise-vs-oss"]',
+    ),
   ).toHaveCount(1);
+});
+
+// Factory's Missions overview documents QA testing running automatically as a
+// mission works — so the pillar must not frame Factory's testing as opt-in.
+test("pillar 1 does not claim Factory's test generation is opt-in", async ({
+  page,
+}) => {
+  await page.goto("/compare");
+  const text = (await page.locator("main").textContent()) ?? "";
+  expect(text).not.toContain("Factory, Augment and Cursor all offer test");
+  expect(text).toMatch(/Factory's Missions do run QA/);
 });
 
 test("retired pillar copy no longer appears anywhere on /compare", async ({
