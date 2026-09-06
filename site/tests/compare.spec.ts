@@ -357,6 +357,101 @@ test("header nav links to /compare on every page", async ({ page }) => {
   }
 });
 
+// MKT-LADDER-NARRATIVE-1: the pillars section is retired from the old
+// "Plan-approval / Tests land / Claude-native" framing to a direct-comparison
+// narrative, with citations on the two pillars that reference OpenHands/Factory.
+test("pillars section presents the retired-narrative titles and intro", async ({
+  page,
+}) => {
+  await page.goto("/compare");
+  const text = (await page.locator("main").textContent()) ?? "";
+  expect(text).toContain(
+    "Three things hold up under a direct comparison. We have retired the ones that did not.",
+  );
+  for (const title of [
+    "Tests are enforced, not offered",
+    "An opinionated loop you can take apart",
+    "Open throughout, not open core",
+  ]) {
+    expect(text).toContain(title);
+  }
+});
+
+// MESSAGING.md D10: every competitor fact must be cited, and the citation
+// must sit on the pillar that actually states the fact. Assert per-card, not
+// per-section — a section-wide link count passes even when a citation is
+// attached to the wrong pillar (which is exactly how the QA-is-CI's-job link
+// ended up on the architecture pillar).
+test("each pillar cites the competitors its own body names", async ({
+  page,
+}) => {
+  await page.goto("/compare");
+  const heading = page.getByRole("heading", {
+    name: /What actually makes Shipwright different/i,
+  });
+  const section = page.locator("section").filter({ has: heading });
+  const card = (title: string) =>
+    section.locator(".sw-card").filter({
+      has: page.getByRole("heading", { name: title }),
+    });
+
+  // Pillar 1 names OpenHands, Factory, Augment and Cursor — all four need a
+  // primary source on this card.
+  const testsPillar = card("Tests are enforced, not offered");
+  for (const url of [
+    "https://docs.openhands.dev/openhands/usage/use-cases/qa-changes",
+    "https://docs.factory.ai/features/missions/overview",
+    "https://docs.augmentcode.com/using-augment/agent",
+    "https://cursor.com/for/test-generation",
+  ]) {
+    await expect(testsPillar.locator(`a[href="${url}"]`)).toHaveCount(1);
+  }
+
+  // Pillar 2 names both OpenHands ("primitives and no opinion") and Factory —
+  // both need a primary source on this card. The OpenHands source is the SDK
+  // product page ("primitives, not prescriptions"), not the QA-changes doc:
+  // this pillar is about architecture/extensibility, not testing, so the
+  // QA-is-CI's-job link belongs on pillar 1 and must not appear here.
+  const loopPillar = card("An opinionated loop you can take apart");
+  await expect(
+    loopPillar.locator(
+      'a[href="https://docs.openhands.dev/openhands/usage/use-cases/qa-changes"]',
+    ),
+  ).toHaveCount(0);
+  for (const url of [
+    "https://www.openhands.dev/product/sdk",
+    "https://docs.factory.ai/features/missions/overview",
+  ]) {
+    await expect(loopPillar.locator(`a[href="${url}"]`)).toHaveCount(1);
+  }
+
+  await expect(
+    card("Open throughout, not open core").locator(
+      'a[href="https://docs.openhands.dev/enterprise/enterprise-vs-oss"]',
+    ),
+  ).toHaveCount(1);
+});
+
+// Factory's Missions overview documents QA testing running automatically as a
+// mission works — so the pillar must not frame Factory's testing as opt-in.
+test("pillar 1 does not claim Factory's test generation is opt-in", async ({
+  page,
+}) => {
+  await page.goto("/compare");
+  const text = (await page.locator("main").textContent()) ?? "";
+  expect(text).not.toContain("Factory, Augment and Cursor all offer test");
+  expect(text).toMatch(/Factory's Missions do run QA/);
+});
+
+test("retired pillar copy no longer appears anywhere on /compare", async ({
+  page,
+}) => {
+  await page.goto("/compare");
+  const text = (await page.locator("main").textContent()) ?? "";
+  expect(text).not.toContain("Plan-approval by default");
+  expect(text).not.toContain("Claude-native by design");
+});
+
 test("homepage differentiators bridge into /compare (competitor-free)", async ({
   page,
 }) => {

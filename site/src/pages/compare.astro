@@ -175,18 +175,42 @@ const landscape = [
 
 // The three things that actually distinguish Shipwright — framed as *how* it
 // works, not as an empty-category claim.
+//
+// MESSAGING.md D10: every competitor fact stated in a pillar body carries a
+// primary-source citation on that same pillar. Pillar-source mapping
+// re-verified 2026-09-06 against each vendor's own docs — in particular,
+// Factory's Missions overview states missions run user-facing QA testing as
+// they work and self-correct, so the pillar-1 body describes Factory's QA as
+// running-but-not-merge-blocking rather than as opt-in test generation.
+// Pillar 2's "primitives and no opinion" claim is sourced to OpenHands' own SDK
+// product page, which states verbatim: "OpenHands gives you primitives, not
+// prescriptions, so you can adapt agents to your codebase, tooling, and
+// governance needs."
 const pillars = [
   {
-    title: "Plan-approval by default, not by tier",
-    body: "Specs become a reviewable task queue before a line of code is written, and a human approves the plan on every task. Some competitors are adding plan approval as an optional add-on; in Shipwright it is the default path for all work, not something you have to unlock.",
+    title: "Tests are enforced, not offered",
+    body: "Everyone in this table can generate tests. Nobody else makes passing them the default gate. OpenHands is explicit that running the suite is CI's job, not the agent's. Factory's Missions do run QA against your app as they work and self-correct, but nothing holds the merge on a red suite. Augment generates tests when you ask for them, and Cursor's missing-test PR checks are rules you opt into. Shipwright writes the failing test before the implementation and will not merge without green CI. It is the pipeline's rule, not the agent's discretion.",
+    citations: [
+      { label: "OpenHands: QA is CI's job", url: "https://docs.openhands.dev/openhands/usage/use-cases/qa-changes" },
+      { label: "Factory Missions", url: "https://docs.factory.ai/features/missions/overview" },
+      { label: "Augment: Agent use cases", url: "https://docs.augmentcode.com/using-augment/agent" },
+      { label: "Cursor: test generation", url: "https://cursor.com/for/test-generation" },
+    ],
   },
   {
-    title: "Tests land with the code",
-    body: 'Every task ships its tests in the same PR, written before the implementation (red-green-refactor is enforced). CI must be green before merge. No “add tests later.”',
+    title: "An opinionated loop you can take apart",
+    body: "OpenHands gives you primitives and no opinion: you assemble the pipeline yourself. Factory gives you an opinion you cannot open. Shipwright ships the loop already opinionated, then lets you disable phases, override the review principles per repo, and bolt on your own commands and scheduled jobs. Start on rails, then change the rails.",
+    citations: [
+      { label: "OpenHands: primitives, not prescriptions", url: "https://www.openhands.dev/product/sdk" },
+      { label: "Factory Missions", url: "https://docs.factory.ai/features/missions/overview" },
+    ],
   },
   {
-    title: "Claude-native by design",
-    body: "The planning prompts, review loops, and context system are tuned for one runtime instead of averaged across many. Claude-optimized, not lowest-common-denominator.",
+    title: "Open throughout, not open core",
+    body: "MIT is table stakes in open source now, so the question is what the license actually covers. In OpenHands, authentication, role-based access control, multi-user organisations and isolated sandboxes sit in the commercial product. In Shipwright, SSO and scoped per-agent access are in the repo you fork. Their open source converts to a paid product exactly when a team needs it. Ours does not.",
+    citations: [
+      { label: "OpenHands: Enterprise vs OSS", url: "https://docs.openhands.dev/enterprise/enterprise-vs-oss" },
+    ],
   },
 ];
 
@@ -358,11 +382,24 @@ const landscapeRows = landscape.map((row) => {
   <!-- What actually makes Shipwright different -->
   <section class="relative z-10 py-20" style="border-top: 1px solid var(--sw-color-border-subtle);">
     <h2>What actually makes Shipwright different</h2>
+    <p class="mt-3 max-w-2xl">
+      Three things hold up under a direct comparison. We have retired the ones that did not.
+    </p>
     <div class="mt-8 grid gap-6 sm:grid-cols-3">
       {pillars.map((p) => (
         <div class="sw-card">
           <h3>{p.title}</h3>
           <p class="mt-2" style="color:var(--sw-color-text-body);">{p.body}</p>
+          {p.citations && (
+            <p class="mt-3 text-sm" style="color: var(--sw-color-text-muted);">
+              {p.citations.map((c, i) => (
+                <>
+                  {i > 0 && " "}
+                  <a href={c.url} class="text-sm">[{c.label}]</a>
+                </>
+              ))}
+            </p>
+          )}
         </div>
       ))}
     </div>
