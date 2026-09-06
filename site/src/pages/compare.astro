@@ -182,6 +182,10 @@ const landscape = [
 // Factory's Missions overview states missions run user-facing QA testing as
 // they work and self-correct, so the pillar-1 body describes Factory's QA as
 // running-but-not-merge-blocking rather than as opt-in test generation.
+// Pillar 2's "primitives and no opinion" claim is sourced to OpenHands' own SDK
+// product page, which states verbatim: "OpenHands gives you primitives, not
+// prescriptions, so you can adapt agents to your codebase, tooling, and
+// governance needs."
 const pillars = [
   {
     title: "Tests are enforced, not offered",
@@ -197,6 +201,7 @@ const pillars = [
     title: "An opinionated loop you can take apart",
     body: "OpenHands gives you primitives and no opinion: you assemble the pipeline yourself. Factory gives you an opinion you cannot open. Shipwright ships the loop already opinionated, then lets you disable phases, override the review principles per repo, and bolt on your own commands and scheduled jobs. Start on rails, then change the rails.",
     citations: [
+      { label: "OpenHands: primitives, not prescriptions", url: "https://www.openhands.dev/product/sdk" },
       { label: "Factory Missions", url: "https://docs.factory.ai/features/missions/overview" },
     ],
   },

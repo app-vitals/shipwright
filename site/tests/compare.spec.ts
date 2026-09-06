@@ -407,7 +407,10 @@ test("each pillar cites the competitors its own body names", async ({
     await expect(testsPillar.locator(`a[href="${url}"]`)).toHaveCount(1);
   }
 
-  // Pillar 2 is about architecture/extensibility, not testing — the
+  // Pillar 2 names both OpenHands ("primitives and no opinion") and Factory —
+  // both need a primary source on this card. The OpenHands source is the SDK
+  // product page ("primitives, not prescriptions"), not the QA-changes doc:
+  // this pillar is about architecture/extensibility, not testing, so the
   // QA-is-CI's-job link belongs on pillar 1 and must not appear here.
   const loopPillar = card("An opinionated loop you can take apart");
   await expect(
@@ -415,11 +418,12 @@ test("each pillar cites the competitors its own body names", async ({
       'a[href="https://docs.openhands.dev/openhands/usage/use-cases/qa-changes"]',
     ),
   ).toHaveCount(0);
-  await expect(
-    loopPillar.locator(
-      'a[href="https://docs.factory.ai/features/missions/overview"]',
-    ),
-  ).toHaveCount(1);
+  for (const url of [
+    "https://www.openhands.dev/product/sdk",
+    "https://docs.factory.ai/features/missions/overview",
+  ]) {
+    await expect(loopPillar.locator(`a[href="${url}"]`)).toHaveCount(1);
+  }
 
   await expect(
     card("Open throughout, not open core").locator(
