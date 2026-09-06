@@ -155,6 +155,38 @@ test("focused OpenHands head-to-head is present and fair", async ({ page }) => {
   await expect(page.getByText(/category leader/i).first()).toBeVisible();
 });
 
+test("/compare links to the full /vs/openhands comparison", async ({
+  page,
+}) => {
+  await page.goto("/compare");
+  await expect(
+    page.getByRole("link", { name: /full.*Shipwright vs OpenHands comparison/i }),
+  ).toHaveAttribute("href", "/vs/openhands");
+});
+
+// Re-verified 2026-09-05: OpenHands' Agent Canvas ships Slack/GitHub/GitLab
+// integration across tiers (not Slack-absent), a dashboard for managing
+// automations (not "Limited" visibility), and RBAC as a commercial-only
+// capability (not mere "Config-level" controls). The landscape row must
+// reflect these corrected, sourced values — see site/src/pages/vs/openhands.astro
+// for the cited detail.
+test("landscape table reflects corrected OpenHands values (re-verified 2026-09-05)", async ({
+  page,
+}) => {
+  await page.goto("/compare");
+  const row = page.locator("table tr").filter({
+    has: page.locator("td").first().getByText("OpenHands", { exact: true }),
+  });
+  const rowText = (await row.textContent()) ?? "";
+  expect(rowText).toContain("Dashboard (Agent Canvas)");
+  expect(rowText).toContain("RBAC (commercial)");
+  expect(rowText).not.toContain("Limited");
+  expect(rowText).not.toContain("Config-level");
+  // Slack workflow cell (10th column) must now read "Yes", not "No".
+  const cells = row.locator("td");
+  await expect(cells.nth(8)).toHaveText("Yes");
+});
+
 test("focused Augment Code head-to-head is present and fair", async ({
   page,
 }) => {
