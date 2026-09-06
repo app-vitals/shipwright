@@ -235,7 +235,52 @@ test("landscape table reflects corrected Cursor values (re-verified 2026-09-05)"
   // Slack workflow cell (9th column, 0-indexed 8) must now read the
   // corrected value, not "No".
   const cells = row.locator("td");
-  await expect(cells.nth(8)).toContainText("Yes - @cursor launches cloud agents");
+  await expect(cells.nth(8)).toContainText("Yes — @cursor launches cloud agents");
+  // Cron scheduling cell (8th column, 0-indexed 7): Cursor shipped cron and
+  // event automations for cloud agents (Aug 19 2026 changelog), so this cell
+  // must no longer read "No".
+  await expect(cells.nth(7)).toContainText("Yes — cron and event automations");
+  await expect(
+    row.locator("td").first().locator('a[href*="cloud-agent/automations"]'),
+  ).toHaveCount(1);
+});
+
+// Typographic consistency: every value cell in the landscape table that
+// qualifies a Yes/No uses an em dash, matching the pre-existing rows. An
+// ASCII hyphen in a cell value means a new/edited cell drifted from the
+// house style.
+test("landscape table cell values use em dashes, never ASCII hyphens", async ({
+  page,
+}) => {
+  await page.goto("/compare");
+  const cells = await page.locator("table tbody tr td").allTextContents();
+  // Guard against a vacuous pass if the locator ever stops matching.
+  expect(cells.length).toBeGreaterThan(50);
+  for (const cell of cells) {
+    expect(cell).not.toMatch(/\b(Yes|No|Partial) - /);
+  }
+});
+
+// AC #8: the head-to-head prose must stay consistent with the corrected,
+// cited table row — no uncited fast-moving figures (MESSAGING.md D10), and
+// it must reflect the Agent Canvas / ACP capabilities the row now cites.
+test("OpenHands head-to-head prose is current and cited", async ({ page }) => {
+  await page.goto("/compare");
+  const section = page
+    .locator("section")
+    .filter({ has: page.getByRole("heading", { name: /Shipwright vs OpenHands/i }) });
+  const text = (await section.textContent()) ?? "";
+  // Stale, uncited star count is gone; the re-verified figure is cited.
+  expect(text).not.toContain("78K");
+  expect(text).toContain("~86.3k");
+  await expect(
+    section.getByRole("link", { name: /86\.3k GitHub stars/i }),
+  ).toHaveAttribute("href", "https://github.com/OpenHands/OpenHands");
+  // Decision-relevant context the corrected row already substantiates.
+  expect(text).toContain("Agent Canvas");
+  expect(text).toContain("ACP");
+  // Both projects occupy the same architectural layer — say so plainly.
+  expect(text).toMatch(/same architectural layer/i);
 });
 
 // The page must carry a visible "facts verified as of" marker (MESSAGING.md

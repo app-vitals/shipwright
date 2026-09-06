@@ -56,7 +56,7 @@ const landscape = [
     policyControls: "Security profiles, network policy, audit logs",
     humanReviewGate: "Optional",
     cronScheduling: "Yes",
-    slackWorkflow: "Yes - Slack Code",
+    slackWorkflow: "Yes — Slack Code",
     testsFirst: "No",
     self: false,
     citations: [{ label: "source", url: "https://docs.devin.ai/release-notes/2026" }],
@@ -69,12 +69,13 @@ const landscape = [
     teamVisibility: "Team dashboard",
     policyControls: "Model/MCP/repo allowlists",
     humanReviewGate: "PR review, no plan gate",
-    cronScheduling: "No",
-    slackWorkflow: "Yes - @cursor launches cloud agents",
+    cronScheduling: "Yes — cron and event automations",
+    slackWorkflow: "Yes — @cursor launches cloud agents",
     testsFirst: "No",
     self: false,
     citations: [
       { label: "Slack", url: "https://cursor.com/docs/integrations/slack" },
+      { label: "automations", url: "https://cursor.com/docs/cloud-agent/automations" },
       {
         label: "policy controls",
         url: "https://cursor.com/docs/enterprise/model-and-integration-management",
@@ -89,8 +90,8 @@ const landscape = [
     teamVisibility: "PR-level",
     policyControls: "Repo policies",
     humanReviewGate: "PR review",
-    cronScheduling: "Yes - scheduled and event automations",
-    slackWorkflow: "Yes - Slack and Teams",
+    cronScheduling: "Yes — scheduled and event automations",
+    slackWorkflow: "Yes — Slack and Teams",
     testsFirst: "No",
     self: false,
     citations: [
@@ -135,8 +136,8 @@ const landscape = [
     teamVisibility: "Slack + PR",
     policyControls: "SOC 2 Type II, ISO 42001",
     humanReviewGate: "PR review",
-    cronScheduling: "Yes - cron, webhook, event triggers",
-    slackWorkflow: "Yes - Slack as tool and trigger",
+    cronScheduling: "Yes — cron, webhook, event triggers",
+    slackWorkflow: "Yes — Slack as tool and trigger",
     testsFirst: "No",
     self: false,
     citations: [{ label: "source", url: "https://docs.augmentcode.com/cosmos/config-slack" }],
@@ -428,10 +429,22 @@ helm install shipwright shipwright/shipwright</code></pre>
     <h2 class="mt-4">Shipwright vs OpenHands</h2>
     <p class="mt-3 max-w-2xl">
       OpenHands is the category leader in open-source autonomous agents — MIT,
-      model-agnostic, deployable on your infra, ~78K stars, and it already runs
-      a delivery pipeline (scheduled tasks, triggers, PR review, opening reviewable
-      PRs). If you want maximum model flexibility and a mature ecosystem today,
-      it is an excellent choice. Here is where the two genuinely differ:
+      model-agnostic, deployable on your infra,{" "}
+      <a href="https://github.com/OpenHands/OpenHands">~86.3k GitHub stars</a>,
+      and it already runs a delivery pipeline (scheduled tasks, triggers, PR
+      review, opening reviewable PRs). It is the closest project to Shipwright
+      on this page: both are MIT, both open real PRs against your repository,
+      and both occupy the same architectural layer — the team delivery
+      pipeline, not the editor. Its{" "}
+      <a href="https://www.openhands.dev/blog/introducing-agent-canvas">Agent
+      Canvas</a> gives that pipeline a dashboard for creating and managing
+      automations, and its{" "}
+      <a href="https://docs.openhands.dev/openhands/usage/agent-canvas/acp-agents">ACP
+      support</a> can launch and drive Claude Code, Codex, or Gemini CLI
+      directly as a subprocess agent — so OpenHands can run the very runtime
+      Shipwright is built on. If you want maximum model flexibility and a
+      mature ecosystem today, it is an excellent choice. Here is where the two
+      genuinely differ:
     </p>
     <ChooseWhenGrid
       cards={[
@@ -450,7 +463,8 @@ helm install shipwright shipwright/shipwright</code></pre>
           items: [
             { text: "You need BYOK / model-agnostic across many providers, including local models." },
             { text: "You want the largest community and the most mature ecosystem available right now." },
-            { text: "You are not committed to a single runtime and want to keep that optionality." },
+            { text: "You are not committed to a single runtime and want to keep that optionality — OpenHands' ACP support can even drive Claude Code, Codex, or Gemini CLI as a subprocess agent." },
+            { text: "You want this same delivery-pipeline layer — OpenHands occupies it too, with Agent Canvas as its dashboard — and prefer its breadth to Shipwright's Claude Code focus." },
           ],
         },
       ]}
