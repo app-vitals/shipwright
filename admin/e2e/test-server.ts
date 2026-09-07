@@ -225,11 +225,12 @@ function buildMockDeps(chatClient: ChatClient | undefined): AdminUIDeps {
       },
       // Referenced by the agent detail page's admin-only member list and by
       // assertAgentAccess's non-admin membership check. Sessions minted for
-      // these e2e tests omit an `isAdmin` claim, and getSessionUser treats a
-      // missing claim as admin (isAdmin !== false) — so the render path always
-      // takes the admin branch (prisma.agentMember.findMany), never the
-      // non-admin findUnique branch. No members fixture exists, so both
-      // resolve to empty/not-found.
+      // these e2e tests (via mintAdminSession) explicitly set `isAdmin: true`,
+      // so the render path deliberately takes the admin branch
+      // (prisma.agentMember.findMany), never the non-admin findUnique branch.
+      // No members fixture exists, so both resolve to empty/not-found. A
+      // non-admin session case isn't exercised here — that's an intentional
+      // test-coverage gap, not a fixture bug.
       agentMember: {
         findMany: async () => [],
         findUnique: async () => null,
@@ -392,7 +393,7 @@ export async function mintAdminSession(
 ): Promise<string> {
   const nowSec = Math.floor(Date.now() / 1000);
   return sign(
-    { userId, email, iat: nowSec, exp: nowSec + 3600 },
+    { userId, email, isAdmin: true, iat: nowSec, exp: nowSec + 3600 },
     ADMIN_E2E_SESSION_SECRET,
     "HS256",
   );

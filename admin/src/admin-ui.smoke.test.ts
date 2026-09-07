@@ -8317,6 +8317,46 @@ describe("admin UI — PRs page", () => {
     });
     expect(res.status).toBe(403);
   });
+
+  // authz-missing-check (fail-open isAdmin default): getSessionUser must treat
+  // a session token that omits the isAdmin claim — or sets it to any non-true
+  // value — as non-admin, not as admin-by-default.
+  it("GET /admin/prs returns 403 when the session token omits the isAdmin claim entirely", async () => {
+    const omittedAdminClaimCookie = await sign(
+      {
+        userId: "google-sub-no-claim",
+        email: "no-claim@example.com",
+        iat: Math.floor(Date.now() / 1000),
+        exp: Math.floor(Date.now() / 1000) + 3600,
+      },
+      SESSION_SECRET,
+      "HS256",
+    );
+    const app = createAdminUIApp(makeMockDeps());
+    const res = await app.request("/admin/prs", {
+      headers: { Cookie: `admin_session=${omittedAdminClaimCookie}` },
+    });
+    expect(res.status).toBe(403);
+  });
+
+  it("GET /admin/prs returns 403 when the session token's isAdmin claim is a non-boolean truthy value", async () => {
+    const nonBooleanAdminClaimCookie = await sign(
+      {
+        userId: "google-sub-string-claim",
+        email: "string-claim@example.com",
+        isAdmin: "true",
+        iat: Math.floor(Date.now() / 1000),
+        exp: Math.floor(Date.now() / 1000) + 3600,
+      },
+      SESSION_SECRET,
+      "HS256",
+    );
+    const app = createAdminUIApp(makeMockDeps());
+    const res = await app.request("/admin/prs", {
+      headers: { Cookie: `admin_session=${nonBooleanAdminClaimCookie}` },
+    });
+    expect(res.status).toBe(403);
+  });
 });
 
 // ─── Public task board ────────────────────────────────────────────────────────
