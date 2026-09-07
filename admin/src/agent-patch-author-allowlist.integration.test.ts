@@ -106,7 +106,12 @@ function makeDeps(prisma: PrismaClient): AdminDeps {
   const savedKey = process.env.SHIPWRIGHT_ENCRYPTION_KEY;
   process.env.SHIPWRIGHT_ENCRYPTION_KEY = REAL_KEY;
   const crypto = makeTokenCrypto();
-  process.env.SHIPWRIGHT_ENCRYPTION_KEY = savedKey;
+  if (savedKey === undefined) {
+    // biome-ignore lint/performance/noDelete: process.env deletion is intentional — assignment stringifies to "undefined"
+    delete process.env.SHIPWRIGHT_ENCRYPTION_KEY;
+  } else {
+    process.env.SHIPWRIGHT_ENCRYPTION_KEY = savedKey;
+  }
 
   return {
     agentService: new AgentService(prisma),
