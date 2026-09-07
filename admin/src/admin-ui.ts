@@ -498,7 +498,7 @@ async function getSessionUser(
       typeof payload.email === "string" &&
       payload.email.length > 0
     ) {
-      return { email: payload.email, isAdmin: payload.isAdmin !== false };
+      return { email: payload.email, isAdmin: payload.isAdmin === true };
     }
     return null;
   } catch {
