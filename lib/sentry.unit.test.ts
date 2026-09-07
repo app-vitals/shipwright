@@ -31,7 +31,12 @@ beforeEach(() => {
 
 afterEach(() => {
   for (const key of ENV_KEYS_UNDER_TEST) {
-    process.env[key] = originalEnv[key];
+    const original = originalEnv[key];
+    if (original === undefined) {
+      delete process.env[key];
+    } else {
+      process.env[key] = original;
+    }
   }
 });
 
