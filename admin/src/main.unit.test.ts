@@ -238,14 +238,16 @@ describe("runMigrations", () => {
 
   afterEach(() => {
     if (originalUrl === undefined) {
-      process.env.DATABASE_URL_SHIPWRIGHT_ADMIN = undefined;
+      // biome-ignore lint/performance/noDelete: process.env deletion is intentional — assignment stringifies to "undefined"
+      delete process.env.DATABASE_URL_SHIPWRIGHT_ADMIN;
     } else {
       process.env.DATABASE_URL_SHIPWRIGHT_ADMIN = originalUrl;
     }
   });
 
   it("returns early without spawning a process when DATABASE_URL_SHIPWRIGHT_ADMIN is unset", async () => {
-    process.env.DATABASE_URL_SHIPWRIGHT_ADMIN = undefined;
+    // biome-ignore lint/performance/noDelete: process.env deletion is intentional — assignment stringifies to "undefined"
+    delete process.env.DATABASE_URL_SHIPWRIGHT_ADMIN;
     await expect(runMigrations()).resolves.toBeUndefined();
   });
 });

@@ -41,11 +41,13 @@ describe("config.claude", () => {
     process.env.ANTHROPIC_FALLBACK_MODEL = "claude-sonnet-4-6";
     const { config: cfg } = createConfig(AGENT_HOME);
     expect(cfg.claude.fallbackModel).toBe("claude-sonnet-4-6");
-    process.env.ANTHROPIC_FALLBACK_MODEL = undefined;
+    // biome-ignore lint/performance/noDelete: process.env deletion is intentional — assignment stringifies to "undefined"
+    delete process.env.ANTHROPIC_FALLBACK_MODEL;
   });
 
   test("fallbackModel is undefined when ANTHROPIC_FALLBACK_MODEL not set", () => {
-    process.env.ANTHROPIC_FALLBACK_MODEL = undefined;
+    // biome-ignore lint/performance/noDelete: process.env deletion is intentional — assignment stringifies to "undefined"
+    delete process.env.ANTHROPIC_FALLBACK_MODEL;
     const { config: cfg } = createConfig(AGENT_HOME);
     expect(cfg.claude.fallbackModel).toBeUndefined();
   });
@@ -54,11 +56,13 @@ describe("config.claude", () => {
     process.env.ANTHROPIC_EFFORT_LEVEL = "xhigh";
     const { config: cfg } = createConfig(AGENT_HOME);
     expect(cfg.claude.effortLevel).toBe("xhigh");
-    process.env.ANTHROPIC_EFFORT_LEVEL = undefined;
+    // biome-ignore lint/performance/noDelete: process.env deletion is intentional — assignment stringifies to "undefined"
+    delete process.env.ANTHROPIC_EFFORT_LEVEL;
   });
 
   test("effortLevel is undefined when ANTHROPIC_EFFORT_LEVEL not set", () => {
-    process.env.ANTHROPIC_EFFORT_LEVEL = undefined;
+    // biome-ignore lint/performance/noDelete: process.env deletion is intentional — assignment stringifies to "undefined"
+    delete process.env.ANTHROPIC_EFFORT_LEVEL;
     const { config: cfg } = createConfig(AGENT_HOME);
     expect(cfg.claude.effortLevel).toBeUndefined();
   });
@@ -67,18 +71,21 @@ describe("config.claude", () => {
     process.env.ANTHROPIC_API_KEY = "sk-ant-test-key";
     const { config: cfg } = createConfig(AGENT_HOME);
     expect(cfg.claude.anthropicApiKey).toBe("sk-ant-test-key");
-    process.env.ANTHROPIC_API_KEY = undefined;
+    // biome-ignore lint/performance/noDelete: process.env deletion is intentional — assignment stringifies to "undefined"
+    delete process.env.ANTHROPIC_API_KEY;
   });
 
   test("anthropicApiKey is undefined when ANTHROPIC_API_KEY not set", () => {
-    process.env.ANTHROPIC_API_KEY = undefined;
+    // biome-ignore lint/performance/noDelete: process.env deletion is intentional — assignment stringifies to "undefined"
+    delete process.env.ANTHROPIC_API_KEY;
     const { config: cfg } = createConfig(AGENT_HOME);
     expect(cfg.claude.anthropicApiKey).toBeUndefined();
   });
 
   test("model defaults to claude-sonnet-4-6 when ANTHROPIC_MODEL not set", () => {
     const saved = process.env.ANTHROPIC_MODEL;
-    process.env.ANTHROPIC_MODEL = undefined;
+    // biome-ignore lint/performance/noDelete: process.env deletion is intentional — assignment stringifies to "undefined"
+    delete process.env.ANTHROPIC_MODEL;
     const { config: cfg } = createConfig(AGENT_HOME);
     expect(cfg.claude.model).toBe("claude-sonnet-4-6");
     process.env.ANTHROPIC_MODEL = saved;
@@ -92,14 +99,16 @@ describe("config.claude", () => {
     process.env.SHIPWRIGHT_CLAUDE_TIMEOUT_MS = "5400000";
     const { config: cfg } = createConfig(AGENT_HOME);
     expect(cfg.claude.timeoutMs).toBe(5_400_000);
-    process.env.SHIPWRIGHT_CLAUDE_TIMEOUT_MS = undefined;
+    // biome-ignore lint/performance/noDelete: process.env deletion is intentional — assignment stringifies to "undefined"
+    delete process.env.SHIPWRIGHT_CLAUDE_TIMEOUT_MS;
   });
 
   test("timeoutMs falls back to default when non-numeric", () => {
     process.env.SHIPWRIGHT_CLAUDE_TIMEOUT_MS = "not-a-number";
     const { config: cfg } = createConfig(AGENT_HOME);
     expect(cfg.claude.timeoutMs).toBe(3_600_000);
-    process.env.SHIPWRIGHT_CLAUDE_TIMEOUT_MS = undefined;
+    // biome-ignore lint/performance/noDelete: process.env deletion is intentional — assignment stringifies to "undefined"
+    delete process.env.SHIPWRIGHT_CLAUDE_TIMEOUT_MS;
   });
 
   test("timeoutMs falls back to default when zero or negative", () => {
@@ -107,14 +116,16 @@ describe("config.claude", () => {
     expect(createConfig(AGENT_HOME).config.claude.timeoutMs).toBe(3_600_000);
     process.env.SHIPWRIGHT_CLAUDE_TIMEOUT_MS = "-1000";
     expect(createConfig(AGENT_HOME).config.claude.timeoutMs).toBe(3_600_000);
-    process.env.SHIPWRIGHT_CLAUDE_TIMEOUT_MS = undefined;
+    // biome-ignore lint/performance/noDelete: process.env deletion is intentional — assignment stringifies to "undefined"
+    delete process.env.SHIPWRIGHT_CLAUDE_TIMEOUT_MS;
   });
 
   test("timeoutMs falls back to default when non-integer", () => {
     process.env.SHIPWRIGHT_CLAUDE_TIMEOUT_MS = "1500.5";
     const { config: cfg } = createConfig(AGENT_HOME);
     expect(cfg.claude.timeoutMs).toBe(3_600_000);
-    process.env.SHIPWRIGHT_CLAUDE_TIMEOUT_MS = undefined;
+    // biome-ignore lint/performance/noDelete: process.env deletion is intentional — assignment stringifies to "undefined"
+    delete process.env.SHIPWRIGHT_CLAUDE_TIMEOUT_MS;
   });
 
   test("idleTimeoutMs defaults to 25min when SHIPWRIGHT_CLAUDE_IDLE_TIMEOUT_MS not set", () => {
@@ -125,14 +136,16 @@ describe("config.claude", () => {
     process.env.SHIPWRIGHT_CLAUDE_IDLE_TIMEOUT_MS = "900000";
     const { config: cfg } = createConfig(AGENT_HOME);
     expect(cfg.claude.idleTimeoutMs).toBe(900_000);
-    process.env.SHIPWRIGHT_CLAUDE_IDLE_TIMEOUT_MS = undefined;
+    // biome-ignore lint/performance/noDelete: process.env deletion is intentional — assignment stringifies to "undefined"
+    delete process.env.SHIPWRIGHT_CLAUDE_IDLE_TIMEOUT_MS;
   });
 
   test("idleTimeoutMs falls back to default when non-numeric", () => {
     process.env.SHIPWRIGHT_CLAUDE_IDLE_TIMEOUT_MS = "not-a-number";
     const { config: cfg } = createConfig(AGENT_HOME);
     expect(cfg.claude.idleTimeoutMs).toBe(1_500_000);
-    process.env.SHIPWRIGHT_CLAUDE_IDLE_TIMEOUT_MS = undefined;
+    // biome-ignore lint/performance/noDelete: process.env deletion is intentional — assignment stringifies to "undefined"
+    delete process.env.SHIPWRIGHT_CLAUDE_IDLE_TIMEOUT_MS;
   });
 
   test("idleTimeoutMs falls back to default when zero or negative", () => {
@@ -144,14 +157,16 @@ describe("config.claude", () => {
     expect(createConfig(AGENT_HOME).config.claude.idleTimeoutMs).toBe(
       1_500_000,
     );
-    process.env.SHIPWRIGHT_CLAUDE_IDLE_TIMEOUT_MS = undefined;
+    // biome-ignore lint/performance/noDelete: process.env deletion is intentional — assignment stringifies to "undefined"
+    delete process.env.SHIPWRIGHT_CLAUDE_IDLE_TIMEOUT_MS;
   });
 
   test("idleTimeoutMs falls back to default when non-integer", () => {
     process.env.SHIPWRIGHT_CLAUDE_IDLE_TIMEOUT_MS = "1500.5";
     const { config: cfg } = createConfig(AGENT_HOME);
     expect(cfg.claude.idleTimeoutMs).toBe(1_500_000);
-    process.env.SHIPWRIGHT_CLAUDE_IDLE_TIMEOUT_MS = undefined;
+    // biome-ignore lint/performance/noDelete: process.env deletion is intentional — assignment stringifies to "undefined"
+    delete process.env.SHIPWRIGHT_CLAUDE_IDLE_TIMEOUT_MS;
   });
 });
 
@@ -172,7 +187,8 @@ describe("config.shipwright", () => {
 
   test("apiUrl is undefined when SHIPWRIGHT_API_URL not set", () => {
     const saved = process.env.SHIPWRIGHT_API_URL;
-    process.env.SHIPWRIGHT_API_URL = undefined;
+    // biome-ignore lint/performance/noDelete: process.env deletion is intentional — assignment stringifies to "undefined"
+    delete process.env.SHIPWRIGHT_API_URL;
     const { config: cfg } = createConfig(AGENT_HOME);
     expect(cfg.shipwright.apiUrl).toBeUndefined();
     process.env.SHIPWRIGHT_API_URL = saved;
@@ -203,11 +219,13 @@ describe("config.slack", () => {
     process.env.SLACK_BOT_TOKEN = "xoxb-test-bot";
     const { config: cfg } = createConfig(AGENT_HOME);
     expect(cfg.slack.botToken).toBe("xoxb-test-bot");
-    process.env.SLACK_BOT_TOKEN = undefined;
+    // biome-ignore lint/performance/noDelete: process.env deletion is intentional — assignment stringifies to "undefined"
+    delete process.env.SLACK_BOT_TOKEN;
   });
 
   test("botToken is undefined when SLACK_BOT_TOKEN not set", () => {
-    process.env.SLACK_BOT_TOKEN = undefined;
+    // biome-ignore lint/performance/noDelete: process.env deletion is intentional — assignment stringifies to "undefined"
+    delete process.env.SLACK_BOT_TOKEN;
     const { config: cfg } = createConfig(AGENT_HOME);
     expect(cfg.slack.botToken).toBeUndefined();
   });
@@ -216,11 +234,13 @@ describe("config.slack", () => {
     process.env.SLACK_APP_TOKEN = "xapp-test-token";
     const { config: cfg } = createConfig(AGENT_HOME);
     expect(cfg.slack.appToken).toBe("xapp-test-token");
-    process.env.SLACK_APP_TOKEN = undefined;
+    // biome-ignore lint/performance/noDelete: process.env deletion is intentional — assignment stringifies to "undefined"
+    delete process.env.SLACK_APP_TOKEN;
   });
 
   test("appToken is undefined when SLACK_APP_TOKEN not set", () => {
-    process.env.SLACK_APP_TOKEN = undefined;
+    // biome-ignore lint/performance/noDelete: process.env deletion is intentional — assignment stringifies to "undefined"
+    delete process.env.SLACK_APP_TOKEN;
     const { config: cfg } = createConfig(AGENT_HOME);
     expect(cfg.slack.appToken).toBeUndefined();
   });
@@ -229,11 +249,13 @@ describe("config.slack", () => {
     process.env.SLACK_SIGNING_SECRET = "abc123secret";
     const { config: cfg } = createConfig(AGENT_HOME);
     expect(cfg.slack.signingSecret).toBe("abc123secret");
-    process.env.SLACK_SIGNING_SECRET = undefined;
+    // biome-ignore lint/performance/noDelete: process.env deletion is intentional — assignment stringifies to "undefined"
+    delete process.env.SLACK_SIGNING_SECRET;
   });
 
   test("signingSecret is undefined when SLACK_SIGNING_SECRET not set", () => {
-    process.env.SLACK_SIGNING_SECRET = undefined;
+    // biome-ignore lint/performance/noDelete: process.env deletion is intentional — assignment stringifies to "undefined"
+    delete process.env.SLACK_SIGNING_SECRET;
     const { config: cfg } = createConfig(AGENT_HOME);
     expect(cfg.slack.signingSecret).toBeUndefined();
   });
@@ -242,11 +264,13 @@ describe("config.slack", () => {
     process.env.SLACK_ADMIN_TOKEN = "xoxp-admin-token";
     const { config: cfg } = createConfig(AGENT_HOME);
     expect(cfg.slack.adminToken).toBe("xoxp-admin-token");
-    process.env.SLACK_ADMIN_TOKEN = undefined;
+    // biome-ignore lint/performance/noDelete: process.env deletion is intentional — assignment stringifies to "undefined"
+    delete process.env.SLACK_ADMIN_TOKEN;
   });
 
   test("adminToken is undefined when SLACK_ADMIN_TOKEN not set", () => {
-    process.env.SLACK_ADMIN_TOKEN = undefined;
+    // biome-ignore lint/performance/noDelete: process.env deletion is intentional — assignment stringifies to "undefined"
+    delete process.env.SLACK_ADMIN_TOKEN;
     const { config: cfg } = createConfig(AGENT_HOME);
     expect(cfg.slack.adminToken).toBeUndefined();
   });
@@ -259,11 +283,13 @@ describe("config.alerts", () => {
     process.env.SLACK_ALERT_CHANNEL = "#alerts";
     const { config: cfg } = createConfig(AGENT_HOME);
     expect(cfg.alerts.channel).toBe("#alerts");
-    process.env.SLACK_ALERT_CHANNEL = undefined;
+    // biome-ignore lint/performance/noDelete: process.env deletion is intentional — assignment stringifies to "undefined"
+    delete process.env.SLACK_ALERT_CHANNEL;
   });
 
   test("channel is undefined when SLACK_ALERT_CHANNEL not set", () => {
-    process.env.SLACK_ALERT_CHANNEL = undefined;
+    // biome-ignore lint/performance/noDelete: process.env deletion is intentional — assignment stringifies to "undefined"
+    delete process.env.SLACK_ALERT_CHANNEL;
     const { config: cfg } = createConfig(AGENT_HOME);
     expect(cfg.alerts.channel).toBeUndefined();
   });
@@ -276,11 +302,13 @@ describe("config.owner", () => {
     process.env.SLACK_OWNER_USER = "U012AB3CD";
     const { config: cfg } = createConfig(AGENT_HOME);
     expect(cfg.owner.user).toBe("U012AB3CD");
-    process.env.SLACK_OWNER_USER = undefined;
+    // biome-ignore lint/performance/noDelete: process.env deletion is intentional — assignment stringifies to "undefined"
+    delete process.env.SLACK_OWNER_USER;
   });
 
   test("user is undefined when SLACK_OWNER_USER not set", () => {
-    process.env.SLACK_OWNER_USER = undefined;
+    // biome-ignore lint/performance/noDelete: process.env deletion is intentional — assignment stringifies to "undefined"
+    delete process.env.SLACK_OWNER_USER;
     const { config: cfg } = createConfig(AGENT_HOME);
     expect(cfg.owner.user).toBeUndefined();
   });
@@ -293,11 +321,13 @@ describe("config.voice", () => {
     process.env.GROQ_API_KEY = "gsk-test-key";
     const { config: cfg } = createConfig(AGENT_HOME);
     expect(cfg.voice.groqApiKey).toBe("gsk-test-key");
-    process.env.GROQ_API_KEY = undefined;
+    // biome-ignore lint/performance/noDelete: process.env deletion is intentional — assignment stringifies to "undefined"
+    delete process.env.GROQ_API_KEY;
   });
 
   test("groqApiKey is undefined when GROQ_API_KEY not set", () => {
-    process.env.GROQ_API_KEY = undefined;
+    // biome-ignore lint/performance/noDelete: process.env deletion is intentional — assignment stringifies to "undefined"
+    delete process.env.GROQ_API_KEY;
     const { config: cfg } = createConfig(AGENT_HOME);
     expect(cfg.voice.groqApiKey).toBeUndefined();
   });
@@ -306,11 +336,13 @@ describe("config.voice", () => {
     process.env.ELEVENLABS_API_KEY = "eleven-test-key";
     const { config: cfg } = createConfig(AGENT_HOME);
     expect(cfg.voice.elevenLabsApiKey).toBe("eleven-test-key");
-    process.env.ELEVENLABS_API_KEY = undefined;
+    // biome-ignore lint/performance/noDelete: process.env deletion is intentional — assignment stringifies to "undefined"
+    delete process.env.ELEVENLABS_API_KEY;
   });
 
   test("elevenLabsApiKey is undefined when ELEVENLABS_API_KEY not set", () => {
-    process.env.ELEVENLABS_API_KEY = undefined;
+    // biome-ignore lint/performance/noDelete: process.env deletion is intentional — assignment stringifies to "undefined"
+    delete process.env.ELEVENLABS_API_KEY;
     const { config: cfg } = createConfig(AGENT_HOME);
     expect(cfg.voice.elevenLabsApiKey).toBeUndefined();
   });
@@ -319,11 +351,13 @@ describe("config.voice", () => {
     process.env.ELEVENLABS_VOICE_ID = "voice-abc";
     const { config: cfg } = createConfig(AGENT_HOME);
     expect(cfg.voice.voiceId).toBe("voice-abc");
-    process.env.ELEVENLABS_VOICE_ID = undefined;
+    // biome-ignore lint/performance/noDelete: process.env deletion is intentional — assignment stringifies to "undefined"
+    delete process.env.ELEVENLABS_VOICE_ID;
   });
 
   test("voiceId is undefined when ELEVENLABS_VOICE_ID not set", () => {
-    process.env.ELEVENLABS_VOICE_ID = undefined;
+    // biome-ignore lint/performance/noDelete: process.env deletion is intentional — assignment stringifies to "undefined"
+    delete process.env.ELEVENLABS_VOICE_ID;
     const { config: cfg } = createConfig(AGENT_HOME);
     expect(cfg.voice.voiceId).toBeUndefined();
   });
@@ -332,11 +366,13 @@ describe("config.voice", () => {
     process.env.PIPER_VOICE = "en_GB-alan-medium";
     const { config: cfg } = createConfig(AGENT_HOME);
     expect(cfg.voice.piperVoice).toBe("en_GB-alan-medium");
-    process.env.PIPER_VOICE = undefined;
+    // biome-ignore lint/performance/noDelete: process.env deletion is intentional — assignment stringifies to "undefined"
+    delete process.env.PIPER_VOICE;
   });
 
   test("piperVoice is undefined when PIPER_VOICE not set", () => {
-    process.env.PIPER_VOICE = undefined;
+    // biome-ignore lint/performance/noDelete: process.env deletion is intentional — assignment stringifies to "undefined"
+    delete process.env.PIPER_VOICE;
     const { config: cfg } = createConfig(AGENT_HOME);
     expect(cfg.voice.piperVoice).toBeUndefined();
   });
@@ -345,11 +381,13 @@ describe("config.voice", () => {
     process.env.WHISPER_SERVICE_URL = "http://localhost:9000";
     const { config: cfg } = createConfig(AGENT_HOME);
     expect(cfg.voice.whisperServiceUrl).toBe("http://localhost:9000");
-    process.env.WHISPER_SERVICE_URL = undefined;
+    // biome-ignore lint/performance/noDelete: process.env deletion is intentional — assignment stringifies to "undefined"
+    delete process.env.WHISPER_SERVICE_URL;
   });
 
   test("whisperServiceUrl is undefined when WHISPER_SERVICE_URL not set", () => {
-    process.env.WHISPER_SERVICE_URL = undefined;
+    // biome-ignore lint/performance/noDelete: process.env deletion is intentional — assignment stringifies to "undefined"
+    delete process.env.WHISPER_SERVICE_URL;
     const { config: cfg } = createConfig(AGENT_HOME);
     expect(cfg.voice.whisperServiceUrl).toBeUndefined();
   });

@@ -132,8 +132,9 @@ jobs:
         with:
           # Pinned, not floating "1.x": Bun 1.4.0 changed `process.env.KEY =
           # undefined` to coerce to the string "undefined" instead of
-          # deleting the key, breaking every "falls back when unset" test in
-          # this suite (lib/sentry.unit.test.ts and friends). Last known-good.
+          # deleting the key. Every "falls back when unset" test in this repo
+          # (lib/sentry.unit.test.ts and friends) now uses `delete
+          # process.env.KEY` instead, which behaves the same across versions.
           bun-version: "1.4.2"
 
       - name: Install go-task

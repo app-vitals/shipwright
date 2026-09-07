@@ -83,11 +83,13 @@ describe("validateRequiredEnv", () => {
 
 describe("getPublicMode", () => {
   beforeEach(() => {
-    process.env.SHIPWRIGHT_METRICS_PUBLIC_MODE = undefined;
+    // biome-ignore lint/performance/noDelete: process.env deletion is intentional — assignment stringifies to "undefined"
+    delete process.env.SHIPWRIGHT_METRICS_PUBLIC_MODE;
   });
 
   afterEach(() => {
-    process.env.SHIPWRIGHT_METRICS_PUBLIC_MODE = undefined;
+    // biome-ignore lint/performance/noDelete: process.env deletion is intentional — assignment stringifies to "undefined"
+    delete process.env.SHIPWRIGHT_METRICS_PUBLIC_MODE;
   });
 
   it("returns false by default", () => {
@@ -116,11 +118,13 @@ describe("getPublicMode", () => {
 
 describe("getPublicRepo", () => {
   beforeEach(() => {
-    process.env.SHIPWRIGHT_METRICS_PUBLIC_REPO = undefined;
+    // biome-ignore lint/performance/noDelete: process.env deletion is intentional — assignment stringifies to "undefined"
+    delete process.env.SHIPWRIGHT_METRICS_PUBLIC_REPO;
   });
 
   afterEach(() => {
-    process.env.SHIPWRIGHT_METRICS_PUBLIC_REPO = undefined;
+    // biome-ignore lint/performance/noDelete: process.env deletion is intentional — assignment stringifies to "undefined"
+    delete process.env.SHIPWRIGHT_METRICS_PUBLIC_REPO;
   });
 
   it("returns undefined when unset", () => {
@@ -135,13 +139,17 @@ describe("getPublicRepo", () => {
 
 describe("validatePublicModeEnv", () => {
   beforeEach(() => {
-    process.env.SHIPWRIGHT_METRICS_PUBLIC_MODE = undefined;
-    process.env.SHIPWRIGHT_METRICS_PUBLIC_REPO = undefined;
+    // biome-ignore lint/performance/noDelete: process.env deletion is intentional — assignment stringifies to "undefined"
+    delete process.env.SHIPWRIGHT_METRICS_PUBLIC_MODE;
+    // biome-ignore lint/performance/noDelete: process.env deletion is intentional — assignment stringifies to "undefined"
+    delete process.env.SHIPWRIGHT_METRICS_PUBLIC_REPO;
   });
 
   afterEach(() => {
-    process.env.SHIPWRIGHT_METRICS_PUBLIC_MODE = undefined;
-    process.env.SHIPWRIGHT_METRICS_PUBLIC_REPO = undefined;
+    // biome-ignore lint/performance/noDelete: process.env deletion is intentional — assignment stringifies to "undefined"
+    delete process.env.SHIPWRIGHT_METRICS_PUBLIC_MODE;
+    // biome-ignore lint/performance/noDelete: process.env deletion is intentional — assignment stringifies to "undefined"
+    delete process.env.SHIPWRIGHT_METRICS_PUBLIC_REPO;
   });
 
   it("does nothing when PUBLIC_MODE is false", () => {
