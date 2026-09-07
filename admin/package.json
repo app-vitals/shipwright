@@ -14,7 +14,7 @@
     "db:migrate": "prisma migrate deploy --schema=prisma/schema.prisma"
   },
   "dependencies": {
-    "@hono/zod-openapi": "^0.18.3",
+    "@hono/zod-openapi": "^0.19.0",
     "@prisma/client": "^6.19.2",
     "@sentry/bun": "^10.63.0",
     "@sentry/hono": "^10.63.0",
