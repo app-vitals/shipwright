@@ -34,6 +34,11 @@ export interface PushPrismaLike {
       where: { threadId: string };
       select: { userEmail: true };
     }): Promise<Array<{ userEmail: string }>>;
+    upsert(args: {
+      where: { userEmail_threadId: { userEmail: string; threadId: string } };
+      create: { userEmail: string; threadId: string; agentId: string };
+      update: { agentId: string };
+    }): Promise<{ id: string }>;
   };
   pushSubscription: {
     findMany(args: {
@@ -47,11 +52,37 @@ export interface PushPrismaLike {
         detailOptIn: string;
       }>
     >;
-    deleteMany(args: {
-      where: { endpoint: { in: string[] } };
-    }): Promise<{ count: number }>;
+    upsert(args: {
+      where: { endpoint: string };
+      create: {
+        userEmail: string;
+        endpoint: string;
+        p256dh: string;
+        auth: string;
+      };
+      update: { userEmail: string; p256dh: string; auth: string };
+    }): Promise<{ id: string }>;
+    deleteMany(
+      args:
+        | { where: { endpoint: { in: string[] } } }
+        | { where: { endpoint: string; userEmail?: string } },
+    ): Promise<{ count: number }>;
   };
 }
+
+/** Outcome of PushService.subscribe — distinguishes the three response shapes
+ * the route handler maps to HTTP status (503 unavailable / 500 store_failed /
+ * 200 ok). */
+export type PushSubscribeResult =
+  | { ok: true }
+  | { ok: false; reason: "unavailable" | "store_failed" };
+
+/** Outcome of PushService.unsubscribe — delete failures are swallowed/logged
+ * inside the service (best-effort), so only "unavailable" (model missing) is
+ * distinguished from success. */
+export type PushUnsubscribeResult =
+  | { ok: true }
+  | { ok: false; reason: "unavailable" };
 
 export class PushService {
   private readonly sender: PushSender;
@@ -135,5 +166,80 @@ export class PushService {
       console.error("[push] notifyThreadReply failed:", err);
       return { delivered: 0, pruned: 0 };
     }
+  }
+
+  /**
+   * Best-effort upsert of a ChatThreadWatch row (CFB-4.2). Never throws into
+   * a request cycle — push is a convenience layer, so a watch-write failure
+   * must not fail the message send it rides along with. The `!this.prisma.
+   * chatThreadWatch` guard is load-bearing: main.ts constructs this service
+   * with `prisma as never`, bypassing type-checking, so the real client may
+   * genuinely lack this model if a migration hasn't landed yet.
+   */
+  async recordWatch(
+    userEmail: string,
+    agentId: string,
+    threadId: string,
+  ): Promise<void> {
+    if (!this.prisma.chatThreadWatch) return;
+    try {
+      await this.prisma.chatThreadWatch.upsert({
+        where: { userEmail_threadId: { userEmail, threadId } },
+        create: { userEmail, threadId, agentId },
+        update: { agentId },
+      });
+    } catch (err) {
+      console.error("[push] watchThread upsert failed:", err);
+    }
+  }
+
+  /**
+   * Upserts a browser push subscription for userEmail. The `unavailable`
+   * reason covers the same not-yet-migrated case as recordWatch's guard;
+   * `store_failed` surfaces an upsert error to the caller (unlike
+   * recordWatch/unsubscribe, this one isn't swallowed — the client needs to
+   * know its subscription didn't stick).
+   */
+  async subscribe(
+    userEmail: string,
+    endpoint: string,
+    p256dh: string,
+    auth: string,
+  ): Promise<PushSubscribeResult> {
+    if (!this.prisma.pushSubscription)
+      return { ok: false, reason: "unavailable" };
+    try {
+      await this.prisma.pushSubscription.upsert({
+        where: { endpoint },
+        create: { userEmail, endpoint, p256dh, auth },
+        update: { userEmail, p256dh, auth },
+      });
+      return { ok: true };
+    } catch (err) {
+      console.error("[push] subscribe upsert failed:", err);
+      return { ok: false, reason: "store_failed" };
+    }
+  }
+
+  /**
+   * Deletes a browser push subscription, scoped to both endpoint and
+   * userEmail — this scoping prevents a stale endpoint from pruning another
+   * user's subscription. Delete failures are best-effort: logged and
+   * swallowed, never surfaced as a distinct outcome.
+   */
+  async unsubscribe(
+    userEmail: string,
+    endpoint: string,
+  ): Promise<PushUnsubscribeResult> {
+    if (!this.prisma.pushSubscription)
+      return { ok: false, reason: "unavailable" };
+    try {
+      await this.prisma.pushSubscription.deleteMany({
+        where: { endpoint, userEmail },
+      });
+    } catch (err) {
+      console.error("[push] unsubscribe delete failed:", err);
+    }
+    return { ok: true };
   }
 }
