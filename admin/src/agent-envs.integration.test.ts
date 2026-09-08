@@ -93,8 +93,12 @@ describeOrSkip("AgentEnvService (integration)", () => {
       const result = await encService.getByAgentId(agentId);
       expect(result?.env.SECRET).toBe("my-api-key");
     } finally {
-      process.env.SHIPWRIGHT_ENCRYPTION_KEY =
-        origKey === undefined ? undefined : origKey;
+      if (origKey === undefined) {
+        // biome-ignore lint/performance/noDelete: process.env deletion is intentional — assignment stringifies to "undefined"
+        delete process.env.SHIPWRIGHT_ENCRYPTION_KEY;
+      } else {
+        process.env.SHIPWRIGHT_ENCRYPTION_KEY = origKey;
+      }
     }
   });
 

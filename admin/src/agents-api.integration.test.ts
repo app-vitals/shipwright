@@ -134,7 +134,12 @@ function makeDeps(
   const savedKey = process.env.SHIPWRIGHT_ENCRYPTION_KEY;
   process.env.SHIPWRIGHT_ENCRYPTION_KEY = REAL_KEY;
   const crypto = makeTokenCrypto();
-  process.env.SHIPWRIGHT_ENCRYPTION_KEY = savedKey;
+  if (savedKey === undefined) {
+    // biome-ignore lint/performance/noDelete: process.env deletion is intentional — assignment stringifies to "undefined"
+    delete process.env.SHIPWRIGHT_ENCRYPTION_KEY;
+  } else {
+    process.env.SHIPWRIGHT_ENCRYPTION_KEY = savedKey;
+  }
 
   return {
     agentService: new AgentService(prisma),
@@ -214,7 +219,12 @@ describeOrSkip("admin CRUD API (integration)", () => {
       expect(raw?.value).not.toBe("my-api-key");
       expect(raw?.value).toContain(":"); // iv:ciphertext:authTag format
     } finally {
-      process.env.SHIPWRIGHT_ENCRYPTION_KEY = savedKey;
+      if (savedKey === undefined) {
+        // biome-ignore lint/performance/noDelete: process.env deletion is intentional — assignment stringifies to "undefined"
+        delete process.env.SHIPWRIGHT_ENCRYPTION_KEY;
+      } else {
+        process.env.SHIPWRIGHT_ENCRYPTION_KEY = savedKey;
+      }
     }
   });
 
@@ -241,7 +251,12 @@ describeOrSkip("admin CRUD API (integration)", () => {
       const body = await res.json();
       expect(body.env.SECRET).toBe("my-api-key");
     } finally {
-      process.env.SHIPWRIGHT_ENCRYPTION_KEY = savedKey;
+      if (savedKey === undefined) {
+        // biome-ignore lint/performance/noDelete: process.env deletion is intentional — assignment stringifies to "undefined"
+        delete process.env.SHIPWRIGHT_ENCRYPTION_KEY;
+      } else {
+        process.env.SHIPWRIGHT_ENCRYPTION_KEY = savedKey;
+      }
     }
   });
 

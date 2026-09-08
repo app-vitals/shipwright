@@ -25,19 +25,25 @@ const originalEnv: Record<string, string | undefined> = {};
 beforeEach(() => {
   for (const key of ENV_KEYS_UNDER_TEST) {
     originalEnv[key] = process.env[key];
-    process.env[key] = undefined;
+    delete process.env[key];
   }
 });
 
 afterEach(() => {
   for (const key of ENV_KEYS_UNDER_TEST) {
-    process.env[key] = originalEnv[key];
+    const original = originalEnv[key];
+    if (original === undefined) {
+      delete process.env[key];
+    } else {
+      process.env[key] = original;
+    }
   }
 });
 
 describe("initSentry — SENTRY_DSN unset", () => {
   test("never calls sentryClient.init", () => {
-    process.env.SENTRY_DSN = undefined;
+    // biome-ignore lint/performance/noDelete: process.env deletion is intentional — assignment stringifies to "undefined"
+    delete process.env.SENTRY_DSN;
     const fakeClient = createFakeSentryClient();
 
     initSentry({ service: "metrics" }, fakeClient);
@@ -93,7 +99,8 @@ describe("initSentry — SENTRY_DSN set", () => {
       "staging",
     );
 
-    process.env.SENTRY_ENVIRONMENT = undefined;
+    // biome-ignore lint/performance/noDelete: process.env deletion is intentional — assignment stringifies to "undefined"
+    delete process.env.SENTRY_ENVIRONMENT;
     process.env.NODE_ENV = "development";
     fakeClient = createFakeSentryClient();
     initSentry({ service: "agent" }, fakeClient);
@@ -101,8 +108,10 @@ describe("initSentry — SENTRY_DSN set", () => {
       "development",
     );
 
-    process.env.SENTRY_ENVIRONMENT = undefined;
-    process.env.NODE_ENV = undefined;
+    // biome-ignore lint/performance/noDelete: process.env deletion is intentional — assignment stringifies to "undefined"
+    delete process.env.SENTRY_ENVIRONMENT;
+    // biome-ignore lint/performance/noDelete: process.env deletion is intentional — assignment stringifies to "undefined"
+    delete process.env.NODE_ENV;
     fakeClient = createFakeSentryClient();
     initSentry({ service: "agent" }, fakeClient);
     expect((fakeClient.calls[0] as { environment: string }).environment).toBe(

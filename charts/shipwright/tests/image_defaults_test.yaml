@@ -123,4 +123,4 @@ tests:
     asserts:
       - equal:
           path: spec.template.spec.containers[0].image
-          value: mirror.example.com/onerahmet/openai-whisper-asr-webservice:v1.3.0
+          value: mirror.example.com/onerahmet/openai-whisper-asr-webservice:v1.10.0

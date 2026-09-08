@@ -137,14 +137,16 @@ describe("makeTokenCrypto", () => {
 
   afterEach(() => {
     if (originalKey === undefined) {
-      process.env.SHIPWRIGHT_ENCRYPTION_KEY = undefined;
+      // biome-ignore lint/performance/noDelete: process.env deletion is intentional — assignment stringifies to "undefined"
+      delete process.env.SHIPWRIGHT_ENCRYPTION_KEY;
     } else {
       process.env.SHIPWRIGHT_ENCRYPTION_KEY = originalKey;
     }
   });
 
   it("returns identityCrypto when SHIPWRIGHT_ENCRYPTION_KEY is not set", () => {
-    process.env.SHIPWRIGHT_ENCRYPTION_KEY = undefined;
+    // biome-ignore lint/performance/noDelete: process.env deletion is intentional — assignment stringifies to "undefined"
+    delete process.env.SHIPWRIGHT_ENCRYPTION_KEY;
     const crypto = makeTokenCrypto();
     const token = "my-secret-token";
     expect(crypto.encrypt(token)).toBe(token);
