@@ -10,6 +10,12 @@ independent of `appVersion`. CI enforces this with
 `ct lint --check-version-increment`. Each release here must mirror the
 `artifacthub.io/changes` annotation in `Chart.yaml`.
 
+## [1.19.130] - 2026-09-08
+
+### Changed
+
+- chart version bump to 1.19.130 — rebase past main's chart v1.19.129 (Whisper ASR image bump v1.3.0 -> v1.10.0 required a version bump `ct lint --check-version-increment` enforces)
+
 ## [1.19.129] - 2026-09-08
 
 ### Changed
