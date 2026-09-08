@@ -1181,8 +1181,13 @@ function makeFakePushService(
     delivered: 0,
     pruned: 0,
   }),
+  recordWatch: (
+    userEmail: string,
+    agentId: string,
+    threadId: string,
+  ) => Promise<void> = async () => {},
 ): PushService {
-  return { notifyThreadReply } as unknown as PushService;
+  return { notifyThreadReply, recordWatch } as unknown as PushService;
 }
 
 describe("POST /admin/chat/:agentId/threads/:threadId/messages/upload", () => {
@@ -1247,24 +1252,20 @@ describe("POST /admin/chat/:agentId/threads/:threadId/messages/upload", () => {
     const chatClient = makeMockChatClient();
     const base = makeBaseDeps();
     const watchUpserts: Array<{
-      where: { userEmail_threadId: { userEmail: string; threadId: string } };
-      create: { userEmail: string; threadId: string; agentId: string };
-      update: { agentId: string };
+      userEmail: string;
+      agentId: string;
+      threadId: string;
     }> = [];
     const app = createAdminUIApp({
       ...base,
       chatClient,
-      pushService: makeFakePushService(),
-      vapidPublicKey: "test-vapid-public-key",
-      prisma: {
-        ...base.prisma,
-        chatThreadWatch: {
-          upsert: async (args) => {
-            watchUpserts.push(args);
-            return { id: "watch-1" };
-          },
+      pushService: makeFakePushService(
+        undefined,
+        async (userEmail, agentId, threadId) => {
+          watchUpserts.push({ userEmail, agentId, threadId });
         },
-      },
+      ),
+      vapidPublicKey: "test-vapid-public-key",
     });
     const res = await app.request(
       `/admin/chat/${AGENT_ID}/threads/${THREAD_ID}/messages/upload`,
@@ -1279,7 +1280,7 @@ describe("POST /admin/chat/:agentId/threads/:threadId/messages/upload", () => {
     );
     expect(res.status).toBe(201);
     expect(watchUpserts).toHaveLength(1);
-    expect(watchUpserts[0]?.create).toEqual({
+    expect(watchUpserts[0]).toEqual({
       userEmail: "admin@example.com",
       threadId: THREAD_ID,
       agentId: AGENT_ID,
@@ -1293,16 +1294,11 @@ describe("POST /admin/chat/:agentId/threads/:threadId/messages/upload", () => {
     const app = createAdminUIApp({
       ...base,
       chatClient,
-      // No pushService/vapidPublicKey — pushEnabled stays false.
-      prisma: {
-        ...base.prisma,
-        chatThreadWatch: {
-          upsert: async (args) => {
-            watchUpserts.push(args);
-            return { id: "watch-1" };
-          },
-        },
-      },
+      // No pushService/vapidPublicKey — pushEnabled stays false, so
+      // recordWatch (spied below) must never be invoked.
+      pushService: makeFakePushService(undefined, async () => {
+        watchUpserts.push(true);
+      }),
     });
     const res = await app.request(
       `/admin/chat/${AGENT_ID}/threads/${THREAD_ID}/messages/upload`,

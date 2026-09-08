@@ -148,3 +148,237 @@ describe("PushService.notifyThreadReply", () => {
     expect(levels).toEqual(["generic"]);
   });
 });
+
+// A fetchImpl is required by the PushService constructor but unused by the
+// write-path methods under test below (recordWatch/subscribe/unsubscribe
+// never touch PushSender).
+const unusedFetch = (async () =>
+  new Response(null, { status: 201 })) as unknown as typeof fetch;
+
+describe("PushService.recordWatch", () => {
+  it("upserts a ChatThreadWatch row scoped to userEmail+threadId", async () => {
+    const calls: unknown[] = [];
+    const prisma = {
+      chatThreadWatch: {
+        findMany: async () => [],
+        upsert: async (args: unknown) => {
+          calls.push(args);
+          return { id: "w1" };
+        },
+      },
+      pushSubscription: {
+        findMany: async () => [],
+        deleteMany: async () => ({ count: 0 }),
+      },
+    };
+    const service = new PushService(
+      prisma as never,
+      vapid,
+      unusedFetch,
+      "title",
+    );
+    await service.recordWatch("a@x.com", "agt_1", "thr_1");
+
+    expect(calls).toEqual([
+      {
+        where: {
+          userEmail_threadId: { userEmail: "a@x.com", threadId: "thr_1" },
+        },
+        create: { userEmail: "a@x.com", threadId: "thr_1", agentId: "agt_1" },
+        update: { agentId: "agt_1" },
+      },
+    ]);
+  });
+
+  it("is a no-op when the chatThreadWatch model is absent (migration not applied)", async () => {
+    const prisma = {
+      pushSubscription: {
+        findMany: async () => [],
+        deleteMany: async () => ({ count: 0 }),
+      },
+    };
+    const service = new PushService(
+      prisma as never,
+      vapid,
+      unusedFetch,
+      "title",
+    );
+    await expect(
+      service.recordWatch("a@x.com", "agt_1", "thr_1"),
+    ).resolves.toBeUndefined();
+  });
+
+  it("swallows an upsert failure and never throws into the caller", async () => {
+    const prisma = {
+      chatThreadWatch: {
+        findMany: async () => [],
+        upsert: async () => {
+          throw new Error("db down");
+        },
+      },
+      pushSubscription: {
+        findMany: async () => [],
+        deleteMany: async () => ({ count: 0 }),
+      },
+    };
+    const service = new PushService(
+      prisma as never,
+      vapid,
+      unusedFetch,
+      "title",
+    );
+    await expect(
+      service.recordWatch("a@x.com", "agt_1", "thr_1"),
+    ).resolves.toBeUndefined();
+  });
+});
+
+describe("PushService.subscribe", () => {
+  it("upserts the subscription and returns ok:true", async () => {
+    const calls: unknown[] = [];
+    const prisma = {
+      chatThreadWatch: { findMany: async () => [] },
+      pushSubscription: {
+        findMany: async () => [],
+        deleteMany: async () => ({ count: 0 }),
+        upsert: async (args: unknown) => {
+          calls.push(args);
+          return { id: "sub_1" };
+        },
+      },
+    };
+    const service = new PushService(
+      prisma as never,
+      vapid,
+      unusedFetch,
+      "title",
+    );
+    const result = await service.subscribe(
+      "a@x.com",
+      "https://push/ok",
+      P256DH,
+      AUTH,
+    );
+
+    expect(result).toEqual({ ok: true });
+    expect(calls).toEqual([
+      {
+        where: { endpoint: "https://push/ok" },
+        create: {
+          userEmail: "a@x.com",
+          endpoint: "https://push/ok",
+          p256dh: P256DH,
+          auth: AUTH,
+        },
+        update: { userEmail: "a@x.com", p256dh: P256DH, auth: AUTH },
+      },
+    ]);
+  });
+
+  it("returns reason:unavailable when the pushSubscription model is absent", async () => {
+    const prisma = {
+      chatThreadWatch: { findMany: async () => [] },
+    };
+    const service = new PushService(
+      prisma as never,
+      vapid,
+      unusedFetch,
+      "title",
+    );
+    const result = await service.subscribe(
+      "a@x.com",
+      "https://push/ok",
+      P256DH,
+      AUTH,
+    );
+    expect(result).toEqual({ ok: false, reason: "unavailable" });
+  });
+
+  it("returns reason:store_failed when the upsert throws", async () => {
+    const prisma = {
+      chatThreadWatch: { findMany: async () => [] },
+      pushSubscription: {
+        findMany: async () => [],
+        deleteMany: async () => ({ count: 0 }),
+        upsert: async () => {
+          throw new Error("db down");
+        },
+      },
+    };
+    const service = new PushService(
+      prisma as never,
+      vapid,
+      unusedFetch,
+      "title",
+    );
+    const result = await service.subscribe(
+      "a@x.com",
+      "https://push/ok",
+      P256DH,
+      AUTH,
+    );
+    expect(result).toEqual({ ok: false, reason: "store_failed" });
+  });
+});
+
+describe("PushService.unsubscribe", () => {
+  it("deletes the subscription scoped to endpoint+userEmail and returns ok:true", async () => {
+    const calls: unknown[] = [];
+    const prisma = {
+      chatThreadWatch: { findMany: async () => [] },
+      pushSubscription: {
+        findMany: async () => [],
+        deleteMany: async (args: unknown) => {
+          calls.push(args);
+          return { count: 1 };
+        },
+      },
+    };
+    const service = new PushService(
+      prisma as never,
+      vapid,
+      unusedFetch,
+      "title",
+    );
+    const result = await service.unsubscribe("a@x.com", "https://push/ok");
+
+    expect(result).toEqual({ ok: true });
+    expect(calls).toEqual([
+      { where: { endpoint: "https://push/ok", userEmail: "a@x.com" } },
+    ]);
+  });
+
+  it("returns reason:unavailable when the pushSubscription model is absent", async () => {
+    const prisma = {
+      chatThreadWatch: { findMany: async () => [] },
+    };
+    const service = new PushService(
+      prisma as never,
+      vapid,
+      unusedFetch,
+      "title",
+    );
+    const result = await service.unsubscribe("a@x.com", "https://push/ok");
+    expect(result).toEqual({ ok: false, reason: "unavailable" });
+  });
+
+  it("swallows a deleteMany failure and still returns ok:true", async () => {
+    const prisma = {
+      chatThreadWatch: { findMany: async () => [] },
+      pushSubscription: {
+        findMany: async () => [],
+        deleteMany: async () => {
+          throw new Error("db down");
+        },
+      },
+    };
+    const service = new PushService(
+      prisma as never,
+      vapid,
+      unusedFetch,
+      "title",
+    );
+    const result = await service.unsubscribe("a@x.com", "https://push/ok");
+    expect(result).toEqual({ ok: true });
+  });
+});
