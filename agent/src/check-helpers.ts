@@ -535,8 +535,21 @@ export function createTaskStoreClient(opts?: { fetchFn?: FetchFn }): {
   return {
     async query(params: URLSearchParams): Promise<Task[]> {
       const res = await doFetch(`${baseUrl}/tasks?${params}`, { headers });
-      if (!res.ok)
-        throw new Error(`task-store GET /tasks?${params} → ${res.status}`);
+      if (!res.ok) {
+        // Attach a truncated response body snippet so a 500 (e.g. task-store
+        // DB unreachable) is diagnosable from the thrown error alone, without
+        // cross-referencing task-store's own logs/Sentry events by timestamp.
+        let bodySnippet = "";
+        try {
+          bodySnippet = (await res.text()).slice(0, 500);
+        } catch {
+          // Body unreadable (already consumed, network cut mid-read, etc.) —
+          // fall back to the status-only message below.
+        }
+        throw new Error(
+          `task-store GET /tasks?${params} → ${res.status}${bodySnippet ? ` — ${bodySnippet}` : ""}`,
+        );
+      }
       const data = (await res.json()) as unknown;
       // Temporary: accept legacy bare Task[] from older task-store instances
       if (Array.isArray(data)) return data as Task[];

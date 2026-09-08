@@ -828,6 +828,58 @@ describe("createTaskStoreClient query()", () => {
       ({
         ok: false,
         status: 500,
+        text: async () => "",
+        json: async () => ({}),
+      }) as Response) as unknown as typeof fetch;
+
+    const client = createTaskStoreClient({ fetchFn: fakeFetch });
+    await expect(
+      client.query(new URLSearchParams({ ready: "true" })),
+    ).rejects.toThrow("task-store GET /tasks");
+  });
+
+  test("attaches a truncated response body snippet to the thrown error", async () => {
+    const fakeFetch = (async () =>
+      ({
+        ok: false,
+        status: 500,
+        text: async () => '{"error":"database unreachable"}',
+      }) as Response) as unknown as typeof fetch;
+
+    const client = createTaskStoreClient({ fetchFn: fakeFetch });
+    await expect(
+      client.query(new URLSearchParams({ ready: "true" })),
+    ).rejects.toThrow(/database unreachable/);
+  });
+
+  test("truncates a long response body attached to the thrown error", async () => {
+    const longBody = "x".repeat(2000);
+    const fakeFetch = (async () =>
+      ({
+        ok: false,
+        status: 500,
+        text: async () => longBody,
+      }) as Response) as unknown as typeof fetch;
+
+    const client = createTaskStoreClient({ fetchFn: fakeFetch });
+    let caught: Error | undefined;
+    try {
+      await client.query(new URLSearchParams({ ready: "true" }));
+    } catch (err) {
+      caught = err as Error;
+    }
+    expect(caught).toBeDefined();
+    expect(caught?.message.length).toBeLessThan(longBody.length);
+  });
+
+  test("still throws the status-only error when reading the response body fails", async () => {
+    const fakeFetch = (async () =>
+      ({
+        ok: false,
+        status: 500,
+        text: async (): Promise<string> => {
+          throw new Error("body already consumed");
+        },
         json: async () => ({}),
       }) as Response) as unknown as typeof fetch;
 
