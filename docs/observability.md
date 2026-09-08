@@ -22,10 +22,25 @@ When `SENTRY_DSN` is set, a service reports to Sentry. Below is a summary of wha
 | Caller identity — which admin or agent token triggered an error | Yes |
 | Tags (structured key-value metadata: `service`, `agent_id`, `item_type`, `item_id`) | Yes |
 | `Authorization` and `Cookie` header values | Redacted — replaced with `[Filtered]` regardless of configuration |
-| Request or response bodies | No — never attached to an event |
+| Request or response bodies | No — never attached to an event, with one narrow exception: see [Foreign response-body snippets](#foreign-response-body-snippets) |
 | The live value of any secret-shaped env var | Redacted — scrubbed wherever it appears, including nested inside longer strings |
 
 **Tags** are structured key-value metadata attached to every event: `service` (the reporting service name, always present), and `agent_id` (when initializing Sentry for an agent runner with an `agentId`). These process-wide tags are set once at init time via `buildSentryInitOptions()`'s static `initialScope`. The agent additionally tags `item_type`/`item_id` (`"task"` or `"pr"`, plus that item's id) on any Sentry event captured during `loop-orchestrator.ts`'s `dispatch()` — its per-item execution runs inside a forked Sentry scope (`sentryClient.withScope(...)`, not a bare `Sentry.setTag()` global mutation) so the tags are scoped to that single dispatch and never leak across concurrent or sequential dispatches. This lets a Sentry Issue or Log be attributed to the specific task/PR that was in flight, not just "which service/agent" — see `lib/sentry.ts`'s `ErrorCapturingClient.withScope` and `loop-orchestrator.ts`'s `dispatch()`.
+
+### Foreign response-body snippets
+
+The one exception to "response bodies are never attached" is the agent's task-store client (`createTaskStoreClient().query()` in `agent/src/check-helpers.ts`). When a `GET /tasks` call returns a non-ok status, the response body is attached to the thrown `Error`'s message so a task-store 500 (e.g. its database being unreachable) is diagnosable from the Sentry Issue alone, instead of requiring a timestamp-correlated cross-reference against task-store's own events.
+
+Because the body comes from a *different* service, neither scrub hook above protects it: `stripSensitiveHeaders` only touches `event.request.headers`, and `redactSecrets` only masks *this* process's own live `SECRET_ENV_VARS` values by exact string match. Task-store's `onError` returns `{ error: err.message }` verbatim for any unhandled 500, so a dependency error that echoes its own credentials (a Prisma `P1013` connection-string validation error, for example) would otherwise reach Sentry unredacted.
+
+`redactBodySnippet()` closes that gap at the point of capture, before the message is ever constructed:
+
+- URI userinfo credentials (`postgresql://user:pw@host` → `postgresql://[Filtered]@host`)
+- Well-known token prefixes (`ghp_`/`github_pat_`/`sk-`/`xox*-`)
+- `Authorization`-style scheme values (`Bearer …`, `Basic …`, `token …`)
+- Secret-shaped key/value pairs (`password`, `secret`, `token`, `api_key`, `credential`, `private_key`, `authorization`) in JSON, query strings, and env dumps
+
+Redaction runs over a 2000-char window and the result is then truncated to 500 chars, so a secret straddling the truncation boundary is masked in full rather than half-emitted. What survives is the diagnostic remainder: status text, error class, Prisma error code, host and table names.
 
 ## Disabling Sentry
 
