@@ -33,6 +33,7 @@ import {
   isTaskBlockedForDispatch,
   isTerminalReviewLabel,
   parseCandidateId,
+  redactBodySnippet,
   resolveAllRepos,
   resolveRepos,
   reviewsAtHeadCommit,
@@ -870,6 +871,36 @@ describe("createTaskStoreClient query()", () => {
     }
     expect(caught).toBeDefined();
     expect(caught?.message.length).toBeLessThan(longBody.length);
+  });
+
+  test("redacts credentials out of the response body snippet", async () => {
+    // Shape of a Prisma P1013 error echoed verbatim by task-store's onError.
+    const leakyBody = JSON.stringify({
+      error:
+        "P1013: the provided database string is invalid: postgresql://swuser:hunter2@db.internal:5432/task_store",
+    });
+    const fakeFetch = (async () =>
+      ({
+        ok: false,
+        status: 500,
+        text: async () => leakyBody,
+      }) as Response) as unknown as typeof fetch;
+
+    const client = createTaskStoreClient({ fetchFn: fakeFetch });
+    let caught: Error | undefined;
+    try {
+      await client.query(new URLSearchParams({ ready: "true" }));
+    } catch (err) {
+      caught = err as Error;
+    }
+    expect(caught).toBeDefined();
+    // The credentials are gone…
+    expect(caught?.message).not.toContain("hunter2");
+    expect(caught?.message).not.toContain("swuser");
+    // …but the diagnostic remainder that motivated the snippet survives.
+    expect(caught?.message).toContain("P1013");
+    expect(caught?.message).toContain("db.internal:5432");
+    expect(caught?.message).toContain("[Filtered]");
   });
 
   test("still throws the status-only error when reading the response body fails", async () => {
@@ -2287,5 +2318,64 @@ describe("isPrRecordBlockedForDispatch", () => {
 
   test("returns false for an undefined record", () => {
     expect(isPrRecordBlockedForDispatch(undefined)).toBe(false);
+  });
+});
+
+describe("redactBodySnippet", () => {
+  test("masks userinfo credentials in a connection string", () => {
+    expect(
+      redactBodySnippet(
+        "postgresql://swuser:hunter2@db.internal:5432/task_store",
+      ),
+    ).toBe("postgresql://[Filtered]@db.internal:5432/task_store");
+  });
+
+  test("masks well-known token prefixes", () => {
+    const out = redactBodySnippet(
+      "auth failed for ghp_abcdefghijklmnop and xoxb-123456789012-abcdef",
+    );
+    expect(out).not.toContain("ghp_abcdefghijklmnop");
+    expect(out).not.toContain("xoxb-123456789012-abcdef");
+    expect(out).toContain("[Filtered]");
+  });
+
+  test("masks Authorization scheme values", () => {
+    expect(redactBodySnippet("upstream sent Bearer abcdef1234567890")).toBe(
+      "upstream sent Bearer [Filtered]",
+    );
+  });
+
+  test("masks secret-shaped key/value pairs in a JSON body", () => {
+    const out = redactBodySnippet(
+      '{"error":"env dump","DB_PASSWORD":"s3cr3t","api_key":"abc123","host":"db.internal"}',
+    );
+    expect(out).not.toContain("s3cr3t");
+    expect(out).not.toContain("abc123");
+    // Non-secret fields are untouched, so the snippet stays diagnostic.
+    expect(out).toContain('"host":"db.internal"');
+  });
+
+  test("leaves an ordinary error body untouched", () => {
+    const body = '{"error":"P2021: table `Task` does not exist"}';
+    expect(redactBodySnippet(body)).toBe(body);
+  });
+
+  test("truncates to 500 chars", () => {
+    expect(redactBodySnippet("x".repeat(5000))).toHaveLength(500);
+  });
+
+  test("redacts past the emit cut so a straddling secret is not half-emitted", () => {
+    // The password starts just before the 500-char emit boundary — without the
+    // wider scan window its leading characters would survive truncation.
+    const padding = "x".repeat(470);
+    const out = redactBodySnippet(
+      `${padding}postgresql://u:supersecretpassword@db.internal/task_store`,
+    );
+    expect(out).not.toContain("supersecret");
+    expect(out).toContain("[Filtered]");
+  });
+
+  test("returns an empty string for an empty body", () => {
+    expect(redactBodySnippet("")).toBe("");
   });
 });

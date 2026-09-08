@@ -473,6 +473,75 @@ type FetchFn = (
 ) => Promise<Response>;
 
 /**
+ * Max chars of a non-ok response body scanned when redacting. Deliberately
+ * larger than the emitted snippet so a secret straddling the emit cut is still
+ * matched and masked in full, rather than half of it slipping through.
+ */
+const BODY_SCAN_LIMIT = 2000;
+
+/** Max chars of the redacted body snippet folded into a thrown error message. */
+const BODY_SNIPPET_LIMIT = 500;
+
+/**
+ * Secret-shaped patterns masked out of another service's error body before any
+ * of it is attached to a thrown Error.
+ *
+ * `docs/observability.md` documents that request/response bodies are never
+ * attached to a Sentry event, and `lib/sentry.ts`'s scrub hook only redacts
+ * *this* process's own live `SECRET_ENV_VARS` values by exact string match —
+ * neither does anything for credential material embedded in a *different*
+ * service's response body (e.g. a Prisma `P1013` error echoing task-store's
+ * own `DATABASE_URL`). Task-store's `onError` returns `{ error: err.message }`
+ * verbatim for any unhandled 500, so that body reaches the agent, and the
+ * agent's own failure path (`loop-orchestrator.ts` / `cron-failure-reporter.ts`)
+ * hands the resulting Error to `captureException`. These patterns close that
+ * gap at the point of capture: the snippet keeps its diagnostic value (status
+ * text, error class, Prisma error code, host/table names) without carrying
+ * credentials.
+ */
+const BODY_SECRET_PATTERNS: readonly {
+  readonly re: RegExp;
+  readonly replacement: string;
+}[] = [
+  // URI userinfo credentials — postgresql://user:pw@host, redis://…, https://…
+  {
+    re: /([a-z][a-z0-9+.-]*:\/\/)[^\s/@]*:[^\s/@]*@/gi,
+    replacement: "$1[Filtered]@",
+  },
+  // Well-known token prefixes (GitHub, Anthropic, Slack).
+  {
+    re: /\b(?:gh[pousr]_|github_pat_|sk-|xox[abprs]-)[A-Za-z0-9_-]{8,}/g,
+    replacement: "[Filtered]",
+  },
+  // Authorization scheme values — "Bearer abc123", "Basic dXNlcjpwdw==".
+  {
+    re: /\b(bearer|basic|token)\s+[A-Za-z0-9._~+/=-]{8,}/gi,
+    replacement: "$1 [Filtered]",
+  },
+  // Secret-shaped key/value pairs in JSON bodies, query strings, and env dumps.
+  {
+    re: /(["']?[A-Za-z0-9_.-]*(?:password|passwd|secret|token|api[_-]?key|apikey|credential|private[_-]?key|authorization)[A-Za-z0-9_.-]*["']?\s*[:=]\s*)(?:"[^"]*"|'[^']*'|[^\s,;&)}\]]+)/gi,
+    replacement: '$1"[Filtered]"',
+  },
+];
+
+/**
+ * Scrubs secret-shaped material out of a foreign service's response body and
+ * truncates it to a bounded snippet safe to fold into a thrown Error message
+ * (and therefore into a Sentry Issue). Redaction runs over a wider window than
+ * the emitted snippet so truncation can't expose the leading half of a secret.
+ *
+ * Exported for direct unit testing; callers should prefer `query()`.
+ */
+export function redactBodySnippet(body: string): string {
+  let redacted = body.slice(0, BODY_SCAN_LIMIT);
+  for (const { re, replacement } of BODY_SECRET_PATTERNS) {
+    redacted = redacted.replace(re, replacement);
+  }
+  return redacted.slice(0, BODY_SNIPPET_LIMIT);
+}
+
+/**
  * Reads SHIPWRIGHT_TASK_STORE_URL and SHIPWRIGHT_TASK_STORE_TOKEN from the
  * environment, validates they are present, and returns a minimal fetch client
  * for the task-store HTTP API.
@@ -536,12 +605,15 @@ export function createTaskStoreClient(opts?: { fetchFn?: FetchFn }): {
     async query(params: URLSearchParams): Promise<Task[]> {
       const res = await doFetch(`${baseUrl}/tasks?${params}`, { headers });
       if (!res.ok) {
-        // Attach a truncated response body snippet so a 500 (e.g. task-store
-        // DB unreachable) is diagnosable from the thrown error alone, without
-        // cross-referencing task-store's own logs/Sentry events by timestamp.
+        // Attach a redacted, truncated response body snippet so a 500 (e.g.
+        // task-store DB unreachable) is diagnosable from the thrown error
+        // alone, without cross-referencing task-store's own logs/Sentry events
+        // by timestamp. The snippet passes through redactBodySnippet first —
+        // this Error's message reaches Sentry via captureException, and
+        // lib/sentry.ts's scrub hook cannot redact another service's secrets.
         let bodySnippet = "";
         try {
-          bodySnippet = (await res.text()).slice(0, 500);
+          bodySnippet = redactBodySnippet(await res.text());
         } catch {
           // Body unreadable (already consumed, network cut mid-read, etc.) —
           // fall back to the status-only message below.
