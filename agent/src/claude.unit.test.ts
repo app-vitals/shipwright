@@ -1138,6 +1138,122 @@ describe("resume retry", () => {
   });
 });
 
+// ─── Connection-lost-mid-response retry (error-7616867192) ────────────────────
+//
+// A transient network drop between the Claude Code CLI and the Anthropic API
+// mid-response throws a ClaudeRunError whose result text contains "Connection
+// lost mid-response" (Sentry issue 7616867192 / VITALS-OS-47). Per human
+// decision (Dave, 2026-09-08), `_spawn` retries this specific failure exactly
+// once — discarding the partial response and re-running the whole spawn from
+// scratch — regardless of whether a session exists to resume. This is
+// independent of (and orthogonal to) the session-resume retry above.
+
+function connectionLostJson(sessionId = "sess-cl"): string {
+  return JSON.stringify({
+    type: "result",
+    subtype: "error",
+    result:
+      "API Error: Connection lost mid-response. The response above may be incomplete.",
+    session_id: sessionId,
+    is_error: true,
+  });
+}
+
+describe("connection-lost-mid-response retry", () => {
+  test("retries once even with no existing session to resume, then succeeds", async () => {
+    let callCount = 0;
+    const mockSpawn = mock(() => {
+      callCount++;
+      if (callCount === 1) {
+        return fakeProc(connectionLostJson(), "", 1) as ReturnType<
+          typeof Bun.spawn
+        >;
+      }
+      return fakeProc(jsonOutput("recovered", "sess-cl")) as ReturnType<
+        typeof Bun.spawn
+      >;
+    });
+
+    mockGetSession.mockClear();
+    mockGetSession.mockReturnValue(undefined);
+    capturedMessages = [];
+    capturedExceptions = [];
+
+    const runClaude = createRunClaude(
+      mockSpawn as typeof Bun.spawn,
+      testSessions,
+      MODEL,
+      WORKSPACE,
+      fakeSentryClient,
+    );
+
+    const result = await runClaude("hello");
+
+    expect(result.result).toBe("recovered");
+    expect(mockSpawn).toHaveBeenCalledTimes(2);
+    expect(capturedMessages).toHaveLength(1);
+    expect(capturedMessages[0]).toContain("Connection lost mid-response");
+    expect(capturedExceptions).toHaveLength(0);
+  });
+
+  test("does not retry a second time when the retry also hits connection-lost-mid-response", async () => {
+    const mockSpawn = mock(
+      () =>
+        fakeProc(connectionLostJson(), "", 1) as ReturnType<typeof Bun.spawn>,
+    );
+
+    mockGetSession.mockClear();
+    mockGetSession.mockReturnValue(undefined);
+    capturedMessages = [];
+    capturedExceptions = [];
+
+    const { ClaudeRunError } = await import("./claude.ts");
+    const runClaude = createRunClaude(
+      mockSpawn as typeof Bun.spawn,
+      testSessions,
+      MODEL,
+      WORKSPACE,
+      fakeSentryClient,
+    );
+
+    await expect(runClaude("hello")).rejects.toBeInstanceOf(ClaudeRunError);
+    expect(mockSpawn).toHaveBeenCalledTimes(2);
+    // Logged once, for the one retry attempt — not on the second failure.
+    expect(capturedMessages).toHaveLength(1);
+  });
+
+  test("does not retry an unrelated is_error failure (only connection-lost-mid-response is eligible)", async () => {
+    const mockSpawn = mock(
+      () =>
+        fakeProc(
+          jsonOutput(
+            "You've hit your org's monthly usage limit",
+            "sess-x",
+            true,
+          ),
+          "",
+          1,
+        ) as ReturnType<typeof Bun.spawn>,
+    );
+
+    mockGetSession.mockClear();
+    mockGetSession.mockReturnValue(undefined);
+    capturedMessages = [];
+
+    const runClaude = createRunClaude(
+      mockSpawn as typeof Bun.spawn,
+      testSessions,
+      MODEL,
+      WORKSPACE,
+      fakeSentryClient,
+    );
+
+    await expect(runClaude("hello")).rejects.toThrow("monthly usage limit");
+    expect(mockSpawn).toHaveBeenCalledTimes(1);
+    expect(capturedMessages).toHaveLength(0);
+  });
+});
+
 // ─── Session persistence on failure (CSI-1.2) ─────────────────────────────────
 //
 // _saveSession only ran after a successful spawn, so a first-message timeout

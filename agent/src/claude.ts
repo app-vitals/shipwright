@@ -179,6 +179,23 @@ export class ClaudeRunError extends Error {
 }
 
 /**
+ * Substring match against the Claude CLI's own error text for a transient
+ * network drop between the CLI process and the Anthropic API mid-stream
+ * (Sentry issue 7616867192 / VITALS-OS-47, e.g. "API Error: Connection lost
+ * mid-response. The response above may be incomplete.") — distinct from
+ * other `is_error` failures (auth, rate limits, etc.), which are not
+ * eligible for `_spawn`'s single connection-lost retry.
+ */
+const CONNECTION_LOST_MID_RESPONSE = "Connection lost mid-response";
+
+function _isConnectionLostMidResponse(err: unknown): err is ClaudeRunError {
+  return (
+    err instanceof ClaudeRunError &&
+    err.resultMessage.includes(CONNECTION_LOST_MID_RESPONSE)
+  );
+}
+
+/**
  * Thrown when a run is cancelled via its AbortSignal (e.g. a chat cancel
  * request surfaced through the heartbeat tick). Mirrors ClaudeTimeoutError /
  * ClaudeRunError's shape — it carries whatever session id the killed run
@@ -471,7 +488,7 @@ export function createRunClaude(
     return { result, modelUsage: accumulated, raw, sessionId: earlySessionId };
   }
 
-  async function _spawn(
+  async function _spawnOnce(
     args: string[],
     perCallOnProgress?: ProgressCallback,
     signal?: AbortSignal,
@@ -620,6 +637,36 @@ export function createRunClaude(
       totalCostUsd: result.total_cost_usd,
       modelUsage: result.modelUsage,
     };
+  }
+
+  /**
+   * Thin wrapper around `_spawnOnce` that retries exactly once on a
+   * connection-lost-mid-response failure — a transient network drop between
+   * the Claude Code CLI process and the Anthropic API, external to this
+   * codebase (Sentry issue 7616867192 / VITALS-OS-47). Human decision (Dave,
+   * 2026-09-08): retry ONCE, discarding the partial response and re-running
+   * the whole spawn from scratch (never resuming it) — no further retries.
+   * Accepts the small duplicate-side-effect risk; logs the retry via Sentry
+   * so it stays visible. Any other failure (including a second
+   * connection-lost error on the retry itself) propagates unchanged.
+   */
+  async function _spawn(
+    args: string[],
+    perCallOnProgress?: ProgressCallback,
+    signal?: AbortSignal,
+    extraEnv?: Record<string, string>,
+  ): Promise<ClaudeRunResult> {
+    try {
+      return await _spawnOnce(args, perCallOnProgress, signal, extraEnv);
+    } catch (err) {
+      if (!_isConnectionLostMidResponse(err)) throw err;
+      sentryClient?.captureMessage?.(
+        `Claude spawn: Connection lost mid-response — retrying once (session ${
+          err.sessionId ?? "unknown"
+        })`,
+      );
+      return _spawnOnce(args, perCallOnProgress, signal, extraEnv);
+    }
   }
 
   async function _saveSession(
