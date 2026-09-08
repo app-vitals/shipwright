@@ -247,32 +247,6 @@ interface PrismaLike {
       count: number;
     }>;
   };
-  // Web Push (CFB-4.2). Present on the real PrismaClient after the migration;
-  // narrowed here to only what the admin UI routes touch. Optional so existing
-  // test doubles (which never enable push) stay valid — the push routes only
-  // touch these when pushEnabled is true.
-  pushSubscription?: {
-    upsert(args: {
-      where: { endpoint: string };
-      create: {
-        userEmail: string;
-        endpoint: string;
-        p256dh: string;
-        auth: string;
-      };
-      update: { userEmail: string; p256dh: string; auth: string };
-    }): Promise<{ id: string }>;
-    deleteMany(args: {
-      where: { endpoint: string; userEmail?: string };
-    }): Promise<{ count: number }>;
-  };
-  chatThreadWatch?: {
-    upsert(args: {
-      where: { userEmail_threadId: { userEmail: string; threadId: string } };
-      create: { userEmail: string; threadId: string; agentId: string };
-      update: { agentId: string };
-    }): Promise<{ id: string }>;
-  };
 }
 
 export interface AdminUIDeps {
@@ -498,7 +472,7 @@ async function getSessionUser(
       typeof payload.email === "string" &&
       payload.email.length > 0
     ) {
-      return { email: payload.email, isAdmin: payload.isAdmin !== false };
+      return { email: payload.email, isAdmin: payload.isAdmin === true };
     }
     return null;
   } catch {
@@ -683,26 +657,6 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
     appBaseUrl,
     secretEnvVars: new Set(SECRET_ENV_VARS),
   });
-
-  // Best-effort upsert of a ChatThreadWatch row (CFB-4.2). Never throws into a
-  // request cycle — push is a convenience layer, so a watch-write failure must
-  // not fail the message send it rides along with.
-  async function watchThread(
-    userEmail: string,
-    agentId: string,
-    threadId: string,
-  ): Promise<void> {
-    if (!prisma.chatThreadWatch) return;
-    try {
-      await prisma.chatThreadWatch.upsert({
-        where: { userEmail_threadId: { userEmail, threadId } },
-        create: { userEmail, threadId, agentId },
-        update: { agentId },
-      });
-    } catch (err) {
-      console.error("[push] watchThread upsert failed:", err);
-    }
-  }
 
   // ─── HTML helper ──────────────────────────────────────────────────────────
 
@@ -3628,7 +3582,7 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
         // own identical call; all three must stay in sync. Best-effort —
         // never block the response.
         if (pushEnabled) {
-          await watchThread(c.var.userEmail, agentId, threadId);
+          await pushService?.recordWatch(c.var.userEmail, agentId, threadId);
         }
         return c.json({ message }, 201);
       } catch {
@@ -3701,7 +3655,7 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
       // be targeted back to them via push (CFB-4.2). Only on user messages, and
       // only when push is configured. Best-effort — never block the redirect.
       if (pushEnabled && role === "user") {
-        await watchThread(c.var.userEmail, agentId, threadId);
+        await pushService?.recordWatch(c.var.userEmail, agentId, threadId);
       }
 
       return c.redirect(backUrl, 302);
@@ -3850,7 +3804,11 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
       try {
         const message = await chatClient.createMessage(threadId, "user", body);
         if (pushEnabled) {
-          await watchThread(c.var.userEmail, c.req.param("agentId"), threadId);
+          await pushService?.recordWatch(
+            c.var.userEmail,
+            c.req.param("agentId"),
+            threadId,
+          );
         }
         return c.json({ message });
       } catch {
@@ -3877,17 +3835,17 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
     if (!endpoint || !p256dh || !auth) {
       return c.json({ error: "bad_request" }, 400);
     }
-    if (!prisma.pushSubscription)
+    const result = await pushService?.subscribe(
+      c.var.userEmail,
+      endpoint,
+      p256dh,
+      auth,
+    );
+    if (!result || !result.ok) {
+      if (result?.reason === "store_failed") {
+        return c.json({ error: "store_failed" }, 500);
+      }
       return c.json({ error: "push_disabled" }, 503);
-    try {
-      await prisma.pushSubscription.upsert({
-        where: { endpoint },
-        create: { userEmail: c.var.userEmail, endpoint, p256dh, auth },
-        update: { userEmail: c.var.userEmail, p256dh, auth },
-      });
-    } catch (err) {
-      console.error("[push] subscribe upsert failed:", err);
-      return c.json({ error: "store_failed" }, 500);
     }
     return c.json({ ok: true });
   });
@@ -3903,16 +3861,11 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
       return c.json({ error: "bad_request" }, 400);
     }
     if (!endpoint) return c.json({ error: "bad_request" }, 400);
-    if (!prisma.pushSubscription)
+    // Scoped to the caller (userEmail) inside PushService.unsubscribe so a
+    // stale endpoint can't be used to prune another user's subscription.
+    const result = await pushService?.unsubscribe(c.var.userEmail, endpoint);
+    if (!result || !result.ok) {
       return c.json({ error: "push_disabled" }, 503);
-    try {
-      // Scope the delete to the caller so a stale endpoint can't be used to
-      // prune another user's subscription.
-      await prisma.pushSubscription.deleteMany({
-        where: { endpoint, userEmail: c.var.userEmail },
-      });
-    } catch (err) {
-      console.error("[push] unsubscribe delete failed:", err);
     }
     return c.json({ ok: true });
   });

@@ -8317,6 +8317,46 @@ describe("admin UI — PRs page", () => {
     });
     expect(res.status).toBe(403);
   });
+
+  // authz-missing-check (fail-open isAdmin default): getSessionUser must treat
+  // a session token that omits the isAdmin claim — or sets it to any non-true
+  // value — as non-admin, not as admin-by-default.
+  it("GET /admin/prs returns 403 when the session token omits the isAdmin claim entirely", async () => {
+    const omittedAdminClaimCookie = await sign(
+      {
+        userId: "google-sub-no-claim",
+        email: "no-claim@example.com",
+        iat: Math.floor(Date.now() / 1000),
+        exp: Math.floor(Date.now() / 1000) + 3600,
+      },
+      SESSION_SECRET,
+      "HS256",
+    );
+    const app = createAdminUIApp(makeMockDeps());
+    const res = await app.request("/admin/prs", {
+      headers: { Cookie: `admin_session=${omittedAdminClaimCookie}` },
+    });
+    expect(res.status).toBe(403);
+  });
+
+  it("GET /admin/prs returns 403 when the session token's isAdmin claim is a non-boolean truthy value", async () => {
+    const nonBooleanAdminClaimCookie = await sign(
+      {
+        userId: "google-sub-string-claim",
+        email: "string-claim@example.com",
+        isAdmin: "true",
+        iat: Math.floor(Date.now() / 1000),
+        exp: Math.floor(Date.now() / 1000) + 3600,
+      },
+      SESSION_SECRET,
+      "HS256",
+    );
+    const app = createAdminUIApp(makeMockDeps());
+    const res = await app.request("/admin/prs", {
+      headers: { Cookie: `admin_session=${nonBooleanAdminClaimCookie}` },
+    });
+    expect(res.status).toBe(403);
+  });
 });
 
 // ─── Public task board ────────────────────────────────────────────────────────
@@ -9066,8 +9106,26 @@ function makeFakePushService(
     delivered: 0,
     pruned: 0,
   }),
+  subscribe: (
+    userEmail: string,
+    endpoint: string,
+    p256dh: string,
+    auth: string,
+  ) => Promise<
+    { ok: true } | { ok: false; reason: "unavailable" | "store_failed" }
+  > = async () => ({ ok: true }),
+  unsubscribe: (
+    userEmail: string,
+    endpoint: string,
+  ) => Promise<
+    { ok: true } | { ok: false; reason: "unavailable" }
+  > = async () => ({ ok: true }),
 ): PushService {
-  return { notifyThreadReply } as unknown as PushService;
+  return {
+    notifyThreadReply,
+    subscribe,
+    unsubscribe,
+  } as unknown as PushService;
 }
 
 describe("admin UI — POST /admin/chat/:agentId/push/subscribe", () => {
@@ -9119,10 +9177,6 @@ describe("admin UI — POST /admin/chat/:agentId/push/subscribe", () => {
       pushService: makeFakePushService(),
       vapidPublicKey: "test-vapid-public-key",
     });
-    deps.prisma.pushSubscription = {
-      upsert: async () => ({ id: "sub-1" }),
-      deleteMany: async () => ({ count: 0 }),
-    };
     const app = createAdminUIApp(deps);
     const res = await app.request(`/admin/chat/${AGENT_ID}/push/subscribe`, {
       method: "POST",
@@ -9137,18 +9191,14 @@ describe("admin UI — POST /admin/chat/:agentId/push/subscribe", () => {
   });
 
   it("upserts the subscription and returns ok:true when push is enabled", async () => {
-    let upsertCalledWith: unknown;
+    let subscribeCalledWith: unknown;
     const deps = makeMockDeps({
-      pushService: makeFakePushService(),
+      pushService: makeFakePushService(undefined, async (...args) => {
+        subscribeCalledWith = args;
+        return { ok: true };
+      }),
       vapidPublicKey: "test-vapid-public-key",
     });
-    deps.prisma.pushSubscription = {
-      upsert: async (args: unknown) => {
-        upsertCalledWith = args;
-        return { id: "sub-1" };
-      },
-      deleteMany: async () => ({ count: 0 }),
-    };
     const app = createAdminUIApp(deps);
     const res = await app.request(`/admin/chat/${AGENT_ID}/push/subscribe`, {
       method: "POST",
@@ -9160,7 +9210,7 @@ describe("admin UI — POST /admin/chat/:agentId/push/subscribe", () => {
     });
     expect(res.status).toBe(200);
     expect(await res.json()).toEqual({ ok: true });
-    expect(upsertCalledWith).toBeDefined();
+    expect(subscribeCalledWith).toBeDefined();
   });
 });
 
@@ -9213,10 +9263,6 @@ describe("admin UI — POST /admin/chat/:agentId/push/unsubscribe", () => {
       pushService: makeFakePushService(),
       vapidPublicKey: "test-vapid-public-key",
     });
-    deps.prisma.pushSubscription = {
-      upsert: async () => ({ id: "sub-1" }),
-      deleteMany: async () => ({ count: 0 }),
-    };
     const app = createAdminUIApp(deps);
     const res = await app.request(`/admin/chat/${AGENT_ID}/push/unsubscribe`, {
       method: "POST",
@@ -9231,18 +9277,18 @@ describe("admin UI — POST /admin/chat/:agentId/push/unsubscribe", () => {
   });
 
   it("deletes the caller's subscription and returns ok:true when push is enabled", async () => {
-    let deleteCalledWith: unknown;
+    let unsubscribeCalledWith: unknown;
     const deps = makeMockDeps({
-      pushService: makeFakePushService(),
+      pushService: makeFakePushService(
+        undefined,
+        undefined,
+        async (...args) => {
+          unsubscribeCalledWith = args;
+          return { ok: true };
+        },
+      ),
       vapidPublicKey: "test-vapid-public-key",
     });
-    deps.prisma.pushSubscription = {
-      upsert: async () => ({ id: "sub-1" }),
-      deleteMany: async (args: unknown) => {
-        deleteCalledWith = args;
-        return { count: 1 };
-      },
-    };
     const app = createAdminUIApp(deps);
     const res = await app.request(`/admin/chat/${AGENT_ID}/push/unsubscribe`, {
       method: "POST",
@@ -9254,7 +9300,7 @@ describe("admin UI — POST /admin/chat/:agentId/push/unsubscribe", () => {
     });
     expect(res.status).toBe(200);
     expect(await res.json()).toEqual({ ok: true });
-    expect(deleteCalledWith).toBeDefined();
+    expect(unsubscribeCalledWith).toBeDefined();
   });
 });
 

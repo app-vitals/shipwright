@@ -98,7 +98,7 @@ async function mintSession(
 ): Promise<string> {
   const nowSec = Math.floor(Date.now() / 1000);
   return sign(
-    { userId, email, iat: nowSec, exp: nowSec + 3600 },
+    { userId, email, isAdmin: true, iat: nowSec, exp: nowSec + 3600 },
     SESSION_SECRET,
     "HS256",
   );
