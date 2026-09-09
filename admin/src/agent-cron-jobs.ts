@@ -200,6 +200,20 @@ export class AgentCronJobService {
   }
 
   /**
+   * Fetch the "shipwright-loop" cron row for each of a set of agent ids, in
+   * a single query — one row per agent that has one (an agent with no
+   * shipwright-loop cron simply has no entry in the result). Used by the
+   * merged fleet-wide queue-activity view to compute each agent's real
+   * loopEnabled value (QAE-1.2) without an N+1 per-agent lookup.
+   */
+  async listShipwrightLoopJobs(agentIds: string[]): Promise<AgentCronJob[]> {
+    if (agentIds.length === 0) return [];
+    return this.prisma.agentCronJob.findMany({
+      where: { agentId: { in: agentIds }, name: "shipwright-loop" },
+    });
+  }
+
+  /**
    * Create a new cron job for the given agent.
    * Validates:
    *   - schedule is a valid 5-field cron expression

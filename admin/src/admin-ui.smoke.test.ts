@@ -284,6 +284,17 @@ function makeMockDeps(
       listWithRunSummary: async () => [
         { ...MOCK_CRON, lastRun: null, runCountToday: 0 },
       ],
+      // Default: every requested agent has an enabled shipwright-loop cron,
+      // matching this suite's other agentCronJobService defaults (MOCK_CRON
+      // is enabled: true) and preserving pre-QAE-1.2 eligibility behavior
+      // for tests that don't specifically exercise loop-enabled gating.
+      listShipwrightLoopJobs: async (agentIds: string[]) =>
+        agentIds.map((agentId) => ({
+          ...MOCK_CRON,
+          agentId,
+          name: "shipwright-loop",
+          enabled: true,
+        })),
       get: async () => MOCK_CRON,
       create: async () => MOCK_CRON,
       setEnabled: async () => MOCK_CRON,
@@ -1267,6 +1278,7 @@ describe("admin UI — authenticated pages", () => {
         agentCronJobService: {
           list: async () => [loopCron, ...phaseCrons],
           listWithRunSummary: async () => [loopCron, ...phaseCrons],
+          listShipwrightLoopJobs: async () => [],
           get: async () => MOCK_CRON,
           create: async () => MOCK_CRON,
           setEnabled: async () => MOCK_CRON,
@@ -1506,6 +1518,7 @@ describe("admin UI — authenticated pages", () => {
           listWithRunSummary: async () => [
             { ...MOCK_CRON, name: "shipwright-loop", lastRun: null, runCountToday: 0 },
           ],
+          listShipwrightLoopJobs: async () => [],
           get: async () => MOCK_CRON,
           create: async () => MOCK_CRON,
           setEnabled: async () => MOCK_CRON,
@@ -1923,6 +1936,7 @@ describe("admin UI — authenticated pages", () => {
                 runCountToday: 0,
               },
             ],
+            listShipwrightLoopJobs: async () => [],
             get: async () => MOCK_CRON,
             create: async () => MOCK_CRON,
             setEnabled: async () => MOCK_CRON,
@@ -2059,6 +2073,7 @@ describe("admin UI — authenticated pages", () => {
                 runCountToday: 0,
               },
             ],
+            listShipwrightLoopJobs: async () => [],
             get: async () => MOCK_CRON,
             create: async () => MOCK_CRON,
             setEnabled: async () => MOCK_CRON,
@@ -3264,6 +3279,108 @@ describe("admin UI — GET /admin/queue-activity (merged fleet-wide view)", () =
     expect(betaOnlyRowHtml).toContain("Beta Agent");
     expect(betaOnlyRowHtml).not.toContain("Alpha Agent");
   });
+
+  it("Eligible agents cell excludes an agent with no shipwright-loop cron row even though it lists the item's repo (QAE-1.2)", async () => {
+    const ALPHA_ID = "agent-alpha";
+    const BETA_ID = "agent-beta";
+    const adminCookie = await makeSessionCookie(
+      SESSION_SECRET,
+      "google-sub-admin",
+      "admin@example.com",
+      true,
+    );
+    const makeAgent = (id: string, name: string) => ({
+      id,
+      name,
+      slackId: null,
+      selfHosted: false,
+      typeName: "coding",
+      createdAt: new Date("2024-01-01"),
+      updatedAt: new Date("2024-01-01"),
+    });
+    const deps = makeMockDeps({
+      agentService: {
+        listAll: async () => [
+          {
+            ...makeAgent(ALPHA_ID, "Alpha Agent"),
+            repos: ["app-vitals/shipwright"],
+          },
+          {
+            ...makeAgent(BETA_ID, "Beta Agent"),
+            repos: ["app-vitals/shipwright"],
+          },
+        ],
+        listByIds: async () => [],
+        searchByName: async () => [],
+        listOptions: async () => [],
+        create: async () => {
+          throw new Error("not implemented");
+        },
+        delete: async () => {},
+        getDetail: async () => null,
+        updateFields: async () => {
+          throw new Error("not implemented");
+        },
+      },
+      agentWorkQueueService: {
+        get: async () => null,
+        getMany: async () => [
+          {
+            id: "snap-alpha",
+            agentId: ALPHA_ID,
+            computedAt: new Date("2026-06-01T10:00:00Z"),
+            items: [
+              {
+                type: "pr",
+                id: "app-vitals/shipwright#200",
+                title: "Shared repo PR",
+                phase: "review",
+                age: "2026-06-01T08:00:00Z",
+              },
+            ],
+            createdAt: new Date("2026-06-01T10:00:00Z"),
+          },
+        ],
+      },
+      agentCronJobService: {
+        list: async () => [],
+        listWithRunSummary: async () => [],
+        // Alpha has an enabled shipwright-loop cron; Beta has no row at
+        // all for it — findMany-style: absent rows just don't appear.
+        listShipwrightLoopJobs: async () => [
+          {
+            ...MOCK_CRON,
+            agentId: ALPHA_ID,
+            name: "shipwright-loop",
+            enabled: true,
+          },
+        ],
+        get: async () => MOCK_CRON,
+        create: async () => MOCK_CRON,
+        setEnabled: async () => MOCK_CRON,
+        update: async () => MOCK_CRON,
+        delete: async () => {},
+        reconcileSystemCrons: async () => ({
+          created: 0,
+          updated: 0,
+          deleted: 0,
+        }),
+      },
+    });
+    const app = createAdminUIApp(deps);
+    const res = await app.request("/admin/queue-activity", {
+      headers: { Cookie: `admin_session=${adminCookie}` },
+    });
+    expect(res.status).toBe(200);
+    const html = await res.text();
+
+    const rowIndex = html.indexOf("app-vitals/shipwright#200");
+    expect(rowIndex).toBeGreaterThan(-1);
+    const rowEnd = html.indexOf("</tr>", rowIndex);
+    const rowHtml = html.slice(rowIndex, rowEnd);
+    expect(rowHtml).toContain("Alpha Agent");
+    expect(rowHtml).not.toContain("Beta Agent");
+  });
 });
 
 // ─── Agent delete route ───────────────────────────────────────────────────────
@@ -4383,6 +4500,7 @@ describe("admin UI — POST /admin/agents/:id/connect-slack/app-token", () => {
           listWithRunSummary: async () => [
             { ...MOCK_CRON, lastRun: null, runCountToday: 0 },
           ],
+          listShipwrightLoopJobs: async () => [],
           get: async () => MOCK_CRON,
           create: async () => MOCK_CRON,
           setEnabled: async () => MOCK_CRON,
@@ -5051,6 +5169,7 @@ describe("admin UI — GET /admin/agents/:id/connect-github/installed", () => {
           listWithRunSummary: async () => [
             { ...MOCK_CRON, lastRun: null, runCountToday: 0 },
           ],
+          listShipwrightLoopJobs: async () => [],
           get: async () => MOCK_CRON,
           create: async () => MOCK_CRON,
           setEnabled: async () => MOCK_CRON,
@@ -5101,6 +5220,7 @@ describe("admin UI — GET /admin/agents/:id/connect-github/installed", () => {
           listWithRunSummary: async () => [
             { ...MOCK_CRON, lastRun: null, runCountToday: 0 },
           ],
+          listShipwrightLoopJobs: async () => [],
           get: async () => MOCK_CRON,
           create: async () => MOCK_CRON,
           setEnabled: async () => MOCK_CRON,

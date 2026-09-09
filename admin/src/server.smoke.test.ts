@@ -154,6 +154,7 @@ function buildComposedApp() {
     agentCronJobService: {
       list: notImplemented,
       listWithRunSummary: notImplemented,
+      listShipwrightLoopJobs: notImplemented,
       create: notImplemented,
       update: notImplemented,
       setEnabled: notImplemented,

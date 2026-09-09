@@ -325,6 +325,41 @@ describeOrSkip("AgentCronJobService (integration)", () => {
     expect(enabled).toHaveLength(1);
   });
 
+  // ─── listShipwrightLoopJobs ─────────────────────────────────────────────────
+
+  it("listShipwrightLoopJobs() returns each requested agent's shipwright-loop row in one query, omitting agents with no such row", async () => {
+    const withLoopAgentId = await createAgent(prisma, "Has Loop Agent");
+    const noLoopAgentId = await createAgent(prisma, "No Loop Agent");
+    await service.create(withLoopAgentId, {
+      schedule: "0 9 * * *",
+      prompt: "/shipwright:dev-task",
+      channel: "C1",
+      enabled: true,
+      name: "shipwright-loop",
+    });
+    // A differently-named cron on the no-loop agent should not be mistaken
+    // for its shipwright-loop row.
+    await service.create(noLoopAgentId, {
+      schedule: "0 9 * * *",
+      prompt: "some other prompt",
+      channel: "C2",
+      enabled: true,
+      name: "shipwright-dev-task",
+    });
+
+    const rows = await service.listShipwrightLoopJobs([
+      withLoopAgentId,
+      noLoopAgentId,
+    ]);
+    expect(rows).toHaveLength(1);
+    expect(rows[0]?.agentId).toBe(withLoopAgentId);
+    expect(rows[0]?.name).toBe("shipwright-loop");
+  });
+
+  it("listShipwrightLoopJobs() returns [] for an empty agent id list", async () => {
+    expect(await service.listShipwrightLoopJobs([])).toEqual([]);
+  });
+
   // ─── update ─────────────────────────────────────────────────────────────────
 
   it("update() changes schedule and prompt", async () => {
