@@ -115,7 +115,7 @@ Task titles, one shape per check, each paired with a `branch` slug derived the s
 - 6.5b hit → `title: "Review {doc} for literal/prose mismatch"`, `branch: "docs/review-{doc-slug}-literal-prose-mismatch"`
 - 6.5c hit → `title: "Review {doc} for convention missing named mechanism"`, `branch: "docs/review-{doc-slug}-missing-mechanism"`
 
-Each task: `layer: "CLI"`, `session: "docs-freshness-cron"`, `branch` as derived above. **The `branch` field is required** — `/shipwright:dev-task` refuses to proceed on any task with no `branch` set (it can't create a worktree) and blocks it with `status: "blocked"` instead, so a task filed here without one silently stalls until a human notices and backfills it by hand.
+Each task: `layer: "CLI"`, `session: "docs-freshness-cron"`, `branch: "docs/{doc-slug}-{YYYYMMDD}"` — `{doc-slug}` is the doc's path/basename minus extension, kebab-cased (e.g. `docs/api-billing.md` → `api-billing`), and `{YYYYMMDD}` is the current run's UTC date (`date -u +%Y%m%d`), so e.g. `docs/api-billing-20260909`. Compute this once per doc and reuse it for every hit filed against that doc in this run. **The `branch` field is required** — `/shipwright:dev-task` refuses to proceed on any task with no `branch` set (it can't create a worktree) and blocks it with `status: "blocked"` instead, so a task filed here without one silently stalls until a human notices and backfills it by hand. The `{YYYYMMDD}` suffix also keeps re-runs collision-free: without it, a doc flagged again on a later cron run would reuse the exact same branch name as a prior run, which can 409 on worktree creation or silently reuse a stale branch.
 
 Track a running count of tasks filed this way for the current repo — this becomes the `Quality flags tasked` figure in Step A9's per-repo summary.
 
@@ -125,7 +125,7 @@ Over 200 lines: file **one** task-store task via the same `/tasks/bulk` mechanis
 
 - `title: "Split {doc} — exceeds {N} lines"`
 - `description`: a best-effort section-grouping suggestion — which `##`/`###` sections would move to a new sub-topic doc, grouped by topic, following the same grouping approach as Step 6.6
-- `layer: "CLI"`, `session: "docs-freshness-cron"`, `branch: "docs/split-{doc-slug}"` (same kebab-case-path-minus-extension slug as Step A5.5's checks — **required**, see that step's note on why an unbranched task stalls silently)
+- `layer: "CLI"`, `session: "docs-freshness-cron"`, `branch: "docs/{doc-slug}-{YYYYMMDD}"` — same doc-slug/date computation as the quality-pass tasks above, for the doc being split (**required**, see that step's note on why an unbranched task stalls silently)
 
 Track a running count of split-proposal tasks filed this way for the current repo — this becomes the `Split proposals tasked` figure in Step A9's per-repo summary.
 
@@ -153,9 +153,9 @@ curl -sf -X POST \
   --data-binary @/tmp/missing-docs-tasks.json | jq .
 ```
 
-Each missing module produces one task with: `title: "Document {module} module"`, `layer: "CLI"`, `session: "docs-freshness-cron"`, `branch: "docs/document-{module-slug}-module"` (kebab-case the module name). **The `branch` field is required** — see Step A5.5's note on why an unbranched task stalls silently on `/shipwright:dev-task`.
+Each missing module produces one task with: `title: "Document {module} module"`, `layer: "CLI"`, `session: "docs-freshness-cron"`, `branch: "docs/{module-slug}-{YYYYMMDD}"` — `{module-slug}` is the module name kebab-cased, and `{YYYYMMDD}` is the run's UTC date (`date -u +%Y%m%d`), same computation Step A5.5 uses. **The `branch` field is required** — see Step A5.5's note on why an unbranched task stalls silently on `/shipwright:dev-task`.
 
-Additionally, run the Step 3a cross-cutting concerns checklist (same seven categories, same material-presence verification procedure), scoped to `CHANGED_FILES` — the same scoping A7's structural check above already uses. For each concern category verified materially present in `CHANGED_FILES` with no matching doc, union one more task into the same `/tmp/missing-docs-tasks.json` payload before it's posted: `title: "Document {concern} conventions"`, `layer: "CLI"`, `session: "docs-freshness-cron"`, `branch: "docs/document-{concern-slug}-conventions"` (kebab-case the concern category name — e.g. `secrets/credential rotation` → `secrets-credential-rotation`) — same session as the structural tasks above, so both are queryable together by downstream tooling. The `"Document {concern} conventions"` title distinguishes concern-based tasks from the structural `"Document {module} module"` tasks in the same payload. If no concern qualifies, the payload is unchanged from the structural-only set.
+Additionally, run the Step 3a cross-cutting concerns checklist (same seven categories, same material-presence verification procedure), scoped to `CHANGED_FILES` — the same scoping A7's structural check above already uses. For each concern category verified materially present in `CHANGED_FILES` with no matching doc, union one more task into the same `/tmp/missing-docs-tasks.json` payload before it's posted: `title: "Document {concern} conventions"`, `layer: "CLI"`, `session: "docs-freshness-cron"`, `branch: "docs/{concern-slug}-{YYYYMMDD}"` — `{concern-slug}` is the concern category name kebab-cased, same UTC-date computation as above — same session as the structural tasks above, so both are queryable together by downstream tooling. The `"Document {concern} conventions"` title distinguishes concern-based tasks from the structural `"Document {module} module"` tasks in the same payload. If no concern qualifies, the payload is unchanged from the structural-only set.
 
 ### Step A8: Write Sync Anchor
 
