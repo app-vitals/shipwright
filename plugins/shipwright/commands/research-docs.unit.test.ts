@@ -536,6 +536,10 @@ describe("research-docs.md — branch field on auto-mode bulk task payloads", ()
     expect(moduleSlice).toContain("branch:");
     expect(moduleSlice).toContain("docs/{module-slug}-{YYYYMMDD}");
     expect(moduleSlice.toLowerCase()).toContain("kebab");
+
+    // A worked example must disambiguate slash-containing input: `/` collapses
+    // to `-` so the branch stays a single segment, not a nested git ref.
+    expect(moduleSlice).toContain("api/billing` → `api-billing");
   });
 
   it("Step A7's concern-based task payload computes a docs/{concern-slug}-{YYYYMMDD} branch", () => {
@@ -551,6 +555,16 @@ describe("research-docs.md — branch field on auto-mode bulk task payloads", ()
 
     expect(concernSlice).toContain("branch:");
     expect(concernSlice).toContain("docs/{concern-slug}-{YYYYMMDD}");
+
+    // Five of Step 3a's seven concern categories contain `/` (and two of those
+    // also contain a space), so the slug rule needs a worked example proving
+    // both collapse to `-` rather than producing a nested `docs/a/b-DATE` ref.
+    expect(concernSlice).toContain(
+      "authorization/access-control` → `authorization-access-control",
+    );
+    expect(concernSlice).toContain(
+      "secrets/credential rotation` → `secrets-credential-rotation",
+    );
   });
 
   it("does not change staleness detection, candidate scoping, or task titles — additive field only", () => {
