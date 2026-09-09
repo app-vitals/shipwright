@@ -1182,6 +1182,15 @@ chart, or bring your own database:
   container. Use together with `externalDatabase.existingSecret` and
   `postgresql.enabled=false`.
 
+  By default, the proxy runs as a **regular sidecar container** alongside the
+  main application containers. For Kubernetes clusters running **1.29+**, you can
+  optionally use a **native sidecar** (a feature GA in Kubernetes 1.29) by setting
+  `cloudSqlProxy.nativeSidecar=true`. Native sidecars start before the main
+  container and persist after it exits (via `restartPolicy: Always`), providing
+  cleaner lifecycle management and better separation of concerns. When enabled,
+  the proxy runs as an `initContainer` instead of a regular `container` in the
+  Deployment.
+
   ```yaml
   postgresql:
     enabled: false
@@ -1191,6 +1200,7 @@ chart, or bring your own database:
     enabled: true
     connectionName: "project:region:instance"   # required
     image: gcr.io/cloud-sql-connectors/cloud-sql-proxy:2
+    nativeSidecar: false                        # set to true for Kubernetes 1.29+
   ```
 
   The full image-override / mirror guidance and the exact pinned version are in
