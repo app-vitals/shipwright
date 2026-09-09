@@ -13,6 +13,7 @@
 
 import { join } from "node:path";
 import * as Sentry from "@sentry/bun";
+import { registerGracefulShutdown } from "@shipwright/lib/graceful-shutdown";
 import { initSentry } from "@shipwright/lib/sentry";
 import { createTaskStoreApp } from "./app.ts";
 import { createScopeResolver } from "./auth.ts";
@@ -141,13 +142,23 @@ async function startServer(): Promise<void> {
     );
   }
 
+  // Reassigned below, after Bun.serve() + registerGracefulShutdown() run —
+  // the checkDbReady closure below only calls this at request time (well
+  // after startServer() finishes its synchronous setup), so it always sees
+  // the real graceful-shutdown flag once one exists.
+  let isShuttingDown = (): boolean => false;
+
   const app = createTaskStoreApp({
     taskService,
     tokenService,
     pullRequestService,
     scopeResolver,
     sentryClient: process.env.SENTRY_DSN ? Sentry : undefined,
-    checkDbReady: () => checkDbReady(prisma),
+    // Once a shutdown signal has been received, fail readiness immediately
+    // (no DB round-trip) so Kubernetes pulls this pod from Service endpoints
+    // as early as possible — see lib/graceful-shutdown.ts.
+    checkDbReady: () =>
+      isShuttingDown() ? Promise.resolve(false) : checkDbReady(prisma),
   });
 
   const reaper = new StaleClaimReaper(prisma);
@@ -180,6 +191,14 @@ async function startServer(): Promise<void> {
   console.log("[task-store] stale-claim reaper started (interval: 60s)");
 
   const server = Bun.serve({ port, fetch: app.fetch });
+
+  const shutdown = registerGracefulShutdown({
+    server,
+    cleanup: [() => prisma.$disconnect()],
+    serviceName: "task-store",
+  });
+  isShuttingDown = shutdown.isShuttingDown;
+
   console.log(`[task-store] listening on http://localhost:${server.port}`);
 }
 
