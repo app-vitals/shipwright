@@ -12,15 +12,22 @@ import { describe, expect, it } from "bun:test";
 import { Hono } from "hono";
 import { checkDbReady } from "./main.ts";
 
-function buildHealthApp(prisma: {
-  $queryRaw: (
-    query: TemplateStringsArray,
-    ...values: unknown[]
-  ) => Promise<unknown>;
-}) {
+function buildHealthApp(
+  prisma: {
+    $queryRaw: (
+      query: TemplateStringsArray,
+      ...values: unknown[]
+    ) => Promise<unknown>;
+  },
+  isShuttingDown: () => boolean = () => false,
+) {
   const root = new Hono();
   root.get("/health", (c) => c.json({ status: "ok" }));
   root.get("/health/ready", async (c) => {
+    // Mirrors main.ts's DBE-2.1 shuttingDown gate — see lib/graceful-shutdown.ts.
+    if (isShuttingDown()) {
+      return c.json({ status: "unavailable" }, 503);
+    }
     const ready = await checkDbReady(prisma);
     return c.json({ status: ready ? "ok" : "unavailable" }, ready ? 200 : 503);
   });
@@ -63,5 +70,22 @@ describe("GET /health/ready (readiness)", () => {
     const res = await app.request("/health/ready");
     expect(res.status).toBe(503);
     expect(await res.json()).toEqual({ status: "unavailable" });
+  });
+
+  it("returns 503 immediately (skipping the DB check) once shuttingDown is set", async () => {
+    let dbChecked = false;
+    const app = buildHealthApp(
+      {
+        $queryRaw: async () => {
+          dbChecked = true;
+          return [{ "?column?": 1 }];
+        },
+      },
+      () => true,
+    );
+    const res = await app.request("/health/ready");
+    expect(res.status).toBe(503);
+    expect(await res.json()).toEqual({ status: "unavailable" });
+    expect(dbChecked).toBe(false);
   });
 });
