@@ -1046,3 +1046,14 @@ cloudSqlProxy:
   args: []
   # -- Compute resources for the proxy sidecar. Empty → no resource limits set.
   resources: {}
+  # -- Render the proxy as a Kubernetes native sidecar (an initContainer with
+  # restartPolicy: Always) instead of a regular container. Requires
+  # Kubernetes >= 1.29 (native sidecar containers went GA in 1.29). This
+  # matters because native sidecars start BEFORE and terminate AFTER the
+  # main app container(s) in the pod, whereas a regular sidecar container is
+  # torn down at the same time as the app on SIGTERM (e.g. pod eviction) —
+  # with no ordering guarantee, the proxy can exit first and leave the app
+  # serving requests with no DB path for the remainder of its grace period.
+  # Default false — keeps the public chart compatible with clusters older
+  # than 1.29; opt in once running on 1.29+.
+  nativeSidecar: false

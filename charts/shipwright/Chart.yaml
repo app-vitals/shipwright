@@ -9,7 +9,7 @@ type: application
 # Chart version (SemVer). Bump on every chart change, independent of appVersion.
 # See CHANGELOG.md and the README "Versioning" section — CI enforces this bump
 # via `ct lint --check-version-increment`.
-version: 1.20.0
+version: 1.20.1
 # Version of the Shipwright application this chart deploys by default.
 appVersion: "0.1.0"
 home: https://shipwrightharness.com
@@ -30,7 +30,7 @@ annotations:
   # entry in CHANGELOG.md (keep the two in sync on every bump).
   artifacthub.io/changes: |
     - kind: added
-      description: "Optional podAnnotations and PodDisruptionBudget support for admin, taskStore, and chat — off/empty by default, purely additive. Set <workload>.podAnnotations with cluster-autoscaler.kubernetes.io/safe-to-evict: \"false\" and <workload>.podDisruptionBudget.enabled: true to protect single-replica workloads from voluntary eviction (e.g. GKE Autopilot cluster-autoscaler node churn)."
+      description: "cloudSqlProxy.nativeSidecar (default false, opt-in): render cloud-sql-proxy as a Kubernetes native sidecar (initContainer with restartPolicy: Always, requires Kubernetes >= 1.29) on admin, task-store, and chat, so the proxy outlives the app on pod eviction instead of exiting first (DBE-1.2)"
 dependencies:
   # Bitnami PostgreSQL subchart. Pinned to a chart version whose default image tag
   # is concrete (NOT `latest`), because Bitnami's 2025 catalog change moved newer

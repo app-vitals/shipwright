@@ -114,3 +114,113 @@ tests:
       - equal:
           path: spec.template.spec.containers[0].name
           value: admin
+
+  # DBE-1.2: nativeSidecar=true renders cloud-sql-proxy as a Kubernetes
+  # native sidecar (initContainer with restartPolicy: Always) instead of a
+  # regular container, so it terminates AFTER the app on pod eviction.
+  - it: nativeSidecar=true renders cloud-sql-proxy under initContainers, not containers
+    template: templates/admin-deployment.yaml
+    set:
+      cloudSqlProxy.enabled: true
+      cloudSqlProxy.connectionName: my-project:us-central1:my-instance
+      cloudSqlProxy.nativeSidecar: true
+    asserts:
+      - notContains:
+          path: spec.template.spec.containers
+          content:
+            name: cloud-sql-proxy
+      - equal:
+          path: spec.template.spec.initContainers[1].name
+          value: cloud-sql-proxy
+
+  - it: nativeSidecar=true sets restartPolicy Always on the cloud-sql-proxy initContainer
+    template: templates/admin-deployment.yaml
+    set:
+      cloudSqlProxy.enabled: true
+      cloudSqlProxy.connectionName: my-project:us-central1:my-instance
+      cloudSqlProxy.nativeSidecar: true
+    asserts:
+      - equal:
+          path: spec.template.spec.initContainers[1].restartPolicy
+          value: Always
+
+  - it: nativeSidecar=true keeps wait-for-postgres as the first initContainer (ordering)
+    template: templates/admin-deployment.yaml
+    set:
+      postgresql.enabled: true
+      cloudSqlProxy.enabled: true
+      cloudSqlProxy.connectionName: my-project:us-central1:my-instance
+      cloudSqlProxy.nativeSidecar: true
+    asserts:
+      - equal:
+          path: spec.template.spec.initContainers[0].name
+          value: wait-for-postgres
+      - equal:
+          path: spec.template.spec.initContainers[1].name
+          value: cloud-sql-proxy
+
+  - it: nativeSidecar=true honors cloudSqlProxy.args on the native sidecar
+    template: templates/admin-deployment.yaml
+    set:
+      cloudSqlProxy.enabled: true
+      cloudSqlProxy.connectionName: my-project:us-central1:my-instance
+      cloudSqlProxy.nativeSidecar: true
+      cloudSqlProxy.args:
+        - --max-sigterm-delay=10s
+        - --structured-logs
+    asserts:
+      - equal:
+          path: spec.template.spec.initContainers[1].args
+          value:
+            - --private-ip
+            - my-project:us-central1:my-instance
+            - --max-sigterm-delay=10s
+            - --structured-logs
+
+  - it: nativeSidecar=true keeps image, securityContext, and resources identical to the default path
+    template: templates/admin-deployment.yaml
+    set:
+      cloudSqlProxy.enabled: true
+      cloudSqlProxy.connectionName: my-project:us-central1:my-instance
+      cloudSqlProxy.nativeSidecar: true
+      cloudSqlProxy.image: gcr.io/cloud-sql-connectors/cloud-sql-proxy:2.14.0
+      cloudSqlProxy.resources:
+        requests:
+          cpu: 10m
+          memory: 32Mi
+        limits:
+          cpu: 100m
+          memory: 128Mi
+    asserts:
+      - equal:
+          path: spec.template.spec.initContainers[1].image
+          value: gcr.io/cloud-sql-connectors/cloud-sql-proxy:2.14.0
+      - equal:
+          path: spec.template.spec.initContainers[1].securityContext.runAsNonRoot
+          value: true
+      - equal:
+          path: spec.template.spec.initContainers[1].resources.requests.cpu
+          value: 10m
+      - equal:
+          path: spec.template.spec.initContainers[1].resources.limits.memory
+          value: 128Mi
+
+  - it: nativeSidecar=true with postgresql.enabled=false still renders cloud-sql-proxy as the sole initContainer
+    template: templates/admin-deployment.yaml
+    set:
+      postgresql.enabled: false
+      externalDatabase.existingSecret: byo-db-secret
+      cloudSqlProxy.enabled: true
+      cloudSqlProxy.connectionName: my-project:us-central1:my-instance
+      cloudSqlProxy.nativeSidecar: true
+    asserts:
+      - equal:
+          path: spec.template.spec.initContainers[0].name
+          value: cloud-sql-proxy
+      - equal:
+          path: spec.template.spec.initContainers[0].restartPolicy
+          value: Always
+      - notContains:
+          path: spec.template.spec.containers
+          content:
+            name: cloud-sql-proxy

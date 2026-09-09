@@ -689,7 +689,8 @@
           "type": "array",
           "items": { "type": "string" }
         },
-        "resources": { "type": "object" }
+        "resources": { "type": "object" },
+        "nativeSidecar": { "type": "boolean" }
       },
       "if": {
         "properties": { "enabled": { "const": true } },
