@@ -21,6 +21,7 @@
 import { join } from "node:path";
 import * as Sentry from "@sentry/bun";
 import { sentry } from "@sentry/hono/bun";
+import { registerGracefulShutdown } from "@shipwright/lib/graceful-shutdown";
 import { buildSentryInitOptions, initSentry } from "@shipwright/lib/sentry";
 import { Hono } from "hono";
 import { PrismaClient } from "../prisma/client/index.js";
@@ -397,6 +398,12 @@ async function startServer(): Promise<void> {
   const { taskStore: deletionTaskStore, chatService: deletionChatService } =
     buildDeletionClients(process.env);
 
+  // Reassigned below, after Bun.serve() + registerGracefulShutdown() run —
+  // the /health/ready handler only calls this at request time (well after
+  // startServer() finishes its synchronous setup), so it always sees the
+  // real graceful-shutdown flag once one exists.
+  let isShuttingDown = (): boolean => false;
+
   const root = new Hono();
 
   // Only mounted when SENTRY_DSN is set — a complete no-op otherwise, matching
@@ -419,6 +426,12 @@ async function startServer(): Promise<void> {
   //                    the Cloud SQL proxy sidecar has finished connecting.
   root.get("/health", (c) => c.json({ status: "ok" }));
   root.get("/health/ready", async (c) => {
+    // Once a shutdown signal has been received, fail readiness immediately
+    // (no DB round-trip) so Kubernetes pulls this pod from Service endpoints
+    // as early as possible — see lib/graceful-shutdown.ts.
+    if (isShuttingDown()) {
+      return c.json({ status: "unavailable" }, 503);
+    }
     const ready = await checkDbReady(prisma);
     return c.json({ status: ready ? "ok" : "unavailable" }, ready ? 200 : 503);
   });
@@ -619,7 +632,14 @@ async function startServer(): Promise<void> {
   });
   root.route("/", adminUIApp);
 
-  Bun.serve({ fetch: root.fetch, port });
+  const server = Bun.serve({ fetch: root.fetch, port });
+
+  const shutdown = registerGracefulShutdown({
+    server,
+    cleanup: [() => prisma.$disconnect()],
+    serviceName: "admin",
+  });
+  isShuttingDown = shutdown.isShuttingDown;
 
   console.log(`[admin] admin service listening on port ${port}`);
 }

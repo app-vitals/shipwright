@@ -12,6 +12,7 @@
  */
 
 import { join } from "node:path";
+import { registerGracefulShutdown } from "@shipwright/lib/graceful-shutdown";
 import { createChatServiceApp } from "./app.ts";
 import { createScopeResolver } from "./auth.ts";
 import { PrismaClient } from "./index.ts";
@@ -146,6 +147,18 @@ async function startServer(): Promise<void> {
   });
 
   const server = Bun.serve({ port, fetch: app.fetch });
+
+  // No /health/ready route exists for chat today (only unauthenticated
+  // /health liveness — see app.ts) so there's nothing to gate on
+  // shuttingDown here; still wire the stop()+cleanup+exit sequence so an
+  // evicted pod disconnects Prisma and exits promptly instead of riding out
+  // the full terminationGracePeriod. See lib/graceful-shutdown.ts.
+  registerGracefulShutdown({
+    server,
+    cleanup: [() => prisma.$disconnect()],
+    serviceName: "chat",
+  });
+
   console.log(`[chat] listening on http://localhost:${server.port}`);
 }
 
