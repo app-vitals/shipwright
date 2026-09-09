@@ -10,7 +10,10 @@
 // 2026-07-22, which runs Devin workloads in the customer's own environment.
 // The deployment claim below was re-cut from "where the work runs" to "where
 // the control plane runs" — the brain still always resides in Cognition's
-// cloud, which is the distinction that actually holds.
+// cloud, which is the distinction that actually holds. "vendor-hosted" is
+// retired page-wide for the same reason: it is environment-scoped, and
+// Outposts made it imprecise. Per MESSAGING.md, claim the control plane
+// ("proprietary" / "vendor-controlled"), never the environment.
 import BaseLayout from "../../layouts/BaseLayout.astro";
 import ChooseWhenGrid from "../../components/ChooseWhenGrid.astro";
 import ComparisonTable from "../../components/ComparisonTable.astro";
@@ -112,7 +115,7 @@ const dimensionRows = comparisonRows.map((row) => {
 
 <BaseLayout
   title="Shipwright vs Devin — Open Source Devin Alternative Compared"
-  description="A sourced, head-to-head Shipwright vs Devin comparison: MIT licence vs proprietary, self-hosted vs vendor-hosted, spec-to-deploy vs spec-to-PR, and an honest breakdown of when to choose each."
+  description="A sourced, head-to-head Shipwright vs Devin comparison: MIT licence vs proprietary, self-hosted vs vendor-controlled, spec-to-deploy vs spec-to-PR, and an honest breakdown of when to choose each."
   pagefindIgnore={true}
 >
   <!-- Page header -->
@@ -207,7 +210,7 @@ const dimensionRows = comparisonRows.map((row) => {
           label: "Choose Devin when",
           labelColor: "var(--sw-color-support-patriot-bright)",
           items: [
-            { text: "You want a fully managed, vendor-hosted service with no infrastructure to run yourself." },
+            { text: "You want a fully managed service with no infrastructure to run yourself." },
             { text: "The task is well-scoped and isolated enough that fire-and-forget autonomy fits." },
             {
               text: ` You need off-the-shelf enterprise attestations — Cognition states SOC 2 Type II certification since September 2024 and lists ISO/IEC 27001:2022 on <a href="${src.trust}">trust.cognition.ai</a>. `,
@@ -235,7 +238,7 @@ const dimensionRows = comparisonRows.map((row) => {
     <h2>Economics</h2>
     <p class="mt-3 max-w-2xl">
       Shipwright: free, MIT, no tiers or seats. Devin: a commercial,
-      vendor-hosted service — see{" "}
+      proprietary service — see{" "}
       <a href={src.pricing}>the vendor's site</a> for current terms, which
       change over time.
     </p>
