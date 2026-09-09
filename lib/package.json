@@ -9,6 +9,7 @@
     "./chat-notify": "./chat-notify.ts",
     "./claim-ttl": "./claim-ttl.ts",
     "./github-login": "./github-login.ts",
+    "./graceful-shutdown": "./graceful-shutdown.ts",
     "./http": "./http.ts",
     "./org-repo": "./org-repo.ts",
     "./pricing": "./pricing.ts",
