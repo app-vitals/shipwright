@@ -57,6 +57,15 @@ export type MergedWorkItem<T extends { type: string; id: string }> = T & {
 export interface AgentForEligibility {
   id: string;
   repos: string[];
+  /**
+   * Whether this agent's shipwright-loop cron is actually enabled. An agent
+   * with `loopEnabled: false` never dispatches to queued work regardless of
+   * which repos it lists, so buildEligibilityIndex() gates on this before
+   * adding the agent to any repo's bucket (QAE-1.1). Required — no default —
+   * so every caller must supply a real value; QAE-1.2 wires this in from the
+   * DB for the merged fleet-wide queue-activity view.
+   */
+  loopEnabled: boolean;
 }
 
 /** repo -> agentId[], built once from the fleet's agent list. */
@@ -105,7 +114,10 @@ export function mergeWorkQueueSnapshots<T extends { type: string; id: string }>(
 
 /**
  * Build a `repo -> agentId[]` index from the fleet's agent list — O(agents).
- * An agent with an empty `repos[]` contributes no entries. Call this once
+ * An agent with an empty `repos[]` contributes no entries. An agent with
+ * `loopEnabled !== true` also contributes no entries, even if `repos[]` is
+ * non-empty — it lists the repo but its shipwright-loop cron isn't enabled,
+ * so it will never actually dispatch to that repo's work. Call this once
  * per merged-view render, then reuse the returned index for every item via
  * lookupEligibleAgents()/annotateEligibility() (O(items)) — never rebuild it
  * per item, which would degrade this to an O(items x agents) nested loop.
@@ -116,6 +128,8 @@ export function buildEligibilityIndex(
   const index: EligibilityIndex = new Map();
 
   for (const agent of agents) {
+    if (agent.loopEnabled !== true) continue;
+
     for (const repo of agent.repos) {
       const agentIds = index.get(repo);
       if (agentIds) {

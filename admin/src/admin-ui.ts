@@ -1173,7 +1173,15 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
         agentId: s.agentId,
         items: s.items as unknown as WorkQueueItem[],
       })),
-      agents.map((a) => ({ id: a.id, repos: a.repos ?? [] })),
+      // loopEnabled is hardcoded true here — this admin service doesn't yet
+      // read each agent's actual shipwright-loop cron state. QAE-1.2 wires
+      // the real per-agent value in from the DB; until then this preserves
+      // today's behavior (every agent listing the repo is eligible).
+      agents.map((a) => ({
+        id: a.id,
+        repos: a.repos ?? [],
+        loopEnabled: true,
+      })),
     );
     const queueTotal = mergedRows.length;
     const pagedRows = mergedRows.slice(queueOffset, queueOffset + queueLimit);
