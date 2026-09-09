@@ -10,6 +10,12 @@ independent of `appVersion`. CI enforces this with
 `ct lint --check-version-increment`. Each release here must mirror the
 `artifacthub.io/changes` annotation in `Chart.yaml`.
 
+## [1.19.131] - 2026-09-09
+
+### Changed
+
+- chart version bump to 1.19.131 — repoint the chart README's cloud-native (any cluster) cross-reference from `docs/deploy-kubernetes.md` to `docs/deploy-kubernetes-providers.md` after the deployment-guide split
+
 ## [1.19.130] - 2026-09-08
 
 ### Changed
