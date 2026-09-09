@@ -10,11 +10,17 @@ independent of `appVersion`. CI enforces this with
 `ct lint --check-version-increment`. Each release here must mirror the
 `artifacthub.io/changes` annotation in `Chart.yaml`.
 
-## [1.19.133] - 2026-09-09
+## [1.20.1] - 2026-09-09
 
 ### Added
 
 - `cloudSqlProxy.nativeSidecar` (default `false`, opt-in): render cloud-sql-proxy as a Kubernetes native sidecar (initContainer with `restartPolicy: Always`, requires Kubernetes >= 1.29) on admin, task-store, and chat, so the proxy outlives the app on pod eviction instead of exiting first (DBE-1.2)
+
+## [1.20.0] - 2026-09-09
+
+### Added
+
+- Optional `podAnnotations` and `podDisruptionBudget` support for `admin`, `taskStore`, and `chat` (DBE-1.1): `<workload>.podAnnotations` (`{}` by default) renders onto `spec.template.metadata.annotations` of the matching Deployment, merged with a `{{- with }}` block; `<workload>.podDisruptionBudget` (`{enabled: false, minAvailable: 1}` by default) gates a new `policy/v1` PodDisruptionBudget per workload (`templates/admin-pdb.yaml`, `templates/task-store-pdb.yaml`, `templates/chat-pdb.yaml`), each selecting via the existing `shipwright.<workload>.selectorLabels` helper and gated on both `<workload>.enabled` and `<workload>.podDisruptionBudget.enabled`. Lets an operator set `cluster-autoscaler.kubernetes.io/safe-to-evict: "false"` plus a `minAvailable: 1` PDB to protect a single-replica workload (all three default to `replicas: 1`) from voluntary disruption — e.g. the GKE Autopilot cluster autoscaler evicting a pod on every transient NAP node scale-down, which otherwise briefly breaks its database connection on every reschedule. Both knobs are off/empty by default — purely additive, `helm template` output for existing values is unchanged. New `tests/admin_pdb_test.yaml`, `tests/task_store_pdb_test.yaml`, `tests/chat_pdb_test.yaml` plus extended cases in the existing `*_workload_test.yaml` files cover both features for all three workloads. README gains a "Protecting single-replica services from voluntary eviction" section with a worked example. Does not touch the cloud-sql-proxy sidecar (separate task).
 
 ## [1.19.132] - 2026-09-09
 

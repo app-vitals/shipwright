@@ -1,0 +1,58 @@
+suite: task-store PodDisruptionBudget (templates/task-store-pdb.yaml)
+# DBE-1.1 — see admin_pdb_test.yaml for the full context.
+# task-store is single-replica by default and is less frequently evicted than
+# admin, but the same protection is offered here for consistency.
+tests:
+  - it: renders NO PodDisruptionBudget by default (taskStore.podDisruptionBudget.enabled=false)
+    template: templates/task-store-pdb.yaml
+    set:
+      taskStore.enabled: true
+    asserts:
+      - hasDocuments:
+          count: 0
+
+  - it: renders NO PodDisruptionBudget when taskStore is disabled, even if podDisruptionBudget.enabled=true
+    template: templates/task-store-pdb.yaml
+    set:
+      taskStore.enabled: false
+      taskStore.podDisruptionBudget.enabled: true
+    asserts:
+      - hasDocuments:
+          count: 0
+
+  - it: renders a policy/v1 PodDisruptionBudget selecting the task-store pods when enabled
+    template: templates/task-store-pdb.yaml
+    set:
+      taskStore.enabled: true
+      taskStore.podDisruptionBudget.enabled: true
+    release:
+      name: r
+    asserts:
+      - isKind:
+          of: PodDisruptionBudget
+      - equal:
+          path: apiVersion
+          value: policy/v1
+      - equal:
+          path: spec.minAvailable
+          value: 1
+      - equal:
+          path: spec.selector.matchLabels["app.kubernetes.io/component"]
+          value: task-store
+      - equal:
+          path: spec.selector.matchLabels["app.kubernetes.io/name"]
+          value: shipwright
+      - equal:
+          path: spec.selector.matchLabels["app.kubernetes.io/instance"]
+          value: r
+
+  - it: honors a custom minAvailable
+    template: templates/task-store-pdb.yaml
+    set:
+      taskStore.enabled: true
+      taskStore.podDisruptionBudget.enabled: true
+      taskStore.podDisruptionBudget.minAvailable: 2
+    asserts:
+      - equal:
+          path: spec.minAvailable
+          value: 2

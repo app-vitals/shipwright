@@ -57,6 +57,27 @@ tests:
     release:
       name: r
 
+  # ── taskStore.podAnnotations (DBE-1.1) ────────────────────────────────────
+
+  - it: renders no pod-template annotations by default
+    template: templates/task-store-deployment.yaml
+    set:
+      taskStore.enabled: true
+    asserts:
+      - notExists:
+          path: spec.template.metadata.annotations
+
+  - it: renders taskStore.podAnnotations onto the pod template metadata
+    template: templates/task-store-deployment.yaml
+    set:
+      taskStore.enabled: true
+      taskStore.podAnnotations:
+        cluster-autoscaler.kubernetes.io/safe-to-evict: "false"
+    asserts:
+      - equal:
+          path: spec.template.metadata.annotations["cluster-autoscaler.kubernetes.io/safe-to-evict"]
+          value: "false"
+
   - it: applies the configured task-store resources
     template: templates/task-store-deployment.yaml
     set:

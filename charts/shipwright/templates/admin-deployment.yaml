@@ -14,6 +14,10 @@ spec:
     metadata:
       labels:
         {{- include "shipwright.admin.selectorLabels" . | nindent 8 }}
+      {{- with .Values.admin.podAnnotations }}
+      annotations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
     spec:
       serviceAccountName: {{ include "shipwright.admin.serviceAccountName" . }}
       {{- with .Values.global.imagePullSecrets }}

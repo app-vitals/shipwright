@@ -280,6 +280,30 @@ admin:
       existingSecret: ""
       key: SENTRY_DSN
     environment: ""
+  # -- Extra annotations for the admin pod template (spec.template.metadata.
+  # annotations) — NOT the ServiceAccount (see serviceAccount.annotations
+  # above). Empty by default. On GKE Autopilot, set
+  # `cluster-autoscaler.kubernetes.io/safe-to-evict: "false"` here to stop the
+  # cluster autoscaler from voluntarily evicting this pod when a transient NAP
+  # node scales down — admin is single-replica by default and re-scheduling
+  # briefly breaks its DB connection (cluster-autoscaler node churn). Example:
+  #   podAnnotations:
+  #     cluster-autoscaler.kubernetes.io/safe-to-evict: "false"
+  podAnnotations: {}
+  # -- Optional PodDisruptionBudget for the admin workload. Off by default —
+  # purely additive. Pairs with podAnnotations above to protect a
+  # single-replica admin pod from voluntary disruption (cluster-autoscaler
+  # node drains, etc.) that otherwise causes a burst of DB-unreachable errors
+  # while the pod reschedules. Recommended for prod single-replica installs:
+  #   podDisruptionBudget:
+  #     enabled: true
+  #     minAvailable: 1
+  podDisruptionBudget:
+    # -- Whether to render a PodDisruptionBudget for the admin workload.
+    enabled: false
+    # -- Minimum number of admin pods that must remain available during a
+    # voluntary disruption. Only used when enabled=true.
+    minAvailable: 1
 
 # -- Metrics dashboard (@shipwright/metrics) — event-store-backed service. Port 3460.
 # In postgres mode it reads/writes an `events` table in the bundled PostgreSQL and
@@ -839,6 +863,26 @@ taskStore:
     annotations: {}
     # -- Name of the task-store ServiceAccount. Generated if empty and create=true.
     name: ""
+  # -- Extra annotations for the task-store pod template (spec.template.
+  # metadata.annotations) — NOT the ServiceAccount (see serviceAccount.
+  # annotations above). Empty by default. On GKE Autopilot, set
+  # `cluster-autoscaler.kubernetes.io/safe-to-evict: "false"` here to stop the
+  # cluster autoscaler from voluntarily evicting this pod when a transient NAP
+  # node scales down. See admin.podAnnotations for the full example.
+  podAnnotations: {}
+  # -- Optional PodDisruptionBudget for the task-store workload. Off by
+  # default — purely additive. See admin.podDisruptionBudget for the full
+  # rationale (cluster-autoscaler node churn). Recommended for prod single-replica
+  # installs:
+  #   podDisruptionBudget:
+  #     enabled: true
+  #     minAvailable: 1
+  podDisruptionBudget:
+    # -- Whether to render a PodDisruptionBudget for the task-store workload.
+    enabled: false
+    # -- Minimum number of task-store pods that must remain available during
+    # a voluntary disruption. Only used when enabled=true.
+    minAvailable: 1
 
 # -- MCP server (@shipwright/mcp-server) — Model Context Protocol HTTP service that
 # proxies the task-store to remote MCP clients (e.g. Claude Desktop custom
@@ -964,6 +1008,25 @@ chat:
     annotations: {}
     # -- Name of the chat ServiceAccount. Generated if empty and create=true.
     name: ""
+  # -- Extra annotations for the chat pod template (spec.template.metadata.
+  # annotations) — NOT the ServiceAccount (see serviceAccount.annotations
+  # above). Empty by default. On GKE Autopilot, set
+  # `cluster-autoscaler.kubernetes.io/safe-to-evict: "false"` here to stop the
+  # cluster autoscaler from voluntarily evicting this pod when a transient NAP
+  # node scales down. See admin.podAnnotations for the full example.
+  podAnnotations: {}
+  # -- Optional PodDisruptionBudget for the chat workload. Off by default —
+  # purely additive. See admin.podDisruptionBudget for the full rationale
+  # (cluster-autoscaler node churn). Recommended for prod single-replica installs:
+  #   podDisruptionBudget:
+  #     enabled: true
+  #     minAvailable: 1
+  podDisruptionBudget:
+    # -- Whether to render a PodDisruptionBudget for the chat workload.
+    enabled: false
+    # -- Minimum number of chat pods that must remain available during a
+    # voluntary disruption. Only used when enabled=true.
+    minAvailable: 1
 
 # -- Cloud SQL Auth Proxy sidecar for the admin pod (GCP Cloud SQL).
 # When enabled, a cloud-sql-proxy sidecar is added to the admin Deployment so

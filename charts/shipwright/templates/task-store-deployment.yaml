@@ -14,6 +14,10 @@ spec:
     metadata:
       labels:
         {{- include "shipwright.taskStore.selectorLabels" . | nindent 8 }}
+      {{- with .Values.taskStore.podAnnotations }}
+      annotations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
     spec:
       serviceAccountName: {{ include "shipwright.taskStore.serviceAccountName" . }}
       {{- with .Values.global.imagePullSecrets }}
