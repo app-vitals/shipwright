@@ -21,6 +21,7 @@ const src = {
   openhandsLicense: "https://github.com/OpenHands/OpenHands/blob/main/LICENSE",
   coder: "https://coder.com/docs",
   devinDeployment: "https://docs.devin.ai/enterprise/deployment/overview",
+  devinReleaseNotes: "https://docs.devin.ai/release-notes/2026",
   factoryDeployment: "https://docs.factory.ai/enterprise/network-and-deployment",
   factoryPricing: "https://factory.ai/pricing",
 };
@@ -65,10 +66,10 @@ const architectureRows = [
   {
     tool: "Devin",
     license: "Proprietary",
-    architecture: "Cognition-hosted at every tier.",
+    architecture: "Cognition-hosted control plane at every tier.",
     detail:
-      "Even the dedicated single-tenant VPC option is a Cognition-managed environment — never inside your own infrastructure. Full breakdown at /vs/devin.",
-    citation: src.devinDeployment,
+      "Devin Outposts can run the execution sandbox in your own environment, but the agent loop — the brain — always resides in Cognition's cloud. Full breakdown at /vs/devin.",
+    citation: [src.devinDeployment, src.devinReleaseNotes],
     self: false,
   },
   {

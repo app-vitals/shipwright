@@ -2,9 +2,18 @@
 // Shipwright vs Devin — the dedicated comparison page for the "open source
 // Devin alternative" query (DVN-2.1). Every Devin-specific claim below is
 // sourced from goals/drafts/devin-alternative-positioning-research.md's
-// safe-to-print register (2026-07-14) and cited inline. Re-verify before any
-// future edit — see brand/MESSAGING.md D10 for the surface-scoped
-// competitor-naming policy this page operates under.
+// safe-to-print register (2026-07-14), re-verified 2026-09-09, and cited
+// inline. Re-verify before any future edit — see brand/MESSAGING.md D10 for
+// the surface-scoped competitor-naming policy this page operates under.
+//
+// 2026-09-09 re-verification: Cognition shipped "Devin Outposts" on
+// 2026-07-22, which runs Devin workloads in the customer's own environment.
+// The deployment claim below was re-cut from "where the work runs" to "where
+// the control plane runs" — the brain still always resides in Cognition's
+// cloud, which is the distinction that actually holds. "vendor-hosted" is
+// retired page-wide for the same reason: it is environment-scoped, and
+// Outposts made it imprecise. Per MESSAGING.md, claim the control plane
+// ("proprietary" / "vendor-controlled"), never the environment.
 import BaseLayout from "../../layouts/BaseLayout.astro";
 import ChooseWhenGrid from "../../components/ChooseWhenGrid.astro";
 import ComparisonTable from "../../components/ComparisonTable.astro";
@@ -12,11 +21,12 @@ import TryItCta from "../../components/TryItCta.astro";
 import { LICENSE_URL } from "../../consts";
 import { escapeHtml } from "../../lib/html-escape";
 
-const verifiedDate = "July 14, 2026";
+const verifiedDate = "September 9, 2026";
 
 // Sources (Appendix, devin-alternative-positioning-research.md).
 const src = {
   deployment: "https://docs.devin.ai/enterprise/deployment/overview",
+  releaseNotes: "https://docs.devin.ai/release-notes/2026",
   pricing: "https://devin.ai/pricing",
   trust: "https://trust.cognition.ai",
   home: "https://devin.ai/",
@@ -33,8 +43,8 @@ const comparisonRows = [
     dimension: "Deployment",
     shipwright: "Runs entirely in your own cloud — control plane included.",
     devin:
-      "Cognition-hosted at every tier. Even the dedicated single-tenant VPC option is a Cognition-managed environment connected via PrivateLink/IPSec — never inside your own infrastructure.",
-    citation: src.deployment,
+      "Cognition-hosted control plane at every tier. Devin Outposts can run the execution sandbox in your own environment, but the agent loop — the brain — always resides in Cognition's cloud.",
+    citation: [src.deployment, src.releaseNotes],
   },
   {
     dimension: "Pipeline",
@@ -46,7 +56,7 @@ const comparisonRows = [
   {
     dimension: "Economics",
     shipwright: "Free, MIT, no tiers or seats.",
-    devin: "Commercial, vendor-hosted — see the vendor's site for current terms.",
+    devin: "Commercial, proprietary — see the vendor's site for current terms.",
     citation: src.pricing,
   },
 ];
@@ -71,29 +81,41 @@ const dimensionColumns = [
   },
 ];
 
-const dimensionRows = comparisonRows.map((row) => ({
-  cells: [
-    {
-      style: "padding:0.9rem 1rem 0.9rem 0; vertical-align:top; font-family:var(--sw-font-display); font-weight:600; color:var(--sw-color-text-heading); white-space:nowrap;",
-      html: ` ${escapeHtml(row.dimension)} `,
-    },
-    {
-      style: "padding:0.9rem 1rem; vertical-align:top; color:var(--sw-color-text-body);",
-      html: ` ${escapeHtml(row.shipwright)} `,
-    },
-    {
-      style: "padding:0.9rem 1rem; vertical-align:top; color:var(--sw-color-text-body);",
-      html: row.citation
-        ? ` ${escapeHtml(row.devin)}  <a href="${row.citation}" class="text-sm">\n[source]\n</a>  `
-        : ` ${escapeHtml(row.devin)} `,
-    },
-  ],
-}));
+const dimensionRows = comparisonRows.map((row) => {
+  // A row may cite one source or several (the Deployment row needs both the
+  // deployment overview and the release note that introduced Outposts).
+  const citations = Array.isArray(row.citation)
+    ? row.citation
+    : row.citation
+      ? [row.citation]
+      : [];
+  const sourceLinks = citations
+    .map((c) => `<a href="${c}" class="text-sm">\n[source]\n</a>`)
+    .join("  ");
+  return {
+    cells: [
+      {
+        style: "padding:0.9rem 1rem 0.9rem 0; vertical-align:top; font-family:var(--sw-font-display); font-weight:600; color:var(--sw-color-text-heading); white-space:nowrap;",
+        html: ` ${escapeHtml(row.dimension)} `,
+      },
+      {
+        style: "padding:0.9rem 1rem; vertical-align:top; color:var(--sw-color-text-body);",
+        html: ` ${escapeHtml(row.shipwright)} `,
+      },
+      {
+        style: "padding:0.9rem 1rem; vertical-align:top; color:var(--sw-color-text-body);",
+        html: sourceLinks
+          ? ` ${escapeHtml(row.devin)}  ${sourceLinks}  `
+          : ` ${escapeHtml(row.devin)} `,
+      },
+    ],
+  };
+});
 ---
 
 <BaseLayout
   title="Shipwright vs Devin — Open Source Devin Alternative Compared"
-  description="A sourced, head-to-head Shipwright vs Devin comparison: MIT licence vs proprietary, self-hosted vs vendor-hosted, spec-to-deploy vs spec-to-PR, and an honest breakdown of when to choose each."
+  description="A sourced, head-to-head Shipwright vs Devin comparison: MIT licence vs proprietary, self-hosted vs vendor-controlled, spec-to-deploy vs spec-to-PR, and an honest breakdown of when to choose each."
   pagefindIgnore={true}
 >
   <!-- Page header -->
@@ -105,9 +127,8 @@ const dimensionRows = comparisonRows.map((row) => ({
     </h1>
     <p class="mt-5 max-w-2xl text-lg">
       Devin is the highest-profile autonomous coding agent — a managed
-      commercial service with a strong benchmark track record. Here is the
-      honest, sourced comparison: where the two genuinely differ, and where
-      each one fits.
+      commercial service. Here is the honest, sourced comparison: where the
+      two genuinely differ, and where each one fits.
     </p>
     <p class="mt-4 text-sm" style="color: var(--sw-color-text-muted);">
       Facts verified as of {verifiedDate}, from Devin's own primary sources
@@ -159,12 +180,23 @@ const dimensionRows = comparisonRows.map((row) => ({
       — a private network path, not a private environment.{" "}
       <a href={src.deployment}>Source: docs.devin.ai deployment overview</a>.
     </p>
+    <p class="mt-3 max-w-2xl">
+      Devin Outposts, introduced in July 2026, moves part of that picture:
+      it is "a new capability for running Devin workloads in your own
+      environment," disabled by default and enabled through a Cognition
+      representative. It relocates the execution sandbox — not the agent
+      loop. Devin's deployment overview still states that its workspace
+      "operates under the control of its brain, which always resides within
+      Cognition's Cloud."{" "}
+      <a href={src.releaseNotes}>Source: docs.devin.ai 2026 release notes</a>.
+    </p>
     <div class="sw-callout mt-6 max-w-3xl">
       <p>
-        <strong>Even Devin's dedicated single-tenant VPC tier is
-        Cognition-hosted — never in your environment.</strong> Shipwright's
-        control plane, agent runtime, and your code all run on infrastructure
-        you own, at every tier, with no managed-service layer in between.
+        <strong>Devin's brain stays in Cognition's cloud at every tier —
+        Outposts moves the workload, not the control plane.</strong>{" "}
+        Shipwright's control plane, agent runtime, and your code all run on
+        infrastructure you own, at every tier, with no managed-service layer
+        in between.
       </p>
     </div>
   </section>
@@ -178,7 +210,7 @@ const dimensionRows = comparisonRows.map((row) => ({
           label: "Choose Devin when",
           labelColor: "var(--sw-color-support-patriot-bright)",
           items: [
-            { text: "You want a fully managed, vendor-hosted service with no infrastructure to run yourself." },
+            { text: "You want a fully managed service with no infrastructure to run yourself." },
             { text: "The task is well-scoped and isolated enough that fire-and-forget autonomy fits." },
             {
               text: ` You need off-the-shelf enterprise attestations — Cognition states SOC 2 Type II certification since September 2024 and lists ISO/IEC 27001:2022 on <a href="${src.trust}">trust.cognition.ai</a>. `,
@@ -206,7 +238,7 @@ const dimensionRows = comparisonRows.map((row) => ({
     <h2>Economics</h2>
     <p class="mt-3 max-w-2xl">
       Shipwright: free, MIT, no tiers or seats. Devin: a commercial,
-      vendor-hosted service — see{" "}
+      proprietary service — see{" "}
       <a href={src.pricing}>the vendor's site</a> for current terms, which
       change over time.
     </p>
