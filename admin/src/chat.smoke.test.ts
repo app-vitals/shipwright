@@ -304,6 +304,7 @@ function makeBaseDeps(overrides?: Partial<AdminUIDeps>): AdminUIDeps {
       listWithRunSummary: async () => [
         { ...MOCK_CRON, lastRun: null, runCountToday: 0 },
       ],
+      listShipwrightLoopJobs: async () => [],
       get: async () => MOCK_CRON,
       create: async () => MOCK_CRON,
       setEnabled: async () => MOCK_CRON,

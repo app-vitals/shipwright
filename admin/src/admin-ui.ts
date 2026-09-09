@@ -259,6 +259,7 @@ export interface AdminUIDeps {
     AgentCronJobService,
     | "list"
     | "listWithRunSummary"
+    | "listShipwrightLoopJobs"
     | "create"
     | "update"
     | "setEnabled"
@@ -1160,20 +1161,32 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
     const queueLimit = 20;
     const queueOffset = (queuePage - 1) * queueLimit;
 
-    const [snapshots, runResult] = await Promise.all([
+    const [snapshots, runResult, loopJobs] = await Promise.all([
       agentWorkQueueService.getMany(agentIds),
       agentCronRunService.listAcrossAgents(agentIds, { limit, offset }),
+      agentCronJobService.listShipwrightLoopJobs(agentIds),
     ]);
 
     const agentNames: Record<string, string> = {};
     for (const a of agents) agentNames[a.id] = a.name;
+
+    // A missing shipwright-loop row defaults to not-loop-enabled; a present
+    // row is loop-enabled only when its own enabled flag is true.
+    const loopEnabledByAgentId = new Map<string, boolean>();
+    for (const job of loopJobs) {
+      loopEnabledByAgentId.set(job.agentId, job.enabled === true);
+    }
 
     const mergedRows = buildMergedWorkQueueRows(
       snapshots.map((s) => ({
         agentId: s.agentId,
         items: s.items as unknown as WorkQueueItem[],
       })),
-      agents.map((a) => ({ id: a.id, repos: a.repos ?? [] })),
+      agents.map((a) => ({
+        id: a.id,
+        repos: a.repos ?? [],
+        loopEnabled: loopEnabledByAgentId.get(a.id) ?? false,
+      })),
     );
     const queueTotal = mergedRows.length;
     const pagedRows = mergedRows.slice(queueOffset, queueOffset + queueLimit);

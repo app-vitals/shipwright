@@ -9118,8 +9118,8 @@ describe("buildMergedWorkQueueRows", () => {
         { agentId: "agent-b", items: [prItem()] },
       ],
       [
-        { id: "agent-a", repos: ["app-vitals/shipwright"] },
-        { id: "agent-b", repos: ["app-vitals/shipwright"] },
+        { id: "agent-a", repos: ["app-vitals/shipwright"], loopEnabled: true },
+        { id: "agent-b", repos: ["app-vitals/shipwright"], loopEnabled: true },
       ],
     );
 
@@ -9131,9 +9131,9 @@ describe("buildMergedWorkQueueRows", () => {
     const rows = buildMergedWorkQueueRows(
       [{ agentId: "agent-a", items: [prItem()] }],
       [
-        { id: "agent-a", repos: ["app-vitals/shipwright"] },
-        { id: "agent-b", repos: ["app-vitals/shipwright"] },
-        { id: "agent-c", repos: ["app-vitals/other-repo"] },
+        { id: "agent-a", repos: ["app-vitals/shipwright"], loopEnabled: true },
+        { id: "agent-b", repos: ["app-vitals/shipwright"], loopEnabled: true },
+        { id: "agent-c", repos: ["app-vitals/other-repo"], loopEnabled: true },
       ],
     );
 
@@ -9157,7 +9157,7 @@ describe("buildMergedWorkQueueRows", () => {
           ],
         },
       ],
-      [{ id: "agent-a", repos: ["app-vitals/shipwright"] }],
+      [{ id: "agent-a", repos: ["app-vitals/shipwright"], loopEnabled: true }],
     );
 
     expect(rows).toHaveLength(1);
@@ -9177,8 +9177,8 @@ describe("buildMergedWorkQueueRows", () => {
         },
       ],
       [
-        { id: "agent-a", repos: ["app-vitals/shipwright"] },
-        { id: "agent-b", repos: ["app-vitals/other-repo"] },
+        { id: "agent-a", repos: ["app-vitals/shipwright"], loopEnabled: true },
+        { id: "agent-b", repos: ["app-vitals/other-repo"], loopEnabled: true },
       ],
     );
 
@@ -9206,8 +9206,8 @@ describe("buildMergedWorkQueueRows", () => {
         },
       ],
       [
-        { id: "agent-a", repos: [] },
-        { id: "agent-b", repos: [] },
+        { id: "agent-a", repos: [], loopEnabled: true },
+        { id: "agent-b", repos: [], loopEnabled: true },
       ],
     );
 

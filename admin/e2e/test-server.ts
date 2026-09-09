@@ -260,6 +260,7 @@ function buildMockDeps(chatClient: ChatClient | undefined): AdminUIDeps {
       listWithRunSummary: async () => [
         { ...MOCK_CRON, lastRun: null, runCountToday: 0 },
       ],
+      listShipwrightLoopJobs: async () => [],
       get: async () => MOCK_CRON,
       create: async () => MOCK_CRON,
       update: async () => MOCK_CRON,

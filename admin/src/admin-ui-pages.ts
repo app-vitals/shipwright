@@ -4641,14 +4641,15 @@ function deriveWorkItemRepo(item: WorkQueueItem): string {
  * every accessible agent's latest work-queue snapshot by (type, id) via
  * mergeWorkQueueSnapshots(), then annotates each surviving row with the
  * agents eligible to work it (via buildEligibilityIndex()/
- * annotateEligibility(), keyed on each agent's repos[]). Result is sorted
+ * annotateEligibility(), keyed on each agent's repos[] and gated on
+ * loopEnabled). Result is sorted
  * oldest-first by age, mirroring rankWorkItems()'s ordering convention
  * (agent/src/work-selector.ts) so the merged Upcoming table reads the same
  * way a single agent's own queue does.
  */
 export function buildMergedWorkQueueRows(
   snapshots: { agentId: string; items: WorkQueueItem[] }[],
-  agents: { id: string; repos: string[] }[],
+  agents: { id: string; repos: string[]; loopEnabled: boolean }[],
 ): MergedWorkQueueRow[] {
   const merged = mergeWorkQueueSnapshots(snapshots);
   const index = buildEligibilityIndex(agents);

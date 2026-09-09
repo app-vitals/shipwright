@@ -68,6 +68,7 @@ function makeMinimalDeps(overrides?: Partial<AdminUIDeps>): AdminUIDeps {
     agentCronJobService: {
       list: async () => [],
       listWithRunSummary: async () => [],
+      listShipwrightLoopJobs: async () => [],
       get: async () => {
         throw new Error("not implemented");
       },

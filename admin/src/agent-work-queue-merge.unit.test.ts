@@ -48,6 +48,7 @@ function makeAgent(
   return {
     id: "agent-1",
     repos: [],
+    loopEnabled: true,
     ...overrides,
   };
 }
@@ -169,6 +170,38 @@ describe("buildEligibilityIndex", () => {
     for (const agentIds of index.values()) {
       expect(agentIds).not.toContain("agent-a");
     }
+  });
+
+  it("includes an agent with the item's repo and loopEnabled: true in the index", () => {
+    const agents = [
+      makeAgent({ id: "agent-a", repos: ["org/repo-1"], loopEnabled: true }),
+    ];
+
+    const index = buildEligibilityIndex(agents);
+
+    expect(index.get("org/repo-1")).toEqual(["agent-a"]);
+  });
+
+  it("excludes an otherwise-identical agent with loopEnabled: false — zero index entries despite a non-empty repos[]", () => {
+    const agents = [
+      makeAgent({ id: "agent-a", repos: ["org/repo-1"], loopEnabled: false }),
+    ];
+
+    const index = buildEligibilityIndex(agents);
+
+    expect(index.size).toBe(0);
+    expect(index.get("org/repo-1")).toBeUndefined();
+  });
+
+  it("in a mixed fleet where two agents share a repo but only one has loopEnabled: true, resolves to just that one agent", () => {
+    const agents = [
+      makeAgent({ id: "agent-a", repos: ["org/repo-1"], loopEnabled: true }),
+      makeAgent({ id: "agent-b", repos: ["org/repo-1"], loopEnabled: false }),
+    ];
+
+    const index = buildEligibilityIndex(agents);
+
+    expect(index.get("org/repo-1")).toEqual(["agent-a"]);
   });
 });
 
