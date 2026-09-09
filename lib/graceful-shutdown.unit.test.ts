@@ -57,26 +57,48 @@ function fakeExit() {
 
 const NOOP_LOGGER = { log: () => {}, error: () => {} };
 
+/**
+ * Builds a fresh set of fakes and registers a shutdown handler against them.
+ * Every test shares this same wiring — only `cleanup` and `hardDeadlineMs`
+ * vary — so the fixture construction lives here once instead of being
+ * repeated per test.
+ */
+function harness(
+  overrides: {
+    cleanup?: Array<() => Promise<void>>;
+    hardDeadlineMs?: number;
+  } = {},
+) {
+  const calls: string[] = [];
+  const server = fakeServer(calls);
+  const signal = fakeSignalSource();
+  const timeout = fakeTimeout();
+  const exit = fakeExit();
+
+  const handle = registerGracefulShutdown({
+    server,
+    cleanup: overrides.cleanup ?? [async () => {}],
+    ...(overrides.hardDeadlineMs !== undefined
+      ? { hardDeadlineMs: overrides.hardDeadlineMs }
+      : {}),
+    process: signal,
+    setTimeoutFn: timeout.setTimeoutFn,
+    clearTimeoutFn: timeout.clearTimeoutFn,
+    exit: exit.exit,
+    logger: NOOP_LOGGER,
+  });
+
+  return { calls, signal, timeout, exit, handle };
+}
+
 describe("registerGracefulShutdown", () => {
   test("calls server.stop() before running cleanup fns", async () => {
-    const calls: string[] = [];
-    const server = fakeServer(calls);
-    const signal = fakeSignalSource();
-    const timeout = fakeTimeout();
-    const exit = fakeExit();
-
-    registerGracefulShutdown({
-      server,
+    const { calls, signal, exit } = harness({
       cleanup: [
         async () => {
           calls.push("cleanup:0");
         },
       ],
-      process: signal,
-      setTimeoutFn: timeout.setTimeoutFn,
-      clearTimeoutFn: timeout.clearTimeoutFn,
-      exit: exit.exit,
-      logger: NOOP_LOGGER,
     });
 
     signal.listeners.SIGTERM();
@@ -86,14 +108,7 @@ describe("registerGracefulShutdown", () => {
   });
 
   test("runs cleanup fns in the given order", async () => {
-    const calls: string[] = [];
-    const server = fakeServer(calls);
-    const signal = fakeSignalSource();
-    const timeout = fakeTimeout();
-    const exit = fakeExit();
-
-    registerGracefulShutdown({
-      server,
+    const { calls, signal, exit } = harness({
       cleanup: [
         async () => {
           calls.push("cleanup:a");
@@ -105,11 +120,6 @@ describe("registerGracefulShutdown", () => {
           calls.push("cleanup:c");
         },
       ],
-      process: signal,
-      setTimeoutFn: timeout.setTimeoutFn,
-      clearTimeoutFn: timeout.clearTimeoutFn,
-      exit: exit.exit,
-      logger: NOOP_LOGGER,
     });
 
     signal.listeners.SIGTERM();
@@ -119,21 +129,7 @@ describe("registerGracefulShutdown", () => {
   });
 
   test("exits with code 0 on clean successful shutdown", async () => {
-    const calls: string[] = [];
-    const server = fakeServer(calls);
-    const signal = fakeSignalSource();
-    const timeout = fakeTimeout();
-    const exit = fakeExit();
-
-    registerGracefulShutdown({
-      server,
-      cleanup: [async () => {}],
-      process: signal,
-      setTimeoutFn: timeout.setTimeoutFn,
-      clearTimeoutFn: timeout.clearTimeoutFn,
-      exit: exit.exit,
-      logger: NOOP_LOGGER,
-    });
+    const { signal, exit } = harness();
 
     signal.listeners.SIGTERM();
     await exit.settled;
@@ -142,14 +138,7 @@ describe("registerGracefulShutdown", () => {
   });
 
   test("hard deadline forces server.stop(true) and exit(1) when cleanup never resolves", async () => {
-    const calls: string[] = [];
-    const server = fakeServer(calls);
-    const signal = fakeSignalSource();
-    const timeout = fakeTimeout();
-    const exit = fakeExit();
-
-    registerGracefulShutdown({
-      server,
+    const { calls, signal, timeout, exit } = harness({
       cleanup: [
         () =>
           new Promise<void>(() => {
@@ -157,11 +146,6 @@ describe("registerGracefulShutdown", () => {
           }),
       ],
       hardDeadlineMs: 20_000,
-      process: signal,
-      setTimeoutFn: timeout.setTimeoutFn,
-      clearTimeoutFn: timeout.clearTimeoutFn,
-      exit: exit.exit,
-      logger: NOOP_LOGGER,
     });
 
     signal.listeners.SIGTERM();
@@ -180,24 +164,12 @@ describe("registerGracefulShutdown", () => {
   });
 
   test("a second SIGTERM after the first is a no-op", async () => {
-    const calls: string[] = [];
-    const server = fakeServer(calls);
-    const signal = fakeSignalSource();
-    const timeout = fakeTimeout();
-    const exit = fakeExit();
-
-    registerGracefulShutdown({
-      server,
+    const { calls, signal, exit } = harness({
       cleanup: [
         async () => {
           calls.push("cleanup:0");
         },
       ],
-      process: signal,
-      setTimeoutFn: timeout.setTimeoutFn,
-      clearTimeoutFn: timeout.clearTimeoutFn,
-      exit: exit.exit,
-      logger: NOOP_LOGGER,
     });
 
     signal.listeners.SIGTERM();
@@ -213,24 +185,12 @@ describe("registerGracefulShutdown", () => {
   });
 
   test("SIGINT triggers the same shutdown sequence as SIGTERM", async () => {
-    const calls: string[] = [];
-    const server = fakeServer(calls);
-    const signal = fakeSignalSource();
-    const timeout = fakeTimeout();
-    const exit = fakeExit();
-
-    registerGracefulShutdown({
-      server,
+    const { calls, signal, exit } = harness({
       cleanup: [
         async () => {
           calls.push("cleanup:0");
         },
       ],
-      process: signal,
-      setTimeoutFn: timeout.setTimeoutFn,
-      clearTimeoutFn: timeout.clearTimeoutFn,
-      exit: exit.exit,
-      logger: NOOP_LOGGER,
     });
 
     signal.listeners.SIGINT();
@@ -241,21 +201,7 @@ describe("registerGracefulShutdown", () => {
   });
 
   test("exposes a readable shuttingDown flag, set synchronously on signal", async () => {
-    const calls: string[] = [];
-    const server = fakeServer(calls);
-    const signal = fakeSignalSource();
-    const timeout = fakeTimeout();
-    const exit = fakeExit();
-
-    const handle = registerGracefulShutdown({
-      server,
-      cleanup: [async () => {}],
-      process: signal,
-      setTimeoutFn: timeout.setTimeoutFn,
-      clearTimeoutFn: timeout.clearTimeoutFn,
-      exit: exit.exit,
-      logger: NOOP_LOGGER,
-    });
+    const { signal, exit, handle } = harness();
 
     expect(handle.isShuttingDown()).toBe(false);
 
@@ -269,14 +215,7 @@ describe("registerGracefulShutdown", () => {
   });
 
   test("a cleanup fn that throws does not prevent later cleanup fns or process.exit", async () => {
-    const calls: string[] = [];
-    const server = fakeServer(calls);
-    const signal = fakeSignalSource();
-    const timeout = fakeTimeout();
-    const exit = fakeExit();
-
-    registerGracefulShutdown({
-      server,
+    const { calls, signal, exit } = harness({
       cleanup: [
         async () => {
           calls.push("cleanup:a");
@@ -286,11 +225,6 @@ describe("registerGracefulShutdown", () => {
           calls.push("cleanup:b");
         },
       ],
-      process: signal,
-      setTimeoutFn: timeout.setTimeoutFn,
-      clearTimeoutFn: timeout.clearTimeoutFn,
-      exit: exit.exit,
-      logger: NOOP_LOGGER,
     });
 
     signal.listeners.SIGTERM();
