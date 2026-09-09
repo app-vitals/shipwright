@@ -408,8 +408,9 @@ test("each pillar cites the competitors its own body names", async ({
   }
 
   // Pillar 2 names OpenHands' trigger-to-PR flow (Plan Mode included) and its
-  // ephemeral, run-scoped tracking — both need a primary source on this card.
-  // Factory is no longer named in this pillar's body (MKT-PILLAR2-PRECISION-1),
+  // ephemeral, run-scoped tracking, plus the ownable-queue point naming
+  // Devin, Augment, and GitHub Copilot (MKT-PIPELINE-PARITY-1) — all need a
+  // primary source on this card. Factory is not named in this pillar's body,
   // so its citation must not appear here. This pillar is about
   // architecture/extensibility, not testing, so the QA-is-CI's-job link
   // belongs on pillar 1 and must not appear here either.
@@ -423,6 +424,10 @@ test("each pillar cites the competitors its own body names", async ({
   for (const url of [
     "https://www.openhands.dev/blog/ai-agent-workflow-automation",
     "https://docs.openhands.dev/sdk/guides/github-workflows/todo-management",
+    "https://docs.devin.ai/release-notes/2026",
+    "https://docs.devin.ai/integrations/jira",
+    "https://www.augmentcode.com/blog/introducing-remote-agent",
+    "https://docs.github.com/en/copilot/concepts/agents/coding-agent/about-coding-agent",
   ]) {
     await expect(loopPillar.locator(`a[href="${url}"]`)).toHaveCount(1);
   }
@@ -481,6 +486,66 @@ test("pillar 2 states the run-vs-backlog distinction and leaves OpenHands' human
     has: page.locator("td").first().getByText("OpenHands", { exact: true }),
   });
   await expect(row).toContainText("Optional");
+});
+
+// MKT-PIPELINE-PARITY-1: pillar 2 must state the ownable-queue point — their
+// backlog lives in a third-party SaaS (Jira/Linear/GitHub Issues), ours runs
+// on infrastructure the reader operates.
+test("pillar 2 states the ownable-queue point", async ({ page }) => {
+  await page.goto("/compare");
+  const text = (await page.locator("main").textContent()) ?? "";
+  expect(text).toContain(
+    "In every case the queue lives in someone else's SaaS.",
+  );
+  expect(text).toContain(
+    "Shipwright's task store runs on infrastructure you operate, in the repo you forked.",
+  );
+});
+
+// MKT-PIPELINE-PARITY-1: the landscape intro no longer merely says
+// "contested" — it names the specific cohort-wide claim (most competitors
+// now plan + queue + ship) with a primary source per vendor.
+test("landscape intro strengthens the contested claim with per-vendor citations", async ({
+  page,
+}) => {
+  await page.goto("/compare");
+  const heading = page.getByRole("heading", { name: /^The landscape$/i });
+  const section = page.locator("section").filter({ has: heading });
+  const text = (await section.textContent()) ?? "";
+  expect(text).toContain("no longer merely contested");
+  // Devin, GitHub Copilot, and Factory's citation URLs are also already used
+  // by their own landscape-table row (same section) — assert "at least one",
+  // not an exact count, so a legitimate shared citation isn't flagged.
+  // Augment's Remote Agent URL is new to this section, so it gets an exact
+  // count of 1.
+  for (const url of [
+    "https://docs.devin.ai/release-notes/2026",
+    "https://docs.github.com/en/copilot/concepts/agents/coding-agent/about-coding-agent",
+    "https://docs.factory.ai/features/missions/overview",
+  ]) {
+    const count = await section.locator(`a[href="${url}"]`).count();
+    expect(count).toBeGreaterThan(0);
+  }
+  await expect(
+    section.locator(
+      'a[href="https://www.augmentcode.com/blog/introducing-remote-agent"]',
+    ),
+  ).toHaveCount(1);
+});
+
+// MKT-PIPELINE-PARITY-1 AC: the honest summary line must close out "What
+// actually makes Shipwright different", adapted to page voice.
+test("the honest summary line closes the pillars section", async ({
+  page,
+}) => {
+  await page.goto("/compare");
+  const text = (await page.locator("main").textContent()) ?? "";
+  expect(text).toContain(
+    "Most of this cohort will plan a change and work it from a queue now.",
+  );
+  expect(text).toContain(
+    "none of them will let you own the whole pipeline — queue included — on infrastructure you run.",
+  );
 });
 
 test("homepage differentiators bridge into /compare (competitor-free)", async ({

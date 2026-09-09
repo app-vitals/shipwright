@@ -201,10 +201,14 @@ const pillars = [
   },
   {
     title: "An opinionated loop you can take apart",
-    body: "OpenHands will plan a task, run it, and open a PR for you to merge. What it does not keep is the middle: the plan is a markdown file, not tracked work, and nothing survives the run. Shipwright turns a plan into a durable backlog with dependency edges and a status lifecycle, and agents pull the next ready task on a schedule for days without anyone re-triggering them. Then you can disable phases, override the review principles per repo, and add your own commands. Their unit of work is a run. Ours is a backlog.",
+    body: "OpenHands will plan a task, run it, and open a PR for you to merge. What it does not keep is the middle: the plan is a markdown file, not tracked work, and nothing survives the run. Shipwright turns a plan into a durable backlog with dependency edges and a status lifecycle, and agents pull the next ready task on a schedule for days without anyone re-triggering them. Then you can disable phases, override the review principles per repo, and add your own commands. Their unit of work is a run. Ours is a backlog. The backlog itself is the wider point: Devin's automation triggers start it on a matching Jira or GitHub ticket with no manual assignment, Augment plans against tickets pulled from Jira, Linear, or Slack, and GitHub's coding agent works GitHub Issues as its backlog directly. In every case the queue lives in someone else's SaaS. Shipwright's task store runs on infrastructure you operate, in the repo you forked.",
     citations: [
       { label: "OpenHands: trigger to PR workflow", url: "https://www.openhands.dev/blog/ai-agent-workflow-automation" },
       { label: "OpenHands: ephemeral, no cross-run tracking", url: "https://docs.openhands.dev/sdk/guides/github-workflows/todo-management" },
+      { label: "Devin: 2026 release notes", url: "https://docs.devin.ai/release-notes/2026" },
+      { label: "Devin: Jira integration", url: "https://docs.devin.ai/integrations/jira" },
+      { label: "Augment: Remote Agent", url: "https://www.augmentcode.com/blog/introducing-remote-agent" },
+      { label: "GitHub Copilot: coding agent", url: "https://docs.github.com/en/copilot/concepts/agents/coding-agent/about-coding-agent" },
     ],
   },
   {
@@ -359,10 +363,22 @@ const landscapeRows = landscape.map((row) => {
       Commercial-tier agents in mid-2026 — the tools teams actually evaluate
       when choosing an AI delivery layer. MIT / own-it / self-hosted is
       table-stakes on the open-source side — every serious open-source tool
-      runs on your infra, so it earns parity, not separation. The delivery-pipeline
-      layer is already contested: OpenHands runs it today, Augment Code's Remote
-      Agents pull from a background task queue and land review-ready PRs, and the
-      commercial tier is moving fast.
+      runs on your infra, so it earns parity, not separation. The
+      delivery-pipeline layer is no longer merely contested — most of this
+      cohort now plans a change and works it from a queue without a human
+      assigning the ticket: Devin's{" "}
+      <a href="https://docs.devin.ai/release-notes/2026">automation triggers</a>{" "}
+      start it on a matching Jira or GitHub ticket with no manual assignment,
+      Augment's{" "}
+      <a href="https://www.augmentcode.com/blog/introducing-remote-agent">Remote
+      Agent</a> picks up tickets from Jira, Linear, or Slack and opens a PR
+      that has already been through review, GitHub's{" "}
+      <a href="https://docs.github.com/en/copilot/concepts/agents/coding-agent/about-coding-agent">coding
+      agent</a> works GitHub Issues as its backlog directly, and{" "}
+      <a href="https://docs.factory.ai/features/missions/overview">Factory's
+      Missions</a> decompose a plan into milestones behind an approval gate.
+      Being first to say so plainly is more credible than being caught
+      understating it.
     </p>
     <p class="mt-4 text-sm" style="color: var(--sw-color-text-muted);">
       Facts verified as of {verifiedDate}, from each vendor's own primary
@@ -405,6 +421,12 @@ const landscapeRows = landscape.map((row) => {
         </div>
       ))}
     </div>
+    <p class="mt-8 max-w-2xl sw-editorial">
+      Most of this cohort will plan a change and work it from a queue now.
+      None of them will refuse to merge code that has no test written first,
+      and none of them will let you own the whole pipeline — queue included —
+      on infrastructure you run.
+    </p>
     <div class="sw-callout mt-8 max-w-3xl">
       <p>
         <strong>On "own-it":</strong> running on your own infra is necessary, not
