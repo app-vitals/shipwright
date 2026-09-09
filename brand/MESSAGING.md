@@ -37,7 +37,7 @@ The old blanket rule ("never name a competitor") is **amended, not deleted**. Co
 
 **Never-print list (binding on every surface):**
 
-- "Devin has no private deployment" / "no VPC option" (three overreaching versions of this claim were refuted in verification — the safe framing is "Even Devin's dedicated single-tenant VPC tier is Cognition-hosted, never in your environment.")
+- "Devin has no private deployment" / "no VPC option" / **"never inside your own infrastructure"** (three overreaching versions of this claim were refuted in verification 2026-07-14; the fourth was refuted 2026-09-09 by Cognition's own release notes). **Superseded safe framing — do not reuse:** "Even Devin's dedicated single-tenant VPC tier is Cognition-hosted, never in your environment." That sentence went stale on **2026-07-22**, when Cognition shipped **Devin Outposts**, "a new capability for running Devin workloads in your own environment" (https://docs.devin.ai/release-notes/2026). **The current safe framing is control-plane-scoped, not environment-scoped:** "Cognition-hosted control plane at every tier. Devin Outposts can run the execution sandbox in your own environment, but the agent loop — the brain — always resides in Cognition's cloud." Outposts moved the workload, not the brain — Devin's deployment overview still states its workspace "operates under the control of its brain, which always resides within Cognition's Cloud." Claim the control plane, never the environment.
 - Any pricing figure — ours or a competitor's (see §3, price-free rule)
 - ACU pricing presented as a self-serve fact (Devin's ACU pricing is Enterprise-only, rates undisclosed)
 - Any SWE-bench Verified number (invalidated Feb 2026)
