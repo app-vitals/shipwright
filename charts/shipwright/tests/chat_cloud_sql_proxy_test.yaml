@@ -1,0 +1,138 @@
+suite: chat cloud-sql-proxy sidecar (DBE-1.2)
+# When cloudSqlProxy.enabled=true, the chat Deployment gets a cloud-sql-proxy
+# sidecar so a GCP Cloud SQL instance is reachable at 127.0.0.1:5432. The
+# sidecar is absent by default (cloudSqlProxy.enabled=false).
+# cloudSqlProxy.nativeSidecar=true renders it as a Kubernetes native sidecar
+# (initContainer with restartPolicy: Always) instead, so it terminates AFTER
+# the app on pod eviction (see admin_cloud_sql_proxy_test.yaml for the same
+# coverage on the admin Deployment).
+release:
+  name: r
+  namespace: shipwright
+tests:
+  - it: does NOT render the cloud-sql-proxy sidecar by default (enabled=false)
+    template: templates/chat-deployment.yaml
+    set:
+      chat.enabled: true
+    asserts:
+      - notContains:
+          path: spec.template.spec.containers
+          content:
+            name: cloud-sql-proxy
+
+  - it: renders the cloud-sql-proxy sidecar under containers when enabled=true (default nativeSidecar=false)
+    template: templates/chat-deployment.yaml
+    set:
+      chat.enabled: true
+      cloudSqlProxy.enabled: true
+      cloudSqlProxy.connectionName: my-project:us-central1:my-instance
+    asserts:
+      - equal:
+          path: spec.template.spec.containers[1].name
+          value: cloud-sql-proxy
+      - equal:
+          path: spec.template.spec.containers[1].args
+          value:
+            - --private-ip
+            - my-project:us-central1:my-instance
+      - equal:
+          path: spec.template.spec.containers[1].securityContext.runAsNonRoot
+          value: true
+
+  - it: nativeSidecar=true renders cloud-sql-proxy under initContainers, not containers
+    template: templates/chat-deployment.yaml
+    set:
+      chat.enabled: true
+      cloudSqlProxy.enabled: true
+      cloudSqlProxy.connectionName: my-project:us-central1:my-instance
+      cloudSqlProxy.nativeSidecar: true
+    asserts:
+      - notContains:
+          path: spec.template.spec.containers
+          content:
+            name: cloud-sql-proxy
+      - equal:
+          path: spec.template.spec.initContainers[0].name
+          value: cloud-sql-proxy
+      - equal:
+          path: spec.template.spec.initContainers[0].restartPolicy
+          value: Always
+
+  - it: nativeSidecar=true keeps wait-for-postgres as the first initContainer (ordering) on the bundled-DB path
+    template: templates/chat-deployment.yaml
+    set:
+      chat.enabled: true
+      chat.database.existingSecret: ""
+      postgresql.enabled: true
+      postgresql.auth.password: testpw
+      cloudSqlProxy.enabled: true
+      cloudSqlProxy.connectionName: my-project:us-central1:my-instance
+      cloudSqlProxy.nativeSidecar: true
+    asserts:
+      - equal:
+          path: spec.template.spec.initContainers[0].name
+          value: wait-for-postgres
+      - equal:
+          path: spec.template.spec.initContainers[1].name
+          value: cloud-sql-proxy
+      - equal:
+          path: spec.template.spec.initContainers[1].restartPolicy
+          value: Always
+
+  - it: nativeSidecar=true honors cloudSqlProxy.args on the native sidecar
+    template: templates/chat-deployment.yaml
+    set:
+      chat.enabled: true
+      cloudSqlProxy.enabled: true
+      cloudSqlProxy.connectionName: my-project:us-central1:my-instance
+      cloudSqlProxy.nativeSidecar: true
+      cloudSqlProxy.args:
+        - --max-sigterm-delay=10s
+        - --structured-logs
+    asserts:
+      - equal:
+          path: spec.template.spec.initContainers[0].args
+          value:
+            - --private-ip
+            - my-project:us-central1:my-instance
+            - --max-sigterm-delay=10s
+            - --structured-logs
+
+  - it: nativeSidecar=true keeps image and resources identical to the default path
+    template: templates/chat-deployment.yaml
+    set:
+      chat.enabled: true
+      cloudSqlProxy.enabled: true
+      cloudSqlProxy.connectionName: my-project:us-central1:my-instance
+      cloudSqlProxy.nativeSidecar: true
+      cloudSqlProxy.image: gcr.io/cloud-sql-connectors/cloud-sql-proxy:2.14.0
+      cloudSqlProxy.resources:
+        requests:
+          cpu: 10m
+          memory: 32Mi
+        limits:
+          cpu: 100m
+          memory: 128Mi
+    asserts:
+      - equal:
+          path: spec.template.spec.initContainers[0].image
+          value: gcr.io/cloud-sql-connectors/cloud-sql-proxy:2.14.0
+      - equal:
+          path: spec.template.spec.initContainers[0].resources.requests.cpu
+          value: 10m
+      - equal:
+          path: spec.template.spec.initContainers[0].resources.limits.memory
+          value: 128Mi
+
+  # Regression guard: enabling the native sidecar does not disturb the main chat container
+  - it: chat container remains at index 0 when the native sidecar is enabled
+    template: templates/chat-deployment.yaml
+    set:
+      chat.enabled: true
+      cloudSqlProxy.enabled: true
+      cloudSqlProxy.connectionName: my-project:us-central1:my-instance
+      cloudSqlProxy.nativeSidecar: true
+    asserts:
+      - equal:
+          path: spec.template.spec.containers[0].name
+          value: chat

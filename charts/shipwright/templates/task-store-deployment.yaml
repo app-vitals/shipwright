@@ -22,13 +22,18 @@ spec:
         - name: {{ . }}
         {{- end }}
       {{- end }}
+      {{- if or (include "shipwright.taskStore.useBundledDatabase" .) (and .Values.cloudSqlProxy.enabled .Values.cloudSqlProxy.nativeSidecar) }}
+      initContainers:
       {{- if include "shipwright.taskStore.useBundledDatabase" . }}
       # Only on the bundled-PostgreSQL path — an external database is the
       # operator's to make reachable, and blocking on it here would be wrong.
-      initContainers:
         - name: wait-for-postgres
           image: busybox:1.36
           command: ['sh', '-c', 'until nc -z {{ include "shipwright.postgresql.fullname" . }} 5432; do echo "waiting for postgresql..."; sleep 2; done']
+      {{- end }}
+      {{- if and .Values.cloudSqlProxy.enabled .Values.cloudSqlProxy.nativeSidecar }}
+        {{- include "shipwright.cloudSqlProxy.container" (dict "context" $ "nativeSidecar" true) | nindent 8 }}
+      {{- end }}
       {{- end }}
       containers:
         - name: task-store
@@ -97,20 +102,7 @@ spec:
           resources:
             {{- toYaml . | nindent 12 }}
           {{- end }}
-        {{- if .Values.cloudSqlProxy.enabled }}
-        - name: cloud-sql-proxy
-          image: {{ .Values.cloudSqlProxy.image }}
-          args:
-            - --private-ip
-            - {{ required "cloudSqlProxy.connectionName is required when cloudSqlProxy.enabled=true" .Values.cloudSqlProxy.connectionName | quote }}
-            {{- range .Values.cloudSqlProxy.args }}
-            - {{ . | quote }}
-            {{- end }}
-          securityContext:
-            runAsNonRoot: true
-          {{- with .Values.cloudSqlProxy.resources }}
-          resources:
-            {{- toYaml . | nindent 12 }}
-          {{- end }}
+        {{- if and .Values.cloudSqlProxy.enabled (not .Values.cloudSqlProxy.nativeSidecar) }}
+        {{- include "shipwright.cloudSqlProxy.container" (dict "context" $ "nativeSidecar" false) | nindent 8 }}
         {{- end }}
 {{- end }}
