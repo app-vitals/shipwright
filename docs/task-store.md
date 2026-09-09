@@ -33,6 +33,29 @@ On each authenticated request, the service resolves the request's caller — a s
 
 When the admin service is configured with a scope resolver (a remote service that looks up an agent's accessible repos by ID), the task-store invokes it on every agent-token request to populate the agent's `repos` array. If the resolver call fails (network error, timeout, non-2xx status, malformed JSON), the `repos` array is set to `[]` as a fail-safe to prevent accidental unrestricted access. To help callers detect and respond to resolver outages, the `scopeDegraded` signal is set to `true` only when a resolver failure occurs (see the `/tasks` response format above). Resolver failures are surfaced in error logs but do not block the request — writes within the restrictive empty scope are still permitted, and reads reflect the restricted visibility.
 
+### Error handling
+
+Handlers throw typed errors (`task-store/src/errors.ts`) rather than constructing responses inline. All extend a common `ApiError` base:
+
+| Class | Status | Thrown when |
+|-------|--------|-------------|
+| `BadRequestError` | 400 | Malformed input — e.g. an invalid `?status=` filter value, a `repo` not in `org/repo` format, a repo-scoped agent token writing outside its scope |
+| `UnauthorizedError` | 401 | Missing, malformed, or revoked bearer token |
+| `ForbiddenError` | 403 | Authenticated but not permitted (e.g. a non-admin token calling an admin-only endpoint) |
+| `NotFoundError` | 404 | Referenced task, PR, or token doesn't exist |
+| `ConflictError` | 409 | A conditional write lost a race (e.g. claiming a task another caller already claimed) |
+| `PayloadTooLargeError` | 413 | Request body exceeds the configured size limit |
+
+`ApiError` also exposes a `status` getter that aliases `statusCode`, so `@sentry/hono`'s error-handled-response detection (which reads `error.status`) recognizes these as already-handled and skips its own capture.
+
+A single `app.onError` hook in `task-store/src/app.ts` maps every thrown error to a response:
+
+1. **`ApiError` instances** — respond with the error's own `statusCode` and `{ error: message }`. No Sentry capture; these are expected, client-facing errors.
+2. **`hono`/`@hono/zod-openapi` `HTTPException` with `status < 500`** — treated the same as an `ApiError`: respond with its own status, no Sentry capture. This covers cases like a malformed JSON request body, which `hono`'s own validators reject before a handler (or `ApiError`) ever runs.
+3. **Everything else** (including a `>=500` `HTTPException`) — an unhandled error. Logged via `console.error` with the resolved caller label (see Authentication above), reported to Sentry if configured, and answered with a generic 500 (or the `HTTPException`'s own `>=500` status).
+
+`GET /tasks?status=` validates the value against the full `TaskStatus` enum before it reaches Prisma, throwing `BadRequestError` on an unrecognized status rather than letting an invalid value surface as a raw Prisma error mapped to a 500.
+
 ### Tasks
 
 #### List tasks
@@ -45,7 +68,7 @@ Query params:
 
 | Param | Type | Description |
 |-------|------|-------------|
-| `status` | string | Filter by exact status (e.g. `pending`, `in_progress`, `pr_open`) |
+| `status` | string | Filter by exact status (e.g. `pending`, `in_progress`, `pr_open`). Validated against the full `TaskStatus` enum before querying — an unrecognized value returns `400` rather than a raw Prisma error (see [Error handling](#error-handling)). |
 | `state` | string | `open` (all non-terminal), `closed` (terminal), `in_progress`, `ready`, `blocked`. `blocked` returns tasks with `status=blocked` OR (a non-terminal status AND an unresolved `blockedBy` entry — dependency or HITL). `session`/`source`/`repo`/`org`/`claimedBy`/`pr`/`branch`/`assignee`/`hitl` all apply under `?state=blocked` identically to the plain list path and to `?ready=true` (applied as an AND filter *after* the full task graph is loaded and dependency resolution has run — a task excluded by one of these filters can still contribute a `blockedBy` entry for an in-scope dependent task, since resolution needs the complete graph). `limit`/`offset`/`updatedSince` have no effect under `?state=blocked` (see the unpaginated-convenience-endpoint note below); `sort` does apply (see that same note). |
 | `ready` | `true` | Alias for `state=ready` — returns only tasks with `status=pending`, `hitl !== true` (Type A HITL tasks excluded), no fresh same-branch in-progress sibling (exclusivity guard, see "Same-branch exclusivity guard" below), and all dependencies satisfied. `session`/`source`/`repo`/`org`/`claimedBy`/`pr`/`branch`/`assignee`/`hitl` all apply under `?ready=true` identically to the plain list path (applied as an AND filter *after* dependency resolution — a task excluded by one of these filters can still satisfy a dependency edge for an in-scope task, since resolution needs the complete graph). `limit`/`offset`/`sort`/`updatedSince` have no effect under `?ready=true` (see the unpaginated-convenience-endpoint note below). Tasks are always returned in ascending `createdAt` order (oldest first) to ensure deterministic selection regardless of insertion order. |
 | `source` | string | Filter by task source (e.g. `plan-session`, `entropy-fix`, `manual`) |
