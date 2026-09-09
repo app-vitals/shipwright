@@ -486,3 +486,100 @@ describe("research-docs.md — size governance", () => {
     expect(splitIdx).toBeGreaterThan(qualityIdx);
   });
 });
+
+describe("research-docs.md — branch field on auto-mode bulk task payloads", () => {
+  it("Step A5.5's quality-pass task payload computes a docs/{doc-slug}-{YYYYMMDD} branch", () => {
+    const stepA5_5Idx = content.indexOf("### Step A5.5: Auto Mode Quality Pass");
+    const stepA6Idx = content.indexOf("### Step A6: Update CLAUDE.md References");
+    expect(stepA5_5Idx).toBeGreaterThan(-1);
+    expect(stepA6Idx).toBeGreaterThan(stepA5_5Idx);
+    const section = content.slice(stepA5_5Idx, stepA6Idx);
+
+    // Must appear before the split-proposal task block so it covers the
+    // quality-pass hit payload specifically, not just anywhere in A5.5.
+    const splitTitleIdx = section.indexOf("Split {doc} — exceeds");
+    expect(splitTitleIdx).toBeGreaterThan(-1);
+    const qualityPassSlice = section.slice(0, splitTitleIdx);
+
+    expect(qualityPassSlice).toContain("branch:");
+    expect(qualityPassSlice).toContain("docs/{doc-slug}-{YYYYMMDD}");
+    expect(qualityPassSlice.toLowerCase()).toContain("kebab");
+    expect(qualityPassSlice).toContain("UTC");
+  });
+
+  it("Step A5.5's split-proposal task payload computes a docs/{doc-slug}-{YYYYMMDD} branch", () => {
+    const stepA5_5Idx = content.indexOf("### Step A5.5: Auto Mode Quality Pass");
+    const stepA6Idx = content.indexOf("### Step A6: Update CLAUDE.md References");
+    const section = content.slice(stepA5_5Idx, stepA6Idx);
+
+    const splitTitleIdx = section.indexOf("Split {doc} — exceeds");
+    expect(splitTitleIdx).toBeGreaterThan(-1);
+    const splitSlice = section.slice(splitTitleIdx);
+
+    expect(splitSlice).toContain("branch:");
+    expect(splitSlice).toContain("docs/{doc-slug}-{YYYYMMDD}");
+  });
+
+  it("Step A7's missing-doc-module task payload computes a docs/{module-slug}-{YYYYMMDD} branch", () => {
+    const stepA7Idx = content.indexOf("### Step A7: Task Out Missing Docs");
+    const stepA8Idx = content.indexOf("### Step A8: Write Sync Anchor");
+    expect(stepA7Idx).toBeGreaterThan(-1);
+    expect(stepA8Idx).toBeGreaterThan(stepA7Idx);
+    const section = content.slice(stepA7Idx, stepA8Idx);
+
+    const concernTitleIdx = section.indexOf(
+      "Document {concern} conventions",
+    );
+    expect(concernTitleIdx).toBeGreaterThan(-1);
+    const moduleSlice = section.slice(0, concernTitleIdx);
+
+    expect(moduleSlice).toContain("branch:");
+    expect(moduleSlice).toContain("docs/{module-slug}-{YYYYMMDD}");
+    expect(moduleSlice.toLowerCase()).toContain("kebab");
+
+    // A worked example must disambiguate slash-containing input: `/` collapses
+    // to `-` so the branch stays a single segment, not a nested git ref.
+    expect(moduleSlice).toContain("api/billing` → `api-billing");
+  });
+
+  it("Step A7's concern-based task payload computes a docs/{concern-slug}-{YYYYMMDD} branch", () => {
+    const stepA7Idx = content.indexOf("### Step A7: Task Out Missing Docs");
+    const stepA8Idx = content.indexOf("### Step A8: Write Sync Anchor");
+    const section = content.slice(stepA7Idx, stepA8Idx);
+
+    const concernTitleIdx = section.indexOf(
+      "Document {concern} conventions",
+    );
+    expect(concernTitleIdx).toBeGreaterThan(-1);
+    const concernSlice = section.slice(concernTitleIdx);
+
+    expect(concernSlice).toContain("branch:");
+    expect(concernSlice).toContain("docs/{concern-slug}-{YYYYMMDD}");
+
+    // Five of Step 3a's seven concern categories contain `/` (and two of those
+    // also contain a space), so the slug rule needs a worked example proving
+    // both collapse to `-` rather than producing a nested `docs/a/b-DATE` ref.
+    expect(concernSlice).toContain(
+      "authorization/access-control` → `authorization-access-control",
+    );
+    expect(concernSlice).toContain(
+      "secrets/credential rotation` → `secrets-credential-rotation",
+    );
+  });
+
+  it("does not change staleness detection, candidate scoping, or task titles — additive field only", () => {
+    // Task titles from before this change must remain byte-identical.
+    expect(content).toContain(
+      'title: "Review {doc} for canonical-source duplication"',
+    );
+    expect(content).toContain(
+      'title: "Review {doc} for literal/prose mismatch"',
+    );
+    expect(content).toContain(
+      'title: "Review {doc} for convention missing named mechanism"',
+    );
+    expect(content).toContain("Split {doc} — exceeds {N} lines");
+    expect(content).toContain('title: "Document {module} module"');
+    expect(content).toContain("Document {concern} conventions");
+  });
+});
