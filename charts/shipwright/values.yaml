@@ -282,7 +282,7 @@ admin:
     environment: ""
   # -- Extra annotations for the admin pod template (spec.template.metadata.
   # annotations) — NOT the ServiceAccount (see serviceAccount.annotations
-  # above). Empty by default. DBE-1.1: on GKE Autopilot, set
+  # above). Empty by default. On GKE Autopilot, set
   # `cluster-autoscaler.kubernetes.io/safe-to-evict: "false"` here to stop the
   # cluster autoscaler from voluntarily evicting this pod when a transient NAP
   # node scales down — admin is single-replica by default and re-scheduling
@@ -291,7 +291,7 @@ admin:
   #     cluster-autoscaler.kubernetes.io/safe-to-evict: "false"
   podAnnotations: {}
   # -- Optional PodDisruptionBudget for the admin workload. Off by default —
-  # purely additive. DBE-1.1: pairs with podAnnotations above to protect a
+  # purely additive. Pairs with podAnnotations above to protect a
   # single-replica admin pod from voluntary disruption (cluster-autoscaler
   # node drains, etc.) that otherwise causes a burst of DB-unreachable errors
   # while the pod reschedules. Recommended for prod single-replica installs:
@@ -865,7 +865,7 @@ taskStore:
     name: ""
   # -- Extra annotations for the task-store pod template (spec.template.
   # metadata.annotations) — NOT the ServiceAccount (see serviceAccount.
-  # annotations above). Empty by default. DBE-1.1: on GKE Autopilot, set
+  # annotations above). Empty by default. On GKE Autopilot, set
   # `cluster-autoscaler.kubernetes.io/safe-to-evict: "false"` here to stop the
   # cluster autoscaler from voluntarily evicting this pod when a transient NAP
   # node scales down. See admin.podAnnotations for the full example.
@@ -1010,7 +1010,7 @@ chat:
     name: ""
   # -- Extra annotations for the chat pod template (spec.template.metadata.
   # annotations) — NOT the ServiceAccount (see serviceAccount.annotations
-  # above). Empty by default. DBE-1.1: on GKE Autopilot, set
+  # above). Empty by default. On GKE Autopilot, set
   # `cluster-autoscaler.kubernetes.io/safe-to-evict: "false"` here to stop the
   # cluster autoscaler from voluntarily evicting this pod when a transient NAP
   # node scales down. See admin.podAnnotations for the full example.
