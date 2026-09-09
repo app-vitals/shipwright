@@ -407,20 +407,22 @@ test("each pillar cites the competitors its own body names", async ({
     await expect(testsPillar.locator(`a[href="${url}"]`)).toHaveCount(1);
   }
 
-  // Pillar 2 names both OpenHands ("primitives and no opinion") and Factory —
-  // both need a primary source on this card. The OpenHands source is the SDK
-  // product page ("primitives, not prescriptions"), not the QA-changes doc:
-  // this pillar is about architecture/extensibility, not testing, so the
-  // QA-is-CI's-job link belongs on pillar 1 and must not appear here.
+  // Pillar 2 names OpenHands' trigger-to-PR flow (Plan Mode included) and its
+  // ephemeral, run-scoped tracking — both need a primary source on this card.
+  // Factory is no longer named in this pillar's body (MKT-PILLAR2-PRECISION-1),
+  // so its citation must not appear here. This pillar is about
+  // architecture/extensibility, not testing, so the QA-is-CI's-job link
+  // belongs on pillar 1 and must not appear here either.
   const loopPillar = card("An opinionated loop you can take apart");
-  await expect(
-    loopPillar.locator(
-      'a[href="https://docs.openhands.dev/openhands/usage/use-cases/qa-changes"]',
-    ),
-  ).toHaveCount(0);
   for (const url of [
-    "https://www.openhands.dev/product/sdk",
+    "https://docs.openhands.dev/openhands/usage/use-cases/qa-changes",
     "https://docs.factory.ai/features/missions/overview",
+  ]) {
+    await expect(loopPillar.locator(`a[href="${url}"]`)).toHaveCount(0);
+  }
+  for (const url of [
+    "https://www.openhands.dev/blog/ai-agent-workflow-automation",
+    "https://docs.openhands.dev/sdk/guides/github-workflows/todo-management",
   ]) {
     await expect(loopPillar.locator(`a[href="${url}"]`)).toHaveCount(1);
   }
@@ -450,6 +452,35 @@ test("retired pillar copy no longer appears anywhere on /compare", async ({
   const text = (await page.locator("main").textContent()) ?? "";
   expect(text).not.toContain("Plan-approval by default");
   expect(text).not.toContain("Claude-native by design");
+});
+
+// MKT-PILLAR2-PRECISION-1: OpenHands ships an opinionated per-run flow
+// (Plan Mode, trigger -> sandbox -> PR) — the old "primitives and no opinion"
+// claim understated them. This phrase must not appear anywhere on the site.
+test("the retired 'primitives and no opinion' claim no longer appears anywhere on /compare", async ({
+  page,
+}) => {
+  await page.goto("/compare");
+  await expectBannedPhrasesAbsent(page, ["primitives and no opinion"]);
+});
+
+// The corrected pillar-2 claim: OpenHands' unit of work is a run, Shipwright's
+// is a durable backlog. Humans review gate for OpenHands stays "Optional" in
+// the landscape table (Plan Mode is opt-in, not a default gate) — unchanged
+// by this correction.
+test("pillar 2 states the run-vs-backlog distinction and leaves OpenHands' human review gate unchanged", async ({
+  page,
+}) => {
+  await page.goto("/compare");
+  const text = (await page.locator("main").textContent()) ?? "";
+  expect(text).toContain("Their unit of work is a run. Ours is a backlog.");
+  expect(text).toContain(
+    "the plan is a markdown file, not tracked work, and nothing survives the run",
+  );
+  const row = page.locator("table tr").filter({
+    has: page.locator("td").first().getByText("OpenHands", { exact: true }),
+  });
+  await expect(row).toContainText("Optional");
 });
 
 test("homepage differentiators bridge into /compare (competitor-free)", async ({
