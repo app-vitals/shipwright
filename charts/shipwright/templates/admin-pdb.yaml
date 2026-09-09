@@ -1,0 +1,13 @@
+{{- if and .Values.admin.enabled .Values.admin.podDisruptionBudget.enabled }}
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: {{ include "shipwright.admin.fullname" . }}
+  labels:
+    {{- include "shipwright.admin.labels" . | nindent 4 }}
+spec:
+  minAvailable: {{ .Values.admin.podDisruptionBudget.minAvailable }}
+  selector:
+    matchLabels:
+      {{- include "shipwright.admin.selectorLabels" . | nindent 6 }}
+{{- end }}

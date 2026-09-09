@@ -1,0 +1,56 @@
+suite: admin PodDisruptionBudget (templates/admin-pdb.yaml)
+# DBE-1.1: the GKE Autopilot cluster autoscaler evicts
+# shipwright-admin (single-replica, no PDB) whenever a transient NAP node
+# scales down, causing a burst of "Can't reach database server" errors while
+# the pod reschedules. An opt-in PodDisruptionBudget lets an operator protect
+# the admin pod from voluntary eviction (default OFF — purely additive).
+tests:
+  - it: renders NO PodDisruptionBudget by default (admin.podDisruptionBudget.enabled=false)
+    template: templates/admin-pdb.yaml
+    asserts:
+      - hasDocuments:
+          count: 0
+
+  - it: renders NO PodDisruptionBudget when admin is disabled, even if podDisruptionBudget.enabled=true
+    template: templates/admin-pdb.yaml
+    set:
+      admin.enabled: false
+      admin.podDisruptionBudget.enabled: true
+    asserts:
+      - hasDocuments:
+          count: 0
+
+  - it: renders a policy/v1 PodDisruptionBudget selecting the admin pods when enabled
+    template: templates/admin-pdb.yaml
+    set:
+      admin.podDisruptionBudget.enabled: true
+    release:
+      name: r
+    asserts:
+      - isKind:
+          of: PodDisruptionBudget
+      - equal:
+          path: apiVersion
+          value: policy/v1
+      - equal:
+          path: spec.minAvailable
+          value: 1
+      - equal:
+          path: spec.selector.matchLabels["app.kubernetes.io/component"]
+          value: admin
+      - equal:
+          path: spec.selector.matchLabels["app.kubernetes.io/name"]
+          value: shipwright
+      - equal:
+          path: spec.selector.matchLabels["app.kubernetes.io/instance"]
+          value: r
+
+  - it: honors a custom minAvailable
+    template: templates/admin-pdb.yaml
+    set:
+      admin.podDisruptionBudget.enabled: true
+      admin.podDisruptionBudget.minAvailable: 2
+    asserts:
+      - equal:
+          path: spec.minAvailable
+          value: 2

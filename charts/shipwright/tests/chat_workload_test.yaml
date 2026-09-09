@@ -53,6 +53,27 @@ tests:
                 name: shipwright-secrets
                 key: DATABASE_URL_SHIPWRIGHT_CHAT
 
+  # ── chat.podAnnotations (DBE-1.1) ─────────────────────────────────────────
+
+  - it: renders no pod-template annotations by default
+    template: templates/chat-deployment.yaml
+    set:
+      chat.enabled: true
+    asserts:
+      - notExists:
+          path: spec.template.metadata.annotations
+
+  - it: renders chat.podAnnotations onto the pod template metadata
+    template: templates/chat-deployment.yaml
+    set:
+      chat.enabled: true
+      chat.podAnnotations:
+        cluster-autoscaler.kubernetes.io/safe-to-evict: "false"
+    asserts:
+      - equal:
+          path: spec.template.metadata.annotations["cluster-autoscaler.kubernetes.io/safe-to-evict"]
+          value: "false"
+
   - it: wires DATABASE_URL_SHIPWRIGHT_CHAT from a custom existingSecret
     template: templates/chat-deployment.yaml
     set:

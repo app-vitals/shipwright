@@ -180,6 +180,8 @@ environment, set `postgresql.auth.existingSecret` to a pre-created Secret (or se
 | `admin.serviceAccount.create` | `true` | Whether to create the admin ServiceAccount. |
 | `admin.serviceAccount.name` | `""` | Admin ServiceAccount name (generated if empty). |
 | `admin.resources` | `50m/64Mi → 250m/256Mi` | Admin container resource requests/limits. |
+| `admin.podAnnotations` / `taskStore.podAnnotations` / `chat.podAnnotations` | `{}` | Extra annotations for the pod template (`spec.template.metadata.annotations`) — **not** the ServiceAccount. See [Protecting single-replica services from voluntary eviction](#protecting-single-replica-services-from-voluntary-eviction) below. |
+| `admin.podDisruptionBudget` / `taskStore.podDisruptionBudget` / `chat.podDisruptionBudget` | `{enabled: false, minAvailable: 1}` | Optional PodDisruptionBudget for the workload. Off by default — purely additive. See below. |
 | `postgresql.enabled` | `true` | Deploy the bundled Bitnami PostgreSQL subchart. |
 | `postgresql.image.registry` | `docker.io` | PostgreSQL image registry (repoint to a mirror — see below). |
 | `postgresql.image.repository` | `bitnamilegacy/postgresql` | PostgreSQL image repository. |
@@ -196,6 +198,49 @@ environment, set `postgresql.auth.existingSecret` to a pre-created Secret (or se
 
 The full values surface is validated by `values.schema.json` (enums for
 `networking.type`, `auth.mode`, and image pull policies; required service shapes).
+
+## Protecting single-replica services from voluntary eviction
+
+`admin`, `taskStore`, and `chat` all default to `replicas: 1`. On clusters
+with an aggressive autoscaler (e.g. GKE Autopilot's cluster autoscaler
+scaling down transient NAP nodes), a single-replica pod with no eviction
+protection can be rescheduled frequently — each reschedule briefly breaks its
+database connection, which shows up as a burst of "can't reach database
+server" errors while the new pod starts and reconnects.
+
+Two independent, opt-in knobs address this — set them together for prod
+single-replica deployments:
+
+```yaml
+admin:
+  # Ask the cluster autoscaler not to evict this pod for node-scale-down.
+  podAnnotations:
+    cluster-autoscaler.kubernetes.io/safe-to-evict: "false"
+  # Also block voluntary disruptions (e.g. `kubectl drain`) from evicting the
+  # only replica outright.
+  podDisruptionBudget:
+    enabled: true
+    minAvailable: 1
+
+taskStore:
+  podAnnotations:
+    cluster-autoscaler.kubernetes.io/safe-to-evict: "false"
+  podDisruptionBudget:
+    enabled: true
+    minAvailable: 1
+
+chat:
+  podAnnotations:
+    cluster-autoscaler.kubernetes.io/safe-to-evict: "false"
+  podDisruptionBudget:
+    enabled: true
+    minAvailable: 1
+```
+
+Both are off/empty by default — enabling them is a deliberate operator
+choice, not a chart default (a `PodDisruptionBudget` with `minAvailable: 1`
+on a single-replica Deployment can otherwise block legitimate node drains
+until you scale up or accept the disruption).
 
 ## Cloud-native install (single chart)
 

@@ -1,0 +1,13 @@
+{{- if and .Values.taskStore.enabled .Values.taskStore.podDisruptionBudget.enabled }}
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: {{ include "shipwright.taskStore.fullname" . }}
+  labels:
+    {{- include "shipwright.taskStore.labels" . | nindent 4 }}
+spec:
+  minAvailable: {{ .Values.taskStore.podDisruptionBudget.minAvailable }}
+  selector:
+    matchLabels:
+      {{- include "shipwright.taskStore.selectorLabels" . | nindent 6 }}
+{{- end }}
