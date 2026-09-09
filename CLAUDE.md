@@ -178,7 +178,8 @@ To load additional context into a session, add `@docs/filename.md` entries here 
 - **docs/task-store.md** — task store service (D): the sole HTTP-service backend — tasks, PR tracking, tokens — and troubleshooting
 - **docs/mcp-tools.md** — generated MCP server tool reference (name, description, HTTP method/path, parameters, body) derived from task-store/openapi.json + the tool allowlist; regenerate with `bun run generate:mcp-docs`
 - **docs/chat.md** — chat service (D): auth model (admin vs. agent tokens, scope resolver), thread/message/token endpoints (incl. attachment streaming and the claim/reply queue), data model, and environment
-- **docs/deploy-kubernetes.md** — Kubernetes deployment guide: Minikube / GKE (Gateway API + cert-manager) / EKS (ALB), the agent runtime-provisioning RBAC model, and auth modes
+- **docs/deploy-kubernetes.md** — Kubernetes deployment guide: networking model, the agent runtime-provisioning RBAC model, agent voice (STT/TTS), Web Push notifications, auth modes, and bringing your own PostgreSQL
+- **docs/deploy-kubernetes-providers.md** — per-provider Kubernetes deployment walkthroughs: Minikube (local), GKE (Gateway API + cert-manager), EKS (ALB), Traefik, and cloud-native (any cluster)
 - **docs/helm-repo.md** — installing the published `shipwright` Helm chart, how chart publishing and version bumps are automated
 - **docs/quickstart.md** — local onboarding: metrics-only quickstart and the full dev stack (`task stack`)
 - **docs/test-readiness/test-system.md** — the authoritative test blueprint: layer matrix, boundary rules, per-component budgets, CI pipeline shape, and the full isolation contract

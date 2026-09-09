@@ -10,11 +10,17 @@ independent of `appVersion`. CI enforces this with
 `ct lint --check-version-increment`. Each release here must mirror the
 `artifacthub.io/changes` annotation in `Chart.yaml`.
 
-## [1.19.132] - 2026-09-09
+## [1.19.133] - 2026-09-09
 
 ### Added
 
 - `cloudSqlProxy.nativeSidecar` (default `false`, opt-in): render cloud-sql-proxy as a Kubernetes native sidecar (initContainer with `restartPolicy: Always`, requires Kubernetes >= 1.29) on admin, task-store, and chat, so the proxy outlives the app on pod eviction instead of exiting first (DBE-1.2)
+
+## [1.19.132] - 2026-09-09
+
+### Changed
+
+- chart version bump to 1.19.132 — repoint the chart README's cloud-native (any cluster) cross-reference from `docs/deploy-kubernetes.md` to `docs/deploy-kubernetes-providers.md` after the deployment-guide split (rebased past main's chart v1.19.131 auto-bump)
 
 ## [1.19.131] - 2026-09-09
 
