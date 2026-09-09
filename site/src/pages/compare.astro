@@ -182,10 +182,12 @@ const landscape = [
 // Factory's Missions overview states missions run user-facing QA testing as
 // they work and self-correct, so the pillar-1 body describes Factory's QA as
 // running-but-not-merge-blocking rather than as opt-in test generation.
-// Pillar 2's "primitives and no opinion" claim is sourced to OpenHands' own SDK
-// product page, which states verbatim: "OpenHands gives you primitives, not
-// prescriptions, so you can adapt agents to your codebase, tooling, and
-// governance needs."
+// Pillar 2's OpenHands claims are sourced to OpenHands' own blog and docs:
+// their trigger -> sandbox run -> PR flow (including Plan Mode, shipped
+// 2026-03-30) is documented on their workflow-automation blog post, and the
+// ephemeral, run-scoped nature of their TODO/plan tracking ("no tracking
+// across runs") is documented in their SDK's todo-management guide. Verified
+// 2026-09-06 — see MKT-PILLAR2-PRECISION-1.
 const pillars = [
   {
     title: "Tests are enforced, not offered",
@@ -199,10 +201,10 @@ const pillars = [
   },
   {
     title: "An opinionated loop you can take apart",
-    body: "OpenHands gives you primitives and no opinion: you assemble the pipeline yourself. Factory gives you an opinion you cannot open. Shipwright ships the loop already opinionated, then lets you disable phases, override the review principles per repo, and bolt on your own commands and scheduled jobs. Start on rails, then change the rails.",
+    body: "OpenHands will plan a task, run it, and open a PR for you to merge. What it does not keep is the middle: the plan is a markdown file, not tracked work, and nothing survives the run. Shipwright turns a plan into a durable backlog with dependency edges and a status lifecycle, and agents pull the next ready task on a schedule for days without anyone re-triggering them. Then you can disable phases, override the review principles per repo, and add your own commands. Their unit of work is a run. Ours is a backlog.",
     citations: [
-      { label: "OpenHands: primitives, not prescriptions", url: "https://www.openhands.dev/product/sdk" },
-      { label: "Factory Missions", url: "https://docs.factory.ai/features/missions/overview" },
+      { label: "OpenHands: trigger to PR workflow", url: "https://www.openhands.dev/blog/ai-agent-workflow-automation" },
+      { label: "OpenHands: ephemeral, no cross-run tracking", url: "https://docs.openhands.dev/sdk/guides/github-workflows/todo-management" },
     ],
   },
   {
