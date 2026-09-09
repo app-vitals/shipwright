@@ -10,6 +10,12 @@ independent of `appVersion`. CI enforces this with
 `ct lint --check-version-increment`. Each release here must mirror the
 `artifacthub.io/changes` annotation in `Chart.yaml`.
 
+## [1.19.132] - 2026-09-09
+
+### Added
+
+- `cloudSqlProxy.nativeSidecar` (default `false`, opt-in): render cloud-sql-proxy as a Kubernetes native sidecar (initContainer with `restartPolicy: Always`, requires Kubernetes >= 1.29) on admin, task-store, and chat, so the proxy outlives the app on pod eviction instead of exiting first (DBE-1.2)
+
 ## [1.19.131] - 2026-09-09
 
 ### Changed
