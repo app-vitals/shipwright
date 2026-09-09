@@ -505,7 +505,9 @@ auth:
 
 Only emails on `allowedEmails` may sign in. The client secret is kept in the
 chart-managed admin Secret, never in plaintext Deployment env. This is the
-required mode for the GKE and EKS targets above.
+required mode for the [GKE](./deploy-kubernetes-providers.md#gke-gateway-api--cert-manager)
+and [EKS](./deploy-kubernetes-providers.md#eks-alb-ingress--cert-manager) targets
+in the provider guides.
 
 ### `auth.mode=okta` — Okta OIDC (production)
 
