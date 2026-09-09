@@ -626,7 +626,7 @@ in a selfsigned issuer or your own hostname as needed. `admin.appBaseUrl`
 can now be left empty instead, since the chart auto-derives it from the
 ingress/gateway host. See [Bundled ingress
 controllers and cert-manager](./deploy-kubernetes.md#bundled-ingress-controllers-and-cert-manager-optional)
-below for the full values reference (per-subchart toggles, the CRD-bootstrap
+in the main deployment guide for the full values reference (per-subchart toggles, the CRD-bootstrap
 hook, and the mutual-exclusion rule between `ingress-nginx` and `traefik`),
 and [Minikube (local)](#minikube-local) for a dev-tuned variant of this same
 profile (`task minikube:cloud-native` / `task minikube:cloud-native:traefik`).

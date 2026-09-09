@@ -218,7 +218,7 @@ tls:
 ```
 
 Swap `ingress-nginx` for `traefik` (and set `networking.ingress.controller:
-traefik`) to bundle Traefik instead. See [`docs/deploy-kubernetes.md`](../../docs/deploy-kubernetes.md#cloud-native-any-cluster)
+traefik`) to bundle Traefik instead. See [`docs/deploy-kubernetes-providers.md`](../../docs/deploy-kubernetes-providers.md#cloud-native-any-cluster)
 for the full walkthrough and ready-to-use example values files.
 
 > ⚠️ **Do not bundle cert-manager on a cluster that already has it installed.**
