@@ -109,13 +109,13 @@ curl -sf -X POST \
   --data-binary @/tmp/quality-pass-tasks.json | jq .
 ```
 
-Task titles, one shape per check:
+Task titles, one shape per check, each paired with a `branch` slug derived the same way (kebab-case the doc's path minus extension, prefixed `docs/`):
 
-- 6.5a hit → `title: "Review {doc} for canonical-source duplication"`
-- 6.5b hit → `title: "Review {doc} for literal/prose mismatch"`
-- 6.5c hit → `title: "Review {doc} for convention missing named mechanism"`
+- 6.5a hit → `title: "Review {doc} for canonical-source duplication"`, `branch: "docs/review-{doc-slug}-canonical-source"`
+- 6.5b hit → `title: "Review {doc} for literal/prose mismatch"`, `branch: "docs/review-{doc-slug}-literal-prose-mismatch"`
+- 6.5c hit → `title: "Review {doc} for convention missing named mechanism"`, `branch: "docs/review-{doc-slug}-missing-mechanism"`
 
-Each task: `layer: "CLI"`, `session: "docs-freshness-cron"`.
+Each task: `layer: "CLI"`, `session: "docs-freshness-cron"`, `branch` as derived above. **The `branch` field is required** — `/shipwright:dev-task` refuses to proceed on any task with no `branch` set (it can't create a worktree) and blocks it with `status: "blocked"` instead, so a task filed here without one silently stalls until a human notices and backfills it by hand.
 
 Track a running count of tasks filed this way for the current repo — this becomes the `Quality flags tasked` figure in Step A9's per-repo summary.
 
@@ -125,7 +125,7 @@ Over 200 lines: file **one** task-store task via the same `/tasks/bulk` mechanis
 
 - `title: "Split {doc} — exceeds {N} lines"`
 - `description`: a best-effort section-grouping suggestion — which `##`/`###` sections would move to a new sub-topic doc, grouped by topic, following the same grouping approach as Step 6.6
-- `layer: "CLI"`, `session: "docs-freshness-cron"`
+- `layer: "CLI"`, `session: "docs-freshness-cron"`, `branch: "docs/split-{doc-slug}"` (same kebab-case-path-minus-extension slug as Step A5.5's checks — **required**, see that step's note on why an unbranched task stalls silently)
 
 Track a running count of split-proposal tasks filed this way for the current repo — this becomes the `Split proposals tasked` figure in Step A9's per-repo summary.
 
@@ -153,9 +153,9 @@ curl -sf -X POST \
   --data-binary @/tmp/missing-docs-tasks.json | jq .
 ```
 
-Each missing module produces one task with: `title: "Document {module} module"`, `layer: "CLI"`, `session: "docs-freshness-cron"`.
+Each missing module produces one task with: `title: "Document {module} module"`, `layer: "CLI"`, `session: "docs-freshness-cron"`, `branch: "docs/document-{module-slug}-module"` (kebab-case the module name). **The `branch` field is required** — see Step A5.5's note on why an unbranched task stalls silently on `/shipwright:dev-task`.
 
-Additionally, run the Step 3a cross-cutting concerns checklist (same seven categories, same material-presence verification procedure), scoped to `CHANGED_FILES` — the same scoping A7's structural check above already uses. For each concern category verified materially present in `CHANGED_FILES` with no matching doc, union one more task into the same `/tmp/missing-docs-tasks.json` payload before it's posted: `title: "Document {concern} conventions"`, `layer: "CLI"`, `session: "docs-freshness-cron"` — same session as the structural tasks above, so both are queryable together by downstream tooling. The `"Document {concern} conventions"` title distinguishes concern-based tasks from the structural `"Document {module} module"` tasks in the same payload. If no concern qualifies, the payload is unchanged from the structural-only set.
+Additionally, run the Step 3a cross-cutting concerns checklist (same seven categories, same material-presence verification procedure), scoped to `CHANGED_FILES` — the same scoping A7's structural check above already uses. For each concern category verified materially present in `CHANGED_FILES` with no matching doc, union one more task into the same `/tmp/missing-docs-tasks.json` payload before it's posted: `title: "Document {concern} conventions"`, `layer: "CLI"`, `session: "docs-freshness-cron"`, `branch: "docs/document-{concern-slug}-conventions"` — same session as the structural tasks above, so both are queryable together by downstream tooling. The `"Document {concern} conventions"` title distinguishes concern-based tasks from the structural `"Document {module} module"` tasks in the same payload. If no concern qualifies, the payload is unchanged from the structural-only set.
 
 ### Step A8: Write Sync Anchor
 
