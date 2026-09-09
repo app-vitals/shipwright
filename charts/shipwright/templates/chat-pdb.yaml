@@ -1,0 +1,13 @@
+{{- if and .Values.chat.enabled .Values.chat.podDisruptionBudget.enabled }}
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: {{ include "shipwright.chat.fullname" . }}
+  labels:
+    {{- include "shipwright.chat.labels" . | nindent 4 }}
+spec:
+  minAvailable: {{ .Values.chat.podDisruptionBudget.minAvailable }}
+  selector:
+    matchLabels:
+      {{- include "shipwright.chat.selectorLabels" . | nindent 6 }}
+{{- end }}

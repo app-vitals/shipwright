@@ -1,0 +1,58 @@
+suite: chat PodDisruptionBudget (templates/chat-pdb.yaml)
+# DBE-1.1 — see admin_pdb_test.yaml for the full context.
+# chat is single-replica by default and is less frequently evicted than
+# admin, but the same protection is offered here for consistency.
+tests:
+  - it: renders NO PodDisruptionBudget by default (chat.podDisruptionBudget.enabled=false)
+    template: templates/chat-pdb.yaml
+    set:
+      chat.enabled: true
+    asserts:
+      - hasDocuments:
+          count: 0
+
+  - it: renders NO PodDisruptionBudget when chat is disabled, even if podDisruptionBudget.enabled=true
+    template: templates/chat-pdb.yaml
+    set:
+      chat.enabled: false
+      chat.podDisruptionBudget.enabled: true
+    asserts:
+      - hasDocuments:
+          count: 0
+
+  - it: renders a policy/v1 PodDisruptionBudget selecting the chat pods when enabled
+    template: templates/chat-pdb.yaml
+    set:
+      chat.enabled: true
+      chat.podDisruptionBudget.enabled: true
+    release:
+      name: r
+    asserts:
+      - isKind:
+          of: PodDisruptionBudget
+      - equal:
+          path: apiVersion
+          value: policy/v1
+      - equal:
+          path: spec.minAvailable
+          value: 1
+      - equal:
+          path: spec.selector.matchLabels["app.kubernetes.io/component"]
+          value: chat
+      - equal:
+          path: spec.selector.matchLabels["app.kubernetes.io/name"]
+          value: shipwright
+      - equal:
+          path: spec.selector.matchLabels["app.kubernetes.io/instance"]
+          value: r
+
+  - it: honors a custom minAvailable
+    template: templates/chat-pdb.yaml
+    set:
+      chat.enabled: true
+      chat.podDisruptionBudget.enabled: true
+      chat.podDisruptionBudget.minAvailable: 2
+    asserts:
+      - equal:
+          path: spec.minAvailable
+          value: 2
