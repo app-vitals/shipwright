@@ -35,7 +35,7 @@ helm repo add shipwright https://app-vitals.github.io/shipwright
 helm install my-release shipwright/shipwright --namespace shipwright --create-namespace
 ```
 
-See [`docs/deploy-kubernetes.md`](./docs/deploy-kubernetes.md) for end-to-end deployment guides (Minikube / GKE / EKS), and [`docs/helm-repo.md`](./docs/helm-repo.md) for the published-repo flow and how publishing is triggered.
+See [`docs/deploy-kubernetes.md`](./docs/deploy-kubernetes.md) for the Kubernetes deployment guide and [`docs/deploy-kubernetes-providers.md`](./docs/deploy-kubernetes-providers.md) for end-to-end per-provider walkthroughs (Minikube / GKE / EKS / Traefik / cloud-native), and [`docs/helm-repo.md`](./docs/helm-repo.md) for the published-repo flow and how publishing is triggered.
 
 ## Get Shipwright in your Slack
 
