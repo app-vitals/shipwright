@@ -42,6 +42,17 @@ Because the body comes from a *different* service, neither scrub hook above prot
 
 Redaction runs over a 2000-char window and the result is then truncated to 500 chars, so a secret straddling the truncation boundary is masked in full rather than half-emitted. What survives is the diagnostic remainder: status text, error class, Prisma error code, host and table names.
 
+### Claude session error classification
+
+Every agent call site reporting a `claude` CLI runner error — `agent/src/cron-failure-reporter.ts`, `agent/src/health.ts`, `agent/src/loop-orchestrator.ts`, and `agent/src/slack.ts` — goes through `reportClaudeError(sentryClient, err)` (`agent/src/claude.ts`) instead of calling `sentryClient.captureException(err)` directly.
+
+`reportClaudeError` classifies the error before reporting it:
+
+- A `ClaudeTimeoutError` with `reason: "ceiling"` — the intentional 1hr hard-ceiling backstop firing on a legitimately long-running session, not a defect — is downgraded to `sentryClient.captureMessage()`. This keeps the event visible in Sentry without creating an actionable Issue that error-patrol would otherwise keep re-flagging as "regressed" even though nothing is broken (VITALS-OS-46).
+- Every other error, including a `ClaudeTimeoutError` with `reason: "idle"` (a genuine hang), is reported unchanged via `sentryClient.captureException(err)`.
+
+Any new call site that can receive a thrown `ClaudeTimeoutError` should report through `reportClaudeError` rather than calling `captureException` directly, to keep this classification consistent.
+
 ## Disabling Sentry
 
 Unset `SENTRY_DSN` (or never set it) for the service in question. This is the default — no other configuration is required to keep a service fully offline from Sentry's perspective. Alternatively, `Sentry` is automatically disabled during test runs (when `NODE_ENV` is `"test"`, set either by the root `bunfig.toml` `[test]` preload script `scripts/test-env-preload.ts` for root-cwd `bun test` runs, or by the subpackage's own `NODE_ENV=test` script prefix for subpackage-cwd runs) even if `SENTRY_DSN` is present in the environment, preventing test assertions from polluting production Sentry with unintended error events.
