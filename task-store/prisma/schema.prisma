@@ -348,10 +348,10 @@ model PullRequestEvent {
 // without requiring schema migrations.
 
 model Session {
-  slug      String    @id // Human-readable identifier, e.g. "shipwright-may-launch"
-  title     String?
-  createdAt DateTime  @default(now())
-  updatedAt DateTime  @updatedAt
+  slug       String    @id // Human-readable identifier, e.g. "shipwright-may-launch"
+  title      String?
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
   archivedAt DateTime?
   archivedBy String?
 }
