@@ -1,11 +1,16 @@
 ---
 // Shared "Try it" CTA section at the bottom of every comparison page
-// (compare.astro, self-hosted.astro, vs/devin.astro). The base CTA — h2,
-// paragraph, install command, GitHub + discovery-call buttons — is
-// byte-identical across all three. self-hosted.astro and vs/devin.astro
-// each append their own trailing-links paragraph after the CTA buttons;
-// compare.astro renders the bare CTA. That page-specific trailing markup is
-// supplied via the default slot so it stays page-owned.
+// (compare.astro, self-hosted.astro, vs/devin.astro, vs/factory.astro,
+// vs/openhands.astro, autonomy.astro). The base CTA — h2, paragraph,
+// install command, GitHub + rollout-call buttons — is byte-identical across
+// all callers. self-hosted.astro and vs/devin.astro each append their own
+// trailing-links paragraph after the CTA buttons; compare.astro renders the
+// bare CTA. That page-specific trailing markup is supplied via the default
+// slot so it stays page-owned.
+//
+// The secondary button and the rollout line below it (MKT-AUTONOMY-PAGE-1)
+// label what the discovery call is actually for and point at /autonomy for
+// readers who want the staged-rollout detail before booking anything.
 import { BOOKING_URL, INSTALL_CMD, REPO_URL } from "../consts";
 ---
 
@@ -18,7 +23,11 @@ import { BOOKING_URL, INSTALL_CMD, REPO_URL } from "../consts";
   <pre class="sw-code mt-4 w-fit"><code>{INSTALL_CMD}</code></pre>
   <div class="mt-6 flex flex-wrap items-center gap-4">
     <a href={REPO_URL} class="sw-btn">View on GitHub ↗</a>
-    <a href={BOOKING_URL} class="sw-btn sw-btn-secondary">Book a discovery call</a>
+    <a href={BOOKING_URL} class="sw-btn sw-btn-secondary">Talk through a rollout</a>
   </div>
+  <p class="mt-4 max-w-2xl text-sm" style="color: var(--sw-color-text-muted);">
+    Rolling this out to a team? We can talk through which stage to start at.
+    <a href="/autonomy">How the stages work</a>
+  </p>
   <slot />
 </section>

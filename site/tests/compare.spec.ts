@@ -199,7 +199,7 @@ test("focused Augment Code head-to-head is present and fair", async ({
   expect(text).toContain("choose shipwright");
 });
 
-test("CTA repeats the install command and links GitHub + discovery call", async ({
+test("CTA repeats the install command and links GitHub + a rollout conversation", async ({
   page,
 }) => {
   await page.goto("/compare");
@@ -212,7 +212,7 @@ test("CTA repeats the install command and links GitHub + discovery call", async 
     page.getByRole("link", { name: /github/i }).first(),
   ).toHaveAttribute("href", /github\.com\/app-vitals\/shipwright/);
   await expect(
-    page.locator("#cta").getByRole("link", { name: /discovery call/i }),
+    page.locator("#cta").getByRole("link", { name: /talk through a rollout/i }),
   ).toHaveAttribute("href", BOOKING_URL);
 });
 
