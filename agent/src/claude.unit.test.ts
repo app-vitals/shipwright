@@ -17,9 +17,13 @@ const WORKSPACE = join(TEST_AGENT_HOME, "workspace");
 
 // ─── Import module under test ─────────────────────────────────────────────────
 
-const { createRunClaude, setLiveClaudeConfig, dominantModel } = await import(
-  "./claude.ts"
-);
+const {
+  createRunClaude,
+  setLiveClaudeConfig,
+  dominantModel,
+  ClaudeTimeoutError,
+  reportClaudeError,
+} = await import("./claude.ts");
 
 // ─── Stream-json fixtures (hand-authored per the public CLI schema) ───────────
 
@@ -2478,5 +2482,60 @@ describe("liveClaudeConfig", () => {
     const effortIdx = cmd.indexOf("--effort");
     expect(effortIdx).toBeGreaterThan(-1);
     expect(cmd[effortIdx + 1]).toBe("xhigh");
+  });
+});
+
+// ─── reportClaudeError ──────────────────────────────────────────────────────
+//
+// VITALS-OS-46: a ClaudeTimeoutError with reason:"ceiling" is the intentional
+// 1hr hard-ceiling backstop firing on a legitimately long-running session —
+// expected, not a defect — so it must be downgraded to captureMessage rather
+// than captureException (which creates an actionable Sentry Issue that keeps
+// re-triggering error-patrol as "regressed"). reason:"idle" (a genuine hang)
+// and any other error must remain unchanged (captureException).
+
+describe("reportClaudeError", () => {
+  beforeEach(() => {
+    capturedMessages = [];
+    capturedExceptions = [];
+  });
+
+  test("a ceiling-reason ClaudeTimeoutError calls captureMessage, not captureException", () => {
+    const err = new ClaudeTimeoutError(3_600_000, "ceiling");
+
+    reportClaudeError(fakeSentryClient, err);
+
+    expect(capturedExceptions).toHaveLength(0);
+    expect(capturedMessages).toHaveLength(1);
+    expect(capturedMessages[0]).toContain("3600s");
+  });
+
+  test("an idle-reason ClaudeTimeoutError calls captureException, not captureMessage", () => {
+    const err = new ClaudeTimeoutError(1_500_000, "idle");
+
+    reportClaudeError(fakeSentryClient, err);
+
+    expect(capturedMessages).toHaveLength(0);
+    expect(capturedExceptions).toHaveLength(1);
+    expect(capturedExceptions[0]).toBe(err);
+  });
+
+  test("a non-ClaudeTimeoutError calls captureException, not captureMessage", () => {
+    const err = new Error("some other failure");
+
+    reportClaudeError(fakeSentryClient, err);
+
+    expect(capturedMessages).toHaveLength(0);
+    expect(capturedExceptions).toHaveLength(1);
+    expect(capturedExceptions[0]).toBe(err);
+  });
+
+  test("does not throw when sentryClient is undefined", () => {
+    expect(() =>
+      reportClaudeError(undefined, new ClaudeTimeoutError(3_600_000, "ceiling")),
+    ).not.toThrow();
+    expect(() =>
+      reportClaudeError(undefined, new Error("boom")),
+    ).not.toThrow();
   });
 });

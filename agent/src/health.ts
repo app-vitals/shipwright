@@ -1,6 +1,7 @@
 import type { ErrorCapturingClient } from "@shipwright/lib/sentry";
 import type { Server } from "bun";
 import { Hono } from "hono";
+import { reportClaudeError } from "./claude.ts";
 import { type Clock, SystemClock } from "./clock.ts";
 import {
   type CronHandlerDeps,
@@ -168,7 +169,7 @@ export function startHealthServer(
           if (err instanceof ValidationError) {
             return Response.json({ error: err.message }, { status: 422 });
           }
-          sentryClient?.captureException(err);
+          reportClaudeError(sentryClient, err);
           console.error("[agent:cron] handler error:", err);
           const message = err instanceof Error ? err.message : String(err);
           return Response.json({ error: message }, { status: 500 });

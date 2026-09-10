@@ -8,6 +8,7 @@
  */
 
 import { describe, expect, it } from "bun:test";
+import { ClaudeTimeoutError } from "./claude.ts";
 import { FixedClock } from "./clock.ts";
 import {
   markCronRunFailureReported,
@@ -72,13 +73,18 @@ function createFakeCronRunReporter(runId: string | null = "run-1") {
 
 function createFakeErrorCapturingClient() {
   const capturedErrors: unknown[] = [];
+  const capturedMessages: string[] = [];
   return {
     client: {
       captureException: (err: unknown) => {
         capturedErrors.push(err);
       },
+      captureMessage: (message: string) => {
+        capturedMessages.push(message);
+      },
     },
     capturedErrors,
+    capturedMessages,
   };
 }
 
@@ -131,6 +137,42 @@ describe("reportCronFailure", () => {
       clock,
     });
 
+    expect(capturedErrors).toHaveLength(1);
+    expect(capturedErrors[0]).toBe(err);
+  });
+
+  it("VITALS-OS-46: reports a ceiling-reason ClaudeTimeoutError via captureMessage, not captureException", async () => {
+    const { reporter } = createFakeCronRunReporter();
+    const { client, capturedErrors, capturedMessages } =
+      createFakeErrorCapturingClient();
+    const clock = FixedClock(FIXED_TIME);
+    const err = new ClaudeTimeoutError(3_600_000, "ceiling");
+
+    await reportCronFailure("my-cron-id", err, {
+      cronRunReporter: reporter,
+      sentryClient: client,
+      clock,
+    });
+
+    expect(capturedErrors).toHaveLength(0);
+    expect(capturedMessages).toHaveLength(1);
+    expect(capturedMessages[0]).toContain("3600s");
+  });
+
+  it("still reports an idle-reason ClaudeTimeoutError via captureException", async () => {
+    const { reporter } = createFakeCronRunReporter();
+    const { client, capturedErrors, capturedMessages } =
+      createFakeErrorCapturingClient();
+    const clock = FixedClock(FIXED_TIME);
+    const err = new ClaudeTimeoutError(1_500_000, "idle");
+
+    await reportCronFailure("my-cron-id", err, {
+      cronRunReporter: reporter,
+      sentryClient: client,
+      clock,
+    });
+
+    expect(capturedMessages).toHaveLength(0);
     expect(capturedErrors).toHaveLength(1);
     expect(capturedErrors[0]).toBe(err);
   });

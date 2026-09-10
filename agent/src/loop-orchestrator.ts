@@ -91,6 +91,7 @@ import {
   ClaudeTimeoutError,
   type ClaudeRunResult,
   type ProgressCallback,
+  reportClaudeError,
 } from "./claude.ts";
 import { type Clock, SystemClock } from "./clock.ts";
 import { markCronRunFailureReported } from "./cron-failure-reporter.ts";
@@ -623,7 +624,7 @@ export function createLoopOrchestrator(
       // captureException, since that catch swallows-and-continues rather
       // than rethrowing out of the tick) — this is a genuinely new Sentry
       // Issue capture point, not a duplicate of cron-failure-reporter.ts's.
-      sentryClient?.captureException(err);
+      reportClaudeError(sentryClient, err);
       throw err;
     }
 

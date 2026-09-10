@@ -240,6 +240,33 @@ export class ClaudeTimeoutError extends Error {
   }
 }
 
+/**
+ * Reports an error to Sentry, downgrading an expected-ceiling
+ * `ClaudeTimeoutError` — the intentional 1hr hard-ceiling backstop firing on
+ * a legitimately long-running session, not a defect — to a `captureMessage`
+ * so it stays visible without creating an actionable Sentry Issue (VITALS-
+ * OS-46: this previously kept re-triggering error-patrol as "regressed" even
+ * though nothing was broken). A `reason: "idle"` timeout (a genuine hang) and
+ * any other error are reported unchanged via `captureException`.
+ *
+ * Every call site that can receive a thrown `ClaudeTimeoutError` should
+ * report through this helper instead of calling `captureException` directly.
+ */
+export function reportClaudeError(
+  sentryClient: ErrorCapturingClient | undefined,
+  err: unknown,
+): void {
+  if (err instanceof ClaudeTimeoutError && err.reason === "ceiling") {
+    sentryClient?.captureMessage?.(
+      `Claude session hit ceiling timeout after ${
+        err.timeoutMs / 1000
+      }s (expected backstop, not a bug)`,
+    );
+    return;
+  }
+  sentryClient?.captureException(err);
+}
+
 interface ClaudeSessionStore {
   get: (key: string) => Promise<string | undefined> | string | undefined;
   set: (key: string, id: string) => Promise<void> | void;
