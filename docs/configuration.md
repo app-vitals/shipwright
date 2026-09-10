@@ -181,6 +181,10 @@ Controls how the admin service provisions the Kubernetes workload backing each a
 | `SHIPWRIGHT_AGENT_REPLICAS` | `number` | `1` | Replica count for the provisioned agent Deployment. Only read when provisioning is enabled. |
 | `SHIPWRIGHT_AGENT_PVC_STORAGE_GI` | `number` | `40` | Storage size in Gi for the per-agent persistent home directory (PVC). Only read when provisioning is enabled. Must be large enough to hold mise caches and workspace files across pod restarts. |
 | `SHIPWRIGHT_AGENT_PVC_NAME_TEMPLATE` | `string` | — | Template for deriving the PVC name from the agent's human-readable name. Use `{name}` as the placeholder — it is substituted with the agent's name (slug) when provided, or the sanitized agent ID otherwise. Example: `my-org-agent-{name}-home` → `my-org-agent-okwow-home`. When unset (the default), PVCs are named `{sanitizedAgentId}-home`. Useful when migrating from static agents whose PVCs were created with a fixed naming convention. Only read when provisioning is enabled. |
+| `SHIPWRIGHT_K8S_AGENT_CPU_REQUEST` | `string` | `500m` | CPU request for the provisioned agent container. No CPU limit is ever set — CPU contention throttles instead of evicting. Only read when provisioning is enabled. |
+| `SHIPWRIGHT_K8S_AGENT_MEMORY_REQUEST` | `string` | `2Gi` | Memory request for the provisioned agent container. Only read when provisioning is enabled. |
+| `SHIPWRIGHT_K8S_AGENT_MEMORY_LIMIT` | `string` | `8Gi` | Memory limit for the provisioned agent container — contains a runaway Claude run to its own container (OOM-kill) rather than letting it grow until the kubelet evicts neighbouring pods under node memory pressure. Only read when provisioning is enabled. |
+| `SHIPWRIGHT_K8S_AGENT_EPHEMERAL_STORAGE` | `string` | `4Gi` | ephemeral-storage for the provisioned agent container, applied to BOTH request and limit (kept equal — Autopilot-style billing charges the request either way). Only read when provisioning is enabled. |
 
 ### Workspace and tooling
 

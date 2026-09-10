@@ -378,6 +378,28 @@
                 "apiUrl": { "type": "string" },
                 "adminDeploymentUid": { "type": "string" },
                 "pvcNameTemplate": { "type": "string" },
+                "resources": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "requests": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "properties": {
+                        "cpu": { "type": "string" },
+                        "memory": { "type": "string" }
+                      }
+                    },
+                    "limits": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "properties": {
+                        "memory": { "type": "string" }
+                      }
+                    },
+                    "ephemeralStorage": { "type": "string" }
+                  }
+                },
                 "pvc": {
                   "type": "object",
                   "additionalProperties": false,

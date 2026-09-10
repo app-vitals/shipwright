@@ -1,0 +1,124 @@
+suite: agent-provisioning resource overrides (AGR-7.2)
+# Asserts agent.provisioning.resources → admin Deployment provisioner env, matching
+# admin/src/main.ts's per-field optional overrides (SHIPWRIGHT_K8S_AGENT_CPU_REQUEST,
+# SHIPWRIGHT_K8S_AGENT_MEMORY_REQUEST, SHIPWRIGHT_K8S_AGENT_MEMORY_LIMIT,
+# SHIPWRIGHT_K8S_AGENT_EPHEMERAL_STORAGE):
+#   (a) each field set → its corresponding env var renders with the configured value
+#   (b) resources map empty (default) → none of the four env vars render
+tests:
+  # ── (a) fields set → corresponding env vars render ──────────────────────────
+  - it: injects SHIPWRIGHT_K8S_AGENT_CPU_REQUEST when agent.provisioning.resources.requests.cpu is set
+    template: templates/admin-deployment.yaml
+    set:
+      agent.provisioning.enabled: true
+      agent.provisioning.resources.requests.cpu: 320m
+    release:
+      name: r
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: SHIPWRIGHT_K8S_AGENT_CPU_REQUEST
+            value: "320m"
+
+  - it: injects SHIPWRIGHT_K8S_AGENT_MEMORY_REQUEST when agent.provisioning.resources.requests.memory is set
+    template: templates/admin-deployment.yaml
+    set:
+      agent.provisioning.enabled: true
+      agent.provisioning.resources.requests.memory: 3Gi
+    release:
+      name: r
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: SHIPWRIGHT_K8S_AGENT_MEMORY_REQUEST
+            value: "3Gi"
+
+  - it: injects SHIPWRIGHT_K8S_AGENT_MEMORY_LIMIT when agent.provisioning.resources.limits.memory is set
+    template: templates/admin-deployment.yaml
+    set:
+      agent.provisioning.enabled: true
+      agent.provisioning.resources.limits.memory: 9Gi
+    release:
+      name: r
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: SHIPWRIGHT_K8S_AGENT_MEMORY_LIMIT
+            value: "9Gi"
+
+  - it: injects SHIPWRIGHT_K8S_AGENT_EPHEMERAL_STORAGE when agent.provisioning.resources.ephemeralStorage is set
+    template: templates/admin-deployment.yaml
+    set:
+      agent.provisioning.enabled: true
+      agent.provisioning.resources.ephemeralStorage: 5Gi
+    release:
+      name: r
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: SHIPWRIGHT_K8S_AGENT_EPHEMERAL_STORAGE
+            value: "5Gi"
+
+  - it: injects all four resource env vars when the full resources map is set
+    template: templates/admin-deployment.yaml
+    set:
+      agent.provisioning.enabled: true
+      agent.provisioning.resources:
+        requests:
+          cpu: 320m
+          memory: 3Gi
+        limits:
+          memory: 9Gi
+        ephemeralStorage: 5Gi
+    release:
+      name: r
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: SHIPWRIGHT_K8S_AGENT_CPU_REQUEST
+            value: "320m"
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: SHIPWRIGHT_K8S_AGENT_MEMORY_REQUEST
+            value: "3Gi"
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: SHIPWRIGHT_K8S_AGENT_MEMORY_LIMIT
+            value: "9Gi"
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: SHIPWRIGHT_K8S_AGENT_EPHEMERAL_STORAGE
+            value: "5Gi"
+
+  # ── (b) resources map empty (default) → none of the four render ─────────────
+  - it: renders none of the four resource env vars when agent.provisioning.resources is empty (default)
+    template: templates/admin-deployment.yaml
+    set:
+      agent.provisioning.enabled: true
+    release:
+      name: r
+    asserts:
+      - notContains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: SHIPWRIGHT_K8S_AGENT_CPU_REQUEST
+      - notContains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: SHIPWRIGHT_K8S_AGENT_MEMORY_REQUEST
+      - notContains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: SHIPWRIGHT_K8S_AGENT_MEMORY_LIMIT
+      - notContains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: SHIPWRIGHT_K8S_AGENT_EPHEMERAL_STORAGE

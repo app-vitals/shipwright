@@ -260,6 +260,25 @@ spec:
             - name: SHIPWRIGHT_AGENT_PVC_NAME_TEMPLATE
               value: {{ . | quote }}
             {{- end }}
+            # Per-field container resource overrides for the provisioned agent.
+            # Each renders only when set; unset fields keep the provisioner's own
+            # built-in defaults (admin/src/agent-manifest.ts).
+            {{- with .Values.agent.provisioning.resources.requests.cpu }}
+            - name: SHIPWRIGHT_K8S_AGENT_CPU_REQUEST
+              value: {{ . | quote }}
+            {{- end }}
+            {{- with .Values.agent.provisioning.resources.requests.memory }}
+            - name: SHIPWRIGHT_K8S_AGENT_MEMORY_REQUEST
+              value: {{ . | quote }}
+            {{- end }}
+            {{- with .Values.agent.provisioning.resources.limits.memory }}
+            - name: SHIPWRIGHT_K8S_AGENT_MEMORY_LIMIT
+              value: {{ . | quote }}
+            {{- end }}
+            {{- with .Values.agent.provisioning.resources.ephemeralStorage }}
+            - name: SHIPWRIGHT_K8S_AGENT_EPHEMERAL_STORAGE
+              value: {{ . | quote }}
+            {{- end }}
             {{- end }}
             {{- if .Values.agent.voice.enabled }}
             # ── Agent-voice env contract (CV-1.1) ─────────────────────────────

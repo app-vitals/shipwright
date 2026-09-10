@@ -278,6 +278,13 @@ agent:
       name: ""                     # generated if empty
     apiUrl: ""                     # in-cluster admin URL handed to agents; built from the admin Service DNS if empty
     adminDeploymentUid: ""         # optional, for ownerRef GC; omitted when empty (downward API can't supply it)
+    resources:
+      requests:
+        cpu: ""                     # e.g. "320m"; empty keeps the provisioner's own default
+        memory: ""                  # e.g. "3Gi"; empty keeps the provisioner's own default
+      limits:
+        memory: ""                  # e.g. "9Gi"; empty keeps the provisioner's own default
+      ephemeralStorage: ""          # e.g. "5Gi"; applied to both request and limit; empty keeps the provisioner's own default
 ```
 
 These map to the admin service's provisioning env vars
@@ -286,6 +293,14 @@ These map to the admin service's provisioning env vars
 `SHIPWRIGHT_API_URL`, `SHIPWRIGHT_ADMIN_DEPLOYMENT_NAME`,
 `SHIPWRIGHT_ADMIN_DEPLOYMENT_UID`) — documented in full in
 [`configuration.md`](./configuration.md#agent-provisioning-admin-service).
+
+The provisioned agent container's resource requests/limits can also be
+overridden per field via `SHIPWRIGHT_K8S_AGENT_CPU_REQUEST`,
+`SHIPWRIGHT_K8S_AGENT_MEMORY_REQUEST`, `SHIPWRIGHT_K8S_AGENT_MEMORY_LIMIT`, and
+`SHIPWRIGHT_K8S_AGENT_EPHEMERAL_STORAGE` — unset fields keep today's defaults
+(500m cpu / 2Gi memory request / 8Gi memory limit / 4Gi ephemeral storage, no
+CPU limit). See [`configuration.md`](./configuration.md#agent-provisioning-admin-service)
+for full defaults and rationale.
 
 ### Chat service provisioning (opt-in)
 

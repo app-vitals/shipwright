@@ -213,6 +213,83 @@ describe("buildProvisioner", () => {
     expect(configOf(withoutChatService).chatServiceUrl).toBeUndefined();
   });
 
+  it("omits the resources block entirely when no SHIPWRIGHT_K8S_AGENT_* vars are set", () => {
+    const provisioner = buildProvisioner(
+      { SHIPWRIGHT_K8S_PROVISIONING: "enabled" },
+      stubAgentTokenService(),
+    );
+    expect(configOf(provisioner).resources).toBeUndefined();
+  });
+
+  it("parses SHIPWRIGHT_K8S_AGENT_CPU_REQUEST individually", () => {
+    const provisioner = buildProvisioner(
+      {
+        SHIPWRIGHT_K8S_PROVISIONING: "enabled",
+        SHIPWRIGHT_K8S_AGENT_CPU_REQUEST: "1000m",
+      },
+      stubAgentTokenService(),
+    );
+    expect(configOf(provisioner).resources).toEqual({ cpuRequest: "1000m" });
+  });
+
+  it("parses SHIPWRIGHT_K8S_AGENT_MEMORY_REQUEST individually", () => {
+    const provisioner = buildProvisioner(
+      {
+        SHIPWRIGHT_K8S_PROVISIONING: "enabled",
+        SHIPWRIGHT_K8S_AGENT_MEMORY_REQUEST: "4Gi",
+      },
+      stubAgentTokenService(),
+    );
+    expect(configOf(provisioner).resources).toEqual({
+      memoryRequest: "4Gi",
+    });
+  });
+
+  it("parses SHIPWRIGHT_K8S_AGENT_MEMORY_LIMIT individually", () => {
+    const provisioner = buildProvisioner(
+      {
+        SHIPWRIGHT_K8S_PROVISIONING: "enabled",
+        SHIPWRIGHT_K8S_AGENT_MEMORY_LIMIT: "16Gi",
+      },
+      stubAgentTokenService(),
+    );
+    expect(configOf(provisioner).resources).toEqual({
+      memoryLimit: "16Gi",
+    });
+  });
+
+  it("parses SHIPWRIGHT_K8S_AGENT_EPHEMERAL_STORAGE individually", () => {
+    const provisioner = buildProvisioner(
+      {
+        SHIPWRIGHT_K8S_PROVISIONING: "enabled",
+        SHIPWRIGHT_K8S_AGENT_EPHEMERAL_STORAGE: "8Gi",
+      },
+      stubAgentTokenService(),
+    );
+    expect(configOf(provisioner).resources).toEqual({
+      ephemeralStorage: "8Gi",
+    });
+  });
+
+  it("parses all four SHIPWRIGHT_K8S_AGENT_* vars together", () => {
+    const provisioner = buildProvisioner(
+      {
+        SHIPWRIGHT_K8S_PROVISIONING: "enabled",
+        SHIPWRIGHT_K8S_AGENT_CPU_REQUEST: "2000m",
+        SHIPWRIGHT_K8S_AGENT_MEMORY_REQUEST: "3Gi",
+        SHIPWRIGHT_K8S_AGENT_MEMORY_LIMIT: "10Gi",
+        SHIPWRIGHT_K8S_AGENT_EPHEMERAL_STORAGE: "6Gi",
+      },
+      stubAgentTokenService(),
+    );
+    expect(configOf(provisioner).resources).toEqual({
+      cpuRequest: "2000m",
+      memoryRequest: "3Gi",
+      memoryLimit: "10Gi",
+      ephemeralStorage: "6Gi",
+    });
+  });
+
   it("sets a pvcName template function when SHIPWRIGHT_AGENT_PVC_NAME_TEMPLATE is set", () => {
     const provisioner = buildProvisioner(
       {

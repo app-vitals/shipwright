@@ -10,6 +10,12 @@ independent of `appVersion`. CI enforces this with
 `ct lint --check-version-increment`. Each release here must mirror the
 `artifacthub.io/changes` annotation in `Chart.yaml`.
 
+## [1.20.4] - 2026-09-10
+
+### Added
+
+- `agent.provisioning.resources` (`requests.cpu`, `requests.memory`, `limits.memory`, `ephemeralStorage`) — per-field overrides for the provisioned agent container's resources, off/empty by default. Set a field to inject the matching `SHIPWRIGHT_K8S_AGENT_*` env var into the admin Deployment.
+
 ## [1.20.3] - 2026-09-09
 
 ### Changed
