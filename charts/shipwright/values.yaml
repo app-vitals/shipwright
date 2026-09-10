@@ -472,6 +472,25 @@ agent:
     # with a specific naming convention (e.g. "my-org-agent-{name}-home").
     # When empty (the default), PVCs are named `{sanitizedAgentId}-home`.
     pvcNameTemplate: ""
+    # -- Per-field overrides for the provisioned agent container's resource
+    # requests/limits. Each sub-field defaults to empty (no override) — when
+    # empty, the provisioner keeps its own built-in defaults (see
+    # admin/src/agent-manifest.ts, the source of truth for what those are).
+    # Set a field to have the provisioner inject the matching
+    # SHIPWRIGHT_K8S_AGENT_* env var into the admin Deployment.
+    resources:
+      requests:
+        # -- CPU request override for the provisioned agent container, e.g. "320m".
+        cpu: ""
+        # -- Memory request override for the provisioned agent container, e.g. "3Gi".
+        memory: ""
+      limits:
+        # -- Memory limit override for the provisioned agent container, e.g. "9Gi".
+        # No CPU limit is ever set (CPU contention throttles instead of evicting).
+        memory: ""
+      # -- ephemeral-storage override for the provisioned agent container,
+      # applied to both request and limit, e.g. "5Gi".
+      ephemeralStorage: ""
     # -- Provisioned workspace PVCs: created per-agent when the provisioner spins
     # up a new agent pod. These settings are surfaced for the agent manifest
     # builder's future use. NOTE: buildProvisioner does not read these as env

@@ -278,6 +278,13 @@ agent:
       name: ""                     # generated if empty
     apiUrl: ""                     # in-cluster admin URL handed to agents; built from the admin Service DNS if empty
     adminDeploymentUid: ""         # optional, for ownerRef GC; omitted when empty (downward API can't supply it)
+    resources:
+      requests:
+        cpu: ""                     # e.g. "320m"; empty keeps the provisioner's own default
+        memory: ""                  # e.g. "3Gi"; empty keeps the provisioner's own default
+      limits:
+        memory: ""                  # e.g. "9Gi"; empty keeps the provisioner's own default
+      ephemeralStorage: ""          # e.g. "5Gi"; applied to both request and limit; empty keeps the provisioner's own default
 ```
 
 These map to the admin service's provisioning env vars
