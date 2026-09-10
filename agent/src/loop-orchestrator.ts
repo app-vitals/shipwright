@@ -624,10 +624,6 @@ export function createLoopOrchestrator(
       // captureException, since that catch swallows-and-continues rather
       // than rethrowing out of the tick) — this is a genuinely new Sentry
       // Issue capture point, not a duplicate of cron-failure-reporter.ts's.
-      // reportClaudeError (VITALS-OS-46) downgrades a ceiling-reason
-      // ClaudeTimeoutError to captureMessage — the intentional 1hr hard-
-      // ceiling backstop firing on a legitimately long-running session is
-      // not a defect and shouldn't create an actionable Sentry Issue.
       reportClaudeError(sentryClient, err);
       throw err;
     }

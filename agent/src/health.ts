@@ -169,11 +169,6 @@ export function startHealthServer(
           if (err instanceof ValidationError) {
             return Response.json({ error: err.message }, { status: 422 });
           }
-          // reportClaudeError (VITALS-OS-46) downgrades a ceiling-reason
-          // ClaudeTimeoutError to captureMessage — the intentional 1hr
-          // hard-ceiling backstop firing on a legitimately long-running
-          // session is not a defect and shouldn't create an actionable
-          // Sentry Issue.
           reportClaudeError(sentryClient, err);
           console.error("[agent:cron] handler error:", err);
           const message = err instanceof Error ? err.message : String(err);

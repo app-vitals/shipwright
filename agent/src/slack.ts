@@ -735,10 +735,6 @@ export function createSlackApp(
       });
     } catch (err) {
       console.error("[slack] error:", err);
-      // reportClaudeError (VITALS-OS-46) downgrades a ceiling-reason
-      // ClaudeTimeoutError to captureMessage — the intentional 1hr hard-
-      // ceiling backstop firing on a legitimately long-running session is
-      // not a defect and shouldn't create an actionable Sentry Issue.
       reportClaudeError(sentryClient, err);
       // Mark the Thinking Steps card status:"error" (STS2-4.1 AC #1) BEFORE the
       // say() below — a UI-state signal only; reportClaudeError(sentryClient, err)
@@ -945,10 +941,6 @@ export function createSlackApp(
       });
     } catch (err) {
       console.error("[slack] error:", err);
-      // reportClaudeError (VITALS-OS-46) downgrades a ceiling-reason
-      // ClaudeTimeoutError to captureMessage — the intentional 1hr hard-
-      // ceiling backstop firing on a legitimately long-running session is
-      // not a defect and shouldn't create an actionable Sentry Issue.
       reportClaudeError(sentryClient, err);
       // Mark the Thinking Steps card status:"error" (STS2-4.1 AC #1) BEFORE the
       // say() below — a UI-state signal only; reportClaudeError(sentryClient, err)

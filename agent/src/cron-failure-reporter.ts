@@ -91,10 +91,6 @@ export async function reportCronFailure(
 
   console.error(`[cron] job ${cronId} failed:`, message);
 
-  // reportClaudeError (VITALS-OS-46) downgrades a ceiling-reason
-  // ClaudeTimeoutError to captureMessage — the intentional 1hr hard-ceiling
-  // backstop firing on a legitimately long-running session is not a defect
-  // and shouldn't create an actionable Sentry Issue.
   reportClaudeError(sentryClient, err);
 
   if (isCronRunFailureReported(err)) {
