@@ -104,7 +104,7 @@ test("facts carry a verified-as-of date", async ({ page }) => {
   await expect(page.getByText(/facts verified as of/i)).toBeVisible();
 });
 
-test("CTA repeats the install command and links GitHub + discovery call", async ({
+test("CTA repeats the install command and links GitHub + a rollout conversation", async ({
   page,
 }) => {
   await page.goto("/self-hosted");
@@ -117,6 +117,6 @@ test("CTA repeats the install command and links GitHub + discovery call", async 
     page.getByRole("link", { name: /github/i }).first(),
   ).toHaveAttribute("href", /github\.com\/app-vitals\/shipwright/);
   await expect(
-    page.locator("#cta").getByRole("link", { name: /discovery call/i }),
+    page.locator("#cta").getByRole("link", { name: /talk through a rollout/i }),
   ).toHaveAttribute("href", BOOKING_URL);
 });

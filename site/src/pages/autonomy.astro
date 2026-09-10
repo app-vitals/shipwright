@@ -1,0 +1,209 @@
+---
+// /autonomy — staged-rollout marketing page (MKT-AUTONOMY-PAGE-1). Surfaces
+// the staged-autonomy model (Stage 1/2/3) as a first-class page instead of
+// leaving it filed under the configuration docs, where only people who
+// already installed Shipwright ever read it.
+//
+// All copy below is pre-written and pre-approved (Dan, 2026-09-09). Every
+// factual claim traces to src/content/docs/configuring-autonomy.mdx — the
+// cron tables, the state/agent-policy.md fields (auto_post_reviews,
+// allowed_events, allow_self_review, min_confidence, max_findings), and the
+// "Hands-off" / "Bring your own PR" workflow patterns are all sourced from
+// that doc. Do not rewrite this copy or invent capabilities.
+//
+// Hard constraints (brand/MESSAGING.md D10, D5): no competitor names (this
+// is not a D10-designated surface), no prices or tier names, no compliance
+// certifications, no services/engagement-model copy — this is a product
+// page, not a pitch for consulting.
+import BaseLayout from "../layouts/BaseLayout.astro";
+import ComparisonTable from "../components/ComparisonTable.astro";
+import TryItCta from "../components/TryItCta.astro";
+
+const dialColumns = [
+  {
+    label: "You want",
+    style:
+      "text-align:left; padding:0.6rem 1rem 0.6rem 0; font-family:var(--sw-font-mono); font-size:0.8125rem; text-transform:uppercase; letter-spacing:0.06em; color:var(--sw-color-text-muted); white-space:nowrap;",
+  },
+  {
+    label: "Setting",
+    style:
+      "text-align:left; padding:0.6rem 0 0.6rem 1rem; font-family:var(--sw-font-mono); font-size:0.8125rem; text-transform:uppercase; letter-spacing:0.06em; color:var(--sw-color-text-muted);",
+  },
+];
+
+// Setting cells reference the exact field names from
+// state/agent-policy.md as documented in configuring-autonomy.mdx.
+const code = (text: string) =>
+  `<code class="sw-mono" style="color:var(--sw-color-support-cyan);">${text}</code>`;
+
+const dialRows = [
+  {
+    want: "Read every review before it reaches GitHub",
+    setting: `${code("auto_post_reviews: false")} - findings stage locally until you approve them`,
+  },
+  {
+    want: "An agent can never block a human PR",
+    setting: `${code("allowed_events")} excludes ${code("REQUEST_CHANGES")} by default`,
+  },
+  {
+    want: "Agent PRs always need a human reviewer",
+    setting: `${code("allow_self_review: false")}, the default`,
+  },
+  {
+    want: "Less review noise",
+    setting: `${code("min_confidence")}, ${code("max_findings")}`,
+  },
+].map((row) => ({
+  cells: [
+    {
+      style: "padding:0.9rem 1rem 0.9rem 0; vertical-align:top; color:var(--sw-color-text-body);",
+      html: row.want,
+    },
+    {
+      style: "padding:0.9rem 0 0.9rem 1rem; vertical-align:top; color:var(--sw-color-text-body);",
+      html: row.setting,
+    },
+  ],
+}));
+---
+
+<BaseLayout
+  title="Roll it out in stages — Shipwright Harness"
+  description="Shipwright's delivery loop is configurable. Start with the agent opening PRs your team reviews, then add automated review, CI patching, and merging as it earns trust."
+>
+  <!-- Hero -->
+  <section class="relative z-10 pt-16 pb-8">
+    <p class="sw-label">Rollout model</p>
+    <h1 class="sw-h1 mt-4 max-w-3xl">Trust is the bottleneck, not the tooling.</h1>
+    <p class="mt-5 max-w-2xl text-lg">
+      Most teams stall on AI adoption for the same reason: nobody wants to be
+      the person who let an agent break production. So it stays a side
+      experiment for a few enthusiasts and nothing changes for everyone else.
+    </p>
+    <p class="mt-4 max-w-2xl text-lg">
+      Shipwright is built to be dialled up, not switched on. You choose how
+      much the agent does on its own, and you change your mind in under a
+      minute.
+    </p>
+  </section>
+
+  <!-- The three stages -->
+  <section id="stages" class="relative z-10 pb-16" style="border-top: 1px solid var(--sw-color-border-subtle); padding-top: 3rem;">
+    <h2>The three stages</h2>
+
+    <div class="mt-8 grid gap-4 sm:grid-cols-3">
+      <div class="sw-card flex flex-col gap-2">
+        <span class="sw-label">Stage 1</span>
+        <h3 class="text-xl">Plan and build.</h3>
+        <p>
+          The agent reads your task queue, picks the next ready task, builds
+          it with tests, and opens a PR. Your engineers review and merge,
+          exactly as they would for a new hire. The agent cannot merge
+          anything.
+        </p>
+        <p class="mt-2 text-sm" style="color: var(--sw-color-text-muted);">
+          Crons: <code class="sw-mono">dev-task</code> on.
+          <code class="sw-mono">review</code>, <code class="sw-mono">patch</code>,
+          <code class="sw-mono">deploy</code> off.
+        </p>
+      </div>
+      <div class="sw-card flex flex-col gap-2">
+        <span class="sw-label">Stage 2</span>
+        <h3 class="text-xl">Add review and patch.</h3>
+        <p>
+          The agent reviews open PRs and fixes failing CI. Review and patch
+          are separate toggles, so you can take one without the other. Your
+          engineers still control every merge.
+        </p>
+        <p class="mt-2 text-sm" style="color: var(--sw-color-text-muted);">
+          Crons: <code class="sw-mono">dev-task</code>, <code class="sw-mono">review</code>,
+          <code class="sw-mono">patch</code> on. <code class="sw-mono">deploy</code> off.
+        </p>
+      </div>
+      <div class="sw-card flex flex-col gap-2">
+        <span class="sw-label">Stage 3</span>
+        <h3 class="text-xl">Close the loop.</h3>
+        <p>
+          The agent merges approved PRs and watches post-merge CI. Plan,
+          build, review, patch, deploy, without manual intervention.
+        </p>
+        <p class="mt-2 text-sm" style="color: var(--sw-color-text-muted);">
+          Crons: all on.
+        </p>
+      </div>
+    </div>
+
+    <div class="sw-callout mt-6 max-w-3xl">
+      <p>
+        Only turn on Stage 3 once the safeguards are in place: CI gates,
+        required reviewers, and a working deploy pre-check. The docs say the
+        same thing, and we mean it.
+      </p>
+    </div>
+  </section>
+
+  <!-- The dial, in detail -->
+  <section id="dial" class="relative z-10 pb-16" style="border-top: 1px solid var(--sw-color-border-subtle); padding-top: 3rem;">
+    <h2>The dial, in detail</h2>
+    <p class="mt-3 max-w-2xl">
+      Each of these is a real setting in <code class="sw-mono">state/agent-policy.md</code>,
+      changed by asking your agent. No restart, no redeploy, picked up on the
+      next config sync.
+    </p>
+    <ComparisonTable columns={dialColumns} rows={dialRows} />
+  </section>
+
+  <!-- What does not change between stages -->
+  <section id="constants" class="relative z-10 pb-16" style="border-top: 1px solid var(--sw-color-border-subtle); padding-top: 3rem;">
+    <h2>What does not change between stages</h2>
+    <p class="mt-3 max-w-2xl">
+      Three things are true at Stage 1 and still true at Stage 3:
+    </p>
+    <ul class="mt-4 flex flex-col gap-3 max-w-2xl" style="color:var(--sw-color-text-body); padding-left:1.1rem; list-style:disc;">
+      <li>
+        <strong>Tests come first, always.</strong> Every task writes its
+        failing test before the implementation and CI must be green to
+        merge. That is not a setting you can relax.
+      </li>
+      <li>
+        <strong>It runs on your infrastructure.</strong> Your cloud, your
+        data boundary, your existing controls.
+      </li>
+      <li>
+        <strong>You keep the record.</strong> Every task and PR carries an
+        append-only trail of what changed, which actor changed it, and when,
+        in your own database.
+      </li>
+    </ul>
+  </section>
+
+  <!-- Two ways in -->
+  <section id="two-ways-in" class="relative z-10 pb-16" style="border-top: 1px solid var(--sw-color-border-subtle); padding-top: 3rem;">
+    <h2>Two ways in</h2>
+    <ul class="mt-4 flex flex-col gap-3 max-w-2xl" style="color:var(--sw-color-text-body); padding-left:1.1rem; list-style:disc;">
+      <li>
+        <strong>Hands-off:</strong> dev-task and patch on, review off. The
+        agent builds and fixes CI; your team does all the reviewing.
+      </li>
+      <li>
+        <strong>Bring your own PR:</strong> skip the queue entirely. Open a
+        PR yourself and let review, patch, and deploy take it from there.
+      </li>
+    </ul>
+  </section>
+
+  <!-- Closing, before the CTA -->
+  <section class="relative z-10 pb-16" style="border-top: 1px solid var(--sw-color-border-subtle); padding-top: 3rem;">
+    <p class="max-w-2xl sw-editorial">
+      Every stage is a toggle, and every toggle goes both ways. If a stage is
+      not working for your team, turn it off and nothing is stranded.
+    </p>
+    <p class="mt-4 max-w-2xl">
+      <a href="/docs/configuring-autonomy">Read the full configuration reference →</a>
+    </p>
+  </section>
+
+  <!-- CTA -->
+  <TryItCta />
+</BaseLayout>
