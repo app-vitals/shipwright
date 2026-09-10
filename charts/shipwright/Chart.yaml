@@ -9,7 +9,7 @@ type: application
 # Chart version (SemVer). Bump on every chart change, independent of appVersion.
 # See CHANGELOG.md and the README "Versioning" section — CI enforces this bump
 # via `ct lint --check-version-increment`.
-version: 1.20.3
+version: 1.20.4
 # Version of the Shipwright application this chart deploys by default.
 appVersion: "0.1.0"
 home: https://shipwrightharness.com
@@ -29,8 +29,8 @@ annotations:
   # Artifact Hub change log for this release. Must mirror the matching version
   # entry in CHANGELOG.md (keep the two in sync on every bump).
   artifacthub.io/changes: |
-    - kind: changed
-      description: "auto-bump to chart v1.20.3 triggered by release tag agent-v1.259.0"
+    - kind: added
+      description: "agent.provisioning.resources (requests.cpu, requests.memory, limits.memory, ephemeralStorage) — per-field overrides for the provisioned agent container's resources, off/empty by default. Set a field to inject the matching SHIPWRIGHT_K8S_AGENT_* env var into the admin Deployment."
 dependencies:
   # Bitnami PostgreSQL subchart. Pinned to a chart version whose default image tag
   # is concrete (NOT `latest`), because Bitnami's 2025 catalog change moved newer
