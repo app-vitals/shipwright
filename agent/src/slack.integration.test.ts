@@ -131,9 +131,13 @@ class MockApp {
 // ─── Fake sentry client — captures errors instead of asserting on a tracker ──
 
 let capturedErrors: unknown[] = [];
+let capturedMessages: string[] = [];
 const fakeSentryClient: ErrorCapturingClient = {
   captureException: (err: unknown) => {
     capturedErrors.push(err);
+  },
+  captureMessage: (message: string) => {
+    capturedMessages.push(message);
   },
 };
 
@@ -168,6 +172,7 @@ function createSlackApp(
   } = {},
 ) {
   capturedErrors = [];
+  capturedMessages = [];
   return _createSlackApp(
     mockRunClaude,
     mockMarkdownToSlack,
@@ -849,6 +854,26 @@ describe("message handler — DM routing", () => {
     expect((capturedErrors[0] as Error).message).toBe("boom");
   });
 
+  test("VITALS-OS-46: a ceiling-reason ClaudeTimeoutError reports via captureMessage, not captureException", async () => {
+    mockRunClaude.mockRejectedValueOnce(
+      new ClaudeTimeoutError(3_600_000, "ceiling"),
+    );
+    await invokeDM({ channel: "D1", ts: "1.1" });
+    expect(capturedErrors.length).toBe(0);
+    expect(capturedMessages.length).toBe(1);
+    expect(capturedMessages[0]).toContain("3600s");
+  });
+
+  test("an idle-reason ClaudeTimeoutError still reports via captureException", async () => {
+    mockRunClaude.mockRejectedValueOnce(
+      new ClaudeTimeoutError(1_500_000, "idle"),
+    );
+    await invokeDM({ channel: "D1", ts: "1.1" });
+    expect(capturedMessages.length).toBe(0);
+    expect(capturedErrors.length).toBe(1);
+    expect((capturedErrors[0] as ClaudeTimeoutError).reason).toBe("idle");
+  });
+
   test("marks the Thinking Steps card status:'error' when runClaude throws (STS2-4.1 AC #1)", async () => {
     createSlackApp();
     mockRunClaude.mockRejectedValueOnce(new Error("boom"));
@@ -1525,6 +1550,26 @@ describe("app_mention handler", () => {
     await invokeMention({ channel: "C1", ts: "2.2" });
     expect(capturedErrors.length).toBe(1);
     expect((capturedErrors[0] as Error).message).toBe("oops");
+  });
+
+  test("VITALS-OS-46: a ceiling-reason ClaudeTimeoutError reports via captureMessage, not captureException (mention)", async () => {
+    mockRunClaude.mockRejectedValueOnce(
+      new ClaudeTimeoutError(3_600_000, "ceiling"),
+    );
+    await invokeMention({ channel: "C1", ts: "2.2" });
+    expect(capturedErrors.length).toBe(0);
+    expect(capturedMessages.length).toBe(1);
+    expect(capturedMessages[0]).toContain("3600s");
+  });
+
+  test("an idle-reason ClaudeTimeoutError still reports via captureException (mention)", async () => {
+    mockRunClaude.mockRejectedValueOnce(
+      new ClaudeTimeoutError(1_500_000, "idle"),
+    );
+    await invokeMention({ channel: "C1", ts: "2.2" });
+    expect(capturedMessages.length).toBe(0);
+    expect(capturedErrors.length).toBe(1);
+    expect((capturedErrors[0] as ClaudeTimeoutError).reason).toBe("idle");
   });
 
   test("marks the Thinking Steps card status:'error' when mention handler throws (STS2-4.1 AC #1)", async () => {

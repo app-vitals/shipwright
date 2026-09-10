@@ -33,6 +33,7 @@
  */
 
 import type { ErrorCapturingClient } from "@shipwright/lib/sentry";
+import { reportClaudeError } from "./claude.ts";
 import type { Clock } from "./clock.ts";
 import type { CronRunReporter } from "./cron-run-reporter.ts";
 
@@ -90,7 +91,11 @@ export async function reportCronFailure(
 
   console.error(`[cron] job ${cronId} failed:`, message);
 
-  sentryClient?.captureException(err);
+  // reportClaudeError (VITALS-OS-46) downgrades a ceiling-reason
+  // ClaudeTimeoutError to captureMessage — the intentional 1hr hard-ceiling
+  // backstop firing on a legitimately long-running session is not a defect
+  // and shouldn't create an actionable Sentry Issue.
+  reportClaudeError(sentryClient, err);
 
   if (isCronRunFailureReported(err)) {
     // A more specific layer (cron-handler.ts / loop-orchestrator.ts) already

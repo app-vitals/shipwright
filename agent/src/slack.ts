@@ -21,7 +21,11 @@ import {
   type ChatTokenReporter,
   NoopChatTokenReporter,
 } from "./chat-token-reporter.ts";
-import { ClaudeRunError, ClaudeTimeoutError } from "./claude.ts";
+import {
+  ClaudeRunError,
+  ClaudeTimeoutError,
+  reportClaudeError,
+} from "./claude.ts";
 import type {
   ClaudeRunResult,
   ProgressCallback,
@@ -731,9 +735,13 @@ export function createSlackApp(
       });
     } catch (err) {
       console.error("[slack] error:", err);
-      sentryClient.captureException(err);
+      // reportClaudeError (VITALS-OS-46) downgrades a ceiling-reason
+      // ClaudeTimeoutError to captureMessage — the intentional 1hr hard-
+      // ceiling backstop firing on a legitimately long-running session is
+      // not a defect and shouldn't create an actionable Sentry Issue.
+      reportClaudeError(sentryClient, err);
       // Mark the Thinking Steps card status:"error" (STS2-4.1 AC #1) BEFORE the
-      // say() below — a UI-state signal only; sentryClient.captureException(err)
+      // say() below — a UI-state signal only; reportClaudeError(sentryClient, err)
       // above remains the single log point for this error. Ordering matters: if
       // say() throws (rate limit, invalid_auth, channel_not_found), this must
       // still run so finishProgress() doesn't send a "Done" card for a run that
@@ -937,9 +945,13 @@ export function createSlackApp(
       });
     } catch (err) {
       console.error("[slack] error:", err);
-      sentryClient.captureException(err);
+      // reportClaudeError (VITALS-OS-46) downgrades a ceiling-reason
+      // ClaudeTimeoutError to captureMessage — the intentional 1hr hard-
+      // ceiling backstop firing on a legitimately long-running session is
+      // not a defect and shouldn't create an actionable Sentry Issue.
+      reportClaudeError(sentryClient, err);
       // Mark the Thinking Steps card status:"error" (STS2-4.1 AC #1) BEFORE the
-      // say() below — a UI-state signal only; sentryClient.captureException(err)
+      // say() below — a UI-state signal only; reportClaudeError(sentryClient, err)
       // above remains the single log point for this error. Ordering matters: if
       // say() throws (rate limit, invalid_auth, channel_not_found), this must
       // still run so finishProgress() doesn't send a "Done" card for a run that

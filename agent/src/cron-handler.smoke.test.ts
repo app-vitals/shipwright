@@ -22,6 +22,7 @@ import { join } from "node:path";
 import type { ErrorCapturingClient } from "@shipwright/lib/sentry";
 import type { WebClient } from "@slack/web-api";
 import type { Server } from "bun";
+import { ClaudeTimeoutError } from "./claude.ts";
 import type { ModelUsage, TokenUsage } from "./claude.ts";
 import { FixedClock } from "./clock.ts";
 import { reportCronFailure } from "./cron-failure-reporter.ts";
@@ -1246,6 +1247,62 @@ describe("POST /cron HTTP endpoint", () => {
     expect(body.error).toContain("claude down");
     expect(capturedErrors.length).toBe(1);
     expect((capturedErrors[0] as Error).message).toBe("claude down");
+  });
+
+  test("VITALS-OS-46: a ceiling-reason ClaudeTimeoutError reports via captureMessage, not captureException", async () => {
+    mockRunner.mockRejectedValueOnce(
+      new ClaudeTimeoutError(3_600_000, "ceiling"),
+    );
+    const capturedErrors: unknown[] = [];
+    const capturedMessages: string[] = [];
+    const fakeSentryClient: ErrorCapturingClient = {
+      captureException: (err: unknown) => {
+        capturedErrors.push(err);
+      },
+      captureMessage: (message: string) => {
+        capturedMessages.push(message);
+      },
+    };
+    serve(19933, fakeSentryClient);
+
+    const res = await fetch("http://localhost:19933/cron", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ jobId: "j9", prompt: "run", channel: "C-X" }),
+    });
+
+    expect(res.status).toBe(500);
+    expect(capturedErrors.length).toBe(0);
+    expect(capturedMessages.length).toBe(1);
+    expect(capturedMessages[0]).toContain("3600s");
+  });
+
+  test("an idle-reason ClaudeTimeoutError still reports via captureException", async () => {
+    mockRunner.mockRejectedValueOnce(
+      new ClaudeTimeoutError(1_500_000, "idle"),
+    );
+    const capturedErrors: unknown[] = [];
+    const capturedMessages: string[] = [];
+    const fakeSentryClient: ErrorCapturingClient = {
+      captureException: (err: unknown) => {
+        capturedErrors.push(err);
+      },
+      captureMessage: (message: string) => {
+        capturedMessages.push(message);
+      },
+    };
+    serve(19934, fakeSentryClient);
+
+    const res = await fetch("http://localhost:19934/cron", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ jobId: "j10", prompt: "run", channel: "C-X" }),
+    });
+
+    expect(res.status).toBe(500);
+    expect(capturedMessages.length).toBe(0);
+    expect(capturedErrors.length).toBe(1);
+    expect((capturedErrors[0] as ClaudeTimeoutError).reason).toBe("idle");
   });
 
   test("422 ValidationError does NOT call sentryClient.captureException", async () => {

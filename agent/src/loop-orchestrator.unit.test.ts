@@ -248,14 +248,19 @@ function makeRecordingWorkQueueReporter(): {
 function makeFakeSentryClient(): {
   client: ErrorCapturingClient;
   captured: Array<{ err: unknown; tags: Record<string, string> }>;
+  capturedMessages: string[];
 } {
   const captured: Array<{ err: unknown; tags: Record<string, string> }> = [];
+  const capturedMessages: string[] = [];
   const als = new AsyncLocalStorage<Record<string, string>>();
 
   const client: ErrorCapturingClient = {
     captureException: (err: unknown) => {
       const active = als.getStore() ?? {};
       captured.push({ err, tags: { ...active } });
+    },
+    captureMessage: (message: string) => {
+      capturedMessages.push(message);
     },
     withScope: async <T>(
       callback: (scope: ScopeTagSetter) => Promise<T>,
@@ -277,7 +282,7 @@ function makeFakeSentryClient(): {
     },
   };
 
-  return { client, captured };
+  return { client, captured, capturedMessages };
 }
 
 // ─── Stub runner ──────────────────────────────────────────────────────────
@@ -1407,6 +1412,62 @@ describe("createLoopOrchestrator", () => {
     expect(completes).toHaveLength(1);
     expect(completes[0]?.outcome).toBe("failed");
     expect(completes[0]?.opts?.sessionId).toBe("session-failed-timeout");
+  });
+
+  // ─── VITALS-OS-46: ceiling-reason ClaudeTimeoutError Sentry downgrade ────
+
+  test("a dispatch throwing a ceiling-reason ClaudeTimeoutError reports via captureMessage, not captureException", async () => {
+    const consumed = new Set<string>();
+    const devTaskCandidates = [task("SWC-CEIL1", "2026-01-01T00:00:00Z")];
+    const { reporter } = makeRecordingReporter();
+    const { client: sentryClient, captured, capturedMessages } =
+      makeFakeSentryClient();
+    const runner = async (): Promise<ClaudeRunResult> => {
+      consumed.add("SWC-CEIL1");
+      throw new ClaudeTimeoutError(3_600_000, "ceiling");
+    };
+    const deps = makeDeps({
+      devTaskCandidates,
+      runner,
+      reporter,
+      consumed,
+      claimTask: consumingClaimTask(consumed),
+      sentryClient,
+    });
+    const loop = createLoopOrchestrator(deps);
+
+    await loop([job("shipwright-dev-task", true)]);
+
+    expect(captured).toHaveLength(0);
+    expect(capturedMessages).toHaveLength(1);
+    expect(capturedMessages[0]).toContain("3600s");
+  });
+
+  test("a dispatch throwing an idle-reason ClaudeTimeoutError still reports via captureException", async () => {
+    const consumed = new Set<string>();
+    const devTaskCandidates = [task("SWC-CEIL2", "2026-01-01T00:00:00Z")];
+    const { reporter } = makeRecordingReporter();
+    const { client: sentryClient, captured, capturedMessages } =
+      makeFakeSentryClient();
+    const runner = async (): Promise<ClaudeRunResult> => {
+      consumed.add("SWC-CEIL2");
+      throw new ClaudeTimeoutError(1_500_000, "idle");
+    };
+    const deps = makeDeps({
+      devTaskCandidates,
+      runner,
+      reporter,
+      consumed,
+      claimTask: consumingClaimTask(consumed),
+      sentryClient,
+    });
+    const loop = createLoopOrchestrator(deps);
+
+    await loop([job("shipwright-dev-task", true)]);
+
+    expect(capturedMessages).toHaveLength(0);
+    expect(captured).toHaveLength(1);
+    expect(captured[0]?.err).toBeInstanceOf(ClaudeTimeoutError);
   });
 
   test("a failed dispatch throwing an error with no sessionId leaves opts.sessionId undefined", async () => {
