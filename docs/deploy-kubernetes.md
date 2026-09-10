@@ -287,6 +287,14 @@ These map to the admin service's provisioning env vars
 `SHIPWRIGHT_ADMIN_DEPLOYMENT_UID`) — documented in full in
 [`configuration.md`](./configuration.md#agent-provisioning-admin-service).
 
+The provisioned agent container's resource requests/limits can also be
+overridden per field via `SHIPWRIGHT_K8S_AGENT_CPU_REQUEST`,
+`SHIPWRIGHT_K8S_AGENT_MEMORY_REQUEST`, `SHIPWRIGHT_K8S_AGENT_MEMORY_LIMIT`, and
+`SHIPWRIGHT_K8S_AGENT_EPHEMERAL_STORAGE` — unset fields keep today's defaults
+(500m cpu / 2Gi memory request / 8Gi memory limit / 4Gi ephemeral storage, no
+CPU limit). See [`configuration.md`](./configuration.md#agent-provisioning-admin-service)
+for full defaults and rationale.
+
 ### Chat service provisioning (opt-in)
 
 By default the admin service **does not** mint chat-service tokens — provisioned agents carry no chat-service credentials. Per-agent chat-service token provisioning on `POST /agents` is enabled the same way the admin console's Chat tab is: via the top-level `chat.enabled` + `chat.adminToken.existingSecret` chart values described in [Chat service (opt-in)](#chat-service-opt-in) above — there is no separate `agent.provisioning.chatService.*` value block.

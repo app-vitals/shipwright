@@ -153,6 +153,22 @@ export function buildProvisioner(
   const pvcStorageGi = pvcStorageGiRaw ? Number(pvcStorageGiRaw) : undefined;
   const pvcNameTemplate = env.SHIPWRIGHT_AGENT_PVC_NAME_TEMPLATE;
 
+  // Optional per-field container resource overrides. Resource quantities are
+  // strings (e.g. "500m", "2Gi") — no numeric parsing needed, unlike replicas/
+  // pvcStorageGi above. Each is passed through only when set (undefined, not
+  // an empty string, when unset) so resolveAgentContainerResources's default
+  // fallback applies field-by-field.
+  const cpuRequest = env.SHIPWRIGHT_K8S_AGENT_CPU_REQUEST;
+  const memoryRequest = env.SHIPWRIGHT_K8S_AGENT_MEMORY_REQUEST;
+  const memoryLimit = env.SHIPWRIGHT_K8S_AGENT_MEMORY_LIMIT;
+  const ephemeralStorage = env.SHIPWRIGHT_K8S_AGENT_EPHEMERAL_STORAGE;
+  const resources = {
+    ...(cpuRequest ? { cpuRequest } : {}),
+    ...(memoryRequest ? { memoryRequest } : {}),
+    ...(memoryLimit ? { memoryLimit } : {}),
+    ...(ephemeralStorage ? { ephemeralStorage } : {}),
+  };
+
   // Agent-voice (STT/TTS) env flowed into provisioned agent pods. The chart's
   // voice Secret + Whisper Service URL land in the admin's env when
   // agent.voice.enabled; absent → voice disabled and no voice env is injected.
@@ -197,6 +213,7 @@ export function buildProvisioner(
     ...(pvcStorageGi !== undefined && Number.isFinite(pvcStorageGi)
       ? { pvcStorageGi }
       : {}),
+    ...(Object.keys(resources).length > 0 ? { resources } : {}),
     ...(Object.keys(voice).length > 0 ? { voice } : {}),
     // When SHIPWRIGHT_AGENT_PVC_NAME_TEMPLATE is set (e.g. "acme-agent-{name}-home"),
     // substitute {name} with the pre-sanitized name resolved by pvcNameFor()

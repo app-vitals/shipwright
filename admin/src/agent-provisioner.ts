@@ -25,6 +25,7 @@
  */
 
 import {
+  type AgentContainerResourceOverrides,
   type AgentVoiceEnv,
   buildAgentDeploymentManifest,
   buildAgentSecretManifest,
@@ -139,6 +140,14 @@ export interface KubernetesAgentProvisionerConfig {
   replicas?: number;
   /** Storage size in Gi for the agent home PVC. Defaults to 40. */
   pvcStorageGi?: number;
+  /**
+   * Optional container resource overrides (cpuRequest, memoryRequest,
+   * memoryLimit, ephemeralStorage), merged field-by-field over the defaults in
+   * `resolveAgentContainerResources` (agent-manifest.ts). Sourced from the
+   * SHIPWRIGHT_K8S_AGENT_* env vars in main.ts's buildProvisioner. Omit (or
+   * leave individual fields unset) to keep today's defaults for those fields.
+   */
+  resources?: AgentContainerResourceOverrides;
   /**
    * Optional agent-voice env flowed into provisioned agent pods. The admin reads
    * these from its OWN env (sourced from the chart's voice Secret + the in-cluster
@@ -275,6 +284,7 @@ export class KubernetesAgentProvisioner implements AgentProvisioner {
       secretName: this.secretNameFor(resourceName),
       tokenSecretKey: this.tokenKey,
       replicas: this.config.replicas,
+      resources: this.config.resources,
       voice: this.config.voice,
       taskStoreUrl: this.config.taskStoreUrl,
       chatServiceUrl: this.config.chatServiceUrl,

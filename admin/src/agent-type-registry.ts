@@ -118,8 +118,13 @@ const AgentTypeEnvSchema = z
 
 /**
  * Optional override of the default agent container resources (see
- * AGENT_CONTAINER_RESOURCES in admin/src/agent-manifest.ts). All fields
+ * resolveAgentContainerResources in admin/src/agent-manifest.ts). All fields
  * optional — a manifest may override just one of requests/limits.
+ *
+ * Not yet wired to any provisioner — parsed as part of
+ * AgentTypeManifestSchema.resources but inert until a future task consumes it
+ * ahead of resolveAgentContainerResources's env-override layer (see that
+ * function's precedence-rule doc comment).
  */
 const AgentTypeResourceListSchema = z
   .object({

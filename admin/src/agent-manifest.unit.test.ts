@@ -8,12 +8,14 @@ import { describe, expect, it } from "bun:test";
 import {
   AGENT_HEALTH_PORT,
   AGENT_HOME_MOUNT_PATH,
+  type AgentContainerResourceOverrides,
   type AgentDeploymentOpts,
   type AgentPvcOpts,
   type AgentSecretOpts,
   buildAgentDeploymentManifest,
   buildAgentPvcManifest,
   buildAgentSecretManifest,
+  resolveAgentContainerResources,
   sanitizeAgentName,
 } from "./agent-manifest.ts";
 
@@ -146,14 +148,14 @@ describe("buildAgentDeploymentManifest", () => {
     );
   });
 
-  it("sets explicit container resources with a memory limit", () => {
+  it("sets explicit container resources with a memory limit by default (no overrides)", () => {
     const d = buildAgentDeploymentManifest(deployOpts);
     const resources = d.spec.template.spec.containers[0].resources;
     expect(resources?.requests?.memory).toBe("2Gi");
     expect(resources?.limits?.memory).toBe("8Gi");
   });
 
-  it("budgets 4Gi of ephemeral storage, matched across request and limit", () => {
+  it("budgets 4Gi of ephemeral storage by default, matched across request and limit", () => {
     const d = buildAgentDeploymentManifest(deployOpts);
     const resources = d.spec.template.spec.containers[0].resources;
     // 1Gi (the Autopilot default) evicted agents mid-run once a build step
@@ -161,6 +163,18 @@ describe("buildAgentDeploymentManifest", () => {
     // bills the request regardless, so a lower request buys nothing.
     expect(resources?.limits?.["ephemeral-storage"]).toBe("4Gi");
     expect(resources?.requests?.["ephemeral-storage"]).toBe("4Gi");
+  });
+
+  it("threads opts.resources overrides through into the manifest's container resources", () => {
+    const d = buildAgentDeploymentManifest({
+      ...deployOpts,
+      resources: { cpuRequest: "2000m", memoryLimit: "16Gi" },
+    });
+    const resources = d.spec.template.spec.containers[0].resources;
+    expect(resources).toEqual({
+      requests: { cpu: "2000m", memory: "2Gi", "ephemeral-storage": "4Gi" },
+      limits: { memory: "16Gi", "ephemeral-storage": "4Gi" },
+    });
   });
 
   it("defines liveness and readiness probes on the health port", () => {
@@ -210,6 +224,82 @@ describe("buildAgentDeploymentManifest", () => {
   it("honours an explicit replicas override", () => {
     const d = buildAgentDeploymentManifest({ ...deployOpts, replicas: 0 });
     expect(d.spec.replicas).toBe(0);
+  });
+});
+
+// ─── resolveAgentContainerResources ────────────────────────────────────────
+
+describe("resolveAgentContainerResources", () => {
+  // Byte-identical to today's values — this is the regression pin for AGR-7.1:
+  // no overrides must reproduce the exact object the old AGENT_CONTAINER_RESOURCES
+  // constant used to return.
+  const DEFAULT_RESOURCES = {
+    requests: { cpu: "500m", memory: "2Gi", "ephemeral-storage": "4Gi" },
+    limits: { memory: "8Gi", "ephemeral-storage": "4Gi" },
+  };
+
+  it("returns today's values byte-identical when called with no overrides", () => {
+    expect(resolveAgentContainerResources()).toEqual(DEFAULT_RESOURCES);
+  });
+
+  it("returns today's values byte-identical when called with an empty overrides object", () => {
+    expect(resolveAgentContainerResources({})).toEqual(DEFAULT_RESOURCES);
+  });
+
+  it("overrides only cpuRequest, leaving every other field at default", () => {
+    const r = resolveAgentContainerResources({ cpuRequest: "1000m" });
+    expect(r).toEqual({
+      requests: { cpu: "1000m", memory: "2Gi", "ephemeral-storage": "4Gi" },
+      limits: { memory: "8Gi", "ephemeral-storage": "4Gi" },
+    });
+  });
+
+  it("overrides only memoryRequest, leaving every other field at default", () => {
+    const r = resolveAgentContainerResources({ memoryRequest: "4Gi" });
+    expect(r).toEqual({
+      requests: { cpu: "500m", memory: "4Gi", "ephemeral-storage": "4Gi" },
+      limits: { memory: "8Gi", "ephemeral-storage": "4Gi" },
+    });
+  });
+
+  it("overrides only memoryLimit, leaving every other field at default", () => {
+    const r = resolveAgentContainerResources({ memoryLimit: "16Gi" });
+    expect(r).toEqual({
+      requests: { cpu: "500m", memory: "2Gi", "ephemeral-storage": "4Gi" },
+      limits: { memory: "16Gi", "ephemeral-storage": "4Gi" },
+    });
+  });
+
+  it("overrides ephemeralStorage on BOTH request and limit, leaving cpu/memory at default", () => {
+    const r = resolveAgentContainerResources({ ephemeralStorage: "8Gi" });
+    expect(r).toEqual({
+      requests: { cpu: "500m", memory: "2Gi", "ephemeral-storage": "8Gi" },
+      limits: { memory: "8Gi", "ephemeral-storage": "8Gi" },
+    });
+  });
+
+  it("merges a partial combination of overrides with the remaining defaults", () => {
+    const r = resolveAgentContainerResources({
+      cpuRequest: "2000m",
+      memoryLimit: "12Gi",
+    });
+    expect(r).toEqual({
+      requests: { cpu: "2000m", memory: "2Gi", "ephemeral-storage": "4Gi" },
+      limits: { memory: "12Gi", "ephemeral-storage": "4Gi" },
+    });
+  });
+
+  it("applies all four overrides simultaneously", () => {
+    const overrides: AgentContainerResourceOverrides = {
+      cpuRequest: "1500m",
+      memoryRequest: "3Gi",
+      memoryLimit: "10Gi",
+      ephemeralStorage: "6Gi",
+    };
+    expect(resolveAgentContainerResources(overrides)).toEqual({
+      requests: { cpu: "1500m", memory: "3Gi", "ephemeral-storage": "6Gi" },
+      limits: { memory: "10Gi", "ephemeral-storage": "6Gi" },
+    });
   });
 });
 

@@ -37,25 +37,70 @@ const AGENT_REPO_DIR = `${AGENT_HOME_MOUNT_PATH}/workspace/repos`;
 const AGENT_WORKTREE_DIR = `${AGENT_HOME_MOUNT_PATH}/workspace/worktrees`;
 
 /**
- * Container resources. Requests mirror the GKE Autopilot defaults the agent
- * ran with before these were explicit. The memory limit exists to contain a
- * runaway Claude run to its own container (OOM-kill) rather than letting it
- * grow until the kubelet evicts neighbouring pods under node memory pressure
+ * Optional per-field overrides for the agent container's resources. Any field
+ * left unset falls back to the default in `resolveAgentContainerResources`.
+ */
+export interface AgentContainerResourceOverrides {
+  /** CPU request, e.g. "500m". No CPU limit is ever set (see rationale below). */
+  cpuRequest?: string;
+  /** Memory request, e.g. "2Gi". */
+  memoryRequest?: string;
+  /** Memory limit, e.g. "8Gi". */
+  memoryLimit?: string;
+  /**
+   * ephemeral-storage, applied to BOTH request and limit (kept equal — see
+   * rationale below). e.g. "4Gi".
+   */
+  ephemeralStorage?: string;
+}
+
+/**
+ * Resolve the agent container's resources.requests/limits, applying any
+ * caller-supplied overrides on top of today's defaults (500m cpu / 2Gi memory
+ * request / 8Gi memory limit / 4Gi ephemeral storage, no CPU limit). Called
+ * from `buildAgentDeploymentManifest` with `opts.resources` — omitted or
+ * partial overrides fall back field-by-field to the default below.
+ *
+ * Precedence (highest wins): agent-type override > env override > default.
+ * `overrides` here is the ENV layer (populated in admin/src/main.ts's
+ * buildProvisioner from SHIPWRIGHT_K8S_AGENT_* vars). The per-type
+ * AgentTypeResourcesSchema in agent-type-registry.ts is already parsed as
+ * part of AgentTypeManifestSchema.resources but is NOT consumed here or by
+ * any provisioner — it stays inert until a future task wires agent-type-level
+ * resource resolution in ahead of this function's env layer.
+ *
+ * Defaults: requests mirror the GKE Autopilot defaults the agent ran with
+ * before these were explicit. The memory limit exists to contain a runaway
+ * Claude run to its own container (OOM-kill) rather than letting it grow
+ * until the kubelet evicts neighbouring pods under node memory pressure
  * (observed: ~11.6Gi used against the 2Gi request). No CPU limit — CPU
  * contention throttles instead of evicting.
  *
- * ephemeral-storage is 4Gi, not the 1Gi Autopilot default: 1Gi left no room for
- * a single build step's scratch space, and agents were evicted mid-run ("Pod
- * ephemeral local storage usage exceeds the total limit of containers 1Gi"),
- * losing the in-flight task. Tool caches are pinned to the PVC in the agent's
- * runMiseStartup, so this budget only has to cover genuinely transient writes —
- * e.g. a scan skill staging tool binaries in a mktemp dir. Requests and limits
- * are kept equal because Autopilot bills the request either way.
+ * ephemeral-storage defaults to 4Gi, not the 1Gi Autopilot default: 1Gi left
+ * no room for a single build step's scratch space, and agents were evicted
+ * mid-run ("Pod ephemeral local storage usage exceeds the total limit of
+ * containers 1Gi"), losing the in-flight task. Tool caches are pinned to the
+ * PVC in the agent's runMiseStartup, so this budget only has to cover
+ * genuinely transient writes — e.g. a scan skill staging tool binaries in a
+ * mktemp dir. Requests and limits are kept equal because Autopilot bills the
+ * request either way.
  */
-export const AGENT_CONTAINER_RESOURCES = {
-  requests: { cpu: "500m", memory: "2Gi", "ephemeral-storage": "4Gi" },
-  limits: { memory: "8Gi", "ephemeral-storage": "4Gi" },
-};
+export function resolveAgentContainerResources(
+  overrides?: AgentContainerResourceOverrides,
+): { requests: Record<string, string>; limits: Record<string, string> } {
+  const ephemeralStorage = overrides?.ephemeralStorage ?? "4Gi";
+  return {
+    requests: {
+      cpu: overrides?.cpuRequest ?? "500m",
+      memory: overrides?.memoryRequest ?? "2Gi",
+      "ephemeral-storage": ephemeralStorage,
+    },
+    limits: {
+      memory: overrides?.memoryLimit ?? "8Gi",
+      "ephemeral-storage": ephemeralStorage,
+    },
+  };
+}
 
 /** Non-root uid/gid the agent runs as (matches the agent image). */
 const AGENT_RUN_AS = 1000;
@@ -169,6 +214,12 @@ export interface AgentDeploymentOpts {
   tokenSecretKey?: string;
   /** Replica count. Defaults to 1. */
   replicas?: number;
+  /**
+   * Optional container resource overrides, merged field-by-field over the
+   * defaults in `resolveAgentContainerResources`. Omit (or leave individual
+   * fields unset) to keep today's values for those fields.
+   */
+  resources?: AgentContainerResourceOverrides;
   /**
    * Optional agent-voice (STT/TTS) configuration. When omitted, the provisioned
    * agent pod gets only the 3 base env vars (voice disabled). When present, the
@@ -353,7 +404,7 @@ export function buildAgentDeploymentManifest(
               name: AGENT_APP_NAME,
               image: `${opts.image}:${opts.imageTag}`,
               ports: [{ containerPort: AGENT_HEALTH_PORT, protocol: "TCP" }],
-              resources: AGENT_CONTAINER_RESOURCES,
+              resources: resolveAgentContainerResources(opts.resources),
               env: [
                 { name: "SHIPWRIGHT_AGENT_ID", value: opts.agentId },
                 { name: "SHIPWRIGHT_API_URL", value: opts.apiUrl },
