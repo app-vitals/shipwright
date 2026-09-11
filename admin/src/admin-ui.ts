@@ -57,6 +57,7 @@ import {
   renderTaskDetailPage,
   renderTasksPage,
 } from "./admin-ui-pages.ts";
+import { registerSessionSettingsRoutes } from "./admin-ui-sessions.ts";
 import type { AgentCronJobService } from "./agent-cron-jobs.ts";
 import type { AgentCronRunService } from "./agent-cron-runs.ts";
 import type { ManualStep } from "./agent-deletion-checklist.ts";
@@ -100,6 +101,10 @@ import {
   renderPwaHeadTags,
   sanitizeStartUrl,
 } from "./pwa.ts";
+import {
+  type SessionFollowPrismaLike,
+  SessionFollowService,
+} from "./session-follow-service.ts";
 import type { AppManifest } from "./slack-provisioning-client.ts";
 import {
   AGENT_BOT_SCOPES,
@@ -111,7 +116,7 @@ import {
   SlackProvisioningService,
 } from "./slack-provisioning-service.ts";
 
-type AdminUIEnv = { Variables: { userEmail: string; isAdmin: boolean } };
+export type AdminUIEnv = { Variables: { userEmail: string; isAdmin: boolean } };
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -630,6 +635,19 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
 
   const requireAuth = createUIAuthMiddleware(sessionSecret);
 
+  // SES-6.1's service — CRUD over SessionFollow + UserNotificationPrefs.
+  // Constructed here (not injected via AdminUIDeps) since it needs only the
+  // same `prisma` dep every other in-process service already gets. `prisma`
+  // is typed as the narrow, pre-existing PrismaLike (agent/agentEnv/etc. only)
+  // shared by many other test doubles — rather than widen that interface
+  // (and every existing double that constructs one) with two more models
+  // only this service touches, the real PrismaClient passed in by main.ts
+  // already structurally satisfies SessionFollowPrismaLike, so the cast here
+  // is safe and keeps the blast radius to this one call site.
+  const sessionFollowService = new SessionFollowService(
+    prisma as unknown as SessionFollowPrismaLike,
+  );
+
   // Extracted Slack app-manifest-creation/OAuth/app-token orchestration
   // (UAP-1.1) — shared by the legacy /admin/provision/* wizard's Slack
   // branch and the new per-agent /admin/agents/:id/connect-slack routes so
@@ -686,11 +704,12 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
    */
   function html(
     content: string,
-    opts?: { includePwaTags?: boolean },
+    opts?: { includePwaTags?: boolean; status?: number },
   ): Response {
     const body =
       opts?.includePwaTags === false ? content : injectPwaHeadTags(content);
     return new Response(body, {
+      status: opts?.status ?? 200,
       headers: {
         "Content-Type": "text/html; charset=utf-8",
         // CSP is out of scope (would need unsafe-inline today and buys
@@ -3189,6 +3208,17 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
         backHref,
       ),
     );
+  });
+
+  // ─── Notification settings (SESH-6.3) ─────────────────────────────────────
+
+  registerSessionSettingsRoutes(app, {
+    requireAuth,
+    sessionFollowService,
+    pushEnabled,
+    vapidPublicKey,
+    timezone,
+    html,
   });
 
   // ─── PRs ─────────────────────────────────────────────────────────────────
