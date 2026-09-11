@@ -20,6 +20,7 @@
 import { describe, expect, it } from "bun:test";
 import { createTaskStoreApp } from "./app.ts";
 import type { Task } from "./index.ts";
+import type { SessionServiceLike } from "./session-service.ts";
 import type { TaskListFilters, TaskServiceLike } from "./task-service.ts";
 import type { TokenServiceLike } from "./token-service.ts";
 
@@ -101,10 +102,12 @@ function makeTask(overrides: Partial<Task> = {}): Task {
   } as Task;
 }
 
-function fakeTaskService(opts: {
-  listResult?: Task[];
-  capturedListFilters?: TaskListFilters[];
-} = {}): TaskServiceLike {
+function fakeTaskService(
+  opts: {
+    listResult?: Task[];
+    capturedListFilters?: TaskListFilters[];
+  } = {},
+): TaskServiceLike {
   return {
     async list(filters?: TaskListFilters) {
       if (opts.capturedListFilters && filters) {
@@ -172,10 +175,23 @@ function fakeTaskService(opts: {
   };
 }
 
+/** No-op SessionService double — session routes aren't under test here. */
+function fakeSessionService(): SessionServiceLike {
+  return {
+    async list() {
+      return { sessions: [], total: 0, limit: 50, offset: 0 };
+    },
+    async get() {
+      return null;
+    },
+  };
+}
+
 function makeApp(taskService: TaskServiceLike) {
   return createTaskStoreApp({
     taskService,
     tokenService: fakeTokenService(),
+    sessionService: fakeSessionService(),
   });
 }
 

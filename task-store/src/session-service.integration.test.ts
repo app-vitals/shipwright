@@ -18,6 +18,7 @@
 
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { PrismaClient } from "../prisma/client/index.js";
+import { SessionService } from "./session-service.ts";
 import { TaskService } from "./task-service.ts";
 
 const TEST_DB = process.env.DATABASE_URL_SHIPWRIGHT_TASK_STORE_TEST;
@@ -295,3 +296,227 @@ describeOrSkip(
     });
   },
 );
+
+// ─── list() / get() (SESH-2.2) ─────────────────────────────────────────────────
+//
+// The smoke tests in routes/sessions.smoke.test.ts inject a hand-written
+// SessionServiceLike double — they verify the route's contract, but never
+// execute SessionService.list()/get()'s real Prisma-backed logic (state
+// filtering, agentScope visibility, sorting). Per data_layer_own_database,
+// that logic belongs here, against a real Postgres DB, not mocked.
+
+describeOrSkip("SessionService.list() / get() (integration)", () => {
+  let prisma: PrismaClient;
+  let taskService: TaskService;
+  let sessionService: SessionService;
+
+  beforeEach(async () => {
+    prisma = makePrisma();
+    taskService = new TaskService(prisma);
+    sessionService = new SessionService(prisma);
+    await prisma.taskEvent.deleteMany();
+    await prisma.task.deleteMany();
+    await prisma.session.deleteMany();
+  });
+
+  afterEach(async () => {
+    await prisma.$disconnect();
+  });
+
+  it("list() with no filters excludes closed and archived sessions by default", async () => {
+    await taskService.create({
+      title: "active task",
+      status: "pending",
+      session: "active-session",
+    });
+    await taskService.create({
+      title: "closed task",
+      status: "done",
+      session: "closed-session",
+    });
+    await taskService.create({
+      title: "archived task",
+      status: "pending",
+      session: "archived-session",
+    });
+    await prisma.session.update({
+      where: { slug: "archived-session" },
+      data: { archivedAt: new Date() },
+    });
+
+    const result = await sessionService.list();
+    const slugs = result.sessions.map((s) => s.slug);
+    expect(slugs).toContain("active-session");
+    expect(slugs).not.toContain("closed-session");
+    expect(slugs).not.toContain("archived-session");
+  });
+
+  it("list({state:'archived'}) returns only archived sessions", async () => {
+    await taskService.create({
+      title: "active task",
+      status: "pending",
+      session: "active-session",
+    });
+    await taskService.create({
+      title: "archived task",
+      status: "pending",
+      session: "archived-session",
+    });
+    await prisma.session.update({
+      where: { slug: "archived-session" },
+      data: { archivedAt: new Date() },
+    });
+
+    const result = await sessionService.list({ state: "archived" });
+    const slugs = result.sessions.map((s) => s.slug);
+    expect(slugs).toEqual(["archived-session"]);
+  });
+
+  it("list({state:'closed'}) returns closed sessions even when archived", async () => {
+    await taskService.create({
+      title: "closed archived task",
+      status: "done",
+      session: "closed-archived-session",
+    });
+    await prisma.session.update({
+      where: { slug: "closed-archived-session" },
+      data: { archivedAt: new Date() },
+    });
+
+    const result = await sessionService.list({ state: "closed" });
+    const slugs = result.sessions.map((s) => s.slug);
+    expect(slugs).toEqual(["closed-archived-session"]);
+  });
+
+  it("list({sort:'waitingSince'}) places the oldest waiting session first, non-waiting after", async () => {
+    await taskService.create({
+      title: "older blocked task",
+      status: "blocked",
+      session: "wait-older",
+    });
+    // Real wall-clock gap so `updatedAt` (and thus waitingSince) differs.
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    await taskService.create({
+      title: "newer blocked task",
+      status: "blocked",
+      session: "wait-newer",
+    });
+    await taskService.create({
+      title: "active task",
+      status: "pending",
+      session: "not-waiting-older",
+    });
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    await taskService.create({
+      title: "more recently active task",
+      status: "pending",
+      session: "not-waiting-newer",
+    });
+
+    const result = await sessionService.list({
+      state: "all",
+      sort: "waitingSince",
+    });
+    const slugs = result.sessions.map((s) => s.slug);
+    const waitOlderIdx = slugs.indexOf("wait-older");
+    const waitNewerIdx = slugs.indexOf("wait-newer");
+    const notWaitingOlderIdx = slugs.indexOf("not-waiting-older");
+    const notWaitingNewerIdx = slugs.indexOf("not-waiting-newer");
+    expect(waitOlderIdx).toBeGreaterThanOrEqual(0);
+    expect(waitOlderIdx).toBeLessThan(waitNewerIdx);
+    expect(waitNewerIdx).toBeLessThan(notWaitingNewerIdx);
+    expect(waitNewerIdx).toBeLessThan(notWaitingOlderIdx);
+    // Non-waiting sessions are sorted by lastActivityAt descending (most
+    // recently active first) among themselves.
+    expect(notWaitingNewerIdx).toBeLessThan(notWaitingOlderIdx);
+  });
+
+  it("list({repo}) only returns sessions whose rollup.repos includes any of the given repo(s)", async () => {
+    await taskService.create({
+      title: "in target repo",
+      status: "pending",
+      session: "repo-match",
+      repo: "org/target-repo",
+    });
+    await taskService.create({
+      title: "in other repo",
+      status: "pending",
+      session: "repo-no-match",
+      repo: "org/other-repo",
+    });
+
+    const result = await sessionService.list({
+      state: "all",
+      repo: "org/target-repo",
+    });
+    const slugs = result.sessions.map((s) => s.slug);
+    expect(slugs).toContain("repo-match");
+    expect(slugs).not.toContain("repo-no-match");
+  });
+
+  it("list({agentScope}) only returns sessions with a task assigned to the agent or in its repo scope", async () => {
+    await taskService.create({
+      title: "assigned to agent",
+      status: "pending",
+      session: "scoped-by-assignee",
+      assignee: "agent-1",
+    });
+    await taskService.create({
+      title: "in scoped repo",
+      status: "pending",
+      session: "scoped-by-repo",
+      repo: "org/scoped-repo",
+    });
+    await taskService.create({
+      title: "unrelated",
+      status: "pending",
+      session: "scoped-hidden",
+      repo: "org/other-repo",
+    });
+
+    const result = await sessionService.list({
+      state: "all",
+      agentScope: { agentId: "agent-1", repos: ["org/scoped-repo"] },
+    });
+    const slugs = result.sessions.map((s) => s.slug);
+    expect(slugs).toContain("scoped-by-assignee");
+    expect(slugs).toContain("scoped-by-repo");
+    expect(slugs).not.toContain("scoped-hidden");
+  });
+
+  it("get() returns null for a slug with no Session row", async () => {
+    const result = await sessionService.get("does-not-exist");
+    expect(result).toBeNull();
+  });
+
+  it("get() returns null when agentScope has no qualifying task in an existing session", async () => {
+    await taskService.create({
+      title: "unrelated",
+      status: "pending",
+      session: "not-mine",
+      repo: "org/other-repo",
+    });
+
+    const result = await sessionService.get("not-mine", {
+      agentId: "agent-1",
+      repos: ["org/scoped-repo"],
+    });
+    expect(result).toBeNull();
+  });
+
+  it("get() returns the flattened session+rollup shape for a visible session", async () => {
+    await taskService.create({
+      title: "a task",
+      status: "pending",
+      session: "flat-session",
+    });
+
+    const result = await sessionService.get("flat-session");
+    expect(result).not.toBeNull();
+    expect(result?.slug).toBe("flat-session");
+    expect(result?.state).toBe("active");
+    expect(result?.counts).toEqual({ total: 1, open: 1, closed: 0 });
+    expect(result?.archived).toBe(false);
+    expect(Array.isArray(result?.waitingTasks)).toBe(true);
+  });
+});

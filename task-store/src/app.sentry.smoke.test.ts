@@ -20,8 +20,21 @@ import { callerLabel } from "@shipwright/lib/request-context";
 import type { ErrorCapturingClient } from "@shipwright/lib/sentry";
 import { createTaskStoreApp } from "./app.ts";
 import { NotFoundError } from "./errors.ts";
+import type { SessionServiceLike } from "./session-service.ts";
 import type { TaskServiceLike } from "./task-service.ts";
 import type { TokenServiceLike } from "./token-service.ts";
+
+/** No-op SessionService double — session routes aren't under test here. */
+function fakeSessionService(): SessionServiceLike {
+  return {
+    async list() {
+      return { sessions: [], total: 0, limit: 50, offset: 0 };
+    },
+    async get() {
+      return null;
+    },
+  };
+}
 
 const VALID_TOKEN = "valid-token";
 const AGENT_TOKEN = "agent-token";
@@ -116,6 +129,7 @@ describe("onError — Sentry capture wiring", () => {
     const app = createTaskStoreApp({
       taskService: throwingTaskService(),
       tokenService: fakeTokenService(),
+      sessionService: fakeSessionService(),
       sentryClient,
     });
 
@@ -135,6 +149,7 @@ describe("onError — Sentry capture wiring", () => {
     const app = createTaskStoreApp({
       taskService: apiErrorTaskService(),
       tokenService: fakeTokenService(),
+      sessionService: fakeSessionService(),
       sentryClient,
     });
 
@@ -150,6 +165,7 @@ describe("onError — Sentry capture wiring", () => {
     const app = createTaskStoreApp({
       taskService: throwingTaskService(),
       tokenService: fakeTokenService(),
+      sessionService: fakeSessionService(),
     });
 
     const res = await app.request("/tasks/abc", {
@@ -166,6 +182,7 @@ describe("onError — malformed JSON request body", () => {
     const app = createTaskStoreApp({
       taskService: apiErrorTaskService(),
       tokenService: fakeTokenService(),
+      sessionService: fakeSessionService(),
       sentryClient,
     });
 
@@ -192,6 +209,7 @@ describe("onError — caller label logging (AOB-3.3)", () => {
       const app = createTaskStoreApp({
         taskService: throwingTaskService(),
         tokenService: fakeTokenServiceWithAgent(),
+        sessionService: fakeSessionService(),
       });
 
       const res = await app.request("/tasks/abc", {
@@ -215,6 +233,7 @@ describe("onError — caller label logging (AOB-3.3)", () => {
       const app = createTaskStoreApp({
         taskService: throwingTaskService(),
         tokenService: fakeTokenServiceWithAgent(),
+        sessionService: fakeSessionService(),
       });
 
       const res = await app.request("/tasks/abc", {

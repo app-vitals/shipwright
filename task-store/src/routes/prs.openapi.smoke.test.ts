@@ -214,6 +214,10 @@ function fakePrService(
     async getEvents() {
       return { events: [], total: 0 };
     },
+
+    async lookupBlockedPrNumbers() {
+      return new Set();
+    },
   };
 }
 

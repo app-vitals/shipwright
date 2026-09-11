@@ -282,6 +282,58 @@ POST /tasks/:id/skip/reset
 
 Resets `skipCount` back to 0 and clears `lastSkippedAt`. Called after a human reviews and unblocks a task that was auto-blocked by skip threshold. Returns `200` with the updated task.
 
+### Sessions
+
+A `Session` row (`slug` is the primary key) is upserted automatically whenever a task write sets a
+non-blank `session` field — see `SessionService.upsert()`. These two read routes let a caller list
+and inspect sessions without re-deriving their rollup state client-side: each session's Task rows
+are summarized into a single rollup (`state`, `waitingSince`, `lastActivityAt`, per-status `counts`,
+distinct `agentIds`/`repos`, and the list of currently-`waitingTasks`) via `computeSessionRollup()`,
+then flattened together with the Session row's own fields (`slug`, `title`, `createdAt`, `updatedAt`,
+`archivedAt`, `archivedBy`) into one object — the rollup is never nested under a `rollup` key.
+
+#### List sessions
+
+```
+GET /sessions
+```
+
+Query params:
+
+| Param | Type | Description |
+|-------|------|-------------|
+| `state` | string | `waiting`, `active`, `closed`, `empty`, `archived`, or `all`. Omitted: only sessions where `archived === false` AND `rollup.state !== 'closed'` (the default view). A named state (`waiting`/`active`/`closed`/`empty`) matches `rollup.state` alone — it is **not** additionally filtered by `archived`, since an explicit state request overrides the default archived-exclusion. `archived` matches `archived === true` (rollup state is ignored). `all` applies no state/archived filtering at all. |
+| `sort` | string | `waitingSince` or `lastActivityAt` (default). `waitingSince`: sessions with `rollup.state === 'waiting'` come first, ordered by `waitingSince` ascending (oldest-waiting-first), followed by every non-waiting session ordered by `lastActivityAt` descending. Default (or explicit `lastActivityAt`): all sessions ordered by `lastActivityAt` descending, with `null` values (e.g. `empty` sessions) sorted last. |
+| `agentId` | string | Only sessions whose `rollup.agentIds` includes this agent. This is a caller-supplied narrowing filter, separate from the auth-scoping described below. |
+| `repo` | string, repeatable | Only sessions whose `rollup.repos` includes any of the given repo(s). Repeat the param to match several repos (e.g. `?repo=org/a&repo=org/b`). |
+| `q` | string | Case-insensitive substring match against `slug` OR `title`. |
+| `limit` | number | Page size. Defaults to `50` when omitted. |
+| `offset` | number | Page offset. Defaults to `0` when omitted. |
+
+Returns `{ sessions: Session[], total: number, limit: number, offset: number }`. `total` is the
+count of all sessions matching the filters, independent of `limit`/`offset`.
+
+**Agent token visibility:** *every* agent token (`agentId` set) is scoped — the scope is applied
+whenever `agentId` is non-null, regardless of whether the token's resolved repo list is empty. A
+scoped token only sees sessions where at least one of that session's own Task rows satisfies
+`task.assignee === agentId OR (task.repo !== null AND task.repo is in the agent's resolved repo
+scope)`. A session with zero tasks can never satisfy this OR, so it is never visible under an agent
+token, and a session none of whose tasks match is silently absent from the list (no error, no
+partial rollup). An agent token with **no** resolved repo scope (empty repo list) degrades to
+assignee-only matching — the repo half of the OR can never match, so it sees only sessions
+containing a task assigned directly to it — it is **not** granted unrestricted visibility. Only
+admin tokens (`agentId === null`) see every session matching the query filters, unrestricted.
+
+#### Get session
+
+```
+GET /sessions/:slug
+```
+
+Returns the same flattened session+rollup shape as the list response. Returns `404` if the session
+doesn't exist, or if an agent token has no qualifying task in it (same visibility rule as
+the list route above) — the two cases are indistinguishable to the caller by design.
+
 ### Task status lifecycle
 
 ```
