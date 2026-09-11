@@ -80,6 +80,7 @@ Query params:
 | `pr` | number | Filter by PR number |
 | `branch` | string | Filter by branch name |
 | `hitl` | `true` or `false` | Filter by HITL (human-in-the-loop) flag: return tasks with or without the flag set |
+| `autonomousPlanSession` | `true` or `false` | Filter by autonomous plan session flag: return tasks marked as part of an autonomous planning session or not |
 | `limit` | number | Page size. Defaults to `50` when omitted. |
 | `offset` | number | Page offset. Defaults to `0` when omitted. |
 | `sort` | string | `asc` (default) or `desc` — orders results by `createdAt`. Default preserves existing ascending order for all callers. |
@@ -120,7 +121,7 @@ supported with `?ready=true`. `updatedSince` has no effect on either branch, for
 whole-graph reason.
 
 Aside from those pagination/sort/recency exceptions, every filter in
-the table — `session`, `source`, `repo`, `org`, `claimedBy`, `pr`, `branch`, `assignee`, `hitl` — applies
+the table — `session`, `source`, `repo`, `org`, `claimedBy`, `pr`, `branch`, `assignee`, `hitl`, `autonomousPlanSession` — applies
 under `?ready=true` and `?state=blocked` exactly as it does on the plain list path.
 `TaskService.listReady()` applies these as a post-filter *after* `resolveReadyTasks()` has
 resolved the complete dependency graph; `TaskService.listBlocked()` applies the identically-shaped
@@ -130,9 +131,9 @@ into the initial query — a task that gets filtered out of the final response c
 satisfy a dependency edge (for `?ready=true`) or contribute a `blockedBy` entry (for
 `?state=blocked`) for another, in-scope task. `repo`/`org` matching mirrors the same
 array-any-match (`repo`) / `startsWith "<org>/"` (`org`) / AND-between-both semantics described
-above for the plain list path, just evaluated in-memory instead of as a Prisma `where` clause. `hitl` is a simple
-equality AND-filter: when omitted it has no effect (matches all `hitl` values); when set to `true` or `false`,
-it matches only tasks where `task.hitl` equals that value.
+above for the plain list path, just evaluated in-memory instead of as a Prisma `where` clause. `hitl` and `autonomousPlanSession` are simple
+equality AND-filters: when omitted they have no effect (match all values); when set to `true` or `false`,
+they match only tasks where `task.hitl`/`task.autonomousPlanSession` equals that value respectively.
 
 **Agent token visibility:**
 - **With repo scope** (repos configured): Return tasks where `assignee === agentId` OR (`assignee === null` AND `repo` is in the agent's scope). This union of explicitly-assigned and pool tasks enables the agent to claim unassigned work from its scoped repositories.
