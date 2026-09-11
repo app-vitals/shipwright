@@ -45,36 +45,37 @@ model Task {
   title  String
   status TaskStatus
 
-  source             String?
-  session            String?
-  repo               String?
-  description        String?
-  acceptanceCriteria String[]
-  layer              String?
-  branch             String?
-  dependencies       String[]
-  pr                 Int?
-  hours              Float?
-  startedAt          String?
-  prCreatedAt        String?
-  mergedAt           String?
-  blockedAt          String?
-  blockedReason      String?
-  note               String?
-  type               String?
-  priority           String?
-  cancelledAt        String?
-  completedAt        String?
-  deployingAt        String?
-  deployedAt         String?
-  ciFixAttempts      Int?
-  mergeCommit        String?
-  prUrl              String?
-  assignee           String?
-  issue              String?
-  model              String? // "haiku" | "sonnet" | "opus"
-  complexity         Int?
-  hitl               Boolean?
+  source                String?
+  session               String?
+  repo                  String?
+  description           String?
+  acceptanceCriteria    String[]
+  layer                 String?
+  branch                String?
+  dependencies          String[]
+  pr                    Int?
+  hours                 Float?
+  startedAt             String?
+  prCreatedAt           String?
+  mergedAt              String?
+  blockedAt             String?
+  blockedReason         String?
+  note                  String?
+  type                  String?
+  priority              String?
+  cancelledAt           String?
+  completedAt           String?
+  deployingAt           String?
+  deployedAt            String?
+  ciFixAttempts         Int?
+  mergeCommit           String?
+  prUrl                 String?
+  assignee              String?
+  issue                 String?
+  model                 String? // "haiku" | "sonnet" | "opus"
+  complexity            Int?
+  hitl                  Boolean?
+  autonomousPlanSession Boolean?
 
   // ─── Skip tracking (auto-block after repeated no-op dispatches) ───
   // skipCount increments each time the loop orchestrator dispatches this task

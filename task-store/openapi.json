@@ -186,6 +186,19 @@
             "schema": {
               "type": "string",
               "enum": [
+                "true",
+                "false"
+              ],
+              "example": "true"
+            },
+            "required": false,
+            "name": "autonomousPlanSession",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
                 "asc",
                 "desc"
               ],
@@ -2545,6 +2558,13 @@
             "example": 7
           },
           "hitl": {
+            "type": [
+              "boolean",
+              "null"
+            ],
+            "example": true
+          },
+          "autonomousPlanSession": {
             "type": [
               "boolean",
               "null"

@@ -29,6 +29,7 @@ export interface paths {
                     offset?: string;
                     ready?: "true" | "false";
                     hitl?: "true" | "false";
+                    autonomousPlanSession?: "true" | "false";
                     sort?: "asc" | "desc";
                     updatedSince?: string;
                 };
@@ -1771,6 +1772,168 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/sessions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List sessions */
+        get: {
+            parameters: {
+                query?: {
+                    state?: "waiting" | "active" | "closed" | "empty" | "archived" | "all";
+                    sort?: "waitingSince" | "lastActivityAt";
+                    agentId?: string;
+                    repo?: string | string[];
+                    q?: string;
+                    limit?: string;
+                    offset?: string;
+                };
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description List of sessions with total count */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["SessionListResponse"];
+                    };
+                };
+                /** @description Unauthorized */
+                401: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/sessions/{slug}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get a session by slug */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    slug: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Session */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Session"];
+                    };
+                };
+                /** @description Unauthorized */
+                401: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+                /** @description Not found */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /** Rename/archive a session — admin-only */
+        patch: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    slug: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: {
+                content: {
+                    "application/json": components["schemas"]["SessionPatchBody"];
+                };
+            };
+            responses: {
+                /** @description Updated session */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Session"];
+                    };
+                };
+                /** @description Unauthorized */
+                401: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+                /** @description Forbidden — admin tokens only */
+                403: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+                /** @description Not found */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+            };
+        };
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -1855,6 +2018,8 @@ export interface components {
             complexity?: number | null;
             /** @example true */
             hitl?: boolean | null;
+            /** @example true */
+            autonomousPlanSession?: boolean | null;
             /**
              * @description Consecutive skip count. Auto-blocks (hitl+blockedReason) once it crosses the threshold (3).
              * @default 0
@@ -2356,6 +2521,95 @@ export interface components {
             limit: number;
             /** @example 0 */
             offset: number;
+        };
+        Session: {
+            /** @example shipwright-may-launch */
+            slug: string;
+            /** @example May launch prep */
+            title?: string | null;
+            /**
+             * Format: date-time
+             * @example 2026-01-01T00:00:00.000Z
+             */
+            createdAt: string;
+            /**
+             * Format: date-time
+             * @example 2026-01-06T12:00:00.000Z
+             */
+            updatedAt: string;
+            /** @example null */
+            archivedAt?: string | null;
+            /** @example null */
+            archivedBy?: string | null;
+            /**
+             * @example active
+             * @enum {string}
+             */
+            state: "waiting" | "active" | "closed" | "empty";
+            /** @example 2026-01-01T00:00:00.000Z */
+            waitingSince: string | null;
+            /** @example 2026-01-06T12:00:00.000Z */
+            lastActivityAt: string | null;
+            /**
+             * @example {
+             *       "total": 3,
+             *       "open": 2,
+             *       "closed": 1
+             *     }
+             */
+            counts: {
+                total: number;
+                open: number;
+                closed: number;
+            };
+            /**
+             * @example [
+             *       "agent-1"
+             *     ]
+             */
+            agentIds: string[];
+            /**
+             * @example [
+             *       "org/repo"
+             *     ]
+             */
+            repos: string[];
+            /**
+             * @example [
+             *       {
+             *         "id": "task-1",
+             *         "kind": "hitl"
+             *       }
+             *     ]
+             */
+            waitingTasks: {
+                id: string;
+                /** @enum {string} */
+                kind: "hitl" | "blocked" | "pr_blocked";
+            }[];
+            /** @example false */
+            archived: boolean;
+        };
+        SessionListResponse: {
+            sessions: components["schemas"]["Session"][];
+            /** @example 10 */
+            total: number;
+            /** @example 50 */
+            limit: number;
+            /** @example 0 */
+            offset: number;
+        };
+        SessionPatchBody: {
+            /**
+             * @description Omitted: title untouched. A string: set. null: clears the title.
+             * @example May launch prep
+             */
+            title?: string | null;
+            /**
+             * @description Omitted: archive fields untouched. true: stamps archivedAt/archivedBy. false: clears both.
+             * @example true
+             */
+            archived?: boolean;
         };
     };
     responses: never;

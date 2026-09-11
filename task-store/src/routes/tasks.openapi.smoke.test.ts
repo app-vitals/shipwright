@@ -483,6 +483,116 @@ describe("createTasksRoutes — OpenAPIHono migration (TSM-1.2)", () => {
     expect(res.status).toBe(400);
   });
 
+  it("GET /?autonomousPlanSession=true passes autonomousPlanSession: true through to taskService.list() (PDR-2.1)", async () => {
+    const task = makeTask({ id: "t-1", autonomousPlanSession: true });
+    let receivedFilters: unknown;
+    const app = createTasksRoutes(
+      fakeTaskService({
+        tasks: [task],
+        onList: (filters) => {
+          receivedFilters = filters;
+        },
+      }),
+    );
+    const parent = makeAdminParent(app);
+
+    const res = await parent.request("/?autonomousPlanSession=true");
+    expect(res.status).toBe(200);
+    expect(
+      (receivedFilters as { autonomousPlanSession?: boolean })
+        .autonomousPlanSession,
+    ).toBe(true);
+  });
+
+  it("GET /?autonomousPlanSession=false passes autonomousPlanSession: false through to taskService.list() (PDR-2.1)", async () => {
+    const task = makeTask({ id: "t-1", autonomousPlanSession: false });
+    let receivedFilters: unknown;
+    const app = createTasksRoutes(
+      fakeTaskService({
+        tasks: [task],
+        onList: (filters) => {
+          receivedFilters = filters;
+        },
+      }),
+    );
+    const parent = makeAdminParent(app);
+
+    const res = await parent.request("/?autonomousPlanSession=false");
+    expect(res.status).toBe(200);
+    expect(
+      (receivedFilters as { autonomousPlanSession?: boolean })
+        .autonomousPlanSession,
+    ).toBe(false);
+  });
+
+  it("GET / with no autonomousPlanSession param passes autonomousPlanSession: undefined through to taskService.list() (existing behavior) (PDR-2.1)", async () => {
+    const task = makeTask({ id: "t-1" });
+    let receivedFilters: unknown;
+    const app = createTasksRoutes(
+      fakeTaskService({
+        tasks: [task],
+        onList: (filters) => {
+          receivedFilters = filters;
+        },
+      }),
+    );
+    const parent = makeAdminParent(app);
+
+    const res = await parent.request("/");
+    expect(res.status).toBe(200);
+    expect(
+      (receivedFilters as { autonomousPlanSession?: boolean })
+        .autonomousPlanSession,
+    ).toBeUndefined();
+  });
+
+  it("GET /?autonomousPlanSession=garbage rejects with a 400 (invalid enum value, mirrors ?hitl= behavior) (PDR-2.1)", async () => {
+    const app = createTasksRoutes(fakeTaskService());
+    const parent = makeAdminParent(app);
+
+    const res = await parent.request("/?autonomousPlanSession=garbage");
+    expect(res.status).toBe(400);
+  });
+
+  it("POST / forwards autonomousPlanSession: true to taskService.create() and returns it in the response, and GET /:id round-trips it (PDR-2.1)", async () => {
+    let received: Record<string, unknown> | undefined;
+    const app = createTasksRoutes(
+      fakeTaskService({
+        onCreate: (data) => {
+          received = data as Record<string, unknown>;
+        },
+      }),
+    );
+    const parent = makeAdminParent(app);
+
+    const createRes = await parent.request("/", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        title: "A task",
+        status: "pending",
+        repo: null,
+        autonomousPlanSession: true,
+      }),
+    });
+    expect(createRes.status).toBe(201);
+    expect(received?.autonomousPlanSession).toBe(true);
+    const createdBody = (await createRes.json()) as Task & {
+      autonomousPlanSession?: boolean | null;
+    };
+    expect(createdBody.autonomousPlanSession).toBe(true);
+
+    const task = makeTask({ id: "t-persisted", autonomousPlanSession: true });
+    const readApp = createTasksRoutes(fakeTaskService({ tasks: [task] }));
+    const readParent = makeAdminParent(readApp);
+    const getRes = await readParent.request("/t-persisted");
+    expect(getRes.status).toBe(200);
+    const getBody = (await getRes.json()) as Task & {
+      autonomousPlanSession?: boolean | null;
+    };
+    expect(getBody.autonomousPlanSession).toBe(true);
+  });
+
   it("GET /distinct returns 200 with { sessions, repos } shape", async () => {
     const app = createTasksRoutes(fakeTaskService());
     const parent = makeAdminParent(app);
