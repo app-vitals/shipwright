@@ -31,6 +31,20 @@ import type { GeneratedTool } from "./generated-tools.ts";
  * pipeline-internal category as the lifecycle routes above, and the two
  * `*_events` routes are audit-trail internals. Widening the public MCP
  * surface is a deliberate decision, not a side effect of regeneration.
+ *
+ * SESH-2.2 decision (regeneration that added GET /sessions and
+ * GET /sessions/{slug} to task-store/openapi.json): `sessions_list` and
+ * `sessions_get` are deliberately NOT added here — they stay on the public
+ * surface, bringing it to 11 tools. Reasoning: both are read-only GETs, and
+ * task-store/src/routes/sessions.ts always builds an `agentScope` for any
+ * token with a non-null `agentId` (an empty `repos` list degrades to
+ * assignee-only visibility inside SessionService's `hasQualifyingTask()`
+ * rather than to unrestricted access — fail-safe-restrictive, not
+ * fail-open). That's the same shape as the already-public `tasks_list` /
+ * `tasks_get` / `prs_list` / `prs_get` (agent-token-scoped reads), not the
+ * shape of what's excluded above: `prs_findings` is a write op, and
+ * `tasks_events` / `prs_events` are audit-trail internals unrelated to
+ * per-agent scoping. This is a considered inclusion, not an omission.
  */
 export const EXCLUDED_TOOLS: readonly string[] = [
   // tasks: pipeline-internal lifecycle
@@ -66,7 +80,8 @@ export const EXCLUDED_TOOLS: readonly string[] = [
 /**
  * Filter a generated tool list down to the agreed public surface.
  * Allowed tools: tasks_list, tasks_create, tasks_bulk, tasks_distinct,
- * tasks_get, tasks_update, prs_list, prs_get, prs_update (9 total).
+ * tasks_get, tasks_update, prs_list, prs_get, prs_update, sessions_list,
+ * sessions_get (11 total).
  */
 export function allowedTools(tools: GeneratedTool[]): GeneratedTool[] {
   const excluded = new Set<string>(EXCLUDED_TOOLS);

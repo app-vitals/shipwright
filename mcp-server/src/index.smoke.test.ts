@@ -12,6 +12,8 @@ const ALLOWED_TOOL_NAMES = [
   "prs_list",
   "prs_get",
   "prs_update",
+  "sessions_list",
+  "sessions_get",
 ] as const;
 
 const TEST_TOKEN = "test-mcp-server-token";
@@ -28,7 +30,7 @@ describe("mcp-server", () => {
     expect(res.status).toBe(200);
   });
 
-  it("GET /mcp/tools returns only the 9 allowed tools", async () => {
+  it("GET /mcp/tools returns only the 11 allowed tools", async () => {
     const res = await app.request("/mcp/tools", {
       headers: { Authorization: `Bearer ${TEST_TOKEN}` },
     });
@@ -37,8 +39,8 @@ describe("mcp-server", () => {
     const body = (await res.json()) as { tools: Array<{ name: string; description: string }> };
     const toolNames = body.tools.map((t) => t.name);
 
-    // Verify we have exactly 9 tools
-    expect(toolNames).toHaveLength(9);
+    // Verify we have exactly 11 tools
+    expect(toolNames).toHaveLength(11);
 
     // Verify all allowed tools are present
     for (const name of ALLOWED_TOOL_NAMES) {

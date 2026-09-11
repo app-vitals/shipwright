@@ -22,11 +22,13 @@ describe("MCP server tools/list", () => {
     const { tools } = await client.listTools();
     const names = tools.map((t) => t.name);
 
-    // Only the 9 allowed tools are exposed; pipeline-internal ops are excluded.
-    expect(tools.length).toBe(9);
+    // Only the 11 allowed tools are exposed; pipeline-internal ops are excluded.
+    expect(tools.length).toBe(11);
     expect(names).toContain("tasks_list");
     expect(names).toContain("prs_list");
     expect(names).toContain("prs_update");
+    expect(names).toContain("sessions_list");
+    expect(names).toContain("sessions_get");
     expect(names).not.toContain("tasks_claim");
     expect(names).not.toContain("prs_claim");
 

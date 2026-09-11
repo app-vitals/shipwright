@@ -1072,4 +1072,90 @@ export const generatedTools: GeneratedTool[] = [
     pathParams: ["id"],
     hasBody: false,
   },
+  {
+    name: "sessions_list",
+    description: "List sessions",
+    inputSchema: {
+      type: "object",
+      properties: {
+        state: {
+          type: "string",
+          enum: ["waiting", "active", "closed", "empty", "archived", "all"],
+          description:
+            "Omitted: archived===false AND state!=='closed'. A named state (waiting/active/closed/empty) matches rollup.state alone (not additionally archived-filtered). 'archived': archived===true (rollup state ignored). 'all': no filtering.",
+          example: "waiting",
+        },
+        sort: {
+          type: "string",
+          enum: ["waitingSince", "lastActivityAt"],
+          description:
+            "'waitingSince': waiting sessions first (oldest waitingSince first), then non-waiting sessions by lastActivityAt desc. Default (or 'lastActivityAt'): all sessions by lastActivityAt desc, nulls last.",
+          example: "waitingSince",
+        },
+        agentId: {
+          type: "string",
+          description:
+            "Only sessions whose rollup.agentIds includes this agent.",
+          example: "agent-id-123",
+        },
+        repo: {
+          anyOf: [
+            {
+              type: "string",
+            },
+            {
+              type: "array",
+              items: {
+                type: "string",
+              },
+            },
+          ],
+          description:
+            "Only sessions whose rollup.repos includes any of the given repo(s). Repeatable (?repo=a&repo=b).",
+          example: "org/repo",
+        },
+        q: {
+          type: "string",
+          description:
+            "Case-insensitive substring match against slug OR title.",
+          example: "launch",
+        },
+        limit: {
+          type: "string",
+          example: "50",
+        },
+        offset: {
+          type: "string",
+          example: "0",
+        },
+      },
+      required: [],
+      additionalProperties: false,
+    },
+    method: "GET",
+    pathTemplate: "/sessions",
+    queryParams: ["state", "sort", "agentId", "repo", "q", "limit", "offset"],
+    pathParams: [],
+    hasBody: false,
+  },
+  {
+    name: "sessions_get",
+    description: "Get a session by slug",
+    inputSchema: {
+      type: "object",
+      properties: {
+        slug: {
+          type: "string",
+          example: "shipwright-may-launch",
+        },
+      },
+      required: ["slug"],
+      additionalProperties: false,
+    },
+    method: "GET",
+    pathTemplate: "/sessions/{slug}",
+    queryParams: [],
+    pathParams: ["slug"],
+    hasBody: false,
+  },
 ];
