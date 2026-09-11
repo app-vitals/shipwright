@@ -65,6 +65,36 @@ API calls — e.g. the Same-Branch Sibling Check's `?repo=` filter below.
 - **Found, any other status** (e.g. `pr_open`, `blocked`, `merged`): not workable. Print
   `⚠ Task {task-id} has status "{status}" — nothing to do.` and stop.
 
+### PRD-Shaped Task Guard (fallback safety net)
+
+Before proceeding with a pending task, detect and block tasks that are PRD-shaped and
+misrouted to dev-task. This is a fallback safety net for legacy PRD tasks (e.g.
+pre-existing `prd-*` tasks) and any trusted source that forgets to set the appropriate
+routing flag.
+
+A task is PRD-shaped if ANY of the following is true:
+
+1. Task id matches the pattern `^prd-` (case-sensitive, e.g. `prd-abc123`)
+2. Task description opens with `"Commit as PRODUCT-SPEC.md and run /shipwright:plan-session"`
+3. Task's `branch` field is exactly `"main"` AND its `acceptanceCriteria` array is empty
+
+When any condition matches, the task is blocked immediately:
+
+```bash
+curl -sf -X PATCH -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
+  -H "Content-Type: application/json" \
+  "$SHIPWRIGHT_TASK_STORE_URL/tasks/{id}" \
+  -d '{"status": "blocked", "hitl": true, "blockedReason": "misrouted_needs_plan_session_not_dev_task"}' | jq .
+```
+
+Print:
+
+```
+⚠ Task {id} looks PRD-shaped, not dev-task-shaped — blocked for human triage (misrouted_needs_plan_session_not_dev_task).
+```
+
+Stop immediately. Do not proceed to Dependency Check, do not claim (Step 2), do not build.
+
 ### Dependency Check (pending tasks only)
 
 An explicit task id is an instruction to work this task now, but it must still be
