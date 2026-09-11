@@ -84,6 +84,25 @@ export type PushUnsubscribeResult =
   | { ok: true }
   | { ok: false; reason: "unavailable" };
 
+/**
+ * A minimal carrier of "who to notify" for a session-based notification.
+ * There is no real Session/SessionFollow Prisma model yet (that lands with
+ * sibling tasks SES-1.1/SES-6.1) — notifySession only needs the resolved
+ * list of emails to notify plus enough identifying info for the payload, not
+ * a Prisma-backed lookup. Callers resolve `emails` themselves.
+ */
+export interface NotificationSession {
+  slug: string;
+  emails: string[];
+}
+
+/**
+ * The kind of session-lifecycle event a notification is for. A future task
+ * (SESH-7.2) will use this to drive a real buildSessionNotificationPayload —
+ * this task only needs the type and a placeholder payload.
+ */
+export type SessionNotificationKind = "immediate" | "reminder" | "completed";
+
 export class PushService {
   private readonly sender: PushSender;
 
@@ -96,17 +115,27 @@ export class PushService {
     this.sender = new PushSender(vapid, fetchImpl);
   }
 
-  /** All subscriptions belonging to the users watching a thread. */
-  private async subscriptionsForThread(threadId: string) {
+  /** The deduped set of emails watching a thread. */
+  private async watchersForThread(threadId: string): Promise<string[]> {
     const watchers = await this.prisma.chatThreadWatch.findMany({
       where: { threadId },
       select: { userEmail: true },
     });
-    const emails = [...new Set(watchers.map((w) => w.userEmail))];
+    return [...new Set(watchers.map((w) => w.userEmail))];
+  }
+
+  /** All push subscriptions belonging to the given emails. */
+  private async subscriptionsForEmails(emails: string[]) {
     if (emails.length === 0) return [];
     return this.prisma.pushSubscription.findMany({
       where: { userEmail: { in: emails } },
     });
+  }
+
+  /** All subscriptions belonging to the users watching a thread. */
+  private async subscriptionsForThread(threadId: string) {
+    const emails = await this.watchersForThread(threadId);
+    return this.subscriptionsForEmails(emails);
   }
 
   /**
@@ -119,6 +148,55 @@ export class PushService {
   }
 
   /**
+   * The reusable core of every "notify these users" flow: resolves push
+   * subscriptions for the given emails, groups them by effective detail
+   * level (min(operator ceiling, each subscription's opt-in)), builds one
+   * payload per group via `buildPayload`, sends, then prunes any endpoints
+   * the sender reports gone. Does NOT swallow errors itself — that's each
+   * public entry point's job (notifyThreadReply, notifySession), so the
+   * "never throws" contract lives at exactly one place per caller instead of
+   * being duplicated or accidentally omitted here.
+   */
+  async sendToUsers(
+    emails: string[],
+    buildPayload: (level: PushDetailLevel) => string,
+  ): Promise<{ delivered: number; pruned: number }> {
+    const subs = await this.subscriptionsForEmails(emails);
+    if (subs.length === 0) return { delivered: 0, pruned: 0 };
+
+    // Group subscriptions by their effective detail level so each group gets
+    // a single payload build. Different opt-ins → different visible content.
+    const byPayload = new Map<string, PushSubscriptionLike[]>();
+    for (const s of subs) {
+      const level = resolveDetailLevel(this.maxDetail, s.detailOptIn);
+      const payload = buildPayload(level);
+      if (!byPayload.has(payload)) {
+        byPayload.set(payload, []);
+      }
+      byPayload.get(payload)?.push({
+        endpoint: s.endpoint,
+        p256dh: s.p256dh,
+        auth: s.auth,
+      });
+    }
+
+    let delivered = 0;
+    const prunedEndpoints: string[] = [];
+    for (const [payload, group] of byPayload) {
+      const res = await this.sender.sendToMany(group, payload);
+      delivered += res.delivered;
+      prunedEndpoints.push(...res.prunedEndpoints);
+    }
+
+    if (prunedEndpoints.length > 0) {
+      await this.prisma.pushSubscription.deleteMany({
+        where: { endpoint: { in: prunedEndpoints } },
+      });
+    }
+    return { delivered, pruned: prunedEndpoints.length };
+  }
+
+  /**
    * Sends the "agent replied" notification to every subscription watching the
    * thread, then prunes any the sender reported gone. Never throws into the
    * caller's request/response cycle — a push failure must not fail the reply.
@@ -127,43 +205,49 @@ export class PushService {
     thread: NotificationThread,
   ): Promise<{ delivered: number; pruned: number }> {
     try {
-      const subs = await this.subscriptionsForThread(thread.threadId);
-      if (subs.length === 0) return { delivered: 0, pruned: 0 };
-
-      // Group subscriptions by their effective detail level so each group gets
-      // a single payload build. Different opt-ins → different visible content.
-      const byPayload = new Map<string, PushSubscriptionLike[]>();
-      for (const s of subs) {
-        const level = resolveDetailLevel(this.maxDetail, s.detailOptIn);
-        const payload = JSON.stringify(buildNotificationPayload(level, thread));
-        if (!byPayload.has(payload)) {
-          byPayload.set(payload, []);
-        }
-        byPayload.get(payload)?.push({
-          endpoint: s.endpoint,
-          p256dh: s.p256dh,
-          auth: s.auth,
-        });
-      }
-
-      let delivered = 0;
-      const prunedEndpoints: string[] = [];
-      for (const [payload, group] of byPayload) {
-        const res = await this.sender.sendToMany(group, payload);
-        delivered += res.delivered;
-        prunedEndpoints.push(...res.prunedEndpoints);
-      }
-
-      if (prunedEndpoints.length > 0) {
-        await this.prisma.pushSubscription.deleteMany({
-          where: { endpoint: { in: prunedEndpoints } },
-        });
-      }
-      return { delivered, pruned: prunedEndpoints.length };
+      const emails = await this.watchersForThread(thread.threadId);
+      if (emails.length === 0) return { delivered: 0, pruned: 0 };
+      return await this.sendToUsers(emails, (level) =>
+        JSON.stringify(buildNotificationPayload(level, thread)),
+      );
     } catch (err) {
       // Push is a convenience layer over polling, never a replacement — a
       // failure here must never surface to the reply flow.
       console.error("[push] notifyThreadReply failed:", err);
+      return { delivered: 0, pruned: 0 };
+    }
+  }
+
+  /**
+   * Sends a session-lifecycle notification (SESH-7.1) to every email on
+   * `session.emails`, then prunes any endpoints the sender reports gone.
+   * Never throws into the caller — same convenience-layer contract as
+   * notifyThreadReply. The payload *content* here is a deliberate
+   * placeholder (the real content policy is SESH-7.2's
+   * buildSessionNotificationPayload), but the detail level it carries is not:
+   * `level` is the caller's per-call ceiling, and the effective level of each
+   * subscription's payload is min(caller ceiling, operator ceiling, that
+   * subscription's opt-in) — the same privacy invariant notifyThreadReply
+   * honors. A caller can ask for less detail, never more.
+   */
+  async notifySession(
+    session: NotificationSession,
+    level: PushDetailLevel,
+    kind: SessionNotificationKind,
+  ): Promise<{ delivered: number; pruned: number }> {
+    try {
+      if (session.emails.length === 0) return { delivered: 0, pruned: 0 };
+      // `subLevel` already is min(this.maxDetail, subscription opt-in);
+      // resolveDetailLevel caps it once more against the caller's request.
+      return await this.sendToUsers(session.emails, (subLevel) =>
+        JSON.stringify({
+          kind,
+          slug: session.slug,
+          level: resolveDetailLevel(level, subLevel),
+        }),
+      );
+    } catch (err) {
+      console.error("[push] notifySession failed:", err);
       return { delivered: 0, pruned: 0 };
     }
   }
