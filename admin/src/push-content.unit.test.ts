@@ -10,7 +10,9 @@
 import { describe, expect, it } from "bun:test";
 import {
   type PushDetailLevel,
+  type SessionNotificationKind,
   buildNotificationPayload,
+  buildSessionNotificationPayload,
   resolveDetailLevel,
 } from "./push-content.ts";
 
@@ -96,6 +98,112 @@ describe("buildNotificationPayload — NEVER leaks sensitive tokens (AC 1)", () 
   for (const level of levels) {
     it(`level "${level}": visible fields contain no id/repo/path token`, () => {
       const p = buildNotificationPayload(level, thread);
+      const visible = `${p.title}\n${p.body}`;
+      for (const token of forbidden) {
+        expect(visible).not.toContain(token);
+      }
+    });
+  }
+});
+
+describe("buildSessionNotificationPayload — kind x level matrix", () => {
+  const session = {
+    slug: "refactor-billing-exporter",
+    title: "Refactor the billing exporter",
+    reason:
+      "The billing exporter needs to page through several upstream services and rewrite the ledger export logic before the deploy window closes tonight.",
+  };
+
+  const kinds: SessionNotificationKind[] = [
+    "immediate",
+    "reminder",
+    "completed",
+  ];
+  const levels: PushDetailLevel[] = ["generic", "title", "preview"];
+
+  const expectedTitle: Record<SessionNotificationKind, string> = {
+    immediate: "A session needs you",
+    reminder: "Still waiting on you",
+    completed: "Session completed",
+  };
+
+  for (const kind of kinds) {
+    for (const level of levels) {
+      it(`kind "${kind}" level "${level}": correct title/body/url/tag/kind`, () => {
+        const p = buildSessionNotificationPayload(level, kind, session);
+
+        expect(p.title).toBe(expectedTitle[kind]);
+        expect(p.kind).toBe(kind);
+        expect(p.url).toBe(
+          `/admin/sessions/${encodeURIComponent(session.slug)}`,
+        );
+        expect(p.tag).toBe(`shipwright-session-${session.slug}`);
+
+        if (level === "generic") {
+          expect(p.body).toBe("");
+        } else if (level === "title") {
+          expect(p.body).toBe(session.title);
+        } else {
+          expect(p.body.length).toBeLessThanOrEqual(120);
+          expect(p.body.length).toBeGreaterThan(0);
+          expect(session.reason.startsWith(p.body)).toBe(true);
+        }
+      });
+    }
+  }
+
+  it("falls back to title when reason is missing at preview level", () => {
+    const p = buildSessionNotificationPayload("preview", "immediate", {
+      slug: "no-reason",
+      title: "Fallback title",
+    });
+    expect(p.body).toBe("Fallback title");
+  });
+
+  it("falls back to empty body when both title and reason are missing", () => {
+    const p = buildSessionNotificationPayload("title", "reminder", {
+      slug: "bare-session",
+    });
+    expect(p.body).toBe("");
+
+    const preview = buildSessionNotificationPayload("preview", "reminder", {
+      slug: "bare-session",
+      title: null,
+      reason: null,
+    });
+    expect(preview.body).toBe("");
+  });
+
+  it("truncates a reason longer than 120 chars at preview level", () => {
+    const longReason = "x".repeat(200);
+    const p = buildSessionNotificationPayload("preview", "completed", {
+      slug: "long-reason",
+      reason: longReason,
+    });
+    expect(p.body.length).toBe(120);
+  });
+});
+
+describe("buildSessionNotificationPayload — NEVER leaks sensitive tokens (AC 2)", () => {
+  const session = {
+    slug: "leaky-session",
+    title: "Ship agt_LEAKING_AGENT_ID for acme-corp/finance-svc",
+    reason:
+      "Working thr_LEAKING_THREAD_ID on acme-corp/finance-svc touching src/export/ledger.ts costs $4.20",
+  };
+
+  const forbidden = [
+    "agt_LEAKING_AGENT_ID",
+    "thr_LEAKING_THREAD_ID",
+    "acme-corp/finance-svc",
+    "src/export/ledger.ts",
+  ];
+
+  const levels: PushDetailLevel[] = ["generic", "title", "preview"];
+
+  for (const level of levels) {
+    it(`level "${level}": visible fields contain no id/repo/path token`, () => {
+      const p = buildSessionNotificationPayload(level, "immediate", session);
       const visible = `${p.title}\n${p.body}`;
       for (const token of forbidden) {
         expect(visible).not.toContain(token);
