@@ -124,8 +124,9 @@ function renderNotificationSettingsPage(opts: {
             value="on"
             ${opts.prefs.autoFollowSessions ? "checked" : ""}
           />
-          <label class="form-label" for="autoFollowSessions" style="margin-bottom:0">Automatically follow sessions I start</label>
+          <label class="form-label" for="autoFollowSessions" style="margin-bottom:0">Automatically follow new sessions I can see</label>
         </div>
+        <p style="font-size:12px;color:#6b7280;margin:-8px 0 12px 22px">Covers any session in the agents and repos you have access to — not just ones you started — from the moment you turn this on.</p>
         <div class="form-group">
           <label class="form-label" for="reminderHourLocal">Reminder hour (0–23, ${escapeHtml(opts.timezone)} time)</label>
           <input

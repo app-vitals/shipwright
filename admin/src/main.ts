@@ -57,6 +57,10 @@ import { HttpKubernetesClient } from "./kubernetes-client.ts";
 import { HttpOktaAuthClient } from "./okta-auth-client.ts";
 import { isPushEnabled } from "./push-sender.ts";
 import { PushService } from "./push-service.ts";
+import {
+  SessionAlertSweeper,
+  type SessionForAlert,
+} from "./session-alert-sweeper.ts";
 import { HttpSlackProvisioningClient } from "./slack-provisioning-client.ts";
 import type { TaskStoreProvisioningClient } from "./task-store-provisioning-client.ts";
 import {
@@ -319,6 +323,35 @@ export function resolvePublicRepo(
   env: Record<string, string | undefined>,
 ): string | undefined {
   return env.SHIPWRIGHT_ADMIN_PUBLIC_REPO?.trim() || undefined;
+}
+
+/** Default cadence of the session-alert sweeper — matches chat's stall reaper. */
+export const DEFAULT_SESSION_ALERT_INTERVAL_MS = 60_000;
+
+/**
+ * Hard timeout on the sweeper's task-store `GET /sessions` calls. Longer than
+ * the repo's usual 5s auth-lookup timeout because this fetches up to 500
+ * sessions, but still well inside the default 60s tick so a stalled
+ * task-store can't wedge the sweep loop behind its in-flight guard.
+ */
+export const SESSION_ALERT_FETCH_TIMEOUT_MS = 10_000;
+
+/**
+ * Resolve the session-alert sweeper's tick interval from the environment.
+ * Reads SHIPWRIGHT_ADMIN_SESSION_ALERT_INTERVAL_MS; anything unset, blank,
+ * non-numeric, or non-positive falls back to the default rather than
+ * producing a setInterval that spins (0/NaN) or never fires.
+ */
+export function resolveSessionAlertIntervalMs(
+  env: Record<string, string | undefined>,
+): number {
+  const raw = env.SHIPWRIGHT_ADMIN_SESSION_ALERT_INTERVAL_MS?.trim();
+  if (!raw) return DEFAULT_SESSION_ALERT_INTERVAL_MS;
+  const parsed = Number(raw);
+  if (!Number.isFinite(parsed) || parsed <= 0) {
+    return DEFAULT_SESSION_ALERT_INTERVAL_MS;
+  }
+  return parsed;
 }
 
 // startServer() is the process entrypoint: it runs the real migration
@@ -671,6 +704,56 @@ async function startServer(): Promise<void> {
     ...taskStoreFetchers,
   });
   root.route("/", adminUIApp);
+
+  // Session alert sweeper (SESH-7.4) — the admin service's only background
+  // loop. Registered HERE, never inside createAdminUIApp(), which must stay
+  // side-effect-free (same rule as chat/src/stall-reaper.ts's registration).
+  // Gated on BOTH push being enabled and the task-store client being
+  // configured: without either, every tick would be a guaranteed no-op (or a
+  // guaranteed error log), so we simply don't start it.
+  if (pushService && taskStoreUrl && taskStoreAdminToken) {
+    const sessionAlertSweeper = new SessionAlertSweeper({
+      prisma: prisma as never,
+      pushService,
+      agentMemberService,
+      agentService,
+      fetchSessions: async (state) => {
+        const res = await fetch(
+          `${taskStoreUrl}/sessions?state=${state}&limit=500`,
+          {
+            headers: { Authorization: `Bearer ${taskStoreAdminToken}` },
+            // Bound the call so a hung task-store can't hold a sweep open past
+            // the tick interval — tick()'s in-flight guard would then skip
+            // every subsequent tick for as long as the socket stayed open.
+            signal: AbortSignal.timeout(SESSION_ALERT_FETCH_TIMEOUT_MS),
+          },
+        );
+        if (!res.ok) {
+          throw new Error(
+            `task-store GET /sessions?state=${state} → ${res.status}`,
+          );
+        }
+        const body = (await res.json()) as { sessions?: SessionForAlert[] };
+        return body.sessions ?? [];
+      },
+      // Same operator ceiling PushService got — without this the sweeper would
+      // cap session pushes at DEFAULT_MAX_DETAIL ("title"), silently ignoring
+      // a SHIPWRIGHT_ADMIN_PUSH_MAX_DETAIL=preview configuration.
+      detailLevel: pushMaxDetail,
+      ...(adminTz ? { timezone: adminTz } : {}),
+    });
+    const sessionAlertIntervalMs = resolveSessionAlertIntervalMs(process.env);
+    setInterval(() => {
+      sessionAlertSweeper
+        .tick()
+        .catch((err) =>
+          console.error("[session-alert-sweeper] tick error:", err),
+        );
+    }, sessionAlertIntervalMs);
+    console.log(
+      `[admin] session alert sweeper started (interval: ${sessionAlertIntervalMs}ms)`,
+    );
+  }
 
   const server = Bun.serve({ fetch: root.fetch, port });
 
