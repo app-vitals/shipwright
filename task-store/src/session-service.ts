@@ -17,6 +17,7 @@
 
 import type { Clock } from "./clock.ts";
 import { SystemClock } from "./clock.ts";
+import { NotFoundError } from "./errors.ts";
 import type { Prisma, PrismaClient, Task } from "./index.ts";
 import {
   type SessionRollupCounts,
@@ -104,6 +105,18 @@ export interface SessionListResult {
   offset: number;
 }
 
+/**
+ * Patch accepted by SessionService.update() (SESH-3.1). Each field is
+ * independently optional/omittable:
+ *   - `title` omitted: untouched. `title: "x"`: set. `title: null`: cleared.
+ *   - `archived` omitted: archive fields untouched. `true`: stamps
+ *     archivedAt/archivedBy (from `actor`). `false`: clears both.
+ */
+export interface SessionUpdatePatch {
+  title?: string | null;
+  archived?: boolean;
+}
+
 /** The subset of SessionService the routes depend on. */
 export interface SessionServiceLike {
   list(filters?: SessionListFilters): Promise<SessionListResult>;
@@ -111,6 +124,11 @@ export interface SessionServiceLike {
     slug: string,
     agentScope?: { agentId: string; repos: string[] },
   ): Promise<SessionListItem | null>;
+  update(
+    slug: string,
+    patch: SessionUpdatePatch,
+    actor: string,
+  ): Promise<SessionListItem>;
 }
 
 /** True when at least one task satisfies the agentScope OR-visibility rule
@@ -363,5 +381,76 @@ export class SessionService implements SessionServiceLike {
         `[session-service] un-archived session "${slug}" on task write at ${this.clock.now().toISOString()}`,
       );
     }
+  }
+
+  // ─── Write (SESH-3.1) ────────────────────────────────────────────────────────
+
+  /**
+   * Rename and/or archive/un-archive a session. Admin-only at the route
+   * layer (routes/sessions.ts) — `actor` is whatever identity the caller
+   * attributes the change to (the route passes a fixed "admin" since only
+   * admin tokens ever reach this method).
+   *
+   * `archived: true` stamps `archivedAt: this.clock.now()` and
+   * `archivedBy: actor`; `archived: false` clears both; omitted leaves the
+   * archive fields untouched. `title` follows the same omit/set/null-clear
+   * shape (see SessionUpdatePatch).
+   *
+   * Throws NotFoundError when `slug` has no Session row — Prisma's own
+   * P2025 (record not found) on the update is translated, mirroring
+   * TaskService.update()'s translateNotFound() convention.
+   *
+   * The returned SessionListItem is produced by re-running get() against
+   * the now-written row rather than duplicating its flatten-with-rollup
+   * logic here.
+   */
+  async update(
+    slug: string,
+    patch: SessionUpdatePatch,
+    actor: string,
+  ): Promise<SessionListItem> {
+    const data: Prisma.SessionUpdateInput = {};
+    if ("title" in patch) {
+      data.title = patch.title ?? null;
+    }
+    if (patch.archived === true) {
+      data.archivedAt = this.clock.now();
+      data.archivedBy = actor;
+    } else if (patch.archived === false) {
+      data.archivedAt = null;
+      data.archivedBy = null;
+    }
+
+    try {
+      await this.prisma.session.update({ where: { slug }, data });
+    } catch (err: unknown) {
+      throw this.translateNotFound(err, "session not found");
+    }
+
+    // The row we just wrote unconditionally exists and update() is
+    // admin-only (no agentScope), so get() cannot legitimately return null
+    // here — the fallback exists only to satisfy the type checker.
+    const updated = await this.get(slug);
+    if (!updated) throw new NotFoundError("session not found");
+
+    console.log(
+      `[session-service] session "${slug}" updated by ${actor}: ` +
+        `counts=${JSON.stringify(updated.counts)}`,
+    );
+
+    return updated;
+  }
+
+  /** Map Prisma's P2025 (record not found) to a NotFoundError; re-throw the rest. */
+  private translateNotFound(err: unknown, message: string): unknown {
+    if (
+      typeof err === "object" &&
+      err !== null &&
+      "code" in err &&
+      (err as { code: string }).code === "P2025"
+    ) {
+      return new NotFoundError(message);
+    }
+    return err;
   }
 }

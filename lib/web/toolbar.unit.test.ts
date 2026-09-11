@@ -73,6 +73,18 @@ describe("renderShipwrightToolbar", () => {
       expect(html).toContain('href="/admin/queue-activity"');
       expect(html).toContain("Queue &amp; Activity");
     });
+
+    // SESH-4.2: the Sessions link lives between Tasks and PRs.
+    test("contains a Sessions link pointing at /admin/sessions, between Tasks and PRs", () => {
+      expect(html).toContain('href="/admin/sessions"');
+      expect(html).toContain(">Sessions<");
+      const tasksIdx = html.indexOf('href="/admin/tasks"');
+      const sessionsIdx = html.indexOf('href="/admin/sessions"');
+      const prsIdx = html.indexOf('href="/admin/prs"');
+      expect(tasksIdx).toBeGreaterThan(-1);
+      expect(sessionsIdx).toBeGreaterThan(tasksIdx);
+      expect(prsIdx).toBeGreaterThan(sessionsIdx);
+    });
   });
 
   describe("active-tab highlighting: Agents vs Queue & Activity (AXR-3.3)", () => {
@@ -117,6 +129,33 @@ describe("renderShipwrightToolbar", () => {
       expect(html).toContain(
         '<a href="/admin/agents" class="vos-nav-link">',
       );
+    });
+  });
+
+  describe("active-tab highlighting: Sessions (SESH-4.2)", () => {
+    function activeHref(html: string): string | undefined {
+      const match = html.match(
+        /<a href="([^"]+)" class="vos-nav-link active">/,
+      );
+      return match?.[1];
+    }
+
+    test("/admin/sessions highlights the Sessions tab", () => {
+      const html = renderShipwrightToolbar({
+        userName: "Alice",
+        activePath: "/admin/sessions",
+        logoutAction: "/auth/logout",
+      });
+      expect(activeHref(html)).toBe("/admin/sessions");
+    });
+
+    test("/admin/sessions/some-slug (session detail) also highlights the Sessions tab", () => {
+      const html = renderShipwrightToolbar({
+        userName: "Alice",
+        activePath: "/admin/sessions/some-slug",
+        logoutAction: "/auth/logout",
+      });
+      expect(activeHref(html)).toBe("/admin/sessions");
     });
   });
 

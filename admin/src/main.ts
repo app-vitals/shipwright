@@ -563,6 +563,29 @@ async function startServer(): Promise<void> {
               throw new Error(`task-store GET /prs/${id} → ${res.status}`);
             return res.json();
           },
+          fetchTaskStoreSessions: async (params: URLSearchParams) => {
+            const url = `${taskStoreUrl}/sessions${params.size > 0 ? `?${params}` : ""}`;
+            const res = await fetch(url, {
+              headers: { Authorization: `Bearer ${taskStoreAdminToken}` },
+            });
+            if (!res.ok)
+              throw new Error(`task-store GET /sessions → ${res.status}`);
+            return res.json();
+          },
+          fetchTaskStoreSession: async (slug: string) => {
+            const res = await fetch(
+              `${taskStoreUrl}/sessions/${encodeURIComponent(slug)}`,
+              {
+                headers: { Authorization: `Bearer ${taskStoreAdminToken}` },
+              },
+            );
+            if (res.status === 404) return null;
+            if (!res.ok)
+              throw new Error(
+                `task-store GET /sessions/${slug} → ${res.status}`,
+              );
+            return res.json();
+          },
         }
       : {};
 

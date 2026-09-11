@@ -334,6 +334,23 @@ Returns the same flattened session+rollup shape as the list response. Returns `4
 doesn't exist, or if an agent token has no qualifying task in it (same visibility rule as
 the list route above) — the two cases are indistinguishable to the caller by design.
 
+#### Update session
+
+```
+PATCH /sessions/:slug
+```
+
+Rename and/or archive a session — **admin-only**, no exceptions. Agent tokens receive `403` regardless of ownership.
+
+Body (JSON):
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `title` | string \| null | Optional. Omitted: title untouched. A string: set to the new title. `null`: clear the title. |
+| `archived` | boolean | Optional. Omitted: archive fields untouched. `true`: sets `archivedAt` to now and `archivedBy` to the calling actor. `false`: clears both fields. |
+
+Both fields are optional; an empty body is a no-op. Returns `200` with the updated session in the same flattened session+rollup shape. Returns `404` if the session doesn't exist.
+
 ### Task status lifecycle
 
 ```
@@ -367,6 +384,19 @@ A pending task is excluded from the ready set if another task shares its non-nul
 - The first task's claim becomes stale (more than 65 minutes without heartbeat) and is reaped
 
 This rule only applies when `branch` is set. Tasks with `branch=null` or `branch=""` are not subject to the exclusivity check.
+
+### Session archive sweep
+
+A background job, `SessionRetentionReaper` (`task-store/src/session-retention-reaper.ts`), archives sessions that have gone inactive. It runs on a 1-hour interval registered in `task-store/src/main.ts` (`SESH-8.1`) — a housekeeping pass, not a liveness check like the stale-claim reaper above.
+
+A session is archived (`archivedAt` set, `archivedBy = "system"`) when **all** of these hold:
+
+1. it is not already archived,
+2. every task in the session is terminal (no open/non-terminal tasks remain),
+3. the session has at least one task ever (an empty session is never archived), and
+4. its last task activity is older than `SHIPWRIGHT_TASK_STORE_SESSION_ARCHIVE_AFTER_DAYS` days (default `30`; see [`docs/configuration.md`](./configuration.md) — set to `0` to disable the sweep).
+
+Archiving is **non-destructive and reversible**: it only removes the session from the default list view. Nothing is deleted, and writing any new task into an archived session automatically un-archives it (`SessionService.upsert()`, SES-1.2) — the next sweep will not re-archive it while that task remains open.
 
 ### PR tracking
 

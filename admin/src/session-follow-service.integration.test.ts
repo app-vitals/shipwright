@@ -78,6 +78,56 @@ describeOrSkip("SessionFollowService (integration)", () => {
     ).resolves.toBeUndefined();
   });
 
+  it("unfollow() deletes the matching SessionAlertState row", async () => {
+    await service.follow("dave@example.com", "sess-1");
+    await prisma.sessionAlertState.create({
+      data: {
+        userEmail: "dave@example.com",
+        sessionSlug: "sess-1",
+        lastAlertedAt: new Date(),
+      },
+    });
+
+    await service.unfollow("dave@example.com", "sess-1");
+
+    const rows = await prisma.sessionAlertState.findMany({
+      where: { userEmail: "dave@example.com", sessionSlug: "sess-1" },
+    });
+    expect(rows).toHaveLength(0);
+  });
+
+  it("unfollow() is idempotent when no SessionAlertState row exists for the slug", async () => {
+    await service.follow("dave@example.com", "sess-1");
+    // No SessionAlertState row seeded for this slug.
+
+    await expect(
+      service.unfollow("dave@example.com", "sess-1"),
+    ).resolves.toBeUndefined();
+
+    const rows = await prisma.sessionAlertState.findMany({
+      where: { userEmail: "dave@example.com", sessionSlug: "sess-1" },
+    });
+    expect(rows).toHaveLength(0);
+  });
+
+  it("unfollow() does not delete another user's SessionAlertState row for the same slug", async () => {
+    await service.follow("dave@example.com", "sess-1");
+    await prisma.sessionAlertState.create({
+      data: {
+        userEmail: "dan@example.com",
+        sessionSlug: "sess-1",
+        lastAlertedAt: new Date(),
+      },
+    });
+
+    await service.unfollow("dave@example.com", "sess-1");
+
+    const rows = await prisma.sessionAlertState.findMany({
+      where: { userEmail: "dan@example.com", sessionSlug: "sess-1" },
+    });
+    expect(rows).toHaveLength(1);
+  });
+
   // ─── listByUser ─────────────────────────────────────────────────────────────
 
   it("listByUser() returns all sessions a user follows", async () => {

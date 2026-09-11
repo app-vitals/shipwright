@@ -2235,6 +2235,74 @@
             }
           }
         }
+      },
+      "patch": {
+        "tags": [
+          "sessions"
+        ],
+        "summary": "Rename/archive a session — admin-only",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "example": "shipwright-may-launch"
+            },
+            "required": true,
+            "name": "slug",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SessionPatchBody"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Updated session",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Session"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden — admin tokens only",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
       }
     }
   },
@@ -3770,6 +3838,24 @@
           "limit",
           "offset"
         ]
+      },
+      "SessionPatchBody": {
+        "type": "object",
+        "properties": {
+          "title": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Omitted: title untouched. A string: set. null: clears the title.",
+            "example": "May launch prep"
+          },
+          "archived": {
+            "type": "boolean",
+            "description": "Omitted: archive fields untouched. true: stamps archivedAt/archivedBy. false: clears both.",
+            "example": true
+          }
+        }
       }
     }
   }

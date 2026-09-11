@@ -267,6 +267,15 @@ describe("buildServiceWorkerBody — push + notificationclick (CFB-4.2)", () => 
     expect(body).toContain("event.data");
     expect(body).toContain(".url");
   });
+
+  it("reads payload.tag for the notification tag, falling back to the shipwright-agent-reply default (SESH-7.3)", () => {
+    const body = buildServiceWorkerBody("1.200.0", getPrecacheList());
+    // A session-scoped payload (tag: "shipwright-session-x") must produce a
+    // distinctly-tagged notification so two session payloads never coalesce;
+    // a tagless chat payload must still fall back to the existing default.
+    expect(body).toContain("payload.tag");
+    expect(body).toContain('tag: payload.tag || "shipwright-agent-reply"');
+  });
 });
 
 describe("buildOfflinePageHtml", () => {

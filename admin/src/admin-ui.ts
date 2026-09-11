@@ -57,6 +57,12 @@ import {
   renderTaskDetailPage,
   renderTasksPage,
 } from "./admin-ui-pages.ts";
+import { registerSessionFollowRoutes } from "./admin-ui-session-follow.ts";
+import {
+  type Session,
+  registerSessionsListRoutes,
+  resolveVisibilityScope,
+} from "./admin-ui-sessions-list.ts";
 import { registerSessionSettingsRoutes } from "./admin-ui-sessions.ts";
 import type { AgentCronJobService } from "./agent-cron-jobs.ts";
 import type { AgentCronRunService } from "./agent-cron-runs.ts";
@@ -105,6 +111,11 @@ import {
   type SessionFollowPrismaLike,
   SessionFollowService,
 } from "./session-follow-service.ts";
+import {
+  type SessionForVisibility,
+  deriveSessionVisibilityFromTasks,
+  isSessionVisible,
+} from "./session-scope.ts";
 import type { AppManifest } from "./slack-provisioning-client.ts";
 import {
   AGENT_BOT_SCOPES,
@@ -394,6 +405,27 @@ export interface AdminUIDeps {
    */
   fetchTaskStorePrById?: (id: string) => Promise<PrListItem | null>;
   /**
+   * Fetch a paginated list of sessions from the task-store service (SESH-4.2).
+   * If absent, the sessions list page renders in degraded mode (empty
+   * sections + a warning banner).
+   */
+  fetchTaskStoreSessions?: (params: URLSearchParams) => Promise<{
+    sessions: Session[];
+    total: number;
+    limit: number;
+    offset: number;
+  }>;
+  /**
+   * Fetch a single session (its agentIds/repos, for visibility checks) from
+   * the task-store service by slug. If absent, a non-admin member always
+   * gets 404 on POST /admin/sessions/:slug/follow — fail-closed, since
+   * visibility can't be verified without it. Not consulted on the admin or
+   * unfollow paths.
+   */
+  fetchTaskStoreSession?: (
+    slug: string,
+  ) => Promise<SessionForVisibility | null>;
+  /**
    * Public repo slug (SHIPWRIGHT_ADMIN_PUBLIC_REPO) for the read-only task board.
    * When set, GET /public/tasks renders the task list filtered to this repo
    * without requiring authentication. When absent, /public/tasks renders in
@@ -617,6 +649,8 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
     timezone = "America/Los_Angeles",
     fetchTaskStorePrs,
     fetchTaskStorePrById,
+    fetchTaskStoreSessions,
+    fetchTaskStoreSession,
     publicRepo,
     chatClient,
     pwaAssetsDir = PWA_ASSETS_DIR,
@@ -3171,10 +3205,19 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
     );
   });
 
+  // ─── Sessions list (SESH-4.2) ──────────────────────────────────────────────
+
+  registerSessionsListRoutes(app, {
+    requireAuth,
+    agentMemberService,
+    agentService,
+    fetchTaskStoreSessions,
+    html,
+  });
+
   // ─── Session detail ───────────────────────────────────────────────────────
 
   app.get("/admin/sessions/:id", requireAuth, async (c) => {
-    if (!c.var.isAdmin) return new Response("Forbidden", { status: 403 });
     const sessionId = c.req.param("id");
     const backHref = resolveSessionDetailBackHref(c.req.query("from"));
 
@@ -3199,6 +3242,39 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
       }
     }
 
+    // SESH-4.2: replaces the old flat `if (!isAdmin) 403` gate with a
+    // session-scope.ts-based visibility check — an admin always sees the
+    // page; a member sees it only when one of the session's own tasks is
+    // assigned/claimed by one of their agents, or is in one of those
+    // agents' repos. Derived from the tasks already fetched above (no
+    // second fetch), using deriveSessionVisibilityFromTasks() so the
+    // agentIds precedence (`claimedBy ?? assignee`) matches the task-store
+    // rollup the list page's check consumes. A session outside the caller's
+    // scope 404s rather than 403s, so its existence isn't leaked to callers
+    // who can't see it.
+    //
+    // Skipped entirely in degraded mode: `tasks` is empty because the task
+    // store is unreachable, so the derived scope would be empty and every
+    // member would be 404'd on sessions they legitimately own. Like every
+    // other degraded-mode route here, render 200 with the "unavailable"
+    // banner instead — the degraded page carries no session data beyond the
+    // slug the caller already supplied, so nothing is leaked.
+    if (!degraded) {
+      const scope = await resolveVisibilityScope(
+        c.var.isAdmin,
+        c.var.userEmail,
+        agentMemberService,
+        agentService,
+      );
+      if (scope.agentIds !== "all") {
+        const derived: SessionForVisibility =
+          deriveSessionVisibilityFromTasks(tasks);
+        if (!isSessionVisible(derived, scope)) {
+          return new Response("Not Found", { status: 404 });
+        }
+      }
+    }
+
     return html(
       renderSessionDetailPage(
         sessionId,
@@ -3208,6 +3284,16 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
         backHref,
       ),
     );
+  });
+
+  // ─── Session follow (SESH-6.2) ─────────────────────────────────────────────
+
+  registerSessionFollowRoutes(app, {
+    requireAuth,
+    sessionFollowService,
+    agentMemberService,
+    agentService,
+    fetchTaskStoreSession,
   });
 
   // ─── Notification settings (SESH-6.3) ─────────────────────────────────────

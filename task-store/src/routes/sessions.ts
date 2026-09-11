@@ -15,24 +15,31 @@
  * unrestricted visibility. Only admin tokens (agentId null) are unrestricted.
  *
  * Routes:
- *   GET /sessions        list (?state, ?sort, ?agentId, ?repo, ?q, ?limit, ?offset)
- *                         returns { sessions, total, limit, offset }
- *   GET /sessions/:slug   fetch one (404 when missing or out of agent scope)
+ *   GET   /sessions        list (?state, ?sort, ?agentId, ?repo, ?q, ?limit, ?offset)
+ *                          returns { sessions, total, limit, offset }
+ *   GET   /sessions/:slug  fetch one (404 when missing or out of agent scope)
+ *   PATCH /sessions/:slug  rename/archive (SESH-3.1) — admin-only, 403 for
+ *                          agent tokens regardless of ownership; unlike the
+ *                          GET routes above, there is no agent-scoped
+ *                          visibility carve-out for this write.
  */
 
 import { OpenAPIHono, createRoute } from "@hono/zod-openapi";
+import { readJson } from "@shipwright/lib/http";
 import type { TaskStoreAuthEnv } from "../auth.ts";
-import { NotFoundError } from "../errors.ts";
+import { BadRequestError, ForbiddenError, NotFoundError } from "../errors.ts";
 import {
   ErrorSchema,
   SessionListQuerySchema,
   SessionListResponseSchema,
+  SessionPatchBodySchema,
   SessionSchema,
   SessionSlugParamSchema,
 } from "../openapi-schemas.ts";
 import type {
   SessionListFilters,
   SessionServiceLike,
+  SessionUpdatePatch,
 } from "../session-service.ts";
 
 // ─── Route definitions ────────────────────────────────────────────────────────
@@ -72,6 +79,37 @@ const getOneRoute = createRoute({
     },
     401: {
       description: "Unauthorized",
+      content: { "application/json": { schema: ErrorSchema } },
+    },
+    404: {
+      description: "Not found",
+      content: { "application/json": { schema: ErrorSchema } },
+    },
+  },
+});
+
+const patchRoute = createRoute({
+  method: "patch",
+  path: "/:slug",
+  tags: ["sessions"],
+  summary: "Rename/archive a session — admin-only",
+  request: {
+    params: SessionSlugParamSchema,
+    body: {
+      content: { "application/json": { schema: SessionPatchBodySchema } },
+    },
+  },
+  responses: {
+    200: {
+      description: "Updated session",
+      content: { "application/json": { schema: SessionSchema } },
+    },
+    401: {
+      description: "Unauthorized",
+      content: { "application/json": { schema: ErrorSchema } },
+    },
+    403: {
+      description: "Forbidden — admin tokens only",
       content: { "application/json": { schema: ErrorSchema } },
     },
     404: {
@@ -141,6 +179,39 @@ export function createSessionsRoutes(
     );
     if (!session) throw new NotFoundError("session not found");
     return c.json(session, 200);
+  });
+
+  // ─── Patch (rename/archive, SESH-3.1) ──────────────────────────────────────
+  // biome-ignore lint/suspicious/noExplicitAny: service returns Prisma-shaped types; JSON serialization handles Date→string correctly at runtime
+  app.openapi(patchRoute, async (c): Promise<any> => {
+    const agentId = c.get("agentId");
+    // Admin-only, no exceptions — unlike the GET routes, agent-scoped tokens
+    // never get read-through visibility into a write here.
+    if (agentId !== null) {
+      throw new ForbiddenError("session updates are admin-only");
+    }
+
+    const body = await readJson(c);
+    const patch: SessionUpdatePatch = {};
+    if ("title" in body) {
+      if (body.title !== null && typeof body.title !== "string") {
+        throw new BadRequestError("title must be a string or null");
+      }
+      patch.title = body.title as string | null;
+    }
+    if ("archived" in body) {
+      if (typeof body.archived !== "boolean") {
+        throw new BadRequestError("archived must be a boolean");
+      }
+      patch.archived = body.archived;
+    }
+
+    const updated = await sessionService.update(
+      c.req.param("slug"),
+      patch,
+      "admin",
+    );
+    return c.json(updated, 200);
   });
 
   return app;
