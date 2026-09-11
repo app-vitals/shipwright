@@ -8,7 +8,8 @@
  *      fetcher — the sessions live in the task-store service, not admin's DB).
  *   2. Materializes auto-follows for users with `autoFollowSessions = true`
  *      who can see a waiting session, don't already have a SessionFollow row,
- *      and whose `autoFollowSince` opt-in (when set) predates the session.
+ *      and whose auto-follow boundary — `autoFollowSince`, else the prefs row's
+ *      `createdAt` — predates the session.
  *   3. Sends one `immediate` push the first time a follower is alerted about a
  *      waiting session, and at most one `reminder` per later local day once
  *      that user's `reminderHourLocal` has passed.
@@ -251,10 +252,10 @@ export function resolveWaitingAlertKind(
  * i.e. whether auto-follow should skip it as pre-opt-in backlog.
  *
  * Returns `false` (don't skip) whenever the question can't be answered:
- * `since` is null (the "always on / never explicitly opted in" cohort, per
- * schema.prisma), or the task-store gave us no usable timestamp. Erring
- * toward following preserves the pre-existing behavior for those cases rather
- * than silently dropping follows on unparseable input.
+ * `since` is null (no prefs row at all — such a user is never in
+ * `autoFollowEmails` to begin with), or the task-store gave us no usable
+ * timestamp. Erring toward following preserves the pre-existing behavior for
+ * those cases rather than silently dropping follows on unparseable input.
  */
 export function startedWaitingBefore(
   session: SessionForAlert,
@@ -266,6 +267,30 @@ export function startedWaitingBefore(
   const ts = new Date(startedAt).getTime();
   if (Number.isNaN(ts)) return false;
   return ts < since.getTime();
+}
+
+/**
+ * The auto-follow boundary for a user: the moment from which auto-follow
+ * applies. `autoFollowSince` when the user explicitly toggled auto-follow on;
+ * otherwise the prefs row's own `createdAt`.
+ *
+ * The `createdAt` fallback matters because `autoFollowSessions` defaults to
+ * true and a prefs row is created merely by loading the settings page — so
+ * most rows are never explicitly stamped. Treating those as "no boundary"
+ * would let the first sweep after the row appears back-follow (and immediately
+ * push) the entire pre-existing waiting backlog. The row's creation is the
+ * earliest moment auto-follow can meaningfully be "on" for that user, so it is
+ * the correct implicit boundary. Rows that predate the sweeper are stamped
+ * once by the 20260911000000_backfill_auto_follow_since migration, which pins
+ * their boundary at deploy time rather than at row creation.
+ */
+export function autoFollowBoundary(
+  prefs:
+    | Pick<UserNotificationPrefsRow, "autoFollowSince" | "createdAt">
+    | undefined,
+): Date | null {
+  if (!prefs) return null;
+  return prefs.autoFollowSince ?? prefs.createdAt;
 }
 
 // ─── Sweeper ────────────────────────────────────────────────────────────────
@@ -416,16 +441,15 @@ export class SessionAlertSweeper {
     // Materialize auto-follows for users who can see this session.
     for (const userEmail of ctx.autoFollowEmails) {
       if (followedEmails.has(userEmail)) continue;
-      // Opt-in boundary: a user who turned auto-follow on at `autoFollowSince`
-      // is not retro-followed onto sessions that were already waiting before
-      // that moment. schema.prisma documents the column for exactly this
-      // ("so a backfill can distinguish 'always on' users from users who
-      // opted in later") — a null value is the always-on cohort and has no
-      // boundary to apply.
+      // Opt-in boundary: a user is never retro-followed onto sessions that
+      // were already waiting before auto-follow started applying to them —
+      // `autoFollowSince` if they explicitly toggled it on, else their prefs
+      // row's `createdAt` (see autoFollowBoundary). Every auto-follow user has
+      // a boundary, so no cohort gets the whole backlog pushed at once.
       if (
         startedWaitingBefore(
           session,
-          ctx.prefsByEmail.get(userEmail)?.autoFollowSince ?? null,
+          autoFollowBoundary(ctx.prefsByEmail.get(userEmail)),
         )
       ) {
         continue;

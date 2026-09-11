@@ -323,9 +323,14 @@ model SessionFollow {
 // controls whether sessions *visible to* the user (any session in an agent or
 // repo they can see — not only sessions they started) are auto-followed by
 // session-alert-sweeper.ts; `autoFollowSince` records when that behavior was
-// turned on (null if never explicitly set), so a backfill can distinguish
-// "always on" users from users who opted in later — the sweeper skips
-// auto-following sessions that were already waiting before that moment.
+// turned on (null if never explicitly set), and the sweeper skips
+// auto-following sessions that were already waiting before that moment. When
+// it is null the sweeper falls back to this row's `createdAt` as the boundary
+// — `autoFollowSessions` defaults to true and a row is created just by loading
+// the settings page, so "null" must not mean "no boundary", or the first sweep
+// would back-follow and immediately push the whole waiting backlog. Rows that
+// predate the sweeper were stamped once by
+// 20260911000000_backfill_auto_follow_since.
 // `reminderHourLocal` is validated to be an integer in
 // [0, 23] at the service layer (session-follow-service.ts), not here — Prisma
 // has no native CHECK constraint support in this schema style.

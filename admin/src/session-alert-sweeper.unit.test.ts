@@ -18,6 +18,7 @@ import {
   type SessionAlertStateRow,
   SessionAlertSweeper,
   type SessionForAlert,
+  autoFollowBoundary,
   localDateKey,
   localHour,
   resolveWaitingAlertKind,
@@ -299,7 +300,7 @@ describe("resolveWaitingAlertKind", () => {
 describe("startedWaitingBefore", () => {
   const since = new Date("2026-03-02T00:00:00Z");
 
-  it("returns false when the user has no opt-in timestamp (always-on cohort)", () => {
+  it("returns false when there is no boundary at all", () => {
     expect(
       startedWaitingBefore(
         { ...WAITING_SESSION, waitingSince: "2020-01-01T00:00:00.000Z" },
@@ -356,6 +357,33 @@ describe("startedWaitingBefore", () => {
     expect(
       startedWaitingBefore({ ...WAITING_SESSION, waitingSince: "soon" }, since),
     ).toBe(false);
+  });
+});
+
+// ─── autoFollowBoundary ─────────────────────────────────────────────────────
+
+describe("autoFollowBoundary", () => {
+  const created = new Date("2026-03-01T00:00:00Z");
+  const stamped = new Date("2026-03-02T12:00:00Z");
+
+  it("prefers the explicit opt-in stamp when present", () => {
+    expect(
+      autoFollowBoundary({ autoFollowSince: stamped, createdAt: created }),
+    ).toEqual(stamped);
+  });
+
+  it("falls back to the prefs row's createdAt when never explicitly stamped", () => {
+    // `autoFollowSessions` defaults to true and a prefs row is created just by
+    // loading the settings page, so most rows are never stamped. Returning
+    // null here would mean "no boundary", letting the first sweep back-follow
+    // and immediately push the whole pre-existing waiting backlog.
+    expect(
+      autoFollowBoundary({ autoFollowSince: null, createdAt: created }),
+    ).toEqual(created);
+  });
+
+  it("returns null only when the user has no prefs row at all", () => {
+    expect(autoFollowBoundary(undefined)).toBeNull();
   });
 });
 
@@ -925,13 +953,14 @@ describe("SessionAlertSweeper.tick — auto-follow opt-in boundary", () => {
     waitingSince: "2026-03-02T16:00:00.000Z",
   };
 
-  function sweeperFor(autoFollowSince: Date | null) {
+  function sweeperFor(autoFollowSince: Date | null, createdAt: Date = EPOCH) {
     const { prisma, store } = fakePrisma({
       prefs: [
         {
           userEmail: "dave@example.com",
           autoFollowSessions: true,
           autoFollowSince,
+          createdAt,
         },
       ],
     });
@@ -965,7 +994,10 @@ describe("SessionAlertSweeper.tick — auto-follow opt-in boundary", () => {
     expect(sent.map((s) => s.slug)).toEqual(["sess-new"]);
   });
 
-  it("auto-follows everything visible when autoFollowSince is null (always-on cohort)", async () => {
+  it("auto-follows everything visible when the prefs row predates every waiting session", async () => {
+    // autoFollowSince null + a prefs row created long before both sessions:
+    // the createdAt fallback boundary is older than the backlog, so nothing is
+    // skipped. This is the unstamped ("always on") user, correctly following.
     const { sweeper, store, sent } = sweeperFor(null);
 
     const result = await sweeper.tick();
@@ -976,6 +1008,23 @@ describe("SessionAlertSweeper.tick — auto-follow opt-in boundary", () => {
       "sess-old",
     ]);
     expect(sent).toHaveLength(2);
+  });
+
+  it("falls back to the prefs row's createdAt when autoFollowSince was never stamped", async () => {
+    // The gap the explicit-opt-in boundary alone leaves open: a user who never
+    // re-saved the toggle (autoFollowSince still null) would otherwise have no
+    // boundary, so the first sweep after their prefs row appears would
+    // back-follow and immediately push the entire pre-existing backlog.
+    const { sweeper, store, sent } = sweeperFor(
+      null,
+      new Date("2026-03-02T12:00:00Z"),
+    );
+
+    const result = await sweeper.tick();
+
+    expect(result.immediate).toBe(1);
+    expect(store.follows.map((f) => f.sessionSlug)).toEqual(["sess-new"]);
+    expect(sent.map((s) => s.slug)).toEqual(["sess-new"]);
   });
 
   it("still alerts an existing explicit follow on a pre-opt-in session", async () => {
