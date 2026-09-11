@@ -329,6 +329,14 @@ export function resolvePublicRepo(
 export const DEFAULT_SESSION_ALERT_INTERVAL_MS = 60_000;
 
 /**
+ * Hard timeout on the sweeper's task-store `GET /sessions` calls. Longer than
+ * the repo's usual 5s auth-lookup timeout because this fetches up to 500
+ * sessions, but still well inside the default 60s tick so a stalled
+ * task-store can't wedge the sweep loop behind its in-flight guard.
+ */
+export const SESSION_ALERT_FETCH_TIMEOUT_MS = 10_000;
+
+/**
  * Resolve the session-alert sweeper's tick interval from the environment.
  * Reads SHIPWRIGHT_ADMIN_SESSION_ALERT_INTERVAL_MS; anything unset, blank,
  * non-numeric, or non-positive falls back to the default rather than
@@ -703,7 +711,13 @@ async function startServer(): Promise<void> {
       fetchSessions: async (state) => {
         const res = await fetch(
           `${taskStoreUrl}/sessions?state=${state}&limit=500`,
-          { headers: { Authorization: `Bearer ${taskStoreAdminToken}` } },
+          {
+            headers: { Authorization: `Bearer ${taskStoreAdminToken}` },
+            // Bound the call so a hung task-store can't hold a sweep open past
+            // the tick interval — tick()'s in-flight guard would then skip
+            // every subsequent tick for as long as the socket stayed open.
+            signal: AbortSignal.timeout(SESSION_ALERT_FETCH_TIMEOUT_MS),
+          },
         );
         if (!res.ok) {
           throw new Error(
@@ -713,6 +727,10 @@ async function startServer(): Promise<void> {
         const body = (await res.json()) as { sessions?: SessionForAlert[] };
         return body.sessions ?? [];
       },
+      // Same operator ceiling PushService got — without this the sweeper would
+      // cap session pushes at DEFAULT_MAX_DETAIL ("title"), silently ignoring
+      // a SHIPWRIGHT_ADMIN_PUSH_MAX_DETAIL=preview configuration.
+      detailLevel: pushMaxDetail,
       ...(adminTz ? { timezone: adminTz } : {}),
     });
     const sessionAlertIntervalMs = resolveSessionAlertIntervalMs(process.env);

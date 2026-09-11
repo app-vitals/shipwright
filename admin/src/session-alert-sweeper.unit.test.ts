@@ -11,6 +11,7 @@
 
 import { describe, expect, it } from "bun:test";
 import { FixedClock } from "./clock.ts";
+import type { PushDetailLevel } from "./push-content.ts";
 import type { SessionNotificationKind } from "./push-service.ts";
 import {
   type SessionAlertPrismaLike,
@@ -20,6 +21,7 @@ import {
   localDateKey,
   localHour,
   resolveWaitingAlertKind,
+  startedWaitingBefore,
 } from "./session-alert-sweeper.ts";
 import type {
   SessionFollowRow,
@@ -161,6 +163,7 @@ interface SentPush {
   slug: string;
   emails: string[];
   kind: SessionNotificationKind;
+  level: PushDetailLevel;
 }
 
 function fakePushService() {
@@ -170,10 +173,15 @@ function fakePushService() {
     pushService: {
       notifySession: async (
         session: { slug: string; emails: string[] },
-        _level: "generic" | "title" | "preview",
+        level: PushDetailLevel,
         kind: SessionNotificationKind,
       ) => {
-        sent.push({ slug: session.slug, emails: session.emails, kind });
+        sent.push({
+          slug: session.slug,
+          emails: session.emails,
+          kind,
+          level,
+        });
         return { delivered: session.emails.length, pruned: 0 };
       },
     },
@@ -285,6 +293,69 @@ describe("resolveWaitingAlertKind", () => {
         TZ,
       ),
     ).toBeNull();
+  });
+});
+
+describe("startedWaitingBefore", () => {
+  const since = new Date("2026-03-02T00:00:00Z");
+
+  it("returns false when the user has no opt-in timestamp (always-on cohort)", () => {
+    expect(
+      startedWaitingBefore(
+        { ...WAITING_SESSION, waitingSince: "2020-01-01T00:00:00.000Z" },
+        null,
+      ),
+    ).toBe(false);
+  });
+
+  it("returns true for a session that was already waiting before the opt-in", () => {
+    expect(
+      startedWaitingBefore(
+        { ...WAITING_SESSION, waitingSince: "2026-03-01T23:59:59.000Z" },
+        since,
+      ),
+    ).toBe(true);
+  });
+
+  it("returns false for a session that started waiting at or after the opt-in", () => {
+    expect(
+      startedWaitingBefore(
+        { ...WAITING_SESSION, waitingSince: "2026-03-02T00:00:00.000Z" },
+        since,
+      ),
+    ).toBe(false);
+    expect(
+      startedWaitingBefore(
+        { ...WAITING_SESSION, waitingSince: "2026-03-03T00:00:00.000Z" },
+        since,
+      ),
+    ).toBe(false);
+  });
+
+  it("falls back to createdAt when waitingSince is absent or null", () => {
+    expect(
+      startedWaitingBefore(
+        { ...WAITING_SESSION, createdAt: "2026-03-01T00:00:00.000Z" },
+        since,
+      ),
+    ).toBe(true);
+    expect(
+      startedWaitingBefore(
+        {
+          ...WAITING_SESSION,
+          waitingSince: null,
+          createdAt: "2026-03-03T00:00:00.000Z",
+        },
+        since,
+      ),
+    ).toBe(false);
+  });
+
+  it("returns false (don't skip) when no usable timestamp is available", () => {
+    expect(startedWaitingBefore(WAITING_SESSION, since)).toBe(false);
+    expect(
+      startedWaitingBefore({ ...WAITING_SESSION, waitingSince: "soon" }, since),
+    ).toBe(false);
   });
 });
 
@@ -835,5 +906,244 @@ describe("SessionAlertSweeper.tick — per-row resilience", () => {
     }).tick();
 
     expect(calls).toBe(1);
+  });
+});
+
+// ─── Auto-follow opt-in boundary ────────────────────────────────────────────
+
+// The toggle turns auto-follow on *from now on*: opting in must not retro-follow
+// (and immediately push) the entire pre-existing backlog of waiting sessions.
+describe("SessionAlertSweeper.tick — auto-follow opt-in boundary", () => {
+  const OLD_SESSION: SessionForAlert = {
+    ...WAITING_SESSION,
+    slug: "sess-old",
+    waitingSince: "2026-02-01T00:00:00.000Z",
+  };
+  const NEW_SESSION: SessionForAlert = {
+    ...WAITING_SESSION,
+    slug: "sess-new",
+    waitingSince: "2026-03-02T16:00:00.000Z",
+  };
+
+  function sweeperFor(autoFollowSince: Date | null) {
+    const { prisma, store } = fakePrisma({
+      prefs: [
+        {
+          userEmail: "dave@example.com",
+          autoFollowSessions: true,
+          autoFollowSince,
+        },
+      ],
+    });
+    const { pushService, sent } = fakePushService();
+    const scope = fakeScopeServices({ "dave@example.com": ["agt_1"] });
+    return {
+      store,
+      sent,
+      sweeper: new SessionAlertSweeper({
+        prisma,
+        pushService,
+        ...scope,
+        fetchSessions: fetchSessionsDouble({
+          waiting: [OLD_SESSION, NEW_SESSION],
+        }),
+        clock: FixedClock(new Date("2026-03-02T17:00:00Z")),
+        timezone: TZ,
+      }),
+    };
+  }
+
+  it("skips sessions that were already waiting before the user opted in", async () => {
+    const { sweeper, store, sent } = sweeperFor(
+      new Date("2026-03-02T12:00:00Z"),
+    );
+
+    const result = await sweeper.tick();
+
+    expect(result.immediate).toBe(1);
+    expect(store.follows.map((f) => f.sessionSlug)).toEqual(["sess-new"]);
+    expect(sent.map((s) => s.slug)).toEqual(["sess-new"]);
+  });
+
+  it("auto-follows everything visible when autoFollowSince is null (always-on cohort)", async () => {
+    const { sweeper, store, sent } = sweeperFor(null);
+
+    const result = await sweeper.tick();
+
+    expect(result.immediate).toBe(2);
+    expect(store.follows.map((f) => f.sessionSlug).sort()).toEqual([
+      "sess-new",
+      "sess-old",
+    ]);
+    expect(sent).toHaveLength(2);
+  });
+
+  it("still alerts an existing explicit follow on a pre-opt-in session", async () => {
+    const { prisma } = fakePrisma({
+      follows: [{ userEmail: "dave@example.com", sessionSlug: "sess-old" }],
+      prefs: [
+        {
+          userEmail: "dave@example.com",
+          autoFollowSessions: true,
+          autoFollowSince: new Date("2026-03-02T12:00:00Z"),
+        },
+      ],
+    });
+    const { pushService, sent } = fakePushService();
+    const scope = fakeScopeServices({ "dave@example.com": ["agt_1"] });
+
+    const result = await new SessionAlertSweeper({
+      prisma,
+      pushService,
+      ...scope,
+      fetchSessions: fetchSessionsDouble({ waiting: [OLD_SESSION] }),
+      clock: FixedClock(new Date("2026-03-02T17:00:00Z")),
+      timezone: TZ,
+    }).tick();
+
+    // The boundary gates *materializing* an auto-follow, never an alert on a
+    // follow the user (or a previous tick) already created.
+    expect(result.immediate).toBe(1);
+    expect(sent.map((s) => s.slug)).toEqual(["sess-old"]);
+  });
+});
+
+// ─── Re-entrancy guard ──────────────────────────────────────────────────────
+
+// main.ts drives tick() from a setInterval, so a sweep slower than the interval
+// would otherwise overlap the next one. The dedup here is a read-then-write
+// across network I/O, so two concurrent sweeps would both see
+// `lastAlertedAt = null` and both push — breaking AC1 at runtime.
+describe("SessionAlertSweeper.tick — re-entrancy", () => {
+  it("returns all-zero and sends nothing when a sweep is already in flight", async () => {
+    const { prisma, store } = fakePrisma({
+      follows: [{ userEmail: "dave@example.com", sessionSlug: "sess-waiting" }],
+    });
+    const { pushService, sent } = fakePushService();
+    const scope = fakeScopeServices({ "dave@example.com": ["agt_1"] });
+
+    let releaseFetch: () => void = () => {};
+    const gate = new Promise<void>((resolve) => {
+      releaseFetch = resolve;
+    });
+
+    const sweeper = new SessionAlertSweeper({
+      prisma,
+      pushService,
+      ...scope,
+      fetchSessions: async (state) => {
+        await gate;
+        return state === "waiting" ? [WAITING_SESSION] : [];
+      },
+      clock: FixedClock(new Date("2026-03-02T17:00:00Z")),
+      timezone: TZ,
+    });
+
+    // First tick parks on the gated fetch; the guard is set synchronously
+    // before the first await, so the second call sees it.
+    const first = sweeper.tick();
+    const overlapping = await sweeper.tick();
+    expect(overlapping).toEqual({
+      immediate: 0,
+      reminders: 0,
+      completions: 0,
+      pruned: 0,
+    });
+    expect(sent).toHaveLength(0);
+
+    releaseFetch();
+    expect(await first).toEqual({
+      immediate: 1,
+      reminders: 0,
+      completions: 0,
+      pruned: 0,
+    });
+    expect(sent).toHaveLength(1);
+    expect(store.alertStates).toHaveLength(1);
+  });
+
+  it("releases the guard after a sweep, so the next tick runs normally", async () => {
+    const { prisma } = fakePrisma({
+      follows: [{ userEmail: "dave@example.com", sessionSlug: "sess-waiting" }],
+    });
+    const { pushService, sent } = fakePushService();
+    const scope = fakeScopeServices({ "dave@example.com": ["agt_1"] });
+
+    const sweeper = new SessionAlertSweeper({
+      prisma,
+      pushService,
+      ...scope,
+      // Rejecting input fetch → tick() short-circuits, but must still clear
+      // the in-flight flag so a transient task-store outage can't wedge the
+      // sweeper permanently.
+      fetchSessions: async () => {
+        throw new Error("task-store down");
+      },
+      clock: FixedClock(new Date("2026-03-02T17:00:00Z")),
+      timezone: TZ,
+    });
+
+    expect(await sweeper.tick()).toEqual({
+      immediate: 0,
+      reminders: 0,
+      completions: 0,
+      pruned: 0,
+    });
+
+    const recovered = new SessionAlertSweeper({
+      prisma,
+      pushService,
+      ...scope,
+      fetchSessions: fetchSessionsDouble({ waiting: [WAITING_SESSION] }),
+      clock: FixedClock(new Date("2026-03-02T17:00:00Z")),
+      timezone: TZ,
+    });
+    expect((await recovered.tick()).immediate).toBe(1);
+
+    // And the same instance can tick again after its own failed sweep.
+    expect(await sweeper.tick()).toEqual({
+      immediate: 0,
+      reminders: 0,
+      completions: 0,
+      pruned: 0,
+    });
+    expect(sent).toHaveLength(1);
+  });
+});
+
+// ─── Detail level ───────────────────────────────────────────────────────────
+
+// `detailLevel` is the operator's SHIPWRIGHT_ADMIN_PUSH_MAX_DETAIL ceiling,
+// threaded through from main.ts. Hardcoding "title" here would cap session
+// pushes below the operator's configured ceiling.
+describe("SessionAlertSweeper — detailLevel", () => {
+  async function tickWith(detailLevel?: string) {
+    const { prisma } = fakePrisma({
+      follows: [{ userEmail: "dave@example.com", sessionSlug: "sess-waiting" }],
+    });
+    const { pushService, sent } = fakePushService();
+    const scope = fakeScopeServices({ "dave@example.com": ["agt_1"] });
+
+    await new SessionAlertSweeper({
+      prisma,
+      pushService,
+      ...scope,
+      fetchSessions: fetchSessionsDouble({ waiting: [WAITING_SESSION] }),
+      clock: FixedClock(new Date("2026-03-02T17:00:00Z")),
+      timezone: TZ,
+      ...(detailLevel === undefined ? {} : { detailLevel }),
+    }).tick();
+
+    return sent;
+  }
+
+  it("passes the configured ceiling through to notifySession", async () => {
+    expect((await tickWith("preview"))[0]?.level).toBe("preview");
+    expect((await tickWith("generic"))[0]?.level).toBe("generic");
+  });
+
+  it("falls back to 'title' when unset or not a known level", async () => {
+    expect((await tickWith())[0]?.level).toBe("title");
+    expect((await tickWith("everything"))[0]?.level).toBe("title");
   });
 });

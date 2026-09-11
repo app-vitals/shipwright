@@ -7,7 +7,8 @@
  *   1. Fetches the task-store's `waiting` and `closed` sessions (injected
  *      fetcher — the sessions live in the task-store service, not admin's DB).
  *   2. Materializes auto-follows for users with `autoFollowSessions = true`
- *      who can see a waiting session and don't already have a SessionFollow row.
+ *      who can see a waiting session, don't already have a SessionFollow row,
+ *      and whose `autoFollowSince` opt-in (when set) predates the session.
  *   3. Sends one `immediate` push the first time a follower is alerted about a
  *      waiting session, and at most one `reminder` per later local day once
  *      that user's `reminderHourLocal` has passed.
@@ -21,6 +22,15 @@
  * try/catch so one bad session or follower can never abort the sweep, a
  * counted return value, and registration via `setInterval` in main.ts (NEVER
  * inside an app factory, which must stay side-effect-free).
+ *
+ * Re-entrancy note — unlike the stall reaper (whose sweep is idempotent and
+ * therefore safe to run concurrently), this sweeper's dedup is a read-then-
+ * write straddling network I/O: `sessionAlertState.findMany()` →
+ * `pushService.notifySession()` → `stampAlertState()`. Two overlapping ticks
+ * would both observe `lastAlertedAt = null` and both push, so `tick()` carries
+ * an in-flight guard and returns an all-zero result rather than starting a
+ * second concurrent sweep. (That guard is per-process; running more than one
+ * admin replica needs a shared lock, which this task does not introduce.)
  *
  * Dedup design note — SessionAlertState carries exactly one nullable
  * `lastAlertedAt` column and deliberately has no "kind" column (see
@@ -41,7 +51,7 @@
  */
 
 import { type Clock, SystemClock } from "./clock.ts";
-import { DEFAULT_MAX_DETAIL, type PushDetailLevel } from "./push-content.ts";
+import { type PushDetailLevel, resolveDetailLevel } from "./push-content.ts";
 import type { PushService } from "./push-service.ts";
 import type {
   SessionFollowRow,
@@ -120,6 +130,14 @@ export interface SessionForAlert {
   title?: string | null;
   agentIds: string[];
   repos: string[];
+  /**
+   * ISO timestamps the auto-follow opt-in boundary is measured against —
+   * `waitingSince` when the task-store has one, `createdAt` otherwise. Both
+   * optional so a caller (or fixture) that omits them simply opts out of the
+   * boundary check rather than being rejected.
+   */
+  waitingSince?: string | null;
+  createdAt?: string | null;
 }
 
 /** Per-tick counters, also the value `tick()` resolves to. */
@@ -160,8 +178,13 @@ export interface SessionAlertSweeperDeps {
   clock?: Clock;
   /** IANA timezone the daily reminder boundary is evaluated in. */
   timezone?: string;
-  /** Per-call detail ceiling handed to PushService.notifySession. */
-  detailLevel?: PushDetailLevel;
+  /**
+   * Per-call detail ceiling handed to PushService.notifySession. Typed
+   * `| string` because main.ts threads the raw
+   * `SHIPWRIGHT_ADMIN_PUSH_MAX_DETAIL` env value straight through (exactly as
+   * PushService receives it); the constructor normalizes it.
+   */
+  detailLevel?: PushDetailLevel | string;
 }
 
 /** Matches UserNotificationPrefs.reminderHourLocal's schema default. */
@@ -223,25 +246,74 @@ export function resolveWaitingAlertKind(
   return localHour(now, timezone) >= reminderHourLocal ? "reminder" : null;
 }
 
+/**
+ * Whether `session` was already waiting before a user's auto-follow opt-in,
+ * i.e. whether auto-follow should skip it as pre-opt-in backlog.
+ *
+ * Returns `false` (don't skip) whenever the question can't be answered:
+ * `since` is null (the "always on / never explicitly opted in" cohort, per
+ * schema.prisma), or the task-store gave us no usable timestamp. Erring
+ * toward following preserves the pre-existing behavior for those cases rather
+ * than silently dropping follows on unparseable input.
+ */
+export function startedWaitingBefore(
+  session: SessionForAlert,
+  since: Date | null,
+): boolean {
+  if (!since) return false;
+  const startedAt = session.waitingSince ?? session.createdAt;
+  if (!startedAt) return false;
+  const ts = new Date(startedAt).getTime();
+  if (Number.isNaN(ts)) return false;
+  return ts < since.getTime();
+}
+
 // ─── Sweeper ────────────────────────────────────────────────────────────────
 
 export class SessionAlertSweeper {
   private readonly clock: Clock;
   private readonly timezone: string;
   private readonly detailLevel: PushDetailLevel;
+  /** True while a sweep is running — see the re-entrancy note in the header. */
+  private sweeping = false;
 
   constructor(private readonly deps: SessionAlertSweeperDeps) {
     this.clock = deps.clock ?? SystemClock();
     this.timezone = deps.timezone ?? DEFAULT_ALERT_TIMEZONE;
-    this.detailLevel = deps.detailLevel ?? DEFAULT_MAX_DETAIL;
+    // `detailLevel` may be an unvalidated env string. resolveDetailLevel with
+    // the most permissive opt-in returns the ceiling itself when it's a valid
+    // level and DEFAULT_MAX_DETAIL ("title") when it's unset or garbage — the
+    // same fallback PushService applies internally.
+    this.detailLevel = resolveDetailLevel(deps.detailLevel, "preview");
   }
 
   /**
    * One sweep. Never throws: input-gathering failures short-circuit to an
    * all-zero result (sending nothing), and every per-session / per-follower
    * step is individually try/caught so one bad row can't abort the rest.
+   *
+   * Not re-entrant by design: if a previous sweep is still in flight (a slow
+   * task-store fetch under a short `SHIPWRIGHT_ADMIN_SESSION_ALERT_INTERVAL_MS`
+   * is the realistic trigger), this call returns all-zero immediately rather
+   * than racing it. Skipping is safe — the next tick picks up whatever the
+   * in-flight sweep leaves behind.
    */
   async tick(): Promise<SessionAlertSweepResult> {
+    if (this.sweeping) {
+      console.warn(
+        "[session-alert-sweeper] previous tick still in flight — skipping",
+      );
+      return { immediate: 0, reminders: 0, completions: 0, pruned: 0 };
+    }
+    this.sweeping = true;
+    try {
+      return await this.sweep();
+    } finally {
+      this.sweeping = false;
+    }
+  }
+
+  private async sweep(): Promise<SessionAlertSweepResult> {
     const result: SessionAlertSweepResult = {
       immediate: 0,
       reminders: 0,
@@ -344,6 +416,20 @@ export class SessionAlertSweeper {
     // Materialize auto-follows for users who can see this session.
     for (const userEmail of ctx.autoFollowEmails) {
       if (followedEmails.has(userEmail)) continue;
+      // Opt-in boundary: a user who turned auto-follow on at `autoFollowSince`
+      // is not retro-followed onto sessions that were already waiting before
+      // that moment. schema.prisma documents the column for exactly this
+      // ("so a backfill can distinguish 'always on' users from users who
+      // opted in later") — a null value is the always-on cohort and has no
+      // boundary to apply.
+      if (
+        startedWaitingBefore(
+          session,
+          ctx.prefsByEmail.get(userEmail)?.autoFollowSince ?? null,
+        )
+      ) {
+        continue;
+      }
       try {
         if (!(await this.canSee(userEmail, session, ctx.scopeCache))) continue;
         await this.deps.prisma.sessionFollow.upsert({

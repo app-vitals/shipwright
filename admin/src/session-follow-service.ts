@@ -12,6 +12,7 @@
  * tests can inject a plain object double instead of a real client.
  */
 
+import { type Clock, SystemClock } from "./clock.ts";
 import { BadRequestError } from "./errors.ts";
 
 // The narrow slice of PrismaClient this service touches. Injected so unit
@@ -80,7 +81,14 @@ export interface UpdatePrefsInput {
 }
 
 export class SessionFollowService {
-  constructor(private readonly prisma: SessionFollowPrismaLike) {}
+  private readonly clock: Clock;
+
+  constructor(
+    private readonly prisma: SessionFollowPrismaLike,
+    clock?: Clock,
+  ) {
+    this.clock = clock ?? SystemClock();
+  }
 
   /**
    * Follows a session for a user. Idempotent: re-following an already-
@@ -161,13 +169,25 @@ export class SessionFollowService {
     // Ensure a row exists first so `update` below always has one to modify —
     // upsert's `update` clause can't express "only touch provided fields"
     // conditionally, so we do the empty-upsert-then-update dance instead.
-    await this.getOrCreatePrefs(userEmail);
+    const current = await this.getOrCreatePrefs(userEmail);
+
+    // Stamp the opt-in moment the first time a user explicitly turns
+    // auto-follow on. session-alert-sweeper.ts reads `autoFollowSince` as the
+    // backfill boundary — without this write it would stay null forever and
+    // the boundary could never apply. Only set on a genuine off→on (or
+    // never-stamped) transition, so re-saving the form with the box already
+    // ticked doesn't silently move the boundary forward.
+    const stampAutoFollowSince =
+      input.autoFollowSessions === true &&
+      (!current.autoFollowSessions || current.autoFollowSince === null);
+
     return this.prisma.userNotificationPrefs.update({
       where: { userEmail },
       data: {
         ...(input.autoFollowSessions !== undefined
           ? { autoFollowSessions: input.autoFollowSessions }
           : {}),
+        ...(stampAutoFollowSince ? { autoFollowSince: this.clock.now() } : {}),
         ...(input.reminderHourLocal !== undefined
           ? { reminderHourLocal: input.reminderHourLocal }
           : {}),
