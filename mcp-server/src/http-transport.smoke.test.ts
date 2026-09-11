@@ -26,6 +26,8 @@ const ALLOWED_TOOL_NAMES = [
   "prs_list",
   "prs_get",
   "prs_update",
+  "sessions_list",
+  "sessions_get",
 ] as const;
 
 interface JsonRpcResponse {
@@ -109,7 +111,7 @@ describe("MCP Streamable HTTP transport", () => {
     });
   });
 
-  it("tools/list over HTTP returns the same 9 allowlisted tools as stdio", async () => {
+  it("tools/list over HTTP returns the same 11 allowlisted tools as stdio", async () => {
     const { app } = buildApp();
     const { sessionId } = await initialize(app);
 
@@ -132,7 +134,7 @@ describe("MCP Streamable HTTP transport", () => {
     const tools = (body.result?.tools ?? []) as Array<{ name: string }>;
     const names = tools.map((t) => t.name);
 
-    expect(names).toHaveLength(9);
+    expect(names).toHaveLength(11);
     for (const name of ALLOWED_TOOL_NAMES) {
       expect(names).toContain(name);
     }

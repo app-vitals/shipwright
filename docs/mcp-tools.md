@@ -36,6 +36,24 @@ Update pull request fields
 - **Has body:** Yes
 - **Parameters:** `id` (path)
 
+## `sessions_get`
+
+Get a session by slug
+
+- **Method:** GET
+- **Path:** `/sessions/{slug}`
+- **Has body:** No
+- **Parameters:** `slug` (path)
+
+## `sessions_list`
+
+List sessions
+
+- **Method:** GET
+- **Path:** `/sessions`
+- **Has body:** No
+- **Parameters:** `state` (query), `sort` (query), `agentId` (query), `repo` (query), `q` (query), `limit` (query), `offset` (query)
+
 ## `tasks_bulk`
 
 Bulk insert tasks

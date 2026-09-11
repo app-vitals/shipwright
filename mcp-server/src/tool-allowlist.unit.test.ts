@@ -15,12 +15,14 @@ const ALLOWED_TOOL_NAMES = [
   "prs_list",
   "prs_get",
   "prs_update",
+  "sessions_list",
+  "sessions_get",
 ] as const;
 
 describe("allowedTools", () => {
-  it("returns only the 9 agreed tools", () => {
+  it("returns only the 11 agreed tools", () => {
     const result = allowedTools(generatedTools);
-    expect(result).toHaveLength(9);
+    expect(result).toHaveLength(11);
   });
 
   it("excludes all EXCLUDED_TOOLS names", () => {
@@ -31,12 +33,12 @@ describe("allowedTools", () => {
     }
   });
 
-  it("stays stable across regeneration — given all 32 generatedTools, only 9 come back", () => {
+  it("stays stable across regeneration — given all 34 generatedTools, only 11 come back", () => {
     // This is the "across regeneration" invariant:
-    // even if generate:mcp-tools emits all 32 ops, only the 9 allowed ones are exposed.
-    expect(generatedTools).toHaveLength(32);
+    // even if generate:mcp-tools emits all 34 ops, only the 11 allowed ones are exposed.
+    expect(generatedTools).toHaveLength(34);
     const result = allowedTools(generatedTools);
-    expect(result).toHaveLength(9);
+    expect(result).toHaveLength(11);
     const resultNames = result.map((t) => t.name);
     for (const name of ALLOWED_TOOL_NAMES) {
       expect(resultNames).toContain(name);
@@ -51,7 +53,7 @@ describe("allowedTools", () => {
 });
 
 describe("createMcpServer lists only allowed tools", () => {
-  it("tools/list returns exactly 9 names and none are in EXCLUDED_TOOLS", async () => {
+  it("tools/list returns exactly 11 names and none are in EXCLUDED_TOOLS", async () => {
     const server = createMcpServer({
       config: { baseUrl: "http://localhost:3002", token: "test-token" },
     });
@@ -67,7 +69,7 @@ describe("createMcpServer lists only allowed tools", () => {
     const { tools } = await client.listTools();
     const names = tools.map((t) => t.name);
 
-    expect(tools.length).toBe(9);
+    expect(tools.length).toBe(11);
     for (const excluded of EXCLUDED_TOOLS) {
       expect(names).not.toContain(excluded);
     }
