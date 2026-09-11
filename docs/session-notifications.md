@@ -86,7 +86,7 @@ The module deliberately takes already-resolved `isAdmin`/`memberships`/session d
 
 **As of 2026-09-11, this visibility model is wired into exactly one route: `POST /admin/sessions/:slug/follow`** (via `memberCanSeeSession()` in `admin-ui-session-follow.ts`, which fails closed — returns not-visible — whenever `fetchTaskStoreSession` is unconfigured, the session lookup fails, or the session doesn't exist). It is **not yet wired into**:
 
-- The session detail page (`GET /admin/sessions/:id`) — currently shows any session to any authenticated user, admin or not
+- The session detail page (`GET /admin/sessions/:id`) — currently gated admin-only (`requireAuth` plus an `isAdmin` check returning `403 Forbidden`), so it is *more* restrictive than this model rather than more permissive: a non-admin member can't reach their own visible sessions here at all
 - `/admin/sessions/:slug/unfollow` (skips the check by design — see above)
 - `/admin/settings/notifications` (admin-only gate instead; a non-admin member never reaches a place that would need this check)
 - Any future reminder/sweeper job
