@@ -6,6 +6,7 @@
  * A task is "ready" to execute when:
  *   - task.status === "pending"
  *   - task.hitl !== true
+ *   - task.autonomousPlanSession !== true
  *   - it has no fresh same-branch in_progress sibling (exclusivity guard, see below)
  *   - every dependency ID resolves to a known task whose status satisfies the
  *     dependency-satisfied rules below
@@ -41,6 +42,7 @@ export interface ReadyTaskLike {
   dependencies?: string[];
   pr?: number | null;
   hitl?: boolean | null;
+  autonomousPlanSession?: boolean | null;
   /** Reason recorded when status is 'blocked'. */
   blockedReason?: string | null;
   /** ISO timestamp when claimed. */
@@ -78,6 +80,7 @@ export async function resolveReadyTasks<T extends ReadyTaskLike>(
   for (const task of tasks) {
     if (task.status !== "pending") continue;
     if (task.hitl === true) continue;
+    if (task.autonomousPlanSession === true) continue;
 
     if (task.branch) {
       const hasFreshInProgressSibling = tasks.some(

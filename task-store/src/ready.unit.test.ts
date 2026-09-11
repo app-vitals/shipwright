@@ -20,6 +20,7 @@ function makeTask(overrides: Partial<ReadyTaskLike> = {}): ReadyTaskLike {
     dependencies: [],
     pr: null,
     hitl: null,
+    autonomousPlanSession: null,
     claimedAt: null,
     heartbeatAt: null,
     ...overrides,
@@ -48,6 +49,12 @@ describe("resolveReadyTasks", () => {
 
   it("excludes a task with hitl === true even if otherwise ready", async () => {
     const task = makeTask({ id: "t1", hitl: true });
+    const result = await resolveReadyTasks([task], isPrMergedShouldNotBeCalled);
+    expect(result).toEqual([]);
+  });
+
+  it("excludes a task with autonomousPlanSession === true even if otherwise ready", async () => {
+    const task = makeTask({ id: "t1", autonomousPlanSession: true });
     const result = await resolveReadyTasks([task], isPrMergedShouldNotBeCalled);
     expect(result).toEqual([]);
   });
