@@ -426,6 +426,15 @@ export interface AdminUIDeps {
     slug: string,
   ) => Promise<SessionForVisibility | null>;
   /**
+   * Resolve whether the current user follows a session, for the session
+   * detail page's Follow/Unfollow button (SESH-5.3). Defaults to querying
+   * the real sessionFollowService when absent — injectable for tests.
+   */
+  fetchIsFollowingSession?: (
+    userEmail: string,
+    slug: string,
+  ) => Promise<boolean>;
+  /**
    * Public repo slug (SHIPWRIGHT_ADMIN_PUBLIC_REPO) for the read-only task board.
    * When set, GET /public/tasks renders the task list filtered to this repo
    * without requiring authentication. When absent, /public/tasks renders in
@@ -703,6 +712,7 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
     fetchTaskStorePrById,
     fetchTaskStoreSessions,
     fetchTaskStoreSession,
+    fetchIsFollowingSession,
     publicRepo,
     chatClient,
     pwaAssetsDir = PWA_ASSETS_DIR,
@@ -733,6 +743,18 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
   const sessionFollowService = new SessionFollowService(
     prisma as unknown as SessionFollowPrismaLike,
   );
+
+  // SESH-5.3: resolves whether the current user already follows a session,
+  // for the detail page's Follow/Unfollow button. Defaults to a real
+  // sessionFollowService.listByUser() lookup — DB-backed via the service
+  // already constructed above, not an HTTP fetch, so no main.ts wiring is
+  // needed. Tests inject a plain double via AdminUIDeps.fetchIsFollowingSession.
+  const resolveIsFollowingSession =
+    fetchIsFollowingSession ??
+    (async (userEmail: string, slug: string) => {
+      const follows = await sessionFollowService.listByUser(userEmail);
+      return follows.some((f) => f.sessionSlug === slug);
+    });
 
   // Extracted Slack app-manifest-creation/OAuth/app-token orchestration
   // (UAP-1.1) — shared by the legacy /admin/provision/* wizard's Slack
@@ -3295,6 +3317,21 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
       }
     }
 
+    // SESH-5.3: best-effort follow-state lookup for the button's initial
+    // render. Independent of the task-store `degraded` flag (it's a
+    // DB-backed lookup, not a task-store fetch) — fail open to "not
+    // following" on error since this is just button display state, not a
+    // security check (the follow route itself enforces visibility).
+    let isFollowing = false;
+    try {
+      isFollowing = await resolveIsFollowingSession(
+        c.var.userEmail,
+        sessionId,
+      );
+    } catch {
+      isFollowing = false;
+    }
+
     return html(
       renderSessionDetailPage(
         sessionId,
@@ -3303,6 +3340,7 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
         degraded,
         backHref,
         prsByTaskId,
+        isFollowing,
       ),
     );
   });
