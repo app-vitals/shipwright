@@ -622,6 +622,42 @@ describe("TaskService.list() updatedSince/repo where clause", () => {
     expect(where?.hitl).toBeUndefined();
   });
 
+  it("list({ autonomousPlanSession: true }) sets where.autonomousPlanSession = true (PDR-2.1)", async () => {
+    const prisma = makeListPrismaDouble();
+    const service = new TaskService(prisma);
+
+    await service.list({ autonomousPlanSession: true });
+
+    const where = prisma._findManyCalls[0].where as
+      | { autonomousPlanSession?: boolean }
+      | undefined;
+    expect(where?.autonomousPlanSession).toBe(true);
+  });
+
+  it("list({ autonomousPlanSession: false }) sets where.autonomousPlanSession = false (PDR-2.1)", async () => {
+    const prisma = makeListPrismaDouble();
+    const service = new TaskService(prisma);
+
+    await service.list({ autonomousPlanSession: false });
+
+    const where = prisma._findManyCalls[0].where as
+      | { autonomousPlanSession?: boolean }
+      | undefined;
+    expect(where?.autonomousPlanSession).toBe(false);
+  });
+
+  it("list({}) omits where.autonomousPlanSession entirely (preserves current unfiltered behavior) (PDR-2.1)", async () => {
+    const prisma = makeListPrismaDouble();
+    const service = new TaskService(prisma);
+
+    await service.list({});
+
+    const where = prisma._findManyCalls[0].where as
+      | { autonomousPlanSession?: boolean }
+      | undefined;
+    expect(where?.autonomousPlanSession).toBeUndefined();
+  });
+
   it("list({ repo: ['org/a', 'org/b'] }) sets where.repo = { in: [...] } matching both", async () => {
     const prisma = makeListPrismaDouble();
     const service = new TaskService(prisma);
@@ -1376,6 +1412,55 @@ describe("TaskService.listReady() filters (unit)", () => {
     expect(result.map((t) => t.id).sort()).toEqual(["t1", "t2"]);
   });
 
+  // ─── autonomousPlanSession (PDR-2.1) ───────────────────────────────────────
+  //
+  // Plain equality post-filter, no ready.ts exclusion side effect — mirrors
+  // the shape of the other plain filters above (e.g. branch), not hitl's
+  // ready-set-exclusion nuance.
+
+  it("listReady({ autonomousPlanSession: true }) returns only tasks with autonomousPlanSession === true", async () => {
+    const prisma = makeReadyPrismaDouble([
+      makeReadyTask({ id: "t1", autonomousPlanSession: true }),
+      makeReadyTask({ id: "t2", autonomousPlanSession: false }),
+      makeReadyTask({ id: "t3", autonomousPlanSession: null }),
+    ]);
+    const service = new TaskService(prisma);
+
+    const result = await service.listReady(undefined, undefined, {
+      autonomousPlanSession: true,
+    });
+
+    expect(result.map((t) => t.id)).toEqual(["t1"]);
+  });
+
+  it("listReady({ autonomousPlanSession: false }) returns only tasks with autonomousPlanSession === false", async () => {
+    const prisma = makeReadyPrismaDouble([
+      makeReadyTask({ id: "t1", autonomousPlanSession: true }),
+      makeReadyTask({ id: "t2", autonomousPlanSession: false }),
+      makeReadyTask({ id: "t3", autonomousPlanSession: null }),
+    ]);
+    const service = new TaskService(prisma);
+
+    const result = await service.listReady(undefined, undefined, {
+      autonomousPlanSession: false,
+    });
+
+    expect(result.map((t) => t.id)).toEqual(["t2"]);
+  });
+
+  it("listReady() with autonomousPlanSession unset returns every ready task regardless of value (back-compat)", async () => {
+    const prisma = makeReadyPrismaDouble([
+      makeReadyTask({ id: "t1", autonomousPlanSession: true }),
+      makeReadyTask({ id: "t2", autonomousPlanSession: false }),
+      makeReadyTask({ id: "t3", autonomousPlanSession: null }),
+    ]);
+    const service = new TaskService(prisma);
+
+    const result = await service.listReady(undefined, undefined, {});
+
+    expect(result.map((t) => t.id).sort()).toEqual(["t1", "t2", "t3"]);
+  });
+
   // ─── assignee ─────────────────────────────────────────────────────────────
 
   it("listReady({ assignee }) returns only tasks matching the assignee", async () => {
@@ -1857,6 +1942,81 @@ describe("TaskService.listBlocked() filters (unit)", () => {
     const prisma = makeBlockedFilterPrismaDouble([
       makeBlockedFilterTask({ id: "t1", status: "blocked", hitl: true }),
       makeBlockedFilterTask({ id: "t2", status: "blocked", hitl: false }),
+    ]);
+    const service = new TaskService(prisma);
+
+    const result = await service.listBlocked(
+      undefined,
+      undefined,
+      undefined,
+      {},
+    );
+
+    expect(result.map((t) => t.id).sort()).toEqual(["t1", "t2"]);
+  });
+
+  // ─── autonomousPlanSession (PDR-2.1) ───────────────────────────────────────
+  //
+  // Plain equality post-filter, no listBlocked()-inclusion side effect —
+  // mirrors the shape of the other plain filters above (e.g. branch), not
+  // hitl's blockedBy-driven nuance.
+
+  it("listBlocked({ autonomousPlanSession: true }) returns only tasks with autonomousPlanSession === true", async () => {
+    const prisma = makeBlockedFilterPrismaDouble([
+      makeBlockedFilterTask({
+        id: "t1",
+        status: "blocked",
+        autonomousPlanSession: true,
+      }),
+      makeBlockedFilterTask({
+        id: "t2",
+        status: "blocked",
+        autonomousPlanSession: false,
+      }),
+    ]);
+    const service = new TaskService(prisma);
+
+    const result = await service.listBlocked(undefined, undefined, undefined, {
+      autonomousPlanSession: true,
+    });
+
+    expect(result.map((t) => t.id)).toEqual(["t1"]);
+  });
+
+  it("listBlocked({ autonomousPlanSession: false }) returns only tasks with autonomousPlanSession === false", async () => {
+    const prisma = makeBlockedFilterPrismaDouble([
+      makeBlockedFilterTask({
+        id: "t1",
+        status: "blocked",
+        autonomousPlanSession: true,
+      }),
+      makeBlockedFilterTask({
+        id: "t2",
+        status: "blocked",
+        autonomousPlanSession: false,
+      }),
+    ]);
+    const service = new TaskService(prisma);
+
+    const result = await service.listBlocked(undefined, undefined, undefined, {
+      autonomousPlanSession: false,
+    });
+
+    expect(result.map((t) => t.id)).toEqual(["t2"]);
+  });
+
+  it("listBlocked() with autonomousPlanSession unset returns every blocked task regardless of value (back-compat)", async () => {
+    const prisma = makeBlockedFilterPrismaDouble([
+      makeBlockedFilterTask({
+        id: "t1",
+        status: "blocked",
+        autonomousPlanSession: true,
+      }),
+      makeBlockedFilterTask({
+        id: "t2",
+        status: "blocked",
+        autonomousPlanSession: false,
+      }),
     ]);
     const service = new TaskService(prisma);
 

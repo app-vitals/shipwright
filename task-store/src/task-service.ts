@@ -141,6 +141,11 @@ function matchesTaskFilters(task: Task, filters: TaskListPostFilters): boolean {
   if (filters.assignee !== undefined && task.assignee !== filters.assignee)
     return false;
   if (filters.hitl !== undefined && task.hitl !== filters.hitl) return false;
+  if (
+    filters.autonomousPlanSession !== undefined &&
+    task.autonomousPlanSession !== filters.autonomousPlanSession
+  )
+    return false;
   if (!matchesRepoOrg(task, filters.repo, filters.org)) return false;
   return true;
 }
@@ -186,6 +191,7 @@ export interface TaskListPostFilters {
   branch?: string;
   assignee?: string;
   hitl?: boolean;
+  autonomousPlanSession?: boolean;
 }
 
 /** Filters accepted by TaskService.list. */
@@ -213,6 +219,7 @@ export interface TaskListFilters {
   pr?: number;
   branch?: string;
   hitl?: boolean;
+  autonomousPlanSession?: boolean;
   limit?: number;
   offset?: number;
   /** Order results by createdAt. Defaults to "asc" (existing behavior). */
@@ -316,6 +323,8 @@ export class TaskService implements TaskServiceLike {
     if (filters.pr !== undefined) where.pr = filters.pr;
     if (filters.branch !== undefined) where.branch = filters.branch;
     if (filters.hitl !== undefined) where.hitl = filters.hitl;
+    if (filters.autonomousPlanSession !== undefined)
+      where.autonomousPlanSession = filters.autonomousPlanSession;
     if (filters.updatedSince) {
       where.updatedAt = { gte: parseUpdatedSince(filters.updatedSince) };
     }

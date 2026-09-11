@@ -14,7 +14,7 @@
  * Admin tokens (agentId null) have no restrictions.
  *
  * Routes:
- *   GET    /tasks               list (?status, ?state=open|closed, ?session, ?assignee, ?pr, ?branch, ?hitl=true|false, ?limit, ?offset, ?ready=true)
+ *   GET    /tasks               list (?status, ?state=open|closed, ?session, ?assignee, ?pr, ?branch, ?hitl=true|false, ?autonomousPlanSession=true|false, ?limit, ?offset, ?ready=true)
  *                              returns { tasks, total, scopeDegraded } — scopeDegraded
  *                              mirrors the auth middleware's scopeDegraded context var
  *                              (true only when the agent's repo-scope resolver call itself
@@ -604,15 +604,21 @@ export function createTasksRoutes(
         : c.req.query("hitl") === "false"
           ? false
           : undefined;
+    const autonomousPlanSession =
+      c.req.query("autonomousPlanSession") === "true"
+        ? true
+        : c.req.query("autonomousPlanSession") === "false"
+          ? false
+          : undefined;
 
     // Note: ?updatedSince, ?limit, and ?offset are intentionally NOT
     // threaded into listReady()/listBlocked() below (?sort applies only to
     // the ?state=blocked branch). Both are convenience endpoints computed
     // over the *entire* task graph (dependency resolution needs every task,
     // not a recency-windowed or paginated subset). session/source/repo/org/
-    // claimedBy/pr/branch/assignee/hitl DO apply to both listReady()
-    // (TRF-1.1) and listBlocked() (ATB-1.2, HTF-1.1) — same parsing as the
-    // fallback branch below, just also forwarded here.
+    // claimedBy/pr/branch/assignee/hitl/autonomousPlanSession DO apply to
+    // both listReady() (TRF-1.1) and listBlocked() (ATB-1.2, HTF-1.1) — same
+    // parsing as the fallback branch below, just also forwarded here.
     // ?ready=true is the legacy spelling; ?state=ready is the new form.
     if (c.req.query("ready") === "true" || stateRaw === "ready") {
       // Pass repos to listReady for repo-scoped agent tokens.
@@ -629,6 +635,7 @@ export function createTasksRoutes(
           branch: c.req.query("branch"),
           assignee: c.req.query("assignee"),
           hitl,
+          autonomousPlanSession,
         },
       );
       return c.json({ tasks, total: tasks.length, scopeDegraded }, 200);
@@ -650,6 +657,7 @@ export function createTasksRoutes(
           branch: c.req.query("branch"),
           assignee: c.req.query("assignee"),
           hitl,
+          autonomousPlanSession,
         },
       );
       return c.json({ tasks, total: tasks.length, scopeDegraded }, 200);
@@ -684,6 +692,7 @@ export function createTasksRoutes(
       pr: prRaw !== undefined ? Number.parseInt(prRaw, 10) : undefined,
       branch: c.req.query("branch"),
       hitl,
+      autonomousPlanSession,
       limit:
         limitRaw !== undefined
           ? Number.parseInt(limitRaw, 10) || undefined
