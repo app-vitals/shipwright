@@ -269,7 +269,7 @@ self.addEventListener("push", (event) => {
     self.registration.showNotification(payload.title, {
       body: payload.body || undefined,
       data: { url: payload.url },
-      tag: "shipwright-agent-reply",
+      tag: payload.tag || "shipwright-agent-reply",
     }),
   );
 });
