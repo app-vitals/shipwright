@@ -13,6 +13,7 @@ import { createTaskStoreApp } from "./app.ts";
 import { FixedClock } from "./clock.ts";
 import { ConflictError, NotFoundError } from "./errors.ts";
 import { PullRequestService } from "./pull-request-service.ts";
+import { SessionService } from "./session-service.ts";
 import { TaskService } from "./task-service.ts";
 import { TaskTokenService } from "./token-service.ts";
 
@@ -503,13 +504,7 @@ describeOrSkip("PullRequestService.claim() phase support (integration)", () => {
 
     let threw = false;
     try {
-      await service.claim(
-        repo,
-        prNumber,
-        commitSha,
-        "agent-y",
-        "patch",
-      );
+      await service.claim(repo, prNumber, commitSha, "agent-y", "patch");
     } catch (err) {
       threw = true;
       expect(err).toBeInstanceOf(ConflictError);
@@ -1809,6 +1804,7 @@ describeOrSkip(
         taskService: new TaskService(prisma),
         tokenService,
         pullRequestService: new PullRequestService(prisma),
+        sessionService: new SessionService(prisma),
       });
     });
 
@@ -2030,13 +2026,7 @@ describeOrSkip("PullRequestService.getEvents() (integration)", () => {
     // claim() (pending -> in_progress), complete() (in_progress -> posted),
     // patch() (posted -> pending) — three distinct auditable transitions.
     const svcClaim = new PullRequestService(prisma, FixedClock(times[0]));
-    await svcClaim.claim(
-      repo,
-      prNumber,
-      commitSha,
-      "agent-a",
-      "review",
-    );
+    await svcClaim.claim(repo, prNumber, commitSha, "agent-a", "review");
 
     const svcComplete = new PullRequestService(prisma, FixedClock(times[1]));
     await svcComplete.complete(seeded.id);

@@ -1,6 +1,7 @@
 import { describe, expect, it } from "bun:test";
 import { createTaskStoreApp } from "./app.ts";
 import type { Task } from "./index.ts";
+import type { SessionServiceLike } from "./session-service.ts";
 import type {
   TaskListFilters,
   TaskListResult,
@@ -187,10 +188,23 @@ function fakeTaskService(opts: {
   };
 }
 
+/** No-op SessionService double — session routes aren't under test here. */
+function fakeSessionService(): SessionServiceLike {
+  return {
+    async list() {
+      return { sessions: [], total: 0, limit: 50, offset: 0 };
+    },
+    async get() {
+      return null;
+    },
+  };
+}
+
 function makeApp(taskService: TaskServiceLike) {
   return createTaskStoreApp({
     taskService,
     tokenService: fakeTokenService(),
+    sessionService: fakeSessionService(),
   });
 }
 

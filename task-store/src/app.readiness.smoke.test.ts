@@ -13,8 +13,21 @@
 
 import { describe, expect, it } from "bun:test";
 import { createTaskStoreApp } from "./app.ts";
+import type { SessionServiceLike } from "./session-service.ts";
 import type { TaskServiceLike } from "./task-service.ts";
 import type { TokenServiceLike } from "./token-service.ts";
+
+/** No-op SessionService double — session routes aren't under test here. */
+function fakeSessionService(): SessionServiceLike {
+  return {
+    async list() {
+      return { sessions: [], total: 0, limit: 50, offset: 0 };
+    },
+    async get() {
+      return null;
+    },
+  };
+}
 
 function fakeTaskService(): TaskServiceLike {
   return {
@@ -107,6 +120,7 @@ describe("GET /health/ready (smoke)", () => {
     const app = createTaskStoreApp({
       taskService: fakeTaskService(),
       tokenService: fakeTokenService(),
+      sessionService: fakeSessionService(),
     });
     const res = await app.request("/health/ready");
     expect(res.status).toBe(200);
@@ -118,6 +132,7 @@ describe("GET /health/ready (smoke)", () => {
     const app = createTaskStoreApp({
       taskService: fakeTaskService(),
       tokenService: fakeTokenService(),
+      sessionService: fakeSessionService(),
       checkDbReady: async () => false,
     });
     const res = await app.request("/health/ready");

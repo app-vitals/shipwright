@@ -20,6 +20,7 @@ import { createScopeResolver } from "./auth.ts";
 import { checkClaimTtlBuffer } from "./claim-ttl-buffer-check.ts";
 import { PrismaClient } from "./index.ts";
 import { PullRequestService } from "./pull-request-service.ts";
+import { SessionService } from "./session-service.ts";
 import { StaleClaimReaper } from "./stale-claim-reaper.ts";
 import { TaskService } from "./task-service.ts";
 import { TaskTokenService } from "./token-service.ts";
@@ -119,6 +120,9 @@ async function startServer(): Promise<void> {
   const taskService = new TaskService(prisma);
   const tokenService = new TaskTokenService(prisma);
   const pullRequestService = new PullRequestService(prisma);
+  const sessionService = new SessionService(prisma, undefined, (pairs) =>
+    pullRequestService.lookupBlockedPrNumbers(pairs),
+  );
 
   const seedToken = process.env.TASK_STORE_SEED_ADMIN_TOKEN;
   if (seedToken) {
@@ -152,6 +156,7 @@ async function startServer(): Promise<void> {
     taskService,
     tokenService,
     pullRequestService,
+    sessionService,
     scopeResolver,
     sentryClient: process.env.SENTRY_DSN ? Sentry : undefined,
     // Once a shutdown signal has been received, fail readiness immediately

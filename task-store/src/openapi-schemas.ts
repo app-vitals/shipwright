@@ -445,6 +445,119 @@ export const PullRequestSchema = z
 
 export type PullRequest = z.infer<typeof PullRequestSchema>;
 
+// ─── Session ──────────────────────────────────────────────────────────────────
+
+/**
+ * A Session row's own fields flattened together with its computed
+ * session-rollup (SESH-2.1's computeSessionRollup) fields — never nested
+ * under a `rollup` key. Mirrors SessionListItem in session-service.ts.
+ */
+export const SessionSchema = z
+  .object({
+    slug: z.string().openapi({ example: "shipwright-may-launch" }),
+    title: z
+      .string()
+      .nullable()
+      .optional()
+      .openapi({ example: "May launch prep" }),
+    createdAt: z
+      .string()
+      .datetime()
+      .openapi({ example: "2026-01-01T00:00:00.000Z" }),
+    updatedAt: z
+      .string()
+      .datetime()
+      .openapi({ example: "2026-01-06T12:00:00.000Z" }),
+    archivedAt: z.string().nullable().optional().openapi({ example: null }),
+    archivedBy: z.string().nullable().optional().openapi({ example: null }),
+    state: z
+      .enum(["waiting", "active", "closed", "empty"])
+      .openapi({ example: "active" }),
+    waitingSince: z
+      .string()
+      .nullable()
+      .openapi({ example: "2026-01-01T00:00:00.000Z" }),
+    lastActivityAt: z
+      .string()
+      .nullable()
+      .openapi({ example: "2026-01-06T12:00:00.000Z" }),
+    counts: z
+      .object({
+        total: z.number().int(),
+        open: z.number().int(),
+        closed: z.number().int(),
+      })
+      .openapi({ example: { total: 3, open: 2, closed: 1 } }),
+    agentIds: z.array(z.string()).openapi({ example: ["agent-1"] }),
+    repos: z.array(z.string()).openapi({ example: ["org/repo"] }),
+    waitingTasks: z
+      .array(
+        z.object({
+          id: z.string(),
+          kind: z.enum(["hitl", "blocked", "pr_blocked"]),
+        }),
+      )
+      .openapi({ example: [{ id: "task-1", kind: "hitl" }] }),
+    archived: z.boolean().openapi({ example: false }),
+  })
+  .openapi("Session");
+
+export type Session = z.infer<typeof SessionSchema>;
+
+/** Path param for GET /sessions/:slug */
+export const SessionSlugParamSchema = z
+  .object({
+    slug: z.string().openapi({ example: "shipwright-may-launch" }),
+  })
+  .openapi("SessionSlugParam");
+
+/** Query params for GET /sessions */
+export const SessionListQuerySchema = z
+  .object({
+    state: z
+      .enum(["waiting", "active", "closed", "empty", "archived", "all"])
+      .optional()
+      .openapi({
+        example: "waiting",
+        description:
+          "Omitted: archived===false AND state!=='closed'. A named state (waiting/active/closed/empty) matches rollup.state alone (not additionally archived-filtered). 'archived': archived===true (rollup state ignored). 'all': no filtering.",
+      }),
+    sort: z.enum(["waitingSince", "lastActivityAt"]).optional().openapi({
+      example: "waitingSince",
+      description:
+        "'waitingSince': waiting sessions first (oldest waitingSince first), then non-waiting sessions by lastActivityAt desc. Default (or 'lastActivityAt'): all sessions by lastActivityAt desc, nulls last.",
+    }),
+    agentId: z.string().optional().openapi({
+      example: "agent-id-123",
+      description: "Only sessions whose rollup.agentIds includes this agent.",
+    }),
+    repo: z
+      .union([z.string(), z.array(z.string())])
+      .optional()
+      .openapi({
+        example: "org/repo",
+        description:
+          "Only sessions whose rollup.repos includes any of the given repo(s). Repeatable (?repo=a&repo=b).",
+      }),
+    q: z.string().optional().openapi({
+      example: "launch",
+      description: "Case-insensitive substring match against slug OR title.",
+    }),
+    limit: z.string().optional().openapi({ example: "50" }),
+    offset: z.string().optional().openapi({ example: "0" }),
+  })
+  .openapi("SessionListQuery");
+
+/** Response for GET /sessions */
+export const SessionListResponseSchema = z
+  .object({
+    sessions: z.array(SessionSchema),
+    total: z.number().int().openapi({ example: 10 }),
+    limit: z.number().int().openapi({ example: 50 }),
+    offset: z.number().int().openapi({ example: 0 }),
+  })
+  .openapi("SessionListResponse");
+
 // ─── Task Token ───────────────────────────────────────────────────────────────
 
 /**

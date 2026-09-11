@@ -19,6 +19,7 @@
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { createTaskStoreApp } from "./app.ts";
 import { PrismaClient } from "./index.ts";
+import { SessionService } from "./session-service.ts";
 import { TaskService } from "./task-service.ts";
 import { TaskTokenService } from "./token-service.ts";
 
@@ -44,10 +45,11 @@ describeOrSkip("task-store API (integration)", () => {
 
     const taskService = new TaskService(prisma);
     const tokenService = new TaskTokenService(prisma);
+    const sessionService = new SessionService(prisma);
     const created = await tokenService.create("integration");
     rawToken = created.rawToken;
 
-    app = createTaskStoreApp({ taskService, tokenService });
+    app = createTaskStoreApp({ taskService, tokenService, sessionService });
   });
 
   afterEach(async () => {
@@ -368,7 +370,10 @@ describeOrSkip("task-store API (integration)", () => {
 
     const res = await app.request("/tasks?ready=true", { headers: auth() });
     expect(res.status).toBe(200);
-    const body = (await res.json()) as { tasks: Array<{ id: string; title: string }>; total: number };
+    const body = (await res.json()) as {
+      tasks: Array<{ id: string; title: string }>;
+      total: number;
+    };
     const ids = body.tasks.map((t) => t.id);
     // ready task qualifies; blockingDep is pending with no deps → also ready.
     expect(ids).toContain(ready.id);
