@@ -162,6 +162,159 @@ describe("plan-session.md — repo auto-detect preserves org/repo format (PRF-1.
   });
 });
 
+describe("plan-session.md — Step 4 `--autonomous` mode (PDR-3.1)", () => {
+  function extractStep4Section(md: string): string {
+    const match = md.match(/## Step 4: Propose a Design[\s\S]*?(?=\n## Step 5: Task Breakdown)/);
+    expect(match).not.toBeNull();
+    return match?.[0] ?? "";
+  }
+
+  function extractAutonomousSubsection(section: string): string {
+    const idx = section.indexOf("### `--autonomous` Mode");
+    expect(idx).toBeGreaterThan(-1);
+    return section.slice(idx);
+  }
+
+  it("adds a distinct `--autonomous` Mode subsection to Step 4", () => {
+    const section = extractStep4Section(content);
+    expect(section).toContain("### `--autonomous` Mode");
+  });
+
+  it("states autonomous mode replaces iterate-until-approved with accept-first-pass", () => {
+    const autoSection = extractAutonomousSubsection(extractStep4Section(content));
+    const lower = autoSection.toLowerCase();
+    expect(lower).toMatch(/accept.first.pass/);
+    expect(lower).toContain("iterate-until-approved");
+    expect(lower).toContain("trusted");
+  });
+
+  it("defines the loose ambiguity bar with Soft ambiguity and Hard contradiction cases", () => {
+    const autoSection = extractAutonomousSubsection(extractStep4Section(content));
+    expect(autoSection).toContain("Soft ambiguity");
+    expect(autoSection).toContain("Hard contradiction");
+    expect(autoSection).toContain("sensible default");
+  });
+
+  it("soft ambiguity applies the default and logs it instead of stalling or asking", () => {
+    const autoSection = extractAutonomousSubsection(extractStep4Section(content));
+    const softIdx = autoSection.indexOf("Soft ambiguity");
+    const hardIdx = autoSection.indexOf("Hard contradiction");
+    const softSection = autoSection.slice(softIdx, hardIdx);
+    const lower = softSection.toLowerCase();
+    expect(lower).toContain("apply the default");
+    expect(lower).toMatch(/do not stall|not.*ask a clarifying question/);
+    expect(lower).not.toContain("blockedreason");
+    expect(lower).not.toContain("patch");
+  });
+
+  it("hard contradiction escapes via PATCH to blocked with hitl:true and blockedReason, then stops before Step 5", () => {
+    const autoSection = extractAutonomousSubsection(extractStep4Section(content));
+    expect(autoSection).toContain('"status": "blocked"');
+    expect(autoSection).toContain('"hitl": true');
+    expect(autoSection).toContain("blockedReason");
+    expect(autoSection).toContain("plan_session_autonomous_hard_contradiction");
+    expect(autoSection.toLowerCase()).toContain("do not proceed to step 5");
+    expect(autoSection.toLowerCase()).toMatch(/do not fabricate|not fabricate an answer/);
+  });
+
+  it("records every accepted default in a Decision Log that carries through to PLAN.md", () => {
+    const autoSection = extractAutonomousSubsection(extractStep4Section(content));
+    expect(autoSection).toContain("## Decision Log");
+    expect(autoSection.toLowerCase()).toContain("plan.md");
+  });
+});
+
+describe("plan-session.md — Step 5 `--autonomous` mode (PDR-3.1)", () => {
+  function extractStep5FullSection(md: string): string {
+    const match = md.match(/## Step 5: Task Breakdown[\s\S]*?(?=\n## Step 5\.5: HITL Detection)/);
+    expect(match).not.toBeNull();
+    return match?.[0] ?? "";
+  }
+
+  function extractAutonomousSubsection(section: string): string {
+    const idx = section.indexOf("### `--autonomous` Mode");
+    expect(idx).toBeGreaterThan(-1);
+    return section.slice(idx);
+  }
+
+  it("adds a distinct `--autonomous` Mode subsection to Step 5", () => {
+    const section = extractStep5FullSection(content);
+    expect(section).toContain("### `--autonomous` Mode");
+  });
+
+  it("applies the same loose ambiguity bar to breakdown-level decisions", () => {
+    const autoSection = extractAutonomousSubsection(extractStep5FullSection(content));
+    expect(autoSection).toContain("Soft ambiguity");
+    expect(autoSection).toContain("Hard contradiction");
+    expect(autoSection).toContain("sensible default");
+  });
+
+  it("hard contradiction escapes via the same PATCH-to-blocked pattern, stopping before Step 5.5", () => {
+    const autoSection = extractAutonomousSubsection(extractStep5FullSection(content));
+    expect(autoSection).toContain('"status": "blocked"');
+    expect(autoSection).toContain('"hitl": true');
+    expect(autoSection).toContain("blockedReason");
+    expect(autoSection.toLowerCase()).toContain("do not proceed to step 5.5");
+  });
+
+  it("skips the iterate-until-approved loop and proceeds directly to Step 5.5", () => {
+    const autoSection = extractAutonomousSubsection(extractStep5FullSection(content));
+    expect(autoSection.toLowerCase()).toContain("skip");
+    expect(autoSection).toContain("Step 5.5");
+  });
+
+  it("soft ambiguity defaults append to the same Decision Log started in Step 4", () => {
+    const autoSection = extractAutonomousSubsection(extractStep5FullSection(content));
+    expect(autoSection).toContain("Decision Log");
+    expect(autoSection.toLowerCase()).toContain("step 4");
+  });
+});
+
+describe("plan-session.md — `--autonomous {task-id}` argument parsing (PDR-3.1)", () => {
+  function extractArgsAndAutoDetectSection(md: string): string {
+    const match = md.match(/^---[\s\S]*?Wait for user confirmation before continuing to Step 1\./);
+    expect(match).not.toBeNull();
+    return match?.[0] ?? "";
+  }
+
+  it("documents the --autonomous {task-id} optional token alongside repo/session", () => {
+    const section = extractArgsAndAutoDetectSection(content);
+    expect(section).toContain("--autonomous");
+    expect(section).toContain("{task-id}");
+    expect(section.toLowerCase()).toContain("autonomousplansession");
+  });
+
+  it("states repo/session are always passed explicitly and the auto-detect confirmation flow does not apply", () => {
+    const section = extractArgsAndAutoDetectSection(content);
+    const autonomousIdx = section.indexOf("--autonomous");
+    expect(autonomousIdx).toBeGreaterThan(-1);
+    const autonomousSection = section.slice(autonomousIdx);
+    const lower = autonomousSection.toLowerCase();
+    expect(lower).toContain("does not apply");
+    expect(lower).toContain("explicitly");
+  });
+});
+
+describe("plan-session.md — Step 6c autonomous close-out (PDR-3.1)", () => {
+  it("Step 6b section includes a Step 6c gated on --autonomous that PATCHes status:done and source to PLAN.md", () => {
+    const section = extractStep6bSection(content);
+    expect(section).toContain("Step 6c");
+    expect(section).toContain("--autonomous");
+    expect(section).toContain('\\"status\\": \\"done\\"');
+    expect(section).toContain('\\"source\\"');
+    expect(section.toLowerCase()).toContain("plan.md");
+  });
+
+  it("only runs Step 6c after the bulk write succeeds", () => {
+    const section = extractStep6bSection(content);
+    const idx = section.indexOf("Step 6c");
+    expect(idx).toBeGreaterThan(-1);
+    const step6cSection = section.slice(idx);
+    expect(step6cSection.toLowerCase()).toMatch(/only run this after|once step 6b.*succeeds/);
+    expect(step6cSection.toLowerCase()).toContain("must not mark the originating task done");
+  });
+});
+
 describe("plan-session.md — Step 5 principles override check + security domain (PCO-1.1)", () => {
   function extractStep5Section(md: string): string {
     const match = md.match(/## Step 5: Task Breakdown[\s\S]*?(?=\n### Complexity and Model Scoring)/);
