@@ -684,3 +684,80 @@ describe("dev-task.md Step 1 — repo-slug derivation for local paths (PRF-1.4)"
     );
   });
 });
+
+describe("dev-task.md Step 1 — PRD-shaped task guard (fallback safety net) (PDR-1.1)", () => {
+  const getGuardSection = () => {
+    const guardIdx = content.indexOf("### PRD-Shaped Task Guard");
+    expect(guardIdx).toBeGreaterThan(-1);
+    const dependencyCheckIdx = content.indexOf("### Dependency Check (pending tasks only)");
+    expect(dependencyCheckIdx).toBeGreaterThan(guardIdx);
+    return { guardIdx, dependencyCheckIdx, section: content.slice(guardIdx, dependencyCheckIdx) };
+  };
+
+  it("adds a PRD-Shaped Task Guard section in Step 1 after pending-status validation and before Dependency Check", () => {
+    const { guardIdx, dependencyCheckIdx } = getGuardSection();
+    const pendingBulletIdx = content.indexOf('**Found, `status == "pending"`**:');
+    expect(pendingBulletIdx).toBeGreaterThan(-1);
+    // Guard should be after the pending bullet and before Dependency Check
+    expect(pendingBulletIdx).toBeLessThan(guardIdx);
+    expect(guardIdx).toBeLessThan(dependencyCheckIdx);
+  });
+
+  it("detects task id prefix: task id matches ^prd-", () => {
+    const { section } = getGuardSection();
+    expect(section).toMatch(/task.{0,40}id.{0,40}(match|matches).{0,60}\^prd-/i);
+  });
+
+  it("detects description prefix: description opens with 'Commit as PRODUCT-SPEC.md and run /shipwright:plan-session'", () => {
+    const { section } = getGuardSection();
+    expect(section).toContain("Commit as PRODUCT-SPEC.md and run /shipwright:plan-session");
+  });
+
+  it("detects branch and criteria: branch === 'main' AND acceptanceCriteria is empty", () => {
+    const { section } = getGuardSection();
+    expect(section).toMatch(/branch.{0,60}main/i);
+    expect(section).toMatch(/acceptanceCriteria.{0,60}empty/i);
+  });
+
+  it("stops before the Dependency Check and before claiming (Step 2)", () => {
+    const { section } = getGuardSection();
+    const claimIdx = content.indexOf("/tasks/{id}/claim");
+    const guardIdx = content.indexOf("### PRD-Shaped Task Guard");
+    expect(guardIdx).toBeLessThan(claimIdx);
+  });
+
+  it("PATCHes the task with exact fields: status:blocked, hitl:true, blockedReason:misrouted_needs_plan_session_not_dev_task", () => {
+    const { section } = getGuardSection();
+    expect(section).toContain('"status": "blocked"');
+    expect(section).toContain('"hitl": true');
+    expect(section).toContain('"blockedReason": "misrouted_needs_plan_session_not_dev_task"');
+  });
+
+  it("uses curl -X PATCH with the standard Authorization header and Content-Type application/json", () => {
+    const { section } = getGuardSection();
+    expect(section).toContain("curl -sf -X PATCH");
+    expect(section).toContain("-H \"Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN\"");
+    expect(section).toContain('-H "Content-Type: application/json"');
+  });
+
+  it("includes the curl command targeting the task-store /tasks/{id} endpoint", () => {
+    const { section } = getGuardSection();
+    expect(section).toContain("$SHIPWRIGHT_TASK_STORE_URL/tasks/{id}");
+  });
+
+  it("pipes the PATCH response through jq", () => {
+    const { section } = getGuardSection();
+    expect(section).toMatch(/\| jq \./);
+  });
+
+  it("prints a clear warning message when guard triggers", () => {
+    const { section } = getGuardSection();
+    expect(section).toMatch(/⚠.*PRD-shaped|Task.{0,40}looks PRD-shaped/i);
+    expect(section).toMatch(/blocked|blocked for human/i);
+  });
+
+  it("does NOT special-case autonomousPlanSession:true tasks (they are excluded upstream at ?ready=true level)", () => {
+    const { section } = getGuardSection();
+    expect(section).not.toContain("autonomousPlanSession");
+  });
+});
