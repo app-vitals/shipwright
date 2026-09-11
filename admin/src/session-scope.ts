@@ -54,6 +54,16 @@ export interface MembershipForScope {
 }
 
 /**
+ * Minimal task shape deriveSessionVisibilityFromTasks needs — a subset of
+ * both admin-ui-pages.ts's TaskItem and task-store's Task row.
+ */
+export interface TaskForVisibility {
+  assignee?: string | null;
+  claimedBy?: string | null;
+  repo?: string | null;
+}
+
+/**
  * The caller's accessible-agent-ids scope: "all" for an admin (bypasses
  * every check), or the specific list of agent ids a member belongs to
  * (possibly empty — a member with zero memberships resolves to []).
@@ -88,6 +98,41 @@ export function visibleAgentIdsFor(
 ): AgentIdScope {
   if (isAdmin) return "all";
   return memberships.map((membership) => membership.agentId);
+}
+
+// ─── Derivation from a session's tasks ──────────────────────────────────────
+
+/**
+ * Derive a SessionForVisibility from a session's own task rows, for callers
+ * that already have the tasks in hand and would otherwise have to refetch
+ * the session rollup (e.g. the session detail route).
+ *
+ * Deliberately mirrors task-store/src/session-rollup.ts's rollup derivation
+ * exactly — `claimedBy ?? assignee` (ONE agent id per task, `claimedBy`
+ * wins) for agentIds, and `repo` for repos — so a locally-derived scope
+ * check matches the one the list page performs against the task-store's own
+ * rollup `agentIds`. Unioning both fields instead would produce a superset:
+ * a task reassigned from agent-a to agent-b (`assignee: "agent-a"`,
+ * `claimedBy: "agent-b"`) rolls up to `["agent-b"]`, so agent-a's members
+ * must not retain access.
+ */
+export function deriveSessionVisibilityFromTasks(
+  tasks: TaskForVisibility[],
+): SessionForVisibility {
+  return {
+    agentIds: [
+      ...new Set(
+        tasks
+          .map((t) => t.claimedBy ?? t.assignee ?? null)
+          .filter((id): id is string => id != null),
+      ),
+    ],
+    repos: [
+      ...new Set(
+        tasks.map((t) => t.repo ?? null).filter((r): r is string => r != null),
+      ),
+    ],
+  };
 }
 
 // ─── Visibility check ───────────────────────────────────────────────────────
