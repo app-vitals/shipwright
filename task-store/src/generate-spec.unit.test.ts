@@ -38,4 +38,19 @@ describe("buildTaskStoreSpec", () => {
     const prPaths = paths.filter((p) => p.startsWith("/prs"));
     expect(prPaths.length).toBeGreaterThan(0);
   });
+
+  it("includes /sessions paths, covering the admin-only PATCH", () => {
+    const spec = buildTaskStoreSpec() as {
+      paths: Record<string, Record<string, unknown>>;
+    };
+    const paths = Object.keys(spec.paths ?? {});
+
+    const sessionPaths = paths.filter((p) => p.startsWith("/sessions"));
+    expect(sessionPaths).toContain("/sessions");
+    expect(sessionPaths).toContain("/sessions/{slug}");
+    expect(Object.keys(spec.paths["/sessions/{slug}"] ?? {}).sort()).toEqual([
+      "get",
+      "patch",
+    ]);
+  });
 });
