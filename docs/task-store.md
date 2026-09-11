@@ -349,7 +349,7 @@ Body (JSON):
 | `title` | string \| null | Optional. Omitted: title untouched. A string: set to the new title. `null`: clear the title. |
 | `archived` | boolean | Optional. Omitted: archive fields untouched. `true`: sets `archivedAt` to now and `archivedBy` to the calling actor. `false`: clears both fields. |
 
-At least one field must be supplied. Returns `200` with the updated session in the same flattened session+rollup shape. Returns `404` if the session doesn't exist.
+Both fields are optional; an empty body is a no-op. Returns `200` with the updated session in the same flattened session+rollup shape. Returns `404` if the session doesn't exist.
 
 ### Task status lifecycle
 
