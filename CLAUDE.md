@@ -98,6 +98,12 @@ pending → in_progress → pr_open → merged → deployed → done
 ```
 plus `approved`, `blocked`, `cancelled`.
 
+Tasks sharing a non-blank `session` field (set only by `/shipwright:plan-session`) roll up into a
+**Session** — browsable in the admin UI's Sessions tab (`/admin/sessions`), which shows per-session
+task status and follow/notification controls. A background alert sweeper pushes "waiting" / reminder /
+"completed" notifications to session followers; see [`docs/task-store.md`](./docs/task-store.md#sessions)
+and [`docs/agent.md`](./docs/agent.md) for the full model.
+
 ### Execution loop
 
 1. Pick a `pending` task whose every `dependencies` entry is done.
