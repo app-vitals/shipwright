@@ -205,6 +205,48 @@ describeOrSkip(
       expect(fine).not.toBeNull();
     });
 
+    // ─── concurrency ────────────────────────────────────────────────────────
+
+    it("two concurrent create()s into the same brand-new session both succeed and leave exactly one Session row", async () => {
+      // Regression guard: upsert() used to do a plain findUnique-then-create,
+      // which isn't atomic — two overlapping transactions writing into the
+      // same brand-new slug could both observe "no row yet", then race on
+      // session.create(). A caught P2002 from inside a Prisma interactive
+      // transaction doesn't actually recover it either: Postgres marks the
+      // whole transaction aborted after any failed statement, so the
+      // subsequent COMMIT silently discards it (including the
+      // already-successful Task insert) without Prisma surfacing an error —
+      // the promise resolves "fulfilled" with data that was never actually
+      // persisted. upsert() now issues a single atomic
+      // `INSERT ... ON CONFLICT (slug) DO UPDATE` via Prisma's native
+      // session.upsert(), which has no such race window.
+      const results = await Promise.allSettled([
+        service.create({
+          title: "racer a",
+          status: "pending",
+          session: "fresh-race-slug",
+        }),
+        service.create({
+          title: "racer b",
+          status: "pending",
+          session: "fresh-race-slug",
+        }),
+      ]);
+
+      const rejected = results.filter((r) => r.status === "rejected");
+      expect(rejected).toEqual([]);
+
+      const rows = await prisma.session.findMany({
+        where: { slug: "fresh-race-slug" },
+      });
+      expect(rows).toHaveLength(1);
+
+      const tasks = await prisma.task.findMany({
+        where: { session: "fresh-race-slug" },
+      });
+      expect(tasks).toHaveLength(2);
+    });
+
     // ─── no-op for blank session ───────────────────────────────────────────────
 
     it("create() with session: null creates no Session row", async () => {

@@ -52,15 +52,33 @@ export class SessionService {
    *
    * - Blank (see isBlankSession): a pure no-op — does not touch the DB at
    *   all, so tasks with session: null/""/"   " never create a Session row.
-   * - No existing row for the slug: created with just `slug` set — this call
-   *   site has no title to provide, so `title` is left null and
-   *   createdAt/updatedAt fall back to their schema defaults.
-   * - Existing row: `title` and `createdAt` are never part of the update
-   *   payload, so a second write into the same session can't overwrite an
-   *   already-set title or reset createdAt. If the row is currently archived
-   *   (archivedAt !== null), the write un-archives it (archivedAt: null) and
-   *   logs the transition, mirroring StaleClaimReaper's console.log
-   *   convention — no TaskEvent-style audit row for v1.
+   * - The actual write is Prisma's native `upsert()` — a single atomic
+   *   `INSERT ... ON CONFLICT (slug) DO UPDATE` statement, not a separate
+   *   findUnique-then-create/update. That matters under concurrency: two
+   *   overlapping task writes into the same brand-new slug both running a
+   *   plain findUnique-then-create would race on the create(), and a caught
+   *   P2002 from *inside* a Prisma interactive transaction doesn't actually
+   *   recover it — Postgres marks the whole transaction aborted after any
+   *   failed statement, so a subsequent COMMIT silently discards it
+   *   (including the already-successful Task insert) without Prisma
+   *   surfacing an error. A single-statement ON CONFLICT upsert has no such
+   *   window: it always cleanly creates-or-updates, never errors on a
+   *   concurrent slug collision.
+   * - `create` sets only `slug` — this call site has no title to provide, so
+   *   `title` is left null and `createdAt`/`updatedAt` fall back to their
+   *   schema defaults.
+   * - `update` sets only `archivedAt: null` — `title` and `createdAt` are
+   *   never part of the update payload, so a second write into the same
+   *   session can't overwrite an already-set title or reset createdAt.
+   *   Setting `archivedAt: null` un-archives a currently-archived row; it's
+   *   a harmless no-op value-wise when the row is already un-archived
+   *   (though Prisma still issues the UPDATE, bumping `updatedAt`).
+   *
+   * The pre-write `findUnique` read below exists solely to decide whether to
+   * log an un-archive transition (mirroring StaleClaimReaper's console.log
+   * convention — no TaskEvent-style audit row for v1); it never gates the
+   * write's correctness, so a stale read under concurrency can at worst
+   * suppress or emit one log line, never corrupt data.
    */
   async upsert(
     client: PrismaTxClient,
@@ -72,21 +90,16 @@ export class SessionService {
 
     const existing = await client.session.findUnique({ where: { slug } });
 
-    if (!existing) {
-      await client.session.create({ data: { slug } });
-      return;
-    }
+    await client.session.upsert({
+      where: { slug },
+      create: { slug },
+      update: { archivedAt: null },
+    });
 
-    if (existing.archivedAt !== null) {
-      await client.session.update({
-        where: { slug },
-        data: { archivedAt: null },
-      });
+    if (existing?.archivedAt) {
       console.log(
         `[session-service] un-archived session "${slug}" on task write at ${this.clock.now().toISOString()}`,
       );
     }
-    // Row exists and isn't archived: nothing to change — title/createdAt are
-    // deliberately left untouched by a task write.
   }
 }
