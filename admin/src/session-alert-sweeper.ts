@@ -365,11 +365,14 @@ export class SessionAlertSweeper {
 
     for (const follower of followers) {
       try {
-        if (!(await this.canSee(follower.userEmail, session, ctx.scopeCache))) {
-          ctx.result.pruned += await this.pruneAlertState(
+        if (
+          !(await this.isVisibleOrPrune(
             follower.userEmail,
-            session.slug,
-          );
+            session,
+            ctx.result,
+            ctx.scopeCache,
+          ))
+        ) {
           continue;
         }
         // Muted means "I still follow this, just don't ping me" — no push and
@@ -421,11 +424,14 @@ export class SessionAlertSweeper {
 
     for (const follower of followRows) {
       try {
-        if (!(await this.canSee(follower.userEmail, session, ctx.scopeCache))) {
-          ctx.result.pruned += await this.pruneAlertState(
+        if (
+          !(await this.isVisibleOrPrune(
             follower.userEmail,
-            session.slug,
-          );
+            session,
+            ctx.result,
+            ctx.scopeCache,
+          ))
+        ) {
           continue;
         }
         if (!follower.muted) {
@@ -485,6 +491,23 @@ export class SessionAlertSweeper {
       where: { userEmail, sessionSlug },
     });
     return count;
+  }
+
+  /**
+   * The shared guard both sweep loops open with: if `userEmail` can no longer
+   * see `session`, prune their stale alert-state row (counting it in
+   * `result.pruned`) and report `false` so the caller sends nothing; otherwise
+   * report `true` so the caller proceeds.
+   */
+  private async isVisibleOrPrune(
+    userEmail: string,
+    session: SessionForAlert,
+    result: SessionAlertSweepResult,
+    cache: Map<string, VisibilityScope>,
+  ): Promise<boolean> {
+    if (await this.canSee(userEmail, session, cache)) return true;
+    result.pruned += await this.pruneAlertState(userEmail, session.slug);
+    return false;
   }
 
   /**
