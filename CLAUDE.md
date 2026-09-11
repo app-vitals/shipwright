@@ -178,6 +178,7 @@ To load additional context into a session, add `@docs/filename.md` entries here 
 - **docs/task-store.md** — task store service (D): the sole HTTP-service backend — tasks, PR tracking, tokens — and troubleshooting
 - **docs/mcp-tools.md** — generated MCP server tool reference (name, description, HTTP method/path, parameters, body) derived from task-store/openapi.json + the tool allowlist; regenerate with `bun run generate:mcp-docs`
 - **docs/chat.md** — chat service (D): auth model (admin vs. agent tokens, scope resolver), thread/message/token endpoints (incl. attachment streaming and the claim/reply queue), data model, and environment
+- **docs/session-notifications.md** — session-follow subsystem (C): the follow/mute + notification-prefs data model, the session-notification detail-level policy (operator ceiling × per-subscription opt-in × per-call ceiling), the `/admin/settings/notifications` page and follow/unfollow routes, and the `session-scope.ts` visibility model (not yet wired into most routes)
 - **docs/deploy-kubernetes.md** — Kubernetes deployment guide: networking model, the agent runtime-provisioning RBAC model, agent voice (STT/TTS), Web Push notifications, auth modes, and bringing your own PostgreSQL
 - **docs/deploy-kubernetes-providers.md** — per-provider Kubernetes deployment walkthroughs: Minikube (local), GKE (Gateway API + cert-manager), EKS (ALB), Traefik, and cloud-native (any cluster)
 - **docs/helm-repo.md** — installing the published `shipwright` Helm chart, how chart publishing and version bumps are automated
