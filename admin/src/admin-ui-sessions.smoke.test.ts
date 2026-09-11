@@ -211,6 +211,18 @@ describe("GET /admin/settings/notifications — followed sessions list", () => {
 
 // ─── POST — validation boundary ────────────────────────────────────────────
 
+/**
+ * Valid range note: the authoritative range is [0, 23] — an hour-of-day.
+ * It is set by SessionFollowService.updatePrefs (SES-6.1) and mirrored by the
+ * rendered input's min=0/max=23.
+ *
+ * SESH-6.3's acceptance criteria describe the boundary as "24 valid, 25
+ * invalid", which is a typo — that same task's description says "validating
+ * reminderHourLocal 0-23", and 24 is not a valid hour-of-day. These tests
+ * assert the real contract (23 is the last valid hour, 24 and 25 both reject)
+ * and additionally cover the literal value 25 named in the AC, so both
+ * readings are exercised and the discrepancy doesn't resurface as confusion.
+ */
 describe("POST /admin/settings/notifications — reminderHourLocal validation", () => {
   it("rejects reminderHourLocal = 24 with 400", async () => {
     const app = buildApp();
@@ -224,6 +236,34 @@ describe("POST /admin/settings/notifications — reminderHourLocal validation", 
       headers,
     });
     expect(res.status).toBe(400);
+  });
+
+  it("rejects reminderHourLocal = 25 with 400 (the literal value named in the AC)", async () => {
+    const app = buildApp();
+    const { body, headers } = formBody({
+      reminderHourLocal: "25",
+      autoFollowSessions: "on",
+    });
+    const res = await app.request(NOTIFICATION_SETTINGS_PATH, {
+      method: "POST",
+      body,
+      headers,
+    });
+    expect(res.status).toBe(400);
+  });
+
+  it("accepts reminderHourLocal = 23 as the upper valid boundary value", async () => {
+    const service = makeFakeSessionFollowService();
+    const app = buildApp({ sessionFollowService: service });
+    const { body, headers } = formBody({ reminderHourLocal: "23" });
+    const res = await app.request(NOTIFICATION_SETTINGS_PATH, {
+      method: "POST",
+      body,
+      headers,
+    });
+    expect(res.status).toBe(200);
+    const text = await res.text();
+    expect(text).toContain('value="23"');
   });
 
   it("accepts reminderHourLocal = 7, persists it, and re-renders showing the new value", async () => {
