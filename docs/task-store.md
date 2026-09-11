@@ -334,6 +334,23 @@ Returns the same flattened session+rollup shape as the list response. Returns `4
 doesn't exist, or if an agent token has no qualifying task in it (same visibility rule as
 the list route above) — the two cases are indistinguishable to the caller by design.
 
+#### Update session
+
+```
+PATCH /sessions/:slug
+```
+
+Rename and/or archive a session — **admin-only**, no exceptions. Agent tokens receive `403` regardless of ownership.
+
+Body (JSON):
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `title` | string \| null | Optional. Omitted: title untouched. A string: set to the new title. `null`: clear the title. |
+| `archived` | boolean | Optional. Omitted: archive fields untouched. `true`: sets `archivedAt` to now and `archivedBy` to the calling actor. `false`: clears both fields. |
+
+At least one field must be supplied. Returns `200` with the updated session in the same flattened session+rollup shape. Returns `404` if the session doesn't exist.
+
 ### Task status lifecycle
 
 ```
