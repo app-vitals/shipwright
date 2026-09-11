@@ -57,6 +57,10 @@ import {
   renderTaskDetailPage,
   renderTasksPage,
 } from "./admin-ui-pages.ts";
+import {
+  SESSION_ADMIN_ACTION_MESSAGES,
+  registerSessionAdminActionsRoutes,
+} from "./admin-ui-session-admin-actions.ts";
 import { registerSessionFollowRoutes } from "./admin-ui-session-follow.ts";
 import {
   type Session,
@@ -426,6 +430,26 @@ export interface AdminUIDeps {
     slug: string,
   ) => Promise<SessionForVisibility | null>;
   /**
+   * Apply a rename/archive patch to a session via the task-store's
+   * `PATCH /sessions/:slug` (SESH-3.1, admin-token only). Backs the session
+   * detail page's admin-only Archive/Unarchive/Rename actions (SESH-5.2). If
+   * absent, those POST routes redirect back with an `?error=` flash instead
+   * of throwing — not every admin deployment has task-store configured.
+   */
+  patchTaskStoreSession?: (
+    slug: string,
+    patch: { title?: string | null; archived?: boolean },
+  ) => Promise<unknown>;
+  /**
+   * Resolve whether the current user follows a session, for the session
+   * detail page's Follow/Unfollow button (SESH-5.3). Defaults to querying
+   * the real sessionFollowService when absent — injectable for tests.
+   */
+  fetchIsFollowingSession?: (
+    userEmail: string,
+    slug: string,
+  ) => Promise<boolean>;
+  /**
    * Public repo slug (SHIPWRIGHT_ADMIN_PUBLIC_REPO) for the read-only task board.
    * When set, GET /public/tasks renders the task list filtered to this repo
    * without requiring authentication. When absent, /public/tasks renders in
@@ -609,6 +633,58 @@ async function redirectWithMembersWarning(
   return c.redirect(`/admin/agents/${agentId}`, 302);
 }
 
+/**
+ * Resolves each task's linked PR via a live GET /prs?repo=&prNumber= lookup,
+ * one request per distinct (repo, pr) pair among the given tasks, run in
+ * parallel to avoid an N+1 sequential-await chain. Shared by GET /admin/tasks
+ * (AXR-1.2) and GET /admin/sessions/:id (SESH-5.1), which both need the same
+ * task-id → PR map. Falls back to no PR data per row if the fetcher is
+ * absent, a task has no repo/pr, or a lookup throws — a failed join never
+ * breaks the page, it just means the caller sees no PR data for that row.
+ */
+async function joinPrsByTaskId(
+  tasks: TaskItem[],
+  fetchTaskStorePrs:
+    | ((params: URLSearchParams) => Promise<{ prs: PrListItem[] }>)
+    | undefined,
+): Promise<Record<string, PrListItem>> {
+  const prsByTaskId: Record<string, PrListItem> = {};
+  if (!fetchTaskStorePrs || tasks.length === 0) return prsByTaskId;
+
+  const distinctPairs = new Map<string, { repo: string; pr: number }>();
+  for (const t of tasks) {
+    if (t.repo && t.pr) {
+      distinctPairs.set(`${t.repo}#${t.pr}`, { repo: t.repo, pr: t.pr });
+    }
+  }
+  if (distinctPairs.size === 0) return prsByTaskId;
+
+  const pairResults = await Promise.all(
+    [...distinctPairs.entries()].map(
+      async ([key, { repo: r, pr: p }]): Promise<
+        [string, PrListItem | undefined]
+      > => {
+        try {
+          const result = await fetchTaskStorePrs(
+            new URLSearchParams({ repo: r, prNumber: String(p) }),
+          );
+          return [key, result.prs[0]];
+        } catch {
+          return [key, undefined];
+        }
+      },
+    ),
+  );
+  const prsByPairKey = new Map(pairResults);
+  for (const t of tasks) {
+    if (t.repo && t.pr) {
+      const pr = prsByPairKey.get(`${t.repo}#${t.pr}`);
+      if (pr) prsByTaskId[t.id] = pr;
+    }
+  }
+  return prsByTaskId;
+}
+
 // ─── App factory ──────────────────────────────────────────────────────────────
 
 export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
@@ -651,6 +727,8 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
     fetchTaskStorePrById,
     fetchTaskStoreSessions,
     fetchTaskStoreSession,
+    patchTaskStoreSession,
+    fetchIsFollowingSession,
     publicRepo,
     chatClient,
     pwaAssetsDir = PWA_ASSETS_DIR,
@@ -681,6 +759,18 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
   const sessionFollowService = new SessionFollowService(
     prisma as unknown as SessionFollowPrismaLike,
   );
+
+  // SESH-5.3: resolves whether the current user already follows a session,
+  // for the detail page's Follow/Unfollow button. Defaults to a real
+  // sessionFollowService.listByUser() lookup — DB-backed via the service
+  // already constructed above, not an HTTP fetch, so no main.ts wiring is
+  // needed. Tests inject a plain double via AdminUIDeps.fetchIsFollowingSession.
+  const resolveIsFollowingSession =
+    fetchIsFollowingSession ??
+    (async (userEmail: string, slug: string) => {
+      const follows = await sessionFollowService.listByUser(userEmail);
+      return follows.some((f) => f.sessionSlug === slug);
+    });
 
   // Extracted Slack app-manifest-creation/OAuth/app-token orchestration
   // (UAP-1.1) — shared by the legacy /admin/provision/* wizard's Slack
@@ -3047,47 +3137,10 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
       for (const a of agents) agentNames[a.id] = a.name;
     }
 
-    // Resolve each task's linked PR via a live GET /prs?repo=&prNumber=
-    // lookup, one request per distinct (repo, pr) pair on this page of
-    // tasks, run in parallel to avoid an N+1 sequential-await chain — same
-    // pattern as GET /admin/prs's linkedTasksByPr join, and the single-task
-    // version at GET /admin/tasks/:id, just batched (AXR-1.2). Falls back to
-    // no PR data per row if the fetcher is absent, a task has no repo/pr, or
-    // a lookup throws — a failed join never breaks the page.
-    const prsByTaskId: Record<string, PrListItem> = {};
-    if (fetchTaskStorePrs && tasks.length > 0) {
-      const distinctPairs = new Map<string, { repo: string; pr: number }>();
-      for (const t of tasks) {
-        if (t.repo && t.pr) {
-          distinctPairs.set(`${t.repo}#${t.pr}`, { repo: t.repo, pr: t.pr });
-        }
-      }
-      if (distinctPairs.size > 0) {
-        const pairResults = await Promise.all(
-          [...distinctPairs.entries()].map(
-            async ([key, { repo: r, pr: p }]): Promise<
-              [string, PrListItem | undefined]
-            > => {
-              try {
-                const result = await fetchTaskStorePrs(
-                  new URLSearchParams({ repo: r, prNumber: String(p) }),
-                );
-                return [key, result.prs[0]];
-              } catch {
-                return [key, undefined];
-              }
-            },
-          ),
-        );
-        const prsByPairKey = new Map(pairResults);
-        for (const t of tasks) {
-          if (t.repo && t.pr) {
-            const pr = prsByPairKey.get(`${t.repo}#${t.pr}`);
-            if (pr) prsByTaskId[t.id] = pr;
-          }
-        }
-      }
-    }
+    // Resolve each task's linked PR (AXR-1.2) — same pattern as GET
+    // /admin/prs's linkedTasksByPr join, and the single-task version at GET
+    // /admin/tasks/:id, just batched.
+    const prsByTaskId = await joinPrsByTaskId(tasks, fetchTaskStorePrs);
 
     // Build suggestions for autocomplete datalists only when task-store integration is active.
     // Skip the DB query entirely when fetchDistinctTaskValues is not configured.
@@ -3242,6 +3295,11 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
       }
     }
 
+    // SESH-5.1: resolve each waiting-candidate task's linked PR so
+    // renderSessionDetailPage can classify "pr_blocked" rows — a failed join
+    // never breaks the page, it just means no task classifies that way.
+    const prsByTaskId = await joinPrsByTaskId(tasks, fetchTaskStorePrs);
+
     // SESH-4.2: replaces the old flat `if (!isAdmin) 403` gate with a
     // session-scope.ts-based visibility check — an admin always sees the
     // page; a member sees it only when one of the session's own tasks is
@@ -3275,6 +3333,40 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
       }
     }
 
+    // SESH-5.2: the ?success=/?error= flash-message convention used
+    // elsewhere in this file (e.g. the agent detail page's
+    // ?success=manifest_synced handling) — set by
+    // registerSessionAdminActionsRoutes()'s archive/unarchive/rename
+    // redirects below.
+    const successParam = c.req.query("success");
+    const errorParam = c.req.query("error");
+    const notice = successParam
+      ? {
+          kind: "success" as const,
+          message: SESSION_ADMIN_ACTION_MESSAGES[successParam] ?? successParam,
+        }
+      : errorParam
+        ? {
+            kind: "error" as const,
+            message: SESSION_ADMIN_ACTION_MESSAGES[errorParam] ?? errorParam,
+          }
+        : undefined;
+
+    // SESH-5.3: best-effort follow-state lookup for the button's initial
+    // render. Independent of the task-store `degraded` flag (it's a
+    // DB-backed lookup, not a task-store fetch) — fail open to "not
+    // following" on error since this is just button display state, not a
+    // security check (the follow route itself enforces visibility).
+    let isFollowing = false;
+    try {
+      isFollowing = await resolveIsFollowingSession(
+        c.var.userEmail,
+        sessionId,
+      );
+    } catch {
+      isFollowing = false;
+    }
+
     return html(
       renderSessionDetailPage(
         sessionId,
@@ -3282,6 +3374,10 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
         c.var.userEmail,
         degraded,
         backHref,
+        prsByTaskId,
+        c.var.isAdmin,
+        notice,
+        isFollowing,
       ),
     );
   });
@@ -3294,6 +3390,13 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
     agentMemberService,
     agentService,
     fetchTaskStoreSession,
+  });
+
+  // ─── Session admin actions: archive/unarchive/rename (SESH-5.2) ───────────
+
+  registerSessionAdminActionsRoutes(app, {
+    requireAuth,
+    patchTaskStoreSession,
   });
 
   // ─── Notification settings (SESH-6.3) ─────────────────────────────────────

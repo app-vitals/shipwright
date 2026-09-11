@@ -8367,6 +8367,280 @@ describe("renderSessionDetailPage", () => {
     expect(html).toContain("Sparse task");
     expect(html).toContain(">1<"); // 1 total task
   });
+
+  // ─── Admin actions: archive/unarchive/rename (SESH-5.2) ─────────────────────
+
+  test("isAdmin=false (default): no archive/unarchive/rename controls are present", () => {
+    const html = renderSessionDetailPage(SESSION_ID, MIXED_TASKS, USER_NAME);
+    expect(html).not.toContain(`/admin/sessions/${SESSION_ID}/archive`);
+    expect(html).not.toContain(`/admin/sessions/${SESSION_ID}/unarchive`);
+    expect(html).not.toContain(`/admin/sessions/${SESSION_ID}/rename`);
+    expect(html).not.toContain("newTitle");
+  });
+
+  test("isAdmin=true: archive, unarchive, and rename forms are present", () => {
+    const html = renderSessionDetailPage(
+      SESSION_ID,
+      MIXED_TASKS,
+      USER_NAME,
+      false,
+      "/admin/tasks",
+      {},
+      true,
+    );
+    expect(html).toContain(`action="/admin/sessions/${SESSION_ID}/archive"`);
+    expect(html).toContain(`action="/admin/sessions/${SESSION_ID}/unarchive"`);
+    expect(html).toContain(`action="/admin/sessions/${SESSION_ID}/rename"`);
+    expect(html).toContain('name="newTitle"');
+  });
+
+  test("a session id with characters needing escaping is URL-encoded in admin action form action attributes", () => {
+    const xssSession = "session<script>";
+    const html = renderSessionDetailPage(
+      xssSession,
+      [],
+      USER_NAME,
+      false,
+      "/admin/tasks",
+      {},
+      true,
+    );
+    expect(html).not.toContain(
+      `action="/admin/sessions/${xssSession}/archive"`,
+    );
+    expect(html).toContain(
+      `action="/admin/sessions/${encodeURIComponent(xssSession)}/archive"`,
+    );
+  });
+
+  test("notice: a success notice renders an alert-success banner with the message", () => {
+    const html = renderSessionDetailPage(
+      SESSION_ID,
+      MIXED_TASKS,
+      USER_NAME,
+      false,
+      "/admin/tasks",
+      {},
+      true,
+      { kind: "success", message: "Session archived." },
+    );
+    expect(html).toContain('class="alert alert-success"');
+    expect(html).toContain("Session archived.");
+  });
+
+  test("notice: an error notice renders an alert-error banner with the message", () => {
+    const html = renderSessionDetailPage(
+      SESSION_ID,
+      MIXED_TASKS,
+      USER_NAME,
+      false,
+      "/admin/tasks",
+      {},
+      true,
+      { kind: "error", message: "Failed to archive the session." },
+    );
+    expect(html).toContain('class="alert alert-error"');
+    expect(html).toContain("Failed to archive the session.");
+  });
+
+  test("no notice: no alert-success/alert-error banner is rendered", () => {
+    const html = renderSessionDetailPage(SESSION_ID, MIXED_TASKS, USER_NAME);
+    expect(html).not.toContain('class="alert alert-success"');
+    expect(html).not.toContain('class="alert alert-error"');
+  });
+});
+
+// ─── renderSessionDetailPage — Needs-you panel + header state badge (SESH-5.1)
+
+describe("renderSessionDetailPage — Needs-you panel + header state badge", () => {
+  const SESSION_ID = "session-needs-you";
+
+  test("a blocked task renders a waiting header badge, the Needs-you panel, Blocked kind, reason, since, task link, and unblock hint", () => {
+    const blocked: TaskItem = {
+      id: "TASK-BLOCKED",
+      title: "Stuck",
+      status: "blocked",
+      session: SESSION_ID,
+      blockedReason: "Ambiguous requirement",
+      updatedAt: "2026-05-01T00:00:00.000Z",
+    };
+    const html = renderSessionDetailPage(SESSION_ID, [blocked], USER_NAME);
+    expect(html).toContain("Needs you");
+    expect(html).toContain("Blocked");
+    expect(html).toContain("Ambiguous requirement");
+    expect(html).toContain("2026-05-01T00:00:00.000Z");
+    expect(html).toContain('href="/admin/tasks/TASK-BLOCKED"');
+    expect(html).toContain("/shipwright:unblock TASK-BLOCKED");
+    expect(html).toContain("Waiting");
+    expect(html).toContain("Waiting since 2026-05-01T00:00:00.000Z");
+  });
+
+  test("a hitl task with no unmet dependency renders the HITL kind + the fixed hint string", () => {
+    const hitlTask: TaskItem = {
+      id: "TASK-HITL",
+      title: "Needs a human",
+      status: "in_progress",
+      session: SESSION_ID,
+      hitl: true,
+      updatedAt: "2026-05-02T00:00:00.000Z",
+    };
+    const html = renderSessionDetailPage(SESSION_ID, [hitlTask], USER_NAME);
+    expect(html).toContain("Needs you");
+    expect(html).toContain("HITL");
+    expect(html).toContain("Needs human via /shipwright:hitl");
+    expect(html).toContain("/shipwright:hitl TASK-HITL");
+  });
+
+  test("a hitl task with an unmet dependency does NOT classify as waiting (dependency-only waits excluded)", () => {
+    const hitlWithDependency: TaskItem = {
+      id: "TASK-HITL-DEP",
+      title: "Needs a human, but blocked on a dependency first",
+      status: "pending",
+      session: SESSION_ID,
+      hitl: true,
+      blockedBy: [{ type: "dependency", id: "TASK-0", status: "pending" }],
+      updatedAt: "2026-05-03T00:00:00.000Z",
+    };
+    const html = renderSessionDetailPage(
+      SESSION_ID,
+      [hitlWithDependency],
+      USER_NAME,
+    );
+    expect(html).not.toContain("Needs you");
+  });
+
+  test("a task with pr set and a blocked joined PR renders the PR blocked kind, the PR's blockedReason, and a PR link", () => {
+    const prBlockedTask: TaskItem = {
+      id: "TASK-PR-BLOCKED",
+      title: "Its PR is stuck",
+      status: "pr_open",
+      session: SESSION_ID,
+      pr: 77,
+      prUrl: "https://github.com/example-org/example-repo/pull/77",
+      updatedAt: "2026-05-04T00:00:00.000Z",
+    };
+    const prsByTaskId: Record<string, PrListItem> = {
+      "TASK-PR-BLOCKED": {
+        id: "pr-77",
+        repo: "example-org/example-repo",
+        prNumber: 77,
+        staged: false,
+        state: "open",
+        reviewState: "in_review",
+        patchCycles: 0,
+        reviewCycles: 0,
+        blocked: true,
+        blockedReason: "Waiting on CI",
+      },
+    };
+    const html = renderSessionDetailPage(
+      SESSION_ID,
+      [prBlockedTask],
+      USER_NAME,
+      false,
+      "/admin/tasks",
+      prsByTaskId,
+    );
+    expect(html).toContain("Needs you");
+    expect(html).toContain("PR blocked");
+    expect(html).toContain("Waiting on CI");
+    expect(html).toContain(
+      'href="https://github.com/example-org/example-repo/pull/77"',
+    );
+    expect(html).toContain("/shipwright:unblock TASK-PR-BLOCKED");
+  });
+
+  test("a non-waiting session (active/closed only) renders no Needs-you panel and no Waiting header state", () => {
+    const activeTask: TaskItem = {
+      id: "TASK-ACTIVE",
+      title: "In flight",
+      status: "in_progress",
+      session: SESSION_ID,
+      updatedAt: "2026-05-05T00:00:00.000Z",
+    };
+    const html = renderSessionDetailPage(SESSION_ID, [activeTask], USER_NAME);
+    expect(html).not.toContain("Needs you");
+    expect(html).not.toContain("Waiting since");
+  });
+
+  test("an empty session renders the Empty header state and no Needs-you panel", () => {
+    const html = renderSessionDetailPage(SESSION_ID, [], USER_NAME);
+    expect(html).toContain(">Empty<");
+    expect(html).not.toContain("Needs you");
+  });
+
+  test("a fully-closed session renders the Closed header state and no Needs-you panel", () => {
+    const closedTask: TaskItem = {
+      id: "TASK-DONE",
+      title: "Shipped",
+      status: "done",
+      session: SESSION_ID,
+      updatedAt: "2026-05-06T00:00:00.000Z",
+    };
+    const html = renderSessionDetailPage(SESSION_ID, [closedTask], USER_NAME);
+    expect(html).toContain(">Closed<");
+    expect(html).not.toContain("Needs you");
+  });
+
+  test("escapes HTML in a blocked task's blockedReason", () => {
+    const xssBlocked: TaskItem = {
+      id: "TASK-XSS-BLOCKED",
+      title: "xss",
+      status: "blocked",
+      session: SESSION_ID,
+      blockedReason: '"><script>xssBlocked()</script>',
+      updatedAt: "2026-05-07T00:00:00.000Z",
+    };
+    const html = renderSessionDetailPage(SESSION_ID, [xssBlocked], USER_NAME);
+    expect(html).not.toContain("<script>xssBlocked()</script>");
+  });
+
+  test("escapes HTML in a pr_blocked task's joined PR blockedReason", () => {
+    const xssPrTask: TaskItem = {
+      id: "TASK-XSS-PR",
+      title: "xss",
+      status: "pr_open",
+      session: SESSION_ID,
+      pr: 88,
+      updatedAt: "2026-05-08T00:00:00.000Z",
+    };
+    const prsByTaskId: Record<string, PrListItem> = {
+      "TASK-XSS-PR": {
+        id: "pr-88",
+        repo: "example-org/example-repo",
+        prNumber: 88,
+        staged: false,
+        state: "open",
+        reviewState: "in_review",
+        patchCycles: 0,
+        reviewCycles: 0,
+        blocked: true,
+        blockedReason: '"><script>xssPr()</script>',
+      },
+    };
+    const html = renderSessionDetailPage(
+      SESSION_ID,
+      [xssPrTask],
+      USER_NAME,
+      false,
+      "/admin/tasks",
+      prsByTaskId,
+    );
+    expect(html).not.toContain("<script>xssPr()</script>");
+  });
+
+  test("escapes HTML in a task's prUrl", () => {
+    const xssPrUrlTask: TaskItem = {
+      id: "TASK-XSS-PRURL",
+      title: "xss",
+      status: "blocked",
+      session: SESSION_ID,
+      prUrl: '"><script>xssPrUrl()</script>',
+      updatedAt: "2026-05-09T00:00:00.000Z",
+    };
+    const html = renderSessionDetailPage(SESSION_ID, [xssPrUrlTask], USER_NAME);
+    expect(html).not.toContain("<script>xssPrUrl()</script>");
+  });
 });
 
 // ─── renderSessionDetailPage — dependency graph ──────────────────────────────

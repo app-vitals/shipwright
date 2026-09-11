@@ -3103,6 +3103,186 @@ const TASK_STATE_GROUPS: { key: TaskState; label: string }[] = [
   { key: "closed", label: "Closed" },
 ];
 
+// ─── Needs-you panel + header state badge (SESH-5.1) ─────────────────────────
+//
+// Mirrors task-store/src/session-rollup.ts's classifyWaiting precedence
+// (blocked > pr_blocked > hitl), reimplemented here against the TaskItem/
+// PrListItem shapes already available on the admin side — this file avoids
+// importing task-store internals (same convention as the BlockedByEntry
+// mirror above). A task only counts as waiting when it's open (not in
+// SESSION_CLOSED_STATUSES).
+
+export type WaitingKind = "hitl" | "blocked" | "pr_blocked";
+
+export interface SessionWaitingTask {
+  task: TaskItem;
+  kind: WaitingKind;
+}
+
+function classifyWaitingTask(
+  task: TaskItem,
+  prsByTaskId: Record<string, PrListItem>,
+): WaitingKind | null {
+  if (task.status === "blocked") return "blocked";
+  if (task.pr != null && prsByTaskId[task.id]?.blocked === true) {
+    return "pr_blocked";
+  }
+  if (task.hitl === true) {
+    const hasUnmetDependency = (task.blockedBy ?? []).some(
+      (entry) => entry.type === "dependency",
+    );
+    if (!hasUnmetDependency) return "hitl";
+  }
+  return null;
+}
+
+/** Computes the session's waiting tasks — open tasks (not in
+ * SESSION_CLOSED_STATUSES) that classify into a WaitingKind. `prsByTaskId`
+ * defaults to `{}` so callers with no PR join simply never surface
+ * "pr_blocked" rows. */
+export function computeSessionWaitingTasks(
+  tasks: TaskItem[],
+  prsByTaskId: Record<string, PrListItem> = {},
+): SessionWaitingTask[] {
+  const waiting: SessionWaitingTask[] = [];
+  for (const t of tasks) {
+    if (SESSION_CLOSED_STATUSES.has(t.status)) continue;
+    const kind = classifyWaitingTask(t, prsByTaskId);
+    if (kind) waiting.push({ task: t, kind });
+  }
+  return waiting;
+}
+
+export type SessionRollupState = "waiting" | "active" | "closed" | "empty";
+
+/** Session-level state: "empty" with zero tasks; "closed" when every task is
+ * closed; "waiting" when at least one open task is waiting; else "active". */
+export function computeSessionState(
+  tasks: TaskItem[],
+  waitingTasks: SessionWaitingTask[],
+): SessionRollupState {
+  if (tasks.length === 0) return "empty";
+  const openCount = tasks.filter(
+    (t) => !SESSION_CLOSED_STATUSES.has(t.status),
+  ).length;
+  if (openCount === 0) return "closed";
+  if (waitingTasks.length > 0) return "waiting";
+  return "active";
+}
+
+/** Earliest `updatedAt` among the session's waiting tasks (mirrors
+ * session-rollup.ts's `waitingSince`) — null when no waiting task carries an
+ * `updatedAt`. */
+function computeWaitingSince(
+  waitingTasks: SessionWaitingTask[],
+): string | null {
+  let earliest: string | null = null;
+  for (const { task } of waitingTasks) {
+    if (!task.updatedAt) continue;
+    if (
+      earliest === null ||
+      new Date(task.updatedAt).getTime() < new Date(earliest).getTime()
+    ) {
+      earliest = task.updatedAt;
+    }
+  }
+  return earliest;
+}
+
+const WAITING_KIND_LABEL: Record<WaitingKind, string> = {
+  hitl: "HITL",
+  blocked: "Blocked",
+  pr_blocked: "PR blocked",
+};
+
+const WAITING_KIND_BADGE_CLASS: Record<WaitingKind, string> = {
+  hitl: "badge-purple",
+  blocked: "badge-red",
+  pr_blocked: "badge-warning",
+};
+
+/** Per-row reason text: blockedReason for "blocked", the joined PR's
+ * blockedReason for "pr_blocked" (no natural per-task reason field exists
+ * for hitl, so that case is a fixed descriptive string). */
+function waitingTaskReason(
+  entry: SessionWaitingTask,
+  prsByTaskId: Record<string, PrListItem>,
+): string | null {
+  if (entry.kind === "blocked") return entry.task.blockedReason ?? null;
+  if (entry.kind === "pr_blocked") {
+    return prsByTaskId[entry.task.id]?.blockedReason ?? null;
+  }
+  return "Needs human via /shipwright:hitl";
+}
+
+/** Copyable slash-command hint for the row's kind — no clipboard JS, just
+ * plain selectable text in a <code> span. */
+function waitingTaskHint(entry: SessionWaitingTask): string {
+  return entry.kind === "hitl"
+    ? `/shipwright:hitl ${entry.task.id}`
+    : `/shipwright:unblock ${entry.task.id}`;
+}
+
+function renderNeedsYouPanel(
+  waitingTasks: SessionWaitingTask[],
+  prsByTaskId: Record<string, PrListItem>,
+): string {
+  const rows = waitingTasks
+    .map((entry) => {
+      const { task, kind } = entry;
+      const reason = waitingTaskReason(entry, prsByTaskId);
+      const since = task.updatedAt ?? null;
+      const prLink =
+        task.prUrl != null
+          ? `<a href="${escapeHtml(task.prUrl)}" target="_blank" rel="noopener" style="color:#6366f1;text-decoration:none">PR</a>`
+          : '<span style="color:#9ca3af">—</span>';
+      return `<tr>
+        <td><span class="badge ${WAITING_KIND_BADGE_CLASS[kind]}">${escapeHtml(WAITING_KIND_LABEL[kind])}</span></td>
+        <td style="font-size:12px">${reason ? escapeHtml(reason) : '<span style="color:#9ca3af">—</span>'}</td>
+        <td style="font-size:12px">${since ? escapeHtml(since) : '<span style="color:#9ca3af">—</span>'}</td>
+        <td class="mono" style="font-size:11px"><a href="/admin/tasks/${escapeHtml(task.id)}" style="color:#6366f1;text-decoration:none">${escapeHtml(task.id)}</a></td>
+        <td style="font-size:12px">${prLink}</td>
+        <td class="mono" style="font-size:11px"><code>${escapeHtml(waitingTaskHint(entry))}</code></td>
+      </tr>`;
+    })
+    .join("\n");
+
+  return `<div class="card" style="margin-bottom:16px">
+      <div style="font-size:12px;font-weight:600;color:#374151;margin-bottom:12px;text-transform:uppercase;letter-spacing:.05em">Needs you</div>
+      <div class="data-table-wrapper">
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th>Kind</th>
+              <th>Reason</th>
+              <th>Since</th>
+              <th>Task</th>
+              <th>PR</th>
+              <th>Command</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${rows}
+          </tbody>
+        </table>
+      </div>
+    </div>`;
+}
+
+const SESSION_STATE_LABEL: Record<SessionRollupState, string> = {
+  waiting: "Waiting",
+  active: "Active",
+  closed: "Closed",
+  empty: "Empty",
+};
+
+const SESSION_STATE_BADGE_CLASS: Record<SessionRollupState, string> = {
+  waiting: "badge-warning",
+  active: "badge-blue",
+  closed: "badge-green",
+  empty: "badge-gray",
+};
+
 // ─── Board column bucketing (AXR-1.2) ────────────────────────────────────────
 //
 // Single source of truth for the task board's 5 possible bucket values —
@@ -3450,10 +3630,63 @@ export function renderSessionDetailPage(
   userName: string,
   degraded = false,
   backHref = "/admin/tasks",
+  prsByTaskId: Record<string, PrListItem> = {},
+  isAdmin = false,
+  notice?: { kind: "success" | "error"; message: string },
+  isFollowing = false,
 ): string {
   const degradedHtml = degraded
     ? `<div class="alert alert-warning">Task store unavailable — data shown may be stale or empty.</div>`
     : "";
+
+  const noticeHtml = notice
+    ? `<div class="alert alert-${notice.kind === "success" ? "success" : "error"}">${escapeHtml(notice.message)}</div>`
+    : "";
+
+  // SESH-5.2: admin-only archive/unarchive/rename controls. Both archive and
+  // unarchive forms are always rendered together (rather than resolving the
+  // session's current archived state to show only the applicable one) —
+  // task-store's SessionService.update() treats either as a harmless,
+  // idempotent re-stamp when already in that state, and this route has no
+  // cheap access to the session's current archived flag without an extra
+  // fetch. Never rendered at all for a non-admin caller.
+  const adminActionsHtml = isAdmin
+    ? `<div class="card" style="margin-bottom:16px">
+      <div style="font-size:12px;font-weight:600;color:#374151;margin-bottom:12px;text-transform:uppercase;letter-spacing:.05em">Admin actions</div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+        <form method="POST" action="/admin/sessions/${encodeURIComponent(sessionId)}/archive" style="margin:0">
+          <button type="submit" class="btn btn-secondary">Archive</button>
+        </form>
+        <form method="POST" action="/admin/sessions/${encodeURIComponent(sessionId)}/unarchive" style="margin:0">
+          <button type="submit" class="btn btn-secondary">Unarchive</button>
+        </form>
+        <form method="POST" action="/admin/sessions/${encodeURIComponent(sessionId)}/rename" style="margin:0;display:flex;gap:6px;align-items:center">
+          <input type="text" name="newTitle" placeholder="New title (blank clears it)" class="form-input" style="max-width:240px" />
+          <button type="submit" class="btn btn-secondary">Rename</button>
+        </form>
+      </div>
+    </div>`
+    : "";
+
+  const waitingTasks = computeSessionWaitingTasks(tasks, prsByTaskId);
+  const sessionState = computeSessionState(tasks, waitingTasks);
+  const waitingSince = computeWaitingSince(waitingTasks);
+
+  const stateBadgeHtml = `<span class="badge ${SESSION_STATE_BADGE_CLASS[sessionState]}">${escapeHtml(SESSION_STATE_LABEL[sessionState])}</span>`;
+  const waitingSinceHtml =
+    sessionState === "waiting" && waitingSince
+      ? `<span style="font-size:12px;color:#6b7280">Waiting since ${escapeHtml(waitingSince)}</span>`
+      : "";
+
+  // SESH-5.3: Follow/Unfollow button. Initial label/data-following reflect
+  // the server-resolved follow state; the inline script below toggles both
+  // client-side after a successful POST, with no full page reload.
+  const followButtonHtml = `<button type="button" id="session-follow-btn" class="btn btn-secondary" style="padding:5px 12px;font-size:13px" data-slug="${escapeHtml(sessionId)}" data-following="${isFollowing ? "true" : "false"}">${isFollowing ? "Following" : "Follow"}</button>`;
+
+  const needsYouSection =
+    sessionState === "waiting"
+      ? renderNeedsYouPanel(waitingTasks, prsByTaskId)
+      : "";
 
   const totalTasks = tasks.length;
   const totalHours = tasks.reduce((sum, t) => sum + (t.hours ?? 0), 0);
@@ -3523,13 +3756,19 @@ export function renderSessionDetailPage(
     <div class="page-header" style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">
       <a href="${escapeHtml(backHref)}" style="color:#6b7280;font-size:13px;text-decoration:none">← Tasks</a>
       <h1 class="page-title" style="margin:0;flex:1">Session <span class="mono">${escapeHtml(sessionId)}</span></h1>
+      ${stateBadgeHtml}
+      ${waitingSinceHtml}
+      ${followButtonHtml}
     </div>
     ${degradedHtml}
+    ${noticeHtml}
+    ${adminActionsHtml}
     <div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:16px">
       ${statCard("Total Tasks", String(totalTasks))}
       ${statCard("Est. Hours", String(totalHours))}
       ${statCard("Layers", String(distinctLayers))}
     </div>
+    ${needsYouSection}
     <div style="font-size:13px;color:#374151;margin-bottom:12px">
       ${TASK_STATE_GROUPS.map(
         ({ key, label }) =>
@@ -3557,7 +3796,33 @@ export function renderSessionDetailPage(
       </div>
     </div>
     ${depsSection}
-  </div>`,
+  </div>
+  <script>
+  (function() {
+    var btn = document.getElementById('session-follow-btn');
+    if (!btn) return;
+    btn.addEventListener('click', function() {
+      var slug = btn.getAttribute('data-slug');
+      var following = btn.getAttribute('data-following') === 'true';
+      var action = following ? 'unfollow' : 'follow';
+      btn.disabled = true;
+      fetch('/admin/sessions/' + encodeURIComponent(slug) + '/' + action, {
+        method: 'POST',
+      }).then(function(r) {
+        if (!r.ok) throw new Error('request failed');
+        return r.json();
+      }).then(function(data) {
+        var nowFollowing = Boolean(data && data.following);
+        btn.setAttribute('data-following', nowFollowing ? 'true' : 'false');
+        btn.textContent = nowFollowing ? 'Following' : 'Follow';
+      }).catch(function() {
+        // Leave the button's prior state/label in place on failure.
+      }).finally(function() {
+        btn.disabled = false;
+      });
+    });
+  })();
+  </script>`,
   });
 }
 
