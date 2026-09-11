@@ -18,6 +18,7 @@ import { BadRequestError, ConflictError, NotFoundError } from "./errors.ts";
 import type { Prisma, PrismaClient, Task, TaskEvent } from "./index.ts";
 import { buildRepoOrgWhere } from "./lib/repo-org-filter.ts";
 import { resolveReadyTasks } from "./ready.ts";
+import { SessionService } from "./session-service.ts";
 import { CLOSED_STATUSES, OPEN_STATUSES } from "./statuses.ts";
 import { writeTaskEvents } from "./task-transition-diff.ts";
 
@@ -286,10 +287,14 @@ export interface TaskServiceLike {
 }
 
 export class TaskService implements TaskServiceLike {
+  private sessionService: SessionService;
+
   constructor(
     private prisma: PrismaClient,
     private clock: Clock = SystemClock(),
-  ) {}
+  ) {
+    this.sessionService = new SessionService(prisma, clock);
+  }
 
   // ─── Reads ─────────────────────────────────────────────────────────────────
 
@@ -559,10 +564,29 @@ export class TaskService implements TaskServiceLike {
 
   // ─── Writes ────────────────────────────────────────────────────────────────
 
+  /**
+   * Wrapped in a $transaction so a non-blank `data.session` upserts the
+   * corresponding Session row (create-if-missing, un-archive-on-write —
+   * see SessionService.upsert()) atomically with the task create. A blank
+   * session (null/undefined/whitespace-only) is a no-op for the Session
+   * table, so this is functionally unchanged for callers not using session.
+   */
   async create(data: Prisma.TaskCreateInput): Promise<Task> {
-    return this.prisma.task.create({ data });
+    return this.prisma.$transaction(async (tx) => {
+      const task = await tx.task.create({ data });
+      await this.sessionService.upsert(tx, task.session);
+      return task;
+    });
   }
 
+  /**
+   * Each task's create + its Session upsert run inside one $transaction per
+   * loop iteration (not one transaction for the whole bulk call) — this
+   * preserves the pre-existing partial-success semantics: one task's P2002
+   * collision (caught below) doesn't roll back tasks already inserted
+   * earlier in the same bulk() call, matching the try/catch-per-item
+   * behavior this had before session support was added.
+   */
   async bulk(
     tasks: Prisma.TaskCreateInput[],
   ): Promise<{ inserted: number; updated: number; skipped: string[] }> {
@@ -570,7 +594,10 @@ export class TaskService implements TaskServiceLike {
     const skipped: string[] = [];
     for (const task of tasks) {
       try {
-        await this.prisma.task.create({ data: task });
+        await this.prisma.$transaction(async (tx) => {
+          const created = await tx.task.create({ data: task });
+          await this.sessionService.upsert(tx, created.session);
+        });
         inserted++;
       } catch (err: unknown) {
         // P2002 = unique constraint violation (id already exists) — skip, but

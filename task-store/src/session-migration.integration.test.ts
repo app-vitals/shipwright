@@ -12,7 +12,14 @@
  * Requires DATABASE_URL_SHIPWRIGHT_TASK_STORE_TEST to be set; skips otherwise.
  */
 
-import { afterEach, beforeEach, describe, expect, it } from "bun:test";
+import {
+  afterAll,
+  afterEach,
+  beforeEach,
+  describe,
+  expect,
+  it,
+} from "bun:test";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { PrismaClient } from "../prisma/client/index.js";
@@ -89,9 +96,7 @@ async function hasSessionColumn(
 /**
  * Get column info for the Session table (type, nullable, defaults).
  */
-async function getSessionColumnInfo(
-  prisma: PrismaClient,
-): Promise<
+async function getSessionColumnInfo(prisma: PrismaClient): Promise<
   Array<{
     column_name: string;
     data_type: string;
@@ -133,6 +138,30 @@ describeOrSkip("add Session model migration (integration)", () => {
   afterEach(async () => {
     await dropSessionTable(prisma);
     await prisma.$disconnect();
+  });
+
+  // The suite's own migrations already applied this migration once (via
+  // `prisma migrate deploy`) before any test file ran, so the Session table
+  // is expected to exist for every OTHER test file/suite that depends on it
+  // (e.g. session-service.integration.test.ts) — this file just re-applies
+  // and re-drops it per-test to exercise the migration.sql in isolation.
+  // Without restoring it here, this file's last afterEach leaves the table
+  // dropped for the remainder of the `bun test` run (file execution order is
+  // alphabetical, so session-migration runs before session-service),
+  // breaking every later suite that assumes Session already exists. Re-run
+  // the migration statements one more time after all of this file's tests
+  // finish so the table is left in the same state this file found it in.
+  afterAll(async () => {
+    const restore = makePrisma();
+    try {
+      if (!(await hasSessionTable(restore))) {
+        for (const statement of migrationStatements()) {
+          await restore.$executeRawUnsafe(statement);
+        }
+      }
+    } finally {
+      await restore.$disconnect();
+    }
   });
 
   it("creates the Session table", async () => {
@@ -261,9 +290,7 @@ describeOrSkip("add Session model migration (integration)", () => {
     // Verify we can query it back
     const sessions = await prisma.$queryRawUnsafe<
       Array<{ slug: string; title: string | null }>
-    >(
-      `SELECT "slug", "title" FROM "Session" WHERE "slug" = 'test-session-1';`,
-    );
+    >(`SELECT "slug", "title" FROM "Session" WHERE "slug" = 'test-session-1';`);
 
     expect(sessions).toHaveLength(1);
     expect(sessions[0]?.slug).toBe("test-session-1");
