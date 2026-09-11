@@ -222,9 +222,13 @@ export class PushService {
    * Sends a session-lifecycle notification (SESH-7.1) to every email on
    * `session.emails`, then prunes any endpoints the sender reports gone.
    * Never throws into the caller — same convenience-layer contract as
-   * notifyThreadReply. The payload here is a deliberate placeholder: the
-   * real content policy (SESH-7.2's buildSessionNotificationPayload) is a
-   * separate, later task.
+   * notifyThreadReply. The payload *content* here is a deliberate
+   * placeholder (the real content policy is SESH-7.2's
+   * buildSessionNotificationPayload), but the detail level it carries is not:
+   * `level` is the caller's per-call ceiling, and the effective level of each
+   * subscription's payload is min(caller ceiling, operator ceiling, that
+   * subscription's opt-in) — the same privacy invariant notifyThreadReply
+   * honors. A caller can ask for less detail, never more.
    */
   async notifySession(
     session: NotificationSession,
@@ -233,8 +237,14 @@ export class PushService {
   ): Promise<{ delivered: number; pruned: number }> {
     try {
       if (session.emails.length === 0) return { delivered: 0, pruned: 0 };
-      return await this.sendToUsers(session.emails, () =>
-        JSON.stringify({ kind, slug: session.slug, level }),
+      // `subLevel` already is min(this.maxDetail, subscription opt-in);
+      // resolveDetailLevel caps it once more against the caller's request.
+      return await this.sendToUsers(session.emails, (subLevel) =>
+        JSON.stringify({
+          kind,
+          slug: session.slug,
+          level: resolveDetailLevel(level, subLevel),
+        }),
       );
     } catch (err) {
       console.error("[push] notifySession failed:", err);

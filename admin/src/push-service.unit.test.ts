@@ -258,6 +258,98 @@ describe("PushService.notifySession", () => {
     expect(result).toEqual({ delivered: 0, pruned: 0 });
   });
 
+  it("builds each payload at min(caller level, operator ceiling, subscription opt-in)", async () => {
+    const { prisma } = fakePrisma(
+      [],
+      [
+        {
+          id: "1",
+          userEmail: "a@x.com",
+          endpoint: "https://push/ok",
+          p256dh: P256DH,
+          auth: AUTH,
+          detailOptIn: "preview",
+        },
+      ],
+    );
+    const fetchImpl = (async () =>
+      new Response(null, { status: 201 })) as unknown as typeof fetch;
+    // Operator ceiling = title, so every subscription resolves to at most
+    // "title" before the caller's own ceiling is applied.
+    const service = new PushService(prisma as never, vapid, fetchImpl, "title");
+
+    // The encrypted push body isn't inspectable, so capture the payload
+    // builder notifySession hands to the extracted core and exercise it with
+    // the per-subscription levels sendToUsers would resolve.
+    const built: string[] = [];
+    const realSendToUsers = service.sendToUsers.bind(service);
+    service.sendToUsers = (emails, buildPayload) =>
+      realSendToUsers(emails, (subLevel) => {
+        const payload = buildPayload(subLevel);
+        built.push(payload);
+        return payload;
+      });
+
+    await service.notifySession(
+      { slug: "sesh_1", emails: ["a@x.com"] },
+      "generic",
+      "immediate",
+    );
+
+    // Subscription opted into "preview", operator ceiling is "title", caller
+    // asked for "generic" — the lowest of the three wins.
+    expect(built).toEqual([
+      JSON.stringify({ kind: "immediate", slug: "sesh_1", level: "generic" }),
+    ]);
+  });
+
+  it("never exceeds the per-subscription level even when the caller asks for more detail", async () => {
+    const { prisma } = fakePrisma(
+      [],
+      [
+        {
+          id: "1",
+          userEmail: "a@x.com",
+          endpoint: "https://push/ok",
+          p256dh: P256DH,
+          auth: AUTH,
+          detailOptIn: "generic",
+        },
+        {
+          id: "2",
+          userEmail: "b@x.com",
+          endpoint: "https://push/ok2",
+          p256dh: P256DH,
+          auth: AUTH,
+          detailOptIn: "preview",
+        },
+      ],
+    );
+    const fetchImpl = (async () =>
+      new Response(null, { status: 201 })) as unknown as typeof fetch;
+    const service = new PushService(prisma as never, vapid, fetchImpl, "title");
+
+    const built: string[] = [];
+    const realSendToUsers = service.sendToUsers.bind(service);
+    service.sendToUsers = (emails, buildPayload) =>
+      realSendToUsers(emails, (subLevel) => {
+        const payload = buildPayload(subLevel);
+        built.push(payload);
+        return payload;
+      });
+
+    await service.notifySession(
+      { slug: "sesh_1", emails: ["a@x.com", "b@x.com"] },
+      "preview",
+      "reminder",
+    );
+
+    // Per-subscriber, not one payload for everyone: the opted-out subscriber
+    // stays at "generic" while the opted-in one is still capped at the
+    // operator ceiling ("title"), never the requested "preview".
+    expect(built.map((p) => JSON.parse(p).level)).toEqual(["generic", "title"]);
+  });
+
   it("swallows a downstream failure and never throws into the caller", async () => {
     const prisma = {
       chatThreadWatch: { findMany: async () => [] },
