@@ -16,8 +16,9 @@ arguments:
 Parse `$ARGUMENTS` to extract:
 - **repo**: first argument
 - **session**: second argument
+- **`--autonomous {task-id}`** (optional): the id of the originating PRD task in the task store — the one flagged `autonomousPlanSession: true`. `{task-id}` is used by Step 4 and Step 5 for the hard-contradiction PATCH-to-blocked escape hatch, and by Step 6 for the on-success PATCH-to-done. **When `--autonomous` is present, `repo` and `session` are always passed explicitly by the machine dispatcher invoking this mode** — the single-argument auto-detect-and-confirm flow below does not apply and must not run in this mode.
 
-**If only one argument is provided**, treat it as `session` and auto-detect `repo`:
+**If only one argument is provided** (and `--autonomous` was not passed), treat it as `session` and auto-detect `repo`:
 1. `git remote get-url origin` → parse the `org/repo` value, stripping trailing `.git`. Preserve the full owner/repo value — do not strip it down to just the repo segment. This is the `repo` value used for the task-store `repo` field.
 2. Fallback (only when the remote parse fails): `basename $(git rev-parse --show-toplevel)`. In this fallback case there is no owner segment, so `repo` and `repo-slug` end up the same bare value.
 3. Derive `repo-slug` from `repo`: the last path segment, lowercased — e.g. `app-vitals/shipwright` → `shipwright`. Use `repo-slug` for all local filesystem path references.
@@ -162,6 +163,24 @@ If the spec is ambiguous or silent on a decision that affects the design, state 
 
 Iterate on feedback. Do not move to task breakdown until the design is approved.
 
+### `--autonomous` Mode
+
+When `--autonomous {task-id}` was passed, this replaces the iterate-until-approved loop above with accept-first-pass: a flagged PRD is already trusted/complete — not a first-draft ambiguous spec — so there is no human in this loop to iterate with.
+
+Apply a loose ambiguity bar with exactly two cases:
+
+- **Soft ambiguity** — the spec is silent, vague, or offers multiple reasonable readings on a design decision, but a sensible default exists. Apply the default. Do not stall or ask a clarifying question — log it (see Decision Log below) instead of flagging for human confirmation.
+- **Hard contradiction** — the spec's own requirements conflict with each other, or with a hard codebase constraint, in a way no default can resolve without guessing. Do NOT fabricate an answer or silently pick a side. Stop immediately:
+  ```bash
+  curl -sf -X PATCH -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
+    -H "Content-Type: application/json" \
+    "$SHIPWRIGHT_TASK_STORE_URL/tasks/{task-id}" \
+    -d '{"status": "blocked", "hitl": true, "blockedReason": "plan_session_autonomous_hard_contradiction: {one-line description}"}' | jq .
+  ```
+  Then stop the command entirely — do not proceed to Step 5.
+
+**Decision Log:** every default applied under the loose ambiguity bar above is recorded as a bullet under a `## Decision Log` section appended to the design writeup, in the form `- {decision point}: defaulted to {choice} — {one-line reason}`. This log carries through into `planning/{session}/PLAN.md` when Step 6a writes the plan to disk — this is what satisfies "every auto-approval decision recorded in the PLAN.md artifact."
+
 ---
 
 ## Step 5: Task Breakdown
@@ -263,6 +282,20 @@ A task that drops or renames something while a later task updates the consumers 
 If a task has no renames, removals, or constraint additions, mark it: `Safe to deploy standalone: yes`.
 
 Present the task list and dependency map as a first pass. The engineer reviews and iterates — they may catch implementation details, missing edge cases, or better task splits. Iterate until approved.
+
+### `--autonomous` Mode
+
+When `--autonomous {task-id}` was passed, apply the same loose ambiguity bar from Step 4 to breakdown-level decisions (how finely to split a task, which layer a cross-cutting task belongs to, complexity/model scoring judgment calls) — skip the "iterate until approved" loop above and proceed directly to Step 5.5 once the first-pass breakdown is accepted.
+
+- **Soft ambiguity** — the breakdown is silent, vague, or offers multiple reasonable readings on a breakdown-level decision, but a sensible default exists. Apply the default and append it to the same `## Decision Log` section started in Step 4 — do not stall or ask a clarifying question.
+- **Hard contradiction** — e.g. a task can't be made to satisfy Breaking Change Safety, or its acceptance criteria can't be made testable. Do NOT fabricate an answer or silently pick a side. Stop immediately using the same escape hatch as Step 4:
+  ```bash
+  curl -sf -X PATCH -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
+    -H "Content-Type: application/json" \
+    "$SHIPWRIGHT_TASK_STORE_URL/tasks/{task-id}" \
+    -d '{"status": "blocked", "hitl": true, "blockedReason": "plan_session_autonomous_hard_contradiction: {one-line description}"}' | jq .
+  ```
+  Then stop the command entirely — do not proceed to Step 5.5.
 
 ---
 
@@ -420,6 +453,19 @@ curl -sf -X POST \
   "$SHIPWRIGHT_TASK_STORE_URL/tasks/bulk" \
   --data-binary @/tmp/new-tasks-{session}.json | jq .
 ```
+
+**Step 6c — Autonomous mode: close out the originating PRD task** (only when `--autonomous {task-id}` was passed):
+
+Once Step 6b's bulk POST succeeds (real tasks are in the queue), transition the originating PRD task to `done` and point its `source` at the plan just written:
+
+```bash
+curl -sf -X PATCH -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
+  -H "Content-Type: application/json" \
+  "$SHIPWRIGHT_TASK_STORE_URL/tasks/{task-id}" \
+  -d "{\"status\": \"done\", \"source\": \"planning/{session}/PLAN.md\"}" | jq .
+```
+
+Only run this after the bulk write succeeds — a failed or partial `tasks/bulk` POST must not mark the originating task done.
 
 ---
 
