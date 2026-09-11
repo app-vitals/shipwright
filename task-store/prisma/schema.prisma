@@ -142,9 +142,9 @@ model Task {
 // deleted. Nothing deletes Task rows today, so this has no live effect.
 
 model TaskEvent {
-  id       String  @id @default(cuid())
+  id       String @id @default(cuid())
   taskId   String
-  task     Task    @relation(fields: [taskId], references: [id])
+  task     Task   @relation(fields: [taskId], references: [id])
   field    String
   oldValue String?
   newValue String?
@@ -365,7 +365,7 @@ model TaskToken {
   id        String    @id @default(cuid())
   token     String    @unique // SHA-256 hash of the raw token (hex)
   label     String?
-  agentId   String? // null = admin token; set = agent token scoped to this agent
+  agentId   String?   // null = admin token; set = agent token scoped to this agent
   createdAt DateTime  @default(now())
   revokedAt DateTime?
 }
