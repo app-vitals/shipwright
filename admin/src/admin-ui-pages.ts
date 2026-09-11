@@ -3631,6 +3631,7 @@ export function renderSessionDetailPage(
   degraded = false,
   backHref = "/admin/tasks",
   prsByTaskId: Record<string, PrListItem> = {},
+  isFollowing = false,
 ): string {
   const degradedHtml = degraded
     ? `<div class="alert alert-warning">Task store unavailable — data shown may be stale or empty.</div>`
@@ -3645,6 +3646,11 @@ export function renderSessionDetailPage(
     sessionState === "waiting" && waitingSince
       ? `<span style="font-size:12px;color:#6b7280">Waiting since ${escapeHtml(waitingSince)}</span>`
       : "";
+
+  // SESH-5.3: Follow/Unfollow button. Initial label/data-following reflect
+  // the server-resolved follow state; the inline script below toggles both
+  // client-side after a successful POST, with no full page reload.
+  const followButtonHtml = `<button type="button" id="session-follow-btn" class="btn btn-secondary" style="padding:5px 12px;font-size:13px" data-slug="${escapeHtml(sessionId)}" data-following="${isFollowing ? "true" : "false"}">${isFollowing ? "Following" : "Follow"}</button>`;
 
   const needsYouSection =
     sessionState === "waiting"
@@ -3721,6 +3727,7 @@ export function renderSessionDetailPage(
       <h1 class="page-title" style="margin:0;flex:1">Session <span class="mono">${escapeHtml(sessionId)}</span></h1>
       ${stateBadgeHtml}
       ${waitingSinceHtml}
+      ${followButtonHtml}
     </div>
     ${degradedHtml}
     <div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:16px">
@@ -3756,7 +3763,33 @@ export function renderSessionDetailPage(
       </div>
     </div>
     ${depsSection}
-  </div>`,
+  </div>
+  <script>
+  (function() {
+    var btn = document.getElementById('session-follow-btn');
+    if (!btn) return;
+    btn.addEventListener('click', function() {
+      var slug = btn.getAttribute('data-slug');
+      var following = btn.getAttribute('data-following') === 'true';
+      var action = following ? 'unfollow' : 'follow';
+      btn.disabled = true;
+      fetch('/admin/sessions/' + encodeURIComponent(slug) + '/' + action, {
+        method: 'POST',
+      }).then(function(r) {
+        if (!r.ok) throw new Error('request failed');
+        return r.json();
+      }).then(function(data) {
+        var nowFollowing = Boolean(data && data.following);
+        btn.setAttribute('data-following', nowFollowing ? 'true' : 'false');
+        btn.textContent = nowFollowing ? 'Following' : 'Follow';
+      }).catch(function() {
+        // Leave the button's prior state/label in place on failure.
+      }).finally(function() {
+        btn.disabled = false;
+      });
+    });
+  })();
+  </script>`,
   });
 }
 

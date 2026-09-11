@@ -7282,6 +7282,70 @@ describe("admin UI — session detail page", () => {
       `<a href="/admin/tasks/task-42" style="color:#6b7280;font-size:13px;text-decoration:none">← Tasks</a>`,
     );
   });
+
+  // ─── Follow/unfollow button (SESH-5.3) ─────────────────────────────────────
+
+  it("renders the Follow button when the current user does not follow the session", async () => {
+    const app = createAdminUIApp(
+      makeMockDeps({
+        fetchTaskStoreTasks: async () => ({
+          tasks: [],
+          total: 0,
+          limit: 500,
+          offset: 0,
+        }),
+        fetchIsFollowingSession: async () => false,
+      }),
+    );
+    const res = await app.request("/admin/sessions/session-abc", {
+      headers: { Cookie: `admin_session=${cookie}` },
+    });
+    expect(res.status).toBe(200);
+    const html = await res.text();
+    expect(html).toContain('data-following="false"');
+    expect(html).toContain(">Follow<");
+    expect(html).not.toContain(">Following<");
+  });
+
+  it("renders the Following button when the current user already follows the session", async () => {
+    const app = createAdminUIApp(
+      makeMockDeps({
+        fetchTaskStoreTasks: async () => ({
+          tasks: [],
+          total: 0,
+          limit: 500,
+          offset: 0,
+        }),
+        fetchIsFollowingSession: async () => true,
+      }),
+    );
+    const res = await app.request("/admin/sessions/session-abc", {
+      headers: { Cookie: `admin_session=${cookie}` },
+    });
+    expect(res.status).toBe(200);
+    const html = await res.text();
+    expect(html).toContain('data-following="true"');
+    expect(html).toContain(">Following<");
+  });
+
+  it("falls back to a default 'Follow' state without throwing when fetchIsFollowingSession is absent", async () => {
+    const app = createAdminUIApp(
+      makeMockDeps({
+        fetchTaskStoreTasks: async () => ({
+          tasks: [],
+          total: 0,
+          limit: 500,
+          offset: 0,
+        }),
+      }),
+    );
+    const res = await app.request("/admin/sessions/session-abc", {
+      headers: { Cookie: `admin_session=${cookie}` },
+    });
+    expect(res.status).toBe(200);
+    const html = await res.text();
+    expect(html).toContain('data-following="false"');
+  });
 });
 
 describe("admin UI — create agent with author allowlist", () => {
