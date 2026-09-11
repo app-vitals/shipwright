@@ -6672,6 +6672,219 @@ describe("admin UI — session detail page", () => {
     expect(html).toContain("Task store unavailable");
   });
 
+  // SESH-4.2: the flat `if (!isAdmin) 403` gate is replaced by a
+  // session-scope.ts-based visibility check derived from the session's own
+  // tasks (assignee/claimedBy → agentIds, repo → repos). This is an
+  // intentional behavior change, not a regression — a member can now reach
+  // a session detail page they're scoped to see, and is 404'd (not 403'd)
+  // on one they aren't.
+  describe("GET /admin/sessions/:id — member scope gate (SESH-4.2)", () => {
+    const MEMBER_EMAIL = "member@example.com";
+
+    it("a member sees a session detail page when one of its tasks is assigned to their agent", async () => {
+      const memberCookie = await makeSessionCookie(
+        SESSION_SECRET,
+        "google-sub-member",
+        MEMBER_EMAIL,
+        false,
+      );
+      const mockTasks = [
+        {
+          id: "task-1",
+          title: "Build auth module",
+          status: "pending",
+          session: "session-visible",
+          repo: "example-org/example-repo",
+          assignee: AGENT_ID,
+          claimedBy: null,
+        },
+      ];
+      const app = createAdminUIApp(
+        makeMockDeps({
+          agentMemberService: {
+            listByEmail: async (email: string) =>
+              email === MEMBER_EMAIL
+                ? [
+                    {
+                      id: "m1",
+                      agentId: AGENT_ID,
+                      email: MEMBER_EMAIL,
+                      createdAt: new Date("2024-01-01"),
+                    },
+                  ]
+                : [],
+            exists: async () => false,
+            add: async () => ({
+              id: "m1",
+              agentId: AGENT_ID,
+              email: MEMBER_EMAIL,
+              createdAt: new Date(),
+            }),
+            remove: async () => {},
+            listByAgentId: async () => [],
+          },
+          fetchTaskStoreTasks: async () => ({
+            tasks: mockTasks,
+            total: mockTasks.length,
+            limit: 500,
+            offset: 0,
+          }),
+        }),
+      );
+      const res = await app.request("/admin/sessions/session-visible", {
+        headers: { Cookie: `admin_session=${memberCookie}` },
+      });
+      expect(res.status).toBe(200);
+      const html = await res.text();
+      expect(html).toContain("Build auth module");
+    });
+
+    it("a member gets 404 (not 403) on a session none of whose tasks belong to their agent or repos", async () => {
+      const memberCookie = await makeSessionCookie(
+        SESSION_SECRET,
+        "google-sub-member",
+        MEMBER_EMAIL,
+        false,
+      );
+      const mockTasks = [
+        {
+          id: "task-1",
+          title: "Someone else's task",
+          status: "pending",
+          session: "session-hidden",
+          repo: "other-org/other-repo",
+          assignee: "agent-other",
+          claimedBy: null,
+        },
+      ];
+      const app = createAdminUIApp(
+        makeMockDeps({
+          agentMemberService: {
+            listByEmail: async (email: string) =>
+              email === MEMBER_EMAIL
+                ? [
+                    {
+                      id: "m1",
+                      agentId: AGENT_ID,
+                      email: MEMBER_EMAIL,
+                      createdAt: new Date("2024-01-01"),
+                    },
+                  ]
+                : [],
+            exists: async () => false,
+            add: async () => ({
+              id: "m1",
+              agentId: AGENT_ID,
+              email: MEMBER_EMAIL,
+              createdAt: new Date(),
+            }),
+            remove: async () => {},
+            listByAgentId: async () => [],
+          },
+          agentService: {
+            listAll: async () => [],
+            listByIds: async () => [
+              {
+                id: AGENT_ID,
+                name: "Test Agent",
+                slackId: null,
+                selfHosted: false,
+                typeName: "coding",
+                createdAt: new Date("2024-01-01"),
+                updatedAt: new Date("2024-01-01"),
+                repos: ["example-org/example-repo"],
+              },
+            ],
+            searchByName: async () => [],
+            listOptions: async () => [],
+            create: async () => {
+              throw new Error("not used");
+            },
+            delete: async () => {},
+            getDetail: async () => {
+              throw new Error("not used");
+            },
+            updateFields: async () => {
+              throw new Error("not used");
+            },
+          },
+          fetchTaskStoreTasks: async () => ({
+            tasks: mockTasks,
+            total: mockTasks.length,
+            limit: 500,
+            offset: 0,
+          }),
+        }),
+      );
+      const res = await app.request("/admin/sessions/session-hidden", {
+        headers: { Cookie: `admin_session=${memberCookie}` },
+      });
+      expect(res.status).toBe(404);
+    });
+
+    it("a member with zero memberships gets 404 on any session", async () => {
+      const outsiderCookie = await makeSessionCookie(
+        SESSION_SECRET,
+        "google-sub-outsider",
+        "outsider@example.com",
+        false,
+      );
+      const mockTasks = [
+        {
+          id: "task-1",
+          title: "Some task",
+          status: "pending",
+          session: "session-abc",
+          repo: "example-org/example-repo",
+          assignee: AGENT_ID,
+          claimedBy: null,
+        },
+      ];
+      const app = createAdminUIApp(
+        makeMockDeps({
+          fetchTaskStoreTasks: async () => ({
+            tasks: mockTasks,
+            total: mockTasks.length,
+            limit: 500,
+            offset: 0,
+          }),
+        }),
+      );
+      const res = await app.request("/admin/sessions/session-abc", {
+        headers: { Cookie: `admin_session=${outsiderCookie}` },
+      });
+      expect(res.status).toBe(404);
+    });
+
+    it("admin still sees any session detail page regardless of scope", async () => {
+      const mockTasks = [
+        {
+          id: "task-1",
+          title: "Some task",
+          status: "pending",
+          session: "session-abc",
+          repo: "example-org/example-repo",
+          assignee: "agent-other",
+          claimedBy: null,
+        },
+      ];
+      const app = createAdminUIApp(
+        makeMockDeps({
+          fetchTaskStoreTasks: async () => ({
+            tasks: mockTasks,
+            total: mockTasks.length,
+            limit: 500,
+            offset: 0,
+          }),
+        }),
+      );
+      const res = await app.request("/admin/sessions/session-abc", {
+        headers: { Cookie: `admin_session=${cookie}` },
+      });
+      expect(res.status).toBe(200);
+    });
+  });
+
   // AC4/AC5: full round-trip — tasks list (with filters/page) → Session Detail
   // → back link returns to the exact originating list URL.
   it("round-trip: tasks list → Session Detail → back link returns to the originating list view", async () => {
