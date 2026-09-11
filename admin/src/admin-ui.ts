@@ -57,6 +57,10 @@ import {
   renderTaskDetailPage,
   renderTasksPage,
 } from "./admin-ui-pages.ts";
+import {
+  SESSION_ADMIN_ACTION_MESSAGES,
+  registerSessionAdminActionsRoutes,
+} from "./admin-ui-session-admin-actions.ts";
 import { registerSessionFollowRoutes } from "./admin-ui-session-follow.ts";
 import {
   type Session,
@@ -426,6 +430,17 @@ export interface AdminUIDeps {
     slug: string,
   ) => Promise<SessionForVisibility | null>;
   /**
+   * Apply a rename/archive patch to a session via the task-store's
+   * `PATCH /sessions/:slug` (SESH-3.1, admin-token only). Backs the session
+   * detail page's admin-only Archive/Unarchive/Rename actions (SESH-5.2). If
+   * absent, those POST routes redirect back with an `?error=` flash instead
+   * of throwing — not every admin deployment has task-store configured.
+   */
+  patchTaskStoreSession?: (
+    slug: string,
+    patch: { title?: string | null; archived?: boolean },
+  ) => Promise<unknown>;
+  /**
    * Resolve whether the current user follows a session, for the session
    * detail page's Follow/Unfollow button (SESH-5.3). Defaults to querying
    * the real sessionFollowService when absent — injectable for tests.
@@ -712,6 +727,7 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
     fetchTaskStorePrById,
     fetchTaskStoreSessions,
     fetchTaskStoreSession,
+    patchTaskStoreSession,
     fetchIsFollowingSession,
     publicRepo,
     chatClient,
@@ -3317,6 +3333,25 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
       }
     }
 
+    // SESH-5.2: the ?success=/?error= flash-message convention used
+    // elsewhere in this file (e.g. the agent detail page's
+    // ?success=manifest_synced handling) — set by
+    // registerSessionAdminActionsRoutes()'s archive/unarchive/rename
+    // redirects below.
+    const successParam = c.req.query("success");
+    const errorParam = c.req.query("error");
+    const notice = successParam
+      ? {
+          kind: "success" as const,
+          message: SESSION_ADMIN_ACTION_MESSAGES[successParam] ?? successParam,
+        }
+      : errorParam
+        ? {
+            kind: "error" as const,
+            message: SESSION_ADMIN_ACTION_MESSAGES[errorParam] ?? errorParam,
+          }
+        : undefined;
+
     // SESH-5.3: best-effort follow-state lookup for the button's initial
     // render. Independent of the task-store `degraded` flag (it's a
     // DB-backed lookup, not a task-store fetch) — fail open to "not
@@ -3340,6 +3375,8 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
         degraded,
         backHref,
         prsByTaskId,
+        c.var.isAdmin,
+        notice,
         isFollowing,
       ),
     );
@@ -3353,6 +3390,13 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
     agentMemberService,
     agentService,
     fetchTaskStoreSession,
+  });
+
+  // ─── Session admin actions: archive/unarchive/rename (SESH-5.2) ───────────
+
+  registerSessionAdminActionsRoutes(app, {
+    requireAuth,
+    patchTaskStoreSession,
   });
 
   // ─── Notification settings (SESH-6.3) ─────────────────────────────────────

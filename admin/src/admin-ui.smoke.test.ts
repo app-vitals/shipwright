@@ -6857,6 +6857,146 @@ describe("admin UI — session detail page", () => {
     expect(html).toContain("Task store unavailable");
   });
 
+  // ─── Admin actions: flash banner + admin gating at the route (SESH-5.2) ───
+  //
+  // registerSessionAdminActionsRoutes()'s own smoke tests (in
+  // admin-ui-session-admin-actions.smoke.test.ts) verify the POST routes
+  // redirect with ?success=/?error=; renderSessionDetailPage()'s own unit
+  // tests (in admin-ui-pages.unit.test.ts) verify the render function hides
+  // the forms when isAdmin is false. Neither exercises this GET route's own
+  // query-param-to-notice mapping or its c.var.isAdmin passthrough — both are
+  // route-level glue, so they're covered here instead.
+
+  it("GET /admin/sessions/:id?success=archived renders the success flash banner", async () => {
+    const app = createAdminUIApp(
+      makeMockDeps({
+        fetchTaskStoreTasks: async () => ({
+          tasks: [],
+          total: 0,
+          limit: 500,
+          offset: 0,
+        }),
+      }),
+    );
+    const res = await app.request(
+      "/admin/sessions/session-abc?success=archived",
+      {
+        headers: { Cookie: `admin_session=${cookie}` },
+      },
+    );
+    expect(res.status).toBe(200);
+    const html = await res.text();
+    expect(html).toContain('class="alert alert-success"');
+    expect(html).toContain("Session archived.");
+  });
+
+  it("GET /admin/sessions/:id?error=rename_failed renders the error flash banner", async () => {
+    const app = createAdminUIApp(
+      makeMockDeps({
+        fetchTaskStoreTasks: async () => ({
+          tasks: [],
+          total: 0,
+          limit: 500,
+          offset: 0,
+        }),
+      }),
+    );
+    const res = await app.request(
+      "/admin/sessions/session-abc?error=rename_failed",
+      { headers: { Cookie: `admin_session=${cookie}` } },
+    );
+    expect(res.status).toBe(200);
+    const html = await res.text();
+    expect(html).toContain('class="alert alert-error"');
+    expect(html).toContain("Failed to rename the session.");
+  });
+
+  it("GET /admin/sessions/:id as admin includes the archive/unarchive/rename controls", async () => {
+    const app = createAdminUIApp(
+      makeMockDeps({
+        fetchTaskStoreTasks: async () => ({
+          tasks: [],
+          total: 0,
+          limit: 500,
+          offset: 0,
+        }),
+      }),
+    );
+    const res = await app.request("/admin/sessions/session-abc", {
+      headers: { Cookie: `admin_session=${cookie}` },
+    });
+    expect(res.status).toBe(200);
+    const html = await res.text();
+    expect(html).toContain('action="/admin/sessions/session-abc/archive"');
+    expect(html).toContain('action="/admin/sessions/session-abc/unarchive"');
+    expect(html).toContain('action="/admin/sessions/session-abc/rename"');
+  });
+
+  it("GET /admin/sessions/:id as a visible member never renders the archive/unarchive/rename controls", async () => {
+    const memberEmail = "member-no-admin-actions@example.com";
+    const memberCookie = await makeSessionCookie(
+      SESSION_SECRET,
+      "google-sub-member-no-admin-actions",
+      memberEmail,
+      false,
+    );
+    const mockTasks = [
+      {
+        id: "task-1",
+        title: "Build auth module",
+        status: "pending",
+        session: "session-member-visible",
+        repo: "example-org/example-repo",
+        assignee: AGENT_ID,
+        claimedBy: null,
+      },
+    ];
+    const app = createAdminUIApp(
+      makeMockDeps({
+        agentMemberService: {
+          listByEmail: async (email: string) =>
+            email === memberEmail
+              ? [
+                  {
+                    id: "m1",
+                    agentId: AGENT_ID,
+                    email: memberEmail,
+                    createdAt: new Date("2024-01-01"),
+                  },
+                ]
+              : [],
+          exists: async () => false,
+          add: async () => ({
+            id: "m1",
+            agentId: AGENT_ID,
+            email: memberEmail,
+            createdAt: new Date(),
+          }),
+          remove: async () => {},
+          listByAgentId: async () => [],
+        },
+        fetchTaskStoreTasks: async () => ({
+          tasks: mockTasks,
+          total: mockTasks.length,
+          limit: 500,
+          offset: 0,
+        }),
+      }),
+    );
+    const res = await app.request("/admin/sessions/session-member-visible", {
+      headers: { Cookie: `admin_session=${memberCookie}` },
+    });
+    expect(res.status).toBe(200);
+    const html = await res.text();
+    expect(html).not.toContain(
+      "/admin/sessions/session-member-visible/archive",
+    );
+    expect(html).not.toContain(
+      "/admin/sessions/session-member-visible/unarchive",
+    );
+    expect(html).not.toContain("/admin/sessions/session-member-visible/rename");
+  });
+
   // SESH-4.2: the flat `if (!isAdmin) 403` gate is replaced by a
   // session-scope.ts-based visibility check derived from the session's own
   // tasks (assignee/claimedBy → agentIds, repo → repos). This is an
