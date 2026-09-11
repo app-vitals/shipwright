@@ -14,12 +14,25 @@
  *   - 400 when updating a revoked token
  */
 
-import { OpenAPIHono } from "@hono/zod-openapi";
 import { describe, expect, it } from "bun:test";
+import { OpenAPIHono } from "@hono/zod-openapi";
 import { createTaskStoreApp } from "./app.ts";
 import { createTokensRoutes } from "./routes/tokens.ts";
+import type { SessionServiceLike } from "./session-service.ts";
 import type { TaskServiceLike } from "./task-service.ts";
 import type { TaskToken, TokenServiceLike } from "./token-service.ts";
+
+/** No-op SessionService double — session routes aren't under test here. */
+function fakeSessionService(): SessionServiceLike {
+  return {
+    async list() {
+      return { sessions: [], total: 0, limit: 50, offset: 0 };
+    },
+    async get() {
+      return null;
+    },
+  };
+}
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -197,6 +210,7 @@ function makeApp(opts: { tokenService?: TokenServiceLike } = {}) {
   return createTaskStoreApp({
     taskService: fakeTaskService(),
     tokenService: opts.tokenService ?? fakeAdminTokenService(),
+    sessionService: fakeSessionService(),
   });
 }
 

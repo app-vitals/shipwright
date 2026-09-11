@@ -121,6 +121,9 @@ async function startServer(): Promise<void> {
   const taskService = new TaskService(prisma);
   const tokenService = new TaskTokenService(prisma);
   const pullRequestService = new PullRequestService(prisma);
+  const sessionService = new SessionService(prisma, undefined, (pairs) =>
+    pullRequestService.lookupBlockedPrNumbers(pairs),
+  );
 
   const seedToken = process.env.TASK_STORE_SEED_ADMIN_TOKEN;
   if (seedToken) {
@@ -154,6 +157,7 @@ async function startServer(): Promise<void> {
     taskService,
     tokenService,
     pullRequestService,
+    sessionService,
     scopeResolver,
     sentryClient: process.env.SENTRY_DSN ? Sentry : undefined,
     // Once a shutdown signal has been received, fail readiness immediately
@@ -192,7 +196,9 @@ async function startServer(): Promise<void> {
   }, 60_000);
   console.log("[task-store] stale-claim reaper started (interval: 60s)");
 
-  const sessionService = new SessionService(prisma);
+  // Reuses the single `sessionService` constructed above (which also backs the
+  // app's blocked-PR lookup) rather than building a second instance — one
+  // SessionService per process, shared by the HTTP surface and this sweep.
   const sessionRetentionReaper = new SessionRetentionReaper(
     prisma,
     sessionService,

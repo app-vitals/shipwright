@@ -13,6 +13,7 @@ import { createTaskStoreApp } from "./app.ts";
 import { FixedClock } from "./clock.ts";
 import { ConflictError, NotFoundError } from "./errors.ts";
 import { PullRequestService } from "./pull-request-service.ts";
+import { SessionService } from "./session-service.ts";
 import { TaskService } from "./task-service.ts";
 import { TaskTokenService } from "./token-service.ts";
 
@@ -503,13 +504,7 @@ describeOrSkip("PullRequestService.claim() phase support (integration)", () => {
 
     let threw = false;
     try {
-      await service.claim(
-        repo,
-        prNumber,
-        commitSha,
-        "agent-y",
-        "patch",
-      );
+      await service.claim(repo, prNumber, commitSha, "agent-y", "patch");
     } catch (err) {
       threw = true;
       expect(err).toBeInstanceOf(ConflictError);
@@ -1304,6 +1299,92 @@ describeOrSkip("PullRequestService.list() and get() (integration)", () => {
   });
 });
 
+// ─── lookupBlockedPrNumbers() — batched (repo, prNumber) blocked lookup (SESH-2.2) ──
+
+describeOrSkip("PullRequestService.lookupBlockedPrNumbers() (integration)", () => {
+  let prisma: PrismaClient;
+  let service: PullRequestService;
+
+  beforeEach(async () => {
+    prisma = makePrisma();
+    service = new PullRequestService(prisma);
+    await prisma.pullRequestEvent.deleteMany();
+    await prisma.pullRequest.deleteMany();
+  });
+
+  afterEach(async () => {
+    await prisma.$disconnect();
+  });
+
+  it("returns the prNumber of a blocked PR matching (repo, prNumber)", async () => {
+    await prisma.pullRequest.create({
+      data: {
+        repo: "app-vitals/shipwright",
+        prNumber: 2001,
+        blocked: true,
+      },
+    });
+
+    const result = await service.lookupBlockedPrNumbers([
+      { repo: "app-vitals/shipwright", prNumber: 2001 },
+    ]);
+    expect(result.has(2001)).toBe(true);
+  });
+
+  it("excludes a PR that is not blocked", async () => {
+    await prisma.pullRequest.create({
+      data: {
+        repo: "app-vitals/shipwright",
+        prNumber: 2002,
+        blocked: false,
+      },
+    });
+
+    const result = await service.lookupBlockedPrNumbers([
+      { repo: "app-vitals/shipwright", prNumber: 2002 },
+    ]);
+    expect(result.has(2002)).toBe(false);
+  });
+
+  it("does not cross-match a blocked PR from an unrelated (repo, prNumber) pair (cross-product guard)", async () => {
+    // Same prNumber, different repo — blocked in a repo the caller didn't ask about.
+    await prisma.pullRequest.create({
+      data: {
+        repo: "app-vitals/other-repo",
+        prNumber: 2003,
+        blocked: true,
+      },
+    });
+
+    const result = await service.lookupBlockedPrNumbers([
+      { repo: "app-vitals/shipwright", prNumber: 2003 },
+    ]);
+    expect(result.has(2003)).toBe(false);
+  });
+
+  it("returns an empty set for an empty input array without querying the DB", async () => {
+    const result = await service.lookupBlockedPrNumbers([]);
+    expect(result.size).toBe(0);
+  });
+
+  it("batches multiple (repo, prNumber) pairs in one call", async () => {
+    await prisma.pullRequest.createMany({
+      data: [
+        { repo: "app-vitals/shipwright", prNumber: 2010, blocked: true },
+        { repo: "app-vitals/shipwright", prNumber: 2011, blocked: false },
+        { repo: "app-vitals/other-repo", prNumber: 2012, blocked: true },
+      ],
+    });
+
+    const result = await service.lookupBlockedPrNumbers([
+      { repo: "app-vitals/shipwright", prNumber: 2010 },
+      { repo: "app-vitals/shipwright", prNumber: 2011 },
+      { repo: "app-vitals/other-repo", prNumber: 2012 },
+    ]);
+    expect(result).toEqual(new Set([2010, 2012]));
+  });
+});
+
 // ─── list({ blocked: true }) — joins linked-task status (HBV-2.1 / HSR-1.4) ──
 
 describeOrSkip(
@@ -1809,6 +1890,7 @@ describeOrSkip(
         taskService: new TaskService(prisma),
         tokenService,
         pullRequestService: new PullRequestService(prisma),
+        sessionService: new SessionService(prisma),
       });
     });
 
@@ -2030,13 +2112,7 @@ describeOrSkip("PullRequestService.getEvents() (integration)", () => {
     // claim() (pending -> in_progress), complete() (in_progress -> posted),
     // patch() (posted -> pending) — three distinct auditable transitions.
     const svcClaim = new PullRequestService(prisma, FixedClock(times[0]));
-    await svcClaim.claim(
-      repo,
-      prNumber,
-      commitSha,
-      "agent-a",
-      "review",
-    );
+    await svcClaim.claim(repo, prNumber, commitSha, "agent-a", "review");
 
     const svcComplete = new PullRequestService(prisma, FixedClock(times[1]));
     await svcComplete.complete(seeded.id);

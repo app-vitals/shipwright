@@ -95,8 +95,7 @@ describe("HttpChatTokenReporter", () => {
   // biome-ignore lint/suspicious/noExplicitAny: Server type param varies by bun version
   let server: ReturnType<typeof Bun.serve<any>>;
   let state: StubState;
-  const PORT = 19961;
-  const BASE_URL = `http://localhost:${PORT}`;
+  let baseUrl: string;
   const AGENT_ID = "agent-abc";
   const API_KEY = "test-api-key";
   const CLOCK = FixedClock(new Date("2026-01-15T12:00:00.000Z"));
@@ -104,7 +103,8 @@ describe("HttpChatTokenReporter", () => {
 
   beforeEach(() => {
     state = { captured: [], statusToReturn: 200 };
-    server = startStubServer(PORT, state);
+    server = startStubServer(0, state);
+    baseUrl = `http://localhost:${server.port}`;
     // liveClaudeConfig is a shared mutable module singleton (see claude.ts) —
     // tests must not depend on the ambient ANTHROPIC_MODEL env var. Inject a
     // model guaranteed to be present in pricing.ts's RATES table with a
@@ -115,14 +115,14 @@ describe("HttpChatTokenReporter", () => {
     setLiveClaudeConfig({ model: "claude-sonnet-4-6" });
   });
 
-  afterEach(() => {
-    server.stop(true);
+  afterEach(async () => {
+    await server.stop(true);
     setLiveClaudeConfig({ model: originalModel });
   });
 
   function makeReporter() {
     return new HttpChatTokenReporter({
-      apiUrl: BASE_URL,
+      apiUrl: baseUrl,
       agentId: AGENT_ID,
       apiKey: API_KEY,
       clock: CLOCK,

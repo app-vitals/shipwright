@@ -29,8 +29,10 @@ import { type TaskStoreAuthEnv, createBearerAuthMiddleware } from "./auth.ts";
 import { ApiError } from "./errors.ts";
 import type { PullRequestServiceLike } from "./pull-request-service.ts";
 import { createPrsRoutes } from "./routes/prs.ts";
+import { createSessionsRoutes } from "./routes/sessions.ts";
 import { createTasksRoutes } from "./routes/tasks.ts";
 import { createTokensRoutes } from "./routes/tokens.ts";
+import type { SessionServiceLike } from "./session-service.ts";
 import type { TaskServiceLike } from "./task-service.ts";
 import type { TokenServiceLike } from "./token-service.ts";
 
@@ -75,11 +77,15 @@ const noopPrService: PullRequestServiceLike = {
   async getEvents(_prId, _opts?) {
     return { events: [], total: 0 };
   },
+  async lookupBlockedPrNumbers(_pairs) {
+    return new Set();
+  },
 };
 
 export interface TaskStoreDeps {
   taskService: TaskServiceLike;
   tokenService: TokenServiceLike;
+  sessionService: SessionServiceLike;
   pullRequestService?: PullRequestServiceLike;
   /** Optional scope resolver for agent tokens — returns repos from agents service. */
   scopeResolver?: (agentId: string) => Promise<string[]>;
@@ -170,6 +176,7 @@ export function createTaskStoreApp(
   app.route("/tasks", createTasksRoutes(deps.taskService));
   app.route("/tokens", createTokensRoutes(deps.tokenService));
   app.route("/prs", createPrsRoutes(deps.pullRequestService ?? noopPrService));
+  app.route("/sessions", createSessionsRoutes(deps.sessionService));
 
   return app;
 }

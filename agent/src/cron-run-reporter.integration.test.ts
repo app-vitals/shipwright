@@ -77,8 +77,7 @@ describe("HttpCronRunReporter", () => {
   // biome-ignore lint/suspicious/noExplicitAny: Server type param varies by bun version
   let server: ReturnType<typeof Bun.serve<any>>;
   let state: StubState;
-  const PORT = 19960;
-  const BASE_URL = `http://localhost:${PORT}`;
+  let baseUrl: string;
   const AGENT_ID = "agent-abc";
   const API_KEY = "test-api-key";
 
@@ -88,16 +87,17 @@ describe("HttpCronRunReporter", () => {
       postStatusToReturn: 201,
       patchStatusToReturn: 200,
     };
-    server = startStubServer(PORT, state);
+    server = startStubServer(0, state);
+    baseUrl = `http://localhost:${server.port}`;
   });
 
-  afterEach(() => {
-    server.stop(true);
+  afterEach(async () => {
+    await server.stop(true);
   });
 
   function makeReporter() {
     return new HttpCronRunReporter({
-      apiUrl: BASE_URL,
+      apiUrl: baseUrl,
       agentId: AGENT_ID,
       apiKey: API_KEY,
     });

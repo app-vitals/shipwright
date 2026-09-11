@@ -6,17 +6,19 @@
  *   - scripts/generate-task-store-spec.ts (the CLI entry point)
  *   - task-store/src/generate-spec.unit.test.ts (for automated verification)
  *
- * Instantiates the tasks, tokens, and prs sub-apps with minimal stubs
- * (no real DB, no real services), calls getOpenAPI31Document() on each, and
- * merges the results into a single OpenAPI 3.1 document.
+ * Instantiates the tasks, tokens, prs, and sessions sub-apps with minimal
+ * stubs (no real DB, no real services), calls getOpenAPI31Document() on each,
+ * and merges the results into a single OpenAPI 3.1 document.
  */
 
 import { writeFileSync } from "node:fs";
 import { resolve } from "node:path";
 import type { PullRequestServiceLike } from "./pull-request-service.ts";
 import { createPrsRoutes } from "./routes/prs.ts";
+import { createSessionsRoutes } from "./routes/sessions.ts";
 import { createTasksRoutes } from "./routes/tasks.ts";
 import { createTokensRoutes } from "./routes/tokens.ts";
+import type { SessionServiceLike } from "./session-service.ts";
 import type { TaskServiceLike } from "./task-service.ts";
 import type { TokenServiceLike } from "./token-service.ts";
 
@@ -132,6 +134,18 @@ const stubPrService: PullRequestServiceLike = {
   async getEvents() {
     return { events: [], total: 0 };
   },
+  async lookupBlockedPrNumbers() {
+    return new Set();
+  },
+};
+
+const stubSessionService: SessionServiceLike = {
+  async list() {
+    return { sessions: [], total: 0, limit: 50, offset: 0 };
+  },
+  async get() {
+    return null;
+  },
 };
 
 // ─── Spec assembly ────────────────────────────────────────────────────────────
@@ -156,6 +170,7 @@ export function buildTaskStoreSpec(): Record<string, unknown> {
   const tasksApp = createTasksRoutes(stubTaskService);
   const tokensApp = createTokensRoutes(stubTokenService);
   const prsApp = createPrsRoutes(stubPrService);
+  const sessionsApp = createSessionsRoutes(stubSessionService);
 
   const innerDocInfo = {
     openapi: "3.1.0" as const,
@@ -165,6 +180,7 @@ export function buildTaskStoreSpec(): Record<string, unknown> {
   const tasksSpec = tasksApp.getOpenAPI31Document(innerDocInfo);
   const tokensSpec = tokensApp.getOpenAPI31Document(innerDocInfo);
   const prsSpec = prsApp.getOpenAPI31Document(innerDocInfo);
+  const sessionsSpec = sessionsApp.getOpenAPI31Document(innerDocInfo);
 
   const mergedPaths: Record<string, Record<string, unknown>> = {
     ...prefixPaths(
@@ -178,6 +194,10 @@ export function buildTaskStoreSpec(): Record<string, unknown> {
     ...prefixPaths(
       (prsSpec.paths ?? {}) as Record<string, Record<string, unknown>>,
       "/prs",
+    ),
+    ...prefixPaths(
+      (sessionsSpec.paths ?? {}) as Record<string, Record<string, unknown>>,
+      "/sessions",
     ),
   };
 
@@ -196,6 +216,7 @@ export function buildTaskStoreSpec(): Record<string, unknown> {
         ...(tasksSpec.components?.schemas ?? {}),
         ...(tokensSpec.components?.schemas ?? {}),
         ...(prsSpec.components?.schemas ?? {}),
+        ...(sessionsSpec.components?.schemas ?? {}),
       },
     },
   };

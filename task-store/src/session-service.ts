@@ -17,7 +17,13 @@
 
 import type { Clock } from "./clock.ts";
 import { SystemClock } from "./clock.ts";
-import type { Prisma, PrismaClient } from "./index.ts";
+import type { Prisma, PrismaClient, Task } from "./index.ts";
+import {
+  type SessionRollupCounts,
+  type SessionRollupState,
+  type WaitingTaskEntry,
+  computeSessionRollup,
+} from "./session-rollup.ts";
 
 /**
  * The Prisma client surface shared by the top-level client and a
@@ -27,6 +33,117 @@ import type { Prisma, PrismaClient } from "./index.ts";
  * the same `tx` the paired task write ran on.
  */
 export type PrismaTxClient = Pick<Prisma.TransactionClient, "session">;
+
+/**
+ * Batched (repo, prNumber) → blocked-prNumbers lookup, mirroring
+ * PullRequestService.lookupBlockedPrNumbers()'s signature exactly (SESH-2.2).
+ * Injected as a plain function (rather than a PullRequestServiceLike
+ * dependency) to keep SessionService decoupled from pull-request-service.ts —
+ * main.ts wires the real implementation in; the default below is a no-op so
+ * every existing caller of `new SessionService(prisma, clock)` (TaskService)
+ * is unaffected.
+ */
+export type LookupBlockedPrNumbers = (
+  pairs: { repo: string; prNumber: number }[],
+) => Promise<Set<number>>;
+
+/**
+ * Filters accepted by SessionService.list(). `agentScope` (auth) is distinct
+ * from `agentId` (a caller-supplied narrowing filter) — see list()'s doc
+ * comment.
+ */
+export interface SessionListFilters {
+  state?: "waiting" | "active" | "closed" | "empty" | "archived" | "all";
+  /** Order results. Defaults to "lastActivityAt" desc (nulls last). */
+  sort?: "waitingSince" | "lastActivityAt";
+  /** Caller filter: only sessions whose rollup.agentIds includes this agent. */
+  agentId?: string;
+  /** Caller filter: only sessions whose rollup.repos includes any of these repos. */
+  repo?: string | string[];
+  /** Case-insensitive substring match against slug OR title. */
+  q?: string;
+  limit?: number;
+  offset?: number;
+  /**
+   * AUTH scope for agent tokens — separate from the `agentId` filter above.
+   * When set, a session is visible only if at least one of its tasks
+   * satisfies `task.assignee === agentScope.agentId OR (task.repo !== null &&
+   * agentScope.repos.includes(task.repo))`. Undefined (admin tokens) sees
+   * every session unconditionally.
+   */
+  agentScope?: { agentId: string; repos: string[] };
+}
+
+/**
+ * A Session row's own fields flattened together with its computed rollup
+ * (SESH-2.1's computeSessionRollup) into one flat object — never nested under
+ * a `rollup` key.
+ */
+export interface SessionListItem {
+  slug: string;
+  title: string | null;
+  createdAt: Date;
+  updatedAt: Date;
+  archivedAt: Date | null;
+  archivedBy: string | null;
+  state: SessionRollupState;
+  waitingSince: string | null;
+  lastActivityAt: string | null;
+  counts: SessionRollupCounts;
+  agentIds: string[];
+  repos: string[];
+  waitingTasks: WaitingTaskEntry[];
+  archived: boolean;
+}
+
+/** Paginated list result from SessionService.list. */
+export interface SessionListResult {
+  sessions: SessionListItem[];
+  total: number;
+  limit: number;
+  offset: number;
+}
+
+/** The subset of SessionService the routes depend on. */
+export interface SessionServiceLike {
+  list(filters?: SessionListFilters): Promise<SessionListResult>;
+  get(
+    slug: string,
+    agentScope?: { agentId: string; repos: string[] },
+  ): Promise<SessionListItem | null>;
+}
+
+/** True when at least one task satisfies the agentScope OR-visibility rule
+ * shared by list() and get() — assignee match OR repo-scope match. Mirrors
+ * TaskService's agentScope OR shape exactly (assignee only, not claimedBy). */
+function hasQualifyingTask(
+  tasks: Pick<Task, "assignee" | "repo">[],
+  agentScope: { agentId: string; repos: string[] },
+): boolean {
+  return tasks.some(
+    (t) =>
+      t.assignee === agentScope.agentId ||
+      (t.repo !== null && agentScope.repos.includes(t.repo)),
+  );
+}
+
+/** -Infinity for null (sorts last in a descending sort); otherwise epoch ms. */
+function activityTime(value: string | null): number {
+  return value === null ? Number.NEGATIVE_INFINITY : new Date(value).getTime();
+}
+
+/** Extract the (repo, prNumber) pairs lookupBlockedPrNumbers() needs from a
+ * task set — only tasks with both fields set can ever be "pr_blocked". */
+function toBlockedLookupKeys(
+  tasks: Task[],
+): { repo: string; prNumber: number }[] {
+  return tasks
+    .filter(
+      (t): t is Task & { repo: string; pr: number } =>
+        t.repo !== null && t.pr !== null,
+    )
+    .map((t) => ({ repo: t.repo, prNumber: t.pr }));
+}
 
 /**
  * True when `session` should be treated as absent for the purposes of the
@@ -41,11 +158,156 @@ export function isBlankSession(session: string | null | undefined): boolean {
   );
 }
 
-export class SessionService {
+export class SessionService implements SessionServiceLike {
   constructor(
     private prisma: PrismaClient,
     private clock: Clock = SystemClock(),
+    private lookupBlockedPrNumbers: LookupBlockedPrNumbers = async () =>
+      new Set<number>(),
   ) {}
+
+  // ─── Reads (SESH-2.2) ────────────────────────────────────────────────────────
+
+  /**
+   * List sessions, each flattened with its computeSessionRollup() result.
+   *
+   * `state` semantics (see SessionListFilters):
+   *   - omitted: archived===false AND rollup.state !== "closed"
+   *   - "waiting"|"active"|"closed"|"empty": rollup.state === value (NOT
+   *     additionally archived-filtered — an explicit state request overrides
+   *     the default archived-exclusion)
+   *   - "archived": archived === true (rollup state ignored)
+   *   - "all": no state/archived filtering at all
+   *
+   * `agentScope` (auth) is applied before every other filter — a session
+   * with zero tasks is never visible under a scoped token. `agentId`/`repo`
+   * are separate, caller-supplied narrowing filters applied afterward.
+   */
+  async list(filters: SessionListFilters = {}): Promise<SessionListResult> {
+    const where: Prisma.SessionWhereInput = {};
+    if (filters.q) {
+      where.OR = [
+        { slug: { contains: filters.q, mode: "insensitive" } },
+        { title: { contains: filters.q, mode: "insensitive" } },
+      ];
+    }
+
+    const sessionRows = await this.prisma.session.findMany({ where });
+    const slugs = sessionRows.map((s) => s.slug);
+    const tasks = slugs.length
+      ? await this.prisma.task.findMany({ where: { session: { in: slugs } } })
+      : [];
+
+    const tasksBySlug = new Map<string, Task[]>();
+    for (const task of tasks) {
+      if (task.session === null) continue;
+      const bucket = tasksBySlug.get(task.session);
+      if (bucket) bucket.push(task);
+      else tasksBySlug.set(task.session, [task]);
+    }
+
+    const prBlockedSet = await this.lookupBlockedPrNumbers(
+      toBlockedLookupKeys(tasks),
+    );
+
+    let items: SessionListItem[] = sessionRows.map((session) => {
+      const sessionTasks = tasksBySlug.get(session.slug) ?? [];
+      const rollup = computeSessionRollup(
+        sessionTasks,
+        prBlockedSet,
+        this.clock,
+        { archivedAt: session.archivedAt },
+      );
+      return { ...session, ...rollup };
+    });
+
+    if (filters.agentScope) {
+      const agentScope = filters.agentScope;
+      items = items.filter((item) =>
+        hasQualifyingTask(tasksBySlug.get(item.slug) ?? [], agentScope),
+      );
+    }
+
+    if (filters.state === undefined) {
+      items = items.filter((item) => !item.archived && item.state !== "closed");
+    } else if (filters.state === "archived") {
+      items = items.filter((item) => item.archived);
+    } else if (filters.state !== "all") {
+      const state = filters.state;
+      items = items.filter((item) => item.state === state);
+    }
+
+    if (filters.agentId !== undefined) {
+      const agentId = filters.agentId;
+      items = items.filter((item) => item.agentIds.includes(agentId));
+    }
+
+    if (filters.repo !== undefined) {
+      const repoList = Array.isArray(filters.repo)
+        ? filters.repo
+        : [filters.repo];
+      items = items.filter((item) =>
+        item.repos.some((repo) => repoList.includes(repo)),
+      );
+    }
+
+    if (filters.sort === "waitingSince") {
+      const waiting = items.filter((item) => item.state === "waiting");
+      const nonWaiting = items.filter((item) => item.state !== "waiting");
+      waiting.sort(
+        (a, b) =>
+          new Date(a.waitingSince as string).getTime() -
+          new Date(b.waitingSince as string).getTime(),
+      );
+      nonWaiting.sort(
+        (a, b) =>
+          activityTime(b.lastActivityAt) - activityTime(a.lastActivityAt),
+      );
+      items = [...waiting, ...nonWaiting];
+    } else {
+      items = [...items].sort(
+        (a, b) =>
+          activityTime(b.lastActivityAt) - activityTime(a.lastActivityAt),
+      );
+    }
+
+    const total = items.length;
+    const limit = filters.limit ?? 50;
+    const offset = filters.offset ?? 0;
+    const sessions = items.slice(offset, offset + limit);
+
+    return { sessions, total, limit, offset };
+  }
+
+  /**
+   * Fetch a single session by slug, flattened with its rollup. Returns null
+   * when missing OR when an agentScope is set and no task in the session
+   * qualifies (mirrors list()'s visibility rule) — both map to a route-level
+   * 404, indistinguishable to the caller by design.
+   */
+  async get(
+    slug: string,
+    agentScope?: { agentId: string; repos: string[] },
+  ): Promise<SessionListItem | null> {
+    const session = await this.prisma.session.findUnique({ where: { slug } });
+    if (!session) return null;
+
+    const tasks = await this.prisma.task.findMany({ where: { session: slug } });
+
+    if (agentScope && !hasQualifyingTask(tasks, agentScope)) {
+      return null;
+    }
+
+    const prBlockedSet = await this.lookupBlockedPrNumbers(
+      toBlockedLookupKeys(tasks),
+    );
+
+    const rollup = computeSessionRollup(tasks, prBlockedSet, this.clock, {
+      archivedAt: session.archivedAt,
+    });
+
+    return { ...session, ...rollup };
+  }
 
   /**
    * Upsert the Session row implied by a task write's `session` value.

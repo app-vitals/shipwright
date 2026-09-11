@@ -82,7 +82,6 @@ function pr(
 describe("loop-orchestrator + real task-store claim client (CBD-2.1)", () => {
   // biome-ignore lint/suspicious/noExplicitAny: Server type param varies by bun version
   let server: ReturnType<typeof Bun.serve<any>>;
-  const PORT = 19962;
   let claimStatusByTaskId: Record<string, number>;
   let claimRequests: string[];
   let savedEnv: { url?: string; token?: string };
@@ -91,7 +90,7 @@ describe("loop-orchestrator + real task-store claim client (CBD-2.1)", () => {
     claimStatusByTaskId = {};
     claimRequests = [];
     server = Bun.serve({
-      port: PORT,
+      port: 0,
       fetch: (req) => {
         const match = new URL(req.url).pathname.match(
           /^\/tasks\/([^/]+)\/claim$/,
@@ -119,12 +118,12 @@ describe("loop-orchestrator + real task-store claim client (CBD-2.1)", () => {
       url: process.env.SHIPWRIGHT_TASK_STORE_URL,
       token: process.env.SHIPWRIGHT_TASK_STORE_TOKEN,
     };
-    process.env.SHIPWRIGHT_TASK_STORE_URL = `http://localhost:${PORT}`;
+    process.env.SHIPWRIGHT_TASK_STORE_URL = `http://localhost:${server.port}`;
     process.env.SHIPWRIGHT_TASK_STORE_TOKEN = "test-token";
   });
 
-  afterEach(() => {
-    server.stop(true);
+  afterEach(async () => {
+    await server.stop(true);
     if (savedEnv.url !== undefined) {
       process.env.SHIPWRIGHT_TASK_STORE_URL = savedEnv.url;
     } else {

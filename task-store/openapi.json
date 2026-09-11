@@ -2063,6 +2063,179 @@
           }
         }
       }
+    },
+    "/sessions": {
+      "get": {
+        "tags": [
+          "sessions"
+        ],
+        "summary": "List sessions",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "waiting",
+                "active",
+                "closed",
+                "empty",
+                "archived",
+                "all"
+              ],
+              "description": "Omitted: archived===false AND state!=='closed'. A named state (waiting/active/closed/empty) matches rollup.state alone (not additionally archived-filtered). 'archived': archived===true (rollup state ignored). 'all': no filtering.",
+              "example": "waiting"
+            },
+            "required": false,
+            "name": "state",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "waitingSince",
+                "lastActivityAt"
+              ],
+              "description": "'waitingSince': waiting sessions first (oldest waitingSince first), then non-waiting sessions by lastActivityAt desc. Default (or 'lastActivityAt'): all sessions by lastActivityAt desc, nulls last.",
+              "example": "waitingSince"
+            },
+            "required": false,
+            "name": "sort",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "description": "Only sessions whose rollup.agentIds includes this agent.",
+              "example": "agent-id-123"
+            },
+            "required": false,
+            "name": "agentId",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                }
+              ],
+              "description": "Only sessions whose rollup.repos includes any of the given repo(s). Repeatable (?repo=a&repo=b).",
+              "example": "org/repo"
+            },
+            "required": false,
+            "name": "repo",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "description": "Case-insensitive substring match against slug OR title.",
+              "example": "launch"
+            },
+            "required": false,
+            "name": "q",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "example": "50"
+            },
+            "required": false,
+            "name": "limit",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "example": "0"
+            },
+            "required": false,
+            "name": "offset",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "List of sessions with total count",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SessionListResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/sessions/{slug}": {
+      "get": {
+        "tags": [
+          "sessions"
+        ],
+        "summary": "Get a session by slug",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "example": "shipwright-may-launch"
+            },
+            "required": true,
+            "name": "slug",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Session",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Session"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
     }
   },
   "components": {
@@ -3412,6 +3585,187 @@
         },
         "required": [
           "events",
+          "total",
+          "limit",
+          "offset"
+        ]
+      },
+      "Session": {
+        "type": "object",
+        "properties": {
+          "slug": {
+            "type": "string",
+            "example": "shipwright-may-launch"
+          },
+          "title": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "example": "May launch prep"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time",
+            "example": "2026-01-01T00:00:00.000Z"
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time",
+            "example": "2026-01-06T12:00:00.000Z"
+          },
+          "archivedAt": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "example": null
+          },
+          "archivedBy": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "example": null
+          },
+          "state": {
+            "type": "string",
+            "enum": [
+              "waiting",
+              "active",
+              "closed",
+              "empty"
+            ],
+            "example": "active"
+          },
+          "waitingSince": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "example": "2026-01-01T00:00:00.000Z"
+          },
+          "lastActivityAt": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "example": "2026-01-06T12:00:00.000Z"
+          },
+          "counts": {
+            "type": "object",
+            "properties": {
+              "total": {
+                "type": "integer"
+              },
+              "open": {
+                "type": "integer"
+              },
+              "closed": {
+                "type": "integer"
+              }
+            },
+            "required": [
+              "total",
+              "open",
+              "closed"
+            ],
+            "example": {
+              "total": 3,
+              "open": 2,
+              "closed": 1
+            }
+          },
+          "agentIds": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "example": [
+              "agent-1"
+            ]
+          },
+          "repos": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "example": [
+              "org/repo"
+            ]
+          },
+          "waitingTasks": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "kind": {
+                  "type": "string",
+                  "enum": [
+                    "hitl",
+                    "blocked",
+                    "pr_blocked"
+                  ]
+                }
+              },
+              "required": [
+                "id",
+                "kind"
+              ]
+            },
+            "example": [
+              {
+                "id": "task-1",
+                "kind": "hitl"
+              }
+            ]
+          },
+          "archived": {
+            "type": "boolean",
+            "example": false
+          }
+        },
+        "required": [
+          "slug",
+          "createdAt",
+          "updatedAt",
+          "state",
+          "waitingSince",
+          "lastActivityAt",
+          "counts",
+          "agentIds",
+          "repos",
+          "waitingTasks",
+          "archived"
+        ]
+      },
+      "SessionListResponse": {
+        "type": "object",
+        "properties": {
+          "sessions": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Session"
+            }
+          },
+          "total": {
+            "type": "integer",
+            "example": 10
+          },
+          "limit": {
+            "type": "integer",
+            "example": 50
+          },
+          "offset": {
+            "type": "integer",
+            "example": 0
+          }
+        },
+        "required": [
+          "sessions",
           "total",
           "limit",
           "offset"

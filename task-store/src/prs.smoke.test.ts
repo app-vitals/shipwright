@@ -35,8 +35,21 @@ import type {
   PullRequestListResult,
   PullRequestServiceLike,
 } from "./pull-request-service.ts";
+import type { SessionServiceLike } from "./session-service.ts";
 import type { TaskServiceLike } from "./task-service.ts";
 import type { TokenServiceLike } from "./token-service.ts";
+
+/** No-op SessionService double — session routes aren't under test here. */
+function fakeSessionService(): SessionServiceLike {
+  return {
+    async list() {
+      return { sessions: [], total: 0, limit: 50, offset: 0 };
+    },
+    async get() {
+      return null;
+    },
+  };
+}
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -460,6 +473,10 @@ function fakePrService(
       if (!store.has(prId)) throw new NotFoundError("pr not found");
       return { events: [], total: 0 };
     },
+
+    async lookupBlockedPrNumbers(): Promise<Set<number>> {
+      return new Set();
+    },
   };
 }
 
@@ -531,6 +548,7 @@ function makeApp(
     taskService: fakeTaskService(),
     tokenService: deps.tokenService ?? fakeAdminTokenService(),
     pullRequestService: deps.prService ?? fakePrService(),
+    sessionService: fakeSessionService(),
     scopeResolver: deps.scopeResolver,
   });
 }

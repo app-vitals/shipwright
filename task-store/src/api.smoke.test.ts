@@ -16,6 +16,7 @@ import { describe, expect, it } from "bun:test";
 import { createTaskStoreApp } from "./app.ts";
 import { ConflictError, NotFoundError } from "./errors.ts";
 import type { Task } from "./index.ts";
+import type { SessionServiceLike } from "./session-service.ts";
 import type {
   TaskListFilters,
   TaskListResult,
@@ -23,6 +24,18 @@ import type {
   TaskWithBlockedBy,
 } from "./task-service.ts";
 import type { TokenServiceLike } from "./token-service.ts";
+
+/** No-op SessionService double — session routes aren't under test here. */
+function fakeSessionService(): SessionServiceLike {
+  return {
+    async list() {
+      return { sessions: [], total: 0, limit: 50, offset: 0 };
+    },
+    async get() {
+      return null;
+    },
+  };
+}
 
 // ─── Distinct result shape ────────────────────────────────────────────────────
 
@@ -261,6 +274,7 @@ function makeApp(
   return createTaskStoreApp({
     taskService: deps.taskService ?? fakeTaskService(),
     tokenService: deps.tokenService ?? fakeTokenService(),
+    sessionService: fakeSessionService(),
     scopeResolver: deps.scopeResolver,
   });
 }
