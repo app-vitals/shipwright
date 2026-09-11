@@ -88,6 +88,11 @@ export function sanitizePublic(text: string): string {
     .trim();
 }
 
+/** Truncates already-sanitized preview text to the shared lock-screen cap. */
+function truncateForPreview(text: string): string {
+  return text.length > PREVIEW_MAX ? text.slice(0, PREVIEW_MAX) : text;
+}
+
 /** Builds the notification payload for a resolved detail level. */
 export function buildNotificationPayload(
   level: PushDetailLevel,
@@ -108,6 +113,65 @@ export function buildNotificationPayload(
 
   // preview
   const raw = sanitizePublic(thread.preview ?? thread.title ?? "");
-  const body = raw.length > PREVIEW_MAX ? raw.slice(0, PREVIEW_MAX) : raw;
-  return { title: GENERIC_TITLE, body, url };
+  return { title: GENERIC_TITLE, body: truncateForPreview(raw), url };
+}
+
+/**
+ * admin/src/push-content.ts — session notification policy.
+ *
+ * A sibling to the chat-thread notification path above, for the separate
+ * "session needs attention / completed" surface. Same lock-screen austerity
+ * policy applies: user-authored free text (session title / reason) is
+ * sanitized before it reaches a visible field. The deep-link `url` is the
+ * only field allowed to carry the session slug (consumed by the SW, not
+ * rendered on the lock screen); `tag` also carries the slug, per spec, so
+ * the OS can coalesce repeat notifications for the same session.
+ */
+
+export type SessionNotificationKind = "immediate" | "reminder" | "completed";
+
+export interface NotificationSession {
+  slug: string;
+  title?: string | null;
+  /** User-authored free text explaining why the session needs attention. */
+  reason?: string | null;
+}
+
+export interface SessionNotificationPayload {
+  title: string;
+  body: string;
+  /** Deep link to the session — consumed by the SW, not shown on the lock screen. */
+  url: string;
+  tag: string;
+  kind: SessionNotificationKind;
+}
+
+const SESSION_KIND_TITLES: Record<SessionNotificationKind, string> = {
+  immediate: "A session needs you",
+  reminder: "Still waiting on you",
+  completed: "Session completed",
+};
+
+/** Builds the notification payload for a session, per kind and detail level. */
+export function buildSessionNotificationPayload(
+  level: PushDetailLevel,
+  kind: SessionNotificationKind,
+  session: NotificationSession,
+): SessionNotificationPayload {
+  const title = SESSION_KIND_TITLES[kind];
+  const url = `/admin/sessions/${encodeURIComponent(session.slug)}`;
+  const tag = `shipwright-session-${session.slug}`;
+
+  if (level === "generic") {
+    return { title, body: "", url, tag, kind };
+  }
+
+  if (level === "title") {
+    const safeTitle = sanitizePublic(session.title ?? "");
+    return { title, body: safeTitle, url, tag, kind };
+  }
+
+  // preview
+  const raw = sanitizePublic(session.reason ?? session.title ?? "");
+  return { title, body: truncateForPreview(raw), url, tag, kind };
 }
