@@ -212,6 +212,50 @@ describe("GET /admin/sessions — member scoping", () => {
     expect(html).not.toContain("Not my session");
   });
 
+  // total/limit/offset come back from the task store BEFORE the client-side
+  // member filter runs, so the summary must not claim they describe the
+  // rendered rows.
+  it("labels the pagination summary with the true visible count for a scoped member", async () => {
+    const sessions = [
+      makeSession({ slug: "s-mine", title: "My session", agentIds: ["agent-a"], repos: [] }),
+      makeSession({ slug: "s-not-mine", title: "Not my session", agentIds: ["agent-b"], repos: [] }),
+    ];
+    const app = buildApp({
+      agentMemberService: makeMemberService([{ agentId: "agent-a" }]),
+      agentService: makeAgentService([{ id: "agent-a", repos: [] }]),
+      fetchTaskStoreSessions: async () => ({
+        sessions,
+        total: 120,
+        limit: 50,
+        offset: 0,
+      }),
+    });
+    const res = await app.request("/admin/sessions", {
+      headers: { "x-test-is-admin": "false", "x-test-user-email": "member@example.com" },
+    });
+    expect(res.status).toBe(200);
+    const html = await res.text();
+    // One of the two fetched rows survived the scope filter.
+    expect(html).toContain("1 visible in results 1–50 of 120");
+    // …and never the bare pre-filter range, which would imply 50 visible rows.
+    expect(html).not.toContain(">1–50 of 120<");
+  });
+
+  it("keeps the plain range summary for an admin (no client-side filtering)", async () => {
+    const app = buildApp({
+      fetchTaskStoreSessions: async () => ({
+        sessions: [makeSession({ slug: "s-1", title: "Some session" })],
+        total: 120,
+        limit: 50,
+        offset: 0,
+      }),
+    });
+    const res = await app.request("/admin/sessions");
+    const html = await res.text();
+    expect(html).toContain(">1–50 of 120<");
+    expect(html).not.toContain("visible in results");
+  });
+
   it("a member with zero memberships renders an empty page, no error", async () => {
     const sessions = [makeSession({ slug: "s-1", title: "Some session" })];
     let fetchCalled = false;

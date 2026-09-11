@@ -209,7 +209,18 @@ export function renderSessionsListPage(
   filters: SessionsListFilters,
   degraded: boolean,
   userName: string,
-  pagination: { total: number; limit: number; offset: number } = {
+  pagination: {
+    total: number;
+    limit: number;
+    offset: number;
+    /**
+     * True when `sessions` was narrowed client-side by the member-visibility
+     * filter, so total/limit/offset describe the task-store's pre-filter
+     * result set rather than the rows actually rendered. The summary is
+     * relabelled accordingly instead of misstating a visible-row count.
+     */
+    scoped?: boolean;
+  } = {
     total: 0,
     limit: 50,
     offset: 0,
@@ -284,13 +295,27 @@ export function renderSessionsListPage(
     ).join("\n");
   }
 
-  const totalPages = Math.max(1, Math.ceil(pagination.total / pagination.limit));
+  const totalPages = Math.max(
+    1,
+    Math.ceil(pagination.total / pagination.limit),
+  );
   const currentPage = Math.floor(pagination.offset / pagination.limit) + 1;
+  const rangeEnd = Math.min(
+    pagination.offset + pagination.limit,
+    pagination.total,
+  );
+  // For a scoped member the rendered rows are a client-side subset of the
+  // task-store page, so "X–Y of Z" would overstate what's actually visible.
+  // Lead with the true visible-row count and label the range/total as the
+  // pre-filter result set the Prev/Next controls actually traverse.
+  const summaryHtml = pagination.scoped
+    ? `<span title="Only sessions you have access to are listed; the range and total describe all sessions matching your filters.">${sessions.length} visible in results ${pagination.offset + 1}–${rangeEnd} of ${pagination.total}</span>`
+    : `<span>${pagination.offset + 1}–${rangeEnd} of ${pagination.total}</span>`;
   const paginationHtml =
     pagination.total === 0
       ? ""
       : `<div style="display:flex;justify-content:space-between;align-items:center;padding:12px 0;font-size:12px;color:#6b7280">
-      <span>${pagination.offset + 1}–${Math.min(pagination.offset + pagination.limit, pagination.total)} of ${pagination.total}</span>
+      ${summaryHtml}
       <div style="display:flex;gap:4px">
         ${currentPage > 1 ? `<a href="${makeUrl({ offset: Math.max(0, pagination.offset - pagination.limit) })}" class="btn btn-secondary" style="font-size:11px;padding:3px 10px">← Prev</a>` : ""}
         ${currentPage < totalPages ? `<a href="${makeUrl({ offset: pagination.offset + pagination.limit })}" class="btn btn-secondary" style="font-size:11px;padding:3px 10px">Next →</a>` : ""}
@@ -398,7 +423,8 @@ export function registerSessionsListRoutes(
     // access-control filter is applied client-side against the full
     // fetched page, on top of (not instead of) the user's own repo/agent/q
     // filters already forwarded above.
-    if (scope.agentIds !== "all") {
+    const scoped = scope.agentIds !== "all";
+    if (scoped) {
       sessions = sessions.filter((s) =>
         isSessionVisible({ agentIds: s.agentIds, repos: s.repos }, scope),
       );
@@ -409,6 +435,9 @@ export function registerSessionsListRoutes(
         total,
         limit,
         offset,
+        // total/limit/offset are the task-store's pre-filter values; flag
+        // that so the summary doesn't claim they describe the rendered rows.
+        scoped,
       }),
     );
   });

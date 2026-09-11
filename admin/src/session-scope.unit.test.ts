@@ -7,6 +7,7 @@
 
 import { describe, expect, it } from "bun:test";
 import {
+  deriveSessionVisibilityFromTasks,
   isSessionVisible,
   type MembershipForScope,
   type SessionForVisibility,
@@ -122,9 +123,9 @@ describe("isSessionVisible", () => {
       agentIds: visibleAgentIdsFor(false, []),
       repos: [],
     });
-    expect(isSessionVisible(makeSession({ agentIds: [], repos: [] }), scope)).toBe(
-      false,
-    );
+    expect(
+      isSessionVisible(makeSession({ agentIds: [], repos: [] }), scope),
+    ).toBe(false);
     expect(
       isSessionVisible(
         makeSession({ agentIds: ["agent-a"], repos: ["org/repo-1"] }),
@@ -137,5 +138,62 @@ describe("isSessionVisible", () => {
     const session = makeSession({ agentIds: [], repos: [] });
     const scope = makeScope({ agentIds: ["agent-a"], repos: ["org/repo-1"] });
     expect(isSessionVisible(session, scope)).toBe(false);
+  });
+});
+
+// ─── deriveSessionVisibilityFromTasks ───────────────────────────────────────
+
+describe("deriveSessionVisibilityFromTasks", () => {
+  it("uses `claimedBy ?? assignee` precedence — a reassigned task yields only claimedBy", () => {
+    // Mirrors task-store/src/session-rollup.ts: one agent id per task,
+    // claimedBy wins. Unioning both fields would leave the stale assignee in
+    // scope and let their members see a session the list page hides.
+    expect(
+      deriveSessionVisibilityFromTasks([
+        { assignee: "agent-a", claimedBy: "agent-b", repo: "org/repo-1" },
+      ]),
+    ).toEqual({ agentIds: ["agent-b"], repos: ["org/repo-1"] });
+  });
+
+  it("falls back to assignee when claimedBy is null/undefined", () => {
+    expect(
+      deriveSessionVisibilityFromTasks([
+        { assignee: "agent-a", claimedBy: null },
+        { assignee: "agent-c" },
+      ]),
+    ).toEqual({ agentIds: ["agent-a", "agent-c"], repos: [] });
+  });
+
+  it("dedupes agent ids and repos across tasks and drops null/undefined values", () => {
+    expect(
+      deriveSessionVisibilityFromTasks([
+        { assignee: "agent-a", repo: "org/repo-1" },
+        { claimedBy: "agent-a", repo: "org/repo-1" },
+        { assignee: null, claimedBy: null, repo: null },
+        { claimedBy: "agent-b", repo: "org/repo-2" },
+      ]),
+    ).toEqual({
+      agentIds: ["agent-a", "agent-b"],
+      repos: ["org/repo-1", "org/repo-2"],
+    });
+  });
+
+  it("returns empty arrays for an empty task list", () => {
+    expect(deriveSessionVisibilityFromTasks([])).toEqual({
+      agentIds: [],
+      repos: [],
+    });
+  });
+
+  it("the derived shape composes with isSessionVisible", () => {
+    const derived = deriveSessionVisibilityFromTasks([
+      { assignee: "agent-a", claimedBy: "agent-b", repo: "org/repo-1" },
+    ]);
+    expect(
+      isSessionVisible(derived, makeScope({ agentIds: ["agent-b"] })),
+    ).toBe(true);
+    expect(
+      isSessionVisible(derived, makeScope({ agentIds: ["agent-a"] })),
+    ).toBe(false);
   });
 });

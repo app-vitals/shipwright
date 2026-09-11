@@ -113,6 +113,7 @@ import {
 } from "./session-follow-service.ts";
 import {
   type SessionForVisibility,
+  deriveSessionVisibilityFromTasks,
   isSessionVisible,
 } from "./session-scope.ts";
 import type { AppManifest } from "./slack-provisioning-client.ts";
@@ -3246,29 +3247,31 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
     // page; a member sees it only when one of the session's own tasks is
     // assigned/claimed by one of their agents, or is in one of those
     // agents' repos. Derived from the tasks already fetched above (no
-    // second fetch). A session outside the caller's scope 404s rather than
-    // 403s, so its existence isn't leaked to callers who can't see it.
-    const scope = await resolveVisibilityScope(
-      c.var.isAdmin,
-      c.var.userEmail,
-      agentMemberService,
-      agentService,
-    );
-    if (scope.agentIds !== "all") {
-      const derived: SessionForVisibility = {
-        agentIds: [
-          ...new Set(
-            tasks
-              .flatMap((t) => [t.assignee, t.claimedBy])
-              .filter((v): v is string => !!v),
-          ),
-        ],
-        repos: [
-          ...new Set(tasks.map((t) => t.repo).filter((v): v is string => !!v)),
-        ],
-      };
-      if (!isSessionVisible(derived, scope)) {
-        return new Response("Not Found", { status: 404 });
+    // second fetch), using deriveSessionVisibilityFromTasks() so the
+    // agentIds precedence (`claimedBy ?? assignee`) matches the task-store
+    // rollup the list page's check consumes. A session outside the caller's
+    // scope 404s rather than 403s, so its existence isn't leaked to callers
+    // who can't see it.
+    //
+    // Skipped entirely in degraded mode: `tasks` is empty because the task
+    // store is unreachable, so the derived scope would be empty and every
+    // member would be 404'd on sessions they legitimately own. Like every
+    // other degraded-mode route here, render 200 with the "unavailable"
+    // banner instead — the degraded page carries no session data beyond the
+    // slug the caller already supplied, so nothing is leaked.
+    if (!degraded) {
+      const scope = await resolveVisibilityScope(
+        c.var.isAdmin,
+        c.var.userEmail,
+        agentMemberService,
+        agentService,
+      );
+      if (scope.agentIds !== "all") {
+        const derived: SessionForVisibility =
+          deriveSessionVisibilityFromTasks(tasks);
+        if (!isSessionVisible(derived, scope)) {
+          return new Response("Not Found", { status: 404 });
+        }
       }
     }
 

@@ -6883,6 +6883,137 @@ describe("admin UI — session detail page", () => {
       });
       expect(res.status).toBe(200);
     });
+
+    // The derived agentIds must follow the task-store rollup's precedence
+    // (`claimedBy ?? assignee` — one id per task, claimedBy wins), not the
+    // union of both fields: after a reassignment the old assignee's members
+    // must lose access, matching what the list page hides.
+    it("a reassigned task (claimedBy wins over assignee) 404s the old assignee's member", async () => {
+      const memberCookie = await makeSessionCookie(
+        SESSION_SECRET,
+        "google-sub-member",
+        MEMBER_EMAIL,
+        false,
+      );
+      const mockTasks = [
+        {
+          id: "task-1",
+          title: "Reassigned task",
+          status: "pending",
+          session: "session-reassigned",
+          repo: "other-org/other-repo",
+          // AGENT_ID was the original assignee; the task has since been
+          // claimed by a different agent, so the rollup reports only
+          // "agent-other".
+          assignee: AGENT_ID,
+          claimedBy: "agent-other",
+        },
+      ];
+      const app = createAdminUIApp(
+        makeMockDeps({
+          agentMemberService: {
+            listByEmail: async (email: string) =>
+              email === MEMBER_EMAIL
+                ? [
+                    {
+                      id: "m1",
+                      agentId: AGENT_ID,
+                      email: MEMBER_EMAIL,
+                      createdAt: new Date("2024-01-01"),
+                    },
+                  ]
+                : [],
+            exists: async () => false,
+            add: async () => ({
+              id: "m1",
+              agentId: AGENT_ID,
+              email: MEMBER_EMAIL,
+              createdAt: new Date(),
+            }),
+            remove: async () => {},
+            listByAgentId: async () => [],
+          },
+          agentService: {
+            listAll: async () => [],
+            listByIds: async () => [
+              {
+                id: AGENT_ID,
+                name: "Test Agent",
+                slackId: null,
+                selfHosted: false,
+                typeName: "coding",
+                createdAt: new Date("2024-01-01"),
+                updatedAt: new Date("2024-01-01"),
+                repos: ["example-org/example-repo"],
+              },
+            ],
+            searchByName: async () => [],
+            listOptions: async () => [],
+            create: async () => {
+              throw new Error("not used");
+            },
+            delete: async () => {},
+            getDetail: async () => {
+              throw new Error("not used");
+            },
+            updateFields: async () => {
+              throw new Error("not used");
+            },
+          },
+          fetchTaskStoreTasks: async () => ({
+            tasks: mockTasks,
+            total: mockTasks.length,
+            limit: 500,
+            offset: 0,
+          }),
+        }),
+      );
+      const res = await app.request("/admin/sessions/session-reassigned", {
+        headers: { Cookie: `admin_session=${memberCookie}` },
+      });
+      expect(res.status).toBe(404);
+    });
+
+    // Degraded mode: tasks can't be fetched, so scope can't be verified
+    // either way. Like every other degraded-mode route, render 200 with the
+    // "unavailable" banner rather than 404ing legitimate members.
+    it("degrades to 200 + banner for a member (not 404) when fetchTaskStoreTasks is absent", async () => {
+      const memberCookie = await makeSessionCookie(
+        SESSION_SECRET,
+        "google-sub-member",
+        MEMBER_EMAIL,
+        false,
+      );
+      const app = createAdminUIApp(makeMockDeps({}));
+      const res = await app.request("/admin/sessions/session-abc", {
+        headers: { Cookie: `admin_session=${memberCookie}` },
+      });
+      expect(res.status).toBe(200);
+      const html = await res.text();
+      expect(html).toContain("Task store unavailable");
+    });
+
+    it("degrades to 200 + banner for a member (not 404) when fetchTaskStoreTasks throws", async () => {
+      const memberCookie = await makeSessionCookie(
+        SESSION_SECRET,
+        "google-sub-member",
+        MEMBER_EMAIL,
+        false,
+      );
+      const app = createAdminUIApp(
+        makeMockDeps({
+          fetchTaskStoreTasks: async () => {
+            throw new Error("task store down");
+          },
+        }),
+      );
+      const res = await app.request("/admin/sessions/session-abc", {
+        headers: { Cookie: `admin_session=${memberCookie}` },
+      });
+      expect(res.status).toBe(200);
+      const html = await res.text();
+      expect(html).toContain("Task store unavailable");
+    });
   });
 
   // AC4/AC5: full round-trip — tasks list (with filters/page) → Session Detail
