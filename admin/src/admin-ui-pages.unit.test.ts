@@ -8367,6 +8367,87 @@ describe("renderSessionDetailPage", () => {
     expect(html).toContain("Sparse task");
     expect(html).toContain(">1<"); // 1 total task
   });
+
+  // ─── Admin actions: archive/unarchive/rename (SESH-5.2) ─────────────────────
+
+  test("isAdmin=false (default): no archive/unarchive/rename controls are present", () => {
+    const html = renderSessionDetailPage(SESSION_ID, MIXED_TASKS, USER_NAME);
+    expect(html).not.toContain(`/admin/sessions/${SESSION_ID}/archive`);
+    expect(html).not.toContain(`/admin/sessions/${SESSION_ID}/unarchive`);
+    expect(html).not.toContain(`/admin/sessions/${SESSION_ID}/rename`);
+    expect(html).not.toContain("newTitle");
+  });
+
+  test("isAdmin=true: archive, unarchive, and rename forms are present", () => {
+    const html = renderSessionDetailPage(
+      SESSION_ID,
+      MIXED_TASKS,
+      USER_NAME,
+      false,
+      "/admin/tasks",
+      {},
+      true,
+    );
+    expect(html).toContain(`action="/admin/sessions/${SESSION_ID}/archive"`);
+    expect(html).toContain(`action="/admin/sessions/${SESSION_ID}/unarchive"`);
+    expect(html).toContain(`action="/admin/sessions/${SESSION_ID}/rename"`);
+    expect(html).toContain('name="newTitle"');
+  });
+
+  test("a session id with characters needing escaping is URL-encoded in admin action form action attributes", () => {
+    const xssSession = "session<script>";
+    const html = renderSessionDetailPage(
+      xssSession,
+      [],
+      USER_NAME,
+      false,
+      "/admin/tasks",
+      {},
+      true,
+    );
+    expect(html).not.toContain(
+      `action="/admin/sessions/${xssSession}/archive"`,
+    );
+    expect(html).toContain(
+      `action="/admin/sessions/${encodeURIComponent(xssSession)}/archive"`,
+    );
+  });
+
+  test("notice: a success notice renders an alert-success banner with the message", () => {
+    const html = renderSessionDetailPage(
+      SESSION_ID,
+      MIXED_TASKS,
+      USER_NAME,
+      false,
+      "/admin/tasks",
+      {},
+      true,
+      { kind: "success", message: "Session archived." },
+    );
+    expect(html).toContain('class="alert alert-success"');
+    expect(html).toContain("Session archived.");
+  });
+
+  test("notice: an error notice renders an alert-error banner with the message", () => {
+    const html = renderSessionDetailPage(
+      SESSION_ID,
+      MIXED_TASKS,
+      USER_NAME,
+      false,
+      "/admin/tasks",
+      {},
+      true,
+      { kind: "error", message: "Failed to archive the session." },
+    );
+    expect(html).toContain('class="alert alert-error"');
+    expect(html).toContain("Failed to archive the session.");
+  });
+
+  test("no notice: no alert-success/alert-error banner is rendered", () => {
+    const html = renderSessionDetailPage(SESSION_ID, MIXED_TASKS, USER_NAME);
+    expect(html).not.toContain('class="alert alert-success"');
+    expect(html).not.toContain('class="alert alert-error"');
+  });
 });
 
 // ─── renderSessionDetailPage — Needs-you panel + header state badge (SESH-5.1)

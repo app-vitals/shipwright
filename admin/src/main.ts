@@ -586,6 +586,27 @@ async function startServer(): Promise<void> {
               );
             return res.json();
           },
+          patchTaskStoreSession: async (
+            slug: string,
+            patch: { title?: string | null; archived?: boolean },
+          ) => {
+            const res = await fetch(
+              `${taskStoreUrl}/sessions/${encodeURIComponent(slug)}`,
+              {
+                method: "PATCH",
+                headers: {
+                  Authorization: `Bearer ${taskStoreAdminToken}`,
+                  "Content-Type": "application/json",
+                },
+                body: JSON.stringify(patch),
+              },
+            );
+            if (!res.ok)
+              throw new Error(
+                `task-store PATCH /sessions/${slug} → ${res.status}`,
+              );
+            return res.json();
+          },
         }
       : {};
 

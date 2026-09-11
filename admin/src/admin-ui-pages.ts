@@ -3631,9 +3631,40 @@ export function renderSessionDetailPage(
   degraded = false,
   backHref = "/admin/tasks",
   prsByTaskId: Record<string, PrListItem> = {},
+  isAdmin = false,
+  notice?: { kind: "success" | "error"; message: string },
 ): string {
   const degradedHtml = degraded
     ? `<div class="alert alert-warning">Task store unavailable — data shown may be stale or empty.</div>`
+    : "";
+
+  const noticeHtml = notice
+    ? `<div class="alert alert-${notice.kind === "success" ? "success" : "error"}">${escapeHtml(notice.message)}</div>`
+    : "";
+
+  // SESH-5.2: admin-only archive/unarchive/rename controls. Both archive and
+  // unarchive forms are always rendered together (rather than resolving the
+  // session's current archived state to show only the applicable one) —
+  // task-store's SessionService.update() treats either as a harmless,
+  // idempotent re-stamp when already in that state, and this route has no
+  // cheap access to the session's current archived flag without an extra
+  // fetch. Never rendered at all for a non-admin caller.
+  const adminActionsHtml = isAdmin
+    ? `<div class="card" style="margin-bottom:16px">
+      <div style="font-size:12px;font-weight:600;color:#374151;margin-bottom:12px;text-transform:uppercase;letter-spacing:.05em">Admin actions</div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+        <form method="POST" action="/admin/sessions/${encodeURIComponent(sessionId)}/archive" style="margin:0">
+          <button type="submit" class="btn btn-secondary">Archive</button>
+        </form>
+        <form method="POST" action="/admin/sessions/${encodeURIComponent(sessionId)}/unarchive" style="margin:0">
+          <button type="submit" class="btn btn-secondary">Unarchive</button>
+        </form>
+        <form method="POST" action="/admin/sessions/${encodeURIComponent(sessionId)}/rename" style="margin:0;display:flex;gap:6px;align-items:center">
+          <input type="text" name="newTitle" placeholder="New title (blank clears it)" class="form-input" style="max-width:240px" />
+          <button type="submit" class="btn btn-secondary">Rename</button>
+        </form>
+      </div>
+    </div>`
     : "";
 
   const waitingTasks = computeSessionWaitingTasks(tasks, prsByTaskId);
@@ -3723,6 +3754,8 @@ export function renderSessionDetailPage(
       ${waitingSinceHtml}
     </div>
     ${degradedHtml}
+    ${noticeHtml}
+    ${adminActionsHtml}
     <div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:16px">
       ${statCard("Total Tasks", String(totalTasks))}
       ${statCard("Est. Hours", String(totalHours))}
