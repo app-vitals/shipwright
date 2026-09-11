@@ -95,6 +95,8 @@ Mounted at `/admin/sessions*`. **Requires authentication** — session cookie or
 | POST | `/admin/sessions/:slug/archive` | admin-only | Archive a session (SESH-5.2). Body: empty form. Admin-only: returns `403` for non-admin callers. Calls task-store `PATCH /sessions/:slug` with `{ archived: true }` (idempotent re-stamp when already archived). On success, redirects to `/admin/sessions/:slug?success=archived` (302); on task-store error or missing dependency, redirects to `/admin/sessions/:slug?error=archive_failed` (302). Errors are logged for operator visibility. |
 | POST | `/admin/sessions/:slug/unarchive` | admin-only | Unarchive a session (SESH-5.2). Body: empty form. Admin-only: returns `403` for non-admin callers. Calls task-store `PATCH /sessions/:slug` with `{ archived: false }` (idempotent re-stamp when already unarchived). On success, redirects to `/admin/sessions/:slug?success=unarchived` (302); on task-store error or missing dependency, redirects to `/admin/sessions/:slug?error=unarchive_failed` (302). Errors are logged for operator visibility. |
 | POST | `/admin/sessions/:slug/rename` | admin-only | Rename a session (SESH-5.2). Body: form-encoded `newTitle` (optional string; empty value sends `null` to clear the title). Admin-only: returns `403` for non-admin callers. Calls task-store `PATCH /sessions/:slug` with `{ title: <value> }` or `{ title: null }` when blank. On success, redirects to `/admin/sessions/:slug?success=renamed` (302); on task-store error or missing dependency, redirects to `/admin/sessions/:slug?error=rename_failed` (302). Errors are logged for operator visibility. |
+| POST | `/admin/sessions/:slug/follow` | admin or member | Follow a session (SESH-6.2), registered by `admin-ui-session-follow.ts`. Body: none (JSON response, not a form post — distinct from the archive/unarchive/rename routes above). Admins always pass; a non-admin member must additionally satisfy the same visibility check as the detail page (`memberCanSeeSession()`, fail-closed — no `fetchTaskStoreSession` dependency or a lookup error yields `404` rather than a false allow). Calls `SessionFollowService.follow()` (upsert, idempotent). Returns `200` with `{ sessionSlug, following: true }`; `404` if the session isn't visible to the caller. |
+| POST | `/admin/sessions/:slug/unfollow` | admin or member | Unfollow a session (SESH-6.2), registered by `admin-ui-session-follow.ts`. Body: none. No visibility re-check — removing your own follow state never requires re-proving visibility (mirrors `POST /admin/settings/notifications/unfollow`'s same skip). Calls `SessionFollowService.unfollow()` (delete, idempotent). Returns `200` with `{ sessionSlug, following: false }`. |
 
 **Visibility scoping (SESH-4.1):** The sessions list and detail routes use the same visibility logic. An admin sees all sessions. A non-admin member's view is scoped to their `AgentMember` rows: they see only sessions with tasks assigned/claimed by their agents, or in their agents' repositories. A member with zero memberships sees an empty sessions list and receives `404` for any detail route. The visibility scope is computed once per request via `resolveVisibilityScope()` (in `admin-ui-sessions-list.ts`) and applied identically to both list and detail routes. The list route checks against the task store's own session rollup; the detail route derives the equivalent shape from the session's tasks via `deriveSessionVisibilityFromTasks()` (in `session-scope.ts`), which uses the same `claimedBy ?? assignee` precedence as `task-store/src/session-rollup.ts` — so a reassigned task's former assignee loses detail access at the same moment the session disappears from their list.
 
@@ -103,6 +105,24 @@ Mounted at `/admin/sessions*`. **Requires authentication** — session cookie or
 **Configuration:**
 
 - Task-store connection is inherited from the agent's main config (`SHIPWRIGHT_TASK_STORE_URL` and `SHIPWRIGHT_TASK_STORE_TOKEN`). No additional env vars required for this route.
+
+### Session alert sweeper (`session-alert-sweeper.ts`) — background job
+
+`SessionAlertSweeper` is the admin service's first (and, as of SESH-7.4, only) background loop — registered via `setInterval` in `main.ts`, never inside `createAdminUIApp()`, which must stay side-effect-free. Every tick it:
+
+1. Fetches the task-store's `waiting` and `closed` sessions (`GET /sessions?state=waiting`/`?state=closed`, admin token, `limit=500`).
+2. Materializes auto-follows: for each user with `UserNotificationPrefs.autoFollowSessions = true` who can already see a waiting session, has no existing `SessionFollow` row, and whose auto-follow boundary (`autoFollowSince`, else the prefs row's `createdAt`) predates the session, upserts a `SessionFollow` row.
+3. Sends one `immediate` push the first time a follower is alerted about a waiting session, and at most one `reminder` per later local day once that user's `reminderHourLocal` has passed — derived entirely from `SessionAlertState.lastAlertedAt` (the schema stores no "kind" column).
+4. Sends one `completed` push per follower of a closed session, then deletes that pair's `SessionFollow` + `SessionAlertState` rows so it never fires again.
+5. Prunes the `SessionAlertState` row of any follower who has lost visibility of the session (membership revoked / repo removed), sending them nothing.
+
+Pushes reuse `PushService.notifySession()` — the same Web Push delivery path as the chat-reply notifier (`POST /admin/push/notify`) — so they share the same VAPID configuration and the same `SHIPWRIGHT_ADMIN_PUSH_MAX_DETAIL` operator ceiling. Not re-entrant: an in-flight guard makes an overlapping tick (a slow task-store fetch under a short interval) return an all-zero result rather than racing the sweep already running; this guard is per-process, so running more than one admin replica needs a shared lock not introduced by this task.
+
+**Configuration:**
+
+- The sweeper only starts when Web Push is fully configured (`SHIPWRIGHT_ADMIN_VAPID_PUBLIC_KEY` + `SHIPWRIGHT_ADMIN_VAPID_PRIVATE_KEY` + `SHIPWRIGHT_ADMIN_VAPID_SUBJECT`) **and** `SHIPWRIGHT_TASK_STORE_URL` + `SHIPWRIGHT_TASK_STORE_ADMIN_TOKEN` are set — otherwise it is never registered (not degraded-mode; simply absent).
+- `SHIPWRIGHT_ADMIN_SESSION_ALERT_INTERVAL_MS` (optional, default `60000`) — tick cadence in ms. Blank, non-numeric, zero, or negative values fall back to the default.
+- See [`configuration.md`](./configuration.md#metrics--admin--chat--task-store-services) for the full env var reference.
 
 ### Public read-only task board (`admin-ui.ts`) — unauthenticated
 

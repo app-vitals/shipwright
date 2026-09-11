@@ -292,6 +292,13 @@ distinct `agentIds`/`repos`, and the list of currently-`waitingTasks`) via `comp
 then flattened together with the Session row's own fields (`slug`, `title`, `createdAt`, `updatedAt`,
 `archivedAt`, `archivedBy`) into one object — the rollup is never nested under a `rollup` key.
 
+**Out of session scope by decision, not oversight:** only `/shipwright:plan-session` ever writes a
+non-blank `session` field onto a task — the `*-fix` patrol skills (`entropy-fix`, `security-fix`,
+`error-fix`, `consolidation-fix`, `test-fix`) never set it on the tasks they queue, and an
+externally-opened PR not linked to any task (e.g. a Renovate dependency-bump PR) has no task at all
+to carry one. Neither surfaces in `/sessions` — this is a deliberate scoping choice (sessions model
+planning-session groupings, not every automated queue or inbound PR), not a gap to be closed.
+
 #### List sessions
 
 ```
@@ -397,6 +404,11 @@ A session is archived (`archivedAt` set, `archivedBy = "system"`) when **all** o
 4. its last task activity is older than `SHIPWRIGHT_TASK_STORE_SESSION_ARCHIVE_AFTER_DAYS` days (default `30`; see [`docs/configuration.md`](./configuration.md) — set to `0` to disable the sweep).
 
 Archiving is **non-destructive and reversible**: it only removes the session from the default list view. Nothing is deleted, and writing any new task into an archived session automatically un-archives it (`SessionService.upsert()`, SES-1.2) — the next sweep will not re-archive it while that task remains open.
+
+**Retention is archive-only.** There is no purge/delete endpoint for sessions (or for the tasks
+within them) — `SessionRetentionReaper` only ever sets `archivedAt`/`archivedBy`, and no route under
+`/sessions` accepts a `DELETE`. A session's rows, and every task that ever belonged to it, persist
+indefinitely; "retention" here means "stop showing it by default," never "remove it."
 
 ### PR tracking
 

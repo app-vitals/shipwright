@@ -484,6 +484,54 @@ and the chat service presents a bearer value that doesn't match it.
 See [`configuration.md`](./configuration.md#metrics--admin--chat--task-store-services)
 for the full list of Web Push env vars and their defaults.
 
+### Session alerts (waiting / reminder / completed)
+
+The same VAPID configuration above also powers a second, independent notification type:
+the **session alert sweeper** (`session-alert-sweeper.ts`), a background loop that pushes
+"session is waiting" / daily-reminder / "session completed" notifications to session
+followers — distinct from the chat-reply notifier's webhook-triggered push above, this one
+runs on its own interval and reads sessions directly from the task-store.
+
+No extra VAPID setup is needed — the sweeper only starts once the VAPID env vars above are
+configured, **and** the admin service can reach the task-store as an admin caller:
+
+```yaml
+admin:
+  extraEnv:
+    - name: SHIPWRIGHT_TASK_STORE_URL
+      value: "http://task-store:3000"
+    - name: SHIPWRIGHT_TASK_STORE_ADMIN_TOKEN
+      valueFrom:
+        secretKeyRef:
+          name: shipwright-secrets
+          key: shipwright-task-store-admin-token
+    - name: SHIPWRIGHT_ADMIN_SESSION_ALERT_INTERVAL_MS
+      value: "60000"                          # optional — tick cadence in ms (default: 60000)
+```
+
+If either the task-store connection or a VAPID var is missing, the sweeper is simply never
+registered (no error, no degraded-mode banner — it's absent).
+
+Retention for these same sessions is a separate, task-store-side concern — set on `taskStore.extraEnv`,
+not `admin.extraEnv`:
+
+```yaml
+taskStore:
+  extraEnv:
+    - name: SHIPWRIGHT_TASK_STORE_SESSION_ARCHIVE_AFTER_DAYS
+      value: "30"                             # optional — days of inactivity before archiving (default: 30; 0 disables the sweep)
+```
+
+Archiving is non-destructive (it only hides a session from the default list view) and reversible
+(any new task written into an archived session un-archives it automatically) — see
+[`task-store.md`](./task-store.md#session-archive-sweep) for the full sweep rules. There is no
+purge/delete endpoint anywhere in this pipeline; nothing this chart configures ever deletes a
+session or its tasks.
+
+See [`configuration.md`](./configuration.md#metrics--admin--chat--task-store-services)
+for the full env var reference (`SHIPWRIGHT_ADMIN_SESSION_ALERT_INTERVAL_MS`,
+`SHIPWRIGHT_TASK_STORE_ADMIN_TOKEN`, `SHIPWRIGHT_TASK_STORE_SESSION_ARCHIVE_AFTER_DAYS`).
+
 ---
 
 ## Authentication modes
