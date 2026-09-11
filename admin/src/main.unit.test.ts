@@ -9,9 +9,11 @@ import {
 } from "./agent-provisioner.ts";
 import type { AgentTokenService } from "./agent-tokens.ts";
 import {
+  DEFAULT_SESSION_ALERT_INTERVAL_MS,
   buildProvisioner,
   checkDbReady,
   resolvePublicRepo,
+  resolveSessionAlertIntervalMs,
   runMigrations,
 } from "./main.ts";
 
@@ -301,6 +303,37 @@ describe("buildProvisioner", () => {
     const config = configOf(provisioner);
     expect(config.pvcName).toBeDefined();
     expect(config.pvcName?.("my-agent")).toBe("acme-agent-my-agent-home");
+  });
+});
+
+// ─── resolveSessionAlertIntervalMs ──────────────────────────────────────────
+
+// The pure env rule behind the session-alert sweeper's setInterval cadence in
+// startServer() (SESH-7.4). Tested without touching process.env.
+describe("resolveSessionAlertIntervalMs", () => {
+  it("defaults to 60s when unset", () => {
+    expect(resolveSessionAlertIntervalMs({})).toBe(
+      DEFAULT_SESSION_ALERT_INTERVAL_MS,
+    );
+    expect(DEFAULT_SESSION_ALERT_INTERVAL_MS).toBe(60_000);
+  });
+
+  it("uses an explicit positive override", () => {
+    expect(
+      resolveSessionAlertIntervalMs({
+        SHIPWRIGHT_ADMIN_SESSION_ALERT_INTERVAL_MS: "5000",
+      }),
+    ).toBe(5000);
+  });
+
+  it("falls back to the default for blank, non-numeric, zero, or negative values", () => {
+    for (const raw of ["", "   ", "soon", "0", "-1"]) {
+      expect(
+        resolveSessionAlertIntervalMs({
+          SHIPWRIGHT_ADMIN_SESSION_ALERT_INTERVAL_MS: raw,
+        }),
+      ).toBe(DEFAULT_SESSION_ALERT_INTERVAL_MS);
+    }
   });
 });
 
