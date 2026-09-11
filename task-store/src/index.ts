@@ -23,6 +23,7 @@ export type {
   PullRequest,
   PrFinding,
   PullRequestEvent,
+  Session,
 } from "../prisma/client/index.js";
 export type {
   BlockedByEntry,

@@ -338,6 +338,24 @@ model PullRequestEvent {
   @@index([prRecordId, at])
 }
 
+// ─── Session ──────────────────────────────────────────────────────────────────
+// A session groups multiple related tasks. Sessions are identified by a human-
+// readable slug (primary key) rather than a numeric ID, allowing sessions to be
+// cited as a meaningful organizational unit.
+//
+// The Task.session field remains a free string (not a foreign key) for backward
+// compatibility — existing tasks that reference sessions by slug continue to work
+// without requiring schema migrations.
+
+model Session {
+  slug       String    @id // Human-readable identifier, e.g. "shipwright-may-launch"
+  title      String?
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+  archivedAt DateTime?
+  archivedBy String?
+}
+
 // ─── Task Token ───────────────────────────────────────────────────────────────
 // Scoped API tokens for task-store authentication. The raw token is returned
 // once at creation; only the SHA-256 hash is stored.
