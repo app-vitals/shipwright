@@ -6655,6 +6655,182 @@ describe("admin UI — session detail page", () => {
     },
   );
 
+  // ─── Needs-you panel + header state badge (SESH-5.1) ──────────────────────
+
+  it("a waiting session (blocked task) shows the Needs-you panel with Blocked badge + reason + since + task link", async () => {
+    const mockTasks = [
+      {
+        id: "task-blocked",
+        title: "Stuck task",
+        status: "blocked",
+        session: "session-waiting",
+        repo: "example-org/example-repo",
+        assignee: null,
+        claimedBy: null,
+        blockedReason: "Needs a human decision",
+        updatedAt: "2026-09-01T00:00:00.000Z",
+      },
+    ];
+    const app = createAdminUIApp(
+      makeMockDeps({
+        fetchTaskStoreTasks: async () => ({
+          tasks: mockTasks,
+          total: mockTasks.length,
+          limit: 500,
+          offset: 0,
+        }),
+      }),
+    );
+    const res = await app.request("/admin/sessions/session-waiting", {
+      headers: { Cookie: `admin_session=${cookie}` },
+    });
+    expect(res.status).toBe(200);
+    const html = await res.text();
+    expect(html).toContain("Needs you");
+    expect(html).toContain("Blocked");
+    expect(html).toContain("Needs a human decision");
+    expect(html).toContain("2026-09-01T00:00:00.000Z");
+    expect(html).toContain('href="/admin/tasks/task-blocked"');
+    expect(html).toContain("/shipwright:unblock task-blocked");
+    // Header state badge
+    expect(html).toContain("Waiting");
+    expect(html).toContain("Waiting since");
+  });
+
+  it("a waiting session (hitl task, no unmet dependency) shows the Needs-you panel with HITL badge + fixed hint", async () => {
+    const mockTasks = [
+      {
+        id: "task-hitl",
+        title: "Needs a human",
+        status: "in_progress",
+        session: "session-hitl-waiting",
+        repo: "example-org/example-repo",
+        assignee: null,
+        claimedBy: null,
+        hitl: true,
+        updatedAt: "2026-09-02T00:00:00.000Z",
+      },
+    ];
+    const app = createAdminUIApp(
+      makeMockDeps({
+        fetchTaskStoreTasks: async () => ({
+          tasks: mockTasks,
+          total: mockTasks.length,
+          limit: 500,
+          offset: 0,
+        }),
+      }),
+    );
+    const res = await app.request("/admin/sessions/session-hitl-waiting", {
+      headers: { Cookie: `admin_session=${cookie}` },
+    });
+    expect(res.status).toBe(200);
+    const html = await res.text();
+    expect(html).toContain("Needs you");
+    expect(html).toContain("HITL");
+    expect(html).toContain("Needs human via /shipwright:hitl");
+    expect(html).toContain("/shipwright:hitl task-hitl");
+  });
+
+  it("a waiting session (pr_blocked task) shows the Needs-you panel with PR blocked badge + the PR's blockedReason + a PR link", async () => {
+    const PR_BLOCKED: PrListItem = {
+      id: "pr-block-1",
+      repo: "example-org/example-repo",
+      prNumber: 55,
+      staged: false,
+      state: "open",
+      reviewState: "in_review",
+      patchCycles: 0,
+      reviewCycles: 0,
+      blocked: true,
+      blockedReason: "CI failing",
+    };
+    const mockTasks = [
+      {
+        id: "task-pr-blocked",
+        title: "PR is blocked",
+        status: "pr_open",
+        session: "session-pr-blocked",
+        repo: "example-org/example-repo",
+        assignee: null,
+        claimedBy: null,
+        pr: 55,
+        prUrl: "https://github.com/example-org/example-repo/pull/55",
+        updatedAt: "2026-09-03T00:00:00.000Z",
+      },
+    ];
+    const app = createAdminUIApp(
+      makeMockDeps({
+        fetchTaskStoreTasks: async () => ({
+          tasks: mockTasks,
+          total: mockTasks.length,
+          limit: 500,
+          offset: 0,
+        }),
+        fetchTaskStorePrs: async () => ({
+          prs: [PR_BLOCKED],
+          total: 1,
+          limit: 50,
+          offset: 0,
+        }),
+      }),
+    );
+    const res = await app.request("/admin/sessions/session-pr-blocked", {
+      headers: { Cookie: `admin_session=${cookie}` },
+    });
+    expect(res.status).toBe(200);
+    const html = await res.text();
+    expect(html).toContain("Needs you");
+    expect(html).toContain("PR blocked");
+    expect(html).toContain("CI failing");
+    expect(html).toContain(
+      'href="https://github.com/example-org/example-repo/pull/55"',
+    );
+    expect(html).toContain("/shipwright:unblock task-pr-blocked");
+  });
+
+  it("a non-waiting session (all active/closed) shows no Needs-you panel and no Waiting header state", async () => {
+    const mockTasks = [
+      {
+        id: "task-active",
+        title: "In progress work",
+        status: "in_progress",
+        session: "session-active",
+        repo: "example-org/example-repo",
+        assignee: null,
+        claimedBy: null,
+        updatedAt: "2026-09-01T00:00:00.000Z",
+      },
+      {
+        id: "task-done",
+        title: "Finished work",
+        status: "done",
+        session: "session-active",
+        repo: "example-org/example-repo",
+        assignee: null,
+        claimedBy: null,
+        updatedAt: "2026-09-01T00:00:00.000Z",
+      },
+    ];
+    const app = createAdminUIApp(
+      makeMockDeps({
+        fetchTaskStoreTasks: async () => ({
+          tasks: mockTasks,
+          total: mockTasks.length,
+          limit: 500,
+          offset: 0,
+        }),
+      }),
+    );
+    const res = await app.request("/admin/sessions/session-active", {
+      headers: { Cookie: `admin_session=${cookie}` },
+    });
+    expect(res.status).toBe(200);
+    const html = await res.text();
+    expect(html).not.toContain("Needs you");
+    expect(html).not.toContain("Waiting since");
+  });
+
   it("GET /admin/sessions/:id unauthenticated redirects to /admin/login", async () => {
     const app = createAdminUIApp(makeMockDeps());
     const res = await app.request("/admin/sessions/session-abc");

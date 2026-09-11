@@ -3242,6 +3242,48 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
       }
     }
 
+    // SESH-5.1: resolve each waiting-candidate task's linked PR via a live
+    // GET /prs?repo=&prNumber= lookup, one request per distinct (repo, pr)
+    // pair among this session's tasks, run in parallel — same batched-join
+    // pattern as GET /admin/tasks's prsByTaskId (see the comment there).
+    // Falls back to no PR data per row if the fetcher is absent, a task has
+    // no repo/pr, or a lookup throws — a failed join never breaks the page,
+    // it just means no task classifies as "pr_blocked".
+    const prsByTaskId: Record<string, PrListItem> = {};
+    if (fetchTaskStorePrs && tasks.length > 0) {
+      const distinctPairs = new Map<string, { repo: string; pr: number }>();
+      for (const t of tasks) {
+        if (t.repo && t.pr) {
+          distinctPairs.set(`${t.repo}#${t.pr}`, { repo: t.repo, pr: t.pr });
+        }
+      }
+      if (distinctPairs.size > 0) {
+        const pairResults = await Promise.all(
+          [...distinctPairs.entries()].map(
+            async ([key, { repo: r, pr: p }]): Promise<
+              [string, PrListItem | undefined]
+            > => {
+              try {
+                const result = await fetchTaskStorePrs(
+                  new URLSearchParams({ repo: r, prNumber: String(p) }),
+                );
+                return [key, result.prs[0]];
+              } catch {
+                return [key, undefined];
+              }
+            },
+          ),
+        );
+        const prsByPairKey = new Map(pairResults);
+        for (const t of tasks) {
+          if (t.repo && t.pr) {
+            const pr = prsByPairKey.get(`${t.repo}#${t.pr}`);
+            if (pr) prsByTaskId[t.id] = pr;
+          }
+        }
+      }
+    }
+
     // SESH-4.2: replaces the old flat `if (!isAdmin) 403` gate with a
     // session-scope.ts-based visibility check — an admin always sees the
     // page; a member sees it only when one of the session's own tasks is
@@ -3282,6 +3324,7 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
         c.var.userEmail,
         degraded,
         backHref,
+        prsByTaskId,
       ),
     );
   });
