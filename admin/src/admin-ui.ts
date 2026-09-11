@@ -57,10 +57,11 @@ import {
   renderTaskDetailPage,
   renderTasksPage,
 } from "./admin-ui-pages.ts";
+import { registerSessionFollowRoutes } from "./admin-ui-session-follow.ts";
 import {
   type Session,
-  resolveVisibilityScope,
   registerSessionsListRoutes,
+  resolveVisibilityScope,
 } from "./admin-ui-sessions-list.ts";
 import { registerSessionSettingsRoutes } from "./admin-ui-sessions.ts";
 import type { AgentCronJobService } from "./agent-cron-jobs.ts";
@@ -111,8 +112,8 @@ import {
   SessionFollowService,
 } from "./session-follow-service.ts";
 import {
-  isSessionVisible,
   type SessionForVisibility,
+  isSessionVisible,
 } from "./session-scope.ts";
 import type { AppManifest } from "./slack-provisioning-client.ts";
 import {
@@ -414,6 +415,16 @@ export interface AdminUIDeps {
     offset: number;
   }>;
   /**
+   * Fetch a single session (its agentIds/repos, for visibility checks) from
+   * the task-store service by slug. If absent, a non-admin member always
+   * gets 404 on POST /admin/sessions/:slug/follow — fail-closed, since
+   * visibility can't be verified without it. Not consulted on the admin or
+   * unfollow paths.
+   */
+  fetchTaskStoreSession?: (
+    slug: string,
+  ) => Promise<SessionForVisibility | null>;
+  /**
    * Public repo slug (SHIPWRIGHT_ADMIN_PUBLIC_REPO) for the read-only task board.
    * When set, GET /public/tasks renders the task list filtered to this repo
    * without requiring authentication. When absent, /public/tasks renders in
@@ -638,6 +649,7 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
     fetchTaskStorePrs,
     fetchTaskStorePrById,
     fetchTaskStoreSessions,
+    fetchTaskStoreSession,
     publicRepo,
     chatClient,
     pwaAssetsDir = PWA_ASSETS_DIR,
@@ -3252,9 +3264,7 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
           ),
         ],
         repos: [
-          ...new Set(
-            tasks.map((t) => t.repo).filter((v): v is string => !!v),
-          ),
+          ...new Set(tasks.map((t) => t.repo).filter((v): v is string => !!v)),
         ],
       };
       if (!isSessionVisible(derived, scope)) {
@@ -3271,6 +3281,16 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
         backHref,
       ),
     );
+  });
+
+  // ─── Session follow (SESH-6.2) ─────────────────────────────────────────────
+
+  registerSessionFollowRoutes(app, {
+    requireAuth,
+    sessionFollowService,
+    agentMemberService,
+    agentService,
+    fetchTaskStoreSession,
   });
 
   // ─── Notification settings (SESH-6.3) ─────────────────────────────────────
