@@ -313,13 +313,16 @@ Query params:
 Returns `{ sessions: Session[], total: number, limit: number, offset: number }`. `total` is the
 count of all sessions matching the filters, independent of `limit`/`offset`.
 
-**Agent token visibility:** a repo-scoped agent token (`agentId` set, non-empty resolved repo scope
-— the same condition `/tasks` uses to decide whether to apply `agentScope`) only sees sessions where
-at least one of that session's own Task rows satisfies `task.assignee === agentId OR (task.repo !==
-null AND task.repo is in the agent's scope)`. A session with zero tasks can never satisfy this OR,
-so it is never visible under a scoped token, and a session none of whose tasks match is silently
-absent from the list (no error, no partial rollup). Admin tokens (`agentId === null`) — and agent
-tokens with no resolved repo scope — see every session matching the query filters, unrestricted.
+**Agent token visibility:** *every* agent token (`agentId` set) is scoped — the scope is applied
+whenever `agentId` is non-null, regardless of whether the token's resolved repo list is empty. A
+scoped token only sees sessions where at least one of that session's own Task rows satisfies
+`task.assignee === agentId OR (task.repo !== null AND task.repo is in the agent's resolved repo
+scope)`. A session with zero tasks can never satisfy this OR, so it is never visible under an agent
+token, and a session none of whose tasks match is silently absent from the list (no error, no
+partial rollup). An agent token with **no** resolved repo scope (empty repo list) degrades to
+assignee-only matching — the repo half of the OR can never match, so it sees only sessions
+containing a task assigned directly to it — it is **not** granted unrestricted visibility. Only
+admin tokens (`agentId === null`) see every session matching the query filters, unrestricted.
 
 #### Get session
 
@@ -328,7 +331,7 @@ GET /sessions/:slug
 ```
 
 Returns the same flattened session+rollup shape as the list response. Returns `404` if the session
-doesn't exist, or if a repo-scoped agent token has no qualifying task in it (same visibility rule as
+doesn't exist, or if an agent token has no qualifying task in it (same visibility rule as
 the list route above) — the two cases are indistinguishable to the caller by design.
 
 ### Task status lifecycle
