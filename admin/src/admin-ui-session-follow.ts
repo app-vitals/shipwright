@@ -55,7 +55,10 @@ async function memberCanSeeSession(
   let session: SessionForVisibility | null;
   try {
     session = await deps.fetchTaskStoreSession(slug);
-  } catch {
+  } catch (err) {
+    // Fail closed, but leave an operational signal: without this, a task-store
+    // outage degrades every member's follow into an indistinguishable 404.
+    console.error("[session-follow] fetchTaskStoreSession failed:", err);
     return false;
   }
   if (!session) return false;

@@ -13,7 +13,7 @@
  * through the route layer.
  */
 
-import { describe, expect, it } from "bun:test";
+import { describe, expect, it, spyOn } from "bun:test";
 import { Hono } from "hono";
 import type { MiddlewareHandler } from "hono";
 import {
@@ -234,23 +234,37 @@ describe("POST /admin/sessions/:slug/follow", () => {
     expect(sessionFollowService.followCalls).toEqual([]);
   });
 
-  it("member-follow-invisible-404: fetchTaskStoreSession throwing is treated as invisible", async () => {
-    const { app, sessionFollowService } = buildApp({
-      agentMemberService: makeFakeAgentMemberService({
-        [DEFAULT_EMAIL]: [{ agentId: "agent-1" }],
-      }),
-      agentService: makeFakeAgentService({ "agent-1": [] }),
-      fetchTaskStoreSession: async () => {
-        throw new Error("task-store unreachable");
-      },
-    });
+  it("member-follow-invisible-404: fetchTaskStoreSession throwing is treated as invisible, and is logged", async () => {
+    const consoleErrorSpy = spyOn(console, "error").mockImplementation(
+      () => {},
+    );
+    try {
+      const { app, sessionFollowService } = buildApp({
+        agentMemberService: makeFakeAgentMemberService({
+          [DEFAULT_EMAIL]: [{ agentId: "agent-1" }],
+        }),
+        agentService: makeFakeAgentService({ "agent-1": [] }),
+        fetchTaskStoreSession: async () => {
+          throw new Error("task-store unreachable");
+        },
+      });
 
-    const res = await req(app, "/admin/sessions/boom-slug/follow", {
-      isAdmin: false,
-    });
+      const res = await req(app, "/admin/sessions/boom-slug/follow", {
+        isAdmin: false,
+      });
 
-    expect(res.status).toBe(404);
-    expect(sessionFollowService.followCalls).toEqual([]);
+      expect(res.status).toBe(404);
+      expect(sessionFollowService.followCalls).toEqual([]);
+
+      // Fail-closed must not be silent — a task-store outage needs an
+      // operational signal, not an indistinguishable 404.
+      expect(consoleErrorSpy).toHaveBeenCalled();
+      const loggedArgs = consoleErrorSpy.mock.calls.flat().join(" ");
+      expect(loggedArgs).toContain("fetchTaskStoreSession failed");
+      expect(loggedArgs).toContain("task-store unreachable");
+    } finally {
+      consoleErrorSpy.mockRestore();
+    }
   });
 
   it("member-follow-visible: visibility via repos intersection (not just agentIds)", async () => {
