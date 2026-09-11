@@ -84,6 +84,23 @@ Mounted at `/admin/chat*`. **Admin-only** — requires session cookie or bearer 
 - `SHIPWRIGHT_CHAT_SERVICE_URL` (optional) — base URL of the chat service (e.g. `http://chat:3000`). Required alongside `SHIPWRIGHT_CHAT_SERVICE_ADMIN_TOKEN` for the admin UI to access threads and messages.
 - `SHIPWRIGHT_CHAT_SERVICE_ADMIN_TOKEN` (optional) — bearer token for admin-side chat service access. Required alongside `SHIPWRIGHT_CHAT_SERVICE_URL`. Used to list/fetch threads and messages (read operations).
 
+### Sessions list UI (`admin-ui-sessions-list.ts`) — authenticated
+
+Mounted at `/admin/sessions*`. **Requires authentication** — session cookie or bearer token (same auth as admin CRUD API). Renders a paginated list of sessions grouped by state (Waiting on you / Active / Closed), with query-based filtering and member-scoped visibility. Admins see all sessions; non-admin members see only sessions with a task assigned to one of their agents or in one of those agents' repositories. When task-store access is unavailable, the page renders in degraded mode (empty sections + warning banner).
+
+| Method | Path | Auth | Description |
+|---|---|---|---|
+| GET | `/admin/sessions` | admin or member | List sessions across all states, filtered and paginated. Query params: `archived` (optional, `true` to show archived sessions instead of active ones), `state` (implicit, derived from `archived` parameter — `"all"` for non-archived or `"archived"` for archived), `sort` (optional, `"waitingSince"` or `"lastActivityAt"`, defaults to `"waitingSince"`), `q` (optional, search by session slug or title), `repo` (optional, can be repeated to filter by repository), `agent` (optional, filter by agent ID), `limit` (optional, pagination limit, defaults to 50), `offset` (optional, pagination offset, defaults to 0). Returns `text/html` with three collapsible sections (Waiting/Active/Closed) or a single Archived section depending on the `archived` query parameter. Session visibility is scoped: admins see all sessions, members see only sessions related to their agents. Empty list renders a message indicating no sessions match the filters. |
+| GET | `/admin/sessions/:id` | admin or member | View a single session detail page. Path param: `:id` (session slug). Returns `text/html`. Session visibility is scoped: admins see all sessions; members see a session only when one of its tasks is assigned to or claimed by one of their agents, or the session's repository is in one of their agents' `repos` lists. Sessions outside the member's scope return `404` to avoid leaking existence. The page displays session metadata (title, slug, creation/update timestamps, archive status), task list filtered to open tasks, and session follow/notification controls (wired to `SessionFollowService`, SESH-6.1). |
+
+**Visibility scoping (SESH-4.1):** The sessions list and detail routes use the same visibility logic. An admin sees all sessions. A non-admin member's view is scoped to their `AgentMember` rows: they see only sessions with tasks assigned/claimed by their agents, or in their agents' repositories. A member with zero memberships sees an empty sessions list and receives `404` for any detail route. The visibility scope is computed once per request via `resolveVisibilityScope()` (in `admin-ui-sessions-list.ts`) and applied identically to both list and detail routes.
+
+**Degraded mode:** When the task-store service is unavailable or `fetchTaskStoreSessions` is not configured, the sessions list page renders empty sections with a warning banner. The detail route still renders but shows a subset of cached/locally-stored data if available. The routes remain accessible and return `200` — callers are not redirected or rejected.
+
+**Configuration:**
+
+- Task-store connection is inherited from the agent's main config (`SHIPWRIGHT_TASK_STORE_URL` and `SHIPWRIGHT_TASK_STORE_TOKEN`). No additional env vars required for this route.
+
 ### Public read-only task board (`admin-ui.ts`) — unauthenticated
 
 Mounted at `/public/tasks`. **No authentication required** — renders a read-only task list scoped to a configurable repository. When `SHIPWRIGHT_ADMIN_PUBLIC_REPO` is set, fetches tasks for that repo from the task-store and displays them in a static HTML page with no mutation controls (create/edit/status-change disabled). When the config is absent or task-store access fails, the page renders in degraded mode (empty table + warning notice). The endpoint is always registered and always accessible; it gracefully degrades when prerequisites are missing.
