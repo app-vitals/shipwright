@@ -10,6 +10,12 @@ independent of `appVersion`. CI enforces this with
 `ct lint --check-version-increment`. Each release here must mirror the
 `artifacthub.io/changes` annotation in `Chart.yaml`.
 
+## [1.20.25] - 2026-09-11
+
+### Added
+
+- document `SHIPWRIGHT_ADMIN_SESSION_ALERT_INTERVAL_MS` and `SHIPWRIGHT_TASK_STORE_SESSION_ARCHIVE_AFTER_DAYS` as commented extraEnv examples under `admin.extraEnv` and `taskStore.extraEnv` (SESH-9.2). Both env vars already have code-level defaults (60000ms and 30 days respectively), so no new required Helm value.
+
 ## [1.20.24] - 2026-09-11
 
 ### Changed

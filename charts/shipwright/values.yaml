@@ -271,7 +271,12 @@ admin:
   appBaseUrl: ""
   # -- Extra environment variables injected into the admin container.
   # List of Kubernetes envVar objects (name/value or name/valueFrom). Use for
-  # env vars not otherwise covered by chart values.
+  # env vars not otherwise covered by chart values. Example (commented out —
+  # the sweeper's own default of 60000ms applies when unset; see
+  # docs/configuration.md for the session-alert sweeper):
+  #   extraEnv:
+  #     - name: SHIPWRIGHT_ADMIN_SESSION_ALERT_INTERVAL_MS
+  #       value: "60000"
   extraEnv: []
   # -- Optional Sentry error reporting for the admin service. Leave
   # dsn.existingSecret empty to disable (no Sentry init, no middleware mounted).
@@ -863,6 +868,10 @@ taskStore:
   # SHIPWRIGHT_TASK_STORE_AGENTS_URL / AGENTS_API_KEY scope-resolver wiring
   # named above), upgrading to this default will silently drop this
   # SHIPWRIGHT_CLAUDE_TIMEOUT_MS entry — re-add it to your own override list.
+  # Another example (commented out — code-level default is 30 days; see
+  # docs/configuration.md for the session-retention reaper):
+  #   - name: SHIPWRIGHT_TASK_STORE_SESSION_ARCHIVE_AFTER_DAYS
+  #     value: "30"
   extraEnv:
     - name: SHIPWRIGHT_CLAUDE_TIMEOUT_MS
       value: "3600000"
