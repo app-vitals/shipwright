@@ -1516,7 +1516,12 @@ describe("admin UI — authenticated pages", () => {
         agentCronJobService: {
           list: async () => [{ ...MOCK_CRON, name: "shipwright-loop" }],
           listWithRunSummary: async () => [
-            { ...MOCK_CRON, name: "shipwright-loop", lastRun: null, runCountToday: 0 },
+            {
+              ...MOCK_CRON,
+              name: "shipwright-loop",
+              lastRun: null,
+              runCountToday: 0,
+            },
           ],
           listShipwrightLoopJobs: async () => [],
           get: async () => MOCK_CRON,
@@ -2977,10 +2982,10 @@ describe("admin UI — GET /admin/queue-activity (merged fleet-wide view)", () =
       "<title>Queue &amp; Activity — All Agents — Shipwright Admin</title>",
     );
     // "All agents" is pre-selected on the merged view's own selector.
-    expect(html).toContain('<option value="__all__" selected>All agents</option>');
     expect(html).toContain(
-      `<option value="${AGENT_ID}">Test Agent</option>`,
+      '<option value="__all__" selected>All agents</option>',
     );
+    expect(html).toContain(`<option value="${AGENT_ID}">Test Agent</option>`);
   });
 
   it("non-admin AgentMember sees the merged view scoped to their accessible agents only", async () => {
@@ -3148,7 +3153,10 @@ describe("admin UI — GET /admin/queue-activity (merged fleet-wide view)", () =
     const deps = makeMockDeps({
       agentService: {
         listAll: async () => [
-          { ...makeAgent(ALPHA_ID, "Alpha Agent"), repos: ["app-vitals/shipwright"] },
+          {
+            ...makeAgent(ALPHA_ID, "Alpha Agent"),
+            repos: ["app-vitals/shipwright"],
+          },
           {
             ...makeAgent(BETA_ID, "Beta Agent"),
             repos: ["app-vitals/shipwright", "app-vitals/other-repo"],
@@ -3266,9 +3274,7 @@ describe("admin UI — GET /admin/queue-activity (merged fleet-wide view)", () =
 
     // Deduped shared PR: queued by both agents, eligible on both (both list
     // "app-vitals/shipwright" in repos) — exactly one row, not two.
-    expect(
-      html.match(/app-vitals\/shipwright#100/g)?.length,
-    ).toBe(1);
+    expect(html.match(/app-vitals\/shipwright#100/g)?.length).toBe(1);
 
     // Beta-only PR: queued only by Beta, eligible only for Beta (only Beta
     // lists "app-vitals/other-repo").
@@ -5899,9 +5905,12 @@ describe("admin UI — tasks page", () => {
         }),
       }),
     );
-    const res = await app.request("/admin/tasks?view=table&status=in_progress", {
-      headers: { Cookie: `admin_session=${cookie}` },
-    });
+    const res = await app.request(
+      "/admin/tasks?view=table&status=in_progress",
+      {
+        headers: { Cookie: `admin_session=${cookie}` },
+      },
+    );
     expect(res.status).toBe(200);
     const html = await res.text();
     const expectedFrom = encodeURIComponent(
@@ -7345,6 +7354,128 @@ describe("admin UI — session detail page", () => {
     expect(res.status).toBe(200);
     const html = await res.text();
     expect(html).toContain('data-following="false"');
+  });
+
+  it("toggles follow/unfollow via the real routes and the detail page re-renders the button state before/after", async () => {
+    // A minimal stateful double for the sessionFollow/sessionAlertState
+    // Prisma models — exercises the real POST /admin/sessions/:slug/follow
+    // and /unfollow routes (SESH-6.2, unmodified by this task) plus this
+    // task's fetchIsFollowingSession fallback resolver end to end, rather
+    // than asserting each rendered state in isolation.
+    const followedSlugs = new Set<string>();
+    const deps = makeMockDeps({
+      fetchTaskStoreTasks: async () => ({
+        tasks: [],
+        total: 0,
+        limit: 500,
+        offset: 0,
+      }),
+    });
+    const prismaWithSessionFollow = deps.prisma as unknown as {
+      sessionFollow: {
+        upsert: (args: {
+          where: {
+            userEmail_sessionSlug: { userEmail: string; sessionSlug: string };
+          };
+        }) => Promise<{
+          id: string;
+          userEmail: string;
+          sessionSlug: string;
+          muted: boolean;
+          createdAt: Date;
+          updatedAt: Date;
+        }>;
+        deleteMany: (args: {
+          where: { sessionSlug: string };
+        }) => Promise<{ count: number }>;
+        findMany: (args: {
+          where: { userEmail: string };
+        }) => Promise<
+          Array<{
+            id: string;
+            userEmail: string;
+            sessionSlug: string;
+            muted: boolean;
+            createdAt: Date;
+            updatedAt: Date;
+          }>
+        >;
+      };
+      sessionAlertState: { deleteMany: () => Promise<{ count: number }> };
+    };
+    prismaWithSessionFollow.sessionFollow = {
+      upsert: async ({ where }) => {
+        const slug = where.userEmail_sessionSlug.sessionSlug;
+        followedSlugs.add(slug);
+        return {
+          id: `follow-${slug}`,
+          userEmail: where.userEmail_sessionSlug.userEmail,
+          sessionSlug: slug,
+          muted: false,
+          createdAt: new Date("2024-01-01"),
+          updatedAt: new Date("2024-01-01"),
+        };
+      },
+      deleteMany: async ({ where }) => {
+        const existed = followedSlugs.delete(where.sessionSlug);
+        return { count: existed ? 1 : 0 };
+      },
+      findMany: async ({ where }) =>
+        [...followedSlugs].map((slug) => ({
+          id: `follow-${slug}`,
+          userEmail: where.userEmail,
+          sessionSlug: slug,
+          muted: false,
+          createdAt: new Date("2024-01-01"),
+          updatedAt: new Date("2024-01-01"),
+        })),
+    };
+    prismaWithSessionFollow.sessionAlertState = {
+      deleteMany: async () => ({ count: 0 }),
+    };
+    const app = createAdminUIApp(deps);
+
+    const before = await app.request("/admin/sessions/session-abc", {
+      headers: { Cookie: `admin_session=${cookie}` },
+    });
+    expect(before.status).toBe(200);
+    const beforeHtml = await before.text();
+    expect(beforeHtml).toContain('data-following="false"');
+    expect(beforeHtml).toContain(">Follow<");
+
+    const followRes = await app.request("/admin/sessions/session-abc/follow", {
+      method: "POST",
+      headers: { Cookie: `admin_session=${cookie}` },
+    });
+    expect(followRes.status).toBe(200);
+    expect(await followRes.json()).toEqual({
+      sessionSlug: "session-abc",
+      following: true,
+    });
+
+    const after = await app.request("/admin/sessions/session-abc", {
+      headers: { Cookie: `admin_session=${cookie}` },
+    });
+    const afterHtml = await after.text();
+    expect(afterHtml).toContain('data-following="true"');
+    expect(afterHtml).toContain(">Following<");
+
+    const unfollowRes = await app.request(
+      "/admin/sessions/session-abc/unfollow",
+      { method: "POST", headers: { Cookie: `admin_session=${cookie}` } },
+    );
+    expect(unfollowRes.status).toBe(200);
+    expect(await unfollowRes.json()).toEqual({
+      sessionSlug: "session-abc",
+      following: false,
+    });
+
+    const afterUnfollow = await app.request("/admin/sessions/session-abc", {
+      headers: { Cookie: `admin_session=${cookie}` },
+    });
+    const afterUnfollowHtml = await afterUnfollow.text();
+    expect(afterUnfollowHtml).toContain('data-following="false"');
+    expect(afterUnfollowHtml).toContain(">Follow<");
   });
 });
 
