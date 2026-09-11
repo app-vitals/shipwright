@@ -132,6 +132,19 @@ function activityTime(value: string | null): number {
   return value === null ? Number.NEGATIVE_INFINITY : new Date(value).getTime();
 }
 
+/** Extract the (repo, prNumber) pairs lookupBlockedPrNumbers() needs from a
+ * task set — only tasks with both fields set can ever be "pr_blocked". */
+function toBlockedLookupKeys(
+  tasks: Task[],
+): { repo: string; prNumber: number }[] {
+  return tasks
+    .filter(
+      (t): t is Task & { repo: string; pr: number } =>
+        t.repo !== null && t.pr !== null,
+    )
+    .map((t) => ({ repo: t.repo, prNumber: t.pr }));
+}
+
 /**
  * True when `session` should be treated as absent for the purposes of the
  * Session upsert hook: null, undefined, or a string that is empty or
@@ -194,12 +207,7 @@ export class SessionService implements SessionServiceLike {
     }
 
     const prBlockedSet = await this.lookupBlockedPrNumbers(
-      tasks
-        .filter(
-          (t): t is Task & { repo: string; pr: number } =>
-            t.repo !== null && t.pr !== null,
-        )
-        .map((t) => ({ repo: t.repo, prNumber: t.pr })),
+      toBlockedLookupKeys(tasks),
     );
 
     let items: SessionListItem[] = sessionRows.map((session) => {
@@ -291,12 +299,7 @@ export class SessionService implements SessionServiceLike {
     }
 
     const prBlockedSet = await this.lookupBlockedPrNumbers(
-      tasks
-        .filter(
-          (t): t is Task & { repo: string; pr: number } =>
-            t.repo !== null && t.pr !== null,
-        )
-        .map((t) => ({ repo: t.repo, prNumber: t.pr })),
+      toBlockedLookupKeys(tasks),
     );
 
     const rollup = computeSessionRollup(tasks, prBlockedSet, this.clock, {
