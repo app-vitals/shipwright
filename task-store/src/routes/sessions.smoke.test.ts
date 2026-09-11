@@ -419,6 +419,26 @@ describe("GET /sessions (smoke)", () => {
     expect(body.sessions.map((s) => s.slug)).not.toContain("empty-1");
   });
 
+  it("agent token with an empty repo scope still sees sessions it is assigned to", async () => {
+    // repos: [] is "scoped-but-unknown" (auth.ts fail-safe restrictive) — it must
+    // degrade to assignee-only visibility, never to unrestricted admin visibility.
+    const parent = makeAgentParent(makeApp(), "agent-2", []);
+    const res = await parent.request("/?state=all");
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as SessionListResult;
+    expect(body.sessions.map((s) => s.slug)).toEqual(["waiting-new"]);
+    expect(body.total).toBe(1);
+  });
+
+  it("agent token with an empty repo scope and no assigned task sees zero sessions", async () => {
+    const parent = makeAgentParent(makeApp(), "agent-unknown", []);
+    const res = await parent.request("/?state=all");
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as SessionListResult;
+    expect(body.sessions).toEqual([]);
+    expect(body.total).toBe(0);
+  });
+
   it("GET /sessions returns 401-shaped auth is enforced upstream — smoke here covers 200 shape: { sessions, total, limit, offset }", async () => {
     const parent = makeAdminParent(makeApp());
     const res = await parent.request("/");
@@ -466,5 +486,20 @@ describe("GET /sessions/:slug (smoke)", () => {
     expect(res.status).toBe(200);
     const body = (await res.json()) as SessionListItem;
     expect(body.slug).toBe("active-1");
+  });
+
+  it("returns 200 for an agent token with an empty repo scope assigned to a task in that session", async () => {
+    const parent = makeAgentParent(makeApp(), "agent-2", []);
+    const res = await parent.request("/waiting-new");
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as SessionListItem;
+    expect(body.slug).toBe("waiting-new");
+  });
+
+  it("returns 404 for an agent token with an empty repo scope and no assigned task", async () => {
+    // Would be 200 (unrestricted) if an empty repo scope skipped agentScope.
+    const parent = makeAgentParent(makeApp(), "agent-unknown", []);
+    const res = await parent.request("/active-1");
+    expect(res.status).toBe(404);
   });
 });

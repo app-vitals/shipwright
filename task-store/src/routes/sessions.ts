@@ -7,11 +7,12 @@
  * applied by the parent app, so these handlers assume the caller is already
  * authenticated.
  *
- * Agent tokens are scoped the same way TaskService.list()'s `agentScope` and
- * distinct() are: `agentScope` is built only when the token has a non-empty
- * repo scope (`agentId !== null && repos !== null && repos.length > 0`,
- * mirroring routes/tasks.ts's `useAgentScope`). Admin tokens (agentId null)
- * are unrestricted.
+ * Agent tokens are ALWAYS scoped: `agentScope` is built for every token with a
+ * non-null `agentId`, regardless of whether its resolved `repos` list is empty.
+ * An empty `repos` (resolver failure or a legitimately zero-repo agent — see
+ * auth.ts's fail-safe-restrictive fallback) degrades naturally to assignee-only
+ * visibility inside SessionService's `hasQualifyingTask()`, rather than to
+ * unrestricted visibility. Only admin tokens (agentId null) are unrestricted.
  *
  * Routes:
  *   GET /sessions        list (?state, ?sort, ?agentId, ?repo, ?q, ?limit, ?offset)
@@ -93,10 +94,10 @@ export function createSessionsRoutes(
     const agentId = c.get("agentId");
     const repos = c.get("repos");
 
-    // Same useAgentScope condition as routes/tasks.ts's listRoute: only build
-    // an auth scope for agent tokens with a known, non-empty repo scope.
-    const useAgentScope =
-      agentId !== null && repos !== null && repos.length > 0;
+    // Every agent token gets an auth scope — an empty `repos` means
+    // "scoped-but-unknown" (fail-safe restrictive per auth.ts), not
+    // "unrestricted", and degrades to assignee-only matching in the service.
+    const useAgentScope = agentId !== null;
 
     const limitRaw = c.req.query("limit");
     const offsetRaw = c.req.query("offset");
@@ -116,7 +117,7 @@ export function createSessionsRoutes(
           ? Number.parseInt(offsetRaw, 10) || undefined
           : undefined,
       ...(useAgentScope
-        ? { agentScope: { agentId: agentId as string, repos } }
+        ? { agentScope: { agentId: agentId as string, repos: repos ?? [] } }
         : {}),
     };
 
@@ -129,12 +130,14 @@ export function createSessionsRoutes(
   app.openapi(getOneRoute, async (c): Promise<any> => {
     const agentId = c.get("agentId");
     const repos = c.get("repos");
-    const useAgentScope =
-      agentId !== null && repos !== null && repos.length > 0;
+    // Same always-scope-agent-tokens rule as the list route above.
+    const useAgentScope = agentId !== null;
 
     const session = await sessionService.get(
       c.req.param("slug"),
-      useAgentScope ? { agentId: agentId as string, repos } : undefined,
+      useAgentScope
+        ? { agentId: agentId as string, repos: repos ?? [] }
+        : undefined,
     );
     if (!session) throw new NotFoundError("session not found");
     return c.json(session, 200);
