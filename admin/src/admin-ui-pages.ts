@@ -3103,6 +3103,186 @@ const TASK_STATE_GROUPS: { key: TaskState; label: string }[] = [
   { key: "closed", label: "Closed" },
 ];
 
+// ─── Needs-you panel + header state badge (SESH-5.1) ─────────────────────────
+//
+// Mirrors task-store/src/session-rollup.ts's classifyWaiting precedence
+// (blocked > pr_blocked > hitl), reimplemented here against the TaskItem/
+// PrListItem shapes already available on the admin side — this file avoids
+// importing task-store internals (same convention as the BlockedByEntry
+// mirror above). A task only counts as waiting when it's open (not in
+// SESSION_CLOSED_STATUSES).
+
+export type WaitingKind = "hitl" | "blocked" | "pr_blocked";
+
+export interface SessionWaitingTask {
+  task: TaskItem;
+  kind: WaitingKind;
+}
+
+function classifyWaitingTask(
+  task: TaskItem,
+  prsByTaskId: Record<string, PrListItem>,
+): WaitingKind | null {
+  if (task.status === "blocked") return "blocked";
+  if (task.pr != null && prsByTaskId[task.id]?.blocked === true) {
+    return "pr_blocked";
+  }
+  if (task.hitl === true) {
+    const hasUnmetDependency = (task.blockedBy ?? []).some(
+      (entry) => entry.type === "dependency",
+    );
+    if (!hasUnmetDependency) return "hitl";
+  }
+  return null;
+}
+
+/** Computes the session's waiting tasks — open tasks (not in
+ * SESSION_CLOSED_STATUSES) that classify into a WaitingKind. `prsByTaskId`
+ * defaults to `{}` so callers with no PR join simply never surface
+ * "pr_blocked" rows. */
+export function computeSessionWaitingTasks(
+  tasks: TaskItem[],
+  prsByTaskId: Record<string, PrListItem> = {},
+): SessionWaitingTask[] {
+  const waiting: SessionWaitingTask[] = [];
+  for (const t of tasks) {
+    if (SESSION_CLOSED_STATUSES.has(t.status)) continue;
+    const kind = classifyWaitingTask(t, prsByTaskId);
+    if (kind) waiting.push({ task: t, kind });
+  }
+  return waiting;
+}
+
+export type SessionRollupState = "waiting" | "active" | "closed" | "empty";
+
+/** Session-level state: "empty" with zero tasks; "closed" when every task is
+ * closed; "waiting" when at least one open task is waiting; else "active". */
+export function computeSessionState(
+  tasks: TaskItem[],
+  waitingTasks: SessionWaitingTask[],
+): SessionRollupState {
+  if (tasks.length === 0) return "empty";
+  const openCount = tasks.filter(
+    (t) => !SESSION_CLOSED_STATUSES.has(t.status),
+  ).length;
+  if (openCount === 0) return "closed";
+  if (waitingTasks.length > 0) return "waiting";
+  return "active";
+}
+
+/** Earliest `updatedAt` among the session's waiting tasks (mirrors
+ * session-rollup.ts's `waitingSince`) — null when no waiting task carries an
+ * `updatedAt`. */
+function computeWaitingSince(
+  waitingTasks: SessionWaitingTask[],
+): string | null {
+  let earliest: string | null = null;
+  for (const { task } of waitingTasks) {
+    if (!task.updatedAt) continue;
+    if (
+      earliest === null ||
+      new Date(task.updatedAt).getTime() < new Date(earliest).getTime()
+    ) {
+      earliest = task.updatedAt;
+    }
+  }
+  return earliest;
+}
+
+const WAITING_KIND_LABEL: Record<WaitingKind, string> = {
+  hitl: "HITL",
+  blocked: "Blocked",
+  pr_blocked: "PR blocked",
+};
+
+const WAITING_KIND_BADGE_CLASS: Record<WaitingKind, string> = {
+  hitl: "badge-purple",
+  blocked: "badge-red",
+  pr_blocked: "badge-warning",
+};
+
+/** Per-row reason text: blockedReason for "blocked", the joined PR's
+ * blockedReason for "pr_blocked" (no natural per-task reason field exists
+ * for hitl, so that case is a fixed descriptive string). */
+function waitingTaskReason(
+  entry: SessionWaitingTask,
+  prsByTaskId: Record<string, PrListItem>,
+): string | null {
+  if (entry.kind === "blocked") return entry.task.blockedReason ?? null;
+  if (entry.kind === "pr_blocked") {
+    return prsByTaskId[entry.task.id]?.blockedReason ?? null;
+  }
+  return "Needs human via /shipwright:hitl";
+}
+
+/** Copyable slash-command hint for the row's kind — no clipboard JS, just
+ * plain selectable text in a <code> span. */
+function waitingTaskHint(entry: SessionWaitingTask): string {
+  return entry.kind === "hitl"
+    ? `/shipwright:hitl ${entry.task.id}`
+    : `/shipwright:unblock ${entry.task.id}`;
+}
+
+function renderNeedsYouPanel(
+  waitingTasks: SessionWaitingTask[],
+  prsByTaskId: Record<string, PrListItem>,
+): string {
+  const rows = waitingTasks
+    .map((entry) => {
+      const { task, kind } = entry;
+      const reason = waitingTaskReason(entry, prsByTaskId);
+      const since = task.updatedAt ?? null;
+      const prLink =
+        task.prUrl != null
+          ? `<a href="${escapeHtml(task.prUrl)}" target="_blank" rel="noopener" style="color:#6366f1;text-decoration:none">PR</a>`
+          : '<span style="color:#9ca3af">—</span>';
+      return `<tr>
+        <td><span class="badge ${WAITING_KIND_BADGE_CLASS[kind]}">${escapeHtml(WAITING_KIND_LABEL[kind])}</span></td>
+        <td style="font-size:12px">${reason ? escapeHtml(reason) : '<span style="color:#9ca3af">—</span>'}</td>
+        <td style="font-size:12px">${since ? escapeHtml(since) : '<span style="color:#9ca3af">—</span>'}</td>
+        <td class="mono" style="font-size:11px"><a href="/admin/tasks/${escapeHtml(task.id)}" style="color:#6366f1;text-decoration:none">${escapeHtml(task.id)}</a></td>
+        <td style="font-size:12px">${prLink}</td>
+        <td class="mono" style="font-size:11px"><code>${escapeHtml(waitingTaskHint(entry))}</code></td>
+      </tr>`;
+    })
+    .join("\n");
+
+  return `<div class="card" style="margin-bottom:16px">
+      <div style="font-size:12px;font-weight:600;color:#374151;margin-bottom:12px;text-transform:uppercase;letter-spacing:.05em">Needs you</div>
+      <div class="data-table-wrapper">
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th>Kind</th>
+              <th>Reason</th>
+              <th>Since</th>
+              <th>Task</th>
+              <th>PR</th>
+              <th>Command</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${rows}
+          </tbody>
+        </table>
+      </div>
+    </div>`;
+}
+
+const SESSION_STATE_LABEL: Record<SessionRollupState, string> = {
+  waiting: "Waiting",
+  active: "Active",
+  closed: "Closed",
+  empty: "Empty",
+};
+
+const SESSION_STATE_BADGE_CLASS: Record<SessionRollupState, string> = {
+  waiting: "badge-warning",
+  active: "badge-blue",
+  closed: "badge-green",
+  empty: "badge-gray",
+};
+
 // ─── Board column bucketing (AXR-1.2) ────────────────────────────────────────
 //
 // Single source of truth for the task board's 5 possible bucket values —
@@ -3450,10 +3630,26 @@ export function renderSessionDetailPage(
   userName: string,
   degraded = false,
   backHref = "/admin/tasks",
+  prsByTaskId: Record<string, PrListItem> = {},
 ): string {
   const degradedHtml = degraded
     ? `<div class="alert alert-warning">Task store unavailable — data shown may be stale or empty.</div>`
     : "";
+
+  const waitingTasks = computeSessionWaitingTasks(tasks, prsByTaskId);
+  const sessionState = computeSessionState(tasks, waitingTasks);
+  const waitingSince = computeWaitingSince(waitingTasks);
+
+  const stateBadgeHtml = `<span class="badge ${SESSION_STATE_BADGE_CLASS[sessionState]}">${escapeHtml(SESSION_STATE_LABEL[sessionState])}</span>`;
+  const waitingSinceHtml =
+    sessionState === "waiting" && waitingSince
+      ? `<span style="font-size:12px;color:#6b7280">Waiting since ${escapeHtml(waitingSince)}</span>`
+      : "";
+
+  const needsYouSection =
+    sessionState === "waiting"
+      ? renderNeedsYouPanel(waitingTasks, prsByTaskId)
+      : "";
 
   const totalTasks = tasks.length;
   const totalHours = tasks.reduce((sum, t) => sum + (t.hours ?? 0), 0);
@@ -3523,6 +3719,8 @@ export function renderSessionDetailPage(
     <div class="page-header" style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">
       <a href="${escapeHtml(backHref)}" style="color:#6b7280;font-size:13px;text-decoration:none">← Tasks</a>
       <h1 class="page-title" style="margin:0;flex:1">Session <span class="mono">${escapeHtml(sessionId)}</span></h1>
+      ${stateBadgeHtml}
+      ${waitingSinceHtml}
     </div>
     ${degradedHtml}
     <div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:16px">
@@ -3530,6 +3728,7 @@ export function renderSessionDetailPage(
       ${statCard("Est. Hours", String(totalHours))}
       ${statCard("Layers", String(distinctLayers))}
     </div>
+    ${needsYouSection}
     <div style="font-size:13px;color:#374151;margin-bottom:12px">
       ${TASK_STATE_GROUPS.map(
         ({ key, label }) =>
