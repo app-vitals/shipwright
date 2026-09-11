@@ -17,12 +17,13 @@
 import { describe, expect, it } from "bun:test";
 import { OpenAPIHono } from "@hono/zod-openapi";
 import type { TaskStoreAuthEnv } from "../auth.ts";
-import { ApiError } from "../errors.ts";
+import { ApiError, NotFoundError } from "../errors.ts";
 import type {
   SessionListFilters,
   SessionListItem,
   SessionListResult,
   SessionServiceLike,
+  SessionUpdatePatch,
 } from "../session-service.ts";
 import { createSessionsRoutes } from "./sessions.ts";
 
@@ -125,6 +126,26 @@ function fakeSessionService(records: FakeSessionRecord[]): SessionServiceLike {
       const record = records.find((r) => r.slug === slug);
       if (!record) return null;
       if (!visible(record, agentScope)) return null;
+      return toItem(record);
+    },
+
+    async update(
+      slug: string,
+      patch: SessionUpdatePatch,
+      _actor: string,
+    ): Promise<SessionListItem> {
+      const record = records.find((r) => r.slug === slug);
+      if (!record) throw new NotFoundError("session not found");
+      if ("title" in patch) record.title = patch.title ?? null;
+      if (patch.archived === true) {
+        record.archivedAt = new Date("2026-02-01T00:00:00.000Z");
+        record.archivedBy = _actor;
+        record.archived = true;
+      } else if (patch.archived === false) {
+        record.archivedAt = null;
+        record.archivedBy = null;
+        record.archived = false;
+      }
       return toItem(record);
     },
   };
@@ -500,6 +521,90 @@ describe("GET /sessions/:slug (smoke)", () => {
     // Would be 200 (unrestricted) if an empty repo scope skipped agentScope.
     const parent = makeAgentParent(makeApp(), "agent-unknown", []);
     const res = await parent.request("/active-1");
+    expect(res.status).toBe(404);
+  });
+});
+
+describe("PATCH /sessions/:slug (smoke)", () => {
+  it("admin token, {archived: true} returns 200 and reflects archived state", async () => {
+    const parent = makeAdminParent(makeApp());
+    const res = await parent.request("/active-1", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ archived: true }),
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as SessionListItem;
+    expect(body.archived).toBe(true);
+    expect(body.archivedBy).toBe("admin");
+    expect(body.archivedAt).not.toBeNull();
+  });
+
+  it("admin token, {archived: false} returns 200 and clears archive fields", async () => {
+    const parent = makeAdminParent(makeApp());
+    const res = await parent.request("/archived-1", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ archived: false }),
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as SessionListItem;
+    expect(body.archived).toBe(false);
+    expect(body.archivedBy).toBeNull();
+    expect(body.archivedAt).toBeNull();
+  });
+
+  it("admin token, {title: 'x'} returns 200 with title updated", async () => {
+    const parent = makeAdminParent(makeApp());
+    const res = await parent.request("/active-1", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ title: "x" }),
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as SessionListItem;
+    expect(body.title).toBe("x");
+  });
+
+  it("admin token, {title: null} returns 200 with title cleared", async () => {
+    const parent = makeAdminParent(makeApp());
+    const res = await parent.request("/active-2", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ title: null }),
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as SessionListItem;
+    expect(body.title).toBeNull();
+  });
+
+  it("agent-scoped token receives 403 regardless of body, even for a session it owns a task in", async () => {
+    const parent = makeAgentParent(makeApp(), "agent-1", ["org/a"]);
+    const res = await parent.request("/active-1", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ archived: true }),
+    });
+    expect(res.status).toBe(403);
+  });
+
+  it("agent-scoped token receives 403 for a nonexistent slug too (auth checked before lookup)", async () => {
+    const parent = makeAgentParent(makeApp(), "agent-1", ["org/a"]);
+    const res = await parent.request("/does-not-exist", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ archived: true }),
+    });
+    expect(res.status).toBe(403);
+  });
+
+  it("admin token, nonexistent slug returns 404", async () => {
+    const parent = makeAdminParent(makeApp());
+    const res = await parent.request("/does-not-exist", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ archived: true }),
+    });
     expect(res.status).toBe(404);
   });
 });

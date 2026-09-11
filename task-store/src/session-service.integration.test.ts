@@ -520,3 +520,155 @@ describeOrSkip("SessionService.list() / get() (integration)", () => {
     expect(Array.isArray(result?.waitingTasks)).toBe(true);
   });
 });
+
+// ─── update() (SESH-3.1) ────────────────────────────────────────────────────
+//
+// The smoke tests in routes/sessions.smoke.test.ts inject a hand-written
+// SessionServiceLike double covering the route's admin-vs-agent-token
+// authorization contract — they never execute SessionService.update()'s real
+// Prisma-backed write. Per data_layer_own_database, the archive/unarchive/
+// rename semantics belong here, against a real Postgres DB.
+
+describeOrSkip("SessionService.update() (integration)", () => {
+  let prisma: PrismaClient;
+  let taskService: TaskService;
+  let sessionService: SessionService;
+
+  beforeEach(async () => {
+    prisma = makePrisma();
+    taskService = new TaskService(prisma);
+    sessionService = new SessionService(prisma);
+    await prisma.taskEvent.deleteMany();
+    await prisma.task.deleteMany();
+    await prisma.session.deleteMany();
+  });
+
+  afterEach(async () => {
+    await prisma.$disconnect();
+  });
+
+  it("update(slug, {archived: true}, actor) sets archivedAt + archivedBy", async () => {
+    await taskService.create({
+      title: "a task",
+      status: "pending",
+      session: "to-archive",
+    });
+
+    const result = await sessionService.update(
+      "to-archive",
+      { archived: true },
+      "dan",
+    );
+
+    expect(result.archived).toBe(true);
+    expect(result.archivedBy).toBe("dan");
+    expect(result.archivedAt).not.toBeNull();
+
+    const row = await prisma.session.findUnique({
+      where: { slug: "to-archive" },
+    });
+    expect(row?.archivedAt).not.toBeNull();
+    expect(row?.archivedBy).toBe("dan");
+  });
+
+  it("update(slug, {archived: false}, actor) on an archived session clears both", async () => {
+    await taskService.create({
+      title: "a task",
+      status: "pending",
+      session: "to-unarchive",
+    });
+    await prisma.session.update({
+      where: { slug: "to-unarchive" },
+      data: { archivedAt: new Date(), archivedBy: "someone" },
+    });
+
+    const result = await sessionService.update(
+      "to-unarchive",
+      { archived: false },
+      "dan",
+    );
+
+    expect(result.archived).toBe(false);
+    expect(result.archivedBy).toBeNull();
+    expect(result.archivedAt).toBeNull();
+
+    const row = await prisma.session.findUnique({
+      where: { slug: "to-unarchive" },
+    });
+    expect(row?.archivedAt).toBeNull();
+    expect(row?.archivedBy).toBeNull();
+  });
+
+  it("update(slug, {title: 'New Title'}, actor) updates title", async () => {
+    await taskService.create({
+      title: "a task",
+      status: "pending",
+      session: "to-rename",
+    });
+
+    const result = await sessionService.update(
+      "to-rename",
+      { title: "New Title" },
+      "dan",
+    );
+
+    expect(result.title).toBe("New Title");
+
+    const row = await prisma.session.findUnique({
+      where: { slug: "to-rename" },
+    });
+    expect(row?.title).toBe("New Title");
+  });
+
+  it("update(slug, {title: null}, actor) clears an existing title", async () => {
+    await taskService.create({
+      title: "a task",
+      status: "pending",
+      session: "to-clear-title",
+    });
+    await prisma.session.update({
+      where: { slug: "to-clear-title" },
+      data: { title: "Old Title" },
+    });
+
+    const result = await sessionService.update(
+      "to-clear-title",
+      { title: null },
+      "dan",
+    );
+
+    expect(result.title).toBeNull();
+
+    const row = await prisma.session.findUnique({
+      where: { slug: "to-clear-title" },
+    });
+    expect(row?.title).toBeNull();
+  });
+
+  it("update() omitting archived/title leaves those fields untouched", async () => {
+    await taskService.create({
+      title: "a task",
+      status: "pending",
+      session: "untouched-fields",
+    });
+    await prisma.session.update({
+      where: { slug: "untouched-fields" },
+      data: { title: "Keep Me" },
+    });
+
+    const result = await sessionService.update(
+      "untouched-fields",
+      {},
+      "dan",
+    );
+
+    expect(result.title).toBe("Keep Me");
+    expect(result.archived).toBe(false);
+  });
+
+  it("update() on a nonexistent slug rejects with NotFoundError", async () => {
+    await expect(
+      sessionService.update("does-not-exist", { title: "x" }, "dan"),
+    ).rejects.toThrow();
+  });
+});
