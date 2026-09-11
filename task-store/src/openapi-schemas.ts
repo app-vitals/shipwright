@@ -558,6 +558,26 @@ export const SessionListResponseSchema = z
   })
   .openapi("SessionListResponse");
 
+/** Request body for PATCH /sessions/:slug — admin-only rename/archive. */
+export const SessionPatchBodySchema = z
+  .object({
+    title: z
+      .string()
+      .nullable()
+      .optional()
+      .openapi({
+        example: "May launch prep",
+        description:
+          "Omitted: title untouched. A string: set. null: clears the title.",
+      }),
+    archived: z.boolean().optional().openapi({
+      example: true,
+      description:
+        "Omitted: archive fields untouched. true: stamps archivedAt/archivedBy. false: clears both.",
+    }),
+  })
+  .openapi("SessionPatchBody");
+
 // ─── Task Token ───────────────────────────────────────────────────────────────
 
 /**

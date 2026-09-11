@@ -21,6 +21,9 @@ function fakeSessionService(): SessionServiceLike {
     async get() {
       return null;
     },
+    async update() {
+      throw new Error("not implemented");
+    },
   };
 }
 

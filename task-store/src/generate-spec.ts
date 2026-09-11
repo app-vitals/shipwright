@@ -146,6 +146,9 @@ const stubSessionService: SessionServiceLike = {
   async get() {
     return null;
   },
+  async update() {
+    throw new Error("not implemented");
+  },
 };
 
 // ─── Spec assembly ────────────────────────────────────────────────────────────
