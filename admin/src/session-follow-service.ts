@@ -3,7 +3,9 @@
  * SessionFollowService — CRUD over SessionFollow + UserNotificationPrefs
  * (SessionAlertState is written by the future reminder job, not this
  * service; the model exists now so that job has a place to land state
- * without a follow-up migration).
+ * without a follow-up migration). unfollow() is the one exception: it also
+ * deletes the caller's SessionAlertState row for the slug, as a cleanup of
+ * stale alert-cooldown state on unfollow, not a write of new alert state.
  *
  * Follows the push-service.ts Prisma-owner pattern: a narrow *PrismaLike
  * interface scoped to only the models/methods this service touches, so
@@ -30,6 +32,11 @@ export interface SessionFollowPrismaLike {
     findMany(args: {
       where: { userEmail: string };
     }): Promise<SessionFollowRow[]>;
+  };
+  sessionAlertState: {
+    deleteMany(args: {
+      where: { userEmail: string; sessionSlug: string };
+    }): Promise<{ count: number }>;
   };
   userNotificationPrefs: {
     upsert(args: {
@@ -96,12 +103,21 @@ export class SessionFollowService {
    * Unfollows a session for a user. Idempotent: unfollowing a session the
    * user never followed (or already unfollowed) is a no-op, not an error —
    * deleteMany matches zero rows silently rather than throwing like delete()
-   * would on a missing unique key.
+   * would on a missing unique key. Also clears the user's SessionAlertState
+   * row for this slug (if any) — a stale cooldown timestamp for a session
+   * the user no longer follows shouldn't linger and affect a future re-follow;
+   * deleteMany against the same [userEmail, sessionSlug] unique key is
+   * idempotent here too.
    */
   async unfollow(userEmail: string, sessionSlug: string): Promise<void> {
-    await this.prisma.sessionFollow.deleteMany({
-      where: { userEmail, sessionSlug },
-    });
+    await Promise.all([
+      this.prisma.sessionFollow.deleteMany({
+        where: { userEmail, sessionSlug },
+      }),
+      this.prisma.sessionAlertState.deleteMany({
+        where: { userEmail, sessionSlug },
+      }),
+    ]);
   }
 
   /** All sessions a user currently follows (muted or not). */
