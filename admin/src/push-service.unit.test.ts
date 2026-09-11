@@ -149,6 +149,139 @@ describe("PushService.notifyThreadReply", () => {
   });
 });
 
+describe("PushService.sendToUsers", () => {
+  it("fans out to given emails' subscriptions, groups by detail level, sends, and prunes gone endpoints", async () => {
+    const { prisma, deleted } = fakePrisma(
+      [],
+      [
+        {
+          id: "1",
+          userEmail: "a@x.com",
+          endpoint: "https://push/ok",
+          p256dh: P256DH,
+          auth: AUTH,
+          detailOptIn: "title",
+        },
+        {
+          id: "2",
+          userEmail: "b@x.com",
+          endpoint: "https://push/gone",
+          p256dh: P256DH,
+          auth: AUTH,
+          detailOptIn: "generic",
+        },
+      ],
+    );
+    const sent: Array<{ url: string; payload: unknown }> = [];
+    const fetchImpl = (async (url: string) => {
+      sent.push({ url, payload: "" });
+      return new Response(null, {
+        status: url.endsWith("/gone") ? 410 : 201,
+      });
+    }) as unknown as typeof fetch;
+
+    const service = new PushService(prisma as never, vapid, fetchImpl, "title");
+    const result = await service.sendToUsers(["a@x.com", "b@x.com"], (level) =>
+      JSON.stringify({ level }),
+    );
+
+    expect(sent.length).toBe(2);
+    expect(result.delivered).toBe(1);
+    expect(result.pruned).toBe(1);
+    expect(deleted).toEqual(["https://push/gone"]);
+  });
+
+  it("returns { delivered: 0, pruned: 0 } when no subscriptions match", async () => {
+    const { prisma } = fakePrisma([], []);
+    let called = 0;
+    const fetchImpl = (async () => {
+      called += 1;
+      return new Response(null, { status: 201 });
+    }) as unknown as typeof fetch;
+    const service = new PushService(prisma as never, vapid, fetchImpl, "title");
+    const result = await service.sendToUsers(["nobody@x.com"], () => "{}");
+
+    expect(called).toBe(0);
+    expect(result).toEqual({ delivered: 0, pruned: 0 });
+  });
+});
+
+describe("PushService.notifySession", () => {
+  it("resolves subscriptions for the emails on the session object and delivers via the extracted core", async () => {
+    const { prisma, deleted } = fakePrisma(
+      [],
+      [
+        {
+          id: "1",
+          userEmail: "a@x.com",
+          endpoint: "https://push/ok",
+          p256dh: P256DH,
+          auth: AUTH,
+          detailOptIn: "title",
+        },
+      ],
+    );
+    const sent: string[] = [];
+    const fetchImpl = (async (url: string) => {
+      sent.push(url);
+      return new Response(null, { status: 201 });
+    }) as unknown as typeof fetch;
+    const service = new PushService(prisma as never, vapid, fetchImpl, "title");
+
+    const result = await service.notifySession(
+      { slug: "sesh_1", emails: ["a@x.com"] },
+      "generic",
+      "immediate",
+    );
+
+    expect(sent).toEqual(["https://push/ok"]);
+    expect(result).toEqual({ delivered: 1, pruned: 0 });
+    expect(deleted).toEqual([]);
+  });
+
+  it("returns { delivered: 0, pruned: 0 } when the session has no emails", async () => {
+    const { prisma } = fakePrisma([], []);
+    let called = 0;
+    const fetchImpl = (async () => {
+      called += 1;
+      return new Response(null, { status: 201 });
+    }) as unknown as typeof fetch;
+    const service = new PushService(prisma as never, vapid, fetchImpl, "title");
+
+    const result = await service.notifySession(
+      { slug: "sesh_1", emails: [] },
+      "generic",
+      "reminder",
+    );
+
+    expect(called).toBe(0);
+    expect(result).toEqual({ delivered: 0, pruned: 0 });
+  });
+
+  it("swallows a downstream failure and never throws into the caller", async () => {
+    const prisma = {
+      chatThreadWatch: { findMany: async () => [] },
+      pushSubscription: {
+        findMany: async () => {
+          throw new Error("db down");
+        },
+        deleteMany: async () => ({ count: 0 }),
+      },
+    };
+    const fetchImpl = (async () =>
+      new Response(null, { status: 201 })) as unknown as typeof fetch;
+    const service = new PushService(prisma as never, vapid, fetchImpl, "title");
+
+    await expect(
+      service.notifySession(
+        { slug: "sesh_1", emails: ["a@x.com"] },
+        "generic",
+        "completed",
+      ),
+    ).resolves.toEqual({ delivered: 0, pruned: 0 });
+  });
+});
+
 // A fetchImpl is required by the PushService constructor but unused by the
 // write-path methods under test below (recordWatch/subscribe/unsubscribe
 // never touch PushSender).
