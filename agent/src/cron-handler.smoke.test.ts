@@ -598,14 +598,12 @@ describe("handleCronRequest — CronRunReporter", () => {
   // biome-ignore lint/suspicious/noExplicitAny: Server type param varies by bun version
   let reporterServer: ReturnType<typeof Bun.serve<any>> | undefined;
   let reporterState: ReporterStubState;
-
-  const REPORTER_PORT = 19965;
-  const REPORTER_BASE_URL = `http://localhost:${REPORTER_PORT}`;
+  let reporterBaseUrl: string;
   const AGENT_ID = "test-agent-id";
 
   function makeHttpReporter() {
     return new HttpCronRunReporter({
-      apiUrl: REPORTER_BASE_URL,
+      apiUrl: reporterBaseUrl,
       agentId: AGENT_ID,
       apiKey: "test-key",
     });
@@ -615,11 +613,12 @@ describe("handleCronRequest — CronRunReporter", () => {
     tmpDir = mkdtempSync(join(tmpdir(), "cron-reporter-test-"));
     mkdirSync(join(tmpDir, "shipwright", "scripts"), { recursive: true });
     reporterState = { requests: [], runIdToReturn: "run-test-1" };
-    reporterServer = startReporterStub(REPORTER_PORT, reporterState);
+    reporterServer = startReporterStub(0, reporterState);
+    reporterBaseUrl = `http://localhost:${reporterServer.port}`;
   });
 
-  afterEach(() => {
-    reporterServer?.stop(true);
+  afterEach(async () => {
+    await reporterServer?.stop(true);
     reporterServer = undefined;
   });
 
@@ -1124,25 +1123,24 @@ describe("POST /cron HTTP endpoint", () => {
   const servers: Server<any>[] = [];
 
   function serve(
-    port: number,
     sentryClient?: ErrorCapturingClient,
     // biome-ignore lint/suspicious/noExplicitAny: Server type param varies by bun version
   ): Server<any> {
-    const s = startHealthServer(port, deps, undefined, undefined, sentryClient);
+    const s = startHealthServer(0, deps, undefined, undefined, sentryClient);
     servers.push(s);
     return s;
   }
 
-  afterEach(() => {
-    for (const s of servers) s.stop(true);
+  afterEach(async () => {
+    for (const s of servers) await s.stop(true);
     servers.length = 0;
   });
 
   test("200 on valid channel request", async () => {
     mockRunner.mockResolvedValueOnce({ result: "ok", sessionId: "s" });
-    serve(19920);
+    const server = serve();
 
-    const res = await fetch("http://localhost:19920/cron", {
+    const res = await fetch(`http://localhost:${server.port}/cron`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ jobId: "j1", prompt: "hello", channel: "C-X" }),
@@ -1155,9 +1153,9 @@ describe("POST /cron HTTP endpoint", () => {
 
   test("200 on valid user DM request", async () => {
     mockRunner.mockResolvedValueOnce({ result: "dm reply", sessionId: "s" });
-    serve(19921);
+    const server = serve();
 
-    const res = await fetch("http://localhost:19921/cron", {
+    const res = await fetch(`http://localhost:${server.port}/cron`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ jobId: "j2", prompt: "daily", user: "U-DAN" }),
@@ -1167,9 +1165,9 @@ describe("POST /cron HTTP endpoint", () => {
   });
 
   test("400 for missing prompt", async () => {
-    serve(19922);
+    const server = serve();
 
-    const res = await fetch("http://localhost:19922/cron", {
+    const res = await fetch(`http://localhost:${server.port}/cron`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ jobId: "j3" }),
@@ -1178,9 +1176,9 @@ describe("POST /cron HTTP endpoint", () => {
   });
 
   test("422 when neither channel nor user and not silent", async () => {
-    serve(19923);
+    const server = serve();
 
-    const res = await fetch("http://localhost:19923/cron", {
+    const res = await fetch(`http://localhost:${server.port}/cron`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ jobId: "j4", prompt: "hello" }),
@@ -1191,9 +1189,9 @@ describe("POST /cron HTTP endpoint", () => {
   });
 
   test("400 for invalid JSON body", async () => {
-    serve(19924);
+    const server = serve();
 
-    const res = await fetch("http://localhost:19924/cron", {
+    const res = await fetch(`http://localhost:${server.port}/cron`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: "not json {{",
@@ -1202,9 +1200,9 @@ describe("POST /cron HTTP endpoint", () => {
   });
 
   test("400 for missing jobId in body", async () => {
-    serve(19925);
+    const server = serve();
 
-    const res = await fetch("http://localhost:19925/cron", {
+    const res = await fetch(`http://localhost:${server.port}/cron`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ prompt: "hello", channel: "C-X" }),
@@ -1214,9 +1212,9 @@ describe("POST /cron HTTP endpoint", () => {
 
   test("500 when Claude runner throws", async () => {
     mockRunner.mockRejectedValueOnce(new Error("claude down"));
-    serve(19926);
+    const server = serve();
 
-    const res = await fetch("http://localhost:19926/cron", {
+    const res = await fetch(`http://localhost:${server.port}/cron`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ jobId: "j5", prompt: "run", channel: "C-X" }),
@@ -1234,9 +1232,9 @@ describe("POST /cron HTTP endpoint", () => {
         capturedErrors.push(err);
       },
     };
-    serve(19930, fakeSentryClient);
+    const server = serve(fakeSentryClient);
 
-    const res = await fetch("http://localhost:19930/cron", {
+    const res = await fetch(`http://localhost:${server.port}/cron`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ jobId: "j8", prompt: "run", channel: "C-X" }),
@@ -1263,9 +1261,9 @@ describe("POST /cron HTTP endpoint", () => {
         capturedMessages.push(message);
       },
     };
-    serve(19933, fakeSentryClient);
+    const server = serve(fakeSentryClient);
 
-    const res = await fetch("http://localhost:19933/cron", {
+    const res = await fetch(`http://localhost:${server.port}/cron`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ jobId: "j9", prompt: "run", channel: "C-X" }),
@@ -1291,9 +1289,9 @@ describe("POST /cron HTTP endpoint", () => {
         capturedMessages.push(message);
       },
     };
-    serve(19934, fakeSentryClient);
+    const server = serve(fakeSentryClient);
 
-    const res = await fetch("http://localhost:19934/cron", {
+    const res = await fetch(`http://localhost:${server.port}/cron`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ jobId: "j10", prompt: "run", channel: "C-X" }),
@@ -1312,9 +1310,9 @@ describe("POST /cron HTTP endpoint", () => {
         capturedErrors.push(err);
       },
     };
-    serve(19931, fakeSentryClient);
+    const server = serve(fakeSentryClient);
 
-    const res = await fetch("http://localhost:19931/cron", {
+    const res = await fetch(`http://localhost:${server.port}/cron`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ jobId: "j9", prompt: "hello" }),
@@ -1326,9 +1324,9 @@ describe("POST /cron HTTP endpoint", () => {
 
   test("500 with no sentryClient wired — behaves exactly as before (no throw, same response)", async () => {
     mockRunner.mockRejectedValueOnce(new Error("claude down"));
-    serve(19932);
+    const server = serve();
 
-    const res = await fetch("http://localhost:19932/cron", {
+    const res = await fetch(`http://localhost:${server.port}/cron`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ jobId: "j10", prompt: "run", channel: "C-X" }),
@@ -1341,9 +1339,9 @@ describe("POST /cron HTTP endpoint", () => {
 
   test("200 with silent=true — no Slack post", async () => {
     mockRunner.mockResolvedValueOnce({ result: "done", sessionId: "s" });
-    serve(19927);
+    const server = serve();
 
-    const res = await fetch("http://localhost:19927/cron", {
+    const res = await fetch(`http://localhost:${server.port}/cron`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ jobId: "j6", prompt: "run", silent: true }),
@@ -1353,10 +1351,10 @@ describe("POST /cron HTTP endpoint", () => {
   });
 
   test("503 when cronDeps not configured", async () => {
-    const s = startHealthServer(19928);
+    const s = startHealthServer(0);
     servers.push(s);
 
-    const res = await fetch("http://localhost:19928/cron", {
+    const res = await fetch(`http://localhost:${s.port}/cron`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ jobId: "j7", prompt: "run", channel: "C-X" }),
@@ -1365,9 +1363,9 @@ describe("POST /cron HTTP endpoint", () => {
   });
 
   test("405 on GET /cron", async () => {
-    serve(19929);
+    const server = serve();
 
-    const res = await fetch("http://localhost:19929/cron", {
+    const res = await fetch(`http://localhost:${server.port}/cron`, {
       method: "GET",
     });
     expect(res.status).toBe(405);
