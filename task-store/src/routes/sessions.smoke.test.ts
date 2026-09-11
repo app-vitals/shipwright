@@ -132,14 +132,14 @@ function fakeSessionService(records: FakeSessionRecord[]): SessionServiceLike {
     async update(
       slug: string,
       patch: SessionUpdatePatch,
-      _actor: string,
+      actor: string,
     ): Promise<SessionListItem> {
       const record = records.find((r) => r.slug === slug);
       if (!record) throw new NotFoundError("session not found");
       if ("title" in patch) record.title = patch.title ?? null;
       if (patch.archived === true) {
         record.archivedAt = new Date("2026-02-01T00:00:00.000Z");
-        record.archivedBy = _actor;
+        record.archivedBy = actor;
         record.archived = true;
       } else if (patch.archived === false) {
         record.archivedAt = null;
