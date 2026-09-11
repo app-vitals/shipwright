@@ -299,3 +299,55 @@ model ChatThreadWatch {
   @@index([threadId])
 }
 
+// ─── Session Follow ───────────────────────────────────────────────────────────
+// Records that a user is "following" a planning session (identified by its
+// slug) so they can receive reminders/notifications about it. `muted` lets a
+// user stay following (kept in listByUser) while suppressing alerts, distinct
+// from unfollowing (row deleted entirely). The unique constraint on
+// [userEmail, sessionSlug] makes follow() idempotent via upsert.
+model SessionFollow {
+  id          String   @id @default(cuid())
+  userEmail   String
+  sessionSlug String
+  muted       Boolean  @default(false)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@unique([userEmail, sessionSlug])
+  @@index([sessionSlug])
+}
+
+// ─── User Notification Prefs ─────────────────────────────────────────────────
+// One row per user, holding their notification preferences. `userEmail` is
+// the primary key (one row per user, not per session). `autoFollowSessions`
+// controls whether newly-created sessions the user touches are auto-followed;
+// `autoFollowSince` records when that behavior was turned on (null if never
+// explicitly set), so a backfill can distinguish "always on" users from users
+// who opted in later. `reminderHourLocal` is validated to be an integer in
+// [0, 23] at the service layer (session-follow-service.ts), not here — Prisma
+// has no native CHECK constraint support in this schema style.
+model UserNotificationPrefs {
+  userEmail          String    @id
+  autoFollowSessions Boolean   @default(true)
+  reminderHourLocal  Int       @default(9)
+  autoFollowSince    DateTime?
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
+}
+
+// ─── Session Alert State ─────────────────────────────────────────────────────
+// Tracks the last time a user was alerted about a given session, so a
+// reminder job can avoid re-alerting the same user/session pair within a
+// cooldown window. The unique constraint on [userEmail, sessionSlug] allows
+// upsert semantics (one state row per user per session).
+model SessionAlertState {
+  id            String    @id @default(cuid())
+  userEmail     String
+  sessionSlug   String
+  lastAlertedAt DateTime?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  @@unique([userEmail, sessionSlug])
+}
+
