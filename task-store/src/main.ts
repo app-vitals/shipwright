@@ -20,6 +20,8 @@ import { createScopeResolver } from "./auth.ts";
 import { checkClaimTtlBuffer } from "./claim-ttl-buffer-check.ts";
 import { PrismaClient } from "./index.ts";
 import { PullRequestService } from "./pull-request-service.ts";
+import { SessionRetentionReaper } from "./session-retention-reaper.ts";
+import { SessionService } from "./session-service.ts";
 import { StaleClaimReaper } from "./stale-claim-reaper.ts";
 import { TaskService } from "./task-service.ts";
 import { TaskTokenService } from "./token-service.ts";
@@ -189,6 +191,25 @@ async function startServer(): Promise<void> {
     });
   }, 60_000);
   console.log("[task-store] stale-claim reaper started (interval: 60s)");
+
+  const sessionService = new SessionService(prisma);
+  const sessionRetentionReaper = new SessionRetentionReaper(
+    prisma,
+    sessionService,
+  );
+
+  if (sessionRetentionReaper.archiveAfterDays === 0) {
+    console.log(
+      "[task-store] session-retention reaper disabled (SHIPWRIGHT_TASK_STORE_SESSION_ARCHIVE_AFTER_DAYS=0)",
+    );
+  } else {
+    setInterval(() => {
+      sessionRetentionReaper.sweep().catch((err) => {
+        console.error("[session-retention-reaper] sweep error:", err);
+      });
+    }, 3_600_000);
+    console.log("[task-store] session-retention reaper started (interval: 1h)");
+  }
 
   const server = Bun.serve({ port, fetch: app.fetch });
 
