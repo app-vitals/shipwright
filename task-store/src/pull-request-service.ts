@@ -244,6 +244,9 @@ export interface PullRequestServiceLike {
     prId: string,
     opts?: { limit?: number; offset?: number },
   ): Promise<GetEventsResult>;
+  lookupBlockedPrNumbers(
+    pairs: { repo: string; prNumber: number }[],
+  ): Promise<Set<number>>;
 }
 
 export class PullRequestService implements PullRequestServiceLike {
@@ -1121,6 +1124,56 @@ export class PullRequestService implements PullRequestServiceLike {
     ]);
 
     return { events, total };
+  }
+
+  /**
+   * Given a batch of (repo, prNumber) pairs — typically every linked-PR
+   * reference across a set of tasks — return the subset of prNumbers whose
+   * PullRequest record has `blocked === true`, in ONE query. Built for
+   * SessionService.list()/get() (SESH-2.2): computeSessionRollup()'s
+   * `prBlockedSet` param needs exactly this signal, and batching the lookup
+   * across an entire session list avoids a per-session round trip.
+   *
+   * Deliberately narrower than the private isPrBlocked()/list({blocked:true})
+   * pair above: this does NOT also consult linked-task status. Callers here
+   * already have the full task set for their own use (SessionService reads
+   * every Task row for the sessions it's rolling up) and
+   * computeSessionRollup's classifyWaiting() independently checks
+   * `task.status === "blocked"` with higher precedence than pr_blocked — so
+   * re-deriving task-blocked-ness inside this helper would be redundant.
+   *
+   * Mirrors list()'s `{blocked:true}` branch: over-fetch on the repo ×
+   * prNumber cross-product (Prisma can't express "any of these (repo, pr)
+   * pairs" without an OR-per-pair query), then filter exact pairs in JS via
+   * the shared prKey() helper. Returns a Set of prNumbers ONLY (not repo+
+   * prNumber pairs) — matches computeSessionRollup's prBlockedSet shape,
+   * itself a pre-existing limitation carried over from SESH-2.1 (a task's pr
+   * field alone, without its repo, is what's compared against the set).
+   */
+  async lookupBlockedPrNumbers(
+    pairs: { repo: string; prNumber: number }[],
+  ): Promise<Set<number>> {
+    if (pairs.length === 0) return new Set();
+
+    const repos = [...new Set(pairs.map((p) => p.repo))];
+    const prNumbers = [...new Set(pairs.map((p) => p.prNumber))];
+    const rows = await this.prisma.pullRequest.findMany({
+      where: {
+        repo: { in: repos },
+        prNumber: { in: prNumbers },
+        blocked: true,
+      },
+      select: { repo: true, prNumber: true },
+    });
+
+    const exactPairs = new Set(pairs.map((p) => prKey(p.repo, p.prNumber)));
+    const result = new Set<number>();
+    for (const row of rows) {
+      if (exactPairs.has(prKey(row.repo, row.prNumber))) {
+        result.add(row.prNumber);
+      }
+    }
+    return result;
   }
 
   // ─── Helpers ─────────────────────────────────────────────────────────────────
