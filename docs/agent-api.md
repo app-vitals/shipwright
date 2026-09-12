@@ -497,7 +497,7 @@ Body:
 | Field | Required | Description |
 |-------|----------|-------------|
 | `computedAt` | yes | ISO timestamp when the agent computed this ranking |
-| `items` | yes | Array of ranked work items. Each entry: `{ type: "task" \| "pr", id: string, title?: string, phase: "dev-task" \| "review" \| "patch" \| "deploy", age: string }` (`age` is an ISO timestamp) |
+| `items` | yes | Array of ranked work items. Each entry: `{ type: "task" \| "pr", id: string, title?: string, phase: "dev-task" \| "plan" \| "review" \| "patch" \| "deploy", age: string }` (`age` is an ISO timestamp) |
 
 Upserts the single row for this `agentId`, overwriting any prior snapshot. Returns `200` with:
 
@@ -507,7 +507,7 @@ Upserts the single row for this `agentId`, overwriting any prior snapshot. Retur
     "id": "string",
     "agentId": "string",
     "computedAt": "ISO timestamp",
-    "items": [{ "type": "task|pr", "id": "string", "title": "string (optional)", "phase": "dev-task|review|patch|deploy", "age": "ISO timestamp" }],
+    "items": [{ "type": "task|pr", "id": "string", "title": "string (optional)", "phase": "dev-task|plan|review|patch|deploy", "age": "ISO timestamp" }],
     "createdAt": "ISO timestamp"
   }
 }

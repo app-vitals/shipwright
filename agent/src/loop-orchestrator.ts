@@ -1003,7 +1003,7 @@ export function createLoopOrchestrator(
           );
         }
 
-        const tasks: WorkTaskCandidate[] = toggles.devTask
+        const devTaskCandidates: WorkTaskCandidate[] = toggles.devTask
           ? (await getDevTaskCandidates()).filter(
               (t) => !failedPreClaimTaskIds.has(t.id),
             )
@@ -1020,13 +1020,35 @@ export function createLoopOrchestrator(
         // pool and every pre-PDR-4.1 code path below is untouched.
         const planEnabled =
           toggles.plan && readBooleanEnv(AUTONOMOUS_PLAN_SESSION_ENV);
-        if (planEnabled && getPlanCandidates) {
-          tasks.push(
-            ...(await getPlanCandidates()).filter(
-              (t) => !failedPreClaimTaskIds.has(t.id),
-            ),
-          );
-        }
+        const planCandidates: WorkTaskCandidate[] =
+          planEnabled && getPlanCandidates
+            ? (await getPlanCandidates()).filter(
+                (t) => !failedPreClaimTaskIds.has(t.id),
+              )
+            : [];
+
+        // Dedupe by id, plan-tagged copy winning. The two providers' queries
+        // overlap: check-plan asks for
+        // `?autonomousPlanSession=true&status=pending`, while
+        // check-dev-task's `?ready=true` never passes
+        // `autonomousPlanSession`, so the task-store doesn't exclude flagged
+        // tasks there either — a flagged, pending, hitl-false task whose
+        // dependencies are satisfied comes back from BOTH. Both copies carry
+        // the identical `createdAt`, and selectNextWorkItem's strict `<`
+        // keeps the first occurrence on a tie, so without this the untagged
+        // dev-task copy would always win and the flagged task would be
+        // dispatched as `/shipwright:dev-task` — never reaching plan-session.
+        //
+        // Done here rather than by adding `autonomousPlanSession: "false"` to
+        // check-dev-task's ready query because Task.autonomousPlanSession is
+        // nullable (`Boolean?`, no default) and the task-store filters it by
+        // strict equality — `?autonomousPlanSession=false` would drop every
+        // task whose column is still NULL, i.e. the entire pre-PDR-2.1 queue.
+        const planTaskIds = new Set(planCandidates.map((t) => t.id));
+        const tasks: WorkTaskCandidate[] = [
+          ...devTaskCandidates.filter((t) => !planTaskIds.has(t.id)),
+          ...planCandidates,
+        ];
 
         const allPrs: WorkPrCandidate[] = [];
         if (toggles.review) allPrs.push(...(await getReviewCandidates()));

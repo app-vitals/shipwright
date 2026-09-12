@@ -30,7 +30,10 @@
  * loop ticks can never double-process the same PRD task.
  */
 
-import { createTaskStoreClient } from "./check-helpers.ts";
+import {
+  createTaskStoreClient,
+  isTaskBlockedForDispatch,
+} from "./check-helpers.ts";
 import type { Task } from "./check-helpers.ts";
 import { type Clock, SystemClock } from "./clock.ts";
 import type { WorkTaskCandidate } from "./work-selector.ts";
@@ -77,6 +80,29 @@ export async function getPlanCandidates(
   const tasks = await deps.getAutonomousPlanTasks();
   const candidates: WorkTaskCandidate[] = [];
   for (const task of tasks) {
+    // Human-escalation gate, matching every other candidate provider:
+    // check-review/check-patch/check-deploy call isTaskBlockedForDispatch()
+    // on the linked task, and check-dev-task gets the equivalent for free
+    // from task-store's ?ready=true filter (ready.ts drops hitl === true).
+    // The `?autonomousPlanSession=true&status=pending` query below has no
+    // such gate, so a task a human escalated with `hitl: true` while leaving
+    // it `pending` would otherwise be claimed and dispatched into an
+    // autonomous plan session.
+    //
+    // Filtered here in the mapper rather than via a `hitl=false` query
+    // param on purpose: Task.hitl is nullable (`Boolean?`, no default), and
+    // the task-store's hitl filter is a strict equality match in both code
+    // paths (task-service.ts's matchesTaskFilters and its Prisma `where`),
+    // so `?hitl=false` would drop every task whose hitl is NULL — i.e.
+    // essentially the entire queue. `isTaskBlockedForDispatch` only rejects
+    // the explicit `hitl === true` (and `status === "blocked"`, which this
+    // query already excludes, kept for defense in depth).
+    if (isTaskBlockedForDispatch(task)) {
+      console.warn(
+        `[check-plan] skipping ${task.id} — escalated to a human (hitl/blocked), not eligible for autonomous dispatch`,
+      );
+      continue;
+    }
     if (!isPresent(task.repo) || !isPresent(task.session)) {
       console.warn(
         `[check-plan] skipping ${task.id} — an autonomous plan-session task needs both repo and session to build its dispatch command`,

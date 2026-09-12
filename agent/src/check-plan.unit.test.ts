@@ -136,4 +136,46 @@ describe("getPlanCandidates", () => {
     );
     expect(result).toEqual([]);
   });
+
+  // ─── Human-escalation gate ─────────────────────────────────────────────────
+  // The `?autonomousPlanSession=true&status=pending` query carries no hitl
+  // filter (Task.hitl is nullable, so `?hitl=false` would drop the entire
+  // NULL-hitl queue), so the gate lives in the mapper via
+  // isTaskBlockedForDispatch — matching check-review/check-patch/check-deploy.
+
+  test("drops a hitl:true task — a human-escalated task is never autonomously dispatched", async () => {
+    const result = await getPlanCandidates(
+      makeDeps({
+        planTasks: [
+          makeTask({ id: "PDR-1", hitl: true }),
+          makeTask({ id: "PDR-2" }),
+        ],
+      }),
+    );
+    expect(result.map((t) => t.id)).toEqual(["PDR-2"]);
+  });
+
+  test("keeps a hitl:false task and a task with no hitl field at all", async () => {
+    const result = await getPlanCandidates(
+      makeDeps({
+        planTasks: [
+          makeTask({ id: "PDR-1", hitl: false }),
+          makeTask({ id: "PDR-2", hitl: undefined }),
+        ],
+      }),
+    );
+    expect(result.map((t) => t.id)).toEqual(["PDR-1", "PDR-2"]);
+  });
+
+  test('drops a status:"blocked" task (defense in depth — the query already filters to pending)', async () => {
+    const result = await getPlanCandidates(
+      makeDeps({
+        planTasks: [
+          makeTask({ id: "PDR-1", status: "blocked" }),
+          makeTask({ id: "PDR-2" }),
+        ],
+      }),
+    );
+    expect(result.map((t) => t.id)).toEqual(["PDR-2"]);
+  });
 });

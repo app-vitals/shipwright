@@ -4332,6 +4332,110 @@ describe("createLoopOrchestrator — autonomous plan phase (PDR-4.1)", () => {
     });
   });
 
+  // ─── Merged-pool dedupe (plan-tagged copy wins) ───────────────────────────
+  // check-dev-task's `?ready=true` query doesn't pass autonomousPlanSession,
+  // so a flagged, pending, hitl-false task with satisfied deps comes back
+  // from BOTH providers with the identical createdAt. selectNextWorkItem's
+  // strict `<` keeps the first occurrence on a tie, so without an explicit
+  // dedupe the untagged dev-task copy would always win the tie and the task
+  // would be dispatched as /shipwright:dev-task, never reaching plan-session.
+
+  test("a task present in BOTH the dev-task and plan pools dispatches as plan-session, not dev-task", async () => {
+    await withPlanEnv("true", async () => {
+      const consumed = new Set<string>();
+      const { runner, messages } = makeRunner();
+      const deps = makeDeps({
+        consumed,
+        runner,
+        devTaskCandidates: [task("PDR-1", "2026-01-01T00:00:00Z")],
+        planCandidates: [planTask("PDR-1", "2026-01-01T00:00:00Z")],
+        claimTask: consumingClaimTask(consumed),
+      });
+      const loop = createLoopOrchestrator(deps);
+
+      await loop(PLAN_ON);
+
+      expectDispatchedCommands(messages, [
+        "/shipwright:plan-session acme/example-repo autonomous-dispatch --autonomous PDR-1",
+      ]);
+    });
+  });
+
+  test("a duplicated task is claimed exactly once — the dev-task copy never produces a second dispatch", async () => {
+    await withPlanEnv("true", async () => {
+      const consumed = new Set<string>();
+      const claims: string[] = [];
+      const { runner, messages } = makeRunner();
+      const deps = makeDeps({
+        consumed,
+        runner,
+        devTaskCandidates: [task("PDR-1", "2026-01-01T00:00:00Z")],
+        planCandidates: [planTask("PDR-1", "2026-01-01T00:00:00Z")],
+        claimTask: async (taskId: string) => {
+          claims.push(taskId);
+          consumed.add(taskId);
+          return true;
+        },
+      });
+      const loop = createLoopOrchestrator(deps);
+
+      await loop(PLAN_ON);
+
+      expect(claims).toEqual(["PDR-1"]);
+      expect(messages).toHaveLength(1);
+    });
+  });
+
+  test("the work-queue snapshot lists a duplicated task once, tagged plan", async () => {
+    await withPlanEnv("true", async () => {
+      const consumed = new Set<string>();
+      const { reporter, snapshots } = makeRecordingWorkQueueReporter();
+      const deps = makeDeps({
+        consumed,
+        runner: makeRunner().runner,
+        workQueueReporter: reporter,
+        devTaskCandidates: [task("PDR-1", "2026-01-01T00:00:00Z")],
+        planCandidates: [planTask("PDR-1", "2026-01-01T00:00:00Z")],
+        claimTask: consumingClaimTask(consumed),
+      });
+      const loop = createLoopOrchestrator(deps);
+
+      await loop(PLAN_ON);
+
+      expect(snapshots[0]?.items).toEqual([
+        {
+          type: "task",
+          id: "PDR-1",
+          title: undefined,
+          phase: "plan",
+          age: "2026-01-01T00:00:00Z",
+        },
+      ]);
+    });
+  });
+
+  test("a non-duplicated dev-task candidate is untouched by the dedupe", async () => {
+    await withPlanEnv("true", async () => {
+      const consumed = new Set<string>();
+      const { runner, messages } = makeRunner();
+      const deps = makeDeps({
+        consumed,
+        runner,
+        devTaskCandidates: [task("SWC-1", "2026-01-01T00:00:00Z")],
+        planCandidates: [planTask("PDR-1", "2026-02-01T00:00:00Z")],
+        claimTask: consumingClaimTask(consumed),
+      });
+      const loop = createLoopOrchestrator(deps);
+
+      await loop(PLAN_ON);
+
+      expectDispatchedCommands(messages, [
+        "/shipwright:dev-task SWC-1",
+        "/shipwright:plan-session acme/example-repo autonomous-dispatch --autonomous PDR-1",
+      ]);
+    });
+  });
+
   // ─── Backward compat: deps without a plan provider ────────────────────────
 
   test("an orchestrator built without a getPlanCandidates dep still runs cleanly with the phase enabled", async () => {

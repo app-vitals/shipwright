@@ -1801,6 +1801,7 @@
             "type": "string",
             "enum": [
               "dev-task",
+              "plan",
               "review",
               "patch",
               "deploy"
