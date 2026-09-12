@@ -21,6 +21,7 @@ import { resolveReadyTasks } from "./ready.ts";
 import { SessionService } from "./session-service.ts";
 import { CLOSED_STATUSES, OPEN_STATUSES } from "./statuses.ts";
 import { writeTaskEvents } from "./task-transition-diff.ts";
+import type { WebhookDispatcher } from "./webhook-dispatcher.ts";
 
 /**
  * The Prisma client surface shared by the top-level client and a
@@ -304,10 +305,7 @@ export class TaskService implements TaskServiceLike {
     // `new TaskService(prisma, clock)`) are unaffected. Not yet invoked from
     // any method here — wiring specific task-store events to fire it is
     // future work.
-    private webhookDispatcher: (
-      type: string,
-      data: unknown,
-    ) => Promise<void> = async () => {},
+    private webhookDispatcher: WebhookDispatcher = async () => {},
   ) {
     this.sessionService = new SessionService(prisma, clock);
   }
