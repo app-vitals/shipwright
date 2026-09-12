@@ -307,7 +307,7 @@ GET /agents/:id/crons/:cronId/runs
 
 Query params: `limit` (default 20), `offset` (default 0), `itemId` (optional; narrows to runs dispatched against this work item), `phaseId` (optional; narrows to runs dispatched by this phase cron). `itemId`/`phaseId` filter server-side via the Prisma `where` clause and can be combined (AND, not OR). Returns `{ items: AgentCronRun[], total: number }`.
 
-Each run record includes: `id`, `cronId`, `agentId`, `startedAt`, `completedAt`, `skipped`, `skipReason`, `outcome`, `error`, `phaseId` (nullable; child `AgentCronJob` id (FK) of the pipeline phase this run served — dev-task/review/patch/deploy; null for legacy five-job crons or runs with no phase attribution), `itemType`, `itemId`, `sessionId` (nullable; Claude session id this cron run corresponds to), `createdAt`, `modelBreakdown` (per-model token and cost breakdown array, each entry: `{ model, inputTokens, outputTokens, cacheReadTokens, cacheCreationTokens, costUsd }`). Top-level token fields (`inputTokens`/`outputTokens`/`cacheReadTokens`/`cacheCreationTokens`/`model`) were dropped from `AgentCronRun` — all token accounting now lives on `modelBreakdown`. The legacy `phase` string field was replaced by a `phaseId` foreign key (LPC-3.1). Note: the resolved `phaseCron` relation (`{ id, name }`) is only included by `listForAgent()`, used by the HTML cron-logs page — not by this JSON endpoint.
+Each run record includes: `id`, `cronId`, `agentId`, `startedAt`, `completedAt`, `skipped`, `skipReason`, `outcome`, `error`, `phaseId` (nullable; child `AgentCronJob` id (FK) of the pipeline phase this run served — dev-task/plan/review/patch/deploy; null for legacy five-job crons or runs with no phase attribution), `itemType`, `itemId`, `sessionId` (nullable; Claude session id this cron run corresponds to), `createdAt`, `modelBreakdown` (per-model token and cost breakdown array, each entry: `{ model, inputTokens, outputTokens, cacheReadTokens, cacheCreationTokens, costUsd }`). Top-level token fields (`inputTokens`/`outputTokens`/`cacheReadTokens`/`cacheCreationTokens`/`model`) were dropped from `AgentCronRun` — all token accounting now lives on `modelBreakdown`. The legacy `phase` string field was replaced by a `phaseId` foreign key (LPC-3.1). Note: the resolved `phaseCron` relation (`{ id, name }`) is only included by `listForAgent()`, used by the HTML cron-logs page — not by this JSON endpoint.
 
 ### Update cron run
 
@@ -339,7 +339,7 @@ Returns:
 }
 ```
 
-`byCron` and `byCronModel` rows include a `phase` field (populated from the `phaseCron.name` relation, e.g., "dev-task"/"review"/"patch"/"deploy") for runs that have a `phaseId`, or `null` for runs with no phase attribution (legacy five-job crons and runs dispatched without a phase cron). `byPhase` groups token stats by the resolved phase cron name; runs with no phase attribution are excluded from this dimension only — they still count toward `totals` and the other dimensions.
+`byCron` and `byCronModel` rows include a `phase` field (populated from the `phaseCron.name` relation, e.g., "dev-task"/"plan"/"review"/"patch"/"deploy") for runs that have a `phaseId`, or `null` for runs with no phase attribution (legacy five-job crons and runs dispatched without a phase cron). `byPhase` groups token stats by the resolved phase cron name; runs with no phase attribution are excluded from this dimension only — they still count toward `totals` and the other dimensions.
 
 ---
 

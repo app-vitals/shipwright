@@ -277,7 +277,6 @@ agent:
       create: true
       name: ""                     # generated if empty
     apiUrl: ""                     # in-cluster admin URL handed to agents; built from the admin Service DNS if empty
-    adminDeploymentUid: ""         # optional, for ownerRef GC; omitted when empty (downward API can't supply it)
     resources:
       requests:
         cpu: ""                     # e.g. "320m"; empty keeps the provisioner's own default
@@ -290,9 +289,13 @@ agent:
 These map to the admin service's provisioning env vars
 (`SHIPWRIGHT_K8S_PROVISIONING`, `SHIPWRIGHT_K8S_NAMESPACE`,
 `SHIPWRIGHT_AGENT_IMAGE`, `SHIPWRIGHT_AGENT_IMAGE_TAG`, `SHIPWRIGHT_AGENT_REPLICAS`,
-`SHIPWRIGHT_API_URL`, `SHIPWRIGHT_ADMIN_DEPLOYMENT_NAME`,
-`SHIPWRIGHT_ADMIN_DEPLOYMENT_UID`) — documented in full in
-[`configuration.md`](./configuration.md#agent-provisioning-admin-service).
+`SHIPWRIGHT_API_URL`) — documented in full in
+[`configuration.md`](./configuration.md#agent-provisioning-admin-service). (An
+earlier `ownerReference`-based garbage-collection mechanism —
+`SHIPWRIGHT_ADMIN_DEPLOYMENT_NAME`/`SHIPWRIGHT_ADMIN_DEPLOYMENT_UID`,
+`adminDeploymentUid` — was removed in #593: ineffective across the
+admin/agent namespace split and unsafe same-namespace, since it would
+cascade-delete every provisioned agent on admin uninstall.)
 
 The provisioned agent container's resource requests/limits can also be
 overridden per field via `SHIPWRIGHT_K8S_AGENT_CPU_REQUEST`,
