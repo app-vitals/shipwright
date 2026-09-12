@@ -186,6 +186,19 @@ export interface SessionAlertSweeperDeps {
    * PushService receives it); the constructor normalizes it.
    */
   detailLevel?: PushDetailLevel | string;
+  /**
+   * The operator allowlist (`SHIPWRIGHT_ADMIN_ALLOWED_EMAILS`). A follower on
+   * it can see every session, exactly as the Sessions tab and the Follow
+   * button already treat them, so their alerts never depend on holding an
+   * `AgentMember` row. Optional: omitted means "nobody is an admin here".
+   */
+  adminAllowedEmails?: string[];
+  /**
+   * Line logger for per-follower outcomes (a push sent, a follower skipped
+   * for visibility). Injected so tests can assert on it without touching
+   * `console`; defaults to `console.log`.
+   */
+  log?: (line: string) => void;
 }
 
 /** Matches UserNotificationPrefs.reminderHourLocal's schema default. */
@@ -302,9 +315,16 @@ export class SessionAlertSweeper {
   /** True while a sweep is running — see the re-entrancy note in the header. */
   private sweeping = false;
 
+  private readonly adminEmails: ReadonlySet<string>;
+  private readonly log: (line: string) => void;
+
   constructor(private readonly deps: SessionAlertSweeperDeps) {
     this.clock = deps.clock ?? SystemClock();
     this.timezone = deps.timezone ?? DEFAULT_ALERT_TIMEZONE;
+    this.adminEmails = new Set(
+      (deps.adminAllowedEmails ?? []).map((email) => email.toLowerCase()),
+    );
+    this.log = deps.log ?? ((line) => console.log(line));
     // `detailLevel` may be an unvalidated env string. resolveDetailLevel with
     // the most permissive opt-in returns the ceiling itself when it's a valid
     // level and DEFAULT_MAX_DETAIL ("title") when it's unset or garbage — the
@@ -500,10 +520,15 @@ export class SessionAlertSweeper {
         );
         if (!kind) continue;
 
-        await this.deps.pushService.notifySession(
+        const sent = await this.deps.pushService.notifySession(
           { slug: session.slug, emails: [follower.userEmail] },
           this.detailLevel,
           kind,
+        );
+        // `delivered: 0` with no error is the "followed, but never enabled
+        // push on any device" case — worth a line, since nothing else says so.
+        this.log(
+          `[session-alert-sweeper] ${kind} → ${follower.userEmail} for ${session.slug}: delivered=${sent.delivered} pruned=${sent.pruned}`,
         );
         await this.stampAlertState(follower.userEmail, session.slug, ctx.now);
         if (kind === "immediate") ctx.result.immediate++;
@@ -621,11 +646,13 @@ export class SessionAlertSweeper {
   }
 
   /**
-   * Whether `userEmail` can still see `session`. Every follower is evaluated
-   * as a non-admin member — the same rule admin-ui-session-follow.ts's
-   * memberCanSeeSession() applies, deliberately without an adminAllowedEmails
-   * fast path: an operator listed there who also holds memberships is covered,
-   * and one who holds none simply doesn't get session pushes.
+   * Whether `userEmail` can still see `session` — the same rule the Sessions
+   * tab and admin-ui-session-follow.ts's memberCanSeeSession() apply: an
+   * email on the operator allowlist sees everything, anyone else sees the
+   * sessions their `AgentMember` rows cover. The allowlist fast path matters:
+   * without it an operator who holds no memberships (the common case — the
+   * allowlist *is* their access) could follow a session in the UI and never
+   * receive a single push, with nothing logged.
    */
   private async canSee(
     userEmail: string,
@@ -633,7 +660,13 @@ export class SessionAlertSweeper {
     cache: Map<string, VisibilityScope>,
   ): Promise<boolean> {
     const scope = await this.scopeFor(userEmail, cache);
-    return isSessionVisible(session, scope);
+    const visible = isSessionVisible(session, scope);
+    if (!visible) {
+      this.log(
+        `[session-alert-sweeper] skip ${userEmail} for ${session.slug}: not visible (no admin allowlist entry or agent membership covers it)`,
+      );
+    }
+    return visible;
   }
 
   private async scopeFor(
@@ -644,8 +677,11 @@ export class SessionAlertSweeper {
     const cached = cache.get(key);
     if (cached) return cached;
 
-    const memberships = await this.deps.agentMemberService.listByEmail(key);
-    const agentIds = visibleAgentIdsFor(false, memberships);
+    const isAdmin = this.adminEmails.has(key);
+    const memberships = isAdmin
+      ? []
+      : await this.deps.agentMemberService.listByEmail(key);
+    const agentIds = visibleAgentIdsFor(isAdmin, memberships);
     const agents =
       memberships.length === 0
         ? []

@@ -761,6 +761,9 @@ async function startServer(): Promise<void> {
       // cap session pushes at DEFAULT_MAX_DETAIL ("title"), silently ignoring
       // a SHIPWRIGHT_ADMIN_PUSH_MAX_DETAIL=preview configuration.
       detailLevel: pushMaxDetail,
+      // Same allowlist createAdminUIApp gates on — an operator listed here
+      // sees (and is alerted for) every session, membership or not.
+      adminAllowedEmails,
       ...(adminTz ? { timezone: adminTz } : {}),
     });
     const sessionAlertIntervalMs = resolveSessionAlertIntervalMs(process.env);

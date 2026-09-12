@@ -14,6 +14,7 @@
 import { describe, expect, it } from "bun:test";
 import { Hono } from "hono";
 import type { MiddlewareHandler } from "hono";
+import { PUSH_TEST_PATH } from "./admin-ui-push-test.ts";
 import {
   NOTIFICATION_SETTINGS_PATH,
   type SessionSettingsDeps,
@@ -163,6 +164,20 @@ describe("GET /admin/settings/notifications — push toggle gating", () => {
     const text = await res.text();
     expect(text).toContain("push-toggle-btn");
     expect(text).toContain("BPUBLICKEY");
+  });
+
+  it("renders the Send test notification control alongside the toggle", async () => {
+    const app = buildApp({ pushEnabled: true, vapidPublicKey: "BPUBLICKEY" });
+    const text = await (await app.request(NOTIFICATION_SETTINGS_PATH)).text();
+    expect(text).toContain("push-test-btn");
+    expect(text).toContain(PUSH_TEST_PATH);
+    expect(text).toContain("Following a session does not subscribe this device");
+  });
+
+  it("omits the Send test notification control when push is disabled", async () => {
+    const app = buildApp({ pushEnabled: false, vapidPublicKey: "" });
+    const text = await (await app.request(NOTIFICATION_SETTINGS_PATH)).text();
+    expect(text).not.toContain("push-test-btn");
   });
 
   it("omits the push toggle when VAPID is not configured", async () => {
