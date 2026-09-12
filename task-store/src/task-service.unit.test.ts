@@ -5,7 +5,12 @@ import { BadRequestError, ConflictError, NotFoundError } from "./errors.ts";
 import type { PrismaClient, Task } from "./index.ts";
 import type { ReadyTaskLike } from "./ready.ts";
 import { CLOSED_STATUSES, OPEN_STATUSES } from "./statuses.ts";
-import { type TaskListFilters, TaskService } from "./task-service.ts";
+import {
+  type TaskListFilters,
+  TaskService,
+  WEBHOOK_TX_TIMEOUT_MS,
+} from "./task-service.ts";
+import type { WebhookDispatcher } from "./webhook-dispatcher.ts";
 
 // ─── Minimal in-memory stub matching only the logic under test ────────────────
 
@@ -2354,5 +2359,176 @@ describe("TaskService.listBlocked() filters (unit)", () => {
       id: "dep-task",
       status: "pending",
     });
+  });
+});
+
+// ─── TSW-1.2: explicit $transaction timeout on dispatching write paths ────────
+
+/**
+ * Every write path that fires the outbound `task.write` webhook from inside
+ * its `$transaction` must pass an explicit `{ timeout }` — Prisma's default
+ * interactive-transaction timeout (5000ms) exactly ties the dispatcher's own
+ * default request timeout, and Prisma's clock starts when the transaction
+ * opens rather than when the webhook call starts. If Prisma's clock wins that
+ * race it throws a transaction-already-closed error, which isn't an ApiError,
+ * so a slow (not failing) receiver surfaces as a 500 instead of the
+ * documented 502.
+ *
+ * These tests assert the options object actually reaches `$transaction` on
+ * all eight paths — a regression here is invisible at runtime until a
+ * receiver gets slow in production.
+ */
+describe("TaskService task.write transaction timeout (TSW-1.2)", () => {
+  function makeTask(overrides: Partial<Task> = {}): Task {
+    return {
+      id: "task-1",
+      title: "A task",
+      status: "pending",
+      session: null,
+      dependencies: [],
+      acceptanceCriteria: [],
+      claimedBy: null,
+      claimedAt: null,
+      heartbeatAt: null,
+      skipCount: 0,
+      lastSkippedAt: null,
+      blockedReason: null,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+      ...overrides,
+    } as unknown as Task;
+  }
+
+  /**
+   * Records the options argument handed to each `$transaction` call, and is
+   * permissive enough about the queries inside to drive every write path
+   * (create/update/claim/complete/fail/release/recordSkip/resetSkip) without
+   * real transactional semantics — the assertion is purely about the options.
+   */
+  function makeTimeoutRecordingDouble(seed: Task): {
+    prisma: PrismaClient;
+    optionsSeen: unknown[];
+  } {
+    const optionsSeen: unknown[] = [];
+    let row: Task = { ...seed };
+
+    const applyData = (data: Record<string, unknown>): void => {
+      const next: Record<string, unknown> = { ...row };
+      for (const [key, value] of Object.entries(data)) {
+        if (
+          typeof value === "object" &&
+          value !== null &&
+          "increment" in value
+        ) {
+          const current = (next[key] as number | null) ?? 0;
+          next[key] = current + (value as { increment: number }).increment;
+          continue;
+        }
+        next[key] = value;
+      }
+      row = next as unknown as Task;
+    };
+
+    const client = {
+      task: {
+        create({ data }: { data: Record<string, unknown> }): Promise<Task> {
+          applyData(data);
+          return Promise.resolve({ ...row });
+        },
+        findUnique(): Promise<Task> {
+          return Promise.resolve({ ...row });
+        },
+        update({ data }: { data: Record<string, unknown> }): Promise<Task> {
+          applyData(data);
+          return Promise.resolve({ ...row });
+        },
+      },
+      taskEvent: {
+        create(): Promise<void> {
+          return Promise.resolve();
+        },
+      },
+      $executeRaw(): Promise<number> {
+        return Promise.resolve(1);
+      },
+      $transaction<T>(fn: (tx: unknown) => Promise<T>, options?: unknown) {
+        optionsSeen.push(options);
+        return fn(client);
+      },
+    };
+
+    return { prisma: client as unknown as PrismaClient, optionsSeen };
+  }
+
+  const noopDispatcher: WebhookDispatcher = async () => {};
+
+  const cases: Array<{
+    name: string;
+    seed: Task;
+    run: (service: TaskService) => Promise<unknown>;
+  }> = [
+    {
+      name: "create",
+      seed: makeTask(),
+      run: (s) => s.create({ title: "t", status: "pending" }),
+    },
+    {
+      name: "update",
+      seed: makeTask(),
+      run: (s) => s.update("task-1", { title: "renamed" }),
+    },
+    {
+      name: "claim",
+      seed: makeTask({ status: "pending", claimedBy: null }),
+      run: (s) => s.claim("task-1", "agent-a"),
+    },
+    {
+      name: "complete",
+      seed: makeTask({ status: "in_progress" }),
+      run: (s) => s.complete("task-1"),
+    },
+    {
+      name: "fail",
+      seed: makeTask({ status: "in_progress" }),
+      run: (s) => s.fail("task-1", "because"),
+    },
+    {
+      name: "release",
+      seed: makeTask({ status: "in_progress", claimedBy: "agent-a" }),
+      run: (s) => s.release("task-1"),
+    },
+    {
+      name: "recordSkip",
+      seed: makeTask(),
+      run: (s) => s.recordSkip("task-1"),
+    },
+    {
+      name: "resetSkip",
+      seed: makeTask({ skipCount: 2 } as Partial<Task>),
+      run: (s) => s.resetSkip("task-1"),
+    },
+  ];
+
+  for (const { name, seed, run } of cases) {
+    it(`${name}() passes an explicit transaction timeout of WEBHOOK_TX_TIMEOUT_MS`, async () => {
+      const { prisma, optionsSeen } = makeTimeoutRecordingDouble(seed);
+      const service = new TaskService(prisma, undefined, noopDispatcher);
+
+      await run(service);
+
+      expect(optionsSeen).toHaveLength(1);
+      expect(optionsSeen[0]).toEqual({ timeout: WEBHOOK_TX_TIMEOUT_MS });
+    });
+  }
+
+  it("leaves headroom over Prisma's 5000ms default transaction timeout, which the webhook default would otherwise tie", () => {
+    // The specific collision under review: Prisma's default interactive
+    // transaction timeout is 5000ms, identical to the dispatcher's former
+    // default request timeout. The explicit override must be strictly
+    // greater, or the fix is cosmetic.
+    const PRISMA_DEFAULT_TX_TIMEOUT_MS = 5000;
+    expect(WEBHOOK_TX_TIMEOUT_MS).toBeGreaterThan(
+      PRISMA_DEFAULT_TX_TIMEOUT_MS,
+    );
   });
 });

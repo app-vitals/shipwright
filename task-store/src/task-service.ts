@@ -14,7 +14,12 @@
 
 import { type BlockedByEntry, computeBlockedBy } from "./blocked-by.ts";
 import { type Clock, SystemClock } from "./clock.ts";
-import { BadRequestError, ConflictError, NotFoundError } from "./errors.ts";
+import {
+  BadRequestError,
+  ConflictError,
+  NotFoundError,
+  WebhookDeliveryError,
+} from "./errors.ts";
 import type { Prisma, PrismaClient, Task, TaskEvent } from "./index.ts";
 import { buildRepoOrgWhere } from "./lib/repo-org-filter.ts";
 import { resolveReadyTasks } from "./ready.ts";
@@ -44,6 +49,44 @@ export { CLOSED_STATUSES, OPEN_STATUSES };
  * agent/ and task-store/ are separate deployables.
  */
 const SKIP_BLOCK_THRESHOLD = 3;
+
+/**
+ * Explicit interactive-transaction `timeout` for every write path that now
+ * dispatches an outbound `task.write` webhook from inside its transaction
+ * (TSW-1.2: create/update/claim/complete/fail/release/recordSkip/resetSkip).
+ *
+ * Prisma's default interactive-transaction `timeout` is 5000ms — the same as
+ * the dispatcher's own default request timeout (`DEFAULT_WEBHOOK_TIMEOUT_MS`
+ * in main.ts) — and Prisma's clock starts when the transaction *opens*, not
+ * when the webhook call starts. Because the dispatcher runs after this
+ * transaction's own findUnique/update/recordTaskTransition queries have
+ * already spent part of that budget, a slow-but-not-yet-failing receiver
+ * would trip Prisma's transaction timeout *before* the dispatcher's own
+ * `AbortSignal.timeout()` fired. Prisma then throws its own
+ * transaction-already-closed error, which is neither a `WebhookDeliveryError`
+ * nor any other `ApiError`, so `translateNotFound()` (P2025-only) passes it
+ * through and app.ts's `onError` answers a generic 500 instead of the
+ * documented 502.
+ *
+ * Setting the transaction budget well above the webhook timeout keeps the
+ * dispatcher's own AbortSignal the first clock to fire, so a slow receiver
+ * always surfaces as `WebhookDeliveryError` → 502 with the transaction rolled
+ * back, exactly as documented. main.ts warns at startup when a configured
+ * `SHIPWRIGHT_TASK_STORE_WEBHOOK_TIMEOUT_MS` erodes that headroom (see
+ * `checkWebhookTimeoutBuffer`).
+ *
+ * `maxWait` is deliberately left at Prisma's 2000ms default: it bounds
+ * acquiring a pool connection *before* the transaction opens, which the
+ * webhook call happens after and therefore cannot affect.
+ */
+export const WEBHOOK_TX_TIMEOUT_MS = 10_000;
+
+/**
+ * The options object handed to each dispatching `$transaction` call. Shared
+ * so all eight write paths stay on one value — a per-call literal would let
+ * them drift apart silently.
+ */
+const WEBHOOK_TX_OPTIONS = { timeout: WEBHOOK_TX_TIMEOUT_MS } as const;
 
 /**
  * Parses an `updatedSince` filter value into a Date, matching the
@@ -591,8 +634,14 @@ export class TaskService implements TaskServiceLike {
     return this.prisma.$transaction(async (tx) => {
       const task = await tx.task.create({ data });
       await this.sessionService.upsert(tx, task.session);
+      // Fires after the task row + its session upsert have both landed, still
+      // inside this transaction — a thrown WebhookDeliveryError propagates
+      // uncaught here, so Prisma rolls back the create (and the session
+      // upsert) rather than leaving a task row an undelivered webhook never
+      // announced.
+      await this.webhookDispatcher("task.write", [task]);
       return task;
-    });
+    }, WEBHOOK_TX_OPTIONS);
   }
 
   /**
@@ -653,8 +702,12 @@ export class TaskService implements TaskServiceLike {
           "update",
           existing?.claimedBy ?? "system",
         );
+        // Same rollback-on-throw contract as create() above: a
+        // WebhookDeliveryError here propagates uncaught and Prisma rolls
+        // back the update.
+        await this.webhookDispatcher("task.write", [record]);
         return record;
-      });
+      }, WEBHOOK_TX_OPTIONS);
     } catch (err: unknown) {
       throw this.translateNotFound(err, "task not found");
     }
@@ -668,6 +721,11 @@ export class TaskService implements TaskServiceLike {
    * cascade, this is the one call path that explicitly removes a task
    * (`DELETE /tasks/:id`), so deliberately wiping its audit trail here is the
    * caller's explicit intent, not an accidental side effect elsewhere.
+   *
+   * TSW-1.2: deliberately does NOT call webhookDispatcher — by the time this
+   * transaction commits, the Task row is gone, so there's no surviving row
+   * to send as `data: [task]`; a "this task was deleted" event is a
+   * different, not-yet-specified event shape, not `task.write`.
    */
   async remove(id: string): Promise<void> {
     try {
@@ -725,10 +783,17 @@ export class TaskService implements TaskServiceLike {
 
         await this.recordTaskTransition(tx, before, after, "claim", claimedBy);
 
+        // Same rollback-on-throw contract as create()/update() above.
+        await this.webhookDispatcher("task.write", [after]);
+
         return after;
-      });
+      }, WEBHOOK_TX_OPTIONS);
     } catch (err: unknown) {
-      if (err instanceof NotFoundError || err instanceof ConflictError) {
+      if (
+        err instanceof NotFoundError ||
+        err instanceof ConflictError ||
+        err instanceof WebhookDeliveryError
+      ) {
         throw err;
       }
       // The Aug 29 500-on-reclaim didn't come from the documented
@@ -752,6 +817,13 @@ export class TaskService implements TaskServiceLike {
    * would be a guaranteed no-op here. Skipping it entirely keeps this hot
    * liveness path a single cheap UPDATE. Mirrors
    * PullRequestService.heartbeat()'s identical rationale.
+   *
+   * TSW-1.2: deliberately does NOT call webhookDispatcher either, for the
+   * same reason it's excluded from the TaskEvent audit trail above — it's
+   * the hottest-volume write path in the service (every claimed task across
+   * the whole agent fleet touches it on a tight interval) and a
+   * heartbeatAt-only change is not an audit-worthy event for downstream
+   * consumers to react to.
    */
   async heartbeat(id: string): Promise<Task> {
     const now = this.clock.now().toISOString();
@@ -785,8 +857,10 @@ export class TaskService implements TaskServiceLike {
           "complete",
           before?.claimedBy ?? "system",
         );
+        // Same rollback-on-throw contract as create()/update()/claim() above.
+        await this.webhookDispatcher("task.write", [record]);
         return record;
-      });
+      }, WEBHOOK_TX_OPTIONS);
     } catch (err: unknown) {
       throw this.translateNotFound(err, "task not found");
     }
@@ -813,8 +887,10 @@ export class TaskService implements TaskServiceLike {
           "fail",
           before?.claimedBy ?? "system",
         );
+        // Same rollback-on-throw contract as create()/update()/claim() above.
+        await this.webhookDispatcher("task.write", [record]);
         return record;
-      });
+      }, WEBHOOK_TX_OPTIONS);
     } catch (err: unknown) {
       throw this.translateNotFound(err, "task not found");
     }
@@ -842,8 +918,10 @@ export class TaskService implements TaskServiceLike {
           "release",
           before?.claimedBy ?? "system",
         );
+        // Same rollback-on-throw contract as create()/update()/claim() above.
+        await this.webhookDispatcher("task.write", [record]);
         return record;
-      });
+      }, WEBHOOK_TX_OPTIONS);
     } catch (err: unknown) {
       throw this.translateNotFound(err, "task not found");
     }
@@ -888,8 +966,10 @@ export class TaskService implements TaskServiceLike {
           "recordSkip",
           before?.claimedBy ?? "system",
         );
+        // Same rollback-on-throw contract as create()/update()/claim() above.
+        await this.webhookDispatcher("task.write", [updated]);
         return updated;
-      });
+      }, WEBHOOK_TX_OPTIONS);
     } catch (err: unknown) {
       throw this.translateNotFound(err, "task not found");
     }
@@ -911,8 +991,10 @@ export class TaskService implements TaskServiceLike {
           "resetSkip",
           before?.claimedBy ?? "system",
         );
+        // Same rollback-on-throw contract as create()/update()/claim() above.
+        await this.webhookDispatcher("task.write", [record]);
         return record;
-      });
+      }, WEBHOOK_TX_OPTIONS);
     } catch (err: unknown) {
       throw this.translateNotFound(err, "task not found");
     }

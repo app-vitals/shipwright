@@ -23,12 +23,22 @@ import { PullRequestService } from "./pull-request-service.ts";
 import { SessionRetentionReaper } from "./session-retention-reaper.ts";
 import { SessionService } from "./session-service.ts";
 import { StaleClaimReaper } from "./stale-claim-reaper.ts";
-import { TaskService } from "./task-service.ts";
+import { TaskService, WEBHOOK_TX_TIMEOUT_MS } from "./task-service.ts";
 import { TaskTokenService } from "./token-service.ts";
 import { createWebhookDispatcher } from "./webhook-dispatcher.ts";
+import { checkWebhookTimeoutBuffer } from "./webhook-timeout-buffer-check.ts";
 
 const DEFAULT_PORT = 3000;
-const DEFAULT_WEBHOOK_TIMEOUT_MS = 5000;
+/**
+ * Default outbound-webhook request timeout. Deliberately well under
+ * `WEBHOOK_TX_TIMEOUT_MS` (task-service.ts, 10000ms), which bounds the
+ * transactions the dispatcher now runs inside: the dispatcher's own
+ * `AbortSignal` must be the first clock to fire, or Prisma's
+ * transaction-timeout error (not an `ApiError`) surfaces as a 500 instead of
+ * the documented `WebhookDeliveryError` → 502. `checkWebhookTimeoutBuffer`
+ * below warns when an operator-supplied override erodes that headroom.
+ */
+const DEFAULT_WEBHOOK_TIMEOUT_MS = 3000;
 
 // ─── Readiness check ──────────────────────────────────────────────────────────
 
@@ -119,6 +129,17 @@ async function startServer(): Promise<void> {
 
   await runMigrations();
 
+  // No explicit `connection_limit` override — this uses Prisma's default
+  // pool sizing (num_physical_cpus * 2 + 1). TSW-1.2 wires the outbound
+  // webhookDispatcher call into create/update/claim/complete/fail/release/
+  // recordSkip/resetSkip, each already inside a $transaction, so those
+  // transactions now hold their pool connection slightly longer (for the
+  // dispatcher's HTTP round-trip, bounded by DEFAULT_WEBHOOK_TIMEOUT_MS
+  // below, with the whole transaction hard-capped by WEBHOOK_TX_TIMEOUT_MS)
+  // before releasing it. The default pool size is believed to have headroom
+  // for current expected concurrent-transaction volume across the agent
+  // fleet; revisit (explicit connection_limit) if fleet size grows
+  // significantly and pool exhaustion becomes observable.
   const prisma = new PrismaClient();
 
   // Build the outbound event dispatcher when a webhook URL is configured.
@@ -145,6 +166,18 @@ async function startServer(): Promise<void> {
 
   if (webhookUrl) {
     console.log(`[task-store] webhook dispatcher configured (${webhookUrl})`);
+    // The dispatcher now fires from inside the task lifecycle transactions
+    // (TSW-1.2), so its timeout must stay comfortably under the transaction
+    // timeout or Prisma's clock wins the race and a slow receiver 500s
+    // instead of 502ing. Only meaningful when a webhook URL is set — the
+    // dispatcher is a no-op otherwise.
+    const webhookTimeoutWarning = checkWebhookTimeoutBuffer(
+      webhookTimeoutMs,
+      WEBHOOK_TX_TIMEOUT_MS,
+    );
+    if (webhookTimeoutWarning) {
+      console.warn(webhookTimeoutWarning);
+    }
     if (!webhookSigningSecret) {
       console.log(
         "[task-store] webhook request signing disabled (SHIPWRIGHT_TASK_STORE_WEBHOOK_SIGNING_SECRET not set)",

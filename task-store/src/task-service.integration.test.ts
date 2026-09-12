@@ -18,8 +18,9 @@
 
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { PrismaClient } from "../prisma/client/index.js";
-import { ConflictError } from "./errors.ts";
+import { ConflictError, WebhookDeliveryError } from "./errors.ts";
 import { TaskService } from "./task-service.ts";
+import type { WebhookDispatcher } from "./webhook-dispatcher.ts";
 
 const TEST_DB = process.env.DATABASE_URL_SHIPWRIGHT_TASK_STORE_TEST;
 
@@ -222,9 +223,7 @@ describeOrSkip(
       expect(result.events).toHaveLength(7);
 
       const claimEvents = result.events.filter((e) => e.method === "claim");
-      const releaseEvents = result.events.filter(
-        (e) => e.method === "release",
-      );
+      const releaseEvents = result.events.filter((e) => e.method === "release");
       expect(claimEvents).toHaveLength(4);
       expect(releaseEvents).toHaveLength(3);
 
@@ -252,3 +251,92 @@ describeOrSkip(
     });
   },
 );
+
+/**
+ * TSW-1.2 — dispatcher-failure rollback + payload shape, against a real
+ * Postgres DB. A thrown WebhookDeliveryError inside the $transaction
+ * callback must propagate uncaught (Prisma rolls back automatically) so the
+ * original call rejects with the same error and no partial write survives —
+ * this is Postgres's transaction guarantee, not something a fake DB/mock
+ * dispatcher could verify.
+ */
+describeOrSkip("TaskService dispatcher wiring (TSW-1.2, integration)", () => {
+  let prisma: PrismaClient;
+
+  beforeEach(async () => {
+    prisma = makePrisma();
+    await prisma.taskEvent.deleteMany();
+    await prisma.task.deleteMany();
+  });
+
+  afterEach(async () => {
+    await prisma.$disconnect();
+  });
+
+  function throwingDispatcher(): WebhookDispatcher {
+    return async () => {
+      throw new WebhookDeliveryError("simulated webhook delivery failure");
+    };
+  }
+
+  it("create(): a dispatcher failure rolls back the task row (no row survives)", async () => {
+    const service = new TaskService(prisma, undefined, throwingDispatcher());
+
+    await expect(
+      service.create({ title: "should-not-persist", status: "pending" }),
+    ).rejects.toBeInstanceOf(WebhookDeliveryError);
+
+    const rows = await prisma.task.findMany({
+      where: { title: "should-not-persist" },
+    });
+    expect(rows).toHaveLength(0);
+  });
+
+  it("update(): a dispatcher failure rolls back the update (task unchanged)", async () => {
+    const seeded = await prisma.task.create({
+      data: { title: "original-title", status: "pending" },
+    });
+    const service = new TaskService(prisma, undefined, throwingDispatcher());
+
+    await expect(
+      service.update(seeded.id, { title: "new-title" }),
+    ).rejects.toBeInstanceOf(WebhookDeliveryError);
+
+    const row = await prisma.task.findUnique({ where: { id: seeded.id } });
+    expect(row?.title).toBe("original-title");
+  });
+
+  it("claim(): a dispatcher failure rolls back the claim (task remains pending, unclaimed)", async () => {
+    const seeded = await prisma.task.create({
+      data: { title: "claim-rollback", status: "pending" },
+    });
+    const service = new TaskService(prisma, undefined, throwingDispatcher());
+
+    await expect(service.claim(seeded.id, "agent-a")).rejects.toBeInstanceOf(
+      WebhookDeliveryError,
+    );
+
+    const row = await prisma.task.findUnique({ where: { id: seeded.id } });
+    expect(row?.status).toBe("pending");
+    expect(row?.claimedBy).toBeNull();
+    expect(row?.claimedAt).toBeNull();
+  });
+
+  it("complete(): dispatcher is called with ('task.write', [theCompletedTask]) right before returning", async () => {
+    const seeded = await prisma.task.create({
+      data: { title: "dispatch-payload-shape", status: "in_progress" },
+    });
+
+    const calls: Array<{ type: string; data: unknown }> = [];
+    const dispatcher: WebhookDispatcher = async (type, data) => {
+      calls.push({ type, data });
+    };
+    const service = new TaskService(prisma, undefined, dispatcher);
+
+    const result = await service.complete(seeded.id);
+
+    expect(calls).toHaveLength(1);
+    expect(calls[0]?.type).toBe("task.write");
+    expect(calls[0]?.data).toEqual([result]);
+  });
+});
