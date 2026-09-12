@@ -16,7 +16,7 @@ Three models, all in `admin/prisma/schema.prisma`, none tied to an `Agent` (no c
 | `UserNotificationPrefs` | Per-user notification settings | `userEmail` (primary key — one row per user, not per session), `autoFollowSessions` (default `true`), `reminderHourLocal` (default `9`, validated to an integer in `[0, 23]`), `autoFollowSince`. |
 | `SessionAlertState` | Per-user/per-session alert cooldown | `userEmail`, `sessionSlug`, `lastAlertedAt`. Unique on `[userEmail, sessionSlug]`. |
 
-`SessionAlertState.lastAlertedAt` is written by `session-alert-sweeper.ts`'s `stampAlertState()` (an upsert, keyed per user/session) after every immediate/reminder/completed push it sends — the cooldown state the model was built to hold. `SessionFollowService.unfollow()` additionally deletes the caller's `SessionAlertState` row for the slug as cleanup, so a stale cooldown timestamp doesn't linger past unfollowing.
+`SessionAlertState.lastAlertedAt` is written by `session-alert-sweeper.ts`'s `stampAlertState()` (an upsert, keyed per user/session) after every immediate/reminder push `sweepWaitingSession()` sends — the cooldown state the model was built to hold. A completed push instead goes through `sweepClosedSession()`, which deletes the `SessionAlertState` row (along with the `SessionFollow` row) as terminal cleanup rather than stamping it. `SessionFollowService.unfollow()` additionally deletes the caller's `SessionAlertState` row for the slug as cleanup, so a stale cooldown timestamp doesn't linger past unfollowing.
 
 `SessionFollowService` (`admin/src/session-follow-service.ts`) is the sole entry point — routes never touch these three Prisma models directly:
 
