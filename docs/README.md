@@ -13,7 +13,7 @@ As you read on, you'll run into two categorically different systems. The **deliv
 - **[Testing](./testing.md)** — the five-layer test model (unit / integration / smoke / e2e / content), run commands, speed budgets, and the isolation contract.
 - **[Metrics dashboard](./metrics.md)** — the provider-agnostic metrics service (fixtures / task-store): JSON endpoints, dashboard, auth, and environment.
 - **[Shipwright agent](./agent.md)** — the autonomous runner: runtime + admin APIs, data model, and environment.
-- **[Deploying to Kubernetes](./deploy-kubernetes.md)** — the Helm chart's networking model, agent provisioning model, agent voice, Web Push, auth modes, and bring-your-own-PostgreSQL; see [Cloud provider guides](./deploy-kubernetes-providers.md) for the Minikube, GKE (Gateway API + cert-manager), EKS (ALB), Traefik, and cloud-native walkthroughs.
+- **[Deploying to Kubernetes](./deploy-kubernetes.md)** — the Helm chart's networking model, agent provisioning model, and auth modes; see [Cloud provider guides](./deploy-kubernetes-providers.md) for the Minikube, GKE (Gateway API + cert-manager), EKS (ALB), Traefik, and cloud-native walkthroughs, and [Optional add-ons](./deploy-kubernetes-addons.md) for agent voice (STT/TTS), Web Push notifications, bring-your-own-PostgreSQL, and the bundled ingress-controller/cert-manager subcharts.
 - **[Test system](./test-readiness/test-system.md)** — the full authoritative test blueprint (source for [Testing](./testing.md)).
 - **[Configuration](./configuration.md)** — all configuration options: plugin env vars, agent env vars, and policy fields.
 
