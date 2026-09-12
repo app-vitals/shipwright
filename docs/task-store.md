@@ -45,6 +45,7 @@ Handlers throw typed errors (`task-store/src/errors.ts`) rather than constructin
 | `NotFoundError` | 404 | Referenced task, PR, or token doesn't exist |
 | `ConflictError` | 409 | A conditional write lost a race (e.g. claiming a task another caller already claimed) |
 | `PayloadTooLargeError` | 413 | Request body exceeds the configured size limit |
+| `WebhookDeliveryError` | 502 | Outbound webhook delivery failed — e.g. the configured receiver returned non-2xx, the request timed out (TSW-1.2), or a network error occurred. Inside a task lifecycle transaction (create/update/claim/complete/fail/release/recordSkip/resetSkip), a thrown `WebhookDeliveryError` propagates uncaught, triggering Prisma to roll back the entire transaction — no partial write survives. |
 
 `ApiError` also exposes a `status` getter that aliases `statusCode`, so `@sentry/hono`'s error-handled-response detection (which reads `error.status`) recognizes these as already-handled and skips its own capture.
 
