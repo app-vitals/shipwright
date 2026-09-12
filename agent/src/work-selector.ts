@@ -34,6 +34,26 @@ export interface WorkTaskCandidate {
   id: string;
   createdAt: string;
   title?: string;
+  /**
+   * Which task-type phase produced this candidate (PDR-4.1). Mirrors
+   * WorkPrCandidate.phase's pattern: tagged once at each candidate's single
+   * construction site (check-dev-task.ts leaves it unset, check-plan.ts sets
+   * "plan"), and read by rankWorkItems/the loop orchestrator to route the
+   * winning item to the right one-shot command. Optional, defaulting to
+   * "dev-task", so every pre-PDR-4.1 candidate/fixture keeps its exact
+   * current meaning.
+   */
+  phase?: "dev-task" | "plan";
+  /**
+   * The task's `repo` ("org/repo"), carried through from the task-store
+   * record. Only populated (and only required) for `phase: "plan"`
+   * candidates, whose dispatched command is
+   * `/shipwright:plan-session {repo} {session} --autonomous {id}` rather than
+   * dev-task's bare `{id}`.
+   */
+  repo?: string;
+  /** The task's planning-session slug. See `repo` above. */
+  session?: string;
 }
 
 export interface WorkPrCandidate {
@@ -49,10 +69,11 @@ export type WorkItem =
   | { type: "pr"; pr: WorkPrCandidate };
 
 /**
- * Full ranked view of a work candidate — used by rankWorkItems() below. Task
- * candidates are synthetically tagged phase: "dev-task" (WorkTaskCandidate
- * itself has no phase field, since it only ever represents the dev-task
- * phase). Every real caller of getReviewCandidates/getPatchCandidates/
+ * Full ranked view of a work candidate — used by rankWorkItems() below. A
+ * task candidate carries its own optional `phase` tag (PDR-4.1: "dev-task"
+ * or "plan"); an untagged one falls back to "dev-task", which is exactly
+ * what every pre-PDR-4.1 task candidate meant when the field didn't exist.
+ * Every real caller of getReviewCandidates/getPatchCandidates/
  * getDeployCandidates always sets WorkPrCandidate.phase (it's set once at
  * each candidate's single construction site, unconditionally) — so by the
  * time a PR candidate reaches rankWorkItems(), phase is never actually
@@ -67,7 +88,7 @@ export interface RankedWorkItem {
   type: "task" | "pr";
   id: string;
   title?: string;
-  phase: "dev-task" | "review" | "patch" | "deploy";
+  phase: "dev-task" | "plan" | "review" | "patch" | "deploy";
   age: string;
 }
 
@@ -137,7 +158,9 @@ export function rankWorkItems(
         type: "task",
         id: task.id,
         title: task.title,
-        phase: "dev-task",
+        // See WorkTaskCandidate.phase: untagged means dev-task, the only
+        // task-type phase that existed before PDR-4.1.
+        phase: task.phase ?? "dev-task",
         age: task.createdAt,
       }),
     ),

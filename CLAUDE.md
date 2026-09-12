@@ -111,7 +111,7 @@ and [`docs/agent.md`](./docs/agent.md) for the full model.
 3. Build + land tests **in the same PR, at the correct layer** (no "tests later").
 4. Open a PR; move the status through its lifecycle.
 
-Driven by Shipwright's own commands: `/shipwright:dev-task` → `/shipwright:review` / `/shipwright:patch` → `/shipwright:deploy`. The `shipwright-loop` cron is the sole supported autonomous driver — it drains the queue by dispatching enabled pipeline phases (dev-task, review, patch, deploy) in a single multi-step run until work is exhausted.
+Driven by Shipwright's own commands: `/shipwright:dev-task` → `/shipwright:review` / `/shipwright:patch` → `/shipwright:deploy`. The `shipwright-loop` cron is the sole supported autonomous driver — it drains the queue by dispatching enabled pipeline phases (dev-task, plan, review, patch, deploy) in a single multi-step run until work is exhausted. The `plan` phase (PDR-4.1, `/shipwright:plan-session --autonomous`) ships disabled and is double-gated: it additionally requires the `SHIPWRIGHT_AGENT_AUTONOMOUS_PLAN_SESSION_ENABLED` env var, so with that unset the loop behaves exactly as the four-phase loop did.
 
 **Task-store connection** is env-var-only: both `SHIPWRIGHT_TASK_STORE_URL` and `SHIPWRIGHT_TASK_STORE_TOKEN` must be set for task operations to function. There is no GitHub fallback and no file-based config — the provisioner injects these two vars into managed GKE agents, and local installs must set them explicitly. If task operations seem to no-op, check `SHIPWRIGHT_TASK_STORE_URL` first.
 

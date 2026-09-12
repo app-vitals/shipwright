@@ -49,6 +49,15 @@ interface GoldenCron {
 
 const GOLDEN_CODING_CRONS: GoldenCron[] = [
   {
+    name: "shipwright-plan",
+    schedule: "* * * * *",
+    prompt: "/shipwright:plan-session",
+    silent: true,
+    preCheck: null,
+    enabled: false,
+    parentCron: "shipwright-loop",
+  },
+  {
     name: "shipwright-dev-task",
     schedule: "* * * * *",
     prompt: "/shipwright:dev-task",

@@ -16,8 +16,8 @@ import type {
 } from "@shipwright/lib/sentry";
 import {
   ClaudeRunError,
-  ClaudeTimeoutError,
   type ClaudeRunResult,
+  ClaudeTimeoutError,
   type ModelUsage,
   type ProgressCallback,
 } from "./claude.ts";
@@ -425,6 +425,11 @@ interface MakeDepsOptions {
   devTaskCandidates?:
     | WorkTaskCandidate[]
     | (() => Promise<WorkTaskCandidate[]>);
+  // PDR-4.1 autonomous plan-session phase pool. Defaults to empty, and the
+  // phase itself is gated behind both the shipwright-plan toggle and
+  // SHIPWRIGHT_AGENT_AUTONOMOUS_PLAN_SESSION_ENABLED, so existing tests that
+  // don't pass this option are unaffected.
+  planCandidates?: WorkTaskCandidate[] | (() => Promise<WorkTaskCandidate[]>);
   reviewCandidates?: WorkPrCandidate[] | (() => Promise<WorkPrCandidate[]>);
   patchCandidates?: WorkPrCandidate[] | (() => Promise<WorkPrCandidate[]>);
   deployCandidates?: WorkPrCandidate[] | (() => Promise<WorkPrCandidate[]>);
@@ -444,6 +449,9 @@ interface MakeDepsOptions {
   // Direct raw-callable override for the dev-task qualification fn — used by
   // tests that need full control (e.g. hanging or throwing).
   getDevTaskCandidates?: () => Promise<WorkTaskCandidate[]>;
+  // Direct raw-callable override for the plan qualification fn (PDR-4.1) —
+  // same escape hatch as getDevTaskCandidates above.
+  getPlanCandidates?: () => Promise<WorkTaskCandidate[]>;
   // Pre-claim hook (CBD-1.2) invoked before dispatching a winning dev-task
   // item. Defaults to a stub that always resolves true (claim succeeds), so
   // existing tests that don't pass this option are unaffected.
@@ -510,6 +518,9 @@ function makeDeps(options: MakeDepsOptions = {}): LoopOrchestratorDeps {
     getDevTaskCandidates:
       options.getDevTaskCandidates ??
       poolStub("devTask", options.devTaskCandidates, consumed, calls),
+    getPlanCandidates:
+      options.getPlanCandidates ??
+      poolStub("plan", options.planCandidates, consumed, calls),
     getReviewCandidates: poolStub(
       "review",
       options.reviewCandidates,
@@ -1420,8 +1431,11 @@ describe("createLoopOrchestrator", () => {
     const consumed = new Set<string>();
     const devTaskCandidates = [task("SWC-CEIL1", "2026-01-01T00:00:00Z")];
     const { reporter } = makeRecordingReporter();
-    const { client: sentryClient, captured, capturedMessages } =
-      makeFakeSentryClient();
+    const {
+      client: sentryClient,
+      captured,
+      capturedMessages,
+    } = makeFakeSentryClient();
     const runner = async (): Promise<ClaudeRunResult> => {
       consumed.add("SWC-CEIL1");
       throw new ClaudeTimeoutError(3_600_000, "ceiling");
@@ -1447,8 +1461,11 @@ describe("createLoopOrchestrator", () => {
     const consumed = new Set<string>();
     const devTaskCandidates = [task("SWC-CEIL2", "2026-01-01T00:00:00Z")];
     const { reporter } = makeRecordingReporter();
-    const { client: sentryClient, captured, capturedMessages } =
-      makeFakeSentryClient();
+    const {
+      client: sentryClient,
+      captured,
+      capturedMessages,
+    } = makeFakeSentryClient();
     const runner = async (): Promise<ClaudeRunResult> => {
       consumed.add("SWC-CEIL2");
       throw new ClaudeTimeoutError(1_500_000, "idle");
@@ -3957,6 +3974,487 @@ describe("createLoopOrchestrator", () => {
     await expect(
       loop([job("shipwright-dev-task", true)]),
     ).resolves.toBeUndefined();
+  });
+});
+
+// ─── Autonomous plan-session phase (PDR-4.1) ─────────────────────────────────
+
+describe("createLoopOrchestrator — autonomous plan phase (PDR-4.1)", () => {
+  const PLAN_ENV = "SHIPWRIGHT_AGENT_AUTONOMOUS_PLAN_SESSION_ENABLED";
+
+  /**
+   * Sets SHIPWRIGHT_AGENT_AUTONOMOUS_PLAN_SESSION_ENABLED (or deletes it when
+   * `value` is undefined) for the duration of `fn`, restoring the prior value
+   * afterward even if `fn` throws. Mirrors the backoff section's
+   * withEnvOverrides helper.
+   */
+  async function withPlanEnv(
+    value: string | undefined,
+    fn: () => Promise<void>,
+  ): Promise<void> {
+    const original = process.env[PLAN_ENV];
+    if (value === undefined) delete process.env[PLAN_ENV];
+    else process.env[PLAN_ENV] = value;
+    try {
+      await fn();
+    } finally {
+      if (original === undefined) delete process.env[PLAN_ENV];
+      else process.env[PLAN_ENV] = original;
+    }
+  }
+
+  /** A plan-phase task candidate, as check-plan.ts's mapper produces it. */
+  function planTask(
+    id: string,
+    createdAt: string,
+    overrides: Partial<WorkTaskCandidate> = {},
+  ): WorkTaskCandidate {
+    return {
+      id,
+      createdAt,
+      phase: "plan",
+      repo: "acme/example-repo",
+      session: "autonomous-dispatch",
+      ...overrides,
+    };
+  }
+
+  const PLAN_ON: CronJobLike[] = [
+    job("shipwright-plan", true),
+    job("shipwright-dev-task", true),
+  ];
+
+  // ─── AC #1: env var unset → byte-for-byte today's behavior ────────────────
+
+  test("with the env var unset, plan candidates are never collected even when the shipwright-plan toggle is on", async () => {
+    await withPlanEnv(undefined, async () => {
+      const calls: string[] = [];
+      const consumed = new Set<string>();
+      const { runner, messages } = makeRunner();
+      const deps = makeDeps({
+        calls,
+        consumed,
+        runner,
+        planCandidates: [planTask("PDR-1", "2020-01-01T00:00:00Z")],
+        claimTask: consumingClaimTask(consumed),
+      });
+      const loop = createLoopOrchestrator(deps);
+
+      await loop(PLAN_ON);
+
+      expect(calls).not.toContain("plan");
+      expect(messages).toHaveLength(0);
+    });
+  });
+
+  test('with the env var set to a non-"true" value, plan candidates are never collected', async () => {
+    await withPlanEnv("false", async () => {
+      const calls: string[] = [];
+      const consumed = new Set<string>();
+      const { runner, messages } = makeRunner();
+      const deps = makeDeps({
+        calls,
+        consumed,
+        runner,
+        planCandidates: [planTask("PDR-1", "2020-01-01T00:00:00Z")],
+        claimTask: consumingClaimTask(consumed),
+      });
+      const loop = createLoopOrchestrator(deps);
+
+      await loop(PLAN_ON);
+
+      expect(calls).not.toContain("plan");
+      expect(messages).toHaveLength(0);
+    });
+  });
+
+  test("with the env var set but the shipwright-plan toggle off, plan candidates are never collected", async () => {
+    await withPlanEnv("true", async () => {
+      const calls: string[] = [];
+      const consumed = new Set<string>();
+      const { runner, messages } = makeRunner();
+      const deps = makeDeps({
+        calls,
+        consumed,
+        runner,
+        planCandidates: [planTask("PDR-1", "2020-01-01T00:00:00Z")],
+        claimTask: consumingClaimTask(consumed),
+      });
+      const loop = createLoopOrchestrator(deps);
+
+      await loop([
+        job("shipwright-plan", false),
+        job("shipwright-dev-task", true),
+      ]);
+
+      expect(calls).not.toContain("plan");
+      expect(messages).toHaveLength(0);
+    });
+  });
+
+  // ─── AC #2: enabled → claimed once and dispatched ─────────────────────────
+
+  test("with the env var set and the toggle on, a flagged task is claimed and dispatched as /shipwright:plan-session {repo} {session} --autonomous {id}", async () => {
+    await withPlanEnv("true", async () => {
+      const consumed = new Set<string>();
+      const claims: string[] = [];
+      const { runner, messages } = makeRunner();
+      const deps = makeDeps({
+        consumed,
+        runner,
+        planCandidates: [planTask("PDR-1", "2026-01-01T00:00:00Z")],
+        claimTask: async (taskId: string) => {
+          claims.push(taskId);
+          consumed.add(taskId);
+          return true;
+        },
+      });
+      const loop = createLoopOrchestrator(deps);
+
+      await loop(PLAN_ON);
+
+      expect(claims).toEqual(["PDR-1"]);
+      expectDispatchedCommands(messages, [
+        "/shipwright:plan-session acme/example-repo autonomous-dispatch --autonomous PDR-1",
+      ]);
+    });
+  });
+
+  test("a plan dispatch is claimed exactly once even across two sequential ticks (the claim removes it from candidacy)", async () => {
+    await withPlanEnv("true", async () => {
+      const consumed = new Set<string>();
+      const claims: string[] = [];
+      const { runner, messages } = makeRunner();
+      const deps = makeDeps({
+        consumed,
+        runner,
+        planCandidates: [planTask("PDR-1", "2026-01-01T00:00:00Z")],
+        claimTask: async (taskId: string) => {
+          claims.push(taskId);
+          consumed.add(taskId);
+          return true;
+        },
+      });
+      const loop = createLoopOrchestrator(deps);
+
+      await loop(PLAN_ON);
+      await loop(PLAN_ON);
+
+      expect(claims).toEqual(["PDR-1"]);
+      expect(messages).toHaveLength(1);
+    });
+  });
+
+  test("a 409 on a plan task's pre-claim skips dispatch entirely and does not re-select it for the rest of the tick", async () => {
+    await withPlanEnv("true", async () => {
+      const claims: string[] = [];
+      const { reporter, creates } = makeRecordingReporter();
+      const { runner, messages } = makeRunner();
+      const deps = makeDeps({
+        runner,
+        reporter,
+        planCandidates: [planTask("PDR-1", "2026-01-01T00:00:00Z")],
+        claimTask: async (taskId: string) => {
+          claims.push(taskId);
+          return false; // 409 — a sibling replica claimed it first
+        },
+      });
+      const loop = createLoopOrchestrator(deps);
+
+      await loop(PLAN_ON);
+
+      expect(claims).toEqual(["PDR-1"]);
+      expect(messages).toHaveLength(0);
+      expect(creates).toHaveLength(0);
+    });
+  });
+
+  test("a thrown pre-claim on a plan task is isolated to that item and does not abort the tick", async () => {
+    await withPlanEnv("true", async () => {
+      const consumed = new Set<string>();
+      const { runner, messages } = makeRunner();
+      const deps = makeDeps({
+        consumed,
+        runner,
+        planCandidates: [planTask("PDR-1", "2026-01-01T00:00:00Z")],
+        devTaskCandidates: [task("SWC-1", "2026-02-01T00:00:00Z")],
+        claimTask: async (taskId: string) => {
+          if (taskId === "PDR-1") throw new Error("task-store 500");
+          consumed.add(taskId);
+          return true;
+        },
+      });
+      const loop = createLoopOrchestrator(deps);
+
+      const warnings = await withCapturedWarnings(async () => {
+        await loop(PLAN_ON);
+      });
+
+      // The plan item is skipped for the tick; the dev-task item still ships.
+      expectDispatchedCommands(messages, ["/shipwright:dev-task SWC-1"]);
+      expect(
+        warnings.some((w) => w.includes("Pre-claim failed for task PDR-1")),
+      ).toBe(true);
+    });
+  });
+
+  // ─── Merged FIFO pool ─────────────────────────────────────────────────────
+
+  test("plan candidates share the merged strict-FIFO pool with dev-task — the older item wins regardless of phase", async () => {
+    await withPlanEnv("true", async () => {
+      const consumed = new Set<string>();
+      const { runner, messages } = makeRunner();
+      const deps = makeDeps({
+        consumed,
+        runner,
+        // dev-task candidate is OLDER, so it must be dispatched first.
+        devTaskCandidates: [task("SWC-1", "2026-01-01T00:00:00Z")],
+        planCandidates: [planTask("PDR-1", "2026-02-01T00:00:00Z")],
+        claimTask: consumingClaimTask(consumed),
+      });
+      const loop = createLoopOrchestrator(deps);
+
+      await loop(PLAN_ON);
+
+      expectDispatchedCommands(messages, [
+        "/shipwright:dev-task SWC-1",
+        "/shipwright:plan-session acme/example-repo autonomous-dispatch --autonomous PDR-1",
+      ]);
+    });
+  });
+
+  test("an older plan candidate is dispatched before a newer dev-task candidate", async () => {
+    await withPlanEnv("true", async () => {
+      const consumed = new Set<string>();
+      const { runner, messages } = makeRunner();
+      const deps = makeDeps({
+        consumed,
+        runner,
+        devTaskCandidates: [task("SWC-1", "2026-02-01T00:00:00Z")],
+        planCandidates: [planTask("PDR-1", "2026-01-01T00:00:00Z")],
+        claimTask: consumingClaimTask(consumed),
+      });
+      const loop = createLoopOrchestrator(deps);
+
+      await loop(PLAN_ON);
+
+      expectDispatchedCommands(messages, [
+        "/shipwright:plan-session acme/example-repo autonomous-dispatch --autonomous PDR-1",
+        "/shipwright:dev-task SWC-1",
+      ]);
+    });
+  });
+
+  // ─── Reporting ────────────────────────────────────────────────────────────
+
+  test('a plan dispatch reports itemType "task", the plain task id, and the shipwright-plan child row\'s phaseId', async () => {
+    await withPlanEnv("true", async () => {
+      const consumed = new Set<string>();
+      const { reporter, creates, completes } = makeRecordingReporter();
+      const { runner } = makeRunner();
+      const deps = makeDeps({
+        consumed,
+        runner,
+        reporter,
+        planCandidates: [planTask("PDR-1", "2026-01-01T00:00:00Z")],
+        claimTask: consumingClaimTask(consumed),
+      });
+      const loop = createLoopOrchestrator(deps);
+
+      await loop(PLAN_ON);
+
+      expect(creates).toHaveLength(1);
+      expect(creates[0]).toEqual({
+        cronId: "shipwright-loop",
+        phaseId: "shipwright-plan",
+        itemType: "task",
+        itemId: "PDR-1",
+      });
+      expect(completes[0]?.outcome).toBe("completed");
+      expect(completes[0]?.itemId).toBe("PDR-1");
+    });
+  });
+
+  test('the work-queue snapshot tags a plan candidate with phase "plan"', async () => {
+    await withPlanEnv("true", async () => {
+      const consumed = new Set<string>();
+      const { reporter: workQueueReporter, snapshots } =
+        makeRecordingWorkQueueReporter();
+      const { runner } = makeRunner();
+      const deps = makeDeps({
+        consumed,
+        runner,
+        workQueueReporter,
+        planCandidates: [planTask("PDR-1", "2026-01-01T00:00:00Z")],
+        claimTask: consumingClaimTask(consumed),
+      });
+      const loop = createLoopOrchestrator(deps);
+
+      await loop(PLAN_ON);
+
+      expect(snapshots[0]?.items).toEqual([
+        {
+          type: "task",
+          id: "PDR-1",
+          title: undefined,
+          phase: "plan",
+          age: "2026-01-01T00:00:00Z",
+        },
+      ]);
+    });
+  });
+
+  // ─── Defensive: un-dispatchable plan candidate ────────────────────────────
+
+  test("a plan candidate missing repo/session is skipped (never claimed, never dispatched) and warns", async () => {
+    await withPlanEnv("true", async () => {
+      const claims: string[] = [];
+      const { runner, messages } = makeRunner();
+      const deps = makeDeps({
+        runner,
+        planCandidates: [
+          planTask("PDR-1", "2026-01-01T00:00:00Z", { session: undefined }),
+        ],
+        claimTask: async (taskId: string) => {
+          claims.push(taskId);
+          return true;
+        },
+      });
+      const loop = createLoopOrchestrator(deps);
+
+      const warnings = await withCapturedWarnings(async () => {
+        await loop(PLAN_ON);
+      });
+
+      expect(claims).toEqual([]);
+      expect(messages).toHaveLength(0);
+      expect(warnings.some((w) => w.includes("PDR-1"))).toBe(true);
+    });
+  });
+
+  // ─── Merged-pool dedupe (plan-tagged copy wins) ───────────────────────────
+  // check-dev-task's `?ready=true` query doesn't pass autonomousPlanSession,
+  // so a flagged, pending, hitl-false task with satisfied deps comes back
+  // from BOTH providers with the identical createdAt. selectNextWorkItem's
+  // strict `<` keeps the first occurrence on a tie, so without an explicit
+  // dedupe the untagged dev-task copy would always win the tie and the task
+  // would be dispatched as /shipwright:dev-task, never reaching plan-session.
+
+  test("a task present in BOTH the dev-task and plan pools dispatches as plan-session, not dev-task", async () => {
+    await withPlanEnv("true", async () => {
+      const consumed = new Set<string>();
+      const { runner, messages } = makeRunner();
+      const deps = makeDeps({
+        consumed,
+        runner,
+        devTaskCandidates: [task("PDR-1", "2026-01-01T00:00:00Z")],
+        planCandidates: [planTask("PDR-1", "2026-01-01T00:00:00Z")],
+        claimTask: consumingClaimTask(consumed),
+      });
+      const loop = createLoopOrchestrator(deps);
+
+      await loop(PLAN_ON);
+
+      expectDispatchedCommands(messages, [
+        "/shipwright:plan-session acme/example-repo autonomous-dispatch --autonomous PDR-1",
+      ]);
+    });
+  });
+
+  test("a duplicated task is claimed exactly once — the dev-task copy never produces a second dispatch", async () => {
+    await withPlanEnv("true", async () => {
+      const consumed = new Set<string>();
+      const claims: string[] = [];
+      const { runner, messages } = makeRunner();
+      const deps = makeDeps({
+        consumed,
+        runner,
+        devTaskCandidates: [task("PDR-1", "2026-01-01T00:00:00Z")],
+        planCandidates: [planTask("PDR-1", "2026-01-01T00:00:00Z")],
+        claimTask: async (taskId: string) => {
+          claims.push(taskId);
+          consumed.add(taskId);
+          return true;
+        },
+      });
+      const loop = createLoopOrchestrator(deps);
+
+      await loop(PLAN_ON);
+
+      expect(claims).toEqual(["PDR-1"]);
+      expect(messages).toHaveLength(1);
+    });
+  });
+
+  test("the work-queue snapshot lists a duplicated task once, tagged plan", async () => {
+    await withPlanEnv("true", async () => {
+      const consumed = new Set<string>();
+      const { reporter, snapshots } = makeRecordingWorkQueueReporter();
+      const deps = makeDeps({
+        consumed,
+        runner: makeRunner().runner,
+        workQueueReporter: reporter,
+        devTaskCandidates: [task("PDR-1", "2026-01-01T00:00:00Z")],
+        planCandidates: [planTask("PDR-1", "2026-01-01T00:00:00Z")],
+        claimTask: consumingClaimTask(consumed),
+      });
+      const loop = createLoopOrchestrator(deps);
+
+      await loop(PLAN_ON);
+
+      expect(snapshots[0]?.items).toEqual([
+        {
+          type: "task",
+          id: "PDR-1",
+          title: undefined,
+          phase: "plan",
+          age: "2026-01-01T00:00:00Z",
+        },
+      ]);
+    });
+  });
+
+  test("a non-duplicated dev-task candidate is untouched by the dedupe", async () => {
+    await withPlanEnv("true", async () => {
+      const consumed = new Set<string>();
+      const { runner, messages } = makeRunner();
+      const deps = makeDeps({
+        consumed,
+        runner,
+        devTaskCandidates: [task("SWC-1", "2026-01-01T00:00:00Z")],
+        planCandidates: [planTask("PDR-1", "2026-02-01T00:00:00Z")],
+        claimTask: consumingClaimTask(consumed),
+      });
+      const loop = createLoopOrchestrator(deps);
+
+      await loop(PLAN_ON);
+
+      expectDispatchedCommands(messages, [
+        "/shipwright:dev-task SWC-1",
+        "/shipwright:plan-session acme/example-repo autonomous-dispatch --autonomous PDR-1",
+      ]);
+    });
+  });
+
+  // ─── Backward compat: deps without a plan provider ────────────────────────
+
+  test("an orchestrator built without a getPlanCandidates dep still runs cleanly with the phase enabled", async () => {
+    await withPlanEnv("true", async () => {
+      const consumed = new Set<string>();
+      const { runner, messages } = makeRunner();
+      const base = makeDeps({
+        consumed,
+        runner,
+        devTaskCandidates: [task("SWC-1", "2026-01-01T00:00:00Z")],
+        claimTask: consumingClaimTask(consumed),
+      });
+      const { getPlanCandidates: _omitted, ...withoutPlan } = base;
+      const loop = createLoopOrchestrator(withoutPlan);
+
+      await loop(PLAN_ON);
+
+      expectDispatchedCommands(messages, ["/shipwright:dev-task SWC-1"]);
+    });
   });
 });
 

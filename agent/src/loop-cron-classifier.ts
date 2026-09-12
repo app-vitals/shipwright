@@ -18,9 +18,10 @@
  *   For rows with no parent, the shipwright-loop job (if present and
  *   enabled) is always included with dispatch: "loop". Every other enabled
  *   job is included with dispatch: "generic" UNLESS shipwright-loop is
- *   present and enabled AND the job's name is one of the five pipeline
+ *   present and enabled AND the job's name is one of the six pipeline
  *   phase jobs (shipwright-dev-task, shipwright-review, shipwright-patch,
- *   shipwright-review-patch, shipwright-deploy) — those are excluded
+ *   shipwright-review-patch, shipwright-deploy, shipwright-plan) — those
+ *   are excluded
  *   entirely (loop-config-only: readable by the loop handler, not
  *   independently scheduled). This name-based fallback stays load-bearing
  *   until every legacy pipeline-phase system cron has parentCronId
@@ -33,19 +34,19 @@
  * resolveLoopPhaseToggles(jobs, loopCronId) → LoopPhaseToggles
  *   The loop's own toggle-reading logic (consumed by the WL-3.3
  *   drain-until-dry orchestrator in loop-orchestrator.ts). Resolves
- *   dev-task/review/patch/deploy as four independent, non-mutually-exclusive
- *   phase booleans, each read exclusively from a CHILD row — one whose
+ *   dev-task/review/patch/deploy/plan as five independent, non-mutually-
+ *   exclusive phase booleans, each read exclusively from a CHILD row — one whose
  *   parentCronId equals the given loopCronId — matched by name (LPC-2.1).
  *   A same-named row that is top-level (parentCronId: null) or a child of a
  *   different parent is ignored; the phase resolves false in either case,
  *   as it does when no matching child row exists at all. This relies on
  *   reconcileSystemCrons() (LPC-1.2) having already run for the given agent
- *   to populate parentCronId on its four phase rows — an agent that hasn't
+ *   to populate parentCronId on its five phase rows — an agent that hasn't
  *   reconciled since LPC-1.2 deployed will see zero active phases here
  *   (soft-fail: the loop simply pauses dispatch, not an error) until its
  *   next reconcile. Deliberately never reads or references
  *   shipwright-review-patch — its internal review-vs-patch selection is
- *   redundant with what the loop does at a higher level across all four
+ *   redundant with what the loop does at a higher level across all five
  *   phases once shipwright-loop is enabled.
  *
  * resolveLoopPhaseJobId(jobs, loopCronId, jobName) → string | null
@@ -88,6 +89,15 @@ export interface LoopPhaseToggles {
   review: boolean;
   patch: boolean;
   deploy: boolean;
+  /**
+   * PDR-4.1 autonomous plan-session phase. Read from the `shipwright-plan`
+   * child row exactly like the other four. This toggle alone is NOT
+   * sufficient to activate the phase — loop-orchestrator.ts additionally
+   * requires the `SHIPWRIGHT_AGENT_AUTONOMOUS_PLAN_SESSION_ENABLED`
+   * code-level kill switch, so an agent whose manifest row got enabled
+   * without the env var still behaves exactly as it does today.
+   */
+  plan: boolean;
 }
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -100,15 +110,26 @@ const PIPELINE_PHASE_JOB_NAMES = new Set<string>([
   "shipwright-patch",
   "shipwright-review-patch",
   "shipwright-deploy",
+  "shipwright-plan",
 ]);
 
 /**
- * The four phase job names resolveLoopPhaseToggles() reads — deliberately
- * excludes shipwright-review-patch (see the module docstring above). Exported
- * so callers that need to reason about "does this agent have any of the four
- * loop-phase child rows reconciled yet" (e.g. loop-orchestrator.ts's
- * unreconciled-agent guard) share this list instead of duplicating the
- * literal names.
+ * The four LEGACY phase job names resolveLoopPhaseToggles() reads —
+ * deliberately excludes shipwright-review-patch (see the module docstring
+ * above). Exported so callers that need to reason about "does this agent
+ * have any of the four loop-phase child rows reconciled yet" (e.g.
+ * loop-orchestrator.ts's unreconciled-agent guard) share this list instead
+ * of duplicating the literal names.
+ *
+ * PDR-4.1 deliberately does NOT add "shipwright-plan" here. This array is
+ * the reconciliation-gap probe backing loop-orchestrator.ts's
+ * unreconciled-agent warn, whose discriminator is "at least one of these
+ * names still lacks a same-parent child row". Every agent reconciled before
+ * PDR-4.1 ships legitimately has no shipwright-plan row, so including it
+ * would turn that probe permanently true and fire a false "run
+ * reconcileSystemCrons()" warn on every fully-reconciled, all-phases-disabled
+ * tick. The plan phase's own absence is not a reconciliation gap — it's the
+ * expected state for any agent that hasn't opted in.
  */
 export const LOOP_PHASE_JOB_NAMES = [
   "shipwright-dev-task",
@@ -173,6 +194,7 @@ export function resolveLoopPhaseToggles<T extends CronJobLike>(
     review: enabledByName("shipwright-review"),
     patch: enabledByName("shipwright-patch"),
     deploy: enabledByName("shipwright-deploy"),
+    plan: enabledByName("shipwright-plan"),
   };
 }
 

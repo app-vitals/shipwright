@@ -1086,6 +1086,35 @@ describe("admin API — work queue snapshot", () => {
     expect(body.snapshot.items).toEqual(VALID_SNAPSHOT_BODY.items);
   });
 
+  // PDR-4.1: the loop orchestrator emits phase "plan" for autonomous
+  // plan-session candidates. The enum must accept it, or enabling the phase
+  // 400s the agent's every-tick snapshot POST.
+  it('POST /agents/:id/work-queue accepts phase "plan" (200)', async () => {
+    const app = createAdminApp(makeMockDeps());
+    const body = {
+      computedAt: "2026-01-01T00:00:00.000Z",
+      items: [
+        {
+          type: "task",
+          id: "PDR-1",
+          phase: "plan",
+          age: "2026-01-01T00:00:00.000Z",
+        },
+      ],
+    };
+    const res = await app.request(`/agents/${AGENT_ID}/work-queue`, {
+      method: "POST",
+      body: JSON.stringify(body),
+      headers: {
+        "Content-Type": "application/json",
+        Cookie: `admin_session=${cookie}`,
+      },
+    });
+    expect(res.status).toBe(200);
+    const json = await res.json();
+    expect(json.snapshot.items).toEqual(body.items);
+  });
+
   it("POST /agents/:id/work-queue with malformed body (bad phase enum) returns 400", async () => {
     const app = createAdminApp(makeMockDeps());
     const res = await app.request(`/agents/${AGENT_ID}/work-queue`, {

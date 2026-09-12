@@ -4311,11 +4311,12 @@ export function partitionCronsForActivityDisplay(crons: CronGroupingInput[]): {
 }
 
 // Inline CSS for the work-queue "Phase" column badge, keyed by the raw
-// phase value (dev-task/review/patch/deploy) — a single neutral palette
+// phase value (dev-task/plan/review/patch/deploy) — a single neutral palette
 // distinct from the outcome-style badges elsewhere on the queue & activity
 // page, since phase here is informational, not a pass/fail signal.
 const WORK_QUEUE_PHASE_BADGE_STYLE: Record<string, string> = {
   "dev-task": "background:#eef2ff;color:#4338ca",
+  plan: "background:#e0f2fe;color:#075985",
   review: "background:#fef3c7;color:#92400e",
   patch: "background:#fee2e2;color:#991b1b",
   deploy: "background:#dcfce7;color:#166534",
@@ -4351,7 +4352,7 @@ export interface WorkQueueItem {
   type: "task" | "pr";
   id: string;
   title?: string;
-  phase: "dev-task" | "review" | "patch" | "deploy";
+  phase: "dev-task" | "plan" | "review" | "patch" | "deploy";
   age: string;
 }
 

@@ -193,6 +193,21 @@ describe("classifyCronJobsForScheduling", () => {
     expect(result.some((r) => r.job.id === "parented-disabled")).toBe(false);
   });
 
+  it("a top-level shipwright-plan row is treated as loop-config-only when shipwright-loop is enabled (PDR-4.1)", () => {
+    const jobs = [
+      makeJob({ id: "loop-1", name: "shipwright-loop", enabled: true }),
+      makeJob({ id: "plan-1", name: "shipwright-plan", enabled: true }),
+    ];
+    const result = classifyCronJobsForScheduling(jobs);
+    expect(result.some((r) => r.job.id === "plan-1")).toBe(false);
+  });
+
+  it("a top-level shipwright-plan row still gets dispatch: generic on an unmigrated agent (shipwright-loop absent)", () => {
+    const jobs = [makeJob({ id: "plan-1", name: "shipwright-plan" })];
+    const result = classifyCronJobsForScheduling(jobs);
+    expect(result.find((r) => r.job.id === "plan-1")?.dispatch).toBe("generic");
+  });
+
   it("a same-agent top-level cron (parentCronId: null, enabled: true, arbitrary name) is NOT excluded — no regression", () => {
     const jobs = [
       makeJob({
@@ -247,6 +262,7 @@ describe("resolveLoopPhaseToggles", () => {
       review: false,
       patch: true,
       deploy: false,
+      plan: false,
     });
   });
 
@@ -265,6 +281,7 @@ describe("resolveLoopPhaseToggles", () => {
       review: false,
       patch: false,
       deploy: false,
+      plan: false,
     });
   });
 
@@ -301,6 +318,7 @@ describe("resolveLoopPhaseToggles", () => {
       review: true,
       patch: true,
       deploy: true,
+      plan: false,
     });
   });
 
@@ -363,6 +381,7 @@ describe("resolveLoopPhaseToggles", () => {
       review: false,
       patch: true,
       deploy: false,
+      plan: false,
     });
   });
 
@@ -382,6 +401,7 @@ describe("resolveLoopPhaseToggles", () => {
       review: false,
       patch: false,
       deploy: false,
+      plan: false,
     });
   });
 
@@ -400,6 +420,70 @@ describe("resolveLoopPhaseToggles", () => {
       review: false,
       patch: false,
       deploy: false,
+      plan: false,
+    });
+  });
+
+  // ─── plan phase (PDR-4.1) ────────────────────────────────────────────────
+
+  it("resolves plan: true from an enabled shipwright-plan child row", () => {
+    const jobs = [
+      makeJob({
+        id: "p1",
+        name: "shipwright-plan",
+        enabled: true,
+        parentCronId: LOOP_ID,
+      }),
+    ];
+    expect(resolveLoopPhaseToggles(jobs, LOOP_ID)).toEqual({
+      devTask: false,
+      review: false,
+      patch: false,
+      deploy: false,
+      plan: true,
+    });
+  });
+
+  it("resolves plan: false for a disabled shipwright-plan child row", () => {
+    const jobs = [
+      makeJob({
+        id: "p1",
+        name: "shipwright-plan",
+        enabled: false,
+        parentCronId: LOOP_ID,
+      }),
+    ];
+    expect(resolveLoopPhaseToggles(jobs, LOOP_ID).plan).toBe(false);
+  });
+
+  it("ignores a top-level shipwright-plan row (parentCronId: null) — same child-row-only rule as the other phases", () => {
+    const jobs = [
+      makeJob({ id: "p1", name: "shipwright-plan", enabled: true }),
+    ];
+    expect(resolveLoopPhaseToggles(jobs, LOOP_ID).plan).toBe(false);
+  });
+
+  it("plan is independent of the other four toggles", () => {
+    const jobs = [
+      makeJob({
+        id: "1",
+        name: "shipwright-dev-task",
+        enabled: true,
+        parentCronId: LOOP_ID,
+      }),
+      makeJob({
+        id: "p1",
+        name: "shipwright-plan",
+        enabled: true,
+        parentCronId: LOOP_ID,
+      }),
+    ];
+    expect(resolveLoopPhaseToggles(jobs, LOOP_ID)).toEqual({
+      devTask: true,
+      review: false,
+      patch: false,
+      deploy: false,
+      plan: true,
     });
   });
 
@@ -426,6 +510,7 @@ describe("resolveLoopPhaseToggles", () => {
       review: false,
       patch: false,
       deploy: false,
+      plan: false,
     });
   });
 });

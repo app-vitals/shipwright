@@ -7,15 +7,17 @@
 
 import { describe, expect, it } from "bun:test";
 import {
-  rankWorkItems,
-  selectNextWorkItem,
   type WorkPrCandidate,
   type WorkTaskCandidate,
+  rankWorkItems,
+  selectNextWorkItem,
 } from "./work-selector.ts";
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
-function makeTask(overrides: Partial<WorkTaskCandidate> = {}): WorkTaskCandidate {
+function makeTask(
+  overrides: Partial<WorkTaskCandidate> = {},
+): WorkTaskCandidate {
   return {
     id: "task-1",
     createdAt: "2026-01-01T00:00:00.000Z",
@@ -23,9 +25,7 @@ function makeTask(overrides: Partial<WorkTaskCandidate> = {}): WorkTaskCandidate
   };
 }
 
-function makePr(
-  overrides: Partial<WorkPrCandidate> = {},
-): WorkPrCandidate {
+function makePr(overrides: Partial<WorkPrCandidate> = {}): WorkPrCandidate {
   return {
     id: "pr-1",
     age: "2026-01-01T00:00:00.000Z",
@@ -42,8 +42,14 @@ describe("selectNextWorkItem", () => {
   });
 
   it("returns the oldest task when only tasks are ready", () => {
-    const older = makeTask({ id: "t-older", createdAt: "2026-01-01T00:00:00.000Z" });
-    const newer = makeTask({ id: "t-newer", createdAt: "2026-01-02T00:00:00.000Z" });
+    const older = makeTask({
+      id: "t-older",
+      createdAt: "2026-01-01T00:00:00.000Z",
+    });
+    const newer = makeTask({
+      id: "t-newer",
+      createdAt: "2026-01-02T00:00:00.000Z",
+    });
     const result = selectNextWorkItem([newer, older], []);
     expect(result).toEqual({ type: "task", task: older });
   });
@@ -63,7 +69,10 @@ describe("selectNextWorkItem", () => {
   });
 
   it("picks the older task over a newer PR", () => {
-    const olderTask = makeTask({ id: "t1", createdAt: "2026-01-01T00:00:00.000Z" });
+    const olderTask = makeTask({
+      id: "t1",
+      createdAt: "2026-01-01T00:00:00.000Z",
+    });
     const newerPr = makePr({ id: "pr1", age: "2026-01-02T00:00:00.000Z" });
     const result = selectNextWorkItem([olderTask], [newerPr]);
     expect(result).toEqual({ type: "task", task: olderTask });
@@ -95,14 +104,29 @@ describe("selectNextWorkItem", () => {
   });
 
   it("carries the phase field through unchanged to the winning PR", () => {
-    const pr = makePr({ id: "pr1", age: "2026-01-01T00:00:00.000Z", phase: "review" });
+    const pr = makePr({
+      id: "pr1",
+      age: "2026-01-01T00:00:00.000Z",
+      phase: "review",
+    });
     const result = selectNextWorkItem([], [pr]);
-    expect(result).toEqual({ type: "pr", pr: expect.objectContaining({ phase: "review" }) });
+    expect(result).toEqual({
+      type: "pr",
+      pr: expect.objectContaining({ phase: "review" }),
+    });
   });
 
   it("ranks by age regardless of phase — older review-phase beats newer deploy-phase", () => {
-    const olderReview = makePr({ id: "pr-older", age: "2026-01-01T00:00:00.000Z", phase: "review" });
-    const newerDeploy = makePr({ id: "pr-newer", age: "2026-01-02T00:00:00.000Z", phase: "deploy" });
+    const olderReview = makePr({
+      id: "pr-older",
+      age: "2026-01-01T00:00:00.000Z",
+      phase: "review",
+    });
+    const newerDeploy = makePr({
+      id: "pr-newer",
+      age: "2026-01-02T00:00:00.000Z",
+      phase: "deploy",
+    });
     const result = selectNextWorkItem([], [newerDeploy, olderReview]);
     expect(result).toEqual({ type: "pr", pr: olderReview });
     expect(result?.type === "pr" && result.pr.phase).toBe("review");
@@ -110,7 +134,11 @@ describe("selectNextWorkItem", () => {
 
   it("handles PR without phase set (undefined) in ranking correctly", () => {
     const older = makePr({ id: "pr-older", age: "2026-01-01T00:00:00.000Z" });
-    const newer = makePr({ id: "pr-newer", age: "2026-01-02T00:00:00.000Z", phase: "patch" });
+    const newer = makePr({
+      id: "pr-newer",
+      age: "2026-01-02T00:00:00.000Z",
+      phase: "patch",
+    });
     const result = selectNextWorkItem([], [newer, older]);
     expect(result).toEqual({ type: "pr", pr: older });
     expect(result?.type === "pr" && result.pr.phase).toBeUndefined();
@@ -149,8 +177,16 @@ describe("rankWorkItems", () => {
   it("returns the full oldest-first ordering across a mixed task/PR input, matching what repeated selectNextWorkItem calls would produce", () => {
     const t1 = makeTask({ id: "t1", createdAt: "2026-03-01T00:00:00.000Z" });
     const t2 = makeTask({ id: "t2", createdAt: "2026-01-15T00:00:00.000Z" });
-    const pr1 = makePr({ id: "pr1", age: "2026-02-01T00:00:00.000Z", phase: "review" });
-    const pr2 = makePr({ id: "pr2", age: "2026-01-10T00:00:00.000Z", phase: "patch" });
+    const pr1 = makePr({
+      id: "pr1",
+      age: "2026-02-01T00:00:00.000Z",
+      phase: "review",
+    });
+    const pr2 = makePr({
+      id: "pr2",
+      age: "2026-01-10T00:00:00.000Z",
+      phase: "patch",
+    });
 
     const ranked = rankWorkItems([t1, t2], [pr1, pr2]);
 
@@ -205,6 +241,50 @@ describe("rankWorkItems", () => {
         phase: "deploy",
         age: "2026-01-02T00:00:00.000Z",
       },
+    ]);
+  });
+
+  it("carries an explicitly-tagged task phase through instead of the dev-task default (PDR-4.1)", () => {
+    const planTask = makeTask({
+      id: "PDR-1",
+      createdAt: "2026-01-01T00:00:00.000Z",
+      title: "Plan it",
+      phase: "plan",
+      repo: "acme/example-repo",
+      session: "autonomous-dispatch",
+    });
+
+    expect(rankWorkItems([planTask], [])).toEqual([
+      {
+        type: "task",
+        id: "PDR-1",
+        title: "Plan it",
+        phase: "plan",
+        age: "2026-01-01T00:00:00.000Z",
+      },
+    ]);
+  });
+
+  it("still defaults an untagged task candidate to phase 'dev-task' (PDR-4.1 backward compat)", () => {
+    const ranked = rankWorkItems([makeTask({ id: "t1" })], []);
+    expect(ranked[0]?.phase).toBe("dev-task");
+  });
+
+  it("ranks plan and dev-task candidates together by age with no phase bias (PDR-4.1)", () => {
+    const planTask = makeTask({
+      id: "PDR-1",
+      createdAt: "2026-02-01T00:00:00.000Z",
+      phase: "plan",
+    });
+    const devTask = makeTask({
+      id: "SWC-1",
+      createdAt: "2026-01-01T00:00:00.000Z",
+    });
+
+    const ranked = rankWorkItems([planTask, devTask], []);
+    expect(ranked.map((r) => [r.id, r.phase])).toEqual([
+      ["SWC-1", "dev-task"],
+      ["PDR-1", "plan"],
     ]);
   });
 

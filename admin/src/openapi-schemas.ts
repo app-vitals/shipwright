@@ -671,6 +671,11 @@ export const AgentEnvPatchBodySchema = z
  * agent/src/work-selector.ts (type/phase are string enums there — validated
  * here for real, since this is a request body needing genuine validation,
  * not just an opaque Json passthrough).
+ *
+ * `phase` MUST stay in lockstep with RankedWorkItem["phase"] in
+ * agent/src/work-selector.ts — the loop orchestrator POSTs a snapshot every
+ * tick, so a phase the agent can emit but this enum doesn't list 400s the
+ * whole snapshot (PDR-4.1 added "plan").
  */
 export const RankedWorkItemSchema = z
   .object({
@@ -681,7 +686,7 @@ export const RankedWorkItemSchema = z
       .optional()
       .openapi({ example: "Add work queue snapshot endpoints" }),
     phase: z
-      .enum(["dev-task", "review", "patch", "deploy"])
+      .enum(["dev-task", "plan", "review", "patch", "deploy"])
       .openapi({ example: "dev-task" }),
     age: z.string().openapi({
       example: "2026-01-01T00:00:00.000Z",

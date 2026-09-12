@@ -29,11 +29,14 @@ Key surfaces (see `plugins/shipwright/README.md` and `plugins/shipwright/CLAUDE.
 `dev-task`, `review`, `patch`, `merge`, and `deploy` are item-addressed executors, not self-discovering
 standalone crons: each requires an explicit target (a task id for `dev-task`; an
 `org/repo#number` PR for the other four) and does no candidate scanning of its own.
-Candidate selection for the four loop-driven phases happens once, upstream, in the Shipwright agent's `shipwright-loop`
+Candidate selection for the five loop-driven phases — `dev-task`, `plan-session`, `review`, `patch`, and `deploy` — happens once, upstream, in the Shipwright agent's `shipwright-loop`
 cron (artifact **C** — see [agent.md](./agent.md)), which is the sole supported driver for
-these four phases; it merges candidates from `agent/src`'s per-phase qualification
+these five phases; it merges candidates from `agent/src`'s per-phase qualification
 functions and dispatches the winning item's command with its id/PR embedded directly in the
-prompt. `merge` is currently human-invoked only. A human can invoke any of the five directly with an explicit target.
+prompt. The `plan-session` phase (PDR-4.1) is the newest and is dispatched as
+`/shipwright:plan-session {repo} {session} --autonomous {task-id}`; it ships disabled and is
+double-gated behind the `SHIPWRIGHT_AGENT_AUTONOMOUS_PLAN_SESSION_ENABLED` env var on top of its
+cron toggle. `merge` is currently human-invoked only and is **not** loop-driven. A human can invoke any of these commands directly with an explicit target.
 
 The `review` command performs dependency-risk-aware analysis on pull requests that modify dependency manifests (e.g., `package.json`, `Gemfile`), analyzing the nature and scope of version changes and producing a risk assessment that informs the review verdict — see `commands/review.md` for details.
 

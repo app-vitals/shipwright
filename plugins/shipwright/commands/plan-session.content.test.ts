@@ -345,3 +345,75 @@ describe("plan-session.md — Step 5 principles override check + security domain
     expect(section).toContain("testing");
   });
 });
+
+/**
+ * No-target guard (PDR-4.1).
+ *
+ * `docs/agent-ops.md` and `site/src/content/docs/cron-jobs.mdx` both promise that a
+ * standalone pipeline cron (one whose parent `shipwright-loop` is disabled) is *silently
+ * inert*: its stored prompt carries no target, so the dispatched command goes `[silent]`
+ * and does nothing. The `shipwright-plan` cron's stored prompt is a bare
+ * `/shipwright:plan-session` with no arguments, so that invariant only holds if
+ * plan-session.md has an explicit no-argument `[silent]` guard — matching the four
+ * pre-existing pipeline commands. Without it, a zero-argument invocation falls through to
+ * the single-argument auto-detect path (`git remote get-url origin`, warning, wait for
+ * confirmation) instead of going inert.
+ */
+
+/** Matches the imperative empty-`$ARGUMENTS` guard, e.g. "If `$ARGUMENTS` is empty, respond `[silent]` and stop". */
+const EMPTY_ARGUMENTS_GUARD =
+  /If `\$ARGUMENTS` is empty,[^\n]*`\[silent\]`[^\n]*stop/i;
+
+/**
+ * Matches a no-argument bullet/heading that resolves to `[silent]` on the same line, e.g.
+ *   `- _(no arguments)_: respond \`[silent]\` and stop immediately`
+ *   `**No arguments**: respond \`[silent]\` and stop immediately`
+ *   `- _(no arguments)_: not supported — respond \`[silent]\` and stop`
+ */
+const NO_ARGUMENT_SILENT_CASE = /\bno arguments?\b[^\n]*`\[silent\]`/i;
+
+/** The four pre-existing loop-driven pipeline commands plan-session must stay consistent with. */
+const SIBLING_PIPELINE_COMMANDS = [
+  "dev-task",
+  "review",
+  "patch",
+  "deploy",
+] as const;
+
+describe("plan-session.md — no-argument [silent] guard (PDR-4.1)", () => {
+  it("documents a no-arguments case that goes [silent]", () => {
+    expect(content).toMatch(NO_ARGUMENT_SILENT_CASE);
+  });
+
+  it("has an explicit empty-$ARGUMENTS [silent] guard", () => {
+    expect(content).toMatch(EMPTY_ARGUMENTS_GUARD);
+  });
+
+  it("places the guard before the single-argument auto-detect-and-confirm flow", () => {
+    const guardIndex = content.search(EMPTY_ARGUMENTS_GUARD);
+    const autoDetectIndex = content.indexOf(
+      "**If only one argument is provided**",
+    );
+    expect(guardIndex).toBeGreaterThan(-1);
+    expect(autoDetectIndex).toBeGreaterThan(-1);
+    expect(guardIndex).toBeLessThan(autoDetectIndex);
+  });
+
+  it("keeps the single-argument auto-detect-and-confirm flow intact for human invocation", () => {
+    expect(content).toContain("**If only one argument is provided**");
+    expect(content).toContain("git remote get-url origin");
+    expect(content).toContain(
+      "Wait for user confirmation before continuing to Step 1.",
+    );
+  });
+
+  for (const command of SIBLING_PIPELINE_COMMANDS) {
+    it(`stays consistent with ${command}.md, which also goes [silent] with no target`, () => {
+      const siblingContent = readFileSync(
+        join(import.meta.dir, `${command}.md`),
+        "utf-8",
+      );
+      expect(siblingContent).toMatch(NO_ARGUMENT_SILENT_CASE);
+    });
+  }
+});

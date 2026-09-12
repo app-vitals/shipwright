@@ -39,15 +39,45 @@ test("the-shipwright-loop page has a dispatch/drain-until-dry heading", async ({
   await expect(heading.first()).toBeVisible();
 });
 
-test("the-shipwright-loop page names the four phase toggles", async ({
+test("the-shipwright-loop page names the five phase toggles", async ({
   page,
 }) => {
   await page.goto("/docs/the-shipwright-loop");
   const body = await page.textContent("body");
+  expect(body).toContain("shipwright-plan");
   expect(body).toContain("shipwright-dev-task");
   expect(body).toContain("shipwright-review");
   expect(body).toContain("shipwright-patch");
   expect(body).toContain("shipwright-deploy");
+});
+
+// PDR-4.1 — `plan` is the fifth loop-dispatched phase, and unlike the other
+// four it is double-gated: the shipwright-plan toggle alone is not enough, the
+// SHIPWRIGHT_AGENT_AUTONOMOUS_PLAN_SESSION_ENABLED env var must also be set.
+// That caveat is the load-bearing claim on this page — a reader who acts on the
+// toggle alone would wrongly expect plan candidates to be dispatched — so pin
+// it rather than letting a later edit quietly drop it back to a four-phase story.
+
+test("the-shipwright-loop page describes the plan phase as double-gated behind the env var", async ({
+  page,
+}) => {
+  await page.goto("/docs/the-shipwright-loop");
+  const body = await page.textContent("body");
+  expect(body).toContain("SHIPWRIGHT_AGENT_AUTONOMOUS_PLAN_SESSION_ENABLED");
+  expect(body?.toLowerCase()).toContain("double-gated");
+});
+
+test("the-shipwright-loop page describes plan candidates and the plan-session dispatch", async ({
+  page,
+}) => {
+  await page.goto("/docs/the-shipwright-loop");
+  const body = await page.textContent("body");
+  // The plan phase's candidate provider and the command it dispatches.
+  expect(body).toContain("/shipwright:plan-session");
+  expect(body?.toLowerCase()).toContain("--autonomous");
+  // Task candidates from dev-task and plan are merged and deduped by task id,
+  // with plan winning — the dedupe rule review round 1 added.
+  expect(body?.toLowerCase()).toContain("deduped by task id");
 });
 
 test("the-shipwright-loop page describes the FIFO work-selector", async ({
