@@ -645,42 +645,64 @@ export class TaskService implements TaskServiceLike {
   }
 
   /**
-   * Each task's create + its Session upsert run inside one $transaction per
-   * loop iteration (not one transaction for the whole bulk call) — this
-   * preserves the pre-existing partial-success semantics: one task's P2002
-   * collision (caught below) doesn't roll back tasks already inserted
-   * earlier in the same bulk() call, matching the try/catch-per-item
-   * behavior this had before session support was added.
+   * TSW-1.3: the whole bulk call runs inside ONE $transaction — not one
+   * $transaction per item (that was the pre-existing partial-success
+   * behavior, which this replaces). Every task's create() + its Session
+   * upsert are attempted in order; a P2002 collision on any single task
+   * (translated to ConflictError below, mirroring
+   * PullRequestService.claim()'s create-path P2002 handling) propagates
+   * uncaught out of the transaction callback, so Prisma rolls back every
+   * insert already made earlier in the same call — the whole batch is
+   * all-or-nothing. There is no more partial-success/skip outcome: a
+   * collision anywhere in the batch fails the entire call with 409, and the
+   * caller is expected to fix the collision and retry the whole batch (the
+   * skills that call this endpoint already treat a non-2xx response as
+   * "log, stop, rerun is idempotent" — see TSW-1.3 planning notes).
+   *
+   * Once every task has been created successfully, the dispatcher is called
+   * exactly once with the full array of created rows — mirrors create()'s
+   * single-item `webhookDispatcher("task.write", [task])` call, just with
+   * N rows instead of one. A thrown WebhookDeliveryError from that call also
+   * propagates uncaught, rolling back the entire batch (same rollback-on-
+   * throw contract as create()/update()/claim() above).
    */
   async bulk(
     tasks: Prisma.TaskCreateInput[],
   ): Promise<{ inserted: number; updated: number; skipped: string[] }> {
-    let inserted = 0;
-    const skipped: string[] = [];
-    for (const task of tasks) {
-      try {
-        await this.prisma.$transaction(async (tx) => {
-          const created = await tx.task.create({ data: task });
-          await this.sessionService.upsert(tx, created.session);
-        });
-        inserted++;
-      } catch (err: unknown) {
-        // P2002 = unique constraint violation (id already exists) — skip, but
-        // record the id so callers can see which tasks collided instead of
-        // this being silently swallowed.
-        if (
-          typeof err === "object" &&
-          err !== null &&
-          "code" in err &&
-          (err as { code: string }).code === "P2002"
-        ) {
-          if (typeof task.id === "string") skipped.push(task.id);
-          continue;
+    const createdRows = await this.prisma.$transaction(async (tx) => {
+      const rows: Task[] = [];
+      for (const task of tasks) {
+        let created: Task;
+        try {
+          created = await tx.task.create({ data: task });
+        } catch (err: unknown) {
+          // P2002 = unique constraint violation (id already exists) —
+          // translate to ConflictError so it propagates uncaught and rolls
+          // back the whole transaction, rather than being swallowed/skipped.
+          if (
+            typeof err === "object" &&
+            err !== null &&
+            "code" in err &&
+            (err as { code: string }).code === "P2002"
+          ) {
+            throw new ConflictError(
+              `task '${task.id}' already exists — bulk() is all-or-nothing, the whole batch was rolled back`,
+            );
+          }
+          throw err;
         }
-        throw err;
+        await this.sessionService.upsert(tx, created.session);
+        rows.push(created);
       }
-    }
-    return { inserted, updated: 0, skipped };
+      // Fires once for the whole batch, after every row has landed, still
+      // inside this transaction — see JSDoc above.
+      await this.webhookDispatcher("task.write", rows);
+      return rows;
+    }, WEBHOOK_TX_OPTIONS);
+    // skipped is always [] on success now — kept only for response-shape
+    // backward compatibility (AC4); collisions hard-fail the whole batch via
+    // ConflictError above instead of populating it.
+    return { inserted: createdRows.length, updated: 0, skipped: [] };
   }
 
   async update(id: string, data: Prisma.TaskUpdateInput): Promise<Task> {

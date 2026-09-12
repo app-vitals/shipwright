@@ -472,7 +472,7 @@ describe("TaskService.listBlocked() sort (unit)", () => {
 // ─── TaskService.bulk() ─────────────────────────────────────────────────────
 
 describe("TaskService.bulk (unit)", () => {
-  it("collects skipped IDs for tasks that collide with a P2002 unique constraint error", async () => {
+  it("rejects with ConflictError on a P2002 collision and halts the transaction callback at the failing item — nothing after it gets created", async () => {
     const created: string[] = [];
     const fakePrisma = {
       task: {
@@ -488,24 +488,34 @@ describe("TaskService.bulk (unit)", () => {
           return { ...data };
         },
       },
-      // bulk() now wraps each task's create + session upsert in one
-      // $transaction per item — hand the callback a `tx` that's just this
-      // same fake client. Neither test task sets `session`, so
-      // SessionService.upsert() short-circuits as a no-op and never reaches
-      // for `tx.session`.
+      // bulk() now wraps the WHOLE call in one $transaction — hand the
+      // callback a `tx` that's just this same fake client. None of the test
+      // tasks set `session`, so SessionService.upsert() short-circuits as a
+      // no-op and never reaches for `tx.session`. A real Postgres
+      // transaction would roll back "before-task"'s already-applied insert
+      // too; this hand-rolled fake can't fake that rollback (it has no
+      // actual storage to unwind) — that guarantee is proven by the
+      // integration tests instead. What this unit test CAN assert is the
+      // control-flow contract: bulk() rejects with ConflictError, and the
+      // loop never reaches the item after the collision.
       $transaction: async (fn: (tx: unknown) => Promise<unknown>) =>
         fn(fakePrisma),
     } as unknown as PrismaClient;
 
     const service = new TaskService(fakePrisma);
-    const result = await service.bulk([
-      { id: "dup-task", title: "Duplicate", status: "pending" } as never,
-      { id: "new-task", title: "New task", status: "pending" } as never,
-    ]);
 
-    expect(result.inserted).toBe(1);
-    expect(result.skipped).toEqual(["dup-task"]);
-    expect(created).toEqual(["new-task"]);
+    await expect(
+      service.bulk([
+        { id: "before-task", title: "Before", status: "pending" } as never,
+        { id: "dup-task", title: "Duplicate", status: "pending" } as never,
+        { id: "after-task", title: "After", status: "pending" } as never,
+      ]),
+    ).rejects.toBeInstanceOf(ConflictError);
+
+    // "before-task" ran (create() was called for it) before the collision;
+    // "after-task" must never have been reached.
+    expect(created).toEqual(["before-task"]);
+    expect(created).not.toContain("after-task");
   });
 });
 
@@ -2527,8 +2537,6 @@ describe("TaskService task.write transaction timeout (TSW-1.2)", () => {
     // default request timeout. The explicit override must be strictly
     // greater, or the fix is cosmetic.
     const PRISMA_DEFAULT_TX_TIMEOUT_MS = 5000;
-    expect(WEBHOOK_TX_TIMEOUT_MS).toBeGreaterThan(
-      PRISMA_DEFAULT_TX_TIMEOUT_MS,
-    );
+    expect(WEBHOOK_TX_TIMEOUT_MS).toBeGreaterThan(PRISMA_DEFAULT_TX_TIMEOUT_MS);
   });
 });

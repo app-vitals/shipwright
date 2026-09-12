@@ -159,7 +159,11 @@ Body (JSON): task fields. `title`, `status`, and `repo` are required. The `repo`
 POST /tasks/bulk
 ```
 
-Body: JSON array of task objects. Each task must have `title`, `status`, and `repo` fields. The `repo` key must be present on every task; `null` is accepted as a valid value for tasks that are not scoped to a specific repository. Agent tokens leave each task's `assignee` as supplied by the caller, defaulting to `null` (unassigned / pool task) when omitted. Skips conflicts (existing ID) rather than failing. Returns `{ inserted: number, updated: number, skipped: string[] }`, where `skipped` lists the IDs of tasks that collided with an existing task.
+Body: JSON array of task objects. Each task must have `title`, `status`, and `repo` fields. The `repo` key must be present on every task; `null` is accepted as a valid value for tasks that are not scoped to a specific repository. Agent tokens leave each task's `assignee` as supplied by the caller, defaulting to `null` (unassigned / pool task) when omitted.
+
+**Atomic, all-or-nothing (breaking change, TSW-1.3):** the whole batch is inserted in a single transaction. If any task's `id` collides with an existing task, the *entire* batch is rolled back and the request fails with `409` — no partial inserts. A webhook delivery failure partway through the batch likewise rolls back everything inserted so far and fails with `502`. On success, returns `{ inserted: number, updated: number, skipped: string[] }`; `skipped` is now always `[]` (kept only for response-shape backward compatibility — it no longer collects colliding IDs, since a collision now fails the whole call instead of being skipped). Exactly one `task.write` event fires per successful call, carrying every task created by that call.
+
+Previously, `POST /tasks/bulk` inserted tasks one at a time and skipped (rather than failing on) any task whose `id` already existed, returning the colliding IDs in `skipped` while still inserting the rest. Callers relying on that partial-success behavior must now retry the whole batch after resolving the collision — the standard failure path is: on a non-2xx response, log and stop; a rerun of the same batch is idempotent once the colliding id is resolved or removed.
 
 #### Distinct values
 
@@ -707,5 +711,5 @@ Agent tokens are repo-scoped — a write to a task or PR outside the token's con
 
 ### Tasks not appearing after creation
 
-- **Duplicate `id`** — `POST /tasks` and `POST /tasks/bulk` skip conflicts on an existing `id` rather than erroring; confirm the task doesn't already exist under that ID.
+- **Duplicate `id`** — `POST /tasks/bulk` fails the *entire* batch with `409` when any task's `id` already exists (TSW-1.3: atomic, all-or-nothing — no partial inserts); confirm none of the tasks in the batch already exist under their ID, or drop/rename the colliding one and retry. `POST /tasks` (singular) has no dedicated collision handling — an existing `id` surfaces as an unhandled error, not a clean `409`.
 - **Missing `repo` key** — `repo` must be present on every task (`null` is a valid value for unscoped tasks, but the key itself is required).

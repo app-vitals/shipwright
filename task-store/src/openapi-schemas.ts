@@ -738,9 +738,9 @@ export const BulkInsertResponseSchema = z
     inserted: z.number().int().openapi({ example: 3 }),
     updated: z.number().int().openapi({ example: 1 }),
     skipped: z.array(z.string()).openapi({
-      example: ["entropy-dead_exports-other-repo-2026-W29"],
+      example: [],
       description:
-        "IDs of tasks skipped because they already exist (Prisma P2002 unique constraint collision).",
+        "Always empty on success (TSW-1.3). bulk() is atomic — a single task id collision (P2002) now hard-fails the whole batch with 409 instead of skipping that task and continuing. This field is retained only for response-shape backward compatibility.",
     }),
   })
   .openapi("BulkInsertResponse");

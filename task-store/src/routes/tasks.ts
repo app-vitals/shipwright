@@ -20,8 +20,13 @@
  *                              (true only when the agent's repo-scope resolver call itself
  *                              failed upstream; see auth.ts)
  *   POST   /tasks               create one (409 if id exists)
- *   POST   /tasks/bulk          insert array, skip 409s → { inserted, updated, skipped }
- *                              (skipped lists the IDs that collided with an existing task)
+ *   POST   /tasks/bulk          insert array atomically in ONE transaction (TSW-1.3) —
+ *                              a single task's id collision (409) or webhook delivery
+ *                              failure (502) rolls back the ENTIRE batch, not just that
+ *                              task. Returns { inserted, updated, skipped } on success;
+ *                              skipped is always [] (kept only for response-shape
+ *                              backward compatibility — collisions now hard-fail the
+ *                              whole call instead of populating it).
  *   GET    /tasks/:id           fetch one (404 when missing)
  *   PATCH  /tasks/:id           update
  *   DELETE /tasks/:id           delete
@@ -213,6 +218,8 @@ const bulkRoute = createRoute({
   path: "/bulk",
   tags: ["tasks"],
   summary: "Bulk insert tasks",
+  description:
+    "Inserts the whole array in one transaction (TSW-1.3): a single task's id collision or a webhook delivery failure rolls back the entire batch, not just that task.",
   request: {
     body: {
       content: { "application/json": { schema: BulkInsertBodySchema } },
@@ -229,6 +236,15 @@ const bulkRoute = createRoute({
     },
     401: {
       description: "Unauthorized",
+      content: { "application/json": { schema: ErrorSchema } },
+    },
+    409: {
+      description:
+        "Conflict — a task id in the batch already exists; the entire batch was rolled back",
+      content: { "application/json": { schema: ErrorSchema } },
+    },
+    502: {
+      description: "Webhook delivery failed; the entire batch was rolled back",
       content: { "application/json": { schema: ErrorSchema } },
     },
   },
