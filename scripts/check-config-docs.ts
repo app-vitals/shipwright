@@ -2,7 +2,8 @@
  * scripts/check-config-docs.ts
  *
  * CI validation script — checks that every process.env.* reference in
- * agent/src/ and plugins/shipwright/scripts/ is documented in docs/configuration.md.
+ * agent/src/ and plugins/shipwright/scripts/ is documented in docs/configuration.md
+ * or docs/configuration-agent.md.
  *
  * Usage (CLI):
  *   bun scripts/check-config-docs.ts
@@ -11,6 +12,7 @@
  *   extractEnvVarNames(sourceCode: string): string[]        — pure string-parsing, no I/O
  *   extractDocumentedVars(markdownContent: string): string[] — pure string-parsing, no I/O
  *   collectTsFiles(dir: string, out: string[]): void         — real filesystem walk, exported for testing
+ *   collectDocumentedVars(paths: string[]): Set<string>      — reads + unions documented vars across files
  *
  * Exit codes:
  *   0 — all env vars are documented (or in the allowlist)
@@ -112,6 +114,24 @@ export function extractDocumentedVars(markdownContent: string): string[] {
   return Array.from(found).sort();
 }
 
+/**
+ * Reads each path in `paths` and unions the documented env var names found
+ * across all of them (via extractDocumentedVars).
+ *
+ * Lets `readFileSync` throw naturally on a missing/unreadable path — callers
+ * (main()) are expected to wrap this in their own try/catch.
+ */
+export function collectDocumentedVars(paths: string[]): Set<string> {
+  const found = new Set<string>();
+  for (const p of paths) {
+    const content = readFileSync(p, "utf8");
+    for (const v of extractDocumentedVars(content)) {
+      found.add(v);
+    }
+  }
+  return found;
+}
+
 // ---------------------------------------------------------------------------
 // File collection helper
 // ---------------------------------------------------------------------------
@@ -169,18 +189,21 @@ function main(): void {
   // scripts/ → project root
   const projectRoot = join(scriptDir, "..");
 
-  const docsPath = join(projectRoot, "docs", "configuration.md");
+  const docsPaths = [
+    join(projectRoot, "docs", "configuration.md"),
+    join(projectRoot, "docs", "configuration-agent.md"),
+  ];
 
   // 1. Read and parse documented vars
-  let docsContent: string;
+  let documentedVars: Set<string>;
   try {
-    docsContent = readFileSync(docsPath, "utf8");
+    documentedVars = collectDocumentedVars(docsPaths);
   } catch (err) {
-    console.error(`ERROR: Could not read ${docsPath}: ${err}`);
+    console.error(
+      `ERROR: Could not read one of ${docsPaths.join(", ")}: ${err}`,
+    );
     process.exit(1);
   }
-
-  const documentedVars = new Set(extractDocumentedVars(docsContent));
 
   // 2. Collect source files from the two directories
   // Intentionally excludes metrics/, admin/src/, and agent/scripts/ — those surfaces have
@@ -231,7 +254,7 @@ function main(): void {
     console.error(`  ${v}`);
   }
   console.error(
-    "\nAdd these vars to docs/configuration.md or the ALLOWLIST in scripts/check-config-docs.ts.",
+    "\nAdd these vars to docs/configuration.md, docs/configuration-agent.md, or the ALLOWLIST in scripts/check-config-docs.ts.",
   );
   process.exit(1);
 }

@@ -122,7 +122,7 @@ Pushes reuse `PushService.notifySession()` — the same Web Push delivery path a
 
 - The sweeper only starts when Web Push is fully configured (`SHIPWRIGHT_ADMIN_VAPID_PUBLIC_KEY` + `SHIPWRIGHT_ADMIN_VAPID_PRIVATE_KEY` + `SHIPWRIGHT_ADMIN_VAPID_SUBJECT`) **and** `SHIPWRIGHT_TASK_STORE_URL` + `SHIPWRIGHT_TASK_STORE_ADMIN_TOKEN` are set — otherwise it is never registered (not degraded-mode; simply absent).
 - `SHIPWRIGHT_ADMIN_SESSION_ALERT_INTERVAL_MS` (optional, default `60000`) — tick cadence in ms. Blank, non-numeric, zero, or negative values fall back to the default.
-- See [`configuration.md`](./configuration.md#metrics--admin--chat--task-store-services) for the full env var reference.
+- See [`configuration-agent.md`](./configuration-agent.md#metrics--admin--chat--task-store-services) for the full env var reference.
 
 ### Public read-only task board (`admin-ui.ts`) — unauthenticated
 
@@ -155,7 +155,7 @@ The admin console is an installable Progressive Web App (PWA). All authenticated
 **Configuration:**
 
 - `SHIPWRIGHT_ADMIN_APP_BASE_URL` (required) — the full HTTPS base URL of the admin console (e.g. `https://admin.example.com`). When this does not start with `https://`, the PWA head tags are omitted from rendered pages, so install prompts and service worker registration are unavailable (home-lab operators on plain HTTP still get a fully functional admin UI, just not the PWA shell).
-- **Web Push** (optional, requires all three): `SHIPWRIGHT_ADMIN_VAPID_PUBLIC_KEY`, `SHIPWRIGHT_ADMIN_VAPID_PRIVATE_KEY`, `SHIPWRIGHT_ADMIN_VAPID_SUBJECT` — enable Web Push notifications. When any is missing, the push routes degrade gracefully (push webhook returns 503, chat page renders no toggle). Also set `SHIPWRIGHT_ADMIN_PUSH_WEBHOOK_TOKEN` (the shared bearer token the chat service presents) and optionally `SHIPWRIGHT_ADMIN_PUSH_MAX_DETAIL` (operator hard ceiling on notification detail level; defaults to `"title"`). See [`configuration.md`](./configuration.md#metrics--admin--chat--task-store-services) for full details on these env vars.
+- **Web Push** (optional, requires all three): `SHIPWRIGHT_ADMIN_VAPID_PUBLIC_KEY`, `SHIPWRIGHT_ADMIN_VAPID_PRIVATE_KEY`, `SHIPWRIGHT_ADMIN_VAPID_SUBJECT` — enable Web Push notifications. When any is missing, the push routes degrade gracefully (push webhook returns 503, chat page renders no toggle). Also set `SHIPWRIGHT_ADMIN_PUSH_WEBHOOK_TOKEN` (the shared bearer token the chat service presents) and optionally `SHIPWRIGHT_ADMIN_PUSH_MAX_DETAIL` (operator hard ceiling on notification detail level; defaults to `"title"`). See [`configuration-agent.md`](./configuration-agent.md#metrics--admin--chat--task-store-services) for full details on these env vars.
 
 ### Chatting with a local agent
 

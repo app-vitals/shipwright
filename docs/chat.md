@@ -320,4 +320,4 @@ Indexes: `[threadId, createdAt]` (message list ordering), `[claimed, threadId]` 
 
 On boot, `main.ts` runs `prisma migrate deploy` against `DATABASE_URL_SHIPWRIGHT_CHAT` as an idempotent preflight, throwing if migrations fail, before serving traffic.
 
-See [configuration.md](configuration.md) for the full env var reference across all services, including the agent-side `SHIPWRIGHT_CHAT_SERVICE_URL` / `SHIPWRIGHT_CHAT_SERVICE_TOKEN` / `SHIPWRIGHT_CHAT_POLL_INTERVAL_MS` vars that drive the chat poll loop consuming this API.
+See [configuration.md](configuration.md) for the full env var reference across all services, and [configuration-agent.md](configuration-agent.md#metrics--admin--chat--task-store-services) for the agent-side `SHIPWRIGHT_CHAT_SERVICE_URL` / `SHIPWRIGHT_CHAT_SERVICE_TOKEN` / `SHIPWRIGHT_CHAT_POLL_INTERVAL_MS` vars that drive the chat poll loop consuming this API.
