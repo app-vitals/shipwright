@@ -290,8 +290,7 @@ agent:
 These map to the admin service's provisioning env vars
 (`SHIPWRIGHT_K8S_PROVISIONING`, `SHIPWRIGHT_K8S_NAMESPACE`,
 `SHIPWRIGHT_AGENT_IMAGE`, `SHIPWRIGHT_AGENT_IMAGE_TAG`, `SHIPWRIGHT_AGENT_REPLICAS`,
-`SHIPWRIGHT_API_URL`, `SHIPWRIGHT_ADMIN_DEPLOYMENT_NAME`,
-`SHIPWRIGHT_ADMIN_DEPLOYMENT_UID`) — documented in full in
+`SHIPWRIGHT_API_URL`) — documented in full in
 [`configuration.md`](./configuration.md#agent-provisioning-admin-service).
 
 The provisioned agent container's resource requests/limits can also be
