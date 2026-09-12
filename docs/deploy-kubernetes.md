@@ -160,7 +160,7 @@ route — reachable only from within the cluster (e.g. by agents over the intern
 network). No ingress path or external exposure is provided — chat is typically
 accessed via the agent's internal network, not the public host.
 
-See [configuration.md](./configuration.md#metrics--admin--chat--task-store-services)
+See [configuration-agent.md](./configuration-agent.md#metrics--admin--chat--task-store-services)
 for the full list of chat service env vars and their defaults.
 
 ### MCP server (opt-in)
@@ -199,7 +199,7 @@ reachable only from within the cluster. **Deliberately exposing it externally
 decision outside this chart.** The chart only renders the internal ClusterIP Service; any
 external path routing is operator-driven.
 
-See [configuration.md](./configuration.md#metrics--admin--chat--task-store-services)
+See [configuration-agent.md](./configuration-agent.md#metrics--admin--chat--task-store-services)
 for the full list of MCP server env vars and their defaults.
 
 ---
@@ -277,7 +277,6 @@ agent:
       create: true
       name: ""                     # generated if empty
     apiUrl: ""                     # in-cluster admin URL handed to agents; built from the admin Service DNS if empty
-    adminDeploymentUid: ""         # optional, for ownerRef GC; omitted when empty (downward API can't supply it)
     resources:
       requests:
         cpu: ""                     # e.g. "320m"; empty keeps the provisioner's own default
@@ -290,16 +289,20 @@ agent:
 These map to the admin service's provisioning env vars
 (`SHIPWRIGHT_K8S_PROVISIONING`, `SHIPWRIGHT_K8S_NAMESPACE`,
 `SHIPWRIGHT_AGENT_IMAGE`, `SHIPWRIGHT_AGENT_IMAGE_TAG`, `SHIPWRIGHT_AGENT_REPLICAS`,
-`SHIPWRIGHT_API_URL`, `SHIPWRIGHT_ADMIN_DEPLOYMENT_NAME`,
-`SHIPWRIGHT_ADMIN_DEPLOYMENT_UID`) — documented in full in
-[`configuration.md`](./configuration.md#agent-provisioning-admin-service).
+`SHIPWRIGHT_API_URL`) — documented in full in
+[`configuration-agent.md`](./configuration-agent.md#agent-provisioning-admin-service). (An
+earlier `ownerReference`-based garbage-collection mechanism —
+`SHIPWRIGHT_ADMIN_DEPLOYMENT_NAME`/`SHIPWRIGHT_ADMIN_DEPLOYMENT_UID`,
+`adminDeploymentUid` — was removed in #593: ineffective across the
+admin/agent namespace split and unsafe same-namespace, since it would
+cascade-delete every provisioned agent on admin uninstall.)
 
 The provisioned agent container's resource requests/limits can also be
 overridden per field via `SHIPWRIGHT_K8S_AGENT_CPU_REQUEST`,
 `SHIPWRIGHT_K8S_AGENT_MEMORY_REQUEST`, `SHIPWRIGHT_K8S_AGENT_MEMORY_LIMIT`, and
 `SHIPWRIGHT_K8S_AGENT_EPHEMERAL_STORAGE` — unset fields keep today's defaults
 (500m cpu / 2Gi memory request / 8Gi memory limit / 4Gi ephemeral storage, no
-CPU limit). See [`configuration.md`](./configuration.md#agent-provisioning-admin-service)
+CPU limit). See [`configuration-agent.md`](./configuration-agent.md#agent-provisioning-admin-service)
 for full defaults and rationale.
 
 ### Chat service provisioning (opt-in)
@@ -312,7 +315,7 @@ When `chat.enabled=true` and `chat.adminToken.existingSecret` is set, the chart 
 
 Task-store and the agent are separate deployables with independent env surfaces. When provisioning a **fleet of N agents sharing one task-store**, each agent can have its own `SHIPWRIGHT_CLAUDE_TIMEOUT_MS` (the hard ceiling timeout, defaulting to 1 hour — a backstop; see `SHIPWRIGHT_CLAUDE_IDLE_TIMEOUT_MS` for the primary, idle-reset timeout), configured per-agent via the admin service's `POST`/`PATCH /agents/:id/envs` endpoints. Task-store itself has a single `SHIPWRIGHT_TASK_STORE_CLAIM_TTL_MS` (the claim reaping timeout, defaulting to 65 minutes) that gates how long a claim remains valid without a heartbeat.
 
-To prevent claims from being reaped mid-session when long-running agents approach their session timeout, `SHIPWRIGHT_TASK_STORE_CLAIM_TTL_MS` must exceed the **maximum** `SHIPWRIGHT_CLAUDE_TIMEOUT_MS` across all provisioned agents, plus the standard 5-minute buffer. Task-store has a startup check (`checkClaimTtlBuffer` in `task-store/src/claim-ttl-buffer-check.ts`) that validates this constraint: the chart ships `SHIPWRIGHT_CLAUDE_TIMEOUT_MS` set to 3600000 ms (1 hour, matching the agent's default ceiling from CSU-1.2) in task-store's env by default. If you are provisioning a **multi-agent fleet** where agents have different timeouts, raise this value to the **maximum** `SHIPWRIGHT_CLAUDE_TIMEOUT_MS` across your entire fleet (via `taskStore.extraEnv` in the chart), and if the resolved claim TTL is insufficient, task-store will `console.warn` at startup with both values and a suggested minimum TTL. The check is purely a warning — it does not block startup — so you can deploy and adjust the TTL upward to resolve it. When the configured claim TTL is insufficient, the warning message includes both the current TTL and the recommended minimum. See [`configuration.md`](./configuration.md#server) for the full `SHIPWRIGHT_TASK_STORE_CLAIM_TTL_MS` and `SHIPWRIGHT_CLAUDE_TIMEOUT_MS` variable descriptions and defaults.
+To prevent claims from being reaped mid-session when long-running agents approach their session timeout, `SHIPWRIGHT_TASK_STORE_CLAIM_TTL_MS` must exceed the **maximum** `SHIPWRIGHT_CLAUDE_TIMEOUT_MS` across all provisioned agents, plus the standard 5-minute buffer. Task-store has a startup check (`checkClaimTtlBuffer` in `task-store/src/claim-ttl-buffer-check.ts`) that validates this constraint: the chart ships `SHIPWRIGHT_CLAUDE_TIMEOUT_MS` set to 3600000 ms (1 hour, matching the agent's default ceiling from CSU-1.2) in task-store's env by default. If you are provisioning a **multi-agent fleet** where agents have different timeouts, raise this value to the **maximum** `SHIPWRIGHT_CLAUDE_TIMEOUT_MS` across your entire fleet (via `taskStore.extraEnv` in the chart), and if the resolved claim TTL is insufficient, task-store will `console.warn` at startup with both values and a suggested minimum TTL. The check is purely a warning — it does not block startup — so you can deploy and adjust the TTL upward to resolve it. When the configured claim TTL is insufficient, the warning message includes both the current TTL and the recommended minimum. See [`configuration-agent.md`](./configuration-agent.md#server) for the full `SHIPWRIGHT_TASK_STORE_CLAIM_TTL_MS` and `SHIPWRIGHT_CLAUDE_TIMEOUT_MS` variable descriptions and defaults.
 
 **Caveat for existing `taskStore.extraEnv` overrides:** Helm replaces array-typed values wholesale rather than merging them. If your deployment already sets `taskStore.extraEnv` (e.g. for the `SHIPWRIGHT_TASK_STORE_AGENTS_URL`/`AGENTS_API_KEY` scope-resolver wiring), upgrading to a chart version that ships this new `SHIPWRIGHT_CLAUDE_TIMEOUT_MS` default will silently drop it — your override entirely replaces the chart's default list, with no warning. Re-add the `SHIPWRIGHT_CLAUDE_TIMEOUT_MS` entry to your own `taskStore.extraEnv` override yourself after upgrading.
 

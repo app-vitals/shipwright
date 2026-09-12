@@ -177,7 +177,7 @@ token) — set the token, alongside the VAPID keys, to enable the inbound trigge
 path. `401 Unauthorized` is only returned once the token is configured server-side
 and the chat service presents a bearer value that doesn't match it.
 
-See [`configuration.md`](./configuration.md#metrics--admin--chat--task-store-services)
+See [`configuration-agent.md`](./configuration-agent.md#metrics--admin--chat--task-store-services)
 for the full list of Web Push env vars and their defaults.
 
 ### Session alerts (waiting / reminder / completed)
@@ -224,7 +224,7 @@ Archiving is non-destructive (it only hides a session from the default list view
 purge/delete endpoint anywhere in this pipeline; nothing this chart configures ever deletes a
 session or its tasks.
 
-See [`configuration.md`](./configuration.md#metrics--admin--chat--task-store-services)
+See [`configuration-agent.md`](./configuration-agent.md#metrics--admin--chat--task-store-services)
 for the full env var reference (`SHIPWRIGHT_ADMIN_SESSION_ALERT_INTERVAL_MS`,
 `SHIPWRIGHT_TASK_STORE_ADMIN_TOKEN`, `SHIPWRIGHT_TASK_STORE_SESSION_ARCHIVE_AFTER_DAYS`).
 
