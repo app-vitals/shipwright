@@ -249,7 +249,7 @@ export interface LoopOrchestratorDeps {
 /**
  * The literal slash-command string and phase tag for each pipeline phase.
  * Deliberately no "/shipwright:review-patch" — the loop's per-tick selection
- * across all four phases supersedes that command's internal review-vs-patch
+ * across all five phases supersedes that command's internal review-vs-patch
  * decision, so it is never invoked.
  */
 const PHASE_COMMANDS: Record<LoopPhase, string> = {

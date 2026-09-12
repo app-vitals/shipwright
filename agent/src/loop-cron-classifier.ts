@@ -18,9 +18,10 @@
  *   For rows with no parent, the shipwright-loop job (if present and
  *   enabled) is always included with dispatch: "loop". Every other enabled
  *   job is included with dispatch: "generic" UNLESS shipwright-loop is
- *   present and enabled AND the job's name is one of the five pipeline
+ *   present and enabled AND the job's name is one of the six pipeline
  *   phase jobs (shipwright-dev-task, shipwright-review, shipwright-patch,
- *   shipwright-review-patch, shipwright-deploy) — those are excluded
+ *   shipwright-review-patch, shipwright-deploy, shipwright-plan) — those
+ *   are excluded
  *   entirely (loop-config-only: readable by the loop handler, not
  *   independently scheduled). This name-based fallback stays load-bearing
  *   until every legacy pipeline-phase system cron has parentCronId
@@ -40,12 +41,12 @@
  *   different parent is ignored; the phase resolves false in either case,
  *   as it does when no matching child row exists at all. This relies on
  *   reconcileSystemCrons() (LPC-1.2) having already run for the given agent
- *   to populate parentCronId on its four phase rows — an agent that hasn't
+ *   to populate parentCronId on its five phase rows — an agent that hasn't
  *   reconciled since LPC-1.2 deployed will see zero active phases here
  *   (soft-fail: the loop simply pauses dispatch, not an error) until its
  *   next reconcile. Deliberately never reads or references
  *   shipwright-review-patch — its internal review-vs-patch selection is
- *   redundant with what the loop does at a higher level across all four
+ *   redundant with what the loop does at a higher level across all five
  *   phases once shipwright-loop is enabled.
  *
  * resolveLoopPhaseJobId(jobs, loopCronId, jobName) → string | null

@@ -16,11 +16,11 @@ by the PR/task it was dispatched against.
 - `/shipwright:investigate-cron <name> <time>` — find the run of cron `<name>`
   closest to `<time>`
 - `/shipwright:investigate-cron --item <org/repo#N|taskId>` — find every
-  dispatch across all four pipeline phases for a given PR or task
+  dispatch across all five pipeline phases for a given PR or task
 
 Arguments:
 
-- `<name>` — cron name: `deploy`, `dev-task`, `patch`, `review`
+- `<name>` — cron name: `deploy`, `dev-task`, `patch`, `plan`, `review`
 - `<time>` — approximate time the cron fired, e.g. `6pm`, `14:30`, `2:30pm PST`.
   Timezone defaults to Pacific if not specified.
 - `--item <org/repo#N|taskId>` — a PR (`org/repo#N`, e.g. `acme/x#123`) or a bare
@@ -80,8 +80,8 @@ CRONS_JSON=$(curl -sf -H "Authorization: Bearer $SHIPWRIGHT_AGENT_API_KEY" \
   "$SHIPWRIGHT_API_URL/agents/$SHIPWRIGHT_AGENT_ID/crons")
 
 # The loop cron is the top-level cron: parentCronId === null (typically
-# system === true and named "shipwright-loop"). Phase crons (dev-task, review,
-# patch, deploy) are children: parentCronId === <loop cron's id>.
+# system === true and named "shipwright-loop"). Phase crons (dev-task, plan,
+# review, patch, deploy) are children: parentCronId === <loop cron's id>.
 LOOP_CRON_ID=$(echo "$CRONS_JSON" | jq -r '.crons[] | select(.parentCronId == null and .system == true) | .id' | head -1)
 
 if [ -z "$LOOP_CRON_ID" ] || [ "$LOOP_CRON_ID" = "null" ]; then

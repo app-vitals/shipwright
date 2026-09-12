@@ -230,7 +230,7 @@ Full reference (schemas, status lifecycle, all endpoints):
 
 ### Maintenance crons + why
 
-Beyond the four pipeline phases, an agent type manifest can enable standalone maintenance
+Beyond the five pipeline phases, an agent type manifest can enable standalone maintenance
 crons — each fully self-contained, doing its own discovery with no dependency on
 `shipwright-loop`:
 
@@ -253,7 +253,7 @@ on per-agent from the Cron Jobs card once you're comfortable with what they'll d
 
 Most maintenance crons poll a `preCheck` script first and only spend a Claude turn if that
 script produces output; most ticks across those crons cost nothing. The pipeline crons
-(dev-task/review/patch/deploy/loop) don't carry a `preCheck` — they're instead gated by
+(plan/dev-task/review/patch/deploy/loop) don't carry a `preCheck` — they're instead gated by
 `shipwright-loop`'s own candidate providers, which decide per tick whether there's a
 winning item to dispatch.
 

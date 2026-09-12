@@ -44,9 +44,9 @@ Once you have console access, work through this list before leaving the agent un
    it acted on. Filter by `?cronId=` or `?outcome=` to narrow the view.
 4. **Check the work queue.** The **Upcoming** section of the same
    `/admin/agents/:id/queue-activity` page shows the agent's latest self-reported ranked queue —
-   the tasks and PRs it sees as pending work, oldest first, across the dev-task, review, patch, and
-   deploy phases. An empty queue with no snapshot yet usually means the agent hasn't ticked since
-   this feature shipped, or `shipwright-loop` isn't enabled.
+   the tasks and PRs it sees as pending work, oldest first, across the plan, dev-task, review,
+   patch, and deploy phases. An empty queue with no snapshot yet usually means the agent hasn't
+   ticked since this feature shipped, or `shipwright-loop` isn't enabled.
 5. **Look at open PRs.** `/admin/prs` lists PRs the agent has opened or is tracking, filterable by
    `?state=`, `?reviewState=`, `?repo=`, and `?taskId=`. Skim it so you know what's in flight.
 6. **Look at tasks with an HITL gate.** `/admin/tasks?hitl=true` filters the task list to tasks
@@ -88,7 +88,7 @@ useful for checking whether a PR has been sitting in the same review state longe
 or whether it's linked back to the task that produced it.
 
 The **Upcoming** section of `/admin/agents/:id/queue-activity` complements this: it's the agent's
-own ranked view of what it intends to work on next, oldest first, across all four pipeline phases —
+own ranked view of what it intends to work on next, oldest first, across all five pipeline phases —
 handy for confirming the agent agrees with what you see in the PR list.
 
 ### Noticing and responding to a HITL escalation
