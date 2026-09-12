@@ -4,11 +4,12 @@
 > specific target: Minikube (local), GKE (Gateway API + cert-manager), EKS (ALB
 > ingress + cert-manager), Traefik (ingress + cert-manager, any cluster), and
 > cloud-native (any cluster, no pre-installed ingress controller or cert-manager
-> required). For the cross-cutting concerns shared by all of them — the
-> networking model, agent runtime provisioning, agent voice, Web Push
-> notifications, authentication modes, bringing your own PostgreSQL, and the
-> bundled ingress-controller/cert-manager subcharts — see
-> [`deploy-kubernetes.md`](./deploy-kubernetes.md).
+> required). For the core concerns shared by all of them — the networking model,
+> agent runtime provisioning, and authentication modes — see
+> [`deploy-kubernetes.md`](./deploy-kubernetes.md). For the optional add-ons that
+> layer on top — agent voice, Web Push notifications, bringing your own
+> PostgreSQL, and the bundled ingress-controller/cert-manager subcharts — see
+> [`deploy-kubernetes-addons.md`](./deploy-kubernetes-addons.md).
 
 > Two install paths are interchangeable below. Install from the local chart
 > source (`charts/shipwright`) when working in this repo, or from the published
