@@ -1412,13 +1412,15 @@ describe("TaskService.listReady() filters (unit)", () => {
     expect(result.map((t) => t.id).sort()).toEqual(["t1", "t2"]);
   });
 
-  // ─── autonomousPlanSession (PDR-2.1) ───────────────────────────────────────
+  // ─── autonomousPlanSession (PDR-2.1 / PDR-2.2) ─────────────────────────────
   //
-  // Plain equality post-filter, no ready.ts exclusion side effect — mirrors
-  // the shape of the other plain filters above (e.g. branch), not hitl's
-  // ready-set-exclusion nuance.
+  // PDR-2.2 added an unconditional ready.ts exclusion for
+  // autonomousPlanSession === true (mirrors hitl's ready-set-exclusion
+  // nuance) — such tasks never appear in the ready set regardless of this
+  // filter. The filter itself only narrows among tasks that already made it
+  // into the ready set (i.e. autonomousPlanSession is false or null).
 
-  it("listReady({ autonomousPlanSession: true }) returns only tasks with autonomousPlanSession === true", async () => {
+  it("listReady({ autonomousPlanSession: true }) returns empty — matching tasks are excluded from the ready set upstream (PDR-2.2)", async () => {
     const prisma = makeReadyPrismaDouble([
       makeReadyTask({ id: "t1", autonomousPlanSession: true }),
       makeReadyTask({ id: "t2", autonomousPlanSession: false }),
@@ -1430,7 +1432,7 @@ describe("TaskService.listReady() filters (unit)", () => {
       autonomousPlanSession: true,
     });
 
-    expect(result.map((t) => t.id)).toEqual(["t1"]);
+    expect(result).toEqual([]);
   });
 
   it("listReady({ autonomousPlanSession: false }) returns only tasks with autonomousPlanSession === false", async () => {
@@ -1448,7 +1450,7 @@ describe("TaskService.listReady() filters (unit)", () => {
     expect(result.map((t) => t.id)).toEqual(["t2"]);
   });
 
-  it("listReady() with autonomousPlanSession unset returns every ready task regardless of value (back-compat)", async () => {
+  it("listReady() with autonomousPlanSession unset excludes autonomousPlanSession:true tasks from the ready set, includes the rest (PDR-2.2)", async () => {
     const prisma = makeReadyPrismaDouble([
       makeReadyTask({ id: "t1", autonomousPlanSession: true }),
       makeReadyTask({ id: "t2", autonomousPlanSession: false }),
@@ -1458,7 +1460,7 @@ describe("TaskService.listReady() filters (unit)", () => {
 
     const result = await service.listReady(undefined, undefined, {});
 
-    expect(result.map((t) => t.id).sort()).toEqual(["t1", "t2", "t3"]);
+    expect(result.map((t) => t.id).sort()).toEqual(["t2", "t3"]);
   });
 
   // ─── assignee ─────────────────────────────────────────────────────────────
