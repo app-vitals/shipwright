@@ -121,6 +121,11 @@ export const generatedTools: GeneratedTool[] = [
           enum: ["true", "false"],
           example: "true",
         },
+        autonomousPlanSession: {
+          type: "string",
+          enum: ["true", "false"],
+          example: "true",
+        },
         sort: {
           type: "string",
           enum: ["asc", "desc"],
@@ -153,6 +158,7 @@ export const generatedTools: GeneratedTool[] = [
       "offset",
       "ready",
       "hitl",
+      "autonomousPlanSession",
       "sort",
       "updatedSince",
     ],
@@ -1157,5 +1163,37 @@ export const generatedTools: GeneratedTool[] = [
     queryParams: [],
     pathParams: ["slug"],
     hasBody: false,
+  },
+  {
+    name: "sessions_update",
+    description: "Rename/archive a session — admin-only",
+    inputSchema: {
+      type: "object",
+      properties: {
+        slug: {
+          type: "string",
+          example: "shipwright-may-launch",
+        },
+        title: {
+          type: ["string", "null"],
+          description:
+            "Omitted: title untouched. A string: set. null: clears the title.",
+          example: "May launch prep",
+        },
+        archived: {
+          type: "boolean",
+          description:
+            "Omitted: archive fields untouched. true: stamps archivedAt/archivedBy. false: clears both.",
+          example: true,
+        },
+      },
+      required: ["slug"],
+      additionalProperties: false,
+    },
+    method: "PATCH",
+    pathTemplate: "/sessions/{slug}",
+    queryParams: [],
+    pathParams: ["slug"],
+    hasBody: true,
   },
 ];
