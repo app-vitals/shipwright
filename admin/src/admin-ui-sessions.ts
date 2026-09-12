@@ -20,6 +20,11 @@ import { renderAdminPage } from "./admin-ui-layout.ts";
 import { escapeHtml, renderAdminToolbar } from "./admin-ui-styles.ts";
 import type { AdminUIEnv } from "./admin-ui.ts";
 import { BadRequestError } from "./errors.ts";
+import {
+  type PushTestRouteDeps,
+  registerPushTestRoute,
+  renderPushTestControl,
+} from "./admin-ui-push-test.ts";
 import { renderPushToggle } from "./push-toggle.ts";
 import type {
   SessionFollowRow,
@@ -41,6 +46,9 @@ export interface SessionSettingsDeps {
   /** Same derived flag admin-ui.ts uses to gate the chat push toggle. */
   pushEnabled: boolean;
   vapidPublicKey: string;
+  /** Backs POST /admin/push/test ("Send test notification"); optional so
+   *  callers without push configured need not construct one. */
+  pushService?: PushTestRouteDeps["pushService"];
   /** SHIPWRIGHT_ADMIN_TZ (validated at startup), or its default. */
   timezone: string;
   /** admin-ui.ts's shared response helper (headers + PWA head-tag injection). */
@@ -112,6 +120,7 @@ function renderNotificationSettingsPage(opts: {
         pushToggleHtml ||
         `<p style="font-size:13px;color:#6b7280;margin:0">Push notifications are not configured on this server.</p>`
       }
+      ${pushToggleHtml ? renderPushTestControl() : ""}
     </div>
     <div class="card">
       <div class="card-title">Session follow preferences</div>
@@ -176,6 +185,12 @@ export function registerSessionSettingsRoutes(
   app: Hono<AdminUIEnv>,
   deps: SessionSettingsDeps,
 ): void {
+  registerPushTestRoute(app, {
+    requireAuth: deps.requireAuth,
+    pushEnabled: deps.pushEnabled,
+    pushService: deps.pushService,
+  });
+
   async function loadPageData(userEmail: string) {
     const [prefs, allFollows] = await Promise.all([
       deps.sessionFollowService.getOrCreatePrefs(userEmail),

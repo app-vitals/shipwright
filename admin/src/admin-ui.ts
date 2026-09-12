@@ -3406,6 +3406,7 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
     sessionFollowService,
     pushEnabled,
     vapidPublicKey,
+    pushService,
     timezone,
     html,
   });
