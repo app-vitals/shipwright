@@ -28,8 +28,14 @@ generic envelope and knows nothing about what consumes it.
 feature entirely, zero behavior change)
 
 - `SHIPWRIGHT_TASK_STORE_WEBHOOK_URL` — the single endpoint every event type is POSTed to.
-- `SHIPWRIGHT_TASK_STORE_WEBHOOK_TOKEN` — optional; sent as `Authorization: Bearer` and used
-  as the HMAC-SHA256 signing key for `X-Shipwright-Signature`.
+- `SHIPWRIGHT_TASK_STORE_WEBHOOK_TOKEN` — optional; sent as `Authorization: Bearer`.
+- `SHIPWRIGHT_TASK_STORE_WEBHOOK_SIGNING_SECRET` — optional; used as the HMAC-SHA256 signing
+  key for `X-Shipwright-Signature`. Deliberately a separate secret from `_TOKEN` (see Decision
+  Log) — dual-using one value for both the bearer credential and the signing key would mean a
+  leak of the (more commonly logged/proxied) bearer header also hands over the ability to forge
+  signed payloads, violating `least_privilege_tokens`
+  (`plugins/shipwright/references/principles.md`). Signing is skipped (no
+  `X-Shipwright-Signature` header sent) when unset, independent of whether `_TOKEN` is set.
 - `SHIPWRIGHT_TASK_STORE_WEBHOOK_TIMEOUT_MS` — optional, default `5000`. Hard timeout on the
   outbound call — load-bearing here (unlike the fire-and-forget `chat/src/reply-notifier.ts`
   precedent), since the call now holds a live Postgres transaction/connection open for its
@@ -38,9 +44,10 @@ feature entirely, zero behavior change)
 ### Envelope
 
 `POST {url}` with body `{ "type": "task.write", "data": [Task, ...] }`, headers
-`Authorization: Bearer {token}` (if configured) and `X-Shipwright-Signature: sha256={hmac}`
-(HMAC-SHA256 over the raw JSON body, keyed by the token) — mirrors the bar this codebase
-already holds *inbound* webhook handlers to (`webhook_signature_verification` in
+`Authorization: Bearer {token}` (if `_TOKEN` configured) and `X-Shipwright-Signature:
+sha256={hmac}` (if `_SIGNING_SECRET` configured; HMAC-SHA256 over the raw JSON body, keyed by
+the signing secret, independent of the bearer token) — mirrors the bar this codebase already
+holds *inbound* webhook handlers to (`webhook_signature_verification` in
 `plugins/shipwright/references/principles.md`), applied to the outbound side so anything
 built on top of this can authenticate what it receives.
 
@@ -76,9 +83,17 @@ responds non-2xx → log the response, stop, do not retry blindly — rerunning 
 idempotent because its own dedup check filters already-queued ids" as their standard failure
 path (see e.g. `entropy-fix/SKILL.md`'s Error Handling section). No code changes are required
 in those skills; the new atomic-failure mode surfaces through a path they already handle.
-Known concrete scenario this affects: two repos scanned in the same ISO week producing a
-colliding `entropy-fix` task id — today a silent per-item skip, after this change a whole-batch
-failure for that run (one-cycle delay via the next scheduled scan, not data loss).
+Known concrete scenario this affects: `entropy-fix` task ids are deterministic per
+`{rule-id}-{repo-slug}-{YYYY-Www}` (the `{repo-slug}` segment already rules out cross-repo
+collisions — see `plugins/shipwright/skills/entropy-fix/SKILL.md:241-243`), but its dedup check
+(6q.1) only queries `status=pending` and `status=in_progress` tasks for the "already active"
+set. A task in any other status (`done`, `cancelled`, `blocked`, etc.) for the same
+repo/rule/ISO-week is invisible to that dedup query, so a later scan in the same week that
+re-detects the same finding recomputes the identical id and collides with that stale/
+non-active row on insert. Today that's a silent per-item skip in `bulk()`'s per-task loop;
+after this change it's a whole-batch failure for that scan's run (one-cycle delay via the next
+scheduled scan, not data loss) — the collision is a single stale row inside an otherwise-fresh
+batch, not a repo-vs-repo scenario.
 
 ### Error surface
 
@@ -113,6 +128,17 @@ is no retry queue, so this is the only record of a dropped write.
 - **Envelope is generic (`{ type, data }`) rather than task-specific:** explicit ask — the
   first event type is `task.write`, but the transport must not need to change shape for a
   second event type later.
+- **Bearer token and HMAC signing key are two independent secrets, not one:** the original
+  draft reused `SHIPWRIGHT_TASK_STORE_WEBHOOK_TOKEN` for both the `Authorization: Bearer`
+  credential and the HMAC-SHA256 signing key. Rejected — `least_privilege_tokens`
+  (`plugins/shipwright/references/principles.md`) argues against one secret carrying more
+  purpose than it needs: a bearer credential is far more likely to leak (logs, proxies, error
+  messages) than a value that's never transmitted in cleartext, and a leak of it would also let
+  an attacker forge `X-Shipwright-Signature` if the two shared a key. Kept both mechanisms
+  (rather than dropping the bearer token) since some consumers may prefer to gate on the
+  simpler header check without implementing HMAC verification — split into
+  `SHIPWRIGHT_TASK_STORE_WEBHOOK_TOKEN` (bearer only) and a new
+  `SHIPWRIGHT_TASK_STORE_WEBHOOK_SIGNING_SECRET` (HMAC key only) instead.
 
 ## Tasks
 
@@ -133,27 +159,44 @@ is no retry queue, so this is the only record of a dropped write.
 
 ### TSW-1.1 — Add outbound webhook config + generic event dispatcher
 
-New `task-store/src/webhook-dispatcher.ts`: `createWebhookDispatcher(url, token, timeoutMs,
-fetchImpl)` returns `(type: string, data: unknown) => Promise<void>`. POSTs
-`{ type, data }` with `Authorization: Bearer {token}` (if set) and `X-Shipwright-Signature:
-sha256={hmac}` (HMAC-SHA256 over the raw body, keyed by `token`), a hard `AbortSignal.timeout`,
-and throws `WebhookDeliveryError` on non-2xx, network error, or timeout. Returns a no-op
-dispatcher when `url` is unset, so call sites never branch on config presence. New
-`WebhookDeliveryError` in `errors.ts`, mapped to HTTP 502 in the app's error handler. Wire
-`SHIPWRIGHT_TASK_STORE_WEBHOOK_URL` / `_TOKEN` / `_TIMEOUT_MS` (default `5000`) in `main.ts`
-and inject the dispatcher into `TaskService`'s constructor (optional param, defaults to the
-no-op dispatcher so existing callers/tests are unaffected).
+New `task-store/src/webhook-dispatcher.ts`: `createWebhookDispatcher(url, token, signingSecret,
+timeoutMs, fetchImpl)` returns `(type: string, data: unknown) => Promise<void>`. POSTs
+`{ type, data }` with `Authorization: Bearer {token}` (if `token` set) and
+`X-Shipwright-Signature: sha256={hmac}` (if `signingSecret` set; HMAC-SHA256 over the raw body,
+keyed by `signingSecret`, independent of `token`), a hard `AbortSignal.timeout`, and throws
+`WebhookDeliveryError` on non-2xx, network error, or timeout. Returns a no-op dispatcher when
+`url` is unset, so call sites never branch on config presence. New `WebhookDeliveryError` in
+`errors.ts`, mapped to HTTP 502 in the app's error handler. Wire
+`SHIPWRIGHT_TASK_STORE_WEBHOOK_URL` / `_TOKEN` / `_SIGNING_SECRET` / `_TIMEOUT_MS` (default
+`5000`) in `main.ts` and inject the dispatcher into `TaskService`'s constructor (optional
+param, defaults to the no-op dispatcher so existing callers/tests are unaffected).
+
+Given the shared-pool blast radius (this dispatcher is invoked from inside a live transaction
+on every high-frequency mutation path across the whole agent fleet, per the Decision Log's
+"network call inside the write transaction" trade), confirm the task-store's Postgres
+connection-pool size has enough headroom above expected peak concurrent-transaction count that
+a merely-slow (not down) webhook target holding connections for up to `_TIMEOUT_MS` doesn't
+exhaust the pool — and/or default `_TIMEOUT_MS` to a value stricter than the generic
+`chat/src/reply-notifier.ts` fire-and-forget precedent's timeout, since this call is not
+fire-and-forget.
 
 - Acceptance criteria:
   - `createWebhookDispatcher` sends the documented envelope, headers, and signature; throws
     `WebhookDeliveryError` on non-2xx/timeout/network error; no-ops when `url` is unset.
   - `WebhookDeliveryError` maps to HTTP 502 in the app's error handler.
-  - `SHIPWRIGHT_TASK_STORE_WEBHOOK_URL`/`_TOKEN`/`_TIMEOUT_MS` wired in `main.ts`; `TaskService`
-    accepts an injected dispatcher (defaults to a no-op).
+  - `SHIPWRIGHT_TASK_STORE_WEBHOOK_URL`/`_TOKEN`/`_SIGNING_SECRET`/`_TIMEOUT_MS` wired in
+    `main.ts`; `TaskService` accepts an injected dispatcher (defaults to a no-op).
+  - `_TOKEN` and `_SIGNING_SECRET` are independent — the bearer header and the HMAC signature
+    are computed from separate values, never derived from each other.
+  - The task's PR description or a code comment on `_TIMEOUT_MS`'s definition records the
+    expected connection-pool headroom this timeout was chosen against (or notes the pool is
+    sized generously enough that this is not yet a concern) — this is a note, not a pool
+    resize; sizing the pool itself is out of scope for this task if current headroom is
+    already sufficient.
   - Test decision: unit tests only (`webhook-dispatcher.unit.test.ts`), injected `FetchLike`
     per this repo's no-`mock.module`/no-`global.fetch` rule — covers success, non-2xx, network
-    error, timeout, signature computation, and the disabled/no-op path. No existing tests
-    retired (net-new module).
+    error, timeout, signature computation (using `signingSecret`, independent of `token`), and
+    the disabled/no-op path. No existing tests retired (net-new module).
 - Layer: API
 - Branch: `feat/tsw-1-1-webhook-dispatcher`
 - Dependencies: none
@@ -177,6 +220,12 @@ why (mirrors the existing heartbeat-skips-audit-trail rationale; delete has no r
     just asserted in a mock) and the API call surfaces 502.
   - `heartbeat()` and `remove()` are unmodified, each with a one-line comment explaining the
     exclusion.
+  - Since this wires the dispatcher into `create`/`update`/`claim`/`complete`/`fail`/
+    `release`/`recordSkip`/`resetSkip` — the highest-frequency paths, used by the whole agent
+    fleet — confirm expected peak concurrent-transaction count stays under the task-store's
+    Postgres connection-pool size with `_TIMEOUT_MS` headroom included; flag to a human
+    reviewer if it doesn't, rather than shipping and finding out via pool exhaustion in
+    production.
   - Test decision: integration tests (`task-service.integration.test.ts`, real Postgres) proving
     rollback-on-webhook-failure for at least create/update/claim — this guarantee is Postgres's
     transaction behavior, not something a fake DB can verify. Smoke test
@@ -197,7 +246,10 @@ Replace `bulk()`'s per-item try/catch-skip loop with one `$transaction` wrapping
 every insert in the transaction succeeds, call the dispatcher once with `type: "task.write"`,
 `data: <all created rows>`. Update `docs/task-store.md`'s `POST /tasks/bulk` description in
 this same PR to state the new atomic-all-or-nothing behavior explicitly (breaking-change
-disclosure ships with the change, not deferred to TSW-1.4).
+disclosure ships with the change, not deferred to TSW-1.4). This is a breaking change to an
+existing endpoint with external callers, so it also gets a `docs/migration.md` entry in this
+same PR — following the existing convention there (see the `PullRequest.taskId` removal entry)
+of documenting what changed, the migration steps for API consumers, and deploy ordering.
 
 - Acceptance criteria:
   - `bulk()` runs as one transaction; a mid-batch P2002 rolls back every insert in that call
@@ -205,6 +257,10 @@ disclosure ships with the change, not deferred to TSW-1.4).
   - Exactly one `task.write` event fires per successful bulk call, containing every created
     row.
   - `docs/task-store.md`'s bulk endpoint section documents the new atomic behavior.
+  - `docs/migration.md` gets a new "Breaking: `POST /tasks/bulk` is now atomic" entry (matching
+    the existing entry format) covering what changed, migration steps for the four external
+    callers (`entropy-fix`/`error-fix`/`security-fix`/`consolidation-fix`, all already
+    verified to degrade cleanly), and deploy ordering.
   - `BulkInsertResponseSchema`'s `skipped` field is kept in the response shape (empty array on
     success) for response-shape backward compatibility, with its doc comment updated to
     reflect that collisions now hard-fail instead of populating it.
@@ -224,8 +280,8 @@ disclosure ships with the change, not deferred to TSW-1.4).
 
 ### TSW-1.4 — Document the webhook feature
 
-Add `SHIPWRIGHT_TASK_STORE_WEBHOOK_URL`/`_TOKEN`/`_TIMEOUT_MS` to `docs/configuration-agent.md`'s
-task-store services section. Add a new "Outbound webhook" section to `docs/task-store.md`
+Add `SHIPWRIGHT_TASK_STORE_WEBHOOK_URL`/`_TOKEN`/`_SIGNING_SECRET`/`_TIMEOUT_MS` to
+`docs/configuration-agent.md`'s task-store services section. Add a new "Outbound webhook" section to `docs/task-store.md`
 covering: the `{ type, data }` envelope, `task.write` as the sole event type today and its
 trigger scope (which methods fire it, which don't and why), the fail-closed/no-retry
 guarantee, the signature header, and an explicit note that integration-specific logic
