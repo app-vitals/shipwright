@@ -2,7 +2,7 @@
 
 Session-follow lets a user follow a task-store [Session](./task-store.md) and receive a Web Push notification about it — the session-lifecycle sibling of the chat "your agent replied" push flow documented in [`docs/agent.md`](./agent.md)'s "PWA shell" section (service worker, VAPID env vars, and the `PushSubscription` model). It reuses that same `PushSubscription`/VAPID infrastructure, but adds its own business-domain state: follow/mute per user per session, per-user notification prefs, and a per-user/per-session alert cooldown.
 
-Implemented across `admin/src/session-follow-service.ts` (CRUD), `admin/src/push-content.ts` (session notification content policy), `admin/src/push-service.ts`'s `notifySession()` (delivery), `admin/src/admin-ui-sessions.ts` (the settings page), `admin/src/admin-ui-session-follow.ts` (follow/unfollow routes), and `admin/src/session-scope.ts` (the visibility model). Per-file detail: [agent-key-files.md](./agent-key-files.md). Prisma models: [agent.md's Data model table](./agent.md#data-model).
+Implemented across `admin/src/session-follow-service.ts` (CRUD), `admin/src/push-content.ts` (session notification content policy), `admin/src/push-service.ts`'s `notifySession()` (delivery), `admin/src/session-alert-sweeper.ts` (the background job that calls `notifySession()`, stamps `SessionAlertState.lastAlertedAt`, and prunes followers who lose visibility), `admin/src/admin-ui-sessions.ts` (the settings page), `admin/src/admin-ui-session-follow.ts` (follow/unfollow routes), and `admin/src/session-scope.ts` (the visibility model). Per-file detail: [agent-key-files.md](./agent-key-files.md). Prisma models: [agent.md's Data model table](./agent.md#data-model).
 
 ---
 
@@ -16,7 +16,7 @@ Three models, all in `admin/prisma/schema.prisma`, none tied to an `Agent` (no c
 | `UserNotificationPrefs` | Per-user notification settings | `userEmail` (primary key — one row per user, not per session), `autoFollowSessions` (default `true`), `reminderHourLocal` (default `9`, validated to an integer in `[0, 23]`), `autoFollowSince`. |
 | `SessionAlertState` | Per-user/per-session alert cooldown | `userEmail`, `sessionSlug`, `lastAlertedAt`. Unique on `[userEmail, sessionSlug]`. |
 
-**`SessionAlertState` has no writer yet.** The model exists so a future reminder job has somewhere to land cooldown state without a follow-up migration, but nothing in this repo currently writes `lastAlertedAt`. The one exception: `SessionFollowService.unfollow()` deletes the caller's `SessionAlertState` row for the slug as cleanup, so a stale cooldown timestamp doesn't linger past unfollowing.
+`SessionAlertState.lastAlertedAt` is written by `session-alert-sweeper.ts`'s `stampAlertState()` (an upsert, keyed per user/session) after every immediate/reminder/completed push it sends — the cooldown state the model was built to hold. `SessionFollowService.unfollow()` additionally deletes the caller's `SessionAlertState` row for the slug as cleanup, so a stale cooldown timestamp doesn't linger past unfollowing.
 
 `SessionFollowService` (`admin/src/session-follow-service.ts`) is the sole entry point — routes never touch these three Prisma models directly:
 
@@ -47,7 +47,7 @@ effective level = min(operator ceiling, per-subscription opt-in, per-call ceilin
 
 `sanitizePublic()` scrubs id/repo/path/cost-shaped substrings (Prisma cuids, `owner/repo`-style slugs, `agt_...`-style ids, `$1,234.56`-style costs) out of the user-authored title/reason before either can reach a locked screen — conservative by design, so an innocuous slash-word being redacted is preferred over a real leak. The deep link (`url: /admin/sessions/:slug`) and the coalescing `tag` (`shipwright-session-:slug`) are the only fields allowed to carry the session slug; neither is rendered on the lock screen.
 
-`PushService.notifySession()` (`admin/src/push-service.ts`) is currently **unwired** — nothing in the codebase calls it outside its own tests. Its caller (a session-lifecycle event source, e.g. the future reminder job) has not landed yet; the payload content it builds today is a documented placeholder pending that wiring.
+`PushService.notifySession()` (`admin/src/push-service.ts`) is called by `session-alert-sweeper.ts` — the session-lifecycle event source this payload logic was built for — once per non-muted, still-visible follower: with kind `"immediate"`/`"reminder"` for a session still waiting on them, and `"completed"` when the session closes.
 
 ## `/admin/settings/notifications` page
 
@@ -84,11 +84,10 @@ isSessionVisible(session, scope): boolean
 
 The module deliberately takes already-resolved `isAdmin`/`memberships`/session data as plain arguments rather than performing its own email lookup or task-store fetch — every real caller already has `isAdmin` from its own auth context and can resolve the rest itself, which keeps this module trivially unit-testable against plain fixtures.
 
-**As of 2026-09-11, this visibility model is wired into exactly one route: `POST /admin/sessions/:slug/follow`** (via `memberCanSeeSession()` in `admin-ui-session-follow.ts`, which fails closed — returns not-visible — whenever `fetchTaskStoreSession` is unconfigured, the session lookup fails, or the session doesn't exist). It is **not yet wired into**:
+**As of 2026-09-12, this visibility model is wired into `POST /admin/sessions/:slug/follow`** (via `memberCanSeeSession()` in `admin-ui-session-follow.ts`, which fails closed — returns not-visible — whenever `fetchTaskStoreSession` is unconfigured, the session lookup fails, or the session doesn't exist) **and into the session-alert-sweeper background job** (`session-alert-sweeper.ts` imports `isSessionVisible`/`visibleAgentIdsFor` directly to prune any follower who has lost visibility of a session before sending it a push). It is **not yet wired into**:
 
 - The session detail page (`GET /admin/sessions/:id`) — currently gated admin-only (`requireAuth` plus an `isAdmin` check returning `403 Forbidden`), so it is *more* restrictive than this model rather than more permissive: a non-admin member can't reach their own visible sessions here at all
 - `/admin/sessions/:slug/unfollow` (skips the check by design — see above)
 - `/admin/settings/notifications` (admin-only gate instead; a non-admin member never reaches a place that would need this check)
-- Any future reminder/sweeper job
 
-Wiring the remaining routes/jobs to this same visibility model is tracked as follow-up work, not part of this doc's scope.
+Wiring the remaining routes to this same visibility model is tracked as follow-up work, not part of this doc's scope.
