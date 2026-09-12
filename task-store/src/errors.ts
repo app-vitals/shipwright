@@ -68,3 +68,10 @@ export class PayloadTooLargeError extends ApiError {
     this.name = "PayloadTooLargeError";
   }
 }
+
+export class WebhookDeliveryError extends ApiError {
+  constructor(message = "Webhook delivery failed") {
+    super(502, message);
+    this.name = "WebhookDeliveryError";
+  }
+}
