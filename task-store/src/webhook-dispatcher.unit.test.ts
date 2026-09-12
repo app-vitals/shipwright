@@ -36,7 +36,13 @@ const WEBHOOK_URL = "https://example.com/webhooks/task-store";
 describe("createWebhookDispatcher", () => {
   test("posts the envelope {type, data} to the configured url", async () => {
     const { fn, calls } = fakeFetch(() => new Response(null, { status: 200 }));
-    const dispatch = createWebhookDispatcher(WEBHOOK_URL, "tok", 5000, fn);
+    const dispatch = createWebhookDispatcher(
+      WEBHOOK_URL,
+      "tok",
+      "sign",
+      5000,
+      fn,
+    );
 
     await dispatch("task.created", { id: "t-1" });
 
@@ -52,6 +58,7 @@ describe("createWebhookDispatcher", () => {
     const dispatch = createWebhookDispatcher(
       WEBHOOK_URL,
       "secret-token",
+      "signing-secret",
       5000,
       fn,
     );
@@ -62,11 +69,12 @@ describe("createWebhookDispatcher", () => {
     expect(headers.Authorization).toBe("Bearer secret-token");
   });
 
-  test("sends X-Shipwright-Signature as sha256={hmac} of the raw body keyed by token", async () => {
+  test("sends X-Shipwright-Signature as sha256={hmac} of the raw body keyed by the signing secret, not the token", async () => {
     const { fn, calls } = fakeFetch(() => new Response(null, { status: 200 }));
     const dispatch = createWebhookDispatcher(
       WEBHOOK_URL,
       "secret-token",
+      "signing-secret",
       5000,
       fn,
     );
@@ -74,16 +82,31 @@ describe("createWebhookDispatcher", () => {
     await dispatch("task.created", { id: "t-1" });
 
     const body = calls[0]?.init?.body as string;
-    const expectedHmac = createHmac("sha256", "secret-token")
+    const headers = calls[0]?.init?.headers as Record<string, string>;
+    const expectedHmac = createHmac("sha256", "signing-secret")
       .update(body)
       .digest("hex");
-    const headers = calls[0]?.init?.headers as Record<string, string>;
     expect(headers["X-Shipwright-Signature"]).toBe(`sha256=${expectedHmac}`);
+
+    // The bearer token must never be usable as the signing key — otherwise the
+    // signature verifies nothing the Authorization header didn't already.
+    const tokenKeyedHmac = createHmac("sha256", "secret-token")
+      .update(body)
+      .digest("hex");
+    expect(headers["X-Shipwright-Signature"]).not.toBe(
+      `sha256=${tokenKeyedHmac}`,
+    );
   });
 
-  test("omits Authorization and signature headers when no token is set", async () => {
+  test("omits Authorization and signature headers when neither credential is set", async () => {
     const { fn, calls } = fakeFetch(() => new Response(null, { status: 200 }));
-    const dispatch = createWebhookDispatcher(WEBHOOK_URL, undefined, 5000, fn);
+    const dispatch = createWebhookDispatcher(
+      WEBHOOK_URL,
+      undefined,
+      undefined,
+      5000,
+      fn,
+    );
 
     await dispatch("task.created", { id: "t-1" });
 
@@ -92,9 +115,53 @@ describe("createWebhookDispatcher", () => {
     expect(headers["X-Shipwright-Signature"]).toBeUndefined();
   });
 
+  test("omits the signature header (signing disabled) when a token is set but no signing secret is", async () => {
+    const { fn, calls } = fakeFetch(() => new Response(null, { status: 200 }));
+    const dispatch = createWebhookDispatcher(
+      WEBHOOK_URL,
+      "secret-token",
+      undefined,
+      5000,
+      fn,
+    );
+
+    await dispatch("task.created", { id: "t-1" });
+
+    const headers = calls[0]?.init?.headers as Record<string, string>;
+    expect(headers.Authorization).toBe("Bearer secret-token");
+    // No fallback to keying the HMAC with the bearer token.
+    expect(headers["X-Shipwright-Signature"]).toBeUndefined();
+  });
+
+  test("signs without an Authorization header when only a signing secret is set", async () => {
+    const { fn, calls } = fakeFetch(() => new Response(null, { status: 200 }));
+    const dispatch = createWebhookDispatcher(
+      WEBHOOK_URL,
+      undefined,
+      "signing-secret",
+      5000,
+      fn,
+    );
+
+    await dispatch("task.created", { id: "t-1" });
+
+    const body = calls[0]?.init?.body as string;
+    const headers = calls[0]?.init?.headers as Record<string, string>;
+    expect(headers.Authorization).toBeUndefined();
+    expect(headers["X-Shipwright-Signature"]).toBe(
+      `sha256=${createHmac("sha256", "signing-secret").update(body).digest("hex")}`,
+    );
+  });
+
   test("sets an AbortSignal.timeout using the configured timeoutMs", async () => {
     const { fn, calls } = fakeFetch(() => new Response(null, { status: 200 }));
-    const dispatch = createWebhookDispatcher(WEBHOOK_URL, "tok", 1234, fn);
+    const dispatch = createWebhookDispatcher(
+      WEBHOOK_URL,
+      "tok",
+      "sign",
+      1234,
+      fn,
+    );
 
     await dispatch("task.created", { id: "t-1" });
 
@@ -103,7 +170,13 @@ describe("createWebhookDispatcher", () => {
 
   test("throws WebhookDeliveryError on a non-2xx response", async () => {
     const { fn } = fakeFetch(() => new Response(null, { status: 503 }));
-    const dispatch = createWebhookDispatcher(WEBHOOK_URL, "tok", 5000, fn);
+    const dispatch = createWebhookDispatcher(
+      WEBHOOK_URL,
+      "tok",
+      "sign",
+      5000,
+      fn,
+    );
 
     await expect(
       dispatch("task.created", { id: "t-1" }),
@@ -114,7 +187,13 @@ describe("createWebhookDispatcher", () => {
     const fn = async (): Promise<Response> => {
       throw new Error("network unreachable");
     };
-    const dispatch = createWebhookDispatcher(WEBHOOK_URL, "tok", 5000, fn);
+    const dispatch = createWebhookDispatcher(
+      WEBHOOK_URL,
+      "tok",
+      "sign",
+      5000,
+      fn,
+    );
 
     await expect(
       dispatch("task.created", { id: "t-1" }),
@@ -129,7 +208,13 @@ describe("createWebhookDispatcher", () => {
       );
       throw err;
     };
-    const dispatch = createWebhookDispatcher(WEBHOOK_URL, "tok", 5000, fn);
+    const dispatch = createWebhookDispatcher(
+      WEBHOOK_URL,
+      "tok",
+      "sign",
+      5000,
+      fn,
+    );
 
     await expect(
       dispatch("task.created", { id: "t-1" }),
@@ -138,7 +223,13 @@ describe("createWebhookDispatcher", () => {
 
   test("no-ops (never calls fetchImpl, resolves) when url is unset", async () => {
     const { fn, calls } = fakeFetch(() => new Response(null, { status: 200 }));
-    const dispatch = createWebhookDispatcher(undefined, "tok", 5000, fn);
+    const dispatch = createWebhookDispatcher(
+      undefined,
+      "tok",
+      "sign",
+      5000,
+      fn,
+    );
 
     await expect(
       dispatch("task.created", { id: "t-1" }),
@@ -148,7 +239,7 @@ describe("createWebhookDispatcher", () => {
 
   test("no-ops when url is an empty string", async () => {
     const { fn, calls } = fakeFetch(() => new Response(null, { status: 200 }));
-    const dispatch = createWebhookDispatcher("", "tok", 5000, fn);
+    const dispatch = createWebhookDispatcher("", "tok", "sign", 5000, fn);
 
     await expect(
       dispatch("task.created", { id: "t-1" }),

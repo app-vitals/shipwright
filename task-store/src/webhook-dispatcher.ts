@@ -8,11 +8,19 @@
  *     Authorization: Bearer {webhookToken}          (only when a token is set)
  *     X-Shipwright-Signature: sha256={hmac}          (HMAC-SHA256 over the raw
  *                                                      body, keyed by the
- *                                                      token; only when a
- *                                                      token is set — there's
- *                                                      no key to sign with
- *                                                      otherwise)
+ *                                                      *signing secret*; only
+ *                                                      when a signing secret
+ *                                                      is set — there's no key
+ *                                                      to sign with otherwise)
  *     { "type": string, "data": unknown }
+ *
+ * The bearer token and the signing secret are deliberately two separate
+ * credentials. Signing with the bearer token would add no verification
+ * independent of the bearer check: anyone who can observe the `Authorization`
+ * header on the receiving side (access logs, a proxy, APM tooling) would
+ * already hold the key needed to forge the signature. This mirrors how the
+ * repo already separates `SLACK_SIGNING_SECRET` from `SLACK_BOT_TOKEN` /
+ * `SLACK_APP_TOKEN` in `agent/src/config.ts`.
  *
  * Unlike chat/src/reply-notifier.ts (which swallows delivery failures so a
  * push failure can never fail a reply), this dispatcher throws
@@ -41,10 +49,16 @@ export type WebhookDispatcher = (type: string, data: unknown) => Promise<void>;
  * Returns a no-op dispatcher when `url` is falsy (unset/empty) — main.ts
  * wires this unconditionally from env, so TaskService and its callers never
  * need to check whether webhooks are configured.
+ *
+ * `token` is used *only* as the `Authorization: Bearer` credential and
+ * `signingSecret` *only* as the HMAC key; the two are never interchanged. Each
+ * is independently optional: configuring one does not imply the other, so an
+ * operator can run bearer-auth-only, signature-only, both, or neither.
  */
 export function createWebhookDispatcher(
   url: string | undefined,
   token: string | undefined,
+  signingSecret: string | undefined,
   timeoutMs: number,
   fetchImpl: FetchLike = fetch,
 ): WebhookDispatcher {
@@ -59,8 +73,10 @@ export function createWebhookDispatcher(
     };
     if (token) {
       headers.Authorization = `Bearer ${token}`;
+    }
+    if (signingSecret) {
       headers["X-Shipwright-Signature"] =
-        `sha256=${createHmac("sha256", token).update(body).digest("hex")}`;
+        `sha256=${createHmac("sha256", signingSecret).update(body).digest("hex")}`;
     }
 
     let res: Response;

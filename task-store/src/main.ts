@@ -127,6 +127,11 @@ async function startServer(): Promise<void> {
   // TaskService — no branching on config presence at any call site.
   const webhookUrl = process.env.SHIPWRIGHT_TASK_STORE_WEBHOOK_URL;
   const webhookToken = process.env.SHIPWRIGHT_TASK_STORE_WEBHOOK_TOKEN;
+  // Distinct from the bearer token on purpose — the HMAC key must not be a
+  // value the receiver already sees in the Authorization header, or the
+  // signature verifies nothing the bearer check didn't already.
+  const webhookSigningSecret =
+    process.env.SHIPWRIGHT_TASK_STORE_WEBHOOK_SIGNING_SECRET;
   const webhookTimeoutMs = Number(
     process.env.SHIPWRIGHT_TASK_STORE_WEBHOOK_TIMEOUT_MS ??
       DEFAULT_WEBHOOK_TIMEOUT_MS,
@@ -134,11 +139,21 @@ async function startServer(): Promise<void> {
   const webhookDispatcher = createWebhookDispatcher(
     webhookUrl,
     webhookToken,
+    webhookSigningSecret,
     webhookTimeoutMs,
   );
 
   if (webhookUrl) {
     console.log(`[task-store] webhook dispatcher configured (${webhookUrl})`);
+    if (!webhookSigningSecret) {
+      console.log(
+        "[task-store] webhook request signing disabled (SHIPWRIGHT_TASK_STORE_WEBHOOK_SIGNING_SECRET not set)",
+      );
+    } else if (webhookSigningSecret === webhookToken) {
+      console.warn(
+        "[task-store] SHIPWRIGHT_TASK_STORE_WEBHOOK_SIGNING_SECRET matches SHIPWRIGHT_TASK_STORE_WEBHOOK_TOKEN — the signature adds no verification beyond the bearer token; use a separate value",
+      );
+    }
   } else {
     console.log(
       "[task-store] webhook dispatcher disabled (SHIPWRIGHT_TASK_STORE_WEBHOOK_URL not set)",
