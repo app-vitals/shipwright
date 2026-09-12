@@ -25,8 +25,10 @@ import { SessionService } from "./session-service.ts";
 import { StaleClaimReaper } from "./stale-claim-reaper.ts";
 import { TaskService } from "./task-service.ts";
 import { TaskTokenService } from "./token-service.ts";
+import { createWebhookDispatcher } from "./webhook-dispatcher.ts";
 
 const DEFAULT_PORT = 3000;
+const DEFAULT_WEBHOOK_TIMEOUT_MS = 5000;
 
 // ─── Readiness check ──────────────────────────────────────────────────────────
 
@@ -118,7 +120,32 @@ async function startServer(): Promise<void> {
   await runMigrations();
 
   const prisma = new PrismaClient();
-  const taskService = new TaskService(prisma);
+
+  // Build the outbound event dispatcher when a webhook URL is configured.
+  // createWebhookDispatcher itself returns a no-op when the URL is unset, so
+  // this can be constructed unconditionally and passed straight into
+  // TaskService — no branching on config presence at any call site.
+  const webhookUrl = process.env.SHIPWRIGHT_TASK_STORE_WEBHOOK_URL;
+  const webhookToken = process.env.SHIPWRIGHT_TASK_STORE_WEBHOOK_TOKEN;
+  const webhookTimeoutMs = Number(
+    process.env.SHIPWRIGHT_TASK_STORE_WEBHOOK_TIMEOUT_MS ??
+      DEFAULT_WEBHOOK_TIMEOUT_MS,
+  );
+  const webhookDispatcher = createWebhookDispatcher(
+    webhookUrl,
+    webhookToken,
+    webhookTimeoutMs,
+  );
+
+  if (webhookUrl) {
+    console.log(`[task-store] webhook dispatcher configured (${webhookUrl})`);
+  } else {
+    console.log(
+      "[task-store] webhook dispatcher disabled (SHIPWRIGHT_TASK_STORE_WEBHOOK_URL not set)",
+    );
+  }
+
+  const taskService = new TaskService(prisma, undefined, webhookDispatcher);
   const tokenService = new TaskTokenService(prisma);
   const pullRequestService = new PullRequestService(prisma);
   const sessionService = new SessionService(prisma, undefined, (pairs) =>

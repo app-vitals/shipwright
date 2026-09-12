@@ -299,6 +299,15 @@ export class TaskService implements TaskServiceLike {
   constructor(
     private prisma: PrismaClient,
     private clock: Clock = SystemClock(),
+    // Injected outbound event dispatcher (TSW-1.1). Defaults to a no-op so
+    // existing call sites (`new TaskService(prisma)` /
+    // `new TaskService(prisma, clock)`) are unaffected. Not yet invoked from
+    // any method here — wiring specific task-store events to fire it is
+    // future work.
+    private webhookDispatcher: (
+      type: string,
+      data: unknown,
+    ) => Promise<void> = async () => {},
   ) {
     this.sessionService = new SessionService(prisma, clock);
   }
