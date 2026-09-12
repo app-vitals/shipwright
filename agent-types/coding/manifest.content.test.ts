@@ -88,12 +88,36 @@ describe("agent-types/coding/manifest.yaml — required top-level sections", () 
   });
 });
 
-// ─── Acceptance criterion 2 — exactly 12 cron entries ──────────────────────
+// ─── Acceptance criterion 2 — exactly 13 cron entries ──────────────────────
 
 describe("agent-types/coding/manifest.yaml — cron count", () => {
-  it("has exactly 12 cron entries", () => {
+  it("has exactly 13 cron entries", () => {
     const manifest = parseAgentTypeManifest(rawContent);
-    expect(manifest.crons).toHaveLength(12);
+    expect(manifest.crons).toHaveLength(13);
+  });
+});
+
+// ─── PDR-4.1 — the autonomous plan-session phase cron ──────────────────────
+
+describe("agent-types/coding/manifest.yaml — shipwright-plan phase cron", () => {
+  const manifest = parseAgentTypeManifest(rawContent);
+  const planCron = manifest.crons.find((c) => c.name === "shipwright-plan");
+
+  it("declares a shipwright-plan cron", () => {
+    expect(planCron).toBeDefined();
+  });
+
+  it("is a child of shipwright-loop, like the other pipeline phases", () => {
+    expect(planCron?.parentCron).toBe("shipwright-loop");
+  });
+
+  it("runs /shipwright:plan-session, silently", () => {
+    expect(planCron?.prompt).toBe("/shipwright:plan-session");
+    expect(planCron?.silent).toBe(true);
+  });
+
+  it("ships disabled (new system crons always ship disabled)", () => {
+    expect(planCron?.enabled).toBe(false);
   });
 });
 

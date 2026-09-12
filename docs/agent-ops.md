@@ -51,14 +51,15 @@ On the agent's next config sync, Claude will no longer have access to shell exec
 
 Every new agent is seeded with the system crons declared by its **agent type manifest** — the source of truth is [`agent-types/{typeName}/manifest.yaml`](../agent-types/coding/manifest.yaml)'s `crons` array (e.g. the `coding` type's thirteen crons). The agent's stored `typeName` is resolved to its manifest at reconcile time via the `AgentTypeRegistry` ([`admin/src/agent-type-manifest-loader.ts`](../admin/src/agent-type-manifest-loader.ts)); an unknown `typeName` falls back to the `coding` manifest with a logged warning, so the boot path never fails. The manifest is reconciled onto each agent at startup via `POST /agents/:id/crons/reconcile`. Reconciliation uses a two-pass strategy: Pass 1 creates or updates each system cron entry (preserving existing IDs for FK stability), recording each into a name → id map. Pass 2 resolves parent/child links by looking up parent cron names in the map and setting `parentCronId` on declared child crons, clearing any existing `parentCronId` back to `null` when an entry no longer declares a resolvable `parentCron` — self-healing the link on every agent boot in both directions with no manual migration. Three are **enabled by default** (`shipwright-dev-task`, `shipwright-review`, `shipwright-patch`); the rest are opt-in (toggle in the admin UI). System crons cannot be modified via the API — they are read-only after creation and are kept in sync with the manifest's cron definitions via the reconciliation process. All run `silent` (they post to Slack only on a result worth surfacing, or on error). Some carry a `preCheck` script whose stdout becomes the actual prompt, so a cron only spends a Claude turn when there is real work ready.
 
-The four pipeline crons (`shipwright-dev-task`, `shipwright-review`, `shipwright-patch`,
-`shipwright-deploy`) are **loop-driven, item-addressed executors, not self-discovering
-standalone crons.** They are linked as child crons of `shipwright-loop` (via `parentCronId`),
-which is the sole supported driver for these four phases: its in-process candidate providers
-(`agent/src/check-dev-task.ts`, `check-review.ts`, `check-patch.ts`, `check-deploy.ts`) select
-a winning candidate each tick and `loop-orchestrator.ts` dispatches the matching command with an
-explicit task id or `org/repo#number` embedded in the prompt. None of the four commands scans
-for its own work — each responds `[silent]` and exits immediately if invoked with no target.
+The five pipeline crons (`shipwright-plan`, `shipwright-dev-task`, `shipwright-review`,
+`shipwright-patch`, `shipwright-deploy`) are **loop-driven, item-addressed executors, not
+self-discovering standalone crons.** They are linked as child crons of `shipwright-loop` (via
+`parentCronId`), which is the sole supported driver for these five phases: its in-process
+candidate providers (`agent/src/check-plan.ts`, `check-dev-task.ts`, `check-review.ts`,
+`check-patch.ts`, `check-deploy.ts`) select a winning candidate each tick and
+`loop-orchestrator.ts` dispatches the matching command with an explicit task id or
+`org/repo#number` embedded in the prompt. None of the five commands scans for its own work —
+each responds `[silent]` and exits immediately if invoked with no target.
 This means a standalone pipeline cron (`shipwright-loop` disabled) is **silently inert**: its
 stored prompt (e.g. `/shipwright:dev-task`) carries no target, so every tick dispatches, goes
 `[silent]`, and does nothing. See [migration.md](./migration.md) for the breaking-change
@@ -66,6 +67,7 @@ note and the fix (enable `shipwright-loop`).
 
 | Cron | Schedule (cron expr) | Default | What it does |
 |---|---|---|---|
+| `shipwright-plan` | `* * * * *` (every minute) | off | Runs an autonomous planning session for the PRD task `shipwright-loop` selects (dispatched as `/shipwright:plan-session {repo} {session} --autonomous {task-id}`). Candidates come from `agent/src/check-plan.ts` — task-store tasks flagged `autonomousPlanSession: true` and still `pending`. **Double-gated:** this cron toggle AND the `SHIPWRIGHT_AGENT_AUTONOMOUS_PLAN_SESSION_ENABLED` env var must both be on; with the env var unset the loop never collects or dispatches a plan candidate. Standalone (loop disabled): inert — see above. |
 | `shipwright-dev-task` | `* * * * *` (every minute) | **on** | Builds and ships a PR for the task `shipwright-loop` selects (dispatched with an explicit task id). Standalone (loop disabled): inert — see above. |
 | `shipwright-review` | `* * * * *` (every minute) | **on** | Reviews the PR `shipwright-loop` selects (dispatched with an explicit `org/repo#number`). Standalone (loop disabled): inert — see above. |
 | `shipwright-patch` | `* * * * *` (every minute) | **on** | Patches the PR `shipwright-loop` selects (dispatched with an explicit `org/repo#number`). Standalone (loop disabled): inert — see above. |

@@ -11,12 +11,15 @@
  * anything left claimed.
  *
  * Each tick, while not busy:
- *   1. Read the four independent phase toggles for this agent (dev-task /
- *      review / patch / deploy) via resolveLoopPhaseToggles — never
+ *   1. Read the five independent phase toggles for this agent (dev-task /
+ *      plan / review / patch / deploy) via resolveLoopPhaseToggles — never
  *      shipwright-review-patch's flag, and never invoking /shipwright:review-patch.
- *   2. For each enabled phase, call its WL-2.2 qualification function to get
+ *      The plan phase (PDR-4.1) additionally requires the
+ *      SHIPWRIGHT_AGENT_AUTONOMOUS_PLAN_SESSION_ENABLED kill switch; with it
+ *      unset the tick behaves byte-for-byte as it did before PDR-4.1.
+ *   2. For each enabled phase, call its qualification function to get
  *      structured candidates. Merge the enabled phases' PR candidate lists into
- *      one array.
+ *      one array, and dev-task's + plan's task candidate lists into another.
  *   3. Call work-selector.ts's selectNextWorkItem(tasks, mergedPrs) exactly
  *      once — strict age-based FIFO across both entity types, no phase bias.
  *   4. If it returns an item, pre-claim it against the task store BEFORE
@@ -28,10 +31,12 @@
  *      (see formatPreClaimMarker) is appended to the dispatched command
  *      string so a future downstream skill (CBD-1.4/1.5/1.6) can recognize
  *      and trust it instead of re-claiming and 409ing against itself. Then
- *      dispatch the correct one-shot command by the item's type (task →
- *      /shipwright:dev-task) or its phase tag (pr → /shipwright:review |
- *      /shipwright:patch | /shipwright:deploy) via the injected claude
- *      runner, and report the run.
+ *      dispatch the correct one-shot command by the item's phase tag (task →
+ *      /shipwright:dev-task | /shipwright:plan-session; pr →
+ *      /shipwright:review | /shipwright:patch | /shipwright:deploy) via the
+ *      injected claude runner, and report the run. Every phase's command is
+ *      `{command} {itemId}` except plan's, which is
+ *      `{command} {repo} {session} --autonomous {itemId}`.
  *   5. Repeat immediately (not waiting for the next cron tick) while work
  *      remains. Stop when nothing is selected. A dispatch that throws (e.g.
  *      the runner times out or errors) is caught, reported, and skipped —
@@ -83,13 +88,17 @@ import {
   getPatchCandidates,
 } from "./check-patch.ts";
 import {
+  buildProductionDeps as buildPlanDeps,
+  getPlanCandidates,
+} from "./check-plan.ts";
+import {
   buildProductionDeps as buildReviewDeps,
   getReviewCandidates,
 } from "./check-review.ts";
 import {
   ClaudeRunError,
-  ClaudeTimeoutError,
   type ClaudeRunResult,
+  ClaudeTimeoutError,
   type ProgressCallback,
   reportClaudeError,
 } from "./claude.ts";
@@ -114,12 +123,25 @@ import {
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
-/** The phase a dispatched run serves — used to tag the AgentCronRun row. */
-export type LoopPhase = "dev-task" | "review" | "patch" | "deploy";
+/**
+ * The phase a dispatched run serves — used to tag the AgentCronRun row.
+ * "plan" (PDR-4.1) is the autonomous plan-session phase; unlike the other
+ * four it is gated behind BOTH its manifest cron toggle and the
+ * SHIPWRIGHT_AGENT_AUTONOMOUS_PLAN_SESSION_ENABLED kill switch.
+ */
+export type LoopPhase = "dev-task" | "plan" | "review" | "patch" | "deploy";
 
 export interface LoopOrchestratorDeps {
   /** WL-2.2 dev-task qualification, pre-wired over its own production deps. */
   getDevTaskCandidates: () => Promise<WorkTaskCandidate[]>;
+  /**
+   * PDR-4.1 autonomous plan-session qualification — candidates tagged
+   * `phase: "plan"` and carrying the task's repo/session (check-plan.ts).
+   * Optional: an orchestrator constructed without it behaves exactly as it
+   * does today, and it is only ever CALLED when both the `shipwright-plan`
+   * toggle and SHIPWRIGHT_AGENT_AUTONOMOUS_PLAN_SESSION_ENABLED are on.
+   */
+  getPlanCandidates?: () => Promise<WorkTaskCandidate[]>;
   /** WL-2.2 review qualification — candidates tagged phase: "review". */
   getReviewCandidates: () => Promise<WorkPrCandidate[]>;
   /** WL-2.2 patch qualification — candidates tagged phase: "patch". */
@@ -232,10 +254,47 @@ export interface LoopOrchestratorDeps {
  */
 const PHASE_COMMANDS: Record<LoopPhase, string> = {
   "dev-task": "/shipwright:dev-task",
+  plan: "/shipwright:plan-session",
   review: "/shipwright:review",
   patch: "/shipwright:patch",
   deploy: "/shipwright:deploy",
 };
+
+/**
+ * PDR-4.1 — the code-level kill switch gating the autonomous plan-session
+ * phase, separate from (and ANDed with) the `shipwright-plan` manifest cron
+ * toggle. Both must be on for plan candidates to be collected at all. With
+ * this unset, the plan branch is structurally unreachable and the tick's
+ * behavior is byte-for-byte what it is today.
+ */
+const AUTONOMOUS_PLAN_SESSION_ENV =
+  "SHIPWRIGHT_AGENT_AUTONOMOUS_PLAN_SESSION_ENABLED";
+
+/**
+ * Reads a strict `"true"` boolean env var. Read fresh on every call (never
+ * cached) so an operator's env change takes effect on the very next tick
+ * without a restart — same contract as readPositiveIntEnv below.
+ */
+function readBooleanEnv(name: string): boolean {
+  return process.env[name] === "true";
+}
+
+/**
+ * Builds the plan phase's command arguments:
+ * `{repo} {session} --autonomous {task-id}`, matching
+ * plugins/shipwright/commands/plan-session.md's argument contract (repo
+ * first, session second, then the `--autonomous {task-id}` flag). Returns
+ * null when the candidate lacks either field, which check-plan.ts already
+ * filters out — kept here as a typed guard so an injected/foreign candidate
+ * provider can't produce a `/shipwright:plan-session undefined undefined`
+ * dispatch.
+ */
+export function buildPlanCommandArgs(task: WorkTaskCandidate): string | null {
+  const repo = task.repo?.trim();
+  const session = task.session?.trim();
+  if (!repo || !session) return null;
+  return `${repo} ${session} --autonomous ${task.id}`;
+}
 
 /**
  * Threshold for spin detection: when the same itemId is dispatched this many
@@ -400,6 +459,7 @@ export function createLoopOrchestrator(
 ): (jobs: CronJobLike[]) => Promise<void> {
   const {
     getDevTaskCandidates,
+    getPlanCandidates,
     getReviewCandidates,
     getPatchCandidates,
     getDeployCandidates,
@@ -518,10 +578,19 @@ export function createLoopOrchestrator(
     itemId: string,
     recordId: string,
     preClaimMarker?: string,
+    commandArgs?: string,
   ): Promise<void> {
+    // `commandArgs` (PDR-4.1) is the argument string appended after the
+    // phase's slash command. It defaults to the bare `itemId` — today's
+    // behavior for every phase — and is only overridden by the plan phase,
+    // whose command contract is `{repo} {session} --autonomous {task-id}`
+    // rather than a bare id. `itemId` itself stays the plain task/PR id
+    // everywhere else (cron-run-reporter tagging, spin detection,
+    // recordSkip/resetSkip dedup) regardless.
+    const args = commandArgs ?? itemId;
     const command = preClaimMarker
-      ? `${PHASE_COMMANDS[phase]} ${itemId} ${preClaimMarker}`
-      : `${PHASE_COMMANDS[phase]} ${itemId}`;
+      ? `${PHASE_COMMANDS[phase]} ${args} ${preClaimMarker}`
+      : `${PHASE_COMMANDS[phase]} ${args}`;
     const message = formatCronMessage(loopCronId, command);
     const runId = await cronRunReporter.createRun(
       loopCronId,
@@ -751,6 +820,7 @@ export function createLoopOrchestrator(
     itemId: string,
     recordId: string,
     preClaimMarker?: string,
+    commandArgs?: string,
   ): Promise<void> {
     if (!sentryClient?.withScope) {
       return dispatchItem(
@@ -760,6 +830,7 @@ export function createLoopOrchestrator(
         itemId,
         recordId,
         preClaimMarker,
+        commandArgs,
       );
     }
     return sentryClient.withScope(async (scope) => {
@@ -772,6 +843,7 @@ export function createLoopOrchestrator(
         itemId,
         recordId,
         preClaimMarker,
+        commandArgs,
       );
     });
   }
@@ -937,6 +1009,25 @@ export function createLoopOrchestrator(
             )
           : [];
 
+        // PDR-4.1: the autonomous plan-session phase's candidates join the
+        // SAME merged task pool dev-task's do — no phase-priority bias, the
+        // age-based FIFO below picks the winner across both. Gated behind
+        // BOTH the shipwright-plan cron toggle and the
+        // SHIPWRIGHT_AGENT_AUTONOMOUS_PLAN_SESSION_ENABLED kill switch (read
+        // fresh every iteration, never cached, so an operator's env change
+        // lands on the very next tick). With the env var unset this
+        // condition is always false, so zero new candidates ever enter the
+        // pool and every pre-PDR-4.1 code path below is untouched.
+        const planEnabled =
+          toggles.plan && readBooleanEnv(AUTONOMOUS_PLAN_SESSION_ENV);
+        if (planEnabled && getPlanCandidates) {
+          tasks.push(
+            ...(await getPlanCandidates()).filter(
+              (t) => !failedPreClaimTaskIds.has(t.id),
+            ),
+          );
+        }
+
         const allPrs: WorkPrCandidate[] = [];
         if (toggles.review) allPrs.push(...(await getReviewCandidates()));
         if (toggles.patch) allPrs.push(...(await getPatchCandidates()));
@@ -970,13 +1061,34 @@ export function createLoopOrchestrator(
         // Only NOW does anything reach the reporter — a phase that found no
         // candidates never logged a row (noise guard).
         const phase: LoopPhase =
-          item.type === "task" ? "dev-task" : (item.pr.phase ?? "review");
+          item.type === "task"
+            ? (item.task.phase ?? "dev-task")
+            : (item.pr.phase ?? "review");
         const phaseId = resolveLoopPhaseJobId(
           jobs,
           loopCronId,
           `shipwright-${phase}`,
         );
         const itemId = item.type === "task" ? item.task.id : item.pr.id;
+
+        // PDR-4.1: the plan phase is the only one whose dispatched command
+        // isn't `{command} {itemId}` — it needs the task's repo and session
+        // too (see buildPlanCommandArgs). Built BEFORE the pre-claim below
+        // so a candidate that can't produce a well-formed command is never
+        // claimed in the first place. check-plan.ts already filters these
+        // out, so this only fires for a foreign/injected candidate provider.
+        let commandArgs: string | undefined;
+        if (phase === "plan" && item.type === "task") {
+          const planArgs = buildPlanCommandArgs(item.task);
+          if (planArgs === null) {
+            console.warn(
+              `Plan candidate ${itemId} is missing repo and/or session — cannot build /shipwright:plan-session arguments, skipping for this tick`,
+            );
+            failedPreClaimTaskIds.add(itemId);
+            continue;
+          }
+          commandArgs = planArgs;
+        }
 
         // Pre-claim: a selected item must be claimed directly against the task
         // store before dispatch — dev-task items via claimTask (CBD-1.2), PR
@@ -1105,6 +1217,7 @@ export function createLoopOrchestrator(
             itemId,
             recordId,
             preClaimMarker,
+            commandArgs,
           );
         } catch (err) {
           // Throw isolation for the runner itself: dispatch() already
@@ -1258,7 +1371,7 @@ export interface LoopOrchestratorProductionOptions {
 }
 
 /**
- * Wire the four WL-2.2 qualification functions over their real production deps
+ * Wire the five qualification functions over their real production deps
  * and return an orchestrator ready for the cron-sync call site. Each phase's
  * deps are built once here (they read the workspace repo list and self-review
  * policy) and reused across ticks — the closures they hold re-query GitHub /
@@ -1274,6 +1387,13 @@ export async function createProductionLoopOrchestrator(
   opts: LoopOrchestratorProductionOptions,
 ): Promise<(jobs: CronJobLike[]) => Promise<void>> {
   const devTaskDeps = buildDevTaskDeps();
+  // PDR-4.1: built unconditionally alongside devTaskDeps (same synchronous,
+  // task-store-only wiring and the same SHIPWRIGHT_AGENT_ID precondition, so
+  // no new failure mode). The phase itself stays inert until both the
+  // shipwright-plan cron toggle and
+  // SHIPWRIGHT_AGENT_AUTONOMOUS_PLAN_SESSION_ENABLED are on — this provider
+  // is never even called otherwise.
+  const planDeps = buildPlanDeps();
   const reviewDeps = await buildReviewDeps({ ghJson, ghGraphql });
   const patchDeps = await buildPatchDeps({ ghJson, ghGraphql, getCurrentUser });
   const deployDeps = await buildDeployDeps({ ghJson });
@@ -1281,6 +1401,7 @@ export async function createProductionLoopOrchestrator(
 
   return createLoopOrchestrator({
     getDevTaskCandidates: () => getDevTaskCandidates(devTaskDeps),
+    getPlanCandidates: () => getPlanCandidates(planDeps),
     getReviewCandidates: () => getReviewCandidates(reviewDeps),
     getPatchCandidates: () => getPatchCandidates(patchDeps),
     getDeployCandidates: () => getDeployCandidates(deployDeps),

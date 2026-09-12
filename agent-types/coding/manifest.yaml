@@ -57,6 +57,19 @@ metadata:
 identity:
   templatesDir: agent/workspace/
 crons:
+  # PDR-4.1 — the autonomous plan-session phase. Listed first because it is
+  # the producer of the tasks the four phases below consume (dispatch order
+  # within a tick is still the loop's age-based FIFO, not manifest order).
+  # Ships disabled per the "new system crons always ship disabled" rule in
+  # plugins/shipwright/CLAUDE.md; it is additionally gated at the code level
+  # by SHIPWRIGHT_AGENT_AUTONOMOUS_PLAN_SESSION_ENABLED, so BOTH must be on
+  # before the loop collects or dispatches a single plan candidate.
+  - name: shipwright-plan
+    schedule: "* * * * *"
+    prompt: /shipwright:plan-session
+    silent: true
+    enabled: false
+    parentCron: shipwright-loop
   - name: shipwright-dev-task
     schedule: "* * * * *"
     prompt: /shipwright:dev-task

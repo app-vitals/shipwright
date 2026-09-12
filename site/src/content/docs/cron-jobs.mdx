@@ -81,8 +81,8 @@ reconcile runs.
 
 ### Loop-driven vs standalone crons
 
-Not every cron discovers its own work. The four pipeline crons — `shipwright-dev-task`,
-`shipwright-review`, `shipwright-patch`, and `shipwright-deploy` — are children of
+Not every cron discovers its own work. The five pipeline crons — `shipwright-plan`,
+`shipwright-dev-task`, `shipwright-review`, `shipwright-patch`, and `shipwright-deploy` — are children of
 `shipwright-loop` (linked via `parentCronId`). They are **loop-driven, item-addressed executors**,
 not self-discovering standalone crons:
 
@@ -113,11 +113,12 @@ scanning repos for stale docs, or querying Sentry for unresolved errors), with n
 
 | Cron | Schedule | Command | Skill | Default | What it does |
 |---|---|---|---|---|---|
+| `shipwright-plan` | every minute | `/shipwright:plan-session` | — | off | Runs an autonomous planning session for the flagged PRD task `shipwright-loop` selects. Needs both this toggle and the `SHIPWRIGHT_AGENT_AUTONOMOUS_PLAN_SESSION_ENABLED` env var. Inert if `shipwright-loop` is disabled. |
 | `shipwright-dev-task` | every minute | `/shipwright:dev-task` | — | **on** | Builds and ships a PR for the task `shipwright-loop` selects. Inert if `shipwright-loop` is disabled. |
 | `shipwright-review` | every minute | `/shipwright:review` | — | **on** | Reviews the PR `shipwright-loop` selects. Inert if `shipwright-loop` is disabled. |
 | `shipwright-patch` | every minute | `/shipwright:patch` | — | **on** | Patches the PR `shipwright-loop` selects. Inert if `shipwright-loop` is disabled. |
 | `shipwright-deploy` | every minute | `/shipwright:deploy` | — | off | Merges and deploys the PR `shipwright-loop` selects. Inert if `shipwright-loop` is disabled. |
-| `shipwright-loop` | every minute | internal | — | off | Drives the four phases above — merges their candidates and dispatches exactly one winning item per phase, per tick, until the queue is dry. |
+| `shipwright-loop` | every minute | internal | — | off | Drives the five phases above — merges their candidates and dispatches exactly one winning item per phase, per tick, until the queue is dry. |
 | `shipwright-test-readiness` | daily 06:00 | `/shipwright:test-readiness --full --publish` | test-readiness | off | Full test-readiness audit for repos with stale or missing artifacts. |
 | `shipwright-docs-freshness` | daily 07:00 | `/shipwright:research-docs --auto` | — | off | Refreshes docs that have drifted from the code. |
 | `learn-dream` | daily 03:00 | `/shipwright:learn-dream --since 1d --review` | — | off | Mines the last day of merged PRs for durable learnings. |
@@ -146,7 +147,7 @@ cron the agent owns, filterable by **Cron** and **Outcome** (`posted` / `dm` / `
 - **Outcome** — what actually happened on that tick
 - **Started** and **Duration** — when it ran and how long it took
 - **Tokens** and **Model** — token counts and per-model cost, if a Claude turn was actually spent
-- **Phase** — for `shipwright-loop` runs, which phase (dev-task/review/patch/deploy) it dispatched
+- **Phase** — for `shipwright-loop` runs, which phase (plan/dev-task/review/patch/deploy) it dispatched
 - **Item** — the specific Task or PR the run was dispatched against, if any
 
 If you're chasing a specific PR or task, filter or scan for its **Item** badge rather than trying
@@ -176,7 +177,7 @@ Use this table when a cron produces no output or shows an unexpected outcome. Ar
 | A cron run shows outcome `silent` in Cron Logs | Look at the run details — this is normal. The run completed successfully and simply had no qualifying work to report. | Most cron ticks find no work and end silently by design. This is the system working correctly, not a bug. |
 | A cron run shows outcome `skipped` in Cron Logs | Look at the run's outcome in Cron Logs. A `skipped` outcome means the cron's `preCheck` script exited non-zero or produced empty output. The tick was suppressed *before* a Claude turn even started. | This is the expected shape for a cron with no work ready. The `preCheck` script found nothing to act on and correctly short-circuited the expensive Claude run. |
 | A cron never appears in Cron Logs at all (no recent runs, no `silent`, no `skipped`) | Check the enabled/disabled badge on the cron's row in the agent's **Cron Jobs** card in the admin console. | If the badge shows **disabled**, the cron doesn't run at all — `node-cron` never scheduled it in the first place. Re-enable it if you want it to fire. |
-| A pipeline cron (`shipwright-dev-task`, `shipwright-review`, `shipwright-patch`, or `shipwright-deploy`) shows as **enabled** but has no runs in Cron Logs | Check whether `shipwright-loop` itself is enabled in the agent's **Cron Jobs** card (see "Loop-driven vs standalone crons" section above). | A reconciled pipeline cron is a child of `shipwright-loop` and never gets its own independent schedule. Its `enabled` toggle only takes effect once `shipwright-loop` reads it and dispatches that phase directly. If `shipwright-loop` is disabled, the pipeline cron will not fire on its own — there's no standalone tick. Re-enable `shipwright-loop` to restore pipeline dispatch. |
+| A pipeline cron (`shipwright-plan`, `shipwright-dev-task`, `shipwright-review`, `shipwright-patch`, or `shipwright-deploy`) shows as **enabled** but has no runs in Cron Logs | Check whether `shipwright-loop` itself is enabled in the agent's **Cron Jobs** card (see "Loop-driven vs standalone crons" section above). | A reconciled pipeline cron is a child of `shipwright-loop` and never gets its own independent schedule. Its `enabled` toggle only takes effect once `shipwright-loop` reads it and dispatches that phase directly. If `shipwright-loop` is disabled, the pipeline cron will not fire on its own — there's no standalone tick. Re-enable `shipwright-loop` to restore pipeline dispatch. |
 
 ## Next steps
 
