@@ -156,9 +156,9 @@ checkbox (<code>POST /admin/agents/:id/crons</code>).</li>
 </ul>
 <p>Each cron row shows its schedule, prompt (prefixed with its name if set), pre-check path, delivery
 target (channel or user), an enabled/disabled badge, its last-run outcome badge and today’s run count,
-and its creation date. A cron that is itself a parent (e.g. <code>shipwright-loop</code>’s dev-task/review/patch/
-deploy phases) renders a nested “Phases of <code>&lt;parent&gt;</code>” sub-table beneath its row, one line per child
-phase cron with the same Logs/Toggle[/Delete] actions.</p>
+and its creation date. A cron that is itself a parent (e.g. <code>shipwright-loop</code>’s plan/dev-task/review/
+patch/deploy phases) renders a nested “Phases of <code>&lt;parent&gt;</code>” sub-table beneath its row, one line per
+child phase cron with the same Logs/Toggle[/Delete] actions.</p>
 <p><strong>Tools</strong> — a table of tool-pattern rows (e.g. <code>Bash(git:*)</code>) with an enabled/disabled badge, creation
 date, and per-row <strong>Enable/Disable</strong> (<code>POST /admin/agents/:id/tools/:toolId/toggle</code>) and <strong>Delete</strong>
 (<code>POST /admin/agents/:id/tools/:toolId/delete</code>) actions, plus an add form
@@ -181,10 +181,10 @@ chat-service tokens/threads, and (if configured) the Slack app, before deleting 
 links (which pre-select that cron via <code>?cronId=</code>), or directly. This is a single per-agent page — it
 always requires a concrete <code>:id</code> and has no “all agents” scope control. It renders two sections:</p>
 <p><strong>Upcoming</strong> — the agent’s self-reported ranked work queue: the ordered list of tasks/PRs it intends
-to work next across the dev-task/review/patch/deploy phases, as last pushed by the agent itself. If
-no snapshot has ever been reported, the section shows a plain empty-state message instead of
+to work next across the plan/dev-task/review/patch/deploy phases, as last pushed by the agent itself.
+If no snapshot has ever been reported, the section shows a plain empty-state message instead of
 erroring. When a snapshot exists, it shows “Last computed: <code>&lt;relative time&gt;</code>” and a table with
-columns #, Type (Task/PR badge), Phase (dev-task/review/patch/deploy badge), Item (linked id +
+columns #, Type (Task/PR badge), Phase (plan/dev-task/review/patch/deploy badge), Item (linked id +
 title), and Age (relative time, title-hover shows the ISO timestamp).</p>
 <p><strong>Past</strong> — every cron run across every cron the agent owns, filterable by <strong>Cron</strong> (dropdown) and
 <strong>Outcome</strong> (<code>posted</code> / <code>dm</code> / <code>silent</code> / <code>skipped</code> / <code>error</code>), paginated 20 per page. Table columns:

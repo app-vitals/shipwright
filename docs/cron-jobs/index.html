@@ -79,8 +79,8 @@ read-only after creation except for the <code>enabled</code> toggle. Anything el
 preCheck) is owned by the agent type manifest and only changes when the manifest changes and a
 reconcile runs.</p>
 <h3 id="loop-driven-vs-standalone-crons">Loop-driven vs standalone crons</h3>
-<p>Not every cron discovers its own work. The four pipeline crons — <code>shipwright-dev-task</code>,
-<code>shipwright-review</code>, <code>shipwright-patch</code>, and <code>shipwright-deploy</code> — are children of
+<p>Not every cron discovers its own work. The five pipeline crons — <code>shipwright-plan</code>,
+<code>shipwright-dev-task</code>, <code>shipwright-review</code>, <code>shipwright-patch</code>, and <code>shipwright-deploy</code> — are children of
 <code>shipwright-loop</code> (linked via <code>parentCronId</code>). They are <strong>loop-driven, item-addressed executors</strong>,
 not self-discovering standalone crons:</p>
 <ul>
@@ -88,7 +88,7 @@ not self-discovering standalone crons:</p>
 pick exactly one winning candidate.</li>
 <li>The loop orchestrator then dispatches the matching command with an explicit task id or
 <code>org/repo#number</code> embedded directly in the prompt.</li>
-<li>None of the four commands scans for its own work. Each one responds <code>[silent]</code> and exits
+<li>None of the five commands scans for its own work. Each one responds <code>[silent]</code> and exits
 immediately if it’s ever invoked with no target.</li>
 </ul>
 <p>The practical consequence: a reconciled pipeline cron never gets its own independent <code>node-cron</code>
@@ -118,6 +118,14 @@ scanning repos for stale docs, or querying Sentry for unresolved errors), with n
 </tr>
 </thead>
 <tbody>
+<tr>
+<td><code>shipwright-plan</code></td>
+<td>every minute</td>
+<td><code>/shipwright:plan-session</code></td>
+<td>—</td>
+<td>off</td>
+<td>Runs an autonomous planning session for the flagged PRD task <code>shipwright-loop</code> selects. Needs both this toggle and the <code>SHIPWRIGHT_AGENT_AUTONOMOUS_PLAN_SESSION_ENABLED</code> env var. Inert if <code>shipwright-loop</code> is disabled.</td>
+</tr>
 <tr>
 <td><code>shipwright-dev-task</code></td>
 <td>every minute</td>
@@ -156,7 +164,7 @@ scanning repos for stale docs, or querying Sentry for unresolved errors), with n
 <td>internal</td>
 <td>—</td>
 <td>off</td>
-<td>Drives the four phases above — merges their candidates and dispatches exactly one winning item per phase, per tick, until the queue is dry.</td>
+<td>Drives the five phases above — merges their candidates and dispatches exactly one winning item per phase, per tick, until the queue is dry.</td>
 </tr>
 <tr>
 <td><code>shipwright-test-readiness</code></td>
@@ -232,7 +240,7 @@ cron the agent owns, filterable by <strong>Cron</strong> and <strong>Outcome</st
 <li><strong>Outcome</strong> — what actually happened on that tick</li>
 <li><strong>Started</strong> and <strong>Duration</strong> — when it ran and how long it took</li>
 <li><strong>Tokens</strong> and <strong>Model</strong> — token counts and per-model cost, if a Claude turn was actually spent</li>
-<li><strong>Phase</strong> — for <code>shipwright-loop</code> runs, which phase (dev-task/review/patch/deploy) it dispatched</li>
+<li><strong>Phase</strong> — for <code>shipwright-loop</code> runs, which phase (plan/dev-task/review/patch/deploy) it dispatched</li>
 <li><strong>Item</strong> — the specific Task or PR the run was dispatched against, if any</li>
 </ul>
 <p>If you’re chasing a specific PR or task, filter or scan for its <strong>Item</strong> badge rather than trying
@@ -276,7 +284,7 @@ conclusion.</p>
 <td>If the badge shows <strong>disabled</strong>, the cron doesn’t run at all — <code>node-cron</code> never scheduled it in the first place. Re-enable it if you want it to fire.</td>
 </tr>
 <tr>
-<td>A pipeline cron (<code>shipwright-dev-task</code>, <code>shipwright-review</code>, <code>shipwright-patch</code>, or <code>shipwright-deploy</code>) shows as <strong>enabled</strong> but has no runs in Cron Logs</td>
+<td>A pipeline cron (<code>shipwright-plan</code>, <code>shipwright-dev-task</code>, <code>shipwright-review</code>, <code>shipwright-patch</code>, or <code>shipwright-deploy</code>) shows as <strong>enabled</strong> but has no runs in Cron Logs</td>
 <td>Check whether <code>shipwright-loop</code> itself is enabled in the agent’s <strong>Cron Jobs</strong> card (see “Loop-driven vs standalone crons” section above).</td>
 <td>A reconciled pipeline cron is a child of <code>shipwright-loop</code> and never gets its own independent schedule. Its <code>enabled</code> toggle only takes effect once <code>shipwright-loop</code> reads it and dispatches that phase directly. If <code>shipwright-loop</code> is disabled, the pipeline cron will not fire on its own — there’s no standalone tick. Re-enable <code>shipwright-loop</code> to restore pipeline dispatch.</td>
 </tr>

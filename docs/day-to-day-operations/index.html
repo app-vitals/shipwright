@@ -43,7 +43,8 @@ through the admin console’s Chat tab instead.</li>
 <li><strong>Find your agent.</strong> Go to <code>/admin/agents</code> and open your agent’s detail page
 (<code>/admin/agents/:id</code>) to confirm it exists and see its configuration.</li>
 <li><strong>Check which crons are enabled.</strong> The agent detail page lists its cron jobs. Pipeline phase
-crons (<code>shipwright-dev-task</code>, <code>shipwright-review</code>, <code>shipwright-patch</code>, <code>shipwright-deploy</code>) and
+crons (<code>shipwright-plan</code>, <code>shipwright-dev-task</code>, <code>shipwright-review</code>, <code>shipwright-patch</code>,
+<code>shipwright-deploy</code>) and
 the <code>shipwright-loop</code> orchestrator are the ones that drive autonomous work — confirm the set you
 expect is turned on. A standalone phase cron with <code>shipwright-loop</code> disabled is inert, so if
 nothing seems to be happening, that’s the first thing to check.</li>
@@ -53,9 +54,9 @@ the run history for every cron the agent owns, and each run shows an outcome (<c
 it acted on. Filter by <code>?cronId=</code> or <code>?outcome=</code> to narrow the view.</li>
 <li><strong>Check the work queue.</strong> The <strong>Upcoming</strong> section of the same
 <code>/admin/agents/:id/queue-activity</code> page shows the agent’s latest self-reported ranked queue —
-the tasks and PRs it sees as pending work, oldest first, across the dev-task, review, patch, and
-deploy phases. An empty queue with no snapshot yet usually means the agent hasn’t ticked since
-this feature shipped, or <code>shipwright-loop</code> isn’t enabled.</li>
+the tasks and PRs it sees as pending work, oldest first, across the plan, dev-task, review,
+patch, and deploy phases. An empty queue with no snapshot yet usually means the agent hasn’t
+ticked since this feature shipped, or <code>shipwright-loop</code> isn’t enabled.</li>
 <li><strong>Look at open PRs.</strong> <code>/admin/prs</code> lists PRs the agent has opened or is tracking, filterable by
 <code>?state=</code>, <code>?reviewState=</code>, <code>?repo=</code>, and <code>?taskId=</code>. Skim it so you know what’s in flight.</li>
 <li><strong>Look at tasks with an HITL gate.</strong> <code>/admin/tasks?hitl=true</code> filters the task list to tasks
@@ -91,7 +92,7 @@ to scope to a specific repository or task. Opening a PR row (<code>/admin/prs/:i
 useful for checking whether a PR has been sitting in the same review state longer than expected,
 or whether it’s linked back to the task that produced it.</p>
 <p>The <strong>Upcoming</strong> section of <code>/admin/agents/:id/queue-activity</code> complements this: it’s the agent’s
-own ranked view of what it intends to work on next, oldest first, across all four pipeline phases —
+own ranked view of what it intends to work on next, oldest first, across all five pipeline phases —
 handy for confirming the agent agrees with what you see in the PR list.</p>
 <h3 id="noticing-and-responding-to-a-hitl-escalation">Noticing and responding to a HITL escalation</h3>
 <p>Some tasks and PRs require a human before the agent can proceed — the <code>hitl: true</code> field marks
