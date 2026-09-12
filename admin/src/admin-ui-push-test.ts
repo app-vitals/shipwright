@@ -49,6 +49,7 @@ export function registerPushTestRoute(
   deps: PushTestRouteDeps,
 ): void {
   app.post(PUSH_TEST_PATH, deps.requireAuth, async (c) => {
+    if (!c.var.isAdmin) return new Response("Forbidden", { status: 403 });
     if (!deps.pushEnabled || !deps.pushService) {
       return c.json({ error: "push_disabled" }, 503);
     }

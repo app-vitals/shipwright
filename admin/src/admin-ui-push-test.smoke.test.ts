@@ -22,10 +22,12 @@ import type { PushDetailLevel } from "./push-content.ts";
 
 const DEFAULT_EMAIL = "dave@example.com";
 
-function makeFakeRequireAuth(): MiddlewareHandler<AdminUIEnv> {
+function makeFakeRequireAuth(
+  { isAdmin = true }: { isAdmin?: boolean } = {},
+): MiddlewareHandler<AdminUIEnv> {
   return async (c, next) => {
     c.set("userEmail", c.req.header("x-test-user-email") ?? DEFAULT_EMAIL);
-    c.set("isAdmin", true);
+    c.set("isAdmin", isAdmin);
     await next();
   };
 }
@@ -50,10 +52,13 @@ function fakePushService(subscribedEmails: string[]) {
   };
 }
 
-function buildApp(overrides: Partial<PushTestRouteDeps> = {}): Hono<AdminUIEnv> {
+function buildApp(
+  overrides: Partial<PushTestRouteDeps> = {},
+  authOpts: { isAdmin?: boolean } = {},
+): Hono<AdminUIEnv> {
   const app = new Hono<AdminUIEnv>();
   registerPushTestRoute(app, {
-    requireAuth: makeFakeRequireAuth(),
+    requireAuth: makeFakeRequireAuth(authOpts),
     pushEnabled: true,
     ...overrides,
   });
@@ -107,5 +112,14 @@ describe("POST /admin/push/test", () => {
     const app = buildApp({ pushEnabled: true, pushService: undefined });
     const res = await app.request(PUSH_TEST_PATH, { method: "POST" });
     expect(res.status).toBe(503);
+  });
+
+  it("returns 403 for an authenticated non-admin", async () => {
+    const { pushService, calls } = fakePushService([DEFAULT_EMAIL]);
+    const app = buildApp({ pushService }, { isAdmin: false });
+
+    const res = await app.request(PUSH_TEST_PATH, { method: "POST" });
+    expect(res.status).toBe(403);
+    expect(calls).toHaveLength(0);
   });
 });
