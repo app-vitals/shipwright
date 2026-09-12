@@ -402,7 +402,7 @@ A session is archived (`archivedAt` set, `archivedBy = "system"`) when **all** o
 1. it is not already archived,
 2. every task in the session is terminal (no open/non-terminal tasks remain),
 3. the session has at least one task ever (an empty session is never archived), and
-4. its last task activity is older than `SHIPWRIGHT_TASK_STORE_SESSION_ARCHIVE_AFTER_DAYS` days (default `30`; see [`docs/configuration.md`](./configuration.md) — set to `0` to disable the sweep).
+4. its last task activity is older than `SHIPWRIGHT_TASK_STORE_SESSION_ARCHIVE_AFTER_DAYS` days (default `30`; see [`docs/configuration-agent.md`](./configuration-agent.md#metrics--admin--chat--task-store-services) — set to `0` to disable the sweep).
 
 Archiving is **non-destructive and reversible**: it only removes the session from the default list view. Nothing is deleted, and writing any new task into an archived session automatically un-archives it (`SessionService.upsert()`, SES-1.2) — the next sweep will not re-archive it while that task remains open.
 
