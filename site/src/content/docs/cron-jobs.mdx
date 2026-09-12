@@ -90,7 +90,7 @@ not self-discovering standalone crons:
   pick exactly one winning candidate.
 - The loop orchestrator then dispatches the matching command with an explicit task id or
   `org/repo#number` embedded directly in the prompt.
-- None of the four commands scans for its own work. Each one responds `[silent]` and exits
+- None of the five commands scans for its own work. Each one responds `[silent]` and exits
   immediately if it's ever invoked with no target.
 
 The practical consequence: a reconciled pipeline cron never gets its own independent `node-cron`

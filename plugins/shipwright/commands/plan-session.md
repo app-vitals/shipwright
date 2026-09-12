@@ -17,6 +17,19 @@ Parse `$ARGUMENTS` to extract:
 - **repo**: first argument
 - **session**: second argument
 - **`--autonomous {task-id}`** (optional): the id of the originating PRD task in the task store — the one flagged `autonomousPlanSession: true`. `{task-id}` is used by Step 4 and Step 5 for the hard-contradiction PATCH-to-blocked escape hatch, and by Step 6 for the on-success PATCH-to-done. **When `--autonomous` is present, `repo` and `session` are always passed explicitly by the machine dispatcher invoking this mode** — the single-argument auto-detect-and-confirm flow below does not apply and must not run in this mode.
+- _(no arguments)_: respond `[silent]` and stop immediately — no repo auto-detect, no
+  task-store queries, no planning work. This command always targets one explicitly-named
+  planning session; it never self-selects work.
+
+**If `$ARGUMENTS` is empty, respond `[silent]` and stop** — do not run `git remote get-url origin`,
+do not print the auto-detect warning, do not wait for confirmation. A `session` slug is required
+and cannot be inferred, so there is nothing to plan. This matches the no-target behavior of the
+other loop-driven pipeline commands (`dev-task`, `review`, `patch`, `deploy`) and is what makes a
+standalone `shipwright-plan` cron (whose stored prompt is a bare `/shipwright:plan-session` with
+no target, dispatched only when `shipwright-loop` is disabled) silently inert rather than kicking
+off an untargeted planning session against whatever repo the working directory happens to be.
+The single-argument auto-detect-and-confirm flow below applies only when a `session` slug **is**
+supplied.
 
 **If only one argument is provided** (and `--autonomous` was not passed), treat it as `session` and auto-detect `repo`:
 1. `git remote get-url origin` → parse the `org/repo` value, stripping trailing `.git`. Preserve the full owner/repo value — do not strip it down to just the repo segment. This is the `repo` value used for the task-store `repo` field.
