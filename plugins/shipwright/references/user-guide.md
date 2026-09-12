@@ -122,18 +122,22 @@ underlying Kubernetes provisioning model.
 
 ### The Shipwright loop, in one paragraph
 
-The delivery loop moves work through four phases — **dev-task** (build and open a PR for a
+The delivery loop moves work through five phases — **plan** (run a planning session for a PRD
+task a human flagged for autonomous planning), **dev-task** (build and open a PR for a
 task), **review** (post findings on an open PR), **patch** (fix a PR in response to review
 feedback), and **deploy** (merge and ship an approved PR) — each implemented as an
-explicit-target-only command that takes an id or `org/repo#number` and does nothing if
-invoked with no target. In production, none of the four self-discovers work: the
+explicit-target-only command that takes an id, a repo/session pair, or an `org/repo#number`
+and does nothing if
+invoked with no target. In production, none of the five self-discovers work: the
 `shipwright-loop` cron is the sole dispatcher. Each tick it reads which phases are enabled,
 asks each enabled phase's candidate provider for ready work, merges tasks and PRs into one
 list, picks the single oldest-ready item via a strict FIFO work-selector (no phase-priority
 bias — a stale PR can win over a newer task and vice versa), pre-claims it, and dispatches the
 matching command — then repeats immediately until the queue drains dry. `dev-task`, `review`,
-and `patch` ship enabled by default; `deploy` and `shipwright-loop` itself ship disabled,
-opt-in from the agent's Cron Jobs card.
+and `patch` ship enabled by default; `deploy`, `plan`, and `shipwright-loop` itself ship
+disabled, opt-in from the agent's Cron Jobs card — and `plan` is double-gated, additionally
+requiring the `SHIPWRIGHT_AGENT_AUTONOMOUS_PLAN_SESSION_ENABLED` env var before the loop will
+collect or dispatch a single plan candidate.
 
 Full mechanics: [`the-shipwright-loop.mdx`](../../../site/src/content/docs/the-shipwright-loop.mdx).
 Ramp-up guidance on which phases to enable when: [`configuring-autonomy.mdx`](../../../site/src/content/docs/configuring-autonomy.mdx).
@@ -150,17 +154,18 @@ Work through these in order:
    found nothing worth posting. A `skipped` outcome means the cron's `preCheck` script found no
    work and a Claude turn was never spent. Neither is a bug by itself.
 2. **If a pipeline cron never shows any runs**, check whether `shipwright-loop` itself is
-   enabled — `shipwright-dev-task`/`review`/`patch`/`deploy` are children of `shipwright-loop`
+   enabled — `shipwright-plan`/`dev-task`/`review`/`patch`/`deploy` are children of
+   `shipwright-loop`
    and never get an independent schedule; their `enabled` toggle only matters once
    `shipwright-loop` reads it.
-3. **Find the exact item.** Cron Logs rows show a **Phase** (which of the four phases ran) and
+3. **Find the exact item.** Cron Logs rows show a **Phase** (which of the five phases ran) and
    an **Item** badge (the exact Task/PR dispatched). Filter/scan by Item rather than trying to
    line up timestamps.
 4. **Ask the agent to investigate.** Use `/shipwright:investigate-cron` (a dedicated tool) with
    a cron name + approximate time, or a specific PR/task id — it reads the underlying session
    transcript and explains what happened in plain language, no raw log access needed.
 5. **Cross-check the work queue.** Admin console → agent detail → **Work Queue** shows the
-   agent's self-reported ranked queue across all four phases, with age — useful for seeing
+   agent's self-reported ranked queue across all five phases, with age — useful for seeing
    what the agent thinks is next versus what actually ran.
 6. **Query the task/PR record directly** if the UI isn't enough — see "Filter tasks/PRs" below.
 

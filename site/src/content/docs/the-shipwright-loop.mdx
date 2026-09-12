@@ -12,8 +12,9 @@ import StepFlow from '../../components/StepFlow.astro'
 # The Shipwright Loop
 
 `shipwright-loop` is the one cron that drives the entire autonomous delivery loop. Instead of
-scheduling `shipwright-dev-task`, `shipwright-review`, `shipwright-patch`, and `shipwright-deploy`
-as four independent crons that race each other on their own timers, the loop wraps all four behind
+scheduling `shipwright-plan`, `shipwright-dev-task`, `shipwright-review`, `shipwright-patch`, and
+`shipwright-deploy` as five independent crons that race each other on their own timers, the loop
+wraps all five behind
 a single tick: it reads which phases are enabled, collects candidate work from each, picks the
 single oldest ready item across the whole set, claims it, dispatches the matching one-shot command,
 and repeats until nothing is left to do.
@@ -30,16 +31,16 @@ Each tick of `shipwright-loop` runs the following sequence. Step 4 hands off to
 
 <StepFlow steps={[
   {
-    label: "Read the four phase toggles",
-    detail: "The loop reads four independent booleans — one per pipeline phase — off child cron rows named shipwright-dev-task, shipwright-review, shipwright-patch, and shipwright-deploy, all parented under the shipwright-loop cron. Each toggle is resolved and enabled/disabled entirely independently of the others. The loop deliberately never reads shipwright-review-patch's flag or invokes /shipwright:review-patch — the loop's own per-tick selection across all four phases supersedes that command's internal review-vs-patch decision.",
+    label: "Read the five phase toggles",
+    detail: "The loop reads five independent booleans — one per pipeline phase — off child cron rows named shipwright-plan, shipwright-dev-task, shipwright-review, shipwright-patch, and shipwright-deploy, all parented under the shipwright-loop cron. Each toggle is resolved and enabled/disabled entirely independently of the others. The plan phase is the one exception to 'the toggle alone decides': it is double-gated, so its candidates are only ever collected when the SHIPWRIGHT_AGENT_AUTONOMOUS_PLAN_SESSION_ENABLED env var is also set — with that unset, the tick behaves exactly as the four-phase loop did. The loop deliberately never reads shipwright-review-patch's flag or invokes /shipwright:review-patch — the loop's own per-tick selection across all five phases supersedes that command's internal review-vs-patch decision.",
   },
   {
     label: "Qualify candidates per enabled phase",
-    detail: "For each enabled phase, the loop calls that phase's own qualification function to get structured candidates: dev-task candidates are tasks ready to build, and review/patch/deploy candidates are PRs ready for that phase. A disabled phase contributes nothing — its qualification function is never called, so a phase with no candidates never even shows up as an empty run.",
+    detail: "For each enabled phase, the loop calls that phase's own qualification function to get structured candidates: dev-task candidates are tasks ready to build, plan candidates are PRD tasks a human flagged for autonomous planning, and review/patch/deploy candidates are PRs ready for that phase. A disabled phase contributes nothing — its qualification function is never called, so a phase with no candidates never even shows up as an empty run.",
   },
   {
     label: "Merge into one candidate list",
-    detail: "The PR candidates from every enabled phase (review, patch, deploy) are merged into a single flat array. Task candidates stay their own list. Both lists feed the same selection step below.",
+    detail: "The PR candidates from every enabled phase (review, patch, deploy) are merged into a single flat array. The task candidates from the two task-producing phases (dev-task and plan) are merged into their own single list, deduped by task id so a task that qualifies for both is dispatched as a planning session rather than as a build. Both lists feed the same selection step below.",
   },
   {
     label: "Run a single FIFO work-selector",
@@ -55,7 +56,7 @@ Each tick of `shipwright-loop` runs the following sequence. Step 4 hands off to
   },
   {
     label: "Dispatch the matching one-shot command",
-    detail: "Once pre-claimed, the loop dispatches the one-shot command for that item: a task item always dispatches /shipwright:dev-task; a PR item dispatches /shipwright:review, /shipwright:patch, or /shipwright:deploy depending on which phase the PR candidate came from. A successful PR pre-claim appends a marker carrying the claimed record's id and commit SHA to the dispatched command string, so the downstream command can recognize the loop already holds the claim instead of re-claiming (and conflicting with itself).",
+    detail: "Once pre-claimed, the loop dispatches the one-shot command for that item: a task item dispatches /shipwright:dev-task, or /shipwright:plan-session {repo} {session} --autonomous {task-id} when the task came from the plan phase; a PR item dispatches /shipwright:review, /shipwright:patch, or /shipwright:deploy depending on which phase the PR candidate came from. A successful PR pre-claim appends a marker carrying the claimed record's id and commit SHA to the dispatched command string, so the downstream command can recognize the loop already holds the claim instead of re-claiming (and conflicting with itself).",
   },
   {
     label: "Repeat immediately — drain until dry",

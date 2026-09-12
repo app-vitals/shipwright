@@ -33,7 +33,8 @@ Once you have console access, work through this list before leaving the agent un
 1. **Find your agent.** Go to `/admin/agents` and open your agent's detail page
    (`/admin/agents/:id`) to confirm it exists and see its configuration.
 2. **Check which crons are enabled.** The agent detail page lists its cron jobs. Pipeline phase
-   crons (`shipwright-dev-task`, `shipwright-review`, `shipwright-patch`, `shipwright-deploy`) and
+   crons (`shipwright-plan`, `shipwright-dev-task`, `shipwright-review`, `shipwright-patch`,
+   `shipwright-deploy`) and
    the `shipwright-loop` orchestrator are the ones that drive autonomous work — confirm the set you
    expect is turned on. A standalone phase cron with `shipwright-loop` disabled is inert, so if
    nothing seems to be happening, that's the first thing to check.
