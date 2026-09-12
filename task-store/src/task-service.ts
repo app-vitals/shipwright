@@ -14,7 +14,12 @@
 
 import { type BlockedByEntry, computeBlockedBy } from "./blocked-by.ts";
 import { type Clock, SystemClock } from "./clock.ts";
-import { BadRequestError, ConflictError, NotFoundError } from "./errors.ts";
+import {
+  BadRequestError,
+  ConflictError,
+  NotFoundError,
+  WebhookDeliveryError,
+} from "./errors.ts";
 import type { Prisma, PrismaClient, Task, TaskEvent } from "./index.ts";
 import { buildRepoOrgWhere } from "./lib/repo-org-filter.ts";
 import { resolveReadyTasks } from "./ready.ts";
@@ -591,6 +596,12 @@ export class TaskService implements TaskServiceLike {
     return this.prisma.$transaction(async (tx) => {
       const task = await tx.task.create({ data });
       await this.sessionService.upsert(tx, task.session);
+      // Fires after the task row + its session upsert have both landed, still
+      // inside this transaction — a thrown WebhookDeliveryError propagates
+      // uncaught here, so Prisma rolls back the create (and the session
+      // upsert) rather than leaving a task row an undelivered webhook never
+      // announced.
+      await this.webhookDispatcher("task.write", [task]);
       return task;
     });
   }
@@ -653,6 +664,10 @@ export class TaskService implements TaskServiceLike {
           "update",
           existing?.claimedBy ?? "system",
         );
+        // Same rollback-on-throw contract as create() above: a
+        // WebhookDeliveryError here propagates uncaught and Prisma rolls
+        // back the update.
+        await this.webhookDispatcher("task.write", [record]);
         return record;
       });
     } catch (err: unknown) {
@@ -668,6 +683,11 @@ export class TaskService implements TaskServiceLike {
    * cascade, this is the one call path that explicitly removes a task
    * (`DELETE /tasks/:id`), so deliberately wiping its audit trail here is the
    * caller's explicit intent, not an accidental side effect elsewhere.
+   *
+   * TSW-1.2: deliberately does NOT call webhookDispatcher — by the time this
+   * transaction commits, the Task row is gone, so there's no surviving row
+   * to send as `data: [task]`; a "this task was deleted" event is a
+   * different, not-yet-specified event shape, not `task.write`.
    */
   async remove(id: string): Promise<void> {
     try {
@@ -725,10 +745,17 @@ export class TaskService implements TaskServiceLike {
 
         await this.recordTaskTransition(tx, before, after, "claim", claimedBy);
 
+        // Same rollback-on-throw contract as create()/update() above.
+        await this.webhookDispatcher("task.write", [after]);
+
         return after;
       });
     } catch (err: unknown) {
-      if (err instanceof NotFoundError || err instanceof ConflictError) {
+      if (
+        err instanceof NotFoundError ||
+        err instanceof ConflictError ||
+        err instanceof WebhookDeliveryError
+      ) {
         throw err;
       }
       // The Aug 29 500-on-reclaim didn't come from the documented
@@ -752,6 +779,13 @@ export class TaskService implements TaskServiceLike {
    * would be a guaranteed no-op here. Skipping it entirely keeps this hot
    * liveness path a single cheap UPDATE. Mirrors
    * PullRequestService.heartbeat()'s identical rationale.
+   *
+   * TSW-1.2: deliberately does NOT call webhookDispatcher either, for the
+   * same reason it's excluded from the TaskEvent audit trail above — it's
+   * the hottest-volume write path in the service (every claimed task across
+   * the whole agent fleet touches it on a tight interval) and a
+   * heartbeatAt-only change is not an audit-worthy event for downstream
+   * consumers to react to.
    */
   async heartbeat(id: string): Promise<Task> {
     const now = this.clock.now().toISOString();
@@ -785,6 +819,8 @@ export class TaskService implements TaskServiceLike {
           "complete",
           before?.claimedBy ?? "system",
         );
+        // Same rollback-on-throw contract as create()/update()/claim() above.
+        await this.webhookDispatcher("task.write", [record]);
         return record;
       });
     } catch (err: unknown) {
@@ -813,6 +849,8 @@ export class TaskService implements TaskServiceLike {
           "fail",
           before?.claimedBy ?? "system",
         );
+        // Same rollback-on-throw contract as create()/update()/claim() above.
+        await this.webhookDispatcher("task.write", [record]);
         return record;
       });
     } catch (err: unknown) {
@@ -842,6 +880,8 @@ export class TaskService implements TaskServiceLike {
           "release",
           before?.claimedBy ?? "system",
         );
+        // Same rollback-on-throw contract as create()/update()/claim() above.
+        await this.webhookDispatcher("task.write", [record]);
         return record;
       });
     } catch (err: unknown) {
@@ -888,6 +928,8 @@ export class TaskService implements TaskServiceLike {
           "recordSkip",
           before?.claimedBy ?? "system",
         );
+        // Same rollback-on-throw contract as create()/update()/claim() above.
+        await this.webhookDispatcher("task.write", [updated]);
         return updated;
       });
     } catch (err: unknown) {
@@ -911,6 +953,8 @@ export class TaskService implements TaskServiceLike {
           "resetSkip",
           before?.claimedBy ?? "system",
         );
+        // Same rollback-on-throw contract as create()/update()/claim() above.
+        await this.webhookDispatcher("task.write", [record]);
         return record;
       });
     } catch (err: unknown) {

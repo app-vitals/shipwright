@@ -119,6 +119,16 @@ async function startServer(): Promise<void> {
 
   await runMigrations();
 
+  // No explicit `connection_limit` override — this uses Prisma's default
+  // pool sizing (num_physical_cpus * 2 + 1). TSW-1.2 wires the outbound
+  // webhookDispatcher call into create/update/claim/complete/fail/release/
+  // recordSkip/resetSkip, each already inside a $transaction, so those
+  // transactions now hold their pool connection slightly longer (for the
+  // dispatcher's HTTP round-trip, bounded by DEFAULT_WEBHOOK_TIMEOUT_MS
+  // below) before releasing it. The default pool size is believed to have
+  // headroom for current expected concurrent-transaction volume across the
+  // agent fleet; revisit (explicit connection_limit) if fleet size grows
+  // significantly and pool exhaustion becomes observable.
   const prisma = new PrismaClient();
 
   // Build the outbound event dispatcher when a webhook URL is configured.
