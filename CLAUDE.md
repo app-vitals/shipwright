@@ -102,7 +102,7 @@ Tasks sharing a non-blank `session` field (set only by `/shipwright:plan-session
 **Session** — browsable in the admin UI's Sessions tab (`/admin/sessions`), which shows per-session
 task status and follow/notification controls. A background alert sweeper pushes "waiting" / reminder /
 "completed" notifications to session followers; see [`docs/task-store.md`](./docs/task-store.md#sessions)
-and [`docs/agent.md`](./docs/agent.md) for the full model.
+and [`docs/agent-web-ui.md`](./docs/agent-web-ui.md) for the full model.
 
 ### Execution loop
 
@@ -176,7 +176,8 @@ To load additional context into a session, add `@docs/filename.md` entries here 
 - **docs/architecture.md** — the four-artifact A→B→C→D design (plugin / metrics / agent / task-store), supporting surfaces, and workspace layout
 - **docs/testing.md** — the five-layer test model (unit / integration / smoke / e2e / content), run commands, speed budgets, and the isolation contract
 - **docs/metrics.md** — metrics service (B): JSON endpoints, server-rendered dashboard, dual auth (Bearer / session), and environment
-- **docs/agent.md** — Shipwright agent (C): run modes, HTTP surfaces (runtime + admin CRUD APIs, chat UI, task board, PWA shell), the sixteen-model Prisma store, and encryption notes
+- **docs/agent.md** — Shipwright agent (C): run modes, HTTP surfaces (runtime + admin CRUD APIs), the sixteen-model Prisma store, and encryption notes
+- **docs/agent-web-ui.md** — Shipwright agent (C) browser-facing surfaces: admin chat UI, sessions list UI, session alert sweeper, public read-only task board, dev auto-login, and PWA shell — split out of docs/agent.md to stay under the docs line-count threshold
 - **docs/configuration-agent.md** — Shipwright agent (C) runtime env var reference (Claude/Anthropic, Slack, GitHub, Shipwright platform, server, database, provisioning, workspace/tooling, voice, dev-only) — split out of docs/configuration.md to stay under the docs line-count threshold
 - **docs/agent-ops.md** — Shipwright agent (C) operations: tool management/narrowing (floor vs. allowed tools), default system crons, environment variables, and baked marketplaces
 - **docs/agent-key-files.md** — Shipwright agent (C) key files: per-file reference table for `admin/src` and `agent/src`

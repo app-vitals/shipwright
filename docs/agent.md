@@ -33,6 +33,11 @@ The schema uses `provider = "postgresql"`. `DATABASE_URL_SHIPWRIGHT_ADMIN` must 
 
 ## HTTP surfaces
 
+> The browser-facing surfaces (admin chat UI, sessions list UI, session alert sweeper, public
+> read-only task board, dev auto-login, PWA shell, and chatting with a local agent) are split
+> out to [`docs/agent-web-ui.md`](./agent-web-ui.md) to keep this file under the docs
+> size-governance threshold.
+
 ### Runtime API (`api.ts`) — machine-polled
 
 Mounted at `/agents/*`. The harness polls this every ~60s. Auth: same admin-key / per-agent-token / session-cookie middleware as the CRUD routes (admin key, per-agent bearer token, or session JWT).
@@ -60,107 +65,6 @@ Mounted at `/agents/*` (unified with the runtime API surface). Auth: **admin key
 | Work Queue | `POST /agents/:id/work-queue` (pushes/upserts the agent's ranked work-queue snapshot, overwriting any prior snapshot; body: `{computedAt, items}`), `GET /agents/:id/work-queue` (fetches the latest snapshot; `404` if none pushed yet) |
 
 Token creation returns the **raw token once** at creation; only its SHA-256 hash is persisted, so validation is an O(1) hash-index lookup.
-
-### Admin chat UI (`admin-ui-pages.ts`, `http-chat-client.ts`) — authenticated
-
-Mounted at `/admin/chat*`. **Admin-only** — requires session cookie or bearer token (same auth as admin CRUD API). When `chatClient` is present in `AdminUIDeps`, renders an agent thread browser with thread list, thread detail, and message creation. When `chatClient` is absent, all routes render in degraded mode (notice + empty state). Gracefully handles missing or unavailable chat service.
-
-| Method | Path | Auth | Description |
-|---|---|---|---|
-| GET | `/admin/chat` | admin | List threads for a selected agent. Query params: `agentId` (optional, pre-selects an agent from the dropdown), `q` (optional, filters threads by title substring). Renders agent selector, search box, and thread list. When no agent is selected, shows empty state prompt. Returns `text/html`. |
-| GET | `/admin/chat/:agentId/threads/:threadId` | admin | View a single thread with its messages. Renders thread title, thread-level aggregated token/cost stats in the header (total input/output tokens and USD cost), message history with message bubbles (role-labeled, color-coded by role, markdown-rendered for assistant messages), per-message token/cost badges on assistant messages with token data. Errored replies (where `errorKind` is set) show an error badge and, if the error is recoverable (`cancelled`, `incomplete`, or `stalled`), a Retry button that resends the original user message. When the last user message in the thread is still unreplied, renders a live status bubble (CFB-2.3, stable DOM id `live-status-bubble`) with two independently-refreshing layers: a client-side 1s elapsed ticker (`now - createdAt`, zero network dependency — the "never go silent" guarantee) and a milestone label sourced from `progressPhase` (via `PROGRESS_LABELS`, `@shipwright/lib/progress-phases`) refreshed off the existing `messages.json` poll (adaptive 2s while pending / 10s idle). If `progressSeq` hasn't advanced for `STALL_WARN_AFTER_MS` (2 min), the bubble gets a pulsing `chat-stall-indicator` warning state; `ABSOLUTE_MAX_MS` (65 min, mirroring the agent's claim-TTL) is the hard stop. Rename form, delete button, and a send form. Client-side JavaScript handles message sending, retry clicks, and polling for real-time updates (`/admin/chat/:agentId/threads/:threadId/messages.json`, which supports `?since=<messageId>` and returns server-rendered `bubbleHtml` so polled bubbles are byte-identical to reloaded ones). A sidebar pane lists all threads for the agent; on mobile (≤640px) it collapses into a CSS-only off-canvas drawer (hamburger toggle, scrim, Escape-to-close) and stats/rename/delete move out of the collapsed header. Returns `text/html`. |
-| POST | `/admin/chat/:agentId/threads` | admin | Create a new thread for an agent. Body: form-encoded `title` (optional string). On success, redirects to the thread detail page (302). On chat-service error, redirects back to the agent's thread list (302). |
-| POST | `/admin/chat/:agentId/threads/:threadId/rename` | admin | Rename a thread. Body: form-encoded `title` (required string; empty title is a no-op redirect). On success or error, redirects back to the thread detail page (302). |
-| POST | `/admin/chat/:agentId/threads/:threadId/delete` | admin | Delete a thread. On success or error, redirects to the agent's thread list (302). Errors are silently swallowed (UX: no error banner). |
-| GET | `/admin/chat/:agentId/threads/:threadId/messages.json` | admin | JSON API: list messages in a thread for client-side polling. Returns `{ messages: ChatMessage[] }` (200) or `{ messages: [] }` (200 when chat service absent/unavailable). |
-| POST | `/admin/chat/:agentId/threads/:threadId/messages/upload` | admin | JSON API: add a message with optional file attachment. Body: `multipart/form-data` with `body` (optional string) and `file` (optional file). Validates attachment size (≤10 MB) and MIME type (images, PDFs, JSON, text, SVG). Returns `{ message: ChatMessage }` (201) on success; on validation error returns `{ error: string }` (400/413/415). Enables client-side send + file upload + optimistic UI + polling loop. |
-| POST | `/admin/chat/:agentId/threads/:threadId/messages` | admin | Form POST: add a message (with optional attachment). Body: `multipart/form-data` with `body` (optional string), `role` (optional, defaults to "user"), and `file` (optional file). Validates attachment size and MIME type. Redirects on success or failure (no JSON). Legacy form-based endpoint; the `/upload` route is preferred for client-side UX. |
-| GET | `/admin/chat/:agentId/threads/:threadId/messages/:id/attachment` | admin | Stream an ephemeral file attachment. No auth after message existence check. Returns the file bytes with `Content-Disposition: attachment`. **Drops the stored bytes immediately after serving** — attachments are not retained long-term; the agent is expected to pull them into its workspace via this endpoint. Returns `404` if message not found or has no attachment. |
-
-**Degraded mode:** When `chatClient` is not configured (env var unset or connection fails), all chat routes render a notice (`SHIPWRIGHT_CHAT_SERVICE_URL` and `SHIPWRIGHT_CHAT_SERVICE_ADMIN_TOKEN` required) and no table/messages. The routes remain accessible and return `200` — callers are not redirected or rejected.
-
-**Configuration:**
-
-- `SHIPWRIGHT_CHAT_SERVICE_URL` (optional) — base URL of the chat service (e.g. `http://chat:3000`). Required alongside `SHIPWRIGHT_CHAT_SERVICE_ADMIN_TOKEN` for the admin UI to access threads and messages.
-- `SHIPWRIGHT_CHAT_SERVICE_ADMIN_TOKEN` (optional) — bearer token for admin-side chat service access. Required alongside `SHIPWRIGHT_CHAT_SERVICE_URL`. Used to list/fetch threads and messages (read operations).
-
-### Sessions list UI (`admin-ui-sessions-list.ts`) — authenticated
-
-Mounted at `/admin/sessions*`. **Requires authentication** — session cookie or bearer token (same auth as admin CRUD API). Renders a paginated list of sessions grouped by state (Waiting on you / Active / Closed), with query-based filtering and member-scoped visibility. Admins see all sessions; non-admin members see only sessions with a task assigned to one of their agents or in one of those agents' repositories. When task-store access is unavailable, the page renders in degraded mode (empty sections + warning banner).
-
-| Method | Path | Auth | Description |
-|---|---|---|---|
-| GET | `/admin/sessions` | admin or member | List sessions across all states, filtered and paginated. Query params: `archived` (optional, `true` to show archived sessions instead of active ones), `state` (implicit, derived from `archived` parameter — `"all"` for non-archived or `"archived"` for archived), `sort` (optional, `"waitingSince"` or `"lastActivityAt"`, defaults to `"waitingSince"`), `q` (optional, search by session slug or title), `repo` (optional, can be repeated to filter by repository), `agent` (optional, filter by agent ID), `limit` (optional, pagination limit, defaults to 50), `offset` (optional, pagination offset, defaults to 0). Returns `text/html` with three collapsible sections (Waiting/Active/Closed) or a single Archived section depending on the `archived` query parameter. Session visibility is scoped: admins see all sessions, members see only sessions related to their agents. Empty list renders a message indicating no sessions match the filters. |
-| GET | `/admin/sessions/:id` | admin or member | View a single session detail page. Path param: `:id` (session slug). Returns `text/html`. Session visibility is scoped: admins see all sessions; members see a session only when one of its tasks is assigned to or claimed by one of their agents, or the session's repository is in one of their agents' `repos` lists. Sessions outside the member's scope return `404` to avoid leaking existence. The page displays session metadata (title, slug, creation/update timestamps, archive status), task list filtered to open tasks, session follow/notification controls (wired to `SessionFollowService`, SESH-6.1), and admin-only action controls (archive/unarchive/rename forms visible when `isAdmin=true` in the page render context, SESH-5.2). |
-| POST | `/admin/sessions/:slug/archive` | admin-only | Archive a session (SESH-5.2). Body: empty form. Admin-only: returns `403` for non-admin callers. Calls task-store `PATCH /sessions/:slug` with `{ archived: true }` (idempotent re-stamp when already archived). On success, redirects to `/admin/sessions/:slug?success=archived` (302); on task-store error or missing dependency, redirects to `/admin/sessions/:slug?error=archive_failed` (302). Errors are logged for operator visibility. |
-| POST | `/admin/sessions/:slug/unarchive` | admin-only | Unarchive a session (SESH-5.2). Body: empty form. Admin-only: returns `403` for non-admin callers. Calls task-store `PATCH /sessions/:slug` with `{ archived: false }` (idempotent re-stamp when already unarchived). On success, redirects to `/admin/sessions/:slug?success=unarchived` (302); on task-store error or missing dependency, redirects to `/admin/sessions/:slug?error=unarchive_failed` (302). Errors are logged for operator visibility. |
-| POST | `/admin/sessions/:slug/rename` | admin-only | Rename a session (SESH-5.2). Body: form-encoded `newTitle` (optional string; empty value sends `null` to clear the title). Admin-only: returns `403` for non-admin callers. Calls task-store `PATCH /sessions/:slug` with `{ title: <value> }` or `{ title: null }` when blank. On success, redirects to `/admin/sessions/:slug?success=renamed` (302); on task-store error or missing dependency, redirects to `/admin/sessions/:slug?error=rename_failed` (302). Errors are logged for operator visibility. |
-| POST | `/admin/sessions/:slug/follow` | admin or member | Follow a session (SESH-6.2), registered by `admin-ui-session-follow.ts`. Body: none (JSON response, not a form post — distinct from the archive/unarchive/rename routes above). Admins always pass; a non-admin member must additionally satisfy the same visibility check as the detail page (`memberCanSeeSession()`, fail-closed — no `fetchTaskStoreSession` dependency or a lookup error yields `404` rather than a false allow). Calls `SessionFollowService.follow()` (upsert, idempotent). Returns `200` with `{ sessionSlug, following: true }`; `404` if the session isn't visible to the caller. |
-| POST | `/admin/sessions/:slug/unfollow` | admin or member | Unfollow a session (SESH-6.2), registered by `admin-ui-session-follow.ts`. Body: none. No visibility re-check — removing your own follow state never requires re-proving visibility (mirrors `POST /admin/settings/notifications/unfollow`'s same skip). Calls `SessionFollowService.unfollow()` (delete, idempotent). Returns `200` with `{ sessionSlug, following: false }`. |
-
-**Visibility scoping (SESH-4.1):** The sessions list and detail routes use the same visibility logic. An admin sees all sessions. A non-admin member's view is scoped to their `AgentMember` rows: they see only sessions with tasks assigned/claimed by their agents, or in their agents' repositories. A member with zero memberships sees an empty sessions list and receives `404` for any detail route. The visibility scope is computed once per request via `resolveVisibilityScope()` (in `admin-ui-sessions-list.ts`) and applied identically to both list and detail routes. The list route checks against the task store's own session rollup; the detail route derives the equivalent shape from the session's tasks via `deriveSessionVisibilityFromTasks()` (in `session-scope.ts`), which uses the same `claimedBy ?? assignee` precedence as `task-store/src/session-rollup.ts` — so a reassigned task's former assignee loses detail access at the same moment the session disappears from their list.
-
-**Degraded mode:** When the task-store service is unavailable or `fetchTaskStoreSessions` is not configured, the sessions list page renders empty sections with a warning banner. The detail route behaves the same way — with no tasks fetched, the member scope check is skipped (it could only ever deny) and the page renders `200` with an empty task list plus the warning banner, rather than `404`ing members during a transient outage. The routes remain accessible and return `200` — callers are not redirected or rejected.
-
-**Configuration:**
-
-- Task-store connection is inherited from the agent's main config (`SHIPWRIGHT_TASK_STORE_URL` and `SHIPWRIGHT_TASK_STORE_TOKEN`). No additional env vars required for this route.
-
-### Session alert sweeper (`session-alert-sweeper.ts`) — background job
-
-`SessionAlertSweeper` is the admin service's first (and, as of SESH-7.4, only) background loop — registered via `setInterval` in `main.ts`, never inside `createAdminUIApp()`, which must stay side-effect-free. Every tick it:
-
-1. Fetches the task-store's `waiting` and `closed` sessions (`GET /sessions?state=waiting`/`?state=closed`, admin token, `limit=500`).
-2. Materializes auto-follows: for each user with `UserNotificationPrefs.autoFollowSessions = true` who can already see a waiting session, has no existing `SessionFollow` row, and whose auto-follow boundary (`autoFollowSince`, else the prefs row's `createdAt`) predates the session, upserts a `SessionFollow` row.
-3. Sends one `immediate` push the first time a follower is alerted about a waiting session, and at most one `reminder` per later local day once that user's `reminderHourLocal` has passed — derived entirely from `SessionAlertState.lastAlertedAt` (the schema stores no "kind" column).
-4. Sends one `completed` push per follower of a closed session, then deletes that pair's `SessionFollow` + `SessionAlertState` rows so it never fires again.
-5. Prunes the `SessionAlertState` row of any follower who has lost visibility of the session (membership revoked / repo removed), sending them nothing.
-
-Pushes reuse `PushService.notifySession()` — the same Web Push delivery path as the chat-reply notifier (`POST /admin/push/notify`) — so they share the same VAPID configuration and the same `SHIPWRIGHT_ADMIN_PUSH_MAX_DETAIL` operator ceiling. Not re-entrant: an in-flight guard makes an overlapping tick (a slow task-store fetch under a short interval) return an all-zero result rather than racing the sweep already running; this guard is per-process, so running more than one admin replica needs a shared lock not introduced by this task.
-
-**Configuration:**
-
-- The sweeper only starts when Web Push is fully configured (`SHIPWRIGHT_ADMIN_VAPID_PUBLIC_KEY` + `SHIPWRIGHT_ADMIN_VAPID_PRIVATE_KEY` + `SHIPWRIGHT_ADMIN_VAPID_SUBJECT`) **and** `SHIPWRIGHT_TASK_STORE_URL` + `SHIPWRIGHT_TASK_STORE_ADMIN_TOKEN` are set — otherwise it is never registered (not degraded-mode; simply absent).
-- `SHIPWRIGHT_ADMIN_SESSION_ALERT_INTERVAL_MS` (optional, default `60000`) — tick cadence in ms. Blank, non-numeric, zero, or negative values fall back to the default.
-- See [`configuration-agent.md`](./configuration-agent.md#metrics--admin--chat--task-store-services) for the full env var reference.
-
-### Public read-only task board (`admin-ui.ts`) — unauthenticated
-
-Mounted at `/public/tasks`. **No authentication required** — renders a read-only task list scoped to a configurable repository. When `SHIPWRIGHT_ADMIN_PUBLIC_REPO` is set, fetches tasks for that repo from the task-store and displays them in a static HTML page with no mutation controls (create/edit/status-change disabled). When the config is absent or task-store access fails, the page renders in degraded mode (empty table + warning notice). The endpoint is always registered and always accessible; it gracefully degrades when prerequisites are missing.
-
-| Method | Path | Auth | Description |
-|---|---|---|---|
-| GET | `/public/tasks` | none | Render the public task list filtered to `SHIPWRIGHT_ADMIN_PUBLIC_REPO`. Query params: `source` (optional, filters by task source). Returns `text/html`. Mutation methods (POST/PUT/DELETE) return `404` (no routes registered). |
-
-**Configuration:**
-
-- `SHIPWRIGHT_ADMIN_PUBLIC_REPO` (optional) — repository slug (format: `org/repo`) scoped for the public board. When set, the board queries and displays tasks for this repo only. When unset, the board renders in degraded mode.
-
-### Dev auto-login (`admin-ui.ts`) — local convenience
-
-Mounted at `/admin/dev-login`. **DEFAULT-DENY:** only registered (and only returns a session) when `devAuthEnabled=true` is injected into `createAdminUIApp()`. The flag is pre-computed from `isDevAuthAllowed()` in `dev-auth-guard.ts`, which hard-blocks the route when `NODE_ENV=production` regardless of the `ADMIN_DEV_AUTH` env var. When disabled, `GET /admin/dev-login` returns `404`. When enabled, it mints an `admin_session` JWT cookie (userId `"dev"`, email `"dev@localhost"`) and redirects to `/admin/agents` — no Google OAuth required.
-
-### PWA shell (`admin-ui.ts`, `pwa.ts`) — installable web app
-
-The admin console is an installable Progressive Web App (PWA). All authenticated `/admin/*` pages automatically include a manifest link and a service worker registration in their `<head>` (via `renderPwaHeadTags()`, gated on `appBaseUrl` starting with `https://` — home-lab operators on plain HTTP see the PWA head tags omitted). The manifest scope is always `/admin/`. The start URL defaults to `/admin/chat` but can be customized per page — when a user triggers "Add to Home Screen," the manifest link's `href` is rewritten client-side to include `?start=<current pathname>`, so the installed shortcut launches back to the page the user was on rather than always to chat (PWA-1.1). Invalid, malicious, or non-navigable start URLs are sanitized to the default. Caching is deliberately austere: only the offline fallback page and the app icons are ever precached; no HTML documents, no JSON routes, no authenticated content. A cached page on a shared or stolen phone is a data leak, so the `shouldCachePwaRequest()` predicate and the precache list are the security boundary.
-
-| Method | Path | Auth | Description |
-|---|---|---|---|
-| GET | `/admin/manifest.webmanifest` | none | Web app manifest (JSON). Served unauthenticated — browsers fetch it with `credentials:omit`, so authentication would silently break install. Accepts optional `?start=` query parameter to customize the manifest's start URL to the current page (PWA-1.1); malformed, malicious, or non-navigable values are rejected and the default is used. Returns the standard `WebAppManifest` object with app name, icons, scope (`/admin/`), start URL (customized per page or `/admin/chat` by default), theme/background colors synced from `brand/tokens.json`, and display mode (`standalone`). |
-| GET | `/admin/sw.js` | none | Service worker JavaScript. Served unauthenticated with `Cache-Control: no-cache` (browsers must revalidate on every load so version bumps take effect). The script is generated by `buildServiceWorkerBody()` and includes the cache name (which embeds the app version), the precache list (offline page + icons), and handlers for `install`, `activate`, `fetch`, `push`, and `notificationclick` events. Fetch handler only serves cached responses for GET requests to URLs in the precache list; everything else passes through to the network. Push handler receives Web Push notifications (JSON payload with `title`, `body`, `url`, and optional `tag`) and displays them via the Notification API; the `tag` field (if present) determines the notification tag used to group notifications — when absent, defaults to `"shipwright-agent-reply"` (enabling session-scoped notification payloads to each receive a distinct tag); notificationclick handler focuses or opens the target URL. |
-| GET | `/admin/offline.html` | none | Offline fallback page (HTML). Served unauthenticated. A minimal, self-contained page (no external resources, no admin-ui-layout dependency) that renders when the network is unavailable and the user is viewing a cached document. Styled with inline CSS using design tokens from `brand/tokens.json`. |
-| GET | `/admin/icons/:filename` | none | PWA icon PNG. Served unauthenticated with `Cache-Control: public, max-age=86400` (86,400 seconds = 24 hours). Filenames are validated against the hardcoded set `PWA_ICONS` (from `admin/src/pwa.ts`): `icon-192.png`, `icon-512.png` (both "any" purpose), `icon-maskable-192.png`, `icon-maskable-512.png` (masked icons confined to ~40% safe zone), `apple-touch-icon.png` (180x180, opaque background for iOS), and `favicon-32.png` (favicon-sized). Unknown filenames return `404`. Reads from the committed PNG files in `admin/pwa-assets/icons/` (populated by `scripts/build-pwa-icons.ts` one-time from the shipwright logo). |
-| POST | `/admin/push/notify` | bearer token (`SHIPWRIGHT_ADMIN_PUSH_WEBHOOK_TOKEN`) | Web Push notification trigger — called by the chat service when an agent posts a reply. Request body: `{threadId, agentId, title?: string \| null, preview?: string \| null}`. Response: `{ok: true, delivered, pruned}`, where `delivered` is the count of successfully-sent pushes and `pruned` is the count of stale subscriptions removed after the push provider reported them gone (404/410). Returns `503` if Web Push is disabled (VAPID keys not configured), `SHIPWRIGHT_ADMIN_PUSH_WEBHOOK_TOKEN` is unset, or the push service is otherwise unavailable. Returns `401` if the bearer token is configured but does not match. Returns `400` if body is malformed or missing required fields. Notification content policy is governed by `SHIPWRIGHT_ADMIN_PUSH_MAX_DETAIL` (operator ceiling) and the user's subscription-level opt-in preference (effective level = min of both). |
-| POST | `/admin/push/test` | admin-only | "Send test notification" — sends a fixed test payload to every push subscription belonging to the *calling* user (never anyone else; the body is ignored) and returns `{ok: true, delivered, pruned}`. Admin-only: returns `403` for non-admin callers, same as the archive/unarchive/rename routes above. `delivered: 0` means this account has no live subscription: enable notifications on a device first. Returns `503` if Web Push is disabled. Rendered as a button on `/admin/settings/notifications`. |
-
-**Configuration:**
-
-- `SHIPWRIGHT_ADMIN_APP_BASE_URL` (required) — the full HTTPS base URL of the admin console (e.g. `https://admin.example.com`). When this does not start with `https://`, the PWA head tags are omitted from rendered pages, so install prompts and service worker registration are unavailable (home-lab operators on plain HTTP still get a fully functional admin UI, just not the PWA shell).
-- **Web Push** (optional, requires all three): `SHIPWRIGHT_ADMIN_VAPID_PUBLIC_KEY`, `SHIPWRIGHT_ADMIN_VAPID_PRIVATE_KEY`, `SHIPWRIGHT_ADMIN_VAPID_SUBJECT` — enable Web Push notifications. When any is missing, the push routes degrade gracefully (push webhook returns 503, chat page renders no toggle). Also set `SHIPWRIGHT_ADMIN_PUSH_WEBHOOK_TOKEN` (the shared bearer token the chat service presents) and optionally `SHIPWRIGHT_ADMIN_PUSH_MAX_DETAIL` (operator hard ceiling on notification detail level; defaults to `"title"`). See [`configuration-agent.md`](./configuration-agent.md#metrics--admin--chat--task-store-services) for full details on these env vars.
-
-### Chatting with a local agent
-
-There is no HTTP chat endpoint on the agent. Chat flows through the chat service: the admin console's Chat tab (`/admin/chat`) posts user messages to the chat service, and the agent's chat poll loop (`chat-poller.ts`) claims them, runs them through Claude, and posts replies. `task stack` wires all of this up locally, including seeded dev tokens.
 
 ## Data model
 
@@ -196,6 +100,7 @@ Unit + integration + smoke layers (`bun test --filter agent`). DB integration te
 ## See also
 
 - [architecture.md](./architecture.md) — the A→B→C→D artifact design.
+- [agent-web-ui.md](./agent-web-ui.md) — the agent's browser-facing surfaces: admin chat UI, sessions list UI, session alert sweeper, public task board, dev auto-login, and PWA shell.
 - [agent-key-files.md](./agent-key-files.md) — per-file reference table for admin/src and agent/src.
 - [agent-ops.md](./agent-ops.md) — tool management/narrowing, default system crons, environment variables, and baked marketplaces.
 - `CLAUDE.md` → "Database env vars" — the per-service `DATABASE_URL_*` convention.
