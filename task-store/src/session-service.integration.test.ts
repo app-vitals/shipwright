@@ -248,8 +248,10 @@ describeOrSkip(
     });
 
     it("bulk(): a mid-batch P2002 collision rolls back every row in the batch (proven via direct Postgres query, not just the rejected promise)", async () => {
-      await prisma.task.create({
-        data: { id: "mid-batch-dup", title: "seeded", status: "pending" },
+      await service.create({
+        id: "mid-batch-dup",
+        title: "seeded",
+        status: "pending",
       });
 
       await expect(

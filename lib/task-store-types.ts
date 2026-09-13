@@ -118,7 +118,10 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Bulk insert tasks */
+        /**
+         * Bulk insert tasks
+         * @description Inserts the whole array in one transaction (TSW-1.3): a single task's id collision or a webhook delivery failure rolls back the entire batch, not just that task. At most 500 tasks per call — the transaction's budget scales with batch size, and this cap bounds it.
+         */
         post: {
             parameters: {
                 query?: never;
@@ -141,7 +144,7 @@ export interface paths {
                         "application/json": components["schemas"]["BulkInsertResponse"];
                     };
                 };
-                /** @description Bad request */
+                /** @description Bad request — malformed body, a missing repo key, or more than 500 tasks in one batch */
                 400: {
                     headers: {
                         [name: string]: unknown;
@@ -152,6 +155,24 @@ export interface paths {
                 };
                 /** @description Unauthorized */
                 401: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+                /** @description Conflict — a task id in the batch already exists; the entire batch was rolled back */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+                /** @description Webhook delivery failed; the entire batch was rolled back */
+                502: {
                     headers: {
                         [name: string]: unknown;
                     };
@@ -2129,13 +2150,12 @@ export interface components {
             /** @example 1 */
             updated: number;
             /**
-             * @description IDs of tasks skipped because they already exist (Prisma P2002 unique constraint collision).
-             * @example [
-             *       "entropy-dead_exports-other-repo-2026-W29"
-             *     ]
+             * @description Always empty on success (TSW-1.3). bulk() is atomic — a single task id collision (P2002) now hard-fails the whole batch with 409 instead of skipping that task and continuing. This field is retained only for response-shape backward compatibility.
+             * @example []
              */
             skipped: string[];
         };
+        /** @description Tasks to insert, at most 500 per call (TSW-1.3: the whole array runs in one transaction, and the cap bounds that transaction's budget). An over-cap batch is rejected with 400 — split it. */
         BulkInsertBody: {
             /** @example Implement feature X */
             title?: string;

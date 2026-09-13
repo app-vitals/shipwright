@@ -8,6 +8,8 @@
 
 import { z } from "@hono/zod-openapi";
 
+import { MAX_BULK_TASKS } from "./task-service.ts";
+
 // ─── Common ───────────────────────────────────────────────────────────────────
 
 export const ErrorSchema = z
@@ -566,15 +568,11 @@ export const SessionListResponseSchema = z
 /** Request body for PATCH /sessions/:slug — admin-only rename/archive. */
 export const SessionPatchBodySchema = z
   .object({
-    title: z
-      .string()
-      .nullable()
-      .optional()
-      .openapi({
-        example: "May launch prep",
-        description:
-          "Omitted: title untouched. A string: set. null: clears the title.",
-      }),
+    title: z.string().nullable().optional().openapi({
+      example: "May launch prep",
+      description:
+        "Omitted: title untouched. A string: set. null: clears the title.",
+    }),
     archived: z.boolean().optional().openapi({
       example: true,
       description:
@@ -727,10 +725,18 @@ const BulkInsertItemSchema = z
   })
   .passthrough();
 
-/** Request body for POST /tasks/bulk */
+/** Request body for POST /tasks/bulk.
+ * The batch-size cap (MAX_BULK_TASKS in task-service.ts) is enforced by the
+ * service rather than by Zod here, for the same reason the required fields
+ * above are — a custom BadRequestError message instead of a raw ZodError —
+ * but it is advertised in the generated spec via `maxItems` below.
+ */
 export const BulkInsertBodySchema = z
   .array(BulkInsertItemSchema)
-  .openapi("BulkInsertBody");
+  .openapi("BulkInsertBody", {
+    maxItems: MAX_BULK_TASKS,
+    description: `Tasks to insert, at most ${MAX_BULK_TASKS} per call (TSW-1.3: the whole array runs in one transaction, and the cap bounds that transaction's budget). An over-cap batch is rejected with 400 — split it.`,
+  });
 
 /** Response for POST /tasks/bulk */
 export const BulkInsertResponseSchema = z

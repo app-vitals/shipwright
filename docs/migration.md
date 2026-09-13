@@ -4,6 +4,45 @@ Durable notes for breaking changes and the steps needed to migrate across versio
 
 ---
 
+## Breaking: `POST /tasks/bulk` is atomic — no more partial success _(TSW-1.3)_
+
+**Version**: next (TSW-1.3)
+
+`POST /tasks/bulk` used to insert tasks one at a time, each in its own transaction, and
+*skip* any task whose `id` already existed — the rest of the batch still landed and the
+colliding IDs came back in `skipped`. It is now all-or-nothing: the whole array is inserted
+in a single transaction, and any failure rolls the entire batch back.
+
+**What changed**:
+- A duplicate `id` anywhere in the batch now fails the whole call with **`409`** and inserts
+  **nothing** (previously: that one task was skipped, the others were inserted, `200`).
+- A webhook delivery failure now fails the whole call with **`502`** and rolls back every row
+  inserted in that call.
+- Exactly one `task.write` event fires per successful call, carrying every created row
+  (previously: one event per task, or none, depending on the path).
+- `skipped` is retained in the `200` response body for response-shape backward compatibility
+  but is now **always `[]`** — collisions hard-fail instead of populating it.
+- New batch-size cap: **at most 500 tasks per call** (`MAX_BULK_TASKS`), over which the call is
+  rejected with `400`. The single transaction's budget scales with batch size
+  (`WEBHOOK_TX_TIMEOUT_MS` floor + `BULK_TX_PER_TASK_TIMEOUT_MS` per task); the cap bounds it,
+  so an oversized batch gets a clean `400` rather than a transaction timeout surfacing as a
+  generic `500`.
+
+**Migration**:
+- **For existing records**: No action required — this changes request handling only, no schema
+  change and no data migration.
+- **For API consumers**: Stop reading `skipped` to detect collisions; branch on the status code
+  instead. On a non-2xx, treat the batch as *entirely* un-inserted, resolve or drop the
+  colliding `id`, and retry the whole batch — a rerun is idempotent once the collision is gone.
+  Callers that relied on "post the batch, let dupes be skipped" as a cheap upsert must now
+  de-duplicate before posting. Callers posting more than 500 tasks must chunk.
+  The in-repo callers (`plan-session`, `entropy-fix`, `error-fix`, `security-fix`,
+  `consolidation-fix`, `test-fix`, `research-docs`) already treat a non-2xx `/tasks/bulk`
+  response as "log the body and stop; the rerun is idempotent", so they needed no changes.
+- **Deploy order**: no ordering constraint — the change is confined to the task-store service.
+
+---
+
 ## Breaking: `Agent.authorAllowlist` field removed _(DBR-2.4)_
 
 **Version**: next (DBR-2.4)

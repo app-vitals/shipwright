@@ -6,6 +6,9 @@ import type { PrismaClient, Task } from "./index.ts";
 import type { ReadyTaskLike } from "./ready.ts";
 import { CLOSED_STATUSES, OPEN_STATUSES } from "./statuses.ts";
 import {
+  BULK_TX_PER_TASK_TIMEOUT_MS,
+  bulkTxTimeoutMs,
+  MAX_BULK_TASKS,
   type TaskListFilters,
   TaskService,
   WEBHOOK_TX_TIMEOUT_MS,
@@ -516,6 +519,110 @@ describe("TaskService.bulk (unit)", () => {
     // "after-task" must never have been reached.
     expect(created).toEqual(["before-task"]);
     expect(created).not.toContain("after-task");
+  });
+
+  /**
+   * Transaction-budget conformance for bulk(), the one dispatching write path
+   * the TSW-1.2 parametrized suite below can't cover with a single fixed
+   * value. Everything the other eight paths do is bounded; bulk()'s work
+   * scales with tasks.length, so its budget has to as well — a fixed 10s
+   * budget would eventually be exhausted by the batch's own inserts and
+   * surface as a raw Prisma transaction-timeout (generic 500), not the
+   * documented 409/502.
+   */
+  function makeBulkTimeoutRecordingDouble() {
+    const optionsSeen: unknown[] = [];
+    const prisma = {
+      task: {
+        create: async ({ data }: { data: Record<string, unknown> }) => ({
+          ...data,
+          session: null,
+        }),
+      },
+      $transaction: async (
+        fn: (tx: unknown) => Promise<unknown>,
+        options?: unknown,
+      ) => {
+        optionsSeen.push(options);
+        return fn(prisma);
+      },
+    };
+    return {
+      prisma: prisma as unknown as PrismaClient,
+      optionsSeen,
+    };
+  }
+
+  it("bulkTxTimeoutMs() floors at WEBHOOK_TX_TIMEOUT_MS and adds a per-task allowance", () => {
+    // An empty batch still gets the shared single-item floor — that floor is
+    // what keeps the dispatcher's own AbortSignal the first clock to fire.
+    expect(bulkTxTimeoutMs(0)).toBe(WEBHOOK_TX_TIMEOUT_MS);
+    expect(bulkTxTimeoutMs(1)).toBe(
+      WEBHOOK_TX_TIMEOUT_MS + BULK_TX_PER_TASK_TIMEOUT_MS,
+    );
+    expect(bulkTxTimeoutMs(50)).toBe(
+      WEBHOOK_TX_TIMEOUT_MS + 50 * BULK_TX_PER_TASK_TIMEOUT_MS,
+    );
+    // Strictly increasing in batch size — the whole point of the change.
+    expect(bulkTxTimeoutMs(50)).toBeGreaterThan(bulkTxTimeoutMs(10));
+    // And bounded, because MAX_BULK_TASKS caps the input.
+    expect(bulkTxTimeoutMs(MAX_BULK_TASKS)).toBe(
+      WEBHOOK_TX_TIMEOUT_MS + MAX_BULK_TASKS * BULK_TX_PER_TASK_TIMEOUT_MS,
+    );
+  });
+
+  it("passes a batch-size-scaled transaction timeout, not the fixed WEBHOOK_TX_TIMEOUT_MS", async () => {
+    const { prisma, optionsSeen } = makeBulkTimeoutRecordingDouble();
+    const service = new TaskService(prisma, undefined, async () => {});
+
+    await service.bulk(
+      Array.from({ length: 20 }, (_, i) => ({
+        id: `bulk-${i}`,
+        title: "t",
+        status: "pending",
+      })) as never,
+    );
+
+    expect(optionsSeen).toHaveLength(1);
+    expect(optionsSeen[0]).toEqual({ timeout: bulkTxTimeoutMs(20) });
+    // Regression guard on the reused-fixed-constant bug: a 20-item batch must
+    // not be handed the same budget a single-item write path gets.
+    expect(optionsSeen[0]).not.toEqual({ timeout: WEBHOOK_TX_TIMEOUT_MS });
+  });
+
+  it("rejects a batch over MAX_BULK_TASKS with BadRequestError without opening a transaction", async () => {
+    const { prisma, optionsSeen } = makeBulkTimeoutRecordingDouble();
+    const service = new TaskService(prisma, undefined, async () => {});
+
+    await expect(
+      service.bulk(
+        Array.from({ length: MAX_BULK_TASKS + 1 }, (_, i) => ({
+          id: `over-${i}`,
+          title: "t",
+          status: "pending",
+        })) as never,
+      ),
+    ).rejects.toBeInstanceOf(BadRequestError);
+
+    // Rejected up front — no transaction was ever opened for the over-cap
+    // batch, so there's nothing left to time out.
+    expect(optionsSeen).toHaveLength(0);
+  });
+
+  it("accepts a batch of exactly MAX_BULK_TASKS", async () => {
+    const { prisma, optionsSeen } = makeBulkTimeoutRecordingDouble();
+    const service = new TaskService(prisma, undefined, async () => {});
+
+    const result = await service.bulk(
+      Array.from({ length: MAX_BULK_TASKS }, (_, i) => ({
+        id: `at-cap-${i}`,
+        title: "t",
+        status: "pending",
+      })) as never,
+    );
+
+    expect(result.inserted).toBe(MAX_BULK_TASKS);
+    expect(optionsSeen).toHaveLength(1);
   });
 });
 
@@ -2387,6 +2494,13 @@ describe("TaskService.listBlocked() filters (unit)", () => {
  * These tests assert the options object actually reaches `$transaction` on
  * all eight paths — a regression here is invisible at runtime until a
  * receiver gets slow in production.
+ *
+ * `bulk()` is deliberately NOT one of the parametrized cases below: since
+ * TSW-1.3 it is the one dispatching path whose in-transaction work scales
+ * with input size, so it passes a batch-size-scaled budget
+ * (`bulkTxTimeoutMs`) rather than the shared fixed constant these cases
+ * assert. Its equivalent conformance tests live in the
+ * "TaskService.bulk (unit)" describe above.
  */
 describe("TaskService task.write transaction timeout (TSW-1.2)", () => {
   function makeTask(overrides: Partial<Task> = {}): Task {
