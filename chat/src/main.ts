@@ -15,8 +15,8 @@ import { join } from "node:path";
 import { registerGracefulShutdown } from "@shipwright/lib/graceful-shutdown";
 import { createChatServiceApp } from "./app.ts";
 import { createScopeResolver } from "./auth.ts";
-import { PrismaClient } from "./index.ts";
 import { MessageService } from "./message-service.ts";
+import { createPrismaClient } from "./prisma-client.ts";
 import { createReplyNotifier } from "./reply-notifier.ts";
 import { StallReaper } from "./stall-reaper.ts";
 import { ThreadService } from "./thread-service.ts";
@@ -78,7 +78,18 @@ async function startServer(): Promise<void> {
 
   await runMigrations();
 
-  const prisma = new PrismaClient();
+  // Prisma 7 has no implicit datasource: the client is built over a pg.Pool
+  // (src/prisma-client.ts), so the connection string must be present here
+  // rather than resolved from the schema at query time. Fail fast with a clear
+  // message instead of letting `pg` silently fall back to PG*/libpq defaults.
+  const databaseUrl = process.env.DATABASE_URL_SHIPWRIGHT_CHAT;
+  if (!databaseUrl) {
+    throw new Error(
+      "DATABASE_URL_SHIPWRIGHT_CHAT is not set — chat cannot connect to Postgres",
+    );
+  }
+
+  const prisma = createPrismaClient(databaseUrl);
   const tokenService = new ChatTokenService(prisma);
   const threadService = new ThreadService(prisma);
   const messageService = new MessageService(prisma);
