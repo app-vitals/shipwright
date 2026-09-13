@@ -27,15 +27,13 @@ import { PrismaClient } from "../prisma/client/client.ts";
 export const DB_CONNECT_TIMEOUT_MS = 10_000;
 
 /**
- * Build an adapter-backed PrismaClient for the given Postgres connection string.
+ * Build the `pg.Pool` the admin service's Prisma client runs on.
  *
- * `disposeExternalPool: true` is required, not cosmetic: the adapter leaves an
- * externally supplied pool open on dispose by default, so without it every
- * `prisma.$disconnect()` would leak its pool's sockets — which the integration
- * suites (a fresh client per `beforeEach`) would turn into connection
- * exhaustion within a single run.
+ * Split out of `createAdminPrismaClient` so the pool's own configuration — the
+ * connect timeout and the mandatory `error` listener — is assertable without a
+ * live database.
  */
-export function createAdminPrismaClient(databaseUrl: string): PrismaClient {
+export function createAdminPgPool(databaseUrl: string): pg.Pool {
   // Fail loudly on a missing connection string rather than booting against an
   // unintended database. `pg` only parses `connectionString` when it is truthy
   // (`if (config.connectionString) { ... }` in its ConnectionParameters), so a
@@ -55,6 +53,42 @@ export function createAdminPrismaClient(databaseUrl: string): PrismaClient {
     connectionString: databaseUrl,
     connectionTimeoutMillis: DB_CONNECT_TIMEOUT_MS,
   });
+
+  // Required, not diagnostic logging: `pg.Pool` re-emits backend/network errors
+  // hit by *idle* clients as its own `error` event, and `Pool` is an
+  // `EventEmitter` — an `error` event with no listener is rethrown as an
+  // uncaught exception that kills the process. Prisma 6's Rust query engine
+  // owned the pool and absorbed these; under Prisma 7 the pool is plain
+  // application code, so admin now has to own it. The service sits behind Cloud
+  // SQL / a proxy sidecar that drops idle connections, and `pg`'s default
+  // `idleTimeoutMillis` keeps idle clients around long enough to be hit. The
+  // pool discards the broken client on its own, so logging is the correct
+  // response — the next checkout just opens a fresh connection.
+  pool.on("error", (err) => {
+    console.error("[admin] idle pg pool client error:", err);
+  });
+
+  return pool;
+}
+
+/**
+ * Build an adapter-backed PrismaClient for the given Postgres connection string.
+ *
+ * `disposeExternalPool: true` is required, not cosmetic: the adapter leaves an
+ * externally supplied pool open on dispose by default, so without it every
+ * `prisma.$disconnect()` would leak its pool's sockets — which the integration
+ * suites (a fresh client per `beforeEach`) would turn into connection
+ * exhaustion within a single run.
+ *
+ * Note for BYO-Postgres operators: the connection string is parsed by `pg`, not
+ * by Prisma's old query engine, so Prisma-only query params (`schema`,
+ * `connection_limit`, `pool_timeout`, `pgbouncer`) are ignored at runtime and
+ * `sslmode=require` now verifies the server certificate. See
+ * `docs/migration.md` ("Breaking: admin's `DATABASE_URL_SHIPWRIGHT_ADMIN` is
+ * now parsed by `pg`, not Prisma").
+ */
+export function createAdminPrismaClient(databaseUrl: string): PrismaClient {
+  const pool = createAdminPgPool(databaseUrl);
   const adapter = new PrismaPg(pool, { disposeExternalPool: true });
   return new PrismaClient({ adapter });
 }
