@@ -21,11 +21,14 @@ import { PrismaClient } from "../prisma/client/client.ts";
 export { PrismaClient };
 
 /**
- * Connect timeout for pool acquisition. Prisma 6's Rust engine applied a 5s
- * Postgres connect timeout by default; `pg` defaults to 0 (wait forever), so
+ * Floor for `pg`'s `connectionTimeoutMillis`. Prisma 6's Rust engine applied a
+ * 5s Postgres connect timeout by default; `pg` defaults to 0 (wait forever), so
  * without this an unreachable database hangs the caller instead of failing
  * fast — which in turn would hang GET /health/ready rather than reporting
  * not-ready. Restated explicitly to preserve the v6 behaviour.
+ *
+ * A configured `pool_timeout` can raise this (see `toPoolConfig`), never lower
+ * it.
  */
 export const CONNECT_TIMEOUT_MS = 5000;
 
@@ -55,11 +58,32 @@ export function toPoolConfig(databaseUrl: string): pg.PoolConfig {
   const schema = url.searchParams.get("schema");
   if (schema) overrides.options = `-c search_path=${schema}`;
 
+  // `pool_timeout` (seconds) was v6's budget for waiting on a free pool slot,
+  // independent of the connect timeout. `pg` has no separate acquire timeout:
+  // pg-pool's `connect()` arms the same `connectionTimeoutMillis` timer on both
+  // the "pool is full / queue behind an idle client" path and the "dial a new
+  // client" path. A configured `pool_timeout` therefore widens that single
+  // budget rather than being silently dropped — CI sets `pool_timeout=20`, and
+  // on the server a webhook-carrying transaction can hold its pool connection
+  // for up to `WEBHOOK_TX_TIMEOUT_MS` (10s, task-service.ts), longer than a
+  // waiter capped at the 5s floor would tolerate.
+  //
+  // Deliberate divergence: v6 read `pool_timeout=0` as "wait forever". pg's
+  // equivalent (`connectionTimeoutMillis: 0`) would apply to the connect path
+  // too, so an unreachable database would hang GET /health/ready instead of
+  // reporting not-ready. `0` — like a negative or non-numeric value — falls
+  // back to the floor instead.
+  const poolTimeout = url.searchParams.get("pool_timeout");
+  const poolTimeoutMs =
+    poolTimeout !== null && Number.isFinite(Number(poolTimeout))
+      ? Number(poolTimeout) * 1000
+      : 0;
+
   for (const param of PRISMA_ONLY_PARAMS) url.searchParams.delete(param);
 
   return {
     connectionString: url.toString(),
-    connectionTimeoutMillis: CONNECT_TIMEOUT_MS,
+    connectionTimeoutMillis: Math.max(poolTimeoutMs, CONNECT_TIMEOUT_MS),
     ...overrides,
   };
 }
