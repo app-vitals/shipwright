@@ -5,13 +5,15 @@
 // database for the chat service. Do NOT point this at a shared database.
 
 generator client {
-  provider = "prisma-client-js"
+  provider = "prisma-client"
   output   = "./client"
 }
 
+// Prisma 7 removed `url` from the schema's datasource block: the connection
+// string for CLI/Migrate now lives in prisma.config.ts, and the runtime client
+// gets its connection from the pg driver adapter (see src/prisma-client.ts).
 datasource db {
   provider = "postgresql"
-  url      = env("DATABASE_URL_SHIPWRIGHT_CHAT")
 }
 
 // ─── Chat Token ───────────────────────────────────────────────────────────────

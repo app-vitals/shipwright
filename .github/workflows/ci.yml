@@ -121,13 +121,14 @@ jobs:
       # docker's `--cpu-shares` shorthand there anyway).
       DATABASE_URL_ADMIN_TEST: postgres://shipwright:shipwright@localhost:5432/shipwright_admin_test
       DATABASE_URL_SHIPWRIGHT_TASK_STORE_TEST: postgres://shipwright:shipwright@localhost:5432/shipwright_task_store_test?connection_limit=5&pool_timeout=20
-      # `prisma migrate deploy` reads the non-_TEST var names below, so they
-      # need to point at the same connection strings as the _TEST vars above to
-      # sync schema against the right databases. Nothing else in this job reads
-      # these three vars at runtime. task-store and chat (still Prisma 6) read
-      # them via their schema's own `datasource db { url = env(...) }`; admin
-      # (Prisma 7) reads DATABASE_URL_SHIPWRIGHT_ADMIN via admin/prisma.config.ts
-      # instead, since Prisma 7 dropped `url` from the datasource block.
+      # `prisma migrate deploy` reads the non-_TEST var names below — task-store
+      # via its own `datasource db { url = env(...) }` declaration; admin and
+      # chat (both on Prisma 7, which dropped `url` from the schema) via their
+      # own prisma.config.ts — so they need to be set to the same connection
+      # strings as the _TEST vars above to sync schema against the right
+      # databases. DATABASE_URL_SHIPWRIGHT_CHAT is the exception to the
+      # "nothing else reads these at runtime" rule: chat's integration suite
+      # reads it directly (it has no separate _TEST variant).
       DATABASE_URL_SHIPWRIGHT_ADMIN: postgres://shipwright:shipwright@localhost:5432/shipwright_admin_test
       DATABASE_URL_SHIPWRIGHT_TASK_STORE: postgres://shipwright:shipwright@localhost:5432/shipwright_task_store_test
       DATABASE_URL_SHIPWRIGHT_CHAT: postgres://shipwright:shipwright@localhost:5432/shipwright_chat_test
@@ -178,7 +179,12 @@ jobs:
           # is what now supplies the connection URL. Both are cwd-dependent.
           (cd admin && bunx prisma migrate deploy --schema=prisma/schema.prisma)
           bunx prisma migrate deploy --schema=task-store/prisma/schema.prisma
-          bunx prisma migrate deploy --schema=chat/prisma/schema.prisma
+          # chat is on Prisma 7 while the root/admin/task-store CLI is still on
+          # 6.x. Its schema no longer carries `url` (v7 moved that to
+          # chat/prisma.config.ts), which the 6.x CLI rejects — so run it from
+          # the chat workspace, where bunx resolves the 7.x CLI and the config
+          # file is discovered.
+          (cd chat && bunx prisma migrate deploy --schema=prisma/schema.prisma)
 
       - name: Install Playwright chromium-headless-shell
         run: ./agent/node_modules/.bin/playwright install --with-deps chromium-headless-shell
