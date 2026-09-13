@@ -3,16 +3,24 @@
  *
  * Unit tests for `toPoolConfig` — the pure URL→`pg.PoolConfig` translation that
  * replaces Prisma 6's Rust-engine handling of Prisma-only connection-string
- * parameters. No I/O: it parses a URL, coerces numbers and builds a search_path.
+ * parameters — and for `createTaskStorePool`'s idle-client error handling.
  *
- * What matters here is that every Prisma-only parameter is either translated
- * into a `pg.PoolConfig` field or dropped from the connection string — anything
- * left in the URL is forwarded to Postgres as an unknown startup parameter and
- * the connection fails.
+ * What matters for `toPoolConfig` is that every Prisma-only parameter is either
+ * translated into a `pg.PoolConfig` field or dropped from the connection string
+ * — anything left in the URL is forwarded to Postgres as an unknown startup
+ * parameter and the connection fails.
+ *
+ * No I/O in either group: `toPoolConfig` just parses a URL, and the pool is
+ * constructed but never connects — its error path is driven by emitting on the
+ * pool directly, the same way node-postgres surfaces an idle-client failure.
  */
 
 import { describe, expect, test } from "bun:test";
-import { CONNECT_TIMEOUT_MS, toPoolConfig } from "./prisma-client.ts";
+import {
+  CONNECT_TIMEOUT_MS,
+  createTaskStorePool,
+  toPoolConfig,
+} from "./prisma-client.ts";
 
 const BASE_URL = "postgresql://user:pass@localhost:5432/shipwright_task_store";
 
@@ -77,5 +85,49 @@ describe("toPoolConfig", () => {
 
     expect(config.max).toBeUndefined();
     expect(config.connectionString).not.toContain("connection_limit");
+  });
+});
+
+/**
+ * Guards the idle-connection failure mode introduced by the Prisma 7 driver
+ * adapter: `pg.Pool` re-emits errors raised by idle pooled clients, and an
+ * unhandled `error` event throws and kills this long-lived service. Prisma 6's
+ * Rust engine handled connection loss internally, so the listener is what
+ * preserves the pre-upgrade behaviour.
+ */
+describe("createTaskStorePool", () => {
+  // Port 1 is never a Postgres: the pool is never connected, so this is inert.
+  const UNUSED_URL =
+    "postgresql://user:pass@127.0.0.1:1/shipwright_task_store_unit_test";
+
+  test("registers an error listener so idle-client errors cannot crash the process", async () => {
+    const pool = createTaskStorePool(UNUSED_URL);
+
+    expect(pool.listenerCount("error")).toBeGreaterThan(0);
+
+    await pool.end();
+  });
+
+  test("routes an idle-client error to the logger instead of throwing", async () => {
+    const logged: unknown[] = [];
+    const pool = createTaskStorePool(UNUSED_URL, (err) => logged.push(err));
+
+    const idleError = new Error("Connection terminated unexpectedly");
+    // `emit` returns false when nothing is listening — which is exactly the
+    // unhandled-'error' case node would turn into a process-killing throw.
+    expect(pool.emit("error", idleError)).toBe(true);
+
+    expect(logged).toEqual([idleError]);
+
+    await pool.end();
+  });
+
+  test("still applies the toPoolConfig translation to its connection options", async () => {
+    const pool = createTaskStorePool(`${BASE_URL}?connection_limit=5`);
+
+    expect(pool.options.max).toBe(5);
+    expect(pool.options.connectionTimeoutMillis).toBe(CONNECT_TIMEOUT_MS);
+
+    await pool.end();
   });
 });

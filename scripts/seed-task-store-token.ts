@@ -82,8 +82,14 @@ export async function seedTaskStoreAdminToken(opts: {
 // ─── CLI entrypoint ───────────────────────────────────────────────────────────
 
 if (import.meta.main) {
-  const { PrismaClient } = await import(
-    "../task-store/prisma/client/index.js"
+  // Imported lazily (and via the task-store's own factory) so that unit tests
+  // importing the pure helpers above don't pull in the Prisma client. Prisma 7
+  // removed both the `prisma/client/index.js` output path and the
+  // `PrismaClient({ datasources })` option, so client construction now lives in
+  // exactly one place — `createPrismaClient`, which wires the PrismaPg driver
+  // adapter over a `pg.Pool`.
+  const { createPrismaClient } = await import(
+    "../task-store/src/prisma-client.ts"
   );
 
   const { dbUrl, token, agentId } = parseSeedArgs(process.argv.slice(2));
@@ -102,7 +108,7 @@ if (import.meta.main) {
     process.exit(1);
   }
 
-  const prisma = new PrismaClient({ datasources: { db: { url: databaseUrl } } });
+  const prisma = createPrismaClient(databaseUrl);
   try {
     const label = agentId ? `dev-${agentId}` : "dev-admin";
     await seedTaskStoreAdminToken({

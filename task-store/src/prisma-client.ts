@@ -88,6 +88,39 @@ export function toPoolConfig(databaseUrl: string): pg.PoolConfig {
   };
 }
 
+/** Default sink for idle-client pool errors. */
+function logIdlePoolError(err: unknown): void {
+  console.error("[task-store] idle pg pool client error:", err);
+}
+
+/**
+ * Builds the task-store's `pg.Pool` from `databaseUrl`.
+ *
+ * `pg.Pool` is an EventEmitter that re-emits errors raised by *idle* pooled
+ * clients (a Postgres restart/failover or an idle-connection timeout), and an
+ * unhandled `error` event on an EventEmitter throws — which would take down
+ * this long-lived service instead of just failing the in-flight query. Prisma
+ * 6's Rust engine absorbed connection loss internally, so the listener below
+ * restores that behaviour: node-postgres already evicts the broken client from
+ * the pool, so logging is enough and the next query re-connects. Mirrors
+ * `createChatPool` in chat/src/prisma-client.ts.
+ *
+ * `logError` is injectable so the listener can be exercised without a real
+ * Postgres failure.
+ *
+ * Exported for unit testing — callers should use `createPrismaClient`.
+ */
+export function createTaskStorePool(
+  databaseUrl: string,
+  logError: (err: unknown) => void = logIdlePoolError,
+): pg.Pool {
+  const pool = new pg.Pool(toPoolConfig(databaseUrl));
+
+  pool.on("error", logError);
+
+  return pool;
+}
+
 /**
  * Builds an adapter-backed PrismaClient for the given Postgres URL.
  *
@@ -98,7 +131,9 @@ export function toPoolConfig(databaseUrl: string): pg.PoolConfig {
  * actually releases the sockets — as it did in v6.
  */
 export function createPrismaClient(databaseUrl: string): PrismaClient {
-  const pool = new pg.Pool(toPoolConfig(databaseUrl));
-  const adapter = new PrismaPg(pool, { disposeExternalPool: true });
+  const adapter = new PrismaPg(createTaskStorePool(databaseUrl), {
+    disposeExternalPool: true,
+  });
+
   return new PrismaClient({ adapter });
 }
