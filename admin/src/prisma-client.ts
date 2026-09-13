@@ -36,6 +36,21 @@ export const DB_CONNECT_TIMEOUT_MS = 10_000;
  * exhaustion within a single run.
  */
 export function createAdminPrismaClient(databaseUrl: string): PrismaClient {
+  // Fail loudly on a missing connection string rather than booting against an
+  // unintended database. `pg` only parses `connectionString` when it is truthy
+  // (`if (config.connectionString) { ... }` in its ConnectionParameters), so a
+  // blank value is silently dropped and `pg.Pool` falls back to
+  // PGHOST/PGUSER/PGPASSWORD/PGDATABASE — or localhost:5432 as the OS user.
+  // The process would then either talk to the wrong database or die later with
+  // a bare `ECONNREFUSED 127.0.0.1:5432` that names no env var. Prisma 6's
+  // `new PrismaClient()` threw `Environment variable not found:
+  // DATABASE_URL_SHIPWRIGHT_ADMIN` immediately; this restores that.
+  if (databaseUrl.trim() === "") {
+    throw new Error(
+      "DATABASE_URL_SHIPWRIGHT_ADMIN is not set — the admin service requires a Postgres connection string (postgresql://user:password@host:5432/database)",
+    );
+  }
+
   const pool = new pg.Pool({
     connectionString: databaseUrl,
     connectionTimeoutMillis: DB_CONNECT_TIMEOUT_MS,

@@ -380,9 +380,12 @@ async function startServer(): Promise<void> {
 
   // Construct PrismaClient once at boot. Prisma 7 has no built-in query
   // engine, so this is a PrismaPg driver adapter over a pg.Pool built from
-  // DATABASE_URL_SHIPWRIGHT_ADMIN — see prisma-client.ts. The `?? ""` keeps
-  // the unset-URL path identical to runMigrations' (warn and carry on, then
-  // fail on first query) rather than throwing before the server ever binds.
+  // DATABASE_URL_SHIPWRIGHT_ADMIN — see prisma-client.ts. An unset URL throws
+  // there (an empty connection string would otherwise make pg fall back to the
+  // PG* env vars or localhost, silently pointing the service at a different
+  // database); the top-level catch turns that into a named
+  // "[admin] fatal startup error" and exit 1, matching how Prisma 6 refused to
+  // construct a client without the env var.
   const prisma = createAdminPrismaClient(
     process.env.DATABASE_URL_SHIPWRIGHT_ADMIN ?? "",
   );
