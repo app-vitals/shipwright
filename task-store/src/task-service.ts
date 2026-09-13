@@ -89,6 +89,50 @@ export const WEBHOOK_TX_TIMEOUT_MS = 10_000;
 const WEBHOOK_TX_OPTIONS = { timeout: WEBHOOK_TX_TIMEOUT_MS } as const;
 
 /**
+ * Per-task budget added on top of `WEBHOOK_TX_TIMEOUT_MS` for `bulk()`.
+ *
+ * The eight single-item write paths above each do a bounded amount of work
+ * (one or two queries plus the dispatcher call), so one fixed budget fits
+ * them all. `bulk()` does not: since TSW-1.3 it runs N creates + N session
+ * upserts inside ONE transaction before the dispatcher is even called, so
+ * its work scales with `tasks.length` while the fixed budget would not.
+ * Left fixed, a large-enough batch would blow the 10s budget and surface as
+ * a raw Prisma transaction-timeout error — which is neither a
+ * `WebhookDeliveryError` nor any other `ApiError`, so app.ts's `onError`
+ * would answer a generic 500 instead of the documented 409/502.
+ *
+ * 100ms per task is heavy overprovisioning against a measured create +
+ * upsert pair (single-digit ms on a healthy Postgres), so the batch's own
+ * inserts can't be what exhausts the budget; the `WEBHOOK_TX_TIMEOUT_MS`
+ * floor still covers the dispatcher round-trip exactly as before, keeping
+ * the dispatcher's own AbortSignal the first clock to fire.
+ */
+export const BULK_TX_PER_TASK_TIMEOUT_MS = 100;
+
+/**
+ * Hard cap on tasks per `bulk()` call. Bounds the worst-case transaction
+ * budget (and therefore how long one call can hold a pool connection) at
+ * `WEBHOOK_TX_TIMEOUT_MS + MAX_BULK_TASKS * BULK_TX_PER_TASK_TIMEOUT_MS` —
+ * without it, `bulkTxTimeoutMs()` would scale without limit. Sized well
+ * above any real caller: the plan/entropy/error/security/consolidation-fix
+ * skills that POST /tasks/bulk file tens of tasks per call, not hundreds.
+ * Over the cap is a caller error, so it's a clean 400 rather than a
+ * transaction left to time out.
+ */
+export const MAX_BULK_TASKS = 500;
+
+/**
+ * Transaction budget for a `bulk()` call of `taskCount` tasks: the shared
+ * single-item floor plus a per-task allowance. Exported for the
+ * timeout-conformance tests.
+ */
+export function bulkTxTimeoutMs(taskCount: number): number {
+  return (
+    WEBHOOK_TX_TIMEOUT_MS + Math.max(0, taskCount) * BULK_TX_PER_TASK_TIMEOUT_MS
+  );
+}
+
+/**
  * Parses an `updatedSince` filter value into a Date, matching the
  * BadRequestError(400) pattern used for `repo`/`prNumber` validation
  * elsewhere in the request stack rather than letting an unparseable value
@@ -645,42 +689,81 @@ export class TaskService implements TaskServiceLike {
   }
 
   /**
-   * Each task's create + its Session upsert run inside one $transaction per
-   * loop iteration (not one transaction for the whole bulk call) — this
-   * preserves the pre-existing partial-success semantics: one task's P2002
-   * collision (caught below) doesn't roll back tasks already inserted
-   * earlier in the same bulk() call, matching the try/catch-per-item
-   * behavior this had before session support was added.
+   * TSW-1.3: the whole bulk call runs inside ONE $transaction — not one
+   * $transaction per item (that was the pre-existing partial-success
+   * behavior, which this replaces). Every task's create() + its Session
+   * upsert are attempted in order; a P2002 collision on any single task
+   * (translated to ConflictError below, mirroring
+   * PullRequestService.claim()'s create-path P2002 handling) propagates
+   * uncaught out of the transaction callback, so Prisma rolls back every
+   * insert already made earlier in the same call — the whole batch is
+   * all-or-nothing. There is no more partial-success/skip outcome: a
+   * collision anywhere in the batch fails the entire call with 409, and the
+   * caller is expected to fix the collision and retry the whole batch (the
+   * skills that call this endpoint already treat a non-2xx response as
+   * "log, stop, rerun is idempotent" — see TSW-1.3 planning notes).
+   *
+   * Once every task has been created successfully, the dispatcher is called
+   * exactly once with the full array of created rows — mirrors create()'s
+   * single-item `webhookDispatcher("task.write", [task])` call, just with
+   * N rows instead of one. A thrown WebhookDeliveryError from that call also
+   * propagates uncaught, rolling back the entire batch (same rollback-on-
+   * throw contract as create()/update()/claim() above).
+   *
+   * Unlike the single-item write paths, this one does NOT use the shared
+   * fixed `WEBHOOK_TX_OPTIONS`: the amount of work inside the transaction
+   * now scales with `tasks.length`, so the budget scales with it too (see
+   * `bulkTxTimeoutMs`), bounded by the `MAX_BULK_TASKS` cap enforced below.
    */
   async bulk(
     tasks: Prisma.TaskCreateInput[],
   ): Promise<{ inserted: number; updated: number; skipped: string[] }> {
-    let inserted = 0;
-    const skipped: string[] = [];
-    for (const task of tasks) {
-      try {
-        await this.prisma.$transaction(async (tx) => {
-          const created = await tx.task.create({ data: task });
-          await this.sessionService.upsert(tx, created.session);
-        });
-        inserted++;
-      } catch (err: unknown) {
-        // P2002 = unique constraint violation (id already exists) — skip, but
-        // record the id so callers can see which tasks collided instead of
-        // this being silently swallowed.
-        if (
-          typeof err === "object" &&
-          err !== null &&
-          "code" in err &&
-          (err as { code: string }).code === "P2002"
-        ) {
-          if (typeof task.id === "string") skipped.push(task.id);
-          continue;
-        }
-        throw err;
-      }
+    // Rejected before the transaction opens: an over-cap batch is a caller
+    // error, and answering 400 up front is strictly better than opening a
+    // transaction whose budget we've deliberately declined to extend that
+    // far (which would time out into a generic 500 instead).
+    if (tasks.length > MAX_BULK_TASKS) {
+      throw new BadRequestError(
+        `bulk insert accepts at most ${MAX_BULK_TASKS} tasks per call (received ${tasks.length}) — split the batch`,
+      );
     }
-    return { inserted, updated: 0, skipped };
+    const createdRows = await this.prisma.$transaction(
+      async (tx) => {
+        const rows: Task[] = [];
+        for (const task of tasks) {
+          let created: Task;
+          try {
+            created = await tx.task.create({ data: task });
+          } catch (err: unknown) {
+            // P2002 = unique constraint violation (id already exists) —
+            // translate to ConflictError so it propagates uncaught and rolls
+            // back the whole transaction, rather than being swallowed/skipped.
+            if (
+              typeof err === "object" &&
+              err !== null &&
+              "code" in err &&
+              (err as { code: string }).code === "P2002"
+            ) {
+              throw new ConflictError(
+                `task '${task.id}' already exists — bulk() is all-or-nothing, the whole batch was rolled back`,
+              );
+            }
+            throw err;
+          }
+          await this.sessionService.upsert(tx, created.session);
+          rows.push(created);
+        }
+        // Fires once for the whole batch, after every row has landed, still
+        // inside this transaction — see JSDoc above.
+        await this.webhookDispatcher("task.write", rows);
+        return rows;
+      },
+      { timeout: bulkTxTimeoutMs(tasks.length) },
+    );
+    // skipped is always [] on success now — kept only for response-shape
+    // backward compatibility (AC4); collisions hard-fail the whole batch via
+    // ConflictError above instead of populating it.
+    return { inserted: createdRows.length, updated: 0, skipped: [] };
   }
 
   async update(id: string, data: Prisma.TaskUpdateInput): Promise<Task> {

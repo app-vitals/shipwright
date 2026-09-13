@@ -20,8 +20,15 @@
  *                              (true only when the agent's repo-scope resolver call itself
  *                              failed upstream; see auth.ts)
  *   POST   /tasks               create one (409 if id exists)
- *   POST   /tasks/bulk          insert array, skip 409s → { inserted, updated, skipped }
- *                              (skipped lists the IDs that collided with an existing task)
+ *   POST   /tasks/bulk          insert array atomically in ONE transaction (TSW-1.3) —
+ *                              a single task's id collision (409) or webhook delivery
+ *                              failure (502) rolls back the ENTIRE batch, not just that
+ *                              task. Returns { inserted, updated, skipped } on success;
+ *                              skipped is always [] (kept only for response-shape
+ *                              backward compatibility — collisions now hard-fail the
+ *                              whole call instead of populating it). Capped at
+ *                              MAX_BULK_TASKS tasks per call (400 over that), which
+ *                              bounds the batch-size-scaled transaction budget.
  *   GET    /tasks/:id           fetch one (404 when missing)
  *   PATCH  /tasks/:id           update
  *   DELETE /tasks/:id           delete
@@ -57,7 +64,7 @@ import {
   TaskSchema,
   UpdateTaskBodySchema,
 } from "../openapi-schemas.ts";
-import type { TaskServiceLike } from "../task-service.ts";
+import { MAX_BULK_TASKS, type TaskServiceLike } from "../task-service.ts";
 import { isOrgRepo } from "../validate.ts";
 
 // Fields that gate task claim ownership. Agent tokens must go through the
@@ -213,6 +220,7 @@ const bulkRoute = createRoute({
   path: "/bulk",
   tags: ["tasks"],
   summary: "Bulk insert tasks",
+  description: `Inserts the whole array in one transaction (TSW-1.3): a single task's id collision or a webhook delivery failure rolls back the entire batch, not just that task. At most ${MAX_BULK_TASKS} tasks per call — the transaction's budget scales with batch size, and this cap bounds it.`,
   request: {
     body: {
       content: { "application/json": { schema: BulkInsertBodySchema } },
@@ -224,11 +232,20 @@ const bulkRoute = createRoute({
       content: { "application/json": { schema: BulkInsertResponseSchema } },
     },
     400: {
-      description: "Bad request",
+      description: `Bad request — malformed body, a missing repo key, or more than ${MAX_BULK_TASKS} tasks in one batch`,
       content: { "application/json": { schema: ErrorSchema } },
     },
     401: {
       description: "Unauthorized",
+      content: { "application/json": { schema: ErrorSchema } },
+    },
+    409: {
+      description:
+        "Conflict — a task id in the batch already exists; the entire batch was rolled back",
+      content: { "application/json": { schema: ErrorSchema } },
+    },
+    502: {
+      description: "Webhook delivery failed; the entire batch was rolled back",
       content: { "application/json": { schema: ErrorSchema } },
     },
   },

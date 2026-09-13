@@ -12,14 +12,22 @@
  *   - writing into an archived session clears archivedAt (un-archive)
  *   - session: null / "" / "   " create no Session row at all, and
  *     create()/bulk() still work unchanged for those tasks
+ *   - TSW-1.3: bulk() is now atomic — one $transaction for the whole call.
+ *     A mid-batch P2002 collision rolls back every row inserted earlier in
+ *     the same call (including their session upserts) and rejects with
+ *     ConflictError; a full-batch success fires exactly one task.write event
+ *     containing every created row; a webhook failure mid-batch also rolls
+ *     back the whole batch and rejects with WebhookDeliveryError.
  *
  * Requires DATABASE_URL_SHIPWRIGHT_TASK_STORE_TEST to be set; skips otherwise.
  */
 
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { PrismaClient } from "../prisma/client/index.js";
+import { ConflictError, WebhookDeliveryError } from "./errors.ts";
 import { SessionService } from "./session-service.ts";
 import { TaskService } from "./task-service.ts";
+import type { WebhookDispatcher } from "./webhook-dispatcher.ts";
 
 const TEST_DB = process.env.DATABASE_URL_SHIPWRIGHT_TASK_STORE_TEST;
 
@@ -172,7 +180,7 @@ describeOrSkip(
       expect(row?.archivedAt).toBeNull();
     });
 
-    it("bulk()'s per-item P2002 skip semantics are preserved alongside the session upsert", async () => {
+    it("bulk()'s P2002 collision rolls back the entire batch, including already-processed session upserts", async () => {
       const existing = await service.create({
         id: "dup-id",
         title: "existing task",
@@ -180,30 +188,117 @@ describeOrSkip(
       });
       expect(existing.id).toBe("dup-id");
 
-      const result = await service.bulk([
-        {
-          id: "dup-id",
-          title: "colliding task",
-          status: "pending",
-          session: "should-not-exist",
-        },
-        { title: "fine task", status: "pending", session: "bulk-ok" },
-      ]);
-      expect(result.inserted).toBe(1);
-      expect(result.skipped).toEqual(["dup-id"]);
+      await expect(
+        service.bulk([
+          { title: "fine task", status: "pending", session: "bulk-ok" },
+          {
+            id: "dup-id",
+            title: "colliding task",
+            status: "pending",
+            session: "should-not-exist",
+          },
+        ]),
+      ).rejects.toBeInstanceOf(ConflictError);
 
-      // The colliding task's session upsert must not have run (its create()
-      // never committed — same transaction as the failed task create()).
+      // The colliding task's session upsert must not have run.
       const shouldNotExist = await prisma.session.findUnique({
         where: { slug: "should-not-exist" },
       });
       expect(shouldNotExist).toBeNull();
 
-      // The non-colliding task's session upsert still landed.
+      // The WHOLE batch rolled back — "fine task"'s session upsert, which ran
+      // earlier in the same transaction, must also not have landed.
       const fine = await prisma.session.findUnique({
         where: { slug: "bulk-ok" },
       });
-      expect(fine).not.toBeNull();
+      expect(fine).toBeNull();
+
+      // "fine task" itself must not exist as a row either.
+      const fineTask = await prisma.task.findFirst({
+        where: { title: "fine task" },
+      });
+      expect(fineTask).toBeNull();
+    });
+
+    it("bulk(): full-batch success fires exactly one task.write event containing every created row", async () => {
+      const calls: Array<{ type: string; data: unknown }> = [];
+      const dispatcher: WebhookDispatcher = async (type, data) => {
+        calls.push({ type, data });
+      };
+      const dispatchingService = new TaskService(prisma, undefined, dispatcher);
+
+      const result = await dispatchingService.bulk([
+        { title: "batch task 1", status: "pending" },
+        { title: "batch task 2", status: "pending" },
+        { title: "batch task 3", status: "pending" },
+      ]);
+
+      expect(result.inserted).toBe(3);
+      expect(result.skipped).toEqual([]);
+
+      expect(calls).toHaveLength(1);
+      expect(calls[0]?.type).toBe("task.write");
+      const dispatched = calls[0]?.data as Array<{ title: string }>;
+      expect(dispatched).toHaveLength(3);
+      expect(dispatched.map((t) => t.title).sort()).toEqual([
+        "batch task 1",
+        "batch task 2",
+        "batch task 3",
+      ]);
+    });
+
+    it("bulk(): a mid-batch P2002 collision rolls back every row in the batch (proven via direct Postgres query, not just the rejected promise)", async () => {
+      await service.create({
+        id: "mid-batch-dup",
+        title: "seeded",
+        status: "pending",
+      });
+
+      await expect(
+        service.bulk([
+          { title: "before-collision", status: "pending" },
+          {
+            id: "mid-batch-dup",
+            title: "colliding",
+            status: "pending",
+          },
+          { title: "after-collision", status: "pending" },
+        ]),
+      ).rejects.toBeInstanceOf(ConflictError);
+
+      const before = await prisma.task.findFirst({
+        where: { title: "before-collision" },
+      });
+      expect(before).toBeNull();
+
+      const after = await prisma.task.findFirst({
+        where: { title: "after-collision" },
+      });
+      expect(after).toBeNull();
+    });
+
+    it("bulk(): a webhook failure mid-batch rolls back every row in the batch and rejects with WebhookDeliveryError", async () => {
+      const throwingDispatcher: WebhookDispatcher = async () => {
+        throw new WebhookDeliveryError("simulated webhook delivery failure");
+      };
+      const failingService = new TaskService(
+        prisma,
+        undefined,
+        throwingDispatcher,
+      );
+
+      await expect(
+        failingService.bulk([
+          { title: "webhook-fail-1", status: "pending" },
+          { title: "webhook-fail-2", status: "pending" },
+          { title: "webhook-fail-3", status: "pending" },
+        ]),
+      ).rejects.toBeInstanceOf(WebhookDeliveryError);
+
+      const rows = await prisma.task.findMany({
+        where: { title: { startsWith: "webhook-fail-" } },
+      });
+      expect(rows).toHaveLength(0);
     });
 
     // ─── concurrency ────────────────────────────────────────────────────────
@@ -656,11 +751,7 @@ describeOrSkip("SessionService.update() (integration)", () => {
       data: { title: "Keep Me" },
     });
 
-    const result = await sessionService.update(
-      "untouched-fields",
-      {},
-      "dan",
-    );
+    const result = await sessionService.update("untouched-fields", {}, "dan");
 
     expect(result.title).toBe("Keep Me");
     expect(result.archived).toBe(false);
