@@ -59,6 +59,36 @@ A single `app.onError` hook in `task-store/src/app.ts` maps every thrown error t
 
 `GET /tasks?status=` validates the value against the full `TaskStatus` enum before it reaches Prisma, throwing `BadRequestError` on an unrecognized status rather than letting an invalid value surface as a raw Prisma error mapped to a 500.
 
+### Outbound webhook
+
+The task store can notify a downstream service of task writes via a generic outbound webhook (TSW-1.1/1.2/1.3). It is configured entirely through env vars — `SHIPWRIGHT_TASK_STORE_WEBHOOK_URL`, `_TOKEN`, `_SIGNING_SECRET`, and `_TIMEOUT_MS` — documented in [`docs/configuration-agent.md`](./configuration-agent.md#metrics--admin--chat--task-store-services). When `SHIPWRIGHT_TASK_STORE_WEBHOOK_URL` is unset, `createWebhookDispatcher()` (`task-store/src/webhook-dispatcher.ts`) returns a no-op dispatcher, so `TaskService` and its callers never have to branch on whether webhooks are configured.
+
+**Envelope.** Every dispatch is a single `POST {webhookUrl}` with a JSON body shaped `{ type: string, data: unknown }` — see the `WebhookDispatcher` type and `createWebhookDispatcher()` in `task-store/src/webhook-dispatcher.ts`. `data` is always an array of the affected `Task` rows, even for single-record writes (e.g. `[task]`), so a receiver can implement one shape for both single writes and batch inserts.
+
+**Event types.** `task.write` is the only event type emitted today. It fires from every `TaskService` method that creates or mutates a task row inside its own `$transaction` (grep `webhookDispatcher(` in `task-store/src/task-service.ts` for every call site):
+
+| Method | Fires `task.write`? | `data` payload |
+|---|---|---|
+| `create()` | Yes | `[task]` |
+| `bulk()` | Yes — once per call | every row inserted by that call (not once per row) |
+| `update()` | Yes | `[record]` |
+| `claim()` | Yes | `[after]` (the post-claim row) |
+| `complete()` | Yes | `[record]` |
+| `fail()` | Yes | `[record]` |
+| `release()` | Yes | `[record]` |
+| `recordSkip()` | Yes | `[updated]` |
+| `resetSkip()` | Yes | `[record]` |
+| `remove()` (`DELETE /tasks/:id`) | **No** | — the transaction deletes the row (and its `TaskEvent` audit rows), so there is no surviving row to send as `data: [task]`; a "task deleted" event would need a different, not-yet-specified event shape, not `task.write` (see the comment above `remove()` in `task-store/src/task-service.ts`). |
+| `heartbeat()` | **No** | — deliberately excluded: it's the hottest-volume write path in the service (every claimed task across the whole agent fleet touches it on a tight interval) and a `heartbeatAt`-only change is not an audit-worthy event for downstream consumers, mirroring its exclusion from the `TaskEvent` audit trail. |
+
+`GET`/list/read endpoints never dispatch — only writes that create or mutate a `Task` row do.
+
+**Fail-closed, no retry.** The dispatcher call sits *inside* the same `$transaction` as the write it announces. A delivery failure (non-2xx response, network error, or timeout) throws `WebhookDeliveryError`, which propagates uncaught out of the transaction callback — Prisma rolls back the entire write (task row, session upsert, audit event, everything) rather than leaving a task row that an undelivered webhook never announced. There is no retry: a caller whose write fails this way must resubmit the original request. See the `WebhookDeliveryError` row in [Error handling](#error-handling) above for the resulting `502` and the transaction-timeout interaction (webhook timeout vs. Prisma's transaction timeout).
+
+**Signature header.** When `SHIPWRIGHT_TASK_STORE_WEBHOOK_SIGNING_SECRET` is set, every request carries `X-Shipwright-Signature: sha256={hmac}`, where `{hmac}` is the HMAC-SHA256 of the raw JSON request body, hex-encoded, keyed by the signing secret (`createHmac("sha256", signingSecret).update(body).digest("hex")` in `task-store/src/webhook-dispatcher.ts`). The signing secret is a **separate credential** from `SHIPWRIGHT_TASK_STORE_WEBHOOK_TOKEN` (the `Authorization: Bearer` value): signing with the bearer token would add no verification independent of the bearer check, since anyone who can observe the `Authorization` header on the receiving side (access logs, a proxy, APM tooling) would already hold the key needed to forge the signature. Either, both, or neither of the token and signing secret may be configured independently; when the signing secret is unset, the `X-Shipwright-Signature` header is omitted entirely (never falls back to the bearer token as a signing key).
+
+**Integration logic lives downstream, not here.** Task-store's webhook surface is deliberately generic — it emits `{ type, data }` envelopes and knows nothing about Jira, Linear, or any other issue tracker. Integration-specific logic (mapping a task write to a Jira ticket update, a Linear issue transition, a Slack message, etc.) belongs in a separate downstream service that subscribes to this webhook, not in task-store itself. Do not add integration-specific branching (`if (type === "task.write" && data.repo === "...")`-style logic tied to a specific third-party system) to `task-store/src/webhook-dispatcher.ts` or `task-store/src/task-service.ts` — that scope boundary is intentional, keeping task-store a generic, repo-agnostic backend.
+
 ### Tasks
 
 #### List tasks
