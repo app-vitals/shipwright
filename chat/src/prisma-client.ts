@@ -25,6 +25,39 @@ import { PrismaClient } from "../prisma/client/client.ts";
  */
 export const DEFAULT_CONNECT_TIMEOUT_MS = 5000;
 
+/** Default sink for idle-client pool errors. */
+function logIdlePoolError(err: unknown): void {
+  console.error("[chat] idle pg pool client error:", err);
+}
+
+/**
+ * Builds the chat service's `pg.Pool`.
+ *
+ * `pg.Pool` is an EventEmitter that re-emits errors raised by *idle* pooled
+ * clients (a Postgres restart/failover or an idle-connection timeout), and an
+ * unhandled `error` event on an EventEmitter throws — which would take down
+ * this long-lived service instead of just failing the in-flight query. Prisma
+ * 6's Rust engine absorbed connection loss internally, so the listener below
+ * restores that behaviour: node-postgres already evicts the broken client from
+ * the pool, so logging is enough and the next query re-connects.
+ *
+ * `logError` is injectable so the listener can be exercised without a real
+ * Postgres failure.
+ */
+export function createChatPool(
+  databaseUrl: string,
+  logError: (err: unknown) => void = logIdlePoolError,
+): pg.Pool {
+  const pool = new pg.Pool({
+    connectionString: databaseUrl,
+    connectionTimeoutMillis: DEFAULT_CONNECT_TIMEOUT_MS,
+  });
+
+  pool.on("error", logError);
+
+  return pool;
+}
+
 /**
  * Builds an adapter-backed PrismaClient for `databaseUrl`.
  *
@@ -33,12 +66,9 @@ export const DEFAULT_CONNECT_TIMEOUT_MS = 5000;
  * callers keep a single lifecycle handle.
  */
 export function createPrismaClient(databaseUrl: string): PrismaClient {
-  const pool = new pg.Pool({
-    connectionString: databaseUrl,
-    connectionTimeoutMillis: DEFAULT_CONNECT_TIMEOUT_MS,
+  const adapter = new PrismaPg(createChatPool(databaseUrl), {
+    disposeExternalPool: true,
   });
-
-  const adapter = new PrismaPg(pool, { disposeExternalPool: true });
 
   return new PrismaClient({ adapter });
 }
