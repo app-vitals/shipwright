@@ -5,14 +5,18 @@
 // WARNING: This schema uses DATABASE_URL_SHIPWRIGHT_ADMIN — a dedicated database
 // for the admin service. Do NOT point this at a shared database.
 
+// Prisma 7: the `prisma-client` generator (ESM, driver-adapter based) replaces
+// `prisma-client-js`, and the datasource block no longer accepts `url` — the
+// connection string for CLI/Migrate lives in ../prisma.config.ts, and the
+// runtime client connects through a PrismaPg driver adapter (see
+// admin/src/prisma-client.ts).
 generator client {
-  provider = "prisma-client-js"
+  provider = "prisma-client"
   output   = "./client"
 }
 
 datasource db {
   provider = "postgresql"
-  url      = env("DATABASE_URL_SHIPWRIGHT_ADMIN")
 }
 
 // ─── Agent ────────────────────────────────────────────────────────────────────

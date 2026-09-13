@@ -6,20 +6,20 @@
  */
 
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
-import { PrismaClient } from "../prisma/client/index.js";
+import type { PrismaClient } from "../prisma/client/client.ts";
 import { AgentCronJobService } from "./agent-cron-jobs.ts";
 import { AgentCronRunService } from "./agent-cron-runs.ts";
 import { FixedClock } from "./clock.ts";
 import { NotFoundError } from "./errors.ts";
+import { createAdminPrismaClient } from "./prisma-client.ts";
 
 const TEST_DB = process.env.DATABASE_URL_ADMIN_TEST;
 
 const describeOrSkip = TEST_DB ? describe : describe.skip;
 
 function makePrisma(): PrismaClient {
-  return new PrismaClient({
-    datasources: { db: { url: TEST_DB as string } },
-  });
+  // TEST_DB is guaranteed set — the describe block is skipped otherwise.
+  return createAdminPrismaClient(TEST_DB as string);
 }
 
 async function createAgent(

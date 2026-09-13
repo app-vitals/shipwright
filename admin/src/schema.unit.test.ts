@@ -8,13 +8,28 @@ import { join } from "node:path";
 const schemaPath = join(import.meta.dir, "../prisma/schema.prisma");
 const schema = readFileSync(schemaPath, "utf-8");
 
+const configPath = join(import.meta.dir, "../prisma.config.ts");
+const config = readFileSync(configPath, "utf-8");
+
 describe("admin/prisma/schema.prisma", () => {
   test('datasource provider is "postgresql"', () => {
     expect(schema).toContain('provider = "postgresql"');
   });
 
-  test("datasource url uses DATABASE_URL_SHIPWRIGHT_ADMIN env var", () => {
-    expect(schema).toContain('url      = env("DATABASE_URL_SHIPWRIGHT_ADMIN")');
+  test('generator provider is "prisma-client"', () => {
+    // Prisma 7 replaced the `prisma-client-js` generator with `prisma-client`;
+    // regressing to the old one would also silently re-break every
+    // `../prisma/client/client.ts` import.
+    expect(schema).toContain('provider = "prisma-client"');
+  });
+
+  test("datasource block declares no url (Prisma 7 moved it to prisma.config.ts)", () => {
+    expect(schema).toMatch(/datasource db \{\s*provider = "postgresql"\s*\}/);
+    expect(schema).not.toContain("url      = env(");
+  });
+
+  test("prisma.config.ts sources the url from DATABASE_URL_SHIPWRIGHT_ADMIN", () => {
+    expect(config).toContain("process.env.DATABASE_URL_SHIPWRIGHT_ADMIN");
   });
 
   describe("AgentCronRun model", () => {

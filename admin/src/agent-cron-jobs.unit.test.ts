@@ -9,7 +9,7 @@
  * contract.
  */
 import { describe, expect, test } from "bun:test";
-import type { AgentCronJob, PrismaClient } from "../prisma/client/index.js";
+import type { AgentCronJob, PrismaClient } from "../prisma/client/client.ts";
 import { AgentCronJobService, isValidCron } from "./agent-cron-jobs.ts";
 import type { AgentTypeManifestResolver } from "./agent-type-manifest-loader.ts";
 import type { AgentTypeManifest } from "./agent-type-registry.ts";

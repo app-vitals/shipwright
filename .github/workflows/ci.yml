@@ -115,11 +115,13 @@ jobs:
       # docker's `--cpu-shares` shorthand there anyway).
       DATABASE_URL_ADMIN_TEST: postgres://shipwright:shipwright@localhost:5432/shipwright_admin_test?connection_limit=5&pool_timeout=20
       DATABASE_URL_SHIPWRIGHT_TASK_STORE_TEST: postgres://shipwright:shipwright@localhost:5432/shipwright_task_store_test?connection_limit=5&pool_timeout=20
-      # The schema.prisma files read the non-_TEST var names below (per their
-      # own `datasource db { url = env(...) }` declarations), so `prisma migrate
-      # deploy` needs these set to the same connection strings as the _TEST vars
-      # above to sync schema against the right databases. Nothing else in this
-      # job reads these three vars at runtime.
+      # `prisma migrate deploy` reads the non-_TEST var names below, so they
+      # need to point at the same connection strings as the _TEST vars above to
+      # sync schema against the right databases. Nothing else in this job reads
+      # these three vars at runtime. task-store and chat (still Prisma 6) read
+      # them via their schema's own `datasource db { url = env(...) }`; admin
+      # (Prisma 7) reads DATABASE_URL_SHIPWRIGHT_ADMIN via admin/prisma.config.ts
+      # instead, since Prisma 7 dropped `url` from the datasource block.
       DATABASE_URL_SHIPWRIGHT_ADMIN: postgres://shipwright:shipwright@localhost:5432/shipwright_admin_test
       DATABASE_URL_SHIPWRIGHT_TASK_STORE: postgres://shipwright:shipwright@localhost:5432/shipwright_task_store_test
       DATABASE_URL_SHIPWRIGHT_CHAT: postgres://shipwright:shipwright@localhost:5432/shipwright_chat_test
@@ -164,7 +166,11 @@ jobs:
 
       - name: Sync test DB schema
         run: |
-          bunx prisma migrate deploy --schema=admin/prisma/schema.prisma
+          # admin runs from its own directory on purpose: it is on Prisma 7, so
+          # the CLI must be admin's own (the repo root still resolves Prisma 6
+          # for task-store/chat) and must discover admin/prisma.config.ts, which
+          # is what now supplies the connection URL. Both are cwd-dependent.
+          (cd admin && bunx prisma migrate deploy --schema=prisma/schema.prisma)
           bunx prisma migrate deploy --schema=task-store/prisma/schema.prisma
           bunx prisma migrate deploy --schema=chat/prisma/schema.prisma
 

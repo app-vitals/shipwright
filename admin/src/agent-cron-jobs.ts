@@ -7,7 +7,7 @@
  * — not both, and not neither (unless silent=true).
  */
 
-import type { AgentCronJob, PrismaClient } from "../prisma/client/index.js";
+import type { AgentCronJob, PrismaClient } from "../prisma/client/client.ts";
 import {
   type AgentTypeManifestResolver,
   AgentTypeRegistry,

@@ -24,7 +24,6 @@ import { sentry } from "@sentry/hono/bun";
 import { registerGracefulShutdown } from "@shipwright/lib/graceful-shutdown";
 import { buildSentryInitOptions, initSentry } from "@shipwright/lib/sentry";
 import { Hono } from "hono";
-import { PrismaClient } from "../prisma/client/index.js";
 import { createAdminUIApp } from "./admin-ui.ts";
 import { AgentChatTokenService } from "./agent-chat-tokens.ts";
 import { AgentCronJobService } from "./agent-cron-jobs.ts";
@@ -55,6 +54,7 @@ import { HttpGoogleAuthClient } from "./google-auth-client.ts";
 import { HttpChatClient } from "./http-chat-client.ts";
 import { HttpKubernetesClient } from "./kubernetes-client.ts";
 import { HttpOktaAuthClient } from "./okta-auth-client.ts";
+import { createAdminPrismaClient } from "./prisma-client.ts";
 import { isPushEnabled } from "./push-sender.ts";
 import { PushService } from "./push-service.ts";
 import {
@@ -378,8 +378,14 @@ async function startServer(): Promise<void> {
   // Run DB migrations as idempotent preflight
   await runMigrations();
 
-  // Construct PrismaClient once at boot
-  const prisma = new PrismaClient();
+  // Construct PrismaClient once at boot. Prisma 7 has no built-in query
+  // engine, so this is a PrismaPg driver adapter over a pg.Pool built from
+  // DATABASE_URL_SHIPWRIGHT_ADMIN — see prisma-client.ts. The `?? ""` keeps
+  // the unset-URL path identical to runMigrations' (warn and carry on, then
+  // fail on first query) rather than throwing before the server ever binds.
+  const prisma = createAdminPrismaClient(
+    process.env.DATABASE_URL_SHIPWRIGHT_ADMIN ?? "",
+  );
 
   // Construct TokenCrypto — reads SHIPWRIGHT_ENCRYPTION_KEY at call time
   const crypto = makeTokenCrypto();

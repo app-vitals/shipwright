@@ -6,19 +6,19 @@
  */
 
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
-import { PrismaClient } from "../prisma/client/index.js";
+import type { PrismaClient } from "../prisma/client/client.ts";
 import { AgentCronJobService } from "./agent-cron-jobs.ts";
 import { AgentCronRunStatsService } from "./agent-cron-run-stats.ts";
 import { AgentCronRunService } from "./agent-cron-runs.ts";
 import { FixedClock } from "./clock.ts";
+import { createAdminPrismaClient } from "./prisma-client.ts";
 
 const TEST_DB = process.env.DATABASE_URL_ADMIN_TEST;
 const describeOrSkip = TEST_DB ? describe : describe.skip;
 
 function makePrisma(): PrismaClient {
-  return new PrismaClient({
-    datasources: { db: { url: TEST_DB as string } },
-  });
+  // TEST_DB is guaranteed set — the describe block is skipped otherwise.
+  return createAdminPrismaClient(TEST_DB as string);
 }
 
 const FIXED_NOW = new Date("2026-01-15T12:00:00Z");
@@ -1073,7 +1073,11 @@ describeOrSkip("AgentCronRunStatsService (integration)", () => {
   it("query() byPhase excludes skipped runs", async () => {
     const agentId = await createAgent(prisma);
     const cronId = await createCron(cronJobService, agentId);
-    const patchPhaseId = await createPhaseCron(cronJobService, agentId, "patch");
+    const patchPhaseId = await createPhaseCron(
+      cronJobService,
+      agentId,
+      "patch",
+    );
 
     const run1 = await runService.create(cronId, agentId, {
       startedAt: new Date("2026-01-10T09:00:00Z"),

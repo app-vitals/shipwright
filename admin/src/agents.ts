@@ -6,7 +6,7 @@
  * etc.) so route handlers never call prisma.agent.* directly.
  */
 
-import type { PrismaClient } from "../prisma/client/index.js";
+import type { PrismaClient } from "../prisma/client/client.ts";
 import { AgentMemberService } from "./agent-members.ts";
 import {
   type AgentTypeManifestResolver,

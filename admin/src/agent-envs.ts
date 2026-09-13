@@ -6,7 +6,7 @@
  * using SHIPWRIGHT_ENCRYPTION_KEY (AES-256-GCM).
  */
 
-import type { PrismaClient } from "../prisma/client/index.js";
+import type { PrismaClient } from "../prisma/client/client.ts";
 import { type Clock, SystemClock } from "./clock.ts";
 import { ApiError, UnprocessableEntityError } from "./errors.ts";
 import type { TokenCrypto } from "./token-crypto.ts";

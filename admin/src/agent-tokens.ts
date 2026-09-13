@@ -7,7 +7,7 @@
  */
 
 import { createHash, randomBytes } from "node:crypto";
-import type { AgentToken, PrismaClient } from "../prisma/client/index.js";
+import type { AgentToken, PrismaClient } from "../prisma/client/client.ts";
 import { type Clock, SystemClock } from "./clock.ts";
 import { UnprocessableEntityError } from "./errors.ts";
 

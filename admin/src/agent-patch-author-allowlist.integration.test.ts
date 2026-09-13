@@ -15,7 +15,7 @@
 
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { sign } from "hono/jwt";
-import { PrismaClient } from "../prisma/client/index.js";
+import type { PrismaClient } from "../prisma/client/client.ts";
 import { AgentChatTokenService } from "./agent-chat-tokens.ts";
 import { AgentCronJobService } from "./agent-cron-jobs.ts";
 import { AgentCronRunStatsService } from "./agent-cron-run-stats.ts";
@@ -33,6 +33,7 @@ import { createAdminApp } from "./agents-api.ts";
 import type { AdminDeps } from "./agents-api.ts";
 import { AgentService } from "./agents.ts";
 import { NoopChatServiceProvisioningClient } from "./chat-service-provisioning-client.ts";
+import { createAdminPrismaClient } from "./prisma-client.ts";
 import { NoopTaskStoreProvisioningClient } from "./task-store-provisioning-client.ts";
 import { makeTokenCrypto } from "./token-crypto.ts";
 
@@ -58,9 +59,8 @@ async function makeSessionCookie(): Promise<string> {
 }
 
 function makePrisma(): PrismaClient {
-  return new PrismaClient({
-    datasources: { db: { url: TEST_DB as string } },
-  });
+  // TEST_DB is guaranteed set — the describe block is skipped otherwise.
+  return createAdminPrismaClient(TEST_DB as string);
 }
 
 const CODING_MANIFEST: AgentTypeManifest = {

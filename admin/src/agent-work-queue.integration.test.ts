@@ -6,17 +6,17 @@
  */
 
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
-import { PrismaClient } from "../prisma/client/index.js";
+import type { PrismaClient } from "../prisma/client/client.ts";
 import { AgentWorkQueueService } from "./agent-work-queue.ts";
+import { createAdminPrismaClient } from "./prisma-client.ts";
 
 const TEST_DB = process.env.DATABASE_URL_ADMIN_TEST;
 
 const describeOrSkip = TEST_DB ? describe : describe.skip;
 
 function makePrisma(): PrismaClient {
-  return new PrismaClient({
-    datasources: { db: { url: TEST_DB as string } },
-  });
+  // TEST_DB is guaranteed set — the describe block is skipped otherwise.
+  return createAdminPrismaClient(TEST_DB as string);
 }
 
 async function createAgent(
@@ -178,7 +178,10 @@ describeOrSkip("AgentWorkQueueService (integration)", () => {
   });
 
   it("getMany() omits agents with no snapshot and includes only those that have one", async () => {
-    const agentWithSnapshotId = await createAgent(prisma, "Agent with snapshot");
+    const agentWithSnapshotId = await createAgent(
+      prisma,
+      "Agent with snapshot",
+    );
     const agentWithoutSnapshotId = await createAgent(
       prisma,
       "Agent without snapshot",

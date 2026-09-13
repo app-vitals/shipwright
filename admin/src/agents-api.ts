@@ -22,7 +22,7 @@
 import { OpenAPIHono, createRoute, z } from "@hono/zod-openapi";
 import { callerLabel } from "@shipwright/lib/request-context";
 import type { ErrorCapturingClient } from "@shipwright/lib/sentry";
-import type { PrismaClient } from "../prisma/client/index.js";
+import type { PrismaClient } from "../prisma/client/client.ts";
 import type { AgentChatTokenService } from "./agent-chat-tokens.ts";
 import type {
   AgentCronJobService,
