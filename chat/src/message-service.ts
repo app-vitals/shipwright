@@ -4,7 +4,7 @@
  */
 
 import { PROGRESS_PHASES } from "@shipwright/lib/progress-phases";
-import { Prisma } from "../prisma/client/index.js";
+import { Prisma } from "../prisma/client/client.ts";
 import { type Clock, SystemClock } from "./clock.ts";
 import { BadRequestError } from "./errors.ts";
 import type { Message, PrismaClient } from "./index.ts";

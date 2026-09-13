@@ -5,7 +5,7 @@
  */
 
 import { PROGRESS_PHASES } from "@shipwright/lib/progress-phases";
-import type { Prisma } from "../prisma/client/index.js";
+import type { Prisma } from "../prisma/client/client.ts";
 import { BadRequestError } from "./errors.ts";
 import type { Message, MessageServiceLike } from "./message-service.ts";
 import type {

@@ -6,5 +6,5 @@
  * than reaching into the generated prisma/client directory directly.
  */
 
-export { PrismaClient, Prisma } from "../prisma/client/index.js";
-export type { ChatToken, Thread, Message } from "../prisma/client/index.js";
+export { PrismaClient, Prisma } from "../prisma/client/client.ts";
+export type { ChatToken, Thread, Message } from "../prisma/client/client.ts";
