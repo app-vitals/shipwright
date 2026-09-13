@@ -25,11 +25,6 @@ import { PrismaClient } from "../prisma/client/client.ts";
  */
 export const DEFAULT_CONNECT_TIMEOUT_MS = 5000;
 
-export interface PrismaClientOptions {
-  /** Overrides {@link DEFAULT_CONNECT_TIMEOUT_MS}. */
-  connectTimeoutMs?: number;
-}
-
 /**
  * Builds an adapter-backed PrismaClient for `databaseUrl`.
  *
@@ -37,14 +32,10 @@ export interface PrismaClientOptions {
  * `disposeExternalPool`, so `prisma.$disconnect()` tears down the pool too and
  * callers keep a single lifecycle handle.
  */
-export function createPrismaClient(
-  databaseUrl: string,
-  options: PrismaClientOptions = {},
-): PrismaClient {
+export function createPrismaClient(databaseUrl: string): PrismaClient {
   const pool = new pg.Pool({
     connectionString: databaseUrl,
-    connectionTimeoutMillis:
-      options.connectTimeoutMs ?? DEFAULT_CONNECT_TIMEOUT_MS,
+    connectionTimeoutMillis: DEFAULT_CONNECT_TIMEOUT_MS,
   });
 
   const adapter = new PrismaPg(pool, { disposeExternalPool: true });
