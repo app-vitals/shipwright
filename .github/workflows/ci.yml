@@ -165,7 +165,12 @@ jobs:
       - name: Sync test DB schema
         run: |
           bunx prisma migrate deploy --schema=admin/prisma/schema.prisma
-          bunx prisma migrate deploy --schema=task-store/prisma/schema.prisma
+          # task-store runs Prisma 7 while admin/chat are still on 6, so this
+          # one must `cd` first: from the repo root `bunx prisma` resolves to
+          # the root's v6 CLI (which rejects task-store's v7 schema, now that
+          # `datasource.url` has moved to task-store/prisma.config.ts), and the
+          # config file is only discovered when task-store is the cwd.
+          cd task-store && bunx prisma migrate deploy --schema=prisma/schema.prisma && cd ..
           bunx prisma migrate deploy --schema=chat/prisma/schema.prisma
 
       - name: Install Playwright chromium-headless-shell

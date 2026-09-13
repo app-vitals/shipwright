@@ -18,7 +18,7 @@ import { initSentry } from "@shipwright/lib/sentry";
 import { createTaskStoreApp } from "./app.ts";
 import { createScopeResolver } from "./auth.ts";
 import { checkClaimTtlBuffer } from "./claim-ttl-buffer-check.ts";
-import { PrismaClient } from "./index.ts";
+import { createPrismaClient } from "./prisma-client.ts";
 import { PullRequestService } from "./pull-request-service.ts";
 import { SessionRetentionReaper } from "./session-retention-reaper.ts";
 import { SessionService } from "./session-service.ts";
@@ -129,18 +129,27 @@ async function startServer(): Promise<void> {
 
   await runMigrations();
 
-  // No explicit `connection_limit` override — this uses Prisma's default
-  // pool sizing (num_physical_cpus * 2 + 1). TSW-1.2 wires the outbound
-  // webhookDispatcher call into create/update/claim/complete/fail/release/
-  // recordSkip/resetSkip, each already inside a $transaction, so those
-  // transactions now hold their pool connection slightly longer (for the
-  // dispatcher's HTTP round-trip, bounded by DEFAULT_WEBHOOK_TIMEOUT_MS
-  // below, with the whole transaction hard-capped by WEBHOOK_TX_TIMEOUT_MS)
-  // before releasing it. The default pool size is believed to have headroom
-  // for current expected concurrent-transaction volume across the agent
-  // fleet; revisit (explicit connection_limit) if fleet size grows
-  // significantly and pool exhaustion becomes observable.
-  const prisma = new PrismaClient();
+  // No explicit `connection_limit` override — this uses the `pg` pool's
+  // default sizing (max 10). TSW-1.2 wires the outbound webhookDispatcher
+  // call into create/update/claim/complete/fail/release/recordSkip/resetSkip,
+  // each already inside a $transaction, so those transactions now hold their
+  // pool connection slightly longer (for the dispatcher's HTTP round-trip,
+  // bounded by DEFAULT_WEBHOOK_TIMEOUT_MS below, with the whole transaction
+  // hard-capped by WEBHOOK_TX_TIMEOUT_MS) before releasing it. The default
+  // pool size is believed to have headroom for current expected
+  // concurrent-transaction volume across the agent fleet; revisit (explicit
+  // `connection_limit` in the URL) if fleet size grows significantly and pool
+  // exhaustion becomes observable.
+  //
+  // Prisma 7 requires a driver adapter — see prisma-client.ts for the
+  // PrismaPg/pg.Pool wiring and its explicit connect timeout.
+  const databaseUrl = process.env.DATABASE_URL_SHIPWRIGHT_TASK_STORE;
+  if (!databaseUrl) {
+    throw new Error(
+      "DATABASE_URL_SHIPWRIGHT_TASK_STORE is not set — the Prisma 7 driver adapter needs an explicit connection string",
+    );
+  }
+  const prisma = createPrismaClient(databaseUrl);
 
   // Build the outbound event dispatcher when a webhook URL is configured.
   // createWebhookDispatcher itself returns a no-op when the URL is unset, so
