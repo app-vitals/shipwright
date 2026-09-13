@@ -104,8 +104,6 @@ export async function seedChatTokens(opts: {
 // ─── CLI entrypoint ───────────────────────────────────────────────────────────
 
 if (import.meta.main) {
-  const { PrismaClient } = await import("../chat/prisma/client/index.js");
-
   const { dbUrl, adminToken, agentToken, agentId } = parseSeedArgs(
     process.argv.slice(2),
   );
@@ -124,9 +122,13 @@ if (import.meta.main) {
     process.exit(1);
   }
 
-  const prisma = new PrismaClient({
-    datasources: { db: { url: databaseUrl } },
-  });
+  // Prisma 7 dropped `new PrismaClient({ datasources })`: the client must be
+  // built over a driver adapter. Go through the chat service's own factory so
+  // this seeder connects exactly the way the service does — one construction
+  // site, imported lazily so the unit test never has to load pg or the
+  // generated client.
+  const { createPrismaClient } = await import("../chat/src/prisma-client.ts");
+  const prisma = createPrismaClient(databaseUrl);
   try {
     await seedChatTokens({
       prisma: prisma as unknown as ChatTokenUpserter,
