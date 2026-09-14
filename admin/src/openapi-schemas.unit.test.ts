@@ -5,6 +5,8 @@
  */
 
 import { describe, expect, test } from "bun:test";
+import { type AdminDeps, createAdminApp } from "./agents-api.ts";
+import { type AgentRuntimeDeps, createAgentRuntimeApp } from "./api.ts";
 import {
   type Agent,
   type AgentCronJob,
@@ -348,5 +350,73 @@ describe("ErrorSchema", () => {
   test("rejects missing error string", () => {
     const result = ErrorSchema.safeParse({});
     expect(result.success).toBe(false);
+  });
+});
+
+// ─── OpenAPI route metadata (summary/description on every createRoute) ────────
+//
+// Builds both OpenAPIHono apps with minimal stub deps — same pattern as
+// scripts/generate-admin-spec.ts — and walks the generated spec's operations.
+// No handler is ever invoked (we never call app.request()), only route
+// registration + getOpenAPI31Document(), so the stub deps only need to satisfy
+// the type checker, not behave correctly. Hard-cast via `unknown` rather than
+// filling in every service method — this test asserts on route *metadata*,
+// not handler behavior (that's covered by the smoke tests).
+
+function collectUndocumentedOperations(
+  paths: unknown,
+  label: string,
+): string[] {
+  const issues: string[] = [];
+  const pathEntries = Object.entries(
+    (paths ?? {}) as Record<string, Record<string, unknown>>,
+  );
+  for (const [path, methods] of pathEntries) {
+    for (const [method, operation] of Object.entries(methods)) {
+      const op = operation as { summary?: unknown; description?: unknown };
+      const summary = typeof op.summary === "string" ? op.summary.trim() : "";
+      const description =
+        typeof op.description === "string" ? op.description.trim() : "";
+      if (!summary || !description) {
+        issues.push(`[${label}] ${method.toUpperCase()} ${path}`);
+      }
+    }
+  }
+  return issues;
+}
+
+describe("OpenAPI route metadata", () => {
+  test("every admin + runtime route has a non-empty summary and description", () => {
+    const runtimeApp = createAgentRuntimeApp({} as unknown as AgentRuntimeDeps);
+    const adminApp = createAdminApp({} as unknown as AdminDeps);
+
+    const runtimeDoc = runtimeApp.getOpenAPI31Document({
+      openapi: "3.1.0",
+      info: { title: "runtime (test)", version: "0.0.0" },
+    });
+    const adminDoc = adminApp.getOpenAPI31Document({
+      openapi: "3.1.0",
+      info: { title: "admin (test)", version: "0.0.0" },
+    });
+
+    const issues = [
+      ...collectUndocumentedOperations(adminDoc.paths, "admin"),
+      ...collectUndocumentedOperations(runtimeDoc.paths, "runtime"),
+    ];
+
+    const totalOperations = [adminDoc, runtimeDoc].reduce(
+      (sum, doc) =>
+        sum +
+        Object.values(
+          (doc.paths ?? {}) as Record<string, Record<string, unknown>>,
+        ).reduce((n, methods) => n + Object.keys(methods).length, 0),
+      0,
+    );
+    // Sanity check that this test is actually walking a non-trivial number of
+    // routes (brief cites ~38 createRoute calls across both files) — guards
+    // against the assertion silently checking zero operations.
+    expect(totalOperations).toBeGreaterThan(30);
+
+    expect(issues).toEqual([]);
   });
 });
