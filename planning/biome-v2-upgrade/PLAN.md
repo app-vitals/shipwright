@@ -10,9 +10,9 @@ CLI rejects it (`organizeImports`, `linter.rules.recommended`, `files.ignore` ar
 deprecated/renamed in v2). `/shipwright:patch` correctly refused to auto-fix this twice —
 a config-schema migration is outside `dependency-patch.md`'s bounded remediation catalog
 (transitive-dependency pins and first-party call-site updates only), so it was left as a
-hold requiring deliberate human execution rather than a silent auto-fix. This mirrors the
-`vitals-os-prisma-7-upgrade` precedent: a major-version bump that needs real migration
-work gets a plan session, not a bot-driven bump.
+hold requiring deliberate human execution rather than a silent auto-fix. This mirrors a
+prior precedent where a major-version bump needing real migration work got a plan session
+rather than a bot-driven bump.
 
 ## Design
 
@@ -35,10 +35,11 @@ against the whole monorepo) rather than guessing at scope. Findings:
   `delete process.env.X` in tests) are now dead and flagged `suppressions/unused` — noise
   that should be cleaned up in the same pass since it's the same config-driven change that
   orphaned them.
-- The remaining ~320 warnings (`noUnusedVariables`, `noUnusedFunctionParameters`,
-  `noUnusedImports`, `useArrowFunction`, `useTemplate`, `noTemplateCurlyInString`, a
-  handful of others) come from v2's `recommended` preset picking up rules that weren't in
-  v1.9.4's — they don't block CI and span hundreds of files. Deliberately **not** bundled
+- The remaining ~351 warnings — `noUnusedVariables`, `noUnusedFunctionParameters`,
+  `noUnusedImports`, `useArrowFunction`, and `useTemplate` (~314 occurrences, per BV2-2.1)
+  plus `noTemplateCurlyInString` (37 occurrences, per BV2-2.2) — come from v2's
+  `recommended` preset picking up rules that weren't in v1.9.4's — they don't block CI and
+  span hundreds of files. Deliberately **not** bundled
   into the unblocking task: that diff would be large, mostly mechanical, and unrelated to
   what's actually gating #3389. Split into their own follow-up tasks instead so the
   CI-unblocking PR stays small and reviewable.
