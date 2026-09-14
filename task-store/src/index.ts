@@ -15,7 +15,7 @@ export {
   PrPhase,
   PrFindingDisposition,
   PrFindingSource,
-} from "../prisma/client/index.js";
+} from "../prisma/client/client.ts";
 export type {
   Task,
   TaskToken,
@@ -24,7 +24,7 @@ export type {
   PrFinding,
   PullRequestEvent,
   Session,
-} from "../prisma/client/index.js";
+} from "../prisma/client/client.ts";
 export type {
   BlockedByEntry,
   TaskWithBlockedBy,

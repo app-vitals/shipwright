@@ -18,7 +18,7 @@
 
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { createTaskStoreApp } from "./app.ts";
-import { PrismaClient } from "./index.ts";
+import { type PrismaClient, createPrismaClient } from "./prisma-client.ts";
 import { SessionService } from "./session-service.ts";
 import { TaskService } from "./task-service.ts";
 import { TaskTokenService } from "./token-service.ts";
@@ -27,9 +27,8 @@ const TEST_DB = process.env.DATABASE_URL_SHIPWRIGHT_TASK_STORE_TEST;
 const describeOrSkip = TEST_DB ? describe : describe.skip;
 
 function makePrisma(): PrismaClient {
-  return new PrismaClient({
-    datasources: { db: { url: TEST_DB as string } },
-  });
+  // TEST_DB is guaranteed set — the describe block is skipped otherwise.
+  return createPrismaClient(TEST_DB as string);
 }
 
 describeOrSkip("task-store API (integration)", () => {
