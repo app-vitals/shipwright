@@ -166,7 +166,7 @@
     "@hono/node-server": "^2.0.12",
     "brace-expansion": "^5.0.9",
     "deepmerge-ts": "^8.0.2",
-    "fast-uri": "^3.1.5",
+    "fast-uri": "^4.0.0",
     "hono": "^4.13.1",
     "ip-address": "^10.5.0",
     "js-yaml": "^4.3.2",
@@ -770,7 +770,7 @@
 
     "fast-querystring": ["fast-querystring@1.1.2", "", { "dependencies": { "fast-decode-uri-component": "^1.0.1" } }, "sha512-g6KuKWmFXc0fID8WWH0jit4g0AGBoJhCkJMb1RmbsSEUNvQ+ZC8D6CUZ+GtF8nMzSPXnhiePyyqqipzNNEnHjg=="],
 
-    "fast-uri": ["fast-uri@3.1.7", "", {}, "sha512-dOvZVzjdZdz7phd9v6jCbwxrBW3fK6n8Rc0CtdmM4bumzMnxywBYhuph6J819RRw/ku+rLbelwfMunktuzVVHg=="],
+    "fast-uri": ["fast-uri@4.1.4", "", {}, "sha512-dODXrIxlS9JSdgAnhIUKOosKV1oMtU2VtVw87QRaHzyl5jxO290Ii5tEZfCfzfWNHi3jKWwBSdQj0qIyshdZdQ=="],
 
     "fdir": ["fdir@6.5.0", "", { "peerDependencies": { "picomatch": "^3 || ^4" }, "optionalPeers": ["picomatch"] }, "sha512-tIbYtZbucOs0BRGqPJkshJUYdL+SDH7dVM8gjy+ERp3WAUjLEFJE+02kanyHtwjWOnwrKYBiwAmM0p4kLJAnXg=="],
 
