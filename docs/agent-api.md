@@ -1,8 +1,12 @@
 # Agent Admin API
 
-The Shipwright admin service exposes a CRUD API for managing agents and their resources. It is the control plane used by the admin UI, the `agent-admin` skill, and the provisioning pipeline.
+The Shipwright admin service exposes a CRUD API for managing agents and their resources. It is the control plane used by the admin UI, the [`agent-admin`](../plugins/shipwright/skills/agent-admin/SKILL.md) skill, and the provisioning pipeline.
 
 Base path: `/agents`
+
+**Full endpoint reference** — every route, parameter, request/response shape, and status code — lives in the generated [`admin/openapi.json`](../admin/openapi.json) spec. **Practical usage** — curl-based examples for common agent-management calls — lives in the [`agent-admin`](../plugins/shipwright/skills/agent-admin/SKILL.md) skill.
+
+This page covers only the auth model and behavioral nuance the spec doesn't carry. Cron jobs and cron runs are documented in [`docs/agent-api-ops.md`](./agent-api-ops.md). The allowed-tools list, API tokens, plugins, chat token usage, and the work-queue snapshot are documented in [`docs/agent-api-resources.md`](./agent-api-resources.md).
 
 ---
 
@@ -16,165 +20,23 @@ Three auth paths are checked in order:
 
 If an `Authorization` header is present but the token is invalid in both token paths, the request is rejected with `401` (no fallthrough to cookie). Missing auth returns `401`. Cross-agent access with a per-agent token returns `403`.
 
-Routes marked **admin-only** require `isAdmin=true`. Per-agent bearer tokens cannot call these routes.
+Routes marked **admin-only** in the OpenAPI spec require `isAdmin=true`. Per-agent bearer tokens cannot call these routes.
 
 ---
 
 ## Agents
 
-### Create agent
+`POST`/`GET`/`PATCH`/`DELETE /agents[/:id]`, `POST /agents/:id/provision`, and `POST /agents/reconcile` are fully described in the OpenAPI spec — including the Agent Type manifest seeding behavior on create and the rollback-guarded provisioning block. Field semantics the spec doesn't carry:
 
-```
-POST /agents
-```
-
-Admin-only. Creates an agent record and, for managed (non-self-hosted) agents, provisions the Kubernetes workload.
-
-The `type` field (optional, defaults to `"coding"`) selects an Agent Type manifest (`agent-types/<type>/manifest.yaml`) that drives seeding: an unknown `type` returns `400` **before any row is created** (zero agent/tool/plugin/member rows persist). On successful agent creation, the resolved manifest is used to seed **AgentTool** rows from its `tools[]`, **AgentPlugin** rows from its `plugins[]` (for the default `"coding"` type, this includes the `shipwright` plugin), **AgentMember** rows from its `members[]`, and **`repos`** from its `repos[]` merged (deduplicated) with any request-supplied `repos`.
-
-All seeding happens inside the same rollback-guarded block as provisioning — if any seeding step or provisioning fails, every already-seeded child row (tools/plugins/members) is cascade-deleted along with the rolled-back agent row.
-
-Body:
-
-| Field | Required | Description |
-|-------|----------|-------------|
-| `name` | yes | Agent slug — used as the K8s Deployment name |
-| `slackId` | no | Slack user ID for the agent's bot account |
-| `selfHosted` | no | `true` if the agent runs outside Kubernetes (default `false`) |
-| `type` | no | Agent Type name (default `"coding"`). Unknown type → `400`, zero rows created |
-| `repos` | no | Array of `org/repo` strings, merged with the resolved type's manifest `repos[]` |
-| `reviewAuthorAllowlist` | no | Array of GitHub login strings — authors permitted to trigger this agent's review/dev-task work (default empty array = all authenticated users). |
-| `patchAuthorAllowlist` | no | Array of GitHub login strings — authors whose PRs this agent will also treat as patch candidates (default empty array). **DBR-1.4:** enforcement is active — `agent/src/check-patch.ts` adds PRs authored by these logins to the patch candidate pool, merged with the agent's self-authored PRs and deduplicated by (repo, PR number). When empty (the default), patch runs remain self-authored-only — an additive allowlist, not a fail-open filter like `reviewAuthorAllowlist`. Settable at creation and editable afterward via `PATCH /agents/:id`. |
-| `restrictSlackToMembers` | no | `true` to restrict Slack message access to agents with `AgentMember` rows (default `false` = unrestricted). When true and no members are configured, a non-blocking warning is returned. |
-
-Returns `201` with `{ id, name, slackId, selfHosted, repos, reviewAuthorAllowlist, patchAuthorAllowlist, restrictSlackToMembers, typeName, createdAt, updatedAt, missingRequiredEnv, warning? }`. Returns `400` for an unknown `type`. The optional `warning` field is present when `restrictSlackToMembers` is true but no members are configured.
-
-### List agents
-
-```
-GET /agents
-```
-
-Admin-only. Returns all agents with `id`, `name`, `selfHosted`, and `typeName` fields. Used for metrics name resolution.
-
-### Get agent
-
-```
-GET /agents/:id
-```
-
-Admin-only. Returns the full agent record: `selfHosted`, `repos`, `reviewAuthorAllowlist`, `patchAuthorAllowlist`, and `restrictSlackToMembers` — each as defined under [Create agent](#create-agent), including the optional `warning` field returned when `restrictSlackToMembers` is `true` but no members are configured — plus `typeName` and `missingRequiredEnv`.
-
-`missingRequiredEnv` is an array of required env var keys declared by the agent's type manifest that have no corresponding `AgentEnv` row yet — key names only, never values. This is purely informational (ATS-4.2).
-
-### Update agent
-
-```
-PATCH /agents/:id
-```
-
-Admin-only. Updatable fields: `selfHosted` (boolean), `repos` (array of `org/repo` strings — each entry is validated for format), `reviewAuthorAllowlist` (array of GitHub login strings — usernames of authors permitted to trigger this agent's review/dev-task work), `patchAuthorAllowlist` (array of GitHub login strings — authors whose PRs this agent will also treat as patch candidates; enforced at runtime since DBR-1.4 by `agent/src/check-patch.ts`, additively on top of the agent's self-authored PRs, with an empty value meaning self-authored-only), `restrictSlackToMembers` (boolean — when `true`, restricts Slack access to configured members only), `slackId` (nullable string — Slack user ID for the agent's bot account; normally resolved and persisted automatically via `auth.test` right after Slack OAuth completes, this field exists to backfill it for agents that connected Slack before that fix shipped). `typeName` is not updatable via this route. Returns the updated agent.
-
-### Delete agent
-
-```
-DELETE /agents/:id
-```
-
-Admin-only. Runs the full `deleteAgentFully()` teardown: deprovisions the agent's K8s workload (Deployment, Secret, and PVC), revokes its task-store and chat-service tokens, deletes its chat threads, and — if a `SLACK_APP_ID` env var is present and an `xoxpToken` was supplied — deletes its Slack app. The Agent DB row (and its cascade-deleted child records: envs, crons, tools, tokens, plugins) is deleted **last**, and only if every one of those steps succeeded.
-
-Body (optional): `{ xoxpToken?: string }` — a Slack user token (`xoxp-...`) authorizing Slack app deletion. Omit it to skip automatic Slack app deletion; a present Slack app then becomes a `manualStepsRequired` entry instead of a hard failure.
-
-Returns `200` with:
-
-```json
-{
-  "agentDeleted": true,
-  "completed": ["k8s", "task-store-tokens", "chat-service-tokens-and-threads", "slack-app"],
-  "failed": [],
-  "manualStepsRequired": [
-    { "key": "GH_TOKEN", "message": "Revoke this GitHub personal access token at https://github.com/settings/tokens (or the fine-grained PAT settings page)." }
-  ]
-}
-```
-
-- `agentDeleted` — `true` only when every automatable step succeeded and the Agent row was deleted. `false` means at least one step failed and the row was intentionally **preserved** for retry.
-- `completed` — steps that succeeded, in execution order (`k8s`, `task-store-tokens`, `chat-service-tokens-and-threads`, `slack-app`).
-- `failed` — `{ step, error }` entries for steps that threw. A failed step does not abort the remaining steps — every step is still attempted so a retry makes maximum forward progress.
-- `manualStepsRequired` — operator reminders for state with no automated revocation: hand-pasted secrets (`GH_TOKEN`, `ANTHROPIC_API_KEY`, `CLAUDE_CODE_OAUTH_TOKEN`, and any other `AgentEnv` row with `secret: true`), plus a Slack-app entry when `SLACK_APP_ID` is set but no `xoxpToken` was supplied. Always populated when applicable; never blocks the delete.
-
-**Retry semantics:** `agentDeleted: false` means the call is safe to retry — every underlying step is individually idempotent (K8s deprovision tolerates an already-absent workload, token revocation tolerates an already-revoked token, thread deletion tolerates no threads), so re-issuing `DELETE /agents/:id` once the failing dependency is healthy again only re-attempts what didn't finish. The Agent row stays reachable via `GET /agents/:id` until `agentDeleted` is `true`.
-
-`404` if the agent doesn't exist. `403` if the caller isn't an admin.
-
-### Provision agent
-
-```
-POST /agents/:id/provision
-```
-
-Admin-only. Provisions or re-provisions the K8s workload for a single managed agent. For self-hosted agents, returns `{ skipped: true, reason: "self-hosted" }` with no K8s changes. On success returns `204`.
-
-### Reconcile all agents
-
-```
-POST /agents/reconcile
-```
-
-Admin-only. Reconciles K8s Deployment state against all managed (non-self-hosted) agents in the DB. Returns:
-
-```json
-{
-  "recreated": ["<agentId>"],
-  "updated": ["<agentId>"],
-  "orphans": ["<deploymentName>"],
-  "failed": [{ "agentId": "<id>", "error": "<message>" }]
-}
-```
+- **`reviewAuthorAllowlist`** vs **`patchAuthorAllowlist`** are not symmetric: an empty `reviewAuthorAllowlist` means "all authenticated users" (fail-open), while an empty `patchAuthorAllowlist` means "self-authored PRs only" — `patchAuthorAllowlist` is additive on top of that, enforced at runtime by `agent/src/check-patch.ts`, which merges allowlisted-author PRs into the self-authored candidate pool and deduplicates by `(repo, PR number)`.
+- **`slackId`** is normally resolved and persisted automatically via `auth.test` right after Slack OAuth completes; it's directly settable only to backfill it for agents that connected Slack before that fix shipped.
+- **`DELETE /agents/:id`**'s `manualStepsRequired` response entries flag state with no automated revocation path: hand-pasted secrets (`GH_TOKEN`, `ANTHROPIC_API_KEY`, `CLAUDE_CODE_OAUTH_TOKEN`, and any other `AgentEnv` row with `secret: true`) must be revoked by hand at their respective provider, plus a Slack-app entry when `SLACK_APP_ID` is set but no `xoxpToken` was supplied to the delete call.
 
 ---
 
 ## Environment variables
 
-Env vars are stored encrypted (AES-256-GCM) and decrypted on read.
-
-### Set env vars (bulk replace)
-
-```
-POST /agents/:id/envs
-```
-
-Body: `{ [key: string]: string }`. Replaces all env vars for the agent atomically. Returns `204`.
-
-### Get env vars
-
-```
-GET /agents/:id/envs
-```
-
-Returns `{ [key: string]: string }` with decrypted values.
-
-### Patch env vars (partial update)
-
-```
-PATCH /agents/:id/envs
-```
-
-Body: `{ [key: string]: string }`. Updates specific keys without touching others. Returns `204`.
-
-### Delete env var
-
-```
-DELETE /agents/:id/envs/:key
-```
-
-Deletes a single env var by key. Returns `204`.
-
----
-
-## Operational APIs
-
-Cron jobs and cron runs are documented in [`docs/agent-api-ops.md`](./agent-api-ops.md). The allowed-tools list, API tokens, plugins, chat token usage, and the work-queue snapshot are documented in [`docs/agent-api-resources.md`](./agent-api-resources.md).
+Env vars are stored encrypted (AES-256-GCM) and decrypted on read. `POST /agents/:id/envs` bulk-replaces every env var; `PATCH /agents/:id/envs` updates specific keys without touching others.
 
 ---
 
@@ -184,13 +46,12 @@ Cron jobs and cron runs are documented in [`docs/agent-api-ops.md`](./agent-api-
 GET /agents/:id/config
 ```
 
-Used by the agent harness on startup and during the config sync loop. Returns the agent's full config bundle:
+Polled by the agent harness on startup and during its config sync loop — the one route on this page the harness itself calls, as opposed to the admin UI or provisioning pipeline. Returns the full config bundle: decrypted env vars, allowed-tools patterns, installed plugins, scoped repos, `reviewAuthorAllowlist`/`patchAuthorAllowlist`/`restrictSlackToMembers`, and derived `memberEmails` (empty unless `restrictSlackToMembers` is `true` and members are configured). Returns `404` if the agent doesn't exist.
 
-- `env` — decrypted key/value env vars
-- `allowedTools` — array of tool patterns
-- `plugins` — installed plugins with derived marketplace URLs
-- `repos` — array of `org/repo` strings (scoped repositories this agent may access)
-- `reviewAuthorAllowlist` / `patchAuthorAllowlist` / `restrictSlackToMembers` — as defined under [Create agent](#create-agent). The runtime uses them to filter review candidates, to extend the patch candidate pool (**DBR-1.3:** synced live via `agent/src/patch-author-allowlist-ref.ts`), and to enforce membership-based Slack access control.
-- `memberEmails` — array of member email addresses (derived from agent's `AgentMember` rows). Empty when `restrictSlackToMembers` is `false` or no members are configured.
+---
 
-Returns `404` if the agent doesn't exist.
+## Related
+
+- Cron jobs and cron runs: [`docs/agent-api-ops.md`](./agent-api-ops.md)
+- Allowed-tools, API tokens, plugins, chat token usage, work-queue snapshot: [`docs/agent-api-resources.md`](./agent-api-resources.md)
+- Practical curl usage: the [`agent-admin`](../plugins/shipwright/skills/agent-admin/SKILL.md) skill
