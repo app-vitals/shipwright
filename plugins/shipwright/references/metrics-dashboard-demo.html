@@ -623,10 +623,11 @@ function clearEl(el) { while (el.firstChild) el.removeChild(el.firstChild); }
 
   var detailEl = document.getElementById('ftq-detail');
   var strong = h('strong', null, ftqTasks.length + ' of ' + nReviewed);
+  var pendingLine;
   detailEl.appendChild(strong);
   detailEl.appendChild(document.createTextNode(' reviewed tasks shipped with zero rework'));
   if (unreviewedTasks.length > 0) {
-    var pendingLine = h('div', { style: { marginTop: '4px', fontSize: '12px', color: 'var(--text-muted)' } },
+    pendingLine = h('div', { style: { marginTop: '4px', fontSize: '12px', color: 'var(--text-muted)' } },
       unreviewedTasks.length + ' task' + (unreviewedTasks.length > 1 ? 's' : '') + ' awaiting /review (' + partialFtqTasks.length + ' clean on simplify+CI)');
     detailEl.appendChild(pendingLine);
   }
@@ -758,6 +759,7 @@ function clearEl(el) { while (el.firstChild) el.removeChild(el.firstChild); }
     var isFtq = hasReview && d.simplify.total === 0 && d.review.verdict === "SHIP IT" && d.ci_fix_attempts === 0;
     var isRed = (hasReview && d.review.verdict === "NEEDS WORK") || d.simplify.total >= 3 || d.ci_fix_attempts >= 2;
     var cls = isFtq ? 'quality-green' : isRed ? 'quality-red' : 'quality-amber';
+    var j, verdictCls;
 
     var row = h('tr', { className: 'task-row ' + cls });
 
@@ -778,7 +780,7 @@ function clearEl(el) { while (el.firstChild) el.removeChild(el.firstChild); }
 
     // Complexity dots
     var dotsDiv = h('div', { className: 'complexity-dots' });
-    for (var j = 0; j < 5; j++) {
+    for (j = 0; j < 5; j++) {
       dotsDiv.appendChild(h('span', { className: j < d.complexity ? 'filled' : 'empty' }));
     }
     var dotsTd = h('td');
@@ -791,7 +793,7 @@ function clearEl(el) { while (el.firstChild) el.removeChild(el.firstChild); }
     // Verdict
     var verdictTd = h('td');
     if (hasReview) {
-      var verdictCls = d.review.verdict === "SHIP IT" ? 'verdict-ship' :
+      verdictCls = d.review.verdict === "SHIP IT" ? 'verdict-ship' :
                        d.review.verdict === "NEEDS FIXES" ? 'verdict-fixes' : 'verdict-work';
       verdictTd.appendChild(h('span', { className: 'verdict-badge ' + verdictCls }, d.review.verdict));
     } else {
@@ -863,6 +865,7 @@ function clearEl(el) { while (el.firstChild) el.removeChild(el.firstChild); }
   var scale = (H - pad - 10) / maxH;
   var totalW = pad + N * (barW * 2 + gap + groupGap);
   var baseline = H - pad;
+  var yh, y;
 
   // Legend
   var legend = h('div', { style: { display: 'flex', gap: '12px', marginBottom: '12px' } }, [
@@ -880,8 +883,8 @@ function clearEl(el) { while (el.firstChild) el.removeChild(el.firstChild); }
   var chartSvg = svg('svg', { width: '100%', viewBox: '0 0 ' + totalW + ' ' + H, preserveAspectRatio: 'xMinYMid meet' });
 
   // Y-axis lines
-  for (var yh = 0; yh <= maxH; yh += 1) {
-    var y = baseline - yh * scale;
+  for (yh = 0; yh <= maxH; yh += 1) {
+    y = baseline - yh * scale;
     chartSvg.appendChild(svg('line', { x1: pad - 4, y1: y, x2: totalW, y2: y, stroke: 'rgba(255,255,255,0.04)', 'stroke-width': '1' }));
     if (yh % 2 === 0) {
       chartSvg.appendChild(svg('text', { x: pad - 8, y: y + 4, 'text-anchor': 'end', fill: 'var(--text-muted)', 'font-size': '9', 'font-family': 'var(--mono)' }, yh + 'h'));
@@ -991,6 +994,7 @@ function clearEl(el) { while (el.firstChild) el.removeChild(el.firstChild); }
   var avgSimp = DATA.reduce(function(s,d){ return s + d.simplify.total; }, 0) / N;
   var avgNaming = DATA.reduce(function(s,d){ return s + d.simplify.naming; }, 0) / N;
   var ciPct = ciFirstPass / N * 100;
+  var drivers;
 
   if (unreviewedTasks.length > 0) {
     recs.push({
@@ -1000,7 +1004,7 @@ function clearEl(el) { while (el.firstChild) el.removeChild(el.firstChild); }
     });
   }
   if (ftqPct < 70 && nReviewed > 0) {
-    var drivers = [];
+    drivers = [];
     if (avgSimp > 0.5) drivers.push('simplify fixes (' + avgSimp.toFixed(1) + '/task)');
     if (ciPct < 90) drivers.push('CI failures (' + Math.round(100 - ciPct) + '% fail rate)');
     recs.push({

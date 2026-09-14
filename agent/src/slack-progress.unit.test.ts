@@ -332,7 +332,8 @@ describe("SlackProgress — Thinking Steps stream", () => {
     expect(chunk?.status).toBe("complete");
     // Completion text never ends in an ellipsis, and is empty rather than
     // "Done" (STS-2.1 AC #4).
-    expect((chunk?.title as string).endsWith("…")).toBe(false);
+    const title = chunk?.title as string;
+    expect(title.endsWith("…")).toBe(false);
     expect(chunk?.title).toBe("");
   });
 

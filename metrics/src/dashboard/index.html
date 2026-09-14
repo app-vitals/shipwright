@@ -21,12 +21,12 @@
           <span class="header-sub">PIPELINE METRICS</span>
         </div>
         <div class="header-controls">
-          <div class="date-range-picker" role="group" aria-label="Date range">
+          <fieldset class="date-range-picker" aria-label="Date range">
             <button class="date-btn active" data-range="today" type="button">1D</button>
             <button class="date-btn" data-range="7d" type="button">7D</button>
             <button class="date-btn" data-range="30d" type="button">30D</button>
             <button class="date-btn" data-range="90d" type="button">90D</button>
-          </div>
+          </fieldset>
           <div class="header-meta">
             <span id="freshness-indicator" class="freshness" aria-live="polite"></span>
             <span id="refresh-countdown" class="countdown" aria-live="polite"></span>
@@ -285,12 +285,12 @@
           </div>
         </div>
         <div class="token-trends-section">
-          <div class="token-trends-toggles" role="group" aria-label="Token series">
+          <fieldset class="token-trends-toggles" aria-label="Token series">
             <button class="token-series-btn active" data-token-series="input" type="button">Input</button>
             <button class="token-series-btn" data-token-series="output" type="button">Output</button>
             <button class="token-series-btn" data-token-series="total" type="button">Total</button>
             <button class="token-series-btn" data-token-series="all" type="button">All</button>
-          </div>
+          </fieldset>
           <div class="chart-container token-trends-chart-container">
             <canvas id="token-trends-chart" aria-label="Token usage trends chart"></canvas>
           </div>
