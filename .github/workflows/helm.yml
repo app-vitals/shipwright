@@ -37,10 +37,15 @@ jobs:
           # helm-unittest v1.x's plugin.yaml uses the `platformHooks` schema
           # field, which Helm only understands from v3.18 onward. Keep this in
           # step with the --version pin below.
-          version: v3.21.4
+          version: v4.3.0
 
       - name: Install helm-unittest plugin
-        run: helm plugin install https://github.com/helm-unittest/helm-unittest --version v1.1.1
+        # Helm v4 requires plugin-source provenance verification by default;
+        # helm-unittest's GitHub source doesn't publish a verifiable
+        # provenance file, so `helm plugin install` fails with "plugin source
+        # does not support verification" unless verification is explicitly
+        # skipped. See helm-unittest#785/#777.
+        run: helm plugin install https://github.com/helm-unittest/helm-unittest --version v1.1.1 --verify=false
 
       - name: Install kubeconform
         uses: bmuschko/setup-kubeconform@e5d264ec1eafe2314e750c429a9da7639dd5a003 # v1.1.0
@@ -132,7 +137,7 @@ jobs:
       - name: Install Helm
         uses: azure/setup-helm@9bc31f4ebc9c6b171d7bfbaa5d006ae7abdb4310 # v5.0.1
         with:
-          version: v3.21.4
+          version: v4.3.0
 
       - name: Set up chart-testing
         uses: helm/chart-testing-action@6ec842c01de15ebb84c8627d2744a0c2f2755c9f # v2.8.0
