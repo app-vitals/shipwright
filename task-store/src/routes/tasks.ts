@@ -310,7 +310,7 @@ const updateRoute = createRoute({
   tags: ["tasks"],
   summary: "Update a task",
   description:
-    "Applies partial task fields. Agent tokens can only update their own tasks (by `assignee` or `claimedBy`) and cannot set `claimedBy`, `claimedAt`, `heartbeatAt`, or `status: 'pending'` via this route — those are managed exclusively by `/claim` and `/release` so a generic PATCH can never bypass the atomic claim protocol. Admin tokens may set any field. A common use is setting `status: 'blocked'` alongside `blockedReason` when an agent hits an unrecoverable dead end.",
+    "Applies partial task fields. Agent tokens can only update tasks within their ownership/repo scope (by `assignee`, `claimedBy`, or a `repo` in the token's scoped repos) and cannot set `claimedBy`, `claimedAt`, `heartbeatAt`, or `status: 'pending'` via this route — those are managed exclusively by `/claim` and `/release` so a generic PATCH can never bypass the atomic claim protocol. Admin tokens may set any field. A common use is setting `status: 'blocked'` alongside `blockedReason` when an agent hits an unrecoverable dead end.",
   request: {
     params: TaskIdParamSchema,
     body: {
@@ -347,7 +347,7 @@ const deleteRoute = createRoute({
   tags: ["tasks"],
   summary: "Delete a task",
   description:
-    "Deletes a task and its TaskEvent audit rows. Agent tokens can only delete their own tasks. Returns `204` on success; this write does not fire a `task.write` webhook, since the deleted row can't be sent as the event payload.",
+    "Deletes a task and its TaskEvent audit rows. Agent tokens can only delete tasks within their ownership/repo scope (by `assignee`, `claimedBy`, or a `repo` in the token's scoped repos). Returns `204` on success; this write does not fire a `task.write` webhook, since the deleted row can't be sent as the event payload.",
   request: {
     params: TaskIdParamSchema,
   },
