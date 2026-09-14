@@ -332,7 +332,6 @@ describe("runClaude", () => {
       expect(opts.env.PATH).toBe(process.env.PATH);
     } finally {
       if (priorSentryDsn === undefined) {
-        // biome-ignore lint/performance/noDelete: process.env deletion is intentional — assignment stringifies to "undefined"
         delete process.env.SENTRY_DSN;
       } else {
         process.env.SENTRY_DSN = priorSentryDsn;

@@ -42,7 +42,6 @@ afterEach(() => {
 
 describe("initSentry — SENTRY_DSN unset", () => {
   test("never calls sentryClient.init", () => {
-    // biome-ignore lint/performance/noDelete: process.env deletion is intentional — assignment stringifies to "undefined"
     delete process.env.SENTRY_DSN;
     const fakeClient = createFakeSentryClient();
 
@@ -99,7 +98,6 @@ describe("initSentry — SENTRY_DSN set", () => {
       "staging",
     );
 
-    // biome-ignore lint/performance/noDelete: process.env deletion is intentional — assignment stringifies to "undefined"
     delete process.env.SENTRY_ENVIRONMENT;
     process.env.NODE_ENV = "development";
     fakeClient = createFakeSentryClient();
@@ -108,9 +106,7 @@ describe("initSentry — SENTRY_DSN set", () => {
       "development",
     );
 
-    // biome-ignore lint/performance/noDelete: process.env deletion is intentional — assignment stringifies to "undefined"
     delete process.env.SENTRY_ENVIRONMENT;
-    // biome-ignore lint/performance/noDelete: process.env deletion is intentional — assignment stringifies to "undefined"
     delete process.env.NODE_ENV;
     fakeClient = createFakeSentryClient();
     initSentry({ service: "agent" }, fakeClient);

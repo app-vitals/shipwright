@@ -1947,13 +1947,11 @@ describe("buildReviewStateProductionDeps", () => {
   };
 
   beforeEach(() => {
-    // biome-ignore lint/performance/noDelete: env var must be fully removed, not set to "undefined" string
     delete process.env.SHIPWRIGHT_TASK_STORE_CLAIM_TTL_MS;
   });
 
   afterEach(() => {
     if (savedEnv.SHIPWRIGHT_TASK_STORE_CLAIM_TTL_MS === undefined) {
-      // biome-ignore lint/performance/noDelete: restore to fully-unset state
       delete process.env.SHIPWRIGHT_TASK_STORE_CLAIM_TTL_MS;
     } else {
       process.env.SHIPWRIGHT_TASK_STORE_CLAIM_TTL_MS =
@@ -2044,14 +2042,12 @@ describe("buildProductionDeps — task-store GET /tasks pagination (TCR-1.2)", (
 
   afterEach(() => {
     if (savedTaskStoreEnv.SHIPWRIGHT_TASK_STORE_URL === undefined) {
-      // biome-ignore lint/performance/noDelete: restore to fully-unset state
       delete process.env.SHIPWRIGHT_TASK_STORE_URL;
     } else {
       process.env.SHIPWRIGHT_TASK_STORE_URL =
         savedTaskStoreEnv.SHIPWRIGHT_TASK_STORE_URL;
     }
     if (savedTaskStoreEnv.SHIPWRIGHT_TASK_STORE_TOKEN === undefined) {
-      // biome-ignore lint/performance/noDelete: restore to fully-unset state
       delete process.env.SHIPWRIGHT_TASK_STORE_TOKEN;
     } else {
       process.env.SHIPWRIGHT_TASK_STORE_TOKEN =
@@ -3199,14 +3195,12 @@ describe("buildProductionDeps — updatedSince filtering (PSR-1.1 / RPS-1.1)", (
 
   afterEach(() => {
     if (savedTaskStoreEnv.SHIPWRIGHT_TASK_STORE_URL === undefined) {
-      // biome-ignore lint/performance/noDelete: restore to fully-unset state
       delete process.env.SHIPWRIGHT_TASK_STORE_URL;
     } else {
       process.env.SHIPWRIGHT_TASK_STORE_URL =
         savedTaskStoreEnv.SHIPWRIGHT_TASK_STORE_URL;
     }
     if (savedTaskStoreEnv.SHIPWRIGHT_TASK_STORE_TOKEN === undefined) {
-      // biome-ignore lint/performance/noDelete: restore to fully-unset state
       delete process.env.SHIPWRIGHT_TASK_STORE_TOKEN;
     } else {
       process.env.SHIPWRIGHT_TASK_STORE_TOKEN =
@@ -3298,14 +3292,12 @@ describe("buildReviewStateProductionDeps — updatedSince filtering (PSR-1.1)", 
 
   afterEach(() => {
     if (savedTaskStoreEnv.SHIPWRIGHT_TASK_STORE_URL === undefined) {
-      // biome-ignore lint/performance/noDelete: restore to fully-unset state
       delete process.env.SHIPWRIGHT_TASK_STORE_URL;
     } else {
       process.env.SHIPWRIGHT_TASK_STORE_URL =
         savedTaskStoreEnv.SHIPWRIGHT_TASK_STORE_URL;
     }
     if (savedTaskStoreEnv.SHIPWRIGHT_TASK_STORE_TOKEN === undefined) {
-      // biome-ignore lint/performance/noDelete: restore to fully-unset state
       delete process.env.SHIPWRIGHT_TASK_STORE_TOKEN;
     } else {
       process.env.SHIPWRIGHT_TASK_STORE_TOKEN =
@@ -3486,7 +3478,6 @@ describe("buildProductionDeps — removeWorktree staleness gate (WTR-1.4)", () =
   test("fresh worktree (mtime within cleanup_after_days) is skipped, not removed", async () => {
     const { workspacePath, shortRepo, worktreeDirName, worktreePath } =
       setupFakeWorkspace({ cleanupAfterDays: 14 });
-    // biome-ignore lint/performance/noDelete: ensure no leftover override from a prior test
     delete process.env.SHIPWRIGHT_WORKTREE_DIR;
     const now = new Date();
     utimesSync(worktreePath, now, now);
@@ -3508,7 +3499,6 @@ describe("buildProductionDeps — removeWorktree staleness gate (WTR-1.4)", () =
   test("stale worktree (mtime older than cleanup_after_days) is force-removed", async () => {
     const { workspacePath, shortRepo, worktreeDirName, worktreePath } =
       setupFakeWorkspace({ cleanupAfterDays: 14 });
-    // biome-ignore lint/performance/noDelete: ensure no leftover override from a prior test
     delete process.env.SHIPWRIGHT_WORKTREE_DIR;
     const twentyDaysAgo = new Date(Date.now() - 20 * 24 * 60 * 60 * 1000);
     utimesSync(worktreePath, twentyDaysAgo, twentyDaysAgo);

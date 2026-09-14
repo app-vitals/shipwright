@@ -1611,7 +1611,6 @@ describe("buildProductionDeps", () => {
     // maps over zero repos, which is fine since these tests call the other
     // deps functions directly, not listOwnOpenPrs's repo-scanning path.
     process.env.WORKSPACE_PATH = "/tmp/check-patch-buildProductionDeps-stub";
-    // biome-ignore lint/performance/noDelete: process.env deletion is intentional — assignment stringifies to "undefined"
     delete process.env.AGENT_HOME;
   });
 
@@ -1619,13 +1618,11 @@ describe("buildProductionDeps", () => {
     if (savedWorkspacePath !== undefined) {
       process.env.WORKSPACE_PATH = savedWorkspacePath;
     } else {
-      // biome-ignore lint/performance/noDelete: process.env deletion is intentional — assignment stringifies to "undefined"
       delete process.env.WORKSPACE_PATH;
     }
     if (savedAgentHome !== undefined) {
       process.env.AGENT_HOME = savedAgentHome;
     } else {
-      // biome-ignore lint/performance/noDelete: process.env deletion is intentional — assignment stringifies to "undefined"
       delete process.env.AGENT_HOME;
     }
   });

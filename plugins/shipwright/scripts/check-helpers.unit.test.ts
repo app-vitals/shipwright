@@ -60,7 +60,6 @@ describe("resolveRepos", () => {
   beforeEach(() => {
     tmpDir = mkdtempSync(join(tmpdir(), "resolve-repos-test-"));
     savedEnv = process.env.SHIPWRIGHT_REPOS_DIR;
-    // biome-ignore lint/performance/noDelete: process.env deletion is intentional — assignment stringifies to "undefined"
     delete process.env.SHIPWRIGHT_REPOS_DIR;
   });
 
@@ -68,7 +67,6 @@ describe("resolveRepos", () => {
     if (savedEnv !== undefined) {
       process.env.SHIPWRIGHT_REPOS_DIR = savedEnv;
     } else {
-      // biome-ignore lint/performance/noDelete: process.env deletion is intentional — assignment stringifies to "undefined"
       delete process.env.SHIPWRIGHT_REPOS_DIR;
     }
     rmSync(tmpDir, { recursive: true, force: true });
@@ -240,7 +238,6 @@ describe("resolveAllRepos", () => {
   beforeEach(() => {
     tmpDir = mkdtempSync(join(tmpdir(), "resolve-all-repos-test-"));
     savedEnv = process.env.SHIPWRIGHT_REPOS_DIR;
-    // biome-ignore lint/performance/noDelete: process.env deletion is intentional — assignment stringifies to "undefined"
     delete process.env.SHIPWRIGHT_REPOS_DIR;
   });
 
@@ -248,7 +245,6 @@ describe("resolveAllRepos", () => {
     if (savedEnv !== undefined) {
       process.env.SHIPWRIGHT_REPOS_DIR = savedEnv;
     } else {
-      // biome-ignore lint/performance/noDelete: process.env deletion is intentional — assignment stringifies to "undefined"
       delete process.env.SHIPWRIGHT_REPOS_DIR;
     }
     rmSync(tmpDir, { recursive: true, force: true });
@@ -277,7 +273,6 @@ describe("resolveRepoDirs", () => {
   beforeEach(() => {
     tmpDir = mkdtempSync(join(tmpdir(), "resolve-repo-dirs-test-"));
     savedEnv = process.env.SHIPWRIGHT_REPOS_DIR;
-    // biome-ignore lint/performance/noDelete: process.env deletion is intentional — assignment stringifies to "undefined"
     delete process.env.SHIPWRIGHT_REPOS_DIR;
   });
 
@@ -285,7 +280,6 @@ describe("resolveRepoDirs", () => {
     if (savedEnv !== undefined) {
       process.env.SHIPWRIGHT_REPOS_DIR = savedEnv;
     } else {
-      // biome-ignore lint/performance/noDelete: process.env deletion is intentional — assignment stringifies to "undefined"
       delete process.env.SHIPWRIGHT_REPOS_DIR;
     }
     rmSync(tmpDir, { recursive: true, force: true });
@@ -453,13 +447,11 @@ describe("createTaskStoreClient query()", () => {
     if (savedEnv.url !== undefined) {
       process.env.SHIPWRIGHT_TASK_STORE_URL = savedEnv.url;
     } else {
-      // biome-ignore lint/performance/noDelete: intentional env cleanup
       delete process.env.SHIPWRIGHT_TASK_STORE_URL;
     }
     if (savedEnv.token !== undefined) {
       process.env.SHIPWRIGHT_TASK_STORE_TOKEN = savedEnv.token;
     } else {
-      // biome-ignore lint/performance/noDelete: intentional env cleanup
       delete process.env.SHIPWRIGHT_TASK_STORE_TOKEN;
     }
     mock.restore();

@@ -127,13 +127,11 @@ describe("loop-orchestrator + real task-store claim client (CBD-2.1)", () => {
     if (savedEnv.url !== undefined) {
       process.env.SHIPWRIGHT_TASK_STORE_URL = savedEnv.url;
     } else {
-      // biome-ignore lint/performance/noDelete: intentional env cleanup
       delete process.env.SHIPWRIGHT_TASK_STORE_URL;
     }
     if (savedEnv.token !== undefined) {
       process.env.SHIPWRIGHT_TASK_STORE_TOKEN = savedEnv.token;
     } else {
-      // biome-ignore lint/performance/noDelete: intentional env cleanup
       delete process.env.SHIPWRIGHT_TASK_STORE_TOKEN;
     }
   });

@@ -602,7 +602,6 @@ describe("runMiseStartup", () => {
     mkdirSync(join(imageMiseDir, "shims"), { recursive: true });
     writeFileSync(join(imageMiseDir, "shims", "claude"), "image-shim", "utf8");
     process.env.HOME = testHome;
-    // biome-ignore lint/performance/noDelete: intentional env-var removal (not object property)
     delete process.env.XDG_DATA_HOME;
     const mockExec = async () => ({ stdout: "", exitCode: 0 });
     await runMiseStartup(testHome, mockExec);
@@ -713,7 +712,6 @@ describe("runMiseStartup", () => {
       "[tools]\n",
       "utf8",
     );
-    // biome-ignore lint/performance/noDelete: intentional env-var removal (not object property)
     delete process.env.MISE_DATA_DIR;
     const mockExec = async () => ({ stdout: "", exitCode: 0 });
     await runMiseStartup(testHome, mockExec);
