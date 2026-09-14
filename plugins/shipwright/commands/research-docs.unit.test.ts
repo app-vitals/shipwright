@@ -444,6 +444,37 @@ describe("research-docs.md — size governance", () => {
     expect(section).toContain("Step 4");
   });
 
+  it("Step 6.6 has a three-branch decision tree gating split vs. spec-pointer conversion", () => {
+    const step6_6Idx = content.indexOf("## Step 6.6: Size Governance");
+    const step7Idx = content.indexOf("## Step 7: Update CLAUDE.md Reference");
+    const section = content.slice(step6_6Idx, step7Idx);
+
+    expect(section.toLowerCase()).toContain("pointer-conversion");
+    expect(section.toLowerCase()).toContain("openapi");
+    expect(section.toLowerCase()).toContain("adequate descriptions");
+    expect(section.toLowerCase()).toContain("isn't enriched");
+    expect(section.toLowerCase()).toContain("no spec exists");
+  });
+
+  it("Step 6.6 has an explicit scope note excluding plugins/shipwright/ skills and commands", () => {
+    const step6_6Idx = content.indexOf("## Step 6.6: Size Governance");
+    const step7Idx = content.indexOf("## Step 7: Update CLAUDE.md Reference");
+    const section = content.slice(step6_6Idx, step7Idx);
+
+    expect(section).toContain("docs/*.md");
+    expect(section).toContain("plugins/shipwright/");
+  });
+
+  it("Step 6.6's worked example for the pointer-conversion branch reflects the DOA-4 pattern", () => {
+    const step6_6Idx = content.indexOf("## Step 6.6: Size Governance");
+    const step7Idx = content.indexOf("## Step 7: Update CLAUDE.md Reference");
+    const section = content.slice(step6_6Idx, step7Idx);
+
+    expect(section).toContain("DOA-4");
+    expect(section).toContain("docs/agent-api.md");
+    expect(section).toContain("admin/openapi.json");
+  });
+
   it("Step A5.5 also checks resulting line count against Step 6.6's hard threshold", () => {
     const stepA5_5Idx = content.indexOf("### Step A5.5: Auto Mode Quality Pass");
     const stepA6Idx = content.indexOf("### Step A6: Update CLAUDE.md References");

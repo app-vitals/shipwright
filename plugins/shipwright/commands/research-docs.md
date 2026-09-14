@@ -561,13 +561,44 @@ Wait for user confirmation before applying any `Edit`. A skipped or declined fla
 
 Run this pass against every doc **updated in Step 6** — not docs drafted fresh in Step 5, and not docs left untouched by this run. Run it after Step 6.5's proposed fixes have been applied or declined, so the line count reflects the doc's actual final state for this run, not an intermediate one.
 
+**Scope:** this rule applies only to `docs/*.md`. Skills and commands under `plugins/shipwright/` (`*.md` command/skill files) are a different document type — agent-facing instructions, not a reference doc describing a system — and must never be pulled into this step's split-vs-pointer decision, regardless of their line count.
+
 **Thresholds:** soft target **150 lines**, hard threshold **200 lines**, for a single generated doc. The goal is a doc that can be fully read when consulted, not a doc that keeps growing forever.
 
 Count the doc's current line count (`wc -l` or equivalent) after Step 6.5.
 
 **Under 200 lines: this step is a no-op.** The doc behaves exactly as before this step existed — no split proposal, no prompt, nothing further to do. This is the common case and requires no output beyond noting the doc is fine.
 
-**Over 200 lines: propose a split — never automatic.** Identify which `##`/`###` sections would move to one or more new sub-topic doc(s), grouped by topic (e.g. all sections about one sub-area move together). For each proposed new doc, propose a filename following the naming pattern detected in Step 4 (`{topic}.md`, `{service}-api.md`, etc. — whatever this project's existing convention is). Present the proposal and wait for confirmation before creating anything:
+**Over 200 lines: decide between pointer-conversion and split.** Before proposing a topic-based split, check whether the doc primarily documents an HTTP API — routes, params, request/response shapes — that has a corresponding generated OpenAPI spec in the repo (`Glob`/`Grep` for the spec file, same discovery approach as Step 6.5a's canonical-source lookup). This produces three branches:
+
+1. **Spec-backed, and the spec's routes already carry adequate descriptions** (each route/operation in the spec has a non-empty `summary`/`description` covering what the doc's own tables would otherwise enumerate) → propose the **pointer-conversion pattern** instead of a split: trim the doc to a short pointer to the spec, keeping only the prose the spec can't carry (the auth model, field semantics not expressible in OpenAPI, cross-cutting gotchas). This is the pattern DOA-4 applied to `docs/agent-api.md` and `docs/agent-api-ops.md` — both trimmed below the 150-line soft target by dropping endpoint/param/response tables now covered by the enriched `admin/openapi.json`, keeping only the auth model and field-semantics prose the spec doesn't carry.
+2. **Spec-backed, but the spec isn't enriched** (routes exist but lack descriptions worth pointing to) → fall back to the split below, and add a note to the proposal that enriching the spec's route descriptions is a prerequisite for pointer-conversion on a future pass.
+3. **No spec exists** → behavior is unchanged: propose the split below.
+
+**Pointer-conversion proposal** (branch 1) — present and wait for confirmation before applying anything:
+
+```
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+SIZE GOVERNANCE
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+docs/agent-api.md is now 227 lines (hard threshold: 200)
+This doc documents the admin CRUD API, and admin/openapi.json already
+carries adequate descriptions for every route.
+
+Proposed pointer-conversion (DOA-4 pattern):
+  Trim docs/agent-api.md to a pointer to admin/openapi.json, keeping only:
+    - the three-path auth model (spec doesn't carry auth semantics)
+    - field semantics not expressible in OpenAPI (e.g. allowlist
+      fail-open/additive contrast, slackId auto-resolve)
+  Drop:
+    - the endpoint/param/response tables (fully covered by the spec)
+
+Proceed? (Apply pointer-conversion / Split instead / Skip)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+```
+
+**Split proposal — never automatic** (branches 2 and 3): Identify which `##`/`###` sections would move to one or more new sub-topic doc(s), grouped by topic (e.g. all sections about one sub-area move together). For each proposed new doc, propose a filename following the naming pattern detected in Step 4 (`{topic}.md`, `{service}-api.md`, etc. — whatever this project's existing convention is). Present the proposal and wait for confirmation before creating anything:
 
 ```
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -594,7 +625,8 @@ Proceed? (Create split / Skip)
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 ```
 
-- **If confirmed:** create the new sub-topic doc(s) via `Write` (moving the identified sections' content verbatim, or lightly re-headed to stand alone), then trim the original doc via `Edit` to keep only the remaining sections plus a short pointer to the new doc(s).
+- **If pointer-conversion confirmed:** trim the doc via `Edit` to the pointer plus the retained prose, per the proposal.
+- **If split confirmed:** create the new sub-topic doc(s) via `Write` (moving the identified sections' content verbatim, or lightly re-headed to stand alone), then trim the original doc via `Edit` to keep only the remaining sections plus a short pointer to the new doc(s).
 - **If declined or skipped:** leave the doc as-is, oversized. It is not retried automatically on a later run — it will surface again next time this doc is updated and re-checked by this step.
 
 ---
