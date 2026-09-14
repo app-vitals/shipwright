@@ -83,7 +83,7 @@ ${tool.description}
   return `${header}${sections.join("\n")}`;
 }
 
-export function generateMcpDocs(): GeneratedTool[] {
+function generateMcpDocs(): GeneratedTool[] {
   const tools = allowedTools(generatedTools);
   writeFileSync(outPath, renderMcpToolsDoc(tools));
   return tools;

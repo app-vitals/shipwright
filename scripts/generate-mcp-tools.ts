@@ -62,7 +62,7 @@ const HTTP_METHODS = ["get", "post", "put", "patch", "delete"] as const;
  *   - Static sub-collections ("/tasks/bulk", "/tasks/distinct",
  *     "/prs/claim", "/prs/claim-next") use the segment as the action.
  */
-export function deriveToolName(method: string, path: string): string {
+function deriveToolName(method: string, path: string): string {
   const segments = path.split("/").filter(Boolean);
   const resource = segments[0];
   const rest = segments.slice(1);
@@ -175,7 +175,7 @@ export interface GeneratedTool {
   hasArrayBody?: boolean;
 }
 
-export function generateTools(spec: OpenApiSpec): GeneratedTool[] {
+function generateTools(spec: OpenApiSpec): GeneratedTool[] {
   const tools: GeneratedTool[] = [];
 
   for (const [path, pathItem] of Object.entries(spec.paths)) {
@@ -293,7 +293,7 @@ export const generatedTools: GeneratedTool[] = ${JSON.stringify(tools, null, 2)}
   return header;
 }
 
-export function generateMcpTools(): GeneratedTool[] {
+function generateMcpTools(): GeneratedTool[] {
   const spec: OpenApiSpec = JSON.parse(readFileSync(specPath, "utf8"));
   const tools = generateTools(spec);
   writeFileSync(outPath, renderModule(tools));

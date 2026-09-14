@@ -684,14 +684,14 @@ export function openInBrowser(
  * default) when the flag is absent, so every pre-CNH-8.2 invocation of this
  * script keeps behaving exactly as before.
  */
-export function parseProfileArg(argv: string[]): string {
+function parseProfileArg(argv: string[]): string {
   const i = argv.indexOf("--profile");
   if (i === -1 || i === argv.length - 1) return "addon";
   return argv[i + 1];
 }
 
 /** True when `name` is a known Profile key. */
-export function isKnownProfile(name: string): name is Profile {
+function isKnownProfile(name: string): name is Profile {
   return Object.hasOwn(PROFILES, name);
 }
 

@@ -3114,7 +3114,7 @@ const TASK_STATE_GROUPS: { key: TaskState; label: string }[] = [
 
 export type WaitingKind = "hitl" | "blocked" | "pr_blocked";
 
-export interface SessionWaitingTask {
+interface SessionWaitingTask {
   task: TaskItem;
   kind: WaitingKind;
 }
@@ -3140,7 +3140,7 @@ function classifyWaitingTask(
  * SESSION_CLOSED_STATUSES) that classify into a WaitingKind. `prsByTaskId`
  * defaults to `{}` so callers with no PR join simply never surface
  * "pr_blocked" rows. */
-export function computeSessionWaitingTasks(
+function computeSessionWaitingTasks(
   tasks: TaskItem[],
   prsByTaskId: Record<string, PrListItem> = {},
 ): SessionWaitingTask[] {
@@ -3157,7 +3157,7 @@ export type SessionRollupState = "waiting" | "active" | "closed" | "empty";
 
 /** Session-level state: "empty" with zero tasks; "closed" when every task is
  * closed; "waiting" when at least one open task is waiting; else "active". */
-export function computeSessionState(
+function computeSessionState(
   tasks: TaskItem[],
   waitingTasks: SessionWaitingTask[],
 ): SessionRollupState {
@@ -3315,7 +3315,7 @@ const SESSION_STATE_BADGE_CLASS: Record<SessionRollupState, string> = {
 //                      fallback — also covers any future/unrecognized status
 //                      value, so every task still lands in exactly one
 //                      column rather than "none of the above").
-export type TaskBoardColumn =
+type TaskBoardColumn =
   | "queued"
   | "claimed"
   | "in_progress"
@@ -3413,13 +3413,13 @@ const LAYOUT_COLUMN_GAP = 100;
 const LAYOUT_ROW_GAP = 30;
 const LAYOUT_MARGIN = 40;
 
-export interface DependencyLayoutPosition {
+interface DependencyLayoutPosition {
   x: number;
   y: number;
   depth: number;
 }
 
-export interface DependencyLayout {
+interface DependencyLayout {
   positions: Map<string, DependencyLayoutPosition>;
   width: number;
   height: number;
@@ -4278,7 +4278,7 @@ export function renderPrDetailPage(
 
 // ─── Cron grouping for activity display ────────────────────────────────────
 
-export interface CronGroupingInput {
+interface CronGroupingInput {
   id: string;
   name: string | null;
   schedule: string;
@@ -5218,12 +5218,12 @@ const chatPageStyles = `
 // (renderMessageBubble()) and the inline JS bubble builder (addBubble()) so
 // the two renderers physically cannot drift apart — see the interpolation of
 // CHAT_BUBBLE_CLASS/CHAT_BUBBLE_INNER_CLASS into `inlineScript` below.
-export const CHAT_BUBBLE_CLASS = "chat-bubble";
-export const CHAT_BUBBLE_INNER_CLASS = "chat-bubble-inner";
-export const CHAT_BUBBLE_INNER_WIDE_CLASS = "chat-bubble-inner--wide";
+const CHAT_BUBBLE_CLASS = "chat-bubble";
+const CHAT_BUBBLE_INNER_CLASS = "chat-bubble-inner";
+const CHAT_BUBBLE_INNER_WIDE_CLASS = "chat-bubble-inner--wide";
 
 /** e.g. "chat-bubble--user" — role is attacker-controlled only via server data, never used unescaped in an attribute here since roles are a closed set (user/assistant/system/other). */
-export function chatBubbleRoleClass(role: string): string {
+function chatBubbleRoleClass(role: string): string {
   return `${CHAT_BUBBLE_CLASS}--${role}`;
 }
 
@@ -5246,10 +5246,10 @@ export const ERROR_KIND_LABELS: Record<string, string> = {
   incomplete: "Incomplete",
   stalled: "Stalled",
 };
-export const DEFAULT_ERROR_LABEL = "Error";
+const DEFAULT_ERROR_LABEL = "Error";
 
 /** Resolve an errorKind to its label, with the shared default fallback. */
-export function errorKindLabel(kind: string): string {
+function errorKindLabel(kind: string): string {
   return ERROR_KIND_LABELS[kind] ?? DEFAULT_ERROR_LABEL;
 }
 
@@ -5260,7 +5260,7 @@ export function errorKindLabel(kind: string): string {
  * likely to succeed. Kinds like rate-limited/timeout/upstream are excluded:
  * those already represent a completed, failed round-trip.
  */
-export const RETRYABLE_ERROR_KINDS: ReadonlySet<string> = new Set([
+const RETRYABLE_ERROR_KINDS: ReadonlySet<string> = new Set([
   "cancelled",
   "incomplete",
   "stalled",
@@ -5271,10 +5271,10 @@ export const RETRYABLE_ERROR_KINDS: ReadonlySet<string> = new Set([
 // ticker JS finds/updates/creates it by this exact id so the "just loaded,
 // agent still working" and "just sent, agent now working" bubbles are one and
 // the same element.
-export const LIVE_STATUS_BUBBLE_ID = "live-status-bubble";
-export const LIVE_STATUS_ELAPSED_ID = "live-status-elapsed";
-export const LIVE_STATUS_MILESTONE_ID = "live-status-milestone";
-export const STALL_INDICATOR_CLASS = "chat-stall-indicator";
+const LIVE_STATUS_BUBBLE_ID = "live-status-bubble";
+const LIVE_STATUS_ELAPSED_ID = "live-status-elapsed";
+const LIVE_STATUS_MILESTONE_ID = "live-status-milestone";
+const STALL_INDICATOR_CLASS = "chat-stall-indicator";
 
 /**
  * Layer-1 elapsed-timer guarantee: the client-side 1s ticker computes
@@ -5405,7 +5405,7 @@ export function renderChatMessageBubble(
  * elapsed seed is 0s server-side; the client ticker takes over immediately
  * from `data-created-at` with zero network dependency.
  */
-export function renderLiveStatusBubble(m: ChatMessage): string {
+function renderLiveStatusBubble(m: ChatMessage): string {
   const milestone =
     m.progressPhase &&
     PROGRESS_LABELS[m.progressPhase as keyof typeof PROGRESS_LABELS]

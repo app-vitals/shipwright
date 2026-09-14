@@ -117,13 +117,13 @@ const LOCAL_API_KEY = "local-test-api-key";
 
 type CleanupFn = () => void | Promise<void>;
 
-export interface CanaryContext {
+interface CanaryContext {
   baseUrl: string;
   apiKey: string;
   onCleanup: (fn: CleanupFn) => void;
 }
 
-export async function runCanaryMode<T>(
+async function runCanaryMode<T>(
   fn: (ctx: CanaryContext) => Promise<T>,
 ): Promise<T> {
   const targetUrl = process.env.TEST_TARGET_URL;
