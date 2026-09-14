@@ -248,7 +248,6 @@ describe("createGitHubTokenManager() — env var wiring", () => {
   });
 
   it("throws when GH_APP_ID is missing", () => {
-    // biome-ignore lint/performance/noDelete: process.env deletion is intentional — assignment stringifies to "undefined"
     delete process.env.GH_APP_ID;
     process.env.GH_APP_PRIVATE_KEY = TEST_PRIVATE_KEY;
     process.env.GH_APP_INSTALLATION_ID = "123";
@@ -260,7 +259,6 @@ describe("createGitHubTokenManager() — env var wiring", () => {
 
   it("throws when GH_APP_PRIVATE_KEY is missing", () => {
     process.env.GH_APP_ID = "12345";
-    // biome-ignore lint/performance/noDelete: process.env deletion is intentional — assignment stringifies to "undefined"
     delete process.env.GH_APP_PRIVATE_KEY;
     process.env.GH_APP_INSTALLATION_ID = "123";
 
@@ -272,7 +270,6 @@ describe("createGitHubTokenManager() — env var wiring", () => {
   it("throws when GH_APP_INSTALLATION_ID is missing", () => {
     process.env.GH_APP_ID = "12345";
     process.env.GH_APP_PRIVATE_KEY = TEST_PRIVATE_KEY;
-    // biome-ignore lint/performance/noDelete: process.env deletion is intentional — assignment stringifies to "undefined"
     delete process.env.GH_APP_INSTALLATION_ID;
 
     expect(() => createGitHubTokenManager()).toThrow(
@@ -407,7 +404,6 @@ describe("getBotIdentity() — missing env var errors", () => {
   });
 
   it("throws when GH_APP_ID is missing", () => {
-    // biome-ignore lint/performance/noDelete: process.env deletion is intentional — assignment stringifies to "undefined"
     delete process.env.GH_APP_ID;
     process.env.GH_APP_PRIVATE_KEY = TEST_PRIVATE_KEY;
 
@@ -416,7 +412,6 @@ describe("getBotIdentity() — missing env var errors", () => {
 
   it("throws when GH_APP_PRIVATE_KEY is missing", () => {
     process.env.GH_APP_ID = "12345";
-    // biome-ignore lint/performance/noDelete: process.env deletion is intentional — assignment stringifies to "undefined"
     delete process.env.GH_APP_PRIVATE_KEY;
 
     expect(() => getBotIdentity()).toThrow(/Missing required env vars/);

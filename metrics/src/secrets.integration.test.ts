@@ -87,7 +87,6 @@ describe("createSecretsClient", () => {
         expect(value).toBe("env-fallback-value");
       } finally {
         if (originalValue === undefined) {
-          // biome-ignore lint/performance/noDelete: process.env deletion is intentional — assignment stringifies to "undefined"
           delete process.env.TEST_SECRET_FALLBACK;
         } else {
           process.env.TEST_SECRET_FALLBACK = originalValue;
@@ -111,7 +110,6 @@ describe("createSecretsClient", () => {
         expect(value).toBe("network-fallback-value");
       } finally {
         if (originalValue === undefined) {
-          // biome-ignore lint/performance/noDelete: process.env deletion is intentional — assignment stringifies to "undefined"
           delete process.env.TEST_NET_ERR_SECRET;
         } else {
           process.env.TEST_NET_ERR_SECRET = originalValue;

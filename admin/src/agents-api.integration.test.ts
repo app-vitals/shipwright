@@ -135,7 +135,6 @@ function makeDeps(
   process.env.SHIPWRIGHT_ENCRYPTION_KEY = REAL_KEY;
   const crypto = makeTokenCrypto();
   if (savedKey === undefined) {
-    // biome-ignore lint/performance/noDelete: process.env deletion is intentional — assignment stringifies to "undefined"
     delete process.env.SHIPWRIGHT_ENCRYPTION_KEY;
   } else {
     process.env.SHIPWRIGHT_ENCRYPTION_KEY = savedKey;
@@ -220,7 +219,6 @@ describeOrSkip("admin CRUD API (integration)", () => {
       expect(raw?.value).toContain(":"); // iv:ciphertext:authTag format
     } finally {
       if (savedKey === undefined) {
-        // biome-ignore lint/performance/noDelete: process.env deletion is intentional — assignment stringifies to "undefined"
         delete process.env.SHIPWRIGHT_ENCRYPTION_KEY;
       } else {
         process.env.SHIPWRIGHT_ENCRYPTION_KEY = savedKey;
@@ -252,7 +250,6 @@ describeOrSkip("admin CRUD API (integration)", () => {
       expect(body.env.SECRET).toBe("my-api-key");
     } finally {
       if (savedKey === undefined) {
-        // biome-ignore lint/performance/noDelete: process.env deletion is intentional — assignment stringifies to "undefined"
         delete process.env.SHIPWRIGHT_ENCRYPTION_KEY;
       } else {
         process.env.SHIPWRIGHT_ENCRYPTION_KEY = savedKey;
