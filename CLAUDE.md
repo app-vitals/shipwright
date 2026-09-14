@@ -133,6 +133,8 @@ Tests land **with** the code, at the correct layer — same PR, no "add tests la
 
 **Test isolation (hard rule):** inject time via a `Clock`; test external clients (task store, GitHub) with recorded fixtures. **No `mock.module()`, no `global.fetch`/`global.*` overrides** — Bun shares the test process, so leaked globals break sibling suites.
 
+**Hidden-directory gotcha:** `bun test`'s recursive walker never descends into a dot-prefixed directory (e.g. `.claude/`) — no `bunfig.toml` setting or CLI flag changes this (confirmed against `bun test --help`: `--path-ignore-patterns` only *removes* matches from an existing walk, it can't add dot-dirs back in). A test file placed there (e.g. `.claude/commands/*.content.test.ts`) silently never runs under plain `bun test` or `task ci`. `scripts/find-hidden-dir-tests.ts` finds such files via `Bun.Glob`'s `dot: true` option and runs each one as an explicit `./`-prefixed path (bun resolves an explicit path directly regardless of the walker) — wired into `task test` and `task ci` (via `test:coverage`) so this runs automatically; no per-file setup needed for a new hidden-directory test.
+
 ## Conventions
 
 - **No new coupling:** the plugin stays repo-agnostic; the metrics service and the agent depend on no external platform service.
