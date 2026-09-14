@@ -155,6 +155,8 @@ const listRoute = createRoute({
   path: "/",
   tags: ["messages"],
   summary: "List messages in a thread",
+  description:
+    "First resolves the parent thread and applies the same agent-scope check as the thread routes — 404 if the thread doesn't exist, 403 if an agent token doesn't own it. `limit` defaults to 50 (capped at 200), `offset` defaults to 0. Returns messages ordered by `createdAt` ascending.",
   request: {
     query: MessageListQuerySchema,
   },
@@ -175,6 +177,8 @@ const createMessageRoute = createRoute({
   path: "/",
   tags: ["messages"],
   summary: "Create a message",
+  description:
+    '`role` and `body` are required — 400 if missing, or if `role` is not `"user"`/`"assistant"`. `attachmentBytes` (base64 or raw bytes) is capped at 10 MB (`MAX_ATTACHMENT_BYTES`) — oversized payloads return 413, because `attachmentBytes` maps to a Postgres `bytea` column loaded in full on every message read; the cap exists to prevent WAL bloat. Returns 201 with the created message.',
   request: {
     body: {
       content: { "application/json": { schema: CreateMessageBodySchema } },
@@ -205,6 +209,8 @@ const claimRoute = createRoute({
   path: "/claim",
   tags: ["messages"],
   summary: "Claim the next unclaimed user message in a thread",
+  description:
+    'Atomically claims the oldest unclaimed `role: "user"` message in the thread — the mechanism the agent\'s chat poll loop uses to pick up new member messages without double-processing. `claimedBy` is set to the caller\'s agentId (or `"admin"` for admin tokens). Concurrent claims on the same message are resolved by a conditional update (`WHERE claimed = false`); the loser gets 404, not an error. Returns 404 if no unclaimed messages exist.',
   responses: {
     200: {
       description: "Claimed message",
@@ -222,6 +228,8 @@ const getAttachmentRoute = createRoute({
   path: "/:id/attachment",
   tags: ["messages"],
   summary: "Stream a message's attachment (ephemeral — cleared after read)",
+  description:
+    "Streams the stored `attachmentBytes` once with `Content-Type: application/octet-stream` and a `Content-Disposition` header set to the message's `attachmentFilename`. Ephemeral retention: after the bytes are served, they are dropped from the row (`clearAttachmentBytes`), so the content is not retained once the agent has pulled it into its workspace — a second call returns 404 (no attachment). Also 404 if the thread or message doesn't exist.",
   request: {
     params: MessageIdParamSchema,
   },
@@ -248,6 +256,8 @@ const cancelRoute = createRoute({
   summary:
     "Request cancellation of an in-flight reply — the claiming agent aborts " +
     "on its next heartbeat tick",
+  description:
+    "Stamps `cancelRequestedAt` on the target message. The claiming agent observes the request on its next heartbeat tick (worst-case cancel latency ≈ one heartbeat interval, ~3s) and aborts — the aborted run remains resumable (its session id is still saved) and is not retried. Registered before the generic `/:id` routes so `/:id/cancel` matches its own handler. Returns 404 if the message doesn't exist or doesn't belong to the thread.",
   request: {
     params: MessageIdParamSchema,
   },
@@ -268,6 +278,8 @@ const getOneRoute = createRoute({
   path: "/:id",
   tags: ["messages"],
   summary: "Get a message by ID",
+  description:
+    "Returns 404 if not found or if the message doesn't belong to the given thread.",
   request: {
     params: MessageIdParamSchema,
   },
@@ -288,6 +300,8 @@ const updateRoute = createRoute({
   path: "/:id",
   tags: ["messages"],
   summary: "Update a message",
+  description:
+    "Body: `{ body?: string, tokens?: JsonValue, costUsd?: number | null, errorKind?: string | null }`. All fields optional — the handler applies a partial update. Returns 404 if not found, otherwise the updated message with 200.",
   request: {
     params: MessageIdParamSchema,
     body: {
@@ -312,6 +326,8 @@ const deleteRoute = createRoute({
   path: "/:id",
   tags: ["messages"],
   summary: "Delete a message",
+  description:
+    "Hard-deletes the message row. Returns 404 if not found, otherwise the deleted message with 200.",
   request: {
     params: MessageIdParamSchema,
   },
@@ -334,6 +350,8 @@ const heartbeatRoute = createRoute({
   summary:
     "Bump a claimed message's heartbeatAt (proof of life for a long-running reply), " +
     "optionally recording the current progress phase",
+  description:
+    "Scoped to the claim's owner: the caller's identity (agentId, or \"admin\" for the admin UI) must match the message's `claimedBy`, or the update no-ops. Optional body `{ phase?: string }` is validated against `PROGRESS_PHASES` — an invalid phase returns 400; on success `progressPhase` is updated and `progressSeq` is incremented atomically alongside `heartbeatAt`. The heartbeat is bidirectional: the returned message carries `cancelRequestedAt`, so the same tick that proves liveness also tells the agent whether a cancel was requested (see POST /:id/cancel) — no second polling loop is needed. Returns 404 if the message doesn't exist, doesn't belong to the thread, isn't currently claimed by the caller, or has already been replied to.",
   request: {
     params: MessageIdParamSchema,
     body: {
@@ -362,6 +380,8 @@ const replyRoute = createRoute({
   path: "/:id/reply",
   tags: ["messages"],
   summary: "Post an agent reply to a user message",
+  description:
+    'The second half of the claim/reply queue cycle. Body: `{ body: string, tokens?: JsonValue, costUsd?: number, errorKind?: string | null }` — `body` is required. Preconditions are checked in order: the target message must exist and belong to the thread (404), `role` must be `"user"` (400 if replying to an assistant message), and `repliedAt` must be null (409 if replying twice). On success, `repliedAt` is set on the user message and a new `role: "assistant"` message is created — both writes run inside a single transaction, so a partial failure can never leave `repliedAt` set with no assistant message. Returns 201 with `{ userMessage, assistantMessage }`.',
   request: {
     params: MessageIdParamSchema,
     body: {

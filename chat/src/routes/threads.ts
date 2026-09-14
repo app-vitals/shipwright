@@ -72,6 +72,8 @@ const listThreadsRoute = createRoute({
   path: "/",
   tags: ["threads"],
   summary: "List threads (scoped to agentId for agent tokens)",
+  description:
+    "Agent tokens are forced to their own agentId regardless of the `agentId` query param; only admin tokens may filter by an arbitrary `agentId` or `memberId`. `limit` defaults to 50 (capped at 200), `offset` defaults to 0. Returns threads ordered by `updatedAt` descending.",
   security: [{ bearerAuth: [] }],
   request: {
     query: ThreadListQuerySchema,
@@ -89,6 +91,8 @@ const createThreadRoute = createRoute({
   path: "/",
   tags: ["threads"],
   summary: "Create a thread",
+  description:
+    "Body: `{ agentId: string, memberId?: string, title?: string }`. `agentId` is required — returns 400 if missing. Agent tokens may only create threads for their own agentId; a mismatched agentId returns 403. Returns 201 with the created thread.",
   security: [{ bearerAuth: [] }],
   request: {
     body: {
@@ -117,6 +121,8 @@ const getThreadStatsRoute = createRoute({
   path: "/:id/stats",
   tags: ["threads"],
   summary: "Get aggregated stats for a thread",
+  description:
+    "Returns `messageCount`, `totalInputTokens`, `totalOutputTokens`, and `totalCostUsd` for the thread. `messageCount` and `totalCostUsd` are computed via a SQL aggregate, but token totals are summed in application code from each message's `tokens` JSON blob — Postgres can't aggregate inside a JSON column, so every message in the thread is loaded into memory to compute this. Acceptable for admin-only usage today, but threads with very large message counts incur proportional memory overhead. 403 if an agent token doesn't own the thread; 404 if the thread doesn't exist.",
   security: [{ bearerAuth: [] }],
   request: {
     params: ThreadIdParamSchema,
@@ -142,6 +148,8 @@ const getThreadRoute = createRoute({
   path: "/:id",
   tags: ["threads"],
   summary: "Get a thread by id",
+  description:
+    "Agent tokens are scoped to threads where `thread.agentId` matches their own agentId — a mismatched thread returns 403. Returns 404 if the thread doesn't exist, otherwise the thread with 200.",
   security: [{ bearerAuth: [] }],
   request: {
     params: ThreadIdParamSchema,
@@ -167,6 +175,8 @@ const updateThreadRoute = createRoute({
   path: "/:id",
   tags: ["threads"],
   summary: "Update thread title and/or memberId",
+  description:
+    "Body: `{ title?: string | null, memberId?: string | null }`. 403 if an agent token doesn't own the thread; 404 if not found. Returns the updated thread with 200.",
   security: [{ bearerAuth: [] }],
   request: {
     params: ThreadIdParamSchema,
@@ -196,6 +206,8 @@ const deleteThreadRoute = createRoute({
   path: "/:id",
   tags: ["threads"],
   summary: "Delete a thread",
+  description:
+    "Cascades to all messages in the thread (`onDelete: Cascade` in the schema) — this is not soft-delete. 403 if an agent token doesn't own the thread; 404 if not found. Otherwise returns the deleted thread with 200.",
   security: [{ bearerAuth: [] }],
   request: {
     params: ThreadIdParamSchema,
