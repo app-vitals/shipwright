@@ -14,17 +14,17 @@
             { "type": "revert", "section": "Reverts" },
             { "type": "docs", "section": "Documentation" },
             { "type": "refactor", "section": "Code Refactoring" },
-            { "type": "test", "section": "Tests", "hidden": true },
-            { "type": "build", "section": "Build System", "hidden": true },
+            { "type": "test", "section": "Tests", "effect": "hidden" },
+            { "type": "build", "section": "Build System", "effect": "hidden" },
             {
               "type": "ci",
               "section": "Continuous Integration",
-              "hidden": true
+              "effect": "hidden"
             },
             {
               "type": "chore",
               "section": "Miscellaneous Chores",
-              "hidden": true
+              "effect": "hidden"
             }
           ]
         }
@@ -42,17 +42,17 @@
             { "type": "revert", "section": "Reverts" },
             { "type": "docs", "section": "Documentation" },
             { "type": "refactor", "section": "Code Refactoring" },
-            { "type": "test", "section": "Tests", "hidden": true },
-            { "type": "build", "section": "Build System", "hidden": true },
+            { "type": "test", "section": "Tests", "effect": "hidden" },
+            { "type": "build", "section": "Build System", "effect": "hidden" },
             {
               "type": "ci",
               "section": "Continuous Integration",
-              "hidden": true
+              "effect": "hidden"
             },
             {
               "type": "chore",
               "section": "Miscellaneous Chores",
-              "hidden": true
+              "effect": "hidden"
             }
           ]
         }
