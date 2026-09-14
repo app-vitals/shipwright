@@ -297,6 +297,9 @@ const WorkQueueSnapshotWrapperSchema = z
 const createAgentRoute = createRoute({
   method: "post",
   path: "/agents",
+  summary: "Create an agent",
+  description:
+    'Admin-only. Creates an agent record and, for managed (non-self-hosted) agents, provisions the Kubernetes workload. The optional `type` field (default "coding") selects an Agent Type manifest that seeds AgentTool, AgentPlugin, and AgentMember rows plus merged `repos`; an unknown type returns 400 before any row is created. Seeding and provisioning share a rollback-guarded block — if either step fails, every already-seeded child row is cascade-deleted along with the agent row.',
   request: {
     body: {
       content: { "application/json": { schema: CreateAgentBodySchema } },
@@ -315,6 +318,9 @@ const createAgentRoute = createRoute({
 const reconcileAgentsRoute = createRoute({
   method: "post",
   path: "/agents/reconcile",
+  summary: "Reconcile all agents' K8s state",
+  description:
+    "Admin-only. Reconciles Kubernetes Deployment state against all managed (non-self-hosted) agents in the DB, returning counts of recreated/updated deployments plus any orphaned deployments or per-agent failures.",
   responses: {
     200: {
       description: "Reconciliation summary",
@@ -327,6 +333,9 @@ const reconcileAgentsRoute = createRoute({
 const provisionAgentRoute = createRoute({
   method: "post",
   path: "/agents/{id}/provision",
+  summary: "Provision an agent's K8s workload",
+  description:
+    'Admin-only. Provisions or re-provisions the Kubernetes workload for a single managed agent — idempotent, safe to call on an already-provisioned agent. For self-hosted agents, returns `{ skipped: true, reason: "self-hosted" }` with no K8s changes.',
   request: { params: AgentIdParamSchema },
   responses: {
     200: {
@@ -349,6 +358,9 @@ const provisionAgentRoute = createRoute({
 const listAgentsRoute = createRoute({
   method: "get",
   path: "/agents",
+  summary: "List all agents",
+  description:
+    "Admin-only. Returns every agent's `id`, `name`, `selfHosted`, and `typeName` — used for metrics name resolution.",
   responses: {
     200: {
       description: "List of agents",
@@ -361,6 +373,9 @@ const listAgentsRoute = createRoute({
 const getAgentRoute = createRoute({
   method: "get",
   path: "/agents/{id}",
+  summary: "Get an agent",
+  description:
+    "Admin-only. Returns the full agent record including `selfHosted`, `repos`, `reviewAuthorAllowlist`, `patchAuthorAllowlist`, `restrictSlackToMembers`, `typeName`, and `missingRequiredEnv` — required env keys declared by the agent's type manifest with no corresponding AgentEnv row yet (informational only).",
   request: { params: AgentIdParamSchema },
   responses: {
     200: {
@@ -375,6 +390,9 @@ const getAgentRoute = createRoute({
 const patchAgentRoute = createRoute({
   method: "patch",
   path: "/agents/{id}",
+  summary: "Update an agent",
+  description:
+    "Admin-only. Updates `selfHosted`, `repos`, `reviewAuthorAllowlist`, `patchAuthorAllowlist`, `restrictSlackToMembers`, and/or `slackId`. `typeName` is not updatable via this route. Returns the updated agent, including a `warning` field when `restrictSlackToMembers` is set true on an agent with zero members.",
   request: {
     params: AgentIdParamSchema,
     body: {
@@ -395,6 +413,9 @@ const patchAgentRoute = createRoute({
 const deleteAgentRoute = createRoute({
   method: "delete",
   path: "/agents/{id}",
+  summary: "Delete an agent",
+  description:
+    "Admin-only. Runs the full deleteAgentFully() teardown: deprovisions the K8s workload, revokes task-store and chat-service tokens, deletes chat threads, and — if an `xoxpToken` is supplied — deletes the Slack app. The Agent row (and its cascade-deleted child records) is deleted last, only if every automatable step succeeded; `agentDeleted: false` means the row was preserved and the call is safe to retry.",
   request: {
     params: AgentIdParamSchema,
     body: {
@@ -416,6 +437,9 @@ const deleteAgentRoute = createRoute({
 const upsertEnvsRoute = createRoute({
   method: "post",
   path: "/agents/{id}/envs",
+  summary: "Replace all env vars",
+  description:
+    "Bulk-replaces all env vars for the agent atomically. Values are stored encrypted (AES-256-GCM).",
   request: {
     params: AgentIdParamSchema,
     body: { content: { "application/json": { schema: AgentEnvBodySchema } } },
@@ -432,6 +456,9 @@ const upsertEnvsRoute = createRoute({
 const getEnvsRoute = createRoute({
   method: "get",
   path: "/agents/{id}/envs",
+  summary: "Get env vars",
+  description:
+    "Returns the agent's env vars. Non-secret values are decrypted; values flagged secret are masked as `***` and their keys listed in `secretKeys`.",
   request: { params: AgentIdParamSchema },
   responses: {
     200: {
@@ -444,6 +471,9 @@ const getEnvsRoute = createRoute({
 const patchEnvsRoute = createRoute({
   method: "patch",
   path: "/agents/{id}/envs",
+  summary: "Update specific env vars",
+  description:
+    "Updates only the specified keys, leaving other existing env vars untouched.",
   request: {
     params: AgentIdParamSchema,
     body: {
@@ -462,6 +492,8 @@ const patchEnvsRoute = createRoute({
 const deleteEnvKeyRoute = createRoute({
   method: "delete",
   path: "/agents/{id}/envs/{key}",
+  summary: "Delete an env var",
+  description: "Deletes a single env var by key.",
   request: { params: EnvKeyParamSchema },
   responses: {
     204: { description: "Key deleted" },
@@ -471,6 +503,9 @@ const deleteEnvKeyRoute = createRoute({
 const createCronRoute = createRoute({
   method: "post",
   path: "/agents/{id}/crons",
+  summary: "Create a cron job",
+  description:
+    "Creates a cron job for the agent. `channel` and `user` are mutually exclusive delivery targets. Returns the created job including system-managed read-only fields (`id`, `system`, `parentCronId`, `createdAt`, `updatedAt`) — `parentCronId` is never settable by the caller.",
   request: {
     params: AgentIdParamSchema,
     body: {
@@ -491,6 +526,9 @@ const createCronRoute = createRoute({
 const reconcileCronsRoute = createRoute({
   method: "post",
   path: "/agents/{id}/crons/reconcile",
+  summary: "Reconcile system crons",
+  description:
+    "Reconciles the agent's system crons against the cron list declared by its Agent Type manifest. Runs in three passes within a single transaction: create-or-update matched-by-name system crons (preserving IDs so run history survives), link/unlink parent-child cron relationships, and delete orphaned system crons no longer in the manifest. Called automatically on agent startup; returns created/updated/deleted counts.",
   request: { params: AgentIdParamSchema },
   responses: {
     200: {
@@ -503,6 +541,9 @@ const reconcileCronsRoute = createRoute({
 const patchCronRoute = createRoute({
   method: "patch",
   path: "/agents/{id}/crons/{cronId}",
+  summary: "Update a cron job",
+  description:
+    "Updates a cron job. `schedule` and `prompt` must be provided together for a content update; `enabled` and `preCheck` are orthogonal and may be sent alone or combined with any other field. At least one field must be present — an empty body returns 400. System crons (`system: true`) cannot be updated and return 403.",
   request: {
     params: CronIdParamSchema,
     body: {
@@ -521,6 +562,9 @@ const patchCronRoute = createRoute({
 const deleteCronRoute = createRoute({
   method: "delete",
   path: "/agents/{id}/crons/{cronId}",
+  summary: "Delete a cron job",
+  description:
+    "Deletes a cron job. System crons (`system: true`) cannot be deleted and return 403.",
   request: { params: CronIdParamSchema },
   responses: {
     204: { description: "Cron job deleted" },
@@ -531,6 +575,9 @@ const deleteCronRoute = createRoute({
 const listCronsRoute = createRoute({
   method: "get",
   path: "/agents/{id}/crons/summary",
+  summary: "List cron jobs with run summary",
+  description:
+    "Returns each cron job's last-run timestamp, outcome, and today's run count alongside its config — without full prompt text. Useful for dashboards.",
   request: { params: AgentIdParamSchema },
   responses: {
     200: {
@@ -546,6 +593,9 @@ const listCronsRoute = createRoute({
 const createCronRunRoute = createRoute({
   method: "post",
   path: "/agents/{id}/crons/{cronId}/runs",
+  summary: "Create a cron run record",
+  description:
+    "Records the start of a cron job execution, including optional skip/outcome data and dispatch attribution (`itemType`/`itemId`, write-once at creation).",
   request: {
     params: CronIdParamSchema,
     body: {
@@ -573,6 +623,9 @@ const createCronRunRoute = createRoute({
 const listCronRunsRoute = createRoute({
   method: "get",
   path: "/agents/{id}/crons/{cronId}/runs",
+  summary: "List cron runs",
+  description:
+    "Returns a paginated list of runs for a cron job (`limit` default 20, `offset` default 0). `itemId` and `phaseId` are optional server-side filters that combine with AND when both are supplied.",
   request: {
     params: CronIdParamSchema,
     query: ListCronRunsQuerySchema,
@@ -589,6 +642,9 @@ const listCronRunsRoute = createRoute({
 const patchCronRunRoute = createRoute({
   method: "patch",
   path: "/agents/{id}/crons/{cronId}/runs/{runId}",
+  summary: "Update a cron run record",
+  description:
+    "Records completion data after a run finishes — `completedAt`, `outcome`, `error`, `skipped`, `skipReason`, `sessionId`, and `modelBreakdown` (per-model token/cost entries, upserted per `[cronRunId, model]`). At least one field must be provided.",
   request: {
     params: CronRunIdParamSchema,
     body: {
@@ -616,6 +672,9 @@ const patchCronRunRoute = createRoute({
 const createToolRoute = createRoute({
   method: "post",
   path: "/agents/{id}/tools",
+  summary: "Add a tool pattern",
+  description:
+    'Adds an allowed-tool entry — a glob or exact Claude Code tool name (e.g. "Read", "Bash", "mcp__*") the agent can call.',
   request: {
     params: AgentIdParamSchema,
     body: {
@@ -636,6 +695,9 @@ const createToolRoute = createRoute({
 const listToolsRoute = createRoute({
   method: "get",
   path: "/agents/{id}/tools",
+  summary: "List tool patterns",
+  description:
+    "Returns every allowed-tool entry for the agent, each with `id`, `pattern`, and `enabled`.",
   request: { params: AgentIdParamSchema },
   responses: {
     200: {
@@ -648,6 +710,8 @@ const listToolsRoute = createRoute({
 const patchToolRoute = createRoute({
   method: "patch",
   path: "/agents/{id}/tools/{toolId}",
+  summary: "Enable or disable a tool pattern",
+  description: "Updates a tool entry's `pattern` and/or `enabled` state.",
   request: {
     params: ToolIdParamSchema,
     body: {
@@ -666,6 +730,8 @@ const patchToolRoute = createRoute({
 const deleteToolRoute = createRoute({
   method: "delete",
   path: "/agents/{id}/tools/{toolId}",
+  summary: "Remove a tool pattern",
+  description: "Deletes a tool entry from the agent's allowed-tools list.",
   request: { params: ToolIdParamSchema },
   responses: {
     204: { description: "Tool removed" },
@@ -675,6 +741,9 @@ const deleteToolRoute = createRoute({
 const createTokenRoute = createRoute({
   method: "post",
   path: "/agents/{id}/tokens",
+  summary: "Create an API token",
+  description:
+    "Creates a per-agent bearer token for scoped API access. The raw token value is returned once in this response — only its SHA-256 hash is persisted, so it must be saved immediately.",
   request: {
     params: AgentIdParamSchema,
     body: {
@@ -697,6 +766,9 @@ const createTokenRoute = createRoute({
 const listTokensRoute = createRoute({
   method: "get",
   path: "/agents/{id}/tokens",
+  summary: "List API tokens",
+  description:
+    "Returns token metadata (hash excluded) for the agent — raw token values are never returned after creation.",
   request: { params: AgentIdParamSchema },
   responses: {
     200: {
@@ -709,6 +781,8 @@ const listTokensRoute = createRoute({
 const deleteTokenRoute = createRoute({
   method: "delete",
   path: "/agents/{id}/tokens/{tokenId}",
+  summary: "Revoke an API token",
+  description: "Soft-deletes the token by setting `revokedAt`.",
   request: { params: TokenIdParamSchema },
   responses: {
     204: { description: "Token revoked" },
@@ -718,6 +792,8 @@ const deleteTokenRoute = createRoute({
 const createPluginRoute = createRoute({
   method: "post",
   path: "/agents/{id}/plugins",
+  summary: "Install a plugin",
+  description: "Adds a Claude Code marketplace plugin for the agent.",
   request: {
     params: AgentIdParamSchema,
     body: {
@@ -738,6 +814,8 @@ const createPluginRoute = createRoute({
 const listPluginsRoute = createRoute({
   method: "get",
   path: "/agents/{id}/plugins",
+  summary: "List plugins",
+  description: "Returns every plugin installed for the agent.",
   request: { params: AgentIdParamSchema },
   responses: {
     200: {
@@ -750,6 +828,9 @@ const listPluginsRoute = createRoute({
 const patchPluginRoute = createRoute({
   method: "patch",
   path: "/agents/{id}/plugins",
+  summary: "Update a plugin",
+  description:
+    'Re-upserts the plugin identified by the required `name` query param with a new `version` and/or `enabled` state. Uses a query param rather than a path segment because a canonical plugin spec like "my-plugin@org/my-marketplace" can contain a literal "/" that would break path matching.',
   request: {
     params: AgentIdParamSchema,
     query: PluginNameQuerySchema,
@@ -769,6 +850,9 @@ const patchPluginRoute = createRoute({
 const deletePluginRoute = createRoute({
   method: "delete",
   path: "/agents/{id}/plugins",
+  summary: "Remove a plugin",
+  description:
+    "Removes the plugin identified by the required `name` query param.",
   request: {
     params: AgentIdParamSchema,
     query: PluginNameQuerySchema,
@@ -782,6 +866,9 @@ const deletePluginRoute = createRoute({
 const upsertChatTokenDailyRoute = createRoute({
   method: "post",
   path: "/agents/{id}/chat-tokens/daily",
+  summary: "Record daily chat token usage",
+  description:
+    "Atomically accumulates Slack chat token usage into the existing rows for each `(agentId, date, model)` tuple, creating them if absent. Supply a `modelBreakdown` array to split a single day's usage across multiple models. Returns the updated daily rows, one per model.",
   request: {
     params: AgentIdParamSchema,
     body: {
@@ -805,6 +892,9 @@ const upsertChatTokenDailyRoute = createRoute({
 const pushWorkQueueSnapshotRoute = createRoute({
   method: "post",
   path: "/agents/{id}/work-queue",
+  summary: "Push a work-queue snapshot",
+  description:
+    "Upserts the agent's single ranked work-queue snapshot (tasks/PRs across pipeline phases), overwriting any prior snapshot — there is no history.",
   request: {
     params: AgentIdParamSchema,
     body: {
@@ -828,6 +918,9 @@ const pushWorkQueueSnapshotRoute = createRoute({
 const getWorkQueueSnapshotRoute = createRoute({
   method: "get",
   path: "/agents/{id}/work-queue",
+  summary: "Get the latest work-queue snapshot",
+  description:
+    "Returns the most recently pushed work-queue snapshot, or 404 if the agent has never pushed one.",
   request: { params: AgentIdParamSchema },
   responses: {
     200: {
@@ -858,6 +951,9 @@ const cronRunStatsQuerySchema = z
 const cronRunTokenStatsRoute = createRoute({
   method: "get",
   path: "/agents/all/cron-runs/stats",
+  summary: "Get aggregated cron-run token stats",
+  description:
+    "Admin-only. Returns token usage and cost aggregated across all agents' cron runs, broken down by agent, cron, model, day, and pipeline phase. Optional `from`/`to` ISO datetime query params bound the range.",
   request: {
     query: cronRunStatsQuerySchema,
   },
@@ -881,6 +977,9 @@ const chatTokenDailyStatsQuerySchema = z
 const chatTokenDailyStatsRoute = createRoute({
   method: "get",
   path: "/agents/chat-tokens/daily/stats",
+  summary: "Get aggregated chat token daily stats",
+  description:
+    "Admin-only. Returns Slack chat token usage aggregated across all agents, broken down by agent, model, and day. Optional `from`/`to` YYYY-MM-DD query params bound the range.",
   request: {
     query: chatTokenDailyStatsQuerySchema,
   },

@@ -2004,6 +2004,8 @@
   "paths": {
     "/agents": {
       "post": {
+        "summary": "Create an agent",
+        "description": "Admin-only. Creates an agent record and, for managed (non-self-hosted) agents, provisions the Kubernetes workload. The optional `type` field (default \"coding\") selects an Agent Type manifest that seeds AgentTool, AgentPlugin, and AgentMember rows plus merged `repos`; an unknown type returns 400 before any row is created. Seeding and provisioning share a rollback-guarded block — if either step fails, every already-seeded child row is cascade-deleted along with the agent row.",
         "requestBody": {
           "content": {
             "application/json": {
@@ -2047,6 +2049,8 @@
         }
       },
       "get": {
+        "summary": "List all agents",
+        "description": "Admin-only. Returns every agent's `id`, `name`, `selfHosted`, and `typeName` — used for metrics name resolution.",
         "responses": {
           "200": {
             "description": "List of agents",
@@ -2076,6 +2080,8 @@
     },
     "/agents/reconcile": {
       "post": {
+        "summary": "Reconcile all agents' K8s state",
+        "description": "Admin-only. Reconciles Kubernetes Deployment state against all managed (non-self-hosted) agents in the DB, returning counts of recreated/updated deployments plus any orphaned deployments or per-agent failures.",
         "responses": {
           "200": {
             "description": "Reconciliation summary",
@@ -2102,6 +2108,8 @@
     },
     "/agents/{id}/provision": {
       "post": {
+        "summary": "Provision an agent's K8s workload",
+        "description": "Admin-only. Provisions or re-provisions the Kubernetes workload for a single managed agent — idempotent, safe to call on an already-provisioned agent. For self-hosted agents, returns `{ skipped: true, reason: \"self-hosted\" }` with no K8s changes.",
         "parameters": [
           {
             "schema": {
@@ -2156,6 +2164,8 @@
     },
     "/agents/{id}": {
       "get": {
+        "summary": "Get an agent",
+        "description": "Admin-only. Returns the full agent record including `selfHosted`, `repos`, `reviewAuthorAllowlist`, `patchAuthorAllowlist`, `restrictSlackToMembers`, `typeName`, and `missingRequiredEnv` — required env keys declared by the agent's type manifest with no corresponding AgentEnv row yet (informational only).",
         "parameters": [
           {
             "schema": {
@@ -2201,6 +2211,8 @@
         }
       },
       "patch": {
+        "summary": "Update an agent",
+        "description": "Admin-only. Updates `selfHosted`, `repos`, `reviewAuthorAllowlist`, `patchAuthorAllowlist`, `restrictSlackToMembers`, and/or `slackId`. `typeName` is not updatable via this route. Returns the updated agent, including a `warning` field when `restrictSlackToMembers` is set true on an agent with zero members.",
         "parameters": [
           {
             "schema": {
@@ -2265,6 +2277,8 @@
         }
       },
       "delete": {
+        "summary": "Delete an agent",
+        "description": "Admin-only. Runs the full deleteAgentFully() teardown: deprovisions the K8s workload, revokes task-store and chat-service tokens, deletes chat threads, and — if an `xoxpToken` is supplied — deletes the Slack app. The Agent row (and its cascade-deleted child records) is deleted last, only if every automatable step succeeded; `agentDeleted: false` means the row was preserved and the call is safe to retry.",
         "parameters": [
           {
             "schema": {
@@ -2322,6 +2336,8 @@
     },
     "/agents/{id}/envs": {
       "post": {
+        "summary": "Replace all env vars",
+        "description": "Bulk-replaces all env vars for the agent atomically. Values are stored encrypted (AES-256-GCM).",
         "parameters": [
           {
             "schema": {
@@ -2366,6 +2382,8 @@
         }
       },
       "get": {
+        "summary": "Get env vars",
+        "description": "Returns the agent's env vars. Non-secret values are decrypted; values flagged secret are masked as `***` and their keys listed in `secretKeys`.",
         "parameters": [
           {
             "schema": {
@@ -2391,6 +2409,8 @@
         }
       },
       "patch": {
+        "summary": "Update specific env vars",
+        "description": "Updates only the specified keys, leaving other existing env vars untouched.",
         "parameters": [
           {
             "schema": {
@@ -2437,6 +2457,8 @@
     },
     "/agents/{id}/envs/{key}": {
       "delete": {
+        "summary": "Delete an env var",
+        "description": "Deletes a single env var by key.",
         "parameters": [
           {
             "schema": {
@@ -2466,6 +2488,8 @@
     },
     "/agents/{id}/crons": {
       "post": {
+        "summary": "Create a cron job",
+        "description": "Creates a cron job for the agent. `channel` and `user` are mutually exclusive delivery targets. Returns the created job including system-managed read-only fields (`id`, `system`, `parentCronId`, `createdAt`, `updatedAt`) — `parentCronId` is never settable by the caller.",
         "parameters": [
           {
             "schema": {
@@ -2514,6 +2538,7 @@
           "runtime"
         ],
         "summary": "List agent cron jobs",
+        "description": "Returns the agent's cron jobs as a plain array (not wrapped), used by the agent harness's scheduler. Returns 404 if the agent doesn't exist.",
         "security": [
           {
             "bearerAuth": []
@@ -2569,6 +2594,8 @@
     },
     "/agents/{id}/crons/reconcile": {
       "post": {
+        "summary": "Reconcile system crons",
+        "description": "Reconciles the agent's system crons against the cron list declared by its Agent Type manifest. Runs in three passes within a single transaction: create-or-update matched-by-name system crons (preserving IDs so run history survives), link/unlink parent-child cron relationships, and delete orphaned system crons no longer in the manifest. Called automatically on agent startup; returns created/updated/deleted counts.",
         "parameters": [
           {
             "schema": {
@@ -2596,6 +2623,8 @@
     },
     "/agents/{id}/crons/{cronId}": {
       "patch": {
+        "summary": "Update a cron job",
+        "description": "Updates a cron job. `schedule` and `prompt` must be provided together for a content update; `enabled` and `preCheck` are orthogonal and may be sent alone or combined with any other field. At least one field must be present — an empty body returns 400. System crons (`system: true`) cannot be updated and return 403.",
         "parameters": [
           {
             "schema": {
@@ -2649,6 +2678,8 @@
         }
       },
       "delete": {
+        "summary": "Delete a cron job",
+        "description": "Deletes a cron job. System crons (`system: true`) cannot be deleted and return 403.",
         "parameters": [
           {
             "schema": {
@@ -2688,6 +2719,8 @@
     },
     "/agents/{id}/crons/summary": {
       "get": {
+        "summary": "List cron jobs with run summary",
+        "description": "Returns each cron job's last-run timestamp, outcome, and today's run count alongside its config — without full prompt text. Useful for dashboards.",
         "parameters": [
           {
             "schema": {
@@ -2725,6 +2758,8 @@
     },
     "/agents/{id}/crons/{cronId}/runs": {
       "post": {
+        "summary": "Create a cron run record",
+        "description": "Records the start of a cron job execution, including optional skip/outcome data and dispatch attribution (`itemType`/`itemId`, write-once at creation).",
         "parameters": [
           {
             "schema": {
@@ -2788,6 +2823,8 @@
         }
       },
       "get": {
+        "summary": "List cron runs",
+        "description": "Returns a paginated list of runs for a cron job (`limit` default 20, `offset` default 0). `itemId` and `phaseId` are optional server-side filters that combine with AND when both are supplied.",
         "parameters": [
           {
             "schema": {
@@ -2870,6 +2907,8 @@
     },
     "/agents/{id}/crons/{cronId}/runs/{runId}": {
       "patch": {
+        "summary": "Update a cron run record",
+        "description": "Records completion data after a run finishes — `completedAt`, `outcome`, `error`, `skipped`, `skipReason`, `sessionId`, and `modelBreakdown` (per-model token/cost entries, upserted per `[cronRunId, model]`). At least one field must be provided.",
         "parameters": [
           {
             "schema": {
@@ -2944,6 +2983,8 @@
     },
     "/agents/{id}/tools": {
       "post": {
+        "summary": "Add a tool pattern",
+        "description": "Adds an allowed-tool entry — a glob or exact Claude Code tool name (e.g. \"Read\", \"Bash\", \"mcp__*\") the agent can call.",
         "parameters": [
           {
             "schema": {
@@ -2988,6 +3029,8 @@
         }
       },
       "get": {
+        "summary": "List tool patterns",
+        "description": "Returns every allowed-tool entry for the agent, each with `id`, `pattern`, and `enabled`.",
         "parameters": [
           {
             "schema": {
@@ -3015,6 +3058,8 @@
     },
     "/agents/{id}/tools/{toolId}": {
       "patch": {
+        "summary": "Enable or disable a tool pattern",
+        "description": "Updates a tool entry's `pattern` and/or `enabled` state.",
         "parameters": [
           {
             "schema": {
@@ -3068,6 +3113,8 @@
         }
       },
       "delete": {
+        "summary": "Remove a tool pattern",
+        "description": "Deletes a tool entry from the agent's allowed-tools list.",
         "parameters": [
           {
             "schema": {
@@ -3097,6 +3144,8 @@
     },
     "/agents/{id}/tokens": {
       "post": {
+        "summary": "Create an API token",
+        "description": "Creates a per-agent bearer token for scoped API access. The raw token value is returned once in this response — only its SHA-256 hash is persisted, so it must be saved immediately.",
         "parameters": [
           {
             "schema": {
@@ -3132,6 +3181,8 @@
         }
       },
       "get": {
+        "summary": "List API tokens",
+        "description": "Returns token metadata (hash excluded) for the agent — raw token values are never returned after creation.",
         "parameters": [
           {
             "schema": {
@@ -3159,6 +3210,8 @@
     },
     "/agents/{id}/tokens/{tokenId}": {
       "delete": {
+        "summary": "Revoke an API token",
+        "description": "Soft-deletes the token by setting `revokedAt`.",
         "parameters": [
           {
             "schema": {
@@ -3188,6 +3241,8 @@
     },
     "/agents/{id}/plugins": {
       "post": {
+        "summary": "Install a plugin",
+        "description": "Adds a Claude Code marketplace plugin for the agent.",
         "parameters": [
           {
             "schema": {
@@ -3232,6 +3287,8 @@
         }
       },
       "get": {
+        "summary": "List plugins",
+        "description": "Returns every plugin installed for the agent.",
         "parameters": [
           {
             "schema": {
@@ -3257,6 +3314,8 @@
         }
       },
       "patch": {
+        "summary": "Update a plugin",
+        "description": "Re-upserts the plugin identified by the required `name` query param with a new `version` and/or `enabled` state. Uses a query param rather than a path segment because a canonical plugin spec like \"my-plugin@org/my-marketplace\" can contain a literal \"/\" that would break path matching.",
         "parameters": [
           {
             "schema": {
@@ -3310,6 +3369,8 @@
         }
       },
       "delete": {
+        "summary": "Remove a plugin",
+        "description": "Removes the plugin identified by the required `name` query param.",
         "parameters": [
           {
             "schema": {
@@ -3349,6 +3410,8 @@
     },
     "/agents/all/cron-runs/stats": {
       "get": {
+        "summary": "Get aggregated cron-run token stats",
+        "description": "Admin-only. Returns token usage and cost aggregated across all agents' cron runs, broken down by agent, cron, model, day, and pipeline phase. Optional `from`/`to` ISO datetime query params bound the range.",
         "parameters": [
           {
             "schema": {
@@ -3407,6 +3470,8 @@
     },
     "/agents/chat-tokens/daily/stats": {
       "get": {
+        "summary": "Get aggregated chat token daily stats",
+        "description": "Admin-only. Returns Slack chat token usage aggregated across all agents, broken down by agent, model, and day. Optional `from`/`to` YYYY-MM-DD query params bound the range.",
         "parameters": [
           {
             "schema": {
@@ -3465,6 +3530,8 @@
     },
     "/agents/{id}/chat-tokens/daily": {
       "post": {
+        "summary": "Record daily chat token usage",
+        "description": "Atomically accumulates Slack chat token usage into the existing rows for each `(agentId, date, model)` tuple, creating them if absent. Supply a `modelBreakdown` array to split a single day's usage across multiple models. Returns the updated daily rows, one per model.",
         "parameters": [
           {
             "schema": {
@@ -3524,6 +3591,8 @@
     },
     "/agents/{id}/work-queue": {
       "post": {
+        "summary": "Push a work-queue snapshot",
+        "description": "Upserts the agent's single ranked work-queue snapshot (tasks/PRs across pipeline phases), overwriting any prior snapshot — there is no history.",
         "parameters": [
           {
             "schema": {
@@ -3568,6 +3637,8 @@
         }
       },
       "get": {
+        "summary": "Get the latest work-queue snapshot",
+        "description": "Returns the most recently pushed work-queue snapshot, or 404 if the agent has never pushed one.",
         "parameters": [
           {
             "schema": {
@@ -3609,6 +3680,7 @@
           "runtime"
         ],
         "summary": "Get agent config bundle",
+        "description": "Returns the agent's full runtime config bundle — decrypted env vars, allowed-tools patterns, installed plugins (with derived marketplace), scoped repos, review/patch author allowlists, and Slack membership-restriction settings. Polled by the agent harness on startup and during its config sync loop. Returns 404 if the agent doesn't exist.",
         "security": [
           {
             "bearerAuth": []

@@ -105,6 +105,8 @@ const getConfigRoute = createRoute({
   path: "/:id/config",
   tags: ["runtime"],
   summary: "Get agent config bundle",
+  description:
+    "Returns the agent's full runtime config bundle — decrypted env vars, allowed-tools patterns, installed plugins (with derived marketplace), scoped repos, review/patch author allowlists, and Slack membership-restriction settings. Polled by the agent harness on startup and during its config sync loop. Returns 404 if the agent doesn't exist.",
   security: [{ bearerAuth: [] }],
   request: {
     params: AgentIdParamSchema,
@@ -130,6 +132,8 @@ const getCronsRoute = createRoute({
   path: "/:id/crons",
   tags: ["runtime"],
   summary: "List agent cron jobs",
+  description:
+    "Returns the agent's cron jobs as a plain array (not wrapped), used by the agent harness's scheduler. Returns 404 if the agent doesn't exist.",
   security: [{ bearerAuth: [] }],
   request: {
     params: AgentIdParamSchema,
