@@ -35,41 +35,36 @@ function currentDocPages(): string[] {
 /** Keys in the map that represent metadata rather than a page → sources entry. */
 const NON_PAGE_KEYS = new Set(["_comment", "_notes"]);
 
+const RAW_MAP = readFileSync(MAP_PATH, "utf8");
+const MAP = JSON.parse(RAW_MAP) as Record<string, unknown>;
+
 describe("site/docs-source-map.json", () => {
   test("exists and is valid JSON", () => {
     expect(existsSync(MAP_PATH)).toBe(true);
-    const raw = readFileSync(MAP_PATH, "utf8");
-    expect(() => JSON.parse(raw)).not.toThrow();
+    expect(() => JSON.parse(RAW_MAP)).not.toThrow();
   });
 
   test("covers every current .mdx page under site/src/content/docs/", () => {
-    const raw = readFileSync(MAP_PATH, "utf8");
-    const map = JSON.parse(raw) as Record<string, unknown>;
     const pages = currentDocPages();
 
     expect(pages.length).toBeGreaterThan(0);
 
     for (const page of pages) {
-      expect(Object.hasOwn(map, page)).toBe(true);
+      expect(Object.hasOwn(MAP, page)).toBe(true);
     }
   });
 
   test("does not contain stale page entries no longer under site/src/content/docs/", () => {
-    const raw = readFileSync(MAP_PATH, "utf8");
-    const map = JSON.parse(raw) as Record<string, unknown>;
     const pages = new Set(currentDocPages());
 
-    for (const key of Object.keys(map)) {
+    for (const key of Object.keys(MAP)) {
       if (NON_PAGE_KEYS.has(key)) continue;
       expect(pages.has(key)).toBe(true);
     }
   });
 
   test("every page entry is an array of source path strings", () => {
-    const raw = readFileSync(MAP_PATH, "utf8");
-    const map = JSON.parse(raw) as Record<string, unknown>;
-
-    for (const [key, value] of Object.entries(map)) {
+    for (const [key, value] of Object.entries(MAP)) {
       if (NON_PAGE_KEYS.has(key)) continue;
       expect(Array.isArray(value)).toBe(true);
       for (const entry of value as unknown[]) {
@@ -79,10 +74,7 @@ describe("site/docs-source-map.json", () => {
   });
 
   test("every listed source path exists on disk relative to the repo root", () => {
-    const raw = readFileSync(MAP_PATH, "utf8");
-    const map = JSON.parse(raw) as Record<string, unknown>;
-
-    for (const [key, value] of Object.entries(map)) {
+    for (const [key, value] of Object.entries(MAP)) {
       if (NON_PAGE_KEYS.has(key)) continue;
       for (const sourcePath of value as string[]) {
         const resolved = join(REPO_ROOT, sourcePath);
@@ -92,12 +84,10 @@ describe("site/docs-source-map.json", () => {
   });
 
   test("every page not listed with an empty array has at least one source", () => {
-    const raw = readFileSync(MAP_PATH, "utf8");
-    const map = JSON.parse(raw) as Record<string, unknown>;
-    const notes = (map._notes ?? {}) as Record<string, string>;
+    const notes = (MAP._notes ?? {}) as Record<string, string>;
 
     for (const page of currentDocPages()) {
-      const sources = map[page] as string[];
+      const sources = MAP[page] as string[];
       if (sources.length === 0) {
         // An empty array is only acceptable when accompanied by an explanatory
         // note documenting why the page has no repo-doc source.
