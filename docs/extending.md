@@ -21,7 +21,7 @@ Install one via the admin CRUD API:
 POST /agents/:id/plugins
 ```
 
-Body: `{ name: string, version?: string, enabled?: boolean }`. See [agent-api.md](./agent-api.md#plugins) for the full request/response shape, plus `GET`/`PATCH`/`DELETE /agents/:id/plugins` for listing, updating, and removing plugins.
+Body: `{ name: string, version?: string, enabled?: boolean }`. See [agent-api-resources.md](./agent-api-resources.md#plugins) for the full request/response shape, plus `GET`/`PATCH`/`DELETE /agents/:id/plugins` for listing, updating, and removing plugins.
 
 `name` follows the marketplace convention `plugin-name@marketplace-name` (e.g. `shipwright@shipwright`). Installing your own plugin (`mycompany-tools@mycompany-marketplace`) does not disturb the existing `shipwright@shipwright` install — both rows coexist on the agent, and the agent's Claude Code session loads commands and skills from every enabled plugin.
 
@@ -44,7 +44,7 @@ Crons are how Shipwright runs autonomous, scheduled behavior — the `shipwright
 POST /agents/:id/crons
 ```
 
-A cron created through this endpoint is always a normal (non-system) cron — system crons are reserved for Shipwright's own built-in maintenance jobs, created internally via reconciliation, and cannot be created through this public route (see [agent-api.md](./agent-api.md#cron-jobs)). Non-system crons you create can be updated or deleted freely through the same CRUD routes; system crons cannot.
+A cron created through this endpoint is always a normal (non-system) cron — system crons are reserved for Shipwright's own built-in maintenance jobs, created internally via reconciliation, and cannot be created through this public route (see [agent-api-ops.md](./agent-api-ops.md#cron-jobs)). Non-system crons you create can be updated or deleted freely through the same CRUD routes; system crons cannot.
 
 The cron's `prompt` field is a **plain string** — it is not scoped to any particular plugin. That means a custom cron's prompt can invoke any command from any plugin installed on the agent, including your own companion plugin's commands:
 
@@ -57,7 +57,7 @@ The cron's `prompt` field is a **plain string** — it is not scoped to any part
 }
 ```
 
-This is the mechanism for repo-specific scheduled/autonomous behavior — a nightly report, a weekly changelog sync, a custom compliance check — that doesn't belong in the shared `shipwright` plugin. See [agent-api.md](./agent-api.md#cron-jobs) for the full field reference (schedule validation, delivery-target rules, `preCheck`, etc.).
+This is the mechanism for repo-specific scheduled/autonomous behavior — a nightly report, a weekly changelog sync, a custom compliance check — that doesn't belong in the shared `shipwright` plugin. See [agent-api-ops.md](./agent-api-ops.md#cron-jobs) for the full field reference (schedule validation, delivery-target rules, `preCheck`, etc.).
 
 ## Lightweight customization without a companion plugin
 
@@ -80,6 +80,8 @@ Reach for this first if you just need different data or thresholds; reach for a 
 
 ## See also
 
-- **[agent-api.md](./agent-api.md)** — full request/response schemas for the Plugins and Cron jobs endpoints.
+- **[agent-api-resources.md](./agent-api-resources.md)** — full request/response schemas for the Plugins endpoints.
+- **[agent-api-ops.md](./agent-api-ops.md)** — full request/response schemas for the Cron jobs endpoints.
+- **[agent-api.md](./agent-api.md)** — the core admin CRUD API: agents, authentication, env vars, and runtime config.
 - **[architecture.md](./architecture.md)** — the four-artifact design and where the plugin fits.
 - **[`skills/entropy-scan/references/customization.md`](../plugins/shipwright/skills/entropy-scan/references/customization.md)** — the `.claude/shipwright/principles.md` override pattern in full.

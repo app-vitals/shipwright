@@ -181,7 +181,9 @@ To load additional context into a session, add `@docs/filename.md` entries here 
 - **docs/configuration-agent.md** — Shipwright agent (C) runtime env var reference (Claude/Anthropic, Slack, GitHub, Shipwright platform, server, database, provisioning, workspace/tooling, voice, dev-only) — split out of docs/configuration.md to stay under the docs line-count threshold
 - **docs/agent-ops.md** — Shipwright agent (C) operations: tool management/narrowing (floor vs. allowed tools), default system crons, environment variables, and baked marketplaces
 - **docs/agent-key-files.md** — Shipwright agent (C) key files: per-file reference table for `admin/src` and `agent/src`
-- **docs/agent-api.md** — the admin CRUD API (D): agents, envs, crons, cron runs, tools, tokens, plugins, and chat-token-usage endpoints, plus auth paths
+- **docs/agent-api.md** — the admin CRUD API (D): agent CRUD, auth paths, env vars, and runtime config
+- **docs/agent-api-ops.md** — the admin CRUD API (D), operational surfaces: cron jobs and cron run endpoints (create/update/delete, system-cron reconciliation, run records and token/cost stats)
+- **docs/agent-api-resources.md** — the admin CRUD API (D), per-agent resources: allowed-tools list, API tokens, plugins, chat-token-usage endpoints, and the work-queue snapshot
 - **docs/extending.md** — extending Shipwright without forking it: installing a companion plugin, command namespacing, custom crons for repo-specific automation, and the lightweight `.claude/shipwright/` override pattern
 - **docs/task-store.md** — task store service (D): the sole HTTP-service backend — tasks, PR tracking, tokens — and troubleshooting
 - **docs/mcp-tools.md** — generated MCP server tool reference (name, description, HTTP method/path, parameters, body) derived from task-store/openapi.json + the tool allowlist; regenerate with `bun run generate:mcp-docs`
