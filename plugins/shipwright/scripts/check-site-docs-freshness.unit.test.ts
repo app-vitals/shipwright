@@ -111,6 +111,58 @@ describe("check-site-docs-freshness — single page", () => {
     expect(result.output).toBe("");
   });
 
+  test("exits 1 when a page maps to an empty source-path array (never qualifies)", async () => {
+    // The source map's schema permits `[]` for a page with no repo-doc source.
+    // Such a page must never qualify: an empty pathspec list would otherwise
+    // make git match EVERY commit since the anchor, not none.
+    const deps = makeDeps({
+      sourceMap: { "no-source.mdx": [] },
+      readAnchor: () => ({ sha: "abc123", timestamp: "2026-01-01T00:00:00Z" }),
+      getCommitsSince: () => ["def789 unrelated commit"],
+      getChangedFilesSince: () => ["some/unrelated/file.ts"],
+    });
+    const result = await run(deps);
+    expect(result.exit).toBe(1);
+    expect(result.output).toBe("");
+  });
+
+  test("an empty-source-path page never reaches the git helpers, even with no anchor", async () => {
+    let gitCalls = 0;
+    const deps = makeDeps({
+      sourceMap: { "no-source.mdx": [] },
+      readAnchor: () => null, // first run — would otherwise qualify
+      getCommitsSince: () => {
+        gitCalls++;
+        return ["def789 unrelated commit"];
+      },
+      getChangedFilesSince: () => {
+        gitCalls++;
+        return ["some/unrelated/file.ts"];
+      },
+    });
+    const result = await run(deps);
+    expect(gitCalls).toBe(0);
+    expect(result.exit).toBe(1);
+    expect(result.output).toBe("");
+  });
+
+  test("an empty-source-path page does not suppress a sibling page's real finding", async () => {
+    const deps = makeDeps({
+      sourceMap: {
+        "no-source.mdx": [],
+        "page-b.mdx": ["docs/b.md"],
+      },
+      readAnchor: () => ({ sha: "sha-b", timestamp: "2026-01-01T00:00:00Z" }),
+      getCommitsSince: () => ["def789 update b"],
+      getChangedFilesSince: () => ["docs/b.md"],
+    });
+    const result = await run(deps);
+    expect(result.exit).toBe(0);
+    expect(result.output).not.toContain("no-source.mdx");
+    expect(result.output).toContain("page-b.mdx");
+    expect(result.output).toContain("docs/b.md");
+  });
+
   test("a directory-valued mapped source path is passed through to git helpers unchanged", async () => {
     const seenPaths: string[][] = [];
     const deps = makeDeps({

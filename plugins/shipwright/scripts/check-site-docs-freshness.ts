@@ -63,8 +63,8 @@ interface PageFinding {
 
 /**
  * Evaluate a single page. Returns:
- * - "no-change"    → page has an anchor but nothing changed in its mapped
- *                     source paths since it
+ * - "no-change"    → page has no mapped source paths at all, or has an anchor
+ *                     but nothing changed in its mapped source paths since it
  * - a PageFinding  → page qualifies (first run, or mapped source paths changed)
  */
 function evaluatePage(
@@ -72,6 +72,14 @@ function evaluatePage(
   sourcePaths: string[],
   deps: Deps,
 ): "no-change" | PageFinding {
+  // A page mapped to zero source paths (permitted by the source map's schema,
+  // paired with a `_notes` entry explaining it has no repo-doc source) has
+  // nothing in this repo that could make it stale. Short-circuit before the
+  // git helpers: passing an empty pathspec list to `git log/diff <range> --`
+  // means NO path restriction (matches every commit), not "match nothing",
+  // which would flag such a page on any unrelated commit since its anchor.
+  if (sourcePaths.length === 0) return "no-change";
+
   const anchor = deps.readAnchor(page);
 
   // First run — no anchor for this page yet, always worth checking
