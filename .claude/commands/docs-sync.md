@@ -1,96 +1,120 @@
-# docs-sync: Regenerate MDX documentation from source
+# docs-sync: Flag, diff, and propose targeted updates to the marketing site's docs
 
-Regenerate the marketing site's MDX documentation from the canonical `docs/` source files. This command syncs `site/src/content/docs/*.mdx` with the corresponding markdown and code in `docs/`, deriving human-friendly content (not verbatim copies) for a public audience.
+Keep the marketing site's MDX documentation (`site/src/content/docs/*.mdx`) in sync with the canonical source it's derived from — `docs/*.md`, `plugins/shipwright/commands/*.md`, `plugins/shipwright/skills/*/SKILL.md`, etc. — without ever regenerating a page from scratch. This command consumes the page-scoped freshness signal from SDR-2 (`plugins/shipwright/scripts/check-site-docs-freshness.ts`) and, for each **flagged** page, shows the diff in its mapped source(s) since the page's own last-synced anchor and proposes a **targeted, section-scoped edit** that preserves the page's existing structure and voice. It never rewrites a page wholesale.
+
+Interactive invocation waits for explicit human confirmation before editing anything. Auto/cron invocation never edits — it files a `hitl: true` proposal task in the task store instead, for a human to review and apply.
 
 ## Usage
 
 ```bash
-/docs-sync [FLAGS]
+/docs-sync [--auto]
 ```
 
-## Flags
+- No flag — **interactive mode** (the default). Run by a human. Presents each flagged page's diff and a proposed edit, and waits for Apply/Skip before touching any file.
+- `--auto` — **cron/unattended mode**, mirroring the `--auto` convention already used by `research-docs.md`. Never edits a file directly; files one `hitl: true` proposal task per flagged page instead.
 
-- `--section <name>` — Regenerate only one section (e.g., `/docs-sync --section getting-started`). Does not touch other section files.
-- `--rebuild` — Regenerate all sections from their source docs.
+## The source-of-truth mapping
 
-If neither flag is given, `/docs-sync --rebuild` is assumed.
+`site/docs-source-map.json` (built by SDR-1) replaces any hardcoded section table as the mapping from site page to source:
 
-## Section registry
+```json
+{ "<page>.mdx": ["<source path>", ...] }
+```
 
-Map each section to its source docs and the target MDX file:
+Keys are bare `.mdx` filenames under `site/src/content/docs/`; values are repo-root-relative source paths (a file or a whole directory). See [`docs/site-docs-freshness.md`](../../docs/site-docs-freshness.md) for the full contract, including the empty-array `_notes` case (a page with no repo-doc source).
 
-| Section | Source Docs | Target MDX | Section Name | Description |
-|---------|-------------|-----------|--------------|-------------|
-| `getting-started` | `docs/quickstart.md` | `site/src/content/docs/getting-started.mdx` | `Getting Started` | One-prompt onboarding, prerequisites, and copy-paste quickstart |
-| `introduction` | `docs/architecture.md`, `docs/README.md` | `site/src/content/docs/introduction.mdx` | `Getting Started` | Four-artifact design (plugin → metrics → agent → task-store), workspace layout, and architectural overview |
-| `configuration` | `docs/configuration.md` | `site/src/content/docs/configuration.mdx` | `Configuration` | All configuration options: plugin env vars, agent env vars, and policy fields |
-| `task-store` | `docs/task-store.md` | `site/src/content/docs/task-store.mdx` | `Task Store` | Task store API, data model, ephemeral document store, and scoped tokens |
-| `testing` | `docs/testing.md`, `docs/test-readiness/test-system.md` | `site/src/content/docs/testing.mdx` | `Testing` | Four-layer test model (unit / integration / smoke / e2e), run commands, speed budgets, and isolation contract |
-| `deploy` | `docs/deploy-kubernetes.md`, `docs/deploy-kubernetes-providers.md`, `docs/helm-repo.md` | `site/src/content/docs/deploying-to-cloud.mdx` | `Operations` | Kubernetes deployment: networking model, agent provisioning RBAC, auth modes, and the per-provider walkthroughs — Minikube (local), GKE (Gateway API + cert-manager), EKS (ALB), Traefik, and cloud-native (any cluster) |
-| `metrics` | `docs/metrics.md` | `site/src/content/docs/metrics.mdx` | `Metrics` | Metrics service (provider-agnostic JSON endpoints, dashboard, dual auth, environment) |
-| `agent` | `docs/agent.md` | `site/src/content/docs/agent.mdx` | `Agent` | Shipwright agent runtime: admin CRUD API, admin UI, Prisma store, encryption, and environment configuration |
-| `agent-api` | `docs/agent-api.md` | `site/src/content/docs/agent-api.mdx` | `Reference` | Agent admin API: agents, envs, crons, cron runs, tools, tokens, plugins, chat token stats, and runtime config |
-| `migration` | `docs/migration.md` | `site/src/content/docs/migration.mdx` | `Migration` | Breaking changes and migration steps across versions |
+Per-page sync anchors live at `state/site-docs-last-synced.json` — `{ "<page>.mdx": { "sha": "...", "timestamp": "..." } }`, one entry per page, each updated independently. This file does not exist until the first page has ever completed a sync.
 
 ## Procedure
 
-### Step 1: Parse arguments
+### Step 1: Resolve the list of flagged pages
 
-Extract `--section` and `--rebuild` flags from the invocation. Set the operation mode:
-- If `--rebuild` is present: regenerate all sections listed in the Section Registry.
-- If `--section <name>` is present: regenerate only that section.
-- If neither: default to `--rebuild` (regenerate all).
+**`--auto` mode:** This command is dispatched as the response to a `site-docs-freshness` cron whose `preCheck` is `plugins/shipwright/scripts/check-site-docs-freshness.ts` — per the agent type manifest's cron `preCheck` contract, the script's stdout becomes this prompt. Parse the flagged page names directly out of the invoking prompt (mirrors `research-docs.md` Step A0's "preCheck output becomes the prompt" pattern). Each qualifying page appears either with its changed-file summary, or — when it qualified with no changed-file detail (first run, or a permissive git-failure fallback) — the line `"{page}: no sync anchor found — run full docs check"`. Treat both forms as "this page is flagged"; don't require a changed-file list to proceed.
 
-### Step 2: For each section to regenerate
+**Interactive mode with no preCheck context (manual invocation):** Run the precheck directly and capture its output:
 
-#### 2a. Read source docs
-
-For the section's "Source Docs" list, read all referenced files from `docs/` (e.g., `docs/quickstart.md`, `docs/architecture.md`). If any source file is missing, flag the section for human review (see Step 4).
-
-#### 2b. Derive human-friendly content
-
-**Do NOT copy-paste the source docs verbatim.** Instead:
-
-1. Extract the key concepts, headings, and code blocks from the source.
-2. Rephrase in clear, conversational prose written for a public audience (no internal jargon, assume the reader is new to Shipwright).
-3. Organize into a logical narrative structure with headings and subheadings.
-4. Preserve code examples and command snippets exactly as they appear in the source.
-5. Remove internal asides, warnings, and caveats that are only relevant to contributors (e.g., "this is going public" warnings, local development notes).
-6. If the section touches on deployment or cloud infrastructure, verify that no internal hostnames, project IDs, or client names appear in the output.
-
-**Example transformation:**
-
-Source (from `docs/quickstart.md`):
-```
-Run it from **inside** the cloned repo (the prompt's step 1 clones and `cd`s for you first).
-It is **idempotent** — safe to re-run: ...
+```bash
+bun plugins/shipwright/scripts/check-site-docs-freshness.ts
 ```
 
-Derived content (for MDX):
-```
-Run the quickstart script from inside the cloned repository. It is idempotent and safe to re-run.
+Exit 0 + stdout lists the flagged pages (same two line-shapes as above). Exit 1 + no output means nothing is flagged — report that and stop; there is nothing to propose.
+
+### Step 2: Per flagged page — diff its mapped source(s)
+
+For each flagged page:
+
+1. Look up its source paths in `site/docs-source-map.json`.
+2. Read that page's anchor from `state/site-docs-last-synced.json`, if present.
+3. Diff:
+   - **Anchor exists:** `git diff {anchor-sha}...HEAD -- {mapped source paths}`
+   - **No anchor yet (first run):** treat the full current content of the mapped source(s) as the change scope — there's nothing to diff against, so read the source(s) in full instead of a diff.
+4. Collect the diff (or full source content, for the no-anchor case) for use in Step 3.
+
+If a page's mapped source array is empty, skip it — an empty mapping (paired with a `_notes` entry) means the page has no repo-doc source and can never be meaningfully diffed; `check-site-docs-freshness.ts` never flags such a page in the first place, so this is a defensive no-op.
+
+### Step 3: Propose a targeted update
+
+**Never regenerate the page.** Apply the section-rewrite procedure from [`plugins/shipwright/references/doc-refresh-recipe.md`](../../plugins/shipwright/references/doc-refresh-recipe.md) Part 2, adapted from `docs/*.md` to an MDX page (frontmatter + body):
+
+1. Read the page's current heading hierarchy (its body, below the frontmatter block).
+2. Map what changed in the diff (Step 2) to the section(s) it affects — the heading immediately above the affected content.
+3. For each affected section, decide the operation using the recipe's vocabulary: **Update** (stale facts, keep structure), **Remove row** (a table entry for something now gone), **Replace** (the section's underlying source concept was wholly replaced), or **Delete section** (covered something removed with no replacement).
+4. If the diff touches frontmatter-relevant facts (e.g. the section moved in the nav chain, or its one-sentence purpose changed), propose the frontmatter field edit too — see the frontmatter and navigation-chain rules below, which still apply unchanged.
+5. Preserve everywhere: heading hierarchy and order, the page's existing tone and terminology, and any manually-written context that the diff doesn't touch.
+6. Draft the edit as focused old/new strings for the `Edit` tool — one edit per affected section — never a whole-page `Write`.
+
+#### Step 3, interactive mode
+
+Present, per flagged page:
+
+- The page name and its mapped source(s).
+- The diff (or, for a first-run page, a summary of what the full source contains).
+- The proposed targeted edit(s) from the procedure above, shown as a diff-style preview (old → new) before touching anything.
+
+Then **wait for explicit human confirmation** — Apply or Skip — before editing. Do not proceed to an edit on an assumed or implied yes.
+
+- **Apply:** Make the edit(s) with `Edit` (focused old/new strings). Then update just that page's entry in `state/site-docs-last-synced.json` to the current HEAD SHA and timestamp — every other page's entry is left untouched. Run the build validation (below).
+- **Skip:** Make no changes to the page and do not touch its anchor entry. Move to the next flagged page.
+
+#### Step 3, auto mode
+
+Never edit a page directly, and never touch the anchor file — the anchor only advances on an actually-applied edit, and auto mode never applies one. For each flagged page, file **one** task-store proposal task via the same `/tasks/bulk` mechanism `research-docs.md` already uses (the same endpoint, same auth header — do not invent a second one):
+
+```bash
+curl -sf -X POST \
+  -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
+  -H "Content-Type: application/json" \
+  "$SHIPWRIGHT_TASK_STORE_URL/tasks/bulk" \
+  --data-binary @/tmp/docs-sync-proposal-tasks.json | jq .
 ```
 
-#### 2c. Generate MDX with frontmatter
+Each task:
 
-Create or update `site/src/content/docs/<section>.mdx` with:
+- `title: "Sync site page {page} with updated source"`
+- `description`: the diff summary from Step 2, the affected section(s) identified in Step 3's procedure, and the proposed Update/Remove-row/Replace/Delete-section operation per section — enough for a human to review the proposal without re-deriving it.
+- `"hitl": true` — this is a proposal, not an auto-appliable change. Site-facing published content is higher-stakes than an internal `docs/*.md` edit, so unlike `research-docs.md`'s existing bulk-filed tasks (which don't set `hitl`), docs-sync's proposals always do.
+- `layer: "CLI"`
+- `session: "docs-sync-cron"` — distinct from `docs-freshness-cron` so these are queryable separately.
+- `branch: "docs/site-{page-slug}-{YYYYMMDD}"` — `{page-slug}` is the page's `.mdx` basename minus extension (e.g. a page file named `configuration.mdx` yields a page-slug of just "configuration", no extension), and `{YYYYMMDD}` is the run's UTC date (`date -u +%Y%m%d`). **The `branch` field is required** — `/shipwright:dev-task` blocks a task with no `branch` (it can't create a worktree) rather than silently proceeding, so an unbranched task here would stall until a human notices and backfills it by hand.
 
-**Frontmatter** (YAML block at top, delimited by `---`):
-```yaml
----
-title: <Section Title>
-description: <1-sentence description of what the reader will learn>
-section: <Section Name>
-order: <numerical order in the nav chain>
-prev: <optional previous section name>
-next: <optional next section name>
----
-```
+Never auto-edit in auto mode, regardless of how confident the proposed edit looks.
+
+### Step 4: Build validation
+
+Run after any edit actually applied (interactive mode's Apply path only — auto mode never edits, so it has nothing to validate):
+
+1. Run `npm run build:check` from the `site/` directory to validate the Astro content collection against the schema.
+2. If validation passes, report success for each regenerated section.
+3. If validation fails, print the error and halt with a non-zero exit code (do not silently ignore schema violations).
+
+## Frontmatter and navigation-chain conventions
+
+These conventions govern any edit this command proposes to a page's frontmatter — unchanged from before, since a targeted update to an existing page still has to keep its frontmatter internally consistent.
 
 **Frontmatter field rules:**
 - `title` (required): Human-readable section title (capitalize each major word). E.g., "Getting Started", "Task Store API", "Deployment Guide".
 - `description` (optional): A single sentence describing the section's purpose, written for someone new to Shipwright. E.g., "Clone the repo, install dependencies, and run the metrics dashboard locally in one prompt."
-- `section` (required): The exact value from the "Section Name" column in the registry table above — use it verbatim. Do not derive this from the section key or title. E.g., "Getting Started" (not "getting-started" or "Introduction").
+- `section` (required): The exact section-name value already used elsewhere in the site's nav — do not invent a new one for an existing page's targeted update. E.g., "Getting Started" (not "getting-started" or "Introduction").
 - `order` (required): A number indicating the section's position in the navigation chain. Use increments of 1 (1, 2, 3, ...) or 10 (10, 20, 30, ...) for flexibility. Earlier sections should have lower order numbers.
 - `prev` (optional): The name of the previous section in the navigation chain (use the `section` value, not the filename). E.g., `prev: Getting Started`.
 - `next` (optional): The name of the next section in the navigation chain (use the `section` value, not the filename). E.g., `next: Configuration`.
@@ -102,57 +126,9 @@ next: <optional next section name>
 
 If a section has no predecessor or successor, omit the `prev` or `next` field.
 
-**Content body** (after frontmatter):
-
-1. Start with an `# <title>` heading matching the frontmatter title.
-2. Write the human-friendly content derived in step 2b.
-3. Use Markdown headings (`##`, `###`, etc.) to organize subsections.
-4. Preserve code blocks and command examples exactly from the source.
-5. Ensure all internal links (e.g., "see Configuration") are written in plain text (not clickable links, as the site's router will handle nav).
-
-### Step 3: Validate generated MDX
-
-For each regenerated section:
-
-1. **Schema check**: Verify that the frontmatter contains all required fields (`title`, `section`, `order`) and that optional fields are strings (if present).
-2. **Content check**: Verify that the body is well-formed Markdown with no syntax errors.
-3. **Link check**: Ensure no links point to internal file paths (e.g., no `[see this](../docs/foo.md)`); use plain text references instead.
-4. **Public-repo scrub**: Scan the entire file for:
-   - Client names (e.g., "app-vitals", "customer X")
-   - Internal hostnames or infrastructure IDs (e.g., "internal-gke-cluster.example.com", project IDs)
-   - Internal Slack/GitHub/Jira links (e.g., "https://github.com/app-vitals/...", "#internal-channel")
-   - Local filesystem paths with usernames (e.g., "/Users/dave/...")
-   - Internal warnings or contributor-only notes
-   
-   If found, rewrite to remove these references before writing the file.
-
-### Step 4: Flag sections for human review
-
-If a section **cannot be fully sourced** from `docs/` + code (e.g., the source file is missing, or the section needs content that doesn't exist in the source material), print a review flag and do **NOT** generate or overwrite the MDX file:
-
-```
-[HUMAN-REVIEW] <section>: Cannot fully source from docs/. Details:
-- Missing: docs/xxx.md
-- Needs external reference: [describe what's missing]
-
-Skipping regeneration for <section>; please add source material or update manually.
-```
-
-**Examples of sections that might need human review:**
-- Slack Integration — not documented in `docs/`, requires custom content about Slack event handlers
-- Video tutorials — requires production of video content, not sourced from markdown
-
-### Step 5: Build validation
-
-After all sections are regenerated:
-
-1. Run `npm run build:check` from the `site/` directory to validate the Astro content collection against the schema.
-2. If validation passes, report success for each regenerated section.
-3. If validation fails, print the error and halt with a non-zero exit code (do not silently ignore schema violations).
-
 ## Public-repo scrubbing rules
 
-Before committing any generated MDX, apply these scrub rules. If found, the section is flagged for human review:
+Before applying any edit, apply these scrub rules. If found, flag the page for human review instead of applying the edit:
 
 **Do NOT include:**
 - Client/customer/partner names: "app-vitals", "Vitals", internal code names, customer accounts
@@ -168,34 +144,15 @@ Before committing any generated MDX, apply these scrub rules. If found, the sect
 
 **If unsure:** Flag it for human review. It's better to ask than to commit proprietary content to a public repo.
 
-## Example execution
-
-### Running `/docs-sync --section getting-started`
-
-1. Parse `--section getting-started` flag.
-2. Read `docs/quickstart.md`.
-3. Derive human-friendly content from the quickstart: prerequisites, step-by-step setup, and the copy-paste session prompt.
-4. Generate `site/src/content/docs/getting-started.mdx` with frontmatter (title: "Getting Started", section: "Getting Started", order: 1, prev: "Introduction", next: "Configuration").
-5. Validate the frontmatter and content.
-6. Run `npm run build:check` from `site/` to confirm the MDX is valid.
-7. Report: "✓ getting-started regenerated; site build passes."
-
-### Running `/docs-sync --rebuild`
-
-1. Iterate through all sections in the registry.
-2. For each section, read the source docs, derive content, generate the MDX file with frontmatter and navigation chain.
-3. Validate each section's frontmatter and content.
-4. Run `npm run build:check` from `site/` to validate all sections together.
-5. Report: "✓ All sections regenerated; site build passes." or if validation fails, halt with details.
-
 ## Error handling
 
-- **Missing source file**: Flag the section for human review; do not attempt to regenerate it.
-- **Build validation failure**: Print the Astro error; do not write the MDX file.
-- **Ambiguous content**: If a section's source material is unclear or contradictory, flag for human review with details of the conflict.
+- **No pages flagged:** Report that the precheck found nothing to sync and stop; there is nothing to propose.
+- **Missing mapped source file:** Flag the page for human review — the source map itself is enforced elsewhere (`scripts/docs-source-map.unit.test.ts`), but if a mapped path genuinely doesn't resolve at diff time, don't attempt to diff or propose against it.
+- **Build validation failure (interactive Apply path):** Print the Astro error; do not update the page's anchor entry, since the applied edit hasn't been confirmed safe.
+- **Ambiguous diff:** If the diff doesn't clearly map to an existing section, flag the page for human review with details of the ambiguity rather than guessing at a Replace or Delete-section operation.
 
 ## Notes
 
-- **Human-first**: Never invent content. If the source doesn't cover a topic, flag it for human review rather than hallucinating.
-- **Iterative**: Run `/docs-sync --section <name>` for single sections during authoring; use `/docs-sync --rebuild` when all source docs are ready.
-- **Mirrors plugin conventions**: This command follows the same instruction-file style as `.claude/skills/*/SKILL.md`, but without YAML frontmatter (commands are flat markdown).
+- **Never a full regenerate:** every edit this command proposes or applies is section-scoped, using `Edit` with focused old/new strings — never a whole-page `Write`. See `plugins/shipwright/references/doc-refresh-recipe.md` Part 2 for the shared procedure this adapts.
+- **Human-first in both modes:** interactive mode never edits without an explicit Apply; auto mode never edits at all — it only proposes, via a `hitl: true` task-store task.
+- **Mirrors plugin conventions:** This command follows the same instruction-file style as `.claude/skills/*/SKILL.md` and `plugins/shipwright/commands/research-docs.md`, but without YAML frontmatter (commands are flat markdown) and scoped to this repo's own marketing-site sync rather than the distributable plugin.
