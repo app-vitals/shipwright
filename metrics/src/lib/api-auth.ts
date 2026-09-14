@@ -113,22 +113,6 @@ export async function assertEngagementScope(
   }
 }
 
-/**
- * Resolve the engagement IDs the caller is allowed to access.
- * Returns undefined for admin callers (no filter needed).
- * For scoped callers, fetches all engagements belonging to their client.
- */
-async function getEngagementIdsForScope(
-  caller: Caller,
-  accountsClient: AccountsClient,
-): Promise<string[] | undefined> {
-  if (caller.scope === "*") return undefined;
-  const engagements = (await accountsClient.listEngagements({
-    clientId: caller.scope,
-  })) as Array<{ id: string }>;
-  return engagements.map((e) => e.id);
-}
-
 // ─── Authz policy framework ──────────────────────────────────────────────────
 
 /**

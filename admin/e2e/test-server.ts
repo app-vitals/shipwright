@@ -18,7 +18,6 @@
  */
 
 import { Hono } from "hono";
-import { sign } from "hono/jwt";
 import { createAdminUIApp } from "../src/admin-ui.ts";
 import type { AdminUIDeps } from "../src/admin-ui.ts";
 import type {
@@ -224,7 +223,7 @@ function buildMockDeps(chatClient: ChatClient | undefined): AdminUIDeps {
       },
       // Referenced by the agent detail page's admin-only member list and by
       // assertAgentAccess's non-admin membership check. Sessions minted for
-      // these e2e tests (via mintAdminSession) explicitly set `isAdmin: true`,
+      // these e2e tests explicitly set `isAdmin: true`,
       // so the render path deliberately takes the admin branch
       // (prisma.agentMember.findMany), never the non-admin findUnique branch.
       // No members fixture exists, so both resolve to empty/not-found. A
@@ -383,20 +382,6 @@ function buildMockDeps(chatClient: ChatClient | undefined): AdminUIDeps {
     appBaseUrl: `http://localhost:${ADMIN_E2E_PORT}`,
     chatClient,
   };
-}
-
-// ─── Helper: mint a valid session JWT ────────────────────────────────────────
-
-async function mintAdminSession(
-  userId = "google-sub-e2e",
-  email = "admin@example.com",
-): Promise<string> {
-  const nowSec = Math.floor(Date.now() / 1000);
-  return sign(
-    { userId, email, isAdmin: true, iat: nowSec, exp: nowSec + 3600 },
-    ADMIN_E2E_SESSION_SECRET,
-    "HS256",
-  );
 }
 
 // ─── Build app ────────────────────────────────────────────────────────────────
