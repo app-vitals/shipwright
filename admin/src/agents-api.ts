@@ -457,7 +457,8 @@ const getEnvsRoute = createRoute({
   method: "get",
   path: "/agents/{id}/envs",
   summary: "Get env vars",
-  description: "Returns the agent's env vars with values decrypted.",
+  description:
+    "Returns the agent's env vars. Non-secret values are decrypted; values flagged secret are masked as `***` and their keys listed in `secretKeys`.",
   request: { params: AgentIdParamSchema },
   responses: {
     200: {
