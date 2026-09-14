@@ -83,7 +83,9 @@ export async function waitForAgent(deps: WaitDeps): Promise<string> {
 // ─── CLI entrypoint ───────────────────────────────────────────────────────────
 
 if (import.meta.main) {
-  const { PrismaClient } = await import("../admin/prisma/client/index.js");
+  const { createAdminPrismaClient } = await import(
+    "../admin/src/prisma-client.ts"
+  );
 
   const argv = process.argv.slice(2);
   const dbUrl = (() => {
@@ -102,9 +104,7 @@ if (import.meta.main) {
     process.exit(1);
   }
 
-  const prisma = new PrismaClient({
-    datasources: { db: { url: dbUrl } },
-  });
+  const prisma = createAdminPrismaClient(dbUrl);
 
   try {
     await waitForAgent({

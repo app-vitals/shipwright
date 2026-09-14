@@ -25,8 +25,8 @@
  * five separate crons.
  */
 
-import { Prisma } from "../prisma/client/index.js";
-import type { PrismaClient } from "../prisma/client/index.js";
+import { Prisma } from "../prisma/client/client.ts";
+import type { PrismaClient } from "../prisma/client/client.ts";
 
 // ─── Types (mirrored from metrics/src/lib/admin-metrics-client.ts) ───────────
 // These types are defined here to keep admin self-contained (rootDir constraint).

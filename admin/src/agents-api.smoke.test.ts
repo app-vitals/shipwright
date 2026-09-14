@@ -8,7 +8,7 @@
 
 import { beforeAll, describe, expect, it } from "bun:test";
 import { sign } from "hono/jwt";
-import type { Prisma } from "../prisma/client/index.js";
+import type { Prisma } from "../prisma/client/client.ts";
 import type { AgentProvisioner, ProvisionResult } from "./agent-provisioner.ts";
 import type { AgentTokenService } from "./agent-tokens.ts";
 import type { AgentTypeManifest } from "./agent-type-registry.ts";
@@ -3531,7 +3531,6 @@ describe("admin API — patchAuthorAllowlist field", () => {
     expect(body.patchAuthorAllowlist).toEqual(["octocat"]);
   });
 });
-
 
 // ─── Cron runs smoke tests ────────────────────────────────────────────────────
 

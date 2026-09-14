@@ -10,7 +10,7 @@ import type {
   AgentCronRun,
   Prisma,
   PrismaClient,
-} from "../prisma/client/index.js";
+} from "../prisma/client/client.ts";
 import { NotFoundError } from "./errors.ts";
 
 export type { AgentCronRun };

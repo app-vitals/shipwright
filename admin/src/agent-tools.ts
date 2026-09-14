@@ -7,7 +7,7 @@
  * duplicates; add() uses upsert so it re-enables a previously disabled pattern.
  */
 
-import type { AgentTool, PrismaClient } from "../prisma/client/index.js";
+import type { AgentTool, PrismaClient } from "../prisma/client/client.ts";
 import { NotFoundError } from "./errors.ts";
 
 export type { AgentTool };

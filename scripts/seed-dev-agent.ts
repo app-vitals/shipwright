@@ -223,7 +223,9 @@ export async function seedDevAgent(deps: SeedDeps): Promise<void> {
 // ─── CLI entrypoint ───────────────────────────────────────────────────────────
 
 if (import.meta.main) {
-  const { PrismaClient } = await import("../admin/prisma/client/index.js");
+  const { createAdminPrismaClient } = await import(
+    "../admin/src/prisma-client.ts"
+  );
   const { AgentTypeRegistry } = await import(
     "../admin/src/agent-type-manifest-loader.ts"
   );
@@ -245,9 +247,7 @@ if (import.meta.main) {
     process.exit(1);
   }
 
-  const prisma = new PrismaClient({
-    datasources: { db: { url: dbUrl } },
-  });
+  const prisma = createAdminPrismaClient(dbUrl);
 
   const envFilePath = path.join(process.cwd(), DEV_AGENT_ENV_FILE);
 

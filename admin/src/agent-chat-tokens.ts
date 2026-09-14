@@ -14,7 +14,7 @@ import { randomBytes } from "node:crypto";
 import type {
   AgentChatTokenUsageDailyByModel,
   PrismaClient,
-} from "../prisma/client/index.js";
+} from "../prisma/client/client.ts";
 import { NotFoundError } from "./errors.ts";
 
 export type { AgentChatTokenUsageDailyByModel };

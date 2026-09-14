@@ -10,7 +10,7 @@
  * upsert so re-adding an existing plugin updates its version and re-enables it.
  */
 
-import type { AgentPlugin, PrismaClient } from "../prisma/client/index.js";
+import type { AgentPlugin, PrismaClient } from "../prisma/client/client.ts";
 import { NotFoundError } from "./errors.ts";
 
 export type { AgentPlugin };

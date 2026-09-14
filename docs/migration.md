@@ -4,6 +4,66 @@ Durable notes for breaking changes and the steps needed to migrate across versio
 
 ---
 
+## Breaking: admin's `DATABASE_URL_SHIPWRIGHT_ADMIN` is now parsed by `pg`, not Prisma _(PS7-1.1)_
+
+**Version**: next (PS7-1.1)
+
+**Who this affects**: only operators running the admin service against their **own** PostgreSQL
+(`externalDatabase.*` in the Helm chart — see
+[`docs/deploy-kubernetes-addons.md`](./deploy-kubernetes-addons.md)). If you use the bundled
+chart database, nothing changes.
+
+Prisma 7 removed the bundled Rust query engine. The admin service now connects through a
+`PrismaPg` driver adapter over a `pg.Pool` (`admin/src/prisma-client.ts`), so
+`DATABASE_URL_SHIPWRIGHT_ADMIN` is parsed at runtime by
+[`pg-connection-string`](https://github.com/brianc/node-postgres/tree/master/packages/pg-connection-string)
+instead of by Prisma's engine. Two connection-string behaviors change as a result.
+
+**What changed**:
+
+- **Prisma-only query params are ignored at runtime.** `schema`, `connection_limit`,
+  `pool_timeout`, and `pgbouncer` are Prisma engine params; `pg` does not understand them and
+  drops them silently. The important one is `?schema=`: the Prisma **CLI** still honors it
+  (`prisma migrate deploy` reads the same URL via `admin/prisma.config.ts`), so a
+  `?schema=shipwright` URL would migrate the `shipwright` schema while the running service
+  queries whatever the connection's `search_path` resolves to — normally `public`. That is a
+  silent split between where your tables are and where the service looks for them.
+- **`sslmode=require` now verifies the server certificate.** Under Prisma 6, `require` meant
+  "encrypt, verify nothing" unless you also set `sslaccept=strict`. Under `pg`, `prefer`,
+  `require`, and `verify-ca` are all treated as aliases for `verify-full`: `rejectUnauthorized`
+  stays at Node's default `true`, so the certificate chain **and** hostname are checked. A
+  Postgres fronted by a self-signed or private-CA certificate that connected fine under Prisma 6
+  can now fail to connect at runtime — and it fails *after* `prisma migrate deploy` has already
+  succeeded, because the CLI path runs first at boot.
+
+**Migration**:
+
+- **For existing records**: none — no schema change and no data migration.
+- **If your URL carries `?schema=<name>`**: drop the param and instead give the admin role a
+  default `search_path`, so the CLI and the runtime client agree:
+  ```sql
+  ALTER ROLE shipwright_admin SET search_path TO shipwright, public;
+  ```
+  Then verify after deploying: `prisma migrate status` should report no pending migrations and
+  the service's `/healthz` should pass. Leaving `?schema=` in place is the failure mode above.
+- **If your URL carries `connection_limit` / `pool_timeout` / `pgbouncer`**: remove them. They
+  are now dead weight. Admin's pool sizing is `pg.Pool`'s default; its connect timeout is set in
+  code (`DB_CONNECT_TIMEOUT_MS`, 10s).
+- **If you relied on `sslmode=require` against a self-signed / private-CA server**, pick one:
+  - **Keep verification, supply the CA** (preferred): keep `sslmode=verify-full` and point
+    `sslrootcert=/path/to/ca.crt` at your CA bundle (mount it into the admin container).
+  - **Restore the old non-verifying behavior**: change `sslmode=require` to **`sslmode=no-verify`**,
+    which sets `rejectUnauthorized: false`. This encrypts but authenticates nothing — only
+    appropriate on a trusted network path.
+  - **Restore libpq semantics wholesale**: append `uselibpqcompat=true` alongside
+    `sslmode=require`, which makes `require` mean "encrypt, don't verify" as libpq defines it.
+- **Deploy order**: update the secret holding `DATABASE_URL_SHIPWRIGHT_ADMIN` **before** rolling
+  out the new admin image. A stale URL surfaces as an admin pod that runs migrations
+  successfully and then fails its first query (`?schema=`) or fails to connect at all
+  (`sslmode=require` against an unverifiable certificate).
+
+---
+
 ## Breaking: `POST /tasks/bulk` is atomic — no more partial success _(TSW-1.3)_
 
 **Version**: next (TSW-1.3)

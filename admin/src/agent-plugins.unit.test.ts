@@ -5,7 +5,7 @@
  */
 
 import { describe, expect, it, mock } from "bun:test";
-import type { PrismaClient } from "../prisma/client/index.js";
+import type { PrismaClient } from "../prisma/client/client.ts";
 import { AgentPluginService } from "./agent-plugins.ts";
 
 describe("AgentPluginService.listEnabled", () => {

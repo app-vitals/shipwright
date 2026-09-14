@@ -23,6 +23,12 @@ WORKDIR /app
 COPY package.json bun.lock ./
 COPY admin/package.json ./admin/
 COPY admin/prisma ./admin/prisma/
+# admin is on Prisma 7, where the datasource block no longer carries `url` — it
+# lives in prisma.config.ts, which sits beside package.json rather than inside
+# prisma/. `bun install` below runs admin's `postinstall: prisma generate`, so
+# the config has to be in the deps stage too, not only in the `COPY . .` of the
+# production stage.
+COPY admin/prisma.config.ts ./admin/
 COPY task-store/package.json ./task-store/
 COPY task-store/prisma ./task-store/prisma/
 COPY chat/package.json ./chat/

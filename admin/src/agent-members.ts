@@ -7,7 +7,7 @@
  * member emails.
  */
 
-import type { AgentMember, PrismaClient } from "../prisma/client/index.js";
+import type { AgentMember, PrismaClient } from "../prisma/client/client.ts";
 
 export type { AgentMember };
 
