@@ -34,11 +34,14 @@ const SINGLE_PAGE_MAP: Record<string, string[]> = {
 function makeDeps(overrides: MakeDepsOptions = {}) {
   return {
     sourceMap: overrides.sourceMap ?? SINGLE_PAGE_MAP,
-    readAnchor: overrides.readAnchor ?? (() => ({ sha: "abc123", timestamp: "2026-01-01T00:00:00Z" })),
+    readAnchor:
+      overrides.readAnchor ??
+      (() => ({ sha: "abc123", timestamp: "2026-01-01T00:00:00Z" })),
     getCommitsSince:
       overrides.getCommitsSince ?? ((_paths: string[], _sha: string) => []),
     getChangedFilesSince:
-      overrides.getChangedFilesSince ?? ((_paths: string[], _sha: string) => []),
+      overrides.getChangedFilesSince ??
+      ((_paths: string[], _sha: string) => []),
   };
 }
 
@@ -117,9 +120,7 @@ describe("check-site-docs-freshness — single page", () => {
         seenPaths.push(paths);
         return ["def789 add skill"];
       },
-      getChangedFilesSince: () => [
-        "plugins/shipwright/skills/foo/SKILL.md",
-      ],
+      getChangedFilesSince: () => ["plugins/shipwright/skills/foo/SKILL.md"],
     });
     const result = await run(deps);
     expect(seenPaths).toEqual([["plugins/shipwright/skills"]]);
@@ -221,7 +222,10 @@ describe("check-site-docs-freshness — multi page", () => {
 
     const deps = makeDeps({
       sourceMap,
-      readAnchor: () => ({ sha: "sha-anchor", timestamp: "2026-01-01T00:00:00Z" }),
+      readAnchor: () => ({
+        sha: "sha-anchor",
+        timestamp: "2026-01-01T00:00:00Z",
+      }),
       getCommitsSince: (paths) => {
         if (paths[0] === "docs/failing.md") return null; // git failure
         return ["def789 add feature"];
@@ -249,7 +253,10 @@ describe("check-site-docs-freshness — multi page", () => {
 
     const deps = makeDeps({
       sourceMap,
-      readAnchor: () => ({ sha: "sha-anchor", timestamp: "2026-01-01T00:00:00Z" }),
+      readAnchor: () => ({
+        sha: "sha-anchor",
+        timestamp: "2026-01-01T00:00:00Z",
+      }),
       getCommitsSince: () => [],
     });
 
