@@ -30,12 +30,7 @@ POST /agents
 
 Admin-only. Creates an agent record and, for managed (non-self-hosted) agents, provisions the Kubernetes workload.
 
-The `type` field (optional, defaults to `"coding"`) selects an Agent Type manifest (`agent-types/<type>/manifest.yaml`) that drives seeding: an unknown `type` returns `400` **before any row is created** (zero agent/tool/plugin/member rows persist). On successful agent creation, the resolved manifest is used to seed:
-
-- **AgentTool** rows from the manifest's `tools[]`
-- **AgentPlugin** rows from the manifest's `plugins[]` (for the default "coding" type, this includes the `shipwright` plugin)
-- **AgentMember** rows from the manifest's `members[]`
-- **`repos`** — the manifest's `repos[]` merged (deduplicated) with any request-supplied `repos`
+The `type` field (optional, defaults to `"coding"`) selects an Agent Type manifest (`agent-types/<type>/manifest.yaml`) that drives seeding: an unknown `type` returns `400` **before any row is created** (zero agent/tool/plugin/member rows persist). On successful agent creation, the resolved manifest is used to seed **AgentTool** rows from its `tools[]`, **AgentPlugin** rows from its `plugins[]` (for the default `"coding"` type, this includes the `shipwright` plugin), **AgentMember** rows from its `members[]`, and **`repos`** from its `repos[]` merged (deduplicated) with any request-supplied `repos`.
 
 All seeding happens inside the same rollback-guarded block as provisioning — if any seeding step or provisioning fails, every already-seeded child row (tools/plugins/members) is cascade-deleted along with the rolled-back agent row.
 
@@ -68,13 +63,7 @@ Admin-only. Returns all agents with `id`, `name`, `selfHosted`, and `typeName` f
 GET /agents/:id
 ```
 
-Admin-only. Returns the full agent record including `selfHosted`, `repos`, `reviewAuthorAllowlist`, `patchAuthorAllowlist`, `restrictSlackToMembers`, `typeName`, and `missingRequiredEnv`.
-
-`reviewAuthorAllowlist` is an array of GitHub login strings — authors whose pull requests are permitted to trigger this agent's review/dev-task work. When empty, all authenticated users are allowed.
-
-`patchAuthorAllowlist` is an array of GitHub login strings — the authors intended to be permitted to trigger patch operations against this agent. **DBR-1.3:** the value is synced live via `agent/src/patch-author-allowlist-ref.ts`. **DBR-1.4:** enforcement is now active — `agent/src/check-patch.ts` filters patch candidates to PRs authored by allowlisted logins, merged with self-authored PRs and deduplicated by (repo, PR number). When empty (the default), patch runs remain self-authored-only — an additive allowlist, not a fail-open filter like review's `reviewAuthorAllowlist`.
-
-`restrictSlackToMembers` is a boolean flag that, when `true`, restricts Slack message access to only users listed in the agent's `AgentMember` rows. Defaults to `false` (unrestricted). An optional `warning` field is included in the response when this flag is `true` but no members are configured, alerting the operator that all Slack senders are currently blocked.
+Admin-only. Returns the full agent record: `selfHosted`, `repos`, `reviewAuthorAllowlist`, `patchAuthorAllowlist`, and `restrictSlackToMembers` — each as defined under [Create agent](#create-agent), including the optional `warning` field returned when `restrictSlackToMembers` is `true` but no members are configured — plus `typeName` and `missingRequiredEnv`.
 
 `missingRequiredEnv` is an array of required env var keys declared by the agent's type manifest that have no corresponding `AgentEnv` row yet — key names only, never values. This is purely informational (ATS-4.2).
 
@@ -94,11 +83,7 @@ DELETE /agents/:id
 
 Admin-only. Runs the full `deleteAgentFully()` teardown: deprovisions the agent's K8s workload (Deployment, Secret, and PVC), revokes its task-store and chat-service tokens, deletes its chat threads, and — if a `SLACK_APP_ID` env var is present and an `xoxpToken` was supplied — deletes its Slack app. The Agent DB row (and its cascade-deleted child records: envs, crons, tools, tokens, plugins) is deleted **last**, and only if every one of those steps succeeded.
 
-Body (optional):
-
-| Field | Required | Description |
-|-------|----------|-------------|
-| `xoxpToken` | no | Slack user token (`xoxp-...`) authorizing Slack app deletion. Omit to skip automatic Slack app deletion — a present Slack app then becomes a `manualStepsRequired` entry instead of a hard failure. |
+Body (optional): `{ xoxpToken?: string }` — a Slack user token (`xoxp-...`) authorizing Slack app deletion. Omit it to skip automatic Slack app deletion; a present Slack app then becomes a `manualStepsRequired` entry instead of a hard failure.
 
 Returns `200` with:
 
@@ -189,7 +174,7 @@ Deletes a single env var by key. Returns `204`.
 
 ## Operational APIs
 
-Cron jobs, cron runs, the allowed-tools list, API tokens, plugins, chat token usage, and the work-queue snapshot are documented in [`docs/agent-api-ops.md`](./agent-api-ops.md).
+Cron jobs and cron runs are documented in [`docs/agent-api-ops.md`](./agent-api-ops.md). The allowed-tools list, API tokens, plugins, chat token usage, and the work-queue snapshot are documented in [`docs/agent-api-resources.md`](./agent-api-resources.md).
 
 ---
 
@@ -205,9 +190,7 @@ Used by the agent harness on startup and during the config sync loop. Returns th
 - `allowedTools` — array of tool patterns
 - `plugins` — installed plugins with derived marketplace URLs
 - `repos` — array of `org/repo` strings (scoped repositories this agent may access)
-- `reviewAuthorAllowlist` — array of GitHub login strings (authors permitted to trigger this agent's review/dev-task work; empty array = all authenticated users allowed). Used by the runtime for review filtering.
-- `patchAuthorAllowlist` — array of GitHub login strings (authors whose PRs this agent will also treat as patch candidates). **DBR-1.3:** synced live via `agent/src/patch-author-allowlist-ref.ts`. **DBR-1.4:** enforcement is active — patch candidates authored by allowlisted logins are merged with the agent's self-authored PRs and deduplicated by (repo, PR number). Empty allowlist means self-authored-only (additive source, not fail-open).
-- `restrictSlackToMembers` — boolean flag controlling Slack message access. When `true`, only users in the agent's `AgentMember` rows can send messages. Defaults to `false` (unrestricted). Used by runtime to enforce membership-based access control.
+- `reviewAuthorAllowlist` / `patchAuthorAllowlist` / `restrictSlackToMembers` — as defined under [Create agent](#create-agent). The runtime uses them to filter review candidates, to extend the patch candidate pool (**DBR-1.3:** synced live via `agent/src/patch-author-allowlist-ref.ts`), and to enforce membership-based Slack access control.
 - `memberEmails` — array of member email addresses (derived from agent's `AgentMember` rows). Empty when `restrictSlackToMembers` is `false` or no members are configured.
 
 Returns `404` if the agent doesn't exist.
