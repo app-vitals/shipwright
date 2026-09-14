@@ -4,137 +4,25 @@ Scheduling and execution-history endpoints for the [Agent Admin API](./agent-api
 
 Base path: `/agents` (same resource as the core API — these are additional routes under it).
 
+**Full endpoint reference** — every route, parameter, request/response shape, and status code — lives in the generated [`admin/openapi.json`](../admin/openapi.json) spec. **Practical usage** lives in the [`agent-admin`](../plugins/shipwright/skills/agent-admin/SKILL.md) skill.
+
+This page covers only behavioral nuance the spec doesn't carry.
+
 ---
 
 ## Cron jobs
 
-### Create cron job
+`POST`/`GET`/`PATCH`/`DELETE /agents/:id/crons[/:cronId]`, `POST /agents/:id/crons/reconcile`, and `GET /agents/:id/crons/summary` are fully described in the spec — including the create/update field constraints and the three-pass reconcile algorithm (create-or-update matched-by-name, link/unlink `parentCronId`, delete orphans).
 
-```
-POST /agents/:id/crons
-```
-
-Body:
-
-| Field | Required | Description |
-|-------|----------|-------------|
-| `schedule` | yes | Cron expression, e.g. `"0 9 * * 1-5"` |
-| `prompt` | yes | The prompt text sent to the agent when the cron fires |
-| `channel` | no | Slack channel ID to post in (mutually exclusive with `user`) |
-| `user` | no | Slack user ID to DM (mutually exclusive with `channel`) |
-| `silent` | no | If `true`, suppress the Slack reply after execution |
-| `enabled` | no | Whether the cron is active (default `true`) |
-| `preCheck` | no | Pre-check script path. Three formats: `"plugin:script.ts"` (relative to plugin's `scripts/` dir), `"./relative.ts"` (relative to workspace root), `"/absolute.ts"`. Pass `null` to clear. |
-| `name` | no | Human-readable identifier, e.g. `"morning-brief"` |
-
-Returns `201` with the created cron job, including read-only fields: `id`, `agentId`, `system`, `parentCronId`, `createdAt`, `updatedAt`. **`parentCronId` is system-managed** and never settable by the user — it is `null` for top-level crons, and set by the system for child crons that belong to a parent orchestration job (LPC-1.3).
-
-### List cron jobs
-
-```
-GET /agents/:id/crons
-```
-
-Returns `{ crons: AgentCronJob[] }` where each cron includes a run summary (last run timestamp, outcome, today's run count), and the read-only `parentCronId` field (used by LPC-1.3 scheduler dispatch filtering to identify child "config-only" crons that should not be independently scheduled).
-
-### Update cron job
-
-```
-PATCH /agents/:id/crons/:cronId
-```
-
-Body fields are the same as create, all optional. Constraints:
-
-- `schedule` and `prompt` must be provided together when doing a content update
-- `enabled` and `preCheck` are orthogonal — each can be sent alone or combined with any other field
-- At least one field must be present (empty body returns `400`)
-- `parentCronId` is never settable (read-only, ignored in request bodies)
-- System crons (flagged `system=true`) cannot be updated — returns `403`
-
-Returns the updated cron job with all read-only fields included (`parentCronId`, `system`, `createdAt`, `updatedAt`).
-
-### Delete cron job
-
-```
-DELETE /agents/:id/crons/:cronId
-```
-
-Returns `204`. System crons (flagged `isSystem=true`) cannot be deleted — returns `403`.
-
-### Reconcile system crons
-
-```
-POST /agents/:id/crons/reconcile
-```
-
-Reconciles the agent's system crons against the cron list declared by its agent type manifest (`agent-types/{typeName}/manifest.yaml`, resolved via the `AgentTypeRegistry`; an unknown `typeName` falls back to the `coding` manifest with a logged warning, so this boot-path call never fails). Called automatically on agent startup. Returns `200` with a summary:
-
-```json
-{
-  "created": 0,
-  "updated": 2,
-  "deleted": 0
-}
-```
-
-**How reconciliation works:**
-
-The process runs in three passes within a single transaction for atomicity:
-
-- **Pass 1 — Create or update:** For each system cron that already exists (matched by name), the endpoint updates it in place with the current definition from the manifest's `crons` array, preserving its ID and existing enabled state. Updating in place (rather than delete+recreate) keeps the cron's ID stable across agent restarts, so `AgentCronRun` history (linked by foreign key with cascade-delete) is never wiped out. Manifest crons that don't yet exist are created with their default enabled state. Each entry's resulting row ID is recorded in a name → id map as it proceeds.
-- **Pass 2 — Link parents:** For each manifest cron entry that declares a `parentCron`, the endpoint resolves the parent's row ID from the name → id map and sets `parentCronId` on the child. If an entry does not declare a resolvable `parentCron`, any existing non-null `parentCronId` on that row is cleared back to `null`. This self-heals the parent/child link on every reconcile call in both directions — null→set (e.g., if it was previously null on a pre-existing row) and set→null (e.g., if a `parentCron` declaration is later removed from the manifest). The order of entries in the manifest's `crons` array does not matter — both parent and child are guaranteed to have been recorded in the map by Pass 1.
-- **Pass 3 — Orphan cleanup:** System crons whose names are no longer in the manifest's `crons` array are deleted.
-
-### Cron summary
-
-```
-GET /agents/:id/crons/summary
-```
-
-Returns a lightweight summary of all cron jobs — name, schedule, enabled state, and last run info — without full prompt text. Useful for dashboards.
+One nuance the spec doesn't carry: reconcile's parent-linking (Pass 2) self-heals in **both** directions on every call — a manifest entry that gains a `parentCron` declaration sets `parentCronId` even if the row previously had none, and one that loses its `parentCron` declaration clears an existing `parentCronId` back to `null`. `parentCronId` itself is always system-managed and never settable through the create/update routes.
 
 ---
 
 ## Cron runs
 
-Cron runs record each execution of a cron job, including token usage and cost.
+Cron runs record each execution of a cron job, including token usage and cost. `POST`/`GET /agents/:id/crons/:cronId/runs` and `PATCH .../runs/:runId` are fully described in the spec.
 
-### Create cron run
-
-```
-POST /agents/:id/crons/:cronId/runs
-```
-
-Body:
-
-| Field | Required | Description |
-|-------|----------|-------------|
-| `startedAt` | yes | ISO timestamp when the run started |
-| `skipped` | no | `true` if the pre-check returned false |
-| `skipReason` | no | Reason the run was skipped. Follows a `{command}:{category}:{reason}[:{detail}]` taxonomy (STD-1.1). On a `[silent]`-marker dispatch, populated from the dispatched command's own `[skip-reason:text]` marker when present (DBV-1.1), falling back to the generic `"command:no-work"` literal when the command didn't tag a specific reason. Skip reasons with a `deferred` category segment (the second colon-delimited field) are exempt from `SKIP_BLOCK_THRESHOLD` counting, allowing legitimate defers (e.g., awaiting a dependency to complete) to be distinguished from genuine no-ops that trigger auto-blocking. See `agent/src/markers.ts` and `agent/src/loop-orchestrator.ts`. |
-| `outcome` | no | `"success"` or `"error"` |
-| `itemType` | no | Work item type this run was dispatched against (`"task"` or `"pr"`). Set by the unified `shipwright-loop` cron alongside `itemId`; null when the tick had no dispatch (skipped tick, empty queue). Write-once at creation — not accepted on the PATCH endpoint. |
-| `itemId` | no | Work item id this run was dispatched against (e.g. `"WLS-2.2"` for a task, `"acme/x#123"` for a PR). Null when the tick had no dispatch. Write-once at creation — not accepted on the PATCH endpoint. |
-
-Returns `201` with the created run record.
-
-### List cron runs
-
-```
-GET /agents/:id/crons/:cronId/runs
-```
-
-Query params: `limit` (default 20), `offset` (default 0), `itemId` (optional; narrows to runs dispatched against this work item), `phaseId` (optional; narrows to runs dispatched by this phase cron). `itemId`/`phaseId` filter server-side via the Prisma `where` clause and can be combined (AND, not OR). Returns `{ items: AgentCronRun[], total: number }`.
-
-Each run record includes: `id`, `cronId`, `agentId`, `startedAt`, `completedAt`, `skipped`, `skipReason`, `outcome`, `error`, `phaseId` (nullable; child `AgentCronJob` id (FK) of the pipeline phase this run served — dev-task/plan/review/patch/deploy; null for legacy five-job crons or runs with no phase attribution), `itemType`, `itemId`, `sessionId` (nullable; Claude session id this cron run corresponds to), `createdAt`, `modelBreakdown` (per-model token and cost breakdown array, each entry: `{ model, inputTokens, outputTokens, cacheReadTokens, cacheCreationTokens, costUsd }`). Top-level token fields (`inputTokens`/`outputTokens`/`cacheReadTokens`/`cacheCreationTokens`/`model`) were dropped from `AgentCronRun` — all token accounting now lives on `modelBreakdown`. The legacy `phase` string field was replaced by a `phaseId` foreign key (LPC-3.1). Note: the resolved `phaseCron` relation (`{ id, name }`) is only included by `listForAgent()`, used by the HTML cron-logs page — not by this JSON endpoint.
-
-### Update cron run
-
-```
-PATCH /agents/:id/crons/:cronId/runs/:runId
-```
-
-Used to record completion data after a run finishes. Updatable fields: `completedAt`, `outcome`, `error`, `skipped`, `skipReason`, `sessionId`, `modelBreakdown` (array of `{ model, inputTokens, outputTokens, cacheReadTokens, cacheCreationTokens, costUsd }` — upserted per `[cronRunId, model]`). The legacy top-level `inputTokens`/`outputTokens`/`cacheReadTokens`/`cacheCreationTokens`/`model` fields are still accepted for backward compatibility with older agent builds but are silently ignored (not persisted) — send `modelBreakdown` instead. Returns the updated run.
+`skipReason` follows a `{command}:{category}:{reason}[:{detail}]` taxonomy (STD-1.1) rather than free text. On a `[silent]`-marker dispatch it's populated from the dispatched command's own `[skip-reason:text]` marker when present (DBV-1.1), falling back to `"command:no-work"` otherwise. Skip reasons with a `deferred` category segment are exempt from `SKIP_BLOCK_THRESHOLD` counting, so a legitimate defer (e.g. waiting on a dependency) doesn't trip auto-blocking the way a genuine no-op would — see `agent/src/markers.ts` and `agent/src/loop-orchestrator.ts`.
 
 ### Cron run stats
 
@@ -142,26 +30,11 @@ Used to record completion data after a run finishes. Updatable fields: `complete
 GET /agents/all/cron-runs/stats
 ```
 
-Admin-only. Aggregated token stats across all agents. Query params: `from` and `to` (optional ISO datetimes).
-
-Returns:
-
-```json
-{
-  "totals": { "inputTokens": 0, "outputTokens": 0, "cacheReadTokens": 0, "cacheCreationTokens": 0, "costUsd": 0 },
-  "byAgent": { "<agentId>": { ... } },
-  "byCron": [{ "key1": "<agentId>", "key2": "<cronName>", "phase": "dev-task", ... }],
-  "byModel": { "<modelId>": { ... } },
-  "byCronModel": [{ "key1": "<agentId>:<cronName>", "key2": "<model>", "phase": "dev-task", ... }],
-  "daily": [{ "date": "YYYY-MM-DD", ... }],
-  "byPhase": [{ "key": "<phase>", ... }]
-}
-```
-
-`byCron` and `byCronModel` rows include a `phase` field (populated from the `phaseCron.name` relation, e.g., "dev-task"/"plan"/"review"/"patch"/"deploy") for runs that have a `phaseId`, or `null` for runs with no phase attribution (legacy five-job crons and runs dispatched without a phase cron). `byPhase` groups token stats by the resolved phase cron name; runs with no phase attribution are excluded from this dimension only — they still count toward `totals` and the other dimensions.
+Admin-only, described in the spec. One nuance: `byPhase` excludes runs with no phase attribution (legacy five-job crons, runs dispatched without a phase cron) from that dimension only — those runs still count toward `totals` and every other breakdown (`byAgent`, `byCron`, `byModel`, `byCronModel`, `daily`).
 
 ---
 
-## Agent resource APIs
+## Related
 
-The allowed-tools list, API tokens, plugins, chat token usage, and the work-queue snapshot are documented in [`docs/agent-api-resources.md`](./agent-api-resources.md).
+- Core agent CRUD, authentication, env vars, runtime config: [`docs/agent-api.md`](./agent-api.md)
+- Allowed-tools, API tokens, plugins, chat token usage, work-queue snapshot: [`docs/agent-api-resources.md`](./agent-api-resources.md)
