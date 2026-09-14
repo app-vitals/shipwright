@@ -1,6 +1,6 @@
 {
   "name": "@shipwright/metrics",
-  "version": "1.268.0",
+  "version": "1.269.0",
   "private": true,
   "type": "module",
   "description": "Shipwright metrics dashboard — stateless Hono service with task-store-backed endpoints",
