@@ -42,6 +42,8 @@ const listTokensRoute = createRoute({
   path: "/",
   tags: ["tokens"],
   summary: "List all tokens",
+  description:
+    "Admin-only. Returns token metadata (hash, label, agentId) for every token — raw token values are never returned once past creation.",
   security: [{ bearerAuth: [] }],
   responses: {
     200: {
@@ -60,6 +62,8 @@ const createTokenRoute = createRoute({
   path: "/",
   tags: ["tokens"],
   summary: "Create a new token — raw value returned exactly once",
+  description:
+    "Admin-only. Body is optional: `{ label?, agentId? }`. Omitting `agentId` creates an unrestricted admin token; supplying it creates an agent-scoped token. Only the token's SHA-256 hash is persisted — the raw value is included in this response and never retrievable again.",
   security: [{ bearerAuth: [] }],
   request: {
     body: {
@@ -84,6 +88,8 @@ const updateTokenRoute = createRoute({
   path: "/:id",
   tags: ["tokens"],
   summary: "Update token label and/or agentId",
+  description:
+    "Admin-only. Body: `{ label?, agentId? }`. Returns `400` if the target token has already been revoked.",
   security: [{ bearerAuth: [] }],
   request: {
     params: TokenIdParamSchema,
@@ -117,6 +123,8 @@ const revokeTokenRoute = createRoute({
   path: "/:id",
   tags: ["tokens"],
   summary: "Revoke a token",
+  description:
+    "Admin-only. Soft-deletes the token by setting `revokedAt` — the record is not removed, so its history stays intact, but the raw token stops authenticating requests.",
   security: [{ bearerAuth: [] }],
   request: {
     params: TokenIdParamSchema,

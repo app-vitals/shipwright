@@ -76,6 +76,8 @@ const listRoute = createRoute({
   path: "/",
   tags: ["PRs"],
   summary: "List pull requests",
+  description:
+    "Returns `{ prs, total, limit, offset }`. `?ready=true` returns only unclaimed PRs (`claimedBy IS NULL`); `?blocked=true` returns PRs where `pr.blocked===true` OR a linked task has `status='blocked'` (resolved live via `(Task.repo, Task.pr)`, so a PR shared by several bundled tasks is blocked if any one of them is). `repo`/`org` are repeatable query params combined via AND; `sort` orders by `createdAt` (`asc` default).",
   request: {
     query: PrListQuerySchema,
   },
@@ -92,6 +94,8 @@ const claimRoute = createRoute({
   path: "/claim",
   tags: ["PRs"],
   summary: "Claim a pull request (atomic)",
+  description:
+    "Atomic via Postgres row locking, keyed on `(repo, prNumber)`. No existing record creates and returns `201` (a concurrent INSERT loser hits the `@@unique([repo, prNumber])` constraint and gets `409`). Against an existing record, the conflict conditions are re-checked inside the UPDATE's own WHERE clause so only one writer can win: same `commitSha` + same `phase` + already claimed by another agent returns `409` (phase locked); already claimed + same `commitSha` + `reviewState !== pending` (review phase only) returns `409` (already reviewed at this commit); otherwise the row is updated and `200` returned (new cycle). Agent tokens pin `claimedBy` to their own ID; admin tokens supply it in the body. Optional `phase` (default `review`) sets the pipeline phase — `patch`/`deploy` phases preserve `reviewState` as-is rather than resetting it.",
   request: {
     body: {
       content: { "application/json": { schema: ClaimPrBodySchema } },
@@ -123,6 +127,8 @@ const claimNextRoute = createRoute({
   path: "/claim-next",
   tags: ["PRs"],
   summary: "Atomic find-and-claim of oldest eligible PR",
+  description:
+    "Atomically finds and claims the oldest eligible PR not yet claimed by the calling agent, in one round-trip — useful for agents implementing a pull-based queue instead of manually claiming a specific PR. Optional `maxConcurrent` (default `1`) caps how many PRs the agent may hold at once; if the agent already has that many claimed, returns `204`. Agent tokens see only PRs in their configured repo scope; admin tokens see all. Returns `200` with `{ pr, phase }`, or `204` if nothing eligible.",
   request: {
     body: {
       content: { "application/json": { schema: ClaimNextBodySchema } },
@@ -153,6 +159,8 @@ const getOneRoute = createRoute({
   path: "/:id",
   tags: ["PRs"],
   summary: "Fetch a single pull request",
+  description:
+    "Fetches a single PR record by its ID. Returns `404` if not found.",
   request: {
     params: PrIdParamSchema,
   },
@@ -173,6 +181,8 @@ const updateRoute = createRoute({
   path: "/:id",
   tags: ["PRs"],
   summary: "Update pull request fields",
+  description:
+    "Writable fields: `staged`, `commitSha`, `reviewedCommitSha`, `agentId`, `state`, `mergedAt`, `reviewState`, `reviewedAt`, `phase`, `readyForReviewAt`, `readyForPatchAt`, `readyForDeployAt`, `blocked`, `blockedReason` — every other field is managed by a lifecycle endpoint instead. Returns `400` if no writable field is provided. Unlike the lifecycle endpoints, PATCH does not record a PullRequestEvent audit row; it's meant for late-stage corrections (e.g. force-setting `state=merged` after GitHub confirms it) that don't need transactional field-diff auditing. Setting `state` to `merged`/`closed`, or `reviewState` to `posted`/`approved`, clears the claim fields (`claimedBy`, `claimedAt`, `heartbeatAt`, `phase`) as a side effect so a completed PR isn't left held by a stale claim. Setting `reviewState=posted` together with `reviewedCommitSha` records the commit-level dedup marker the review phase's staged-review guard reads to decide whether re-review is needed.",
   request: {
     params: PrIdParamSchema,
     body: {
@@ -201,6 +211,8 @@ const heartbeatRoute = createRoute({
   path: "/:id/heartbeat",
   tags: ["PRs"],
   summary: "Touch heartbeatAt for a claimed PR",
+  description:
+    "Updates `heartbeatAt` to now to signal the claiming agent is still working. Deliberately excluded from the PullRequestEvent audit trail — a bare liveness ping recording would be a guaranteed no-op, and keeping this a single cheap UPDATE avoids dominating write volume.",
   request: {
     params: PrIdParamSchema,
   },
@@ -217,6 +229,8 @@ const completeRoute = createRoute({
   path: "/:id/complete",
   tags: ["PRs"],
   summary: "Mark PR review as complete (reviewState=posted)",
+  description:
+    "Sets `reviewState=posted`, increments `reviewCycles`, sets `reviewedAt`, and clears `claimedBy`/`claimedAt`/`heartbeatAt`/`phase` so the review claim is released as soon as the review is done. Records field-level transitions as PullRequestEvent rows.",
   request: {
     params: PrIdParamSchema,
   },
@@ -238,6 +252,8 @@ const patchRoute = createRoute({
   tags: ["PRs"],
   summary:
     "Increment patchCycles and conditionally reset reviewState=pending; optionally track a CI-failure streak via ciFailureSignature",
+  description:
+    "Increments `patchCycles`, sets `patchedAt`, and clears `claimedBy`/`claimedAt`/`heartbeatAt`/`phase`. `reviewState` is reset conditionally based on the optional `commitSha` field: omitted resets unconditionally to `pending`; provided and differing from the stored `commitSha` also resets to `pending` and updates `commitSha`; provided and matching leaves `reviewState` untouched (a no-op patch cycle). The optional `ciFailureSignature` field tracks consecutive patch cycles hitting the same CI failure — a matching signature increments `consecutiveCiFailureCount`, a differing or absent one resets it to 1; crossing the threshold (3, `SPIN_DETECTION_THRESHOLD`) auto-sets `blocked=true` with a descriptive `blockedReason`. Records field-level transitions as PullRequestEvent rows.",
   request: {
     params: PrIdParamSchema,
     body: {
@@ -262,6 +278,8 @@ const releaseRoute = createRoute({
   path: "/:id/release",
   tags: ["PRs"],
   summary: "Release a claim (reviewState=pending, claimedBy cleared)",
+  description:
+    "Clears `claimedBy`, `claimedAt`, and `heartbeatAt`. Resets `reviewState=pending` unless it's already a terminal value (`posted`/`approved`), in which case `reviewState` is left untouched. Records field-level transitions as PullRequestEvent rows.",
   request: {
     params: PrIdParamSchema,
   },
@@ -282,6 +300,8 @@ const skipRoute = createRoute({
   path: "/:id/skip",
   tags: ["PRs"],
   summary: "Record a skip — increments skipCount, auto-blocks at threshold",
+  description:
+    'Increments `skipCount` and updates `lastSkippedAt` to now. When `skipCount` crosses the threshold (3), auto-sets `blocked=true` and `blockedReason="Auto-blocked after {skipCount} consecutive skips (dispatched but found nothing to do)"`. Mirrors `POST /tasks/:id/skip`. Records field-level transitions as PullRequestEvent rows.',
   request: {
     params: PrIdParamSchema,
   },
@@ -303,6 +323,8 @@ const skipResetRoute = createRoute({
   tags: ["PRs"],
   summary:
     "Reset skip tracking — skipCount back to 0; also clears blocked/blockedReason if the PR was blocked by the skip mechanism",
+  description:
+    'Resets `skipCount` to 0 and clears `lastSkippedAt`. If the PR is currently blocked with a `blockedReason` matching the skip-auto-block message (contains "consecutive skips"), also clears `blocked=false` and `blockedReason=null` in the same update — a block set by a different mechanism (e.g. the CI-failure-streak auto-block from `POST /:id/patch`) is left untouched. Records field-level transitions as PullRequestEvent rows.',
   request: {
     params: PrIdParamSchema,
   },
@@ -324,6 +346,8 @@ const findingsRoute = createRoute({
   tags: ["PRs"],
   summary:
     "Append a review/patch finding to a PR — source:'patch' may only submit disposition:'rejected'",
+  description:
+    'Appends a `PrFinding` row: `{ ref, disposition, source, evidence, at?, agentId? }`, where `disposition` is one of `resolved`, `superseded`, `rejected`, and `source` is one of `review`, `patch`. Server-enforced authority rule: `source:"patch"` may only submit `disposition:"rejected"` (patch cannot unilaterally resolve or supersede a finding it didn\'t originate) — any other combination returns `400`. `source:"review"` may submit any disposition. Returns `201` with the created finding.',
   request: {
     params: PrIdParamSchema,
     body: {
@@ -354,6 +378,8 @@ const eventsRoute = createRoute({
   tags: ["PRs"],
   summary:
     "Fetch a PR's PullRequestEvent audit trail, ordered by `at` ascending (oldest first)",
+  description:
+    "Returns `{ events, total, limit, offset }` — the PR's append-only `PullRequestEvent` rows recording field-level state transitions, oldest first. `total` counts all events regardless of `limit`/`offset` (default `limit=50`, `offset=0`). Returns `404` if the PR doesn't exist.",
   request: {
     params: PrIdParamSchema,
     query: PrEventsQuerySchema,

@@ -5,6 +5,7 @@
  */
 
 import { describe, expect, test } from "bun:test";
+import { buildTaskStoreSpec } from "./generate-spec.ts";
 import {
   type Task,
   TaskSchema,
@@ -686,5 +687,41 @@ describe("OkSchema", () => {
   test("rejects non-literal true ok value", () => {
     const result = OkSchema.safeParse({ ok: false });
     expect(result.success).toBe(false);
+  });
+});
+
+// ─── OpenAPI route descriptions ────────────────────────────────────────────────
+
+describe("OpenAPI route descriptions", () => {
+  test("every route has a non-empty description alongside its summary", () => {
+    const spec = buildTaskStoreSpec() as {
+      paths: Record<
+        string,
+        Record<string, { summary?: string; description?: string }>
+      >;
+    };
+
+    const missing: string[] = [];
+    let routeCount = 0;
+    for (const [path, methods] of Object.entries(spec.paths)) {
+      for (const [method, operation] of Object.entries(methods)) {
+        routeCount++;
+        expect(
+          operation.summary,
+          `${method.toUpperCase()} ${path} summary`,
+        ).toBeTruthy();
+        if (
+          typeof operation.description !== "string" ||
+          operation.description.trim() === ""
+        ) {
+          missing.push(`${method.toUpperCase()} ${path}`);
+        }
+      }
+    }
+
+    // Sanity check that we actually walked all 35 documented routes, not an
+    // empty/degenerate spec.
+    expect(routeCount).toBeGreaterThanOrEqual(35);
+    expect(missing).toEqual([]);
   });
 });

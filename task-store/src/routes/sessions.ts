@@ -49,6 +49,8 @@ const listRoute = createRoute({
   path: "/",
   tags: ["sessions"],
   summary: "List sessions",
+  description:
+    "Returns `{ sessions, total, limit, offset }` — each session's Task rows rolled up into a single object (`state`, `waitingSince`, `lastActivityAt`, per-status `counts`, distinct `agentIds`/`repos`, `waitingTasks`) flattened with the Session row's own fields. Omitting `?state` defaults to non-archived, non-closed sessions. Every agent token (agentId set) is scoped: it only sees sessions with at least one qualifying task — one where `assignee === agentId` OR the task's repo is in the agent's resolved scope; a token with no resolved repos degrades to assignee-only matching rather than unrestricted visibility. Only admin tokens see every session unrestricted.",
   request: {
     query: SessionListQuerySchema,
   },
@@ -69,6 +71,8 @@ const getOneRoute = createRoute({
   path: "/:slug",
   tags: ["sessions"],
   summary: "Get a session by slug",
+  description:
+    "Returns the same flattened session+rollup shape as the list route. Returns `404` if the session doesn't exist, or if an agent token has no qualifying task in it (same visibility rule as list) — the two cases are indistinguishable to the caller by design.",
   request: {
     params: SessionSlugParamSchema,
   },
@@ -93,6 +97,8 @@ const patchRoute = createRoute({
   path: "/:slug",
   tags: ["sessions"],
   summary: "Rename/archive a session — admin-only",
+  description:
+    "Admin-only, no exceptions — agent tokens get `403` regardless of ownership. Body: `{ title?: string | null, archived?: boolean }`, both optional (an empty body is a no-op). `title: null` clears the title; `archived: true` sets `archivedAt`/`archivedBy`, `archived: false` clears both. Returns `404` if the session doesn't exist.",
   request: {
     params: SessionSlugParamSchema,
     body: {

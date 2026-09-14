@@ -174,6 +174,8 @@ const listRoute = createRoute({
   path: "/",
   tags: ["tasks"],
   summary: "List tasks",
+  description:
+    "Returns `{ tasks, total, limit, offset, scopeDegraded }`. `?ready=true` (or `?state=ready`) is an unpaginated convenience endpoint that computes over the whole dependency graph and returns only tasks that are `pending`, non-HITL, non-autonomous-plan-session, free of a fresh same-branch in-progress sibling, and fully dependency-satisfied — always oldest-first. `?state=blocked` similarly walks the whole graph to compute each task's `blockedBy` entries. Agent tokens with repo scope see the OR union of tasks assigned to them and unassigned pool tasks in their scoped repos; agent tokens without repo scope see only their own assigned tasks; admin tokens see everything matching the filters.",
   request: {
     query: TaskListQuerySchema,
   },
@@ -194,6 +196,8 @@ const createTaskRoute = createRoute({
   path: "/",
   tags: ["tasks"],
   summary: "Create a task",
+  description:
+    "Creates a single task. `title`, `status`, and `repo` are required — the `repo` key must be present, though `null` is a valid value for tasks not scoped to a specific repository. Agent tokens leave `assignee` as supplied by the caller, defaulting to `null` (unassigned/pool task) when omitted. Returns `201` with the created task; an existing `id` collision is not given dedicated handling and surfaces as an unhandled error rather than a clean `409` (use `POST /tasks/bulk` for collision-safe inserts).",
   request: {
     body: {
       content: { "application/json": { schema: CreateTaskBodySchema } },
@@ -256,6 +260,8 @@ const distinctRoute = createRoute({
   path: "/distinct",
   tags: ["tasks"],
   summary: "Get distinct session and repo values",
+  description:
+    "Returns distinct `sessions`, `repos` (`org/repo` strings), and `orgs` (the `org` prefix of each `repo`) across the caller's visible task set — useful for populating filter dropdowns in a UI.",
   responses: {
     200: {
       description: "Distinct values",
@@ -273,6 +279,8 @@ const getOneRoute = createRoute({
   path: "/:id",
   tags: ["tasks"],
   summary: "Get a task by ID",
+  description:
+    "Fetches a single task by its ID. Returns `404` if the task doesn't exist or is outside the calling agent token's ownership/repo scope.",
   request: {
     params: TaskIdParamSchema,
   },
@@ -301,6 +309,8 @@ const updateRoute = createRoute({
   path: "/:id",
   tags: ["tasks"],
   summary: "Update a task",
+  description:
+    "Applies partial task fields. Agent tokens can only update tasks within their ownership/repo scope (by `assignee`, `claimedBy`, or a `repo` in the token's scoped repos) and cannot set `claimedBy`, `claimedAt`, `heartbeatAt`, or `status: 'pending'` via this route — those are managed exclusively by `/claim` and `/release` so a generic PATCH can never bypass the atomic claim protocol. Admin tokens may set any field. A common use is setting `status: 'blocked'` alongside `blockedReason` when an agent hits an unrecoverable dead end.",
   request: {
     params: TaskIdParamSchema,
     body: {
@@ -336,6 +346,8 @@ const deleteRoute = createRoute({
   path: "/:id",
   tags: ["tasks"],
   summary: "Delete a task",
+  description:
+    "Deletes a task and its TaskEvent audit rows. Agent tokens can only delete tasks within their ownership/repo scope (by `assignee`, `claimedBy`, or a `repo` in the token's scoped repos). Returns `204` on success; this write does not fire a `task.write` webhook, since the deleted row can't be sent as the event payload.",
   request: {
     params: TaskIdParamSchema,
   },
@@ -363,6 +375,8 @@ const claimRoute = createRoute({
   path: "/:id/claim",
   tags: ["tasks"],
   summary: "Atomically claim a task",
+  description:
+    "Atomically claims a pending task via a single conditional `UPDATE ... WHERE status='pending' AND \"claimedBy\" IS NULL`, setting `status=in_progress`, `claimedBy`, `claimedAt`, `heartbeatAt`, and `startedAt` (or keeping it if already set) in one round-trip. Agent tokens send no body — the service pins `claimedBy` to the calling agent's ID server-side; admin tokens must supply `{ claimedBy: string }`. Returns `200` with the claimed task, or `409` if the task is already claimed or not in `pending` status. A DB-level CHECK constraint independently enforces that a row can never have `status='pending'` with a non-null `claimedBy` simultaneously, as defense-in-depth against any write path — including manual admin PATCHes — that might otherwise leave a task claimed-yet-pending.",
   request: {
     params: TaskIdParamSchema,
     body: {
@@ -403,6 +417,8 @@ const heartbeatRoute = createRoute({
   path: "/:id/heartbeat",
   tags: ["tasks"],
   summary: "Touch heartbeatAt on a claimed task",
+  description:
+    "Updates `heartbeatAt` to now. Agents call this periodically to renew a claim before any long-running operation (dispatching a subagent, waiting on CI) so the stale-claim reaper doesn't reclaim the task mid-pipeline. This write is deliberately excluded from both the `task.write` webhook and the TaskEvent audit trail — it's the highest-volume write path in the service and a heartbeat-only change isn't an audit-worthy event.",
   request: {
     params: TaskIdParamSchema,
   },
@@ -431,6 +447,8 @@ const completeRoute = createRoute({
   path: "/:id/complete",
   tags: ["tasks"],
   summary: "Mark a task as done",
+  description:
+    "Sets `status=done` and `completedAt` to now, ending the task's lifecycle successfully.",
   request: {
     params: TaskIdParamSchema,
   },
@@ -459,6 +477,8 @@ const failRoute = createRoute({
   path: "/:id/fail",
   tags: ["tasks"],
   summary: "Mark a task as blocked",
+  description:
+    "Sets `status=blocked`, pausing the task (it returns to `pending` on retry). Optional body `{ reason: string }` records why.",
   request: {
     params: TaskIdParamSchema,
     body: {
@@ -491,6 +511,8 @@ const releaseRoute = createRoute({
   path: "/:id/release",
   tags: ["tasks"],
   summary: "Release a task back to pending",
+  description:
+    "Clears `claimedBy`, `claimedAt`, and `heartbeatAt`, and resets `status=pending`. Use when an agent stops work without completing or failing, so the task becomes claimable again.",
   request: {
     params: TaskIdParamSchema,
   },
@@ -519,6 +541,8 @@ const skipRoute = createRoute({
   path: "/:id/skip",
   tags: ["tasks"],
   summary: "Record a skip — increments skipCount, auto-blocks at threshold",
+  description:
+    'Increments `skipCount` and updates `lastSkippedAt` to now. Called by orchestrators when a task is repeatedly re-selected but produces no visible outcome ([silent] dispatch). When `skipCount` crosses the threshold (3, `SPIN_DETECTION_THRESHOLD`), the task is auto-set to `status=blocked` with `blockedReason="Auto-blocked after {skipCount} consecutive skips (dispatched but found nothing to do)"` to halt further dispatches.',
   request: {
     params: TaskIdParamSchema,
   },
@@ -547,6 +571,8 @@ const skipResetRoute = createRoute({
   path: "/:id/skip/reset",
   tags: ["tasks"],
   summary: "Reset skip tracking — skipCount back to 0",
+  description:
+    "Resets `skipCount` back to 0 and clears `lastSkippedAt`. Called after a human reviews and unblocks a task that was auto-blocked by the skip threshold.",
   request: {
     params: TaskIdParamSchema,
   },
@@ -576,6 +602,8 @@ const eventsRoute = createRoute({
   tags: ["tasks"],
   summary:
     "Fetch a task's TaskEvent audit trail, ordered by `at` ascending (oldest first)",
+  description:
+    "Returns `{ events, total, limit, offset }` — the task's append-only `TaskEvent` rows recording field-level state transitions, oldest first. `total` counts all events regardless of `limit`/`offset` (default `limit=50`, `offset=0`). Returns `404` if the task doesn't exist or is outside the caller's scope.",
   request: {
     params: TaskIdParamSchema,
     query: TaskEventsQuerySchema,
