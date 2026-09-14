@@ -505,6 +505,66 @@ describe("research-docs.md — size governance", () => {
     expect(uniqueBulkEndpoints.has("/tasks/bulk")).toBe(true);
   });
 
+  it("Step A5.5 applies Step 6.6's three-branch decision tree instead of unconditionally filing a Split task", () => {
+    const stepA5_5Idx = content.indexOf("### Step A5.5: Auto Mode Quality Pass");
+    const stepA6Idx = content.indexOf("### Step A6: Update CLAUDE.md References");
+    const section = content.slice(stepA5_5Idx, stepA6Idx);
+
+    // Branch 1 — spec-backed + enriched → pointer-conversion task, not a split
+    expect(section.toLowerCase()).toContain("pointer-conversion");
+    expect(section.toLowerCase()).toContain("adequate descriptions");
+    expect(section).toContain("Convert {doc} to a pointer to {spec} — exceeds");
+    expect(section).toContain("DOA-4");
+
+    // Branch 2 — spec-backed but unenriched → split task + enrichment prerequisite
+    expect(section.toLowerCase()).toContain("isn't enriched");
+    expect(section.toLowerCase()).toContain("prerequisite");
+
+    // Branch 3 — no spec → split task unchanged
+    expect(section.toLowerCase()).toContain("no spec exists");
+
+    // The split task is explicitly scoped to branches 2 and 3, not unconditional
+    const splitTitleIdx = section.indexOf("Split {doc} — exceeds");
+    expect(splitTitleIdx).toBeGreaterThan(-1);
+    expect(section).toContain("branches 2 and 3");
+
+    // Pointer-conversion branch is presented before the split fallback
+    const pointerTitleIdx = section.indexOf(
+      "Convert {doc} to a pointer to {spec} — exceeds",
+    );
+    expect(pointerTitleIdx).toBeLessThan(splitTitleIdx);
+
+    // Still no auto-edit: auto mode files a task in every branch
+    expect(section.toLowerCase()).toContain("never creates a split file");
+  });
+
+  it("Step A5.5's pointer-conversion task payload carries the same required fields as the split task", () => {
+    const stepA5_5Idx = content.indexOf("### Step A5.5: Auto Mode Quality Pass");
+    const stepA6Idx = content.indexOf("### Step A6: Update CLAUDE.md References");
+    const section = content.slice(stepA5_5Idx, stepA6Idx);
+
+    const pointerTitleIdx = section.indexOf(
+      "Convert {doc} to a pointer to {spec} — exceeds",
+    );
+    const splitTitleIdx = section.indexOf("Split {doc} — exceeds");
+    expect(pointerTitleIdx).toBeGreaterThan(-1);
+    const pointerSlice = section.slice(pointerTitleIdx, splitTitleIdx);
+
+    expect(pointerSlice).toContain('layer: "CLI"');
+    expect(pointerSlice).toContain('session: "docs-freshness-cron"');
+    expect(pointerSlice).toContain("branch:");
+    expect(pointerSlice).toContain("docs/{doc-slug}-{YYYYMMDD}");
+  });
+
+  it("Step A5.5 inherits Step 6.6's docs/*.md scope rule excluding plugins/shipwright/", () => {
+    const stepA5_5Idx = content.indexOf("### Step A5.5: Auto Mode Quality Pass");
+    const stepA6Idx = content.indexOf("### Step A6: Update CLAUDE.md References");
+    const section = content.slice(stepA5_5Idx, stepA6Idx);
+
+    expect(section).toContain("docs/*.md");
+    expect(section).toContain("plugins/shipwright/");
+  });
+
   it("Step A9's summary template includes a Split proposals tasked line, after Quality flags tasked", () => {
     const stepA9Idx = content.indexOf("### Step A9");
     expect(stepA9Idx).toBeGreaterThan(-1);

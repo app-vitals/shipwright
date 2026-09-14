@@ -119,15 +119,24 @@ Each task: `layer: "CLI"`, `session: "docs-freshness-cron"`, `branch: "docs/{doc
 
 Track a running count of tasks filed this way for the current repo — this becomes the `Quality flags tasked` figure in Step A9's per-repo summary.
 
-After the quality-pass checks above, also check the doc's resulting **line count** against the hard threshold defined in Interactive Mode Step 6.6 (Size Governance) — 200 lines. Reuse that step's threshold and section-grouping logic rather than re-deriving it here.
+After the quality-pass checks above, also check the doc's resulting **line count** against the hard threshold defined in Interactive Mode Step 6.6 (Size Governance) — 200 lines. Reuse that step's threshold, its scope rule (`docs/*.md` only — never `plugins/shipwright/` command/skill files), its spec-detection logic, and its section-grouping logic rather than re-deriving any of them here.
 
-Over 200 lines: file **one** task-store task via the same `/tasks/bulk` mechanism used above (same endpoint, same auth header — no second endpoint). Auto mode never creates a split file — only a task:
+**Over 200 lines: apply the same three-branch decision tree Step 6.6 defines** — first check whether the doc primarily documents an HTTP API (routes, params, request/response shapes) that has a corresponding generated OpenAPI spec in the repo, using the same `Glob`/`Grep` discovery Step 6.6 uses — then take exactly one branch. Auto mode never trims a doc, never creates a split file, and never applies a pointer-conversion itself: every branch files **one** task-store task via the same `/tasks/bulk` mechanism used above (same endpoint, same auth header — no second endpoint).
+
+1. **Spec-backed, and the spec's routes already carry adequate descriptions** → file a **pointer-conversion** task instead of a split task:
+   - `title: "Convert {doc} to a pointer to {spec} — exceeds {N} lines"`
+   - `description`: which endpoint/param/response tables the spec already covers and can therefore be dropped, and which prose must be kept (the auth model, field semantics not expressible in OpenAPI, cross-cutting gotchas) — the same DOA-4 pattern Step 6.6 cites for `docs/agent-api.md` and `docs/agent-api-ops.md`
+   - `layer: "CLI"`, `session: "docs-freshness-cron"`, `branch: "docs/{doc-slug}-{YYYYMMDD}"` — same doc-slug/date computation as the quality-pass tasks above, for the doc being converted (**required**, see that step's note on why an unbranched task stalls silently)
+2. **Spec-backed, but the spec isn't enriched** (routes exist but lack descriptions worth pointing to) → file the split task below, and state in its `description` that enriching the spec's route descriptions is a prerequisite for pointer-conversion on a future pass.
+3. **No spec exists** → file the split task below unchanged.
+
+**Split task** (branches 2 and 3 only):
 
 - `title: "Split {doc} — exceeds {N} lines"`
-- `description`: a best-effort section-grouping suggestion — which `##`/`###` sections would move to a new sub-topic doc, grouped by topic, following the same grouping approach as Step 6.6
+- `description`: a best-effort section-grouping suggestion — which `##`/`###` sections would move to a new sub-topic doc, grouped by topic, following the same grouping approach as Step 6.6 — plus, for branch 2, the spec-enrichment prerequisite note above
 - `layer: "CLI"`, `session: "docs-freshness-cron"`, `branch: "docs/{doc-slug}-{YYYYMMDD}"` — same doc-slug/date computation as the quality-pass tasks above, for the doc being split (**required**, see that step's note on why an unbranched task stalls silently)
 
-Track a running count of split-proposal tasks filed this way for the current repo — this becomes the `Split proposals tasked` figure in Step A9's per-repo summary.
+Track a running count of size-governance tasks filed this way for the current repo — split proposals and pointer-conversion proposals alike, since each oversized doc yields exactly one of the two. That combined count becomes the `Split proposals tasked` figure in Step A9's per-repo summary.
 
 ### Step A6: Update CLAUDE.md References
 
