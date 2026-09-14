@@ -47,7 +47,7 @@ For each page in the source map:
 
 **Exit-code contract:**
 
-- **Exit 0** + page-scoped summary on stdout — at least one page has source changes worth checking. Output lists each qualifying page, either with its changed files or (no-anchor case) `"{page}: no sync anchor found — run full docs check"`.
+- **Exit 0** + page-scoped summary on stdout — at least one page has source changes worth checking. Output lists each qualifying page, either with its changed files or — whenever the page qualified with an empty changed-file list — the fixed line `"{page}: no sync anchor found — run full docs check"`. Despite its wording, that line is **not** exclusive to the no-anchor case: it's also what a page gets when it qualified permissively from a `git log` / `git diff` failure or from the outer unexpected-error fallback (the "permissive" row in the table above). When debugging real cron output, check stderr for the accompanying `git log failed` / `git diff failed` / `evaluation failed` warning before concluding a page genuinely has no anchor.
 - **Exit 1** + no output — nothing to do for any page.
 
 Unit-tested via `plugins/shipwright/scripts/check-site-docs-freshness.unit.test.ts`, which injects stub dependencies (no real git/filesystem I/O) and asserts the exit code for each case in the table above.
