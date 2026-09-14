@@ -261,7 +261,7 @@ export function buildProvisioner(
  * deleteAgentFully() call with nothing to revoke (listTokensForAgent → [])
  * completes cleanly instead of surfacing a new error path.
  */
-export function buildDeletionClients(env: NodeJS.ProcessEnv): {
+function buildDeletionClients(env: NodeJS.ProcessEnv): {
   taskStore: TaskStoreProvisioningClient;
   chatService: ChatServiceProvisioningClient;
 } {
@@ -334,7 +334,7 @@ export const DEFAULT_SESSION_ALERT_INTERVAL_MS = 60_000;
  * sessions, but still well inside the default 60s tick so a stalled
  * task-store can't wedge the sweep loop behind its in-flight guard.
  */
-export const SESSION_ALERT_FETCH_TIMEOUT_MS = 10_000;
+const SESSION_ALERT_FETCH_TIMEOUT_MS = 10_000;
 
 /**
  * Resolve the session-alert sweeper's tick interval from the environment.

@@ -92,48 +92,6 @@ export const authMiddleware = (apiKeys: Map<string, Caller>) =>
     await next();
   });
 
-/**
- * Token validator interface — decouples authMiddleware from Prisma.
- * Implement with AgentTokenService.validate() for DB-backed agent token auth.
- */
-interface AgentTokenValidator {
-  validate(raw: string): Promise<{ userId: string; clientId: string } | null>;
-}
-
-/**
- * Extended auth middleware that falls back to DB-backed agent token validation
- * when the Bearer token is not found in the static apiKeys map.
- *
- * Flow:
- *   1. Check static map (service-to-service tokens)
- *   2. If not found, validate as an agent token via the provided validator
- *   3. Valid agent token → Caller{name: agentId, scope: clientId}
- *   4. Unknown / revoked → 401
- */
-export const authMiddlewareWithAgentTokens = (
-  apiKeys: Map<string, Caller>,
-  agentTokens: AgentTokenValidator,
-) =>
-  createMiddleware<AuthEnv>(async (c, next) => {
-    const header = c.req.header("Authorization")?.trim();
-    const token = header?.startsWith("Bearer ") ? header.slice(7) : undefined;
-    if (!token) return c.json({ error: "Unauthorized" }, 401);
-
-    // Static key check first (service-to-service, admin tokens)
-    const staticCaller = apiKeys.get(token);
-    if (staticCaller) {
-      c.set("caller", staticCaller);
-      return next();
-    }
-
-    // Fall back to DB-backed agent token validation
-    const validated = await agentTokens.validate(token);
-    if (!validated) return c.json({ error: "Unauthorized" }, 401);
-
-    c.set("caller", { name: validated.userId, scope: validated.clientId });
-    return next();
-  });
-
 // ─── Scope helpers ───────────────────────────────────────────────────────────
 
 /**
@@ -153,22 +111,6 @@ export async function assertEngagementScope(
   if (engagement.clientId !== caller.scope) {
     throw new ForbiddenError("Not authorized for this engagement");
   }
-}
-
-/**
- * Resolve the engagement IDs the caller is allowed to access.
- * Returns undefined for admin callers (no filter needed).
- * For scoped callers, fetches all engagements belonging to their client.
- */
-export async function getEngagementIdsForScope(
-  caller: Caller,
-  accountsClient: AccountsClient,
-): Promise<string[] | undefined> {
-  if (caller.scope === "*") return undefined;
-  const engagements = (await accountsClient.listEngagements({
-    clientId: caller.scope,
-  })) as Array<{ id: string }>;
-  return engagements.map((e) => e.id);
 }
 
 // ─── Authz policy framework ──────────────────────────────────────────────────

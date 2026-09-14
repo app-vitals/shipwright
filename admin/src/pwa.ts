@@ -64,7 +64,7 @@ export interface WebAppManifest {
 }
 
 /** Fallback start_url — used whenever no (or no valid) page-specific start_url is available. */
-export const DEFAULT_START_URL = "/admin/chat";
+const DEFAULT_START_URL = "/admin/chat";
 
 /**
  * Builds the web app manifest object. scope is always /admin/ (the

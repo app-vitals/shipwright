@@ -18,7 +18,6 @@
  */
 
 import { Hono } from "hono";
-import { sign } from "hono/jwt";
 import { createAdminUIApp } from "../src/admin-ui.ts";
 import type { AdminUIDeps } from "../src/admin-ui.ts";
 import type {
@@ -29,10 +28,9 @@ import type {
 
 // ─── Config ───────────────────────────────────────────────────────────────────
 
-export const ADMIN_E2E_PORT = 3490;
-export const ADMIN_E2E_SESSION_SECRET =
+const ADMIN_E2E_PORT = 3490;
+const ADMIN_E2E_SESSION_SECRET =
   process.env.ADMIN_E2E_SESSION_SECRET ?? "e2e-admin-test-secret-32chars!!!";
-export const SESSION_COOKIE = "admin_session";
 
 const ADMIN_E2E_AGENT = {
   id: "agent-e2e-1",
@@ -78,7 +76,7 @@ const MOCK_TOKEN = {
 
 // ─── Chat fixtures (CFB-1.3 — chat thread page e2e) ──────────────────────────
 
-export const MOCK_CHAT_THREAD: ChatThread = {
+const MOCK_CHAT_THREAD: ChatThread = {
   id: "thread-e2e-1",
   agentId: ADMIN_E2E_AGENT.id,
   title: "E2E Test Thread",
@@ -87,7 +85,7 @@ export const MOCK_CHAT_THREAD: ChatThread = {
   updatedAt: "2024-01-01T00:00:00.000Z",
 };
 
-export const MOCK_CHAT_MESSAGES: ChatMessage[] = [
+const MOCK_CHAT_MESSAGES: ChatMessage[] = [
   {
     id: "msg-e2e-1",
     threadId: MOCK_CHAT_THREAD.id,
@@ -113,7 +111,7 @@ export const MOCK_CHAT_MESSAGES: ChatMessage[] = [
 // renders the live status bubble and the client ticker + stall state can be
 // asserted by chat-progress.e2e.ts without any real agent. createdAt is
 // computed at boot so the elapsed value starts near 0 and visibly increments.
-export const MOCK_CHAT_PENDING_MESSAGES: ChatMessage[] = [
+const MOCK_CHAT_PENDING_MESSAGES: ChatMessage[] = [
   {
     id: "msg-pending-e2e-1",
     threadId: MOCK_CHAT_THREAD.id,
@@ -225,7 +223,7 @@ function buildMockDeps(chatClient: ChatClient | undefined): AdminUIDeps {
       },
       // Referenced by the agent detail page's admin-only member list and by
       // assertAgentAccess's non-admin membership check. Sessions minted for
-      // these e2e tests (via mintAdminSession) explicitly set `isAdmin: true`,
+      // these e2e tests explicitly set `isAdmin: true`,
       // so the render path deliberately takes the admin branch
       // (prisma.agentMember.findMany), never the non-admin findUnique branch.
       // No members fixture exists, so both resolve to empty/not-found. A
@@ -384,20 +382,6 @@ function buildMockDeps(chatClient: ChatClient | undefined): AdminUIDeps {
     appBaseUrl: `http://localhost:${ADMIN_E2E_PORT}`,
     chatClient,
   };
-}
-
-// ─── Helper: mint a valid session JWT ────────────────────────────────────────
-
-export async function mintAdminSession(
-  userId = "google-sub-e2e",
-  email = "admin@example.com",
-): Promise<string> {
-  const nowSec = Math.floor(Date.now() / 1000);
-  return sign(
-    { userId, email, isAdmin: true, iat: nowSec, exp: nowSec + 3600 },
-    ADMIN_E2E_SESSION_SECRET,
-    "HS256",
-  );
 }
 
 // ─── Build app ────────────────────────────────────────────────────────────────

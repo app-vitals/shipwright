@@ -168,7 +168,7 @@ function collectPolicies(
  * after `parent.route("/", child)` so the parent's `enumerateRoutes()` sees
  * every policy registered on the child.
  */
-export function registerSubAppPolicies(
+function registerSubAppPolicies(
   // biome-ignore lint/suspicious/noExplicitAny: structural access only
   parent: OpenAPIHono<any>,
   // biome-ignore lint/suspicious/noExplicitAny: structural access only

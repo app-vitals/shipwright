@@ -30,7 +30,7 @@ import {
   type VisibilityScope,
 } from "./session-scope.ts";
 
-export const SESSIONS_LIST_PATH = "/admin/sessions";
+const SESSIONS_LIST_PATH = "/admin/sessions";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -86,7 +86,7 @@ export interface SessionsListDeps {
   html: (content: string, opts?: { status?: number }) => Response;
 }
 
-export interface SessionsListFilters {
+interface SessionsListFilters {
   repo: string[];
   agentId?: string;
   q?: string;
@@ -204,7 +204,7 @@ function renderSection(label: string, sessions: Session[]): string {
   </div>`;
 }
 
-export function renderSessionsListPage(
+function renderSessionsListPage(
   sessions: Session[],
   filters: SessionsListFilters,
   degraded: boolean,

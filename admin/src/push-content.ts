@@ -28,7 +28,7 @@ const LEVEL_RANK: Record<PushDetailLevel, number> = {
 /** Operator ceiling default per the brief. */
 export const DEFAULT_MAX_DETAIL: PushDetailLevel = "title";
 /** Safest per-subscription default. */
-export const DEFAULT_OPT_IN: PushDetailLevel = "generic";
+const DEFAULT_OPT_IN: PushDetailLevel = "generic";
 
 const GENERIC_TITLE = "Your agent replied";
 const PREVIEW_MAX = 120;
@@ -59,7 +59,7 @@ export interface NotificationThread {
   preview?: string | null;
 }
 
-export interface NotificationPayload {
+interface NotificationPayload {
   title: string;
   body: string;
   /** Deep link to the thread — consumed by the SW, not shown on the lock screen. */
@@ -78,7 +78,7 @@ const COST_SHAPE = /\$\s?\d[\d,]*(?:\.\d+)?/g; // $4.20
  * client-shaped reaches a lock screen. Conservative by design: a false-positive
  * redaction (an innocuous slash-word) is strictly safer than a leak.
  */
-export function sanitizePublic(text: string): string {
+function sanitizePublic(text: string): string {
   return text
     .replace(CUID_SHAPE, "…")
     .replace(REPO_SHAPE, "…")
@@ -137,7 +137,7 @@ export interface NotificationSession {
   reason?: string | null;
 }
 
-export interface SessionNotificationPayload {
+interface SessionNotificationPayload {
   title: string;
   body: string;
   /** Deep link to the session — consumed by the SW, not shown on the lock screen. */

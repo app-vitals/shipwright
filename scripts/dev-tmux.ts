@@ -179,7 +179,7 @@ export type BuildOpts = {
  *
  * Returns one shell line for `tmux send-keys`, mirroring buildLogsBanner().
  */
-export function buildAgentPaneScript(repoPath: string): string {
+function buildAgentPaneScript(repoPath: string): string {
   const waitCmd = `bun run scripts/wait-for-agent.ts --db-url ${DEV_DATABASE_URL}`;
   const seedTokenCmd = `bun run scripts/seed-chat-tokens.ts --db-url ${DEV_CHAT_DATABASE_URL} --admin-token ${DEV_CHAT_ADMIN_TOKEN} --agent-token ${DEV_CHAT_AGENT_TOKEN} --agent-id "$AGENT_ID"`;
   const dockerRunCmd = [
@@ -344,7 +344,7 @@ export const STACK_PANES: Pane[] = [
  * `tmux send-keys`. Env is exported inline so it applies only to this pane.
  * Defensive: skips undefined/empty env keys.
  */
-export function paneShellLine(pane: Pane): string {
+function paneShellLine(pane: Pane): string {
   const envPrefix = Object.entries(pane.env ?? {})
     .filter(([k, v]) => k && v !== undefined)
     .map(([k, v]) => `${k}=${v}`)
@@ -610,7 +610,7 @@ export function runStack(
 // ---------------------------------------------------------------------------
 
 /** True if the `tmux` binary is on PATH. */
-export function tmuxIsInstalled(
+function tmuxIsInstalled(
   which: (bin: string) => string | null = (bin) => Bun.which(bin),
 ): boolean {
   return which("tmux") !== null;

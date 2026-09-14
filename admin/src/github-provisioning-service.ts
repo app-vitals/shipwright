@@ -46,20 +46,20 @@ export const GITHUB_ORG_PATTERN = /^[A-Za-z0-9](?:[A-Za-z0-9-]){0,38}$/;
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
-export interface GithubAppProvisionStatePayload {
+interface GithubAppProvisionStatePayload {
   agentId: string;
   githubOrg: string;
 }
 
-export type StartPatConnectResult =
+type StartPatConnectResult =
   | { ok: true; agentId: string }
   | { ok: false; agentId: string; error: string };
 
-export type StartAppManualConnectResult =
+type StartAppManualConnectResult =
   | { ok: true; agentId: string }
   | { ok: false; agentId: string; error: string };
 
-export type StartAppAutoConnectResult =
+type StartAppAutoConnectResult =
   | {
       ok: true;
       /** Signed JWT to store in the GITHUB_PROVISION_STATE_COOKIE. */
@@ -70,7 +70,7 @@ export type StartAppAutoConnectResult =
     }
   | { ok: false; error: string };
 
-export type CompleteConnectResult =
+type CompleteConnectResult =
   | {
       /** Provision-state cookie missing or invalid/expired — restart the flow. */
       outcome: "invalid_state";
@@ -98,7 +98,7 @@ export type CompleteConnectResult =
       installUrl: string;
     };
 
-export type CompleteInstalledResult =
+type CompleteInstalledResult =
   | {
       /** Provision-state cookie missing or invalid/expired — restart the flow. */
       outcome: "invalid_state";
@@ -120,7 +120,7 @@ export type CompleteInstalledResult =
       agentId: string;
     };
 
-export interface GithubProvisioningServiceDeps {
+interface GithubProvisioningServiceDeps {
   githubAppClient: AdminUIGithubAppClient;
   agentService: Pick<AgentService, "getDetail">;
   agentEnvService: Pick<AgentEnvService, "patch">;
@@ -138,19 +138,19 @@ function isNumericId(value: string | undefined): value is string {
 }
 
 /** Validates a pasted GitHub App ID (numeric string). */
-export function isValidGithubAppId(value: string | undefined): value is string {
+function isValidGithubAppId(value: string | undefined): value is string {
   return isNumericId(value);
 }
 
 /** Validates a pasted GitHub App Installation ID (numeric string). */
-export function isValidGithubAppInstallationId(
+function isValidGithubAppInstallationId(
   value: string | undefined,
 ): value is string {
   return isNumericId(value);
 }
 
 /** Validates a pasted GitHub App private key (PEM-encoded). */
-export function isValidGithubAppPrivateKey(
+function isValidGithubAppPrivateKey(
   value: string | undefined,
 ): value is string {
   return Boolean(value?.includes("BEGIN") && value.includes("PRIVATE KEY"));
