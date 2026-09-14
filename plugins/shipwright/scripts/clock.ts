@@ -10,8 +10,6 @@
  * The scripts must import Clock from a local path that exists in the cache —
  * not from a shared lib/ that only exists in the source repo. This file keeps
  * the plugin fully self-contained so it runs correctly from any install location.
- *
- * Test doubles (FixedClock) live in ./test-helpers/doubles.ts.
  */
 
 // ─── Interface ────────────────────────────────────────────────────────────────
