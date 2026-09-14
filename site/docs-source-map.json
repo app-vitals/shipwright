@@ -1,0 +1,82 @@
+{
+  "_comment": "SDR-1: audit of what each site/src/content/docs/*.mdx page is substantively derived from today, by content comparison against docs/*.md, plugins/shipwright/commands/*.md, and plugins/shipwright/skills/*/SKILL.md. Keys are bare .mdx filenames (no directory prefix). Values are repo-root-relative source paths that exist at HEAD; a directory path means the page draws from the whole directory rather than one file. Mappings are many-to-many by design. See '_notes' for pages with no repo-doc source (none currently — every page on the site today is technical documentation with a traceable docs/ or plugin source).",
+  "_notes": {},
+  "admin-console.mdx": [
+    "docs/agent-web-ui.md",
+    "docs/agent-api.md",
+    "docs/agent.md",
+    "docs/agent-key-files.md"
+  ],
+  "agent-skills.mdx": [
+    "plugins/shipwright/skills"
+  ],
+  "commands-reference.mdx": [
+    "plugins/shipwright/commands"
+  ],
+  "configuring-autonomy.mdx": [
+    "docs/agent-ops.md",
+    "docs/configuration.md"
+  ],
+  "cron-jobs.mdx": [
+    "docs/agent-ops.md",
+    "plugins/shipwright/skills/investigate-cron/SKILL.md"
+  ],
+  "day-to-day-operations.mdx": [
+    "docs/agent-web-ui.md",
+    "docs/task-store.md",
+    "plugins/shipwright/commands/hitl.md"
+  ],
+  "deploying-to-cloud.mdx": [
+    "docs/deploy-kubernetes.md",
+    "docs/deploy-kubernetes-providers.md",
+    "docs/helm-repo.md"
+  ],
+  "getting-started.mdx": [
+    "docs/quickstart.md"
+  ],
+  "introduction.mdx": [
+    "docs/architecture.md",
+    "docs/README.md"
+  ],
+  "prs-api.mdx": [
+    "docs/task-store.md"
+  ],
+  "reference.mdx": [
+    "docs/configuration.md",
+    "docs/configuration-agent.md"
+  ],
+  "running-locally.mdx": [
+    "docs/quickstart.md"
+  ],
+  "security.mdx": [
+    "docs/deploy-kubernetes.md",
+    "docs/observability.md",
+    "docs/agent-ops.md",
+    "docs/configuration.md",
+    "docs/configuration-agent.md",
+    "docs/agent-key-files.md"
+  ],
+  "slack-integration.mdx": [
+    "docs/configuration-agent.md",
+    "docs/agent.md",
+    "docs/agent-key-files.md"
+  ],
+  "task-store-api.mdx": [
+    "docs/task-store.md"
+  ],
+  "the-agent.mdx": [
+    "docs/agent.md",
+    "docs/agent-api.md",
+    "docs/agent-key-files.md"
+  ],
+  "the-plugin.mdx": [
+    "docs/architecture.md",
+    "plugins/shipwright/commands",
+    "plugins/shipwright/skills"
+  ],
+  "the-shipwright-loop.mdx": [
+    "docs/agent-ops.md",
+    "docs/architecture.md",
+    "docs/agent-key-files.md"
+  ]
+}
