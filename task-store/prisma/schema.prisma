@@ -5,13 +5,16 @@
 // database for the task-store service. Do NOT point this at a shared database.
 
 generator client {
-  provider = "prisma-client-js"
+  provider = "prisma-client"
   output   = "./client"
 }
 
+// Prisma 7 removed `url` from `datasource` blocks — the Migrate connection URL
+// now lives in ../prisma.config.ts (`datasource.url`), and the runtime
+// connection comes from the PrismaPg driver adapter built in src/prisma-client.ts.
+// Both still read DATABASE_URL_SHIPWRIGHT_TASK_STORE.
 datasource db {
   provider = "postgresql"
-  url      = env("DATABASE_URL_SHIPWRIGHT_TASK_STORE")
 }
 
 // ─── Task Status ──────────────────────────────────────────────────────────────
