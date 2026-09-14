@@ -38,7 +38,7 @@ tasks:
       - bun plugins/shipwright/scripts/check-banned-strings.ts
 
   check-config-docs:
-    desc: Verify all process.env.* vars in agent/src/ and plugins/shipwright/scripts/ are documented in docs/configuration.md
+    desc: Verify all process.env.* vars in agent/src/ and plugins/shipwright/scripts/ are documented in docs/configuration.md or docs/configuration-agent.md
     cmds:
       - bun scripts/check-config-docs.ts
 

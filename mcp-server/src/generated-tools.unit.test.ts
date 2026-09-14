@@ -2,10 +2,10 @@ import { describe, expect, it } from "bun:test";
 import { generatedTools } from "./generated-tools.ts";
 
 describe("generatedTools", () => {
-  it("emits one tool per OpenAPI operation (34 total)", () => {
+  it("emits one tool per OpenAPI operation (35 total)", () => {
     // 32 pre-SESH-2.2 + sessions_list (GET /sessions) + sessions_get
-    // (GET /sessions/{slug}).
-    expect(generatedTools).toHaveLength(34);
+    // (GET /sessions/{slug}) + sessions_update (PATCH /sessions/{slug}, SESH-3.1).
+    expect(generatedTools).toHaveLength(35);
   });
 
   it("has unique tool names", () => {

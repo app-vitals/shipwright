@@ -1196,3 +1196,100 @@ describe("SessionAlertSweeper — detailLevel", () => {
     expect((await tickWith("everything"))[0]?.level).toBe("title");
   });
 });
+
+// ─── Admin allowlist fast path + outcome logging ─────────────────────────────
+//
+// An operator on SHIPWRIGHT_ADMIN_ALLOWED_EMAILS sees every session in the UI
+// and can follow any of them, so the sweeper must alert them without an
+// AgentMember row. Before this path existed, an admin with no memberships
+// could follow a session and never be pushed — silently.
+
+describe("SessionAlertSweeper — admin allowlist", () => {
+  it("alerts an allowlisted admin who holds no agent memberships", async () => {
+    const { prisma } = fakePrisma({
+      follows: [{ userEmail: "admin@example.com", sessionSlug: WAITING_SESSION.slug }],
+    });
+    const { pushService, sent } = fakePushService();
+    const scope = fakeScopeServices({}); // no memberships for anyone
+    const lines: string[] = [];
+
+    const sweeper = new SessionAlertSweeper({
+      prisma,
+      pushService,
+      ...scope,
+      adminAllowedEmails: ["Admin@Example.com"], // case-insensitive, like the UI
+      log: (line) => lines.push(line),
+      fetchSessions: fetchSessionsDouble({ waiting: [WAITING_SESSION] }),
+      clock: FixedClock(new Date("2026-03-02T17:00:00Z")),
+      timezone: TZ,
+    });
+
+    const result = await sweeper.tick();
+    expect(result.immediate).toBe(1);
+    expect(sent).toEqual([
+      {
+        slug: WAITING_SESSION.slug,
+        emails: ["admin@example.com"],
+        kind: "immediate",
+        level: "title",
+      },
+    ]);
+    expect(lines).toEqual([
+      `[session-alert-sweeper] immediate → admin@example.com for ${WAITING_SESSION.slug}: delivered=1 pruned=0`,
+    ]);
+  });
+
+  it("still skips a non-admin follower with no covering membership, and says so in the log", async () => {
+    const { prisma } = fakePrisma({
+      follows: [{ userEmail: "member@example.com", sessionSlug: WAITING_SESSION.slug }],
+    });
+    const { pushService, sent } = fakePushService();
+    const scope = fakeScopeServices({ "member@example.com": [] });
+    const lines: string[] = [];
+
+    const sweeper = new SessionAlertSweeper({
+      prisma,
+      pushService,
+      ...scope,
+      adminAllowedEmails: ["admin@example.com"],
+      log: (line) => lines.push(line),
+      fetchSessions: fetchSessionsDouble({ waiting: [WAITING_SESSION] }),
+      clock: FixedClock(new Date("2026-03-02T17:00:00Z")),
+      timezone: TZ,
+    });
+
+    const result = await sweeper.tick();
+    expect(result.immediate).toBe(0);
+    expect(sent).toHaveLength(0);
+    expect(lines).toHaveLength(1);
+    expect(lines[0]).toContain("skip member@example.com for sess-waiting: not visible");
+  });
+
+  it("never consults memberships for an allowlisted admin", async () => {
+    const { prisma } = fakePrisma({
+      follows: [{ userEmail: "admin@example.com", sessionSlug: WAITING_SESSION.slug }],
+    });
+    const { pushService } = fakePushService();
+    let membershipLookups = 0;
+    const sweeper = new SessionAlertSweeper({
+      prisma,
+      pushService,
+      agentMemberService: {
+        listByEmail: async () => {
+          membershipLookups++;
+          return [];
+        },
+      },
+      agentService: { listByIds: async () => [] },
+      adminAllowedEmails: ["admin@example.com"],
+      log: () => {},
+      fetchSessions: fetchSessionsDouble({ waiting: [WAITING_SESSION] }),
+      clock: FixedClock(new Date("2026-03-02T17:00:00Z")),
+      timezone: TZ,
+    });
+
+    const result = await sweeper.tick();
+    expect(result.immediate).toBe(1);
+    expect(membershipLookups).toBe(0);
+  });
+});

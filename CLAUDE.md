@@ -102,7 +102,7 @@ Tasks sharing a non-blank `session` field (set only by `/shipwright:plan-session
 **Session** — browsable in the admin UI's Sessions tab (`/admin/sessions`), which shows per-session
 task status and follow/notification controls. A background alert sweeper pushes "waiting" / reminder /
 "completed" notifications to session followers; see [`docs/task-store.md`](./docs/task-store.md#sessions)
-and [`docs/agent.md`](./docs/agent.md) for the full model.
+and [`docs/agent-web-ui.md`](./docs/agent-web-ui.md) for the full model.
 
 ### Execution loop
 
@@ -163,7 +163,7 @@ Each Prisma service reads its own `DATABASE_URL_*` — never a shared connection
 
 The schema uses `provider = "postgresql"`. All database connection strings must be Postgres connection strings: `postgresql://user:password@host:5432/database`.
 
-For the full configuration reference (all env vars, agent config, policy config), see [`docs/configuration.md`](./docs/configuration.md).
+For the full configuration reference (all env vars, agent config, policy config), see [`docs/configuration.md`](./docs/configuration.md) (agent runtime env vars split into [`docs/configuration-agent.md`](./docs/configuration-agent.md)).
 
 ## Debugging
 
@@ -176,7 +176,9 @@ To load additional context into a session, add `@docs/filename.md` entries here 
 - **docs/architecture.md** — the four-artifact A→B→C→D design (plugin / metrics / agent / task-store), supporting surfaces, and workspace layout
 - **docs/testing.md** — the five-layer test model (unit / integration / smoke / e2e / content), run commands, speed budgets, and the isolation contract
 - **docs/metrics.md** — metrics service (B): JSON endpoints, server-rendered dashboard, dual auth (Bearer / session), and environment
-- **docs/agent.md** — Shipwright agent (C): run modes, HTTP surfaces (runtime + admin CRUD APIs, chat UI, task board, PWA shell), the sixteen-model Prisma store, and encryption notes
+- **docs/agent.md** — Shipwright agent (C): run modes, HTTP surfaces (runtime + admin CRUD APIs), the sixteen-model Prisma store, and encryption notes
+- **docs/agent-web-ui.md** — Shipwright agent (C) browser-facing surfaces: admin chat UI, sessions list UI, session alert sweeper, public read-only task board, dev auto-login, and PWA shell — split out of docs/agent.md to stay under the docs line-count threshold
+- **docs/configuration-agent.md** — Shipwright agent (C) runtime env var reference (Claude/Anthropic, Slack, GitHub, Shipwright platform, server, database, provisioning, workspace/tooling, voice, dev-only) — split out of docs/configuration.md to stay under the docs line-count threshold
 - **docs/agent-ops.md** — Shipwright agent (C) operations: tool management/narrowing (floor vs. allowed tools), default system crons, environment variables, and baked marketplaces
 - **docs/agent-key-files.md** — Shipwright agent (C) key files: per-file reference table for `admin/src` and `agent/src`
 - **docs/agent-api.md** — the admin CRUD API (D): agent CRUD, auth paths, env vars, and runtime config
@@ -186,8 +188,9 @@ To load additional context into a session, add `@docs/filename.md` entries here 
 - **docs/mcp-tools.md** — generated MCP server tool reference (name, description, HTTP method/path, parameters, body) derived from task-store/openapi.json + the tool allowlist; regenerate with `bun run generate:mcp-docs`
 - **docs/chat.md** — chat service (D): auth model (admin vs. agent tokens, scope resolver), thread/message/token endpoints (incl. attachment streaming and the claim/reply queue), data model, and environment
 - **docs/session-notifications.md** — session-follow subsystem (C): the follow/mute + notification-prefs data model, the session-notification detail-level policy (operator ceiling × per-subscription opt-in × per-call ceiling), the `/admin/settings/notifications` page and follow/unfollow routes, and the `session-scope.ts` visibility model (not yet wired into most routes)
-- **docs/deploy-kubernetes.md** — Kubernetes deployment guide: networking model, the agent runtime-provisioning RBAC model, agent voice (STT/TTS), Web Push notifications, auth modes, and bringing your own PostgreSQL
+- **docs/deploy-kubernetes.md** — Kubernetes deployment guide: networking model, the agent runtime-provisioning RBAC model, and auth modes
 - **docs/deploy-kubernetes-providers.md** — per-provider Kubernetes deployment walkthroughs: Minikube (local), GKE (Gateway API + cert-manager), EKS (ALB), Traefik, and cloud-native (any cluster)
+- **docs/deploy-kubernetes-addons.md** — optional Kubernetes deploy add-ons: agent voice (STT/TTS), Web Push notifications, bringing your own PostgreSQL, and bundled ingress-controllers/cert-manager
 - **docs/helm-repo.md** — installing the published `shipwright` Helm chart, how chart publishing and version bumps are automated
 - **docs/quickstart.md** — local onboarding: metrics-only quickstart and the full dev stack (`task stack`)
 - **docs/test-readiness/test-system.md** — the authoritative test blueprint: layer matrix, boundary rules, per-component budgets, CI pipeline shape, and the full isolation contract

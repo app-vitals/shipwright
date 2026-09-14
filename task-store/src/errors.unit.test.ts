@@ -26,6 +26,7 @@ import {
   ConflictError,
   ForbiddenError,
   NotFoundError,
+  WebhookDeliveryError,
 } from "./errors.ts";
 
 describe("ApiError.status alias (Sentry defaultShouldHandleError contract)", () => {
@@ -40,8 +41,12 @@ describe("ApiError.status alias (Sentry defaultShouldHandleError contract)", () 
     ["ConflictError", new ConflictError(), 409],
     ["BadRequestError", new BadRequestError(), 400],
     ["ForbiddenError", new ForbiddenError(), 403],
-  ] as const)("exposes status equal to statusCode on %s", (_name, err, expectedStatus) => {
-    expect(err.status).toBe(err.statusCode);
-    expect(err.status).toBe(expectedStatus);
-  });
+    ["WebhookDeliveryError", new WebhookDeliveryError(), 502],
+  ] as const)(
+    "exposes status equal to statusCode on %s",
+    (_name, err, expectedStatus) => {
+      expect(err.status).toBe(err.statusCode);
+      expect(err.status).toBe(expectedStatus);
+    },
+  );
 });

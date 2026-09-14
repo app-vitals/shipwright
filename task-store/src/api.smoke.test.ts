@@ -14,7 +14,11 @@
 
 import { describe, expect, it } from "bun:test";
 import { createTaskStoreApp } from "./app.ts";
-import { ConflictError, NotFoundError } from "./errors.ts";
+import {
+  ConflictError,
+  NotFoundError,
+  WebhookDeliveryError,
+} from "./errors.ts";
 import type { Task } from "./index.ts";
 import type { SessionServiceLike } from "./session-service.ts";
 import type {
@@ -354,6 +358,26 @@ describe("task-store API (smoke)", () => {
       body: JSON.stringify({ claimedBy: "agent-a" }),
     });
     expect(res.status).toBe(409);
+  });
+
+  it("returns 502 for POST /tasks/:id/claim when the outbound webhook dispatcher fails (TSW-1.2)", async () => {
+    // TaskService.claim() fires the injected webhookDispatcher from inside
+    // its $transaction callback; a WebhookDeliveryError propagates uncaught
+    // out of the callback (Prisma rolls back), and the route layer's generic
+    // ApiError mapping in app.ts's onError surfaces WebhookDeliveryError's
+    // statusCode (502) unchanged — same wiring already used for
+    // ConflictError(409)/NotFoundError(404) above.
+    const app = makeApp({
+      taskService: fakeTaskService({
+        claimThrows: new WebhookDeliveryError("simulated webhook failure"),
+      }),
+    });
+    const res = await app.request("/tasks/task-1/claim", {
+      method: "POST",
+      headers: { ...auth(), "content-type": "application/json" },
+      body: JSON.stringify({ claimedBy: "agent-a" }),
+    });
+    expect(res.status).toBe(502);
   });
 
   it("returns 200 for a successful claim", async () => {

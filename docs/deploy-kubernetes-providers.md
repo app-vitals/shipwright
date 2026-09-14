@@ -4,11 +4,12 @@
 > specific target: Minikube (local), GKE (Gateway API + cert-manager), EKS (ALB
 > ingress + cert-manager), Traefik (ingress + cert-manager, any cluster), and
 > cloud-native (any cluster, no pre-installed ingress controller or cert-manager
-> required). For the cross-cutting concerns shared by all of them — the
-> networking model, agent runtime provisioning, agent voice, Web Push
-> notifications, authentication modes, bringing your own PostgreSQL, and the
-> bundled ingress-controller/cert-manager subcharts — see
-> [`deploy-kubernetes.md`](./deploy-kubernetes.md).
+> required). For the core concerns shared by all of them — the networking model,
+> agent runtime provisioning, and authentication modes — see
+> [`deploy-kubernetes.md`](./deploy-kubernetes.md). For the optional add-ons that
+> layer on top — agent voice, Web Push notifications, bringing your own
+> PostgreSQL, and the bundled ingress-controller/cert-manager subcharts — see
+> [`deploy-kubernetes-addons.md`](./deploy-kubernetes-addons.md).
 
 > Two install paths are interchangeable below. Install from the local chart
 > source (`charts/shipwright`) when working in this repo, or from the published
@@ -251,7 +252,7 @@ Gateway API, with TLS issued by cert-manager. A ready-to-apply example lives at
   `letsencrypt-prod`). If you're bringing your own cert-manager, its CRDs
   (`cert-manager.io/v1`) must exist before install. **Alternatively,** you can
   bundle cert-manager in this same Helm release (see [Bundled ingress
-  controllers and cert-manager](./deploy-kubernetes.md#bundled-ingress-controllers-and-cert-manager-optional)
+  controllers and cert-manager](./deploy-kubernetes-addons.md#bundled-ingress-controllers-and-cert-manager-optional)
   below) — the chart will then apply the `Certificate` after cert-manager's
   CRDs are ready via a post-install Job hook.
 
@@ -339,7 +340,7 @@ certificate management.
   requires no cert-manager), or cert-manager (when bundled or pre-installed). If
   bringing your own cert-manager, its CRDs (`cert-manager.io/v1`) must exist
   before install. Alternatively, you can bundle cert-manager in this same Helm
-  release (see [Bundled ingress controllers and cert-manager](./deploy-kubernetes.md#bundled-ingress-controllers-and-cert-manager-optional)
+  release (see [Bundled ingress controllers and cert-manager](./deploy-kubernetes-addons.md#bundled-ingress-controllers-and-cert-manager-optional)
   below) — the chart will then apply any chart-managed `Issuer` after
   cert-manager's CRDs are ready via a post-install Job hook.
 
@@ -473,7 +474,7 @@ Production deployment on any Kubernetes cluster with Traefik as the ingress cont
   `letsencrypt-prod`). If you're bringing your own cert-manager, its CRDs
   (`cert-manager.io/v1`) must exist before install. **Alternatively,** you can
   bundle cert-manager in this same Helm release (see [Bundled ingress
-  controllers and cert-manager](./deploy-kubernetes.md#bundled-ingress-controllers-and-cert-manager-optional)
+  controllers and cert-manager](./deploy-kubernetes-addons.md#bundled-ingress-controllers-and-cert-manager-optional)
   below) — the chart will then apply the `Ingress` TLS stanza and any
   chart-managed `Issuer` after cert-manager's CRDs are ready via a post-install
   Job hook.
@@ -625,7 +626,7 @@ issuer and set `admin.appBaseUrl` explicitly for OAuth/OIDC redirects — swap
 in a selfsigned issuer or your own hostname as needed. `admin.appBaseUrl`
 can now be left empty instead, since the chart auto-derives it from the
 ingress/gateway host. See [Bundled ingress
-controllers and cert-manager](./deploy-kubernetes.md#bundled-ingress-controllers-and-cert-manager-optional)
+controllers and cert-manager](./deploy-kubernetes-addons.md#bundled-ingress-controllers-and-cert-manager-optional)
 in the main deployment guide for the full values reference (per-subchart toggles, the CRD-bootstrap
 hook, and the mutual-exclusion rule between `ingress-nginx` and `traefik`),
 and [Minikube (local)](#minikube-local) for a dev-tuned variant of this same

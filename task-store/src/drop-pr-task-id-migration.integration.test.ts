@@ -24,7 +24,7 @@
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { PrismaClient } from "../prisma/client/index.js";
+import { type PrismaClient, createPrismaClient } from "./prisma-client.ts";
 
 const TEST_DB = process.env.DATABASE_URL_SHIPWRIGHT_TASK_STORE_TEST;
 
@@ -43,10 +43,8 @@ const MIGRATION_SQL_PATH = join(
 );
 
 function makePrisma(): PrismaClient {
-  return new PrismaClient({
-    // TEST_DB is guaranteed set — the describe block is skipped otherwise.
-    datasources: { db: { url: TEST_DB as string } },
-  });
+  // TEST_DB is guaranteed set — the describe block is skipped otherwise.
+  return createPrismaClient(TEST_DB as string);
 }
 
 /**

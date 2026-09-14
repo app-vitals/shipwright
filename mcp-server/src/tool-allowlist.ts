@@ -45,6 +45,14 @@ import type { GeneratedTool } from "./generated-tools.ts";
  * shape of what's excluded above: `prs_findings` is a write op, and
  * `tasks_events` / `prs_events` are audit-trail internals unrelated to
  * per-agent scoping. This is a considered inclusion, not an omission.
+ *
+ * `sessions_update` (PATCH /sessions/{slug}, added to task-store/openapi.json
+ * for SESH-3.1) surfaced when this file was next regenerated: it's excluded
+ * here, not added to the public surface. Unlike `sessions_list`/`sessions_get`
+ * above, the route itself is admin-only (`session updates are admin-only` —
+ * task-store/src/routes/sessions.ts throws `ForbiddenError` for any non-admin
+ * token), so it's in the same "write op outside the agreed edit surface"
+ * category as `prs_findings`, not the "agent-token-scoped read" category.
  */
 export const EXCLUDED_TOOLS: readonly string[] = [
   // tasks: pipeline-internal lifecycle
@@ -75,6 +83,8 @@ export const EXCLUDED_TOOLS: readonly string[] = [
   "tasks_events",
   "prs_events",
   "prs_findings",
+  // sessions: admin-only write op
+  "sessions_update",
 ] as const;
 
 /**

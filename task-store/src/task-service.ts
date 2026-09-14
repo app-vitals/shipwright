@@ -14,13 +14,19 @@
 
 import { type BlockedByEntry, computeBlockedBy } from "./blocked-by.ts";
 import { type Clock, SystemClock } from "./clock.ts";
-import { BadRequestError, ConflictError, NotFoundError } from "./errors.ts";
+import {
+  BadRequestError,
+  ConflictError,
+  NotFoundError,
+  WebhookDeliveryError,
+} from "./errors.ts";
 import type { Prisma, PrismaClient, Task, TaskEvent } from "./index.ts";
 import { buildRepoOrgWhere } from "./lib/repo-org-filter.ts";
 import { resolveReadyTasks } from "./ready.ts";
 import { SessionService } from "./session-service.ts";
 import { CLOSED_STATUSES, OPEN_STATUSES } from "./statuses.ts";
 import { writeTaskEvents } from "./task-transition-diff.ts";
+import type { WebhookDispatcher } from "./webhook-dispatcher.ts";
 
 /**
  * The Prisma client surface shared by the top-level client and a
@@ -43,6 +49,88 @@ export { CLOSED_STATUSES, OPEN_STATUSES };
  * agent/ and task-store/ are separate deployables.
  */
 const SKIP_BLOCK_THRESHOLD = 3;
+
+/**
+ * Explicit interactive-transaction `timeout` for every write path that now
+ * dispatches an outbound `task.write` webhook from inside its transaction
+ * (TSW-1.2: create/update/claim/complete/fail/release/recordSkip/resetSkip).
+ *
+ * Prisma's default interactive-transaction `timeout` is 5000ms — the same as
+ * the dispatcher's own default request timeout (`DEFAULT_WEBHOOK_TIMEOUT_MS`
+ * in main.ts) — and Prisma's clock starts when the transaction *opens*, not
+ * when the webhook call starts. Because the dispatcher runs after this
+ * transaction's own findUnique/update/recordTaskTransition queries have
+ * already spent part of that budget, a slow-but-not-yet-failing receiver
+ * would trip Prisma's transaction timeout *before* the dispatcher's own
+ * `AbortSignal.timeout()` fired. Prisma then throws its own
+ * transaction-already-closed error, which is neither a `WebhookDeliveryError`
+ * nor any other `ApiError`, so `translateNotFound()` (P2025-only) passes it
+ * through and app.ts's `onError` answers a generic 500 instead of the
+ * documented 502.
+ *
+ * Setting the transaction budget well above the webhook timeout keeps the
+ * dispatcher's own AbortSignal the first clock to fire, so a slow receiver
+ * always surfaces as `WebhookDeliveryError` → 502 with the transaction rolled
+ * back, exactly as documented. main.ts warns at startup when a configured
+ * `SHIPWRIGHT_TASK_STORE_WEBHOOK_TIMEOUT_MS` erodes that headroom (see
+ * `checkWebhookTimeoutBuffer`).
+ *
+ * `maxWait` is deliberately left at Prisma's 2000ms default: it bounds
+ * acquiring a pool connection *before* the transaction opens, which the
+ * webhook call happens after and therefore cannot affect.
+ */
+export const WEBHOOK_TX_TIMEOUT_MS = 10_000;
+
+/**
+ * The options object handed to each dispatching `$transaction` call. Shared
+ * so all eight write paths stay on one value — a per-call literal would let
+ * them drift apart silently.
+ */
+const WEBHOOK_TX_OPTIONS = { timeout: WEBHOOK_TX_TIMEOUT_MS } as const;
+
+/**
+ * Per-task budget added on top of `WEBHOOK_TX_TIMEOUT_MS` for `bulk()`.
+ *
+ * The eight single-item write paths above each do a bounded amount of work
+ * (one or two queries plus the dispatcher call), so one fixed budget fits
+ * them all. `bulk()` does not: since TSW-1.3 it runs N creates + N session
+ * upserts inside ONE transaction before the dispatcher is even called, so
+ * its work scales with `tasks.length` while the fixed budget would not.
+ * Left fixed, a large-enough batch would blow the 10s budget and surface as
+ * a raw Prisma transaction-timeout error — which is neither a
+ * `WebhookDeliveryError` nor any other `ApiError`, so app.ts's `onError`
+ * would answer a generic 500 instead of the documented 409/502.
+ *
+ * 100ms per task is heavy overprovisioning against a measured create +
+ * upsert pair (single-digit ms on a healthy Postgres), so the batch's own
+ * inserts can't be what exhausts the budget; the `WEBHOOK_TX_TIMEOUT_MS`
+ * floor still covers the dispatcher round-trip exactly as before, keeping
+ * the dispatcher's own AbortSignal the first clock to fire.
+ */
+export const BULK_TX_PER_TASK_TIMEOUT_MS = 100;
+
+/**
+ * Hard cap on tasks per `bulk()` call. Bounds the worst-case transaction
+ * budget (and therefore how long one call can hold a pool connection) at
+ * `WEBHOOK_TX_TIMEOUT_MS + MAX_BULK_TASKS * BULK_TX_PER_TASK_TIMEOUT_MS` —
+ * without it, `bulkTxTimeoutMs()` would scale without limit. Sized well
+ * above any real caller: the plan/entropy/error/security/consolidation-fix
+ * skills that POST /tasks/bulk file tens of tasks per call, not hundreds.
+ * Over the cap is a caller error, so it's a clean 400 rather than a
+ * transaction left to time out.
+ */
+export const MAX_BULK_TASKS = 500;
+
+/**
+ * Transaction budget for a `bulk()` call of `taskCount` tasks: the shared
+ * single-item floor plus a per-task allowance. Exported for the
+ * timeout-conformance tests.
+ */
+export function bulkTxTimeoutMs(taskCount: number): number {
+  return (
+    WEBHOOK_TX_TIMEOUT_MS + Math.max(0, taskCount) * BULK_TX_PER_TASK_TIMEOUT_MS
+  );
+}
 
 /**
  * Parses an `updatedSince` filter value into a Date, matching the
@@ -299,6 +387,12 @@ export class TaskService implements TaskServiceLike {
   constructor(
     private prisma: PrismaClient,
     private clock: Clock = SystemClock(),
+    // Injected outbound event dispatcher (TSW-1.1). Defaults to a no-op so
+    // existing call sites (`new TaskService(prisma)` /
+    // `new TaskService(prisma, clock)`) are unaffected. Not yet invoked from
+    // any method here — wiring specific task-store events to fire it is
+    // future work.
+    private webhookDispatcher: WebhookDispatcher = async () => {},
   ) {
     this.sessionService = new SessionService(prisma, clock);
   }
@@ -584,47 +678,92 @@ export class TaskService implements TaskServiceLike {
     return this.prisma.$transaction(async (tx) => {
       const task = await tx.task.create({ data });
       await this.sessionService.upsert(tx, task.session);
+      // Fires after the task row + its session upsert have both landed, still
+      // inside this transaction — a thrown WebhookDeliveryError propagates
+      // uncaught here, so Prisma rolls back the create (and the session
+      // upsert) rather than leaving a task row an undelivered webhook never
+      // announced.
+      await this.webhookDispatcher("task.write", [task]);
       return task;
-    });
+    }, WEBHOOK_TX_OPTIONS);
   }
 
   /**
-   * Each task's create + its Session upsert run inside one $transaction per
-   * loop iteration (not one transaction for the whole bulk call) — this
-   * preserves the pre-existing partial-success semantics: one task's P2002
-   * collision (caught below) doesn't roll back tasks already inserted
-   * earlier in the same bulk() call, matching the try/catch-per-item
-   * behavior this had before session support was added.
+   * TSW-1.3: the whole bulk call runs inside ONE $transaction — not one
+   * $transaction per item (that was the pre-existing partial-success
+   * behavior, which this replaces). Every task's create() + its Session
+   * upsert are attempted in order; a P2002 collision on any single task
+   * (translated to ConflictError below, mirroring
+   * PullRequestService.claim()'s create-path P2002 handling) propagates
+   * uncaught out of the transaction callback, so Prisma rolls back every
+   * insert already made earlier in the same call — the whole batch is
+   * all-or-nothing. There is no more partial-success/skip outcome: a
+   * collision anywhere in the batch fails the entire call with 409, and the
+   * caller is expected to fix the collision and retry the whole batch (the
+   * skills that call this endpoint already treat a non-2xx response as
+   * "log, stop, rerun is idempotent" — see TSW-1.3 planning notes).
+   *
+   * Once every task has been created successfully, the dispatcher is called
+   * exactly once with the full array of created rows — mirrors create()'s
+   * single-item `webhookDispatcher("task.write", [task])` call, just with
+   * N rows instead of one. A thrown WebhookDeliveryError from that call also
+   * propagates uncaught, rolling back the entire batch (same rollback-on-
+   * throw contract as create()/update()/claim() above).
+   *
+   * Unlike the single-item write paths, this one does NOT use the shared
+   * fixed `WEBHOOK_TX_OPTIONS`: the amount of work inside the transaction
+   * now scales with `tasks.length`, so the budget scales with it too (see
+   * `bulkTxTimeoutMs`), bounded by the `MAX_BULK_TASKS` cap enforced below.
    */
   async bulk(
     tasks: Prisma.TaskCreateInput[],
   ): Promise<{ inserted: number; updated: number; skipped: string[] }> {
-    let inserted = 0;
-    const skipped: string[] = [];
-    for (const task of tasks) {
-      try {
-        await this.prisma.$transaction(async (tx) => {
-          const created = await tx.task.create({ data: task });
-          await this.sessionService.upsert(tx, created.session);
-        });
-        inserted++;
-      } catch (err: unknown) {
-        // P2002 = unique constraint violation (id already exists) — skip, but
-        // record the id so callers can see which tasks collided instead of
-        // this being silently swallowed.
-        if (
-          typeof err === "object" &&
-          err !== null &&
-          "code" in err &&
-          (err as { code: string }).code === "P2002"
-        ) {
-          if (typeof task.id === "string") skipped.push(task.id);
-          continue;
-        }
-        throw err;
-      }
+    // Rejected before the transaction opens: an over-cap batch is a caller
+    // error, and answering 400 up front is strictly better than opening a
+    // transaction whose budget we've deliberately declined to extend that
+    // far (which would time out into a generic 500 instead).
+    if (tasks.length > MAX_BULK_TASKS) {
+      throw new BadRequestError(
+        `bulk insert accepts at most ${MAX_BULK_TASKS} tasks per call (received ${tasks.length}) — split the batch`,
+      );
     }
-    return { inserted, updated: 0, skipped };
+    const createdRows = await this.prisma.$transaction(
+      async (tx) => {
+        const rows: Task[] = [];
+        for (const task of tasks) {
+          let created: Task;
+          try {
+            created = await tx.task.create({ data: task });
+          } catch (err: unknown) {
+            // P2002 = unique constraint violation (id already exists) —
+            // translate to ConflictError so it propagates uncaught and rolls
+            // back the whole transaction, rather than being swallowed/skipped.
+            if (
+              typeof err === "object" &&
+              err !== null &&
+              "code" in err &&
+              (err as { code: string }).code === "P2002"
+            ) {
+              throw new ConflictError(
+                `task '${task.id}' already exists — bulk() is all-or-nothing, the whole batch was rolled back`,
+              );
+            }
+            throw err;
+          }
+          await this.sessionService.upsert(tx, created.session);
+          rows.push(created);
+        }
+        // Fires once for the whole batch, after every row has landed, still
+        // inside this transaction — see JSDoc above.
+        await this.webhookDispatcher("task.write", rows);
+        return rows;
+      },
+      { timeout: bulkTxTimeoutMs(tasks.length) },
+    );
+    // skipped is always [] on success now — kept only for response-shape
+    // backward compatibility (AC4); collisions hard-fail the whole batch via
+    // ConflictError above instead of populating it.
+    return { inserted: createdRows.length, updated: 0, skipped: [] };
   }
 
   async update(id: string, data: Prisma.TaskUpdateInput): Promise<Task> {
@@ -646,8 +785,12 @@ export class TaskService implements TaskServiceLike {
           "update",
           existing?.claimedBy ?? "system",
         );
+        // Same rollback-on-throw contract as create() above: a
+        // WebhookDeliveryError here propagates uncaught and Prisma rolls
+        // back the update.
+        await this.webhookDispatcher("task.write", [record]);
         return record;
-      });
+      }, WEBHOOK_TX_OPTIONS);
     } catch (err: unknown) {
       throw this.translateNotFound(err, "task not found");
     }
@@ -661,6 +804,11 @@ export class TaskService implements TaskServiceLike {
    * cascade, this is the one call path that explicitly removes a task
    * (`DELETE /tasks/:id`), so deliberately wiping its audit trail here is the
    * caller's explicit intent, not an accidental side effect elsewhere.
+   *
+   * TSW-1.2: deliberately does NOT call webhookDispatcher — by the time this
+   * transaction commits, the Task row is gone, so there's no surviving row
+   * to send as `data: [task]`; a "this task was deleted" event is a
+   * different, not-yet-specified event shape, not `task.write`.
    */
   async remove(id: string): Promise<void> {
     try {
@@ -718,10 +866,17 @@ export class TaskService implements TaskServiceLike {
 
         await this.recordTaskTransition(tx, before, after, "claim", claimedBy);
 
+        // Same rollback-on-throw contract as create()/update() above.
+        await this.webhookDispatcher("task.write", [after]);
+
         return after;
-      });
+      }, WEBHOOK_TX_OPTIONS);
     } catch (err: unknown) {
-      if (err instanceof NotFoundError || err instanceof ConflictError) {
+      if (
+        err instanceof NotFoundError ||
+        err instanceof ConflictError ||
+        err instanceof WebhookDeliveryError
+      ) {
         throw err;
       }
       // The Aug 29 500-on-reclaim didn't come from the documented
@@ -745,6 +900,13 @@ export class TaskService implements TaskServiceLike {
    * would be a guaranteed no-op here. Skipping it entirely keeps this hot
    * liveness path a single cheap UPDATE. Mirrors
    * PullRequestService.heartbeat()'s identical rationale.
+   *
+   * TSW-1.2: deliberately does NOT call webhookDispatcher either, for the
+   * same reason it's excluded from the TaskEvent audit trail above — it's
+   * the hottest-volume write path in the service (every claimed task across
+   * the whole agent fleet touches it on a tight interval) and a
+   * heartbeatAt-only change is not an audit-worthy event for downstream
+   * consumers to react to.
    */
   async heartbeat(id: string): Promise<Task> {
     const now = this.clock.now().toISOString();
@@ -778,8 +940,10 @@ export class TaskService implements TaskServiceLike {
           "complete",
           before?.claimedBy ?? "system",
         );
+        // Same rollback-on-throw contract as create()/update()/claim() above.
+        await this.webhookDispatcher("task.write", [record]);
         return record;
-      });
+      }, WEBHOOK_TX_OPTIONS);
     } catch (err: unknown) {
       throw this.translateNotFound(err, "task not found");
     }
@@ -806,8 +970,10 @@ export class TaskService implements TaskServiceLike {
           "fail",
           before?.claimedBy ?? "system",
         );
+        // Same rollback-on-throw contract as create()/update()/claim() above.
+        await this.webhookDispatcher("task.write", [record]);
         return record;
-      });
+      }, WEBHOOK_TX_OPTIONS);
     } catch (err: unknown) {
       throw this.translateNotFound(err, "task not found");
     }
@@ -835,8 +1001,10 @@ export class TaskService implements TaskServiceLike {
           "release",
           before?.claimedBy ?? "system",
         );
+        // Same rollback-on-throw contract as create()/update()/claim() above.
+        await this.webhookDispatcher("task.write", [record]);
         return record;
-      });
+      }, WEBHOOK_TX_OPTIONS);
     } catch (err: unknown) {
       throw this.translateNotFound(err, "task not found");
     }
@@ -881,8 +1049,10 @@ export class TaskService implements TaskServiceLike {
           "recordSkip",
           before?.claimedBy ?? "system",
         );
+        // Same rollback-on-throw contract as create()/update()/claim() above.
+        await this.webhookDispatcher("task.write", [updated]);
         return updated;
-      });
+      }, WEBHOOK_TX_OPTIONS);
     } catch (err: unknown) {
       throw this.translateNotFound(err, "task not found");
     }
@@ -904,8 +1074,10 @@ export class TaskService implements TaskServiceLike {
           "resetSkip",
           before?.claimedBy ?? "system",
         );
+        // Same rollback-on-throw contract as create()/update()/claim() above.
+        await this.webhookDispatcher("task.write", [record]);
         return record;
-      });
+      }, WEBHOOK_TX_OPTIONS);
     } catch (err: unknown) {
       throw this.translateNotFound(err, "task not found");
     }

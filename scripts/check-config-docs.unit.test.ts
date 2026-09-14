@@ -10,6 +10,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import {
+  collectDocumentedVars,
   collectTsFiles,
   extractDocumentedVars,
   extractEnvVarNames,
@@ -325,5 +326,79 @@ describe("collectTsFiles", () => {
     expect(out).toContain("/already/here.ts");
     expect(out).toContain(join(scratchDir, "new.ts"));
     expect(out).toHaveLength(2);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// collectDocumentedVars
+// ---------------------------------------------------------------------------
+
+describe("collectDocumentedVars", () => {
+  let scratchDir: string;
+
+  beforeEach(() => {
+    scratchDir = mkdtempSync(join(tmpdir(), "check-config-docs-union-"));
+  });
+
+  afterEach(() => {
+    rmSync(scratchDir, { recursive: true, force: true });
+  });
+
+  test("unions documented vars across two files", () => {
+    const fileA = join(scratchDir, "a.md");
+    const fileB = join(scratchDir, "b.md");
+    writeFileSync(
+      fileA,
+      `
+| Name | Description |
+|---|---|
+| \`ONLY_IN_A\` | Var only in file A. |
+`,
+    );
+    writeFileSync(
+      fileB,
+      `
+| Name | Description |
+|---|---|
+| \`ONLY_IN_B\` | Var only in file B. |
+`,
+    );
+
+    const vars = collectDocumentedVars([fileA, fileB]);
+
+    expect(vars.has("ONLY_IN_A")).toBe(true);
+    expect(vars.has("ONLY_IN_B")).toBe(true);
+  });
+
+  test("deduplicates a var that appears in both files", () => {
+    const fileA = join(scratchDir, "a.md");
+    const fileB = join(scratchDir, "b.md");
+    writeFileSync(
+      fileA,
+      `
+| Name | Description |
+|---|---|
+| \`SHARED_VAR\` | Defined in A. |
+`,
+    );
+    writeFileSync(
+      fileB,
+      `
+| Name | Description |
+|---|---|
+| \`SHARED_VAR\` | Also defined in B. |
+`,
+    );
+
+    const vars = collectDocumentedVars([fileA, fileB]);
+    const asArray = Array.from(vars).filter((v) => v === "SHARED_VAR");
+
+    expect(asArray).toHaveLength(1);
+  });
+
+  test("throws when a given path does not exist", () => {
+    const missingPath = join(scratchDir, "does-not-exist.md");
+
+    expect(() => collectDocumentedVars([missingPath])).toThrow();
   });
 });
