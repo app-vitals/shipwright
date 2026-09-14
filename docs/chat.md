@@ -1,8 +1,10 @@
 # Chat Service
 
-The Shipwright chat service (`@shipwright/chat`) is a standalone Hono service that stores conversation threads between agents and their human members — the backing store for the admin console's Chat tab and the agent's chat poll loop.
+The Shipwright chat service (`@shipwright/chat`) is a standalone Hono service that stores conversation threads between agents and their human members — the backing store for the admin console's Chat tab and the agent's chat poll loop. All routes are mounted at the service root (no base path), e.g. `http://localhost:3003`.
 
-Base path: none (all routes are mounted at the service root, e.g. `http://localhost:3003`).
+**Full endpoint reference** — every route, parameter, request/response shape, and status code, including behavioral nuance like the claim/reply queue's precondition ordering and transactional atomicity — lives in the generated [`chat/openapi.json`](../chat/openapi.json) spec. Request/response shapes are validated and documented via Zod schemas with OpenAPI metadata in `chat/src/openapi-schemas.ts` (mirrors the pattern in `admin/src/openapi-schemas.ts`); the spec is generated from those schemas via `chat/src/generate-spec.ts` and can be regenerated any time with `bun run generate:chat-spec` (or `npm run generate:chat-spec`).
+
+This page covers the conceptual auth model, the storage schema, environment config, and cross-cutting queue behavior that don't belong to any single endpoint.
 
 ---
 
@@ -41,217 +43,9 @@ When configured with `SHIPWRIGHT_CHAT_PUSH_WEBHOOK_URL` + `SHIPWRIGHT_CHAT_PUSH_
 
 ---
 
-## Tokens
-
-Admin-only endpoints for managing chat service tokens. Mounted at `/tokens`.
-
-#### List tokens
-
-```
-GET /tokens
-```
-
-Returns token metadata (hash + label + `agentId`) ordered by `createdAt`. Never returns raw token values.
-
-#### Create token
-
-```
-POST /tokens
-```
-
-Body (optional JSON): `{ label?: string, agentId?: string }`. Omitting `agentId` creates an admin token. Returns `201` with the token record plus `rawToken` — the raw value is returned **once** and not stored.
-
-#### Update token
-
-```
-PATCH /tokens/:id
-```
-
-Body: `{ label?: string, agentId?: string }`. Returns `404` if the token doesn't exist, or `400` if the token is already revoked. Returns the updated token record.
-
-#### Revoke token
-
-```
-DELETE /tokens/:id
-```
-
-Soft-deletes the token (sets `revokedAt`). Returns `404` if not found, otherwise the revoked token record with `200`.
-
----
-
-## Threads
-
-CRUD for conversation threads. Mounted at `/threads`. Agent tokens are scoped to threads where `thread.agentId === callerAgentId` — any operation against a thread owned by a different agent returns `403`.
-
-#### List threads
-
-```
-GET /threads
-```
-
-Query params: `agentId` (admin only — agent tokens are forced to their own ID), `memberId`, `limit` (default `50`, capped at `200`), `offset` (default `0`).
-
-Returns `{ threads: Thread[], total: number, limit: number, offset: number }`, ordered by `updatedAt` descending.
-
-#### Create thread
-
-```
-POST /threads
-```
-
-Body: `{ agentId: string, memberId?: string, title?: string }`. `agentId` is required — returns `400` if missing. Agent tokens may only create threads for their own `agentId` — mismatched `agentId` returns `403`. Returns `201` with the created thread.
-
-#### Get thread
-
-```
-GET /threads/:id
-```
-
-Returns `404` if not found, `403` if an agent token doesn't own the thread. Returns the thread with `200`.
-
-#### Thread stats
-
-```
-GET /threads/:id/stats
-```
-
-Returns aggregate usage for the thread:
-
-```json
-{
-  "messageCount": 12,
-  "totalInputTokens": 4200,
-  "totalOutputTokens": 1830,
-  "totalCostUsd": 0.42
-}
-```
-
-`messageCount` and `totalCostUsd` are computed via a SQL aggregate over `Message`. Token totals are summed in application code from each message's `tokens` JSON blob (`input_tokens` / `output_tokens` keys) — Postgres can't aggregate inside a JSON column, so every message in the thread is loaded to compute this. Acceptable for admin-only usage; threads with very large message counts incur proportional memory overhead.
-
-#### Update thread
-
-```
-PATCH /threads/:id
-```
-
-Body: `{ title?: string | null, memberId?: string | null }`. Returns `404` if not found, `403` if scope-mismatched. Returns the updated thread with `200`.
-
-#### Delete thread
-
-```
-DELETE /threads/:id
-```
-
-Cascades to all messages in the thread (`onDelete: Cascade` in the schema). Returns `404` if not found, `403` if scope-mismatched, otherwise the deleted thread with `200`.
-
----
-
-## Messages
-
-CRUD plus the claim/reply queue API. Mounted at `/threads/:threadId/messages`. Every route first resolves the parent thread and applies the same agent-scope check as the thread routes — `404` if the thread doesn't exist, `403` if an agent token doesn't own it.
-
-#### List messages
-
-```
-GET /threads/:threadId/messages
-```
-
-Query params: `limit` (default `50`, capped at `200`), `offset` (default `0`). Returns `{ messages: Message[], total: number, limit: number, offset: number }`, ordered by `createdAt` ascending.
-
-#### Create message
-
-```
-POST /threads/:threadId/messages
-```
-
-Body: `{ role: "user" | "assistant", body: string, tokens?: JsonValue, costUsd?: number, attachmentFilename?: string, attachmentSize?: number, attachmentBytes?: string (base64) | Uint8Array }`. `role` and `body` are required — returns `400` if missing or if `role` is not `"user"`/`"assistant"`. Returns `201` with the created message.
-
-**Attachment size guard:** `attachmentBytes` is capped at `MAX_ATTACHMENT_BYTES` (10 MB) — oversized payloads return `413`. The cap exists because `attachmentBytes` is a Postgres `bytea` column loaded in full on every `Message` read; removing the cap risks WAL bloat.
-
-#### Claim (queue API)
-
-```
-POST /threads/:threadId/messages/claim
-```
-
-Atomically claims the oldest unclaimed `role: "user"` message in the thread — the mechanism the agent's chat poll loop uses to pick up new member messages without double-processing. `claimedBy` is set to the caller's `agentId` (or `"admin"` for admin tokens). Returns `404` if no unclaimed messages exist, otherwise the claimed message with `200`. Concurrent claims on the same message are resolved by a conditional update (`WHERE claimed = false`); the loser gets `404`, not an error.
-
-#### Get attachment
-
-```
-GET /threads/:threadId/messages/:id/attachment
-```
-
-Streams the stored `attachmentBytes` once with `Content-Type: application/octet-stream` and a `Content-Disposition` header set to the message's `attachmentFilename`. Returns `404` if the message has no attachment. **Ephemeral retention** — after the bytes are served, they are dropped from the row (`clearAttachmentBytes`) so the content is not retained once the agent has pulled it into its workspace.
-
-#### Get message
-
-```
-GET /threads/:threadId/messages/:id
-```
-
-Returns `404` if not found or if the message doesn't belong to `:threadId`.
-
-#### Update message
-
-```
-PATCH /threads/:threadId/messages/:id
-```
-
-Body: `{ body?: string, tokens?: JsonValue, costUsd?: number | null, errorKind?: string | null }`. Returns `404` if not found. Returns the updated message with `200`.
-
-#### Delete message
-
-```
-DELETE /threads/:threadId/messages/:id
-```
-
-Returns `404` if not found, otherwise the deleted message with `200`.
-
-#### Heartbeat (queue API)
-
-```
-POST /threads/:threadId/messages/:id/heartbeat
-```
-
-Bumps `heartbeatAt` to now on the target message — proof of life while the claiming agent works a long-running reply. The agent's chat poll loop calls this on a fixed interval (`heartbeatIntervalMs`, default 3s) that runs for the whole duration of the reply — interval-driven rather than tied to Claude's turn cadence, since a single long-running tool call can go quiet for minutes between stream events. The admin chat UI uses `heartbeatAt` (alongside `claimedAt`) to extend its own timeout instead of tripping a flat cutoff. Scoped to the claim's owner: the caller's identity (`agentId`, or `"admin"` for the admin UI) must match the message's `claimedBy`, or the update no-ops.
-
-Optional request body: `{ phase?: string }`. When `phase` is provided, it must be one of the valid `PROGRESS_PHASES` — otherwise returns `400`. On success, `progressPhase` is updated and `progressSeq` is incremented atomically alongside `heartbeatAt`.
-
-The heartbeat is **bidirectional**: the returned message carries `cancelRequestedAt`, so the same 3s tick that proves liveness also tells the agent whether a cancel was requested — no second polling loop and no inbound HTTP surface on the agent (the pull-only architecture is preserved). The agent derives `HeartbeatResult { cancelRequested }` from that field and, when set, aborts the in-flight Claude run (worst-case cancel latency ≈ one heartbeat interval, ~3s).
-
-Returns `400` if `phase` is provided but invalid, `404` if the message doesn't exist, doesn't belong to `:threadId`, isn't currently claimed by the caller, or has already been replied to; otherwise the updated message with `200`.
-
-#### Cancel (queue API)
-
-```
-POST /threads/:threadId/messages/:id/cancel
-```
-
-Requests cancellation of an in-flight reply by stamping `cancelRequestedAt` on the target message. Auth is the same `requireThread` scope as the rest of the queue API; the route is registered before the generic `/:id` routes so `/:id/cancel` matches its own handler. Returns `404` if the message doesn't exist or doesn't belong to `:threadId`; otherwise the updated message with `200`. The claiming agent observes the request on its next heartbeat tick (see above) and aborts — the aborted run remains resumable (its session id is still saved) and is **not** retried.
-
-#### Reply (queue API)
-
-```
-POST /threads/:threadId/messages/:id/reply
-```
-
-Posts an agent's reply to a claimed user message — the second half of the claim/reply queue cycle. Body: `{ body: string, tokens?: JsonValue, costUsd?: number, errorKind?: string | null }`. `body` is required. `errorKind` (e.g. `"cancelled"`, `"incomplete"`, `"stalled"`) is stamped on the assistant message so the admin chat UI can render a status badge and a Retry action.
-
-Preconditions, checked in order:
-1. The target message must exist and belong to `:threadId` — `404`
-2. `role` must be `"user"` — replying to an assistant message returns `400`
-3. `repliedAt` must be `null` — replying twice returns `409`
-
-On success, sets `repliedAt` on the user message and creates a new `role: "assistant"` message in the same thread — both writes run inside a single `prisma.$transaction`, so a partial failure can never leave `repliedAt` set with no assistant message. Returns `201` with `{ userMessage: Message, assistantMessage: Message }`.
-
----
-
 ## Data model
 
-Three Prisma models, defined in `chat/prisma/schema.prisma` and owned exclusively by this service. Request and response shapes are validated and documented via Zod schemas with OpenAPI metadata in `chat/src/openapi-schemas.ts` — mirrors the pattern in `admin/src/openapi-schemas.ts`.
-
-The OpenAPI 3.1 specification is generated from these schemas via `chat/src/generate-spec.ts` and written to `chat/openapi.json`. Regenerate the spec at any time with `bun run generate:chat-spec` (or `npm run generate:chat-spec`).
+Three Prisma models, defined in `chat/prisma/schema.prisma` and owned exclusively by this service — these describe the stored data, which is distinct from the API request/response shapes in `chat/openapi.json`.
 
 ### ChatToken
 
@@ -321,3 +115,9 @@ Indexes: `[threadId, createdAt]` (message list ordering), `[claimed, threadId]` 
 On boot, `main.ts` runs `prisma migrate deploy` against `DATABASE_URL_SHIPWRIGHT_CHAT` as an idempotent preflight, throwing if migrations fail, before serving traffic.
 
 See [configuration.md](configuration.md) for the full env var reference across all services, and [configuration-agent.md](configuration-agent.md#metrics--admin--chat--task-store-services) for the agent-side `SHIPWRIGHT_CHAT_SERVICE_URL` / `SHIPWRIGHT_CHAT_SERVICE_TOKEN` / `SHIPWRIGHT_CHAT_POLL_INTERVAL_MS` vars that drive the chat poll loop consuming this API.
+
+---
+
+## Claim/reply queue behavior
+
+The agent's chat poll loop claims a message via `POST /threads/:threadId/messages/claim`, then heartbeats via `POST .../:id/heartbeat` on a fixed interval (`heartbeatIntervalMs`, default 3s) for the whole duration of the reply — interval-driven rather than tied to Claude's turn cadence, since a single long-running tool call can go quiet for minutes between stream events. Because the heartbeat response carries `cancelRequestedAt`, the same tick that proves liveness doubles as the agent's only cancellation signal (see `POST .../:id/cancel`) — there is no separate inbound HTTP surface on the agent, preserving its pull-only architecture. The admin chat UI uses `heartbeatAt` (alongside `claimedAt`) to extend its own timeout instead of tripping a flat cutoff.
