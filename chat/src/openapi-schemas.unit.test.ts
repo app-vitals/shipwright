@@ -5,6 +5,7 @@
  */
 
 import { describe, expect, test } from "bun:test";
+import { buildChatSpec } from "./generate-spec.ts";
 import {
   type ChatToken,
   ChatTokenSchema,
@@ -370,5 +371,51 @@ describe("ErrorSchema", () => {
   test("rejects missing error string", () => {
     const result = ErrorSchema.safeParse({});
     expect(result.success).toBe(false);
+  });
+});
+
+// ─── OpenAPI route metadata (summary/description on every createRoute) ────────
+//
+// Builds the merged spec via buildChatSpec() — the same stub-deps assembly
+// used by scripts/generate-chat-spec.ts to write chat/openapi.json — and walks
+// every operation in the resulting paths object. No handler is ever invoked
+// (we never call app.request()), only route registration +
+// getOpenAPI31Document(), so this test asserts on route *metadata*, not
+// handler behavior (that's covered by the smoke tests).
+
+function collectUndocumentedOperations(paths: unknown): string[] {
+  const issues: string[] = [];
+  const pathEntries = Object.entries(
+    (paths ?? {}) as Record<string, Record<string, unknown>>,
+  );
+  for (const [path, methods] of pathEntries) {
+    for (const [method, operation] of Object.entries(methods)) {
+      const op = operation as { summary?: unknown; description?: unknown };
+      const summary = typeof op.summary === "string" ? op.summary.trim() : "";
+      const description =
+        typeof op.description === "string" ? op.description.trim() : "";
+      if (!summary || !description) {
+        issues.push(`${method.toUpperCase()} ${path}`);
+      }
+    }
+  }
+  return issues;
+}
+
+describe("OpenAPI route metadata", () => {
+  test("every chat route has a non-empty summary and description", () => {
+    const spec = buildChatSpec() as { paths?: unknown };
+
+    const issues = collectUndocumentedOperations(spec.paths);
+
+    const totalOperations = Object.values(
+      (spec.paths ?? {}) as Record<string, Record<string, unknown>>,
+    ).reduce((n, methods) => n + Object.keys(methods).length, 0);
+    // Sanity check that this test is actually walking a non-trivial number of
+    // routes (chat has exactly 20 routes across tokens/threads/messages) —
+    // guards against the assertion silently checking zero operations.
+    expect(totalOperations).toBe(20);
+
+    expect(issues).toEqual([]);
   });
 });

@@ -18,6 +18,7 @@
           "tokens"
         ],
         "summary": "List all tokens",
+        "description": "Admin-only. Returns token metadata (hash + label + agentId) ordered by createdAt. Never returns raw token values — only the SHA-256 hash is persisted, and the raw value is returned once, at creation.",
         "security": [
           {
             "bearerAuth": []
@@ -54,6 +55,7 @@
           "tokens"
         ],
         "summary": "Create a new token — raw value returned exactly once",
+        "description": "Admin-only. Body is optional JSON: `{ label?: string, agentId?: string }`. Omitting `agentId` creates an admin token (unrestricted); setting it creates an agent token scoped to that agent's own threads. Returns 201 with the token record plus `rawToken` — the raw 64-char hex value is returned exactly once and is never stored (only its SHA-256 hash persists).",
         "security": [
           {
             "bearerAuth": []
@@ -99,6 +101,7 @@
           "tokens"
         ],
         "summary": "Update token label and/or agentId",
+        "description": "Admin-only. Body: `{ label?: string, agentId?: string }`. Returns 404 if the token doesn't exist, or 400 if the token has already been revoked (revoked tokens are immutable). Returns the updated token record.",
         "security": [
           {
             "bearerAuth": []
@@ -173,6 +176,7 @@
           "tokens"
         ],
         "summary": "Revoke a token",
+        "description": "Admin-only. Soft-deletes the token by setting `revokedAt` — the token row is not removed. Returns 404 if not found, otherwise the revoked token record with 200.",
         "security": [
           {
             "bearerAuth": []
@@ -229,6 +233,7 @@
           "threads"
         ],
         "summary": "List threads (scoped to agentId for agent tokens)",
+        "description": "Agent tokens are forced to their own agentId regardless of the `agentId` query param; only admin tokens may filter by an arbitrary `agentId` or `memberId`. `limit` defaults to 50 (capped at 200), `offset` defaults to 0. Returns threads ordered by `updatedAt` descending.",
         "security": [
           {
             "bearerAuth": []
@@ -290,6 +295,7 @@
           "threads"
         ],
         "summary": "Create a thread",
+        "description": "Body: `{ agentId: string, memberId?: string, title?: string }`. `agentId` is required — returns 400 if missing. Agent tokens may only create threads for their own agentId; a mismatched agentId returns 403. Returns 201 with the created thread.",
         "security": [
           {
             "bearerAuth": []
@@ -345,6 +351,7 @@
           "threads"
         ],
         "summary": "Get aggregated stats for a thread",
+        "description": "Returns `messageCount`, `totalInputTokens`, `totalOutputTokens`, and `totalCostUsd` for the thread. `messageCount` and `totalCostUsd` are computed via a SQL aggregate, but token totals are summed in application code from each message's `tokens` JSON blob — Postgres can't aggregate inside a JSON column, so every message in the thread is loaded into memory to compute this. Acceptable for admin-only usage today, but threads with very large message counts incur proportional memory overhead. 403 if an agent token doesn't own the thread; 404 if the thread doesn't exist.",
         "security": [
           {
             "bearerAuth": []
@@ -401,6 +408,7 @@
           "threads"
         ],
         "summary": "Get a thread by id",
+        "description": "Agent tokens are scoped to threads where `thread.agentId` matches their own agentId — a mismatched thread returns 403. Returns 404 if the thread doesn't exist, otherwise the thread with 200.",
         "security": [
           {
             "bearerAuth": []
@@ -455,6 +463,7 @@
           "threads"
         ],
         "summary": "Update thread title and/or memberId",
+        "description": "Body: `{ title?: string | null, memberId?: string | null }`. 403 if an agent token doesn't own the thread; 404 if not found. Returns the updated thread with 200.",
         "security": [
           {
             "bearerAuth": []
@@ -519,6 +528,7 @@
           "threads"
         ],
         "summary": "Delete a thread",
+        "description": "Cascades to all messages in the thread (`onDelete: Cascade` in the schema) — this is not soft-delete. 403 if an agent token doesn't own the thread; 404 if not found. Otherwise returns the deleted thread with 200.",
         "security": [
           {
             "bearerAuth": []
@@ -575,6 +585,7 @@
           "messages"
         ],
         "summary": "List messages in a thread",
+        "description": "First resolves the parent thread and applies the same agent-scope check as the thread routes — 404 if the thread doesn't exist, 403 if an agent token doesn't own it. `limit` defaults to 50 (capped at 200), `offset` defaults to 0. Returns messages ordered by `createdAt` ascending.",
         "parameters": [
           {
             "schema": {
@@ -623,6 +634,7 @@
           "messages"
         ],
         "summary": "Create a message",
+        "description": "`role` and `body` are required — 400 if missing, or if `role` is not `\"user\"`/`\"assistant\"`. `attachmentBytes` (base64 or raw bytes) is capped at 10 MB (`MAX_ATTACHMENT_BYTES`) — oversized payloads return 413, because `attachmentBytes` maps to a Postgres `bytea` column loaded in full on every message read; the cap exists to prevent WAL bloat. Returns 201 with the created message.",
         "requestBody": {
           "content": {
             "application/json": {
@@ -682,6 +694,7 @@
           "messages"
         ],
         "summary": "Claim the next unclaimed user message in a thread",
+        "description": "Atomically claims the oldest unclaimed `role: \"user\"` message in the thread — the mechanism the agent's chat poll loop uses to pick up new member messages without double-processing. `claimedBy` is set to the caller's agentId (or `\"admin\"` for admin tokens). Concurrent claims on the same message are resolved by a conditional update (`WHERE claimed = false`); the loser gets 404, not an error. Returns 404 if no unclaimed messages exist.",
         "responses": {
           "200": {
             "description": "Claimed message",
@@ -712,6 +725,7 @@
           "messages"
         ],
         "summary": "Stream a message's attachment (ephemeral — cleared after read)",
+        "description": "Streams the stored `attachmentBytes` once with `Content-Type: application/octet-stream` and a `Content-Disposition` header set to the message's `attachmentFilename`. Ephemeral retention: after the bytes are served, they are dropped from the row (`clearAttachmentBytes`), so the content is not retained once the agent has pulled it into its workspace — a second call returns 404 (no attachment). Also 404 if the thread or message doesn't exist.",
         "parameters": [
           {
             "schema": {
@@ -754,6 +768,7 @@
           "messages"
         ],
         "summary": "Request cancellation of an in-flight reply — the claiming agent aborts on its next heartbeat tick",
+        "description": "Stamps `cancelRequestedAt` on the target message. The claiming agent observes the request on its next heartbeat tick (worst-case cancel latency ≈ one heartbeat interval, ~3s) and aborts — the aborted run remains resumable (its session id is still saved) and is not retried. Registered before the generic `/:id` routes so `/:id/cancel` matches its own handler. Returns 404 if the message doesn't exist or doesn't belong to the thread.",
         "parameters": [
           {
             "schema": {
@@ -795,6 +810,7 @@
           "messages"
         ],
         "summary": "Get a message by ID",
+        "description": "Returns 404 if not found or if the message doesn't belong to the given thread.",
         "parameters": [
           {
             "schema": {
@@ -834,6 +850,7 @@
           "messages"
         ],
         "summary": "Update a message",
+        "description": "Body: `{ body?: string, tokens?: JsonValue, costUsd?: number | null, errorKind?: string | null }`. All fields optional — the handler applies a partial update. Returns 404 if not found, otherwise the updated message with 200.",
         "parameters": [
           {
             "schema": {
@@ -883,6 +900,7 @@
           "messages"
         ],
         "summary": "Delete a message",
+        "description": "Hard-deletes the message row. Returns 404 if not found, otherwise the deleted message with 200.",
         "parameters": [
           {
             "schema": {
@@ -924,6 +942,7 @@
           "messages"
         ],
         "summary": "Bump a claimed message's heartbeatAt (proof of life for a long-running reply), optionally recording the current progress phase",
+        "description": "Scoped to the claim's owner: the caller's identity (agentId, or \"admin\" for the admin UI) must match the message's `claimedBy`, or the update no-ops. Optional body `{ phase?: string }` is validated against `PROGRESS_PHASES` — an invalid phase returns 400; on success `progressPhase` is updated and `progressSeq` is incremented atomically alongside `heartbeatAt`. The heartbeat is bidirectional: the returned message carries `cancelRequestedAt`, so the same tick that proves liveness also tells the agent whether a cancel was requested (see POST /:id/cancel) — no second polling loop is needed. Returns 404 if the message doesn't exist, doesn't belong to the thread, isn't currently claimed by the caller, or has already been replied to.",
         "parameters": [
           {
             "schema": {
@@ -985,6 +1004,7 @@
           "messages"
         ],
         "summary": "Post an agent reply to a user message",
+        "description": "The second half of the claim/reply queue cycle. Body: `{ body: string, tokens?: JsonValue, costUsd?: number, errorKind?: string | null }` — `body` is required. Preconditions are checked in order: the target message must exist and belong to the thread (404), `role` must be `\"user\"` (400 if replying to an assistant message), and `repliedAt` must be null (409 if replying twice). On success, `repliedAt` is set on the user message and a new `role: \"assistant\"` message is created — both writes run inside a single transaction, so a partial failure can never leave `repliedAt` set with no assistant message. Returns 201 with `{ userMessage, assistantMessage }`.",
         "parameters": [
           {
             "schema": {
