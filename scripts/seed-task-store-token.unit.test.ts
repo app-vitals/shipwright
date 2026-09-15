@@ -2,18 +2,22 @@
  * scripts/seed-task-store-token.unit.test.ts
  * Unit tests for the local-dev task-store admin-token seeder.
  *
- * Pure helpers (hashRawToken, parseSeedArgs) and the upsert shape are tested via
- * an injected prisma double — no real DB, no network. The seeder is only ever run
- * by `task stack` against the local task-store DB; it is never part of a deployed
- * stack.
+ * Pure helpers (hashRawToken) and the upsert shape are tested via an injected
+ * prisma double — no real DB, no network. The seeder is only ever run by
+ * `task stack` against the local task-store DB; it is never part of a
+ * deployed stack.
+ *
+ * Flag parsing itself is covered by lib/cli-flags.unit.test.ts; this file
+ * only asserts that the flag-name mapping this script relies on
+ * (--db-url/--token/--agent-id, both `--flag value` and `--flag=value` forms)
+ * resolves the way the CLI entrypoint expects.
  */
 
 import { describe, expect, test } from "bun:test";
-import {
-  hashRawToken,
-  parseSeedArgs,
-  seedTaskStoreAdminToken,
-} from "./seed-task-store-token.ts";
+import { parseFlags } from "../lib/cli-flags.ts";
+import { hashRawToken, seedTaskStoreAdminToken } from "./seed-task-store-token.ts";
+
+const SEED_TOKEN_FLAGS = ["--db-url", "--token", "--agent-id"] as const;
 
 describe("hashRawToken", () => {
   test("is a stable SHA-256 hex digest (known vector)", () => {
@@ -30,52 +34,59 @@ describe("hashRawToken", () => {
   });
 });
 
-describe("parseSeedArgs", () => {
+describe("parseFlags — seed-task-store-token's flag mapping", () => {
   test("parses --db-url and --token in space form", () => {
-    expect(
-      parseSeedArgs(["--db-url", "postgresql://x/y", "--token", "abc"]),
-    ).toEqual({ dbUrl: "postgresql://x/y", token: "abc", agentId: undefined });
+    const result = parseFlags(
+      ["--db-url", "postgresql://x/y", "--token", "abc"],
+      SEED_TOKEN_FLAGS,
+    );
+    expect(result["--db-url"]).toBe("postgresql://x/y");
+    expect(result["--token"]).toBe("abc");
+    expect(result["--agent-id"]).toBeUndefined();
   });
 
   test("parses --db-url= and --token= in equals form", () => {
-    expect(
-      parseSeedArgs(["--db-url=postgresql://x/y", "--token=abc"]),
-    ).toEqual({ dbUrl: "postgresql://x/y", token: "abc", agentId: undefined });
+    const result = parseFlags(
+      ["--db-url=postgresql://x/y", "--token=abc"],
+      SEED_TOKEN_FLAGS,
+    );
+    expect(result["--db-url"]).toBe("postgresql://x/y");
+    expect(result["--token"]).toBe("abc");
+    expect(result["--agent-id"]).toBeUndefined();
   });
 
   test("returns undefined fields when flags are absent", () => {
-    expect(parseSeedArgs([])).toEqual({
-      dbUrl: undefined,
-      token: undefined,
-      agentId: undefined,
-    });
+    const result = parseFlags([], SEED_TOKEN_FLAGS);
+    expect(result["--db-url"]).toBeUndefined();
+    expect(result["--token"]).toBeUndefined();
+    expect(result["--agent-id"]).toBeUndefined();
   });
 
   test("parses --agent-id in space form", () => {
-    expect(
-      parseSeedArgs([
+    const result = parseFlags(
+      [
         "--db-url",
         "postgresql://x/y",
         "--token",
         "abc",
         "--agent-id",
         "hitl",
-      ]),
-    ).toEqual({
-      dbUrl: "postgresql://x/y",
-      token: "abc",
-      agentId: "hitl",
-    });
+      ],
+      SEED_TOKEN_FLAGS,
+    );
+    expect(result["--db-url"]).toBe("postgresql://x/y");
+    expect(result["--token"]).toBe("abc");
+    expect(result["--agent-id"]).toBe("hitl");
   });
 
   test("parses --agent-id= in equals form", () => {
-    expect(
-      parseSeedArgs(["--token=abc", "--agent-id=hitl"]),
-    ).toEqual({
-      dbUrl: undefined,
-      token: "abc",
-      agentId: "hitl",
-    });
+    const result = parseFlags(
+      ["--token=abc", "--agent-id=hitl"],
+      SEED_TOKEN_FLAGS,
+    );
+    expect(result["--db-url"]).toBeUndefined();
+    expect(result["--token"]).toBe("abc");
+    expect(result["--agent-id"]).toBe("hitl");
   });
 });
 

@@ -20,11 +20,13 @@
  *   bun run scripts/seed-chat-tokens.ts --db-url <url> \
  *     --admin-token <raw> --agent-token <raw> --agent-id <agentId>
  *
- * Pure helpers (hashRawToken, parseSeedArgs) and the upsert (seedChatTokens)
- * are exported for unit testing; the import.meta.main block wires real I/O.
+ * Pure helpers (hashRawToken) and the upsert (seedChatTokens) are exported
+ * for unit testing; the import.meta.main block wires real I/O. CLI flags are
+ * parsed via the shared lib/cli-flags.ts#parseFlags helper.
  */
 
 import { createHash } from "node:crypto";
+import { parseFlags } from "../lib/cli-flags.ts";
 
 /**
  * SHA-256 hex digest of a raw token. Mirrors the (private) hashToken in
@@ -33,31 +35,6 @@ import { createHash } from "node:crypto";
  */
 export function hashRawToken(raw: string): string {
   return createHash("sha256").update(raw).digest("hex");
-}
-
-export interface SeedArgs {
-  dbUrl?: string;
-  adminToken?: string;
-  agentToken?: string;
-  agentId?: string;
-}
-
-/** Parse CLI flags (both `--flag value` and `--flag=value`). */
-export function parseSeedArgs(argv: string[]): SeedArgs {
-  const read = (name: string): string | undefined => {
-    for (let i = 0; i < argv.length; i++) {
-      if (argv[i] === `--${name}` && argv[i + 1]) return argv[i + 1];
-      const prefix = `--${name}=`;
-      if (argv[i]?.startsWith(prefix)) return argv[i].slice(prefix.length);
-    }
-    return undefined;
-  };
-  return {
-    dbUrl: read("db-url"),
-    adminToken: read("admin-token"),
-    agentToken: read("agent-token"),
-    agentId: read("agent-id"),
-  };
 }
 
 /** Minimal slice of the chat PrismaClient this seeder needs. */
@@ -104,9 +81,16 @@ export async function seedChatTokens(opts: {
 // ─── CLI entrypoint ───────────────────────────────────────────────────────────
 
 if (import.meta.main) {
-  const { dbUrl, adminToken, agentToken, agentId } = parseSeedArgs(
-    process.argv.slice(2),
-  );
+  const flags = parseFlags(process.argv.slice(2), [
+    "--db-url",
+    "--admin-token",
+    "--agent-token",
+    "--agent-id",
+  ] as const);
+  const dbUrl = flags["--db-url"];
+  const adminToken = flags["--admin-token"];
+  const agentToken = flags["--agent-token"];
+  const agentId = flags["--agent-id"];
   const databaseUrl = dbUrl ?? process.env.DATABASE_URL_SHIPWRIGHT_CHAT;
 
   if (!databaseUrl) {

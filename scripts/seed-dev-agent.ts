@@ -22,6 +22,7 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
 import type { AgentTypeManifestResolver } from "../admin/src/agent-type-manifest-loader.ts";
+import { parseFlags } from "../lib/cli-flags.ts";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -231,14 +232,9 @@ if (import.meta.main) {
   );
 
   const argv = process.argv.slice(2);
-  const dbUrl = (() => {
-    for (let i = 0; i < argv.length; i++) {
-      if (argv[i] === "--db-url" && argv[i + 1]) return argv[i + 1];
-      if (argv[i]?.startsWith("--db-url="))
-        return argv[i].slice("--db-url=".length);
-    }
-    return process.env.DATABASE_URL_SHIPWRIGHT_ADMIN;
-  })();
+  const dbUrl =
+    parseFlags(argv, ["--db-url"] as const)["--db-url"] ??
+    process.env.DATABASE_URL_SHIPWRIGHT_ADMIN;
 
   if (!dbUrl) {
     console.error(

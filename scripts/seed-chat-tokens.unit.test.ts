@@ -2,18 +2,27 @@
  * scripts/seed-chat-tokens.unit.test.ts
  * Unit tests for the local-dev chat-service token seeder.
  *
- * Pure helpers (hashRawToken, parseSeedArgs) and the upsert shape are tested
- * via an injected prisma double — no real DB, no network. The seeder is only
- * ever run by `task stack` against the local chat DB; it is never part of a
- * deployed stack.
+ * Pure helpers (hashRawToken) and the upsert shape are tested via an injected
+ * prisma double — no real DB, no network. The seeder is only ever run by
+ * `task stack` against the local chat DB; it is never part of a deployed
+ * stack.
+ *
+ * Flag parsing itself is covered by lib/cli-flags.unit.test.ts; this file
+ * only asserts that the flag-name mapping this script relies on
+ * (--db-url/--admin-token/--agent-token/--agent-id, both `--flag value` and
+ * `--flag=value` forms) resolves the way the CLI entrypoint expects.
  */
 
 import { describe, expect, test } from "bun:test";
-import {
-  hashRawToken,
-  parseSeedArgs,
-  seedChatTokens,
-} from "./seed-chat-tokens.ts";
+import { parseFlags } from "../lib/cli-flags.ts";
+import { hashRawToken, seedChatTokens } from "./seed-chat-tokens.ts";
+
+const SEED_CHAT_FLAGS = [
+  "--db-url",
+  "--admin-token",
+  "--agent-token",
+  "--agent-id",
+] as const;
 
 describe("hashRawToken", () => {
   test("is a stable SHA-256 hex digest (known vector)", () => {
@@ -30,10 +39,10 @@ describe("hashRawToken", () => {
   });
 });
 
-describe("parseSeedArgs", () => {
+describe("parseFlags — seed-chat-tokens's flag mapping", () => {
   test("parses all flags in space form", () => {
-    expect(
-      parseSeedArgs([
+    const result = parseFlags(
+      [
         "--db-url",
         "postgresql://x/y",
         "--admin-token",
@@ -42,38 +51,37 @@ describe("parseSeedArgs", () => {
         "b",
         "--agent-id",
         "dev-agent",
-      ]),
-    ).toEqual({
-      dbUrl: "postgresql://x/y",
-      adminToken: "a",
-      agentToken: "b",
-      agentId: "dev-agent",
-    });
+      ],
+      SEED_CHAT_FLAGS,
+    );
+    expect(result["--db-url"]).toBe("postgresql://x/y");
+    expect(result["--admin-token"]).toBe("a");
+    expect(result["--agent-token"]).toBe("b");
+    expect(result["--agent-id"]).toBe("dev-agent");
   });
 
   test("parses all flags in equals form", () => {
-    expect(
-      parseSeedArgs([
+    const result = parseFlags(
+      [
         "--db-url=postgresql://x/y",
         "--admin-token=a",
         "--agent-token=b",
         "--agent-id=dev-agent",
-      ]),
-    ).toEqual({
-      dbUrl: "postgresql://x/y",
-      adminToken: "a",
-      agentToken: "b",
-      agentId: "dev-agent",
-    });
+      ],
+      SEED_CHAT_FLAGS,
+    );
+    expect(result["--db-url"]).toBe("postgresql://x/y");
+    expect(result["--admin-token"]).toBe("a");
+    expect(result["--agent-token"]).toBe("b");
+    expect(result["--agent-id"]).toBe("dev-agent");
   });
 
   test("returns undefined fields when flags are absent", () => {
-    expect(parseSeedArgs([])).toEqual({
-      dbUrl: undefined,
-      adminToken: undefined,
-      agentToken: undefined,
-      agentId: undefined,
-    });
+    const result = parseFlags([], SEED_CHAT_FLAGS);
+    expect(result["--db-url"]).toBeUndefined();
+    expect(result["--admin-token"]).toBeUndefined();
+    expect(result["--agent-token"]).toBeUndefined();
+    expect(result["--agent-id"]).toBeUndefined();
   });
 });
 
