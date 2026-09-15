@@ -794,8 +794,9 @@ describe("deploy.md — branch-protection-block detection on squash merge (RDA-1
 
 describe("deploy.md — bundle-mate sync on Step 5c budget-exhausted deployed marking (DBS-1.1)", () => {
   // Post-merge CI still pending after 10 minutes marks `deployed` for every task sharing
-  // this PR (TASK_IDS), not just the primary — unlike the 6 sibling escalation sites below,
-  // which set `blocked` on the primary task only. See PRB-3.2 for why those stayed single-task.
+  // this PR (TASK_IDS), not just the primary. The 5 post-merge failure/blocked escalation
+  // sites below (originally scoped to single-task TASK_ID under PRB-3.2) were extended to
+  // the same TASK_IDS loop per review follow-up on #3452 — see that describe block below.
   function extractSection(): string {
     const anchorIdx = content.indexOf(
       "Post-merge CI still pending after 10 minutes",
@@ -830,14 +831,16 @@ describe("deploy.md — bundle-mate sync on Step 5c budget-exhausted deployed ma
   });
 });
 
-describe("deploy.md — PR-level blocked escalation on deploy-only-mode failures (PRB-3.2)", () => {
-  // The 5 remaining escalation/failure sites that must PATCH /prs/$PR_RECORD_ID with
-  // blocked:true + blockedReason when TASK_ID is empty (deploy-only mode), instead of
-  // silently skipping. Each is identified by a unique anchor string near its bash
-  // block, and the original TASK_ID-non-empty PATCH body that must remain unchanged.
-  // These set `blocked` on the primary task only — bundle-mate sync is intentionally
-  // scoped to the merged/deploying/deployed success path (see DBS-1.1 above and Step 2's
-  // TASK_IDS note in deploy.md), not to failure escalation.
+describe("deploy.md — PR-level blocked escalation on deploy-only-mode failures (PRB-3.2, extended to TASK_IDS)", () => {
+  // The 5 post-merge failure/blocked escalation sites. Originally (PRB-3.2) these PATCHed
+  // only the primary TASK_ID and fell back to /prs/$PR_RECORD_ID with blocked:true +
+  // blockedReason in deploy-only mode. Per review follow-up on #3452 — a bundled PR that
+  // fails after Step 5 was leaving its bundle-mates stuck at `deploying` forever, since
+  // nothing else ever revisits them — these now loop over TASK_IDS (every bundle-mate
+  // already moved to merged/deploying by Step 4b/Step 5), matching the pattern already
+  // used by the merged/deploying/deployed success-path sites above. The deploy-only-mode
+  // PR-record fallback is unchanged. Each site is identified by a unique anchor string
+  // near its bash block, and the original per-task PATCH body that must remain unchanged.
   const sites = [
     {
       name: "Post-merge CI failed (Step 5c)",
@@ -875,12 +878,14 @@ describe("deploy.md — PR-level blocked escalation on deploy-only-mode failures
     const anchorIdx = content.indexOf(anchor);
     expect(anchorIdx).toBeGreaterThan(-1);
     // Grab a generous window after the anchor covering the print block + PATCH bash block.
-    return content.slice(anchorIdx, anchorIdx + 1200);
+    // Widened from 1200 to 1500 to fit the TASK_IDS loop's extra lines (the `for tid in
+    // ...; do ... done` wrapper is longer than the single-line TASK_ID PATCH it replaced).
+    return content.slice(anchorIdx, anchorIdx + 1500);
   }
 
   for (const site of sites) {
     describe(site.name, () => {
-      it("PATCHes /prs/$PR_RECORD_ID with blocked:true + blockedReason when TASK_ID is empty", () => {
+      it("PATCHes /prs/$PR_RECORD_ID with blocked:true + blockedReason when TASK_IDS is empty", () => {
         const section = extractSiteSection(site.anchor);
         expect(section).toContain(
           "$SHIPWRIGHT_TASK_STORE_URL/prs/$PR_RECORD_ID",
@@ -890,17 +895,18 @@ describe("deploy.md — PR-level blocked escalation on deploy-only-mode failures
         expect(section).toContain("blockedReason");
       });
 
-      it("still PATCHes /tasks/$TASK_ID with the original unchanged body when TASK_ID is non-empty", () => {
+      it("loops over TASK_IDS, PATCHing /tasks/$tid with the original per-task body for every bundle-mate", () => {
         const section = extractSiteSection(site.anchor);
-        expect(section).toContain("$SHIPWRIGHT_TASK_STORE_URL/tasks/$TASK_ID");
+        expect(section).toContain("for tid in $TASK_IDS");
+        expect(section).toContain("$SHIPWRIGHT_TASK_STORE_URL/tasks/$tid");
         expect(section).toContain(site.taskBody);
       });
 
-      it("branches explicitly on whether TASK_ID is set (if/else), not a blanket skip", () => {
+      it("branches explicitly on whether TASK_IDS is set (if/else), not a blanket skip", () => {
         const section = extractSiteSection(site.anchor);
         const hasConditional =
-          /if\s*\[\s*-n\s*"\$TASK_ID"\s*\]/.test(section) ||
-          /if\s*\[\s*-z\s*"\$TASK_ID"\s*\]/.test(section);
+          /if\s*\[\s*-n\s*"\$TASK_IDS"\s*\]/.test(section) ||
+          /if\s*\[\s*-z\s*"\$TASK_IDS"\s*\]/.test(section);
         expect(hasConditional).toBe(true);
       });
     });
@@ -1118,11 +1124,27 @@ describe("deploy.md — bundle-mate task sync on merge/deploy status transitions
     expect(section).toContain('\\"status\\": \\"deployed\\"');
   });
 
-  it("does not loop the failure/blocked escalation sites over TASK_IDS — those stay single-task (PRB-3.2)", () => {
+  it("loops the post-merge failure/blocked escalation sites over TASK_IDS too, not just the success path", () => {
     const idx = content.indexOf("Post-merge CI failed — {name}");
     expect(idx).toBeGreaterThan(-1);
     const section = content.slice(idx, idx + 1200);
-    expect(section).not.toContain("for tid in $TASK_IDS");
-    expect(section).toContain("$SHIPWRIGHT_TASK_STORE_URL/tasks/$TASK_ID");
+    expect(section).toContain("for tid in $TASK_IDS");
+    expect(section).toContain("$SHIPWRIGHT_TASK_STORE_URL/tasks/$tid");
+  });
+
+  it("does NOT loop Step 4b's pre-merge failure sites (branch-protection block, squash-merge failure) — those fire before any bundle-mate has left pr_open, so single-TASK_ID is correct", () => {
+    const step4bIdx = content.indexOf("### 4b. Squash Merge");
+    const mergedLoopIdx = content.indexOf(
+      "Mark the task (and every bundle-mate task on `TASK_IDS`) merged",
+    );
+    expect(step4bIdx).toBeGreaterThan(-1);
+    expect(mergedLoopIdx).toBeGreaterThan(step4bIdx);
+    // Scope to the pre-merge-failure portion of Step 4b only — up to (not including) the
+    // success-path "mark merged" TASK_IDS loop that follows it in the same step.
+    const step4bFailureSection = content.slice(step4bIdx, mergedLoopIdx);
+    expect(step4bFailureSection).not.toContain("for tid in $TASK_IDS");
+    expect(step4bFailureSection).toContain(
+      "$SHIPWRIGHT_TASK_STORE_URL/tasks/$TASK_ID",
+    );
   });
 });
