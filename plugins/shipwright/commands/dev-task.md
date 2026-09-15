@@ -876,9 +876,12 @@ Generated with [Claude Code](https://claude.com/claude-code)
 **Write the PR body to a temp file** to avoid heredoc syntax in the command string (heredocs break permission glob matching and cause repeated approval prompts during `/dev-loop`):
 ```
 Write the PR body content to /tmp/shipwright-pr-body-{task-id}.txt
-gh pr create --title "{title}" --body-file /tmp/shipwright-pr-body-{task-id}.txt
+gh label create shipwright --description "Opened autonomously by Shipwright" --color 1D76DB --force
+gh pr create --title "{title}" --body-file /tmp/shipwright-pr-body-{task-id}.txt --label shipwright
 rm /tmp/shipwright-pr-body-{task-id}.txt
 ```
+
+The `gh label create` step uses `--force` to make it idempotent — it will upsert the label if it already exists rather than erroring. This allows reviewers to see this step in the command text without flagging it as a repeated mutation.
 The temp file path MUST include the task ID to avoid collisions — `/tmp` is shared across all worktrees.
 Do NOT use `--body "$(cat <<'EOF'..."` — this produces a different command string each time and cannot be matched by `Bash(gh pr create:*)`.
 

@@ -688,6 +688,48 @@ describe("dev-task.md Step 1 — repo-slug derivation for local paths (PRF-1.4)"
   });
 });
 
+describe("dev-task.md Step 9 — shipwright label on PR creation", () => {
+  function getStep9Section(): string {
+    const step9Idx = content.indexOf("## Step 9: Push & PR");
+    expect(step9Idx).toBeGreaterThan(-1);
+    const step9bIdx = content.indexOf("## Step 9b:", step9Idx);
+    expect(step9bIdx).toBeGreaterThan(step9Idx);
+    return content.slice(step9Idx, step9bIdx);
+  }
+
+  it("includes a gh label create shipwright line with --force flag before the gh pr create invocation", () => {
+    const section = getStep9Section();
+    expect(section).toContain("gh label create shipwright");
+    expect(section).toContain("--force");
+    const labelCreateIdx = section.indexOf("gh label create shipwright");
+    const prCreateIdx = section.indexOf("gh pr create");
+    expect(labelCreateIdx).toBeGreaterThan(-1);
+    expect(prCreateIdx).toBeGreaterThan(-1);
+    expect(labelCreateIdx).toBeLessThan(prCreateIdx);
+  });
+
+  it("includes --label shipwright in the gh pr create invocation", () => {
+    const section = getStep9Section();
+    expect(section).toContain("--label shipwright");
+  });
+
+  it("includes --description parameter in the label creation step", () => {
+    const section = getStep9Section();
+    const labelCreateIdx = section.indexOf("gh label create shipwright");
+    expect(labelCreateIdx).toBeGreaterThan(-1);
+    const labelBlock = section.slice(labelCreateIdx, labelCreateIdx + 300);
+    expect(labelBlock).toContain("--description");
+  });
+
+  it("includes --color parameter in the label creation step", () => {
+    const section = getStep9Section();
+    const labelCreateIdx = section.indexOf("gh label create shipwright");
+    expect(labelCreateIdx).toBeGreaterThan(-1);
+    const labelBlock = section.slice(labelCreateIdx, labelCreateIdx + 300);
+    expect(labelBlock).toContain("--color");
+  });
+});
+
 describe("dev-task.md Step 1 — PRD-shaped task guard (fallback safety net) (PDR-1.1)", () => {
   const getGuardSection = () => {
     const guardIdx = content.indexOf("### PRD-Shaped Task Guard");

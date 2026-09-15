@@ -1148,3 +1148,45 @@ describe("deploy.md — bundle-mate task sync on merge/deploy status transitions
     );
   });
 });
+
+describe("deploy.md Step 6 — shipwright label on revert PR creation", () => {
+  function getStep6Section(): string {
+    const step6Idx = content.indexOf("## Step 6: Canary Failure — Open Revert PR");
+    expect(step6Idx).toBeGreaterThan(-1);
+    const step7Idx = content.indexOf("## Step 7:", step6Idx);
+    expect(step7Idx).toBeGreaterThan(step6Idx);
+    return content.slice(step6Idx, step7Idx);
+  }
+
+  it("includes a gh label create shipwright line with --force flag before the gh pr create invocation", () => {
+    const section = getStep6Section();
+    expect(section).toContain("gh label create shipwright");
+    expect(section).toContain("--force");
+    const labelCreateIdx = section.indexOf("gh label create shipwright");
+    const prCreateIdx = section.indexOf("gh pr create");
+    expect(labelCreateIdx).toBeGreaterThan(-1);
+    expect(prCreateIdx).toBeGreaterThan(-1);
+    expect(labelCreateIdx).toBeLessThan(prCreateIdx);
+  });
+
+  it("includes --label shipwright in the gh pr create invocation", () => {
+    const section = getStep6Section();
+    expect(section).toContain("--label shipwright");
+  });
+
+  it("includes --description parameter in the label creation step", () => {
+    const section = getStep6Section();
+    const labelCreateIdx = section.indexOf("gh label create shipwright");
+    expect(labelCreateIdx).toBeGreaterThan(-1);
+    const labelBlock = section.slice(labelCreateIdx, labelCreateIdx + 300);
+    expect(labelBlock).toContain("--description");
+  });
+
+  it("includes --color parameter in the label creation step", () => {
+    const section = getStep6Section();
+    const labelCreateIdx = section.indexOf("gh label create shipwright");
+    expect(labelCreateIdx).toBeGreaterThan(-1);
+    const labelBlock = section.slice(labelCreateIdx, labelCreateIdx + 300);
+    expect(labelBlock).toContain("--color");
+  });
+});

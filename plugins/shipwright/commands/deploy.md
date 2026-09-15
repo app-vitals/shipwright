@@ -890,13 +890,17 @@ Generated with [Claude Code](https://claude.com/claude-code)
 ```
 
 ```bash
+gh label create shipwright --description "Opened autonomously by Shipwright" --color 1D76DB --force
 gh pr create \
   --repo {org}/{repo} \
   --title "revert: canary failure — PR #{pr}" \
   --body-file /tmp/shipwright-revert-{pr}.txt \
-  --base main
+  --base main \
+  --label shipwright
 rm /tmp/shipwright-revert-{pr}.txt
 ```
+
+The `gh label create` step uses `--force` to make it idempotent — it will upsert the label if it already exists rather than erroring. This allows reviewers to see this step in the command text without flagging it as a repeated mutation.
 
 Print:
 ```
