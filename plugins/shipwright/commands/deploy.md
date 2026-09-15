@@ -51,10 +51,20 @@ TASK_JSON=$(curl -sf -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" "$S
 TASK_ID=$(echo "$TASK_JSON" | jq -r '.tasks[0].id // empty')
 TASK_TITLE=$(echo "$TASK_JSON" | jq -r '.tasks[0].title // empty')
 TASK_STATUS=$(echo "$TASK_JSON" | jq -r '.tasks[0].status // empty')
+TASK_IDS=$(echo "$TASK_JSON" | jq -r '[.tasks[].id] | join(" ")')
 ```
 
 If `TASK_ID` is empty or `TASK_STATUS` is not `"pr_open"`, proceed in **deploy-only mode** — no
 todos update will be performed.
+
+**Bundled PRs (`TASK_IDS`).** A single PR can carry several tasks that were opened together
+on one branch (see Step 2b's Bundle Completeness Gate) — the query above then returns more
+than one entry in `.tasks[]`. `TASK_ID` stays the *primary* task (`tasks[0]`) and is what
+every deploy-only-mode check and print statement below still keys off of. `TASK_IDS` is the
+full space-separated list of every task on this PR, including the primary. Every
+merged/deploying/deployed status transition below (Step 4b, Step 5, Step 5c success/timeout,
+Step 8b) must loop over `TASK_IDS`, not just `TASK_ID` — otherwise bundle-mates are silently
+left stranded at their pre-merge status forever, since nothing else ever revisits them.
 
 ### 2a. Own-PRs-Only Check
 
@@ -390,14 +400,17 @@ Print:
   Squash SHA: {SQUASH_SHA[0..7]}
 ```
 
-Mark the task merged via the task store — skip if in deploy-only mode:
+Mark the task (and every bundle-mate task on `TASK_IDS`) merged via the task store — skip if
+in deploy-only mode:
 
 ```bash
-curl -sf -X PATCH \
-  -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
-  -H "Content-Type: application/json" \
-  "$SHIPWRIGHT_TASK_STORE_URL/tasks/$TASK_ID" \
-  -d "{\"status\": \"merged\", \"mergedAt\": \"$(date -u +%Y-%m-%dT%H:%M:%SZ)\"}" | jq .
+for tid in $TASK_IDS; do
+  curl -sf -X PATCH \
+    -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
+    -H "Content-Type: application/json" \
+    "$SHIPWRIGHT_TASK_STORE_URL/tasks/$tid" \
+    -d "{\"status\": \"merged\", \"mergedAt\": \"$(date -u +%Y-%m-%dT%H:%M:%SZ)\"}" | jq .
+done
 ```
 
 ### 4c. Update PullRequest Record (post-merge)
@@ -422,16 +435,18 @@ fi
 
 ## Step 5: Poll Deploy → Canary → Promote
 
-Mark the task `deploying` — the merge has landed and the deploy pipeline is now in
-flight. This stamps `deployingAt`, the start of the deploy window (`deployedAt − deployingAt`
-is the deploy duration). Skip if in deploy-only mode:
+Mark the task (and every bundle-mate task on `TASK_IDS`) `deploying` — the merge has landed
+and the deploy pipeline is now in flight. This stamps `deployingAt`, the start of the deploy
+window (`deployedAt − deployingAt` is the deploy duration). Skip if in deploy-only mode:
 
 ```bash
-curl -sf -X PATCH \
-  -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
-  -H "Content-Type: application/json" \
-  "$SHIPWRIGHT_TASK_STORE_URL/tasks/$TASK_ID" \
-  -d "{\"status\": \"deploying\", \"deployingAt\": \"$(date -u +%Y-%m-%dT%H:%M:%SZ)\"}" | jq .
+for tid in $TASK_IDS; do
+  curl -sf -X PATCH \
+    -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
+    -H "Content-Type: application/json" \
+    "$SHIPWRIGHT_TASK_STORE_URL/tasks/$tid" \
+    -d "{\"status\": \"deploying\", \"deployingAt\": \"$(date -u +%Y-%m-%dT%H:%M:%SZ)\"}" | jq .
+done
 ```
 
 ### 5a. No-Pipeline Detection
@@ -514,13 +529,16 @@ an empty run list, so at least one run must have been seen):
   {name}: success
   ...
 ```
-Compute `pipeline_minutes = elapsed`. Update the task store — skip if deploy-only mode:
+Compute `pipeline_minutes = elapsed`. Update the task store (every task on `TASK_IDS`, not
+just the primary) — skip if deploy-only mode:
 ```bash
-curl -sf -X PATCH \
-  -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
-  -H "Content-Type: application/json" \
-  "$SHIPWRIGHT_TASK_STORE_URL/tasks/$TASK_ID" \
-  -d "{\"status\": \"deployed\", \"deployedAt\": \"$(date -u +%Y-%m-%dT%H:%M:%SZ)\"}" | jq .
+for tid in $TASK_IDS; do
+  curl -sf -X PATCH \
+    -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
+    -H "Content-Type: application/json" \
+    "$SHIPWRIGHT_TASK_STORE_URL/tasks/$tid" \
+    -d "{\"status\": \"deployed\", \"deployedAt\": \"$(date -u +%Y-%m-%dT%H:%M:%SZ)\"}" | jq .
+done
 ```
 Print the handoff block (Step 9) with `Pipeline: post-merge CI ({pipeline_minutes}m)`. Stop.
 
@@ -557,16 +575,18 @@ non-green conclusion seen (every latest-per-workflow run in `$RUNS_JSON` is stil
 ⚠ Post-merge CI still pending after 10 minutes — marking deployed.
   Check manually: gh api repos/{org}/{repo}/actions/runs?head_sha={SQUASH_SHA}
 ```
-Update the task store to `status=deployed` if a task is linked; otherwise flag the PR
-record for human attention (deploy-only mode) — the deploy itself is marked done, but a
-human should still check the pending runs manually:
+Update the task store to `status=deployed` for every task on `TASK_IDS` if a task is linked;
+otherwise flag the PR record for human attention (deploy-only mode) — the deploy itself is
+marked done, but a human should still check the pending runs manually:
 ```bash
-if [ -n "$TASK_ID" ]; then
-  curl -sf -X PATCH \
-    -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
-    -H "Content-Type: application/json" \
-    "$SHIPWRIGHT_TASK_STORE_URL/tasks/$TASK_ID" \
-    -d "{\"status\": \"deployed\", \"deployedAt\": \"$(date -u +%Y-%m-%dT%H:%M:%SZ)\"}" | jq .
+if [ -n "$TASK_IDS" ]; then
+  for tid in $TASK_IDS; do
+    curl -sf -X PATCH \
+      -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
+      -H "Content-Type: application/json" \
+      "$SHIPWRIGHT_TASK_STORE_URL/tasks/$tid" \
+      -d "{\"status\": \"deployed\", \"deployedAt\": \"$(date -u +%Y-%m-%dT%H:%M:%SZ)\"}" | jq .
+  done
 elif [ -n "$PR_RECORD_ID" ]; then
   curl -sf -X PATCH \
     -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
@@ -932,14 +952,17 @@ pipeline_minutes = floor((now - deploy_started_at) / 60)
 
 ### 8b. Update task store
 
-Skip if no task was found (deploy-only mode):
+Skip if no task was found (deploy-only mode). Update every task on `TASK_IDS`, not just the
+primary:
 
 ```bash
-curl -sf -X PATCH \
-  -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
-  -H "Content-Type: application/json" \
-  "$SHIPWRIGHT_TASK_STORE_URL/tasks/$TASK_ID" \
-  -d "{\"status\": \"deployed\", \"deployedAt\": \"$(date -u +%Y-%m-%dT%H:%M:%SZ)\"}" | jq .
+for tid in $TASK_IDS; do
+  curl -sf -X PATCH \
+    -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
+    -H "Content-Type: application/json" \
+    "$SHIPWRIGHT_TASK_STORE_URL/tasks/$tid" \
+    -d "{\"status\": \"deployed\", \"deployedAt\": \"$(date -u +%Y-%m-%dT%H:%M:%SZ)\"}" | jq .
+done
 ```
 
 ---
