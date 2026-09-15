@@ -51,10 +51,31 @@ TASK_JSON=$(curl -sf -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" "$S
 TASK_ID=$(echo "$TASK_JSON" | jq -r '.tasks[0].id // empty')
 TASK_TITLE=$(echo "$TASK_JSON" | jq -r '.tasks[0].title // empty')
 TASK_STATUS=$(echo "$TASK_JSON" | jq -r '.tasks[0].status // empty')
+TASK_IDS=$(echo "$TASK_JSON" | jq -r '[.tasks[].id] | join(" ")')
 ```
 
 If `TASK_ID` is empty or `TASK_STATUS` is not `"pr_open"`, proceed in **deploy-only mode** — no
 todos update will be performed.
+
+**Bundled PRs (`TASK_IDS`).** A single PR can carry several tasks that were opened together
+on one branch (see Step 2b's Bundle Completeness Gate) — the query above then returns more
+than one entry in `.tasks[]`. `TASK_ID` stays the *primary* task (`tasks[0]`) — it still gates
+Step 4b's two pre-merge-failure sites (branch-protection block, squash-merge failure) below.
+Every post-merge deploy-only-mode check (Step 5b/5c/6/8b) now gates on `TASK_IDS` instead.
+`TASK_IDS` is the full space-separated list of every task on this PR, including the primary. Every
+merged/deploying/deployed status transition below (Step 4b, Step 5, Step 5c success/timeout,
+Step 8b) must loop over `TASK_IDS`, not just `TASK_ID` — otherwise bundle-mates are silently
+left stranded at their pre-merge status forever, since nothing else ever revisits them. The
+same applies to every post-merge failure/`blocked` escalation site (Step 5b's Deploy-stage-
+failed, Promote-skipped, and pipeline-timeout terminal conditions; Step 5c's CI-failed
+terminal condition; Step 6's canary-failed/revert-opened path): once Step 4b/Step 5 have
+already moved every bundle-mate to `merged`/`deploying`, a later-stage failure must mark
+every bundle-mate `blocked` too, not just the primary — otherwise the siblings are left
+stuck at `deploying` forever with no record that anything went wrong. Step 4b's own
+*pre*-merge failure sites (branch-protection block, squash-merge failure) are the one
+exception and stay single-`TASK_ID`: they fire before any bundle-mate has transitioned away
+from `pr_open`, so blocking just the primary is sufficient — Step 2b's Bundle Completeness
+Gate will still catch it on any bundle-mate's next deploy attempt.
 
 ### 2a. Own-PRs-Only Check
 
@@ -390,14 +411,17 @@ Print:
   Squash SHA: {SQUASH_SHA[0..7]}
 ```
 
-Mark the task merged via the task store — skip if in deploy-only mode:
+Mark the task (and every bundle-mate task on `TASK_IDS`) merged via the task store — skip if
+in deploy-only mode:
 
 ```bash
-curl -sf -X PATCH \
-  -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
-  -H "Content-Type: application/json" \
-  "$SHIPWRIGHT_TASK_STORE_URL/tasks/$TASK_ID" \
-  -d "{\"status\": \"merged\", \"mergedAt\": \"$(date -u +%Y-%m-%dT%H:%M:%SZ)\"}" | jq .
+for tid in $TASK_IDS; do
+  curl -sf -X PATCH \
+    -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
+    -H "Content-Type: application/json" \
+    "$SHIPWRIGHT_TASK_STORE_URL/tasks/$tid" \
+    -d "{\"status\": \"merged\", \"mergedAt\": \"$(date -u +%Y-%m-%dT%H:%M:%SZ)\"}" | jq .
+done
 ```
 
 ### 4c. Update PullRequest Record (post-merge)
@@ -422,16 +446,18 @@ fi
 
 ## Step 5: Poll Deploy → Canary → Promote
 
-Mark the task `deploying` — the merge has landed and the deploy pipeline is now in
-flight. This stamps `deployingAt`, the start of the deploy window (`deployedAt − deployingAt`
-is the deploy duration). Skip if in deploy-only mode:
+Mark the task (and every bundle-mate task on `TASK_IDS`) `deploying` — the merge has landed
+and the deploy pipeline is now in flight. This stamps `deployingAt`, the start of the deploy
+window (`deployedAt − deployingAt` is the deploy duration). Skip if in deploy-only mode:
 
 ```bash
-curl -sf -X PATCH \
-  -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
-  -H "Content-Type: application/json" \
-  "$SHIPWRIGHT_TASK_STORE_URL/tasks/$TASK_ID" \
-  -d "{\"status\": \"deploying\", \"deployingAt\": \"$(date -u +%Y-%m-%dT%H:%M:%SZ)\"}" | jq .
+for tid in $TASK_IDS; do
+  curl -sf -X PATCH \
+    -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
+    -H "Content-Type: application/json" \
+    "$SHIPWRIGHT_TASK_STORE_URL/tasks/$tid" \
+    -d "{\"status\": \"deploying\", \"deployingAt\": \"$(date -u +%Y-%m-%dT%H:%M:%SZ)\"}" | jq .
+done
 ```
 
 ### 5a. No-Pipeline Detection
@@ -514,13 +540,16 @@ an empty run list, so at least one run must have been seen):
   {name}: success
   ...
 ```
-Compute `pipeline_minutes = elapsed`. Update the task store — skip if deploy-only mode:
+Compute `pipeline_minutes = elapsed`. Update the task store (every task on `TASK_IDS`, not
+just the primary) — skip if deploy-only mode:
 ```bash
-curl -sf -X PATCH \
-  -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
-  -H "Content-Type: application/json" \
-  "$SHIPWRIGHT_TASK_STORE_URL/tasks/$TASK_ID" \
-  -d "{\"status\": \"deployed\", \"deployedAt\": \"$(date -u +%Y-%m-%dT%H:%M:%SZ)\"}" | jq .
+for tid in $TASK_IDS; do
+  curl -sf -X PATCH \
+    -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
+    -H "Content-Type: application/json" \
+    "$SHIPWRIGHT_TASK_STORE_URL/tasks/$tid" \
+    -d "{\"status\": \"deployed\", \"deployedAt\": \"$(date -u +%Y-%m-%dT%H:%M:%SZ)\"}" | jq .
+done
 ```
 Print the handoff block (Step 9) with `Pipeline: post-merge CI ({pipeline_minutes}m)`. Stop.
 
@@ -531,15 +560,18 @@ Print the handoff block (Step 9) with `Pipeline: post-merge CI ({pipeline_minute
 ✗ Post-merge CI failed — {name}
   Logs: gh run view {id} --log --failed
 ```
-Update via task store if a task is linked; otherwise flag the PR record for human
-attention (deploy-only mode):
+Update every task on `TASK_IDS` (not just the primary — every bundle-mate already moved to
+`deploying` in Step 5) via the task store if any are linked; otherwise flag the PR record for
+human attention (deploy-only mode):
 ```bash
-if [ -n "$TASK_ID" ]; then
-  curl -sf -X PATCH \
-    -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
-    -H "Content-Type: application/json" \
-    "$SHIPWRIGHT_TASK_STORE_URL/tasks/$TASK_ID" \
-    -d "{\"status\": \"blocked\", \"note\": \"Post-merge CI failed — run ID: {id}\"}" | jq .
+if [ -n "$TASK_IDS" ]; then
+  for tid in $TASK_IDS; do
+    curl -sf -X PATCH \
+      -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
+      -H "Content-Type: application/json" \
+      "$SHIPWRIGHT_TASK_STORE_URL/tasks/$tid" \
+      -d "{\"status\": \"blocked\", \"note\": \"Post-merge CI failed — run ID: {id}\"}" | jq .
+  done
 elif [ -n "$PR_RECORD_ID" ]; then
   curl -sf -X PATCH \
     -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
@@ -557,16 +589,18 @@ non-green conclusion seen (every latest-per-workflow run in `$RUNS_JSON` is stil
 ⚠ Post-merge CI still pending after 10 minutes — marking deployed.
   Check manually: gh api repos/{org}/{repo}/actions/runs?head_sha={SQUASH_SHA}
 ```
-Update the task store to `status=deployed` if a task is linked; otherwise flag the PR
-record for human attention (deploy-only mode) — the deploy itself is marked done, but a
-human should still check the pending runs manually:
+Update the task store to `status=deployed` for every task on `TASK_IDS` if a task is linked;
+otherwise flag the PR record for human attention (deploy-only mode) — the deploy itself is
+marked done, but a human should still check the pending runs manually:
 ```bash
-if [ -n "$TASK_ID" ]; then
-  curl -sf -X PATCH \
-    -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
-    -H "Content-Type: application/json" \
-    "$SHIPWRIGHT_TASK_STORE_URL/tasks/$TASK_ID" \
-    -d "{\"status\": \"deployed\", \"deployedAt\": \"$(date -u +%Y-%m-%dT%H:%M:%SZ)\"}" | jq .
+if [ -n "$TASK_IDS" ]; then
+  for tid in $TASK_IDS; do
+    curl -sf -X PATCH \
+      -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
+      -H "Content-Type: application/json" \
+      "$SHIPWRIGHT_TASK_STORE_URL/tasks/$tid" \
+      -d "{\"status\": \"deployed\", \"deployedAt\": \"$(date -u +%Y-%m-%dT%H:%M:%SZ)\"}" | jq .
+  done
 elif [ -n "$PR_RECORD_ID" ]; then
   curl -sf -X PATCH \
     -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
@@ -736,15 +770,18 @@ that fallback mode has no data for.
   Run ID: {id}
   Collect logs: gh run view {id} --log --failed
 ```
-Update via task store if a task is linked; otherwise flag the PR record for human
-attention (deploy-only mode):
+Update every task on `TASK_IDS` (not just the primary — every bundle-mate already moved to
+`deploying` in Step 5) via the task store if any are linked; otherwise flag the PR record for
+human attention (deploy-only mode):
 ```bash
-if [ -n "$TASK_ID" ]; then
-  curl -sf -X PATCH \
-    -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
-    -H "Content-Type: application/json" \
-    "$SHIPWRIGHT_TASK_STORE_URL/tasks/$TASK_ID" \
-    -d "{\"status\": \"blocked\", \"note\": \"Deploy stage failed — run ID: {id}\"}" | jq .
+if [ -n "$TASK_IDS" ]; then
+  for tid in $TASK_IDS; do
+    curl -sf -X PATCH \
+      -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
+      -H "Content-Type: application/json" \
+      "$SHIPWRIGHT_TASK_STORE_URL/tasks/$tid" \
+      -d "{\"status\": \"blocked\", \"note\": \"Deploy stage failed — run ID: {id}\"}" | jq .
+  done
 elif [ -n "$PR_RECORD_ID" ]; then
   curl -sf -X PATCH \
     -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
@@ -765,15 +802,18 @@ Go to Step 6.
   Check: gh api repos/{org}/{repo}/actions/runs?per_page=10 --jq '.workflow_runs[] | select(.name == "Promote to Prod")'
   Likely cause: Promote workflow's `workflow_run.conclusion` did not match `success`.
 ```
-Update via task store if a task is linked; otherwise flag the PR record for human
-attention (deploy-only mode):
+Update every task on `TASK_IDS` (not just the primary — every bundle-mate already moved to
+`deploying` in Step 5) via the task store if any are linked; otherwise flag the PR record for
+human attention (deploy-only mode):
 ```bash
-if [ -n "$TASK_ID" ]; then
-  curl -sf -X PATCH \
-    -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
-    -H "Content-Type: application/json" \
-    "$SHIPWRIGHT_TASK_STORE_URL/tasks/$TASK_ID" \
-    -d '{"status": "blocked", "note": "canary_blocked: Promote skipped after canary success"}' | jq .
+if [ -n "$TASK_IDS" ]; then
+  for tid in $TASK_IDS; do
+    curl -sf -X PATCH \
+      -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
+      -H "Content-Type: application/json" \
+      "$SHIPWRIGHT_TASK_STORE_URL/tasks/$tid" \
+      -d '{"status": "blocked", "note": "canary_blocked: Promote skipped after canary success"}' | jq .
+  done
 elif [ -n "$PR_RECORD_ID" ]; then
   curl -sf -X PATCH \
     -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
@@ -795,15 +835,18 @@ Go to Step 7.
     Canary:  {status}/{conclusion}
     Promote: {status}/{conclusion}
 ```
-Update via task store if a task is linked; otherwise flag the PR record for human
-attention (deploy-only mode):
+Update every task on `TASK_IDS` (not just the primary — every bundle-mate already moved to
+`deploying` in Step 5) via the task store if any are linked; otherwise flag the PR record for
+human attention (deploy-only mode):
 ```bash
-if [ -n "$TASK_ID" ]; then
-  curl -sf -X PATCH \
-    -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
-    -H "Content-Type: application/json" \
-    "$SHIPWRIGHT_TASK_STORE_URL/tasks/$TASK_ID" \
-    -d '{"status": "blocked", "note": "Pipeline timeout after 30 minutes"}' | jq .
+if [ -n "$TASK_IDS" ]; then
+  for tid in $TASK_IDS; do
+    curl -sf -X PATCH \
+      -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
+      -H "Content-Type: application/json" \
+      "$SHIPWRIGHT_TASK_STORE_URL/tasks/$tid" \
+      -d '{"status": "blocked", "note": "Pipeline timeout after 30 minutes"}' | jq .
+  done
 elif [ -n "$PR_RECORD_ID" ]; then
   curl -sf -X PATCH \
     -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
@@ -869,16 +912,19 @@ Canary logs: gh run view {canary_run_id} --log --failed
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 ```
 
-Update via task store if a task is linked; otherwise flag the PR record for human
-attention (deploy-only mode):
+Update every task on `TASK_IDS` (not just the primary — every bundle-mate already moved to
+`deploying` in Step 5) via the task store if any are linked; otherwise flag the PR record for
+human attention (deploy-only mode):
 
 ```bash
-if [ -n "$TASK_ID" ]; then
-  curl -sf -X PATCH \
-    -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
-    -H "Content-Type: application/json" \
-    "$SHIPWRIGHT_TASK_STORE_URL/tasks/$TASK_ID" \
-    -d "{\"status\": \"blocked\", \"blockedAt\": \"$(date -u +%Y-%m-%dT%H:%M:%SZ)\", \"note\": \"Canary failed after deploy. Revert PR opened: {revert_pr_url}\"}" | jq .
+if [ -n "$TASK_IDS" ]; then
+  for tid in $TASK_IDS; do
+    curl -sf -X PATCH \
+      -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
+      -H "Content-Type: application/json" \
+      "$SHIPWRIGHT_TASK_STORE_URL/tasks/$tid" \
+      -d "{\"status\": \"blocked\", \"blockedAt\": \"$(date -u +%Y-%m-%dT%H:%M:%SZ)\", \"note\": \"Canary failed after deploy. Revert PR opened: {revert_pr_url}\"}" | jq .
+  done
 elif [ -n "$PR_RECORD_ID" ]; then
   curl -sf -X PATCH \
     -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
@@ -932,14 +978,17 @@ pipeline_minutes = floor((now - deploy_started_at) / 60)
 
 ### 8b. Update task store
 
-Skip if no task was found (deploy-only mode):
+Skip if no task was found (deploy-only mode). Update every task on `TASK_IDS`, not just the
+primary:
 
 ```bash
-curl -sf -X PATCH \
-  -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
-  -H "Content-Type: application/json" \
-  "$SHIPWRIGHT_TASK_STORE_URL/tasks/$TASK_ID" \
-  -d "{\"status\": \"deployed\", \"deployedAt\": \"$(date -u +%Y-%m-%dT%H:%M:%SZ)\"}" | jq .
+for tid in $TASK_IDS; do
+  curl -sf -X PATCH \
+    -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
+    -H "Content-Type: application/json" \
+    "$SHIPWRIGHT_TASK_STORE_URL/tasks/$tid" \
+    -d "{\"status\": \"deployed\", \"deployedAt\": \"$(date -u +%Y-%m-%dT%H:%M:%SZ)\"}" | jq .
+done
 ```
 
 ---
