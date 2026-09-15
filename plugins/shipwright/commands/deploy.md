@@ -59,9 +59,10 @@ todos update will be performed.
 
 **Bundled PRs (`TASK_IDS`).** A single PR can carry several tasks that were opened together
 on one branch (see Step 2b's Bundle Completeness Gate) — the query above then returns more
-than one entry in `.tasks[]`. `TASK_ID` stays the *primary* task (`tasks[0]`) and is what
-every deploy-only-mode check and print statement below still keys off of. `TASK_IDS` is the
-full space-separated list of every task on this PR, including the primary. Every
+than one entry in `.tasks[]`. `TASK_ID` stays the *primary* task (`tasks[0]`) — it still gates
+Step 4b's two pre-merge-failure sites (branch-protection block, squash-merge failure) below.
+Every post-merge deploy-only-mode check (Step 5b/5c/6/8b) now gates on `TASK_IDS` instead.
+`TASK_IDS` is the full space-separated list of every task on this PR, including the primary. Every
 merged/deploying/deployed status transition below (Step 4b, Step 5, Step 5c success/timeout,
 Step 8b) must loop over `TASK_IDS`, not just `TASK_ID` — otherwise bundle-mates are silently
 left stranded at their pre-merge status forever, since nothing else ever revisits them. The
