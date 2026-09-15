@@ -878,6 +878,25 @@ describe("patch.md — escalate .claude/** path findings to HITL on the first ro
     expect(section).toContain("reviewThreads.nodes[]");
   });
 
+  it("the review-body fallback requires the `.claude/` mention to co-occur with remediation language, not a bare anywhere-in-body substring", () => {
+    // Markdown hard-wraps, so compare against a whitespace-normalized copy.
+    const flat = getStep5a6bSection().replace(/\s+/g, " ");
+    // The fallback must be anchored on a code span, not free text anywhere in the body.
+    expect(flat).toContain("inside an inline code span");
+    // ...and scoped to the same sentence as a remediation verb.
+    expect(flat).toContain("**same sentence**");
+    expect(flat).toContain("remediation verb");
+    for (const verb of ["edit", "update", "change", "modify", "rewrite", "delete", "fix"]) {
+      expect(flat).toContain(`\`${verb}\``);
+    }
+    // A bare substring match is explicitly called out as insufficient.
+    expect(flat).toMatch(/bare `\.claude\/` substring anywhere in the body is \*\*not\*\* enough/);
+    // ...with the false-positive risk (incidental context citations) spelled out.
+    expect(flat).toMatch(/cite `\.claude\/`-rooted paths as \*context\*/);
+    // Ambiguity resolves toward not matching (false-negative is cheaper than false-positive).
+    expect(flat).toContain("**do not match**");
+  });
+
   it("has a distinct blockedReason from Step 5a.7's second-round-disagreement string", () => {
     const section = getStep5a6bSection();
     expect(section).toContain("structurally unfixable");

@@ -942,8 +942,21 @@ contributed to this PR's List A membership (Step 3a's `reviewThreads.nodes[]` en
 
 - **Inline thread finding**: the thread's first comment `path` (from Step 3a) starts with
   `.claude/`.
-- **Review-body-level finding** (no inline thread — fallback): the review body text
-  mentions a `.claude/` path (a substring match for `.claude/` anywhere in the body).
+- **Review-body-level finding** (no inline thread — fallback): the review body mentions a
+  `.claude/`-rooted path **inside an inline code span** (backtick-delimited — e.g. a span
+  whose contents start with `.claude/`) **and** that code span occurs in the **same sentence**
+  as a remediation verb — one of `edit`, `update`, `change`, `modify`, `rewrite`, `add`,
+  `remove`, `delete`, `fix`, in any inflection (`edits`/`editing`/`edited`, and so on). Treat a
+  sentence as the text between sentence-ending punctuation *followed by whitespace* (`. `,
+  `! `, `? `) or a line break; the dot inside `.claude/` is never a sentence boundary, since it
+  is not followed by whitespace. A bare `.claude/` substring anywhere in the body is **not**
+  enough on its own: this plugin's own review agents routinely cite `.claude/`-rooted paths as
+  *context* (e.g. a principles or decisions-registry file) in findings whose actual remediation
+  is an ordinary, auto-fixable source edit, and escalating those would skip the fix subagent
+  for no reason. When it is genuinely ambiguous whether the body is asking for a `.claude/**`
+  write, **do not match** — the inline-thread path above is the reliable signal, and a
+  false-negative here merely means the normal fix dispatch runs, whereas a false-positive
+  strands an auto-fixable PR in HITL.
 
 **If no finding matches**: this check does not apply — proceed to Step 5a.7.
 
