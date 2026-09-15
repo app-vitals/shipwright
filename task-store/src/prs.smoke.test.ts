@@ -1600,7 +1600,7 @@ describe("/prs routes (smoke)", () => {
 
     const prServiceWithCapture: PullRequestServiceLike = {
       ...fakePrService({ claimNextResult: { pr, phase: "review" } }),
-      async claimNext(agentId, maxConcurrent) {
+      async claimNext(agentId, _maxConcurrent) {
         capturedAgentId = agentId;
         return { pr, phase: "review" as const };
       },
@@ -1936,7 +1936,7 @@ describe("/prs routes (smoke)", () => {
       }),
     });
     expect([200, 201]).toContain(res.status);
-    const body = (await res.json()) as PrFinding;
+    const _body = (await res.json()) as PrFinding;
     expect(appendFindingCalls).toHaveLength(1);
     expect(appendFindingCalls[0]?.agentId).toBeUndefined();
   });

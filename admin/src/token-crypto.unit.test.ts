@@ -4,7 +4,7 @@
  * Pure logic — no I/O, no DB, no network.
  */
 
-import { afterEach, beforeEach, describe, expect, it } from "bun:test";
+import { afterEach, describe, expect, it } from "bun:test";
 import { decrypt, encrypt, isValidKeyHex } from "./crypto.ts";
 import { identityCrypto, makeTokenCrypto } from "./token-crypto.ts";
 

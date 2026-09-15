@@ -166,7 +166,7 @@ function scanReposDirWithPaths(dir: string): RepoDir[] {
       const content = readFileSync(gitConfigPath, "utf-8");
       // Look for the [remote "origin"] url line
       const urlMatch = content.match(
-        /\[remote\s+"origin"\][^\[]*url\s*=\s*(.+)/,
+        /\[remote\s+"origin"\][^[]*url\s*=\s*(.+)/,
       );
       if (!urlMatch) continue;
       const remoteUrl = urlMatch[1].trim();

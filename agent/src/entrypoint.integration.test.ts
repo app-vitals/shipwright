@@ -7,7 +7,7 @@
  */
 
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
-import { existsSync, mkdirSync, rmSync, symlinkSync } from "node:fs";
+import { existsSync, mkdirSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import type { AgentConfigResponse } from "@shipwright/admin";
 import { runEntrypoint } from "./entrypoint.ts";
@@ -98,7 +98,7 @@ function makeDeps(
     setupGitHubAuth: async () => {
       githubAuthCalled.called = true;
     },
-    runMiseStartup: async (_home: string, execFn) => {
+    runMiseStartup: async (_home: string, _execFn) => {
       miseCalls.push(["runMiseStartup", _home]);
       return Promise.resolve();
     },

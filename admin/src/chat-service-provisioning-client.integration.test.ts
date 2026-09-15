@@ -344,7 +344,7 @@ describe("HttpChatServiceProvisioningClient — deleteThreadsForAgent", () => {
         key: "listThreads_agent456_single_page",
       },
       {
-        match: (url, method) => method === "DELETE",
+        match: (_url, method) => method === "DELETE",
         key: "deleteThread_500",
       },
     ]);

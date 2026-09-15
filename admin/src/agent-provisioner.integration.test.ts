@@ -33,7 +33,6 @@ import {
   type DeploymentSpec,
   type KubernetesClient,
   type KubernetesDeployment,
-  type KubernetesPvc,
   type KubernetesSecret,
   type PvcSpec,
   RecordedKubernetesClient,

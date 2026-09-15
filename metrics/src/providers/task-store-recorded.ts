@@ -87,7 +87,7 @@ export class RecordedAdminMetricsClient implements AdminMetricsClient {
 
 export class FaultingCronAdminMetricsClient implements AdminMetricsClient {
   constructor(
-    private readonly _cron: CronRunTokenStats,
+    _cron: CronRunTokenStats,
     private readonly chat: ChatTokenStats,
   ) {}
 
@@ -103,7 +103,7 @@ export class FaultingCronAdminMetricsClient implements AdminMetricsClient {
 export class FaultingChatAdminMetricsClient implements AdminMetricsClient {
   constructor(
     private readonly cron: CronRunTokenStats,
-    private readonly _chat: ChatTokenStats,
+    _chat: ChatTokenStats,
   ) {}
 
   async cronRunTokenStats(): Promise<CronRunTokenStats> {

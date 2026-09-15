@@ -49,7 +49,7 @@ function fakeAdminTokenService(): TokenServiceLike {
 }
 
 /** Builds an agent token service where the agent is scoped to the given repos. */
-function fakeAgentTokenService(scopedRepos: string[]): TokenServiceLike {
+function fakeAgentTokenService(_scopedRepos: string[]): TokenServiceLike {
   return {
     async create(label?: string, agentId?: string) {
       return {

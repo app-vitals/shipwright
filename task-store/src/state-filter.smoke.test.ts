@@ -325,8 +325,8 @@ describe("GET /tasks state filter (smoke)", () => {
     const taskService: TaskServiceLike = {
       ...baseFake,
       async listReady(
-        agentId?: string,
-        repos?: string[],
+        _agentId?: string,
+        _repos?: string[],
         filters?: Record<string, unknown>,
       ) {
         capturedFilters.push(filters);
@@ -361,8 +361,8 @@ describe("GET /tasks state filter (smoke)", () => {
     const taskService: TaskServiceLike = {
       ...baseFake,
       async listReady(
-        agentId?: string,
-        repos?: string[],
+        _agentId?: string,
+        _repos?: string[],
         filters?: Record<string, unknown>,
       ) {
         capturedFilters.push(filters);
@@ -385,8 +385,8 @@ describe("GET /tasks state filter (smoke)", () => {
     const taskService: TaskServiceLike = {
       ...baseFake,
       async listReady(
-        agentId?: string,
-        repos?: string[],
+        _agentId?: string,
+        _repos?: string[],
         filters?: Record<string, unknown>,
       ) {
         capturedFilters.push(filters);
@@ -409,8 +409,8 @@ describe("GET /tasks state filter (smoke)", () => {
     const taskService: TaskServiceLike = {
       ...baseFake,
       async listReady(
-        agentId?: string,
-        repos?: string[],
+        _agentId?: string,
+        _repos?: string[],
         filters?: Record<string, unknown>,
       ) {
         capturedFilters.push(filters);

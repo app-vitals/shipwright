@@ -996,7 +996,7 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
     });
   });
 
-  app.get("/admin/sw.js", (c) => {
+  app.get("/admin/sw.js", (_c) => {
     const body = buildServiceWorkerBody(appVersion, getPrecacheList());
     return new Response(body, {
       headers: {
@@ -1009,7 +1009,7 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
     });
   });
 
-  app.get("/admin/offline.html", (c) => {
+  app.get("/admin/offline.html", (_c) => {
     return new Response(buildOfflinePageHtml(), {
       headers: { "Content-Type": "text/html; charset=utf-8" },
     });
@@ -2481,7 +2481,7 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
       return c.redirect(`/admin/agents/${agentId}?error=missing_fields`, 302);
     }
 
-    if (!xoxpToken || !xoxpToken.startsWith("xoxe.xoxp-")) {
+    if (!xoxpToken?.startsWith("xoxe.xoxp-")) {
       return c.redirect(
         `/admin/agents/${agentId}?error=${encodeURIComponent("Slack app configuration token must start with xoxe.xoxp-")}`,
         302,
@@ -4074,7 +4074,7 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
       p256dh,
       auth,
     );
-    if (!result || !result.ok) {
+    if (!result?.ok) {
       if (result?.reason === "store_failed") {
         return c.json({ error: "store_failed" }, 500);
       }
@@ -4097,7 +4097,7 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
     // Scoped to the caller (userEmail) inside PushService.unsubscribe so a
     // stale endpoint can't be used to prune another user's subscription.
     const result = await pushService?.unsubscribe(c.var.userEmail, endpoint);
-    if (!result || !result.ok) {
+    if (!result?.ok) {
       return c.json({ error: "push_disabled" }, 503);
     }
     return c.json({ ok: true });

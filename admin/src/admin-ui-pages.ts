@@ -4497,7 +4497,7 @@ function renderCronRunRow(
     agentCell?: string;
   },
 ): string {
-  const { timezone, now, cronLinkAgentId, agentCell } = opts;
+  const { timezone, now: _now, cronLinkAgentId, agentCell } = opts;
   const outcomeLabel = cronRunOutcomeLabel(r);
   const badgeStyle = cronOutcomeStyle(outcomeLabel);
   const badgeTitle =

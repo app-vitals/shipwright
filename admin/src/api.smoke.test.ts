@@ -12,7 +12,6 @@
 
 import { describe, expect, test } from "bun:test";
 import { Hono } from "hono";
-import { sign } from "hono/jwt";
 import type { AgentCronJob } from "./agent-cron-jobs.ts";
 import type { AgentEnvBundle } from "./agent-envs.ts";
 import { NoopAgentProvisioner } from "./agent-provisioner.ts";

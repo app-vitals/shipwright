@@ -22,7 +22,7 @@
 import { type ChildProcess, spawn } from "node:child_process";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { type BrowserContext, type Page, expect, test } from "@playwright/test";
+import { type BrowserContext, expect, test } from "@playwright/test";
 import { sign } from "hono/jwt";
 
 // ─── Constants ────────────────────────────────────────────────────────────────

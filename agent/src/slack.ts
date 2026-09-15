@@ -29,7 +29,6 @@ import {
 import type {
   ClaudeRunResult,
   ProgressCallback,
-  TokenUsage,
 } from "./claude.ts";
 import {
   formatPlanLink,

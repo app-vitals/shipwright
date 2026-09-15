@@ -213,7 +213,7 @@ export class SlackProvisioningService {
     redirectUri: string,
     ghConnectError?: string,
   ): Promise<StartConnectResult> {
-    if (!xoxpToken || !xoxpToken.startsWith("xoxe.xoxp-")) {
+    if (!xoxpToken?.startsWith("xoxe.xoxp-")) {
       return {
         ok: false,
         error: "Slack app configuration token must start with xoxe.xoxp-",
@@ -413,7 +413,7 @@ export class SlackProvisioningService {
       return { ok: false, agentId: "", error: "Agent ID is required." };
     }
 
-    if (!xappToken || !xappToken.startsWith("xapp-")) {
+    if (!xappToken?.startsWith("xapp-")) {
       return {
         ok: false,
         agentId,

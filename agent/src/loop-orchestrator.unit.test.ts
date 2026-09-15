@@ -3648,7 +3648,7 @@ describe("createLoopOrchestrator", () => {
       reviewCandidates: [prCandidate],
       runner,
       consumed,
-      claimPr: async (pr: WorkPrCandidate) => ({
+      claimPr: async (_pr: WorkPrCandidate) => ({
         id: "clxRECORD",
         commitSha: "deadbeef1234",
       }),

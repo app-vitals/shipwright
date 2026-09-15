@@ -3758,7 +3758,7 @@ describe("admin API — cron runs", () => {
       ...base,
       agentCronRunService: {
         ...base.agentCronRunService,
-        list: async (cronId, agentId, opts) => {
+        list: async (_cronId, _agentId, opts) => {
           listCalls.push({ opts });
           return {
             items: [],

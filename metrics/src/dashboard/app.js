@@ -644,7 +644,7 @@
           },
         },
       });
-    } catch (err) {
+    } catch (_err) {
       showError("Failed to render chart");
     }
   }
@@ -734,7 +734,7 @@
           },
         },
       });
-    } catch (err) {
+    } catch (_err) {
       showError("Failed to render token trends chart");
     }
   }
@@ -965,7 +965,7 @@
           },
         },
       });
-    } catch (err) {
+    } catch (_err) {
       showError("Failed to render metric chart");
     }
   }

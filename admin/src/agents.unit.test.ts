@@ -6,7 +6,6 @@
  */
 
 import { describe, expect, it } from "bun:test";
-import type { AgentMemberService } from "./agent-members.ts";
 import type { AgentTypeManifestResolver } from "./agent-type-manifest-loader.ts";
 import type { AgentTypeManifest } from "./agent-type-registry.ts";
 import { AgentService } from "./agents.ts";
