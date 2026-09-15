@@ -381,7 +381,7 @@ database** (an integration test) — never mocked. Mocking DB queries is fragile
 low-value; the DB itself is the boundary, not the ORM. This matches existing practice
 (`admin`/`task-store` integration tests hit a real Postgres via
 `DATABASE_URL_ADMIN_TEST` / `DATABASE_URL_SHIPWRIGHT_TASK_STORE_TEST`, and `ci.yml`
-provisions a real `postgres:16` service container). A repo onboarding via test-readiness
+provisions a real `postgres:18` service container). A repo onboarding via test-readiness
 must add a real test-DB service container to CI to make this principle enforceable.
 
 Judgment-only — this entry carries no Detection field and is never entropy-scanned.
