@@ -38,6 +38,14 @@ import {
 } from "./check-helpers.ts";
 import type { LinkedTaskInfo } from "./check-helpers.ts";
 import type { WorkPrCandidate } from "./work-selector.ts";
+// CIG-1.2: CI-green classification is delegated to the shared classifier
+// (CIG-1.1) instead of a local latestRunPerName/isCiGreen pair, so
+// check-deploy.ts, check-patch.ts's cancelled-retry logic, and the
+// plugins/shipwright/commands/*.md call sites all agree on the same
+// dedup-by-workflow_id + success/skipped/neutral-is-green semantics.
+// Mirrors check-patch.ts's own import of
+// plugins/shipwright/scripts/compute-unaddressed-findings.ts.
+import { isCiGreen } from "../../plugins/shipwright/scripts/is-ci-green.ts";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -75,6 +83,11 @@ export interface CiRun {
   status: string;
   conclusion: string | null;
   createdAt?: string;
+  // CIG-1.2: carried through from the Actions API so this run can be
+  // deduped by CIG-1.1's shared isCiGreen() classifier — which dedups by
+  // workflow_id + run_number rather than by name + createdAt.
+  workflow_id: number;
+  run_number: number;
 }
 
 export interface PrRecord {
@@ -107,8 +120,9 @@ export interface CheckDeployDeps {
   // Fetches ALL workflow runs for the PR's head SHA (Actions:Read scope, no
   // GitHub Checks permission needed — works on public and private repos with
   // a fine-grained PAT, unlike the abandoned statusCheckRollup approach).
-  // Deliberately unfiltered by workflow name — isCiGreen groups by name and
-  // requires every workflow's latest run to be green.
+  // Deliberately unfiltered by workflow name — the shared isCiGreen()
+  // classifier (CIG-1.1) dedups by workflow_id and requires every
+  // workflow's latest run to be green.
   fetchCiRuns: (org: string, repo: string, headSha: string) => Promise<CiRun[]>;
   // Returns the current time as an ISO string. Injected for testability.
   clock?: () => string;
@@ -158,45 +172,6 @@ export interface CheckDeployDeps {
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
-
-// Reduces a list of Actions API runs to the latest run per workflow name
-// (highest createdAt). A workflow can have multiple historical runs at the
-// same SHA from retries/reruns — only the latest should count, so a
-// fixed-and-rerun workflow isn't permanently blocked by its own stale
-// failure. Runs with no createdAt are never preferred over one that has a
-// timestamp (mirrors isActiveRun's conservative handling of missing
-// timestamps elsewhere in this file); ties (equal createdAt, or neither run
-// having one) keep the first-seen run — arbitrary but deterministic.
-function latestRunPerName(runs: CiRun[]): CiRun[] {
-  const latestByName = new Map<string, CiRun>();
-  for (const run of runs) {
-    const current = latestByName.get(run.name);
-    if (!current) {
-      latestByName.set(run.name, run);
-      continue;
-    }
-    if (
-      run.createdAt &&
-      (!current.createdAt || run.createdAt > current.createdAt)
-    ) {
-      latestByName.set(run.name, run);
-    }
-  }
-  return [...latestByName.values()];
-}
-
-// A PR is CI-green only when it has at least one workflow run for its head
-// SHA and, grouping runs by workflow name and keeping only the latest run
-// per name, every one of those latest runs completed with conclusion
-// "success". Fail-closed: an empty run list, or any latest-per-name run that
-// is failing, cancelled, or still queued/in_progress, means the PR is not a
-// deploy candidate. No name filter — every workflow at the SHA is evaluated,
-// not just one hardcoded to be named "ci" (the pre-#2948 bug this restores
-// past).
-function isCiGreen(runs: CiRun[]): boolean {
-  if (runs.length === 0) return false;
-  return latestRunPerName(runs).every((run) => run.conclusion === "success");
-}
 
 // Queued runs older than 1 hour are treated as stuck/ghost runs and ignored.
 const STALE_QUEUED_RUN_MS = 60 * 60 * 1000;
@@ -391,6 +366,8 @@ interface GhWorkflowRunsJson {
     status: string;
     conclusion: string | null;
     created_at: string;
+    workflow_id: number;
+    run_number: number;
   }>;
 }
 
@@ -452,6 +429,8 @@ export async function buildProductionDeps(opts: {
           status: r.status,
           conclusion: r.conclusion,
           createdAt: r.created_at,
+          workflow_id: r.workflow_id,
+          run_number: r.run_number,
         }));
       } catch (err) {
         process.stderr.write(

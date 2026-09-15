@@ -172,26 +172,19 @@ PATs cannot be granted on private repos):
 
 ```bash
 HEAD_SHA=$(gh pr view {pr} --repo {org}/{repo} --json headRefOid -q '.headRefOid')
-RUNS_JSON=$(gh api "repos/{org}/{repo}/actions/runs?head_sha=$HEAD_SHA")
-ALL_GREEN=$(echo "$RUNS_JSON" | jq -r '
-  .workflow_runs as $r
-  | ($r
-      | group_by(.name)
-      | map(max_by(.created_at))
-    ) as $latest
-  | ($latest | length > 0) and ($latest | all(.conclusion == "success"))
-')
+RUNS_JSON=$(gh api "repos/{org}/{repo}/actions/runs?head_sha=$HEAD_SHA" --jq '.workflow_runs')
+ALL_GREEN=$(bun run "${CLAUDE_PLUGIN_ROOT}/scripts/is-ci-green.ts" "$RUNS_JSON")
 ```
 
-No workflow-name filter is applied — every run for the head SHA is fetched, then grouped by
-workflow `name` and reduced to the latest run per name (by `created_at`), so a
-fixed-and-rerun workflow isn't permanently blocked by its own stale failure. This catches
-every required check (e.g. `pr-title-lint`, or any other repo-specific required workflow),
-not just a single named CI workflow.
+No workflow-name filter is applied — every run for the head SHA is fetched and handed to the
+shared `is-ci-green.ts` classifier (CIG-1.1), which dedups the runs by `workflow_id` (keeping
+only the highest `run_number` per workflow) so a fixed-and-rerun workflow isn't permanently
+blocked by its own stale failure. This catches every required check (e.g. `pr-title-lint`, or
+any other repo-specific required workflow), not just a single named CI workflow.
 
-A run is green only when its latest-per-name entry has `conclusion == "success"`. All
-latest-per-name runs must be green, and there must be at least one run — an empty run list
-is not green (fail-closed).
+A run is green when its latest-per-`workflow_id` entry has `conclusion` of `success`,
+`skipped`, or `neutral`. All latest-per-workflow runs must be green, and there must be at
+least one run — an empty run list is not green (fail-closed).
 
 If `ALL_GREEN` is not `"true"` (or the run list is empty), print and stop:
 ```
@@ -493,20 +486,28 @@ Poll for CI and build runs on `SQUASH_SHA` for up to **10 minutes** (poll every 
 
 ```bash
 REPO="{org}/{repo}"
-gh api "repos/$REPO/actions/runs?per_page=50" \
-  --jq "[.workflow_runs[] | select(.head_sha == \"$SQUASH_SHA\") | {id, name, status, conclusion}]"
+RUNS_JSON=$(gh api "repos/$REPO/actions/runs?per_page=50" \
+  --jq "[.workflow_runs[] | select(.head_sha == \"$SQUASH_SHA\") | {id, name, workflow_id, run_number, status, conclusion}]")
 ```
 
-Print progress on each poll:
+Print progress on each poll (from `$RUNS_JSON`):
 ```
 [{elapsed}m] {name}: {status}/{conclusion} | {name}: {status}/{conclusion} | ...
 ```
 
 Use `-` for runs not yet seen.
 
-**Terminal conditions:**
+**Terminal conditions:** on each poll, run `$RUNS_JSON` through the shared classifier —
+```bash
+ALL_GREEN=$(bun run "${CLAUDE_PLUGIN_ROOT}/scripts/is-ci-green.ts" "$RUNS_JSON")
+```
+— which dedups by `workflow_id` (latest run per workflow, by highest `run_number`) and
+treats `success`, `skipped`, and `neutral` conclusions as green, exactly matching Step 3b's
+classification. This decides the pass/fail terminal condition below — the printed progress
+table above no longer needs to be read informally to determine the outcome.
 
-**All runs completed successfully** (at least one run must be seen, AND `conclusion == "success"` for every run seen):
+**All runs completed successfully** (`ALL_GREEN == "true"` — the classifier fails closed on
+an empty run list, so at least one run must have been seen):
 ```
 ✓ Post-merge CI passed ({elapsed}m)
   {name}: success
@@ -523,7 +524,9 @@ curl -sf -X PATCH \
 ```
 Print the handoff block (Step 9) with `Pipeline: post-merge CI ({pipeline_minutes}m)`. Stop.
 
-**Any run fails** (`conclusion == "failure"` on any run):
+**Any run fails** (`ALL_GREEN` is not `"true"` and at least one latest-per-workflow run in
+`$RUNS_JSON` has a terminal non-green `conclusion` — `failure`, `cancelled`, `timed_out`,
+`action_required`, `stale`, or `startup_failure`):
 ```
 ✗ Post-merge CI failed — {name}
   Logs: gh run view {id} --log --failed
@@ -547,7 +550,9 @@ fi
 ```
 Stop.
 
-**Budget exhausted (10 minutes)** with runs still pending:
+**Budget exhausted (10 minutes)** with `ALL_GREEN` still not `"true"` and no terminal
+non-green conclusion seen (every latest-per-workflow run in `$RUNS_JSON` is still `queued`,
+`in_progress`, or otherwise unconcluded):
 ```
 ⚠ Post-merge CI still pending after 10 minutes — marking deployed.
   Check manually: gh api repos/{org}/{repo}/actions/runs?head_sha={SQUASH_SHA}
@@ -695,25 +700,30 @@ Re-surface this message every 5 minutes while the queue remains stuck.
 **If `SHA_ONLY_FALLBACK=true`** (set above when resolved stage names didn't match live
 workflows): the named-stage checks below do not apply — there is no `.name` to match
 against them. Instead, evaluate the same generic, name-agnostic scheme Step 5c's own
-"Terminal conditions:" subsection uses (all-success / any-failure / budget-exhausted over
-the full set of runs matched by `$SQUASH_SHA` alone), reusing that subsection's
-conclusion checks and task-store/PR-record update bash blocks verbatim, but scoped to
-*this* step's 30-minute budget and elapsed time rather than Step 5c's separate 10-minute
-window:
+"Terminal conditions:" subsection uses (`is-ci-green.ts`-classified all-green /
+any-terminal-failure / budget-exhausted over the full set of runs matched by `$SQUASH_SHA`
+alone — fetched with the same `workflow_id`/`run_number` fields and piped to the same
+`bun run "${CLAUDE_PLUGIN_ROOT}/scripts/is-ci-green.ts" "$RUNS_JSON"` call), reusing that
+subsection's conclusion checks and task-store/PR-record update bash blocks verbatim, but
+scoped to *this* step's 30-minute budget and elapsed time rather than Step 5c's separate
+10-minute window:
 
-- **All runs completed successfully** (at least one run seen, `conclusion == "success"`
-  for every run seen): print the same success format as Step 5c ("Pipeline monitoring
-  passed" in place of "Post-merge CI passed"), run the same `status: "deployed"` task-store
-  update, print the handoff block (Step 9) with `Pipeline: SHA-only fallback ({elapsed}m)`.
-  Stop.
-- **Any run fails** (`conclusion == "failure"` on any run): print the same failure format
-  as Step 5c ("Pipeline monitoring failed" in place of "Post-merge CI failed"), run the
-  same `status: "blocked"` / PR-record `blocked` update. Stop.
-- **Budget exhausted (30 minutes)** with runs still pending: print the same pending-timeout
-  format as Step 5c ("Pipeline monitoring still pending after 30 minutes" in place of
-  "Post-merge CI still pending after 10 minutes"), run the same `status: "deployed"` (task
-  marked done, human checks manually) task-store update, print the handoff block (Step 9)
-  with `Pipeline: SHA-only fallback (pending at timeout)`. Stop.
+- **All runs completed successfully** (`ALL_GREEN == "true"` — the classifier fails closed
+  on an empty run list, so at least one run must have been seen): print the same success
+  format as Step 5c ("Pipeline monitoring passed" in place of "Post-merge CI passed"), run
+  the same `status: "deployed"` task-store update, print the handoff block (Step 9) with
+  `Pipeline: SHA-only fallback ({elapsed}m)`. Stop.
+- **Any run fails** (`ALL_GREEN` is not `"true"` and at least one latest-per-workflow run has
+  a terminal non-green `conclusion` — `failure`, `cancelled`, `timed_out`,
+  `action_required`, `stale`, or `startup_failure`): print the same failure format as Step 5c
+  ("Pipeline monitoring failed" in place of "Post-merge CI failed"), run the same
+  `status: "blocked"` / PR-record `blocked` update. Stop.
+- **Budget exhausted (30 minutes)** with `ALL_GREEN` still not `"true"` and no terminal
+  non-green conclusion seen: print the same pending-timeout format as Step 5c ("Pipeline
+  monitoring still pending after 30 minutes" in place of "Post-merge CI still pending after
+  10 minutes"), run the same `status: "deployed"` (task marked done, human checks
+  manually) task-store update, print the handoff block (Step 9) with
+  `Pipeline: SHA-only fallback (pending at timeout)`. Stop.
 
 Skip the named-stage bullets below entirely in this mode — they require `.name` matching
 that fallback mode has no data for.

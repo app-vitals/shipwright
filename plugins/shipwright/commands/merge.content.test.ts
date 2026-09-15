@@ -160,10 +160,11 @@ describe("merge.md — Step 2: Pre-flight Checks", () => {
     expect(section).not.toContain("StatusContext");
   });
 
-  it("groups runs by workflow name and keeps only the latest run per name", () => {
+  it("delegates green-classification to the shared is-ci-green.ts CLI instead of freehand jq", () => {
     const section = extractStep2Section(content);
-    expect(section).toContain("group_by(.name)");
-    expect(section).toContain("max_by(.created_at)");
+    expect(section).toContain("is-ci-green.ts");
+    expect(section).not.toContain("group_by(.name)");
+    expect(section).not.toContain("max_by(.created_at)");
   });
 
   it("has a pre-flight summary subsection", () => {

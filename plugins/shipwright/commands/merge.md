@@ -165,26 +165,19 @@ PATs cannot be granted on private repos):
 
 ```bash
 HEAD_SHA=$(gh pr view {pr} --repo {org}/{repo} --json headRefOid -q '.headRefOid')
-RUNS_JSON=$(gh api "repos/{org}/{repo}/actions/runs?head_sha=$HEAD_SHA")
-ALL_GREEN=$(echo "$RUNS_JSON" | jq -r '
-  .workflow_runs as $r
-  | ($r
-      | group_by(.name)
-      | map(max_by(.created_at))
-    ) as $latest
-  | ($latest | length > 0) and ($latest | all(.conclusion == "success"))
-')
+RUNS_JSON=$(gh api "repos/{org}/{repo}/actions/runs?head_sha=$HEAD_SHA" --jq '.workflow_runs')
+ALL_GREEN=$(bun run "${CLAUDE_PLUGIN_ROOT}/scripts/is-ci-green.ts" "$RUNS_JSON")
 ```
 
-No workflow-name filter is applied — every run for the head SHA is fetched, then grouped by
-workflow `name` and reduced to the latest run per name (by `created_at`), so a
-fixed-and-rerun workflow isn't permanently blocked by its own stale failure. This catches
-every required check (e.g. `pr-title-lint`, or any other repo-specific required workflow),
-not just a single named CI workflow.
+No workflow-name filter is applied — every run for the head SHA is fetched and handed to the
+shared `is-ci-green.ts` classifier (CIG-1.1), which dedups the runs by `workflow_id` (keeping
+only the highest `run_number` per workflow) so a fixed-and-rerun workflow isn't permanently
+blocked by its own stale failure. This catches every required check (e.g. `pr-title-lint`, or
+any other repo-specific required workflow), not just a single named CI workflow.
 
-A run is green only when its latest-per-name entry has `conclusion == "success"`. All
-latest-per-name runs must be green, and there must be at least one run — an empty run list
-is not green (fail-closed).
+A run is green when its latest-per-`workflow_id` entry has `conclusion` of `success`,
+`skipped`, or `neutral`. All latest-per-workflow runs must be green, and there must be at
+least one run — an empty run list is not green (fail-closed).
 
 If `ALL_GREEN` is not `"true"` (or the run list is empty), print and stop:
 ```
