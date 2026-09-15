@@ -78,6 +78,7 @@ describe("scripts/check-downstream-compat.sh — Render A restore guard (extract
     const copyWrapperFn = script.slice(copyWrapperStart, copyWrapperEnd);
     expect(copyWrapperFn).toContain("rm -rf");
 
+    // biome-ignore lint/suspicious/noTemplateCurlyInString: literal shell variable in asserted script substring, not JS interpolation
     const guardStart = script.indexOf('if [[ -f "${WRAPPER_DIR}/Chart.lock"');
     const guardEnd = script.indexOf("\nfi", guardStart) + 3;
     const guardBlock = script.slice(guardStart, guardEnd);
@@ -95,6 +96,7 @@ describe("scripts/check-downstream-compat.sh — Render A restore guard (extract
         `WRAPPER_DIR=${JSON.stringify(wrapperDir)}`,
         `RENDER_A_DIR=${JSON.stringify(renderADir)}`,
         copyWrapperFn,
+        // biome-ignore lint/suspicious/noTemplateCurlyInString: literal shell variable in generated bash harness, not JS interpolation
         'copy_wrapper "${RENDER_A_DIR}"',
         guardBlock,
       ].join("\n");
@@ -120,6 +122,7 @@ describe("scripts/check-downstream-compat.sh — image-tag allowlist (extracted,
   // the actual allowlist code rather than a hand-copied stand-in.
   function extractAllowlistScript(): string {
     const script = readScript();
+    // biome-ignore lint/suspicious/noTemplateCurlyInString: literal shell variable in asserted script substring, not JS interpolation
     const heredocStart = script.indexOf("<<'PYEOF'\n", script.indexOf("python3 - \"${AB_DIFF}\""));
     expect(heredocStart).toBeGreaterThan(-1);
     const bodyStart = heredocStart + "<<'PYEOF'\n".length;

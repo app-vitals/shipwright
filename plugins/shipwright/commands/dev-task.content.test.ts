@@ -660,6 +660,7 @@ describe("dev-task.md Step 1 — repo-slug derivation for local paths (PRF-1.4)"
     expect(section).toMatch(/last path segment/i);
   });
 
+  // biome-ignore lint/suspicious/noTemplateCurlyInString: literal shell path placeholder in test description, not JS interpolation
   it("no longer uses raw {repo} for ${SHIPWRIGHT_REPO_DIR:-$HOME/src}/{repo} style local paths", () => {
     // This exact substring would NOT match {repo-slug} (which has extra chars before the
     // closing brace), so it robustly distinguishes "still raw {repo}" from "now {repo-slug}".
@@ -674,12 +675,14 @@ describe("dev-task.md Step 1 — repo-slug derivation for local paths (PRF-1.4)"
 
   it("derives GH_REPO from the local checkout using {repo-slug}, not {repo}", () => {
     expect(content).toContain(
+      // biome-ignore lint/suspicious/noTemplateCurlyInString: literal shell parameter-expansion in asserted dev-task command text, not JS interpolation
       "git -C ${SHIPWRIGHT_REPO_DIR:-$HOME/src}/{repo-slug} remote get-url origin",
     );
   });
 
   it("constructs worktree paths using {repo-slug}-{branch-slug}", () => {
     expect(content).toContain(
+      // biome-ignore lint/suspicious/noTemplateCurlyInString: literal shell worktree-path placeholder in asserted dev-task text, not JS interpolation
       "${SHIPWRIGHT_WORKTREE_DIR:-$HOME/worktrees}/{repo-slug}-{branch-slug}",
     );
   });

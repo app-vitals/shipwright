@@ -67,6 +67,7 @@ describe("SKILL.md — the dependency-bot cross-check step is retired (DBR-3.4)"
 describe("SKILL.md — worktree path convention", () => {
   it("uses SHIPWRIGHT_WORKTREE_DIR env var form instead of hardcoded ~/worktrees", () => {
     expect(content).toContain(
+      // biome-ignore lint/suspicious/noTemplateCurlyInString: literal shell worktree-path placeholder in asserted skill text, not JS interpolation
       "${SHIPWRIGHT_WORKTREE_DIR:-$HOME/worktrees}/{repo}-{branch-slug}",
     );
     expect(content).not.toContain("~/worktrees/{repo}-{branch-slug}");
