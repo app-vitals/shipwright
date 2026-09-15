@@ -121,6 +121,15 @@ const GOLDEN_CODING_CRONS: GoldenCron[] = [
     parentCron: null,
   },
   {
+    name: "shipwright-site-docs-freshness",
+    schedule: "0 7 * * *",
+    prompt: "/docs-sync --auto",
+    silent: true,
+    preCheck: "shipwright:check-site-docs-freshness.ts",
+    enabled: false,
+    parentCron: null,
+  },
+  {
     name: "learn-dream",
     schedule: "0 3 * * *",
     prompt: "/shipwright:learn-dream --since 1d --review",
