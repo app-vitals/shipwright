@@ -329,7 +329,8 @@ Flag a task as HITL if its title or description contains any of the following ke
 terraform, helm, kubectl, GKE, GCP, deploy (image/cluster context),
 container registry, image push, certificate, Cloud SQL, kube-context,
 rollout, helm upgrade, kubectl apply, PAT, personal access token,
-provision secret, GitHub settings, branch protection, allow_auto_merge
+provision secret, GitHub settings, branch protection, allow_auto_merge,
+.claude/
 ```
 
 ### Judgment Step (Type A detection)
@@ -340,6 +341,7 @@ Even without a keyword match, flag the task Type A HITL if it fundamentally requ
 - Approving a privileged workflow that requires human authorization
 - Any action that cannot be expressed as a CLI command the agent can run
 - Reading live production data to verify something (a backfill/attribution mapping, a data shape assumption) in a repo where the dev-task agent's normal execution environment cannot reach production databases directly — check the repo's `CLAUDE.md` for a rule to this effect. The keyword scan above won't catch this on its own since the trigger words (`kubectl`, `Cloud SQL`, etc.) typically show up only in acceptance criteria, not the task title/description — apply this judgment check explicitly for any backfill/migration task.
+- Creating or modifying a file under `.claude/**` in the target repo — this is a distinct case from the others above: it is not blocked by any tool-permission configuration Shipwright controls, it is blocked unconditionally by the Claude Code CLI's own protection of its config/permissions/hooks directory. No amount of granted tool access changes this — flag it Type A HITL whenever the description, acceptance criteria, or identified file scope names a `.claude/**` path (e.g. `.claude/commands/*.md`, `.claude/settings.json`, `.claude/agents/*.md`).
 
 **CI workflow secret scan**: if a task adds or modifies a CI workflow file, extract every `${{ secrets.* }}` reference in the changed file and check whether each secret name already appears in other workflow files in the repo. Any secret that is net-new — not referenced anywhere else — requires a human to provision it. Flag the task Type A HITL and list the new secret names in the `## Human steps` section.
 
@@ -369,6 +371,16 @@ Requires: GCP Console access (Cloud SQL Admin role)
 Action: Set the database password via Cloud SQL Studio or:
   gcloud sql users set-password app --instance=prod-db --password=<value>
 Pre-requisite: Ensure kube-context is pointed at the production cluster before running migrations.
+```
+
+**Example Type A HITL description injection (`.claude/**` case):**
+```
+{original description}
+
+## Human steps
+Requires: direct repo write access outside the agent's own tooling.
+Reason: the Claude Code CLI blocks agent writes under .claude/** unconditionally — this is not a Shipwright permission setting.
+Action: a human applies the change to .claude/commands/docs-sync.md directly and pushes it to the branch.
 ```
 
 After scanning, list any flagged tasks:

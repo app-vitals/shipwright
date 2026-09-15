@@ -78,6 +78,69 @@ describe("plan-session.md — Step 5.5 is a 2-way HITL classification (RHA-1.2)"
   });
 });
 
+describe("plan-session.md — Step 5.5 flags .claude/** write tasks as HITL (CDH-1.1)", () => {
+  function extractJudgmentStepSubsection(section: string): string {
+    const idx = section.indexOf("### Judgment Step");
+    expect(idx).toBeGreaterThan(-1);
+    const howToFlagIdx = section.indexOf("### How to Flag a Matched Task");
+    expect(howToFlagIdx).toBeGreaterThan(idx);
+    return section.slice(idx, howToFlagIdx);
+  }
+
+  /**
+   * Extracts just the new `.claude/**` Judgment Step bullet, so assertions about its
+   * wording can't be satisfied by unrelated prose elsewhere in the subsection.
+   */
+  function extractClaudeDirBullet(section: string): string {
+    const judgmentSection = extractJudgmentStepSubsection(section);
+    const idx = judgmentSection.indexOf("- Creating or modifying a file under `.claude/**`");
+    expect(idx).toBeGreaterThan(-1);
+    const rest = judgmentSection.slice(idx);
+    // The bullet is a single markdown list item: it ends at the next blank line.
+    const endIdx = rest.indexOf("\n\n");
+    return endIdx === -1 ? rest : rest.slice(0, endIdx);
+  }
+
+  function extractKeywordHeuristicsCodeBlock(section: string): string {
+    const idx = section.indexOf("### Keyword Heuristics");
+    expect(idx).toBeGreaterThan(-1);
+    const sub = section.slice(idx);
+    const match = sub.match(/```[\s\S]*?```/);
+    expect(match).not.toBeNull();
+    return match?.[0] ?? "";
+  }
+
+  it("Judgment Step flags a task requiring a .claude/** change as Type A HITL", () => {
+    const section = extractStep5_5Section(content);
+    const judgmentSection = extractJudgmentStepSubsection(section);
+    expect(judgmentSection).toContain(".claude/**");
+  });
+
+  it("the .claude/** bullet itself explains writes are blocked unconditionally by the Claude Code CLI's own protection, not by any Shipwright tool-permission setting", () => {
+    const section = extractStep5_5Section(content);
+    const bullet = extractClaudeDirBullet(section);
+    const lower = bullet.toLowerCase();
+    expect(lower).toContain("blocked unconditionally");
+    expect(lower).toContain("claude code cli");
+    expect(lower).toContain("not blocked by any tool-permission configuration");
+  });
+
+  it("Keyword Heuristics fenced keyword list includes a .claude/ path pattern", () => {
+    const section = extractStep5_5Section(content);
+    const codeBlock = extractKeywordHeuristicsCodeBlock(section);
+    expect(codeBlock).toContain(".claude/");
+  });
+
+  it("How to Flag a Matched Task includes a .claude/**-specific example description injection", () => {
+    const section = extractStep5_5Section(content);
+    const howToFlagIdx = section.indexOf("### How to Flag a Matched Task");
+    expect(howToFlagIdx).toBeGreaterThan(-1);
+    const howToFlagSection = section.slice(howToFlagIdx);
+    expect(howToFlagSection).toContain(".claude/**");
+    expect(howToFlagSection.toLowerCase()).toContain("## human steps");
+  });
+});
+
 describe("plan-session.md — task table legend no longer references Approval / requiresHumanApproval (RHA-1.2)", () => {
   it("the HITL column legend documents ⚠ HITL for Type A only, not ⚠ Approval", () => {
     const hitlLegendMatch = content.match(/\*\*HITL\*\*:[\s\S]*?see Step 5\.5[\s\S]*?omit otherwise/);
