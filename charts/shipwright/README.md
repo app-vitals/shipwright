@@ -290,6 +290,56 @@ The chart vendors **four optional subcharts** — each gated by its own
 render (`templates/_validation.tpl`). See [Cloud-native install](#cloud-native-install-single-chart)
 above for bundling `cert-manager` alongside either one.
 
+## ⚠️ Upgrading to chart 1.20.58+ — bundled PostgreSQL 17 → 18
+
+Chart `1.20.58` moves the bundled `postgresql` subchart from `16.7.27`
+(PostgreSQL **17.6.0**) to `18.11.3` (PostgreSQL **18.6.0**). **This is a
+PostgreSQL major-version change.** Fresh installs are unaffected — this is the
+tested, intended path.
+
+**Existing installs are not.** `helm upgrade` reuses the release's existing
+PersistentVolumeClaim, so the new pod starts PostgreSQL 18 binaries against a
+17.x data directory. PostgreSQL refuses to do this and the pod will crash-loop
+with an error like `database files are incompatible with server` — there is no
+automatic in-place conversion.
+
+Pick one of these **before** upgrading a live release:
+
+1. **Stay on PostgreSQL 17** — keep your data directory as-is by pinning the
+   subchart's image back to the last `bitnamilegacy` Postgres 17 build:
+
+   ```yaml
+   postgresql:
+     image:
+       registry: docker.io
+       repository: bitnamilegacy/postgresql
+       digest: ""
+       tag: "17.6.0-debian-12-r4"   # or whatever 17.x tag your mirror provides
+   ```
+
+   (Or hold the whole release at chart `1.20.57`.)
+
+2. **Migrate the data** — dump on 17, restore on 18. Scale the app down first so
+   nothing writes during the dump:
+
+   ```bash
+   kubectl exec -n <ns> <release>-postgresql-0 -- \
+     pg_dumpall -U postgres > shipwright-pg17.sql
+   # upgrade the release, let the new PVC initialize empty on 18.x, then:
+   kubectl exec -i -n <ns> <release>-postgresql-0 -- \
+     psql -U postgres < shipwright-pg17.sql
+   ```
+
+   A `pg_upgrade` against a copy of the old data directory works too, but
+   requires both major versions' binaries in the same container.
+
+3. **Bring your own PostgreSQL** — set `postgresql.enabled: false` and manage
+   the major-version upgrade on your own database (see "Bring your own
+   PostgreSQL" under the "Bitnami registry risk" section below).
+
+**Take a backup either way.** The chart does not snapshot the PVC for you, and
+`helm rollback` restores manifests, not data.
+
 ## ⚠️ Bitnami registry risk and image-override / mirror fallback
 
 The bundled PostgreSQL dependency is the **Bitnami `postgresql` subchart**,
