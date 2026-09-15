@@ -261,6 +261,7 @@ describe("SKILL.md — refuses to write test-readiness-plan.md on script failure
 describe("SKILL.md — template placeholders wired from the script output", () => {
   it("lists all seven Coverage Gate placeholders in the render step", () => {
     const renderIdx = content.indexOf(
+      // biome-ignore lint/suspicious/noTemplateCurlyInString: literal ${CLAUDE_PLUGIN_ROOT} placeholder in asserted skill text, not JS interpolation
       "10. Load `${CLAUDE_PLUGIN_ROOT}/assets/templates/test-readiness-plan.md.tmpl`",
     );
     expect(renderIdx).toBeGreaterThan(-1);
@@ -344,6 +345,7 @@ describe("SKILL.md — Process step 9 auto-emits the stage-3 coverage-promotion 
       "9. **Auto-emit the stage-3 coverage-promotion task",
     );
     const nextStepIdx = content.indexOf(
+      // biome-ignore lint/suspicious/noTemplateCurlyInString: literal ${CLAUDE_PLUGIN_ROOT} placeholder in asserted skill text, not JS interpolation
       "10. Load `${CLAUDE_PLUGIN_ROOT}/assets/templates/test-readiness-plan.md.tmpl`",
     );
     expect(idx).toBeGreaterThan(-1);
@@ -359,6 +361,7 @@ describe("SKILL.md — Process step 9 auto-emits the stage-3 coverage-promotion 
       "9. **Auto-emit the stage-3 coverage-promotion task",
     );
     const step10Idx = content.indexOf(
+      // biome-ignore lint/suspicious/noTemplateCurlyInString: literal ${CLAUDE_PLUGIN_ROOT} placeholder in asserted skill text, not JS interpolation
       "10. Load `${CLAUDE_PLUGIN_ROOT}/assets/templates/test-readiness-plan.md.tmpl`",
     );
     expect(coverageGateIdx).toBeGreaterThan(-1);

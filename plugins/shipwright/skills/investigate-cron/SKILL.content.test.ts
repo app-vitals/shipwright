@@ -219,6 +219,7 @@ describe("SKILL.md — admin API run lookup", () => {
     const hasRunsEndpoint =
       content.includes("/crons/$LOOP_CRON_ID/runs") ||
       content.includes("/crons/{loopCronId}/runs") ||
+      // biome-ignore lint/suspicious/noTemplateCurlyInString: literal ${LOOP_CRON_ID} placeholder variant in asserted skill text, not JS interpolation
       content.includes("/crons/${LOOP_CRON_ID}/runs");
     expect(hasRunsEndpoint).toBe(true);
   });

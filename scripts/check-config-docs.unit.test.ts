@@ -75,6 +75,7 @@ describe("extractEnvVarNames", () => {
   });
 
   test("handles process.env access inside string template", () => {
+    // biome-ignore lint/suspicious/noTemplateCurlyInString: literal source-code fixture text parsed by extractEnvVarNames, not JS interpolation
     const src = "const url = `http://${process.env.HOST}:${process.env.PORT}`;";
     const vars = extractEnvVarNames(src);
     expect(vars).toContain("HOST");

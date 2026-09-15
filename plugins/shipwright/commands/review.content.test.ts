@@ -202,6 +202,7 @@ describe("review.md — state/reviews/ paths survive worktree checkout (RSP-1.1)
 
   it("Step 4's worktree-transition line notes state/reviews/ as an exception", () => {
     const transitionIdx = content.indexOf(
+      // biome-ignore lint/suspicious/noTemplateCurlyInString: literal shell worktree-path placeholder in asserted doc text, not JS interpolation
       "All subsequent steps run from `${SHIPWRIGHT_WORKTREE_DIR:-$HOME/worktrees}/{repo}-{branch-slug}/`",
     );
     expect(transitionIdx).toBeGreaterThan(-1);
@@ -227,6 +228,7 @@ describe("review.md — state/reviews/ paths survive worktree checkout (RSP-1.1)
     const section = content.slice(stepIdx, stepIdx + 400);
 
     expect(section).toContain(
+      // biome-ignore lint/suspicious/noTemplateCurlyInString: literal shell worktree-path placeholder in asserted doc text, not JS interpolation
       "${SHIPWRIGHT_WORKTREE_DIR:-$HOME/worktrees}/{repo}-{branch-slug}/docs/test-readiness/test-system.md",
     );
     expect(section).not.toContain(
@@ -672,6 +674,7 @@ describe("review.md — Step 14 live-review pre-check (RVD-1.2)", () => {
     );
     const section = step14Section.slice(preCheckIdx, fastPathIdx);
 
+    // biome-ignore lint/suspicious/noTemplateCurlyInString: literal ${PR_RECORD_ID} placeholder in asserted task-store URL text, not JS interpolation
     const patchIdx = section.indexOf("$SHIPWRIGHT_TASK_STORE_URL/prs/${PR_RECORD_ID}");
     const skippingIdx = section.indexOf("Skipping #{pr}");
 
@@ -1153,6 +1156,7 @@ describe("review.md — Unresolved Comment Check is mechanized via compute-unres
     const unresolvedSection = section.slice(unresolvedIdx);
 
     expect(unresolvedSection).toContain(
+      // biome-ignore lint/suspicious/noTemplateCurlyInString: literal ${CLAUDE_PLUGIN_ROOT} placeholder in asserted command text, not JS interpolation
       'bun run "${CLAUDE_PLUGIN_ROOT}/scripts/compute-unresolved-comment-check.ts"',
     );
     expect(unresolvedSection).toContain("hasSubstantiveUnresolvedFeedback");
@@ -1378,6 +1382,7 @@ describe("review.md — Step 9.5 invokes compute-unaddressed-findings.ts mechani
 
   it("invokes the extracted compute-unaddressed-findings.ts CLI script via CLAUDE_PLUGIN_ROOT", () => {
     expect(step95Section).toContain(
+      // biome-ignore lint/suspicious/noTemplateCurlyInString: literal ${CLAUDE_PLUGIN_ROOT} placeholder in asserted command text, not JS interpolation
       'bun run "${CLAUDE_PLUGIN_ROOT}/scripts/compute-unaddressed-findings.ts"',
     );
   });
@@ -1703,6 +1708,7 @@ describe("review.md — Step 9.5 unaddressed-findings gate retains its PVD-1.1 c
 
   it("still invokes compute-unaddressed-findings.ts with the same CLI call", () => {
     expect(step95Section).toContain(
+      // biome-ignore lint/suspicious/noTemplateCurlyInString: literal ${CLAUDE_PLUGIN_ROOT} placeholder in asserted command text, not JS interpolation
       'bun run "${CLAUDE_PLUGIN_ROOT}/scripts/compute-unaddressed-findings.ts"',
     );
     expect(step95Section).toContain('{"unaddressedFindings":true|false}');
@@ -1856,6 +1862,7 @@ describe("review.md — findings ledger persistence (PFL-2.1)", () => {
     for (const section of [step5Ledger, step7Ledger]) {
       expect(section).toContain("Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN");
       expect(section).toContain("Content-Type: application/json");
+      // biome-ignore lint/suspicious/noTemplateCurlyInString: literal ${PR_RECORD_ID} placeholder in asserted task-store URL text, not JS interpolation
       expect(section).toContain("$SHIPWRIGHT_TASK_STORE_URL/prs/${PR_RECORD_ID}/findings");
     }
   });
@@ -1931,6 +1938,7 @@ describe("review.md — self-review ledger write at post time (PFL-5.2)", () => 
     expect(ledgerSection).toContain('\\"disposition\\": \\"resolved\\"');
     expect(ledgerSection).toContain('\\"source\\": \\"review\\"');
     expect(ledgerSection).toContain("/findings");
+    // biome-ignore lint/suspicious/noTemplateCurlyInString: literal ${headRefOid}/${SUBMITTED_AT} placeholders in asserted ledger key text, not JS interpolation
     expect(ledgerSection).toContain("${headRefOid}@${SUBMITTED_AT}");
   });
 

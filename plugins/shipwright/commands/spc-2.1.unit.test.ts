@@ -32,18 +32,22 @@ function bashBlocks(content: string): string {
 }
 
 describe("dev-task.md — SHIPWRIGHT_REPO_DIR", () => {
+  // biome-ignore lint/suspicious/noTemplateCurlyInString: literal shell path placeholder in asserted command-doc text, not JS interpolation
   it("replaces ~/src/{repo} with ${SHIPWRIGHT_REPO_DIR:-$HOME/src}/{repo-slug} in bash blocks", () => {
     // Local filesystem paths use {repo-slug} (PRF-1.4) — SHIPWRIGHT_REPO_DIR clones live
     // flat as repos/<bare-name>, not repos/<org>/<repo>. {repo} (org/repo) remains reserved
     // for task-store API calls.
     const blocks = bashBlocks(devTask);
     expect(blocks).not.toContain("~/src/{repo}");
+    // biome-ignore lint/suspicious/noTemplateCurlyInString: literal shell path placeholder in asserted command-doc text, not JS interpolation
     expect(blocks).toContain("${SHIPWRIGHT_REPO_DIR:-$HOME/src}/{repo-slug}");
   });
 
+  // biome-ignore lint/suspicious/noTemplateCurlyInString: literal shell path placeholder in asserted command-doc text, not JS interpolation
   it("replaces ~/worktrees/{repo} with ${SHIPWRIGHT_WORKTREE_DIR:-$HOME/worktrees}/{repo-slug} in bash blocks", () => {
     const blocks = bashBlocks(devTask);
     expect(blocks).toContain(
+      // biome-ignore lint/suspicious/noTemplateCurlyInString: literal shell path placeholder in asserted command-doc text, not JS interpolation
       "${SHIPWRIGHT_WORKTREE_DIR:-$HOME/worktrees}/{repo-slug}",
     );
   });
@@ -54,15 +58,19 @@ describe("dev-task.md — SHIPWRIGHT_REPO_DIR", () => {
 });
 
 describe("patch.md — SHIPWRIGHT_REPO_DIR", () => {
+  // biome-ignore lint/suspicious/noTemplateCurlyInString: literal shell path placeholder in asserted command-doc text, not JS interpolation
   it("replaces ~/src/{repo} with ${SHIPWRIGHT_REPO_DIR:-$HOME/src}/{repo} in bash blocks", () => {
     const blocks = bashBlocks(patch);
     expect(blocks).not.toContain("~/src/{repo}");
+    // biome-ignore lint/suspicious/noTemplateCurlyInString: literal shell path placeholder in asserted command-doc text, not JS interpolation
     expect(blocks).toContain("${SHIPWRIGHT_REPO_DIR:-$HOME/src}/{repo}");
   });
 
+  // biome-ignore lint/suspicious/noTemplateCurlyInString: literal shell path placeholder in asserted command-doc text, not JS interpolation
   it("replaces ~/worktrees/{repo} with ${SHIPWRIGHT_WORKTREE_DIR:-$HOME/worktrees}/{repo} in bash blocks", () => {
     const blocks = bashBlocks(patch);
     expect(blocks).toContain(
+      // biome-ignore lint/suspicious/noTemplateCurlyInString: literal shell path placeholder in asserted command-doc text, not JS interpolation
       "${SHIPWRIGHT_WORKTREE_DIR:-$HOME/worktrees}/{repo}",
     );
   });
@@ -73,15 +81,19 @@ describe("patch.md — SHIPWRIGHT_REPO_DIR", () => {
 });
 
 describe("deploy.md — SHIPWRIGHT_REPO_DIR", () => {
+  // biome-ignore lint/suspicious/noTemplateCurlyInString: literal shell path placeholder in asserted command-doc text, not JS interpolation
   it("replaces ~/src/{repo} with ${SHIPWRIGHT_REPO_DIR:-$HOME/src}/{repo} in bash blocks", () => {
     const blocks = bashBlocks(deploy);
     expect(blocks).not.toContain("~/src/{repo}");
+    // biome-ignore lint/suspicious/noTemplateCurlyInString: literal shell path placeholder in asserted command-doc text, not JS interpolation
     expect(blocks).toContain("${SHIPWRIGHT_REPO_DIR:-$HOME/src}/{repo}");
   });
 
+  // biome-ignore lint/suspicious/noTemplateCurlyInString: literal shell path placeholder in asserted command-doc text, not JS interpolation
   it("replaces ~/worktrees/{repo} with ${SHIPWRIGHT_WORKTREE_DIR:-$HOME/worktrees}/{repo} in bash blocks", () => {
     const blocks = bashBlocks(deploy);
     expect(blocks).toContain(
+      // biome-ignore lint/suspicious/noTemplateCurlyInString: literal shell path placeholder in asserted command-doc text, not JS interpolation
       "${SHIPWRIGHT_WORKTREE_DIR:-$HOME/worktrees}/{repo}",
     );
   });
@@ -102,12 +114,14 @@ describe("dev-task.md — subagent prompt templates", () => {
 
   it("uses env var form for prose line (line ~176)", () => {
     expect(devTask).toContain(
+      // biome-ignore lint/suspicious/noTemplateCurlyInString: literal shell worktree-path placeholder in asserted dev-task prose, not JS interpolation
       "${SHIPWRIGHT_WORKTREE_DIR:-$HOME/worktrees}/{repo-slug}-{branch-slug}/",
     );
   });
 
   it("uses env var form in docs-refresher dispatch prompt (line 763)", () => {
     expect(devTask).toContain(
+      // biome-ignore lint/suspicious/noTemplateCurlyInString: literal shell worktree-path placeholder in asserted dev-task prose, not JS interpolation
       "${SHIPWRIGHT_WORKTREE_DIR:-$HOME/worktrees}/{repo-slug}-{branch-slug}",
     );
     expect(devTask).not.toContain("Worktree:  ~/worktrees/{repo-slug}-{branch-slug}");
