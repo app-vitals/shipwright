@@ -231,6 +231,25 @@ describe("TaskSchema", () => {
     expect(result.success).toBe(false);
   });
 
+  // ─── kind (TKD-1.1) ─────────────────────────────────────────────────────────
+
+  test("parses kind: 'prd'", () => {
+    const result = TaskSchema.safeParse({ ...validTask, kind: "prd" });
+    expect(result.success).toBe(true);
+    if (result.success) expect(result.data.kind).toBe("prd");
+  });
+
+  test("defaults a task with no kind to 'dev' (every pre-TKD-1.1 row)", () => {
+    const result = TaskSchema.safeParse(validTask);
+    expect(result.success).toBe(true);
+    if (result.success) expect(result.data.kind).toBe("dev");
+  });
+
+  test("rejects an unknown kind", () => {
+    const result = TaskSchema.safeParse({ ...validTask, kind: "epic" });
+    expect(result.success).toBe(false);
+  });
+
   test("parses acceptanceCriteria as string array", () => {
     const result = TaskSchema.safeParse({
       ...validTask,

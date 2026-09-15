@@ -20,7 +20,7 @@ function makeTask(overrides: Partial<ReadyTaskLike> = {}): ReadyTaskLike {
     dependencies: [],
     pr: null,
     hitl: null,
-    autonomousPlanSession: null,
+    kind: "dev",
     claimedAt: null,
     heartbeatAt: null,
     ...overrides,
@@ -53,10 +53,16 @@ describe("resolveReadyTasks", () => {
     expect(result).toEqual([]);
   });
 
-  it("excludes a task with autonomousPlanSession === true even if otherwise ready", async () => {
-    const task = makeTask({ id: "t1", autonomousPlanSession: true });
+  it("excludes a task with kind === 'prd' even if otherwise ready (TKD-1.1)", async () => {
+    const task = makeTask({ id: "t1", kind: "prd" });
     const result = await resolveReadyTasks([task], isPrMergedShouldNotBeCalled);
     expect(result).toEqual([]);
+  });
+
+  it("includes a task with kind === 'dev' (the default for every pre-TKD-1.1 row)", async () => {
+    const task = makeTask({ id: "t1", kind: "dev" });
+    const result = await resolveReadyTasks([task], isPrMergedShouldNotBeCalled);
+    expect(result).toEqual([task]);
   });
 
   it("includes a pending task with no dependencies", async () => {

@@ -137,11 +137,16 @@ export const TaskSchema = z
     model: z.string().nullable().optional().openapi({ example: "sonnet" }),
     complexity: z.number().int().nullable().optional().openapi({ example: 7 }),
     hitl: z.boolean().nullable().optional().openapi({ example: true }),
-    autonomousPlanSession: z
-      .boolean()
-      .nullable()
-      .optional()
-      .openapi({ example: true }),
+    kind: z.enum(["dev", "prd"]).default("dev").openapi({
+      example: "dev",
+      description:
+        "What the task is: `dev` (ordinary work item, the default) or `prd` (a product spec awaiting an autonomous plan session). A `prd` task is never part of the `?ready=true` set.",
+    }),
+    autonomousPlanSession: z.boolean().nullable().optional().openapi({
+      example: true,
+      description:
+        'Deprecated (TKD-1.1) — the legacy spelling of `kind: "prd"`. Still accepted on write and still filterable; the task store keeps it in sync with `kind`.',
+    }),
     skipCount: z.number().int().default(0).openapi({
       example: 0,
       description:
@@ -651,10 +656,16 @@ export const TaskListQuerySchema = z.object({
   offset: z.string().optional().openapi({ example: "0" }),
   ready: z.enum(["true", "false"]).optional().openapi({ example: "true" }),
   hitl: z.enum(["true", "false"]).optional().openapi({ example: "true" }),
-  autonomousPlanSession: z
-    .enum(["true", "false"])
-    .optional()
-    .openapi({ example: "true" }),
+  kind: z.enum(["dev", "prd"]).optional().openapi({
+    example: "prd",
+    description:
+      "Filter by TaskKind. Combines with every other filter as an AND. Note `?kind=prd&ready=true` is always empty — ready.ts excludes the PRD slice structurally.",
+  }),
+  autonomousPlanSession: z.enum(["true", "false"]).optional().openapi({
+    example: "true",
+    description:
+      "Deprecated (TKD-1.1) — the legacy spelling of `?kind=prd` / `?kind=dev`. Still supported unchanged.",
+  }),
   sort: z.enum(["asc", "desc"]).optional().openapi({ example: "asc" }),
   updatedSince: z.string().optional().openapi({
     example: "2026-01-01T00:00:00.000Z",
@@ -700,6 +711,16 @@ export const CreateTaskBodySchema = z
     priority: z.string().optional().openapi({ example: "high" }),
     type: z.string().optional().openapi({ example: "feature" }),
     source: z.string().optional().openapi({ example: "manual" }),
+    kind: z.enum(["dev", "prd"]).optional().openapi({
+      example: "dev",
+      description:
+        'What the task is (TKD-1.1). Defaults to `dev`. The legacy `autonomousPlanSession: true` boolean is still accepted as a synonym for `kind: "prd"` and is normalized server-side; an explicit `kind` wins when both are sent.',
+    }),
+    autonomousPlanSession: z.boolean().optional().openapi({
+      example: true,
+      description:
+        'Deprecated (TKD-1.1) — the legacy spelling of `kind: "prd"`.',
+    }),
   })
   .passthrough()
   .openapi("CreateTaskBody");

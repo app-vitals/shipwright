@@ -6,7 +6,7 @@
  * A task is "ready" to execute when:
  *   - task.status === "pending"
  *   - task.hitl !== true
- *   - task.autonomousPlanSession !== true
+ *   - task.kind !== "prd"
  *   - it has no fresh same-branch in_progress sibling (exclusivity guard, see below)
  *   - every dependency ID resolves to a known task whose status satisfies the
  *     dependency-satisfied rules below
@@ -42,7 +42,13 @@ export interface ReadyTaskLike {
   dependencies?: string[];
   pr?: number | null;
   hitl?: boolean | null;
-  autonomousPlanSession?: boolean | null;
+  /**
+   * TaskKind ("dev" | "prd"). Typed as a plain string so this stays a
+   * structural shape the Prisma Task satisfies without importing its enum.
+   * Absent/undefined means "dev" — the column's default, and what every row
+   * predating TKD-1.1 was backfilled to.
+   */
+  kind?: string | null;
   /** Reason recorded when status is 'blocked'. */
   blockedReason?: string | null;
   /** ISO timestamp when claimed. */
@@ -80,7 +86,12 @@ export async function resolveReadyTasks<T extends ReadyTaskLike>(
   for (const task of tasks) {
     if (task.status !== "pending") continue;
     if (task.hitl === true) continue;
-    if (task.autonomousPlanSession === true) continue;
+    // TKD-1.1: the PRD slice is never dev work. Supersedes PDR-2.2's
+    // `autonomousPlanSession === true` check — the two are equivalent by
+    // construction (the migration backfilled kind='prd' for every flagged row,
+    // and every write path keeps the pair in sync), except that an explicit
+    // `kind` now wins over a contradicting legacy flag.
+    if (task.kind === "prd") continue;
 
     if (task.branch) {
       const hasFreshInProgressSibling = tasks.some(

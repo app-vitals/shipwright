@@ -346,6 +346,9 @@ describe("plan-session.md — `--autonomous {task-id}` argument parsing (PDR-3.1
     const section = extractArgsAndAutoDetectSection(content);
     expect(section).toContain("--autonomous");
     expect(section).toContain("{task-id}");
+    // TKD-1.1: `kind: "prd"` is the current spelling; the legacy
+    // autonomousPlanSession boolean stays documented as still-accepted.
+    expect(section).toContain('kind: "prd"');
     expect(section.toLowerCase()).toContain("autonomousplansession");
   });
 

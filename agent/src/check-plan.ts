@@ -8,11 +8,12 @@
  * candidate mapper, an async collector, and a buildProductionDeps() wiring
  * over createTaskStoreClient) — but queries a different slice of the task
  * store. Where dev-task asks for `?ready=true` (dependency-resolved work
- * items), this phase asks for `?autonomousPlanSession=true&status=pending`:
- * PRD tasks that a human flagged for autonomous planning and that nobody has
- * picked up yet. These are the tasks PDR-3.1's autonomous plan-session mode
- * consumes, and they are deliberately NOT filtered by `ready` — a PRD task
- * awaiting planning has no dependency graph to resolve.
+ * items), this phase asks for `?kind=prd&status=pending` (TKD-1.1, replacing
+ * the legacy `?autonomousPlanSession=true`): PRD tasks flagged for autonomous
+ * planning that nobody has picked up yet. These are the tasks PDR-3.1's
+ * autonomous plan-session mode consumes, and they are deliberately NOT
+ * filtered by `ready` — a PRD task awaiting planning has no dependency graph
+ * to resolve, and `?ready=true` excludes the whole `kind: "prd"` slice anyway.
  *
  * Unlike dev-task's bare `/shipwright:dev-task {id}` dispatch, the plan
  * phase's command contract is
@@ -41,8 +42,8 @@ import type { WorkTaskCandidate } from "./work-selector.ts";
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 export interface CheckPlanDeps {
-  /** Flagged, still-pending PRD tasks awaiting an autonomous plan session. */
-  getAutonomousPlanTasks: () => Promise<Task[]>;
+  /** `kind: "prd"`, still-pending tasks awaiting an autonomous plan session. */
+  getPrdTasks: () => Promise<Task[]>;
   clock: Clock;
   /** This agent's own task-store id. */
   agentId: string;
@@ -77,14 +78,14 @@ function toWorkTaskCandidate(task: Task): WorkTaskCandidate {
 export async function getPlanCandidates(
   deps: CheckPlanDeps,
 ): Promise<WorkTaskCandidate[]> {
-  const tasks = await deps.getAutonomousPlanTasks();
+  const tasks = await deps.getPrdTasks();
   const candidates: WorkTaskCandidate[] = [];
   for (const task of tasks) {
     // Human-escalation gate, matching every other candidate provider:
     // check-review/check-patch/check-deploy call isTaskBlockedForDispatch()
     // on the linked task, and check-dev-task gets the equivalent for free
     // from task-store's ?ready=true filter (ready.ts drops hitl === true).
-    // The `?autonomousPlanSession=true&status=pending` query below has no
+    // The `?kind=prd&status=pending` query below has no
     // such gate, so a task a human escalated with `hitl: true` while leaving
     // it `pending` would otherwise be claimed and dispatched into an
     // autonomous plan session.
@@ -116,6 +117,18 @@ export async function getPlanCandidates(
 
 // ─── Production deps ──────────────────────────────────────────────────────────
 
+/**
+ * The task-store query that defines this phase's pool (TKD-1.1).
+ *
+ * Exported so its shape is unit-testable without standing up a task-store
+ * client: `kind=prd` is the current spelling of what used to be
+ * `autonomousPlanSession=true`, and getting it wrong silently empties the
+ * whole plan phase.
+ */
+export function buildPrdTaskQuery(): URLSearchParams {
+  return new URLSearchParams({ kind: "prd", status: "pending" });
+}
+
 export function buildProductionDeps(): CheckPlanDeps {
   const client = createTaskStoreClient();
   const agentId = (process.env.SHIPWRIGHT_AGENT_ID ?? "").trim();
@@ -125,13 +138,7 @@ export function buildProductionDeps(): CheckPlanDeps {
   }
 
   return {
-    getAutonomousPlanTasks: () =>
-      client.query(
-        new URLSearchParams({
-          autonomousPlanSession: "true",
-          status: "pending",
-        }),
-      ),
+    getPrdTasks: () => client.query(buildPrdTaskQuery()),
     clock: SystemClock(),
     agentId,
   };

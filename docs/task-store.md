@@ -46,6 +46,26 @@ pending → in_progress → pr_open → approved → merged → deploying → de
 Terminal statuses (closed): `merged`, `done`, `deploying`, `deployed`, `cancelled`.
 Paused status: `blocked` (returned to `pending` on retry).
 
+### Task kind
+
+`Task.kind` is a `TaskKind` enum — `dev` (the default) or `prd` — recording what a task *is*, as
+opposed to what state it's in:
+
+| `kind` | Meaning | Dispatched as |
+|---|---|---|
+| `dev` | An ordinary work item. The default, and what every row created before the enum existed was backfilled to. | `/shipwright:dev-task {id}` |
+| `prd` | A product spec awaiting an autonomous planning pass. Never part of the `?ready=true` set — a PRD task has no dependency graph to resolve and must not be picked up as dev work. | `/shipwright:plan-session {repo} {session} --autonomous {id}` |
+
+Filter on it with `?kind=dev` / `?kind=prd`; `agent/src/check-plan.ts` collects the plan phase's
+candidates with `?kind=prd&status=pending`.
+
+**Legacy `autonomousPlanSession`.** `kind` supersedes the boolean `autonomousPlanSession` flag,
+which remains fully supported during the transition window: it is still a column, still returned on
+every task, still accepted on `POST /tasks` and `POST /tasks/bulk`, and still filterable via
+`?autonomousPlanSession=true|false`. The task store normalizes the two into each other on every
+write — `autonomousPlanSession: true` stores `kind: "prd"`, and `kind: "prd"` back-fills the flag —
+so the pair never disagrees. If a single request sets both, the explicit `kind` wins.
+
 ### Dependency satisfaction rules
 
 When `GET /tasks?ready=true` evaluates whether a task is eligible to run, it checks whether all of the task's dependencies are "satisfied." A task's dependencies are specified in its `dependencies` array (a list of task IDs). A single dependency is satisfied when its task meets one of these conditions:
@@ -102,7 +122,7 @@ All `/tokens` endpoints are admin-only — create, list, update (relabel/rescope
 
 ### `?ready=true` returns empty
 
-If `GET /tasks?ready=true` returns `{ tasks: [], total: 0 }` even though tasks exist, check in order: (1) an unfiltered `?assignee=` query can still exclude tasks assigned elsewhere — use an admin token or drop the filter; (2) `hitl: true` (Type A — requires direct human execution) or (3) `autonomousPlanSession: true` may be set — query `?status=pending` to check; (4) a same-branch sibling may hold the [exclusivity guard](#same-branch-exclusivity-guard) — query `?status=in_progress` to check, and note a stale claim (>65 min, no heartbeat) is reaped automatically; (5) [dependencies](#dependency-satisfaction-rules) may be unsatisfied; (6) the queue may simply be empty — confirm with `?status=pending`.
+If `GET /tasks?ready=true` returns `{ tasks: [], total: 0 }` even though tasks exist, check in order: (1) an unfiltered `?assignee=` query can still exclude tasks assigned elsewhere — use an admin token or drop the filter; (2) `hitl: true` (Type A — requires direct human execution) or (3) `kind: "prd"` (a product spec awaiting an autonomous plan session; equivalently the legacy `autonomousPlanSession: true` flag) may be set — query `?status=pending` to check; (4) a same-branch sibling may hold the [exclusivity guard](#same-branch-exclusivity-guard) — query `?status=in_progress` to check, and note a stale claim (>65 min, no heartbeat) is reaped automatically; (5) [dependencies](#dependency-satisfaction-rules) may be unsatisfied; (6) the queue may simply be empty — confirm with `?status=pending`.
 
 ### 401 Unauthorized
 
