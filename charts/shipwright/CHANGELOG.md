@@ -10,6 +10,12 @@ independent of `appVersion`. CI enforces this with
 `ct lint --check-version-increment`. Each release here must mirror the
 `artifacthub.io/changes` annotation in `Chart.yaml`.
 
+## [1.20.58] - 2026-09-15
+
+### Changed
+
+- bump bundled postgresql subchart to 18.11.3 (Postgres 18.6.0), pinning postgresql.image.digest instead of a tag since Bitnami no longer publishes concrete version tags publicly
+
 ## [1.20.57] - 2026-09-15
 
 ### Changed
