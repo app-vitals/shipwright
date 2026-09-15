@@ -90,6 +90,7 @@ describe("unblock.md — phase inference (AC2)", () => {
   const patchReasons = [
     "merge-conflict",
     "second-round disagreement",
+    "structurally unfixable",
     "review-finding fix blocked",
     "CI-fix blocked",
   ];

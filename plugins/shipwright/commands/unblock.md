@@ -140,6 +140,7 @@ subagent's own detail) after a fixed prefix.
 | **dev-task** | `ci_max_retries_exhausted` | task: `blockedReason` |
 | **patch** | `merge-conflict` (resolution blocked) | task: `blockedReason` |
 | **patch** | `second-round disagreement` (reviewer vs. automated fix, escalated to HITL) | task: `blockedReason` |
+| **patch** | `structurally unfixable` (finding requires a write under `.claude/**`, which the CLI blocks unconditionally — escalated to HITL on the first round) | task: `blockedReason` |
 | **patch** | `review-finding fix blocked` | task: `blockedReason` |
 | **patch** | `CI-fix blocked` | task: `blockedReason` |
 | **deploy** | `Post-merge CI failed` | task: `blockedReason`, fallback `note`; PR: `blockedReason` |

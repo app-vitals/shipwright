@@ -198,8 +198,9 @@ MATCHED_TASKS=$(curl -sf -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN"
 
   Also set `PR_TASK_ID` to the id of the task that produced the highest tier (the first
   match on a tie). Several sites further down this file — Step 4c's BLOCKED handling, Step
-  5a.7, Step 5c's BLOCKED handling, and `references/escalation-pattern.md`'s shared
-  PATCH/comment/release sequence — reuse `PR_TASK_ID` as a single scalar to PATCH one task
+  5a.6b, Step 5a.7, Step 5c's BLOCKED handling, and
+  `references/escalation-pattern.md`'s shared PATCH/comment/release sequence — reuse
+  `PR_TASK_ID` as a single scalar to PATCH one task
   to `status: blocked` during HITL escalation. The model-tier calculation above now
   considers every matched task, but that downstream escalation-PATCH mechanism still only
   ever flags one task, so `PR_TASK_ID` stays a single value here rather than becoming a set.
@@ -894,7 +895,7 @@ headRefOid=$(gh pr view {pr} --repo {org}/{repo} --json headRefOid -q '.headRefO
 - **`headRefOid == PRECLAIM_COMMIT_SHA`** (marker is current): trust it. Set
   `PR_RECORD_ID = PRECLAIM_RECORD_ID` and **skip this site's own `/prs/claim` call below**
   — the orchestrator's `/prs/claim` already holds this PR under `phase: "patch"`. Proceed
-  to Step 5a.7 (`PR_RECORD_ID` is reused by the post-fix update in Step 5c.5, same as the
+  to Step 5a.6b (`PR_RECORD_ID` is reused by the post-fix update in Step 5c.5, same as the
   self-claim path).
 - **`headRefOid != PRECLAIM_COMMIT_SHA`** (stale marker — new commits landed between the
   orchestrator's claim and now) **or no marker present**: fall back to self-claiming
@@ -919,7 +920,92 @@ Skip the rest of Step 5 for this PR. Move to the next qualifying PR in List A. I
 candidates remain, continue to Step 6.
 
 **Otherwise** (`200` or `201`): the claim succeeded. `PR_RECORD_ID` is reused by the
-post-fix update in Step 5c.5 — no second claim call is needed. Proceed to Step 5a.7.
+post-fix update in Step 5c.5 — no second claim call is needed. Proceed to Step 5a.6b.
+
+### Step 5a.6b: `.claude/**` Path Escalation Check (CDH-1.2)
+
+The Claude Code CLI blocks writes under `.claude/**` unconditionally in headless (`-p`)
+runs — a fix subagent dispatched against a finding that requires editing a file under
+`.claude/**` cannot make the required change no matter how many times it's retried. Without
+this check, such a PR would loop through Step 5b's fix dispatch every cycle, fail to make
+the edit, and re-qualify for List A again next cycle — wasting a cycle indefinitely instead
+of ever reaching a human (rooted in app-vitals/shipwright#3366, where this constraint
+surfaced mid-flight as a review finding rather than being known at planning time). This
+check fires on the very first round, before Step 5a.7's second-round-disagreement check even
+applies (which only escalates on a *second* round of the same disagreement) — a `.claude/**`
+write requirement is structurally unfixable regardless of how many rounds have passed, so
+there is no reason to wait for a second round to escalate it.
+
+**Scan this cycle's List A findings for a `.claude/**` remediation.** For each finding that
+contributed to this PR's List A membership (Step 3a's `reviewThreads.nodes[]` entries with
+`isResolved == false`, and the qualifying COMMENTED/CHANGES_REQUESTED review bodies):
+
+- **Inline thread finding**: the thread's first comment `path` (from Step 3a) starts with
+  `.claude/`.
+- **Review-body-level finding** (no inline thread — fallback): the review body mentions a
+  `.claude/`-rooted path **inside an inline code span** (backtick-delimited — e.g. a span
+  whose contents start with `.claude/`) **and** that code span occurs in the **same sentence**
+  as a remediation verb — one of `edit`, `update`, `change`, `modify`, `rewrite`, `add`,
+  `remove`, `delete`, `fix`, in any inflection (`edits`/`editing`/`edited`, and so on). Treat a
+  sentence as the text between sentence-ending punctuation *followed by whitespace* (`. `,
+  `! `, `? `) or a line break; the dot inside `.claude/` is never a sentence boundary, since it
+  is not followed by whitespace. A bare `.claude/` substring anywhere in the body is **not**
+  enough on its own: this plugin's own review agents routinely cite `.claude/`-rooted paths as
+  *context* (e.g. a principles or decisions-registry file) in findings whose actual remediation
+  is an ordinary, auto-fixable source edit, and escalating those would skip the fix subagent
+  for no reason. When it is genuinely ambiguous whether the body is asking for a `.claude/**`
+  write, **do not match** — the inline-thread path above is the reliable signal, and a
+  false-negative here merely means the normal fix dispatch runs, whereas a false-positive
+  strands an auto-fixable PR in HITL.
+
+**If no finding matches**: this check does not apply — proceed to Step 5a.7.
+
+**If at least one finding matches**: do not dispatch the fix subagent for this PR this cycle
+at all — skip the rest of Step 5 entirely, do not proceed to Step 5a.7, and do not proceed
+to Step 5b. Escalate immediately via `references/escalation-pattern.md`'s shared
+PATCH/comment/release sequence:
+
+- **`{blockedReason}`**: `"structurally unfixable — finding requires a write under
+  .claude/**, which the Claude Code CLI blocks unconditionally — escalated to HITL"`
+- **`{comment_body}`**: "This finding requires editing a file under `.claude/**`, which the
+  Claude Code CLI blocks unconditionally in automated runs — no automated fix is possible
+  here. Flagging for a human to make the change directly instead of looping on a fix
+  attempt that can never succeed."
+- **`{temp_file_slug}`**: `claude-dir` (temp file:
+  `/tmp/shipwright-patch-claude-dir-{pr}.txt`)
+- **`PR_TASK_ID`**: reused from Step 2.1 (same as Step 5a.7 — no fresh fetch)
+- **`PR_RECORD_ID`**: reused from the pre-work claim in Step 5a.6
+- **Claim released**: the pre-work claim from Step 5a.6
+
+**Extra step, unique to this site — resolve unresolved inline threads before releasing the
+claim.** Same rationale and mechanism as Step 5a.7's own site-specific hook: resolve **all**
+currently-unresolved inline threads on this PR (from Step 3a's `reviewThreads.nodes[]`), not
+just the thread(s) that matched `.claude/**` — escalating already means giving up on
+automated resolution for this cycle, and leaving any thread unresolved would leave it
+`isResolved == false`, so Step 3a's List A criteria would re-qualify for List A again next
+cycle and re-fire this same escalation indefinitely — the exact loop this check exists to
+close. Use the same mutation as Step 5a.7:
+
+```bash
+gh api graphql -f query='
+mutation {
+  resolveReviewThread(input: {threadId: "{thread.id}"}) {
+    thread { isResolved }
+  }
+}'
+```
+
+Run this for the Thread ID of every thread in Step 3a's `reviewThreads.nodes[]` with
+`isResolved == false`. If there are none, there is nothing to resolve — move on. Do this
+before releasing the pre-work claim from Step 5a.6.
+
+After releasing the claim, print:
+```
+⏸ PR #{pr} — finding requires a .claude/** write, which the CLI cannot make — escalating to
+HITL (task {PR_TASK_ID or "none"}). Skipping fix dispatch for this cycle.
+```
+
+Move to the next qualifying PR in List A. If no candidates remain, continue to Step 6.
 
 ### Step 5a.7: Second-Round Escalation Check (RPF-1.3)
 
