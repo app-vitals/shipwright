@@ -18,6 +18,11 @@ describe("docs-sync.md — old Section Registry / full-regenerate flow removed",
     );
   });
 
+  it("has no dangling references to a section registry anywhere in the file", () => {
+    expect(content).not.toMatch(/section registry order/i);
+    expect(content).not.toMatch(/Section Name column/i);
+  });
+
   it("no longer documents --section / --rebuild flags", () => {
     expect(content).not.toContain("--section");
     expect(content).not.toContain("--rebuild");
@@ -157,16 +162,20 @@ describe("docs-sync.md — preserved verbatim sections", () => {
     );
   });
 
-  it("preserves the Navigation chain explanation verbatim", () => {
+  it("derives the Navigation chain from neighboring pages' frontmatter, not a registry", () => {
     const idx = content.indexOf("**Navigation chain**");
     expect(idx).toBeGreaterThan(-1);
-    const section = content.slice(idx, idx + 500);
+    const section = content.slice(idx, idx + 800);
     expect(section).toContain(
-      "Using the section registry order, set `prev` and `next` to create a continuous chain through the docs.",
+      "There is no global section registry to consult — derive the chain from the target page's neighbors.",
+    );
+    expect(section).toContain(
+      "Read the neighboring pages' current frontmatter in `site/src/content/docs/`, order them by `order`, and set `prev` to the `section` value of the page immediately before the target and `next` to the `section` value of the page immediately after it.",
     );
     expect(section).toContain(
       "If a section has no predecessor or successor, omit the `prev` or `next` field.",
     );
+    expect(section).not.toContain("Using the section registry order");
   });
 
   it("preserves the build:check validation step verbatim", () => {

@@ -119,10 +119,7 @@ These conventions govern any edit this command proposes to a page's frontmatter 
 - `prev` (optional): The name of the previous section in the navigation chain (use the `section` value, not the filename). E.g., `prev: Getting Started`.
 - `next` (optional): The name of the next section in the navigation chain (use the `section` value, not the filename). E.g., `next: Configuration`.
 
-**Navigation chain**: Using the section registry order, set `prev` and `next` to create a continuous chain through the docs. Use the `section` value (from the Section Name column) for prev/next references. For example:
-- introduction (order 0): `next: Getting Started`
-- getting-started (order 1): `prev: Getting Started`, `next: Configuration`
-- configuration (order 3): `prev: Getting Started`, `next: Task Store`
+**Navigation chain**: There is no global section registry to consult — derive the chain from the target page's neighbors. Read the neighboring pages' current frontmatter in `site/src/content/docs/`, order them by `order`, and set `prev` to the `section` value of the page immediately before the target and `next` to the `section` value of the page immediately after it. If a neighbor's own frontmatter looks inconsistent, flag it for human review rather than editing it as a side effect of this page's update.
 
 If a section has no predecessor or successor, omit the `prev` or `next` field.
 
