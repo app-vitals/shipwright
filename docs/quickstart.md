@@ -94,7 +94,7 @@ Run the complete local stack — metrics dashboard, admin UI, and the Shipwright
 | **go-task** (`task`) | Single local entrypoint. | <https://taskfile.dev/installation/> |
 | **Docker** | Runs the agent in an isolated container. | <https://docs.docker.com/get-docker/> |
 | **tmux** | `task stack` multiplexes the 6 panes. | `brew install tmux` / `apt install tmux` |
-| **PostgreSQL** | Admin service DB (local). | `brew install postgresql@16` / `apt install postgresql` |
+| **PostgreSQL** | Admin service DB (local). | `brew install postgresql@18` / `apt install postgresql` |
 | **Claude Code** | Runs the `/plugin install` step. | <https://www.anthropic.com/claude-code> |
 
 ### Step 1 — Clone and install
