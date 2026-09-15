@@ -8,7 +8,7 @@
 
 import { beforeAll, describe, expect, it } from "bun:test";
 import { sign } from "hono/jwt";
-import type { PrListItem, } from "./admin-ui-pages.ts";
+import type { PrListItem } from "./admin-ui-pages.ts";
 import { createAdminUIApp } from "./admin-ui.ts";
 import type {
   AdminUIDeps,
