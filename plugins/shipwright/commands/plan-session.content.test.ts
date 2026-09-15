@@ -87,6 +87,20 @@ describe("plan-session.md — Step 5.5 flags .claude/** write tasks as HITL (CDH
     return section.slice(idx, howToFlagIdx);
   }
 
+  /**
+   * Extracts just the new `.claude/**` Judgment Step bullet, so assertions about its
+   * wording can't be satisfied by unrelated prose elsewhere in the subsection.
+   */
+  function extractClaudeDirBullet(section: string): string {
+    const judgmentSection = extractJudgmentStepSubsection(section);
+    const idx = judgmentSection.indexOf("- Creating or modifying a file under `.claude/**`");
+    expect(idx).toBeGreaterThan(-1);
+    const rest = judgmentSection.slice(idx);
+    // The bullet is a single markdown list item: it ends at the next blank line.
+    const endIdx = rest.indexOf("\n\n");
+    return endIdx === -1 ? rest : rest.slice(0, endIdx);
+  }
+
   function extractKeywordHeuristicsCodeBlock(section: string): string {
     const idx = section.indexOf("### Keyword Heuristics");
     expect(idx).toBeGreaterThan(-1);
@@ -102,13 +116,13 @@ describe("plan-session.md — Step 5.5 flags .claude/** write tasks as HITL (CDH
     expect(judgmentSection).toContain(".claude/**");
   });
 
-  it("Judgment Step explains .claude/** writes are blocked unconditionally by the Claude Code CLI's own protection, independent of Shipwright's tool permissions", () => {
+  it("the .claude/** bullet itself explains writes are blocked unconditionally by the Claude Code CLI's own protection, not by any Shipwright tool-permission setting", () => {
     const section = extractStep5_5Section(content);
-    const judgmentSection = extractJudgmentStepSubsection(section);
-    const lower = judgmentSection.toLowerCase();
+    const bullet = extractClaudeDirBullet(section);
+    const lower = bullet.toLowerCase();
     expect(lower).toContain("blocked unconditionally");
     expect(lower).toContain("claude code cli");
-    expect(lower).toMatch(/independent of|regardless of/);
+    expect(lower).toContain("not blocked by any tool-permission configuration");
   });
 
   it("Keyword Heuristics fenced keyword list includes a .claude/ path pattern", () => {
