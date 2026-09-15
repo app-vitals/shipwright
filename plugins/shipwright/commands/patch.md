@@ -198,8 +198,9 @@ MATCHED_TASKS=$(curl -sf -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN"
 
   Also set `PR_TASK_ID` to the id of the task that produced the highest tier (the first
   match on a tie). Several sites further down this file — Step 4c's BLOCKED handling, Step
-  5a.6b, Step 5a.7, Step 5c's BLOCKED handling, and `references/escalation-pattern.md`'s shared
-  PATCH/comment/release sequence — reuse `PR_TASK_ID` as a single scalar to PATCH one task
+  5a.6b, Step 5a.7, Step 5c's BLOCKED handling, and
+  `references/escalation-pattern.md`'s shared PATCH/comment/release sequence — reuse
+  `PR_TASK_ID` as a single scalar to PATCH one task
   to `status: blocked` during HITL escalation. The model-tier calculation above now
   considers every matched task, but that downstream escalation-PATCH mechanism still only
   ever flags one task, so `PR_TASK_ID` stays a single value here rather than becoming a set.
