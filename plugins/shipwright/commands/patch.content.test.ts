@@ -661,11 +661,15 @@ describe("patch.md — escalate to HITL instead of looping on a second-round dis
     expect(step5bIdx).toBeGreaterThan(step5a7Idx);
   });
 
-  it("the claim step (5a.6) hands off to 5a.7, not straight to 5b", () => {
+  it("the claim step (5a.6) hands off to 5a.6b, not straight to 5a.7 or 5b", () => {
     const step5a6Idx = content.indexOf("### Step 5a.6: Claim PR Record (pre-work lock)");
-    const step5a7Idx = content.indexOf("### Step 5a.7: Second-Round Escalation Check (RPF-1.3)");
-    const section = content.slice(step5a6Idx, step5a7Idx);
-    expect(section).toContain("Proceed to Step 5a.7");
+    const step5a6bIdx = content.indexOf(
+      "### Step 5a.6b: `.claude/**` Path Escalation Check (CDH-1.2)",
+    );
+    expect(step5a6bIdx).toBeGreaterThan(step5a6Idx);
+    const section = content.slice(step5a6Idx, step5a6bIdx);
+    expect(section).toContain("Proceed to Step 5a.6b");
+    expect(section).not.toContain("Proceed to Step 5a.7");
   });
 
   it("second-round detection compares an author-reply comment's createdAt against the qualifying review's submittedAt", () => {
@@ -834,6 +838,89 @@ describe("patch.md — escalate to HITL instead of looping on a second-round dis
     );
     // Should explain reply-after-review is inherently a stronger signal than reply-before-review.
     expect(section).toMatch(/after a review.{0,120}(stronger|inherent)/is);
+  });
+});
+
+describe("patch.md — escalate .claude/** path findings to HITL on the first round (CDH-1.2)", () => {
+  function getStep5a6bSection() {
+    const step5a6bIdx = content.indexOf(
+      "### Step 5a.6b: `.claude/**` Path Escalation Check (CDH-1.2)",
+    );
+    const step5a7Idx = content.indexOf("### Step 5a.7: Second-Round Escalation Check (RPF-1.3)");
+    expect(step5a6bIdx).toBeGreaterThan(-1);
+    expect(step5a7Idx).toBeGreaterThan(step5a6bIdx);
+    return content.slice(step5a6bIdx, step5a7Idx);
+  }
+
+  it("Step 5a.6b exists between Step 5a.6 (claim) and Step 5a.7 (second-round check)", () => {
+    const step5a6Idx = content.indexOf("### Step 5a.6: Claim PR Record (pre-work lock)");
+    const step5a6bIdx = content.indexOf(
+      "### Step 5a.6b: `.claude/**` Path Escalation Check (CDH-1.2)",
+    );
+    const step5a7Idx = content.indexOf("### Step 5a.7: Second-Round Escalation Check (RPF-1.3)");
+    expect(step5a6Idx).toBeGreaterThan(-1);
+    expect(step5a6bIdx).toBeGreaterThan(step5a6Idx);
+    expect(step5a7Idx).toBeGreaterThan(step5a6bIdx);
+  });
+
+  it("fires unconditionally on the first round -- no second-round wait, unlike 5a.7", () => {
+    const section = getStep5a6bSection();
+    expect(section.toLowerCase()).toMatch(/first round|first-round/);
+    expect(section).not.toContain("SAME_FINDING");
+    expect(section).not.toContain("DIFFERENT_FINDING");
+  });
+
+  it("matches an inline thread's `.claude/` path, with a fallback to a review-body-level text mention", () => {
+    const section = getStep5a6bSection();
+    expect(section).toContain(".claude/");
+    expect(section.toLowerCase()).toContain("inline thread");
+    expect(section.toLowerCase()).toContain("fallback");
+    expect(section).toContain("reviewThreads.nodes[]");
+  });
+
+  it("has a distinct blockedReason from Step 5a.7's second-round-disagreement string", () => {
+    const section = getStep5a6bSection();
+    expect(section).toContain("structurally unfixable");
+    expect(section).not.toContain(
+      "second-round disagreement between reviewer and automated fix",
+    );
+  });
+
+  it("points at the shared escalation pattern and states its own temp_file_slug/comment body inline", () => {
+    const section = getStep5a6bSection();
+    expect(section).toContain("references/escalation-pattern.md");
+    expect(section).toContain("`claude-dir`");
+    expect(section).toContain("/tmp/shipwright-patch-claude-dir-{pr}.txt");
+    expect(escalationPatternContent).toContain(
+      "gh pr comment {pr} --repo {org}/{repo} --body-file /tmp/shipwright-patch-{temp_file_slug}-{pr}.txt",
+    );
+  });
+
+  it("reuses PR_TASK_ID/PR_RECORD_ID already resolved earlier in Step 5, same as Step 5a.7", () => {
+    const section = getStep5a6bSection();
+    expect(section).toContain("PR_TASK_ID");
+    expect(section).toContain("PR_RECORD_ID");
+    expect(section).toMatch(/Step 2\.1|reuse/i);
+    expect(section).toContain("Step 5a.6");
+  });
+
+  it("skips dispatching the fix subagent for this PR this cycle entirely, not deferring to 5a.7 or 5b", () => {
+    const section = getStep5a6bSection();
+    expect(section).toContain("do not dispatch the fix subagent");
+    expect(section).toContain("Move to the next qualifying PR in List A");
+  });
+
+  it("has the site-specific inline-thread-resolution hook before releasing the claim, to avoid re-qualifying for List A every cycle", () => {
+    const section = getStep5a6bSection();
+    expect(section).toContain("resolveReviewThread");
+    expect(section).toContain("Extra step, unique to this site");
+    expect(section.toLowerCase()).toMatch(/re-qualify for list a|re-flag.{0,40}list a/);
+  });
+
+  it("the no-match path leaves this check inapplicable and proceeds to Step 5a.7 unaffected", () => {
+    const section = getStep5a6bSection();
+    expect(section).toMatch(/no finding matches/i);
+    expect(section).toContain("proceed to Step 5a.7");
   });
 });
 
@@ -1361,6 +1448,27 @@ describe("patch.md — escalate first-time BLOCKED status to HITL before releasi
     const step5a7Section = content.slice(step5a7Idx, step5bIdx);
     expect(step5a7Section).toContain("/tmp/shipwright-patch-escalation-{pr}.txt");
     expect(step5a7Section).toContain("second-round disagreement");
+  });
+
+  it("the existing Step 5a.7 second-round-disagreement escalation is unaffected by the new Step 5a.6b .claude/** escalation", () => {
+    const step5a6bIdx = content.indexOf(
+      "### Step 5a.6b: `.claude/**` Path Escalation Check (CDH-1.2)",
+    );
+    const step5a7Idx = content.indexOf("### Step 5a.7: Second-Round Escalation Check (RPF-1.3)");
+    const step5bIdx = content.indexOf("### Step 5b: Dispatch Fix Subagent");
+    expect(step5a6bIdx).toBeGreaterThan(-1);
+    expect(step5a7Idx).toBeGreaterThan(step5a6bIdx);
+    expect(step5bIdx).toBeGreaterThan(step5a7Idx);
+
+    const step5a7Section = content.slice(step5a7Idx, step5bIdx);
+    expect(step5a7Section).toContain("/tmp/shipwright-patch-escalation-{pr}.txt");
+    expect(step5a7Section).toContain("second-round disagreement");
+
+    const step5a6bSection = content.slice(step5a6bIdx, step5a7Idx);
+    expect(step5a6bSection).toContain("structurally unfixable");
+    expect(step5a6bSection).not.toContain(
+      "second-round disagreement between reviewer and automated fix",
+    );
   });
 
   it("Step 6d's BLOCKED escalation is consistent with Step 6b.6's pre-dispatch status check (same PATCH targets, via the shared escalation pattern)", () => {
