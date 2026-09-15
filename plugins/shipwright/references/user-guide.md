@@ -238,6 +238,7 @@ crons — each fully self-contained, doing its own discovery with no dependency 
 |---|---|---|
 | `shipwright-test-readiness` | off | Full test-readiness audit for repos with stale/missing test artifacts. |
 | `shipwright-docs-freshness` | off | Refreshes docs that have drifted from the code they describe. |
+| `shipwright-site-docs-freshness` | off | Flags marketing-site pages that have drifted from their mapped source docs and files a proposal task instead of auto-editing. |
 | `learn-dream` | off | Mines the last day of merged PRs for durable learnings. |
 | `entropy-patrol-maintenance` | off | Scans for code entropy (dead code, duplication, layering drift) and fixes what's PR-worthy. |
 | `error-patrol-maintenance` | off | Scans unresolved Sentry errors and fixes what's PR-worthy. |
