@@ -54,9 +54,18 @@ Unit-tested via `plugins/shipwright/scripts/check-site-docs-freshness.unit.test.
 
 ## Wiring status
 
-**Not yet wired to a cron, as of 2026-09-14.** The script's own header says so directly: "Pre-check for a site-docs-freshness cron (not yet wired up — see SDR-4)." Confirmed against current `main`: no entry in `agent-types/coding/manifest.yaml`'s `crons` array references `check-site-docs-freshness.ts`, and no other cron/command in the repo invokes it — the script exists and is fully unit-tested, but nothing runs it outside of `bun test`.
+**Wired as of SDR-4.** The site-docs-freshness cron entry in `agent-types/coding/manifest.yaml` is:
 
-For comparison, the repo-scoped `check-docs-freshness.ts` **is** wired today:
+```yaml
+- name: shipwright-site-docs-freshness
+  schedule: "0 7 * * *"
+  prompt: /docs-sync --auto
+  preCheck: shipwright:check-site-docs-freshness.ts
+  silent: true
+  enabled: false
+```
+
+This mirrors the repo-scoped `shipwright-docs-freshness` cron:
 
 ```yaml
 - name: shipwright-docs-freshness
@@ -67,6 +76,4 @@ For comparison, the repo-scoped `check-docs-freshness.ts` **is** wired today:
   enabled: false
 ```
 
-It's the `preCheck` for the `shipwright-docs-freshness` cron in `agent-types/coding/manifest.yaml` (see [`docs/agent-types.md`](./agent-types.md) for the manifest schema and the `preCheck` contract), driving `/shipwright:research-docs --auto`, and ships `enabled: false` per the new-system-crons-ship-disabled convention (see `plugins/shipwright/CLAUDE.md`).
-
-Landing SDR-4 means adding the analogous cron entry for the page-scoped check — pointing at a command that consumes the precheck's per-page output — the same way `shipwright-docs-freshness` pairs with `check-docs-freshness.ts` today. Re-check this section against current `main` before relying on it; SDR-4 may have landed since this was written.
+Both crons ship `enabled: false` per the new-system-crons-ship-disabled convention (see `plugins/shipwright/CLAUDE.md`). The key difference is the command: `shipwright-docs-freshness` drives the repo-wide `/shipwright:research-docs --auto` command (consuming the repo-scoped precheck's results), while `shipwright-site-docs-freshness` drives `/docs-sync --auto` (consuming the page-scoped precheck's per-page output). See [`docs/agent-types.md`](./agent-types.md) for the manifest schema and the `preCheck` contract.
