@@ -97,7 +97,7 @@ export function createChatPoller(opts: ChatPollerOptions): ChatPoller {
         const bytes = await client.getAttachment(threadId, message.id);
         if (bytes) {
           const safeFilename = message.attachmentFilename.replace(
-            /[^\w.\-]+/g,
+            /[^\w.-]+/g,
             "_",
           );
           const uploadsDir = join(workspaceDir, "uploads");

@@ -481,51 +481,47 @@ var DATA = [
 // COMPUTE DERIVED METRICS
 // =====================================================================
 var N = DATA.length;
-var totalEst = DATA.reduce(function(s,d){ return s + d.estimated_h; }, 0);
-var totalAct = DATA.reduce(function(s,d){ return s + d.actual_h; }, 0);
-var totalFiles = DATA.reduce(function(s,d){ return s + d.files_changed; }, 0);
+var totalEst = DATA.reduce((s,d)=> s + d.estimated_h, 0);
+var totalAct = DATA.reduce((s,d)=> s + d.actual_h, 0);
+var totalFiles = DATA.reduce((s,d)=> s + d.files_changed, 0);
 var ratio = totalAct / totalEst;
 
 // Two-phase write: tasks with review !== null have been through /review
-var reviewedTasks = DATA.filter(function(d){ return d.review !== null; });
-var unreviewedTasks = DATA.filter(function(d){ return d.review === null; });
+var reviewedTasks = DATA.filter((d)=> d.review !== null);
+var unreviewedTasks = DATA.filter((d)=> d.review === null);
 var nReviewed = reviewedTasks.length;
 
 // First-time quality — only review-enriched tasks can be assessed
-var ftqTasks = reviewedTasks.filter(function(d){
-  return d.simplify.total === 0 && d.review.verdict === "SHIP IT" && d.ci_fix_attempts === 0;
-});
+var ftqTasks = reviewedTasks.filter((d)=> d.simplify.total === 0 && d.review.verdict === "SHIP IT" && d.ci_fix_attempts === 0);
 var ftqRate = nReviewed > 0 ? ftqTasks.length / nReviewed : 0;
 
 // Partial FTQ (simplify + CI only, for unreviewed tasks)
-var partialFtqTasks = unreviewedTasks.filter(function(d){
-  return d.simplify.total === 0 && d.ci_fix_attempts === 0;
-});
+var partialFtqTasks = unreviewedTasks.filter((d)=> d.simplify.total === 0 && d.ci_fix_attempts === 0);
 
 // Simplify totals (all tasks have simplify data)
 var simpCats = ['dry','dead_code','naming','complexity','consistency'];
 var simpTotals = {};
-simpCats.forEach(function(c){ simpTotals[c] = DATA.reduce(function(s,d){ return s + d.simplify[c]; }, 0); });
-var simpMax = Math.max.apply(null, simpCats.map(function(c){ return simpTotals[c]; }).concat([1]));
+simpCats.forEach((c)=> { simpTotals[c] = DATA.reduce((s,d)=> s + d.simplify[c], 0); });
+var simpMax = Math.max.apply(null, simpCats.map((c)=> simpTotals[c]).concat([1]));
 
 // Review verdicts — only reviewed tasks
 var verdicts = { "SHIP IT": 0, "NEEDS FIXES": 0, "NEEDS WORK": 0, "PENDING": 0 };
-DATA.forEach(function(d){
+DATA.forEach((d)=> {
   if (d.review !== null) { verdicts[d.review.verdict]++; }
   else { verdicts["PENDING"]++; }
 });
 
 // CI first-pass (all tasks have CI data)
-var ciFirstPass = DATA.filter(function(d){ return d.ci_fix_attempts === 0; }).length;
+var ciFirstPass = DATA.filter((d)=> d.ci_fix_attempts === 0).length;
 
 // Coverage
-var avgCovDelta = DATA.reduce(function(s,d){ return s + d.coverage.delta; }, 0) / N;
+var avgCovDelta = DATA.reduce((s,d)=> s + d.coverage.delta, 0) / N;
 
 // Estimation accuracy per complexity tier
 function tierDeviation(minC, maxC) {
-  var t = DATA.filter(function(d){ return d.complexity >= minC && d.complexity <= maxC; });
+  var t = DATA.filter((d)=> d.complexity >= minC && d.complexity <= maxC);
   if (!t.length) return 0;
-  return t.reduce(function(s,d){ return s + ((d.actual_h / d.estimated_h) - 1); }, 0) / t.length * 100;
+  return t.reduce((s,d)=> s + ((d.actual_h / d.estimated_h) - 1), 0) / t.length * 100;
 }
 
 // Trends: first half vs second half
@@ -534,12 +530,12 @@ var firstHalf = DATA.slice(0, half);
 var secondHalf = DATA.slice(half);
 function sliceMetrics(slice) {
   var n = slice.length;
-  var reviewed = slice.filter(function(d){ return d.review !== null; });
+  var reviewed = slice.filter((d)=> d.review !== null);
   var nRev = reviewed.length || 1; // avoid division by zero
-  var ftq = reviewed.filter(function(d){ return d.simplify.total === 0 && d.review.verdict === "SHIP IT" && d.ci_fix_attempts === 0; }).length / nRev * 100;
-  var simpAvg = slice.reduce(function(s,d){ return s + d.simplify.total; }, 0) / n;
-  var shipRate = reviewed.filter(function(d){ return d.review.verdict === "SHIP IT"; }).length / nRev * 100;
-  var ciRate = slice.filter(function(d){ return d.ci_fix_attempts === 0; }).length / n * 100;
+  var ftq = reviewed.filter((d)=> d.simplify.total === 0 && d.review.verdict === "SHIP IT" && d.ci_fix_attempts === 0).length / nRev * 100;
+  var simpAvg = slice.reduce((s,d)=> s + d.simplify.total, 0) / n;
+  var shipRate = reviewed.filter((d)=> d.review.verdict === "SHIP IT").length / nRev * 100;
+  var ciRate = slice.filter((d)=> d.ci_fix_attempts === 0).length / n * 100;
   return { ftq: ftq, simpAvg: simpAvg, shipRate: shipRate, ciRate: ciRate };
 }
 var trendFirst = sliceMetrics(firstHalf);
@@ -550,44 +546,44 @@ var trendSecond = sliceMetrics(secondHalf);
 // =====================================================================
 function h(tag, attrs, children) {
   var el = document.createElement(tag);
-  if (attrs) Object.keys(attrs).forEach(function(k){
+  if (attrs) Object.keys(attrs).forEach((k)=> {
     if (k === 'style' && typeof attrs[k] === 'object') {
-      Object.keys(attrs[k]).forEach(function(sk){ el.style[sk] = attrs[k][sk]; });
+      Object.keys(attrs[k]).forEach((sk)=> { el.style[sk] = attrs[k][sk]; });
     } else if (k === 'className') { el.className = attrs[k]; }
     else { el.setAttribute(k, attrs[k]); }
   });
   if (children !== undefined) {
     if (typeof children === 'string') el.textContent = children;
-    else if (Array.isArray(children)) children.forEach(function(c){ if (c) el.appendChild(c); });
+    else if (Array.isArray(children)) children.forEach((c)=> { if (c) el.appendChild(c); });
     else el.appendChild(children);
   }
   return el;
 }
 function svg(tag, attrs, children) {
   var el = document.createElementNS('http://www.w3.org/2000/svg', tag);
-  if (attrs) Object.keys(attrs).forEach(function(k){ el.setAttribute(k, attrs[k]); });
+  if (attrs) Object.keys(attrs).forEach((k)=> { el.setAttribute(k, attrs[k]); });
   if (children) {
     if (typeof children === 'string') el.textContent = children;
-    else if (Array.isArray(children)) children.forEach(function(c){ if (c) el.appendChild(c); });
+    else if (Array.isArray(children)) children.forEach((c)=> { if (c) el.appendChild(c); });
     else el.appendChild(children);
   }
   return el;
 }
-function appendAll(parent, nodes) { nodes.forEach(function(n){ parent.appendChild(n); }); }
+function appendAll(parent, nodes) { nodes.forEach((n)=> { parent.appendChild(n); }); }
 function clearEl(el) { while (el.firstChild) el.removeChild(el.firstChild); }
 
 // =====================================================================
 // RENDER — Header stat cards
 // =====================================================================
-(function() {
+(() => {
   var container = document.getElementById('stat-cards');
   var cards = [
-    { value: String(N), label: 'Tasks Completed', sub: DATA.filter(function(d){return d.retries>0;}).length + ' retried', border: 'var(--green)' },
+    { value: String(N), label: 'Tasks Completed', sub: DATA.filter((d)=> d.retries>0).length + ' retried', border: 'var(--green)' },
     { value: totalEst.toFixed(1) + 'h', label: 'Estimated Hours', sub: totalAct.toFixed(1) + 'h actual (' + ratio.toFixed(2) + 'x)', border: 'var(--blue)' },
     { value: nReviewed + '/' + N, label: 'Reviewed', sub: unreviewedTasks.length > 0 ? unreviewedTasks.length + ' awaiting /review' : 'all reviewed', border: 'var(--purple)' },
     { value: String(totalFiles), label: 'Files Changed', sub: (totalFiles/N).toFixed(1) + ' avg/task', border: 'var(--text-muted)' }
   ];
-  cards.forEach(function(c) {
+  cards.forEach((c) => {
     var card = h('div', { className: 'stat-card', style: { borderLeftColor: c.border } }, [
       h('div', { className: 'value' }, c.value),
       h('div', { className: 'label' }, c.label),
@@ -600,7 +596,7 @@ function clearEl(el) { while (el.firstChild) el.removeChild(el.firstChild); }
 // =====================================================================
 // RENDER — FTQ Ring (SVG)
 // =====================================================================
-(function() {
+(() => {
   var pct = ftqRate;
   var r = 50, cx = 60, cy = 60, sw = 10;
   var circ = 2 * Math.PI * r;
@@ -636,12 +632,12 @@ function clearEl(el) { while (el.firstChild) el.removeChild(el.firstChild); }
 // =====================================================================
 // RENDER — Simplify Bars
 // =====================================================================
-(function() {
+(() => {
   var container = document.getElementById('simplify-bars');
   var labels = { dry:'DRY', dead_code:'Dead Code', naming:'Naming', complexity:'Complexity', consistency:'Consistency' };
   var colors = { dry:'var(--blue)', dead_code:'var(--red)', naming:'var(--amber)', complexity:'var(--purple)', consistency:'var(--text-secondary)' };
 
-  simpCats.forEach(function(c) {
+  simpCats.forEach((c) => {
     var pct = simpMax > 0 ? (simpTotals[c] / simpMax * 100) : 0;
     var fill = h('div', { className: 'bar-fill', style: { width: pct + '%', background: colors[c] } });
     if (simpTotals[c] > 0) fill.appendChild(h('span', null, String(simpTotals[c])));
@@ -656,16 +652,16 @@ function clearEl(el) { while (el.firstChild) el.removeChild(el.firstChild); }
 // =====================================================================
 // RENDER — Review Donut (SVG)
 // =====================================================================
-(function() {
+(() => {
   var container = document.getElementById('review-donut');
   var r = 45, cx = 55, cy = 55, sw = 14;
   var circ = 2 * Math.PI * r;
   var colorMap = { "SHIP IT": 'var(--green)', "NEEDS FIXES": 'var(--amber)', "NEEDS WORK": 'var(--red)', "PENDING": 'var(--text-muted)' };
   var order = ["SHIP IT", "NEEDS FIXES", "NEEDS WORK", "PENDING"];
 
-  var activeOrder = order.filter(function(v){ return verdicts[v] > 0; });
+  var activeOrder = order.filter((v)=> verdicts[v] > 0);
   var cumPct = 0;
-  var arcs = activeOrder.map(function(v) {
+  var arcs = activeOrder.map((v) => {
     var pct = verdicts[v] / N;
     var dash = pct * circ;
     var off = -cumPct * circ;
@@ -679,7 +675,7 @@ function clearEl(el) { while (el.firstChild) el.removeChild(el.firstChild); }
   container.appendChild(donut);
 
   var legend = h('div', { className: 'donut-legend' });
-  order.forEach(function(v) {
+  order.forEach((v) => {
     if (verdicts[v] === 0) return;
     var row = h('div');
     var dot = h('span', { className: 'legend-dot', style: { background: colorMap[v] } });
@@ -694,7 +690,7 @@ function clearEl(el) { while (el.firstChild) el.removeChild(el.firstChild); }
 // =====================================================================
 // RENDER — CI & Coverage
 // =====================================================================
-(function() {
+(() => {
   var container = document.getElementById('ci-coverage');
   var ciPct = ciFirstPass / N * 100;
   var ciColor = ciPct >= 80 ? 'var(--green)' : ciPct >= 60 ? 'var(--amber)' : 'var(--red)';
@@ -712,20 +708,20 @@ function clearEl(el) { while (el.firstChild) el.removeChild(el.firstChild); }
   container.appendChild(ciCard);
 
   // Coverage card
-  var covPoints = DATA.map(function(d){ return d.coverage.after; });
+  var covPoints = DATA.map((d)=> d.coverage.after);
   var minCov = Math.min.apply(null, covPoints) - 1;
   var maxCov = Math.max.apply(null, covPoints) + 1;
   var range = maxCov - minCov;
   var sparkW = 180, sparkH = 35;
 
-  var polyPts = covPoints.map(function(v, i) {
+  var polyPts = covPoints.map((v, i) => {
     var x = (i / (covPoints.length - 1)) * sparkW;
     var y = sparkH - ((v - minCov) / range) * sparkH;
     return x + ',' + y;
   }).join(' ');
 
   var sparkChildren = [svg('polyline', { points: polyPts, fill: 'none', stroke: 'var(--green)', 'stroke-width': '2', 'stroke-linecap': 'round', 'stroke-linejoin': 'round' })];
-  covPoints.forEach(function(v, i) {
+  covPoints.forEach((v, i) => {
     var x = (i / (covPoints.length - 1)) * sparkW;
     var y = sparkH - ((v - minCov) / range) * sparkH;
     sparkChildren.push(svg('circle', { cx: x, cy: y, r: '3', fill: 'var(--green)' }));
@@ -751,10 +747,10 @@ function clearEl(el) { while (el.firstChild) el.removeChild(el.firstChild); }
 // =====================================================================
 // RENDER — Task Table
 // =====================================================================
-(function() {
+(() => {
   var tbody = document.getElementById('task-body');
 
-  DATA.forEach(function(d, i) {
+  DATA.forEach((d, i) => {
     var hasReview = d.review !== null;
     var isFtq = hasReview && d.simplify.total === 0 && d.review.verdict === "SHIP IT" && d.ci_fix_attempts === 0;
     var isRed = (hasReview && d.review.verdict === "NEEDS WORK") || d.simplify.total >= 3 || d.ci_fix_attempts >= 2;
@@ -829,7 +825,7 @@ function clearEl(el) { while (el.firstChild) el.removeChild(el.firstChild); }
     var detailTd = document.createElement('td');
     detailTd.setAttribute('colspan', '10');
 
-    var simpDetail = simpCats.filter(function(c){ return d.simplify[c] > 0; }).map(function(c){ return c + ': ' + d.simplify[c]; }).join(', ') || 'none';
+    var simpDetail = simpCats.filter((c)=> d.simplify[c] > 0).map((c)=> c + ': ' + d.simplify[c]).join(', ') || 'none';
     var reqDetail = d.requirements.met + ' met, ' + d.requirements.partial + ' partial, ' + d.requirements.not_met + ' not met';
     var ciDetail = d.ci.failures.length > 0 ? d.ci.failures.join('; ') : 'All passed';
 
@@ -848,7 +844,7 @@ function clearEl(el) { while (el.firstChild) el.removeChild(el.firstChild); }
     detailTd.appendChild(grid);
     detail.appendChild(detailTd);
 
-    row.addEventListener('click', function() { detail.classList.toggle('open'); });
+    row.addEventListener('click', () => { detail.classList.toggle('open'); });
 
     tbody.appendChild(row);
     tbody.appendChild(detail);
@@ -858,10 +854,10 @@ function clearEl(el) { while (el.firstChild) el.removeChild(el.firstChild); }
 // =====================================================================
 // RENDER — Estimation Chart (SVG bar chart)
 // =====================================================================
-(function() {
+(() => {
   var container = document.getElementById('est-chart');
   var pad = 40, barW = 16, gap = 8, groupGap = 24, H = 160;
-  var maxH = Math.max.apply(null, DATA.map(function(d){ return Math.max(d.estimated_h, d.actual_h); }));
+  var maxH = Math.max.apply(null, DATA.map((d)=> Math.max(d.estimated_h, d.actual_h)));
   var scale = (H - pad - 10) / maxH;
   var totalW = pad + N * (barW * 2 + gap + groupGap);
   var baseline = H - pad;
@@ -892,7 +888,7 @@ function clearEl(el) { while (el.firstChild) el.removeChild(el.firstChild); }
   }
 
   // Bars + labels
-  DATA.forEach(function(d, i) {
+  DATA.forEach((d, i) => {
     var x = pad + i * (barW * 2 + gap + groupGap);
     var estH = d.estimated_h * scale;
     var actH = d.actual_h * scale;
@@ -907,15 +903,15 @@ function clearEl(el) { while (el.firstChild) el.removeChild(el.firstChild); }
 // =====================================================================
 // RENDER — Estimation Deviation
 // =====================================================================
-(function() {
+(() => {
   var container = document.getElementById('est-deviation');
   var tiers = [
     { label: 'Simple (1-2)', dev: tierDeviation(1,2) },
     { label: 'Standard (3)', dev: tierDeviation(3,3) },
     { label: 'Complex (4-5)', dev: tierDeviation(4,5) }
   ];
-  var maxDev = Math.max.apply(null, tiers.map(function(t){ return Math.abs(t.dev); }).concat([20]));
-  var overallDev = DATA.reduce(function(s,d){ return s + ((d.actual_h / d.estimated_h) - 1); }, 0) / N * 100;
+  var maxDev = Math.max.apply(null, tiers.map((t)=> Math.abs(t.dev)).concat([20]));
+  var overallDev = DATA.reduce((s,d)=> s + ((d.actual_h / d.estimated_h) - 1), 0) / N * 100;
 
   // Overall label
   var overallRow = h('div', { style: { fontSize: '13px', color: 'var(--text-secondary)', marginBottom: '16px' } });
@@ -924,7 +920,7 @@ function clearEl(el) { while (el.firstChild) el.removeChild(el.firstChild); }
   overallRow.appendChild(document.createTextNode(' avg error'));
   container.appendChild(overallRow);
 
-  tiers.forEach(function(t) {
+  tiers.forEach((t) => {
     var pct = Math.abs(t.dev) / maxDev * 45;
     var color = Math.abs(t.dev) > 15 ? 'var(--amber)' : 'var(--green)';
     var left = t.dev > 0 ? '50%' : (50 - pct) + '%';
@@ -945,7 +941,7 @@ function clearEl(el) { while (el.firstChild) el.removeChild(el.firstChild); }
 // =====================================================================
 // RENDER — Trends Table
 // =====================================================================
-(function() {
+(() => {
   var table = document.getElementById('trend-table');
   var metrics = [
     { label: 'First-Time Quality', first: trendFirst.ftq, second: trendSecond.ftq, unit: '%', decimals: 0, higherBetter: true },
@@ -965,7 +961,7 @@ function clearEl(el) { while (el.firstChild) el.removeChild(el.firstChild); }
   table.appendChild(thead);
 
   var tbodyEl = h('tbody');
-  metrics.forEach(function(m) {
+  metrics.forEach((m) => {
     var diff = m.second - m.first;
     var improving = m.higherBetter ? diff > 0 : diff < 0;
     var stable = Math.abs(diff) < 1;
@@ -987,12 +983,12 @@ function clearEl(el) { while (el.firstChild) el.removeChild(el.firstChild); }
 // =====================================================================
 // RENDER — Recommendations
 // =====================================================================
-(function() {
+(() => {
   var container = document.getElementById('recommendations');
   var recs = [];
   var ftqPct = ftqRate * 100;
-  var avgSimp = DATA.reduce(function(s,d){ return s + d.simplify.total; }, 0) / N;
-  var avgNaming = DATA.reduce(function(s,d){ return s + d.simplify.naming; }, 0) / N;
+  var avgSimp = DATA.reduce((s,d)=> s + d.simplify.total, 0) / N;
+  var avgNaming = DATA.reduce((s,d)=> s + d.simplify.naming, 0) / N;
   var ciPct = ciFirstPass / N * 100;
   var drivers;
 
@@ -1000,7 +996,7 @@ function clearEl(el) { while (el.firstChild) el.removeChild(el.firstChild); }
     recs.push({
       icon: '\u21BB', color: 'var(--text-secondary)', bg: 'rgba(255,255,255,0.08)', border: 'var(--text-muted)',
       title: unreviewedTasks.length + ' task' + (unreviewedTasks.length > 1 ? 's' : '') + ' awaiting /review',
-      body: 'Tasks ' + unreviewedTasks.map(function(d){ return d.task; }).join(', ') + ' have metrics from /dev-task but no review data yet. Run /review on each to complete the fix cascade and enable full FTQ calculation.'
+      body: 'Tasks ' + unreviewedTasks.map((d)=> d.task).join(', ') + ' have metrics from /dev-task but no review data yet. Run /review on each to complete the fix cascade and enable full FTQ calculation.'
     });
   }
   if (ftqPct < 70 && nReviewed > 0) {
@@ -1028,7 +1024,7 @@ function clearEl(el) { while (el.firstChild) el.removeChild(el.firstChild); }
     });
   }
 
-  recs.forEach(function(r) {
+  recs.forEach((r) => {
     var card = h('div', { className: 'rec-card', style: { borderLeftColor: r.border } }, [
       h('div', { className: 'rec-icon', style: { background: r.bg, color: r.color } }, r.icon),
       h('div', { className: 'rec-body' }, [

@@ -639,7 +639,7 @@ describe("patch.md — POST a rejected ledger entry on rebuttal (PFL-2.2)", () =
     const step5dIdx = content.indexOf("### Step 5d:");
     const section = content.slice(step5c5Idx, step5dIdx);
 
-    expect(section).toContain('\\\"agentId\\\": \\\"$SHIPWRIGHT_AGENT_ID\\\"');
+    expect(section).toContain('\\"agentId\\": \\"$SHIPWRIGHT_AGENT_ID\\"');
   });
 });
 
