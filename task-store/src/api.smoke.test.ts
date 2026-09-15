@@ -241,7 +241,7 @@ function fakeTaskService(
 }
 
 /** Token service that validates AGENT_TOKEN as agent-1 with repos scope. */
-function fakeRepoAgentTokenService(repos: string[]): TokenServiceLike {
+function fakeRepoAgentTokenService(_repos: string[]): TokenServiceLike {
   return {
     async create(label?: string) {
       return {

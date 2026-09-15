@@ -643,11 +643,11 @@ describeOrSkip(
   "PullRequestService.complete() readyForPatchAt (integration)",
   () => {
     let prisma: PrismaClient;
-    let service: PullRequestService;
+    let _service: PullRequestService;
 
     beforeEach(async () => {
       prisma = makePrisma();
-      service = new PullRequestService(prisma);
+      _service = new PullRequestService(prisma);
       // PullRequestEvent's FK is ON DELETE RESTRICT (PSA-1.2) — clear event
       // rows before their parent PullRequest rows, since claim()/etc. write them.
       await prisma.pullRequestEvent.deleteMany();

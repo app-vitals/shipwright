@@ -20,7 +20,6 @@ import {
 } from "./agent-provisioner.ts";
 import type { AgentTokenService } from "./agent-tokens.ts";
 import type { ChatServiceProvisioningClient } from "./chat-service-provisioning-client.ts";
-import { ConflictError } from "./errors.ts";
 import {
   type KubernetesClient,
   RecordedKubernetesClient,
@@ -645,7 +644,7 @@ describe("KubernetesAgentProvisioner — task-store token minting", () => {
     };
 
     const recorded = emptyClient();
-    const failingK8s = new RecordedKubernetesClient({
+    const _failingK8s = new RecordedKubernetesClient({
       deployments: {},
       secrets: {},
       pvcs: {},
@@ -885,7 +884,7 @@ describe("KubernetesAgentProvisioner — chat-service token minting", () => {
     };
 
     const recorded = emptyClient();
-    const failingK8s = new RecordedKubernetesClient({
+    const _failingK8s = new RecordedKubernetesClient({
       deployments: {},
       secrets: {},
       pvcs: {},

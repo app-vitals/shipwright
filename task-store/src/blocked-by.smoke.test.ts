@@ -14,7 +14,6 @@ import type { Task } from "./index.ts";
 import type { SessionServiceLike } from "./session-service.ts";
 import type {
   TaskListFilters,
-  TaskListResult,
   TaskServiceLike,
   TaskWithBlockedBy,
 } from "./task-service.ts";

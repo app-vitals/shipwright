@@ -258,8 +258,7 @@ export function fakeMessageService(
       }
       const msg = store.find((m) => m.id === id);
       if (
-        !msg ||
-        msg.role !== "user" ||
+        msg?.role !== "user" ||
         !msg.claimed ||
         msg.repliedAt !== null ||
         msg.claimedBy !== claimedBy

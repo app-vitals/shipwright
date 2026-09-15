@@ -9,7 +9,6 @@
  *   const user = await client.getUser(userId);
  */
 
-import createClient from "openapi-fetch";
 
 // ─── Inline types (no accounts-types.ts dependency) ──────────────────────────
 
@@ -165,11 +164,11 @@ export class HttpAccountsClient implements AccountsClient {
     return this.fetch<AgentRecord[]>("/agents");
   }
 
-  async createUser(input: unknown): Promise<UserRecord> {
+  async createUser(_input: unknown): Promise<UserRecord> {
     throw new AccountsClientError(501, "not implemented");
   }
 
-  async updateUser(id: string, input: unknown): Promise<UserRecord> {
+  async updateUser(_id: string, _input: unknown): Promise<UserRecord> {
     throw new AccountsClientError(501, "not implemented");
   }
 
@@ -177,85 +176,85 @@ export class HttpAccountsClient implements AccountsClient {
     throw new AccountsClientError(501, "not implemented");
   }
 
-  async getClient(id: string): Promise<unknown> {
+  async getClient(_id: string): Promise<unknown> {
     throw new AccountsClientError(501, "not implemented");
   }
 
-  async createClient(input: unknown): Promise<unknown> {
+  async createClient(_input: unknown): Promise<unknown> {
     throw new AccountsClientError(501, "not implemented");
   }
 
-  async updateClient(id: string, input: unknown): Promise<unknown> {
+  async updateClient(_id: string, _input: unknown): Promise<unknown> {
     throw new AccountsClientError(501, "not implemented");
   }
 
-  async deleteClient(id: string): Promise<void> {
+  async deleteClient(_id: string): Promise<void> {
     throw new AccountsClientError(501, "not implemented");
   }
 
-  async listEngagements(filters?: unknown): Promise<unknown[]> {
+  async listEngagements(_filters?: unknown): Promise<unknown[]> {
     throw new AccountsClientError(501, "not implemented");
   }
 
-  async getEngagement(id: string): Promise<unknown> {
+  async getEngagement(_id: string): Promise<unknown> {
     throw new AccountsClientError(501, "not implemented");
   }
 
-  async createEngagement(input: unknown): Promise<unknown> {
+  async createEngagement(_input: unknown): Promise<unknown> {
     throw new AccountsClientError(501, "not implemented");
   }
 
-  async updateEngagement(id: string, input: unknown): Promise<unknown> {
+  async updateEngagement(_id: string, _input: unknown): Promise<unknown> {
     throw new AccountsClientError(501, "not implemented");
   }
 
-  async deleteEngagement(id: string): Promise<void> {
+  async deleteEngagement(_id: string): Promise<void> {
     throw new AccountsClientError(501, "not implemented");
   }
 
-  async listOAuthConnections(userId: string): Promise<unknown[]> {
+  async listOAuthConnections(_userId: string): Promise<unknown[]> {
     throw new AccountsClientError(501, "not implemented");
   }
 
   async getOAuthConnection(
-    userId: string,
-    provider: string,
+    _userId: string,
+    _provider: string,
   ): Promise<unknown | null> {
     throw new AccountsClientError(501, "not implemented");
   }
 
   async deleteOAuthConnection(
-    userId: string,
-    provider: string,
+    _userId: string,
+    _provider: string,
   ): Promise<unknown> {
     throw new AccountsClientError(501, "not implemented");
   }
 
-  async getOAuthToken(userId: string, provider: string): Promise<unknown> {
+  async getOAuthToken(_userId: string, _provider: string): Promise<unknown> {
     throw new AccountsClientError(501, "not implemented");
   }
 
-  async listConnections(filters?: unknown): Promise<unknown[]> {
+  async listConnections(_filters?: unknown): Promise<unknown[]> {
     throw new AccountsClientError(501, "not implemented");
   }
 
-  async getConnectionToken(id: string): Promise<unknown> {
+  async getConnectionToken(_id: string): Promise<unknown> {
     throw new AccountsClientError(501, "not implemented");
   }
 
-  async getAgentEnv(agentId: string): Promise<unknown> {
+  async getAgentEnv(_agentId: string): Promise<unknown> {
     throw new AccountsClientError(501, "not implemented");
   }
 
-  async upsertAgentEnv(agentId: string, input: unknown): Promise<unknown> {
+  async upsertAgentEnv(_agentId: string, _input: unknown): Promise<unknown> {
     throw new AccountsClientError(501, "not implemented");
   }
 
-  async patchAgentEnv(agentId: string, input: unknown): Promise<unknown> {
+  async patchAgentEnv(_agentId: string, _input: unknown): Promise<unknown> {
     throw new AccountsClientError(501, "not implemented");
   }
 
-  async getAgentConfigBundle(agentId: string): Promise<unknown> {
+  async getAgentConfigBundle(_agentId: string): Promise<unknown> {
     throw new AccountsClientError(501, "not implemented");
   }
 
@@ -264,14 +263,14 @@ export class HttpAccountsClient implements AccountsClient {
   }
 
   async createAgentToken(
-    userId: string,
-    clientId: string,
-    label?: string,
+    _userId: string,
+    _clientId: string,
+    _label?: string,
   ): Promise<unknown> {
     throw new AccountsClientError(501, "not implemented");
   }
 
-  async getTeam(id: string): Promise<unknown | null> {
+  async getTeam(_id: string): Promise<unknown | null> {
     throw new AccountsClientError(501, "not implemented");
   }
 
@@ -287,31 +286,31 @@ export class HttpAccountsClient implements AccountsClient {
     return this.fetch<CronJobRecord[]>(`/agents/${agentId}/crons`);
   }
 
-  async createAgentCronJob(agentId: string, input: unknown): Promise<unknown> {
+  async createAgentCronJob(_agentId: string, _input: unknown): Promise<unknown> {
     throw new AccountsClientError(501, "not implemented");
   }
 
-  async deleteAgentCronJob(agentId: string, cronId: string): Promise<void> {
+  async deleteAgentCronJob(_agentId: string, _cronId: string): Promise<void> {
     throw new AccountsClientError(501, "not implemented");
   }
 
   async setAgentCronJobEnabled(
-    agentId: string,
-    cronId: string,
-    enabled: boolean,
+    _agentId: string,
+    _cronId: string,
+    _enabled: boolean,
   ): Promise<unknown> {
     throw new AccountsClientError(501, "not implemented");
   }
 
   async reconcileSystemCrons(
-    agentId: string,
-    input: unknown,
+    _agentId: string,
+    _input: unknown,
   ): Promise<{ created: number; updated: number; deleted: number }> {
     throw new AccountsClientError(501, "not implemented");
   }
 
   async validateAgentToken(
-    token: string,
+    _token: string,
   ): Promise<{ userId: string; clientId: string } | null> {
     throw new AccountsClientError(501, "not implemented");
   }

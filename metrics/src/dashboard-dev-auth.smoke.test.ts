@@ -18,10 +18,8 @@
 
 import { describe, expect, test } from "bun:test";
 import { type MetricsDeps, createMetricsApp } from "./api.ts";
-import { parseApiKeys } from "./lib/api-auth.ts";
 import { makeAccountsClientMock } from "./lib/test-helpers.ts";
 import { createFixtureTaskStoreProvider } from "./fixtures/task-store-fixtures.ts";
-import type { MetricsProvider } from "./metrics-provider.ts";
 
 const noopAccountsClient = makeAccountsClientMock(async () => []);
 

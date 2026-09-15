@@ -26,7 +26,6 @@
 // write to the findings ledger.
 
 import { describe, expect, test } from "bun:test";
-import { computeVerdict } from "./compute-review-verdict.ts";
 import {
   type IssueCommentNode,
   type PrFinding,

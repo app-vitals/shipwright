@@ -417,7 +417,7 @@ test.describe("Dashboard — page load", () => {
   test("redirects unauthenticated requests to /admin/login", async ({
     page,
   }) => {
-    const response = await page.goto(`${BASE_URL}/dashboard`, {
+    const _response = await page.goto(`${BASE_URL}/dashboard`, {
       waitUntil: "domcontentloaded",
     });
     // Should redirect to login

@@ -1118,14 +1118,6 @@ export class TaskService implements TaskServiceLike {
     return { events, total };
   }
 
-  // ─── Helpers ─────────────────────────────────────────────────────────────────
-
-  private async requireTask(id: string): Promise<Task> {
-    const task = await this.prisma.task.findUnique({ where: { id } });
-    if (!task) throw new NotFoundError("task not found");
-    return task;
-  }
-
   /**
    * Write the audit trail for a single mutation: diff `before` vs `after` and
    * insert one TaskEvent row per changed, auditable field. Runs on the same

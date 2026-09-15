@@ -9,7 +9,7 @@
  * going through the Hono app.
  */
 
-import { beforeAll, describe, expect, it } from "bun:test";
+import { describe, expect, it } from "bun:test";
 import { readFileSync } from "node:fs";
 import { sign } from "hono/jwt";
 import type { AdminUISlackClient } from "./admin-ui.ts";

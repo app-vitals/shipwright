@@ -24,7 +24,6 @@ import {
   HttpKubernetesClient,
   type KubernetesClient,
   type KubernetesDeployment,
-  type KubernetesPvc,
   RecordedKubernetesClient,
 } from "./kubernetes-client.ts";
 

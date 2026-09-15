@@ -8,7 +8,7 @@
 
 import { beforeAll, describe, expect, it } from "bun:test";
 import { sign } from "hono/jwt";
-import type { PrListItem, PullRequestItem } from "./admin-ui-pages.ts";
+import type { PrListItem, } from "./admin-ui-pages.ts";
 import { createAdminUIApp } from "./admin-ui.ts";
 import type {
   AdminUIDeps,
@@ -1840,7 +1840,7 @@ describe("admin UI — authenticated pages", () => {
   });
 
   it("POST /admin/agents/:id/envs with secret=true shows lock icon in rendered page", async () => {
-    let capturedArgs: unknown[] = [];
+    let _capturedArgs: unknown[] = [];
     const deps = makeMockDeps({
       agentEnvService: {
         getByAgentId: async () => ({
@@ -1848,10 +1848,10 @@ describe("admin UI — authenticated pages", () => {
           secretKeys: ["MY_SECRET"],
         }),
         upsert: async (...args: unknown[]) => {
-          capturedArgs = args;
+          _capturedArgs = args;
         },
         patch: async (...args: unknown[]) => {
-          capturedArgs = args;
+          _capturedArgs = args;
         },
         deleteKey: async () => {},
         getConfigBundle: async () => null,
@@ -6430,7 +6430,7 @@ describe("admin UI — tasks page", () => {
       makeMockDeps({
         fetchTaskStoreTask: async (id: string) =>
           id === "task-43" ? mockTask : null,
-        fetchTaskStorePrs: async (params: URLSearchParams) => {
+        fetchTaskStorePrs: async (_params: URLSearchParams) => {
           called = true;
           return { prs: [], total: 0, limit: 50, offset: 0 };
         },

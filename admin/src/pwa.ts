@@ -359,7 +359,7 @@ export function buildOfflinePageHtml(): string {
  * sanitizes it, and threads it into buildManifest().
  */
 export function renderPwaHeadTags(appBaseUrl: string): string {
-  if (!appBaseUrl || !appBaseUrl.startsWith("https://")) return "";
+  if (!appBaseUrl?.startsWith("https://")) return "";
 
   return [
     '<link rel="manifest" href="/admin/manifest.webmanifest" id="pwa-manifest-link" />',

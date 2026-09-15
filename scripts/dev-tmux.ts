@@ -116,7 +116,7 @@ const STACK_WORKSPACE_DIRS = [
   "task-store",
   "chat",
 ];
-const DEV_AGENT_HOME = "state/agent-home";
+const _DEV_AGENT_HOME = "state/agent-home";
 
 // ---------------------------------------------------------------------------
 // Types

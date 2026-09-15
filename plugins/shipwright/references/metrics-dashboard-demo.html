@@ -508,7 +508,7 @@ var simpMax = Math.max.apply(null, simpCats.map((c)=> simpTotals[c]).concat([1])
 var verdicts = { "SHIP IT": 0, "NEEDS FIXES": 0, "NEEDS WORK": 0, "PENDING": 0 };
 DATA.forEach((d)=> {
   if (d.review !== null) { verdicts[d.review.verdict]++; }
-  else { verdicts["PENDING"]++; }
+  else { verdicts.PENDING++; }
 });
 
 // CI first-pass (all tasks have CI data)
@@ -569,7 +569,7 @@ function svg(tag, attrs, children) {
   }
   return el;
 }
-function appendAll(parent, nodes) { nodes.forEach((n)=> { parent.appendChild(n); }); }
+function _appendAll(parent, nodes) { nodes.forEach((n)=> { parent.appendChild(n); }); }
 function clearEl(el) { while (el.firstChild) el.removeChild(el.firstChild); }
 
 // =====================================================================
@@ -578,10 +578,10 @@ function clearEl(el) { while (el.firstChild) el.removeChild(el.firstChild); }
 (() => {
   var container = document.getElementById('stat-cards');
   var cards = [
-    { value: String(N), label: 'Tasks Completed', sub: DATA.filter((d)=> d.retries>0).length + ' retried', border: 'var(--green)' },
-    { value: totalEst.toFixed(1) + 'h', label: 'Estimated Hours', sub: totalAct.toFixed(1) + 'h actual (' + ratio.toFixed(2) + 'x)', border: 'var(--blue)' },
-    { value: nReviewed + '/' + N, label: 'Reviewed', sub: unreviewedTasks.length > 0 ? unreviewedTasks.length + ' awaiting /review' : 'all reviewed', border: 'var(--purple)' },
-    { value: String(totalFiles), label: 'Files Changed', sub: (totalFiles/N).toFixed(1) + ' avg/task', border: 'var(--text-muted)' }
+    { value: String(N), label: 'Tasks Completed', sub: `${DATA.filter((d)=> d.retries>0).length} retried`, border: 'var(--green)' },
+    { value: `${totalEst.toFixed(1)}h`, label: 'Estimated Hours', sub: `${totalAct.toFixed(1)}h actual (${ratio.toFixed(2)}x)`, border: 'var(--blue)' },
+    { value: `${nReviewed}/${N}`, label: 'Reviewed', sub: unreviewedTasks.length > 0 ? `${unreviewedTasks.length} awaiting /review` : 'all reviewed', border: 'var(--purple)' },
+    { value: String(totalFiles), label: 'Files Changed', sub: `${(totalFiles/N).toFixed(1)} avg/task`, border: 'var(--text-muted)' }
   ];
   cards.forEach((c) => {
     var card = h('div', { className: 'stat-card', style: { borderLeftColor: c.border } }, [
@@ -607,9 +607,9 @@ function clearEl(el) { while (el.firstChild) el.removeChild(el.firstChild); }
     svg('circle', { cx: cx, cy: cy, r: r, fill: 'none', stroke: 'rgba(255,255,255,0.06)', 'stroke-width': sw }),
     svg('circle', { cx: cx, cy: cy, r: r, fill: 'none', stroke: color, 'stroke-width': sw,
       'stroke-dasharray': circ, 'stroke-dashoffset': offset, 'stroke-linecap': 'round',
-      transform: 'rotate(-90 ' + cx + ' ' + cy + ')' }),
+      transform: `rotate(-90 ${cx} ${cy})` }),
     svg('text', { x: cx, y: cy - 2, 'text-anchor': 'middle', fill: 'var(--text-primary)',
-      'font-size': '26', 'font-weight': '700', 'font-family': 'var(--mono)' }, Math.round(pct * 100) + '%'),
+      'font-size': '26', 'font-weight': '700', 'font-family': 'var(--mono)' }, `${Math.round(pct * 100)}%`),
     svg('text', { x: cx, y: Number(cy) + 14, 'text-anchor': 'middle', fill: 'var(--text-muted)', 'font-size': '10' }, 'FTQ')
   ]);
 
@@ -618,13 +618,13 @@ function clearEl(el) { while (el.firstChild) el.removeChild(el.firstChild); }
   ringEl.appendChild(ring);
 
   var detailEl = document.getElementById('ftq-detail');
-  var strong = h('strong', null, ftqTasks.length + ' of ' + nReviewed);
+  var strong = h('strong', null, `${ftqTasks.length} of ${nReviewed}`);
   var pendingLine;
   detailEl.appendChild(strong);
   detailEl.appendChild(document.createTextNode(' reviewed tasks shipped with zero rework'));
   if (unreviewedTasks.length > 0) {
     pendingLine = h('div', { style: { marginTop: '4px', fontSize: '12px', color: 'var(--text-muted)' } },
-      unreviewedTasks.length + ' task' + (unreviewedTasks.length > 1 ? 's' : '') + ' awaiting /review (' + partialFtqTasks.length + ' clean on simplify+CI)');
+      `${unreviewedTasks.length} task${unreviewedTasks.length > 1 ? 's' : ''} awaiting /review (${partialFtqTasks.length} clean on simplify+CI)`);
     detailEl.appendChild(pendingLine);
   }
 })();
@@ -639,7 +639,7 @@ function clearEl(el) { while (el.firstChild) el.removeChild(el.firstChild); }
 
   simpCats.forEach((c) => {
     var pct = simpMax > 0 ? (simpTotals[c] / simpMax * 100) : 0;
-    var fill = h('div', { className: 'bar-fill', style: { width: pct + '%', background: colors[c] } });
+    var fill = h('div', { className: 'bar-fill', style: { width: `${pct}%`, background: colors[c] } });
     if (simpTotals[c] > 0) fill.appendChild(h('span', null, String(simpTotals[c])));
 
     container.appendChild(h('div', { className: 'bar-row' }, [
@@ -667,8 +667,8 @@ function clearEl(el) { while (el.firstChild) el.removeChild(el.firstChild); }
     var off = -cumPct * circ;
     cumPct += pct;
     return svg('circle', { cx: cx, cy: cy, r: r, fill: 'none', stroke: colorMap[v], 'stroke-width': sw,
-      'stroke-dasharray': dash + ' ' + (circ - dash), 'stroke-dashoffset': off,
-      transform: 'rotate(-90 ' + cx + ' ' + cy + ')' });
+      'stroke-dasharray': `${dash} ${circ - dash}`, 'stroke-dashoffset': off,
+      transform: `rotate(-90 ${cx} ${cy})` });
   });
 
   var donut = svg('svg', { width: '115', height: '115', viewBox: '0 0 110 110', style: 'flex-shrink:0' }, arcs);
@@ -681,7 +681,7 @@ function clearEl(el) { while (el.firstChild) el.removeChild(el.firstChild); }
     var dot = h('span', { className: 'legend-dot', style: { background: colorMap[v] } });
     row.appendChild(dot);
     var label = v === 'PENDING' ? 'Pending /review' : v;
-    row.appendChild(document.createTextNode(label + ': ' + verdicts[v] + '/' + N + ' (' + Math.round(verdicts[v]/N*100) + '%)'));
+    row.appendChild(document.createTextNode(`${label}: ${verdicts[v]}/${N} (${Math.round(verdicts[v]/N*100)}%)`));
     legend.appendChild(row);
   });
   container.appendChild(legend);
@@ -698,12 +698,12 @@ function clearEl(el) { while (el.firstChild) el.removeChild(el.firstChild); }
   // CI card
   var ciCard = h('div', { className: 'mini-card' }, [
     h('div', { className: 'mini-label' }, 'CI First-Pass Rate'),
-    h('div', { className: 'mini-value', style: { color: ciColor } }, Math.round(ciPct) + '%'),
+    h('div', { className: 'mini-value', style: { color: ciColor } }, `${Math.round(ciPct)}%`),
     h('div', { className: 'progress-track' }, [
-      h('div', { className: 'progress-fill', style: { width: ciPct + '%', background: ciColor } })
+      h('div', { className: 'progress-fill', style: { width: `${ciPct}%`, background: ciColor } })
     ]),
     h('div', { style: { fontSize: '11px', color: 'var(--text-muted)', marginTop: '6px', fontFamily: 'var(--mono)' } },
-      ciFirstPass + '/' + N + ' tasks passed CI on first try')
+      `${ciFirstPass}/${N} tasks passed CI on first try`)
   ]);
   container.appendChild(ciCard);
 
@@ -717,7 +717,7 @@ function clearEl(el) { while (el.firstChild) el.removeChild(el.firstChild); }
   var polyPts = covPoints.map((v, i) => {
     var x = (i / (covPoints.length - 1)) * sparkW;
     var y = sparkH - ((v - minCov) / range) * sparkH;
-    return x + ',' + y;
+    return `${x},${y}`;
   }).join(' ');
 
   var sparkChildren = [svg('polyline', { points: polyPts, fill: 'none', stroke: 'var(--green)', 'stroke-width': '2', 'stroke-linecap': 'round', 'stroke-linejoin': 'round' })];
@@ -726,11 +726,11 @@ function clearEl(el) { while (el.firstChild) el.removeChild(el.firstChild); }
     var y = sparkH - ((v - minCov) / range) * sparkH;
     sparkChildren.push(svg('circle', { cx: x, cy: y, r: '3', fill: 'var(--green)' }));
   });
-  var sparkSvg = svg('svg', { width: sparkW, height: sparkH, viewBox: '0 0 ' + sparkW + ' ' + sparkH }, sparkChildren);
+  var sparkSvg = svg('svg', { width: sparkW, height: sparkH, viewBox: `0 0 ${sparkW} ${sparkH}` }, sparkChildren);
   sparkSvg.style.marginTop = '8px';
 
   var valueRow = h('div', { style: { display: 'flex', alignItems: 'baseline', gap: '8px' } }, [
-    h('div', { className: 'mini-value', style: { color: 'var(--green)' } }, '+' + avgCovDelta.toFixed(1) + '%'),
+    h('div', { className: 'mini-value', style: { color: 'var(--green)' } }, `+${avgCovDelta.toFixed(1)}%`),
     h('span', { style: { fontSize: '12px', color: 'var(--text-muted)', fontFamily: 'var(--mono)' } }, 'avg delta/task')
   ]);
 
@@ -739,7 +739,7 @@ function clearEl(el) { while (el.firstChild) el.removeChild(el.firstChild); }
     valueRow,
     sparkSvg,
     h('div', { style: { fontSize: '11px', color: 'var(--text-muted)', marginTop: '4px', fontFamily: 'var(--mono)' } },
-      covPoints[0].toFixed(1) + '% \u2192 ' + covPoints[covPoints.length-1].toFixed(1) + '%')
+      `${covPoints[0].toFixed(1)}% \u2192 ${covPoints[covPoints.length-1].toFixed(1)}%`)
   ]);
   container.appendChild(covCard);
 })();
@@ -757,7 +757,7 @@ function clearEl(el) { while (el.firstChild) el.removeChild(el.firstChild); }
     var cls = isFtq ? 'quality-green' : isRed ? 'quality-red' : 'quality-amber';
     var j, verdictCls;
 
-    var row = h('tr', { className: 'task-row ' + cls });
+    var row = h('tr', { className: `task-row ${cls}` });
 
     // # column
     var numTd = h('td', { style: { width: '20px', textAlign: 'center', fontSize: '12px', color: 'var(--text-muted)' } }, String(i + 1));
@@ -784,14 +784,14 @@ function clearEl(el) { while (el.firstChild) el.removeChild(el.firstChild); }
     row.appendChild(dotsTd);
 
     // Est/Actual
-    row.appendChild(h('td', { style: { fontFamily: 'var(--mono)' } }, d.estimated_h + 'h / ' + d.actual_h + 'h'));
+    row.appendChild(h('td', { style: { fontFamily: 'var(--mono)' } }, `${d.estimated_h}h / ${d.actual_h}h`));
 
     // Verdict
     var verdictTd = h('td');
     if (hasReview) {
       verdictCls = d.review.verdict === "SHIP IT" ? 'verdict-ship' :
                        d.review.verdict === "NEEDS FIXES" ? 'verdict-fixes' : 'verdict-work';
-      verdictTd.appendChild(h('span', { className: 'verdict-badge ' + verdictCls }, d.review.verdict));
+      verdictTd.appendChild(h('span', { className: `verdict-badge ${verdictCls}` }, d.review.verdict));
     } else {
       verdictTd.appendChild(h('span', { className: 'verdict-badge', style: { background: 'rgba(255,255,255,0.06)', color: 'var(--text-muted)' } }, 'PENDING'));
     }
@@ -805,7 +805,7 @@ function clearEl(el) { while (el.firstChild) el.removeChild(el.firstChild); }
     if (d.ci_fix_attempts === 0) {
       ciTd.appendChild(h('span', { style: { color: 'var(--green)' } }, 'Pass'));
     } else {
-      ciTd.appendChild(h('span', { style: { color: 'var(--amber)' } }, d.ci_fix_attempts + ' fix'));
+      ciTd.appendChild(h('span', { style: { color: 'var(--amber)' } }, `${d.ci_fix_attempts} fix`));
     }
     row.appendChild(ciTd);
 
@@ -825,21 +825,21 @@ function clearEl(el) { while (el.firstChild) el.removeChild(el.firstChild); }
     var detailTd = document.createElement('td');
     detailTd.setAttribute('colspan', '10');
 
-    var simpDetail = simpCats.filter((c)=> d.simplify[c] > 0).map((c)=> c + ': ' + d.simplify[c]).join(', ') || 'none';
-    var reqDetail = d.requirements.met + ' met, ' + d.requirements.partial + ' partial, ' + d.requirements.not_met + ' not met';
+    var simpDetail = simpCats.filter((c)=> d.simplify[c] > 0).map((c)=> `${c}: ${d.simplify[c]}`).join(', ') || 'none';
+    var reqDetail = `${d.requirements.met} met, ${d.requirements.partial} partial, ${d.requirements.not_met} not met`;
     var ciDetail = d.ci.failures.length > 0 ? d.ci.failures.join('; ') : 'All passed';
 
     var reviewDetail = hasReview
-      ? d.review.findings + ' findings, ' + d.review.fixes_applied + ' auto-fixed \u2014 ' + d.review.agents.join(', ')
+      ? `${d.review.findings} findings, ${d.review.fixes_applied} auto-fixed \u2014 ${d.review.agents.join(', ')}`
       : 'Awaiting /review \u2014 run /review to enrich this record';
 
     var grid = h('div', { className: 'detail-grid' }, [
       h('div', { className: 'detail-section' }, [ h('h4', null, 'Simplify'), h('p', null, simpDetail) ]),
       h('div', { className: 'detail-section' }, [ h('h4', null, 'Review'), h('p', null, reviewDetail) ]),
-      h('div', { className: 'detail-section' }, [ h('h4', null, 'Requirements'), h('p', null, reqDetail + ' (' + d.requirements.total + ' total AC)') ]),
-      h('div', { className: 'detail-section' }, [ h('h4', null, 'CI'), h('p', null, d.ci.fix_attempts + ' attempts \u2014 ' + ciDetail) ]),
-      h('div', { className: 'detail-section' }, [ h('h4', null, 'Coverage'), h('p', null, d.coverage.before + '% \u2192 ' + d.coverage.after + '% (' + (d.coverage.delta > 0 ? '+' : '') + d.coverage.delta + '%)') ]),
-      h('div', { className: 'detail-section' }, [ h('h4', null, 'Meta'), h('p', null, 'PR #' + d.pr + ' \u00B7 ' + d.files_changed + ' files \u00B7 ' + d.model + (d.retries > 0 ? ' \u00B7 ' + d.retries + ' retries' : '')) ])
+      h('div', { className: 'detail-section' }, [ h('h4', null, 'Requirements'), h('p', null, `${reqDetail} (${d.requirements.total} total AC)`) ]),
+      h('div', { className: 'detail-section' }, [ h('h4', null, 'CI'), h('p', null, `${d.ci.fix_attempts} attempts \u2014 ${ciDetail}`) ]),
+      h('div', { className: 'detail-section' }, [ h('h4', null, 'Coverage'), h('p', null, `${d.coverage.before}% \u2192 ${d.coverage.after}% (${d.coverage.delta > 0 ? '+' : ''}${d.coverage.delta}%)`) ]),
+      h('div', { className: 'detail-section' }, [ h('h4', null, 'Meta'), h('p', null, `PR #${d.pr} \u00B7 ${d.files_changed} files \u00B7 ${d.model}${d.retries > 0 ? ` \u00B7 ${d.retries} retries` : ''}`) ])
     ]);
     detailTd.appendChild(grid);
     detail.appendChild(detailTd);
@@ -876,14 +876,14 @@ function clearEl(el) { while (el.firstChild) el.removeChild(el.firstChild); }
   ]);
   container.appendChild(legend);
 
-  var chartSvg = svg('svg', { width: '100%', viewBox: '0 0 ' + totalW + ' ' + H, preserveAspectRatio: 'xMinYMid meet' });
+  var chartSvg = svg('svg', { width: '100%', viewBox: `0 0 ${totalW} ${H}`, preserveAspectRatio: 'xMinYMid meet' });
 
   // Y-axis lines
   for (yh = 0; yh <= maxH; yh += 1) {
     y = baseline - yh * scale;
     chartSvg.appendChild(svg('line', { x1: pad - 4, y1: y, x2: totalW, y2: y, stroke: 'rgba(255,255,255,0.04)', 'stroke-width': '1' }));
     if (yh % 2 === 0) {
-      chartSvg.appendChild(svg('text', { x: pad - 8, y: y + 4, 'text-anchor': 'end', fill: 'var(--text-muted)', 'font-size': '9', 'font-family': 'var(--mono)' }, yh + 'h'));
+      chartSvg.appendChild(svg('text', { x: pad - 8, y: y + 4, 'text-anchor': 'end', fill: 'var(--text-muted)', 'font-size': '9', 'font-family': 'var(--mono)' }, `${yh}h`));
     }
   }
 
@@ -916,24 +916,24 @@ function clearEl(el) { while (el.firstChild) el.removeChild(el.firstChild); }
   // Overall label
   var overallRow = h('div', { style: { fontSize: '13px', color: 'var(--text-secondary)', marginBottom: '16px' } });
   overallRow.appendChild(document.createTextNode('Overall: '));
-  overallRow.appendChild(h('strong', { style: { color: 'var(--text-primary)', fontFamily: 'var(--mono)' } }, (overallDev > 0 ? '+' : '') + overallDev.toFixed(1) + '%'));
+  overallRow.appendChild(h('strong', { style: { color: 'var(--text-primary)', fontFamily: 'var(--mono)' } }, `${(overallDev > 0 ? '+' : '') + overallDev.toFixed(1)}%`));
   overallRow.appendChild(document.createTextNode(' avg error'));
   container.appendChild(overallRow);
 
   tiers.forEach((t) => {
     var pct = Math.abs(t.dev) / maxDev * 45;
     var color = Math.abs(t.dev) > 15 ? 'var(--amber)' : 'var(--green)';
-    var left = t.dev > 0 ? '50%' : (50 - pct) + '%';
+    var left = t.dev > 0 ? '50%' : `${50 - pct}%`;
 
     var track = h('div', { className: 'deviation-track' }, [
       h('div', { className: 'deviation-center' }),
-      h('div', { className: 'deviation-bar', style: { left: left, width: pct + '%', background: color } })
+      h('div', { className: 'deviation-bar', style: { left: left, width: `${pct}%`, background: color } })
     ]);
 
     container.appendChild(h('div', { className: 'deviation-row' }, [
       h('div', { className: 'deviation-label' }, t.label),
       track,
-      h('div', { className: 'deviation-val', style: { color: color } }, (t.dev > 0 ? '+' : '') + t.dev.toFixed(0) + '%')
+      h('div', { className: 'deviation-val', style: { color: color } }, `${(t.dev > 0 ? '+' : '') + t.dev.toFixed(0)}%`)
     ]));
   });
 })();
@@ -973,7 +973,7 @@ function clearEl(el) { while (el.firstChild) el.removeChild(el.firstChild); }
       h('td', { style: { color: 'var(--text-secondary)', fontFamily: 'system-ui' } }, m.label),
       h('td', null, m.first.toFixed(m.decimals) + m.unit),
       h('td', null, m.second.toFixed(m.decimals) + m.unit),
-      h('td', null, [ h('span', { className: 'trend-arrow', style: { color: color } }, arrow + ' ' + labelText) ])
+      h('td', null, [ h('span', { className: 'trend-arrow', style: { color: color } }, `${arrow} ${labelText}`) ])
     ]);
     tbodyEl.appendChild(tr);
   });
@@ -995,31 +995,31 @@ function clearEl(el) { while (el.firstChild) el.removeChild(el.firstChild); }
   if (unreviewedTasks.length > 0) {
     recs.push({
       icon: '\u21BB', color: 'var(--text-secondary)', bg: 'rgba(255,255,255,0.08)', border: 'var(--text-muted)',
-      title: unreviewedTasks.length + ' task' + (unreviewedTasks.length > 1 ? 's' : '') + ' awaiting /review',
-      body: 'Tasks ' + unreviewedTasks.map((d)=> d.task).join(', ') + ' have metrics from /dev-task but no review data yet. Run /review on each to complete the fix cascade and enable full FTQ calculation.'
+      title: `${unreviewedTasks.length} task${unreviewedTasks.length > 1 ? 's' : ''} awaiting /review`,
+      body: `Tasks ${unreviewedTasks.map((d)=> d.task).join(', ')} have metrics from /dev-task but no review data yet. Run /review on each to complete the fix cascade and enable full FTQ calculation.`
     });
   }
   if (ftqPct < 70 && nReviewed > 0) {
     drivers = [];
-    if (avgSimp > 0.5) drivers.push('simplify fixes (' + avgSimp.toFixed(1) + '/task)');
-    if (ciPct < 90) drivers.push('CI failures (' + Math.round(100 - ciPct) + '% fail rate)');
+    if (avgSimp > 0.5) drivers.push(`simplify fixes (${avgSimp.toFixed(1)}/task)`);
+    if (ciPct < 90) drivers.push(`CI failures (${Math.round(100 - ciPct)}% fail rate)`);
     recs.push({
       icon: '!', color: 'var(--amber)', bg: 'var(--amber-dim)', border: 'var(--amber)',
-      title: 'First-time quality is ' + Math.round(ftqPct) + '% \u2014 target 70%+',
-      body: (nReviewed - ftqTasks.length) + ' of ' + nReviewed + ' reviewed tasks needed post-implementation rework. Primary drivers: ' + drivers.join(', ') + '. Focus on reducing these to improve pipeline efficiency.'
+      title: `First-time quality is ${Math.round(ftqPct)}% \u2014 target 70%+`,
+      body: `${nReviewed - ftqTasks.length} of ${nReviewed} reviewed tasks needed post-implementation rework. Primary drivers: ${drivers.join(', ')}. Focus on reducing these to improve pipeline efficiency.`
     });
   }
   if (avgNaming > 0.3) {
     recs.push({
       icon: 'A', color: 'var(--blue)', bg: 'rgba(96,165,250,0.15)', border: 'var(--blue)',
-      title: 'Naming is the top simplify category (' + avgNaming.toFixed(1) + ' avg/task)',
+      title: `Naming is the top simplify category (${avgNaming.toFixed(1)} avg/task)`,
       body: 'Add explicit naming conventions to your project\'s CLAUDE.md or the task Context field. Include examples of preferred patterns (camelCase, PascalCase for types, etc.) so the implementation step generates consistent names.'
     });
   }
   if (tierDeviation(4,5) > 15) {
     recs.push({
       icon: '~', color: 'var(--purple)', bg: 'rgba(167,139,250,0.15)', border: 'var(--purple)',
-      title: 'Complex tasks (4-5) run +' + tierDeviation(4,5).toFixed(0) + '% over estimate',
+      title: `Complex tasks (4-5) run +${tierDeviation(4,5).toFixed(0)}% over estimate`,
       body: 'Consider padding complexity 4-5 estimates by 20%, or break them into smaller subtasks. The estimation error is concentrated in high-complexity work \u2014 simple and standard tasks track well.'
     });
   }
