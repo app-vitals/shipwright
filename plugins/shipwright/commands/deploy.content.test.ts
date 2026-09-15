@@ -524,7 +524,7 @@ describe("deploy.md — Terminal Conditions SHA_ONLY_FALLBACK branch coverage (D
   it("SHA_ONLY_FALLBACK budget-exhausted case marks deployed for manual check and prints the pending-at-timeout handoff", () => {
     const section = extractTerminalConditionsSection(content);
     const timeoutMatch = section.match(
-      /Budget exhausted \(30 minutes\)\*\* with runs still pending[\s\S]*?(?=Skip the named-stage bullets)/,
+      /Budget exhausted \(30 minutes\)\*\* with `ALL_GREEN`[\s\S]*?(?=Skip the named-stage bullets)/,
     );
     expect(timeoutMatch).not.toBeNull();
     const timeoutSection = timeoutMatch?.[0] ?? "";
@@ -1006,10 +1006,11 @@ describe("deploy.md — Step 3b: verify all checks are green (CGC-1.1)", () => {
     expect(section).not.toContain('ascii_downcase == "ci"');
   });
 
-  it("groups runs by workflow name and keeps only the latest run per name", () => {
+  it("delegates green-classification to the shared is-ci-green.ts CLI instead of freehand jq", () => {
     const section = extractStep3bSection(content);
-    expect(section).toContain("group_by(.name)");
-    expect(section).toContain("max_by(.created_at)");
+    expect(section).toContain("is-ci-green.ts");
+    expect(section).not.toContain("group_by(.name)");
+    expect(section).not.toContain("max_by(.created_at)");
   });
 
   it("fails with a clear message when not all checks are green", () => {

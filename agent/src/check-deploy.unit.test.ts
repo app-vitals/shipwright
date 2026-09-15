@@ -29,6 +29,8 @@ const GREEN_CI_RUN: CiRun = {
   status: "completed",
   conclusion: "success",
   createdAt: "2026-05-01T00:00:00.000Z",
+  workflow_id: 1,
+  run_number: 1,
 };
 
 function makeGhPr(overrides: Partial<GhPr> = {}): GhPr {
@@ -283,6 +285,8 @@ describe("getDeployCandidates", () => {
               status: "in_progress",
               conclusion: null,
               createdAt: "2026-05-01T00:00:00.000Z",
+              workflow_id: 1,
+              run_number: 1,
             },
           ],
         },
@@ -303,6 +307,8 @@ describe("getDeployCandidates", () => {
               status: "completed",
               conclusion: "failure",
               createdAt: "2026-05-01T00:00:00.000Z",
+              workflow_id: 1,
+              run_number: 1,
             },
           ],
         },
@@ -334,18 +340,24 @@ describe("getDeployCandidates", () => {
               status: "completed",
               conclusion: "success",
               createdAt: "2026-05-01T00:00:00.000Z",
+              workflow_id: 1,
+              run_number: 1,
             },
             {
               name: "pr-title-lint",
               status: "completed",
               conclusion: "success",
               createdAt: "2026-05-01T00:00:00.000Z",
+              workflow_id: 2,
+              run_number: 1,
             },
             {
               name: "some-other-check",
               status: "completed",
               conclusion: "success",
               createdAt: "2026-05-01T00:00:00.000Z",
+              workflow_id: 3,
+              run_number: 1,
             },
           ],
         },
@@ -366,12 +378,16 @@ describe("getDeployCandidates", () => {
               status: "completed",
               conclusion: "failure",
               createdAt: "2026-05-01T00:00:00.000Z",
+              workflow_id: 1,
+              run_number: 1,
             },
             {
               name: "ci",
               status: "completed",
               conclusion: "success",
               createdAt: "2026-05-01T00:10:00.000Z",
+              workflow_id: 1,
+              run_number: 2,
             },
           ],
         },
@@ -392,12 +408,16 @@ describe("getDeployCandidates", () => {
               status: "completed",
               conclusion: "success",
               createdAt: "2026-05-01T00:00:00.000Z",
+              workflow_id: 1,
+              run_number: 1,
             },
             {
               name: "pr-title-lint",
               status: "completed",
               conclusion: "failure",
               createdAt: "2026-05-01T00:00:00.000Z",
+              workflow_id: 2,
+              run_number: 1,
             },
           ],
         },
@@ -418,12 +438,115 @@ describe("getDeployCandidates", () => {
               status: "completed",
               conclusion: "success",
               createdAt: "2026-05-01T00:00:00.000Z",
+              workflow_id: 1,
+              run_number: 1,
             },
             {
               name: "pr-title-lint",
               status: "queued",
               conclusion: null,
               createdAt: "2026-05-01T00:00:00.000Z",
+              workflow_id: 2,
+              run_number: 1,
+            },
+          ],
+        },
+      }),
+    );
+    expect(result).toEqual([]);
+  });
+
+  // ─── CIG-1.2: skipped/neutral conclusions now count as green ─────────────
+  //
+  // Previously this file's own local isCiGreen() required strict
+  // conclusion === "success" — a "skipped" or "neutral" run (e.g. a
+  // path-filtered workflow, or a required check that intentionally
+  // no-ops) would have wrongly blocked deploy candidacy. Now that
+  // isCiGreen is imported from CIG-1.1's shared classifier, both count as
+  // green.
+
+  test("returns a candidate when one workflow's latest run has conclusion 'skipped' (treated as green)", async () => {
+    const pr = makeGhPr({ reviewDecision: "APPROVED" });
+    const result = await getDeployCandidates(
+      makeDeps({
+        prs: { "acme/example-repo": [pr] },
+        ciRuns: {
+          sha50: [
+            {
+              name: "ci",
+              status: "completed",
+              conclusion: "success",
+              createdAt: "2026-05-01T00:00:00.000Z",
+              workflow_id: 1,
+              run_number: 1,
+            },
+            {
+              name: "pr-title-lint",
+              status: "completed",
+              conclusion: "skipped",
+              createdAt: "2026-05-01T00:00:00.000Z",
+              workflow_id: 2,
+              run_number: 1,
+            },
+          ],
+        },
+      }),
+    );
+    expect(result).toHaveLength(1);
+  });
+
+  test("returns a candidate when one workflow's latest run has conclusion 'neutral' (treated as green)", async () => {
+    const pr = makeGhPr({ reviewDecision: "APPROVED" });
+    const result = await getDeployCandidates(
+      makeDeps({
+        prs: { "acme/example-repo": [pr] },
+        ciRuns: {
+          sha50: [
+            {
+              name: "ci",
+              status: "completed",
+              conclusion: "success",
+              createdAt: "2026-05-01T00:00:00.000Z",
+              workflow_id: 1,
+              run_number: 1,
+            },
+            {
+              name: "pr-title-lint",
+              status: "completed",
+              conclusion: "neutral",
+              createdAt: "2026-05-01T00:00:00.000Z",
+              workflow_id: 2,
+              run_number: 1,
+            },
+          ],
+        },
+      }),
+    );
+    expect(result).toHaveLength(1);
+  });
+
+  test("returns empty array when one workflow's latest run has conclusion 'cancelled' (still not green)", async () => {
+    const pr = makeGhPr({ reviewDecision: "APPROVED" });
+    const result = await getDeployCandidates(
+      makeDeps({
+        prs: { "acme/example-repo": [pr] },
+        ciRuns: {
+          sha50: [
+            {
+              name: "ci",
+              status: "completed",
+              conclusion: "success",
+              createdAt: "2026-05-01T00:00:00.000Z",
+              workflow_id: 1,
+              run_number: 1,
+            },
+            {
+              name: "pr-title-lint",
+              status: "completed",
+              conclusion: "cancelled",
+              createdAt: "2026-05-01T00:00:00.000Z",
+              workflow_id: 2,
+              run_number: 1,
             },
           ],
         },
@@ -1225,12 +1348,16 @@ describe("buildProductionDeps", () => {
               status: "completed",
               conclusion: "success",
               created_at: "2026-05-01T00:00:00Z",
+              workflow_id: 111,
+              run_number: 3,
             },
             {
               name: "pr-title-lint",
               status: "completed",
               conclusion: "success",
               created_at: "2026-05-01T00:01:00Z",
+              workflow_id: 222,
+              run_number: 1,
             },
           ],
         } as unknown as T;
@@ -1245,12 +1372,16 @@ describe("buildProductionDeps", () => {
         status: "completed",
         conclusion: "success",
         createdAt: "2026-05-01T00:00:00Z",
+        workflow_id: 111,
+        run_number: 3,
       },
       {
         name: "pr-title-lint",
         status: "completed",
         conclusion: "success",
         createdAt: "2026-05-01T00:01:00Z",
+        workflow_id: 222,
+        run_number: 1,
       },
     ]);
     expect(seenArgs).toHaveLength(1);

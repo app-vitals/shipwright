@@ -1954,14 +1954,15 @@ curl -s -o /dev/null -X POST \
   -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
   "$SHIPWRIGHT_TASK_STORE_URL/prs/$PR_RECORD_ID/heartbeat"
 
-gh api "repos/$REPO/actions/runs?head_sha=$HEAD_SHA&per_page=20" \
-  --jq '[.workflow_runs[] | {id, name, workflow_id, run_number, status, conclusion}]'
+RUNS_JSON=$(gh api "repos/$REPO/actions/runs?head_sha=$HEAD_SHA&per_page=20" \
+  --jq '[.workflow_runs[] | {id, name, workflow_id, run_number, status, conclusion}]')
 ```
 
 Filter to runs where `head_sha == HEAD_SHA`. Keep polling while any run has `status` of
-`queued`, `in_progress`, or `waiting`. **Deduplicate by workflow:** evaluate only the latest
-run per workflow (highest `run_number` per `workflow_id`), same as Step 3c and `dev-task.md`
-Step 9b.2, to avoid a stale failed run being counted alongside its passing rerun.
+`queued`, `in_progress`, or `waiting`. **Deduplication is handled internally** by the shared
+`is-ci-green.ts` classifier (CIG-1.1) called below — it evaluates only the latest run per
+workflow (highest `run_number` per `workflow_id`), same as Step 3c and `dev-task.md` Step
+9b.2, to avoid a stale failed run being counted alongside its passing rerun.
 
 **No CI configured:** if no matching runs appear after 60 seconds (2 polls), skip the rest
 of Step 6.5 and proceed to Step 7 — mirroring `dev-task.md` Step 9b.2's identical
@@ -1970,8 +1971,13 @@ no-CI-configured skip. Print:
 ⏭ No CI checks configured — skipping CI verification gate
 ```
 
-**All checks pass:** if all latest-per-workflow runs have `conclusion == "success"`, print
-and proceed to the existing Step 7 report unchanged:
+**All checks pass:** run the polled runs through the shared classifier —
+```bash
+ALL_GREEN=$(bun run "${CLAUDE_PLUGIN_ROOT}/scripts/is-ci-green.ts" "$RUNS_JSON")
+```
+— which dedups by `workflow_id`/`run_number` and treats `success`, `skipped`, and `neutral`
+conclusions as green. If `ALL_GREEN` is `"true"`, print and proceed to the existing Step 7
+report unchanged:
 ```
 ✓ CI checks passed after patch
 ```
