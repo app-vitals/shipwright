@@ -232,13 +232,16 @@ for the full env var reference (`SHIPWRIGHT_ADMIN_SESSION_ALERT_INTERVAL_MS`,
 
 ## Bringing your own PostgreSQL / Bitnami registry fallback
 
-The bundled PostgreSQL is the **Bitnami `postgresql` subchart**, pinned to a
-chart version whose default image tag is concrete (not `latest`) so it renders
-deterministically. In 2025 Bitnami changed their catalog and registry, moving
-many image tags to a `bitnamilegacy` repository — the chart now **defaults to
-the `bitnamilegacy/postgresql` image** so a fresh install pulls successfully
-from the public registry. You can repoint the images without changing the
-chart, or bring your own database:
+The bundled PostgreSQL is the **Bitnami `postgresql` subchart**, pinned to the
+chart release shipping Postgres 18.x. In 2025 Bitnami changed their catalog
+and registry: the `bitnami/postgresql` repository now only publishes a
+floating `latest` tag, and the `bitnamilegacy` mirror (a frozen snapshot of
+the last pre-change release) never received a Postgres 18 build at all —
+it tops out at Postgres 17.6.0. So instead of pinning a concrete tag, the
+chart pins `postgresql.image.digest` to an immutable sha256 digest of a
+`bitnami/postgresql:latest` build, which renders deterministically without
+depending on a version tag that no longer exists publicly. You can repoint
+the images without changing the chart, or bring your own database:
 
 - **Mirror the whole stack:** set `global.imageRegistry: <your-mirror>`.
   When set, this prefix is applied **only** to bare repository names (those not
@@ -251,9 +254,11 @@ chart, or bring your own database:
   alone. Only bare names (e.g., `shipwright-admin` or the whisper image
   `onerahmet/openai-whisper-asr-webservice`) receive the prefix.
 
-- **Use the standard `bitnami/postgresql` repository** instead of the default
-  `bitnamilegacy` mirror (e.g., if you have Bitnami Secure access) by setting
-  `postgresql.image.repository: bitnami/postgresql`.
+- **Override the pinned digest with an explicit tag** (e.g., if you have
+  Bitnami Secure access to a concrete versioned tag, or maintain your own
+  mirror with tagged builds) by clearing `postgresql.image.digest: ""` and
+  setting `postgresql.image.tag` explicitly — a non-empty `tag` only takes
+  effect when `digest` is unset.
 
 - **Bring your own PostgreSQL:** set `postgresql.enabled=false` and point
   `externalDatabase.existingSecret` at a pre-created Kubernetes Secret holding

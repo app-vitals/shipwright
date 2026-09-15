@@ -56,7 +56,7 @@ tests:
             value: "r-postgresql"
 
   - it: sources the superuser password from the subchart Secret under key postgres-password
-    # Bitnami postgresql 16.7.27 emits `postgres-password` (superuser) and
+    # Bitnami postgresql 18.11.3 emits `postgres-password` (superuser) and
     # `password` (app user). It has never emitted `postgresql-password`.
     asserts:
       - contains:
@@ -111,16 +111,16 @@ tests:
     asserts:
       - matchRegex:
           path: spec.template.spec.containers[0].image
-          pattern: "^docker\\.io/bitnamilegacy/postgresql:"
+          pattern: "^docker\\.io/bitnami/postgresql@sha256:"
 
-  - it: follows a postgresql image override back to bitnami/postgresql
+  - it: follows a postgresql image override back to an explicit tag
     set:
-      postgresql.image.registry: docker.io
-      postgresql.image.repository: bitnami/postgresql
+      postgresql.image.digest: ""
+      postgresql.image.tag: "18.6.0"
     asserts:
       - matchRegex:
           path: spec.template.spec.containers[0].image
-          pattern: "^docker\\.io/bitnami/postgresql:"
+          pattern: "^docker\\.io/bitnami/postgresql:18\\.6\\.0$"
 
   - it: runs as a non-root user
     asserts:

@@ -184,7 +184,7 @@ environment, set `postgresql.auth.existingSecret` to a pre-created Secret (or se
 | `admin.podDisruptionBudget` / `taskStore.podDisruptionBudget` / `chat.podDisruptionBudget` | `{enabled: false, minAvailable: 1}` | Optional PodDisruptionBudget for the workload. Off by default — purely additive. See below. |
 | `postgresql.enabled` | `true` | Deploy the bundled Bitnami PostgreSQL subchart. |
 | `postgresql.image.registry` | `docker.io` | PostgreSQL image registry (repoint to a mirror — see below). |
-| `postgresql.image.repository` | `bitnamilegacy/postgresql` | PostgreSQL image repository. |
+| `postgresql.image.repository` | `bitnami/postgresql` | PostgreSQL image repository. |
 | `postgresql.auth.database` | `shipwright_admin` | Default database created on first boot. |
 | `postgresql.auth.username` | `shipwright` | Default application user. |
 | `postgresql.auth.password` | `shipwright` | Default password — **change for any non-throwaway env**, or use `existingSecret`. |
@@ -281,7 +281,7 @@ The chart vendors **four optional subcharts** — each gated by its own
 
 | Subchart | Version | Repository | Condition | Default |
 |---|---|---|---|---|
-| `postgresql` | `16.7.27` | `oci://registry-1.docker.io/bitnamicharts` | `postgresql.enabled` | **on** |
+| `postgresql` | `18.11.3` | `oci://registry-1.docker.io/bitnamicharts` | `postgresql.enabled` | **on** |
 | `ingress-nginx` | `4.15.1` | `https://kubernetes.github.io/ingress-nginx` | `ingress-nginx.enabled` | off |
 | `traefik` | `41.3.0` | `https://traefik.github.io/charts` | `traefik.enabled` | off |
 | `cert-manager` | `v1.21.1` | `https://charts.jetstack.io` | `cert-manager.enabled` | off |
@@ -293,32 +293,54 @@ above for bundling `cert-manager` alongside either one.
 ## ⚠️ Bitnami registry risk and image-override / mirror fallback
 
 The bundled PostgreSQL dependency is the **Bitnami `postgresql` subchart**,
-pinned to chart version **`16.7.27`** (PostgreSQL app `17.6.0`) via OCI:
+pinned to chart version **`18.11.3`** (PostgreSQL app `18.6.0`) via OCI:
 
 ```yaml
 dependencies:
   - name: postgresql
-    version: "16.7.27"
+    version: "18.11.3"
     repository: oci://registry-1.docker.io/bitnamicharts
     condition: postgresql.enabled
 ```
 
-**Why this specific pin and mirror?** In **2025 Bitnami changed their catalog and registry.**
-Many image tags were moved to a `bitnamilegacy` repository, and the newest
-secure/hardened images moved behind **Bitnami Secure** (newer chart lines ship a
-default `image.tag: latest` that no longer resolves to a concrete public tag).
-Chart `16.7.27` is pinned because its **default image tag is concrete**
-(`17.6.0-debian-12-r4`), not `latest`, so it renders deterministically.
-**The chart now defaults to the `bitnamilegacy` mirror** to ensure a fresh
-install pulls successfully from the public registry.
+**Why this pin, and why digest instead of tag?** In **2025 Bitnami changed
+their catalog and registry.** The newest secure/hardened images moved behind
+**Bitnami Secure**, and every current `postgresql` chart release — including
+this Postgres 18 line — now ships a default `image.tag: latest` that is a
+floating target, not a concrete version. The `bitnamilegacy` mirror (a frozen
+snapshot of Bitnami's last pre-change public images) **never received a
+Postgres 18 build** — it tops out at `17.6.0` — so it cannot back this bump at
+all.
 
-**If you need the standard `bitnami` repository** (e.g., you have Bitnami Secure
-access or the legacy mirror is deprecated), override the image explicitly:
+With no concrete public tag available for Postgres 18, this chart pins
+**`postgresql.image.digest`** instead of a tag — an immutable `sha256:...`
+reference to a specific `bitnami/postgresql:latest` build (currently
+`18.6.0`). The subchart's image helper renders `repository@digest` instead of
+`repository:tag` whenever `digest` is set, so the render stays deterministic
+even though the tag it was captured from keeps moving:
+
+```yaml
+postgresql:
+  image:
+    registry: docker.io
+    repository: bitnami/postgresql
+    digest: sha256:b69d1fca390fb131639e86e820f248acfc5d911339dc884796f8009260c598d7
+```
+
+**To re-pin after a Postgres patch release**, resolve the new digest for
+`bitnami/postgresql:latest` (e.g. `docker buildx imagetools inspect
+bitnami/postgresql:latest`) and update `postgresql.image.digest` above.
+
+**If you have Bitnami Secure access or your own mirror with concrete version
+tags**, clear the digest and set an explicit tag instead — `tag` only takes
+effect when `digest` is unset:
 
 ```yaml
 postgresql:
   image:
     repository: bitnami/postgresql
+    digest: ""
+    tag: "18.6.0-debian-12-rN"   # whatever concrete tag your source provides
 ```
 
 **For other registry scenarios**, pick one of these alternatives:
