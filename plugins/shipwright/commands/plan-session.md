@@ -55,11 +55,12 @@ This is the engineering planning pass. The product spec (what and why) is alread
 
 1. Read `CLAUDE.md` in the repo worktree if available, otherwise read from `${SHIPWRIGHT_REPO_DIR:-$HOME/src}/{repo-slug}/`
 2. Glob the repo structure to understand the codebase layout
-3. Check for any existing tasks in this session to avoid duplicates:
+3. Check for any existing tasks in this session to avoid duplicates. Under `--autonomous {task-id}`, set `AUTONOMOUS_TASK_ID` to `{task-id}` first; otherwise leave it unset and the filter is a no-op:
    ```bash
-   curl -sf -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" "$SHIPWRIGHT_TASK_STORE_URL/tasks?session=$SESSION" | jq '.tasks'
+   curl -sf -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" "$SHIPWRIGHT_TASK_STORE_URL/tasks?session=$SESSION" \
+     | jq --arg t "${AUTONOMOUS_TASK_ID:-}" '.tasks | map(select(.id != $t))'
    ```
-   The response is a paginated envelope — unwrap `.tasks` to get the array. If non-empty, print the existing task IDs and skip re-adding them.
+   The response is a paginated envelope — unwrap `.tasks` to get the array. The `select(.id != $t)` drops the originating PRD task in autonomous mode: it shares this session slug because it is the session's *input*, not a duplicate of the work it produces. If the result is non-empty, print the existing task IDs and skip re-adding them.
 4. Scan for open tasks from prior sessions that may be prerequisites for this work:
    ```bash
    curl -sf -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
@@ -96,7 +97,7 @@ When `--autonomous {task-id}` was passed, the spec arrives through the originati
    ```
    Print `⚠ Task {task-id} has no spec to plan from — blocked for human triage (plan_session_autonomous_no_spec).` and stop. Do not continue to Step 2.
 
-The interactive fallback below — asking **"What are we building?"** — must never run under `--autonomous`; there is no one to answer it. Likewise, in 1.3's duplicate scan, exclude `{task-id}` itself from the existing-tasks list: the originating PRD task shares this session slug because it is the *input* to the session, not a duplicate of the work it produces.
+The interactive fallback below — asking **"What are we building?"** — must never run under `--autonomous`; there is no one to answer it. (The originating task `{task-id}` is already excluded from 1.3's duplicate scan by that step's own `select(.id != $t)` filter — no further action here.)
 
 Present a brief orientation:
 

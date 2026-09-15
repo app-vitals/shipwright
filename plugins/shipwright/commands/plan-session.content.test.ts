@@ -406,11 +406,21 @@ describe("plan-session.md — Step 1 `--autonomous` spec materialization from th
     expect(sub.toLowerCase()).toMatch(/never|must not|do not/);
   });
 
-  it("excludes the originating task from the same-session duplicate scan", () => {
+  it("excludes the originating task from the same-session duplicate scan via a jq filter in item 3 itself, not trailing prose", () => {
+    const section = extractStep1Section(content);
+    const item3Idx = section.indexOf("3. Check for any existing tasks in this session");
+    const item4Idx = section.indexOf("4. Scan for open tasks from prior sessions");
+    expect(item3Idx).toBeGreaterThan(-1);
+    expect(item4Idx).toBeGreaterThan(item3Idx);
+    const item3 = section.slice(item3Idx, item4Idx);
+    expect(item3).toContain("AUTONOMOUS_TASK_ID");
+    expect(item3).toContain("select(.id != $t)");
+    expect(item3).toContain("--autonomous");
+    expect(item3.toLowerCase()).toContain("duplicate");
+
     const sub = extractAutonomousSubsection(content);
     expect(sub).toContain("{task-id}");
-    expect(sub.toLowerCase()).toMatch(/exclude|ignore|skip/);
-    expect(sub.toLowerCase()).toContain("duplicate");
+    expect(sub).toContain("select(.id != $t)");
   });
 });
 
