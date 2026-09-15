@@ -2288,7 +2288,7 @@ describe("buildProductionDeps — task-store GET /tasks pagination (TCR-1.2)", (
       { id: "t1", repo: "acme/example-repo", branch: "feat/bundle" },
       { id: "t2", repo: "acme/example-repo", branch: "feat/bundle" },
     ];
-    const { fetchFn, calls } = makeFakeDegradableBranchTaskStoreFetch({
+    const { fetchFn, calls: _calls } = makeFakeDegradableBranchTaskStoreFetch({
       tasksByRepoBranch: { "acme/example-repo#feat/bundle": tasks },
       // Only the initial call is degraded; the retry succeeds.
       degradedForCalls: 1,

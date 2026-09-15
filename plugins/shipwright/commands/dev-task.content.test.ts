@@ -720,7 +720,7 @@ describe("dev-task.md Step 1 — PRD-shaped task guard (fallback safety net) (PD
   });
 
   it("stops before the Dependency Check and before claiming (Step 2)", () => {
-    const { section } = getGuardSection();
+    const { section: _section } = getGuardSection();
     const claimIdx = content.indexOf("/tasks/{id}/claim");
     const guardIdx = content.indexOf("### PRD-Shaped Task Guard");
     expect(guardIdx).toBeLessThan(claimIdx);

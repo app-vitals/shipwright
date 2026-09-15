@@ -359,7 +359,7 @@ describe("message handler — DM routing", () => {
   });
 
   test("returns early when message has no text and no files", async () => {
-    const { client, say } = await invokeDM({ text: undefined });
+    const { client: _client, say } = await invokeDM({ text: undefined });
     expect(mockRunClaude).not.toHaveBeenCalled();
     expect(say).not.toHaveBeenCalled();
   });

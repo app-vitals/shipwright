@@ -172,7 +172,7 @@ export async function handleCronRequest(
       "installed_plugins.json",
     ),
     cronRunReporter,
-    agentId,
+    agentId: _agentId,
     clock = SystemClock(),
     spawner = Bun.spawn,
   } = deps;
