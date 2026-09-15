@@ -57,6 +57,7 @@ Manual test scenarios for each command across different project types.
 | 40 | `/dev-task` Step 8.5 | Any | Unparseable agent result is recorded, not silent | Agent returns no/garbled `AUTO_DOCS_METRICS` block; `⚠ ... agent_error` printed; metrics record has `skipped_reason:"agent_error"`, `updated:false`; pipeline continues |
 | 41 | `/plan-session` Step 6a / `/prd` Phase 4 | Any (admin app base URL configured) | Plan viz link after markdown write | `PLAN.md`/`PRODUCT-SPEC.md` written unchanged, then a `${SHIPWRIGHT_ADMIN_APP_BASE_URL}/admin/sessions/{session}` link is constructed and a `Plan viz: {url}` line is surfaced in the confirmation block |
 | 42 | `/plan-session` Step 6a / `/prd` Phase 4 | Any (admin app base URL unset) | Plan viz graceful skip | `⏭ Plan viz skipped — SHIPWRIGHT_ADMIN_APP_BASE_URL unset.` printed; markdown still written; no `Plan viz:` line; command never blocks |
+| 45 | `/plan-session --autonomous` Step 1 | Any (flagged PRD task, no spec file in worktree) | Spec materialized from the task description | `planning/{session}/PRODUCT-SPEC.md` written from the task's `description` with the `Commit as PRODUCT-SPEC.md…` preamble stripped; no "What are we building?" prompt; the originating task is excluded from the duplicate scan; an empty description blocks the task with `plan_session_autonomous_no_spec` |
 | 44 | `/shipwright:hitl` Step 6a | Any (gitleaks-secret/hardcoded-credential HITL task) | Gitleaksignore suppression sub-step | Two distinct questions asked (false-positive vs. rotated); suppression never offered for rotated findings; confirmed findings flow through worktree → `.gitleaksignore` append → commit → push → PR; declining suppression still reaches Step 6b mark-done |
 
 ---
@@ -1212,6 +1213,41 @@ Repeat with a HITL task whose `description` has no `Rule:` trailer line at all (
 manually-filed infra task).
 - [ ] Step 6a is skipped entirely — no suppression questions asked
 - [ ] Step 6b's mark-done flow behaves exactly as it did before this change
+
+---
+
+## Scenario 45: /plan-session --autonomous — Spec Materialized From the Task Description
+
+Covers the hand-off from an external PRD submitter (e.g. a platform gateway that POSTs a
+task flagged `autonomousPlanSession: true` with the whole spec in `description`). Before
+this change Step 1 only ever read `planning/{session}/PRODUCT-SPEC.md` from the worktree
+and otherwise fell back to the interactive "What are we building?" prompt — which, under
+`--autonomous`, has no one to answer it.
+
+### Setup
+1. A task in the task store: `id: prd-demo`, `session: prd-demo`, `repo: {org/repo}`,
+   `status: pending`, `autonomousPlanSession: true`, and a `description` of
+   `Commit as PRODUCT-SPEC.md and run /shipwright:plan-session.\n\n# PRODUCT-SPEC.md\n\n…`
+   (a small but complete spec body).
+2. A target repo cloned at `repos/{repo}` with **no** `planning/prd-demo/` directory.
+
+### Run
+Invoke `/shipwright:plan-session {org/repo} prd-demo --autonomous prd-demo`.
+
+### Verify
+- [ ] Step 1 fetches `GET /tasks/prd-demo` and writes `planning/prd-demo/PRODUCT-SPEC.md`
+      whose first line is `# PRODUCT-SPEC.md` — the `Commit as PRODUCT-SPEC.md and run
+      /shipwright:plan-session.` preamble and the blank line after it are stripped
+- [ ] The orientation header reports `Spec: found`
+- [ ] The agent never asks "What are we building?"
+- [ ] Step 1.3's existing-tasks output does not list `prd-demo` as a duplicate
+- [ ] Planning proceeds through Steps 2–6 and Step 6c closes `prd-demo` to `done`
+- [ ] Re-run with `planning/prd-demo/PRODUCT-SPEC.md` already present in the worktree: the
+      file is used as-is and no task-store fetch/write of the spec happens
+- [ ] Re-run with a task whose `description` is empty (or only the preamble): the task is
+      PATCHed to `status: blocked`, `hitl: true`, `blockedReason` starting
+      `plan_session_autonomous_no_spec`, the `⚠ … blocked for human triage` line is printed,
+      and Step 2 never runs
 
 ---
 
