@@ -1,6 +1,7 @@
 #!/usr/bin/env bun
 import { mkdirSync, openSync, readFileSync, unlinkSync } from "node:fs";
 import { dirname } from "node:path";
+import { parseFlags } from "../lib/cli-flags.ts";
 
 /**
  * scripts/minikube.ts — bring the full Shipwright stack up on Minikube.
@@ -680,14 +681,13 @@ export function openInBrowser(
 }
 
 /**
- * Parse `--profile <name>` from argv. Returns "addon" (the pre-existing
- * default) when the flag is absent, so every pre-CNH-8.2 invocation of this
- * script keeps behaving exactly as before.
+ * Parse `--profile <name>` (or `--profile=<name>`) from argv. Returns "addon"
+ * (the pre-existing default) when the flag is absent, so every pre-CNH-8.2
+ * invocation of this script keeps behaving exactly as before.
  */
 function parseProfileArg(argv: string[]): string {
-  const i = argv.indexOf("--profile");
-  if (i === -1 || i === argv.length - 1) return "addon";
-  return argv[i + 1];
+  const { "--profile": profile } = parseFlags(argv, ["--profile"] as const);
+  return profile ?? "addon";
 }
 
 /** True when `name` is a known Profile key. */

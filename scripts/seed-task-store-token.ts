@@ -16,11 +16,13 @@
  *
  *   bun run scripts/seed-task-store-token.ts --db-url <url> --token <rawToken>
  *
- * Pure helpers (hashRawToken, parseSeedArgs) and the upsert (seedTaskStoreAdminToken)
- * are exported for unit testing; the import.meta.main block wires real I/O.
+ * Pure helpers (hashRawToken) and the upsert (seedTaskStoreAdminToken) are
+ * exported for unit testing; the import.meta.main block wires real I/O. CLI
+ * flags are parsed via the shared lib/cli-flags.ts#parseFlags helper.
  */
 
 import { createHash } from "node:crypto";
+import { parseFlags } from "../lib/cli-flags.ts";
 
 /**
  * SHA-256 hex digest of a raw token. Mirrors the (private) hashToken in
@@ -29,25 +31,6 @@ import { createHash } from "node:crypto";
  */
 export function hashRawToken(raw: string): string {
   return createHash("sha256").update(raw).digest("hex");
-}
-
-export interface SeedArgs {
-  dbUrl?: string;
-  token?: string;
-  agentId?: string;
-}
-
-/** Parse `--db-url`/`--token`/`--agent-id` flags (both `--flag value` and `--flag=value`). */
-export function parseSeedArgs(argv: string[]): SeedArgs {
-  const read = (name: string): string | undefined => {
-    for (let i = 0; i < argv.length; i++) {
-      if (argv[i] === `--${name}` && argv[i + 1]) return argv[i + 1];
-      const prefix = `--${name}=`;
-      if (argv[i]?.startsWith(prefix)) return argv[i].slice(prefix.length);
-    }
-    return undefined;
-  };
-  return { dbUrl: read("db-url"), token: read("token"), agentId: read("agent-id") };
 }
 
 /** Minimal slice of PrismaClient this seeder needs — keeps the double tiny. */
@@ -92,7 +75,14 @@ if (import.meta.main) {
     "../task-store/src/prisma-client.ts"
   );
 
-  const { dbUrl, token, agentId } = parseSeedArgs(process.argv.slice(2));
+  const flags = parseFlags(process.argv.slice(2), [
+    "--db-url",
+    "--token",
+    "--agent-id",
+  ] as const);
+  const dbUrl = flags["--db-url"];
+  const token = flags["--token"];
+  const agentId = flags["--agent-id"];
   const databaseUrl = dbUrl ?? process.env.DATABASE_URL_SHIPWRIGHT_TASK_STORE;
 
   if (!databaseUrl) {

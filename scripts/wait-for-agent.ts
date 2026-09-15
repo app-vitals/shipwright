@@ -19,6 +19,8 @@
  *   bun run scripts/wait-for-agent.ts [--db-url <url>]
  */
 
+import { parseFlags } from "../lib/cli-flags.ts";
+
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 /** The subset of an Agent row this script needs. */
@@ -88,14 +90,9 @@ if (import.meta.main) {
   );
 
   const argv = process.argv.slice(2);
-  const dbUrl = (() => {
-    for (let i = 0; i < argv.length; i++) {
-      if (argv[i] === "--db-url" && argv[i + 1]) return argv[i + 1];
-      if (argv[i]?.startsWith("--db-url="))
-        return argv[i].slice("--db-url=".length);
-    }
-    return process.env.DATABASE_URL_SHIPWRIGHT_ADMIN;
-  })();
+  const dbUrl =
+    parseFlags(argv, ["--db-url"] as const)["--db-url"] ??
+    process.env.DATABASE_URL_SHIPWRIGHT_ADMIN;
 
   if (!dbUrl) {
     console.error(
