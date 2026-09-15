@@ -759,8 +759,9 @@ describe("dev-task.md Step 1 — PRD-shaped task guard (fallback safety net) (PD
     expect(section).toMatch(/blocked|blocked for human/i);
   });
 
-  it("does NOT special-case autonomousPlanSession:true tasks (they are excluded upstream at ?ready=true level)", () => {
+  it("does NOT special-case kind:prd tasks (they are excluded upstream at ?ready=true level)", () => {
     const { section } = getGuardSection();
     expect(section).not.toContain("autonomousPlanSession");
+    expect(section).not.toContain('"kind"');
   });
 });

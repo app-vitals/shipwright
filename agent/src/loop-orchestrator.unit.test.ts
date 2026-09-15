@@ -4333,11 +4333,16 @@ describe("createLoopOrchestrator — autonomous plan phase (PDR-4.1)", () => {
   });
 
   // ─── Merged-pool dedupe (plan-tagged copy wins) ───────────────────────────
-  // check-dev-task's `?ready=true` query doesn't pass autonomousPlanSession,
-  // so a flagged, pending, hitl-false task with satisfied deps comes back
-  // from BOTH providers with the identical createdAt. selectNextWorkItem's
-  // strict `<` keeps the first occurrence on a tie, so without an explicit
-  // dedupe the untagged dev-task copy would always win the tie and the task
+  // The dedupe is a defensive backstop, not a load-bearing disjointness fix:
+  // ready.ts excludes `kind === "prd"` outright (PDR-2.2, re-expressed on the
+  // enum by TKD-1.1), so in practice check-dev-task's `?ready=true` pool and
+  // check-plan's `?kind=prd&status=pending` pool don't overlap. This test
+  // exercises the backstop directly, by handing the orchestrator a task that
+  // IS in both pools (as it would be if a foreign provider, a stale task-store
+  // deploy, or a hand-written `kind`/`autonomousPlanSession` mismatch leaked
+  // one through): both copies carry an identical createdAt, and
+  // selectNextWorkItem's strict `<` keeps the first occurrence on a tie, so
+  // without the dedupe the untagged dev-task copy would win and the PRD task
   // would be dispatched as /shipwright:dev-task, never reaching plan-session.
 
   test("a task present in BOTH the dev-task and plan pools dispatches as plan-session, not dev-task", async () => {

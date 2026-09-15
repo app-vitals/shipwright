@@ -12,7 +12,11 @@
 
 import { describe, expect, test } from "bun:test";
 import type { Task } from "./check-helpers.ts";
-import { type CheckPlanDeps, getPlanCandidates } from "./check-plan.ts";
+import {
+  buildPrdTaskQuery,
+  type CheckPlanDeps,
+  getPlanCandidates,
+} from "./check-plan.ts";
 import { FixedClock } from "./clock.ts";
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -44,7 +48,7 @@ function makeDeps(options: MakeDepsOptions = {}): CheckPlanDeps {
   const agentId = options.agentId ?? MY_AGENT_ID;
 
   return {
-    getAutonomousPlanTasks: async (): Promise<Task[]> => planTasks,
+    getPrdTasks: async (): Promise<Task[]> => planTasks,
     clock,
     agentId,
   };
@@ -138,7 +142,7 @@ describe("getPlanCandidates", () => {
   });
 
   // ─── Human-escalation gate ─────────────────────────────────────────────────
-  // The `?autonomousPlanSession=true&status=pending` query carries no hitl
+  // The `?kind=prd&status=pending` query carries no hitl
   // filter (Task.hitl is nullable, so `?hitl=false` would drop the entire
   // NULL-hitl queue), so the gate lives in the mapper via
   // isTaskBlockedForDispatch — matching check-review/check-patch/check-deploy.
@@ -177,5 +181,16 @@ describe("getPlanCandidates", () => {
       }),
     );
     expect(result.map((t) => t.id)).toEqual(["PDR-2"]);
+  });
+});
+
+// ─── Task-store query shape (TKD-1.1) ─────────────────────────────────────────
+
+describe("buildPrdTaskQuery", () => {
+  test("asks the task store for kind=prd&status=pending, not the legacy boolean flag", () => {
+    const query = buildPrdTaskQuery();
+    expect(query.get("kind")).toBe("prd");
+    expect(query.get("status")).toBe("pending");
+    expect(query.get("autonomousPlanSession")).toBeNull();
   });
 });

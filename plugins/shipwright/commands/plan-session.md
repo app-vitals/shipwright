@@ -16,7 +16,7 @@ arguments:
 Parse `$ARGUMENTS` to extract:
 - **repo**: first argument
 - **session**: second argument
-- **`--autonomous {task-id}`** (optional): the id of the originating PRD task in the task store — the one flagged `autonomousPlanSession: true`. `{task-id}` is used by Step 4 and Step 5 for the hard-contradiction PATCH-to-blocked escape hatch, and by Step 6 for the on-success PATCH-to-done. **When `--autonomous` is present, `repo` and `session` are always passed explicitly by the machine dispatcher invoking this mode** — the single-argument auto-detect-and-confirm flow below does not apply and must not run in this mode.
+- **`--autonomous {task-id}`** (optional): the id of the originating PRD task in the task store — the one recorded as `kind: "prd"` (equivalently, flagged with the legacy `autonomousPlanSession: true` boolean, which the task store still accepts and normalizes to `kind: "prd"` on write). `{task-id}` is used by Step 4 and Step 5 for the hard-contradiction PATCH-to-blocked escape hatch, and by Step 6 for the on-success PATCH-to-done. **When `--autonomous` is present, `repo` and `session` are always passed explicitly by the machine dispatcher invoking this mode** — the single-argument auto-detect-and-confirm flow below does not apply and must not run in this mode.
 - _(no arguments)_: respond `[silent]` and stop immediately — no repo auto-detect, no
   task-store queries, no planning work. This command always targets one explicitly-named
   planning session; it never self-selects work.

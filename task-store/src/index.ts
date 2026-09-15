@@ -9,6 +9,7 @@
 export {
   PrismaClient,
   Prisma,
+  TaskKind,
   TaskStatus,
   PrState,
   PrReviewState,
