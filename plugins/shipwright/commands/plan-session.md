@@ -46,7 +46,7 @@ Wait for user confirmation before continuing to Step 1.
 
 This is the engineering planning pass. The product spec (what and why) is already done — either from `/prd` or handed in directly. This session translates that spec into a concrete technical design and task queue.
 
-**Input:** `planning/{session}/PRODUCT-SPEC.md` (or a verbal description if no spec exists)
+**Input:** `planning/{session}/PRODUCT-SPEC.md` (or a verbal description if no spec exists; under `--autonomous`, the originating task's `description` is materialized to that path — see Step 1)
 **Output:** Tasks in the task store, ready for `dev-task` to execute
 
 ---
@@ -76,6 +76,28 @@ This is the engineering planning pass. The product spec (what and why) is alread
    If empty, continue silently. These IDs are valid `dependencies` values in Step 5.
 5. Read `planning/{session}/PRODUCT-SPEC.md` if it exists — this is the primary input
 
+### `--autonomous` Mode
+
+When `--autonomous {task-id}` was passed, the spec arrives through the originating task record, not through a human. Run this between 1.5 and the orientation header:
+
+1. If `planning/{session}/PRODUCT-SPEC.md` already exists in the worktree, use it as-is and continue to the orientation header.
+2. If the file does not exist, fetch the originating PRD task and materialize the spec from its `description`:
+   ```bash
+   curl -sf -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
+     "$SHIPWRIGHT_TASK_STORE_URL/tasks/{task-id}" | jq -r '.description // ""'
+   ```
+   Submitters (e.g. an external `submit-prd` gateway) prefix the spec with the instruction line `Commit as PRODUCT-SPEC.md and run /shipwright:plan-session.` — strip that line and any blank lines that follow it. Write what remains to `planning/{session}/PRODUCT-SPEC.md` (create the directory if needed). From here on it is the primary input for Steps 2–5, exactly as if `/prd` had written it.
+3. If the description is missing, or blank after stripping, there is nothing to plan and no human to ask. Block the task and stop:
+   ```bash
+   curl -sf -X PATCH -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
+     -H "Content-Type: application/json" \
+     "$SHIPWRIGHT_TASK_STORE_URL/tasks/{task-id}" \
+     -d '{"status": "blocked", "hitl": true, "blockedReason": "plan_session_autonomous_no_spec: no planning/{session}/PRODUCT-SPEC.md in the worktree and the task description is empty"}' | jq .
+   ```
+   Print `⚠ Task {task-id} has no spec to plan from — blocked for human triage (plan_session_autonomous_no_spec).` and stop. Do not continue to Step 2.
+
+The interactive fallback below — asking **"What are we building?"** — must never run under `--autonomous`; there is no one to answer it. Likewise, in 1.3's duplicate scan, exclude `{task-id}` itself from the existing-tasks list: the originating PRD task shares this session slug because it is the *input* to the session, not a duplicate of the work it produces.
+
 Present a brief orientation:
 
 ```
@@ -89,7 +111,7 @@ Spec: {found / not found}
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 ```
 
-If no spec exists, ask: **"What are we building?"** and collect enough to proceed. Keep it brief — this is an engineering session, not a discovery session.
+If no spec exists (and `--autonomous` was not passed — see the `--autonomous` Mode subsection above), ask: **"What are we building?"** and collect enough to proceed. Keep it brief — this is an engineering session, not a discovery session.
 
 ---
 

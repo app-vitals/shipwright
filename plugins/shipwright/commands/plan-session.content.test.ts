@@ -360,6 +360,60 @@ describe("plan-session.md — `--autonomous {task-id}` argument parsing (PDR-3.1
   });
 });
 
+describe("plan-session.md — Step 1 `--autonomous` spec materialization from the task record", () => {
+  function extractStep1Section(md: string): string {
+    const match = md.match(/## Step 1: Load Context[\s\S]*?(?=\n## Step 2: Explore the Codebase)/);
+    expect(match).not.toBeNull();
+    return match?.[0] ?? "";
+  }
+
+  function extractAutonomousSubsection(md: string): string {
+    const section = extractStep1Section(md);
+    const idx = section.indexOf("### `--autonomous` Mode");
+    expect(idx).toBeGreaterThan(-1);
+    return section.slice(idx);
+  }
+
+  it("adds a distinct `--autonomous` Mode subsection to Step 1", () => {
+    expect(extractStep1Section(content)).toContain("### `--autonomous` Mode");
+  });
+
+  it("fetches the originating task and writes its description to planning/{session}/PRODUCT-SPEC.md when the file is absent", () => {
+    const sub = extractAutonomousSubsection(content);
+    expect(sub).toContain("$SHIPWRIGHT_TASK_STORE_URL/tasks/{task-id}");
+    expect(sub).toContain("planning/{session}/PRODUCT-SPEC.md");
+    expect(sub.toLowerCase()).toContain("description");
+    expect(sub.toLowerCase()).toMatch(/does not exist|is absent|not found/);
+  });
+
+  it("strips the submit-prd instruction preamble before writing the spec", () => {
+    const sub = extractAutonomousSubsection(content);
+    expect(sub).toContain("Commit as PRODUCT-SPEC.md and run /shipwright:plan-session.");
+    expect(sub.toLowerCase()).toMatch(/strip|remove|drop/);
+  });
+
+  it("blocks the task with hitl:true and a plan_session_autonomous_no_spec reason when no spec can be found", () => {
+    const sub = extractAutonomousSubsection(content);
+    expect(sub).toContain("plan_session_autonomous_no_spec");
+    expect(sub).toContain('"status": "blocked"');
+    expect(sub).toContain('"hitl": true');
+    expect(sub).toContain("$SHIPWRIGHT_TASK_STORE_URL/tasks/{task-id}");
+  });
+
+  it("forbids the interactive 'What are we building?' fallback under --autonomous", () => {
+    const sub = extractAutonomousSubsection(content);
+    expect(sub).toContain("What are we building?");
+    expect(sub.toLowerCase()).toMatch(/never|must not|do not/);
+  });
+
+  it("excludes the originating task from the same-session duplicate scan", () => {
+    const sub = extractAutonomousSubsection(content);
+    expect(sub).toContain("{task-id}");
+    expect(sub.toLowerCase()).toMatch(/exclude|ignore|skip/);
+    expect(sub.toLowerCase()).toContain("duplicate");
+  });
+});
+
 describe("plan-session.md — Step 6c autonomous close-out (PDR-3.1)", () => {
   it("Step 6b section includes a Step 6c gated on --autonomous that PATCHes status:done and source to PLAN.md", () => {
     const section = extractStep6bSection(content);
