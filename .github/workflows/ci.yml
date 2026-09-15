@@ -85,7 +85,7 @@ jobs:
     if: always() && (needs.changes.result != 'success' || needs.changes.outputs.app == 'true')
     services:
       postgres:
-        image: postgres:16
+        image: postgres:18
         env:
           POSTGRES_USER: shipwright
           POSTGRES_PASSWORD: shipwright
