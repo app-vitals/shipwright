@@ -8,6 +8,7 @@
     "./agent-default-tools": "./agent-default-tools.ts",
     "./chat-notify": "./chat-notify.ts",
     "./claim-ttl": "./claim-ttl.ts",
+    "./cli-flags": "./cli-flags.ts",
     "./github-login": "./github-login.ts",
     "./graceful-shutdown": "./graceful-shutdown.ts",
     "./http": "./http.ts",
