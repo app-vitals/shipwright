@@ -1161,12 +1161,11 @@ As `agent-A`, invoke `/shipwright:dev-task`
 
 ## Scenario 44: /shipwright:hitl — Gitleaksignore Suppression Sub-Step
 
-Covers the fix for a real gap: once a human confirms a `gitleaks-secret` or
+Covers the fix for a recurring gap: once a human confirms a `gitleaks-secret` or
 `hardcoded-credential` HITL finding is a false positive and closes the task via
 `/shipwright:hitl`, nothing previously recorded that decision anywhere gitleaks itself
-respects — the same full-history scan re-detected the identical commits every subsequent
-ISO week and `security-fix` re-filed an identical task (this happened for real on a
-downstream repo and had to be backfilled manually). Step 6a now offers to permanently
+respects — the same full-history scan re-detects the identical commits every subsequent
+ISO week, and `security-fix` re-files an identical task. Step 6a now offers to permanently
 suppress confirmed false positives via `.gitleaksignore`, while never conflating that with
 a rotated-credential closure.
 

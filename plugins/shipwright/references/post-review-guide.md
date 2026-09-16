@@ -87,11 +87,11 @@ different reasons, but must carry different `Verdict: ...` labels:
 - **Any author, genuine unresolved finding.** A real finding remains at head. `event:
   COMMENT`, and the body correctly says `Verdict: COMMENT`.
 
-This is the exact mix-up observed in production on two separate PRs in another repo in
-this deployment (one self-authored, one not): both posted bodies reading `Verdict: COMMENT`
-despite clean narratives ("No blocking issues found... checks out clean"), which was
-actually the first case mislabeled as the second. See `review.md` Step 10 for the full
-worked example.
+This exact mix-up can occur across two separate PRs (one self-authored, one not): both
+posted bodies reading `Verdict: COMMENT` despite clean narratives ("No blocking issues found...
+checks out clean"), when actually the first case was mislabeled as the second. See `review.md`
+Step 10 for the full worked example and why the mechanical decision logic was added to
+prevent this confusion.
 
 ### Tone
 
