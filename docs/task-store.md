@@ -80,10 +80,12 @@ When `GET /tasks?ready=true` evaluates whether a task is eligible to run, it che
 
 ### PR origin metrics
 
-`PullRequest.origin` is a `PrOrigin` enum (`shipwright` | `ci` | `dependency_bot` | `human` |
-`unknown`) recording where a PR record first learned about the PR. It's nullable and
-**first-write-wins**: once set, no later write ever overwrites it — see
-`PullRequestService.stampOrigin()`. Three call sites write it:
+`PullRequest` carries four nullable, purely additive origin-tracking columns: `origin` (a
+`PrOrigin` enum — `shipwright` | `ci` | `dependency_bot` | `human` | `unknown`), `authorLogin`,
+`headRef`, and `title`. `origin` is **first-write-wins**: once set, no later write ever overwrites
+it — see `PullRequestService.stampOrigin()`. `authorLogin`/`headRef`/`title` are written
+unconditionally by whichever call site supplies them — the latest known value always wins for
+those three. Three call sites write these fields:
 
 1. `TaskService.update()` — when a PATCH sends `status: "pr_open"` and the resulting `pr` is
    non-null (either supplied in the same PATCH or already on the row), the task-store stamps
@@ -91,16 +93,19 @@ When `GET /tasks?ready=true` evaluates whether a task is eligible to run, it che
    the task write — no extra API call from `dev-task.md`/`unblock.md`. A PATCH that would leave
    `status: "pr_open"` with `pr` null (neither supplied nor already on the row) is rejected with
    `400` — this invariant is enforced server-side, not just by convention.
-2. `POST /prs/census` — a batch upsert (`{repo, prNumber, origin?, authorLogin?, headRef?, title?,
-   state?, mergedAt?, prCreatedAt?}[]`, capped at 200 entries per call) used by a repo-wide census
-   sweep to backfill origin/author/branch/title for PRs the pipeline never claimed directly.
-   `authorLogin`/`headRef`/`title`/`state`/`mergedAt`/`prCreatedAt` are written unconditionally;
-   `origin` follows the same first-write-wins rule. It never touches
+2. `PullRequestService.claim()` (`POST /prs/claim`) — after every successful claim (update or
+   create branch), looks up whether a Task row links `(repo, prNumber)` and derives a `PrOrigin`
+   via the pure `deriveOrigin()` helper (`task-store/src/pr-origin-derivation.ts`), then calls
+   `stampOrigin()` atomically with the claim write. A task-row match always wins over any
+   author/branch-based signal — see [metrics.md](./metrics.md#origin-classification-rules) for
+   the exact precedence table `deriveOrigin()` implements.
+3. `POST /prs/census` — a batch upsert (`{repo, prNumber, origin?, authorLogin?, headRef?, title?,
+   state?, mergedAt?, prCreatedAt?}[]`, capped at 200 entries per call) used by POM-4.1's
+   repo-wide census sweep (see [agent-ops.md](./agent-ops.md#pr-origin-census-sweep)) to backfill
+   origin/author/branch/title for PRs the pipeline never claimed directly. It never touches
    claim/phase/review/patch/blocked fields, so it's safe to run alongside review/patch/deploy's
    separate `POST /prs/claim` lock. New rows get `phase=null`, `reviewState="pending"`,
    `staged=false`.
-3. A third call site (not yet wired) will stamp non-`shipwright` origins (`ci` / `dependency_bot` /
-   `human`) as they're detected.
 
 `GET /prs/census/cursor?repo=org/name` returns `{ cursor }` — the max `mergedAt` among rows scoped
 to `repo` with a non-null `origin`, or `null` when none exist — the incremental search window the
@@ -109,8 +114,12 @@ census sweep uses to avoid re-scanning the same PRs every run.
 `GET /prs` accepts `?origin=shipwright,ci` (comma-separated) to filter by any of the given values.
 
 **Known gap:** a PR that never goes through the `pr_open` transition, `POST /prs/claim`, or the
-census sweep (e.g. a canary-revert PR opened directly by `deploy.md`) has no PullRequest row at
-all, and therefore no `origin`. This is an accepted gap, not a bug.
+census sweep has no PullRequest row at all, and therefore no `origin`. In practice this now only
+affects `deploy.md`'s canary-revert PR: it never transitions a task to `pr_open` and never calls
+`/prs/claim`, but it IS a merged PR like any other, so POM-4.1's census sweep classifies it
+(typically `human`, via author login) once it merges. A canary-revert PR that already merged
+before POM-4.1 shipped stays `origin=null` (`unknown`) permanently — historical backfill is out of
+scope.
 
 ### Same-branch exclusivity guard
 
