@@ -146,6 +146,53 @@ export const QueueResultSchema = z
   })
   .openapi("QueueResult");
 
+// ─── Merged-PRs-by-repo schemas (POM-2.1) ────────────────────────────────────
+
+export const MergedPrsQuerySchema = DateRangeQuerySchema.extend({
+  groupBy: z.enum(["day", "week"]).openapi({
+    description: "Time bucket granularity — required, no default",
+    example: "week",
+  }),
+});
+
+export type MergedPrsQuery = z.infer<typeof MergedPrsQuerySchema>;
+
+const OriginBreakdownSchema = z
+  .object({
+    shipwright: z.number().int().openapi({ example: 4 }),
+    ci: z.number().int().openapi({ example: 2 }),
+    dependency_bot: z.number().int().openapi({ example: 3 }),
+    human: z.number().int().openapi({ example: 1 }),
+    unknown: z.number().int().openapi({ example: 0 }),
+  })
+  .openapi("OriginBreakdown");
+
+const MergedPrsRepoSchema = z
+  .object({
+    repo: z.string().openapi({ example: "org/repo" }),
+    total: z.number().int().openapi({ example: 10 }),
+    byOrigin: OriginBreakdownSchema,
+  })
+  .openapi("MergedPrsRepo");
+
+const MergedPrsTrendPointSchema = z
+  .object({
+    period: z.string().openapi({ example: "2026-06-01" }),
+    repo: z.string().openapi({ example: "org/repo" }),
+    byOrigin: OriginBreakdownSchema,
+  })
+  .openapi("MergedPrsTrendPoint");
+
+export const MergedPrsResultSchema = z
+  .object({
+    from: z.string().openapi({ example: "2026-06-01T00:00:00.000Z" }),
+    to: z.string().openapi({ example: "2026-06-07T23:59:59.999Z" }),
+    groupBy: z.enum(["day", "week"]).openapi({ example: "week" }),
+    repos: z.array(MergedPrsRepoSchema),
+    trend: z.array(MergedPrsTrendPointSchema),
+  })
+  .openapi("MergedPrsResult");
+
 // ─── Tokens schemas ───────────────────────────────────────────────────────────
 
 export const TokensQuerySchema = DateRangeQuerySchema;

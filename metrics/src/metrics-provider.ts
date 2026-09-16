@@ -16,6 +16,9 @@ export type QueryDateRange = DatePreset | DateRange;
 /** Grouping granularity for the trends endpoint. */
 export type TrendsGroupBy = "day" | "week" | "hour";
 
+/** Grouping granularity for the merged-PRs-by-repo endpoint (no "hour" bucket — PR merges are sparse enough that day/week are the only useful buckets). */
+export type MergedPrsGroupBy = "day" | "week";
+
 /** Dashboard timezone — all date windows are anchored to LA wall clock. */
 export const DASHBOARD_TZ = "America/Los_Angeles";
 
@@ -33,6 +36,11 @@ export type MetricQuery =
   | { kind: "queueFunnel"; range: QueryDateRange }
   | { kind: "queueCycleStarted"; range: QueryDateRange }
   | { kind: "queueCycleMerged"; range: QueryDateRange }
+  | {
+      kind: "mergedPrsByRepo";
+      range: QueryDateRange;
+      groupBy: MergedPrsGroupBy;
+    }
   | { kind: "tokensTotals"; range: QueryDateRange }
   | { kind: "tokensBySessionType"; range: QueryDateRange }
   | { kind: "tokensByAgent"; range: QueryDateRange }

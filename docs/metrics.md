@@ -52,7 +52,7 @@ When `METRICS_OFFLINE=true`, `server.ts` injects an offline `TaskStoreProvider` 
 
 ## API Endpoints
 
-All metric endpoints are `GET`, return JSON, and accept the same date-window query params: `preset` (`today` | `7d` | `30d` | `90d`) or an explicit `from`/`to` range. `/metrics/trends` additionally accepts `groupBy`.
+All metric endpoints are `GET`, return JSON, and accept the same date-window query params: `preset` (`today` | `7d` | `30d` | `90d`) or an explicit `from`/`to` range. `/metrics/trends` additionally accepts an optional `groupBy` (`day` | `week` | `hour`, defaults to `day`). `/metrics/merged-prs` requires `groupBy` (`day` | `week`, no default) — a missing or invalid value returns `400`.
 
 ### Authenticated routes (`/metrics/*`)
 
@@ -64,6 +64,7 @@ Require a bearer token (scope `"*"`) or session cookie (with `OWNER` role if req
 | GET | `/metrics/trends` | Time-series trends; supports `groupBy`. |
 | GET | `/metrics/features` | Per-feature task / CI / review breakdown. |
 | GET | `/metrics/queue` | Shipwright v3 queue metrics: funnel counts, block rate, avg cycle time (days), avg review findings. |
+| GET | `/metrics/merged-prs` | Merged PRs grouped by repo, origin, and time bucket. Requires `groupBy` (`day` \| `week`). |
 | GET | `/metrics/cost-efficiency` | Fleet-wide and per-cron cost efficiency: routed cost vs. all-Opus counterfactual. Run/cron-centric. |
 | GET | `/metrics/tokens` | Token usage — totals, by agent, by session type, by agent + session type, by agent + cron, by agent + model, by agent + cron + model, and trends; each group includes a `cost` field (USD). |
 | GET | `/dashboard` | Server-rendered dashboard HTML (session-gated). |
@@ -79,9 +80,41 @@ Require a bearer token (scope `"*"`) or session cookie (with `OWNER` role if req
 | GET | `/public/metrics/trends` | Time-series trends; supports `groupBy`. |
 | GET | `/public/metrics/features` | Per-feature task / CI / review breakdown. |
 | GET | `/public/metrics/queue` | Shipwright v3 queue metrics: funnel counts, block rate, avg cycle time (days), avg review findings. |
+| GET | `/public/metrics/merged-prs` | Merged PRs grouped by repo, origin, and time bucket, scoped to the configured public repo. Requires `groupBy` (`day` \| `week`). |
 | GET | `/public/metrics/cost-efficiency` | Fleet-wide and per-cron cost efficiency: routed cost vs. all-Opus counterfactual. Run/cron-centric. |
 | GET | `/public/dashboard` | Server-rendered dashboard HTML (no session required). |
 | GET | `/public/metrics/tokens` | Not available on public routes — returns `404`. |
+
+### `/metrics/merged-prs` and `/public/metrics/merged-prs` response shape
+
+Both routes return the same envelope shape (`data` scoped to all repos on the authenticated route, to the configured public repo on the public route):
+
+```jsonc
+{
+  "data": {
+    "from": "2026-06-01T00:00:00.000Z",
+    "to": "2026-06-07T23:59:59.999Z",
+    "groupBy": "week",
+    "repos": [
+      {
+        "repo": "org/repo",
+        "total": 10,
+        "byOrigin": { "shipwright": 4, "ci": 2, "dependency_bot": 3, "human": 1, "unknown": 0 }
+      }
+    ],
+    "trend": [
+      {
+        "period": "2026-06-01",
+        "repo": "org/repo",
+        "byOrigin": { "shipwright": 2, "ci": 1, "dependency_bot": 0, "human": 0, "unknown": 0 }
+      }
+    ]
+  },
+  "meta": { "dateRange": { "from": "…", "to": "…" }, "generatedAt": "…", "queryTimeMs": 3 }
+}
+```
+
+`repos[]` totals each merged PR in the window by repo × origin; `trend[]` breaks the same counts down by time bucket (`period`, a day `YYYY-MM-DD` or Monday-anchored ISO-week start date depending on `groupBy`) × repo. Origin follows the POM-1.1 taxonomy (`shipwright | ci | dependency_bot | human`); a PR whose origin was never stamped (`null`) is counted under `unknown`. Only `state:"merged"` PRs are counted — open and closed PRs are excluded.
 
 ### Utility routes
 
