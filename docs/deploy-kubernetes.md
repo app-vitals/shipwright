@@ -222,7 +222,8 @@ ingress-controller/cert-manager subcharts), apply to all five.
 ## Agent runtime provisioning model
 
 By default the admin service runs in **Noop** mode: creating an agent
-(`POST /agents`) or deleting one (`DELETE /agents/:id`) only writes a database
+(via the admin console form at `/admin/agents/new`) or deleting one
+(`DELETE /agents/:id`) only writes a database
 row — no cluster access is required, and the chart renders no provisioning RBAC.
 This is the safe default for any deployment that doesn't need the admin service
 to spin up real agent workloads.
@@ -230,7 +231,7 @@ to spin up real agent workloads.
 Setting `agent.provisioning.enabled=true` switches the admin service to the
 **Kubernetes** provisioner. Then:
 
-- `POST /agents` creates a per-agent **PersistentVolumeClaim** (for persistent
+- Creating an agent creates a per-agent **PersistentVolumeClaim** (for persistent
   agent home storage), mints a scoped per-agent token, creates a per-agent
   **Secret** (carrying the token), and a per-agent **Deployment** (referencing
   both), in that order. All operations are idempotent and safe to retry. **Exception:** if the agent is marked `selfHosted: true`, provisioning is skipped — the agent is expected to manage its own workload.
@@ -307,9 +308,9 @@ for full defaults and rationale.
 
 ### Chat service provisioning (opt-in)
 
-By default the admin service **does not** mint chat-service tokens — provisioned agents carry no chat-service credentials. Per-agent chat-service token provisioning on `POST /agents` is enabled the same way the admin console's Chat tab is: via the top-level `chat.enabled` + `chat.adminToken.existingSecret` chart values described in [Chat service (opt-in)](#chat-service-opt-in) above — there is no separate `agent.provisioning.chatService.*` value block.
+By default the admin service **does not** mint chat-service tokens — provisioned agents carry no chat-service credentials. Per-agent chat-service token provisioning at agent-creation time is enabled the same way the admin console's Chat tab is: via the top-level `chat.enabled` + `chat.adminToken.existingSecret` chart values described in [Chat service (opt-in)](#chat-service-opt-in) above — there is no separate `agent.provisioning.chatService.*` value block.
 
-When `chat.enabled=true` and `chat.adminToken.existingSecret` is set, the chart injects `SHIPWRIGHT_CHAT_SERVICE_URL` and `SHIPWRIGHT_CHAT_SERVICE_ADMIN_TOKEN` into the admin Deployment. With those present, the provisioner mints a scoped per-agent token during `POST /agents`, stores it in the agent Secret (key `chat-service-token`), and injects it into the agent Deployment as `SHIPWRIGHT_CHAT_SERVICE_TOKEN` (via `secretKeyRef`). On agent deletion the token is revoked via `DELETE /tokens/:id`. When the admin token wiring is absent, chat-service token provisioning is disabled and agents carry no chat-service credentials.
+When `chat.enabled=true` and `chat.adminToken.existingSecret` is set, the chart injects `SHIPWRIGHT_CHAT_SERVICE_URL` and `SHIPWRIGHT_CHAT_SERVICE_ADMIN_TOKEN` into the admin Deployment. With those present, the provisioner mints a scoped per-agent token when an agent is created, stores it in the agent Secret (key `chat-service-token`), and injects it into the agent Deployment as `SHIPWRIGHT_CHAT_SERVICE_TOKEN` (via `secretKeyRef`). On agent deletion the token is revoked via `DELETE /tokens/:id`. When the admin token wiring is absent, chat-service token provisioning is disabled and agents carry no chat-service credentials.
 
 ### Task-store claim TTL and the agent fleet
 

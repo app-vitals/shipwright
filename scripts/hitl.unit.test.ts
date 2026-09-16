@@ -24,6 +24,8 @@ import {
   createTeeWriter,
   ensureHitlAgent,
   installLogFileTee,
+  parseAdminSessionCookie,
+  parseCreatedAgentId,
   parseHitlAuthors,
   parseHitlRepos,
   parseTasksResponse,
@@ -64,6 +66,35 @@ function json(body: unknown, status = 200): Response {
     status,
     headers: { "Content-Type": "application/json" },
   });
+}
+
+/** A 302 with the given Location (and optionally a Set-Cookie) — the shape both admin-UI routes return. */
+function redirect(location: string, setCookie?: string): Response {
+  const headers: Record<string, string> = { Location: location };
+  if (setCookie) headers["Set-Cookie"] = setCookie;
+  return new Response(null, { status: 302, headers });
+}
+
+/**
+ * GET /admin/dev-login → 302 + admin session cookie. The hitl agent's create
+ * path mints a session here because POST /admin/agents is session-gated
+ * (there is no POST /agents JSON API anymore — ABF-3.2).
+ */
+function devLoginRoute(setCookie = "admin_session=dev-sess; Path=/; HttpOnly"): Route {
+  return {
+    method: "GET",
+    match: (url) => url.endsWith("/admin/dev-login"),
+    respond: () => redirect("/admin/agents", setCookie),
+  };
+}
+
+/** POST /admin/agents (the HTML create form) → 302 to the created agent's detail page. */
+function createFormRoute(location: string): Route {
+  return {
+    method: "POST",
+    match: (url) => url.endsWith("/admin/agents"),
+    respond: () => redirect(location),
+  };
 }
 
 describe("buildTaskCommand", () => {
@@ -532,19 +563,61 @@ describe("parseHitlAuthors", () => {
   });
 });
 
+describe("parseAdminSessionCookie", () => {
+  test("extracts the admin_session cookie as a ready-to-send Cookie value", () => {
+    expect(
+      parseAdminSessionCookie(
+        "admin_session=abc.def; Path=/; HttpOnly; SameSite=Lax",
+      ),
+    ).toBe("admin_session=abc.def");
+  });
+
+  test("finds admin_session when it is not the first cookie in the header", () => {
+    expect(
+      parseAdminSessionCookie("other=1; Path=/, admin_session=xyz; Path=/"),
+    ).toBe("admin_session=xyz");
+  });
+
+  test("returns null for a missing or unrelated Set-Cookie header", () => {
+    expect(parseAdminSessionCookie(null)).toBeNull();
+    expect(parseAdminSessionCookie(undefined)).toBeNull();
+    expect(parseAdminSessionCookie("other=1; Path=/")).toBeNull();
+  });
+});
+
+describe("parseCreatedAgentId", () => {
+  test("extracts the id from the success redirect", () => {
+    expect(parseCreatedAgentId("/admin/agents/agent-1")).toBe("agent-1");
+  });
+
+  test("ignores a trailing query string", () => {
+    expect(
+      parseCreatedAgentId("/admin/agents/agent-1?warning=restrict_slack"),
+    ).toBe("agent-1");
+  });
+
+  test("returns null for the /admin/agents/new error redirect", () => {
+    expect(parseCreatedAgentId("/admin/agents/new?error=invalid_type")).toBeNull();
+    expect(parseCreatedAgentId("/admin/agents/new")).toBeNull();
+  });
+
+  test("returns null when there is no Location header", () => {
+    expect(parseCreatedAgentId(null)).toBeNull();
+    expect(parseCreatedAgentId(undefined)).toBeNull();
+    expect(parseCreatedAgentId("")).toBeNull();
+  });
+});
+
 describe("ensureHitlAgent", () => {
-  test("create path: no existing agent — creates, then PATCHes repos when non-empty", async () => {
+  test("create path: no existing agent — dev-logs in, POSTs the create form, then PATCHes repos when non-empty", async () => {
     const fetchDouble = makeFetchDouble([
       {
         method: "GET",
         match: (url) => url.endsWith("/agents"),
         respond: () => json([]),
       },
-      {
-        method: "POST",
-        match: (url) => url.endsWith("/agents"),
-        respond: () => json({ id: "agent-1", name: "hitl", repos: [] }, 201),
-      },
+      devLoginRoute(),
+      createFormRoute("/admin/agents/agent-1"),
       {
         method: "PATCH",
         match: (url) => url.endsWith("/agents/agent-1"),
@@ -561,8 +634,17 @@ describe("ensureHitlAgent", () => {
         calls: Array<{ method: string; url: string; body?: string }>;
       }
     ).calls;
-    expect(calls.map((c) => c.method)).toEqual(["GET", "POST", "PATCH"]);
-    expect(JSON.parse(calls[2].body ?? "{}")).toEqual({ repos: ["org/repo"] });
+    expect(calls.map((c) => c.method)).toEqual(["GET", "GET", "POST", "PATCH"]);
+    // The retired POST /agents JSON route must not be called — creation goes
+    // through the admin UI's form endpoint instead.
+    expect(calls[2].url).toEndWith("/admin/agents");
+    expect(calls[1].url).toEndWith("/admin/dev-login");
+    const form = new URLSearchParams(calls[2].body ?? "");
+    expect(form.get("name")).toBe("hitl");
+    expect(form.get("type")).toBe("coding");
+    // No `runtime` field → self-hosted, matching the retired JSON body.
+    expect(form.get("runtime")).toBeNull();
+    expect(JSON.parse(calls[3].body ?? "{}")).toEqual({ repos: ["org/repo"] });
   });
 
   test("create path: no existing agent, HITL_REPOS empty — creates, skips PATCH", async () => {
@@ -572,11 +654,8 @@ describe("ensureHitlAgent", () => {
         match: (url) => url.endsWith("/agents"),
         respond: () => json([]),
       },
-      {
-        method: "POST",
-        match: (url) => url.endsWith("/agents"),
-        respond: () => json({ id: "agent-1", name: "hitl", repos: [] }, 201),
-      },
+      devLoginRoute(),
+      createFormRoute("/admin/agents/agent-1"),
     ]);
 
     const id = await ensureHitlAgent(fetchDouble, []);
@@ -585,7 +664,58 @@ describe("ensureHitlAgent", () => {
     const calls = (
       fetchDouble as unknown as { calls: Array<{ method: string }> }
     ).calls;
-    expect(calls.map((c) => c.method)).toEqual(["GET", "POST"]);
+    expect(calls.map((c) => c.method)).toEqual(["GET", "GET", "POST"]);
+  });
+
+  test("create path: success redirect carrying a ?warning= query still yields the agent id", async () => {
+    const fetchDouble = makeFetchDouble([
+      {
+        method: "GET",
+        match: (url) => url.endsWith("/agents"),
+        respond: () => json([]),
+      },
+      devLoginRoute(),
+      createFormRoute("/admin/agents/agent-9?warning=restrict_slack_no_members"),
+    ]);
+
+    expect(await ensureHitlAgent(fetchDouble, [])).toBe("agent-9");
+  });
+
+  test("failure path: dev-login returns no session cookie — returns null, never POSTs", async () => {
+    const fetchDouble = makeFetchDouble([
+      {
+        method: "GET",
+        match: (url) => url.endsWith("/agents"),
+        respond: () => json([]),
+      },
+      {
+        method: "GET",
+        match: (url) => url.endsWith("/admin/dev-login"),
+        respond: () => new Response("Not Found", { status: 404 }),
+      },
+    ]);
+
+    const id = await ensureHitlAgent(fetchDouble, ["org/repo"]);
+
+    expect(id).toBeNull();
+    const calls = (
+      fetchDouble as unknown as { calls: Array<{ method: string }> }
+    ).calls;
+    expect(calls.map((c) => c.method)).toEqual(["GET", "GET"]);
+  });
+
+  test("failure path: create form redirects back to /admin/agents/new with an error — returns null", async () => {
+    const fetchDouble = makeFetchDouble([
+      {
+        method: "GET",
+        match: (url) => url.endsWith("/agents"),
+        respond: () => json([]),
+      },
+      devLoginRoute(),
+      createFormRoute("/admin/agents/new?error=invalid_type"),
+    ]);
+
+    expect(await ensureHitlAgent(fetchDouble, ["org/repo"])).toBeNull();
   });
 
   test("existing-agent-match path: repos already match — no PATCH issued", async () => {
@@ -665,17 +795,18 @@ describe("ensureHitlAgent", () => {
     expect(calls).toHaveLength(1);
   });
 
-  test("failure path: POST /agents non-ok — returns null", async () => {
+  test("failure path: POST /admin/agents non-ok with no redirect — returns null", async () => {
     const fetchDouble = makeFetchDouble([
       {
         method: "GET",
         match: (url) => url.endsWith("/agents"),
         respond: () => json([]),
       },
+      devLoginRoute(),
       {
         method: "POST",
-        match: (url) => url.endsWith("/agents"),
-        respond: () => json({ error: "boom" }, 500),
+        match: (url) => url.endsWith("/admin/agents"),
+        respond: () => new Response("Forbidden", { status: 403 }),
       },
     ]);
 
@@ -737,15 +868,8 @@ describe("ensureHitlAgent", () => {
         match: (url) => url.endsWith("/agents"),
         respond: () => json([]),
       },
-      {
-        method: "POST",
-        match: (url) => url.endsWith("/agents"),
-        respond: () =>
-          json(
-            { id: "agent-1", name: "hitl", repos: [], reviewAuthorAllowlist: [] },
-            201,
-          ),
-      },
+      devLoginRoute(),
+      createFormRoute("/admin/agents/agent-1"),
       {
         method: "PATCH",
         match: (url) => url.endsWith("/agents/agent-1"),
@@ -767,8 +891,8 @@ describe("ensureHitlAgent", () => {
         calls: Array<{ method: string; url: string; body?: string }>;
       }
     ).calls;
-    expect(calls.map((c) => c.method)).toEqual(["GET", "POST", "PATCH"]);
-    expect(JSON.parse(calls[2].body ?? "{}")).toEqual({
+    expect(calls.map((c) => c.method)).toEqual(["GET", "GET", "POST", "PATCH"]);
+    expect(JSON.parse(calls[3].body ?? "{}")).toEqual({
       reviewAuthorAllowlist: ["danmcaulay"],
     });
   });

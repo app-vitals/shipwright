@@ -50,12 +50,15 @@ are restricted to their own agent ID.
 
 | Resource | Endpoints |
 |----------|-----------|
-| Agents | `POST /agents`, `GET /agents`, `GET /agents/:id`, `PATCH /agents/:id`, `POST /agents/:id/provision` |
+| Agents | `GET /agents`, `GET /agents/:id`, `PATCH /agents/:id`, `DELETE /agents/:id`, `POST /agents/:id/provision` |
 | Envs | `POST` / `GET` / `PATCH` `/agents/:id/envs`, `DELETE /agents/:id/envs/:key` |
 | Crons | `POST` `/agents/:id/crons`, `PATCH` / `DELETE` `/agents/:id/crons/:cronId`, `POST /agents/:id/crons/reconcile` |
 | Tools | `POST` / `GET` `/agents/:id/tools`, `PATCH` / `DELETE` `/agents/:id/tools/:toolId` |
 | Tokens | `POST` / `GET` `/agents/:id/tokens`, `DELETE /agents/:id/tokens/:tokenId` |
 | Plugins | `POST` / `GET` / `PATCH` `/agents/:id/plugins`, `DELETE /agents/:id/plugins` |
+
+There is no agent-creation endpoint on this JSON API — new agents are created exclusively
+through the admin console's form at `/admin/agents/new`.
 
 Token creation returns the raw token once at creation. Only its SHA-256 hash is persisted — token
 validation is an O(1) hash-index lookup with no plaintext at rest.

@@ -125,7 +125,7 @@ describe("agent-types/coding/manifest.yaml — shipwright-plan phase cron", () =
 //
 // This manifest is the single source of truth for the coding agent's tool
 // set as of ATS-3.3 — the former hardcoded tools constant module has been
-// deleted; both admin/src/agents-api.ts (POST /agents) and
+// deleted; both admin/src/admin-ui.ts (POST /admin/agents) and
 // scripts/seed-dev-agent.ts now resolve tools from this manifest via
 // AgentTypeRegistry instead. This test pins the expected tool set directly
 // so a regression here fails loudly rather than silently drifting.

@@ -239,7 +239,7 @@ describe("seedDevAgent", () => {
     await seedDevAgent(deps);
 
     // Tool set matches the real coding manifest exactly (parity with the
-    // admin POST /agents seeding path, which resolves the same manifest).
+    // admin POST /admin/agents seeding path, which resolves the same manifest).
     const toolPatterns = double.agentToolUpserts.map(
       (u) =>
         (u.where as { agentId_pattern: { pattern: string } }).agentId_pattern
