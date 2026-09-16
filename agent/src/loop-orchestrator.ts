@@ -1031,15 +1031,15 @@ export function createLoopOrchestrator(
         // a workaround. The two providers' pools are already disjoint in
         // practice: check-plan asks for the PRD slice (buildPrdTaskQuery), and
         // check-dev-task's `?ready=true` excludes it outright — task-store's
-        // ready.ts drops a task whose `kind` is "prd" OR whose legacy
-        // `autonomousPlanSession` is true (PDR-2.2's check, kept alongside the
-        // enum by TKD-1.1 so the exclusion fails closed), so a PRD task cannot
-        // legitimately appear in dev-task's list at all.
+        // ready.ts drops a task whose `kind` is "prd" (TKD-1.3 removed the
+        // legacy `autonomousPlanSession` boolean this exclusion used to also
+        // check), so a PRD task cannot legitimately appear in dev-task's list
+        // at all.
         //
         // The dedupe stays because that disjointness is enforced server-side,
-        // one deploy away: an agent binary running against an older task-store
-        // (or a row whose `kind`/`autonomousPlanSession` pair was hand-edited
-        // out of sync) can still surface the same task from both providers.
+        // one deploy away: an agent binary running against an older/newer
+        // task-store version skew (or a row whose `kind` was hand-edited
+        // inconsistently) can still surface the same task from both providers.
         // When that happens both copies carry an identical `createdAt`, and
         // selectNextWorkItem's strict `<` keeps the first occurrence on a tie,
         // so the untagged dev-task copy would win and the PRD task would be
