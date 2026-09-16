@@ -33,7 +33,6 @@ export interface paths {
                     ready?: "true" | "false";
                     hitl?: "true" | "false";
                     kind?: "dev" | "prd";
-                    autonomousPlanSession?: "true" | "false";
                     sort?: "asc" | "desc";
                     updatedSince?: string;
                 };
@@ -2150,11 +2149,6 @@ export interface components {
              */
             kind: "dev" | "prd";
             /**
-             * @description Deprecated (TKD-1.1) — the legacy spelling of `kind: "prd"`. Still accepted on write and still filterable; the task store keeps it in sync with `kind`.
-             * @example true
-             */
-            autonomousPlanSession?: boolean | null;
-            /**
              * @description Consecutive skip count. Auto-blocks (hitl+blockedReason) once it crosses the threshold (3).
              * @default 0
              * @example 0
@@ -2257,16 +2251,11 @@ export interface components {
             /** @example manual */
             source?: string;
             /**
-             * @description What the task is (TKD-1.1). Defaults to `dev`. The legacy `autonomousPlanSession: true` boolean is still accepted as a synonym for `kind: "prd"` and is normalized server-side; an explicit `kind` wins when both are sent.
+             * @description What the task is (TKD-1.1). Defaults to `dev`.
              * @example dev
              * @enum {string}
              */
             kind?: "dev" | "prd";
-            /**
-             * @description Deprecated (TKD-1.1) — the legacy spelling of `kind: "prd"`.
-             * @example true
-             */
-            autonomousPlanSession?: boolean;
         };
         BulkInsertResponse: {
             /** @example 3 */

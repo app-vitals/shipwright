@@ -128,13 +128,6 @@ export const generatedTools: GeneratedTool[] = [
             "Filter by TaskKind. Combines with every other filter as an AND. Note `?kind=prd&ready=true` is always empty — ready.ts excludes the PRD slice structurally.",
           example: "prd",
         },
-        autonomousPlanSession: {
-          type: "string",
-          enum: ["true", "false"],
-          description:
-            "Deprecated (TKD-1.1) — the legacy spelling of `?kind=prd` / `?kind=dev`. Still supported unchanged.",
-          example: "true",
-        },
         sort: {
           type: "string",
           enum: ["asc", "desc"],
@@ -168,7 +161,6 @@ export const generatedTools: GeneratedTool[] = [
       "ready",
       "hitl",
       "kind",
-      "autonomousPlanSession",
       "sort",
       "updatedSince",
     ],
@@ -244,15 +236,8 @@ export const generatedTools: GeneratedTool[] = [
         kind: {
           type: "string",
           enum: ["dev", "prd"],
-          description:
-            'What the task is (TKD-1.1). Defaults to `dev`. The legacy `autonomousPlanSession: true` boolean is still accepted as a synonym for `kind: "prd"` and is normalized server-side; an explicit `kind` wins when both are sent.',
+          description: "What the task is (TKD-1.1). Defaults to `dev`.",
           example: "dev",
-        },
-        autonomousPlanSession: {
-          type: "boolean",
-          description:
-            'Deprecated (TKD-1.1) — the legacy spelling of `kind: "prd"`.',
-          example: true,
         },
       },
       required: [],

@@ -201,20 +201,6 @@
             "schema": {
               "type": "string",
               "enum": [
-                "true",
-                "false"
-              ],
-              "description": "Deprecated (TKD-1.1) — the legacy spelling of `?kind=prd` / `?kind=dev`. Still supported unchanged.",
-              "example": "true"
-            },
-            "required": false,
-            "name": "autonomousPlanSession",
-            "in": "query"
-          },
-          {
-            "schema": {
-              "type": "string",
-              "enum": [
                 "asc",
                 "desc"
               ],
@@ -2644,14 +2630,6 @@
             "description": "What the task is: `dev` (ordinary work item, the default) or `prd` (a product spec awaiting an autonomous plan session). A `prd` task is never part of the `?ready=true` set.",
             "example": "dev"
           },
-          "autonomousPlanSession": {
-            "type": [
-              "boolean",
-              "null"
-            ],
-            "description": "Deprecated (TKD-1.1) — the legacy spelling of `kind: \"prd\"`. Still accepted on write and still filterable; the task store keeps it in sync with `kind`.",
-            "example": true
-          },
           "skipCount": {
             "type": "integer",
             "default": 0,
@@ -2922,13 +2900,8 @@
               "dev",
               "prd"
             ],
-            "description": "What the task is (TKD-1.1). Defaults to `dev`. The legacy `autonomousPlanSession: true` boolean is still accepted as a synonym for `kind: \"prd\"` and is normalized server-side; an explicit `kind` wins when both are sent.",
+            "description": "What the task is (TKD-1.1). Defaults to `dev`.",
             "example": "dev"
-          },
-          "autonomousPlanSession": {
-            "type": "boolean",
-            "description": "Deprecated (TKD-1.1) — the legacy spelling of `kind: \"prd\"`.",
-            "example": true
           }
         }
       },
