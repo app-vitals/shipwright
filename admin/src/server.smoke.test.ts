@@ -178,7 +178,7 @@ function buildComposedApp() {
       create: notImplemented,
       revoke: notImplemented,
     },
-    agentPluginService: { list: notImplemented },
+    agentPluginService: { list: notImplemented, add: notImplemented },
     agentMemberService: {
       listByEmail: notImplemented,
       exists: notImplemented,

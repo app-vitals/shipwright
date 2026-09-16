@@ -186,9 +186,14 @@ function makeMockDeps(overrides?: Partial<AdminUIDeps>): AdminUIDeps {
     },
     agentToolService: {
       list: async () => [],
-      add: async () => {
-        throw new Error("not implemented");
-      },
+      add: async (agentId: string, pattern: string) => ({
+        id: "tool1",
+        agentId,
+        pattern,
+        enabled: true,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      }),
       toggle: async () => {
         throw new Error("not implemented");
       },
@@ -213,6 +218,15 @@ function makeMockDeps(overrides?: Partial<AdminUIDeps>): AdminUIDeps {
     },
     agentPluginService: {
       list: async () => [],
+      add: async (agentId: string, name: string) => ({
+        id: "plugin1",
+        agentId,
+        name,
+        version: null,
+        enabled: true,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      }),
     },
     agentMemberService: {
       listByEmail: async () => [],

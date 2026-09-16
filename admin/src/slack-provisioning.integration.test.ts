@@ -220,6 +220,9 @@ function makeMockDeps(
     },
     agentPluginService: {
       list: async () => [],
+      add: async () => {
+        throw new Error("not implemented");
+      },
     },
     agentMemberService: {
       listByEmail: async () => [],
