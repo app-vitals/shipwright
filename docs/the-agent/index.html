@@ -84,7 +84,7 @@ are restricted to their own agent ID.</p>
 <tbody>
 <tr>
 <td>Agents</td>
-<td><code>POST /agents</code>, <code>GET /agents</code>, <code>GET /agents/:id</code>, <code>PATCH /agents/:id</code>, <code>POST /agents/:id/provision</code></td>
+<td><code>GET /agents</code>, <code>GET /agents/:id</code>, <code>PATCH /agents/:id</code>, <code>DELETE /agents/:id</code>, <code>POST /agents/:id/provision</code></td>
 </tr>
 <tr>
 <td>Envs</td>
@@ -108,6 +108,8 @@ are restricted to their own agent ID.</p>
 </tr>
 </tbody>
 </table>
+<p>There is no agent-creation endpoint on this JSON API — new agents are created exclusively
+through the admin console’s form at <code>/admin/agents/new</code>.</p>
 <p>Token creation returns the raw token once at creation. Only its SHA-256 hash is persisted — token
 validation is an O(1) hash-index lookup with no plaintext at rest.</p>
 <h2 id="data-model">Data model</h2>
