@@ -91,6 +91,15 @@ function fakeSessionService(records: FakeSessionRecord[]): SessionServiceLike {
         );
       }
 
+      if (filters.org !== undefined) {
+        const orgList = Array.isArray(filters.org)
+          ? filters.org
+          : [filters.org];
+        items = items.filter((r) =>
+          r.repos.some((repo) => orgList.includes(repo.split("/")[0])),
+        );
+      }
+
       let sorted = [...items];
       if (filters.sort === "waitingSince") {
         const waiting = sorted.filter((r) => r.state === "waiting");
@@ -401,6 +410,20 @@ describe("GET /sessions (smoke)", () => {
     expect(res.status).toBe(200);
     const body = (await res.json()) as SessionListResult;
     expect(body.sessions.map((s) => s.slug)).toEqual(["waiting-new"]);
+  });
+
+  it("?org=org filters to sessions touching a repo in that org", async () => {
+    const parent = makeAdminParent(makeApp());
+    const res = await parent.request("/?state=all&org=org");
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as SessionListResult;
+    // Every fixture with a non-empty `repos` list lives under the "org" org
+    // (e.g. "org/a", "org/b") — empty-1 has no repos so it's excluded.
+    expect(body.sessions.map((s) => s.slug).sort()).toEqual(
+      FIXTURES.filter((f) => f.repos.length > 0)
+        .map((f) => f.slug)
+        .sort(),
+    );
   });
 
   it("?q=launch substring-matches title (case-insensitive)", async () => {

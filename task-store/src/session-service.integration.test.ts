@@ -547,6 +547,102 @@ describeOrSkip("SessionService.list() / get() (integration)", () => {
     expect(slugs).not.toContain("repo-no-match");
   });
 
+  it("list({org}) only returns sessions whose rollup.repos org-prefix matches the given org", async () => {
+    await taskService.create({
+      title: "in target org",
+      status: "pending",
+      session: "org-match",
+      repo: "target-org/some-repo",
+    });
+    await taskService.create({
+      title: "in other org",
+      status: "pending",
+      session: "org-no-match",
+      repo: "other-org/some-repo",
+    });
+
+    const result = await sessionService.list({
+      state: "all",
+      org: "target-org",
+    });
+    const slugs = result.sessions.map((s) => s.slug);
+    expect(slugs).toContain("org-match");
+    expect(slugs).not.toContain("org-no-match");
+  });
+
+  it("list({org: [...]}) matches sessions in any of the given orgs (OR semantics)", async () => {
+    await taskService.create({
+      title: "in org a",
+      status: "pending",
+      session: "org-a-match",
+      repo: "org-a/repo-1",
+    });
+    await taskService.create({
+      title: "in org b",
+      status: "pending",
+      session: "org-b-match",
+      repo: "org-b/repo-1",
+    });
+    await taskService.create({
+      title: "in org c",
+      status: "pending",
+      session: "org-c-no-match",
+      repo: "org-c/repo-1",
+    });
+
+    const result = await sessionService.list({
+      state: "all",
+      org: ["org-a", "org-b"],
+    });
+    const slugs = result.sessions.map((s) => s.slug);
+    expect(slugs).toContain("org-a-match");
+    expect(slugs).toContain("org-b-match");
+    expect(slugs).not.toContain("org-c-no-match");
+  });
+
+  it("list({org}) with no matching org returns no sessions for that filter", async () => {
+    await taskService.create({
+      title: "in some org",
+      status: "pending",
+      session: "some-org-session",
+      repo: "some-org/some-repo",
+    });
+
+    const result = await sessionService.list({
+      state: "all",
+      org: "nonexistent-org",
+    });
+    const slugs = result.sessions.map((s) => s.slug);
+    expect(slugs).not.toContain("some-org-session");
+  });
+
+  it("list({org, state}) combines the org filter with an existing state filter (AND)", async () => {
+    // Both sessions are "waiting" (status: "blocked" per the sort test above)
+    // so the state filter alone can't distinguish them — only the org filter
+    // can, which is the point: this proves org narrows a same-state result
+    // set rather than merely reflecting the state filter's own work.
+    await taskService.create({
+      title: "waiting task in target org",
+      status: "blocked",
+      session: "org-and-state-match",
+      repo: "target-org/repo-1",
+    });
+    await taskService.create({
+      title: "waiting task in other org",
+      status: "blocked",
+      session: "org-mismatch-state-match",
+      repo: "other-org/repo-1",
+    });
+
+    const result = await sessionService.list({
+      state: "waiting",
+      org: "target-org",
+    });
+    const slugs = result.sessions.map((s) => s.slug);
+    expect(slugs).toContain("org-and-state-match");
+    expect(slugs).not.toContain("org-mismatch-state-match");
+  });
+
   it("list({agentScope}) only returns sessions with a task assigned to the agent or in its repo scope", async () => {
     await taskService.create({
       title: "assigned to agent",

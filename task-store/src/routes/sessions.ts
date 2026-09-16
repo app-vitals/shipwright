@@ -15,7 +15,7 @@
  * unrestricted visibility. Only admin tokens (agentId null) are unrestricted.
  *
  * Routes:
- *   GET   /sessions        list (?state, ?sort, ?agentId, ?repo, ?q, ?limit, ?offset)
+ *   GET   /sessions        list (?state, ?sort, ?agentId, ?repo, ?org, ?q, ?limit, ?offset)
  *                          returns { sessions, total, limit, offset }
  *   GET   /sessions/:slug  fetch one (404 when missing or out of agent scope)
  *   PATCH /sessions/:slug  rename/archive (SESH-3.1) — admin-only, 403 for
@@ -151,6 +151,7 @@ export function createSessionsRoutes(
       sort: c.req.query("sort") as SessionListFilters["sort"],
       agentId: c.req.query("agentId"),
       repo: c.req.queries("repo"),
+      org: c.req.queries("org"),
       q: c.req.query("q"),
       limit:
         limitRaw !== undefined
