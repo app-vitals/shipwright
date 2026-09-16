@@ -19,15 +19,16 @@
  */
 
 import type { Hono, MiddlewareHandler } from "hono";
-import { renderAdminPage } from "./admin-ui-layout.ts";
-import { escapeHtml, renderAdminToolbar } from "./admin-ui-styles.ts";
 import type { AdminUIEnv } from "./admin-ui.ts";
+import { renderAdminPage } from "./admin-ui-layout.ts";
+import { renderRepoOrgFilterFields } from "./admin-ui-pages.ts";
+import { escapeHtml, renderAdminToolbar } from "./admin-ui-styles.ts";
 import type { AgentMemberService } from "./agent-members.ts";
 import type { AgentService } from "./agents.ts";
 import {
   isSessionVisible,
-  visibleAgentIdsFor,
   type VisibilityScope,
+  visibleAgentIdsFor,
 } from "./session-scope.ts";
 
 const SESSIONS_LIST_PATH = "/admin/sessions";
@@ -66,7 +67,10 @@ export type SessionsListAgentMemberService = Pick<
 >;
 
 /** The narrow slice of AgentService this module calls. */
-export type SessionsListAgentService = Pick<AgentService, "listByIds">;
+export type SessionsListAgentService = Pick<
+  AgentService,
+  "listByIds" | "listOptions"
+>;
 
 export interface SessionsListDeps {
   requireAuth: MiddlewareHandler<AdminUIEnv>;
@@ -82,12 +86,30 @@ export interface SessionsListDeps {
     limit: number;
     offset: number;
   }>;
+  /**
+   * Fetch distinct session/repo/org values from the task-store service.
+   * Used to populate the Org/Repo multiselect and Agent datalist
+   * autocomplete suggestions in the filter form — same dep shape as the
+   * Tasks page's identically-named dep. If absent, the filter fields still
+   * render (no crash) but with no autocomplete suggestions.
+   */
+  fetchDistinctTaskValues?: () => Promise<{
+    sessions: string[];
+    repos: string[];
+    orgs: string[];
+  }>;
+  /**
+   * IANA timezone name for date/time display. Defaults to
+   * "America/Los_Angeles" when absent (mirrors every other admin page).
+   */
+  timezone?: string;
   /** admin-ui.ts's shared response helper (headers + PWA head-tag injection). */
   html: (content: string, opts?: { status?: number }) => Response;
 }
 
 interface SessionsListFilters {
   repo: string[];
+  org: string[];
   agentId?: string;
   q?: string;
   sort: "waitingSince" | "lastActivityAt";
@@ -139,11 +161,14 @@ const SECTION_META: Array<{
   { key: "closed", label: "Closed" },
 ];
 
-function formatTimestamp(value: string | null | undefined): string {
+function formatTimestamp(
+  value: string | null | undefined,
+  timezone?: string,
+): string {
   if (!value) return "—";
   const d = new Date(value);
   if (Number.isNaN(d.getTime())) return escapeHtml(value);
-  return escapeHtml(d.toLocaleString());
+  return escapeHtml(d.toLocaleString(undefined, { timeZone: timezone }));
 }
 
 function badgeList(values: string[], badgeClass: string): string {
@@ -156,16 +181,27 @@ function badgeList(values: string[], badgeClass: string): string {
     .join("");
 }
 
-function sessionRow(session: Session): string {
+function sessionRow(
+  session: Session,
+  agentNames: Record<string, string>,
+  timezone?: string,
+): string {
   const title = session.title?.trim() || session.slug;
+  // The Slug row renders only when it actually differs from the title —
+  // when there's no custom title, `title` already fell back to `session.slug`
+  // above, so a separate slug line underneath would just duplicate it.
+  const slugHtml =
+    session.slug !== title
+      ? `<div class="mono" style="font-size:11px;color:#9ca3af">${escapeHtml(session.slug)}</div>`
+      : "";
+  const agentLabels = session.agentIds.map((id) => agentNames[id] ?? id);
   return `<tr>
-    <td><a href="/admin/sessions/${encodeURIComponent(session.slug)}" style="color:#6366f1;text-decoration:none;font-weight:500">${escapeHtml(title)}</a></td>
-    <td class="mono" style="font-size:11px">${escapeHtml(session.slug)}</td>
-    <td style="font-size:12px">${badgeList(session.agentIds, "badge-gray")}</td>
+    <td><a href="/admin/sessions/${encodeURIComponent(session.slug)}" style="color:#6366f1;text-decoration:none;font-weight:500">${escapeHtml(title)}</a>${slugHtml}</td>
+    <td style="font-size:12px">${badgeList(agentLabels, "badge-gray")}</td>
     <td style="font-size:12px">${badgeList(session.repos, "badge-purple")}</td>
     <td style="font-size:12px">${session.counts.open}/${session.counts.total}</td>
-    <td style="font-size:12px">${formatTimestamp(session.waitingSince)}</td>
-    <td style="font-size:12px">${formatTimestamp(session.lastActivityAt)}</td>
+    <td style="font-size:12px">${formatTimestamp(session.waitingSince, timezone)}</td>
+    <td style="font-size:12px">${formatTimestamp(session.lastActivityAt, timezone)}</td>
     <td style="text-align:right">
       <!-- Follow/Following toggle stub (SESH-4.2) — visual only, not yet
            wired to SessionFollowService (SES-6.1). A future task wires this
@@ -175,7 +211,12 @@ function sessionRow(session: Session): string {
   </tr>`;
 }
 
-function renderSection(label: string, sessions: Session[]): string {
+function renderSection(
+  label: string,
+  sessions: Session[],
+  agentNames: Record<string, string>,
+  timezone?: string,
+): string {
   return `<div class="card" style="margin-bottom:16px">
     <div class="card-title" style="font-size:12px;font-weight:600;color:#374151;text-transform:uppercase;letter-spacing:.05em;margin-bottom:12px">${escapeHtml(label)} (${sessions.length})</div>
     <div class="data-table-wrapper">
@@ -183,7 +224,6 @@ function renderSection(label: string, sessions: Session[]): string {
         <thead>
           <tr>
             <th>Session</th>
-            <th>Slug</th>
             <th>Agents</th>
             <th>Repos</th>
             <th>Open/Total</th>
@@ -195,8 +235,10 @@ function renderSection(label: string, sessions: Session[]): string {
         <tbody>
           ${
             sessions.length === 0
-              ? `<tr><td colspan="8" class="empty-state">No sessions.</td></tr>`
-              : sessions.map(sessionRow).join("\n")
+              ? `<tr><td colspan="7" class="empty-state">No sessions.</td></tr>`
+              : sessions
+                  .map((s) => sessionRow(s, agentNames, timezone))
+                  .join("\n")
           }
         </tbody>
       </table>
@@ -209,6 +251,7 @@ function renderSessionsListPage(
   filters: SessionsListFilters,
   degraded: boolean,
   userName: string,
+  agentNames: Record<string, string>,
   pagination: {
     total: number;
     limit: number;
@@ -225,6 +268,8 @@ function renderSessionsListPage(
     limit: 50,
     offset: 0,
   },
+  suggestions?: { orgs?: string[]; repos?: string[]; agents?: string[] },
+  timezone?: string,
 ): string {
   const degradedHtml = degraded
     ? `<div class="alert alert-warning">Task store unavailable — data shown may be stale or empty.</div>`
@@ -235,6 +280,7 @@ function renderSessionsListPage(
   ): string => {
     const params = new URLSearchParams();
     for (const r of filters.repo) params.append("repo", r);
+    for (const o of filters.org) params.append("org", o);
     if (filters.agentId) params.set("agent", filters.agentId);
     if (filters.q) params.set("q", filters.q);
     if (filters.sort !== "waitingSince") params.set("sort", filters.sort);
@@ -257,12 +303,12 @@ function renderSessionsListPage(
     </div>
     <div class="form-group" style="margin:0">
       <label class="form-label" for="agent">Agent</label>
-      <input id="agent" name="agent" type="text" class="form-input" value="${escapeHtml(filters.agentId ?? "")}" />
+      <input id="agent" name="agent" type="text" class="form-input" value="${escapeHtml(filters.agentId ?? "")}"${suggestions?.agents?.length ? ' list="agents-list"' : ""} />
     </div>
-    <div class="form-group" style="margin:0">
-      <label class="form-label" for="repo">Repo</label>
-      <input id="repo" name="repo" type="text" class="form-input" value="${escapeHtml(filters.repo[0] ?? "")}" />
-    </div>
+    ${renderRepoOrgFilterFields(
+      { org: filters.org, repo: filters.repo },
+      { orgs: suggestions?.orgs, repos: suggestions?.repos },
+    )}
     <div class="form-group" style="margin:0">
       <label class="form-label" for="sort">Sort</label>
       <select id="sort" name="sort" class="form-input">
@@ -273,11 +319,12 @@ function renderSessionsListPage(
     ${filters.archived ? '<input type="hidden" name="archived" value="true" />' : ""}
     <button type="submit" class="btn btn-primary" style="font-size:12px">Filter</button>
     ${archivedToggle}
+    ${suggestions?.agents?.length ? `<datalist id="agents-list">${suggestions.agents.map((a) => `<option value="${escapeHtml(a)}">`).join("")}</datalist>` : ""}
   </form>`;
 
   let sectionsHtml: string;
   if (filters.archived) {
-    sectionsHtml = renderSection("Archived", sessions);
+    sectionsHtml = renderSection("Archived", sessions, agentNames, timezone);
   } else {
     const bySection = new Map<string, Session[]>();
     for (const s of sessions) {
@@ -291,7 +338,7 @@ function renderSessionsListPage(
       else bySection.set(s.state, [s]);
     }
     sectionsHtml = SECTION_META.map(({ key, label }) =>
-      renderSection(label, bySection.get(key) ?? []),
+      renderSection(label, bySection.get(key) ?? [], agentNames, timezone),
     ).join("\n");
   }
 
@@ -354,6 +401,7 @@ export function registerSessionsListRoutes(
 
     const archived = c.req.query("archived") === "true";
     const repo = c.req.queries("repo") ?? [];
+    const org = c.req.queries("org") ?? [];
     const agentId = c.req.query("agent") || undefined;
     const q = c.req.query("q") || undefined;
     const sort: "waitingSince" | "lastActivityAt" =
@@ -369,7 +417,14 @@ export function registerSessionsListRoutes(
       ? Math.max(0, Number.parseInt(offsetRaw, 10) || 0)
       : 0;
 
-    const filters: SessionsListFilters = { repo, agentId, q, sort, archived };
+    const filters: SessionsListFilters = {
+      repo,
+      org,
+      agentId,
+      q,
+      sort,
+      archived,
+    };
 
     const scope = await resolveVisibilityScope(
       isAdmin,
@@ -383,17 +438,29 @@ export function registerSessionsListRoutes(
     // than an error (AC2).
     if (scope.agentIds !== "all" && scope.agentIds.length === 0) {
       return deps.html(
-        renderSessionsListPage([], filters, false, userEmail, {
-          total: 0,
-          limit,
-          offset,
-        }),
+        renderSessionsListPage(
+          [],
+          filters,
+          false,
+          userEmail,
+          {},
+          {
+            total: 0,
+            limit,
+            offset,
+          },
+        ),
       );
     }
 
     let sessions: Session[] = [];
     let total = 0;
     let degraded = false;
+    let distinctValues: {
+      sessions: string[];
+      repos: string[];
+      orgs: string[];
+    } | null = null;
 
     if (!deps.fetchTaskStoreSessions) {
       degraded = true;
@@ -405,14 +472,21 @@ export function registerSessionsListRoutes(
       params.set("state", archived ? "archived" : "all");
       params.set("sort", sort);
       for (const r of repo) params.append("repo", r);
+      for (const o of org) params.append("org", o);
       if (agentId) params.set("agentId", agentId);
       if (q) params.set("q", q);
       params.set("limit", String(limit));
       params.set("offset", String(offset));
       try {
-        const result = await deps.fetchTaskStoreSessions(params);
+        const [result, distinct] = await Promise.all([
+          deps.fetchTaskStoreSessions(params),
+          deps.fetchDistinctTaskValues
+            ? deps.fetchDistinctTaskValues().catch(() => null)
+            : Promise.resolve(null),
+        ]);
         sessions = result.sessions;
         total = result.total;
+        distinctValues = distinct;
       } catch {
         degraded = true;
       }
@@ -430,15 +504,45 @@ export function registerSessionsListRoutes(
       );
     }
 
+    // Resolve agent ids → names across the fetched page, same pattern as
+    // every other admin page (agentNames[id] ?? id fallback in sessionRow).
+    const agentIds = [...new Set(sessions.flatMap((s) => s.agentIds))];
+    const agentNames: Record<string, string> = {};
+    if (agentIds.length > 0) {
+      const agents = await deps.agentService.listByIds(agentIds);
+      for (const a of agents) agentNames[a.id] = a.name;
+    }
+
+    // Build autocomplete suggestions only when task-store integration is
+    // active — skip the extra agentService.listOptions() call entirely when
+    // fetchDistinctTaskValues is not configured (degraded mode).
+    const suggestions =
+      deps.fetchDistinctTaskValues && distinctValues
+        ? {
+            orgs: distinctValues.orgs,
+            repos: distinctValues.repos,
+            agents: (await deps.agentService.listOptions()).map((a) => a.name),
+          }
+        : undefined;
+
     return deps.html(
-      renderSessionsListPage(sessions, filters, degraded, userEmail, {
-        total,
-        limit,
-        offset,
-        // total/limit/offset are the task-store's pre-filter values; flag
-        // that so the summary doesn't claim they describe the rendered rows.
-        scoped,
-      }),
+      renderSessionsListPage(
+        sessions,
+        filters,
+        degraded,
+        userEmail,
+        agentNames,
+        {
+          total,
+          limit,
+          offset,
+          // total/limit/offset are the task-store's pre-filter values; flag
+          // that so the summary doesn't claim they describe the rendered rows.
+          scoped,
+        },
+        suggestions,
+        deps.timezone,
+      ),
     );
   });
 }

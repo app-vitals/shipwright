@@ -3297,6 +3297,8 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
     agentMemberService,
     agentService,
     fetchTaskStoreSessions,
+    fetchDistinctTaskValues,
+    timezone,
     html,
   });
 

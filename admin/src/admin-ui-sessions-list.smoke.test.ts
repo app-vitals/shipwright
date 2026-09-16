@@ -76,15 +76,18 @@ function makeMemberService(
 }
 
 function makeAgentService(
-  agents: Array<{ id: string; repos?: string[] }> = [],
+  agents: Array<{ id: string; name?: string; repos?: string[] }> = [],
 ): SessionsListAgentService {
+  // Name defaults to something distinct from the id (`<id>-name`) so a test
+  // asserting the Agents column shows the *name* rather than the raw id
+  // can't accidentally pass because the two strings happen to be equal.
   return {
     listByIds: async (ids: string[]) =>
       agents
         .filter((a) => ids.includes(a.id))
         .map((a) => ({
           id: a.id,
-          name: a.id,
+          name: a.name ?? `${a.id}-name`,
           slackId: null,
           selfHosted: false,
           typeName: "coding",
@@ -92,6 +95,8 @@ function makeAgentService(
           updatedAt: new Date("2024-01-01"),
           repos: a.repos ?? [],
         })),
+    listOptions: async () =>
+      agents.map((a) => ({ id: a.id, name: a.name ?? `${a.id}-name` })),
   };
 }
 
@@ -317,5 +322,193 @@ describe("GET /admin/sessions — row actions", () => {
     const res = await app.request("/admin/sessions");
     const html = await res.text();
     expect(html).toContain("Follow");
+  });
+});
+
+// ─── SPT-1.2 AC1: Pacific timezone ──────────────────────────────────────────
+
+describe("GET /admin/sessions — timezone", () => {
+  it("renders Waiting since / Last activity in the configured timezone rather than server-local time", async () => {
+    // 09:00 UTC lands on a different calendar hour in America/Los_Angeles
+    // (01:00 PST, UTC-8) — a real, observable difference rather than an
+    // assertion that merely re-implements the production code.
+    const utcTimestamp = "2026-01-01T09:00:00.000Z";
+    const sessions = [
+      makeSession({
+        slug: "s-tz",
+        title: "TZ session",
+        state: "waiting",
+        waitingSince: utcTimestamp,
+        lastActivityAt: utcTimestamp,
+      }),
+    ];
+    const app = buildApp({
+      timezone: "America/Los_Angeles",
+      fetchTaskStoreSessions: async () => ({
+        sessions,
+        total: sessions.length,
+        limit: 50,
+        offset: 0,
+      }),
+    });
+    const res = await app.request("/admin/sessions");
+    const html = await res.text();
+
+    const pacific = new Date(utcTimestamp).toLocaleString(undefined, {
+      timeZone: "America/Los_Angeles",
+    });
+    const utc = new Date(utcTimestamp).toLocaleString(undefined, {
+      timeZone: "UTC",
+    });
+    expect(pacific).not.toBe(utc);
+    expect(html).toContain(pacific);
+    expect(html).not.toContain(utc);
+  });
+});
+
+// ─── SPT-1.2 AC2: agent name resolution ─────────────────────────────────────
+
+describe("GET /admin/sessions — agent names", () => {
+  it("resolves agent ids to names in the Agents column, falling back to the raw id when unmatched", async () => {
+    const sessions = [
+      makeSession({
+        slug: "s-agents",
+        title: "Agents session",
+        agentIds: ["agent-a", "agent-unknown"],
+      }),
+    ];
+    const app = buildApp({
+      agentService: makeAgentService([{ id: "agent-a", name: "Agent Alpha" }]),
+      fetchTaskStoreSessions: async () => ({
+        sessions,
+        total: sessions.length,
+        limit: 50,
+        offset: 0,
+      }),
+    });
+    const res = await app.request("/admin/sessions");
+    const html = await res.text();
+    expect(html).toContain("Agent Alpha");
+    // Unmatched id falls back to the raw id.
+    expect(html).toContain("agent-unknown");
+    // The matched id's raw form should not leak into the rendered badge.
+    expect(html).not.toContain(">agent-a<");
+  });
+});
+
+// ─── SPT-1.2 AC3: merged Session/Slug column ────────────────────────────────
+
+describe("GET /admin/sessions — merged Session/Slug column", () => {
+  it("has 7 columns, not 8 (no separate Slug <th>)", async () => {
+    const app = buildApp({
+      fetchTaskStoreSessions: async () => ({
+        sessions: [],
+        total: 0,
+        limit: 50,
+        offset: 0,
+      }),
+    });
+    const res = await app.request("/admin/sessions");
+    const html = await res.text();
+    expect(html).not.toContain("<th>Slug</th>");
+    expect(html).toContain('colspan="7"');
+    expect(html).not.toContain('colspan="8"');
+  });
+
+  it("shows the slug underneath the title only when it differs from the title", async () => {
+    const sessions = [
+      makeSession({
+        slug: "slug-one",
+        title: "Custom Title",
+        state: "active",
+      }),
+      makeSession({
+        slug: "slug-two",
+        title: null,
+        state: "active",
+      }),
+    ];
+    const app = buildApp({
+      fetchTaskStoreSessions: async () => ({
+        sessions,
+        total: sessions.length,
+        limit: 50,
+        offset: 0,
+      }),
+    });
+    const res = await app.request("/admin/sessions");
+    const html = await res.text();
+    // title != slug: the slug renders separately as its own text node
+    // (the title link's own text is "Custom Title", not the slug).
+    expect(html).toContain(">slug-one<");
+    // no title (title falls back to slug): the slug is the title link's
+    // own text — it must not additionally render a second, separate slug
+    // row underneath (that would just duplicate it).
+    const slugTwoTextNodeCount = (html.match(/>slug-two</g) ?? []).length;
+    expect(slugTwoTextNodeCount).toBe(1);
+  });
+});
+
+// ─── SPT-1.2 AC4: Org+Repo+Agent filter autocomplete ────────────────────────
+
+describe("GET /admin/sessions — filter autocomplete", () => {
+  it("renders Org/Repo multiselects and an Agent datalist when fetchDistinctTaskValues is configured", async () => {
+    const app = buildApp({
+      fetchDistinctTaskValues: async () => ({
+        sessions: [],
+        repos: ["org/repo-a"],
+        orgs: ["org"],
+      }),
+      agentService: makeAgentService([{ id: "agent-a", name: "Agent Alpha" }]),
+      fetchTaskStoreSessions: async () => ({
+        sessions: [],
+        total: 0,
+        limit: 50,
+        offset: 0,
+      }),
+    });
+    const res = await app.request("/admin/sessions");
+    const html = await res.text();
+    expect(html).toContain('name="org" multiple');
+    expect(html).toContain('name="repo" multiple');
+    expect(html).toContain('<option value="org/repo-a">org/repo-a</option>');
+    expect(html).toContain('<option value="org">org</option>');
+    expect(html).toContain('list="agents-list"');
+    expect(html).toContain('<datalist id="agents-list">');
+    expect(html).toContain('<option value="Agent Alpha">');
+  });
+
+  it("still renders working filter fields (no datalist, no crash) when fetchDistinctTaskValues is absent — degraded-mode parity with the Tasks page", async () => {
+    const app = buildApp({
+      fetchTaskStoreSessions: async () => ({
+        sessions: [],
+        total: 0,
+        limit: 50,
+        offset: 0,
+      }),
+    });
+    const res = await app.request("/admin/sessions");
+    expect(res.status).toBe(200);
+    const html = await res.text();
+    expect(html).toContain('name="org" multiple');
+    expect(html).toContain('name="repo" multiple');
+    expect(html).not.toContain("agents-list");
+  });
+});
+
+// ─── SPT-1.2 AC5: org filter forwarding ─────────────────────────────────────
+
+describe("GET /admin/sessions — org filter forwarding", () => {
+  it("forwards repeated org= query values through to the task-store /sessions fetch", async () => {
+    const captured: { org: string[] } = { org: [] };
+    const app = buildApp({
+      fetchTaskStoreSessions: async (params) => {
+        captured.org = params.getAll("org");
+        return { sessions: [], total: 0, limit: 50, offset: 0 };
+      },
+    });
+    const res = await app.request("/admin/sessions?org=my-org&org=other-org");
+    expect(res.status).toBe(200);
+    expect(captured.org).toEqual(["my-org", "other-org"]);
   });
 });
