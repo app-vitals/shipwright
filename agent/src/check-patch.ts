@@ -600,6 +600,8 @@ export async function getPatchCandidates(
       age: linkedTask?.createdAt ?? pr.createdAt ?? "",
       phase: "patch",
       title: pr.title,
+      authorLogin: pr.author,
+      headRefName: pr.headRefName,
       commitSha: pr.headRefOid,
     });
   }

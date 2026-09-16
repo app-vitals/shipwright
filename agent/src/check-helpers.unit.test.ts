@@ -1051,6 +1051,60 @@ describe("createTaskStoreClient query()", () => {
     );
   });
 
+  test("claimPr() forwards authorLogin/title and renames headRefName -> headRef in the outbound body (POM-1.2)", async () => {
+    let capturedInit: RequestInit | undefined;
+    const fakeFetch = (async (_url: RequestInfo | URL, init?: RequestInit) => {
+      capturedInit = init;
+      return { ok: true, status: 200, json: async () => FAKE_PR } as Response;
+    }) as unknown as typeof fetch;
+
+    const client = createTaskStoreClient({ fetchFn: fakeFetch });
+    await client.claimPr({
+      repo: "app-vitals/shipwright",
+      prNumber: 42,
+      commitSha: "abc123def456",
+      phase: "review",
+      authorLogin: "octocat",
+      headRefName: "feat/some-branch",
+      title: "Add the origin metrics dimension",
+    });
+
+    const sentBody = JSON.parse(capturedInit?.body as string);
+    expect(sentBody).toEqual({
+      repo: "app-vitals/shipwright",
+      prNumber: 42,
+      commitSha: "abc123def456",
+      phase: "review",
+      authorLogin: "octocat",
+      headRef: "feat/some-branch",
+      title: "Add the origin metrics dimension",
+    });
+    // The client-side field name must never leak into the outbound request.
+    expect(sentBody.headRefName).toBeUndefined();
+  });
+
+  test("claimPr() omits authorLogin/headRef/title from the outbound body when not supplied", async () => {
+    let capturedInit: RequestInit | undefined;
+    const fakeFetch = (async (_url: RequestInfo | URL, init?: RequestInit) => {
+      capturedInit = init;
+      return { ok: true, status: 200, json: async () => FAKE_PR } as Response;
+    }) as unknown as typeof fetch;
+
+    const client = createTaskStoreClient({ fetchFn: fakeFetch });
+    await client.claimPr({
+      repo: "app-vitals/shipwright",
+      prNumber: 42,
+      commitSha: "abc123def456",
+      phase: "review",
+    });
+
+    const sentBody = JSON.parse(capturedInit?.body as string);
+    expect("authorLogin" in sentBody).toBe(false);
+    expect("headRef" in sentBody).toBe(false);
+    expect("headRefName" in sentBody).toBe(false);
+    expect("title" in sentBody).toBe(false);
+  });
+
   test("claimPr() returns {id, commitSha} on 200", async () => {
     const fakeFetch = (async () =>
       ({

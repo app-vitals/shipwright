@@ -131,7 +131,7 @@ const claimRoute = createRoute({
   tags: ["PRs"],
   summary: "Claim a pull request (atomic)",
   description:
-    "Atomic via Postgres row locking, keyed on `(repo, prNumber)`. No existing record creates and returns `201` (a concurrent INSERT loser hits the `@@unique([repo, prNumber])` constraint and gets `409`). Against an existing record, the conflict conditions are re-checked inside the UPDATE's own WHERE clause so only one writer can win: same `commitSha` + same `phase` + already claimed by another agent returns `409` (phase locked); already claimed + same `commitSha` + `reviewState !== pending` (review phase only) returns `409` (already reviewed at this commit); otherwise the row is updated and `200` returned (new cycle). Agent tokens pin `claimedBy` to their own ID; admin tokens supply it in the body. Optional `phase` (default `review`) sets the pipeline phase — `patch`/`deploy` phases preserve `reviewState` as-is rather than resetting it.",
+    "Atomic via Postgres row locking, keyed on `(repo, prNumber)`. No existing record creates and returns `201` (a concurrent INSERT loser hits the `@@unique([repo, prNumber])` constraint and gets `409`). Against an existing record, the conflict conditions are re-checked inside the UPDATE's own WHERE clause so only one writer can win: same `commitSha` + same `phase` + already claimed by another agent returns `409` (phase locked); already claimed + same `commitSha` + `reviewState !== pending` (review phase only) returns `409` (already reviewed at this commit); otherwise the row is updated and `200` returned (new cycle). Agent tokens pin `claimedBy` to their own ID; admin tokens supply it in the body. Optional `phase` (default `review`) sets the pipeline phase — `patch`/`deploy` phases preserve `reviewState` as-is rather than resetting it. Optional `authorLogin`/`headRef`/`title` (POM-1.2) are forwarded server-side into an atomic origin-stamping write: a linked Task row (matching `repo`+`pr`) always derives `origin='shipwright'`; otherwise `authorLogin`/`headRef` are pattern-matched against known CI/dependency-bot signals, falling back to `human`/`unknown`. Origin is first-write-wins (never overwritten once set); `authorLogin`/`headRef`/`title` are refreshed to the latest value on every claim.",
   request: {
     body: {
       content: { "application/json": { schema: ClaimPrBodySchema } },
@@ -549,7 +549,17 @@ export function createPrsRoutes(
     const repos = c.get("repos");
     const body = await readJson(c);
 
-    const { repo, prNumber, commitSha, claimedBy, phase, prCreatedAt } = body;
+    const {
+      repo,
+      prNumber,
+      commitSha,
+      claimedBy,
+      phase,
+      prCreatedAt,
+      authorLogin,
+      headRef,
+      title,
+    } = body;
 
     // Validate required fields
     if (typeof repo !== "string" || !repo) {
@@ -600,6 +610,9 @@ export function createPrsRoutes(
       resolvedClaimedBy,
       resolvedPhase,
       resolvedPrCreatedAt,
+      stringOrNull(authorLogin),
+      stringOrNull(headRef),
+      stringOrNull(title),
     );
 
     return c.json(record, status);

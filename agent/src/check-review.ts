@@ -717,6 +717,8 @@ export async function getReviewCandidates(
       age,
       phase: "review",
       title: pr.title,
+      authorLogin: pr.author.login,
+      headRefName: pr.headRefName,
       commitSha: pr.headRefOid,
     });
   }

@@ -109,6 +109,12 @@ on the same JSON) — reused unchanged at Step 5a.7's author-reply detection bel
 a self-authored PR, `PR_AUTHOR` naturally equals `CURRENT_USER`; for an allowlisted PR it's
 that PR's own real author.
 
+Also capture `PR_TITLE` (`.title`) and `PR_HEAD_REF` (`.headRefName`) from the same JSON —
+both fields are already in this response, no extra `gh` call needed. All three
+(`PR_AUTHOR`/`PR_TITLE`/`PR_HEAD_REF`) are reused unchanged by each of the three `/prs/claim`
+call sites below (Steps 4a.6/5a.6/6b.5) so `/prs/claim` can derive `origin` server-side
+(POM-1.2).
+
 Then evaluate the in-scope test with an **exact** membership check — never a substring one:
 
 ```bash
@@ -676,7 +682,9 @@ PR_CLAIM=$(curl -s -o /tmp/pr_claim_patch.json -w '%{http_code}' -X POST \
   -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
   -H "Content-Type: application/json" \
   "$SHIPWRIGHT_TASK_STORE_URL/prs/claim" \
-  -d "{\"repo\": \"{org}/{repo}\", \"prNumber\": {pr}, \"commitSha\": \"$HEAD_SHA_PRE_PATCH\", \"phase\": \"patch\"}")
+  -d "$(jq -n --arg repo "{org}/{repo}" --argjson prNumber {pr} --arg commitSha "$HEAD_SHA_PRE_PATCH" \
+        --arg authorLogin "$PR_AUTHOR" --arg headRef "$PR_HEAD_REF" --arg title "$PR_TITLE" \
+        '{repo: $repo, prNumber: $prNumber, commitSha: $commitSha, phase: "patch", authorLogin: $authorLogin, headRef: $headRef, title: $title}')")
 PR_RECORD_ID=$(jq -r '.id // empty' /tmp/pr_claim_patch.json)
 ```
 
@@ -907,7 +915,9 @@ PR_CLAIM=$(curl -s -o /tmp/pr_claim_patch.json -w '%{http_code}' -X POST \
   -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
   -H "Content-Type: application/json" \
   "$SHIPWRIGHT_TASK_STORE_URL/prs/claim" \
-  -d "{\"repo\": \"{org}/{repo}\", \"prNumber\": {pr}, \"commitSha\": \"$HEAD_SHA_PRE_PATCH\", \"phase\": \"patch\"}")
+  -d "$(jq -n --arg repo "{org}/{repo}" --argjson prNumber {pr} --arg commitSha "$HEAD_SHA_PRE_PATCH" \
+        --arg authorLogin "$PR_AUTHOR" --arg headRef "$PR_HEAD_REF" --arg title "$PR_TITLE" \
+        '{repo: $repo, prNumber: $prNumber, commitSha: $commitSha, phase: "patch", authorLogin: $authorLogin, headRef: $headRef, title: $title}')")
 PR_RECORD_ID=$(jq -r '.id // empty' /tmp/pr_claim_patch.json)
 ```
 
@@ -1606,7 +1616,9 @@ PR_CLAIM=$(curl -s -o /tmp/pr_claim_patch.json -w '%{http_code}' -X POST \
   -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
   -H "Content-Type: application/json" \
   "$SHIPWRIGHT_TASK_STORE_URL/prs/claim" \
-  -d "{\"repo\": \"{org}/{repo}\", \"prNumber\": {pr}, \"commitSha\": \"$HEAD_SHA_PRE_PATCH\", \"phase\": \"patch\"}")
+  -d "$(jq -n --arg repo "{org}/{repo}" --argjson prNumber {pr} --arg commitSha "$HEAD_SHA_PRE_PATCH" \
+        --arg authorLogin "$PR_AUTHOR" --arg headRef "$PR_HEAD_REF" --arg title "$PR_TITLE" \
+        '{repo: $repo, prNumber: $prNumber, commitSha: $commitSha, phase: "patch", authorLogin: $authorLogin, headRef: $headRef, title: $title}')")
 PR_RECORD_ID=$(jq -r '.id // empty' /tmp/pr_claim_patch.json)
 ```
 

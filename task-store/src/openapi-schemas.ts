@@ -1064,6 +1064,21 @@ export const ClaimPrBodySchema = z
       description:
         "ISO timestamp of the GitHub PR's actual creation time. Only applied on first claim (record creation); ignored on subsequent claims since the field is immutable once set.",
     }),
+    authorLogin: z.string().nullable().optional().openapi({
+      example: "octocat",
+      description:
+        "PR author's GitHub login (POM-1.2). Used server-side to derive `origin` (first-write-wins) and refreshed unconditionally on every claim.",
+    }),
+    headRef: z.string().nullable().optional().openapi({
+      example: "feat/some-branch",
+      description:
+        "PR's head branch name (POM-1.2). Used server-side to derive `origin` (first-write-wins) and refreshed unconditionally on every claim.",
+    }),
+    title: z.string().nullable().optional().openapi({
+      example: "Add the origin metrics dimension",
+      description:
+        "PR title (POM-1.2). Refreshed unconditionally on every claim.",
+    }),
   })
   .openapi("ClaimPrBody");
 

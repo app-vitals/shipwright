@@ -2186,3 +2186,44 @@ describe("patch.md — dependency-patch protocol injected into Step 5b (DBP-1.2)
     expect(section).toMatch(/Step 3a\.5's\s+already-held exclusion matches on that exact string/i);
   });
 });
+
+describe("patch.md — /prs/claim threads authorLogin/headRef/title for server-side origin derivation (POM-1.2)", () => {
+  it("Step 2 captures PR_TITLE/PR_HEAD_REF alongside PR_AUTHOR from the same gh pr view result (no new gh call)", () => {
+    const step2Idx = content.indexOf("## Step 2: Resolve Target PR");
+    const step2_5Idx = content.indexOf("## Step 2.5:");
+    expect(step2Idx).toBeGreaterThan(-1);
+    expect(step2_5Idx).toBeGreaterThan(step2Idx);
+    const step2Section = content.slice(step2Idx, step2_5Idx);
+
+    // Still exactly one `gh pr view {number} ...` call in this step.
+    const ghPrViewCalls = step2Section.match(/gh pr view \{number\} --repo \{org\}\/\{repo\}/g) ?? [];
+    expect(ghPrViewCalls).toHaveLength(1);
+    expect(step2Section).toContain(
+      "--json number,title,headRefName,headRefOid,additions,deletions,mergeStateStatus,state,author",
+    );
+    expect(step2Section).toContain("PR_TITLE");
+    expect(step2Section).toContain("PR_HEAD_REF");
+    expect(step2Section).toContain("PR_AUTHOR");
+  });
+
+  for (const [label, sectionHeader, nextHeader] of [
+    ["Step 4a.6", "### Step 4a.6: Claim PR Record (pre-work lock)", "### Step 4b: Dispatch Conflict Resolution Subagent"],
+    ["Step 5a.6", "### Step 5a.6: Claim PR Record (pre-work lock)", "### Step 5a.6b: `.claude/**` Path Escalation Check (CDH-1.2)"],
+    ["Step 6b.5", "### Step 6b.5: Claim PR Record (pre-work lock)", "### Step 6b.6: Escalation Check (CFE-1.1)"],
+  ] as const) {
+    it(`${label}'s /prs/claim call threads authorLogin/headRef/title from the Step 2 captures`, () => {
+      const sectionIdx = content.indexOf(sectionHeader);
+      const nextIdx = content.indexOf(nextHeader);
+      expect(sectionIdx).toBeGreaterThan(-1);
+      expect(nextIdx).toBeGreaterThan(sectionIdx);
+      const section = content.slice(sectionIdx, nextIdx);
+
+      expect(section).toContain('--arg authorLogin "$PR_AUTHOR"');
+      expect(section).toContain('--arg headRef "$PR_HEAD_REF"');
+      expect(section).toContain('--arg title "$PR_TITLE"');
+      expect(section).toContain(
+        "authorLogin: $authorLogin, headRef: $headRef, title: $title",
+      );
+    });
+  }
+});

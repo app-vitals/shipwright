@@ -561,6 +561,15 @@ export function createTaskStoreClient(opts?: { fetchFn?: FetchFn }): {
     prNumber: number;
     commitSha: string;
     phase: "review" | "patch" | "deploy";
+    /** POM-1.2: forwarded to POST /prs/claim so origin can be derived server-side. */
+    authorLogin?: string | null;
+    /**
+     * Named `headRefName` (mirroring WorkPrCandidate/GitHub's own field name)
+     * even though the outbound task-store request body field is `headRef` —
+     * the rename happens inside this method's implementation below.
+     */
+    headRefName?: string;
+    title?: string;
   }): Promise<{ id: string; commitSha: string } | null>;
   recordSkip(itemType: "task" | "pr", id: string): Promise<void>;
   resetSkip(itemType: "task" | "pr", id: string): Promise<void>;
@@ -663,11 +672,20 @@ export function createTaskStoreClient(opts?: { fetchFn?: FetchFn }): {
       prNumber: number;
       commitSha: string;
       phase: "review" | "patch" | "deploy";
+      authorLogin?: string | null;
+      headRefName?: string;
+      title?: string;
     }): Promise<{ id: string; commitSha: string } | null> {
+      // The task-store's /prs/claim body field is `headRef` (its shorter
+      // internal column name), not `headRefName` (WorkPrCandidate/GitHub's
+      // field name) — rename at this HTTP boundary rather than sending a
+      // `headRefName` field the route doesn't recognize.
+      const { headRefName, ...rest } = params;
+      const body = { ...rest, headRef: headRefName };
       const res = await doFetch(`${baseUrl}/prs/claim`, {
         method: "POST",
         headers,
-        body: JSON.stringify(params),
+        body: JSON.stringify(body),
       });
       // 409 = another agent replica already claimed this PR at this commit.
       // The caller skips dispatch; not an error.

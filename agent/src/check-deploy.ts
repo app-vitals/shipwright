@@ -327,6 +327,8 @@ export async function getDeployCandidates(
         age: linkedTask?.createdAt ?? pr.createdAt ?? "",
         phase: "deploy",
         title: pr.title,
+        authorLogin: pr.author.login,
+        headRefName: pr.headRefName,
         commitSha: pr.headRefOid,
       });
     } catch (err) {

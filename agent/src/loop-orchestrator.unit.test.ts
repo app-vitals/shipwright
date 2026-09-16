@@ -30,6 +30,7 @@ import type { CronJobLike } from "./loop-cron-classifier.ts";
 import {
   type LoopOrchestratorDeps,
   type LoopOrchestratorProductionOptions,
+  buildClaimPrRequest,
   createLoopOrchestrator,
   createLoopOrchestratorGetter,
   formatPreClaimMarker,
@@ -1747,6 +1748,41 @@ describe("createLoopOrchestrator", () => {
       { itemType: "pr", recordId: "pr-record-cuid-abc" },
     ]);
     expect(recordCalls).toEqual([]);
+  });
+
+  test("claimPr is invoked with the full WorkPrCandidate, including authorLogin/headRefName/title (POM-1.2)", async () => {
+    const consumed = new Set<string>();
+    const { reporter } = makeRecordingReporter();
+    const reviewCandidates = [
+      pr("acme/x#9", "2026-01-01T00:00:00Z", "review", {
+        authorLogin: "octocat",
+        headRefName: "feat/some-branch",
+        title: "Add the origin metrics dimension",
+      }),
+    ];
+    const { runner } = makeDrainingRunner(
+      { review: reviewCandidates },
+      consumed,
+    );
+    const claimPrCalls: WorkPrCandidate[] = [];
+    const deps = makeDeps({
+      reviewCandidates,
+      runner,
+      reporter,
+      consumed,
+      claimPr: async (candidate: WorkPrCandidate) => {
+        claimPrCalls.push(candidate);
+        return { id: "pr-record-cuid-xyz", commitSha: candidate.commitSha };
+      },
+    });
+    const loop = createLoopOrchestrator(deps);
+
+    await loop([job("shipwright-review", true)]);
+
+    expect(claimPrCalls).toHaveLength(1);
+    expect(claimPrCalls[0]?.authorLogin).toBe("octocat");
+    expect(claimPrCalls[0]?.headRefName).toBe("feat/some-branch");
+    expect(claimPrCalls[0]?.title).toBe("Add the origin metrics dimension");
   });
 
   test("recordSkip/resetSkip errors don't propagate or abort the tick — the drain still proceeds", async () => {
@@ -4472,5 +4508,61 @@ describe("formatPreClaimMarker", () => {
     expect(formatPreClaimMarker("clxRECORD", "deadbeef1234")).toBe(
       "[preclaim:clxRECORD:deadbeef1234]",
     );
+  });
+});
+
+// ─── buildClaimPrRequest (POM-1.2) ─────────────────────────────────────────
+
+describe("buildClaimPrRequest", () => {
+  test("forwards authorLogin/headRefName/title from the candidate alongside repo/prNumber/commitSha/phase", () => {
+    const candidate = pr("acme/x#9", "2026-01-01T00:00:00Z", "review", {
+      authorLogin: "octocat",
+      headRefName: "feat/some-branch",
+      title: "Add the origin metrics dimension",
+    });
+
+    const request = buildClaimPrRequest(candidate, {
+      repo: "acme/x",
+      prNumber: 9,
+    });
+
+    expect(request).toEqual({
+      repo: "acme/x",
+      prNumber: 9,
+      commitSha: candidate.commitSha,
+      phase: "review",
+      authorLogin: "octocat",
+      headRefName: "feat/some-branch",
+      title: "Add the origin metrics dimension",
+    });
+  });
+
+  test("defaults phase to 'review' and leaves authorLogin/headRefName/title undefined when absent from the candidate", () => {
+    const candidate = pr("acme/x#9", "2026-01-01T00:00:00Z", "review");
+    const { phase: _drop, ...candidateWithoutPhase } = candidate;
+
+    const request = buildClaimPrRequest(candidateWithoutPhase, {
+      repo: "acme/x",
+      prNumber: 9,
+    });
+
+    expect(request.phase).toBe("review");
+    expect(request.authorLogin).toBeUndefined();
+    expect(request.headRefName).toBeUndefined();
+    expect(request.title).toBeUndefined();
+  });
+
+  test("passes through an explicit patch/deploy phase unchanged", () => {
+    const candidate = pr("acme/x#9", "2026-01-01T00:00:00Z", "deploy", {
+      authorLogin: "bodhi-agent",
+    });
+
+    const request = buildClaimPrRequest(candidate, {
+      repo: "acme/x",
+      prNumber: 9,
+    });
+
+    expect(request.phase).toBe("deploy");
+    expect(request.authorLogin).toBe("bodhi-agent");
   });
 });

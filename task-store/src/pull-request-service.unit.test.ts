@@ -11,6 +11,7 @@ import { describe, expect, test } from "bun:test";
 import { FixedClock } from "./clock.ts";
 import { BadRequestError, NotFoundError } from "./errors.ts";
 import type { PullRequest } from "./index.ts";
+import { deriveOrigin } from "./pr-origin-derivation.ts";
 import {
   MAX_CENSUS_ENTRIES,
   PullRequestService,
@@ -2174,5 +2175,287 @@ describe("PullRequestService.getCensusCursor() (POM-1.1)", () => {
     const cursor = await svc.getCensusCursor("org/repo");
 
     expect(cursor).toBeNull();
+  });
+});
+
+// ─── deriveOrigin() (POM-1.2) ───────────────────────────────────────────────
+
+describe("deriveOrigin() (POM-1.2)", () => {
+  test("authorLogin 'github-actions[bot]' -> ci", () => {
+    expect(
+      deriveOrigin({ hasLinkedTask: false, authorLogin: "github-actions[bot]" }),
+    ).toBe("ci");
+  });
+
+  test("headRef matching chore/chart-v* with no matching author -> ci", () => {
+    expect(
+      deriveOrigin({
+        hasLinkedTask: false,
+        authorLogin: "someone",
+        headRef: "chore/chart-v1.2.3",
+      }),
+    ).toBe("ci");
+  });
+
+  test("headRef matching chore/plugin-version-v* -> ci", () => {
+    expect(
+      deriveOrigin({
+        hasLinkedTask: false,
+        headRef: "chore/plugin-version-v1.0.0",
+      }),
+    ).toBe("ci");
+  });
+
+  test("a headRef that merely contains, but doesn't start with, the chore/chart-v prefix does not match", () => {
+    expect(
+      deriveOrigin({
+        hasLinkedTask: false,
+        authorLogin: "octocat",
+        headRef: "feat/chore/chart-v1.2.3",
+      }),
+    ).toBe("human");
+  });
+
+  test("authorLogin 'renovate[bot]' -> dependency_bot", () => {
+    expect(
+      deriveOrigin({ hasLinkedTask: false, authorLogin: "renovate[bot]" }),
+    ).toBe("dependency_bot");
+  });
+
+  test("authorLogin 'dependabot[bot]' -> dependency_bot", () => {
+    expect(
+      deriveOrigin({ hasLinkedTask: false, authorLogin: "dependabot[bot]" }),
+    ).toBe("dependency_bot");
+  });
+
+  test("a task-row match with a human authorLogin -> shipwright", () => {
+    expect(
+      deriveOrigin({ hasLinkedTask: true, authorLogin: "octocat" }),
+    ).toBe("shipwright");
+  });
+
+  test("a human login with no task-row match -> human", () => {
+    expect(
+      deriveOrigin({ hasLinkedTask: false, authorLogin: "octocat" }),
+    ).toBe("human");
+  });
+
+  test("missing authorLogin and no task-row match -> unknown", () => {
+    expect(deriveOrigin({ hasLinkedTask: false })).toBe("unknown");
+    expect(deriveOrigin({ hasLinkedTask: false, authorLogin: null })).toBe(
+      "unknown",
+    );
+    expect(deriveOrigin({ hasLinkedTask: false, authorLogin: "" })).toBe(
+      "unknown",
+    );
+  });
+
+  test("a task-row match takes precedence over an authorLogin that would otherwise say 'ci'", () => {
+    expect(
+      deriveOrigin({
+        hasLinkedTask: true,
+        authorLogin: "github-actions[bot]",
+      }),
+    ).toBe("shipwright");
+  });
+
+  test("a task-row match takes precedence over an authorLogin that would otherwise say 'dependency_bot'", () => {
+    expect(
+      deriveOrigin({ hasLinkedTask: true, authorLogin: "renovate[bot]" }),
+    ).toBe("shipwright");
+  });
+});
+
+// ─── PullRequestService.claim() origin stamping (POM-1.2) ──────────────────
+
+interface ClaimPrismaSeedRow extends Partial<PullRequest> {
+  id: string;
+  repo: string;
+  prNumber: number;
+}
+
+/**
+ * A hand-built Prisma double for exercising claim()'s POM-1.2 origin-stamping
+ * tail call end-to-end: findUnique/update/create on `pullRequest` (the
+ * conflict-detection WHERE guard is intentionally not simulated — these tests
+ * only exercise the origin-stamping behavior tacked on after a successful
+ * write, not the CRF-1.1 race-detection logic covered elsewhere), a no-op
+ * `pullRequestEvent.create` audit stub, a `task.findFirst` stub backed by a
+ * caller-supplied list of linked-task rows, and a callback-form
+ * `$transaction`. Mirrors makeOriginPrismaDouble's conventions, extended with
+ * the `task` table claim()'s origin derivation now needs.
+ */
+function makeClaimPrismaDouble(
+  seed: ClaimPrismaSeedRow[] = [],
+  taskRows: { repo: string; pr: number }[] = [],
+) {
+  const rows = new Map<string, Partial<PullRequest>>();
+  for (const row of seed) {
+    rows.set(`${row.repo}#${row.prNumber}`, { ...row });
+  }
+  let nextId = rows.size;
+
+  const prisma = {
+    pullRequest: {
+      findUnique({
+        where,
+      }: {
+        where: { repo_prNumber: { repo: string; prNumber: number } };
+      }) {
+        const { repo, prNumber } = where.repo_prNumber;
+        return Promise.resolve(rows.get(`${repo}#${prNumber}`) ?? null);
+      },
+      update({
+        where,
+        data,
+      }: {
+        where: { id: string };
+        data: Record<string, unknown>;
+      }) {
+        for (const [key, row] of rows) {
+          if (row.id === where.id) {
+            const updated = { ...row, ...data };
+            rows.set(key, updated);
+            return Promise.resolve(updated);
+          }
+        }
+        return Promise.reject(new Error(`row ${where.id} not found`));
+      },
+      create({ data }: { data: Record<string, unknown> }) {
+        nextId += 1;
+        // Mirror Prisma's own behavior for an omitted nullable column
+        // (`origin PrOrigin?` has no explicit default): the stored value is
+        // `null`, not simply absent — matters because upsertOriginFields'
+        // first-write-wins check tests `existing.origin === null` and would
+        // otherwise wrongly treat an omitted key as "already has an origin".
+        const record = { id: `pr-${nextId}`, origin: null, ...data };
+        rows.set(`${data.repo}#${data.prNumber}`, record);
+        return Promise.resolve(record);
+      },
+    },
+    pullRequestEvent: {
+      create(_args: unknown) {
+        return Promise.resolve({ id: "event-1" });
+      },
+    },
+    task: {
+      findFirst({ where }: { where: { repo: string; pr: number } }) {
+        const match = taskRows.find(
+          (t) => t.repo === where.repo && t.pr === where.pr,
+        );
+        return Promise.resolve(match ? { id: `task-${match.repo}-${match.pr}` } : null);
+      },
+    },
+    $transaction<T>(fn: (tx: unknown) => Promise<T>): Promise<T> {
+      return fn(prisma);
+    },
+    _rows: rows,
+  };
+  return prisma;
+}
+
+describe("PullRequestService.claim() origin stamping (POM-1.2)", () => {
+  const NOW = new Date("2026-09-16T00:00:00.000Z");
+  const clock = FixedClock(NOW);
+
+  test("creates a new row and stamps origin derived from authorLogin/headRef/title", async () => {
+    const prisma = makeClaimPrismaDouble();
+    const svc = new PullRequestService(prisma as never, clock);
+
+    const { status, record } = await svc.claim(
+      "org/repo",
+      42,
+      "sha1",
+      "agent-a",
+      "review",
+      undefined,
+      "octocat",
+      "feat/x",
+      "Add X",
+    );
+
+    expect(status).toBe(201);
+    expect(record.origin).toBe("human" as never);
+    expect(record.authorLogin).toBe("octocat");
+    expect(record.headRef).toBe("feat/x");
+    expect(record.title).toBe("Add X");
+  });
+
+  test("a task-row match derives origin='shipwright' on create, even when authorLogin looks like a bot", async () => {
+    const prisma = makeClaimPrismaDouble([], [{ repo: "org/repo", pr: 42 }]);
+    const svc = new PullRequestService(prisma as never, clock);
+
+    const { record } = await svc.claim(
+      "org/repo",
+      42,
+      "sha1",
+      "agent-a",
+      "review",
+      undefined,
+      "github-actions[bot]",
+    );
+
+    expect(record.origin).toBe("shipwright" as never);
+  });
+
+  test("existing claim() callers with the old positional argument count still work (authorLogin/headRef/title omitted -> unknown)", async () => {
+    const prisma = makeClaimPrismaDouble();
+    const svc = new PullRequestService(prisma as never, clock);
+
+    const { status, record } = await svc.claim(
+      "org/repo",
+      7,
+      "sha1",
+      "agent-a",
+    );
+
+    expect(status).toBe(201);
+    expect(record.origin).toBe("unknown" as never);
+  });
+
+  test("claim() on an existing row with a non-null origin does not change origin, but still updates authorLogin/headRef/title/commitSha/claimedBy/claimedAt/heartbeatAt/phase", async () => {
+    const prisma = makeClaimPrismaDouble([
+      {
+        id: "pr-existing",
+        repo: "org/repo",
+        prNumber: 42,
+        origin: "human" as never,
+        authorLogin: "old-login",
+        headRef: "old-ref",
+        title: "old title",
+        commitSha: "old-sha",
+        claimedBy: null,
+        claimedAt: null,
+        heartbeatAt: null,
+        phase: null,
+        reviewState: "pending" as never,
+      },
+    ]);
+    const svc = new PullRequestService(prisma as never, clock);
+
+    const { status, record } = await svc.claim(
+      "org/repo",
+      42,
+      "new-sha",
+      "agent-b",
+      "review",
+      undefined,
+      // Would derive "ci" if origin weren't already set — proves
+      // first-write-wins holds through claim(), not just stampOrigin().
+      "github-actions[bot]",
+      "new-ref",
+      "new title",
+    );
+
+    expect(status).toBe(200);
+    expect(record.origin).toBe("human" as never);
+    expect(record.authorLogin).toBe("github-actions[bot]");
+    expect(record.headRef).toBe("new-ref");
+    expect(record.title).toBe("new title");
+    expect(record.commitSha).toBe("new-sha");
+    expect(record.claimedBy).toBe("agent-b");
+    expect(record.claimedAt).toBe(NOW.toISOString());
+    expect(record.heartbeatAt).toBe(NOW.toISOString());
+    expect(record.phase).toBe("review" as never);
   });
 });
