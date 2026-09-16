@@ -53,6 +53,15 @@ import type { GeneratedTool } from "./generated-tools.ts";
  * task-store/src/routes/sessions.ts throws `ForbiddenError` for any non-admin
  * token), so it's in the same "write op outside the agreed edit surface"
  * category as `prs_findings`, not the "agent-token-scoped read" category.
+ *
+ * POM-1.1 (PR origin metrics) added two routes: `POST /prs/census` (batch
+ * upsert of authorLogin/headRef/title/state/mergedAt/prCreatedAt/origin,
+ * keyed by (repo, prNumber)) and `GET /prs/census/cursor` (the incremental-
+ * search-window cursor POM-4.1's census sweep reads). `prs_census` is
+ * excluded here — deliberately, per POM-1.1's brief — as a write op in the
+ * same category as `prs_findings`/`sessions_update`. `prs_cursor` (the
+ * cursor GET) stays public: it's a read, scoped by `?repo=` the same way
+ * `prs_list`/`prs_get` already are.
  */
 export const EXCLUDED_TOOLS: readonly string[] = [
   // tasks: pipeline-internal lifecycle
@@ -85,13 +94,16 @@ export const EXCLUDED_TOOLS: readonly string[] = [
   "prs_findings",
   // sessions: admin-only write op
   "sessions_update",
+  // prs: census batch-upsert write op (POM-1.1) — prs_cursor (the read-only
+  // cursor GET) stays public, see the doc comment above.
+  "prs_census",
 ] as const;
 
 /**
  * Filter a generated tool list down to the agreed public surface.
  * Allowed tools: tasks_list, tasks_create, tasks_bulk, tasks_distinct,
- * tasks_get, tasks_update, prs_list, prs_get, prs_update, sessions_list,
- * sessions_get (11 total).
+ * tasks_get, tasks_update, prs_list, prs_get, prs_update, prs_cursor,
+ * sessions_list, sessions_get (12 total).
  */
 export function allowedTools(tools: GeneratedTool[]): GeneratedTool[] {
   const excluded = new Set<string>(EXCLUDED_TOOLS);

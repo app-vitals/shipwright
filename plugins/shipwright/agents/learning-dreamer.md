@@ -94,8 +94,8 @@ Every item cites the evidence:
   sessions; the team moved to per-branch ephemeral DBs. Stale.
 
 ## Memory
-- **Dan** — approves PRs with "Ship it" comments; prefers code decisions explained
-  before asking him to merge. Seen in 8 sessions (mar-10 refactor, mar-12 ×2, mar-14 ×3, mar-15, mar-16).
+- **The code reviewer** — approves PRs with "Ship it" comments; prefers code decisions explained
+  before asking for merge approval. Seen in 8 sessions (mar-10 refactor, mar-12 ×2, mar-14 ×3, mar-15, mar-16).
 
 ## Harness — flushed to other repos
 - **`shipwright`** (`~/src/shipwright`) — 1 small edit applied, 1 issue

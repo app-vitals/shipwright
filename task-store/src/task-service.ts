@@ -28,6 +28,10 @@ import type {
   TaskKind,
 } from "./index.ts";
 import { buildRepoOrgWhere } from "./lib/repo-org-filter.ts";
+import {
+  type PrOriginStamper,
+  PullRequestService,
+} from "./pull-request-service.ts";
 import { resolveReadyTasks } from "./ready.ts";
 import { SessionService } from "./session-service.ts";
 import { CLOSED_STATUSES, OPEN_STATUSES } from "./statuses.ts";
@@ -398,6 +402,17 @@ export class TaskService implements TaskServiceLike {
     // any method here — wiring specific task-store events to fire it is
     // future work.
     private webhookDispatcher: WebhookDispatcher = async () => {},
+    // POM-1.1: the origin-stamping dependency update() calls on a pr_open
+    // transition. Defaults to a real PullRequestService built over the same
+    // `prisma`/`clock` — mirrors SessionService's internally-constructed
+    // pattern above, so every existing `new TaskService(prisma)` /
+    // `new TaskService(prisma, clock)` call site is unaffected. Tests can
+    // inject a minimal PrOriginStamper double instead of a full
+    // PullRequestServiceLike fake.
+    private pullRequestService: PrOriginStamper = new PullRequestService(
+      prisma,
+      clock,
+    ),
   ) {
     this.sessionService = new SessionService(prisma, clock);
   }
@@ -771,9 +786,39 @@ export class TaskService implements TaskServiceLike {
   }
 
   async update(id: string, data: Prisma.TaskUpdateInput): Promise<Task> {
+    // PATCH bodies are plain JSON (never Prisma's `{ set: value }` operation
+    // wrapper form), so reading fields off `data` as a loose record is safe
+    // here, mirroring how routes/tasks.ts already treats PATCH bodies.
+    const patch = data as Record<string, unknown>;
     try {
       return await this.prisma.$transaction(async (tx) => {
         const existing = await tx.task.findUnique({ where: { id } });
+
+        // POM-1.1: the resulting (status, pr, repo) after this PATCH is
+        // applied — "resulting" merges an explicitly-supplied field with
+        // whatever is already on the row (undefined in the PATCH means
+        // "leave it as-is"; an explicit null is a real value).
+        const resultingStatus =
+          patch.status !== undefined ? patch.status : existing?.status;
+        const resultingPr: number | null =
+          patch.pr !== undefined
+            ? (patch.pr as number | null)
+            : (existing?.pr ?? null);
+        const resultingRepo =
+          patch.repo !== undefined
+            ? (patch.repo as string | null)
+            : (existing?.repo ?? null);
+
+        // Closes the invariant PullRequestService.stampOrigin() below
+        // depends on holding forever (not just by convention): a PATCH must
+        // never leave status='pr_open' with pr null — neither newly
+        // supplied in this PATCH nor already present on the row.
+        if (resultingStatus === "pr_open" && resultingPr === null) {
+          throw new BadRequestError(
+            "status: 'pr_open' requires a non-null pr — supply pr in this PATCH or ensure the task already has one",
+          );
+        }
+
         const record = await tx.task.update({
           where: { id },
           data,
@@ -796,6 +841,29 @@ export class TaskService implements TaskServiceLike {
         // WebhookDeliveryError here propagates uncaught and Prisma rolls
         // back the update.
         await this.webhookDispatcher("task.write", [record]);
+
+        // POM-1.1: TaskService.update() is the first of three stampOrigin()
+        // call sites (POM-1.2 wires the third) — dev-task.md's initial
+        // pr_open PATCH (status+pr both supplied) and unblock.md's
+        // re-affirm-only PATCH (status alone, pr already on the row) both
+        // send exactly the payload shape that triggers this: fires only
+        // when THIS PATCH explicitly set status:'pr_open' (not on every
+        // unrelated PATCH to an already-pr_open task), with a resolvable
+        // non-null pr and repo, in the SAME transaction as the task write —
+        // no separate API call from either command.
+        if (
+          patch.status === "pr_open" &&
+          resultingPr !== null &&
+          typeof resultingRepo === "string"
+        ) {
+          await this.pullRequestService.stampOrigin(
+            resultingRepo,
+            resultingPr,
+            { origin: "shipwright" },
+            tx,
+          );
+        }
+
         return record;
       }, WEBHOOK_TX_OPTIONS);
     } catch (err: unknown) {

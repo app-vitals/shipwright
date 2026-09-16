@@ -2952,6 +2952,173 @@ describe("renderTasksPage — blocker badges", () => {
   });
 });
 
+// ─── renderTasksPage — kind badge ──────────────────────────────────────────────
+
+describe("renderTasksPage — kind badge (TKD-1.4)", () => {
+  function render(tasks: TaskItem[]): string {
+    return renderTasksPage(
+      tasks,
+      {},
+      false,
+      USER_NAME,
+      {},
+      { total: tasks.length, limit: 50, page: 1 },
+      undefined,
+      undefined,
+    );
+  }
+
+  function renderBoard(
+    tasks: TaskItem[],
+    filters: Parameters<typeof renderTasksPage>[1] = {},
+    suggestions: Parameters<typeof renderTasksPage>[7] = undefined,
+    prsByTaskId: Parameters<typeof renderTasksPage>[10] = {},
+    now?: Parameters<typeof renderTasksPage>[12],
+  ): string {
+    return renderTasksPage(
+      tasks,
+      filters,
+      false,
+      USER_NAME,
+      {},
+      { total: tasks.length, limit: 50, page: 1 },
+      undefined,
+      suggestions,
+      false,
+      "America/Los_Angeles",
+      prsByTaskId,
+      "board",
+      now,
+    );
+  }
+
+  // AC2: table view shows a "PRD" badge only for kind === "prd" tasks
+  test("table view: task with kind 'prd' shows a PRD badge", () => {
+    const prdTask: TaskItem = {
+      id: "TASK-PRD-1",
+      title: "PRD kind task",
+      status: "pending",
+      session: null,
+      repo: null,
+      assignee: null,
+      claimedBy: null,
+      kind: "prd",
+    };
+    const html = render([prdTask]);
+    expect(html).toContain("PRD");
+    expect(html).toContain("badge-purple");
+  });
+
+  // AC2: table view does NOT show a PRD badge for kind === "dev"
+  test("table view: task with kind 'dev' does not show a PRD badge", () => {
+    const devTask: TaskItem = {
+      id: "TASK-DEV-1",
+      title: "Dev kind task",
+      status: "pending",
+      session: null,
+      repo: null,
+      assignee: null,
+      claimedBy: null,
+      kind: "dev",
+    };
+    const html = render([devTask]);
+    // The specific PRD badge should NOT be present (but there will be status badges, etc.)
+    // To be precise: no PRD badge for dev kind
+    const hasPrdBadgeSpan = html.includes(
+      '<span class="badge badge-purple" style="font-size:10px;margin-left:6px">PRD</span>',
+    );
+    expect(hasPrdBadgeSpan).toBe(false);
+  });
+
+  // AC2: table view does NOT show a PRD badge for undefined/missing kind (backward compat)
+  test("table view: task without kind field shows no PRD badge", () => {
+    const taskNoKind: TaskItem = {
+      id: "TASK-NO-KIND",
+      title: "No kind task",
+      status: "pending",
+      session: null,
+      repo: null,
+      assignee: null,
+      claimedBy: null,
+    };
+    const html = render([taskNoKind]);
+    const hasPrdBadgeSpan = html.includes(
+      '<span class="badge badge-purple" style="font-size:10px;margin-left:6px">PRD</span>',
+    );
+    expect(hasPrdBadgeSpan).toBe(false);
+  });
+
+  // AC2: board view shows a "PRD" badge only for kind === "prd" tasks
+  test("board view: task with kind 'prd' shows a PRD badge", () => {
+    const prdTask: TaskItem = {
+      id: "BOARD-PRD-1",
+      title: "Board PRD task",
+      status: "pending",
+      session: null,
+      repo: null,
+      assignee: null,
+      claimedBy: null,
+      kind: "prd",
+    };
+    const html = renderBoard([prdTask]);
+    expect(html).toContain("PRD");
+    expect(html).toContain("badge-purple");
+  });
+
+  // AC2: board view does NOT show a PRD badge for kind === "dev"
+  test("board view: task with kind 'dev' does not show a PRD badge", () => {
+    const devTask: TaskItem = {
+      id: "BOARD-DEV-1",
+      title: "Board dev task",
+      status: "pending",
+      session: null,
+      repo: null,
+      assignee: null,
+      claimedBy: null,
+      kind: "dev",
+    };
+    const html = renderBoard([devTask]);
+    const hasPrdBadgeSpan = html.includes(
+      '<span class="badge badge-purple" style="font-size:10px;margin-left:6px">PRD</span>',
+    );
+    expect(hasPrdBadgeSpan).toBe(false);
+  });
+
+  // AC2: board view does NOT show a PRD badge for undefined/missing kind (backward compat)
+  test("board view: task without kind field shows no PRD badge", () => {
+    const taskNoKind: TaskItem = {
+      id: "BOARD-NO-KIND",
+      title: "Board no kind task",
+      status: "pending",
+      session: null,
+      repo: null,
+      assignee: null,
+      claimedBy: null,
+    };
+    const html = renderBoard([taskNoKind]);
+    const hasPrdBadgeSpan = html.includes(
+      '<span class="badge badge-purple" style="font-size:10px;margin-left:6px">PRD</span>',
+    );
+    expect(hasPrdBadgeSpan).toBe(false);
+  });
+
+  // XSS: kind value is escaped (even though it should only be "dev" | "prd")
+  test("table view: kind value is HTML-escaped", () => {
+    const xssTask = {
+      id: "TASK-XSS",
+      title: "XSS task",
+      status: "pending",
+      session: null,
+      repo: null,
+      assignee: null,
+      claimedBy: null,
+      kind: "<script>alert(1)</script>",
+    } as TaskItem;
+    const html = render([xssTask]);
+    expect(html).not.toContain("<script>alert(1)</script>");
+  });
+});
+
 // ─── renderTasksPage — PR column ──────────────────────────────────────────────
 
 describe("renderTasksPage — PR column", () => {
@@ -6919,6 +7086,55 @@ describe("renderTaskDetailPage — session link to /admin/sessions/{session}", (
     expect(html).toContain(
       `<a href="/admin/sessions/session-xyz?from=${encodeURIComponent(from)}"`,
     );
+  });
+});
+
+// ─── renderTaskDetailPage — kind field (TKD-1.4) ────────────────────────────────
+
+describe("renderTaskDetailPage — kind field (TKD-1.4)", () => {
+  function render(task: Partial<TaskItem> = {}): string {
+    return renderTaskDetailPage(
+      { ...TASK_DETAIL, ...task },
+      USER_NAME,
+      {},
+      "UTC",
+    );
+  }
+
+  // AC1: Task detail page shows a Kind row when kind is set
+  test("shows Kind row when task.kind is 'prd'", () => {
+    const html = render({ kind: "prd" });
+    expect(html).toContain("Kind");
+    expect(html).toContain("prd");
+  });
+
+  test("shows Kind row when task.kind is 'dev'", () => {
+    const html = render({ kind: "dev" });
+    expect(html).toContain("Kind");
+    expect(html).toContain("dev");
+  });
+
+  // Backward compat: no Kind row when kind is absent
+  test("no Kind row when kind is null", () => {
+    const html = render({ kind: null });
+    // The Kind label should not appear in the HTML
+    expect(html).not.toContain(
+      '<td style="width:170px;padding:8px 12px;color:#6b7280;font-size:12px;font-weight:500;vertical-align:top;white-space:nowrap">Kind</td>',
+    );
+  });
+
+  test("no Kind row when kind is undefined", () => {
+    const html = render({ kind: undefined });
+    expect(html).not.toContain(
+      '<td style="width:170px;padding:8px 12px;color:#6b7280;font-size:12px;font-weight:500;vertical-align:top;white-space:nowrap">Kind</td>',
+    );
+  });
+
+  // XSS: kind value is escaped
+  test("Kind value is HTML-escaped", () => {
+    const html = render({ kind: "<script>alert(1)</script>" });
+    expect(html).not.toContain("<script>alert(1)</script>");
+    expect(html).toContain("&lt;script&gt;");
   });
 });
 

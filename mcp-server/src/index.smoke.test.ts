@@ -1,4 +1,4 @@
-import { describe, it, expect } from "bun:test";
+import { describe, expect, it } from "bun:test";
 import { createApp } from "./index.js";
 import { EXCLUDED_TOOLS } from "./tool-allowlist.js";
 
@@ -12,6 +12,7 @@ const ALLOWED_TOOL_NAMES = [
   "prs_list",
   "prs_get",
   "prs_update",
+  "prs_cursor",
   "sessions_list",
   "sessions_get",
 ] as const;
@@ -30,17 +31,19 @@ describe("mcp-server", () => {
     expect(res.status).toBe(200);
   });
 
-  it("GET /mcp/tools returns only the 11 allowed tools", async () => {
+  it("GET /mcp/tools returns only the 12 allowed tools", async () => {
     const res = await app.request("/mcp/tools", {
       headers: { Authorization: `Bearer ${TEST_TOKEN}` },
     });
     expect(res.status).toBe(200);
 
-    const body = (await res.json()) as { tools: Array<{ name: string; description: string }> };
+    const body = (await res.json()) as {
+      tools: Array<{ name: string; description: string }>;
+    };
     const toolNames = body.tools.map((t) => t.name);
 
-    // Verify we have exactly 11 tools
-    expect(toolNames).toHaveLength(11);
+    // Verify we have exactly 12 tools
+    expect(toolNames).toHaveLength(12);
 
     // Verify all allowed tools are present
     for (const name of ALLOWED_TOOL_NAMES) {

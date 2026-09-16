@@ -78,6 +78,40 @@ When `GET /tasks?ready=true` evaluates whether a task is eligible to run, it che
 
 4. **Any other status is not satisfied.** If a dependency does not match one of the three rules above (e.g., it has `status = pending`, `status = blocked`, or is `pr_open` on a different branch with no PR link), the task cannot run — the dependency is unsatisfied and the task is excluded from `?ready=true` results.
 
+### PR origin metrics
+
+`PullRequest.origin` is a `PrOrigin` enum (`shipwright` | `ci` | `dependency_bot` | `human` |
+`unknown`) recording where a PR record first learned about the PR. It's nullable and
+**first-write-wins**: once set, no later write ever overwrites it — see
+`PullRequestService.stampOrigin()`. Three call sites write it:
+
+1. `TaskService.update()` — when a PATCH sends `status: "pr_open"` and the resulting `pr` is
+   non-null (either supplied in the same PATCH or already on the row), the task-store stamps
+   `origin: "shipwright"` on the linked `(repo, pr)` PullRequest row **in the same transaction** as
+   the task write — no extra API call from `dev-task.md`/`unblock.md`. A PATCH that would leave
+   `status: "pr_open"` with `pr` null (neither supplied nor already on the row) is rejected with
+   `400` — this invariant is enforced server-side, not just by convention.
+2. `POST /prs/census` — a batch upsert (`{repo, prNumber, origin?, authorLogin?, headRef?, title?,
+   state?, mergedAt?, prCreatedAt?}[]`, capped at 200 entries per call) used by a repo-wide census
+   sweep to backfill origin/author/branch/title for PRs the pipeline never claimed directly.
+   `authorLogin`/`headRef`/`title`/`state`/`mergedAt`/`prCreatedAt` are written unconditionally;
+   `origin` follows the same first-write-wins rule. It never touches
+   claim/phase/review/patch/blocked fields, so it's safe to run alongside review/patch/deploy's
+   separate `POST /prs/claim` lock. New rows get `phase=null`, `reviewState="pending"`,
+   `staged=false`.
+3. A third call site (not yet wired) will stamp non-`shipwright` origins (`ci` / `dependency_bot` /
+   `human`) as they're detected.
+
+`GET /prs/census/cursor?repo=org/name` returns `{ cursor }` — the max `mergedAt` among rows scoped
+to `repo` with a non-null `origin`, or `null` when none exist — the incremental search window the
+census sweep uses to avoid re-scanning the same PRs every run.
+
+`GET /prs` accepts `?origin=shipwright,ci` (comma-separated) to filter by any of the given values.
+
+**Known gap:** a PR that never goes through the `pr_open` transition, `POST /prs/claim`, or the
+census sweep (e.g. a canary-revert PR opened directly by `deploy.md`) has no PullRequest row at
+all, and therefore no `origin`. This is an accepted gap, not a bug.
+
 ### Same-branch exclusivity guard
 
 A pending task is excluded from the ready set if another task shares its non-null/non-empty `branch` field and is `in_progress` with a fresh claim. This "same-branch exclusivity guard" prevents multiple agents from simultaneously executing tasks bound to the same feature branch — a real dev-task session is likely mid-flight on that shared git branch.
