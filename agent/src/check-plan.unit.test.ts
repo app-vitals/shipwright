@@ -142,7 +142,7 @@ describe("getPlanCandidates", () => {
   });
 
   // ─── Human-escalation gate ─────────────────────────────────────────────────
-  // The `?kind=prd&status=pending` query carries no hitl
+  // buildPrdTaskQuery()'s task-store query carries no hitl
   // filter (Task.hitl is nullable, so `?hitl=false` would drop the entire
   // NULL-hitl queue), so the gate lives in the mapper via
   // isTaskBlockedForDispatch — matching check-review/check-patch/check-deploy.
@@ -187,10 +187,28 @@ describe("getPlanCandidates", () => {
 // ─── Task-store query shape (TKD-1.1) ─────────────────────────────────────────
 
 describe("buildPrdTaskQuery", () => {
-  test("asks the task store for kind=prd&status=pending, not the legacy boolean flag", () => {
+  test("asks the task store for kind=prd&status=pending", () => {
     const query = buildPrdTaskQuery();
     expect(query.get("kind")).toBe("prd");
     expect(query.get("status")).toBe("pending");
-    expect(query.get("autonomousPlanSession")).toBeNull();
+  });
+
+  // The agent and the task-store deploy independently, and the task-store
+  // ignores query params it doesn't recognize instead of rejecting them. On a
+  // task-store that predates TKD-1.1, a kind-only query would silently widen
+  // to `?status=pending` — every pending task becomes a plan candidate and
+  // ordinary dev tasks get dispatched as `/shipwright:plan-session
+  // --autonomous`. The legacy flag rides along so the pool stays narrow either
+  // way.
+  test("also sends the legacy autonomousPlanSession flag so the pool stays narrow against a pre-TKD-1.1 task-store", () => {
+    expect(buildPrdTaskQuery().get("autonomousPlanSession")).toBe("true");
+  });
+
+  test("sends no filter beyond kind, the legacy flag, and status", () => {
+    expect([...buildPrdTaskQuery().keys()].sort()).toEqual([
+      "autonomousPlanSession",
+      "kind",
+      "status",
+    ]);
   });
 });

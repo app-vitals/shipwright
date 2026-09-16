@@ -1029,11 +1029,12 @@ export function createLoopOrchestrator(
 
         // Dedupe by id, plan-tagged copy winning — a defensive backstop, not
         // a workaround. The two providers' pools are already disjoint in
-        // practice: check-plan asks for `?kind=prd&status=pending`, and
-        // check-dev-task's `?ready=true` excludes the `kind: "prd"` slice
-        // outright (task-store's ready.ts, added by PDR-2.2 on the legacy
-        // boolean and re-expressed on the enum by TKD-1.1), so a PRD task
-        // cannot legitimately appear in dev-task's list at all.
+        // practice: check-plan asks for the PRD slice (buildPrdTaskQuery), and
+        // check-dev-task's `?ready=true` excludes it outright — task-store's
+        // ready.ts drops a task whose `kind` is "prd" OR whose legacy
+        // `autonomousPlanSession` is true (PDR-2.2's check, kept alongside the
+        // enum by TKD-1.1 so the exclusion fails closed), so a PRD task cannot
+        // legitimately appear in dev-task's list at all.
         //
         // The dedupe stays because that disjointness is enforced server-side,
         // one deploy away: an agent binary running against an older task-store

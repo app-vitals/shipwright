@@ -8,9 +8,10 @@
  * candidate mapper, an async collector, and a buildProductionDeps() wiring
  * over createTaskStoreClient) — but queries a different slice of the task
  * store. Where dev-task asks for `?ready=true` (dependency-resolved work
- * items), this phase asks for `?kind=prd&status=pending` (TKD-1.1, replacing
- * the legacy `?autonomousPlanSession=true`): PRD tasks flagged for autonomous
- * planning that nobody has picked up yet. These are the tasks PDR-3.1's
+ * items), this phase asks for `?kind=prd&autonomousPlanSession=true&
+ * status=pending` (TKD-1.1 — `kind` is the current spelling, the legacy flag
+ * is sent alongside it for the transition window): PRD tasks flagged for
+ * autonomous planning that nobody has picked up yet. These are PDR-3.1's
  * autonomous plan-session mode consumes, and they are deliberately NOT
  * filtered by `ready` — a PRD task awaiting planning has no dependency graph
  * to resolve, and `?ready=true` excludes the whole `kind: "prd"` slice anyway.
@@ -85,7 +86,7 @@ export async function getPlanCandidates(
     // check-review/check-patch/check-deploy call isTaskBlockedForDispatch()
     // on the linked task, and check-dev-task gets the equivalent for free
     // from task-store's ?ready=true filter (ready.ts drops hitl === true).
-    // The `?kind=prd&status=pending` query below has no
+    // buildPrdTaskQuery()'s query below (see its doc comment) has no
     // such gate, so a task a human escalated with `hitl: true` while leaving
     // it `pending` would otherwise be claimed and dispatched into an
     // autonomous plan session.
@@ -124,9 +125,27 @@ export async function getPlanCandidates(
  * client: `kind=prd` is the current spelling of what used to be
  * `autonomousPlanSession=true`, and getting it wrong silently empties the
  * whole plan phase.
+ *
+ * BOTH spellings are sent for the duration of the transition window, and the
+ * redundancy is deliberate. `agent/` and `task-store/` deploy independently,
+ * and the task-store's list-query schema ignores params it doesn't recognize
+ * rather than rejecting them — so against a task-store that predates TKD-1.1 a
+ * `kind`-only query degrades to a bare `?status=pending`, making EVERY pending
+ * task a plan candidate. loop-orchestrator's dedupe deliberately lets the
+ * plan-tagged copy win ties, so ordinary dev tasks would then be dispatched as
+ * `/shipwright:plan-session --autonomous`. Sending the legacy flag too keeps
+ * the pool correctly narrowed on an old task-store, and costs nothing on a new
+ * one: normalizeTaskKind() forces the pair to agree on every write path, so
+ * `kind=prd` and `autonomousPlanSession=true` select the same rows.
+ *
+ * Drop the legacy param once every deployed task-store honors `?kind=`.
  */
 export function buildPrdTaskQuery(): URLSearchParams {
-  return new URLSearchParams({ kind: "prd", status: "pending" });
+  return new URLSearchParams({
+    kind: "prd",
+    autonomousPlanSession: "true",
+    status: "pending",
+  });
 }
 
 export function buildProductionDeps(): CheckPlanDeps {

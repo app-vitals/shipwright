@@ -706,7 +706,11 @@ describe("TaskService kind/autonomousPlanSession normalization (TKD-1.1)", () =>
     expect(createData[0].autonomousPlanSession).toBeUndefined();
   });
 
-  it("create() lets an explicit kind win over a contradicting legacy flag", async () => {
+  // "Wins" has to mean "overwrites", not "is stored next to". A row persisted
+  // as kind='dev' + autonomousPlanSession=true passes both `?ready=true` and
+  // the legacy `?autonomousPlanSession=true` filter while `?kind=prd` misses
+  // it — the exact self-contradicting row normalizeTaskKind exists to prevent.
+  it("create() lets an explicit kind win over a contradicting legacy flag, forcing the flag to agree", async () => {
     const { prisma, createData } = makeWriteRecordingDouble();
     const service = new TaskService(prisma);
 
@@ -719,6 +723,36 @@ describe("TaskService kind/autonomousPlanSession normalization (TKD-1.1)", () =>
     } as never);
 
     expect(createData[0].kind).toBe("dev");
+    expect(createData[0].autonomousPlanSession).toBe(false);
+  });
+
+  it("create() forces the legacy flag true when kind:'prd' contradicts autonomousPlanSession:false", async () => {
+    const { prisma, createData } = makeWriteRecordingDouble();
+    const service = new TaskService(prisma);
+
+    await service.create({
+      id: "t1",
+      title: "Plan me",
+      status: "pending",
+      kind: "prd",
+      autonomousPlanSession: false,
+    } as never);
+
+    expect(createData[0].kind).toBe("prd");
+    expect(createData[0].autonomousPlanSession).toBe(true);
+  });
+
+  it("update() forces the legacy flag to agree when a PATCH sends a contradicting pair", async () => {
+    const { prisma, updateData } = makeWriteRecordingDouble();
+    const service = new TaskService(prisma);
+
+    await service.update("t1", {
+      kind: "prd",
+      autonomousPlanSession: false,
+    } as never);
+
+    expect(updateData[0].kind).toBe("prd");
+    expect(updateData[0].autonomousPlanSession).toBe(true);
   });
 
   it("create() normalizes autonomousPlanSession:false to kind:'dev'", async () => {

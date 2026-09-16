@@ -150,6 +150,12 @@ export function bulkTxTimeoutMs(taskCount: number): number {
  *
  * Precedence: an explicitly-supplied `kind` always wins — it's the current
  * spelling, so a caller that sends both is taken at its most specific word.
+ * "Wins" means it *overwrites* a contradicting legacy flag rather than
+ * deferring to it: `{ kind: "dev", autonomousPlanSession: true }` is stored as
+ * `kind='dev', autonomousPlanSession=false`. Leaving the caller's flag intact
+ * would persist a row that is "dev" to ready.ts and `?kind=` but "prd" to the
+ * deprecated `?autonomousPlanSession=true` filter — exactly the divergence
+ * this function exists to prevent.
  * A write that mentions neither field is returned untouched, leaving the
  * column's `dev` default (create) or the stored value (update) in place.
  *
@@ -164,10 +170,10 @@ export function normalizeTaskKind<
 >(data: T): T {
   const { kind, autonomousPlanSession } = data;
   if (kind !== undefined) {
-    // Explicit kind wins. Back-fill the legacy flag only when the caller
-    // didn't state it, so the deprecated filter still sees this row.
-    if (typeof kind !== "string" || autonomousPlanSession !== undefined)
-      return data;
+    // Explicit kind wins — force the legacy flag to agree with it, whether the
+    // caller omitted it or contradicted it. Anything else lets a single
+    // request persist a row that disagrees with itself.
+    if (typeof kind !== "string") return data;
     return { ...data, autonomousPlanSession: kind === "prd" };
   }
   if (typeof autonomousPlanSession !== "boolean") return data;

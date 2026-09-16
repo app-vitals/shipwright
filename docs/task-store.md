@@ -57,14 +57,27 @@ opposed to what state it's in:
 | `prd` | A product spec awaiting an autonomous planning pass. Never part of the `?ready=true` set — a PRD task has no dependency graph to resolve and must not be picked up as dev work. | `/shipwright:plan-session {repo} {session} --autonomous {id}` |
 
 Filter on it with `?kind=dev` / `?kind=prd`; `agent/src/check-plan.ts` collects the plan phase's
-candidates with `?kind=prd&status=pending`.
+candidates with `?kind=prd&autonomousPlanSession=true&status=pending`. It sends both spellings on
+purpose: `agent/` and `task-store/` deploy independently, and the list-query schema ignores params
+it doesn't recognize rather than rejecting them, so against a task-store that predates `kind` a
+`kind`-only query would silently widen to `?status=pending` and make every pending task a plan
+candidate. Drop the legacy param once every deployed task-store honors `?kind=`.
 
 **Legacy `autonomousPlanSession`.** `kind` supersedes the boolean `autonomousPlanSession` flag,
 which remains fully supported during the transition window: it is still a column, still returned on
 every task, still accepted on `POST /tasks` and `POST /tasks/bulk`, and still filterable via
 `?autonomousPlanSession=true|false`. The task store normalizes the two into each other on every
 write — `autonomousPlanSession: true` stores `kind: "prd"`, and `kind: "prd"` back-fills the flag —
-so the pair never disagrees. If a single request sets both, the explicit `kind` wins.
+so the pair never disagrees. If a single request sets both, the explicit `kind` wins and the flag is
+**overwritten** to match it: `{"kind":"dev","autonomousPlanSession":true}` persists as `kind: "dev"`,
+`autonomousPlanSession: false`. Reading it the other way (storing the caller's contradiction as-is)
+would leave a row that is dev work to `?ready=true` and `?kind=` but a PRD task to
+`?autonomousPlanSession=true` — the divergence this normalization exists to prevent.
+
+Reads stay fail-closed while both spellings are live: `?ready=true` excludes a task whose `kind` is
+`"prd"` **or** whose legacy `autonomousPlanSession` is `true`, so a row written by an older
+task-store mid-rollout (legacy flag set, `kind` still at its `dev` default) is never handed out as
+dev work.
 
 ### Dependency satisfaction rules
 
