@@ -6,11 +6,11 @@
  */
 
 import { join } from "node:path";
-import { OpenAPIHono, createRoute } from "@hono/zod-openapi";
+import { createRoute, OpenAPIHono } from "@hono/zod-openapi";
 import { sentry } from "@sentry/hono/bun";
 import {
-  type ErrorCapturingClient,
   buildSentryInitOptions,
+  type ErrorCapturingClient,
 } from "@shipwright/lib/sentry";
 import { getCookie } from "hono/cookie";
 import { createMiddleware } from "hono/factory";
@@ -32,8 +32,8 @@ import { ErrorSchema } from "./lib/api-schemas.ts";
 import { registerWithAuthz } from "./lib/api-utils.ts";
 import { makeOnError } from "./lib/errors.ts";
 import {
-  SESSION_COOKIE,
   createSessionMiddleware,
+  SESSION_COOKIE,
 } from "./lib/session-middleware.ts";
 import type {
   MetricsProvider,
@@ -44,6 +44,8 @@ import {
   CostEfficiencyResultSchema,
   DateRangeQuerySchema,
   FeaturesResultSchema,
+  MergedPrsQuerySchema,
+  MergedPrsResultSchema,
   QueueResultSchema,
   SummaryResultSchema,
   TokensResultSchema,
@@ -256,6 +258,33 @@ const costEfficiencyRoute = createRoute({
   },
 });
 
+const mergedPrsRoute = createRoute({
+  method: "get",
+  path: "/metrics/merged-prs",
+  summary: "Merged PRs by repo and origin",
+  description:
+    "Returns merged pull requests grouped by repo, origin (shipwright | ci | dependency_bot | human | unknown), and time bucket. `groupBy` is required — day or week.",
+  request: { query: MergedPrsQuerySchema },
+  responses: {
+    200: {
+      description: "Merged PRs by repo",
+      content: { "application/json": { schema: MergedPrsResultSchema } },
+    },
+    400: {
+      description: "Invalid parameters",
+      content: { "application/json": { schema: ErrorSchema } },
+    },
+    401: {
+      description: "Unauthorized",
+      content: { "application/json": { schema: ErrorSchema } },
+    },
+    500: {
+      description: "Query error",
+      content: { "application/json": { schema: ErrorSchema } },
+    },
+  },
+});
+
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 function resolveDateRange(
@@ -343,7 +372,10 @@ function makeCostEfficiencyHandler(
     const startMs = Date.now();
 
     try {
-      const result = await provider.query({ kind: "costEfficiency", range: dateRange });
+      const result = await provider.query({
+        kind: "costEfficiency",
+        range: dateRange,
+      });
 
       const scopeIdx = result.columns.indexOf("scope");
       const modelIdx = result.columns.indexOf("model_family");
@@ -386,18 +418,37 @@ function makeCostEfficiencyHandler(
         const savingsUsd = toNum(row[savingsIdx]);
 
         if (scope === "fleet") {
-          fleetByModel.push({ modelFamily, routedUsd, counterfactualOpusUsd: opusUsd, savingsUsd });
+          fleetByModel.push({
+            modelFamily,
+            routedUsd,
+            counterfactualOpusUsd: opusUsd,
+            savingsUsd,
+          });
           fleetRoutedUsd += routedUsd;
           fleetOpusUsd += opusUsd;
         } else if (scope.startsWith("agent:")) {
           const agentId = scope.slice("agent:".length);
-          const savingsPct = opusUsd > 0
-            ? Math.round((savingsUsd / opusUsd) * 10000) / 100
-            : null;
-          byAgentModel.push({ agentId, modelFamily, routedUsd, counterfactualOpusUsd: opusUsd, savingsUsd, savingsPct });
+          const savingsPct =
+            opusUsd > 0
+              ? Math.round((savingsUsd / opusUsd) * 10000) / 100
+              : null;
+          byAgentModel.push({
+            agentId,
+            modelFamily,
+            routedUsd,
+            counterfactualOpusUsd: opusUsd,
+            savingsUsd,
+            savingsPct,
+          });
         } else if (scope.startsWith("cron:")) {
           const cronKey = scope.slice("cron:".length);
-          byCronModel.push({ cronKey, modelFamily, routedUsd, counterfactualOpusUsd: opusUsd, savingsUsd });
+          byCronModel.push({
+            cronKey,
+            modelFamily,
+            routedUsd,
+            counterfactualOpusUsd: opusUsd,
+            savingsUsd,
+          });
         }
       }
 
@@ -408,7 +459,9 @@ function makeCostEfficiencyHandler(
           : null;
 
       const runsTotal = new Set(byCronModel.map((r) => r.cronKey)).size;
-      const runsWithCostData = new Set(byCronModel.filter((r) => r.routedUsd > 0).map((r) => r.cronKey)).size;
+      const runsWithCostData = new Set(
+        byCronModel.filter((r) => r.routedUsd > 0).map((r) => r.cronKey),
+      ).size;
 
       return c.json(
         wrapResponse(
@@ -836,6 +889,130 @@ function makeQueueHandler(
   };
 }
 
+// ─── /metrics/merged-prs (POM-2.1) ────────────────────────────────────────
+
+const ORIGIN_KEYS = [
+  "shipwright",
+  "ci",
+  "dependency_bot",
+  "human",
+  "unknown",
+] as const;
+
+function zeroByOrigin(): Record<(typeof ORIGIN_KEYS)[number], number> {
+  return {
+    shipwright: 0,
+    ci: 0,
+    dependency_bot: 0,
+    human: 0,
+    unknown: 0,
+  };
+}
+
+function makeMergedPrsHandler(
+  provider: MetricsProvider,
+): AppHandler<typeof mergedPrsRoute> {
+  return async (c) => {
+    const { preset, from, to, groupBy } = c.req.valid("query");
+
+    if ((from && !to) || (!from && to)) {
+      return c.json({ error: "custom range requires both from and to" }, 400);
+    }
+    if (from && to) {
+      const rangeError = validateCustomRange(from, to);
+      if (rangeError) return c.json({ error: rangeError }, 400);
+    }
+
+    const dateRange = resolveDateRange(preset, from, to);
+    const dateRangeMeta = resolveDateRangeForMeta(preset, from, to);
+    const startMs = Date.now();
+
+    try {
+      const result = await provider.query({
+        kind: "mergedPrsByRepo",
+        range: dateRange,
+        groupBy,
+      });
+
+      const repoIdx = result.columns.indexOf("repo");
+      const originIdx = result.columns.indexOf("origin");
+      const periodIdx = result.columns.indexOf("period");
+      const countIdx = result.columns.indexOf("count");
+
+      const repoTotals = new Map<
+        string,
+        Record<(typeof ORIGIN_KEYS)[number], number>
+      >();
+      const trendByKey = new Map<
+        string,
+        {
+          period: string;
+          repo: string;
+          byOrigin: Record<(typeof ORIGIN_KEYS)[number], number>;
+        }
+      >();
+
+      for (const raw of result.results) {
+        const row = raw as unknown[];
+        const repo = String(row[repoIdx]);
+        const originRaw = String(row[originIdx]);
+        const origin = (ORIGIN_KEYS as readonly string[]).includes(originRaw)
+          ? (originRaw as (typeof ORIGIN_KEYS)[number])
+          : "unknown";
+        const period = String(row[periodIdx]);
+        const count = toNum(row[countIdx]);
+
+        const repoBucket = repoTotals.get(repo) ?? zeroByOrigin();
+        repoBucket[origin] += count;
+        repoTotals.set(repo, repoBucket);
+
+        const trendKey = `${period}\0${repo}`;
+        const trendEntry = trendByKey.get(trendKey) ?? {
+          period,
+          repo,
+          byOrigin: zeroByOrigin(),
+        };
+        trendEntry.byOrigin[origin] += count;
+        trendByKey.set(trendKey, trendEntry);
+      }
+
+      const repos = [...repoTotals.entries()]
+        .map(([repo, byOrigin]) => ({
+          repo,
+          total: Object.values(byOrigin).reduce((a, b) => a + b, 0),
+          byOrigin,
+        }))
+        .sort((a, b) => a.repo.localeCompare(b.repo));
+
+      const trend = [...trendByKey.values()].sort((a, b) =>
+        a.period === b.period
+          ? a.repo.localeCompare(b.repo)
+          : a.period.localeCompare(b.period),
+      );
+
+      return c.json(
+        wrapResponse(
+          {
+            from: dateRangeMeta.from,
+            to: dateRangeMeta.to,
+            groupBy,
+            repos,
+            trend,
+          },
+          {
+            dateRange: dateRangeMeta,
+            generatedAt: new Date().toISOString(),
+            queryTimeMs: Date.now() - startMs,
+          },
+        ),
+        200,
+      );
+    } catch (err) {
+      return handleQueryError(c, err);
+    }
+  };
+}
+
 // ─── Handler factory ─────────────────────────────────────────────────────────
 
 export function createMetricsApp(
@@ -1151,7 +1328,18 @@ export function createMetricsApp(
   registerWithAuthz(app, featuresRoute, metricsPolicy, handleFeatures);
   registerWithAuthz(app, queueRoute, metricsPolicy, handleQueue);
   registerWithAuthz(app, tokensRoute, metricsPolicy, handleTokens);
-  registerWithAuthz(app, costEfficiencyRoute, metricsPolicy, makeCostEfficiencyHandler(provider));
+  registerWithAuthz(
+    app,
+    costEfficiencyRoute,
+    metricsPolicy,
+    makeCostEfficiencyHandler(provider),
+  );
+  registerWithAuthz(
+    app,
+    mergedPrsRoute,
+    metricsPolicy,
+    makeMergedPrsHandler(provider),
+  );
 
   // ─── Dashboard static files ───────────────────────────────────────────────
 
@@ -1361,6 +1549,10 @@ const publicCostEfficiencyRoute = createRoute({
   ...costEfficiencyRoute,
   path: "/public/metrics/cost-efficiency",
 });
+const publicMergedPrsRoute = createRoute({
+  ...mergedPrsRoute,
+  path: "/public/metrics/merged-prs",
+});
 
 const PUBLIC_POLICY = { kind: "public" as const };
 
@@ -1457,7 +1649,18 @@ export function createPublicMetricsApp(
     app,
     publicCostEfficiencyRoute,
     PUBLIC_POLICY,
-    makeCostEfficiencyHandler(provider) as unknown as AppHandler<typeof publicCostEfficiencyRoute>,
+    makeCostEfficiencyHandler(provider) as unknown as AppHandler<
+      typeof publicCostEfficiencyRoute
+    >,
+  );
+
+  registerWithAuthz(
+    app,
+    publicMergedPrsRoute,
+    PUBLIC_POLICY,
+    makeMergedPrsHandler(provider) as unknown as AppHandler<
+      typeof publicMergedPrsRoute
+    >,
   );
 
   // Token usage is owner-only telemetry — not exposed publicly.

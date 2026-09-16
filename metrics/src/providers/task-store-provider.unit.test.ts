@@ -214,3 +214,156 @@ describe("TaskStoreProvider.featuresReviews (unit) — task-originated grouping"
     ).toBeUndefined();
   });
 });
+
+// ─── mergedPrsByRepo (POM-2.1) ─────────────────────────────────────────────
+
+describe("TaskStoreProvider.mergedPrsByRepo (unit) — repo × origin × bucket grouping", () => {
+  const RANGE_WIDE = { from: "2026-05-25", to: "2026-06-15" } as const;
+
+  function buildPrs(): PrRecord[] {
+    return [
+      {
+        id: "pr-1",
+        repo: "org/alpha",
+        state: "merged",
+        origin: "shipwright",
+        mergedAt: "2026-06-01T12:00:00.000Z", // Monday
+      },
+      {
+        id: "pr-2",
+        repo: "org/alpha",
+        state: "merged",
+        origin: "ci",
+        mergedAt: "2026-06-02T12:00:00.000Z", // Tuesday — same ISO week as pr-1
+      },
+      {
+        id: "pr-3",
+        repo: "org/alpha",
+        state: "merged",
+        origin: "dependency_bot",
+        mergedAt: "2026-06-09T12:00:00.000Z", // Tuesday, next week
+      },
+      {
+        id: "pr-4",
+        repo: "org/beta",
+        state: "merged",
+        origin: "human",
+        mergedAt: "2026-06-01T12:00:00.000Z",
+      },
+      {
+        id: "pr-5",
+        repo: "org/beta",
+        state: "merged",
+        origin: null, // no stamped origin → unknown bucket
+        mergedAt: "2026-06-02T12:00:00.000Z",
+      },
+      {
+        id: "pr-6",
+        repo: "org/beta",
+        state: "open", // excluded — not merged, despite carrying a mergedAt-shaped value
+        origin: "shipwright",
+        mergedAt: "2026-06-03T12:00:00.000Z",
+      },
+      {
+        id: "pr-7",
+        repo: "org/alpha",
+        state: "closed", // excluded — not merged
+        origin: "human",
+        mergedAt: "2026-06-04T12:00:00.000Z",
+      },
+    ];
+  }
+
+  function totalsByRepoOrigin(t: {
+    columns: string[];
+    results: unknown[][];
+  }): Map<string, number> {
+    const totals = new Map<string, number>();
+    for (const row of t.results) {
+      const repo = String(row[colIndex(t, "repo")]);
+      const origin = String(row[colIndex(t, "origin")]);
+      const count = Number(row[colIndex(t, "count")]);
+      const key = `${repo}:${origin}`;
+      totals.set(key, (totals.get(key) ?? 0) + count);
+    }
+    return totals;
+  }
+
+  test("groupBy=day: exact repo×origin totals; null origin → unknown; open/closed excluded", async () => {
+    const provider = buildProvider([], buildPrs());
+    const t = await provider.query({
+      kind: "mergedPrsByRepo",
+      range: RANGE_WIDE,
+      groupBy: "day",
+    });
+
+    expect(t.columns).toEqual(["repo", "origin", "period", "count"]);
+
+    const totals = totalsByRepoOrigin(t);
+    expect(totals.get("org/alpha:shipwright")).toBe(1);
+    expect(totals.get("org/alpha:ci")).toBe(1);
+    expect(totals.get("org/alpha:dependency_bot")).toBe(1);
+    expect(totals.get("org/beta:human")).toBe(1);
+    expect(totals.get("org/beta:unknown")).toBe(1);
+    // Excluded (state !== merged) rows contribute nothing.
+    expect(totals.get("org/beta:shipwright")).toBeUndefined();
+    expect(totals.get("org/alpha:human")).toBeUndefined();
+    expect(totals.size).toBe(5);
+
+    // Three distinct calendar-day buckets: 06-01, 06-02, 06-09.
+    const periods = new Set(t.results.map((r) => r[colIndex(t, "period")]));
+    expect(periods).toEqual(
+      new Set(["2026-06-01", "2026-06-02", "2026-06-09"]),
+    );
+
+    const alphaShipwright = t.results.find(
+      (r) =>
+        r[colIndex(t, "repo")] === "org/alpha" &&
+        r[colIndex(t, "origin")] === "shipwright",
+    );
+    expect(alphaShipwright?.[colIndex(t, "period")]).toBe("2026-06-01");
+    expect(alphaShipwright?.[colIndex(t, "count")]).toBe(1);
+  });
+
+  test("groupBy=week: same-week rows collapse into one bucket; a following week stays separate", async () => {
+    const provider = buildProvider([], buildPrs());
+    const t = await provider.query({
+      kind: "mergedPrsByRepo",
+      range: RANGE_WIDE,
+      groupBy: "week",
+    });
+
+    const totals = totalsByRepoOrigin(t);
+    expect(totals.get("org/alpha:shipwright")).toBe(1);
+    expect(totals.get("org/alpha:ci")).toBe(1);
+    expect(totals.get("org/alpha:dependency_bot")).toBe(1);
+    expect(totals.get("org/beta:human")).toBe(1);
+    expect(totals.get("org/beta:unknown")).toBe(1);
+    expect(totals.size).toBe(5);
+
+    const alphaShipwright = t.results.find(
+      (r) =>
+        r[colIndex(t, "repo")] === "org/alpha" &&
+        r[colIndex(t, "origin")] === "shipwright",
+    );
+    const alphaCi = t.results.find(
+      (r) =>
+        r[colIndex(t, "repo")] === "org/alpha" &&
+        r[colIndex(t, "origin")] === "ci",
+    );
+    const alphaDepBot = t.results.find(
+      (r) =>
+        r[colIndex(t, "repo")] === "org/alpha" &&
+        r[colIndex(t, "origin")] === "dependency_bot",
+    );
+
+    // pr-1 (06-01, Mon) and pr-2 (06-02, Tue) fall in the same Monday-anchored
+    // week bucket; pr-3 (06-09, the following Tuesday) falls in the next one.
+    expect(alphaShipwright?.[colIndex(t, "period")]).toBe("2026-06-01");
+    expect(alphaCi?.[colIndex(t, "period")]).toBe("2026-06-01");
+    expect(alphaDepBot?.[colIndex(t, "period")]).toBe("2026-06-08");
+
+    const periods = new Set(t.results.map((r) => r[colIndex(t, "period")]));
+    expect(periods).toEqual(new Set(["2026-06-01", "2026-06-08"]));
+  });
+});

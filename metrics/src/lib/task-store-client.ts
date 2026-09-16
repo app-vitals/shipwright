@@ -76,13 +76,22 @@ type PrOptionalOverrides = Pick<
   | "reviewCycles"
   | "patchCycles"
   | "prNumber"
+  | "state"
+  | "origin"
+  | "authorLogin"
+  | "headRef"
+  | "title"
 >;
 
 /**
  * Slim PR record — drives review-derived metrics. `reviewState` takes the live
  * task-store values `approved | posted | pending` (an `approved` review is the
  * "ship it" equivalent). The store records no per-PR findings count, so
- * `avg_review_findings` is emitted as null by this provider.
+ * `avg_review_findings` is emitted as null by this provider. `state`
+ * (`open | merged | closed`) and `origin` (POM-1.1's `shipwright | ci |
+ * dependency_bot | human | unknown | null`) drive the merged-PRs-by-repo
+ * metric (POM-2.1); `authorLogin`/`headRef`/`title` are carried through for
+ * completeness but not currently read by any provider query.
  */
 export type PrRecord = Pick<PullRequestSchema, "mergedAt"> &
   Partial<PrOptionalOverrides>;
@@ -113,6 +122,7 @@ export interface TaskStoreClient {
     to?: string;
     reviewState?: string;
     repo?: string;
+    state?: string;
   }): Promise<PrRecord[]>;
 }
 
@@ -315,11 +325,15 @@ export class HttpTaskStoreClient implements TaskStoreClient {
     to?: string;
     reviewState?: string;
     repo?: string;
+    state?: string;
   }): Promise<PrRecord[]> {
     // Same server-side pre-filter / client-side precise-filter split as
-    // listTasks() above.
+    // listTasks() above. `state` (open|merged|closed) is a live GET /prs
+    // query param — passed straight through server-side, same as
+    // reviewState, with no client-side re-filter needed.
     const prs = await this.fetchAllPages<PrRecord>("/prs", "prs", {
       reviewState: params.reviewState,
+      state: params.state,
       updatedSince: params.from,
       repo: params.repo,
     });

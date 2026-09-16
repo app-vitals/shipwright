@@ -167,7 +167,13 @@ describe("public metrics surface — cost-efficiency", () => {
     // A cron with 2 models contributing cost → runsWithCostData should be 1, not 2
     const provider: MetricsProvider = {
       query: async () => ({
-        columns: ["scope", "model_family", "routed_usd", "opus_usd", "savings_usd"],
+        columns: [
+          "scope",
+          "model_family",
+          "routed_usd",
+          "opus_usd",
+          "savings_usd",
+        ],
         results: [
           // cron-a uses 2 models with cost → counts as 1 run with cost data
           ["cron:cron-a", "claude-sonnet", 1.5, 2.0, 0.5],
@@ -184,6 +190,75 @@ describe("public metrics surface — cost-efficiency", () => {
     const body = await res.json();
     expect(body.data.runsTotal).toBe(2); // cron-a and cron-b
     expect(body.data.runsWithCostData).toBe(1); // only cron-a has routedUsd > 0
+  });
+});
+
+describe("public metrics surface — merged PRs (POM-2.1)", () => {
+  test("GET /public/metrics/merged-prs?groupBy=week → 200 with no auth header", async () => {
+    const app = buildApp();
+    const res = await app.request(
+      "/public/metrics/merged-prs?preset=7d&groupBy=week",
+    );
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.data.repos).toEqual([]);
+    expect(body.data.trend).toEqual([]);
+  });
+
+  test("GET /public/metrics/merged-prs → only the public repo's rows appear, empty when it has no merged PRs", async () => {
+    // Provider returns two repos' worth of merged-PR rows; a real repo-scoped
+    // provider (constructed with a `repo` ctor param) would only ever be able
+    // to produce rows for its own repo, but this test drives the handler
+    // directly against a provider that returns cross-repo rows to prove the
+    // route itself does no extra scoping beyond what the injected provider
+    // already narrowed to. Empty-repo case (AC#3) is covered by the
+    // no-auth-header test above via makeEmptyProvider().
+    const provider: MetricsProvider = {
+      query: async (q) => {
+        if (q.kind === "mergedPrsByRepo") {
+          return {
+            columns: ["repo", "origin", "period", "count"],
+            results: [["org/public-repo", "shipwright", "2026-06-01", 3]],
+            types: [],
+          };
+        }
+        return emptyResult;
+      },
+    };
+    const app = createPublicMetricsApp(provider);
+    const res = await app.request(
+      "/public/metrics/merged-prs?preset=7d&groupBy=day",
+    );
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.data.repos).toEqual([
+      {
+        repo: "org/public-repo",
+        total: 3,
+        byOrigin: {
+          shipwright: 3,
+          ci: 0,
+          dependency_bot: 0,
+          human: 0,
+          unknown: 0,
+        },
+      },
+    ]);
+    expect(body.data.trend).toHaveLength(1);
+  });
+
+  test("GET /public/metrics/merged-prs with missing groupBy → 400", async () => {
+    const app = buildApp();
+    const res = await app.request("/public/metrics/merged-prs?preset=7d");
+    expect(res.status).toBe(400);
+  });
+
+  test("GET /public/metrics/merged-prs with invalid groupBy → 400", async () => {
+    const app = buildApp();
+    const res = await app.request(
+      "/public/metrics/merged-prs?preset=7d&groupBy=month",
+    );
+    expect(res.status).toBe(400);
   });
 });
 

@@ -10,18 +10,18 @@
  */
 
 import {
-  AdminMetricsClientError,
   type AdminMetricsClient,
+  AdminMetricsClientError,
   type ChatTokenStats,
   type CronRunTokenStats,
 } from "../lib/admin-metrics-client.ts";
 import {
-  type PrRecord,
-  type TaskRecord,
-  type TaskStoreClient,
   inWindow,
   matchesRepo,
+  type PrRecord,
   prAnchor,
+  type TaskRecord,
+  type TaskStoreClient,
   taskAnchor,
 } from "../lib/task-store-client.ts";
 
@@ -56,10 +56,12 @@ export class RecordedTaskStoreClient implements TaskStoreClient {
     to?: string;
     reviewState?: string;
     repo?: string;
+    state?: string;
   }): Promise<PrRecord[]> {
     return this.prs.filter((p) => {
       if (params.reviewState && p.reviewState !== params.reviewState)
         return false;
+      if (params.state && p.state !== params.state) return false;
       if (!matchesRepo(p.repo, params.repo)) return false;
       return inWindow(prAnchor(p), params);
     });

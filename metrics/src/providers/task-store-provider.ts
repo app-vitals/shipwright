@@ -17,14 +17,14 @@
  */
 
 import {
-  OPUS_MODEL,
   calculateCost,
   normalizeModelToRateKey,
+  OPUS_MODEL,
 } from "@shipwright/lib/pricing";
 import { resolveQueryRange } from "../formatters.ts";
 import {
-  AdminMetricsClientError,
   type AdminMetricsClient,
+  AdminMetricsClientError,
   type ChatTokenStats,
   type CronRunTokenStats,
   type TokenAggregate,
@@ -38,8 +38,8 @@ import type {
 } from "../lib/task-store-client.ts";
 import type {
   MetricQuery,
-  MetricTable,
   MetricsProvider,
+  MetricTable,
 } from "../metrics-provider.ts";
 
 const DASHBOARD_TZ = "America/Los_Angeles";
@@ -98,6 +98,34 @@ function sum(values: Array<number | null>): number {
 
 function dayBucket(ts: string): string {
   return new Date(ts).toLocaleDateString("en-CA", { timeZone: DASHBOARD_TZ });
+}
+
+/**
+ * Monday-anchored ISO-week bucket (YYYY-MM-DD of that week's Monday), derived
+ * from the DASHBOARD_TZ calendar day. Pure string/UTC date arithmetic on the
+ * already-resolved LA calendar date — no further timezone conversion needed.
+ */
+function weekBucket(ts: string): string {
+  const day = dayBucket(ts);
+  const d = new Date(`${day}T00:00:00.000Z`);
+  const dow = d.getUTCDay(); // 0=Sun..6=Sat
+  const daysSinceMonday = (dow + 6) % 7;
+  d.setUTCDate(d.getUTCDate() - daysSinceMonday);
+  return d.toISOString().slice(0, 10);
+}
+
+// PR origin taxonomy (POM-1.1): shipwright | ci | dependency_bot | human |
+// unknown | null. A null/missing/unrecognized origin normalizes to "unknown"
+// — the merged-PRs-by-repo grouping's stated fallback bucket.
+const KNOWN_PR_ORIGINS = new Set([
+  "shipwright",
+  "ci",
+  "dependency_bot",
+  "human",
+]);
+
+function normalizeOrigin(origin: string | null | undefined): string {
+  return origin && KNOWN_PR_ORIGINS.has(origin) ? origin : "unknown";
 }
 
 function table(columns: string[], results: unknown[][]): MetricTable {
@@ -214,6 +242,8 @@ export class TaskStoreProvider implements MetricsProvider {
         return this.cycleRows(win, "started");
       case "queueCycleMerged":
         return this.cycleRows(win, "merged");
+      case "mergedPrsByRepo":
+        return this.mergedPrsByRepo(win, q.groupBy);
       case "tokensTotals":
         return this.tokensTotals(win);
       case "tokensBySessionType":
@@ -539,8 +569,7 @@ export class TaskStoreProvider implements MetricsProvider {
       // alone; otherwise require the repo to match so two PRs sharing a number
       // across repos can't be confused.
       const pr = prs.find(
-        (p) =>
-          (t.repo == null || p.repo === t.repo) && p.prNumber === t.pr,
+        (p) => (t.repo == null || p.repo === t.repo) && p.prNumber === t.pr,
       );
       if (!pr) continue;
       const arr = map.get(prefix) ?? [];
@@ -633,6 +662,47 @@ export class TaskStoreProvider implements MetricsProvider {
       null, // avg_review_findings — task-store PR records carry no findings count
     ];
     return table(columns, [row]);
+  }
+
+  /**
+   * Merged PRs grouped by repo × origin × time bucket (POM-2.1). Calls
+   * listPrs with state:"merged" (server-side filter — excludes open/closed)
+   * and buckets each row's mergedAt into a day or week period. A null/
+   * unrecognized origin normalizes to "unknown"; a row missing both repo and
+   * mergedAt is skipped (shouldn't happen for a real merged-state row, but
+   * keeps the grouping crash-proof against partial fixtures).
+   *
+   * Emits the finest grain (repo, origin, period, count) — api.ts's handler
+   * aggregates this into the repos[]/trend[] response shape, mirroring how
+   * every other query kind here returns a flat MetricTable for the handler
+   * to reshape.
+   */
+  private async mergedPrsByRepo(
+    win: { from: string; to: string },
+    groupBy: "day" | "week",
+  ): Promise<MetricTable> {
+    const prs = await this.taskStore.listPrs({
+      ...win,
+      state: "merged",
+      repo: this.repo,
+    });
+
+    const bucket = groupBy === "week" ? weekBucket : dayBucket;
+    const counts = new Map<string, number>();
+    for (const p of prs) {
+      if (!p.repo || !p.mergedAt) continue;
+      const key = [p.repo, normalizeOrigin(p.origin), bucket(p.mergedAt)].join(
+        "\0",
+      );
+      counts.set(key, (counts.get(key) ?? 0) + 1);
+    }
+
+    const columns = ["repo", "origin", "period", "count"];
+    const rows = [...counts.entries()].map(([key, count]) => [
+      ...key.split("\0"),
+      count,
+    ]);
+    return table(columns, rows);
   }
 
   private async cycleRows(
