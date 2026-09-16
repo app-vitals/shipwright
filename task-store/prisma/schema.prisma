@@ -209,6 +209,32 @@ enum PrPhase {
   deploy
 }
 
+// ─── PR Origin ────────────────────────────────────────────────────────────────
+// Where a PullRequest record's row first learned about the PR — the metrics
+// dimension POM-1.1 introduces. First-write-wins: once set, later writes never
+// overwrite it (see PullRequestService.stampOrigin()).
+//
+//   shipwright      — opened by a Shipwright command (dev-task.md/unblock.md's
+//                      pr_open transition stamps this server-side)
+//   ci               — opened by a CI bot (e.g. an automated dependency-bump
+//                      workflow that isn't the dependency_bot itself)
+//   dependency_bot   — opened by a dependency-update bot (Renovate/Dependabot)
+//   human            — opened directly by a human
+//   unknown          — origin could not be determined (e.g. discovered via the
+//                      POM-4.1 census sweep with no other signal)
+//
+// Nullable on the PullRequest model: a row with origin=NULL has never been
+// stamped — see the "known accepted gap" in POM-1.1's planning doc for PRs
+// that never go through pr_open, /prs/claim, or the census sweep.
+
+enum PrOrigin {
+  shipwright
+  ci
+  dependency_bot
+  human
+  unknown
+}
+
 // ─── Pull Request ─────────────────────────────────────────────────────────────
 // Tracks a GitHub PR through the Shipwright review → patch → deploy pipeline.
 // repo is in org/repo format (e.g. "app-vitals/shipwright").
@@ -246,6 +272,22 @@ model PullRequest {
   blocked           Boolean       @default(false)
   blockedReason     String?
 
+  // ─── Origin metrics (POM-1.1) ───
+  // All four nullable, purely additive columns. `origin` is written exactly
+  // once (first-write-wins) by PullRequestService.stampOrigin() from three
+  // call sites: TaskService.update()'s pr_open transition (this task),
+  // POST /prs/census's batch upsert (this task), and a third call site
+  // POM-1.2 wires up later. authorLogin/headRef/title are always written
+  // unconditionally by whichever call site supplies them (no first-write-wins
+  // — the latest known value wins for these three). A PR that never passes
+  // through any of those three paths (e.g. deploy.md's canary-revert PR) has
+  // no PullRequest row at all, let alone an origin — see POM-1.1's planning
+  // doc for that accepted gap.
+  origin       PrOrigin?
+  authorLogin  String?
+  headRef      String?
+  title        String?
+
   // ─── Skip tracking (auto-block after repeated no-op dispatches) ───
   // Mirrors Task.skipCount/lastSkippedAt — see comment there for the
   // threshold rationale (3, matching SPIN_DETECTION_THRESHOLD in
@@ -274,6 +316,7 @@ model PullRequest {
   @@index([state])
   @@index([reviewState])
   @@index([updatedAt])
+  @@index([origin])
 }
 
 // ─── PR Finding Disposition ───────────────────────────────────────────────────

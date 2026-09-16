@@ -3,6 +3,10 @@ import { computeBlockedBy } from "./blocked-by.ts";
 import { FixedClock } from "./clock.ts";
 import { BadRequestError, ConflictError, NotFoundError } from "./errors.ts";
 import type { PrismaClient, Task } from "./index.ts";
+import type {
+  PrOriginStamper,
+  StampOriginInput,
+} from "./pull-request-service.ts";
 import type { ReadyTaskLike } from "./ready.ts";
 import { CLOSED_STATUSES, OPEN_STATUSES } from "./statuses.ts";
 import {
@@ -2892,5 +2896,190 @@ describe("TaskService task.write transaction timeout (TSW-1.2)", () => {
     // greater, or the fix is cosmetic.
     const PRISMA_DEFAULT_TX_TIMEOUT_MS = 5000;
     expect(WEBHOOK_TX_TIMEOUT_MS).toBeGreaterThan(PRISMA_DEFAULT_TX_TIMEOUT_MS);
+  });
+});
+
+// ─── TaskService.update() — pr_open origin stamp + validation guard (POM-1.1) ──
+
+describe("TaskService.update() pr_open origin stamp + validation guard (POM-1.1)", () => {
+  interface StampCall {
+    repo: string;
+    prNumber: number;
+    data: StampOriginInput;
+    client: unknown;
+  }
+
+  /** Records every stampOrigin() call; returns a canned PullRequest-ish echo. */
+  function makeStamperDouble(): {
+    stamper: PrOriginStamper;
+    calls: StampCall[];
+  } {
+    const calls: StampCall[] = [];
+    const stamper: PrOriginStamper = {
+      async stampOrigin(repo, prNumber, data, client) {
+        calls.push({ repo, prNumber, data, client });
+        return {
+          id: "pr-x",
+          repo,
+          prNumber,
+          origin: data.origin ?? null,
+        } as never;
+      },
+    };
+    return { stamper, calls };
+  }
+
+  /**
+   * A task/taskEvent-only Prisma double whose findUnique() always returns the
+   * same seeded `existing` row (or null) — mirrors makeWriteRecordingDouble
+   * above, extended to support a non-null findUnique() result so
+   * update()'s pre-write `existing` read sees seeded status/pr/repo values.
+   */
+  function makeSeededPrismaDouble(existing: Record<string, unknown> | null) {
+    const updateData: Record<string, unknown>[] = [];
+    const prisma = {
+      task: {
+        findUnique: async () => existing,
+        update: async ({ data }: { data: Record<string, unknown> }) => {
+          updateData.push(data);
+          return { id: "t1", ...(existing ?? {}), ...data };
+        },
+      },
+      taskEvent: { create: async () => ({}) },
+      $transaction: async (fn: (tx: unknown) => Promise<unknown>) => fn(prisma),
+    };
+    return { prisma: prisma as unknown as PrismaClient, updateData };
+  }
+
+  it("throws BadRequestError when this PATCH sets status:'pr_open' and pr:null, with no pr already on the row", async () => {
+    const { prisma } = makeSeededPrismaDouble({
+      id: "t1",
+      status: "in_progress",
+      pr: null,
+      repo: "org/repo",
+    });
+    const { stamper, calls } = makeStamperDouble();
+    const service = new TaskService(prisma, undefined, undefined, stamper);
+
+    await expect(
+      service.update("t1", { status: "pr_open", pr: null } as never),
+    ).rejects.toThrow(BadRequestError);
+    expect(calls).toHaveLength(0);
+  });
+
+  it("throws BadRequestError when the resulting state (existing row) is already status='pr_open' with pr=null, even though this PATCH doesn't touch status or pr", async () => {
+    // Closes the invariant "forever, not just by convention" — a legacy row
+    // that somehow already violates it must not be silently perpetuated by
+    // an unrelated PATCH.
+    const { prisma } = makeSeededPrismaDouble({
+      id: "t1",
+      status: "pr_open",
+      pr: null,
+      repo: "org/repo",
+    });
+    const { stamper, calls } = makeStamperDouble();
+    const service = new TaskService(prisma, undefined, undefined, stamper);
+
+    await expect(
+      service.update("t1", { note: "unrelated" } as never),
+    ).rejects.toThrow(BadRequestError);
+    expect(calls).toHaveLength(0);
+  });
+
+  it("succeeds and calls stampOrigin(origin:'shipwright') when status:'pr_open' and a new pr are both supplied (dev-task.md's initial PATCH)", async () => {
+    const { prisma, updateData } = makeSeededPrismaDouble({
+      id: "t1",
+      status: "in_progress",
+      pr: null,
+      repo: "org/repo",
+    });
+    const { stamper, calls } = makeStamperDouble();
+    const service = new TaskService(prisma, undefined, undefined, stamper);
+
+    const result = await service.update("t1", {
+      status: "pr_open",
+      pr: 42,
+    } as never);
+
+    expect(result).toBeDefined();
+    expect(updateData).toHaveLength(1);
+    expect(calls).toHaveLength(1);
+    expect(calls[0]).toMatchObject({
+      repo: "org/repo",
+      prNumber: 42,
+      data: { origin: "shipwright" },
+    });
+  });
+
+  it("succeeds and calls stampOrigin when status:'pr_open' is re-affirmed alone, with pr already on the row (unblock.md's re-affirm-only path)", async () => {
+    const { prisma } = makeSeededPrismaDouble({
+      id: "t1",
+      status: "pr_open",
+      pr: 99,
+      repo: "org/repo",
+    });
+    const { stamper, calls } = makeStamperDouble();
+    const service = new TaskService(prisma, undefined, undefined, stamper);
+
+    await service.update("t1", { status: "pr_open" } as never);
+
+    expect(calls).toHaveLength(1);
+    expect(calls[0]).toMatchObject({
+      repo: "org/repo",
+      prNumber: 99,
+      data: { origin: "shipwright" },
+    });
+  });
+
+  it("does not call stampOrigin for a PATCH that doesn't set status:'pr_open', even when the row is already pr_open", async () => {
+    const { prisma } = makeSeededPrismaDouble({
+      id: "t1",
+      status: "pr_open",
+      pr: 5,
+      repo: "org/repo",
+    });
+    const { stamper, calls } = makeStamperDouble();
+    const service = new TaskService(prisma, undefined, undefined, stamper);
+
+    await service.update("t1", { note: "just a note" } as never);
+
+    expect(calls).toHaveLength(0);
+  });
+
+  it("does not call stampOrigin when the resulting repo is null (no key to upsert against)", async () => {
+    const { prisma } = makeSeededPrismaDouble({
+      id: "t1",
+      status: "in_progress",
+      pr: null,
+      repo: null,
+    });
+    const { stamper, calls } = makeStamperDouble();
+    const service = new TaskService(prisma, undefined, undefined, stamper);
+
+    const result = await service.update("t1", {
+      status: "pr_open",
+      pr: 10,
+    } as never);
+
+    expect(result).toBeDefined();
+    expect(calls).toHaveLength(0);
+  });
+
+  it("passes the same-transaction tx client through to stampOrigin's fourth argument", async () => {
+    const { prisma } = makeSeededPrismaDouble({
+      id: "t1",
+      status: "in_progress",
+      pr: null,
+      repo: "org/repo",
+    });
+    const { stamper, calls } = makeStamperDouble();
+    const service = new TaskService(prisma, undefined, undefined, stamper);
+
+    await service.update("t1", { status: "pr_open", pr: 1 } as never);
+
+    // $transaction's callback-form double invokes fn(prisma) — the `tx`
+    // handed to stampOrigin is that same object, proving the call happens
+    // inside update()'s own transaction rather than as a separate call.
+    expect(calls[0]?.client).toBe(prisma as never);
   });
 });

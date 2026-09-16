@@ -9,6 +9,15 @@ This is the public tool surface exposed by the MCP server (`@shipwright/mcp-serv
 after allowlist filtering. See [architecture.md](./architecture.md#mcp-server) for
 how the server is generated, wired, and executed.
 
+## `prs_cursor`
+
+Get the census incremental-search-window cursor for a repo
+
+- **Method:** GET
+- **Path:** `/prs/census/cursor`
+- **Has body:** No
+- **Parameters:** `repo` (query)
+
 ## `prs_get`
 
 Fetch a single pull request
@@ -25,7 +34,7 @@ List pull requests
 - **Method:** GET
 - **Path:** `/prs`
 - **Has body:** No
-- **Parameters:** `repo` (query), `org` (query), `prNumber` (query), `state` (query), `reviewState` (query), `staged` (query), `limit` (query), `offset` (query), `ready` (query), `blocked` (query), `sort` (query), `updatedSince` (query)
+- **Parameters:** `repo` (query), `org` (query), `prNumber` (query), `state` (query), `reviewState` (query), `staged` (query), `limit` (query), `offset` (query), `ready` (query), `blocked` (query), `sort` (query), `updatedSince` (query), `origin` (query)
 
 ## `prs_update`
 

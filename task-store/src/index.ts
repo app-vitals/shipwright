@@ -6,28 +6,29 @@
  * than reaching into the generated prisma/client directory directly.
  */
 
-export {
-  PrismaClient,
-  Prisma,
-  TaskKind,
-  TaskStatus,
-  PrState,
-  PrReviewState,
-  PrPhase,
-  PrFindingDisposition,
-  PrFindingSource,
-} from "../prisma/client/client.ts";
 export type {
-  Task,
-  TaskToken,
-  TaskEvent,
-  PullRequest,
   PrFinding,
+  PullRequest,
   PullRequestEvent,
   Session,
+  Task,
+  TaskEvent,
+  TaskToken,
+} from "../prisma/client/client.ts";
+export {
+  PrFindingDisposition,
+  PrFindingSource,
+  Prisma,
+  PrismaClient,
+  PrOrigin,
+  PrPhase,
+  PrReviewState,
+  PrState,
+  TaskKind,
+  TaskStatus,
 } from "../prisma/client/client.ts";
 export type {
   BlockedByEntry,
-  TaskWithBlockedBy,
   TaskListResult,
+  TaskWithBlockedBy,
 } from "./task-service.ts";

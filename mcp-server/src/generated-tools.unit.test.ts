@@ -2,10 +2,11 @@ import { describe, expect, it } from "bun:test";
 import { generatedTools } from "./generated-tools.ts";
 
 describe("generatedTools", () => {
-  it("emits one tool per OpenAPI operation (35 total)", () => {
+  it("emits one tool per OpenAPI operation (37 total)", () => {
     // 32 pre-SESH-2.2 + sessions_list (GET /sessions) + sessions_get
-    // (GET /sessions/{slug}) + sessions_update (PATCH /sessions/{slug}, SESH-3.1).
-    expect(generatedTools).toHaveLength(35);
+    // (GET /sessions/{slug}) + sessions_update (PATCH /sessions/{slug}, SESH-3.1)
+    // + prs_census (POST /prs/census) + prs_cursor (GET /prs/census/cursor, POM-1.1).
+    expect(generatedTools).toHaveLength(37);
   });
 
   it("has unique tool names", () => {
@@ -84,7 +85,10 @@ describe("generatedTools", () => {
     expect(tool?.hasArrayBody).toBe(true);
     // items property must be present and typed as array
     expect(tool?.inputSchema.properties).toHaveProperty("items");
-    const itemsProp = tool?.inputSchema.properties.items as Record<string, unknown>;
+    const itemsProp = tool?.inputSchema.properties.items as Record<
+      string,
+      unknown
+    >;
     expect(itemsProp?.type).toBe("array");
     // the spec's requestBody has no required:true, so items is optional
     // but the property must be present and well-typed

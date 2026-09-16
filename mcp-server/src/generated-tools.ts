@@ -742,6 +742,12 @@ export const generatedTools: GeneratedTool[] = [
             "Only return PRs with updatedAt >= this ISO timestamp. A conservative pre-filter, not a precise sync anchor.",
           example: "2026-01-01T00:00:00.000Z",
         },
+        origin: {
+          type: "string",
+          description:
+            "Comma-separated list of PrOrigin values (shipwright, ci, dependency_bot, human, unknown). Matches rows whose origin is any of the given values.",
+          example: "shipwright,ci",
+        },
       },
       required: [],
       additionalProperties: false,
@@ -761,6 +767,7 @@ export const generatedTools: GeneratedTool[] = [
       "blocked",
       "sort",
       "updatedSince",
+      "origin",
     ],
     pathParams: [],
     hasBody: false,
@@ -840,6 +847,51 @@ export const generatedTools: GeneratedTool[] = [
     queryParams: [],
     pathParams: [],
     hasBody: true,
+  },
+  {
+    name: "prs_census",
+    description: "Batch upsert PR origin/author/branch/title/state metadata",
+    inputSchema: {
+      type: "object",
+      properties: {
+        items: {
+          type: "array",
+          description: "Array of items to submit as the request body.",
+          items: {
+            $ref: "#/components/schemas/CensusEntry",
+          },
+        },
+      },
+      required: ["items"],
+      additionalProperties: false,
+    },
+    method: "POST",
+    pathTemplate: "/prs/census",
+    queryParams: [],
+    pathParams: [],
+    hasBody: true,
+    hasArrayBody: true,
+  },
+  {
+    name: "prs_cursor",
+    description: "Get the census incremental-search-window cursor for a repo",
+    inputSchema: {
+      type: "object",
+      properties: {
+        repo: {
+          type: "string",
+          description: "Repository in org/repo format.",
+          example: "org/repo",
+        },
+      },
+      required: ["repo"],
+      additionalProperties: false,
+    },
+    method: "GET",
+    pathTemplate: "/prs/census/cursor",
+    queryParams: ["repo"],
+    pathParams: [],
+    hasBody: false,
   },
   {
     name: "prs_get",
