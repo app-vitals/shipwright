@@ -1180,6 +1180,22 @@ export const generatedTools: GeneratedTool[] = [
             "Only sessions whose rollup.repos includes any of the given repo(s). Repeatable (?repo=a&repo=b).",
           example: "org/repo",
         },
+        org: {
+          anyOf: [
+            {
+              type: "string",
+            },
+            {
+              type: "array",
+              items: {
+                type: "string",
+              },
+            },
+          ],
+          description:
+            "Only sessions with a repo whose `org/repo` string starts with `<org>/`. Repeatable — pass `?org=` multiple times to match any of several orgs (e.g. `?org=a&org=b`).",
+          example: "org",
+        },
         q: {
           type: "string",
           description:
@@ -1200,7 +1216,16 @@ export const generatedTools: GeneratedTool[] = [
     },
     method: "GET",
     pathTemplate: "/sessions",
-    queryParams: ["state", "sort", "agentId", "repo", "q", "limit", "offset"],
+    queryParams: [
+      "state",
+      "sort",
+      "agentId",
+      "repo",
+      "org",
+      "q",
+      "limit",
+      "offset",
+    ],
     pathParams: [],
     hasBody: false,
   },
