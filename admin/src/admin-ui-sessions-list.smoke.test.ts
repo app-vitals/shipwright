@@ -97,6 +97,25 @@ function makeAgentService(
         })),
     listOptions: async () =>
       agents.map((a) => ({ id: a.id, name: a.name ?? `${a.id}-name` })),
+    // Real case-insensitive substring match, mirroring AgentService.searchByName
+    // (agents.ts), so tests exercising the agent-name filter can assert on
+    // genuine fuzzy/partial-match and zero-match behavior rather than a
+    // fixed/stubbed return value.
+    searchByName: async (query: string) => {
+      const q = query.toLowerCase();
+      return agents
+        .filter((a) => (a.name ?? `${a.id}-name`).toLowerCase().includes(q))
+        .map((a) => ({
+          id: a.id,
+          name: a.name ?? `${a.id}-name`,
+          slackId: null,
+          selfHosted: false,
+          typeName: "coding",
+          createdAt: new Date("2024-01-01"),
+          updatedAt: new Date("2024-01-01"),
+          repos: a.repos ?? [],
+        }));
+    },
   };
 }
 
@@ -510,5 +529,126 @@ describe("GET /admin/sessions — org filter forwarding", () => {
     const res = await app.request("/admin/sessions?org=my-org&org=other-org");
     expect(res.status).toBe(200);
     expect(captured.org).toEqual(["my-org", "other-org"]);
+  });
+});
+
+// ─── SLF-1.1: agent-name filter resolves to ids, not forwarded as agentId ───
+//
+// The Agent filter's <input> + datalist suggest agent *names*
+// (agentService.listOptions()), but the task-store's GET /sessions only
+// matches real agent *ids* (rollup.agentIds). Forwarding the typed name
+// straight through as `agentId` always returned zero sessions. The fix
+// resolves the name to matching ids via agentService.searchByName() first
+// (shared with the Tasks page via resolveAgentNameFilterAndPaginate in
+// admin-ui-pages.ts) and filters sessions client-side by agentIds membership.
+
+describe("GET /admin/sessions — agent name filter (SLF-1.1)", () => {
+  it("?agent=<name> returns only sessions whose agentIds resolve via searchByName, and never forwards the raw name as agentId", async () => {
+    const sessions = [
+      makeSession({ slug: "s-alpha", title: "Alpha session", agentIds: ["agent-alpha"] }),
+      makeSession({ slug: "s-beta", title: "Beta session", agentIds: ["agent-beta"] }),
+      makeSession({ slug: "s-none", title: "No agent session", agentIds: [] }),
+    ];
+    let capturedAgentId: string | null | undefined;
+    const app = buildApp({
+      agentService: makeAgentService([
+        { id: "agent-alpha", name: "Agent Alpha" },
+        { id: "agent-beta", name: "Agent Beta" },
+      ]),
+      fetchTaskStoreSessions: async (params) => {
+        capturedAgentId = params.get("agentId");
+        return { sessions, total: sessions.length, limit: 500, offset: 0 };
+      },
+    });
+    const res = await app.request("/admin/sessions?agent=Alpha");
+    expect(res.status).toBe(200);
+    const html = await res.text();
+    expect(html).toContain("Alpha session");
+    expect(html).not.toContain("Beta session");
+    expect(html).not.toContain("No agent session");
+    // The route must never forward the raw typed name as agentId — the
+    // task-store only understands real agent ids, not display names.
+    expect(capturedAgentId).toBeNull();
+  });
+
+  it("multiple fuzzy-matching agents are combined with OR semantics", async () => {
+    const sessions = [
+      makeSession({ slug: "s-alpha", title: "Alpha session", agentIds: ["agent-alpha"] }),
+      makeSession({ slug: "s-beta", title: "Beta session", agentIds: ["agent-beta"] }),
+      makeSession({ slug: "s-gamma", title: "Gamma session", agentIds: ["agent-gamma"] }),
+    ];
+    const app = buildApp({
+      agentService: makeAgentService([
+        { id: "agent-alpha", name: "Test Alpha" },
+        { id: "agent-beta", name: "Test Beta" },
+        { id: "agent-gamma", name: "Gamma Only" },
+      ]),
+      fetchTaskStoreSessions: async () => ({
+        sessions,
+        total: sessions.length,
+        limit: 500,
+        offset: 0,
+      }),
+    });
+    const res = await app.request("/admin/sessions?agent=Test");
+    expect(res.status).toBe(200);
+    const html = await res.text();
+    expect(html).toContain("Alpha session");
+    expect(html).toContain("Beta session");
+    expect(html).not.toContain("Gamma session");
+  });
+
+  it("an agent-name filter with zero matches returns an empty session list, not a full/unfiltered list or a 500", async () => {
+    const sessions = [
+      makeSession({ slug: "s-alpha", title: "Alpha session", agentIds: ["agent-alpha"] }),
+    ];
+    const app = buildApp({
+      agentService: makeAgentService([{ id: "agent-alpha", name: "Agent Alpha" }]),
+      fetchTaskStoreSessions: async () => ({
+        sessions,
+        total: sessions.length,
+        limit: 500,
+        offset: 0,
+      }),
+    });
+    const res = await app.request("/admin/sessions?agent=no-such-agent-name");
+    expect(res.status).toBe(200);
+    const html = await res.text();
+    expect(html).not.toContain("Alpha session");
+    expect(html).toContain("No sessions.");
+  });
+
+  it("keeps pagination correct (limit/offset) when the agent filter is active", async () => {
+    const sessions = Array.from({ length: 5 }, (_, i) =>
+      makeSession({
+        slug: `s-${i}`,
+        title: `Match session ${i}`,
+        state: "active",
+        agentIds: ["agent-match"],
+      }),
+    );
+    const app = buildApp({
+      agentService: makeAgentService([{ id: "agent-match", name: "Match Agent" }]),
+      fetchTaskStoreSessions: async (params) => {
+        // The route must widen to a large page (mirroring the Tasks page's
+        // 500/0) rather than forwarding the caller's own small limit/offset,
+        // since filtering happens client-side after this fetch.
+        expect(params.get("limit")).toBe("500");
+        expect(params.get("offset")).toBe("0");
+        return { sessions, total: sessions.length, limit: 500, offset: 0 };
+      },
+    });
+    const res = await app.request(
+      "/admin/sessions?agent=Match&limit=2&offset=2",
+    );
+    expect(res.status).toBe(200);
+    const html = await res.text();
+    expect(html).toContain("Match session 2");
+    expect(html).toContain("Match session 3");
+    expect(html).not.toContain("Match session 0");
+    expect(html).not.toContain("Match session 1");
+    expect(html).not.toContain("Match session 4");
+    // 5 total matches, page 2 of a 2-per-page window: 3–4 of 5.
+    expect(html).toContain("3–4 of 5");
   });
 });
