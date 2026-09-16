@@ -1033,15 +1033,14 @@ treats it as an unaddressed finding forever. Always lead the body with the liter
 label, on both the initial-review and re-review paths (Steps 10/11 run identically for both;
 see Step 14's re-review flow).
 
-**Worked example — the two cases production actually confused.** This convention was not
-followed on two separate PRs in another repo in this deployment (one self-authored, one not),
-and recurred again two days after that guidance landed, on another PR review in the same
-deployment — proof that prose guidance alone was not sufficient enforcement, which is why the
-decision is now mechanical (`compute-review-verdict.ts`) rather than freehand. All of these
-mislabeled review bodies read `Verdict: COMMENT` even though the narrative was explicitly
-clean — e.g. "No blocking issues found... checks out clean." In each case the underlying
-situation was actually Case 1 below (a clean review that should read `Verdict: APPROVE`), but
-it was written as if it were Case 2. Both cases resolve to the
+**Worked example — the two cases easily confused without mechanical enforcement.** Without
+explicit mechanical enforcement, this convention can be broken across multiple PRs (one
+self-authored, one not) — both mislabeled with `Verdict: COMMENT` even though the narrative
+was explicitly clean (e.g., "No blocking issues found... checks out clean.") when actually
+the underlying situation was Case 1 below (a clean review that should read `Verdict: APPROVE`).
+The recurrence of this error pattern across different PRs demonstrated that prose guidance
+alone was insufficient — which is why the decision is now mechanical (`compute-review-verdict.ts`)
+rather than freehand. Both cases resolve to the
 **same `event: "COMMENT"`** — that surface-level identity is exactly why they get conflated —
 but they MUST produce **different** `Verdict: ...` body labels:
 
