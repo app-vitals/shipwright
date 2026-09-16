@@ -17,16 +17,12 @@ Entrypoint: `metrics/src/server.ts` (standalone Bun server, default port **3460*
 **Preferred — offline mode** (no credentials needed):
 
 ```bash
-task api        # or: task ui (same process)
+task api        # or: task ui (same process); equivalent to METRICS_OFFLINE=true bun metrics/src/server.ts
 ```
 
-Both targets start the metrics server with `METRICS_OFFLINE=true` and serve the dashboard at http://localhost:3460/dashboard. No external credentials required — fixture data is injected automatically.
+Starts the metrics server with `METRICS_OFFLINE=true`, serving the dashboard at http://localhost:3460/dashboard. `server.ts` injects an offline `TaskStoreProvider` built from recorded cassettes (`createFixtureTaskStoreProvider()`, pre-recorded sample data for every query type) and bypasses session auth for `/dashboard` (serves as "Offline User"). For additional auth bypass on both `/dashboard` and `/metrics/*` (useful with `task stack`), combine with `METRICS_DASHBOARD_DEV_AUTH=true`. Safe for local dev and CI with no secrets configured.
 
-For a full dev environment with Ctrl-C cleanup:
-
-```bash
-task dev        # supervisor: starts metrics + kills all children on Ctrl-C
-```
+For a full dev environment with Ctrl-C cleanup: `task dev` (supervisor: starts metrics + kills all children on Ctrl-C).
 
 **Against the live task-store + admin services (taskstore mode):**
 
@@ -41,14 +37,6 @@ bun metrics/src/server.ts          # serves on :3460 (override with METRICS_API_
 ```
 
 In taskstore mode, `server.ts` wires a `TaskStoreProvider` over an `HttpTaskStoreClient` (tasks + PRs) and an `HttpAdminMetricsClient` (token-aggregation stats). Env can also be loaded from a dotenv file (`SHIPWRIGHT_ENV_FILE`, default `~/.shipwright/.env`) — set vars are never overwritten.
-
-**Offline mode** — run without any external services:
-
-```bash
-METRICS_OFFLINE=true bun metrics/src/server.ts
-```
-
-When `METRICS_OFFLINE=true`, `server.ts` injects an offline `TaskStoreProvider` built from recorded cassettes (`createFixtureTaskStoreProvider()`, pre-recorded sample data for every query type) and bypasses session auth for `/dashboard` (serves as "Offline User"). For additional auth bypass on both `/dashboard` and `/metrics/*` endpoints (useful in local development with `task stack`), combine with `METRICS_DASHBOARD_DEV_AUTH=true`. Safe for local development and CI environments with no secrets configured.
 
 ## API Endpoints
 
@@ -115,6 +103,22 @@ Both routes return the same envelope shape (`data` scoped to all repos on the au
 ```
 
 `repos[]` totals each merged PR in the window by repo × origin; `trend[]` breaks the same counts down by time bucket (`period`, a day `YYYY-MM-DD` or Monday-anchored ISO-week start date depending on `groupBy`) × repo. Origin follows the POM-1.1 taxonomy (`shipwright | ci | dependency_bot | human`); a PR whose origin was never stamped (`null`) is counted under `unknown`. Only `state:"merged"` PRs are counted — open and closed PRs are excluded.
+
+The dashboard's **"Merged PRs by repo"** panel renders this same data as two Chart.js charts: a stacked bar chart (one bar per repo, segments stacked by origin, tooltip shows % of repo total) and a trend line chart (one line per origin over time), plus a repo picker that filters the trend chart when more than one repo has merged PRs in range.
+
+### Origin classification rules
+
+`PullRequest.origin` is derived by precedence (first match wins), implemented identically by `deriveOrigin()` (task-store, `/prs/claim`, POM-1.2) and `classifyPrOrigin()` (agent, the POM-4.1 census sweep):
+
+| Order | Condition | Origin |
+|---|---|---|
+| 1 | A task-store `Task` row links `(repo, pr)` | `shipwright` |
+| 2 | `authorLogin` is `github-actions[bot]`, or `headRef` matches `chore/(chart\|plugin-version)-v*` | `ci` |
+| 3 | `authorLogin` is `renovate[bot]` or `dependabot[bot]` | `dependency_bot` |
+| 4 | `authorLogin` is any other non-empty string | `human` |
+| 5 | No `authorLogin` and no task-row match | `unknown` |
+
+A task-row match always wins, even over a bot-looking `authorLogin`. **Historical-accuracy caveat:** `deploy.md`'s canary-revert PR never transitions a task to `pr_open` and never calls `/prs/claim`, but it IS a merged PR like any other, so the census sweep classifies it (typically `human`) once it merges after POM-4.1 shipped. A canary-revert PR that already merged before then stays `origin=null` (`unknown`) permanently — historical backfill is out of scope.
 
 ### Utility routes
 
