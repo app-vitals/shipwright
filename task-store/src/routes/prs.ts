@@ -34,10 +34,10 @@ import { createRoute, OpenAPIHono } from "@hono/zod-openapi";
 import { readJson } from "@shipwright/lib/http";
 import type { TaskStoreAuthEnv } from "../auth.ts";
 import { BadRequestError, ForbiddenError, NotFoundError } from "../errors.ts";
+import { PrOrigin } from "../index.ts";
 import type {
   PrFindingDisposition,
   PrFindingSource,
-  PrOrigin,
   PrState,
   PullRequest,
 } from "../index.ts";
@@ -93,13 +93,9 @@ function validateCensusRepoScope(repo: string, repos: string[] | null): void {
   }
 }
 
-const PR_ORIGIN_VALUES = new Set<string>([
-  "shipwright",
-  "ci",
-  "dependency_bot",
-  "human",
-  "unknown",
-]);
+// Derived from the runtime PrOrigin enum rather than hand-listed, so this
+// stays in sync with the Prisma schema without a second literal to update.
+const PR_ORIGIN_VALUES = new Set<string>(Object.values(PrOrigin));
 
 /** Parse a raw census-entry value into a nullable-or-undefined string field:
  * a real string or explicit null are passed through; anything else
