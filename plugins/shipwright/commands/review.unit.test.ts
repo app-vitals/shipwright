@@ -109,7 +109,9 @@ describe("review.md — WLS-3.2 explicit-target-only", () => {
   it("claim 409 responds [silent] and stops, with no retry against a different PR", () => {
     const claimIdx = content.indexOf("### Claim using pre-captured commit SHA");
     expect(claimIdx).toBeGreaterThan(-1);
-    const claimSection = content.slice(claimIdx, claimIdx + 1600);
+    // Window widened for POM-1.2's extra CLAIM_META capture + jq -n claim-body
+    // construction, which pushed the 409/[silent] bullets further from the anchor.
+    const claimSection = content.slice(claimIdx, claimIdx + 2400);
     expect(claimSection.includes("409")).toBe(true);
     expect(claimSection.includes("[silent]")).toBe(true);
     expect(claimSection.includes("return to Step 3")).toBe(false);
@@ -249,14 +251,19 @@ describe("review.md — RHR-1.1 review-post freshness re-check", () => {
   });
 
   it("does not introduce a second canonical headRefOid capture point — Step 4 and Step 14 remain the sole capture sites", () => {
-    // The canonical variable is captured via `gh pr view ... --json headRefOid -q '.headRefOid'`.
-    // Count occurrences of this exact capture pattern across the whole file; RHR-1.1's
-    // addition must reuse a differently-named variable (currentHeadRefOid) for its own
-    // re-fetch rather than reassigning `headRefOid` a third time via the same pattern.
-    const captureRegex = /headRefOid=\$\(gh pr view [^\n]*--json headRefOid -q '\.headRefOid'\)/g;
-    const matches = content.match(captureRegex) ?? [];
-    // Step 4 and Step 14's Pre-Claim Fast Path both use this exact pattern already;
-    // RHR-1.1 must not add a third occurrence assigning to `headRefOid` itself.
+    // The canonical variable is assigned in exactly two places: Step 14's Pre-Claim
+    // Fast Path (`gh pr view ... --json headRefOid -q '.headRefOid'`) and Step 4's
+    // claim call, which (POM-1.2) now extracts it via jq from the same widened
+    // CLAIM_META fetch that also captures author/title/headRefName, rather than a
+    // second standalone `gh pr view --json headRefOid` call. RHR-1.1's addition must
+    // reuse a differently-named variable (currentHeadRefOid) for its own re-fetch
+    // rather than reassigning `headRefOid` a third time via either pattern.
+    const step14Pattern = /headRefOid=\$\(gh pr view [^\n]*--json headRefOid -q '\.headRefOid'\)/g;
+    const step4Pattern = /headRefOid=\$\(jq -r '\.headRefOid' <<< "\$CLAIM_META"\)/g;
+    const matches = [
+      ...(content.match(step14Pattern) ?? []),
+      ...(content.match(step4Pattern) ?? []),
+    ];
     expect(matches.length).toBe(2);
   });
 });

@@ -83,10 +83,19 @@ Get the current agent's own GH login and verify the PR was authored by the agent
 
 ```bash
 AGENT_LOGIN=$(gh api user --jq '.login')
-PR_AUTHOR=$(gh pr view {pr} --repo {org}/{repo} --json author --jq '.author.login')
+PR_META=$(gh pr view {pr} --repo {org}/{repo} --json author,title,headRefName)
+PR_AUTHOR=$(jq -r '.author.login' <<< "$PR_META")
+PR_TITLE=$(jq -r '.title' <<< "$PR_META")
+PR_HEAD_REF=$(jq -r '.headRefName' <<< "$PR_META")
 ```
 
 If `PR_AUTHOR != AGENT_LOGIN`, this PR was not authored by the current agent — skip it silently and stop. Only PRs we authored go through this deploy pipeline. Respond `[silent]`.
+
+`PR_AUTHOR`/`PR_TITLE`/`PR_HEAD_REF` are reused unchanged by the `/prs/claim` call in Step 4a
+below so `/prs/claim` can derive `origin` server-side (POM-1.2) — since deploy only ever
+claims PRs it authored itself, a linked Task row (the common case here) makes `origin`
+resolve to `shipwright` regardless of `authorLogin`, but the fields are threaded through
+for consistency with review.md/patch.md.
 
 Print:
 ```
@@ -260,7 +269,9 @@ PR_CLAIM=$(curl -s -o /tmp/pr_claim_deploy.json -w '%{http_code}' -X POST \
   -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
   -H "Content-Type: application/json" \
   "$SHIPWRIGHT_TASK_STORE_URL/prs/claim" \
-  -d "{\"repo\": \"{org}/{repo}\", \"prNumber\": {pr}, \"commitSha\": \"$HEAD_SHA_PRE_MERGE\", \"phase\": \"deploy\"}")
+  -d "$(jq -n --arg repo "{org}/{repo}" --argjson prNumber {pr} --arg commitSha "$HEAD_SHA_PRE_MERGE" \
+        --arg authorLogin "$PR_AUTHOR" --arg headRef "$PR_HEAD_REF" --arg title "$PR_TITLE" \
+        '{repo: $repo, prNumber: $prNumber, commitSha: $commitSha, phase: "deploy", authorLogin: $authorLogin, headRef: $headRef, title: $title}')")
 PR_RECORD_ID=$(jq -r '.id // empty' /tmp/pr_claim_deploy.json)
 ```
 

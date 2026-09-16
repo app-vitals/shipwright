@@ -1021,9 +1021,8 @@ describe("review.md — reviewedCommitSha written/read for dedup (RCS-1.2)", () 
     expect(step5Idx).toBeGreaterThan(step4Idx);
     const section = content.slice(step4Idx, step5Idx);
 
-    expect(section).toContain(
-      '-d "{\\"repo\\": \\"{org}/{repo}\\", \\"prNumber\\": {pr}, \\"commitSha\\": \\"{headRefOid}\\"',
-    );
+    expect(section).toContain('--arg commitSha "$headRefOid"');
+    expect(section).not.toContain('--arg commitSha "$reviewedCommitSha"');
   });
 });
 
@@ -2195,5 +2194,56 @@ describe("review.md — Step 10's JSON-building prose references the dependency-
 
     const lower = step10Section.toLowerCase();
     expect(lower).toContain("dependency");
+  });
+});
+
+describe("review.md — /prs/claim threads authorLogin/headRef/title for server-side origin derivation (POM-1.2)", () => {
+  it("Step 4's claim call sites authorLogin/headRef/title from a single widened gh pr view call (no new gh call)", () => {
+    const step4Idx = content.indexOf("## Step 4: Checkout into Worktree");
+    const step5Idx = content.indexOf("## Step 5: Gather Context");
+    expect(step4Idx).toBeGreaterThan(-1);
+    expect(step5Idx).toBeGreaterThan(step4Idx);
+    const section = content.slice(step4Idx, step5Idx);
+
+    // Widened, not a new call: still exactly one `gh pr view ... headRefOid` fetch
+    // in this section, now also carrying title/headRefName/author.
+    const ghPrViewCalls = section.match(/gh pr view \{pr\} --repo \{org\}\/\{repo\}/g) ?? [];
+    expect(ghPrViewCalls).toHaveLength(1);
+    expect(section).toContain(
+      "gh pr view {pr} --repo {org}/{repo} --json headRefOid,title,headRefName,author",
+    );
+    expect(section).toContain("PR_AUTHOR=$(jq -r '.author.login' <<< \"$CLAIM_META\")");
+    expect(section).toContain("PR_TITLE=$(jq -r '.title' <<< \"$CLAIM_META\")");
+    expect(section).toContain("PR_HEAD_REF=$(jq -r '.headRefName' <<< \"$CLAIM_META\")");
+
+    // The claim body itself carries all three fields, sourced from those captures.
+    expect(section).toContain('--arg authorLogin "$PR_AUTHOR"');
+    expect(section).toContain('--arg headRef "$PR_HEAD_REF"');
+    expect(section).toContain('--arg title "$PR_TITLE"');
+    expect(section).toContain("authorLogin: $authorLogin, headRef: $headRef, title: $title");
+  });
+
+  it("Step 14's staged-review-refresh claim call also threads authorLogin/headRef/title, reusing the Live-Review Pre-Check's own GraphQL fetch (no new gh call)", () => {
+    const preCheckIdx = content.indexOf("### Live-Review Pre-Check (RVD-1.2)");
+    const preClaimFastPathIdx = content.indexOf("### Pre-Claim Fast Path (CBD-1.4)");
+    expect(preCheckIdx).toBeGreaterThan(-1);
+    expect(preClaimFastPathIdx).toBeGreaterThan(preCheckIdx);
+    const preCheckSection = content.slice(preCheckIdx, preClaimFastPathIdx);
+
+    // The precheck's own GraphQL query already fetches author/headRefOid; this
+    // change widens it with title/headRefName rather than issuing a new call.
+    expect(preCheckSection).toContain("title\n      headRefName");
+    expect(preCheckSection).toContain("PR_AUTHOR=$(echo \"$precheck\" | jq -r '.authorLogin')");
+    expect(preCheckSection).toContain("PR_TITLE=$(echo \"$precheck\" | jq -r '.title')");
+    expect(preCheckSection).toContain("PR_HEAD_REF=$(echo \"$precheck\" | jq -r '.headRefName')");
+
+    const stagedRefreshIdx = content.indexOf(
+      "Re-claim the record at the new head to",
+    );
+    expect(stagedRefreshIdx).toBeGreaterThan(-1);
+    const refreshClaimSnippet = content.slice(stagedRefreshIdx, stagedRefreshIdx + 700);
+    expect(refreshClaimSnippet).toContain('--arg authorLogin "$PR_AUTHOR"');
+    expect(refreshClaimSnippet).toContain('--arg headRef "$PR_HEAD_REF"');
+    expect(refreshClaimSnippet).toContain('--arg title "$PR_TITLE"');
   });
 });

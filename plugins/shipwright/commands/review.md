@@ -124,16 +124,24 @@ the dedup check (empty if no record existed). The claim will overwrite `commitSh
 new head — `LAST_REVIEWED_COMMIT` preserves the pre-claim value without an extra fetch.
 Use it in Steps 5 and 9.
 
-Then claim the PR atomically at the current head. Fetch the head SHA first:
+Then claim the PR atomically at the current head. Fetch the head SHA plus the
+author/title/head-branch fields `/prs/claim` uses server-side to derive `origin`
+(POM-1.2) — one call covers both, no extra `gh` round trip:
 ```bash
-headRefOid=$(gh pr view {pr} --repo {org}/{repo} --json headRefOid -q '.headRefOid')
+CLAIM_META=$(gh pr view {pr} --repo {org}/{repo} --json headRefOid,title,headRefName,author)
+headRefOid=$(jq -r '.headRefOid' <<< "$CLAIM_META")
+PR_AUTHOR=$(jq -r '.author.login' <<< "$CLAIM_META")
+PR_TITLE=$(jq -r '.title' <<< "$CLAIM_META")
+PR_HEAD_REF=$(jq -r '.headRefName' <<< "$CLAIM_META")
 ```
 ```bash
 PR_CLAIM=$(curl -s -o /tmp/pr_claim.json -w '%{http_code}' -X POST \
   -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
   -H "Content-Type: application/json" \
   "$SHIPWRIGHT_TASK_STORE_URL/prs/claim" \
-  -d "{\"repo\": \"{org}/{repo}\", \"prNumber\": {pr}, \"commitSha\": \"{headRefOid}\"}")
+  -d "$(jq -n --arg repo "{org}/{repo}" --argjson prNumber {pr} --arg commitSha "$headRefOid" \
+        --arg authorLogin "$PR_AUTHOR" --arg headRef "$PR_HEAD_REF" --arg title "$PR_TITLE" \
+        '{repo: $repo, prNumber: $prNumber, commitSha: $commitSha, authorLogin: $authorLogin, headRef: $headRef, title: $title}')")
 ```
 - `201` (new) or `200` (update): claimed. Capture `.id` from `/tmp/pr_claim.json` as
   `PR_RECORD_ID`; the claim sets `reviewState: "in_progress"`.
@@ -1374,6 +1382,8 @@ precheck=$(gh api graphql -f query='
       author {
         login
       }
+      title
+      headRefName
       headRefOid
       comments(last: 50) {
         nodes {
@@ -1395,9 +1405,18 @@ precheck=$(gh api graphql -f query='
       }
     }
   }
-}' | jq --arg currentUser "$CURRENT_USER" '.data.repository.pullRequest as $pr | ([$pr.reviews.nodes[] | select(.commit.oid == $pr.headRefOid and ((.body | test("verdict\\**\\s*:\\s*\\**(approve|comment)\\b"; "i")) or .state == "APPROVED")) | .submittedAt] | max) as $maxTerminalSubmittedAt | {headRefOid: $pr.headRefOid, terminal: (if $maxTerminalSubmittedAt != null then ([$pr.comments.nodes[] | select(.author.login != $currentUser and (.createdAt > $maxTerminalSubmittedAt)) | .createdAt] | length == 0) else false end)}')
+}' | jq --arg currentUser "$CURRENT_USER" '.data.repository.pullRequest as $pr | ([$pr.reviews.nodes[] | select(.commit.oid == $pr.headRefOid and ((.body | test("verdict\\**\\s*:\\s*\\**(approve|comment)\\b"; "i")) or .state == "APPROVED")) | .submittedAt] | max) as $maxTerminalSubmittedAt | {headRefOid: $pr.headRefOid, terminal: (if $maxTerminalSubmittedAt != null then ([$pr.comments.nodes[] | select(.author.login != $currentUser and (.createdAt > $maxTerminalSubmittedAt)) | .createdAt] | length == 0) else false end), authorLogin: $pr.author.login, title: $pr.title, headRefName: $pr.headRefName}')
 headRefOid=$(echo "$precheck" | jq -r '.headRefOid')
 terminal=$(echo "$precheck" | jq -r '.terminal')
+```
+
+Also capture `PR_AUTHOR`/`PR_TITLE`/`PR_HEAD_REF` from this same response — reused below by the
+staged-review refresh claim (and available as a fallback anywhere later in this step) without an
+extra `gh`/`gh api` round trip:
+```bash
+PR_AUTHOR=$(echo "$precheck" | jq -r '.authorLogin')
+PR_TITLE=$(echo "$precheck" | jq -r '.title')
+PR_HEAD_REF=$(echo "$precheck" | jq -r '.headRefName')
 ```
 
 `gh api`'s own `--jq`/`-q` flag does not support `--arg` — that's a `jq`-binary-only
@@ -1580,7 +1599,9 @@ gh pr view {pr} --repo {org}/{repo} --json headRefOid --jq '.headRefOid'
     -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
     -H "Content-Type: application/json" \
     "$SHIPWRIGHT_TASK_STORE_URL/prs/claim" \
-    -d "{\"repo\": \"{org}/{repo}\", \"prNumber\": {pr}, \"commitSha\": \"{headRefOid}\"}" >/dev/null
+    -d "$(jq -n --arg repo "{org}/{repo}" --argjson prNumber {pr} --arg commitSha "$headRefOid" \
+          --arg authorLogin "$PR_AUTHOR" --arg headRef "$PR_HEAD_REF" --arg title "$PR_TITLE" \
+          '{repo: $repo, prNumber: $prNumber, commitSha: $commitSha, authorLogin: $authorLogin, headRef: $headRef, title: $title}')" >/dev/null
   ```
   Print:
   ```

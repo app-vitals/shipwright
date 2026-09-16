@@ -1148,3 +1148,33 @@ describe("deploy.md — bundle-mate task sync on merge/deploy status transitions
     );
   });
 });
+
+describe("deploy.md — /prs/claim threads authorLogin/headRef/title for server-side origin derivation (POM-1.2)", () => {
+  it("Step 2a captures PR_TITLE/PR_HEAD_REF alongside PR_AUTHOR from a single widened gh pr view call (no new gh call)", () => {
+    const step2aSection = extractStep2aSection(content);
+
+    const ghPrViewCalls = step2aSection.match(/gh pr view \{pr\} --repo \{org\}\/\{repo\}/g) ?? [];
+    expect(ghPrViewCalls).toHaveLength(1);
+    expect(step2aSection).toContain(
+      "gh pr view {pr} --repo {org}/{repo} --json author,title,headRefName",
+    );
+    expect(step2aSection).toContain("PR_AUTHOR=$(jq -r '.author.login' <<< \"$PR_META\")");
+    expect(step2aSection).toContain("PR_TITLE=$(jq -r '.title' <<< \"$PR_META\")");
+    expect(step2aSection).toContain("PR_HEAD_REF=$(jq -r '.headRefName' <<< \"$PR_META\")");
+  });
+
+  it("Step 4a's /prs/claim call threads authorLogin/headRef/title from the Step 2a captures", () => {
+    const step4aIdx = content.indexOf("### 4a. Claim PR Record (pre-merge lock)");
+    const step4bIdx = content.indexOf("### 4b. Squash Merge");
+    expect(step4aIdx).toBeGreaterThan(-1);
+    expect(step4bIdx).toBeGreaterThan(step4aIdx);
+    const section = content.slice(step4aIdx, step4bIdx);
+
+    expect(section).toContain('--arg authorLogin "$PR_AUTHOR"');
+    expect(section).toContain('--arg headRef "$PR_HEAD_REF"');
+    expect(section).toContain('--arg title "$PR_TITLE"');
+    expect(section).toContain(
+      "authorLogin: $authorLogin, headRef: $headRef, title: $title",
+    );
+  });
+});
