@@ -85,7 +85,7 @@ Bootstrapping a new agent (Maverick) surfaced three separate defects:
 - **Plugin string format confirmed correct.** `plugins: [shipwright]` is a
   bare name with no `@marketplace` suffix. `admin/src/api.ts:207-217`
   explicitly defaults a bare name (no `@`) to the `shipwright` marketplace —
-  this is the documented, tested contract (`agent/src/agent-plugins.ts`
+  this is the documented, tested contract (`admin/src/agent-plugins.ts`
   docstring, `docs/agent-types.md`'s worked example), not an oversight. The
   fix passes `manifest.plugins` entries through unmodified, exactly as
   `agents-api.ts` already does.
