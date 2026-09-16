@@ -40,8 +40,14 @@ import {
  * anchored to call time. Always yields non-empty KPI data for the 7d/30d
  * presets regardless of when the stack is launched — no manual date-rolling
  * required.
+ *
+ * @param repo - optional `org/repo` scope, forwarded to TaskStoreProvider.
+ *   Only the PR cassette carries repo/origin attribution (org/alpha,
+ *   org/beta), so this is meant for scoping the merged-PRs-by-repo query in
+ *   a repo-scoped (public-mode-style) preview/test — task-derived metrics
+ *   have no repo field and would come back empty if scoped.
  */
-export function createFixtureTaskStoreProvider(): MetricsProvider {
+export function createFixtureTaskStoreProvider(repo?: string): MetricsProvider {
   const now = new Date();
   const clock: Clock = { now: () => now };
 
@@ -143,12 +149,20 @@ export function createFixtureTaskStoreProvider(): MetricsProvider {
       reviewState: "approved",
       createdAt: d(2, 1),
       mergedAt: d(2),
+      // repo/origin/state (POM-2.1/POM-2.2): drives the merged-PRs-by-repo
+      // dashboard panel — two repos, one merged PR each, distinct origins.
+      repo: "org/alpha",
+      origin: "shipwright",
+      state: "merged",
     },
     {
       id: "pr-2",
       reviewState: "posted",
       createdAt: d(1, 2),
       mergedAt: d(1, 1),
+      repo: "org/beta",
+      origin: "ci",
+      state: "merged",
     },
   ];
 
@@ -202,7 +216,13 @@ export function createFixtureTaskStoreProvider(): MetricsProvider {
   const CHAT_STATS: ChatTokenStats = {
     totals: agg(400, 200, 80, 40, 0.6),
     byAgent: [{ key: "agent-a", ...agg(400, 200, 80, 40, 0.6) }],
-    byModel: [{ key1: "agent-a", key2: "claude-sonnet-4-5", ...agg(400, 200, 80, 40, 0.6) }],
+    byModel: [
+      {
+        key1: "agent-a",
+        key2: "claude-sonnet-4-5",
+        ...agg(400, 200, 80, 40, 0.6),
+      },
+    ],
     daily: [{ period: ds(1), ...agg(400, 200, 80, 40, 0.6) }],
   };
 
@@ -210,5 +230,6 @@ export function createFixtureTaskStoreProvider(): MetricsProvider {
     new RecordedTaskStoreClient(TASKS, PRS),
     new RecordedAdminMetricsClient(CRON_STATS, CHAT_STATS),
     clock,
+    repo,
   );
 }

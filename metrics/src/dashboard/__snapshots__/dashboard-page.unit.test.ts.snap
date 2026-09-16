@@ -286,6 +286,28 @@ exports[`renderDashboardPage — snapshot renders full page for a regular user 1
         </div>
       </section>
 
+      <!-- Merged PRs by repo -->
+      <section class="section" aria-label="Merged PRs by repo">
+        <div class="section-header">
+          <h2 class="section-title">Merged PRs by repo</h2>
+        </div>
+        <div id="merged-prs-content">
+          <div class="merged-prs-repo-picker" id="merged-prs-repo-picker" style="display:none">
+            <label for="merged-prs-repo-select">Repo</label>
+            <select id="merged-prs-repo-select"></select>
+          </div>
+          <div class="merged-prs-charts">
+            <div class="chart-container">
+              <canvas id="merged-prs-bar-chart" aria-label="Merged PRs by repo and origin"></canvas>
+            </div>
+            <div class="chart-container">
+              <canvas id="merged-prs-trend-chart" aria-label="Merged PRs trend by origin over time"></canvas>
+            </div>
+          </div>
+        </div>
+        <p id="merged-prs-empty" class="empty-state" style="display:none">No merged PRs in this range</p>
+      </section>
+
       <!-- Pipeline Quality -->
       <section class="section" aria-label="Pipeline quality">
         <div class="section-header">
@@ -777,6 +799,28 @@ exports[`renderDashboardPage — snapshot renders full page for an owner 1`] = `
           </div>
 
         </div>
+      </section>
+
+      <!-- Merged PRs by repo -->
+      <section class="section" aria-label="Merged PRs by repo">
+        <div class="section-header">
+          <h2 class="section-title">Merged PRs by repo</h2>
+        </div>
+        <div id="merged-prs-content">
+          <div class="merged-prs-repo-picker" id="merged-prs-repo-picker" style="display:none">
+            <label for="merged-prs-repo-select">Repo</label>
+            <select id="merged-prs-repo-select"></select>
+          </div>
+          <div class="merged-prs-charts">
+            <div class="chart-container">
+              <canvas id="merged-prs-bar-chart" aria-label="Merged PRs by repo and origin"></canvas>
+            </div>
+            <div class="chart-container">
+              <canvas id="merged-prs-trend-chart" aria-label="Merged PRs trend by origin over time"></canvas>
+            </div>
+          </div>
+        </div>
+        <p id="merged-prs-empty" class="empty-state" style="display:none">No merged PRs in this range</p>
       </section>
 
       <!-- Pipeline Quality -->
@@ -1272,6 +1316,28 @@ exports[`renderDashboardPage — MG-1.2 clickable metric graphs snapshot matches
         </div>
       </section>
 
+      <!-- Merged PRs by repo -->
+      <section class="section" aria-label="Merged PRs by repo">
+        <div class="section-header">
+          <h2 class="section-title">Merged PRs by repo</h2>
+        </div>
+        <div id="merged-prs-content">
+          <div class="merged-prs-repo-picker" id="merged-prs-repo-picker" style="display:none">
+            <label for="merged-prs-repo-select">Repo</label>
+            <select id="merged-prs-repo-select"></select>
+          </div>
+          <div class="merged-prs-charts">
+            <div class="chart-container">
+              <canvas id="merged-prs-bar-chart" aria-label="Merged PRs by repo and origin"></canvas>
+            </div>
+            <div class="chart-container">
+              <canvas id="merged-prs-trend-chart" aria-label="Merged PRs trend by origin over time"></canvas>
+            </div>
+          </div>
+        </div>
+        <p id="merged-prs-empty" class="empty-state" style="display:none">No merged PRs in this range</p>
+      </section>
+
       <!-- Pipeline Quality -->
       <section class="section" aria-label="Pipeline quality">
         <div class="section-header">
@@ -1765,6 +1831,28 @@ exports[`renderDashboardPage — TK-1.2 token trends chart snapshot matches afte
         </div>
       </section>
 
+      <!-- Merged PRs by repo -->
+      <section class="section" aria-label="Merged PRs by repo">
+        <div class="section-header">
+          <h2 class="section-title">Merged PRs by repo</h2>
+        </div>
+        <div id="merged-prs-content">
+          <div class="merged-prs-repo-picker" id="merged-prs-repo-picker" style="display:none">
+            <label for="merged-prs-repo-select">Repo</label>
+            <select id="merged-prs-repo-select"></select>
+          </div>
+          <div class="merged-prs-charts">
+            <div class="chart-container">
+              <canvas id="merged-prs-bar-chart" aria-label="Merged PRs by repo and origin"></canvas>
+            </div>
+            <div class="chart-container">
+              <canvas id="merged-prs-trend-chart" aria-label="Merged PRs trend by origin over time"></canvas>
+            </div>
+          </div>
+        </div>
+        <p id="merged-prs-empty" class="empty-state" style="display:none">No merged PRs in this range</p>
+      </section>
+
       <!-- Pipeline Quality -->
       <section class="section" aria-label="Pipeline quality">
         <div class="section-header">
@@ -2245,6 +2333,28 @@ exports[`renderDashboardPage — PCE-1.4 Cost Efficiency card readOnly page snap
           </div>
 
         </div>
+      </section>
+
+      <!-- Merged PRs by repo -->
+      <section class="section" aria-label="Merged PRs by repo">
+        <div class="section-header">
+          <h2 class="section-title">Merged PRs by repo</h2>
+        </div>
+        <div id="merged-prs-content">
+          <div class="merged-prs-repo-picker" id="merged-prs-repo-picker" style="display:none">
+            <label for="merged-prs-repo-select">Repo</label>
+            <select id="merged-prs-repo-select"></select>
+          </div>
+          <div class="merged-prs-charts">
+            <div class="chart-container">
+              <canvas id="merged-prs-bar-chart" aria-label="Merged PRs by repo and origin"></canvas>
+            </div>
+            <div class="chart-container">
+              <canvas id="merged-prs-trend-chart" aria-label="Merged PRs trend by origin over time"></canvas>
+            </div>
+          </div>
+        </div>
+        <p id="merged-prs-empty" class="empty-state" style="display:none">No merged PRs in this range</p>
       </section>
 
       <!-- Pipeline Quality -->

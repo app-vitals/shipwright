@@ -126,6 +126,28 @@
         </div>
       </section>
 
+      <!-- Merged PRs by repo -->
+      <section class="section" aria-label="Merged PRs by repo">
+        <div class="section-header">
+          <h2 class="section-title">Merged PRs by repo</h2>
+        </div>
+        <div id="merged-prs-content">
+          <div class="merged-prs-repo-picker" id="merged-prs-repo-picker" style="display:none">
+            <label for="merged-prs-repo-select">Repo</label>
+            <select id="merged-prs-repo-select"></select>
+          </div>
+          <div class="merged-prs-charts">
+            <div class="chart-container">
+              <canvas id="merged-prs-bar-chart" aria-label="Merged PRs by repo and origin"></canvas>
+            </div>
+            <div class="chart-container">
+              <canvas id="merged-prs-trend-chart" aria-label="Merged PRs trend by origin over time"></canvas>
+            </div>
+          </div>
+        </div>
+        <p id="merged-prs-empty" class="empty-state" style="display:none">No merged PRs in this range</p>
+      </section>
+
       <!-- Pipeline Quality -->
       <section class="section" aria-label="Pipeline quality">
         <div class="section-header">
