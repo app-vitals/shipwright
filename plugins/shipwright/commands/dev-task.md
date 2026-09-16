@@ -739,12 +739,6 @@ Examples based on detected toolchain:
 - Ruby: `bundle exec rspec` (or `bundle exec rake test`)
 - Multi-layer: run `{test command}`, then each additional entry in `{tests}` (e.g., `npx playwright test` for e2e alongside the default `pytest` for unit/integration)
 
-If validation becomes backgrounded via a scheduled wakeup between Step 8 and this step, a
-session resumption can silently fail — the PR remains green but the task-store record never
-advances past the validation gate (per the AGH-1.1 incident). Run all validations synchronously
-in the same Bash invocation, or use the Monitor tool / in-Bash polling loop to stay within the
-same session and visible turn.
-
 ### Coverage Gate
 
 Run coverage checks for each package that has changed files on this branch:
