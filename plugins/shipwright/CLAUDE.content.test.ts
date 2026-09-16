@@ -133,9 +133,9 @@ describe("CLAUDE.md — five-phase pipeline (PDR-4.1)", () => {
 
   it("the Candidate Selection Contract documents the plan/dev-task dedupe", () => {
     expect(candidateSelectionSection).toContain("deduped by task id");
-    // The plan pool's actual query shape: the legacy spelling, sent alone (an
-    // AND with `?kind=prd` would orphan the mid-rollout divergence row).
-    expect(candidateSelectionSection).toContain("autonomousPlanSession=true");
+    // The plan pool's actual query shape, post-TKD-1.3: `kind: "prd"` is the
+    // only spelling now that the legacy autonomousPlanSession flag is gone.
+    expect(candidateSelectionSection).toContain("?kind=prd&status=pending");
     expect(candidateSelectionSection).toContain('kind: "prd"');
   });
 

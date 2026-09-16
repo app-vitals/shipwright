@@ -14,7 +14,7 @@
  * Admin tokens (agentId null) have no restrictions.
  *
  * Routes:
- *   GET    /tasks               list (?status, ?state=open|closed, ?session, ?assignee, ?pr, ?branch, ?hitl=true|false, ?kind=dev|prd, ?autonomousPlanSession=true|false, ?limit, ?offset, ?ready=true)
+ *   GET    /tasks               list (?status, ?state=open|closed, ?session, ?assignee, ?pr, ?branch, ?hitl=true|false, ?kind=dev|prd, ?limit, ?offset, ?ready=true)
  *                              returns { tasks, total, scopeDegraded } — scopeDegraded
  *                              mirrors the auth middleware's scopeDegraded context var
  *                              (true only when the agent's repo-scope resolver call itself
@@ -649,12 +649,6 @@ export function createTasksRoutes(
         : c.req.query("hitl") === "false"
           ? false
           : undefined;
-    const autonomousPlanSession =
-      c.req.query("autonomousPlanSession") === "true"
-        ? true
-        : c.req.query("autonomousPlanSession") === "false"
-          ? false
-          : undefined;
     // TKD-1.1. The zod query schema already rejects anything outside the enum
     // with a 400, so a present value is always "dev" | "prd" here.
     const kind = c.req.query("kind") as TaskKind | undefined;
@@ -664,7 +658,7 @@ export function createTasksRoutes(
     // the ?state=blocked branch). Both are convenience endpoints computed
     // over the *entire* task graph (dependency resolution needs every task,
     // not a recency-windowed or paginated subset). session/source/repo/org/
-    // claimedBy/pr/branch/assignee/hitl/autonomousPlanSession DO apply to
+    // claimedBy/pr/branch/assignee/hitl DO apply to
     // both listReady() (TRF-1.1) and listBlocked() (ATB-1.2, HTF-1.1) — same
     // parsing as the fallback branch below, just also forwarded here.
     // ?ready=true is the legacy spelling; ?state=ready is the new form.
@@ -684,7 +678,6 @@ export function createTasksRoutes(
           assignee: c.req.query("assignee"),
           hitl,
           kind,
-          autonomousPlanSession,
         },
       );
       return c.json({ tasks, total: tasks.length, scopeDegraded }, 200);
@@ -707,7 +700,6 @@ export function createTasksRoutes(
           assignee: c.req.query("assignee"),
           hitl,
           kind,
-          autonomousPlanSession,
         },
       );
       return c.json({ tasks, total: tasks.length, scopeDegraded }, 200);
@@ -743,7 +735,6 @@ export function createTasksRoutes(
       branch: c.req.query("branch"),
       hitl,
       kind,
-      autonomousPlanSession,
       limit:
         limitRaw !== undefined
           ? Number.parseInt(limitRaw, 10) || undefined

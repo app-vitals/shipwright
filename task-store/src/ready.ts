@@ -6,8 +6,7 @@
  * A task is "ready" to execute when:
  *   - task.status === "pending"
  *   - task.hitl !== true
- *   - task.kind !== "prd" AND task.autonomousPlanSession !== true (the legacy
- *     spelling, still checked so the exclusion fails closed mid-rollout)
+ *   - task.kind !== "prd"
  *   - it has no fresh same-branch in_progress sibling (exclusivity guard, see below)
  *   - every dependency ID resolves to a known task whose status satisfies the
  *     dependency-satisfied rules below
@@ -50,13 +49,6 @@ export interface ReadyTaskLike {
    * predating TKD-1.1 was backfilled to.
    */
   kind?: string | null;
-  /**
-   * @deprecated Legacy spelling of `kind === "prd"` (TKD-1.1). Still checked
-   * here so the PRD exclusion stays fail-closed against a row written by an
-   * older task-store during a rolling deploy (which sets the flag but leaves
-   * `kind` at its `dev` default).
-   */
-  autonomousPlanSession?: boolean | null;
   /** Reason recorded when status is 'blocked'. */
   blockedReason?: string | null;
   /** ISO timestamp when claimed. */
@@ -94,21 +86,10 @@ export async function resolveReadyTasks<T extends ReadyTaskLike>(
   for (const task of tasks) {
     if (task.status !== "pending") continue;
     if (task.hitl === true) continue;
-    // TKD-1.1: the PRD slice is never dev work. `kind` is the current
-    // spelling; PDR-2.2's `autonomousPlanSession === true` check is kept
-    // alongside it rather than replaced, so the exclusion fails CLOSED.
-    //
-    // The two are equivalent by construction on any row this build wrote (the
-    // migration backfilled kind='prd' for every flagged row, and
-    // normalizeTaskKind forces the pair to agree on every write path), which
-    // makes the second clause dead weight in steady state. It earns its keep
-    // during a rolling deploy: an old task-store pod still writing
-    // `autonomousPlanSession: true` leaves `kind` at the migration's `dev`
-    // default, and a new pod serving `?ready=true` would otherwise hand that
-    // PRD task to dev-task — something the pre-TKD-1.1 check never allowed.
-    // Erring toward "not ready" only defers work; erring the other way
-    // dispatches a PRD task as `/shipwright:dev-task`.
-    if (task.kind === "prd" || task.autonomousPlanSession === true) continue;
+    // The PRD slice is never dev work (TKD-1.1) — it has no dependency graph
+    // to resolve and must be dispatched as `/shipwright:plan-session
+    // --autonomous`, not `/shipwright:dev-task`.
+    if (task.kind === "prd") continue;
 
     if (task.branch) {
       const hasFreshInProgressSibling = tasks.some(

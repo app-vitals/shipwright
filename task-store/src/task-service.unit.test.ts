@@ -630,206 +630,6 @@ describe("TaskService.bulk (unit)", () => {
   });
 });
 
-// ─── TaskService kind / autonomousPlanSession dual-accept (TKD-1.1) ──────────
-//
-// The write paths accept BOTH the new `kind` enum and the legacy
-// `autonomousPlanSession` boolean during the transition window, normalizing
-// each into the other so the pair is always self-consistent — `kind` is what
-// ready.ts filters on, and `?autonomousPlanSession=` is still a live query
-// filter, so a row that set only one of them would be invisible to the other.
-
-describe("TaskService kind/autonomousPlanSession normalization (TKD-1.1)", () => {
-  /** Recording double capturing the exact `data` handed to Prisma. */
-  function makeWriteRecordingDouble() {
-    const createData: Record<string, unknown>[] = [];
-    const updateData: Record<string, unknown>[] = [];
-    const prisma = {
-      task: {
-        create: async ({ data }: { data: Record<string, unknown> }) => {
-          createData.push(data);
-          return { ...data, session: null };
-        },
-        findUnique: async () => null,
-        update: async ({ data }: { data: Record<string, unknown> }) => {
-          updateData.push(data);
-          return { id: "t1", ...data, session: null };
-        },
-      },
-      taskEvent: { create: async () => ({}) },
-      $transaction: async (fn: (tx: unknown) => Promise<unknown>) => fn(prisma),
-    };
-    return {
-      prisma: prisma as unknown as PrismaClient,
-      createData,
-      updateData,
-    };
-  }
-
-  it("create() normalizes a legacy autonomousPlanSession:true (with no kind) to kind:'prd'", async () => {
-    const { prisma, createData } = makeWriteRecordingDouble();
-    const service = new TaskService(prisma);
-
-    await service.create({
-      id: "t1",
-      title: "A PRD",
-      status: "pending",
-      autonomousPlanSession: true,
-    } as never);
-
-    expect(createData[0].kind).toBe("prd");
-    // The legacy field is preserved, not rewritten away.
-    expect(createData[0].autonomousPlanSession).toBe(true);
-  });
-
-  it("create() back-fills the legacy autonomousPlanSession flag when only kind:'prd' is supplied", async () => {
-    const { prisma, createData } = makeWriteRecordingDouble();
-    const service = new TaskService(prisma);
-
-    await service.create({
-      id: "t1",
-      title: "A PRD",
-      status: "pending",
-      kind: "prd",
-    } as never);
-
-    expect(createData[0].kind).toBe("prd");
-    expect(createData[0].autonomousPlanSession).toBe(true);
-  });
-
-  it("create() leaves a plain task untouched — no kind, no autonomousPlanSession (Prisma's dev default applies)", async () => {
-    const { prisma, createData } = makeWriteRecordingDouble();
-    const service = new TaskService(prisma);
-
-    await service.create({
-      id: "t1",
-      title: "Ordinary work",
-      status: "pending",
-    } as never);
-
-    expect(createData[0].kind).toBeUndefined();
-    expect(createData[0].autonomousPlanSession).toBeUndefined();
-  });
-
-  // "Wins" has to mean "overwrites", not "is stored next to". A row persisted
-  // as kind='dev' + autonomousPlanSession=true passes both `?ready=true` and
-  // the legacy `?autonomousPlanSession=true` filter while `?kind=prd` misses
-  // it — the exact self-contradicting row normalizeTaskKind exists to prevent.
-  it("create() lets an explicit kind win over a contradicting legacy flag, forcing the flag to agree", async () => {
-    const { prisma, createData } = makeWriteRecordingDouble();
-    const service = new TaskService(prisma);
-
-    await service.create({
-      id: "t1",
-      title: "Ordinary work",
-      status: "pending",
-      kind: "dev",
-      autonomousPlanSession: true,
-    } as never);
-
-    expect(createData[0].kind).toBe("dev");
-    expect(createData[0].autonomousPlanSession).toBe(false);
-  });
-
-  it("create() forces the legacy flag true when kind:'prd' contradicts autonomousPlanSession:false", async () => {
-    const { prisma, createData } = makeWriteRecordingDouble();
-    const service = new TaskService(prisma);
-
-    await service.create({
-      id: "t1",
-      title: "Plan me",
-      status: "pending",
-      kind: "prd",
-      autonomousPlanSession: false,
-    } as never);
-
-    expect(createData[0].kind).toBe("prd");
-    expect(createData[0].autonomousPlanSession).toBe(true);
-  });
-
-  it("update() forces the legacy flag to agree when a PATCH sends a contradicting pair", async () => {
-    const { prisma, updateData } = makeWriteRecordingDouble();
-    const service = new TaskService(prisma);
-
-    await service.update("t1", {
-      kind: "prd",
-      autonomousPlanSession: false,
-    } as never);
-
-    expect(updateData[0].kind).toBe("prd");
-    expect(updateData[0].autonomousPlanSession).toBe(true);
-  });
-
-  it("create() normalizes autonomousPlanSession:false to kind:'dev'", async () => {
-    const { prisma, createData } = makeWriteRecordingDouble();
-    const service = new TaskService(prisma);
-
-    await service.create({
-      id: "t1",
-      title: "Ordinary work",
-      status: "pending",
-      autonomousPlanSession: false,
-    } as never);
-
-    expect(createData[0].kind).toBe("dev");
-  });
-
-  it("bulk() normalizes the legacy flag on every item independently", async () => {
-    const { prisma, createData } = makeWriteRecordingDouble();
-    const service = new TaskService(prisma);
-
-    await service.bulk([
-      {
-        id: "t1",
-        title: "A PRD",
-        status: "pending",
-        autonomousPlanSession: true,
-      },
-      { id: "t2", title: "Dev work", status: "pending" },
-      { id: "t3", title: "Another PRD", status: "pending", kind: "prd" },
-    ] as never);
-
-    expect(createData.map((d) => d.kind)).toEqual(["prd", undefined, "prd"]);
-    expect(createData[2].autonomousPlanSession).toBe(true);
-  });
-
-  it("update() normalizes a legacy autonomousPlanSession:true PATCH to kind:'prd'", async () => {
-    const { prisma, updateData } = makeWriteRecordingDouble();
-    const service = new TaskService(prisma);
-
-    await service.update("t1", { autonomousPlanSession: true } as never);
-
-    expect(updateData[0].kind).toBe("prd");
-  });
-
-  it("update() un-flags both fields together when the legacy flag is PATCHed to false", async () => {
-    const { prisma, updateData } = makeWriteRecordingDouble();
-    const service = new TaskService(prisma);
-
-    await service.update("t1", { autonomousPlanSession: false } as never);
-
-    expect(updateData[0].kind).toBe("dev");
-  });
-
-  it("update() back-fills the legacy flag when only kind is PATCHed", async () => {
-    const { prisma, updateData } = makeWriteRecordingDouble();
-    const service = new TaskService(prisma);
-
-    await service.update("t1", { kind: "prd" } as never);
-
-    expect(updateData[0].autonomousPlanSession).toBe(true);
-  });
-
-  it("update() leaves an unrelated PATCH free of both fields", async () => {
-    const { prisma, updateData } = makeWriteRecordingDouble();
-    const service = new TaskService(prisma);
-
-    await service.update("t1", { status: "in_progress" } as never);
-
-    expect(updateData[0].kind).toBeUndefined();
-    expect(updateData[0].autonomousPlanSession).toBeUndefined();
-  });
-});
-
 // ─── TaskService.list() updatedSince/repo where clause ─────────────────────
 
 describe("TaskService.list() updatedSince/repo where clause", () => {
@@ -946,42 +746,6 @@ describe("TaskService.list() updatedSince/repo where clause", () => {
       | { hitl?: boolean }
       | undefined;
     expect(where?.hitl).toBeUndefined();
-  });
-
-  it("list({ autonomousPlanSession: true }) sets where.autonomousPlanSession = true (PDR-2.1)", async () => {
-    const prisma = makeListPrismaDouble();
-    const service = new TaskService(prisma);
-
-    await service.list({ autonomousPlanSession: true });
-
-    const where = prisma._findManyCalls[0].where as
-      | { autonomousPlanSession?: boolean }
-      | undefined;
-    expect(where?.autonomousPlanSession).toBe(true);
-  });
-
-  it("list({ autonomousPlanSession: false }) sets where.autonomousPlanSession = false (PDR-2.1)", async () => {
-    const prisma = makeListPrismaDouble();
-    const service = new TaskService(prisma);
-
-    await service.list({ autonomousPlanSession: false });
-
-    const where = prisma._findManyCalls[0].where as
-      | { autonomousPlanSession?: boolean }
-      | undefined;
-    expect(where?.autonomousPlanSession).toBe(false);
-  });
-
-  it("list({}) omits where.autonomousPlanSession entirely (preserves current unfiltered behavior) (PDR-2.1)", async () => {
-    const prisma = makeListPrismaDouble();
-    const service = new TaskService(prisma);
-
-    await service.list({});
-
-    const where = prisma._findManyCalls[0].where as
-      | { autonomousPlanSession?: boolean }
-      | undefined;
-    expect(where?.autonomousPlanSession).toBeUndefined();
   });
 
   it("list({ kind: 'prd' }) sets where.kind = 'prd' (TKD-1.1)", async () => {
@@ -1762,20 +1526,18 @@ describe("TaskService.listReady() filters (unit)", () => {
     expect(result.map((t) => t.id).sort()).toEqual(["t1", "t2"]);
   });
 
-  // ─── kind (TKD-1.1, superseding PDR-2.1 / PDR-2.2) ─────────────────────────
+  // ─── kind (TKD-1.1) ─────────────────────────────────────────────────────────
   //
-  // PDR-2.2 added an unconditional ready.ts exclusion for the PRD slice
-  // (mirrors hitl's ready-set-exclusion nuance), which TKD-1.1 re-expressed as
-  // `kind === "prd"` — such tasks never appear in the ready set regardless of
-  // this filter. The filter itself only narrows among tasks that already made
-  // it into the ready set (i.e. kind === "dev"). Fixtures set both fields
-  // because the write paths keep them self-consistent (normalizeTaskKind).
+  // ready.ts's unconditional `kind === "prd"` exclusion means such tasks never
+  // appear in the ready set regardless of this filter. The filter itself only
+  // narrows among tasks that already made it into the ready set (i.e.
+  // kind === "dev").
 
   it("listReady({ kind: 'prd' }) returns empty — matching tasks are excluded from the ready set upstream (TKD-1.1)", async () => {
     const prisma = makeReadyPrismaDouble([
-      makeReadyTask({ id: "t1", kind: "prd", autonomousPlanSession: true }),
-      makeReadyTask({ id: "t2", kind: "dev", autonomousPlanSession: false }),
-      makeReadyTask({ id: "t3", kind: "dev", autonomousPlanSession: null }),
+      makeReadyTask({ id: "t1", kind: "prd" }),
+      makeReadyTask({ id: "t2", kind: "dev" }),
+      makeReadyTask({ id: "t3", kind: "dev" }),
     ]);
     const service = new TaskService(prisma);
 
@@ -1788,9 +1550,9 @@ describe("TaskService.listReady() filters (unit)", () => {
 
   it("listReady({ kind: 'dev' }) returns only tasks with kind === 'dev' (TKD-1.1)", async () => {
     const prisma = makeReadyPrismaDouble([
-      makeReadyTask({ id: "t1", kind: "prd", autonomousPlanSession: true }),
-      makeReadyTask({ id: "t2", kind: "dev", autonomousPlanSession: false }),
-      makeReadyTask({ id: "t3", kind: "dev", autonomousPlanSession: null }),
+      makeReadyTask({ id: "t1", kind: "prd" }),
+      makeReadyTask({ id: "t2", kind: "dev" }),
+      makeReadyTask({ id: "t3", kind: "dev" }),
     ]);
     const service = new TaskService(prisma);
 
@@ -1803,30 +1565,15 @@ describe("TaskService.listReady() filters (unit)", () => {
 
   it("listReady() with kind unset excludes kind:'prd' tasks from the ready set, includes the rest (TKD-1.1)", async () => {
     const prisma = makeReadyPrismaDouble([
-      makeReadyTask({ id: "t1", kind: "prd", autonomousPlanSession: true }),
-      makeReadyTask({ id: "t2", kind: "dev", autonomousPlanSession: false }),
-      makeReadyTask({ id: "t3", kind: "dev", autonomousPlanSession: null }),
+      makeReadyTask({ id: "t1", kind: "prd" }),
+      makeReadyTask({ id: "t2", kind: "dev" }),
+      makeReadyTask({ id: "t3", kind: "dev" }),
     ]);
     const service = new TaskService(prisma);
 
     const result = await service.listReady(undefined, undefined, {});
 
     expect(result.map((t) => t.id).sort()).toEqual(["t2", "t3"]);
-  });
-
-  it("listReady({ autonomousPlanSession: false }) still narrows by the legacy flag (transition-window back-compat)", async () => {
-    const prisma = makeReadyPrismaDouble([
-      makeReadyTask({ id: "t1", kind: "prd", autonomousPlanSession: true }),
-      makeReadyTask({ id: "t2", kind: "dev", autonomousPlanSession: false }),
-      makeReadyTask({ id: "t3", kind: "dev", autonomousPlanSession: null }),
-    ]);
-    const service = new TaskService(prisma);
-
-    const result = await service.listReady(undefined, undefined, {
-      autonomousPlanSession: false,
-    });
-
-    expect(result.map((t) => t.id)).toEqual(["t2"]);
   });
 
   // ─── assignee ─────────────────────────────────────────────────────────────
@@ -2310,81 +2057,6 @@ describe("TaskService.listBlocked() filters (unit)", () => {
     const prisma = makeBlockedFilterPrismaDouble([
       makeBlockedFilterTask({ id: "t1", status: "blocked", hitl: true }),
       makeBlockedFilterTask({ id: "t2", status: "blocked", hitl: false }),
-    ]);
-    const service = new TaskService(prisma);
-
-    const result = await service.listBlocked(
-      undefined,
-      undefined,
-      undefined,
-      {},
-    );
-
-    expect(result.map((t) => t.id).sort()).toEqual(["t1", "t2"]);
-  });
-
-  // ─── autonomousPlanSession (PDR-2.1) ───────────────────────────────────────
-  //
-  // Plain equality post-filter, no listBlocked()-inclusion side effect —
-  // mirrors the shape of the other plain filters above (e.g. branch), not
-  // hitl's blockedBy-driven nuance.
-
-  it("listBlocked({ autonomousPlanSession: true }) returns only tasks with autonomousPlanSession === true", async () => {
-    const prisma = makeBlockedFilterPrismaDouble([
-      makeBlockedFilterTask({
-        id: "t1",
-        status: "blocked",
-        autonomousPlanSession: true,
-      }),
-      makeBlockedFilterTask({
-        id: "t2",
-        status: "blocked",
-        autonomousPlanSession: false,
-      }),
-    ]);
-    const service = new TaskService(prisma);
-
-    const result = await service.listBlocked(undefined, undefined, undefined, {
-      autonomousPlanSession: true,
-    });
-
-    expect(result.map((t) => t.id)).toEqual(["t1"]);
-  });
-
-  it("listBlocked({ autonomousPlanSession: false }) returns only tasks with autonomousPlanSession === false", async () => {
-    const prisma = makeBlockedFilterPrismaDouble([
-      makeBlockedFilterTask({
-        id: "t1",
-        status: "blocked",
-        autonomousPlanSession: true,
-      }),
-      makeBlockedFilterTask({
-        id: "t2",
-        status: "blocked",
-        autonomousPlanSession: false,
-      }),
-    ]);
-    const service = new TaskService(prisma);
-
-    const result = await service.listBlocked(undefined, undefined, undefined, {
-      autonomousPlanSession: false,
-    });
-
-    expect(result.map((t) => t.id)).toEqual(["t2"]);
-  });
-
-  it("listBlocked() with autonomousPlanSession unset returns every blocked task regardless of value (back-compat)", async () => {
-    const prisma = makeBlockedFilterPrismaDouble([
-      makeBlockedFilterTask({
-        id: "t1",
-        status: "blocked",
-        autonomousPlanSession: true,
-      }),
-      makeBlockedFilterTask({
-        id: "t2",
-        status: "blocked",
-        autonomousPlanSession: false,
-      }),
     ]);
     const service = new TaskService(prisma);
 

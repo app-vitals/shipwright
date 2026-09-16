@@ -346,10 +346,10 @@ describe("plan-session.md — `--autonomous {task-id}` argument parsing (PDR-3.1
     const section = extractArgsAndAutoDetectSection(content);
     expect(section).toContain("--autonomous");
     expect(section).toContain("{task-id}");
-    // TKD-1.1: `kind: "prd"` is the current spelling; the legacy
-    // autonomousPlanSession boolean stays documented as still-accepted.
+    // TKD-1.3: `kind: "prd"` is the only spelling now that the legacy
+    // autonomousPlanSession boolean has been dropped.
     expect(section).toContain('kind: "prd"');
-    expect(section.toLowerCase()).toContain("autonomousplansession");
+    expect(section.toLowerCase()).not.toContain("autonomousplansession");
   });
 
   it("states repo/session are always passed explicitly and the auto-detect confirmation flow does not apply", () => {

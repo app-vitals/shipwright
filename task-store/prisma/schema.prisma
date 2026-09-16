@@ -45,11 +45,10 @@ enum TaskStatus {
 //         part of the ?ready=true set (ready.ts excludes it) — a PRD task has no
 //         dependency graph to resolve and must not be picked up as dev work.
 //
-// TKD-1.1: supersedes the boolean `autonomousPlanSession` flag below, which is
-// retained (column, API field, and `?autonomousPlanSession=` filter) for the
-// transition window. The task-store normalizes between the two on every write
-// — see normalizeTaskKind() in src/task-service.ts — so the pair stays
-// self-consistent and the legacy filter keeps returning the same rows.
+// TKD-1.1 introduced this enum as the successor to a boolean
+// `autonomousPlanSession` flag, kept in sync with it during a transition
+// window; TKD-1.3 dropped that legacy flag once every writer (TKD-1.2) moved
+// off it.
 
 enum TaskKind {
   dev
@@ -69,40 +68,37 @@ model Task {
   title  String
   status TaskStatus
 
-  source                String?
-  session               String?
-  repo                  String?
-  description           String?
-  acceptanceCriteria    String[]
-  layer                 String?
-  branch                String?
-  dependencies          String[]
-  pr                    Int?
-  hours                 Float?
-  startedAt             String?
-  prCreatedAt           String?
-  mergedAt              String?
-  blockedAt             String?
-  blockedReason         String?
-  note                  String?
-  type                  String?
-  priority              String?
-  cancelledAt           String?
-  completedAt           String?
-  deployingAt           String?
-  deployedAt            String?
-  ciFixAttempts         Int?
-  mergeCommit           String?
-  prUrl                 String?
-  assignee              String?
-  issue                 String?
-  model                 String? // "haiku" | "sonnet" | "opus"
-  complexity            Int?
-  hitl                  Boolean?
-  kind                  TaskKind @default(dev)
-  // Legacy spelling of `kind == prd` (TKD-1.1). Still written/read by the
-  // API; kept in sync with `kind` by normalizeTaskKind() on every write.
-  autonomousPlanSession Boolean?
+  source             String?
+  session            String?
+  repo               String?
+  description        String?
+  acceptanceCriteria String[]
+  layer              String?
+  branch             String?
+  dependencies       String[]
+  pr                 Int?
+  hours              Float?
+  startedAt          String?
+  prCreatedAt        String?
+  mergedAt           String?
+  blockedAt          String?
+  blockedReason      String?
+  note               String?
+  type               String?
+  priority           String?
+  cancelledAt        String?
+  completedAt        String?
+  deployingAt        String?
+  deployedAt         String?
+  ciFixAttempts      Int?
+  mergeCommit        String?
+  prUrl              String?
+  assignee           String?
+  issue              String?
+  model              String? // "haiku" | "sonnet" | "opus"
+  complexity         Int?
+  hitl               Boolean?
+  kind               TaskKind @default(dev)
 
   // ─── Skip tracking (auto-block after repeated no-op dispatches) ───
   // skipCount increments each time the loop orchestrator dispatches this task
@@ -169,9 +165,9 @@ model Task {
 // deleted. Nothing deletes Task rows today, so this has no live effect.
 
 model TaskEvent {
-  id       String @id @default(cuid())
+  id       String  @id @default(cuid())
   taskId   String
-  task     Task   @relation(fields: [taskId], references: [id])
+  task     Task    @relation(fields: [taskId], references: [id])
   field    String
   oldValue String?
   newValue String?
@@ -435,7 +431,7 @@ model TaskToken {
   id        String    @id @default(cuid())
   token     String    @unique // SHA-256 hash of the raw token (hex)
   label     String?
-  agentId   String?   // null = admin token; set = agent token scoped to this agent
+  agentId   String? // null = admin token; set = agent token scoped to this agent
   createdAt DateTime  @default(now())
   revokedAt DateTime?
 }

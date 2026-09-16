@@ -1218,14 +1218,14 @@ manually-filed infra task).
 ## Scenario 45: /plan-session --autonomous — Spec Materialized From the Task Description
 
 Covers the hand-off from an external PRD submitter (e.g. a platform gateway that POSTs a
-task flagged `autonomousPlanSession: true` with the whole spec in `description`). Before
+task flagged `kind: "prd"` with the whole spec in `description`). Before
 this change Step 1 only ever read `planning/{session}/PRODUCT-SPEC.md` from the worktree
 and otherwise fell back to the interactive "What are we building?" prompt — which, under
 `--autonomous`, has no one to answer it.
 
 ### Setup
 1. A task in the task store: `id: prd-demo`, `session: prd-demo`, `repo: {org/repo}`,
-   `status: pending`, `autonomousPlanSession: true`, and a `description` of
+   `status: pending`, `kind: "prd"`, and a `description` of
    `Commit as PRODUCT-SPEC.md and run /shipwright:plan-session.\n\n# PRODUCT-SPEC.md\n\n…`
    (a small but complete spec body).
 2. A target repo cloned at `repos/{repo}` with **no** `planning/prd-demo/` directory.
