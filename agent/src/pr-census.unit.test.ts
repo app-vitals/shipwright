@@ -201,29 +201,31 @@ describe("classifyPrOrigin", () => {
   });
 
   // NOTE: per the module doc comment's explicit, twice-stated precedence
-  // order (ci -> dependency_bot -> shipwright -> human -> unknown), the ci/
-  // dependency_bot checks run BEFORE the task-row/shipwright check — so an
-  // author login that independently triggers ci/dependency_bot wins over a
-  // task-row match, not the other way around. This is the interpretation
-  // implemented and tested here.
-  test("a ci-triggering author login takes precedence over a task-row match", () => {
+  // order (shipwright -> ci -> dependency_bot -> human -> unknown), the
+  // task-row/shipwright check runs BEFORE the ci/dependency_bot checks — so
+  // a task-row match wins over an author login that would otherwise say
+  // ci/dependency_bot, not the other way around. A task-row match is a
+  // direct DB join and a more trustworthy signal than inferring origin from
+  // author login/branch name. This is the interpretation implemented and
+  // tested here.
+  test("a task-row match takes precedence over a ci-triggering author login", () => {
     expect(
       classifyPrOrigin({
         authorLogin: "github-actions[bot]",
         headRefName: "feat/x",
         hasTaskRowMatch: true,
       }),
-    ).toBe("ci");
+    ).toBe("shipwright");
   });
 
-  test("a dependency_bot-triggering author login takes precedence over a task-row match", () => {
+  test("a task-row match takes precedence over a dependency_bot-triggering author login", () => {
     expect(
       classifyPrOrigin({
         authorLogin: "renovate[bot]",
         headRefName: "renovate/some-dep",
         hasTaskRowMatch: true,
       }),
-    ).toBe("dependency_bot");
+    ).toBe("shipwright");
   });
 });
 

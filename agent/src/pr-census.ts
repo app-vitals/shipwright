@@ -92,15 +92,19 @@ const CI_BRANCH_PATTERN = /^chore\/(chart|plugin-version)-v/;
  * GitHub-label approach was explicitly rejected; task-row match already
  * covers shipwright's own PRs without it). Precedence:
  *
- *   ci -> dependency_bot -> shipwright -> human -> unknown
+ *   shipwright -> ci -> dependency_bot -> human -> unknown
  *
- * `unknown` is reached only when `authorLogin` is missing/null AND nothing
- * else matched — a task-row match still wins over `unknown` even with a
- * missing author login, since the shipwright check runs before the
- * human/unknown catch-all.
+ * A task-row match (a direct DB join) is checked first and takes precedence
+ * over an author login or branch name that would otherwise say `ci` or
+ * `dependency_bot` — a task-store row is a more trustworthy signal than
+ * inferring origin from author login/branch name, which could theoretically
+ * collide (e.g. a bot re-authoring a shipwright-tracked PR). `unknown` is
+ * reached only when `authorLogin` is missing/null AND nothing else matched.
  */
 export function classifyPrOrigin(input: ClassifyPrOriginInput): PrOrigin {
   const { authorLogin, headRefName, hasTaskRowMatch } = input;
+
+  if (hasTaskRowMatch) return "shipwright";
 
   if (
     authorLogin === "github-actions[bot]" ||
@@ -114,8 +118,6 @@ export function classifyPrOrigin(input: ClassifyPrOriginInput): PrOrigin {
   if (authorLogin === "renovate[bot]" || authorLogin === "dependabot[bot]") {
     return "dependency_bot";
   }
-
-  if (hasTaskRowMatch) return "shipwright";
 
   if (authorLogin) return "human";
 
