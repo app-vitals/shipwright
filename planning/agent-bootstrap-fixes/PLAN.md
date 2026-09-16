@@ -46,15 +46,28 @@ Bootstrapping a new agent (Maverick) surfaced three separate defects:
 
 ## Investigation notes (why the fix is scoped the way it is)
 
-- **No shared-core extraction needed.** `POST /agents` (Path A) has **no
-  caller anywhere in this repo** — no Taskfile target, no script, no CI job.
-  `task stack`'s dev workflow explicitly points developers at the web form
-  (`/admin/agents/new`) instead. The only reference to `POST /agents` outside
-  its own implementation/tests is the `agent-admin` skill's docs. A third,
-  independent reimplementation of the same manifest-seeding logic already
-  exists in `scripts/seed-dev-agent.ts` (raw Prisma upserts for the special
-  `dev-agent` bootstrap case) — so the manifest-driven tools/plugins seeding
-  pattern has been hand-copied three times, not two.
+- **No shared-core extraction needed for the tools/plugins-seeding fix
+  itself** (ABF-3.1) — that part is a straightforward mirror of
+  `agents-api.ts`'s existing loop onto Path B. `task stack`'s dev workflow
+  points developers at the web form (`/admin/agents/new`) for interactive
+  creation.
+- **Retiring Path A (ABF-3.2) is not merely removing a caller-less
+  endpoint, though.** `POST /agents` is not just referenced in "the
+  `agent-admin` skill's docs" — it is the skill's **documented, prescribed
+  mechanism** for self-hosted agent creation (`SKILL.md:362-384`), used
+  precisely because the `/admin/provision` wizard requires interactive OAuth
+  and doesn't apply to self-hosted agents. It is Bearer-token authenticated
+  (`createAdminAuthMiddleware`), while the surviving `POST /admin/agents`
+  path is session-cookie-only (`createUIAuthMiddleware`, no Bearer
+  fallback — see ABF-3.2 below). So Path A is a real, in-repo-documented,
+  headless creation path today, not a hypothetical external one — see
+  ABF-3.2's HITL note for the full detail and the resulting scope
+  (a replacement Bearer-auth path, plus doc updates across five `docs/*.md`
+  files and two `site/` pages).
+- A third, independent reimplementation of the same manifest-seeding logic
+  already exists in `scripts/seed-dev-agent.ts` (raw Prisma upserts for the
+  special `dev-agent` bootstrap case) — so the manifest-driven tools/plugins
+  seeding pattern has been hand-copied three times, not two.
 - **Decision: fix Path B, then retire Path A**, rather than building a shared
   `createAgentWithSeeding()` core both paths call. Since Path A is being
   deleted, none of the cross-path reconciliation work (differing rollback
@@ -92,11 +105,27 @@ Bootstrapping a new agent (Maverick) surfaced three separate defects:
 4. **ABF-3.2** — Retire `POST /agents` (agents-api.ts) and the `agent-admin`
    skill's references to it, now that Path B is the sole, fixed creation path.
    Depends on ABF-3.1 (fix before remove — add → fix → remove sequencing, not
-   remove-then-fix). **Flagged HITL**: no external caller was found in this
-   repo, but the admin service is deployed and could in principle be called
-   by something outside this codebase (a personal script, an external
-   integration) — removal should not proceed until a human confirms no live
-   external caller exists.
+   remove-then-fix). **Flagged HITL — real in-repo caller, not just a
+   hypothetical external one.** `plugins/shipwright/skills/agent-admin/SKILL.md:362-384`
+   documents `POST /agents` (Bearer-token auth via `createAdminAuthMiddleware`,
+   `admin/src/agents-api.ts:1054-1068`) as the prescribed way to register a
+   **self-hosted** agent, specifically because the `/admin/provision` wizard
+   doesn't apply to that case. The surviving path, `POST /admin/agents`, is
+   gated by `createUIAuthMiddleware` (`admin/src/admin-ui.ts:547-561`, wired
+   in as `requireAuth` at line 748), which only accepts a session cookie from
+   interactive OAuth login — it has no Bearer-token fallback. So retiring
+   Path A as scoped doesn't just remove a hypothetical external caller, it
+   removes the only non-interactive, headless agent-creation mechanism in the
+   codebase, with no replacement. A Bearer-auth-capable replacement path (or
+   a Bearer-token affordance on `POST /admin/agents`) should be scoped as
+   part of, or before, this task. Human sign-off should not proceed until
+   that gap is addressed — not just until "no external caller" is confirmed.
+   `POST /agents` is also referenced in `docs/agent-ops.md`,
+   `docs/agent-types.md`, `docs/migration.md`, `docs/configuration-agent.md`,
+   `docs/deploy-kubernetes.md`, and two `site/` content pages
+   (`site/src/content/docs/the-agent.mdx`, `site/src/content/docs/reference.mdx`)
+   — all of these need updating as part of this task's scope, not just the
+   agent-admin skill.
 
 ## Tasks
 
@@ -105,7 +134,7 @@ Bootstrapping a new agent (Maverick) surfaced three separate defects:
 | ABF-1.1 | Fix stale cron description in BOOTSTRAP.md.template + add regression test | Shared | 2 | 2 / sonnet | | — |
 | ABF-2.1 | Add GitHub App auth retry to agent's config-sync loop (no-restart activation) | Background | 5 | 4 / sonnet | | — |
 | ABF-3.1 | Seed manifest tools + plugins on POST /admin/agents (fix zero-tool bug) | API | 4 | 3 / sonnet | | — |
-| ABF-3.2 | Retire POST /agents JSON API + agent-admin skill references | API | 2 | 2 / sonnet | ⚠ HITL | ABF-3.1 |
+| ABF-3.2 | Scope+add headless Bearer-auth replacement, then retire POST /agents JSON API + update agent-admin skill and all doc references | API | 2 | 2 / sonnet | ⚠ HITL | ABF-3.1 |
 
 ### Dependency graph
 
@@ -114,23 +143,29 @@ Bootstrapping a new agent (Maverick) surfaced three separate defects:
   ├─ ABF-1.1 (no deps)
   ├─ ABF-2.1 (no deps)
   └─ ABF-3.1 (no deps)
-        └─ ABF-3.2 ⚠HITL (confirm no external caller before removal)
+        └─ ABF-3.2 ⚠HITL (scope headless Bearer-auth replacement before removal)
 ```
 
 ### Breaking-change safety
 
 - ABF-1.1, ABF-2.1, ABF-3.1 are pure additions/fixes — safe to deploy standalone.
 - ABF-3.2 removes a documented, external-facing API endpoint
-  (`POST /agents`). No consumer was found anywhere in this repo (see
-  Investigation notes above), but the admin service is a deployed API and
-  could have callers this repo can't see. Sequenced strictly after ABF-3.1
-  (fix the surviving path first) and flagged HITL so a human confirms zero
-  live external callers before the removal PR merges.
+  (`POST /agents`) that is also the only headless/Bearer-token
+  agent-creation mechanism in the codebase today — the `agent-admin` skill
+  prescribes it for self-hosted agents, and the surviving `POST /admin/agents`
+  path has no Bearer-token fallback (see Investigation notes and ABF-3.2
+  above). Sequenced strictly after ABF-3.1 (fix the surviving path first)
+  and flagged HITL so a human confirms a replacement headless path is in
+  place (or explicitly accepted as out of scope) before the removal PR
+  merges — not merely that no external caller exists.
 
 ### HITL scan
 
-`ABF-3.2` — removing a documented external API surface based on an
-in-repo-only "no caller found" check is a judgment call a human should make,
-not something dev-task should decide unilaterally from a grep. Flagged HITL
-with a `## Human steps` note. No other task in this plan requires human
-steps.
+`ABF-3.2` — removing `POST /agents` retires a real, documented, in-repo
+headless creation path (the `agent-admin` skill's prescribed mechanism for
+self-hosted agents) with no Bearer-auth-capable replacement currently
+scoped — not just a hypothetical external caller. Deciding whether to scope
+a replacement first, or explicitly accept the gap, is a judgment call a
+human should make, not something dev-task should decide unilaterally.
+Flagged HITL with a `## Human steps` note. No other task in this plan
+requires human steps.
