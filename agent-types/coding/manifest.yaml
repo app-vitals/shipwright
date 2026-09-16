@@ -111,12 +111,6 @@ crons:
     preCheck: shipwright:check-docs-freshness.ts
     silent: true
     enabled: false
-  - name: shipwright-site-docs-freshness
-    schedule: "0 7 * * *"
-    prompt: /docs-sync --auto
-    preCheck: shipwright:check-site-docs-freshness.ts
-    silent: true
-    enabled: false
   - name: learn-dream
     schedule: "0 3 * * *"
     preCheck: shipwright:check-learn-dream.ts
