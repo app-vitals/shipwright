@@ -4,6 +4,62 @@ Durable notes for breaking changes and the steps needed to migrate across versio
 
 ---
 
+## Breaking: bundled PostgreSQL bump 17 → 18 requires manual data migration _(PGU-1.4)_
+
+**Version**: chart `1.20.58` (PGU-1.1)
+
+**Who this affects**: only existing installs using the bundled `postgresql.enabled: true` path
+that already have real data on a PersistentVolumeClaim. Fresh installs are unaffected — Postgres
+18 is the tested, intended path for a new release. Installs running `postgresql.enabled: false`
+(bring-your-own-Postgres, per
+[`docs/deploy-kubernetes-addons.md`](./deploy-kubernetes-addons.md)) are also unaffected, since
+this chart never touches their database.
+
+PGU-1.1 moved the bundled `postgresql` subchart dependency in `charts/shipwright/Chart.yaml` from
+chart `16.7.27` (PostgreSQL app `17.6.0`) to chart `18.11.3` (PostgreSQL app `18.6.0`), as part of
+the chart version bump to `1.20.58`. This is a PostgreSQL **major**-version change, and major
+upgrades are not in-place: `helm upgrade` reuses the release's existing PVC, so the new pod starts
+PostgreSQL 18 binaries directly against a 17.x data directory. PostgreSQL refuses to do this and
+the pod crash-loops with an error like `database files are incompatible with server` — there is no
+automatic conversion, and no automated migration job is being built for this (confirmed not
+currently needed by any live deployment).
+
+**What changed**:
+- `charts/shipwright/Chart.yaml`'s `postgresql` dependency: chart `16.7.27` → `18.11.3`,
+  PostgreSQL app `17.6.0` → `18.6.0`.
+- Chart version: `1.20.58`.
+- A live release upgraded straight to `1.20.58`+ with an existing PVC will crash-loop on the
+  bundled Postgres pod instead of starting cleanly.
+
+**Migration**:
+- **For fresh installs**: no action — install `1.20.58`+ directly.
+- **For existing installs with data on the bundled PVC**, before upgrading, pick one:
+  1. **Migrate the data.** Scale the app down first so nothing writes during the dump, then
+     `pg_dumpall` from the old (17.x) instance to a SQL file:
+     ```bash
+     kubectl exec -n <ns> <release>-postgresql-0 -- \
+       pg_dumpall -U postgres > shipwright-pg17.sql
+     ```
+     Upgrade the release and let the new PVC initialize empty on 18.x, then restore:
+     ```bash
+     kubectl exec -i -n <ns> <release>-postgresql-0 -- \
+       psql -U postgres < shipwright-pg17.sql
+     ```
+     A `pg_upgrade` run against a copy of the old data directory is an equivalent alternative,
+     but requires both major versions' binaries present in the same container.
+  2. **Stay on PostgreSQL 17 for now** — pin `postgresql.image` back to a 17.x
+     `bitnamilegacy/postgresql` build, or hold the release at chart `1.20.57`.
+  3. **Switch to bring-your-own-Postgres** — set `postgresql.enabled: false` and manage the
+     major-version upgrade on an external database instead.
+
+  See the [`charts/shipwright/README.md`](../charts/shipwright/README.md) section "Upgrading to
+  chart 1.20.58+ — bundled PostgreSQL 17 → 18" for the full command reference and image-pinning
+  details.
+- **Take a backup either way** — the chart does not snapshot the PVC for you, and `helm rollback`
+  restores manifests, not data.
+
+---
+
 ## Breaking: admin's `DATABASE_URL_SHIPWRIGHT_ADMIN` is now parsed by `pg`, not Prisma _(PS7-1.1)_
 
 **Version**: next (PS7-1.1)
