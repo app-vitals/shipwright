@@ -6,9 +6,16 @@
  * valid 3.1.0 spec. `buildSpecApp()` wires the /doc endpoint directly — this test
  * does NOT verify that production `main.ts` exposes /doc (it does not today;
  * wiring /doc in the factory is a planned follow-up).
+ *
+ * Also guards the committed generated artifact `admin/openapi.json` against
+ * drift: its path+method set must match the live spec, so a route removed from
+ * (or added to) the Hono registrations can't be left behind in the checked-in
+ * spec (and therefore in the `lib/admin-types.ts` generated from it).
  */
 
 import { describe, expect, it } from "bun:test";
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 import { OpenAPIHono } from "@hono/zod-openapi";
 import { NoopAgentProvisioner } from "./agent-provisioner.ts";
 import { createAdminApp, parseAdminApiKeys } from "./agents-api.ts";
@@ -423,11 +430,46 @@ describe("GET /doc — OpenAPI spec endpoint", () => {
     expect(body.paths["/agents/:id/crons"]).toBeDefined();
   });
 
-  it("spec covers admin routes (POST /agents, GET /agents/{id}/envs)", async () => {
+  it("spec covers admin routes (GET /agents, GET /agents/{id}/envs)", async () => {
     const app = buildSpecApp();
     const res = await app.request("/doc");
     const body = await res.json();
     expect(body.paths["/agents"]).toBeDefined();
+    expect(body.paths["/agents"].get).toBeDefined();
     expect(body.paths["/agents/{id}/envs"]).toBeDefined();
+  });
+
+  it("does not document the retired POST /agents creation route", async () => {
+    const app = buildSpecApp();
+    const res = await app.request("/doc");
+    const body = await res.json();
+    // ABF-3.2 retired the JSON creation API — agents are created only via the
+    // admin UI's form-encoded POST /admin/agents, which is not part of this spec.
+    expect(body.paths["/agents"].post).toBeUndefined();
+    expect(body.components?.schemas?.CreateAgentBody).toBeUndefined();
+  });
+
+  it("committed admin/openapi.json matches the live spec's routes", async () => {
+    const app = buildSpecApp();
+    const res = await app.request("/doc");
+    const live = await res.json();
+    const committed = JSON.parse(
+      readFileSync(resolve(import.meta.dir, "../openapi.json"), "utf8"),
+    ) as { paths: Record<string, Record<string, unknown>> };
+
+    // The live /doc keeps Hono colon params (`:id`); generate-admin-spec.ts
+    // rewrites them to OpenAPI braces before writing the artifact.
+    const operations = (paths: Record<string, Record<string, unknown>>) =>
+      Object.entries(paths)
+        .flatMap(([path, def]) =>
+          Object.keys(def).map(
+            (method) =>
+              `${method.toUpperCase()} ${path.replace(/:(\w+)/g, "{$1}")}`,
+          ),
+        )
+        .sort();
+
+    // If this fails, run `bun run generate:admin-spec && bun run generate:admin-types`.
+    expect(operations(committed.paths)).toEqual(operations(live.paths));
   });
 });

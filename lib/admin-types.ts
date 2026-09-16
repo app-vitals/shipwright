@@ -4,91 +4,6 @@
  */
 
 export interface paths {
-    "/agents": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get: {
-            parameters: {
-                query?: never;
-                header?: never;
-                path?: never;
-                cookie?: never;
-            };
-            requestBody?: never;
-            responses: {
-                /** @description List of agents */
-                200: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": components["schemas"]["AgentSummary"][];
-                    };
-                };
-                /** @description Forbidden */
-                403: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": components["schemas"]["Error"];
-                    };
-                };
-            };
-        };
-        put?: never;
-        post: {
-            parameters: {
-                query?: never;
-                header?: never;
-                path?: never;
-                cookie?: never;
-            };
-            requestBody?: {
-                content: {
-                    "application/json": components["schemas"]["CreateAgentBody"];
-                };
-            };
-            responses: {
-                /** @description Agent created */
-                201: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": components["schemas"]["Agent"];
-                    };
-                };
-                /** @description Bad request */
-                400: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": components["schemas"]["Error"];
-                    };
-                };
-                /** @description Forbidden */
-                403: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": components["schemas"]["Error"];
-                    };
-                };
-            };
-        };
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/agents/reconcile": {
         parameters: {
             query?: never;
@@ -98,6 +13,10 @@ export interface paths {
         };
         get?: never;
         put?: never;
+        /**
+         * Reconcile all agents' K8s state
+         * @description Admin-only. Reconciles Kubernetes Deployment state against all managed (non-self-hosted) agents in the DB, returning counts of recreated/updated deployments plus any orphaned deployments or per-agent failures.
+         */
         post: {
             parameters: {
                 query?: never;
@@ -142,6 +61,10 @@ export interface paths {
         };
         get?: never;
         put?: never;
+        /**
+         * Provision an agent's K8s workload
+         * @description Admin-only. Provisions or re-provisions the Kubernetes workload for a single managed agent — idempotent, safe to call on an already-provisioned agent. For self-hosted agents, returns `{ skipped: true, reason: "self-hosted" }` with no K8s changes.
+         */
         post: {
             parameters: {
                 query?: never;
@@ -195,6 +118,10 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
+        /**
+         * Get an agent
+         * @description Admin-only. Returns the full agent record including `selfHosted`, `repos`, `reviewAuthorAllowlist`, `patchAuthorAllowlist`, `restrictSlackToMembers`, `typeName`, and `missingRequiredEnv` — required env keys declared by the agent's type manifest with no corresponding AgentEnv row yet (informational only).
+         */
         get: {
             parameters: {
                 query?: never;
@@ -237,6 +164,10 @@ export interface paths {
         };
         put?: never;
         post?: never;
+        /**
+         * Delete an agent
+         * @description Admin-only. Runs the full deleteAgentFully() teardown: deprovisions the K8s workload, revokes task-store and chat-service tokens, deletes chat threads, and — if an `xoxpToken` is supplied — deletes the Slack app. The Agent row (and its cascade-deleted child records) is deleted last, only if every automatable step succeeded; `agentDeleted: false` means the row was preserved and the call is safe to retry.
+         */
         delete: {
             parameters: {
                 query?: never;
@@ -283,6 +214,10 @@ export interface paths {
         };
         options?: never;
         head?: never;
+        /**
+         * Update an agent
+         * @description Admin-only. Updates `selfHosted`, `repos`, `reviewAuthorAllowlist`, `patchAuthorAllowlist`, `restrictSlackToMembers`, and/or `slackId`. `typeName` is not updatable via this route. Returns the updated agent, including a `warning` field when `restrictSlackToMembers` is set true on an agent with zero members.
+         */
         patch: {
             parameters: {
                 query?: never;
@@ -338,6 +273,54 @@ export interface paths {
         };
         trace?: never;
     };
+    "/agents": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List all agents
+         * @description Admin-only. Returns every agent's `id`, `name`, `selfHosted`, and `typeName` — used for metrics name resolution.
+         */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description List of agents */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["AgentSummary"][];
+                    };
+                };
+                /** @description Forbidden */
+                403: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/agents/{id}/envs": {
         parameters: {
             query?: never;
@@ -345,6 +328,10 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
+        /**
+         * Get env vars
+         * @description Returns the agent's env vars. Non-secret values are decrypted; values flagged secret are masked as `***` and their keys listed in `secretKeys`.
+         */
         get: {
             parameters: {
                 query?: never;
@@ -368,6 +355,10 @@ export interface paths {
             };
         };
         put?: never;
+        /**
+         * Replace all env vars
+         * @description Bulk-replaces all env vars for the agent atomically. Values are stored encrypted (AES-256-GCM).
+         */
         post: {
             parameters: {
                 query?: never;
@@ -406,6 +397,10 @@ export interface paths {
         delete?: never;
         options?: never;
         head?: never;
+        /**
+         * Update specific env vars
+         * @description Updates only the specified keys, leaving other existing env vars untouched.
+         */
         patch: {
             parameters: {
                 query?: never;
@@ -453,6 +448,10 @@ export interface paths {
         get?: never;
         put?: never;
         post?: never;
+        /**
+         * Delete an env var
+         * @description Deletes a single env var by key.
+         */
         delete: {
             parameters: {
                 query?: never;
@@ -486,7 +485,10 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** List agent cron jobs */
+        /**
+         * List agent cron jobs
+         * @description Returns the agent's cron jobs as a plain array (not wrapped), used by the agent harness's scheduler. Returns 404 if the agent doesn't exist.
+         */
         get: {
             parameters: {
                 query?: never;
@@ -528,6 +530,10 @@ export interface paths {
             };
         };
         put?: never;
+        /**
+         * Create a cron job
+         * @description Creates a cron job for the agent. `channel` and `user` are mutually exclusive delivery targets. Returns the created job including system-managed read-only fields (`id`, `system`, `parentCronId`, `createdAt`, `updatedAt`) — `parentCronId` is never settable by the caller.
+         */
         post: {
             parameters: {
                 query?: never;
@@ -578,6 +584,10 @@ export interface paths {
         };
         get?: never;
         put?: never;
+        /**
+         * Reconcile system crons
+         * @description Reconciles the agent's system crons against the cron list declared by its Agent Type manifest. Runs in three passes within a single transaction: create-or-update matched-by-name system crons (preserving IDs so run history survives), link/unlink parent-child cron relationships, and delete orphaned system crons no longer in the manifest. Called automatically on agent startup; returns created/updated/deleted counts.
+         */
         post: {
             parameters: {
                 query?: never;
@@ -616,6 +626,10 @@ export interface paths {
         get?: never;
         put?: never;
         post?: never;
+        /**
+         * Delete a cron job
+         * @description Deletes a cron job. System crons (`system: true`) cannot be deleted and return 403.
+         */
         delete: {
             parameters: {
                 query?: never;
@@ -648,6 +662,10 @@ export interface paths {
         };
         options?: never;
         head?: never;
+        /**
+         * Update a cron job
+         * @description Updates a cron job. `schedule` and `prompt` must be provided together for a content update; `enabled` and `preCheck` are orthogonal and may be sent alone or combined with any other field. At least one field must be present — an empty body returns 400. System crons (`system: true`) cannot be updated and return 403.
+         */
         patch: {
             parameters: {
                 query?: never;
@@ -693,6 +711,10 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
+        /**
+         * List cron jobs with run summary
+         * @description Returns each cron job's last-run timestamp, outcome, and today's run count alongside its config — without full prompt text. Useful for dashboards.
+         */
         get: {
             parameters: {
                 query?: never;
@@ -739,6 +761,10 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
+        /**
+         * List cron runs
+         * @description Returns a paginated list of runs for a cron job (`limit` default 20, `offset` default 0). `itemId` and `phaseId` are optional server-side filters that combine with AND when both are supplied.
+         */
         get: {
             parameters: {
                 query?: {
@@ -777,6 +803,10 @@ export interface paths {
             };
         };
         put?: never;
+        /**
+         * Create a cron run record
+         * @description Records the start of a cron job execution, including optional skip/outcome data and dispatch attribution (`itemType`/`itemId`, write-once at creation).
+         */
         post: {
             parameters: {
                 query?: never;
@@ -841,6 +871,10 @@ export interface paths {
         delete?: never;
         options?: never;
         head?: never;
+        /**
+         * Update a cron run record
+         * @description Records completion data after a run finishes — `completedAt`, `outcome`, `error`, `skipped`, `skipReason`, `sessionId`, and `modelBreakdown` (per-model token/cost entries, upserted per `[cronRunId, model]`). At least one field must be provided.
+         */
         patch: {
             parameters: {
                 query?: never;
@@ -896,6 +930,10 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
+        /**
+         * List tool patterns
+         * @description Returns every allowed-tool entry for the agent, each with `id`, `pattern`, and `enabled`.
+         */
         get: {
             parameters: {
                 query?: never;
@@ -919,6 +957,10 @@ export interface paths {
             };
         };
         put?: never;
+        /**
+         * Add a tool pattern
+         * @description Adds an allowed-tool entry — a glob or exact Claude Code tool name (e.g. "Read", "Bash", "mcp__*") the agent can call.
+         */
         post: {
             parameters: {
                 query?: never;
@@ -970,6 +1012,10 @@ export interface paths {
         get?: never;
         put?: never;
         post?: never;
+        /**
+         * Remove a tool pattern
+         * @description Deletes a tool entry from the agent's allowed-tools list.
+         */
         delete: {
             parameters: {
                 query?: never;
@@ -993,6 +1039,10 @@ export interface paths {
         };
         options?: never;
         head?: never;
+        /**
+         * Enable or disable a tool pattern
+         * @description Updates a tool entry's `pattern` and/or `enabled` state.
+         */
         patch: {
             parameters: {
                 query?: never;
@@ -1038,6 +1088,10 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
+        /**
+         * List API tokens
+         * @description Returns token metadata (hash excluded) for the agent — raw token values are never returned after creation.
+         */
         get: {
             parameters: {
                 query?: never;
@@ -1061,6 +1115,10 @@ export interface paths {
             };
         };
         put?: never;
+        /**
+         * Create an API token
+         * @description Creates a per-agent bearer token for scoped API access. The raw token value is returned once in this response — only its SHA-256 hash is persisted, so it must be saved immediately.
+         */
         post: {
             parameters: {
                 query?: never;
@@ -1103,6 +1161,10 @@ export interface paths {
         get?: never;
         put?: never;
         post?: never;
+        /**
+         * Revoke an API token
+         * @description Soft-deletes the token by setting `revokedAt`.
+         */
         delete: {
             parameters: {
                 query?: never;
@@ -1136,6 +1198,10 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
+        /**
+         * List plugins
+         * @description Returns every plugin installed for the agent.
+         */
         get: {
             parameters: {
                 query?: never;
@@ -1159,6 +1225,10 @@ export interface paths {
             };
         };
         put?: never;
+        /**
+         * Install a plugin
+         * @description Adds a Claude Code marketplace plugin for the agent.
+         */
         post: {
             parameters: {
                 query?: never;
@@ -1194,6 +1264,10 @@ export interface paths {
                 };
             };
         };
+        /**
+         * Remove a plugin
+         * @description Removes the plugin identified by the required `name` query param.
+         */
         delete: {
             parameters: {
                 query: {
@@ -1227,6 +1301,10 @@ export interface paths {
         };
         options?: never;
         head?: never;
+        /**
+         * Update a plugin
+         * @description Re-upserts the plugin identified by the required `name` query param with a new `version` and/or `enabled` state. Uses a query param rather than a path segment because a canonical plugin spec like "my-plugin@org/my-marketplace" can contain a literal "/" that would break path matching.
+         */
         patch: {
             parameters: {
                 query: {
@@ -1273,6 +1351,10 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
+        /**
+         * Get aggregated cron-run token stats
+         * @description Admin-only. Returns token usage and cost aggregated across all agents' cron runs, broken down by agent, cron, model, day, and pipeline phase. Optional `from`/`to` ISO datetime query params bound the range.
+         */
         get: {
             parameters: {
                 query?: {
@@ -1329,6 +1411,10 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
+        /**
+         * Get aggregated chat token daily stats
+         * @description Admin-only. Returns Slack chat token usage aggregated across all agents, broken down by agent, model, and day. Optional `from`/`to` YYYY-MM-DD query params bound the range.
+         */
         get: {
             parameters: {
                 query?: {
@@ -1387,6 +1473,10 @@ export interface paths {
         };
         get?: never;
         put?: never;
+        /**
+         * Record daily chat token usage
+         * @description Atomically accumulates Slack chat token usage into the existing rows for each `(agentId, date, model)` tuple, creating them if absent. Supply a `modelBreakdown` array to split a single day's usage across multiple models. Returns the updated daily rows, one per model.
+         */
         post: {
             parameters: {
                 query?: never;
@@ -1444,6 +1534,10 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
+        /**
+         * Get the latest work-queue snapshot
+         * @description Returns the most recently pushed work-queue snapshot, or 404 if the agent has never pushed one.
+         */
         get: {
             parameters: {
                 query?: never;
@@ -1476,6 +1570,10 @@ export interface paths {
             };
         };
         put?: never;
+        /**
+         * Push a work-queue snapshot
+         * @description Upserts the agent's single ranked work-queue snapshot (tasks/PRs across pipeline phases), overwriting any prior snapshot — there is no history.
+         */
         post: {
             parameters: {
                 query?: never;
@@ -1524,7 +1622,10 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Get agent config bundle */
+        /**
+         * Get agent config bundle
+         * @description Returns the agent's full runtime config bundle — decrypted env vars, allowed-tools patterns, installed plugins (with derived marketplace), scoped repos, review/patch author allowlists, and Slack membership-restriction settings. Polled by the agent harness on startup and during its config sync loop. Returns 404 if the agent doesn't exist.
+         */
         get: {
             parameters: {
                 query?: never;
@@ -1577,64 +1678,6 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
-        Agent: {
-            /** @example clx1234567890 */
-            id: string;
-            /** @example Bodhi */
-            name: string;
-            /** @example U0AALR8M69X */
-            slackId?: string | null;
-            /** @example false */
-            selfHosted: boolean;
-            /** @example coding */
-            typeName: string;
-            /**
-             * Format: date-time
-             * @example 2026-01-01T00:00:00.000Z
-             */
-            createdAt: string;
-            /**
-             * Format: date-time
-             * @example 2026-01-01T00:00:00.000Z
-             */
-            updatedAt: string;
-            /** @example this agent has no members — enabling this will block all Slack senders */
-            warning?: string;
-        };
-        Error: {
-            /** @example not found */
-            error: string;
-        };
-        CreateAgentBody: {
-            /** @example Bodhi */
-            name: string;
-            /** @example U0AALR8M69X */
-            slackId?: string;
-            /** @example false */
-            selfHosted?: boolean;
-            /** @example coding */
-            type?: string;
-            /**
-             * @example [
-             *       "my-org/my-repo"
-             *     ]
-             */
-            repos?: string[];
-            /**
-             * @example [
-             *       "octocat"
-             *     ]
-             */
-            reviewAuthorAllowlist?: string[];
-            /**
-             * @example [
-             *       "octocat"
-             *     ]
-             */
-            patchAuthorAllowlist?: string[];
-            /** @example false */
-            restrictSlackToMembers?: boolean;
-        };
         ReconcileAgentsResult: {
             recreated: string[];
             updated: string[];
@@ -1643,6 +1686,10 @@ export interface components {
                 agentId: string;
                 error: string;
             }[];
+        };
+        Error: {
+            /** @example not found */
+            error: string;
         };
         ProvisionAgentResult: {
             resourceName: string;
