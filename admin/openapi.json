@@ -13,124 +13,6 @@
   ],
   "components": {
     "schemas": {
-      "Agent": {
-        "type": "object",
-        "properties": {
-          "id": {
-            "type": "string",
-            "example": "clx1234567890"
-          },
-          "name": {
-            "type": "string",
-            "example": "Bodhi"
-          },
-          "slackId": {
-            "type": [
-              "string",
-              "null"
-            ],
-            "example": "U0AALR8M69X"
-          },
-          "selfHosted": {
-            "type": "boolean",
-            "example": false
-          },
-          "typeName": {
-            "type": "string",
-            "example": "coding"
-          },
-          "createdAt": {
-            "type": "string",
-            "format": "date-time",
-            "example": "2026-01-01T00:00:00.000Z"
-          },
-          "updatedAt": {
-            "type": "string",
-            "format": "date-time",
-            "example": "2026-01-01T00:00:00.000Z"
-          },
-          "warning": {
-            "type": "string",
-            "example": "this agent has no members — enabling this will block all Slack senders"
-          }
-        },
-        "required": [
-          "id",
-          "name",
-          "selfHosted",
-          "typeName",
-          "createdAt",
-          "updatedAt"
-        ]
-      },
-      "Error": {
-        "type": "object",
-        "properties": {
-          "error": {
-            "type": "string",
-            "example": "not found"
-          }
-        },
-        "required": [
-          "error"
-        ]
-      },
-      "CreateAgentBody": {
-        "type": "object",
-        "properties": {
-          "name": {
-            "type": "string",
-            "minLength": 1,
-            "example": "Bodhi"
-          },
-          "slackId": {
-            "type": "string",
-            "example": "U0AALR8M69X"
-          },
-          "selfHosted": {
-            "type": "boolean",
-            "example": false
-          },
-          "type": {
-            "type": "string",
-            "example": "coding"
-          },
-          "repos": {
-            "type": "array",
-            "items": {
-              "type": "string"
-            },
-            "example": [
-              "my-org/my-repo"
-            ]
-          },
-          "reviewAuthorAllowlist": {
-            "type": "array",
-            "items": {
-              "type": "string"
-            },
-            "example": [
-              "octocat"
-            ]
-          },
-          "patchAuthorAllowlist": {
-            "type": "array",
-            "items": {
-              "type": "string"
-            },
-            "example": [
-              "octocat"
-            ]
-          },
-          "restrictSlackToMembers": {
-            "type": "boolean",
-            "example": false
-          }
-        },
-        "required": [
-          "name"
-        ]
-      },
       "ReconcileAgentsResult": {
         "type": "object",
         "properties": {
@@ -176,6 +58,18 @@
           "updated",
           "orphans",
           "failed"
+        ]
+      },
+      "Error": {
+        "type": "object",
+        "properties": {
+          "error": {
+            "type": "string",
+            "example": "not found"
+          }
+        },
+        "required": [
+          "error"
         ]
       },
       "ProvisionAgentResult": {
@@ -2002,82 +1896,6 @@
     "parameters": {}
   },
   "paths": {
-    "/agents": {
-      "post": {
-        "summary": "Create an agent",
-        "description": "Admin-only. Creates an agent record and, for managed (non-self-hosted) agents, provisions the Kubernetes workload. The optional `type` field (default \"coding\") selects an Agent Type manifest that seeds AgentTool, AgentPlugin, and AgentMember rows plus merged `repos`; an unknown type returns 400 before any row is created. Seeding and provisioning share a rollback-guarded block — if either step fails, every already-seeded child row is cascade-deleted along with the agent row.",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/CreateAgentBody"
-              }
-            }
-          }
-        },
-        "responses": {
-          "201": {
-            "description": "Agent created",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Agent"
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "Bad request",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          },
-          "403": {
-            "description": "Forbidden",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          }
-        }
-      },
-      "get": {
-        "summary": "List all agents",
-        "description": "Admin-only. Returns every agent's `id`, `name`, `selfHosted`, and `typeName` — used for metrics name resolution.",
-        "responses": {
-          "200": {
-            "description": "List of agents",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "array",
-                  "items": {
-                    "$ref": "#/components/schemas/AgentSummary"
-                  }
-                }
-              }
-            }
-          },
-          "403": {
-            "description": "Forbidden",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
     "/agents/reconcile": {
       "post": {
         "summary": "Reconcile all agents' K8s state",
@@ -2323,6 +2141,37 @@
           },
           "404": {
             "description": "Agent not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/agents": {
+      "get": {
+        "summary": "List all agents",
+        "description": "Admin-only. Returns every agent's `id`, `name`, `selfHosted`, and `typeName` — used for metrics name resolution.",
+        "responses": {
+          "200": {
+            "description": "List of agents",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/AgentSummary"
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
             "content": {
               "application/json": {
                 "schema": {

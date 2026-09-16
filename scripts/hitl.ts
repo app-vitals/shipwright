@@ -812,7 +812,7 @@ interface AgentSummary {
   selfHosted: boolean;
 }
 
-/** POST /agents and GET/PATCH /agents/:id full-record shape — includes `repos` and `reviewAuthorAllowlist`. */
+/** GET/PATCH /agents/:id full-record shape — includes `repos` and `reviewAuthorAllowlist`. */
 interface AgentRecord {
   id: string;
   name: string;
@@ -822,6 +822,90 @@ interface AgentRecord {
 
 /** Injectable fetch type so tests can supply a double instead of real network calls. */
 type FetchLike = typeof fetch;
+
+/** Agent Type the hitl agent is created as — mirrors the retired JSON API's default. */
+const HITL_AGENT_TYPE = "coding";
+
+/**
+ * Pulls the `admin_session` cookie out of a Set-Cookie response header and
+ * returns it as a ready-to-send `Cookie` header value (or null when absent).
+ * Pure + exported so the header parsing is unit-testable without a live admin
+ * service.
+ */
+export function parseAdminSessionCookie(
+  setCookie: string | null | undefined,
+): string | null {
+  if (!setCookie) return null;
+  const match = setCookie.match(/(?:^|[,;]\s*)admin_session=([^;,]+)/);
+  return match ? `admin_session=${match[1]}` : null;
+}
+
+/**
+ * Extracts the created agent's id from POST /admin/agents' 302 Location.
+ * On success the form redirects to `/admin/agents/:id` (optionally with a
+ * `?warning=…` query); every failure mode redirects back to
+ * `/admin/agents/new?error=…`, which yields null. Pure + exported for tests.
+ */
+export function parseCreatedAgentId(
+  location: string | null | undefined,
+): string | null {
+  if (!location) return null;
+  const path = location.split("?")[0];
+  const match = path.match(/\/admin\/agents\/([^/]+)\/?$/);
+  if (!match || match[1] === "new") return null;
+  return match[1];
+}
+
+/**
+ * Creates the `hitl` agent via the admin console's HTML form endpoint
+ * (`POST /admin/agents`) — the sole supported agent-creation path since the
+ * `POST /agents` JSON API was retired (ABF-3.2).
+ *
+ * That route is session-gated (`createUIAuthMiddleware`), not Bearer-gated,
+ * so we first mint an admin session through the dev auto-login route. hitl's
+ * own admin service enables it (`ADMIN_DEV_AUTH=true`, see
+ * buildServiceSpecs) and it is hard-blocked in production, so this stays a
+ * local-dev-only affordance.
+ *
+ * Only `name` + `type` are submitted (omitting `runtime` means self-hosted —
+ * exactly what the retired JSON call sent); `repos`/`reviewAuthorAllowlist`
+ * are applied by the caller's follow-up PATCH, as before.
+ */
+async function createHitlAgent(fetchImpl: FetchLike): Promise<string | null> {
+  const loginRes = await fetchImpl(`${ADMIN_URL}/admin/dev-login`, {
+    redirect: "manual",
+  });
+  const cookie = parseAdminSessionCookie(loginRes.headers.get("set-cookie"));
+  if (!cookie) {
+    log(
+      `warning: dev-login returned no admin session (${loginRes.status}) — cannot create hitl agent; create one at ${ADMIN_URL}/admin/agents/new`,
+    );
+    return null;
+  }
+
+  const createRes = await fetchImpl(`${ADMIN_URL}/admin/agents`, {
+    method: "POST",
+    headers: {
+      Cookie: cookie,
+      "Content-Type": "application/x-www-form-urlencoded",
+    },
+    body: new URLSearchParams({
+      name: HITL_AGENT_NAME,
+      type: HITL_AGENT_TYPE,
+    }).toString(),
+    redirect: "manual",
+  });
+
+  const location = createRes.headers.get("location");
+  const createdId = parseCreatedAgentId(location);
+  if (!createdId) {
+    log(
+      `warning: failed to create hitl agent via POST /admin/agents (${createRes.status}${location ? ` → ${location}` : ""}) — scope resolver may not work`,
+    );
+    return null;
+  }
+  return createdId;
+}
 
 /** Order-independent array-equality check — same semantics for repos and reviewAuthorAllowlist. */
 function sameMembers(a: string[], b: string[]): boolean {
@@ -916,39 +1000,25 @@ export async function ensureHitlAgent(
     return existing.id;
   }
 
-  const createRes = await fetchImpl(`${ADMIN_URL}/agents`, {
-    method: "POST",
-    headers: { ...headers, "Content-Type": "application/json" },
-    body: JSON.stringify({
-      name: HITL_AGENT_NAME,
-      selfHosted: true,
-    }),
-  });
+  const createdId = await createHitlAgent(fetchImpl);
+  if (!createdId) return null;
 
-  if (createRes.ok) {
-    const created: AgentRecord = await createRes.json();
-    // CreateAgentBodySchema doesn't accept `repos`/`reviewAuthorAllowlist` —
-    // persist them via a follow-up PATCH (mirrors the existing-agent-mismatch
-    // branch above).
-    const patchFields: {
-      repos?: string[];
-      reviewAuthorAllowlist?: string[];
-    } = {};
-    if (repos.length > 0) patchFields.repos = repos;
-    if (authors.length > 0) patchFields.reviewAuthorAllowlist = authors;
-    if (Object.keys(patchFields).length > 0) {
-      await patchHitlAgent(created.id, patchFields, fetchImpl, headers);
-    }
-    log(
-      `created hitl agent (id: ${created.id}, repos: ${repos.join(", ") || "none"}, reviewAuthorAllowlist: ${authors.join(", ") || "none"})`,
-    );
-    return created.id;
+  // The create form only carries `name`/`type` — persist
+  // `repos`/`reviewAuthorAllowlist` via a follow-up PATCH (mirrors the
+  // existing-agent-mismatch branch above).
+  const patchFields: {
+    repos?: string[];
+    reviewAuthorAllowlist?: string[];
+  } = {};
+  if (repos.length > 0) patchFields.repos = repos;
+  if (authors.length > 0) patchFields.reviewAuthorAllowlist = authors;
+  if (Object.keys(patchFields).length > 0) {
+    await patchHitlAgent(createdId, patchFields, fetchImpl, headers);
   }
-
   log(
-    `warning: failed to create hitl agent (${createRes.status}) — scope resolver may not work`,
+    `created hitl agent (id: ${createdId}, repos: ${repos.join(", ") || "none"}, reviewAuthorAllowlist: ${authors.join(", ") || "none"})`,
   );
-  return null;
+  return createdId;
 }
 
 async function seedAgentToken(agentId: string): Promise<void> {

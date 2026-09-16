@@ -28,43 +28,6 @@ export const OkSchema = z
 
 // ─── Agent ────────────────────────────────────────────────────────────────────
 
-/**
- * Full Agent response shape (POST /agents → 201).
- * Sensitive fields (slackBotToken, anthropicApiKey) are never returned.
- */
-export const AgentSchema = z
-  .object({
-    id: z.string().openapi({ example: "clx1234567890" }),
-    name: z.string().openapi({ example: "Bodhi" }),
-    slackId: z
-      .string()
-      .nullable()
-      .optional()
-      .openapi({ example: "U0AALR8M69X" }),
-    selfHosted: z.boolean().openapi({ example: false }),
-    typeName: z.string().openapi({ example: "coding" }),
-    createdAt: z
-      .string()
-      .datetime()
-      .openapi({ example: "2026-01-01T00:00:00.000Z" }),
-    updatedAt: z
-      .string()
-      .datetime()
-      .openapi({ example: "2026-01-01T00:00:00.000Z" }),
-    /**
-     * Non-blocking warning surfaced when restrictSlackToMembers is set to
-     * true on an agent with zero AgentMember rows — the save still succeeds,
-     * this is informational only.
-     */
-    warning: z.string().optional().openapi({
-      example:
-        "this agent has no members — enabling this will block all Slack senders",
-    }),
-  })
-  .openapi("Agent");
-
-export type Agent = z.infer<typeof AgentSchema>;
-
 /** Minimal Agent shape for list endpoints (GET /agents). */
 export const AgentSummarySchema = z
   .object({
@@ -74,67 +37,6 @@ export const AgentSummarySchema = z
     typeName: z.string().openapi({ example: "coding" }),
   })
   .openapi("AgentSummary");
-
-export const CreateAgentBodySchema = z
-  .object({
-    name: z.string().min(1).openapi({ example: "Bodhi" }),
-    slackId: z.string().optional().openapi({ example: "U0AALR8M69X" }),
-    selfHosted: z.boolean().optional().openapi({ example: false }),
-    /**
-     * Agent Type name (see agent-types/<type>/manifest.yaml). Optional —
-     * defaults to "coding". An unknown type returns 400 before any row is
-     * created. Drives seeding of AgentTool/AgentPlugin/AgentMember rows and
-     * (merged with `repos` below) the agent's repos field from the resolved
-     * manifest.
-     */
-    type: z.string().optional().openapi({ example: "coding" }),
-    /**
-     * Additional `org/repo` entries merged with the resolved type's manifest
-     * repos[] at creation time. Mirrors PatchAgentBodySchema's repos shape.
-     */
-    repos: z
-      .array(
-        z.string().refine(isOrgRepo, {
-          message: "each repo must be in org/repo format",
-        }),
-      )
-      .optional()
-      .openapi({ example: ["my-org/my-repo"] }),
-    /**
-     * Initial reviewAuthorAllowlist[] — GitHub logins permitted to trigger
-     * this agent's review/dev-task work. Mirrors PatchAgentBodySchema's
-     * reviewAuthorAllowlist shape.
-     */
-    reviewAuthorAllowlist: z
-      .array(
-        z.string().refine(isGithubLogin, {
-          message: "each entry must be a valid GitHub login",
-        }),
-      )
-      .optional()
-      .openapi({ example: ["octocat"] }),
-    /**
-     * Initial patchAuthorAllowlist[] — GitHub logins permitted to trigger
-     * patch runs for this agent. Independent of reviewAuthorAllowlist. Mirrors
-     * PatchAgentBodySchema's patchAuthorAllowlist shape.
-     */
-    patchAuthorAllowlist: z
-      .array(
-        z.string().refine(isGithubLogin, {
-          message: "each entry must be a valid GitHub login",
-        }),
-      )
-      .optional()
-      .openapi({ example: ["octocat"] }),
-    /**
-     * Initial restrictSlackToMembers flag — when true, only AgentMember
-     * emails may message this agent over Slack. Optional, defaults to the
-     * column default (false). Mirrors PatchAgentBodySchema's
-     * restrictSlackToMembers shape.
-     */
-    restrictSlackToMembers: z.boolean().optional().openapi({ example: false }),
-  })
-  .openapi("CreateAgentBody");
 
 export const PatchAgentBodySchema = z
   .object({
@@ -170,9 +72,8 @@ export const PatchAgentBodySchema = z
       .optional()
       .openapi({ example: ["octocat"] }),
     /**
-     * Initial patchAuthorAllowlist[] — GitHub logins permitted to trigger
-     * patch runs for this agent. Independent of reviewAuthorAllowlist. Mirrors
-     * CreateAgentBodySchema's patchAuthorAllowlist shape.
+     * GitHub logins permitted to trigger patch runs for this agent.
+     * Independent of reviewAuthorAllowlist.
      */
     patchAuthorAllowlist: z
       .array(

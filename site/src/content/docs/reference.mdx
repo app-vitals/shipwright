@@ -92,7 +92,7 @@ Cross-service vars read by the admin service and metrics service (not the task-s
 
 ### Agent provisioning (Kubernetes)
 
-Controls how the admin service provisions the Kubernetes workload backing each agent on `POST /agents`. When provisioning is disabled (the default), create/delete only write the database row — no cluster is required.
+Controls how the admin service provisions the Kubernetes workload backing each agent at creation time. When provisioning is disabled (the default), create/delete only write the database row — no cluster is required.
 
 <ConfigTable vars={agentProvisioningVars} />
 

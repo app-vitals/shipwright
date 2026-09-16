@@ -1462,10 +1462,8 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
       return c.redirect("/admin/agents/new?error=missing_fields", 302);
     }
     // Resolve the requested type BEFORE creating any row — an unknown/missing
-    // type must redirect with zero rows created, mirroring the tryGetManifest
-    // validation POST /agents already does in agents-api.ts. The resolved
-    // manifest is captured (not discarded) so its tools/plugins can be seeded
-    // below, mirroring agents-api.ts's POST /agents behavior.
+    // type must redirect with zero rows created. The resolved manifest is
+    // captured (not discarded) so its tools/plugins can be seeded below.
     const manifest = typeName
       ? agentTypeRegistry.tryGetManifest(typeName)
       : undefined;
@@ -1488,8 +1486,8 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
       typeName,
       restrictSlackToMembers,
     });
-    // Seed AgentTool/AgentPlugin rows from the resolved manifest, mirroring
-    // POST /agents in agents-api.ts. Roll the agent row back on any seeding
+    // Seed AgentTool/AgentPlugin rows from the resolved manifest. Roll the
+    // agent row back on any seeding
     // failure so a retry with the same name doesn't collide with a
     // half-seeded agent. Members/repos are NOT seeded from the manifest here
     // — they already have their own dedicated form-field handling below, and

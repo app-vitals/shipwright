@@ -6,7 +6,8 @@
  * AgentEnv (CLAUDE_CODE_OAUTH_TOKEN, optional GH_TOKEN), and its
  * AgentPlugin/AgentTool rows resolved from the "coding" Agent Type manifest
  * (agent-types/coding/manifest.yaml) via AgentTypeRegistry — the same
- * manifest-driven source of truth used by admin POST /agents (ATS-3.3).
+ * manifest-driven source of truth used by the admin console's agent-creation
+ * form, POST /admin/agents (ATS-3.3).
  *
  * Reads secrets from state/dev-agent.env (git-ignored). Exits non-zero with
  * a clear message if the file is missing or CLAUDE_CODE_OAUTH_TOKEN is absent.
@@ -80,8 +81,8 @@ export interface SeedDeps {
   readEnvFile: () => string;
   /**
    * Resolves the "coding" Agent Type manifest for its tools[]/plugins[] —
-   * the single source of truth this script and admin POST /agents both seed
-   * from. Injectable for testability (see seed-dev-agent.unit.test.ts).
+   * the single source of truth this script and the admin console's
+   * POST /admin/agents create form both seed from. Injectable for testability (see seed-dev-agent.unit.test.ts).
    */
   agentTypeRegistry: AgentTypeManifestResolver;
   /** Called when the script should exit with an error. The implementation should throw. */
@@ -121,7 +122,7 @@ export async function seedDevAgent(deps: SeedDeps): Promise<void> {
   const { prisma, readEnvFile, agentTypeRegistry, exit } = deps;
 
   // Resolve the "coding" manifest up front — its tools[]/plugins[] are this
-  // script's single source of truth (mirrors admin POST /agents' seeding).
+  // script's single source of truth (mirrors POST /admin/agents' seeding).
   const manifest = agentTypeRegistry.getManifest(DEV_AGENT_TYPE);
 
   // 1. Read and parse the env file

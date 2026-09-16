@@ -361,26 +361,18 @@ curl -sf -X DELETE \
 
 ## Creating a New Agent (Admin Only)
 
-Two paths, depending on whether the agent is self-hosted.
+The web UI form at `/admin/agents/new` is the sole supported way to create a new agent —
+there is no JSON API for agent creation. (`/admin/provision` still works as a legacy
+redirect to the same page.)
 
-**Non-self-hosted (preferred):** use the inline provisioning wizard at `/admin/provision`.
-Select the "Create new agent" toggle (instead of "Use existing agent") to walk through
-Slack app creation, GitHub auth, and AI credentials in one flow.
+The form covers both runtime modes — self-hosted and in-cluster (managed) — plus agent
+type selection, Slack app connection, GitHub auth, AI credentials, repos, member emails,
+and author allowlists, all in one flow. Sign in as an admin, open `/admin/agents/new`, and
+walk through the form; it submits to `POST /admin/agents` (an HTML form endpoint, not part
+of the JSON admin API documented elsewhere in this skill).
 
-**Self-hosted:** the wizard doesn't apply — register the agent directly via the admin API.
-Requires an admin-level API key configured in `SHIPWRIGHT_ADMIN_API_KEYS` on the server.
-
-```bash
-curl -sf -X POST \
-  -H "Authorization: Bearer $SHIPWRIGHT_ADMIN_API_KEY" \
-  -H "Content-Type: application/json" \
-  "$SHIPWRIGHT_API_URL/agents" \
-  -d '{"name": "my-agent", "slackId": "U0AALR8M69X"}' | jq .
-# Returns: { id, name, slackId, createdAt }
-```
-
-After creating a self-hosted agent via the raw API, set env vars, add tool patterns, install
-plugins, and seed crons using the endpoints documented elsewhere in this skill.
+After the agent is created, set env vars, add tool patterns, install plugins, and seed
+crons using the endpoints documented elsewhere in this skill.
 
 ---
 

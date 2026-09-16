@@ -8,12 +8,10 @@ import { describe, expect, test } from "bun:test";
 import { type AdminDeps, createAdminApp } from "./agents-api.ts";
 import { type AgentRuntimeDeps, createAgentRuntimeApp } from "./api.ts";
 import {
-  type Agent,
   type AgentCronJob,
   AgentCronJobSchema,
   type AgentPlugin,
   AgentPluginSchema,
-  AgentSchema,
   type AgentToken,
   AgentTokenSchema,
   type AgentTool,
@@ -24,16 +22,6 @@ import {
 // ─── Fixtures ─────────────────────────────────────────────────────────────────
 
 const now = new Date().toISOString();
-
-const validAgent = {
-  id: "cuid1",
-  name: "Bodhi",
-  slackId: "U01234567",
-  selfHosted: false,
-  typeName: "coding",
-  createdAt: now,
-  updatedAt: now,
-};
 
 const validCronJob = {
   id: "cuid2",
@@ -77,70 +65,6 @@ const validPlugin = {
   createdAt: now,
   updatedAt: now,
 };
-
-// ─── AgentSchema ─────────────────────────────────────────────────────────────
-
-describe("AgentSchema", () => {
-  test("parses valid agent with slackId", () => {
-    const result = AgentSchema.safeParse(validAgent);
-    expect(result.success).toBe(true);
-    if (result.success) {
-      const agent: Agent = result.data;
-      expect(agent.id).toBe("cuid1");
-      expect(agent.name).toBe("Bodhi");
-      expect(agent.slackId).toBe("U01234567");
-    }
-  });
-
-  test("parses valid agent without slackId", () => {
-    const { slackId: _, ...agentNoSlack } = validAgent;
-    const result = AgentSchema.safeParse(agentNoSlack);
-    expect(result.success).toBe(true);
-    if (result.success) {
-      expect(result.data.slackId).toBeUndefined();
-    }
-  });
-
-  test("parses valid agent with null slackId", () => {
-    const result = AgentSchema.safeParse({ ...validAgent, slackId: null });
-    expect(result.success).toBe(true);
-  });
-
-  test("rejects missing id", () => {
-    const { id: _, ...noId } = validAgent;
-    const result = AgentSchema.safeParse(noId);
-    expect(result.success).toBe(false);
-  });
-
-  test("rejects missing name", () => {
-    const { name: _, ...noName } = validAgent;
-    const result = AgentSchema.safeParse(noName);
-    expect(result.success).toBe(false);
-  });
-
-  test("does not expose slackBotToken", () => {
-    const withSecret = { ...validAgent, slackBotToken: "xoxb-secret" };
-    const result = AgentSchema.safeParse(withSecret);
-    // Should still parse (extra fields are stripped), but the type should not include it
-    expect(result.success).toBe(true);
-    if (result.success) {
-      expect(
-        (result.data as Record<string, unknown>).slackBotToken,
-      ).toBeUndefined();
-    }
-  });
-
-  test("does not expose anthropicApiKey", () => {
-    const withSecret = { ...validAgent, anthropicApiKey: "sk-ant-secret" };
-    const result = AgentSchema.safeParse(withSecret);
-    expect(result.success).toBe(true);
-    if (result.success) {
-      expect(
-        (result.data as Record<string, unknown>).anthropicApiKey,
-      ).toBeUndefined();
-    }
-  });
-});
 
 // ─── AgentCronJobSchema ───────────────────────────────────────────────────────
 

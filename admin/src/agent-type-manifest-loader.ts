@@ -89,7 +89,7 @@ export interface AgentTypeManifestResolver {
    * Resolve `typeName` to its parsed manifest WITHOUT falling back to
    * "coding" — returns undefined for an unknown type instead. No warning is
    * logged (an unknown type here is an expected, callers-handle-it outcome,
-   * not a degraded-boot condition). Used by POST /agents to reject an
+   * not a degraded-boot condition). Used by POST /admin/agents to reject an
    * unknown requested `type` with 400 rather than silently seeding a
    * "coding" agent under a different label.
    */
