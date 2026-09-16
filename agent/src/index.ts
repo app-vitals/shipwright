@@ -71,6 +71,10 @@ import {
 } from "./patch-author-allowlist-ref.ts";
 import { validatePiperVoice } from "./piper-voice.ts";
 import {
+  buildProductionDeps as buildPrCensusDeps,
+  runPrCensus,
+} from "./pr-census.ts";
+import {
   buildProductionDeps as buildPrStateReconcilerDeps,
   buildReviewStateProductionDeps as buildReviewStateReconcilerDeps,
   reconcilePrState,
@@ -508,6 +512,17 @@ if (runtimeClient && agentId) {
 // lazy-deps + own-try/catch shape as the three passes above — an independent
 // safety net alongside TCS-2.1's DB constraint on the same invariant, not a
 // replacement for it.
+//
+// POM-4.1 adds a fifth, independent pass on this SAME tick: runPrCensus, a
+// repo-wide merged-PR origin census sweep. Unlike the four passes above, this
+// one intentionally has NO GitHub-label dependency (that approach was
+// rejected) — it classifies each newly-merged PR (ci / dependency_bot /
+// shipwright / human / unknown) via a pure classifier and an incremental
+// `gh pr list --search "merged:>=<cursor>"` call per repo, POSTing the
+// classified batch to POM-1.1's `POST /prs/census`. Same lazy-deps + own-
+// try/catch shape as the four passes above — see pr-census.ts for the full
+// rationale, including why a null cursor (first run) issues zero gh calls
+// instead of a full historical backfill.
 if (runtimeClient && agentId) {
   let reconcilerDeps: ReturnType<typeof buildPrStateReconcilerDeps> | undefined;
   let reviewStateReconcilerDeps:
@@ -519,6 +534,7 @@ if (runtimeClient && agentId) {
   let claimInvariantReconcilerDeps:
     | ReturnType<typeof buildClaimInvariantReconcilerDeps>
     | undefined;
+  let prCensusDeps: ReturnType<typeof buildPrCensusDeps> | undefined;
 
   async function runPrStateReconciler() {
     try {
@@ -567,6 +583,19 @@ if (runtimeClient && agentId) {
     } catch (err) {
       console.error(
         "[claim-invariant-reconciler] tick failed (non-fatal):",
+        err instanceof Error ? err.message : String(err),
+      );
+    }
+
+    try {
+      prCensusDeps ??= buildPrCensusDeps({
+        ghJson,
+        getScopedRepos: agentReposRef.get,
+      });
+      await runPrCensus(prCensusDeps);
+    } catch (err) {
+      console.error(
+        "[pr-census] tick failed (non-fatal):",
         err instanceof Error ? err.message : String(err),
       );
     }
