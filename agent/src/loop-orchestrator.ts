@@ -1412,6 +1412,40 @@ export interface LoopOrchestratorProductionOptions {
  * configured agent. Review/patch/deploy deps are async because they resolve
  * workspace state and the current GitHub user up front.
  */
+/**
+ * Builds the request body createProductionLoopOrchestrator's `claimPr` wrapper
+ * sends to taskStoreClient.claimPr() — a pure function (no I/O) so the
+ * authorLogin/headRefName/title forwarding (POM-1.2) can be unit-tested
+ * without standing up the production task-store client or the review/patch/
+ * deploy deps createProductionLoopOrchestrator otherwise requires.
+ * authorLogin/headRefName/title are all optional on WorkPrCandidate, so
+ * passing them through as-is (including undefined) is safe — check-helpers.ts's
+ * claimPr() implementation is what actually renames headRefName -> headRef
+ * for the outbound HTTP body.
+ */
+export function buildClaimPrRequest(
+  pr: WorkPrCandidate,
+  parsed: { repo: string; prNumber: number },
+): {
+  repo: string;
+  prNumber: number;
+  commitSha: string;
+  phase: "review" | "patch" | "deploy";
+  authorLogin?: string;
+  headRefName?: string;
+  title?: string;
+} {
+  return {
+    repo: parsed.repo,
+    prNumber: parsed.prNumber,
+    commitSha: pr.commitSha,
+    phase: pr.phase ?? "review",
+    authorLogin: pr.authorLogin,
+    headRefName: pr.headRefName,
+    title: pr.title,
+  };
+}
+
 export async function createProductionLoopOrchestrator(
   opts: LoopOrchestratorProductionOptions,
 ): Promise<(jobs: CronJobLike[]) => Promise<void>> {
@@ -1442,12 +1476,7 @@ export async function createProductionLoopOrchestrator(
           `invalid PR candidate id (expected org/repo#number): ${pr.id}`,
         );
       }
-      return taskStoreClient.claimPr({
-        repo: parsed.repo,
-        prNumber: parsed.prNumber,
-        commitSha: pr.commitSha,
-        phase: pr.phase ?? "review",
-      });
+      return taskStoreClient.claimPr(buildClaimPrRequest(pr, parsed));
     },
     recordSkip: (itemType, id) => taskStoreClient.recordSkip(itemType, id),
     resetSkip: (itemType, id) => taskStoreClient.resetSkip(itemType, id),

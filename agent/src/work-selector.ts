@@ -61,6 +61,19 @@ export interface WorkPrCandidate {
   age: string;
   phase?: "review" | "patch" | "deploy";
   title?: string;
+  /**
+   * The PR author's GitHub login (POM-1.2) — forwarded by loop-orchestrator's
+   * claimPr wrapper to POST /prs/claim so the task-store can derive `origin`
+   * server-side. Named to mirror GitHub's own `author.login` field.
+   */
+  authorLogin?: string;
+  /**
+   * The PR's head branch name (POM-1.2) — forwarded alongside authorLogin.
+   * Named `headRefName` (mirroring GitHub's own field) rather than the
+   * task-store's shorter `headRef` column name; the rename happens at the
+   * HTTP boundary in check-helpers.ts's claimPr().
+   */
+  headRefName?: string;
   commitSha: string;
 }
 
