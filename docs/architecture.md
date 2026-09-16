@@ -46,7 +46,7 @@ A repo or team can extend this loop with its own commands, skills, or scheduled 
 
 ## B — Metrics dashboard
 
-A Hono service that turns pipeline events into analytics. Two sets of read-only JSON endpoints: authenticated `/metrics/*` (summary, trends, features, queue, tokens) and unauthenticated `/public/*` (summary, trends, features, queue), plus session-gated `/dashboard` and public `/public/dashboard`. All served by a backend-agnostic `MetricsProvider` interface. The active backend is selected from env at startup: **fixtures** (offline) or **taskstore** (live task-store + admin APIs). See **[metrics.md](./metrics.md)**.
+A Hono service that turns pipeline events into analytics. Two sets of read-only JSON endpoints: authenticated `/metrics/*` (summary, trends, features, queue, merged-prs, cost-efficiency, tokens) and unauthenticated `/public/*` (summary, trends, features, queue, merged-prs, cost-efficiency), plus session-gated `/dashboard` and public `/public/dashboard`. All served by a backend-agnostic `MetricsProvider` interface. The active backend is selected from env at startup: **fixtures** (offline) or **taskstore** (live task-store + admin APIs). See **[metrics.md](./metrics.md)**.
 
 ## C — Shipwright agent
 
