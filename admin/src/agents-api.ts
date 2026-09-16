@@ -3,7 +3,8 @@
  * Admin CRUD API — OpenAPIHono app factory.
  *
  * Routes mounted at /agents/*. Full CRUD for:
- *   - Agent (create)
+ *   - Agent (read/update/delete — creation happens via the web UI form at
+ *     /admin/agents/new, see admin-ui.ts, not this API)
  *   - AgentEnv
  *   - AgentCronJob
  *   - AgentTool
@@ -38,10 +39,7 @@ import type { AgentPluginService } from "./agent-plugins.ts";
 import type { AgentProvisioner } from "./agent-provisioner.ts";
 import type { AgentTokenService } from "./agent-tokens.ts";
 import type { AgentToolService } from "./agent-tools.ts";
-import {
-  type AgentTypeManifestResolver,
-  AgentTypeRegistry,
-} from "./agent-type-manifest-loader.ts";
+import type { AgentTypeManifestResolver } from "./agent-type-manifest-loader.ts";
 import type { AgentWorkQueueService } from "./agent-work-queue.ts";
 import type { AgentService } from "./agents.ts";
 import { createAdminAuthMiddleware, parseAdminApiKeys } from "./api-auth.ts";
@@ -61,13 +59,11 @@ import {
   AgentEnvResponseSchema,
   AgentIdParamSchema,
   AgentPluginSchema,
-  AgentSchema,
   AgentSummarySchema,
   AgentTokenSchema,
   AgentToolSchema,
   AgentWorkQueueSnapshotSchema,
   ChatTokenStatsSchema,
-  CreateAgentBodySchema,
   CreateAgentCronJobBodySchema,
   CreateAgentCronRunBodySchema,
   CreateAgentPluginBodySchema,
@@ -143,11 +139,13 @@ export interface AdminDeps {
   >;
   agentMemberService: Pick<AgentMemberService, "add" | "listByAgentId">;
   /**
-   * Resolves an agent-type name to its parsed Agent Type manifest — the
-   * source of truth for the tools/plugins/members/repos seeded at create
-   * time (see createAgentRoute below). Defaults to the real disk-backed
-   * AgentTypeRegistry, matching the DI pattern already used by
-   * AgentCronJobService (agent-cron-jobs.ts).
+   * Resolves an agent-type name to its parsed Agent Type manifest. Not
+   * currently consumed by any route in this file — agent creation (which
+   * used to seed AgentTool/AgentPlugin/AgentMember rows from a manifest via
+   * POST /agents) now happens exclusively through the web UI form at
+   * /admin/agents/new (see admin-ui.ts), which has its own independent
+   * agentTypeRegistry dependency. Retained here as an optional field only
+   * for backward-compatible construction by existing callers.
    */
   agentTypeRegistry?: AgentTypeManifestResolver;
   agentChatTokenService: Pick<
@@ -293,27 +291,6 @@ const WorkQueueSnapshotWrapperSchema = z
   .openapi("WorkQueueSnapshotWrapper");
 
 // ─── Route definitions ──────────────────────────────────────────────────────────
-
-const createAgentRoute = createRoute({
-  method: "post",
-  path: "/agents",
-  summary: "Create an agent",
-  description:
-    'Admin-only. Creates an agent record and, for managed (non-self-hosted) agents, provisions the Kubernetes workload. The optional `type` field (default "coding") selects an Agent Type manifest that seeds AgentTool, AgentPlugin, and AgentMember rows plus merged `repos`; an unknown type returns 400 before any row is created. Seeding and provisioning share a rollback-guarded block — if either step fails, every already-seeded child row is cascade-deleted along with the agent row.',
-  request: {
-    body: {
-      content: { "application/json": { schema: CreateAgentBodySchema } },
-    },
-  },
-  responses: {
-    201: {
-      description: "Agent created",
-      content: { "application/json": { schema: AgentSchema } },
-    },
-    400: { description: "Bad request", ...jsonError },
-    403: { description: "Forbidden", ...jsonError },
-  },
-});
 
 const reconcileAgentsRoute = createRoute({
   method: "post",
@@ -1006,7 +983,6 @@ export function createAdminApp(deps: AdminDeps): OpenAPIHono<AdminAuthEnv> {
     agentTokenService,
     agentPluginService,
     agentMemberService,
-    agentTypeRegistry = new AgentTypeRegistry(),
     agentChatTokenService,
     agentWorkQueueService,
     prisma,
@@ -1068,85 +1044,6 @@ export function createAdminApp(deps: AdminDeps): OpenAPIHono<AdminAuthEnv> {
   app.use("/agents/reconcile", authMiddleware);
 
   // ─── Agents ────────────────────────────────────────────────────────────────
-
-  // POST /agents — create a new agent (admin only)
-  app.openapi(createAgentRoute, async (c) => {
-    if (c.get("isAdmin") !== true) {
-      throw new ForbiddenError(
-        "Only admin bearers and session users can create agents",
-      );
-    }
-    const body = c.req.valid("json");
-
-    // Resolve the requested type (default "coding") to its manifest BEFORE
-    // creating any row — an unknown type must 400 with zero rows created,
-    // not roll back after the fact. tryGetManifest() (unlike getManifest())
-    // never silently falls back to "coding" for an unknown type.
-    const typeName = body.type ?? "coding";
-    const manifest = agentTypeRegistry.tryGetManifest(typeName);
-    if (!manifest) {
-      throw new BadRequestError(`unknown agent type "${typeName}"`);
-    }
-
-    const repos = [...new Set([...manifest.repos, ...(body.repos ?? [])])];
-
-    const agent = await agentService.create({
-      name: body.name,
-      slackId: body.slackId ?? null,
-      selfHosted: body.selfHosted ?? false,
-      typeName,
-      repos,
-      ...(body.reviewAuthorAllowlist !== undefined
-        ? { reviewAuthorAllowlist: body.reviewAuthorAllowlist }
-        : {}),
-      ...(body.patchAuthorAllowlist !== undefined
-        ? { patchAuthorAllowlist: body.patchAuthorAllowlist }
-        : {}),
-      ...(body.restrictSlackToMembers !== undefined
-        ? { restrictSlackToMembers: body.restrictSlackToMembers }
-        : {}),
-    });
-
-    // Seed AgentTool/AgentPlugin/AgentMember rows from the resolved
-    // manifest, then provision the backing workload — all wrapped in the
-    // same try/catch so a failure at any step rolls the agent row back
-    // (never leaving a half-created agent with partially-seeded child rows
-    // and no cleanup). Self-hosted agents manage their own workload — skip
-    // provisioning, but still seed and still roll back on a seeding failure.
-    try {
-      for (const pattern of manifest.tools) {
-        await agentToolService.add(agent.id, pattern);
-      }
-      for (const pluginName of manifest.plugins) {
-        await agentPluginService.add(agent.id, pluginName);
-      }
-      for (const email of manifest.members) {
-        await agentMemberService.add(agent.id, email);
-      }
-
-      // Provision AFTER the row (and its seeded children) exist — the
-      // provisioner mints a per-agent token tied to the agent id. The Noop
-      // provisioner never throws, preserving today's create behavior exactly.
-      if (!agent.selfHosted) {
-        await provisioner.provision(agent.id, { slug: agent.name });
-      }
-    } catch (err) {
-      await agentService.delete(agent.id).catch((cleanupErr) => {
-        console.error(
-          "[agents-api] failed to roll back agent after create error:",
-          cleanupErr,
-        );
-      });
-      throw err;
-    }
-
-    const warning = await computeRestrictSlackToMembersWarning(
-      agentMemberService,
-      agent.id,
-      agent.restrictSlackToMembers,
-    );
-    return c.json(serializeAgent(agent, warning), 201);
-  });
 
   // POST /agents/reconcile — reconcile K8s Deployment state against the DB (admin only)
   app.openapi(reconcileAgentsRoute, async (c) => {
