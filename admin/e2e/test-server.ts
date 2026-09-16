@@ -286,6 +286,15 @@ function buildMockDeps(chatClient: ChatClient | undefined): AdminUIDeps {
     },
     agentPluginService: {
       list: async () => [],
+      add: async (agentId: string, name: string) => ({
+        id: "plugin-e2e-1",
+        agentId,
+        name,
+        version: null,
+        enabled: true,
+        createdAt: new Date("2024-01-01"),
+        updatedAt: new Date("2024-01-01"),
+      }),
     },
     agentMemberService: {
       listByEmail: async () => [],
