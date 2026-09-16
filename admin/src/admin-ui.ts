@@ -300,7 +300,7 @@ export interface AdminUIDeps {
     AgentTokenService,
     "listForAgent" | "create" | "revoke"
   >;
-  agentPluginService: Pick<AgentPluginService, "list">;
+  agentPluginService: Pick<AgentPluginService, "list" | "add">;
   agentMemberService: Pick<
     AgentMemberService,
     "listByEmail" | "exists" | "add" | "remove" | "listByAgentId"
@@ -1463,8 +1463,13 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
     }
     // Resolve the requested type BEFORE creating any row — an unknown/missing
     // type must redirect with zero rows created, mirroring the tryGetManifest
-    // validation POST /agents already does in agents-api.ts.
-    if (!typeName || !agentTypeRegistry.tryGetManifest(typeName)) {
+    // validation POST /agents already does in agents-api.ts. The resolved
+    // manifest is captured (not discarded) so its tools/plugins can be seeded
+    // below, mirroring agents-api.ts's POST /agents behavior.
+    const manifest = typeName
+      ? agentTypeRegistry.tryGetManifest(typeName)
+      : undefined;
+    if (!typeName || !manifest) {
       return c.redirect("/admin/agents/new?error=invalid_type", 302);
     }
     // Absent/unrecognized runtime means self-hosted — the historical behavior of
@@ -1483,6 +1488,33 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
       typeName,
       restrictSlackToMembers,
     });
+    // Seed AgentTool/AgentPlugin rows from the resolved manifest, mirroring
+    // POST /agents in agents-api.ts. Roll the agent row back on any seeding
+    // failure so a retry with the same name doesn't collide with a
+    // half-seeded agent. Members/repos are NOT seeded from the manifest here
+    // — they already have their own dedicated form-field handling below, and
+    // the manifest's members/repos arrays are empty for every agent type
+    // that exists today.
+    try {
+      for (const pattern of manifest.tools) {
+        await agentToolService.add(agent.id, pattern);
+      }
+      for (const pluginName of manifest.plugins) {
+        await agentPluginService.add(agent.id, pluginName);
+      }
+    } catch (err) {
+      console.error(
+        "[admin-ui] tool/plugin seeding failed, rolling back:",
+        err,
+      );
+      await agentService.delete(agent.id).catch((cleanupErr) => {
+        console.error(
+          "[admin-ui] failed to roll back agent after seeding error:",
+          cleanupErr,
+        );
+      });
+      return c.redirect("/admin/agents/new?error=seed_failed", 302);
+    }
     // Attach repos if provided
     if (reposRaw) {
       const repos = reposRaw

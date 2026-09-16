@@ -332,6 +332,15 @@ function makeMockDeps(
     },
     agentPluginService: {
       list: async () => [],
+      add: async (agentId: string, name: string) => ({
+        id: "p1",
+        agentId,
+        name,
+        version: null,
+        enabled: true,
+        createdAt: new Date("2024-01-01"),
+        updatedAt: new Date("2024-01-01"),
+      }),
     },
     agentMemberService: {
       listByEmail: async () => [],
@@ -7783,6 +7792,132 @@ describe("admin UI — create agent with patch author allowlist", () => {
     expect(res.status).toBe(302);
     expect(res.headers.get("Location")).toBe(
       "/admin/agents/new?error=invalid_author_allowlist_format",
+    );
+    expect(deletedId).toBe(AGENT_ID);
+  });
+});
+
+describe("admin UI — create agent seeds manifest tools and plugins", () => {
+  let cookie: string;
+
+  beforeAll(async () => {
+    cookie = await makeSessionCookie();
+  });
+
+  it("POST /admin/agents with type=coding seeds AgentTool rows for every manifest tool (including Bash) and an AgentPlugin row named shipwright", async () => {
+    const seededTools: string[] = [];
+    const seededPlugins: string[] = [];
+    const deps = makeMockDeps();
+    deps.agentToolService = {
+      ...deps.agentToolService,
+      add: async (agentId: string, pattern: string) => {
+        seededTools.push(pattern);
+        return { ...MOCK_TOOL, agentId, pattern };
+      },
+    };
+    deps.agentPluginService = {
+      ...deps.agentPluginService,
+      add: async (agentId: string, name: string) => {
+        seededPlugins.push(name);
+        return {
+          id: "p1",
+          agentId,
+          name,
+          version: null,
+          enabled: true,
+          createdAt: new Date("2024-01-01"),
+          updatedAt: new Date("2024-01-01"),
+        };
+      },
+    };
+    const app = createAdminUIApp(deps);
+    const body = new URLSearchParams({ name: "Test Agent", type: "coding" });
+    const res = await app.request("/admin/agents", {
+      method: "POST",
+      body: body.toString(),
+      headers: {
+        "Content-Type": "application/x-www-form-urlencoded",
+        Cookie: `admin_session=${cookie}`,
+      },
+    });
+    expect(res.status).toBe(302);
+    expect(res.headers.get("Location")).toBe(`/admin/agents/${AGENT_ID}`);
+    expect(seededTools).toEqual([
+      "Read",
+      "Write",
+      "Edit",
+      "Glob",
+      "Grep",
+      "Bash",
+      "WebSearch",
+      "WebFetch",
+      "Skill",
+      "Agent",
+    ]);
+    expect(seededTools).toContain("Bash");
+    expect(seededPlugins).toEqual(["shipwright"]);
+  });
+
+  it("POST /admin/agents rolls back the agent and redirects with error when tool seeding fails", async () => {
+    let deletedId: string | undefined;
+    const deps = makeMockDeps();
+    deps.agentToolService = {
+      ...deps.agentToolService,
+      add: async () => {
+        throw new Error("boom: tool seeding failed");
+      },
+    };
+    deps.agentService = {
+      ...deps.agentService,
+      delete: async (id: string) => {
+        deletedId = id;
+      },
+    };
+    const app = createAdminUIApp(deps);
+    const body = new URLSearchParams({ name: "Test Agent", type: "coding" });
+    const res = await app.request("/admin/agents", {
+      method: "POST",
+      body: body.toString(),
+      headers: {
+        "Content-Type": "application/x-www-form-urlencoded",
+        Cookie: `admin_session=${cookie}`,
+      },
+    });
+    expect(res.status).toBe(302);
+    expect(res.headers.get("Location")).toBe(
+      "/admin/agents/new?error=seed_failed",
+    );
+    expect(deletedId).toBe(AGENT_ID);
+  });
+
+  it("POST /admin/agents rolls back the agent and redirects with error when plugin seeding fails", async () => {
+    let deletedId: string | undefined;
+    const deps = makeMockDeps();
+    deps.agentPluginService = {
+      ...deps.agentPluginService,
+      add: async () => {
+        throw new Error("boom: plugin seeding failed");
+      },
+    };
+    deps.agentService = {
+      ...deps.agentService,
+      delete: async (id: string) => {
+        deletedId = id;
+      },
+    };
+    const app = createAdminUIApp(deps);
+    const body = new URLSearchParams({ name: "Test Agent", type: "coding" });
+    const res = await app.request("/admin/agents", {
+      method: "POST",
+      body: body.toString(),
+      headers: {
+        "Content-Type": "application/x-www-form-urlencoded",
+        Cookie: `admin_session=${cookie}`,
+      },
+    });
+    expect(res.status).toBe(302);
+    expect(res.headers.get("Location")).toBe(
+      "/admin/agents/new?error=seed_failed",
     );
     expect(deletedId).toBe(AGENT_ID);
   });

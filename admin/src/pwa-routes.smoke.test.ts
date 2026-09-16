@@ -117,7 +117,12 @@ function makeMinimalDeps(overrides?: Partial<AdminUIDeps>): AdminUIDeps {
         throw new Error("not implemented");
       },
     },
-    agentPluginService: { list: async () => [] },
+    agentPluginService: {
+      list: async () => [],
+      add: async () => {
+        throw new Error("not implemented");
+      },
+    },
     agentMemberService: {
       listByEmail: async () => [],
       exists: async () => false,

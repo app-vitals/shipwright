@@ -340,7 +340,12 @@ function makeBaseDeps(overrides?: Partial<AdminUIDeps>): AdminUIDeps {
       create: async () => ({ token: MOCK_TOKEN, rawToken: "sw_raw123" }),
       revoke: async () => MOCK_TOKEN,
     },
-    agentPluginService: { list: async () => [] },
+    agentPluginService: {
+      list: async () => [],
+      add: async () => {
+        throw new Error("not implemented");
+      },
+    },
     agentMemberService: {
       listByEmail: async () => [],
       exists: async () => false,
