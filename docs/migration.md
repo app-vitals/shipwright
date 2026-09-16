@@ -23,8 +23,10 @@ credentials, and runtime selection — leaving the JSON route as a second, parti
 of the same seeding/provisioning logic that had to be kept in sync by hand.
 
 **What changed**:
-- `POST /agents` returns **404**. The route definition (`createAgentRoute`), its handler, and
-  its `CreateAgentBodySchema` request body are gone from `admin/src/agents-api.ts`.
+- `POST /agents` returns **404**. The route definition (`createAgentRoute`) and its handler are
+  gone from `admin/src/agents-api.ts`, and its now-unreferenced `CreateAgentBodySchema` request
+  body — along with the `AgentSchema` response shape it returned — is gone from
+  `admin/src/openapi-schemas.ts`.
 - `admin/openapi.json` no longer lists a `post` operation under `/agents` (only `get`), and the
   regenerated [`lib/admin-types.ts`](../lib/admin-types.ts) drops the matching
   `paths["/agents"]["post"]` member — a **type-level** break for TypeScript clients generated
