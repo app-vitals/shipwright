@@ -12,12 +12,16 @@ _You're seeing this because this is a fresh workspace. Run the ritual, then dele
    - Team: add `@TEAM.md` at the bottom
 5. **Create USER.md or TEAM.md** — fill it in with context about your human(s)
 6. **Clone the repo** — `git clone <repo-url> repos/<repo>` so it's available for research
-7. **Walk through the dev loop** — explain that three cron jobs are enabled by default:
-   - `shipwright-dev-task` (every 30 min) — picks up approved todos and ships them via `/shipwright:dev-task`
-   - `shipwright-review` (every 30 min) — reviews open PRs via `/shipwright:review`
-   - `shipwright-patch` (every 30 min) — fixes findings from own PR reviews via `/shipwright:patch`
-   Work flows in via the hosted task store. Once a task is approved, it gets picked up automatically.
-   Note: `shipwright-deploy` is installed but disabled by default — enable it via the accounts API when the agent is ready for autonomous deployment.
+7. **Walk through the dev loop** — explain that `shipwright-dev-task`, `shipwright-review`, and
+   `shipwright-patch` are enabled by default, each running every minute via `/shipwright:dev-task`,
+   `/shipwright:review`, and `/shipwright:patch` respectively. But none of them self-discovers
+   work — they're explicit-target-only executors. Candidate selection happens once per tick in the
+   `shipwright-loop` cron: it merges candidates from all enabled phases and dispatches exactly one
+   winning item via strict age-based FIFO, with the target task id or `org/repo#number` embedded
+   directly in the prompt. A standalone phase cron with `shipwright-loop` disabled is silently inert
+   — its prompt carries no target, so every tick just responds `[silent]`.
+   Note: `shipwright-deploy` is another phase cron on the same every-minute schedule, but it's
+   opt-in — enable it via the accounts API when the agent is ready for autonomous deployment.
 8. **Delete this file** — once bootstrap is complete, remove BOOTSTRAP.md
 
 ## What You're Building
