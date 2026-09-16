@@ -205,6 +205,9 @@ interface CapturedClaimCall {
   claimedBy: string;
   phase?: "review" | "patch" | "deploy";
   prCreatedAt?: string;
+  authorLogin?: string | null;
+  headRef?: string | null;
+  title?: string | null;
 }
 
 /** Captured args from each fakePrService.appendFinding() call. */
@@ -300,6 +303,9 @@ function fakePrService(
       claimedBy: string,
       phase?: "review" | "patch" | "deploy",
       prCreatedAt?: string,
+      authorLogin?: string | null,
+      headRef?: string | null,
+      title?: string | null,
     ): Promise<{ status: 200 | 201; record: PullRequest }> {
       opts.claimCalls?.push({
         repo,
@@ -308,6 +314,9 @@ function fakePrService(
         claimedBy,
         phase,
         prCreatedAt,
+        authorLogin,
+        headRef,
+        title,
       });
       if (opts.claimResult !== undefined) {
         if (opts.claimResult instanceof Error) throw opts.claimResult;
@@ -325,6 +334,9 @@ function fakePrService(
         claimedAt: new Date().toISOString(),
         heartbeatAt: new Date().toISOString(),
         prCreatedAt: prCreatedAt ?? null,
+        authorLogin: authorLogin ?? null,
+        headRef: headRef ?? null,
+        title: title ?? null,
       });
       store.set(record.id, record);
       return { status: 201, record };
@@ -873,6 +885,76 @@ describe("/prs routes (smoke)", () => {
     expect(res.status).toBe(201);
     expect(claimCalls).toHaveLength(1);
     expect(claimCalls[0]?.prCreatedAt).toBeUndefined();
+  });
+
+  it("POST /prs/claim forwards authorLogin/headRef/title from the request body to service.claim() (POM-1.2)", async () => {
+    const claimCalls: CapturedClaimCall[] = [];
+    const app = makeApp({ prService: fakePrService({ claimCalls }) });
+    const res = await app.request("/prs/claim", {
+      method: "POST",
+      headers: { ...adminAuth(), "content-type": "application/json" },
+      body: JSON.stringify({
+        repo: ADMIN_REPO,
+        prNumber: 42,
+        commitSha: "abc123",
+        claimedBy: "agent-1",
+        authorLogin: "octocat",
+        headRef: "feat/some-branch",
+        title: "Add the origin metrics dimension",
+      }),
+    });
+    expect(res.status).toBe(201);
+    expect(claimCalls).toHaveLength(1);
+    expect(claimCalls[0]?.authorLogin).toBe("octocat");
+    expect(claimCalls[0]?.headRef).toBe("feat/some-branch");
+    expect(claimCalls[0]?.title).toBe("Add the origin metrics dimension");
+    const body = (await res.json()) as PullRequest;
+    expect(body.authorLogin).toBe("octocat");
+    expect(body.headRef).toBe("feat/some-branch");
+    expect(body.title).toBe("Add the origin metrics dimension");
+  });
+
+  it("POST /prs/claim passes an explicit null authorLogin/headRef/title through as null (not undefined)", async () => {
+    const claimCalls: CapturedClaimCall[] = [];
+    const app = makeApp({ prService: fakePrService({ claimCalls }) });
+    const res = await app.request("/prs/claim", {
+      method: "POST",
+      headers: { ...adminAuth(), "content-type": "application/json" },
+      body: JSON.stringify({
+        repo: ADMIN_REPO,
+        prNumber: 42,
+        commitSha: "abc123",
+        claimedBy: "agent-1",
+        authorLogin: null,
+        headRef: null,
+        title: null,
+      }),
+    });
+    expect(res.status).toBe(201);
+    expect(claimCalls).toHaveLength(1);
+    expect(claimCalls[0]?.authorLogin).toBeNull();
+    expect(claimCalls[0]?.headRef).toBeNull();
+    expect(claimCalls[0]?.title).toBeNull();
+  });
+
+  it("POST /prs/claim without authorLogin/headRef/title leaves them undefined (not persisted)", async () => {
+    const claimCalls: CapturedClaimCall[] = [];
+    const app = makeApp({ prService: fakePrService({ claimCalls }) });
+    const res = await app.request("/prs/claim", {
+      method: "POST",
+      headers: { ...adminAuth(), "content-type": "application/json" },
+      body: JSON.stringify({
+        repo: ADMIN_REPO,
+        prNumber: 42,
+        commitSha: "abc123",
+        claimedBy: "agent-1",
+      }),
+    });
+    expect(res.status).toBe(201);
+    expect(claimCalls).toHaveLength(1);
+    expect(claimCalls[0]?.authorLogin).toBeUndefined();
+    expect(claimCalls[0]?.headRef).toBeUndefined();
+    expect(claimCalls[0]?.title).toBeUndefined();
   });
 
   // ─── POST /prs/:id/complete ───────────────────────────────────────────────

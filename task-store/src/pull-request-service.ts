@@ -33,6 +33,7 @@ import {
   type PullRequestEvent,
 } from "./index.ts";
 import { buildRepoOrgWhere } from "./lib/repo-org-filter.ts";
+import { deriveOrigin } from "./pr-origin-derivation.ts";
 import { computePrTransitionDiff } from "./pr-transition-diff.ts";
 
 /**
@@ -293,6 +294,9 @@ export interface PullRequestServiceLike {
     claimedBy: string,
     phase?: PrPhase,
     prCreatedAt?: string,
+    authorLogin?: string | null,
+    headRef?: string | null,
+    title?: string | null,
   ): Promise<{ status: 200 | 201; record: PullRequest }>;
   heartbeat(id: string): Promise<PullRequest>;
   complete(id: string): Promise<PullRequest>;
@@ -538,6 +542,18 @@ export class PullRequestService implements PullRequestServiceLike {
    *     clears stale claims asynchronously.
    *   - Legacy review path: claimedBy IS NOT NULL AND same commitSha AND
    *     reviewState !== 'pending' → 409
+   *
+   * Origin stamping (POM-1.2): after the claim write succeeds (update or
+   * create branch), looks up whether a Task row exists for (repo, prNumber),
+   * derives a PrOrigin via deriveOrigin() (a task-row match always wins,
+   * taking precedence over any author/branch-based signal), and calls
+   * stampOrigin() with the same `tx` so it's atomic with the claim write.
+   * stampOrigin()'s first-write-wins contract means this is safe to call on
+   * every claim — an already-set origin is never overwritten, while
+   * authorLogin/headRef/title are refreshed to the latest supplied value
+   * every time. The final `record` returned is stampOrigin()'s return value,
+   * not the raw claim-write result, so the API response reflects the
+   * freshly-stamped fields.
    */
   async claim(
     repo: string,
@@ -546,6 +562,9 @@ export class PullRequestService implements PullRequestServiceLike {
     claimedBy: string,
     phase: PrPhase = "review",
     prCreatedAt?: string,
+    authorLogin?: string | null,
+    headRef?: string | null,
+    title?: string | null,
   ): Promise<{ status: 200 | 201; record: PullRequest }> {
     const now = this.clock.now().toISOString();
 
@@ -618,7 +637,15 @@ export class PullRequestService implements PullRequestServiceLike {
           // the same tx (the CRF-1.1 WHERE-guard/conflict-detection logic above
           // is untouched — recordTransition only runs once the update succeeds).
           await this.recordTransition(tx, existing, record, "claim", claimedBy);
-          return { status: 200 as const, record };
+          const stamped = await this.stampClaimOrigin(
+            tx,
+            repo,
+            prNumber,
+            authorLogin,
+            headRef,
+            title,
+          );
+          return { status: 200 as const, record: stamped };
         } catch (err: unknown) {
           // The combined WHERE matched 0 rows → Prisma throws P2025. Distinguish
           // the two causes: the row still exists (a concurrent claim() now
@@ -672,8 +699,16 @@ export class PullRequestService implements PullRequestServiceLike {
           createData.readyForDeployAt = now;
         }
 
-        const record = await tx.pullRequest.create({ data: createData });
-        return { status: 201 as const, record };
+        await tx.pullRequest.create({ data: createData });
+        const stamped = await this.stampClaimOrigin(
+          tx,
+          repo,
+          prNumber,
+          authorLogin,
+          headRef,
+          title,
+        );
+        return { status: 201 as const, record: stamped };
       } catch (err: unknown) {
         if (
           typeof err === "object" &&
@@ -1275,7 +1310,35 @@ export class PullRequestService implements PullRequestServiceLike {
     return result;
   }
 
-  // ─── Origin metrics (POM-1.1) ───────────────────────────────────────────────
+  // ─── Origin metrics (POM-1.1 / POM-1.2) ─────────────────────────────────────
+
+  /**
+   * claim()'s origin-stamping tail call (POM-1.2): looks up whether a Task
+   * row links (repo, prNumber), derives a PrOrigin via deriveOrigin() (a
+   * task-row match always wins over any author/branch-based signal), and
+   * calls stampOrigin() against the same `tx` so the origin write is atomic
+   * with the claim write that preceded it. Returns stampOrigin()'s record —
+   * the final value claim() returns to its caller.
+   */
+  private async stampClaimOrigin(
+    tx: Prisma.TransactionClient,
+    repo: string,
+    prNumber: number,
+    authorLogin: string | null | undefined,
+    headRef: string | null | undefined,
+    title: string | null | undefined,
+  ): Promise<PullRequest> {
+    const linkedTask = await tx.task.findFirst({
+      where: { repo, pr: prNumber },
+      select: { id: true },
+    });
+    const origin = deriveOrigin({
+      hasLinkedTask: linkedTask !== null,
+      authorLogin,
+      headRef,
+    });
+    return this.stampOrigin(repo, prNumber, { origin, authorLogin, headRef, title }, tx);
+  }
 
   async stampOrigin(
     repo: string,
