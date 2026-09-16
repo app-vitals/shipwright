@@ -4336,7 +4336,8 @@ describe("createLoopOrchestrator — autonomous plan phase (PDR-4.1)", () => {
   // The dedupe is a defensive backstop, not a load-bearing disjointness fix:
   // ready.ts excludes `kind === "prd"` outright (PDR-2.2, re-expressed on the
   // enum by TKD-1.1), so in practice check-dev-task's `?ready=true` pool and
-  // check-plan's `?kind=prd&status=pending` pool don't overlap. This test
+  // check-plan's `?autonomousPlanSession=true&status=pending` pool don't
+  // overlap — the two filters are exact complements. This test
   // exercises the backstop directly, by handing the orchestrator a task that
   // IS in both pools (as it would be if a foreign provider, a stale task-store
   // deploy, or a hand-written `kind`/`autonomousPlanSession` mismatch leaked

@@ -135,8 +135,10 @@ Two of the five providers return **task** candidates (`check-dev-task.ts` and
 `check-plan.ts`); the other three return **PR** candidates. Both task lists are merged into a
 single pool before selection, deduped by task id with the `phase: "plan"`-tagged copy winning.
 The dedupe is a **defensive backstop, not a required workaround**: `check-plan.ts` asks for
-`?kind=prd&autonomousPlanSession=true&status=pending` (the legacy param rides along on purpose
-until every deployed task-store honors `?kind=`), and `check-dev-task.ts`'s `?ready=true` already excludes the
+`?autonomousPlanSession=true&status=pending` (the legacy spelling, on purpose — the task store
+ANDs list filters, so pairing it with `?kind=prd` would orphan a mid-rollout row whose `kind`
+lags its legacy flag, and sending `?kind=prd` alone would be ignored by a task-store that
+predates it and silently widen the pool to every pending task), and `check-dev-task.ts`'s `?ready=true` already excludes the
 `kind: "prd"` slice server-side (task-store's `ready.ts`), so the two pools don't overlap in
 practice. It's kept because that guarantee lives one deploy away — an agent running against an
 older task-store, or a task whose `kind` and legacy `autonomousPlanSession` flag were written

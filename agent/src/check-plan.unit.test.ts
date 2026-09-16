@@ -186,10 +186,26 @@ describe("getPlanCandidates", () => {
 
 // ─── Task-store query shape (TKD-1.1) ─────────────────────────────────────────
 
+/**
+ * Mirrors how the task-store evaluates a list query: TaskService.list()
+ * (`task-store/src/task-service.ts`) assigns every supplied filter onto a
+ * single Prisma `where` object, so a row is returned only if it satisfies
+ * EVERY param — a strict AND, never an OR. Query params arrive as strings, so
+ * each row field is compared stringified.
+ */
+function matchesQuery(
+  query: URLSearchParams,
+  row: Record<string, unknown>,
+): boolean {
+  return [...query.entries()].every(
+    ([key, value]) => String(row[key]) === value,
+  );
+}
+
 describe("buildPrdTaskQuery", () => {
-  test("asks the task store for kind=prd&status=pending", () => {
+  test("asks the task store for still-pending PRD tasks", () => {
     const query = buildPrdTaskQuery();
-    expect(query.get("kind")).toBe("prd");
+    expect(query.get("autonomousPlanSession")).toBe("true");
     expect(query.get("status")).toBe("pending");
   });
 
@@ -198,17 +214,62 @@ describe("buildPrdTaskQuery", () => {
   // task-store that predates TKD-1.1, a kind-only query would silently widen
   // to `?status=pending` — every pending task becomes a plan candidate and
   // ordinary dev tasks get dispatched as `/shipwright:plan-session
-  // --autonomous`. The legacy flag rides along so the pool stays narrow either
-  // way.
-  test("also sends the legacy autonomousPlanSession flag so the pool stays narrow against a pre-TKD-1.1 task-store", () => {
-    expect(buildPrdTaskQuery().get("autonomousPlanSession")).toBe("true");
+  // --autonomous`. The legacy flag is what keeps the pool narrow on both old
+  // and new stores.
+  test("sends the legacy autonomousPlanSession flag, not kind, for the transition window", () => {
+    expect(buildPrdTaskQuery().has("kind")).toBe(false);
   });
 
-  test("sends no filter beyond kind, the legacy flag, and status", () => {
+  test("sends no filter beyond the legacy flag and status", () => {
     expect([...buildPrdTaskQuery().keys()].sort()).toEqual([
       "autonomousPlanSession",
-      "kind",
       "status",
     ]);
+  });
+
+  // The regression this shape exists to prevent: sending `kind=prd` alongside
+  // the legacy flag ANDs the two, and the mid-rollout divergence row (an old
+  // task-store pod wrote `autonomousPlanSession: true` while `kind` stayed at
+  // the migration's `dev` default) fails the `kind` conjunct. task-store's
+  // ready.ts already excludes that row from the dev-task pool via an OR, so an
+  // AND-ed plan query would leave it invisible to BOTH providers forever.
+  test("still selects the mid-rollout divergence row (kind='dev' + legacy flag true)", () => {
+    expect(
+      matchesQuery(buildPrdTaskQuery(), {
+        kind: "dev",
+        autonomousPlanSession: true,
+        status: "pending",
+      }),
+    ).toBe(true);
+  });
+
+  test("selects an ordinary PRD row whose kind and legacy flag agree", () => {
+    expect(
+      matchesQuery(buildPrdTaskQuery(), {
+        kind: "prd",
+        autonomousPlanSession: true,
+        status: "pending",
+      }),
+    ).toBe(true);
+  });
+
+  test("does not select an ordinary pending dev task", () => {
+    expect(
+      matchesQuery(buildPrdTaskQuery(), {
+        kind: "dev",
+        autonomousPlanSession: false,
+        status: "pending",
+      }),
+    ).toBe(false);
+  });
+
+  test("does not select a PRD task that is no longer pending", () => {
+    expect(
+      matchesQuery(buildPrdTaskQuery(), {
+        kind: "prd",
+        autonomousPlanSession: true,
+        status: "in_progress",
+      }),
+    ).toBe(false);
   });
 });

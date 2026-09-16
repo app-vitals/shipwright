@@ -57,11 +57,18 @@ opposed to what state it's in:
 | `prd` | A product spec awaiting an autonomous planning pass. Never part of the `?ready=true` set — a PRD task has no dependency graph to resolve and must not be picked up as dev work. | `/shipwright:plan-session {repo} {session} --autonomous {id}` |
 
 Filter on it with `?kind=dev` / `?kind=prd`; `agent/src/check-plan.ts` collects the plan phase's
-candidates with `?kind=prd&autonomousPlanSession=true&status=pending`. It sends both spellings on
-purpose: `agent/` and `task-store/` deploy independently, and the list-query schema ignores params
-it doesn't recognize rather than rejecting them, so against a task-store that predates `kind` a
-`kind`-only query would silently widen to `?status=pending` and make every pending task a plan
-candidate. Drop the legacy param once every deployed task-store honors `?kind=`.
+candidates with the legacy spelling, `?autonomousPlanSession=true&status=pending`. That is
+deliberate for the transition window, and the two spellings are **not** sent together: every list
+filter lands on one Prisma `where` object, so `?kind=prd&autonomousPlanSession=true` is a strict
+AND, and it would exclude the very row a rolling deploy can produce (legacy flag set by an older
+pod, `kind` still at its `dev` default) — a PRD task invisible to the plan pool *and*, via
+`?ready=true`'s OR, to the dev-task pool. A `kind`-only query is no better: `agent/` and
+`task-store/` deploy independently and the list-query schema ignores params it doesn't recognize
+rather than rejecting them, so against a task-store that predates `kind` it would silently widen to
+`?status=pending` and make every pending task a plan candidate. The legacy flag alone is an exact
+match for the `kind: "prd"` slice on a new store (writes keep the pair in sync, and the migration
+back-filled existing rows) and the only filter that narrows at all on an old one. Switch it to
+`?kind=prd` once every deployed task-store honors `?kind=`.
 
 **Legacy `autonomousPlanSession`.** `kind` supersedes the boolean `autonomousPlanSession` flag,
 which remains fully supported during the transition window: it is still a column, still returned on

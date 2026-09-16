@@ -8,10 +8,10 @@
  * candidate mapper, an async collector, and a buildProductionDeps() wiring
  * over createTaskStoreClient) — but queries a different slice of the task
  * store. Where dev-task asks for `?ready=true` (dependency-resolved work
- * items), this phase asks for `?kind=prd&autonomousPlanSession=true&
- * status=pending` (TKD-1.1 — `kind` is the current spelling, the legacy flag
- * is sent alongside it for the transition window): PRD tasks flagged for
- * autonomous planning that nobody has picked up yet. These are PDR-3.1's
+ * items), this phase asks for `?autonomousPlanSession=true&status=pending`
+ * (TKD-1.1 — the legacy spelling is what the query still sends during the
+ * transition window; see buildPrdTaskQuery's doc comment for why): PRD tasks
+ * flagged for autonomous planning that nobody has picked up yet. These are PDR-3.1's
  * autonomous plan-session mode consumes, and they are deliberately NOT
  * filtered by `ready` — a PRD task awaiting planning has no dependency graph
  * to resolve, and `?ready=true` excludes the whole `kind: "prd"` slice anyway.
@@ -122,27 +122,46 @@ export async function getPlanCandidates(
  * The task-store query that defines this phase's pool (TKD-1.1).
  *
  * Exported so its shape is unit-testable without standing up a task-store
- * client: `kind=prd` is the current spelling of what used to be
- * `autonomousPlanSession=true`, and getting it wrong silently empties the
- * whole plan phase.
+ * client: this one query defines the entire plan pool, and getting it wrong
+ * silently empties the phase (or, worse, silently widens it to every pending
+ * task).
  *
- * BOTH spellings are sent for the duration of the transition window, and the
- * redundancy is deliberate. `agent/` and `task-store/` deploy independently,
- * and the task-store's list-query schema ignores params it doesn't recognize
- * rather than rejecting them — so against a task-store that predates TKD-1.1 a
- * `kind`-only query degrades to a bare `?status=pending`, making EVERY pending
- * task a plan candidate. loop-orchestrator's dedupe deliberately lets the
- * plan-tagged copy win ties, so ordinary dev tasks would then be dispatched as
- * `/shipwright:plan-session --autonomous`. Sending the legacy flag too keeps
- * the pool correctly narrowed on an old task-store, and costs nothing on a new
- * one: normalizeTaskKind() forces the pair to agree on every write path, so
- * `kind=prd` and `autonomousPlanSession=true` select the same rows.
+ * `kind=prd` is the current spelling of what used to be
+ * `autonomousPlanSession=true`, but for the transition window the query sends
+ * the LEGACY spelling alone, on purpose. Three constraints force that choice:
  *
- * Drop the legacy param once every deployed task-store honors `?kind=`.
+ *  1. The task-store cannot express an OR across two filter params —
+ *     TaskService.list() drops every supplied filter onto one Prisma `where`
+ *     object, so `?kind=prd&autonomousPlanSession=true` is a strict AND.
+ *  2. That AND orphans the one row shape this transition window actually
+ *     produces. An old task-store pod writing `autonomousPlanSession: true`
+ *     leaves `kind` at the migration's `dev` default; ready.ts correctly
+ *     excludes that row from the dev-task pool (`kind === "prd" ||
+ *     autonomousPlanSession === true`), and an AND-ed query would exclude it
+ *     from the plan pool too — a PRD task invisible to both providers, with
+ *     nothing to back-fill `kind` and no error to notice.
+ *  3. A `kind`-only query is worse still: the list-query schema ignores params
+ *     it doesn't recognize rather than rejecting them, so against a task-store
+ *     that predates TKD-1.1 it degrades to a bare `?status=pending` and makes
+ *     EVERY pending task a plan candidate — which loop-orchestrator's dedupe
+ *     then resolves in the plan phase's favor, dispatching ordinary dev tasks
+ *     as `/shipwright:plan-session --autonomous`.
+ *
+ * The legacy flag alone has none of those failure modes. On a new task-store
+ * it is an exact match for the `kind: "prd"` slice — normalizeTaskKind()
+ * forces the pair to agree on every write path and the TKD-1.1 migration
+ * back-filled existing rows, so `kind='prd'` and `autonomousPlanSession=true`
+ * select the same rows — and it additionally picks up the mid-rollout
+ * divergence row from (2). On an old task-store it is the only filter that
+ * narrows the pool at all. It is also the exact complement of ready.ts's
+ * exclusion, so the plan and dev-task pools stay disjoint either way.
+ *
+ * Switch this to `kind=prd` (dropping the legacy param) once every deployed
+ * task-store honors `?kind=` — at which point no divergence row can be
+ * written, and the rationale above collapses.
  */
 export function buildPrdTaskQuery(): URLSearchParams {
   return new URLSearchParams({
-    kind: "prd",
     autonomousPlanSession: "true",
     status: "pending",
   });
