@@ -4,6 +4,71 @@ Durable notes for breaking changes and the steps needed to migrate across versio
 
 ---
 
+## Breaking: `POST /agents` JSON API retired — agent creation is UI-only _(ABF-3.2)_
+
+**Version**: next (ABF-3.2)
+
+**Who this affects**: only callers that created agents programmatically through the admin
+JSON API (`POST /agents`). Every other `/agents/*` route is unchanged — `GET`/`PATCH`/`DELETE
+/agents[/:id]`, `POST /agents/:id/provision`, `POST /agents/reconcile`, and all the per-agent
+sub-resources (envs, crons, tools, tokens, plugins) stay exactly as they were.
+
+The `POST /agents` route has been removed from the admin CRUD API
+([`admin/src/agents-api.ts`](../admin/src/agents-api.ts)), along with its OpenAPI schema entry
+and the corresponding generated types. Agent creation now happens exclusively through the admin
+console's HTML form at `/admin/agents/new`, which submits to `POST /admin/agents` in
+[`admin/src/admin-ui.ts`](../admin/src/admin-ui.ts). That form had already become the real
+creation path — it is the only one that walks Slack app connection, GitHub auth, AI
+credentials, and runtime selection — leaving the JSON route as a second, partial implementation
+of the same seeding/provisioning logic that had to be kept in sync by hand.
+
+**What changed**:
+- `POST /agents` returns **404**. The route definition (`createAgentRoute`), its handler, and
+  its `CreateAgentBodySchema` request body are gone from `admin/src/agents-api.ts`.
+- `admin/openapi.json` no longer lists a `post` operation under `/agents` (only `get`), and the
+  regenerated [`lib/admin-types.ts`](../lib/admin-types.ts) drops the matching
+  `paths["/agents"]["post"]` member — a **type-level** break for TypeScript clients generated
+  from that file. A drift-guard check in `admin/src/admin-spec.smoke.test.ts` keeps the spec and
+  the generated types in sync going forward.
+- `AdminDeps.agentTypeRegistry` is now unused by `agents-api.ts` and is retained only as an
+  optional field for backward-compatible construction; the admin UI carries its own
+  `agentTypeRegistry` dependency for manifest-driven seeding.
+- `scripts/hitl.ts` (the `task hitl` bootstrap) now creates the local dev `hitl` agent via
+  `POST /admin/agents` instead of `POST /agents`, minting an admin session through the dev
+  auto-login route first.
+
+**Migration**:
+- **For humans**: no action — use `/admin/agents/new` (`/admin/provision` still 302-redirects
+  there). It is the sole supported creation path, and covers both self-hosted and in-cluster
+  runtimes.
+- **For scripted/API callers**: repoint at `POST /admin/agents`. It is an **HTML form
+  endpoint**, not a JSON one, and differs from the retired route in four ways:
+  1. **Auth** is a session cookie (`createUIAuthMiddleware`), not a bearer token. Outside
+     production you can mint one via `GET /admin/dev-login` (dev-auth only); in production,
+     drive it from a signed-in admin browser session.
+  2. **Body** is `application/x-www-form-urlencoded`, not JSON. Field names:
+     `name`, `type` (agent type, required — no implicit `"coding"` default), `runtime`
+     (`in-cluster` for a managed/provisioned agent; absent/anything else means self-hosted, the
+     inverse of the old `selfHosted` boolean), `repos` / `authorAllowlist` /
+     `patchAuthorAllowlist` / `memberEmails` (newline-separated lists), and
+     `restrictSlackToMembers`. Note `authorAllowlist` here is the *form field* name for the
+     `reviewAuthorAllowlist` column.
+  3. **Response** is a `302` — `Location: /admin/agents/:id` on success, or
+     `/admin/agents/new?error=<reason>` on failure — not a `201` with a JSON agent body. Parse
+     the created id out of the redirect target (see `parseCreatedAgentId()` in
+     `scripts/hitl.ts` for a reference implementation) rather than reading a response body.
+  4. **`slackId` is not settable at create time.** It is resolved and persisted automatically
+     after Slack OAuth; backfill it with `PATCH /agents/:id` if you need to set it directly.
+- **Seeding parity**: the form seeds `AgentTool`/`AgentPlugin` rows from the selected Agent
+  Type manifest and rolls the agent row back on failure, exactly as the JSON route did. It does
+  *not* seed `AgentMember` rows or merge `manifest.repos` into `repos` — those come from the
+  form's own `memberEmails`/`repos` fields. No shipped agent type declares non-empty
+  `members`/`repos`, so this is a no-op difference today.
+- **Deploy order**: no constraint — the change is confined to the admin service, and the only
+  in-repo caller (`scripts/hitl.ts`) ships in the same change.
+
+---
+
 ## Breaking: bundled PostgreSQL bump 17 → 18 requires manual data migration _(PGU-1.4)_
 
 **Version**: chart `1.20.58` (PGU-1.1)
