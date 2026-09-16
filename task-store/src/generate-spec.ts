@@ -137,6 +137,15 @@ const stubPrService: PullRequestServiceLike = {
   async lookupBlockedPrNumbers() {
     return new Set();
   },
+  async stampOrigin() {
+    return {} as never;
+  },
+  async census() {
+    return [];
+  },
+  async getCensusCursor() {
+    return null;
+  },
 };
 
 const stubSessionService: SessionServiceLike = {

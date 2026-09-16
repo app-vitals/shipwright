@@ -1224,6 +1224,7 @@ export interface paths {
                     blocked?: "true" | "false";
                     sort?: "asc" | "desc";
                     updatedSince?: string;
+                    origin?: string;
                 };
                 header?: never;
                 path?: never;
@@ -1373,6 +1374,126 @@ export interface paths {
                 };
             };
         };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/prs/census": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Batch upsert PR origin/author/branch/title/state metadata
+         * @description Upserts a PullRequest row for each (repo, prNumber) entry — at most 200 entries per call, all in one transaction. Writes `authorLogin`/`headRef`/`title`/`state`/`mergedAt`/`prCreatedAt` unconditionally; `origin` follows first-write-wins (only applied when the row's existing origin is currently null). Never touches claim/phase/review/patch/blocked fields — safe to run alongside review/patch/deploy's separate POST /prs/claim lock. New rows get `phase=null`, `reviewState='pending'`, `staged=false`. Not part of the public MCP tool surface.
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["CensusBody"];
+                };
+            };
+            responses: {
+                /** @description Upserted PR rows, one per input entry */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["CensusResponse"];
+                    };
+                };
+                /** @description Bad request — malformed entry, or more than 200 entries in one batch */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+                /** @description Forbidden — an entry's repo is outside the agent token's scope */
+                403: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/prs/census/cursor": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get the census incremental-search-window cursor for a repo
+         * @description Returns `{ cursor }`: the max `mergedAt` (ISO string) among rows scoped to `repo` whose `origin` is not null, or `null` when no such row exists. Used by POM-4.1's census sweep to derive its incremental search window.
+         */
+        get: {
+            parameters: {
+                query: {
+                    repo: string;
+                };
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Census cursor */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["CensusCursorResponse"];
+                    };
+                };
+                /** @description Bad request — missing or malformed repo */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+                /** @description Forbidden — repo is outside the agent token's scope */
+                403: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -2514,6 +2635,18 @@ export interface components {
             /** @example no linked task */
             blockedReason?: string | null;
             /**
+             * @description Where this PR record first learned about the PR — first-write-wins (see PullRequestService.stampOrigin()). Null means the row has never been stamped (POM-1.1's accepted gap: a PR that never passes through the pr_open transition, POST /prs/claim, or the census sweep has no origin at all).
+             * @example shipwright
+             * @enum {string|null}
+             */
+            origin?: "shipwright" | "ci" | "dependency_bot" | "human" | "unknown" | null;
+            /** @example octocat */
+            authorLogin?: string | null;
+            /** @example feat/some-branch */
+            headRef?: string | null;
+            /** @example Add the origin metrics dimension */
+            title?: string | null;
+            /**
              * @description Consecutive skip count. Auto-blocks (blocked+blockedReason) once it crosses the threshold (3). POST /prs/:id/skip/reset resets this to 0 and, only when blockedReason matches the skip-auto-block message pattern (contains 'consecutive skips'), also clears blocked/blockedReason — a block set by a different mechanism (e.g. the CI-failure-streak auto-block) is left untouched.
              * @default 0
              * @example 0
@@ -2609,6 +2742,46 @@ export interface components {
              * @example 1
              */
             maxConcurrent?: number;
+        };
+        CensusResponse: {
+            /** @description The upserted PullRequest rows, one per input entry. */
+            prs: components["schemas"]["PullRequest"][];
+        };
+        CensusEntry: {
+            /** @example org/repo */
+            repo: string;
+            /** @example 42 */
+            prNumber: number;
+            /**
+             * @description First-write-wins: only applied when the row's existing origin is currently null.
+             * @example unknown
+             * @enum {string}
+             */
+            origin?: "shipwright" | "ci" | "dependency_bot" | "human" | "unknown";
+            /** @example octocat */
+            authorLogin?: string | null;
+            /** @example feat/some-branch */
+            headRef?: string | null;
+            /** @example Add the origin metrics dimension */
+            title?: string | null;
+            /**
+             * @example merged
+             * @enum {string}
+             */
+            state?: "open" | "merged" | "closed";
+            /** @example 2026-01-04T00:00:00.000Z */
+            mergedAt?: string | null;
+            /** @example 2026-01-01T00:00:00.000Z */
+            prCreatedAt?: string | null;
+        };
+        /** @description Entries to upsert, at most 200 per call — the whole batch runs in one transaction. An over-cap batch is rejected with 400. */
+        CensusBody: components["schemas"]["CensusEntry"][];
+        CensusCursorResponse: {
+            /**
+             * @description Max mergedAt (ISO string) among rows scoped to `repo` whose origin is not null, or null when no such row exists.
+             * @example 2026-01-04T00:00:00.000Z
+             */
+            cursor: string | null;
         };
         UpdatePrBody: {
             [key: string]: unknown;

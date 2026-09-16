@@ -20,12 +20,12 @@
 import { sentry } from "@sentry/hono/bun";
 import { callerLabel } from "@shipwright/lib/request-context";
 import {
-  type ErrorCapturingClient,
   buildSentryInitOptions,
+  type ErrorCapturingClient,
 } from "@shipwright/lib/sentry";
 import { Hono } from "hono";
 import { HTTPException } from "hono/http-exception";
-import { type TaskStoreAuthEnv, createBearerAuthMiddleware } from "./auth.ts";
+import { createBearerAuthMiddleware, type TaskStoreAuthEnv } from "./auth.ts";
 import { ApiError } from "./errors.ts";
 import type { PullRequestServiceLike } from "./pull-request-service.ts";
 import { createPrsRoutes } from "./routes/prs.ts";
@@ -79,6 +79,15 @@ const noopPrService: PullRequestServiceLike = {
   },
   async lookupBlockedPrNumbers(_pairs) {
     return new Set();
+  },
+  async stampOrigin(_repo, _prNumber, _data, _client?) {
+    return {} as never;
+  },
+  async census(_entries) {
+    return [];
+  },
+  async getCensusCursor(_repo) {
+    return null;
   },
 };
 

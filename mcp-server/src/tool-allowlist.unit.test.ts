@@ -3,7 +3,7 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import { generatedTools } from "./generated-tools.ts";
 import { createMcpServer } from "./mcp-server.ts";
-import { EXCLUDED_TOOLS, allowedTools } from "./tool-allowlist.ts";
+import { allowedTools, EXCLUDED_TOOLS } from "./tool-allowlist.ts";
 
 const ALLOWED_TOOL_NAMES = [
   "tasks_list",
@@ -15,14 +15,15 @@ const ALLOWED_TOOL_NAMES = [
   "prs_list",
   "prs_get",
   "prs_update",
+  "prs_cursor",
   "sessions_list",
   "sessions_get",
 ] as const;
 
 describe("allowedTools", () => {
-  it("returns only the 11 agreed tools", () => {
+  it("returns only the 12 agreed tools", () => {
     const result = allowedTools(generatedTools);
-    expect(result).toHaveLength(11);
+    expect(result).toHaveLength(12);
   });
 
   it("excludes all EXCLUDED_TOOLS names", () => {
@@ -33,12 +34,12 @@ describe("allowedTools", () => {
     }
   });
 
-  it("stays stable across regeneration — given all 35 generatedTools, only 11 come back", () => {
+  it("stays stable across regeneration — given all 37 generatedTools, only 12 come back", () => {
     // This is the "across regeneration" invariant:
-    // even if generate:mcp-tools emits all 35 ops, only the 11 allowed ones are exposed.
-    expect(generatedTools).toHaveLength(35);
+    // even if generate:mcp-tools emits all 37 ops, only the 12 allowed ones are exposed.
+    expect(generatedTools).toHaveLength(37);
     const result = allowedTools(generatedTools);
-    expect(result).toHaveLength(11);
+    expect(result).toHaveLength(12);
     const resultNames = result.map((t) => t.name);
     for (const name of ALLOWED_TOOL_NAMES) {
       expect(resultNames).toContain(name);
@@ -53,7 +54,7 @@ describe("allowedTools", () => {
 });
 
 describe("createMcpServer lists only allowed tools", () => {
-  it("tools/list returns exactly 11 names and none are in EXCLUDED_TOOLS", async () => {
+  it("tools/list returns exactly 12 names and none are in EXCLUDED_TOOLS", async () => {
     const server = createMcpServer({
       config: { baseUrl: "http://localhost:3002", token: "test-token" },
     });
@@ -69,7 +70,7 @@ describe("createMcpServer lists only allowed tools", () => {
     const { tools } = await client.listTools();
     const names = tools.map((t) => t.name);
 
-    expect(tools.length).toBe(11);
+    expect(tools.length).toBe(12);
     for (const excluded of EXCLUDED_TOOLS) {
       expect(names).not.toContain(excluded);
     }

@@ -237,6 +237,7 @@ function fakePrService(
       prId: string;
       opts?: { limit?: number; offset?: number };
     }>;
+    capturedListFilters?: PullRequestListFilters[];
   } = {},
 ): PullRequestServiceLike {
   const store = opts.store ?? new Map<string, PullRequest>();
@@ -245,6 +246,7 @@ function fakePrService(
     async list(
       filters?: PullRequestListFilters,
     ): Promise<PullRequestListResult> {
+      opts.capturedListFilters?.push(filters ?? {});
       let prs = Array.from(store.values());
       if (opts.listResult !== undefined) prs = opts.listResult;
       if (filters?.reviewState)
@@ -479,6 +481,103 @@ function fakePrService(
 
     async lookupBlockedPrNumbers(): Promise<Set<number>> {
       return new Set();
+    },
+
+    // ─── Origin metrics (POM-1.1) — store-backed so smoke tests can assert
+    // real upsert/first-write-wins/cursor behavior through the HTTP layer. ───
+
+    async stampOrigin(repo, prNumber, data) {
+      const existing = Array.from(store.values()).find(
+        (pr) => pr.repo === repo && pr.prNumber === prNumber,
+      );
+      const resolvedOrigin =
+        data.origin !== undefined && (!existing || existing.origin === null)
+          ? data.origin
+          : undefined;
+      if (existing) {
+        const updated: PullRequest = {
+          ...existing,
+          ...(data.authorLogin !== undefined
+            ? { authorLogin: data.authorLogin }
+            : {}),
+          ...(data.headRef !== undefined ? { headRef: data.headRef } : {}),
+          ...(data.title !== undefined ? { title: data.title } : {}),
+          ...(resolvedOrigin !== undefined ? { origin: resolvedOrigin } : {}),
+        };
+        store.set(existing.id, updated);
+        return updated;
+      }
+      const created = makePr({
+        id: `pr-stamp-${store.size + 1}`,
+        repo,
+        prNumber,
+        authorLogin: data.authorLogin ?? null,
+        headRef: data.headRef ?? null,
+        title: data.title ?? null,
+        origin: resolvedOrigin ?? null,
+      });
+      store.set(created.id, created);
+      return created;
+    },
+
+    async census(entries) {
+      const results: PullRequest[] = [];
+      for (const entry of entries) {
+        const existing = Array.from(store.values()).find(
+          (pr) => pr.repo === entry.repo && pr.prNumber === entry.prNumber,
+        );
+        const resolvedOrigin =
+          entry.origin !== undefined && (!existing || existing.origin === null)
+            ? entry.origin
+            : undefined;
+        if (existing) {
+          const updated: PullRequest = {
+            ...existing,
+            ...(entry.authorLogin !== undefined
+              ? { authorLogin: entry.authorLogin }
+              : {}),
+            ...(entry.headRef !== undefined ? { headRef: entry.headRef } : {}),
+            ...(entry.title !== undefined ? { title: entry.title } : {}),
+            ...(entry.state !== undefined ? { state: entry.state } : {}),
+            ...(entry.mergedAt !== undefined
+              ? { mergedAt: entry.mergedAt }
+              : {}),
+            ...(entry.prCreatedAt !== undefined
+              ? { prCreatedAt: entry.prCreatedAt }
+              : {}),
+            ...(resolvedOrigin !== undefined ? { origin: resolvedOrigin } : {}),
+          };
+          store.set(existing.id, updated);
+          results.push(updated);
+        } else {
+          const created = makePr({
+            id: `pr-census-${store.size + 1}`,
+            repo: entry.repo,
+            prNumber: entry.prNumber,
+            authorLogin: entry.authorLogin ?? null,
+            headRef: entry.headRef ?? null,
+            title: entry.title ?? null,
+            origin: resolvedOrigin ?? null,
+            state: entry.state ?? "open",
+            mergedAt: entry.mergedAt ?? null,
+            prCreatedAt: entry.prCreatedAt ?? null,
+          });
+          store.set(created.id, created);
+          results.push(created);
+        }
+      }
+      return results;
+    },
+
+    async getCensusCursor(repo) {
+      const candidates = Array.from(store.values()).filter(
+        (pr) => pr.repo === repo && pr.origin !== null && pr.mergedAt !== null,
+      );
+      if (candidates.length === 0) return null;
+      return candidates
+        .map((pr) => pr.mergedAt as string)
+        .sort()
+        .at(-1) as string;
     },
   };
 }
@@ -2106,5 +2205,213 @@ describe("/prs routes (smoke)", () => {
     expect(getEventsCalls).toHaveLength(1);
     expect(getEventsCalls[0]?.opts?.limit).toBeUndefined();
     expect(getEventsCalls[0]?.opts?.offset).toBeUndefined();
+  });
+
+  // ─── POST /prs/census (POM-1.1) ───────────────────────────────────────────
+
+  it("POST /prs/census creates a new row with phase=null, reviewState=pending, staged=false, and the supplied fields", async () => {
+    const app = makeApp();
+    const res = await app.request("/prs/census", {
+      method: "POST",
+      headers: { ...adminAuth(), "content-type": "application/json" },
+      body: JSON.stringify([
+        {
+          repo: ADMIN_REPO,
+          prNumber: 100,
+          origin: "ci",
+          authorLogin: "renovate[bot]",
+          headRef: "renovate/some-dep",
+          title: "Bump some-dep",
+          state: "merged",
+          mergedAt: "2026-01-05T00:00:00.000Z",
+          prCreatedAt: "2026-01-01T00:00:00.000Z",
+        },
+      ]),
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { prs: PullRequest[] };
+    expect(body.prs).toHaveLength(1);
+    const pr = body.prs[0];
+    expect(pr.repo).toBe(ADMIN_REPO);
+    expect(pr.prNumber).toBe(100);
+    expect(pr.phase).toBeNull();
+    expect(pr.reviewState).toBe("pending");
+    expect(pr.staged).toBe(false);
+    expect(pr.origin).toBe("ci");
+    expect(pr.authorLogin).toBe("renovate[bot]");
+    expect(pr.headRef).toBe("renovate/some-dep");
+    expect(pr.title).toBe("Bump some-dep");
+    expect(pr.state).toBe("merged");
+    expect(pr.mergedAt).toBe("2026-01-05T00:00:00.000Z");
+  });
+
+  it("POST /prs/census on an existing row updates authorLogin/headRef/title/state/mergedAt unconditionally but leaves a non-null origin unchanged", async () => {
+    const store = new Map<string, PullRequest>();
+    store.set(
+      "pr-1",
+      makePr({
+        id: "pr-1",
+        repo: ADMIN_REPO,
+        prNumber: 42,
+        origin: "human",
+        authorLogin: "old-login",
+        state: "open",
+        claimedBy: "agent-x",
+        phase: "review",
+        reviewState: "in_progress",
+      }),
+    );
+    const app = makeApp({ prService: fakePrService({ store }) });
+
+    const res = await app.request("/prs/census", {
+      method: "POST",
+      headers: { ...adminAuth(), "content-type": "application/json" },
+      body: JSON.stringify([
+        {
+          repo: ADMIN_REPO,
+          prNumber: 42,
+          origin: "ci",
+          authorLogin: "new-login",
+          state: "merged",
+          mergedAt: "2026-02-01T00:00:00.000Z",
+        },
+      ]),
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { prs: PullRequest[] };
+    const pr = body.prs[0];
+    // Unconditional fields update...
+    expect(pr.authorLogin).toBe("new-login");
+    expect(pr.state).toBe("merged");
+    expect(pr.mergedAt).toBe("2026-02-01T00:00:00.000Z");
+    // ...but a non-null origin is left unchanged (first-write-wins)...
+    expect(pr.origin).toBe("human");
+    // ...and claim/phase/reviewState fields are left untouched.
+    expect(pr.claimedBy).toBe("agent-x");
+    expect(pr.phase).toBe("review");
+    expect(pr.reviewState).toBe("in_progress");
+  });
+
+  it("POST /prs/census with more than 200 entries returns 400", async () => {
+    const app = makeApp();
+    const entries = Array.from({ length: 201 }, (_, i) => ({
+      repo: ADMIN_REPO,
+      prNumber: i + 1,
+    }));
+    const res = await app.request("/prs/census", {
+      method: "POST",
+      headers: { ...adminAuth(), "content-type": "application/json" },
+      body: JSON.stringify(entries),
+    });
+    expect(res.status).toBe(400);
+  });
+
+  it("POST /prs/census returns 403 for an agent token when an entry's repo is out of scope", async () => {
+    const app = makeApp({
+      tokenService: fakeAgentTokenService(),
+      scopeResolver: makeScopeResolver([SCOPED_REPO]),
+    });
+    const res = await app.request("/prs/census", {
+      method: "POST",
+      headers: { ...agentAuth(), "content-type": "application/json" },
+      body: JSON.stringify([{ repo: "other-org/other-repo", prNumber: 1 }]),
+    });
+    expect(res.status).toBe(403);
+  });
+
+  it("POST /prs/census returns 200 for an agent token when the entry's repo is in scope", async () => {
+    const app = makeApp({
+      tokenService: fakeAgentTokenService(),
+      scopeResolver: makeScopeResolver([SCOPED_REPO]),
+    });
+    const res = await app.request("/prs/census", {
+      method: "POST",
+      headers: { ...agentAuth(), "content-type": "application/json" },
+      body: JSON.stringify([{ repo: SCOPED_REPO, prNumber: 1 }]),
+    });
+    expect(res.status).toBe(200);
+  });
+
+  // ─── GET /prs/census/cursor (POM-1.1) ─────────────────────────────────────
+
+  it("GET /prs/census/cursor returns the max mergedAt among rows with a non-null origin", async () => {
+    const store = new Map<string, PullRequest>();
+    store.set(
+      "pr-1",
+      makePr({
+        id: "pr-1",
+        repo: ADMIN_REPO,
+        prNumber: 1,
+        origin: "shipwright",
+        mergedAt: "2026-01-01T00:00:00.000Z",
+      }),
+    );
+    store.set(
+      "pr-2",
+      makePr({
+        id: "pr-2",
+        repo: ADMIN_REPO,
+        prNumber: 2,
+        origin: "ci",
+        mergedAt: "2026-03-01T00:00:00.000Z",
+      }),
+    );
+    // A row with origin:null must not be considered, even with a later mergedAt.
+    store.set(
+      "pr-3",
+      makePr({
+        id: "pr-3",
+        repo: ADMIN_REPO,
+        prNumber: 3,
+        origin: null,
+        mergedAt: "2026-06-01T00:00:00.000Z",
+      }),
+    );
+    const app = makeApp({ prService: fakePrService({ store }) });
+
+    const res = await app.request(
+      `/prs/census/cursor?repo=${encodeURIComponent(ADMIN_REPO)}`,
+      { headers: adminAuth() },
+    );
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { cursor: string | null };
+    expect(body.cursor).toBe("2026-03-01T00:00:00.000Z");
+  });
+
+  it("GET /prs/census/cursor returns { cursor: null } when no origin-stamped row exists", async () => {
+    const app = makeApp();
+    const res = await app.request(
+      `/prs/census/cursor?repo=${encodeURIComponent(ADMIN_REPO)}`,
+      { headers: adminAuth() },
+    );
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { cursor: string | null };
+    expect(body.cursor).toBeNull();
+  });
+
+  it("GET /prs/census/cursor returns 403 for an agent token when repo is out of scope", async () => {
+    const app = makeApp({
+      tokenService: fakeAgentTokenService(),
+      scopeResolver: makeScopeResolver([SCOPED_REPO]),
+    });
+    const res = await app.request(
+      "/prs/census/cursor?repo=other-org/other-repo",
+      { headers: agentAuth() },
+    );
+    expect(res.status).toBe(403);
+  });
+
+  // ─── GET /prs?origin=a,b (POM-1.1) ─────────────────────────────────────────
+
+  it("GET /prs?origin=shipwright,ci forwards the parsed origin list to the service", async () => {
+    const capturedListFilters: PullRequestListFilters[] = [];
+    const app = makeApp({
+      prService: fakePrService({ capturedListFilters }),
+    });
+    const res = await app.request("/prs?origin=shipwright,ci", {
+      headers: adminAuth(),
+    });
+    expect(res.status).toBe(200);
+    expect(capturedListFilters[0]?.origin).toEqual(["shipwright", "ci"]);
   });
 });

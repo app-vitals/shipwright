@@ -24,9 +24,11 @@ import {
   type PrFinding,
   type PrFindingDisposition,
   type PrFindingSource,
-  type PrPhase,
   Prisma,
   type PrismaClient,
+  type PrOrigin,
+  type PrPhase,
+  type PrState,
   type PullRequest,
   type PullRequestEvent,
 } from "./index.ts";
@@ -38,11 +40,16 @@ import { computePrTransitionDiff } from "./pr-transition-diff.ts";
  * callback's `tx`. recordTransition() accepts this so it can run against either
  * — the write path always hands it the same `tx` that performed the source
  * update, keeping the event insert(s) atomic with it.
+ *
+ * Also the type stampOrigin()'s optional `client` param accepts (POM-1.1) —
+ * exported as `PullRequestTxClient` so TaskService.update() can type the tx
+ * it hands across the service boundary in the same $transaction.
  */
 type PrismaTxClient = Pick<
   Prisma.TransactionClient,
   "pullRequest" | "pullRequestEvent"
 >;
+export type PullRequestTxClient = PrismaTxClient;
 
 /**
  * Parses an `updatedSince` filter value into a Date, matching the
@@ -183,6 +190,12 @@ export interface PullRequestListFilters {
    * rationale. Omitting it preserves current (unfiltered) behavior.
    */
   updatedSince?: string;
+  /**
+   * PrOrigin values to match (OR'd together, i.e. `{ origin: { in: [...] } }`)
+   * — POM-1.1's `GET /prs?origin=shipwright,ci` filter. Omitting it preserves
+   * current (unfiltered) behavior.
+   */
+  origin?: PrOrigin[];
 }
 
 /** Paginated list result from PullRequestService.list. */
@@ -197,6 +210,63 @@ export interface PullRequestListResult {
 export interface GetEventsResult {
   events: PullRequestEvent[];
   total: number;
+}
+
+// ─── Origin metrics (POM-1.1) ──────────────────────────────────────────────────
+
+/**
+ * Fields PullRequestService.stampOrigin() may write for a (repo, prNumber)
+ * pair. `origin` is first-write-wins: it is only applied when the target
+ * row's existing `origin` is currently null (a row that already has an
+ * origin is never overwritten). `authorLogin`/`headRef`/`title` are written
+ * unconditionally whenever supplied — the latest known value always wins for
+ * those three; a field simply omitted from `data` is left untouched on an
+ * existing row (never forced to null).
+ */
+export interface StampOriginInput {
+  origin?: PrOrigin;
+  authorLogin?: string | null;
+  headRef?: string | null;
+  title?: string | null;
+}
+
+/**
+ * A single entry in a `POST /prs/census` batch upsert — StampOriginInput
+ * plus the additional fields census writes unconditionally (`state`,
+ * `mergedAt`, `prCreatedAt`). Deliberately excludes claim/phase/review/
+ * patch/blocked fields — census must never touch them, so there's no way to
+ * even supply them here.
+ */
+export interface CensusEntryInput extends StampOriginInput {
+  repo: string;
+  prNumber: number;
+  state?: PrState;
+  mergedAt?: string | null;
+  prCreatedAt?: string | null;
+}
+
+/**
+ * Hard cap on entries per `POST /prs/census` call — bounds the shared
+ * transaction's per-call work, mirroring `MAX_BULK_TASKS` in
+ * task-service.ts. An over-cap batch is rejected with 400 before any write.
+ */
+export const MAX_CENSUS_ENTRIES = 200;
+
+/**
+ * Narrow interface for the origin-stamping dependency TaskService.update()
+ * needs — just stampOrigin(), not PullRequestServiceLike's full pipeline
+ * surface — so TaskService's own unit tests can inject a minimal double
+ * instead of building out dozens of unrelated PR-lifecycle stub methods. A
+ * real PullRequestService instance satisfies this structurally (no explicit
+ * `implements` needed).
+ */
+export interface PrOriginStamper {
+  stampOrigin(
+    repo: string,
+    prNumber: number,
+    data: StampOriginInput,
+    client?: PullRequestTxClient,
+  ): Promise<PullRequest>;
 }
 
 /** Input for PullRequestService.appendFinding. */
@@ -247,6 +317,32 @@ export interface PullRequestServiceLike {
   lookupBlockedPrNumbers(
     pairs: { repo: string; prNumber: number }[],
   ): Promise<Set<number>>;
+  /**
+   * Upsert a PullRequest row for (repo, prNumber): authorLogin/headRef/title
+   * are written unconditionally when supplied; origin follows first-write-
+   * wins (see StampOriginInput). When `client` is supplied, runs against it
+   * directly (no nested transaction) so a caller — e.g. TaskService.update()
+   * — can fold this into its own $transaction; when omitted, wraps the write
+   * in its own transaction.
+   */
+  stampOrigin(
+    repo: string,
+    prNumber: number,
+    data: StampOriginInput,
+    client?: PullRequestTxClient,
+  ): Promise<PullRequest>;
+  /**
+   * Batch upsert for POST /prs/census (max MAX_CENSUS_ENTRIES per call, all
+   * in one transaction). Never touches claim/phase/review/patch/blocked
+   * fields; new rows get phase=null, reviewState='pending', staged=false.
+   */
+  census(entries: CensusEntryInput[]): Promise<PullRequest[]>;
+  /**
+   * Max `mergedAt` (ISO string) among rows scoped to `repo` whose `origin`
+   * is not null, or null when no such row exists — the incremental search
+   * window POM-4.1's census sweep reads via GET /prs/census/cursor.
+   */
+  getCensusCursor(repo: string): Promise<string | null>;
 }
 
 export class PullRequestService implements PullRequestServiceLike {
@@ -279,6 +375,9 @@ export class PullRequestService implements PullRequestServiceLike {
       where.reviewState = filters.reviewState as PullRequest["reviewState"];
     if (filters.staged !== undefined) where.staged = filters.staged;
     if (filters.ready) where.claimedBy = null;
+    if (filters.origin && filters.origin.length > 0) {
+      where.origin = { in: filters.origin };
+    }
     if (filters.updatedSince) {
       where.updatedAt = { gte: parseUpdatedSince(filters.updatedSince) };
     }
@@ -1174,6 +1273,138 @@ export class PullRequestService implements PullRequestServiceLike {
       }
     }
     return result;
+  }
+
+  // ─── Origin metrics (POM-1.1) ───────────────────────────────────────────────
+
+  async stampOrigin(
+    repo: string,
+    prNumber: number,
+    data: StampOriginInput,
+    client?: PullRequestTxClient,
+  ): Promise<PullRequest> {
+    const entry: CensusEntryInput = { repo, prNumber, ...data };
+    if (client) {
+      return this.upsertOriginFields(client, entry);
+    }
+    return this.prisma.$transaction((tx) => this.upsertOriginFields(tx, entry));
+  }
+
+  async census(entries: CensusEntryInput[]): Promise<PullRequest[]> {
+    if (entries.length > MAX_CENSUS_ENTRIES) {
+      throw new BadRequestError(
+        `census accepts at most ${MAX_CENSUS_ENTRIES} entries per call (received ${entries.length}) — split the batch`,
+      );
+    }
+    return this.prisma.$transaction(async (tx) => {
+      const results: PullRequest[] = [];
+      for (const entry of entries) {
+        results.push(await this.upsertOriginFields(tx, entry));
+      }
+      return results;
+    });
+  }
+
+  async getCensusCursor(repo: string): Promise<string | null> {
+    const row = await this.prisma.pullRequest.findFirst({
+      where: { repo, origin: { not: null }, mergedAt: { not: null } },
+      orderBy: { mergedAt: "desc" },
+      select: { mergedAt: true },
+    });
+    return row?.mergedAt ?? null;
+  }
+
+  /**
+   * Core upsert shared by stampOrigin() and census(): findUnique by the
+   * (repo, prNumber) unique key, then either update (authorLogin/headRef/
+   * title/state/mergedAt/prCreatedAt written unconditionally when supplied;
+   * origin only when currently null) or create (new rows pick up the
+   * schema's own phase=null/reviewState='pending'/staged=false defaults —
+   * left absent from createData rather than restated here, so a future
+   * default change doesn't need updating in two places).
+   *
+   * Deliberately does NOT call recordTransition()/write PullRequestEvent
+   * rows — stampOrigin/census are metrics-plumbing writes, not pipeline
+   * lifecycle transitions, and origin/authorLogin/headRef/title are not in
+   * pr-transition-diff.ts's AUDITED_FIELDS allowlist.
+   *
+   * A concurrent create race (two callers upserting the same never-before-
+   * seen (repo, prNumber) at once) surfaces as Prisma P2002; the loser
+   * retries once as a plain update against the now-existing row rather than
+   * surfacing a 409 — stampOrigin/census are idempotent upserts, not claims.
+   */
+  private async upsertOriginFields(
+    client: PullRequestTxClient,
+    entry: CensusEntryInput,
+  ): Promise<PullRequest> {
+    const {
+      repo,
+      prNumber,
+      origin,
+      authorLogin,
+      headRef,
+      title,
+      state,
+      mergedAt,
+      prCreatedAt,
+    } = entry;
+
+    const existing = await client.pullRequest.findUnique({
+      where: { repo_prNumber: { repo, prNumber } },
+    });
+
+    // First-write-wins: only apply `origin` when it was supplied AND the
+    // target row (if any) doesn't already have a non-null origin.
+    const resolvedOrigin =
+      origin !== undefined && (!existing || existing.origin === null)
+        ? origin
+        : undefined;
+
+    if (existing) {
+      const updateData: Prisma.PullRequestUpdateInput = {};
+      if (authorLogin !== undefined) updateData.authorLogin = authorLogin;
+      if (headRef !== undefined) updateData.headRef = headRef;
+      if (title !== undefined) updateData.title = title;
+      if (state !== undefined) updateData.state = state;
+      if (mergedAt !== undefined) updateData.mergedAt = mergedAt;
+      if (prCreatedAt !== undefined) updateData.prCreatedAt = prCreatedAt;
+      if (resolvedOrigin !== undefined) updateData.origin = resolvedOrigin;
+
+      if (Object.keys(updateData).length === 0) return existing;
+
+      return client.pullRequest.update({
+        where: { id: existing.id },
+        data: updateData,
+      });
+    }
+
+    try {
+      return await client.pullRequest.create({
+        data: {
+          repo,
+          prNumber,
+          authorLogin: authorLogin ?? null,
+          headRef: headRef ?? null,
+          title: title ?? null,
+          origin: resolvedOrigin ?? null,
+          ...(state !== undefined ? { state } : {}),
+          mergedAt: mergedAt ?? null,
+          prCreatedAt: prCreatedAt ?? null,
+        },
+      });
+    } catch (err: unknown) {
+      if (
+        typeof err === "object" &&
+        err !== null &&
+        "code" in err &&
+        (err as { code: string }).code === "P2002"
+      ) {
+        // Lost a concurrent create race — the row now exists; retry once as
+        // a plain update against it.
+        return this.upsertOriginFields(client, entry);
+      }
+      throw err;
+    }
   }
 
   // ─── Helpers ─────────────────────────────────────────────────────────────────

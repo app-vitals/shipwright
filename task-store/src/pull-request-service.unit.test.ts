@@ -11,7 +11,10 @@ import { describe, expect, test } from "bun:test";
 import { FixedClock } from "./clock.ts";
 import { BadRequestError, NotFoundError } from "./errors.ts";
 import type { PullRequest } from "./index.ts";
-import { PullRequestService } from "./pull-request-service.ts";
+import {
+  MAX_CENSUS_ENTRIES,
+  PullRequestService,
+} from "./pull-request-service.ts";
 
 // ─── Prisma double ────────────────────────────────────────────────────────────
 
@@ -1803,5 +1806,373 @@ describe("PullRequestService.getEvents()", () => {
 
     expect(result.events).toEqual([]);
     expect(result.total).toBe(0);
+  });
+});
+
+// ─── PullRequestService.stampOrigin() / census() (POM-1.1) ────────────────────
+
+/**
+ * A small in-memory Prisma double supporting exactly what stampOrigin()/
+ * census() need: findUnique by the (repo, prNumber) unique key, update by id,
+ * create, and a callback-form $transaction that invokes the callback with
+ * the double itself as `tx` — mirrors attachEventStub's $transaction shape
+ * above, extended with a `pullRequest` table keyed by (repo, prNumber)
+ * instead of a single fixed findUniqueResult.
+ */
+function makeOriginPrismaDouble(seed: Partial<PullRequest>[] = []) {
+  const rows = new Map<string, Partial<PullRequest>>();
+  for (const row of seed) {
+    rows.set(`${row.repo}#${row.prNumber}`, { ...row });
+  }
+  let nextId = rows.size;
+  const createCalls: Record<string, unknown>[] = [];
+  const updateCalls: {
+    where: { id: string };
+    data: Record<string, unknown>;
+  }[] = [];
+
+  const prisma = {
+    pullRequest: {
+      findUnique({
+        where,
+      }: {
+        where: { repo_prNumber: { repo: string; prNumber: number } };
+      }) {
+        const { repo, prNumber } = where.repo_prNumber;
+        return Promise.resolve(rows.get(`${repo}#${prNumber}`) ?? null);
+      },
+      update({
+        where,
+        data,
+      }: {
+        where: { id: string };
+        data: Record<string, unknown>;
+      }) {
+        updateCalls.push({ where, data });
+        for (const [key, row] of rows) {
+          if (row.id === where.id) {
+            const updated = { ...row, ...data };
+            rows.set(key, updated);
+            return Promise.resolve(updated);
+          }
+        }
+        return Promise.reject(new Error(`row ${where.id} not found`));
+      },
+      create({ data }: { data: Record<string, unknown> }) {
+        createCalls.push(data);
+        nextId += 1;
+        const record = { id: `pr-${nextId}`, ...data };
+        rows.set(`${data.repo}#${data.prNumber}`, record);
+        return Promise.resolve(record);
+      },
+      findFirst({
+        where,
+        orderBy: _orderBy,
+      }: {
+        where: {
+          repo: string;
+          origin?: { not: null };
+          mergedAt?: { not: null };
+        };
+        orderBy?: unknown;
+      }) {
+        const candidates = Array.from(rows.values())
+          .filter((r) => r.repo === where.repo)
+          .filter((r) => (where.origin ? r.origin !== null : true))
+          .filter((r) => (where.mergedAt ? r.mergedAt !== null : true))
+          .sort((a, b) => String(b.mergedAt).localeCompare(String(a.mergedAt)));
+        return Promise.resolve(candidates[0] ?? null);
+      },
+    },
+    $transaction<T>(fn: (tx: unknown) => Promise<T>): Promise<T> {
+      return fn(prisma);
+    },
+    _rows: rows,
+    _createCalls: createCalls,
+    _updateCalls: updateCalls,
+  };
+  return prisma;
+}
+
+describe("PullRequestService.stampOrigin() (POM-1.1)", () => {
+  const NOW = new Date("2026-09-16T00:00:00.000Z");
+  const clock = FixedClock(NOW);
+
+  test("creates a new row when none exists, writing the supplied fields", async () => {
+    const prisma = makeOriginPrismaDouble();
+    const svc = new PullRequestService(prisma as never, clock);
+
+    const record = await svc.stampOrigin("org/repo", 42, {
+      origin: "shipwright",
+      authorLogin: "octocat",
+      headRef: "feat/x",
+      title: "Add X",
+    });
+
+    expect(record.origin).toBe("shipwright" as never);
+    expect(prisma._createCalls).toHaveLength(1);
+    expect(prisma._createCalls[0]).toMatchObject({
+      repo: "org/repo",
+      prNumber: 42,
+      origin: "shipwright",
+      authorLogin: "octocat",
+      headRef: "feat/x",
+      title: "Add X",
+    });
+  });
+
+  test("first-write-wins: does not overwrite an existing non-null origin", async () => {
+    const prisma = makeOriginPrismaDouble([
+      {
+        id: "pr-existing",
+        repo: "org/repo",
+        prNumber: 42,
+        origin: "human" as never,
+      },
+    ]);
+    const svc = new PullRequestService(prisma as never, clock);
+
+    const record = await svc.stampOrigin("org/repo", 42, {
+      origin: "shipwright",
+    });
+
+    // No other field was supplied, and origin is blocked by first-write-wins
+    // — the update payload is empty, so no write happens at all (a pure
+    // no-op) and the pre-existing row is returned unchanged.
+    expect(prisma._updateCalls).toHaveLength(0);
+    expect(record.origin).toBe("human" as never);
+    expect(prisma._rows.get("org/repo#42")?.origin).toBe("human" as never);
+  });
+
+  test("first-write-wins: applies origin when the existing row's origin is currently null", async () => {
+    const prisma = makeOriginPrismaDouble([
+      { id: "pr-existing", repo: "org/repo", prNumber: 42, origin: null },
+    ]);
+    const svc = new PullRequestService(prisma as never, clock);
+
+    const record = await svc.stampOrigin("org/repo", 42, {
+      origin: "ci",
+    });
+
+    expect(record.origin).toBe("ci" as never);
+    expect(prisma._updateCalls[0].data.origin).toBe("ci");
+  });
+
+  test("writes authorLogin/headRef/title unconditionally on an existing row, leaving omitted fields untouched", async () => {
+    const prisma = makeOriginPrismaDouble([
+      {
+        id: "pr-existing",
+        repo: "org/repo",
+        prNumber: 42,
+        origin: "human" as never,
+        authorLogin: "old-login",
+        headRef: "old-ref",
+        title: "old title",
+      },
+    ]);
+    const svc = new PullRequestService(prisma as never, clock);
+
+    await svc.stampOrigin("org/repo", 42, { authorLogin: "new-login" });
+
+    const { data } = prisma._updateCalls[0];
+    expect(data.authorLogin).toBe("new-login");
+    // headRef/title were omitted from this call — untouched (not forced to
+    // null, not present in the update payload at all).
+    expect(data.headRef).toBeUndefined();
+    expect(data.title).toBeUndefined();
+    expect(prisma._rows.get("org/repo#42")?.headRef).toBe("old-ref");
+    expect(prisma._rows.get("org/repo#42")?.title).toBe("old title");
+  });
+
+  test("an explicit null authorLogin clears it (distinct from omitting the field)", async () => {
+    const prisma = makeOriginPrismaDouble([
+      {
+        id: "pr-existing",
+        repo: "org/repo",
+        prNumber: 42,
+        authorLogin: "old-login",
+      },
+    ]);
+    const svc = new PullRequestService(prisma as never, clock);
+
+    await svc.stampOrigin("org/repo", 42, { authorLogin: null });
+
+    expect(prisma._rows.get("org/repo#42")?.authorLogin).toBeNull();
+  });
+
+  test("runs against a supplied tx client directly (no nested transaction) when `client` is provided", async () => {
+    const prisma = makeOriginPrismaDouble();
+    const svc = new PullRequestService(prisma as never, clock);
+    let transactionCalls = 0;
+    const txSpy = {
+      pullRequest: prisma.pullRequest,
+    };
+    const originalTransaction = prisma.$transaction;
+    prisma.$transaction = (fn: (tx: unknown) => unknown) => {
+      transactionCalls += 1;
+      return originalTransaction(fn as never);
+    };
+
+    await svc.stampOrigin("org/repo", 7, { origin: "unknown" }, txSpy as never);
+
+    expect(transactionCalls).toBe(0);
+    expect(prisma._rows.get("org/repo#7")?.origin).toBe("unknown" as never);
+  });
+});
+
+describe("PullRequestService.census() (POM-1.1)", () => {
+  const NOW = new Date("2026-09-16T00:00:00.000Z");
+  const clock = FixedClock(NOW);
+
+  test("creates a new row with phase=null/reviewState=pending/staged=false left absent (schema defaults apply) and writes the supplied fields", async () => {
+    const prisma = makeOriginPrismaDouble();
+    const svc = new PullRequestService(prisma as never, clock);
+
+    const [record] = await svc.census([
+      {
+        repo: "org/repo",
+        prNumber: 100,
+        origin: "ci",
+        authorLogin: "renovate[bot]",
+        state: "merged",
+        mergedAt: "2026-01-05T00:00:00.000Z",
+      },
+    ]);
+
+    expect(record.origin).toBe("ci" as never);
+    const created = prisma._createCalls[0];
+    // create() never sets phase/reviewState/staged explicitly — the schema's
+    // own defaults (phase=null, reviewState='pending', staged=false) apply.
+    expect(created.phase).toBeUndefined();
+    expect(created.reviewState).toBeUndefined();
+    expect(created.staged).toBeUndefined();
+    expect(created.state).toBe("merged");
+    expect(created.mergedAt).toBe("2026-01-05T00:00:00.000Z");
+  });
+
+  test("on an existing row, writes authorLogin/headRef/title/state/mergedAt/prCreatedAt unconditionally but never touches claim/phase/review/patch/blocked fields", async () => {
+    const prisma = makeOriginPrismaDouble([
+      {
+        id: "pr-existing",
+        repo: "org/repo",
+        prNumber: 42,
+        origin: "human" as never,
+        claimedBy: "agent-x",
+        claimedAt: "2026-01-01T00:00:00.000Z",
+        heartbeatAt: "2026-01-01T00:00:00.000Z",
+        phase: "review" as never,
+        reviewState: "in_progress" as never,
+        patchCycles: 3,
+        reviewCycles: 2,
+        blocked: true,
+        blockedReason: "stuck",
+      },
+    ]);
+    const svc = new PullRequestService(prisma as never, clock);
+
+    const [record] = await svc.census([
+      {
+        repo: "org/repo",
+        prNumber: 42,
+        authorLogin: "new-login",
+        headRef: "feat/y",
+        title: "New title",
+        state: "merged",
+        mergedAt: "2026-02-01T00:00:00.000Z",
+        prCreatedAt: "2026-01-01T00:00:00.000Z",
+      },
+    ]);
+
+    expect(record.authorLogin).toBe("new-login");
+    expect(record.headRef).toBe("feat/y");
+    expect(record.title).toBe("New title");
+    expect(record.state).toBe("merged" as never);
+    expect(record.mergedAt).toBe("2026-02-01T00:00:00.000Z");
+    expect(record.prCreatedAt).toBe("2026-01-01T00:00:00.000Z");
+    // Never touched:
+    expect(record.claimedBy).toBe("agent-x");
+    expect(record.claimedAt).toBe("2026-01-01T00:00:00.000Z");
+    expect(record.heartbeatAt).toBe("2026-01-01T00:00:00.000Z");
+    expect(record.phase).toBe("review" as never);
+    expect(record.reviewState).toBe("in_progress" as never);
+    expect(record.patchCycles).toBe(3);
+    expect(record.reviewCycles).toBe(2);
+    expect(record.blocked).toBe(true);
+    expect(record.blockedReason).toBe("stuck");
+    // Origin left unchanged (already non-null).
+    expect(record.origin).toBe("human" as never);
+  });
+
+  test("rejects a batch of more than MAX_CENSUS_ENTRIES with BadRequestError, before any write", async () => {
+    const prisma = makeOriginPrismaDouble();
+    const svc = new PullRequestService(prisma as never, clock);
+
+    const entries = Array.from({ length: MAX_CENSUS_ENTRIES + 1 }, (_, i) => ({
+      repo: "org/repo",
+      prNumber: i + 1,
+    }));
+
+    await expect(svc.census(entries)).rejects.toThrow(BadRequestError);
+    expect(prisma._createCalls).toHaveLength(0);
+  });
+
+  test("upserts multiple entries in one call", async () => {
+    const prisma = makeOriginPrismaDouble();
+    const svc = new PullRequestService(prisma as never, clock);
+
+    const records = await svc.census([
+      { repo: "org/repo", prNumber: 1, origin: "human" },
+      { repo: "org/repo", prNumber: 2, origin: "ci" },
+    ]);
+
+    expect(records).toHaveLength(2);
+    expect(prisma._rows.get("org/repo#1")?.origin).toBe("human" as never);
+    expect(prisma._rows.get("org/repo#2")?.origin).toBe("ci" as never);
+  });
+});
+
+describe("PullRequestService.getCensusCursor() (POM-1.1)", () => {
+  const NOW = new Date("2026-09-16T00:00:00.000Z");
+  const clock = FixedClock(NOW);
+
+  test("returns the max mergedAt among rows scoped to repo with a non-null origin", async () => {
+    const prisma = makeOriginPrismaDouble([
+      {
+        id: "pr-1",
+        repo: "org/repo",
+        prNumber: 1,
+        origin: "shipwright" as never,
+        mergedAt: "2026-01-01T00:00:00.000Z",
+      },
+      {
+        id: "pr-2",
+        repo: "org/repo",
+        prNumber: 2,
+        origin: "ci" as never,
+        mergedAt: "2026-03-01T00:00:00.000Z",
+      },
+    ]);
+    const svc = new PullRequestService(prisma as never, clock);
+
+    const cursor = await svc.getCensusCursor("org/repo");
+
+    expect(cursor).toBe("2026-03-01T00:00:00.000Z");
+  });
+
+  test("returns null when no row has a non-null origin", async () => {
+    const prisma = makeOriginPrismaDouble([
+      {
+        id: "pr-1",
+        repo: "org/repo",
+        prNumber: 1,
+        origin: null,
+        mergedAt: "2026-01-01T00:00:00.000Z",
+      },
+    ]);
+    const svc = new PullRequestService(prisma as never, clock);
+
+    const cursor = await svc.getCensusCursor("org/repo");
+
+    expect(cursor).toBeNull();
   });
 });

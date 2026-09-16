@@ -8,7 +8,18 @@
 
 import { z } from "@hono/zod-openapi";
 
+import { MAX_CENSUS_ENTRIES } from "./pull-request-service.ts";
 import { MAX_BULK_TASKS } from "./task-service.ts";
+
+/** PrOrigin enum values (POM-1.1), mirrored here rather than imported from
+ * the generated Prisma client so this file stays a pure Zod-schema module. */
+const PR_ORIGIN_VALUES = [
+  "shipwright",
+  "ci",
+  "dependency_bot",
+  "human",
+  "unknown",
+] as const;
 
 // ─── Common ───────────────────────────────────────────────────────────────────
 
@@ -416,6 +427,26 @@ export const PullRequestSchema = z
       .nullable()
       .optional()
       .openapi({ example: "no linked task" }),
+    origin: z.enum(PR_ORIGIN_VALUES).nullable().optional().openapi({
+      example: "shipwright",
+      description:
+        "Where this PR record first learned about the PR — first-write-wins (see PullRequestService.stampOrigin()). Null means the row has never been stamped (POM-1.1's accepted gap: a PR that never passes through the pr_open transition, POST /prs/claim, or the census sweep has no origin at all).",
+    }),
+    authorLogin: z
+      .string()
+      .nullable()
+      .optional()
+      .openapi({ example: "octocat" }),
+    headRef: z
+      .string()
+      .nullable()
+      .optional()
+      .openapi({ example: "feat/some-branch" }),
+    title: z
+      .string()
+      .nullable()
+      .optional()
+      .openapi({ example: "Add the origin metrics dimension" }),
     skipCount: z.number().int().default(0).openapi({
       example: 0,
       description:
@@ -865,6 +896,11 @@ export const PrListQuerySchema = z
       description:
         "Only return PRs with updatedAt >= this ISO timestamp. A conservative pre-filter, not a precise sync anchor.",
     }),
+    origin: z.string().optional().openapi({
+      example: "shipwright,ci",
+      description:
+        "Comma-separated list of PrOrigin values (shipwright, ci, dependency_bot, human, unknown). Matches rows whose origin is any of the given values.",
+    }),
   })
   .openapi("PrListQuery");
 
@@ -878,6 +914,89 @@ export const PrListResponseSchema = z
     offset: z.number().int().openapi({ example: 0 }),
   })
   .openapi("PrListResponse");
+
+// ─── Census (POM-1.1) ───────────────────────────────────────────────────────
+
+/** A single entry in a POST /prs/census batch upsert. */
+const CensusEntrySchema = z
+  .object({
+    repo: z.string().openapi({ example: "org/repo" }),
+    prNumber: z.number().int().openapi({ example: 42 }),
+    origin: z.enum(PR_ORIGIN_VALUES).optional().openapi({
+      example: "unknown",
+      description:
+        "First-write-wins: only applied when the row's existing origin is currently null.",
+    }),
+    authorLogin: z
+      .string()
+      .nullable()
+      .optional()
+      .openapi({ example: "octocat" }),
+    headRef: z
+      .string()
+      .nullable()
+      .optional()
+      .openapi({ example: "feat/some-branch" }),
+    title: z
+      .string()
+      .nullable()
+      .optional()
+      .openapi({ example: "Add the origin metrics dimension" }),
+    state: z
+      .enum(["open", "merged", "closed"])
+      .optional()
+      .openapi({ example: "merged" }),
+    mergedAt: z
+      .string()
+      .nullable()
+      .optional()
+      .openapi({ example: "2026-01-04T00:00:00.000Z" }),
+    prCreatedAt: z
+      .string()
+      .nullable()
+      .optional()
+      .openapi({ example: "2026-01-01T00:00:00.000Z" }),
+  })
+  .openapi("CensusEntry");
+
+/** Request body for POST /prs/census — a batch of CensusEntry, max
+ * MAX_CENSUS_ENTRIES per call. */
+export const CensusBodySchema = z
+  .array(CensusEntrySchema)
+  .openapi("CensusBody", {
+    maxItems: MAX_CENSUS_ENTRIES,
+    description: `Entries to upsert, at most ${MAX_CENSUS_ENTRIES} per call — the whole batch runs in one transaction. An over-cap batch is rejected with 400.`,
+  });
+
+/** Response for POST /prs/census */
+export const CensusResponseSchema = z
+  .object({
+    prs: z.array(PullRequestSchema).openapi({
+      description: "The upserted PullRequest rows, one per input entry.",
+    }),
+  })
+  .openapi("CensusResponse");
+
+/** Query params for GET /prs/census/cursor */
+export const CensusCursorQuerySchema = z
+  .object({
+    repo: z.string().openapi({
+      example: "org/repo",
+      description: "Repository in org/repo format.",
+    }),
+  })
+  .openapi("CensusCursorQuery");
+
+/** Response for GET /prs/census/cursor */
+export const CensusCursorResponseSchema = z
+  .object({
+    cursor: z.string().nullable().openapi({
+      example: "2026-01-04T00:00:00.000Z",
+      description:
+        "Max mergedAt (ISO string) among rows scoped to `repo` whose origin is not null, or null when no such row exists.",
+    }),
+  })
+  .openapi("CensusCursorResponse");
 
 /** Query params for GET /prs/:id/events */
 export const PrEventsQuerySchema = z

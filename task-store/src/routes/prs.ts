@@ -30,16 +30,22 @@
  *                              ordered by `at` ascending (oldest first)
  */
 
-import { OpenAPIHono, createRoute } from "@hono/zod-openapi";
+import { createRoute, OpenAPIHono } from "@hono/zod-openapi";
 import { readJson } from "@shipwright/lib/http";
 import type { TaskStoreAuthEnv } from "../auth.ts";
-import { BadRequestError, NotFoundError } from "../errors.ts";
+import { BadRequestError, ForbiddenError, NotFoundError } from "../errors.ts";
 import type {
   PrFindingDisposition,
   PrFindingSource,
+  PrOrigin,
+  PrState,
   PullRequest,
 } from "../index.ts";
 import {
+  CensusBodySchema,
+  CensusCursorQuerySchema,
+  CensusCursorResponseSchema,
+  CensusResponseSchema,
   ClaimNextBodySchema,
   ClaimNextResponseSchema,
   ClaimPrBodySchema,
@@ -55,7 +61,11 @@ import {
   PullRequestSchema,
   UpdatePrBodySchema,
 } from "../openapi-schemas.ts";
-import type { PullRequestServiceLike } from "../pull-request-service.ts";
+import {
+  type CensusEntryInput,
+  MAX_CENSUS_ENTRIES,
+  type PullRequestServiceLike,
+} from "../pull-request-service.ts";
 import { isOrgRepo } from "../validate.ts";
 
 // repos === null means admin token — bypass scope check; still enforce format.
@@ -67,6 +77,36 @@ function validateRepo(repo: unknown, repos: string[] | null): void {
   if (repos !== null && !repos.includes(repo)) {
     throw new BadRequestError(`repo '${repo}' is not in this agent's scope`);
   }
+}
+
+// Census-specific repo scope check (POM-1.1): format violations are still
+// 400 (matches validateRepo() above), but an out-of-scope repo is 403 —
+// deliberately NOT reusing validateRepo()'s own 400-for-everything shape,
+// per POM-1.1's acceptance criteria for POST /prs/census and
+// GET /prs/census/cursor.
+function validateCensusRepoScope(repo: string, repos: string[] | null): void {
+  if (!isOrgRepo(repo)) {
+    throw new BadRequestError(`repo '${repo}' must be in org/repo format`);
+  }
+  if (repos !== null && !repos.includes(repo)) {
+    throw new ForbiddenError(`repo '${repo}' is not in this agent's scope`);
+  }
+}
+
+const PR_ORIGIN_VALUES = new Set<string>([
+  "shipwright",
+  "ci",
+  "dependency_bot",
+  "human",
+  "unknown",
+]);
+
+/** Parse a raw census-entry value into a nullable-or-undefined string field:
+ * a real string or explicit null are passed through; anything else
+ * (undefined, wrong type) becomes undefined ("leave untouched"). */
+function stringOrNull(value: unknown): string | null | undefined {
+  if (typeof value === "string" || value === null) return value;
+  return undefined;
 }
 
 // ─── Route definitions ────────────────────────────────────────────────────────
@@ -396,6 +436,61 @@ const eventsRoute = createRoute({
   },
 });
 
+const censusRoute = createRoute({
+  method: "post",
+  path: "/census",
+  tags: ["PRs"],
+  summary: "Batch upsert PR origin/author/branch/title/state metadata",
+  description: `Upserts a PullRequest row for each (repo, prNumber) entry — at most ${MAX_CENSUS_ENTRIES} entries per call, all in one transaction. Writes \`authorLogin\`/\`headRef\`/\`title\`/\`state\`/\`mergedAt\`/\`prCreatedAt\` unconditionally; \`origin\` follows first-write-wins (only applied when the row's existing origin is currently null). Never touches claim/phase/review/patch/blocked fields — safe to run alongside review/patch/deploy's separate POST /prs/claim lock. New rows get \`phase=null\`, \`reviewState='pending'\`, \`staged=false\`. Not part of the public MCP tool surface.`,
+  request: {
+    body: {
+      content: { "application/json": { schema: CensusBodySchema } },
+      required: true,
+    },
+  },
+  responses: {
+    200: {
+      content: { "application/json": { schema: CensusResponseSchema } },
+      description: "Upserted PR rows, one per input entry",
+    },
+    400: {
+      content: { "application/json": { schema: ErrorSchema } },
+      description: `Bad request — malformed entry, or more than ${MAX_CENSUS_ENTRIES} entries in one batch`,
+    },
+    403: {
+      content: { "application/json": { schema: ErrorSchema } },
+      description:
+        "Forbidden — an entry's repo is outside the agent token's scope",
+    },
+  },
+});
+
+const censusCursorRoute = createRoute({
+  method: "get",
+  path: "/census/cursor",
+  tags: ["PRs"],
+  summary: "Get the census incremental-search-window cursor for a repo",
+  description:
+    "Returns `{ cursor }`: the max `mergedAt` (ISO string) among rows scoped to `repo` whose `origin` is not null, or `null` when no such row exists. Used by POM-4.1's census sweep to derive its incremental search window.",
+  request: {
+    query: CensusCursorQuerySchema,
+  },
+  responses: {
+    200: {
+      content: { "application/json": { schema: CensusCursorResponseSchema } },
+      description: "Census cursor",
+    },
+    400: {
+      content: { "application/json": { schema: ErrorSchema } },
+      description: "Bad request — missing or malformed repo",
+    },
+    403: {
+      content: { "application/json": { schema: ErrorSchema } },
+      description: "Forbidden — repo is outside the agent token's scope",
+    },
+  },
+});
+
 // ─── Factory ──────────────────────────────────────────────────────────────────
 
 export function createPrsRoutes(
@@ -416,6 +511,13 @@ export function createPrsRoutes(
     const ready = c.req.query("ready") === "true" ? true : undefined;
     const blocked = c.req.query("blocked") === "true" ? true : undefined;
     const sort = c.req.query("sort") === "desc" ? "desc" : undefined;
+    const originRaw = c.req.query("origin");
+    const origin = originRaw
+      ? (originRaw
+          .split(",")
+          .map((v) => v.trim())
+          .filter((v) => PR_ORIGIN_VALUES.has(v)) as PrOrigin[])
+      : undefined;
 
     const result = await prService.list({
       repo: c.req.queries("repo"),
@@ -430,6 +532,7 @@ export function createPrsRoutes(
       ready,
       blocked,
       sort,
+      origin,
       limit:
         limitRaw !== undefined
           ? Number.parseInt(limitRaw, 10) || undefined
@@ -545,6 +648,84 @@ export function createPrsRoutes(
     }
 
     return c.json(result, 200);
+  });
+
+  // ─── Census (batch upsert) — must be before /:id to avoid param capture ───
+  // biome-ignore lint/suspicious/noExplicitAny: service returns Prisma types; JSON serialization handles Date→string correctly at runtime
+  app.openapi(censusRoute, async (c): Promise<any> => {
+    const agentId = c.get("agentId");
+    const repos = c.get("repos");
+    // readJson() deliberately collapses an array body to {} (it's built for
+    // object-shaped PATCH bodies) — read the raw JSON directly here, mirroring
+    // routes/tasks.ts's bulkRoute handler for the same array-body shape.
+    let body: unknown;
+    try {
+      body = await c.req.json();
+    } catch {
+      throw new BadRequestError("body must be a JSON array of census entries");
+    }
+    if (!Array.isArray(body)) {
+      throw new BadRequestError("body must be a JSON array of census entries");
+    }
+    if (body.length > MAX_CENSUS_ENTRIES) {
+      throw new BadRequestError(
+        `census accepts at most ${MAX_CENSUS_ENTRIES} entries per call (received ${body.length}) — split the batch`,
+      );
+    }
+
+    const entries: CensusEntryInput[] = (body as Record<string, unknown>[]).map(
+      (raw, i) => {
+        const { repo, prNumber } = raw;
+        if (typeof repo !== "string" || !repo) {
+          throw new BadRequestError(`entry ${i}: repo is required`);
+        }
+        if (typeof prNumber !== "number" || !Number.isInteger(prNumber)) {
+          throw new BadRequestError(`entry ${i}: prNumber must be an integer`);
+        }
+        validateCensusRepoScope(repo, agentId !== null ? repos : null);
+
+        const origin =
+          typeof raw.origin === "string" && PR_ORIGIN_VALUES.has(raw.origin)
+            ? (raw.origin as PrOrigin)
+            : undefined;
+        const state =
+          raw.state === "open" ||
+          raw.state === "merged" ||
+          raw.state === "closed"
+            ? (raw.state as PrState)
+            : undefined;
+
+        return {
+          repo,
+          prNumber,
+          origin,
+          authorLogin: stringOrNull(raw.authorLogin),
+          headRef: stringOrNull(raw.headRef),
+          title: stringOrNull(raw.title),
+          state,
+          mergedAt: stringOrNull(raw.mergedAt),
+          prCreatedAt: stringOrNull(raw.prCreatedAt),
+        };
+      },
+    );
+
+    const prs = await prService.census(entries);
+    return c.json({ prs }, 200);
+  });
+
+  // ─── Census cursor — must be before /:id to avoid param capture ───────────
+  // biome-ignore lint/suspicious/noExplicitAny: service returns Prisma types; JSON serialization handles Date→string correctly at runtime
+  app.openapi(censusCursorRoute, async (c): Promise<any> => {
+    const agentId = c.get("agentId");
+    const repos = c.get("repos");
+    const repo = c.req.query("repo");
+    if (typeof repo !== "string" || !repo) {
+      throw new BadRequestError("repo is required");
+    }
+    validateCensusRepoScope(repo, agentId !== null ? repos : null);
+
+    const cursor = await prService.getCensusCursor(repo);
+    return c.json({ cursor }, 200);
   });
 
   // ─── Get one ───────────────────────────────────────────────────────────────
