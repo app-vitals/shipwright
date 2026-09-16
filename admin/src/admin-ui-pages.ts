@@ -345,6 +345,7 @@ export interface TaskItem {
   complexity?: number | null;
   hitl?: boolean | null;
   hours?: number | null;
+  kind?: string | null;
   startedAt?: string | null;
   completedAt?: string | null;
   blockedAt?: string | null;
@@ -2118,6 +2119,13 @@ export function renderTasksPage(
       .join("");
   };
 
+  const renderKindBadge = (kind: string | null | undefined): string => {
+    if (kind === "prd") {
+      return `<span class="badge badge-purple" style="font-size:10px;margin-left:6px">PRD</span>`;
+    }
+    return "";
+  };
+
   if (view === "board") {
     return renderTasksBoard({
       tasks,
@@ -2131,6 +2139,7 @@ export function renderTasksPage(
       degradedHtml,
       agentFilterHtml,
       renderBlockerBadges,
+      renderKindBadge,
       page: pagination.page,
       now,
     });
@@ -2184,6 +2193,7 @@ export function renderTasksPage(
                 : agentLink(agentId, agentNames[agentId] ?? agentId)
               : '<span style="color:#9ca3af">—</span>';
             const blockerBadges = renderBlockerBadges(t.blockedBy);
+            const kindBadge = renderKindBadge(t.kind);
             const prCell =
               t.pr && t.repo
                 ? `<a href="https://github.com/${escapeHtml(t.repo)}/pull/${t.pr}" style="color:#6366f1;text-decoration:none" title="View PR">#${t.pr}</a>`
@@ -2217,7 +2227,7 @@ export function renderTasksPage(
               : "";
             return `<tr${readOnly ? "" : ` data-href="${detailHref}" style="cursor:pointer"`}${prJoinAttrs}>
     <td class="mono" style="font-size:11px">${readOnly ? escapeHtml(t.id) : `<a href="${detailHref}" style="color:#6366f1;text-decoration:none" title="View details">${escapeHtml(t.id)}</a>`}</td>
-    <td>${readOnly ? escapeHtml(t.title) : `<a href="${detailHref}" style="color:inherit;text-decoration:none">${escapeHtml(t.title)}</a>`}${blockerBadges}</td>
+    <td>${readOnly ? escapeHtml(t.title) : `<a href="${detailHref}" style="color:inherit;text-decoration:none">${escapeHtml(t.title)}</a>`}${blockerBadges}${kindBadge}</td>
     <td><span class="badge ${statusBadgeClass(t.status)}">${escapeHtml(t.status)}</span></td>
     <td style="font-size:12px">${agentCell}</td>
     <td class="col-session mono" style="font-size:11px">${
@@ -2467,6 +2477,7 @@ function renderTasksBoard(args: {
   renderBlockerBadges: (
     blockedBy: BlockedByEntry[] | null | undefined,
   ) => string;
+  renderKindBadge: (kind: string | null | undefined) => string;
   page: number;
   // Reference "current" time for card age badges (TBC-1.1) — threaded down
   // from renderTasksPage so renderCard (defined below) never calls
@@ -2485,6 +2496,7 @@ function renderTasksBoard(args: {
     degradedHtml,
     agentFilterHtml,
     renderBlockerBadges,
+    renderKindBadge,
     page,
     now,
   } = args;
@@ -2565,6 +2577,7 @@ function renderTasksBoard(args: {
         : agentLink(agentId, agentNames[agentId] ?? agentId)
       : "";
     const blockerBadges = renderBlockerBadges(t.blockedBy);
+    const kindBadge = renderKindBadge(t.kind);
     // Same joined-PR attributes as the table row (AXR-1.2's prsByTaskId) —
     // rendered on the card itself so the blocked/HITL state is visible
     // inline, with no click-through required (AC3).
@@ -2617,7 +2630,7 @@ function renderTasksBoard(args: {
           ${prLink}
           ${ageCell}
         </div>
-        ${blockerBadges}${prBadge}
+        ${blockerBadges}${prBadge}${kindBadge}
         ${releaseForm}
       </div>`;
 
@@ -2944,6 +2957,7 @@ export function renderTaskDetailPage(
     field("Priority", task.priority),
     field("Type", task.type),
     field("Layer", task.layer),
+    field("Kind", task.kind),
     field("Source", task.source),
     agentField("Assignee", task.assignee),
     agentField("Agent Hint", task.agentHint),
