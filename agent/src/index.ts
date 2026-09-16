@@ -13,6 +13,7 @@
  *  8. Graceful SIGTERM/SIGINT shutdown
  */
 
+import { join } from "node:path";
 import * as Sentry from "@sentry/bun";
 import { initSentry } from "@shipwright/lib/sentry";
 import { WebClient } from "@slack/web-api";
@@ -40,13 +41,18 @@ import {
 import { SystemClock } from "./clock.ts";
 import { createConfig } from "./config.ts";
 import { reportCronFailure } from "./cron-failure-reporter.ts";
-import { handleCronRequest } from "./cron-handler.ts";
 import type { CronHandlerDeps } from "./cron-handler.ts";
+import { handleCronRequest } from "./cron-handler.ts";
 import {
   HttpCronRunReporter,
   NoopCronRunReporter,
 } from "./cron-run-reporter.ts";
 import { markdownToSlack } from "./format.ts";
+import { buildGitHubAuthDeps } from "./github-auth-deps.ts";
+import {
+  githubAuthActiveRef,
+  startGitHubAuthIfPossible,
+} from "./github-auth-startup.ts";
 import {
   DEFAULT_HEALTH_PORT,
   markSlackConnected,
@@ -55,8 +61,8 @@ import {
 } from "./health.ts";
 import { HttpChatServiceClient } from "./http-chat-service-client.ts";
 import { buildLogPrefix } from "./log-prefix.ts";
-import { classifyCronJobsForScheduling } from "./loop-cron-classifier.ts";
 import type { CronJobLike } from "./loop-cron-classifier.ts";
+import { classifyCronJobsForScheduling } from "./loop-cron-classifier.ts";
 import { createJobsRef } from "./loop-jobs-ref.ts";
 import { createLoopOrchestratorGetter } from "./loop-orchestrator.ts";
 import {
@@ -76,13 +82,14 @@ import {
 } from "./review-author-allowlist-ref.ts";
 import { createFileSessionStore, threadKey } from "./sessions.ts";
 import { ensureAgentHome, installPlugins, runMiseStartup } from "./setup.ts";
+import { setupGitHubAuth } from "./setup-github-auth.ts";
 import { HttpShipwrightRuntimeClient } from "./shipwright-runtime-client.ts";
+import { createSlackApp, hasSlackCredentials } from "./slack.ts";
 import {
   type StartableSlackApp,
   slackClientRef,
   startSlackIfPossible,
 } from "./slack-startup.ts";
-import { createSlackApp, hasSlackCredentials } from "./slack.ts";
 import { sendBackOnlineDm } from "./startup-dm.ts";
 import { resolveDisplayName, resolveUserEmail } from "./users.ts";
 import { synthesizeSpeech } from "./voice.ts";
@@ -276,6 +283,23 @@ const slackStartDeps = {
     sendBackOnlineDm(client, config.owner.user),
 };
 
+// ABF-2.1: shared GitHub-App-auth-start deps, built once so syncConfig()'s
+// retry call site (below) reuses the same live process.env reference and
+// production wiring (spawnSync/writeToken/tokenPath/credentialHelperPath)
+// as entrypoint-main.ts's one-shot boot call — see github-auth-deps.ts.
+// Unlike Slack, there is no boot-time call site here: entrypoint-main.ts
+// already runs setupGitHubAuth() once at boot in its own (separate)
+// process, and this process's first syncConfig() tick (awaited below,
+// before Step 5) is this process's own "boot" for GitHub App auth.
+const GITHUB_AUTH_SCRIPTS_BIN = join(import.meta.dir, "..", "scripts", "bin");
+const githubAuthStartDeps = {
+  env: process.env as Record<string, string | undefined>,
+  isActive: githubAuthActiveRef.isActive,
+  markActive: () => githubAuthActiveRef.setActive(true),
+  setupGitHubAuth: () =>
+    setupGitHubAuth(buildGitHubAuthDeps(agentHome, GITHUB_AUTH_SCRIPTS_BIN)),
+};
+
 const healthPort = Number(
   process.env.SHIPWRIGHT_HEALTH_PORT ?? DEFAULT_HEALTH_PORT,
 );
@@ -403,6 +427,26 @@ if (runtimeClient && agentId) {
     } catch (err) {
       console.error(
         "[config-sync] Slack startup failed:",
+        err instanceof Error ? err.message : String(err),
+      );
+    }
+
+    // ABF-2.1: retry GitHub App auth setup on every successful tick — a
+    // no-op unless GH_APP_ID/GH_APP_INSTALLATION_ID/GH_APP_PRIVATE_KEY are
+    // newly complete against live process.env AND setup hasn't already
+    // succeeded in this process (see startGitHubAuthIfPossible's own
+    // guards). Kept in its own try/catch, separate from both the
+    // fetch/env-sync try above and the Slack-retry try above, so a GitHub
+    // auth start failure is logged distinctly rather than being
+    // misreported as either of those, and so it can never mask an
+    // already-successful env sync or Slack start earlier in this same tick.
+    try {
+      if (await startGitHubAuthIfPossible(githubAuthStartDeps)) {
+        console.log("[config-sync] GitHub App auth configured — running");
+      }
+    } catch (err) {
+      console.error(
+        "[config-sync] GitHub App auth startup failed:",
         err instanceof Error ? err.message : String(err),
       );
     }

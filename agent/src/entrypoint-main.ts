@@ -15,13 +15,13 @@
 import { join } from "node:path";
 import { parseCliArgs } from "./cli-args.ts";
 import { runEntrypoint } from "./entrypoint.ts";
-import { createGitHubTokenManager, getBotIdentity } from "./github-app-auth.ts";
-import { setupGitHubAuth } from "./setup-github-auth.ts";
+import { buildGitHubAuthDeps } from "./github-auth-deps.ts";
 import {
   ensureDotClaudeSymlink,
   installPlugins,
   runMiseStartup,
 } from "./setup.ts";
+import { setupGitHubAuth } from "./setup-github-auth.ts";
 import { HttpShipwrightRuntimeClient } from "./shipwright-runtime-client.ts";
 
 const { agentId, apiUrl, apiKey } = parseCliArgs(
@@ -42,22 +42,6 @@ const configClient = {
 };
 
 const SCRIPTS_BIN = join(import.meta.dir, "..", "scripts", "bin");
-const TOKEN_PATH = join(agentHome, "gh-token");
-
-const spawnSyncFn: Parameters<typeof setupGitHubAuth>[0]["spawnSync"] = (
-  cmd,
-  args,
-  opts,
-) => {
-  const proc = Bun.spawnSync([cmd, ...args], {
-    stdio:
-      opts.stdio === "inherit"
-        ? ["inherit", "inherit", "inherit"]
-        : ["pipe", "pipe", "pipe"],
-    env: opts.env as Record<string, string>,
-  });
-  return { status: proc.exitCode };
-};
 
 await runEntrypoint({
   agentId,
@@ -72,17 +56,7 @@ await runEntrypoint({
   },
   symlinkDotClaude: ensureDotClaudeSymlink,
   setupGitHubAuth: async () => {
-    await setupGitHubAuth({
-      env: process.env as Record<string, string | undefined>,
-      createTokenManager: createGitHubTokenManager,
-      getBotIdentity,
-      spawnSync: spawnSyncFn,
-      writeToken: (token: string) => {
-        Bun.write(TOKEN_PATH, token);
-      },
-      tokenPath: TOKEN_PATH,
-      credentialHelperPath: join(SCRIPTS_BIN, "git-credential-shipwright.sh"),
-    });
+    await setupGitHubAuth(buildGitHubAuthDeps(agentHome, SCRIPTS_BIN));
   },
   runMiseStartup,
   installPlugins,
