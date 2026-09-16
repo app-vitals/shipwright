@@ -61,7 +61,7 @@ List sessions
 - **Method:** GET
 - **Path:** `/sessions`
 - **Has body:** No
-- **Parameters:** `state` (query), `sort` (query), `agentId` (query), `repo` (query), `q` (query), `limit` (query), `offset` (query)
+- **Parameters:** `state` (query), `sort` (query), `agentId` (query), `repo` (query), `org` (query), `q` (query), `limit` (query), `offset` (query)
 
 ## `tasks_bulk`
 

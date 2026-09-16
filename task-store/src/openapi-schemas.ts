@@ -577,6 +577,14 @@ export const SessionListQuerySchema = z
         description:
           "Only sessions whose rollup.repos includes any of the given repo(s). Repeatable (?repo=a&repo=b).",
       }),
+    org: z
+      .union([z.string(), z.array(z.string())])
+      .optional()
+      .openapi({
+        example: "org",
+        description:
+          "Only sessions with a repo whose `org/repo` string starts with `<org>/`. Repeatable — pass `?org=` multiple times to match any of several orgs (e.g. `?org=a&org=b`).",
+      }),
     q: z.string().optional().openapi({
       example: "launch",
       description: "Case-insensitive substring match against slug OR title.",

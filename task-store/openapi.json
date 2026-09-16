@@ -2316,6 +2316,26 @@
           },
           {
             "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                }
+              ],
+              "description": "Only sessions with a repo whose `org/repo` string starts with `<org>/`. Repeatable — pass `?org=` multiple times to match any of several orgs (e.g. `?org=a&org=b`).",
+              "example": "org"
+            },
+            "required": false,
+            "name": "org",
+            "in": "query"
+          },
+          {
+            "schema": {
               "type": "string",
               "description": "Case-insensitive substring match against slug OR title.",
               "example": "launch"

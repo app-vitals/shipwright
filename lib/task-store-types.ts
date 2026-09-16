@@ -2025,6 +2025,7 @@ export interface paths {
                     sort?: "waitingSince" | "lastActivityAt";
                     agentId?: string;
                     repo?: string | string[];
+                    org?: string | string[];
                     q?: string;
                     limit?: string;
                     offset?: string;

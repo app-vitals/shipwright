@@ -61,6 +61,8 @@ export interface SessionListFilters {
   agentId?: string;
   /** Caller filter: only sessions whose rollup.repos includes any of these repos. */
   repo?: string | string[];
+  /** Caller filter: only sessions with a repo whose `org/repo` org segment matches any of these orgs. */
+  org?: string | string[];
   /** Case-insensitive substring match against slug OR title. */
   q?: string;
   limit?: number;
@@ -198,8 +200,8 @@ export class SessionService implements SessionServiceLike {
    *   - "all": no state/archived filtering at all
    *
    * `agentScope` (auth) is applied before every other filter — a session
-   * with zero tasks is never visible under a scoped token. `agentId`/`repo`
-   * are separate, caller-supplied narrowing filters applied afterward.
+   * with zero tasks is never visible under a scoped token. `agentId`/`repo`/
+   * `org` are separate, caller-supplied narrowing filters applied afterward.
    */
   async list(filters: SessionListFilters = {}): Promise<SessionListResult> {
     const where: Prisma.SessionWhereInput = {};
@@ -266,6 +268,13 @@ export class SessionService implements SessionServiceLike {
         : [filters.repo];
       items = items.filter((item) =>
         item.repos.some((repo) => repoList.includes(repo)),
+      );
+    }
+
+    if (filters.org !== undefined) {
+      const orgList = Array.isArray(filters.org) ? filters.org : [filters.org];
+      items = items.filter((item) =>
+        item.repos.some((repo) => orgList.includes(repo.split("/")[0])),
       );
     }
 
