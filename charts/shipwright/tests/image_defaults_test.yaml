@@ -1,6 +1,6 @@
 suite: default image repositories and pull policy
 # HD-2.1 set the PostgreSQL image coordinates (docker.io/bitnami/postgresql,
-# concrete tag — never `latest`) and the IfNotPresent default pull policy.
+# pinned by digest — never `latest`) and the IfNotPresent default pull policy.
 # The shipwright service image repositories (shipwright-admin / -metrics /
 # -task-store / -chat) now DO have consuming workload templates (admin/metrics/
 # task-store/chat Deployments), so their image + registry-prefix behavior is
@@ -18,16 +18,16 @@ templates:
   - templates/chat-deployment.yaml
   - templates/whisper-deployment.yaml
 tests:
-  - it: renders the bitnamilegacy/postgresql image from the docker.io registry
+  - it: renders the bitnami/postgresql image from the docker.io registry
     template: charts/postgresql/templates/primary/statefulset.yaml
     set:
       postgresql.enabled: true
     asserts:
       - matchRegex:
           path: spec.template.spec.containers[0].image
-          pattern: "^docker\\.io/bitnamilegacy/postgresql:"
+          pattern: "^docker\\.io/bitnami/postgresql@sha256:"
 
-  - it: pins a concrete PostgreSQL image tag (never `latest`)
+  - it: pins a concrete PostgreSQL image digest (never `latest`)
     template: charts/postgresql/templates/primary/statefulset.yaml
     set:
       postgresql.enabled: true
@@ -53,7 +53,7 @@ tests:
     asserts:
       - matchRegex:
           path: spec.template.spec.containers[0].image
-          pattern: "^my-mirror\\.example\\.com/bitnamilegacy/postgresql:"
+          pattern: "^my-mirror\\.example\\.com/bitnami/postgresql@sha256:"
 
   # ── DCC-3.1: global.imageRegistry must NOT double-prefix fully-qualified
   # service repositories, but SHOULD still prefix bare repository names. The

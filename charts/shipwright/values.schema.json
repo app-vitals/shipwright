@@ -612,7 +612,8 @@
           "properties": {
             "registry": { "type": "string" },
             "repository": { "type": "string" },
-            "tag": { "type": "string" }
+            "tag": { "type": "string" },
+            "digest": { "type": "string" }
           }
         },
         "auth": {

@@ -65,7 +65,7 @@ spec:
         - name: db-bootstrap
           # Reuse the PostgreSQL subchart's own image so this Job never triggers
           # an extra image pull — it is already on the node for the database pod.
-          image: {{ include "shipwright.imageRef" (dict "context" $ "repository" (printf "%s/%s" .Values.postgresql.image.registry .Values.postgresql.image.repository) "tag" .Values.postgresql.image.tag) | quote }}
+          image: {{ include "shipwright.imageRef" (dict "context" $ "repository" (printf "%s/%s" .Values.postgresql.image.registry .Values.postgresql.image.repository) "tag" .Values.postgresql.image.tag "digest" .Values.postgresql.image.digest) | quote }}
           imagePullPolicy: {{ .Values.postgresql.image.pullPolicy | default .Values.imagePullPolicy }}
           env:
             - name: PGHOST

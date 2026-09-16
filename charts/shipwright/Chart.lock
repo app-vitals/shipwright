@@ -1,7 +1,7 @@
 dependencies:
 - name: postgresql
   repository: oci://registry-1.docker.io/bitnamicharts
-  version: 16.7.27
+  version: 18.11.3
 - name: ingress-nginx
   repository: https://kubernetes.github.io/ingress-nginx
   version: 4.15.1
@@ -11,5 +11,5 @@ dependencies:
 - name: cert-manager
   repository: https://charts.jetstack.io
   version: v1.21.1
-digest: sha256:07c0c4d1b17431ca5d801cb6a7e14ad50586bb485cb09442b1bd6cde2f147e22
-generated: "2026-09-04T23:52:25.302507332Z"
+digest: sha256:fcfd3abe381461071b419d3c3b39b2f84990ab0105f4fb2d277b36a594a58539
+generated: "2026-09-15T22:24:30.401060609Z"

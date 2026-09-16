@@ -70,6 +70,10 @@ Args: a dict with keys
   - context:    the root "." context (to reach .Values.global.imageRegistry)
   - repository: the image repository (may be bare or fully-qualified)
   - tag:        the image tag
+  - digest:     (optional) an immutable image digest ("sha256:..."). When set,
+                takes precedence over tag and the reference uses "@" instead
+                of ":" as the separator — same convention as bitnami-common's
+                own common.images.image helper.
 
 DCC-3.1: the shipwright service repositories default to fully-qualified GHCR
 paths (e.g. ghcr.io/app-vitals/shipwright-admin). Blindly prefixing
@@ -84,12 +88,17 @@ receive the global.imageRegistry prefix.
 {{- define "shipwright.imageRef" -}}
 {{- $registry := .context.Values.global.imageRegistry -}}
 {{- $repository := .repository -}}
-{{- $tag := .tag -}}
+{{- $separator := ":" -}}
+{{- $termination := .tag -}}
+{{- if .digest -}}
+{{- $separator = "@" -}}
+{{- $termination = .digest -}}
+{{- end -}}
 {{- $firstSegment := $repository | splitList "/" | first -}}
 {{- if and $registry (not (or (contains "." $firstSegment) (contains ":" $firstSegment))) -}}
-{{- printf "%s/%s:%s" $registry $repository $tag -}}
+{{- printf "%s/%s%s%s" $registry $repository $separator $termination -}}
 {{- else -}}
-{{- printf "%s:%s" $repository $tag -}}
+{{- printf "%s%s%s" $repository $separator $termination -}}
 {{- end -}}
 {{- end }}
 
@@ -299,7 +308,7 @@ postgresql.auth.username — NOT the postgres superuser). Resolution order:
   4. "" — the case on `helm template` / helm-unittest, which do NOT execute
      `lookup`. A live install/upgrade resolves the real value.
 
-KEY NAME: Bitnami postgresql 16.7.27 templates/secrets.yaml emits exactly
+KEY NAME: Bitnami postgresql 18.11.3 templates/secrets.yaml emits exactly
 `postgres-password` (superuser), `password` (application user),
 `replication-password` and `ldap-password`. It has NEVER emitted
 `postgresql-password` — the key this chart previously looked up, which meant

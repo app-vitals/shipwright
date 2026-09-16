@@ -10,6 +10,16 @@ independent of `appVersion`. CI enforces this with
 `ct lint --check-version-increment`. Each release here must mirror the
 `artifacthub.io/changes` annotation in `Chart.yaml`.
 
+## [1.20.58] - 2026-09-15
+
+### Changed
+
+- bump bundled postgresql subchart to 18.11.3 (Postgres 18.6.0), pinning postgresql.image.digest instead of a tag since Bitnami no longer publishes concrete version tags publicly
+
+### Upgrade notes
+
+- **BREAKING for existing self-hosted installs:** this is a PostgreSQL major-version change (17.6.0 → 18.6.0). `helm upgrade` reuses the existing PVC, so PostgreSQL 18 binaries start against a 17.x data directory and the pod crash-loops (`database files are incompatible with server`). Before upgrading a live release, either pin the image back to a 17.x build (`postgresql.image.repository: bitnamilegacy/postgresql`, `digest: ""`, `tag: "17.6.0-debian-12-r4"`) or perform a `pg_dumpall`/`psql` restore (or `pg_upgrade`) migration. See the chart README section "Upgrading to chart 1.20.58+ — bundled PostgreSQL 17 → 18".
+
 ## [1.20.57] - 2026-09-15
 
 ### Changed

@@ -15,9 +15,8 @@ global:
   # Shipwright service images (admin, metrics, taskStore, chat) default to
   # fully-qualified ghcr.io/app-vitals/shipwright-<svc> repositories, so this is
   # mainly relevant for the Bitnami PostgreSQL subchart and the whisper/cloud-sql
-  # sidecar images. Set this to a mirror (e.g. your registry, or a `bitnamilegacy`
-  # mirror) if the default Bitnami registry tags become unavailable. See README
-  # "Bitnami registry risk".
+  # sidecar images. Set this to a mirror registry if the pinned Bitnami
+  # PostgreSQL digest becomes unavailable. See README "Bitnami registry risk".
   #
   # Fully-qualified-repository detection (DCC-3.1): setting this does NOT
   # re-prefix a service image whose repository already names a registry host —
@@ -646,14 +645,18 @@ auth:
 postgresql:
   # -- Deploy the bundled PostgreSQL subchart.
   enabled: true
-  # -- Image overrides. The `bitnamilegacy` mirror is now the default (Bitnami's
-  # 2025 catalog change moved public tags to Bitnami Secure). To switch back to
-  # the standard `bitnami` repository, override this value explicitly (or see
-  # README "Bitnami registry risk" for alternative mirror options).
+  # -- Image overrides. Pinned by digest (not tag): as of the Postgres 18 chart
+  # line, Bitnami no longer publishes a concrete version tag publicly — the
+  # `bitnami/postgresql` repo only carries the floating `latest` tag, and the
+  # `bitnamilegacy` mirror was frozen at Postgres 17.6.0 and never got a Postgres
+  # 18 build. Pinning `digest` (which overrides `tag` in the subchart's image
+  # helper) keeps the render deterministic despite `latest` being a moving
+  # target. See README "Bitnami registry risk" for the full explanation and how
+  # to re-pin when bumping further.
   image:
     registry: docker.io
-    repository: bitnamilegacy/postgresql
-    # tag intentionally left to the pinned subchart default (concrete, not `latest`).
+    repository: bitnami/postgresql
+    digest: sha256:b69d1fca390fb131639e86e820f248acfc5d911339dc884796f8009260c598d7
   auth:
     # -- Default database name created on first boot.
     database: shipwright_admin
