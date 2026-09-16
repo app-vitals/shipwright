@@ -3104,7 +3104,7 @@ describe("renderTasksPage — kind badge (TKD-1.4)", () => {
 
   // XSS: kind value is escaped (even though it should only be "dev" | "prd")
   test("table view: kind value is HTML-escaped", () => {
-    const xssTask: TaskItem = {
+    const xssTask = {
       id: "TASK-XSS",
       title: "XSS task",
       status: "pending",
@@ -3112,8 +3112,8 @@ describe("renderTasksPage — kind badge (TKD-1.4)", () => {
       repo: null,
       assignee: null,
       claimedBy: null,
-      kind: "<script>alert(1)</script>" as any,
-    };
+      kind: "<script>alert(1)</script>",
+    } as TaskItem;
     const html = render([xssTask]);
     expect(html).not.toContain("<script>alert(1)</script>");
   });
@@ -7132,7 +7132,7 @@ describe("renderTaskDetailPage — kind field (TKD-1.4)", () => {
 
   // XSS: kind value is escaped
   test("Kind value is HTML-escaped", () => {
-    const html = render({ kind: "<script>alert(1)</script>" as any });
+    const html = render({ kind: "<script>alert(1)</script>" });
     expect(html).not.toContain("<script>alert(1)</script>");
     expect(html).toContain("&lt;script&gt;");
   });
