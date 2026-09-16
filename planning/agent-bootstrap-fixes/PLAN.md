@@ -62,7 +62,7 @@ Bootstrapping a new agent (Maverick) surfaced three separate defects:
   fallback — see ABF-3.2 below). So Path A is a real, in-repo-documented,
   headless creation path today, not a hypothetical external one — see
   ABF-3.2's HITL note for the full detail and the resulting scope
-  (a replacement Bearer-auth path, plus doc updates across seven `docs/*.md`
+  (a replacement Bearer-auth path, plus doc updates across eight `docs/*.md`
   files and two `site/` pages).
 - A third, independent reimplementation of the same manifest-seeding logic
   already exists in `scripts/seed-dev-agent.ts` (raw Prisma upserts for the
@@ -125,7 +125,11 @@ Bootstrapping a new agent (Maverick) surfaced three separate defects:
    `docs/deploy-kubernetes.md`, `docs/agent.md` (the admin CRUD API endpoint
    table entry describing this endpoint's manifest-seeding behavior in
    detail), `docs/architecture.md` (names `POST /agents` in the C-artifact
-   summary), and two `site/` content pages
+   summary), `docs/agent-api.md` (lines 27-29: describes `POST`/`GET`/`PATCH`/
+   `DELETE /agents[/:id]` as "fully described in the OpenAPI spec — including
+   the Agent Type manifest seeding behavior on create and the
+   rollback-guarded provisioning block" — a direct reference to the exact
+   create-agent behavior this task retires), and two `site/` content pages
    (`site/src/content/docs/the-agent.mdx`, `site/src/content/docs/reference.mdx`)
    — all of these need updating as part of this task's scope, not just the
    agent-admin skill.
