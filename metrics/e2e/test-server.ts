@@ -4,7 +4,7 @@
  * the fixture provider satisfies the required provider seam without live services.
  */
 
-import { createMetricsApp } from "../src/api.ts";
+import { createMetricsApp, createPublicMetricsApp } from "../src/api.ts";
 import { createFixtureTaskStoreProvider } from "../src/fixtures/task-store-fixtures.ts";
 import { parseApiKeys } from "../src/lib/api-auth.ts";
 import { makeAccountsClientMock } from "../src/lib/test-helpers.ts";
@@ -18,6 +18,14 @@ const app = createMetricsApp(apiKeys, noopAccountsClient, {
   sessionSecret,
   provider: createFixtureTaskStoreProvider(),
 });
+
+// Public, unauthenticated /public/* surface (mirrors server.ts's PUBLIC_MODE
+// wiring) — scoped to a single repo so dashboard.e2e.ts can exercise the
+// Merged PRs by repo panel's "public dashboard shows only the public repo"
+// behavior (POM-2.2) against real fixture-computed data, not a route mock.
+const publicProvider = createFixtureTaskStoreProvider("org/alpha");
+const publicApp = createPublicMetricsApp(publicProvider);
+app.route("/", publicApp);
 
 app.get("/health", (c) => c.json({ status: "ok" }, 200));
 

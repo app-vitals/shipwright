@@ -16,6 +16,34 @@
   let tokenTrendsChart = null;
   let activeTokenSeries = "input";
   let modalChart = null;
+  let mergedPrsBarChart = null;
+  let mergedPrsTrendChart = null;
+  let lastMergedPrsTrend = [];
+
+  // Fixed origin taxonomy + colors, shared by the bar and trend charts so
+  // legend/tooltip semantics stay identical across both (unknown is grey).
+  const ORIGIN_KEYS = [
+    "shipwright",
+    "ci",
+    "dependency_bot",
+    "human",
+    "unknown",
+  ];
+  const ORIGIN_COLORS = {
+    shipwright: "#00ccaa",
+    ci: "#4488ff",
+    dependency_bot: "#cc8844",
+    human: "#cc44aa",
+    unknown: "#888888",
+  };
+
+  function originLabel(origin) {
+    if (origin === "ci") return "CI";
+    return origin
+      .split("_")
+      .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
+      .join(" ");
+  }
 
   // ─── Date range helpers ───────────────────────────────────────────────────
 
@@ -28,6 +56,14 @@
     if (range === "today") return "hour";
     if (range === "90d") return "week";
     return "day"; // 7d, 30d, custom
+  }
+
+  // /metrics/merged-prs only accepts day|week (no hour bucket) — map "today"
+  // down to "day" rather than changing groupByForRange, which /metrics/trends
+  // still relies on for its hourly bucket.
+  function mergedPrsGroupByForRange(range) {
+    const gb = groupByForRange(range);
+    return gb === "hour" ? "day" : gb;
   }
 
   function rangeFromButton(btn) {
@@ -125,7 +161,7 @@
   async function fetchAll(range) {
     const API_BASE = getApiBase();
     const q = buildQuery(range);
-    const [summary, trends, featuresRes, queueRes, tokensRes] =
+    const [summary, trends, featuresRes, queueRes, tokensRes, mergedPrsRes] =
       await fetchSequential(
         [
           { url: `${API_BASE}/summary?${q}`, parse: (r) => r.json() },
@@ -157,18 +193,37 @@
               return null;
             },
           },
+          {
+            url: `${API_BASE}/merged-prs?${q}&groupBy=${mergedPrsGroupByForRange(range)}`,
+            parse: (r) => r.json(),
+            onError: (err) => {
+              console.error("Merged PRs fetch failed:", err);
+              return null;
+            },
+          },
         ],
         fetch,
       );
     // Cost efficiency is only fetched on the public (read-only) dashboard,
     // guarded by element presence so the authenticated page never fetches it.
-    const costEffEl = document.getElementById('cost-efficiency-section');
+    const costEffEl = document.getElementById("cost-efficiency-section");
     const costEffRes = costEffEl
       ? await fetch(`${API_BASE}/cost-efficiency?${q}`)
           .then((r) => r.json())
-          .catch((err) => { console.error("Cost efficiency fetch failed:", err); return null; })
+          .catch((err) => {
+            console.error("Cost efficiency fetch failed:", err);
+            return null;
+          })
       : null;
-    return { summary, trends, featuresRes, queueRes, tokensRes, costEffRes };
+    return {
+      summary,
+      trends,
+      featuresRes,
+      queueRes,
+      tokensRes,
+      mergedPrsRes,
+      costEffRes,
+    };
   }
 
   // ─── Formatters ───────────────────────────────────────────────────────────
@@ -493,39 +548,53 @@
   function updateCostEfficiency(res) {
     const $ = (id) => document.getElementById(id);
     // Read-only/public dashboard renders this section; authenticated page does not.
-    if (!$('cost-efficiency-section')) return;
+    if (!$("cost-efficiency-section")) return;
 
     const data = res && !res.error ? res.data : null;
-    const emptyEl = $('ce-empty');
-    const limitedEl = $('ce-limited');
+    const emptyEl = $("ce-empty");
+    const limitedEl = $("ce-limited");
 
     if (!data || data.runsWithCostData === 0) {
-      if (emptyEl) emptyEl.style.display = '';
-      if ($('ce-routed')) $('ce-routed').textContent = '--';
-      if ($('ce-opus')) $('ce-opus').textContent = '--';
-      if ($('ce-savings-text')) $('ce-savings-text').textContent = '--';
+      if (emptyEl) emptyEl.style.display = "";
+      if ($("ce-routed")) $("ce-routed").textContent = "--";
+      if ($("ce-opus")) $("ce-opus").textContent = "--";
+      if ($("ce-savings-text")) $("ce-savings-text").textContent = "--";
       return;
     }
 
-    if (emptyEl) emptyEl.style.display = 'none';
+    if (emptyEl) emptyEl.style.display = "none";
 
     const fleet = data.fleet;
     const smallN = data.runsWithCostData > 0 && data.runsWithCostData < 3;
 
     // Routed/Opus KPIs
-    if ($('ce-routed')) $('ce-routed').textContent = smallN ? '--' : fmtCost(fleet.routedUsd);
-    if ($('ce-opus')) $('ce-opus').textContent = smallN ? '--' : fmtCost(fleet.counterfactualOpusUsd);
+    if ($("ce-routed"))
+      $("ce-routed").textContent = smallN ? "--" : fmtCost(fleet.routedUsd);
+    if ($("ce-opus"))
+      $("ce-opus").textContent = smallN
+        ? "--"
+        : fmtCost(fleet.counterfactualOpusUsd);
 
     // Savings line
-    if ($('ce-savings-text')) {
-      if (smallN && fleet.savingsPct !== null && fleet.savingsPct !== undefined) {
-        $('ce-savings-text').textContent = `${Math.round(fleet.savingsPct)}% saved`;
-        if (limitedEl) limitedEl.style.display = '';
-      } else if (!smallN && fleet.savingsUsd !== null && fleet.savingsPct !== null) {
-        $('ce-savings-text').textContent = `${fmtCost(fleet.savingsUsd)} saved · ${Math.round(fleet.savingsPct)}%`;
-        if (limitedEl) limitedEl.style.display = 'none';
+    if ($("ce-savings-text")) {
+      if (
+        smallN &&
+        fleet.savingsPct !== null &&
+        fleet.savingsPct !== undefined
+      ) {
+        $("ce-savings-text").textContent =
+          `${Math.round(fleet.savingsPct)}% saved`;
+        if (limitedEl) limitedEl.style.display = "";
+      } else if (
+        !smallN &&
+        fleet.savingsUsd !== null &&
+        fleet.savingsPct !== null
+      ) {
+        $("ce-savings-text").textContent =
+          `${fmtCost(fleet.savingsUsd)} saved · ${Math.round(fleet.savingsPct)}%`;
+        if (limitedEl) limitedEl.style.display = "none";
       } else {
-        $('ce-savings-text').textContent = '--';
+        $("ce-savings-text").textContent = "--";
       }
     }
 
@@ -535,21 +604,100 @@
     let sonnetUsd = 0;
     let opusUsd = 0;
     for (const m of byModel) {
-      const mf = m.modelFamily || '';
-      if (mf.includes('haiku')) haikuUsd += m.routedUsd;
-      else if (mf.includes('opus')) opusUsd += m.routedUsd;
+      const mf = m.modelFamily || "";
+      if (mf.includes("haiku")) haikuUsd += m.routedUsd;
+      else if (mf.includes("opus")) opusUsd += m.routedUsd;
       else sonnetUsd += m.routedUsd;
     }
     const total = haikuUsd + sonnetUsd + opusUsd || 1;
     const pct = (v) => `${Math.round((v / total) * 100)}%`;
 
-    if ($('ce-bar-haiku')) $('ce-bar-haiku').style.flexBasis = pct(haikuUsd);
-    if ($('ce-bar-sonnet')) $('ce-bar-sonnet').style.flexBasis = pct(sonnetUsd);
-    if ($('ce-bar-opus')) $('ce-bar-opus').style.flexBasis = pct(opusUsd);
+    if ($("ce-bar-haiku")) $("ce-bar-haiku").style.flexBasis = pct(haikuUsd);
+    if ($("ce-bar-sonnet")) $("ce-bar-sonnet").style.flexBasis = pct(sonnetUsd);
+    if ($("ce-bar-opus")) $("ce-bar-opus").style.flexBasis = pct(opusUsd);
 
-    if ($('ce-legend-haiku')) $('ce-legend-haiku').textContent = `Haiku ${pct(haikuUsd)}`;
-    if ($('ce-legend-sonnet')) $('ce-legend-sonnet').textContent = `Sonnet ${pct(sonnetUsd)}`;
-    if ($('ce-legend-opus')) $('ce-legend-opus').textContent = `Opus ${pct(opusUsd)}`;
+    if ($("ce-legend-haiku"))
+      $("ce-legend-haiku").textContent = `Haiku ${pct(haikuUsd)}`;
+    if ($("ce-legend-sonnet"))
+      $("ce-legend-sonnet").textContent = `Sonnet ${pct(sonnetUsd)}`;
+    if ($("ce-legend-opus"))
+      $("ce-legend-opus").textContent = `Opus ${pct(opusUsd)}`;
+  }
+
+  // ─── Update Merged PRs by Repo ───────────────────────────────────────────
+
+  function destroyMergedPrsCharts() {
+    if (mergedPrsBarChart) {
+      mergedPrsBarChart.destroy();
+      mergedPrsBarChart = window.mergedPrsBarChart = null;
+    }
+    if (mergedPrsTrendChart) {
+      mergedPrsTrendChart.destroy();
+      mergedPrsTrendChart = window.mergedPrsTrendChart = null;
+    }
+  }
+
+  function populateMergedPrsRepoSelect(repos) {
+    const picker = document.getElementById("merged-prs-repo-picker");
+    const select = document.getElementById("merged-prs-repo-select");
+    if (!picker || !select) return;
+
+    if (!repos || repos.length <= 1) {
+      picker.style.display = "none";
+      select.innerHTML = "";
+      return;
+    }
+
+    const previousValue = select.value;
+    select.innerHTML = "";
+    const allOption = document.createElement("option");
+    allOption.value = "";
+    allOption.textContent = "All repos";
+    select.appendChild(allOption);
+    for (const r of repos) {
+      const opt = document.createElement("option");
+      opt.value = r.repo;
+      opt.textContent = r.repo;
+      select.appendChild(opt);
+    }
+    select.value = repos.some((r) => r.repo === previousValue)
+      ? previousValue
+      : "";
+    picker.style.display = "";
+  }
+
+  function updateMergedPrs(res) {
+    const contentEl = document.getElementById("merged-prs-content");
+    const emptyEl = document.getElementById("merged-prs-empty");
+    if (!contentEl) return;
+
+    const data = res && !res.error ? res.data : null;
+    const repos = data?.repos ?? [];
+    const trend = data?.trend ?? [];
+    lastMergedPrsTrend = trend;
+
+    if (!data || repos.length === 0) {
+      contentEl.style.display = "none";
+      if (emptyEl) emptyEl.style.display = "";
+      destroyMergedPrsCharts();
+      return;
+    }
+
+    contentEl.style.display = "";
+    if (emptyEl) emptyEl.style.display = "none";
+
+    populateMergedPrsRepoSelect(repos);
+    drawMergedPrsBarChart(repos);
+    const select = document.getElementById("merged-prs-repo-select");
+    drawMergedPrsTrendChart(trend, select ? select.value : "");
+  }
+
+  function initMergedPrsRepoSelect() {
+    const select = document.getElementById("merged-prs-repo-select");
+    if (!select) return;
+    select.addEventListener("change", () => {
+      drawMergedPrsTrendChart(lastMergedPrsTrend, select.value);
+    });
   }
 
   // ─── Chart.js Trends Chart ───────────────────────────────────────────────
@@ -565,6 +713,164 @@
       pointRadius: 3,
       tension: 0.3,
     };
+  }
+
+  // Bar-shaped dataset (solid fill, no border/point styling) — distinct from
+  // makeDataset's line shape, reused by the Merged PRs stacked bar chart.
+  function makeBarDataset(label, data, color) {
+    return {
+      label,
+      data,
+      backgroundColor: color,
+    };
+  }
+
+  function drawMergedPrsBarChart(repos) {
+    const canvas = document.getElementById("merged-prs-bar-chart");
+    if (!canvas) return;
+    const ctx = canvas.getContext("2d");
+
+    if (mergedPrsBarChart) {
+      mergedPrsBarChart.destroy();
+      mergedPrsBarChart = window.mergedPrsBarChart = null;
+    }
+
+    const labels = repos.map((r) => r.repo);
+    const totals = repos.map((r) => r.total);
+    const datasets = ORIGIN_KEYS.map((origin) =>
+      makeBarDataset(
+        originLabel(origin),
+        repos.map((r) => r.byOrigin?.[origin] ?? 0),
+        ORIGIN_COLORS[origin],
+      ),
+    );
+
+    try {
+      mergedPrsBarChart = window.mergedPrsBarChart = new Chart(ctx, {
+        type: "bar",
+        data: { labels, datasets },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: {
+            legend: {
+              labels: {
+                color: "var(--text)",
+                font: { family: "'JetBrains Mono', monospace", size: 11 },
+                boxWidth: 12,
+              },
+            },
+            tooltip: {
+              callbacks: {
+                label: (ctx) => {
+                  const count = ctx.raw ?? 0;
+                  const total = totals[ctx.dataIndex] || 0;
+                  const pct = total > 0 ? Math.round((count / total) * 100) : 0;
+                  return `${ctx.dataset.label}: ${count} (${pct}% of repo total)`;
+                },
+              },
+            },
+          },
+          scales: {
+            x: {
+              stacked: true,
+              ticks: {
+                color: "var(--text-dim)",
+                font: { family: "'JetBrains Mono', monospace", size: 10 },
+                maxRotation: 45,
+              },
+              grid: { color: "var(--surface-raised)" },
+            },
+            y: {
+              stacked: true,
+              ticks: {
+                color: "var(--text-dim)",
+                font: { family: "'JetBrains Mono', monospace", size: 10 },
+              },
+              grid: { color: "var(--surface-raised)" },
+            },
+          },
+        },
+      });
+    } catch (_err) {
+      showError("Failed to render merged PRs chart");
+    }
+  }
+
+  function drawMergedPrsTrendChart(trendRows, repoFilter) {
+    const canvas = document.getElementById("merged-prs-trend-chart");
+    if (!canvas) return;
+    const ctx = canvas.getContext("2d");
+
+    if (mergedPrsTrendChart) {
+      mergedPrsTrendChart.destroy();
+      mergedPrsTrendChart = window.mergedPrsTrendChart = null;
+    }
+
+    const rows = repoFilter
+      ? (trendRows || []).filter((r) => r.repo === repoFilter)
+      : trendRows || [];
+    const periods = [...new Set(rows.map((r) => r.period))].sort();
+
+    if (periods.length === 0) {
+      ctx.font = "14px var(--mono)";
+      ctx.fillStyle = "var(--text-dim)";
+      ctx.textAlign = "center";
+      ctx.fillText(
+        "No data for this period",
+        canvas.width / 2,
+        canvas.height / 2,
+      );
+      return;
+    }
+
+    const datasets = ORIGIN_KEYS.map((origin) => {
+      const values = periods.map((period) =>
+        rows
+          .filter((r) => r.period === period)
+          .reduce((sum, r) => sum + (r.byOrigin?.[origin] ?? 0), 0),
+      );
+      return makeDataset(originLabel(origin), values, ORIGIN_COLORS[origin]);
+    });
+
+    try {
+      mergedPrsTrendChart = window.mergedPrsTrendChart = new Chart(ctx, {
+        type: "line",
+        data: { labels: periods, datasets },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: {
+            legend: {
+              labels: {
+                color: "var(--text)",
+                font: { family: "'JetBrains Mono', monospace", size: 11 },
+                boxWidth: 12,
+              },
+            },
+          },
+          scales: {
+            x: {
+              ticks: {
+                color: "var(--text-dim)",
+                font: { family: "'JetBrains Mono', monospace", size: 10 },
+                maxRotation: 45,
+              },
+              grid: { color: "var(--surface-raised)" },
+            },
+            y: {
+              ticks: {
+                color: "var(--text-dim)",
+                font: { family: "'JetBrains Mono', monospace", size: 10 },
+              },
+              grid: { color: "var(--surface-raised)" },
+            },
+          },
+        },
+      });
+    } catch (_err) {
+      showError("Failed to render merged PRs trend chart");
+    }
   }
 
   function drawChart(rows) {
@@ -1003,8 +1309,15 @@
   async function refresh() {
     setLoading(true);
     try {
-      const { summary, trends, featuresRes, queueRes, tokensRes, costEffRes } =
-        await fetchAll(currentRange);
+      const {
+        summary,
+        trends,
+        featuresRes,
+        queueRes,
+        tokensRes,
+        mergedPrsRes,
+        costEffRes,
+      } = await fetchAll(currentRange);
       const firstError = summary.error || trends.error;
       if (firstError) {
         showError(`Metrics error: ${firstError}`);
@@ -1034,6 +1347,7 @@
       }
       updateTokens(tokensRes);
       renderTokenTrendsChart(lastTokensTrends, activeTokenSeries);
+      updateMergedPrs(mergedPrsRes);
       updateCostEfficiency(costEffRes);
     } catch (err) {
       showError(`Failed to load metrics: ${err.message}`);
@@ -1079,6 +1393,7 @@
       initDateRangePicker();
       initMetricClicks();
       initTokenTrendsToggles();
+      initMergedPrsRepoSelect();
       refresh();
     });
   } else {

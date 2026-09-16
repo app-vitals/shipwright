@@ -14,7 +14,7 @@
 import { type ChildProcess, spawn } from "node:child_process";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { type Page, expect, test } from "@playwright/test";
+import { expect, type Page, test } from "@playwright/test";
 import { sign } from "hono/jwt";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -284,7 +284,7 @@ async function mockMetricsAPIs(
     route.fulfill({
       status: 200,
       contentType: "application/javascript",
-      body: "window.Chart = class Chart { constructor() {} destroy() {} update() {} }; Chart.defaults = {};",
+      body: "window.Chart = class Chart { constructor(ctx, config) { this.config = config; this.data = config && config.data; this.options = config && config.options; } destroy() {} update() {} }; Chart.defaults = {};",
     });
   });
 }
@@ -396,7 +396,7 @@ async function mockMetricsAPIsWithFullTrends(page: Page): Promise<void> {
     route.fulfill({
       status: 200,
       contentType: "application/javascript",
-      body: "window.Chart = class Chart { constructor() {} destroy() {} update() {} }; Chart.defaults = {};",
+      body: "window.Chart = class Chart { constructor(ctx, config) { this.config = config; this.data = config && config.data; this.options = config && config.options; } destroy() {} update() {} }; Chart.defaults = {};",
     });
   });
 }
@@ -665,7 +665,7 @@ test.describe("Dashboard — error handling", () => {
       route.fulfill({
         status: 200,
         contentType: "application/javascript",
-        body: "window.Chart = class Chart { constructor() {} destroy() {} update() {} }; Chart.defaults = {};",
+        body: "window.Chart = class Chart { constructor(ctx, config) { this.config = config; this.data = config && config.data; this.options = config && config.options; } destroy() {} update() {} }; Chart.defaults = {};",
       }),
     );
 
@@ -719,7 +719,7 @@ test.describe("Dashboard — error handling", () => {
       route.fulfill({
         status: 200,
         contentType: "application/javascript",
-        body: "window.Chart = class Chart { constructor() {} destroy() {} update() {} }; Chart.defaults = {};",
+        body: "window.Chart = class Chart { constructor(ctx, config) { this.config = config; this.data = config && config.data; this.options = config && config.options; } destroy() {} update() {} }; Chart.defaults = {};",
       }),
     );
 
@@ -967,5 +967,147 @@ test.describe("Dashboard — MG-1.2 clickable metric graphs", () => {
     await card.click();
 
     await expect(page.locator("#metric-chart")).toBeVisible();
+  });
+});
+
+// ─── Dashboard — POM-2.2 Merged PRs by repo panel ────────────────────────────
+//
+// These tests deliberately do NOT mock /metrics/merged-prs or
+// /public/metrics/merged-prs — mockMetricsAPIs() never registers a route for
+// that endpoint, so requests fall through to the real test server, which
+// wires createFixtureTaskStoreProvider() (2 repos: org/alpha, org/beta) for
+// the authenticated app and a repo-scoped variant (org/alpha only) for the
+// /public/* mount — see metrics/e2e/test-server.ts. This exercises the panel
+// against real fixture-computed data end to end.
+
+function makeEmptyMergedPrsResponse() {
+  return {
+    data: {
+      from: "2026-01-01T00:00:00.000Z",
+      to: "2026-01-08T00:00:00.000Z",
+      groupBy: "day",
+      repos: [],
+      trend: [],
+    },
+    meta: {
+      dateRange: "today",
+      generatedAt: new Date().toISOString(),
+      queryTimeMs: 5,
+    },
+  };
+}
+
+test.describe("Dashboard — Merged PRs by repo panel", () => {
+  // The fixture PR cassette's mergedAt dates are 1-2 days before "now" (see
+  // task-store-fixtures.ts), so they fall outside the default "today" (1D)
+  // window but are guaranteed inside "7d" — switch to 7D before asserting
+  // populated state, mirroring the fixture's own "7d/30d always non-empty"
+  // guarantee used throughout this cassette.
+  test("renders heading and both canvases on /dashboard with one bar per fixture repo", async ({
+    page,
+  }) => {
+    await mockMetricsAPIs(page);
+    await injectSessionCookie(page);
+    await page.goto(`${BASE_URL}/dashboard`, { waitUntil: "networkidle" });
+
+    await expect(
+      page.locator('[aria-label="Merged PRs by repo"] .section-title'),
+    ).toHaveText("Merged PRs by repo");
+
+    await page.locator('[data-range="7d"]').click();
+    await page.waitForFunction(
+      () => (window.mergedPrsBarChart?.data?.labels?.length ?? 0) > 0,
+    );
+
+    await expect(page.locator("#merged-prs-bar-chart")).toBeVisible();
+    await expect(page.locator("#merged-prs-trend-chart")).toBeVisible();
+
+    const barLabelsCount = await page.evaluate(
+      () => window.mergedPrsBarChart.data.labels.length,
+    );
+    expect(barLabelsCount).toBe(2);
+  });
+
+  test("shows the repo selector when more than one repo is present", async ({
+    page,
+  }) => {
+    await mockMetricsAPIs(page);
+    await injectSessionCookie(page);
+    await page.goto(`${BASE_URL}/dashboard`, { waitUntil: "networkidle" });
+
+    await page.locator('[data-range="7d"]').click();
+    await page.waitForFunction(
+      () => (window.mergedPrsBarChart?.data?.labels?.length ?? 0) > 0,
+    );
+
+    await expect(page.locator("#merged-prs-repo-picker")).toBeVisible();
+    // "All repos" + org/alpha + org/beta
+    await expect(page.locator("#merged-prs-repo-select option")).toHaveCount(3);
+  });
+
+  test("renders on /public/dashboard scoped to only the public repo", async ({
+    page,
+  }) => {
+    await mockMetricsAPIs(page);
+    await page.goto(`${BASE_URL}/public/dashboard`, {
+      waitUntil: "networkidle",
+    });
+
+    await expect(
+      page.locator('[aria-label="Merged PRs by repo"] .section-title'),
+    ).toHaveText("Merged PRs by repo");
+
+    await page.locator('[data-range="7d"]').click();
+    await page.waitForFunction(
+      () => (window.mergedPrsBarChart?.data?.labels?.length ?? 0) > 0,
+    );
+
+    const barLabels = await page.evaluate(
+      () => window.mergedPrsBarChart.data.labels,
+    );
+    expect(barLabels).toEqual(["org/alpha"]);
+
+    // A single repo means no selector is needed.
+    await expect(page.locator("#merged-prs-repo-picker")).toBeHidden();
+  });
+
+  test("changing the date range re-fetches /metrics/merged-prs with the new query", async ({
+    page,
+  }) => {
+    await mockMetricsAPIs(page);
+    await injectSessionCookie(page);
+    await page.goto(`${BASE_URL}/dashboard`, { waitUntil: "networkidle" });
+
+    const requestPromise = page.waitForRequest((req) =>
+      req.url().includes("/metrics/merged-prs"),
+    );
+    await page.locator('[data-range="30d"]').click();
+    const request = await requestPromise;
+
+    const url = new URL(request.url());
+    expect(url.searchParams.get("preset")).toBe("30d");
+    expect(url.searchParams.get("groupBy")).toBe("day");
+  });
+
+  test("shows the empty-state message and hides both canvases when the provider returns no merged PRs", async ({
+    page,
+  }) => {
+    await mockMetricsAPIs(page);
+    await page.route("**/metrics/merged-prs**", (route) => {
+      route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify(makeEmptyMergedPrsResponse()),
+      });
+    });
+    await injectSessionCookie(page);
+    await page.goto(`${BASE_URL}/dashboard`, { waitUntil: "networkidle" });
+
+    await expect(page.locator("#merged-prs-empty")).toBeVisible();
+    await expect(page.locator("#merged-prs-empty")).toHaveText(
+      "No merged PRs in this range",
+    );
+    await expect(page.locator("#merged-prs-bar-chart")).toBeHidden();
+    await expect(page.locator("#merged-prs-trend-chart")).toBeHidden();
   });
 });

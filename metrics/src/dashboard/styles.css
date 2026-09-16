@@ -349,6 +349,40 @@ body {
   opacity: 0.3;
 }
 
+/* ─── Merged PRs by Repo ────────────────────────────────────────────────── */
+
+.merged-prs-repo-picker {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 1rem;
+  font-family: var(--sans);
+  font-size: 13px;
+  color: var(--text-dim);
+}
+
+.merged-prs-repo-picker select {
+  font-family: var(--mono);
+  font-size: 13px;
+  padding: 0.25rem 0.5rem;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface);
+  color: var(--text);
+}
+
+.merged-prs-charts {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1.5rem;
+}
+
+@media (max-width: 900px) {
+  .merged-prs-charts {
+    grid-template-columns: 1fr;
+  }
+}
+
 /* ─── Error Toast ───────────────────────────────────────────────────────── */
 
 #error-toast {
