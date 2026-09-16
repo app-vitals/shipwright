@@ -554,6 +554,84 @@ describe("createTasksRoutes — OpenAPIHono migration (TSM-1.2)", () => {
     expect(res.status).toBe(400);
   });
 
+  it("GET /?kind=prd passes kind: 'prd' through to taskService.list() (TKD-1.1)", async () => {
+    const task = makeTask({ id: "t-1", kind: "prd" });
+    let receivedFilters: unknown;
+    const app = createTasksRoutes(
+      fakeTaskService({
+        tasks: [task],
+        onList: (filters) => {
+          receivedFilters = filters;
+        },
+      }),
+    );
+    const parent = makeAdminParent(app);
+
+    const res = await parent.request("/?kind=prd");
+    expect(res.status).toBe(200);
+    expect((receivedFilters as { kind?: string }).kind).toBe("prd");
+  });
+
+  it("GET / with no kind param passes kind: undefined through to taskService.list() (TKD-1.1)", async () => {
+    let receivedFilters: unknown;
+    const app = createTasksRoutes(
+      fakeTaskService({
+        tasks: [makeTask({ id: "t-1" })],
+        onList: (filters) => {
+          receivedFilters = filters;
+        },
+      }),
+    );
+    const parent = makeAdminParent(app);
+
+    const res = await parent.request("/");
+    expect(res.status).toBe(200);
+    expect((receivedFilters as { kind?: string }).kind).toBeUndefined();
+  });
+
+  it("GET /?kind=garbage rejects with a 400 (invalid enum value, mirrors ?hitl= behavior) (TKD-1.1)", async () => {
+    const app = createTasksRoutes(fakeTaskService());
+    const parent = makeAdminParent(app);
+
+    const res = await parent.request("/?kind=garbage");
+    expect(res.status).toBe(400);
+  });
+
+  it("POST / forwards kind: 'prd' to taskService.create() and returns it in the response, and GET /:id round-trips it (TKD-1.1)", async () => {
+    let received: Record<string, unknown> | undefined;
+    const app = createTasksRoutes(
+      fakeTaskService({
+        onCreate: (data) => {
+          received = data as Record<string, unknown>;
+        },
+      }),
+    );
+    const parent = makeAdminParent(app);
+
+    const createRes = await parent.request("/", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        title: "A PRD",
+        status: "pending",
+        repo: null,
+        kind: "prd",
+      }),
+    });
+    expect(createRes.status).toBe(201);
+    expect(received?.kind).toBe("prd");
+    const createdBody = (await createRes.json()) as Task & { kind?: string };
+    expect(createdBody.kind).toBe("prd");
+
+    const task = makeTask({ id: "t-persisted", kind: "prd" });
+    const readApp = createTasksRoutes(fakeTaskService({ tasks: [task] }));
+    const readParent = makeAdminParent(readApp);
+    const getRes = await readParent.request("/t-persisted");
+    expect(getRes.status).toBe(200);
+    const getBody = (await getRes.json()) as Task & { kind?: string };
+    expect(getBody.kind).toBe("prd");
+  });
+
   it("POST / forwards autonomousPlanSession: true to taskService.create() and returns it in the response, and GET /:id round-trips it (PDR-2.1)", async () => {
     let received: Record<string, unknown> | undefined;
     const app = createTasksRoutes(
@@ -1078,7 +1156,10 @@ describe("GET /:id/events (TCS-1.2)", () => {
   it("returns 200 with an empty array when the task has zero events (not 404)", async () => {
     const task = makeTask({ id: "t-1" });
     const app = createTasksRoutes(
-      fakeTaskService({ tasks: [task], eventsResult: { events: [], total: 0 } }),
+      fakeTaskService({
+        tasks: [task],
+        eventsResult: { events: [], total: 0 },
+      }),
     );
     const parent = makeAdminParent(app);
 
@@ -1151,7 +1232,10 @@ describe("GET /:id/events (TCS-1.2)", () => {
   it("agent token that is the assignee -> 200 (ownership enforced, not blanket-denied)", async () => {
     const task = makeTask({ id: "t-1", assignee: "agent-1" });
     const app = createTasksRoutes(
-      fakeTaskService({ tasks: [task], eventsResult: { events: [], total: 0 } }),
+      fakeTaskService({
+        tasks: [task],
+        eventsResult: { events: [], total: 0 },
+      }),
     );
     const parent = makeAgentParent(app, "agent-1", []);
 

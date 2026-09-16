@@ -35,6 +35,27 @@ enum TaskStatus {
   cancelled
 }
 
+// ─── Task Kind ────────────────────────────────────────────────────────────────
+// What a task record *is*, as opposed to what state it is in (TaskStatus).
+//
+//   dev — an ordinary work item, executed by /shipwright:dev-task. The default
+//         for every task, including every row that predates this enum.
+//   prd — a product-spec task awaiting an autonomous planning pass, dispatched
+//         as /shipwright:plan-session {repo} {session} --autonomous {id}. Never
+//         part of the ?ready=true set (ready.ts excludes it) — a PRD task has no
+//         dependency graph to resolve and must not be picked up as dev work.
+//
+// TKD-1.1: supersedes the boolean `autonomousPlanSession` flag below, which is
+// retained (column, API field, and `?autonomousPlanSession=` filter) for the
+// transition window. The task-store normalizes between the two on every write
+// — see normalizeTaskKind() in src/task-service.ts — so the pair stays
+// self-consistent and the legacy filter keeps returning the same rows.
+
+enum TaskKind {
+  dev
+  prd
+}
+
 // ─── Task ─────────────────────────────────────────────────────────────────────
 // Canonical task record. Mirrors the store.ts Task interface (minus prNumber,
 // prOpenedAt, file, size) plus claim/liveness fields for multi-agent execution.
@@ -78,6 +99,9 @@ model Task {
   model                 String? // "haiku" | "sonnet" | "opus"
   complexity            Int?
   hitl                  Boolean?
+  kind                  TaskKind @default(dev)
+  // Legacy spelling of `kind == prd` (TKD-1.1). Still written/read by the
+  // API; kept in sync with `kind` by normalizeTaskKind() on every write.
   autonomousPlanSession Boolean?
 
   // ─── Skip tracking (auto-block after repeated no-op dispatches) ───

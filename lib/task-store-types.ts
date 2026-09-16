@@ -11,7 +11,10 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** List tasks */
+        /**
+         * List tasks
+         * @description Returns `{ tasks, total, limit, offset, scopeDegraded }`. `?ready=true` (or `?state=ready`) is an unpaginated convenience endpoint that computes over the whole dependency graph and returns only tasks that are `pending`, non-HITL, non-autonomous-plan-session, free of a fresh same-branch in-progress sibling, and fully dependency-satisfied — always oldest-first. `?state=blocked` similarly walks the whole graph to compute each task's `blockedBy` entries. Agent tokens with repo scope see the OR union of tasks assigned to them and unassigned pool tasks in their scoped repos; agent tokens without repo scope see only their own assigned tasks; admin tokens see everything matching the filters.
+         */
         get: {
             parameters: {
                 query?: {
@@ -29,6 +32,7 @@ export interface paths {
                     offset?: string;
                     ready?: "true" | "false";
                     hitl?: "true" | "false";
+                    kind?: "dev" | "prd";
                     autonomousPlanSession?: "true" | "false";
                     sort?: "asc" | "desc";
                     updatedSince?: string;
@@ -60,7 +64,10 @@ export interface paths {
             };
         };
         put?: never;
-        /** Create a task */
+        /**
+         * Create a task
+         * @description Creates a single task. `title`, `status`, and `repo` are required — the `repo` key must be present, though `null` is a valid value for tasks not scoped to a specific repository. Agent tokens leave `assignee` as supplied by the caller, defaulting to `null` (unassigned/pool task) when omitted. Returns `201` with the created task; an existing `id` collision is not given dedicated handling and surfaces as an unhandled error rather than a clean `409` (use `POST /tasks/bulk` for collision-safe inserts).
+         */
         post: {
             parameters: {
                 query?: never;
@@ -195,7 +202,10 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Get distinct session and repo values */
+        /**
+         * Get distinct session and repo values
+         * @description Returns distinct `sessions`, `repos` (`org/repo` strings), and `orgs` (the `org` prefix of each `repo`) across the caller's visible task set — useful for populating filter dropdowns in a UI.
+         */
         get: {
             parameters: {
                 query?: never;
@@ -240,7 +250,10 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Get a task by ID */
+        /**
+         * Get a task by ID
+         * @description Fetches a single task by its ID. Returns `404` if the task doesn't exist or is outside the calling agent token's ownership/repo scope.
+         */
         get: {
             parameters: {
                 query?: never;
@@ -292,7 +305,10 @@ export interface paths {
         };
         put?: never;
         post?: never;
-        /** Delete a task */
+        /**
+         * Delete a task
+         * @description Deletes a task and its TaskEvent audit rows. Agent tokens can only delete tasks within their ownership/repo scope (by `assignee`, `claimedBy`, or a `repo` in the token's scoped repos). Returns `204` on success; this write does not fire a `task.write` webhook, since the deleted row can't be sent as the event payload.
+         */
         delete: {
             parameters: {
                 query?: never;
@@ -342,7 +358,10 @@ export interface paths {
         };
         options?: never;
         head?: never;
-        /** Update a task */
+        /**
+         * Update a task
+         * @description Applies partial task fields. Agent tokens can only update tasks within their ownership/repo scope (by `assignee`, `claimedBy`, or a `repo` in the token's scoped repos) and cannot set `claimedBy`, `claimedAt`, `heartbeatAt`, or `status: 'pending'` via this route — those are managed exclusively by `/claim` and `/release` so a generic PATCH can never bypass the atomic claim protocol. Admin tokens may set any field. A common use is setting `status: 'blocked'` alongside `blockedReason` when an agent hits an unrecoverable dead end.
+         */
         patch: {
             parameters: {
                 query?: never;
@@ -416,7 +435,10 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Atomically claim a task */
+        /**
+         * Atomically claim a task
+         * @description Atomically claims a pending task via a single conditional `UPDATE ... WHERE status='pending' AND "claimedBy" IS NULL`, setting `status=in_progress`, `claimedBy`, `claimedAt`, `heartbeatAt`, and `startedAt` (or keeping it if already set) in one round-trip. Agent tokens send no body — the service pins `claimedBy` to the calling agent's ID server-side; admin tokens must supply `{ claimedBy: string }`. Returns `200` with the claimed task, or `409` if the task is already claimed or not in `pending` status. A DB-level CHECK constraint independently enforces that a row can never have `status='pending'` with a non-null `claimedBy` simultaneously, as defense-in-depth against any write path — including manual admin PATCHes — that might otherwise leave a task claimed-yet-pending.
+         */
         post: {
             parameters: {
                 query?: never;
@@ -503,7 +525,10 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Touch heartbeatAt on a claimed task */
+        /**
+         * Touch heartbeatAt on a claimed task
+         * @description Updates `heartbeatAt` to now. Agents call this periodically to renew a claim before any long-running operation (dispatching a subagent, waiting on CI) so the stale-claim reaper doesn't reclaim the task mid-pipeline. This write is deliberately excluded from both the `task.write` webhook and the TaskEvent audit trail — it's the highest-volume write path in the service and a heartbeat-only change isn't an audit-worthy event.
+         */
         post: {
             parameters: {
                 query?: never;
@@ -568,7 +593,10 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Mark a task as done */
+        /**
+         * Mark a task as done
+         * @description Sets `status=done` and `completedAt` to now, ending the task's lifecycle successfully.
+         */
         post: {
             parameters: {
                 query?: never;
@@ -633,7 +661,10 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Mark a task as blocked */
+        /**
+         * Mark a task as blocked
+         * @description Sets `status=blocked`, pausing the task (it returns to `pending` on retry). Optional body `{ reason: string }` records why.
+         */
         post: {
             parameters: {
                 query?: never;
@@ -702,7 +733,10 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Release a task back to pending */
+        /**
+         * Release a task back to pending
+         * @description Clears `claimedBy`, `claimedAt`, and `heartbeatAt`, and resets `status=pending`. Use when an agent stops work without completing or failing, so the task becomes claimable again.
+         */
         post: {
             parameters: {
                 query?: never;
@@ -767,7 +801,10 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Record a skip — increments skipCount, auto-blocks at threshold */
+        /**
+         * Record a skip — increments skipCount, auto-blocks at threshold
+         * @description Increments `skipCount` and updates `lastSkippedAt` to now. Called by orchestrators when a task is repeatedly re-selected but produces no visible outcome ([silent] dispatch). When `skipCount` crosses the threshold (3, `SPIN_DETECTION_THRESHOLD`), the task is auto-set to `status=blocked` with `blockedReason="Auto-blocked after {skipCount} consecutive skips (dispatched but found nothing to do)"` to halt further dispatches.
+         */
         post: {
             parameters: {
                 query?: never;
@@ -832,7 +869,10 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Reset skip tracking — skipCount back to 0 */
+        /**
+         * Reset skip tracking — skipCount back to 0
+         * @description Resets `skipCount` back to 0 and clears `lastSkippedAt`. Called after a human reviews and unblocks a task that was auto-blocked by the skip threshold.
+         */
         post: {
             parameters: {
                 query?: never;
@@ -895,7 +935,10 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Fetch a task's TaskEvent audit trail, ordered by `at` ascending (oldest first) */
+        /**
+         * Fetch a task's TaskEvent audit trail, ordered by `at` ascending (oldest first)
+         * @description Returns `{ events, total, limit, offset }` — the task's append-only `TaskEvent` rows recording field-level state transitions, oldest first. `total` counts all events regardless of `limit`/`offset` (default `limit=50`, `offset=0`). Returns `404` if the task doesn't exist or is outside the caller's scope.
+         */
         get: {
             parameters: {
                 query?: {
@@ -963,7 +1006,10 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** List all tokens */
+        /**
+         * List all tokens
+         * @description Admin-only. Returns token metadata (hash, label, agentId) for every token — raw token values are never returned once past creation.
+         */
         get: {
             parameters: {
                 query?: never;
@@ -994,7 +1040,10 @@ export interface paths {
             };
         };
         put?: never;
-        /** Create a new token — raw value returned exactly once */
+        /**
+         * Create a new token — raw value returned exactly once
+         * @description Admin-only. Body is optional: `{ label?, agentId? }`. Omitting `agentId` creates an unrestricted admin token; supplying it creates an agent-scoped token. Only the token's SHA-256 hash is persisted — the raw value is included in this response and never retrievable again.
+         */
         post: {
             parameters: {
                 query?: never;
@@ -1044,7 +1093,10 @@ export interface paths {
         get?: never;
         put?: never;
         post?: never;
-        /** Revoke a token */
+        /**
+         * Revoke a token
+         * @description Admin-only. Soft-deletes the token by setting `revokedAt` — the record is not removed, so its history stays intact, but the raw token stops authenticating requests.
+         */
         delete: {
             parameters: {
                 query?: never;
@@ -1087,7 +1139,10 @@ export interface paths {
         };
         options?: never;
         head?: never;
-        /** Update token label and/or agentId */
+        /**
+         * Update token label and/or agentId
+         * @description Admin-only. Body: `{ label?, agentId? }`. Returns `400` if the target token has already been revoked.
+         */
         patch: {
             parameters: {
                 query?: never;
@@ -1150,7 +1205,10 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** List pull requests */
+        /**
+         * List pull requests
+         * @description Returns `{ prs, total, limit, offset }`. `?ready=true` returns only unclaimed PRs (`claimedBy IS NULL`); `?blocked=true` returns PRs where `pr.blocked===true` OR a linked task has `status='blocked'` (resolved live via `(Task.repo, Task.pr)`, so a PR shared by several bundled tasks is blocked if any one of them is). `repo`/`org` are repeatable query params combined via AND; `sort` orders by `createdAt` (`asc` default).
+         */
         get: {
             parameters: {
                 query?: {
@@ -1201,7 +1259,10 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Claim a pull request (atomic) */
+        /**
+         * Claim a pull request (atomic)
+         * @description Atomic via Postgres row locking, keyed on `(repo, prNumber)`. No existing record creates and returns `201` (a concurrent INSERT loser hits the `@@unique([repo, prNumber])` constraint and gets `409`). Against an existing record, the conflict conditions are re-checked inside the UPDATE's own WHERE clause so only one writer can win: same `commitSha` + same `phase` + already claimed by another agent returns `409` (phase locked); already claimed + same `commitSha` + `reviewState !== pending` (review phase only) returns `409` (already reviewed at this commit); otherwise the row is updated and `200` returned (new cycle). Agent tokens pin `claimedBy` to their own ID; admin tokens supply it in the body. Optional `phase` (default `review`) sets the pipeline phase — `patch`/`deploy` phases preserve `reviewState` as-is rather than resetting it.
+         */
         post: {
             parameters: {
                 query?: never;
@@ -1268,7 +1329,10 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Atomic find-and-claim of oldest eligible PR */
+        /**
+         * Atomic find-and-claim of oldest eligible PR
+         * @description Atomically finds and claims the oldest eligible PR not yet claimed by the calling agent, in one round-trip — useful for agents implementing a pull-based queue instead of manually claiming a specific PR. Optional `maxConcurrent` (default `1`) caps how many PRs the agent may hold at once; if the agent already has that many claimed, returns `204`. Agent tokens see only PRs in their configured repo scope; admin tokens see all. Returns `200` with `{ pr, phase }`, or `204` if nothing eligible.
+         */
         post: {
             parameters: {
                 query?: never;
@@ -1322,7 +1386,10 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Fetch a single pull request */
+        /**
+         * Fetch a single pull request
+         * @description Fetches a single PR record by its ID. Returns `404` if not found.
+         */
         get: {
             parameters: {
                 query?: never;
@@ -1359,7 +1426,10 @@ export interface paths {
         delete?: never;
         options?: never;
         head?: never;
-        /** Update pull request fields */
+        /**
+         * Update pull request fields
+         * @description Writable fields: `staged`, `commitSha`, `reviewedCommitSha`, `agentId`, `state`, `mergedAt`, `reviewState`, `reviewedAt`, `phase`, `readyForReviewAt`, `readyForPatchAt`, `readyForDeployAt`, `blocked`, `blockedReason` — every other field is managed by a lifecycle endpoint instead. Returns `400` if no writable field is provided. Unlike the lifecycle endpoints, PATCH does not record a PullRequestEvent audit row; it's meant for late-stage corrections (e.g. force-setting `state=merged` after GitHub confirms it) that don't need transactional field-diff auditing. Setting `state` to `merged`/`closed`, or `reviewState` to `posted`/`approved`, clears the claim fields (`claimedBy`, `claimedAt`, `heartbeatAt`, `phase`) as a side effect so a completed PR isn't left held by a stale claim. Setting `reviewState=posted` together with `reviewedCommitSha` records the commit-level dedup marker the review phase's staged-review guard reads to decide whether re-review is needed.
+         */
         patch: {
             parameters: {
                 query?: never;
@@ -1415,7 +1485,10 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Touch heartbeatAt for a claimed PR */
+        /**
+         * Touch heartbeatAt for a claimed PR
+         * @description Updates `heartbeatAt` to now to signal the claiming agent is still working. Deliberately excluded from the PullRequestEvent audit trail — a bare liveness ping recording would be a guaranteed no-op, and keeping this a single cheap UPDATE avoids dominating write volume.
+         */
         post: {
             parameters: {
                 query?: never;
@@ -1453,7 +1526,10 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Mark PR review as complete (reviewState=posted) */
+        /**
+         * Mark PR review as complete (reviewState=posted)
+         * @description Sets `reviewState=posted`, increments `reviewCycles`, sets `reviewedAt`, and clears `claimedBy`/`claimedAt`/`heartbeatAt`/`phase` so the review claim is released as soon as the review is done. Records field-level transitions as PullRequestEvent rows.
+         */
         post: {
             parameters: {
                 query?: never;
@@ -1500,7 +1576,10 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Increment patchCycles and conditionally reset reviewState=pending; optionally track a CI-failure streak via ciFailureSignature */
+        /**
+         * Increment patchCycles and conditionally reset reviewState=pending; optionally track a CI-failure streak via ciFailureSignature
+         * @description Increments `patchCycles`, sets `patchedAt`, and clears `claimedBy`/`claimedAt`/`heartbeatAt`/`phase`. `reviewState` is reset conditionally based on the optional `commitSha` field: omitted resets unconditionally to `pending`; provided and differing from the stored `commitSha` also resets to `pending` and updates `commitSha`; provided and matching leaves `reviewState` untouched (a no-op patch cycle). The optional `ciFailureSignature` field tracks consecutive patch cycles hitting the same CI failure — a matching signature increments `consecutiveCiFailureCount`, a differing or absent one resets it to 1; crossing the threshold (3, `SPIN_DETECTION_THRESHOLD`) auto-sets `blocked=true` with a descriptive `blockedReason`. Records field-level transitions as PullRequestEvent rows.
+         */
         post: {
             parameters: {
                 query?: never;
@@ -1551,7 +1630,10 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Release a claim (reviewState=pending, claimedBy cleared) */
+        /**
+         * Release a claim (reviewState=pending, claimedBy cleared)
+         * @description Clears `claimedBy`, `claimedAt`, and `heartbeatAt`. Resets `reviewState=pending` unless it's already a terminal value (`posted`/`approved`), in which case `reviewState` is left untouched. Records field-level transitions as PullRequestEvent rows.
+         */
         post: {
             parameters: {
                 query?: never;
@@ -1598,7 +1680,10 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Record a skip — increments skipCount, auto-blocks at threshold */
+        /**
+         * Record a skip — increments skipCount, auto-blocks at threshold
+         * @description Increments `skipCount` and updates `lastSkippedAt` to now. When `skipCount` crosses the threshold (3), auto-sets `blocked=true` and `blockedReason="Auto-blocked after {skipCount} consecutive skips (dispatched but found nothing to do)"`. Mirrors `POST /tasks/:id/skip`. Records field-level transitions as PullRequestEvent rows.
+         */
         post: {
             parameters: {
                 query?: never;
@@ -1645,7 +1730,10 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Reset skip tracking — skipCount back to 0; also clears blocked/blockedReason if the PR was blocked by the skip mechanism */
+        /**
+         * Reset skip tracking — skipCount back to 0; also clears blocked/blockedReason if the PR was blocked by the skip mechanism
+         * @description Resets `skipCount` to 0 and clears `lastSkippedAt`. If the PR is currently blocked with a `blockedReason` matching the skip-auto-block message (contains "consecutive skips"), also clears `blocked=false` and `blockedReason=null` in the same update — a block set by a different mechanism (e.g. the CI-failure-streak auto-block from `POST /:id/patch`) is left untouched. Records field-level transitions as PullRequestEvent rows.
+         */
         post: {
             parameters: {
                 query?: never;
@@ -1692,7 +1780,10 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Append a review/patch finding to a PR — source:'patch' may only submit disposition:'rejected' */
+        /**
+         * Append a review/patch finding to a PR — source:'patch' may only submit disposition:'rejected'
+         * @description Appends a `PrFinding` row: `{ ref, disposition, source, evidence, at?, agentId? }`, where `disposition` is one of `resolved`, `superseded`, `rejected`, and `source` is one of `review`, `patch`. Server-enforced authority rule: `source:"patch"` may only submit `disposition:"rejected"` (patch cannot unilaterally resolve or supersede a finding it didn't originate) — any other combination returns `400`. `source:"review"` may submit any disposition. Returns `201` with the created finding.
+         */
         post: {
             parameters: {
                 query?: never;
@@ -1750,7 +1841,10 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Fetch a PR's PullRequestEvent audit trail, ordered by `at` ascending (oldest first) */
+        /**
+         * Fetch a PR's PullRequestEvent audit trail, ordered by `at` ascending (oldest first)
+         * @description Returns `{ events, total, limit, offset }` — the PR's append-only `PullRequestEvent` rows recording field-level state transitions, oldest first. `total` counts all events regardless of `limit`/`offset` (default `limit=50`, `offset=0`). Returns `404` if the PR doesn't exist.
+         */
         get: {
             parameters: {
                 query?: {
@@ -1800,7 +1894,10 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** List sessions */
+        /**
+         * List sessions
+         * @description Returns `{ sessions, total, limit, offset }` — each session's Task rows rolled up into a single object (`state`, `waitingSince`, `lastActivityAt`, per-status `counts`, distinct `agentIds`/`repos`, `waitingTasks`) flattened with the Session row's own fields. Omitting `?state` defaults to non-archived, non-closed sessions. Every agent token (agentId set) is scoped: it only sees sessions with at least one qualifying task — one where `assignee === agentId` OR the task's repo is in the agent's resolved scope; a token with no resolved repos degrades to assignee-only matching rather than unrestricted visibility. Only admin tokens see every session unrestricted.
+         */
         get: {
             parameters: {
                 query?: {
@@ -1853,7 +1950,10 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Get a session by slug */
+        /**
+         * Get a session by slug
+         * @description Returns the same flattened session+rollup shape as the list route. Returns `404` if the session doesn't exist, or if an agent token has no qualifying task in it (same visibility rule as list) — the two cases are indistinguishable to the caller by design.
+         */
         get: {
             parameters: {
                 query?: never;
@@ -1899,7 +1999,10 @@ export interface paths {
         delete?: never;
         options?: never;
         head?: never;
-        /** Rename/archive a session — admin-only */
+        /**
+         * Rename/archive a session — admin-only
+         * @description Admin-only, no exceptions — agent tokens get `403` regardless of ownership. Body: `{ title?: string | null, archived?: boolean }`, both optional (an empty body is a no-op). `title: null` clears the title; `archived: true` sets `archivedAt`/`archivedBy`, `archived: false` clears both. Returns `404` if the session doesn't exist.
+         */
         patch: {
             parameters: {
                 query?: never;
@@ -2039,7 +2142,17 @@ export interface components {
             complexity?: number | null;
             /** @example true */
             hitl?: boolean | null;
-            /** @example true */
+            /**
+             * @description What the task is: `dev` (ordinary work item, the default) or `prd` (a product spec awaiting an autonomous plan session). A `prd` task is never part of the `?ready=true` set.
+             * @default dev
+             * @example dev
+             * @enum {string}
+             */
+            kind: "dev" | "prd";
+            /**
+             * @description Deprecated (TKD-1.1) — the legacy spelling of `kind: "prd"`. Still accepted on write and still filterable; the task store keeps it in sync with `kind`.
+             * @example true
+             */
             autonomousPlanSession?: boolean | null;
             /**
              * @description Consecutive skip count. Auto-blocks (hitl+blockedReason) once it crosses the threshold (3).
@@ -2143,6 +2256,17 @@ export interface components {
             type?: string;
             /** @example manual */
             source?: string;
+            /**
+             * @description What the task is (TKD-1.1). Defaults to `dev`. The legacy `autonomousPlanSession: true` boolean is still accepted as a synonym for `kind: "prd"` and is normalized server-side; an explicit `kind` wins when both are sent.
+             * @example dev
+             * @enum {string}
+             */
+            kind?: "dev" | "prd";
+            /**
+             * @description Deprecated (TKD-1.1) — the legacy spelling of `kind: "prd"`.
+             * @example true
+             */
+            autonomousPlanSession?: boolean;
         };
         BulkInsertResponse: {
             /** @example 3 */

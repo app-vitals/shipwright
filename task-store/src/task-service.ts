@@ -20,7 +20,13 @@ import {
   NotFoundError,
   WebhookDeliveryError,
 } from "./errors.ts";
-import type { Prisma, PrismaClient, Task, TaskEvent } from "./index.ts";
+import type {
+  Prisma,
+  PrismaClient,
+  Task,
+  TaskEvent,
+  TaskKind,
+} from "./index.ts";
 import { buildRepoOrgWhere } from "./lib/repo-org-filter.ts";
 import { resolveReadyTasks } from "./ready.ts";
 import { SessionService } from "./session-service.ts";
@@ -133,6 +139,48 @@ export function bulkTxTimeoutMs(taskCount: number): number {
 }
 
 /**
+ * TKD-1.1 — reconcile the `kind` enum with its legacy spelling,
+ * `autonomousPlanSession`, on every write path (create / bulk / update).
+ *
+ * Both are accepted for the duration of the transition window, and each one
+ * back-fills the other so a row never says "prd" in one field and "dev" in the
+ * other: `kind` is what ready.ts filters on, while `?autonomousPlanSession=`
+ * is still a live query filter, so a write that set only one of them would be
+ * invisible to the other.
+ *
+ * Precedence: an explicitly-supplied `kind` always wins — it's the current
+ * spelling, so a caller that sends both is taken at its most specific word.
+ * "Wins" means it *overwrites* a contradicting legacy flag rather than
+ * deferring to it: `{ kind: "dev", autonomousPlanSession: true }` is stored as
+ * `kind='dev', autonomousPlanSession=false`. Leaving the caller's flag intact
+ * would persist a row that is "dev" to ready.ts and `?kind=` but "prd" to the
+ * deprecated `?autonomousPlanSession=true` filter — exactly the divergence
+ * this function exists to prevent.
+ * A write that mentions neither field is returned untouched, leaving the
+ * column's `dev` default (create) or the stored value (update) in place.
+ *
+ * Mutates nothing — returns a shallow copy, so the caller's object is safe to
+ * reuse. A field expressed as a Prisma update-operation wrapper
+ * (`{ set: … }`) rather than a plain value is left strictly alone: no HTTP
+ * caller sends that shape (PATCH bodies are plain JSON), and guessing at it
+ * would risk clobbering a deliberate write.
+ */
+export function normalizeTaskKind<
+  T extends { kind?: unknown; autonomousPlanSession?: unknown },
+>(data: T): T {
+  const { kind, autonomousPlanSession } = data;
+  if (kind !== undefined) {
+    // Explicit kind wins — force the legacy flag to agree with it, whether the
+    // caller omitted it or contradicted it. Anything else lets a single
+    // request persist a row that disagrees with itself.
+    if (typeof kind !== "string") return data;
+    return { ...data, autonomousPlanSession: kind === "prd" };
+  }
+  if (typeof autonomousPlanSession !== "boolean") return data;
+  return { ...data, kind: autonomousPlanSession ? "prd" : "dev" };
+}
+
+/**
  * Parses an `updatedSince` filter value into a Date, matching the
  * BadRequestError(400) pattern used for `repo`/`prNumber` validation
  * elsewhere in the request stack rather than letting an unparseable value
@@ -229,6 +277,7 @@ function matchesTaskFilters(task: Task, filters: TaskListPostFilters): boolean {
   if (filters.assignee !== undefined && task.assignee !== filters.assignee)
     return false;
   if (filters.hitl !== undefined && task.hitl !== filters.hitl) return false;
+  if (filters.kind !== undefined && task.kind !== filters.kind) return false;
   if (
     filters.autonomousPlanSession !== undefined &&
     task.autonomousPlanSession !== filters.autonomousPlanSession
@@ -279,6 +328,10 @@ export interface TaskListPostFilters {
   branch?: string;
   assignee?: string;
   hitl?: boolean;
+  /** TaskKind narrowing (TKD-1.1). Note `kind: "prd"` always yields an empty
+   * ready set — ready.ts excludes that slice structurally. */
+  kind?: TaskKind;
+  /** @deprecated Legacy spelling of `kind` (TKD-1.1). Still honored. */
   autonomousPlanSession?: boolean;
 }
 
@@ -307,6 +360,9 @@ export interface TaskListFilters {
   pr?: number;
   branch?: string;
   hitl?: boolean;
+  /** TaskKind narrowing (TKD-1.1) — `?kind=dev` / `?kind=prd`. */
+  kind?: TaskKind;
+  /** @deprecated Legacy spelling of `kind` (TKD-1.1). Still honored. */
   autonomousPlanSession?: boolean;
   limit?: number;
   offset?: number;
@@ -417,6 +473,7 @@ export class TaskService implements TaskServiceLike {
     if (filters.pr !== undefined) where.pr = filters.pr;
     if (filters.branch !== undefined) where.branch = filters.branch;
     if (filters.hitl !== undefined) where.hitl = filters.hitl;
+    if (filters.kind !== undefined) where.kind = filters.kind;
     if (filters.autonomousPlanSession !== undefined)
       where.autonomousPlanSession = filters.autonomousPlanSession;
     if (filters.updatedSince) {
@@ -675,8 +732,9 @@ export class TaskService implements TaskServiceLike {
    * table, so this is functionally unchanged for callers not using session.
    */
   async create(data: Prisma.TaskCreateInput): Promise<Task> {
+    const normalized = normalizeTaskKind(data);
     return this.prisma.$transaction(async (tx) => {
-      const task = await tx.task.create({ data });
+      const task = await tx.task.create({ data: normalized });
       await this.sessionService.upsert(tx, task.session);
       // Fires after the task row + its session upsert have both landed, still
       // inside this transaction — a thrown WebhookDeliveryError propagates
@@ -733,7 +791,7 @@ export class TaskService implements TaskServiceLike {
         for (const task of tasks) {
           let created: Task;
           try {
-            created = await tx.task.create({ data: task });
+            created = await tx.task.create({ data: normalizeTaskKind(task) });
           } catch (err: unknown) {
             // P2002 = unique constraint violation (id already exists) —
             // translate to ConflictError so it propagates uncaught and rolls
@@ -767,10 +825,14 @@ export class TaskService implements TaskServiceLike {
   }
 
   async update(id: string, data: Prisma.TaskUpdateInput): Promise<Task> {
+    const normalized = normalizeTaskKind(data);
     try {
       return await this.prisma.$transaction(async (tx) => {
         const existing = await tx.task.findUnique({ where: { id } });
-        const record = await tx.task.update({ where: { id }, data });
+        const record = await tx.task.update({
+          where: { id },
+          data: normalized,
+        });
         // update() has no single owning actor the way claim/release/recordSkip
         // do (a generic PATCH may be issued by any caller) — attribute to the
         // task's current claimant if one holds it, else "system". Mirrors

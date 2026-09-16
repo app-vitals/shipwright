@@ -20,7 +20,7 @@ function makeTask(overrides: Partial<ReadyTaskLike> = {}): ReadyTaskLike {
     dependencies: [],
     pr: null,
     hitl: null,
-    autonomousPlanSession: null,
+    kind: "dev",
     claimedAt: null,
     heartbeatAt: null,
     ...overrides,
@@ -53,10 +53,50 @@ describe("resolveReadyTasks", () => {
     expect(result).toEqual([]);
   });
 
-  it("excludes a task with autonomousPlanSession === true even if otherwise ready", async () => {
-    const task = makeTask({ id: "t1", autonomousPlanSession: true });
+  it("excludes a task with kind === 'prd' even if otherwise ready (TKD-1.1)", async () => {
+    const task = makeTask({ id: "t1", kind: "prd" });
     const result = await resolveReadyTasks([task], isPrMergedShouldNotBeCalled);
     expect(result).toEqual([]);
+  });
+
+  it("includes a task with kind === 'dev' (the default for every pre-TKD-1.1 row)", async () => {
+    const task = makeTask({ id: "t1", kind: "dev" });
+    const result = await resolveReadyTasks([task], isPrMergedShouldNotBeCalled);
+    expect(result).toEqual([task]);
+  });
+
+  // Rolling-deploy skew: an old task-store pod still writes the legacy flag
+  // and leaves `kind` at the migration's 'dev' default. A kind-only exclusion
+  // would hand that PRD task to dev-task — so the legacy check is kept
+  // alongside the enum and the exclusion fails closed.
+  it("excludes a task with the legacy autonomousPlanSession === true even when kind is still 'dev' (rolling-deploy skew)", async () => {
+    const task = makeTask({
+      id: "t1",
+      kind: "dev",
+      autonomousPlanSession: true,
+    });
+    const result = await resolveReadyTasks([task], isPrMergedShouldNotBeCalled);
+    expect(result).toEqual([]);
+  });
+
+  it("excludes a task with the legacy autonomousPlanSession === true and no kind at all (pre-TKD-1.1 row shape)", async () => {
+    const task = makeTask({
+      id: "t1",
+      kind: undefined,
+      autonomousPlanSession: true,
+    });
+    const result = await resolveReadyTasks([task], isPrMergedShouldNotBeCalled);
+    expect(result).toEqual([]);
+  });
+
+  it("includes a dev task whose legacy flag is false or null (the whole pre-PDR-2.1 queue stays ready)", async () => {
+    const explicitFalse = makeTask({ id: "t1", autonomousPlanSession: false });
+    const stillNull = makeTask({ id: "t2", autonomousPlanSession: null });
+    const result = await resolveReadyTasks(
+      [explicitFalse, stillNull],
+      isPrMergedShouldNotBeCalled,
+    );
+    expect(result.map((t) => t.id)).toEqual(["t1", "t2"]);
   });
 
   it("includes a pending task with no dependencies", async () => {

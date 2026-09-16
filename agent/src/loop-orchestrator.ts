@@ -1027,23 +1027,30 @@ export function createLoopOrchestrator(
               )
             : [];
 
-        // Dedupe by id, plan-tagged copy winning. The two providers' queries
-        // overlap: check-plan asks for
-        // `?autonomousPlanSession=true&status=pending`, while
-        // check-dev-task's `?ready=true` never passes
-        // `autonomousPlanSession`, so the task-store doesn't exclude flagged
-        // tasks there either — a flagged, pending, hitl-false task whose
-        // dependencies are satisfied comes back from BOTH. Both copies carry
-        // the identical `createdAt`, and selectNextWorkItem's strict `<`
-        // keeps the first occurrence on a tie, so without this the untagged
-        // dev-task copy would always win and the flagged task would be
-        // dispatched as `/shipwright:dev-task` — never reaching plan-session.
+        // Dedupe by id, plan-tagged copy winning — a defensive backstop, not
+        // a workaround. The two providers' pools are already disjoint in
+        // practice: check-plan asks for the PRD slice (buildPrdTaskQuery), and
+        // check-dev-task's `?ready=true` excludes it outright — task-store's
+        // ready.ts drops a task whose `kind` is "prd" OR whose legacy
+        // `autonomousPlanSession` is true (PDR-2.2's check, kept alongside the
+        // enum by TKD-1.1 so the exclusion fails closed), so a PRD task cannot
+        // legitimately appear in dev-task's list at all.
         //
-        // Done here rather than by adding `autonomousPlanSession: "false"` to
-        // check-dev-task's ready query because Task.autonomousPlanSession is
-        // nullable (`Boolean?`, no default) and the task-store filters it by
-        // strict equality — `?autonomousPlanSession=false` would drop every
-        // task whose column is still NULL, i.e. the entire pre-PDR-2.1 queue.
+        // The dedupe stays because that disjointness is enforced server-side,
+        // one deploy away: an agent binary running against an older task-store
+        // (or a row whose `kind`/`autonomousPlanSession` pair was hand-edited
+        // out of sync) can still surface the same task from both providers.
+        // When that happens both copies carry an identical `createdAt`, and
+        // selectNextWorkItem's strict `<` keeps the first occurrence on a tie,
+        // so the untagged dev-task copy would win and the PRD task would be
+        // dispatched as `/shipwright:dev-task` — never reaching plan-session.
+        // Correcting that misroute locally is far cheaper than the alternative.
+        //
+        // Still done here rather than by narrowing check-dev-task's ready
+        // query with a `?kind=dev` param: the exclusion belongs in ready.ts
+        // (where it already is), and the task-store filters `kind` by strict
+        // equality, so a client-side narrowing would only duplicate a
+        // server-side guarantee.
         const planTaskIds = new Set(planCandidates.map((t) => t.id));
         const tasks: WorkTaskCandidate[] = [
           ...devTaskCandidates.filter((t) => !planTaskIds.has(t.id)),

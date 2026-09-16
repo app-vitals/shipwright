@@ -14,7 +14,7 @@
  * Admin tokens (agentId null) have no restrictions.
  *
  * Routes:
- *   GET    /tasks               list (?status, ?state=open|closed, ?session, ?assignee, ?pr, ?branch, ?hitl=true|false, ?autonomousPlanSession=true|false, ?limit, ?offset, ?ready=true)
+ *   GET    /tasks               list (?status, ?state=open|closed, ?session, ?assignee, ?pr, ?branch, ?hitl=true|false, ?kind=dev|prd, ?autonomousPlanSession=true|false, ?limit, ?offset, ?ready=true)
  *                              returns { tasks, total, scopeDegraded } — scopeDegraded
  *                              mirrors the auth middleware's scopeDegraded context var
  *                              (true only when the agent's repo-scope resolver call itself
@@ -46,7 +46,7 @@ import { OpenAPIHono, createRoute } from "@hono/zod-openapi";
 import { readJson } from "@shipwright/lib/http";
 import type { TaskStoreAuthEnv } from "../auth.ts";
 import { BadRequestError, ForbiddenError, NotFoundError } from "../errors.ts";
-import type { Prisma } from "../index.ts";
+import type { Prisma, TaskKind } from "../index.ts";
 import { CLOSED_STATUSES, OPEN_STATUSES } from "../statuses.ts";
 import {
   BulkInsertBodySchema,
@@ -655,6 +655,9 @@ export function createTasksRoutes(
         : c.req.query("autonomousPlanSession") === "false"
           ? false
           : undefined;
+    // TKD-1.1. The zod query schema already rejects anything outside the enum
+    // with a 400, so a present value is always "dev" | "prd" here.
+    const kind = c.req.query("kind") as TaskKind | undefined;
 
     // Note: ?updatedSince, ?limit, and ?offset are intentionally NOT
     // threaded into listReady()/listBlocked() below (?sort applies only to
@@ -680,6 +683,7 @@ export function createTasksRoutes(
           branch: c.req.query("branch"),
           assignee: c.req.query("assignee"),
           hitl,
+          kind,
           autonomousPlanSession,
         },
       );
@@ -702,6 +706,7 @@ export function createTasksRoutes(
           branch: c.req.query("branch"),
           assignee: c.req.query("assignee"),
           hitl,
+          kind,
           autonomousPlanSession,
         },
       );
@@ -737,6 +742,7 @@ export function createTasksRoutes(
       pr: prRaw !== undefined ? Number.parseInt(prRaw, 10) : undefined,
       branch: c.req.query("branch"),
       hitl,
+      kind,
       autonomousPlanSession,
       limit:
         limitRaw !== undefined

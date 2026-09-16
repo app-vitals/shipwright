@@ -12,7 +12,11 @@
 
 import { describe, expect, test } from "bun:test";
 import type { Task } from "./check-helpers.ts";
-import { type CheckPlanDeps, getPlanCandidates } from "./check-plan.ts";
+import {
+  buildPrdTaskQuery,
+  type CheckPlanDeps,
+  getPlanCandidates,
+} from "./check-plan.ts";
 import { FixedClock } from "./clock.ts";
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -44,7 +48,7 @@ function makeDeps(options: MakeDepsOptions = {}): CheckPlanDeps {
   const agentId = options.agentId ?? MY_AGENT_ID;
 
   return {
-    getAutonomousPlanTasks: async (): Promise<Task[]> => planTasks,
+    getPrdTasks: async (): Promise<Task[]> => planTasks,
     clock,
     agentId,
   };
@@ -138,7 +142,7 @@ describe("getPlanCandidates", () => {
   });
 
   // ─── Human-escalation gate ─────────────────────────────────────────────────
-  // The `?autonomousPlanSession=true&status=pending` query carries no hitl
+  // buildPrdTaskQuery()'s task-store query carries no hitl
   // filter (Task.hitl is nullable, so `?hitl=false` would drop the entire
   // NULL-hitl queue), so the gate lives in the mapper via
   // isTaskBlockedForDispatch — matching check-review/check-patch/check-deploy.
@@ -177,5 +181,95 @@ describe("getPlanCandidates", () => {
       }),
     );
     expect(result.map((t) => t.id)).toEqual(["PDR-2"]);
+  });
+});
+
+// ─── Task-store query shape (TKD-1.1) ─────────────────────────────────────────
+
+/**
+ * Mirrors how the task-store evaluates a list query: TaskService.list()
+ * (`task-store/src/task-service.ts`) assigns every supplied filter onto a
+ * single Prisma `where` object, so a row is returned only if it satisfies
+ * EVERY param — a strict AND, never an OR. Query params arrive as strings, so
+ * each row field is compared stringified.
+ */
+function matchesQuery(
+  query: URLSearchParams,
+  row: Record<string, unknown>,
+): boolean {
+  return [...query.entries()].every(
+    ([key, value]) => String(row[key]) === value,
+  );
+}
+
+describe("buildPrdTaskQuery", () => {
+  test("asks the task store for still-pending PRD tasks", () => {
+    const query = buildPrdTaskQuery();
+    expect(query.get("autonomousPlanSession")).toBe("true");
+    expect(query.get("status")).toBe("pending");
+  });
+
+  // The agent and the task-store deploy independently, and the task-store
+  // ignores query params it doesn't recognize instead of rejecting them. On a
+  // task-store that predates TKD-1.1, a kind-only query would silently widen
+  // to `?status=pending` — every pending task becomes a plan candidate and
+  // ordinary dev tasks get dispatched as `/shipwright:plan-session
+  // --autonomous`. The legacy flag is what keeps the pool narrow on both old
+  // and new stores.
+  test("sends the legacy autonomousPlanSession flag, not kind, for the transition window", () => {
+    expect(buildPrdTaskQuery().has("kind")).toBe(false);
+  });
+
+  test("sends no filter beyond the legacy flag and status", () => {
+    expect([...buildPrdTaskQuery().keys()].sort()).toEqual([
+      "autonomousPlanSession",
+      "status",
+    ]);
+  });
+
+  // The regression this shape exists to prevent: sending `kind=prd` alongside
+  // the legacy flag ANDs the two, and the mid-rollout divergence row (an old
+  // task-store pod wrote `autonomousPlanSession: true` while `kind` stayed at
+  // the migration's `dev` default) fails the `kind` conjunct. task-store's
+  // ready.ts already excludes that row from the dev-task pool via an OR, so an
+  // AND-ed plan query would leave it invisible to BOTH providers forever.
+  test("still selects the mid-rollout divergence row (kind='dev' + legacy flag true)", () => {
+    expect(
+      matchesQuery(buildPrdTaskQuery(), {
+        kind: "dev",
+        autonomousPlanSession: true,
+        status: "pending",
+      }),
+    ).toBe(true);
+  });
+
+  test("selects an ordinary PRD row whose kind and legacy flag agree", () => {
+    expect(
+      matchesQuery(buildPrdTaskQuery(), {
+        kind: "prd",
+        autonomousPlanSession: true,
+        status: "pending",
+      }),
+    ).toBe(true);
+  });
+
+  test("does not select an ordinary pending dev task", () => {
+    expect(
+      matchesQuery(buildPrdTaskQuery(), {
+        kind: "dev",
+        autonomousPlanSession: false,
+        status: "pending",
+      }),
+    ).toBe(false);
+  });
+
+  test("does not select a PRD task that is no longer pending", () => {
+    expect(
+      matchesQuery(buildPrdTaskQuery(), {
+        kind: "prd",
+        autonomousPlanSession: true,
+        status: "in_progress",
+      }),
+    ).toBe(false);
   });
 });

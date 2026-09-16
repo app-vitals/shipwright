@@ -8,11 +8,13 @@
  * candidate mapper, an async collector, and a buildProductionDeps() wiring
  * over createTaskStoreClient) — but queries a different slice of the task
  * store. Where dev-task asks for `?ready=true` (dependency-resolved work
- * items), this phase asks for `?autonomousPlanSession=true&status=pending`:
- * PRD tasks that a human flagged for autonomous planning and that nobody has
- * picked up yet. These are the tasks PDR-3.1's autonomous plan-session mode
- * consumes, and they are deliberately NOT filtered by `ready` — a PRD task
- * awaiting planning has no dependency graph to resolve.
+ * items), this phase asks for `?autonomousPlanSession=true&status=pending`
+ * (TKD-1.1 — the legacy spelling is what the query still sends during the
+ * transition window; see buildPrdTaskQuery's doc comment for why): PRD tasks
+ * flagged for autonomous planning that nobody has picked up yet. These are PDR-3.1's
+ * autonomous plan-session mode consumes, and they are deliberately NOT
+ * filtered by `ready` — a PRD task awaiting planning has no dependency graph
+ * to resolve, and `?ready=true` excludes the whole `kind: "prd"` slice anyway.
  *
  * Unlike dev-task's bare `/shipwright:dev-task {id}` dispatch, the plan
  * phase's command contract is
@@ -41,8 +43,8 @@ import type { WorkTaskCandidate } from "./work-selector.ts";
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 export interface CheckPlanDeps {
-  /** Flagged, still-pending PRD tasks awaiting an autonomous plan session. */
-  getAutonomousPlanTasks: () => Promise<Task[]>;
+  /** `kind: "prd"`, still-pending tasks awaiting an autonomous plan session. */
+  getPrdTasks: () => Promise<Task[]>;
   clock: Clock;
   /** This agent's own task-store id. */
   agentId: string;
@@ -77,14 +79,14 @@ function toWorkTaskCandidate(task: Task): WorkTaskCandidate {
 export async function getPlanCandidates(
   deps: CheckPlanDeps,
 ): Promise<WorkTaskCandidate[]> {
-  const tasks = await deps.getAutonomousPlanTasks();
+  const tasks = await deps.getPrdTasks();
   const candidates: WorkTaskCandidate[] = [];
   for (const task of tasks) {
     // Human-escalation gate, matching every other candidate provider:
     // check-review/check-patch/check-deploy call isTaskBlockedForDispatch()
     // on the linked task, and check-dev-task gets the equivalent for free
     // from task-store's ?ready=true filter (ready.ts drops hitl === true).
-    // The `?autonomousPlanSession=true&status=pending` query below has no
+    // buildPrdTaskQuery()'s query below (see its doc comment) has no
     // such gate, so a task a human escalated with `hitl: true` while leaving
     // it `pending` would otherwise be claimed and dispatched into an
     // autonomous plan session.
@@ -116,6 +118,55 @@ export async function getPlanCandidates(
 
 // ─── Production deps ──────────────────────────────────────────────────────────
 
+/**
+ * The task-store query that defines this phase's pool (TKD-1.1).
+ *
+ * Exported so its shape is unit-testable without standing up a task-store
+ * client: this one query defines the entire plan pool, and getting it wrong
+ * silently empties the phase (or, worse, silently widens it to every pending
+ * task).
+ *
+ * `kind=prd` is the current spelling of what used to be
+ * `autonomousPlanSession=true`, but for the transition window the query sends
+ * the LEGACY spelling alone, on purpose. Three constraints force that choice:
+ *
+ *  1. The task-store cannot express an OR across two filter params —
+ *     TaskService.list() drops every supplied filter onto one Prisma `where`
+ *     object, so `?kind=prd&autonomousPlanSession=true` is a strict AND.
+ *  2. That AND orphans the one row shape this transition window actually
+ *     produces. An old task-store pod writing `autonomousPlanSession: true`
+ *     leaves `kind` at the migration's `dev` default; ready.ts correctly
+ *     excludes that row from the dev-task pool (`kind === "prd" ||
+ *     autonomousPlanSession === true`), and an AND-ed query would exclude it
+ *     from the plan pool too — a PRD task invisible to both providers, with
+ *     nothing to back-fill `kind` and no error to notice.
+ *  3. A `kind`-only query is worse still: the list-query schema ignores params
+ *     it doesn't recognize rather than rejecting them, so against a task-store
+ *     that predates TKD-1.1 it degrades to a bare `?status=pending` and makes
+ *     EVERY pending task a plan candidate — which loop-orchestrator's dedupe
+ *     then resolves in the plan phase's favor, dispatching ordinary dev tasks
+ *     as `/shipwright:plan-session --autonomous`.
+ *
+ * The legacy flag alone has none of those failure modes. On a new task-store
+ * it is an exact match for the `kind: "prd"` slice — normalizeTaskKind()
+ * forces the pair to agree on every write path and the TKD-1.1 migration
+ * back-filled existing rows, so `kind='prd'` and `autonomousPlanSession=true`
+ * select the same rows — and it additionally picks up the mid-rollout
+ * divergence row from (2). On an old task-store it is the only filter that
+ * narrows the pool at all. It is also the exact complement of ready.ts's
+ * exclusion, so the plan and dev-task pools stay disjoint either way.
+ *
+ * Switch this to `kind=prd` (dropping the legacy param) once every deployed
+ * task-store honors `?kind=` — at which point no divergence row can be
+ * written, and the rationale above collapses.
+ */
+export function buildPrdTaskQuery(): URLSearchParams {
+  return new URLSearchParams({
+    autonomousPlanSession: "true",
+    status: "pending",
+  });
+}
+
 export function buildProductionDeps(): CheckPlanDeps {
   const client = createTaskStoreClient();
   const agentId = (process.env.SHIPWRIGHT_AGENT_ID ?? "").trim();
@@ -125,13 +176,7 @@ export function buildProductionDeps(): CheckPlanDeps {
   }
 
   return {
-    getAutonomousPlanTasks: () =>
-      client.query(
-        new URLSearchParams({
-          autonomousPlanSession: "true",
-          status: "pending",
-        }),
-      ),
+    getPrdTasks: () => client.query(buildPrdTaskQuery()),
     clock: SystemClock(),
     agentId,
   };

@@ -133,7 +133,18 @@ describe("CLAUDE.md — five-phase pipeline (PDR-4.1)", () => {
 
   it("the Candidate Selection Contract documents the plan/dev-task dedupe", () => {
     expect(candidateSelectionSection).toContain("deduped by task id");
+    // The plan pool's actual query shape: the legacy spelling, sent alone (an
+    // AND with `?kind=prd` would orphan the mid-rollout divergence row).
     expect(candidateSelectionSection).toContain("autonomousPlanSession=true");
+    expect(candidateSelectionSection).toContain('kind: "prd"');
+  });
+
+  it("the Candidate Selection Contract describes the dedupe as a defensive backstop, not a workaround for a ?ready=true that fails to exclude PRD tasks (TKD-1.1)", () => {
+    // ready.ts has excluded the PRD slice since PDR-2.2, so the two providers'
+    // pools don't actually overlap — the stale claim that they do must be gone.
+    expect(candidateSelectionSection).not.toMatch(/never excludes/i);
+    expect(candidateSelectionSection).toMatch(/backstop|defensive/i);
+    expect(candidateSelectionSection).toMatch(/excludes/i);
   });
 
   it("the Candidate Selection Contract documents the plan phase's double gate", () => {
