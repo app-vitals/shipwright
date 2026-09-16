@@ -121,12 +121,13 @@ scanning repos for stale docs, or querying Sentry for unresolved errors), with n
 | `shipwright-loop` | every minute | internal | — | off | Drives the five phases above — merges their candidates and dispatches exactly one winning item per phase, per tick, until the queue is dry. |
 | `shipwright-test-readiness` | daily 06:00 | `/shipwright:test-readiness --full --publish` | test-readiness | off | Full test-readiness audit for repos with stale or missing artifacts. |
 | `shipwright-docs-freshness` | daily 07:00 | `/shipwright:research-docs --auto` | — | off | Refreshes docs that have drifted from the code. |
-| `shipwright-site-docs-freshness` | daily 07:00 | `/docs-sync --auto` | — | off | Flags marketing-site pages that have drifted from their mapped source docs and files a proposal task instead of auto-editing. |
 | `learn-dream` | daily 03:00 | `/shipwright:learn-dream --since 1d --review` | — | off | Mines the last day of merged PRs for durable learnings. |
 | `entropy-patrol-maintenance` | weekly Mon 04:00 | `/shipwright:entropy-scan` → `/shipwright:entropy-fix` | entropy-scan, entropy-fix | off | Scans for code entropy and fixes what's PR-worthy. |
 | `error-patrol-maintenance` | daily 04:00 | `/shipwright:error-scan` → `/shipwright:error-fix` → `/shipwright:error-resolve` | error-scan, error-fix, error-resolve | off | Scans for unresolved Sentry errors and fixes what's PR-worthy. |
 | `security-patrol-maintenance` | weekly Mon 06:00 | `/shipwright:security-scan` → `/shipwright:security-fix` | security-scan, security-fix | off | Scans for security vulnerabilities and fixes what's PR-worthy. |
 | `consolidation-patrol-maintenance` | weekly Mon 05:00 | `/shipwright:consolidation-scan` → `/shipwright:consolidation-fix` | consolidation-scan, consolidation-fix | off | Proposes consolidation for duplicate patterns that have stabilized over time. |
+
+`shipwright-site-docs-freshness` isn't in the table above — its precheck and command are scoped to this repo's own marketing site rather than being useful for every agent's repo, so it's available to wire in per-agent as a custom, non-system cron rather than being seeded by default.
 
 Only three ship enabled by default: `shipwright-dev-task`, `shipwright-review`, and
 `shipwright-patch`. Everything else — including `shipwright-loop` itself — is opt-in, toggled from

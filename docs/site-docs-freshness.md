@@ -54,26 +54,17 @@ Unit-tested via `plugins/shipwright/scripts/check-site-docs-freshness.unit.test.
 
 ## Wiring status
 
-**Wired as of SDR-4.** The site-docs-freshness cron entry in `agent-types/coding/manifest.yaml` is:
+**Available to wire per-agent — not part of the generic coding manifest.** Unlike the repo-scoped `shipwright-docs-freshness` cron (generically useful across every repo under `repos/`, and seeded onto every `coding`-type agent via `agent-types/coding/manifest.yaml`), `shipwright-site-docs-freshness`'s precheck and downstream command are both scoped to this one repo's own marketing site (`site/docs-source-map.json`, `site/src/content/docs/`). That scoping means it doesn't belong in the generic manifest every `coding`-type agent gets by default — it's only relevant to an agent that maintains *this* repo's site.
 
-```yaml
-- name: shipwright-site-docs-freshness
-  schedule: "0 7 * * *"
-  prompt: /docs-sync --auto
-  preCheck: shipwright:check-site-docs-freshness.ts
-  silent: true
-  enabled: false
+An operator who wants it can wire it as a [custom cron](./extending.md#custom-cron-jobs-for-scheduled-automation) via `POST /agents/:id/crons`, mirroring `shipwright-docs-freshness`'s shape:
+
+```json
+{
+  "schedule": "0 7 * * *",
+  "prompt": "/docs-sync --auto",
+  "preCheck": "shipwright:check-site-docs-freshness.ts",
+  "silent": true
+}
 ```
 
-This mirrors the repo-scoped `shipwright-docs-freshness` cron:
-
-```yaml
-- name: shipwright-docs-freshness
-  schedule: "0 7 * * *"
-  prompt: /shipwright:research-docs --auto
-  preCheck: shipwright:check-docs-freshness.ts
-  silent: true
-  enabled: false
-```
-
-Both crons ship `enabled: false` per the new-system-crons-ship-disabled convention (see `plugins/shipwright/CLAUDE.md`). The key difference is the command: `shipwright-docs-freshness` drives the repo-wide `/shipwright:research-docs --auto` command (consuming the repo-scoped precheck's results), while `shipwright-site-docs-freshness` drives `/docs-sync --auto` (consuming the page-scoped precheck's per-page output). See [`docs/agent-types.md`](./agent-types.md) for the manifest schema and the `preCheck` contract.
+See [`docs/agent-types.md`](./agent-types.md) for the manifest schema and the `preCheck` contract, and [`docs/extending.md`](./extending.md) for the full custom-cron API reference.

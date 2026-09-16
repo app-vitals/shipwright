@@ -238,12 +238,13 @@ crons — each fully self-contained, doing its own discovery with no dependency 
 |---|---|---|
 | `shipwright-test-readiness` | off | Full test-readiness audit for repos with stale/missing test artifacts. |
 | `shipwright-docs-freshness` | off | Refreshes docs that have drifted from the code they describe. |
-| `shipwright-site-docs-freshness` | off | Flags marketing-site pages that have drifted from their mapped source docs and files a proposal task instead of auto-editing. |
 | `learn-dream` | off | Mines the last day of merged PRs for durable learnings. |
 | `entropy-patrol-maintenance` | off | Scans for code entropy (dead code, duplication, layering drift) and fixes what's PR-worthy. |
 | `error-patrol-maintenance` | off | Scans unresolved Sentry errors and fixes what's PR-worthy. |
 | `security-patrol-maintenance` | off | Scans for security vulnerabilities and fixes what's PR-worthy. |
 | `consolidation-patrol-maintenance` | off | Proposes consolidation for duplicate patterns that have stabilized over time. |
+
+`shipwright-site-docs-freshness` (page-scoped staleness checks for this repo's own marketing site) isn't in this list — its precheck is scoped to `site/`, so it doesn't belong in the generic manifest every agent gets. It's available to wire per-agent as a [custom cron](../../../docs/extending.md#custom-cron-jobs-for-scheduled-automation); see [`docs/site-docs-freshness.md`](../../../docs/site-docs-freshness.md) for the schedule/prompt/preCheck shape.
 
 These exist because the pipeline crons only react to work already in the queue — they don't
 notice a stale doc, a growing pile of dead code, or a new Sentry error on their own. The
