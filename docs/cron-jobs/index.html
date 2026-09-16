@@ -183,14 +183,6 @@ scanning repos for stale docs, or querying Sentry for unresolved errors), with n
 <td>Refreshes docs that have drifted from the code.</td>
 </tr>
 <tr>
-<td><code>shipwright-site-docs-freshness</code></td>
-<td>daily 07:00</td>
-<td><code>/docs-sync --auto</code></td>
-<td>—</td>
-<td>off</td>
-<td>Flags marketing-site pages that have drifted from their mapped source docs and files a proposal task instead of auto-editing.</td>
-</tr>
-<tr>
 <td><code>learn-dream</code></td>
 <td>daily 03:00</td>
 <td><code>/shipwright:learn-dream --since 1d --review</code></td>
@@ -232,6 +224,7 @@ scanning repos for stale docs, or querying Sentry for unresolved errors), with n
 </tr>
 </tbody>
 </table>
+<p><code>shipwright-site-docs-freshness</code> isn’t in the table above — its precheck and command are scoped to this repo’s own marketing site rather than being useful for every agent’s repo, so it’s available to wire in per-agent as a custom, non-system cron rather than being seeded by default.</p>
 <p>Only three ship enabled by default: <code>shipwright-dev-task</code>, <code>shipwright-review</code>, and
 <code>shipwright-patch</code>. Everything else — including <code>shipwright-loop</code> itself — is opt-in, toggled from
 the agent’s Cron Jobs card in the admin console.</p>
