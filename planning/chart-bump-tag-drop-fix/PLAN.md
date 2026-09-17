@@ -12,13 +12,20 @@ deployment delay.
 ## Investigation
 
 Traced the full release chain for `task-store-v1.139.0` (the tag containing the org
-filter fix, cut 2026-09-16 15:40:22 UTC — same instant as four other same-day releases:
-`admin-v1.186.0`, `chat-v1.102.0`, `mcp-server-v0.100.0`, `metrics-v1.107.0`).
+filter fix, cut 2026-09-16 15:40:22 UTC — same instant as three other same-day releases
+this bug actually affects: `admin-v1.186.0`, `chat-v1.102.0`, `metrics-v1.107.0`).
+`mcp-server-v0.100.0` was also released in the same batch, but it's a separate,
+pre-existing gap and not a symptom of this bug: `auto-bump-chart.yml`'s tag-push trigger
+has no `mcp-server-v*` pattern, and `chart-tag-utils.sh`'s `service_for_tag()` /
+`values_paths_for_service()` (mirrored by `check-chart-drift.yml`'s
+`SERVICES=(admin metrics agent task-store chat)`) have no `mcp-server` branch either —
+so `mcp-server-v0.100.0` could never be credited by any chart-bump PR regardless of this
+bug, and isn't in-scope evidence for CBT-1.1's regression test.
 
 The chart-bump commit that ran immediately after that batch (`chore(chart): bump chart
 version to 1.20.72`, merged ~15:52 UTC) credited **only `metrics-v1.107.0`** — the other
-four tags from the exact same batch, including `task-store-v1.139.0`, were silently
-dropped and never credited by any chart version. Confirmed this wasn't task-store-specific:
+three tags this bug tracks from the exact same batch, including `task-store-v1.139.0`,
+were silently dropped and never credited by any chart version. Confirmed this wasn't task-store-specific:
 `admin-v1.186.0` was also permanently skipped (`charts/shipwright/values.yaml`'s admin
 pin jumps straight from `admin-v1.185.0` to `admin-v1.187.0`, never referencing `.186.0`).
 The org filter fix only reached production because `task-store-v1.140.0` happened to
