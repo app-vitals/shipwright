@@ -28,7 +28,9 @@
   ],
   "deploying-to-cloud.mdx": [
     "docs/deploy-kubernetes.md",
+    "docs/deploy-kubernetes-networking.md",
     "docs/deploy-kubernetes-providers.md",
+    "docs/deploy-kubernetes-provisioning.md",
     "docs/helm-repo.md"
   ],
   "getting-started.mdx": [
@@ -50,6 +52,8 @@
   ],
   "security.mdx": [
     "docs/deploy-kubernetes.md",
+    "docs/deploy-kubernetes-networking.md",
+    "docs/deploy-kubernetes-provisioning.md",
     "docs/observability.md",
     "docs/agent-ops.md",
     "docs/configuration.md",
