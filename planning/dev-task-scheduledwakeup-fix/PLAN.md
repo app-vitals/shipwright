@@ -9,9 +9,17 @@ several tasks over 3 days). The originally-suspected cause was a silent `Schedul
 resume failure. Investigation (code-verified, not theoretical) found the real mechanism:
 
 - `ScheduleWakeup` is not implemented anywhere in `app-vitals/shipwright` — grepped
-  `agent/src` and the whole repo, zero references outside content-test assertions that it
-  shouldn't be mentioned in `dev-task.md`. It's a harness-level capability outside
-  Shipwright's control.
+  `agent/src` and found no implementation; it's a harness-level capability outside
+  Shipwright's control. Correction: an earlier draft of this plan claimed the only repo
+  references were content-test assertions that it shouldn't be mentioned in `dev-task.md`.
+  That's inaccurate — `agent/workspace/CLAUDE.md.template` (the CLAUDE.md loaded into every
+  agent session, not just dev-task) has a substantial "Waiting and Polling" section (~lines
+  159-216) discussing `ScheduleWakeup`'s `-r <sessionId>` resume mechanics, prompt-cache
+  freshness cost tradeoffs, and `_runClaude`'s existing retry-once-on-failure behavior, plus
+  a recommended cron+blocking-loop alternative for long waits.
+  `docs/test-readiness/test-inventory.md` and `test-migration.md` also reference it
+  (documenting the dev-task guardrail's test coverage). None of these mention the
+  heartbeat/`StaleClaimReaper` root cause this plan identifies below.
 - A dev-task session hits a long-running Step 8 check, calls `ScheduleWakeup`, and ends its
   turn. The process exits cleanly (no error, no timeout) — from `_runClaude`'s perspective
   this is an ordinary successful run that simply didn't finish the task.
@@ -69,7 +77,13 @@ expected to re-validate live state on every repeat dispatch, not continue stale 
 Step 8/9b.2 guardrail (already added after the August CVF-1.1/AGH-1.1 incident, still being
 ignored) with the actual mechanical reason — ScheduleWakeup ends the process, which stops
 the claim heartbeat, which triggers the 65-minute reclaim — instead of just asserting the
-rule. `Monitor` stays a legitimate sanctioned in-session polling option; its earlier
+rule. Also reconcile `agent/workspace/CLAUDE.md.template`'s existing "Waiting and Polling"
+section with this finding: it already tells every agent session (not just dev-task) to
+prefer blocking in-Bash loops over `ScheduleWakeup` for sub-10-minute waits, but doesn't
+explain *why* a `ScheduleWakeup` resume failure is unrecoverable for a claimed task — add a
+pointer to the heartbeat/`StaleClaimReaper` mechanism so the session-wide guidance and the
+dev-task-specific guardrail state the same root cause instead of drifting independently.
+`Monitor` stays a legitimate sanctioned in-session polling option; its earlier
 "requires approval" failure was traced to a missing `AgentTool` grant, not a
 headless-incompatibility (confirmed by live test after the grant was added), so it's not
 being pulled from the guardrail's escape hatch.
