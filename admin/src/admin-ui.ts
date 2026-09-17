@@ -56,6 +56,7 @@ import {
   renderSessionDetailPage,
   renderTaskDetailPage,
   renderTasksPage,
+  resolveAgentNameFilterAndPaginate,
 } from "./admin-ui-pages.ts";
 import {
   SESSION_ADMIN_ACTION_MESSAGES,
@@ -3083,17 +3084,10 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
     const limit = view === "board" ? BOARD_TASK_LIMIT : 50;
     const offset = (page - 1) * limit;
 
-    // When filtering by agent name, resolve matching IDs upfront so we can
-    // filter tasks client-side (task store only supports a single assignee ID).
-    let agentFilterIds: Set<string> | null = null;
-    if (agent) {
-      const matched = await agentService.searchByName(agent);
-      agentFilterIds = new Set(matched.map((a) => a.id));
-    }
-
     let tasks: TaskItem[] = [];
     let total = 0;
     let degraded = false;
+    let agentFilterActive = false;
     let distinctValues: {
       sessions: string[];
       repos: string[];
@@ -3103,55 +3097,57 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
     if (!fetchTaskStoreTasks) {
       degraded = true;
     } else {
-      const params = new URLSearchParams();
-      if (status) {
-        params.set("status", status);
-      } else if (state) {
-        params.set("state", state);
-      } else if (view === "board") {
-        // TBC-2.1: with no explicit status/state filter, the default board
-        // query excludes the fully-closed statuses (merged/done/deploying/
-        // deployed/cancelled) so Done tasks never crowd out the shared
-        // recency window. This can't exclude "claimed" specifically at the
-        // query level — claimed and queued share the same "pending" status,
-        // distinguished only by claimedBy — so Claimed is dropped purely by
-        // no longer being a rendered TASK_BOARD_COLUMNS entry.
-        params.set("state", "open");
-      }
-      if (session) params.set("session", session);
-      for (const r of repo ?? []) params.append("repo", r);
-      for (const o of org ?? []) params.append("org", o);
-      if (source) params.set("source", source);
-      if (hitl) params.set("hitl", hitl);
-      // Agent-name filtering is done client-side, so we fetch a larger slice
-      // when an agent filter is active to avoid under-counting across pages.
-      params.set("limit", agentFilterIds !== null ? "500" : String(limit));
-      params.set("offset", agentFilterIds !== null ? "0" : String(offset));
-      params.set("sort", "desc");
       try {
         const [result, distinct] = await Promise.all([
-          fetchTaskStoreTasks(params),
+          resolveAgentNameFilterAndPaginate<TaskItem>({
+            agentName: agent,
+            searchByName: (name) => agentService.searchByName(name),
+            limit,
+            offset,
+            matches: (t, ids) =>
+              (!!t.assignee && ids.has(t.assignee)) ||
+              (!!t.claimedBy && ids.has(t.claimedBy)),
+            fetchPage: async (fetchLimit, fetchOffset) => {
+              const params = new URLSearchParams();
+              if (status) {
+                params.set("status", status);
+              } else if (state) {
+                params.set("state", state);
+              } else if (view === "board") {
+                // TBC-2.1: with no explicit status/state filter, the
+                // default board query excludes the fully-closed statuses
+                // (merged/done/deploying/deployed/cancelled) so Done tasks
+                // never crowd out the shared recency window. This can't
+                // exclude "claimed" specifically at the query level —
+                // claimed and queued share the same "pending" status,
+                // distinguished only by claimedBy — so Claimed is dropped
+                // purely by no longer being a rendered TASK_BOARD_COLUMNS
+                // entry.
+                params.set("state", "open");
+              }
+              if (session) params.set("session", session);
+              for (const r of repo ?? []) params.append("repo", r);
+              for (const o of org ?? []) params.append("org", o);
+              if (source) params.set("source", source);
+              if (hitl) params.set("hitl", hitl);
+              params.set("limit", String(fetchLimit));
+              params.set("offset", String(fetchOffset));
+              params.set("sort", "desc");
+              const fetched = await fetchTaskStoreTasks(params);
+              return { items: fetched.tasks, total: fetched.total };
+            },
+          }),
           fetchDistinctTaskValues
             ? fetchDistinctTaskValues().catch(() => null)
             : Promise.resolve(null),
         ]);
-        tasks = result.tasks;
+        tasks = result.items;
         total = result.total;
+        agentFilterActive = result.filterActive;
         distinctValues = distinct;
       } catch {
         degraded = true;
       }
-    }
-
-    if (agentFilterIds !== null) {
-      const ids = agentFilterIds;
-      tasks = tasks.filter(
-        (t) =>
-          (t.assignee && ids.has(t.assignee)) ||
-          (t.claimedBy && ids.has(t.claimedBy)),
-      );
-      total = tasks.length;
-      tasks = tasks.slice(offset, offset + limit);
     }
 
     const agentIds = [
@@ -3194,7 +3190,7 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
         { total, limit, page },
         {
           ...(error ? { error } : {}),
-          agentFilterActive: agentFilterIds !== null,
+          agentFilterActive,
         },
         suggestions,
         false,

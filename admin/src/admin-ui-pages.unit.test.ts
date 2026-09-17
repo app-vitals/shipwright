@@ -50,6 +50,7 @@ import {
   renderSessionDetailPage,
   renderTaskDetailPage,
   renderTasksPage,
+  resolveAgentNameFilterAndPaginate,
 } from "./admin-ui-pages.ts";
 import { renderAdminToolbar } from "./admin-ui-styles.ts";
 import type { ChatMessage, ChatThread } from "./http-chat-client.ts";
@@ -10171,4 +10172,104 @@ describe("all page renderers — single DOCTYPE and viewport meta (CFB-1.2)", ()
       );
     });
   }
+});
+
+// ─── resolveAgentNameFilterAndPaginate (SLF-1.1) ────────────────────────────
+//
+// Extracted from the Tasks page route's inline agentFilterIds block so the
+// Sessions page route can share the exact same resolve → widen-fetch →
+// filter → recompute-total → re-slice flow. These unit tests cover the
+// helper directly (pure logic, injected fetchPage/searchByName/matches — no
+// I/O), confirming behavior is unchanged after the extraction from
+// admin-ui.ts's Tasks page agent filter (still covered end-to-end by
+// admin-ui.smoke.test.ts's "GET /admin/tasks?agent= filters by agent name").
+
+interface FakeItem {
+  id: string;
+  ownerAgentId: string | null;
+}
+
+describe("resolveAgentNameFilterAndPaginate", () => {
+  test("passthrough: no agentName runs fetchPage once at the caller's own limit/offset, filterActive false", async () => {
+    const fetchPageCalls: Array<{ limit: number; offset: number }> = [];
+    const result = await resolveAgentNameFilterAndPaginate<FakeItem>({
+      agentName: undefined,
+      searchByName: async () => {
+        throw new Error("searchByName must not be called with no agentName");
+      },
+      limit: 10,
+      offset: 20,
+      matches: () => true,
+      fetchPage: async (limit, offset) => {
+        fetchPageCalls.push({ limit, offset });
+        return {
+          items: [{ id: "t1", ownerAgentId: "agent-a" }],
+          total: 42,
+        };
+      },
+    });
+
+    expect(fetchPageCalls).toEqual([{ limit: 10, offset: 20 }]);
+    expect(result).toEqual({
+      items: [{ id: "t1", ownerAgentId: "agent-a" }],
+      total: 42,
+      filterActive: false,
+    });
+  });
+
+  test("resolves the name to matching ids (OR semantics across multiple matches), widens the fetch, and re-paginates the filtered set", async () => {
+    const allItems: FakeItem[] = [
+      { id: "t1", ownerAgentId: "agent-a" },
+      { id: "t2", ownerAgentId: "agent-b" },
+      { id: "t3", ownerAgentId: "agent-c" },
+      { id: "t4", ownerAgentId: null },
+    ];
+    const fetchPageCalls: Array<{ limit: number; offset: number }> = [];
+
+    const result = await resolveAgentNameFilterAndPaginate<FakeItem>({
+      agentName: "ag",
+      searchByName: async (name) => {
+        expect(name).toBe("ag");
+        // Fuzzy match hits two agents — OR semantics means items owned by
+        // either should survive the filter.
+        return [{ id: "agent-a" }, { id: "agent-b" }];
+      },
+      limit: 1,
+      offset: 1,
+      matches: (item, ids) =>
+        item.ownerAgentId !== null && ids.has(item.ownerAgentId),
+      fetchPage: async (limit, offset) => {
+        fetchPageCalls.push({ limit, offset });
+        return { items: allItems, total: allItems.length };
+      },
+    });
+
+    // Widened to the shared 500/0 page instead of the caller's own limit/offset.
+    expect(fetchPageCalls).toEqual([{ limit: 500, offset: 0 }]);
+    // Two of the four items match (t1, t2); total is recomputed from the
+    // filtered set, not the upstream total (4).
+    expect(result.total).toBe(2);
+    expect(result.filterActive).toBe(true);
+    // offset 1, limit 1 over the filtered [t1, t2] set slices to just t2.
+    expect(result.items).toEqual([{ id: "t2", ownerAgentId: "agent-b" }]);
+  });
+
+  test("a name with zero matches returns an empty, non-erroring result rather than an unfiltered list", async () => {
+    const allItems: FakeItem[] = [
+      { id: "t1", ownerAgentId: "agent-a" },
+      { id: "t2", ownerAgentId: "agent-b" },
+    ];
+
+    const result = await resolveAgentNameFilterAndPaginate<FakeItem>({
+      agentName: "no-such-agent",
+      searchByName: async () => [],
+      limit: 50,
+      offset: 0,
+      matches: (item, ids) =>
+        item.ownerAgentId !== null && ids.has(item.ownerAgentId),
+      fetchPage: async () => ({ items: allItems, total: allItems.length }),
+    });
+
+    expect(result).toEqual({ items: [], total: 0, filterActive: true });
+  });
 });

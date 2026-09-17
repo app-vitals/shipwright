@@ -21,7 +21,10 @@
 import type { Hono, MiddlewareHandler } from "hono";
 import type { AdminUIEnv } from "./admin-ui.ts";
 import { renderAdminPage } from "./admin-ui-layout.ts";
-import { renderRepoOrgFilterFields } from "./admin-ui-pages.ts";
+import {
+  renderRepoOrgFilterFields,
+  resolveAgentNameFilterAndPaginate,
+} from "./admin-ui-pages.ts";
 import { escapeHtml, renderAdminToolbar } from "./admin-ui-styles.ts";
 import type { AgentMemberService } from "./agent-members.ts";
 import type { AgentService } from "./agents.ts";
@@ -69,7 +72,7 @@ export type SessionsListAgentMemberService = Pick<
 /** The narrow slice of AgentService this module calls. */
 export type SessionsListAgentService = Pick<
   AgentService,
-  "listByIds" | "listOptions"
+  "listByIds" | "listOptions" | "searchByName"
 >;
 
 export interface SessionsListDeps {
@@ -462,29 +465,49 @@ export function registerSessionsListRoutes(
       orgs: string[];
     } | null = null;
 
-    if (!deps.fetchTaskStoreSessions) {
+    const fetchTaskStoreSessions = deps.fetchTaskStoreSessions;
+    if (!fetchTaskStoreSessions) {
       degraded = true;
     } else {
-      const params = new URLSearchParams();
-      // state=all/archived (never the default-omitted filter) — the three
-      // main sections are bucketed client-side from the full, unfiltered
-      // set so Waiting/Active/Closed can all render from one request.
-      params.set("state", archived ? "archived" : "all");
-      params.set("sort", sort);
-      for (const r of repo) params.append("repo", r);
-      for (const o of org) params.append("org", o);
-      if (agentId) params.set("agentId", agentId);
-      if (q) params.set("q", q);
-      params.set("limit", String(limit));
-      params.set("offset", String(offset));
       try {
+        // `agentId` (from the `agent` query param) is actually the agent's
+        // display *name* — it's what the filter form's datalist suggests
+        // (agentService.listOptions() returns names, not ids) — while the
+        // task-store's GET /sessions ?agentId filter matches against real
+        // agent ids (rollup.agentIds). resolveAgentNameFilterAndPaginate
+        // resolves the name to its matching id set via searchByName() and
+        // filters/re-paginates client-side, the same flow the Tasks page
+        // uses for its own name-based agent filter (admin-ui.ts).
         const [result, distinct] = await Promise.all([
-          deps.fetchTaskStoreSessions(params),
+          resolveAgentNameFilterAndPaginate<Session>({
+            agentName: agentId,
+            searchByName: (name) => deps.agentService.searchByName(name),
+            limit,
+            offset,
+            matches: (session, matchedAgentIds) =>
+              session.agentIds.some((id) => matchedAgentIds.has(id)),
+            fetchPage: async (fetchLimit, fetchOffset) => {
+              const params = new URLSearchParams();
+              // state=all/archived (never the default-omitted filter) —
+              // the three main sections are bucketed client-side from the
+              // full, unfiltered set so Waiting/Active/Closed can all
+              // render from one request.
+              params.set("state", archived ? "archived" : "all");
+              params.set("sort", sort);
+              for (const r of repo) params.append("repo", r);
+              for (const o of org) params.append("org", o);
+              if (q) params.set("q", q);
+              params.set("limit", String(fetchLimit));
+              params.set("offset", String(fetchOffset));
+              const fetched = await fetchTaskStoreSessions(params);
+              return { items: fetched.sessions, total: fetched.total };
+            },
+          }),
           deps.fetchDistinctTaskValues
             ? deps.fetchDistinctTaskValues().catch(() => null)
             : Promise.resolve(null),
         ]);
-        sessions = result.sessions;
+        sessions = result.items;
         total = result.total;
         distinctValues = distinct;
       } catch {

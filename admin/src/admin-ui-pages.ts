@@ -2000,6 +2000,73 @@ export function renderRepoOrgFilterFields(
         </div>`;
 }
 
+/**
+ * Shared "filter by agent display name, not id" resolver/paginator.
+ *
+ * The task-store's list endpoints (GET /tasks, GET /sessions) only support
+ * narrowing by real agent *id* (assignee/claimedBy or rollup.agentIds) — they
+ * have no "match by display name" filter, and there's no OR-of-ids filter
+ * either. So when a caller's filter form offers a name-based datalist (every
+ * admin list page that filters by agent), the name has to be resolved to the
+ * set of matching agent ids first, and membership in that set has to be
+ * checked client-side against a widened, unpaginated fetch — otherwise a
+ * fuzzy/partial name match that hits N agents can't be expressed as a single
+ * upstream query, and normal limit/offset pagination would undercount pages
+ * once the client-side filter narrows the result set.
+ *
+ * Originally lived inline in the Tasks page route (admin-ui.ts); extracted
+ * here so the Sessions page route (admin-ui-sessions-list.ts) can share the
+ * exact same resolve → widen-fetch → filter → recompute-total → re-slice
+ * flow instead of carrying its own divergent copy. The two callers' list
+ * items have different shapes (TaskItem's assignee/claimedBy vs. Session's
+ * agentIds array), so the membership check is injected via `matches` rather
+ * than hardcoded here.
+ *
+ * When `agentName` is absent/empty, this is a passthrough: `fetchPage` runs
+ * once with the caller's own requested limit/offset and no filtering happens
+ * (`filterActive: false`). When `agentName` is present, `searchByName` runs
+ * once to resolve it to zero or more agent ids (a name with zero matches
+ * still produces a valid, empty result rather than an error), `fetchPage`
+ * runs once at limit 500 / offset 0 to gather a page large enough to filter
+ * against client-side, and the result is filtered, its total recomputed from
+ * the filtered set, and re-sliced to the caller's originally-requested
+ * limit/offset (`filterActive: true`).
+ */
+export async function resolveAgentNameFilterAndPaginate<T>(options: {
+  agentName: string | undefined;
+  searchByName: (name: string) => Promise<Array<{ id: string }>>;
+  limit: number;
+  offset: number;
+  matches: (item: T, matchedAgentIds: Set<string>) => boolean;
+  fetchPage: (
+    limit: number,
+    offset: number,
+  ) => Promise<{ items: T[]; total: number }>;
+}): Promise<{ items: T[]; total: number; filterActive: boolean }> {
+  const { agentName, searchByName, limit, offset, matches, fetchPage } =
+    options;
+
+  if (!agentName) {
+    const { items, total } = await fetchPage(limit, offset);
+    return { items, total, filterActive: false };
+  }
+
+  const matchedAgents = await searchByName(agentName);
+  const matchedAgentIds = new Set(matchedAgents.map((a) => a.id));
+
+  // Widen to a single large page (matching every other client-side filter
+  // in this codebase) rather than paginating the upstream fetch, since the
+  // filtered total isn't known until every candidate row has been fetched.
+  const { items: fetched } = await fetchPage(500, 0);
+  const filtered = fetched.filter((item) => matches(item, matchedAgentIds));
+
+  return {
+    items: filtered.slice(offset, offset + limit),
+    total: filtered.length,
+    filterActive: true,
+  };
+}
+
 // ─── Tasks page ──────────────────────────────────────────────────────────────
 
 // Shared by both the board (default) and table (?view=table) layouts.
