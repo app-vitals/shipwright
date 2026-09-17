@@ -646,6 +646,54 @@ describe("dev-task.md — ScheduleWakeup/backgrounding prohibition guardrail (SW
     expect(section).toContain("30 seconds");
     expect(section).toContain("10 minutes");
   });
+
+  it("Step 8 explains the claim-heartbeat mechanism: a resumed session stops the task's claim heartbeat", () => {
+    const section = getStep8Section();
+    const lower = section.toLowerCase().replace(/\s+/g, " ");
+    expect(lower).toMatch(/heartbeat|heart.{0,20}beat/);
+  });
+
+  it("Step 8 mentions the StaleClaimReaper (or 'stale claim reaper') that reclaims abandoned claims", () => {
+    const section = getStep8Section();
+    const lower = section.toLowerCase().replace(/\s+/g, " ");
+    expect(lower).toMatch(/stale.{0,40}claim.{0,40}reaper|reaper.{0,40}stale.{0,40}claim/);
+  });
+
+  it("Step 8 cites the ~65-minute claim TTL after which a stale claim is reclaimed", () => {
+    const section = getStep8Section();
+    const lower = section.toLowerCase().replace(/\s+/g, " ");
+    expect(lower).toMatch(/65.{0,10}minute|~65|claim.{0,60}ttl/i);
+  });
+
+  it("Step 8 explains that a stale-claim reclaim causes a context-free re-bootstrap on the next cron tick", () => {
+    const section = getStep8Section();
+    const lower = section.toLowerCase().replace(/\s+/g, " ");
+    expect(lower).toMatch(/context.{0,10}free|reclaim.*re.?dispatch|re.?bootstrap/i);
+  });
+
+  it("Step 9b.2 explains the claim-heartbeat mechanism: a resumed session stops the task's claim heartbeat", () => {
+    const section = getStep9b2Section();
+    const lower = section.toLowerCase().replace(/\s+/g, " ");
+    expect(lower).toMatch(/heartbeat|heart.{0,20}beat/);
+  });
+
+  it("Step 9b.2 mentions the StaleClaimReaper (or 'stale claim reaper') that reclaims abandoned claims", () => {
+    const section = getStep9b2Section();
+    const lower = section.toLowerCase().replace(/\s+/g, " ");
+    expect(lower).toMatch(/stale.{0,40}claim.{0,40}reaper|reaper.{0,40}stale.{0,40}claim/);
+  });
+
+  it("Step 9b.2 cites the ~65-minute claim TTL after which a stale claim is reclaimed", () => {
+    const section = getStep9b2Section();
+    const lower = section.toLowerCase().replace(/\s+/g, " ");
+    expect(lower).toMatch(/65.{0,10}minute|~65|claim.{0,60}ttl/i);
+  });
+
+  it("Step 9b.2 explains that a stale-claim reclaim causes a context-free re-bootstrap on the next cron tick", () => {
+    const section = getStep9b2Section();
+    const lower = section.toLowerCase().replace(/\s+/g, " ");
+    expect(lower).toMatch(/context.{0,10}free|reclaim.*re.?dispatch|re.?bootstrap/i);
+  });
 });
 
 describe("dev-task.md Step 1 — repo-slug derivation for local paths (PRF-1.4)", () => {

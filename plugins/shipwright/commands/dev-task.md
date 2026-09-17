@@ -724,10 +724,15 @@ invocation — chaining additional Bash calls back-to-back if a single command n
 wall-clock time than one call's timeout allows — or, if backgrounding is genuinely
 needed, poll for completion within this same session (a chained in-Bash loop, or the
 Monitor tool). Do not hand the wait off via a scheduled wakeup mechanism that resumes the
-session later: a resumed session is a brand-new process invocation with no memory of this
-pipeline's progress, and a silent resume failure leaves the task-store record stuck
-mid-pipeline with a fully green PR nobody recorded (per the AGH-1.1 incident, where a
-scheduled wakeup silently failed during local test validation).
+session later: when the current session process ends, it stops sending heartbeats to the
+task store. If the gap between heartbeats exceeds the ~65-minute claim TTL
+(`DEFAULT_CLAIM_TTL_MS` in `lib/claim-ttl.ts` — the 1-hour `claude -p` hard-ceiling
+timeout plus a 5-minute buffer), the task store's `StaleClaimReaper` reclaims the stale
+`in_progress` claim, resetting the task back toward `pending`. The next cron tick then
+re-dispatches this task with no memory of this pipeline's progress — a full context-free
+re-bootstrap. A silent resume failure leaves the task-store record stuck mid-pipeline
+with a fully green PR nobody recorded (per the AGH-1.1 incident, where a scheduled wakeup
+silently failed during local test validation).
 
 Run the detected validation commands from Step 0. For multi-ecosystem projects, run all applicable commands. If `tests` was populated in Step 0 (multiple test layers), run each layer's command — not just the fast default `test` command.
 
@@ -957,13 +962,19 @@ HEAD_SHA=$(git rev-parse HEAD)
 ```
 
 **Implementation: chained in-Bash sleep loop.** Do not wait between polls via a scheduled
-wakeup mechanism that resumes the session later — each resumption is a brand-new process
-invocation, and a silent resume failure leaves this exact PR fully green and mergeable
-with no task-store record of it (per the AGH-1.1 incident, where a session backgrounded
-the CI poll via a scheduled wakeup and never resumed). Instead, run the 30-second-interval
-checks as a shell-level loop inside a single Bash tool call, and chain additional Bash
-calls back-to-back within the same turn if the full 10-minute budget needs more iterations
-than one call comfortably covers.
+wakeup mechanism that resumes the session later — when the current session process ends,
+it stops sending heartbeats to the task store. If the gap between heartbeats exceeds the
+~65-minute claim TTL (`DEFAULT_CLAIM_TTL_MS` in `lib/claim-ttl.ts` — the 1-hour `claude -p`
+hard-ceiling timeout plus a 5-minute buffer), the task store's `StaleClaimReaper` reclaims
+the stale `in_progress` claim, resetting the task back toward `pending`. The next cron
+tick then re-dispatches this task with no memory of this pipeline's progress — a full
+context-free re-bootstrap. Each resumption is a brand-new process invocation, and a silent
+resume failure leaves this exact PR fully green and mergeable with no task-store record of
+it (per the AGH-1.1 incident, where a session backgrounded the CI poll via a scheduled
+wakeup and never resumed). Instead, run the 30-second-interval checks as a shell-level
+loop inside a single Bash tool call, and chain additional Bash calls back-to-back within
+the same turn if the full 10-minute budget needs more iterations than one call comfortably
+covers.
 
 Poll every 30 seconds for up to **10 minutes** (20 polls max). On each poll:
 ```bash
