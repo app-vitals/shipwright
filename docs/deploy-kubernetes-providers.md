@@ -151,7 +151,7 @@ Everything else — inter-service tokens included — is **manual, per-service
 `existingSecret` wiring**; the chart does not auto-generate or auto-mesh them.
 For example, the chat admin token that powers the admin console's Chat tab is
 wired via `chat.adminToken.existingSecret` (see
-[Chat service (opt-in)](./deploy-kubernetes.md#chat-service-opt-in)), and the task-store bearer token consumed by
+[Chat service (opt-in)](./deploy-kubernetes-networking.md#chat-service-opt-in)), and the task-store bearer token consumed by
 the metrics dashboard is wired via `metrics.provider.taskStoreToken.existingSecret`.
 The Minikube example values file below leaves the task-store token unset (see
 its comments) since the chart has no equivalent seed-token wiring for
