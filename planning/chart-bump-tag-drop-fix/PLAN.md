@@ -46,28 +46,28 @@ backstop was built, but the root cause in `collect_batch_tags()` was never fixed
 didn't fire on this incident because the gap self-healed (~22:10 UTC) before the next
 scheduled 09:00 UTC run.
 
-The drift-check's own building blocks are the fix: `lib/chart-drift-check.sh`'s
+The drift-check's own building blocks are the fix: `.github/workflows/lib/chart-drift-check.sh`'s
 `read_pinned_tag()` (reads what's currently pinned in `values.yaml`) and
-`lib/chart-tag-utils.sh`'s `highest_semver_tag()` already implement, and have test
+`.github/workflows/lib/chart-tag-utils.sh`'s `highest_semver_tag()` already implement, and have test
 coverage for, exactly the "is this service's tag actually reflected in values.yaml"
 comparison that `collect_batch_tags()` should be doing instead of a wall-clock heuristic.
 
 ## Design
 
 **CBT-1.1** — replace timestamp-based tag collection with a drift-based diff:
-- Move `read_pinned_tag()` from `lib/chart-drift-check.sh` into `lib/chart-tag-utils.sh`
+- Move `read_pinned_tag()` from `.github/workflows/lib/chart-drift-check.sh` into `.github/workflows/lib/chart-tag-utils.sh`
   (a generic dot-path reader with no drift-specific meaning — belongs alongside
   `service_for_tag`/`values_paths_for_service`/`highest_semver_tag`).
   `chart-drift-check.sh` keeps calling it, now via the existing
   "source chart-tag-utils.sh then chart-drift-check.sh" order already used by
   `check-chart-drift.yml` — no behavior change there.
-- Add `compute_batch_from_drift()` to `lib/chart-tag-utils.sh`: for each of the 5 service
+- Add `compute_batch_from_drift()` to `.github/workflows/lib/chart-tag-utils.sh`: for each of the 5 service
   patterns, finds the highest-semver `{service}-v*` tag and compares it against
   `read_pinned_tag()`'s current value in `charts/shipwright/values.yaml` on the checked-out
   ref; a service is included in the batch only when the two differ.
 - `auto-bump-chart.yml`'s "Resolve chart version bump (retry on branch collision)" step:
   replace the inlined `collect_batch_tags()` body with a call into
-  `compute_batch_from_drift()` (sourcing `lib/chart-tag-utils.sh`). The surrounding
+  `compute_batch_from_drift()` (sourcing `.github/workflows/lib/chart-tag-utils.sh`). The surrounding
   `resolve_batch_with_retry`/`compute_batch_and_version` retry loop is otherwise
   unchanged — a collision retry already re-fetches fresh main before recomputing, which
   is now correct by construction since the new logic diffs live state rather than
@@ -83,8 +83,8 @@ comparison that `collect_batch_tags()` should be doing instead of a wall-clock h
   this exact incident shape (two service-tag batches landing back-to-back, where the
   second batch's tags predate the first batch's PR merge timestamp) and asserts nothing
   gets dropped. The file keeps its existing convention of inlining its own copies of the
-  tag-utils helpers rather than sourcing `lib/chart-tag-utils.sh` directly — that
-  pre-existing inconsistency (noted in `lib/chart-tag-utils.sh`'s own header comment) is
+  tag-utils helpers rather than sourcing `.github/workflows/lib/chart-tag-utils.sh` directly — that
+  pre-existing inconsistency (noted in `.github/workflows/lib/chart-tag-utils.sh`'s own header comment) is
   out of scope for this bug fix.
 
 No API/schema/interface change — the resulting chart-bump PR format, branch naming, and
@@ -100,7 +100,7 @@ of anything external consumers depend on.
   with the code in the same PR; splitting here would leave an unsafe intermediate state
   (rewritten selection logic with stale test coverage).
 - Not fixing `test-auto-bump-chart.sh`'s pre-existing inline-copy-vs-source inconsistency
-  with `lib/chart-tag-utils.sh`: real, but unrelated to this bug — keeps the fix PR
+  with `.github/workflows/lib/chart-tag-utils.sh`: real, but unrelated to this bug — keeps the fix PR
   scoped and reviewable.
 - Skip opening a PR on an empty recomputed batch (behavior change from today's
   always-credit-the-trigger-tag fallback): confirmed with Dan — strictly more correct,
