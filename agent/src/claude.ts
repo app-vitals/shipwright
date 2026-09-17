@@ -120,6 +120,17 @@ export type ProgressCallback = (
 ) => void;
 
 /**
+ * Callback fired the instant a session id is captured off the stream's
+ * leading `system`/`init` line — the earliest point in a run a session id is
+ * ever available, strictly before any `ProgressCallback` fire (those only
+ * happen on later `assistant` lines). Exists so a caller (and `_runClaude`'s
+ * own retry gate, see below) can learn "this run now has an id worth
+ * resuming with" without waiting for a terminal result or a thrown error to
+ * carry it.
+ */
+export type EarlySessionIdCallback = (sessionId: string) => void;
+
+/**
  * Returns the model name with the highest outputTokens from the CLI's
  * modelUsage map. Returns undefined when the map is empty.
  */
@@ -304,6 +315,7 @@ export function createRunClaude(
   onProgress?: ProgressCallback,
   signal?: AbortSignal,
   extraEnv?: Record<string, string>,
+  onEarlySessionId?: EarlySessionIdCallback,
 ) => Promise<ClaudeRunResult> {
   // Per-session queue: ensures messages on the same thread run serially
   const sessionQueues = new Map<string, Promise<unknown>>();
@@ -382,6 +394,7 @@ export function createRunClaude(
     stream: ReadableStream<Uint8Array>,
     onLine?: () => void,
     perCallOnProgress?: ProgressCallback,
+    onEarlySessionId?: EarlySessionIdCallback,
   ): Promise<{
     result?: ClaudeResultEvent;
     modelUsage: ModelUsage;
@@ -433,6 +446,9 @@ export function createRunClaude(
           system.session_id
         ) {
           earlySessionId = system.session_id;
+          // Fired here, on the leading init line — before any assistant-turn
+          // onProgress fire below, since those only happen on later lines.
+          onEarlySessionId?.(earlySessionId);
         }
         return;
       }
@@ -520,6 +536,7 @@ export function createRunClaude(
     perCallOnProgress?: ProgressCallback,
     signal?: AbortSignal,
     extraEnv?: Record<string, string>,
+    onEarlySessionId?: EarlySessionIdCallback,
   ): Promise<ClaudeRunResult> {
     // Strip SENTRY_DSN so a spawned Claude Code session (and any `bun test`
     // it runs internally) can never construct a real Sentry client from
@@ -584,7 +601,12 @@ export function createRunClaude(
       stderr,
       exitCode,
     ] = await Promise.all([
-      _consumeStream(proc.stdout, resetIdleTimer, perCallOnProgress),
+      _consumeStream(
+        proc.stdout,
+        resetIdleTimer,
+        perCallOnProgress,
+        onEarlySessionId,
+      ),
       new Response(proc.stderr).text(),
       proc.exited,
     ]).finally(() => {
@@ -682,9 +704,16 @@ export function createRunClaude(
     perCallOnProgress?: ProgressCallback,
     signal?: AbortSignal,
     extraEnv?: Record<string, string>,
+    onEarlySessionId?: EarlySessionIdCallback,
   ): Promise<ClaudeRunResult> {
     try {
-      return await _spawnOnce(args, perCallOnProgress, signal, extraEnv);
+      return await _spawnOnce(
+        args,
+        perCallOnProgress,
+        signal,
+        extraEnv,
+        onEarlySessionId,
+      );
     } catch (err) {
       if (!_isConnectionLostMidResponse(err)) throw err;
       sentryClient?.captureMessage?.(
@@ -692,7 +721,13 @@ export function createRunClaude(
           err.sessionId ?? "unknown"
         })`,
       );
-      return _spawnOnce(args, perCallOnProgress, signal, extraEnv);
+      return _spawnOnce(
+        args,
+        perCallOnProgress,
+        signal,
+        extraEnv,
+        onEarlySessionId,
+      );
     }
   }
 
@@ -738,6 +773,7 @@ export function createRunClaude(
     perCallOnProgress: ProgressCallback | undefined,
     signal: AbortSignal | undefined,
     extraEnv?: Record<string, string>,
+    onEarlySessionId?: EarlySessionIdCallback,
   ): Promise<ClaudeRunResult> {
     const existingSessionId = sessionKey
       ? await sessions.get(sessionKey)
@@ -745,8 +781,27 @@ export function createRunClaude(
 
     const args = _buildArgs(message, existingSessionId);
 
+    // A call that starts FRESH (no existingSessionId) can still capture a
+    // session id mid-attempt — off the stream's leading system/init line,
+    // well before any terminal result or thrown error. Track it here so the
+    // retry gate below can resume with it even though the run didn't begin
+    // as a resume. `??=` keeps first-write-wins, mirroring _consumeStream's
+    // own earlySessionId semantics; the caller's own callback still fires on
+    // every capture (including a retry attempt), not just the first.
+    let capturedSessionId: string | undefined;
+    const captureEarlySessionId: EarlySessionIdCallback = (sessionId) => {
+      capturedSessionId ??= sessionId;
+      onEarlySessionId?.(sessionId);
+    };
+
     try {
-      const output = await _spawn(args, perCallOnProgress, signal, extraEnv);
+      const output = await _spawn(
+        args,
+        perCallOnProgress,
+        signal,
+        extraEnv,
+        captureEarlySessionId,
+      );
       await _saveSession(sessionKey, output);
       return output;
     } catch (err) {
@@ -760,26 +815,56 @@ export function createRunClaude(
         // replace the original Claude error being handled in this catch block.
       }
 
-      // Retry the same resumed session once: transient blips (e.g. a socket
-      // close) can self-heal on a second attempt without losing conversation
-      // context. Do NOT catch ClaudeTimeoutError — that means the session
-      // hung and we should surface the error rather than silently spawning a
-      // second process that would also hang. Do NOT retry ClaudeAbortedError
-      // either — the user asked to cancel, so spawning a second process would
-      // defy that. If the retry also fails, rethrow the ORIGINAL error and
-      // leave the session mapping untouched — an error (even a burst of them)
-      // is never treated as proof the session itself is corrupt.
-      if (
-        existingSessionId &&
-        !(err instanceof ClaudeTimeoutError) &&
-        !(err instanceof ClaudeAbortedError)
-      ) {
+      // A session id worth resuming with, in priority order: one already
+      // known at call start (Slack-thread resume), one captured mid-attempt
+      // off the init line even though this call started fresh, or one the
+      // thrown error itself carries (ClaudeRunError/ClaudeTimeoutError/
+      // ClaudeAbortedError all expose `sessionId`). Without at least one of
+      // these there's nothing to resume, so no retry — same as today's
+      // behavior when existingSessionId is undefined.
+      const errSessionId =
+        err instanceof ClaudeRunError ||
+        err instanceof ClaudeTimeoutError ||
+        err instanceof ClaudeAbortedError
+          ? err.sessionId
+          : undefined;
+      const retrySessionId =
+        existingSessionId ?? capturedSessionId ?? errSessionId;
+
+      // Retry once: transient blips (e.g. a socket close, or the hard
+      // wall-clock ceiling firing on a session that was still legitimately
+      // working) can self-heal on a second attempt without losing
+      // conversation context. Do NOT retry ClaudeAbortedError — the user
+      // asked to cancel, so spawning a second process would defy that. Do
+      // NOT retry an idle-reason ClaudeTimeoutError — that means the session
+      // genuinely hung, and we should surface the error rather than silently
+      // spawning a second process that would also hang; a ceiling-reason
+      // timeout is retried, since it's the expected "hit the hard cap while
+      // still working" case, not a hang signal. If the retry also fails,
+      // rethrow the ORIGINAL error and leave the session mapping untouched —
+      // an error (even a burst of them) is never treated as proof the
+      // session itself is corrupt.
+      // Also exclude a connection-lost-mid-response failure: `_spawn` already
+      // gave it its own dedicated single retry (see `_spawn`'s docstring —
+      // Dave, 2026-09-08: retry ONCE, no further retries). That error's
+      // ClaudeRunError happens to carry a `sessionId` (from the CLI's
+      // `result` event) like any other, so without this exclusion it would
+      // qualify for a SECOND, stacked retry cycle here — silently doubling
+      // the documented one-retry limit.
+      const retryBlocked =
+        err instanceof ClaudeAbortedError ||
+        (err instanceof ClaudeTimeoutError && err.reason === "idle") ||
+        _isConnectionLostMidResponse(err);
+
+      if (retrySessionId && !retryBlocked) {
+        const retryArgs = _buildArgs(message, retrySessionId);
         try {
           const output = await _spawn(
-            args,
+            retryArgs,
             perCallOnProgress,
             signal,
             extraEnv,
+            captureEarlySessionId,
           );
           await _saveSession(sessionKey, output);
           return { ...output, recoveredFromError: true };
@@ -806,11 +891,26 @@ export function createRunClaude(
     onProgress?: ProgressCallback,
     signal?: AbortSignal,
     extraEnv?: Record<string, string>,
+    onEarlySessionId?: EarlySessionIdCallback,
   ): Promise<ClaudeRunResult> {
     if (sessionKey)
       return _enqueue(sessionKey, () =>
-        _runClaude(message, sessionKey, onProgress, signal, extraEnv),
+        _runClaude(
+          message,
+          sessionKey,
+          onProgress,
+          signal,
+          extraEnv,
+          onEarlySessionId,
+        ),
       );
-    return _runClaude(message, undefined, onProgress, signal, extraEnv);
+    return _runClaude(
+      message,
+      undefined,
+      onProgress,
+      signal,
+      extraEnv,
+      onEarlySessionId,
+    );
   };
 }
