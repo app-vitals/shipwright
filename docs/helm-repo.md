@@ -73,10 +73,13 @@ within seconds or minutes of each other. Rather than bumping the chart once
 per tag (a PR/merge/publish cycle per tag for what's really one release
 event), the workflow **debounces**: a 90-second quiet period absorbs bursts,
 and only the last tag in a burst triggers the actual bump. The resulting PR
-credits every release tag that landed since the previous chart-bump commit,
-so the batch stays fully traceable even though it's collapsed into a single
-version bump. The PR body lists exactly which `values.yaml` path(s) were
-pinned and to which tag(s).
+credits every release tag that is currently drifted from what's pinned in
+`values.yaml` (i.e., the highest-semver tag for each service differs from its
+current `values.yaml` pin), so the batch stays fully traceable even though it's
+collapsed into a single version bump. If nothing has actually drifted (e.g., a
+concurrent run already pinned everything), the workflow skips opening a PR
+entirely. The PR body lists exactly which `values.yaml` path(s) were pinned
+and to which tag(s).
 
 ### Handling concurrent bumps (collision retry)
 
@@ -88,9 +91,10 @@ commit. When this happens, the workflow detects a branch-name collision
 (`chore/chart-v{version}` already exists on the remote) and, instead of
 silently skipping and dropping the losing run's entire tag batch, it fetches
 a fresh copy of `main`, re-derives the batch and version from that newer
-state (the winning run's chart-bump commit becomes the new baseline, so
-already-pinned tags are naturally excluded), and retries — up to 5 times
-with a 15-second backoff between attempts.
+state by checking which tags currently drift from the new `values.yaml`
+(tags the winning run already pinned are no longer drifted and are naturally
+excluded), and retries — up to 5 times with a 15-second backoff between
+attempts.
 
 If every retry attempt still collides, the workflow fails loudly, naming the
 release tag(s) that could not be pinned, rather than silently exiting
