@@ -166,6 +166,7 @@ tools:
   - WebFetch
   - Skill
   - Agent
+  - Monitor
 env:
   required:
     - key: CLAUDE_CODE_OAUTH_TOKEN

@@ -230,6 +230,7 @@ tools:
   - WebFetch
   - Skill
   - Agent
+  - Monitor
 ```
 
 This list is **additive on top of the floor set** — see [FLOOR_TOOLS are outside manifest authority](#floor_tools-are-outside-manifest-authority). Listing `Read`/`Write`/`Edit`/`Glob`/`Grep`/`Skill` here is harmless (they're already floor-granted) but redundant; the fields that actually matter to declare are the high-privilege ones — `Bash`, `WebSearch`, `WebFetch`, `Agent` — since those are never floor-granted.
