@@ -1202,4 +1202,157 @@ describe("loop-orchestrator + dev-task auto-resume (DTW-1.3)", () => {
     expect(cleared).toHaveLength(1);
     expect(cleared[0]).toMatch(/^dev-task:DTW-9\.9:/);
   });
+
+  test("every resume attempt renews the claim FIRST — one dispatch never outlives the single-session claim TTL", async () => {
+    // Regression test for the third-round review finding: lib/claim-ttl.ts
+    // sizes DEFAULT_CLAIM_TTL_MS as "one Claude session + 5min buffer", an
+    // invariant that assumes a claim spans exactly one session. This loop can
+    // hold one claim across up to 4 sequential runner() calls, and an attempt
+    // that exits before its in-session heartbeat step leaves the claim to go
+    // stale mid-dispatch — the StaleClaimReaper then releases it and a sibling
+    // agent can start a second, cold session on the same task/branch. The
+    // ownership gate closes the resume half of that race; renewing the claim
+    // before each attempt closes the reap half.
+    const events: string[] = [];
+    const runner = async (): Promise<ClaudeRunResult> => {
+      events.push("run");
+      return { result: "done" };
+    };
+    const { reporter, creates } = makeAttemptRecordingReporter();
+    // Never terminal → the dispatch exhausts its 3-resume cap.
+    const { getTaskState } = makeStateStub([
+      "in_progress",
+      "in_progress",
+      "in_progress",
+    ]);
+
+    let devTaskCalls = 0;
+    const loop = createLoopOrchestrator({
+      getDevTaskCandidates: async () => {
+        devTaskCalls += 1;
+        return devTaskCalls === 1
+          ? [task("DTW-9.10", "2026-01-01T00:00:00Z")]
+          : [];
+      },
+      getReviewCandidates: async () => [],
+      getPatchCandidates: async () => [],
+      getDeployCandidates: async () => [],
+      claimTask: async () => true,
+      claimPr: async (p) => ({ id: p.id, commitSha: p.commitSha }),
+      recordSkip: async () => {},
+      resetSkip: async () => {},
+      getTaskState,
+      agentId: OWNER_AGENT_ID,
+      heartbeatTask: async (id) => {
+        events.push(`heartbeat:${id}`);
+      },
+      runner,
+      cronRunReporter: reporter,
+      workQueueReporter: noopWorkQueueReporter,
+      loopCronId: "shipwright-loop",
+      clock: FixedClock(new Date("2026-07-20T00:00:00Z")),
+    });
+
+    await loop([job("shipwright-dev-task", true)]);
+
+    // The initial attempt runs on the claim the loop just took (POST /claim
+    // sets heartbeatAt itself, so no renewal is needed before it); every
+    // resume is preceded by exactly one renewal of THIS task's claim.
+    expect(events).toEqual([
+      "run",
+      "heartbeat:DTW-9.10",
+      "run",
+      "heartbeat:DTW-9.10",
+      "run",
+      "heartbeat:DTW-9.10",
+      "run",
+    ]);
+    expect(creates).toHaveLength(4);
+  });
+
+  test("a claim renewal failure stops the resume loop but leaves the dispatch itself successful", async () => {
+    const { runner, sessionKeys } = makeSessionKeyRecordingRunner();
+    const { reporter, creates, completes } = makeAttemptRecordingReporter();
+    const { getTaskState } = makeStateStub(["in_progress", "in_progress"]);
+
+    let devTaskCalls = 0;
+    const loop = createLoopOrchestrator({
+      getDevTaskCandidates: async () => {
+        devTaskCalls += 1;
+        return devTaskCalls === 1
+          ? [task("DTW-9.11", "2026-01-01T00:00:00Z")]
+          : [];
+      },
+      getReviewCandidates: async () => [],
+      getPatchCandidates: async () => [],
+      getDeployCandidates: async () => [],
+      claimTask: async () => true,
+      claimPr: async (p) => ({ id: p.id, commitSha: p.commitSha }),
+      recordSkip: async () => {},
+      resetSkip: async () => {},
+      getTaskState,
+      agentId: OWNER_AGENT_ID,
+      heartbeatTask: async () => {
+        throw new Error("task-store POST /tasks/DTW-9.11/heartbeat → 503");
+      },
+      runner,
+      cronRunReporter: reporter,
+      workQueueReporter: noopWorkQueueReporter,
+      loopCronId: "shipwright-loop",
+      clock: FixedClock(new Date("2026-07-20T00:00:00Z")),
+    });
+
+    await loop([job("shipwright-dev-task", true)]);
+
+    // Fail-safe: a claim that can't be proven fresh is never resumed against
+    // (pre-DTW-1.3 behavior — the reaper + next tick take over)...
+    expect(sessionKeys).toHaveLength(1);
+    // ...and the renewal blip must not turn an otherwise-successful dispatch
+    // into a failed cron run.
+    expect(creates).toHaveLength(1);
+    expect(completes).toEqual([{ itemId: "DTW-9.11", outcome: "completed" }]);
+  });
+
+  test("a task reaped and re-claimed by another agent is never heartbeated on that agent's behalf", async () => {
+    const { runner, sessionKeys } = makeSessionKeyRecordingRunner();
+    const { reporter } = makeAttemptRecordingReporter();
+    const heartbeats: string[] = [];
+    const { getTaskState } = makeStateStub([
+      { status: "in_progress", claimedBy: "agent-someone-else" },
+    ]);
+
+    let devTaskCalls = 0;
+    const loop = createLoopOrchestrator({
+      getDevTaskCandidates: async () => {
+        devTaskCalls += 1;
+        return devTaskCalls === 1
+          ? [task("DTW-9.12", "2026-01-01T00:00:00Z")]
+          : [];
+      },
+      getReviewCandidates: async () => [],
+      getPatchCandidates: async () => [],
+      getDeployCandidates: async () => [],
+      claimTask: async () => true,
+      claimPr: async (p) => ({ id: p.id, commitSha: p.commitSha }),
+      recordSkip: async () => {},
+      resetSkip: async () => {},
+      getTaskState,
+      agentId: OWNER_AGENT_ID,
+      heartbeatTask: async (id) => {
+        heartbeats.push(id);
+      },
+      runner,
+      cronRunReporter: reporter,
+      workQueueReporter: noopWorkQueueReporter,
+      loopCronId: "shipwright-loop",
+      clock: FixedClock(new Date("2026-07-20T00:00:00Z")),
+    });
+
+    await loop([job("shipwright-dev-task", true)]);
+
+    expect(sessionKeys).toHaveLength(1);
+    // The renewal is ordered after the ownership gate, so a claim that now
+    // belongs to a sibling agent is left to age out on its own schedule.
+    expect(heartbeats).toEqual([]);
+  });
 });

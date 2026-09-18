@@ -263,6 +263,34 @@ export interface LoopOrchestratorDeps {
    */
   agentId?: string;
   /**
+   * DTW-1.3 — renews this dispatch's claim on a task (POST
+   * /tasks/{id}/heartbeat) immediately before each auto-resume attempt.
+   *
+   * `lib/claim-ttl.ts`'s DEFAULT_CLAIM_TTL_MS (session timeout + 5min buffer)
+   * is sized on the assumption that a claim spans exactly ONE Claude session,
+   * so "a claim isn't reaped mid-session". The auto-resume loop breaks that
+   * assumption: one dispatch can issue up to 1 + MAX_AUTO_RESUMES sequential
+   * runner() calls against the same claim, and nothing in this file (or in
+   * createTaskStoreClient) renews the claim between them — the only other
+   * heartbeat renewals are prompt-driven, inside the dev-task session itself,
+   * and an attempt that exits abnormally early (precisely the case this
+   * feature targets) may never reach one. Without this renewal the reaper can
+   * release the claim mid-dispatch and a sibling agent can start a second,
+   * cold session on the same task/branch while this dispatch's next attempt is
+   * still in flight. The `claimedBy` ownership gate closes the resume half of
+   * that race but not the reap half; refreshing here closes the reap half by
+   * giving every attempt a full TTL window, exactly like the `/claim` that
+   * started the dispatch.
+   *
+   * A rejection means "the claim could not be proven fresh" and stops the
+   * resume loop (the dispatch itself still succeeds) — strictly today's
+   * pre-DTW-1.3 behavior, same fail-safe stance as a getTaskState failure.
+   *
+   * Optional: when undefined (every test that doesn't opt in), the loop
+   * resumes without renewing, identical to pre-fix behavior.
+   */
+  heartbeatTask?: (taskId: string) => Promise<void>;
+  /**
    * Clears a persisted session-store entry by key. Called (best-effort) at
    * the end of a dev-task dispatch's resume loop to drop that dispatch's
    * per-dispatch nonce key, which is unreachable from then on — without this,
@@ -553,6 +581,7 @@ export function createLoopOrchestrator(
     resetSkip,
     getTaskState,
     agentId,
+    heartbeatTask,
     clearSessionKey,
     runner,
     cronRunReporter,
@@ -1005,6 +1034,28 @@ export function createLoopOrchestrator(
               `[loop-orchestrator] ${itemId} is in_progress but claimed by ${liveState.claimedBy ?? "nobody"} (not ${agentId}) — not resuming`,
             );
             return;
+          }
+          // Claim-TTL refresh: DEFAULT_CLAIM_TTL_MS is sized for exactly one
+          // Claude session, but this loop can hold one claim across up to
+          // 1 + MAX_AUTO_RESUMES of them. Renew it here so the attempt below
+          // starts with a full TTL window — otherwise an attempt that exited
+          // before its in-session heartbeat step leaves a claim that the
+          // StaleClaimReaper can release mid-dispatch, letting a sibling agent
+          // start a second, cold session on the same task/branch while this
+          // attempt is still running. Ordered AFTER the ownership gate so a
+          // claim that already belongs to someone else is never refreshed on
+          // their behalf. A failure means the claim can't be proven fresh, so
+          // stop resuming rather than run an attempt that may be racing a reap
+          // — the dispatch itself stays successful.
+          if (heartbeatTask) {
+            try {
+              await heartbeatTask(itemId);
+            } catch (err) {
+              console.warn(
+                `[loop-orchestrator] heartbeatTask failed for ${itemId}: ${String(err)} — not resuming`,
+              );
+              return;
+            }
           }
           resumeAttempt += 1;
           if ((await runOneAttempt()) !== "completed") return;
@@ -1742,6 +1793,11 @@ export async function createProductionLoopOrchestrator(
     // The value the task store pins claimedBy to for this agent's own claims.
     // Empty/unset → the resume gate keeps its status-only behavior.
     agentId: (process.env.SHIPWRIGHT_AGENT_ID ?? "").trim() || undefined,
+    // DTW-1.3: renews the claim before each resume attempt so a multi-attempt
+    // dispatch never outlives DEFAULT_CLAIM_TTL_MS, which is sized for a
+    // single session. Throws on a non-ok response — the resume gate reads that
+    // as "stop resuming".
+    heartbeatTask: (id) => taskStoreClient.heartbeatTask(id),
     clearSessionKey: opts.clearSessionKey,
     runner: opts.runner,
     cronRunReporter: opts.cronRunReporter,

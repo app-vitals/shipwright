@@ -993,6 +993,41 @@ describe("createTaskStoreClient query()", () => {
     );
   });
 
+  // ─── heartbeatTask() (DTW-1.3) ────────────────────────────────────────────
+
+  test("heartbeatTask() POSTs to /tasks/:id/heartbeat with a valid empty JSON body", async () => {
+    let capturedUrl: string | undefined;
+    let capturedInit: RequestInit | undefined;
+    const fakeFetch = (async (url: RequestInfo | URL, init?: RequestInit) => {
+      capturedUrl = String(url);
+      capturedInit = init;
+      return { ok: true, status: 200, json: async () => FAKE_TASK } as Response;
+    }) as unknown as typeof fetch;
+
+    const client = createTaskStoreClient({ fetchFn: fakeFetch });
+    await client.heartbeatTask("T-1");
+
+    expect(capturedUrl).toBe(
+      "https://task-store.example.com/tasks/T-1/heartbeat",
+    );
+    expect(capturedInit?.method).toBe("POST");
+    expect(capturedInit?.body).toBe("{}");
+  });
+
+  test("heartbeatTask() throws on a non-ok status so the caller can stop resuming", async () => {
+    const fakeFetch = (async () =>
+      ({
+        ok: false,
+        status: 403,
+        json: async () => ({}),
+      }) as Response) as unknown as typeof fetch;
+
+    const client = createTaskStoreClient({ fetchFn: fakeFetch });
+    await expect(client.heartbeatTask("T-1")).rejects.toThrow(
+      "task-store POST /tasks/T-1/heartbeat → 403",
+    );
+  });
+
   test("claim() POSTs to /tasks/:id/claim", async () => {
     let capturedUrl: string | undefined;
     let capturedInit: RequestInit | undefined;

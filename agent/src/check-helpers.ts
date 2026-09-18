@@ -566,6 +566,15 @@ export function createTaskStoreClient(opts?: { fetchFn?: FetchFn }): {
    * genuinely gone), throws on any other non-ok status.
    */
   getTask(id: string): Promise<Task | null>;
+  /**
+   * DTW-1.3 — renews a claimed task's `heartbeatAt` (POST /tasks/{id}/heartbeat)
+   * so the task-store's StaleClaimReaper doesn't release the claim out from
+   * under a long-running, multi-attempt dispatch. Throws on any non-ok status
+   * (including 404/403) rather than swallowing: the loop's resume gate treats a
+   * failed renewal as "don't start another attempt against a claim I can't
+   * prove is still fresh", so the failure must be visible to the caller.
+   */
+  heartbeatTask(id: string): Promise<void>;
   update(id: string, fields: Record<string, unknown>): Promise<Task>;
   claim(id: string): Promise<boolean>;
   claimPr(params: {
@@ -664,6 +673,20 @@ export function createTaskStoreClient(opts?: { fetchFn?: FetchFn }): {
       if (!res.ok)
         throw new Error(`task-store GET /tasks/${id} → ${res.status}`);
       return res.json() as Promise<Task>;
+    },
+    async heartbeatTask(id: string): Promise<void> {
+      const res = await doFetch(`${baseUrl}/tasks/${id}/heartbeat`, {
+        method: "POST",
+        headers,
+        // headers always declares Content-Type: application/json — send a
+        // valid empty object so the server's JSON body parser doesn't choke
+        // on a truly empty body (mirrors claim() above).
+        body: "{}",
+      });
+      if (!res.ok)
+        throw new Error(
+          `task-store POST /tasks/${id}/heartbeat → ${res.status}`,
+        );
     },
     async update(id: string, fields: Record<string, unknown>): Promise<Task> {
       const res = await doFetch(`${baseUrl}/tasks/${id}`, {
