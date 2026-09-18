@@ -94,6 +94,18 @@ export interface CronRunReporter {
     runId: string | null,
     modelBreakdown: ModelBreakdownEntry[],
   ): Promise<void>;
+  /**
+   * Fire-and-forget mid-run session-id push. PATCHes only sessionId — no
+   * completedAt/outcome, so it never signals run completion. Called as soon as
+   * an early session id is known (before the run finishes), so the cron-run
+   * log has it for manual inspection/resume even if the run never reaches a
+   * terminal state.
+   */
+  recordSessionId(
+    cronId: string,
+    runId: string | null,
+    sessionId: string,
+  ): Promise<void>;
 }
 
 export interface HttpCronRunReporterOptions {
@@ -257,6 +269,19 @@ export class HttpCronRunReporter implements CronRunReporter {
 
     await this.patchRun(url, { modelBreakdown });
   }
+
+  async recordSessionId(
+    cronId: string,
+    runId: string | null,
+    sessionId: string,
+  ): Promise<void> {
+    if (runId === null) return;
+
+    const { apiUrl, agentId } = this.opts;
+    const url = `${apiUrl}/agents/${agentId}/crons/${cronId}/runs/${runId}`;
+
+    await this.patchRun(url, { sessionId });
+  }
 }
 
 export class NoopCronRunReporter implements CronRunReporter {
@@ -300,6 +325,14 @@ export class NoopCronRunReporter implements CronRunReporter {
     _cronId: string,
     _runId: string | null,
     _modelBreakdown: ModelBreakdownEntry[],
+  ): Promise<void> {
+    // intentional no-op
+  }
+
+  async recordSessionId(
+    _cronId: string,
+    _runId: string | null,
+    _sessionId: string,
   ): Promise<void> {
     // intentional no-op
   }

@@ -74,6 +74,12 @@ export interface Task {
   prOpenedAt?: string;
   prUrl?: string;
   assignee?: string;
+  /**
+   * The agent id currently holding the claim — pinned server-side by
+   * POST /tasks/{id}/claim to the calling agent's id, cleared by /release and
+   * by the StaleClaimReaper. Null/absent means unclaimed.
+   */
+  claimedBy?: string | null;
   issue?: string;
   model?: "haiku" | "sonnet" | "opus";
   complexity?: number;
@@ -554,6 +560,21 @@ export function redactBodySnippet(body: string): string {
  */
 export function createTaskStoreClient(opts?: { fetchFn?: FetchFn }): {
   query(params: URLSearchParams): Promise<Task[]>;
+  /**
+   * DTW-1.3 — fetches one task by id (GET /tasks/{id}) so a caller can read
+   * its LIVE status mid-dispatch. Resolves null on a 404 (the task is
+   * genuinely gone), throws on any other non-ok status.
+   */
+  getTask(id: string): Promise<Task | null>;
+  /**
+   * DTW-1.3 — renews a claimed task's `heartbeatAt` (POST /tasks/{id}/heartbeat)
+   * so the task-store's StaleClaimReaper doesn't release the claim out from
+   * under a long-running, multi-attempt dispatch. Throws on any non-ok status
+   * (including 404/403) rather than swallowing: the loop's resume gate treats a
+   * failed renewal as "don't start another attempt against a claim I can't
+   * prove is still fresh", so the failure must be visible to the caller.
+   */
+  heartbeatTask(id: string): Promise<void>;
   update(id: string, fields: Record<string, unknown>): Promise<Task>;
   claim(id: string): Promise<boolean>;
   claimPr(params: {
@@ -643,6 +664,29 @@ export function createTaskStoreClient(opts?: { fetchFn?: FetchFn }): {
       throw new Error(
         `Unexpected task-store response format: ${JSON.stringify(data)}`,
       );
+    },
+    async getTask(id: string): Promise<Task | null> {
+      const res = await doFetch(`${baseUrl}/tasks/${id}`, { headers });
+      // A 404 means the task genuinely no longer exists — the caller treats
+      // that as "not in_progress anymore", not as an error worth throwing.
+      if (res.status === 404) return null;
+      if (!res.ok)
+        throw new Error(`task-store GET /tasks/${id} → ${res.status}`);
+      return res.json() as Promise<Task>;
+    },
+    async heartbeatTask(id: string): Promise<void> {
+      const res = await doFetch(`${baseUrl}/tasks/${id}/heartbeat`, {
+        method: "POST",
+        headers,
+        // headers always declares Content-Type: application/json — send a
+        // valid empty object so the server's JSON body parser doesn't choke
+        // on a truly empty body (mirrors claim() above).
+        body: "{}",
+      });
+      if (!res.ok)
+        throw new Error(
+          `task-store POST /tasks/${id}/heartbeat → ${res.status}`,
+        );
     },
     async update(id: string, fields: Record<string, unknown>): Promise<Task> {
       const res = await doFetch(`${baseUrl}/tasks/${id}`, {
@@ -881,9 +925,7 @@ function mergeLinkedTasks(tasks: Task[]): LinkedTaskInfo | null {
   const anyHitl = first.hitl === true || rest.some((t) => t.hitl === true);
   return {
     status:
-      anyBlockedStatus && first.status !== "blocked"
-        ? "blocked"
-        : first.status,
+      anyBlockedStatus && first.status !== "blocked" ? "blocked" : first.status,
     createdAt: first.createdAt,
     // Preserve first.hitl's original value (including undefined) unless a
     // bundle-mate is hitl:true, in which case the merged result must report

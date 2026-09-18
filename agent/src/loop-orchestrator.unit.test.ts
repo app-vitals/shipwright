@@ -18,6 +18,7 @@ import {
   ClaudeRunError,
   type ClaudeRunResult,
   ClaudeTimeoutError,
+  type EarlySessionIdCallback,
   type ModelUsage,
   type ProgressCallback,
 } from "./claude.ts";
@@ -90,6 +91,12 @@ interface ProgressCall {
   runId: string | null;
   modelBreakdown: ModelBreakdownEntry[];
 }
+/** DTW-1.3 — one recorded recordSessionId() call. */
+interface SessionIdCall {
+  cronId: string;
+  runId: string | null;
+  sessionId: string;
+}
 
 function makeRecordingReporter(): {
   reporter: CronRunReporter;
@@ -97,11 +104,13 @@ function makeRecordingReporter(): {
   completes: CompleteCall[];
   skips: SkipCall[];
   progressCalls: ProgressCall[];
+  sessionIdCalls: SessionIdCall[];
 } {
   const creates: CreateCall[] = [];
   const completes: CompleteCall[] = [];
   const skips: SkipCall[] = [];
   const progressCalls: ProgressCall[] = [];
+  const sessionIdCalls: SessionIdCall[] = [];
   let counter = 0;
 
   const reporter: CronRunReporter = {
@@ -153,9 +162,19 @@ function makeRecordingReporter(): {
     async recordProgress(cronId, runId, modelBreakdown) {
       progressCalls.push({ cronId, runId, modelBreakdown });
     },
+    async recordSessionId(cronId, runId, sessionId) {
+      sessionIdCalls.push({ cronId, runId, sessionId });
+    },
   };
 
-  return { reporter, creates, completes, skips, progressCalls };
+  return {
+    reporter,
+    creates,
+    completes,
+    skips,
+    progressCalls,
+    sessionIdCalls,
+  };
 }
 
 // ─── Stub skip tracker (SKT-2.1) ────────────────────────────────────────────
@@ -434,11 +453,17 @@ interface MakeDepsOptions {
   reviewCandidates?: WorkPrCandidate[] | (() => Promise<WorkPrCandidate[]>);
   patchCandidates?: WorkPrCandidate[] | (() => Promise<WorkPrCandidate[]>);
   deployCandidates?: WorkPrCandidate[] | (() => Promise<WorkPrCandidate[]>);
-  runner?: (
-    message: string,
-    onProgress?: ProgressCallback,
-  ) => Promise<ClaudeRunResult>;
+  runner?: LoopOrchestratorDeps["runner"];
   reporter?: CronRunReporter;
+  // DTW-1.3: live task-state probe used by the dev-task auto-resume loop.
+  // Defaults to a stub that always resolves null ("gone" → never resume), so
+  // existing tests that don't pass it are unaffected.
+  getTaskState?: LoopOrchestratorDeps["getTaskState"];
+  // DTW-1.3: this agent's claim identity, and the per-dispatch session-key
+  // cleanup hook. Both undefined by default (ownership gate skipped, no
+  // cleanup), so existing tests are unaffected.
+  agentId?: string;
+  clearSessionKey?: (key: string) => Promise<void>;
   workQueueReporter?: WorkQueueReporter;
   loopCronId?: string;
   // Records which qualification functions were actually invoked.
@@ -555,6 +580,9 @@ function makeDeps(options: MakeDepsOptions = {}): LoopOrchestratorDeps {
       })),
     recordSkip: options.recordSkip ?? (async () => {}),
     resetSkip: options.resetSkip ?? (async () => {}),
+    getTaskState: options.getTaskState ?? (async () => null),
+    agentId: options.agentId,
+    clearSessionKey: options.clearSessionKey,
     sentryClient: options.sentryClient,
   };
 }
@@ -1012,6 +1040,93 @@ describe("createLoopOrchestrator", () => {
     // hung) iteration — effectively 0ms since its own busySince reset, not
     // the ~40 cumulative minutes both dispatches took.
     expect(busyLogs.some((msg) => msg.includes(String(40 * 60 * 1000)))).toBe(
+      false,
+    );
+  });
+
+  test("LPF-7.2 + DTW-1.3: busySince resets per dispatch attempt — a multi-resume dev-task dispatch does not falsely escalate", async () => {
+    // Regression test for the review finding on this PR: DTW-1.3's auto-resume
+    // loop lets ONE dev-task dispatch make up to 4 sequential runner() calls
+    // (1 initial + MAX_AUTO_RESUMES), each independently bounded by claude.ts's
+    // 30-minute ceiling — so a single drain iteration can now legitimately run
+    // for ~2 hours. With busySince reset only per drain ITERATION, a concurrent
+    // tick firing mid-resume-loop would see that cumulative time cross
+    // BUSY_STALL_THRESHOLD_MS (35 min) and emit a false, Sentry-eligible
+    // "stuck/wedged" console.error on a perfectly healthy dispatch. Four
+    // 20-minute attempts (80 minutes cumulative) blow well past the threshold
+    // if measured from iteration start, but must not escalate once busySince
+    // re-baselines per attempt.
+    let release!: () => void;
+    const gate = new Promise<void>((res) => {
+      release = res;
+    });
+    let markReachedLastResume!: () => void;
+    const reachedLastResume = new Promise<void>((res) => {
+      markReachedLastResume = res;
+    });
+    const { clock, advanceMs } = makeMutableClockForBackoff(
+      "2026-01-01T00:00:00Z",
+    );
+
+    const consumed = new Set<string>();
+    let runnerCalls = 0;
+    const runner = async (): Promise<ClaudeRunResult> => {
+      runnerCalls += 1;
+      // Each attempt takes 20 (simulated) minutes — under the 30-minute
+      // runner() ceiling the threshold is calibrated against.
+      advanceMs(20 * 60 * 1000);
+      if (runnerCalls === 4) {
+        // Final resume: hang here so the overlapping tick below fires while
+        // this dispatch is still inside its resume loop.
+        markReachedLastResume();
+        await gate;
+      }
+      return { result: "done" };
+    };
+
+    const deps = {
+      ...makeDeps({
+        devTaskCandidates: [task("DTW-BUSY-1", "2026-01-01T00:00:00Z")],
+        claimTask: consumingClaimTask(consumed),
+        consumed,
+        // Never terminal, still ours → the resume loop runs to its full cap.
+        getTaskState: async () => ({
+          status: "in_progress",
+          claimedBy: null,
+        }),
+        runner,
+      }),
+      clock,
+    };
+    const loop = createLoopOrchestrator(deps);
+
+    const first = loop(ALL_PHASES_ON);
+    await reachedLastResume;
+
+    let errorMessages: string[] = [];
+    const warnMessages = await withCapturedWarnings(async () => {
+      errorMessages = await withCapturedErrors(async () => {
+        await loop(ALL_PHASES_ON);
+      });
+    });
+
+    release();
+    await first;
+
+    // 1 initial + 3 resumes actually ran.
+    expect(runnerCalls).toBe(4);
+    // The concurrent tick must NOT have escalated to the stuck/wedged error.
+    expect(errorMessages).toEqual([]);
+    const busyLogs = warnMessages.filter(
+      (msg) => msg.toLowerCase().includes("busy") || msg.includes("draining"),
+    );
+    expect(busyLogs.length).toBeGreaterThan(0);
+    // Elapsed reflects only the in-flight 4th attempt (20 min), not the
+    // 80-minute cumulative resume loop.
+    expect(busyLogs.some((msg) => msg.includes(String(20 * 60 * 1000)))).toBe(
+      true,
+    );
+    expect(busyLogs.some((msg) => msg.includes(String(80 * 60 * 1000)))).toBe(
       false,
     );
   });
@@ -3989,6 +4104,7 @@ describe("createLoopOrchestrator", () => {
       async recordProgress() {
         throw new Error("admin API unreachable");
       },
+      async recordSessionId() {},
     };
     const runner = async (
       _message: string,
@@ -4007,6 +4123,136 @@ describe("createLoopOrchestrator", () => {
     const loop = createLoopOrchestrator(deps);
 
     // Must resolve without throwing despite recordProgress rejecting.
+    await expect(
+      loop([job("shipwright-dev-task", true)]),
+    ).resolves.toBeUndefined();
+  });
+
+  // ─── Early session-id push (DTW-1.3) ───────────────────────────────────────
+
+  test("a dev-task runner that fires onEarlySessionId pushes it via recordSessionId before the run completes", async () => {
+    const consumed = new Set<string>();
+    const devTaskCandidates = [task("SWC-E1", "2026-01-01T00:00:00Z")];
+    const { reporter, sessionIdCalls } = makeRecordingReporter();
+    const callOrder: string[] = [];
+    const trackedReporter: CronRunReporter = {
+      ...reporter,
+      async recordSessionId(cronId, runId, sessionId) {
+        callOrder.push("recordSessionId");
+        await reporter.recordSessionId(cronId, runId, sessionId);
+      },
+      async completeRun(
+        cronId,
+        runId,
+        completedAt,
+        outcome,
+        opts,
+        phaseId,
+        itemType,
+        itemId,
+      ) {
+        callOrder.push("completeRun");
+        await reporter.completeRun(
+          cronId,
+          runId,
+          completedAt,
+          outcome,
+          opts,
+          phaseId,
+          itemType,
+          itemId,
+        );
+      },
+    };
+
+    const runner = async (
+      _message: string,
+      _onProgress?: ProgressCallback,
+      _sessionKey?: string,
+      onEarlySessionId?: EarlySessionIdCallback,
+    ): Promise<ClaudeRunResult> => {
+      // Fired synchronously, i.e. well before the run resolves.
+      onEarlySessionId?.("sess-early-abc");
+      consumed.add("SWC-E1");
+      return { result: "done", sessionId: "sess-early-abc" };
+    };
+
+    const deps = makeDeps({
+      devTaskCandidates,
+      runner,
+      reporter: trackedReporter,
+      consumed,
+    });
+    const loop = createLoopOrchestrator(deps);
+
+    await loop([job("shipwright-dev-task", true)]);
+
+    expect(sessionIdCalls).toHaveLength(1);
+    expect(sessionIdCalls[0]).toEqual({
+      cronId: "shipwright-loop",
+      runId: "run-1",
+      sessionId: "sess-early-abc",
+    });
+    // Pushed as soon as the callback fired — not deferred to completion.
+    expect(callOrder).toEqual(["recordSessionId", "completeRun"]);
+  });
+
+  test("a non-dev-task (review) dispatch never pushes recordSessionId — no sessionKey, no early-session capture", async () => {
+    const consumed = new Set<string>();
+    const reviewCandidates = [pr("acme/x#3", "2026-01-01T00:00:00Z", "review")];
+    const { reporter, sessionIdCalls } = makeRecordingReporter();
+
+    const runner = async (
+      _message: string,
+      _onProgress?: ProgressCallback,
+      _sessionKey?: string,
+      onEarlySessionId?: EarlySessionIdCallback,
+    ): Promise<ClaudeRunResult> => {
+      onEarlySessionId?.("sess-review-1");
+      consumed.add("acme/x#3");
+      return { result: "done" };
+    };
+
+    const deps = makeDeps({ reviewCandidates, runner, reporter, consumed });
+    const loop = createLoopOrchestrator(deps);
+
+    await loop([job("shipwright-review", true)]);
+
+    expect(sessionIdCalls).toHaveLength(0);
+  });
+
+  test("a recordSessionId rejection does not crash dispatch", async () => {
+    const consumed = new Set<string>();
+    const devTaskCandidates = [task("SWC-E2", "2026-01-01T00:00:00Z")];
+    const failingReporter: CronRunReporter = {
+      async createRun() {
+        return "run-1";
+      },
+      async completeRun() {},
+      async skipRun() {},
+      async recordProgress() {},
+      async recordSessionId() {
+        throw new Error("admin API unreachable");
+      },
+    };
+    const runner = async (
+      _message: string,
+      _onProgress?: ProgressCallback,
+      _sessionKey?: string,
+      onEarlySessionId?: EarlySessionIdCallback,
+    ): Promise<ClaudeRunResult> => {
+      onEarlySessionId?.("sess-early-boom");
+      consumed.add("SWC-E2");
+      return { result: "done" };
+    };
+    const deps = makeDeps({
+      devTaskCandidates,
+      runner,
+      reporter: failingReporter,
+      consumed,
+    });
+    const loop = createLoopOrchestrator(deps);
+
     await expect(
       loop([job("shipwright-dev-task", true)]),
     ).resolves.toBeUndefined();

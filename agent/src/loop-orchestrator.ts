@@ -67,6 +67,7 @@
  * noise.
  */
 
+import { randomUUID } from "node:crypto";
 import type { ErrorCapturingClient } from "@shipwright/lib/sentry";
 import {
   buildProductionDeps as buildDeployDeps,
@@ -99,6 +100,7 @@ import {
   ClaudeRunError,
   type ClaudeRunResult,
   ClaudeTimeoutError,
+  type EarlySessionIdCallback,
   type ProgressCallback,
   reportClaudeError,
 } from "./claude.ts";
@@ -204,11 +206,103 @@ export interface LoopOrchestratorDeps {
    * cronRunReporter.recordProgress (debounced) inside dispatch() so token
    * totals survive an agent-process kill mid-run, not just a clean
    * completion.
+   *
+   * DTW-1.3 widened the signature with two optional trailing params, both
+   * supplied only by the dev-task dispatch path:
+   *   - `sessionKey` — `dev-task:{taskId}:{per-dispatch nonce}`. The underlying
+   *     runner (createRunClaude's closure) persists session ids in its own
+   *     `sessions` map keyed by this value and automatically builds `-r <id>`
+   *     on the next call with the SAME key, so a resume "just happens" by
+   *     calling runner() again with it. The nonce is minted once per
+   *     dispatchItem call, so resuming is scoped to that dispatch's own loop
+   *     and a later independent dispatch of the same task can't inherit a dead
+   *     session; the key is cleared (via clearSessionKey) once that loop exits
+   *     (see dispatchItem for the full rationale). Left undefined for
+   *     review/patch/deploy/plan, which deliberately start fresh on every
+   *     dispatch.
+   *   - `onEarlySessionId` — fires as soon as a session id is known (even for
+   *     a call that started fresh), wired to cronRunReporter.recordSessionId
+   *     so the cron-run log carries it before the run reaches a terminal state.
    */
   runner: (
     message: string,
     onProgress?: ProgressCallback,
+    sessionKey?: string,
+    onEarlySessionId?: EarlySessionIdCallback,
   ) => Promise<ClaudeRunResult>;
+  /**
+   * DTW-1.3 — fetches a task's live state from the task store, used by the
+   * dev-task-only auto-resume loop in dispatchItem to decide whether to
+   * immediately resume a still-in_progress task instead of waiting for the
+   * next cron tick / the StaleClaimReaper. Returns null if the task can't be
+   * found (treated as "stop resuming").
+   *
+   * Returns `claimedBy` alongside `status` (both come from the same
+   * GET /tasks/{id} response, so this costs nothing extra) because status
+   * alone can't distinguish "still mine" from "reaped and re-claimed by
+   * someone else" — see the resume gate in dispatchItem and the `agentId`
+   * doc comment below.
+   */
+  getTaskState: (
+    taskId: string,
+  ) => Promise<{ status: string; claimedBy: string | null } | null>;
+  /**
+   * This agent's own claim identity (SHIPWRIGHT_AGENT_ID) — the value the
+   * task store pins `claimedBy` to when this agent's token claims a task.
+   * Used solely by the dev-task auto-resume gate: a dispatch can hold a task
+   * across up to 1 + MAX_AUTO_RESUMES sequential runner() calls, which is long
+   * enough for the claim TTL to lapse if an attempt stalls past its heartbeat.
+   * If the StaleClaimReaper then releases the claim and a different claimant
+   * picks the task back up to `in_progress` before the next check, a
+   * status-only gate would happily resume this loop's stale session against a
+   * task another session now owns.
+   *
+   * Optional: when undefined (no agent id configured, and every test that
+   * doesn't opt in), the gate falls back to the status-only check — identical
+   * to pre-fix behavior rather than silently refusing to ever resume.
+   */
+  agentId?: string;
+  /**
+   * DTW-1.3 — renews this dispatch's claim on a task (POST
+   * /tasks/{id}/heartbeat) immediately before each auto-resume attempt.
+   *
+   * `lib/claim-ttl.ts`'s DEFAULT_CLAIM_TTL_MS (session timeout + 5min buffer)
+   * is sized on the assumption that a claim spans exactly ONE Claude session,
+   * so "a claim isn't reaped mid-session". The auto-resume loop breaks that
+   * assumption: one dispatch can issue up to 1 + MAX_AUTO_RESUMES sequential
+   * runner() calls against the same claim, and nothing in this file (or in
+   * createTaskStoreClient) renews the claim between them — the only other
+   * heartbeat renewals are prompt-driven, inside the dev-task session itself,
+   * and an attempt that exits abnormally early (precisely the case this
+   * feature targets) may never reach one. Without this renewal the reaper can
+   * release the claim mid-dispatch and a sibling agent can start a second,
+   * cold session on the same task/branch while this dispatch's next attempt is
+   * still in flight. The `claimedBy` ownership gate closes the resume half of
+   * that race but not the reap half; refreshing here closes the reap half by
+   * giving every attempt a full TTL window, exactly like the `/claim` that
+   * started the dispatch.
+   *
+   * A rejection means "the claim could not be proven fresh" and stops the
+   * resume loop (the dispatch itself still succeeds) — strictly today's
+   * pre-DTW-1.3 behavior, same fail-safe stance as a getTaskState failure.
+   *
+   * Optional: when undefined (every test that doesn't opt in), the loop
+   * resumes without renewing, identical to pre-fix behavior.
+   */
+  heartbeatTask?: (taskId: string) => Promise<void>;
+  /**
+   * Clears a persisted session-store entry by key. Called (best-effort) at
+   * the end of a dev-task dispatch's resume loop to drop that dispatch's
+   * per-dispatch nonce key, which is unreachable from then on — without this,
+   * `sessions.json` gains one permanent entry per dev-task dispatch, and that
+   * file is read+rewritten on every Slack message too.
+   *
+   * Optional and never awaited for correctness: a failure here is logged and
+   * swallowed (a stray entry is harmless, and the store's TTL prune — wired in
+   * index.ts — is the backstop for the entries an abrupt process kill leaves
+   * behind).
+   */
+  clearSessionKey?: (key: string) => Promise<void>;
   /** Reports each dispatch's run to the admin API (fire-and-forget). */
   cronRunReporter: CronRunReporter;
   /**
@@ -322,12 +416,14 @@ const DEFAULT_EMPTY_BACKOFF_ATTEMPTS = 3;
  * dispatch()/runner() (e.g. a wedge in candidate collection or a runner()
  * call that itself failed to respect its own timeout), meaning it cannot
  * self-recover without a process restart. busySince is reset at the top of
- * every drain iteration (not just once at tick-start), so elapsedMs reflects
- * only the current iteration's duration — a tick that sequentially works
- * through many candidates stays busy for longer than any single dispatch,
- * but that cumulative time is healthy, not stall evidence. Once busySince's
- * elapsed time exceeds this, the busy-skip log below escalates from
- * console.warn to console.error.
+ * every drain iteration (not just once at tick-start) AND again at the top of
+ * every dispatch attempt (runOneAttempt), so elapsedMs never spans more than
+ * one runner() call — a tick that sequentially works through many candidates,
+ * or a single dev-task dispatch that auto-resumes itself up to MAX_AUTO_RESUMES
+ * times, stays busy for far longer than any one runner() call, but that
+ * cumulative time is healthy, not stall evidence. Once busySince's elapsed
+ * time exceeds this, the busy-skip log below escalates from console.warn to
+ * console.error.
  */
 const BUSY_STALL_THRESHOLD_MS = 35 * 60 * 1000;
 
@@ -390,6 +486,22 @@ const PR_REDISPATCH_COOLDOWN_MS = 25 * 60 * 1000;
  * totals instead.
  */
 const PROGRESS_PUSH_DEBOUNCE_MS = 5000;
+
+/**
+ * DTW-1.3 — how many times a single dev-task dispatch may auto-resume its own
+ * session before giving up and returning to the drain loop. A cron-dispatched
+ * dev-task session that ends with the task still `in_progress` (e.g. it hit a
+ * long wait and its process exited) used to sit until the task-store's
+ * StaleClaimReaper released the claim ~65 minutes later, and the next tick
+ * then re-dispatched it with ZERO memory of prior progress. Resuming
+ * immediately with the same sessionKey keeps the prior session's context.
+ *
+ * Capped so a persistently-stuck task can't spin forever: at most 4 runner()
+ * calls per dispatch (1 initial + 3 resumes), each its own AgentCronRun row
+ * tagged with the same itemId. On exhausting the cap the task is simply left
+ * `in_progress` — exactly today's behavior — for the reaper + human triage.
+ */
+const MAX_AUTO_RESUMES = 3;
 
 /**
  * Builds the phase-scoped cooldown key (PRC-1.1) shared by
@@ -467,6 +579,10 @@ export function createLoopOrchestrator(
     claimPr,
     recordSkip,
     resetSkip,
+    getTaskState,
+    agentId,
+    heartbeatTask,
+    clearSessionKey,
     runner,
     cronRunReporter,
     workQueueReporter,
@@ -592,139 +708,282 @@ export function createLoopOrchestrator(
       ? `${PHASE_COMMANDS[phase]} ${args} ${preClaimMarker}`
       : `${PHASE_COMMANDS[phase]} ${args}`;
     const message = formatCronMessage(loopCronId, command);
-    const runId = await cronRunReporter.createRun(
-      loopCronId,
-      clock.now(),
-      phaseId ?? undefined,
-      itemType,
-      itemId,
-    );
 
-    // Progress push (CSU-3.1): fired as each new assistant turn completes so
-    // token totals survive an agent-process OOM/deploy-kill mid-run, not just
-    // a clean completion. Debounced against PROGRESS_PUSH_DEBOUNCE_MS (via the
-    // injected clock, not Date.now(), to stay deterministic under
-    // FixedClock) to avoid hammering the admin API on a chatty multi-turn
-    // run. recordProgress is fire-and-forget per its own doc comment — a
-    // rejection must not crash dispatch(), so it's awaited with the
-    // rejection caught and swallowed (a transient admin-API blip here isn't
-    // worth losing the dispatch over).
-    let lastProgressPushAt: number | undefined;
-    const onProgress: ProgressCallback = (modelUsage) => {
-      const { modelBreakdown } = buildTokenPayload(undefined, modelUsage);
-      if (!modelBreakdown || modelBreakdown.length === 0) return;
+    // DTW-1.3: dev-task — and ONLY dev-task — gets a stable session identity
+    // so a follow-up attempt continues the same Claude session instead of
+    // starting cold. The underlying runner persists session ids keyed by this
+    // value and builds `-r <id>` itself on the next call with the same key, so
+    // nothing here has to carry the id around. review/patch/deploy/plan keep
+    // sessionKey undefined — a deliberate product decision: those phases
+    // re-validate live state on every dispatch and must not continue stale
+    // context.
+    //
+    // The key is scoped to THIS dispatch via a per-dispatch nonce, not to the
+    // task id alone. sessions.ts's store is file-backed with a 7-day TTL and
+    // nothing in the repo ever clears a `dev-task:*` entry, so a bare
+    // `dev-task:{itemId}` key would also be picked up by any LATER, fully
+    // independent dispatch of the same task inside that window — the next tick
+    // after the StaleClaimReaper releases the claim, a dispatch after an
+    // agent-process restart, or a human re-run — silently resuming a dead
+    // session and carrying its stale conclusions (e.g. "I already opened the
+    // PR" → `[silent]` → skip-counter auto-block) into what
+    // plugins/shipwright/commands/dev-task.md documents as "a full
+    // context-free re-bootstrap". The nonce keeps resuming scoped to this
+    // dispatch's own loop below — all 1 + MAX_AUTO_RESUMES attempts share this
+    // one key, which is what makes `-r` fire on the resumes — while
+    // guaranteeing the next dispatch starts cold.
+    //
+    // A nonce rather than a clear-on-exit ALONE: an explicit clear can't cover
+    // a hard process kill mid-resume-loop, whereas an unreachable per-dispatch
+    // key is inert by construction. But inert isn't free — a nonce key is
+    // written once and never read again, so it's never lazily evicted by
+    // `get()` either, and one permanent entry per dev-task dispatch would grow
+    // the same `sessions.json` that every Slack message reads and rewrites. So
+    // both: the resume loop below clears its own key on exit (the normal path),
+    // and index.ts wires a periodic `sessions.prune()` so the entries an abrupt
+    // kill leaves behind actually do age out through the store's TTL — the
+    // prune that, before that wiring, had zero production call sites.
+    const sessionKey =
+      phase === "dev-task" ? `dev-task:${itemId}:${randomUUID()}` : undefined;
 
-      const nowMs = clock.now().getTime();
-      if (
-        lastProgressPushAt !== undefined &&
-        nowMs - lastProgressPushAt < PROGRESS_PUSH_DEBOUNCE_MS
-      ) {
-        return;
-      }
-      lastProgressPushAt = nowMs;
+    /**
+     * One dispatch attempt: its own createRun → runner() → terminal
+     * completeRun/skipRun pair, all tagged with this dispatch's
+     * phaseId/itemType/itemId. Resolves "silent" when the command reported
+     * nothing to do, "completed" otherwise; a runner failure is reported as a
+     * failed run and RETHROWN, exactly as before DTW-1.3 (the resume loop
+     * below must not swallow it).
+     */
+    async function runOneAttempt(): Promise<"completed" | "silent"> {
+      // LPF-7.2 + DTW-1.3: re-baseline the busy-stall window on EVERY attempt,
+      // not just once per drain iteration. BUSY_STALL_THRESHOLD_MS assumes the
+      // measured window is a single runner() call, bounded by claude.ts's
+      // 30-minute ceiling. The auto-resume loop below makes one dev-task
+      // dispatch issue up to 1 + MAX_AUTO_RESUMES sequential runner() calls
+      // (~2 hours of legitimate work) inside one drain iteration, so measuring
+      // from the iteration's start would let a concurrent tick's busy check
+      // cross the threshold and emit a false, Sentry-eligible "stuck/wedged"
+      // console.error on a perfectly healthy resume loop. Resetting here keeps
+      // elapsedMs meaning "time since the current runner() call started" — the
+      // one quantity the 35-minute margin is actually calibrated against — so
+      // the stall window stays as tight as it was pre-DTW-1.3 rather than
+      // being widened 4x. Applied to every phase (not just dev-task): a
+      // single-attempt phase is simply the n=1 case, and the iteration-level
+      // reset above still covers a wedge in candidate collection or pre-claim,
+      // which happens before this point.
+      busySince = clock.now();
 
-      cronRunReporter
-        .recordProgress(loopCronId, runId, modelBreakdown)
-        .catch((err) => {
-          console.warn(
-            `[loop-orchestrator] recordProgress failed for run ${runId}: ${String(err)} — swallowing`,
-          );
-        });
-    };
+      const runId = await cronRunReporter.createRun(
+        loopCronId,
+        clock.now(),
+        phaseId ?? undefined,
+        itemType,
+        itemId,
+      );
 
-    let runResult: ClaudeRunResult;
-    try {
-      runResult = await runner(message, onProgress);
-      if (runResult.streamIncomplete) {
-        // Clean process exit, but the stream never emitted a terminal
-        // `result` event — treat this the same as a genuine failure rather
-        // than letting an empty response masquerade as a completed dispatch
-        // (see CSU-1.1 review).
-        throw new ClaudeRunError(
-          "claude stream ended without a terminal result event",
-          undefined,
-          "stream incomplete — no terminal result event",
-          runResult.sessionId,
-          runResult.modelUsage,
+      // DTW-1.3: push the session id into the cron-run row the moment it's
+      // known — before the run reaches any terminal state — so an operator can
+      // find/resume the session manually even if this attempt never completes.
+      // Only wired for the dev-task path (the only phase with a sessionKey);
+      // fire-and-forget, same contract as recordProgress below.
+      const onEarlySessionId: EarlySessionIdCallback | undefined = sessionKey
+        ? (sid) => {
+            cronRunReporter
+              .recordSessionId(loopCronId, runId, sid)
+              .catch((err) => {
+                console.warn(
+                  `[loop-orchestrator] recordSessionId failed for run ${runId}: ${String(err)} — swallowing`,
+                );
+              });
+          }
+        : undefined;
+
+      // Progress push (CSU-3.1): fired as each new assistant turn completes so
+      // token totals survive an agent-process OOM/deploy-kill mid-run, not just
+      // a clean completion. Debounced against PROGRESS_PUSH_DEBOUNCE_MS (via the
+      // injected clock, not Date.now(), to stay deterministic under
+      // FixedClock) to avoid hammering the admin API on a chatty multi-turn
+      // run. recordProgress is fire-and-forget per its own doc comment — a
+      // rejection must not crash dispatch(), so it's awaited with the
+      // rejection caught and swallowed (a transient admin-API blip here isn't
+      // worth losing the dispatch over).
+      let lastProgressPushAt: number | undefined;
+      const onProgress: ProgressCallback = (modelUsage) => {
+        const { modelBreakdown } = buildTokenPayload(undefined, modelUsage);
+        if (!modelBreakdown || modelBreakdown.length === 0) return;
+
+        const nowMs = clock.now().getTime();
+        if (
+          lastProgressPushAt !== undefined &&
+          nowMs - lastProgressPushAt < PROGRESS_PUSH_DEBOUNCE_MS
+        ) {
+          return;
+        }
+        lastProgressPushAt = nowMs;
+
+        cronRunReporter
+          .recordProgress(loopCronId, runId, modelBreakdown)
+          .catch((err) => {
+            console.warn(
+              `[loop-orchestrator] recordProgress failed for run ${runId}: ${String(err)} — swallowing`,
+            );
+          });
+      };
+
+      let runResult: ClaudeRunResult;
+      try {
+        runResult = await runner(
+          message,
+          onProgress,
+          sessionKey,
+          onEarlySessionId,
         );
-      }
-    } catch (err) {
-      // Partial-usage-on-failure (CSU-3.1): a ClaudeTimeoutError carries
-      // whatever per-model usage was accumulated before the process was
-      // killed — attach it as modelBreakdown so a timed-out run's tokens
-      // aren't dropped entirely (the direct fix for "unknown model" on
-      // timed-out shipwright-loop runs). Scoped narrowly to
-      // ClaudeTimeoutError's `partialModelUsage` field, not ClaudeRunError's
-      // differently-named `modelUsage` field — any other error (including
-      // ClaudeRunError) falls back to { error } only, unchanged.
-      const tokenPayload =
-        err instanceof ClaudeTimeoutError
-          ? buildTokenPayload(undefined, err.partialModelUsage)
-          : undefined;
+        if (runResult.streamIncomplete) {
+          // Clean process exit, but the stream never emitted a terminal
+          // `result` event — treat this the same as a genuine failure rather
+          // than letting an empty response masquerade as a completed dispatch
+          // (see CSU-1.1 review).
+          throw new ClaudeRunError(
+            "claude stream ended without a terminal result event",
+            undefined,
+            "stream incomplete — no terminal result event",
+            runResult.sessionId,
+            runResult.modelUsage,
+          );
+        }
+      } catch (err) {
+        // Partial-usage-on-failure (CSU-3.1): a ClaudeTimeoutError carries
+        // whatever per-model usage was accumulated before the process was
+        // killed — attach it as modelBreakdown so a timed-out run's tokens
+        // aren't dropped entirely (the direct fix for "unknown model" on
+        // timed-out shipwright-loop runs). Scoped narrowly to
+        // ClaudeTimeoutError's `partialModelUsage` field, not ClaudeRunError's
+        // differently-named `modelUsage` field — any other error (including
+        // ClaudeRunError) falls back to { error } only, unchanged.
+        const tokenPayload =
+          err instanceof ClaudeTimeoutError
+            ? buildTokenPayload(undefined, err.partialModelUsage)
+            : undefined;
 
-      // CSI-2.3: mirror cron-handler.ts's (CSI-2.2) session-id extraction —
-      // only ClaudeRunError/ClaudeTimeoutError carry a sessionId field; any
-      // other thrown error has none.
-      const errSessionId =
-        err instanceof ClaudeRunError || err instanceof ClaudeTimeoutError
-          ? err.sessionId
-          : undefined;
+        // CSI-2.3: mirror cron-handler.ts's (CSI-2.2) session-id extraction —
+        // only ClaudeRunError/ClaudeTimeoutError carry a sessionId field; any
+        // other thrown error has none.
+        const errSessionId =
+          err instanceof ClaudeRunError || err instanceof ClaudeTimeoutError
+            ? err.sessionId
+            : undefined;
+
+        await cronRunReporter.completeRun(
+          loopCronId,
+          runId,
+          clock.now(),
+          "failed",
+          {
+            error: err instanceof Error ? err.message : String(err),
+            ...tokenPayload,
+            sessionId: errSessionId,
+          },
+          phaseId ?? undefined,
+          itemType,
+          itemId,
+        );
+        markCronRunFailureReported(err);
+        // LO-1.1: captured while the sentryClient.withScope fork set up by the
+        // dispatch() wrapper below is still active — item_type/item_id tags
+        // are attached to this Issue automatically. Previously a per-item
+        // dispatch failure was only ever surfaced as a console.warn at the
+        // runLoopTick call site (never reaching reportCronFailure's
+        // captureException, since that catch swallows-and-continues rather
+        // than rethrowing out of the tick) — this is a genuinely new Sentry
+        // Issue capture point, not a duplicate of cron-failure-reporter.ts's.
+        reportClaudeError(sentryClient, err);
+        throw err;
+      }
+
+      const { markers } = parseMarkers(runResult.result);
+      const isSilent = markers.some((m) => m.type === "silent");
+
+      if (isSilent) {
+        // DBV-1.1: a command can tag its own silent dispatch with a specific,
+        // machine-readable [skip-reason:text] marker (e.g. deploy's Step 2b
+        // bundle-completeness gate) so the AgentCronRun.skipReason field
+        // records exactly why nothing happened, instead of the generic
+        // "command:no-work" literal. Falls back to that literal when the
+        // command didn't tag a reason, leaving every other command's behavior
+        // unchanged.
+        const skipReasonMarker = markers.find((m) => m.type === "skip-reason");
+        const skipReason =
+          skipReasonMarker?.type === "skip-reason"
+            ? skipReasonMarker.reason
+            : "command:no-work";
+
+        // The command was dispatched (it was selected), but found nothing to do
+        // once it ran — one row, marked skipped. runner(message) already ran
+        // and may have spent real tokens before reporting nothing-to-do, so
+        // (unlike the other skip paths, e.g. a 409 pre-claim conflict) forward
+        // that spend via buildTokenPayload rather than dropping it (see the
+        // file's skipRun opts doc comment).
+        await cronRunReporter.skipRun(
+          loopCronId,
+          runId,
+          clock.now(),
+          skipReason,
+          {
+            ...buildTokenPayload(runResult.usage, runResult.modelUsage),
+            sessionId: runResult.sessionId,
+          },
+          phaseId ?? undefined,
+          itemType,
+          itemId,
+        );
+        // STD-1.1: skip-reasons follow (or are moving toward) a
+        // `{command}:{category}:{reason}[:{detail}]` taxonomy — a legitimate
+        // defer, not a genuine no-op, is tagged with a `deferred` category
+        // segment (the second colon-delimited field) and is exempt from
+        // SKIP_BLOCK_THRESHOLD counting, same rationale as BBE-1.2's original
+        // fix: counting a legitimate defer toward the HITL auto-block streak
+        // risks the same false auto-block BBE-1.1 fixed at the systemic level.
+        // skipRun above stays unconditional — observability must not change,
+        // only the skip-count side effect is exempted. Any skip-reason that
+        // doesn't parse into at least 2 segments, or whose category segment
+        // isn't exactly 'deferred', falls through to recordSkip exactly as
+        // today — fail-safe default, no automatic exemption without an
+        // explicit 'deferred' tag.
+        //
+        // STD-1.4: review.md's Unresolved Comment Check tags its defer as
+        // `review:deferred:unresolved-human-feedback:{pr}` — it's already
+        // covered by the generic isDeferredCategory check below (no separate
+        // prefix needed) since it follows the taxonomy from day one.
+        const isDeferredCategory = skipReason.split(":")[1] === "deferred";
+        // BBE-1.2 backward-compat: dev-task's Same-Branch Sibling Check has
+        // been retagged (STD-1.2) to the taxonomy-conformant
+        // `dev-task:deferred:same-branch-sibling-busy:{branch}` marker, which
+        // is already covered by the generic isDeferredCategory check above
+        // (its second segment is literally 'deferred') — no separate handling
+        // needed for it. This explicit exact-prefix OR instead matches the OLD
+        // pre-rename marker (no 'deferred' segment), kept purely for backward
+        // compat with an agent whose plugin install lags the deployed
+        // `agent/` binary (plugin version is tracked per-agent in
+        // `AgentPlugin`, decoupled from `agent/`'s own deploy) and may still
+        // emit the old-format string. The branch suffix varies per task, so
+        // match by prefix rather than exact string equality.
+        const isSameBranchSiblingBusy = skipReason.startsWith(
+          "dev-task:same-branch-sibling-busy:",
+        );
+        if (!isDeferredCategory && !isSameBranchSiblingBusy) {
+          // SKT-2.1: fire-and-forget — see callSkipTracker's doc comment.
+          await callSkipTracker("recordSkip", () =>
+            recordSkip(itemType, recordId),
+          );
+        }
+        return "silent";
+      }
 
       await cronRunReporter.completeRun(
         loopCronId,
         runId,
         clock.now(),
-        "failed",
-        {
-          error: err instanceof Error ? err.message : String(err),
-          ...tokenPayload,
-          sessionId: errSessionId,
-        },
-        phaseId ?? undefined,
-        itemType,
-        itemId,
-      );
-      markCronRunFailureReported(err);
-      // LO-1.1: captured while the sentryClient.withScope fork set up by the
-      // dispatch() wrapper below is still active — item_type/item_id tags
-      // are attached to this Issue automatically. Previously a per-item
-      // dispatch failure was only ever surfaced as a console.warn at the
-      // runLoopTick call site (never reaching reportCronFailure's
-      // captureException, since that catch swallows-and-continues rather
-      // than rethrowing out of the tick) — this is a genuinely new Sentry
-      // Issue capture point, not a duplicate of cron-failure-reporter.ts's.
-      reportClaudeError(sentryClient, err);
-      throw err;
-    }
-
-    const { markers } = parseMarkers(runResult.result);
-    const isSilent = markers.some((m) => m.type === "silent");
-
-    if (isSilent) {
-      // DBV-1.1: a command can tag its own silent dispatch with a specific,
-      // machine-readable [skip-reason:text] marker (e.g. deploy's Step 2b
-      // bundle-completeness gate) so the AgentCronRun.skipReason field
-      // records exactly why nothing happened, instead of the generic
-      // "command:no-work" literal. Falls back to that literal when the
-      // command didn't tag a reason, leaving every other command's behavior
-      // unchanged.
-      const skipReasonMarker = markers.find((m) => m.type === "skip-reason");
-      const skipReason =
-        skipReasonMarker?.type === "skip-reason"
-          ? skipReasonMarker.reason
-          : "command:no-work";
-
-      // The command was dispatched (it was selected), but found nothing to do
-      // once it ran — one row, marked skipped. runner(message) already ran
-      // and may have spent real tokens before reporting nothing-to-do, so
-      // (unlike the other skip paths, e.g. a 409 pre-claim conflict) forward
-      // that spend via buildTokenPayload rather than dropping it (see the
-      // file's skipRun opts doc comment).
-      await cronRunReporter.skipRun(
-        loopCronId,
-        runId,
-        clock.now(),
-        skipReason,
+        "completed",
         {
           ...buildTokenPayload(runResult.usage, runResult.modelUsage),
           sessionId: runResult.sessionId,
@@ -733,64 +992,93 @@ export function createLoopOrchestrator(
         itemType,
         itemId,
       );
-      // STD-1.1: skip-reasons follow (or are moving toward) a
-      // `{command}:{category}:{reason}[:{detail}]` taxonomy — a legitimate
-      // defer, not a genuine no-op, is tagged with a `deferred` category
-      // segment (the second colon-delimited field) and is exempt from
-      // SKIP_BLOCK_THRESHOLD counting, same rationale as BBE-1.2's original
-      // fix: counting a legitimate defer toward the HITL auto-block streak
-      // risks the same false auto-block BBE-1.1 fixed at the systemic level.
-      // skipRun above stays unconditional — observability must not change,
-      // only the skip-count side effect is exempted. Any skip-reason that
-      // doesn't parse into at least 2 segments, or whose category segment
-      // isn't exactly 'deferred', falls through to recordSkip exactly as
-      // today — fail-safe default, no automatic exemption without an
-      // explicit 'deferred' tag.
-      //
-      // STD-1.4: review.md's Unresolved Comment Check tags its defer as
-      // `review:deferred:unresolved-human-feedback:{pr}` — it's already
-      // covered by the generic isDeferredCategory check below (no separate
-      // prefix needed) since it follows the taxonomy from day one.
-      const isDeferredCategory = skipReason.split(":")[1] === "deferred";
-      // BBE-1.2 backward-compat: dev-task's Same-Branch Sibling Check has
-      // been retagged (STD-1.2) to the taxonomy-conformant
-      // `dev-task:deferred:same-branch-sibling-busy:{branch}` marker, which
-      // is already covered by the generic isDeferredCategory check above
-      // (its second segment is literally 'deferred') — no separate handling
-      // needed for it. This explicit exact-prefix OR instead matches the OLD
-      // pre-rename marker (no 'deferred' segment), kept purely for backward
-      // compat with an agent whose plugin install lags the deployed
-      // `agent/` binary (plugin version is tracked per-agent in
-      // `AgentPlugin`, decoupled from `agent/`'s own deploy) and may still
-      // emit the old-format string. The branch suffix varies per task, so
-      // match by prefix rather than exact string equality.
-      const isSameBranchSiblingBusy = skipReason.startsWith(
-        "dev-task:same-branch-sibling-busy:",
-      );
-      if (!isDeferredCategory && !isSameBranchSiblingBusy) {
-        // SKT-2.1: fire-and-forget — see callSkipTracker's doc comment.
-        await callSkipTracker("recordSkip", () =>
-          recordSkip(itemType, recordId),
-        );
-      }
-      return;
+      // SKT-2.1: real progress clears any prior skip streak.
+      await callSkipTracker("resetSkip", () => resetSkip(itemType, recordId));
+      return "completed";
     }
 
-    await cronRunReporter.completeRun(
-      loopCronId,
-      runId,
-      clock.now(),
-      "completed",
-      {
-        ...buildTokenPayload(runResult.usage, runResult.modelUsage),
-        sessionId: runResult.sessionId,
-      },
-      phaseId ?? undefined,
-      itemType,
-      itemId,
-    );
-    // SKT-2.1: real progress clears any prior skip streak.
-    await callSkipTracker("resetSkip", () => resetSkip(itemType, recordId));
+    // DTW-1.3 auto-resume loop — dev-task only. After an attempt finishes,
+    // re-read the task's LIVE state: still `in_progress` AND still claimed by
+    // this agent means the session ended without finishing the task (the
+    // ScheduleWakeup/long-wait case), so resume it right now with the same
+    // sessionKey instead of leaving the claim to go stale for ~65 minutes and
+    // burning a cold session on the next tick. Capped at MAX_AUTO_RESUMES; a
+    // "silent" outcome or a thrown failure ends the loop (the throw propagates
+    // out of dispatchItem unchanged).
+    if (phase === "dev-task" && sessionKey) {
+      try {
+        if ((await runOneAttempt()) !== "completed") return;
+        let resumeAttempt = 0;
+        while (resumeAttempt < MAX_AUTO_RESUMES) {
+          let liveState: Awaited<ReturnType<typeof getTaskState>>;
+          try {
+            liveState = await getTaskState(itemId);
+          } catch (err) {
+            // Resuming is an optimization — a task-store blip here must not
+            // turn an otherwise-successful dispatch into a failure. Fall back
+            // to today's behavior (stop, let the reaper + next tick handle it).
+            console.warn(
+              `[loop-orchestrator] getTaskState failed for ${itemId}: ${String(err)} — not resuming`,
+            );
+            return;
+          }
+          if (liveState?.status !== "in_progress") return;
+          // Ownership gate: `in_progress` alone doesn't prove the claim is
+          // still ours. If this dispatch's claim lapsed and was reaped, another
+          // claimant can have the task back at `in_progress` by now — resuming
+          // a stale session against it would have two sessions working one
+          // task. Skipped only when no agentId is configured (see the dep's
+          // doc comment).
+          if (agentId && liveState.claimedBy !== agentId) {
+            console.warn(
+              `[loop-orchestrator] ${itemId} is in_progress but claimed by ${liveState.claimedBy ?? "nobody"} (not ${agentId}) — not resuming`,
+            );
+            return;
+          }
+          // Claim-TTL refresh: DEFAULT_CLAIM_TTL_MS is sized for exactly one
+          // Claude session, but this loop can hold one claim across up to
+          // 1 + MAX_AUTO_RESUMES of them. Renew it here so the attempt below
+          // starts with a full TTL window — otherwise an attempt that exited
+          // before its in-session heartbeat step leaves a claim that the
+          // StaleClaimReaper can release mid-dispatch, letting a sibling agent
+          // start a second, cold session on the same task/branch while this
+          // attempt is still running. Ordered AFTER the ownership gate so a
+          // claim that already belongs to someone else is never refreshed on
+          // their behalf. A failure means the claim can't be proven fresh, so
+          // stop resuming rather than run an attempt that may be racing a reap
+          // — the dispatch itself stays successful.
+          if (heartbeatTask) {
+            try {
+              await heartbeatTask(itemId);
+            } catch (err) {
+              console.warn(
+                `[loop-orchestrator] heartbeatTask failed for ${itemId}: ${String(err)} — not resuming`,
+              );
+              return;
+            }
+          }
+          resumeAttempt += 1;
+          if ((await runOneAttempt()) !== "completed") return;
+        }
+        return;
+      } finally {
+        // The nonce key is unreachable from here on — drop it so sessions.json
+        // doesn't accumulate one permanent entry per dev-task dispatch. Runs on
+        // every exit path including the rethrown runner failure; best-effort,
+        // never allowed to mask the outcome of the dispatch itself.
+        if (clearSessionKey) {
+          try {
+            await clearSessionKey(sessionKey);
+          } catch (err) {
+            console.warn(
+              `[loop-orchestrator] clearSessionKey failed for ${sessionKey}: ${String(err)} — swallowing`,
+            );
+          }
+        }
+      }
+    }
+
+    await runOneAttempt();
   }
 
   /**
@@ -860,12 +1148,14 @@ export function createLoopOrchestrator(
     // the injected clock) shows how long the current drain iteration has
     // been running.
     // LPF-7.2: busySince is reset at the top of every drain iteration (see
-    // the reset inside the while loop below), so this elapsed time reflects
-    // only the current iteration, not the whole tick's cumulative drain
-    // time — a tick sequentially working through many candidates is
-    // legitimately busy far longer than any single dispatch, and measuring
-    // from tick-start would misread that as a stall. Once the current
-    // iteration's elapsed time exceeds BUSY_STALL_THRESHOLD_MS — well past
+    // the reset inside the while loop below) and again at the top of every
+    // dispatch attempt (runOneAttempt), so this elapsed time reflects only
+    // the current in-flight runner() call, not the whole tick's cumulative
+    // drain time — a tick sequentially working through many candidates, or a
+    // dev-task dispatch auto-resuming itself up to MAX_AUTO_RESUMES times, is
+    // legitimately busy far longer than any single runner() call, and
+    // measuring from tick-start would misread that as a stall. Once the
+    // current attempt's elapsed time exceeds BUSY_STALL_THRESHOLD_MS — well past
     // claude.ts's 30-minute runner() ceiling — it can no longer be "still
     // running normally"; it's wedged somewhere before ever completing
     // dispatch()/runner() and cannot self-recover, so escalate to
@@ -1324,15 +1614,20 @@ export function createLoopOrchestrator(
 // ─── Getter factory ────────────────────────────────────────────────────────────
 
 export interface LoopOrchestratorGetterDeps {
+  /** DTW-1.3 — see LoopOrchestratorDeps's runner doc comment. */
   runner: (
     message: string,
     onProgress?: ProgressCallback,
+    sessionKey?: string,
+    onEarlySessionId?: EarlySessionIdCallback,
   ) => Promise<ClaudeRunResult>;
   cronRunReporter: CronRunReporter;
   workQueueReporter: WorkQueueReporter;
   createOrchestrator?: typeof createProductionLoopOrchestrator;
   /** LO-1.1 — see LoopOrchestratorDeps's sentryClient doc comment. */
   sentryClient?: ErrorCapturingClient;
+  /** DTW-1.3 — see LoopOrchestratorDeps's clearSessionKey doc comment. */
+  clearSessionKey?: (key: string) => Promise<void>;
 }
 
 /**
@@ -1368,6 +1663,7 @@ export function createLoopOrchestratorGetter(
         workQueueReporter: deps.workQueueReporter,
         loopCronId,
         sentryClient: deps.sentryClient,
+        clearSessionKey: deps.clearSessionKey,
       })
         .then((orch) => {
           orchestrator = orch;
@@ -1387,9 +1683,12 @@ export function createLoopOrchestratorGetter(
 // ─── Production wiring ────────────────────────────────────────────────────────
 
 export interface LoopOrchestratorProductionOptions {
+  /** DTW-1.3 — see LoopOrchestratorDeps's runner doc comment. */
   runner: (
     message: string,
     onProgress?: ProgressCallback,
+    sessionKey?: string,
+    onEarlySessionId?: EarlySessionIdCallback,
   ) => Promise<ClaudeRunResult>;
   cronRunReporter: CronRunReporter;
   workQueueReporter: WorkQueueReporter;
@@ -1397,6 +1696,8 @@ export interface LoopOrchestratorProductionOptions {
   clock?: Clock;
   /** LO-1.1 — see LoopOrchestratorDeps's sentryClient doc comment. */
   sentryClient?: ErrorCapturingClient;
+  /** DTW-1.3 — see LoopOrchestratorDeps's clearSessionKey doc comment. */
+  clearSessionKey?: (key: string) => Promise<void>;
 }
 
 /**
@@ -1480,6 +1781,24 @@ export async function createProductionLoopOrchestrator(
     },
     recordSkip: (itemType, id) => taskStoreClient.recordSkip(itemType, id),
     resetSkip: (itemType, id) => taskStoreClient.resetSkip(itemType, id),
+    // DTW-1.3: a missing task (getTask → null) stays null, which the resume
+    // loop reads as "stop resuming". claimedBy rides along on the same
+    // response so the resume gate can check claim ownership, not just status.
+    getTaskState: (id) =>
+      taskStoreClient
+        .getTask(id)
+        .then((t) =>
+          t ? { status: t.status, claimedBy: t.claimedBy ?? null } : null,
+        ),
+    // The value the task store pins claimedBy to for this agent's own claims.
+    // Empty/unset → the resume gate keeps its status-only behavior.
+    agentId: (process.env.SHIPWRIGHT_AGENT_ID ?? "").trim() || undefined,
+    // DTW-1.3: renews the claim before each resume attempt so a multi-attempt
+    // dispatch never outlives DEFAULT_CLAIM_TTL_MS, which is sized for a
+    // single session. Throws on a non-ok response — the resume gate reads that
+    // as "stop resuming".
+    heartbeatTask: (id) => taskStoreClient.heartbeatTask(id),
+    clearSessionKey: opts.clearSessionKey,
     runner: opts.runner,
     cronRunReporter: opts.cronRunReporter,
     workQueueReporter: opts.workQueueReporter,

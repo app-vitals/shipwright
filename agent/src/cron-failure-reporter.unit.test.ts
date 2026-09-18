@@ -66,6 +66,7 @@ function createFakeCronRunReporter(runId: string | null = "run-1") {
       throw new Error("skipRun should not be called by reportCronFailure");
     },
     async recordProgress() {},
+    async recordSessionId() {},
   };
 
   return { reporter, createRunCalls, completeRunCalls };

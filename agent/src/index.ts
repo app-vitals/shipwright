@@ -35,6 +35,7 @@ import {
 } from "./claim-invariant-reconciler.ts";
 import {
   createRunClaude,
+  type EarlySessionIdCallback,
   type ProgressCallback,
   setLiveClaudeConfig,
 } from "./claude.ts";
@@ -84,7 +85,11 @@ import {
   resolveReviewAuthorAllowlist,
   reviewAuthorAllowlistRef,
 } from "./review-author-allowlist-ref.ts";
-import { createFileSessionStore, threadKey } from "./sessions.ts";
+import {
+  createFileSessionStore,
+  startSessionPruner,
+  threadKey,
+} from "./sessions.ts";
 import { ensureAgentHome, installPlugins, runMiseStartup } from "./setup.ts";
 import { setupGitHubAuth } from "./setup-github-auth.ts";
 import { HttpShipwrightRuntimeClient } from "./shipwright-runtime-client.ts";
@@ -149,6 +154,12 @@ console.log(`[agent] agent home initialized: ${config.paths.home}`);
 
 const slackClock = SystemClock();
 const sessions = createFileSessionStore(config.paths.sessions);
+// DTW-1.3: make the store's TTL prune real. Slack thread keys are re-read (so
+// they expire lazily via get()), but a dev-task dispatch's per-dispatch session
+// key is written once and never read again — its owning resume loop clears it
+// on exit, and this sweep is the backstop for the ones an abrupt process kill
+// strands.
+startSessionPruner(sessions, "sessions.json");
 
 // Slack is optional (see Step 7 + startSlackIfPossible in slack-startup.ts).
 // Building a WebClient around an empty token would make every downstream
@@ -630,13 +641,32 @@ const loopJobsRef = createJobsRef<CronJobLike>();
 // wiring cost, and its construction errors surface at fire time (logged by the
 // cron callback's try/catch) rather than crashing agent startup.
 const getLoopOrchestrator = createLoopOrchestratorGetter({
+  // DTW-1.3: sessionKey is no longer hardcoded undefined for the loop path —
+  // the orchestrator supplies `dev-task:{taskId}:{per-dispatch nonce}` for
+  // dev-task dispatches (and nothing for every other phase), plus an
+  // onEarlySessionId callback. The loop never passes extraEnv (only
+  // cron-handler's dispatch does), so the former 3rd `extraEnv` param here was
+  // dead for this call site.
   runner: (
     message: string,
     onProgress?: ProgressCallback,
-    extraEnv?: Record<string, string>,
-  ) => runner(message, undefined, onProgress, undefined, extraEnv),
+    sessionKey?: string,
+    onEarlySessionId?: EarlySessionIdCallback,
+  ) =>
+    runner(
+      message,
+      sessionKey,
+      onProgress,
+      undefined,
+      undefined,
+      onEarlySessionId,
+    ),
   cronRunReporter: cronRunReporter ?? new NoopCronRunReporter(),
   workQueueReporter,
+  // DTW-1.3: lets the dev-task resume loop drop its own per-dispatch nonce key
+  // when it exits, so `sessions.json` (shared with Slack thread sessions) does
+  // not gain one permanent entry per dev-task dispatch.
+  clearSessionKey: (key: string) => sessions.clear(key),
   // LO-1.1: same optional-by-convention pattern as every other sentryClient
   // call site in this file (undefined, i.e. fully inert, when SENTRY_DSN is
   // unset) — see LoopOrchestratorDeps's sentryClient doc comment.

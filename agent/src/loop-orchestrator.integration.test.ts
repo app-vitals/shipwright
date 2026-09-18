@@ -159,6 +159,7 @@ describe("loop-orchestrator + real task-store claim client (CBD-2.1)", () => {
       },
       async skipRun() {},
       async recordProgress() {},
+      async recordSessionId() {},
     };
     return { reporter, completedItemIds };
   }
@@ -200,6 +201,8 @@ describe("loop-orchestrator + real task-store claim client (CBD-2.1)", () => {
       claimPr: async (p) => ({ id: p.id, commitSha: p.commitSha }),
       recordSkip: async () => {},
       resetSkip: async () => {},
+      // DTW-1.3: no live status (null) → the dev-task resume loop never fires.
+      getTaskState: async () => null,
       runner,
       cronRunReporter: reporter,
       workQueueReporter: noopWorkQueueReporter,
@@ -263,6 +266,7 @@ describe("loop-orchestrator + child AgentCronJob rows (LPC-2.1)", () => {
       },
       async skipRun() {},
       async recordProgress() {},
+      async recordSessionId() {},
     };
     return { reporter, completedItemIds };
   }
@@ -320,6 +324,8 @@ describe("loop-orchestrator + child AgentCronJob rows (LPC-2.1)", () => {
         claimPr: async (p) => ({ id: p.id, commitSha: p.commitSha }),
         recordSkip: async () => {},
         resetSkip: async () => {},
+        // DTW-1.3: no live status (null) → the dev-task resume loop never fires.
+        getTaskState: async () => null,
         runner,
         cronRunReporter: reporter,
         workQueueReporter: noopWorkQueueReporter,
@@ -410,6 +416,7 @@ describe("loop-orchestrator + progress push / partial-usage-on-failure (CSU-3.1)
       async recordProgress(_cronId, runId, modelBreakdown) {
         progressCalls.push({ runId, modelBreakdown });
       },
+      async recordSessionId() {},
     };
     return { reporter, completeCalls, progressCalls };
   }
@@ -478,6 +485,8 @@ describe("loop-orchestrator + progress push / partial-usage-on-failure (CSU-3.1)
       claimPr: async (p) => ({ id: p.id, commitSha: p.commitSha }),
       recordSkip: async () => {},
       resetSkip: async () => {},
+      // DTW-1.3: no live status (null) → the dev-task resume loop never fires.
+      getTaskState: async () => null,
       runner,
       cronRunReporter: trackedReporter,
       workQueueReporter: noopWorkQueueReporter,
@@ -545,6 +554,8 @@ describe("loop-orchestrator + progress push / partial-usage-on-failure (CSU-3.1)
       claimPr: async (p) => ({ id: p.id, commitSha: p.commitSha }),
       recordSkip: async () => {},
       resetSkip: async () => {},
+      // DTW-1.3: no live status (null) → the dev-task resume loop never fires.
+      getTaskState: async () => null,
       runner,
       cronRunReporter: reporter,
       workQueueReporter: noopWorkQueueReporter,
@@ -628,6 +639,8 @@ describe("loop-orchestrator + progress push / partial-usage-on-failure (CSU-3.1)
       claimPr: async (p) => ({ id: p.id, commitSha: p.commitSha }),
       recordSkip: async () => {},
       resetSkip: async () => {},
+      // DTW-1.3: no live status (null) → the dev-task resume loop never fires.
+      getTaskState: async () => null,
       runner,
       cronRunReporter: trackedReporter,
       workQueueReporter: noopWorkQueueReporter,
@@ -638,8 +651,708 @@ describe("loop-orchestrator + progress push / partial-usage-on-failure (CSU-3.1)
     await loop([job("shipwright-dev-task", true)]);
 
     expect(skipCalls).toHaveLength(1);
-    expect(skipCalls[0]?.opts?.sessionId).toBe(
-      "session-integration-skipped",
-    );
+    expect(skipCalls[0]?.opts?.sessionId).toBe("session-integration-skipped");
+  });
+});
+
+// ─── DTW-1.3: dev-task-only auto-resume loop ─────────────────────────────────
+
+describe("loop-orchestrator + dev-task auto-resume (DTW-1.3)", () => {
+  const noopWorkQueueReporter: WorkQueueReporter = {
+    async reportSnapshot() {},
+  };
+
+  /** The agent id these tests run as — i.e. the expected `claimedBy` owner. */
+  const OWNER_AGENT_ID = "agent-owner";
+
+  /**
+   * Records one entry per createRun/completeRun, tagged with the itemId the
+   * dispatch was made against — so a test can assert "one AgentCronRun row per
+   * attempt, all sharing the same itemId".
+   */
+  function makeAttemptRecordingReporter(): {
+    reporter: CronRunReporter;
+    creates: Array<{ itemId?: string }>;
+    completes: Array<{ itemId?: string; outcome: string }>;
+  } {
+    const creates: Array<{ itemId?: string }> = [];
+    const completes: Array<{ itemId?: string; outcome: string }> = [];
+    let counter = 0;
+    const reporter: CronRunReporter = {
+      async createRun(_cronId, _startedAt, _phaseId, _itemType, itemId) {
+        creates.push({ itemId });
+        counter += 1;
+        return `run-${counter}`;
+      },
+      async completeRun(
+        _cronId,
+        _runId,
+        _completedAt,
+        outcome,
+        _opts,
+        _phaseId,
+        _itemType,
+        itemId,
+      ) {
+        completes.push({ itemId, outcome });
+      },
+      async skipRun() {},
+      async recordProgress() {},
+      async recordSessionId() {},
+    };
+    return { reporter, creates, completes };
+  }
+
+  /** A runner that records the sessionKey it was handed on every call. */
+  function makeSessionKeyRecordingRunner(): {
+    runner: (
+      message: string,
+      onProgress?: ProgressCallback,
+      sessionKey?: string,
+    ) => Promise<ClaudeRunResult>;
+    sessionKeys: Array<string | undefined>;
+  } {
+    const sessionKeys: Array<string | undefined> = [];
+    const runner = async (
+      _message: string,
+      _onProgress?: ProgressCallback,
+      sessionKey?: string,
+    ): Promise<ClaudeRunResult> => {
+      sessionKeys.push(sessionKey);
+      return { result: "done" };
+    };
+    return { runner, sessionKeys };
+  }
+
+  /**
+   * Scripted getTaskState: one entry per expected poll. A bare string is
+   * shorthand for "that status, claimed by OWNER_AGENT_ID" (the common case —
+   * this agent still owns the claim); pass an object to model a different
+   * claimant. `null` models a task that's gone.
+   */
+  function makeStateStub(
+    states: Array<string | null | { status: string; claimedBy: string | null }>,
+  ): {
+    getTaskState: (
+      taskId: string,
+    ) => Promise<{ status: string; claimedBy: string | null } | null>;
+    calls: string[];
+  } {
+    const calls: string[] = [];
+    let idx = 0;
+    return {
+      calls,
+      getTaskState: async (taskId: string) => {
+        calls.push(taskId);
+        const entry = states[idx] ?? null;
+        idx += 1;
+        if (entry === null) return null;
+        return typeof entry === "string"
+          ? { status: entry, claimedBy: OWNER_AGENT_ID }
+          : entry;
+      },
+    };
+  }
+
+  test("a dev-task dispatch left in_progress auto-resumes with the SAME sessionKey, capped at 3 resumes (4 runner calls)", async () => {
+    const { runner, sessionKeys } = makeSessionKeyRecordingRunner();
+    const { reporter, creates, completes } = makeAttemptRecordingReporter();
+    // in_progress for every check the cap allows; the trailing terminal value
+    // is never reached because the 3-resume cap trips first.
+    const { getTaskState, calls } = makeStateStub([
+      "in_progress",
+      "in_progress",
+      "in_progress",
+      "pr_open",
+    ]);
+
+    let devTaskCalls = 0;
+    const loop = createLoopOrchestrator({
+      getDevTaskCandidates: async () => {
+        devTaskCalls += 1;
+        return devTaskCalls === 1
+          ? [task("DTW-9.1", "2026-01-01T00:00:00Z")]
+          : [];
+      },
+      getReviewCandidates: async () => [],
+      getPatchCandidates: async () => [],
+      getDeployCandidates: async () => [],
+      claimTask: async () => true,
+      claimPr: async (p) => ({ id: p.id, commitSha: p.commitSha }),
+      recordSkip: async () => {},
+      resetSkip: async () => {},
+      getTaskState,
+      agentId: OWNER_AGENT_ID,
+      runner,
+      cronRunReporter: reporter,
+      workQueueReporter: noopWorkQueueReporter,
+      loopCronId: "shipwright-loop",
+      clock: FixedClock(new Date("2026-07-20T00:00:00Z")),
+    });
+
+    await loop([job("shipwright-dev-task", true)]);
+
+    // 1 initial + 3 resumes.
+    expect(sessionKeys).toHaveLength(4);
+    // Every call — initial AND resumes — reuses the same sessionKey, which is
+    // what makes the underlying runner build `-r <sessionId>` on the resumes.
+    expect(new Set(sessionKeys).size).toBe(1);
+    // ...and that key is scoped to BOTH the task and this one dispatch: the
+    // task id keeps it greppable, the trailing per-dispatch nonce keeps a
+    // later, independent dispatch of the same task from resuming this dead
+    // session (see the cross-dispatch test below).
+    expect(sessionKeys[0]).toMatch(/^dev-task:DTW-9\.1:.+/);
+    // Every status check was against the dispatched task.
+    expect(calls.every((id) => id === "DTW-9.1")).toBe(true);
+    // One AgentCronRun row per attempt, all tagged with the same itemId.
+    expect(creates).toHaveLength(4);
+    expect(completes).toHaveLength(4);
+    expect(creates.every((c) => c.itemId === "DTW-9.1")).toBe(true);
+    expect(completes.every((c) => c.itemId === "DTW-9.1")).toBe(true);
+    expect(completes.every((c) => c.outcome === "completed")).toBe(true);
+  });
+
+  test("a task that never reaches a terminal state stops at exactly 3 resumes — not an infinite loop", async () => {
+    const { runner, sessionKeys } = makeSessionKeyRecordingRunner();
+    const { reporter, creates, completes } = makeAttemptRecordingReporter();
+    const alwaysInProgress = async () => ({
+      status: "in_progress",
+      claimedBy: OWNER_AGENT_ID,
+    });
+
+    let devTaskCalls = 0;
+    const loop = createLoopOrchestrator({
+      getDevTaskCandidates: async () => {
+        devTaskCalls += 1;
+        return devTaskCalls === 1
+          ? [task("DTW-9.2", "2026-01-01T00:00:00Z")]
+          : [];
+      },
+      getReviewCandidates: async () => [],
+      getPatchCandidates: async () => [],
+      getDeployCandidates: async () => [],
+      claimTask: async () => true,
+      claimPr: async (p) => ({ id: p.id, commitSha: p.commitSha }),
+      recordSkip: async () => {},
+      resetSkip: async () => {},
+      getTaskState: alwaysInProgress,
+      agentId: OWNER_AGENT_ID,
+      runner,
+      cronRunReporter: reporter,
+      workQueueReporter: noopWorkQueueReporter,
+      loopCronId: "shipwright-loop",
+      clock: FixedClock(new Date("2026-07-20T00:00:00Z")),
+    });
+
+    await loop([job("shipwright-dev-task", true)]);
+
+    expect(sessionKeys).toHaveLength(4);
+    expect(creates).toHaveLength(4);
+    expect(completes).toHaveLength(4);
+  });
+
+  test("a dev-task that reaches a terminal status after the first attempt is not resumed at all", async () => {
+    const { runner, sessionKeys } = makeSessionKeyRecordingRunner();
+    const { reporter, creates } = makeAttemptRecordingReporter();
+    const { getTaskState, calls } = makeStateStub(["pr_open"]);
+
+    let devTaskCalls = 0;
+    const loop = createLoopOrchestrator({
+      getDevTaskCandidates: async () => {
+        devTaskCalls += 1;
+        return devTaskCalls === 1
+          ? [task("DTW-9.3", "2026-01-01T00:00:00Z")]
+          : [];
+      },
+      getReviewCandidates: async () => [],
+      getPatchCandidates: async () => [],
+      getDeployCandidates: async () => [],
+      claimTask: async () => true,
+      claimPr: async (p) => ({ id: p.id, commitSha: p.commitSha }),
+      recordSkip: async () => {},
+      resetSkip: async () => {},
+      getTaskState,
+      agentId: OWNER_AGENT_ID,
+      runner,
+      cronRunReporter: reporter,
+      workQueueReporter: noopWorkQueueReporter,
+      loopCronId: "shipwright-loop",
+      clock: FixedClock(new Date("2026-07-20T00:00:00Z")),
+    });
+
+    await loop([job("shipwright-dev-task", true)]);
+
+    expect(sessionKeys).toHaveLength(1);
+    expect(creates).toHaveLength(1);
+    expect(calls).toEqual(["DTW-9.3"]);
+  });
+
+  test("two independent dispatches of the SAME task id get different sessionKeys — a dead session is never resumed across dispatches", async () => {
+    // Regression test for the review finding on this PR: the session store
+    // (agent/src/sessions.ts) is file-backed with a 7-day TTL and nothing ever
+    // clears a `dev-task:*` entry, so a sessionKey derived purely from the task
+    // id would let a LATER, fully independent dispatch of the same task —
+    // the next tick after the StaleClaimReaper releases the claim, a dispatch
+    // after an agent-process restart, or a human re-run — resume the previous
+    // dispatch's dead session via `-r`, contradicting dev-task.md's documented
+    // "full context-free re-bootstrap" contract for exactly that scenario.
+    const { runner, sessionKeys } = makeSessionKeyRecordingRunner();
+    const { reporter } = makeAttemptRecordingReporter();
+
+    // Models "the task is claimable again on a later tick": the claim removes
+    // it from candidacy for the rest of THIS drain, and the test resets the
+    // flag between ticks to stand in for the reaper releasing the claim.
+    let claimedThisTick = false;
+    const loop = createLoopOrchestrator({
+      getDevTaskCandidates: async () =>
+        claimedThisTick ? [] : [task("DTW-9.4", "2026-01-01T00:00:00Z")],
+      getReviewCandidates: async () => [],
+      getPatchCandidates: async () => [],
+      getDeployCandidates: async () => [],
+      claimTask: async () => {
+        claimedThisTick = true;
+        return true;
+      },
+      claimPr: async (p) => ({ id: p.id, commitSha: p.commitSha }),
+      recordSkip: async () => {},
+      resetSkip: async () => {},
+      // Never terminal → each dispatch exhausts its 3-resume cap.
+      getTaskState: async () => ({
+        status: "in_progress",
+        claimedBy: OWNER_AGENT_ID,
+      }),
+      agentId: OWNER_AGENT_ID,
+      runner,
+      cronRunReporter: reporter,
+      workQueueReporter: noopWorkQueueReporter,
+      loopCronId: "shipwright-loop",
+      clock: FixedClock(new Date("2026-07-20T00:00:00Z")),
+    });
+
+    await loop([job("shipwright-dev-task", true)]);
+    const firstDispatchKeys = [...sessionKeys];
+    sessionKeys.length = 0;
+
+    // Later, independent tick on the same task id.
+    claimedThisTick = false;
+    await loop([job("shipwright-dev-task", true)]);
+    const secondDispatchKeys = [...sessionKeys];
+
+    // Each dispatch ran its full 1-initial + 3-resumes loop...
+    expect(firstDispatchKeys).toHaveLength(4);
+    expect(secondDispatchKeys).toHaveLength(4);
+    // ...reusing one key WITHIN the dispatch (that's what makes `-r` fire on
+    // its own resumes)...
+    expect(new Set(firstDispatchKeys).size).toBe(1);
+    expect(new Set(secondDispatchKeys).size).toBe(1);
+    // ...but the two dispatches must not share a key, or the second would
+    // resume the first's dead session.
+    expect(secondDispatchKeys[0]).not.toBe(firstDispatchKeys[0]);
+    // Both stay scoped to (and greppable by) the task id.
+    expect(firstDispatchKeys[0]).toMatch(/^dev-task:DTW-9\.4:/);
+    expect(secondDispatchKeys[0]).toMatch(/^dev-task:DTW-9\.4:/);
+  });
+
+  test("a review dispatch never consults getTaskState and gets an undefined sessionKey — the resume loop is dev-task-only", async () => {
+    const { runner, sessionKeys } = makeSessionKeyRecordingRunner();
+    const { reporter, creates } = makeAttemptRecordingReporter();
+    const statusCalls: string[] = [];
+
+    let reviewConsumed = false;
+    const loop = createLoopOrchestrator({
+      getDevTaskCandidates: async () => [],
+      getReviewCandidates: async () =>
+        reviewConsumed
+          ? []
+          : [pr("acme/x#7", "2026-01-01T00:00:00Z", "review")],
+      getPatchCandidates: async () => [],
+      getDeployCandidates: async () => [],
+      claimTask: async () => true,
+      claimPr: async (p) => {
+        reviewConsumed = true;
+        return { id: p.id, commitSha: p.commitSha };
+      },
+      recordSkip: async () => {},
+      resetSkip: async () => {},
+      getTaskState: async (id) => {
+        statusCalls.push(id);
+        return { status: "in_progress", claimedBy: OWNER_AGENT_ID };
+      },
+      runner,
+      cronRunReporter: reporter,
+      workQueueReporter: noopWorkQueueReporter,
+      loopCronId: "shipwright-loop",
+      clock: FixedClock(new Date("2026-07-20T00:00:00Z")),
+    });
+
+    await loop([job("shipwright-review", true)]);
+
+    expect(sessionKeys).toEqual([undefined]);
+    expect(statusCalls).toEqual([]);
+    expect(creates).toHaveLength(1);
+  });
+
+  test("a task that is in_progress but claimed by ANOTHER agent is not resumed — the reap-then-reclaim race", async () => {
+    // Regression test for the second-round review finding: one dispatch can
+    // hold a task across up to 4 sequential runner() calls, long enough for the
+    // claim TTL to lapse if an attempt stalls past its heartbeat. If the
+    // StaleClaimReaper then releases the claim and a DIFFERENT claimant claims
+    // it back to in_progress before this loop's next poll, a status-only gate
+    // would resume this dispatch's stale session against a task another session
+    // now owns. The gate must check ownership, not just status.
+    const { runner, sessionKeys } = makeSessionKeyRecordingRunner();
+    const { reporter, creates } = makeAttemptRecordingReporter();
+    // First poll: still in_progress, but reaped and re-claimed by someone else.
+    const { getTaskState, calls } = makeStateStub([
+      { status: "in_progress", claimedBy: "agent-someone-else" },
+    ]);
+
+    let devTaskCalls = 0;
+    const loop = createLoopOrchestrator({
+      getDevTaskCandidates: async () => {
+        devTaskCalls += 1;
+        return devTaskCalls === 1
+          ? [task("DTW-9.5", "2026-01-01T00:00:00Z")]
+          : [];
+      },
+      getReviewCandidates: async () => [],
+      getPatchCandidates: async () => [],
+      getDeployCandidates: async () => [],
+      claimTask: async () => true,
+      claimPr: async (p) => ({ id: p.id, commitSha: p.commitSha }),
+      recordSkip: async () => {},
+      resetSkip: async () => {},
+      getTaskState,
+      agentId: OWNER_AGENT_ID,
+      runner,
+      cronRunReporter: reporter,
+      workQueueReporter: noopWorkQueueReporter,
+      loopCronId: "shipwright-loop",
+      clock: FixedClock(new Date("2026-07-20T00:00:00Z")),
+    });
+
+    await loop([job("shipwright-dev-task", true)]);
+
+    // The initial attempt ran; the resume did not.
+    expect(sessionKeys).toHaveLength(1);
+    expect(creates).toHaveLength(1);
+    expect(calls).toEqual(["DTW-9.5"]);
+  });
+
+  test("an unclaimed (reaped, not yet re-claimed) in_progress task is not resumed either", async () => {
+    const { runner, sessionKeys } = makeSessionKeyRecordingRunner();
+    const { reporter } = makeAttemptRecordingReporter();
+    const { getTaskState } = makeStateStub([
+      { status: "in_progress", claimedBy: null },
+    ]);
+
+    let devTaskCalls = 0;
+    const loop = createLoopOrchestrator({
+      getDevTaskCandidates: async () => {
+        devTaskCalls += 1;
+        return devTaskCalls === 1
+          ? [task("DTW-9.6", "2026-01-01T00:00:00Z")]
+          : [];
+      },
+      getReviewCandidates: async () => [],
+      getPatchCandidates: async () => [],
+      getDeployCandidates: async () => [],
+      claimTask: async () => true,
+      claimPr: async (p) => ({ id: p.id, commitSha: p.commitSha }),
+      recordSkip: async () => {},
+      resetSkip: async () => {},
+      getTaskState,
+      agentId: OWNER_AGENT_ID,
+      runner,
+      cronRunReporter: reporter,
+      workQueueReporter: noopWorkQueueReporter,
+      loopCronId: "shipwright-loop",
+      clock: FixedClock(new Date("2026-07-20T00:00:00Z")),
+    });
+
+    await loop([job("shipwright-dev-task", true)]);
+
+    expect(sessionKeys).toHaveLength(1);
+  });
+
+  test("with no agentId configured the gate stays status-only — resuming still works", async () => {
+    const { runner, sessionKeys } = makeSessionKeyRecordingRunner();
+    const { reporter } = makeAttemptRecordingReporter();
+    // claimedBy is whatever the store says; without an agentId to compare it
+    // against, the loop must behave exactly as it did before the ownership gate.
+    const { getTaskState } = makeStateStub([
+      { status: "in_progress", claimedBy: "agent-someone-else" },
+      { status: "pr_open", claimedBy: "agent-someone-else" },
+    ]);
+
+    let devTaskCalls = 0;
+    const loop = createLoopOrchestrator({
+      getDevTaskCandidates: async () => {
+        devTaskCalls += 1;
+        return devTaskCalls === 1
+          ? [task("DTW-9.7", "2026-01-01T00:00:00Z")]
+          : [];
+      },
+      getReviewCandidates: async () => [],
+      getPatchCandidates: async () => [],
+      getDeployCandidates: async () => [],
+      claimTask: async () => true,
+      claimPr: async (p) => ({ id: p.id, commitSha: p.commitSha }),
+      recordSkip: async () => {},
+      resetSkip: async () => {},
+      getTaskState,
+      runner,
+      cronRunReporter: reporter,
+      workQueueReporter: noopWorkQueueReporter,
+      loopCronId: "shipwright-loop",
+      clock: FixedClock(new Date("2026-07-20T00:00:00Z")),
+    });
+
+    await loop([job("shipwright-dev-task", true)]);
+
+    // 1 initial + 1 resume, then the terminal pr_open stops the loop.
+    expect(sessionKeys).toHaveLength(2);
+  });
+
+  test("the per-dispatch sessionKey is cleared from the session store when the resume loop exits", async () => {
+    // Regression test for the second-round review finding: a per-dispatch nonce
+    // key is written once and never read again, so it is never lazily evicted
+    // by get() — without an explicit clear, sessions.json (shared with Slack
+    // thread sessions, read+rewritten on every Slack message) would gain one
+    // permanent entry per dev-task dispatch.
+    const { runner, sessionKeys } = makeSessionKeyRecordingRunner();
+    const { reporter } = makeAttemptRecordingReporter();
+    const cleared: string[] = [];
+    const { getTaskState } = makeStateStub(["pr_open"]);
+
+    let devTaskCalls = 0;
+    const loop = createLoopOrchestrator({
+      getDevTaskCandidates: async () => {
+        devTaskCalls += 1;
+        return devTaskCalls === 1
+          ? [task("DTW-9.8", "2026-01-01T00:00:00Z")]
+          : [];
+      },
+      getReviewCandidates: async () => [],
+      getPatchCandidates: async () => [],
+      getDeployCandidates: async () => [],
+      claimTask: async () => true,
+      claimPr: async (p) => ({ id: p.id, commitSha: p.commitSha }),
+      recordSkip: async () => {},
+      resetSkip: async () => {},
+      getTaskState,
+      agentId: OWNER_AGENT_ID,
+      clearSessionKey: async (key) => {
+        cleared.push(key);
+      },
+      runner,
+      cronRunReporter: reporter,
+      workQueueReporter: noopWorkQueueReporter,
+      loopCronId: "shipwright-loop",
+      clock: FixedClock(new Date("2026-07-20T00:00:00Z")),
+    });
+
+    await loop([job("shipwright-dev-task", true)]);
+
+    // Exactly the key this dispatch used, cleared exactly once.
+    expect(cleared).toEqual([sessionKeys[0] as string]);
+    expect(cleared[0]).toMatch(/^dev-task:DTW-9\.8:/);
+  });
+
+  test("a failed dev-task attempt still clears its sessionKey, and a clearSessionKey failure never masks the dispatch outcome", async () => {
+    const { reporter } = makeAttemptRecordingReporter();
+    const cleared: string[] = [];
+    const runner = async (): Promise<ClaudeRunResult> => {
+      throw new Error("runner boom");
+    };
+
+    let devTaskCalls = 0;
+    const loop = createLoopOrchestrator({
+      getDevTaskCandidates: async () => {
+        devTaskCalls += 1;
+        return devTaskCalls === 1
+          ? [task("DTW-9.9", "2026-01-01T00:00:00Z")]
+          : [];
+      },
+      getReviewCandidates: async () => [],
+      getPatchCandidates: async () => [],
+      getDeployCandidates: async () => [],
+      claimTask: async () => true,
+      claimPr: async (p) => ({ id: p.id, commitSha: p.commitSha }),
+      recordSkip: async () => {},
+      resetSkip: async () => {},
+      getTaskState: async () => null,
+      agentId: OWNER_AGENT_ID,
+      clearSessionKey: async (key) => {
+        cleared.push(key);
+        throw new Error("session store unwritable");
+      },
+      runner,
+      cronRunReporter: reporter,
+      workQueueReporter: noopWorkQueueReporter,
+      loopCronId: "shipwright-loop",
+      clock: FixedClock(new Date("2026-07-20T00:00:00Z")),
+    });
+
+    // The dispatch failure is caught+isolated by the drain loop (CBD-2.3), so
+    // the tick resolves — the point here is that the swallowed clear failure
+    // neither crashes the tick nor skips the clear attempt.
+    await loop([job("shipwright-dev-task", true)]);
+
+    expect(cleared).toHaveLength(1);
+    expect(cleared[0]).toMatch(/^dev-task:DTW-9\.9:/);
+  });
+
+  test("every resume attempt renews the claim FIRST — one dispatch never outlives the single-session claim TTL", async () => {
+    // Regression test for the third-round review finding: lib/claim-ttl.ts
+    // sizes DEFAULT_CLAIM_TTL_MS as "one Claude session + 5min buffer", an
+    // invariant that assumes a claim spans exactly one session. This loop can
+    // hold one claim across up to 4 sequential runner() calls, and an attempt
+    // that exits before its in-session heartbeat step leaves the claim to go
+    // stale mid-dispatch — the StaleClaimReaper then releases it and a sibling
+    // agent can start a second, cold session on the same task/branch. The
+    // ownership gate closes the resume half of that race; renewing the claim
+    // before each attempt closes the reap half.
+    const events: string[] = [];
+    const runner = async (): Promise<ClaudeRunResult> => {
+      events.push("run");
+      return { result: "done" };
+    };
+    const { reporter, creates } = makeAttemptRecordingReporter();
+    // Never terminal → the dispatch exhausts its 3-resume cap.
+    const { getTaskState } = makeStateStub([
+      "in_progress",
+      "in_progress",
+      "in_progress",
+    ]);
+
+    let devTaskCalls = 0;
+    const loop = createLoopOrchestrator({
+      getDevTaskCandidates: async () => {
+        devTaskCalls += 1;
+        return devTaskCalls === 1
+          ? [task("DTW-9.10", "2026-01-01T00:00:00Z")]
+          : [];
+      },
+      getReviewCandidates: async () => [],
+      getPatchCandidates: async () => [],
+      getDeployCandidates: async () => [],
+      claimTask: async () => true,
+      claimPr: async (p) => ({ id: p.id, commitSha: p.commitSha }),
+      recordSkip: async () => {},
+      resetSkip: async () => {},
+      getTaskState,
+      agentId: OWNER_AGENT_ID,
+      heartbeatTask: async (id) => {
+        events.push(`heartbeat:${id}`);
+      },
+      runner,
+      cronRunReporter: reporter,
+      workQueueReporter: noopWorkQueueReporter,
+      loopCronId: "shipwright-loop",
+      clock: FixedClock(new Date("2026-07-20T00:00:00Z")),
+    });
+
+    await loop([job("shipwright-dev-task", true)]);
+
+    // The initial attempt runs on the claim the loop just took (POST /claim
+    // sets heartbeatAt itself, so no renewal is needed before it); every
+    // resume is preceded by exactly one renewal of THIS task's claim.
+    expect(events).toEqual([
+      "run",
+      "heartbeat:DTW-9.10",
+      "run",
+      "heartbeat:DTW-9.10",
+      "run",
+      "heartbeat:DTW-9.10",
+      "run",
+    ]);
+    expect(creates).toHaveLength(4);
+  });
+
+  test("a claim renewal failure stops the resume loop but leaves the dispatch itself successful", async () => {
+    const { runner, sessionKeys } = makeSessionKeyRecordingRunner();
+    const { reporter, creates, completes } = makeAttemptRecordingReporter();
+    const { getTaskState } = makeStateStub(["in_progress", "in_progress"]);
+
+    let devTaskCalls = 0;
+    const loop = createLoopOrchestrator({
+      getDevTaskCandidates: async () => {
+        devTaskCalls += 1;
+        return devTaskCalls === 1
+          ? [task("DTW-9.11", "2026-01-01T00:00:00Z")]
+          : [];
+      },
+      getReviewCandidates: async () => [],
+      getPatchCandidates: async () => [],
+      getDeployCandidates: async () => [],
+      claimTask: async () => true,
+      claimPr: async (p) => ({ id: p.id, commitSha: p.commitSha }),
+      recordSkip: async () => {},
+      resetSkip: async () => {},
+      getTaskState,
+      agentId: OWNER_AGENT_ID,
+      heartbeatTask: async () => {
+        throw new Error("task-store POST /tasks/DTW-9.11/heartbeat → 503");
+      },
+      runner,
+      cronRunReporter: reporter,
+      workQueueReporter: noopWorkQueueReporter,
+      loopCronId: "shipwright-loop",
+      clock: FixedClock(new Date("2026-07-20T00:00:00Z")),
+    });
+
+    await loop([job("shipwright-dev-task", true)]);
+
+    // Fail-safe: a claim that can't be proven fresh is never resumed against
+    // (pre-DTW-1.3 behavior — the reaper + next tick take over)...
+    expect(sessionKeys).toHaveLength(1);
+    // ...and the renewal blip must not turn an otherwise-successful dispatch
+    // into a failed cron run.
+    expect(creates).toHaveLength(1);
+    expect(completes).toEqual([{ itemId: "DTW-9.11", outcome: "completed" }]);
+  });
+
+  test("a task reaped and re-claimed by another agent is never heartbeated on that agent's behalf", async () => {
+    const { runner, sessionKeys } = makeSessionKeyRecordingRunner();
+    const { reporter } = makeAttemptRecordingReporter();
+    const heartbeats: string[] = [];
+    const { getTaskState } = makeStateStub([
+      { status: "in_progress", claimedBy: "agent-someone-else" },
+    ]);
+
+    let devTaskCalls = 0;
+    const loop = createLoopOrchestrator({
+      getDevTaskCandidates: async () => {
+        devTaskCalls += 1;
+        return devTaskCalls === 1
+          ? [task("DTW-9.12", "2026-01-01T00:00:00Z")]
+          : [];
+      },
+      getReviewCandidates: async () => [],
+      getPatchCandidates: async () => [],
+      getDeployCandidates: async () => [],
+      claimTask: async () => true,
+      claimPr: async (p) => ({ id: p.id, commitSha: p.commitSha }),
+      recordSkip: async () => {},
+      resetSkip: async () => {},
+      getTaskState,
+      agentId: OWNER_AGENT_ID,
+      heartbeatTask: async (id) => {
+        heartbeats.push(id);
+      },
+      runner,
+      cronRunReporter: reporter,
+      workQueueReporter: noopWorkQueueReporter,
+      loopCronId: "shipwright-loop",
+      clock: FixedClock(new Date("2026-07-20T00:00:00Z")),
+    });
+
+    await loop([job("shipwright-dev-task", true)]);
+
+    expect(sessionKeys).toHaveLength(1);
+    // The renewal is ordered after the ownership gate, so a claim that now
+    // belongs to a sibling agent is left to age out on its own schedule.
+    expect(heartbeats).toEqual([]);
   });
 });
