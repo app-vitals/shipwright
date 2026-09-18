@@ -216,7 +216,8 @@ export interface LoopOrchestratorDeps {
    *     calling runner() again with it. The nonce is minted once per
    *     dispatchItem call, so resuming is scoped to that dispatch's own loop
    *     and a later independent dispatch of the same task can't inherit a dead
-   *     session (see dispatchItem for the full rationale). Left undefined for
+   *     session; the key is cleared (via clearSessionKey) once that loop exits
+   *     (see dispatchItem for the full rationale). Left undefined for
    *     review/patch/deploy/plan, which deliberately start fresh on every
    *     dispatch.
    *   - `onEarlySessionId` — fires as soon as a session id is known (even for
@@ -230,13 +231,50 @@ export interface LoopOrchestratorDeps {
     onEarlySessionId?: EarlySessionIdCallback,
   ) => Promise<ClaudeRunResult>;
   /**
-   * DTW-1.3 — fetches a task's live status from the task store, used by the
+   * DTW-1.3 — fetches a task's live state from the task store, used by the
    * dev-task-only auto-resume loop in dispatchItem to decide whether to
    * immediately resume a still-in_progress task instead of waiting for the
    * next cron tick / the StaleClaimReaper. Returns null if the task can't be
    * found (treated as "stop resuming").
+   *
+   * Returns `claimedBy` alongside `status` (both come from the same
+   * GET /tasks/{id} response, so this costs nothing extra) because status
+   * alone can't distinguish "still mine" from "reaped and re-claimed by
+   * someone else" — see the resume gate in dispatchItem and the `agentId`
+   * doc comment below.
    */
-  getTaskStatus: (taskId: string) => Promise<string | null>;
+  getTaskState: (
+    taskId: string,
+  ) => Promise<{ status: string; claimedBy: string | null } | null>;
+  /**
+   * This agent's own claim identity (SHIPWRIGHT_AGENT_ID) — the value the
+   * task store pins `claimedBy` to when this agent's token claims a task.
+   * Used solely by the dev-task auto-resume gate: a dispatch can hold a task
+   * across up to 1 + MAX_AUTO_RESUMES sequential runner() calls, which is long
+   * enough for the claim TTL to lapse if an attempt stalls past its heartbeat.
+   * If the StaleClaimReaper then releases the claim and a different claimant
+   * picks the task back up to `in_progress` before the next check, a
+   * status-only gate would happily resume this loop's stale session against a
+   * task another session now owns.
+   *
+   * Optional: when undefined (no agent id configured, and every test that
+   * doesn't opt in), the gate falls back to the status-only check — identical
+   * to pre-fix behavior rather than silently refusing to ever resume.
+   */
+  agentId?: string;
+  /**
+   * Clears a persisted session-store entry by key. Called (best-effort) at
+   * the end of a dev-task dispatch's resume loop to drop that dispatch's
+   * per-dispatch nonce key, which is unreachable from then on — without this,
+   * `sessions.json` gains one permanent entry per dev-task dispatch, and that
+   * file is read+rewritten on every Slack message too.
+   *
+   * Optional and never awaited for correctness: a failure here is logged and
+   * swallowed (a stray entry is harmless, and the store's TTL prune — wired in
+   * index.ts — is the backstop for the entries an abrupt process kill leaves
+   * behind).
+   */
+  clearSessionKey?: (key: string) => Promise<void>;
   /** Reports each dispatch's run to the admin API (fire-and-forget). */
   cronRunReporter: CronRunReporter;
   /**
@@ -513,7 +551,9 @@ export function createLoopOrchestrator(
     claimPr,
     recordSkip,
     resetSkip,
-    getTaskStatus,
+    getTaskState,
+    agentId,
+    clearSessionKey,
     runner,
     cronRunReporter,
     workQueueReporter,
@@ -664,10 +704,16 @@ export function createLoopOrchestrator(
     // one key, which is what makes `-r` fire on the resumes — while
     // guaranteeing the next dispatch starts cold.
     //
-    // A nonce rather than a clear-on-exit: an explicit clear can't cover a hard
-    // process kill mid-resume-loop, whereas an unreachable per-dispatch key is
-    // inert by construction. Abandoned entries age out through the store's own
-    // TTL prune.
+    // A nonce rather than a clear-on-exit ALONE: an explicit clear can't cover
+    // a hard process kill mid-resume-loop, whereas an unreachable per-dispatch
+    // key is inert by construction. But inert isn't free — a nonce key is
+    // written once and never read again, so it's never lazily evicted by
+    // `get()` either, and one permanent entry per dev-task dispatch would grow
+    // the same `sessions.json` that every Slack message reads and rewrites. So
+    // both: the resume loop below clears its own key on exit (the normal path),
+    // and index.ts wires a periodic `sessions.prune()` so the entries an abrupt
+    // kill leaves behind actually do age out through the store's TTL — the
+    // prune that, before that wiring, had zero production call sites.
     const sessionKey =
       phase === "dev-task" ? `dev-task:${itemId}:${randomUUID()}` : undefined;
 
@@ -923,33 +969,62 @@ export function createLoopOrchestrator(
     }
 
     // DTW-1.3 auto-resume loop — dev-task only. After an attempt finishes,
-    // re-read the task's LIVE status: still `in_progress` means the session
-    // ended without finishing the task (the ScheduleWakeup/long-wait case), so
-    // resume it right now with the same sessionKey instead of leaving the
-    // claim to go stale for ~65 minutes and burning a cold session on the next
-    // tick. Capped at MAX_AUTO_RESUMES; a "silent" outcome or a thrown failure
-    // ends the loop (the throw propagates out of dispatchItem unchanged).
+    // re-read the task's LIVE state: still `in_progress` AND still claimed by
+    // this agent means the session ended without finishing the task (the
+    // ScheduleWakeup/long-wait case), so resume it right now with the same
+    // sessionKey instead of leaving the claim to go stale for ~65 minutes and
+    // burning a cold session on the next tick. Capped at MAX_AUTO_RESUMES; a
+    // "silent" outcome or a thrown failure ends the loop (the throw propagates
+    // out of dispatchItem unchanged).
     if (phase === "dev-task" && sessionKey) {
-      if ((await runOneAttempt()) !== "completed") return;
-      let resumeAttempt = 0;
-      while (resumeAttempt < MAX_AUTO_RESUMES) {
-        let liveStatus: string | null;
-        try {
-          liveStatus = await getTaskStatus(itemId);
-        } catch (err) {
-          // Resuming is an optimization — a task-store blip here must not turn
-          // an otherwise-successful dispatch into a failure. Fall back to
-          // today's behavior (stop, let the reaper + next tick handle it).
-          console.warn(
-            `[loop-orchestrator] getTaskStatus failed for ${itemId}: ${String(err)} — not resuming`,
-          );
-          return;
-        }
-        if (liveStatus !== "in_progress") return;
-        resumeAttempt += 1;
+      try {
         if ((await runOneAttempt()) !== "completed") return;
+        let resumeAttempt = 0;
+        while (resumeAttempt < MAX_AUTO_RESUMES) {
+          let liveState: Awaited<ReturnType<typeof getTaskState>>;
+          try {
+            liveState = await getTaskState(itemId);
+          } catch (err) {
+            // Resuming is an optimization — a task-store blip here must not
+            // turn an otherwise-successful dispatch into a failure. Fall back
+            // to today's behavior (stop, let the reaper + next tick handle it).
+            console.warn(
+              `[loop-orchestrator] getTaskState failed for ${itemId}: ${String(err)} — not resuming`,
+            );
+            return;
+          }
+          if (liveState?.status !== "in_progress") return;
+          // Ownership gate: `in_progress` alone doesn't prove the claim is
+          // still ours. If this dispatch's claim lapsed and was reaped, another
+          // claimant can have the task back at `in_progress` by now — resuming
+          // a stale session against it would have two sessions working one
+          // task. Skipped only when no agentId is configured (see the dep's
+          // doc comment).
+          if (agentId && liveState.claimedBy !== agentId) {
+            console.warn(
+              `[loop-orchestrator] ${itemId} is in_progress but claimed by ${liveState.claimedBy ?? "nobody"} (not ${agentId}) — not resuming`,
+            );
+            return;
+          }
+          resumeAttempt += 1;
+          if ((await runOneAttempt()) !== "completed") return;
+        }
+        return;
+      } finally {
+        // The nonce key is unreachable from here on — drop it so sessions.json
+        // doesn't accumulate one permanent entry per dev-task dispatch. Runs on
+        // every exit path including the rethrown runner failure; best-effort,
+        // never allowed to mask the outcome of the dispatch itself.
+        if (clearSessionKey) {
+          try {
+            await clearSessionKey(sessionKey);
+          } catch (err) {
+            console.warn(
+              `[loop-orchestrator] clearSessionKey failed for ${sessionKey}: ${String(err)} — swallowing`,
+            );
+          }
+        }
       }
-      return;
     }
 
     await runOneAttempt();
@@ -1500,6 +1575,8 @@ export interface LoopOrchestratorGetterDeps {
   createOrchestrator?: typeof createProductionLoopOrchestrator;
   /** LO-1.1 — see LoopOrchestratorDeps's sentryClient doc comment. */
   sentryClient?: ErrorCapturingClient;
+  /** DTW-1.3 — see LoopOrchestratorDeps's clearSessionKey doc comment. */
+  clearSessionKey?: (key: string) => Promise<void>;
 }
 
 /**
@@ -1535,6 +1612,7 @@ export function createLoopOrchestratorGetter(
         workQueueReporter: deps.workQueueReporter,
         loopCronId,
         sentryClient: deps.sentryClient,
+        clearSessionKey: deps.clearSessionKey,
       })
         .then((orch) => {
           orchestrator = orch;
@@ -1567,6 +1645,8 @@ export interface LoopOrchestratorProductionOptions {
   clock?: Clock;
   /** LO-1.1 — see LoopOrchestratorDeps's sentryClient doc comment. */
   sentryClient?: ErrorCapturingClient;
+  /** DTW-1.3 — see LoopOrchestratorDeps's clearSessionKey doc comment. */
+  clearSessionKey?: (key: string) => Promise<void>;
 }
 
 /**
@@ -1650,10 +1730,19 @@ export async function createProductionLoopOrchestrator(
     },
     recordSkip: (itemType, id) => taskStoreClient.recordSkip(itemType, id),
     resetSkip: (itemType, id) => taskStoreClient.resetSkip(itemType, id),
-    // DTW-1.3: a missing task (getTask → null) collapses to a null status,
-    // which the resume loop reads as "stop resuming".
-    getTaskStatus: (id) =>
-      taskStoreClient.getTask(id).then((t) => t?.status ?? null),
+    // DTW-1.3: a missing task (getTask → null) stays null, which the resume
+    // loop reads as "stop resuming". claimedBy rides along on the same
+    // response so the resume gate can check claim ownership, not just status.
+    getTaskState: (id) =>
+      taskStoreClient
+        .getTask(id)
+        .then((t) =>
+          t ? { status: t.status, claimedBy: t.claimedBy ?? null } : null,
+        ),
+    // The value the task store pins claimedBy to for this agent's own claims.
+    // Empty/unset → the resume gate keeps its status-only behavior.
+    agentId: (process.env.SHIPWRIGHT_AGENT_ID ?? "").trim() || undefined,
+    clearSessionKey: opts.clearSessionKey,
     runner: opts.runner,
     cronRunReporter: opts.cronRunReporter,
     workQueueReporter: opts.workQueueReporter,

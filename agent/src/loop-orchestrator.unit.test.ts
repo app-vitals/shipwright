@@ -455,10 +455,15 @@ interface MakeDepsOptions {
   deployCandidates?: WorkPrCandidate[] | (() => Promise<WorkPrCandidate[]>);
   runner?: LoopOrchestratorDeps["runner"];
   reporter?: CronRunReporter;
-  // DTW-1.3: live task-status probe used by the dev-task auto-resume loop.
+  // DTW-1.3: live task-state probe used by the dev-task auto-resume loop.
   // Defaults to a stub that always resolves null ("gone" → never resume), so
   // existing tests that don't pass it are unaffected.
-  getTaskStatus?: (taskId: string) => Promise<string | null>;
+  getTaskState?: LoopOrchestratorDeps["getTaskState"];
+  // DTW-1.3: this agent's claim identity, and the per-dispatch session-key
+  // cleanup hook. Both undefined by default (ownership gate skipped, no
+  // cleanup), so existing tests are unaffected.
+  agentId?: string;
+  clearSessionKey?: (key: string) => Promise<void>;
   workQueueReporter?: WorkQueueReporter;
   loopCronId?: string;
   // Records which qualification functions were actually invoked.
@@ -575,7 +580,9 @@ function makeDeps(options: MakeDepsOptions = {}): LoopOrchestratorDeps {
       })),
     recordSkip: options.recordSkip ?? (async () => {}),
     resetSkip: options.resetSkip ?? (async () => {}),
-    getTaskStatus: options.getTaskStatus ?? (async () => null),
+    getTaskState: options.getTaskState ?? (async () => null),
+    agentId: options.agentId,
+    clearSessionKey: options.clearSessionKey,
     sentryClient: options.sentryClient,
   };
 }
@@ -1082,8 +1089,11 @@ describe("createLoopOrchestrator", () => {
         devTaskCandidates: [task("DTW-BUSY-1", "2026-01-01T00:00:00Z")],
         claimTask: consumingClaimTask(consumed),
         consumed,
-        // Never terminal → the resume loop runs to its full cap.
-        getTaskStatus: async () => "in_progress",
+        // Never terminal, still ours → the resume loop runs to its full cap.
+        getTaskState: async () => ({
+          status: "in_progress",
+          claimedBy: null,
+        }),
         runner,
       }),
       clock,

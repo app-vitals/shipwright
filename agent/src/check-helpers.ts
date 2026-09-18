@@ -74,6 +74,12 @@ export interface Task {
   prOpenedAt?: string;
   prUrl?: string;
   assignee?: string;
+  /**
+   * The agent id currently holding the claim — pinned server-side by
+   * POST /tasks/{id}/claim to the calling agent's id, cleared by /release and
+   * by the StaleClaimReaper. Null/absent means unclaimed.
+   */
+  claimedBy?: string | null;
   issue?: string;
   model?: "haiku" | "sonnet" | "opus";
   complexity?: number;
@@ -896,9 +902,7 @@ function mergeLinkedTasks(tasks: Task[]): LinkedTaskInfo | null {
   const anyHitl = first.hitl === true || rest.some((t) => t.hitl === true);
   return {
     status:
-      anyBlockedStatus && first.status !== "blocked"
-        ? "blocked"
-        : first.status,
+      anyBlockedStatus && first.status !== "blocked" ? "blocked" : first.status,
     createdAt: first.createdAt,
     // Preserve first.hitl's original value (including undefined) unless a
     // bundle-mate is hitl:true, in which case the merged result must report

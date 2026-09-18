@@ -125,7 +125,67 @@ export function createFileSessionStore(
         if (pruned > 0) await save(map);
         return pruned;
       }),
-    size: () =>
-      enqueue(file, async () => Object.keys(await load()).length),
+    size: () => enqueue(file, async () => Object.keys(await load()).length),
   };
+}
+
+// ─── Periodic prune ───────────────────────────────────────────────────────────
+
+/** Default sweep interval for startSessionPruner: 6 hours. */
+export const SESSION_PRUNE_INTERVAL_MS = 6 * 60 * 60 * 1000;
+
+/** The slice of the store startSessionPruner needs — keeps callers/tests thin. */
+export interface PrunableSessionStore {
+  prune: () => Promise<number>;
+}
+
+/**
+ * One prune sweep. Never throws: a prune failure (unreadable/locked file,
+ * disk blip) is logged and swallowed, since this is pure housekeeping.
+ * Returns the number of entries removed (0 on failure).
+ */
+export async function pruneSessionsOnce(
+  store: PrunableSessionStore,
+  label: string,
+): Promise<number> {
+  try {
+    const pruned = await store.prune();
+    if (pruned > 0) {
+      console.log(`[sessions] pruned ${pruned} expired ${label} entries`);
+    }
+    return pruned;
+  } catch (err) {
+    console.warn(
+      `[sessions] prune failed for ${label}: ${String(err)} — swallowing`,
+    );
+    return 0;
+  }
+}
+
+/**
+ * Start the periodic TTL sweep for a file-backed session store.
+ *
+ * Without this, `prune()` has no production call site and entries only ever
+ * expire lazily on `get()` — which never happens for a key that is written
+ * once and never read again (DTW-1.3's per-dispatch `dev-task:{id}:{nonce}`
+ * keys, whose owning loop normally clears them but can't after an abrupt
+ * process kill). The sweep runs once immediately (clearing whatever a previous
+ * process left behind) and then on `intervalMs`.
+ *
+ * `setIntervalFn` is injectable so tests can drive the schedule deterministically.
+ */
+export function startSessionPruner(
+  store: PrunableSessionStore,
+  label: string,
+  opts?: {
+    intervalMs?: number;
+    setIntervalFn?: (fn: () => void, ms: number) => unknown;
+  },
+): void {
+  const intervalMs = opts?.intervalMs ?? SESSION_PRUNE_INTERVAL_MS;
+  const schedule =
+    opts?.setIntervalFn ??
+    ((fn: () => void, ms: number) => setInterval(fn, ms));
+  void pruneSessionsOnce(store, label);
+  schedule(() => void pruneSessionsOnce(store, label), intervalMs);
 }
