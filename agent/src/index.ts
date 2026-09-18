@@ -35,6 +35,7 @@ import {
 } from "./claim-invariant-reconciler.ts";
 import {
   createRunClaude,
+  type EarlySessionIdCallback,
   type ProgressCallback,
   setLiveClaudeConfig,
 } from "./claude.ts";
@@ -630,11 +631,25 @@ const loopJobsRef = createJobsRef<CronJobLike>();
 // wiring cost, and its construction errors surface at fire time (logged by the
 // cron callback's try/catch) rather than crashing agent startup.
 const getLoopOrchestrator = createLoopOrchestratorGetter({
+  // DTW-1.3: sessionKey is no longer hardcoded undefined for the loop path —
+  // the orchestrator supplies `dev-task:{taskId}` for dev-task dispatches (and
+  // nothing for every other phase), plus an onEarlySessionId callback. The
+  // loop never passes extraEnv (only cron-handler's dispatch does), so the
+  // former 3rd `extraEnv` param here was dead for this call site.
   runner: (
     message: string,
     onProgress?: ProgressCallback,
-    extraEnv?: Record<string, string>,
-  ) => runner(message, undefined, onProgress, undefined, extraEnv),
+    sessionKey?: string,
+    onEarlySessionId?: EarlySessionIdCallback,
+  ) =>
+    runner(
+      message,
+      sessionKey,
+      onProgress,
+      undefined,
+      undefined,
+      onEarlySessionId,
+    ),
   cronRunReporter: cronRunReporter ?? new NoopCronRunReporter(),
   workQueueReporter,
   // LO-1.1: same optional-by-convention pattern as every other sentryClient

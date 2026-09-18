@@ -159,6 +159,7 @@ describe("loop-orchestrator + real task-store claim client (CBD-2.1)", () => {
       },
       async skipRun() {},
       async recordProgress() {},
+      async recordSessionId() {},
     };
     return { reporter, completedItemIds };
   }
@@ -200,6 +201,8 @@ describe("loop-orchestrator + real task-store claim client (CBD-2.1)", () => {
       claimPr: async (p) => ({ id: p.id, commitSha: p.commitSha }),
       recordSkip: async () => {},
       resetSkip: async () => {},
+      // DTW-1.3: no live status (null) → the dev-task resume loop never fires.
+      getTaskStatus: async () => null,
       runner,
       cronRunReporter: reporter,
       workQueueReporter: noopWorkQueueReporter,
@@ -263,6 +266,7 @@ describe("loop-orchestrator + child AgentCronJob rows (LPC-2.1)", () => {
       },
       async skipRun() {},
       async recordProgress() {},
+      async recordSessionId() {},
     };
     return { reporter, completedItemIds };
   }
@@ -320,6 +324,8 @@ describe("loop-orchestrator + child AgentCronJob rows (LPC-2.1)", () => {
         claimPr: async (p) => ({ id: p.id, commitSha: p.commitSha }),
         recordSkip: async () => {},
         resetSkip: async () => {},
+        // DTW-1.3: no live status (null) → the dev-task resume loop never fires.
+        getTaskStatus: async () => null,
         runner,
         cronRunReporter: reporter,
         workQueueReporter: noopWorkQueueReporter,
@@ -410,6 +416,7 @@ describe("loop-orchestrator + progress push / partial-usage-on-failure (CSU-3.1)
       async recordProgress(_cronId, runId, modelBreakdown) {
         progressCalls.push({ runId, modelBreakdown });
       },
+      async recordSessionId() {},
     };
     return { reporter, completeCalls, progressCalls };
   }
@@ -478,6 +485,8 @@ describe("loop-orchestrator + progress push / partial-usage-on-failure (CSU-3.1)
       claimPr: async (p) => ({ id: p.id, commitSha: p.commitSha }),
       recordSkip: async () => {},
       resetSkip: async () => {},
+      // DTW-1.3: no live status (null) → the dev-task resume loop never fires.
+      getTaskStatus: async () => null,
       runner,
       cronRunReporter: trackedReporter,
       workQueueReporter: noopWorkQueueReporter,
@@ -545,6 +554,8 @@ describe("loop-orchestrator + progress push / partial-usage-on-failure (CSU-3.1)
       claimPr: async (p) => ({ id: p.id, commitSha: p.commitSha }),
       recordSkip: async () => {},
       resetSkip: async () => {},
+      // DTW-1.3: no live status (null) → the dev-task resume loop never fires.
+      getTaskStatus: async () => null,
       runner,
       cronRunReporter: reporter,
       workQueueReporter: noopWorkQueueReporter,
@@ -628,6 +639,8 @@ describe("loop-orchestrator + progress push / partial-usage-on-failure (CSU-3.1)
       claimPr: async (p) => ({ id: p.id, commitSha: p.commitSha }),
       recordSkip: async () => {},
       resetSkip: async () => {},
+      // DTW-1.3: no live status (null) → the dev-task resume loop never fires.
+      getTaskStatus: async () => null,
       runner,
       cronRunReporter: trackedReporter,
       workQueueReporter: noopWorkQueueReporter,
@@ -638,8 +651,256 @@ describe("loop-orchestrator + progress push / partial-usage-on-failure (CSU-3.1)
     await loop([job("shipwright-dev-task", true)]);
 
     expect(skipCalls).toHaveLength(1);
-    expect(skipCalls[0]?.opts?.sessionId).toBe(
-      "session-integration-skipped",
-    );
+    expect(skipCalls[0]?.opts?.sessionId).toBe("session-integration-skipped");
+  });
+});
+
+// ─── DTW-1.3: dev-task-only auto-resume loop ─────────────────────────────────
+
+describe("loop-orchestrator + dev-task auto-resume (DTW-1.3)", () => {
+  const noopWorkQueueReporter: WorkQueueReporter = {
+    async reportSnapshot() {},
+  };
+
+  /**
+   * Records one entry per createRun/completeRun, tagged with the itemId the
+   * dispatch was made against — so a test can assert "one AgentCronRun row per
+   * attempt, all sharing the same itemId".
+   */
+  function makeAttemptRecordingReporter(): {
+    reporter: CronRunReporter;
+    creates: Array<{ itemId?: string }>;
+    completes: Array<{ itemId?: string; outcome: string }>;
+  } {
+    const creates: Array<{ itemId?: string }> = [];
+    const completes: Array<{ itemId?: string; outcome: string }> = [];
+    let counter = 0;
+    const reporter: CronRunReporter = {
+      async createRun(_cronId, _startedAt, _phaseId, _itemType, itemId) {
+        creates.push({ itemId });
+        counter += 1;
+        return `run-${counter}`;
+      },
+      async completeRun(
+        _cronId,
+        _runId,
+        _completedAt,
+        outcome,
+        _opts,
+        _phaseId,
+        _itemType,
+        itemId,
+      ) {
+        completes.push({ itemId, outcome });
+      },
+      async skipRun() {},
+      async recordProgress() {},
+      async recordSessionId() {},
+    };
+    return { reporter, creates, completes };
+  }
+
+  /** A runner that records the sessionKey it was handed on every call. */
+  function makeSessionKeyRecordingRunner(): {
+    runner: (
+      message: string,
+      onProgress?: ProgressCallback,
+      sessionKey?: string,
+    ) => Promise<ClaudeRunResult>;
+    sessionKeys: Array<string | undefined>;
+  } {
+    const sessionKeys: Array<string | undefined> = [];
+    const runner = async (
+      _message: string,
+      _onProgress?: ProgressCallback,
+      sessionKey?: string,
+    ): Promise<ClaudeRunResult> => {
+      sessionKeys.push(sessionKey);
+      return { result: "done" };
+    };
+    return { runner, sessionKeys };
+  }
+
+  function makeStatusStub(statuses: Array<string | null>): {
+    getTaskStatus: (taskId: string) => Promise<string | null>;
+    calls: string[];
+  } {
+    const calls: string[] = [];
+    let idx = 0;
+    return {
+      calls,
+      getTaskStatus: async (taskId: string) => {
+        calls.push(taskId);
+        const status = statuses[idx] ?? null;
+        idx += 1;
+        return status;
+      },
+    };
+  }
+
+  test("a dev-task dispatch left in_progress auto-resumes with the SAME sessionKey, capped at 3 resumes (4 runner calls)", async () => {
+    const { runner, sessionKeys } = makeSessionKeyRecordingRunner();
+    const { reporter, creates, completes } = makeAttemptRecordingReporter();
+    // in_progress for every check the cap allows; the trailing terminal value
+    // is never reached because the 3-resume cap trips first.
+    const { getTaskStatus, calls } = makeStatusStub([
+      "in_progress",
+      "in_progress",
+      "in_progress",
+      "pr_open",
+    ]);
+
+    let devTaskCalls = 0;
+    const loop = createLoopOrchestrator({
+      getDevTaskCandidates: async () => {
+        devTaskCalls += 1;
+        return devTaskCalls === 1
+          ? [task("DTW-9.1", "2026-01-01T00:00:00Z")]
+          : [];
+      },
+      getReviewCandidates: async () => [],
+      getPatchCandidates: async () => [],
+      getDeployCandidates: async () => [],
+      claimTask: async () => true,
+      claimPr: async (p) => ({ id: p.id, commitSha: p.commitSha }),
+      recordSkip: async () => {},
+      resetSkip: async () => {},
+      getTaskStatus,
+      runner,
+      cronRunReporter: reporter,
+      workQueueReporter: noopWorkQueueReporter,
+      loopCronId: "shipwright-loop",
+      clock: FixedClock(new Date("2026-07-20T00:00:00Z")),
+    });
+
+    await loop([job("shipwright-dev-task", true)]);
+
+    // 1 initial + 3 resumes.
+    expect(sessionKeys).toHaveLength(4);
+    // Every call — initial AND resumes — reuses the same sessionKey, which is
+    // what makes the underlying runner build `-r <sessionId>` on the resumes.
+    expect(sessionKeys).toEqual([
+      "dev-task:DTW-9.1",
+      "dev-task:DTW-9.1",
+      "dev-task:DTW-9.1",
+      "dev-task:DTW-9.1",
+    ]);
+    // Every status check was against the dispatched task.
+    expect(calls.every((id) => id === "DTW-9.1")).toBe(true);
+    // One AgentCronRun row per attempt, all tagged with the same itemId.
+    expect(creates).toHaveLength(4);
+    expect(completes).toHaveLength(4);
+    expect(creates.every((c) => c.itemId === "DTW-9.1")).toBe(true);
+    expect(completes.every((c) => c.itemId === "DTW-9.1")).toBe(true);
+    expect(completes.every((c) => c.outcome === "completed")).toBe(true);
+  });
+
+  test("a task that never reaches a terminal state stops at exactly 3 resumes — not an infinite loop", async () => {
+    const { runner, sessionKeys } = makeSessionKeyRecordingRunner();
+    const { reporter, creates, completes } = makeAttemptRecordingReporter();
+    const alwaysInProgress = async () => "in_progress";
+
+    let devTaskCalls = 0;
+    const loop = createLoopOrchestrator({
+      getDevTaskCandidates: async () => {
+        devTaskCalls += 1;
+        return devTaskCalls === 1
+          ? [task("DTW-9.2", "2026-01-01T00:00:00Z")]
+          : [];
+      },
+      getReviewCandidates: async () => [],
+      getPatchCandidates: async () => [],
+      getDeployCandidates: async () => [],
+      claimTask: async () => true,
+      claimPr: async (p) => ({ id: p.id, commitSha: p.commitSha }),
+      recordSkip: async () => {},
+      resetSkip: async () => {},
+      getTaskStatus: alwaysInProgress,
+      runner,
+      cronRunReporter: reporter,
+      workQueueReporter: noopWorkQueueReporter,
+      loopCronId: "shipwright-loop",
+      clock: FixedClock(new Date("2026-07-20T00:00:00Z")),
+    });
+
+    await loop([job("shipwright-dev-task", true)]);
+
+    expect(sessionKeys).toHaveLength(4);
+    expect(creates).toHaveLength(4);
+    expect(completes).toHaveLength(4);
+  });
+
+  test("a dev-task that reaches a terminal status after the first attempt is not resumed at all", async () => {
+    const { runner, sessionKeys } = makeSessionKeyRecordingRunner();
+    const { reporter, creates } = makeAttemptRecordingReporter();
+    const { getTaskStatus, calls } = makeStatusStub(["pr_open"]);
+
+    let devTaskCalls = 0;
+    const loop = createLoopOrchestrator({
+      getDevTaskCandidates: async () => {
+        devTaskCalls += 1;
+        return devTaskCalls === 1
+          ? [task("DTW-9.3", "2026-01-01T00:00:00Z")]
+          : [];
+      },
+      getReviewCandidates: async () => [],
+      getPatchCandidates: async () => [],
+      getDeployCandidates: async () => [],
+      claimTask: async () => true,
+      claimPr: async (p) => ({ id: p.id, commitSha: p.commitSha }),
+      recordSkip: async () => {},
+      resetSkip: async () => {},
+      getTaskStatus,
+      runner,
+      cronRunReporter: reporter,
+      workQueueReporter: noopWorkQueueReporter,
+      loopCronId: "shipwright-loop",
+      clock: FixedClock(new Date("2026-07-20T00:00:00Z")),
+    });
+
+    await loop([job("shipwright-dev-task", true)]);
+
+    expect(sessionKeys).toHaveLength(1);
+    expect(creates).toHaveLength(1);
+    expect(calls).toEqual(["DTW-9.3"]);
+  });
+
+  test("a review dispatch never consults getTaskStatus and gets an undefined sessionKey — the resume loop is dev-task-only", async () => {
+    const { runner, sessionKeys } = makeSessionKeyRecordingRunner();
+    const { reporter, creates } = makeAttemptRecordingReporter();
+    const statusCalls: string[] = [];
+
+    let reviewConsumed = false;
+    const loop = createLoopOrchestrator({
+      getDevTaskCandidates: async () => [],
+      getReviewCandidates: async () =>
+        reviewConsumed
+          ? []
+          : [pr("acme/x#7", "2026-01-01T00:00:00Z", "review")],
+      getPatchCandidates: async () => [],
+      getDeployCandidates: async () => [],
+      claimTask: async () => true,
+      claimPr: async (p) => {
+        reviewConsumed = true;
+        return { id: p.id, commitSha: p.commitSha };
+      },
+      recordSkip: async () => {},
+      resetSkip: async () => {},
+      getTaskStatus: async (id) => {
+        statusCalls.push(id);
+        return "in_progress";
+      },
+      runner,
+      cronRunReporter: reporter,
+      workQueueReporter: noopWorkQueueReporter,
+      loopCronId: "shipwright-loop",
+      clock: FixedClock(new Date("2026-07-20T00:00:00Z")),
+    });
+
+    await loop([job("shipwright-review", true)]);
+
+    expect(sessionKeys).toEqual([undefined]);
+    expect(statusCalls).toEqual([]);
+    expect(creates).toHaveLength(1);
   });
 });

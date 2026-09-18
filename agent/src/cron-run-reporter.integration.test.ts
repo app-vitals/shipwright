@@ -394,6 +394,54 @@ describe("HttpCronRunReporter", () => {
     ).resolves.toBeUndefined();
   });
 
+  // ─── recordSessionId (DTW-1.3) ─────────────────────────────────────────────
+
+  test("recordSessionId PATCHes to correct URL with only sessionId in body", async () => {
+    const reporter = makeReporter();
+
+    await reporter.recordSessionId("cron-123", "run-abc", "sess-early-1");
+
+    expect(state.captured).toHaveLength(1);
+    expect(state.captured[0].method).toBe("PATCH");
+    expect(state.captured[0].url).toContain(
+      `/agents/${AGENT_ID}/crons/cron-123/runs/run-abc`,
+    );
+
+    const body = state.captured[0].body as Record<string, unknown>;
+    expect(Object.keys(body)).toEqual(["sessionId"]);
+    expect(body.sessionId).toBe("sess-early-1");
+    expect(body.completedAt).toBeUndefined();
+    expect(body.outcome).toBeUndefined();
+  });
+
+  test("recordSessionId does nothing when runId is null", async () => {
+    const reporter = makeReporter();
+    await reporter.recordSessionId("cron-123", null, "sess-early-1");
+
+    expect(state.captured).toHaveLength(0);
+  });
+
+  test("recordSessionId swallows network errors (does not throw)", async () => {
+    const reporter = new HttpCronRunReporter({
+      apiUrl: "http://localhost:19999", // nothing listening
+      agentId: AGENT_ID,
+      apiKey: API_KEY,
+    });
+
+    await expect(
+      reporter.recordSessionId("cron-net-err", "run-1", "sess-early-1"),
+    ).resolves.toBeUndefined();
+  });
+
+  test("recordSessionId swallows HTTP error responses (does not throw)", async () => {
+    state.patchStatusToReturn = 500;
+    const reporter = makeReporter();
+
+    await expect(
+      reporter.recordSessionId("cron-http-err", "run-1", "sess-early-1"),
+    ).resolves.toBeUndefined();
+  });
+
   // ─── skipRun ───────────────────────────────────────────────────────────────
 
   test("skipRun PATCHes to correct URL with skipped:true and skipReason", async () => {
@@ -630,6 +678,13 @@ describe("NoopCronRunReporter", () => {
     const reporter = new NoopCronRunReporter();
     await expect(
       reporter.recordProgress("any", null, []),
+    ).resolves.toBeUndefined();
+  });
+
+  test("recordSessionId resolves immediately and does not throw", async () => {
+    const reporter = new NoopCronRunReporter();
+    await expect(
+      reporter.recordSessionId("any", null, "sess-1"),
     ).resolves.toBeUndefined();
   });
 });

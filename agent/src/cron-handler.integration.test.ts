@@ -93,6 +93,7 @@ function makeRecordingReporter(): {
     async recordProgress(_cronId, runId, modelBreakdown) {
       progressCalls.push({ runId, modelBreakdown });
     },
+    async recordSessionId() {},
   };
   return { reporter, completeCalls, progressCalls };
 }

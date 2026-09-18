@@ -944,6 +944,55 @@ describe("createTaskStoreClient query()", () => {
     ).rejects.toThrow("task-store PATCH /tasks/T-1");
   });
 
+  // ─── getTask() (DTW-1.3) ──────────────────────────────────────────────────
+
+  test("getTask() GETs /tasks/:id and returns the parsed task", async () => {
+    let capturedUrl: string | undefined;
+    let capturedInit: RequestInit | undefined;
+    const fakeFetch = (async (url: RequestInfo | URL, init?: RequestInit) => {
+      capturedUrl = String(url);
+      capturedInit = init;
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({ ...FAKE_TASK, status: "in_progress" }),
+      } as Response;
+    }) as unknown as typeof fetch;
+
+    const client = createTaskStoreClient({ fetchFn: fakeFetch });
+    const result = await client.getTask("T-1");
+
+    expect(capturedUrl).toBe("https://task-store.example.com/tasks/T-1");
+    expect(capturedInit?.method ?? "GET").toBe("GET");
+    expect(result).toEqual({ ...FAKE_TASK, status: "in_progress" });
+  });
+
+  test("getTask() returns null on 404", async () => {
+    const fakeFetch = (async () =>
+      ({
+        ok: false,
+        status: 404,
+        json: async () => ({ error: "not found" }),
+      }) as Response) as unknown as typeof fetch;
+
+    const client = createTaskStoreClient({ fetchFn: fakeFetch });
+    await expect(client.getTask("T-missing")).resolves.toBeNull();
+  });
+
+  test("getTask() throws on other non-ok statuses (e.g. 500)", async () => {
+    const fakeFetch = (async () =>
+      ({
+        ok: false,
+        status: 500,
+        json: async () => ({}),
+      }) as Response) as unknown as typeof fetch;
+
+    const client = createTaskStoreClient({ fetchFn: fakeFetch });
+    await expect(client.getTask("T-1")).rejects.toThrow(
+      "task-store GET /tasks/T-1 → 500",
+    );
+  });
+
   test("claim() POSTs to /tasks/:id/claim", async () => {
     let capturedUrl: string | undefined;
     let capturedInit: RequestInit | undefined;
