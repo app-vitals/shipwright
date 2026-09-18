@@ -1037,6 +1037,90 @@ describe("createLoopOrchestrator", () => {
     );
   });
 
+  test("LPF-7.2 + DTW-1.3: busySince resets per dispatch attempt — a multi-resume dev-task dispatch does not falsely escalate", async () => {
+    // Regression test for the review finding on this PR: DTW-1.3's auto-resume
+    // loop lets ONE dev-task dispatch make up to 4 sequential runner() calls
+    // (1 initial + MAX_AUTO_RESUMES), each independently bounded by claude.ts's
+    // 30-minute ceiling — so a single drain iteration can now legitimately run
+    // for ~2 hours. With busySince reset only per drain ITERATION, a concurrent
+    // tick firing mid-resume-loop would see that cumulative time cross
+    // BUSY_STALL_THRESHOLD_MS (35 min) and emit a false, Sentry-eligible
+    // "stuck/wedged" console.error on a perfectly healthy dispatch. Four
+    // 20-minute attempts (80 minutes cumulative) blow well past the threshold
+    // if measured from iteration start, but must not escalate once busySince
+    // re-baselines per attempt.
+    let release!: () => void;
+    const gate = new Promise<void>((res) => {
+      release = res;
+    });
+    let markReachedLastResume!: () => void;
+    const reachedLastResume = new Promise<void>((res) => {
+      markReachedLastResume = res;
+    });
+    const { clock, advanceMs } = makeMutableClockForBackoff(
+      "2026-01-01T00:00:00Z",
+    );
+
+    const consumed = new Set<string>();
+    let runnerCalls = 0;
+    const runner = async (): Promise<ClaudeRunResult> => {
+      runnerCalls += 1;
+      // Each attempt takes 20 (simulated) minutes — under the 30-minute
+      // runner() ceiling the threshold is calibrated against.
+      advanceMs(20 * 60 * 1000);
+      if (runnerCalls === 4) {
+        // Final resume: hang here so the overlapping tick below fires while
+        // this dispatch is still inside its resume loop.
+        markReachedLastResume();
+        await gate;
+      }
+      return { result: "done" };
+    };
+
+    const deps = {
+      ...makeDeps({
+        devTaskCandidates: [task("DTW-BUSY-1", "2026-01-01T00:00:00Z")],
+        claimTask: consumingClaimTask(consumed),
+        consumed,
+        // Never terminal → the resume loop runs to its full cap.
+        getTaskStatus: async () => "in_progress",
+        runner,
+      }),
+      clock,
+    };
+    const loop = createLoopOrchestrator(deps);
+
+    const first = loop(ALL_PHASES_ON);
+    await reachedLastResume;
+
+    let errorMessages: string[] = [];
+    const warnMessages = await withCapturedWarnings(async () => {
+      errorMessages = await withCapturedErrors(async () => {
+        await loop(ALL_PHASES_ON);
+      });
+    });
+
+    release();
+    await first;
+
+    // 1 initial + 3 resumes actually ran.
+    expect(runnerCalls).toBe(4);
+    // The concurrent tick must NOT have escalated to the stuck/wedged error.
+    expect(errorMessages).toEqual([]);
+    const busyLogs = warnMessages.filter(
+      (msg) => msg.toLowerCase().includes("busy") || msg.includes("draining"),
+    );
+    expect(busyLogs.length).toBeGreaterThan(0);
+    // Elapsed reflects only the in-flight 4th attempt (20 min), not the
+    // 80-minute cumulative resume loop.
+    expect(busyLogs.some((msg) => msg.includes(String(20 * 60 * 1000)))).toBe(
+      true,
+    );
+    expect(busyLogs.some((msg) => msg.includes(String(80 * 60 * 1000)))).toBe(
+      false,
+    );
+  });
+
   test("skips disabled phases: a disabled phase's qualification fn is never called", async () => {
     const calls: string[] = [];
     const deps = makeDeps({ calls });

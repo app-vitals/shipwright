@@ -67,6 +67,7 @@
  * noise.
  */
 
+import { randomUUID } from "node:crypto";
 import type { ErrorCapturingClient } from "@shipwright/lib/sentry";
 import {
   buildProductionDeps as buildDeployDeps,
@@ -208,12 +209,16 @@ export interface LoopOrchestratorDeps {
    *
    * DTW-1.3 widened the signature with two optional trailing params, both
    * supplied only by the dev-task dispatch path:
-   *   - `sessionKey` — `dev-task:{taskId}`. The underlying runner
-   *     (createRunClaude's closure) persists session ids in its own `sessions`
-   *     map keyed by this value and automatically builds `-r <id>` on the next
-   *     call with the SAME key, so a resume "just happens" by calling runner()
-   *     again with it. Left undefined for review/patch/deploy/plan, which
-   *     deliberately start fresh on every dispatch.
+   *   - `sessionKey` — `dev-task:{taskId}:{per-dispatch nonce}`. The underlying
+   *     runner (createRunClaude's closure) persists session ids in its own
+   *     `sessions` map keyed by this value and automatically builds `-r <id>`
+   *     on the next call with the SAME key, so a resume "just happens" by
+   *     calling runner() again with it. The nonce is minted once per
+   *     dispatchItem call, so resuming is scoped to that dispatch's own loop
+   *     and a later independent dispatch of the same task can't inherit a dead
+   *     session (see dispatchItem for the full rationale). Left undefined for
+   *     review/patch/deploy/plan, which deliberately start fresh on every
+   *     dispatch.
    *   - `onEarlySessionId` — fires as soon as a session id is known (even for
    *     a call that started fresh), wired to cronRunReporter.recordSessionId
    *     so the cron-run log carries it before the run reaches a terminal state.
@@ -345,12 +350,14 @@ const DEFAULT_EMPTY_BACKOFF_ATTEMPTS = 3;
  * dispatch()/runner() (e.g. a wedge in candidate collection or a runner()
  * call that itself failed to respect its own timeout), meaning it cannot
  * self-recover without a process restart. busySince is reset at the top of
- * every drain iteration (not just once at tick-start), so elapsedMs reflects
- * only the current iteration's duration — a tick that sequentially works
- * through many candidates stays busy for longer than any single dispatch,
- * but that cumulative time is healthy, not stall evidence. Once busySince's
- * elapsed time exceeds this, the busy-skip log below escalates from
- * console.warn to console.error.
+ * every drain iteration (not just once at tick-start) AND again at the top of
+ * every dispatch attempt (runOneAttempt), so elapsedMs never spans more than
+ * one runner() call — a tick that sequentially works through many candidates,
+ * or a single dev-task dispatch that auto-resumes itself up to MAX_AUTO_RESUMES
+ * times, stays busy for far longer than any one runner() call, but that
+ * cumulative time is healthy, not stall evidence. Once busySince's elapsed
+ * time exceeds this, the busy-skip log below escalates from console.warn to
+ * console.error.
  */
 const BUSY_STALL_THRESHOLD_MS = 35 * 60 * 1000;
 
@@ -641,7 +648,28 @@ export function createLoopOrchestrator(
     // sessionKey undefined — a deliberate product decision: those phases
     // re-validate live state on every dispatch and must not continue stale
     // context.
-    const sessionKey = phase === "dev-task" ? `dev-task:${itemId}` : undefined;
+    //
+    // The key is scoped to THIS dispatch via a per-dispatch nonce, not to the
+    // task id alone. sessions.ts's store is file-backed with a 7-day TTL and
+    // nothing in the repo ever clears a `dev-task:*` entry, so a bare
+    // `dev-task:{itemId}` key would also be picked up by any LATER, fully
+    // independent dispatch of the same task inside that window — the next tick
+    // after the StaleClaimReaper releases the claim, a dispatch after an
+    // agent-process restart, or a human re-run — silently resuming a dead
+    // session and carrying its stale conclusions (e.g. "I already opened the
+    // PR" → `[silent]` → skip-counter auto-block) into what
+    // plugins/shipwright/commands/dev-task.md documents as "a full
+    // context-free re-bootstrap". The nonce keeps resuming scoped to this
+    // dispatch's own loop below — all 1 + MAX_AUTO_RESUMES attempts share this
+    // one key, which is what makes `-r` fire on the resumes — while
+    // guaranteeing the next dispatch starts cold.
+    //
+    // A nonce rather than a clear-on-exit: an explicit clear can't cover a hard
+    // process kill mid-resume-loop, whereas an unreachable per-dispatch key is
+    // inert by construction. Abandoned entries age out through the store's own
+    // TTL prune.
+    const sessionKey =
+      phase === "dev-task" ? `dev-task:${itemId}:${randomUUID()}` : undefined;
 
     /**
      * One dispatch attempt: its own createRun → runner() → terminal
@@ -652,6 +680,24 @@ export function createLoopOrchestrator(
      * below must not swallow it).
      */
     async function runOneAttempt(): Promise<"completed" | "silent"> {
+      // LPF-7.2 + DTW-1.3: re-baseline the busy-stall window on EVERY attempt,
+      // not just once per drain iteration. BUSY_STALL_THRESHOLD_MS assumes the
+      // measured window is a single runner() call, bounded by claude.ts's
+      // 30-minute ceiling. The auto-resume loop below makes one dev-task
+      // dispatch issue up to 1 + MAX_AUTO_RESUMES sequential runner() calls
+      // (~2 hours of legitimate work) inside one drain iteration, so measuring
+      // from the iteration's start would let a concurrent tick's busy check
+      // cross the threshold and emit a false, Sentry-eligible "stuck/wedged"
+      // console.error on a perfectly healthy resume loop. Resetting here keeps
+      // elapsedMs meaning "time since the current runner() call started" — the
+      // one quantity the 35-minute margin is actually calibrated against — so
+      // the stall window stays as tight as it was pre-DTW-1.3 rather than
+      // being widened 4x. Applied to every phase (not just dev-task): a
+      // single-attempt phase is simply the n=1 case, and the iteration-level
+      // reset above still covers a wedge in candidate collection or pre-claim,
+      // which happens before this point.
+      busySince = clock.now();
+
       const runId = await cronRunReporter.createRun(
         loopCronId,
         clock.now(),
@@ -976,12 +1022,14 @@ export function createLoopOrchestrator(
     // the injected clock) shows how long the current drain iteration has
     // been running.
     // LPF-7.2: busySince is reset at the top of every drain iteration (see
-    // the reset inside the while loop below), so this elapsed time reflects
-    // only the current iteration, not the whole tick's cumulative drain
-    // time — a tick sequentially working through many candidates is
-    // legitimately busy far longer than any single dispatch, and measuring
-    // from tick-start would misread that as a stall. Once the current
-    // iteration's elapsed time exceeds BUSY_STALL_THRESHOLD_MS — well past
+    // the reset inside the while loop below) and again at the top of every
+    // dispatch attempt (runOneAttempt), so this elapsed time reflects only
+    // the current in-flight runner() call, not the whole tick's cumulative
+    // drain time — a tick sequentially working through many candidates, or a
+    // dev-task dispatch auto-resuming itself up to MAX_AUTO_RESUMES times, is
+    // legitimately busy far longer than any single runner() call, and
+    // measuring from tick-start would misread that as a stall. Once the
+    // current attempt's elapsed time exceeds BUSY_STALL_THRESHOLD_MS — well past
     // claude.ts's 30-minute runner() ceiling — it can no longer be "still
     // running normally"; it's wedged somewhere before ever completing
     // dispatch()/runner() and cannot self-recover, so escalate to

@@ -779,12 +779,12 @@ describe("loop-orchestrator + dev-task auto-resume (DTW-1.3)", () => {
     expect(sessionKeys).toHaveLength(4);
     // Every call — initial AND resumes — reuses the same sessionKey, which is
     // what makes the underlying runner build `-r <sessionId>` on the resumes.
-    expect(sessionKeys).toEqual([
-      "dev-task:DTW-9.1",
-      "dev-task:DTW-9.1",
-      "dev-task:DTW-9.1",
-      "dev-task:DTW-9.1",
-    ]);
+    expect(new Set(sessionKeys).size).toBe(1);
+    // ...and that key is scoped to BOTH the task and this one dispatch: the
+    // task id keeps it greppable, the trailing per-dispatch nonce keeps a
+    // later, independent dispatch of the same task from resuming this dead
+    // session (see the cross-dispatch test below).
+    expect(sessionKeys[0]).toMatch(/^dev-task:DTW-9\.1:.+/);
     // Every status check was against the dispatched task.
     expect(calls.every((id) => id === "DTW-9.1")).toBe(true);
     // One AgentCronRun row per attempt, all tagged with the same itemId.
@@ -863,6 +863,68 @@ describe("loop-orchestrator + dev-task auto-resume (DTW-1.3)", () => {
     expect(sessionKeys).toHaveLength(1);
     expect(creates).toHaveLength(1);
     expect(calls).toEqual(["DTW-9.3"]);
+  });
+
+  test("two independent dispatches of the SAME task id get different sessionKeys — a dead session is never resumed across dispatches", async () => {
+    // Regression test for the review finding on this PR: the session store
+    // (agent/src/sessions.ts) is file-backed with a 7-day TTL and nothing ever
+    // clears a `dev-task:*` entry, so a sessionKey derived purely from the task
+    // id would let a LATER, fully independent dispatch of the same task —
+    // the next tick after the StaleClaimReaper releases the claim, a dispatch
+    // after an agent-process restart, or a human re-run — resume the previous
+    // dispatch's dead session via `-r`, contradicting dev-task.md's documented
+    // "full context-free re-bootstrap" contract for exactly that scenario.
+    const { runner, sessionKeys } = makeSessionKeyRecordingRunner();
+    const { reporter } = makeAttemptRecordingReporter();
+
+    // Models "the task is claimable again on a later tick": the claim removes
+    // it from candidacy for the rest of THIS drain, and the test resets the
+    // flag between ticks to stand in for the reaper releasing the claim.
+    let claimedThisTick = false;
+    const loop = createLoopOrchestrator({
+      getDevTaskCandidates: async () =>
+        claimedThisTick ? [] : [task("DTW-9.4", "2026-01-01T00:00:00Z")],
+      getReviewCandidates: async () => [],
+      getPatchCandidates: async () => [],
+      getDeployCandidates: async () => [],
+      claimTask: async () => {
+        claimedThisTick = true;
+        return true;
+      },
+      claimPr: async (p) => ({ id: p.id, commitSha: p.commitSha }),
+      recordSkip: async () => {},
+      resetSkip: async () => {},
+      // Never terminal → each dispatch exhausts its 3-resume cap.
+      getTaskStatus: async () => "in_progress",
+      runner,
+      cronRunReporter: reporter,
+      workQueueReporter: noopWorkQueueReporter,
+      loopCronId: "shipwright-loop",
+      clock: FixedClock(new Date("2026-07-20T00:00:00Z")),
+    });
+
+    await loop([job("shipwright-dev-task", true)]);
+    const firstDispatchKeys = [...sessionKeys];
+    sessionKeys.length = 0;
+
+    // Later, independent tick on the same task id.
+    claimedThisTick = false;
+    await loop([job("shipwright-dev-task", true)]);
+    const secondDispatchKeys = [...sessionKeys];
+
+    // Each dispatch ran its full 1-initial + 3-resumes loop...
+    expect(firstDispatchKeys).toHaveLength(4);
+    expect(secondDispatchKeys).toHaveLength(4);
+    // ...reusing one key WITHIN the dispatch (that's what makes `-r` fire on
+    // its own resumes)...
+    expect(new Set(firstDispatchKeys).size).toBe(1);
+    expect(new Set(secondDispatchKeys).size).toBe(1);
+    // ...but the two dispatches must not share a key, or the second would
+    // resume the first's dead session.
+    expect(secondDispatchKeys[0]).not.toBe(firstDispatchKeys[0]);
+    // Both stay scoped to (and greppable by) the task id.
+    expect(firstDispatchKeys[0]).toMatch(/^dev-task:DTW-9\.4:/);
+    expect(secondDispatchKeys[0]).toMatch(/^dev-task:DTW-9\.4:/);
   });
 
   test("a review dispatch never consults getTaskStatus and gets an undefined sessionKey — the resume loop is dev-task-only", async () => {
