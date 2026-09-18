@@ -144,6 +144,7 @@ describe("agent-types/coding/manifest.yaml — tools set", () => {
       "WebFetch",
       "Skill",
       "Agent",
+      "Monitor",
     ]);
   });
 });
