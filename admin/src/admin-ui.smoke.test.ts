@@ -7853,6 +7853,7 @@ describe("admin UI — create agent seeds manifest tools and plugins", () => {
       "WebFetch",
       "Skill",
       "Agent",
+      "Monitor",
     ]);
     expect(seededTools).toContain("Bash");
     expect(seededPlugins).toEqual(["shipwright"]);
