@@ -508,7 +508,7 @@ describe("runClaude", () => {
     expect(timeoutErr.timeoutMs).toBe(10);
   });
 
-  test("throws ClaudeTimeoutError on stale-session timeout and does not retry (spawn called once)", async () => {
+  test("throws ClaudeTimeoutError on an idle-reason stale-session timeout and does not retry (spawn called once)", async () => {
     const proc = hangingProc();
     const mockSpawnTimeout = mock(
       () => proc as unknown as ReturnType<typeof Bun.spawn>,
@@ -529,16 +529,173 @@ describe("runClaude", () => {
       undefined,
       undefined,
       undefined,
-      10, // 10ms ceiling timeout
-      10, // 10ms idle timeout
+      5000, // ceiling far away — idle must fire first, deterministically
+      10, // 10ms idle timeout — hangingProc never emits a line, so idle fires
     );
 
     const { ClaudeTimeoutError } = await import("./claude.ts");
-    await expect(
-      runClaudeWithTimeout("hello", "chan:ts"),
-    ).rejects.toBeInstanceOf(ClaudeTimeoutError);
-    // Guard prevents retry — spawn must be called exactly once
+    const err = await runClaudeWithTimeout("hello", "chan:ts").catch(
+      (e) => e,
+    );
+    expect(err).toBeInstanceOf(ClaudeTimeoutError);
+    expect((err as InstanceType<typeof ClaudeTimeoutError>).reason).toBe(
+      "idle",
+    );
+    // Idle is the genuine-hang signal — the safety rail prevents retry even
+    // with an existing session available to resume. Spawn called once.
     expect(mockSpawnTimeout).toHaveBeenCalledTimes(1);
+  });
+
+  test("a ceiling-reason timeout IS retried once when a session id is available to resume", async () => {
+    // Fresh hangingProc() per spawn call — a real proc's stdout stream can
+    // only be consumed once, so the mock must hand back a new instance on
+    // each invocation (same pattern as the existing resume-retry tests).
+    let call = 0;
+    const mockSpawnCeiling = mock(() => {
+      call++;
+      if (call === 1) {
+        return hangingProc() as unknown as ReturnType<typeof Bun.spawn>;
+      }
+      return fakeProc(
+        jsonOutput("recovered", "existing-sid"),
+      ) as ReturnType<typeof Bun.spawn>;
+    });
+
+    mockGetSession.mockClear();
+    mockSetSession.mockClear();
+    mockClearSession.mockClear();
+    mockGetSession.mockReturnValueOnce("existing-sid");
+
+    const runClaudeCeilingRetry = createRunClaude(
+      mockSpawnCeiling as typeof Bun.spawn,
+      testSessions,
+      MODEL,
+      WORKSPACE,
+      fakeSentryClient,
+      undefined,
+      undefined,
+      undefined,
+      10, // 10ms ceiling — fires deterministically before idle
+      5000, // idle far away — ceiling must fire first
+    );
+
+    const result = await runClaudeCeilingRetry("hello", "chan:ts");
+    expect(result.result).toBe("recovered");
+    expect(result.recoveredFromError).toBe(true);
+    expect(mockSpawnCeiling).toHaveBeenCalledTimes(2);
+
+    const [secondCmd] = mockSpawnCeiling.mock.calls[1] as unknown as [
+      string[],
+    ];
+    const rIdx = secondCmd.indexOf("-r");
+    expect(rIdx).toBeGreaterThan(-1);
+    expect(secondCmd[rIdx + 1]).toBe("existing-sid");
+  });
+
+  test("a fresh call that captures a session id mid-attempt (off the init line) is retried once with -r <that id>", async () => {
+    // First attempt: emits a system/init line (captures a session id via the
+    // new early-session-id path), then exits non-zero with no accumulated
+    // usage — this throws a plain Error carrying NO sessionId of its own, so
+    // the only way this retry can happen is via the mid-attempt capture, not
+    // via err.sessionId.
+    let call = 0;
+    const mockSpawn = mock(() => {
+      call++;
+      if (call === 1) {
+        return {
+          stdout: ndjsonStream([
+            JSON.stringify({
+              type: "system",
+              subtype: "init",
+              session_id: "early-sid",
+            }),
+          ]),
+          stderr: bodyStream("socket closed"),
+          exited: Promise.resolve(1),
+          kill: () => {},
+        } as unknown as ReturnType<typeof Bun.spawn>;
+      }
+      return fakeProc(
+        jsonOutput("recovered", "early-sid"),
+      ) as ReturnType<typeof Bun.spawn>;
+    });
+
+    mockGetSession.mockClear();
+    mockSetSession.mockClear();
+    mockClearSession.mockClear();
+    mockGetSession.mockReturnValue(undefined); // fresh — no existing session
+
+    const runClaudeFreshRetry = createRunClaude(
+      mockSpawn as typeof Bun.spawn,
+      testSessions,
+      MODEL,
+      WORKSPACE,
+      fakeSentryClient,
+    );
+
+    const result = await runClaudeFreshRetry("hello", "chan:ts");
+
+    expect(result.result).toBe("recovered");
+    expect(result.recoveredFromError).toBe(true);
+    expect(mockSpawn).toHaveBeenCalledTimes(2);
+
+    // First (fresh) call must NOT have passed -r.
+    const [firstCmd] = mockSpawn.mock.calls[0] as unknown as [string[]];
+    expect(firstCmd.indexOf("-r")).toBe(-1);
+
+    // Retry must resume with the id captured mid-first-attempt.
+    const [secondCmd] = mockSpawn.mock.calls[1] as unknown as [string[]];
+    const rIdx = secondCmd.indexOf("-r");
+    expect(rIdx).toBeGreaterThan(-1);
+    expect(secondCmd[rIdx + 1]).toBe("early-sid");
+    expect(mockSetSession).toHaveBeenCalledWith("chan:ts", "early-sid");
+  });
+
+  test("the early-session-id callback fires before the per-call onProgress callback for the same run", async () => {
+    const lines = [
+      JSON.stringify({
+        type: "system",
+        subtype: "init",
+        session_id: "sess-cb",
+      }),
+      JSON.stringify({
+        type: "assistant",
+        message: {
+          id: "msg_1",
+          role: "assistant",
+          model: MODEL,
+          usage: {
+            input_tokens: 1,
+            output_tokens: 1,
+            cache_read_input_tokens: 0,
+            cache_creation_input_tokens: 0,
+          },
+        },
+      }),
+      jsonOutput("done", "sess-cb"),
+    ];
+    const mockSpawnEarly = mock(
+      () => ndjsonProc(lines) as ReturnType<typeof Bun.spawn>,
+    );
+    const runClaudeEarly = createRunClaude(
+      mockSpawnEarly as typeof Bun.spawn,
+      testSessions,
+      MODEL,
+      WORKSPACE,
+      fakeSentryClient,
+    );
+
+    const calls: string[] = [];
+    await runClaudeEarly(
+      "hello",
+      undefined,
+      () => calls.push("progress"),
+      undefined,
+      undefined,
+      () => calls.push("early"),
+    );
+
+    expect(calls).toEqual(["early", "progress"]);
   });
 
   // ─── Abort / cancel ──────────────────────────────────────────────────────────
@@ -1225,7 +1382,15 @@ describe("connection-lost-mid-response retry", () => {
     expect(capturedMessages).toHaveLength(1);
   });
 
-  test("does not retry an unrelated is_error failure (only connection-lost-mid-response is eligible)", async () => {
+  test("an unrelated is_error failure is NOT retried via _spawn's own connection-lost mechanism, but IS retried once via the widened outer gate (it carries a session id)", async () => {
+    // This failure is not connection-lost-mid-response, so `_spawn`'s own
+    // dedicated single retry (and its Sentry captureMessage) never fires —
+    // capturedMessages stays empty throughout. But per the widened retry
+    // gate (see `_runClaude`), ANY ClaudeRunError that carries a session id
+    // (this one does: result.session_id = "sess-x") is now eligible for
+    // _runClaude's own one-shot outer retry, even on a fresh call with no
+    // existingSessionId — this is the acceptance-criterion behavior, not a
+    // connection-lost special case.
     const mockSpawn = mock(
       () =>
         fakeProc(
@@ -1242,6 +1407,7 @@ describe("connection-lost-mid-response retry", () => {
     mockGetSession.mockClear();
     mockGetSession.mockReturnValue(undefined);
     capturedMessages = [];
+    capturedExceptions = [];
 
     const runClaude = createRunClaude(
       mockSpawn as typeof Bun.spawn,
@@ -1252,8 +1418,19 @@ describe("connection-lost-mid-response retry", () => {
     );
 
     await expect(runClaude("hello")).rejects.toThrow("monthly usage limit");
-    expect(mockSpawn).toHaveBeenCalledTimes(1);
+    // Outer gate retried once (both attempts fail identically) — one retry
+    // only, matching the existing one-retry-only contract.
+    expect(mockSpawn).toHaveBeenCalledTimes(2);
+    // The retry used -r sess-x, the session id carried by the error.
+    const [secondCmd] = mockSpawn.mock.calls[1] as unknown as [string[]];
+    const rIdx = secondCmd.indexOf("-r");
+    expect(rIdx).toBeGreaterThan(-1);
+    expect(secondCmd[rIdx + 1]).toBe("sess-x");
+    // No connection-lost captureMessage — this path is unrelated to that
+    // mechanism.
     expect(capturedMessages).toHaveLength(0);
+    // The exhausted-retry Sentry capture still fires with the ORIGINAL error.
+    expect(capturedExceptions).toHaveLength(1);
   });
 });
 
