@@ -242,13 +242,6 @@
     return String(Math.round(Number(v)));
   }
 
-  function fmtEstError(v) {
-    if (v === null || v === undefined) return "--";
-    const n = Number(v);
-    const sign = n > 0 ? "+" : "";
-    return `${sign}${Math.round(n)}%`;
-  }
-
   function fmtHours(v) {
     return v != null ? `${fmtNum(v)}h` : "--";
   }
@@ -273,7 +266,7 @@
 
     $("kpi-tasks").textContent = fmtInt(data.tasksCompleted);
     $("kpi-ci-rate").textContent = fmtPct(data.ciFirstPassRate);
-    $("kpi-estimation").textContent = fmtEstError(data.estimationAccuracy);
+    $("kpi-shipwright-prs").textContent = fmtInt(data.shipwrightPrsMerged);
     $("kpi-review-rate").textContent = fmtPct(data.reviewShipItRate);
     $("task-count-badge").textContent = `${fmtInt(data.tasksCompleted)} tasks`;
   }
@@ -1073,10 +1066,10 @@
       denominator: (r) => r.ciGates,
       fmt: fmtPct,
     },
-    "estimation-accuracy": {
-      label: "Estimation Accuracy",
-      series: (r) => r.estimationAccuracy,
-      fmt: fmtEstError,
+    "shipwright-prs-merged": {
+      label: "Shipwright PRs Merged",
+      series: (r) => r.shipwrightPrsMerged,
+      fmt: fmtInt,
     },
     "review-ship-it": {
       label: "Review SHIP IT Rate",

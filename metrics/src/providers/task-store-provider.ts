@@ -320,6 +320,13 @@ export class TaskStoreProvider implements MetricsProvider {
       prs.map((p) => (num(p.reviewCycles) ?? 0) + (num(p.patchCycles) ?? 0)),
     );
 
+    // Shipwright-authored PRs merged in the period (POM-1.1/1.2/4.1 origin
+    // tracking) — same origin/state predicate mergedPrsByRepo uses, just
+    // collapsed to a single total instead of a repo × origin breakdown.
+    const shipwrightPrsMerged = prs.filter(
+      (p) => p.state === "merged" && p.origin === "shipwright",
+    ).length;
+
     const columns = [
       "tasks_completed",
       "tasks_blocked",
@@ -340,6 +347,7 @@ export class TaskStoreProvider implements MetricsProvider {
       "reviews_total",
       "reviews_ship_it",
       "avg_review_iterations",
+      "shipwright_prs_merged",
       "complexity_1",
       "complexity_2",
       "complexity_3",
@@ -370,6 +378,7 @@ export class TaskStoreProvider implements MetricsProvider {
       prs.length,
       shipIt,
       avgReviewIterations,
+      shipwrightPrsMerged,
       complexityCount(1),
       complexityCount(2),
       complexityCount(3),
@@ -440,7 +449,7 @@ export class TaskStoreProvider implements MetricsProvider {
       "avg_files_changed",
       "avg_fix_attempts",
       "avg_cycle_time_hours",
-      "estimation_accuracy",
+      "shipwright_prs_merged",
       "simplify_avg_dry",
       "simplify_avg_dead_code",
       "simplify_avg_naming",
@@ -484,14 +493,11 @@ export class TaskStoreProvider implements MetricsProvider {
         ? positiveCycle.reduce((a, b) => a + b, 0) / positiveCycle.length
         : null;
 
-      const estAcc = c
-        .map((t) => {
-          const est = num(t.hours);
-          const act = cycleHours(t);
-          if (est === null || act === null || est <= 0) return null;
-          return act / est;
-        })
-        .filter((v): v is number => v !== null);
+      // Shipwright-authored PRs merged in this period — bucketed the same
+      // way reviews_ship_it is (over dayPrs, keyed by mergedAt ?? createdAt).
+      const shipwrightPrsMergedInPeriod = dayPrs.filter(
+        (pr) => pr.state === "merged" && pr.origin === "shipwright",
+      ).length;
 
       return [
         p,
@@ -511,9 +517,7 @@ export class TaskStoreProvider implements MetricsProvider {
         null, // avg_files_changed — no source
         avg(ciTasks.map((t) => num(t.ciFixAttempts))),
         avgCycle,
-        estAcc.length
-          ? estAcc.reduce((a, b) => a + b, 0) / estAcc.length
-          : null,
+        shipwrightPrsMergedInPeriod,
         avg(c.map((t) => num(t.simplifyDry))),
         avg(c.map((t) => num(t.simplifyDeadCode))),
         avg(c.map((t) => num(t.simplifyNaming))),

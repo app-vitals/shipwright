@@ -334,7 +334,7 @@ describe("renderDashboardPage — MG-1.2 clickable metric graphs", () => {
     // Overview KPI cards
     expect(html).toContain('data-metric="tasks-completed"');
     expect(html).toContain('data-metric="ci-first-pass"');
-    expect(html).toContain('data-metric="estimation-accuracy"');
+    expect(html).toContain('data-metric="shipwright-prs-merged"');
     expect(html).toContain('data-metric="review-ship-it"');
   });
 
@@ -597,7 +597,7 @@ describe("renderDashboardPage — PPL-1.2 readOnly variant", () => {
   test("keeps the pipeline KPI cards", () => {
     expect(html).toContain("Tasks Completed");
     expect(html).toContain("CI First-Pass Rate");
-    expect(html).toContain("Estimation Accuracy");
+    expect(html).toContain("Shipwright PRs Merged");
     expect(html).toContain("Review SHIP IT Rate");
   });
 
