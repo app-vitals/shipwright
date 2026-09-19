@@ -291,6 +291,7 @@ describe("TaskStoreProvider (integration)", () => {
       "reviews_total",
       "reviews_ship_it",
       "avg_review_iterations",
+      "shipwright_prs_merged",
       "complexity_1",
       "complexity_2",
       "complexity_3",
@@ -319,6 +320,8 @@ describe("TaskStoreProvider (integration)", () => {
     expect(row[colIndex(t, "avg_coverage_delta")]).toBe(2.5);
     // avg_review_iterations = avg(reviewCycles + patchCycles) = avg(2, 3) = 2.5
     expect(row[colIndex(t, "avg_review_iterations")]).toBe(2.5);
+    // Neither fixture PR has origin "shipwright" — shipwright_prs_merged is 0.
+    expect(row[colIndex(t, "shipwright_prs_merged")]).toBe(0);
     // simplify category averages: QS-1.1 (4,2,6,1,3) + QS-1.2 (2,0,4,3,1)
     expect(row[colIndex(t, "simplify_avg_dry")]).toBe(3);
     expect(row[colIndex(t, "simplify_avg_dead_code")]).toBe(1);

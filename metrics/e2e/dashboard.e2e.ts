@@ -128,7 +128,7 @@ function makeSummaryResponse(overrides: Record<string, unknown> = {}) {
       reviewsTotal: 38,
       reviewsShipIt: 30,
       reviewShipItRate: 78.95,
-      estimationAccuracy: 5.0,
+      shipwrightPrsMerged: 12,
       complexityDist: { c1: 10, c2: 15, c3: 12, c4: 4, c5: 1 },
       avgFixCascadeDepth: null,
       ...overrides,
@@ -160,7 +160,7 @@ function makeTrendsResponse(rowCount = 3) {
     avgFilesChanged: 7.0,
     avgFixAttempts: 1.1,
     avgCycleTimeHours: 4.2,
-    estimationAccuracy: 5.0,
+    shipwrightPrsMerged: 1 + i,
     simplifyAvgDry: 1.0,
     simplifyAvgDeadCode: 1.0,
     simplifyAvgNaming: 1.0,
@@ -308,7 +308,7 @@ function makeTrendsResponseWithFullFields(rowCount = 7) {
     avgFilesChanged: 7.0,
     avgFixAttempts: 1.1,
     avgCycleTimeHours: 4.2,
-    estimationAccuracy: 5.0,
+    shipwrightPrsMerged: 1 + i,
     simplifyAvgDry: 1.0,
     simplifyAvgDeadCode: 1.0,
     simplifyAvgNaming: 1.0,
@@ -899,20 +899,20 @@ test.describe("Dashboard — MG-1.2 clickable metric graphs", () => {
     );
   });
 
-  test("clicking estimation-accuracy KPI card opens modal", async ({
+  test("clicking shipwright-prs-merged KPI card opens modal", async ({
     page,
   }) => {
     await mockMetricsAPIsWithFullTrends(page);
     await injectSessionCookie(page);
     await page.goto(`${BASE_URL}/dashboard`, { waitUntil: "networkidle" });
 
-    const card = page.locator('[data-metric="estimation-accuracy"]').first();
+    const card = page.locator('[data-metric="shipwright-prs-merged"]').first();
     await card.click();
 
     const modal = page.locator("#metric-modal");
     await expect(modal).not.toHaveAttribute("hidden");
     await expect(page.locator("#metric-modal-title")).toContainText(
-      "Estimation Accuracy",
+      "Shipwright PRs Merged",
     );
   });
 

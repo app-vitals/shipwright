@@ -102,7 +102,7 @@ const summaryRoute = createRoute({
   path: "/metrics/summary",
   summary: "All pipeline metrics",
   description:
-    "Returns all Shipwright pipeline metrics: task counts, CI gates, simplify fixes, coverage, reviews, estimation accuracy.",
+    "Returns all Shipwright pipeline metrics: task counts, CI gates, simplify fixes, coverage, reviews, Shipwright PRs merged.",
   request: { query: DateRangeQuerySchema },
   responses: {
     200: {
@@ -534,10 +534,6 @@ function makeSummaryHandler(
         reviewsTotal > 0
           ? Math.round((reviewsShipIt / reviewsTotal) * 10000) / 100
           : null;
-      const estimationAccuracy =
-        avgActual !== null && avgEstimated !== null && avgEstimated > 0
-          ? Math.round((avgActual / avgEstimated - 1) * 100 * 100) / 100
-          : null;
       const taskBlockedRate =
         tasksCompleted + tasksBlocked > 0
           ? Math.round(
@@ -578,7 +574,7 @@ function makeSummaryHandler(
             reviewsShipIt,
             reviewShipItRate,
             avgReviewIterations: toNumOrNull(row.avg_review_iterations),
-            estimationAccuracy,
+            shipwrightPrsMerged: toNum(row.shipwright_prs_merged),
             complexityDist: {
               c1: toNum(row.complexity_1),
               c2: toNum(row.complexity_2),
@@ -652,7 +648,7 @@ function makeTrendsHandler(
           avgFilesChanged: toNumOrNull(row.avg_files_changed),
           avgFixAttempts: toNumOrNull(row.avg_fix_attempts),
           avgCycleTimeHours: toNumOrNull(row.avg_cycle_time_hours),
-          estimationAccuracy: toNumOrNull(row.estimation_accuracy),
+          shipwrightPrsMerged: toNum(row.shipwright_prs_merged),
           simplifyAvgDry: toNumOrNull(row.simplify_avg_dry),
           simplifyAvgDeadCode: toNumOrNull(row.simplify_avg_dead_code),
           simplifyAvgNaming: toNumOrNull(row.simplify_avg_naming),
