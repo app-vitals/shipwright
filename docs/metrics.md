@@ -118,7 +118,7 @@ The dashboard's **"Merged PRs by repo"** panel renders this same data as two Cha
 | 4 | `authorLogin` is any other non-empty string | `human` |
 | 5 | No `authorLogin` and no task-row match | `unknown` |
 
-A task-row match always wins, even over a bot-looking `authorLogin`. **Historical-accuracy caveat:** `deploy.md`'s canary-revert PR never transitions a task to `pr_open` and never calls `/prs/claim`, but it IS a merged PR like any other, so the census sweep classifies it (typically `human`) once it merges after POM-4.1 shipped. A canary-revert PR that already merged before then stays `origin=null` (`unknown`) permanently — historical backfill is out of scope.
+A task-row match always wins, even over a bot-looking `authorLogin`. **Historical-accuracy caveat:** `deploy.md`'s canary-revert PR never transitions a task to `pr_open` and never calls `/prs/claim`, but it IS a merged PR like any other, so the census sweep classifies it (typically `human`) once it merges after POM-4.1 shipped. PRs that merged before origin-tracking was deployed (POM-1.1/1.2, deployed 2026-09-16) can be backfilled via POB-1.1's one-time `agent/scripts/backfill-pr-origin.ts` script; without running the backfill, such PRs remain `origin=null` (`unknown`).
 
 ### Utility routes
 
