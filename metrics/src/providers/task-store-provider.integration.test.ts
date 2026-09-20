@@ -151,6 +151,56 @@ const PRS: PrRecord[] = [
   },
 ];
 
+// MPC-1.1 shipwright_prs_merged fixture. The shared PRS set above carries
+// neither `state` nor `origin`, so it only exercises the false branch of the
+// `state === "merged" && origin === "shipwright"` predicate. This set covers
+// the true branch plus a near-miss for each half, so flipping or dropping
+// either conjunct fails a test.
+const ORIGIN_PRS: PrRecord[] = [
+  // Matches: merged + shipwright, on 2026-06-02.
+  {
+    id: "pr-sw-1",
+    prNumber: 11,
+    reviewState: "approved",
+    state: "merged",
+    origin: "shipwright",
+    createdAt: "2026-06-02T09:00:00.000Z",
+    mergedAt: "2026-06-02T10:00:00.000Z",
+  },
+  // Matches: merged + shipwright, on 2026-06-03 (separate trends bucket).
+  {
+    id: "pr-sw-2",
+    prNumber: 12,
+    reviewState: "approved",
+    state: "merged",
+    origin: "shipwright",
+    createdAt: "2026-06-03T09:00:00.000Z",
+    mergedAt: "2026-06-03T10:00:00.000Z",
+  },
+  // Near-miss on `origin`: merged, but human-authored. Shares 2026-06-03
+  // with pr-sw-2 so an origin-blind count would report 2 for that day.
+  {
+    id: "pr-human-1",
+    prNumber: 13,
+    reviewState: "approved",
+    state: "merged",
+    origin: "human",
+    createdAt: "2026-06-03T11:00:00.000Z",
+    mergedAt: "2026-06-03T12:00:00.000Z",
+  },
+  // Near-miss on `state`: shipwright-authored, but still open. Anchors to
+  // createdAt (2026-06-04) since mergedAt is null.
+  {
+    id: "pr-sw-open",
+    prNumber: 14,
+    reviewState: "pending",
+    state: "open",
+    origin: "shipwright",
+    createdAt: "2026-06-04T09:00:00.000Z",
+    mergedAt: null,
+  },
+];
+
 const agg = (
   input: number,
   output: number,
@@ -252,8 +302,8 @@ const CHAT_STATS: ChatTokenStats = {
 
 const CLOCK = FixedClock("2026-06-10T12:00:00.000Z");
 
-function buildProvider() {
-  const taskStore = new RecordedTaskStoreClient(TASKS, PRS);
+function buildProvider(prs: PrRecord[] = PRS) {
+  const taskStore = new RecordedTaskStoreClient(TASKS, prs);
   const admin = new RecordedAdminMetricsClient(CRON_STATS, CHAT_STATS);
   return new TaskStoreProvider(taskStore, admin, CLOCK);
 }
@@ -321,6 +371,7 @@ describe("TaskStoreProvider (integration)", () => {
     // avg_review_iterations = avg(reviewCycles + patchCycles) = avg(2, 3) = 2.5
     expect(row[colIndex(t, "avg_review_iterations")]).toBe(2.5);
     // Neither fixture PR has origin "shipwright" — shipwright_prs_merged is 0.
+    // The true-match branch is covered by the ORIGIN_PRS tests below.
     expect(row[colIndex(t, "shipwright_prs_merged")]).toBe(0);
     // simplify category averages: QS-1.1 (4,2,6,1,3) + QS-1.2 (2,0,4,3,1)
     expect(row[colIndex(t, "simplify_avg_dry")]).toBe(3);
@@ -328,6 +379,38 @@ describe("TaskStoreProvider (integration)", () => {
     expect(row[colIndex(t, "simplify_avg_naming")]).toBe(5);
     expect(row[colIndex(t, "simplify_avg_complexity")]).toBe(2);
     expect(row[colIndex(t, "simplify_avg_consistency")]).toBe(2);
+  });
+
+  test("summary shipwright_prs_merged counts only merged shipwright-origin PRs", async () => {
+    const provider = buildProvider(ORIGIN_PRS);
+    const t = await provider.query({ kind: "summary", range: RANGE });
+    const row = t.results[0];
+
+    // All four ORIGIN_PRS land in the window…
+    expect(row[colIndex(t, "reviews_total")]).toBe(4);
+    // …but only pr-sw-1 and pr-sw-2 are merged AND shipwright-authored.
+    // pr-human-1 fails the origin half; pr-sw-open fails the state half.
+    expect(row[colIndex(t, "shipwright_prs_merged")]).toBe(2);
+  });
+
+  test("trends shipwright_prs_merged buckets merged shipwright PRs per period", async () => {
+    const provider = buildProvider(ORIGIN_PRS);
+    const t = await provider.query({
+      kind: "trends",
+      range: RANGE,
+      groupBy: "day",
+    });
+    const day = (p: string) =>
+      t.results.find((r) => r[colIndex(t, "period")] === p);
+
+    // pr-sw-1 merges on 2026-06-02.
+    expect(day("2026-06-02")?.[colIndex(t, "shipwright_prs_merged")]).toBe(1);
+    // pr-sw-2 and pr-human-1 both merge on 2026-06-03; only the former counts.
+    expect(day("2026-06-03")?.[colIndex(t, "reviews")]).toBe(2);
+    expect(day("2026-06-03")?.[colIndex(t, "shipwright_prs_merged")]).toBe(1);
+    // pr-sw-open anchors to 2026-06-04 but is not merged → 0.
+    expect(day("2026-06-04")?.[colIndex(t, "reviews")]).toBe(1);
+    expect(day("2026-06-04")?.[colIndex(t, "shipwright_prs_merged")]).toBe(0);
   });
 
   test("summary coverage aggregation excludes null coverageDelta tasks from the average", async () => {
