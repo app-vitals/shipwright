@@ -28,6 +28,7 @@ import {
 import { escapeHtml, renderAdminToolbar } from "./admin-ui-styles.ts";
 import type { AgentMemberService } from "./agent-members.ts";
 import type { AgentService } from "./agents.ts";
+import type { SessionFollowService } from "./session-follow-service.ts";
 import {
   isSessionVisible,
   type VisibilityScope,
@@ -79,6 +80,14 @@ export interface SessionsListDeps {
   requireAuth: MiddlewareHandler<AdminUIEnv>;
   agentMemberService: SessionsListAgentMemberService;
   agentService: SessionsListAgentService;
+  /**
+   * Resolves which sessions the current user already follows (SESH-6.1/
+   * SESH-6.2). Called once per request — via listByUser(userEmail) — and
+   * the resulting slugs are threaded down into each row's Follow button
+   * rather than resolved per-row, mirroring the single agentService.listByIds
+   * call already made for agentNames.
+   */
+  sessionFollowService: Pick<SessionFollowService, "listByUser">;
   /**
    * Fetch sessions from the task-store service. If absent, the page renders
    * in degraded mode (empty sections + a warning banner) rather than 500ing.
@@ -187,6 +196,7 @@ function badgeList(values: string[], badgeClass: string): string {
 function sessionRow(
   session: Session,
   agentNames: Record<string, string>,
+  followedSlugs: Set<string>,
   timezone?: string,
 ): string {
   const title = session.title?.trim() || session.slug;
@@ -198,6 +208,11 @@ function sessionRow(
       ? `<div class="mono" style="font-size:11px;color:#9ca3af">${escapeHtml(session.slug)}</div>`
       : "";
   const agentLabels = session.agentIds.map((id) => agentNames[id] ?? id);
+  // SESH-6.2/FLW-1.1: live Follow/Following toggle, mirroring the session
+  // detail page's #session-follow-btn (admin-ui-pages.ts) but class-based
+  // since there's one per row — the page's single delegated <script>
+  // (renderSessionsListPage) handles clicks for every row via that class.
+  const isFollowing = followedSlugs.has(session.slug);
   return `<tr>
     <td><a href="/admin/sessions/${encodeURIComponent(session.slug)}" style="color:#6366f1;text-decoration:none;font-weight:500">${escapeHtml(title)}</a>${slugHtml}</td>
     <td style="font-size:12px">${badgeList(agentLabels, "badge-gray")}</td>
@@ -206,10 +221,7 @@ function sessionRow(
     <td style="font-size:12px">${formatTimestamp(session.waitingSince, timezone)}</td>
     <td style="font-size:12px">${formatTimestamp(session.lastActivityAt, timezone)}</td>
     <td style="text-align:right">
-      <!-- Follow/Following toggle stub (SESH-4.2) — visual only, not yet
-           wired to SessionFollowService (SES-6.1). A future task wires this
-           to POST /admin/settings/notifications' follow/unfollow actions. -->
-      <button type="button" class="btn btn-secondary follow-toggle-stub" style="font-size:11px;padding:3px 10px" disabled title="Follow is not wired up yet">Follow</button>
+      <button type="button" class="btn btn-secondary session-follow-btn" style="font-size:11px;padding:3px 10px" data-slug="${escapeHtml(session.slug)}" data-following="${isFollowing ? "true" : "false"}">${isFollowing ? "Following" : "Follow"}</button>
     </td>
   </tr>`;
 }
@@ -218,6 +230,7 @@ function renderSection(
   label: string,
   sessions: Session[],
   agentNames: Record<string, string>,
+  followedSlugs: Set<string>,
   timezone?: string,
 ): string {
   return `<div class="card" style="margin-bottom:16px">
@@ -240,7 +253,9 @@ function renderSection(
             sessions.length === 0
               ? `<tr><td colspan="7" class="empty-state">No sessions.</td></tr>`
               : sessions
-                  .map((s) => sessionRow(s, agentNames, timezone))
+                  .map((s) =>
+                    sessionRow(s, agentNames, followedSlugs, timezone),
+                  )
                   .join("\n")
           }
         </tbody>
@@ -255,6 +270,7 @@ function renderSessionsListPage(
   degraded: boolean,
   userName: string,
   agentNames: Record<string, string>,
+  followedSlugs: Set<string>,
   pagination: {
     total: number;
     limit: number;
@@ -327,7 +343,13 @@ function renderSessionsListPage(
 
   let sectionsHtml: string;
   if (filters.archived) {
-    sectionsHtml = renderSection("Archived", sessions, agentNames, timezone);
+    sectionsHtml = renderSection(
+      "Archived",
+      sessions,
+      agentNames,
+      followedSlugs,
+      timezone,
+    );
   } else {
     const bySection = new Map<string, Session[]>();
     for (const s of sessions) {
@@ -341,7 +363,13 @@ function renderSessionsListPage(
       else bySection.set(s.state, [s]);
     }
     sectionsHtml = SECTION_META.map(({ key, label }) =>
-      renderSection(label, bySection.get(key) ?? [], agentNames, timezone),
+      renderSection(
+        label,
+        bySection.get(key) ?? [],
+        agentNames,
+        followedSlugs,
+        timezone,
+      ),
     ).join("\n");
   }
 
@@ -383,7 +411,34 @@ function renderSessionsListPage(
     ${filterForm}
     ${sectionsHtml}
     ${paginationHtml}
-  </div>`,
+  </div>
+  <script>
+  (function() {
+    document.addEventListener('click', function(e) {
+      var target = e.target;
+      if (!target || !target.classList || !target.classList.contains('session-follow-btn')) return;
+      var btn = target;
+      var slug = btn.getAttribute('data-slug');
+      var following = btn.getAttribute('data-following') === 'true';
+      var action = following ? 'unfollow' : 'follow';
+      btn.disabled = true;
+      fetch('/admin/sessions/' + encodeURIComponent(slug) + '/' + action, {
+        method: 'POST',
+      }).then(function(r) {
+        if (!r.ok) throw new Error('request failed');
+        return r.json();
+      }).then(function(data) {
+        var nowFollowing = Boolean(data && data.following);
+        btn.setAttribute('data-following', nowFollowing ? 'true' : 'false');
+        btn.textContent = nowFollowing ? 'Following' : 'Follow';
+      }).catch(function() {
+        // Leave the button's prior state/label in place on failure.
+      }).finally(function() {
+        btn.disabled = false;
+      });
+    });
+  })();
+  </script>`,
   });
 }
 
@@ -441,18 +496,11 @@ export function registerSessionsListRoutes(
     // than an error (AC2).
     if (scope.agentIds !== "all" && scope.agentIds.length === 0) {
       return deps.html(
-        renderSessionsListPage(
-          [],
-          filters,
-          false,
-          userEmail,
-          {},
-          {
-            total: 0,
-            limit,
-            offset,
-          },
-        ),
+        renderSessionsListPage([], filters, false, userEmail, {}, new Set(), {
+          total: 0,
+          limit,
+          offset,
+        }),
       );
     }
 
@@ -536,6 +584,27 @@ export function registerSessionsListRoutes(
       for (const a of agents) agentNames[a.id] = a.name;
     }
 
+    // Batch-resolve which of the fetched rows the current user already
+    // follows via a single listByUser() call — mirrors the agentNames
+    // resolution above (one call per page render, not one per row).
+    //
+    // Best-effort, exactly like the session detail page's equivalent lookup.
+    // Independent of the task-store `degraded` flag (it's a DB-backed lookup,
+    // not a task-store fetch) — fail open to "not following" on error since
+    // this is just button display state, not a security check (the follow
+    // route itself enforces visibility). A failure here must not 500 the whole
+    // list and take the Waiting/Active/Closed sections down with it.
+    let followedSlugs = new Set<string>();
+    try {
+      followedSlugs = new Set(
+        (await deps.sessionFollowService.listByUser(userEmail)).map(
+          (f) => f.sessionSlug,
+        ),
+      );
+    } catch {
+      followedSlugs = new Set();
+    }
+
     // Build autocomplete suggestions only when task-store integration is
     // active — skip the extra agentService.listOptions() call entirely when
     // fetchDistinctTaskValues is not configured (degraded mode).
@@ -555,6 +624,7 @@ export function registerSessionsListRoutes(
         degraded,
         userEmail,
         agentNames,
+        followedSlugs,
         {
           total,
           limit,

@@ -11,16 +11,17 @@
  */
 
 import { describe, expect, it } from "bun:test";
-import { Hono } from "hono";
 import type { MiddlewareHandler } from "hono";
+import { Hono } from "hono";
 import type { AdminUIEnv } from "./admin-ui.ts";
 import {
+  registerSessionsListRoutes,
   type Session,
   type SessionsListAgentMemberService,
   type SessionsListAgentService,
   type SessionsListDeps,
-  registerSessionsListRoutes,
 } from "./admin-ui-sessions-list.ts";
+import type { SessionFollowService } from "./session-follow-service.ts";
 
 const DEFAULT_EMAIL = "admin@example.com";
 
@@ -119,12 +120,35 @@ function makeAgentService(
   };
 }
 
+/**
+ * Test double for the narrow `Pick<SessionFollowService, "listByUser">`
+ * slice SessionsListDeps depends on. Returns one SessionFollowRow per given
+ * slug — id/muted/timestamps are unused by the sessions-list route, only
+ * `sessionSlug` (matched against each row's `session.slug`) matters.
+ */
+function makeFollowService(
+  followedSlugs: string[] = [],
+): Pick<SessionFollowService, "listByUser"> {
+  return {
+    listByUser: async () =>
+      followedSlugs.map((sessionSlug, i) => ({
+        id: `follow-${i}`,
+        userEmail: DEFAULT_EMAIL,
+        sessionSlug,
+        muted: false,
+        createdAt: new Date("2024-01-01"),
+        updatedAt: new Date("2024-01-01"),
+      })),
+  };
+}
+
 function buildApp(overrides: Partial<SessionsListDeps> = {}): Hono<AdminUIEnv> {
   const app = new Hono<AdminUIEnv>();
   const deps: SessionsListDeps = {
     requireAuth: makeFakeRequireAuth(),
     agentMemberService: makeMemberService(),
     agentService: makeAgentService(),
+    sessionFollowService: makeFollowService(),
     html: fakeHtml,
     ...overrides,
   };
@@ -137,9 +161,22 @@ function buildApp(overrides: Partial<SessionsListDeps> = {}): Hono<AdminUIEnv> {
 describe("GET /admin/sessions — admin view", () => {
   it("renders Waiting/Active/Closed sections with sessions bucketed by state", async () => {
     const sessions = [
-      makeSession({ slug: "s-waiting", title: "Waiting session", state: "waiting", waitingSince: "2026-01-01T00:00:00.000Z" }),
-      makeSession({ slug: "s-active", title: "Active session", state: "active" }),
-      makeSession({ slug: "s-closed", title: "Closed session", state: "closed" }),
+      makeSession({
+        slug: "s-waiting",
+        title: "Waiting session",
+        state: "waiting",
+        waitingSince: "2026-01-01T00:00:00.000Z",
+      }),
+      makeSession({
+        slug: "s-active",
+        title: "Active session",
+        state: "active",
+      }),
+      makeSession({
+        slug: "s-closed",
+        title: "Closed session",
+        state: "closed",
+      }),
     ];
     const app = buildApp({
       fetchTaskStoreSessions: async (params) => {
@@ -173,7 +210,12 @@ describe("GET /admin/sessions — admin view", () => {
 
   it("excludes archived sessions from the default (non-archived) view", async () => {
     const sessions = [
-      makeSession({ slug: "s-archived", title: "Archived session", state: "closed", archivedAt: "2026-01-05T00:00:00.000Z" }),
+      makeSession({
+        slug: "s-archived",
+        title: "Archived session",
+        state: "closed",
+        archivedAt: "2026-01-05T00:00:00.000Z",
+      }),
     ];
     const app = buildApp({
       fetchTaskStoreSessions: async () => ({
@@ -191,7 +233,11 @@ describe("GET /admin/sessions — admin view", () => {
   it("?archived=true requests state=archived and renders only archived sessions", async () => {
     const captured: { state: string | null } = { state: null };
     const sessions = [
-      makeSession({ slug: "s-archived", title: "Archived session", archivedAt: "2026-01-05T00:00:00.000Z" }),
+      makeSession({
+        slug: "s-archived",
+        title: "Archived session",
+        archivedAt: "2026-01-05T00:00:00.000Z",
+      }),
     ];
     const app = buildApp({
       fetchTaskStoreSessions: async (params) => {
@@ -212,13 +258,30 @@ describe("GET /admin/sessions — admin view", () => {
 describe("GET /admin/sessions — member scoping", () => {
   it("a member of agent A only sees sessions with a task assigned to A or in A's repos", async () => {
     const sessions = [
-      makeSession({ slug: "s-mine", title: "My session", agentIds: ["agent-a"], repos: [] }),
-      makeSession({ slug: "s-repo-mine", title: "My repo session", agentIds: [], repos: ["org/repo-a"] }),
-      makeSession({ slug: "s-not-mine", title: "Not my session", agentIds: ["agent-b"], repos: ["org/repo-b"] }),
+      makeSession({
+        slug: "s-mine",
+        title: "My session",
+        agentIds: ["agent-a"],
+        repos: [],
+      }),
+      makeSession({
+        slug: "s-repo-mine",
+        title: "My repo session",
+        agentIds: [],
+        repos: ["org/repo-a"],
+      }),
+      makeSession({
+        slug: "s-not-mine",
+        title: "Not my session",
+        agentIds: ["agent-b"],
+        repos: ["org/repo-b"],
+      }),
     ];
     const app = buildApp({
       agentMemberService: makeMemberService([{ agentId: "agent-a" }]),
-      agentService: makeAgentService([{ id: "agent-a", repos: ["org/repo-a"] }]),
+      agentService: makeAgentService([
+        { id: "agent-a", repos: ["org/repo-a"] },
+      ]),
       fetchTaskStoreSessions: async () => ({
         sessions,
         total: sessions.length,
@@ -227,7 +290,10 @@ describe("GET /admin/sessions — member scoping", () => {
       }),
     });
     const res = await app.request("/admin/sessions", {
-      headers: { "x-test-is-admin": "false", "x-test-user-email": "member@example.com" },
+      headers: {
+        "x-test-is-admin": "false",
+        "x-test-user-email": "member@example.com",
+      },
     });
     expect(res.status).toBe(200);
     const html = await res.text();
@@ -241,8 +307,18 @@ describe("GET /admin/sessions — member scoping", () => {
   // rendered rows.
   it("labels the pagination summary with the true visible count for a scoped member", async () => {
     const sessions = [
-      makeSession({ slug: "s-mine", title: "My session", agentIds: ["agent-a"], repos: [] }),
-      makeSession({ slug: "s-not-mine", title: "Not my session", agentIds: ["agent-b"], repos: [] }),
+      makeSession({
+        slug: "s-mine",
+        title: "My session",
+        agentIds: ["agent-a"],
+        repos: [],
+      }),
+      makeSession({
+        slug: "s-not-mine",
+        title: "Not my session",
+        agentIds: ["agent-b"],
+        repos: [],
+      }),
     ];
     const app = buildApp({
       agentMemberService: makeMemberService([{ agentId: "agent-a" }]),
@@ -255,7 +331,10 @@ describe("GET /admin/sessions — member scoping", () => {
       }),
     });
     const res = await app.request("/admin/sessions", {
-      headers: { "x-test-is-admin": "false", "x-test-user-email": "member@example.com" },
+      headers: {
+        "x-test-is-admin": "false",
+        "x-test-user-email": "member@example.com",
+      },
     });
     expect(res.status).toBe(200);
     const html = await res.text();
@@ -291,7 +370,10 @@ describe("GET /admin/sessions — member scoping", () => {
       },
     });
     const res = await app.request("/admin/sessions", {
-      headers: { "x-test-is-admin": "false", "x-test-user-email": "nobody@example.com" },
+      headers: {
+        "x-test-is-admin": "false",
+        "x-test-user-email": "nobody@example.com",
+      },
     });
     expect(res.status).toBe(200);
     const html = await res.text();
@@ -325,10 +407,109 @@ describe("GET /admin/sessions — degraded mode", () => {
   });
 });
 
-// ─── Follow/Following stub ───────────────────────────────────────────────────
+// ─── Follow/Unfollow toggle (FLW-1.1) ───────────────────────────────────────
+//
+// Live per-row Follow button wired to SessionFollowService.listByUser(),
+// called once per page render (buildApp() injects a plain in-memory double —
+// no real DB). Replaces the old disabled follow-toggle-stub button + its
+// "renders a Follow toggle stub per row" test, which only asserted stub text.
 
 describe("GET /admin/sessions — row actions", () => {
-  it("renders a Follow toggle stub per row", async () => {
+  it("renders each row's Follow button enabled, with data-slug set to that row's slug", async () => {
+    const sessions = [makeSession({ slug: "s-1", title: "Some session" })];
+    const app = buildApp({
+      sessionFollowService: makeFollowService([]),
+      fetchTaskStoreSessions: async () => ({
+        sessions,
+        total: sessions.length,
+        limit: 50,
+        offset: 0,
+      }),
+    });
+    const res = await app.request("/admin/sessions");
+    const html = await res.text();
+    // Exact button markup: no `disabled` attribute, correct data-slug, and
+    // enabled label "Follow" — not the old disabled follow-toggle-stub.
+    expect(html).toContain(
+      '<button type="button" class="btn btn-secondary session-follow-btn" style="font-size:11px;padding:3px 10px" data-slug="s-1" data-following="false">Follow</button>',
+    );
+    expect(html).not.toContain("follow-toggle-stub");
+  });
+
+  it('renders data-following="true" and label "Following" for a session the user already follows', async () => {
+    const sessions = [
+      makeSession({ slug: "s-followed", title: "Followed session" }),
+    ];
+    const app = buildApp({
+      sessionFollowService: makeFollowService(["s-followed"]),
+      fetchTaskStoreSessions: async () => ({
+        sessions,
+        total: sessions.length,
+        limit: 50,
+        offset: 0,
+      }),
+    });
+    const res = await app.request("/admin/sessions");
+    const html = await res.text();
+    expect(html).toContain('data-slug="s-followed" data-following="true"');
+    expect(html).toContain(">Following</button>");
+  });
+
+  it('renders data-following="false" and label "Follow" for a session the user does not follow', async () => {
+    const sessions = [
+      makeSession({ slug: "s-not-followed", title: "Unfollowed session" }),
+    ];
+    const app = buildApp({
+      sessionFollowService: makeFollowService(["some-other-slug"]),
+      fetchTaskStoreSessions: async () => ({
+        sessions,
+        total: sessions.length,
+        limit: 50,
+        offset: 0,
+      }),
+    });
+    const res = await app.request("/admin/sessions");
+    const html = await res.text();
+    expect(html).toContain('data-slug="s-not-followed" data-following="false"');
+    expect(html).toContain(">Follow</button>");
+  });
+
+  it("fails open to \"not following\" when listByUser() rejects, still rendering the page", async () => {
+    const sessions = [
+      makeSession({ slug: "s-waiting", title: "Waiting session" }),
+      makeSession({
+        slug: "s-active",
+        title: "Active session",
+        state: "active",
+      }),
+    ];
+    const app = buildApp({
+      sessionFollowService: {
+        listByUser: async () => {
+          throw new Error("follow store unavailable");
+        },
+      },
+      fetchTaskStoreSessions: async () => ({
+        sessions,
+        total: sessions.length,
+        limit: 50,
+        offset: 0,
+      }),
+    });
+    const res = await app.request("/admin/sessions");
+    // The page still renders — a follow-state lookup failure is button display
+    // state, not a reason to 500 the whole list.
+    expect(res.status).toBe(200);
+    const html = await res.text();
+    expect(html).toContain("Waiting session");
+    expect(html).toContain("Active session");
+    // Every button falls back to the "not following" state.
+    expect(html).toContain('data-slug="s-waiting" data-following="false"');
+    expect(html).toContain('data-slug="s-active" data-following="false"');
+    expect(html).not.toContain('data-following="true"');
+  });
+
+  it("renders a single delegated click handler for .session-follow-btn, posting to /admin/sessions/{slug}/{follow|unfollow}", async () => {
     const sessions = [makeSession({ slug: "s-1", title: "Some session" })];
     const app = buildApp({
       fetchTaskStoreSessions: async () => ({
@@ -340,7 +521,10 @@ describe("GET /admin/sessions — row actions", () => {
     });
     const res = await app.request("/admin/sessions");
     const html = await res.text();
-    expect(html).toContain("Follow");
+    expect(html).toContain("classList.contains('session-follow-btn')");
+    expect(html).toContain(
+      "'/admin/sessions/' + encodeURIComponent(slug) + '/' + action",
+    );
   });
 });
 
@@ -545,8 +729,16 @@ describe("GET /admin/sessions — org filter forwarding", () => {
 describe("GET /admin/sessions — agent name filter (SLF-1.1)", () => {
   it("?agent=<name> returns only sessions whose agentIds resolve via searchByName, and never forwards the raw name as agentId", async () => {
     const sessions = [
-      makeSession({ slug: "s-alpha", title: "Alpha session", agentIds: ["agent-alpha"] }),
-      makeSession({ slug: "s-beta", title: "Beta session", agentIds: ["agent-beta"] }),
+      makeSession({
+        slug: "s-alpha",
+        title: "Alpha session",
+        agentIds: ["agent-alpha"],
+      }),
+      makeSession({
+        slug: "s-beta",
+        title: "Beta session",
+        agentIds: ["agent-beta"],
+      }),
       makeSession({ slug: "s-none", title: "No agent session", agentIds: [] }),
     ];
     let capturedAgentId: string | null | undefined;
@@ -573,9 +765,21 @@ describe("GET /admin/sessions — agent name filter (SLF-1.1)", () => {
 
   it("multiple fuzzy-matching agents are combined with OR semantics", async () => {
     const sessions = [
-      makeSession({ slug: "s-alpha", title: "Alpha session", agentIds: ["agent-alpha"] }),
-      makeSession({ slug: "s-beta", title: "Beta session", agentIds: ["agent-beta"] }),
-      makeSession({ slug: "s-gamma", title: "Gamma session", agentIds: ["agent-gamma"] }),
+      makeSession({
+        slug: "s-alpha",
+        title: "Alpha session",
+        agentIds: ["agent-alpha"],
+      }),
+      makeSession({
+        slug: "s-beta",
+        title: "Beta session",
+        agentIds: ["agent-beta"],
+      }),
+      makeSession({
+        slug: "s-gamma",
+        title: "Gamma session",
+        agentIds: ["agent-gamma"],
+      }),
     ];
     const app = buildApp({
       agentService: makeAgentService([
@@ -600,10 +804,16 @@ describe("GET /admin/sessions — agent name filter (SLF-1.1)", () => {
 
   it("an agent-name filter with zero matches returns an empty session list, not a full/unfiltered list or a 500", async () => {
     const sessions = [
-      makeSession({ slug: "s-alpha", title: "Alpha session", agentIds: ["agent-alpha"] }),
+      makeSession({
+        slug: "s-alpha",
+        title: "Alpha session",
+        agentIds: ["agent-alpha"],
+      }),
     ];
     const app = buildApp({
-      agentService: makeAgentService([{ id: "agent-alpha", name: "Agent Alpha" }]),
+      agentService: makeAgentService([
+        { id: "agent-alpha", name: "Agent Alpha" },
+      ]),
       fetchTaskStoreSessions: async () => ({
         sessions,
         total: sessions.length,
@@ -628,7 +838,9 @@ describe("GET /admin/sessions — agent name filter (SLF-1.1)", () => {
       }),
     );
     const app = buildApp({
-      agentService: makeAgentService([{ id: "agent-match", name: "Match Agent" }]),
+      agentService: makeAgentService([
+        { id: "agent-match", name: "Match Agent" },
+      ]),
       fetchTaskStoreSessions: async (params) => {
         // The route must widen to a large page (mirroring the Tasks page's
         // 500/0) rather than forwarding the caller's own small limit/offset,
