@@ -177,8 +177,8 @@ export interface PrCensusDeps {
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
-/** Matches task-store's own MAX_CENSUS_ENTRIES (task-store/src/pull-request-service.ts) — kept as a literal here rather than importing across the service boundary, mirroring this file's other task-store-shape mirrors above. */
-const CENSUS_CHUNK_SIZE = 200;
+/** Matches task-store's own MAX_CENSUS_ENTRIES (task-store/src/pull-request-service.ts) — kept as a literal here rather than importing across the service boundary, mirroring this file's other task-store-shape mirrors above. Exported so pr-origin-backfill.ts (POB-1.1's one-off historical backfill script) can chunk its own POST /prs/census calls identically instead of re-declaring the literal. */
+export const CENSUS_CHUNK_SIZE = 200;
 
 // ─── Throttle state ───────────────────────────────────────────────────────────
 
@@ -202,9 +202,11 @@ export function __resetPrCensusThrottleForTests(): void {
 
 /**
  * Classify one `gh pr list` result against the repo's task-store tasks and
- * build its `POST /prs/census` entry.
+ * build its `POST /prs/census` entry. Exported so pr-origin-backfill.ts
+ * (POB-1.1's one-off historical backfill script) can reuse this exact
+ * GhCensusPr -> CensusEntry assembly instead of duplicating it.
  */
-function buildCensusEntry(
+export function buildCensusEntry(
   repo: string,
   pr: GhCensusPr,
   taskPrNumbers: Set<number>,
