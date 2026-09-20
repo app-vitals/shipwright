@@ -474,6 +474,41 @@ describe("GET /admin/sessions — row actions", () => {
     expect(html).toContain(">Follow</button>");
   });
 
+  it("fails open to \"not following\" when listByUser() rejects, still rendering the page", async () => {
+    const sessions = [
+      makeSession({ slug: "s-waiting", title: "Waiting session" }),
+      makeSession({
+        slug: "s-active",
+        title: "Active session",
+        state: "active",
+      }),
+    ];
+    const app = buildApp({
+      sessionFollowService: {
+        listByUser: async () => {
+          throw new Error("follow store unavailable");
+        },
+      },
+      fetchTaskStoreSessions: async () => ({
+        sessions,
+        total: sessions.length,
+        limit: 50,
+        offset: 0,
+      }),
+    });
+    const res = await app.request("/admin/sessions");
+    // The page still renders — a follow-state lookup failure is button display
+    // state, not a reason to 500 the whole list.
+    expect(res.status).toBe(200);
+    const html = await res.text();
+    expect(html).toContain("Waiting session");
+    expect(html).toContain("Active session");
+    // Every button falls back to the "not following" state.
+    expect(html).toContain('data-slug="s-waiting" data-following="false"');
+    expect(html).toContain('data-slug="s-active" data-following="false"');
+    expect(html).not.toContain('data-following="true"');
+  });
+
   it("renders a single delegated click handler for .session-follow-btn, posting to /admin/sessions/{slug}/{follow|unfollow}", async () => {
     const sessions = [makeSession({ slug: "s-1", title: "Some session" })];
     const app = buildApp({

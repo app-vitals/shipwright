@@ -587,11 +587,23 @@ export function registerSessionsListRoutes(
     // Batch-resolve which of the fetched rows the current user already
     // follows via a single listByUser() call — mirrors the agentNames
     // resolution above (one call per page render, not one per row).
-    const followedSlugs = new Set(
-      (await deps.sessionFollowService.listByUser(userEmail)).map(
-        (f) => f.sessionSlug,
-      ),
-    );
+    //
+    // Best-effort, exactly like the session detail page's equivalent lookup.
+    // Independent of the task-store `degraded` flag (it's a DB-backed lookup,
+    // not a task-store fetch) — fail open to "not following" on error since
+    // this is just button display state, not a security check (the follow
+    // route itself enforces visibility). A failure here must not 500 the whole
+    // list and take the Waiting/Active/Closed sections down with it.
+    let followedSlugs = new Set<string>();
+    try {
+      followedSlugs = new Set(
+        (await deps.sessionFollowService.listByUser(userEmail)).map(
+          (f) => f.sessionSlug,
+        ),
+      );
+    } catch {
+      followedSlugs = new Set();
+    }
 
     // Build autocomplete suggestions only when task-store integration is
     // active — skip the extra agentService.listOptions() call entirely when
