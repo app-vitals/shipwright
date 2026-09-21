@@ -1994,6 +1994,11 @@ describe("review.md — Step 7 dispatch is synchronous, no ScheduleWakeup/Monito
     expect(lower).not.toContain("running in the background");
     expect(lower).not.toContain("wait for it to complete");
   });
+
+  it("pins run_in_background: false on the Agent tool dispatch (ABD-1.3)", () => {
+    const step7Section = extractStep7Section(content);
+    expect(step7Section).toContain("run_in_background: false");
+  });
 });
 
 describe("review.md — testReadinessContext fallback checks principles.md override (PCO-1.3)", () => {
