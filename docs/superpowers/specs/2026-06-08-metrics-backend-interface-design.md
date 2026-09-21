@@ -21,7 +21,7 @@ The metrics service can already read from PostHog (live) and offline fixtures, a
 
 All three are **event stores** — they persist events-with-properties and support arbitrary aggregation — so every metric we compute (counts, averages, group-bys, cycle-time joins) is expressible in all three with identical results.
 
-**Prometheus is explicitly out of scope.** It is a numeric time-series database: it cannot store event properties, and the bulk of these dashboards (estimation accuracy, complexity distribution, per-feature breakdowns, per-task cycle-time joins) require event-level granularity it does not retain. Prometheus is the right tool for *operational/runtime* metrics, not *event-level delivery analytics*. Forcing it behind this interface would produce misleading empty charts. If runtime metrics are ever wanted, that is a separate, additive surface — not a provider here.
+**Prometheus is explicitly out of scope.** It is a numeric time-series database: it cannot store event properties, and the bulk of these dashboards (Shipwright PRs merged, complexity distribution, per-feature breakdowns, per-task cycle-time joins) require event-level granularity it does not retain. Prometheus is the right tool for *operational/runtime* metrics, not *event-level delivery analytics*. Forcing it behind this interface would produce misleading empty charts. If runtime metrics are ever wanted, that is a separate, additive surface — not a provider here.
 
 ---
 
