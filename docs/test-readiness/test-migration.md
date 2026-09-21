@@ -818,7 +818,7 @@ from the prior pass's 401 (+2 net): `agent/src/pr-origin-backfill.unit.test.ts` 
 backing the new POB-1.1 inventory row) and `agent/src/sessions.unit.test.ts` (new, backing
 the DTW-1.3 companion prune-wiring fix) — both verified directly via `git log
 --diff-filter=A` against the `eff5b503..08cab0b33` range, matching exactly (no other new
-test files this cycle, consistent with the small 7-non-routine-commit delta).
+test files this cycle, consistent with the small 6-non-routine-commit delta).
 
 **Promote/deepen gains its first finding in eight cycles this pass** — see Method note
 step 3 above and Tests — bucketed below. Rebuild remains empty.
@@ -1264,7 +1264,7 @@ without a PR reference this clear.
   tests across 370 files.") — +52 tests / +2 files vs. the 2026-09-18 pass, tracking this
   cycle's two new test files (`pr-origin-backfill.unit.test.ts`,
   `sessions.unit.test.ts`) plus their in-line case counts, proportionate to the small
-  7-commit delta.
+  6-commit delta.
 - **Coverage (from this same run's `test:coverage` step log):** Lines 92.46%
   (35715/38629), Functions 91.01% (2965/3258) — against the 90%/89% thresholds
   (`✅ Coverage gate passed`, logged directly). Both comfortably clear their respective
@@ -1277,7 +1277,7 @@ without a PR reference this clear.
 
 Test-count growth trajectory (continued from below): …→ 7,870 (2026-09-02) → 9,219
 (2026-09-18) → **9,271 (2026-09-21, this pass)** — +52 tests, proportionate to this
-cycle's small 7-commit delta, in sharp contrast to the prior pass's +1,349-test outlier
+cycle's small 6-commit delta, in sharp contrast to the prior pass's +1,349-test outlier
 jump. No test-count anomaly, no padding.
 
 ### Tier 2 — per-layer breakdown (conditional)

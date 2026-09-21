@@ -138,7 +138,7 @@ finding across every cycle to date. See Milestone 3.
 
 Fully green run — no failing jobs. `bun test` step itself: 23.04s. **9,271 tests across
 370 files** (+52 tests / +2 files vs. the 2026-09-18 pass, proportionate to this cycle's
-small 7-commit delta — in sharp contrast to the prior pass's +1,349-test outlier jump).
+small 6-commit delta — in sharp contrast to the prior pass's +1,349-test outlier jump).
 Coverage held essentially flat: **92.46%** lines (35715/38629), **91.01%** functions
 (2965/3258), against the 90%/89% thresholds — `✅ Coverage gate passed`, logged directly.
 Test-count growth trajectory: …→ 7,870 (2026-09-02) → 9,219 (2026-09-18) → **9,271
@@ -233,7 +233,7 @@ the long-standing, explicitly-optional `admin/src/clock.ts` item, unchanged.
 **Tier 2 triggered:** no. Per-layer numbers are not fabricated here — Tier 1's aggregate
 is the complete, sufficient measurement this cycle. Growth trajectory (370 files, 9,219 →
 9,271 tests since the 2026-09-18 baseline) is proportionate to this cycle's small
-7-commit delta with no budget concern.
+6-commit delta with no budget concern.
 
 ## 4. Roadmap (five milestones)
 
