@@ -434,7 +434,7 @@ git push origin --delete {branch}
 
 Fall through to the standard fresh-start flow (same as branch-absent path):
 ```bash
-git -C ${SHIPWRIGHT_REPO_DIR:-repos}/{repo-slug} worktree add ${SHIPWRIGHT_WORKTREE_DIR:-worktrees}/{repo-slug}-{branch-slug} origin/main -b {branch}
+git -C ${SHIPWRIGHT_REPO_DIR:-$HOME/src}/{repo-slug} worktree add ${SHIPWRIGHT_WORKTREE_DIR:-$HOME/worktrees}/{repo-slug}-{branch-slug} origin/main -b {branch}
 ```
 
 **If no merged PR** (open PR or no PR — genuine bundled task, joining an existing branch/PR):
