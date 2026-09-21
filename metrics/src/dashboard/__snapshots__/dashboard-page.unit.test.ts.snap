@@ -215,10 +215,10 @@ exports[`renderDashboardPage — snapshot renders full page for a regular user 1
             <div class="kpi-value" id="kpi-ci-rate"><span class="skeleton">&nbsp;</span></div>
             <div class="kpi-meta">passed_first_try / total gates</div>
           </div>
-          <div class="kpi-card" data-metric="estimation-accuracy">
-            <div class="kpi-label">Estimation Accuracy<span class="info-icon" data-tooltip="How close estimated hours are to actual — 0% is perfect" tabindex="0" aria-label="How close estimated hours are to actual — 0% is perfect">i</span></div>
-            <div class="kpi-value" id="kpi-estimation"><span class="skeleton">&nbsp;</span></div>
-            <div class="kpi-meta">mean (actual_h / estimated_h - 1)</div>
+          <div class="kpi-card" data-metric="shipwright-prs-merged">
+            <div class="kpi-label">Shipwright PRs Merged<span class="info-icon" data-tooltip="PRs authored by Shipwright that were merged in the selected period" tabindex="0" aria-label="PRs authored by Shipwright that were merged in the selected period">i</span></div>
+            <div class="kpi-value" id="kpi-shipwright-prs"><span class="skeleton">&nbsp;</span></div>
+            <div class="kpi-meta">origin=shipwright, state=merged</div>
           </div>
           <div class="kpi-card" data-metric="review-ship-it">
             <div class="kpi-label">Review SHIP IT Rate<span class="info-icon" data-tooltip="% of code reviews that received an immediate ship-it verdict" tabindex="0" aria-label="% of code reviews that received an immediate ship-it verdict">i</span></div>
@@ -730,10 +730,10 @@ exports[`renderDashboardPage — snapshot renders full page for an owner 1`] = `
             <div class="kpi-value" id="kpi-ci-rate"><span class="skeleton">&nbsp;</span></div>
             <div class="kpi-meta">passed_first_try / total gates</div>
           </div>
-          <div class="kpi-card" data-metric="estimation-accuracy">
-            <div class="kpi-label">Estimation Accuracy<span class="info-icon" data-tooltip="How close estimated hours are to actual — 0% is perfect" tabindex="0" aria-label="How close estimated hours are to actual — 0% is perfect">i</span></div>
-            <div class="kpi-value" id="kpi-estimation"><span class="skeleton">&nbsp;</span></div>
-            <div class="kpi-meta">mean (actual_h / estimated_h - 1)</div>
+          <div class="kpi-card" data-metric="shipwright-prs-merged">
+            <div class="kpi-label">Shipwright PRs Merged<span class="info-icon" data-tooltip="PRs authored by Shipwright that were merged in the selected period" tabindex="0" aria-label="PRs authored by Shipwright that were merged in the selected period">i</span></div>
+            <div class="kpi-value" id="kpi-shipwright-prs"><span class="skeleton">&nbsp;</span></div>
+            <div class="kpi-meta">origin=shipwright, state=merged</div>
           </div>
           <div class="kpi-card" data-metric="review-ship-it">
             <div class="kpi-label">Review SHIP IT Rate<span class="info-icon" data-tooltip="% of code reviews that received an immediate ship-it verdict" tabindex="0" aria-label="% of code reviews that received an immediate ship-it verdict">i</span></div>
@@ -1245,10 +1245,10 @@ exports[`renderDashboardPage — MG-1.2 clickable metric graphs snapshot matches
             <div class="kpi-value" id="kpi-ci-rate"><span class="skeleton">&nbsp;</span></div>
             <div class="kpi-meta">passed_first_try / total gates</div>
           </div>
-          <div class="kpi-card" data-metric="estimation-accuracy">
-            <div class="kpi-label">Estimation Accuracy<span class="info-icon" data-tooltip="How close estimated hours are to actual — 0% is perfect" tabindex="0" aria-label="How close estimated hours are to actual — 0% is perfect">i</span></div>
-            <div class="kpi-value" id="kpi-estimation"><span class="skeleton">&nbsp;</span></div>
-            <div class="kpi-meta">mean (actual_h / estimated_h - 1)</div>
+          <div class="kpi-card" data-metric="shipwright-prs-merged">
+            <div class="kpi-label">Shipwright PRs Merged<span class="info-icon" data-tooltip="PRs authored by Shipwright that were merged in the selected period" tabindex="0" aria-label="PRs authored by Shipwright that were merged in the selected period">i</span></div>
+            <div class="kpi-value" id="kpi-shipwright-prs"><span class="skeleton">&nbsp;</span></div>
+            <div class="kpi-meta">origin=shipwright, state=merged</div>
           </div>
           <div class="kpi-card" data-metric="review-ship-it">
             <div class="kpi-label">Review SHIP IT Rate<span class="info-icon" data-tooltip="% of code reviews that received an immediate ship-it verdict" tabindex="0" aria-label="% of code reviews that received an immediate ship-it verdict">i</span></div>
@@ -1760,10 +1760,10 @@ exports[`renderDashboardPage — TK-1.2 token trends chart snapshot matches afte
             <div class="kpi-value" id="kpi-ci-rate"><span class="skeleton">&nbsp;</span></div>
             <div class="kpi-meta">passed_first_try / total gates</div>
           </div>
-          <div class="kpi-card" data-metric="estimation-accuracy">
-            <div class="kpi-label">Estimation Accuracy<span class="info-icon" data-tooltip="How close estimated hours are to actual — 0% is perfect" tabindex="0" aria-label="How close estimated hours are to actual — 0% is perfect">i</span></div>
-            <div class="kpi-value" id="kpi-estimation"><span class="skeleton">&nbsp;</span></div>
-            <div class="kpi-meta">mean (actual_h / estimated_h - 1)</div>
+          <div class="kpi-card" data-metric="shipwright-prs-merged">
+            <div class="kpi-label">Shipwright PRs Merged<span class="info-icon" data-tooltip="PRs authored by Shipwright that were merged in the selected period" tabindex="0" aria-label="PRs authored by Shipwright that were merged in the selected period">i</span></div>
+            <div class="kpi-value" id="kpi-shipwright-prs"><span class="skeleton">&nbsp;</span></div>
+            <div class="kpi-meta">origin=shipwright, state=merged</div>
           </div>
           <div class="kpi-card" data-metric="review-ship-it">
             <div class="kpi-label">Review SHIP IT Rate<span class="info-icon" data-tooltip="% of code reviews that received an immediate ship-it verdict" tabindex="0" aria-label="% of code reviews that received an immediate ship-it verdict">i</span></div>
@@ -2264,10 +2264,10 @@ exports[`renderDashboardPage — PCE-1.4 Cost Efficiency card readOnly page snap
             <div class="kpi-value" id="kpi-ci-rate"><span class="skeleton">&nbsp;</span></div>
             <div class="kpi-meta">passed_first_try / total gates</div>
           </div>
-          <div class="kpi-card" data-metric="estimation-accuracy">
-            <div class="kpi-label">Estimation Accuracy<span class="info-icon" data-tooltip="How close estimated hours are to actual — 0% is perfect" tabindex="0" aria-label="How close estimated hours are to actual — 0% is perfect">i</span></div>
-            <div class="kpi-value" id="kpi-estimation"><span class="skeleton">&nbsp;</span></div>
-            <div class="kpi-meta">mean (actual_h / estimated_h - 1)</div>
+          <div class="kpi-card" data-metric="shipwright-prs-merged">
+            <div class="kpi-label">Shipwright PRs Merged<span class="info-icon" data-tooltip="PRs authored by Shipwright that were merged in the selected period" tabindex="0" aria-label="PRs authored by Shipwright that were merged in the selected period">i</span></div>
+            <div class="kpi-value" id="kpi-shipwright-prs"><span class="skeleton">&nbsp;</span></div>
+            <div class="kpi-meta">origin=shipwright, state=merged</div>
           </div>
           <div class="kpi-card" data-metric="review-ship-it">
             <div class="kpi-label">Review SHIP IT Rate<span class="info-icon" data-tooltip="% of code reviews that received an immediate ship-it verdict" tabindex="0" aria-label="% of code reviews that received an immediate ship-it verdict">i</span></div>

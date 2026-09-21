@@ -68,7 +68,7 @@ export const SummaryResultSchema = z
     reviewsShipIt: z.number().int(),
     reviewShipItRate: z.number().nullable(),
     avgReviewIterations: z.number().nullable(),
-    estimationAccuracy: z.number().nullable(),
+    shipwrightPrsMerged: z.number().int(),
     complexityDist: z.object({
       c1: z.number().int(),
       c2: z.number().int(),
@@ -100,7 +100,7 @@ export const TrendsPeriodSchema = z.object({
   avgFilesChanged: z.number().nullable(),
   avgFixAttempts: z.number().nullable(),
   avgCycleTimeHours: z.number().nullable(),
-  estimationAccuracy: z.number().nullable(),
+  shipwrightPrsMerged: z.number().int(),
   simplifyAvgDry: z.number().nullable(),
   simplifyAvgDeadCode: z.number().nullable(),
   simplifyAvgNaming: z.number().nullable(),

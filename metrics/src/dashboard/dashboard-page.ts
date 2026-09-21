@@ -179,10 +179,10 @@ export function renderDashboardPage(opts: DashboardPageOptions): string {
             <div class="kpi-value" id="kpi-ci-rate"><span class="skeleton">&nbsp;</span></div>
             <div class="kpi-meta">passed_first_try / total gates</div>
           </div>
-          <div class="kpi-card" data-metric="estimation-accuracy">
-            <div class="kpi-label">Estimation Accuracy${infoIcon("How close estimated hours are to actual — 0% is perfect")}</div>
-            <div class="kpi-value" id="kpi-estimation"><span class="skeleton">&nbsp;</span></div>
-            <div class="kpi-meta">mean (actual_h / estimated_h - 1)</div>
+          <div class="kpi-card" data-metric="shipwright-prs-merged">
+            <div class="kpi-label">Shipwright PRs Merged${infoIcon("PRs authored by Shipwright that were merged in the selected period")}</div>
+            <div class="kpi-value" id="kpi-shipwright-prs"><span class="skeleton">&nbsp;</span></div>
+            <div class="kpi-meta">origin=shipwright, state=merged</div>
           </div>
           <div class="kpi-card" data-metric="review-ship-it">
             <div class="kpi-label">Review SHIP IT Rate${infoIcon("% of code reviews that received an immediate ship-it verdict")}</div>
