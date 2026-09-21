@@ -11,7 +11,7 @@
 
 ## Method note (this cycle, 2026-09-21)
 
-This pass covers a small 3-day/18-commit top-up (7 non-routine commits after excluding
+This pass covers a small 3-day/18-commit top-up (6 non-routine commits after excluding
 chart/plugin-version-sync and docs-freshness-anchor churn — see `test-inventory.md`'s
 Sampling section for the full per-commit breakdown) since the 2026-09-18 pass. Every new
 source file identified in this cycle's Phase 1 inventory refresh was checked directly via

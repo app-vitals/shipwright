@@ -55,7 +55,7 @@
   wiring, even though the *design intent* (pure logic, no I/O) is unit-equivalent.
 - **Delta since the 2026-09-18 design (this pass, 2026-09-21, against the Phase 1
   inventory's small 3-day/18-commit top-up since `eff5b503` — diff range
-  `eff5b503..08cab0b33`, 7 non-routine commits after excluding chart/plugin-version-sync
+  `eff5b503..08cab0b33`, 6 non-routine commits after excluding chart/plugin-version-sync
   and docs-freshness-anchor churn):** no new frameworks, layer types, local-substitute
   categories, canary-applicability change, or user journeys. `deploy_model` re-verified
   as `direct` directly against `CLAUDE.md` at this commit (`08cab0b33`, unchanged); the
