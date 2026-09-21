@@ -62,3 +62,38 @@ describe("CLAUDE.md.template — Slack AskUserQuestion note", () => {
     expect(readTemplate().toLowerCase()).toContain("plain text");
   });
 });
+
+describe("CLAUDE.md.template — Agent tool background-dispatch warning", () => {
+  it("mentions run_in_background: false in the Waiting and Polling section", () => {
+    expect(readTemplate()).toContain("run_in_background: false");
+  });
+
+  it("explains the Agent tool defaults to background dispatch", () => {
+    const template = readTemplate();
+    expect(template).toContain("run_in_background: true");
+    expect(template.toLowerCase()).toContain("agent");
+  });
+
+  it("draws the parallel to ScheduleWakeup failure mode in the same section", () => {
+    const template = readTemplate();
+    // Extract just the Waiting and Polling section to ensure context
+    const waitingSection = template.slice(
+      template.indexOf("### Waiting and Polling"),
+    );
+    expect(waitingSection.toLowerCase()).toContain("schedulewakeup");
+    expect(waitingSection.toLowerCase()).toContain("same");
+  });
+
+  it("instructs that cron-dispatched work needing results must pass run_in_background: false", () => {
+    expect(readTemplate().toLowerCase()).toContain(
+      "cron".toLowerCase(),
+    );
+    expect(readTemplate().toLowerCase()).toContain(
+      "run_in_background: false".toLowerCase(),
+    );
+  });
+
+  it("clarifies that multiple foreground Agent calls still run concurrently", () => {
+    expect(readTemplate().toLowerCase()).toContain("concurrently");
+  });
+});

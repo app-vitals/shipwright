@@ -211,6 +211,18 @@ This pattern avoids the cache-freshness and retry-on-error tradeoffs of `Schedul
 and keeps your work session and context across the long external wait. For waits that
 stay within the ~10-minute ceiling, keep using the blocking in-Bash loop guidance above.
 
+The `Agent` tool defaults to `run_in_background: true` — your turn receives an
+automated "you'll be notified when the subagent completes" message, assuming a live
+session remains to receive that notification. However, in a cron-dispatched (non-interactive)
+`claude -p` invocation, once your turn ends the process exits — there is no live session
+waiting for that async completion signal. This is the same failure mode as `ScheduleWakeup`
+above: the mechanism is designed for a persistent session, not a one-shot subprocess.
+For any cron-dispatched work where your turn needs the subagent's result before it ends,
+pass `run_in_background: false` on the `Agent` tool call. Multiple foreground `Agent`
+calls issued in the same assistant message still run concurrently — the only difference
+from background mode is that the turn blocks until all of them complete, preventing
+early process exit.
+
 There is currently no known legitimate use case for `ScheduleWakeup` in this
 repo's own skills or commands — `plugins/shipwright/` has zero references to
 it.
