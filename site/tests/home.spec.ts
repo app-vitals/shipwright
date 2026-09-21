@@ -289,8 +289,11 @@ test("metrics section renders real proof-dashboard figures", async ({ page }) =>
   // Headline metric names appear.
   await expect(section.getByText(/cycle time/i).first()).toBeVisible();
   await expect(section.getByText(/ship-it rate/i).first()).toBeVisible();
+  await expect(section.getByText(/shipwright prs merged/i).first()).toBeVisible();
   // The figures are sourced from the public proof dashboard, not illustrative.
   await expect(section.getByText(/Real figures for this repo/i)).toBeVisible();
+  // The removed estimationAccuracy field's card must not linger anywhere.
+  await expect(page.getByText(/estimation accuracy/i)).toHaveCount(0);
 });
 
 test("crons section documents the default scheduled jobs", async ({
