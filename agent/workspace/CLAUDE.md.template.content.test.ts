@@ -69,9 +69,7 @@ describe("CLAUDE.md.template — Agent tool background-dispatch warning", () => 
   });
 
   it("explains the Agent tool defaults to background dispatch", () => {
-    const template = readTemplate();
-    expect(template).toContain("run_in_background: true");
-    expect(template.toLowerCase()).toContain("agent");
+    expect(readTemplate()).toContain("run_in_background: true");
   });
 
   it("draws the parallel to ScheduleWakeup failure mode in the same section", () => {
@@ -85,12 +83,9 @@ describe("CLAUDE.md.template — Agent tool background-dispatch warning", () => 
   });
 
   it("instructs that cron-dispatched work needing results must pass run_in_background: false", () => {
-    expect(readTemplate().toLowerCase()).toContain(
-      "cron".toLowerCase(),
-    );
-    expect(readTemplate().toLowerCase()).toContain(
-      "run_in_background: false".toLowerCase(),
-    );
+    const template = readTemplate();
+    expect(template.toLowerCase()).toContain("cron");
+    expect(template).toContain("run_in_background: false");
   });
 
   it("clarifies that multiple foreground Agent calls still run concurrently", () => {
