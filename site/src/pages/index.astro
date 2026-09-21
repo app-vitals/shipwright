@@ -121,7 +121,7 @@ type ProofSummary = {
   tasksCompleted: number;
   avgCycleTimeHours: number | null;
   reviewShipItRate: number | null;
-  estimationAccuracy: number | null;
+  shipwrightPrsMerged: number | null;
 };
 type ProofTrendPoint = { period: string; tasksCompleted: number };
 
@@ -130,7 +130,7 @@ const summaryFallback: ProofSummary = {
   tasksCompleted: 86,
   avgCycleTimeHours: 2.617,
   reviewShipItRate: 65.31,
-  estimationAccuracy: -3.48,
+  shipwrightPrsMerged: 80,
 };
 const trendsFallback: ProofTrendPoint[] = [
   { period: "2026-06-24", tasksCompleted: 22 },
@@ -172,8 +172,7 @@ const trendRows =
 const fmtCycle = (h: number | null) =>
   h == null ? "—" : h >= 24 ? `${(h / 24).toFixed(1)}d` : `${h.toFixed(1)}h`;
 const fmtPct = (n: number | null) => (n == null ? "—" : `${Math.round(n)}%`);
-const fmtSignedPct = (n: number | null) =>
-  n == null ? "—" : `${n > 0 ? "+" : n < 0 ? "−" : ""}${Math.abs(n).toFixed(1)}%`;
+const fmtInt = (n: number | null) => (n == null ? "—" : String(Math.round(n)));
 
 const metricStats = [
   {
@@ -192,9 +191,9 @@ const metricStats = [
     note: "approved on first review",
   },
   {
-    value: fmtSignedPct(summary.estimationAccuracy),
-    label: "Estimation accuracy",
-    note: "actual vs. planned (0% = perfect)",
+    value: fmtInt(summary.shipwrightPrsMerged),
+    label: "Shipwright PRs merged",
+    note: "agent-authored, not human",
   },
 ];
 // Real per-day throughput → relative bar heights (%).
@@ -594,7 +593,7 @@ const differentiators = [
       A dashboard that grades the work.
     </h2>
     <p class="mt-5 max-w-2xl text-lg">
-      Every task emits telemetry — first-time-quality, estimation accuracy,
+      Every task emits telemetry — first-time-quality, coverage deltas,
       review verdicts, cycle time, and token cost — to a dashboard you host
       yourself. Offline fixtures for local dev, or your own self-hosted
       Shipwright task-store for live data; no data leaves your control.
@@ -605,7 +604,7 @@ const differentiators = [
       class="mt-10 overflow-hidden rounded-xl"
       style="background: var(--sw-color-bg-raised); border: 1px solid var(--sw-color-border-muted);"
       role="img"
-      aria-label="Live Shipwright metrics for this repo: tasks shipped, cycle time, review ship-it rate, estimation accuracy, and a per-day throughput chart."
+      aria-label="Live Shipwright metrics for this repo: tasks shipped, cycle time, review ship-it rate, Shipwright PRs merged, and a per-day throughput chart."
     >
       <!-- Window chrome -->
       <div
@@ -705,7 +704,7 @@ const differentiators = [
 
     <p class="mt-6 max-w-2xl text-sm" style="color: var(--sw-color-text-muted);">
       <a href={proofUrl}>proof.shipwrightharness.com</a> — tasks shipped, cycle
-      time, review verdicts, and estimation accuracy for this repo, in the open.
+      time, review verdicts, and Shipwright PRs merged for this repo, in the open.
     </p>
       </div>
 
