@@ -736,6 +736,40 @@ describe("dev-task.md Step 1 — repo-slug derivation for local paths (PRF-1.4)"
   });
 });
 
+describe("dev-task.md — worktree add/remove absolute-fallback regression guard (T-085)", () => {
+  // Matches every `git -C ... worktree add/remove ...` invocation, in full, on one line —
+  // mirrors the file's actual style (see lines ~390/411/437/443/448). Deliberately requires
+  // the literal `git -C` prefix so it does NOT match the unrelated prose line
+  // "`worktree add {worktree-path} {branch}`" (no `git -C`, no leading dash-C path).
+  const WORKTREE_INVOCATION_RE = /git -C \S+ worktree (?:add|remove) \S+[^\n]*/g;
+
+  const getWorktreeInvocations = () => content.match(WORKTREE_INVOCATION_RE) ?? [];
+
+  // A bare relative default for either fallback var — e.g. ${SHIPWRIGHT_REPO_DIR:-repos} or
+  // ${SHIPWRIGHT_WORKTREE_DIR:-worktrees} — the exact class of bug PR #3545 fixed. Any
+  // ${VAR:-DEFAULT} where DEFAULT does not start with an absolute path ($HOME/ or /) trips
+  // this, regardless of what the relative default text actually says.
+  const BARE_RELATIVE_DEFAULT =
+    /\$\{(?:SHIPWRIGHT_REPO_DIR|SHIPWRIGHT_WORKTREE_DIR):-(?!\$HOME\/|\/)[^}]*\}/;
+
+  it("finds at least one `git -C ... worktree add/remove ...` invocation to guard (sanity check the regex isn't vacuous)", () => {
+    const invocations = getWorktreeInvocations();
+    expect(invocations.length).toBeGreaterThan(0);
+  });
+
+  it("every worktree add/remove invocation resolves both SHIPWRIGHT_REPO_DIR and SHIPWRIGHT_WORKTREE_DIR via the absolute-fallback form, never a bare relative default", () => {
+    const invocations = getWorktreeInvocations();
+    for (const invocation of invocations) {
+      expect(invocation).not.toMatch(BARE_RELATIVE_DEFAULT);
+      // Every invocation's `-C` repo path must resolve via ${SHIPWRIGHT_REPO_DIR:-$HOME/src}.
+      expect(invocation).toMatch(/\$\{SHIPWRIGHT_REPO_DIR:-\$HOME\//);
+      // Every invocation's worktree-path argument must resolve via
+      // ${SHIPWRIGHT_WORKTREE_DIR:-$HOME/worktrees}.
+      expect(invocation).toMatch(/\$\{SHIPWRIGHT_WORKTREE_DIR:-\$HOME\//);
+    }
+  });
+});
+
 describe("dev-task.md Step 1 — PRD-shaped task guard (fallback safety net) (PDR-1.1)", () => {
   const getGuardSection = () => {
     const guardIdx = content.indexOf("### PRD-Shaped Task Guard");
