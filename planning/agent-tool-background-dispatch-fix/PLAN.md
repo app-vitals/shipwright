@@ -89,9 +89,9 @@ ends.
 
 | ID | Title | Deps | Layer | Hours | Complexity | Model |
 |---|---|---|---|---|---|---|
-| ATB-1.1 | Pin run_in_background:false on patch.md's 3 subagent dispatch sites | — | Shared | 1 | 2 | haiku |
-| ATB-1.2 | Pin run_in_background:false on dev-task.md's 4 subagent dispatch sites + nested researcher spawn | — | Shared | 1 | 2 | haiku |
-| ATB-1.3 | Pin explicit run_in_background:false on review.md's Step 7 dispatch | — | Shared | 0.5 | 2 | haiku |
-| ATB-1.4 | Add Agent-tool background-dispatch warning to CLAUDE.md.template's Waiting and Polling section | — | Shared | 0.5 | 2 | haiku |
+| ABD-1.1 | Pin run_in_background:false on patch.md's 3 subagent dispatch sites | — | Shared | 1 | 2 | haiku |
+| ABD-1.2 | Pin run_in_background:false on dev-task.md's 4 subagent dispatch sites + nested researcher spawn | — | Shared | 1 | 2 | haiku |
+| ABD-1.3 | Pin explicit run_in_background:false on review.md's Step 7 dispatch | — | Shared | 0.5 | 2 | haiku |
+| ABD-1.4 | Add Agent-tool background-dispatch warning to CLAUDE.md.template's Waiting and Polling section | — | Shared | 0.5 | 2 | haiku |
 
 All four are additive — no renames/removals/constraint changes. Safe to deploy standalone.
