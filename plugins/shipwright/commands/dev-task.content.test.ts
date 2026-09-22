@@ -847,3 +847,40 @@ describe("dev-task.md Step 1 — PRD-shaped task guard (fallback safety net) (PD
     expect(section).not.toContain('"kind"');
   });
 });
+
+describe("dev-task.md — subagent dispatch is foreground, not background (ABD-1.2)", () => {
+  it("Step 5b's implementation-subagent dispatch pins run_in_background: false", () => {
+    const anchorIdx = content.indexOf("Dispatch a `general-purpose` subagent with this prompt");
+    expect(anchorIdx).toBeGreaterThan(-1);
+    const section = content.slice(anchorIdx, anchorIdx + 600);
+    expect(section).toContain("run_in_background: false");
+  });
+
+  it("Step 5b's nested researcher-agent spawn instruction pins run_in_background: false", () => {
+    const anchorIdx = content.indexOf("Spawn the shipwright:researcher agent via the Agent tool");
+    expect(anchorIdx).toBeGreaterThan(-1);
+    const section = content.slice(anchorIdx, anchorIdx + 300);
+    expect(section).toContain("run_in_background: false");
+  });
+
+  it("Step 6.5's spec compliance subagent dispatch pins run_in_background: false", () => {
+    const anchorIdx = content.indexOf("**Dispatch a `general-purpose` subagent** with `model: 'haiku'`");
+    expect(anchorIdx).toBeGreaterThan(-1);
+    const section = content.slice(anchorIdx, anchorIdx + 300);
+    expect(section).toContain("run_in_background: false");
+  });
+
+  it("Step 8.5a's docs-refresher agent dispatch pins run_in_background: false", () => {
+    const anchorIdx = content.indexOf("Use the Agent tool to dispatch the `shipwright:docs-refresher` agent");
+    expect(anchorIdx).toBeGreaterThan(-1);
+    const section = content.slice(anchorIdx, anchorIdx + 300);
+    expect(section).toContain("run_in_background: false");
+  });
+
+  it("Step 9b.3's CI-fix subagent dispatch pins run_in_background: false", () => {
+    const anchorIdx = content.indexOf("**Launch fix subagent** using the Agent tool");
+    expect(anchorIdx).toBeGreaterThan(-1);
+    const section = content.slice(anchorIdx, anchorIdx + 300);
+    expect(section).toContain("run_in_background: false");
+  });
+});

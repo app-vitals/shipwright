@@ -486,7 +486,7 @@ curl -s -o /dev/null -X POST \
   "$SHIPWRIGHT_TASK_STORE_URL/tasks/{id}/heartbeat"
 ```
 
-Dispatch a `general-purpose` subagent with this prompt (fill in all `{placeholders}` from context already collected). Pass `model: task.model ?? 'sonnet'` to the Agent() call so tasks can opt into a different model tier. At dispatch time, set `EFFECTIVE_MODEL = task.model ?? 'sonnet'` — this variable tracks the model the implementation subagent actually runs on, and is written back to the task store as `model` in Step 10a.
+Dispatch a `general-purpose` subagent with this prompt (fill in all `{placeholders}` from context already collected). Pass `model: task.model ?? 'sonnet'` and `run_in_background: false` to the Agent() call so tasks can opt into a different model tier and this step blocks until the subagent finishes. At dispatch time, set `EFFECTIVE_MODEL = task.model ?? 'sonnet'` — this variable tracks the model the implementation subagent actually runs on, and is written back to the task store as `model` in Step 10a.
 
 ```
 You are implementing a feature task. Follow TDD (red-green-refactor) strictly — write failing tests BEFORE writing implementation code.
@@ -511,7 +511,7 @@ INSTRUCTIONS — follow in order:
 
 [A] Discovery
   - Glob the project structure and read the files most relevant to this task
-  - Spawn the shipwright:researcher agent via the Agent tool, passing: task ID "{id}", title "{title}", description "{description}", layer "{layer}", and the project docs directory path
+  - Spawn the shipwright:researcher agent via the Agent tool, passing: task ID "{id}", title "{title}", description "{description}", layer "{layer}", the project docs directory path, and run_in_background: false
   - Use research output to inform architecture and patterns
 
 [B] Architecture — use the simplest approach that fits existing patterns:
@@ -625,7 +625,7 @@ Respect its `architecture` domain entries (e.g. `architecture_layering`) when ar
 
 Before creating a PR, launch an independent spec compliance subagent to verify the implementation actually satisfies the acceptance criteria. This is an independent review — the subagent has no knowledge of implementation decisions made in Step 7, only the spec and the diff.
 
-**Dispatch a `general-purpose` subagent** with `model: 'haiku'` (spec compliance is a lightweight structured review) and this prompt:
+**Dispatch a `general-purpose` subagent** with `model: 'haiku'` and `run_in_background: false` (spec compliance is a lightweight structured review that must block until it finishes) and this prompt:
 
 ```
 You are performing a spec compliance review. Review the implementation diff against the acceptance criteria and report whether each criterion is MET, PARTIAL, or NOT MET.
@@ -788,7 +788,7 @@ This step is always-on and self-no-ops cheaply when there are no docs to refresh
 
 ### 8.5a. Dispatch the docs-refresher Agent
 
-Use the Agent tool to dispatch the `shipwright:docs-refresher` agent with this prompt:
+Use the Agent tool to dispatch the `shipwright:docs-refresher` agent with `run_in_background: false` and this prompt:
 
 ```
 You are refreshing docs for the current branch.
@@ -1043,6 +1043,7 @@ While `ci_attempt < ci_max_retries`:
 3. **Launch fix subagent** using the Agent tool:
 
    - **Type**: `general-purpose`
+   - **run_in_background: false**
    - **Prompt**:
      ```
      You are fixing CI failures (or merge conflicts) on an open pull request.
