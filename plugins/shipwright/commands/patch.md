@@ -712,7 +712,7 @@ curl -s -o /dev/null -X POST \
 ```
 
 Dispatch a `general-purpose` subagent via the Agent tool, passing `model: PATCH_MODEL`
-(resolved once in Step 2.1) so the conflict-resolution subagent runs at the escalated
+(resolved once in Step 2.1) and `run_in_background: false` so the conflict-resolution subagent runs at the escalated
 tier, with this prompt:
 
 ```
@@ -1168,7 +1168,7 @@ curl -s -o /dev/null -X POST \
 ```
 
 Dispatch a `general-purpose` subagent via the Agent tool, passing `model: PATCH_MODEL`
-(resolved once in Step 2.1) so the fix subagent runs at the escalated tier, with this
+(resolved once in Step 2.1) and `run_in_background: false` so the fix subagent runs at the escalated tier, with this
 prompt. When Step 3a.5 left `DEPENDENCY_RISK_FINDING` set for this PR — its step 1 derived a
 finding and its step 3 already-held exclusion did not clear it — with recommendation
 `review` or `hold`, include the DEPENDENCY-RISK REMEDIATION PROTOCOL block below — it is
@@ -1848,7 +1848,7 @@ curl -s -o /dev/null -X POST \
 ```
 
 Dispatch a `general-purpose` subagent via the Agent tool, passing `model: PATCH_MODEL`
-(resolved once in Step 2.1) so the CI-fix subagent runs at the escalated tier, with this
+(resolved once in Step 2.1) and `run_in_background: false` so the CI-fix subagent runs at the escalated tier, with this
 prompt:
 
 ```

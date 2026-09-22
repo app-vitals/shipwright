@@ -2227,3 +2227,32 @@ describe("patch.md — /prs/claim threads authorLogin/headRef/title for server-s
     });
   }
 });
+
+describe("patch.md — subagent dispatch is foreground, not background (ABD-1.1)", () => {
+  it("Step 4b (conflict resolution) has run_in_background: false", () => {
+    const step4bIdx = content.indexOf("### Step 4b: Dispatch Conflict Resolution Subagent");
+    const step4cIdx = content.indexOf("### Step 4c: Handle Subagent Status");
+    expect(step4bIdx).toBeGreaterThan(-1);
+    expect(step4cIdx).toBeGreaterThan(-1);
+    const section = content.slice(step4bIdx, step4cIdx);
+    expect(section).toContain("run_in_background: false");
+  });
+
+  it("Step 5b (fix findings) has run_in_background: false", () => {
+    const step5bIdx = content.indexOf("### Step 5b: Dispatch Fix Subagent");
+    const step5cIdx = content.indexOf("### Step 5c: Handle Subagent Status");
+    expect(step5bIdx).toBeGreaterThan(-1);
+    expect(step5cIdx).toBeGreaterThan(-1);
+    const section = content.slice(step5bIdx, step5cIdx);
+    expect(section).toContain("run_in_background: false");
+  });
+
+  it("Step 6c (CI fixes) has run_in_background: false", () => {
+    const step6cIdx = content.indexOf("### Step 6c: Dispatch Fix Subagent");
+    const step6dIdx = content.indexOf("### Step 6d: Handle Subagent Status");
+    expect(step6cIdx).toBeGreaterThan(-1);
+    expect(step6dIdx).toBeGreaterThan(-1);
+    const section = content.slice(step6cIdx, step6dIdx);
+    expect(section).toContain("run_in_background: false");
+  });
+});
