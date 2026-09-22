@@ -42,7 +42,7 @@ subagent dispatch site, independent of `ScheduleWakeup`.
 ## Design
 
 Audited every `Dispatch ... subagent via the Agent tool` site across `patch.md`, `dev-task.md`,
-`review.md`, and `deploy.md`:
+`review.md`, `research.md`, and `deploy.md`:
 
 - **`patch.md`** — 3 sites (Step 4b conflict resolution, Step 5b fix subagent, Step 6c
   CI-fix), none pin `run_in_background`.
@@ -56,7 +56,13 @@ Audited every `Dispatch ... subagent via the Agent tool` site across `patch.md`,
   never passes the literal `run_in_background: false` parameter — grepped, that string
   appears nowhere in `commands/`. Not a live bug; tightened here for defense-in-depth so the
   behavior doesn't depend solely on the dispatching model reading and honoring the prose.
+- **`research.md`** — Step 2 ("Spawn the `researcher` agent via the Agent tool") is a single,
+  independent dispatch site — distinct from the nested `shipwright:researcher` spawn inside
+  `dev-task.md`'s Step 5b prompt (already covered by ABD-1.2). No `run_in_background` pin.
 - **`deploy.md`** — dispatches no subagents via the Agent tool. Not in scope.
+
+A re-grep of `plugins/shipwright/commands/*.md` for `Agent tool` confirms these are the only
+5 files with any match — no 6th site exists.
 
 Fix: add an explicit `run_in_background: false` to every dispatch instruction identified
 above. This is the minimal, targeted fix — no change to prompt content beyond the one
@@ -73,10 +79,10 @@ ends.
 
 ## Decision Log
 
-- Scoped to the 4 files actually containing "Dispatch ... via the Agent tool" instructions
-  (`patch.md`, `dev-task.md`, `review.md`, `CLAUDE.md.template`) — `deploy.md` was audited
-  and confirmed to dispatch no subagents, so it is explicitly out of scope rather than
-  silently skipped.
+- Scoped to the 5 files actually containing "Dispatch ... via the Agent tool" instructions
+  (`patch.md`, `dev-task.md`, `review.md`, `research.md`, `CLAUDE.md.template`) — `deploy.md`
+  was audited and confirmed to dispatch no subagents, so it is explicitly out of scope rather
+  than silently skipped.
 - `review.md`'s fix is included even though it is not a live bug — the prose-only guidance
   is a weaker guarantee than the literal parameter, and the fix is nearly free.
 - The `ok-wow/ok-wow` PR #2311 detached-HEAD/dirty-worktree issue is explicitly NOT addressed
@@ -93,5 +99,6 @@ ends.
 | ABD-1.2 | Pin run_in_background:false on dev-task.md's 4 subagent dispatch sites + nested researcher spawn | — | Shared | 1 | 2 | haiku |
 | ABD-1.3 | Pin explicit run_in_background:false on review.md's Step 7 dispatch | — | Shared | 0.5 | 2 | haiku |
 | ABD-1.4 | Add Agent-tool background-dispatch warning to CLAUDE.md.template's Waiting and Polling section | — | Shared | 0.5 | 2 | haiku |
+| ABD-1.5 | Pin explicit run_in_background:false on research.md's Step 2 dispatch | — | Shared | 0.5 | 2 | haiku |
 
-All four are additive — no renames/removals/constraint changes. Safe to deploy standalone.
+All five are additive — no renames/removals/constraint changes. Safe to deploy standalone.
