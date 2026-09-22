@@ -26,7 +26,7 @@ Running web-only research for: $ARGUMENTS
 
 ## Step 2: Launch Research Agent
 
-Spawn the `researcher` agent via the Agent tool. Pass a prompt that includes:
+Spawn the `researcher` agent via the Agent tool with `run_in_background: false`. Pass a prompt that includes:
 
 1. **The task:** `$ARGUMENTS`
 2. **The docs directory path** (if found)
