@@ -631,8 +631,8 @@ keeps review context isolated from the main thread (policy, queue, posting).
 
 Dispatch via the Agent tool with `subagent_type: "shipwright:code-reviewer"`, passing
 `model: TASK_MODEL ?? 'sonnet'` (the linked task's model tier resolved at the end of Step 4,
-falling back to `'sonnet'` when no task is linked or the lookup failed), and pass
-a single prompt block containing:
+falling back to `'sonnet'` when no task is linked or the lookup failed) and
+`run_in_background: false`, and pass a single prompt block containing:
 
 **This call is synchronous and blocking** — the Agent tool result returns the subagent's
 full JSON response directly, so Step 7 continues straight to parsing it into Step 8 and
