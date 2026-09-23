@@ -67,6 +67,7 @@
  * noise.
  */
 
+import { randomUUID } from "node:crypto";
 import type { ErrorCapturingClient } from "@shipwright/lib/sentry";
 import {
   buildProductionDeps as buildDeployDeps,
@@ -206,23 +207,25 @@ export interface LoopOrchestratorDeps {
    * totals survive an agent-process kill mid-run, not just a clean
    * completion.
    *
-   * DTW-1.3 widened the signature with two optional trailing params, both
-   * supplied only by the dev-task dispatch path:
-   *   - `sessionKey` — `dev-task:{taskId}` (DTR-1.1; stable across every
-   *     dispatch of this task, no per-dispatch nonce). The underlying runner
+   * DTW-1.3 widened the signature with two optional trailing params:
+   *   - `sessionKey` — the resume identity. The underlying runner
    *     (createRunClaude's closure) persists session ids in its own
    *     `sessions` map keyed by this value and automatically builds `-r <id>`
    *     on the next call with the SAME key, so a resume "just happens" by
-   *     calling runner() again with it. Because the key is stable (not
-   *     minted fresh per dispatchItem call), it survives across separate
-   *     dispatches too — a LATER, independent dispatch of the same
-   *     still-in_progress task (next cron tick, a StaleClaimReaper reclaim,
-   *     a human re-run) resumes this same session instead of starting cold.
-   *     The key is only cleared (via clearSessionKey) once a fresh
-   *     getTaskState check confirms the task has reached a terminal
-   *     dev-task-work status — see dispatchItem's finally block for the full
-   *     rationale. Left undefined for review/patch/deploy/plan, which
-   *     deliberately start fresh on every dispatch.
+   *     calling runner() again with it. Two shapes, per phase:
+   *       · dev-task — `dev-task:{taskId}` (DTR-1.1): stable across every
+   *         dispatch of this task, no per-dispatch nonce, so it survives
+   *         separate dispatches too — a LATER, independent dispatch of the
+   *         same still-in_progress task (next cron tick, a StaleClaimReaper
+   *         reclaim, a human re-run) resumes this same session instead of
+   *         starting cold. Only cleared (via clearSessionKey) once a fresh
+   *         getTaskState check confirms the task reached a terminal
+   *         dev-task-work status — see dispatchItem's dev-task finally block.
+   *       · review/patch/deploy — `{phase}:{itemId}:{uuid}` (CRT-1.3): a
+   *         per-dispatch nonce, so resuming works WITHIN one dispatch's own
+   *         resume loop but never across dispatches; cleared unconditionally
+   *         when that loop exits.
+   *     Left undefined for plan, which always starts fresh.
    *   - `onEarlySessionId` — fires as soon as a session id is known (even for
    *     a call that started fresh), wired to cronRunReporter.recordSessionId
    *     so the cron-run log carries it before the run reaches a terminal state.
@@ -252,17 +255,21 @@ export interface LoopOrchestratorDeps {
   /**
    * This agent's own claim identity (SHIPWRIGHT_AGENT_ID) — the value the
    * task store pins `claimedBy` to when this agent's token claims a task.
-   * Used solely by the dev-task auto-resume gate: a dispatch can hold a task
-   * across up to 1 + MAX_AUTO_RESUMES sequential runner() calls, which is long
-   * enough for the claim TTL to lapse if an attempt stalls past its heartbeat.
-   * If the StaleClaimReaper then releases the claim and a different claimant
-   * picks the task back up to `in_progress` before the next check, a
-   * status-only gate would happily resume this loop's stale session against a
-   * task another session now owns.
+   * Used by BOTH auto-resume gates in dispatchItem — the dev-task one
+   * (DTW-1.3) and the PR-phase review/patch/deploy one (CRT-1.3). A dispatch
+   * can hold a task or PR across up to 1 + MAX_AUTO_RESUMES sequential
+   * runner() calls, which is long enough for the claim TTL to lapse if an
+   * attempt stalls past its heartbeat. If the StaleClaimReaper then releases
+   * the claim and a different claimant picks the item back up before the next
+   * check, an owner-blind gate would happily resume this loop's stale session
+   * against a task/PR another session now owns.
    *
    * Optional: when undefined (no agent id configured, and every test that
-   * doesn't opt in), the gate falls back to the status-only check — identical
-   * to pre-fix behavior rather than silently refusing to ever resume.
+   * doesn't opt in), each gate skips only its owner-match half and falls back
+   * to its always-on floor — `status === "in_progress"` for dev-task,
+   * `claimedBy !== null` for a PR — so an unconfigured agent behaves as it
+   * did pre-gate rather than silently refusing to ever resume, while still
+   * never resuming against a released or finished item.
    */
   agentId?: string;
   /**
@@ -294,18 +301,21 @@ export interface LoopOrchestratorDeps {
    */
   heartbeatTask?: (taskId: string) => Promise<void>;
   /**
-   * CRT-1.2 — fetches a PR's live state from the task store, used by the
-   * PR-phase (review/patch/deploy) dispatch logic to decide whether to
-   * proceed or mark as stale. Returns null if the PR can't be found (treated
-   * as "stop processing"). Returns `claimedBy` alongside state so the dispatch
-   * can verify claim ownership.
+   * CRT-1.2 — fetches a PR's live state from the task store; consumed by
+   * CRT-1.3's PR-phase (review/patch/deploy) auto-resume gate in dispatchItem
+   * to decide whether to immediately resume the same session instead of
+   * waiting for the next cron tick / the StaleClaimReaper. Returns null if the
+   * PR can't be found (treated as "stop resuming"). The PR analog of
+   * getTaskState, called with the PullRequest DB record's CUID (`recordId`),
+   * never the `org/repo#123` display id.
    *
-   * Currently unused by existing dispatch logic — wired here for CRT-1.3 to
-   * consume in the PR-phase dispatch path. Mirrors getTaskState pattern.
+   * `claimedBy` is the whole gate for a PR item: unlike a task there is no
+   * `in_progress`-equivalent status to check, because every real PR completion
+   * path already nulls the claim.
    *
-   * Optional: when undefined (every existing test and deployment that doesn't
-   * opt in), dispatch proceeds without live PR state checks, identical to
-   * pre-CRT-1.2 behavior.
+   * Optional: when undefined (every test and deployment that doesn't opt in),
+   * a PR-phase dispatch never resumes — it runs exactly one attempt, identical
+   * to pre-CRT-1.3 behavior.
    */
   getPrState?: (
     prId: string,
@@ -313,26 +323,34 @@ export interface LoopOrchestratorDeps {
   /**
    * CRT-1.2 — renews a claimed PR's `heartbeatAt` (POST /prs/{id}/heartbeat)
    * so the task-store's claim TTL doesn't release the claim out from
-   * under a long-running, multi-attempt dispatch.
+   * under a long-running, multi-attempt dispatch. The PR analog of
+   * heartbeatTask, and consumed by CRT-1.3's PR-phase resume loop for exactly
+   * the same reason: one dispatch can hold a claim across up to
+   * 1 + MAX_AUTO_RESUMES sequential runner() calls, while DEFAULT_CLAIM_TTL_MS
+   * is sized for a single session. Called with `recordId` (the DB CUID) and
+   * ordered AFTER the ownership gate, so a claim that already belongs to a
+   * sibling agent is never refreshed on its behalf. A rejection means "the
+   * claim could not be proven fresh" and stops the resume loop; the dispatch
+   * itself still succeeds.
    *
-   * Currently unused by existing dispatch logic — wired here for CRT-1.3 to
-   * consume in the PR-phase dispatch path. Mirrors heartbeatTask pattern.
-   *
-   * Optional: when undefined (every existing test and deployment that doesn't
-   * opt in), dispatch proceeds without renewing PR claims, identical to
-   * pre-CRT-1.2 behavior.
+   * Optional: when undefined (every test that doesn't opt in), the loop
+   * resumes without renewing, identical to pre-CRT-1.2 behavior.
    */
   heartbeatPr?: (prId: string) => Promise<void>;
   /**
-   * Clears a persisted session-store entry by key. Called (best-effort) at
-   * the end of a dev-task dispatch's resume loop, but — DTR-1.1 — ONLY once a
-   * fresh getTaskState check in that finally block confirms the task has
-   * reached a terminal dev-task-work status (TERMINAL_DEV_TASK_STATUSES): the
-   * key is now stable (`dev-task:{taskId}`, no per-dispatch nonce) precisely
-   * so it can survive this dispatch's exit and be resumed by a LATER,
-   * separate dispatch of the same still-in_progress task. Clearing
-   * unconditionally on every exit (the pre-DTR-1.1 behavior) would defeat
-   * that cross-dispatch resume entirely.
+   * Clears a persisted session-store entry by key. Called (best-effort) when a
+   * dispatch's resume loop exits — but WHEN it's called differs per phase,
+   * matching the two sessionKey shapes described on `runner` above:
+   *   - dev-task (DTR-1.1) — ONLY once a fresh getTaskState check in that
+   *     block's finally confirms the task reached a terminal dev-task-work
+   *     status (TERMINAL_DEV_TASK_STATUSES). The key is stable
+   *     (`dev-task:{taskId}`, no nonce) precisely so it can survive this
+   *     dispatch's exit and be resumed by a LATER, separate dispatch of the
+   *     same still-in_progress task; clearing unconditionally (the
+   *     pre-DTR-1.1 behavior) would defeat that cross-dispatch resume.
+   *   - review/patch/deploy (CRT-1.3) — unconditionally on every exit. Those
+   *     keys are per-dispatch nonces with nothing to preserve across
+   *     dispatches, so there's no state to re-check first.
    *
    * Optional and never awaited for correctness: a failure here is logged and
    * swallowed (a stray entry is harmless, and the store's TTL prune — wired in
@@ -525,18 +543,21 @@ const PR_REDISPATCH_COOLDOWN_MS = 25 * 60 * 1000;
 const PROGRESS_PUSH_DEBOUNCE_MS = 5000;
 
 /**
- * DTW-1.3 — how many times a single dev-task dispatch may auto-resume its own
- * session before giving up and returning to the drain loop. A cron-dispatched
- * dev-task session that ends with the task still `in_progress` (e.g. it hit a
- * long wait and its process exited) used to sit until the task-store's
+ * DTW-1.3 — how many times a single dispatch may auto-resume its own session
+ * before giving up and returning to the drain loop. A cron-dispatched session
+ * that ends with its work item still claimed by this agent (e.g. it hit a long
+ * wait and its process exited) used to sit until the task-store's
  * StaleClaimReaper released the claim ~65 minutes later, and the next tick
  * then re-dispatched it with ZERO memory of prior progress. Resuming
  * immediately with the same sessionKey keeps the prior session's context.
  *
- * Capped so a persistently-stuck task can't spin forever: at most 4 runner()
+ * Capped so a persistently-stuck item can't spin forever: at most 4 runner()
  * calls per dispatch (1 initial + 3 resumes), each its own AgentCronRun row
- * tagged with the same itemId. On exhausting the cap the task is simply left
- * `in_progress` — exactly today's behavior — for the reaper + human triage.
+ * tagged with the same itemId. On exhausting the cap the item is simply left
+ * claimed — exactly today's behavior — for the reaper + human triage.
+ *
+ * Shared by both resume loops in dispatchItem: dev-task's (DTW-1.3/DTR-1.1)
+ * and, since CRT-1.3, review/patch/deploy's.
  */
 const MAX_AUTO_RESUMES = 3;
 
@@ -633,6 +654,8 @@ export function createLoopOrchestrator(
     getTaskState,
     agentId,
     heartbeatTask,
+    getPrState,
+    heartbeatPr,
     clearSessionKey,
     runner,
     cronRunReporter,
@@ -760,40 +783,52 @@ export function createLoopOrchestrator(
       : `${PHASE_COMMANDS[phase]} ${args}`;
     const message = formatCronMessage(loopCronId, command);
 
-    // DTW-1.3/DTR-1.1: dev-task — and ONLY dev-task — gets a stable session
-    // identity so a follow-up attempt continues the same Claude session
-    // instead of starting cold. The underlying runner persists session ids
-    // keyed by this value and builds `-r <id>` itself on the next call with
-    // the same key, so nothing here has to carry the id around.
-    // review/patch/deploy/plan keep sessionKey undefined — a deliberate
-    // product decision: those phases re-validate live state on every
-    // dispatch and must not continue stale context.
+    // DTW-1.3/DTR-1.1/CRT-1.3: a session identity, so a follow-up attempt
+    // continues the same Claude session instead of starting cold. The
+    // underlying runner persists session ids keyed by this value and builds
+    // `-r <id>` itself on the next call with the same key, so nothing here has
+    // to carry the id around.
     //
-    // DTR-1.1: the key is `dev-task:{itemId}` — stable across EVERY dispatch
-    // of this task, not scoped to one dispatchItem() call via a per-dispatch
-    // nonce (the original DTW-1.3 design). That nonce made resuming work only
-    // WITHIN one dispatch's own internal resume loop below; a later, fully
-    // separate dispatch of the same still-in_progress task (the next cron
-    // tick, a StaleClaimReaper reclaim, an explicit human re-run) always
-    // started cold with zero memory of prior work, even with substantial
-    // progress already made. Dropping the nonce means that later dispatch can
-    // resume this exact session instead.
+    // Two deliberately DIFFERENT mechanisms live behind this one variable, and
+    // the resume loop below has a matching block for each:
     //
-    // Safe cross-dispatch reuse depends on when the key gets cleared: the
-    // resume loop's `finally` block below clears it only once a FRESH
-    // getTaskState check confirms the task has reached a terminal
-    // dev-task-work status (TERMINAL_DEV_TASK_STATUSES) — never
-    // unconditionally on exit. A task still `in_progress` keeps its key, so
-    // the next dispatch resumes it; a task that reached e.g. `pr_open` has
-    // its key cleared, so a later, unrelated task reusing this exact
-    // `itemId` (unlikely, but not impossible after task-store id reuse)
-    // never inherits a dead session.
+    //   dev-task (DTR-1.1) — `dev-task:{itemId}`, a STABLE key with no
+    //     per-dispatch nonce, so it survives this dispatch's exit and a later,
+    //     fully separate dispatch of the same still-in_progress task (the next
+    //     cron tick, a StaleClaimReaper reclaim, an explicit human re-run)
+    //     resumes this exact session instead of starting cold with zero memory
+    //     of substantial prior progress. Safe cross-dispatch reuse depends on
+    //     when the key is cleared: the dev-task block's `finally` clears it
+    //     only once a FRESH getTaskState check confirms the task reached a
+    //     terminal dev-task-work status (TERMINAL_DEV_TASK_STATUSES), never
+    //     unconditionally on exit — so a still-in_progress task keeps its key
+    //     while a task that reached e.g. `pr_open` drops it, and a later,
+    //     unrelated task reusing this exact `itemId` (unlikely, but not
+    //     impossible after task-store id reuse) never inherits a dead session.
+    //
+    //   review/patch/deploy (CRT-1.3) — `{phase}:{itemId}:{randomUUID()}`, a
+    //     PER-DISPATCH nonce: exactly the shape dev-task used before DTR-1.1
+    //     dropped its own. These phases opt into the same-session resume loop
+    //     (an attempt that exits early mid-review/patch/deploy is just as
+    //     wasteful to redo cold) but deliberately NOT into cross-dispatch
+    //     persistence — they re-validate live GitHub/task-store state at the
+    //     top of every dispatch, so a reclaim, or simply this dispatch ending,
+    //     must mean a cold start next time. The nonce guarantees that on its
+    //     own, and the matching block clears the key unconditionally on exit.
+    //
+    //   plan — still undefined. Out of CRT-1.3's scope; a plan-session
+    //     dispatch always starts fresh.
     //
     // sessions.ts's store is file-backed with a 7-day TTL and no lazy
     // eviction on write, only on `get()` — index.ts's periodic
     // `sessions.prune()` remains the backstop for whatever an abrupt process
-    // kill leaves behind before this finally block ever runs.
-    const sessionKey = phase === "dev-task" ? `dev-task:${itemId}` : undefined;
+    // kill leaves behind before either finally block ever runs.
+    const sessionKey =
+      phase === "dev-task"
+        ? `dev-task:${itemId}`
+        : phase === "review" || phase === "patch" || phase === "deploy"
+          ? `${phase}:${itemId}:${randomUUID()}`
+          : undefined;
 
     /**
      * One dispatch attempt: its own createRun → runner() → terminal
@@ -833,8 +868,9 @@ export function createLoopOrchestrator(
       // DTW-1.3: push the session id into the cron-run row the moment it's
       // known — before the run reaches any terminal state — so an operator can
       // find/resume the session manually even if this attempt never completes.
-      // Only wired for the dev-task path (the only phase with a sessionKey);
-      // fire-and-forget, same contract as recordProgress below.
+      // Wired for every phase that has a sessionKey — dev-task plus, since
+      // CRT-1.3, review/patch/deploy; only plan (no sessionKey) opts out.
+      // Fire-and-forget, same contract as recordProgress below.
       const onEarlySessionId: EarlySessionIdCallback | undefined = sessionKey
         ? (sid) => {
             cronRunReporter
@@ -1047,7 +1083,9 @@ export function createLoopOrchestrator(
       return "completed";
     }
 
-    // DTW-1.3 auto-resume loop — dev-task only. After an attempt finishes,
+    // DTW-1.3 auto-resume loop — the dev-task (task-item) mechanism; the PR
+    // phases have their own, deliberately separate block below (CRT-1.3).
+    // After an attempt finishes,
     // re-read the task's LIVE state: still `in_progress` AND still claimed by
     // this agent means the session ended without finishing the task (the
     // ScheduleWakeup/long-wait case), so resume it right now with the same
@@ -1133,6 +1171,124 @@ export function createLoopOrchestrator(
           );
         }
         if (isTerminal && clearSessionKey) {
+          try {
+            await clearSessionKey(sessionKey);
+          } catch (err) {
+            console.warn(
+              `[loop-orchestrator] clearSessionKey failed for ${sessionKey}: ${String(err)} — swallowing`,
+            );
+          }
+        }
+      }
+    }
+
+    // CRT-1.3 auto-resume loop — the PR phases (review/patch/deploy). Same
+    // shape and same MAX_AUTO_RESUMES cap as the dev-task block above, but a
+    // deliberately SEPARATE block rather than a widened one, because the two
+    // mechanisms differ in both halves that matter:
+    //
+    //   - Ownership: a PR item has no `in_progress`-equivalent status to gate
+    //     on — every real PR completion path (review posted, patch pushed,
+    //     deploy merged/promoted, an explicit release) already nulls
+    //     `claimedBy` — so `claimedBy` carries both halves of dev-task's
+    //     status-then-owner check at once: "still claimed at all" is the
+    //     always-on floor (dev-task's status check), and "claimed by ME" is
+    //     the owner match (skipped when no agentId is configured). It's also
+    //     read through getPrState/heartbeatPr (`/prs/{id}`), a different
+    //     task-store surface from getTaskState/heartbeatTask (`/tasks/{id}`).
+    //
+    //   - Cleanup: the key is cleared UNCONDITIONALLY on exit — no
+    //     terminal-status re-check, because a per-dispatch nonce key has no
+    //     cross-dispatch value to preserve in the first place (see the
+    //     sessionKey comment above).
+    //
+    // Everything else matches dev-task: heartbeat AFTER the ownership gate and
+    // BEFORE each resume (never refresh a claim that now belongs to a sibling
+    // agent), any failure along the way stops resuming without failing the
+    // dispatch, and a "silent" or thrown attempt ends the loop — the throw
+    // propagating out of dispatchItem to the drain loop's per-item isolation
+    // and the reaper fallback exactly as before.
+    //
+    // `recordId`, NOT `itemId`, is the id both PR deps take: for a PR item
+    // `itemId` is the human-readable "org/repo#123" display id (command
+    // routing + cron-run tagging) while `recordId` is the PullRequest DB
+    // record's CUID that GET/POST /prs/{id} keys on — the same distinction the
+    // recordSkip/resetSkip calls above already observe.
+    if (
+      (phase === "review" || phase === "patch" || phase === "deploy") &&
+      sessionKey
+    ) {
+      try {
+        if ((await runOneAttempt()) !== "completed") return;
+        // Without this dep there is no way to prove the claim is still ours,
+        // and resuming on faith could put two sessions on one PR/branch — so
+        // don't resume at all, leaving this dispatch as the single attempt it
+        // was before CRT-1.3. Checked once here rather than per iteration:
+        // it's a closure-captured dep that cannot change mid-loop.
+        if (!getPrState) return;
+        let resumeAttempt = 0;
+        while (resumeAttempt < MAX_AUTO_RESUMES) {
+          let liveState: Awaited<ReturnType<typeof getPrState>>;
+          try {
+            liveState = await getPrState(recordId);
+          } catch (err) {
+            // Resuming is an optimization — a task-store blip here must not
+            // turn an otherwise-successful dispatch into a failure.
+            console.warn(
+              `[loop-orchestrator] getPrState failed for ${recordId}: ${String(err)} — not resuming`,
+            );
+            return;
+          }
+          // The PR record is gone (404 → null): nothing left to resume against.
+          if (!liveState) return;
+          // Ownership gate, in two parts:
+          //
+          //   - The floor (`claimedBy === null`) applies ALWAYS, configured
+          //     agentId or not. A null claim means the PR was released — by a
+          //     clean completion, an explicit release, or the reaper — so
+          //     there is nothing left for this session to resume against. This
+          //     is the PR-side analog of dev-task's unconditional
+          //     `status !== "in_progress"` check: without it, an agent with no
+          //     SHIPWRIGHT_AGENT_ID would resume on any PR record that still
+          //     exists, whoever owns it. That gap is reachable in production,
+          //     not just in theory — `agentId` is read from the env var only,
+          //     while entrypoint.ts also accepts an equivalent `--agent-id`
+          //     CLI flag.
+          //   - The owner match is skipped when no agentId is configured,
+          //     which keeps such an agent on the pre-gate behavior for a claim
+          //     that IS held by someone rather than silently never resuming
+          //     (same fail-open stance as the dev-task gate's own `agentId &&`).
+          if (
+            liveState.claimedBy === null ||
+            (agentId && liveState.claimedBy !== agentId)
+          ) {
+            console.warn(
+              `[loop-orchestrator] ${recordId} is claimed by ${liveState.claimedBy ?? "nobody"}${agentId ? ` (not ${agentId})` : ""} — not resuming`,
+            );
+            return;
+          }
+          if (heartbeatPr) {
+            try {
+              await heartbeatPr(recordId);
+            } catch (err) {
+              console.warn(
+                `[loop-orchestrator] heartbeatPr failed for ${recordId}: ${String(err)} — not resuming`,
+              );
+              return;
+            }
+          }
+          resumeAttempt += 1;
+          if ((await runOneAttempt()) !== "completed") return;
+        }
+        return;
+      } finally {
+        // Unconditional clear — unlike dev-task's DTR-1.1 stable key, these
+        // three phases use a per-dispatch nonce with no cross-dispatch
+        // persistence: a reclaim, or simply this dispatch ending, always means
+        // a cold start next time. Runs on every exit path (silent, completed,
+        // resume-cap exhausted, thrown failure); best-effort, since a stray
+        // entry is harmless and sessions.prune() is the backstop anyway.
+        if (clearSessionKey) {
           try {
             await clearSessionKey(sessionKey);
           } catch (err) {
@@ -1864,22 +2020,24 @@ export async function createProductionLoopOrchestrator(
     // single session. Throws on a non-ok response — the resume gate reads that
     // as "stop resuming".
     heartbeatTask: (id) => taskStoreClient.heartbeatTask(id),
-    // CRT-1.2: PR-phase live-state check — currently unused by existing
-    // dispatch logic, wired for CRT-1.3 to consume.
+    // CRT-1.2/CRT-1.3: PR-phase live-state check — a missing PR (getPr → null)
+    // stays null, which the PR resume gate reads as "stop resuming".
+    // claimedBy rides along on the same response and is the entire gate (a PR
+    // has no in_progress-equivalent status).
     getPrState: (id) =>
-      taskStoreClient
-        .getPr(id)
-        .then((pr) =>
-          pr
-            ? {
-                reviewState: (pr as { reviewState?: string }).reviewState,
-                claimedBy: (pr as { claimedBy?: string | null })
-                  .claimedBy ?? null,
-              }
-            : null,
-        ),
-    // CRT-1.2: PR-phase claim renewal — currently unused by existing
-    // dispatch logic, wired for CRT-1.3 to consume.
+      taskStoreClient.getPr(id).then((pr) =>
+        pr
+          ? {
+              reviewState: (pr as { reviewState?: string }).reviewState,
+              claimedBy:
+                (pr as { claimedBy?: string | null }).claimedBy ?? null,
+            }
+          : null,
+      ),
+    // CRT-1.2/CRT-1.3: PR-phase claim renewal, called before each resume
+    // attempt so a multi-attempt dispatch never outlives the single-session
+    // claim TTL. Throws on a non-ok response — the resume gate reads that as
+    // "stop resuming".
     heartbeatPr: (id) => taskStoreClient.heartbeatPr(id),
     clearSessionKey: opts.clearSessionKey,
     runner: opts.runner,

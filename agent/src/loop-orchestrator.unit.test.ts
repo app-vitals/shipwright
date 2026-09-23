@@ -4197,7 +4197,13 @@ describe("createLoopOrchestrator", () => {
     expect(callOrder).toEqual(["recordSessionId", "completeRun"]);
   });
 
-  test("a non-dev-task (review) dispatch never pushes recordSessionId — no sessionKey, no early-session capture", async () => {
+  test("a review dispatch pushes recordSessionId too — CRT-1.3 gave the PR phases their own sessionKey, so early-session capture is wired for them as well", async () => {
+    // Pre-CRT-1.3 this asserted the opposite (no sessionKey → no
+    // onEarlySessionId → no recordSessionId push). CRT-1.3 mints a
+    // per-dispatch nonce sessionKey for review/patch/deploy, and
+    // onEarlySessionId is gated purely on `sessionKey` being truthy — so the
+    // cron-run row now carries the session id for a PR-phase dispatch too,
+    // which is exactly the observability the resume loop needs.
     const consumed = new Set<string>();
     const reviewCandidates = [pr("acme/x#3", "2026-01-01T00:00:00Z", "review")];
     const { reporter, sessionIdCalls } = makeRecordingReporter();
@@ -4218,6 +4224,58 @@ describe("createLoopOrchestrator", () => {
 
     await loop([job("shipwright-review", true)]);
 
+    expect(sessionIdCalls).toHaveLength(1);
+    expect(sessionIdCalls[0]?.sessionId).toBe("sess-review-1");
+  });
+
+  test("a plan dispatch still gets no sessionKey and pushes no recordSessionId — the plan phase is out of CRT-1.3's scope", async () => {
+    // CRT-1.3 widened the sessionKey gate to review/patch/deploy only; plan
+    // deliberately keeps starting cold on every dispatch, so it must stay on
+    // the undefined-sessionKey path (and therefore the no-early-capture path).
+    const consumed = new Set<string>();
+    const planCandidates = [
+      {
+        id: "PLN-1.1",
+        createdAt: "2026-01-01T00:00:00Z",
+        phase: "plan" as const,
+        repo: "acme/x",
+        session: "sesh-1",
+      },
+    ];
+    const { reporter, sessionIdCalls } = makeRecordingReporter();
+    const sessionKeys: Array<string | undefined> = [];
+
+    const runner = async (
+      _message: string,
+      _onProgress?: ProgressCallback,
+      sessionKey?: string,
+      onEarlySessionId?: EarlySessionIdCallback,
+    ): Promise<ClaudeRunResult> => {
+      sessionKeys.push(sessionKey);
+      onEarlySessionId?.("sess-plan-1");
+      consumed.add("PLN-1.1");
+      return { result: "done" };
+    };
+
+    const deps = makeDeps({ planCandidates, runner, reporter, consumed });
+    const original =
+      process.env.SHIPWRIGHT_AGENT_AUTONOMOUS_PLAN_SESSION_ENABLED;
+    process.env.SHIPWRIGHT_AGENT_AUTONOMOUS_PLAN_SESSION_ENABLED = "true";
+    try {
+      const loop = createLoopOrchestrator(deps);
+      await loop([
+        job("shipwright-plan", true),
+        job("shipwright-dev-task", false),
+      ]);
+    } finally {
+      if (original === undefined) {
+        delete process.env.SHIPWRIGHT_AGENT_AUTONOMOUS_PLAN_SESSION_ENABLED;
+      } else {
+        process.env.SHIPWRIGHT_AGENT_AUTONOMOUS_PLAN_SESSION_ENABLED = original;
+      }
+    }
+
+    expect(sessionKeys).toEqual([undefined]);
     expect(sessionIdCalls).toHaveLength(0);
   });
 
