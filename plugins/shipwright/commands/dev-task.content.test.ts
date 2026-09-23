@@ -980,6 +980,12 @@ describe("dev-task.md Step 8 — scoped lint wiring (LSC-1.2)", () => {
     expect(section).toMatch(/main\.\.\.HEAD/);
   });
 
+  it("documents resolving the priority-4 {changed files} placeholder from git diff --name-only", () => {
+    const section = buildAndLintSection();
+    expect(section).toContain("{changed files}");
+    expect(section).toContain("git diff --name-only main...HEAD");
+  });
+
   it("documents reporting which lint mode (scoped vs. full) ran in the Pre-Ship Checks output", () => {
     const section = buildAndLintSection();
     expect(section).toMatch(/scoped/i);
