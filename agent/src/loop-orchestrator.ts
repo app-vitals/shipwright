@@ -255,17 +255,21 @@ export interface LoopOrchestratorDeps {
   /**
    * This agent's own claim identity (SHIPWRIGHT_AGENT_ID) — the value the
    * task store pins `claimedBy` to when this agent's token claims a task.
-   * Used solely by the dev-task auto-resume gate: a dispatch can hold a task
-   * across up to 1 + MAX_AUTO_RESUMES sequential runner() calls, which is long
-   * enough for the claim TTL to lapse if an attempt stalls past its heartbeat.
-   * If the StaleClaimReaper then releases the claim and a different claimant
-   * picks the task back up to `in_progress` before the next check, a
-   * status-only gate would happily resume this loop's stale session against a
-   * task another session now owns.
+   * Used by BOTH auto-resume gates in dispatchItem — the dev-task one
+   * (DTW-1.3) and the PR-phase review/patch/deploy one (CRT-1.3). A dispatch
+   * can hold a task or PR across up to 1 + MAX_AUTO_RESUMES sequential
+   * runner() calls, which is long enough for the claim TTL to lapse if an
+   * attempt stalls past its heartbeat. If the StaleClaimReaper then releases
+   * the claim and a different claimant picks the item back up before the next
+   * check, an owner-blind gate would happily resume this loop's stale session
+   * against a task/PR another session now owns.
    *
    * Optional: when undefined (no agent id configured, and every test that
-   * doesn't opt in), the gate falls back to the status-only check — identical
-   * to pre-fix behavior rather than silently refusing to ever resume.
+   * doesn't opt in), each gate skips only its owner-match half and falls back
+   * to its always-on floor — `status === "in_progress"` for dev-task,
+   * `claimedBy !== null` for a PR — so an unconfigured agent behaves as it
+   * did pre-gate rather than silently refusing to ever resume, while still
+   * never resuming against a released or finished item.
    */
   agentId?: string;
   /**
@@ -1186,11 +1190,12 @@ export function createLoopOrchestrator(
     //   - Ownership: a PR item has no `in_progress`-equivalent status to gate
     //     on — every real PR completion path (review posted, patch pushed,
     //     deploy merged/promoted, an explicit release) already nulls
-    //     `claimedBy` — so "still claimed by this agent" IS the whole check.
-    //     That makes the gate strictly simpler than dev-task's two-part
-    //     status-then-owner check, not a special case of it. It's also read
-    //     through getPrState/heartbeatPr (`/prs/{id}`), a different task-store
-    //     surface from getTaskState/heartbeatTask (`/tasks/{id}`).
+    //     `claimedBy` — so `claimedBy` carries both halves of dev-task's
+    //     status-then-owner check at once: "still claimed at all" is the
+    //     always-on floor (dev-task's status check), and "claimed by ME" is
+    //     the owner match (skipped when no agentId is configured). It's also
+    //     read through getPrState/heartbeatPr (`/prs/{id}`), a different
+    //     task-store surface from getTaskState/heartbeatTask (`/tasks/{id}`).
     //
     //   - Cleanup: the key is cleared UNCONDITIONALLY on exit — no
     //     terminal-status re-check, because a per-dispatch nonce key has no
@@ -1236,13 +1241,29 @@ export function createLoopOrchestrator(
           }
           // The PR record is gone (404 → null): nothing left to resume against.
           if (!liveState) return;
-          // Ownership gate. Skipped only when no agentId is configured, which
-          // keeps an agent with no SHIPWRIGHT_AGENT_ID on the pre-gate
-          // behavior rather than silently never resuming (same fail-open
-          // stance as the dev-task gate's own `agentId &&`).
-          if (agentId && liveState.claimedBy !== agentId) {
+          // Ownership gate, in two parts:
+          //
+          //   - The floor (`claimedBy === null`) applies ALWAYS, configured
+          //     agentId or not. A null claim means the PR was released — by a
+          //     clean completion, an explicit release, or the reaper — so
+          //     there is nothing left for this session to resume against. This
+          //     is the PR-side analog of dev-task's unconditional
+          //     `status !== "in_progress"` check: without it, an agent with no
+          //     SHIPWRIGHT_AGENT_ID would resume on any PR record that still
+          //     exists, whoever owns it. That gap is reachable in production,
+          //     not just in theory — `agentId` is read from the env var only,
+          //     while entrypoint.ts also accepts an equivalent `--agent-id`
+          //     CLI flag.
+          //   - The owner match is skipped when no agentId is configured,
+          //     which keeps such an agent on the pre-gate behavior for a claim
+          //     that IS held by someone rather than silently never resuming
+          //     (same fail-open stance as the dev-task gate's own `agentId &&`).
+          if (
+            liveState.claimedBy === null ||
+            (agentId && liveState.claimedBy !== agentId)
+          ) {
             console.warn(
-              `[loop-orchestrator] ${recordId} is claimed by ${liveState.claimedBy ?? "nobody"} (not ${agentId}) — not resuming`,
+              `[loop-orchestrator] ${recordId} is claimed by ${liveState.claimedBy ?? "nobody"}${agentId ? ` (not ${agentId})` : ""} — not resuming`,
             );
             return;
           }

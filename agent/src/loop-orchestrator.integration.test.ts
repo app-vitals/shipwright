@@ -1962,6 +1962,42 @@ describe("loop-orchestrator + same-session auto-resume (DTW-1.3 / CRT-1.3)", () 
     expect(sessionKeys).toHaveLength(2);
   });
 
+  test("with no agentId configured a RELEASED PR claim still blocks the resume — fail-open has a claimedBy floor", async () => {
+    // The limit of the fail-open stance above: skipping the owner-match half
+    // must not mean skipping the gate entirely. `claimedBy: null` is the shape
+    // every real PR completion path leaves behind (review posted, patch
+    // pushed, deploy merged, explicit release, reaper), so resuming against it
+    // would re-run a finished PR — the PR-side analog of dev-task's
+    // unconditional `status !== "in_progress"` check, which also holds with no
+    // agentId configured.
+    const { runner, sessionKeys } = makeSessionKeyRecordingRunner();
+    const { reporter, creates, completes } = makeAttemptRecordingReporter();
+    const { getPrState, calls } = makePrStateStub([{ claimedBy: null }]);
+    const heartbeats: string[] = [];
+    const prId = "acme/x#30";
+
+    const loop = makePrPhaseLoop({
+      phase: "patch",
+      prId,
+      runner,
+      reporter,
+      getPrState,
+      heartbeatPr: async (id) => {
+        heartbeats.push(id);
+      },
+      noAgentId: true,
+    });
+
+    await loop([job("shipwright-patch", true)]);
+
+    expect(sessionKeys).toHaveLength(1);
+    expect(creates).toHaveLength(1);
+    expect(completes).toEqual([{ itemId: prId, outcome: "completed" }]);
+    expect(calls).toEqual([recordIdFor(prId)]);
+    // Never renew a claim the gate just rejected.
+    expect(heartbeats).toEqual([]);
+  });
+
   test("a thrown PR-phase attempt never resumes and still clears its nonce key", async () => {
     // AC4: crash/timeout handling is unchanged — the throw propagates to the
     // drain loop's per-item isolation (CBD-2.3) and the reaper fallback, and
