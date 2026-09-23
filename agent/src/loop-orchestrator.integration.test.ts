@@ -1281,6 +1281,54 @@ describe("loop-orchestrator + dev-task auto-resume (DTW-1.3)", () => {
     expect(completes).toEqual([{ itemId: "DTW-9.13", outcome: "failed" }]);
   });
 
+  test("a getTaskState failure during the finally block's own terminal-status check does not clear the sessionKey or crash the dispatch", async () => {
+    // Distinct from the "unknown final status" test above (which models
+    // getTaskState resolving to null): this models getTaskState REJECTING
+    // during the finally block's fresh check — a task-store blip, not a
+    // "task not found". Same fail-safe contract either way: cannot confirm
+    // terminal, so the key must survive and the dispatch must not crash.
+    const { runner, sessionKeys } = makeSessionKeyRecordingRunner();
+    const { reporter } = makeAttemptRecordingReporter();
+    const cleared: string[] = [];
+
+    let devTaskCalls = 0;
+    const loop = createLoopOrchestrator({
+      getDevTaskCandidates: async () => {
+        devTaskCalls += 1;
+        return devTaskCalls === 1
+          ? [task("DTW-9.14", "2026-01-01T00:00:00Z")]
+          : [];
+      },
+      getReviewCandidates: async () => [],
+      getPatchCandidates: async () => [],
+      getDeployCandidates: async () => [],
+      claimTask: async () => true,
+      claimPr: async (p) => ({ id: p.id, commitSha: p.commitSha }),
+      recordSkip: async () => {},
+      resetSkip: async () => {},
+      // Throws on every call: the resume loop's own check (line ~1035) hits
+      // this first and stops resuming (pre-existing fail-safe, unchanged by
+      // DTR-1.1); the finally block's fresh terminal-status check (the new
+      // DTR-1.1 code path this test targets) then hits it again on its own.
+      getTaskState: async () => {
+        throw new Error("task-store 503");
+      },
+      clearSessionKey: async (key) => {
+        cleared.push(key);
+      },
+      runner,
+      cronRunReporter: reporter,
+      workQueueReporter: noopWorkQueueReporter,
+      loopCronId: "shipwright-loop",
+      clock: FixedClock(new Date("2026-07-20T00:00:00Z")),
+    });
+
+    await loop([job("shipwright-dev-task", true)]);
+
+    expect(sessionKeys).toEqual(["dev-task:DTW-9.14"]);
+    expect(cleared).toHaveLength(0);
+  });
+
   test("every resume attempt renews the claim FIRST — one dispatch never outlives the single-session claim TTL", async () => {
     // Regression test for the third-round review finding: lib/claim-ttl.ts
     // sizes DEFAULT_CLAIM_TTL_MS as "one Claude session + 5min buffer", an
