@@ -68,6 +68,7 @@ function makeRecordingReporter(): {
   progressCalls: Array<{
     runId: string | null;
     modelBreakdown: ModelBreakdownEntry[];
+    lastHeartbeatAt: Date;
   }>;
 } {
   const completeCalls: Array<{
@@ -81,6 +82,7 @@ function makeRecordingReporter(): {
   const progressCalls: Array<{
     runId: string | null;
     modelBreakdown: ModelBreakdownEntry[];
+    lastHeartbeatAt: Date;
   }> = [];
   const reporter: CronRunReporter = {
     async createRun() {
@@ -90,8 +92,8 @@ function makeRecordingReporter(): {
       completeCalls.push({ outcome, opts });
     },
     async skipRun() {},
-    async recordProgress(_cronId, runId, modelBreakdown) {
-      progressCalls.push({ runId, modelBreakdown });
+    async recordProgress(_cronId, runId, modelBreakdown, lastHeartbeatAt) {
+      progressCalls.push({ runId, modelBreakdown, lastHeartbeatAt });
     },
     async recordSessionId() {},
   };
@@ -107,9 +109,14 @@ describe("handleCronRequest + progress push / partial-usage-on-failure (CSU-3.2)
 
     const trackedReporter: CronRunReporter = {
       ...reporter,
-      async recordProgress(cronId, runId, modelBreakdown) {
+      async recordProgress(cronId, runId, modelBreakdown, lastHeartbeatAt) {
         callOrder.push("recordProgress");
-        await reporter.recordProgress(cronId, runId, modelBreakdown);
+        await reporter.recordProgress(
+          cronId,
+          runId,
+          modelBreakdown,
+          lastHeartbeatAt,
+        );
       },
       async completeRun(
         cronId,
@@ -237,6 +244,77 @@ describe("handleCronRequest + progress push / partial-usage-on-failure (CSU-3.2)
 
     expect(progressCalls).toHaveLength(1);
     expect(progressCalls[0]?.modelBreakdown?.[0]?.inputTokens).toBe(10);
+  });
+
+  // ─── lastHeartbeatAt sourced from the injected Clock (CRH-1.1) ────────────
+
+  test("recordProgress's lastHeartbeatAt is sourced from the injected Clock at push time, not wall-clock", async () => {
+    const { reporter, progressCalls } = makeRecordingReporter();
+    // A clock fixed far from the real wall clock — if the implementation ever
+    // reached for new Date()/Date.now() instead of clock.now(), the pushed
+    // timestamp would not equal this fixed instant.
+    const clock = makeMutableClock(new Date("2020-01-01T00:00:00Z"));
+
+    const runner = async (
+      _message: string,
+      onProgress?: ProgressCallback,
+    ): Promise<ClaudeRunResult> => {
+      onProgress?.(makeUsage());
+      return { result: "done", sessionId: "s1", modelUsage: makeUsage() };
+    };
+
+    await handleCronRequest(
+      { jobId: "heartbeat-job", prompt: "hello", channel: "C-X" },
+      {
+        slack: mockSlack,
+        runner,
+        cronRunReporter: reporter,
+        clock,
+      },
+    );
+
+    expect(progressCalls).toHaveLength(1);
+    expect(progressCalls[0]?.lastHeartbeatAt).toEqual(
+      new Date("2020-01-01T00:00:00Z"),
+    );
+  });
+
+  test("two debounced progress pushes at different clock ticks each carry their own lastHeartbeatAt", async () => {
+    const { reporter, progressCalls } = makeRecordingReporter();
+    const clock = makeMutableClock(new Date("2026-07-20T00:00:00Z"));
+
+    const runner = async (
+      _message: string,
+      onProgress?: ProgressCallback,
+    ): Promise<ClaudeRunResult> => {
+      onProgress?.(makeUsage({ inputTokens: 10 }));
+      // Advance past the 5s debounce window before the second push.
+      clock.advance(6000);
+      onProgress?.(makeUsage({ inputTokens: 20 }));
+      return {
+        result: "done",
+        sessionId: "s1",
+        modelUsage: makeUsage({ inputTokens: 20 }),
+      };
+    };
+
+    await handleCronRequest(
+      { jobId: "heartbeat-debounce-job", prompt: "hello", channel: "C-X" },
+      {
+        slack: mockSlack,
+        runner,
+        cronRunReporter: reporter,
+        clock,
+      },
+    );
+
+    expect(progressCalls).toHaveLength(2);
+    expect(progressCalls[0]?.lastHeartbeatAt).toEqual(
+      new Date("2026-07-20T00:00:00Z"),
+    );
+    expect(progressCalls[1]?.lastHeartbeatAt).toEqual(
+      new Date("2026-07-20T00:00:06Z"),
+    );
   });
 });
 

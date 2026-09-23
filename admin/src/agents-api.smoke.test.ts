@@ -596,6 +596,7 @@ function makeMockDeps(): AdminDeps {
         itemType: null,
         itemId: null,
         sessionId: null,
+        lastHeartbeatAt: null,
         phaseId: null,
         createdAt: new Date("2024-01-01T09:00:00.000Z"),
       }),
@@ -618,6 +619,7 @@ function makeMockDeps(): AdminDeps {
         itemType: null,
         itemId: null,
         sessionId: null,
+        lastHeartbeatAt: null,
         phaseId: null,
         createdAt: new Date("2024-01-01T09:00:00.000Z"),
         modelBreakdown: [],
@@ -3264,6 +3266,66 @@ describe("admin API — cron runs", () => {
     expect(listBody.items[0].sessionId).toBe("session-abc-123");
   });
 
+  it("PATCH then GET /agents/:id/crons/:cronId/runs/:runId round trips lastHeartbeatAt", async () => {
+    const deps = makeMockDepsWithStatefulRunService();
+    const app = createAdminApp(deps);
+
+    const patchRes = await app.request(
+      `/agents/${AGENT_ID}/crons/${CRON_ID}/runs/${RUN_ID}`,
+      {
+        method: "PATCH",
+        body: JSON.stringify({
+          lastHeartbeatAt: "2026-01-01T08:00:03.000Z",
+        }),
+        headers: {
+          "Content-Type": "application/json",
+          Cookie: `admin_session=${cookie}`,
+        },
+      },
+    );
+    expect(patchRes.status).toBe(200);
+    const patchBody = await patchRes.json();
+    expect(patchBody.run.lastHeartbeatAt).toBe("2026-01-01T08:00:03.000Z");
+
+    const listRes = await app.request(
+      `/agents/${AGENT_ID}/crons/${CRON_ID}/runs`,
+      { headers: { Cookie: `admin_session=${cookie}` } },
+    );
+    expect(listRes.status).toBe(200);
+    const listBody = await listRes.json();
+    expect(listBody.items[0].lastHeartbeatAt).toBe(
+      "2026-01-01T08:00:03.000Z",
+    );
+  });
+
+  it("PATCH /agents/:id/crons/:cronId/runs/:runId clears lastHeartbeatAt when explicitly set to null", async () => {
+    const deps = makeMockDepsWithStatefulRunService();
+    const app = createAdminApp(deps);
+
+    await app.request(`/agents/${AGENT_ID}/crons/${CRON_ID}/runs/${RUN_ID}`, {
+      method: "PATCH",
+      body: JSON.stringify({ lastHeartbeatAt: "2026-01-01T08:00:03.000Z" }),
+      headers: {
+        "Content-Type": "application/json",
+        Cookie: `admin_session=${cookie}`,
+      },
+    });
+    const clearRes = await app.request(
+      `/agents/${AGENT_ID}/crons/${CRON_ID}/runs/${RUN_ID}`,
+      {
+        method: "PATCH",
+        body: JSON.stringify({ lastHeartbeatAt: null }),
+        headers: {
+          "Content-Type": "application/json",
+          Cookie: `admin_session=${cookie}`,
+        },
+      },
+    );
+    expect(clearRes.status).toBe(200);
+    const clearBody = await clearRes.json();
+    expect(clearBody.run.lastHeartbeatAt).toBeNull();
+  });
+
   it("GET /agents/:id/crons/summary response includes lastRun and runCountToday", async () => {
     const deps = makeMockDepsWithRunSummary();
     const app = createAdminApp(deps);
@@ -3377,6 +3439,7 @@ function makeMockDepsWithRunService(opts?: {
     itemType: opts?.itemType ?? null,
     itemId: opts?.itemId ?? null,
     sessionId: null,
+    lastHeartbeatAt: null,
     phaseId: opts?.phaseId ?? null,
     createdAt: new Date("2026-01-01T08:00:00.000Z"),
   };
@@ -3465,6 +3528,7 @@ function makeMockDepsWithStatefulRunService(): AdminDeps {
       itemType: null,
       itemId: null,
       sessionId: null,
+      lastHeartbeatAt: null,
       phaseId: null,
       createdAt: new Date("2026-01-01T08:00:00.000Z"),
       modelBreakdown: [],
@@ -3486,10 +3550,13 @@ function makeMockDepsWithStatefulRunService(): AdminDeps {
         _runId: string,
         _agentId: string,
         _cronId: string,
-        input: { sessionId?: string | null },
+        input: { sessionId?: string | null; lastHeartbeatAt?: Date | null },
       ) => {
         if (input.sessionId !== undefined) {
           state.run = { ...state.run, sessionId: input.sessionId };
+        }
+        if (input.lastHeartbeatAt !== undefined) {
+          state.run = { ...state.run, lastHeartbeatAt: input.lastHeartbeatAt };
         }
         return state.run as never;
       },

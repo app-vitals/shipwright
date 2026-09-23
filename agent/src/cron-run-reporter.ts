@@ -85,14 +85,20 @@ export interface CronRunReporter {
     itemId?: string,
   ): Promise<void>;
   /**
-   * Fire-and-forget mid-run token push. PATCHes only modelBreakdown — no
-   * completedAt/outcome, so it never signals run completion. Safe to call
-   * repeatedly; the admin PATCH handler upserts per [cronRunId, model].
+   * Fire-and-forget mid-run progress push. PATCHes modelBreakdown and
+   * lastHeartbeatAt — no completedAt/outcome, so it never signals run
+   * completion. Safe to call repeatedly; the admin PATCH handler upserts
+   * modelBreakdown per [cronRunId, model] and overwrites lastHeartbeatAt.
+   *
+   * `lastHeartbeatAt` must be sourced from the caller's injected Clock
+   * (`clock.now()`), never `new Date()`/`Date.now()` directly, so it stays
+   * deterministic under a FixedClock in tests (CRH-1.1).
    */
   recordProgress(
     cronId: string,
     runId: string | null,
     modelBreakdown: ModelBreakdownEntry[],
+    lastHeartbeatAt: Date,
   ): Promise<void>;
   /**
    * Fire-and-forget mid-run session-id push. PATCHes only sessionId — no
@@ -261,13 +267,17 @@ export class HttpCronRunReporter implements CronRunReporter {
     cronId: string,
     runId: string | null,
     modelBreakdown: ModelBreakdownEntry[],
+    lastHeartbeatAt: Date,
   ): Promise<void> {
     if (runId === null) return;
 
     const { apiUrl, agentId } = this.opts;
     const url = `${apiUrl}/agents/${agentId}/crons/${cronId}/runs/${runId}`;
 
-    await this.patchRun(url, { modelBreakdown });
+    await this.patchRun(url, {
+      modelBreakdown,
+      lastHeartbeatAt: lastHeartbeatAt.toISOString(),
+    });
   }
 
   async recordSessionId(
@@ -325,6 +335,7 @@ export class NoopCronRunReporter implements CronRunReporter {
     _cronId: string,
     _runId: string | null,
     _modelBreakdown: ModelBreakdownEntry[],
+    _lastHeartbeatAt: Date,
   ): Promise<void> {
     // intentional no-op
   }

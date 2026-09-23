@@ -664,6 +664,86 @@ describeOrSkip("AgentCronRunService (integration)", () => {
     expect(updated.sessionId).toBe("session-should-persist");
   });
 
+  // ─── patch — lastHeartbeatAt (CRH-1.1) ─────────────────────────────────────
+
+  it("patch() round-trips a lastHeartbeatAt field", async () => {
+    const agentId = await createAgent(prisma);
+    const cronId = await createCron(cronJobService, agentId);
+
+    const run = await runService.create(cronId, agentId, {
+      startedAt: new Date("2026-01-15T10:00:00Z"),
+      skipped: false,
+    });
+    expect(run.lastHeartbeatAt).toBeNull();
+
+    const heartbeatAt = new Date("2026-01-15T10:00:05Z");
+    const updated = await runService.patch(run.id, agentId, cronId, {
+      lastHeartbeatAt: heartbeatAt,
+    });
+
+    expect(updated.lastHeartbeatAt).toEqual(heartbeatAt);
+  });
+
+  it("patch() clears lastHeartbeatAt when explicitly set to null", async () => {
+    const agentId = await createAgent(prisma);
+    const cronId = await createCron(cronJobService, agentId);
+
+    const run = await runService.create(cronId, agentId, {
+      startedAt: new Date(),
+      skipped: false,
+    });
+
+    await runService.patch(run.id, agentId, cronId, {
+      lastHeartbeatAt: new Date("2026-01-15T10:00:05Z"),
+    });
+    const cleared = await runService.patch(run.id, agentId, cronId, {
+      lastHeartbeatAt: null,
+    });
+
+    expect(cleared.lastHeartbeatAt).toBeNull();
+  });
+
+  it("patch() leaves lastHeartbeatAt untouched when omitted from the input", async () => {
+    const agentId = await createAgent(prisma);
+    const cronId = await createCron(cronJobService, agentId);
+
+    const run = await runService.create(cronId, agentId, {
+      startedAt: new Date(),
+      skipped: false,
+    });
+    const heartbeatAt = new Date("2026-01-15T10:00:05Z");
+
+    await runService.patch(run.id, agentId, cronId, {
+      lastHeartbeatAt: heartbeatAt,
+    });
+    const updated = await runService.patch(run.id, agentId, cronId, {
+      outcome: "success",
+    });
+
+    expect(updated.lastHeartbeatAt).toEqual(heartbeatAt);
+  });
+
+  it("patch() updates lastHeartbeatAt repeatedly across successive progress pushes (debounced heartbeat simulation)", async () => {
+    const agentId = await createAgent(prisma);
+    const cronId = await createCron(cronJobService, agentId);
+
+    const run = await runService.create(cronId, agentId, {
+      startedAt: new Date("2026-01-15T10:00:00Z"),
+      skipped: false,
+    });
+
+    await runService.patch(run.id, agentId, cronId, {
+      lastHeartbeatAt: new Date("2026-01-15T10:00:05Z"),
+    });
+    const secondPush = await runService.patch(run.id, agentId, cronId, {
+      lastHeartbeatAt: new Date("2026-01-15T10:00:10Z"),
+    });
+
+    expect(secondPush.lastHeartbeatAt).toEqual(
+      new Date("2026-01-15T10:00:10Z"),
+    );
+  });
+
   // ─── listWithRunSummary ─────────────────────────────────────────────────────
 
   it("listWithRunSummary() returns lastRun null when no runs exist", async () => {
