@@ -660,9 +660,9 @@ describe("loop-orchestrator + progress push / partial-usage-on-failure (CSU-3.1)
   });
 });
 
-// ─── DTW-1.3: dev-task-only auto-resume loop ─────────────────────────────────
+// ─── DTW-1.3 / DTR-1.1 / CRT-1.3: same-session auto-resume loop ──────────────
 
-describe("loop-orchestrator + dev-task auto-resume (DTW-1.3)", () => {
+describe("loop-orchestrator + same-session auto-resume (DTW-1.3 / CRT-1.3)", () => {
   const noopWorkQueueReporter: WorkQueueReporter = {
     async reportSnapshot() {},
   };
@@ -966,7 +966,16 @@ describe("loop-orchestrator + dev-task auto-resume (DTW-1.3)", () => {
     expect(secondDispatchKeys[0]).toBe("dev-task:DTW-9.4");
   });
 
-  test("a review dispatch never consults getTaskState and gets an undefined sessionKey — the resume loop is dev-task-only", async () => {
+  test("a review dispatch never consults getTaskState — it gets a PR-phase nonce sessionKey and, with no getPrState wired, never resumes", async () => {
+    // CRT-1.3 updated this test's premise: review/patch/deploy DO get a
+    // sessionKey now (a per-dispatch `{phase}:{itemId}:{uuid}` nonce), so the
+    // old "undefined sessionKey" assertion no longer describes the design.
+    // What still holds — and is the point worth keeping here — is that a PR
+    // item never touches the TASK-side resume deps: ownership for PR phases is
+    // proven via getPrState, and with that dep unwired (as below) the loop has
+    // no way to verify the claim, so it stops after the first attempt rather
+    // than falling back to getTaskState against an id the task store would
+    // never recognize.
     const { runner, sessionKeys } = makeSessionKeyRecordingRunner();
     const { reporter, creates } = makeAttemptRecordingReporter();
     const statusCalls: string[] = [];
@@ -1000,7 +1009,13 @@ describe("loop-orchestrator + dev-task auto-resume (DTW-1.3)", () => {
 
     await loop([job("shipwright-review", true)]);
 
-    expect(sessionKeys).toEqual([undefined]);
+    // One attempt only (no getPrState → no way to prove the claim is still
+    // ours → no resume), handed a review-phase nonce key.
+    expect(sessionKeys).toHaveLength(1);
+    expect(sessionKeys[0]).toMatch(
+      /^review:acme\/x#7:[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/,
+    );
+    // The task-side dep is still never consulted for a PR item.
     expect(statusCalls).toEqual([]);
     expect(creates).toHaveLength(1);
   });
@@ -1485,5 +1500,584 @@ describe("loop-orchestrator + dev-task auto-resume (DTW-1.3)", () => {
     // The renewal is ordered after the ownership gate, so a claim that now
     // belongs to a sibling agent is left to age out on its own schedule.
     expect(heartbeats).toEqual([]);
+  });
+
+  // ─── CRT-1.3: the same resume loop, widened to the PR phases ───────────────
+  //
+  // review/patch/deploy now participate in the auto-resume loop too, but on
+  // their OWN mechanism — deliberately parallel to dev-task's rather than
+  // shared with it:
+  //   - sessionKey is a PER-DISPATCH nonce (`{phase}:{itemId}:{uuid}`), i.e.
+  //     exactly the shape dev-task used before DTR-1.1 dropped its nonce. A
+  //     later, separate dispatch of the same PR therefore starts cold.
+  //   - ownership is proven via getPrState (claimedBy only — a PR has no
+  //     in_progress-equivalent status gate, since every real PR completion
+  //     path already nulls claimedBy) and renewed via heartbeatPr.
+  //   - the key is cleared UNCONDITIONALLY on exit, since nothing downstream
+  //     is ever meant to resume it.
+  // dev-task's DTR-1.1 behavior above is untouched by any of this.
+
+  /** The three PR phases CRT-1.3 widened the resume gate to. */
+  const PR_PHASES = ["review", "patch", "deploy"] as const;
+  type PrPhase = (typeof PR_PHASES)[number];
+
+  /** Maps a PR phase to the child cron job name that enables it. */
+  const PR_PHASE_JOB: Record<PrPhase, string> = {
+    review: "shipwright-review",
+    patch: "shipwright-patch",
+    deploy: "shipwright-deploy",
+  };
+
+  /**
+   * Matches the per-dispatch nonce sessionKey CRT-1.3 mints for a PR phase:
+   * `{phase}:{itemId}:{randomUUID()}`. Asserted by pattern rather than exact
+   * equality because the nonce is, by design, unpredictable.
+   */
+  function nonceKeyPattern(phase: string, itemId: string): RegExp {
+    const literalItemId = itemId.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    return new RegExp(
+      `^${phase}:${literalItemId}:` +
+        "[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+    );
+  }
+
+  /**
+   * Scripted getPrState — the PR-item analog of makeStateStub above, one entry
+   * per expected poll. `"mine"` is shorthand for "still claimed by
+   * OWNER_AGENT_ID" (the common case); pass an object to model a release
+   * (`claimedBy: null`) or a reap-then-reclaim by a sibling agent; `null`
+   * models a PR record that's gone. There is deliberately no status field —
+   * ownership is the entire gate for a PR item.
+   */
+  function makePrStateStub(
+    states: Array<"mine" | null | { claimedBy: string | null }>,
+  ): {
+    getPrState: (prId: string) => Promise<{ claimedBy: string | null } | null>;
+    calls: string[];
+  } {
+    const calls: string[] = [];
+    let idx = 0;
+    return {
+      calls,
+      getPrState: async (prId: string) => {
+        calls.push(prId);
+        const entry = states[idx] ?? null;
+        idx += 1;
+        if (entry === null) return null;
+        return entry === "mine" ? { claimedBy: OWNER_AGENT_ID } : entry;
+      },
+    };
+  }
+
+  /** The PullRequest DB record id claimPr hands back for `prId`. */
+  function recordIdFor(prId: string): string {
+    return `clx-${prId.replace(/\W/g, "")}`;
+  }
+
+  /**
+   * Builds an orchestrator wired to dispatch exactly ONE PR candidate in the
+   * given phase, then drain dry.
+   *
+   * The record id claimPr returns is deliberately NOT equal to the
+   * human-readable `org/repo#123` itemId, so a test can prove the resume gate
+   * calls getPrState/heartbeatPr with the PullRequest DB record's CUID (what
+   * GET/POST /prs/{id} expects) rather than the display id those routes would
+   * 404 on. getTaskState throws for the same reason: a PR item must never
+   * reach the task-side resume deps.
+   */
+  function makePrPhaseLoop(opts: {
+    phase: PrPhase;
+    prId: string;
+    runner: (
+      message: string,
+      onProgress?: ProgressCallback,
+      sessionKey?: string,
+    ) => Promise<ClaudeRunResult>;
+    reporter: CronRunReporter;
+    getPrState?: (prId: string) => Promise<{ claimedBy: string | null } | null>;
+    heartbeatPr?: (prId: string) => Promise<void>;
+    clearSessionKey?: (key: string) => Promise<void>;
+    /** Models SHIPWRIGHT_AGENT_ID being unset (the fail-open gate). */
+    noAgentId?: boolean;
+  }): (jobs: CronJobLike[]) => Promise<void> {
+    const recordId = recordIdFor(opts.prId);
+    const commitSha = `${opts.prId}-sha`;
+    let consumed = false;
+    const candidates = async (): Promise<WorkPrCandidate[]> =>
+      consumed
+        ? []
+        : [
+            {
+              id: opts.prId,
+              age: "2026-01-01T00:00:00Z",
+              phase: opts.phase,
+              commitSha,
+            },
+          ];
+    const noCandidates = async (): Promise<WorkPrCandidate[]> => [];
+
+    return createLoopOrchestrator({
+      getDevTaskCandidates: async () => [],
+      getReviewCandidates: opts.phase === "review" ? candidates : noCandidates,
+      getPatchCandidates: opts.phase === "patch" ? candidates : noCandidates,
+      getDeployCandidates: opts.phase === "deploy" ? candidates : noCandidates,
+      claimTask: async () => true,
+      claimPr: async () => {
+        consumed = true;
+        return { id: recordId, commitSha };
+      },
+      recordSkip: async () => {},
+      resetSkip: async () => {},
+      getTaskState: async () => {
+        throw new Error("getTaskState must never be consulted for a PR item");
+      },
+      agentId: opts.noAgentId ? undefined : OWNER_AGENT_ID,
+      getPrState: opts.getPrState,
+      heartbeatPr: opts.heartbeatPr,
+      clearSessionKey: opts.clearSessionKey,
+      runner: opts.runner,
+      cronRunReporter: opts.reporter,
+      workQueueReporter: noopWorkQueueReporter,
+      loopCronId: "shipwright-loop",
+      clock: FixedClock(new Date("2026-07-20T00:00:00Z")),
+    });
+  }
+
+  for (const phase of PR_PHASES) {
+    const prId = `acme/${phase}#7`;
+    const recordId = recordIdFor(prId);
+
+    test(`a ${phase} dispatch whose PR is still claimed by this agent auto-resumes the SAME nonce sessionKey, capped at 3 resumes (4 runner calls)`, async () => {
+      const { runner, sessionKeys } = makeSessionKeyRecordingRunner();
+      const { reporter, creates, completes } = makeAttemptRecordingReporter();
+      // Three polls is exactly what the 3-resume cap allows; unlike dev-task
+      // there is no fourth, finally-block poll (the clear is unconditional).
+      const { getPrState, calls } = makePrStateStub(["mine", "mine", "mine"]);
+      const heartbeats: string[] = [];
+      const cleared: string[] = [];
+
+      const loop = makePrPhaseLoop({
+        phase,
+        prId,
+        runner,
+        reporter,
+        getPrState,
+        heartbeatPr: async (id) => {
+          heartbeats.push(id);
+        },
+        clearSessionKey: async (key) => {
+          cleared.push(key);
+        },
+      });
+
+      await loop([job(PR_PHASE_JOB[phase], true)]);
+
+      // 1 initial + 3 resumes, every call reusing the one key that makes the
+      // underlying runner build `-r <sessionId>` on the resumes...
+      expect(sessionKeys).toHaveLength(4);
+      expect(new Set(sessionKeys).size).toBe(1);
+      // ...and that key is a per-dispatch nonce, not dev-task's stable form.
+      expect(sessionKeys[0]).toMatch(nonceKeyPattern(phase, prId));
+      // Both PR-side deps are called with the PullRequest DB record id.
+      expect(calls).toEqual([recordId, recordId, recordId]);
+      expect(heartbeats).toEqual([recordId, recordId, recordId]);
+      // One AgentCronRun row per attempt, all tagged with the display itemId.
+      expect(creates).toHaveLength(4);
+      expect(completes).toHaveLength(4);
+      expect(completes.every((c) => c.itemId === prId)).toBe(true);
+      expect(completes.every((c) => c.outcome === "completed")).toBe(true);
+      // Unconditional clear on exit — no cross-dispatch persistence.
+      expect(cleared).toEqual([sessionKeys[0] as string]);
+    });
+
+    test(`a ${phase} dispatch whose PR claim was released is not resumed`, async () => {
+      const { runner, sessionKeys } = makeSessionKeyRecordingRunner();
+      const { reporter, creates, completes } = makeAttemptRecordingReporter();
+      // The normal clean-completion shape: every real PR completion path nulls
+      // claimedBy, which is precisely why ownership alone is a sufficient gate.
+      const { getPrState, calls } = makePrStateStub([{ claimedBy: null }]);
+      const heartbeats: string[] = [];
+
+      const loop = makePrPhaseLoop({
+        phase,
+        prId,
+        runner,
+        reporter,
+        getPrState,
+        heartbeatPr: async (id) => {
+          heartbeats.push(id);
+        },
+      });
+
+      await loop([job(PR_PHASE_JOB[phase], true)]);
+
+      expect(sessionKeys).toHaveLength(1);
+      expect(creates).toHaveLength(1);
+      expect(completes).toEqual([{ itemId: prId, outcome: "completed" }]);
+      expect(calls).toEqual([recordId]);
+      // Never heartbeat a claim the gate just rejected.
+      expect(heartbeats).toEqual([]);
+    });
+
+    test(`a ${phase} dispatch whose PR was reaped and re-claimed by ANOTHER agent is not resumed`, async () => {
+      const { runner, sessionKeys } = makeSessionKeyRecordingRunner();
+      const { reporter, creates } = makeAttemptRecordingReporter();
+      const { getPrState } = makePrStateStub([
+        { claimedBy: "agent-someone-else" },
+      ]);
+      const heartbeats: string[] = [];
+
+      const loop = makePrPhaseLoop({
+        phase,
+        prId,
+        runner,
+        reporter,
+        getPrState,
+        heartbeatPr: async (id) => {
+          heartbeats.push(id);
+        },
+      });
+
+      await loop([job(PR_PHASE_JOB[phase], true)]);
+
+      // Resuming here would put two sessions on one PR/branch.
+      expect(sessionKeys).toHaveLength(1);
+      expect(creates).toHaveLength(1);
+      expect(heartbeats).toEqual([]);
+    });
+  }
+
+  test("a PR-phase resume renews the claim FIRST — heartbeatPr is ordered before every resume attempt", async () => {
+    const events: string[] = [];
+    const runner = async (): Promise<ClaudeRunResult> => {
+      events.push("run");
+      return { result: "done" };
+    };
+    const { reporter, creates } = makeAttemptRecordingReporter();
+    const { getPrState } = makePrStateStub(["mine", "mine", "mine"]);
+    const prId = "acme/x#21";
+
+    const loop = makePrPhaseLoop({
+      phase: "patch",
+      prId,
+      runner,
+      reporter,
+      getPrState,
+      heartbeatPr: async (id) => {
+        events.push(`heartbeat:${id}`);
+      },
+    });
+
+    await loop([job("shipwright-patch", true)]);
+
+    // POST /prs/claim set heartbeatAt itself, so the initial attempt needs no
+    // renewal; every resume is preceded by exactly one.
+    const recordId = recordIdFor(prId);
+    expect(events).toEqual([
+      "run",
+      `heartbeat:${recordId}`,
+      "run",
+      `heartbeat:${recordId}`,
+      "run",
+      `heartbeat:${recordId}`,
+      "run",
+    ]);
+    expect(creates).toHaveLength(4);
+  });
+
+  test("two separate dispatches of the same PR get DIFFERENT nonce keys — PR phases have no cross-dispatch persistence (unlike dev-task's DTR-1.1)", async () => {
+    // The mirror image of the dev-task cross-dispatch test above: dev-task's
+    // stable key deliberately survives a dispatch so the next one resumes it,
+    // while a PR phase's nonce deliberately does not — a reclaim, or simply
+    // this dispatch ending, always means a cold start next time.
+    const { runner, sessionKeys } = makeSessionKeyRecordingRunner();
+    const { reporter } = makeAttemptRecordingReporter();
+    const cleared: string[] = [];
+    // A fresh commitSha on the second tick, so CBD-2.2's redispatch cooldown
+    // (keyed on id+phase+commitSha) doesn't suppress the second dispatch.
+    let commitSha = "sha-1";
+    let consumed = false;
+
+    const loop = createLoopOrchestrator({
+      getDevTaskCandidates: async () => [],
+      getReviewCandidates: async () => [],
+      getPatchCandidates: async () =>
+        consumed
+          ? []
+          : [
+              {
+                id: "acme/x#22",
+                age: "2026-01-01T00:00:00Z",
+                phase: "patch" as const,
+                commitSha,
+              },
+            ],
+      getDeployCandidates: async () => [],
+      claimTask: async () => true,
+      claimPr: async () => {
+        consumed = true;
+        return { id: "clx-22", commitSha };
+      },
+      recordSkip: async () => {},
+      resetSkip: async () => {},
+      getTaskState: async () => null,
+      agentId: OWNER_AGENT_ID,
+      // Released after the first attempt, so each dispatch is a single attempt.
+      getPrState: async () => ({ claimedBy: null }),
+      clearSessionKey: async (key) => {
+        cleared.push(key);
+      },
+      runner,
+      cronRunReporter: reporter,
+      workQueueReporter: noopWorkQueueReporter,
+      loopCronId: "shipwright-loop",
+      clock: FixedClock(new Date("2026-07-20T00:00:00Z")),
+    });
+
+    await loop([job("shipwright-patch", true)]);
+    consumed = false;
+    commitSha = "sha-2";
+    await loop([job("shipwright-patch", true)]);
+
+    expect(sessionKeys).toHaveLength(2);
+    expect(sessionKeys[0]).toMatch(nonceKeyPattern("patch", "acme/x#22"));
+    expect(sessionKeys[1]).toMatch(nonceKeyPattern("patch", "acme/x#22"));
+    // Different nonces → the second dispatch cannot resume the first.
+    expect(sessionKeys[1]).not.toBe(sessionKeys[0]);
+    // Each dispatch cleared its own key on the way out.
+    expect(cleared).toEqual(sessionKeys as string[]);
+  });
+
+  test("a PR record that has vanished (getPrState → null) is not resumed", async () => {
+    const { runner, sessionKeys } = makeSessionKeyRecordingRunner();
+    const { reporter, completes } = makeAttemptRecordingReporter();
+    const { getPrState } = makePrStateStub([null]);
+
+    const loop = makePrPhaseLoop({
+      phase: "deploy",
+      prId: "acme/x#23",
+      runner,
+      reporter,
+      getPrState,
+    });
+
+    await loop([job("shipwright-deploy", true)]);
+
+    expect(sessionKeys).toHaveLength(1);
+    expect(completes).toEqual([{ itemId: "acme/x#23", outcome: "completed" }]);
+  });
+
+  test("a getPrState failure stops the resume loop but leaves the dispatch itself successful", async () => {
+    const { runner, sessionKeys } = makeSessionKeyRecordingRunner();
+    const { reporter, creates, completes } = makeAttemptRecordingReporter();
+    const cleared: string[] = [];
+
+    const loop = makePrPhaseLoop({
+      phase: "review",
+      prId: "acme/x#24",
+      runner,
+      reporter,
+      getPrState: async () => {
+        throw new Error("task-store GET /prs/clx-24 → 503");
+      },
+      clearSessionKey: async (key) => {
+        cleared.push(key);
+      },
+    });
+
+    await loop([job("shipwright-review", true)]);
+
+    // Resuming is an optimization — a task-store blip must not fail a dispatch.
+    expect(sessionKeys).toHaveLength(1);
+    expect(creates).toHaveLength(1);
+    expect(completes).toEqual([{ itemId: "acme/x#24", outcome: "completed" }]);
+    expect(cleared).toHaveLength(1);
+  });
+
+  test("a heartbeatPr failure stops the resume loop but leaves the dispatch itself successful", async () => {
+    const { runner, sessionKeys } = makeSessionKeyRecordingRunner();
+    const { reporter, completes } = makeAttemptRecordingReporter();
+    const { getPrState } = makePrStateStub(["mine", "mine"]);
+
+    const loop = makePrPhaseLoop({
+      phase: "patch",
+      prId: "acme/x#25",
+      runner,
+      reporter,
+      getPrState,
+      heartbeatPr: async () => {
+        throw new Error("task-store POST /prs/clx-25/heartbeat → 503");
+      },
+    });
+
+    await loop([job("shipwright-patch", true)]);
+
+    expect(sessionKeys).toHaveLength(1);
+    expect(completes).toEqual([{ itemId: "acme/x#25", outcome: "completed" }]);
+  });
+
+  test("with heartbeatPr unwired the PR-phase loop still resumes — identical to the pre-CRT-1.2 no-renewal behavior", async () => {
+    const { runner, sessionKeys } = makeSessionKeyRecordingRunner();
+    const { reporter } = makeAttemptRecordingReporter();
+    const { getPrState } = makePrStateStub(["mine", { claimedBy: null }]);
+
+    const loop = makePrPhaseLoop({
+      phase: "deploy",
+      prId: "acme/x#26",
+      runner,
+      reporter,
+      getPrState,
+    });
+
+    await loop([job("shipwright-deploy", true)]);
+
+    // 1 initial + 1 resume, then the released claim stops the loop.
+    expect(sessionKeys).toHaveLength(2);
+    expect(new Set(sessionKeys).size).toBe(1);
+  });
+
+  test("with no agentId configured the PR-phase gate fails open — resuming still works", async () => {
+    // Mirrors the dev-task gate's stance: an agent with no SHIPWRIGHT_AGENT_ID
+    // has nothing to compare claimedBy against, so it must behave as it did
+    // before the ownership gate existed rather than silently never resuming.
+    const { runner, sessionKeys } = makeSessionKeyRecordingRunner();
+    const { reporter } = makeAttemptRecordingReporter();
+    const { getPrState } = makePrStateStub([
+      { claimedBy: "agent-someone-else" },
+      null,
+    ]);
+
+    const loop = makePrPhaseLoop({
+      phase: "review",
+      prId: "acme/x#27",
+      runner,
+      reporter,
+      getPrState,
+      noAgentId: true,
+    });
+
+    await loop([job("shipwright-review", true)]);
+
+    // 1 initial + 1 resume, then the vanished record stops the loop.
+    expect(sessionKeys).toHaveLength(2);
+  });
+
+  test("a thrown PR-phase attempt never resumes and still clears its nonce key", async () => {
+    // AC4: crash/timeout handling is unchanged — the throw propagates to the
+    // drain loop's per-item isolation (CBD-2.3) and the reaper fallback, and
+    // the resume loop is never entered. The nonce is still cleared, since
+    // nothing downstream is ever meant to resume it.
+    const { reporter, completes } = makeAttemptRecordingReporter();
+    const cleared: string[] = [];
+    const prStateCalls: string[] = [];
+    const runner = async (): Promise<ClaudeRunResult> => {
+      throw new Error("runner boom");
+    };
+
+    const loop = makePrPhaseLoop({
+      phase: "patch",
+      prId: "acme/x#28",
+      runner,
+      reporter,
+      getPrState: async (id) => {
+        prStateCalls.push(id);
+        return { claimedBy: OWNER_AGENT_ID };
+      },
+      clearSessionKey: async (key) => {
+        cleared.push(key);
+      },
+    });
+
+    await loop([job("shipwright-patch", true)]);
+
+    expect(completes).toEqual([{ itemId: "acme/x#28", outcome: "failed" }]);
+    // A failed attempt is never followed by an ownership poll or a resume.
+    expect(prStateCalls).toEqual([]);
+    expect(cleared).toHaveLength(1);
+    expect(cleared[0]).toMatch(nonceKeyPattern("patch", "acme/x#28"));
+  });
+
+  test("a clearSessionKey failure on a PR phase never masks the dispatch outcome", async () => {
+    const { runner, sessionKeys } = makeSessionKeyRecordingRunner();
+    const { reporter, completes } = makeAttemptRecordingReporter();
+    const cleared: string[] = [];
+    const { getPrState } = makePrStateStub([{ claimedBy: null }]);
+
+    const loop = makePrPhaseLoop({
+      phase: "review",
+      prId: "acme/x#29",
+      runner,
+      reporter,
+      getPrState,
+      clearSessionKey: async (key) => {
+        cleared.push(key);
+        throw new Error("session store unwritable");
+      },
+    });
+
+    await loop([job("shipwright-review", true)]);
+
+    expect(cleared).toHaveLength(1);
+    expect(sessionKeys).toHaveLength(1);
+    expect(completes).toEqual([{ itemId: "acme/x#29", outcome: "completed" }]);
+  });
+
+  test("widening the gate leaves dev-task's key format and clear condition untouched — one tick, both mechanisms side by side", async () => {
+    // AC1: the same drain dispatches a dev-task item and a PR item. The
+    // dev-task key stays the stable, nonce-free `dev-task:{taskId}` form and
+    // is cleared only because its task is confirmed terminal (pr_open); the
+    // PR key carries a nonce and is cleared unconditionally.
+    const { runner, sessionKeys } = makeSessionKeyRecordingRunner();
+    const { reporter } = makeAttemptRecordingReporter();
+    const cleared: string[] = [];
+    let taskConsumed = false;
+    let prConsumed = false;
+
+    const loop = createLoopOrchestrator({
+      getDevTaskCandidates: async () =>
+        taskConsumed ? [] : [task("CRT-9.1", "2026-01-01T00:00:00Z")],
+      getReviewCandidates: async () => [],
+      getPatchCandidates: async () =>
+        prConsumed ? [] : [pr("acme/x#30", "2026-01-02T00:00:00Z", "patch")],
+      getDeployCandidates: async () => [],
+      claimTask: async () => {
+        taskConsumed = true;
+        return true;
+      },
+      claimPr: async (p) => {
+        prConsumed = true;
+        return { id: "clx-30", commitSha: p.commitSha };
+      },
+      recordSkip: async () => {},
+      resetSkip: async () => {},
+      // Terminal right away: the dev-task loop stops resuming AND its finally
+      // block clears the stable key.
+      getTaskState: async () => ({
+        status: "pr_open",
+        claimedBy: OWNER_AGENT_ID,
+      }),
+      // Released right away: the PR loop stops resuming after one attempt.
+      getPrState: async () => ({ claimedBy: null }),
+      agentId: OWNER_AGENT_ID,
+      clearSessionKey: async (key) => {
+        cleared.push(key);
+      },
+      runner,
+      cronRunReporter: reporter,
+      workQueueReporter: noopWorkQueueReporter,
+      loopCronId: "shipwright-loop",
+      clock: FixedClock(new Date("2026-07-20T00:00:00Z")),
+    });
+
+    await loop([
+      job("shipwright-dev-task", true),
+      job("shipwright-patch", true),
+    ]);
+
+    expect(sessionKeys).toHaveLength(2);
+    // The older task item wins the FIFO, so it's dispatched first.
+    expect(sessionKeys[0]).toBe("dev-task:CRT-9.1");
+    expect(sessionKeys[1]).toMatch(nonceKeyPattern("patch", "acme/x#30"));
+    expect(cleared).toEqual([sessionKeys[0], sessionKeys[1]] as string[]);
   });
 });
