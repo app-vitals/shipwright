@@ -995,7 +995,7 @@ describe("admin API — cron jobs", () => {
     expect(res.status).toBe(403);
   });
 
-  it("PATCH /agents/:id/crons/:cronId on a system cron with an orthogonal-field-only update returns 403", async () => {
+  it("PATCH /agents/:id/crons/:cronId on a system cron with an enabled-only update returns 200", async () => {
     const base = makeMockDeps();
     const deps: AdminDeps = {
       ...base,
@@ -1008,6 +1008,32 @@ describe("admin API — cron jobs", () => {
     const res = await app.request(`/agents/${AGENT_ID}/crons/${CRON_ID}`, {
       method: "PATCH",
       body: JSON.stringify({ enabled: false }),
+      headers: {
+        "Content-Type": "application/json",
+        Cookie: `admin_session=${cookie}`,
+      },
+    });
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.cron.enabled).toBe(false);
+  });
+
+  it("PATCH /agents/:id/crons/:cronId on a system cron with enabled+preCheck returns 403", async () => {
+    const base = makeMockDeps();
+    const deps: AdminDeps = {
+      ...base,
+      agentCronJobService: {
+        ...base.agentCronJobService,
+        get: async () => ({ ...MOCK_CRON, system: true }),
+      },
+    };
+    const app = createAdminApp(deps);
+    const res = await app.request(`/agents/${AGENT_ID}/crons/${CRON_ID}`, {
+      method: "PATCH",
+      body: JSON.stringify({
+        enabled: true,
+        preCheck: "shipwright:check-dev-task.ts",
+      }),
       headers: {
         "Content-Type": "application/json",
         Cookie: `admin_session=${cookie}`,

@@ -664,7 +664,7 @@ export interface paths {
         head?: never;
         /**
          * Update a cron job
-         * @description Updates a cron job. `schedule` and `prompt` must be provided together for a content update; `enabled` and `preCheck` are orthogonal and may be sent alone or combined with any other field. At least one field must be present — an empty body returns 400. System crons (`system: true`) cannot be updated and return 403.
+         * @description Updates a cron job. `schedule` and `prompt` must be provided together for a content update; `enabled` and `preCheck` are orthogonal and may be sent alone or combined with any other field. At least one field must be present — an empty body returns 400. System crons (`system: true`) reject `schedule`, `prompt`, and/or `preCheck` changes with 403; an enabled-only body is allowed and toggles the cron via the same path used for non-system crons.
          */
         patch: {
             parameters: {
