@@ -1000,3 +1000,55 @@ describe("dev-task.md Step 8 — scoped lint wiring (LSC-1.2)", () => {
     );
   });
 });
+
+describe("dev-task.md Step 0b — lintScoped producer wiring (LSC-1.2)", () => {
+  const storeAndCacheSection = () => {
+    const anchorIdx = content.indexOf("4. **Store and cache.**");
+    expect(anchorIdx).toBeGreaterThan(-1);
+    const nextSectionIdx = content.indexOf("## Step 2: Mark In-Progress");
+    expect(nextSectionIdx).toBeGreaterThan(anchorIdx);
+    return content.slice(anchorIdx, nextSectionIdx);
+  };
+
+  it("lists lintScoped among the fields written to the toolchain cache", () => {
+    const section = storeAndCacheSection();
+    expect(section).toContain("**lintScoped**");
+  });
+
+  it("points at toolchain-patterns.md's Scoped Lint Detection rules", () => {
+    const section = storeAndCacheSection();
+    expect(section).toContain("references/toolchain-patterns.md");
+    expect(section).toContain("Scoped Lint Detection");
+  });
+
+  it("enumerates all four scoped-lint priority signals and their commands", () => {
+    const section = storeAndCacheSection();
+    expect(section).toContain("turbo.json");
+    expect(section).toContain("turbo lint --filter=...[{base}...{head}]");
+    expect(section).toContain("nx.json");
+    expect(section).toContain("nx affected --target=lint --base={base}");
+    expect(section).toContain("pnpm-workspace.yaml");
+    expect(section).toContain('pnpm --filter "...[{base}]" lint');
+    expect(section).toContain("eslint {changed files}");
+  });
+
+  it("instructs storing the template with placeholders unsubstituted for the Step 8 consumer", () => {
+    const section = storeAndCacheSection();
+    expect(section).toMatch(/unsubstituted/i);
+    expect(section).toMatch(/\{changed files\}/);
+    expect(section).toMatch(/Build & Lint|Step 8/);
+  });
+
+  it("instructs omitting lintScoped entirely rather than writing null when no scoped command exists", () => {
+    const section = storeAndCacheSection();
+    expect(section).toMatch(/omit `lintScoped` from the cache entirely/i);
+    expect(section).toMatch(/never write `null`/i);
+  });
+
+  it("keeps the existing unscoped lint cache field alongside lintScoped", () => {
+    const section = storeAndCacheSection();
+    expect(section).toContain("**lint**");
+    expect(section).toContain("**typecheck**");
+    expect(section).toContain("**build**");
+  });
+});

@@ -233,6 +233,13 @@ Auto-detect the project toolchain (run once, reuse throughout), checking the cro
    - **test**: Fast default test command for TDD cycles (e.g., `pnpm test`, `cargo test`, `go test ./...`, `pytest`)
    - **tests**: Optional object mapping layer names to commands when the project has distinct test layers (e.g., `{"unit": "pytest tests/unit", "integration": "pytest tests/integration", "e2e": "npx playwright test"}`). Keys are free-form — use whatever the project calls its layers. Omit when only one test command exists.
    - **lint**: Lint command (e.g., `pnpm lint`, `cargo clippy`, `golangci-lint run`, `ruff check`)
+   - **lintScoped**: Optional diff-scoped lint command template, detected per `references/toolchain-patterns.md`'s "Scoped Lint Detection" priority table — first match wins, scanning the project root:
+     1. `turbo.json` present (Turborepo) → `turbo lint --filter=...[{base}...{head}]`
+     2. `nx.json` present (Nx) → `nx affected --target=lint --base={base}`
+     3. `pnpm-workspace.yaml` present (pnpm workspaces) → `pnpm --filter "...[{base}]" lint`
+     4. No monorepo tool detected, but an eslint config exists → `eslint {changed files}`
+
+     Store the template with its `{base}`/`{head}`/`{changed files}` placeholders **unsubstituted** — the consumer (Step 8's Build & Lint) resolves them against its own diff refs at run time. When none of these signals produce a usable command (e.g. a non-Node ecosystem with no equivalent scoped-lint tool), **omit `lintScoped` from the cache entirely — never write `null`.**
    - **typecheck**: Type check command if applicable (e.g., `pnpm -r check`, `tsc --noEmit`)
    - **build**: Build command (e.g., `pnpm build`, `cargo build`, `go build ./...`)
 
