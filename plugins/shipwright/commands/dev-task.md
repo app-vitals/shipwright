@@ -778,6 +778,21 @@ Do NOT silently skip this check. Coverage must be measured and reported even if 
 
 ### Build & Lint
 
+**Prefer scoped lint.** Check the toolchain cache read in Step 0/0b (`state/toolchain-cache/{repo-slug}.json`) for a `lintScoped` field (see `references/toolchain-patterns.md`'s "Caching Across Runs" and "Scoped Lint Detection" sections).
+
+- **If `lintScoped` is present**, run it in place of the unscoped lint command, substituting its `{base}`/`{head}` placeholders with `main`/`HEAD` — the same base/head pair already used for `git diff main...HEAD` in Step 6 (Simplify), Step 6.5 (Spec Compliance Check), and Step 7 (Requirements Verification). This reuses that existing diffing convention; no new diff-computation logic is introduced here.
+- **If `lintScoped` is absent** from the cache (omitted, not `null`), fall back unchanged to the existing unscoped `{lint}` (or `{validate}`) command from Step 0 — run it exactly as before.
+
+**Report the mode that ran.** In the Pre-Ship Checks output, note whether lint ran scoped or full so a human reviewing the run can tell at a glance, e.g.:
+
+```
+Lint: scoped (turbo lint --filter=...[main...HEAD]) — PASS
+```
+or
+```
+Lint: full ({lint command}) — PASS
+```
+
 **Pause point (conditional):** Only if a check fails and cannot be auto-fixed, stop and let the user resolve.
 
 ## Step 8.5: Auto-Refresh Docs

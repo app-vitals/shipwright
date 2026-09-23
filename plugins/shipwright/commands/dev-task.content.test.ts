@@ -943,3 +943,54 @@ describe("dev-task.md — subagent dispatch is foreground, not background (ABD-1
     expect(section).toContain("run_in_background: false");
   });
 });
+
+describe("dev-task.md Step 8 — scoped lint wiring (LSC-1.2)", () => {
+  const buildAndLintSection = () => {
+    const anchorIdx = content.indexOf("### Build & Lint");
+    expect(anchorIdx).toBeGreaterThan(-1);
+    const nextSectionIdx = content.indexOf("## Step 8.5: Auto-Refresh Docs");
+    expect(nextSectionIdx).toBeGreaterThan(anchorIdx);
+    return content.slice(anchorIdx, nextSectionIdx);
+  };
+
+  it("references the lintScoped cache field from the Step 0/0b toolchain cache", () => {
+    const section = buildAndLintSection();
+    expect(section).toContain("lintScoped");
+    expect(section).toMatch(/Step 0\/0b|Step 0b/);
+  });
+
+  it("documents running lintScoped in place of the unscoped lint command when present", () => {
+    const section = buildAndLintSection();
+    expect(section).toMatch(/lintScoped/);
+    expect(section).toMatch(/in place of|instead of/i);
+  });
+
+  it("documents falling back to the existing unscoped lint command unchanged when lintScoped is absent", () => {
+    const section = buildAndLintSection();
+    expect(section).toMatch(/absent|not (?:present|populated)|omitted/i);
+    expect(section).toMatch(/fall ?back/i);
+    expect(section).toMatch(/unchanged/i);
+  });
+
+  it("resolves {base}/{head} to the existing main...HEAD diffing convention without new diff-computation logic", () => {
+    const section = buildAndLintSection();
+    expect(section).toContain("{base}");
+    expect(section).toContain("{head}");
+    expect(section).toContain("main");
+    expect(section).toMatch(/main\.\.\.HEAD/);
+  });
+
+  it("documents reporting which lint mode (scoped vs. full) ran in the Pre-Ship Checks output", () => {
+    const section = buildAndLintSection();
+    expect(section).toMatch(/scoped/i);
+    expect(section).toMatch(/full/i);
+    expect(section).toMatch(/report/i);
+  });
+
+  it("keeps the existing conditional pause-point guidance intact", () => {
+    const section = buildAndLintSection();
+    expect(section).toContain(
+      "**Pause point (conditional):** Only if a check fails and cannot be auto-fixed, stop and let the user resolve.",
+    );
+  });
+});
