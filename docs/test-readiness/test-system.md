@@ -333,7 +333,7 @@ a guideline.
   interface (`agent/src/clock.ts`, `admin/src/clock.ts`, `mcp-server/src/clock.ts`,
   `task-store`'s equivalent) for deterministic time-dependent tests (claim-TTL logic,
   stale-claim reaping, session retention).
-- **Recorded-fixture loader** — one shared cassette-loading utility (`loadFixture(name)`) for
+- **Recorded-fixture loader** — one shared recorded-fixture-double-loading utility (`loadFixture(name)`) for
   the JSON fixture directories listed in the Local execution architecture table (GitHub, Slack,
   K8s, Google, Okta, Groq/ElevenLabs, Web Push).
 - **Injected-exec double** — one shared interface + fake implementation for `gh`/`git`/`helm`/
