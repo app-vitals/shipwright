@@ -387,7 +387,8 @@ export async function handleCronRequest(
     const { modelBreakdown } = buildTokenPayload(undefined, progressModelUsage);
     if (!modelBreakdown || modelBreakdown.length === 0) return;
 
-    const nowMs = clock.now().getTime();
+    const now = clock.now();
+    const nowMs = now.getTime();
     if (
       lastProgressPushAt !== undefined &&
       nowMs - lastProgressPushAt < PROGRESS_PUSH_DEBOUNCE_MS
@@ -397,7 +398,7 @@ export async function handleCronRequest(
     lastProgressPushAt = nowMs;
 
     cronRunReporter
-      ?.recordProgress(jobId, runId, modelBreakdown)
+      ?.recordProgress(jobId, runId, modelBreakdown, now)
       .catch((err) => {
         console.warn(
           `[agent:cron] recordProgress failed for run ${runId}: ${String(err)} — swallowing`,

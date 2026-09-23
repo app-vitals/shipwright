@@ -432,9 +432,14 @@ describe("loop-orchestrator + progress push / partial-usage-on-failure (CSU-3.1)
 
     const trackedReporter: CronRunReporter = {
       ...reporter,
-      async recordProgress(cronId, runId, modelBreakdown) {
+      async recordProgress(cronId, runId, modelBreakdown, lastHeartbeatAt) {
         callOrder.push("recordProgress");
-        await reporter.recordProgress(cronId, runId, modelBreakdown);
+        await reporter.recordProgress(
+          cronId,
+          runId,
+          modelBreakdown,
+          lastHeartbeatAt,
+        );
       },
       async completeRun(
         cronId,

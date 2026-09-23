@@ -831,7 +831,8 @@ export function createLoopOrchestrator(
         const { modelBreakdown } = buildTokenPayload(undefined, modelUsage);
         if (!modelBreakdown || modelBreakdown.length === 0) return;
 
-        const nowMs = clock.now().getTime();
+        const now = clock.now();
+        const nowMs = now.getTime();
         if (
           lastProgressPushAt !== undefined &&
           nowMs - lastProgressPushAt < PROGRESS_PUSH_DEBOUNCE_MS
@@ -841,7 +842,7 @@ export function createLoopOrchestrator(
         lastProgressPushAt = nowMs;
 
         cronRunReporter
-          .recordProgress(loopCronId, runId, modelBreakdown)
+          .recordProgress(loopCronId, runId, modelBreakdown, now)
           .catch((err) => {
             console.warn(
               `[loop-orchestrator] recordProgress failed for run ${runId}: ${String(err)} — swallowing`,

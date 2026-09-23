@@ -520,7 +520,7 @@ const patchCronRoute = createRoute({
   path: "/agents/{id}/crons/{cronId}",
   summary: "Update a cron job",
   description:
-    "Updates a cron job. `schedule` and `prompt` must be provided together for a content update; `enabled` and `preCheck` are orthogonal and may be sent alone or combined with any other field. At least one field must be present — an empty body returns 400. System crons (`system: true`) cannot be updated and return 403.",
+    "Updates a cron job. `schedule` and `prompt` must be provided together for a content update; `enabled` and `preCheck` are orthogonal and may be sent alone or combined with any other field. At least one field must be present — an empty body returns 400. System crons (`system: true`) reject `schedule`, `prompt`, and/or `preCheck` changes with 403; an enabled-only body is allowed and toggles the cron via the same path used for non-system crons.",
   request: {
     params: CronIdParamSchema,
     body: {
@@ -1233,6 +1233,8 @@ export function createAdminApp(deps: AdminDeps): OpenAPIHono<AdminAuthEnv> {
   // schedule and prompt must be provided together (content update).
   // enabled and preCheck are orthogonal — each may be sent alone or combined
   // with a content update or with each other. Empty body returns 400.
+  // System crons (system: true) reject schedule/prompt/preCheck changes with
+  // 403, but an enabled-only body is allowed through to setEnabled().
   // These are business-logic checks (not schema-level), so they remain manual.
   app.openapi(patchCronRoute, async (c) => {
     const { id: agentId, cronId } = c.req.valid("param");
@@ -1255,8 +1257,10 @@ export function createAdminApp(deps: AdminDeps): OpenAPIHono<AdminAuthEnv> {
     }
 
     const existing = await agentCronJobService.get(agentId, cronId);
-    if (existing.system) {
-      throw new ForbiddenError("system crons cannot be updated");
+    if (existing.system && (hasSchedule || hasPrompt || hasPreCheck)) {
+      throw new ForbiddenError(
+        "system crons cannot have schedule, prompt, or preCheck updated",
+      );
     }
 
     let cron: Awaited<ReturnType<AgentCronJobService["update"]>> | undefined;
@@ -1391,6 +1395,11 @@ export function createAdminApp(deps: AdminDeps): OpenAPIHono<AdminAuthEnv> {
         cacheCreationTokens: body.cacheCreationTokens,
       }),
       ...(body.sessionId !== undefined && { sessionId: body.sessionId }),
+      ...(body.lastHeartbeatAt !== undefined && {
+        lastHeartbeatAt: body.lastHeartbeatAt
+          ? new Date(body.lastHeartbeatAt)
+          : null,
+      }),
       ...(body.modelBreakdown !== undefined && {
         modelBreakdown: body.modelBreakdown,
       }),
@@ -1672,6 +1681,7 @@ function serializeCronRun(run: {
   itemType: string | null;
   itemId: string | null;
   sessionId: string | null;
+  lastHeartbeatAt: Date | null;
   createdAt: Date;
   modelBreakdown?: ModelBreakdownEntry[];
 }): z.infer<typeof AgentCronRunSchema> {
@@ -1714,6 +1724,9 @@ function serializeCronRun(run: {
     itemType: run.itemType,
     itemId: run.itemId,
     sessionId: run.sessionId,
+    lastHeartbeatAt: run.lastHeartbeatAt
+      ? run.lastHeartbeatAt.toISOString()
+      : null,
     ...tokenTotals,
     createdAt: run.createdAt.toISOString(),
     ...(run.modelBreakdown !== undefined && {

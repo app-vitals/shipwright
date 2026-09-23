@@ -179,12 +179,9 @@ describe("SKILL.md — graceful no-match handling", () => {
     expect(hasNoMatch).toBe(true);
   });
 
-  it("mentions preCheck or bodhi.log as a fallback when no session exists", () => {
+  it("mentions preCheck as a fallback when no session exists", () => {
     const hasFallback =
-      content.includes("preCheck") ||
-      content.includes("pre-check") ||
-      content.includes("bodhi.log") ||
-      content.includes("logs/");
+      content.includes("preCheck") || content.includes("pre-check");
     expect(hasFallback).toBe(true);
   });
 });
