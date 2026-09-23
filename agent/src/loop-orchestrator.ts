@@ -67,7 +67,6 @@
  * noise.
  */
 
-import { randomUUID } from "node:crypto";
 import type { ErrorCapturingClient } from "@shipwright/lib/sentry";
 import {
   buildProductionDeps as buildDeployDeps,
@@ -209,17 +208,21 @@ export interface LoopOrchestratorDeps {
    *
    * DTW-1.3 widened the signature with two optional trailing params, both
    * supplied only by the dev-task dispatch path:
-   *   - `sessionKey` — `dev-task:{taskId}:{per-dispatch nonce}`. The underlying
-   *     runner (createRunClaude's closure) persists session ids in its own
+   *   - `sessionKey` — `dev-task:{taskId}` (DTR-1.1; stable across every
+   *     dispatch of this task, no per-dispatch nonce). The underlying runner
+   *     (createRunClaude's closure) persists session ids in its own
    *     `sessions` map keyed by this value and automatically builds `-r <id>`
    *     on the next call with the SAME key, so a resume "just happens" by
-   *     calling runner() again with it. The nonce is minted once per
-   *     dispatchItem call, so resuming is scoped to that dispatch's own loop
-   *     and a later independent dispatch of the same task can't inherit a dead
-   *     session; the key is cleared (via clearSessionKey) once that loop exits
-   *     (see dispatchItem for the full rationale). Left undefined for
-   *     review/patch/deploy/plan, which deliberately start fresh on every
-   *     dispatch.
+   *     calling runner() again with it. Because the key is stable (not
+   *     minted fresh per dispatchItem call), it survives across separate
+   *     dispatches too — a LATER, independent dispatch of the same
+   *     still-in_progress task (next cron tick, a StaleClaimReaper reclaim,
+   *     a human re-run) resumes this same session instead of starting cold.
+   *     The key is only cleared (via clearSessionKey) once a fresh
+   *     getTaskState check confirms the task has reached a terminal
+   *     dev-task-work status — see dispatchItem's finally block for the full
+   *     rationale. Left undefined for review/patch/deploy/plan, which
+   *     deliberately start fresh on every dispatch.
    *   - `onEarlySessionId` — fires as soon as a session id is known (even for
    *     a call that started fresh), wired to cronRunReporter.recordSessionId
    *     so the cron-run log carries it before the run reaches a terminal state.
@@ -292,10 +295,14 @@ export interface LoopOrchestratorDeps {
   heartbeatTask?: (taskId: string) => Promise<void>;
   /**
    * Clears a persisted session-store entry by key. Called (best-effort) at
-   * the end of a dev-task dispatch's resume loop to drop that dispatch's
-   * per-dispatch nonce key, which is unreachable from then on — without this,
-   * `sessions.json` gains one permanent entry per dev-task dispatch, and that
-   * file is read+rewritten on every Slack message too.
+   * the end of a dev-task dispatch's resume loop, but — DTR-1.1 — ONLY once a
+   * fresh getTaskState check in that finally block confirms the task has
+   * reached a terminal dev-task-work status (TERMINAL_DEV_TASK_STATUSES): the
+   * key is now stable (`dev-task:{taskId}`, no per-dispatch nonce) precisely
+   * so it can survive this dispatch's exit and be resumed by a LATER,
+   * separate dispatch of the same still-in_progress task. Clearing
+   * unconditionally on every exit (the pre-DTR-1.1 behavior) would defeat
+   * that cross-dispatch resume entirely.
    *
    * Optional and never awaited for correctness: a failure here is logged and
    * swallowed (a stray entry is harmless, and the store's TTL prune — wired in
@@ -504,6 +511,20 @@ const PROGRESS_PUSH_DEBOUNCE_MS = 5000;
 const MAX_AUTO_RESUMES = 3;
 
 /**
+ * DTR-1.1 — dev-task statuses that mean the task has left active dev-task
+ * work. The session key for a task in one of these statuses is safe to
+ * clear: no later dispatch will ever want to resume it, because dev-task's
+ * own claim/dependency/reality-check gates (see dev-task.md) refuse to
+ * re-enter a task once it's reached one of these.
+ */
+const TERMINAL_DEV_TASK_STATUSES = new Set([
+  "pr_open",
+  "blocked",
+  "cancelled",
+  "done",
+]);
+
+/**
  * Builds the phase-scoped cooldown key (PRC-1.1) shared by
  * isPrDispatchSuppressed's lookup and the dispatch loop's lastPrDispatch
  * write — `${pr.id}:${phase}` rather than bare pr.id, so each phase's
@@ -709,42 +730,40 @@ export function createLoopOrchestrator(
       : `${PHASE_COMMANDS[phase]} ${args}`;
     const message = formatCronMessage(loopCronId, command);
 
-    // DTW-1.3: dev-task — and ONLY dev-task — gets a stable session identity
-    // so a follow-up attempt continues the same Claude session instead of
-    // starting cold. The underlying runner persists session ids keyed by this
-    // value and builds `-r <id>` itself on the next call with the same key, so
-    // nothing here has to carry the id around. review/patch/deploy/plan keep
-    // sessionKey undefined — a deliberate product decision: those phases
-    // re-validate live state on every dispatch and must not continue stale
-    // context.
+    // DTW-1.3/DTR-1.1: dev-task — and ONLY dev-task — gets a stable session
+    // identity so a follow-up attempt continues the same Claude session
+    // instead of starting cold. The underlying runner persists session ids
+    // keyed by this value and builds `-r <id>` itself on the next call with
+    // the same key, so nothing here has to carry the id around.
+    // review/patch/deploy/plan keep sessionKey undefined — a deliberate
+    // product decision: those phases re-validate live state on every
+    // dispatch and must not continue stale context.
     //
-    // The key is scoped to THIS dispatch via a per-dispatch nonce, not to the
-    // task id alone. sessions.ts's store is file-backed with a 7-day TTL and
-    // nothing in the repo ever clears a `dev-task:*` entry, so a bare
-    // `dev-task:{itemId}` key would also be picked up by any LATER, fully
-    // independent dispatch of the same task inside that window — the next tick
-    // after the StaleClaimReaper releases the claim, a dispatch after an
-    // agent-process restart, or a human re-run — silently resuming a dead
-    // session and carrying its stale conclusions (e.g. "I already opened the
-    // PR" → `[silent]` → skip-counter auto-block) into what
-    // plugins/shipwright/commands/dev-task.md documents as "a full
-    // context-free re-bootstrap". The nonce keeps resuming scoped to this
-    // dispatch's own loop below — all 1 + MAX_AUTO_RESUMES attempts share this
-    // one key, which is what makes `-r` fire on the resumes — while
-    // guaranteeing the next dispatch starts cold.
+    // DTR-1.1: the key is `dev-task:{itemId}` — stable across EVERY dispatch
+    // of this task, not scoped to one dispatchItem() call via a per-dispatch
+    // nonce (the original DTW-1.3 design). That nonce made resuming work only
+    // WITHIN one dispatch's own internal resume loop below; a later, fully
+    // separate dispatch of the same still-in_progress task (the next cron
+    // tick, a StaleClaimReaper reclaim, an explicit human re-run) always
+    // started cold with zero memory of prior work, even with substantial
+    // progress already made. Dropping the nonce means that later dispatch can
+    // resume this exact session instead.
     //
-    // A nonce rather than a clear-on-exit ALONE: an explicit clear can't cover
-    // a hard process kill mid-resume-loop, whereas an unreachable per-dispatch
-    // key is inert by construction. But inert isn't free — a nonce key is
-    // written once and never read again, so it's never lazily evicted by
-    // `get()` either, and one permanent entry per dev-task dispatch would grow
-    // the same `sessions.json` that every Slack message reads and rewrites. So
-    // both: the resume loop below clears its own key on exit (the normal path),
-    // and index.ts wires a periodic `sessions.prune()` so the entries an abrupt
-    // kill leaves behind actually do age out through the store's TTL — the
-    // prune that, before that wiring, had zero production call sites.
-    const sessionKey =
-      phase === "dev-task" ? `dev-task:${itemId}:${randomUUID()}` : undefined;
+    // Safe cross-dispatch reuse depends on when the key gets cleared: the
+    // resume loop's `finally` block below clears it only once a FRESH
+    // getTaskState check confirms the task has reached a terminal
+    // dev-task-work status (TERMINAL_DEV_TASK_STATUSES) — never
+    // unconditionally on exit. A task still `in_progress` keeps its key, so
+    // the next dispatch resumes it; a task that reached e.g. `pr_open` has
+    // its key cleared, so a later, unrelated task reusing this exact
+    // `itemId` (unlikely, but not impossible after task-store id reuse)
+    // never inherits a dead session.
+    //
+    // sessions.ts's store is file-backed with a 7-day TTL and no lazy
+    // eviction on write, only on `get()` — index.ts's periodic
+    // `sessions.prune()` remains the backstop for whatever an abrupt process
+    // kill leaves behind before this finally block ever runs.
+    const sessionKey = phase === "dev-task" ? `dev-task:${itemId}` : undefined;
 
     /**
      * One dispatch attempt: its own createRun → runner() → terminal
@@ -1062,11 +1081,27 @@ export function createLoopOrchestrator(
         }
         return;
       } finally {
-        // The nonce key is unreachable from here on — drop it so sessions.json
-        // doesn't accumulate one permanent entry per dev-task dispatch. Runs on
-        // every exit path including the rethrown runner failure; best-effort,
-        // never allowed to mask the outcome of the dispatch itself.
-        if (clearSessionKey) {
+        // DTR-1.1: clear the session key ONLY once the task has actually left
+        // active dev-task work. A stable (non-nonce) key must otherwise survive
+        // this dispatch's exit so a LATER, separate dispatch of the same task
+        // (next cron tick, a StaleClaimReaper reclaim, an explicit re-run) can
+        // resume this exact Claude session instead of starting cold — that's the
+        // whole point of DTR-1.1. Re-check FRESH state here rather than reusing
+        // whatever the resume loop last observed: this finally runs on every exit
+        // path (silent, completed, resume-cap exhausted, thrown failure), several
+        // of which never call getTaskState at all.
+        let isTerminal = false;
+        try {
+          const finalState = await getTaskState(itemId);
+          isTerminal = finalState
+            ? TERMINAL_DEV_TASK_STATUSES.has(finalState.status)
+            : false;
+        } catch (err) {
+          console.warn(
+            `[loop-orchestrator] getTaskState failed while checking final status for ${itemId}: ${String(err)} — not clearing sessionKey`,
+          );
+        }
+        if (isTerminal && clearSessionKey) {
           try {
             await clearSessionKey(sessionKey);
           } catch (err) {

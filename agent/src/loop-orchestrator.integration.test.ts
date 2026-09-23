@@ -797,11 +797,11 @@ describe("loop-orchestrator + dev-task auto-resume (DTW-1.3)", () => {
     // Every call — initial AND resumes — reuses the same sessionKey, which is
     // what makes the underlying runner build `-r <sessionId>` on the resumes.
     expect(new Set(sessionKeys).size).toBe(1);
-    // ...and that key is scoped to BOTH the task and this one dispatch: the
-    // task id keeps it greppable, the trailing per-dispatch nonce keeps a
-    // later, independent dispatch of the same task from resuming this dead
-    // session (see the cross-dispatch test below).
-    expect(sessionKeys[0]).toMatch(/^dev-task:DTW-9\.1:.+/);
+    // ...and that key is the exact stable `dev-task:{taskId}` form (DTR-1.1,
+    // no per-dispatch nonce) — a later, independent dispatch of this same
+    // task deliberately CAN resume this session (see the cross-dispatch test
+    // below), which is the whole point of dropping the nonce.
+    expect(sessionKeys[0]).toBe("dev-task:DTW-9.1");
     // Every status check was against the dispatched task.
     expect(calls.every((id) => id === "DTW-9.1")).toBe(true);
     // One AgentCronRun row per attempt, all tagged with the same itemId.
@@ -854,7 +854,10 @@ describe("loop-orchestrator + dev-task auto-resume (DTW-1.3)", () => {
   test("a dev-task that reaches a terminal status after the first attempt is not resumed at all", async () => {
     const { runner, sessionKeys } = makeSessionKeyRecordingRunner();
     const { reporter, creates } = makeAttemptRecordingReporter();
-    const { getTaskState, calls } = makeStateStub(["pr_open"]);
+    // Two entries: the resume loop's own check consumes the first (sees
+    // pr_open, stops resuming); the finally block's fresh DTR-1.1
+    // terminal-status re-check consumes the second.
+    const { getTaskState, calls } = makeStateStub(["pr_open", "pr_open"]);
 
     let devTaskCalls = 0;
     const loop = createLoopOrchestrator({
@@ -884,18 +887,21 @@ describe("loop-orchestrator + dev-task auto-resume (DTW-1.3)", () => {
 
     expect(sessionKeys).toHaveLength(1);
     expect(creates).toHaveLength(1);
-    expect(calls).toEqual(["DTW-9.3"]);
+    expect(calls).toEqual(["DTW-9.3", "DTW-9.3"]);
   });
 
-  test("two independent dispatches of the SAME task id get different sessionKeys — a dead session is never resumed across dispatches", async () => {
-    // Regression test for the review finding on this PR: the session store
-    // (agent/src/sessions.ts) is file-backed with a 7-day TTL and nothing ever
-    // clears a `dev-task:*` entry, so a sessionKey derived purely from the task
-    // id would let a LATER, fully independent dispatch of the same task —
-    // the next tick after the StaleClaimReaper releases the claim, a dispatch
-    // after an agent-process restart, or a human re-run — resume the previous
-    // dispatch's dead session via `-r`, contradicting dev-task.md's documented
-    // "full context-free re-bootstrap" contract for exactly that scenario.
+  test("two independent dispatches of the SAME in-progress task id resume the SAME sessionKey — cross-dispatch resume (DTR-1.1)", async () => {
+    // DTR-1.1: sessionKey is now stable (`dev-task:{taskId}`, no per-dispatch
+    // nonce) precisely so a LATER, fully independent dispatch of the same
+    // task — the next tick after the StaleClaimReaper releases a stale
+    // claim, a dispatch after an agent-process restart, or a human re-run —
+    // picks up the SAME underlying Claude session instead of starting cold,
+    // matching dev-task.md's resume contract across dispatches, not just
+    // within one dispatch's own internal resume loop. The task stays
+    // in_progress (never terminal) across both dispatches below, which under
+    // the new finally-block logic means its sessionKey is never cleared
+    // between them — that's what lets the second dispatch resume the
+    // first's session via `-r`.
     const { runner, sessionKeys } = makeSessionKeyRecordingRunner();
     const { reporter } = makeAttemptRecordingReporter();
 
@@ -916,7 +922,8 @@ describe("loop-orchestrator + dev-task auto-resume (DTW-1.3)", () => {
       claimPr: async (p) => ({ id: p.id, commitSha: p.commitSha }),
       recordSkip: async () => {},
       resetSkip: async () => {},
-      // Never terminal → each dispatch exhausts its 3-resume cap.
+      // Never terminal → each dispatch exhausts its 3-resume cap, and the
+      // key is never cleared between the two separate loop() calls below.
       getTaskState: async () => ({
         status: "in_progress",
         claimedBy: OWNER_AGENT_ID,
@@ -933,7 +940,8 @@ describe("loop-orchestrator + dev-task auto-resume (DTW-1.3)", () => {
     const firstDispatchKeys = [...sessionKeys];
     sessionKeys.length = 0;
 
-    // Later, independent tick on the same task id.
+    // Later, fully independent dispatch of the same task id (e.g. the next
+    // cron tick after the StaleClaimReaper released a stale claim).
     claimedThisTick = false;
     await loop([job("shipwright-dev-task", true)]);
     const secondDispatchKeys = [...sessionKeys];
@@ -945,12 +953,12 @@ describe("loop-orchestrator + dev-task auto-resume (DTW-1.3)", () => {
     // its own resumes)...
     expect(new Set(firstDispatchKeys).size).toBe(1);
     expect(new Set(secondDispatchKeys).size).toBe(1);
-    // ...but the two dispatches must not share a key, or the second would
-    // resume the first's dead session.
-    expect(secondDispatchKeys[0]).not.toBe(firstDispatchKeys[0]);
-    // Both stay scoped to (and greppable by) the task id.
-    expect(firstDispatchKeys[0]).toMatch(/^dev-task:DTW-9\.4:/);
-    expect(secondDispatchKeys[0]).toMatch(/^dev-task:DTW-9\.4:/);
+    // ...and now the two SEPARATE dispatches share that SAME exact stable
+    // key too — the core cross-dispatch resume behavior DTR-1.1 exists to
+    // provide.
+    expect(secondDispatchKeys[0]).toBe(firstDispatchKeys[0]);
+    expect(firstDispatchKeys[0]).toBe("dev-task:DTW-9.4");
+    expect(secondDispatchKeys[0]).toBe("dev-task:DTW-9.4");
   });
 
   test("a review dispatch never consults getTaskState and gets an undefined sessionKey — the resume loop is dev-task-only", async () => {
@@ -1002,8 +1010,12 @@ describe("loop-orchestrator + dev-task auto-resume (DTW-1.3)", () => {
     // now owns. The gate must check ownership, not just status.
     const { runner, sessionKeys } = makeSessionKeyRecordingRunner();
     const { reporter, creates } = makeAttemptRecordingReporter();
-    // First poll: still in_progress, but reaped and re-claimed by someone else.
+    // First poll (resume loop's own ownership check): still in_progress, but
+    // reaped and re-claimed by someone else. Second poll (the finally
+    // block's fresh DTR-1.1 terminal-status re-check): same non-terminal
+    // status, so the key is not cleared.
     const { getTaskState, calls } = makeStateStub([
+      { status: "in_progress", claimedBy: "agent-someone-else" },
       { status: "in_progress", claimedBy: "agent-someone-else" },
     ]);
 
@@ -1036,7 +1048,7 @@ describe("loop-orchestrator + dev-task auto-resume (DTW-1.3)", () => {
     // The initial attempt ran; the resume did not.
     expect(sessionKeys).toHaveLength(1);
     expect(creates).toHaveLength(1);
-    expect(calls).toEqual(["DTW-9.5"]);
+    expect(calls).toEqual(["DTW-9.5", "DTW-9.5"]);
   });
 
   test("an unclaimed (reaped, not yet re-claimed) in_progress task is not resumed either", async () => {
@@ -1114,16 +1126,22 @@ describe("loop-orchestrator + dev-task auto-resume (DTW-1.3)", () => {
     expect(sessionKeys).toHaveLength(2);
   });
 
-  test("the per-dispatch sessionKey is cleared from the session store when the resume loop exits", async () => {
-    // Regression test for the second-round review finding: a per-dispatch nonce
-    // key is written once and never read again, so it is never lazily evicted
-    // by get() — without an explicit clear, sessions.json (shared with Slack
-    // thread sessions, read+rewritten on every Slack message) would gain one
-    // permanent entry per dev-task dispatch.
+  test("the sessionKey is cleared once the task reaches a terminal status", async () => {
+    // DTR-1.1: the sessionKey is now stable (`dev-task:{taskId}`, no
+    // per-dispatch nonce) so it can survive across separate dispatches —
+    // it must therefore be cleared explicitly, and only once the task-store
+    // confirms (via a FRESH getTaskState check in the finally block) that
+    // the task has actually left active dev-task work. Without this,
+    // sessions.json (shared with Slack thread sessions, read+rewritten on
+    // every Slack message) would keep a stable key around forever once a
+    // task reaches pr_open/blocked/cancelled/done. Two stub entries: the
+    // resume loop's own check (sees pr_open, stops resuming without
+    // clearing) and the finally block's fresh terminal-status re-check that
+    // actually triggers the clear.
     const { runner, sessionKeys } = makeSessionKeyRecordingRunner();
     const { reporter } = makeAttemptRecordingReporter();
     const cleared: string[] = [];
-    const { getTaskState } = makeStateStub(["pr_open"]);
+    const { getTaskState } = makeStateStub(["pr_open", "pr_open"]);
 
     let devTaskCalls = 0;
     const loop = createLoopOrchestrator({
@@ -1154,12 +1172,19 @@ describe("loop-orchestrator + dev-task auto-resume (DTW-1.3)", () => {
 
     await loop([job("shipwright-dev-task", true)]);
 
-    // Exactly the key this dispatch used, cleared exactly once.
+    // Exactly the key this dispatch used, cleared exactly once, in the
+    // exact stable dev-task:{taskId} form.
     expect(cleared).toEqual([sessionKeys[0] as string]);
-    expect(cleared[0]).toMatch(/^dev-task:DTW-9\.8:/);
+    expect(cleared[0]).toBe("dev-task:DTW-9.8");
   });
 
-  test("a failed dev-task attempt still clears its sessionKey, and a clearSessionKey failure never masks the dispatch outcome", async () => {
+  test("a failed dev-task attempt with unknown final status does NOT clear its sessionKey — the key must survive so a later dispatch can still resume", async () => {
+    // DTR-1.1: getTaskState returning null (task not found / lookup failed)
+    // means the finally block cannot confirm the task reached a terminal
+    // status — fail toward PRESERVING the key. A wrongly-preserved key only
+    // costs one future resume attempt; a wrongly-cleared one silently and
+    // permanently loses resumability for a task that may still be
+    // in_progress.
     const { reporter } = makeAttemptRecordingReporter();
     const cleared: string[] = [];
     const runner = async (): Promise<ClaudeRunResult> => {
@@ -1185,7 +1210,6 @@ describe("loop-orchestrator + dev-task auto-resume (DTW-1.3)", () => {
       agentId: OWNER_AGENT_ID,
       clearSessionKey: async (key) => {
         cleared.push(key);
-        throw new Error("session store unwritable");
       },
       runner,
       cronRunReporter: reporter,
@@ -1195,12 +1219,66 @@ describe("loop-orchestrator + dev-task auto-resume (DTW-1.3)", () => {
     });
 
     // The dispatch failure is caught+isolated by the drain loop (CBD-2.3), so
-    // the tick resolves — the point here is that the swallowed clear failure
-    // neither crashes the tick nor skips the clear attempt.
+    // the tick resolves — the point here is that an unconfirmed final status
+    // leaves the sessionKey untouched.
     await loop([job("shipwright-dev-task", true)]);
 
-    expect(cleared).toHaveLength(1);
-    expect(cleared[0]).toMatch(/^dev-task:DTW-9\.9:/);
+    expect(cleared).toHaveLength(0);
+  });
+
+  test("a clearSessionKey failure never masks the dispatch outcome, when the task IS confirmed terminal", async () => {
+    // Companion to the test above: this exercises the invariant that a
+    // clearSessionKey failure is swallowed and never crashes the dispatch,
+    // in the one scenario where the finally block actually attempts a clear
+    // (a confirmed terminal status) rather than skipping it.
+    const { reporter, completes } = makeAttemptRecordingReporter();
+    const cleared: string[] = [];
+    const runner = async (): Promise<ClaudeRunResult> => {
+      throw new Error("runner boom");
+    };
+
+    let devTaskCalls = 0;
+    const loop = createLoopOrchestrator({
+      getDevTaskCandidates: async () => {
+        devTaskCalls += 1;
+        return devTaskCalls === 1
+          ? [task("DTW-9.13", "2026-01-01T00:00:00Z")]
+          : [];
+      },
+      getReviewCandidates: async () => [],
+      getPatchCandidates: async () => [],
+      getDeployCandidates: async () => [],
+      claimTask: async () => true,
+      claimPr: async (p) => ({ id: p.id, commitSha: p.commitSha }),
+      recordSkip: async () => {},
+      resetSkip: async () => {},
+      getTaskState: async () => ({
+        status: "pr_open",
+        claimedBy: OWNER_AGENT_ID,
+      }),
+      agentId: OWNER_AGENT_ID,
+      clearSessionKey: async (key) => {
+        cleared.push(key);
+        throw new Error("session store unwritable");
+      },
+      runner,
+      cronRunReporter: reporter,
+      workQueueReporter: noopWorkQueueReporter,
+      loopCronId: "shipwright-loop",
+      clock: FixedClock(new Date("2026-07-20T00:00:00Z")),
+    });
+
+    // Must not throw out of the tick — the drain loop isolates the runner's
+    // own failure (CBD-2.3), and the clearSessionKey failure inside the
+    // finally block must be swallowed on top of that.
+    await loop([job("shipwright-dev-task", true)]);
+
+    // The clear was attempted (and failed, harmlessly) exactly once, against
+    // the exact stable key.
+    expect(cleared).toEqual(["dev-task:DTW-9.13"]);
+    // The runner's own failure is still faithfully reported as a failed run —
+    // the clearSessionKey failure did not mask it.
+    expect(completes).toEqual([{ itemId: "DTW-9.13", outcome: "failed" }]);
   });
 
   test("every resume attempt renews the claim FIRST — one dispatch never outlives the single-session claim TTL", async () => {
