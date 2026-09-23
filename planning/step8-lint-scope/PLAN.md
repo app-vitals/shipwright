@@ -17,8 +17,8 @@ codebase regardless of diff size — and it already caused at least one unrelate
 failure (a flaky sandbox worker-thread timeout in an unrelated package, unrelated to the
 actual change).
 
-`patch.md` has the identical pattern at three separate call-sites (CI-fix flow, review-fix
-flow, conflict-resolution flow — `patch.md:643-649`, `860-866`, `1549-1555`), pulling the
+`patch.md` has the identical pattern at three separate call-sites (conflict-resolution flow
+~`patch.md:621-748`, review-fix flow ~`1180-1285`, CI-fix flow ~`1855-1894`), pulling the
 same cached `lint` field verbatim. Patch diffs are typically even smaller than dev-task
 diffs, so the unscoped-relint cost is proportionally worse there.
 
