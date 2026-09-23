@@ -1548,6 +1548,39 @@ describe("patch.md — docs-first toolchain discovery + per-repo cache (TDF-1.1)
   });
 });
 
+describe("patch.md — scoped-lint preference at all three lint-command sites (LSC-1.3)", () => {
+  function checkSite(step: string, next: string) {
+    const stepIdx = content.indexOf(step);
+    expect(stepIdx).toBeGreaterThan(-1);
+    const nextIdx = content.indexOf(next, stepIdx);
+    expect(nextIdx).toBeGreaterThan(stepIdx);
+    const section = content.slice(stepIdx, nextIdx);
+    expect(section).toMatch(/lintScoped/);
+    expect(section).toMatch(/\{base\}/);
+    expect(section).toMatch(/\{head\}/);
+    expect(section).toMatch(/absent.{0,160}unscoped|unscoped.{0,160}absent/is);
+  }
+
+  it("Step 4a.5 (conflict-resolution) prefers cached lintScoped, falling back to the unscoped lint command when absent", () => {
+    checkSite("### Step 4a.5: Detect Project Toolchain", "### Step 4a.6");
+  });
+
+  it("Step 5a.5 (review-fix) prefers cached lintScoped, falling back to the unscoped lint command when absent", () => {
+    checkSite("### Step 5a.5: Detect Project Toolchain", "### Step 5a.6");
+  });
+
+  it("Step 6a.5 (CI-fix) prefers cached lintScoped, falling back to the unscoped lint command when absent", () => {
+    checkSite("### Step 6a.5: Detect Project Toolchain", "### Step 6b");
+  });
+
+  it("conflict-resolution and CI-fix sites compute {head} from the worktree's current HEAD SHA for the scoped-lint substitution", () => {
+    // review-fix reuses the $base already fetched for the PR-diff-against-base step instead
+    // of adding a second fetch, so only assert the {head} computation is present at each site
+    const headComputation = "git -C {worktree-path} rev-parse HEAD";
+    expect(content.split(headComputation).length - 1).toBeGreaterThanOrEqual(3);
+  });
+});
+
 describe("patch.md — Step 2.5/Step 3 opening prose reflects single-PR scope (PCG-1.1)", () => {
   function getStep2_5Section() {
     const step2_5Idx = content.indexOf("## Step 2.5: Handle DIRTY PRs (Auto-Rebase Attempt)");
