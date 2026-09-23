@@ -943,3 +943,112 @@ describe("dev-task.md — subagent dispatch is foreground, not background (ABD-1
     expect(section).toContain("run_in_background: false");
   });
 });
+
+describe("dev-task.md Step 8 — scoped lint wiring (LSC-1.2)", () => {
+  const buildAndLintSection = () => {
+    const anchorIdx = content.indexOf("### Build & Lint");
+    expect(anchorIdx).toBeGreaterThan(-1);
+    const nextSectionIdx = content.indexOf("## Step 8.5: Auto-Refresh Docs");
+    expect(nextSectionIdx).toBeGreaterThan(anchorIdx);
+    return content.slice(anchorIdx, nextSectionIdx);
+  };
+
+  it("references the lintScoped cache field from the Step 0/0b toolchain cache", () => {
+    const section = buildAndLintSection();
+    expect(section).toContain("lintScoped");
+    expect(section).toMatch(/Step 0\/0b|Step 0b/);
+  });
+
+  it("documents running lintScoped in place of the unscoped lint command when present", () => {
+    const section = buildAndLintSection();
+    expect(section).toMatch(/lintScoped/);
+    expect(section).toMatch(/in place of|instead of/i);
+  });
+
+  it("documents falling back to the existing unscoped lint command unchanged when lintScoped is absent", () => {
+    const section = buildAndLintSection();
+    expect(section).toMatch(/absent|not (?:present|populated)|omitted/i);
+    expect(section).toMatch(/fall ?back/i);
+    expect(section).toMatch(/unchanged/i);
+  });
+
+  it("resolves {base}/{head} to the existing main...HEAD diffing convention without new diff-computation logic", () => {
+    const section = buildAndLintSection();
+    expect(section).toContain("{base}");
+    expect(section).toContain("{head}");
+    expect(section).toContain("main");
+    expect(section).toMatch(/main\.\.\.HEAD/);
+  });
+
+  it("documents resolving the priority-4 {changed files} placeholder from git diff --name-only", () => {
+    const section = buildAndLintSection();
+    expect(section).toContain("{changed files}");
+    expect(section).toContain("git diff --name-only main...HEAD");
+  });
+
+  it("documents reporting which lint mode (scoped vs. full) ran in the Pre-Ship Checks output", () => {
+    const section = buildAndLintSection();
+    expect(section).toMatch(/scoped/i);
+    expect(section).toMatch(/full/i);
+    expect(section).toMatch(/report/i);
+  });
+
+  it("keeps the existing conditional pause-point guidance intact", () => {
+    const section = buildAndLintSection();
+    expect(section).toContain(
+      "**Pause point (conditional):** Only if a check fails and cannot be auto-fixed, stop and let the user resolve.",
+    );
+  });
+});
+
+describe("dev-task.md Step 0b — lintScoped producer wiring (LSC-1.2)", () => {
+  const storeAndCacheSection = () => {
+    const anchorIdx = content.indexOf("4. **Store and cache.**");
+    expect(anchorIdx).toBeGreaterThan(-1);
+    const nextSectionIdx = content.indexOf("## Step 2: Mark In-Progress");
+    expect(nextSectionIdx).toBeGreaterThan(anchorIdx);
+    return content.slice(anchorIdx, nextSectionIdx);
+  };
+
+  it("lists lintScoped among the fields written to the toolchain cache", () => {
+    const section = storeAndCacheSection();
+    expect(section).toContain("**lintScoped**");
+  });
+
+  it("points at toolchain-patterns.md's Scoped Lint Detection rules", () => {
+    const section = storeAndCacheSection();
+    expect(section).toContain("references/toolchain-patterns.md");
+    expect(section).toContain("Scoped Lint Detection");
+  });
+
+  it("enumerates all four scoped-lint priority signals and their commands", () => {
+    const section = storeAndCacheSection();
+    expect(section).toContain("turbo.json");
+    expect(section).toContain("turbo lint --filter=...[{base}...{head}]");
+    expect(section).toContain("nx.json");
+    expect(section).toContain("nx affected --target=lint --base={base}");
+    expect(section).toContain("pnpm-workspace.yaml");
+    expect(section).toContain('pnpm --filter "...[{base}]" lint');
+    expect(section).toContain("eslint {changed files}");
+  });
+
+  it("instructs storing the template with placeholders unsubstituted for the Step 8 consumer", () => {
+    const section = storeAndCacheSection();
+    expect(section).toMatch(/unsubstituted/i);
+    expect(section).toMatch(/\{changed files\}/);
+    expect(section).toMatch(/Build & Lint|Step 8/);
+  });
+
+  it("instructs omitting lintScoped entirely rather than writing null when no scoped command exists", () => {
+    const section = storeAndCacheSection();
+    expect(section).toMatch(/omit `lintScoped` from the cache entirely/i);
+    expect(section).toMatch(/never write `null`/i);
+  });
+
+  it("keeps the existing unscoped lint cache field alongside lintScoped", () => {
+    const section = storeAndCacheSection();
+    expect(section).toContain("**lint**");
+    expect(section).toContain("**typecheck**");
+    expect(section).toContain("**build**");
+  });
+});
