@@ -59,6 +59,29 @@ This covers both failure shapes uniformly:
   `release()`) already nulls `claimedBy`, so claim ownership alone is a sufficient and
   simpler signal than what dev-task currently checks.
 
+- **Reconciling the resume loop's generalization with `loop-orchestrator.ts`'s existing
+  "review/patch/deploy must not continue stale context" rationale (lines 712-719).** That
+  comment is about the command's *own* state reads, not Claude session identity: `-r`
+  resume continues the prior conversation, but every resumed attempt still re-sends the
+  full `{command} {args}` message, which re-enters the command's slash-command body from
+  its own Step 1/Step 2 exactly as a cold dispatch would. `patch.md`, `review.md`, and
+  `deploy.md` are all built around fetching PR/CI/comment state live via `gh`/task-store
+  calls on every invocation rather than trusting anything cached — e.g. `review.md` Step
+  14's live-GitHub pre-check "queries GitHub directly for a terminal review at the current
+  head commit ... independent of what the local task-store record says", and all three
+  commands' Pre-Claim Fast Path "independently re-validates the marker against that site's
+  freshly-fetched live head before trusting it." So a resumed session still reasons over
+  fresh PR state each attempt; what it retains across the resume is conversational/tool
+  scratch context (e.g. an already-cloned worktree, already-computed diagnostics), not a
+  cached belief about PR state. This is the same shape of freshness dev-task already
+  relies on today, just applied to three more phases.
+  **Scoping CRT-1.3:** implementation must verify, for each of review/patch/deploy, that
+  the command's state-fetching steps (Step 1 onward) are unconditionally re-executed on
+  every resume attempt — no early-return or cached-value path that would let a resumed
+  session skip re-fetching live PR/CI/comment state before acting. If any of the three
+  commands turns out to have such a shortcut, CRT-1.3 must close it (or exclude that phase
+  from the resume loop) before shipping.
+
 ## Tasks
 
 | Task    | Title                                                        | Depends on | Hours | Complexity | Model  |
