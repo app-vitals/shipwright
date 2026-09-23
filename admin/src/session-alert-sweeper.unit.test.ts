@@ -11,8 +11,10 @@
 
 import { describe, expect, it } from "bun:test";
 import { FixedClock } from "./clock.ts";
-import type { PushDetailLevel } from "./push-content.ts";
-import type { SessionNotificationKind } from "./push-service.ts";
+import type {
+  PushDetailLevel,
+  SessionNotificationKind,
+} from "./push-content.ts";
 import {
   type SessionAlertPrismaLike,
   type SessionAlertStateRow,
@@ -165,6 +167,7 @@ interface SentPush {
   emails: string[];
   kind: SessionNotificationKind;
   level: PushDetailLevel;
+  title?: string | null;
 }
 
 function fakePushService() {
@@ -173,7 +176,7 @@ function fakePushService() {
     sent,
     pushService: {
       notifySession: async (
-        session: { slug: string; emails: string[] },
+        session: { slug: string; emails: string[]; title?: string | null },
         level: PushDetailLevel,
         kind: SessionNotificationKind,
       ) => {
@@ -182,6 +185,7 @@ function fakePushService() {
           emails: session.emails,
           kind,
           level,
+          title: session.title,
         });
         return { delivered: session.emails.length, pruned: 0 };
       },
@@ -429,6 +433,9 @@ describe("SessionAlertSweeper.tick — waiting sessions (AC1)", () => {
       "dan@example.com",
       "dave@example.com",
     ]);
+    // The session's title is forwarded through to notifySession so the push
+    // payload can carry it (rather than only slug/emails).
+    expect(sent.every((s) => s.title === WAITING_SESSION.title)).toBe(true);
     expect(store.alertStates).toHaveLength(2);
 
     const second = await sweeper.tick();
@@ -698,6 +705,7 @@ describe("SessionAlertSweeper.tick — closed sessions (AC3)", () => {
     });
     expect(sent).toHaveLength(1);
     expect(sent[0]?.kind).toBe("completed");
+    expect(sent[0]?.title).toBe(CLOSED_SESSION.title);
     expect(store.follows).toHaveLength(0);
     expect(store.alertStates).toHaveLength(0);
 
@@ -1232,6 +1240,7 @@ describe("SessionAlertSweeper — admin allowlist", () => {
         emails: ["admin@example.com"],
         kind: "immediate",
         level: "title",
+        title: WAITING_SESSION.title,
       },
     ]);
     expect(lines).toEqual([

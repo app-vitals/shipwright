@@ -17,7 +17,9 @@
 import {
   type NotificationThread,
   type PushDetailLevel,
+  type SessionNotificationKind,
   buildNotificationPayload,
+  buildSessionNotificationPayload,
   resolveDetailLevel,
 } from "./push-content.ts";
 import {
@@ -89,19 +91,17 @@ export type PushUnsubscribeResult =
  * There is no real Session/SessionFollow Prisma model yet (that lands with
  * sibling tasks SES-1.1/SES-6.1) — notifySession only needs the resolved
  * list of emails to notify plus enough identifying info for the payload, not
- * a Prisma-backed lookup. Callers resolve `emails` themselves.
+ * a Prisma-backed lookup. Callers resolve `emails` themselves. `title` is
+ * optional so a caller that hasn't resolved it yet still satisfies this type;
+ * it structurally matches push-content.ts's `NotificationSession` (which
+ * `buildSessionNotificationPayload` consumes), minus that type's `reason`
+ * field — no caller here has one to offer yet.
  */
 export interface NotificationSession {
   slug: string;
   emails: string[];
+  title?: string | null;
 }
-
-/**
- * The kind of session-lifecycle event a notification is for. A future task
- * (SESH-7.2) will use this to drive a real buildSessionNotificationPayload —
- * this task only needs the type and a placeholder payload.
- */
-export type SessionNotificationKind = "immediate" | "reminder" | "completed";
 
 export class PushService {
   private readonly sender: PushSender;
@@ -222,13 +222,14 @@ export class PushService {
    * Sends a session-lifecycle notification (SESH-7.1) to every email on
    * `session.emails`, then prunes any endpoints the sender reports gone.
    * Never throws into the caller — same convenience-layer contract as
-   * notifyThreadReply. The payload *content* here is a deliberate
-   * placeholder (the real content policy is SESH-7.2's
-   * buildSessionNotificationPayload), but the detail level it carries is not:
-   * `level` is the caller's per-call ceiling, and the effective level of each
-   * subscription's payload is min(caller ceiling, operator ceiling, that
-   * subscription's opt-in) — the same privacy invariant notifyThreadReply
-   * honors. A caller can ask for less detail, never more.
+   * notifyThreadReply. The payload content is built by
+   * `buildSessionNotificationPayload` (push-content.ts's session policy),
+   * mirroring exactly how notifyThreadReply builds its own via
+   * `buildNotificationPayload`. The detail level honors the same privacy
+   * invariant notifyThreadReply does: `level` is the caller's per-call
+   * ceiling, and the effective level of each subscription's payload is
+   * min(caller ceiling, operator ceiling, that subscription's opt-in). A
+   * caller can ask for less detail, never more.
    */
   async notifySession(
     session: NotificationSession,
@@ -240,11 +241,13 @@ export class PushService {
       // `subLevel` already is min(this.maxDetail, subscription opt-in);
       // resolveDetailLevel caps it once more against the caller's request.
       return await this.sendToUsers(session.emails, (subLevel) =>
-        JSON.stringify({
-          kind,
-          slug: session.slug,
-          level: resolveDetailLevel(level, subLevel),
-        }),
+        JSON.stringify(
+          buildSessionNotificationPayload(
+            resolveDetailLevel(level, subLevel),
+            kind,
+            session,
+          ),
+        ),
       );
     } catch (err) {
       console.error("[push] notifySession failed:", err);
