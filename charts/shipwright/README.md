@@ -195,6 +195,11 @@ environment, set `postgresql.auth.existingSecret` to a pre-created Secret (or se
 | `ingress-nginx.enabled` | `false` | Deploy the bundled ingress-nginx subchart as the cluster's ingress controller. Mutually exclusive with `traefik.enabled`. |
 | `traefik.enabled` | `false` | Deploy the bundled Traefik subchart as the cluster's ingress controller. Mutually exclusive with `ingress-nginx.enabled`. Independent of `networking.ingress.controller: traefik` (set both to fully bundle and use Traefik). |
 | `cert-manager.enabled` | `false` | Deploy the bundled cert-manager subchart (controller + CRDs). Pairs with `tls.certManager.enabled` for the chart's own Issuer/Certificate wiring. |
+| `awsSecurityGroupPolicy.enabled` | `false` | Render an AWS VPC CNI `SecurityGroupPolicy` so matching pods get a branch ENI carrying `groupIds` (EKS only, requires the `vpcresources.k8s.aws` CRD). Off = nothing rendered. See [add-ons](../docs/deploy-kubernetes-addons.md#aws-pod-security-groups-eks-optional). |
+| `awsSecurityGroupPolicy.groupIds` | `[]` | Security group IDs attached to matching pods. Required once enabled (at least one). Include the cluster's **node** security group — a branch ENI carries only these groups, so omitting it costs the pod cluster networking and DNS. |
+| `awsSecurityGroupPolicy.podSelector.matchLabels` | `{}` | Labels a pod must carry to receive those groups. Empty = the chart's own selector labels (every pod this chart renders, but not bundled subchart pods such as the bundled PostgreSQL). |
+| `awsSecurityGroupPolicy.nameOverride` | `""` | Name for the rendered `SecurityGroupPolicy` (empty = chart fullname). |
+| `awsSecurityGroupPolicy.extraLabels` | `{}` | Extra labels merged into the resource metadata on top of the chart's common labels. |
 
 The full values surface is validated by `values.schema.json` (enums for
 `networking.type`, `auth.mode`, and image pull policies; required service shapes).

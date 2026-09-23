@@ -10,6 +10,12 @@ independent of `appVersion`. CI enforces this with
 `ct lint --check-version-increment`. Each release here must mirror the
 `artifacthub.io/changes` annotation in `Chart.yaml`.
 
+## [1.21.0] - 2026-09-25
+
+### Added
+
+- Optional `awsSecurityGroupPolicy` — an opt-in AWS VPC CNI `SecurityGroupPolicy` (`vpcresources.k8s.aws/v1beta1`) for EKS clusters running security groups for pods. `awsSecurityGroupPolicy.enabled` defaults to `false` and `templates/security-group-policy.yaml` renders no documents at all when off, so `helm template` output for existing values is unchanged. When enabled, the resource selects pods by `awsSecurityGroupPolicy.podSelector.matchLabels` (empty → the chart's own `shipwright.selectorLabels`, i.e. every pod this chart renders but not bundled subchart pods) and attaches `awsSecurityGroupPolicy.groupIds` to their branch ENIs; `nameOverride` renames the resource (default: chart fullname) and `extraLabels` merges onto the chart's common labels. `values.schema.json` gains a matching `if`/`then` guard, mirroring `cloudSqlProxy.connectionName`, that requires at least one entry in `groupIds` once enabled — the VPC CNI admission webhook rejects an empty group list, so failing the render is the more actionable error. This opens the network path for a pod to reach a resource whose security group admits a specific client security group rather than a CIDR (typically a managed database or database proxy in a peered VPC); a branch ENI carries only the listed groups, so the cluster's node security group must be included or the pod loses cluster-internal networking and DNS. Network path only — pointing Shipwright at that database is still `postgresql.enabled: false` plus `externalDatabase`. New `tests/aws_security_group_policy_test.yaml` covers both the disabled and enabled paths, with the schema guard covered in `tests/values_schema_test.yaml`; the chart README gains values-table rows and `docs/deploy-kubernetes-addons.md` a worked "AWS pod security groups (EKS, optional)" section.
+
 ## [1.20.120] - 2026-09-25
 
 ### Changed

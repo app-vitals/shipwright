@@ -1,9 +1,10 @@
 # Kubernetes deploy: optional add-ons
 
 > Optional, deploy-time feature add-ons for the `shipwright` Helm chart — agent
-> voice (STT/TTS), Web Push notifications, bringing your own PostgreSQL, and the
-> bundled ingress-controller/cert-manager subcharts. All are disabled by default
-> and layer on top of the core deploy concerns covered in
+> voice (STT/TTS), Web Push notifications, bringing your own PostgreSQL, the
+> bundled ingress-controller/cert-manager subcharts, and EKS pod security
+> groups. All are disabled by default and layer on top of the core deploy
+> concerns covered in
 > [`deploy-kubernetes.md`](./deploy-kubernetes.md) (networking model, cloud
 > provider guides, agent runtime provisioning, and authentication modes).
 
@@ -11,6 +12,7 @@
 - [Web Push notifications (optional)](#web-push-notifications-optional)
 - [Bringing your own PostgreSQL / Bitnami registry fallback](#bringing-your-own-postgresql--bitnami-registry-fallback)
 - [Bundled ingress controllers and cert-manager (optional)](#bundled-ingress-controllers-and-cert-manager-optional)
+- [AWS pod security groups (EKS, optional)](#aws-pod-security-groups-eks-optional)
 
 ---
 
@@ -458,6 +460,98 @@ Example value files are provided:
 - [`examples/values-cloud-native-traefik.yaml`](../charts/shipwright/examples/values-cloud-native-traefik.yaml) — production-oriented: bundles Traefik + cert-manager with `letsencrypt-prod`, uses `shipwright.example.com`, and sets `admin.appBaseUrl: https://shipwright.example.com` explicitly (equivalent to leaving it empty and letting the chart auto-derive)
 
 **Note:** the Minikube task `task minikube:cloud-native` and `task minikube:cloud-native:traefik` use simplified versions (`charts/shipwright/examples/values-minikube-cloud-native-nginx.yaml` and `charts/shipwright/examples/values-minikube-cloud-native-traefik.yaml`) tuned for local development with self-signed certs and without OAuth/OIDC setup — see [Minikube (local)](./deploy-kubernetes-providers.md#minikube-local) in the provider guides for details.
+
+---
+
+## AWS pod security groups (EKS, optional)
+
+> Applies to **EKS only**, and is **off by default** — with
+> `awsSecurityGroupPolicy.enabled: false` the chart renders no
+> `SecurityGroupPolicy` at all, so this section is inert unless you opt in.
+
+On EKS with [security groups for pods][sgp] enabled, the AWS VPC CNI can give a
+pod its own *branch ENI* carrying security groups you choose, instead of only
+inheriting the node's. That matters when Shipwright must reach a resource whose
+security group admits a specific **client security group** rather than a CIDR —
+most often a managed database, or a database proxy, living in a peered VPC.
+
+Without a branch ENI the pod's traffic leaves on the node security group, the
+target rejects it on source-SG mismatch, and the connection simply hangs until
+the client times out — there is no rejection packet to read.
+
+[sgp]: https://docs.aws.amazon.com/eks/latest/userguide/security-groups-for-pods.html
+
+### Enabling it
+
+```yaml
+awsSecurityGroupPolicy:
+  enabled: true
+  groupIds:
+    - sg-xxxxxxxxxxxxxxxxx   # the cluster's node security group
+    - sg-yyyyyyyyyyyyyyyyy   # a client SG the target's security group admits
+```
+
+That renders one `vpcresources.k8s.aws/v1beta1` `SecurityGroupPolicy` selecting
+every pod this chart owns.
+
+**List the node security group too.** A branch ENI carries *only* the groups
+named in `groupIds` — it does not add to the node's. Omit the node SG and the
+pod loses cluster-internal networking and DNS.
+
+`groupIds` is required once enabled (`values.schema.json` enforces at least one
+entry): the VPC CNI's admission webhook rejects a policy with an empty group
+list, and failing the Helm render is the more actionable error.
+
+### Choosing which pods it applies to
+
+`podSelector.matchLabels` defaults to the chart's own selector labels, which
+match every pod **this chart** renders but *not* bundled subchart pods — the
+bundled PostgreSQL carries the release's `app.kubernetes.io/instance` under its
+own `app.kubernetes.io/name`. Select on the instance label alone to cover those
+too:
+
+```yaml
+awsSecurityGroupPolicy:
+  enabled: true
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/instance: my-release
+  groupIds:
+    - sg-xxxxxxxxxxxxxxxxx
+```
+
+Or scope it to a single service with the component label
+(`admin`, `metrics`, `agent`, `task-store`, `chat`):
+
+```yaml
+awsSecurityGroupPolicy:
+  enabled: true
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/instance: my-release
+      app.kubernetes.io/component: admin
+  groupIds:
+    - sg-xxxxxxxxxxxxxxxxx
+```
+
+`nameOverride` renames the rendered resource (default: the chart fullname), and
+`extraLabels` merges extra labels into its metadata on top of the chart's
+common labels.
+
+### Pairing it with an external database
+
+This feature opens the *network path* only; it does not point Shipwright at a
+different database. To actually use a managed instance, combine it with
+`postgresql.enabled: false` and the `externalDatabase` values described in
+[Bringing your own PostgreSQL](#bringing-your-own-postgresql--bitnami-registry-fallback).
+Enabled on its own it is harmless — it only widens what the pod's ENI is
+allowed to reach.
+
+### Requirements
+
+The `vpcresources.k8s.aws/v1beta1` CRD must be installed; it ships with the AWS
+VPC CNI on EKS. On any other Kubernetes distribution leave this disabled — the
+API server would reject the resource as an unknown kind.
 
 ---
 

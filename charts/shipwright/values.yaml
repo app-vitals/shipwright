@@ -1088,3 +1088,56 @@ cloudSqlProxy:
   # Default false — keeps the public chart compatible with clusters older
   # than 1.29; opt in once running on 1.29+.
   nativeSidecar: false
+
+# -- Optional AWS VPC CNI `SecurityGroupPolicy` (EKS only). Default OFF — with
+# `enabled: false` this chart renders nothing at all for this feature, so an
+# existing install is byte-identical before and after this block was added.
+#
+# WHAT IT DOES: on EKS with "security groups for pods" enabled, the VPC CNI
+# gives every pod matching `podSelector.matchLabels` a branch ENI carrying the
+# listed security groups, instead of only the node's. This is how a pod reaches
+# a resource whose own security group admits a specific *client* security group
+# rather than a CIDR — the common case being a managed database (or a database
+# proxy) in a peered VPC. Without it the pod's traffic leaves on the node SG,
+# the target rejects it on source-SG mismatch, and the connection hangs until
+# the client times out.
+#
+# REQUIREMENTS: the `vpcresources.k8s.aws/v1beta1` CRD must be installed —
+# it ships with the AWS VPC CNI on EKS. On any other Kubernetes distribution
+# leave this disabled; the resource would be rejected as an unknown kind.
+#
+# ATTACH THE NODE SG TOO: a branch ENI carries *only* the groups listed here,
+# so list the cluster's node security group alongside the group that opens the
+# path you want. Omitting it strips the pod of cluster-internal networking and
+# DNS.
+awsSecurityGroupPolicy:
+  # -- Whether to render the SecurityGroupPolicy. Opt-in; default false.
+  enabled: false
+  # -- Name for the rendered SecurityGroupPolicy. Empty → the chart fullname.
+  nameOverride: ""
+  # -- Extra labels merged into the resource's metadata, on top of the chart's
+  # common labels. Empty → common labels only.
+  extraLabels: {}
+  podSelector:
+    # -- Labels a pod must carry to receive these security groups. Empty
+    # (default) → the chart's own selector labels
+    # (`app.kubernetes.io/name` + `app.kubernetes.io/instance`), which match
+    # every pod this chart renders but NOT bundled subchart pods such as the
+    # bundled PostgreSQL — those carry the release's `instance` label under
+    # their own `name`. To cover subchart pods as well, select on the instance
+    # label alone, e.g.
+    #   matchLabels:
+    #     app.kubernetes.io/instance: my-release
+    # To scope the policy to a single service, add its component label, e.g.
+    #   matchLabels:
+    #     app.kubernetes.io/name: shipwright
+    #     app.kubernetes.io/instance: my-release
+    #     app.kubernetes.io/component: admin
+    matchLabels: {}
+  # -- Security group IDs to attach to matching pods. Required when enabled —
+  # the chart ships no defaults, because a security group ID is specific to one
+  # VPC in one account. Supply your own, e.g.
+  #   groupIds:
+  #     - sg-xxxxxxxxxxxxxxxxx   # cluster node security group
+  #     - sg-yyyyyyyyyyyyyyyyy   # client SG the database's SG admits
+  groupIds: []
