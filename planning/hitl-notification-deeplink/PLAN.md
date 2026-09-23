@@ -58,6 +58,14 @@ change needed to close this bug.
   asserts delivery counts (`{delivered, pruned}`), never inspects the payload JSON sent
   to `fetchImpl` — that's why the missing `url` shipped unnoticed. Add a unit assertion
   on the actual payload body (specifically that `url` is `/admin/sessions/{slug}`).
+  Two existing tests in this suite assert directly on the current ad-hoc payload's
+  `level` field (`expect(built).toEqual([JSON.stringify({ kind: "immediate", slug:
+  "sesh_1", level: "generic" })])` at lines 301-303, and `expect(built.map((p) =>
+  JSON.parse(p).level)).toEqual([...])` at line 350) — once `notifySession()` switches
+  to `buildSessionNotificationPayload()`, which returns `{title, body, url, tag, kind}`
+  with no `slug`/`level` key, both assertions break deterministically. These two tests
+  must be rewritten against the new payload shape (e.g. asserting on `url`/`kind`/`tag`
+  instead of `level`), not left as-is while a new assertion is added alongside them.
 - `session-alert-sweeper.unit.test.ts` — extend an existing case (or add one) asserting
   the session's `title` is passed through to the `pushService.notifySession()` call.
 - No integration/smoke/e2e changes — this is pure payload-shape logic with existing
@@ -83,8 +91,13 @@ change needed to close this bug.
   - Unit test: extend `push-service.unit.test.ts`'s `notifySession` describe block to
     assert the sent payload includes `url: "/admin/sessions/{slug}"` (not just delivery
     counts). Extend `session-alert-sweeper.unit.test.ts` to assert `title` is forwarded.
-  - No existing test is retired — the delivery-count assertions stay; payload-shape
-    assertions are additive.
+  - The delivery-count assertions stay untouched, and `session-alert-sweeper.unit.test.ts`
+    only needs additive changes. But two tests in `push-service.unit.test.ts`'s
+    `notifySession` suite (~lines 301-303 and 350) assert directly on the current
+    payload's `level` key — since `buildSessionNotificationPayload()` returns
+    `{title, body, url, tag, kind}` with no `level`/`slug`, those two assertions must be
+    rewritten against the new payload shape as part of this task; they are not simply
+    left in place while new assertions are added alongside them.
 - **Dependencies**: none
 - **Branch**: `feat/hnd-1-1-wire-notifysession`
 - **Layer**: Background
