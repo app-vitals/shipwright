@@ -521,7 +521,11 @@ export class SessionAlertSweeper {
         if (!kind) continue;
 
         const sent = await this.deps.pushService.notifySession(
-          { slug: session.slug, emails: [follower.userEmail] },
+          {
+            slug: session.slug,
+            title: session.title,
+            emails: [follower.userEmail],
+          },
           this.detailLevel,
           kind,
         );
@@ -571,7 +575,11 @@ export class SessionAlertSweeper {
         }
         if (!follower.muted) {
           await this.deps.pushService.notifySession(
-            { slug: session.slug, emails: [follower.userEmail] },
+            {
+              slug: session.slug,
+              title: session.title,
+              emails: [follower.userEmail],
+            },
             this.detailLevel,
             "completed",
           );

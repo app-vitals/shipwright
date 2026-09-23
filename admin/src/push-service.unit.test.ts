@@ -7,6 +7,7 @@
  */
 
 import { describe, expect, it } from "bun:test";
+import { buildSessionNotificationPayload } from "./push-content.ts";
 import type { PushSubscriptionLike } from "./push-sender.ts";
 import { PushService } from "./push-service.ts";
 
@@ -239,6 +240,46 @@ describe("PushService.notifySession", () => {
     expect(deleted).toEqual([]);
   });
 
+  it("includes the session deep-link url in the payload it sends", async () => {
+    const { prisma } = fakePrisma(
+      [],
+      [
+        {
+          id: "1",
+          userEmail: "a@x.com",
+          endpoint: "https://push/ok",
+          p256dh: P256DH,
+          auth: AUTH,
+          detailOptIn: "title",
+        },
+      ],
+    );
+    const fetchImpl = (async () =>
+      new Response(null, { status: 201 })) as unknown as typeof fetch;
+    const service = new PushService(prisma as never, vapid, fetchImpl, "title");
+
+    // The encrypted push body isn't inspectable end-to-end, so capture the
+    // payload builder notifySession hands to the extracted core — same
+    // workaround the level-resolution tests below use.
+    const built: string[] = [];
+    const realSendToUsers = service.sendToUsers.bind(service);
+    service.sendToUsers = (emails, buildPayload) =>
+      realSendToUsers(emails, (subLevel) => {
+        const payload = buildPayload(subLevel);
+        built.push(payload);
+        return payload;
+      });
+
+    await service.notifySession(
+      { slug: "sesh_1", emails: ["a@x.com"] },
+      "generic",
+      "immediate",
+    );
+
+    expect(built).toHaveLength(1);
+    expect(JSON.parse(built[0] ?? "{}").url).toBe("/admin/sessions/sesh_1");
+  });
+
   it("returns { delivered: 0, pruned: 0 } when the session has no emails", async () => {
     const { prisma } = fakePrisma([], []);
     let called = 0;
@@ -291,15 +332,23 @@ describe("PushService.notifySession", () => {
       });
 
     await service.notifySession(
-      { slug: "sesh_1", emails: ["a@x.com"] },
+      { slug: "sesh_1", title: "Something happened", emails: ["a@x.com"] },
       "generic",
       "immediate",
     );
 
     // Subscription opted into "preview", operator ceiling is "title", caller
-    // asked for "generic" — the lowest of the three wins.
+    // asked for "generic" — the lowest of the three wins. Comparing against
+    // buildSessionNotificationPayload's own output (rather than hand-rolling
+    // the expected JSON) proves the resolved level, not just some payload,
+    // reached the content builder — a title-level `body` would be non-empty here.
     expect(built).toEqual([
-      JSON.stringify({ kind: "immediate", slug: "sesh_1", level: "generic" }),
+      JSON.stringify(
+        buildSessionNotificationPayload("generic", "immediate", {
+          slug: "sesh_1",
+          title: "Something happened",
+        }),
+      ),
     ]);
   });
 
@@ -339,15 +388,36 @@ describe("PushService.notifySession", () => {
       });
 
     await service.notifySession(
-      { slug: "sesh_1", emails: ["a@x.com", "b@x.com"] },
+      {
+        slug: "sesh_1",
+        title: "Something happened",
+        emails: ["a@x.com", "b@x.com"],
+      },
       "preview",
       "reminder",
     );
 
     // Per-subscriber, not one payload for everyone: the opted-out subscriber
     // stays at "generic" while the opted-in one is still capped at the
-    // operator ceiling ("title"), never the requested "preview".
-    expect(built.map((p) => JSON.parse(p).level)).toEqual(["generic", "title"]);
+    // operator ceiling ("title"), never the requested "preview". Comparing
+    // against buildSessionNotificationPayload's own output at each expected
+    // level (rather than a `level` field the new payload shape doesn't have)
+    // proves the resolution — the two levels produce visibly different
+    // `body` values given a non-empty title.
+    expect(built).toEqual([
+      JSON.stringify(
+        buildSessionNotificationPayload("generic", "reminder", {
+          slug: "sesh_1",
+          title: "Something happened",
+        }),
+      ),
+      JSON.stringify(
+        buildSessionNotificationPayload("title", "reminder", {
+          slug: "sesh_1",
+          title: "Something happened",
+        }),
+      ),
+    ]);
   });
 
   it("swallows a downstream failure and never throws into the caller", async () => {
