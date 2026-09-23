@@ -575,6 +575,21 @@ export function createTaskStoreClient(opts?: { fetchFn?: FetchFn }): {
    * prove is still fresh", so the failure must be visible to the caller.
    */
   heartbeatTask(id: string): Promise<void>;
+  /**
+   * CRT-1.2 — fetches one PR by id (GET /prs/{id}) so a caller can read
+   * its LIVE state mid-dispatch. Resolves null on a 404 (the PR is
+   * genuinely gone), throws on any other non-ok status.
+   */
+  getPr(id: string): Promise<unknown | null>;
+  /**
+   * CRT-1.2 — renews a claimed PR's `heartbeatAt` (POST /prs/{id}/heartbeat)
+   * so the task-store's claim TTL doesn't release the claim out from
+   * under a long-running dispatch. Throws on any non-ok status
+   * (including 404/403) rather than swallowing: the loop's resume gate treats a
+   * failed renewal as "don't start another attempt against a claim I can't
+   * prove is still fresh", so the failure must be visible to the caller.
+   */
+  heartbeatPr(id: string): Promise<void>;
   update(id: string, fields: Record<string, unknown>): Promise<Task>;
   claim(id: string): Promise<boolean>;
   claimPr(params: {
@@ -687,6 +702,27 @@ export function createTaskStoreClient(opts?: { fetchFn?: FetchFn }): {
         throw new Error(
           `task-store POST /tasks/${id}/heartbeat → ${res.status}`,
         );
+    },
+    async getPr(id: string): Promise<unknown | null> {
+      const res = await doFetch(`${baseUrl}/prs/${id}`, { headers });
+      // A 404 means the PR genuinely no longer exists — the caller treats
+      // that as "not in_progress anymore", not as an error worth throwing.
+      if (res.status === 404) return null;
+      if (!res.ok)
+        throw new Error(`task-store GET /prs/${id} → ${res.status}`);
+      return res.json() as Promise<unknown>;
+    },
+    async heartbeatPr(id: string): Promise<void> {
+      const res = await doFetch(`${baseUrl}/prs/${id}/heartbeat`, {
+        method: "POST",
+        headers,
+        // headers always declares Content-Type: application/json — send a
+        // valid empty object so the server's JSON body parser doesn't choke
+        // on a truly empty body (mirrors heartbeatTask above).
+        body: "{}",
+      });
+      if (!res.ok)
+        throw new Error(`task-store POST /prs/${id}/heartbeat → ${res.status}`);
     },
     async update(id: string, fields: Record<string, unknown>): Promise<Task> {
       const res = await doFetch(`${baseUrl}/tasks/${id}`, {

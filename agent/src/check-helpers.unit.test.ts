@@ -1028,6 +1028,99 @@ describe("createTaskStoreClient query()", () => {
     );
   });
 
+  // ─── getPr() (CRT-1.2) ────────────────────────────────────────────────────
+
+  const FAKE_PR = {
+    id: "clx0987654321",
+    repo: "app-vitals/shipwright",
+    prNumber: 42,
+    commitSha: "abc123def456",
+    reviewState: "pending",
+    claimedBy: "agent-123",
+  };
+
+  test("getPr() GETs /prs/:id and returns the parsed PR", async () => {
+    let capturedUrl: string | undefined;
+    let capturedInit: RequestInit | undefined;
+    const fakeFetch = (async (url: RequestInfo | URL, init?: RequestInit) => {
+      capturedUrl = String(url);
+      capturedInit = init;
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({ ...FAKE_PR, reviewState: "approved" }),
+      } as Response;
+    }) as unknown as typeof fetch;
+
+    const client = createTaskStoreClient({ fetchFn: fakeFetch });
+    const result = await client.getPr("clx0987654321");
+
+    expect(capturedUrl).toBe("https://task-store.example.com/prs/clx0987654321");
+    expect(capturedInit?.method ?? "GET").toBe("GET");
+    expect(result).toEqual({ ...FAKE_PR, reviewState: "approved" });
+  });
+
+  test("getPr() returns null on 404", async () => {
+    const fakeFetch = (async () =>
+      ({
+        ok: false,
+        status: 404,
+        json: async () => ({ error: "not found" }),
+      }) as Response) as unknown as typeof fetch;
+
+    const client = createTaskStoreClient({ fetchFn: fakeFetch });
+    await expect(client.getPr("clx-missing")).resolves.toBeNull();
+  });
+
+  test("getPr() throws on other non-ok statuses (e.g. 500)", async () => {
+    const fakeFetch = (async () =>
+      ({
+        ok: false,
+        status: 500,
+        json: async () => ({}),
+      }) as Response) as unknown as typeof fetch;
+
+    const client = createTaskStoreClient({ fetchFn: fakeFetch });
+    await expect(client.getPr("clx0987654321")).rejects.toThrow(
+      "task-store GET /prs/clx0987654321 → 500",
+    );
+  });
+
+  // ─── heartbeatPr() (CRT-1.2) ──────────────────────────────────────────────
+
+  test("heartbeatPr() POSTs to /prs/:id/heartbeat with a valid empty JSON body", async () => {
+    let capturedUrl: string | undefined;
+    let capturedInit: RequestInit | undefined;
+    const fakeFetch = (async (url: RequestInfo | URL, init?: RequestInit) => {
+      capturedUrl = String(url);
+      capturedInit = init;
+      return { ok: true, status: 200, json: async () => FAKE_PR } as Response;
+    }) as unknown as typeof fetch;
+
+    const client = createTaskStoreClient({ fetchFn: fakeFetch });
+    await client.heartbeatPr("clx0987654321");
+
+    expect(capturedUrl).toBe(
+      "https://task-store.example.com/prs/clx0987654321/heartbeat",
+    );
+    expect(capturedInit?.method).toBe("POST");
+    expect(capturedInit?.body).toBe("{}");
+  });
+
+  test("heartbeatPr() throws on a non-ok status so the caller can stop resuming", async () => {
+    const fakeFetch = (async () =>
+      ({
+        ok: false,
+        status: 403,
+        json: async () => ({}),
+      }) as Response) as unknown as typeof fetch;
+
+    const client = createTaskStoreClient({ fetchFn: fakeFetch });
+    await expect(client.heartbeatPr("clx0987654321")).rejects.toThrow(
+      "task-store POST /prs/clx0987654321/heartbeat → 403",
+    );
+  });
+
   test("claim() POSTs to /tasks/:id/claim", async () => {
     let capturedUrl: string | undefined;
     let capturedInit: RequestInit | undefined;
@@ -1098,13 +1191,6 @@ describe("createTaskStoreClient query()", () => {
   });
 
   // ─── claimPr() (CBD-1.3) ──────────────────────────────────────────────────
-
-  const FAKE_PR = {
-    id: "clx0987654321",
-    repo: "app-vitals/shipwright",
-    prNumber: 42,
-    commitSha: "abc123def456",
-  };
 
   test("claimPr() POSTs to /prs/claim with the right body", async () => {
     let capturedUrl: string | undefined;
