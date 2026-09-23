@@ -1063,7 +1063,7 @@ export class TaskService implements TaskServiceLike {
     try {
       return await this.prisma.$transaction(async (tx) => {
         const before = await tx.task.findUnique({ where: { id } });
-        const updateData: Record<string, unknown> = {
+        const updateData: Prisma.TaskUpdateInput = {
           claimedBy: null,
           claimedAt: null,
           heartbeatAt: null,
