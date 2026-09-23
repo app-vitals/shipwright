@@ -640,13 +640,26 @@ git -C ${SHIPWRIGHT_REPO_DIR:-$HOME/src}/{repo} worktree add ${SHIPWRIGHT_WORKTR
 
 Check the cache before any fresh detection, then fall back to docs-first discovery and config-file scanning — see `references/toolchain-patterns.md`'s "Caching Across Runs" and "Docs-First Discovery" sections for the exact protocol:
 
-1. Compute the fingerprint against `{worktree-path}` and read `state/toolchain-cache/{repo}.json`. If the file exists and its fingerprint matches, reuse the cached **lint**/**test**/**tests** commands and skip to Step 4a.6.
+1. Compute the fingerprint against `{worktree-path}` and read `state/toolchain-cache/{repo}.json`. If the file exists and its fingerprint matches, reuse the cached **lint**/**test**/**tests** commands and skip to item 5 below (the scoped-lint check still needs to run against the reused commands).
 2. Otherwise, read `CLAUDE.md` + `docs/*.md`/`ai-docs/*.md` for explicit lint/test commands first (authoritative if found), then fall back to the config-file lookup table in `references/toolchain-patterns.md` to fill any gaps.
 3. Store detected commands:
    - **{lint command}**: e.g., `bun run lint`, `cargo clippy`, `golangci-lint run`
    - **{test command}**: e.g., `bun test`, `cargo test`, `go test ./...`, `pytest`
    - **{tests}**: optional object of additional test layers (e.g., `{"integration": "pytest tests/integration", "e2e": "npx playwright test"}`) — omit when only one test command exists
 4. On a cache miss, overwrite `state/toolchain-cache/{repo}.json` with the new fingerprint + commands.
+5. **Prefer scoped lint when available.** Check whether the cached `commands.lintScoped`
+   field (see `references/toolchain-patterns.md`'s "Caching Across Runs" section) is
+   present:
+   ```bash
+   base=$(gh pr view {pr} --repo {org}/{repo} --json baseRefName -q '.baseRefName')
+   head=$(git -C {worktree-path} rev-parse HEAD)
+   ```
+   - **`lintScoped` present**: substitute `{base}` and `{head}` above into its template
+     (e.g. `turbo lint --filter=...[{base}...{head}]`) to resolve **{lint command}** for
+     this PR's dispatch in Step 4b — the scoped command replaces the unscoped one for this
+     dispatch only, the cache entry itself is untouched.
+   - **`lintScoped` absent**: **{lint command}** remains the unscoped cached `lint`
+     command from step 3 above, unchanged.
 
 ### Step 4a.6: Claim PR Record (pre-work lock)
 
@@ -872,6 +885,20 @@ From inside the worktree, collect the full picture of what needs fixing:
    base=$(gh pr view {pr} --repo {org}/{repo} --json baseRefName -q '.baseRefName')
    git diff "origin/$base"...HEAD
    ```
+
+   **Prefer scoped lint when available.** Check whether the cached `commands.lintScoped`
+   field (see `references/toolchain-patterns.md`'s "Caching Across Runs" section) is
+   present:
+   ```bash
+   head=$(git -C {worktree-path} rev-parse HEAD)
+   ```
+   - **`lintScoped` present**: substitute `{base}` (reuse `$base` above — no second
+     fetch) and `{head}` above into its template (e.g. `turbo lint
+     --filter=...[{base}...{head}]`) to resolve **{lint command}** for this PR's dispatch
+     in Step 5b — the scoped command replaces the unscoped one for this dispatch only, the
+     cache entry itself is untouched.
+   - **`lintScoped` absent**: **{lint command}** remains the unscoped cached `lint`
+     command from step 3 above, unchanged.
 
 2. **Unresolved inline threads** (from Step 3a — already fetched, reuse):
    Each thread with `isResolved == false` — include `id`, `path`, `line`, and comment body.
@@ -1546,13 +1573,26 @@ git -C ${SHIPWRIGHT_REPO_DIR:-$HOME/src}/{repo} worktree add ${SHIPWRIGHT_WORKTR
 
 Check the cache before any fresh detection, then fall back to docs-first discovery and config-file scanning — see `references/toolchain-patterns.md`'s "Caching Across Runs" and "Docs-First Discovery" sections for the exact protocol:
 
-1. Compute the fingerprint against `{worktree-path}` and read `state/toolchain-cache/{repo}.json`. If the file exists and its fingerprint matches, reuse the cached **lint**/**test**/**tests** commands and skip to Step 6b.
+1. Compute the fingerprint against `{worktree-path}` and read `state/toolchain-cache/{repo}.json`. If the file exists and its fingerprint matches, reuse the cached **lint**/**test**/**tests** commands and skip to item 5 below (the scoped-lint check still needs to run against the reused commands).
 2. Otherwise, read `CLAUDE.md` + `docs/*.md`/`ai-docs/*.md` for explicit lint/test commands first (authoritative if found), then fall back to the config-file lookup table in `references/toolchain-patterns.md` to fill any gaps.
 3. Store detected commands:
    - **{lint command}**: e.g., `bun run lint`, `cargo clippy`, `golangci-lint run`
    - **{test command}**: e.g., `bun test`, `cargo test`, `go test ./...`, `pytest`
    - **{tests}**: optional object of additional test layers (e.g., `{"integration": "pytest tests/integration", "e2e": "npx playwright test"}`) — omit when only one test command exists
 4. On a cache miss, overwrite `state/toolchain-cache/{repo}.json` with the new fingerprint + commands.
+5. **Prefer scoped lint when available.** Check whether the cached `commands.lintScoped`
+   field (see `references/toolchain-patterns.md`'s "Caching Across Runs" section) is
+   present:
+   ```bash
+   base=$(gh pr view {pr} --repo {org}/{repo} --json baseRefName -q '.baseRefName')
+   head=$(git -C {worktree-path} rev-parse HEAD)
+   ```
+   - **`lintScoped` present**: substitute `{base}` and `{head}` above into its template
+     (e.g. `turbo lint --filter=...[{base}...{head}]`) to resolve **{lint command}** for
+     this PR's dispatch in Step 6c — the scoped command replaces the unscoped one for this
+     dispatch only, the cache entry itself is untouched.
+   - **`lintScoped` absent**: **{lint command}** remains the unscoped cached `lint`
+     command from step 3 above, unchanged.
 
 ### Step 6b: Collect CI Failure Output
 
