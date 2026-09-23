@@ -8,7 +8,8 @@ actually touched by the diff. On a monorepo, the cached command is typically a r
 repo-wide script (e.g. a Turborepo `lint` pipeline that fans out to every workspace). This
 is asymmetric with the Coverage Gate section of the same step, which already scopes
 explicitly to "packages that have changed files on this branch"
-(`dev-task.md:747-777`) — Build & Lint (`dev-task.md:779-781`) has no equivalent scoping.
+(`dev-task.md:747-777`) — the unscoped validation-command paragraph earlier in the same
+step (`dev-task.md:737-745`) has no equivalent scoping.
 
 Concretely observed on a large monorepo: the toolchain cache held `"lint": "npm run lint"`
 (a Turborepo pipeline script), so every dev-task's pre-ship check relinted the entire
@@ -96,13 +97,15 @@ Safe to deploy standalone: yes.
 **Layer:** Shared · **Branch:** `feat/lsc-1-2-devtask-scoped-lint` · **Hours:** 2 ·
 **Complexity:** 3 · **Model:** sonnet · **Dependencies:** LSC-1.1
 
-Update `dev-task.md`'s Step 8 Build & Lint section to prefer `lintScoped` from the
+Update `dev-task.md`'s Step 8 validation-command paragraph (`dev-task.md:737-745`,
+immediately before the Coverage Gate subsection) to prefer `lintScoped` from the
 toolchain cache when present, falling back to the existing unscoped `lint`/`validate`
 command when absent.
 
 Acceptance criteria:
-- Step 8 reads `lintScoped` from the cache populated in Step 0/0b and runs it in place of
-  the unscoped command when present; falls back unchanged when absent.
+- Step 8's validation-command paragraph (`dev-task.md:737-745`) reads `lintScoped` from
+  the cache populated in Step 0/0b and runs it in place of the unscoped command when
+  present; falls back unchanged when absent.
 - `{base}`/`{head}` placeholders resolve to whatever value(s) Step 8 (or an earlier step)
   already computes for diffing against the target branch — no new diff-computation logic.
 - Pre-Ship Checks output reports which lint mode ran (scoped vs. full) so a human
