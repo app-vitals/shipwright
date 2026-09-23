@@ -387,10 +387,10 @@ Per the flat, repo-agnostic `repo-config` recommendation (this repo is on, or mo
   direct`.
 - **Recorded-fixture recording credentials** (used only when re-recording fixtures, never in
   normal CI runs — see the deferred recorded-fixture maintenance loop below): one per external
-  integration named in the Local execution architecture table — e.g. a scoped GitHub PAT/App
-  credential, a Slack bot token, Google/Okta OAuth test client secrets, Groq/ElevenLabs API
-  keys. Scope these to a dedicated `recorded-fixture-refresh` GitHub Environment, not shared
-  with the CI integration-test run.
+  integration named in the Local execution architecture table — e.g. Groq/ElevenLabs API
+  credentials (`agent/src/voice.ts` recordings), a scoped GitHub PAT/App credential, a Slack
+  bot token, and Google/Okta OAuth test client secrets. Scope these to a dedicated
+  `recorded-fixture-refresh` GitHub Environment, not shared with the CI integration-test run.
 - **Test Postgres credentials** — already plain workflow env vars in `ci.yml`
   (`DATABASE_URL_ADMIN_TEST`, `DATABASE_URL_SHIPWRIGHT_TASK_STORE_TEST`,
   `DATABASE_URL_SHIPWRIGHT_CHAT`), pointed at the ephemeral `services: postgres` container —
