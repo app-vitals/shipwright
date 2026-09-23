@@ -855,7 +855,8 @@ No session found for cron "<name>" around <time> Pacific.
 
 Possible reasons:
 1. The preCheck script returned non-zero — the cron was suppressed before Claude ran.
-   Check logs/bodhi.log for "[preCheck]" lines around <time>.
+   preCheck failures are logged to stdout via console.error with an "[agent:cron]" prefix
+   (agent/src/cron-handler.ts) — check the container's stdout/log aggregator around <time>.
 2. The cron was disabled at the time. Verify via:
       curl -s -H "Authorization: Bearer $SHIPWRIGHT_AGENT_API_KEY" \
         "$SHIPWRIGHT_API_URL/agents/$SHIPWRIGHT_AGENT_ID/crons" | jq '.crons[] | select(.name | test("<name>"))'
@@ -865,24 +866,18 @@ Possible reasons:
    check the task store / GitHub directly for its history instead.
 ```
 
-For case 1, grep bodhi.log:
-```bash
-grep -i "precheck\|pre-check\|cron" logs/bodhi.log | tail -50
-```
-
 ---
 
 ## Notes
 
 - This skill reads the admin API, the task store, live GitHub state, transcript
   files, and (optionally, Step 4) Sentry — it does **not** require container stdout or
-  any external log system beyond `logs/bodhi.log` for the preCheck fallback case. The
-  Claude Code session JSONL is the authoritative record of what the model concluded and
-  why; the admin API's `AgentCronRun` records are the authoritative record of exactly
-  when and against what item a cron fired; the task store and GitHub are the
-  authoritative record of an item's *current* state (Step 2); Sentry (Step 4) is the
-  authoritative record of unhandled exceptions and structured console output, when
-  `SENTRY_ORG`/`SENTRY_AUTH_TOKEN` are configured.
+  any external log system. The Claude Code session JSONL is the authoritative record of
+  what the model concluded and why; the admin API's `AgentCronRun` records are the
+  authoritative record of exactly when and against what item a cron fired; the task
+  store and GitHub are the authoritative record of an item's *current* state (Step 2);
+  Sentry (Step 4) is the authoritative record of unhandled exceptions and structured
+  console output, when `SENTRY_ORG`/`SENTRY_AUTH_TOKEN` are configured.
 - Prefer the admin-API path (Step 1) over the fallback whenever the admin API is
   reachable and returns run records — it gives an exact `startedAt` instead of a guess,
   and item mode is only possible through it.
