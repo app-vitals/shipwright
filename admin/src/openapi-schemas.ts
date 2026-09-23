@@ -273,6 +273,15 @@ export const AgentCronRunSchema = z
       description:
         "Agent session id this run was executed under. Null for runs with no recorded session.",
     }),
+    lastHeartbeatAt: z
+      .string()
+      .datetime()
+      .nullable()
+      .openapi({
+        example: "2026-01-01T08:00:03.000Z",
+        description:
+          "Most recent debounced progress-push (recordProgress()) timestamp, sourced from the agent's injected Clock. Null for runs that never reported progress (short/legacy runs).",
+      }),
     createdAt: z
       .string()
       .datetime()
@@ -378,6 +387,16 @@ export const PatchAgentCronRunBodySchema = z
       example: "session-abc-123",
       description: "Agent session id this run was executed under.",
     }),
+    lastHeartbeatAt: z
+      .string()
+      .datetime()
+      .nullable()
+      .optional()
+      .openapi({
+        example: "2026-01-01T08:00:03.000Z",
+        description:
+          "Most recent debounced progress-push (recordProgress()) timestamp, sourced from the agent's injected Clock.",
+      }),
     modelBreakdown: z
       .array(ModelBreakdownEntrySchema)
       .optional()

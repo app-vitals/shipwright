@@ -6248,6 +6248,7 @@ describe("renderQueueActivityPage — Past section", () => {
       filters?: { cronId?: string; outcome?: string };
       pagination?: { total: number; limit: number; page: number };
       crons?: { id: string; name: string | null; schedule: string }[];
+      now?: Date;
     },
   ): string {
     return renderQueueActivityPage({
@@ -6263,6 +6264,7 @@ describe("renderQueueActivityPage — Past section", () => {
       },
       userName: "admin@example.com",
       timezone: "America/Los_Angeles",
+      now: opts?.now,
     });
   }
 
@@ -6387,6 +6389,7 @@ describe("renderQueueActivityPage — Past section", () => {
     expect(html).toContain("<th>Cron</th>");
     expect(html).toContain("Started");
     expect(html).toContain("Duration");
+    expect(html).toContain("<th>Last Heartbeat</th>");
     expect(html).toContain("Tokens");
     expect(html).toContain("Model");
     expect(html).toContain("<th>Phase</th>");
@@ -6489,6 +6492,67 @@ describe("renderQueueActivityPage — Past section", () => {
       }),
     ]);
     expect(html).toContain("—");
+  });
+
+  // ─── Last Heartbeat / in-progress duration (CRH-1.1) ────────────────────
+
+  test("renders a '~'-prefixed duration from startedAt to lastHeartbeatAt when completedAt is null but a heartbeat exists", () => {
+    const html = render([
+      makeRun({
+        completedAt: null,
+        startedAt: new Date("2026-06-01T10:00:00Z"),
+        lastHeartbeatAt: new Date("2026-06-01T10:00:07Z"),
+      }),
+    ]);
+    const bodyRowMatch = html.match(/<tbody>([\s\S]*?)<\/tbody>/);
+    expect(bodyRowMatch).not.toBeNull();
+    expect(bodyRowMatch?.[1]).toContain("~7.0s");
+  });
+
+  test("renders a plain (non-'~') duration when completedAt is set, even if lastHeartbeatAt is also present", () => {
+    const html = render([
+      makeRun({
+        startedAt: new Date("2026-06-01T10:00:00Z"),
+        completedAt: new Date("2026-06-01T10:00:02Z"),
+        lastHeartbeatAt: new Date("2026-06-01T10:00:07Z"),
+      }),
+    ]);
+    const bodyRowMatch = html.match(/<tbody>([\s\S]*?)<\/tbody>/);
+    expect(bodyRowMatch).not.toBeNull();
+    expect(bodyRowMatch?.[1]).toContain("2.0s");
+    expect(bodyRowMatch?.[1]).not.toContain("~2.0s");
+    expect(bodyRowMatch?.[1]).not.toContain("~7.0s");
+  });
+
+  test("renders em-dash for duration when neither completedAt nor lastHeartbeatAt is set", () => {
+    const html = render([
+      makeRun({
+        completedAt: null,
+        lastHeartbeatAt: null,
+      }),
+    ]);
+    const bodyRowMatch = html.match(/<tbody>([\s\S]*?)<\/tbody>/);
+    expect(bodyRowMatch).not.toBeNull();
+    expect(bodyRowMatch?.[1]).toContain("—");
+  });
+
+  test("renders the Last Heartbeat cell as a relative time when lastHeartbeatAt is present", () => {
+    const html = render(
+      [
+        makeRun({
+          lastHeartbeatAt: new Date("2026-06-01T09:55:00Z"),
+        }),
+      ],
+      { now: new Date("2026-06-01T10:00:00Z") },
+    );
+    expect(html).toContain("5 minutes ago");
+  });
+
+  test("renders an em-dash for the Last Heartbeat cell when lastHeartbeatAt is absent", () => {
+    const html = render([makeRun({ lastHeartbeatAt: undefined })]);
+    const bodyRowMatch = html.match(/<tbody>([\s\S]*?)<\/tbody>/);
+    expect(bodyRowMatch).not.toBeNull();
+    expect(bodyRowMatch?.[1]).toContain("—");
   });
 
   test("renders the run's phase (via phaseCron, prefix stripped) when set", () => {
@@ -6851,7 +6915,7 @@ describe("renderQueueActivityPage — Past section", () => {
     expect(theadMatch).not.toBeNull();
     // Count <th> elements within the thead
     const headers = theadMatch?.[1].match(/<th[^>]*>/g);
-    expect(headers?.length).toBe(10);
+    expect(headers?.length).toBe(11);
   });
 
   test("escapes XSS in sessionId within the title attribute", () => {

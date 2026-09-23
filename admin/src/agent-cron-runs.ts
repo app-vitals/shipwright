@@ -69,6 +69,12 @@ export interface PatchAgentCronRunInput {
   cacheCreationTokens?: number | null;
   /** Agent session id this run was executed under. Null clears it. */
   sessionId?: string | null;
+  /**
+   * Most recent debounced progress-push (recordProgress()) timestamp,
+   * sourced from the agent's injected Clock. Null clears it. Overwritten on
+   * every progress push — always the latest, not a history.
+   */
+  lastHeartbeatAt?: Date | null;
   modelBreakdown?: ModelBreakdownEntry[];
 }
 
@@ -205,6 +211,9 @@ export class AgentCronRunService {
       ...(input.skipped !== undefined && { skipped: input.skipped }),
       ...(input.skipReason !== undefined && { skipReason: input.skipReason }),
       ...(input.sessionId !== undefined && { sessionId: input.sessionId }),
+      ...(input.lastHeartbeatAt !== undefined && {
+        lastHeartbeatAt: input.lastHeartbeatAt,
+      }),
     };
 
     if (input.modelBreakdown && input.modelBreakdown.length > 0) {

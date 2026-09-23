@@ -335,7 +335,7 @@ describe("HttpCronRunReporter", () => {
 
   // ─── recordProgress ────────────────────────────────────────────────────────
 
-  test("recordProgress PATCHes to correct URL with only modelBreakdown in body", async () => {
+  test("recordProgress PATCHes to correct URL with modelBreakdown and lastHeartbeatAt in body", async () => {
     const reporter = makeReporter();
     const modelBreakdown = [
       {
@@ -347,8 +347,14 @@ describe("HttpCronRunReporter", () => {
         costUsd: 0.002,
       },
     ];
+    const lastHeartbeatAt = new Date("2026-01-01T08:00:03.000Z");
 
-    await reporter.recordProgress("cron-123", "run-abc", modelBreakdown);
+    await reporter.recordProgress(
+      "cron-123",
+      "run-abc",
+      modelBreakdown,
+      lastHeartbeatAt,
+    );
 
     expect(state.captured).toHaveLength(1);
     expect(state.captured[0].method).toBe("PATCH");
@@ -357,9 +363,12 @@ describe("HttpCronRunReporter", () => {
     );
 
     const body = state.captured[0].body as Record<string, unknown>;
-    expect(Object.keys(body)).toEqual(["modelBreakdown"]);
+    expect(new Set(Object.keys(body))).toEqual(
+      new Set(["modelBreakdown", "lastHeartbeatAt"]),
+    );
     expect(body.completedAt).toBeUndefined();
     expect(body.outcome).toBeUndefined();
+    expect(body.lastHeartbeatAt).toBe(lastHeartbeatAt.toISOString());
     const breakdown = body.modelBreakdown as Array<Record<string, unknown>>;
     expect(breakdown).toHaveLength(1);
     expect(breakdown[0].model).toBe("claude-sonnet-4-5");
@@ -368,7 +377,7 @@ describe("HttpCronRunReporter", () => {
 
   test("recordProgress does nothing when runId is null", async () => {
     const reporter = makeReporter();
-    await reporter.recordProgress("cron-123", null, []);
+    await reporter.recordProgress("cron-123", null, [], new Date());
 
     expect(state.captured).toHaveLength(0);
   });
@@ -381,7 +390,7 @@ describe("HttpCronRunReporter", () => {
     });
 
     await expect(
-      reporter.recordProgress("cron-net-err", "run-1", []),
+      reporter.recordProgress("cron-net-err", "run-1", [], new Date()),
     ).resolves.toBeUndefined();
   });
 
@@ -390,7 +399,7 @@ describe("HttpCronRunReporter", () => {
     const reporter = makeReporter();
 
     await expect(
-      reporter.recordProgress("cron-http-err", "run-1", []),
+      reporter.recordProgress("cron-http-err", "run-1", [], new Date()),
     ).resolves.toBeUndefined();
   });
 
@@ -677,7 +686,7 @@ describe("NoopCronRunReporter", () => {
   test("recordProgress resolves immediately and does not throw", async () => {
     const reporter = new NoopCronRunReporter();
     await expect(
-      reporter.recordProgress("any", null, []),
+      reporter.recordProgress("any", null, [], new Date()),
     ).resolves.toBeUndefined();
   });
 
