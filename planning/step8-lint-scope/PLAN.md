@@ -87,8 +87,9 @@ Acceptance criteria:
   projects with no monorepo tool.
 - Test decision: extend the existing `toolchain-patterns.md`-content describe blocks in
   `dev-task.content.test.ts` (or add a new co-located describe block) asserting the doc
-  contains the `lintScoped` field name, the Turborepo and generic-eslint-fallback rules,
-  and the "omitted when no match" behavior. Purely additive — no existing tests retired.
+  contains the `lintScoped` field name, the Turborepo, Nx, pnpm-workspace, and
+  generic-eslint-fallback detection rules, and the "omitted when no match" behavior.
+  Purely additive — no existing tests retired.
 
 Safe to deploy standalone: yes.
 
@@ -111,8 +112,9 @@ Acceptance criteria:
 - Pre-Ship Checks output reports which lint mode ran (scoped vs. full) so a human
   reviewing the run can tell.
 - Test decision: extend `dev-task.content.test.ts` with a new describe block asserting
-  Step 8 references `lintScoped` and documents the fallback-to-full behavior. Purely
-  additive — no existing tests retired.
+  Step 8 references `lintScoped` and documents the fallback-to-full behavior, and that the
+  Pre-Ship Checks output section specifies reporting which lint mode ran (scoped vs. full).
+  Purely additive — no existing tests retired.
 
 Safe to deploy standalone: yes.
 
