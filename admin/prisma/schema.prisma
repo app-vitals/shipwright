@@ -188,6 +188,13 @@ model AgentCronRun {
   itemId             String?   // work item id this run was dispatched against (e.g. "WLS-2.2" or
                                 // "acme/x#123"); null when the tick had no dispatch
   sessionId          String?   // Claude session id this cron run corresponds to
+  lastHeartbeatAt    DateTime? // Most recent debounced progress-push (recordProgress())
+                                // timestamp, sourced from the agent's injected Clock. Null
+                                // for runs that never reported progress (short/legacy runs).
+                                // Lets the admin UI show a "last checked in" signal — and a
+                                // best-effort in-progress duration — for a run that stalls
+                                // or crashes before reaching completedAt. Additive/nullable;
+                                // no backfill for existing rows.
   createdAt          DateTime  @default(now())
 
   // Secondary/denormalized pointer to the phase cron (a child AgentCronJob)

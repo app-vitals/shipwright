@@ -1395,6 +1395,11 @@ export function createAdminApp(deps: AdminDeps): OpenAPIHono<AdminAuthEnv> {
         cacheCreationTokens: body.cacheCreationTokens,
       }),
       ...(body.sessionId !== undefined && { sessionId: body.sessionId }),
+      ...(body.lastHeartbeatAt !== undefined && {
+        lastHeartbeatAt: body.lastHeartbeatAt
+          ? new Date(body.lastHeartbeatAt)
+          : null,
+      }),
       ...(body.modelBreakdown !== undefined && {
         modelBreakdown: body.modelBreakdown,
       }),
@@ -1676,6 +1681,7 @@ function serializeCronRun(run: {
   itemType: string | null;
   itemId: string | null;
   sessionId: string | null;
+  lastHeartbeatAt: Date | null;
   createdAt: Date;
   modelBreakdown?: ModelBreakdownEntry[];
 }): z.infer<typeof AgentCronRunSchema> {
@@ -1718,6 +1724,9 @@ function serializeCronRun(run: {
     itemType: run.itemType,
     itemId: run.itemId,
     sessionId: run.sessionId,
+    lastHeartbeatAt: run.lastHeartbeatAt
+      ? run.lastHeartbeatAt.toISOString()
+      : null,
     ...tokenTotals,
     createdAt: run.createdAt.toISOString(),
     ...(run.modelBreakdown !== undefined && {

@@ -221,6 +221,14 @@ export interface CronRunItem {
    */
   sessionId?: string | null;
   /**
+   * Most recent debounced progress-push (recordProgress()) timestamp,
+   * sourced from the agent's injected Clock. Null/absent for runs that never
+   * reported progress (short/legacy runs). Used by renderCronRunRow both for
+   * its own "Last Heartbeat" column and as a duration fallback when the run
+   * has no completedAt yet (a stalled/crashed run) — see durationCell there.
+   */
+  lastHeartbeatAt?: Date | null;
+  /**
    * The owning cron's id/name/schedule — present on cross-cron listings (e.g.
    * renderQueueActivityPage's per-agent Past table) so the Cron column can be
    * rendered without an N+1 lookup. Absent on single-cron listings.
@@ -4413,6 +4421,7 @@ const CRON_RUN_TABLE_HEAD_CELLS = `
   <th>Cron</th>
   <th>Started</th>
   <th>Duration</th>
+  <th>Last Heartbeat</th>
   <th class="col-tokens">Tokens</th>
   <th class="col-model">Model</th>
   <th>Phase</th>
@@ -4578,7 +4587,7 @@ function renderCronRunRow(
     agentCell?: string;
   },
 ): string {
-  const { timezone, now: _now, cronLinkAgentId, agentCell } = opts;
+  const { timezone, now, cronLinkAgentId, agentCell } = opts;
   const outcomeLabel = cronRunOutcomeLabel(r);
   const badgeStyle = cronOutcomeStyle(outcomeLabel);
   const badgeTitle =
@@ -4602,12 +4611,28 @@ function renderCronRunRow(
   });
   const startedCell = `<span title="${escapeHtml(startedIso)}">${escapeHtml(startedFmt)}</span>`;
 
-  const durationCell = r.completedAt
+  // A run that stalls or crashes before reaching completedAt would otherwise
+  // render a bare "—" with no signal of how long it ran before going dark.
+  // Fall back to the most recent lastHeartbeatAt as the duration's end point,
+  // prefixed with "~" to mark it as a best-effort in-progress duration —
+  // visually distinct from a completedAt-backed final duration.
+  const durationEndAt = r.completedAt ?? r.lastHeartbeatAt;
+  const durationCell = durationEndAt
     ? escapeHtml(
-        fmtDuration(
-          new Date(r.completedAt).getTime() - new Date(r.startedAt).getTime(),
-        ),
+        `${r.completedAt ? "" : "~"}${fmtDuration(
+          new Date(durationEndAt).getTime() - new Date(r.startedAt).getTime(),
+        )}`,
       )
+    : "—";
+
+  // Last Heartbeat cell: relative time of the most recent debounced
+  // progress-push, em-dash when the run never reported one (short/legacy
+  // runs) — same convention as the other optional-timestamp cells here.
+  const heartbeatCell = r.lastHeartbeatAt
+    ? (() => {
+        const heartbeatDate = new Date(r.lastHeartbeatAt as Date);
+        return `<span title="${escapeHtml(heartbeatDate.toISOString())}">${escapeHtml(relativeTime(heartbeatDate, now))}</span>`;
+      })()
     : "—";
 
   // Token totals are summed from the per-model breakdown rows — the sole
@@ -4688,6 +4713,7 @@ function renderCronRunRow(
       <td style="font-size:12px">${cronCell}</td>
       <td style="font-size:12px">${startedCell}</td>
       <td class="mono" style="font-size:12px">${durationCell}</td>
+      <td style="font-size:12px">${heartbeatCell}</td>
       <td class="col-tokens mono" style="font-size:12px">${tokensCell}</td>
       <td class="col-model" style="font-size:12px">${modelCell}</td>
       <td style="font-size:12px">${phaseCell}</td>
