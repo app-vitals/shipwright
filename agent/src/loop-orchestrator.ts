@@ -294,6 +294,36 @@ export interface LoopOrchestratorDeps {
    */
   heartbeatTask?: (taskId: string) => Promise<void>;
   /**
+   * CRT-1.2 — fetches a PR's live state from the task store, used by the
+   * PR-phase (review/patch/deploy) dispatch logic to decide whether to
+   * proceed or mark as stale. Returns null if the PR can't be found (treated
+   * as "stop processing"). Returns `claimedBy` alongside state so the dispatch
+   * can verify claim ownership.
+   *
+   * Currently unused by existing dispatch logic — wired here for CRT-1.3 to
+   * consume in the PR-phase dispatch path. Mirrors getTaskState pattern.
+   *
+   * Optional: when undefined (every existing test and deployment that doesn't
+   * opt in), dispatch proceeds without live PR state checks, identical to
+   * pre-CRT-1.2 behavior.
+   */
+  getPrState?: (
+    prId: string,
+  ) => Promise<{ reviewState?: string; claimedBy: string | null } | null>;
+  /**
+   * CRT-1.2 — renews a claimed PR's `heartbeatAt` (POST /prs/{id}/heartbeat)
+   * so the task-store's claim TTL doesn't release the claim out from
+   * under a long-running, multi-attempt dispatch.
+   *
+   * Currently unused by existing dispatch logic — wired here for CRT-1.3 to
+   * consume in the PR-phase dispatch path. Mirrors heartbeatTask pattern.
+   *
+   * Optional: when undefined (every existing test and deployment that doesn't
+   * opt in), dispatch proceeds without renewing PR claims, identical to
+   * pre-CRT-1.2 behavior.
+   */
+  heartbeatPr?: (prId: string) => Promise<void>;
+  /**
    * Clears a persisted session-store entry by key. Called (best-effort) at
    * the end of a dev-task dispatch's resume loop, but — DTR-1.1 — ONLY once a
    * fresh getTaskState check in that finally block confirms the task has
@@ -1834,6 +1864,23 @@ export async function createProductionLoopOrchestrator(
     // single session. Throws on a non-ok response — the resume gate reads that
     // as "stop resuming".
     heartbeatTask: (id) => taskStoreClient.heartbeatTask(id),
+    // CRT-1.2: PR-phase live-state check — currently unused by existing
+    // dispatch logic, wired for CRT-1.3 to consume.
+    getPrState: (id) =>
+      taskStoreClient
+        .getPr(id)
+        .then((pr) =>
+          pr
+            ? {
+                reviewState: (pr as { reviewState?: string }).reviewState,
+                claimedBy: (pr as { claimedBy?: string | null })
+                  .claimedBy ?? null,
+              }
+            : null,
+        ),
+    // CRT-1.2: PR-phase claim renewal — currently unused by existing
+    // dispatch logic, wired for CRT-1.3 to consume.
+    heartbeatPr: (id) => taskStoreClient.heartbeatPr(id),
     clearSessionKey: opts.clearSessionKey,
     runner: opts.runner,
     cronRunReporter: opts.cronRunReporter,
