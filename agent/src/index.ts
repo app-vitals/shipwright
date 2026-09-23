@@ -641,12 +641,15 @@ const loopJobsRef = createJobsRef<CronJobLike>();
 // wiring cost, and its construction errors surface at fire time (logged by the
 // cron callback's try/catch) rather than crashing agent startup.
 const getLoopOrchestrator = createLoopOrchestratorGetter({
-  // DTW-1.3: sessionKey is no longer hardcoded undefined for the loop path —
-  // the orchestrator supplies `dev-task:{taskId}:{per-dispatch nonce}` for
+  // DTW-1.3/DTR-1.1: sessionKey is no longer hardcoded undefined for the loop
+  // path — the orchestrator supplies a stable `dev-task:{taskId}` key for
   // dev-task dispatches (and nothing for every other phase), plus an
-  // onEarlySessionId callback. The loop never passes extraEnv (only
-  // cron-handler's dispatch does), so the former 3rd `extraEnv` param here was
-  // dead for this call site.
+  // onEarlySessionId callback. The key is stable (not a per-dispatch nonce)
+  // so a later, separate dispatch of the same still-in_progress task can
+  // resume this same session — see loop-orchestrator.ts's sessionKey doc
+  // comment. The loop never passes extraEnv (only cron-handler's dispatch
+  // does), so the former 3rd `extraEnv` param here was dead for this call
+  // site.
   runner: (
     message: string,
     onProgress?: ProgressCallback,
@@ -663,9 +666,14 @@ const getLoopOrchestrator = createLoopOrchestratorGetter({
     ),
   cronRunReporter: cronRunReporter ?? new NoopCronRunReporter(),
   workQueueReporter,
-  // DTW-1.3: lets the dev-task resume loop drop its own per-dispatch nonce key
-  // when it exits, so `sessions.json` (shared with Slack thread sessions) does
-  // not gain one permanent entry per dev-task dispatch.
+  // DTW-1.3/DTR-1.1: lets the dev-task resume loop drop its stable session
+  // key, but only once the orchestrator's fresh getTaskState check confirms
+  // the task has reached a terminal dev-task-work status — not
+  // unconditionally on every dispatch exit, since the key must otherwise
+  // survive so a later, separate dispatch of the same still-in_progress task
+  // can resume it. `sessions.json` (shared with Slack thread sessions) still
+  // relies on this eventually firing so it doesn't accumulate a permanent
+  // entry per task that finishes dev-task work.
   clearSessionKey: (key: string) => sessions.clear(key),
   // LO-1.1: same optional-by-convention pattern as every other sentryClient
   // call site in this file (undefined, i.e. fully inert, when SENTRY_DSN is

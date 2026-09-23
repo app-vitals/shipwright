@@ -389,6 +389,65 @@ describe("toolchain-patterns.md — cache schema includes tests object for multi
   });
 });
 
+describe("toolchain-patterns.md — cache schema includes lintScoped for diff-scoped lint detection (LSC-1.1)", () => {
+  it("defines a lintScoped field in the cache schema", () => {
+    const referencesPath = join(import.meta.dir, "..", "references", "toolchain-patterns.md");
+    const referencesContent = readFileSync(referencesPath, "utf-8");
+
+    const schemaIdx = referencesContent.indexOf('"commands"');
+    expect(schemaIdx).toBeGreaterThan(-1);
+    const schemaSection = referencesContent.slice(schemaIdx, schemaIdx + 500);
+    expect(schemaSection).toContain('"lintScoped"');
+  });
+
+  it("documents lintScoped as omitted (never null) when no scoped command is available", () => {
+    const referencesPath = join(import.meta.dir, "..", "references", "toolchain-patterns.md");
+    const referencesContent = readFileSync(referencesPath, "utf-8");
+
+    const fieldIdx = referencesContent.indexOf("**`lintScoped`**");
+    expect(fieldIdx).toBeGreaterThan(-1);
+    const fieldSection = referencesContent.slice(fieldIdx, fieldIdx + 500);
+    expect(fieldSection).toMatch(/omit/i);
+    expect(fieldSection).toMatch(/never.{0,20}null/i);
+  });
+
+  it("documents the Turborepo scoped-lint detection rule", () => {
+    const referencesPath = join(import.meta.dir, "..", "references", "toolchain-patterns.md");
+    const referencesContent = readFileSync(referencesPath, "utf-8");
+
+    expect(referencesContent).toContain("turbo.json");
+    expect(referencesContent).toContain("turbo lint --filter=");
+  });
+
+  it("documents the Nx scoped-lint detection rule", () => {
+    const referencesPath = join(import.meta.dir, "..", "references", "toolchain-patterns.md");
+    const referencesContent = readFileSync(referencesPath, "utf-8");
+
+    expect(referencesContent).toContain("nx.json");
+    expect(referencesContent).toContain("nx affected --target=lint --base=");
+  });
+
+  it("documents the pnpm workspaces scoped-lint detection rule", () => {
+    const referencesPath = join(import.meta.dir, "..", "references", "toolchain-patterns.md");
+    const referencesContent = readFileSync(referencesPath, "utf-8");
+
+    expect(referencesContent).toContain("pnpm-workspace.yaml");
+    expect(referencesContent).toMatch(/pnpm --filter "\.\.\.\[\{base\}\]" lint/);
+  });
+
+  it("documents the generic eslint changed-files fallback for no monorepo tool detected", () => {
+    const referencesPath = join(import.meta.dir, "..", "references", "toolchain-patterns.md");
+    const referencesContent = readFileSync(referencesPath, "utf-8");
+
+    const sectionIdx = referencesContent.indexOf("### Scoped Lint Detection");
+    expect(sectionIdx).toBeGreaterThan(-1);
+    const section = referencesContent.slice(sectionIdx, sectionIdx + 2000);
+    expect(section).toMatch(/no monorepo tool/i);
+    expect(section).toMatch(/eslint/i);
+    expect(section).toMatch(/changed/i);
+  });
+});
+
 describe("toolchain-patterns.md — fingerprint path list covers task-runner/version-manager config (CPF-review-2242)", () => {
   it("includes Taskfile.yml, justfile/Justfile, and mise.toml/.mise.toml alongside the other fingerprinted paths", () => {
     const referencesPath = join(import.meta.dir, "..", "references", "toolchain-patterns.md");

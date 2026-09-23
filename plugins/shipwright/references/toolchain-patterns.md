@@ -45,6 +45,7 @@ state/toolchain-cache/{repo}.json
     "test": "...",
     "tests": { "<layer>": "<command>", ... },
     "lint": "...",
+    "lintScoped": "...",
     "typecheck": "...",
     "build": "..."
   }
@@ -53,6 +54,7 @@ state/toolchain-cache/{repo}.json
 
 - **`test`** — the fast default test command for TDD cycles (unit tests, or the project's main test runner). Always populated.
 - **`tests`** — optional object mapping layer names to commands, populated when the project has distinct test commands per layer. Keys are free-form (e.g., `unit`, `integration`, `smoke`, `e2e`, `schema-conformance`, `contract` — whatever the project calls them). When present, `test` should match one of these entries (typically the fastest layer). When absent or empty, `test` alone covers everything.
+- **`lintScoped`** — optional command template for scoping lint to only the changed files/packages in the current diff (see the Node.js "Scoped Lint Detection" rules below); populated when a monorepo tool or a changed-files fallback yields a usable command, omitted (never set to `null`) when no scoped command is available and the plain `lint` command is the only option.
 
 One file per repo (not one shared file keyed by repo) — a shared file read-modify-written from multiple concurrent processes is not atomic: two agents updating *different* repos' entries at the same time can each read the whole file and clobber the other's addition on write, even though they touched different keys. Splitting by repo removes that cross-repo collision entirely. A same-repo collision (two runs racing on the same repo) can still happen, but it's benign — both would compute the same commands from the same repo state, so a lost update just costs a redundant re-detection next time, not data loss.
 
@@ -104,6 +106,19 @@ Scan the project root for these files in priority order. A project may match mul
 - `turbo.json` → Turborepo
 
 **Per-package commands** (monorepo): `{manager} --filter {package} {script}`
+
+### Scoped Lint Detection
+
+Populates the `lintScoped` cache field (see "## Caching Across Runs" above) with a command that scopes lint to the current diff instead of the whole repo, so a large monorepo doesn't pay a full-repo lint on every change. Check signals in this priority order — first match wins, `{base}`/`{head}` are the diff's base and head refs:
+
+| Priority | Signal | Command |
+|----------|--------|---------|
+| 1 | `turbo.json` present (Turborepo) | `turbo lint --filter=...[{base}...{head}]` |
+| 2 | `nx.json` present (Nx) | `nx affected --target=lint --base={base}` |
+| 3 | `pnpm-workspace.yaml` present (pnpm workspaces) | `pnpm --filter "...[{base}]" lint` |
+| 4 | No monorepo tool detected | Generic `eslint {changed files}` fallback — run against the git-diff-changed files that are lintable (JS/TS extensions eslint covers), not the whole repo |
+
+When none of these signals produce a usable command (e.g. a non-Node ecosystem with no equivalent scoped-lint tool), omit `lintScoped` from the cache entirely — never set it to `null`.
 
 ## Rust
 
