@@ -2571,6 +2571,225 @@ describe("TaskService task.write transaction timeout (TSW-1.2)", () => {
   });
 });
 
+// ─── TaskService.release() terminal-state guard (CRT-1.1) ──────────────────────
+
+describe("TaskService.release() terminal-state guard (CRT-1.1)", () => {
+  interface TaskUpdateCall {
+    where: { id: string };
+    data: Record<string, unknown>;
+  }
+
+  interface TaskReleaseDouble {
+    task: {
+      findUnique: (args: { where: { id: string } }) => Promise<Task | null>;
+      update: (args: TaskUpdateCall) => Promise<Task>;
+    };
+    taskEvent: {
+      create: (args: unknown) => Promise<void>;
+    };
+    $transaction<T>(
+      fn: (tx: unknown) => Promise<T>,
+      options?: unknown,
+    ): Promise<T>;
+    _updateCalls: TaskUpdateCall[];
+  }
+
+  function makeReleaseDouble(
+    findUniqueResult: Partial<Task>,
+  ): TaskReleaseDouble {
+    const updateCalls: TaskUpdateCall[] = [];
+
+    const double: TaskReleaseDouble = {
+      task: {
+        findUnique(_args: unknown): Promise<Task | null> {
+          return Promise.resolve(findUniqueResult as Task | null);
+        },
+        update(args: TaskUpdateCall): Promise<Task> {
+          updateCalls.push(args);
+          return Promise.resolve({
+            id: "task-1",
+            title: "A task",
+            status: "pending",
+            session: null,
+            dependencies: [],
+            acceptanceCriteria: [],
+            claimedBy: null,
+            claimedAt: null,
+            heartbeatAt: null,
+            skipCount: 0,
+            lastSkippedAt: null,
+            blockedReason: null,
+            createdAt: new Date(),
+            updatedAt: new Date(),
+            ...(findUniqueResult ?? {}),
+            ...args.data,
+          } as Task);
+        },
+      },
+      taskEvent: {
+        create(_args: unknown): Promise<void> {
+          return Promise.resolve();
+        },
+      },
+      $transaction<T>(
+        fn: (tx: unknown) => Promise<T>,
+        _options?: unknown,
+      ): Promise<T> {
+        return fn(double);
+      },
+      _updateCalls: updateCalls,
+    };
+
+    return double;
+  }
+
+  const noopDispatcher: WebhookDispatcher = async () => {};
+
+  it("status:in_progress — resets status to pending, clears claim fields", async () => {
+    const double = makeReleaseDouble({
+      id: "task-1",
+      status: "in_progress",
+      claimedBy: "agent-a",
+      claimedAt: "2026-08-10T12:00:00.000Z",
+      heartbeatAt: "2026-08-10T12:01:00.000Z",
+    } as Partial<Task>);
+    const svc = new TaskService(
+      double as unknown as PrismaClient,
+      undefined,
+      noopDispatcher,
+    );
+
+    await svc.release("task-1");
+
+    expect(double._updateCalls).toHaveLength(1);
+    const { data } = double._updateCalls[0];
+    expect(data.status).toBe("pending");
+    expect(data.claimedBy).toBeNull();
+    expect(data.claimedAt).toBeNull();
+    expect(data.heartbeatAt).toBeNull();
+  });
+
+  it("status:cancelled — preserves status, clears claim fields", async () => {
+    const double = makeReleaseDouble({
+      id: "task-1",
+      status: "cancelled",
+      claimedBy: "agent-a",
+      claimedAt: "2026-08-10T12:00:00.000Z",
+      heartbeatAt: "2026-08-10T12:01:00.000Z",
+    } as Partial<Task>);
+    const svc = new TaskService(
+      double as unknown as PrismaClient,
+      undefined,
+      noopDispatcher,
+    );
+
+    await svc.release("task-1");
+
+    expect(double._updateCalls).toHaveLength(1);
+    const { data } = double._updateCalls[0];
+    expect("status" in data).toBe(false);
+    expect(data.claimedBy).toBeNull();
+    expect(data.claimedAt).toBeNull();
+    expect(data.heartbeatAt).toBeNull();
+  });
+
+  it("status:pending — preserves status (not in_progress), clears claim fields", async () => {
+    const double = makeReleaseDouble({
+      id: "task-1",
+      status: "pending",
+      claimedBy: "agent-a",
+      claimedAt: "2026-08-10T12:00:00.000Z",
+      heartbeatAt: "2026-08-10T12:01:00.000Z",
+    } as Partial<Task>);
+    const svc = new TaskService(
+      double as unknown as PrismaClient,
+      undefined,
+      noopDispatcher,
+    );
+
+    await svc.release("task-1");
+
+    expect(double._updateCalls).toHaveLength(1);
+    const { data } = double._updateCalls[0];
+    expect("status" in data).toBe(false);
+    expect(data.claimedBy).toBeNull();
+    expect(data.claimedAt).toBeNull();
+    expect(data.heartbeatAt).toBeNull();
+  });
+
+  it("status:pr_open — preserves status, clears claim fields", async () => {
+    const double = makeReleaseDouble({
+      id: "task-1",
+      status: "pr_open",
+      claimedBy: "agent-a",
+      claimedAt: "2026-08-10T12:00:00.000Z",
+      heartbeatAt: "2026-08-10T12:01:00.000Z",
+    } as Partial<Task>);
+    const svc = new TaskService(
+      double as unknown as PrismaClient,
+      undefined,
+      noopDispatcher,
+    );
+
+    await svc.release("task-1");
+
+    expect(double._updateCalls).toHaveLength(1);
+    const { data } = double._updateCalls[0];
+    expect("status" in data).toBe(false);
+    expect(data.claimedBy).toBeNull();
+    expect(data.claimedAt).toBeNull();
+    expect(data.heartbeatAt).toBeNull();
+  });
+
+  it("status:merged — preserves status, clears claim fields", async () => {
+    const double = makeReleaseDouble({
+      id: "task-1",
+      status: "merged",
+      claimedBy: "agent-a",
+      claimedAt: "2026-08-10T12:00:00.000Z",
+      heartbeatAt: "2026-08-10T12:01:00.000Z",
+    } as Partial<Task>);
+    const svc = new TaskService(
+      double as unknown as PrismaClient,
+      undefined,
+      noopDispatcher,
+    );
+
+    await svc.release("task-1");
+
+    expect(double._updateCalls).toHaveLength(1);
+    const { data } = double._updateCalls[0];
+    expect("status" in data).toBe(false);
+    expect(data.claimedBy).toBeNull();
+    expect(data.claimedAt).toBeNull();
+    expect(data.heartbeatAt).toBeNull();
+  });
+
+  it("status:done — preserves status, clears claim fields", async () => {
+    const double = makeReleaseDouble({
+      id: "task-1",
+      status: "done",
+      claimedBy: "agent-a",
+      claimedAt: "2026-08-10T12:00:00.000Z",
+      heartbeatAt: "2026-08-10T12:01:00.000Z",
+    } as Partial<Task>);
+    const svc = new TaskService(
+      double as unknown as PrismaClient,
+      undefined,
+      noopDispatcher,
+    );
+
+    await svc.release("task-1");
+
+    expect(double._updateCalls).toHaveLength(1);
+    const { data } = double._updateCalls[0];
+    expect("status" in data).toBe(false);
+    expect(data.claimedBy).toBeNull();
+    expect(data.claimedAt).toBeNull();
+    expect(data.heartbeatAt).toBeNull();
+  });
+});
+
 // ─── TaskService.update() — pr_open origin stamp + validation guard (POM-1.1) ──
 
 describe("TaskService.update() pr_open origin stamp + validation guard (POM-1.1)", () => {
