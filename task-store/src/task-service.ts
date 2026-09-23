@@ -1054,19 +1054,26 @@ export class TaskService implements TaskServiceLike {
     }
   }
 
-  /** Unclaim a task — reset claim fields and return it to pending. */
+  /**
+   * Unclaim a task — always clears claim fields (claimedBy/claimedAt/heartbeatAt).
+   * status is reset to 'pending' only if it is 'in_progress'; a terminal status
+   * is left untouched.
+   */
   async release(id: string): Promise<Task> {
     try {
       return await this.prisma.$transaction(async (tx) => {
         const before = await tx.task.findUnique({ where: { id } });
+        const updateData: Prisma.TaskUpdateInput = {
+          claimedBy: null,
+          claimedAt: null,
+          heartbeatAt: null,
+        };
+        if (before?.status === "in_progress") {
+          updateData.status = "pending";
+        }
         const record = await tx.task.update({
           where: { id },
-          data: {
-            status: "pending",
-            claimedBy: null,
-            claimedAt: null,
-            heartbeatAt: null,
-          },
+          data: updateData,
         });
         // Actor is whoever held the claim being given up.
         await this.recordTaskTransition(
