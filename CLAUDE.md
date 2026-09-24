@@ -68,6 +68,14 @@ task agent-workspace-pull -- <id-or-name>  # mirror a real, already-deployed age
 
 `task stack` (`scripts/dev-tmux.ts`) launches one tmux session named `shipwright` with a 6-pane dashboard: **metrics** (SQLite, :3460), **admin** (CRUD API + UI, :3001), **task-store** (:3002), **chat-svc** (the chat service, :3003), **agent** in Docker with the chat poll loop enabled, and a scratch **logs** shell. `task stack` creates zero agents automatically: the agent pane prints a pointer to `http://localhost:3001/admin/agents/new` and polls the admin DB (`scripts/wait-for-agent.ts`) until a developer creates one via the UI, then seeds that agent's chat token and starts its container with `SHIPWRIGHT_AGENT_ID` set to the resolved id — no stack restart required, and relaunching with an agent already created proceeds immediately. Chatting with the agent happens in the browser via the admin console's Chat tab (`/admin/chat`). It runs a Prisma `migrate deploy` preflight before the admin pane so the admin service's Postgres schema is up to date; the preflight first checks Postgres is reachable and, on macOS, prints the exact `brew`/`createdb` commands and offers to run them (`[y/N]`) before launching. The agent pane builds the Docker image from `agent/Dockerfile` and runs it with `--env-file state/dev-agent.env` so secrets are injected at runtime without appearing in the command or the image. Closing the session (`tmux kill-session -t shipwright`) stops every pane. `task stack` is additive — it does not touch `task dev`, which stays the no-tmux fallback the quickstart depends on; if tmux isn't installed, `task stack` fails fast and points you at `task dev`. The command/pane-env sequence is built by a pure, injected-exec builder (mirrors `scripts/dev.ts`) and unit-tested in `scripts/dev-tmux.unit.test.ts`. `scripts/seed-dev-agent.ts` still exists as a standalone, explicitly-invoked convenience script — `task stack` no longer calls it.
 
+### Shipwright Learned Facts
+
+> _Auto-maintained by Shipwright's toolchain detection — edits here are overwritten on the next run._
+
+- Scoped-command variants: none detected (no turbo.json/nx.json/pnpm-workspace.yaml, and no eslint config — Biome covers lint/format) — `lint`/`typecheck`/`test` run unscoped as `task lint`/`task typecheck`/`task test`.
+- Per-check verification budget: 150s (lint/typecheck/test), 300s (install) — source: ci-derived, padded 1.5x from the "lint / typecheck / test" CI job's ~95s duration on a recent successful `main` run.
+- Skip-locally classifications: none recorded yet.
+
 ## Before you commit — this repository is going public
 
 This repo is **private today but destined to be a public, MIT open-source project.** Git history is permanent. **Scrub before the commit, not after the push.**
