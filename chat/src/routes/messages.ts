@@ -6,7 +6,7 @@
  *   GET    /                  list messages in thread
  *   POST   /                  create message
  *   POST   /claim             claim next unclaimed user message (queue API)
- *   GET    /:id/attachment    stream (and clear) an ephemeral attachment
+ *   GET    /:id/attachment    stream an attachment (cleared after read for user messages only)
  *   GET    /:id               get message
  *   PATCH  /:id               update message
  *   DELETE /:id               delete message
@@ -275,9 +275,10 @@ const getAttachmentRoute = createRoute({
   method: "get",
   path: "/:id/attachment",
   tags: ["messages"],
-  summary: "Stream a message's attachment (ephemeral — cleared after read)",
+  summary:
+    "Stream a message's attachment (ephemeral for user messages — cleared after read)",
   description:
-    "Streams the stored `attachmentBytes` once with `Content-Type: application/octet-stream` and a `Content-Disposition` header set to the message's `attachmentFilename`. Ephemeral retention: after the bytes are served, they are dropped from the row (`clearAttachmentBytes`), so the content is not retained once the agent has pulled it into its workspace — a second call returns 404 (no attachment). Also 404 if the thread or message doesn't exist.",
+    'Streams the stored `attachmentBytes` once with `Content-Type: application/octet-stream` and a `Content-Disposition` header set to the message\'s `attachmentFilename`. Ephemeral retention applies only to `role: "user"` messages: after the bytes are served, they are dropped from the row (`clearAttachmentBytes`), so the content is not retained once the agent has pulled it into its workspace — a second call returns 404 (no attachment). `role: "assistant"` attachments are retained instead — the bytes stay on the row and can be fetched repeatedly (e.g. a member re-downloading a report from the chat UI). Also 404 if the thread or message doesn\'t exist.',
   request: {
     params: MessageIdParamSchema,
   },
@@ -541,12 +542,14 @@ export function createMessagesRoutes(
     return c.json(claimed, 200);
   });
 
-  // ─── Get attachment (ephemeral) ──────────────────────────────────────────────
+  // ─── Get attachment (ephemeral for user messages) ────────────────────────────
   // Registered before /:id so "/:id/attachment" matches. Streams the stored
-  // bytes once, then drops them — content is not retained after the agent pulls
-  // it into its workspace. Registered via createRoute()/app.openapi(); the
-  // handler still returns a raw Response, which app.openapi() passes through
-  // unchanged (validated only against the documented schema, not enforced).
+  // bytes once; for role: "user" messages the bytes are then dropped — content
+  // is not retained after the agent pulls it into its workspace. role: "assistant"
+  // attachments are retained across repeated fetches (see the clear-skip below).
+  // Registered via createRoute()/app.openapi(); the handler still returns a raw
+  // Response, which app.openapi() passes through unchanged (validated only
+  // against the documented schema, not enforced).
   app.openapi(getAttachmentRoute, async (c) => {
     const threadId = c.req.param("threadId") as string;
     await requireThread(c, threadService, threadId);
@@ -562,8 +565,14 @@ export function createMessagesRoutes(
     const bytes = message.attachmentBytes;
     const filename = message.attachmentFilename ?? "attachment";
 
-    // Drop the bytes now that they've been served (ephemeral retention).
-    await messageService.clearAttachmentBytes(message.id);
+    // Drop the bytes now that they've been served (ephemeral retention) —
+    // but only for user-authored attachments, which the agent pulls exactly
+    // once into its workspace. Assistant-authored attachments are retained
+    // across multiple fetches (e.g. a member re-downloading a report from
+    // the chat UI), so skip the clear for role === "assistant".
+    if (message.role !== "assistant") {
+      await messageService.clearAttachmentBytes(message.id);
+    }
 
     return new Response(bytes, {
       status: 200,
