@@ -1548,6 +1548,25 @@ describe("patch.md — docs-first toolchain discovery + per-repo cache (TDF-1.1)
   });
 });
 
+describe("patch.md — delegates to toolchain-patterns.md's docsSource pointer (LVB-4.1)", () => {
+  // The docsSource pointer field and scoped-fingerprint rule are asserted against
+  // toolchain-patterns.md's actual content in dev-task.content.test.ts — this file
+  // only needs to confirm patch.md's three call sites delegate rather than re-embed.
+  it("Step 4a.5/5a.5/6a.5 delegate to toolchain-patterns.md's Caching Across Runs section rather than re-embedding the fingerprint recipe inline", () => {
+    for (const [step, next] of [
+      ["### Step 4a.5: Detect Project Toolchain", "### Step 4a.6"],
+      ["### Step 5a.5: Detect Project Toolchain", "### Step 5a.6"],
+      ["### Step 6a.5: Detect Project Toolchain", "### Step 6b"],
+    ] as const) {
+      const stepIdx = content.indexOf(step);
+      const nextIdx = content.indexOf(next, stepIdx);
+      const section = content.slice(stepIdx, nextIdx);
+      expect(section).not.toMatch(/docsSource/);
+      expect(section).toMatch(/Caching Across Runs/);
+    }
+  });
+});
+
 describe("patch.md — scoped-lint preference at all three lint-command sites (LSC-1.3)", () => {
   function checkSite(step: string, next: string) {
     const stepIdx = content.indexOf(step);
