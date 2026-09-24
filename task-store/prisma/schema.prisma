@@ -1,5 +1,5 @@
 // Shipwright — Task Store Service Schema
-// Owns: Task, TaskToken, PullRequest, PrFinding.
+// Owns: Task, TaskToken, PullRequest, PrFinding, VerificationCheck.
 //
 // WARNING: This schema uses DATABASE_URL_SHIPWRIGHT_TASK_STORE — a dedicated
 // database for the task-store service. Do NOT point this at a shared database.
@@ -133,7 +133,8 @@ model Task {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  events TaskEvent[]
+  events             TaskEvent[]
+  verificationChecks VerificationCheck[]
 
   @@index([status])
   @@index([session])
@@ -279,10 +280,10 @@ model PullRequest {
   // through any of those three paths (e.g. deploy.md's canary-revert PR) has
   // no PullRequest row at all, let alone an origin — see POM-1.1's planning
   // doc for that accepted gap.
-  origin       PrOrigin?
-  authorLogin  String?
-  headRef      String?
-  title        String?
+  origin      PrOrigin?
+  authorLogin String?
+  headRef     String?
+  title       String?
 
   // ─── Skip tracking (auto-block after repeated no-op dispatches) ───
   // Mirrors Task.skipCount/lastSkippedAt — see comment there for the
@@ -305,8 +306,9 @@ model PullRequest {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  findings PrFinding[]
-  events   PullRequestEvent[]
+  findings           PrFinding[]
+  events             PullRequestEvent[]
+  verificationChecks VerificationCheck[]
 
   @@unique([repo, prNumber])
   @@index([state])
@@ -403,6 +405,133 @@ model PullRequestEvent {
   createdAt DateTime @default(now())
 
   @@index([prRecordId, at])
+}
+
+// ─── Verification Check Status ────────────────────────────────────────────────
+// Outcome of a single verification check attempted during dev-task's Step 8 (or
+// patch.md's mirrored validate/lint/test call sites, LVB-2.1/LVB-2.2) — LVB-5.1's
+// structured, queryable successor to the printed-only "PRE-SHIP CHECKS" table
+// those commands emit today (see dev-task.md Step 8's forward pointer to
+// LVB-5.1/5.2).
+//
+// Identifiers use snake_case (ran_passed, timed_out, ...) rather than the
+// hyphenated prose form ("ran-passed") used to describe them — Prisma enum
+// values cannot contain `-` (validation error: "The character `-` is not
+// allowed in Enum Value names"), and the generated client surfaces the
+// identifier itself as the runtime string value (there is no separate
+// @map'd wire value to diverge from it). This mirrors the multi-word enum
+// values already used elsewhere in this schema (TaskStatus.in_progress,
+// TaskStatus.pr_open) rather than introducing a new convention.
+
+enum VerificationCheckStatus {
+  ran_passed
+  ran_failed
+  skipped
+  timed_out
+}
+
+// ─── Verification Check Reason Category ───────────────────────────────────────
+// A closed set of ENVIRONMENTAL causes for why a check was skipped or timed
+// out — never a correctness judgment. Valid ONLY alongside
+// status IN (ran_passed's complement — i.e. skipped/timed_out); a ran_failed
+// row (the check executed and produced a genuine failure — a real assertion/
+// test failure, a real lint violation) must NEVER carry one. This separation
+// is load-bearing for LVB-4.4's skip-locally learning trigger, which must
+// only fire on skipped/timed-out outcomes and must never be tripped by a
+// genuine ran-failed result — enforced by VerificationCheckService.record(),
+// not just by convention (see its doc comment).
+//
+//   check_timeout / install_timeout — the check's (or the install step's)
+//                        time budget was exceeded (LVB-2.1/2.2's per-check
+//                        budgets).
+//   resource_limit    — insufficient CPU/memory/disk in the execution
+//                        environment.
+//   missing_tool       — the execution image lacks a required tool/runtime/
+//                        SDK for this check (the "docker image" dimension).
+//   missing_secret     — a required API key/credential isn't available.
+//   missing_dependency — e.g. no local DB or external service reachable.
+//   not_configured     — the repo hasn't declared what this check needs, so
+//                        we don't know yet.
+//   learned_skip       — classified from repeated prior occurrences rather
+//                        than observed directly this run;
+//                        `learnedFromCategory` carries the original
+//                        root-cause category that triggered the learning.
+//
+// (Identifiers use snake_case rather than the hyphenated prose form used to
+// describe them above — see VerificationCheckStatus's doc comment for why.)
+
+enum VerificationCheckReasonCategory {
+  check_timeout
+  install_timeout
+  resource_limit
+  missing_tool
+  missing_secret
+  missing_dependency
+  not_configured
+  learned_skip
+}
+
+// ─── Verification Check ─────────────────────────────────────────────────────────
+// A single per-check verification outcome — LVB-5.1. Modeled as a dedicated
+// append-only table (mirrors PrFinding/TaskEvent) rather than a JSON blob:
+// entries are appended via a plain INSERT, which is race-safe, whereas a
+// JSON-array read-modify-write PATCH on a parent record is not (mirrors the
+// PrFinding/TaskEvent rationale documented above).
+//
+// Exactly one of taskId/prRecordId is set: a check may be recorded against an
+// in-progress task before a PR exists, or against an already-open PR. There is
+// no existing "optional reference to one of two parent record types" pattern
+// elsewhere in this schema to mirror, so this uses two nullable FK columns;
+// Prisma has no schema-level XOR constraint, so "exactly one set" is enforced
+// by VerificationCheckService.record() at the service layer, not the DB.
+//
+// repo is stored directly (not derived via the taskId/prRecordId join) —
+// self-describing without an extra join, and not guaranteed to equal the
+// parent's own repo field for every future caller shape.
+//
+// checkName is a free-form string (not an enum) — "install", "lint",
+// "typecheck", "unit", "integration", etc. — deliberately, mirroring
+// TaskEvent.field/method's "plain string, not an enum, so new call sites
+// don't require a schema migration" rationale.
+//
+// at is an ISO timestamp of when the check completed, stamped by the caller
+// at insert time — the same "String for JS-interface-originated timestamps"
+// convention used throughout this schema.
+//
+// Both FKs deliberately omit onDelete (defaulting to RESTRICT), matching
+// PrFinding/TaskEvent — an outcome record should never silently disappear if
+// its parent Task/PullRequest row were ever deleted.
+
+model VerificationCheck {
+  id String @id @default(cuid())
+
+  taskId String?
+  task   Task?   @relation(fields: [taskId], references: [id])
+
+  prRecordId  String?
+  pullRequest PullRequest? @relation(fields: [prRecordId], references: [id])
+
+  repo      String
+  checkName String
+
+  status VerificationCheckStatus
+
+  // Only ever non-null alongside status IN (skipped, timed_out) — see the
+  // enum's doc comment and VerificationCheckService.record()'s validation.
+  reasonCategory VerificationCheckReasonCategory?
+
+  // Only ever non-null alongside reasonCategory === learned_skip — the
+  // original root-cause category that triggered the learned classification.
+  learnedFromCategory VerificationCheckReasonCategory?
+
+  durationMs Int?
+  at         String
+
+  createdAt DateTime @default(now())
+
+  @@index([taskId, at])
+  @@index([prRecordId, at])
+  @@index([repo, checkName])
 }
 
 // ─── Session ──────────────────────────────────────────────────────────────────

@@ -25,6 +25,7 @@ import { SessionService } from "./session-service.ts";
 import { StaleClaimReaper } from "./stale-claim-reaper.ts";
 import { TaskService, WEBHOOK_TX_TIMEOUT_MS } from "./task-service.ts";
 import { TaskTokenService } from "./token-service.ts";
+import { VerificationCheckService } from "./verification-check-service.ts";
 import { createWebhookDispatcher } from "./webhook-dispatcher.ts";
 import { checkWebhookTimeoutBuffer } from "./webhook-timeout-buffer-check.ts";
 
@@ -208,6 +209,7 @@ async function startServer(): Promise<void> {
   const sessionService = new SessionService(prisma, undefined, (pairs) =>
     pullRequestService.lookupBlockedPrNumbers(pairs),
   );
+  const verificationCheckService = new VerificationCheckService(prisma);
 
   const seedToken = process.env.TASK_STORE_SEED_ADMIN_TOKEN;
   if (seedToken) {
@@ -242,6 +244,7 @@ async function startServer(): Promise<void> {
     tokenService,
     pullRequestService,
     sessionService,
+    verificationCheckService,
     scopeResolver,
     sentryClient: process.env.SENTRY_DSN ? Sentry : undefined,
     // Once a shutdown signal has been received, fail readiness immediately
