@@ -150,17 +150,18 @@ describe("unblock.md — phase inference (AC2)", () => {
 });
 
 describe("unblock.md — retry logic (AC3)", () => {
-  it("distinguishes task.pr-having tasks (status:pr_open) from no-PR tasks (status:pending via release)", () => {
+  it("distinguishes task.pr-having tasks (status:pr_open) from no-PR tasks (status:pending via unblock)", () => {
     expect(content).toContain("pr_open");
-    expect(content).toContain("/release");
+    expect(content).toContain("/tasks/:id/unblock");
   });
 
-  it("uses POST /tasks/:id/release for the no-PR retry case, not a raw PATCH status:pending", () => {
-    expect(content).toContain("/release");
-    // The raw-PATCH-to-pending path must be called out as disallowed for agent tokens.
+  it("uses POST /tasks/:id/unblock for the no-PR retry case as a single atomic call, not the old release+PATCH two-step", () => {
     const lower = content.toLowerCase();
-    expect(lower).toContain("agent token");
-    expect(lower).toContain("cannot");
+    expect(lower).toMatch(/\/tasks\/\$task_id\/unblock/);
+    // The old two-step (release, then a follow-up PATCH clearing blockedReason/blockedAt)
+    // must be gone from the no-PR retry path.
+    expect(content).not.toContain("$SHIPWRIGHT_TASK_STORE_URL/tasks/$TASK_ID/release");
+    expect(lower).toContain("409");
   });
 
   it("PATCHes status:pr_open directly (not release) when task.pr is set", () => {
@@ -174,9 +175,15 @@ describe("unblock.md — retry logic (AC3)", () => {
     expect(lower).toContain("clear");
   });
 
-  it("resets skipCount to 0 via POST /tasks/:id/skip/reset when blockedReason indicates spin-detection", () => {
-    expect(content).toContain("/skip/reset");
+  it("resets skipCount/lastSkippedAt automatically via POST /tasks/:id/unblock for a blocked task, with no separate reset call needed", () => {
     expect(content).toContain("Auto-blocked after");
+    expect(content).toContain("skipCount");
+    expect(content).toContain("lastSkippedAt");
+    const lower = content.toLowerCase();
+    expect(lower).toContain("automatically");
+    // The old task-side purpose-built reset endpoint call must be gone — /unblock
+    // folds this in as part of its single atomic update.
+    expect(content).not.toContain("$SHIPWRIGHT_TASK_STORE_URL/tasks/$TASK_ID/skip/reset");
   });
 
   it("also resets skipCount via POST /prs/:id/skip/reset for a PR-only record hit by the skip-count spin-detection variant", () => {

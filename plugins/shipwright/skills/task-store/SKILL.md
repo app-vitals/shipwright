@@ -233,7 +233,8 @@ Branch statuses: `blocked`, `cancelled`, `deploying`, `deployed`
 | `PATCH` | `/tasks/:id` | Update fields (partial update, returns updated task) |
 | `DELETE` | `/tasks/:id` | Delete a task |
 | `POST` | `/tasks/:id/claim` | Atomic claim → `in_progress` (409 if already claimed) |
-| `POST` | `/tasks/:id/release` | Unclaim → `pending` |
+| `POST` | `/tasks/:id/release` | Unclaim (`in_progress` → `pending`) |
+| `POST` | `/tasks/:id/unblock` | Unblock: `blocked` → `pending` (409 if not blocked) |
 | `POST` | `/tasks/:id/complete` | Mark `done` |
 | `POST` | `/tasks/:id/fail` | Mark `blocked` |
 
