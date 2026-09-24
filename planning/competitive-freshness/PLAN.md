@@ -49,12 +49,14 @@ None — this session ran with a human (Dan, via this planning thread) providing
 
 ## Follow-up (not a task-store task)
 
-Once CF-2.1 merges and deploys, create the cron on this agent — a plain-language prompt referencing the repo-local runbook, not a `/shipwright:*` command invocation:
+**Confirmed 2026-09-24** by reading `agent/src/cron-handler.ts`'s `preCheck` resolution directly: it supports two modes, a `plugin:script` namespaced form *and* a plain file-path form (any string starting with `./`, `../`, or `/`), where a relative path resolves against the agent's own workspace root (`resolve(workspace, req.preCheck)`). A repo-root, non-plugin script works via the file-path form — no plugin required, and it gets the same cost benefit as `shipwright-site-docs-freshness` (stdout becomes the prompt; the Claude turn is skipped entirely on a no-op tick, per the same contract documented in `docs/agent-ops.md`).
+
+Once CF-2.1 merges and deploys, create the cron on this agent:
 
 ```bash
 curl -sf -X POST -H "Authorization: Bearer $SHIPWRIGHT_AGENT_API_KEY" -H "Content-Type: application/json" \
   "$SHIPWRIGHT_API_URL/agents/$SHIPWRIGHT_AGENT_ID/crons" \
-  -d '{"name": "shipwright-competitive-freshness", "schedule": "0 8 * * *", "prompt": "Run scripts/check-competitive-freshness.ts. For any page it flags, follow scripts/competitive-refresh-runbook.md.", "enabled": true, "silent": true}'
+  -d '{"name": "shipwright-competitive-freshness", "schedule": "0 8 * * *", "prompt": "Follow scripts/competitive-refresh-runbook.md for every page the preCheck flagged.", "preCheck": "./scripts/check-competitive-freshness.ts", "enabled": true, "silent": true}'
 ```
 
-Note: every existing `preCheck` example in this repo's docs (`docs/agent-types.md`, `docs/site-docs-freshness.md`) uses a `{pluginName}:{scriptPath}` reference resolved against an *installed plugin's* `scripts/` directory (e.g. `shipwright:check-site-docs-freshness.ts`) — whether it can resolve a bare repo-root path like `scripts/check-competitive-freshness.ts` (outside any plugin) is **unconfirmed**, not verified false, just not checked. Whoever wires up this cron should check the actual preCheck-resolution code first: if a repo-root path works, prefer `preCheck` (cheaper — skips the Claude turn entirely when nothing is stale, matching `shipwright-site-docs-freshness`'s pattern); if it only resolves plugin-bundled scripts, fall back to the plain-language prompt above, which runs the check inline as the cron's own first step (correct either way, just a turn spent even on a no-op tick).
+The `prompt` here is a fallback/backstop only — per the `preCheck` contract, when the script exits 0 its **stdout replaces the prompt** (the flagged-pages summary becomes what Claude actually sees), and the cron is skipped without spending a Claude turn at all when it exits 1. `scripts/check-competitive-freshness.ts`'s exit-0 output should therefore itself reference the runbook by name (mirroring how `check-site-docs-freshness.ts`'s summary output drives `research-docs --auto`) so the real prompt Claude receives is self-contained.
