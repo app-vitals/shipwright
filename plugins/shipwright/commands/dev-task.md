@@ -751,6 +751,79 @@ Examples based on detected toolchain:
 - Ruby: `bundle exec rspec` (or `bundle exec rake test`)
 - Multi-layer: run `{test command}`, then each additional entry in `{tests}` (e.g., `npx playwright test` for e2e alongside the default `pytest` for unit/integration)
 
+### Enforced, Process-Group-Aware Timeouts
+
+**Local verification here is best-effort and non-blocking — CI (Step 9b) is the real
+arbiter.** Every install/lint/typecheck/test invocation in this step runs under an enforced,
+per-check timeout budget so a hung or runaway command can never stall the pipeline. Failure,
+timeout, or skip of ANY of these checks ALWAYS proceeds to Step 9 (Push & PR) — there is no
+pause point here. The only remaining real block in this pipeline is Step 5's TDD
+red-green-refactor gate (a different, narrower gate that governs writing the implementation
+itself, not this pre-ship verification pass).
+
+**A bare `timeout <cmd>` is not sufficient.** `timeout` only signals the process it directly
+execs — a tool like npm, turbo, or a test runner that forks worker subprocesses leaves those
+descendants alive after `timeout` reports a clean exit 124, and they keep running and writing
+into `node_modules`/build output/test artifacts, corrupting the worktree for whatever runs
+against it next (a later CI-fix attempt, or a future revisit of the same repo). Every
+enforced-timeout invocation MUST run the wrapped command in its own session/process group via
+`setsid`, and on expiry MUST kill the ENTIRE process group — not just the directly-execed
+process. Use this pattern (adapt `{budget}` and `{command}` per check):
+
+```bash
+setsid timeout --kill-after=10s {budget}s {command} &
+CMD_PID=$!
+wait $CMD_PID
+EXIT=$?
+# Always kill the whole process group by negative PID, whether the command finished,
+# failed, or timed out (exit 124) — this guarantees no descendant survives the attempt,
+# even ones timeout's own single-process signal never reached.
+kill -TERM -$CMD_PID 2>/dev/null
+kill -KILL -$CMD_PID 2>/dev/null
+```
+
+`setsid` puts `{command}` in its own session/process group with PID `$CMD_PID` as the group
+leader, so `-$CMD_PID` (negative PID) targets the whole group in the `kill` calls — every
+forked descendant, not just the direct child `timeout` wraps. Run this for **install**, then
+**lint**, **typecheck**, and **test** (and each layer in `{tests}` if multi-layer) in turn.
+There is currently no stored `install` command in the Step 0/0b toolchain cache — derive it
+inline per ecosystem (e.g. `{manager} install`, `bun install`, `pip install -e .`,
+`bundle install`, `cargo fetch`), the same way the "Examples based on detected toolchain" list
+above already gives per-ecosystem example commands, since lint/typecheck/test generally need
+dependencies installed first to run meaningfully.
+
+**Record, don't swallow, each outcome.** After each wrapped invocation, note its status —
+`pass`, `fail`, `timeout`, or `skip` — for the human-readable Pre-Ship Checks output below.
+This is a printed record only (a full structured task-store model for verification outcomes
+is a separate future task, LVB-5.1/5.2) — never silently drop a check's result:
+
+```
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+PRE-SHIP CHECKS
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+install:    {pass|fail|timeout|skip}
+lint:       {pass|fail|timeout|skip}
+typecheck:  {pass|fail|timeout|skip}
+test:       {pass|fail|timeout|skip}
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+```
+
+**Budget derivation.** Prefer deriving `{budget}` from the target repo's real recent CI job
+durations over a guessed constant:
+
+```bash
+RUN_ID=$(gh run list --repo "$GH_REPO" --branch main --status success --limit 1 --json databaseId --jq '.[0].databaseId')
+gh run view "$RUN_ID" --repo "$GH_REPO" --json jobs \
+  --jq '.jobs[] | {name, startedAt, completedAt}'
+```
+
+Use the duration of the job closest in purpose to the check being budgeted (e.g. the CI job
+that runs `lint`/`typecheck`/`test`), and pad it (e.g. 1.5x) to absorb local-machine variance.
+**Fall back to a flat constant of 10 minutes per check** when CI history isn't obtainable —
+no CI configured, an API error, or no runs yet on `main`/the default branch. State explicitly
+in the Pre-Ship Checks output which source (`ci-derived` or `fallback-10m`) produced
+`{budget}`.
+
 ### Coverage Gate
 
 Run coverage checks for each package that has changed files on this branch:
@@ -802,7 +875,10 @@ or
 Lint: full ({lint command}) — PASS
 ```
 
-**Pause point (conditional):** Only if a check fails and cannot be auto-fixed, stop and let the user resolve.
+**No pause point.** A lint failure that cannot be auto-fixed, a timeout, or a skipped check
+never blocks proceeding to Step 9 (Push & PR) — always continue there and let the CI Gate
+(Step 9b) be the real arbiter against CI's unrestricted environment. Only Step 5's TDD
+red-green-refactor gate remains a real block in this pipeline.
 
 ## Step 8.5: Auto-Refresh Docs
 

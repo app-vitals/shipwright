@@ -993,11 +993,74 @@ describe("dev-task.md Step 8 — scoped lint wiring (LSC-1.2)", () => {
     expect(section).toMatch(/report/i);
   });
 
-  it("keeps the existing conditional pause-point guidance intact", () => {
+  it("no longer contains the old blocking pause-point line — replaced by non-blocking always-proceed wording (LVB-2.1)", () => {
     const section = buildAndLintSection();
-    expect(section).toContain(
+    expect(section).not.toContain(
       "**Pause point (conditional):** Only if a check fails and cannot be auto-fixed, stop and let the user resolve.",
     );
+    const lower = section.toLowerCase().replace(/\s+/g, " ");
+    expect(lower).toMatch(/never block(s|ing)? (proceeding to )?(step 9|push)/);
+  });
+});
+
+describe("dev-task.md Step 8 — enforced non-blocking verification budgets (LVB-2.1)", () => {
+  const getStep8Section = () => {
+    const step8Idx = content.indexOf("## Step 8: Pre-Ship Checks");
+    expect(step8Idx).toBeGreaterThan(-1);
+    const step85Idx = content.indexOf("## Step 8.5:", step8Idx);
+    expect(step85Idx).toBeGreaterThan(step8Idx);
+    return content.slice(step8Idx, step85Idx);
+  };
+
+  it("does not contain the old blocking pause-point line for a failed/unfixable check", () => {
+    const section = getStep8Section();
+    const lower = section.toLowerCase().replace(/\s+/g, " ");
+    expect(lower).not.toContain(
+      "pause point (conditional): only if a check fails and cannot be auto-fixed, stop and let the user resolve.",
+    );
+  });
+
+  it("wraps checks in a process-group-aware enforced timeout: setsid + whole-group kill wording, not just 'wrapped in timeout'", () => {
+    const section = getStep8Section();
+    expect(section).toContain("setsid");
+    const lower = section.toLowerCase().replace(/\s+/g, " ");
+    expect(lower).toMatch(/process(-| )group/);
+    // Must describe killing the whole group (negative-PID / group kill), not merely naming timeout.
+    expect(lower).toMatch(/(kill|terminat).{0,60}(whole|entire|-\$|negative).{0,20}(group|pid)|(-\$pid|kill -- -\$)/);
+  });
+
+  it("states expiry (timeout) never blocks proceeding to Step 9 (Push & PR)", () => {
+    const section = getStep8Section();
+    const lower = section.toLowerCase().replace(/\s+/g, " ");
+    expect(lower).toMatch(/(timeout|expir(y|es|ed)).{0,120}never block/);
+  });
+
+  it("states a check FAILURE (not just timeout) also never blocks proceeding, distinguishing this from Step 5's TDD gate", () => {
+    const section = getStep8Section();
+    const lower = section.toLowerCase().replace(/\s+/g, " ");
+    expect(lower).toMatch(/fail.{0,120}never block/);
+    expect(lower).toContain("step 5");
+    expect(lower).toMatch(/only.{0,60}step 5.{0,80}(real|actual) block/);
+  });
+
+  it("derives the per-check budget from real recent CI job durations via gh run list, with a documented flat fallback constant", () => {
+    const section = getStep8Section();
+    expect(section).toContain("gh run list");
+    const lower = section.toLowerCase().replace(/\s+/g, " ");
+    expect(lower).toMatch(/fallback/);
+    expect(lower).toMatch(/\d+[- ]minute/);
+  });
+
+  it("records each check's outcome (pass/fail/timeout/skip) for the printed Pre-Ship Checks output", () => {
+    const section = getStep8Section();
+    const lower = section.toLowerCase().replace(/\s+/g, " ");
+    expect(lower).toMatch(/(pass|fail|timeout|skip)[^.]{0,40}(pass|fail|timeout|skip)[^.]{0,40}(pass|fail|timeout|skip)/);
+    expect(lower).toMatch(/record|report|print/);
+  });
+
+  it("addresses install explicitly as one of the enforced-timeout-wrapped checks", () => {
+    const section = getStep8Section();
+    expect(section).toMatch(/install/i);
   });
 });
 
