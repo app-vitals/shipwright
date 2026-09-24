@@ -13,6 +13,7 @@
  *   * /*               — bearer auth middleware (everything else)
  *   * /tasks/*         — task CRUD + claim/heartbeat/complete/fail/release
  *   * /tokens/*        — token create/list/revoke
+ *   * /verification-checks/* — record/list structured per-check verification outcomes
  *
  * Thrown ApiError subclasses are mapped to HTTP responses by the onError hook.
  */
@@ -32,9 +33,11 @@ import { createPrsRoutes } from "./routes/prs.ts";
 import { createSessionsRoutes } from "./routes/sessions.ts";
 import { createTasksRoutes } from "./routes/tasks.ts";
 import { createTokensRoutes } from "./routes/tokens.ts";
+import { createVerificationChecksRoutes } from "./routes/verification-checks.ts";
 import type { SessionServiceLike } from "./session-service.ts";
 import type { TaskServiceLike } from "./task-service.ts";
 import type { TokenServiceLike } from "./token-service.ts";
+import type { VerificationCheckServiceLike } from "./verification-check-service.ts";
 
 /** No-op PullRequestService used when the feature is not wired up in a test context. */
 const noopPrService: PullRequestServiceLike = {
@@ -91,11 +94,25 @@ const noopPrService: PullRequestServiceLike = {
   },
 };
 
+/** No-op VerificationCheckService used when the feature is not wired up in a test context. */
+const noopVerificationCheckService: VerificationCheckServiceLike = {
+  async record(_data) {
+    return {} as never;
+  },
+  async listForTask(_taskId, _opts?) {
+    return { checks: [], total: 0 };
+  },
+  async listForPr(_prId, _opts?) {
+    return { checks: [], total: 0 };
+  },
+};
+
 export interface TaskStoreDeps {
   taskService: TaskServiceLike;
   tokenService: TokenServiceLike;
   sessionService: SessionServiceLike;
   pullRequestService?: PullRequestServiceLike;
+  verificationCheckService?: VerificationCheckServiceLike;
   /** Optional scope resolver for agent tokens — returns repos from agents service. */
   scopeResolver?: (agentId: string) => Promise<string[]>;
   /**
@@ -186,6 +203,12 @@ export function createTaskStoreApp(
   app.route("/tokens", createTokensRoutes(deps.tokenService));
   app.route("/prs", createPrsRoutes(deps.pullRequestService ?? noopPrService));
   app.route("/sessions", createSessionsRoutes(deps.sessionService));
+  app.route(
+    "/verification-checks",
+    createVerificationChecksRoutes(
+      deps.verificationCheckService ?? noopVerificationCheckService,
+    ),
+  );
 
   return app;
 }

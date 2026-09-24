@@ -2579,6 +2579,137 @@
           }
         }
       }
+    },
+    "/verification-checks": {
+      "post": {
+        "tags": [
+          "Verification Checks"
+        ],
+        "summary": "Record a single per-check verification outcome",
+        "description": "Records one VerificationCheck row against exactly one parent — `taskId` (a task still in progress, before a PR exists) or `prId` (an already-open PR); supplying neither or both is `400`. `status` is `ran_passed | ran_failed | skipped | timed_out`. `reasonCategory` is a closed set of ENVIRONMENTAL causes and is only valid alongside `status: skipped | timed_out` — a `ran_failed` row (the check ran and produced a genuine failure) must never carry one; supplying it anyway is `400`, enforced server-side (not just by convention). `learnedFromCategory` is only valid alongside `reasonCategory: learned_skip`, and must not itself be `learned_skip`. `at` defaults to the current time when omitted.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateVerificationCheckBody"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Recorded verification check",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VerificationCheck"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad request — missing/invalid fields, taskId/prId neither-or-both, or a status/reasonCategory combination that violates the ran_failed-never-carries-a-reasonCategory rule",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found — the referenced task/pr does not exist",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      },
+      "get": {
+        "tags": [
+          "Verification Checks"
+        ],
+        "summary": "List verification checks for a task or PR",
+        "description": "Returns `{ checks, total, limit, offset }` for exactly one of `?taskId=` or `?prId=` (supplying neither or both is `400`), ordered by `at` ascending (oldest first, default `limit=50`, `offset=0`). Returns `404` if the referenced task/pr doesn't exist.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "description": "Exactly one of ?taskId=/?prId= is required.",
+              "example": "clx1234567890"
+            },
+            "required": false,
+            "name": "taskId",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "example": "clx0987654321"
+            },
+            "required": false,
+            "name": "prId",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "description": "Max records to return",
+              "example": "50"
+            },
+            "required": false,
+            "name": "limit",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "description": "Pagination offset",
+              "example": "0"
+            },
+            "required": false,
+            "name": "offset",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Verification check history",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VerificationCheckListResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad request — ?taskId=/?prId= neither or both supplied",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
     }
   },
   "components": {
@@ -4322,6 +4453,220 @@
             "example": true
           }
         }
+      },
+      "VerificationCheck": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "example": "clxvcheck1234567"
+          },
+          "taskId": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "example": null
+          },
+          "prRecordId": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "example": "clx0987654321"
+          },
+          "repo": {
+            "type": "string",
+            "example": "org/repo"
+          },
+          "checkName": {
+            "type": "string",
+            "example": "unit"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "ran_passed",
+              "ran_failed",
+              "skipped",
+              "timed_out"
+            ],
+            "description": "Outcome of the check attempt. A 'ran_failed' row must never carry a reasonCategory — that field means the agent could not attempt/complete the check in its own environment, never that the code has a real problem.",
+            "example": "ran_passed"
+          },
+          "reasonCategory": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "enum": [
+              "check_timeout",
+              "install_timeout",
+              "resource_limit",
+              "missing_tool",
+              "missing_secret",
+              "missing_dependency",
+              "not_configured",
+              "learned_skip"
+            ],
+            "description": "A closed set of ENVIRONMENTAL causes, only valid alongside status: 'skipped' or 'timed_out'.",
+            "example": null
+          },
+          "learnedFromCategory": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "enum": [
+              "check_timeout",
+              "install_timeout",
+              "resource_limit",
+              "missing_tool",
+              "missing_secret",
+              "missing_dependency",
+              "not_configured",
+              "learned_skip"
+            ],
+            "description": "Only valid alongside reasonCategory: 'learned_skip' — the original root-cause category that triggered the learned classification.",
+            "example": null
+          },
+          "durationMs": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "example": 4200
+          },
+          "at": {
+            "type": "string",
+            "example": "2026-09-24T12:00:00.000Z"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time",
+            "example": "2026-09-24T12:00:00.000Z"
+          }
+        },
+        "required": [
+          "id",
+          "taskId",
+          "prRecordId",
+          "repo",
+          "checkName",
+          "status",
+          "reasonCategory",
+          "learnedFromCategory",
+          "durationMs",
+          "at",
+          "createdAt"
+        ]
+      },
+      "CreateVerificationCheckBody": {
+        "type": "object",
+        "properties": {
+          "taskId": {
+            "type": "string",
+            "description": "Exactly one of taskId/prId is required — supplying neither or both is 400.",
+            "example": "clx1234567890"
+          },
+          "prId": {
+            "type": "string",
+            "example": "clx0987654321"
+          },
+          "repo": {
+            "type": "string",
+            "example": "org/repo"
+          },
+          "checkName": {
+            "type": "string",
+            "description": "Free-form check name — 'install', 'lint', 'typecheck', 'unit', 'integration', etc.",
+            "example": "unit"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "ran_passed",
+              "ran_failed",
+              "skipped",
+              "timed_out"
+            ],
+            "example": "ran_passed"
+          },
+          "reasonCategory": {
+            "type": "string",
+            "enum": [
+              "check_timeout",
+              "install_timeout",
+              "resource_limit",
+              "missing_tool",
+              "missing_secret",
+              "missing_dependency",
+              "not_configured",
+              "learned_skip"
+            ],
+            "description": "Only valid alongside status: 'skipped' or 'timed_out'. A status:'ran_failed' (or 'ran_passed') request supplying this is 400.",
+            "example": "missing_tool"
+          },
+          "learnedFromCategory": {
+            "type": "string",
+            "enum": [
+              "check_timeout",
+              "install_timeout",
+              "resource_limit",
+              "missing_tool",
+              "missing_secret",
+              "missing_dependency",
+              "not_configured",
+              "learned_skip"
+            ],
+            "description": "Only valid alongside reasonCategory: 'learned_skip', and must not itself be 'learned_skip'.",
+            "example": "missing_tool"
+          },
+          "durationMs": {
+            "type": "integer",
+            "example": 4200
+          },
+          "at": {
+            "type": "string",
+            "description": "ISO timestamp of when the check completed. Defaults to the current time when omitted.",
+            "example": "2026-09-24T12:00:00.000Z"
+          }
+        },
+        "required": [
+          "repo",
+          "checkName",
+          "status"
+        ]
+      },
+      "VerificationCheckListResponse": {
+        "type": "object",
+        "properties": {
+          "checks": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/VerificationCheck"
+            },
+            "description": "Verification checks for the given task/PR, ordered by `at` ascending (oldest first)."
+          },
+          "total": {
+            "type": "integer",
+            "example": 1
+          },
+          "limit": {
+            "type": "integer",
+            "example": 50
+          },
+          "offset": {
+            "type": "integer",
+            "example": 0
+          }
+        },
+        "required": [
+          "checks",
+          "total",
+          "limit",
+          "offset"
+        ]
       }
     }
   }

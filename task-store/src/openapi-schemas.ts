@@ -1161,3 +1161,139 @@ export const CreateFindingBodySchema = z
     }),
   })
   .openapi("CreateFindingBody");
+
+// ─── Verification Check (LVB-5.1) ──────────────────────────────────────────────
+// Mirrored here rather than imported from the generated Prisma client so this
+// file stays a pure Zod-schema module (mirrors PR_ORIGIN_VALUES above).
+
+const VERIFICATION_CHECK_STATUS_VALUES = [
+  "ran_passed",
+  "ran_failed",
+  "skipped",
+  "timed_out",
+] as const;
+
+const VERIFICATION_CHECK_REASON_CATEGORY_VALUES = [
+  "check_timeout",
+  "install_timeout",
+  "resource_limit",
+  "missing_tool",
+  "missing_secret",
+  "missing_dependency",
+  "not_configured",
+  "learned_skip",
+] as const;
+
+export const VerificationCheckSchema = z
+  .object({
+    id: z.string().openapi({ example: "clxvcheck1234567" }),
+    taskId: z.string().nullable().openapi({ example: null }),
+    prRecordId: z.string().nullable().openapi({ example: "clx0987654321" }),
+    repo: z.string().openapi({ example: "org/repo" }),
+    checkName: z.string().openapi({ example: "unit" }),
+    status: z.enum(VERIFICATION_CHECK_STATUS_VALUES).openapi({
+      example: "ran_passed",
+      description:
+        "Outcome of the check attempt. A 'ran_failed' row must never carry a reasonCategory — that field means the agent could not attempt/complete the check in its own environment, never that the code has a real problem.",
+    }),
+    reasonCategory: z
+      .enum(VERIFICATION_CHECK_REASON_CATEGORY_VALUES)
+      .nullable()
+      .openapi({
+        example: null,
+        description:
+          "A closed set of ENVIRONMENTAL causes, only valid alongside status: 'skipped' or 'timed_out'.",
+      }),
+    learnedFromCategory: z
+      .enum(VERIFICATION_CHECK_REASON_CATEGORY_VALUES)
+      .nullable()
+      .openapi({
+        example: null,
+        description:
+          "Only valid alongside reasonCategory: 'learned_skip' — the original root-cause category that triggered the learned classification.",
+      }),
+    durationMs: z.number().int().nullable().openapi({ example: 4200 }),
+    at: z.string().openapi({ example: "2026-09-24T12:00:00.000Z" }),
+    createdAt: z
+      .string()
+      .datetime()
+      .openapi({ example: "2026-09-24T12:00:00.000Z" }),
+  })
+  .openapi("VerificationCheck");
+
+export type VerificationCheck = z.infer<typeof VerificationCheckSchema>;
+
+/** Request body for POST /verification-checks. */
+export const CreateVerificationCheckBodySchema = z
+  .object({
+    taskId: z.string().optional().openapi({
+      example: "clx1234567890",
+      description:
+        "Exactly one of taskId/prId is required — supplying neither or both is 400.",
+    }),
+    prId: z.string().optional().openapi({ example: "clx0987654321" }),
+    repo: z.string().openapi({ example: "org/repo" }),
+    checkName: z.string().openapi({
+      example: "unit",
+      description:
+        "Free-form check name — 'install', 'lint', 'typecheck', 'unit', 'integration', etc.",
+    }),
+    status: z.enum(VERIFICATION_CHECK_STATUS_VALUES).openapi({
+      example: "ran_passed",
+    }),
+    reasonCategory: z
+      .enum(VERIFICATION_CHECK_REASON_CATEGORY_VALUES)
+      .optional()
+      .openapi({
+        example: "missing_tool",
+        description:
+          "Only valid alongside status: 'skipped' or 'timed_out'. A status:'ran_failed' (or 'ran_passed') request supplying this is 400.",
+      }),
+    learnedFromCategory: z
+      .enum(VERIFICATION_CHECK_REASON_CATEGORY_VALUES)
+      .optional()
+      .openapi({
+        example: "missing_tool",
+        description:
+          "Only valid alongside reasonCategory: 'learned_skip', and must not itself be 'learned_skip'.",
+      }),
+    durationMs: z.number().int().optional().openapi({ example: 4200 }),
+    at: z.string().optional().openapi({
+      example: "2026-09-24T12:00:00.000Z",
+      description:
+        "ISO timestamp of when the check completed. Defaults to the current time when omitted.",
+    }),
+  })
+  .openapi("CreateVerificationCheckBody");
+
+/** Query params for GET /verification-checks */
+export const VerificationCheckListQuerySchema = z
+  .object({
+    taskId: z.string().optional().openapi({
+      example: "clx1234567890",
+      description: "Exactly one of ?taskId=/?prId= is required.",
+    }),
+    prId: z.string().optional().openapi({ example: "clx0987654321" }),
+    limit: z
+      .string()
+      .optional()
+      .openapi({ example: "50", description: "Max records to return" }),
+    offset: z
+      .string()
+      .optional()
+      .openapi({ example: "0", description: "Pagination offset" }),
+  })
+  .openapi("VerificationCheckListQuery");
+
+/** Response for GET /verification-checks */
+export const VerificationCheckListResponseSchema = z
+  .object({
+    checks: z.array(VerificationCheckSchema).openapi({
+      description:
+        "Verification checks for the given task/PR, ordered by `at` ascending (oldest first).",
+    }),
+    total: z.number().int().openapi({ example: 1 }),
+    limit: z.number().int().openapi({ example: 50 }),
+    offset: z.number().int().openapi({ example: 0 }),
+  })
+  .openapi("VerificationCheckListResponse");
