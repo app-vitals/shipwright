@@ -1308,6 +1308,137 @@ describe("createChatPoller reply: [speak:] marker synthesis", () => {
     expect(replyOpts.attachmentBytes).toBeUndefined();
   });
 
+  it("falls back to the speak text when a marker-only reply yields no audio (null)", async () => {
+    const threadId = "thread-speak-only-null";
+    const thread = makeThread(threadId);
+    const message = makeMessage(threadId, "msg-speak-only-null-1");
+    const replyResult = makeReplyResult(message);
+
+    const replyToMessage = mock(async () => replyResult);
+    const client = makeFakeClient({
+      listThreads: async () => ({
+        threads: [thread],
+        total: 1,
+        limit: 50,
+        offset: 0,
+      }),
+      claimMessage: async () => message,
+      replyToMessage,
+    });
+
+    // Marker-only body — stripping the marker leaves an empty string.
+    const runner = mock(async () => ({
+      result: "[speak:All done, the deploy is green]",
+    }));
+    const synthesizeSpeechFn = mock(async () => null);
+
+    const poller = createChatPoller({
+      client,
+      runner,
+      synthesizeSpeechFn,
+    });
+    await poller.pollOnce();
+
+    expect(synthesizeSpeechFn).toHaveBeenCalledTimes(1);
+    expect(replyToMessage).toHaveBeenCalledTimes(1);
+    const [, , opts] = replyToMessage.mock.calls[0] as unknown[];
+    const replyOpts = opts as Record<string, unknown>;
+    expect(replyOpts.body).toBe("All done, the deploy is green");
+    expect(replyOpts.attachmentFilename).toBeUndefined();
+    expect(replyOpts.attachmentSize).toBeUndefined();
+    expect(replyOpts.attachmentBytes).toBeUndefined();
+  });
+
+  it("falls back to the speak text when a marker-only reply's synthesis throws", async () => {
+    const threadId = "thread-speak-only-throw";
+    const thread = makeThread(threadId);
+    const message = makeMessage(threadId, "msg-speak-only-throw-1");
+    const replyResult = makeReplyResult(message);
+
+    const replyToMessage = mock(async () => replyResult);
+    const client = makeFakeClient({
+      listThreads: async () => ({
+        threads: [thread],
+        total: 1,
+        limit: 50,
+        offset: 0,
+      }),
+      claimMessage: async () => message,
+      replyToMessage,
+    });
+
+    const runner = mock(async () => ({
+      result: "[speak:Sorry, I could not find that file]",
+    }));
+    const synthesizeSpeechFn = mock(async () => {
+      throw new Error("tts provider down");
+    });
+
+    const poller = createChatPoller({
+      client,
+      runner,
+      synthesizeSpeechFn,
+    });
+
+    await expect(poller.pollOnce()).resolves.toBeUndefined();
+
+    expect(synthesizeSpeechFn).toHaveBeenCalledTimes(1);
+    expect(replyToMessage).toHaveBeenCalledTimes(1);
+    const [, , opts] = replyToMessage.mock.calls[0] as unknown[];
+    const replyOpts = opts as Record<string, unknown>;
+    expect(replyOpts.body).toBe("Sorry, I could not find that file");
+    expect(replyOpts.attachmentFilename).toBeUndefined();
+    expect(replyOpts.attachmentSize).toBeUndefined();
+    expect(replyOpts.attachmentBytes).toBeUndefined();
+  });
+
+  it("posts an empty body with the audio attachment when a marker-only reply synthesizes successfully", async () => {
+    const audioDir = await mkdtemp(join(tmpdir(), "chat-poller-tts-only-"));
+    try {
+      const audioPath = join(audioDir, "only.wav");
+      await writeFile(audioPath, new Uint8Array([7, 7, 7]));
+
+      const threadId = "thread-speak-only-ok";
+      const thread = makeThread(threadId);
+      const message = makeMessage(threadId, "msg-speak-only-ok-1");
+      const replyResult = makeReplyResult(message);
+
+      const replyToMessage = mock(async () => replyResult);
+      const client = makeFakeClient({
+        listThreads: async () => ({
+          threads: [thread],
+          total: 1,
+          limit: 50,
+          offset: 0,
+        }),
+        claimMessage: async () => message,
+        replyToMessage,
+      });
+
+      const runner = mock(async () => ({
+        result: "[speak:Shipped it]",
+      }));
+      const synthesizeSpeechFn = mock(
+        async (_text: string, _cfg: unknown) => audioPath,
+      );
+
+      const poller = createChatPoller({
+        client,
+        runner,
+        synthesizeSpeechFn,
+      });
+      await poller.pollOnce();
+
+      const [, , opts] = replyToMessage.mock.calls[0] as unknown[];
+      const replyOpts = opts as Record<string, unknown>;
+      // Audio carries the reply — no text fallback needed.
+      expect(replyOpts.body).toBe("");
+      expect(replyOpts.attachmentFilename).toBe("only.wav");
+    } finally {
+      await rm(audioDir, { recursive: true, force: true });
+    }
+  });
+
   it("picks the first [speak:] marker's text when other markers are present", async () => {
     const audioDir = await mkdtemp(join(tmpdir(), "chat-poller-tts-multi-"));
     try {

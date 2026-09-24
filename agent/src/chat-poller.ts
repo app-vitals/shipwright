@@ -231,6 +231,8 @@ export function createChatPoller(opts: ChatPollerOptions): ChatPoller {
     // The marker is stripped from the posted body whenever one is found,
     // regardless of whether synthesis itself succeeds — only the attachment
     // is conditional on success (AC2 stripping + AC4 graceful degradation).
+    // A marker-only reply that produced no audio falls back to posting the
+    // spoken text, so the user never gets an empty bubble (see below).
     let replyBody = body;
     let attachmentFilename: string | undefined;
     let attachmentSize: number | undefined;
@@ -262,6 +264,18 @@ export function createChatPoller(opts: ChatPollerOptions): ChatPoller {
             err instanceof Error ? err.message : String(err),
           );
         }
+      }
+
+      // Text fallback: a marker-only reply (`[speak:...]` and nothing else)
+      // strips down to an empty body, so if no audio was produced the user
+      // would get a blank bubble. Post the spoken text instead — the same
+      // contract as slack.ts's postSpeakTextFallback. When `cleaned` still has
+      // text, that text IS the graceful degradation; leave it alone.
+      if (attachmentBytes === undefined && replyBody.trim().length === 0) {
+        console.warn(
+          `[chat-poller] no audio for [speak:] marker on thread ${threadId} message ${message.id} — falling back to speak text`,
+        );
+        replyBody = speakText;
       }
     }
 
