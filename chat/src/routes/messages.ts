@@ -44,6 +44,43 @@ import { parseIntParam } from "./utils.ts";
 /** Maximum allowed size for message attachment bytes (10 MB). */
 export const MAX_ATTACHMENT_BYTES = 10 * 1024 * 1024;
 
+/**
+ * Parse+size-guard a request body's `attachmentBytes` field (base64 string or
+ * raw Uint8Array), shared by the create and reply handlers. Throws
+ * PayloadTooLargeError if the decoded size exceeds MAX_ATTACHMENT_BYTES.
+ * Returns undefined when `raw` is undefined or an unrecognized type.
+ */
+function parseAttachmentBytes(raw: unknown): Uint8Array | undefined {
+  if (raw === undefined) return undefined;
+
+  if (typeof raw === "string") {
+    const byteLength = Math.ceil((raw.length * 3) / 4);
+    if (byteLength > MAX_ATTACHMENT_BYTES) {
+      throw new PayloadTooLargeError(
+        `attachmentBytes exceeds the 10 MB limit (received ~${Math.round(byteLength / 1024 / 1024)} MB)`,
+      );
+    }
+    const buf = Buffer.from(raw, "base64");
+    return new Uint8Array(
+      buf.buffer.slice(
+        buf.byteOffset,
+        buf.byteOffset + buf.byteLength,
+      ) as ArrayBuffer,
+    );
+  }
+
+  if (raw instanceof Uint8Array) {
+    if (raw.byteLength > MAX_ATTACHMENT_BYTES) {
+      throw new PayloadTooLargeError(
+        `attachmentBytes exceeds the 10 MB limit (received ~${Math.round(raw.byteLength / 1024 / 1024)} MB)`,
+      );
+    }
+    return raw;
+  }
+
+  return undefined;
+}
+
 // ─── Route-local schemas ──────────────────────────────────────────────────────
 
 /** Path param for routes with /:id */
@@ -120,6 +157,8 @@ const HeartbeatBodySchema = z
 /** Request body for POST /:id/reply.
  * `body` is required at runtime by the handler (custom error message), but
  * kept optional here per the permissive-schema/manual-validation convention.
+ * `attachmentBytes` (base64 or raw bytes) is capped at 10 MB (`MAX_ATTACHMENT_BYTES`)
+ * — same guard as CreateMessageBodySchema's attachment fields.
  */
 const ReplyBodySchema = z
   .object({
@@ -137,6 +176,15 @@ const ReplyBodySchema = z
       .nullable()
       .optional()
       .openapi({ example: "cancelled" }),
+    attachmentFilename: z
+      .string()
+      .optional()
+      .openapi({ example: "report.pdf" }),
+    attachmentSize: z.number().int().optional().openapi({ example: 1024 }),
+    attachmentBytes: z
+      .string()
+      .optional()
+      .openapi({ example: "base64-encoded-bytes" }),
   })
   .openapi("ReplyBody");
 
@@ -381,7 +429,7 @@ const replyRoute = createRoute({
   tags: ["messages"],
   summary: "Post an agent reply to a user message",
   description:
-    'The second half of the claim/reply queue cycle. Body: `{ body: string, tokens?: JsonValue, costUsd?: number, errorKind?: string | null }` — `body` is required. Preconditions are checked in order: the target message must exist and belong to the thread (404), `role` must be `"user"` (400 if replying to an assistant message), and `repliedAt` must be null (409 if replying twice). On success, `repliedAt` is set on the user message and a new `role: "assistant"` message is created — both writes run inside a single transaction, so a partial failure can never leave `repliedAt` set with no assistant message. Returns 201 with `{ userMessage, assistantMessage }`.',
+    'The second half of the claim/reply queue cycle. Body: `{ body: string, tokens?: JsonValue, costUsd?: number, errorKind?: string | null, attachmentFilename?: string, attachmentSize?: number, attachmentBytes?: string }` — `body` is required. Preconditions are checked in order: the target message must exist and belong to the thread (404), `role` must be `"user"` (400 if replying to an assistant message), and `repliedAt` must be null (409 if replying twice). `attachmentBytes` (base64 or raw bytes) is capped at 10 MB (`MAX_ATTACHMENT_BYTES`) — oversized payloads return 413, same guard as POST / (create). On success, `repliedAt` is set on the user message and a new `role: "assistant"` message is created (with the attachment fields, if given) — both writes run inside a single transaction, so a partial failure can never leave `repliedAt` set with no assistant message. Returns 201 with `{ userMessage, assistantMessage }`.',
   request: {
     params: MessageIdParamSchema,
     body: {
@@ -403,6 +451,10 @@ const replyRoute = createRoute({
     },
     409: {
       description: "Message already has a reply",
+      content: { "application/json": { schema: ErrorSchema } },
+    },
+    413: {
+      description: "Attachment exceeds size limit",
       content: { "application/json": { schema: ErrorSchema } },
     },
   },
@@ -453,33 +505,7 @@ export function createMessagesRoutes(
       throw new BadRequestError("body is required");
 
     // Attachment size guard.
-    let attachmentBytes: Uint8Array | undefined;
-    if (body.attachmentBytes !== undefined) {
-      let byteLength = 0;
-      if (typeof body.attachmentBytes === "string") {
-        byteLength = Math.ceil((body.attachmentBytes.length * 3) / 4);
-        if (byteLength > MAX_ATTACHMENT_BYTES) {
-          throw new PayloadTooLargeError(
-            `attachmentBytes exceeds the 10 MB limit (received ~${Math.round(byteLength / 1024 / 1024)} MB)`,
-          );
-        }
-        const buf = Buffer.from(body.attachmentBytes, "base64");
-        attachmentBytes = new Uint8Array(
-          buf.buffer.slice(
-            buf.byteOffset,
-            buf.byteOffset + buf.byteLength,
-          ) as ArrayBuffer,
-        );
-      } else if (body.attachmentBytes instanceof Uint8Array) {
-        byteLength = body.attachmentBytes.byteLength;
-        if (byteLength > MAX_ATTACHMENT_BYTES) {
-          throw new PayloadTooLargeError(
-            `attachmentBytes exceeds the 10 MB limit (received ~${Math.round(byteLength / 1024 / 1024)} MB)`,
-          );
-        }
-        attachmentBytes = body.attachmentBytes;
-      }
-    }
+    const attachmentBytes = parseAttachmentBytes(body.attachmentBytes);
 
     const message = await messageService.create(threadId, {
       role,
@@ -667,6 +693,9 @@ export function createMessagesRoutes(
     const replyBody = typeof body.body === "string" ? body.body : undefined;
     if (replyBody === undefined) throw new BadRequestError("body is required");
 
+    // Attachment size guard — same as create().
+    const attachmentBytes = parseAttachmentBytes(body.attachmentBytes);
+
     const result = await messageService.reply(c.req.param("id"), {
       body: replyBody,
       tokens:
@@ -676,6 +705,15 @@ export function createMessagesRoutes(
         typeof body.errorKind === "string" || body.errorKind === null
           ? (body.errorKind as string | null)
           : undefined,
+      attachmentFilename:
+        typeof body.attachmentFilename === "string"
+          ? body.attachmentFilename
+          : undefined,
+      attachmentSize:
+        typeof body.attachmentSize === "number"
+          ? body.attachmentSize
+          : undefined,
+      attachmentBytes,
     });
     if (!result) throw new NotFoundError("message not found");
 

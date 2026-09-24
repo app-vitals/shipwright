@@ -1004,7 +1004,7 @@
           "messages"
         ],
         "summary": "Post an agent reply to a user message",
-        "description": "The second half of the claim/reply queue cycle. Body: `{ body: string, tokens?: JsonValue, costUsd?: number, errorKind?: string | null }` — `body` is required. Preconditions are checked in order: the target message must exist and belong to the thread (404), `role` must be `\"user\"` (400 if replying to an assistant message), and `repliedAt` must be null (409 if replying twice). On success, `repliedAt` is set on the user message and a new `role: \"assistant\"` message is created — both writes run inside a single transaction, so a partial failure can never leave `repliedAt` set with no assistant message. Returns 201 with `{ userMessage, assistantMessage }`.",
+        "description": "The second half of the claim/reply queue cycle. Body: `{ body: string, tokens?: JsonValue, costUsd?: number, errorKind?: string | null, attachmentFilename?: string, attachmentSize?: number, attachmentBytes?: string }` — `body` is required. Preconditions are checked in order: the target message must exist and belong to the thread (404), `role` must be `\"user\"` (400 if replying to an assistant message), and `repliedAt` must be null (409 if replying twice). `attachmentBytes` (base64 or raw bytes) is capped at 10 MB (`MAX_ATTACHMENT_BYTES`) — oversized payloads return 413, same guard as POST / (create). On success, `repliedAt` is set on the user message and a new `role: \"assistant\"` message is created (with the attachment fields, if given) — both writes run inside a single transaction, so a partial failure can never leave `repliedAt` set with no assistant message. Returns 201 with `{ userMessage, assistantMessage }`.",
         "parameters": [
           {
             "schema": {
@@ -1058,6 +1058,16 @@
           },
           "409": {
             "description": "Message already has a reply",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "Attachment exceeds size limit",
             "content": {
               "application/json": {
                 "schema": {
@@ -1579,6 +1589,18 @@
               "null"
             ],
             "example": "cancelled"
+          },
+          "attachmentFilename": {
+            "type": "string",
+            "example": "report.pdf"
+          },
+          "attachmentSize": {
+            "type": "integer",
+            "example": 1024
+          },
+          "attachmentBytes": {
+            "type": "string",
+            "example": "base64-encoded-bytes"
           }
         }
       }

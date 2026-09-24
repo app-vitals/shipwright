@@ -613,6 +613,69 @@ describe("POST /threads/:id/messages/:msgId/reply", () => {
     };
     expect(body.assistantMessage.errorKind).toBe("cancelled");
   });
+
+  it("persists an attachment on the assistant reply, readable back via GET .../attachment", async () => {
+    const ts = fakeThreadService();
+    const ms = fakeMessageService();
+    const thread = await ts.create({ agentId: "a1" });
+    const userMsg = await ms.create(thread.id, { role: "user", body: "Help!" });
+    const app = buildApp(ts, ms);
+
+    const attachmentBase64 = Buffer.from([1, 2, 3, 4, 5]).toString("base64");
+    const res = await app.request(
+      `/threads/${thread.id}/messages/${userMsg.id}/reply`,
+      {
+        method: "POST",
+        headers: H.post,
+        body: JSON.stringify({
+          body: "Here's the file.",
+          attachmentFilename: "result.bin",
+          attachmentSize: 5,
+          attachmentBytes: attachmentBase64,
+        }),
+      },
+    );
+    expect(res.status).toBe(201);
+    const body = (await res.json()) as {
+      assistantMessage: Message;
+    };
+    expect(body.assistantMessage.attachmentFilename).toBe("result.bin");
+    expect(body.assistantMessage.attachmentSize).toBe(5);
+
+    const attachmentRes = await app.request(
+      `/threads/${thread.id}/messages/${body.assistantMessage.id}/attachment`,
+      { headers: H.get },
+    );
+    expect(attachmentRes.status).toBe(200);
+    expect(attachmentRes.headers.get("content-disposition")).toContain(
+      "result.bin",
+    );
+    const buf = new Uint8Array(await attachmentRes.arrayBuffer());
+    expect(Array.from(buf)).toEqual([1, 2, 3, 4, 5]);
+  });
+
+  it("returns 413 when attachmentBytes exceeds 10 MB", async () => {
+    const ts = fakeThreadService();
+    const ms = fakeMessageService();
+    const thread = await ts.create({ agentId: "a1" });
+    const userMsg = await ms.create(thread.id, { role: "user", body: "Help!" });
+    const app = buildApp(ts, ms);
+
+    // base64 string whose decoded size exceeds 10 MB
+    const oversized = "A".repeat(Math.ceil((11 * 1024 * 1024 * 4) / 3));
+    const res = await app.request(
+      `/threads/${thread.id}/messages/${userMsg.id}/reply`,
+      {
+        method: "POST",
+        headers: H.post,
+        body: JSON.stringify({
+          body: "Big",
+          attachmentBytes: oversized,
+        }),
+      },
+    );
+    expect(res.status).toBe(413);
+  });
 });
 
 // ─── Queue API: cancel ────────────────────────────────────────────────────────

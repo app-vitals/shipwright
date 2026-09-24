@@ -92,6 +92,10 @@ export interface MessageServiceLike {
    * "cancelled" / "incomplete" / "stalled") so the UI can render a Retry
    * affordance. The whole reply runs in a single transaction — a partial
    * failure never leaves repliedAt set with no assistant message.
+   *
+   * `attachmentFilename`/`attachmentSize`/`attachmentBytes` are optional and,
+   * when provided, are written onto the created assistant message — same
+   * shape and semantics as `create()`'s attachment fields.
    */
   reply(
     messageId: string,
@@ -100,6 +104,9 @@ export interface MessageServiceLike {
       tokens?: JsonValue;
       costUsd?: number;
       errorKind?: string | null;
+      attachmentFilename?: string;
+      attachmentSize?: number;
+      attachmentBytes?: Uint8Array;
     },
   ): Promise<{ userMessage: Message; assistantMessage: Message } | null>;
 
@@ -284,6 +291,9 @@ export class MessageService implements MessageServiceLike {
       tokens?: JsonValue;
       costUsd?: number;
       errorKind?: string | null;
+      attachmentFilename?: string;
+      attachmentSize?: number;
+      attachmentBytes?: Uint8Array;
     },
   ): Promise<{ userMessage: Message; assistantMessage: Message } | null> {
     const userMessage = await this.prisma.message.findUnique({
@@ -312,6 +322,11 @@ export class MessageService implements MessageServiceLike {
               : Prisma.DbNull,
           costUsd: data.costUsd ?? null,
           errorKind: data.errorKind ?? null,
+          attachmentFilename: data.attachmentFilename ?? null,
+          attachmentSize: data.attachmentSize ?? null,
+          attachmentBytes: data.attachmentBytes
+            ? toBytes(data.attachmentBytes)
+            : null,
         },
       }),
     ]);
