@@ -2845,6 +2845,277 @@ describe("admin API — patchAuthorAllowlist field", () => {
   });
 });
 
+// ─── trialExpiresAt / trialExpiryWarnedAt fields (ATE-1.1) ───────────────────
+// trialExpiresAt is a user-settable nullable scalar wired through PATCH/GET
+// /agents/:id, following the slackId pattern. trialExpiryWarnedAt is GET-only
+// (written internally by ATE-2.1's warning check, not yet built) — it is
+// deliberately absent from PatchAgentBodySchema, so a PATCH body can never
+// set it.
+
+describe("admin API — trialExpiresAt field", () => {
+  let cookie: string;
+
+  beforeAll(async () => {
+    cookie = await makeSessionCookie();
+  });
+
+  it("GET /agents/:id returns trialExpiresAt: null and trialExpiryWarnedAt: null for an agent that never set them", async () => {
+    const app = createAdminApp(makeMockDeps());
+    const res = await app.request(`/agents/${AGENT_ID}`, {
+      headers: { Cookie: `admin_session=${cookie}` },
+    });
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.trialExpiresAt).toBe(null);
+    expect(body.trialExpiryWarnedAt).toBe(null);
+  });
+
+  it("PATCH /agents/:id with {trialExpiresAt} sets it, and a subsequent GET reflects it", async () => {
+    // In-memory agent row shared between the PATCH and the follow-up GET, to
+    // exercise real persistence semantics rather than just response echo.
+    let trialExpiresAt: Date | null = null;
+    const base = makeMockDeps();
+    const deps: AdminDeps = {
+      ...base,
+      agentService: {
+        ...base.agentService,
+        getDetail: async (id: string) =>
+          id === AGENT_ID
+            ? {
+                id: AGENT_ID,
+                name: "Existing Agent",
+                slackId: null,
+                selfHosted: false,
+                repos: [],
+                reviewAuthorAllowlist: [],
+                patchAuthorAllowlist: [],
+                restrictSlackToMembers: false,
+                typeName: "coding",
+                createdAt: new Date("2024-01-01"),
+                updatedAt: new Date("2024-01-01"),
+                missingRequiredEnv: [],
+                trialExpiresAt,
+                trialExpiryWarnedAt: null,
+              }
+            : null,
+        updateSelfHosted: async (
+          id: string,
+          input: { selfHosted?: boolean; trialExpiresAt?: Date | null },
+        ) => {
+          if (input.trialExpiresAt !== undefined) {
+            trialExpiresAt = input.trialExpiresAt;
+          }
+          return {
+            id,
+            name: "Existing Agent",
+            slackId: null,
+            selfHosted: input.selfHosted ?? false,
+            repos: [],
+            reviewAuthorAllowlist: [],
+            patchAuthorAllowlist: [],
+            restrictSlackToMembers: false,
+            typeName: "coding",
+            createdAt: new Date("2024-01-01"),
+            updatedAt: new Date("2024-01-01"),
+            missingRequiredEnv: [],
+            trialExpiresAt,
+            trialExpiryWarnedAt: null,
+          };
+        },
+      },
+    };
+    const app = createAdminApp(deps);
+
+    const patchRes = await app.request(`/agents/${AGENT_ID}`, {
+      method: "PATCH",
+      body: JSON.stringify({ trialExpiresAt: "2026-12-01T00:00:00Z" }),
+      headers: {
+        "Content-Type": "application/json",
+        Cookie: `admin_session=${cookie}`,
+      },
+    });
+    expect(patchRes.status).toBe(200);
+    const patchBody = await patchRes.json();
+    expect(patchBody.trialExpiresAt).toBe("2026-12-01T00:00:00.000Z");
+
+    const getRes = await app.request(`/agents/${AGENT_ID}`, {
+      headers: { Cookie: `admin_session=${cookie}` },
+    });
+    expect(getRes.status).toBe(200);
+    const getBody = await getRes.json();
+    expect(getBody.trialExpiresAt).toBe("2026-12-01T00:00:00.000Z");
+  });
+
+  it("PATCH /agents/:id with {trialExpiresAt: null} clears it, and a subsequent GET reflects null", async () => {
+    let trialExpiresAt: Date | null = new Date("2026-12-01T00:00:00Z");
+    const base = makeMockDeps();
+    const deps: AdminDeps = {
+      ...base,
+      agentService: {
+        ...base.agentService,
+        getDetail: async (id: string) =>
+          id === AGENT_ID
+            ? {
+                id: AGENT_ID,
+                name: "Existing Agent",
+                slackId: null,
+                selfHosted: false,
+                repos: [],
+                reviewAuthorAllowlist: [],
+                patchAuthorAllowlist: [],
+                restrictSlackToMembers: false,
+                typeName: "coding",
+                createdAt: new Date("2024-01-01"),
+                updatedAt: new Date("2024-01-01"),
+                missingRequiredEnv: [],
+                trialExpiresAt,
+                trialExpiryWarnedAt: null,
+              }
+            : null,
+        updateSelfHosted: async (
+          id: string,
+          input: { selfHosted?: boolean; trialExpiresAt?: Date | null },
+        ) => {
+          if (input.trialExpiresAt !== undefined) {
+            trialExpiresAt = input.trialExpiresAt;
+          }
+          return {
+            id,
+            name: "Existing Agent",
+            slackId: null,
+            selfHosted: input.selfHosted ?? false,
+            repos: [],
+            reviewAuthorAllowlist: [],
+            patchAuthorAllowlist: [],
+            restrictSlackToMembers: false,
+            typeName: "coding",
+            createdAt: new Date("2024-01-01"),
+            updatedAt: new Date("2024-01-01"),
+            missingRequiredEnv: [],
+            trialExpiresAt,
+            trialExpiryWarnedAt: null,
+          };
+        },
+      },
+    };
+    const app = createAdminApp(deps);
+
+    const patchRes = await app.request(`/agents/${AGENT_ID}`, {
+      method: "PATCH",
+      body: JSON.stringify({ trialExpiresAt: null }),
+      headers: {
+        "Content-Type": "application/json",
+        Cookie: `admin_session=${cookie}`,
+      },
+    });
+    expect(patchRes.status).toBe(200);
+    const patchBody = await patchRes.json();
+    expect(patchBody.trialExpiresAt).toBe(null);
+
+    const getRes = await app.request(`/agents/${AGENT_ID}`, {
+      headers: { Cookie: `admin_session=${cookie}` },
+    });
+    expect(getRes.status).toBe(200);
+    const getBody = await getRes.json();
+    expect(getBody.trialExpiresAt).toBe(null);
+  });
+
+  it("PATCH /agents/:id omitting trialExpiresAt does not pass it to the service (existing value untouched)", async () => {
+    const base = makeMockDeps();
+    let capturedInput: { selfHosted?: boolean; trialExpiresAt?: Date | null } =
+      {};
+    const deps: AdminDeps = {
+      ...base,
+      agentService: {
+        ...base.agentService,
+        updateSelfHosted: async (
+          id: string,
+          input: { selfHosted?: boolean; trialExpiresAt?: Date | null },
+        ) => {
+          capturedInput = input;
+          return {
+            id,
+            name: "Existing Agent",
+            slackId: null,
+            selfHosted: input.selfHosted ?? false,
+            repos: [],
+            reviewAuthorAllowlist: [],
+            patchAuthorAllowlist: [],
+            restrictSlackToMembers: false,
+            typeName: "coding",
+            createdAt: new Date("2024-01-01"),
+            updatedAt: new Date("2024-01-01"),
+            missingRequiredEnv: [],
+            // The service layer would echo back the persisted (untouched)
+            // value here — simulated directly since this mock has no state.
+            trialExpiresAt: new Date("2026-12-01T00:00:00Z"),
+            trialExpiryWarnedAt: null,
+          };
+        },
+      },
+    };
+    const app = createAdminApp(deps);
+    const res = await app.request(`/agents/${AGENT_ID}`, {
+      method: "PATCH",
+      body: JSON.stringify({ selfHosted: true }),
+      headers: {
+        "Content-Type": "application/json",
+        Cookie: `admin_session=${cookie}`,
+      },
+    });
+    expect(res.status).toBe(200);
+    expect("trialExpiresAt" in capturedInput).toBe(false);
+    const body = await res.json();
+    expect(body.trialExpiresAt).toBe("2026-12-01T00:00:00.000Z");
+  });
+
+  it("PATCH /agents/:id with {trialExpiresAt} does not accept trialExpiryWarnedAt in the body (read-only field ignored)", async () => {
+    const base = makeMockDeps();
+    const deps: AdminDeps = {
+      ...base,
+      agentService: {
+        ...base.agentService,
+        updateSelfHosted: async (
+          id: string,
+          input: { selfHosted?: boolean },
+        ) => ({
+          id,
+          name: "Existing Agent",
+          slackId: null,
+          selfHosted: input.selfHosted ?? false,
+          repos: [],
+          reviewAuthorAllowlist: [],
+          patchAuthorAllowlist: [],
+          restrictSlackToMembers: false,
+          typeName: "coding",
+          createdAt: new Date("2024-01-01"),
+          updatedAt: new Date("2024-01-01"),
+          missingRequiredEnv: [],
+          trialExpiresAt: null,
+          // trialExpiryWarnedAt stays null regardless of what the request
+          // body contains — it isn't part of PatchAgentBodySchema at all.
+          trialExpiryWarnedAt: null,
+        }),
+      },
+    };
+    const app = createAdminApp(deps);
+    const res = await app.request(`/agents/${AGENT_ID}`, {
+      method: "PATCH",
+      body: JSON.stringify({
+        trialExpiresAt: "2026-12-01T00:00:00Z",
+        trialExpiryWarnedAt: "2026-11-01T00:00:00Z",
+      }),
+      headers: {
+        "Content-Type": "application/json",
+        Cookie: `admin_session=${cookie}`,
+      },
+    });
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.trialExpiryWarnedAt).toBe(null);
+  });
+});
+
 // ─── Cron runs smoke tests ────────────────────────────────────────────────────
 
 describe("admin API — cron runs", () => {
