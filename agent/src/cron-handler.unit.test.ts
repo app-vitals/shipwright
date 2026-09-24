@@ -32,8 +32,15 @@ import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { WebClient } from "@slack/web-api";
-import type { ModelUsage, TokenUsage } from "./claude.ts";
+import type {
+  ClaudeRunResult,
+  EarlySessionIdCallback,
+  ModelUsage,
+  ProgressCallback,
+  TokenUsage,
+} from "./claude.ts";
 import { handleCronRequest } from "./cron-handler.ts";
+import type { CronRunReporter } from "./cron-run-reporter.ts";
 
 // ─── Fake spawn helpers (mirrors claude.unit.test.ts) ──────────────────────
 
@@ -702,5 +709,133 @@ describe("handleCronRequest — SLACK_CHANNEL_ID extraEnv (STC-1.3)", () => {
       Record<string, string> | undefined,
     ];
     expect(call[2]).toBeUndefined();
+  });
+});
+
+// ─── onEarlySessionId wiring (CES-1.1) ──────────────────────────────────────
+//
+// The generic cron path (this file) has no session-id visibility on its
+// cron-run log until completeRun fires at the very end of a dispatch —
+// unlike loop-orchestrator.ts's dev-task dispatches, which already push an
+// early session id via the same recordSessionId() reporter method. These
+// tests assert handleCronRequest constructs a matching fire-and-forget
+// onEarlySessionId callback and forwards it into runner() as the 4th
+// positional arg, mirroring the onProgress/recordProgress wiring above.
+
+function makeSessionIdRecordingReporter(
+  recordSessionIdImpl?: (
+    cronId: string,
+    runId: string | null,
+    sessionId: string,
+  ) => Promise<void>,
+): {
+  reporter: CronRunReporter;
+  sessionIdCalls: Array<{
+    cronId: string;
+    runId: string | null;
+    sessionId: string;
+  }>;
+} {
+  const sessionIdCalls: Array<{
+    cronId: string;
+    runId: string | null;
+    sessionId: string;
+  }> = [];
+  const reporter: CronRunReporter = {
+    async createRun() {
+      return "run-early-1";
+    },
+    async completeRun() {},
+    async skipRun() {},
+    async recordProgress() {},
+    async recordSessionId(cronId, runId, sessionId) {
+      sessionIdCalls.push({ cronId, runId, sessionId });
+      if (recordSessionIdImpl)
+        await recordSessionIdImpl(cronId, runId, sessionId);
+    },
+  };
+  return { reporter, sessionIdCalls };
+}
+
+describe("handleCronRequest — onEarlySessionId wiring (CES-1.1)", () => {
+  test("runner is called with a 4th-arg onEarlySessionId callback that forwards into cronRunReporter.recordSessionId(jobId, runId, sid)", async () => {
+    const { reporter, sessionIdCalls } = makeSessionIdRecordingReporter();
+
+    let capturedOnEarlySessionId: EarlySessionIdCallback | undefined;
+    const runner = mock(
+      async (
+        _message: string,
+        _onProgress?: ProgressCallback,
+        _extraEnv?: Record<string, string>,
+        onEarlySessionId?: EarlySessionIdCallback,
+      ): Promise<ClaudeRunResult> => {
+        capturedOnEarlySessionId = onEarlySessionId;
+        return { result: "claude reply", sessionId: "sess-1" };
+      },
+    );
+
+    await handleCronRequest(
+      { jobId: "j-early", prompt: "hello", silent: true },
+      { ...deps, runner, cronRunReporter: reporter },
+    );
+
+    expect(runner).toHaveBeenCalledTimes(1);
+    expect(typeof capturedOnEarlySessionId).toBe("function");
+
+    capturedOnEarlySessionId?.("early-sess-id");
+    // recordSessionId is fire-and-forget — give its promise chain a tick.
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(sessionIdCalls).toEqual([
+      { cronId: "j-early", runId: "run-early-1", sessionId: "early-sess-id" },
+    ]);
+  });
+
+  test("a cronRunReporter.recordSessionId rejection is caught and warn-logged, never thrown — dispatch still completes normally", async () => {
+    const { reporter } = makeSessionIdRecordingReporter(async () => {
+      throw new Error("network error");
+    });
+
+    let capturedOnEarlySessionId: EarlySessionIdCallback | undefined;
+    const runner = mock(
+      async (
+        _message: string,
+        _onProgress?: ProgressCallback,
+        _extraEnv?: Record<string, string>,
+        onEarlySessionId?: EarlySessionIdCallback,
+      ): Promise<ClaudeRunResult> => {
+        capturedOnEarlySessionId = onEarlySessionId;
+        return { result: "claude reply", sessionId: "sess-2" };
+      },
+    );
+
+    const warnMessages: string[] = [];
+    const originalWarn = console.warn;
+    console.warn = (...args: unknown[]) => {
+      warnMessages.push(args.map(String).join(" "));
+    };
+
+    try {
+      await expect(
+        handleCronRequest(
+          { jobId: "j-early-fail", prompt: "hello", silent: true },
+          { ...deps, runner, cronRunReporter: reporter },
+        ),
+      ).resolves.toBeUndefined();
+
+      expect(typeof capturedOnEarlySessionId).toBe("function");
+      capturedOnEarlySessionId?.("early-sess-id-2");
+      // Let the rejected recordSessionId promise's .catch handler run.
+      await Promise.resolve();
+      await Promise.resolve();
+      await Promise.resolve();
+    } finally {
+      console.warn = originalWarn;
+    }
+
+    expect(warnMessages.some((m) => m.includes("recordSessionId failed"))).toBe(
+      true,
+    );
   });
 });

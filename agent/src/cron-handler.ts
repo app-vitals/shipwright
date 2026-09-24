@@ -14,17 +14,20 @@ import {
   ClaudeRunError,
   type ClaudeRunResult,
   ClaudeTimeoutError,
+  type EarlySessionIdCallback,
   type ModelUsage,
   type ProgressCallback,
   type TokenUsage,
 } from "./claude.ts";
 import { type Clock, SystemClock } from "./clock.ts";
 import { markCronRunFailureReported } from "./cron-failure-reporter.ts";
-import type { ModelBreakdownEntry } from "./cron-run-reporter.ts";
-import type { CronRunReporter } from "./cron-run-reporter.ts";
+import type {
+  CronRunReporter,
+  ModelBreakdownEntry,
+} from "./cron-run-reporter.ts";
 import { markdownToSlack } from "./format.ts";
 import { parseMarkers } from "./markers.ts";
-import { type SynthesizeSpeechFn, dispatchMarkers } from "./slack.ts";
+import { dispatchMarkers, type SynthesizeSpeechFn } from "./slack.ts";
 import type { VoiceConfig } from "./voice.ts";
 
 export function buildTokenPayload(
@@ -71,6 +74,7 @@ type ClaudeRunner = (
   message: string,
   onProgress?: ProgressCallback,
   extraEnv?: Record<string, string>,
+  onEarlySessionId?: EarlySessionIdCallback,
 ) => Promise<ClaudeRunResult>;
 
 /**
@@ -406,8 +410,29 @@ export async function handleCronRequest(
       });
   };
 
+  // Early session-id push (CES-1.1): fired as soon as the CLI's leading
+  // system/init stream-json line arrives, well before the run finishes — so
+  // the cron-run log has a sessionId for manual inspection even if the run
+  // never reaches a terminal state (crash, kill, timeout). Fire-and-forget
+  // per recordSessionId's own doc comment — a rejection must not crash the
+  // run, so it's caught and swallowed. Mirrors loop-orchestrator.ts's
+  // onEarlySessionId wiring and this file's own onProgress/recordProgress
+  // pattern just above.
+  const onEarlySessionId: EarlySessionIdCallback = (sid) => {
+    cronRunReporter?.recordSessionId(jobId, runId, sid).catch((err) => {
+      console.warn(
+        `[agent:cron] recordSessionId failed for run ${runId}: ${String(err)} — swallowing`,
+      );
+    });
+  };
+
   try {
-    const runResult = await runner(message, onProgress, extraEnv);
+    const runResult = await runner(
+      message,
+      onProgress,
+      extraEnv,
+      onEarlySessionId,
+    );
     if (runResult.streamIncomplete) {
       // Clean process exit, but the stream never emitted a terminal `result`
       // event — treat this the same as a genuine failure rather than letting
