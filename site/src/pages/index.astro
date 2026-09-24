@@ -5,7 +5,7 @@
 // (see brand/MESSAGING.md D10) — only the H1/meta phrase and one linked
 // sentence may name a competitor here.
 import BaseLayout from "../layouts/BaseLayout.astro";
-import { BOOKING_URL } from "../consts";
+import { BOOKING_URL, REPO_URL, withUtm } from "../consts";
 
 // Devin-alternative repositioning (D1): the new canonical H1/tagline
 // hierarchy. See brand/MESSAGING.md §1.
@@ -20,7 +20,6 @@ const pageDescription =
   "Shipwright is the MIT-licensed, spec-to-deploy autonomous delivery agent that " +
   "runs entirely in your own cloud. An open source alternative to Devin.";
 const install = "/plugin install shipwright@app-vitals/shipwright";
-const githubUrl = "https://github.com/app-vitals/shipwright";
 const proofUrl = "https://proof.shipwrightharness.com/public/dashboard";
 const proofTasksUrl = "https://proof.shipwrightharness.com/public/tasks";
 
@@ -167,6 +166,37 @@ const trendRows =
   trendsData.rows && trendsData.rows.length > 0
     ? trendsData.rows
     : trendsFallback;
+
+// Star count (STAR-1.1) — REAL figure pulled at build time from the public,
+// unauthenticated GitHub REST API. Same fetch-with-fallback shape as
+// PROOF_METRICS_BASE/fetchProof above: try the live endpoint, fall back to a
+// hardcoded last-known snapshot on any failure/timeout so a build never
+// breaks. Display is gated behind MIN_STARS_TO_DISPLAY — below that
+// threshold the CTA still asks for a star, it just omits the number, so a
+// small count never undersells the project.
+const STAR_COUNT_API = "https://api.github.com/repos/app-vitals/shipwright";
+const MIN_STARS_TO_DISPLAY = 50;
+// Last-known snapshot (build-time fallback only, checked 2026-09-24).
+const starCountFallback = 14;
+
+async function fetchStarCount(): Promise<number> {
+  try {
+    const res = await fetch(STAR_COUNT_API, {
+      signal: AbortSignal.timeout(8000),
+      headers: { accept: "application/vnd.github+json" },
+    });
+    if (!res.ok) return starCountFallback;
+    const json = (await res.json()) as { stargazers_count?: unknown };
+    return typeof json.stargazers_count === "number"
+      ? json.stargazers_count
+      : starCountFallback;
+  } catch {
+    return starCountFallback;
+  }
+}
+
+const starCount = await fetchStarCount();
+const showStarCount = starCount >= MIN_STARS_TO_DISPLAY;
 
 // Format the real summary into the four headline cards.
 const fmtCycle = (h: number | null) =>
@@ -339,6 +369,21 @@ const differentiators = [
     </p>
     <p class="mt-2 max-w-2xl mx-auto text-sm" style="color: var(--sw-color-text-muted);">
       {priorTagline}
+    </p>
+
+    <!-- Star CTA (STAR-1.1) — the site's first ask for a star; everything
+         else on the homepage today waits until the Social Proof section. -->
+    <p class="mt-8 flex flex-wrap items-center justify-center gap-3">
+      <a href={withUtm(REPO_URL, "hero")} class="sw-btn sw-btn-secondary">
+        Star us on GitHub
+      </a>
+      <span
+        class="text-sm"
+        style="color: var(--sw-color-text-muted); display: inline-block; min-width: 5ch;"
+        data-testid="hero-star-count"
+      >
+        {showStarCount ? `${starCount.toLocaleString()} stars` : ""}
+      </span>
     </p>
 
     <!-- Intro video — hero centerpiece. -->
@@ -1044,7 +1089,7 @@ const differentiators = [
           Read the source, file an issue, or star the repo to follow along as it
           grows.
         </p>
-        <a class="sw-btn sw-btn-secondary w-fit" href={githubUrl}>
+        <a class="sw-btn sw-btn-secondary w-fit" href={withUtm(REPO_URL, "social_proof")}>
           Star on GitHub
         </a>
       </div>

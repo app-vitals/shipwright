@@ -15,6 +15,7 @@ import {
   DOCS_SIDEBAR_SUPPLEMENTAL_LINKS,
   PRIMARY_NAV_LINKS,
   REPO_URL,
+  withUtm,
 } from "../consts";
 
 interface Heading {
@@ -399,6 +400,21 @@ const tocHeadings = headings.filter((h) => h.depth === 2 || h.depth === 3);
               </div>
             )
           }
+
+          <!-- Star CTA (STAR-1.1) — desktop-visible star ask. The sidebar's
+               GitHub link above only renders in the mobile-only nav, so
+               desktop docs readers otherwise never see a GitHub/star link. -->
+          <div
+            class="docs-star-cta"
+            style="margin-top: 2.5rem; padding-top: 1.5rem; border-top: 1px solid var(--sw-color-border-subtle);"
+          >
+            <p>
+              Finding Shipwright useful?{" "}
+              <a href={withUtm(REPO_URL, "docs")} class="sw-btn sw-btn-secondary">
+                Star us on GitHub ↗
+              </a>
+            </p>
+          </div>
         </main>
 
         <!-- TOC (on-page, static) -->
