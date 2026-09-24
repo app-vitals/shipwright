@@ -985,7 +985,7 @@ If `auto_docs_updated == false`:
 
 Record what this run learned about the repo's toolchain into the repo's own docs. See
 `references/toolchain-patterns.md`'s "Writing Learned Facts Back to Docs" section for the
-mechanics — update the `### Shipwright Learned Facts` subsection in the pointer doc (if
+mechanics — update the `Shipwright Learned Facts` subsection in the pointer doc (if
 `docsSource` was populated in Step 0b) or create/update the default `docs/toolchain.md` (if
 not).
 

@@ -659,7 +659,7 @@ describe("toolchain-patterns.md — docsSource pointer + scoped fingerprint (LVB
     expect(section).toMatch(/false cache \*?hit/i);
   });
 
-  it("strips Shipwright's own '### Shipwright Learned Facts' subsection out of the docsSource-populated hash so the write-back mechanism can't self-invalidate the cache (LVB-4.2)", () => {
+  it("strips Shipwright's own 'Shipwright Learned Facts' subsection out of the docsSource-populated hash so the write-back mechanism can't self-invalidate the cache (LVB-4.2)", () => {
     const awkIdx = referencesContent.indexOf("heading_content=$(awk");
     expect(awkIdx).toBeGreaterThan(-1);
     const awkBlock = referencesContent.slice(awkIdx, referencesContent.indexOf("```", awkIdx));
@@ -667,12 +667,33 @@ describe("toolchain-patterns.md — docsSource pointer + scoped fingerprint (LVB
     // The marker subsection is nested under {docsSource.heading}, so the
     // same-or-shallower boundary rule above *includes* it in the section's
     // content — it has to be filtered back out before hashing.
-    expect(awkBlock).toMatch(/### Shipwright Learned Facts/);
-    // Skip until the next heading at level <= 3 (the marker heading's own level),
+    expect(awkBlock).toMatch(/Shipwright Learned Facts/);
+    // Skip until the next heading at level <= the marker heading's own level,
     // then resume — not an unconditional exit, which would also drop any
     // human-authored subsection that follows the marker.
-    expect(awkBlock).toMatch(/RLENGTH\s*<=\s*3/);
+    expect(awkBlock).toMatch(/RLENGTH\s*<=\s*marker_level/);
     expect(awkBlock).toMatch(/skip\s*=\s*0/);
+  });
+
+  it("derives the strip pass's marker level from docsSource.heading instead of hardcoding 3, so it still works under a level-3+ pointer heading (LVB-4.2)", () => {
+    const awkIdx = referencesContent.indexOf("heading_content=$(awk");
+    expect(awkIdx).toBeGreaterThan(-1);
+    const awkBlock = referencesContent.slice(awkIdx, referencesContent.indexOf("```", awkIdx));
+    const stripPassIdx = awkBlock.indexOf("| awk");
+    expect(stripPassIdx).toBeGreaterThan(-1);
+    const stripPass = awkBlock.slice(stripPassIdx);
+
+    // The strip pass needs {docsSource.heading} too — it can't compute the
+    // marker's level without the parent heading it nests under.
+    expect(stripPass).toMatch(/-v h="\{docsSource\.heading\}"/);
+    expect(stripPass).toMatch(/marker_level\s*=\s*RLENGTH\s*\+\s*1/);
+    // Capped at markdown's maximum heading depth.
+    expect(stripPass).toMatch(/marker_level\s*>\s*6/);
+    // The marker pattern is built from that derived level, never a literal '###'
+    // — a hardcoded level-3 strip silently stops matching the moment
+    // docsSource.heading is itself level 3 or deeper.
+    expect(stripPass).not.toMatch(/### Shipwright Learned Facts/);
+    expect(stripPass).not.toMatch(/RLENGTH\s*<=\s*3\b/);
   });
 
   it("excludes the no-pointer fallback target docs/toolchain.md from the config-file fingerprint pathspec for the same reason (LVB-4.2)", () => {
@@ -728,12 +749,39 @@ describe("toolchain-patterns.md — writing learned facts back to docs (LVB-4.2)
     expect(s).toMatch(/skip-locally/i);
   });
 
-  it("defines a fixed, idempotent '### Shipwright Learned Facts' marker subsection owned exclusively by this mechanism", () => {
+  it("defines a fixed, idempotent 'Shipwright Learned Facts' marker subsection owned exclusively by this mechanism", () => {
     const s = section();
-    expect(s).toContain("### Shipwright Learned Facts");
+    expect(s).toContain("Shipwright Learned Facts");
     expect(s).toMatch(/full replace/i);
     expect(s).toMatch(/never an append that duplicates/i);
     expect(s).toMatch(/auto-maintained/i);
+  });
+
+  it("derives the marker's heading level as one deeper than its parent heading rather than hardcoding level 3 (LVB-4.2)", () => {
+    const s = section();
+    // The heading *text* is fixed; its '#' depth is parent level + 1, capped at
+    // markdown's maximum of 6.
+    expect(s).toMatch(/derived, never hardcoded/i);
+    expect(s).toMatch(/one level deeper/i);
+    expect(s).toMatch(/parent level \+ 1/);
+    expect(s).toMatch(/capped at[^.]{0,40}6/i);
+    // The failure this guards: docsSource.heading can itself be level 3+ (Docs-First
+    // Discovery scans arbitrary docs/*.md and ai-docs/*.md files), and a level-3
+    // marker under a level-3 parent is a *sibling* — under this file's own
+    // same-or-shallower boundary rule it terminates the parent section instead of
+    // nesting inside it.
+    expect(s).toMatch(/sibling/i);
+    expect(s).toMatch(/docs\/\*\.md|ai-docs\/\*\.md/);
+    // Worked example: a level-3 parent yields a level-4 marker.
+    expect(s).toMatch(/`#### Shipwright Learned Facts`/);
+    // And downstream boundary checks key off the same derived level.
+    expect(s).toMatch(/same derived level|that same derived level/i);
+  });
+
+  it("applies the same derivation to the no-pointer default file: a level-1 '# Toolchain' title yields a level-2 marker (LVB-4.2)", () => {
+    const s = section();
+    expect(s).toMatch(/`## Shipwright Learned Facts`/);
+    expect(s).toMatch(/# Toolchain[^.]{0,40}level 1/i);
   });
 
   it("reuses the Fingerprint recipe's same-or-shallower heading-boundary technique instead of reinventing it", () => {
