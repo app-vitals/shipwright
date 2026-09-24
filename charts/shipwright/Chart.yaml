@@ -9,7 +9,7 @@ type: application
 # Chart version (SemVer). Bump on every chart change, independent of appVersion.
 # See CHANGELOG.md and the README "Versioning" section — CI enforces this bump
 # via `ct lint --check-version-increment`.
-version: 1.20.110
+version: 1.20.111
 # Version of the Shipwright application this chart deploys by default.
 appVersion: "0.1.0"
 home: https://shipwrightharness.com
@@ -30,7 +30,7 @@ annotations:
   # entry in CHANGELOG.md (keep the two in sync on every bump).
   artifacthub.io/changes: |
     - kind: changed
-      description: "auto-bump to chart v1.20.110 triggered by release tag agent-v1.307.0"
+      description: "auto-bump to chart v1.20.111 triggered by release tag task-store-v1.146.0"
 dependencies:
   # Bitnami PostgreSQL subchart, pinned to the chart release shipping Postgres 18.x
   # (appVersion 18.6.0). Every current chart release defaults image.tag to `latest`
