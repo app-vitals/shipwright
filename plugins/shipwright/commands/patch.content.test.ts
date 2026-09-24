@@ -1548,48 +1548,10 @@ describe("patch.md — docs-first toolchain discovery + per-repo cache (TDF-1.1)
   });
 });
 
-describe("toolchain-patterns.md — docsSource pointer + scoped fingerprint (LVB-4.1)", () => {
-  const referencesPath = join(import.meta.dir, "..", "references", "toolchain-patterns.md");
-  const referencesContent = readFileSync(referencesPath, "utf-8");
-
-  it("Docs-First Discovery records a {path, heading} pointer to the source doc", () => {
-    const sectionIdx = referencesContent.indexOf("## Docs-First Discovery");
-    const cachingIdx = referencesContent.indexOf("## Caching Across Runs");
-    expect(sectionIdx).toBeGreaterThan(-1);
-    expect(cachingIdx).toBeGreaterThan(sectionIdx);
-    const section = referencesContent.slice(sectionIdx, cachingIdx);
-    expect(section).toMatch(/docsSource/);
-    expect(section).toMatch(/\{\s*path\s*,\s*heading\s*\}/);
-  });
-
-  it("defines a docsSource field in the cache schema", () => {
-    const cachingIdx = referencesContent.indexOf("## Caching Across Runs");
-    const schemaIdx = referencesContent.indexOf('"commands"', cachingIdx);
-    expect(schemaIdx).toBeGreaterThan(-1);
-    const schemaSection = referencesContent.slice(cachingIdx, schemaIdx);
-    expect(schemaSection).toContain('"docsSource"');
-  });
-
-  it("scopes the fingerprint so a routine lockfile-only dependency bump no longer invalidates the cache", () => {
-    const fingerprintIdx = referencesContent.indexOf("**Fingerprint**");
-    expect(fingerprintIdx).toBeGreaterThan(-1);
-    const nextSectionIdx = referencesContent.indexOf("## Detection Order");
-    expect(nextSectionIdx).toBeGreaterThan(fingerprintIdx);
-    const section = referencesContent.slice(fingerprintIdx, nextSectionIdx);
-    expect(section).toMatch(/lockfile-only/i);
-    // The actual recipes (the bash code blocks) must not hash any lockfile —
-    // mentioning lockfiles in surrounding prose (as explicitly excluded) is fine.
-    const codeBlocks = [...section.matchAll(/```bash\n([\s\S]*?)```/g)].map((m) => m[1]);
-    expect(codeBlocks.length).toBeGreaterThan(0);
-    for (const block of codeBlocks) {
-      expect(block).not.toMatch(/package-lock\.json/);
-      expect(block).not.toMatch(/bun\.lock\b/);
-      expect(block).not.toMatch(/bun\.lockb/);
-      expect(block).not.toMatch(/yarn\.lock/);
-      expect(block).not.toMatch(/pnpm-lock\.yaml/);
-    }
-  });
-
+describe("patch.md — delegates to toolchain-patterns.md's docsSource pointer (LVB-4.1)", () => {
+  // The docsSource pointer field and scoped-fingerprint rule are asserted against
+  // toolchain-patterns.md's actual content in dev-task.content.test.ts — this file
+  // only needs to confirm patch.md's three call sites delegate rather than re-embed.
   it("Step 4a.5/5a.5/6a.5 delegate to toolchain-patterns.md's Caching Across Runs section rather than re-embedding the fingerprint recipe inline", () => {
     for (const [step, next] of [
       ["### Step 4a.5: Detect Project Toolchain", "### Step 4a.6"],
