@@ -514,6 +514,26 @@ export const generatedTools: GeneratedTool[] = [
     hasBody: false,
   },
   {
+    name: "tasks_unblock",
+    description: "Atomically unblock a task back to pending",
+    inputSchema: {
+      type: "object",
+      properties: {
+        id: {
+          type: "string",
+          example: "clx1234567890",
+        },
+      },
+      required: ["id"],
+      additionalProperties: false,
+    },
+    method: "POST",
+    pathTemplate: "/tasks/{id}/unblock",
+    queryParams: [],
+    pathParams: ["id"],
+    hasBody: false,
+  },
+  {
     name: "tasks_events",
     description:
       "Fetch a task's TaskEvent audit trail, ordered by `at` ascending (oldest first)",
@@ -795,6 +815,24 @@ export const generatedTools: GeneratedTool[] = [
           description:
             "ISO timestamp of the GitHub PR's actual creation time. Only applied on first claim (record creation); ignored on subsequent claims since the field is immutable once set.",
           example: "2026-01-01T00:00:00.000Z",
+        },
+        authorLogin: {
+          type: ["string", "null"],
+          description:
+            "PR author's GitHub login (POM-1.2). Used server-side to derive `origin` (first-write-wins) and refreshed unconditionally on every claim.",
+          example: "octocat",
+        },
+        headRef: {
+          type: ["string", "null"],
+          description:
+            "PR's head branch name (POM-1.2). Used server-side to derive `origin` (first-write-wins) and refreshed unconditionally on every claim.",
+          example: "feat/some-branch",
+        },
+        title: {
+          type: ["string", "null"],
+          description:
+            "PR title (POM-1.2). Refreshed unconditionally on every claim.",
+          example: "Add the origin metrics dimension",
         },
       },
       required: ["repo", "prNumber", "commitSha"],

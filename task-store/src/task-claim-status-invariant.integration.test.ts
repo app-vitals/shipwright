@@ -16,11 +16,19 @@
  * independently blocks the invariant-violating shape even if application
  * code is buggy or bypassed.
  *
+ * Also exercises TaskService.unblock() (UNB-1.1) against a real DB: its
+ * atomic conditional UPDATE (WHERE status='blocked') clears claimedBy back
+ * to NULL in the same statement that flips status to 'pending', so the
+ * resulting row must satisfy this same CHECK constraint — proving the new
+ * write path composes correctly with the pre-existing invariant rather than
+ * relying on the app-level guard alone.
+ *
  * Requires DATABASE_URL_SHIPWRIGHT_TASK_STORE_TEST to be set; skips otherwise.
  */
 
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
-import { type PrismaClient, createPrismaClient } from "./prisma-client.ts";
+import { createPrismaClient, type PrismaClient } from "./prisma-client.ts";
+import { TaskService } from "./task-service.ts";
 
 const TEST_DB = process.env.DATABASE_URL_SHIPWRIGHT_TASK_STORE_TEST;
 
@@ -47,6 +55,11 @@ describeOrSkip("Task pending/claimedBy DB invariant (integration)", () => {
   });
 
   afterEach(async () => {
+    // TaskEvent's FK is ON DELETE RESTRICT (TCS-1.1) — the UNB-1.1 unblock()
+    // case below goes through the real TaskService (not raw SQL like the
+    // other cases in this file), so it writes TaskEvent audit rows that must
+    // be cleared before their parent Task row, same ordering as beforeEach.
+    await prisma.taskEvent.deleteMany();
     await prisma.task.deleteMany();
     await prisma.$disconnect();
   });
@@ -104,5 +117,42 @@ describeOrSkip("Task pending/claimedBy DB invariant (integration)", () => {
     });
     expect(task.status).toBe("in_progress");
     expect(task.claimedBy).toBe("some-agent");
+  });
+
+  it("TaskService.unblock()'s atomic UPDATE (status=blocked -> pending, claimedBy cleared) satisfies the invariant against a real DB (UNB-1.1)", async () => {
+    await prisma.task.create({
+      data: {
+        id: "t-unb11-real-db",
+        title: "blocked task, real claim",
+        status: "blocked",
+        claimedBy: "some-agent",
+        claimedAt: new Date().toISOString(),
+        heartbeatAt: new Date().toISOString(),
+        blockedAt: new Date().toISOString(),
+        blockedReason: "spun out",
+        skipCount: 3,
+        lastSkippedAt: new Date().toISOString(),
+      },
+    });
+
+    const service = new TaskService(prisma);
+    const result = await service.unblock("t-unb11-real-db");
+
+    expect(result.status).toBe("pending");
+    expect(result.claimedBy).toBeNull();
+    expect(result.blockedReason).toBeNull();
+    expect(result.blockedAt).toBeNull();
+    expect(result.skipCount).toBe(0);
+    expect(result.lastSkippedAt).toBeNull();
+
+    // Re-read from the DB directly to confirm the row genuinely satisfies
+    // the CHECK constraint (status='pending' iff claimedBy IS NULL) —
+    // TaskService.unblock()'s single UPDATE statement did not need two
+    // round-trips to land in a constraint-satisfying state.
+    const task = await prisma.task.findUniqueOrThrow({
+      where: { id: "t-unb11-real-db" },
+    });
+    expect(task.status).toBe("pending");
+    expect(task.claimedBy).toBeNull();
   });
 });

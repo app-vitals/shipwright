@@ -39,15 +39,17 @@
  *   POST   /tasks/:id/release   unclaim → pending
  *   POST   /tasks/:id/skip      increment skipCount, auto-block at threshold
  *   POST   /tasks/:id/skip/reset  reset skipCount back to 0
+ *   POST   /tasks/:id/unblock   atomic unblock (409 unless status='blocked') —
+ *                              clears blockedReason/blockedAt/claimedBy/claimedAt/
+ *                              heartbeatAt and resets skipCount/lastSkippedAt
  *   GET    /tasks/:id/events    fetch a TaskEvent audit trail (?limit, ?offset)
  */
 
-import { OpenAPIHono, createRoute } from "@hono/zod-openapi";
+import { createRoute, OpenAPIHono } from "@hono/zod-openapi";
 import { readJson } from "@shipwright/lib/http";
 import type { TaskStoreAuthEnv } from "../auth.ts";
 import { BadRequestError, ForbiddenError, NotFoundError } from "../errors.ts";
 import type { Prisma, TaskKind } from "../index.ts";
-import { CLOSED_STATUSES, OPEN_STATUSES } from "../statuses.ts";
 import {
   BulkInsertBodySchema,
   BulkInsertResponseSchema,
@@ -64,6 +66,7 @@ import {
   TaskSchema,
   UpdateTaskBodySchema,
 } from "../openapi-schemas.ts";
+import { CLOSED_STATUSES, OPEN_STATUSES } from "../statuses.ts";
 import { MAX_BULK_TASKS, type TaskServiceLike } from "../task-service.ts";
 import { isOrgRepo } from "../validate.ts";
 
@@ -596,6 +599,40 @@ const skipResetRoute = createRoute({
   },
 });
 
+const unblockRoute = createRoute({
+  method: "post",
+  path: "/:id/unblock",
+  tags: ["tasks"],
+  summary: "Atomically unblock a task back to pending",
+  description:
+    "Atomically unblocks a task via a single conditional `UPDATE ... WHERE status='blocked'`, setting `status=pending` and clearing `blockedReason`, `blockedAt`, `claimedBy`, `claimedAt`, and `heartbeatAt`, and resetting `skipCount` to `0` and `lastSkippedAt` to `null` — all in one round-trip. Returns `409` if the task is not currently in `blocked` status (never a silent no-op, unlike `/release` on a non-`in_progress` task).",
+  request: {
+    params: TaskIdParamSchema,
+  },
+  responses: {
+    200: {
+      description: "Unblocked task",
+      content: { "application/json": { schema: TaskSchema } },
+    },
+    401: {
+      description: "Unauthorized",
+      content: { "application/json": { schema: ErrorSchema } },
+    },
+    403: {
+      description: "Forbidden",
+      content: { "application/json": { schema: ErrorSchema } },
+    },
+    404: {
+      description: "Not found",
+      content: { "application/json": { schema: ErrorSchema } },
+    },
+    409: {
+      description: "Conflict — task is not currently blocked",
+      content: { "application/json": { schema: ErrorSchema } },
+    },
+  },
+});
+
 const eventsRoute = createRoute({
   method: "get",
   path: "/:id/events",
@@ -970,6 +1007,16 @@ export function createTasksRoutes(
     const repos = c.get("repos") ?? [];
     await requireOwnership(taskService, c.req.param("id"), agentId, repos);
     const task = await taskService.resetSkip(c.req.param("id"));
+    return c.json(task, 200);
+  });
+
+  // ─── Unblock (atomic) ──────────────────────────────────────────────────────
+  // biome-ignore lint/suspicious/noExplicitAny: service returns Prisma types; JSON serialization handles Date→string correctly at runtime
+  app.openapi(unblockRoute, async (c): Promise<any> => {
+    const agentId = c.get("agentId");
+    const repos = c.get("repos") ?? [];
+    await requireOwnership(taskService, c.req.param("id"), agentId, repos);
+    const task = await taskService.unblock(c.req.param("id"));
     return c.json(task, 200);
   });
 

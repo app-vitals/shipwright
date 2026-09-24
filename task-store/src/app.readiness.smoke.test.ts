@@ -76,6 +76,9 @@ function fakeTaskService(): TaskServiceLike {
     async resetSkip() {
       return {} as never;
     },
+    async unblock() {
+      return {} as never;
+    },
     async bulk() {
       return { inserted: 0, updated: 0, skipped: [] };
     },

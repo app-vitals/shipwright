@@ -176,6 +176,9 @@ function fakeTaskService(opts: {
     async resetSkip(id: string) {
       return makeTask({ id, skipCount: 0 });
     },
+    async unblock(id: string) {
+      return makeTask({ id, status: "pending" });
+    },
     async bulk(_tasks) {
       return { inserted: 0, updated: 0, skipped: [] };
     },

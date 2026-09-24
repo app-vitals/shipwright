@@ -93,10 +93,11 @@ those three. Three call sites write these fields:
    the task write — no extra API call from `dev-task.md`/`unblock.md`. A PATCH that would leave
    `status: "pr_open"` with `pr` null (neither supplied nor already on the row) is rejected with
    `400` — this invariant is enforced server-side, not just by convention.
-2. `PullRequestService.claim()` (`POST /prs/claim`) — after every successful claim (update or
-   create branch), looks up whether a Task row links `(repo, prNumber)` and derives a `PrOrigin`
-   via the pure `deriveOrigin()` helper (`task-store/src/pr-origin-derivation.ts`), then calls
-   `stampOrigin()` atomically with the claim write. A task-row match always wins over any
+2. `PullRequestService.claim()` (`POST /prs/claim`) — accepts optional `authorLogin`, `headRef`,
+   and `title` fields, which are stored unconditionally (latest value always wins). After every
+   successful claim (update or create branch), looks up whether a Task row links `(repo, prNumber)`
+   and derives a `PrOrigin` via the pure `deriveOrigin()` helper (`task-store/src/pr-origin-derivation.ts`),
+   then calls `stampOrigin()` atomically with the claim write. A task-row match always wins over any
    author/branch-based signal — see [metrics.md](./metrics.md#origin-classification-rules) for
    the exact precedence table `deriveOrigin()` implements.
 3. `POST /prs/census` — a batch upsert (`{repo, prNumber, origin?, authorLogin?, headRef?, title?,

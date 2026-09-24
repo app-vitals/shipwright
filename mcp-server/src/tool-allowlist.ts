@@ -16,7 +16,7 @@ import type { GeneratedTool } from "./generated-tools.ts";
  *
  * Excluded categories:
  * - Pipeline-internal lifecycle ops: tasks_claim, tasks_heartbeat, tasks_complete,
- *   tasks_fail, tasks_release, tasks_skip, tasks_reset
+ *   tasks_fail, tasks_release, tasks_skip, tasks_reset, tasks_unblock
  * - Destructive ops: tasks_delete
  * - Token-management routes: tokens_list, tokens_create, tokens_update, tokens_delete
  * - PR lifecycle ops: prs_claim, prs_claim_next, prs_heartbeat, prs_complete,
@@ -62,6 +62,14 @@ import type { GeneratedTool } from "./generated-tools.ts";
  * same category as `prs_findings`/`sessions_update`. `prs_cursor` (the
  * cursor GET) stays public: it's a read, scoped by `?repo=` the same way
  * `prs_list`/`prs_get` already are.
+ *
+ * UNB-1.1 added `POST /tasks/{id}/unblock` (an atomic
+ * status='blocked'->'pending' transition, mirroring `/claim`'s conditional-
+ * UPDATE pattern). `tasks_unblock` is excluded here, in the same
+ * pipeline-internal lifecycle category as `tasks_fail`/`tasks_release`/
+ * `tasks_skip`/`tasks_reset` above — it's a claim/skip-state mutation via a
+ * dedicated atomic route, not the "ordinary field edit" shape the public
+ * surface is scoped to.
  */
 export const EXCLUDED_TOOLS: readonly string[] = [
   // tasks: pipeline-internal lifecycle
@@ -72,6 +80,7 @@ export const EXCLUDED_TOOLS: readonly string[] = [
   "tasks_release",
   "tasks_skip",
   "tasks_reset",
+  "tasks_unblock",
   // tasks: destructive
   "tasks_delete",
   // tokens: all token-management

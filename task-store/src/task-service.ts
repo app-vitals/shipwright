@@ -384,6 +384,7 @@ export interface TaskServiceLike {
   release(id: string): Promise<Task>;
   recordSkip(id: string): Promise<Task>;
   resetSkip(id: string): Promise<Task>;
+  unblock(id: string): Promise<Task>;
   getEvents(
     id: string,
     opts?: { limit?: number; offset?: number },
@@ -1163,6 +1164,68 @@ export class TaskService implements TaskServiceLike {
     } catch (err: unknown) {
       throw this.translateNotFound(err, "task not found");
     }
+  }
+
+  /**
+   * Atomically unblock a blocked task, returning it to 'pending'.
+   *
+   * Single conditional UPDATE — `WHERE id = $1 AND status = 'blocked'` —
+   * mirroring claim()'s pattern above. If 0 rows are affected the task is
+   * either missing or not currently blocked: distinguish the two with a
+   * follow-up read so callers get 404 vs 409, exactly like claim().
+   *
+   * Deliberately does NOT silently no-op on a non-blocked task the way
+   * release()'s pre-atomic-guard behavior did (CRT-1.1): the whole point of
+   * this endpoint is a hard 409 when the precondition isn't met, so a caller
+   * can't mistake "nothing happened" for "task unblocked".
+   *
+   * On success, clears every field an agent's failed/blocked attempt could
+   * have left behind — blockedReason/blockedAt, claimedBy/claimedAt/
+   * heartbeatAt, and the skip-tracking pair (skipCount/lastSkippedAt) — in
+   * the same statement that flips status back to 'pending', so the row can
+   * never land in an intermediate state that violates the DB-level
+   * status='pending' iff claimedBy IS NULL invariant (see
+   * task-claim-status-invariant.integration.test.ts).
+   */
+  async unblock(id: string): Promise<Task> {
+    return await this.prisma.$transaction(async (tx) => {
+      const before = await tx.task.findUnique({ where: { id } });
+
+      const affected = await tx.$executeRaw`
+        UPDATE "Task"
+        SET status = 'pending',
+            "blockedReason" = NULL,
+            "blockedAt" = NULL,
+            "claimedBy" = NULL,
+            "claimedAt" = NULL,
+            "heartbeatAt" = NULL,
+            "skipCount" = 0,
+            "lastSkippedAt" = NULL,
+            "updatedAt" = now()
+        WHERE id = ${id} AND status = 'blocked'
+      `;
+
+      if (affected === 0) {
+        if (!before) throw new NotFoundError("task not found");
+        throw new ConflictError("task is not currently blocked");
+      }
+
+      const after = await tx.task.findUnique({ where: { id } });
+      if (!after) throw new NotFoundError("task not found");
+
+      await this.recordTaskTransition(
+        tx,
+        before,
+        after,
+        "unblock",
+        before?.claimedBy ?? "system",
+      );
+
+      // Same rollback-on-throw contract as create()/update()/claim() above.
+      await this.webhookDispatcher("task.write", [after]);
+
+      return after;
+    }, WEBHOOK_TX_OPTIONS);
   }
 
   /**

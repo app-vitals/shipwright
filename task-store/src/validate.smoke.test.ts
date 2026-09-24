@@ -131,9 +131,7 @@ function withBlockedBy(task: Task): TaskWithBlockedBy {
 }
 
 function fakeTaskService(
-  opts: {
-    getResult?: Task | null;
-  } = {},
+  opts: { getResult?: Task | null } = {},
 ): TaskServiceLike {
   return {
     async list(_filters?: TaskListFilters): Promise<TaskListResult> {
@@ -179,6 +177,9 @@ function fakeTaskService(
     },
     async resetSkip(id: string) {
       return makeTask({ id, skipCount: 0 });
+    },
+    async unblock(id: string) {
+      return makeTask({ id, status: "pending" });
     },
     async bulk(_tasks) {
       return { inserted: 0, updated: 0, skipped: [] };
