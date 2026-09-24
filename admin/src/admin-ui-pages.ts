@@ -137,6 +137,166 @@ export interface PrListItem {
   lastSkippedAt?: string | null;
 }
 
+// Inline type mirroring VerificationCheck fields (LVB-5.1,
+// task-store/src/openapi-schemas.ts's VerificationCheckSchema) without
+// cross-package coupling to @shipwright/task-store — same convention as the
+// other inline type mirrors in this file (PrListItem, TaskItem, etc).
+export interface VerificationCheckItem {
+  id: string;
+  taskId: string | null;
+  prRecordId: string | null;
+  repo: string;
+  checkName: string;
+  /** "ran_passed" | "ran_failed" | "skipped" | "timed_out" */
+  status: string;
+  reasonCategory: string | null;
+  learnedFromCategory: string | null;
+  durationMs: number | null;
+  at: string;
+  createdAt: string;
+}
+
+/**
+ * Lightweight, pre-aggregated rollup of recent verification-check activity
+ * across an agent's recently-dispatched tasks/PRs — backs the agent detail
+ * page's "Recent Verification Activity" card (LVB-5.3 AC2). Computed by the
+ * caller (admin-ui.ts's agent-detail route) from a bounded set of recent
+ * cron-run dispatch targets; this module only renders it.
+ */
+export interface VerificationActivitySummary {
+  /** Total verification-check rows counted across the sampled items. */
+  totalChecks: number;
+  /** Number of distinct tasks/PRs whose checks contributed to this rollup. */
+  itemCount: number;
+  /** Counts keyed by VerificationCheckStatus (e.g. "ran_passed": 9). */
+  counts: Record<string, number>;
+}
+
+// Inline CSS + labels for verification-check status badges, keyed by the raw
+// VerificationCheckStatus value. Shared by the task/PR detail "Verification
+// Checks" card and the agent detail "Recent Verification Activity" rollup.
+const VERIFICATION_STATUS_STYLE: Record<string, string> = {
+  ran_passed: "background:#d1fae5;color:#065f46",
+  ran_failed: "background:#fee2e2;color:#991b1b",
+  skipped: "background:#f3f4f6;color:#6b7280",
+  timed_out: "background:#fde68a;color:#92400e",
+};
+const VERIFICATION_STATUS_STYLE_DEFAULT = "background:#f3f4f6;color:#6b7280";
+const VERIFICATION_STATUS_LABEL: Record<string, string> = {
+  ran_passed: "passed",
+  ran_failed: "failed",
+  skipped: "skipped",
+  timed_out: "timed out",
+};
+const VERIFICATION_STATUS_ORDER = [
+  "ran_passed",
+  "ran_failed",
+  "skipped",
+  "timed_out",
+];
+
+/** Human label for a verification-check status, falling back to the raw value for an unrecognized status. */
+function verificationStatusLabel(status: string): string {
+  return VERIFICATION_STATUS_LABEL[status] ?? status;
+}
+
+/** Renders a status badge for a verification-check row, styled by status. */
+function verificationStatusBadge(status: string): string {
+  const style =
+    VERIFICATION_STATUS_STYLE[status] ?? VERIFICATION_STATUS_STYLE_DEFAULT;
+  return `<span class="badge" style="${style}">${escapeHtml(verificationStatusLabel(status))}</span>`;
+}
+
+/**
+ * Reduces a task/PR's verification-check history down to the most recent run
+ * per checkName (a task/PR can have many rows per checkName, one per run over
+ * time — see task-store/src/routes/verification-checks.ts). Sorted by
+ * checkName for stable, deterministic rendering.
+ */
+export function mostRecentVerificationChecksByCheckName(
+  checks: VerificationCheckItem[],
+): VerificationCheckItem[] {
+  const latestByName = new Map<string, VerificationCheckItem>();
+  for (const check of checks) {
+    const existing = latestByName.get(check.checkName);
+    if (
+      !existing ||
+      new Date(check.at).getTime() > new Date(existing.at).getTime()
+    ) {
+      latestByName.set(check.checkName, check);
+    }
+  }
+  return [...latestByName.values()].sort((a, b) =>
+    a.checkName.localeCompare(b.checkName),
+  );
+}
+
+/**
+ * Renders the "Verification Checks" card shared by the task detail and PR
+ * detail pages (LVB-5.3 AC1) — one row per checkName, showing only the most
+ * recent run's status + reason. Returns "" when there are no checks, so
+ * tasks/PRs predating LVB-5.1 (or not yet reported by LVB-5.2) render exactly
+ * as before, no empty card.
+ */
+function renderVerificationChecksCard(
+  checks: VerificationCheckItem[],
+  timezone: string,
+): string {
+  const mostRecent = mostRecentVerificationChecksByCheckName(checks);
+  if (mostRecent.length === 0) return "";
+  const rows = mostRecent
+    .map((check) => {
+      const d = new Date(check.at);
+      const fmt = Number.isNaN(d.getTime())
+        ? check.at
+        : d.toLocaleString("en-US", {
+            dateStyle: "medium",
+            timeStyle: "short",
+            timeZone: timezone,
+          });
+      const reasonHtml = check.reasonCategory
+        ? `<div style="font-size:11px;color:#9ca3af;margin-top:2px">${escapeHtml(check.reasonCategory)}</div>`
+        : "";
+      return `<tr>
+      <td style="width:170px;padding:8px 12px;color:#6b7280;font-size:12px;font-weight:500;vertical-align:top;white-space:nowrap;font-family:monospace">${escapeHtml(check.checkName)}</td>
+      <td style="padding:8px 12px;font-size:13px">${verificationStatusBadge(check.status)}${reasonHtml}</td>
+      <td style="padding:8px 12px;font-size:13px;color:#6b7280" title="${escapeHtml(check.at)}">${escapeHtml(fmt)}</td>
+    </tr>`;
+    })
+    .join("");
+  return `<div class="card" style="margin-bottom:16px">
+      <div style="font-size:12px;font-weight:600;color:#374151;margin-bottom:8px;text-transform:uppercase;letter-spacing:.05em">Verification Checks</div>
+      <table class="detail-table"><tbody>
+        ${rows}
+      </tbody></table>
+    </div>`;
+}
+
+/**
+ * Renders the "Recent Verification Activity" rollup card on the agent detail
+ * page (LVB-5.3 AC2) — a lightweight counts-by-status summary, not a full
+ * history browser. Returns "" when the summary is absent or has zero checks
+ * (e.g. the fetcher isn't configured, or none of the agent's recently
+ * dispatched items have recorded verification checks yet).
+ */
+function renderVerificationActivityCard(
+  summary?: VerificationActivitySummary,
+): string {
+  if (!summary || summary.totalChecks === 0) return "";
+  const badges = VERIFICATION_STATUS_ORDER.map((status) => {
+    const count = summary.counts[status] ?? 0;
+    if (count === 0) return "";
+    return `<span style="margin-right:12px;font-size:13px">${verificationStatusBadge(status)} ${count}</span>`;
+  })
+    .filter(Boolean)
+    .join("");
+  return `<div class="card">
+      <div class="card-title">Recent Verification Activity</div>
+      <div style="font-size:13px;color:#6b7280;margin-bottom:10px">${summary.totalChecks} check${summary.totalChecks === 1 ? "" : "s"} across ${summary.itemCount} recent item${summary.itemCount === 1 ? "" : "s"}</div>
+      <div>${badges}</div>
+    </div>`;
+}
+
 export interface AgentListItem {
   id: string;
   name: string;
@@ -999,6 +1159,14 @@ export function renderAgentDetailPage(
     warning?: string;
     now?: Date;
     timezone?: string;
+    /**
+     * Pre-aggregated rollup of recent verification-check activity across this
+     * agent's recently-dispatched tasks/PRs (LVB-5.3 AC2). Computed by the
+     * caller from AgentCronRunService.listForAgent's itemType/itemId dispatch
+     * targets — see admin-ui.ts's buildVerificationActivityRollup(). Absent
+     * (or zero total) renders no card.
+     */
+    verificationActivity?: VerificationActivitySummary;
   },
 ): string {
   // Reference time for relative timestamps — injected by tests for determinism,
@@ -1365,6 +1533,10 @@ export function renderAgentDetailPage(
       </div>`
     : "";
 
+  const verificationActivityHtml = renderVerificationActivityCard(
+    opts?.verificationActivity,
+  );
+
   return renderAdminPage({
     title: `${agent.name} — Shipwright Admin`,
     body: `${renderAdminToolbar(userName, "/admin/agents")}
@@ -1404,6 +1576,7 @@ export function renderAgentDetailPage(
     ${successHtml}
     ${warningHtml}
     ${newTokenHtml}
+    ${verificationActivityHtml}
 
     ${
       !agent.selfHosted
@@ -2869,6 +3042,7 @@ export function renderTaskDetailPage(
   timezone = "America/Los_Angeles",
   pullRequest?: PullRequestItem,
   backHref = "/admin/tasks",
+  verificationChecks: VerificationCheckItem[] = [],
 ): string {
   const statusClass =
     task.status === "in_progress"
@@ -2984,6 +3158,11 @@ export function renderTaskDetailPage(
     </div>`;
       })()
     : "";
+
+  const verificationSection = renderVerificationChecksCard(
+    verificationChecks,
+    timezone,
+  );
 
   const releaseButton =
     task.status === "in_progress"
@@ -3143,6 +3322,7 @@ export function renderTaskDetailPage(
         : ""
     }
     ${prSection}
+    ${verificationSection}
   </div>`,
   });
 }
@@ -4237,6 +4417,7 @@ export function renderPrDetailPage(
   agentNames: Record<string, string> = {},
   timezone = "America/Los_Angeles",
   linkedTasks: TaskItem[] = [],
+  verificationChecks: VerificationCheckItem[] = [],
 ): string {
   function field(
     label: string,
@@ -4331,6 +4512,11 @@ export function renderPrDetailPage(
     .filter(Boolean)
     .join("\n");
 
+  const verificationSection = renderVerificationChecksCard(
+    verificationChecks,
+    timezone,
+  );
+
   return renderAdminPage({
     title: `PR #${pr.prNumber} — ${pr.repo} — Shipwright Admin`,
     extraStyles: `
@@ -4366,6 +4552,7 @@ export function renderPrDetailPage(
     </div>`
         : ""
     }
+    ${verificationSection}
   </div>`,
   });
 }
