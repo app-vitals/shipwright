@@ -4228,10 +4228,13 @@ describe("createLoopOrchestrator", () => {
     expect(sessionIdCalls[0]?.sessionId).toBe("sess-review-1");
   });
 
-  test("a plan dispatch still gets no sessionKey and pushes no recordSessionId — the plan phase is out of CRT-1.3's scope", async () => {
+  test("a plan dispatch still gets no sessionKey but now pushes recordSessionId — CES-1.2 decoupled the early-session-id push from sessionKey", async () => {
     // CRT-1.3 widened the sessionKey gate to review/patch/deploy only; plan
     // deliberately keeps starting cold on every dispatch, so it must stay on
-    // the undefined-sessionKey path (and therefore the no-early-capture path).
+    // the undefined-sessionKey path. However, CES-1.2 decouples the
+    // onEarlySessionId callback construction from sessionKey truthiness — the
+    // callback is built unconditionally for every phase (including plan) so the
+    // session id is captured in the cron-run row regardless.
     const consumed = new Set<string>();
     const planCandidates = [
       {
@@ -4276,7 +4279,93 @@ describe("createLoopOrchestrator", () => {
     }
 
     expect(sessionKeys).toEqual([undefined]);
-    expect(sessionIdCalls).toHaveLength(0);
+    expect(sessionIdCalls).toHaveLength(1);
+    expect(sessionIdCalls[0]?.sessionId).toBe("sess-plan-1");
+  });
+
+  test("a plan-phase dispatch fires onEarlySessionId and pushes it via recordSessionId before the run completes", async () => {
+    const consumed = new Set<string>();
+    const planCandidates = [
+      {
+        id: "PLN-1.2",
+        createdAt: "2026-01-01T00:00:00Z",
+        phase: "plan" as const,
+        repo: "acme/x",
+        session: "sesh-2",
+      },
+    ];
+    const { reporter, sessionIdCalls } = makeRecordingReporter();
+    const callOrder: string[] = [];
+    const trackedReporter: CronRunReporter = {
+      ...reporter,
+      async recordSessionId(cronId, runId, sessionId) {
+        callOrder.push("recordSessionId");
+        await reporter.recordSessionId(cronId, runId, sessionId);
+      },
+      async completeRun(
+        cronId,
+        runId,
+        completedAt,
+        outcome,
+        opts,
+        phaseId,
+        itemType,
+        itemId,
+      ) {
+        callOrder.push("completeRun");
+        await reporter.completeRun(
+          cronId,
+          runId,
+          completedAt,
+          outcome,
+          opts,
+          phaseId,
+          itemType,
+          itemId,
+        );
+      },
+    };
+
+    const runner = async (
+      _message: string,
+      _onProgress?: ProgressCallback,
+      _sessionKey?: string,
+      onEarlySessionId?: EarlySessionIdCallback,
+    ): Promise<ClaudeRunResult> => {
+      // Fired synchronously, i.e. well before the run resolves.
+      onEarlySessionId?.("sess-plan-early-xyz");
+      consumed.add("PLN-1.2");
+      return { result: "done", sessionId: "sess-plan-early-xyz" };
+    };
+
+    const deps = makeDeps({
+      planCandidates,
+      runner,
+      reporter: trackedReporter,
+      consumed,
+    });
+    const original =
+      process.env.SHIPWRIGHT_AGENT_AUTONOMOUS_PLAN_SESSION_ENABLED;
+    process.env.SHIPWRIGHT_AGENT_AUTONOMOUS_PLAN_SESSION_ENABLED = "true";
+    try {
+      const loop = createLoopOrchestrator(deps);
+      await loop([job("shipwright-plan", true)]);
+    } finally {
+      if (original === undefined) {
+        delete process.env.SHIPWRIGHT_AGENT_AUTONOMOUS_PLAN_SESSION_ENABLED;
+      } else {
+        process.env.SHIPWRIGHT_AGENT_AUTONOMOUS_PLAN_SESSION_ENABLED = original;
+      }
+    }
+
+    expect(sessionIdCalls).toHaveLength(1);
+    expect(sessionIdCalls[0]).toEqual({
+      cronId: "shipwright-loop",
+      runId: "run-1",
+      sessionId: "sess-plan-early-xyz",
+    });
+    // Pushed as soon as the callback fired — not deferred to completion.
+    expect(callOrder).toEqual(["recordSessionId", "completeRun"]);
   });
 
   test("a recordSessionId rejection does not crash dispatch", async () => {
