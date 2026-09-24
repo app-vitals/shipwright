@@ -1636,8 +1636,17 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
     // param.
     const result = await createAgent(
       {
+        // Bind each method createAgent() needs (CreateAgentDeps.agentService
+        // = create | delete | updateFields | runTransaction) explicitly
+        // rather than spreading `agentService`: in production this is a real
+        // `new AgentService(prisma)` whose methods live on
+        // AgentService.prototype, and object spread copies only own
+        // enumerable properties — a spread would silently drop
+        // create/delete/updateFields and throw at the first call.
         agentService: {
-          ...agentService,
+          create: agentService.create.bind(agentService),
+          delete: agentService.delete.bind(agentService),
+          updateFields: agentService.updateFields.bind(agentService),
           // Test doubles for routes unrelated to agent creation don't
           // implement runTransaction (see AdminUIDeps.agentService above) —
           // fall back to a non-transactional passthrough so createAgent()
