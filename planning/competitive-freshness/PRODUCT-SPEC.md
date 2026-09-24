@@ -117,7 +117,15 @@ Feature 1 must land before Feature 2 (the command depends on the precheck's data
 
 ## Success Criteria
 
-- `check-competitive-freshness.ts` correctly identifies stale pages/rows by age, mirroring the existing site-docs-freshness precheck's contract.
-- `/shipwright:competitive-refresh --auto` can run unattended, re-verify a page's claims against live sources, and either bump `verifiedDate` or open a review-gated PR depending on materiality.
+- `scripts/check-competitive-freshness.ts` correctly identifies stale pages/rows by age, mirroring the existing site-docs-freshness precheck's contract.
+- The custom cron (once created, post-merge) can run unattended, re-verify a page's claims against live sources per `scripts/competitive-refresh-runbook.md`, and either bump `verifiedDate` or open a review-gated PR depending on materiality.
 - The specific gap this session found (SpaceX/Cursor) would be caught by this mechanism going forward, via the general recent-news search step.
 - `task ci` passes with no regression to the mirrored `check-site-docs-freshness` test suite.
+
+## 2026-09-24 correction: not a plugin capability
+
+Dan caught this after the spec was first written: this is App-Vitals-specific business content (hardcoded competitor names, dependency on `brand/MESSAGING.md`'s App-Vitals-specific competitor-naming policy) — not a generic, repo-agnostic capability any shipwright-plugin installer would want. It does not belong under `plugins/shipwright/` (which ships to every user who installs the plugin). Both tasks were still `pending` with no code written, so amended in place rather than rebuilt from scratch:
+
+- **Feature 1**'s precheck moves from `plugins/shipwright/scripts/check-competitive-freshness.ts` to `scripts/check-competitive-freshness.ts` (repo-root — this repo's own tooling, matching the existing `scripts/hitl.ts`/`scripts/dev-tmux.ts` precedent, distinct from the distributed plugin's `plugins/shipwright/scripts/`). Its internal date-comparison *mechanism* still mirrors `check-site-docs-freshness.ts` — only its location changed.
+- **Feature 2** is no longer a distributed `/shipwright:competitive-refresh` command with `$ARGUMENTS`-based auto/interactive mode-switching. It's `scripts/competitive-refresh-runbook.md` — a plain, repo-local markdown runbook a custom (non-system) cron's plain-language prompt references directly, per `docs/extending.md`'s pattern for repo-specific scheduled automation ("a nightly report, a weekly changelog sync, a custom compliance check — that doesn't belong in the shared shipwright plugin"). No new companion plugin either — this is a one-off, single-repo automation, not a reusable capability, so a companion plugin would be over-engineering for what it's solving.
+- Every acceptance criterion carries over unchanged in substance (re-fetch cited sources, general recent-news search, `brand/MESSAGING.md` read first, commit-vs-PR risk split, unreachable-source fallback) — only the *location* and *distribution model* changed, not the behavior.
