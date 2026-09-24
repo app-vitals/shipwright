@@ -943,6 +943,41 @@ describe("GET /threads/:id/messages/:msgId/attachment", () => {
     );
     expect(res2.status).toBe(404);
   });
+
+  it("retains the attachment bytes across repeated GETs for an assistant-authored message", async () => {
+    const ts = fakeThreadService();
+    const ms = spyClearAttachment(fakeMessageService());
+    const thread = await ts.create({ agentId: "a1" });
+    const bytes = new Uint8Array([4, 2, 0]);
+    const msg = await ms.create(thread.id, {
+      role: "assistant",
+      body: "Here's the report",
+      attachmentFilename: "report.bin",
+      attachmentSize: bytes.byteLength,
+      attachmentBytes: bytes,
+    });
+    const app = buildApp(ts, ms);
+
+    const res = await app.request(
+      `/threads/${thread.id}/messages/${msg.id}/attachment`,
+      { headers: H.get },
+    );
+    expect(res.status).toBe(200);
+    const buf = new Uint8Array(await res.arrayBuffer());
+    expect(Array.from(buf)).toEqual([4, 2, 0]);
+    // clearAttachmentBytes must NOT be called for an assistant-authored message
+    expect(ms.clearedIds).not.toContain(msg.id);
+
+    // A second fetch still returns 200 with the same bytes (not 404) — retained.
+    const res2 = await app.request(
+      `/threads/${thread.id}/messages/${msg.id}/attachment`,
+      { headers: H.get },
+    );
+    expect(res2.status).toBe(200);
+    const buf2 = new Uint8Array(await res2.arrayBuffer());
+    expect(Array.from(buf2)).toEqual([4, 2, 0]);
+    expect(ms.clearedIds).not.toContain(msg.id);
+  });
 });
 
 // ─── Reply notifier wiring (CFB-4.3) ──────────────────────────────────────────

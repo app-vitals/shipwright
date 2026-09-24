@@ -83,7 +83,7 @@ Indexes: `[agentId, updatedAt desc]` (list-by-agent ordering), `[memberId]`.
 | `costUsd` | `Float?` | |
 | `attachmentFilename` | `String?` | Set via `POST / (create)` or `POST /:id/reply`; optional |
 | `attachmentSize` | `Int?` | Set via `POST / (create)` or `POST /:id/reply`; optional |
-| `attachmentBytes` | `Bytes?` | Set via `POST / (create)` or `POST /:id/reply`; app-layer capped at 10 MB (`MAX_ATTACHMENT_BYTES`); cleared after being served once |
+| `attachmentBytes` | `Bytes?` | Set via `POST / (create)` or `POST /:id/reply`; app-layer capped at 10 MB (`MAX_ATTACHMENT_BYTES`). For `role: "user"` messages, cleared after being served once via `GET /:id/attachment` (ephemeral retention — content is not retained after the agent pulls it into its workspace). For `role: "assistant"` messages, retained indefinitely and can be fetched repeatedly (e.g. a member downloading a report from the chat UI). |
 | `claimed` | `Boolean` | Default `false`; set by the claim queue endpoint |
 | `claimedAt` | `DateTime?` | |
 | `claimedBy` | `String?` | Caller `agentId`, or `"admin"` |
