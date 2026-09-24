@@ -49,6 +49,8 @@ import {
   type TaskItem,
   type TokenItem,
   type ToolItem,
+  type VerificationActivitySummary,
+  type VerificationCheckItem,
   type WorkQueueItem,
   type WorkQueueSnapshotItem,
 } from "./admin-ui-pages.ts";
@@ -702,6 +704,56 @@ describe("renderAgentDetailPage — overview", () => {
   test("renders no warning banner when opts.warning is absent", () => {
     const html = render();
     expect(html).not.toContain("this agent has no members");
+  });
+});
+
+describe("renderAgentDetailPage — Recent Verification Activity rollup", () => {
+  function render(verificationActivity?: VerificationActivitySummary): string {
+    return renderAgentDetailPage(
+      AGENT,
+      {},
+      [],
+      [],
+      [],
+      [],
+      [],
+      USER_NAME,
+      true,
+      { timezone: "UTC", verificationActivity },
+    );
+  }
+
+  test("no rollup card when verificationActivity is absent", () => {
+    const html = render(undefined);
+    expect(html).not.toContain("Recent Verification Activity");
+  });
+
+  test("renders rollup card with heading when verificationActivity is present", () => {
+    const html = render({
+      totalChecks: 12,
+      itemCount: 3,
+      counts: { ran_passed: 9, ran_failed: 2, skipped: 1 },
+    });
+    expect(html).toContain("Recent Verification Activity");
+  });
+
+  test("renders counts by status", () => {
+    const html = render({
+      totalChecks: 12,
+      itemCount: 3,
+      counts: { ran_passed: 9, ran_failed: 2, skipped: 1 },
+    });
+    expect(html).toContain("9");
+    expect(html).toContain("passed");
+    expect(html).toContain("2");
+    expect(html).toContain("failed");
+    expect(html).toContain("1");
+    expect(html).toContain("skipped");
+  });
+
+  test("no rollup card when totalChecks is 0", () => {
+    const html = render({ totalChecks: 0, itemCount: 0, counts: {} });
+    expect(html).not.toContain("Recent Verification Activity");
   });
 });
 
@@ -5008,6 +5060,135 @@ describe("renderTaskDetailPage — Pull Request Review section", () => {
   });
 });
 
+function mkVerificationCheck(
+  overrides: Partial<VerificationCheckItem> = {},
+): VerificationCheckItem {
+  return {
+    id: "vc-1",
+    taskId: "TS-PR-1",
+    prRecordId: null,
+    repo: "my-org/my-repo",
+    checkName: "unit",
+    status: "ran_passed",
+    reasonCategory: null,
+    learnedFromCategory: null,
+    durationMs: 4200,
+    at: "2026-06-01T10:00:00.000Z",
+    createdAt: "2026-06-01T10:00:00.000Z",
+    ...overrides,
+  };
+}
+
+describe("renderTaskDetailPage — Verification Checks section", () => {
+  function render(checks: VerificationCheckItem[] = []): string {
+    return renderTaskDetailPage(
+      { ...TASK_DETAIL, id: "TS-PR-1" },
+      "user@example.com",
+      {},
+      "UTC",
+      undefined,
+      "/admin/tasks",
+      checks,
+    );
+  }
+
+  test("renders section heading when checks are present", () => {
+    const html = render([mkVerificationCheck()]);
+    expect(html).toContain("Verification Checks");
+  });
+
+  test("renders checkName and status for a single check", () => {
+    const html = render([
+      mkVerificationCheck({ checkName: "typecheck", status: "ran_passed" }),
+    ]);
+    expect(html).toContain("typecheck");
+    expect(html).toContain("passed");
+  });
+
+  test("no section when checks array is empty", () => {
+    const html = render([]);
+    expect(html).not.toContain("Verification Checks");
+  });
+
+  test("no section when checks argument is omitted (defaults to empty)", () => {
+    const html = renderTaskDetailPage(
+      { ...TASK_DETAIL, id: "TS-PR-1" },
+      "user@example.com",
+    );
+    expect(html).not.toContain("Verification Checks");
+  });
+
+  test("only the most recent run per checkName is shown, not older runs", () => {
+    const html = render([
+      mkVerificationCheck({
+        checkName: "unit",
+        status: "ran_failed",
+        at: "2026-06-01T09:00:00.000Z",
+      }),
+      mkVerificationCheck({
+        checkName: "unit",
+        status: "ran_passed",
+        at: "2026-06-01T11:00:00.000Z",
+      }),
+    ]);
+    expect(html).toContain("passed");
+    expect(html).not.toContain("failed");
+  });
+
+  test("a skipped check with a reasonCategory renders the reason", () => {
+    const html = render([
+      mkVerificationCheck({
+        checkName: "lint",
+        status: "skipped",
+        reasonCategory: "missing_tool",
+      }),
+    ]);
+    expect(html).toContain("skipped");
+    expect(html).toContain("missing_tool");
+  });
+
+  test("a ran_passed check renders with no reasonCategory text", () => {
+    const html = render([
+      mkVerificationCheck({
+        checkName: "unit",
+        status: "ran_passed",
+        reasonCategory: null,
+      }),
+    ]);
+    expect(html).toContain("passed");
+    expect(html).not.toContain("missing_tool");
+  });
+
+  test("multiple distinct checkNames each render their own row", () => {
+    const html = render([
+      mkVerificationCheck({ checkName: "lint", status: "ran_passed" }),
+      mkVerificationCheck({ checkName: "typecheck", status: "ran_failed" }),
+    ]);
+    expect(html).toContain("lint");
+    expect(html).toContain("typecheck");
+  });
+
+  test("XSS: checkName is escaped", () => {
+    const html = render([
+      mkVerificationCheck({ checkName: "<script>xss()</script>" }),
+    ]);
+    expect(html).not.toContain("<script>xss");
+    expect(html).toContain("&lt;script&gt;");
+  });
+
+  test("XSS: reasonCategory is escaped", () => {
+    const html = render([
+      mkVerificationCheck({
+        status: "skipped",
+        reasonCategory:
+          "<script>xss()</script>" as VerificationCheckItem["reasonCategory"],
+      }),
+    ]);
+    expect(html).not.toContain("<script>xss");
+    expect(html).toContain("&lt;script&gt;");
+  });
+});
+
 describe("renderTaskDetailPage — Skip Count / Last Skipped", () => {
   function render(task: Partial<TaskItem> = {}): string {
     return renderTaskDetailPage(
@@ -6230,6 +6411,76 @@ describe("renderPrDetailPage", () => {
   test("omits Last Skipped field when lastSkippedAt is null/undefined", () => {
     const html = render({ ...PR_DETAIL, skipCount: 2, lastSkippedAt: null });
     expect(html).not.toContain("Last Skipped");
+  });
+});
+
+describe("renderPrDetailPage — Verification Checks section", () => {
+  function render(checks: VerificationCheckItem[] = []): string {
+    return renderPrDetailPage(
+      PR_DETAIL,
+      USER_NAME,
+      {},
+      "America/Los_Angeles",
+      [],
+      checks,
+    );
+  }
+
+  test("renders section heading when checks are present", () => {
+    const html = render([
+      mkVerificationCheck({ taskId: null, prRecordId: PR_DETAIL.id }),
+    ]);
+    expect(html).toContain("Verification Checks");
+  });
+
+  test("no section when checks array is empty", () => {
+    const html = render([]);
+    expect(html).not.toContain("Verification Checks");
+  });
+
+  test("no section when checks argument is omitted (defaults to empty)", () => {
+    const html = renderPrDetailPage(PR_DETAIL, USER_NAME);
+    expect(html).not.toContain("Verification Checks");
+  });
+
+  test("only the most recent run per checkName is shown, not older runs", () => {
+    const html = render([
+      mkVerificationCheck({
+        checkName: "install",
+        status: "timed_out",
+        reasonCategory: "install_timeout",
+        at: "2026-06-01T09:00:00.000Z",
+      }),
+      mkVerificationCheck({
+        checkName: "install",
+        status: "ran_passed",
+        reasonCategory: null,
+        at: "2026-06-01T11:00:00.000Z",
+      }),
+    ]);
+    expect(html).toContain("passed");
+    expect(html).not.toContain("timed out");
+    expect(html).not.toContain("install_timeout");
+  });
+
+  test("a skipped check with a reasonCategory renders the reason", () => {
+    const html = render([
+      mkVerificationCheck({
+        checkName: "e2e",
+        status: "skipped",
+        reasonCategory: "not_configured",
+      }),
+    ]);
+    expect(html).toContain("skipped");
+    expect(html).toContain("not_configured");
+  });
+
+  test("XSS: checkName is escaped", () => {
+    const html = render([
+      mkVerificationCheck({ checkName: "<script>xss()</script>" }),
+    ]);
+    expect(html).not.toContain("<script>xss");
+    expect(html).toContain("&lt;script&gt;");
   });
 });
 

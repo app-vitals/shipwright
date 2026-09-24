@@ -605,6 +605,17 @@ async function startServer(): Promise<void> {
               throw new Error(`task-store GET /prs/${id} → ${res.status}`);
             return res.json();
           },
+          fetchVerificationChecks: async (params: URLSearchParams) => {
+            const url = `${taskStoreUrl}/verification-checks${params.size > 0 ? `?${params}` : ""}`;
+            const res = await fetch(url, {
+              headers: { Authorization: `Bearer ${taskStoreAdminToken}` },
+            });
+            if (!res.ok)
+              throw new Error(
+                `task-store GET /verification-checks → ${res.status}`,
+              );
+            return res.json();
+          },
           fetchTaskStoreSessions: async (params: URLSearchParams) => {
             const url = `${taskStoreUrl}/sessions${params.size > 0 ? `?${params}` : ""}`;
             const res = await fetch(url, {

@@ -56,6 +56,8 @@ import {
   renderTasksPage,
   resolveAgentNameFilterAndPaginate,
   type TaskItem,
+  type VerificationActivitySummary,
+  type VerificationCheckItem,
   type WorkQueueItem,
 } from "./admin-ui-pages.ts";
 import {
@@ -408,6 +410,20 @@ export interface AdminUIDeps {
    */
   fetchTaskStorePrById?: (id: string) => Promise<PrListItem | null>;
   /**
+   * Fetch recorded verification-check outcomes (LVB-5.1) for a task or PR
+   * from the task-store service, via exactly one of `?taskId=` or `?prId=`.
+   * If absent, the task/PR detail pages render without a Verification Checks
+   * card and the agent detail page renders without its Recent Verification
+   * Activity rollup — the same graceful-degradation convention as every
+   * other optional task-store fetcher in this file.
+   */
+  fetchVerificationChecks?: (params: URLSearchParams) => Promise<{
+    checks: VerificationCheckItem[];
+    total: number;
+    limit: number;
+    offset: number;
+  }>;
+  /**
    * Fetch a paginated list of sessions from the task-store service (SESH-4.2).
    * If absent, the sessions list page renders in degraded mode (empty
    * sections + a warning banner).
@@ -684,6 +700,91 @@ async function joinPrsByTaskId(
   return prsByTaskId;
 }
 
+/**
+ * Builds the "Recent Verification Activity" rollup for the agent detail page
+ * (LVB-5.3 AC2) from the agent's most recent cron-run dispatch targets.
+ * There is no task-store query to list "all tasks/PRs claimed by agent X"
+ * directly (GET /tasks only supports ?assignee=, GET /prs has no agent
+ * filter), so this reuses the same itemType/itemId dispatch-target data the
+ * existing Queue Activity page already renders (see workItemLink() in
+ * admin-ui-pages.ts) — up to `maxItems` distinct recent {itemType, itemId}
+ * pairs are extracted, a "pr" reference is resolved to its task-store record
+ * id via fetchTaskStorePrs (mirroring joinPrsByTaskId's repo+prNumber
+ * lookup; a "task" reference needs no resolution, Task.id IS the human
+ * string task-store expects), then each item's verification checks are
+ * fetched and aggregated in parallel. A failed lookup for one item is
+ * swallowed so it never breaks the whole rollup — returns undefined (no
+ * card) when the fetcher is absent, no items qualify, or nothing came back.
+ */
+async function buildVerificationActivityRollup(
+  runs: { itemType?: string | null; itemId?: string | null }[],
+  fetchVerificationChecks:
+    | ((
+        params: URLSearchParams,
+      ) => Promise<{ checks: VerificationCheckItem[] }>)
+    | undefined,
+  fetchTaskStorePrs:
+    | ((params: URLSearchParams) => Promise<{ prs: PrListItem[] }>)
+    | undefined,
+  maxItems = 10,
+): Promise<VerificationActivitySummary | undefined> {
+  if (!fetchVerificationChecks) return undefined;
+
+  const seen = new Set<string>();
+  const distinctItems: { itemType: "task" | "pr"; itemId: string }[] = [];
+  for (const run of runs) {
+    if (!run.itemType || !run.itemId) continue;
+    if (run.itemType !== "task" && run.itemType !== "pr") continue;
+    const key = `${run.itemType}:${run.itemId}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    distinctItems.push({ itemType: run.itemType, itemId: run.itemId });
+    if (distinctItems.length >= maxItems) break;
+  }
+  if (distinctItems.length === 0) return undefined;
+
+  const checksPerItem = await Promise.all(
+    distinctItems.map(async (item): Promise<VerificationCheckItem[]> => {
+      try {
+        if (item.itemType === "task") {
+          const result = await fetchVerificationChecks(
+            new URLSearchParams({ taskId: item.itemId }),
+          );
+          return result.checks;
+        }
+        // itemType === "pr" — resolve the "repo#prNumber" dispatch-target
+        // reference to its task-store PR record id first.
+        const match = item.itemId.match(/^(.+)#(\d+)$/);
+        if (!match || !fetchTaskStorePrs) return [];
+        const [, repo, prNumber] = match;
+        const prResult = await fetchTaskStorePrs(
+          new URLSearchParams({ repo, prNumber }),
+        );
+        const pr = prResult.prs[0];
+        if (!pr) return [];
+        const result = await fetchVerificationChecks(
+          new URLSearchParams({ prId: pr.id }),
+        );
+        return result.checks;
+      } catch {
+        return [];
+      }
+    }),
+  );
+
+  const counts: Record<string, number> = {};
+  let totalChecks = 0;
+  for (const checks of checksPerItem) {
+    for (const check of checks) {
+      counts[check.status] = (counts[check.status] ?? 0) + 1;
+      totalChecks++;
+    }
+  }
+  if (totalChecks === 0) return undefined;
+
+  return { totalChecks, itemCount: distinctItems.length, counts };
+}
+
 // ─── App factory ──────────────────────────────────────────────────────────────
 
 export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
@@ -724,6 +825,7 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
     timezone = "America/Los_Angeles",
     fetchTaskStorePrs,
     fetchTaskStorePrById,
+    fetchVerificationChecks,
     fetchTaskStoreSessions,
     fetchTaskStoreSession,
     patchTaskStoreSession,
@@ -1820,7 +1922,7 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
           // verbatim rather than mapped to a fixed key.
           (warningParam ?? undefined);
 
-    const [envResult, crons, tools, tokens, plugins, members] =
+    const [envResult, crons, tools, tokens, plugins, members, recentRuns] =
       await Promise.all([
         agentEnvService
           .getByAgentId(agentId)
@@ -1832,7 +1934,18 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
         c.var.isAdmin
           ? agentMemberService.listByAgentId(agentId)
           : Promise.resolve([]),
+        agentCronRunService.listForAgent(agentId, { limit: 20 }),
       ]);
+
+    // Lightweight rollup of recent verification-check activity (LVB-5.3 AC2)
+    // across this agent's recently-dispatched tasks/PRs — see
+    // buildVerificationActivityRollup()'s doc comment for why this reuses
+    // cron-run dispatch targets rather than a dedicated task-store query.
+    const verificationActivity = await buildVerificationActivityRollup(
+      recentRuns.items,
+      fetchVerificationChecks,
+      fetchTaskStorePrs,
+    );
 
     return html(
       renderAgentDetailPage(
@@ -1845,7 +1958,14 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
         members,
         c.var.userEmail,
         c.var.isAdmin,
-        { error, newToken, successMsg, warning, timezone },
+        {
+          error,
+          newToken,
+          successMsg,
+          warning,
+          timezone,
+          verificationActivity,
+        },
       ),
     );
   });
@@ -3239,6 +3359,21 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
       }
     }
 
+    // Fetch recorded verification-check outcomes (LVB-5.1) for this task —
+    // absence of the fetcher or a failed lookup renders the page without a
+    // Verification Checks section, never a 500.
+    let verificationChecks: VerificationCheckItem[] = [];
+    if (fetchVerificationChecks) {
+      try {
+        const result = await fetchVerificationChecks(
+          new URLSearchParams({ taskId }),
+        );
+        verificationChecks = result.checks;
+      } catch {
+        // swallow — page renders without Verification Checks section
+      }
+    }
+
     return html(
       renderTaskDetailPage(
         task,
@@ -3247,6 +3382,7 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
         timezone,
         pullRequest,
         backHref,
+        verificationChecks,
       ),
     );
   });
@@ -3642,6 +3778,21 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
       }
     }
 
+    // Fetch recorded verification-check outcomes (LVB-5.1) for this PR —
+    // absence of the fetcher or a failed lookup renders the page without a
+    // Verification Checks section, never a 500.
+    let verificationChecks: VerificationCheckItem[] = [];
+    if (fetchVerificationChecks) {
+      try {
+        const result = await fetchVerificationChecks(
+          new URLSearchParams({ prId }),
+        );
+        verificationChecks = result.checks;
+      } catch {
+        // swallow — page renders without Verification Checks section
+      }
+    }
+
     return html(
       renderPrDetailPage(
         pr,
@@ -3649,6 +3800,7 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
         agentNames,
         timezone,
         linkedTasks,
+        verificationChecks,
       ),
     );
   });

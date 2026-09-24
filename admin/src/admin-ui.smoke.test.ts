@@ -943,6 +943,244 @@ describe("admin UI — authenticated pages", () => {
     expect(html).toContain("admin@example.com");
   });
 
+  it("authenticated GET /admin/agents/:id renders a Recent Verification Activity rollup from recent cron-run dispatch targets", async () => {
+    const app = createAdminUIApp(
+      makeMockDeps({
+        agentCronRunService: {
+          listForAgent: async () => ({
+            items: [
+              {
+                id: "run-1",
+                cronId: CRON_ID,
+                agentId: AGENT_ID,
+                startedAt: new Date("2026-06-01T10:00:00Z"),
+                completedAt: new Date("2026-06-01T10:00:03Z"),
+                skipped: false,
+                skipReason: null,
+                outcome: "posted",
+                error: null,
+                itemType: "task",
+                itemId: "WLS-2.2",
+                sessionId: null,
+                lastHeartbeatAt: null,
+                phaseId: null,
+                phaseCron: null,
+                createdAt: new Date("2026-06-01T10:00:00Z"),
+                modelBreakdown: [],
+                cron: MOCK_CRON,
+              },
+              {
+                id: "run-2",
+                cronId: CRON_ID,
+                agentId: AGENT_ID,
+                startedAt: new Date("2026-06-01T11:00:00Z"),
+                completedAt: new Date("2026-06-01T11:00:03Z"),
+                skipped: false,
+                skipReason: null,
+                outcome: "posted",
+                error: null,
+                itemType: "pr",
+                itemId: "acme/widgets#7",
+                sessionId: null,
+                lastHeartbeatAt: null,
+                phaseId: null,
+                phaseCron: null,
+                createdAt: new Date("2026-06-01T11:00:00Z"),
+                modelBreakdown: [],
+                cron: MOCK_CRON,
+              },
+            ],
+            total: 2,
+            limit: 20,
+            offset: 0,
+          }),
+          listAcrossAgents: async () => ({
+            items: [],
+            total: 0,
+            limit: 20,
+            offset: 0,
+          }),
+        },
+        fetchTaskStorePrs: async (params: URLSearchParams) => {
+          expect(params.get("repo")).toBe("acme/widgets");
+          expect(params.get("prNumber")).toBe("7");
+          return {
+            prs: [
+              {
+                id: "pr-record-7",
+                repo: "acme/widgets",
+                prNumber: 7,
+                staged: false,
+                state: "open",
+                reviewState: "posted",
+                patchCycles: 0,
+                reviewCycles: 0,
+              },
+            ],
+            total: 1,
+            limit: 50,
+            offset: 0,
+          };
+        },
+        fetchVerificationChecks: async (params: URLSearchParams) => {
+          if (params.get("taskId") === "WLS-2.2") {
+            return {
+              checks: [
+                {
+                  id: "vc-task-1",
+                  taskId: "WLS-2.2",
+                  prRecordId: null,
+                  repo: "acme/widgets",
+                  checkName: "unit",
+                  status: "ran_passed",
+                  reasonCategory: null,
+                  learnedFromCategory: null,
+                  durationMs: 1000,
+                  at: "2026-06-01T10:00:00.000Z",
+                  createdAt: "2026-06-01T10:00:00.000Z",
+                },
+              ],
+              total: 1,
+              limit: 50,
+              offset: 0,
+            };
+          }
+          if (params.get("prId") === "pr-record-7") {
+            return {
+              checks: [
+                {
+                  id: "vc-pr-1",
+                  taskId: null,
+                  prRecordId: "pr-record-7",
+                  repo: "acme/widgets",
+                  checkName: "lint",
+                  status: "ran_failed",
+                  reasonCategory: null,
+                  learnedFromCategory: null,
+                  durationMs: 500,
+                  at: "2026-06-01T11:00:00.000Z",
+                  createdAt: "2026-06-01T11:00:00.000Z",
+                },
+              ],
+              total: 1,
+              limit: 50,
+              offset: 0,
+            };
+          }
+          return { checks: [], total: 0, limit: 50, offset: 0 };
+        },
+      }),
+    );
+    const res = await app.request(`/admin/agents/${AGENT_ID}`, {
+      headers: { Cookie: `admin_session=${cookie}` },
+    });
+    expect(res.status).toBe(200);
+    const html = await res.text();
+    expect(html).toContain("Recent Verification Activity");
+  });
+
+  it("authenticated GET /admin/agents/:id renders no Recent Verification Activity card when fetchVerificationChecks is absent", async () => {
+    const app = createAdminUIApp(
+      makeMockDeps({
+        agentCronRunService: {
+          listForAgent: async () => ({
+            items: [
+              {
+                id: "run-1",
+                cronId: CRON_ID,
+                agentId: AGENT_ID,
+                startedAt: new Date("2026-06-01T10:00:00Z"),
+                completedAt: new Date("2026-06-01T10:00:03Z"),
+                skipped: false,
+                skipReason: null,
+                outcome: "posted",
+                error: null,
+                itemType: "task",
+                itemId: "WLS-2.2",
+                sessionId: null,
+                lastHeartbeatAt: null,
+                phaseId: null,
+                phaseCron: null,
+                createdAt: new Date("2026-06-01T10:00:00Z"),
+                modelBreakdown: [],
+                cron: MOCK_CRON,
+              },
+            ],
+            total: 1,
+            limit: 20,
+            offset: 0,
+          }),
+          listAcrossAgents: async () => ({
+            items: [],
+            total: 0,
+            limit: 20,
+            offset: 0,
+          }),
+        },
+      }),
+    );
+    const res = await app.request(`/admin/agents/${AGENT_ID}`, {
+      headers: { Cookie: `admin_session=${cookie}` },
+    });
+    expect(res.status).toBe(200);
+    const html = await res.text();
+    expect(html).not.toContain("Recent Verification Activity");
+  });
+
+  it("authenticated GET /admin/agents/:id renders no Recent Verification Activity card when no recent runs carry a dispatch target", async () => {
+    const app = createAdminUIApp(
+      makeMockDeps({
+        agentCronRunService: {
+          listForAgent: async () => ({
+            items: [
+              {
+                id: "run-1",
+                cronId: CRON_ID,
+                agentId: AGENT_ID,
+                startedAt: new Date("2026-06-01T10:00:00Z"),
+                completedAt: new Date("2026-06-01T10:00:03Z"),
+                skipped: false,
+                skipReason: null,
+                outcome: "posted",
+                error: null,
+                itemType: null,
+                itemId: null,
+                sessionId: null,
+                lastHeartbeatAt: null,
+                phaseId: null,
+                phaseCron: null,
+                createdAt: new Date("2026-06-01T10:00:00Z"),
+                modelBreakdown: [],
+                cron: MOCK_CRON,
+              },
+            ],
+            total: 1,
+            limit: 20,
+            offset: 0,
+          }),
+          listAcrossAgents: async () => ({
+            items: [],
+            total: 0,
+            limit: 20,
+            offset: 0,
+          }),
+        },
+        fetchVerificationChecks: async () => ({
+          checks: [],
+          total: 0,
+          limit: 50,
+          offset: 0,
+        }),
+      }),
+    );
+    const res = await app.request(`/admin/agents/${AGENT_ID}`, {
+      headers: { Cookie: `admin_session=${cookie}` },
+    });
+    expect(res.status).toBe(200);
+    const html = await res.text();
+    expect(html).not.toContain("Recent Verification Activity");
+  });
+
   describe("connect-later actions (UAP-2.3)", () => {
     it("no env vars set: shows Connect Slack, Set up GitHub App, and Add GitHub PAT actions, each wired to the correct connect-* route and agent id", async () => {
       const app = createAdminUIApp(
@@ -2673,7 +2911,9 @@ describe("admin UI — member access control", () => {
         agent: {
           findMany: async ({
             where,
-          }: { where?: { id?: { in?: string[] } } } = {}) => {
+          }: {
+            where?: { id?: { in?: string[] } };
+          } = {}) => {
             const allAgents = [
               {
                 id: AGENT_ID,
@@ -3796,7 +4036,9 @@ describe("admin UI — member management routes", () => {
           findUnique: async () => null,
           create: async ({
             data,
-          }: { data: { agentId: string; email: string } }) => {
+          }: {
+            data: { agentId: string; email: string };
+          }) => {
             created = data;
             return { id: "m-new", ...data };
           },
@@ -3883,7 +4125,9 @@ describe("admin UI — member management routes", () => {
           }),
           deleteMany: async ({
             where,
-          }: { where: { id: string; agentId: string } }) => {
+          }: {
+            where: { id: string; agentId: string };
+          }) => {
             deletedId = where.id;
             return { count: 1 };
           },
@@ -6456,6 +6700,118 @@ describe("admin UI — tasks page", () => {
     expect(called).toBe(false);
   });
 
+  it("GET /admin/tasks/:id renders Verification Checks section using fetchVerificationChecks(?taskId=)", async () => {
+    const mockTask = {
+      id: "task-42",
+      title: "Build the thing",
+      status: "in_progress",
+      description: "Do the work",
+      branch: "feat/thing",
+      assignee: "agent-unknown",
+      claimedBy: "agent-unknown",
+      session: null,
+      repo: "org/repo",
+      pr: null,
+    };
+    let capturedParams: URLSearchParams | null = null;
+    const app = createAdminUIApp(
+      makeMockDeps({
+        fetchTaskStoreTask: async (id: string) =>
+          id === "task-42" ? mockTask : null,
+        fetchVerificationChecks: async (params: URLSearchParams) => {
+          capturedParams = params;
+          return {
+            checks: [
+              {
+                id: "vc-1",
+                taskId: "task-42",
+                prRecordId: null,
+                repo: "org/repo",
+                checkName: "unit",
+                status: "ran_passed",
+                reasonCategory: null,
+                learnedFromCategory: null,
+                durationMs: 1000,
+                at: "2026-06-01T10:00:00.000Z",
+                createdAt: "2026-06-01T10:00:00.000Z",
+              },
+            ],
+            total: 1,
+            limit: 50,
+            offset: 0,
+          };
+        },
+      }),
+    );
+    const res = await app.request("/admin/tasks/task-42", {
+      headers: { Cookie: `admin_session=${cookie}` },
+    });
+    expect(res.status).toBe(200);
+    const html = await res.text();
+    expect(html).toContain("Verification Checks");
+    expect(html).toContain("unit");
+    expect(capturedParams).not.toBeNull();
+    const captured = capturedParams as unknown as URLSearchParams;
+    expect(captured.get("taskId")).toBe("task-42");
+  });
+
+  it("GET /admin/tasks/:id renders without Verification Checks section when fetchVerificationChecks is absent", async () => {
+    const mockTask = {
+      id: "task-42",
+      title: "Build the thing",
+      status: "in_progress",
+      description: "Do the work",
+      branch: "feat/thing",
+      assignee: "agent-unknown",
+      claimedBy: "agent-unknown",
+      session: null,
+      repo: "org/repo",
+      pr: null,
+    };
+    const app = createAdminUIApp(
+      makeMockDeps({
+        fetchTaskStoreTask: async (id: string) =>
+          id === "task-42" ? mockTask : null,
+      }),
+    );
+    const res = await app.request("/admin/tasks/task-42", {
+      headers: { Cookie: `admin_session=${cookie}` },
+    });
+    expect(res.status).toBe(200);
+    const html = await res.text();
+    expect(html).not.toContain("Verification Checks");
+  });
+
+  it("GET /admin/tasks/:id renders without Verification Checks section when fetchVerificationChecks throws", async () => {
+    const mockTask = {
+      id: "task-42",
+      title: "Build the thing",
+      status: "in_progress",
+      description: "Do the work",
+      branch: "feat/thing",
+      assignee: "agent-unknown",
+      claimedBy: "agent-unknown",
+      session: null,
+      repo: "org/repo",
+      pr: null,
+    };
+    const app = createAdminUIApp(
+      makeMockDeps({
+        fetchTaskStoreTask: async (id: string) =>
+          id === "task-42" ? mockTask : null,
+        fetchVerificationChecks: async () => {
+          throw new Error("task store unavailable");
+        },
+      }),
+    );
+    const res = await app.request("/admin/tasks/task-42", {
+      headers: { Cookie: `admin_session=${cookie}` },
+    });
+    expect(res.status).toBe(200);
+    const html = await res.text();
+    expect(html).not.toContain("Verification Checks");
+  });
+
   it("GET /admin/tasks?view=table with no ?state= forwards no state to task-store (show all)", async () => {
     let capturedParams: URLSearchParams | null = null;
     const app = createAdminUIApp(
@@ -7539,9 +7895,7 @@ describe("admin UI — session detail page", () => {
         deleteMany: (args: {
           where: { sessionSlug: string };
         }) => Promise<{ count: number }>;
-        findMany: (args: {
-          where: { userEmail: string };
-        }) => Promise<
+        findMany: (args: { where: { userEmail: string } }) => Promise<
           Array<{
             id: string;
             userEmail: string;
@@ -9290,6 +9644,89 @@ describe("admin UI — PRs page", () => {
     expect(html).toContain("42");
   });
 
+  it("GET /admin/prs/:id renders Verification Checks section using fetchVerificationChecks(?prId=)", async () => {
+    let capturedParams: URLSearchParams | null = null;
+    const app = createAdminUIApp(
+      makeMockDeps({
+        fetchTaskStorePrById: async (id: string) =>
+          id === "pr-smoke-1" ? MOCK_PR : null,
+        fetchTaskStoreTasks: async () => ({
+          tasks: [],
+          total: 0,
+          limit: 50,
+          offset: 0,
+        }),
+        fetchVerificationChecks: async (params: URLSearchParams) => {
+          capturedParams = params;
+          return {
+            checks: [
+              {
+                id: "vc-1",
+                taskId: null,
+                prRecordId: "pr-smoke-1",
+                repo: "app-vitals/shipwright",
+                checkName: "typecheck",
+                status: "ran_failed",
+                reasonCategory: null,
+                learnedFromCategory: null,
+                durationMs: 2000,
+                at: "2026-06-01T10:00:00.000Z",
+                createdAt: "2026-06-01T10:00:00.000Z",
+              },
+            ],
+            total: 1,
+            limit: 50,
+            offset: 0,
+          };
+        },
+      }),
+    );
+    const res = await app.request("/admin/prs/pr-smoke-1", {
+      headers: { Cookie: `admin_session=${cookie}` },
+    });
+    expect(res.status).toBe(200);
+    const html = await res.text();
+    expect(html).toContain("Verification Checks");
+    expect(html).toContain("typecheck");
+    expect(capturedParams).not.toBeNull();
+    expect((capturedParams as unknown as URLSearchParams).get("prId")).toBe(
+      "pr-smoke-1",
+    );
+  });
+
+  it("GET /admin/prs/:id renders without Verification Checks section when fetchVerificationChecks is absent", async () => {
+    const app = createAdminUIApp(
+      makeMockDeps({
+        fetchTaskStorePrById: async (id: string) =>
+          id === "pr-smoke-1" ? MOCK_PR : null,
+      }),
+    );
+    const res = await app.request("/admin/prs/pr-smoke-1", {
+      headers: { Cookie: `admin_session=${cookie}` },
+    });
+    expect(res.status).toBe(200);
+    const html = await res.text();
+    expect(html).not.toContain("Verification Checks");
+  });
+
+  it("GET /admin/prs/:id renders without Verification Checks section when fetchVerificationChecks throws", async () => {
+    const app = createAdminUIApp(
+      makeMockDeps({
+        fetchTaskStorePrById: async (id: string) =>
+          id === "pr-smoke-1" ? MOCK_PR : null,
+        fetchVerificationChecks: async () => {
+          throw new Error("task store unavailable");
+        },
+      }),
+    );
+    const res = await app.request("/admin/prs/pr-smoke-1", {
+      headers: { Cookie: `admin_session=${cookie}` },
+    });
+    expect(res.status).toBe(200);
+    const html = await res.text();
+    expect(html).not.toContain("Verification Checks");
+  });
+
   it("GET /admin/prs/:id renders 'Blocked' field, not 'HITL', when the PR is blocked", async () => {
     const app = createAdminUIApp(
       makeMockDeps({
@@ -9962,7 +10399,9 @@ describe("admin UI — Okta-authenticated access control", () => {
         agent: {
           findMany: async ({
             where,
-          }: { where?: { id?: { in?: string[] } } } = {}) => {
+          }: {
+            where?: { id?: { in?: string[] } };
+          } = {}) => {
             const allAgents = [
               {
                 id: AGENT_ID,
