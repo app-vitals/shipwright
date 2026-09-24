@@ -1227,3 +1227,81 @@ describe("dev-task.md Step 0b — lintScoped producer wiring (LSC-1.2)", () => {
     expect(section).toContain("**build**");
   });
 });
+
+describe("dev-task.md Step 8 — record verification outcomes via task-store API (LVB-5.2)", () => {
+  const getStep8Section = () => {
+    const step8Idx = content.indexOf("## Step 8: Pre-Ship Checks");
+    expect(step8Idx).toBeGreaterThan(-1);
+    const step85Idx = content.indexOf("## Step 8.5:", step8Idx);
+    expect(step85Idx).toBeGreaterThan(step8Idx);
+    return content.slice(step8Idx, step85Idx);
+  };
+
+  it("POSTs to the verification-checks endpoint", () => {
+    const section = getStep8Section();
+    expect(section).toContain("$SHIPWRIGHT_TASK_STORE_URL/verification-checks");
+  });
+
+  it("the verification-checks call is a POST", () => {
+    const section = getStep8Section();
+    const idx = section.indexOf("$SHIPWRIGHT_TASK_STORE_URL/verification-checks");
+    expect(idx).toBeGreaterThan(-1);
+    const nearby = section.slice(Math.max(0, idx - 300), idx);
+    expect(nearby).toContain("-X POST");
+  });
+
+  it("uses taskId as the parent id, referencing the task's {id} placeholder", () => {
+    const section = getStep8Section();
+    expect(section).toContain("taskId");
+    expect(section).toMatch(/--arg taskId "\{id\}"/);
+  });
+
+  it("references all four status values: ran_passed, ran_failed, timed_out, skipped", () => {
+    const section = getStep8Section();
+    expect(section).toContain("ran_passed");
+    expect(section).toContain("ran_failed");
+    expect(section).toContain("timed_out");
+    expect(section).toContain("skipped");
+  });
+
+  it("never unconditionally attaches a reasonCategory value alongside a ran_failed outcome", () => {
+    const section = getStep8Section();
+    const nearby = section.match(/ran_failed[\s\S]{0,120}/)?.[0] ?? "";
+    expect(nearby.length).toBeGreaterThan(0);
+    expect(nearby).not.toMatch(
+      /reasonCategory["']?\s*[:=]\s*["'](check_timeout|install_timeout|resource_limit|missing_tool|missing_secret|missing_dependency|not_configured|learned_skip)/,
+    );
+  });
+
+  it("maps timeout (exit 124) to timed_out with a check_timeout/install_timeout reasonCategory", () => {
+    const section = getStep8Section();
+    expect(section).toContain("124");
+    expect(section).toMatch(/timed_out[\s\S]{0,200}(check_timeout|install_timeout)/);
+  });
+
+  it("records the scoped-lint empty-filtered-list skip with status skipped and reasonCategory not_configured", () => {
+    const section = getStep8Section();
+    const skipIdx = section.indexOf("skip lint entirely rather than invoking the linter with no paths");
+    expect(skipIdx).toBeGreaterThan(-1);
+    const nearby = section.slice(skipIdx, skipIdx + 700);
+    expect(nearby).toContain("$SHIPWRIGHT_TASK_STORE_URL/verification-checks");
+    expect(nearby).toContain('"lint"');
+    expect(nearby).toContain('"skipped"');
+    expect(nearby).toContain("not_configured");
+  });
+
+  it("leaves a hook note for future skip paths (e.g. LVB-4.4) to record status: skipped through this same POST", () => {
+    const section = getStep8Section();
+    const lower = section.toLowerCase().replace(/\s+/g, " ");
+    expect(lower).toMatch(/future skip path[\s\S]{0,200}skipped/);
+  });
+
+  it("updates the 'Record, don't swallow' prose to mention posting to the task-store API, not just printing", () => {
+    const section = getStep8Section();
+    const idx = section.indexOf("Record, don't swallow, each outcome");
+    expect(idx).toBeGreaterThan(-1);
+    const nearby = section.slice(idx, idx + 400);
+    expect(nearby.toLowerCase()).toMatch(/post/);
+    expect(nearby).toContain("verification-check");
+  });
+});
