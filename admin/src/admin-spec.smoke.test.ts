@@ -89,6 +89,17 @@ function buildSpecApp() {
         updatedAt: new Date(),
         missingRequiredEnv: [],
       }),
+      updateFields: async () => {
+        throw new Error("not implemented");
+      },
+      runTransaction: async (fn) => fn(undefined as never),
+    },
+    agentTypeRegistry: {
+      getManifest: () => {
+        throw new Error("not implemented");
+      },
+      tryGetManifest: () => undefined,
+      listTypes: () => [],
     },
     agentEnvService: {
       upsert: async () => {},
@@ -432,7 +443,7 @@ describe("GET /doc — OpenAPI spec endpoint", () => {
     expect(body.paths["/agents/:id/crons"]).toBeDefined();
   });
 
-  it("spec covers admin routes (GET /agents, GET /agents/{id}/envs)", async () => {
+  it("spec covers admin routes (GET /agents, POST /agents, GET /agents/{id}/envs)", async () => {
     const app = buildSpecApp();
     const res = await app.request("/doc");
     const body = await res.json();
@@ -441,14 +452,16 @@ describe("GET /doc — OpenAPI spec endpoint", () => {
     expect(body.paths["/agents/{id}/envs"]).toBeDefined();
   });
 
-  it("does not document the retired POST /agents creation route", async () => {
+  it("documents the POST /agents creation route (APA-2.1)", async () => {
     const app = buildSpecApp();
     const res = await app.request("/doc");
     const body = await res.json();
-    // ABF-3.2 retired the JSON creation API — agents are created only via the
-    // admin UI's form-encoded POST /admin/agents, which is not part of this spec.
-    expect(body.paths["/agents"].post).toBeUndefined();
-    expect(body.components?.schemas?.CreateAgentBody).toBeUndefined();
+    // ABF-3.2 retired the JSON creation API (no caller existed at the time);
+    // APA-2.1 reinstates it once createAgent() (APA-1.1) made agent creation a
+    // single, injectable function multiple callers — the web UI form and this
+    // route — can both call.
+    expect(body.paths["/agents"].post).toBeDefined();
+    expect(body.components?.schemas?.CreateAgentBody).toBeDefined();
   });
 
   it("committed admin/openapi.json matches the live spec's routes", async () => {

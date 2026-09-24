@@ -39,9 +39,10 @@ import {
 } from "./agent-provisioner.ts";
 import { AgentTokenService } from "./agent-tokens.ts";
 import { AgentToolService } from "./agent-tools.ts";
+import { AgentTypeRegistry } from "./agent-type-manifest-loader.ts";
 import { AgentWorkQueueService } from "./agent-work-queue.ts";
-import { createAdminApp, parseAdminApiKeys } from "./agents-api.ts";
 import { AgentService } from "./agents.ts";
+import { createAdminApp, parseAdminApiKeys } from "./agents-api.ts";
 import { createAgentRuntimeApp } from "./api.ts";
 import type { ChatServiceProvisioningClient } from "./chat-service-provisioning-client.ts";
 import {
@@ -528,6 +529,7 @@ async function startServer(): Promise<void> {
     agentTokenService,
     agentPluginService,
     agentMemberService,
+    agentTypeRegistry: new AgentTypeRegistry(),
     agentChatTokenService,
     agentWorkQueueService,
     prisma,

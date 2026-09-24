@@ -9,8 +9,8 @@
 import { beforeAll, describe, expect, it } from "bun:test";
 import { sign } from "hono/jwt";
 import type { AgentProvisioner, ProvisionResult } from "./agent-provisioner.ts";
-import { createAdminApp } from "./agents-api.ts";
 import type { AdminDeps } from "./agents-api.ts";
+import { createAdminApp } from "./agents-api.ts";
 import { NotFoundError } from "./errors.ts";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -133,6 +133,10 @@ function makeMockDeps(opts?: {
       updateSelfHosted: async () => {
         throw new Error("not implemented");
       },
+      updateFields: async () => {
+        throw new Error("not implemented");
+      },
+      runTransaction: async (fn) => fn(undefined as never),
     },
     agentEnvService: {
       upsert: async () => {},
@@ -205,6 +209,13 @@ function makeMockDeps(opts?: {
         throw new Error("not implemented");
       },
       listByAgentId: async () => [],
+    },
+    agentTypeRegistry: {
+      getManifest: () => {
+        throw new Error("not implemented");
+      },
+      tryGetManifest: () => undefined,
+      listTypes: () => [],
     },
     agentChatTokenService: {
       upsertDailyByModel: opts?.agentChatTokenServiceThrows
