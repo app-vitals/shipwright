@@ -314,7 +314,11 @@ test("mobile sidebar contains Docs, Compare, GitHub nav links", async ({ page })
     sidebar.locator("a[href='/docs/introduction']").first(),
   ).toBeVisible();
   await expect(sidebar.locator("a[href='/compare']")).toBeVisible();
-  await expect(sidebar.locator("a[href='https://github.com/app-vitals/shipwright']")).toBeVisible();
+  // STAR-1.1 UTM-tags this link, so match on the repo-URL prefix rather than
+  // an exact bare href.
+  await expect(
+    sidebar.locator("a[href^='https://github.com/app-vitals/shipwright?']"),
+  ).toBeVisible();
 });
 
 test("sidebar section order: Getting Started appears before Agent", async ({

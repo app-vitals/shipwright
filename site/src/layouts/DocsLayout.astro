@@ -314,7 +314,7 @@ const tocHeadings = headings.filter((h) => h.depth === 2 || h.depth === 3);
               {PRIMARY_NAV_LINKS.map((link) => (
                 <li><a href={link.href} class="docs-sidebar-link">{link.label}</a></li>
               ))}
-              <li><a href={REPO_URL} class="docs-sidebar-link">GitHub ↗</a></li>
+              <li><a href={withUtm(REPO_URL, "docs_sidebar")} class="docs-sidebar-link">GitHub ↗</a></li>
               <li><a href={BOOKING_URL} class="docs-sidebar-link">Book a call</a></li>
             </ul>
           </nav>

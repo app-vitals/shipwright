@@ -3,7 +3,7 @@
 // DocsLayout. `variant="marketing"` (default) adds the CSS-only mobile
 // hamburger + slide-in nav panel; `variant="docs"` omits it because
 // DocsLayout drives its own mobile nav from the docs sidebar toggle instead.
-import { BOOKING_URL, PRIMARY_NAV_LINKS, REPO_URL } from "../consts";
+import { BOOKING_URL, PRIMARY_NAV_LINKS, REPO_URL, withUtm } from "../consts";
 
 interface Props {
   variant?: "marketing" | "docs";
@@ -46,7 +46,7 @@ const { variant = "marketing" } = Astro.props;
     {PRIMARY_NAV_LINKS.map((link) => (
       <a href={link.href} class="sw-label">{link.label}</a>
     ))}
-    <a href={REPO_URL} class="sw-label">GitHub ↗</a>
+    <a href={withUtm(REPO_URL, "nav_header")} class="sw-label">GitHub ↗</a>
     <a href={BOOKING_URL} class="sw-btn sw-btn-secondary">Book a call</a>
   </nav>
 
@@ -79,7 +79,7 @@ const { variant = "marketing" } = Astro.props;
             </li>
           ))}
           <li>
-            <a href={REPO_URL} class="sw-label">GitHub ↗</a>
+            <a href={withUtm(REPO_URL, "nav_header_mobile")} class="sw-label">GitHub ↗</a>
           </li>
           <li>
             <a href={BOOKING_URL} class="sw-label">Book a call</a>

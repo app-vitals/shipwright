@@ -85,6 +85,84 @@ test("social-proof GitHub CTA keeps 'Star on GitHub' wording and gains UTM taggi
   expect(href).toMatch(repoLinkPattern("social_proof"));
 });
 
+// ---- (E) AC5: every site->repo link carries UTM parameters ----
+// The global nav header, the mobile nav panel, the footer, and the docs
+// sidebar all linked bare REPO_URL before this. AC5 is "all site->repo links
+// carry UTM parameters", so assert the absence of the bare form directly
+// rather than only spot-checking the CTAs.
+
+test("global nav header GitHub link is UTM-tagged", async ({ page }) => {
+  await page.goto("/");
+  const link = page
+    .locator("header")
+    .getByRole("link", { name: /github/i })
+    .first();
+  await expect(link).toBeVisible();
+  const href = await link.getAttribute("href");
+  expect(href).toMatch(repoLinkPattern("nav_header"));
+});
+
+test("mobile nav panel GitHub link is UTM-tagged", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto("/");
+  // The panel is closed (and so hidden from the accessibility tree) until the
+  // toggle is tapped, so locate by CSS rather than by role — this assertion is
+  // about the href, not about visibility.
+  const link = page
+    .locator(`#mobile-nav-panel a[href^="${REPO_URL}?"]`)
+    .first();
+  await expect(link).toHaveCount(1);
+  const href = await link.getAttribute("href");
+  expect(href).toMatch(repoLinkPattern("nav_header_mobile"));
+});
+
+test("site footer GitHub link is UTM-tagged", async ({ page }) => {
+  await page.goto("/");
+  const link = page
+    .locator("footer")
+    .getByRole("link", { name: "GitHub", exact: true });
+  await expect(link).toBeVisible();
+  const href = await link.getAttribute("href");
+  expect(href).toMatch(repoLinkPattern("nav_footer"));
+});
+
+test("docs mobile sidebar GitHub link is UTM-tagged", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto("/docs/introduction");
+  const link = page
+    .locator("aside.docs-sidebar")
+    .locator("a.docs-sidebar-link")
+    .filter({ hasText: /github/i })
+    .first();
+  const href = await link.getAttribute("href");
+  expect(href).toMatch(repoLinkPattern("docs_sidebar"));
+});
+
+// The catch-all: no anchor anywhere on these pages points at a bare,
+// untagged REPO_URL. Guards against a future placement reintroducing one.
+for (const route of ["/", "/docs/introduction"]) {
+  test(`${route} has no bare untagged REPO_URL link`, async ({ page }) => {
+    await page.goto(route);
+    await expect(page.locator(`a[href="${REPO_URL}"]`)).toHaveCount(0);
+    await expect(page.locator(`a[href="${REPO_URL}/"]`)).toHaveCount(0);
+
+    // And every repo link that *is* present carries the full UTM scheme.
+    const hrefs = await page
+      .locator(`a[href^="${REPO_URL}?"]`)
+      .evaluateAll((els) =>
+        els.map((el) => (el as HTMLAnchorElement).getAttribute("href") ?? ""),
+      );
+    expect(hrefs.length).toBeGreaterThan(0);
+    for (const href of hrefs) {
+      const params = new URL(href).searchParams;
+      expect(params.get("utm_source")).toBe("shipwrightharness.com");
+      expect(params.get("utm_medium")).toBe("site");
+      expect(params.get("utm_campaign")).toBe("star_cta");
+      expect(params.get("utm_content")).toBeTruthy();
+    }
+  });
+}
+
 // ---- (C) /docs/introduction desktop-visible star CTA ----
 
 test("/docs/introduction presents a star CTA visible at desktop widths", async ({
