@@ -8,7 +8,7 @@
 
 - **Language(s):** TypeScript (Bun runtime), plus Astro/Tailwind for the marketing site; a small but real bash cluster for CI chart-tag logic (`.github/workflows/lib/*.sh`)
 - **Package manager:** Bun workspaces (`bun.lock`), 8-workspace monorepo (`lib`, `plugins/shipwright`, `metrics`, `agent`, `admin`, `task-store`, `chat`, `mcp-server`) plus non-workspace supporting surfaces (`site/`, `brand/`, `scripts/`, `charts/` Helm chart, `demo/`, `.github/workflows/`)
-- **Primary framework(s):** Hono (all HTTP services: metrics, admin, task-store, chat), Prisma + Postgres (admin, task-store, chat), Zod / `@hono/zod-openapi` for schema validation, Astro (site), Playwright (site `*.spec.ts` + admin `*.e2e.ts`, plus a headless-Chromium agent runtime capability), Bun's built-in test runner throughout.
+- **Primary framework(s):** Hono (all HTTP services: metrics, admin, task-store, chat), Prisma + Postgres (admin, task-store, chat), Zod / `@hono/zod-openapi` for schema validation, Astro (site), Playwright (site `*.spec.ts` + admin `*.e2e.ts` + metrics `*.e2e.ts`, plus a headless-Chromium agent runtime capability), Bun's built-in test runner throughout.
 - **Detected source roots:** `lib/`, `metrics/src/`, `agent/src/`, `agent/scripts/`, `admin/src/`, `task-store/src/`, `chat/src/`, `mcp-server/src/`, `plugins/shipwright/{commands,agents,skills,scripts,references}/`, `scripts/`, `brand/`, `site/src/`, `.github/workflows/lib/`
 
 **CLAUDE.md layer-structure declaration:** the root CLAUDE.md's `## Test conventions` section declares five concrete layer names via filename suffix, used verbatim below instead of the rubric's generic unit/integration/smoke/E2E labels:
@@ -18,7 +18,7 @@
 | `*.unit.test.ts` | unit | pure logic, no I/O |
 | `*.integration.test.ts` | integration | real dependency behavior via recorded fixtures / injected doubles |
 | `*.smoke.test.ts` | smoke | HTTP route contracts — in-process `app.request()` (real `Bun.serve()` boot only when there's no Hono app-factory seam) |
-| `*.spec.ts` / `*.e2e.ts` | e2e | real-browser Playwright (`site/` uses `*.spec.ts`; `admin/e2e/` uses `*.e2e.ts`) |
+| `*.spec.ts` / `*.e2e.ts` | e2e | real-browser Playwright (`site/` uses `*.spec.ts`; `admin/e2e/` and `metrics/e2e/` use `*.e2e.ts`) |
 | `*.content.test.ts` | content | markdown/prompt-content assertions (commands, skills, agent prompts) — no I/O boundary, not one of the four canonical layers but a first-class fifth layer in this repo |
 
 Also observed but not declared in CLAUDE.md: `.github/workflows/test-*.sh` — plain-bash assertion scripts (no suffix convention, run via `bash <file>.sh` rather than `bun test`), treated as an unofficial sixth "shell" layer (see Ambiguous items).

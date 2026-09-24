@@ -22,8 +22,8 @@
   `demo/`, `.github/workflows/`).
 - **Primary frameworks:** Hono (all HTTP services), Prisma + Postgres (admin, task-store,
   chat — one DB per service, never a shared connection), Zod / `@hono/zod-openapi` for schema
-  validation, Astro (site), Playwright (`site/*.spec.ts`, `admin/e2e/*.e2e.ts`), Bun's built-in
-  test runner throughout.
+  validation, Astro (site), Playwright (`site/*.spec.ts`, `admin/e2e/*.e2e.ts`,
+  `metrics/e2e/*.e2e.ts`), Bun's built-in test runner throughout.
 - **Existing layer convention (from CLAUDE.md `## Test conventions`):** this repo already
   declares five concrete layer names by filename suffix — `*.unit.test.ts`,
   `*.integration.test.ts`, `*.smoke.test.ts`, `*.spec.ts`/`*.e2e.ts` (e2e), and
@@ -48,7 +48,7 @@
 | Unit | `bun test` (`*.unit.test.ts`) | Stack-profile default for TypeScript/Bun. Zero extra runtime dependency, fastest possible cold-start for a suite that must stay <30s. |
 | Integration | `bun test` + testcontainers (Postgres) / recorded-fixture doubles for every non-DB boundary | Stack-profile default. Per the Step 3 pattern: Prisma-backed services wrap ORM calls behind a typed service-layer interface (the repo already has one `service.ts` per Prisma model area per workspace); integration tests exercise that interface against a real Postgres, never a mocked ORM. |
 | Smoke | `bun test` + Hono's in-process `app.request()` (real `Bun.serve()` boot only when no app-factory seam exists) | **Override of the stack-profile default** (`supertest`). Hono ships its own zero-dependency in-process request helper (`app.request()`); reaching for `supertest` would add a second HTTP-test dependency for no capability gain, and this is already the convention CLAUDE.md declares for every one of the 5 HTTP services. Step 2 permits overriding the matrix when "existing build infra makes one choice radically cheaper" — that applies here. |
-| E2E | Playwright (`*.spec.ts` in `site/`, `*.e2e.ts` in `admin/e2e/`) | Canonical TS browser-E2E framework; already the only E2E tooling this monorepo needs (two Playwright surfaces, not per-workspace duplication). |
+| E2E | Playwright (`*.spec.ts` in `site/`, `*.e2e.ts` in `admin/e2e/` and `metrics/e2e/`) | Canonical TS browser-E2E framework; already the only E2E tooling this monorepo needs (three Playwright surfaces, not per-workspace duplication). |
 | Content (5th, repo-specific) | `bun test` (`*.content.test.ts`) | No I/O boundary — asserts on the text/structure of command/skill/agent markdown files (`plugins/shipwright/commands/*.md`, `skills/*/SKILL.md`, `agents/*.md`, ~85+ files total per inventory). Cheap enough to share the unit layer's runner and speed budget. |
 | Shell (6th, unofficial per inventory) | `bash <file>.sh` assertion scripts | `.github/workflows/lib/chart-tag-utils.sh` / `chart-drift-check.sh` are pure string/tag-parsing bash with no network calls — outside the `bun test` runner's reach entirely. This blueprint keeps them on plain bash rather than porting to a TS test just to fit one runner; see Ambiguous-item note in the inventory recommending CLAUDE.md formally adopt this as a sixth documented layer. |
 
@@ -202,8 +202,8 @@ main branch merge
     freely if the suite ever needs it, but the <60s target should be reachable single-threaded
     given the surface size.
   - E2E: Playwright's built-in worker sharding. Suggested starting point: `workers: 4` for
-    `site/` (many marketing pages), `workers: 2` for `admin/e2e/` (fewer, heavier specs per
-    the inventory's single-journey description).
+    `site/` (many marketing pages), `workers: 2` for `admin/e2e/` and `metrics/e2e/` (fewer,
+    heavier specs per the inventory's single-journey description).
 - **Budget:** <15 min total per PR (all jobs above, in parallel where the diagram shows
   parallel branches).
 - **Coverage toolchain:** `lcov` — Bun's native `bun test --coverage --coverage-reporter=lcov`,
@@ -237,7 +237,7 @@ Step 2 override rule: no reason exists to invent a different one):
 | `*.unit.test.ts` | unit |
 | `*.integration.test.ts` | integration |
 | `*.smoke.test.ts` | smoke |
-| `*.spec.ts` (in `site/`) / `*.e2e.ts` (in `admin/e2e/`) | e2e |
+| `*.spec.ts` (in `site/`) / `*.e2e.ts` (in `admin/e2e/` and `metrics/e2e/`) | e2e |
 | `*.content.test.ts` | content |
 | `*.canary.test.ts` | reserved, unused while `deploy_model: direct` |
 
@@ -251,7 +251,8 @@ Step 2 override rule: no reason exists to invent a different one):
   enforced), layer selection is done via **positional glob arguments**, e.g.
   `bun test '**/*.unit.test.ts' '**/*.content.test.ts'`. This is what the CI steps above use.
 - **Playwright `testMatch`** — `site/playwright.config.ts` scoped to `*.spec.ts`;
-  `admin/playwright.config.ts` (or equivalent) scoped to `*.e2e.ts` under `admin/e2e/`.
+  `admin/playwright.config.ts` and `metrics/playwright.config.ts` (or equivalent) each scoped
+  to `*.e2e.ts` under their own `e2e/` directory (`admin/e2e/`, `metrics/e2e/`).
 - **Coverage config `exclude`** — exclude generated code (`lib/admin-types.ts`,
   `lib/task-store-types.ts`, `mcp-server/src/generated-tools.ts`), test infra
   (`metrics/src/lib/test-helpers.ts`, `chat/src/test-fakes.ts`, `scripts/test-env-preload.ts`),
@@ -310,7 +311,8 @@ a guideline.
   contention). Add multi-process fan-out only if approaching the 3 min budget.
 - **Smoke:** safe to parallelize freely (in-process, no shared external state) if ever needed;
   not required to hit <60s given current surface size.
-- **E2E:** Playwright worker sharding — `workers: 4` (`site/`), `workers: 2` (`admin/e2e/`).
+- **E2E:** Playwright worker sharding — `workers: 4` (`site/`), `workers: 2` (`admin/e2e/` and
+  `metrics/e2e/`).
 - **Enforcement:** per the speed-budgets skill, add both `timeout-minutes` at the CI-job level
   (suite target × 1.5, rounded up) and native per-test timeouts (`bun test --timeout 200` for
   unit/content, Playwright's `timeout: 90000` for E2E) so drift past a hard cap fails loudly
