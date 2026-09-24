@@ -4,6 +4,41 @@ Durable notes for breaking changes and the steps needed to migrate across versio
 
 ---
 
+## Feature: `POST /agents` JSON API restored — programmatic agent creation _(APA-2.1)_
+
+**Version**: next (APA-2.1)
+
+**What this affects**: callers that want to create agents programmatically through the admin
+JSON API. The `POST /agents` JSON route is now available again, alongside the web UI form at
+`/admin/agents/new`. Both paths use the same underlying `createAgent()` implementation — they
+are two callers of a single creation function, not two separate implementations.
+
+**What changed**:
+
+- `POST /agents` is now available and fully documented in the OpenAPI spec
+  ([`admin/openapi.json`](../admin/openapi.json)). The route is **admin-only** (requires an
+  admin-level `Authorization: Bearer` token or session cookie; per-agent tokens cannot call it).
+- The request body is JSON (unlike the form's `application/x-www-form-urlencoded`), with fields:
+  `name`, `typeName` (defaults to `"coding"`; no longer required), `runtime` (`"in-cluster"` for
+  managed agents; omit or any other value means self-hosted), `reposRaw`, `authorAllowlistRaw`,
+  `patchAuthorAllowlistRaw`, `memberEmailsRaw` (all newline-separated lists), and
+  `restrictSlackToMembersRaw`.
+- The response is a `201` with the created agent object in the same shape as `GET /agents/:id`,
+  not a `302` redirect.
+- Creation is transactional: any failure (missing fields, invalid type, malformed repos/allowlists,
+  provisioning failure) leaves zero rows behind rather than a partial success.
+
+**Migration**:
+
+- **For humans**: no change — the web form at `/admin/agents/new` still works exactly as before
+  and remains the friendlier path with guided UI for Slack/GitHub provisioning and credentials.
+- **For scripted/API callers**: you can now use `POST /agents` with a JSON body instead of
+  `POST /admin/agents` with a form body. See the [`agent-admin`](../plugins/shipwright/skills/agent-admin/SKILL.md)
+  skill for practical curl examples. Both paths work and use the same implementation — pick
+  whichever suits your caller better.
+
+---
+
 ## Breaking: `POST /agents` JSON API retired — agent creation is UI-only _(ABF-3.2)_
 
 **Version**: next (ABF-3.2)
