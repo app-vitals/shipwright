@@ -727,6 +727,35 @@ describe("toolchain-patterns.md — relocation-on-staleness for broken pointer (
     expect(section).toMatch(/\(re\)create|recreate|derive the default/i);
   });
 
+  it("step 2's cache-miss routing defers to the relocation subsection for a broken docsSource pointer", () => {
+    const cachingIdx = referencesContent.indexOf("## Caching Across Runs");
+    const relocationIdx = referencesContent.indexOf("### Relocation on Broken Pointer");
+    expect(cachingIdx).toBeGreaterThan(-1);
+    expect(relocationIdx).toBeGreaterThan(cachingIdx);
+
+    // Step 2 is the numbered cache-miss branch between the cache-hit step and the
+    // relocation subsection. It must carve out the broken-pointer case rather than
+    // routing every fingerprint mismatch straight to the config-file fallback.
+    const stepTwoIdx = referencesContent.indexOf("2. Otherwise —", cachingIdx);
+    expect(stepTwoIdx).toBeGreaterThan(-1);
+    expect(stepTwoIdx).toBeLessThan(relocationIdx);
+    const stepTwo = referencesContent.slice(stepTwoIdx, relocationIdx);
+
+    expect(stepTwo).toMatch(/Relocation on Broken Pointer/);
+    expect(stepTwo).toMatch(/docsSource/);
+    expect(stepTwo).toMatch(/govern|override|refine|unless|exception/i);
+  });
+
+  it("the relocation subsection states it refines step 2 rather than standing alongside it", () => {
+    const relocationIdx = referencesContent.indexOf("### Relocation on Broken Pointer");
+    expect(relocationIdx).toBeGreaterThan(-1);
+    const detectionOrderIdx = referencesContent.indexOf("## Detection Order");
+    const section = referencesContent.slice(relocationIdx, detectionOrderIdx);
+
+    expect(section).toMatch(/step 2/i);
+    expect(section).toMatch(/refine|override|govern/i);
+  });
+
   it("delegates to doc-refresh-recipe.md's verification-table pattern rather than re-embedding the table", () => {
     const relocationIdx = referencesContent.indexOf("Relocation on Broken Pointer");
     expect(relocationIdx).toBeGreaterThan(-1);
