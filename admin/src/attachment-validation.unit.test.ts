@@ -6,6 +6,8 @@
 
 import { describe, expect, it } from "bun:test";
 import {
+  audioContentTypeForFilename,
+  isAudioFilename,
   MAX_ATTACHMENT_BYTES,
   validateAttachment,
 } from "./attachment-validation.ts";
@@ -104,5 +106,77 @@ describe("validateAttachment", () => {
     if (!result.ok) {
       expect(result.status).toBe(415);
     }
+  });
+
+  // VM-3.1: mic-recorded blobs go through the same upload path as file
+  // attachments, so MediaRecorder's actual output MIME types must be allowed.
+  it("accepts audio/webm (MediaRecorder default in some browsers)", () => {
+    const result = validateAttachment("recording.webm", 1024, "audio/webm");
+    expect(result.ok).toBe(true);
+  });
+
+  it("accepts audio/webm;codecs=opus (MediaRecorder's Chrome/Firefox default)", () => {
+    const result = validateAttachment(
+      "recording.webm",
+      1024,
+      "audio/webm;codecs=opus",
+    );
+    expect(result.ok).toBe(true);
+  });
+
+  it("accepts audio/ogg (MediaRecorder's Firefox alternative)", () => {
+    const result = validateAttachment("recording.ogg", 1024, "audio/ogg");
+    expect(result.ok).toBe(true);
+  });
+
+  it("still rejects an unrelated audio type not in the allowlist", () => {
+    const result = validateAttachment("clip.aac", 1024, "audio/aac");
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.status).toBe(415);
+    }
+  });
+});
+
+describe("isAudioFilename", () => {
+  it("returns true for MediaRecorder output extensions (.webm, .ogg)", () => {
+    expect(isAudioFilename("recording-123.webm")).toBe(true);
+    expect(isAudioFilename("recording-123.ogg")).toBe(true);
+  });
+
+  it("returns true for TTS output extensions (.wav, .mp3) — VM-2.1 assistant replies", () => {
+    expect(isAudioFilename("1700000000000-response.wav")).toBe(true);
+    expect(isAudioFilename("1700000000000-response.mp3")).toBe(true);
+  });
+
+  it("is case-insensitive", () => {
+    expect(isAudioFilename("Recording.WEBM")).toBe(true);
+  });
+
+  it("returns false for non-audio filenames", () => {
+    expect(isAudioFilename("notes.txt")).toBe(false);
+    expect(isAudioFilename("photo.png")).toBe(false);
+    expect(isAudioFilename("doc.pdf")).toBe(false);
+  });
+
+  it("returns false for null/undefined/empty filenames without throwing", () => {
+    expect(isAudioFilename(null)).toBe(false);
+    expect(isAudioFilename(undefined)).toBe(false);
+    expect(isAudioFilename("")).toBe(false);
+  });
+});
+
+describe("audioContentTypeForFilename", () => {
+  it("maps each recognized audio extension to a real audio/* Content-Type", () => {
+    expect(audioContentTypeForFilename("a.webm")).toBe("audio/webm");
+    expect(audioContentTypeForFilename("a.ogg")).toBe("audio/ogg");
+    expect(audioContentTypeForFilename("a.wav")).toBe("audio/wav");
+    expect(audioContentTypeForFilename("a.mp3")).toBe("audio/mpeg");
+  });
+
+  it("returns null for a non-audio or missing filename", () => {
+    expect(audioContentTypeForFilename("notes.txt")).toBeNull();
+    expect(audioContentTypeForFilename(null)).toBeNull();
+    expect(audioContentTypeForFilename(undefined)).toBeNull();
   });
 });

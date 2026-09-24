@@ -385,6 +385,100 @@ describe("HttpChatClient — getThreadStats", () => {
   });
 });
 
+// ─── getAttachment ──────────────────────────────────────────────────────────
+// VM-3.1: proxies the chat service's GET /:id/attachment so the browser (which
+// never holds the chat service's admin bearer token) can play back a message's
+// audio attachment. Uses a raw (non-JSON) fetchFn double since the response
+// body is binary bytes, not JSON — the shared cassetteFetch() helper above
+// only knows how to serve JSON bodies.
+
+describe("HttpChatClient — getAttachment", () => {
+  it("GETs /threads/:threadId/messages/:id/attachment with Bearer auth and parses filename from Content-Disposition", async () => {
+    let lastRequest: { url: string; headers: Headers } | undefined;
+    const bytes = new TextEncoder().encode("fake audio bytes");
+    const fetchFn = (async (input: RequestInfo | URL, init?: RequestInit) => {
+      lastRequest = {
+        url: typeof input === "string" ? input : input.toString(),
+        headers: new Headers(init?.headers),
+      };
+      return new Response(bytes, {
+        status: 200,
+        headers: {
+          "Content-Type": "application/octet-stream",
+          "Content-Disposition": 'attachment; filename="recording-123.webm"',
+        },
+      });
+    }) as typeof fetch;
+    const client = new HttpChatClient(
+      "https://chat.example.com",
+      "admin-token-xyz",
+      { fetchFn },
+    );
+
+    const result = await client.getAttachment("thread_1", "msg_1");
+
+    expect(lastRequest?.url).toBe(
+      "https://chat.example.com/threads/thread_1/messages/msg_1/attachment",
+    );
+    expect(lastRequest?.headers.get("authorization")).toBe(
+      "Bearer admin-token-xyz",
+    );
+    expect(result?.filename).toBe("recording-123.webm");
+    expect(
+      Buffer.from(result?.bytes ?? new Uint8Array()).toString("utf-8"),
+    ).toBe("fake audio bytes");
+  });
+
+  it("returns null on a 404 (no attachment, or already cleared by ephemeral retention)", async () => {
+    const fetchFn = (async (_input: RequestInfo | URL, _init?: RequestInit) =>
+      new Response(JSON.stringify({ error: "no attachment" }), {
+        status: 404,
+        headers: { "Content-Type": "application/json" },
+      })) as typeof fetch;
+    const client = new HttpChatClient(
+      "https://chat.example.com",
+      "admin-token-xyz",
+      { fetchFn },
+    );
+
+    const result = await client.getAttachment("thread_1", "msg_1");
+    expect(result).toBeNull();
+  });
+
+  it("falls back to a generic filename when Content-Disposition is missing", async () => {
+    const fetchFn = (async (_input: RequestInfo | URL, _init?: RequestInit) =>
+      new Response(new Uint8Array([1, 2, 3]), {
+        status: 200,
+        headers: { "Content-Type": "application/octet-stream" },
+      })) as typeof fetch;
+    const client = new HttpChatClient(
+      "https://chat.example.com",
+      "admin-token-xyz",
+      { fetchFn },
+    );
+
+    const result = await client.getAttachment("thread_1", "msg_1");
+    expect(result?.filename).toBe("attachment");
+  });
+
+  it("throws on a non-ok, non-404 response with the exact error message format", async () => {
+    const fetchFn = (async (_input: RequestInfo | URL, _init?: RequestInit) =>
+      new Response("", {
+        status: 500,
+        statusText: "status-500",
+      })) as typeof fetch;
+    const client = new HttpChatClient(
+      "https://chat.example.com",
+      "admin-token-xyz",
+      { fetchFn },
+    );
+
+    await expect(client.getAttachment("thread_1", "msg_1")).rejects.toThrow(
+      "chat-service GET /threads/thread_1/messages/msg_1/attachment failed: 500 status-500",
+    );
+  });
+});
+
 // ─── NoopChatClient ─────────────────────────────────────────────────────────
 
 describe("NoopChatClient", () => {
@@ -450,5 +544,11 @@ describe("NoopChatClient", () => {
       totalOutputTokens: 0,
       totalCostUsd: 0,
     });
+  });
+
+  it("getAttachment returns null (no chat service to proxy)", async () => {
+    const client = new NoopChatClient();
+    const result = await client.getAttachment("thread_1", "msg_1");
+    expect(result).toBeNull();
   });
 });

@@ -10,34 +10,29 @@ import { describe, expect, test } from "bun:test";
 import {
   type AgentDetail,
   type AgentListItem,
+  bucketTaskColumn,
+  buildMergedWorkQueueRows,
   type CronJobItem,
   type CronRunItem,
+  classifyTaskState,
+  computeDependencyLayout,
+  computeDependencyNodes,
   type DependencyNode,
   ERROR_KIND_LABELS,
+  heartbeatFreshness,
   type MemberItem,
   type MergedWorkQueueRow,
   type PluginItem,
   type PrListItem,
   type PullRequestItem,
-  type TaskItem,
-  type TokenItem,
-  type ToolItem,
-  type WorkQueueItem,
-  type WorkQueueSnapshotItem,
-  bucketTaskColumn,
-  buildMergedWorkQueueRows,
-  classifyTaskState,
-  computeDependencyLayout,
-  computeDependencyNodes,
-  heartbeatFreshness,
   partitionCronsForActivityDisplay,
   renderAgentDetailPage,
   renderAgentsPage,
   renderChatMessageBubble,
   renderChatPage,
   renderChatThreadPage,
-  renderGithubAppInstallPage,
   renderGithubAppInstalledPage,
+  renderGithubAppInstallPage,
   renderGithubAppManifestRedirectPage,
   renderLoginPage,
   renderMergedQueueActivityPage,
@@ -51,6 +46,11 @@ import {
   renderTaskDetailPage,
   renderTasksPage,
   resolveAgentNameFilterAndPaginate,
+  type TaskItem,
+  type TokenItem,
+  type ToolItem,
+  type WorkQueueItem,
+  type WorkQueueSnapshotItem,
 } from "./admin-ui-pages.ts";
 import { renderAdminToolbar } from "./admin-ui-styles.ts";
 import type { ChatMessage, ChatThread } from "./http-chat-client.ts";
@@ -3724,8 +3724,14 @@ describe("renderTasksPage — board view (AXR-1.3)", () => {
     // Exactly 3 column containers
     expect((html.match(/class="column"/g) ?? []).length).toBe(3);
     // Columns must render left-to-right in this exact order.
-    const dataColumnSequence = [...html.matchAll(/data-column="([^"]+)"/g)].map((m) => m[1]);
-    expect(dataColumnSequence).toEqual(["queued", "in_progress", "blocked_hitl"]);
+    const dataColumnSequence = [...html.matchAll(/data-column="([^"]+)"/g)].map(
+      (m) => m[1],
+    );
+    expect(dataColumnSequence).toEqual([
+      "queued",
+      "in_progress",
+      "blocked_hitl",
+    ]);
   });
 
   function extractColumn(html: string, key: string): string {
@@ -3789,9 +3795,7 @@ describe("renderTasksPage — board view (AXR-1.3)", () => {
       assignee: null,
     };
     const html = renderBoard([task]);
-    expect(extractColumn(html, "blocked_hitl")).toContain(
-      "Blocked task title",
-    );
+    expect(extractColumn(html, "blocked_hitl")).toContain("Blocked task title");
   });
 
   test("buckets a hitl:true task into Blocked-HITL even when in_progress", () => {
@@ -3805,9 +3809,7 @@ describe("renderTasksPage — board view (AXR-1.3)", () => {
     };
     const html = renderBoard([task]);
     expect(extractColumn(html, "blocked_hitl")).toContain("HITL task title");
-    expect(extractColumn(html, "in_progress")).not.toContain(
-      "HITL task title",
-    );
+    expect(extractColumn(html, "in_progress")).not.toContain("HITL task title");
   });
 
   test("a done task is absent from the default board — Done is no longer rendered (TBC-2.1)", () => {
@@ -3881,7 +3883,11 @@ describe("renderTasksPage — board view (AXR-1.3)", () => {
   });
 
   test("default board filter row shows only Org and Repo selects — status/hitl/session/source/agent are collapsed under a <details> more-filters disclosure", () => {
-    const html = renderBoard([], {}, { orgs: ["app-vitals"], repos: ["app-vitals/repo-a"] });
+    const html = renderBoard(
+      [],
+      {},
+      { orgs: ["app-vitals"], repos: ["app-vitals/repo-a"] },
+    );
     expect(html).toContain('<select name="org" multiple');
     expect(html).toContain('<select name="repo" multiple');
     expect(html).toContain('<details class="more-filters">');
@@ -3980,7 +3986,11 @@ describe("renderTasksPage — board view (AXR-1.3)", () => {
   });
 
   test("Org and Repo remain two independent multiselects on the board, not merged into one combined scope-pill selector", () => {
-    const html = renderBoard([], {}, { orgs: ["app-vitals"], repos: ["app-vitals/repo-a"] });
+    const html = renderBoard(
+      [],
+      {},
+      { orgs: ["app-vitals"], repos: ["app-vitals/repo-a"] },
+    );
     const selectCount = (html.match(/<select /g) ?? []).length;
     // org, repo, plus status + hitl inside <details> == 4 total <select>s
     expect(selectCount).toBeGreaterThanOrEqual(2);
@@ -3994,11 +4004,7 @@ describe("renderTasksPage — board view (AXR-1.3)", () => {
       { org: ["app-vitals"] },
       {
         orgs: ["app-vitals", "other-org"],
-        repos: [
-          "app-vitals/repo-a",
-          "app-vitals/repo-b",
-          "other-org/repo-c",
-        ],
+        repos: ["app-vitals/repo-a", "app-vitals/repo-b", "other-org/repo-c"],
       },
     );
     // Org is selected...
@@ -4015,9 +4021,7 @@ describe("renderTasksPage — board view (AXR-1.3)", () => {
       /<select name="repo" multiple[^>]*>([\s\S]*?)<\/select>/,
     );
     expect(repoSelectMatch).not.toBeNull();
-    expect(repoSelectMatch ? repoSelectMatch[1] : "").not.toContain(
-      "selected",
-    );
+    expect(repoSelectMatch ? repoSelectMatch[1] : "").not.toContain("selected");
   });
 
   test("view: 'board' is reachable via a link back to the table view (?view=table)", () => {
@@ -4070,7 +4074,9 @@ describe("renderTasksPage — board view (AXR-1.3)", () => {
       assignee: null,
     };
     const html = renderBoard([task]);
-    const checkboxIndex = html.indexOf('id="task-drawer-toggle-DOM-ORDER-TEST"');
+    const checkboxIndex = html.indexOf(
+      'id="task-drawer-toggle-DOM-ORDER-TEST"',
+    );
     const drawerPanelIndex = html.indexOf('class="task-drawer"');
     expect(checkboxIndex).toBeGreaterThanOrEqual(0);
     expect(drawerPanelIndex).toBeGreaterThanOrEqual(0);
@@ -4144,9 +4150,27 @@ describe("renderTasksPage — board view (AXR-1.3)", () => {
 
   test("multiple cards each get unique drawer checkbox ids", () => {
     const tasks: TaskItem[] = [
-      { id: "TASK-1", title: "Task 1", status: "pending", claimedBy: null, assignee: null },
-      { id: "TASK-2", title: "Task 2", status: "pending", claimedBy: null, assignee: null },
-      { id: "TASK-3", title: "Task 3", status: "pending", claimedBy: null, assignee: null },
+      {
+        id: "TASK-1",
+        title: "Task 1",
+        status: "pending",
+        claimedBy: null,
+        assignee: null,
+      },
+      {
+        id: "TASK-2",
+        title: "Task 2",
+        status: "pending",
+        claimedBy: null,
+        assignee: null,
+      },
+      {
+        id: "TASK-3",
+        title: "Task 3",
+        status: "pending",
+        claimedBy: null,
+        assignee: null,
+      },
     ];
     const html = renderBoard(tasks);
     expect(html).toContain('id="task-drawer-toggle-TASK-1"');
@@ -4184,7 +4208,7 @@ describe("renderTasksPage — board view (AXR-1.3)", () => {
     expect(html).not.toContain('id="task-drawer-toggle-');
     expect(html).not.toContain('class="task-drawer-scrim"');
     expect(html).not.toContain('class="task-drawer"');
-    expect(html).not.toContain('data-drawer-toggle=');
+    expect(html).not.toContain("data-drawer-toggle=");
   });
 
   // Opening a card's drawer must close any other drawer already open — two
@@ -4193,11 +4217,27 @@ describe("renderTasksPage — board view (AXR-1.3)", () => {
   // behind the new one instead of a clean single-drawer UX.
   test("click handler closes any other open drawer before opening the clicked card's", () => {
     const html = renderBoard([
-      { id: "T-A", title: "A", status: "pending", claimedBy: null, assignee: null },
-      { id: "T-B", title: "B", status: "pending", claimedBy: null, assignee: null },
+      {
+        id: "T-A",
+        title: "A",
+        status: "pending",
+        claimedBy: null,
+        assignee: null,
+      },
+      {
+        id: "T-B",
+        title: "B",
+        status: "pending",
+        claimedBy: null,
+        assignee: null,
+      },
     ]);
-    expect(html).toContain('.task-drawer-toggle:checked").forEach(function(openToggle)');
-    expect(html).toContain("if (openToggle.id !== toggleId) openToggle.checked = false;");
+    expect(html).toContain(
+      '.task-drawer-toggle:checked").forEach(function(openToggle)',
+    );
+    expect(html).toContain(
+      "if (openToggle.id !== toggleId) openToggle.checked = false;",
+    );
   });
 
   // ─── board card age badge (TBC-1.1) ─────────────────────────────────────
@@ -7912,6 +7952,93 @@ describe("renderChatThreadPage — CFB-1.3 class migration", () => {
   });
 });
 
+// ─── VM-3.1 — mic-record button + SSR audio-player rendering ────────────────
+
+describe("renderChatThreadPage — mic input + audio playback (VM-3.1)", () => {
+  const THREAD: ChatThread = {
+    id: "thread-vm31",
+    agentId: "agent-vm31",
+    title: "Voice Thread",
+    memberId: null,
+    createdAt: "2024-01-01T00:00:00.000Z",
+    updatedAt: "2024-01-01T00:00:00.000Z",
+  };
+
+  const USER_MSG: ChatMessage = {
+    id: "msg-1",
+    threadId: "thread-vm31",
+    role: "user",
+    body: "Hello, agent!",
+    createdAt: "2024-01-01T00:00:00.000Z",
+    claimedBy: null,
+    repliedAt: null,
+    tokens: null,
+    costUsd: null,
+    errorKind: null,
+    attachmentFilename: null,
+    attachmentSize: null,
+  };
+
+  test("renders a mic-record button beside the hidden file input", () => {
+    const html = renderChatThreadPage(
+      "agent-vm31",
+      THREAD,
+      [USER_MSG],
+      "alice",
+    );
+    expect(html).toContain('id="mic-btn"');
+    const fileInputIdx = html.indexOf('id="file-input"');
+    const micBtnIdx = html.indexOf('id="mic-btn"');
+    const sendFormEndIdx = html.indexOf('id="send-form"');
+    expect(fileInputIdx).toBeGreaterThan(-1);
+    expect(micBtnIdx).toBeGreaterThan(fileInputIdx);
+    expect(sendFormEndIdx).toBeGreaterThan(-1);
+  });
+
+  test("inline script references MediaRecorder / getUserMedia for the mic flow", () => {
+    const html = renderChatThreadPage(
+      "agent-vm31",
+      THREAD,
+      [USER_MSG],
+      "alice",
+    );
+    expect(html).toContain("MediaRecorder");
+    expect(html).toContain("getUserMedia");
+  });
+
+  test("SSR-rendered bubble for a user message with an audio attachment uses the attachment-proxy URL for this agent/thread", () => {
+    const html = renderChatThreadPage(
+      "agent-vm31",
+      THREAD,
+      [{ ...USER_MSG, attachmentFilename: "recording-123.webm" }],
+      "alice",
+    );
+    expect(html).toContain("<audio");
+    expect(html).toContain(
+      "/admin/chat/agent-vm31/threads/thread-vm31/messages/msg-1/attachment",
+    );
+  });
+
+  test("SSR-rendered bubble for a non-audio attachment still uses the filename badge", () => {
+    const html = renderChatThreadPage(
+      "agent-vm31",
+      THREAD,
+      [{ ...USER_MSG, attachmentFilename: "report.pdf" }],
+      "alice",
+    );
+    // The page's own inline <script> legitimately contains the literal
+    // "<audio" (the mic-recording preview markup) regardless of this
+    // message's attachment — so assert on the rendered message bubble
+    // specifically, not page-wide absence.
+    const bubbleMatch = html.match(
+      /<div class="chat-bubble[^>]*data-message-id="msg-1"[\s\S]*?<\/div>\s*<\/div>/,
+    );
+    expect(bubbleMatch).not.toBeNull();
+    expect(bubbleMatch?.[0]).toContain("📎 report.pdf");
+    expect(bubbleMatch?.[0]).not.toContain("<audio");
+  });
+});
+
 // ─── CFB-2.3 — live progress, elapsed timer, stall state ─────────────────────
 
 describe("renderChatMessageBubble (hoisted module-level renderer)", () => {
@@ -7966,6 +8093,96 @@ describe("renderChatMessageBubble (hoisted module-level renderer)", () => {
       errorKind: "something-weird",
     });
     expect(html).toContain("Error");
+  });
+});
+
+// ─── VM-3.1 — mic input + audio playback: audio-vs-badge rendering branch ────
+// renderChatMessageBubble is the single hoisted renderer shared by BOTH the
+// SSR thread-detail page (renderChatThreadPage) and the polled bubbleHtml
+// path (messages.json, in admin-ui.ts) — see the module comment above this
+// function. Testing it directly therefore covers both render paths at once;
+// renderChatThreadPage is also exercised below to confirm the SSR call site
+// actually threads agentId through.
+
+describe("renderChatMessageBubble — audio attachment vs. filename badge (VM-3.1)", () => {
+  const BASE_MSG: ChatMessage = {
+    id: "msg-vm31-1",
+    threadId: "thread-vm31",
+    role: "user",
+    body: "voice note",
+    createdAt: "2024-01-01T00:00:00.000Z",
+    claimedBy: null,
+    repliedAt: null,
+    tokens: null,
+    costUsd: null,
+    errorKind: null,
+    attachmentFilename: null,
+    attachmentSize: null,
+  };
+
+  test("a .webm attachment (mic recording) renders an inline <audio> player, not a badge", () => {
+    const html = renderChatMessageBubble(
+      { ...BASE_MSG, attachmentFilename: "recording-123.webm" },
+      null,
+      "agent-1",
+    );
+    expect(html).toContain("<audio");
+    expect(html).toContain("controls");
+    expect(html).not.toContain("📎");
+  });
+
+  test("a .ogg attachment renders an inline <audio> player", () => {
+    const html = renderChatMessageBubble(
+      { ...BASE_MSG, attachmentFilename: "recording-123.ogg" },
+      null,
+      "agent-1",
+    );
+    expect(html).toContain("<audio");
+  });
+
+  test("a .wav assistant-reply attachment (VM-2.1 TTS) renders an inline <audio> player", () => {
+    const html = renderChatMessageBubble(
+      {
+        ...BASE_MSG,
+        role: "assistant",
+        attachmentFilename: "1700000000000-response.wav",
+      },
+      null,
+      "agent-1",
+    );
+    expect(html).toContain("<audio");
+    expect(html).not.toContain("📎");
+  });
+
+  test("the <audio> src points at the per-message attachment proxy route, using agentId + threadId + id", () => {
+    const html = renderChatMessageBubble(
+      { ...BASE_MSG, attachmentFilename: "recording-123.webm" },
+      null,
+      "agent-1",
+    );
+    expect(html).toContain(
+      "/admin/chat/agent-1/threads/thread-vm31/messages/msg-vm31-1/attachment",
+    );
+  });
+
+  test("a non-audio attachment (e.g. a PDF) still renders as the plain filename badge", () => {
+    const html = renderChatMessageBubble(
+      { ...BASE_MSG, attachmentFilename: "report.pdf" },
+      null,
+      "agent-1",
+    );
+    expect(html).toContain("📎 report.pdf");
+    expect(html).not.toContain("<audio");
+  });
+
+  test("no attachment renders neither an audio player nor a badge", () => {
+    const html = renderChatMessageBubble(BASE_MSG, null, "agent-1");
+    expect(html).not.toContain("<audio");
+    expect(html).not.toContain("📎");
+  });
+
+  test("works without an agentId argument (back-compat with existing call sites/tests)", () => {
+    expect(() => renderChatMessageBubble(BASE_MSG)).not.toThrow();
   });
 });
 
@@ -9728,7 +9945,12 @@ describe("buildMergedWorkQueueRows", () => {
         },
         {
           agentId: "agent-b",
-          items: [prItem({ id: "app-vitals/other-repo#5", age: "2026-06-01T07:00:00Z" })],
+          items: [
+            prItem({
+              id: "app-vitals/other-repo#5",
+              age: "2026-06-01T07:00:00Z",
+            }),
+          ],
         },
       ],
       [
@@ -9750,13 +9972,19 @@ describe("buildMergedWorkQueueRows", () => {
         {
           agentId: "agent-a",
           items: [
-            prItem({ id: "app-vitals/shipwright#1", age: "2026-06-01T09:00:00Z" }),
+            prItem({
+              id: "app-vitals/shipwright#1",
+              age: "2026-06-01T09:00:00Z",
+            }),
           ],
         },
         {
           agentId: "agent-b",
           items: [
-            prItem({ id: "app-vitals/shipwright#2", age: "2026-06-01T07:00:00Z" }),
+            prItem({
+              id: "app-vitals/shipwright#2",
+              age: "2026-06-01T07:00:00Z",
+            }),
           ],
         },
       ],
@@ -9784,7 +10012,10 @@ describe("renderMergedQueueActivityPage", () => {
     { id: "agent-alpha", name: "Alpha Agent" },
     { id: "agent-beta", name: "Beta Agent" },
   ];
-  const AGENT_NAMES = { "agent-alpha": "Alpha Agent", "agent-beta": "Beta Agent" };
+  const AGENT_NAMES = {
+    "agent-alpha": "Alpha Agent",
+    "agent-beta": "Beta Agent",
+  };
 
   function mergedRow(
     overrides?: Partial<MergedWorkQueueRow>,
@@ -9844,9 +10075,7 @@ describe("renderMergedQueueActivityPage", () => {
     expect(html).toContain(
       '<option value="__all__" selected>All agents</option>',
     );
-    expect(html).toContain(
-      '<option value="agent-alpha">Alpha Agent</option>',
-    );
+    expect(html).toContain('<option value="agent-alpha">Alpha Agent</option>');
     expect(html).toContain('<option value="agent-beta">Beta Agent</option>');
     // Choosing a specific agent still navigates to its own queue-activity page.
     expect(html).toContain(
@@ -9905,7 +10134,9 @@ describe("renderMergedQueueActivityPage", () => {
       '<a href="/admin/agents/agent-beta" style="color:#6366f1;text-decoration:none">Beta Agent</a>',
     );
     // Cron-filter link is scoped to the run's own agent, not a single agent.
-    expect(html).toContain("/admin/agents/agent-beta/queue-activity?cronId=cron-1");
+    expect(html).toContain(
+      "/admin/agents/agent-beta/queue-activity?cronId=cron-1",
+    );
   });
 
   test("renders pagination controls for the Upcoming table when total exceeds one page", () => {

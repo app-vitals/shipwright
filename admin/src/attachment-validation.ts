@@ -23,7 +23,54 @@ export const ALLOWED_MIME_EXACT = new Set([
   "image/heif",
   "application/pdf",
   "application/json",
+  // VM-3.1: mic-recorded blobs are submitted through this same upload path —
+  // these are the exact MIME strings Chrome/Firefox's MediaRecorder emits
+  // (browser/codec dependent, so all three are allowed).
+  "audio/webm",
+  "audio/webm;codecs=opus",
+  "audio/ogg",
 ]);
+
+/**
+ * Filename extensions rendered as an inline <audio> player instead of a
+ * plain filename badge (VM-3.1). No MIME type is persisted end-to-end on a
+ * ChatMessage — the chat service only stores attachmentFilename/attachmentSize
+ * — so audio-ness is inferred from the filename extension. Covers both
+ * MediaRecorder-authored user attachments (.webm/.ogg, this task) and
+ * TTS-authored assistant attachments (.wav/.mp3, from VM-2.1's chat-poller).
+ */
+const AUDIO_FILE_EXTENSIONS = [".wav", ".mp3", ".webm", ".ogg"];
+
+/** Whether an attachment's filename indicates audio content. */
+export function isAudioFilename(filename: string | null | undefined): boolean {
+  if (!filename) return false;
+  const lower = filename.toLowerCase();
+  return AUDIO_FILE_EXTENSIONS.some((ext) => lower.endsWith(ext));
+}
+
+const AUDIO_CONTENT_TYPES: Record<string, string> = {
+  ".wav": "audio/wav",
+  ".mp3": "audio/mpeg",
+  ".webm": "audio/webm",
+  ".ogg": "audio/ogg",
+};
+
+/**
+ * Map an audio filename's extension to a real `audio/*` Content-Type, for
+ * the admin attachment-proxy route to serve. The chat service's own
+ * GET /:id/attachment always streams `application/octet-stream`
+ * (chat/src/routes/messages.ts), which most browsers refuse to play inline
+ * in an <audio> element — the proxy route re-labels the response using this
+ * mapping instead. Returns null for a non-audio (or unrecognized) filename.
+ */
+export function audioContentTypeForFilename(
+  filename: string | null | undefined,
+): string | null {
+  if (!filename) return null;
+  const lower = filename.toLowerCase();
+  const ext = AUDIO_FILE_EXTENSIONS.find((e) => lower.endsWith(e));
+  return ext ? (AUDIO_CONTENT_TYPES[ext] ?? null) : null;
+}
 
 export type AttachmentValidationResult =
   | { ok: false; error: string; status: 413 | 415 }

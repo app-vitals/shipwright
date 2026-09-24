@@ -139,6 +139,19 @@ export interface ChatClient {
   ): Promise<ChatMessage>;
 
   getThreadStats(threadId: string): Promise<ThreadStats>;
+
+  /**
+   * Fetch a message's attachment bytes + filename, for proxying playback/
+   * download back to the browser (VM-3.1) — the browser never holds the
+   * chat service's admin bearer token, so it cannot call the chat service's
+   * GET /:id/attachment directly. Returns null when the message has no
+   * attachment (e.g. a user-authored attachment already cleared by the
+   * ephemeral-retention policy — see chat/src/routes/messages.ts).
+   */
+  getAttachment(
+    threadId: string,
+    messageId: string,
+  ): Promise<{ bytes: Uint8Array; filename: string } | null>;
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -329,6 +342,39 @@ export class HttpChatClient implements ChatClient {
     }
     return res.json() as Promise<ThreadStats>;
   }
+
+  async getAttachment(
+    threadId: string,
+    messageId: string,
+  ): Promise<{ bytes: Uint8Array; filename: string } | null> {
+    const res = await this.fetchFn(
+      `${this.baseUrl}/threads/${threadId}/messages/${messageId}/attachment`,
+      { headers: { Authorization: `Bearer ${this.adminToken}` } },
+    );
+    if (res.status === 404) return null;
+    if (!res.ok) {
+      throw new Error(
+        `chat-service GET /threads/${threadId}/messages/${messageId}/attachment failed: ${res.status} ${res.statusText}`,
+      );
+    }
+    const filename = parseAttachmentFilename(
+      res.headers.get("content-disposition"),
+    );
+    const bytes = new Uint8Array(await res.arrayBuffer());
+    return { bytes, filename };
+  }
+}
+
+/**
+ * Extract the filename from a `Content-Disposition: attachment;
+ * filename="x"` header (as sent by chat/src/routes/messages.ts's
+ * getAttachmentRoute). Falls back to a generic name if the header is
+ * missing or unparsable.
+ */
+function parseAttachmentFilename(header: string | null): string {
+  if (!header) return "attachment";
+  const match = header.match(/filename="?([^";]+)"?/);
+  return match?.[1] ?? "attachment";
 }
 
 // ─── Noop implementation ──────────────────────────────────────────────────────
@@ -423,5 +469,12 @@ export class NoopChatClient implements ChatClient {
       totalOutputTokens: 0,
       totalCostUsd: 0,
     };
+  }
+
+  async getAttachment(
+    _threadId: string,
+    _messageId: string,
+  ): Promise<{ bytes: Uint8Array; filename: string } | null> {
+    return null;
   }
 }

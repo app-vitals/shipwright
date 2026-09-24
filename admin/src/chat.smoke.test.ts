@@ -8,12 +8,12 @@
 
 import { beforeAll, describe, expect, it } from "bun:test";
 import { sign } from "hono/jwt";
-import { createAdminUIApp } from "./admin-ui.ts";
 import type {
   AdminUIDeps,
   AdminUIGithubAppClient,
   AdminUISlackClient,
 } from "./admin-ui.ts";
+import { createAdminUIApp } from "./admin-ui.ts";
 import type {
   GoogleAuthClient,
   GoogleTokenResponse,
@@ -150,6 +150,7 @@ function makeMockChatClient(overrides?: Partial<ChatClient>): ChatClient {
     }),
     createMessage: async () => MOCK_MESSAGE,
     getThreadStats: async () => MOCK_THREAD_STATS,
+    getAttachment: async () => null,
     ...overrides,
   };
 }
@@ -1319,6 +1320,67 @@ describe("POST /admin/chat/:agentId/threads/:threadId/messages/upload", () => {
     );
     expect(res.status).toBe(201);
     expect(watchUpserts).toHaveLength(0);
+  });
+});
+
+// ─── Attachment proxy: GET messages/:messageId/attachment (VM-3.1) ────────────
+// Streams a message's attachment bytes back to the browser for inline <audio>
+// playback — the browser never holds the chat service's admin bearer token,
+// so this route fetches on its behalf via chatClient.getAttachment().
+
+describe("GET /admin/chat/:agentId/threads/:threadId/messages/:messageId/attachment", () => {
+  let sessionCookie: string;
+
+  beforeAll(async () => {
+    sessionCookie = await makeSessionCookie();
+  });
+
+  it("returns 302 to login without session cookie", async () => {
+    const chatClient = makeMockChatClient();
+    const app = createAdminUIApp(makeBaseDeps({ chatClient }));
+    const res = await app.request(
+      `/admin/chat/${AGENT_ID}/threads/${THREAD_ID}/messages/msg-1/attachment`,
+    );
+    expect(res.status).toBe(302);
+    expect(res.headers.get("location")).toContain("/admin/login");
+  });
+
+  it("streams bytes with an audio/* Content-Type for a .webm attachment", async () => {
+    const bytes = new Uint8Array([1, 2, 3, 4]);
+    const chatClient = makeMockChatClient({
+      getAttachment: async () => ({
+        bytes,
+        filename: "recording-123.webm",
+      }),
+    });
+    const app = createAdminUIApp(makeBaseDeps({ chatClient }));
+    const res = await app.request(
+      `/admin/chat/${AGENT_ID}/threads/${THREAD_ID}/messages/msg-1/attachment`,
+      { headers: { Cookie: `admin_session=${sessionCookie}` } },
+    );
+    expect(res.status).toBe(200);
+    expect(res.headers.get("content-type")).toBe("audio/webm");
+    const body = new Uint8Array(await res.arrayBuffer());
+    expect(Array.from(body)).toEqual(Array.from(bytes));
+  });
+
+  it("returns 404 when the chat client reports no attachment", async () => {
+    const chatClient = makeMockChatClient({ getAttachment: async () => null });
+    const app = createAdminUIApp(makeBaseDeps({ chatClient }));
+    const res = await app.request(
+      `/admin/chat/${AGENT_ID}/threads/${THREAD_ID}/messages/msg-1/attachment`,
+      { headers: { Cookie: `admin_session=${sessionCookie}` } },
+    );
+    expect(res.status).toBe(404);
+  });
+
+  it("returns 503 when the chat service is not configured", async () => {
+    const app = createAdminUIApp(makeBaseDeps()); // no chatClient
+    const res = await app.request(
+      `/admin/chat/${AGENT_ID}/threads/${THREAD_ID}/messages/msg-1/attachment`,
+      { headers: { Cookie: `admin_session=${sessionCookie}` } },
+    );
+    expect(res.status).toBe(503);
   });
 });
 
