@@ -660,6 +660,85 @@ describe("toolchain-patterns.md — docsSource pointer + scoped fingerprint (LVB
   });
 });
 
+describe("toolchain-patterns.md — relocation-on-staleness for broken pointer (LVB-4.3)", () => {
+  const referencesPath = join(import.meta.dir, "..", "references", "toolchain-patterns.md");
+  const referencesContent = readFileSync(referencesPath, "utf-8");
+
+  it("defines a Relocation on Broken Pointer subsection under Caching Across Runs", () => {
+    const cachingIdx = referencesContent.indexOf("## Caching Across Runs");
+    const detectionOrderIdx = referencesContent.indexOf("## Detection Order");
+    expect(cachingIdx).toBeGreaterThan(-1);
+    expect(detectionOrderIdx).toBeGreaterThan(cachingIdx);
+
+    const relocationIdx = referencesContent.indexOf("Relocation on Broken Pointer");
+    expect(relocationIdx).toBeGreaterThan(cachingIdx);
+    expect(relocationIdx).toBeLessThan(detectionOrderIdx);
+  });
+
+  it("defines a broken pointer as path-no-longer-exists OR heading-no-longer-found, citing doc-refresh-recipe.md's verification checks", () => {
+    const relocationIdx = referencesContent.indexOf("Relocation on Broken Pointer");
+    expect(relocationIdx).toBeGreaterThan(-1);
+    const detectionOrderIdx = referencesContent.indexOf("## Detection Order");
+    const section = referencesContent.slice(relocationIdx, detectionOrderIdx);
+
+    expect(section).toMatch(/doc-refresh-recipe\.md/);
+    expect(section).toMatch(/docsSource\.path/);
+    expect(section).toMatch(/docsSource\.heading/);
+    expect(section).toMatch(/no longer exists|gone|missing/i);
+  });
+
+  it("attempts a relocation search BEFORE falling back to config-file fallback / doc recreation", () => {
+    const relocationIdx = referencesContent.indexOf("Relocation on Broken Pointer");
+    expect(relocationIdx).toBeGreaterThan(-1);
+    const detectionOrderIdx = referencesContent.indexOf("## Detection Order");
+    const section = referencesContent.slice(relocationIdx, detectionOrderIdx);
+
+    expect(section).toMatch(/relocat/i);
+    expect(section).toMatch(/before/i);
+    expect(section).toMatch(/fallback/i);
+
+    // Ordering assertion, not just presence: "relocat*" language must appear
+    // before the fallback-only-if-relocation-fails language in document order.
+    const firstRelocationMention = section.search(/relocat/i);
+    const fallbackOnlyIfFailed = section.search(/relocation (also )?fails/i);
+    expect(fallbackOnlyIfFailed).toBeGreaterThan(-1);
+    expect(firstRelocationMention).toBeLessThan(fallbackOnlyIfFailed);
+  });
+
+  it("relocate-success: a successful relocation updates the stored docsSource pointer to the new path/heading", () => {
+    const relocationIdx = referencesContent.indexOf("Relocation on Broken Pointer");
+    expect(relocationIdx).toBeGreaterThan(-1);
+    const detectionOrderIdx = referencesContent.indexOf("## Detection Order");
+    const section = referencesContent.slice(relocationIdx, detectionOrderIdx);
+
+    expect(section).toMatch(/succeed/i);
+    expect(section).toMatch(/update(s|d)?\s+(the\s+)?stored\s+`?docsSource/i);
+    expect(section).not.toMatch(/relocation succeeds[\s\S]{0,300}config-file fallback/i);
+  });
+
+  it("relocate-fails-fallback-to-default: falls back to config-file detection / doc recreation only when relocation also fails", () => {
+    const relocationIdx = referencesContent.indexOf("Relocation on Broken Pointer");
+    expect(relocationIdx).toBeGreaterThan(-1);
+    const detectionOrderIdx = referencesContent.indexOf("## Detection Order");
+    const section = referencesContent.slice(relocationIdx, detectionOrderIdx);
+
+    expect(section).toMatch(/relocation (also )?fails/i);
+    expect(section).toMatch(/config-file fallback/i);
+    expect(section).toMatch(/\(re\)create|recreate|derive the default/i);
+  });
+
+  it("delegates to doc-refresh-recipe.md's verification-table pattern rather than re-embedding the table", () => {
+    const relocationIdx = referencesContent.indexOf("Relocation on Broken Pointer");
+    expect(relocationIdx).toBeGreaterThan(-1);
+    const detectionOrderIdx = referencesContent.indexOf("## Detection Order");
+    const section = referencesContent.slice(relocationIdx, detectionOrderIdx);
+
+    expect(section).toMatch(/doc-refresh-recipe\.md/);
+    // Must not re-embed the verification table itself (its distinctive header row).
+    expect(section).not.toMatch(/\|\s*Check\s*\|\s*Method\s*\|\s*Stale if\s*\|/i);
+  });
+});
+
 describe("dev-task.md Step 5c — BLOCKED dead-end PATCHes task status (BHE-1.2)", () => {
   it("PATCHes status:'blocked' with a blockedReason when the model-upgrade ladder is exhausted and the blocker is a genuine dead end", () => {
     const step5cIdx = content.indexOf("### 5c. Handle Subagent Status");
