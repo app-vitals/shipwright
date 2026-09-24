@@ -161,7 +161,7 @@ Milestone 4 and Open risks).
 ## 2. Where we want to be
 
 - **Framework matrix** — already fully realized: `bun test` (unit/integration/smoke/content),
-  Playwright (E2E, 2 surfaces: `site/*.spec.ts`, `admin/e2e/*.e2e.ts`), plain `bash` (the
+  Playwright (E2E, 3 surfaces: `site/*.spec.ts`, `admin/e2e/*.e2e.ts`, `metrics/e2e/*.e2e.ts`), plain `bash` (the
   shell layer). No framework changes needed.
 - **Local-substitute map** — every dependency named in the inventory has a working local
   substitute (recorded-fixture doubles for internal/third-party HTTP, real Postgres via CI
