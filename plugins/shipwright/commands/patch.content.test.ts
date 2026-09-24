@@ -2289,3 +2289,62 @@ describe("patch.md — subagent dispatch is foreground, not background (ABD-1.1)
     expect(section).toContain("run_in_background: false");
   });
 });
+
+describe("patch.md — enforced, process-group-aware, non-blocking local validation (LVB-2.2)", () => {
+  function getValidateSection(stepStartMarker, stepEndMarker) {
+    const stepStartIdx = content.indexOf(stepStartMarker);
+    const stepEndIdx = content.indexOf(stepEndMarker);
+    expect(stepStartIdx).toBeGreaterThan(-1);
+    expect(stepEndIdx).toBeGreaterThan(stepStartIdx);
+    const stepSection = content.slice(stepStartIdx, stepEndIdx);
+    const cIdx = stepSection.indexOf("[C] Validate");
+    expect(cIdx).toBeGreaterThan(-1);
+    const c5Idx = stepSection.indexOf("[C.5] Add test coverage");
+    const dIdx = stepSection.indexOf("[D] Commit");
+    const endIdx = c5Idx > -1 ? c5Idx : dIdx;
+    expect(endIdx).toBeGreaterThan(cIdx);
+    return stepSection.slice(cIdx, endIdx);
+  }
+
+  const getStep4bValidate = () =>
+    getValidateSection(
+      "### Step 4b: Dispatch Conflict Resolution Subagent",
+      "### Step 4c: Handle Subagent Status",
+    );
+  const getStep5bValidate = () =>
+    getValidateSection("### Step 5b: Dispatch Fix Subagent", "### Step 5c: Handle Subagent Status");
+  const getStep6cValidate = () =>
+    getValidateSection("### Step 6c: Dispatch Fix Subagent", "### Step 6d: Handle Subagent Status");
+
+  for (const [label, getSection] of [
+    ["Step 4b", getStep4bValidate],
+    ["Step 5b", getStep5bValidate],
+    ["Step 6c", getStep6cValidate],
+  ]) {
+    it(`${label} [C] Validate no longer contains the old bare "Re-run until both pass cleanly" wording`, () => {
+      const section = getSection();
+      expect(section).not.toContain("Re-run until both pass cleanly");
+    });
+
+    it(`${label} [C] Validate wraps checks in a process-group-aware enforced timeout: setsid + whole-group kill wording, not just bare timeout`, () => {
+      const section = getSection();
+      expect(section).toContain("setsid");
+      const lower = section.toLowerCase().replace(/\s+/g, " ");
+      expect(lower).toMatch(/process(-| )group/);
+      expect(lower).toMatch(/(kill|terminat).{0,60}(whole|entire|-\$|negative).{0,20}(group|pid)|(-\$pid|kill -- -\$)/);
+    });
+
+    it(`${label} [C] Validate states a local failure or timeout never blocks proceeding to commit/push, naming CI (Gate) as the real arbiter`, () => {
+      const section = getSection();
+      const lower = section.toLowerCase().replace(/\s+/g, " ");
+      expect(lower).toMatch(/(timeout|fail).{0,160}never (stop|block)/);
+      expect(lower).toContain("ci gate");
+    });
+
+    it(`${label} [C] Validate documents a flat enforced budget (minutes)`, () => {
+      const section = getSection();
+      const lower = section.toLowerCase().replace(/\s+/g, " ");
+      expect(lower).toMatch(/\d+[- ]minute/);
+    });
+  }
+});

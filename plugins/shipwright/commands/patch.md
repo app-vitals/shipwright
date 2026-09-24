@@ -757,11 +757,32 @@ INSTRUCTIONS — follow in order:
     changes are the goal; base is just catching up
   - Stage resolved files: `git add {file}`
 
-[C] Validate
-  - Run: {lint command}
-  - Run: {test command}
-  - Fix any failures introduced by the merge
-  - Re-run until both pass cleanly
+[C] Validate (enforced, non-blocking — CI Gate is the real arbiter)
+  Local validation here is best-effort, not a gate: fix what you can, but a lingering
+  failure or timeout must never stop [D]'s commit/push — this PR's CI Gate is what actually
+  decides mergeability. Run {lint command} and {test command} (and each additional test
+  layer listed in TOOLCHAIN above) under an enforced, process-group-aware timeout so a hung
+  or runaway command can't stall this fix indefinitely. A bare `timeout <cmd>` only signals
+  the process it directly execs — a tool that forks worker subprocesses (npm, turbo, a test
+  runner) leaves descendants alive after `timeout` reports a clean exit 124, and those
+  descendants keep writing into this worktree, corrupting it for whatever reuses it next (a
+  later patch attempt on this same PR). Wrap each invocation:
+  ```bash
+  setsid timeout --kill-after=10s 600s {command} &
+  CMD_PID=$!
+  wait $CMD_PID
+  EXIT=$?
+  # Kill the whole process group by negative PID regardless of outcome — this guarantees no
+  # descendant survives, even ones timeout's own single-process signal never reached.
+  kill -TERM -$CMD_PID 2>/dev/null
+  kill -KILL -$CMD_PID 2>/dev/null
+  ```
+  `setsid` puts `{command}` in its own session/process group with PID `$CMD_PID` as the
+  group leader, so `-$CMD_PID` (negative PID) targets the whole group in both `kill` calls —
+  every forked descendant, not just the direct child `timeout` wraps. Use a flat 600s
+  (10-minute) budget per check. Fix any failure you can clearly attribute to the merge; note
+  anything else (pre-existing, flaky, or a timeout with no obvious cause) in CONCERNS and
+  continue to [D] regardless — never loop waiting for a clean pass.
 
 [D] Commit and push
   - Complete the merge: `git commit -m "Merge branch '{base}' into {branch}"`
@@ -1308,18 +1329,40 @@ INSTRUCTIONS — follow in order:
   - If a finding is unclear or contradictory, apply the most conservative interpretation
     (preserve existing behavior; add the narrowest fix that satisfies the concern)
 
-[C] Validate
-  - Run: {lint command}
-  - Run: {test command}
-  - Fix any failures introduced by your changes
-  - Re-run until both pass cleanly
+[C] Validate (enforced, non-blocking — CI Gate is the real arbiter)
+  Local validation here is best-effort, not a gate: fix what you can, but a lingering
+  failure or timeout must never stop [D]'s commit/push — this PR's CI Gate is what actually
+  decides mergeability. Run {lint command} and {test command} (and each additional test
+  layer listed in TOOLCHAIN above) under an enforced, process-group-aware timeout so a hung
+  or runaway command can't stall this fix indefinitely. A bare `timeout <cmd>` only signals
+  the process it directly execs — a tool that forks worker subprocesses (npm, turbo, a test
+  runner) leaves descendants alive after `timeout` reports a clean exit 124, and those
+  descendants keep writing into this worktree, corrupting it for whatever reuses it next (a
+  later patch attempt on this same PR). Wrap each invocation:
+  ```bash
+  setsid timeout --kill-after=10s 600s {command} &
+  CMD_PID=$!
+  wait $CMD_PID
+  EXIT=$?
+  # Kill the whole process group by negative PID regardless of outcome — this guarantees no
+  # descendant survives, even ones timeout's own single-process signal never reached.
+  kill -TERM -$CMD_PID 2>/dev/null
+  kill -KILL -$CMD_PID 2>/dev/null
+  ```
+  `setsid` puts `{command}` in its own session/process group with PID `$CMD_PID` as the
+  group leader, so `-$CMD_PID` (negative PID) targets the whole group in both `kill` calls —
+  every forked descendant, not just the direct child `timeout` wraps. Use a flat 600s
+  (10-minute) budget per check. Fix any failure you can clearly attribute to your changes;
+  note anything else (pre-existing, flaky, or a timeout with no obvious cause) in CONCERNS
+  and continue to [C.5]/[D] regardless — never loop waiting for a clean pass.
 
 [C.5] Add test coverage
   - Detect the test framework and file-naming conventions from nearby existing tests in
     the repo
   - Add or update a test covering the new or changed behavior, following those existing
     patterns
-  - Re-run {test command} from [C] to confirm the new test passes alongside the rest
+  - Re-run {test command} from [C] (same enforced timeout wrapper) to confirm the new test
+    passes alongside the rest
   - If no test is needed (test-file-only change, config change, or pure deletion with no
     new behavior), state that explicitly instead of adding one
 
@@ -1930,18 +1973,42 @@ INSTRUCTIONS — follow in order:
   - If a failure is caused by a flaky test or an external dependency, note it in concerns
     rather than patching around it
 
-[C] Validate
-  - Run: {lint command}
-  - Run: {test command}
-  - Fix any failures introduced by your changes
-  - Re-run until both pass cleanly
+[C] Validate (enforced, non-blocking — CI Gate is the real arbiter)
+  Local validation here is best-effort, not a gate: fix what you can, but a lingering
+  failure or timeout must never stop [D]'s commit/push — this PR's CI Gate is what actually
+  decides mergeability. Run {lint command} and {test command} (and each additional test
+  layer listed in TOOLCHAIN above) under an enforced, process-group-aware timeout so a hung
+  or runaway command can't stall this fix indefinitely. A bare `timeout <cmd>` only signals
+  the process it directly execs — a tool that forks worker subprocesses (npm, turbo, a test
+  runner) leaves descendants alive after `timeout` reports a clean exit 124, and those
+  descendants keep writing into this worktree, corrupting it for whatever reuses it next —
+  notably a later CI-fix attempt against this same PR, reusing this same worktree. Wrap each
+  invocation:
+  ```bash
+  setsid timeout --kill-after=10s 600s {command} &
+  CMD_PID=$!
+  wait $CMD_PID
+  EXIT=$?
+  # Kill the whole process group by negative PID regardless of outcome — this guarantees no
+  # descendant survives, even ones timeout's own single-process signal never reached, before
+  # any later attempt reuses this worktree.
+  kill -TERM -$CMD_PID 2>/dev/null
+  kill -KILL -$CMD_PID 2>/dev/null
+  ```
+  `setsid` puts `{command}` in its own session/process group with PID `$CMD_PID` as the
+  group leader, so `-$CMD_PID` (negative PID) targets the whole group in both `kill` calls —
+  every forked descendant, not just the direct child `timeout` wraps. Use a flat 600s
+  (10-minute) budget per check. Fix any failure you can clearly attribute to your fix; note
+  anything else (pre-existing, flaky, or a timeout with no obvious cause) in CONCERNS and
+  continue to [C.5]/[D] regardless — never loop waiting for a clean pass.
 
 [C.5] Add test coverage
   - Detect the test framework and file-naming conventions from nearby existing tests in
     the repo
   - Add or update a test covering the new or changed behavior, following those existing
     patterns
-  - Re-run {test command} from [C] to confirm the new test passes alongside the rest
+  - Re-run {test command} from [C] (same enforced timeout wrapper) to confirm the new test
+    passes alongside the rest
   - If no test is needed (test-file-only change, config change, or pure deletion with no
     new behavior), state that explicitly instead of adding one
 
