@@ -1,0 +1,123 @@
+# Competitive Page Freshness — Product Specification
+
+**Date**: 2026-09-24
+**Session**: competitive-freshness
+**Status**: Draft
+**Repo**: `app-vitals/shipwright`
+
+## Overview
+
+A precheck + command pair, mirroring the existing `check-site-docs-freshness.ts` / `research-docs --auto` pattern, that periodically re-verifies the factual claims on the marketing site's competitive-comparison pages (`site/src/pages/vs/*.astro`, `site/src/pages/compare.astro`) against their cited external sources — catching drift like a competitor's pricing change, certification, or acquisition (the exact gap that let SpaceX's acquisition of Cursor go unnoticed on `/compare` for a month). Unlike the existing docs-freshness mechanism, which diffs this repo's own source against its own docs, this checks external, third-party facts that no git diff can ever surface.
+
+## Problem Statement
+
+`site/src/pages/vs/devin.astro` already carries a `verifiedDate` and a structured `src` object of cited URLs, and is genuinely well-maintained by hand (re-verified 2026-09-09). But nothing automates the re-verification — it happens only when someone remembers to do it manually. `compare.astro`'s per-tool rows have citations but no `verifiedDate` at all. Neither page type is covered by `site/docs-source-map.json` or the `shipwright-site-docs-freshness` cron, because that mechanism's entire design (anchor SHA + `getCommitsSince` against this repo's own git history) has no way to represent "an external company changed something" — there's no commit to diff against.
+
+## Users & Context
+
+- **The `shipwright-site-docs-freshness`-adjacent cron infrastructure**: gets a sibling precheck/command pair built the same way, for a different (external) staleness signal.
+- **Whoever reviews the resulting PRs**: material factual changes (pricing, ownership, certification) go through a normal PR + review, not a silent auto-commit — these are public claims about competitors and deserve a second look, per `brand/MESSAGING.md`'s existing competitor-naming policy.
+
+---
+
+## Features
+
+### Feature 1: `check-competitive-freshness.ts` precheck + `verifiedDate` on `compare.astro`
+
+**Priority**: High
+**Description**: A precheck script matching `check-site-docs-freshness.ts`'s exit 0/1 contract, but staleness-by-age instead of staleness-by-git-diff. Extend `compare.astro` to carry a `verifiedDate` per tool row (mirroring the `vs/*.astro` pattern) so both page types can be checked uniformly.
+
+**Requirements**:
+- Add a `verifiedDate` field to each tool entry in `site/src/pages/compare.astro`'s data array, seeded with today's date for entries not otherwise re-verified as part of this work (this spec does not require re-verifying every row — just adding the field so future runs have a baseline).
+- `plugins/shipwright/scripts/check-competitive-freshness.ts`: scans `site/src/pages/vs/*.astro` (parsing the `verifiedDate` const) and `compare.astro`'s per-tool `verifiedDate` fields. A page/row qualifies (is a candidate) when its `verifiedDate` is more than a configurable threshold old — default 30 days. Exit 0 with a summary listing qualifying pages/rows (page name, days since last verified) when at least one qualifies; exit 1 with no output when none do. Mirror `check-site-docs-freshness.ts`'s structure (injectable deps, one page's parse failure isolated and treated as qualifying, doesn't block others).
+
+**Acceptance Criteria**:
+- [ ] `compare.astro`'s tool entries each carry a `verifiedDate` field
+- [ ] `check-competitive-freshness.ts` exits 0 and lists qualifying pages/rows when at least one is older than the threshold; exits 1 with no output when none are
+- [ ] A page/row with an unparseable or missing `verifiedDate` is treated as qualifying (fail toward checking, not skipping)
+- [ ] Test decision: unit test with injected fixture dates covering fresh, stale, missing, and unparseable cases — mirroring `check-site-docs-freshness.unit.test.ts`'s injected-dependency approach, no real filesystem/git I/O
+
+**Source Map**:
+- `plugins/shipwright/scripts/check-site-docs-freshness.ts` — pattern to mirror
+- `plugins/shipwright/scripts/check-site-docs-freshness.unit.test.ts` — test pattern to mirror
+- `site/src/pages/vs/devin.astro`, `vs/factory.astro`, `vs/openhands.astro` — existing `verifiedDate` pattern
+- `site/src/pages/compare.astro` — gains `verifiedDate` per row
+
+**Testing Strategy**: Layer: unit — injected fixture dates, no real I/O, matching the mirrored script's own test approach.
+
+---
+
+### Feature 2: `/shipwright:competitive-refresh` command
+
+**Priority**: High
+**Description**: A command (mirroring `research-docs`'s `--auto`/interactive split) that re-verifies a flagged page's claims against its cited sources plus a general recent-news check for that competitor, and either bumps `verifiedDate` (no material change) or opens a PR with the update (material change) — never a silent direct-to-main edit for a material factual change.
+
+**Requirements**:
+- `plugins/shipwright/commands/competitive-refresh.md`, with an `--auto` mode for cron use (no confirmation prompts) and an interactive mode for manual invocation, following the same `$ARGUMENTS` convention as `research-docs.md`.
+- For each page/row the precheck flagged: WebFetch every URL in the page's `src`/`citations` object and re-check the specific claim it supports (pricing figures, certification status, deployment model, etc.); additionally run one general web search along the lines of "{competitor} acquisition funding news {current year}" to catch structural changes (acquisitions, shutdowns, rebrands) that no single cited URL would reveal — this is the SpaceX/Cursor gap specifically: no existing citation URL would have surfaced that on its own.
+- Read `brand/MESSAGING.md`'s competitor-naming policy (D10, cited in `vs/devin.astro`'s file header) before writing or editing any competitor claim — this command must respect the same policy human editors already follow.
+- **No material change found**: bump `verifiedDate` to today, commit directly (matches `research-docs --auto`'s Step A5 pattern for low-risk internal updates — this is the equivalent low-risk case, since nothing in the visible claims actually changed).
+- **Material change found** (pricing, certification, ownership/acquisition, deployment model, or any claim the page currently asserts that's now false): update the content and citations, but open a PR rather than committing to `main` directly — these are public claims about named competitors, lower-confidence than an internal git-diff-sourced update, and should go through the same review path as any other content change.
+- Auto mode never fabricates a claim it can't source — if a competitor's current state is genuinely ambiguous or a source is unreachable, leave the existing claim and file a task-store task (same `/tasks/bulk` pattern `research-docs --auto` already uses) rather than guessing.
+
+**Acceptance Criteria**:
+- [ ] Running against a page whose cited sources return unchanged content bumps only `verifiedDate`, committed directly
+- [ ] Running against a page where a cited source's content changed (e.g. a pricing figure) updates the specific claim, updates the citation if the source URL changed, and opens a PR instead of committing to `main`
+- [ ] The general recent-news search step is present and documented as the mechanism that would have caught the SpaceX/Cursor gap — an acquisition isn't necessarily reflected on any single previously-cited URL
+- [ ] `brand/MESSAGING.md`'s competitor-naming policy is read and cited as a constraint before any claim is written or edited
+- [ ] An unreachable/ambiguous source results in a filed task-store task, not a fabricated claim or a silent skip
+- [ ] Test decision: `*.content.test.ts` asserting the command file's required sections/instructions exist (matching this repo's convention for command/skill prose), plus unit tests for any pure logic split out (e.g. material-vs-cosmetic change classification, if implemented as a separate testable function)
+
+**Technical Considerations**: This command depends on live web access (WebFetch/WebSearch) at run time — unlike `research-docs`, which is purely git-based and works fully offline. Auto-mode runs must handle a fetch failure gracefully (treat as "couldn't verify," file a task, don't block the rest of the run) rather than erroring out the whole pass over one unreachable source.
+
+**Source Map**:
+- `plugins/shipwright/commands/research-docs.md` — auto/interactive mode pattern, task-filing pattern
+- `brand/MESSAGING.md` — competitor-naming policy (D10) to respect
+- `site/src/pages/vs/*.astro`, `site/src/pages/compare.astro` — pages this command edits
+
+**Testing Strategy**: Layer: content — command-file prose assertions, matching this repo's `*.content.test.ts` convention; unit tests for any extracted pure logic.
+
+---
+
+## Technical Constraints
+
+- Never auto-commit a material factual change about a named competitor directly to `main` — always a PR, per Feature 2.
+- Must respect `brand/MESSAGING.md`'s existing competitor-naming policy, not invent a new one.
+- The precheck (Feature 1) must stay pure/offline (date comparison only) — all external verification happens in the command (Feature 2), not the precheck, matching the existing precheck-is-cheap / command-does-the-work split used throughout this repo's patrol crons.
+
+## Scope
+
+**In Scope**:
+- `verifiedDate` on `compare.astro` rows
+- `check-competitive-freshness.ts` precheck
+- `/shipwright:competitive-refresh` command (auto + interactive modes)
+
+**Out of Scope**:
+- Creating the actual cron on any specific agent — that's a config action (`POST /agents/:id/crons`) taken once this code is merged and deployed, not part of this PRD's build.
+- Re-verifying every existing claim on every page as part of this work — Feature 1 seeds `verifiedDate` fields but doesn't mandate a full manual re-audit; that's what the new automated mechanism is for, going forward.
+- Adding dedicated `vs/*.astro` pages for competitors that only appear in `compare.astro` today (e.g. a dedicated `vs/cursor.astro`) — out of scope, a content decision, not part of this freshness mechanism.
+
+## Priorities & Sequence
+
+Feature 1 must land before Feature 2 (the command depends on the precheck's data shape and the `verifiedDate` field existing on `compare.astro`). No other ordering constraints.
+
+## Testing Strategy
+
+| Feature | Layer | Rationale |
+|---------|-------|-----------|
+| Precheck + verifiedDate | unit | injected fixture dates, no real I/O |
+| competitive-refresh command | content | command-file prose assertions, matching this repo's convention |
+
+## Resolved Decisions
+
+- **Material changes go through a PR, cosmetic changes (date bump only) commit directly.** — Rationale: mirrors `research-docs --auto`'s existing risk-tiered pattern (low-risk internal updates apply directly, riskier size-governance/quality-pass proposals go through a task/review gate) — external, third-party facts are lower-confidence than an internal git diff and deserve the same review a human editor's claim would get.
+- **A general recent-news search, not just re-fetching cited URLs.** — Rationale: the SpaceX/Cursor gap specifically wasn't visible from any single previously-cited URL — an acquisition is exactly the kind of structural change that only a broader search catches, and it's the concrete case that motivated this whole PRD.
+- **30-day default staleness threshold.** — Rationale: matches the cadence implied by `vs/devin.astro`'s own re-verification history (verified July 14, re-verified September 9 — roughly 8 weeks, but this is a fast-moving market per this session's own competitive-landscape research); 30 days is a reasonable default, easily adjusted later, not something to over-index on now.
+- **Cron creation is a follow-up action, not part of this PRD.** — Rationale: the cron can't meaningfully exist until `/shipwright:competitive-refresh` exists to be its prompt; creating it is a one-line `POST /agents/:id/crons` call once this ships, not build work.
+
+## Success Criteria
+
+- `check-competitive-freshness.ts` correctly identifies stale pages/rows by age, mirroring the existing site-docs-freshness precheck's contract.
+- `/shipwright:competitive-refresh --auto` can run unattended, re-verify a page's claims against live sources, and either bump `verifiedDate` or open a review-gated PR depending on materiality.
+- The specific gap this session found (SpaceX/Cursor) would be caught by this mechanism going forward, via the general recent-news search step.
+- `task ci` passes with no regression to the mirrored `check-site-docs-freshness` test suite.
