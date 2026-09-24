@@ -658,6 +658,237 @@ describe("toolchain-patterns.md — docsSource pointer + scoped fingerprint (LVB
     expect(section).toMatch(/nested subheading/i);
     expect(section).toMatch(/false cache \*?hit/i);
   });
+
+  it("strips Shipwright's own 'Shipwright Learned Facts' subsection out of the docsSource-populated hash so the write-back mechanism can't self-invalidate the cache (LVB-4.2)", () => {
+    const awkIdx = referencesContent.indexOf("heading_content=$(awk");
+    expect(awkIdx).toBeGreaterThan(-1);
+    const awkBlock = referencesContent.slice(awkIdx, referencesContent.indexOf("```", awkIdx));
+
+    // The marker subsection is nested under {docsSource.heading}, so the
+    // same-or-shallower boundary rule above *includes* it in the section's
+    // content — it has to be filtered back out before hashing.
+    expect(awkBlock).toMatch(/Shipwright Learned Facts/);
+    // Skip until the next heading at level <= the marker heading's own level,
+    // then resume — not an unconditional exit, which would also drop any
+    // human-authored subsection that follows the marker.
+    expect(awkBlock).toMatch(/RLENGTH\s*<=\s*marker_level/);
+    expect(awkBlock).toMatch(/skip\s*=\s*0/);
+  });
+
+  it("derives the strip pass's marker level from docsSource.heading instead of hardcoding 3, so it still works under a level-3+ pointer heading (LVB-4.2)", () => {
+    const awkIdx = referencesContent.indexOf("heading_content=$(awk");
+    expect(awkIdx).toBeGreaterThan(-1);
+    const awkBlock = referencesContent.slice(awkIdx, referencesContent.indexOf("```", awkIdx));
+    const stripPassIdx = awkBlock.indexOf("| awk");
+    expect(stripPassIdx).toBeGreaterThan(-1);
+    const stripPass = awkBlock.slice(stripPassIdx);
+
+    // The strip pass needs {docsSource.heading} too — it can't compute the
+    // marker's level without the parent heading it nests under.
+    expect(stripPass).toMatch(/-v h="\{docsSource\.heading\}"/);
+    expect(stripPass).toMatch(/marker_level\s*=\s*RLENGTH\s*\+\s*1/);
+    // Capped at markdown's maximum heading depth.
+    expect(stripPass).toMatch(/marker_level\s*>\s*6/);
+    // The marker pattern is built from that derived level, never a literal '###'
+    // — a hardcoded level-3 strip silently stops matching the moment
+    // docsSource.heading is itself level 3 or deeper.
+    expect(stripPass).not.toMatch(/### Shipwright Learned Facts/);
+    expect(stripPass).not.toMatch(/RLENGTH\s*<=\s*3\b/);
+  });
+
+  it("excludes the no-pointer fallback target docs/toolchain.md from the config-file fingerprint pathspec for the same reason (LVB-4.2)", () => {
+    const fingerprintIdx = referencesContent.indexOf("**Fingerprint**");
+    const nextSectionIdx = referencesContent.indexOf("## Detection Order");
+    const section = referencesContent.slice(fingerprintIdx, nextSectionIdx);
+    const gitLogIdx = section.indexOf("git -C {repo-dir} log -1");
+    expect(gitLogIdx).toBeGreaterThan(-1);
+    const gitLogLine = section.slice(gitLogIdx, section.indexOf("\n", gitLogIdx));
+    // docs/toolchain.md lives under the `docs` pathspec entry, so without an
+    // explicit exclude every learned-facts commit would move this recipe's %H.
+    expect(gitLogLine).toMatch(/:\(exclude\)docs\/toolchain\.md/);
+  });
+
+  it("explains both self-invalidation guards as the same exclusion principle already applied to lockfiles", () => {
+    const fingerprintIdx = referencesContent.indexOf("**Fingerprint**");
+    const nextSectionIdx = referencesContent.indexOf("## Detection Order");
+    const section = referencesContent.slice(fingerprintIdx, nextSectionIdx);
+    expect(section).toMatch(/self-invalidat/i);
+    expect(section).toMatch(/cache miss on essentially every subsequent run/i);
+  });
+});
+
+describe("toolchain-patterns.md — writing learned facts back to docs (LVB-4.2)", () => {
+  const referencesPath = join(import.meta.dir, "..", "references", "toolchain-patterns.md");
+  const referencesContent = readFileSync(referencesPath, "utf-8");
+
+  function section(): string {
+    const sectionIdx = referencesContent.indexOf("## Writing Learned Facts Back to Docs");
+    expect(sectionIdx).toBeGreaterThan(-1);
+    const nextSectionIdx = referencesContent.indexOf("## Detection Order");
+    expect(nextSectionIdx).toBeGreaterThan(sectionIdx);
+    return referencesContent.slice(sectionIdx, nextSectionIdx);
+  }
+
+  it("is placed after '## Caching Across Runs' and before '## Detection Order'", () => {
+    const cachingIdx = referencesContent.indexOf("## Caching Across Runs");
+    const sectionIdx = referencesContent.indexOf("## Writing Learned Facts Back to Docs");
+    const detectionIdx = referencesContent.indexOf("## Detection Order");
+    expect(cachingIdx).toBeGreaterThan(-1);
+    expect(sectionIdx).toBeGreaterThan(cachingIdx);
+    expect(detectionIdx).toBeGreaterThan(sectionIdx);
+  });
+
+  it("defines what counts as a learned fact: scoped commands, the enforced budget, and a reserved skip-locally slot", () => {
+    const s = section();
+    expect(s).toMatch(/lintScoped/);
+    expect(s).toMatch(/typecheckScoped/);
+    expect(s).toMatch(/testScoped/);
+    expect(s).toMatch(/\{budget\}/);
+    expect(s).toMatch(/ci-derived/);
+    expect(s).toMatch(/fallback-10m/);
+    expect(s).toMatch(/skip-locally/i);
+  });
+
+  it("defines a fixed, idempotent 'Shipwright Learned Facts' marker subsection owned exclusively by this mechanism", () => {
+    const s = section();
+    expect(s).toContain("Shipwright Learned Facts");
+    expect(s).toMatch(/full replace/i);
+    expect(s).toMatch(/never an append that duplicates/i);
+    expect(s).toMatch(/auto-maintained/i);
+  });
+
+  it("derives the marker's heading level as one deeper than its parent heading rather than hardcoding level 3 (LVB-4.2)", () => {
+    const s = section();
+    // The heading *text* is fixed; its '#' depth is parent level + 1, capped at
+    // markdown's maximum of 6.
+    expect(s).toMatch(/derived, never hardcoded/i);
+    expect(s).toMatch(/one level deeper/i);
+    expect(s).toMatch(/parent level \+ 1/);
+    expect(s).toMatch(/capped at[^.]{0,40}6/i);
+    // The failure this guards: docsSource.heading can itself be level 3+ (Docs-First
+    // Discovery scans arbitrary docs/*.md and ai-docs/*.md files), and a level-3
+    // marker under a level-3 parent is a *sibling* — under this file's own
+    // same-or-shallower boundary rule it terminates the parent section instead of
+    // nesting inside it.
+    expect(s).toMatch(/sibling/i);
+    expect(s).toMatch(/docs\/\*\.md|ai-docs\/\*\.md/);
+    // Worked example: a level-3 parent yields a level-4 marker.
+    expect(s).toMatch(/`#### Shipwright Learned Facts`/);
+    // And downstream boundary checks key off the same derived level.
+    expect(s).toMatch(/same derived level|that same derived level/i);
+  });
+
+  it("applies the same derivation to the no-pointer default file: a level-1 '# Toolchain' title yields a level-2 marker (LVB-4.2)", () => {
+    const s = section();
+    expect(s).toMatch(/`## Shipwright Learned Facts`/);
+    expect(s).toMatch(/# Toolchain[^.]{0,40}level 1/i);
+  });
+
+  it("reuses the Fingerprint recipe's same-or-shallower heading-boundary technique instead of reinventing it", () => {
+    const s = section();
+    expect(s).toMatch(/same-or-shallower level|same or shallower level/i);
+    // Explicitly ties back to the Fingerprint section's awk recipe rather than
+    // re-describing a parallel heading-boundary rule that could drift from it.
+    expect(s).toMatch(/Fingerprint/);
+  });
+
+  it("pointer-exists case: target is docsSource.path, nested under docsSource.heading, via doc-refresh-recipe.md's Update mechanics — updates the existing doc, not a new file", () => {
+    const s = section();
+    expect(s).toMatch(/docsSource\.path/);
+    expect(s).toMatch(/docsSource\.heading/);
+    expect(s).toMatch(/doc-refresh-recipe\.md/);
+    expect(s).toMatch(/\bUpdate\b/);
+    expect(s).toMatch(/not a new file|never a new file/i);
+  });
+
+  it("no-pointer case: docs/toolchain.md is created as the default fallback target", () => {
+    const s = section();
+    expect(s).toMatch(/docsSource.{0,40}absent/i);
+    expect(s).toMatch(/docs\/toolchain\.md/);
+    expect(s).toMatch(/create/i);
+    // Re-running against an already-created docs/toolchain.md updates just the
+    // marker subsection via Edit mechanics, not a whole-file rewrite.
+    expect(s).toMatch(/whole-file rewrite/i);
+  });
+
+  it("scopes both write targets to the active worktree and forbids writing into the shared pre-worktree repo checkout", () => {
+    const s = section();
+    expect(s).toMatch(/\{worktree-path\}/);
+    // The shared checkout is what every concurrent/future run for this repo
+    // depends on staying clean, and Step 4 git-pulls it.
+    expect(s).toMatch(/SHIPWRIGHT_REPO_DIR/);
+    expect(s).toMatch(/never.{0,60}shared|shared.{0,80}never/i);
+    expect(s).toMatch(/git pull/i);
+  });
+
+  it("states the write happens at Step 8.6 — after the worktree exists and after Step 8 derives {budget} — not at Step 0b", () => {
+    const s = section();
+    expect(s).toMatch(/Step 8\.6/);
+    // Both sequencing preconditions must be stated as the reason for the hook point.
+    expect(s).toMatch(/Step 0b[\s\S]{0,400}before Step 4|before Step 4[\s\S]{0,400}Step 0b/);
+    expect(s).toMatch(/\{budget\}[\s\S]{0,200}Step 8|Step 8[\s\S]{0,200}\{budget\}/);
+    // One hook, not two — no second write hook to keep in sync.
+    expect(s).toMatch(/single write per run|one hook/i);
+    expect(s).toMatch(/best-effort/i);
+    expect(s).toMatch(/never block/i);
+  });
+});
+
+describe("dev-task.md Step 8.6 — wires in toolchain-patterns.md's 'Writing Learned Facts Back to Docs' section (LVB-4.2)", () => {
+  function step86(): string {
+    const stepIdx = content.indexOf("## Step 8.6: Write Learned Facts Back to Docs");
+    expect(stepIdx).toBeGreaterThan(-1);
+    const nextStepIdx = content.indexOf("## Step 9: Push & PR");
+    expect(nextStepIdx).toBeGreaterThan(stepIdx);
+    return content.slice(stepIdx, nextStepIdx);
+  }
+
+  it("is sequenced after Step 8.5's docs refresh and before Step 9's push", () => {
+    const docsRefreshIdx = content.indexOf("## Step 8.5: Auto-Refresh Docs");
+    const stepIdx = content.indexOf("## Step 8.6: Write Learned Facts Back to Docs");
+    const pushIdx = content.indexOf("## Step 9: Push & PR");
+    expect(docsRefreshIdx).toBeGreaterThan(-1);
+    expect(stepIdx).toBeGreaterThan(docsRefreshIdx);
+    expect(pushIdx).toBeGreaterThan(stepIdx);
+  });
+
+  it("delegates by reference instead of re-embedding the editing mechanics inline", () => {
+    const step = step86();
+    expect(step).toMatch(/Writing Learned Facts Back to Docs/);
+    expect(step).toMatch(/best-effort/i);
+    expect(step).toMatch(/never blocks the pipeline/i);
+    // Naming the subsection is fine, but the actual editing mechanics
+    // (full-replace rule, heading-boundary technique) must not be re-embedded
+    // here; they live only in toolchain-patterns.md.
+    expect(step).not.toMatch(/full replace/i);
+    expect(step).not.toMatch(/same-or-shallower level|same or shallower level/i);
+  });
+
+  it("writes only into the worktree and commits the result so it lands in this task's PR", () => {
+    const step = step86();
+    expect(step).toMatch(/SHIPWRIGHT_WORKTREE_DIR/);
+    expect(step).toMatch(/Never the shared repo checkout/i);
+    expect(step).toMatch(/git commit/);
+    expect(step).toMatch(/Step 9's push/);
+  });
+
+  it("explains why this hook point, not Step 0b: the worktree doesn't exist yet there and {budget} isn't derived until Step 8", () => {
+    const step = step86();
+    expect(step).toMatch(/Step 0b/);
+    expect(step).toMatch(/pre-worktree|before Step 4|worktree.{0,40}exists/i);
+    expect(step).toMatch(/\{budget\}/);
+    expect(step).toMatch(/Step 8/);
+  });
+
+  it("Step 0b itself performs no doc write and points forward to Step 8.6", () => {
+    const stepIdx = content.indexOf("### 0b. Detect Project Toolchain");
+    expect(stepIdx).toBeGreaterThan(-1);
+    const nextStepIdx = content.indexOf("## Step 2: Mark In-Progress");
+    const step0b = content.slice(stepIdx, nextStepIdx);
+
+    expect(step0b).toMatch(/No doc write happens here/i);
+    expect(step0b).toMatch(/Step 8\.6/);
+  });
 });
 
 describe("dev-task.md Step 5c — BLOCKED dead-end PATCHes task status (BHE-1.2)", () => {
