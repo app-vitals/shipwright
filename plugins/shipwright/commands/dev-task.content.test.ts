@@ -465,6 +465,65 @@ describe("toolchain-patterns.md — fingerprint path list covers task-runner/ver
   });
 });
 
+describe("toolchain-patterns.md — docsSource pointer + scoped fingerprint (LVB-4.1)", () => {
+  const referencesPath = join(import.meta.dir, "..", "references", "toolchain-patterns.md");
+  const referencesContent = readFileSync(referencesPath, "utf-8");
+
+  it("Docs-First Discovery records a {path, heading} pointer to the source doc", () => {
+    const sectionIdx = referencesContent.indexOf("## Docs-First Discovery");
+    const cachingIdx = referencesContent.indexOf("## Caching Across Runs");
+    expect(sectionIdx).toBeGreaterThan(-1);
+    expect(cachingIdx).toBeGreaterThan(sectionIdx);
+    const section = referencesContent.slice(sectionIdx, cachingIdx);
+    expect(section).toMatch(/docsSource/);
+    expect(section).toMatch(/\{\s*path\s*,\s*heading\s*\}/);
+  });
+
+  it("defines a docsSource field in the cache schema", () => {
+    const cachingIdx = referencesContent.indexOf("## Caching Across Runs");
+    const schemaIdx = referencesContent.indexOf('"commands"', cachingIdx);
+    expect(schemaIdx).toBeGreaterThan(-1);
+    const schemaSection = referencesContent.slice(cachingIdx, schemaIdx);
+    expect(schemaSection).toContain('"docsSource"');
+  });
+
+  it("documents docsSource as omitted (never null) when detection falls through to config-file scanning", () => {
+    const fieldIdx = referencesContent.indexOf("**`docsSource`**");
+    expect(fieldIdx).toBeGreaterThan(-1);
+    const fieldSection = referencesContent.slice(fieldIdx, fieldIdx + 500);
+    expect(fieldSection).toMatch(/omit/i);
+    expect(fieldSection).toMatch(/never.{0,20}null/i);
+  });
+
+  it("scopes the fingerprint so a routine lockfile-only dependency bump no longer invalidates the cache", () => {
+    const fingerprintIdx = referencesContent.indexOf("**Fingerprint**");
+    expect(fingerprintIdx).toBeGreaterThan(-1);
+    const nextSectionIdx = referencesContent.indexOf("## Detection Order");
+    expect(nextSectionIdx).toBeGreaterThan(fingerprintIdx);
+    const section = referencesContent.slice(fingerprintIdx, nextSectionIdx);
+    expect(section).toMatch(/lockfile-only/i);
+    // The actual recipes (the bash code blocks) must not hash any lockfile —
+    // mentioning lockfiles in surrounding prose (as explicitly excluded) is fine.
+    const codeBlocks = [...section.matchAll(/```bash\n([\s\S]*?)```/g)].map((m) => m[1]);
+    expect(codeBlocks.length).toBeGreaterThan(0);
+    for (const block of codeBlocks) {
+      expect(block).not.toMatch(/package-lock\.json/);
+      expect(block).not.toMatch(/bun\.lock\b/);
+      expect(block).not.toMatch(/bun\.lockb/);
+      expect(block).not.toMatch(/yarn\.lock/);
+      expect(block).not.toMatch(/pnpm-lock\.yaml/);
+    }
+  });
+
+  it("scopes the docsSource-populated fingerprint to the pointed-to heading plus package.json's scripts block", () => {
+    const fingerprintIdx = referencesContent.indexOf("**Fingerprint**");
+    const nextSectionIdx = referencesContent.indexOf("## Detection Order");
+    const section = referencesContent.slice(fingerprintIdx, nextSectionIdx);
+    expect(section).toMatch(/docsSource[\s\S]{0,400}heading/i);
+    expect(section).toMatch(/scripts/);
+  });
+});
+
 describe("dev-task.md Step 5c — BLOCKED dead-end PATCHes task status (BHE-1.2)", () => {
   it("PATCHes status:'blocked' with a blockedReason when the model-upgrade ladder is exhausted and the blocker is a genuine dead end", () => {
     const step5cIdx = content.indexOf("### 5c. Handle Subagent Status");
