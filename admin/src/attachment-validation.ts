@@ -41,13 +41,6 @@ export const ALLOWED_MIME_EXACT = new Set([
  */
 const AUDIO_FILE_EXTENSIONS = [".wav", ".mp3", ".webm", ".ogg"];
 
-/** Whether an attachment's filename indicates audio content. */
-export function isAudioFilename(filename: string | null | undefined): boolean {
-  if (!filename) return false;
-  const lower = filename.toLowerCase();
-  return AUDIO_FILE_EXTENSIONS.some((ext) => lower.endsWith(ext));
-}
-
 const AUDIO_CONTENT_TYPES: Record<string, string> = {
   ".wav": "audio/wav",
   ".mp3": "audio/mpeg",
@@ -70,6 +63,11 @@ export function audioContentTypeForFilename(
   const lower = filename.toLowerCase();
   const ext = AUDIO_FILE_EXTENSIONS.find((e) => lower.endsWith(e));
   return ext ? (AUDIO_CONTENT_TYPES[ext] ?? null) : null;
+}
+
+/** Whether an attachment's filename indicates audio content. */
+export function isAudioFilename(filename: string | null | undefined): boolean {
+  return audioContentTypeForFilename(filename) !== null;
 }
 
 export type AttachmentValidationResult =
