@@ -105,6 +105,9 @@ const noopVerificationCheckService: VerificationCheckServiceLike = {
   async listForPr(_prId, _opts?) {
     return { checks: [], total: 0 };
   },
+  async listByRepoAndCheck(_repo, _checkName, _opts?) {
+    return { checks: [], total: 0 };
+  },
 };
 
 export interface TaskStoreDeps {

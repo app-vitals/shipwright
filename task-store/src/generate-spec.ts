@@ -175,6 +175,9 @@ const stubVerificationCheckService: VerificationCheckServiceLike = {
   async listForPr() {
     return { checks: [], total: 0 };
   },
+  async listByRepoAndCheck() {
+    return { checks: [], total: 0 };
+  },
 };
 
 // ─── Spec assembly ────────────────────────────────────────────────────────────

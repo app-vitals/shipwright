@@ -2634,13 +2634,13 @@
         "tags": [
           "Verification Checks"
         ],
-        "summary": "List verification checks for a task or PR",
-        "description": "Returns `{ checks, total, limit, offset }` for exactly one of `?taskId=` or `?prId=` (supplying neither or both is `400`), ordered by `at` ascending (oldest first, default `limit=50`, `offset=0`). Returns `404` if the referenced task/pr doesn't exist.",
+        "summary": "List verification checks for a task, a PR, or a repo+checkName pair",
+        "description": "Returns `{ checks, total, limit, offset }` for exactly one of three mutually-exclusive modes: `?taskId=`, `?prId=`, or `?repo=`+`?checkName=` together (supplying none, or more than one mode, or only half of the repo+checkName pair, is `400`). The `?taskId=`/`?prId=` modes are ordered by `at` ascending (oldest first, default `limit=50`, `offset=0`) and `404` if the referenced task/pr doesn't exist. The `?repo=`+`?checkName=` mode (LVB-4.4) spans every task/PR that recorded that repo+check — there's no single parent to `404` on, so an unmatched pair returns `200` with an empty list — and is ordered by `at` DESCENDING (most recent first) so a caller can walk backward from the latest outcome to detect a consecutive skipped/timed_out streak.",
         "parameters": [
           {
             "schema": {
               "type": "string",
-              "description": "Exactly one of ?taskId=/?prId= is required.",
+              "description": "Selects task mode. Exactly one of ?taskId=, ?prId=, or (?repo=+?checkName=) is required.",
               "example": "clx1234567890"
             },
             "required": false,
@@ -2654,6 +2654,26 @@
             },
             "required": false,
             "name": "prId",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "description": "Selects repo+checkName mode (LVB-4.4) — paired with ?checkName=, both required together. Returns history for this repo+check across ALL tasks/PRs, ordered by `at` DESCENDING (most recent first) — a deliberate deviation from the taskId/prId modes' ascending order, so a caller can walk backward from the most recent outcome to detect a consecutive skipped/timed_out streak.",
+              "example": "org/repo"
+            },
+            "required": false,
+            "name": "repo",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "description": "Paired with ?repo= — supplying only one of the pair is 400.",
+              "example": "unit"
+            },
+            "required": false,
+            "name": "checkName",
             "in": "query"
           },
           {
@@ -2689,7 +2709,7 @@
             }
           },
           "400": {
-            "description": "Bad request — ?taskId=/?prId= neither or both supplied",
+            "description": "Bad request — none, or more than one, of ?taskId=/?prId=/(?repo=+?checkName=) supplied, or only one half of the ?repo=/?checkName= pair given",
             "content": {
               "application/json": {
                 "schema": {
@@ -2699,7 +2719,7 @@
             }
           },
           "404": {
-            "description": "Not found",
+            "description": "Not found (?taskId=/?prId= modes only — the referenced task/pr doesn't exist)",
             "content": {
               "application/json": {
                 "schema": {
@@ -4646,7 +4666,7 @@
             "items": {
               "$ref": "#/components/schemas/VerificationCheck"
             },
-            "description": "Verification checks for the given task/PR, ordered by `at` ascending (oldest first)."
+            "description": "Verification checks matching the selected mode. Ordered by `at` ascending (oldest first) for taskId/prId modes; ordered by `at` descending (most recent first) for repo+checkName mode."
           },
           "total": {
             "type": "integer",

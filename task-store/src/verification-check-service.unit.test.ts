@@ -21,13 +21,11 @@ interface CreateCall {
 
 interface FindManyCall {
   where?: unknown;
+  orderBy?: unknown;
 }
 
 function makePrismaDouble(
-  opts: {
-    taskExists?: boolean;
-    prExists?: boolean;
-  } = {},
+  opts: { taskExists?: boolean; prExists?: boolean } = {},
 ) {
   const createCalls: CreateCall[] = [];
   const findManyCalls: FindManyCall[] = [];
@@ -46,9 +44,7 @@ function makePrismaDouble(
     pullRequest: {
       findUnique(args: unknown): Promise<{ id: string } | null> {
         prFindUniqueArgs.push(args);
-        return Promise.resolve(
-          opts.prExists === false ? null : { id: "pr-1" },
-        );
+        return Promise.resolve(opts.prExists === false ? null : { id: "pr-1" });
       },
     },
     verificationCheck: {
@@ -572,5 +568,83 @@ describe("VerificationCheckService.listForPr()", () => {
     expect(prisma._findManyCalls).toHaveLength(1);
     expect(prisma._findManyCalls[0].where).toEqual({ prRecordId: "pr-1" });
     expect(result).toEqual({ checks: [], total: 0 });
+  });
+});
+
+// ─── listByRepoAndCheck() — the LVB-4.4 history-walk mode ─────────────────────
+//
+// This mode exists to answer "the last few outcomes for check X on repo Y,
+// across ALL tasks/PRs" — the learning trigger walks these backward from most
+// recent to detect a consecutive skipped/timed_out streak. That purpose is
+// why this mode orders `at` DESCENDING (most recent first) — a deliberate
+// deviation from listForTask/listForPr's ascending order, which is unchanged
+// for backward compatibility.
+
+describe("VerificationCheckService.listByRepoAndCheck()", () => {
+  const clock = FixedClock(NOW);
+
+  test("missing repo — throws BadRequestError, no DB query", async () => {
+    const prisma = makePrismaDouble();
+    const svc = new VerificationCheckService(prisma as never, clock);
+
+    await expect(svc.listByRepoAndCheck("", "lint")).rejects.toThrow(
+      BadRequestError,
+    );
+    expect(prisma._findManyCalls).toHaveLength(0);
+  });
+
+  test("missing checkName — throws BadRequestError, no DB query", async () => {
+    const prisma = makePrismaDouble();
+    const svc = new VerificationCheckService(prisma as never, clock);
+
+    await expect(svc.listByRepoAndCheck("org/repo", "")).rejects.toThrow(
+      BadRequestError,
+    );
+    expect(prisma._findManyCalls).toHaveLength(0);
+  });
+
+  test("repo+checkName supplied — queries verificationCheck scoped to {repo, checkName}, ordered by `at` DESCENDING", async () => {
+    const prisma = makePrismaDouble();
+    const svc = new VerificationCheckService(prisma as never, clock);
+
+    const result = await svc.listByRepoAndCheck("org/repo", "lint");
+
+    expect(prisma._findManyCalls).toHaveLength(1);
+    expect(prisma._findManyCalls[0].where).toEqual({
+      repo: "org/repo",
+      checkName: "lint",
+    });
+    expect(prisma._findManyCalls[0].orderBy).toEqual({ at: "desc" });
+    expect(result).toEqual({ checks: [], total: 0 });
+  });
+
+  test("does not existence-check a parent — there is no single task/PR to 404 on for this mode", async () => {
+    const prisma = makePrismaDouble();
+    const svc = new VerificationCheckService(prisma as never, clock);
+
+    await svc.listByRepoAndCheck("org/repo", "lint");
+
+    expect(prisma._taskFindUniqueArgs).toHaveLength(0);
+    expect(prisma._prFindUniqueArgs).toHaveLength(0);
+  });
+
+  test("respects limit/offset options", async () => {
+    const prisma = makePrismaDouble();
+    const svc = new VerificationCheckService(prisma as never, clock);
+
+    await svc.listByRepoAndCheck("org/repo", "lint", { limit: 5, offset: 1 });
+
+    expect(prisma._findManyCalls).toHaveLength(1);
+  });
+
+  test("listForTask/listForPr remain ordered `at` ASCENDING — unchanged by this addition", async () => {
+    const prisma = makePrismaDouble();
+    const svc = new VerificationCheckService(prisma as never, clock);
+
+    await svc.listForTask("task-1");
+    await svc.listForPr("pr-1");
+
+    expect(prisma._findManyCalls[0].orderBy).toEqual({ at: "asc" });
+    expect(prisma._findManyCalls[1].orderBy).toEqual({ at: "asc" });
   });
 });
