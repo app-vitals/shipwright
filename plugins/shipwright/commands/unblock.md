@@ -192,12 +192,12 @@ There are three retry destinations, chosen per item:
 - **task.pr is set** (escalation happened mid-review/patch/deploy, after a PR already
   existed) → PATCH the task directly to `status: 'pr_open'`. Do **not** use `/release` here
   — `/release` resets to `'pending'`, which would let `dev-task` open a duplicate PR.
-- **task.pr is empty** (no PR exists yet) → agent tokens **cannot** PATCH a task's status
-  to `'pending'` directly (`assertNoLifecycleFieldWrite()` in `task-store/src/routes/tasks.ts`
-  throws 400 for agent tokens attempting this). Use `POST /tasks/:id/release` instead —
-  it atomically sets `status:'pending', claimedBy:null, claimedAt:null, heartbeatAt:null` —
-  then a follow-up `PATCH /tasks/:id` to clear `blockedReason`/`blockedAt` (release() does
-  not touch those fields).
+- **task.pr is empty** (no PR exists yet) → use the single `POST /tasks/:id/unblock` call.
+  It atomically resets `status` to `'pending'` and clears `blockedReason`, `blockedAt`,
+  `claimedBy`, `claimedAt`, and `heartbeatAt` — and also resets `skipCount`/`lastSkippedAt` —
+  all in one round-trip, via a single conditional `UPDATE ... WHERE status='blocked'`. No
+  follow-up PATCH is needed. Returns `409` if the task isn't currently `status: 'blocked'`
+  (never a silent no-op, unlike `/release` on a task that isn't `in_progress`).
 - **PR-only record** (no linked task) → `PATCH /prs/:id` with `blocked: false` (and clear
   `blockedReason`). No task-side call needed.
 
@@ -213,17 +213,17 @@ curl -sf -X PATCH \
 
 ### 6b. Retry — task.pr is empty (no PR yet)
 
+A single call resets `status` to `'pending'`, clears `blockedReason`/`blockedAt`
+(and `claimedBy`/`claimedAt`/`heartbeatAt`), and resets `skipCount`/`lastSkippedAt` —
+all automatically, in one round-trip. No follow-up PATCH is needed:
+
 ```bash
 curl -sf -X POST \
   -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
-  "$SHIPWRIGHT_TASK_STORE_URL/tasks/$TASK_ID/release" | jq .
-
-curl -sf -X PATCH \
-  -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
-  -H "Content-Type: application/json" \
-  "$SHIPWRIGHT_TASK_STORE_URL/tasks/$TASK_ID" \
-  -d '{"blockedReason": null, "blockedAt": null}' | jq .
+  "$SHIPWRIGHT_TASK_STORE_URL/tasks/$TASK_ID/unblock" | jq .
 ```
+
+Returns `409` if the task is not currently `status: 'blocked'`.
 
 ### 6c. Retry — PR-only record (no linked task)
 
@@ -235,24 +235,17 @@ curl -sf -X PATCH \
   -d '{"blocked": false, "blockedReason": null}' | jq .
 ```
 
-### 6d. Spin-detection skipCount reset
+### 6d. Spin-detection skipCount reset — PR-only records
 
-In addition to whichever retry path (6a/6b/6c) applies, if `blockedReason` matches the
-**skip-count** spin-detection variant (starts with `Auto-blocked after` and contains
-`consecutive skips` — the `recordSkip()` pattern), also reset `skipCount` via the
-purpose-built endpoint — prefer this over a raw PATCH of `skipCount`. This applies to
-**both** tasks and PR-only records — `Task` and `PullRequest` each carry their own
-`skipCount`/`lastSkippedAt`, and each has its own reset endpoint:
+If `blockedReason` matches the **skip-count** spin-detection variant (starts with
+`Auto-blocked after` and contains `consecutive skips` — the `recordSkip()` pattern):
 
-Task record:
-
-```bash
-curl -sf -X POST \
-  -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
-  "$SHIPWRIGHT_TASK_STORE_URL/tasks/$TASK_ID/skip/reset" | jq .
-```
-
-PR-only record (no linked task):
+- **Task:** nothing extra to do here — Step 6b's `POST /tasks/:id/unblock` call already
+  resets `skipCount`/`lastSkippedAt` to `0`/`null` automatically as part of its single
+  atomic update.
+- **PR-only record** (no linked task): `/tasks/:id/unblock` is task-only and does not
+  apply to PR-only records, so in addition to the 6c retry, reset `skipCount` via the
+  purpose-built endpoint — prefer this over a raw PATCH of `skipCount`:
 
 ```bash
 curl -sf -X POST \
@@ -260,9 +253,9 @@ curl -sf -X POST \
   "$SHIPWRIGHT_TASK_STORE_URL/prs/$PR_ID/skip/reset" | jq .
 ```
 
-(Both `resetSkip()` implementations set `skipCount: 0, lastSkippedAt: null` on their
-respective record.) Without this step, a PR-only record blocked by this exact reason
-re-blocks on its very next skip — its elevated `skipCount` is untouched by a 6c retry.
+(`resetSkip()` sets `skipCount: 0, lastSkippedAt: null` on the PR record.) Without this
+step, a PR-only record blocked by this exact reason re-blocks on its very next skip — its
+elevated `skipCount` is untouched by a 6c retry.
 
 **Does not apply to the PR CI-failure-streak variant.** If `blockedReason` instead matches
 the **PR CI-failure streak** spin-detection variant (contains `consecutive patch cycles
