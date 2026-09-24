@@ -260,7 +260,7 @@ Also observed but not declared in CLAUDE.md: `.github/workflows/test-*.sh` — p
 | `brand/build-brand-css.ts` (tokens.json → CSS generator) | 1. Pure business logic (string generation) | unit | medium | n/a |
 | `site/src/content.config.ts` (Astro content collection schema) | 1. Pure business logic (schema def) | unit | low | n/a |
 | `site/src/data/config-vars.ts` (static config-var data) | 1. Pure business logic (data) | unit | low | n/a |
-| `site/src/consts.ts` (nav-link data, sidebar-links data) | 1. Pure business logic (data) | unit | low | n/a |
+| `site/src/consts.ts` (nav-link data, sidebar-links data, `withUtm` UTM-tag utility) | 1. Pure business logic (data + pure string utility) | unit | low | n/a |
 | `site/src/lib/html-escape.ts` (per test-readiness-decisions.md - see 'site/src/lib/html-escape.ts — indirect e2e coverage accepted') | 1. Pure business logic | e2e (covered indirectly via `compare.spec.ts`, `self-hosted.spec.ts`, `vs-devin.spec.ts`) | high | n/a |
 | `site/src/pages/*.astro` (marketing pages: index, agent-model, service-architecture, compare, self-hosted, vs/devin, vs/factory, vs/openhands, story, autonomy, docs/[...slug]) | 6. User journey (rendered page + nav flow) | e2e (Playwright `*.spec.ts`) | high | n/a |
 | `site/src/layouts/*.astro`, `components/*.astro` | 3. HTTP route (rendered fragment, no standalone contract) | e2e (covered via page-level spec, not independently) | medium | n/a |
