@@ -734,6 +734,7 @@ conflicts, validate, and push.
 
 PR: #{pr} — {title}
 Repo: {org}/{repo}
+PR Record ID: {PR_RECORD_ID}
 Branch: {branch}
 Base branch: {base}
 Worktree: {worktree-path}
@@ -783,6 +784,28 @@ INSTRUCTIONS — follow in order:
   (10-minute) budget per check. Fix any failure you can clearly attribute to the merge; note
   anything else (pre-existing, flaky, or a timeout with no obvious cause) in CONCERNS and
   continue to [D] regardless — never loop waiting for a clean pass.
+
+  **Record each outcome.** Immediately after `$EXIT` is known for each invocation, POST one
+  verification-check record to the task-store API (LVB-5.1) — informational only, never a
+  gate. Run best-effort and warn-and-continue on any failure:
+  ```bash
+  CHECK_NAME="{lint|test|<layer name>}"
+  if [ "$EXIT" -eq 0 ]; then
+    VC_STATUS="ran_passed"; VC_REASON=""
+  elif [ "$EXIT" -eq 124 ]; then
+    VC_STATUS="timed_out"; VC_REASON="check_timeout"
+  else
+    VC_STATUS="ran_failed"; VC_REASON=""
+  fi
+  VC_BODY=$(jq -n --arg prId "{PR Record ID}" --arg repo "{org}/{repo}" --arg checkName "$CHECK_NAME" \
+    --arg status "$VC_STATUS" --arg reason "$VC_REASON" \
+    '{prId: $prId, repo: $repo, checkName: $checkName, status: $status}
+     + (if $reason != "" then {reasonCategory: $reason} else {} end)')
+  curl -sf -X POST -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
+    -H "Content-Type: application/json" \
+    "$SHIPWRIGHT_TASK_STORE_URL/verification-checks" \
+    -d "$VC_BODY" > /dev/null 2>&1 || echo "⚠ verification-check POST for $CHECK_NAME failed — continuing"
+  ```
 
 [D] Commit and push
   - Complete the merge: `git commit -m "Merge branch '{base}' into {branch}"`
@@ -1230,6 +1253,7 @@ and resolve the addressed GitHub threads.
 
 PR: #{pr} — {title}
 Repo: {org}/{repo}
+PR Record ID: {PR_RECORD_ID}
 Branch: {branch}
 Worktree: {worktree-path}
 
@@ -1355,6 +1379,28 @@ INSTRUCTIONS — follow in order:
   (10-minute) budget per check. Fix any failure you can clearly attribute to your changes;
   note anything else (pre-existing, flaky, or a timeout with no obvious cause) in CONCERNS
   and continue to [C.5]/[D] regardless — never loop waiting for a clean pass.
+
+  **Record each outcome.** Immediately after `$EXIT` is known for each invocation, POST one
+  verification-check record to the task-store API (LVB-5.1) — informational only, never a
+  gate. Run best-effort and warn-and-continue on any failure:
+  ```bash
+  CHECK_NAME="{lint|test|<layer name>}"
+  if [ "$EXIT" -eq 0 ]; then
+    VC_STATUS="ran_passed"; VC_REASON=""
+  elif [ "$EXIT" -eq 124 ]; then
+    VC_STATUS="timed_out"; VC_REASON="check_timeout"
+  else
+    VC_STATUS="ran_failed"; VC_REASON=""
+  fi
+  VC_BODY=$(jq -n --arg prId "{PR Record ID}" --arg repo "{org}/{repo}" --arg checkName "$CHECK_NAME" \
+    --arg status "$VC_STATUS" --arg reason "$VC_REASON" \
+    '{prId: $prId, repo: $repo, checkName: $checkName, status: $status}
+     + (if $reason != "" then {reasonCategory: $reason} else {} end)')
+  curl -sf -X POST -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
+    -H "Content-Type: application/json" \
+    "$SHIPWRIGHT_TASK_STORE_URL/verification-checks" \
+    -d "$VC_BODY" > /dev/null 2>&1 || echo "⚠ verification-check POST for $CHECK_NAME failed — continuing"
+  ```
 
 [C.5] Add test coverage
   - Detect the test framework and file-naming conventions from nearby existing tests in
@@ -1939,6 +1985,7 @@ You are fixing failing CI on a pull request. Diagnose the failures, apply fixes,
 
 PR: #{pr} — {title}
 Repo: {org}/{repo}
+PR Record ID: {PR_RECORD_ID}
 Branch: {branch}
 Worktree: {worktree-path}
 
@@ -2001,6 +2048,28 @@ INSTRUCTIONS — follow in order:
   (10-minute) budget per check. Fix any failure you can clearly attribute to your fix; note
   anything else (pre-existing, flaky, or a timeout with no obvious cause) in CONCERNS and
   continue to [C.5]/[D] regardless — never loop waiting for a clean pass.
+
+  **Record each outcome.** Immediately after `$EXIT` is known for each invocation, POST one
+  verification-check record to the task-store API (LVB-5.1) — informational only, never a
+  gate. Run best-effort and warn-and-continue on any failure:
+  ```bash
+  CHECK_NAME="{lint|test|<layer name>}"
+  if [ "$EXIT" -eq 0 ]; then
+    VC_STATUS="ran_passed"; VC_REASON=""
+  elif [ "$EXIT" -eq 124 ]; then
+    VC_STATUS="timed_out"; VC_REASON="check_timeout"
+  else
+    VC_STATUS="ran_failed"; VC_REASON=""
+  fi
+  VC_BODY=$(jq -n --arg prId "{PR Record ID}" --arg repo "{org}/{repo}" --arg checkName "$CHECK_NAME" \
+    --arg status "$VC_STATUS" --arg reason "$VC_REASON" \
+    '{prId: $prId, repo: $repo, checkName: $checkName, status: $status}
+     + (if $reason != "" then {reasonCategory: $reason} else {} end)')
+  curl -sf -X POST -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
+    -H "Content-Type: application/json" \
+    "$SHIPWRIGHT_TASK_STORE_URL/verification-checks" \
+    -d "$VC_BODY" > /dev/null 2>&1 || echo "⚠ verification-check POST for $CHECK_NAME failed — continuing"
+  ```
 
 [C.5] Add test coverage
   - Detect the test framework and file-naming conventions from nearby existing tests in

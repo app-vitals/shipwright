@@ -2348,3 +2348,91 @@ describe("patch.md — enforced, process-group-aware, non-blocking local validat
     });
   }
 });
+
+describe("patch.md — record verification outcomes via task-store API (LVB-5.2)", () => {
+  function getStepSection(stepStartMarker, stepEndMarker) {
+    const stepStartIdx = content.indexOf(stepStartMarker);
+    const stepEndIdx = content.indexOf(stepEndMarker);
+    expect(stepStartIdx).toBeGreaterThan(-1);
+    expect(stepEndIdx).toBeGreaterThan(stepStartIdx);
+    return content.slice(stepStartIdx, stepEndIdx);
+  }
+
+  function getValidateSection(stepStartMarker, stepEndMarker) {
+    const stepSection = getStepSection(stepStartMarker, stepEndMarker);
+    const cIdx = stepSection.indexOf("[C] Validate");
+    expect(cIdx).toBeGreaterThan(-1);
+    const c5Idx = stepSection.indexOf("[C.5] Add test coverage");
+    const dIdx = stepSection.indexOf("[D] Commit");
+    const endIdx = c5Idx > -1 ? c5Idx : dIdx;
+    expect(endIdx).toBeGreaterThan(cIdx);
+    return stepSection.slice(cIdx, endIdx);
+  }
+
+  const sites = [
+    [
+      "Step 4b",
+      "### Step 4b: Dispatch Conflict Resolution Subagent",
+      "### Step 4c: Handle Subagent Status",
+    ],
+    ["Step 5b", "### Step 5b: Dispatch Fix Subagent", "### Step 5c: Handle Subagent Status"],
+    ["Step 6c", "### Step 6c: Dispatch Fix Subagent", "### Step 6d: Handle Subagent Status"],
+  ];
+
+  for (const [label, startMarker, endMarker] of sites) {
+    it(`${label} subagent prompt header includes a PR Record ID line`, () => {
+      const section = getStepSection(startMarker, endMarker);
+      expect(section).toMatch(/PR Record ID:\s*\{PR_RECORD_ID\}/);
+    });
+
+    it(`${label} [C] Validate POSTs to the verification-checks endpoint`, () => {
+      const section = getValidateSection(startMarker, endMarker);
+      expect(section).toContain("$SHIPWRIGHT_TASK_STORE_URL/verification-checks");
+    });
+
+    it(`${label} [C] Validate verification-checks call is a POST`, () => {
+      const section = getValidateSection(startMarker, endMarker);
+      const idx = section.indexOf("$SHIPWRIGHT_TASK_STORE_URL/verification-checks");
+      expect(idx).toBeGreaterThan(-1);
+      const nearby = section.slice(Math.max(0, idx - 300), idx);
+      expect(nearby).toContain("-X POST");
+    });
+
+    it(`${label} [C] Validate uses prId (PR Record ID), not a task id, as the parent id`, () => {
+      const section = getValidateSection(startMarker, endMarker);
+      expect(section).toContain("prId");
+      expect(section).toMatch(/--arg prId "\{PR Record ID\}"/);
+      expect(section).not.toContain("taskId");
+    });
+
+    it(`${label} [C] Validate references all four status values: ran_passed, ran_failed, timed_out, skipped`, () => {
+      const section = getValidateSection(startMarker, endMarker);
+      expect(section).toContain("ran_passed");
+      expect(section).toContain("ran_failed");
+      expect(section).toContain("timed_out");
+    });
+
+    it(`${label} [C] Validate never unconditionally attaches a reasonCategory value alongside a ran_failed outcome`, () => {
+      const section = getValidateSection(startMarker, endMarker);
+      const nearby = section.match(/ran_failed[\s\S]{0,120}/)?.[0] ?? "";
+      expect(nearby.length).toBeGreaterThan(0);
+      expect(nearby).not.toMatch(
+        /reasonCategory["']?\s*[:=]\s*["'](check_timeout|install_timeout|resource_limit|missing_tool|missing_secret|missing_dependency|not_configured|learned_skip)/,
+      );
+    });
+
+    it(`${label} [C] Validate maps timeout (exit 124) to timed_out with a check_timeout reasonCategory`, () => {
+      const section = getValidateSection(startMarker, endMarker);
+      expect(section).toContain("124");
+      expect(section).toMatch(/timed_out[\s\S]{0,200}check_timeout/);
+    });
+
+    it(`${label} [C] Validate POST is best-effort (warn-and-continue on failure)`, () => {
+      const section = getValidateSection(startMarker, endMarker);
+      const idx = section.indexOf("$SHIPWRIGHT_TASK_STORE_URL/verification-checks");
+      expect(idx).toBeGreaterThan(-1);
+      const nearby = section.slice(idx, idx + 300);
+      expect(nearby).toMatch(/\|\|\s*echo/);
+    });
+  }
+});

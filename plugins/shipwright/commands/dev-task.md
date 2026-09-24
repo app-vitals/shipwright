@@ -771,6 +771,7 @@ enforced-timeout invocation MUST run the wrapped command in its own session/proc
 process. Use this pattern (adapt `{budget}` and `{command}` per check):
 
 ```bash
+CHECK_NAME="{install|lint|typecheck|test|<layer name>}"
 setsid timeout --kill-after=10s {budget}s {command} &
 CMD_PID=$!
 wait $CMD_PID
@@ -780,6 +781,25 @@ EXIT=$?
 # even ones timeout's own single-process signal never reached.
 kill -TERM -$CMD_PID 2>/dev/null
 kill -KILL -$CMD_PID 2>/dev/null
+
+# Record this outcome via LVB-5.1's verification-check API — informational only, never a
+# pipeline gate. Run best-effort and warn-and-continue on any failure.
+if [ "$EXIT" -eq 0 ]; then
+  VC_STATUS="ran_passed"; VC_REASON=""
+elif [ "$EXIT" -eq 124 ]; then
+  VC_STATUS="timed_out"
+  if [ "$CHECK_NAME" = "install" ]; then VC_REASON="install_timeout"; else VC_REASON="check_timeout"; fi
+else
+  VC_STATUS="ran_failed"; VC_REASON=""
+fi
+VC_BODY=$(jq -n --arg taskId "{id}" --arg repo "$GH_REPO" --arg checkName "$CHECK_NAME" \
+  --arg status "$VC_STATUS" --arg reason "$VC_REASON" \
+  '{taskId: $taskId, repo: $repo, checkName: $checkName, status: $status}
+   + (if $reason != "" then {reasonCategory: $reason} else {} end)')
+curl -sf -X POST -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
+  -H "Content-Type: application/json" \
+  "$SHIPWRIGHT_TASK_STORE_URL/verification-checks" \
+  -d "$VC_BODY" > /dev/null 2>&1 || echo "⚠ verification-check POST for $CHECK_NAME failed — continuing"
 ```
 
 `setsid` puts `{command}` in its own session/process group with PID `$CMD_PID` as the group
@@ -792,10 +812,17 @@ inline per ecosystem (e.g. `{manager} install`, `bun install`, `pip install -e .
 above already gives per-ecosystem example commands, since lint/typecheck/test generally need
 dependencies installed first to run meaningfully.
 
+**Any future skip path must record `status: skipped` too.** LVB-4.4 will later add a
+"skip-locally" classification (read from the toolchain doc) that skips a check without
+attempting it, citing a recorded environmental reasonCategory — when it lands, it only needs
+to emit the same POST shape above with `status: skipped` and the applicable reasonCategory;
+no new recording mechanism is needed.
+
 **Record, don't swallow, each outcome.** After each wrapped invocation, note its status —
-`pass`, `fail`, `timeout`, or `skip` — for the human-readable Pre-Ship Checks output below.
-This is a printed record only (a full structured task-store model for verification outcomes
-is a separate future task, LVB-5.1/5.2) — never silently drop a check's result:
+`pass`, `fail`, `timeout`, or `skip` — for the human-readable Pre-Ship Checks output below,
+and POST one verification-check record to the task-store API per the pattern above (LVB-5.1)
+— never silently drop a check's result. The printed table below is additive to, not a
+replacement for, that recorded outcome:
 
 ```
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -862,7 +889,15 @@ Do NOT silently skip this check. Coverage must be measured and reported even if 
 
 - **If `lintScoped` is present**, run it in place of the unscoped lint command. Which placeholder it carries depends on which priority signal populated it (see the "Scoped Lint Detection" priority table):
   - **`{base}`/`{head}` placeholders** (priorities 1-3 — Turborepo/Nx/pnpm workspaces): substitute with `main`/`HEAD` — the same base/head pair already used for `git diff main...HEAD` in Step 6 (Simplify), Step 6.5 (Spec Compliance Check), and Step 7 (Requirements Verification). This reuses that existing diffing convention; no new diff-computation logic is introduced here.
-  - **`{changed files}` placeholder** (priority 4 — no monorepo tool detected, e.g. `eslint {changed files}`): substitute with the lintable files from `git diff --name-only main...HEAD` — same `main...HEAD` base/head pair as above, filtered to the extensions the linter covers (for eslint: JS/TS extensions), and dropping paths that no longer exist on disk (deleted or renamed files). If that filtered list is empty, skip lint entirely rather than invoking the linter with no paths — an argument-less `eslint` would silently lint the whole repo and defeat the scoping.
+  - **`{changed files}` placeholder** (priority 4 — no monorepo tool detected, e.g. `eslint {changed files}`): substitute with the lintable files from `git diff --name-only main...HEAD` — same `main...HEAD` base/head pair as above, filtered to the extensions the linter covers (for eslint: JS/TS extensions), and dropping paths that no longer exist on disk (deleted or renamed files). If that filtered list is empty, skip lint entirely rather than invoking the linter with no paths — an argument-less `eslint` would silently lint the whole repo and defeat the scoping. When this skip fires, record it too — checkName `"lint"`, status `"skipped"`, reasonCategory `not_configured` (closest fit: no lint-relevant files changed):
+    ```bash
+    curl -sf -X POST -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
+      -H "Content-Type: application/json" \
+      "$SHIPWRIGHT_TASK_STORE_URL/verification-checks" \
+      -d "$(jq -n --arg taskId "{id}" --arg repo "$GH_REPO" \
+            '{taskId: $taskId, repo: $repo, checkName: "lint", status: "skipped", reasonCategory: "not_configured"}')" \
+      > /dev/null 2>&1 || echo "⚠ verification-check POST for lint (skipped) failed — continuing"
+    ```
 - **If `lintScoped` is absent** from the cache (omitted, not `null`), fall back unchanged to the existing unscoped `{lint}` (or `{validate}`) command from Step 0 — run it exactly as before.
 
 **Report the mode that ran.** In the Pre-Ship Checks output, note whether lint ran scoped or full so a human reviewing the run can tell at a glance, e.g.:
