@@ -18,12 +18,12 @@ are two callers of a single creation function, not two separate implementations.
 - `POST /agents` is now available and fully documented in the OpenAPI spec
   ([`admin/openapi.json`](../admin/openapi.json)). The route is **admin-only** (requires an
   admin-level `Authorization: Bearer` token or session cookie; per-agent tokens cannot call it).
-- The request body is JSON (unlike the form's `application/x-www-form-urlencoded`), with fields:
-  `name`, `typeName` (defaults to `"coding"`; no longer required), `runtime` (`"in-cluster"` for
-  managed agents; omit or any other value means self-hosted), `reposRaw`, `authorAllowlistRaw`,
+- The request body is JSON (unlike the form's `application/x-www-form-urlencoded`), with required
+  fields `name` and `typeName`, plus optional `runtime` (`"in-cluster"` for managed agents; omit
+  or any other value means self-hosted), `reposRaw`, `authorAllowlistRaw`,
   `patchAuthorAllowlistRaw`, `memberEmailsRaw` (all newline-separated lists), and
   `restrictSlackToMembersRaw`.
-- The response is a `201` with the created agent object in the same shape as `GET /agents/:id`,
+- The response is a `200` with the created agent object in the same shape as `GET /agents/:id`,
   not a `302` redirect.
 - Creation is transactional: any failure (missing fields, invalid type, malformed repos/allowlists,
   provisioning failure) leaves zero rows behind rather than a partial success.
