@@ -443,6 +443,48 @@ describe("HttpChatServiceClient.replyToMessage", () => {
     expect(err).toBeInstanceOf(ChatServiceClientError);
     expect(err.statusCode).toBe(400);
   });
+
+  it("base64-encodes attachmentBytes and sends attachmentFilename/attachmentSize", async () => {
+    const { fn, calls } = capturingFetch(201, SAMPLE_REPLY_RESULT);
+    const client = new HttpChatServiceClient({
+      baseUrl: BASE_URL,
+      token: TOKEN,
+      fetchFn: fn,
+    });
+
+    const attachmentBytes = new Uint8Array([1, 2, 3, 4]);
+    await client.replyToMessage(THREAD_ID, MESSAGE_ID, {
+      body: "Here you go",
+      attachmentFilename: "response.wav",
+      attachmentSize: attachmentBytes.length,
+      attachmentBytes,
+    });
+
+    expect(calls[0].body).toEqual({
+      body: "Here you go",
+      attachmentFilename: "response.wav",
+      attachmentSize: 4,
+      attachmentBytes: Buffer.from(attachmentBytes).toString("base64"),
+    });
+  });
+
+  it("omits attachment fields entirely when not provided", async () => {
+    const { fn, calls } = capturingFetch(201, SAMPLE_REPLY_RESULT);
+    const client = new HttpChatServiceClient({
+      baseUrl: BASE_URL,
+      token: TOKEN,
+      fetchFn: fn,
+    });
+
+    await client.replyToMessage(THREAD_ID, MESSAGE_ID, {
+      body: "no attachment",
+    });
+
+    const body = calls[0].body as Record<string, unknown>;
+    expect(body.attachmentFilename).toBeUndefined();
+    expect(body.attachmentSize).toBeUndefined();
+    expect(body.attachmentBytes).toBeUndefined();
+  });
 });
 
 // ─── ChatServiceClientError ────────────────────────────────────────────────────

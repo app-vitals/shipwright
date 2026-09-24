@@ -70,6 +70,15 @@ export interface ReplyOptions {
   costUsd?: number;
   /** Stamped on the assistant message so the UI can offer a Retry action. */
   errorKind?: string;
+  /** Filename for an optional reply attachment (e.g. synthesized speech audio). */
+  attachmentFilename?: string;
+  /** Byte size of `attachmentBytes`. Required alongside attachmentBytes. */
+  attachmentSize?: number;
+  /**
+   * Raw attachment bytes. Base64-encoded by replyToMessage() before being
+   * sent in the JSON body — callers pass raw bytes, not a pre-encoded string.
+   */
+  attachmentBytes?: Uint8Array;
 }
 
 // ─── Error ────────────────────────────────────────────────────────────────────
@@ -225,6 +234,14 @@ export class HttpChatServiceClient implements ChatServiceClient {
     if (opts.tokens !== undefined) body.tokens = opts.tokens;
     if (opts.costUsd !== undefined) body.costUsd = opts.costUsd;
     if (opts.errorKind !== undefined) body.errorKind = opts.errorKind;
+    if (opts.attachmentFilename !== undefined)
+      body.attachmentFilename = opts.attachmentFilename;
+    if (opts.attachmentSize !== undefined)
+      body.attachmentSize = opts.attachmentSize;
+    if (opts.attachmentBytes !== undefined)
+      body.attachmentBytes = Buffer.from(opts.attachmentBytes).toString(
+        "base64",
+      );
 
     const res = await this.fetchFn(url, {
       method: "POST",
