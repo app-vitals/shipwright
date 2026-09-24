@@ -8,7 +8,14 @@
 import { describe, expect, it } from "bun:test";
 import type { AgentTypeManifestResolver } from "./agent-type-manifest-loader.ts";
 import type { AgentTypeManifest } from "./agent-type-registry.ts";
-import { AgentService } from "./agents.ts";
+import type {
+  AgentDetail,
+  CreateAgentDeps,
+  CreateAgentFormInput,
+  UpdateAgentFieldsInput,
+} from "./agents.ts";
+import { AgentService, createAgent } from "./agents.ts";
+import type { PrismaTransactionClient } from "./prisma-tx.ts";
 
 // ─── In-memory prisma.agent test double ────────────────────────────────────
 
@@ -905,5 +912,510 @@ describe("AgentService.updateFields", () => {
       updatedAt: new Date("2024-01-02"),
       missingRequiredEnv: [],
     });
+  });
+});
+
+// ─── createAgent() ──────────────────────────────────────────────────────────
+//
+// Pure-logic coverage of createAgent()'s branching/orchestration against
+// fully injected fakes — no real Prisma, no real transaction. The `agents`
+// map below stands in for "what a real DB would contain": a roll-back path
+// is only correct if it both (a) explicitly calls agentService.delete() —
+// verified by admin-ui.smoke.test.ts's mocked-call assertions, which this
+// suite mirrors — and (b) actually removes the row from `agents`, proving
+// createAgent() doesn't leave a dangling entry behind even at this layer.
+// True atomicity under a REAL Postgres transaction (the acceptance
+// criterion this whole task is about) is covered separately by
+// agents.integration.test.ts against a real DB.
+
+const CODING_MANIFEST: AgentTypeManifest = {
+  apiVersion: "shipwright.dev/v1alpha1",
+  kind: "AgentType",
+  metadata: {
+    name: "coding",
+    displayName: "Coding Agent",
+    description: "test manifest",
+    version: "1.0.0",
+    skills: [],
+  },
+  identity: { templatesDir: "agent/workspace/" },
+  crons: [],
+  plugins: ["shipwright"],
+  tools: ["Read", "Write", "Bash"],
+  env: { required: [], optional: [] },
+  members: [],
+  repos: [],
+  chat: true,
+  voice: true,
+} as unknown as AgentTypeManifest;
+
+function fakeCreateAgentTypeRegistry(
+  byType: Record<string, AgentTypeManifest> = { coding: CODING_MANIFEST },
+): Pick<AgentTypeManifestResolver, "tryGetManifest"> {
+  return {
+    tryGetManifest: (typeName: string) => byType[typeName],
+  };
+}
+
+interface CreateAgentHarnessCalls {
+  created: Array<{
+    name: string;
+    typeName?: string;
+    selfHosted?: boolean;
+  }>;
+  deleted: string[];
+  toolsAdded: Array<{ agentId: string; pattern: string }>;
+  pluginsAdded: Array<{ agentId: string; name: string }>;
+  membersAdded: Array<{ agentId: string; email: string }>;
+  updateFieldsCalls: Array<{ id: string; fields: UpdateAgentFieldsInput }>;
+  envPatched: Array<{ agentId: string; env: Record<string, string> }>;
+  provisioned: string[];
+  reconciled: string[];
+}
+
+function makeCreateAgentHarness(
+  opts: {
+    manifests?: Record<string, AgentTypeManifest>;
+    canProvision?: boolean;
+    provisionImpl?: (agentId: string) => Promise<unknown>;
+    toolAddImpl?: (agentId: string, pattern: string) => Promise<unknown>;
+    pluginAddImpl?: (agentId: string, name: string) => Promise<unknown>;
+    reconcileImpl?: (agentId: string) => Promise<unknown>;
+  } = {},
+): {
+  deps: CreateAgentDeps;
+  calls: CreateAgentHarnessCalls;
+  agents: Map<string, AgentDetail>;
+} {
+  const calls: CreateAgentHarnessCalls = {
+    created: [],
+    deleted: [],
+    toolsAdded: [],
+    pluginsAdded: [],
+    membersAdded: [],
+    updateFieldsCalls: [],
+    envPatched: [],
+    provisioned: [],
+    reconciled: [],
+  };
+  const agents = new Map<string, AgentDetail>();
+  let nextId = 1;
+
+  const agentService: CreateAgentDeps["agentService"] = {
+    create: async (input) => {
+      const id = `agent-${nextId++}`;
+      const detail: AgentDetail = {
+        id,
+        name: input.name,
+        slackId: input.slackId ?? null,
+        selfHosted: input.selfHosted ?? false,
+        repos: input.repos ?? [],
+        reviewAuthorAllowlist: input.reviewAuthorAllowlist ?? [],
+        patchAuthorAllowlist: input.patchAuthorAllowlist ?? [],
+        restrictSlackToMembers: input.restrictSlackToMembers ?? false,
+        typeName: input.typeName ?? "coding",
+        createdAt: new Date("2024-01-01"),
+        updatedAt: new Date("2024-01-01"),
+        missingRequiredEnv: [],
+      };
+      agents.set(id, detail);
+      calls.created.push({
+        name: input.name,
+        typeName: input.typeName,
+        selfHosted: input.selfHosted,
+      });
+      return detail;
+    },
+    delete: async (id) => {
+      agents.delete(id);
+      calls.deleted.push(id);
+    },
+    updateFields: async (id, fields) => {
+      const existing = agents.get(id);
+      if (!existing) throw new Error(`agent ${id} not found`);
+      const updated = { ...existing, ...fields };
+      agents.set(id, updated);
+      calls.updateFieldsCalls.push({ id, fields });
+      return updated;
+    },
+    // No real transaction here — see the file-level comment above. tx is
+    // simply threaded through as `undefined`, mirroring exactly what
+    // admin-ui.ts's own non-transactional fallback does for test doubles
+    // that don't implement runTransaction (see AdminUIDeps.agentService).
+    runTransaction: async (fn) => fn(undefined as unknown as PrismaTransactionClient),
+  };
+
+  const agentToolService: CreateAgentDeps["agentToolService"] = {
+    add: async (agentId, pattern) => {
+      if (opts.toolAddImpl) await opts.toolAddImpl(agentId, pattern);
+      calls.toolsAdded.push({ agentId, pattern });
+      return {} as never;
+    },
+  };
+
+  const agentPluginService: CreateAgentDeps["agentPluginService"] = {
+    add: async (agentId, name) => {
+      if (opts.pluginAddImpl) await opts.pluginAddImpl(agentId, name);
+      calls.pluginsAdded.push({ agentId, name });
+      return {} as never;
+    },
+  };
+
+  const agentMemberService: CreateAgentDeps["agentMemberService"] = {
+    add: async (agentId, email) => {
+      calls.membersAdded.push({ agentId, email });
+      return {} as never;
+    },
+  };
+
+  const agentEnvService: CreateAgentDeps["agentEnvService"] = {
+    patch: async (agentId, env) => {
+      calls.envPatched.push({ agentId, env });
+    },
+  };
+
+  const agentCronJobService: CreateAgentDeps["agentCronJobService"] = {
+    reconcileSystemCrons: async (agentId) => {
+      if (opts.reconcileImpl) await opts.reconcileImpl(agentId);
+      calls.reconciled.push(agentId);
+      return { created: 0, updated: 0, deleted: 0 };
+    },
+  };
+
+  const provisioner: CreateAgentDeps["provisioner"] = {
+    canProvision: opts.canProvision ?? false,
+    provision: async (agentId) => {
+      if (opts.provisionImpl) await opts.provisionImpl(agentId);
+      calls.provisioned.push(agentId);
+      return { resourceName: "r", secretName: "s", deploymentName: "d" };
+    },
+  };
+
+  const agentTypeRegistry = fakeCreateAgentTypeRegistry(opts.manifests);
+
+  return {
+    deps: {
+      agentService,
+      agentToolService,
+      agentPluginService,
+      agentMemberService,
+      agentEnvService,
+      agentCronJobService,
+      provisioner,
+      agentTypeRegistry,
+    },
+    calls,
+    agents,
+  };
+}
+
+function baseCreateAgentInput(
+  overrides: Partial<CreateAgentFormInput> = {},
+): CreateAgentFormInput {
+  return {
+    name: "Test Agent",
+    typeName: "coding",
+    runtime: undefined,
+    reposRaw: undefined,
+    authorAllowlistRaw: undefined,
+    patchAuthorAllowlistRaw: undefined,
+    memberEmailsRaw: undefined,
+    restrictSlackToMembersRaw: undefined,
+    claudeCodeOauthToken: undefined,
+    anthropicApiKey: undefined,
+    ...overrides,
+  };
+}
+
+describe("createAgent()", () => {
+  it("returns missing_fields and creates nothing when name is empty", async () => {
+    const { deps, calls } = makeCreateAgentHarness();
+
+    const result = await createAgent(
+      deps,
+      baseCreateAgentInput({ name: undefined }),
+    );
+
+    expect(result).toEqual({ ok: false, errorCode: "missing_fields" });
+    expect(calls.created).toEqual([]);
+  });
+
+  it("returns invalid_type and creates nothing when typeName is unknown", async () => {
+    const { deps, calls } = makeCreateAgentHarness();
+
+    const result = await createAgent(
+      deps,
+      baseCreateAgentInput({ typeName: "nonexistent" }),
+    );
+
+    expect(result).toEqual({ ok: false, errorCode: "invalid_type" });
+    expect(calls.created).toEqual([]);
+  });
+
+  it("returns invalid_type and creates nothing when typeName is missing", async () => {
+    const { deps, calls } = makeCreateAgentHarness();
+
+    const result = await createAgent(
+      deps,
+      baseCreateAgentInput({ typeName: undefined }),
+    );
+
+    expect(result).toEqual({ ok: false, errorCode: "invalid_type" });
+    expect(calls.created).toEqual([]);
+  });
+
+  it("returns provisioning_disabled and creates nothing when runtime=in-cluster but the provisioner can't provision", async () => {
+    const { deps, calls } = makeCreateAgentHarness({ canProvision: false });
+
+    const result = await createAgent(
+      deps,
+      baseCreateAgentInput({ runtime: "in-cluster" }),
+    );
+
+    expect(result).toEqual({ ok: false, errorCode: "provisioning_disabled" });
+    expect(calls.created).toEqual([]);
+  });
+
+  it("happy path: creates the agent, seeds manifest tools/plugins, attaches repos/allowlists/members, and reconciles crons", async () => {
+    const { deps, calls } = makeCreateAgentHarness({ canProvision: false });
+
+    const result = await createAgent(
+      deps,
+      baseCreateAgentInput({
+        reposRaw: "org/repo1\norg/repo2",
+        authorAllowlistRaw: "octocat\nhubot\noctocat",
+        patchAuthorAllowlistRaw: "patcher1",
+        memberEmailsRaw: "Dev@Example.com\ndev@example.com",
+        restrictSlackToMembersRaw: "true",
+      }),
+    );
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) throw new Error("expected success");
+    expect(result.agent.name).toBe("Test Agent");
+    expect(result.restrictSlackToMembers).toBe(true);
+
+    expect(calls.toolsAdded.map((t) => t.pattern)).toEqual([
+      "Read",
+      "Write",
+      "Bash",
+    ]);
+    expect(calls.pluginsAdded.map((p) => p.name)).toEqual(["shipwright"]);
+    expect(calls.updateFieldsCalls).toEqual([
+      { id: result.agent.id, fields: { repos: ["org/repo1", "org/repo2"] } },
+      {
+        id: result.agent.id,
+        fields: { reviewAuthorAllowlist: ["octocat", "hubot"] },
+      },
+      {
+        id: result.agent.id,
+        fields: { patchAuthorAllowlist: ["patcher1"] },
+      },
+    ]);
+    // memberEmails is lower-cased then deduped, so the two variants of the
+    // same address collapse into a single add() call.
+    expect(calls.membersAdded).toEqual([
+      { agentId: result.agent.id, email: "dev@example.com" },
+    ]);
+    expect(calls.deleted).toEqual([]);
+    expect(calls.reconciled).toEqual([result.agent.id]);
+    expect(calls.provisioned).toEqual([]);
+  });
+
+  it("repos are trimmed/filtered but NOT deduped, matching the pre-APA-1.1 inline handler", async () => {
+    const { deps, calls } = makeCreateAgentHarness();
+
+    const result = await createAgent(
+      deps,
+      baseCreateAgentInput({ reposRaw: "org/repo1\norg/repo1" }),
+    );
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) throw new Error("expected success");
+    expect(calls.updateFieldsCalls).toEqual([
+      { id: result.agent.id, fields: { repos: ["org/repo1", "org/repo1"] } },
+    ]);
+  });
+
+  it("seed_failed: a tool-seeding failure rolls back the agent (delete called) and leaves zero surviving rows", async () => {
+    const { deps, calls, agents } = makeCreateAgentHarness({
+      toolAddImpl: async () => {
+        throw new Error("boom: tool seeding failed");
+      },
+    });
+
+    const result = await createAgent(deps, baseCreateAgentInput());
+
+    expect(result).toEqual({ ok: false, errorCode: "seed_failed" });
+    expect(calls.created.length).toBe(1);
+    expect(calls.deleted.length).toBe(1);
+    expect(agents.size).toBe(0);
+  });
+
+  it("seed_failed: a plugin-seeding failure rolls back the agent and leaves zero surviving rows", async () => {
+    const { deps, calls, agents } = makeCreateAgentHarness({
+      pluginAddImpl: async () => {
+        throw new Error("boom: plugin seeding failed");
+      },
+    });
+
+    const result = await createAgent(deps, baseCreateAgentInput());
+
+    expect(result).toEqual({ ok: false, errorCode: "seed_failed" });
+    expect(calls.deleted.length).toBe(1);
+    expect(agents.size).toBe(0);
+  });
+
+  it("invalid_repo_format: rolls back the agent, leaves zero surviving rows, and never reaches the allowlist steps", async () => {
+    const { deps, calls, agents } = makeCreateAgentHarness();
+
+    const result = await createAgent(
+      deps,
+      baseCreateAgentInput({
+        reposRaw: "not-a-valid-repo!!",
+        authorAllowlistRaw: "octocat",
+      }),
+    );
+
+    expect(result).toEqual({ ok: false, errorCode: "invalid_repo_format" });
+    expect(calls.deleted.length).toBe(1);
+    expect(agents.size).toBe(0);
+    expect(calls.updateFieldsCalls).toEqual([]);
+  });
+
+  it("invalid_author_allowlist_format: an invalid reviewAuthorAllowlist entry rolls back the agent", async () => {
+    const { deps, calls, agents } = makeCreateAgentHarness();
+
+    const result = await createAgent(
+      deps,
+      baseCreateAgentInput({ authorAllowlistRaw: "octocat\nnot a valid login!" }),
+    );
+
+    expect(result).toEqual({
+      ok: false,
+      errorCode: "invalid_author_allowlist_format",
+    });
+    expect(calls.deleted.length).toBe(1);
+    expect(agents.size).toBe(0);
+  });
+
+  it("invalid_author_allowlist_format: an invalid patchAuthorAllowlist entry rolls back the agent", async () => {
+    const { deps, calls, agents } = makeCreateAgentHarness();
+
+    const result = await createAgent(
+      deps,
+      baseCreateAgentInput({
+        patchAuthorAllowlistRaw: "octocat\nnot a valid login!",
+      }),
+    );
+
+    expect(result).toEqual({
+      ok: false,
+      errorCode: "invalid_author_allowlist_format",
+    });
+    expect(calls.deleted.length).toBe(1);
+    expect(agents.size).toBe(0);
+  });
+
+  it("member add failures (e.g. duplicate) are swallowed and do not roll back the agent", async () => {
+    const { deps, calls, agents } = makeCreateAgentHarness();
+    const failingMemberDeps: CreateAgentDeps = {
+      ...deps,
+      agentMemberService: {
+        add: async () => {
+          throw new Error("unique constraint violation");
+        },
+      },
+    };
+
+    const result = await createAgent(
+      failingMemberDeps,
+      baseCreateAgentInput({ memberEmailsRaw: "dev@example.com" }),
+    );
+
+    expect(result.ok).toBe(true);
+    expect(calls.deleted).toEqual([]);
+    expect(agents.size).toBe(1);
+  });
+
+  it("patches Claude env credentials when provided, keyed correctly", async () => {
+    const { deps, calls } = makeCreateAgentHarness();
+
+    const result = await createAgent(
+      deps,
+      baseCreateAgentInput({
+        claudeCodeOauthToken: "tok-123",
+        anthropicApiKey: "key-456",
+      }),
+    );
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) throw new Error("expected success");
+    expect(calls.envPatched).toEqual([
+      {
+        agentId: result.agent.id,
+        env: {
+          CLAUDE_CODE_OAUTH_TOKEN: "tok-123",
+          ANTHROPIC_API_KEY: "key-456",
+        },
+      },
+    ]);
+  });
+
+  it("does not call agentEnvService.patch when no credentials are provided", async () => {
+    const { deps, calls } = makeCreateAgentHarness();
+
+    await createAgent(deps, baseCreateAgentInput());
+
+    expect(calls.envPatched).toEqual([]);
+  });
+
+  it("provisions Kubernetes resources when runtime=in-cluster and the provisioner allows it", async () => {
+    const { deps, calls } = makeCreateAgentHarness({ canProvision: true });
+
+    const result = await createAgent(
+      deps,
+      baseCreateAgentInput({ runtime: "in-cluster" }),
+    );
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) throw new Error("expected success");
+    expect(calls.provisioned).toEqual([result.agent.id]);
+    expect(calls.deleted).toEqual([]);
+  });
+
+  it("provision_failed: a provisioning failure deletes the already-created agent row (compensating delete, not a DB rollback) and skips cron reconcile", async () => {
+    const { deps, calls, agents } = makeCreateAgentHarness({
+      canProvision: true,
+      provisionImpl: async () => {
+        throw new Error("boom: provisioning failed");
+      },
+    });
+
+    const result = await createAgent(
+      deps,
+      baseCreateAgentInput({ runtime: "in-cluster" }),
+    );
+
+    expect(result).toEqual({ ok: false, errorCode: "provision_failed" });
+    expect(calls.created.length).toBe(1);
+    expect(calls.deleted.length).toBe(1);
+    expect(agents.size).toBe(0);
+    expect(calls.reconciled).toEqual([]);
+  });
+
+  it("reconcileSystemCrons failures are non-fatal — the agent survives and creation still succeeds", async () => {
+    const { deps, agents } = makeCreateAgentHarness({
+      reconcileImpl: async () => {
+        throw new Error("boom: cron reconcile failed");
+      },
+    });
+
+    const result = await createAgent(deps, baseCreateAgentInput());
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) throw new Error("expected success");
+    expect(agents.size).toBe(1);
+    expect(agents.has(result.agent.id)).toBe(true);
   });
 });

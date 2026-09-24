@@ -88,6 +88,7 @@ import {
 } from "./agent-type-manifest-loader.ts";
 import type { AgentWorkQueueService } from "./agent-work-queue.ts";
 import type { AgentService } from "./agents.ts";
+import { createAgent } from "./agents.ts";
 import { publicNoAuthMiddleware } from "./api-auth.ts";
 import {
   audioContentTypeForFilename,
@@ -106,6 +107,7 @@ import {
   filterSince,
 } from "./http-chat-client.ts";
 import type { OktaAuthClient } from "./okta-auth-client.ts";
+import type { PrismaTransactionClient } from "./prisma-tx.ts";
 import type { PushService } from "./push-service.ts";
 import {
   buildManifest,
@@ -316,7 +318,18 @@ export interface AdminUIDeps {
     | "delete"
     | "getDetail"
     | "updateFields"
-  >;
+  > & {
+    /**
+     * Runs a function inside a single interactive Prisma transaction — see
+     * AgentService.runTransaction(). Optional here (unlike the rest of this
+     * Pick) so the many existing test doubles for routes that never touch
+     * agent creation don't all need to implement it: POST /admin/agents
+     * (the only caller, via createAgent() in agents.ts) falls back to a
+     * non-transactional passthrough when it's absent. Every production
+     * wiring (main.ts) always supplies the real AgentService method.
+     */
+    runTransaction?: AgentService["runTransaction"];
+  };
   provisioner: AgentProvisioner;
   /**
    * Resolves an agent's typeName to its parsed Agent Type manifest and lists
@@ -1604,188 +1617,71 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
       return c.redirect("/admin/agents/new", 302);
     }
     const connectSlack = connectSlackRaw === "true";
-    if (!name) {
-      return c.redirect("/admin/agents/new?error=missing_fields", 302);
-    }
-    // Resolve the requested type BEFORE creating any row — an unknown/missing
-    // type must redirect with zero rows created. The resolved manifest is
-    // captured (not discarded) so its tools/plugins can be seeded below.
-    const manifest = typeName
-      ? agentTypeRegistry.tryGetManifest(typeName)
-      : undefined;
-    if (!typeName || !manifest) {
-      return c.redirect("/admin/agents/new?error=invalid_type", 302);
-    }
-    // Absent/unrecognized runtime means self-hosted — the historical behavior of
-    // this form, and what `task stack` depends on.
+    // Absent/unrecognized runtime means self-hosted — the historical behavior
+    // of this form. createAgent() below re-derives this same value itself
+    // (it owns the runtime/provisioning validation); it's recomputed here
+    // too only to gate the UAP-2.1 Slack/GitHub connect block further down,
+    // which runs after createAgent() returns and has no other way to learn
+    // whether this agent is in-cluster.
     const inCluster = runtime === "in-cluster";
-    // Same "validate before creating any row" rule as the type check above: a
-    // no-op provisioner would let provision() succeed while creating nothing,
-    // leaving an agent row with no workload behind it.
-    if (inCluster && !provisioner.canProvision) {
-      return c.redirect("/admin/agents/new?error=provisioning_disabled", 302);
+
+    // APA-1.1: the entire create-agent sequence (validate name/typeName,
+    // create the Agent row, seed AgentTool/AgentPlugin from the type
+    // manifest, attach repos/allowlists/members, patch Claude credentials,
+    // provision Kubernetes when requested, best-effort reconcile system
+    // crons) lives in createAgent() (agents.ts) as the single implementation
+    // of agent creation. Every failure mode redirects to the same
+    // `/admin/agents/new?error=<code>` shape the inline handler used to
+    // build itself, so `result.errorCode` maps directly into the query
+    // param.
+    const result = await createAgent(
+      {
+        // Bind each method createAgent() needs (CreateAgentDeps.agentService
+        // = create | delete | updateFields | runTransaction) explicitly
+        // rather than spreading `agentService`: in production this is a real
+        // `new AgentService(prisma)` whose methods live on
+        // AgentService.prototype, and object spread copies only own
+        // enumerable properties — a spread would silently drop
+        // create/delete/updateFields and throw at the first call.
+        agentService: {
+          create: agentService.create.bind(agentService),
+          delete: agentService.delete.bind(agentService),
+          updateFields: agentService.updateFields.bind(agentService),
+          // Test doubles for routes unrelated to agent creation don't
+          // implement runTransaction (see AdminUIDeps.agentService above) —
+          // fall back to a non-transactional passthrough so createAgent()
+          // always has a concrete implementation to call. Production always
+          // supplies the real AgentService method.
+          runTransaction:
+            agentService.runTransaction?.bind(agentService) ??
+            (<T>(fn: (tx: PrismaTransactionClient) => Promise<T>) =>
+              fn(undefined as unknown as PrismaTransactionClient)),
+        },
+        agentToolService,
+        agentPluginService,
+        agentMemberService,
+        agentEnvService,
+        agentCronJobService,
+        provisioner,
+        agentTypeRegistry,
+      },
+      {
+        name,
+        typeName,
+        runtime,
+        reposRaw,
+        authorAllowlistRaw,
+        patchAuthorAllowlistRaw,
+        memberEmailsRaw,
+        restrictSlackToMembersRaw,
+        claudeCodeOauthToken,
+        anthropicApiKey,
+      },
+    );
+    if (!result.ok) {
+      return c.redirect(`/admin/agents/new?error=${result.errorCode}`, 302);
     }
-    const restrictSlackToMembers = restrictSlackToMembersRaw === "true";
-    const agent = await agentService.create({
-      name,
-      selfHosted: !inCluster,
-      typeName,
-      restrictSlackToMembers,
-    });
-    // Seed AgentTool/AgentPlugin rows from the resolved manifest. Roll the
-    // agent row back on any seeding
-    // failure so a retry with the same name doesn't collide with a
-    // half-seeded agent. Members/repos are NOT seeded from the manifest here
-    // — they already have their own dedicated form-field handling below, and
-    // the manifest's members/repos arrays are empty for every agent type
-    // that exists today.
-    try {
-      for (const pattern of manifest.tools) {
-        await agentToolService.add(agent.id, pattern);
-      }
-      for (const pluginName of manifest.plugins) {
-        await agentPluginService.add(agent.id, pluginName);
-      }
-    } catch (err) {
-      console.error(
-        "[admin-ui] tool/plugin seeding failed, rolling back:",
-        err,
-      );
-      await agentService.delete(agent.id).catch((cleanupErr) => {
-        console.error(
-          "[admin-ui] failed to roll back agent after seeding error:",
-          cleanupErr,
-        );
-      });
-      return c.redirect("/admin/agents/new?error=seed_failed", 302);
-    }
-    // Attach repos if provided
-    if (reposRaw) {
-      const repos = reposRaw
-        .split(/\r?\n/)
-        .map((r) => r.trim())
-        .filter((r) => r.length > 0);
-      const invalid = repos.filter((r) => !isOrgRepo(r));
-      if (invalid.length > 0) {
-        await agentService.delete(agent.id);
-        return c.redirect("/admin/agents/new?error=invalid_repo_format", 302);
-      }
-      if (repos.length > 0) {
-        await agentService.updateFields(agent.id, { repos });
-      }
-    }
-    // Attach authorAllowlist if provided
-    if (authorAllowlistRaw) {
-      const authorAllowlist = [
-        ...new Set(
-          authorAllowlistRaw
-            .split(/\r?\n/)
-            .map((l) => l.trim())
-            .filter((l) => l.length > 0),
-        ),
-      ];
-      const invalid = authorAllowlist.filter((l) => !isGithubLogin(l));
-      if (invalid.length > 0) {
-        await agentService.delete(agent.id);
-        return c.redirect(
-          "/admin/agents/new?error=invalid_author_allowlist_format",
-          302,
-        );
-      }
-      if (authorAllowlist.length > 0) {
-        await agentService.updateFields(agent.id, {
-          reviewAuthorAllowlist: authorAllowlist,
-        });
-      }
-    }
-    // Attach patchAuthorAllowlist if provided
-    if (patchAuthorAllowlistRaw) {
-      const patchAuthorAllowlist = [
-        ...new Set(
-          patchAuthorAllowlistRaw
-            .split(/\r?\n/)
-            .map((l) => l.trim())
-            .filter((l) => l.length > 0),
-        ),
-      ];
-      const invalid = patchAuthorAllowlist.filter((l) => !isGithubLogin(l));
-      if (invalid.length > 0) {
-        await agentService.delete(agent.id);
-        return c.redirect(
-          "/admin/agents/new?error=invalid_author_allowlist_format",
-          302,
-        );
-      }
-      if (patchAuthorAllowlist.length > 0) {
-        await agentService.updateFields(agent.id, {
-          patchAuthorAllowlist,
-        });
-      }
-    }
-    // Attach member emails if provided — best-effort, mirrors the single-add
-    // POST /admin/agents/:id/members route: no format validation, and a
-    // failed/duplicate add is silently ignored rather than rolling back the
-    // agent. Runs before redirectWithMembersWarning below so freshly-added
-    // members are already visible to its zero-members check.
-    if (memberEmailsRaw) {
-      const memberEmails = [
-        ...new Set(
-          memberEmailsRaw
-            .split(/\r?\n/)
-            .map((l) => l.trim().toLowerCase())
-            .filter((l) => l.length > 0),
-        ),
-      ];
-      for (const email of memberEmails) {
-        try {
-          await agentMemberService.add(agent.id, email);
-        } catch {
-          // unique constraint violation — already a member, ignore
-        }
-      }
-    }
-    // Store the Claude credentials before provisioning so the pod comes up
-    // with them already in its env bundle rather than failing its first
-    // turn. Both fields (if supplied) go through a single patch call, mirroring
-    // the provision wizard's AI-credentials fieldset.
-    const claudeEnv: Record<string, string> = {};
-    if (claudeCodeOauthToken) {
-      claudeEnv.CLAUDE_CODE_OAUTH_TOKEN = claudeCodeOauthToken;
-    }
-    if (anthropicApiKey) {
-      claudeEnv.ANTHROPIC_API_KEY = anthropicApiKey;
-    }
-    if (Object.keys(claudeEnv).length > 0) {
-      await agentEnvService.patch(
-        agent.id,
-        claudeEnv,
-        new Set(SECRET_ENV_VARS),
-      );
-    }
-    if (inCluster) {
-      // Roll the row back on failure so a retry with the same name doesn't
-      // collide with a half-created agent.
-      try {
-        await provisioner.provision(agent.id, { slug: agent.name });
-      } catch (err) {
-        console.error("[admin-ui] provisioning failed, rolling back:", err);
-        await agentService.delete(agent.id).catch((cleanupErr) => {
-          console.error(
-            "[admin-ui] failed to roll back agent after provision error:",
-            cleanupErr,
-          );
-        });
-        return c.redirect("/admin/agents/new?error=provision_failed", 302);
-      }
-    }
-    // Best-effort, mirroring the same call at agent boot (agent/src/index.ts).
-    // reconcileSystemCrons is a full three-pass reconcile, so a second run is a
-    // no-op — and failing here would strand the operator next to a live agent.
-    try {
-      await agentCronJobService.reconcileSystemCrons(agent.id);
-    } catch (err) {
-      console.error("[admin-ui] failed to seed system crons (non-fatal):", err);
-    }
+    const { agent, restrictSlackToMembers } = result;
 
     // ─── UAP-2.1: inline Slack/GitHub connect branches ─────────────────────
     // The agent row already exists at this point, so any failure below
