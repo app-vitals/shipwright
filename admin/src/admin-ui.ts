@@ -32,18 +32,16 @@ import { sign, verify } from "hono/jwt";
 import {
   type AgentDetail,
   type AgentOption,
+  buildMergedWorkQueueRows,
   type PrListItem,
   type PullRequestItem,
-  type TaskItem,
-  type WorkQueueItem,
-  buildMergedWorkQueueRows,
   renderAgentDetailPage,
   renderAgentsPage,
   renderChatMessageBubble,
   renderChatPage,
   renderChatThreadPage,
-  renderGithubAppInstallPage,
   renderGithubAppInstalledPage,
+  renderGithubAppInstallPage,
   renderGithubAppManifestRedirectPage,
   renderLoginPage,
   renderMergedQueueActivityPage,
@@ -57,23 +55,25 @@ import {
   renderTaskDetailPage,
   renderTasksPage,
   resolveAgentNameFilterAndPaginate,
+  type TaskItem,
+  type WorkQueueItem,
 } from "./admin-ui-pages.ts";
 import {
-  SESSION_ADMIN_ACTION_MESSAGES,
   registerSessionAdminActionsRoutes,
+  SESSION_ADMIN_ACTION_MESSAGES,
 } from "./admin-ui-session-admin-actions.ts";
 import { registerSessionFollowRoutes } from "./admin-ui-session-follow.ts";
+import { registerSessionSettingsRoutes } from "./admin-ui-sessions.ts";
 import {
-  type Session,
   registerSessionsListRoutes,
   resolveVisibilityScope,
+  type Session,
 } from "./admin-ui-sessions-list.ts";
-import { registerSessionSettingsRoutes } from "./admin-ui-sessions.ts";
 import type { AgentCronJobService } from "./agent-cron-jobs.ts";
 import type { AgentCronRunService } from "./agent-cron-runs.ts";
-import type { ManualStep } from "./agent-deletion-checklist.ts";
 import type { DeleteAgentFullyDeps } from "./agent-deletion.ts";
 import { deleteAgentFully } from "./agent-deletion.ts";
+import type { ManualStep } from "./agent-deletion-checklist.ts";
 import type { AgentEnvService } from "./agent-envs.ts";
 import type { AgentMemberService } from "./agent-members.ts";
 import type { AgentPluginService } from "./agent-plugins.ts";
@@ -87,7 +87,10 @@ import {
 import type { AgentWorkQueueService } from "./agent-work-queue.ts";
 import type { AgentService } from "./agents.ts";
 import { publicNoAuthMiddleware } from "./api-auth.ts";
-import { validateAttachment } from "./attachment-validation.ts";
+import {
+  audioContentTypeForFilename,
+  validateAttachment,
+} from "./attachment-validation.ts";
 import { ForbiddenError, UnprocessableEntityError } from "./errors.ts";
 import {
   GITHUB_PROVISION_STATE_COOKIE,
@@ -103,12 +106,12 @@ import {
 import type { OktaAuthClient } from "./okta-auth-client.ts";
 import type { PushService } from "./push-service.ts";
 import {
-  PWA_ASSETS_DIR,
-  PWA_ICONS,
   buildManifest,
   buildOfflinePageHtml,
   buildServiceWorkerBody,
   getPrecacheList,
+  PWA_ASSETS_DIR,
+  PWA_ICONS,
   renderPwaHeadTags,
   sanitizeStartUrl,
 } from "./pwa.ts";
@@ -117,9 +120,9 @@ import {
   SessionFollowService,
 } from "./session-follow-service.ts";
 import {
-  type SessionForVisibility,
   deriveSessionVisibilityFromTasks,
   isSessionVisible,
+  type SessionForVisibility,
 } from "./session-scope.ts";
 import type { AppManifest } from "./slack-provisioning-client.ts";
 import {
@@ -211,10 +214,7 @@ interface PrismaAgentLike {
     updatedAt: Date;
     repos: string[];
   }>;
-  update(args: {
-    where: { id: string };
-    data: { repos: string[] };
-  }): Promise<{
+  update(args: { where: { id: string }; data: { repos: string[] } }): Promise<{
     id: string;
     name: string;
     slackId: string | null;
@@ -241,9 +241,7 @@ interface PrismaLike {
     }): Promise<{ key: string; value: string; secret: boolean }[]>;
   };
   agentPlugin: {
-    findMany(args: {
-      where: { agentId: string; enabled: boolean };
-    }): Promise<
+    findMany(args: { where: { agentId: string; enabled: boolean } }): Promise<
       Array<{
         id: string;
         name: string;
@@ -3388,10 +3386,7 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
     // security check (the follow route itself enforces visibility).
     let isFollowing = false;
     try {
-      isFollowing = await resolveIsFollowingSession(
-        c.var.userEmail,
-        sessionId,
-      );
+      isFollowing = await resolveIsFollowingSession(c.var.userEmail, sessionId);
     } catch {
       isFollowing = false;
     }
@@ -3853,6 +3848,47 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
     },
   );
 
+  // Attachment proxy (VM-3.1) — streams a message's attachment bytes back to
+  // the browser so audio attachments can play inline via `<audio src>`. The
+  // browser never holds the chat service's admin bearer token, so it can't
+  // call the chat service's GET /:id/attachment directly; this route fetches
+  // on its behalf and re-serves with a real audio/* Content-Type (the chat
+  // service itself always streams application/octet-stream, which most
+  // browsers won't play inline in an <audio> element).
+  app.get(
+    "/admin/chat/:agentId/threads/:threadId/messages/:messageId/attachment",
+    requireAuth,
+    async (c) => {
+      if (!c.var.isAdmin) return new Response("Forbidden", { status: 403 });
+
+      if (!chatClient) {
+        return c.json({ error: "chat service not configured" }, 503);
+      }
+
+      const threadId = c.req.param("threadId");
+      const messageId = c.req.param("messageId");
+
+      try {
+        const attachment = await chatClient.getAttachment(threadId, messageId);
+        if (!attachment) {
+          return c.json({ error: "attachment not found" }, 404);
+        }
+        const contentType =
+          audioContentTypeForFilename(attachment.filename) ??
+          "application/octet-stream";
+        // .slice() normalizes to Uint8Array<ArrayBuffer> — Hono's Data type
+        // requires that exact generic, not the wider Uint8Array<ArrayBufferLike>
+        // that new Uint8Array(await res.arrayBuffer()) produces.
+        return c.body(attachment.bytes.slice(), 200, {
+          "Content-Type": contentType,
+          "Content-Disposition": `inline; filename="${attachment.filename.replace(/"/g, "")}"`,
+        });
+      } catch {
+        return c.json({ error: "failed to fetch attachment" }, 500);
+      }
+    },
+  );
+
   app.post(
     "/admin/chat/:agentId/threads/:threadId/messages",
     requireAuth,
@@ -3998,6 +4034,7 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
     async (c) => {
       if (!c.var.isAdmin) return new Response("Forbidden", { status: 403 });
 
+      const agentId = c.req.param("agentId");
       const threadId = c.req.param("threadId");
       // ?since=<messageId> → incremental poll: only messages after that id.
       const since = c.req.query("since") || undefined;
@@ -4030,6 +4067,7 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
           bubbleHtml: renderChatMessageBubble(
             m,
             retryBodyByMessageId.get(m.id) ?? null,
+            agentId,
           ),
         }));
         return c.json({ messages });

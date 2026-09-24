@@ -50,6 +50,8 @@ state/toolchain-cache/{repo}.json
     "lint": "...",
     "lintScoped": "...",
     "typecheck": "...",
+    "typecheckScoped": "...",
+    "testScoped": "...",
     "build": "..."
   }
 }
@@ -57,7 +59,7 @@ state/toolchain-cache/{repo}.json
 
 - **`test`** — the fast default test command for TDD cycles (unit tests, or the project's main test runner). Always populated.
 - **`tests`** — optional object mapping layer names to commands, populated when the project has distinct test commands per layer. Keys are free-form (e.g., `unit`, `integration`, `smoke`, `e2e`, `schema-conformance`, `contract` — whatever the project calls them). When present, `test` should match one of these entries (typically the fastest layer). When absent or empty, `test` alone covers everything.
-- **`lintScoped`** — optional command template for scoping lint to only the changed files/packages in the current diff (see the Node.js "Scoped Lint Detection" rules below); populated when a monorepo tool or a changed-files fallback yields a usable command, omitted (never set to `null`) when no scoped command is available and the plain `lint` command is the only option.
+- **Scoped fields (`lintScoped`, `typecheckScoped`, `testScoped`)** — all follow the same pattern: an optional command template for scoping that check to only the changed files/packages/modules in the current diff instead of the whole repo, so a large monorepo doesn't pay a full-repo run on every change. Each is populated independently when a monorepo/affected-graph tool or a changed-files fallback yields a usable command for *that* check, and omitted (never set to `null`) when no scoped command is available for it — the plain (unscoped) command is then the only option, and that's fine. A project can have some scoped fields populated and others omitted (e.g. `lintScoped` set via eslint-on-changed-files but no equivalent `testScoped` fallback). Per-ecosystem detection rules for each scoped field live in the ecosystem sections below (see the Node.js "Scoped Check Detection" subsection, and the "Scoped Test Detection" subsections under Java, Rust, and Go).
 - **`docsSource`** — optional `{ path, heading }` pointer to exactly where Docs-First Discovery found the authoritative commands (e.g. `{"path": "CLAUDE.md", "heading": "## Commands"}`, or a `docs/*.md`/`ai-docs/*.md` file). Populated only when detection found commands in an existing doc; omitted (never set to `null`) when detection fell through to config-file scanning with no docs pointer to record. This is what the fingerprint below scopes itself to.
 
 One file per repo (not one shared file keyed by repo) — a shared file read-modify-written from multiple concurrent processes is not atomic: two agents updating *different* repos' entries at the same time can each read the whole file and clobber the other's addition on write, even though they touched different keys. Splitting by repo removes that cross-repo collision entirely. A same-repo collision (two runs racing on the same repo) can still happen, but it's benign — both would compute the same commands from the same repo state, so a lost update just costs a redundant re-detection next time, not data loss.
@@ -125,18 +127,20 @@ Scan the project root for these files in priority order. A project may match mul
 
 **Per-package commands** (monorepo): `{manager} --filter {package} {script}`
 
-### Scoped Lint Detection
+### Scoped Check Detection (Lint, Test, Typecheck)
 
-Populates the `lintScoped` cache field (see "## Caching Across Runs" above) with a command that scopes lint to the current diff instead of the whole repo, so a large monorepo doesn't pay a full-repo lint on every change. Check signals in this priority order — first match wins, `{base}`/`{head}` are the diff's base and head refs:
+Populates the `lintScoped`, `testScoped`, and `typecheckScoped` cache fields (see "## Caching Across Runs" above) with commands that scope each check to the current diff instead of the whole repo, so a large monorepo doesn't pay a full-repo run on every change. Check signals in this priority order — first match wins, `{base}`/`{head}` are the diff's base and head refs — and apply the same priority order independently per check (a repo can resolve `lintScoped` via Turborepo and still have no `typecheckScoped` if the `typecheck` script isn't wired into `turbo.json`'s pipeline):
 
-| Priority | Signal | Command |
-|----------|--------|---------|
-| 1 | `turbo.json` present (Turborepo) | `turbo lint --filter=...[{base}...{head}]` |
-| 2 | `nx.json` present (Nx) | `nx affected --target=lint --base={base}` |
-| 3 | `pnpm-workspace.yaml` present (pnpm workspaces) | `pnpm --filter "...[{base}]" lint` |
-| 4 | No monorepo tool detected | Generic `eslint {changed files}` fallback — run against the git-diff-changed files that are lintable (JS/TS extensions eslint covers), not the whole repo |
+| Priority | Signal | `lintScoped` | `testScoped` | `typecheckScoped` |
+|----------|--------|---------------|---------------|---------------------|
+| 1 | `turbo.json` present (Turborepo) | `turbo lint --filter=...[{base}...{head}]` | `turbo test --filter=...[{base}...{head}]` | `turbo typecheck --filter=...[{base}...{head}]` |
+| 2 | `nx.json` present (Nx) | `nx affected --target=lint --base={base}` | `nx affected --target=test --base={base}` | `nx affected --target=typecheck --base={base}` |
+| 3 | `pnpm-workspace.yaml` present (pnpm workspaces) | `pnpm --filter "...[{base}]" lint` | `pnpm --filter "...[{base}]" test` | `pnpm --filter "...[{base}]" typecheck` |
+| 4 | No monorepo tool detected | Generic `eslint {changed files}` fallback — run against the git-diff-changed files that are lintable (JS/TS extensions eslint covers), not the whole repo | No generic fallback — a changed-files test run is unsound in JS/TS (a test can exercise code far from the file that changed); omit `testScoped` rather than guess | No generic fallback — `tsc` type-checks the whole project graph by design, so there's no sound per-file scoping; omit `typecheckScoped` rather than guess |
 
-When none of these signals produce a usable command (e.g. a non-Node ecosystem with no equivalent scoped-lint tool), omit `lintScoped` from the cache entirely — never set it to `null`.
+Priority 1–3 commands require the target script (`test`, `typecheck`) to actually be declared in the monorepo tool's pipeline/target config (e.g. `turbo.json`'s `pipeline`/`tasks`, or an `nx.json` target default) — a tool being present doesn't guarantee every check is wired into it. Verify the target exists before emitting the scoped command; if it doesn't, fall through to the next priority (or omit) for that check only.
+
+When none of these signals produce a usable command for a given check (e.g. a non-Node ecosystem with no equivalent scoped tool, or priority 4's "no sound fallback" cases above), omit that field from the cache entirely — never set it to `null`.
 
 ## Rust
 
@@ -155,6 +159,18 @@ When none of these signals produce a usable command (e.g. a non-Node ecosystem w
 
 **Workspace detection:** `[workspace]` section in root `Cargo.toml`
 
+### Scoped Test Detection
+
+Populates `testScoped` (see "## Caching Across Runs" above). Rust has no ecosystem-standard affected-graph tool comparable to turbo/nx — there is no built-in "which crates does this diff affect" command, only per-crate scoping you construct yourself:
+
+| Signal | Command |
+|--------|---------|
+| `[workspace]` section in root `Cargo.toml`, and the diff's changed files map to a single member crate | `cargo test -p {crate}` — `{crate}` is the package name (from that crate's `Cargo.toml`) containing the changed paths |
+| Diff touches files in multiple member crates | Either run `cargo test -p {crate}` once per touched crate, or fall through to the plain `cargo test` (workspace-wide) — per-crate scoping doesn't compose into one command the way a graph-aware `affected` command would |
+| No workspace (single-crate repo), or changed paths don't map cleanly to one crate | Omit `testScoped` — the plain `cargo test` is the only option |
+
+**Caveat:** this is per-crate scoping, not a true dependency-affected-graph query — `cargo test -p {crate}` runs only that crate's own tests, it does not also run tests in crates that depend on the changed crate (Nx/Turbo's `affected` does traverse that graph). It also doesn't catch a workspace-wide integration test crate that indirectly exercises the changed code. Given Rust workspaces are typically small enough that a full `cargo test` is cheap, treat this as an available optimization, not a strong recommendation — falling through to the plain `test` command is a reasonable default, especially for smaller workspaces.
+
 ## Go
 
 | Signal | Detection |
@@ -171,6 +187,18 @@ When none of these signals produce a usable command (e.g. a non-Node ecosystem w
 | `gofmt -l .` | Format check |
 
 **Workspace detection:** `go.work` file
+
+### Scoped Test Detection
+
+Populates `testScoped` (see "## Caching Across Runs" above). Like Rust, Go has no ecosystem-standard affected-graph tool — scoping is per-package, not dependency-graph-aware:
+
+| Signal | Command |
+|--------|---------|
+| Diff's changed files map to one or a small number of packages | `go test ./{changed-package}/...` — one invocation per changed package (or a comma-joined package list in one `go test` call) |
+| `go.work` present (multi-module workspace) and changes span multiple modules | Run the per-package command above scoped within each affected module, or fall through to `go test ./...` at the workspace root |
+| Changed paths span most of the tree, or don't map cleanly to specific packages | Omit `testScoped` — the plain `go test ./...` is the only option |
+
+**Caveat:** `go test ./{package}/...` tests the changed package and its subpackages, but not packages elsewhere in the module that import the changed package and could be affected by the change — there's no built-in "affected" resolution the way Nx/Turbo provide for Node. As with Rust, Go compiles and tests fast enough in most repos that a full `go test ./...` is often cheap; treat per-package scoping as an available option for large repos where the full run has become slow, not a default recommendation.
 
 ## Java
 
@@ -200,6 +228,18 @@ When none of these signals produce a usable command (e.g. a non-Node ecosystem w
 - Maven: root `pom.xml` with `<modules>` section
 - Gradle: `settings.gradle` or `settings.gradle.kts` with `include(...)` statements
 
+### Scoped Test Detection
+
+Populates `testScoped` (see "## Caching Across Runs" above), for multi-module Maven/Gradle projects:
+
+| Tool | Signal | Command |
+|------|--------|---------|
+| Maven | `<modules>` section in root `pom.xml`, and the diff's changed files map to one or more member modules | `mvn test -pl {module} -am` (wrapper: `./mvnw test -pl {module} -am`) — `-pl` selects the changed module(s) (comma-separated for multiple), `-am` ("also make") builds their upstream dependencies first so the scoped run still reflects a consistent reactor build |
+| Gradle | `settings.gradle`/`settings.gradle.kts` `include(...)` statements, and the diff maps to one member module | `./gradlew :{module}:test` (global: `gradle :{module}:test`) — Gradle only rebuilds/retests the targeted module and its dependencies via its own up-to-date/dependency tracking |
+| Either | Diff spans most/all modules, or an affected-modules Gradle plugin isn't installed and changes don't map cleanly to a single module | Omit `testScoped` — the plain multi-module `test` command (full reactor / `./gradlew test`) is the only option |
+
+**Determining "changed module":** map each changed file path to the module/subproject whose root directory contains it — the module boundary is the directory holding that module's own `pom.xml` (Maven) or its entry in `settings.gradle`'s `include(...)` (Gradle). A diff touching files in more than one module's directory means more than one `{module}` value — either run the scoped command once per touched module, or fall through to the full multi-module command if that's simpler than composing several scoped invocations. A shared/root-level file changing (e.g. the parent `pom.xml`, `build.gradle` at the root, a shared BOM) should be treated as touching every module, since it can affect the reactor build for all of them — fall through to the full command in that case rather than scoping to just the file's own directory.
+
 **Mixed-language test suites** (common in Java projects):
 - `src/test/` in Java + `playwright.config.*` or `package.json` with Playwright → TypeScript E2E tests alongside Java unit tests
 - `requirements.txt` / `pyproject.toml` at root or in `tests/` → Python acceptance tests (e.g., pytest + requests)
@@ -224,6 +264,8 @@ When none of these signals produce a usable command (e.g. a non-Node ecosystem w
 
 **Monorepo detection:** Multiple `pyproject.toml` files in subdirectories
 
+**Scoped detection:** not attempted. Python has no ecosystem-standard affected-graph tool comparable to turbo/nx (a monorepo of multiple `pyproject.toml` packages has no equivalent of `nx affected`/`turbo --filter` built into the standard tooling). Best-effort/full-suite is the default — `testScoped`/`lintScoped`/`typecheckScoped` are omitted for Python and the plain full-repo commands above are used, even in a multi-package layout.
+
 ## Ruby
 
 | Signal | Detection |
@@ -239,6 +281,8 @@ When none of these signals produce a usable command (e.g. a non-Node ecosystem w
 | `bundle exec rake test` | Tests (Minitest) |
 | `bundle exec rubocop` | Lint |
 | `bundle exec standardrb` | Lint (Standard) |
+
+**Scoped detection:** not attempted, for the same reason as Python — no ecosystem-standard affected-graph tool exists for Ruby/Bundler. Best-effort/full-suite is the default; `testScoped`/`lintScoped`/`typecheckScoped` are omitted and the plain commands above are used.
 
 ## Generic / Makefile
 
@@ -323,6 +367,16 @@ npm_config_cache=/cache/npm npm ci
 
 **Rule for Shipwright**: run dependency installation as a direct package-manager invocation (`npm ci`, `bun install`, `pip install`, `cargo fetch`), never behind a monorepo task runner, unless the repo's runner config explicitly passes the cache vars through. Detected commands that bundle installation into a task-runner target (`turbo run setup`, `nx run-many -t install`) should be treated as cache-defeating and flagged, not silently used.
 
+
+## Never Run a Target the Diff Doesn't Touch
+
+This is a general rule, not specific to Node/monorepo tooling: never invoke a build, test, or export target whose declared source-path scope the current diff does not touch. The mechanism is the same regardless of ecosystem — compare the diff's changed file paths against each target's declared source-path scope, and only run targets whose scope overlaps the diff.
+
+"Declared source-path scope" means whatever the project's own tooling uses to say a target belongs to a given set of paths — a Turborepo/Nx/pnpm-workspace package boundary, a Maven/Gradle module directory, a Cargo/Go workspace member, a Makefile target's documented inputs, or a platform-specific build step (e.g. a mobile/native export step whose inputs are an `ios/`, `android/`, or platform-specific asset directory) are all instances of the same pattern. The mobile/native export step is one example among many, not a distinguished case — the same logic applies to, say, a docs-site build target scoped to `site/`, or a database-migration-generation target scoped to a `prisma/` or `migrations/` directory.
+
+Running an out-of-scope target isn't just wasted time: some targets have side effects (writing generated output, hitting external services, requiring credentials or platform-specific toolchains that may not even be installed in the current environment) that are actively harmful or simply fail outright when invoked without a reason tied to the diff. A native export step, for example, may require a full mobile toolchain (Xcode, Android SDK) unavailable in this environment — invoking it on a diff that never touched `ios/`/`android/` is both wasted effort and likely to fail for reasons unrelated to the change under test.
+
+This rule composes with, but is distinct from, scoped-check detection (`lintScoped`/`testScoped`/`typecheckScoped`) above: scoped-check detection narrows a check's *default* target set to just the affected packages/modules as an optimization; this rule is the harder constraint that a target outside the diff's scope should not run at all, regardless of whether a scoped or full command is otherwise in use.
 
 ## Multi-Ecosystem Projects
 
