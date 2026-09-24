@@ -16,12 +16,13 @@ import {
   renderAdminToolbar,
 } from "./admin-ui-styles.ts";
 import type { ManualStep } from "./agent-deletion-checklist.ts";
+import type { AgentTypeOption } from "./agent-type-manifest-loader.ts";
 import {
   annotateEligibility,
   buildEligibilityIndex,
   mergeWorkQueueSnapshots,
 } from "./agent-work-queue-merge.ts";
-import type { AgentTypeOption } from "./agent-type-manifest-loader.ts";
+import { isAudioFilename } from "./attachment-validation.ts";
 import { parseChatMarkers } from "./chat-markers.ts";
 import type {
   ChatMessage,
@@ -2731,7 +2732,9 @@ function renderTasksBoard(args: {
         ${t.session ? `<div style="font-size:12px;color:#6b7280;margin-bottom:8px"><strong>Session:</strong> ${escapeHtml(t.session)}</div>` : ""}
         ${agentId ? `<div style="font-size:12px;color:#6b7280;margin-bottom:16px"><strong>Agent:</strong> ${escapeHtml(agentNames[agentId] ?? agentId)}</div>` : ""}
         ${t.description ? `<div style="font-size:13px;color:#374151;line-height:1.6;margin-bottom:16px">${renderMarkdown(t.description)}</div>` : ""}
-        ${joinedPr ? `
+        ${
+          joinedPr
+            ? `
           <div style="border-top:1px solid #e8e8ee;padding-top:16px">
             <h3 style="font-size:13px;font-weight:600;margin-bottom:8px">Pull Request</h3>
             <div style="font-size:12px;color:#6b7280;margin-bottom:4px"><strong>Number:</strong> <a href="https://github.com/${escapeHtml(joinedPr.repo)}/pull/${joinedPr.prNumber}" style="color:#6366f1;text-decoration:none">#${joinedPr.prNumber}</a></div>
@@ -2739,7 +2742,9 @@ function renderTasksBoard(args: {
             <div style="font-size:12px;color:#6b7280;margin-bottom:4px"><strong>Review State:</strong> ${escapeHtml(joinedPr.reviewState)}</div>
             ${joinedPr.blocked ? `<div style="font-size:12px;color:#dc2626"><strong>Blocked:</strong> ${escapeHtml(joinedPr.blockedReason ?? "Yes")}</div>` : ""}
           </div>
-        ` : ""}
+        `
+            : ""
+        }
       </div>
     `;
 
@@ -4509,7 +4514,10 @@ function renderPaginationBar(opts: {
   const { pagination, basePath, pageParam } = opts;
   if (pagination.total === 0) return "";
 
-  const totalPages = Math.max(1, Math.ceil(pagination.total / pagination.limit));
+  const totalPages = Math.max(
+    1,
+    Math.ceil(pagination.total / pagination.limit),
+  );
   const { page, limit, total } = pagination;
   const from = (page - 1) * limit + 1;
   const to = Math.min(page * limit, total);
@@ -4643,10 +4651,7 @@ function renderCronRunRow(
       ? "—"
       : (() => {
           const input = breakdown.reduce((sum, m) => sum + m.inputTokens, 0);
-          const output = breakdown.reduce(
-            (sum, m) => sum + m.outputTokens,
-            0,
-          );
+          const output = breakdown.reduce((sum, m) => sum + m.outputTokens, 0);
           return `${escapeHtml(String(input))} in / ${escapeHtml(String(output))} out`;
         })();
 
@@ -5409,10 +5414,16 @@ export const ABSOLUTE_MAX_MS = 3_900_000;
  * badge also renders a Retry button that resends that exact text. Callers
  * iterating a message list should track the last-seen user body and pass it
  * through per-message (see renderChatThreadPage and the messages.json route).
+ *
+ * `agentId` (VM-3.1) is needed to build the attachment-proxy URL
+ * (`/admin/chat/:agentId/threads/:threadId/messages/:id/attachment`) used as
+ * an audio attachment's `<audio src>` — defaults to "" for callers/tests that
+ * don't pass it and don't care about attachment rendering.
  */
 export function renderChatMessageBubble(
   m: ChatMessage,
   retryBody: string | null = null,
+  agentId = "",
 ): string {
   const isUser = m.role === "user";
   const isAssistant = m.role === "assistant";
@@ -5476,9 +5487,16 @@ export function renderChatMessageBubble(
     ? `<div style="font-size:14px;line-height:1.6;color:${bubbleColor}">${renderMarkdown(cleanedBody)}</div>`
     : `<div style="font-size:14px;white-space:pre-wrap;color:${bubbleColor}">${escapeHtml(m.body)}</div>`;
 
-  // Attachment badge (metadata only — content is ephemeral, no re-download).
-  const attachmentBadge = m.attachmentFilename
-    ? `<div style="display:inline-block;margin-top:8px;padding:3px 8px;background:#e5e7eb;color:#374151;border-radius:6px;font-size:12px">📎 ${escapeHtml(m.attachmentFilename)}</div>`
+  // Attachment: an inline <audio> player for audio attachments (VM-3.1) —
+  // mic-recorded user messages and VM-2.1's TTS-authored assistant replies —
+  // otherwise the plain filename badge. Audio-ness is inferred from the
+  // filename extension (see attachment-validation.ts's isAudioFilename); the
+  // src hits the admin attachment-proxy route, which streams the message's
+  // bytes from the chat service with a real audio/* Content-Type.
+  const attachmentMedia = m.attachmentFilename
+    ? isAudioFilename(m.attachmentFilename)
+      ? `<audio controls style="display:block;margin-top:8px;max-width:100%" src="${escapeHtml(`/admin/chat/${encodeURIComponent(agentId)}/threads/${encodeURIComponent(m.threadId)}/messages/${encodeURIComponent(m.id)}/attachment`)}"></audio>`
+      : `<div style="display:inline-block;margin-top:8px;padding:3px 8px;background:#e5e7eb;color:#374151;border-radius:6px;font-size:12px">📎 ${escapeHtml(m.attachmentFilename)}</div>`
     : "";
 
   let tokenBadge = "";
@@ -5495,7 +5513,7 @@ export function renderChatMessageBubble(
         <div style="font-size:11px;font-weight:600;color:${bubbleColor};margin-bottom:4px;text-transform:uppercase;letter-spacing:0.05em">${escapeHtml(m.role)}</div>
         ${bodyHtml}
         ${markerBadges}
-        ${attachmentBadge}
+        ${attachmentMedia}
         ${errorBadge}
         ${tokenBadge}
         <div style="font-size:11px;color:#9ca3af;margin-top:6px">${escapeHtml(new Date(m.createdAt).toLocaleString())}</div>
@@ -5572,6 +5590,8 @@ const chatThreadStyles = `
     .chat-message-input { flex:1;resize:vertical;padding:10px 12px;border:1px solid #d1d5db;border-radius:8px;font-size:14px;font-family:inherit;line-height:1.5;outline:none }
     .chat-composer-btn { flex-shrink:0;height:44px }
     .chat-composer-btn--attach { padding:0 16px }
+    .chat-composer-btn--mic { padding:0 16px }
+    .chat-composer-btn--mic.chat-mic-recording { background:#fee2e2;color:#b91c1c;border-color:#b91c1c }
     .chat-composer-btn--send { padding:0 20px }
     /* Live-progress stall state (CFB-2.3): when progressSeq hasn't advanced for
        STALL_WARN_AFTER_MS the status bubble gains .${STALL_INDICATOR_CLASS},
@@ -5779,7 +5799,7 @@ export function renderChatThreadPage(
   let lastUserBody: string | null = null;
   const messageBubbles = messages
     .map((m) => {
-      const html = renderChatMessageBubble(m, lastUserBody);
+      const html = renderChatMessageBubble(m, lastUserBody, agentId);
       if (m.role === "user") lastUserBody = m.body;
       return html;
     })
@@ -5848,6 +5868,7 @@ export function renderChatThreadPage(
   var attachBtn = document.getElementById('attach-btn');
   var fileInput = document.getElementById('file-input');
   var fileName = document.getElementById('file-name');
+  var micBtn = document.getElementById('mic-btn');
   var container = document.getElementById('messages-container');
   var agentId = ${JSON.stringify(agentId)};
   var threadId = ${JSON.stringify(thread.id)};
@@ -5908,11 +5929,20 @@ export function renderChatThreadPage(
   // Optimistic user bubble (pre-round-trip; body is plain text, so no markdown
   // — matches the server's white-space:pre-wrap user rendering). Assistant and
   // reloaded bubbles are NEVER built here: they come from server bubbleHtml.
-  function addUserBubble(body, attachmentName) {
+  // \`file\` (VM-3.1) may be a picked file OR a mic-recorded Blob/File — for
+  // an audio file this renders an inline <audio> player immediately, using a
+  // local object URL (no round-trip needed to preview what was just
+  // recorded); everything else still gets the plain filename badge.
+  function addUserBubble(body, file) {
     var color = '#4f46e5';
-    var attachmentHtml = attachmentName
-      ? '<div style="display:inline-block;margin-top:8px;padding:3px 8px;background:#e5e7eb;color:#374151;border-radius:6px;font-size:12px">📎 ' + escHtml(attachmentName) + '</div>'
-      : '';
+    var attachmentHtml = '';
+    if (file) {
+      if (file.type && file.type.indexOf('audio/') === 0) {
+        attachmentHtml = '<audio controls style="display:block;margin-top:8px;max-width:100%" src="' + URL.createObjectURL(file) + '"></audio>';
+      } else {
+        attachmentHtml = '<div style="display:inline-block;margin-top:8px;padding:3px 8px;background:#e5e7eb;color:#374151;border-radius:6px;font-size:12px">📎 ' + escHtml(file.name) + '</div>';
+      }
+    }
     var bubble = document.createElement('div');
     bubble.className = '${CHAT_BUBBLE_CLASS} ${CHAT_BUBBLE_CLASS}--user';
     bubble.innerHTML = '<div class="${CHAT_BUBBLE_INNER_CLASS}">'
@@ -6032,6 +6062,7 @@ export function renderChatThreadPage(
   function enableSend() {
     sendBtn.disabled = false;
     sendBtn.textContent = 'Send';
+    if (micBtn) micBtn.disabled = false;
   }
 
   // Adaptive poll: fast while a reply is pending, slow while idle (so
@@ -6111,6 +6142,87 @@ export function renderChatThreadPage(
     });
   }
 
+  // Mic-record button (VM-3.1): records via MediaRecorder and submits the
+  // resulting Blob through the SAME sendText()/upload flow as a picked file
+  // — no separate endpoint. Click once to start, click again (or the button
+  // relabels to a stop icon) to stop and send. Candidate MIME types are
+  // ordered by preference; attachment-validation.ts's allowlist accepts all
+  // three so whichever the browser actually supports still uploads cleanly.
+  var MIC_MIME_CANDIDATES = ['audio/webm;codecs=opus', 'audio/webm', 'audio/ogg'];
+  var mediaRecorder = null;
+  var micStream = null;
+  var recordedChunks = [];
+
+  function micSupported() {
+    return !!(window.MediaRecorder && navigator.mediaDevices && navigator.mediaDevices.getUserMedia);
+  }
+
+  function stopMicStream() {
+    if (micStream) {
+      micStream.getTracks().forEach(function(t) { t.stop(); });
+      micStream = null;
+    }
+  }
+
+  function setMicRecordingUI(recording) {
+    if (!micBtn) return;
+    micBtn.textContent = recording ? '⏹' : '🎤';
+    micBtn.classList.toggle('chat-mic-recording', recording);
+    micBtn.setAttribute('aria-label', recording ? 'Stop recording' : 'Record a voice message');
+  }
+
+  if (micBtn) {
+    if (!micSupported()) {
+      // Graceful degradation: no MediaRecorder/getUserMedia in this browser
+      // (or non-HTTPS context) — hide the button rather than offer a dead
+      // control.
+      micBtn.style.display = 'none';
+    } else {
+      micBtn.addEventListener('click', function() {
+        if (mediaRecorder && mediaRecorder.state === 'recording') {
+          mediaRecorder.stop();
+          return;
+        }
+        navigator.mediaDevices.getUserMedia({ audio: true }).then(function(stream) {
+          micStream = stream;
+          recordedChunks = [];
+          var mimeType = '';
+          for (var i = 0; i < MIC_MIME_CANDIDATES.length; i++) {
+            if (window.MediaRecorder.isTypeSupported && window.MediaRecorder.isTypeSupported(MIC_MIME_CANDIDATES[i])) {
+              mimeType = MIC_MIME_CANDIDATES[i];
+              break;
+            }
+          }
+          try {
+            mediaRecorder = mimeType ? new MediaRecorder(stream, { mimeType: mimeType }) : new MediaRecorder(stream);
+          } catch (e) {
+            stopMicStream();
+            return;
+          }
+          mediaRecorder.addEventListener('dataavailable', function(e) {
+            if (e.data && e.data.size > 0) recordedChunks.push(e.data);
+          });
+          mediaRecorder.addEventListener('stop', function() {
+            stopMicStream();
+            setMicRecordingUI(false);
+            var blobType = mediaRecorder.mimeType || mimeType || 'audio/webm';
+            var blob = new Blob(recordedChunks, { type: blobType });
+            recordedChunks = [];
+            if (blob.size === 0) return;
+            var ext = blobType.indexOf('ogg') !== -1 ? 'ogg' : 'webm';
+            var file = new File([blob], 'recording-' + Date.now() + '.' + ext, { type: blobType });
+            sendText('', file);
+          });
+          mediaRecorder.start();
+          setMicRecordingUI(true);
+        }).catch(function() {
+          // Permission denied, no mic, or blocked context — no-op; the
+          // button simply stays in its idle state.
+        });
+      });
+    }
+  }
+
   function clearFile() {
     if (fileInput) fileInput.value = '';
     if (fileName) fileName.textContent = '';
@@ -6119,18 +6231,18 @@ export function renderChatThreadPage(
   function sendText(text, file) {
     if (!text && !file) return;
 
-    // Disable send button
+    // Disable send button (and mic — no recording mid-send)
     sendBtn.disabled = true;
     sendBtn.textContent = 'Sending…';
+    if (micBtn) micBtn.disabled = true;
 
     // Build multipart body before clearing the inputs
     var fd = new FormData();
     fd.append('body', text);
     if (file) fd.append('file', file);
-    var attachmentName = file ? file.name : null;
 
-    // Add user bubble optimistically (with attachment badge if present).
-    addUserBubble(text, attachmentName);
+    // Add user bubble optimistically (with attachment preview if present).
+    addUserBubble(text, file);
 
     // Show the live status bubble + start the ticker immediately — Layer 1
     // begins ticking with zero network dependency.
@@ -6383,6 +6495,13 @@ export function renderChatThreadPage(
               class="chat-message-input"
             ></textarea>
             <input type="file" id="file-input" name="file" style="display:none" accept="text/*,image/*,application/pdf,application/json">
+            <button
+              type="button"
+              id="mic-btn"
+              class="btn btn-secondary chat-composer-btn chat-composer-btn--mic"
+              aria-label="Record a voice message"
+              title="Record a voice message"
+            >🎤</button>
             <button
               type="button"
               id="attach-btn"
