@@ -619,6 +619,50 @@ describeOrSkip("MessageService (integration)", () => {
       expect(result?.assistantMessage.errorKind).toBe("cancelled");
       expect(result?.userMessage.repliedAt).not.toBeNull();
     });
+
+    it("persists attachmentFilename/attachmentSize/attachmentBytes on the assistant message when provided", async () => {
+      const threadId = await createThread(prisma);
+      const userMessage = await prisma.message.create({
+        data: { threadId, role: "user", body: "question" },
+      });
+      const attachmentBytes = new Uint8Array([5, 6, 7, 8]);
+
+      const result = await service.reply(userMessage.id, {
+        body: "Here's the file you asked for.",
+        attachmentFilename: "report.pdf",
+        attachmentSize: 4,
+        attachmentBytes,
+      });
+
+      expect(result?.assistantMessage.attachmentFilename).toBe("report.pdf");
+      expect(result?.assistantMessage.attachmentSize).toBe(4);
+      expect(
+        Buffer.from(result?.assistantMessage.attachmentBytes as Uint8Array),
+      ).toEqual(Buffer.from(attachmentBytes));
+
+      // Re-read to confirm it was actually persisted, not just echoed back.
+      const read = await service.findById(result?.assistantMessage.id as string);
+      expect(read?.attachmentFilename).toBe("report.pdf");
+      expect(read?.attachmentSize).toBe(4);
+      expect(Buffer.from(read?.attachmentBytes as Uint8Array)).toEqual(
+        Buffer.from(attachmentBytes),
+      );
+    });
+
+    it("leaves attachment fields null on the assistant message when omitted (unchanged default behavior)", async () => {
+      const threadId = await createThread(prisma);
+      const userMessage = await prisma.message.create({
+        data: { threadId, role: "user", body: "question" },
+      });
+
+      const result = await service.reply(userMessage.id, {
+        body: "No attachment here.",
+      });
+
+      expect(result?.assistantMessage.attachmentFilename).toBeNull();
+      expect(result?.assistantMessage.attachmentSize).toBeNull();
+      expect(result?.assistantMessage.attachmentBytes).toBeNull();
+    });
   });
 
   // ─── requestCancel() ──────────────────────────────────────────────────────────

@@ -81,9 +81,9 @@ Indexes: `[agentId, updatedAt desc]` (list-by-agent ordering), `[memberId]`.
 | `body` | `String` | |
 | `tokens` | `Json?` | e.g. `{ input_tokens, output_tokens }` — used by thread stats |
 | `costUsd` | `Float?` | |
-| `attachmentFilename` | `String?` | |
-| `attachmentSize` | `Int?` | |
-| `attachmentBytes` | `Bytes?` | App-layer capped at 10 MB (`MAX_ATTACHMENT_BYTES`); cleared after being served once |
+| `attachmentFilename` | `String?` | Set via `POST / (create)` or `POST /:id/reply`; optional |
+| `attachmentSize` | `Int?` | Set via `POST / (create)` or `POST /:id/reply`; optional |
+| `attachmentBytes` | `Bytes?` | Set via `POST / (create)` or `POST /:id/reply`; app-layer capped at 10 MB (`MAX_ATTACHMENT_BYTES`); cleared after being served once |
 | `claimed` | `Boolean` | Default `false`; set by the claim queue endpoint |
 | `claimedAt` | `DateTime?` | |
 | `claimedBy` | `String?` | Caller `agentId`, or `"admin"` |
