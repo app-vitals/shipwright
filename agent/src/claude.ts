@@ -1,5 +1,11 @@
 import type { ProgressPhase } from "@shipwright/lib/progress-phases";
 import type { ErrorCapturingClient } from "@shipwright/lib/sentry";
+import {
+  createRunCgroup,
+  killTree,
+  markCgroupUnavailable,
+  removeRunCgroup,
+} from "./process-tree-kill.ts";
 import { type ContentBlock, phaseForBlock } from "./progress-milestones.ts";
 
 export interface LiveClaudeConfig {
@@ -548,12 +554,56 @@ export function createRunClaude(
     // extraEnv is layered on last (after the SENTRY_DSN strip) as a per-run
     // override point — if a caller somehow passed SENTRY_DSN in extraEnv, it
     // would deliberately win.
-    const proc = spawner(["claude", ...args], {
-      cwd: workspace,
-      env: { ...spawnEnv, ...extraEnv },
-      stdout: "pipe",
-      stderr: "pipe",
-    });
+    //
+    // Nothing else is filtered: the CLI (and every install/build it runs in
+    // turn) inherits the ambient environment wholesale, so tooling cache vars
+    // like npm_config_cache / YARN_CACHE_FOLDER / PIP_CACHE_DIR reach child
+    // install processes intact. See plugins/shipwright/references/
+    // toolchain-patterns.md ("Environment Passthrough to Install Children")
+    // for the one place that is NOT true — a target repo whose task runner
+    // enforces a strict env allowlist.
+    const spawnEnvironment = { ...spawnEnv, ...extraEnv };
+    // Two literal option objects rather than one spread: the "pipe" literals
+    // have to stay literal for Bun.spawn's overloads to type stdout/stderr as
+    // readable streams rather than the widened number|stream|undefined union.
+    const spawnClaude = (cgroup: string | undefined) =>
+      cgroup === undefined
+        ? spawner(["claude", ...args], {
+            cwd: workspace,
+            env: spawnEnvironment,
+            stdout: "pipe",
+            stderr: "pipe",
+          })
+        : spawner(["claude", ...args], {
+            cwd: workspace,
+            env: spawnEnvironment,
+            stdout: "pipe",
+            stderr: "pipe",
+            cgroup,
+          });
+
+    // Put the CLI in its own cgroup when the container delegates cgroup v2,
+    // so the timeout/abort path can kill it and every process it forked in
+    // one atomic write. Returns undefined on the (common) read-only-cgroupfs
+    // container, where killTree falls back to a procfs descendant walk
+    // instead — see agent/src/process-tree-kill.ts.
+    let cgroupPath = createRunCgroup();
+    let proc: ReturnType<typeof spawnClaude>;
+    try {
+      proc = spawnClaude(cgroupPath);
+    } catch (err) {
+      // Bun fails the spawn outright if the cgroup can't be joined (it was
+      // removed underneath us, delegation was revoked mid-run, …). A
+      // containment optimization must never cost us the run itself: drop the
+      // cgroup, latch the mode off for later invocations, and spawn plainly.
+      if (!cgroupPath) throw err;
+      removeRunCgroup(cgroupPath);
+      markCgroupUnavailable(
+        `spawn with cgroup failed: ${err instanceof Error ? err.message : String(err)}`,
+      );
+      cgroupPath = undefined;
+      proc = spawnClaude(undefined);
+    }
 
     let timedOut = false;
     let aborted = false;
@@ -566,7 +616,7 @@ export function createRunClaude(
     // it can't leak on a long-lived, per-thread signal across a resume-retry.
     const onAbort = () => {
       aborted = true;
-      proc.kill();
+      killTree(proc, cgroupPath);
     };
     if (signal) {
       if (signal.aborted) onAbort();
@@ -579,7 +629,7 @@ export function createRunClaude(
       timedOut = true;
       timeoutReason = "ceiling";
       firedTimeoutMs = timeoutMs;
-      proc.kill();
+      killTree(proc, cgroupPath);
     }, timeoutMs);
 
     // Idle-reset timer: cleared/restarted on every stdout line. Fires when
@@ -591,7 +641,7 @@ export function createRunClaude(
         timedOut = true;
         timeoutReason = "idle";
         firedTimeoutMs = idleTimeoutMs;
-        proc.kill();
+        killTree(proc, cgroupPath);
       }, idleTimeoutMs);
     };
     resetIdleTimer();
@@ -613,6 +663,11 @@ export function createRunClaude(
       clearTimeout(ceilingTimer);
       clearTimeout(idleTimer);
       if (signal) signal.removeEventListener("abort", onAbort);
+      // The CLI has exited by now, so this is also the point where any
+      // descendant that outlived it becomes visible: removeRunCgroup kills
+      // stragglers still inside before removing the directory. Best-effort —
+      // it never throws.
+      if (cgroupPath) removeRunCgroup(cgroupPath);
     });
 
     // Aborted must be checked BEFORE timedOut and the exitCode checks: kill()

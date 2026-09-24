@@ -277,6 +277,19 @@ jobs:
             --entrypoint bun shipwright-agent:ci \
             run agent/scripts/verify-browser-launch.ts
 
+      # Reports (does not gate) which process-tree-kill mode the real image
+      # resolves to: cgroup v2 delegation if /sys/fs/cgroup is writable inside
+      # the container, otherwise the procfs descendant-walk fallback. Both are
+      # supported — see agent/src/process-tree-kill.ts — so this step always
+      # exits 0; it exists so the answer is visible per-build in CI logs
+      # instead of being a stale assumption in a comment. Same restrictions as
+      # the browser check above, for the same reason.
+      - name: Report cgroup delegation mode under sandbox restrictions
+        run: |
+          docker run --rm --user 1000 --security-opt=no-new-privileges \
+            --entrypoint bun shipwright-agent:ci \
+            run agent/scripts/verify-cgroup-delegation.ts
+
   metrics-docker-build:
     name: metrics docker build
     timeout-minutes: 20
