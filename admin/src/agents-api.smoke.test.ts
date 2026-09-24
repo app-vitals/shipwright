@@ -1478,6 +1478,33 @@ const ADMIN_API_KEY = "admin-key-for-create-tests";
 
 // ─── Create agent smoke tests (APA-2.1) ───────────────────────────────────────
 
+/**
+ * AdminDeps wired with admin API key auth and an agentService.create() that
+ * counts calls — used by the validation-failure tests below to assert zero
+ * Agent rows are created.
+ */
+function makeMockDepsCountingCreateCalls(): {
+  deps: AdminDeps;
+  createCalls: () => number;
+} {
+  let createCalls = 0;
+  const base = makeMockDeps();
+  const deps: AdminDeps = {
+    ...base,
+    adminApiKeys: parseAdminApiKeys(`admin:${ADMIN_API_KEY}:*`),
+    agentService: {
+      ...base.agentService,
+      create: async (...args) => {
+        createCalls++;
+        return base.agentService.create(
+          ...(args as Parameters<typeof base.agentService.create>),
+        );
+      },
+    },
+  };
+  return { deps, createCalls: () => createCalls };
+}
+
 describe("admin API — POST /agents", () => {
   let cookie: string;
 
@@ -1589,21 +1616,7 @@ describe("admin API — POST /agents", () => {
   });
 
   it("missing name → 4xx and no Agent row created", async () => {
-    let createCalls = 0;
-    const base = makeMockDeps();
-    const deps: AdminDeps = {
-      ...base,
-      adminApiKeys: parseAdminApiKeys(`admin:${ADMIN_API_KEY}:*`),
-      agentService: {
-        ...base.agentService,
-        create: async (...args) => {
-          createCalls++;
-          return base.agentService.create(
-            ...(args as Parameters<typeof base.agentService.create>),
-          );
-        },
-      },
-    };
+    const { deps, createCalls } = makeMockDepsCountingCreateCalls();
     const app = createAdminApp(deps);
     const res = await app.request("/agents", {
       method: "POST",
@@ -1615,25 +1628,11 @@ describe("admin API — POST /agents", () => {
     });
     expect(res.status).toBeGreaterThanOrEqual(400);
     expect(res.status).toBeLessThan(500);
-    expect(createCalls).toBe(0);
+    expect(createCalls()).toBe(0);
   });
 
   it("unresolvable typeName → 4xx and no Agent row created", async () => {
-    let createCalls = 0;
-    const base = makeMockDeps();
-    const deps: AdminDeps = {
-      ...base,
-      adminApiKeys: parseAdminApiKeys(`admin:${ADMIN_API_KEY}:*`),
-      agentService: {
-        ...base.agentService,
-        create: async (...args) => {
-          createCalls++;
-          return base.agentService.create(
-            ...(args as Parameters<typeof base.agentService.create>),
-          );
-        },
-      },
-    };
+    const { deps, createCalls } = makeMockDepsCountingCreateCalls();
     const app = createAdminApp(deps);
     const res = await app.request("/agents", {
       method: "POST",
@@ -1645,7 +1644,7 @@ describe("admin API — POST /agents", () => {
     });
     expect(res.status).toBeGreaterThanOrEqual(400);
     expect(res.status).toBeLessThan(500);
-    expect(createCalls).toBe(0);
+    expect(createCalls()).toBe(0);
     const body = await res.json();
     expect(body.error).toContain("invalid_type");
   });
