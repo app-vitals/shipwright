@@ -49,15 +49,14 @@ state/toolchain-cache/{repo}.json
     "typecheck": "...",
     "typecheckScoped": "...",
     "testScoped": "...",
-    "build": "...",
-    "installScoped": "..."
+    "build": "..."
   }
 }
 ```
 
 - **`test`** — the fast default test command for TDD cycles (unit tests, or the project's main test runner). Always populated.
 - **`tests`** — optional object mapping layer names to commands, populated when the project has distinct test commands per layer. Keys are free-form (e.g., `unit`, `integration`, `smoke`, `e2e`, `schema-conformance`, `contract` — whatever the project calls them). When present, `test` should match one of these entries (typically the fastest layer). When absent or empty, `test` alone covers everything.
-- **Scoped fields (`lintScoped`, `typecheckScoped`, `testScoped`, `installScoped`)** — all follow the same pattern: an optional command template for scoping that check to only the changed files/packages/modules in the current diff instead of the whole repo, so a large monorepo doesn't pay a full-repo run on every change. Each is populated independently when a monorepo/affected-graph tool or a changed-files fallback yields a usable command for *that* check, and omitted (never set to `null`) when no scoped command is available for it — the plain (unscoped) command is then the only option, and that's fine. A project can have some scoped fields populated and others omitted (e.g. `lintScoped` set via eslint-on-changed-files but no equivalent `testScoped` fallback). Per-ecosystem detection rules for each scoped field live in the ecosystem sections below (see the Node.js "Scoped Check Detection" subsection, and the "Scoped Test Detection" subsections under Java, Rust, and Go).
+- **Scoped fields (`lintScoped`, `typecheckScoped`, `testScoped`)** — all follow the same pattern: an optional command template for scoping that check to only the changed files/packages/modules in the current diff instead of the whole repo, so a large monorepo doesn't pay a full-repo run on every change. Each is populated independently when a monorepo/affected-graph tool or a changed-files fallback yields a usable command for *that* check, and omitted (never set to `null`) when no scoped command is available for it — the plain (unscoped) command is then the only option, and that's fine. A project can have some scoped fields populated and others omitted (e.g. `lintScoped` set via eslint-on-changed-files but no equivalent `testScoped` fallback). Per-ecosystem detection rules for each scoped field live in the ecosystem sections below (see the Node.js "Scoped Check Detection" subsection, and the "Scoped Test Detection" subsections under Java, Rust, and Go).
 
 One file per repo (not one shared file keyed by repo) — a shared file read-modify-written from multiple concurrent processes is not atomic: two agents updating *different* repos' entries at the same time can each read the whole file and clobber the other's addition on write, even though they touched different keys. Splitting by repo removes that cross-repo collision entirely. A same-repo collision (two runs racing on the same repo) can still happen, but it's benign — both would compute the same commands from the same repo state, so a lost update just costs a redundant re-detection next time, not data loss.
 

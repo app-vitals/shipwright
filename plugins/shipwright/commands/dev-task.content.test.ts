@@ -448,8 +448,8 @@ describe("toolchain-patterns.md — cache schema includes lintScoped for diff-sc
   });
 });
 
-describe("toolchain-patterns.md — generalized installScoped/typecheckScoped/testScoped detection across ecosystems (LVB-3.1)", () => {
-  it("defines typecheckScoped, testScoped, and installScoped fields in the cache schema", () => {
+describe("toolchain-patterns.md — generalized typecheckScoped/testScoped detection across ecosystems (LVB-3.1)", () => {
+  it("defines typecheckScoped and testScoped fields in the cache schema", () => {
     const referencesPath = join(import.meta.dir, "..", "references", "toolchain-patterns.md");
     const referencesContent = readFileSync(referencesPath, "utf-8");
 
@@ -458,7 +458,28 @@ describe("toolchain-patterns.md — generalized installScoped/typecheckScoped/te
     const schemaSection = referencesContent.slice(schemaIdx, schemaIdx + 500);
     expect(schemaSection).toContain('"typecheckScoped"');
     expect(schemaSection).toContain('"testScoped"');
-    expect(schemaSection).toContain('"installScoped"');
+  });
+
+  it("does not declare a scoped field without a corresponding per-ecosystem detection rule", () => {
+    const referencesPath = join(import.meta.dir, "..", "references", "toolchain-patterns.md");
+    const referencesContent = readFileSync(referencesPath, "utf-8");
+
+    // Every `*Scoped` field named anywhere in the doc must be more than a schema
+    // placeholder: it needs at least one detection rule / ecosystem mention beyond
+    // the schema block and the shared "Scoped fields" definition bullet. Guards the
+    // LVB-3.1 review finding — `installScoped` was declared with no rule defining it.
+    const scopedFields = new Set(
+      [...referencesContent.matchAll(/`?"?(\w+Scoped)"?`?/g)].map((m) => m[1] as string),
+    );
+    expect(scopedFields.size).toBeGreaterThan(0);
+
+    for (const field of scopedFields) {
+      const occurrences = referencesContent.split(field).length - 1;
+      expect(
+        occurrences,
+        `${field} is named ${occurrences}x — a scoped field needs a per-ecosystem detection rule, not just a schema entry`,
+      ).toBeGreaterThan(2);
+    }
   });
 
   it("extends the Node.js scoped-check priority table to testScoped and typecheckScoped, not just lint", () => {
