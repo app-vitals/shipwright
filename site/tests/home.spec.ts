@@ -510,10 +510,14 @@ test("footer links to repo, license (MIT), Claude Code, and community", async ({
   await page.goto("/");
   const footer = page.locator("footer");
   await expect(footer).toBeVisible();
-  // Repository.
+  // Repository. (STAR-1.1 UTM-tags this link, so match the base URL plus the
+  // query string rather than an exact bare href.)
   await expect(
     footer.getByRole("link", { name: "GitHub", exact: true }),
-  ).toHaveAttribute("href", "https://github.com/app-vitals/shipwright");
+  ).toHaveAttribute(
+    "href",
+    /^https:\/\/github\.com\/app-vitals\/shipwright\?.*utm_content=nav_footer/,
+  );
   // License (MIT).
   await expect(
     footer.getByRole("link", { name: /MIT License/i }),
