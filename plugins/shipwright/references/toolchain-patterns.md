@@ -96,6 +96,26 @@ A missing or stale cache never blocks progress — worst case is a cache miss, w
 
 **Known limitation, not addressed here:** the cache stores root-level commands only — the same granularity the config-file fallback already used before caching existed. A monorepo with genuinely different per-package toolchains (turborepo/nx/pnpm-workspaces) isn't newly broken by caching, but isn't specially handled either; per-package cache scoping is a candidate follow-up if it turns out to matter in practice.
 
+## Writing Learned Facts Back to Docs
+
+Toolchain detection produces things worth recording somewhere more visible than `state/toolchain-cache/{repo}.json` — a project's own docs are what a human (or a later agent skimming `CLAUDE.md` instead of the cache) actually reads. After detection runs, write a small, best-effort summary of what was learned back into the project's own doc tree.
+
+**What counts as a learned fact:**
+- **Scoped-command variants** actually detected for this repo — the `lintScoped`/`typecheckScoped`/`testScoped` values from the cache entry, when present (see "Caching Across Runs" above).
+- **The enforced per-check verification budget** actually used for this repo — the `{budget}` value (see Step 8's enforced per-check timeout budgets), and whether it was `ci-derived` or the `fallback-10m` constant.
+- **Skip-locally classifications** — a reserved slot for a future mechanism (not built here) that, after repeated `timeout`/`skip` outcomes for the same check+repo, will record a skip-locally classification via this same append mechanism. This task only reserves the slot/format; the list is empty/absent until that mechanism exists.
+
+**The marker subsection.** All of the above is written into a fixed, idempotent subsection — `### Shipwright Learned Facts` — that this mechanism owns exclusively. Every write is a **full replace** of everything between that heading and the next heading of the same-or-shallower level, never an append that duplicates prior content. Reuse the exact heading-boundary technique already documented under "Caching Across Runs" → **Fingerprint** (the awk recipe that derives a heading's level from its own `#` markers and only exits at a subsequent heading whose level is `<=` that one) rather than reimplementing a slightly different boundary rule that could drift from it. Open the subsection with a one-line auto-maintained note so a human editing the doc by hand knows not to maintain it:
+
+> _Auto-maintained by Shipwright's toolchain detection — edits here are overwritten on the next run._
+
+**Target location** depends on whether `docsSource` was populated for this repo:
+
+- **Pointer exists** (`docsSource: { path, heading }` populated): the target is `{docsSource.path}`, and `### Shipwright Learned Facts` is inserted/updated as a nested subsection immediately under `{docsSource.heading}` — appended at the end of that heading's own content, before the next heading of the same or shallower level. Apply `doc-refresh-recipe.md`'s Part 2 **Update** operation: read the doc in full, then use the `Edit` tool with a focused old/new string scoped to the `### Shipwright Learned Facts` subsection (or its insertion point, if it doesn't exist yet), leaving everything else in `{docsSource.path}` untouched. This updates the existing doc — not a new file.
+- **No pointer** (`docsSource` absent — config-file-only detection): the target is the default `docs/toolchain.md`. If it doesn't exist yet, create it with a minimal header — a one-line `# Toolchain` title plus a short sentence noting this file is Shipwright's own record of the detected toolchain — followed by the `### Shipwright Learned Facts` subsection. If it already exists (e.g. a prior run already created it), update just the marker subsection via the same Edit-based mechanics as the pointer-exists case above — never a whole-file rewrite.
+
+**When this runs.** At the same point the toolchain cache itself is (re)written — the end of dev-task.md Step 0b's detection. The write is triggered whenever a fresh detection ran, and it's also worth refreshing on a cache hit if Step 8's checks produced a new `{budget}` value — the enforced budget can change run to run even when the detected commands themselves haven't. This write is best-effort and never blocks the pipeline — the same "never blocks" posture already used for Step 8's enforced verification timeouts and Step 8.5's docs refresh: a failure to write it is logged and skipped, not escalated.
+
 ## Detection Order
 
 Scan the project root for these files in priority order. A project may match multiple ecosystems (e.g., Node.js + Rust in a monorepo).

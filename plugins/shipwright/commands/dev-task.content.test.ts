@@ -660,6 +660,100 @@ describe("toolchain-patterns.md — docsSource pointer + scoped fingerprint (LVB
   });
 });
 
+describe("toolchain-patterns.md — writing learned facts back to docs (LVB-4.2)", () => {
+  const referencesPath = join(import.meta.dir, "..", "references", "toolchain-patterns.md");
+  const referencesContent = readFileSync(referencesPath, "utf-8");
+
+  function section(): string {
+    const sectionIdx = referencesContent.indexOf("## Writing Learned Facts Back to Docs");
+    expect(sectionIdx).toBeGreaterThan(-1);
+    const nextSectionIdx = referencesContent.indexOf("## Detection Order");
+    expect(nextSectionIdx).toBeGreaterThan(sectionIdx);
+    return referencesContent.slice(sectionIdx, nextSectionIdx);
+  }
+
+  it("is placed after '## Caching Across Runs' and before '## Detection Order'", () => {
+    const cachingIdx = referencesContent.indexOf("## Caching Across Runs");
+    const sectionIdx = referencesContent.indexOf("## Writing Learned Facts Back to Docs");
+    const detectionIdx = referencesContent.indexOf("## Detection Order");
+    expect(cachingIdx).toBeGreaterThan(-1);
+    expect(sectionIdx).toBeGreaterThan(cachingIdx);
+    expect(detectionIdx).toBeGreaterThan(sectionIdx);
+  });
+
+  it("defines what counts as a learned fact: scoped commands, the enforced budget, and a reserved skip-locally slot", () => {
+    const s = section();
+    expect(s).toMatch(/lintScoped/);
+    expect(s).toMatch(/typecheckScoped/);
+    expect(s).toMatch(/testScoped/);
+    expect(s).toMatch(/\{budget\}/);
+    expect(s).toMatch(/ci-derived/);
+    expect(s).toMatch(/fallback-10m/);
+    expect(s).toMatch(/skip-locally/i);
+  });
+
+  it("defines a fixed, idempotent '### Shipwright Learned Facts' marker subsection owned exclusively by this mechanism", () => {
+    const s = section();
+    expect(s).toContain("### Shipwright Learned Facts");
+    expect(s).toMatch(/full replace/i);
+    expect(s).toMatch(/never an append that duplicates/i);
+    expect(s).toMatch(/auto-maintained/i);
+  });
+
+  it("reuses the Fingerprint recipe's same-or-shallower heading-boundary technique instead of reinventing it", () => {
+    const s = section();
+    expect(s).toMatch(/same-or-shallower level|same or shallower level/i);
+    // Explicitly ties back to the Fingerprint section's awk recipe rather than
+    // re-describing a parallel heading-boundary rule that could drift from it.
+    expect(s).toMatch(/Fingerprint/);
+  });
+
+  it("pointer-exists case: target is docsSource.path, nested under docsSource.heading, via doc-refresh-recipe.md's Update mechanics — updates the existing doc, not a new file", () => {
+    const s = section();
+    expect(s).toMatch(/docsSource\.path/);
+    expect(s).toMatch(/docsSource\.heading/);
+    expect(s).toMatch(/doc-refresh-recipe\.md/);
+    expect(s).toMatch(/\bUpdate\b/);
+    expect(s).toMatch(/not a new file|never a new file/i);
+  });
+
+  it("no-pointer case: docs/toolchain.md is created as the default fallback target", () => {
+    const s = section();
+    expect(s).toMatch(/docsSource.{0,40}absent/i);
+    expect(s).toMatch(/docs\/toolchain\.md/);
+    expect(s).toMatch(/create/i);
+    // Re-running against an already-created docs/toolchain.md updates just the
+    // marker subsection via Edit mechanics, not a whole-file rewrite.
+    expect(s).toMatch(/whole-file rewrite/i);
+  });
+
+  it("states the write happens at the end of Step 0b's detection and is best-effort / never blocks the pipeline", () => {
+    const s = section();
+    expect(s).toMatch(/Step 0b/);
+    expect(s).toMatch(/best-effort/i);
+    expect(s).toMatch(/never block/i);
+  });
+});
+
+describe("dev-task.md Step 0b — wires in toolchain-patterns.md's 'Writing Learned Facts Back to Docs' section (LVB-4.2)", () => {
+  it("adds a final numbered step that delegates by reference instead of re-embedding the mechanics inline", () => {
+    const stepIdx = content.indexOf("### 0b. Detect Project Toolchain");
+    expect(stepIdx).toBeGreaterThan(-1);
+    const nextStepIdx = content.indexOf("## Step 2: Mark In-Progress");
+    expect(nextStepIdx).toBeGreaterThan(stepIdx);
+    const step = content.slice(stepIdx, nextStepIdx);
+
+    expect(step).toMatch(/Writing Learned Facts Back to Docs/);
+    expect(step).toMatch(/best-effort/i);
+    expect(step).toMatch(/never blocks the pipeline/i);
+    // Delegates by reference — naming the subsection is fine, but the actual
+    // editing mechanics (full-replace rule, heading-boundary technique) must
+    // not be re-embedded inline here; they live only in toolchain-patterns.md.
+    expect(step).not.toMatch(/full replace/i);
+    expect(step).not.toMatch(/same-or-shallower level|same or shallower level/i);
+  });
+});
+
 describe("dev-task.md Step 5c — BLOCKED dead-end PATCHes task status (BHE-1.2)", () => {
   it("PATCHes status:'blocked' with a blockedReason when the model-upgrade ladder is exhausted and the blocker is a genuine dead end", () => {
     const step5cIdx = content.indexOf("### 5c. Handle Subagent Status");

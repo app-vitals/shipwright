@@ -245,6 +245,8 @@ Auto-detect the project toolchain (run once, reuse throughout), checking the cro
 
    On a cache miss (step 2/3 ran), overwrite `state/toolchain-cache/{repo-slug}.json` with the new fingerprint + commands.
 
+5. **Write learned facts back to docs.** See `references/toolchain-patterns.md`'s "Writing Learned Facts Back to Docs" section — append/update the `### Shipwright Learned Facts` subsection in the pointer doc (if `docsSource` was populated) or create/update the default `docs/toolchain.md` (if not). Best-effort; never blocks the pipeline.
+
 Refer to `references/toolchain-patterns.md` for the full detection lookup table and the caching protocol.
 
 ## Step 2: Mark In-Progress
