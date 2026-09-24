@@ -6,7 +6,7 @@
  */
 
 import { describe, expect, it, mock } from "bun:test";
-import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createChatPoller, deriveReply } from "./chat-poller.ts";
@@ -866,6 +866,493 @@ describe("createChatPoller poll: attachment handling", () => {
       expect(runnerArg).toBe(message.body);
     } finally {
       await rm(workspaceDir, { recursive: true, force: true });
+    }
+  });
+});
+
+// ─── poll: audio attachment transcription (STT) ────────────────────────────────
+
+describe("createChatPoller poll: audio attachment transcription", () => {
+  it("detects every supported audio extension (case-insensitive) and transcribes it", async () => {
+    const extensions = [
+      "voice.webm",
+      "voice.ogg",
+      "voice.wav",
+      "voice.m4a",
+      "voice.mp3",
+      "voice.WEBM",
+      "voice.Wav",
+    ];
+
+    for (const filename of extensions) {
+      const workspaceDir = await mkdtemp(join(tmpdir(), "chat-poller-voice-"));
+      try {
+        const threadId = `thread-voice-${filename}`;
+        const messageId = "msg-voice-1";
+        const thread = makeThread(threadId);
+        const message = makeMessageWithAttachment(
+          threadId,
+          filename,
+          messageId,
+        );
+        const replyResult = makeReplyResult(makeMessage(threadId, messageId));
+
+        const fileBytes = new Uint8Array([1, 2, 3]);
+        const getAttachment = mock(async () => fileBytes);
+        const transcribeAudioFn = mock(async () => "hello from voice");
+
+        const client = makeFakeClient({
+          listThreads: async () => ({
+            threads: [thread],
+            total: 1,
+            limit: 50,
+            offset: 0,
+          }),
+          claimMessage: async () => message,
+          replyToMessage: async () => replyResult,
+          getAttachment,
+        });
+
+        const runner = mock(async () => ({ result: "ok" }));
+        const poller = createChatPoller({
+          client,
+          runner,
+          workspaceDir,
+          transcribeAudioFn,
+        });
+        await poller.pollOnce();
+
+        expect(transcribeAudioFn).toHaveBeenCalledTimes(1);
+        const [filePath] = transcribeAudioFn.mock.calls[0] as unknown[];
+        expect(filePath).toContain(messageId);
+
+        const runnerArg = (runner.mock.calls[0] as unknown[])[0] as string;
+        expect(runnerArg).toBe("[voice transcript: hello from voice]");
+        expect(runnerArg).not.toContain(message.body);
+      } finally {
+        await rm(workspaceDir, { recursive: true, force: true });
+      }
+    }
+  });
+
+  it("does not transcribe a non-audio attachment extension", async () => {
+    const workspaceDir = await mkdtemp(join(tmpdir(), "chat-poller-voice-"));
+    try {
+      const threadId = "thread-voice-nonaudio";
+      const messageId = "msg-voice-nonaudio";
+      const thread = makeThread(threadId);
+      const message = makeMessageWithAttachment(
+        threadId,
+        "notes.pdf",
+        messageId,
+      );
+      const replyResult = makeReplyResult(makeMessage(threadId, messageId));
+
+      const fileBytes = new Uint8Array([1, 2, 3]);
+      const getAttachment = mock(async () => fileBytes);
+      const transcribeAudioFn = mock(async () => "should not be called");
+
+      const client = makeFakeClient({
+        listThreads: async () => ({
+          threads: [thread],
+          total: 1,
+          limit: 50,
+          offset: 0,
+        }),
+        claimMessage: async () => message,
+        replyToMessage: async () => replyResult,
+        getAttachment,
+      });
+
+      const runner = mock(async () => ({ result: "ok" }));
+      const poller = createChatPoller({
+        client,
+        runner,
+        workspaceDir,
+        transcribeAudioFn,
+      });
+      await poller.pollOnce();
+
+      expect(transcribeAudioFn).not.toHaveBeenCalled();
+      const runnerArg = (runner.mock.calls[0] as unknown[])[0] as string;
+      expect(runnerArg).toContain(message.body);
+      expect(runnerArg).toContain("notes.pdf");
+    } finally {
+      await rm(workspaceDir, { recursive: true, force: true });
+    }
+  });
+
+  it("falls back to the attached-file note when transcribeAudioFn returns null", async () => {
+    const workspaceDir = await mkdtemp(join(tmpdir(), "chat-poller-voice-"));
+    try {
+      const threadId = "thread-voice-null";
+      const messageId = "msg-voice-null";
+      const thread = makeThread(threadId);
+      const message = makeMessageWithAttachment(
+        threadId,
+        "voice.webm",
+        messageId,
+      );
+      const replyResult = makeReplyResult(makeMessage(threadId, messageId));
+
+      const getAttachment = mock(async () => new Uint8Array([1, 2, 3]));
+      const transcribeAudioFn = mock(async () => null);
+
+      const client = makeFakeClient({
+        listThreads: async () => ({
+          threads: [thread],
+          total: 1,
+          limit: 50,
+          offset: 0,
+        }),
+        claimMessage: async () => message,
+        replyToMessage: async () => replyResult,
+        getAttachment,
+      });
+
+      const runner = mock(async () => ({ result: "ok" }));
+      const poller = createChatPoller({
+        client,
+        runner,
+        workspaceDir,
+        transcribeAudioFn,
+      });
+      await poller.pollOnce();
+
+      expect(transcribeAudioFn).toHaveBeenCalledTimes(1);
+      const runnerArg = (runner.mock.calls[0] as unknown[])[0] as string;
+      expect(runnerArg).toContain(message.body);
+      expect(runnerArg).toContain("voice.webm");
+      expect(runnerArg).not.toContain("[voice transcript:");
+    } finally {
+      await rm(workspaceDir, { recursive: true, force: true });
+    }
+  });
+
+  it("falls back to the attached-file note when transcribeAudioFn throws", async () => {
+    const workspaceDir = await mkdtemp(join(tmpdir(), "chat-poller-voice-"));
+    try {
+      const threadId = "thread-voice-throw";
+      const messageId = "msg-voice-throw";
+      const thread = makeThread(threadId);
+      const message = makeMessageWithAttachment(
+        threadId,
+        "voice.ogg",
+        messageId,
+      );
+      const replyResult = makeReplyResult(makeMessage(threadId, messageId));
+
+      const getAttachment = mock(async () => new Uint8Array([1, 2, 3]));
+      const transcribeAudioFn = mock(async () => {
+        throw new Error("network error");
+      });
+
+      const client = makeFakeClient({
+        listThreads: async () => ({
+          threads: [thread],
+          total: 1,
+          limit: 50,
+          offset: 0,
+        }),
+        claimMessage: async () => message,
+        replyToMessage: async () => replyResult,
+        getAttachment,
+      });
+
+      const runner = mock(async () => ({ result: "ok" }));
+      const poller = createChatPoller({
+        client,
+        runner,
+        workspaceDir,
+        transcribeAudioFn,
+      });
+
+      await expect(poller.pollOnce()).resolves.toBeUndefined();
+
+      expect(transcribeAudioFn).toHaveBeenCalledTimes(1);
+      const runnerArg = (runner.mock.calls[0] as unknown[])[0] as string;
+      expect(runnerArg).toContain(message.body);
+      expect(runnerArg).toContain("voice.ogg");
+    } finally {
+      await rm(workspaceDir, { recursive: true, force: true });
+    }
+  });
+
+  it("falls back to the attached-file note when the transcript is empty/whitespace-only", async () => {
+    const workspaceDir = await mkdtemp(join(tmpdir(), "chat-poller-voice-"));
+    try {
+      const threadId = "thread-voice-blank";
+      const messageId = "msg-voice-blank";
+      const thread = makeThread(threadId);
+      const message = makeMessageWithAttachment(
+        threadId,
+        "voice.m4a",
+        messageId,
+      );
+      const replyResult = makeReplyResult(makeMessage(threadId, messageId));
+
+      const getAttachment = mock(async () => new Uint8Array([1, 2, 3]));
+      const transcribeAudioFn = mock(async () => "   ");
+
+      const client = makeFakeClient({
+        listThreads: async () => ({
+          threads: [thread],
+          total: 1,
+          limit: 50,
+          offset: 0,
+        }),
+        claimMessage: async () => message,
+        replyToMessage: async () => replyResult,
+        getAttachment,
+      });
+
+      const runner = mock(async () => ({ result: "ok" }));
+      const poller = createChatPoller({
+        client,
+        runner,
+        workspaceDir,
+        transcribeAudioFn,
+      });
+      await poller.pollOnce();
+
+      const runnerArg = (runner.mock.calls[0] as unknown[])[0] as string;
+      expect(runnerArg).toContain(message.body);
+      expect(runnerArg).not.toContain("[voice transcript:");
+    } finally {
+      await rm(workspaceDir, { recursive: true, force: true });
+    }
+  });
+});
+
+// ─── reply: [speak:] marker synthesis (TTS) ────────────────────────────────────
+
+describe("createChatPoller reply: [speak:] marker synthesis", () => {
+  it("synthesizes speech, strips the marker from the body, and attaches the audio to replyToMessage", async () => {
+    const audioDir = await mkdtemp(join(tmpdir(), "chat-poller-tts-"));
+    try {
+      const audioPath = join(audioDir, "response.wav");
+      const audioBytes = new Uint8Array([9, 8, 7, 6]);
+      await writeFile(audioPath, audioBytes);
+
+      const threadId = "thread-speak";
+      const thread = makeThread(threadId);
+      const message = makeMessage(threadId, "msg-speak-1");
+      const replyResult = makeReplyResult(message);
+
+      const replyToMessage = mock(async () => replyResult);
+      const client = makeFakeClient({
+        listThreads: async () => ({
+          threads: [thread],
+          total: 1,
+          limit: 50,
+          offset: 0,
+        }),
+        claimMessage: async () => message,
+        replyToMessage,
+      });
+
+      const runner = mock(async () => ({
+        result: "Here you go. [speak:Here you go]",
+      }));
+      const synthesizeSpeechFn = mock(
+        async (_text: string, _cfg: unknown) => audioPath,
+      );
+
+      const poller = createChatPoller({
+        client,
+        runner,
+        synthesizeSpeechFn,
+      });
+      await poller.pollOnce();
+
+      expect(synthesizeSpeechFn).toHaveBeenCalledTimes(1);
+      expect(synthesizeSpeechFn.mock.calls[0][0]).toBe("Here you go");
+
+      expect(replyToMessage).toHaveBeenCalledTimes(1);
+      const [, , opts] = replyToMessage.mock.calls[0] as unknown[];
+      const replyOpts = opts as {
+        body: string;
+        attachmentFilename?: string;
+        attachmentSize?: number;
+        attachmentBytes?: Uint8Array;
+      };
+      expect(replyOpts.body).toBe("Here you go.");
+      expect(replyOpts.body).not.toContain("[speak:");
+      expect(replyOpts.attachmentFilename).toBe("response.wav");
+      expect(replyOpts.attachmentSize).toBe(audioBytes.length);
+      expect(Array.from(replyOpts.attachmentBytes ?? [])).toEqual(
+        Array.from(audioBytes),
+      );
+    } finally {
+      await rm(audioDir, { recursive: true, force: true });
+    }
+  });
+
+  it("leaves a reply with no [speak:] marker completely unaffected", async () => {
+    const threadId = "thread-no-speak";
+    const thread = makeThread(threadId);
+    const message = makeMessage(threadId, "msg-no-speak-1");
+    const replyResult = makeReplyResult(message);
+
+    const replyToMessage = mock(async () => replyResult);
+    const client = makeFakeClient({
+      listThreads: async () => ({
+        threads: [thread],
+        total: 1,
+        limit: 50,
+        offset: 0,
+      }),
+      claimMessage: async () => message,
+      replyToMessage,
+    });
+
+    const runner = mock(async () => ({ result: "Plain text reply." }));
+    const synthesizeSpeechFn = mock(async () => "/tmp/should-not-be-used.wav");
+
+    const poller = createChatPoller({
+      client,
+      runner,
+      synthesizeSpeechFn,
+    });
+    await poller.pollOnce();
+
+    expect(synthesizeSpeechFn).not.toHaveBeenCalled();
+    expect(replyToMessage).toHaveBeenCalledTimes(1);
+    const [, , opts] = replyToMessage.mock.calls[0] as unknown[];
+    const replyOpts = opts as Record<string, unknown>;
+    expect(replyOpts.body).toBe("Plain text reply.");
+    expect(replyOpts.attachmentFilename).toBeUndefined();
+    expect(replyOpts.attachmentBytes).toBeUndefined();
+  });
+
+  it("strips the marker and sends a text-only reply when synthesizeSpeechFn returns null", async () => {
+    const threadId = "thread-speak-null";
+    const thread = makeThread(threadId);
+    const message = makeMessage(threadId, "msg-speak-null-1");
+    const replyResult = makeReplyResult(message);
+
+    const replyToMessage = mock(async () => replyResult);
+    const client = makeFakeClient({
+      listThreads: async () => ({
+        threads: [thread],
+        total: 1,
+        limit: 50,
+        offset: 0,
+      }),
+      claimMessage: async () => message,
+      replyToMessage,
+    });
+
+    const runner = mock(async () => ({
+      result: "Got it. [speak:Got it]",
+    }));
+    const synthesizeSpeechFn = mock(async () => null);
+
+    const poller = createChatPoller({
+      client,
+      runner,
+      synthesizeSpeechFn,
+    });
+    await poller.pollOnce();
+
+    expect(synthesizeSpeechFn).toHaveBeenCalledTimes(1);
+    expect(replyToMessage).toHaveBeenCalledTimes(1);
+    const [, , opts] = replyToMessage.mock.calls[0] as unknown[];
+    const replyOpts = opts as Record<string, unknown>;
+    expect(replyOpts.body).toBe("Got it.");
+    expect(replyOpts.body).not.toContain("[speak:");
+    expect(replyOpts.attachmentFilename).toBeUndefined();
+    expect(replyOpts.attachmentBytes).toBeUndefined();
+  });
+
+  it("strips the marker and sends a text-only reply when synthesizeSpeechFn throws", async () => {
+    const threadId = "thread-speak-throw";
+    const thread = makeThread(threadId);
+    const message = makeMessage(threadId, "msg-speak-throw-1");
+    const replyResult = makeReplyResult(message);
+
+    const replyToMessage = mock(async () => replyResult);
+    const client = makeFakeClient({
+      listThreads: async () => ({
+        threads: [thread],
+        total: 1,
+        limit: 50,
+        offset: 0,
+      }),
+      claimMessage: async () => message,
+      replyToMessage,
+    });
+
+    const runner = mock(async () => ({
+      result: "Noted. [speak:Noted]",
+    }));
+    const synthesizeSpeechFn = mock(async () => {
+      throw new Error("tts provider down");
+    });
+
+    const poller = createChatPoller({
+      client,
+      runner,
+      synthesizeSpeechFn,
+    });
+
+    await expect(poller.pollOnce()).resolves.toBeUndefined();
+
+    expect(synthesizeSpeechFn).toHaveBeenCalledTimes(1);
+    expect(replyToMessage).toHaveBeenCalledTimes(1);
+    const [, , opts] = replyToMessage.mock.calls[0] as unknown[];
+    const replyOpts = opts as Record<string, unknown>;
+    expect(replyOpts.body).toBe("Noted.");
+    expect(replyOpts.body).not.toContain("[speak:");
+    expect(replyOpts.attachmentFilename).toBeUndefined();
+    expect(replyOpts.attachmentBytes).toBeUndefined();
+  });
+
+  it("picks the first [speak:] marker's text when other markers are present", async () => {
+    const audioDir = await mkdtemp(join(tmpdir(), "chat-poller-tts-multi-"));
+    try {
+      const audioPath = join(audioDir, "multi.wav");
+      await writeFile(audioPath, new Uint8Array([1]));
+
+      const threadId = "thread-speak-multi";
+      const thread = makeThread(threadId);
+      const message = makeMessage(threadId, "msg-speak-multi-1");
+      const replyResult = makeReplyResult(message);
+
+      const replyToMessage = mock(async () => replyResult);
+      const client = makeFakeClient({
+        listThreads: async () => ({
+          threads: [thread],
+          total: 1,
+          limit: 50,
+          offset: 0,
+        }),
+        claimMessage: async () => message,
+        replyToMessage,
+      });
+
+      const runner = mock(async () => ({
+        result: "Done. [speak:Done] [react:eyes]",
+      }));
+      const synthesizeSpeechFn = mock(
+        async (_text: string, _cfg: unknown) => audioPath,
+      );
+
+      const poller = createChatPoller({
+        client,
+        runner,
+        synthesizeSpeechFn,
+      });
+      await poller.pollOnce();
+
+      expect(synthesizeSpeechFn).toHaveBeenCalledTimes(1);
+      expect(synthesizeSpeechFn.mock.calls[0][0]).toBe("Done");
+      const [, , opts] = replyToMessage.mock.calls[0] as unknown[];
+      const replyOpts = opts as Record<string, unknown>;
+      expect(replyOpts.body).toBe("Done.");
+      expect(replyOpts.body).not.toContain("[react:");
+    } finally {
+      await rm(audioDir, { recursive: true, force: true });
     }
   });
 });

@@ -14,10 +14,16 @@
  * threads continue processing.
  */
 
-import { mkdir, writeFile } from "node:fs/promises";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import type { ClaudeRunResult, ProgressCallback } from "./claude.ts";
 import type { ChatServiceClient } from "./http-chat-service-client.ts";
+import { parseMarkers } from "./markers.ts";
+import {
+  synthesizeSpeech,
+  transcribeAudio,
+  type VoiceConfig,
+} from "./voice.ts";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -27,6 +33,18 @@ export type ChatRunner = (
   onProgress?: ProgressCallback,
   signal?: AbortSignal,
 ) => Promise<ClaudeRunResult>;
+
+/** DI seam for STT — defaults to `transcribeAudio` from ./voice.ts. */
+export type TranscribeAudioFn = typeof transcribeAudio;
+/** DI seam for TTS — defaults to `synthesizeSpeech` from ./voice.ts. */
+export type SynthesizeSpeechFn = typeof synthesizeSpeech;
+
+/**
+ * Audio attachment extensions recognized as voice notes. Detected by
+ * filename extension (not mimetype — the chat service doesn't surface one)
+ * against the same set of formats Slack's voice-note handling accepts.
+ */
+const AUDIO_EXTENSION_REGEX = /\.(webm|ogg|wav|m4a|mp3)$/i;
 
 /**
  * Heartbeat cadence while a reply is in flight.
@@ -56,6 +74,12 @@ export interface ChatPollerOptions {
   setIntervalFn?: typeof setInterval;
   /** Injected for tests so timer behavior is deterministic. */
   clearIntervalFn?: typeof clearInterval;
+  /** STT: transcribes an audio attachment. Default: transcribeAudio from ./voice.ts. */
+  transcribeAudioFn?: TranscribeAudioFn;
+  /** TTS: synthesizes a [speak:] marker's text to audio. Default: synthesizeSpeech from ./voice.ts. */
+  synthesizeSpeechFn?: SynthesizeSpeechFn;
+  /** Voice provider config (Groq/whisper-svc for STT, ElevenLabs/Piper for TTS). */
+  voiceConfig?: VoiceConfig;
 }
 
 export interface ChatPoller {
@@ -78,6 +102,9 @@ export function createChatPoller(opts: ChatPollerOptions): ChatPoller {
     workspaceDir,
     setIntervalFn = setInterval,
     clearIntervalFn = clearInterval,
+    transcribeAudioFn = transcribeAudio,
+    synthesizeSpeechFn = synthesizeSpeech,
+    voiceConfig = {},
   } = opts;
 
   let timer: ReturnType<typeof setInterval> | undefined;
@@ -104,7 +131,30 @@ export function createChatPoller(opts: ChatPollerOptions): ChatPoller {
           await mkdir(uploadsDir, { recursive: true });
           const filePath = join(uploadsDir, `${message.id}-${safeFilename}`);
           await writeFile(filePath, bytes);
-          runnerMessage = `${message.body}\n\n[Attached file: ${safeFilename} saved at ${filePath}]`;
+
+          // Voice note: transcribe and replace the runner message entirely
+          // (same convention Slack's buildPromptWithFiles uses — the
+          // transcript stands in for the message body, it isn't appended to
+          // it). Any failure (no fn injected, non-audio extension, a thrown
+          // transcribeAudioFn, or a null/blank transcript) falls through to
+          // the generic attached-file note below.
+          let transcript: string | null = null;
+          if (transcribeAudioFn && AUDIO_EXTENSION_REGEX.test(safeFilename)) {
+            try {
+              transcript = await transcribeAudioFn(filePath, voiceConfig);
+            } catch (err) {
+              console.error(
+                `[chat-poller] transcription failed for thread ${threadId} message ${message.id}:`,
+                err instanceof Error ? err.message : String(err),
+              );
+              transcript = null;
+            }
+          }
+
+          runnerMessage =
+            transcript && transcript.trim().length > 0
+              ? `[voice transcript: ${transcript.trim()}]`
+              : `${message.body}\n\n[Attached file: ${safeFilename} saved at ${filePath}]`;
         }
       } catch (err) {
         console.error(
@@ -177,12 +227,53 @@ export function createChatPoller(opts: ChatPollerOptions): ChatPoller {
       errorKind: finalErrorKind,
     } = deriveReply(runResult, errorKind);
 
+    // TTS: extract a [speak:] marker (if any) and synthesize it to audio.
+    // The marker is stripped from the posted body whenever one is found,
+    // regardless of whether synthesis itself succeeds — only the attachment
+    // is conditional on success (AC2 stripping + AC4 graceful degradation).
+    let replyBody = body;
+    let attachmentFilename: string | undefined;
+    let attachmentSize: number | undefined;
+    let attachmentBytes: Uint8Array | undefined;
+
+    const { cleaned, markers } = parseMarkers(body);
+    let speakText: string | undefined;
+    for (const marker of markers) {
+      if (marker.type === "speak") {
+        speakText = marker.text;
+        break;
+      }
+    }
+
+    if (speakText !== undefined) {
+      replyBody = cleaned;
+      if (synthesizeSpeechFn) {
+        try {
+          const audioPath = await synthesizeSpeechFn(speakText, voiceConfig);
+          if (audioPath) {
+            const audioBytes = await readFile(audioPath);
+            attachmentBytes = new Uint8Array(audioBytes);
+            attachmentFilename = audioPath.split("/").pop() ?? "response.mp3";
+            attachmentSize = attachmentBytes.length;
+          }
+        } catch (err) {
+          console.error(
+            `[chat-poller] speech synthesis failed for thread ${threadId} message ${message.id}:`,
+            err instanceof Error ? err.message : String(err),
+          );
+        }
+      }
+    }
+
     try {
       await client.replyToMessage(threadId, message.id, {
-        body,
+        body: replyBody,
         tokens,
         costUsd,
         errorKind: finalErrorKind,
+        attachmentFilename,
+        attachmentSize,
+        attachmentBytes,
       });
     } catch (err) {
       console.error(

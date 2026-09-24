@@ -101,7 +101,7 @@ import {
 } from "./slack-startup.ts";
 import { sendBackOnlineDm } from "./startup-dm.ts";
 import { resolveDisplayName, resolveUserEmail } from "./users.ts";
-import { synthesizeSpeech } from "./voice.ts";
+import { synthesizeSpeech, transcribeAudio } from "./voice.ts";
 import {
   HttpWorkQueueReporter,
   NoopWorkQueueReporter,
@@ -803,6 +803,9 @@ if (config.chat.serviceUrl && config.chat.serviceToken) {
     runner: chatRunner,
     intervalMs: config.chat.pollIntervalMs ?? 5_000,
     workspaceDir: config.paths.workspace,
+    transcribeAudioFn: transcribeAudio,
+    synthesizeSpeechFn: synthesizeSpeech,
+    voiceConfig: config.voice,
   });
   chatPoller.start();
   console.log(
