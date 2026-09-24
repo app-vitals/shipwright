@@ -70,13 +70,16 @@ One file per repo (not one shared file keyed by repo) — a shared file read-mod
 
   ```bash
   heading_content=$(awk -v h="{docsSource.heading}" '
+    BEGIN { match(h, /^#+/); level = RLENGTH }
     $0 == h { found=1; next }
-    found && /^#{1,6} / { exit }
+    found && /^#+[ \t]/ { match($0, /^#+/); if (RLENGTH <= level) exit }
     found { print }
   ' {docsSource.path})
   scripts_json=$(test -f package.json && jq -c '.scripts // {}' package.json || echo "{}")
   fingerprint=$(printf '%s\n%s' "$heading_content" "$scripts_json" | sha256sum | cut -d' ' -f1)
   ```
+
+  **The section ends at the next heading of the same or shallower level — not at the next heading of *any* level.** `{docsSource.heading}` is stored as the literal heading line including its `#` markers (e.g. `## Commands`), so the recipe derives the target's level from it and only exits on a subsequent heading whose level is `<=` that. Nested subheadings *are* part of the section's own content: a monorepo whose commands doc is structured as `## Commands` → `### Build` / `### Test` must hash all of it. Exiting at the first heading of any level would capture only the intro prose before the first subsection, so an edit to a command nested under `### Test` would never change the hash — a silent false cache *hit* serving a stale command, which is strictly worse than the cache *miss* that is this design's intended worst case. (`#+` rather than `#{1,6}` also keeps the pattern working under awk implementations that don't enable ERE interval expressions; a run of 7+ `#` isn't a valid ATX heading anyway, and the level comparison already excludes it from ending a level-1–6 section.)
 
 - **No `docsSource`** (pure config-file detection): scope to the manifest/config files that directly define commands, still excluding lockfiles — this is the canonical "routine dependency bump" case the fingerprint targets. `CLAUDE.md`/`docs`/`ai-docs` stay in this pathspec even though docs-first found nothing this time, so a *later* addition of a commands section still invalidates the cache and gets picked up on the next run:
 

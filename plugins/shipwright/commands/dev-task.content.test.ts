@@ -634,6 +634,30 @@ describe("toolchain-patterns.md — docsSource pointer + scoped fingerprint (LVB
     expect(section).toMatch(/docsSource[\s\S]{0,400}heading/i);
     expect(section).toMatch(/scripts/);
   });
+
+  it("ends the heading extraction at the next same-or-shallower heading, not at any nested subheading", () => {
+    const awkIdx = referencesContent.indexOf("heading_content=$(awk");
+    expect(awkIdx).toBeGreaterThan(-1);
+    const awkBlock = referencesContent.slice(awkIdx, referencesContent.indexOf("```", awkIdx));
+
+    // Must derive the target heading's level from docsSource.heading...
+    expect(awkBlock).toMatch(/match\(h, \/\^#\+\/\)/);
+    expect(awkBlock).toMatch(/level\s*=\s*RLENGTH/);
+    // ...and only exit on a subsequent heading at that level or shallower.
+    expect(awkBlock).toMatch(/RLENGTH\s*<=\s*level.*exit/);
+    // A bare unconditional exit on any heading would truncate the section at the
+    // first nested subheading, silently producing a stale-command cache hit.
+    expect(awkBlock).not.toMatch(/\/\^#\{1,6\} \/\s*\{\s*exit\s*\}/);
+  });
+
+  it("explains why truncating at a nested subheading would be a false cache hit", () => {
+    const fingerprintIdx = referencesContent.indexOf("**Fingerprint**");
+    const nextSectionIdx = referencesContent.indexOf("## Detection Order");
+    const section = referencesContent.slice(fingerprintIdx, nextSectionIdx);
+    expect(section).toMatch(/same or shallower level/i);
+    expect(section).toMatch(/nested subheading/i);
+    expect(section).toMatch(/false cache \*?hit/i);
+  });
 });
 
 describe("dev-task.md Step 5c — BLOCKED dead-end PATCHes task status (BHE-1.2)", () => {
