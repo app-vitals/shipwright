@@ -236,7 +236,16 @@ const cronDeps: CronHandlerDeps = {
     message: string,
     onProgress?: ProgressCallback,
     extraEnv?: Record<string, string>,
-  ) => runner(message, undefined, onProgress, undefined, extraEnv),
+    onEarlySessionId?: EarlySessionIdCallback,
+  ) =>
+    runner(
+      message,
+      undefined,
+      onProgress,
+      undefined,
+      extraEnv,
+      onEarlySessionId,
+    ),
   formatter: markdownToSlack,
   onSession: async (channel: string, ts: string, sessionId: string) => {
     await sessions.set(threadKey(channel, ts), sessionId);
