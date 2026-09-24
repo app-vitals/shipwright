@@ -2547,6 +2547,11 @@ describe("TaskService task.write transaction timeout (TSW-1.2)", () => {
       seed: makeTask({ skipCount: 2 } as Partial<Task>),
       run: (s) => s.resetSkip("task-1"),
     },
+    {
+      name: "unblock",
+      seed: makeTask({ status: "blocked" } as Partial<Task>),
+      run: (s) => s.unblock("task-1"),
+    },
   ];
 
   for (const { name, seed, run } of cases) {
@@ -2787,6 +2792,212 @@ describe("TaskService.release() terminal-state guard (CRT-1.1)", () => {
     expect(data.claimedBy).toBeNull();
     expect(data.claimedAt).toBeNull();
     expect(data.heartbeatAt).toBeNull();
+  });
+});
+
+// ─── TaskService.unblock() atomic guard (UNB-1.1) ──────────────────────────
+//
+// Mirrors claim()'s conditional-UPDATE pattern (WHERE status='blocked'
+// instead of WHERE status='pending' AND claimedBy IS NULL), and mirrors the
+// CRT-1.1 release() describe block above in style: one case per status
+// confirming ONLY 'blocked' succeeds, every other status 409s (never a
+// silent no-op — that's the CRT-1.1 bug this endpoint must not repeat).
+
+describe("TaskService.unblock() atomic guard (UNB-1.1)", () => {
+  function makeFullTask(overrides: Partial<Task> = {}): Task {
+    return {
+      id: "task-1",
+      title: "A task",
+      status: "blocked",
+      source: null,
+      session: null,
+      repo: null,
+      description: null,
+      acceptanceCriteria: [],
+      layer: null,
+      branch: null,
+      dependencies: [],
+      pr: null,
+      hours: null,
+      startedAt: null,
+      prCreatedAt: null,
+      mergedAt: null,
+      blockedAt: "2026-08-10T11:00:00.000Z",
+      blockedReason: "stuck",
+      note: null,
+      type: null,
+      priority: null,
+      cancelledAt: null,
+      completedAt: null,
+      deployingAt: null,
+      ciFixAttempts: null,
+      mergeCommit: null,
+      prUrl: null,
+      assignee: null,
+      issue: null,
+      model: null,
+      complexity: null,
+      hitl: null,
+      claimedBy: "agent-a",
+      agentHint: null,
+      claimedAt: "2026-08-10T10:00:00.000Z",
+      heartbeatAt: "2026-08-10T10:05:00.000Z",
+      skipCount: 3,
+      lastSkippedAt: "2026-08-10T09:00:00.000Z",
+      createdAt: new Date("2026-08-10T09:00:00.000Z"),
+      updatedAt: new Date("2026-08-10T09:00:00.000Z"),
+      ...overrides,
+    } as Task;
+  }
+
+  /**
+   * makeUnblockPrismaDouble — simulates a Postgres row against the *actual*
+   * SQL text unblock() sends, mirroring makeClaimPrismaDouble above. Reads
+   * the tagged-template `strings` to determine whether the WHERE clause
+   * gates on status='blocked', rather than hardcoding that behavior — so
+   * this double breaks (and the ConflictError tests below fail) if
+   * unblock()'s WHERE clause regresses into a silent no-op.
+   */
+  interface UnblockPrismaDouble {
+    $executeRaw(
+      strings: TemplateStringsArray,
+      ...values: unknown[]
+    ): Promise<number>;
+    task: {
+      findUnique(args: { where: { id: string } }): Promise<Task | null>;
+    };
+    taskEvent: {
+      create(): Promise<void>;
+    };
+    $transaction<T>(fn: (tx: UnblockPrismaDouble) => Promise<T>): Promise<T>;
+  }
+
+  function makeUnblockPrismaDouble(initialTask: Task | null) {
+    let row: Task | null = initialTask ? { ...initialTask } : null;
+
+    const prisma: UnblockPrismaDouble = {
+      async $executeRaw(
+        strings: TemplateStringsArray,
+        ...values: unknown[]
+      ): Promise<number> {
+        const sql = strings.join("?");
+        const requiresBlocked = /status\s*=\s*'blocked'/i.test(sql);
+        const taskId = values[values.length - 1] as string;
+
+        if (!row || row.id !== taskId) return 0;
+        const matchesStatus = !requiresBlocked || row.status === "blocked";
+        if (!matchesStatus) return 0;
+
+        row = {
+          ...row,
+          status: "pending",
+          blockedReason: null,
+          blockedAt: null,
+          claimedBy: null,
+          claimedAt: null,
+          heartbeatAt: null,
+          skipCount: 0,
+          lastSkippedAt: null,
+          updatedAt: new Date(),
+        } as Task;
+        return 1;
+      },
+      task: {
+        findUnique({ where }: { where: { id: string } }): Promise<Task | null> {
+          if (row && where.id === row.id) return Promise.resolve({ ...row });
+          return Promise.resolve(null);
+        },
+      },
+      taskEvent: {
+        create(): Promise<void> {
+          return Promise.resolve();
+        },
+      },
+      $transaction<T>(fn: (tx: UnblockPrismaDouble) => Promise<T>): Promise<T> {
+        return fn(prisma);
+      },
+    };
+
+    return prisma as unknown as PrismaClient;
+  }
+
+  const STATUSES_OTHER_THAN_BLOCKED = [
+    "pending",
+    "in_progress",
+    "cancelled",
+    "pr_open",
+    "approved",
+    "merged",
+    "deployed",
+    "done",
+  ] as const;
+
+  it("unblock() succeeds when task status is blocked (happy path)", async () => {
+    const prisma = makeUnblockPrismaDouble(makeFullTask({ status: "blocked" }));
+    const service = new TaskService(
+      prisma,
+      FixedClock(new Date("2026-08-10T12:00:00.000Z")),
+    );
+
+    const result = await service.unblock("task-1");
+
+    expect(result.status).toBe("pending");
+  });
+
+  for (const status of STATUSES_OTHER_THAN_BLOCKED) {
+    it(`unblock() throws ConflictError (409) when task status is '${status}', not a silent no-op`, async () => {
+      const prisma = makeUnblockPrismaDouble(
+        makeFullTask({ status: status as Task["status"] }),
+      );
+      const service = new TaskService(
+        prisma,
+        FixedClock(new Date("2026-08-10T12:00:00.000Z")),
+      );
+
+      await expect(service.unblock("task-1")).rejects.toThrow(ConflictError);
+    });
+  }
+
+  it("unblock() throws NotFoundError when the task does not exist", async () => {
+    const prisma = makeUnblockPrismaDouble(null);
+    const service = new TaskService(
+      prisma,
+      FixedClock(new Date("2026-08-10T12:00:00.000Z")),
+    );
+
+    await expect(service.unblock("missing-task")).rejects.toThrow(
+      NotFoundError,
+    );
+  });
+
+  it("unblock() clears blockedReason/blockedAt/claimedBy/claimedAt/heartbeatAt and resets skipCount/lastSkippedAt on success", async () => {
+    const prisma = makeUnblockPrismaDouble(
+      makeFullTask({
+        status: "blocked",
+        blockedReason: "spun out after 3 skips",
+        blockedAt: "2026-08-10T11:00:00.000Z",
+        claimedBy: "agent-a",
+        claimedAt: "2026-08-10T10:00:00.000Z",
+        heartbeatAt: "2026-08-10T10:05:00.000Z",
+        skipCount: 3,
+        lastSkippedAt: "2026-08-10T09:00:00.000Z",
+      }),
+    );
+    const service = new TaskService(
+      prisma,
+      FixedClock(new Date("2026-08-10T12:00:00.000Z")),
+    );
+
+    const result = await service.unblock("task-1");
+
+    expect(result.status).toBe("pending");
+    expect(result.blockedReason).toBeNull();
+    expect(result.blockedAt).toBeNull();
+    expect(result.claimedBy).toBeNull();
+    expect(result.claimedAt).toBeNull();
+    expect(result.heartbeatAt).toBeNull();
+    expect(result.skipCount).toBe(0);
+    expect(result.lastSkippedAt).toBeNull();
   });
 });
 

@@ -171,6 +171,7 @@ function fakeTaskService(
   opts: {
     getResult?: Task | null;
     claimThrows?: Error;
+    unblockThrows?: Error;
     listResult?: Task[];
     listReadyResult?: Task[];
     listBlockedResult?: Task[];
@@ -227,6 +228,18 @@ function fakeTaskService(
     },
     async resetSkip(id: string) {
       return makeTask({ id, skipCount: 0 });
+    },
+    async unblock(id: string) {
+      if (opts.unblockThrows) throw opts.unblockThrows;
+      return makeTask({
+        id,
+        status: "pending",
+        blockedReason: null,
+        blockedAt: null,
+        claimedBy: null,
+        claimedAt: null,
+        heartbeatAt: null,
+      });
     },
     async bulk(_tasks) {
       return { inserted: 0, updated: 0, skipped: [] };
@@ -1250,5 +1263,78 @@ describe("task-store API (smoke)", () => {
     });
 
     expect(res.status).toBe(200);
+  });
+
+  // ─── POST /tasks/:id/unblock (UNB-1.1) ─────────────────────────────────────
+
+  it("POST /tasks/:id/unblock returns 200 with status:'pending' when the task was blocked", async () => {
+    const app = makeApp({
+      taskService: fakeTaskService({
+        getResult: makeTask({ id: "task-1", status: "blocked" }),
+      }),
+    });
+
+    const res = await app.request("/tasks/task-1/unblock", {
+      method: "POST",
+      headers: auth(),
+    });
+
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as Task;
+    expect(body.status).toBe("pending");
+    expect(body.blockedReason).toBeNull();
+    expect(body.blockedAt).toBeNull();
+    expect(body.claimedBy).toBeNull();
+    expect(body.claimedAt).toBeNull();
+    expect(body.heartbeatAt).toBeNull();
+  });
+
+  it("POST /tasks/:id/unblock returns 409 when the task is not currently blocked", async () => {
+    const app = makeApp({
+      taskService: fakeTaskService({
+        getResult: makeTask({ id: "task-1", status: "pending" }),
+        unblockThrows: new ConflictError("task is not currently blocked"),
+      }),
+    });
+
+    const res = await app.request("/tasks/task-1/unblock", {
+      method: "POST",
+      headers: auth(),
+    });
+
+    expect(res.status).toBe(409);
+  });
+
+  it("POST /tasks/:id/unblock returns 403 when agent token tries to unblock a task owned by a different agent", async () => {
+    const app = makeApp({
+      tokenService: fakeAgentTokenService(),
+      taskService: fakeTaskService({
+        getResult: makeTask({
+          id: "task-1",
+          status: "blocked",
+          assignee: "agent-2",
+        }),
+      }),
+    });
+
+    const res = await app.request("/tasks/task-1/unblock", {
+      method: "POST",
+      headers: { Authorization: `Bearer ${AGENT_TOKEN}` },
+    });
+
+    expect(res.status).toBe(403);
+  });
+
+  it("POST /tasks/:id/unblock returns 404 when the task does not exist", async () => {
+    const app = makeApp({
+      taskService: fakeTaskService({ getResult: null }),
+    });
+
+    const res = await app.request("/tasks/missing/unblock", {
+      method: "POST",
+      headers: auth(),
+    });
+
+    expect(res.status).toBe(404);
   });
 });

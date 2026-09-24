@@ -71,6 +71,9 @@ const stubTaskService: TaskServiceLike = {
   async resetSkip() {
     return {} as never;
   },
+  async unblock() {
+    return {} as never;
+  },
   async getEvents() {
     return { events: [], total: 0 };
   },

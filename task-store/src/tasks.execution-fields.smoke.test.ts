@@ -217,6 +217,23 @@ function fakeTaskService(
       storedTasks.set(id, updated);
       return updated;
     },
+    async unblock(id: string) {
+      const existing = storedTasks.get(id);
+      if (!existing) throw new Error("Task not found");
+      const updated = {
+        ...existing,
+        status: "pending" as const,
+        blockedReason: null,
+        blockedAt: null,
+        claimedBy: null,
+        claimedAt: null,
+        heartbeatAt: null,
+        skipCount: 0,
+        lastSkippedAt: null,
+      };
+      storedTasks.set(id, updated);
+      return updated;
+    },
     async bulk(_tasks) {
       return { inserted: 0, updated: 0, skipped: [] };
     },
