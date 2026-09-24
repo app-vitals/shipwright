@@ -34,10 +34,10 @@ describe("allowedTools", () => {
     }
   });
 
-  it("stays stable across regeneration — given all 37 generatedTools, only 12 come back", () => {
+  it("stays stable across regeneration — given all 38 generatedTools, only 12 come back", () => {
     // This is the "across regeneration" invariant:
-    // even if generate:mcp-tools emits all 37 ops, only the 12 allowed ones are exposed.
-    expect(generatedTools).toHaveLength(37);
+    // even if generate:mcp-tools emits all 38 ops, only the 12 allowed ones are exposed.
+    expect(generatedTools).toHaveLength(38);
     const result = allowedTools(generatedTools);
     expect(result).toHaveLength(12);
     const resultNames = result.map((t) => t.name);
