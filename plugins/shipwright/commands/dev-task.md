@@ -245,9 +245,9 @@ Auto-detect the project toolchain (run once, reuse throughout), checking the cro
 
    On a cache miss (step 2/3 ran), overwrite `state/toolchain-cache/{repo-slug}.json` with the new fingerprint + commands.
 
-5. **Write learned facts back to docs.** See `references/toolchain-patterns.md`'s "Writing Learned Facts Back to Docs" section — append/update the `### Shipwright Learned Facts` subsection in the pointer doc (if `docsSource` was populated) or create/update the default `docs/toolchain.md` (if not). Best-effort; never blocks the pipeline.
-
 Refer to `references/toolchain-patterns.md` for the full detection lookup table and the caching protocol.
+
+**No doc write happens here.** Detection's learned facts are written back to the project's own docs later, at Step 8.6 — this step runs before Step 4 creates the worktree, so there is no repo-safe file to edit yet, and Step 8's `{budget}` isn't derived yet either.
 
 ## Step 2: Mark In-Progress
 
@@ -977,6 +977,41 @@ If `auto_docs_updated == true`:
 If `auto_docs_updated == false`:
 ```
 ⏭ Docs refresh skipped ({auto_docs_skipped_reason})
+```
+
+---
+
+## Step 8.6: Write Learned Facts Back to Docs
+
+Record what this run learned about the repo's toolchain into the repo's own docs. See
+`references/toolchain-patterns.md`'s "Writing Learned Facts Back to Docs" section for the
+mechanics — update the `### Shipwright Learned Facts` subsection in the pointer doc (if
+`docsSource` was populated in Step 0b) or create/update the default `docs/toolchain.md` (if
+not).
+
+This runs here, not at Step 0b, for two reasons: `{worktree-path}` exists by now (Step 0b
+runs pre-worktree, and writing into the shared `${SHIPWRIGHT_REPO_DIR:-$HOME/src}/{repo-slug}`
+checkout would leave uncommitted changes that Step 4's `git pull` and every concurrent run
+for this repo would collide with), and Step 8's `{budget}` — one of the facts being
+recorded — is only derived during Step 8.
+
+- **Write target:** always inside `${SHIPWRIGHT_WORKTREE_DIR:-$HOME/worktrees}/{repo-slug}-{branch-slug}/`. Never the shared repo checkout.
+- **Facts to record:** the scoped-command variants from the Step 0b cache entry
+  (`lintScoped`/`typecheckScoped`/`testScoped`, when present), the `{budget}` Step 8 used plus
+  its `ci-derived`/`fallback-10m` source, and the reserved skip-locally slot.
+- **Commit it** on the task's branch so it lands in this task's PR, alongside Step 8.5's
+  docs-refresh commit:
+  ```bash
+  git add {written doc path}
+  git commit -m "docs: record Shipwright learned facts for {repo-slug}"
+  ```
+  Step 9's push carries it to the PR. If nothing changed (the subsection already matches),
+  there is nothing to commit — skip silently.
+
+Best-effort; never blocks the pipeline. A failed write or failed commit is logged and skipped,
+and Step 9 proceeds regardless:
+```
+⏭ Learned-facts write skipped ({reason})
 ```
 
 ---

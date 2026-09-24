@@ -74,18 +74,26 @@ One file per repo (not one shared file keyed by repo) — a shared file read-mod
     $0 == h { found=1; next }
     found && /^#+[ \t]/ { match($0, /^#+/); if (RLENGTH <= level) exit }
     found { print }
-  ' {docsSource.path})
+  ' {docsSource.path} | awk '
+    /^### Shipwright Learned Facts[ \t]*$/ { skip=1; next }
+    skip && /^#+[ \t]/ { match($0, /^#+/); if (RLENGTH <= 3) skip=0 }
+    !skip { print }
+  ')
   scripts_json=$(test -f package.json && jq -c '.scripts // {}' package.json || echo "{}")
   fingerprint=$(printf '%s\n%s' "$heading_content" "$scripts_json" | sha256sum | cut -d' ' -f1)
   ```
+
+  **The second pass strips Shipwright's own `### Shipwright Learned Facts` subsection before hashing** — the same exclusion principle as lockfiles, for the same reason. That subsection is written by "Writing Learned Facts Back to Docs" below, *nested under `{docsSource.heading}`*, so it is part of the hashed section's content by the same-or-shallower rule described next. Hashing it would make the mechanism self-invalidating: every write would change the next run's fingerprint, forcing a cache miss on essentially every subsequent run for every docsSource-pointer repo. The content Shipwright itself auto-maintains carries no signal about whether the *human-authored* commands changed, which is the only thing the fingerprint is trying to detect.
 
   **The section ends at the next heading of the same or shallower level — not at the next heading of *any* level.** `{docsSource.heading}` is stored as the literal heading line including its `#` markers (e.g. `## Commands`), so the recipe derives the target's level from it and only exits on a subsequent heading whose level is `<=` that. Nested subheadings *are* part of the section's own content: a monorepo whose commands doc is structured as `## Commands` → `### Build` / `### Test` must hash all of it. Exiting at the first heading of any level would capture only the intro prose before the first subsection, so an edit to a command nested under `### Test` would never change the hash — a silent false cache *hit* serving a stale command, which is strictly worse than the cache *miss* that is this design's intended worst case. (`#+` rather than `#{1,6}` also keeps the pattern working under awk implementations that don't enable ERE interval expressions; a run of 7+ `#` isn't a valid ATX heading anyway, and the level comparison already excludes it from ending a level-1–6 section.)
 
 - **No `docsSource`** (pure config-file detection): scope to the manifest/config files that directly define commands, still excluding lockfiles — this is the canonical "routine dependency bump" case the fingerprint targets. `CLAUDE.md`/`docs`/`ai-docs` stay in this pathspec even though docs-first found nothing this time, so a *later* addition of a commands section still invalidates the cache and gets picked up on the next run:
 
   ```bash
-  git -C {repo-dir} log -1 --format=%H -- CLAUDE.md docs ai-docs package.json Cargo.toml go.mod pyproject.toml setup.py Gemfile Makefile Taskfile.yml justfile Justfile mise.toml .mise.toml pom.xml build.gradle build.gradle.kts
+  git -C {repo-dir} log -1 --format=%H -- CLAUDE.md docs ai-docs package.json Cargo.toml go.mod pyproject.toml setup.py Gemfile Makefile Taskfile.yml justfile Justfile mise.toml .mise.toml pom.xml build.gradle build.gradle.kts ':(exclude)docs/toolchain.md'
   ```
+
+  The `':(exclude)docs/toolchain.md'` pathspec is the no-pointer half of the same self-invalidation guard as the marker-subsection strip above: `docs/toolchain.md` is the file "Writing Learned Facts Back to Docs" below *creates* for this exact case, and it lives inside the `docs` pathspec entry, so without the exclusion every learned-facts commit would move this recipe's `%H` and force a cache miss on the next run.
 
 `{repo-dir}` / `{docsSource.path}` (when relative) is whichever checkout is live at the point detection runs — `${SHIPWRIGHT_REPO_DIR:-$HOME/src}/{repo}` for dev-task's pre-worktree detection (Step 1/0b runs before the worktree exists); the active `{worktree-path}` for patch, which always operates on an already-existing branch.
 
@@ -98,7 +106,7 @@ A missing or stale cache never blocks progress — worst case is a cache miss, w
 
 ## Writing Learned Facts Back to Docs
 
-Toolchain detection produces things worth recording somewhere more visible than `state/toolchain-cache/{repo}.json` — a project's own docs are what a human (or a later agent skimming `CLAUDE.md` instead of the cache) actually reads. After detection runs, write a small, best-effort summary of what was learned back into the project's own doc tree.
+Toolchain detection produces things worth recording somewhere more visible than `state/toolchain-cache/{repo}.json` — a project's own docs are what a human (or a later agent skimming `CLAUDE.md` instead of the cache) actually reads. Once the run has both a worktree and its verification results in hand (see "When this runs" below), write a small, best-effort summary of what was learned back into the project's own doc tree.
 
 **What counts as a learned fact:**
 - **Scoped-command variants** actually detected for this repo — the `lintScoped`/`typecheckScoped`/`testScoped` values from the cache entry, when present (see "Caching Across Runs" above).
@@ -109,12 +117,21 @@ Toolchain detection produces things worth recording somewhere more visible than 
 
 > _Auto-maintained by Shipwright's toolchain detection — edits here are overwritten on the next run._
 
-**Target location** depends on whether `docsSource` was populated for this repo:
+**Target location** depends on whether `docsSource` was populated for this repo. Both paths resolve their target **inside the active `{worktree-path}`** — see "Which checkout" below; neither ever writes to the shared pre-worktree repo checkout:
 
-- **Pointer exists** (`docsSource: { path, heading }` populated): the target is `{docsSource.path}`, and `### Shipwright Learned Facts` is inserted/updated as a nested subsection immediately under `{docsSource.heading}` — appended at the end of that heading's own content, before the next heading of the same or shallower level. Apply `doc-refresh-recipe.md`'s Part 2 **Update** operation: read the doc in full, then use the `Edit` tool with a focused old/new string scoped to the `### Shipwright Learned Facts` subsection (or its insertion point, if it doesn't exist yet), leaving everything else in `{docsSource.path}` untouched. This updates the existing doc — not a new file.
-- **No pointer** (`docsSource` absent — config-file-only detection): the target is the default `docs/toolchain.md`. If it doesn't exist yet, create it with a minimal header — a one-line `# Toolchain` title plus a short sentence noting this file is Shipwright's own record of the detected toolchain — followed by the `### Shipwright Learned Facts` subsection. If it already exists (e.g. a prior run already created it), update just the marker subsection via the same Edit-based mechanics as the pointer-exists case above — never a whole-file rewrite.
+- **Pointer exists** (`docsSource: { path, heading }` populated): the target is `{worktree-path}/{docsSource.path}`, and `### Shipwright Learned Facts` is inserted/updated as a nested subsection immediately under `{docsSource.heading}` — appended at the end of that heading's own content, before the next heading of the same or shallower level. Apply `doc-refresh-recipe.md`'s Part 2 **Update** operation: read the doc in full, then use the `Edit` tool with a focused old/new string scoped to the `### Shipwright Learned Facts` subsection (or its insertion point, if it doesn't exist yet), leaving everything else in `{docsSource.path}` untouched. This updates the existing doc — not a new file.
+- **No pointer** (`docsSource` absent — config-file-only detection): the target is the default `{worktree-path}/docs/toolchain.md`. If it doesn't exist yet, create it with a minimal header — a one-line `# Toolchain` title plus a short sentence noting this file is Shipwright's own record of the detected toolchain — followed by the `### Shipwright Learned Facts` subsection. If it already exists (e.g. a prior run already created it), update just the marker subsection via the same Edit-based mechanics as the pointer-exists case above — never a whole-file rewrite.
 
-**When this runs.** At the same point the toolchain cache itself is (re)written — the end of dev-task.md Step 0b's detection. The write is triggered whenever a fresh detection ran, and it's also worth refreshing on a cache hit if Step 8's checks produced a new `{budget}` value — the enforced budget can change run to run even when the detected commands themselves haven't. This write is best-effort and never blocks the pipeline — the same "never blocks" posture already used for Step 8's enforced verification timeouts and Step 8.5's docs refresh: a failure to write it is logged and skipped, not escalated.
+**Which checkout — always the worktree, never the shared repo checkout.** Detection itself runs pre-worktree, against `${SHIPWRIGHT_REPO_DIR:-$HOME/src}/{repo}` (see the `{repo-dir}` note above), but this *write* must not. That shared checkout is the one every concurrent and future dev-task/patch/deploy run for this repo depends on staying clean, and dev-task's own Step 4 runs `git pull` against it — uncommitted learned-facts edits sitting there would collide with that pull and leak into unrelated runs. The write therefore always targets the task's own `{worktree-path}`, where it is committed on the task's branch and lands in the task's PR like any other change.
+
+**When this runs.** Not at detection time — at **dev-task.md Step 8.6**, after Step 8's pre-ship checks and Step 8.5's docs refresh, and before Step 9's push. Two reasons this is the only viable point, and both are structural rather than stylistic:
+
+1. **The worktree exists by then.** Step 0b/Step 1 detection runs before Step 4 creates `{worktree-path}`, so there is no repo-safe place to write at detection time (see "Which checkout" above).
+2. **`{budget}` exists by then.** The enforced per-check verification budget is derived inside Step 8 ("Budget derivation"), several steps after detection. Writing at Step 0b would record scoped commands with an empty budget field and no later hook to backfill it. At Step 8.6 all three fact categories — scoped commands (from the Step 0b cache entry), the budget and its `ci-derived`/`fallback-10m` source, and the reserved skip-locally slot — are simultaneously in hand, so one write covers all of them.
+
+A single write per run, at one hook, is deliberate: there is no second write hook to keep in sync, and the full-replace marker subsection makes re-running idempotent.
+
+This write is best-effort and never blocks the pipeline — the same "never blocks" posture already used for Step 8's enforced verification timeouts and Step 8.5's docs refresh: a failure to write it (or to commit it) is logged and skipped, not escalated, and Step 9 proceeds regardless.
 
 ## Detection Order
 

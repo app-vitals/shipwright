@@ -658,6 +658,42 @@ describe("toolchain-patterns.md — docsSource pointer + scoped fingerprint (LVB
     expect(section).toMatch(/nested subheading/i);
     expect(section).toMatch(/false cache \*?hit/i);
   });
+
+  it("strips Shipwright's own '### Shipwright Learned Facts' subsection out of the docsSource-populated hash so the write-back mechanism can't self-invalidate the cache (LVB-4.2)", () => {
+    const awkIdx = referencesContent.indexOf("heading_content=$(awk");
+    expect(awkIdx).toBeGreaterThan(-1);
+    const awkBlock = referencesContent.slice(awkIdx, referencesContent.indexOf("```", awkIdx));
+
+    // The marker subsection is nested under {docsSource.heading}, so the
+    // same-or-shallower boundary rule above *includes* it in the section's
+    // content — it has to be filtered back out before hashing.
+    expect(awkBlock).toMatch(/### Shipwright Learned Facts/);
+    // Skip until the next heading at level <= 3 (the marker heading's own level),
+    // then resume — not an unconditional exit, which would also drop any
+    // human-authored subsection that follows the marker.
+    expect(awkBlock).toMatch(/RLENGTH\s*<=\s*3/);
+    expect(awkBlock).toMatch(/skip\s*=\s*0/);
+  });
+
+  it("excludes the no-pointer fallback target docs/toolchain.md from the config-file fingerprint pathspec for the same reason (LVB-4.2)", () => {
+    const fingerprintIdx = referencesContent.indexOf("**Fingerprint**");
+    const nextSectionIdx = referencesContent.indexOf("## Detection Order");
+    const section = referencesContent.slice(fingerprintIdx, nextSectionIdx);
+    const gitLogIdx = section.indexOf("git -C {repo-dir} log -1");
+    expect(gitLogIdx).toBeGreaterThan(-1);
+    const gitLogLine = section.slice(gitLogIdx, section.indexOf("\n", gitLogIdx));
+    // docs/toolchain.md lives under the `docs` pathspec entry, so without an
+    // explicit exclude every learned-facts commit would move this recipe's %H.
+    expect(gitLogLine).toMatch(/:\(exclude\)docs\/toolchain\.md/);
+  });
+
+  it("explains both self-invalidation guards as the same exclusion principle already applied to lockfiles", () => {
+    const fingerprintIdx = referencesContent.indexOf("**Fingerprint**");
+    const nextSectionIdx = referencesContent.indexOf("## Detection Order");
+    const section = referencesContent.slice(fingerprintIdx, nextSectionIdx);
+    expect(section).toMatch(/self-invalidat/i);
+    expect(section).toMatch(/cache miss on essentially every subsequent run/i);
+  });
 });
 
 describe("toolchain-patterns.md — writing learned facts back to docs (LVB-4.2)", () => {
@@ -727,30 +763,83 @@ describe("toolchain-patterns.md — writing learned facts back to docs (LVB-4.2)
     expect(s).toMatch(/whole-file rewrite/i);
   });
 
-  it("states the write happens at the end of Step 0b's detection and is best-effort / never blocks the pipeline", () => {
+  it("scopes both write targets to the active worktree and forbids writing into the shared pre-worktree repo checkout", () => {
     const s = section();
-    expect(s).toMatch(/Step 0b/);
+    expect(s).toMatch(/\{worktree-path\}/);
+    // The shared checkout is what every concurrent/future run for this repo
+    // depends on staying clean, and Step 4 git-pulls it.
+    expect(s).toMatch(/SHIPWRIGHT_REPO_DIR/);
+    expect(s).toMatch(/never.{0,60}shared|shared.{0,80}never/i);
+    expect(s).toMatch(/git pull/i);
+  });
+
+  it("states the write happens at Step 8.6 — after the worktree exists and after Step 8 derives {budget} — not at Step 0b", () => {
+    const s = section();
+    expect(s).toMatch(/Step 8\.6/);
+    // Both sequencing preconditions must be stated as the reason for the hook point.
+    expect(s).toMatch(/Step 0b[\s\S]{0,400}before Step 4|before Step 4[\s\S]{0,400}Step 0b/);
+    expect(s).toMatch(/\{budget\}[\s\S]{0,200}Step 8|Step 8[\s\S]{0,200}\{budget\}/);
+    // One hook, not two — no second write hook to keep in sync.
+    expect(s).toMatch(/single write per run|one hook/i);
     expect(s).toMatch(/best-effort/i);
     expect(s).toMatch(/never block/i);
   });
 });
 
-describe("dev-task.md Step 0b — wires in toolchain-patterns.md's 'Writing Learned Facts Back to Docs' section (LVB-4.2)", () => {
-  it("adds a final numbered step that delegates by reference instead of re-embedding the mechanics inline", () => {
-    const stepIdx = content.indexOf("### 0b. Detect Project Toolchain");
+describe("dev-task.md Step 8.6 — wires in toolchain-patterns.md's 'Writing Learned Facts Back to Docs' section (LVB-4.2)", () => {
+  function step86(): string {
+    const stepIdx = content.indexOf("## Step 8.6: Write Learned Facts Back to Docs");
     expect(stepIdx).toBeGreaterThan(-1);
-    const nextStepIdx = content.indexOf("## Step 2: Mark In-Progress");
+    const nextStepIdx = content.indexOf("## Step 9: Push & PR");
     expect(nextStepIdx).toBeGreaterThan(stepIdx);
-    const step = content.slice(stepIdx, nextStepIdx);
+    return content.slice(stepIdx, nextStepIdx);
+  }
 
+  it("is sequenced after Step 8.5's docs refresh and before Step 9's push", () => {
+    const docsRefreshIdx = content.indexOf("## Step 8.5: Auto-Refresh Docs");
+    const stepIdx = content.indexOf("## Step 8.6: Write Learned Facts Back to Docs");
+    const pushIdx = content.indexOf("## Step 9: Push & PR");
+    expect(docsRefreshIdx).toBeGreaterThan(-1);
+    expect(stepIdx).toBeGreaterThan(docsRefreshIdx);
+    expect(pushIdx).toBeGreaterThan(stepIdx);
+  });
+
+  it("delegates by reference instead of re-embedding the editing mechanics inline", () => {
+    const step = step86();
     expect(step).toMatch(/Writing Learned Facts Back to Docs/);
     expect(step).toMatch(/best-effort/i);
     expect(step).toMatch(/never blocks the pipeline/i);
-    // Delegates by reference — naming the subsection is fine, but the actual
-    // editing mechanics (full-replace rule, heading-boundary technique) must
-    // not be re-embedded inline here; they live only in toolchain-patterns.md.
+    // Naming the subsection is fine, but the actual editing mechanics
+    // (full-replace rule, heading-boundary technique) must not be re-embedded
+    // here; they live only in toolchain-patterns.md.
     expect(step).not.toMatch(/full replace/i);
     expect(step).not.toMatch(/same-or-shallower level|same or shallower level/i);
+  });
+
+  it("writes only into the worktree and commits the result so it lands in this task's PR", () => {
+    const step = step86();
+    expect(step).toMatch(/SHIPWRIGHT_WORKTREE_DIR/);
+    expect(step).toMatch(/Never the shared repo checkout/i);
+    expect(step).toMatch(/git commit/);
+    expect(step).toMatch(/Step 9's push/);
+  });
+
+  it("explains why this hook point, not Step 0b: the worktree doesn't exist yet there and {budget} isn't derived until Step 8", () => {
+    const step = step86();
+    expect(step).toMatch(/Step 0b/);
+    expect(step).toMatch(/pre-worktree|before Step 4|worktree.{0,40}exists/i);
+    expect(step).toMatch(/\{budget\}/);
+    expect(step).toMatch(/Step 8/);
+  });
+
+  it("Step 0b itself performs no doc write and points forward to Step 8.6", () => {
+    const stepIdx = content.indexOf("### 0b. Detect Project Toolchain");
+    expect(stepIdx).toBeGreaterThan(-1);
+    const nextStepIdx = content.indexOf("## Step 2: Mark In-Progress");
+    const step0b = content.slice(stepIdx, nextStepIdx);
+
+    expect(step0b).toMatch(/No doc write happens here/i);
+    expect(step0b).toMatch(/Step 8\.6/);
   });
 });
 
