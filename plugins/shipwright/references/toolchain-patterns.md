@@ -278,6 +278,34 @@ bun run db:migrate    # via package.json scripts
 ---
 
 
+## Environment Passthrough to Install Children
+
+Package managers only honor a cache location if its env var actually survives the trip to the process doing the installing. Two layers can break that, and only one of them is under Shipwright's control.
+
+**Layer 1 — the agent's own spawn (verified fine).** `agent/src/claude.ts` spawns the `claude` CLI with `env: { ...process.env, ...extraEnv }` and strips exactly one variable, `SENTRY_DSN`. Everything else — `npm_config_cache`, `YARN_CACHE_FOLDER`, `PNPM_HOME`/`npm_config_store_dir`, `BUN_INSTALL_CACHE_DIR`, `PIP_CACHE_DIR`, `CARGO_HOME`, `GOMODCACHE`, `GRADLE_USER_HOME` — is inherited wholesale, and POSIX env inheritance carries it transparently through the CLI to the Bash-tool child and on to the install process it runs. Verified empirically two levels deep. Adding a cgroup to that spawn (see `agent/src/process-tree-kill.ts`) does not touch env; cgroup membership and environment are independent.
+
+**Layer 2 — the target repo's task runner (the real risk).** Monorepo task runners deliberately hash and whitelist the environment so task output is cacheable. Turborepo runs in `envMode: "strict"` by default (2.0+): a task's child process receives **only** the vars declared in `turbo.json`'s `env`/`globalEnv`, plus a small built-in passthrough list. Nx's `runtime`/`env` inputs behave similarly. An undeclared `npm_config_cache` is silently dropped — the install then writes to the default per-user cache, which in a fresh container means a full cold download on every run.
+
+```bash
+# RISKY — a strict-env task runner can strip npm_config_cache before the
+# install child ever sees it, silently defeating the warm cache.
+npm_config_cache=/cache/npm turbo run setup
+
+# SAFE — invoke the package manager directly; nothing sits in between.
+npm_config_cache=/cache/npm npm ci
+```
+
+```jsonc
+// OR declare it, if the install genuinely has to run through the task runner:
+// turbo.json
+{ "globalPassThroughEnv": ["npm_config_cache", "YARN_CACHE_FOLDER", "PIP_CACHE_DIR"] }
+```
+
+**Detection:** a `turbo.json` with no `envMode` (strict is the default) or `"envMode": "strict"`, or an `nx.json` with `namedInputs` declaring `runtime`/`env` entries. Confirm cheaply from inside the repo with `<runner> run <task>` wrapping `sh -c 'echo $npm_config_cache'` — an empty result means the var is being stripped, not that it was never set.
+
+**Rule for Shipwright**: run dependency installation as a direct package-manager invocation (`npm ci`, `bun install`, `pip install`, `cargo fetch`), never behind a monorepo task runner, unless the repo's runner config explicitly passes the cache vars through. Detected commands that bundle installation into a task-runner target (`turbo run setup`, `nx run-many -t install`) should be treated as cache-defeating and flagged, not silently used.
+
+
 ## Multi-Ecosystem Projects
 
 Some projects use multiple ecosystems. When this happens:

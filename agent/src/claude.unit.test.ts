@@ -8,6 +8,14 @@
 
 import "./test-env.ts";
 import { beforeEach, describe, expect, mock, test } from "bun:test";
+import {
+  existsSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { ErrorCapturingClient } from "@shipwright/lib/sentry";
 import { TEST_AGENT_HOME } from "./test-env.ts";
@@ -534,9 +542,7 @@ describe("runClaude", () => {
     );
 
     const { ClaudeTimeoutError } = await import("./claude.ts");
-    const err = await runClaudeWithTimeout("hello", "chan:ts").catch(
-      (e) => e,
-    );
+    const err = await runClaudeWithTimeout("hello", "chan:ts").catch((e) => e);
     expect(err).toBeInstanceOf(ClaudeTimeoutError);
     expect((err as InstanceType<typeof ClaudeTimeoutError>).reason).toBe(
       "idle",
@@ -556,9 +562,9 @@ describe("runClaude", () => {
       if (call === 1) {
         return hangingProc() as unknown as ReturnType<typeof Bun.spawn>;
       }
-      return fakeProc(
-        jsonOutput("recovered", "existing-sid"),
-      ) as ReturnType<typeof Bun.spawn>;
+      return fakeProc(jsonOutput("recovered", "existing-sid")) as ReturnType<
+        typeof Bun.spawn
+      >;
     });
 
     mockGetSession.mockClear();
@@ -584,9 +590,7 @@ describe("runClaude", () => {
     expect(result.recoveredFromError).toBe(true);
     expect(mockSpawnCeiling).toHaveBeenCalledTimes(2);
 
-    const [secondCmd] = mockSpawnCeiling.mock.calls[1] as unknown as [
-      string[],
-    ];
+    const [secondCmd] = mockSpawnCeiling.mock.calls[1] as unknown as [string[]];
     const rIdx = secondCmd.indexOf("-r");
     expect(rIdx).toBeGreaterThan(-1);
     expect(secondCmd[rIdx + 1]).toBe("existing-sid");
@@ -615,9 +619,9 @@ describe("runClaude", () => {
           kill: () => {},
         } as unknown as ReturnType<typeof Bun.spawn>;
       }
-      return fakeProc(
-        jsonOutput("recovered", "early-sid"),
-      ) as ReturnType<typeof Bun.spawn>;
+      return fakeProc(jsonOutput("recovered", "early-sid")) as ReturnType<
+        typeof Bun.spawn
+      >;
     });
 
     mockGetSession.mockClear();
@@ -1066,6 +1070,163 @@ describe("runClaude", () => {
       const e = err as InstanceType<typeof ClaudeRunError>;
       expect(e.apiErrorStatus).toBe(429);
       expect(e.resultMessage).toContain("monthly usage limit");
+    }
+  });
+});
+
+// ─── Process-tree kill on timeout ─────────────────────────────────────────────
+
+/**
+ * Unlike every other test in this file (which injects a fully synthetic
+ * FakeProc), these spawn a REAL subprocess through the same `spawner`
+ * injection seam — because the behavior under test only exists at the OS
+ * level: a `claude` CLI that forked its own children (an install, a build)
+ * leaves those children running when only the direct child is signalled.
+ * A fake proc can't express that.
+ *
+ * The stub script forks a long-lived grandchild, records its pid to a temp
+ * file, and then waits forever without writing to stdout — so the ceiling
+ * timer is what ends the run, exactly like a session that blew its budget.
+ *
+ * Without the fix these don't just leak a process, they hang: the orphaned
+ * grandchild inherited the stdout pipe, so `_consumeStream` never sees EOF
+ * and the run never settles at all. Both tests therefore fail (by timeout)
+ * against a bare `proc.kill()`.
+ *
+ * Linux-only (procfs); self-skips elsewhere, matching the agent's runtime.
+ */
+const canSpawnRealProcs =
+  process.platform === "linux" && existsSync("/proc/self/task");
+
+/** False for a pid that is gone OR an unreaped zombie (SIGKILLed orphan). */
+function pidIsAlive(pid: number): boolean {
+  let stat: string;
+  try {
+    stat = readFileSync(`/proc/${pid}/stat`, "utf8");
+  } catch {
+    return false;
+  }
+  const close = stat.lastIndexOf(")");
+  return stat.slice(close + 2, close + 3) !== "Z";
+}
+
+async function waitForPidDeath(
+  pid: number,
+  timeoutMs = 1500,
+): Promise<boolean> {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    if (!pidIsAlive(pid)) return true;
+    await Bun.sleep(10);
+  }
+  return !pidIsAlive(pid);
+}
+
+describe.if(canSpawnRealProcs)("process-tree kill on timeout", () => {
+  test("a ceiling timeout kills the spawned CLI's forked descendant, not just the CLI itself", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "shipwright-treekill-"));
+    const pidFile = join(dir, "grandchild.pid");
+    const script = join(dir, "stub-claude.sh");
+    // `sleep 300 &` stands in for an install/build the CLI kicked off; the
+    // parent then blocks on `wait` and never writes to stdout, so only the
+    // ceiling timer can end it.
+    writeFileSync(
+      script,
+      `#!/bin/sh\nsleep 300 &\necho $! > "${pidFile}"\nwait\n`,
+    );
+
+    // Thin wrapper around the real Bun.spawn: swaps the `claude` argv for the
+    // stub script while passing every option through untouched (cwd, env, and
+    // — critically — whatever cgroup option the implementation adds).
+    const realSpawner = ((
+      _cmd: string[],
+      opts: Bun.SpawnOptions.OptionsObject<"ignore", "pipe", "pipe">,
+    ) => Bun.spawn(["sh", script], opts)) as unknown as typeof Bun.spawn;
+
+    const runClaudeRealProc = createRunClaude(
+      realSpawner,
+      testSessions,
+      MODEL,
+      WORKSPACE,
+      fakeSentryClient,
+      undefined,
+      undefined,
+      undefined,
+      300, // 300ms ceiling — fires quickly, keeps the suite fast
+      5000, // idle far away: the ceiling is the trigger under test
+    );
+
+    try {
+      const err = await runClaudeRealProc("hello").catch((e) => e);
+      expect(err).toBeInstanceOf(ClaudeTimeoutError);
+      expect((err as InstanceType<typeof ClaudeTimeoutError>).reason).toBe(
+        "ceiling",
+      );
+
+      const grandchildPid = Number.parseInt(
+        readFileSync(pidFile, "utf8").trim(),
+        10,
+      );
+      expect(Number.isInteger(grandchildPid)).toBe(true);
+      // The whole point: before the process-tree kill, this grandchild was
+      // reparented to init and kept running past the timeout.
+      expect(await waitForPidDeath(grandchildPid)).toBe(true);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  test("an AbortSignal kills the spawned CLI's forked descendant too", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "shipwright-treekill-abort-"));
+    const pidFile = join(dir, "grandchild.pid");
+    const script = join(dir, "stub-claude.sh");
+    writeFileSync(
+      script,
+      `#!/bin/sh\nsleep 300 &\necho $! > "${pidFile}"\nwait\n`,
+    );
+
+    const realSpawner = ((
+      _cmd: string[],
+      opts: Bun.SpawnOptions.OptionsObject<"ignore", "pipe", "pipe">,
+    ) => Bun.spawn(["sh", script], opts)) as unknown as typeof Bun.spawn;
+
+    const runClaudeRealProc = createRunClaude(
+      realSpawner,
+      testSessions,
+      MODEL,
+      WORKSPACE,
+      fakeSentryClient,
+      undefined,
+      undefined,
+      undefined,
+      10_000, // neither timer should fire — the abort is the trigger
+      10_000,
+    );
+
+    try {
+      const ctl = new AbortController();
+      const runPromise = runClaudeRealProc(
+        "hello",
+        undefined,
+        undefined,
+        ctl.signal,
+      );
+      // Give the stub time to fork and record its grandchild pid.
+      const deadline = Date.now() + 1500;
+      while (!existsSync(pidFile) && Date.now() < deadline) await Bun.sleep(10);
+      ctl.abort();
+
+      const { ClaudeAbortedError } = await import("./claude.ts");
+      const err = await runPromise.catch((e) => e);
+      expect(err).toBeInstanceOf(ClaudeAbortedError);
+
+      const grandchildPid = Number.parseInt(
+        readFileSync(pidFile, "utf8").trim(),
+        10,
+      );
+      expect(await waitForPidDeath(grandchildPid)).toBe(true);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
     }
   });
 });
@@ -2708,10 +2869,11 @@ describe("reportClaudeError", () => {
 
   test("does not throw when sentryClient is undefined", () => {
     expect(() =>
-      reportClaudeError(undefined, new ClaudeTimeoutError(3_600_000, "ceiling")),
+      reportClaudeError(
+        undefined,
+        new ClaudeTimeoutError(3_600_000, "ceiling"),
+      ),
     ).not.toThrow();
-    expect(() =>
-      reportClaudeError(undefined, new Error("boom")),
-    ).not.toThrow();
+    expect(() => reportClaudeError(undefined, new Error("boom"))).not.toThrow();
   });
 });
