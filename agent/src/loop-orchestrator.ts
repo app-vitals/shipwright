@@ -865,23 +865,23 @@ export function createLoopOrchestrator(
         itemId,
       );
 
-      // DTW-1.3: push the session id into the cron-run row the moment it's
-      // known — before the run reaches any terminal state — so an operator can
-      // find/resume the session manually even if this attempt never completes.
-      // Wired for every phase that has a sessionKey — dev-task plus, since
-      // CRT-1.3, review/patch/deploy; only plan (no sessionKey) opts out.
+      // DTW-1.3/CES-1.2: push the session id into the cron-run row the moment
+      // it's known — before the run reaches any terminal state — so an operator
+      // can find/resume the session manually even if this attempt never
+      // completes. Wired for every phase (all five: dev-task, plan, review,
+      // patch, deploy), independent of sessionKey. The sessionKey itself remains
+      // undefined for plan by design (plan doesn't resume), but the session id
+      // capture is decoupled from that — plan still pushes it for observability.
       // Fire-and-forget, same contract as recordProgress below.
-      const onEarlySessionId: EarlySessionIdCallback | undefined = sessionKey
-        ? (sid) => {
-            cronRunReporter
-              .recordSessionId(loopCronId, runId, sid)
-              .catch((err) => {
-                console.warn(
-                  `[loop-orchestrator] recordSessionId failed for run ${runId}: ${String(err)} — swallowing`,
-                );
-              });
-          }
-        : undefined;
+      const onEarlySessionId: EarlySessionIdCallback = (sid) => {
+        cronRunReporter
+          .recordSessionId(loopCronId, runId, sid)
+          .catch((err) => {
+            console.warn(
+              `[loop-orchestrator] recordSessionId failed for run ${runId}: ${String(err)} — swallowing`,
+            );
+          });
+      };
 
       // Progress push (CSU-3.1): fired as each new assistant turn completes so
       // token totals survive an agent-process OOM/deploy-kill mid-run, not just
