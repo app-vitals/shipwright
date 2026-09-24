@@ -404,9 +404,9 @@ describe("toolchain-patterns.md — cache schema includes lintScoped for diff-sc
     const referencesPath = join(import.meta.dir, "..", "references", "toolchain-patterns.md");
     const referencesContent = readFileSync(referencesPath, "utf-8");
 
-    const fieldIdx = referencesContent.indexOf("**`lintScoped`**");
+    const fieldIdx = referencesContent.indexOf("**Scoped fields (`lintScoped`");
     expect(fieldIdx).toBeGreaterThan(-1);
-    const fieldSection = referencesContent.slice(fieldIdx, fieldIdx + 500);
+    const fieldSection = referencesContent.slice(fieldIdx, fieldIdx + 700);
     expect(fieldSection).toMatch(/omit/i);
     expect(fieldSection).toMatch(/never.{0,20}null/i);
   });
@@ -439,12 +439,103 @@ describe("toolchain-patterns.md — cache schema includes lintScoped for diff-sc
     const referencesPath = join(import.meta.dir, "..", "references", "toolchain-patterns.md");
     const referencesContent = readFileSync(referencesPath, "utf-8");
 
-    const sectionIdx = referencesContent.indexOf("### Scoped Lint Detection");
+    const sectionIdx = referencesContent.indexOf("### Scoped Check Detection");
     expect(sectionIdx).toBeGreaterThan(-1);
     const section = referencesContent.slice(sectionIdx, sectionIdx + 2000);
     expect(section).toMatch(/no monorepo tool/i);
     expect(section).toMatch(/eslint/i);
     expect(section).toMatch(/changed/i);
+  });
+});
+
+describe("toolchain-patterns.md — generalized installScoped/typecheckScoped/testScoped detection across ecosystems (LVB-3.1)", () => {
+  it("defines typecheckScoped, testScoped, and installScoped fields in the cache schema", () => {
+    const referencesPath = join(import.meta.dir, "..", "references", "toolchain-patterns.md");
+    const referencesContent = readFileSync(referencesPath, "utf-8");
+
+    const schemaIdx = referencesContent.indexOf('"commands"');
+    expect(schemaIdx).toBeGreaterThan(-1);
+    const schemaSection = referencesContent.slice(schemaIdx, schemaIdx + 500);
+    expect(schemaSection).toContain('"typecheckScoped"');
+    expect(schemaSection).toContain('"testScoped"');
+    expect(schemaSection).toContain('"installScoped"');
+  });
+
+  it("extends the Node.js scoped-check priority table to testScoped and typecheckScoped, not just lint", () => {
+    const referencesPath = join(import.meta.dir, "..", "references", "toolchain-patterns.md");
+    const referencesContent = readFileSync(referencesPath, "utf-8");
+
+    const sectionIdx = referencesContent.indexOf("### Scoped Check Detection");
+    expect(sectionIdx).toBeGreaterThan(-1);
+    const section = referencesContent.slice(sectionIdx, sectionIdx + 2500);
+    expect(section).toContain("turbo test --filter=");
+    expect(section).toContain("turbo typecheck --filter=");
+    expect(section).toContain("nx affected --target=test --base=");
+    expect(section).toContain("nx affected --target=typecheck --base=");
+    expect(section).toMatch(/pnpm --filter "\.\.\.\[\{base\}\]" test/);
+    expect(section).toMatch(/pnpm --filter "\.\.\.\[\{base\}\]" typecheck/);
+  });
+
+  it("documents the Java Maven reactor -pl/-am scoped test command", () => {
+    const referencesPath = join(import.meta.dir, "..", "references", "toolchain-patterns.md");
+    const referencesContent = readFileSync(referencesPath, "utf-8");
+
+    expect(referencesContent).toContain("mvn test -pl {module} -am");
+  });
+
+  it("documents the Java Gradle module-targeting scoped test command", () => {
+    const referencesPath = join(import.meta.dir, "..", "references", "toolchain-patterns.md");
+    const referencesContent = readFileSync(referencesPath, "utf-8");
+
+    expect(referencesContent).toContain("./gradlew :{module}:test");
+  });
+
+  it("documents Go/Rust scoped test detection with a caveat that affected-tooling is weaker there", () => {
+    const referencesPath = join(import.meta.dir, "..", "references", "toolchain-patterns.md");
+    const referencesContent = readFileSync(referencesPath, "utf-8");
+
+    const rustIdx = referencesContent.indexOf("## Rust");
+    const goIdx = referencesContent.indexOf("## Go");
+    expect(rustIdx).toBeGreaterThan(-1);
+    expect(goIdx).toBeGreaterThan(rustIdx);
+
+    const rustSection = referencesContent.slice(rustIdx, goIdx);
+    expect(rustSection).toContain("cargo test -p {crate}");
+    expect(rustSection).toMatch(/cheap/i);
+
+    const javaIdx = referencesContent.indexOf("## Java");
+    const goSection = referencesContent.slice(goIdx, javaIdx > -1 ? javaIdx : goIdx + 3000);
+    expect(goSection).toContain("go test ./{changed-package}/...");
+    expect(goSection).toMatch(/cheap/i);
+  });
+
+  it("documents Python and Ruby as best-effort/full-suite by default, not attempting scoped detection", () => {
+    const referencesPath = join(import.meta.dir, "..", "references", "toolchain-patterns.md");
+    const referencesContent = readFileSync(referencesPath, "utf-8");
+
+    const pythonIdx = referencesContent.indexOf("## Python");
+    const rubyIdx = referencesContent.indexOf("## Ruby");
+    expect(pythonIdx).toBeGreaterThan(-1);
+    expect(rubyIdx).toBeGreaterThan(pythonIdx);
+
+    const pythonSection = referencesContent.slice(pythonIdx, rubyIdx);
+    expect(pythonSection).toMatch(/not attempted/i);
+    expect(pythonSection).toMatch(/best-effort\/full-suite/i);
+
+    const genericIdx = referencesContent.indexOf("## Generic / Makefile");
+    const rubySection = referencesContent.slice(rubyIdx, genericIdx > -1 ? genericIdx : rubyIdx + 1000);
+    expect(rubySection).toMatch(/not attempted/i);
+  });
+
+  it("states the 'never run a target the diff doesn't touch' rule generically, not tied to Node/monorepo tooling", () => {
+    const referencesPath = join(import.meta.dir, "..", "references", "toolchain-patterns.md");
+    const referencesContent = readFileSync(referencesPath, "utf-8");
+
+    const sectionIdx = referencesContent.indexOf("## Never Run a Target the Diff Doesn't Touch");
+    expect(sectionIdx).toBeGreaterThan(-1);
+    const section = referencesContent.slice(sectionIdx, sectionIdx + 1500);
+    expect(section).toMatch(/general rule, not specific to Node\/monorepo tooling/i);
+    expect(section).toMatch(/mobile\/native export step/i);
   });
 });
 
