@@ -701,6 +701,57 @@ async function joinPrsByTaskId(
 }
 
 /**
+ * Max verification-check rows fetched per task/PR for the detail cards and the
+ * agent rollup. The task-store's GET /verification-checks returns rows `at`
+ * ascending (oldest first) with a default `limit` of 50 (see
+ * task-store/src/verification-check-service.ts's list()), so an unqualified
+ * request yields the OLDEST 50 rows — exactly the wrong end of the history for
+ * a "most recent run per checkName" view once a task/PR records more than one
+ * page of checks.
+ */
+const VERIFICATION_CHECKS_PAGE_LIMIT = 200;
+
+/** Shape of the optional task-store verification-check fetcher (see AdminUIDeps). */
+type FetchVerificationChecks = (
+  params: URLSearchParams,
+) => Promise<{ checks: VerificationCheckItem[]; total?: number }>;
+
+/**
+ * Fetches the most RECENT window of a task's/PR's verification-check history,
+ * so mostRecentVerificationChecksByCheckName()/buildVerificationActivityRollup()
+ * reduce over rows that actually contain each checkName's latest run.
+ *
+ * GET /verification-checks exposes no `order=desc` option — only `limit`/
+ * `offset` over an ascending scan — so "the newest page" is expressed as "the
+ * LAST page": request `limit` rows, and if the response's `total` says the
+ * history is longer than what came back, re-request at
+ * `offset = total - limit`. That second round-trip only happens for a task/PR
+ * with more than VERIFICATION_CHECKS_PAGE_LIMIT recorded checks; every other
+ * call stays a single request. (If rows are appended between the two calls the
+ * window shifts by at most that many rows — harmless for a "latest per
+ * checkName" reduction over a 200-row window.)
+ */
+async function fetchRecentVerificationChecks(
+  fetchVerificationChecks: FetchVerificationChecks,
+  parent: { taskId: string } | { prId: string },
+): Promise<VerificationCheckItem[]> {
+  const buildParams = () =>
+    new URLSearchParams({
+      ...parent,
+      limit: String(VERIFICATION_CHECKS_PAGE_LIMIT),
+    });
+
+  const first = await fetchVerificationChecks(buildParams());
+  const total = typeof first.total === "number" ? first.total : 0;
+  if (total <= first.checks.length) return first.checks;
+
+  const tailParams = buildParams();
+  tailParams.set("offset", String(total - VERIFICATION_CHECKS_PAGE_LIMIT));
+  const tail = await fetchVerificationChecks(tailParams);
+  return tail.checks;
+}
+
+/**
  * Builds the "Recent Verification Activity" rollup for the agent detail page
  * (LVB-5.3 AC2) from the agent's most recent cron-run dispatch targets.
  * There is no task-store query to list "all tasks/PRs claimed by agent X"
@@ -718,11 +769,7 @@ async function joinPrsByTaskId(
  */
 async function buildVerificationActivityRollup(
   runs: { itemType?: string | null; itemId?: string | null }[],
-  fetchVerificationChecks:
-    | ((
-        params: URLSearchParams,
-      ) => Promise<{ checks: VerificationCheckItem[] }>)
-    | undefined,
+  fetchVerificationChecks: FetchVerificationChecks | undefined,
   fetchTaskStorePrs:
     | ((params: URLSearchParams) => Promise<{ prs: PrListItem[] }>)
     | undefined,
@@ -747,10 +794,9 @@ async function buildVerificationActivityRollup(
     distinctItems.map(async (item): Promise<VerificationCheckItem[]> => {
       try {
         if (item.itemType === "task") {
-          const result = await fetchVerificationChecks(
-            new URLSearchParams({ taskId: item.itemId }),
-          );
-          return result.checks;
+          return await fetchRecentVerificationChecks(fetchVerificationChecks, {
+            taskId: item.itemId,
+          });
         }
         // itemType === "pr" — resolve the "repo#prNumber" dispatch-target
         // reference to its task-store PR record id first.
@@ -762,10 +808,9 @@ async function buildVerificationActivityRollup(
         );
         const pr = prResult.prs[0];
         if (!pr) return [];
-        const result = await fetchVerificationChecks(
-          new URLSearchParams({ prId: pr.id }),
-        );
-        return result.checks;
+        return await fetchRecentVerificationChecks(fetchVerificationChecks, {
+          prId: pr.id,
+        });
       } catch {
         return [];
       }
@@ -3365,10 +3410,10 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
     let verificationChecks: VerificationCheckItem[] = [];
     if (fetchVerificationChecks) {
       try {
-        const result = await fetchVerificationChecks(
-          new URLSearchParams({ taskId }),
+        verificationChecks = await fetchRecentVerificationChecks(
+          fetchVerificationChecks,
+          { taskId },
         );
-        verificationChecks = result.checks;
       } catch {
         // swallow — page renders without Verification Checks section
       }
@@ -3784,10 +3829,10 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
     let verificationChecks: VerificationCheckItem[] = [];
     if (fetchVerificationChecks) {
       try {
-        const result = await fetchVerificationChecks(
-          new URLSearchParams({ prId }),
+        verificationChecks = await fetchRecentVerificationChecks(
+          fetchVerificationChecks,
+          { prId },
         );
-        verificationChecks = result.checks;
       } catch {
         // swallow — page renders without Verification Checks section
       }

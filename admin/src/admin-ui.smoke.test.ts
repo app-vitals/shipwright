@@ -944,6 +944,7 @@ describe("admin UI — authenticated pages", () => {
   });
 
   it("authenticated GET /admin/agents/:id renders a Recent Verification Activity rollup from recent cron-run dispatch targets", async () => {
+    const rollupLimits: number[] = [];
     const app = createAdminUIApp(
       makeMockDeps({
         agentCronRunService: {
@@ -1023,6 +1024,9 @@ describe("admin UI — authenticated pages", () => {
           };
         },
         fetchVerificationChecks: async (params: URLSearchParams) => {
+          // The rollup must ask for more than the task-store's oldest-first
+          // 50-row default page, or its per-checkName "latest" is stale.
+          rollupLimits.push(Number(params.get("limit")));
           if (params.get("taskId") === "WLS-2.2") {
             return {
               checks: [
@@ -1077,6 +1081,8 @@ describe("admin UI — authenticated pages", () => {
     expect(res.status).toBe(200);
     const html = await res.text();
     expect(html).toContain("Recent Verification Activity");
+    expect(rollupLimits.length).toBeGreaterThan(0);
+    for (const limit of rollupLimits) expect(limit).toBeGreaterThan(50);
   });
 
   it("authenticated GET /admin/agents/:id renders no Recent Verification Activity card when fetchVerificationChecks is absent", async () => {
@@ -6753,6 +6759,73 @@ describe("admin UI — tasks page", () => {
     expect(capturedParams).not.toBeNull();
     const captured = capturedParams as unknown as URLSearchParams;
     expect(captured.get("taskId")).toBe("task-42");
+    // The task-store returns rows `at`-ascending with a default limit of 50,
+    // so an unqualified request would hand the card the OLDEST page. The route
+    // must ask for a window big enough to contain each checkName's latest run.
+    expect(Number(captured.get("limit"))).toBeGreaterThan(50);
+  });
+
+  it("GET /admin/tasks/:id pages to the newest verification checks when the history exceeds one page", async () => {
+    const mockTask = {
+      id: "task-99",
+      title: "Long-running task",
+      status: "in_progress",
+      description: "Many verification runs",
+      branch: "feat/long",
+      assignee: "agent-unknown",
+      claimedBy: "agent-unknown",
+      session: null,
+      repo: "org/repo",
+      pr: null,
+    };
+    const makeCheck = (id: string, status: string, at: string) => ({
+      id,
+      taskId: "task-99",
+      prRecordId: null,
+      repo: "org/repo",
+      checkName: "unit",
+      status,
+      reasonCategory: null,
+      learnedFromCategory: null,
+      durationMs: 1000,
+      at,
+      createdAt: at,
+    });
+    const TOTAL = 250;
+    const requests: URLSearchParams[] = [];
+    const app = createAdminUIApp(
+      makeMockDeps({
+        fetchTaskStoreTask: async (id: string) =>
+          id === "task-99" ? mockTask : null,
+        fetchVerificationChecks: async (params: URLSearchParams) => {
+          requests.push(params);
+          const limit = Number(params.get("limit"));
+          const offset = Number(params.get("offset") ?? "0");
+          // Oldest-first pagination: offset 0 is the stale head of the
+          // history, the last page holds the genuinely most recent runs.
+          const checks =
+            offset > 0
+              ? [makeCheck("vc-new", "ran_passed", "2026-06-20T10:00:00.000Z")]
+              : [makeCheck("vc-old", "ran_failed", "2026-06-01T10:00:00.000Z")];
+          return { checks, total: TOTAL, limit, offset };
+        },
+      }),
+    );
+    const res = await app.request("/admin/tasks/task-99", {
+      headers: { Cookie: `admin_session=${cookie}` },
+    });
+    expect(res.status).toBe(200);
+    const html = await res.text();
+    // Two calls: the first reports total > page size, the second fetches the
+    // tail page at offset = total - limit.
+    expect(requests.length).toBe(2);
+    const firstLimit = Number(requests[0].get("limit"));
+    expect(requests[0].get("offset")).toBeNull();
+    expect(requests[1].get("taskId")).toBe("task-99");
+    expect(Number(requests[1].get("offset"))).toBe(TOTAL - firstLimit);
+    // The rendered card reflects the newest run, not the stale first page.
+    expect(html).toContain("2026-06-20T10:00:00.000Z");
+    expect(html).not.toContain("2026-06-01T10:00:00.000Z");
   });
 
   it("GET /admin/tasks/:id renders without Verification Checks section when fetchVerificationChecks is absent", async () => {
@@ -9692,6 +9765,11 @@ describe("admin UI — PRs page", () => {
     expect((capturedParams as unknown as URLSearchParams).get("prId")).toBe(
       "pr-smoke-1",
     );
+    // See the task-detail equivalent: the default oldest-first 50-row page is
+    // the wrong end of the history for a "most recent run" card.
+    expect(
+      Number((capturedParams as unknown as URLSearchParams).get("limit")),
+    ).toBeGreaterThan(50);
   });
 
   it("GET /admin/prs/:id renders without Verification Checks section when fetchVerificationChecks is absent", async () => {
