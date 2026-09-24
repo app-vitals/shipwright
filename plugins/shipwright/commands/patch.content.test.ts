@@ -2401,7 +2401,7 @@ describe("patch.md — record verification outcomes via task-store API (LVB-5.2)
     it(`${label} [C] Validate uses prId (PR Record ID), not a task id, as the parent id`, () => {
       const section = getValidateSection(startMarker, endMarker);
       expect(section).toContain("prId");
-      expect(section).toMatch(/--arg prId "\{PR Record ID\}"/);
+      expect(section).toMatch(/--arg prId "\{PR_RECORD_ID\}"/);
       expect(section).not.toContain("taskId");
     });
 

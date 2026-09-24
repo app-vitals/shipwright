@@ -797,7 +797,7 @@ INSTRUCTIONS — follow in order:
   else
     VC_STATUS="ran_failed"; VC_REASON=""
   fi
-  VC_BODY=$(jq -n --arg prId "{PR Record ID}" --arg repo "{org}/{repo}" --arg checkName "$CHECK_NAME" \
+  VC_BODY=$(jq -n --arg prId "{PR_RECORD_ID}" --arg repo "{org}/{repo}" --arg checkName "$CHECK_NAME" \
     --arg status "$VC_STATUS" --arg reason "$VC_REASON" \
     '{prId: $prId, repo: $repo, checkName: $checkName, status: $status}
      + (if $reason != "" then {reasonCategory: $reason} else {} end)')
@@ -1392,7 +1392,7 @@ INSTRUCTIONS — follow in order:
   else
     VC_STATUS="ran_failed"; VC_REASON=""
   fi
-  VC_BODY=$(jq -n --arg prId "{PR Record ID}" --arg repo "{org}/{repo}" --arg checkName "$CHECK_NAME" \
+  VC_BODY=$(jq -n --arg prId "{PR_RECORD_ID}" --arg repo "{org}/{repo}" --arg checkName "$CHECK_NAME" \
     --arg status "$VC_STATUS" --arg reason "$VC_REASON" \
     '{prId: $prId, repo: $repo, checkName: $checkName, status: $status}
      + (if $reason != "" then {reasonCategory: $reason} else {} end)')
@@ -2061,7 +2061,7 @@ INSTRUCTIONS — follow in order:
   else
     VC_STATUS="ran_failed"; VC_REASON=""
   fi
-  VC_BODY=$(jq -n --arg prId "{PR Record ID}" --arg repo "{org}/{repo}" --arg checkName "$CHECK_NAME" \
+  VC_BODY=$(jq -n --arg prId "{PR_RECORD_ID}" --arg repo "{org}/{repo}" --arg checkName "$CHECK_NAME" \
     --arg status "$VC_STATUS" --arg reason "$VC_REASON" \
     '{prId: $prId, repo: $repo, checkName: $checkName, status: $status}
      + (if $reason != "" then {reasonCategory: $reason} else {} end)')
