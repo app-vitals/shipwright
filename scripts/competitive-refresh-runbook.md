@@ -162,7 +162,9 @@ gap, via `POST /tasks/bulk` (mirroring the pattern used by
 step):
 
 ```bash
-cat > /tmp/competitive-refresh-tasks-$(date +%s).json <<'EOF'
+TASKS_FILE="/tmp/competitive-refresh-tasks-$(date +%s).json"
+
+cat > "$TASKS_FILE" <<'EOF'
 [
   {
     "id": "competitive-refresh-vs-devin-pricing-20260925",
@@ -181,9 +183,9 @@ curl -sf -X POST \
   -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
   -H "Content-Type: application/json" \
   "$SHIPWRIGHT_TASK_STORE_URL/tasks/bulk" \
-  --data-binary @/tmp/competitive-refresh-tasks-$(date +%s).json | jq .
+  --data-binary @"$TASKS_FILE" | jq .
 
-rm -f /tmp/competitive-refresh-tasks-*.json
+rm -f "$TASKS_FILE"
 ```
 
 Give the task's `id` a unique, descriptive slug (page/row + date, as above)
