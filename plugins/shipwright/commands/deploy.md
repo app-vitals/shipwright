@@ -11,6 +11,24 @@ metrics on success.
 
 **This command runs autonomously. Do not pause for user input unless pre-flight fails.**
 
+> **Scope note — GitHub Actions only, two deploy models.** This command reads the target
+> repo's own `CLAUDE.md` `## Deploy model` section and recognizes exactly two shapes:
+> `direct`/`none` (no pipeline — merge, then watch post-merge CI) and `staged` (a
+> three-stage GitHub Actions poll, defaulting to workflows named `Deploy`, `Canary`, and
+> `Promote to Prod`; a repo can name its own stages in `CLAUDE.md` and this command
+> validates them against `gh api .../actions/workflows` before polling). There is no
+> support for any other CI/CD system — GitLab CI, CircleCI, Jenkins, Bitbucket Pipelines,
+> Azure DevOps — or for GitOps-based rollout (ArgoCD, Flux), feature-flag-gated canaries,
+> blue-green or multi-region deploys, database-migration-coordinated rollouts, or
+> approval gated in a non-GitHub tool. A repo on any of these will either be silently
+> misclassified as "no pipeline" or will hang polling for GitHub Actions runs that never
+> appear. Step 7's post-deploy health check is a literal, unfilled template written for a
+> GCP/GKE target (`<your-service-host>`, `<your-gcp-project>`) — unlike the Deploy model
+> detection above, it is not read dynamically from the target repo and needs manual
+> adaptation per repo. In short: this command is proven across App Vitals' own two repos
+> (this repo on `direct`, a second internal repo on `staged` with the default stage names) —
+> treat it as validated for that shape, not as a general-purpose CI/CD abstraction.
+
 > **Task store setup:** This command updates task status in the Shipwright task store on deploy completion. If `SHIPWRIGHT_TASK_STORE_URL` or `SHIPWRIGHT_TASK_STORE_TOKEN` is missing, invoke `/shipwright:task-store` for setup instructions.
 
 ---
