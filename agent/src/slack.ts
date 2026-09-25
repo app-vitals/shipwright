@@ -18,6 +18,10 @@ import {
   agentSlackMembershipRef,
 } from "./agent-slack-membership-ref.ts";
 import {
+  type AgentTrialExpiryRef,
+  agentTrialExpiryRef,
+} from "./agent-trial-expiry-ref.ts";
+import {
   type ChatTokenReporter,
   NoopChatTokenReporter,
 } from "./chat-token-reporter.ts";
@@ -188,6 +192,36 @@ export function isAllowedSlackSender(
   if (!email) return false;
   const lowered = email.toLowerCase();
   return emails.some((e) => e.toLowerCase() === lowered);
+}
+
+/**
+ * The message posted (once per inbound event, no dedup) when isTrialExpired()
+ * rejects a Slack message/mention/reaction — ATE-3.1. Unlike
+ * shouldRejectSlackSender (which silently drops the message), the caller
+ * always replies with this so the user isn't met with unexplained silence.
+ */
+export const TRIAL_EXPIRED_NOTICE =
+  "This trial has ended — contact us to continue.";
+
+/**
+ * The shared trial-expiry gate used by all three event handlers (message,
+ * app_mention, reaction_added) — ATE-3.1. Runs before shouldRejectSlackSender
+ * and before any Claude session is invoked.
+ *
+ * Fails OPEN (not expired) while the ref has never synced, or when no trial
+ * is configured (trialExpiresAt null), so a persistent config-sync failure
+ * never locks a paying customer out of their own agent. Only a
+ * trialExpiresAt strictly in the past counts as expired — a trial expiring
+ * at exactly `now` is not yet locked out.
+ */
+export function isTrialExpired(
+  trialExpiryRef: AgentTrialExpiryRef,
+  now: () => Date = () => new Date(),
+): boolean {
+  if (!trialExpiryRef.hasSynced()) return false;
+  const trialExpiresAt = trialExpiryRef.get();
+  if (!trialExpiresAt) return false;
+  return trialExpiresAt.getTime() < now().getTime();
 }
 
 /**
@@ -505,6 +539,7 @@ export function createSlackApp(
   chatTokenReporter: ChatTokenReporter = new NoopChatTokenReporter(),
   resolveUserEmailFn: ResolveUserEmailFn = async () => undefined,
   membershipRef: AgentSlackMembershipRef = agentSlackMembershipRef,
+  trialExpiryRef: AgentTrialExpiryRef = agentTrialExpiryRef,
 ): App {
   const app = appFactory({
     token: slackConfig.botToken,
@@ -591,6 +626,14 @@ export function createSlackApp(
       if (!msg.thread_ts) return;
       if (!(await getSessionFn(getThreadKey(msg.channel, msg.thread_ts))))
         return;
+    }
+
+    if (isTrialExpired(trialExpiryRef)) {
+      await say({
+        text: TRIAL_EXPIRED_NOTICE,
+        thread_ts: msg.thread_ts ?? msg.ts,
+      });
+      return;
     }
 
     if (
@@ -787,6 +830,11 @@ export function createSlackApp(
       return;
     }
 
+    if (isTrialExpired(trialExpiryRef)) {
+      await say({ text: TRIAL_EXPIRED_NOTICE, thread_ts: replyTs });
+      return;
+    }
+
     if (
       ev.user &&
       (await shouldRejectSlackSender(
@@ -979,6 +1027,14 @@ export function createSlackApp(
     if (ev.item.type !== "message") return;
     if (!botUserId || ev.item_user !== botUserId) return;
     if (!ev.item.channel.startsWith("D")) return;
+
+    if (isTrialExpired(trialExpiryRef)) {
+      await client.chat.postMessage({
+        channel: ev.item.channel,
+        text: TRIAL_EXPIRED_NOTICE,
+      });
+      return;
+    }
 
     if (
       await shouldRejectSlackSender(

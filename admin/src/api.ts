@@ -47,6 +47,15 @@ export interface AgentConfigResponse {
   patchAuthorAllowlist: string[];
   restrictSlackToMembers: boolean;
   memberEmails: string[];
+  /**
+   * ATE-3.1: ISO timestamp of trial expiry, or null/absent when no trial is
+   * configured. Optional (rather than a required nullable field) so existing
+   * fixtures/doubles built against this interface before ATE-3.1 keep
+   * compiling unchanged. Read by agent/src/index.ts's syncConfig() to sync
+   * agent-trial-expiry-ref.ts's live ref, which agent/src/slack.ts's
+   * isTrialExpired() gate reads to block Slack access post-expiry.
+   */
+  trialExpiresAt?: string | null;
 }
 
 interface AgentEnvServiceLike {
@@ -78,6 +87,8 @@ interface AgentServiceLike {
     patchAuthorAllowlist: string[];
     restrictSlackToMembers: boolean;
     memberEmails: string[];
+    /** ATE-3.1: optional so pre-existing test doubles built against this interface keep compiling unchanged. */
+    trialExpiresAt?: Date | null;
   } | null>;
 }
 
@@ -220,6 +231,9 @@ export function createAgentRuntimeApp(deps: AgentRuntimeDeps): OpenAPIHono {
       patchAuthorAllowlist: agent.patchAuthorAllowlist,
       restrictSlackToMembers: agent.restrictSlackToMembers ?? false,
       memberEmails: agent.memberEmails ?? [],
+      trialExpiresAt: agent.trialExpiresAt
+        ? agent.trialExpiresAt.toISOString()
+        : null,
     };
 
     return c.json(response, 200);
