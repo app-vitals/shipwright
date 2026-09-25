@@ -30,7 +30,7 @@ flowchart LR
     style M fill:#0f2d1e,stroke:#34c77b,color:#34c77b
 ```
 
-Every feature moves through the same stages. One `planning/{folder}/` directory ties everything together — `/plan-session` writes the task breakdown, `/dev-task` reads it and appends metrics, `/dev-loop` runs tasks continuously.
+Every feature moves through the same stages. One `planning/{folder}/` directory ties everything together — `/plan-session` writes the task breakdown, `/dev-task` reads and updates it, `/dev-loop` runs tasks continuously.
 
 ## Commands
 
@@ -43,12 +43,15 @@ Every feature moves through the same stages. One `planning/{folder}/` directory 
 | `/dev-loop {folder?}` | Autonomous continuous dev — picks next task, runs dev-task --merge in a loop |
 | `/hitl {task-id}` | Execute a human-in-the-loop task — loads task context, assists with infra execution, marks done on exit |
 | `/unblock [repo ...]` | Interactive triage for blocked tasks/PRs — discovers escalations, infers origin phase, lets you retry, redirect, or abandon each one |
-| `/metrics {project?}` | Analyze pipeline metrics — fix cascade trends, quality rates, and recommendations |
 | `/refresh-plan {folder}` | Syncs planning doc against current codebase state |
 | `/review` | Auto-detecting multi-agent code review for the current branch |
 | `/review-staged` | Walk through staged PR reviews conversationally — APPROVEs first, smallest diff first, owner steers each with verbs |
 | `/research {task}` | Load relevant project docs and web research for a given task |
 | `/research-docs [module|--auto]` | Analyze codebase and generate or update project documentation. `--auto` runs unattended (no prompts) for cron/scheduled use |
+
+Pipeline analytics (cycle time, FTQ rate, CI gate, cost) live outside the command
+surface — the metrics service exposes them as read-only `/metrics/*` JSON endpoints
+plus a server-rendered `/dashboard` (see [docs/metrics.md](../../docs/metrics.md)).
 
 ### Test Readiness Pipeline
 
@@ -63,7 +66,7 @@ A five-phase pipeline that audits whether a codebase's tests can be trusted by a
 | `/test-fix [--dry-run]` | 5 | Queue the roadmap's tasks to the Shipwright Task Store, one task per `T-NNN` row with dependency edges; `dev-task` (or `/shipwright:hitl` for HITL tasks) picks them up automatically |
 | `/test-debt [path]` | post | Compute the corrective-commit ratio per milestone from git history and flag under-specified milestones as planning debt |
 
-Three cross-cutting contracts back the pipeline: **canary-execution** (dual-mode local/`TEST_TARGET_URL` runner), **speed-budgets** (per-layer 95p targets and hard caps), and **repo-config** (branch protection that makes "tests pass" a real gate). `/test-debt` is named to avoid colliding with `/metrics`, which covers shipwright's own dev-pipeline metrics.
+Three cross-cutting contracts back the pipeline: **canary-execution** (dual-mode local/`TEST_TARGET_URL` runner), **speed-budgets** (per-layer 95p targets and hard caps), and **repo-config** (branch protection that makes "tests pass" a real gate).
 
 ## Workflow
 
@@ -160,27 +163,7 @@ Updates stale tasks in a planning doc:
 - Regenerates context fields
 - Marks already-met acceptance criteria
 
-### 6. Metrics
-
-```
-/metrics                              # all projects, all time
-/metrics my-project                   # single project
-/metrics --from 2026-03-01            # date filter
-/metrics --compare projectA projectB  # side-by-side
-```
-
-**The fix cascade** — Shipwright's pipeline has three post-implementation phases that catch and fix issues: Simplify (Step 8), PR Review (Steps 12–14), and CI Gate (Step 11). Each fix is a signal that upstream code generation could be better. `/metrics` measures this rework and tracks it over time.
-
-Key metrics:
-- **First-time quality rate** — % of tasks with zero simplify fixes, SHIP IT verdict, and CI pass on first try
-- **Simplify fix breakdown** — DRY violations, dead code, naming, complexity, consistency
-- **Review verdict distribution** — SHIP IT / NEEDS FIXES / NEEDS WORK
-- **CI first-pass rate** and common failure patterns
-- **Estimation accuracy** by complexity tier (1–2 / 3 / 4–5)
-
-`/metrics` reads task-store timestamps directly — no event-firing pipeline required.
-
-### 7. Research
+### 6. Research
 
 - `/research {task}` scans your project's `docs/` directory, selects relevant files, optionally runs web search, and returns distilled context
 - `/research-docs [module]` audits your existing documentation, identifies gaps and stale content, and generates or updates docs
@@ -290,7 +273,6 @@ shipwright/
 │   ├── plan-session.md          # Planning session workflow
 │   ├── dev-task.md              # Single task execution
 │   ├── dev-loop.md              # Autonomous continuous loop
-│   ├── metrics.md               # Pipeline metrics analysis
 │   ├── refresh-plan.md          # Planning doc refresh
 │   ├── research.md              # Load project docs and web research
 │   ├── research-docs.md         # Generate/update project documentation
@@ -308,7 +290,6 @@ shipwright/
 │       └── SKILL.md             # Query and update the task store — lifecycle invocations, env var config
 ├── references/
 │   ├── doc-refresh-recipe.md    # Shared staleness + section-rewrite recipe (research-docs + docs-refresher)
-│   ├── metrics-schema.md        # Metrics JSONL schema reference
 │   ├── planning-doc-template.md # Task breakdown document template
 │   ├── product-spec-template.md # PRODUCT-SPEC.md template for /prd
 │   └── toolchain-patterns.md    # Config file → command mapping
