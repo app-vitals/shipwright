@@ -534,6 +534,36 @@ awsSecurityGroupPolicy:
     - sg-xxxxxxxxxxxxxxxxx
 ```
 
+To cover a *set* of services with one policy without widening it to the whole
+release, give each of them an opt-in label via `podLabels` (available on
+`admin`, `taskStore`, and `chat`) and select on that instead:
+
+```yaml
+admin:
+  podLabels:
+    example.com/peer-datastore: "true"
+taskStore:
+  podLabels:
+    example.com/peer-datastore: "true"
+chat:
+  podLabels:
+    example.com/peer-datastore: "true"
+
+awsSecurityGroupPolicy:
+  enabled: true
+  podSelector:
+    matchLabels:
+      example.com/peer-datastore: "true"
+  groupIds:
+    - sg-xxxxxxxxxxxxxxxxx
+```
+
+That keeps the admission blast radius to the opted-in pods: the VPC CNI
+webhook rejects a matching pod if the policy is misconfigured (an empty
+`groupIds`, say), so a release-wide selector would take every pod down with
+it. See the chart README's
+[Opting a workload into a label-selecting cluster policy](../charts/shipwright/README.md#opting-a-workload-into-a-label-selecting-cluster-policy).
+
 `nameOverride` renames the rendered resource (default: the chart fullname), and
 `extraLabels` merges extra labels into its metadata on top of the chart's
 common labels.
