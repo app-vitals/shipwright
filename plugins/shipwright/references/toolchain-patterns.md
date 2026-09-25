@@ -105,9 +105,29 @@ One file per repo (not one shared file keyed by repo) — a shared file read-mod
 `{repo-dir}` / `{docsSource.path}` (when relative) is whichever checkout is live at the point detection runs — `${SHIPWRIGHT_REPO_DIR:-$HOME/src}/{repo}` for dev-task's pre-worktree detection (Step 1/0b runs before the worktree exists); the active `{worktree-path}` for patch, which always operates on an already-existing branch.
 
 1. Read `state/toolchain-cache/{repo}.json`. If it exists and its `fingerprint` matches the value above (computed with whichever recipe matches the cached entry's own `docsSource` presence/absence), reuse the cached `commands` (including `tests` and `docsSource` if present) and skip both Docs-First Discovery and config-file scanning entirely.
-2. Otherwise — file missing, or a fingerprint mismatch (first run, or toolchain-relevant content changed since the last detection) — run Docs-First Discovery above, then the config-file fallback tables below, and overwrite `state/toolchain-cache/{repo}.json` with the new fingerprint + `docsSource` (if found) + commands (a whole-file write — no cross-repo merge needed, since this file only ever holds this one repo's data).
+2. Otherwise — file missing, or a fingerprint mismatch (first run, or toolchain-relevant content changed since the last detection) — run Docs-First Discovery above, then the config-file fallback tables below, and overwrite `state/toolchain-cache/{repo}.json` with the new fingerprint + `docsSource` (if found) + commands (a whole-file write — no cross-repo merge needed, since this file only ever holds this one repo's data). **Exception — broken `docsSource` pointer:** when the cached entry has a populated `docsSource` whose path/heading no longer resolves, "Relocation on Broken Pointer" below refines this step and governs instead; run its relocation attempt *first*, and only reach this step's config-file fallback / doc recreation if relocation also fails.
 
 A missing or stale cache never blocks progress — worst case is a cache miss, which costs exactly what a full detection would cost with no cache at all.
+
+### Relocation on Broken Pointer
+
+This subsection **refines step 2 above** — it is not a parallel alternative to it. A broken pointer *is* a fingerprint mismatch (the populated-`docsSource` recipe hashes the pointed-to heading's content, so a moved file or restructured heading changes the hash), so it enters step 2; what follows overrides step 2's routing for that one case only. Every other mismatch keeps step 2's behavior unchanged.
+
+A `docsSource` pointer can go stale in a more specific way than a generic fingerprint mismatch: the file was moved/renamed, or the heading was restructured, while the underlying commands still exist somewhere in the docs. Treat this as its own case rather than letting it fall silently into a full re-scan.
+
+**Broken-pointer check** — reuse doc-refresh-recipe.md's verification-table pattern (Part 1, "File path" and "Script" rows) rather than re-deriving it here:
+- `docsSource.path` no longer exists — the "File path" check (`Glob` for the path).
+- `docsSource.path` exists but `docsSource.heading` is no longer found in it — the same heading-extraction check the fingerprint recipe above already runs; an empty result means the heading is gone, the same failure mode the "Script" check covers for a renamed/removed script.
+
+Either condition means the pointer is broken.
+
+**On a broken pointer, attempt relocation before falling back.** Before treating `docsSource` as absent and running the full config-file fallback / doc recreation:
+
+1. Re-run Docs-First Discovery's search (`CLAUDE.md`, `docs/*.md`, `ai-docs/*.md` — see above) scoped to finding the same kind of commands section that was originally pointed to — same heading text, or a heading covering the same command keys (`validate`/`test`/`lint`/etc.) — elsewhere in the docs.
+2. **Relocation succeeds** — a new path/heading is found containing the same authoritative commands: update the stored `docsSource.path`/`docsSource.heading` to the new location and treat this as a cache refresh, not a full fallback — recompute the fingerprint from the new location and overwrite the cache entry. Do not run the config-file fallback or recreate the default doc; the pointer was found, just moved.
+3. **Relocation also fails** — no matching section is found anywhere in the docs: only now treat `docsSource` as absent. Run the full config-file fallback tables below, and (re)create/derive the default doc-less commands per the "No `docsSource`" fingerprint recipe above.
+
+Relocation is always attempted first — a broken pointer never immediately triggers doc recreation. Falling back to config-file detection / (re)creating the default doc is strictly the last resort, reached only when relocation also fails.
 
 **Known limitation, not addressed here:** the cache stores root-level commands only — the same granularity the config-file fallback already used before caching existed. A monorepo with genuinely different per-package toolchains (turborepo/nx/pnpm-workspaces) isn't newly broken by caching, but isn't specially handled either; per-package cache scoping is a candidate follow-up if it turns out to matter in practice.
 
