@@ -285,6 +285,18 @@ model PullRequest {
   headRef     String?
   title       String?
 
+  // ─── Commit-count metrics (CPP-1.1) ───
+  // All five nullable, purely additive columns, written unconditionally by
+  // POST /prs/census whenever supplied (mirrors authorLogin/headRef/title —
+  // NOT origin's first-write-wins semantic). Only the census sweep supplies
+  // these fields, so there's no competing lower-quality writer to guard
+  // against.
+  commitCount           Int?
+  commitsDocsRefresh    Int?
+  commitsReviewPatch    Int?
+  commitsCiFix          Int?
+  commitsImplementation Int?
+
   // ─── Skip tracking (auto-block after repeated no-op dispatches) ───
   // Mirrors Task.skipCount/lastSkippedAt — see comment there for the
   // threshold rationale (3, matching SPIN_DETECTION_THRESHOLD in
