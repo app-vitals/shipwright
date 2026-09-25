@@ -105,6 +105,15 @@ function stringOrNull(value: unknown): string | null | undefined {
   return undefined;
 }
 
+/** Parse a raw census-entry value into a nullable-or-undefined integer field:
+ * a real integer or explicit null are passed through; anything else
+ * (undefined, wrong type, non-integer) becomes undefined ("leave untouched"). */
+function numberOrNull(value: unknown): number | null | undefined {
+  if (value === null) return null;
+  if (typeof value === "number" && Number.isInteger(value)) return value;
+  return undefined;
+}
+
 // ─── Route definitions ────────────────────────────────────────────────────────
 
 const listRoute = createRoute({
@@ -437,7 +446,7 @@ const censusRoute = createRoute({
   path: "/census",
   tags: ["PRs"],
   summary: "Batch upsert PR origin/author/branch/title/state metadata",
-  description: `Upserts a PullRequest row for each (repo, prNumber) entry — at most ${MAX_CENSUS_ENTRIES} entries per call, all in one transaction. Writes \`authorLogin\`/\`headRef\`/\`title\`/\`state\`/\`mergedAt\`/\`prCreatedAt\` unconditionally; \`origin\` follows first-write-wins (only applied when the row's existing origin is currently null). Never touches claim/phase/review/patch/blocked fields — safe to run alongside review/patch/deploy's separate POST /prs/claim lock. New rows get \`phase=null\`, \`reviewState='pending'\`, \`staged=false\`. Not part of the public MCP tool surface.`,
+  description: `Upserts a PullRequest row for each (repo, prNumber) entry — at most ${MAX_CENSUS_ENTRIES} entries per call, all in one transaction. Writes \`authorLogin\`/\`headRef\`/\`title\`/\`state\`/\`mergedAt\`/\`prCreatedAt\`/\`commitCount\`/\`commitsDocsRefresh\`/\`commitsReviewPatch\`/\`commitsCiFix\`/\`commitsImplementation\` unconditionally; \`origin\` follows first-write-wins (only applied when the row's existing origin is currently null). Never touches claim/phase/review/patch/blocked fields — safe to run alongside review/patch/deploy's separate POST /prs/claim lock. New rows get \`phase=null\`, \`reviewState='pending'\`, \`staged=false\`. Not part of the public MCP tool surface.`,
   request: {
     body: {
       content: { "application/json": { schema: CensusBodySchema } },
@@ -714,6 +723,11 @@ export function createPrsRoutes(
           state,
           mergedAt: stringOrNull(raw.mergedAt),
           prCreatedAt: stringOrNull(raw.prCreatedAt),
+          commitCount: numberOrNull(raw.commitCount),
+          commitsDocsRefresh: numberOrNull(raw.commitsDocsRefresh),
+          commitsReviewPatch: numberOrNull(raw.commitsReviewPatch),
+          commitsCiFix: numberOrNull(raw.commitsCiFix),
+          commitsImplementation: numberOrNull(raw.commitsImplementation),
         };
       },
     );

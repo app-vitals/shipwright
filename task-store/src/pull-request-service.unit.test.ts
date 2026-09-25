@@ -2132,6 +2132,111 @@ describe("PullRequestService.census() (POM-1.1)", () => {
   });
 });
 
+describe("PullRequestService.census() commit-count fields (CPP-1.1)", () => {
+  const NOW = new Date("2026-09-16T00:00:00.000Z");
+  const clock = FixedClock(NOW);
+
+  test("persists the 5 commit-count fields on insert", async () => {
+    const prisma = makeOriginPrismaDouble();
+    const svc = new PullRequestService(prisma as never, clock);
+
+    const [record] = await svc.census([
+      {
+        repo: "org/repo",
+        prNumber: 100,
+        commitCount: 12,
+        commitsDocsRefresh: 1,
+        commitsReviewPatch: 3,
+        commitsCiFix: 2,
+        commitsImplementation: 6,
+      },
+    ]);
+
+    const created = prisma._createCalls[0];
+    expect(created.commitCount).toBe(12);
+    expect(created.commitsDocsRefresh).toBe(1);
+    expect(created.commitsReviewPatch).toBe(3);
+    expect(created.commitsCiFix).toBe(2);
+    expect(created.commitsImplementation).toBe(6);
+    expect(record.commitCount).toBe(12 as never);
+    expect(record.commitsDocsRefresh).toBe(1 as never);
+    expect(record.commitsReviewPatch).toBe(3 as never);
+    expect(record.commitsCiFix).toBe(2 as never);
+    expect(record.commitsImplementation).toBe(6 as never);
+  });
+
+  test("persists the 5 commit-count fields on update, overwriting existing values", async () => {
+    const prisma = makeOriginPrismaDouble([
+      {
+        id: "pr-existing",
+        repo: "org/repo",
+        prNumber: 42,
+        commitCount: 1 as never,
+        commitsDocsRefresh: 0 as never,
+        commitsReviewPatch: 0 as never,
+        commitsCiFix: 0 as never,
+        commitsImplementation: 1 as never,
+      },
+    ]);
+    const svc = new PullRequestService(prisma as never, clock);
+
+    const [record] = await svc.census([
+      {
+        repo: "org/repo",
+        prNumber: 42,
+        commitCount: 20,
+        commitsDocsRefresh: 2,
+        commitsReviewPatch: 5,
+        commitsCiFix: 4,
+        commitsImplementation: 9,
+      },
+    ]);
+
+    expect(record.commitCount).toBe(20 as never);
+    expect(record.commitsDocsRefresh).toBe(2 as never);
+    expect(record.commitsReviewPatch).toBe(5 as never);
+    expect(record.commitsCiFix).toBe(4 as never);
+    expect(record.commitsImplementation).toBe(9 as never);
+    expect(prisma._rows.get("org/repo#42")?.commitCount).toBe(20 as never);
+  });
+
+  test("omitting the commit-count fields on an existing row leaves previously-set values untouched", async () => {
+    const prisma = makeOriginPrismaDouble([
+      {
+        id: "pr-existing",
+        repo: "org/repo",
+        prNumber: 42,
+        commitCount: 12 as never,
+        commitsDocsRefresh: 1 as never,
+        commitsReviewPatch: 3 as never,
+        commitsCiFix: 2 as never,
+        commitsImplementation: 6 as never,
+      },
+    ]);
+    const svc = new PullRequestService(prisma as never, clock);
+
+    const [record] = await svc.census([
+      {
+        repo: "org/repo",
+        prNumber: 42,
+        authorLogin: "new-login",
+      },
+    ]);
+
+    const { data } = prisma._updateCalls[0];
+    expect(data.commitCount).toBeUndefined();
+    expect(data.commitsDocsRefresh).toBeUndefined();
+    expect(data.commitsReviewPatch).toBeUndefined();
+    expect(data.commitsCiFix).toBeUndefined();
+    expect(data.commitsImplementation).toBeUndefined();
+    expect(record.commitCount).toBe(12 as never);
+    expect(record.commitsDocsRefresh).toBe(1 as never);
+    expect(record.commitsReviewPatch).toBe(3 as never);
+    expect(record.commitsCiFix).toBe(2 as never);
+    expect(record.commitsImplementation).toBe(6 as never);
+  });
+});
+
 describe("PullRequestService.getCensusCursor() (POM-1.1)", () => {
   const NOW = new Date("2026-09-16T00:00:00.000Z");
   const clock = FixedClock(NOW);

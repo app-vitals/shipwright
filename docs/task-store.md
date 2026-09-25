@@ -101,12 +101,15 @@ those three. Three call sites write these fields:
    author/branch-based signal — see [metrics.md](./metrics.md#origin-classification-rules) for
    the exact precedence table `deriveOrigin()` implements.
 3. `POST /prs/census` — a batch upsert (`{repo, prNumber, origin?, authorLogin?, headRef?, title?,
-   state?, mergedAt?, prCreatedAt?}[]`, capped at 200 entries per call) used by POM-4.1's
+   state?, mergedAt?, prCreatedAt?, commitCount?, commitsDocsRefresh?, commitsReviewPatch?,
+   commitsCiFix?, commitsImplementation?}[]`, capped at 200 entries per call) used by POM-4.1's
    repo-wide census sweep (see [agent-ops.md](./agent-ops.md#pr-origin-census-sweep)) to backfill
-   origin/author/branch/title for PRs the pipeline never claimed directly. It never touches
-   claim/phase/review/patch/blocked fields, so it's safe to run alongside review/patch/deploy's
-   separate `POST /prs/claim` lock. New rows get `phase=null`, `reviewState="pending"`,
-   `staged=false`.
+   origin/author/branch/title/commit-count metrics for PRs the pipeline never claimed directly. It
+   never touches claim/phase/review/patch/blocked fields, so it's safe to run alongside
+   review/patch/deploy's separate `POST /prs/claim` lock. New rows get `phase=null`,
+   `reviewState="pending"`, `staged=false`. The five commit-count fields (CPP-1.1: `commitCount`,
+   `commitsDocsRefresh`, `commitsReviewPatch`, `commitsCiFix`, `commitsImplementation`) are written
+   unconditionally when supplied.
 
 `GET /prs/census/cursor?repo=org/name` returns `{ cursor }` — the max `mergedAt` among rows scoped
 to `repo` with a non-null `origin`, or `null` when none exist — the incremental search window the
