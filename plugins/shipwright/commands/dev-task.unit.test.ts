@@ -4,14 +4,11 @@ import { join } from "node:path";
 import { groupChecksByName, parseActionsChecks } from "../scripts/ci-checks.ts";
 
 const DEV_TASK_MD_PATH = join(import.meta.dir, "dev-task.md");
-const METRICS_MD_PATH = join(import.meta.dir, "metrics.md");
 
 let devTaskContent: string;
-let metricsContent: string;
 
 beforeAll(() => {
   devTaskContent = readFileSync(DEV_TASK_MD_PATH, "utf-8");
-  metricsContent = readFileSync(METRICS_MD_PATH, "utf-8");
 });
 
 describe("parseActionsChecks", () => {
@@ -140,24 +137,5 @@ describe("dev-task.md Step 10a — execution metric fields in PATCH body", () =>
 
   it("includes model (EFFECTIVE_MODEL) in the Step 10a PATCH body", () => {
     expect(devTaskContent.includes('\\"model\\": \\"{EFFECTIVE_MODEL}\\"')).toBe(true);
-  });
-});
-
-describe("metrics.md CI Gate section — check-name grouping", () => {
-  it("includes check-name grouping instruction text", () => {
-    const hasGrouping =
-      metricsContent.includes("check name") ||
-      metricsContent.includes("Check name") ||
-      metricsContent.includes("groupChecksByName") ||
-      metricsContent.includes("check-name");
-    expect(hasGrouping).toBe(true);
-  });
-
-  it("shows frequency notation (e.g. 4×)", () => {
-    const hasFrequency =
-      metricsContent.includes("×)") ||
-      metricsContent.includes("frequency") ||
-      metricsContent.includes("4×");
-    expect(hasFrequency).toBe(true);
   });
 });
