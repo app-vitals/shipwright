@@ -101,15 +101,15 @@ An optional expiry date on an agent that automatically tears it down once passed
 ## Technical Constraints
 
 - Additive only — `trialExpiresAt`/`trialExpiryWarnedAt` nullable, default `null`; every existing agent is unaffected.
-- Must not reimplement or duplicate `deleteAgentFully()`'s teardown logic — call it, don't fork it.
-- Slack-app orphan cleanup after automated expiry is explicitly out of scope for full automation — surfaced as a manual-steps checklist to an ops channel, per `deleteAgentFully()`'s existing designed behavior for a missing `xoxpToken`.
+- ~~Must not reimplement or duplicate `deleteAgentFully()`'s teardown logic — call it, don't fork it.~~ Superseded by the 2026-09-24 correction below: `deleteAgentFully()` is not called anywhere in this feature. The corrected constraint is: disable crons via the existing per-cron `PATCH /agents/:id/crons/:cronId` route (no bulk endpoint — iterate each cron) and gate Slack ingress via a new check in `agent/src/slack.ts`; do not touch K8s workload, tokens, chat threads, or the `Agent` row.
+- ~~Slack-app orphan cleanup after automated expiry is explicitly out of scope for full automation — surfaced as a manual-steps checklist to an ops channel, per `deleteAgentFully()`'s existing designed behavior for a missing `xoxpToken`.~~ Retired by the 2026-09-24 correction: since nothing is deleted on trial expiry, there is no Slack app to orphan and no manual-steps checklist to post.
 
 ## Scope
 
 **In Scope**:
 - `trialExpiresAt` + `trialExpiryWarnedAt` fields, admin API support
 - Pre-expiry Slack warning (Feature 2)
-- Automatic teardown via existing `deleteAgentFully()` (Feature 3)
+- Trial-expiry lockdown — disable crons + block Slack messages, no deletion (Feature 3, corrected 2026-09-24; see correction note below)
 
 **Out of Scope**:
 - Automated Slack-app deletion for expired agents (needs a human-supplied token by design — not solved here, see Feature 3)
@@ -126,12 +126,12 @@ Feature 1 must land before Features 2 and 3 (both need the field to query agains
 |---------|-------|-----------|
 | trialExpiresAt field | smoke | HTTP route contract for existing PATCH/GET pattern |
 | Expiry warning alert | integration | fixture agents + injected Slack double |
-| Automatic teardown | integration | fixture agents + injected teardown-dependency doubles |
+| Trial-expiry lockdown | integration | fixture agents + injected cron-PATCH and Slack-gate doubles (corrected 2026-09-24 — was "Automatic teardown" against teardown-dependency doubles; superseded) |
 
 ## Resolved Decisions
 
 - **No trial-to-conversion flow in this PRD.** — Rationale: "what does converting a trial to paid actually mean" is a product/billing decision, not an engineering default I can sensibly guess; deleting-or-not-deleting on expiry is the only behavior this spec implements.
-- **Slack-app cleanup stays manual on automated expiry.** — Rationale: `deleteAgentFully()` already models this correctly (skip + checklist rather than fail) when no human token is available; inventing a way to store and reuse a Slack admin token for unattended deletion would be a new, separate security surface not asked for here.
+- ~~**Slack-app cleanup stays manual on automated expiry.**~~ — Superseded by the 2026-09-24 correction: expiry no longer deletes anything, so there is no Slack app cleanup step (manual or otherwise) to make a decision about. Original rationale (retained for history): `deleteAgentFully()` already modeled this correctly (skip + checklist rather than fail) when no human token is available; inventing a way to store and reuse a Slack admin token for unattended deletion would have been a new, separate security surface not asked for.
 - **Ops-channel alert destination is a new admin-level env var, not the expiring agent's own channel.** — Rationale: the agent's own Slack app may already be mid-teardown or unreachable by the time the post-teardown summary is ready to send; a stable admin channel is more reliable.
 
 ## Success Criteria
@@ -150,5 +150,15 @@ Dan, reviewing PR #3646: "I don't want to auto deprovision. We should just flag 
 - **Block Slack messages.** A new reject-gate in `agent/src/slack.ts`, mirroring the existing `shouldRejectSlackSender()` pattern (checked identically by all three inbound handlers — `app.message`, `app_mention`, `reaction_added`) — checks `trialExpiresAt` before any Claude session is invoked. Unlike `shouldRejectSlackSender()`, which silently drops a rejected message, this gate replies once with a clear "trial has ended" notice — silence would read as the agent being broken, not intentionally paused.
 - **No `deleteAgentFully()` call anywhere in this feature.** The agent's K8s workload, tokens, chat threads, and `Agent` row are all left untouched by trial expiry — reversible if the trial is extended or the customer converts, which was the whole point of the correction.
 - **No new DB field required** beyond `trialExpiresAt` (already added by `ATE-1.1`) — both the cron-disable check and the Slack gate read it directly.
+
+**Acceptance Criteria (corrected design):**
+- [ ] An agent with `trialExpiresAt` in the past and at least one enabled `AgentCronJob` has every one of its crons disabled (via `PATCH /agents/:id/crons/:cronId`, `enabled: false`) on the next check run
+- [ ] A Slack message, `app_mention`, or `reaction_added` event addressed to an agent whose `trialExpiresAt` has passed is rejected before any Claude session is invoked, with a one-time "trial has ended" reply posted back — not silence
+- [ ] An agent with `trialExpiresAt` unset or in the future is unaffected by both the cron-disable check and the Slack gate
+- [ ] Idempotent: re-running the cron-disable check after all of an expired agent's crons are already disabled finds nothing to do (no error, no duplicate `PATCH` calls, no state-tracking field needed)
+- [ ] No `deleteAgentFully()` call, and no change to the agent's K8s workload, tokens, chat threads, or `Agent` row, occurs anywhere in this flow
+- [ ] Test decision: integration test the cron-disable check against fixture agents with an injected admin-API double; unit test the Slack reject-gate's `trialExpiresAt` comparison and one-time-reply behavior in isolation, mirroring `shouldRejectSlackSender()`'s existing test pattern
+
+**Re-enable on trial extension — out of scope for this PRD.** If `trialExpiresAt` is later cleared or moved into the future (e.g. a trial extension or paid conversion) after an agent's crons have already been disabled, this design does not automatically re-enable them. The Slack reject-gate self-heals on its own — it re-checks `trialExpiresAt` on every inbound message, so it stops rejecting as soon as the field no longer indicates expiry — but disabled crons stay disabled until a human re-enables them manually (e.g. via the existing per-cron `PATCH` route or the admin UI). This is an accepted gap, not solved here, consistent with how trial-to-paid conversion is already treated under Out of Scope above; a follow-up PRD would be needed to define an automatic re-enable-on-extension behavior.
 
 This also **retires the Slack-app-orphan-cleanup limitation** documented earlier in this spec (§ Feature 3 original design, § Resolved Decisions) — since nothing is deleted, there's no Slack app to orphan in the first place.

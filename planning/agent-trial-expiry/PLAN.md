@@ -26,7 +26,7 @@ All three tasks are additive. No renames or removals.
 [START]
   └─ ATE-1.1: trial expiry fields (no deps)
         ├─ ATE-2.1: pre-expiry warning (needs 1.1)
-        └─ ATE-3.1: automatic teardown (needs 1.1)
+        └─ ATE-3.1: trial-expiry lockdown (needs 1.1)
 ```
 
 ```
@@ -38,11 +38,11 @@ ATE-3.1  | 1.1        | —        |
 
 ## Breaking Change Safety
 
-All three tasks are additive (new nullable columns, new scheduled checks that no-op for agents with `trialExpiresAt` unset, a call to an existing, unmodified `deleteAgentFully()`). Safe to deploy standalone: yes, for every task.
+All three tasks are additive (new nullable columns, new scheduled checks that no-op for agents with `trialExpiresAt` unset, and — per the 2026-09-24 correction above — a lockdown check that disables the agent's crons and blocks inbound Slack messages, with no `deleteAgentFully()` call anywhere in this feature). Safe to deploy standalone: yes, for every task.
 
 ## HITL Scan
 
-No tasks matched the Type A keyword heuristic or judgment step. `HITL scan: no tasks require human steps`. Note: ATE-3.1's real-world blast radius (accidentally tearing down a live agent on an off-by-one) is handled via its acceptance criteria's explicit not-yet-expired no-op test requirement, not via HITL routing — this is ordinary autonomously-buildable code with strong test requirements, not a human-execution task.
+No tasks matched the Type A keyword heuristic or judgment step. `HITL scan: no tasks require human steps`. Note: ATE-3.1's real-world blast radius (accidentally disabling crons or blocking Slack messages for a non-expired agent on an off-by-one — nothing is deleted under the corrected lockdown design) is handled via its acceptance criteria's explicit not-yet-expired no-op test requirement, not via HITL routing — this is ordinary autonomously-buildable code with strong test requirements, not a human-execution task.
 
 ## Decision Log
 
