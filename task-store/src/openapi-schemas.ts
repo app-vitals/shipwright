@@ -442,6 +442,27 @@ export const PullRequestSchema = z
       .nullable()
       .optional()
       .openapi({ example: "Add the origin metrics dimension" }),
+    commitCount: z.number().int().nullable().optional().openapi({
+      example: 12,
+      description:
+        "Total commit count on this PR (CPP-1.1). Written unconditionally by POST /prs/census whenever supplied — mirrors authorLogin/headRef/title, not origin's first-write-wins semantic.",
+    }),
+    commitsDocsRefresh: z.number().int().nullable().optional().openapi({
+      example: 1,
+      description: "Commits attributed to the docs-refresher subagent (CPP-1.1).",
+    }),
+    commitsReviewPatch: z.number().int().nullable().optional().openapi({
+      example: 3,
+      description: "Commits attributed to the review/patch cycle (CPP-1.1).",
+    }),
+    commitsCiFix: z.number().int().nullable().optional().openapi({
+      example: 2,
+      description: "Commits attributed to CI-fix cycles (CPP-1.1).",
+    }),
+    commitsImplementation: z.number().int().nullable().optional().openapi({
+      example: 6,
+      description: "Commits attributed to the initial implementation (CPP-1.1).",
+    }),
     skipCount: z.number().int().default(0).openapi({
       example: 0,
       description:
@@ -948,6 +969,26 @@ const CensusEntrySchema = z
       .nullable()
       .optional()
       .openapi({ example: "2026-01-01T00:00:00.000Z" }),
+    commitCount: z.number().int().nullable().optional().openapi({ example: 12 }),
+    commitsDocsRefresh: z
+      .number()
+      .int()
+      .nullable()
+      .optional()
+      .openapi({ example: 1 }),
+    commitsReviewPatch: z
+      .number()
+      .int()
+      .nullable()
+      .optional()
+      .openapi({ example: 3 }),
+    commitsCiFix: z.number().int().nullable().optional().openapi({ example: 2 }),
+    commitsImplementation: z
+      .number()
+      .int()
+      .nullable()
+      .optional()
+      .openapi({ example: 6 }),
   })
   .openapi("CensusEntry");
 

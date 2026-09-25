@@ -234,9 +234,15 @@ export interface StampOriginInput {
 /**
  * A single entry in a `POST /prs/census` batch upsert — StampOriginInput
  * plus the additional fields census writes unconditionally (`state`,
- * `mergedAt`, `prCreatedAt`). Deliberately excludes claim/phase/review/
- * patch/blocked fields — census must never touch them, so there's no way to
- * even supply them here.
+ * `mergedAt`, `prCreatedAt`, and the five commit-count fields from CPP-1.1).
+ * Deliberately excludes claim/phase/review/patch/blocked fields — census
+ * must never touch them, so there's no way to even supply them here.
+ *
+ * The five commit-count fields (`commitCount`/`commitsDocsRefresh`/
+ * `commitsReviewPatch`/`commitsCiFix`/`commitsImplementation`, CPP-1.1) live
+ * only on this interface, not on `StampOriginInput` — only the census sweep
+ * ever supplies them, so TaskService.update()'s pr_open transition and
+ * claim() (the other two StampOriginInput callers) never see them.
  */
 export interface CensusEntryInput extends StampOriginInput {
   repo: string;
@@ -244,6 +250,11 @@ export interface CensusEntryInput extends StampOriginInput {
   state?: PrState;
   mergedAt?: string | null;
   prCreatedAt?: string | null;
+  commitCount?: number | null;
+  commitsDocsRefresh?: number | null;
+  commitsReviewPatch?: number | null;
+  commitsCiFix?: number | null;
+  commitsImplementation?: number | null;
 }
 
 /**
@@ -339,6 +350,8 @@ export interface PullRequestServiceLike {
    * Batch upsert for POST /prs/census (max MAX_CENSUS_ENTRIES per call, all
    * in one transaction). Never touches claim/phase/review/patch/blocked
    * fields; new rows get phase=null, reviewState='pending', staged=false.
+   * The five commit-count fields (CPP-1.1) are written unconditionally
+   * whenever supplied, same as authorLogin/headRef/title.
    */
   census(entries: CensusEntryInput[]): Promise<PullRequest[]>;
   /**
@@ -1380,11 +1393,13 @@ export class PullRequestService implements PullRequestServiceLike {
   /**
    * Core upsert shared by stampOrigin() and census(): findUnique by the
    * (repo, prNumber) unique key, then either update (authorLogin/headRef/
-   * title/state/mergedAt/prCreatedAt written unconditionally when supplied;
-   * origin only when currently null) or create (new rows pick up the
-   * schema's own phase=null/reviewState='pending'/staged=false defaults —
-   * left absent from createData rather than restated here, so a future
-   * default change doesn't need updating in two places).
+   * title/state/mergedAt/prCreatedAt/commitCount/commitsDocsRefresh/
+   * commitsReviewPatch/commitsCiFix/commitsImplementation written
+   * unconditionally when supplied; origin only when currently null) or
+   * create (new rows pick up the schema's own phase=null/
+   * reviewState='pending'/staged=false defaults — left absent from
+   * createData rather than restated here, so a future default change
+   * doesn't need updating in two places).
    *
    * Deliberately does NOT call recordTransition()/write PullRequestEvent
    * rows — stampOrigin/census are metrics-plumbing writes, not pipeline
@@ -1410,6 +1425,11 @@ export class PullRequestService implements PullRequestServiceLike {
       state,
       mergedAt,
       prCreatedAt,
+      commitCount,
+      commitsDocsRefresh,
+      commitsReviewPatch,
+      commitsCiFix,
+      commitsImplementation,
     } = entry;
 
     const existing = await client.pullRequest.findUnique({
@@ -1431,6 +1451,14 @@ export class PullRequestService implements PullRequestServiceLike {
       if (state !== undefined) updateData.state = state;
       if (mergedAt !== undefined) updateData.mergedAt = mergedAt;
       if (prCreatedAt !== undefined) updateData.prCreatedAt = prCreatedAt;
+      if (commitCount !== undefined) updateData.commitCount = commitCount;
+      if (commitsDocsRefresh !== undefined)
+        updateData.commitsDocsRefresh = commitsDocsRefresh;
+      if (commitsReviewPatch !== undefined)
+        updateData.commitsReviewPatch = commitsReviewPatch;
+      if (commitsCiFix !== undefined) updateData.commitsCiFix = commitsCiFix;
+      if (commitsImplementation !== undefined)
+        updateData.commitsImplementation = commitsImplementation;
       if (resolvedOrigin !== undefined) updateData.origin = resolvedOrigin;
 
       if (Object.keys(updateData).length === 0) return existing;
@@ -1453,6 +1481,11 @@ export class PullRequestService implements PullRequestServiceLike {
           ...(state !== undefined ? { state } : {}),
           mergedAt: mergedAt ?? null,
           prCreatedAt: prCreatedAt ?? null,
+          commitCount: commitCount ?? null,
+          commitsDocsRefresh: commitsDocsRefresh ?? null,
+          commitsReviewPatch: commitsReviewPatch ?? null,
+          commitsCiFix: commitsCiFix ?? null,
+          commitsImplementation: commitsImplementation ?? null,
         },
       });
     } catch (err: unknown) {
