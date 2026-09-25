@@ -122,6 +122,16 @@ affects `deploy.md`'s canary-revert PR: it never transitions a task to `pr_open`
 before POM-4.1 shipped stays `origin=null` (`unknown`) permanently — historical backfill is out of
 scope.
 
+### Verification checks
+
+`VerificationCheck` is an append-only per-check outcome record (mirrors `PrFinding`/`TaskEvent` — a race-safe `INSERT`, not a JSON blob) belonging to exactly one parent: a `Task` (recorded while still in progress, before a PR exists) or a `PullRequest` (recorded once a PR is open). Prisma has no schema-level XOR constraint across the two nullable FK columns, so "exactly one of `taskId`/`prId`" is enforced by `VerificationCheckService.record()` — supplying neither or both is `400`.
+
+`status` is `ran_passed | ran_failed | skipped | timed_out`. `reasonCategory` is a closed set of ENVIRONMENTAL causes (`check_timeout | install_timeout | resource_limit | missing_tool | missing_secret | missing_dependency | not_configured | learned_skip`) and is only valid alongside `status: skipped | timed_out` — a `ran_failed` row (the check ran and produced a genuine failure) must never carry one; that combination is rejected server-side, not just by convention. `learnedFromCategory` is only valid alongside `reasonCategory: learned_skip`, and must not itself be `learned_skip` — both rules are enforced in the same `record()` call.
+
+`POST /verification-checks` records one outcome. `GET /verification-checks` supports three mutually-exclusive query modes: `?taskId=` and `?prId=` (ordered by `at` ascending, default `limit=50`/`offset=0`, `404` if the referenced task/PR doesn't exist), and `?repo=`+`?checkName=` together (LVB-4.4's skip-locally learning trigger — spans every task/PR that ever recorded that repo+check pair, so an unmatched pair returns `200` with an empty list rather than `404`, and is ordered by `at` **descending** so a caller can walk backward from the most recent outcome to detect a consecutive skipped/timed_out streak).
+
+Full request/response shapes live in the OpenAPI spec, per this doc's existing pointer convention.
+
 ### Same-branch exclusivity guard
 
 A pending task is excluded from the ready set if another task shares its non-null/non-empty `branch` field and is `in_progress` with a fresh claim. This "same-branch exclusivity guard" prevents multiple agents from simultaneously executing tasks bound to the same feature branch — a real dev-task session is likely mid-flight on that shared git branch.
