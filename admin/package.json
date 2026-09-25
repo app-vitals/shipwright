@@ -20,6 +20,7 @@
     "@sentry/bun": "^10.63.0",
     "@sentry/hono": "^10.63.0",
     "@shipwright/lib": "workspace:*",
+    "@slack/web-api": "^8.1.0",
     "hono": "^4.13.1",
     "pg": "^8.16.3",
     "yaml": "^2.9.0",
