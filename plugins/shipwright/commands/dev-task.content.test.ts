@@ -31,7 +31,9 @@ describe("dev-task.md — explicit-target-only argument contract", () => {
   });
 
   it("removes the ready-queue scan (GET /tasks?ready=true request) from Step 1 entirely", () => {
-    expect(content).not.toContain('"$SHIPWRIGHT_TASK_STORE_URL/tasks?ready=true"');
+    expect(content).not.toContain(
+      '"$SHIPWRIGHT_TASK_STORE_URL/tasks?ready=true"',
+    );
     expect(content).not.toContain("ready-queue scan");
   });
 
@@ -40,17 +42,25 @@ describe("dev-task.md — explicit-target-only argument contract", () => {
     // to any specific task) must be gone. The Same-Branch Sibling Check's targeted
     // `?branch={branch}&status=in_progress` lookup is a different, legitimate query and is
     // not banned by this guard.
-    expect(content).not.toContain("tasks?status=in_progress&assignee=$SHIPWRIGHT_AGENT_ID");
-    expect(content).not.toContain('"$SHIPWRIGHT_TASK_STORE_URL/tasks?status=in_progress"');
+    expect(content).not.toContain(
+      "tasks?status=in_progress&assignee=$SHIPWRIGHT_AGENT_ID",
+    );
+    expect(content).not.toContain(
+      '"$SHIPWRIGHT_TASK_STORE_URL/tasks?status=in_progress"',
+    );
     expect(content).not.toContain("Resuming interrupted task");
   });
 
   it("in_progress status skips straight to Step 3 — recovery now happens unconditionally in Step 4's reality check, not a status-gated orphan check", () => {
     // The old status-gated "Step 2 Orphan Check" mechanism is retired (DOH-1.1) — superseded
     // by the unconditional Branch/PR Reality Check in Step 4.
-    expect(content).not.toMatch(/proceed\s+straight\s+to\s+Step 2's Orphan Check/i);
+    expect(content).not.toMatch(
+      /proceed\s+straight\s+to\s+Step 2's Orphan Check/i,
+    );
     expect(content).not.toContain("### Orphan Check (prior session recovery)");
-    expect(content).toMatch(/skip\s+Step 2's claim[\s\S]*?then proceed to Step 3/i);
+    expect(content).toMatch(
+      /skip\s+Step 2's claim[\s\S]*?then proceed to Step 3/i,
+    );
   });
 
   it("in_progress path is explicitly routed through the Same-Branch Sibling Check before Step 3", () => {
@@ -89,7 +99,9 @@ describe("dev-task.md Step 2 — atomic claim", () => {
     // in progress. That specific PATCH invocation must be gone from Step 2 —
     // scoped narrowly so it doesn't clash with Step 1's `?status=in_progress`
     // query string check or other PATCH calls elsewhere in the doc (e.g. blocked).
-    expect(content).not.toContain('-d "{\\"status\\": \\"in_progress\\", \\"startedAt\\"');
+    expect(content).not.toContain(
+      '-d "{\\"status\\": \\"in_progress\\", \\"startedAt\\"',
+    );
   });
 
   it("calls POST /tasks/{id}/claim to atomically claim the task", () => {
@@ -106,7 +118,7 @@ describe("dev-task.md Step 2 — atomic claim", () => {
     // Look at the surrounding claim command block only, not the whole doc.
     const block = content.slice(Math.max(0, claimIdx - 400), claimIdx + 200);
     expect(block).not.toContain('-d "{\\"claimedBy\\"');
-    expect(block).not.toContain("-d '{\"claimedBy\"");
+    expect(block).not.toContain('-d \'{"claimedBy"');
   });
 
   it("handles 409 by responding [silent] and stopping — no retry against a different task", () => {
@@ -162,8 +174,12 @@ describe("dev-task.md Step 10a — PATCH status check", () => {
     expect(section).toContain('\\"simplifyDry\\": {simplify_dry}');
     expect(section).toContain('\\"simplifyDeadCode\\": {simplify_dead_code}');
     expect(section).toContain('\\"simplifyNaming\\": {simplify_naming}');
-    expect(section).toContain('\\"simplifyComplexity\\": {simplify_complexity}');
-    expect(section).toContain('\\"simplifyConsistency\\": {simplify_consistency}');
+    expect(section).toContain(
+      '\\"simplifyComplexity\\": {simplify_complexity}',
+    );
+    expect(section).toContain(
+      '\\"simplifyConsistency\\": {simplify_consistency}',
+    );
     expect(section).toContain('\\"coverageDelta\\": {coverage_delta}');
     expect(section).toContain('\\"model\\": \\"{EFFECTIVE_MODEL}\\"');
   });
@@ -230,7 +246,9 @@ describe("Step 1 — same-branch sibling ordering check (bundled-task deferral)"
     const siblingCheckIdx = content.indexOf("### Same-Branch Sibling Check");
     expect(siblingCheckIdx).toBeGreaterThan(-1);
 
-    const branchValidationIdx = content.indexOf("**Validate required fields.**");
+    const branchValidationIdx = content.indexOf(
+      "**Validate required fields.**",
+    );
     const bannerIdx = content.indexOf("TASK: {id}");
     expect(branchValidationIdx).toBeGreaterThan(-1);
     expect(bannerIdx).toBeGreaterThan(-1);
@@ -257,7 +275,9 @@ describe("Step 1 — same-branch sibling ordering check (bundled-task deferral)"
     const siblingCheckIdx = content.indexOf("### Same-Branch Sibling Check");
     expect(siblingCheckIdx).toBeGreaterThan(-1);
     const section = content.slice(siblingCheckIdx, siblingCheckIdx + 2500);
-    expect(section).toMatch(/exclude.{0,60}own.{0,10}\{id\}|own.{0,10}\{id\}.{0,60}not a\s+sibling/is);
+    expect(section).toMatch(
+      /exclude.{0,60}own.{0,10}\{id\}|own.{0,10}\{id\}.{0,60}not a\s+sibling/is,
+    );
   });
 
   it("computes sibling freshness using the 65-minute claim TTL, mirroring the stale-claim reaper's two-case formula", () => {
@@ -268,7 +288,9 @@ describe("Step 1 — same-branch sibling ordering check (bundled-task deferral)"
     expect(section).toContain("lib/claim-ttl.ts");
     expect(section).toMatch(/65.{0,10}minute/i);
     expect(section).toMatch(/heartbeatAt.{0,80}within the last 65 minutes/is);
-    expect(section).toMatch(/heartbeatAt is null.{0,80}claimedAt.{0,80}within the last 65 minutes/is);
+    expect(section).toMatch(
+      /heartbeatAt is null.{0,80}claimedAt.{0,80}within the last 65 minutes/is,
+    );
   });
 
   it("when a sibling is fresh: releases this task's own claim and stops silently, without proceeding", () => {
@@ -304,7 +326,9 @@ describe("Step 1 — same-branch sibling ordering check (bundled-task deferral)"
     const section = content.slice(siblingCheckIdx, siblingCheckIdx + 4000);
     expect(section).toMatch(/if no sibling is fresh/i);
     expect(section).toMatch(/proceed(s|ing)? normally/i);
-    expect(section).toMatch(/Branch\/PR Reality Check.{0,120}unchanged|unchanged.{0,120}Branch\/PR Reality Check/is);
+    expect(section).toMatch(
+      /Branch\/PR Reality Check.{0,120}unchanged|unchanged.{0,120}Branch\/PR Reality Check/is,
+    );
   });
 
   it("applies regardless of this task's own status (pending or resumed in_progress)", () => {
@@ -317,7 +341,9 @@ describe("Step 1 — same-branch sibling ordering check (bundled-task deferral)"
 
 describe("dev-task.md Step 1 — Dependency Check (pending tasks only)", () => {
   it("tags an unsatisfied dependency defer with [skip-reason:dev-task:deferred:dependency-unsatisfied:{dep-id}] before [silent]", () => {
-    const depCheckIdx = content.indexOf("### Dependency Check (pending tasks only)");
+    const depCheckIdx = content.indexOf(
+      "### Dependency Check (pending tasks only)",
+    );
     expect(depCheckIdx).toBeGreaterThan(-1);
     const section = content.slice(depCheckIdx, depCheckIdx + 2500);
     expect(section).toContain(
@@ -332,7 +358,9 @@ describe("dev-task.md Step 1 — Dependency Check (pending tasks only)", () => {
   });
 
   it("names the specific unsatisfied dependency id in the skip-reason tag", () => {
-    const depCheckIdx = content.indexOf("### Dependency Check (pending tasks only)");
+    const depCheckIdx = content.indexOf(
+      "### Dependency Check (pending tasks only)",
+    );
     expect(depCheckIdx).toBeGreaterThan(-1);
     const section = content.slice(depCheckIdx, depCheckIdx + 2500);
     // Verify the prose mentions interpolating the dep-id
@@ -354,7 +382,9 @@ describe("dev-task.md 0b — docs-first toolchain discovery + per-repo cache (TD
     const stepIdx = content.indexOf("### 0b. Detect Project Toolchain");
     const section = content.slice(stepIdx, stepIdx + 2000);
     expect(section).toMatch(/\*\*Docs-first discovery\*\*/i);
-    expect(section).toMatch(/CLAUDE\.md.{0,60}docs\/\*\.md.{0,20}ai-docs\/\*\.md/is);
+    expect(section).toMatch(
+      /CLAUDE\.md.{0,60}docs\/\*\.md.{0,20}ai-docs\/\*\.md/is,
+    );
     expect(section).toMatch(/\*\*Config-file fallback\*\*/i);
   });
 
@@ -372,7 +402,12 @@ describe("dev-task.md 0b — docs-first toolchain discovery + per-repo cache (TD
 
 describe("toolchain-patterns.md — cache schema includes tests object for multi-layer test commands", () => {
   it("defines a tests field in the cache schema", () => {
-    const referencesPath = join(import.meta.dir, "..", "references", "toolchain-patterns.md");
+    const referencesPath = join(
+      import.meta.dir,
+      "..",
+      "references",
+      "toolchain-patterns.md",
+    );
     const referencesContent = readFileSync(referencesPath, "utf-8");
 
     const schemaIdx = referencesContent.indexOf('"commands"');
@@ -382,7 +417,12 @@ describe("toolchain-patterns.md — cache schema includes tests object for multi
   });
 
   it("documents multi-layer test detection", () => {
-    const referencesPath = join(import.meta.dir, "..", "references", "toolchain-patterns.md");
+    const referencesPath = join(
+      import.meta.dir,
+      "..",
+      "references",
+      "toolchain-patterns.md",
+    );
     const referencesContent = readFileSync(referencesPath, "utf-8");
     expect(referencesContent).toContain("### Multi-Layer Test Detection");
     expect(referencesContent).toMatch(/keys are free-form/i);
@@ -391,7 +431,12 @@ describe("toolchain-patterns.md — cache schema includes tests object for multi
 
 describe("toolchain-patterns.md — cache schema includes lintScoped for diff-scoped lint detection (LSC-1.1)", () => {
   it("defines a lintScoped field in the cache schema", () => {
-    const referencesPath = join(import.meta.dir, "..", "references", "toolchain-patterns.md");
+    const referencesPath = join(
+      import.meta.dir,
+      "..",
+      "references",
+      "toolchain-patterns.md",
+    );
     const referencesContent = readFileSync(referencesPath, "utf-8");
 
     const schemaIdx = referencesContent.indexOf('"commands"');
@@ -401,7 +446,12 @@ describe("toolchain-patterns.md — cache schema includes lintScoped for diff-sc
   });
 
   it("documents lintScoped as omitted (never null) when no scoped command is available", () => {
-    const referencesPath = join(import.meta.dir, "..", "references", "toolchain-patterns.md");
+    const referencesPath = join(
+      import.meta.dir,
+      "..",
+      "references",
+      "toolchain-patterns.md",
+    );
     const referencesContent = readFileSync(referencesPath, "utf-8");
 
     const fieldIdx = referencesContent.indexOf("**Scoped fields (`lintScoped`");
@@ -412,7 +462,12 @@ describe("toolchain-patterns.md — cache schema includes lintScoped for diff-sc
   });
 
   it("documents the Turborepo scoped-lint detection rule", () => {
-    const referencesPath = join(import.meta.dir, "..", "references", "toolchain-patterns.md");
+    const referencesPath = join(
+      import.meta.dir,
+      "..",
+      "references",
+      "toolchain-patterns.md",
+    );
     const referencesContent = readFileSync(referencesPath, "utf-8");
 
     expect(referencesContent).toContain("turbo.json");
@@ -420,7 +475,12 @@ describe("toolchain-patterns.md — cache schema includes lintScoped for diff-sc
   });
 
   it("documents the Nx scoped-lint detection rule", () => {
-    const referencesPath = join(import.meta.dir, "..", "references", "toolchain-patterns.md");
+    const referencesPath = join(
+      import.meta.dir,
+      "..",
+      "references",
+      "toolchain-patterns.md",
+    );
     const referencesContent = readFileSync(referencesPath, "utf-8");
 
     expect(referencesContent).toContain("nx.json");
@@ -428,15 +488,27 @@ describe("toolchain-patterns.md — cache schema includes lintScoped for diff-sc
   });
 
   it("documents the pnpm workspaces scoped-lint detection rule", () => {
-    const referencesPath = join(import.meta.dir, "..", "references", "toolchain-patterns.md");
+    const referencesPath = join(
+      import.meta.dir,
+      "..",
+      "references",
+      "toolchain-patterns.md",
+    );
     const referencesContent = readFileSync(referencesPath, "utf-8");
 
     expect(referencesContent).toContain("pnpm-workspace.yaml");
-    expect(referencesContent).toMatch(/pnpm --filter "\.\.\.\[\{base\}\]" lint/);
+    expect(referencesContent).toMatch(
+      /pnpm --filter "\.\.\.\[\{base\}\]" lint/,
+    );
   });
 
   it("documents the generic eslint changed-files fallback for no monorepo tool detected", () => {
-    const referencesPath = join(import.meta.dir, "..", "references", "toolchain-patterns.md");
+    const referencesPath = join(
+      import.meta.dir,
+      "..",
+      "references",
+      "toolchain-patterns.md",
+    );
     const referencesContent = readFileSync(referencesPath, "utf-8");
 
     const sectionIdx = referencesContent.indexOf("### Scoped Check Detection");
@@ -450,7 +522,12 @@ describe("toolchain-patterns.md — cache schema includes lintScoped for diff-sc
 
 describe("toolchain-patterns.md — generalized typecheckScoped/testScoped detection across ecosystems (LVB-3.1)", () => {
   it("defines typecheckScoped and testScoped fields in the cache schema", () => {
-    const referencesPath = join(import.meta.dir, "..", "references", "toolchain-patterns.md");
+    const referencesPath = join(
+      import.meta.dir,
+      "..",
+      "references",
+      "toolchain-patterns.md",
+    );
     const referencesContent = readFileSync(referencesPath, "utf-8");
 
     const schemaIdx = referencesContent.indexOf('"commands"');
@@ -461,7 +538,12 @@ describe("toolchain-patterns.md — generalized typecheckScoped/testScoped detec
   });
 
   it("does not declare a scoped field without a corresponding per-ecosystem detection rule", () => {
-    const referencesPath = join(import.meta.dir, "..", "references", "toolchain-patterns.md");
+    const referencesPath = join(
+      import.meta.dir,
+      "..",
+      "references",
+      "toolchain-patterns.md",
+    );
     const referencesContent = readFileSync(referencesPath, "utf-8");
 
     // Every `*Scoped` field named anywhere in the doc must be more than a schema
@@ -469,7 +551,9 @@ describe("toolchain-patterns.md — generalized typecheckScoped/testScoped detec
     // the schema block and the shared "Scoped fields" definition bullet. Guards the
     // LVB-3.1 review finding — `installScoped` was declared with no rule defining it.
     const scopedFields = new Set(
-      [...referencesContent.matchAll(/`?"?(\w+Scoped)"?`?/g)].map((m) => m[1] as string),
+      [...referencesContent.matchAll(/`?"?(\w+Scoped)"?`?/g)].map(
+        (m) => m[1] as string,
+      ),
     );
     expect(scopedFields.size).toBeGreaterThan(0);
 
@@ -483,7 +567,12 @@ describe("toolchain-patterns.md — generalized typecheckScoped/testScoped detec
   });
 
   it("extends the Node.js scoped-check priority table to testScoped and typecheckScoped, not just lint", () => {
-    const referencesPath = join(import.meta.dir, "..", "references", "toolchain-patterns.md");
+    const referencesPath = join(
+      import.meta.dir,
+      "..",
+      "references",
+      "toolchain-patterns.md",
+    );
     const referencesContent = readFileSync(referencesPath, "utf-8");
 
     const sectionIdx = referencesContent.indexOf("### Scoped Check Detection");
@@ -498,21 +587,36 @@ describe("toolchain-patterns.md — generalized typecheckScoped/testScoped detec
   });
 
   it("documents the Java Maven reactor -pl/-am scoped test command", () => {
-    const referencesPath = join(import.meta.dir, "..", "references", "toolchain-patterns.md");
+    const referencesPath = join(
+      import.meta.dir,
+      "..",
+      "references",
+      "toolchain-patterns.md",
+    );
     const referencesContent = readFileSync(referencesPath, "utf-8");
 
     expect(referencesContent).toContain("mvn test -pl {module} -am");
   });
 
   it("documents the Java Gradle module-targeting scoped test command", () => {
-    const referencesPath = join(import.meta.dir, "..", "references", "toolchain-patterns.md");
+    const referencesPath = join(
+      import.meta.dir,
+      "..",
+      "references",
+      "toolchain-patterns.md",
+    );
     const referencesContent = readFileSync(referencesPath, "utf-8");
 
     expect(referencesContent).toContain("./gradlew :{module}:test");
   });
 
   it("documents Go/Rust scoped test detection with a caveat that affected-tooling is weaker there", () => {
-    const referencesPath = join(import.meta.dir, "..", "references", "toolchain-patterns.md");
+    const referencesPath = join(
+      import.meta.dir,
+      "..",
+      "references",
+      "toolchain-patterns.md",
+    );
     const referencesContent = readFileSync(referencesPath, "utf-8");
 
     const rustIdx = referencesContent.indexOf("## Rust");
@@ -525,13 +629,21 @@ describe("toolchain-patterns.md — generalized typecheckScoped/testScoped detec
     expect(rustSection).toMatch(/cheap/i);
 
     const javaIdx = referencesContent.indexOf("## Java");
-    const goSection = referencesContent.slice(goIdx, javaIdx > -1 ? javaIdx : goIdx + 3000);
+    const goSection = referencesContent.slice(
+      goIdx,
+      javaIdx > -1 ? javaIdx : goIdx + 3000,
+    );
     expect(goSection).toContain("go test ./{changed-package}/...");
     expect(goSection).toMatch(/cheap/i);
   });
 
   it("documents Python and Ruby as best-effort/full-suite by default, not attempting scoped detection", () => {
-    const referencesPath = join(import.meta.dir, "..", "references", "toolchain-patterns.md");
+    const referencesPath = join(
+      import.meta.dir,
+      "..",
+      "references",
+      "toolchain-patterns.md",
+    );
     const referencesContent = readFileSync(referencesPath, "utf-8");
 
     const pythonIdx = referencesContent.indexOf("## Python");
@@ -544,30 +656,52 @@ describe("toolchain-patterns.md — generalized typecheckScoped/testScoped detec
     expect(pythonSection).toMatch(/best-effort\/full-suite/i);
 
     const genericIdx = referencesContent.indexOf("## Generic / Makefile");
-    const rubySection = referencesContent.slice(rubyIdx, genericIdx > -1 ? genericIdx : rubyIdx + 1000);
+    const rubySection = referencesContent.slice(
+      rubyIdx,
+      genericIdx > -1 ? genericIdx : rubyIdx + 1000,
+    );
     expect(rubySection).toMatch(/not attempted/i);
   });
 
   it("states the 'never run a target the diff doesn't touch' rule generically, not tied to Node/monorepo tooling", () => {
-    const referencesPath = join(import.meta.dir, "..", "references", "toolchain-patterns.md");
+    const referencesPath = join(
+      import.meta.dir,
+      "..",
+      "references",
+      "toolchain-patterns.md",
+    );
     const referencesContent = readFileSync(referencesPath, "utf-8");
 
-    const sectionIdx = referencesContent.indexOf("## Never Run a Target the Diff Doesn't Touch");
+    const sectionIdx = referencesContent.indexOf(
+      "## Never Run a Target the Diff Doesn't Touch",
+    );
     expect(sectionIdx).toBeGreaterThan(-1);
     const section = referencesContent.slice(sectionIdx, sectionIdx + 1500);
-    expect(section).toMatch(/general rule, not specific to Node\/monorepo tooling/i);
+    expect(section).toMatch(
+      /general rule, not specific to Node\/monorepo tooling/i,
+    );
     expect(section).toMatch(/mobile\/native export step/i);
   });
 });
 
 describe("toolchain-patterns.md — fingerprint path list covers task-runner/version-manager config (CPF-review-2242)", () => {
   it("includes Taskfile.yml, justfile/Justfile, and mise.toml/.mise.toml alongside the other fingerprinted paths", () => {
-    const referencesPath = join(import.meta.dir, "..", "references", "toolchain-patterns.md");
+    const referencesPath = join(
+      import.meta.dir,
+      "..",
+      "references",
+      "toolchain-patterns.md",
+    );
     const referencesContent = readFileSync(referencesPath, "utf-8");
 
-    const fingerprintIdx = referencesContent.indexOf("git -C {repo-dir} log -1 --format=%H --");
+    const fingerprintIdx = referencesContent.indexOf(
+      "git -C {repo-dir} log -1 --format=%H --",
+    );
     expect(fingerprintIdx).toBeGreaterThan(-1);
-    const fingerprintLine = referencesContent.slice(fingerprintIdx, referencesContent.indexOf("\n", fingerprintIdx));
+    const fingerprintLine = referencesContent.slice(
+      fingerprintIdx,
+      referencesContent.indexOf("\n", fingerprintIdx),
+    );
 
     expect(fingerprintLine).toContain("Taskfile.yml");
     expect(fingerprintLine).toContain("justfile");
@@ -578,7 +712,12 @@ describe("toolchain-patterns.md — fingerprint path list covers task-runner/ver
 });
 
 describe("toolchain-patterns.md — docsSource pointer + scoped fingerprint (LVB-4.1)", () => {
-  const referencesPath = join(import.meta.dir, "..", "references", "toolchain-patterns.md");
+  const referencesPath = join(
+    import.meta.dir,
+    "..",
+    "references",
+    "toolchain-patterns.md",
+  );
   const referencesContent = readFileSync(referencesPath, "utf-8");
 
   it("Docs-First Discovery records a {path, heading} pointer to the source doc", () => {
@@ -616,7 +755,9 @@ describe("toolchain-patterns.md — docsSource pointer + scoped fingerprint (LVB
     expect(section).toMatch(/lockfile-only/i);
     // The actual recipes (the bash code blocks) must not hash any lockfile —
     // mentioning lockfiles in surrounding prose (as explicitly excluded) is fine.
-    const codeBlocks = [...section.matchAll(/```bash\n([\s\S]*?)```/g)].map((m) => m[1]);
+    const codeBlocks = [...section.matchAll(/```bash\n([\s\S]*?)```/g)].map(
+      (m) => m[1],
+    );
     expect(codeBlocks.length).toBeGreaterThan(0);
     for (const block of codeBlocks) {
       expect(block).not.toMatch(/package-lock\.json/);
@@ -638,7 +779,10 @@ describe("toolchain-patterns.md — docsSource pointer + scoped fingerprint (LVB
   it("ends the heading extraction at the next same-or-shallower heading, not at any nested subheading", () => {
     const awkIdx = referencesContent.indexOf("heading_content=$(awk");
     expect(awkIdx).toBeGreaterThan(-1);
-    const awkBlock = referencesContent.slice(awkIdx, referencesContent.indexOf("```", awkIdx));
+    const awkBlock = referencesContent.slice(
+      awkIdx,
+      referencesContent.indexOf("```", awkIdx),
+    );
 
     // Must derive the target heading's level from docsSource.heading...
     expect(awkBlock).toMatch(/match\(h, \/\^#\+\/\)/);
@@ -662,7 +806,10 @@ describe("toolchain-patterns.md — docsSource pointer + scoped fingerprint (LVB
   it("strips Shipwright's own 'Shipwright Learned Facts' subsection out of the docsSource-populated hash so the write-back mechanism can't self-invalidate the cache (LVB-4.2)", () => {
     const awkIdx = referencesContent.indexOf("heading_content=$(awk");
     expect(awkIdx).toBeGreaterThan(-1);
-    const awkBlock = referencesContent.slice(awkIdx, referencesContent.indexOf("```", awkIdx));
+    const awkBlock = referencesContent.slice(
+      awkIdx,
+      referencesContent.indexOf("```", awkIdx),
+    );
 
     // The marker subsection is nested under {docsSource.heading}, so the
     // same-or-shallower boundary rule above *includes* it in the section's
@@ -678,7 +825,10 @@ describe("toolchain-patterns.md — docsSource pointer + scoped fingerprint (LVB
   it("derives the strip pass's marker level from docsSource.heading instead of hardcoding 3, so it still works under a level-3+ pointer heading (LVB-4.2)", () => {
     const awkIdx = referencesContent.indexOf("heading_content=$(awk");
     expect(awkIdx).toBeGreaterThan(-1);
-    const awkBlock = referencesContent.slice(awkIdx, referencesContent.indexOf("```", awkIdx));
+    const awkBlock = referencesContent.slice(
+      awkIdx,
+      referencesContent.indexOf("```", awkIdx),
+    );
     const stripPassIdx = awkBlock.indexOf("| awk");
     expect(stripPassIdx).toBeGreaterThan(-1);
     const stripPass = awkBlock.slice(stripPassIdx);
@@ -702,7 +852,10 @@ describe("toolchain-patterns.md — docsSource pointer + scoped fingerprint (LVB
     const section = referencesContent.slice(fingerprintIdx, nextSectionIdx);
     const gitLogIdx = section.indexOf("git -C {repo-dir} log -1");
     expect(gitLogIdx).toBeGreaterThan(-1);
-    const gitLogLine = section.slice(gitLogIdx, section.indexOf("\n", gitLogIdx));
+    const gitLogLine = section.slice(
+      gitLogIdx,
+      section.indexOf("\n", gitLogIdx),
+    );
     // docs/toolchain.md lives under the `docs` pathspec entry, so without an
     // explicit exclude every learned-facts commit would move this recipe's %H.
     expect(gitLogLine).toMatch(/:\(exclude\)docs\/toolchain\.md/);
@@ -718,11 +871,18 @@ describe("toolchain-patterns.md — docsSource pointer + scoped fingerprint (LVB
 });
 
 describe("toolchain-patterns.md — writing learned facts back to docs (LVB-4.2)", () => {
-  const referencesPath = join(import.meta.dir, "..", "references", "toolchain-patterns.md");
+  const referencesPath = join(
+    import.meta.dir,
+    "..",
+    "references",
+    "toolchain-patterns.md",
+  );
   const referencesContent = readFileSync(referencesPath, "utf-8");
 
   function section(): string {
-    const sectionIdx = referencesContent.indexOf("## Writing Learned Facts Back to Docs");
+    const sectionIdx = referencesContent.indexOf(
+      "## Writing Learned Facts Back to Docs",
+    );
     expect(sectionIdx).toBeGreaterThan(-1);
     const nextSectionIdx = referencesContent.indexOf("## Detection Order");
     expect(nextSectionIdx).toBeGreaterThan(sectionIdx);
@@ -731,7 +891,9 @@ describe("toolchain-patterns.md — writing learned facts back to docs (LVB-4.2)
 
   it("is placed after '## Caching Across Runs' and before '## Detection Order'", () => {
     const cachingIdx = referencesContent.indexOf("## Caching Across Runs");
-    const sectionIdx = referencesContent.indexOf("## Writing Learned Facts Back to Docs");
+    const sectionIdx = referencesContent.indexOf(
+      "## Writing Learned Facts Back to Docs",
+    );
     const detectionIdx = referencesContent.indexOf("## Detection Order");
     expect(cachingIdx).toBeGreaterThan(-1);
     expect(sectionIdx).toBeGreaterThan(cachingIdx);
@@ -821,12 +983,59 @@ describe("toolchain-patterns.md — writing learned facts back to docs (LVB-4.2)
     expect(s).toMatch(/git pull/i);
   });
 
+  it("defines the skip-locally table format: Check/Reason/Classified At columns, Reason drawn from the ENVIRONMENTAL reasonCategory values (LVB-4.4)", () => {
+    const s = section();
+    expect(s).toMatch(/\|\s*Check\s*\|\s*Reason\s*\|\s*Classified At\s*\|/);
+    expect(s).toContain("check_timeout");
+    expect(s).toContain("install_timeout");
+    expect(s).toContain("resource_limit");
+    expect(s).toContain("missing_tool");
+    expect(s).toContain("missing_secret");
+    expect(s).toContain("missing_dependency");
+    expect(s).toContain("not_configured");
+    expect(s).toMatch(/never `learned_skip` itself/i);
+  });
+
+  it("describes the read side: a match skips the setsid wrapper entirely and POSTs status skipped + reasonCategory learned_skip + learnedFromCategory (LVB-4.4)", () => {
+    const s = section().replace(/\s+/g, " ");
+    expect(s).toMatch(/not attempted at all this run/i);
+    expect(s).toContain('status: "skipped"');
+    expect(s).toContain('reasonCategory: "learned_skip"');
+    expect(s).toContain("learnedFromCategory");
+    expect(s).toMatch(/dev-task\.md Step 8/);
+    expect(s).toMatch(/patch\.md/);
+  });
+
+  it("describes the write side: repo+checkName history mode, descending order, consecutive-streak counting, and the ran_passed/ran_failed break (LVB-4.4)", () => {
+    const s = section().replace(/\s+/g, " ");
+    expect(s).toMatch(/GET \/verification-checks\?repo=&checkName=&limit=/);
+    expect(s).toMatch(/ordered by `at` DESCENDING/);
+    expect(s).toMatch(/CONSECUTIVE run of `skipped`\/`timed_out` rows/);
+    expect(s).toMatch(/breaks\/resets that count/i);
+    expect(s).toMatch(
+      /must never contribute to this counter or by itself trigger a write/i,
+    );
+    expect(s).toMatch(/streak reaches 2/i);
+  });
+
+  it("explicitly scopes the write trigger to dev-task.md only — patch.md is read-only against this table (LVB-4.4)", () => {
+    const s = section().replace(/\s+/g, " ");
+    expect(s).toMatch(/patch\.md`? is read-only against this table/i);
+    expect(s).toMatch(/never writes this table/i);
+    expect(s).toMatch(/no write hook/i);
+    expect(s).toMatch(/never adds new ones itself/i);
+  });
+
   it("states the write happens at Step 8.6 — after the worktree exists and after Step 8 derives {budget} — not at Step 0b", () => {
     const s = section();
     expect(s).toMatch(/Step 8\.6/);
     // Both sequencing preconditions must be stated as the reason for the hook point.
-    expect(s).toMatch(/Step 0b[\s\S]{0,400}before Step 4|before Step 4[\s\S]{0,400}Step 0b/);
-    expect(s).toMatch(/\{budget\}[\s\S]{0,200}Step 8|Step 8[\s\S]{0,200}\{budget\}/);
+    expect(s).toMatch(
+      /Step 0b[\s\S]{0,400}before Step 4|before Step 4[\s\S]{0,400}Step 0b/,
+    );
+    expect(s).toMatch(
+      /\{budget\}[\s\S]{0,200}Step 8|Step 8[\s\S]{0,200}\{budget\}/,
+    );
     // One hook, not two — no second write hook to keep in sync.
     expect(s).toMatch(/single write per run|one hook/i);
     expect(s).toMatch(/best-effort/i);
@@ -836,7 +1045,9 @@ describe("toolchain-patterns.md — writing learned facts back to docs (LVB-4.2)
 
 describe("dev-task.md Step 8.6 — wires in toolchain-patterns.md's 'Writing Learned Facts Back to Docs' section (LVB-4.2)", () => {
   function step86(): string {
-    const stepIdx = content.indexOf("## Step 8.6: Write Learned Facts Back to Docs");
+    const stepIdx = content.indexOf(
+      "## Step 8.6: Write Learned Facts Back to Docs",
+    );
     expect(stepIdx).toBeGreaterThan(-1);
     const nextStepIdx = content.indexOf("## Step 9: Push & PR");
     expect(nextStepIdx).toBeGreaterThan(stepIdx);
@@ -845,7 +1056,9 @@ describe("dev-task.md Step 8.6 — wires in toolchain-patterns.md's 'Writing Lea
 
   it("is sequenced after Step 8.5's docs refresh and before Step 9's push", () => {
     const docsRefreshIdx = content.indexOf("## Step 8.5: Auto-Refresh Docs");
-    const stepIdx = content.indexOf("## Step 8.6: Write Learned Facts Back to Docs");
+    const stepIdx = content.indexOf(
+      "## Step 8.6: Write Learned Facts Back to Docs",
+    );
     const pushIdx = content.indexOf("## Step 9: Push & PR");
     expect(docsRefreshIdx).toBeGreaterThan(-1);
     expect(stepIdx).toBeGreaterThan(docsRefreshIdx);
@@ -861,7 +1074,9 @@ describe("dev-task.md Step 8.6 — wires in toolchain-patterns.md's 'Writing Lea
     // (full-replace rule, heading-boundary technique) must not be re-embedded
     // here; they live only in toolchain-patterns.md.
     expect(step).not.toMatch(/full replace/i);
-    expect(step).not.toMatch(/same-or-shallower level|same or shallower level/i);
+    expect(step).not.toMatch(
+      /same-or-shallower level|same or shallower level/i,
+    );
   });
 
   it("writes only into the worktree and commits the result so it lands in this task's PR", () => {
@@ -899,7 +1114,9 @@ describe("dev-task.md Step 5c — BLOCKED dead-end PATCHes task status (BHE-1.2)
 
     expect(section).toContain('"$SHIPWRIGHT_TASK_STORE_URL/tasks/{id}"');
     expect(section).toMatch(/-X PATCH/);
-    expect(section).toMatch(/-d '\{"status": "blocked", "blockedReason": "[a-z_]+"\}'/);
+    expect(section).toMatch(
+      /-d '\{"status": "blocked", "blockedReason": "[a-z_]+"\}'/,
+    );
   });
 
   it("uses the same curl shape as Steps 1/7/9/9b.5 (curl -sf -X PATCH ... | jq .)", () => {
@@ -907,7 +1124,9 @@ describe("dev-task.md Step 5c — BLOCKED dead-end PATCHes task status (BHE-1.2)
     expect(step5cIdx).toBeGreaterThan(-1);
     const section = content.slice(step5cIdx, step5cIdx + 2500);
 
-    expect(section).toContain("curl -sf -X PATCH -H \"Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN\"");
+    expect(section).toContain(
+      'curl -sf -X PATCH -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN"',
+    );
     expect(section).toContain('-H "Content-Type: application/json"');
     expect(section).toMatch(/\| jq \./);
   });
@@ -921,7 +1140,9 @@ describe("dev-task.md Step 5c — BLOCKED dead-end PATCHes task status (BHE-1.2)
     // BEFORE the blocked-status PATCH, and the PATCH must be scoped to the remaining
     // dead-end case only — not interleaved into each resolvable branch.
     const contextIdx = section.search(/context problem, provide more context/i);
-    const tooLargeIdx = section.search(/task is too large, break it into smaller sub-tasks/i);
+    const tooLargeIdx = section.search(
+      /task is too large, break it into smaller sub-tasks/i,
+    );
     const planIdx = section.search(/plan is wrong, escalate to the user/i);
     const patchIdx = section.search(/-X PATCH/);
 
@@ -974,7 +1195,9 @@ describe("Step 4 — unconditional branch/PR reality check (DOH-1.1)", () => {
     expect(section).toContain("git ls-remote --heads origin {branch}");
     // Open PR check with mergeability/CI-relevant fields
     expect(section).toContain("--state open");
-    expect(section).toMatch(/gh pr list --head \{branch\}.*--state open.*json number,state,mergeable,mergeStateStatus/);
+    expect(section).toMatch(
+      /gh pr list --head \{branch\}.*--state open.*json number,state,mergeable,mergeStateStatus/,
+    );
   });
 
   it("derives --repo from git remote using the same pattern as the Step 4 stale-bundle-branch check", () => {
@@ -1015,7 +1238,9 @@ describe("Step 4 — unconditional branch/PR reality check (DOH-1.1)", () => {
     expect(staleSectionIdx).toBeGreaterThan(-1);
     const staleSection = section.slice(staleSectionIdx);
     const worktreeRemoveIdx = staleSection.search(/worktree remove/);
-    const branchDeleteIdx = staleSection.search(/git -C .*branch -D \{branch\}/);
+    const branchDeleteIdx = staleSection.search(
+      /git -C .*branch -D \{branch\}/,
+    );
     expect(worktreeRemoveIdx).toBeGreaterThan(-1);
     expect(branchDeleteIdx).toBeGreaterThan(-1);
     expect(worktreeRemoveIdx).toBeLessThan(branchDeleteIdx);
@@ -1030,11 +1255,15 @@ describe("Step 4 — unconditional branch/PR reality check (DOH-1.1)", () => {
 
   it("no longer routes an in_progress task's stale branch/PR cleanup through a status-gated Step 2 Orphan Check", () => {
     expect(content).not.toContain("### Orphan Check (prior session recovery)");
-    expect(content).not.toMatch(/If the task's current status is already `in_progress`:/);
+    expect(content).not.toMatch(
+      /If the task's current status is already `in_progress`:/,
+    );
   });
 
   it("Step 1 no longer special-cases in_progress status as a distinct branch routing to Step 2's Orphan Check", () => {
-    expect(content).not.toMatch(/proceed\s+straight\s+to\s+Step 2's Orphan Check/i);
+    expect(content).not.toMatch(
+      /proceed\s+straight\s+to\s+Step 2's Orphan Check/i,
+    );
   });
 });
 
@@ -1053,7 +1282,9 @@ describe("dev-task.md — Step 6 principles override + security domain", () => {
     expect(section).toContain("plugins/shipwright/references/principles.md");
 
     const overrideIdx = section.indexOf(".claude/shipwright/principles.md");
-    const fallbackIdx = section.indexOf("plugins/shipwright/references/principles.md");
+    const fallbackIdx = section.indexOf(
+      "plugins/shipwright/references/principles.md",
+    );
     expect(overrideIdx).toBeGreaterThan(-1);
     expect(fallbackIdx).toBeGreaterThan(-1);
     expect(overrideIdx).toBeLessThan(fallbackIdx);
@@ -1105,7 +1336,9 @@ describe("dev-task.md — ScheduleWakeup/backgrounding prohibition guardrail (SW
 
   it("Step 8's guardrail prohibits handing the wait off via a scheduled wakeup mechanism", () => {
     const section = getStep8Section();
-    expect(section.toLowerCase().replace(/\s+/g, " ")).toContain("scheduled wakeup mechanism");
+    expect(section.toLowerCase().replace(/\s+/g, " ")).toContain(
+      "scheduled wakeup mechanism",
+    );
   });
 
   it("Step 9b.2 (Wait for Checks) states the 30s/10-min poll must run as a blocking loop within the same Bash invocation chain", () => {
@@ -1123,7 +1356,9 @@ describe("dev-task.md — ScheduleWakeup/backgrounding prohibition guardrail (SW
 
   it("Step 9b.2's guardrail prohibits handing the wait off via a scheduled wakeup mechanism", () => {
     const section = getStep9b2Section();
-    expect(section.toLowerCase().replace(/\s+/g, " ")).toContain("scheduled wakeup mechanism");
+    expect(section.toLowerCase().replace(/\s+/g, " ")).toContain(
+      "scheduled wakeup mechanism",
+    );
   });
 
   it("preserves the existing 30-second poll interval and 10-minute budget wording in Step 9b.2", () => {
@@ -1141,7 +1376,9 @@ describe("dev-task.md — ScheduleWakeup/backgrounding prohibition guardrail (SW
   it("Step 8 mentions the StaleClaimReaper (or 'stale claim reaper') that reclaims abandoned claims", () => {
     const section = getStep8Section();
     const lower = section.toLowerCase().replace(/\s+/g, " ");
-    expect(lower).toMatch(/stale.{0,40}claim.{0,40}reaper|reaper.{0,40}stale.{0,40}claim/);
+    expect(lower).toMatch(
+      /stale.{0,40}claim.{0,40}reaper|reaper.{0,40}stale.{0,40}claim/,
+    );
   });
 
   it("Step 8 cites the ~65-minute claim TTL after which a stale claim is reclaimed", () => {
@@ -1153,7 +1390,9 @@ describe("dev-task.md — ScheduleWakeup/backgrounding prohibition guardrail (SW
   it("Step 8 explains that a stale-claim reclaim causes a context-free re-bootstrap on the next cron tick", () => {
     const section = getStep8Section();
     const lower = section.toLowerCase().replace(/\s+/g, " ");
-    expect(lower).toMatch(/context.{0,10}free|reclaim.*re.?dispatch|re.?bootstrap/i);
+    expect(lower).toMatch(
+      /context.{0,10}free|reclaim.*re.?dispatch|re.?bootstrap/i,
+    );
   });
 
   it("Step 9b.2 explains the claim-heartbeat mechanism: a resumed session stops the task's claim heartbeat", () => {
@@ -1165,7 +1404,9 @@ describe("dev-task.md — ScheduleWakeup/backgrounding prohibition guardrail (SW
   it("Step 9b.2 mentions the StaleClaimReaper (or 'stale claim reaper') that reclaims abandoned claims", () => {
     const section = getStep9b2Section();
     const lower = section.toLowerCase().replace(/\s+/g, " ");
-    expect(lower).toMatch(/stale.{0,40}claim.{0,40}reaper|reaper.{0,40}stale.{0,40}claim/);
+    expect(lower).toMatch(
+      /stale.{0,40}claim.{0,40}reaper|reaper.{0,40}stale.{0,40}claim/,
+    );
   });
 
   it("Step 9b.2 cites the ~65-minute claim TTL after which a stale claim is reclaimed", () => {
@@ -1177,13 +1418,17 @@ describe("dev-task.md — ScheduleWakeup/backgrounding prohibition guardrail (SW
   it("Step 9b.2 explains that a stale-claim reclaim causes a context-free re-bootstrap on the next cron tick", () => {
     const section = getStep9b2Section();
     const lower = section.toLowerCase().replace(/\s+/g, " ");
-    expect(lower).toMatch(/context.{0,10}free|reclaim.*re.?dispatch|re.?bootstrap/i);
+    expect(lower).toMatch(
+      /context.{0,10}free|reclaim.*re.?dispatch|re.?bootstrap/i,
+    );
   });
 });
 
 describe("dev-task.md Step 1 — repo-slug derivation for local paths (PRF-1.4)", () => {
   it("derives {repo-slug} in Step 1, immediately after the task fetch and before the Same-Branch Sibling Check", () => {
-    const fetchIdx = content.indexOf('"$SHIPWRIGHT_TASK_STORE_URL/tasks/{task-id}"');
+    const fetchIdx = content.indexOf(
+      '"$SHIPWRIGHT_TASK_STORE_URL/tasks/{task-id}"',
+    );
     expect(fetchIdx).toBeGreaterThan(-1);
     const siblingCheckIdx = content.indexOf("### Same-Branch Sibling Check");
     expect(siblingCheckIdx).toBeGreaterThan(fetchIdx);
@@ -1197,7 +1442,9 @@ describe("dev-task.md Step 1 — repo-slug derivation for local paths (PRF-1.4)"
   it("no longer uses raw {repo} for ${SHIPWRIGHT_REPO_DIR:-$HOME/src}/{repo} style local paths", () => {
     // This exact substring would NOT match {repo-slug} (which has extra chars before the
     // closing brace), so it robustly distinguishes "still raw {repo}" from "now {repo-slug}".
-    expect(content.match(/\$\{SHIPWRIGHT_REPO_DIR:-\$HOME\/src\}\/\{repo\}/)).toBeNull();
+    expect(
+      content.match(/\$\{SHIPWRIGHT_REPO_DIR:-\$HOME\/src\}\/\{repo\}/),
+    ).toBeNull();
   });
 
   it("keeps the Same-Branch Sibling Check's task-store API call scoped by the full {repo} (org/repo) value, unchanged", () => {
@@ -1226,9 +1473,11 @@ describe("dev-task.md — worktree add/remove absolute-fallback regression guard
   // mirrors the file's actual style (see lines ~390/411/437/443/448). Deliberately requires
   // the literal `git -C` prefix so it does NOT match the unrelated prose line
   // "`worktree add {worktree-path} {branch}`" (no `git -C`, no leading dash-C path).
-  const WORKTREE_INVOCATION_RE = /git -C \S+ worktree (?:add|remove) \S+[^\n]*/g;
+  const WORKTREE_INVOCATION_RE =
+    /git -C \S+ worktree (?:add|remove) \S+[^\n]*/g;
 
-  const getWorktreeInvocations = () => content.match(WORKTREE_INVOCATION_RE) ?? [];
+  const getWorktreeInvocations = () =>
+    content.match(WORKTREE_INVOCATION_RE) ?? [];
 
   // A bare relative default for either fallback var — e.g. ${SHIPWRIGHT_REPO_DIR:-repos} or
   // ${SHIPWRIGHT_WORKTREE_DIR:-worktrees} — the exact class of bug PR #3545 fixed. Any
@@ -1259,14 +1508,22 @@ describe("dev-task.md Step 1 — PRD-shaped task guard (fallback safety net) (PD
   const getGuardSection = () => {
     const guardIdx = content.indexOf("### PRD-Shaped Task Guard");
     expect(guardIdx).toBeGreaterThan(-1);
-    const dependencyCheckIdx = content.indexOf("### Dependency Check (pending tasks only)");
+    const dependencyCheckIdx = content.indexOf(
+      "### Dependency Check (pending tasks only)",
+    );
     expect(dependencyCheckIdx).toBeGreaterThan(guardIdx);
-    return { guardIdx, dependencyCheckIdx, section: content.slice(guardIdx, dependencyCheckIdx) };
+    return {
+      guardIdx,
+      dependencyCheckIdx,
+      section: content.slice(guardIdx, dependencyCheckIdx),
+    };
   };
 
   it("adds a PRD-Shaped Task Guard section in Step 1 after pending-status validation and before Dependency Check", () => {
     const { guardIdx, dependencyCheckIdx } = getGuardSection();
-    const pendingBulletIdx = content.indexOf('**Found, `status == "pending"`**:');
+    const pendingBulletIdx = content.indexOf(
+      '**Found, `status == "pending"`**:',
+    );
     expect(pendingBulletIdx).toBeGreaterThan(-1);
     // Guard should be after the pending bullet and before Dependency Check
     expect(pendingBulletIdx).toBeLessThan(guardIdx);
@@ -1275,12 +1532,16 @@ describe("dev-task.md Step 1 — PRD-shaped task guard (fallback safety net) (PD
 
   it("detects task id prefix: task id matches ^prd-", () => {
     const { section } = getGuardSection();
-    expect(section).toMatch(/task.{0,40}id.{0,40}(match|matches).{0,60}\^prd-/i);
+    expect(section).toMatch(
+      /task.{0,40}id.{0,40}(match|matches).{0,60}\^prd-/i,
+    );
   });
 
   it("detects description prefix: description opens with 'Commit as PRODUCT-SPEC.md and run /shipwright:plan-session'", () => {
     const { section } = getGuardSection();
-    expect(section).toContain("Commit as PRODUCT-SPEC.md and run /shipwright:plan-session");
+    expect(section).toContain(
+      "Commit as PRODUCT-SPEC.md and run /shipwright:plan-session",
+    );
   });
 
   it("detects branch and criteria: branch === 'main' AND acceptanceCriteria is empty", () => {
@@ -1300,13 +1561,17 @@ describe("dev-task.md Step 1 — PRD-shaped task guard (fallback safety net) (PD
     const { section } = getGuardSection();
     expect(section).toContain('"status": "blocked"');
     expect(section).toContain('"hitl": true');
-    expect(section).toContain('"blockedReason": "misrouted_needs_plan_session_not_dev_task"');
+    expect(section).toContain(
+      '"blockedReason": "misrouted_needs_plan_session_not_dev_task"',
+    );
   });
 
   it("uses curl -X PATCH with the standard Authorization header and Content-Type application/json", () => {
     const { section } = getGuardSection();
     expect(section).toContain("curl -sf -X PATCH");
-    expect(section).toContain("-H \"Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN\"");
+    expect(section).toContain(
+      '-H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN"',
+    );
     expect(section).toContain('-H "Content-Type: application/json"');
   });
 
@@ -1335,35 +1600,45 @@ describe("dev-task.md Step 1 — PRD-shaped task guard (fallback safety net) (PD
 
 describe("dev-task.md — subagent dispatch is foreground, not background (ABD-1.2)", () => {
   it("Step 5b's implementation-subagent dispatch pins run_in_background: false", () => {
-    const anchorIdx = content.indexOf("Dispatch a `general-purpose` subagent with this prompt");
+    const anchorIdx = content.indexOf(
+      "Dispatch a `general-purpose` subagent with this prompt",
+    );
     expect(anchorIdx).toBeGreaterThan(-1);
     const section = content.slice(anchorIdx, anchorIdx + 600);
     expect(section).toContain("run_in_background: false");
   });
 
   it("Step 5b's nested researcher-agent spawn instruction pins run_in_background: false", () => {
-    const anchorIdx = content.indexOf("Spawn the shipwright:researcher agent via the Agent tool");
+    const anchorIdx = content.indexOf(
+      "Spawn the shipwright:researcher agent via the Agent tool",
+    );
     expect(anchorIdx).toBeGreaterThan(-1);
     const section = content.slice(anchorIdx, anchorIdx + 300);
     expect(section).toContain("run_in_background: false");
   });
 
   it("Step 6.5's spec compliance subagent dispatch pins run_in_background: false", () => {
-    const anchorIdx = content.indexOf("**Dispatch a `general-purpose` subagent** with `model: 'haiku'`");
+    const anchorIdx = content.indexOf(
+      "**Dispatch a `general-purpose` subagent** with `model: 'haiku'`",
+    );
     expect(anchorIdx).toBeGreaterThan(-1);
     const section = content.slice(anchorIdx, anchorIdx + 300);
     expect(section).toContain("run_in_background: false");
   });
 
   it("Step 8.5a's docs-refresher agent dispatch pins run_in_background: false", () => {
-    const anchorIdx = content.indexOf("Use the Agent tool to dispatch the `shipwright:docs-refresher` agent");
+    const anchorIdx = content.indexOf(
+      "Use the Agent tool to dispatch the `shipwright:docs-refresher` agent",
+    );
     expect(anchorIdx).toBeGreaterThan(-1);
     const section = content.slice(anchorIdx, anchorIdx + 300);
     expect(section).toContain("run_in_background: false");
   });
 
   it("Step 9b.3's CI-fix subagent dispatch pins run_in_background: false", () => {
-    const anchorIdx = content.indexOf("**Launch fix subagent** using the Agent tool");
+    const anchorIdx = content.indexOf(
+      "**Launch fix subagent** using the Agent tool",
+    );
     expect(anchorIdx).toBeGreaterThan(-1);
     const section = content.slice(anchorIdx, anchorIdx + 300);
     expect(section).toContain("run_in_background: false");
@@ -1452,7 +1727,9 @@ describe("dev-task.md Step 8 — enforced non-blocking verification budgets (LVB
     const lower = section.toLowerCase().replace(/\s+/g, " ");
     expect(lower).toMatch(/process(-| )group/);
     // Must describe killing the whole group (negative-PID / group kill), not merely naming timeout.
-    expect(lower).toMatch(/(kill|terminat).{0,60}(whole|entire|-\$|negative).{0,20}(group|pid)|(-\$pid|kill -- -\$)/);
+    expect(lower).toMatch(
+      /(kill|terminat).{0,60}(whole|entire|-\$|negative).{0,20}(group|pid)|(-\$pid|kill -- -\$)/,
+    );
   });
 
   it("states expiry (timeout) never blocks proceeding to Step 9 (Push & PR)", () => {
@@ -1480,7 +1757,9 @@ describe("dev-task.md Step 8 — enforced non-blocking verification budgets (LVB
   it("records each check's outcome (pass/fail/timeout/skip) for the printed Pre-Ship Checks output", () => {
     const section = getStep8Section();
     const lower = section.toLowerCase().replace(/\s+/g, " ");
-    expect(lower).toMatch(/(pass|fail|timeout|skip)[^.]{0,40}(pass|fail|timeout|skip)[^.]{0,40}(pass|fail|timeout|skip)/);
+    expect(lower).toMatch(
+      /(pass|fail|timeout|skip)[^.]{0,40}(pass|fail|timeout|skip)[^.]{0,40}(pass|fail|timeout|skip)/,
+    );
     expect(lower).toMatch(/record|report|print/);
   });
 
@@ -1558,7 +1837,9 @@ describe("dev-task.md Step 8 — record verification outcomes via task-store API
 
   it("the verification-checks call is a POST", () => {
     const section = getStep8Section();
-    const idx = section.indexOf("$SHIPWRIGHT_TASK_STORE_URL/verification-checks");
+    const idx = section.indexOf(
+      "$SHIPWRIGHT_TASK_STORE_URL/verification-checks",
+    );
     expect(idx).toBeGreaterThan(-1);
     const nearby = section.slice(Math.max(0, idx - 300), idx);
     expect(nearby).toContain("-X POST");
@@ -1590,12 +1871,16 @@ describe("dev-task.md Step 8 — record verification outcomes via task-store API
   it("maps timeout (exit 124) to timed_out with a check_timeout/install_timeout reasonCategory", () => {
     const section = getStep8Section();
     expect(section).toContain("124");
-    expect(section).toMatch(/timed_out[\s\S]{0,200}(check_timeout|install_timeout)/);
+    expect(section).toMatch(
+      /timed_out[\s\S]{0,200}(check_timeout|install_timeout)/,
+    );
   });
 
   it("records the scoped-lint empty-filtered-list skip with status skipped and reasonCategory not_configured", () => {
     const section = getStep8Section();
-    const skipIdx = section.indexOf("skip lint entirely rather than invoking the linter with no paths");
+    const skipIdx = section.indexOf(
+      "skip lint entirely rather than invoking the linter with no paths",
+    );
     expect(skipIdx).toBeGreaterThan(-1);
     const nearby = section.slice(skipIdx, skipIdx + 700);
     expect(nearby).toContain("$SHIPWRIGHT_TASK_STORE_URL/verification-checks");
@@ -1604,10 +1889,12 @@ describe("dev-task.md Step 8 — record verification outcomes via task-store API
     expect(nearby).toContain("not_configured");
   });
 
-  it("leaves a hook note for future skip paths (e.g. LVB-4.4) to record status: skipped through this same POST", () => {
+  it("confirms the skip-locally read path (LVB-4.4) reuses this exact POST shape — no separate recording mechanism", () => {
     const section = getStep8Section();
-    const lower = section.toLowerCase().replace(/\s+/g, " ");
-    expect(lower).toMatch(/future skip path[\s\S]{0,200}skipped/);
+    expect(section).toMatch(/skip-locally read path/i);
+    expect(section).toMatch(/reuses this exact POST shape/i);
+    expect(section).toContain('reasonCategory: "learned_skip"');
+    expect(section).toMatch(/no new recording mechanism was needed/i);
   });
 
   it("updates the 'Record, don't swallow' prose to mention posting to the task-store API, not just printing", () => {
@@ -1617,5 +1904,201 @@ describe("dev-task.md Step 8 — record verification outcomes via task-store API
     const nearby = section.slice(idx, idx + 400);
     expect(nearby.toLowerCase()).toMatch(/post/);
     expect(nearby).toContain("verification-check");
+  });
+});
+
+describe("dev-task.md Step 8 — Skip-Locally Classification: read before attempting (LVB-4.4)", () => {
+  function section(): string {
+    const idx = content.indexOf(
+      "### Skip-Locally Classification: Read Before Attempting Each Check",
+    );
+    expect(idx).toBeGreaterThan(-1);
+    const nextIdx = content.indexOf(
+      "### Enforced, Process-Group-Aware Timeouts",
+    );
+    expect(nextIdx).toBeGreaterThan(idx);
+    return content.slice(idx, nextIdx);
+  }
+
+  it("is sequenced before the enforced-timeout wrapper, so a skip-locally match never runs it", () => {
+    const skipIdx = content.indexOf(
+      "### Skip-Locally Classification: Read Before Attempting Each Check",
+    );
+    const timeoutIdx = content.indexOf(
+      "### Enforced, Process-Group-Aware Timeouts",
+    );
+    expect(skipIdx).toBeGreaterThan(-1);
+    expect(timeoutIdx).toBeGreaterThan(skipIdx);
+  });
+
+  it("loads the learned-facts doc once per run using the same target resolution as Step 8.6 (docsSource pointer, else default docs/toolchain.md)", () => {
+    const s = section();
+    expect(s).toMatch(/docsSource\.path/);
+    expect(s).toMatch(/docsSource\.heading/);
+    expect(s).toMatch(/docs\/toolchain\.md/);
+    expect(s).toMatch(/Shipwright[\s\S]{0,10}Learned Facts/);
+  });
+
+  it("checks each check's name against the loaded map before running it, for install/lint/typecheck/test and each layer", () => {
+    const s = section();
+    expect(s).toMatch(/install, lint, typecheck, test/i);
+    expect(s).toMatch(/\{tests\}/);
+    expect(s).toMatch(
+      /checkName\s*->\s*reasonCategory|checkName.{0,10}reasonCategory/,
+    );
+  });
+
+  it("on a match: does NOT run the setsid timeout wrapper — no budget spent attempting the check", () => {
+    const s = section();
+    expect(s).toMatch(/do NOT run the `setsid timeout/i);
+    expect(s).toMatch(/no budget/i);
+  });
+
+  it("on a match: POSTs status skipped, reasonCategory learned_skip, and learnedFromCategory carrying the recorded category", () => {
+    const s = section();
+    expect(s).toContain('status: "skipped"');
+    expect(s).toContain('reasonCategory: "learned_skip"');
+    expect(s).toContain("learnedFromCategory: $learnedFrom");
+  });
+
+  it("surfaces the recorded reason in the human-readable PRE-SHIP CHECKS output as 'skip (learned: {reason})'", () => {
+    const s = section();
+    expect(s).toMatch(/skip \(learned: \{reason\}\)/);
+    expect(s).not.toMatch(
+      /skip \(learned: \{reason\}\)[\s\S]{0,40}plain `skip`\s*$/,
+    ); // sanity: phrase isn't truncated
+  });
+});
+
+describe("dev-task.md Step 8 — Skip-Locally Learning Trigger (LVB-4.4)", () => {
+  function section(): string {
+    const idx = content.indexOf("### Skip-Locally Learning Trigger");
+    expect(idx).toBeGreaterThan(-1);
+    const nextIdx = content.indexOf("**Budget derivation.**");
+    expect(nextIdx).toBeGreaterThan(idx);
+    return content.slice(idx, nextIdx);
+  }
+
+  it("is sequenced after the enforced-timeout block (real check attempts) and before Budget derivation", () => {
+    const timeoutIdx = content.indexOf(
+      "### Enforced, Process-Group-Aware Timeouts",
+    );
+    const triggerIdx = content.indexOf("### Skip-Locally Learning Trigger");
+    const budgetIdx = content.indexOf("**Budget derivation.**");
+    expect(timeoutIdx).toBeGreaterThan(-1);
+    expect(triggerIdx).toBeGreaterThan(timeoutIdx);
+    expect(budgetIdx).toBeGreaterThan(triggerIdx);
+  });
+
+  it("only fires for REAL check attempts — explicitly excludes the skip-on-read short-circuit", () => {
+    const s = section();
+    expect(s).toMatch(/REAL check attempt/);
+    expect(s).toMatch(/not a skip-on-read short-circuit/i);
+  });
+
+  it("a ran_passed or ran_failed outcome stops here — never contributes to the counter or triggers a write", () => {
+    const s = section().replace(/\s+/g, " ");
+    expect(s).toMatch(/ran_passed.{0,20}or.{0,20}ran_failed.{0,60}never does/i);
+    expect(s).toMatch(/stop here/i);
+    expect(s).toMatch(
+      /must never contribute to this counter or trigger a skip-locally write/i,
+    );
+  });
+
+  it("explicitly states a real test/lint failure is a separate, expected outcome that should keep failing loudly, not get silently marked as skipped", () => {
+    const s = section().replace(/\s+/g, " ");
+    expect(s).toMatch(/completely separate, expected outcome/i);
+    expect(s).toMatch(/keep running and keep failing loudly/i);
+    expect(s).toMatch(
+      /not get silently marked as something the agent stops attempting/i,
+    );
+  });
+
+  it("queries GET /verification-checks?repo=&checkName=&limit= — the LVB-4.4 repo+checkName history mode", () => {
+    const s = section();
+    expect(s).toContain(
+      "$SHIPWRIGHT_TASK_STORE_URL/verification-checks?repo=$GH_REPO&checkName=$CHECK_NAME&limit=",
+    );
+    expect(s).toMatch(/ordered by `at` DESCENDING/);
+  });
+
+  it("counts the CONSECUTIVE run of skipped/timed_out rows from most recent backward, stopping (breaking) at the first ran_passed or ran_failed row", () => {
+    const s = section().replace(/\s+/g, " ");
+    expect(s).toMatch(/CONSECUTIVE run of `skipped`\/`timed_out` rows/);
+    expect(s).toMatch(
+      /stops \(via `break`\) at the first `ran_passed` or `ran_failed` row/,
+    );
+    expect(s).toContain("break");
+    expect(s).toMatch(/breaks\/resets the streak/);
+  });
+
+  it("explicitly states a ran_failed row caps everything before it out of the count — two timeouts either side of a failure never sum to a streak of 2", () => {
+    const s = section().replace(/\s+/g, " ");
+    expect(s).toMatch(
+      /ran_failed.{0,80}caps everything before it out of the count/i,
+    );
+    expect(s).toMatch(/never sum to a streak of 2/i);
+    expect(s).toMatch(
+      /structurally unable to contribute to this counter or trigger a skip-locally write/i,
+    );
+  });
+
+  it("triggers the write once the streak reaches 2, carrying the triggering (most recent) reasonCategory forward", () => {
+    const s = section();
+    expect(s).toMatch(/STREAK.{0,10}-ge 2/);
+    expect(s).toMatch(/2nd \(or later\) consecutive skip\/timeout/i);
+    expect(s).toMatch(
+      /carrying the triggering[\s\S]{0,60}\$VC_REASON.{0,20}forward/i,
+    );
+    expect(s).toMatch(
+      /Learned skip-locally for \$CHECK_NAME after 2 consecutive \$VC_REASON outcomes/,
+    );
+  });
+
+  it("reuses Step 8.6's write mechanics by reference (target resolution + full-replace) rather than re-deriving them, and updates the in-memory map for within-run consistency", () => {
+    const s = section();
+    expect(s).toMatch(/Reuse Step 8\.6's write mechanics/i);
+    expect(s).toMatch(/in-memory skip-locally map/i);
+    expect(s).toMatch(/within-run reread/i);
+  });
+
+  it("states the write is best-effort and never blocks the pipeline, matching Step 8's other writes", () => {
+    const s = section();
+    expect(s).toMatch(/best-effort/i);
+    expect(s).toMatch(/never blocks the pipeline/i);
+  });
+});
+
+describe("dev-task.md Step 8.6 — populates the skip-locally list for real (LVB-4.4)", () => {
+  function step86(): string {
+    const stepIdx = content.indexOf(
+      "## Step 8.6: Write Learned Facts Back to Docs",
+    );
+    expect(stepIdx).toBeGreaterThan(-1);
+    const nextStepIdx = content.indexOf("## Step 9: Push & PR");
+    expect(nextStepIdx).toBeGreaterThan(stepIdx);
+    return content.slice(stepIdx, nextStepIdx);
+  }
+
+  it("no longer describes the skip-locally slot as merely reserved — it now reflects this run's actual classifications", () => {
+    const step = step86();
+    expect(step).not.toMatch(/reserved skip-locally slot/i);
+    expect(step).toMatch(/skip-locally classifications table/i);
+  });
+
+  it("ties the recorded list back to the in-memory map loaded/updated earlier in Step 8", () => {
+    const step = step86().replace(/\s+/g, " ");
+    expect(step).toMatch(
+      /Skip-Locally Classification: Read Before Attempting Each Check/,
+    );
+    expect(step).toMatch(/Skip-Locally Learning Trigger/);
+  });
+
+  it("still delegates the write mechanics by reference — does not re-embed 'full replace'/'same-or-shallower' wording here", () => {
+    const step = step86();
+    expect(step).not.toMatch(/full replace/i);
+    expect(step).not.toMatch(
+      /same-or-shallower level|same or shallower level/i,
+    );
   });
 });

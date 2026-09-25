@@ -39,6 +39,13 @@ model Agent {
   patchAuthorAllowlist   String[] @default([])
   restrictSlackToMembers Boolean  @default(false)
   typeName               String   @default("coding")
+  // ATE-1.1: trial expiry tracking. Both nullable/additive — null means "no
+  // trial configured" / "no warning sent yet". trialExpiresAt is settable via
+  // PATCH /agents/:id like other nullable scalar fields; trialExpiryWarnedAt
+  // is written internally by ATE-2.1's warning check (not user-editable via
+  // the PATCH route) but is included in GET/PATCH responses.
+  trialExpiresAt         DateTime?
+  trialExpiryWarnedAt    DateTime?
   createdAt              DateTime @default(now())
   updatedAt              DateTime @updatedAt
 

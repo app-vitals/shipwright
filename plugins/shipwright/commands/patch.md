@@ -761,7 +761,35 @@ INSTRUCTIONS — follow in order:
 [C] Validate (enforced, non-blocking — CI Gate is the real arbiter)
   Local validation here is best-effort, not a gate: fix what you can, but a lingering
   failure or timeout must never stop [D]'s commit/push — this PR's CI Gate is what actually
-  decides mergeability. Run {lint command} and {test command} (and each additional test
+  decides mergeability.
+
+  **Skip-locally check (read before attempting).** Before running each check below, look up its
+  `{checkName}` in the toolchain doc's skip-locally table — the same `Shipwright Learned Facts`
+  marker subsection dev-task.md's Step 8.6 writes, resolved the same way: the pointer doc at
+  `{worktree-path}/{docsSource.path}` under `docsSource.heading` if `docsSource` was populated at
+  detection time, else the default `{worktree-path}/docs/toolchain.md` (see
+  `references/toolchain-patterns.md`'s "Writing Learned Facts Back to Docs" section for the table
+  format). If a match exists for this `{checkName}`, do NOT run the `setsid timeout ...` wrapper
+  for that check at all — no budget spent even attempting it. Instead POST the outcome directly:
+  ```bash
+  LEARNED_REASON="{reasonCategory recorded in the matched skip-locally table row}"
+  VC_BODY=$(jq -n --arg prId "{PR_RECORD_ID}" --arg repo "{org}/{repo}" --arg checkName "$CHECK_NAME" \
+    --arg learnedFrom "$LEARNED_REASON" \
+    '{prId: $prId, repo: $repo, checkName: $checkName, status: "skipped",
+      reasonCategory: "learned_skip", learnedFromCategory: $learnedFrom}')
+  curl -sf -X POST -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
+    -H "Content-Type: application/json" \
+    "$SHIPWRIGHT_TASK_STORE_URL/verification-checks" \
+    -d "$VC_BODY" > /dev/null 2>&1 || echo "⚠ verification-check POST for $CHECK_NAME (learned skip) failed — continuing"
+  ```
+  Report it in the human-readable results as `skip (learned: {reason})` rather than plain `skip`
+  — the recorded reason surfaces via both the POST's `learnedFromCategory` field and the
+  human-readable output. `patch.md` never writes to this table itself — it only reads
+  classifications dev-task.md's Step 8 has already learned (LVB-4.2 only wired the write
+  mechanism into dev-task.md; LVB-4.4 preserves that asymmetry rather than adding a second,
+  parallel write path here).
+
+  Run {lint command} and {test command} (and each additional test
   layer listed in TOOLCHAIN above) under an enforced, process-group-aware timeout so a hung
   or runaway command can't stall this fix indefinitely. A bare `timeout <cmd>` only signals
   the process it directly execs — a tool that forks worker subprocesses (npm, turbo, a test
@@ -1356,7 +1384,35 @@ INSTRUCTIONS — follow in order:
 [C] Validate (enforced, non-blocking — CI Gate is the real arbiter)
   Local validation here is best-effort, not a gate: fix what you can, but a lingering
   failure or timeout must never stop [D]'s commit/push — this PR's CI Gate is what actually
-  decides mergeability. Run {lint command} and {test command} (and each additional test
+  decides mergeability.
+
+  **Skip-locally check (read before attempting).** Before running each check below, look up its
+  `{checkName}` in the toolchain doc's skip-locally table — the same `Shipwright Learned Facts`
+  marker subsection dev-task.md's Step 8.6 writes, resolved the same way: the pointer doc at
+  `{worktree-path}/{docsSource.path}` under `docsSource.heading` if `docsSource` was populated at
+  detection time, else the default `{worktree-path}/docs/toolchain.md` (see
+  `references/toolchain-patterns.md`'s "Writing Learned Facts Back to Docs" section for the table
+  format). If a match exists for this `{checkName}`, do NOT run the `setsid timeout ...` wrapper
+  for that check at all — no budget spent even attempting it. Instead POST the outcome directly:
+  ```bash
+  LEARNED_REASON="{reasonCategory recorded in the matched skip-locally table row}"
+  VC_BODY=$(jq -n --arg prId "{PR_RECORD_ID}" --arg repo "{org}/{repo}" --arg checkName "$CHECK_NAME" \
+    --arg learnedFrom "$LEARNED_REASON" \
+    '{prId: $prId, repo: $repo, checkName: $checkName, status: "skipped",
+      reasonCategory: "learned_skip", learnedFromCategory: $learnedFrom}')
+  curl -sf -X POST -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
+    -H "Content-Type: application/json" \
+    "$SHIPWRIGHT_TASK_STORE_URL/verification-checks" \
+    -d "$VC_BODY" > /dev/null 2>&1 || echo "⚠ verification-check POST for $CHECK_NAME (learned skip) failed — continuing"
+  ```
+  Report it in the human-readable results as `skip (learned: {reason})` rather than plain `skip`
+  — the recorded reason surfaces via both the POST's `learnedFromCategory` field and the
+  human-readable output. `patch.md` never writes to this table itself — it only reads
+  classifications dev-task.md's Step 8 has already learned (LVB-4.2 only wired the write
+  mechanism into dev-task.md; LVB-4.4 preserves that asymmetry rather than adding a second,
+  parallel write path here).
+
+  Run {lint command} and {test command} (and each additional test
   layer listed in TOOLCHAIN above) under an enforced, process-group-aware timeout so a hung
   or runaway command can't stall this fix indefinitely. A bare `timeout <cmd>` only signals
   the process it directly execs — a tool that forks worker subprocesses (npm, turbo, a test
@@ -2023,7 +2079,35 @@ INSTRUCTIONS — follow in order:
 [C] Validate (enforced, non-blocking — CI Gate is the real arbiter)
   Local validation here is best-effort, not a gate: fix what you can, but a lingering
   failure or timeout must never stop [D]'s commit/push — this PR's CI Gate is what actually
-  decides mergeability. Run {lint command} and {test command} (and each additional test
+  decides mergeability.
+
+  **Skip-locally check (read before attempting).** Before running each check below, look up its
+  `{checkName}` in the toolchain doc's skip-locally table — the same `Shipwright Learned Facts`
+  marker subsection dev-task.md's Step 8.6 writes, resolved the same way: the pointer doc at
+  `{worktree-path}/{docsSource.path}` under `docsSource.heading` if `docsSource` was populated at
+  detection time, else the default `{worktree-path}/docs/toolchain.md` (see
+  `references/toolchain-patterns.md`'s "Writing Learned Facts Back to Docs" section for the table
+  format). If a match exists for this `{checkName}`, do NOT run the `setsid timeout ...` wrapper
+  for that check at all — no budget spent even attempting it. Instead POST the outcome directly:
+  ```bash
+  LEARNED_REASON="{reasonCategory recorded in the matched skip-locally table row}"
+  VC_BODY=$(jq -n --arg prId "{PR_RECORD_ID}" --arg repo "{org}/{repo}" --arg checkName "$CHECK_NAME" \
+    --arg learnedFrom "$LEARNED_REASON" \
+    '{prId: $prId, repo: $repo, checkName: $checkName, status: "skipped",
+      reasonCategory: "learned_skip", learnedFromCategory: $learnedFrom}')
+  curl -sf -X POST -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
+    -H "Content-Type: application/json" \
+    "$SHIPWRIGHT_TASK_STORE_URL/verification-checks" \
+    -d "$VC_BODY" > /dev/null 2>&1 || echo "⚠ verification-check POST for $CHECK_NAME (learned skip) failed — continuing"
+  ```
+  Report it in the human-readable results as `skip (learned: {reason})` rather than plain `skip`
+  — the recorded reason surfaces via both the POST's `learnedFromCategory` field and the
+  human-readable output. `patch.md` never writes to this table itself — it only reads
+  classifications dev-task.md's Step 8 has already learned (LVB-4.2 only wired the write
+  mechanism into dev-task.md; LVB-4.4 preserves that asymmetry rather than adding a second,
+  parallel write path here).
+
+  Run {lint command} and {test command} (and each additional test
   layer listed in TOOLCHAIN above) under an enforced, process-group-aware timeout so a hung
   or runaway command can't stall this fix indefinitely. A bare `timeout <cmd>` only signals
   the process it directly execs — a tool that forks worker subprocesses (npm, turbo, a test

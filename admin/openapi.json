@@ -167,6 +167,20 @@
           },
           "warning": {
             "type": "string"
+          },
+          "trialExpiresAt": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "trialExpiryWarnedAt": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
           }
         },
         "required": [
@@ -227,6 +241,14 @@
           "restrictSlackToMembers": {
             "type": "boolean",
             "example": false
+          },
+          "trialExpiresAt": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time",
+            "example": "2026-12-01T00:00:00.000Z"
           }
         }
       },
@@ -335,6 +357,55 @@
           "id",
           "name",
           "selfHosted",
+          "typeName"
+        ]
+      },
+      "CreateAgentBody": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "example": "Bodhi"
+          },
+          "typeName": {
+            "type": "string",
+            "minLength": 1,
+            "example": "coding"
+          },
+          "runtime": {
+            "type": "string",
+            "example": "in-cluster"
+          },
+          "reposRaw": {
+            "type": "string",
+            "example": "my-org/my-repo"
+          },
+          "authorAllowlistRaw": {
+            "type": "string",
+            "example": "octocat"
+          },
+          "patchAuthorAllowlistRaw": {
+            "type": "string",
+            "example": "octocat"
+          },
+          "memberEmailsRaw": {
+            "type": "string",
+            "example": "dev@example.com"
+          },
+          "restrictSlackToMembersRaw": {
+            "type": "string",
+            "example": "true"
+          },
+          "claudeCodeOauthToken": {
+            "type": "string"
+          },
+          "anthropicApiKey": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
           "typeName"
         ]
       },
@@ -856,6 +927,15 @@
             "description": "Agent session id this run was executed under. Null for runs with no recorded session.",
             "example": "session-abc-123"
           },
+          "lastHeartbeatAt": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time",
+            "description": "Most recent debounced progress-push (recordProgress()) timestamp, sourced from the agent's injected Clock. Null for runs that never reported progress (short/legacy runs).",
+            "example": "2026-01-01T08:00:03.000Z"
+          },
           "createdAt": {
             "type": "string",
             "format": "date-time",
@@ -886,6 +966,7 @@
           "cacheReadTokens",
           "cacheCreationTokens",
           "sessionId",
+          "lastHeartbeatAt",
           "createdAt"
         ]
       },
@@ -1081,6 +1162,15 @@
             ],
             "description": "Agent session id this run was executed under.",
             "example": "session-abc-123"
+          },
+          "lastHeartbeatAt": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time",
+            "description": "Most recent debounced progress-push (recordProgress()) timestamp, sourced from the agent's injected Clock.",
+            "example": "2026-01-01T08:00:03.000Z"
           },
           "modelBreakdown": {
             "type": "array",
@@ -1867,6 +1957,14 @@
             "example": [
               "dev@example.com"
             ]
+          },
+          "trialExpiresAt": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time",
+            "example": "2026-12-01T00:00:00.000Z"
           }
         },
         "required": [
@@ -2030,7 +2128,7 @@
       },
       "patch": {
         "summary": "Update an agent",
-        "description": "Admin-only. Updates `selfHosted`, `repos`, `reviewAuthorAllowlist`, `patchAuthorAllowlist`, `restrictSlackToMembers`, and/or `slackId`. `typeName` is not updatable via this route. Returns the updated agent, including a `warning` field when `restrictSlackToMembers` is set true on an agent with zero members.",
+        "description": "Admin-only. Updates `selfHosted`, `repos`, `reviewAuthorAllowlist`, `patchAuthorAllowlist`, `restrictSlackToMembers`, `slackId`, and/or `trialExpiresAt`. `typeName` and `trialExpiryWarnedAt` are not updatable via this route. Returns the updated agent, including a `warning` field when `restrictSlackToMembers` is set true on an agent with zero members.",
         "parameters": [
           {
             "schema": {
@@ -2166,6 +2264,51 @@
                   "items": {
                     "$ref": "#/components/schemas/AgentSummary"
                   }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "summary": "Create an agent",
+        "description": "Admin-only. Validates name/typeName, creates the Agent row, seeds AgentTool/AgentPlugin rows from the resolved type manifest, attaches repos/allowlists/members, patches Claude credentials, and provisions Kubernetes when `runtime` is \"in-cluster\" — the same createAgent() implementation (APA-1.1) the web UI form at /admin/agents/new uses. Transactional: on any failure zero rows persist, and this route never returns a partial-success 200. Returns the created agent in the same shape as GET /agents/:id.",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateAgentBody"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Agent created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GetAgentResult"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
                 }
               }
             }

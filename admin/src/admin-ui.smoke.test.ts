@@ -8110,6 +8110,84 @@ describe("admin UI — create agent with author allowlist", () => {
     expect(capturedAllowlist).toEqual(["octocat", "another-user"]);
   });
 
+  // Regression guard for the createAgent() deps wiring: production injects a
+  // real `new AgentService(prisma)`, whose create/delete/updateFields are
+  // ordinary class methods and therefore live on AgentService.prototype — NOT
+  // as own enumerable properties. Every other double in this file is a plain
+  // object literal, so a `{...agentService}` spread at the call site would
+  // look fine here while throwing "create is not a function" in production.
+  // `withPrototypeMethods()` reproduces the class-instance shape: the returned
+  // object has zero own enumerable properties and resolves every method
+  // through its prototype, so a spread would yield `{}`.
+  it("POST /admin/agents works when agentService's methods live on its prototype (class instance, not object literal)", async () => {
+    const withPrototypeMethods = <T extends object>(source: T): T => {
+      const proto: Record<string, unknown> = {};
+      for (const [key, value] of Object.entries(source)) {
+        if (typeof value === "function") proto[key] = value;
+      }
+      return Object.create(proto) as T;
+    };
+
+    const deps = makeMockDeps();
+    const plain = deps.agentService;
+    const calls: string[] = [];
+    deps.agentService = withPrototypeMethods({
+      ...plain,
+      create: async (...args: Parameters<typeof plain.create>) => {
+        calls.push("create");
+        return plain.create(...args);
+      },
+      updateFields: async (...args: Parameters<typeof plain.updateFields>) => {
+        calls.push("updateFields");
+        return plain.updateFields(...args);
+      },
+      delete: async (...args: Parameters<typeof plain.delete>) => {
+        calls.push("delete");
+        return plain.delete(...args);
+      },
+    });
+    // Sanity check: the double really does hide its methods from a spread.
+    expect(Object.keys({ ...deps.agentService })).toEqual([]);
+    expect(typeof deps.agentService.create).toBe("function");
+
+    const app = createAdminUIApp(deps);
+    const headers = {
+      "Content-Type": "application/x-www-form-urlencoded",
+      Cookie: `admin_session=${cookie}`,
+    };
+
+    // Happy path — exercises create() + updateFields().
+    const okRes = await app.request("/admin/agents", {
+      method: "POST",
+      body: new URLSearchParams({
+        name: "Test Agent",
+        type: "coding",
+        repos: "octocat/hello-world",
+      }).toString(),
+      headers,
+    });
+    expect(okRes.status).toBe(302);
+    expect(okRes.headers.get("Location")).toBe(`/admin/agents/${AGENT_ID}`);
+    expect(calls).toEqual(["create", "updateFields"]);
+
+    // Rollback path — exercises delete().
+    calls.length = 0;
+    const badRes = await app.request("/admin/agents", {
+      method: "POST",
+      body: new URLSearchParams({
+        name: "Test Agent",
+        type: "coding",
+        repos: "not-an-org-repo",
+      }).toString(),
+      headers,
+    });
+    expect(badRes.status).toBe(302);
+    expect(badRes.headers.get("Location")).toBe(
+      "/admin/agents/new?error=invalid_repo_format",
+    );
+    expect(calls).toEqual(["create", "delete"]);
+  });
+
   it("POST /admin/agents with invalid authorAllowlist entries deletes the created agent and redirects with error", async () => {
     let deletedId: string | undefined;
     const deps = makeMockDeps();

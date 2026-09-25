@@ -28,6 +28,9 @@
  *   - GET /verification-checks?taskId= / ?prId= → 200 with the recorded rows
  *   - GET /verification-checks → 400 when neither/both ?taskId=/?prId= given
  *   - GET /verification-checks → 404 when the referenced task/pr is missing
+ *   - GET /verification-checks?repo=&checkName= → 200, most-recent-first (LVB-4.4)
+ *   - GET /verification-checks?repo=&checkName= → 400 when only one of the pair
+ *     is given, or when combined with ?taskId=/?prId=
  */
 
 import { describe, expect, it } from "bun:test";
@@ -161,9 +164,7 @@ function makePrismaDouble(
   const prisma = {
     task: {
       findUnique({ where }: { where: { id: string } }) {
-        return Promise.resolve(
-          taskIds.has(where.id) ? { id: where.id } : null,
-        );
+        return Promise.resolve(taskIds.has(where.id) ? { id: where.id } : null);
       },
     },
     pullRequest: {
@@ -178,11 +179,32 @@ function makePrismaDouble(
         rows.push(row);
         return Promise.resolve(row);
       },
-      findMany({ where }: { where: Record<string, unknown> }) {
-        const matched = rows.filter((r) =>
+      findMany({
+        where,
+        orderBy,
+        take,
+        skip,
+      }: {
+        where: Record<string, unknown>;
+        orderBy?: { at?: "asc" | "desc" };
+        take?: number;
+        skip?: number;
+      }) {
+        let matched = rows.filter((r) =>
           Object.entries(where).every(([k, v]) => r[k] === v),
         );
-        return Promise.resolve(matched);
+        if (orderBy?.at) {
+          const dir = orderBy.at === "desc" ? -1 : 1;
+          matched = [...matched].sort(
+            (a, b) => dir * String(a.at).localeCompare(String(b.at)),
+          );
+        }
+        const offset = skip ?? 0;
+        const limited =
+          take !== undefined
+            ? matched.slice(offset, offset + take)
+            : matched.slice(offset);
+        return Promise.resolve(limited);
       },
       count({ where }: { where: Record<string, unknown> }) {
         const matched = rows.filter((r) =>
@@ -408,5 +430,182 @@ describe("/verification-checks routes (smoke)", () => {
       { headers: adminAuth() },
     );
     expect(res.status).toBe(404);
+  });
+
+  // ─── GET /verification-checks?repo=&checkName= (LVB-4.4) ─────────────────
+
+  it("GET ?repo=&checkName= after three POSTs — 200, ordered by `at` DESCENDING (most recent first)", async () => {
+    const app = makeApp();
+    const posts = [
+      { at: "2026-09-01T00:00:00.000Z", status: "ran_passed" },
+      {
+        at: "2026-09-02T00:00:00.000Z",
+        status: "timed_out",
+        reasonCategory: "check_timeout",
+      },
+      {
+        at: "2026-09-03T00:00:00.000Z",
+        status: "skipped",
+        reasonCategory: "missing_tool",
+      },
+    ];
+    for (const p of posts) {
+      await app.request("/verification-checks", {
+        method: "POST",
+        headers: { ...adminAuth(), "content-type": "application/json" },
+        body: JSON.stringify({
+          taskId: "task-1",
+          repo: "org/repo",
+          checkName: "lint",
+          ...p,
+        }),
+      });
+    }
+
+    const res = await app.request(
+      "/verification-checks?repo=org%2Frepo&checkName=lint",
+      { headers: adminAuth() },
+    );
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as {
+      checks: Array<Record<string, unknown>>;
+      total: number;
+    };
+    expect(body.total).toBe(3);
+    expect(body.checks.map((c) => c.at)).toEqual([
+      "2026-09-03T00:00:00.000Z",
+      "2026-09-02T00:00:00.000Z",
+      "2026-09-01T00:00:00.000Z",
+    ]);
+  });
+
+  it("GET ?repo=&checkName= respects ?limit=", async () => {
+    const app = makeApp();
+    for (const at of [
+      "2026-09-01T00:00:00.000Z",
+      "2026-09-02T00:00:00.000Z",
+      "2026-09-03T00:00:00.000Z",
+    ]) {
+      await app.request("/verification-checks", {
+        method: "POST",
+        headers: { ...adminAuth(), "content-type": "application/json" },
+        body: JSON.stringify({
+          taskId: "task-1",
+          repo: "org/repo",
+          checkName: "lint",
+          status: "ran_passed",
+          at,
+        }),
+      });
+    }
+
+    const res = await app.request(
+      "/verification-checks?repo=org%2Frepo&checkName=lint&limit=2",
+      { headers: adminAuth() },
+    );
+    const body = (await res.json()) as {
+      checks: Array<Record<string, unknown>>;
+      total: number;
+      limit: number;
+    };
+    expect(body.checks).toHaveLength(2);
+    expect(body.total).toBe(3);
+    expect(body.limit).toBe(2);
+    expect(body.checks.map((c) => c.at)).toEqual([
+      "2026-09-03T00:00:00.000Z",
+      "2026-09-02T00:00:00.000Z",
+    ]);
+  });
+
+  it("GET ?repo=&checkName= only returns rows matching that exact repo+checkName pair", async () => {
+    const app = makeApp();
+    await app.request("/verification-checks", {
+      method: "POST",
+      headers: { ...adminAuth(), "content-type": "application/json" },
+      body: JSON.stringify({
+        taskId: "task-1",
+        repo: "org/repo",
+        checkName: "lint",
+        status: "ran_passed",
+      }),
+    });
+    await app.request("/verification-checks", {
+      method: "POST",
+      headers: { ...adminAuth(), "content-type": "application/json" },
+      body: JSON.stringify({
+        taskId: "task-1",
+        repo: "org/repo",
+        checkName: "unit",
+        status: "ran_passed",
+      }),
+    });
+    await app.request("/verification-checks", {
+      method: "POST",
+      headers: { ...adminAuth(), "content-type": "application/json" },
+      body: JSON.stringify({
+        taskId: "task-1",
+        repo: "org/other-repo",
+        checkName: "lint",
+        status: "ran_passed",
+      }),
+    });
+
+    const res = await app.request(
+      "/verification-checks?repo=org%2Frepo&checkName=lint",
+      { headers: adminAuth() },
+    );
+    const body = (await res.json()) as {
+      checks: Array<Record<string, unknown>>;
+      total: number;
+    };
+    expect(body.total).toBe(1);
+    expect(body.checks[0].checkName).toBe("lint");
+    expect(body.checks[0].repo).toBe("org/repo");
+  });
+
+  it("GET ?repo=&checkName= with no matching rows — 200 with an empty list (no 404 — no single parent to 404 on)", async () => {
+    const app = makeApp();
+    const res = await app.request(
+      "/verification-checks?repo=org%2Frepo&checkName=lint",
+      { headers: adminAuth() },
+    );
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { checks: unknown[]; total: number };
+    expect(body.checks).toEqual([]);
+    expect(body.total).toBe(0);
+  });
+
+  it("GET with only ?repo= (no ?checkName=) — 400", async () => {
+    const app = makeApp();
+    const res = await app.request("/verification-checks?repo=org%2Frepo", {
+      headers: adminAuth(),
+    });
+    expect(res.status).toBe(400);
+  });
+
+  it("GET with only ?checkName= (no ?repo=) — 400", async () => {
+    const app = makeApp();
+    const res = await app.request("/verification-checks?checkName=lint", {
+      headers: adminAuth(),
+    });
+    expect(res.status).toBe(400);
+  });
+
+  it("GET with ?taskId= combined with ?repo=&checkName= — 400 (all three modes mutually exclusive)", async () => {
+    const app = makeApp();
+    const res = await app.request(
+      "/verification-checks?taskId=task-1&repo=org%2Frepo&checkName=lint",
+      { headers: adminAuth() },
+    );
+    expect(res.status).toBe(400);
+  });
+
+  it("GET with ?prId= combined with ?repo=&checkName= — 400", async () => {
+    const app = makeApp();
+    const res = await app.request(
+      "/verification-checks?prId=pr-1&repo=org%2Frepo&checkName=lint",
+      { headers: adminAuth() },
+    );
+    expect(res.status).toBe(400);
   });
 });

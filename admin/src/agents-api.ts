@@ -3,8 +3,10 @@
  * Admin CRUD API — OpenAPIHono app factory.
  *
  * Routes mounted at /agents/*. Full CRUD for:
- *   - Agent (read/update/delete — creation happens via the web UI form at
- *     /admin/agents/new, see admin-ui.ts, not this API)
+ *   - Agent (create/read/update/delete — POST /agents (APA-2.1) and the web
+ *     UI form at /admin/agents/new (see admin-ui.ts) both call the same
+ *     createAgent() implementation (agents.ts, APA-1.1), so there is exactly
+ *     one implementation of agent creation with two callers)
  *   - AgentEnv
  *   - AgentCronJob
  *   - AgentTool
@@ -20,7 +22,7 @@
  * Cookie name: admin_session.
  */
 
-import { OpenAPIHono, createRoute, z } from "@hono/zod-openapi";
+import { createRoute, OpenAPIHono, z } from "@hono/zod-openapi";
 import { callerLabel } from "@shipwright/lib/request-context";
 import type { ErrorCapturingClient } from "@shipwright/lib/sentry";
 import type { PrismaClient } from "../prisma/client/client.ts";
@@ -42,8 +44,9 @@ import type { AgentToolService } from "./agent-tools.ts";
 import type { AgentTypeManifestResolver } from "./agent-type-manifest-loader.ts";
 import type { AgentWorkQueueService } from "./agent-work-queue.ts";
 import type { AgentService } from "./agents.ts";
-import { createAdminAuthMiddleware, parseAdminApiKeys } from "./api-auth.ts";
+import { createAgent } from "./agents.ts";
 import type { AdminApiKey, AdminAuthEnv } from "./api-auth.ts";
+import { createAdminAuthMiddleware, parseAdminApiKeys } from "./api-auth.ts";
 import {
   ApiError,
   BadRequestError,
@@ -64,6 +67,7 @@ import {
   AgentToolSchema,
   AgentWorkQueueSnapshotSchema,
   ChatTokenStatsSchema,
+  CreateAgentBodySchema,
   CreateAgentCronJobBodySchema,
   CreateAgentCronRunBodySchema,
   CreateAgentPluginBodySchema,
@@ -72,8 +76,8 @@ import {
   CreateAgentToolBodySchema,
   CronIdParamSchema,
   CronRunIdParamSchema,
-  CronRunTokenStatsSchema,
   CronRunsListSchema,
+  CronRunTokenStatsSchema,
   CronsWithSummaryWrapperSchema,
   DeleteAgentBodySchema,
   DeleteAgentResultSchema,
@@ -106,6 +110,11 @@ export interface AdminDeps {
     | "getDetail"
     | "exists"
     | "updateSelfHosted"
+    // "updateFields" and "runTransaction" are only needed by createAgent()
+    // (POST /agents, APA-2.1) — everything else in this file already went
+    // through the narrower Pick above.
+    | "updateFields"
+    | "runTransaction"
   >;
   agentEnvService: Pick<
     AgentEnvService,
@@ -139,15 +148,14 @@ export interface AdminDeps {
   >;
   agentMemberService: Pick<AgentMemberService, "add" | "listByAgentId">;
   /**
-   * Resolves an agent-type name to its parsed Agent Type manifest. Not
-   * currently consumed by any route in this file — agent creation (which
-   * used to seed AgentTool/AgentPlugin/AgentMember rows from a manifest via
-   * POST /agents) now happens exclusively through the web UI form at
-   * /admin/agents/new (see admin-ui.ts), which has its own independent
-   * agentTypeRegistry dependency. Retained here as an optional field only
-   * for backward-compatible construction by existing callers.
+   * Resolves an agent-type name to its parsed Agent Type manifest. Consumed
+   * by POST /agents (createAgentRoute, APA-2.1) to seed AgentTool/AgentPlugin
+   * rows from the resolved manifest during agent creation — the same
+   * createAgent() call admin-ui.ts's POST /admin/agents form handler makes
+   * with its own independently-constructed agentTypeRegistry instance.
+   * Required (not optional) because the route needs it unconditionally.
    */
-  agentTypeRegistry?: AgentTypeManifestResolver;
+  agentTypeRegistry: AgentTypeManifestResolver;
   agentChatTokenService: Pick<
     AgentChatTokenService,
     "upsertDailyByModel" | "queryStats"
@@ -192,9 +200,9 @@ export interface AdminDeps {
   sentryClient?: ErrorCapturingClient;
 }
 
+export type { AdminApiKey };
 // Re-export for callers that need to build the map from an env string.
 export { parseAdminApiKeys };
-export type { AdminApiKey };
 
 // ─── Response schema helpers ────────────────────────────────────────────────────
 
@@ -255,6 +263,14 @@ const GetAgentResultSchema = z
      * this is informational only.
      */
     warning: z.string().optional(),
+    /**
+     * ATE-1.1: trial expiry tracking. trialExpiresAt is settable via
+     * PATCH /agents/:id (see PatchAgentBodySchema). trialExpiryWarnedAt is
+     * written internally by ATE-2.1's warning check — read-only via this
+     * route, GET/PATCH responses only.
+     */
+    trialExpiresAt: z.string().datetime().nullable().optional(),
+    trialExpiryWarnedAt: z.string().datetime().nullable().optional(),
   })
   .openapi("GetAgentResult");
 
@@ -347,6 +363,27 @@ const listAgentsRoute = createRoute({
   },
 });
 
+const createAgentRoute = createRoute({
+  method: "post",
+  path: "/agents",
+  summary: "Create an agent",
+  description:
+    'Admin-only. Validates name/typeName, creates the Agent row, seeds AgentTool/AgentPlugin rows from the resolved type manifest, attaches repos/allowlists/members, patches Claude credentials, and provisions Kubernetes when `runtime` is "in-cluster" — the same createAgent() implementation (APA-1.1) the web UI form at /admin/agents/new uses. Transactional: on any failure zero rows persist, and this route never returns a partial-success 200. Returns the created agent in the same shape as GET /agents/:id.',
+  request: {
+    body: {
+      content: { "application/json": { schema: CreateAgentBodySchema } },
+    },
+  },
+  responses: {
+    200: {
+      description: "Agent created",
+      content: { "application/json": { schema: GetAgentResultSchema } },
+    },
+    400: { description: "Bad request", ...jsonError },
+    403: { description: "Forbidden", ...jsonError },
+  },
+});
+
 const getAgentRoute = createRoute({
   method: "get",
   path: "/agents/{id}",
@@ -369,7 +406,7 @@ const patchAgentRoute = createRoute({
   path: "/agents/{id}",
   summary: "Update an agent",
   description:
-    "Admin-only. Updates `selfHosted`, `repos`, `reviewAuthorAllowlist`, `patchAuthorAllowlist`, `restrictSlackToMembers`, and/or `slackId`. `typeName` is not updatable via this route. Returns the updated agent, including a `warning` field when `restrictSlackToMembers` is set true on an agent with zero members.",
+    "Admin-only. Updates `selfHosted`, `repos`, `reviewAuthorAllowlist`, `patchAuthorAllowlist`, `restrictSlackToMembers`, `slackId`, and/or `trialExpiresAt`. `typeName` and `trialExpiryWarnedAt` are not updatable via this route. Returns the updated agent, including a `warning` field when `restrictSlackToMembers` is set true on an agent with zero members.",
   request: {
     params: AgentIdParamSchema,
     body: {
@@ -983,6 +1020,7 @@ export function createAdminApp(deps: AdminDeps): OpenAPIHono<AdminAuthEnv> {
     agentTokenService,
     agentPluginService,
     agentMemberService,
+    agentTypeRegistry,
     agentChatTokenService,
     agentWorkQueueService,
     prisma,
@@ -1123,6 +1161,13 @@ export function createAdminApp(deps: AdminDeps): OpenAPIHono<AdminAuthEnv> {
         ? { restrictSlackToMembers: body.restrictSlackToMembers }
         : {}),
       ...(body.slackId !== undefined ? { slackId: body.slackId } : {}),
+      ...(body.trialExpiresAt !== undefined
+        ? {
+            trialExpiresAt: body.trialExpiresAt
+              ? new Date(body.trialExpiresAt)
+              : null,
+          }
+        : {}),
     });
     const warning = await computeRestrictSlackToMembersWarning(
       agentMemberService,
@@ -1170,6 +1215,62 @@ export function createAdminApp(deps: AdminDeps): OpenAPIHono<AdminAuthEnv> {
     }
     const agents = await agentService.list();
     return c.json(agents, 200);
+  });
+
+  // POST /agents — create a new agent (admin only). Delegates to createAgent()
+  // (agents.ts, APA-1.1) — the same implementation admin-ui.ts's POST
+  // /admin/agents form handler calls, so this route is a second caller, not a
+  // second implementation.
+  app.openapi(createAgentRoute, async (c) => {
+    if (c.get("isAdmin") !== true) {
+      throw new ForbiddenError("Admin access required to create agent");
+    }
+    const body = c.req.valid("json");
+
+    const result = await createAgent(
+      {
+        // Bind each method explicitly rather than spreading `agentService`:
+        // in production this is a real AgentService instance whose methods
+        // live on the prototype, and object spread copies only own
+        // enumerable properties — it would silently drop
+        // create/delete/updateFields/runTransaction and throw at the first
+        // call. Mirrors admin-ui.ts's POST /admin/agents wiring exactly.
+        agentService: {
+          create: agentService.create.bind(agentService),
+          delete: agentService.delete.bind(agentService),
+          updateFields: agentService.updateFields.bind(agentService),
+          runTransaction: agentService.runTransaction.bind(agentService),
+        },
+        agentToolService,
+        agentPluginService,
+        agentMemberService,
+        agentEnvService,
+        agentCronJobService,
+        provisioner,
+        agentTypeRegistry,
+      },
+      {
+        name: body.name,
+        typeName: body.typeName,
+        runtime: body.runtime,
+        reposRaw: body.reposRaw,
+        authorAllowlistRaw: body.authorAllowlistRaw,
+        patchAuthorAllowlistRaw: body.patchAuthorAllowlistRaw,
+        memberEmailsRaw: body.memberEmailsRaw,
+        restrictSlackToMembersRaw: body.restrictSlackToMembersRaw,
+        claudeCodeOauthToken: body.claudeCodeOauthToken,
+        anthropicApiKey: body.anthropicApiKey,
+      },
+    );
+
+    if (!result.ok) {
+      // createAgent()'s transactional design guarantees zero rows persist on
+      // any of these failure codes — no partial-success 200, no redundant
+      // cleanup needed here.
+      throw new BadRequestError(`create agent failed: ${result.errorCode}`);
+    }
+
+    return c.json(serializeAgent(result.agent), 200);
   });
 
   // ─── Env vars ──────────────────────────────────────────────────────────────
@@ -1778,6 +1879,8 @@ function serializeAgent(
     createdAt: Date;
     updatedAt: Date;
     missingRequiredEnv?: string[];
+    trialExpiresAt?: Date | null;
+    trialExpiryWarnedAt?: Date | null;
   },
   warning?: string,
 ): z.infer<typeof GetAgentResultSchema> {
@@ -1794,6 +1897,12 @@ function serializeAgent(
     createdAt: agent.createdAt.toISOString(),
     updatedAt: agent.updatedAt.toISOString(),
     missingRequiredEnv: agent.missingRequiredEnv ?? [],
+    trialExpiresAt: agent.trialExpiresAt
+      ? agent.trialExpiresAt.toISOString()
+      : null,
+    trialExpiryWarnedAt: agent.trialExpiryWarnedAt
+      ? agent.trialExpiryWarnedAt.toISOString()
+      : null,
     ...(warning !== undefined ? { warning } : {}),
   };
 }

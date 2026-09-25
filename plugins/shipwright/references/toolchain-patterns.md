@@ -118,7 +118,45 @@ Toolchain detection produces things worth recording somewhere more visible than 
 **What counts as a learned fact:**
 - **Scoped-command variants** actually detected for this repo — the `lintScoped`/`typecheckScoped`/`testScoped` values from the cache entry, when present (see "Caching Across Runs" above).
 - **The enforced per-check verification budget** actually used for this repo — the `{budget}` value (see Step 8's enforced per-check timeout budgets), and whether it was `ci-derived` or the `fallback-10m` constant.
-- **Skip-locally classifications** — a reserved slot for a future mechanism (not built here) that, after repeated `timeout`/`skip` outcomes for the same check+repo, will record a skip-locally classification via this same append mechanism. This task only reserves the slot/format; the list is empty/absent until that mechanism exists.
+- **Skip-locally classifications** (LVB-4.4) — a small table, inside the marker subsection, of checks this repo has learned to stop attempting locally. One row per `checkName`:
+
+  | Check | Reason | Classified At |
+  |-------|--------|----------------|
+  | `{checkName}` | `{reasonCategory}` | `{ISO timestamp}` |
+
+  `Reason` is one of `VerificationCheckReasonCategory`'s ENVIRONMENTAL values (`check_timeout`,
+  `install_timeout`, `resource_limit`, `missing_tool`, `missing_secret`, `missing_dependency`,
+  `not_configured`) — never `learned_skip` itself, since `learned_skip` is the *meta*-category
+  the read side below POSTs when *citing* this table, not a value this table ever stores.
+  `Classified At` is the ISO timestamp of the write that produced or last updated the row.
+
+  **Read side** (dev-task.md Step 8's "Skip-Locally Classification: Read Before Attempting Each
+  Check", and patch.md's three verification-check call sites): before attempting a check, look
+  up its `checkName` in this table. A match means the check is not attempted at all this run —
+  no `setsid timeout ...` wrapper, no budget spent even trying — and a `VerificationCheck` row is
+  POSTed directly instead, with `status: "skipped"`, `reasonCategory: "learned_skip"`, and
+  `learnedFromCategory` set to the table row's `Reason`, so the recorded (environmental, never a
+  correctness judgment) reason is surfaced in that run's structured outcome.
+
+  **Write side — the learning trigger** (dev-task.md Step 8's "Skip-Locally Learning Trigger"
+  subsection only; `patch.md` never writes this table — see below): after a REAL check attempt
+  (one that actually ran, not a skip-on-read short-circuit) POSTs a `skipped`/`timed_out`
+  outcome, dev-task queries `GET /verification-checks?repo=&checkName=&limit=` — the repo+check
+  history mode, ordered by `at` DESCENDING (most recent first) specifically so a caller can walk
+  backward from the latest outcome — and counts the CONSECUTIVE run of `skipped`/`timed_out` rows
+  starting from the most recent. A `ran_passed` or `ran_failed` row breaks/resets that count: a
+  real pass or a real test/lint failure is a completely separate, expected outcome and must never
+  contribute to this counter or by itself trigger a write — a check that reliably fails because
+  the code under review is wrong keeps running and keeps failing loudly, not silently getting
+  marked as something the agent stops attempting. Once the streak reaches 2, dev-task writes (or
+  updates) this table's row for that `checkName`, carrying the 2nd (triggering, most recent)
+  outcome's `reasonCategory` forward as the new `Reason`.
+
+  **`patch.md` is read-only against this table.** It checks the table before attempting each of
+  its own verification-check call sites, same as dev-task, but has no write hook — LVB-4.2 only
+  wired the write mechanism into dev-task.md, and this task preserves that asymmetry rather than
+  building a second, parallel write path. A `patch` run still benefits from classifications
+  dev-task has already learned; it just never adds new ones itself.
 
 **The marker subsection.** All of the above is written into a fixed, idempotent subsection — `Shipwright Learned Facts` — that this mechanism owns exclusively. Every write is a **full replace** of everything between that heading and the next heading of the same-or-shallower level, never an append that duplicates prior content. Reuse the exact heading-boundary technique already documented under "Caching Across Runs" → **Fingerprint** (the awk recipe that derives a heading's level from its own `#` markers and only exits at a subsequent heading whose level is `<=` that one) rather than reimplementing a slightly different boundary rule that could drift from it. Open the subsection with a one-line auto-maintained note so a human editing the doc by hand knows not to maintain it:
 
@@ -145,7 +183,7 @@ Every boundary check downstream — the full-replace range here, and the Fingerp
 **When this runs.** Not at detection time — at **dev-task.md Step 8.6**, after Step 8's pre-ship checks and Step 8.5's docs refresh, and before Step 9's push. Two reasons this is the only viable point, and both are structural rather than stylistic:
 
 1. **The worktree exists by then.** Step 0b/Step 1 detection runs before Step 4 creates `{worktree-path}`, so there is no repo-safe place to write at detection time (see "Which checkout" above).
-2. **`{budget}` exists by then.** The enforced per-check verification budget is derived inside Step 8 ("Budget derivation"), several steps after detection. Writing at Step 0b would record scoped commands with an empty budget field and no later hook to backfill it. At Step 8.6 all three fact categories — scoped commands (from the Step 0b cache entry), the budget and its `ci-derived`/`fallback-10m` source, and the reserved skip-locally slot — are simultaneously in hand, so one write covers all of them.
+2. **`{budget}` exists by then.** The enforced per-check verification budget is derived inside Step 8 ("Budget derivation"), several steps after detection. Writing at Step 0b would record scoped commands with an empty budget field and no later hook to backfill it. At Step 8.6 all three fact categories — scoped commands (from the Step 0b cache entry), the budget and its `ci-derived`/`fallback-10m` source, and this run's skip-locally classifications table (populated in-memory by Step 8's read and learning-trigger sections, empty when nothing was learned this run) — are simultaneously in hand, so one write covers all of them.
 
 A single write per run, at one hook, is deliberate: there is no second write hook to keep in sync, and the full-replace marker subsection makes re-running idempotent.
 

@@ -3,7 +3,11 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 
 const PATCH_MD_PATH = join(import.meta.dir, "patch.md");
-const ESCALATION_PATTERN_PATH = join(import.meta.dir, "references", "escalation-pattern.md");
+const ESCALATION_PATTERN_PATH = join(
+  import.meta.dir,
+  "references",
+  "escalation-pattern.md",
+);
 
 let content: string;
 let escalationPatternContent: string;
@@ -22,7 +26,9 @@ describe("patch.md — explicit-target-only argument contract (WLS-3.3)", () => 
   });
 
   it("states the org/repo#number argument is required in prose", () => {
-    expect(content).toMatch(/org\/repo#number.{0,60}required|required.{0,60}org\/repo#number/is);
+    expect(content).toMatch(
+      /org\/repo#number.{0,60}required|required.{0,60}org\/repo#number/is,
+    );
   });
 
   it("no-argument invocation responds [silent] and stops with no GitHub scan", () => {
@@ -106,7 +112,9 @@ describe("patch.md — patch-author allowlist (PAS-1.1)", () => {
     expect(step2Section).toContain(
       `[[ "$PATCH_AUTHOR_ALLOWLIST" == *"$PR_AUTHOR"* ]]`,
     );
-    expect(step2Section).toMatch(/never a substring|not a substring|Do \*\*not\*\*/);
+    expect(step2Section).toMatch(
+      /never a substring|not a substring|Do \*\*not\*\*/,
+    );
   });
 
   it("Step 2 captures PR_AUTHOR from the gh pr view result for reuse at Step 5a.7", () => {
@@ -117,10 +125,15 @@ describe("patch.md — patch-author allowlist (PAS-1.1)", () => {
   });
 
   it("Step 5a.7's author-reply detection threads PR_AUTHOR instead of a hardcoded CURRENT_USER-only comparison", () => {
-    const step5a7Idx = content.indexOf("### Step 5a.7: Second-Round Escalation Check (RPF-1.3)");
+    const step5a7Idx = content.indexOf(
+      "### Step 5a.7: Second-Round Escalation Check (RPF-1.3)",
+    );
     expect(step5a7Idx).toBeGreaterThan(-1);
     const nextSectionIdx = content.indexOf("### Step 5a.8", step5a7Idx);
-    const step5a7End = nextSectionIdx > -1 ? nextSectionIdx : content.indexOf("### Step 5b", step5a7Idx);
+    const step5a7End =
+      nextSectionIdx > -1
+        ? nextSectionIdx
+        : content.indexOf("### Step 5b", step5a7Idx);
     expect(step5a7End).toBeGreaterThan(-1);
     const step5a7Section = content.slice(step5a7Idx, step5a7End);
     expect(step5a7Section).toContain("author.login == PR_AUTHOR");
@@ -130,13 +143,18 @@ describe("patch.md — patch-author allowlist (PAS-1.1)", () => {
 
 describe("patch.md — pre-work PR claim lock (CLM-2.1)", () => {
   it("Step 4 (merge conflicts): claims the PR (phase: patch) before dispatching the conflict-resolution subagent", () => {
-    const step4bIdx = content.indexOf("### Step 4b: Dispatch Conflict Resolution Subagent");
+    const step4bIdx = content.indexOf(
+      "### Step 4b: Dispatch Conflict Resolution Subagent",
+    );
     expect(step4bIdx).toBeGreaterThan(-1);
     const preStep4b = content.slice(0, step4bIdx);
     const lastClaimBeforeStep4b = preStep4b.lastIndexOf("/prs/claim");
     expect(lastClaimBeforeStep4b).toBeGreaterThan(-1);
     // The nearest preceding claim call must carry phase: "patch"
-    const claimSnippet = preStep4b.slice(lastClaimBeforeStep4b, lastClaimBeforeStep4b + 400);
+    const claimSnippet = preStep4b.slice(
+      lastClaimBeforeStep4b,
+      lastClaimBeforeStep4b + 400,
+    );
     expect(claimSnippet).toContain("phase");
     expect(claimSnippet).toContain("patch");
   });
@@ -150,7 +168,10 @@ describe("patch.md — pre-work PR claim lock (CLM-2.1)", () => {
     const lastClaimBeforeStep5b = preStep5b.lastIndexOf("/prs/claim");
     expect(lastClaimBeforeStep5b).toBeGreaterThan(-1);
     // The nearest preceding claim call must carry phase: "patch"
-    const claimSnippet = preStep5b.slice(lastClaimBeforeStep5b, lastClaimBeforeStep5b + 400);
+    const claimSnippet = preStep5b.slice(
+      lastClaimBeforeStep5b,
+      lastClaimBeforeStep5b + 400,
+    );
     expect(claimSnippet).toContain("phase");
     expect(claimSnippet).toContain("patch");
   });
@@ -164,7 +185,10 @@ describe("patch.md — pre-work PR claim lock (CLM-2.1)", () => {
     const lastClaimBeforeStep6c = preStep6c.lastIndexOf("/prs/claim");
     expect(lastClaimBeforeStep6c).toBeGreaterThan(-1);
     // The nearest preceding claim call must carry phase: "patch"
-    const claimSnippet = preStep6c.slice(lastClaimBeforeStep6c, lastClaimBeforeStep6c + 400);
+    const claimSnippet = preStep6c.slice(
+      lastClaimBeforeStep6c,
+      lastClaimBeforeStep6c + 400,
+    );
     expect(claimSnippet).toContain("phase");
     expect(claimSnippet).toContain("patch");
   });
@@ -178,7 +202,9 @@ describe("patch.md — pre-work PR claim lock (CLM-2.1)", () => {
       claimIndices.push(idx);
       searchFrom = idx + 1;
     }
-    const step4bIdx = content.indexOf("### Step 4b: Dispatch Conflict Resolution Subagent");
+    const step4bIdx = content.indexOf(
+      "### Step 4b: Dispatch Conflict Resolution Subagent",
+    );
     const step5bIdx = content.indexOf("### Step 5b: Dispatch Fix Subagent");
     const step6cIdx = content.indexOf("### Step 6c: Dispatch Fix Subagent");
 
@@ -189,11 +215,14 @@ describe("patch.md — pre-work PR claim lock (CLM-2.1)", () => {
 
   it("409 handling causes the PR to be skipped and the next candidate in the list to be tried (List C)", () => {
     const step4aIdx = content.indexOf("### Step 4a: Set Up Worktree");
-    const step4bIdx = content.indexOf("### Step 4b: Dispatch Conflict Resolution Subagent");
+    const step4bIdx = content.indexOf(
+      "### Step 4b: Dispatch Conflict Resolution Subagent",
+    );
     const preDispatchSection = content.slice(step4aIdx, step4bIdx);
     expect(preDispatchSection).toContain("409");
     const hasSkipLanguage =
-      preDispatchSection.includes("skip") || preDispatchSection.includes("skipping");
+      preDispatchSection.includes("skip") ||
+      preDispatchSection.includes("skipping");
     expect(hasSkipLanguage).toBe(true);
     expect(preDispatchSection.toLowerCase()).toContain("next");
     expect(preDispatchSection).toContain("List C");
@@ -205,7 +234,8 @@ describe("patch.md — pre-work PR claim lock (CLM-2.1)", () => {
     const preDispatchSection = content.slice(step5aIdx, step5bIdx);
     expect(preDispatchSection).toContain("409");
     const hasSkipLanguage =
-      preDispatchSection.includes("skip") || preDispatchSection.includes("skipping");
+      preDispatchSection.includes("skip") ||
+      preDispatchSection.includes("skipping");
     expect(hasSkipLanguage).toBe(true);
     expect(preDispatchSection.toLowerCase()).toContain("next");
     expect(preDispatchSection).toContain("List A");
@@ -217,7 +247,8 @@ describe("patch.md — pre-work PR claim lock (CLM-2.1)", () => {
     const preDispatchSection = content.slice(step6aIdx, step6cIdx);
     expect(preDispatchSection).toContain("409");
     const hasSkipLanguage =
-      preDispatchSection.includes("skip") || preDispatchSection.includes("skipping");
+      preDispatchSection.includes("skip") ||
+      preDispatchSection.includes("skipping");
     expect(hasSkipLanguage).toBe(true);
     expect(preDispatchSection.toLowerCase()).toContain("next");
     expect(preDispatchSection).toContain("List D");
@@ -334,8 +365,12 @@ describe("patch.md — pre-claim marker documentation (CBD-1.5)", () => {
 describe("patch.md — pre-claim fast path skips re-claiming at all three sites (CBD-1.5)", () => {
   // List C — merge conflicts — Step 4a.6
   it("Step 4a.6 has a Pre-Claim Fast Path that validates against a freshly-fetched live headRefOid", () => {
-    const siteIdx = content.indexOf("### Step 4a.6: Claim PR Record (pre-work lock)");
-    const nextIdx = content.indexOf("### Step 4b: Dispatch Conflict Resolution Subagent");
+    const siteIdx = content.indexOf(
+      "### Step 4a.6: Claim PR Record (pre-work lock)",
+    );
+    const nextIdx = content.indexOf(
+      "### Step 4b: Dispatch Conflict Resolution Subagent",
+    );
     expect(siteIdx).toBeGreaterThan(-1);
     expect(nextIdx).toBeGreaterThan(-1);
     const section = content.slice(siteIdx, nextIdx);
@@ -346,8 +381,12 @@ describe("patch.md — pre-claim fast path skips re-claiming at all three sites 
   });
 
   it("Step 4a.6 trusts a matching marker: sets PR_RECORD_ID = PRECLAIM_RECORD_ID and skips its own /prs/claim", () => {
-    const siteIdx = content.indexOf("### Step 4a.6: Claim PR Record (pre-work lock)");
-    const nextIdx = content.indexOf("### Step 4b: Dispatch Conflict Resolution Subagent");
+    const siteIdx = content.indexOf(
+      "### Step 4a.6: Claim PR Record (pre-work lock)",
+    );
+    const nextIdx = content.indexOf(
+      "### Step 4b: Dispatch Conflict Resolution Subagent",
+    );
     const section = content.slice(siteIdx, nextIdx);
 
     expect(section).toContain("headRefOid == PRECLAIM_COMMIT_SHA");
@@ -356,8 +395,12 @@ describe("patch.md — pre-claim fast path skips re-claiming at all three sites 
   });
 
   it("Step 4a.6 falls back to self-claiming on a stale or absent marker", () => {
-    const siteIdx = content.indexOf("### Step 4a.6: Claim PR Record (pre-work lock)");
-    const nextIdx = content.indexOf("### Step 4b: Dispatch Conflict Resolution Subagent");
+    const siteIdx = content.indexOf(
+      "### Step 4a.6: Claim PR Record (pre-work lock)",
+    );
+    const nextIdx = content.indexOf(
+      "### Step 4b: Dispatch Conflict Resolution Subagent",
+    );
     const section = content.slice(siteIdx, nextIdx);
 
     expect(section).toContain("headRefOid != PRECLAIM_COMMIT_SHA");
@@ -370,7 +413,9 @@ describe("patch.md — pre-claim fast path skips re-claiming at all three sites 
 
   // List A — review findings — Step 5a.6
   it("Step 5a.6 has a Pre-Claim Fast Path that validates against a freshly-fetched live headRefOid", () => {
-    const siteIdx = content.indexOf("### Step 5a.6: Claim PR Record (pre-work lock)");
+    const siteIdx = content.indexOf(
+      "### Step 5a.6: Claim PR Record (pre-work lock)",
+    );
     const nextIdx = content.indexOf("### Step 5b: Dispatch Fix Subagent");
     expect(siteIdx).toBeGreaterThan(-1);
     expect(nextIdx).toBeGreaterThan(-1);
@@ -382,7 +427,9 @@ describe("patch.md — pre-claim fast path skips re-claiming at all three sites 
   });
 
   it("Step 5a.6 trusts a matching marker: sets PR_RECORD_ID = PRECLAIM_RECORD_ID and skips its own /prs/claim", () => {
-    const siteIdx = content.indexOf("### Step 5a.6: Claim PR Record (pre-work lock)");
+    const siteIdx = content.indexOf(
+      "### Step 5a.6: Claim PR Record (pre-work lock)",
+    );
     const nextIdx = content.indexOf("### Step 5b: Dispatch Fix Subagent");
     const section = content.slice(siteIdx, nextIdx);
 
@@ -392,7 +439,9 @@ describe("patch.md — pre-claim fast path skips re-claiming at all three sites 
   });
 
   it("Step 5a.6 falls back to self-claiming on a stale or absent marker", () => {
-    const siteIdx = content.indexOf("### Step 5a.6: Claim PR Record (pre-work lock)");
+    const siteIdx = content.indexOf(
+      "### Step 5a.6: Claim PR Record (pre-work lock)",
+    );
     const nextIdx = content.indexOf("### Step 5b: Dispatch Fix Subagent");
     const section = content.slice(siteIdx, nextIdx);
 
@@ -405,7 +454,9 @@ describe("patch.md — pre-claim fast path skips re-claiming at all three sites 
 
   // List D — failing CI — Step 6b.5
   it("Step 6b.5 has a Pre-Claim Fast Path that validates against a freshly-fetched live headRefOid", () => {
-    const siteIdx = content.indexOf("### Step 6b.5: Claim PR Record (pre-work lock)");
+    const siteIdx = content.indexOf(
+      "### Step 6b.5: Claim PR Record (pre-work lock)",
+    );
     const nextIdx = content.indexOf("### Step 6c: Dispatch Fix Subagent");
     expect(siteIdx).toBeGreaterThan(-1);
     expect(nextIdx).toBeGreaterThan(-1);
@@ -417,7 +468,9 @@ describe("patch.md — pre-claim fast path skips re-claiming at all three sites 
   });
 
   it("Step 6b.5 trusts a matching marker: sets PR_RECORD_ID = PRECLAIM_RECORD_ID and skips its own /prs/claim", () => {
-    const siteIdx = content.indexOf("### Step 6b.5: Claim PR Record (pre-work lock)");
+    const siteIdx = content.indexOf(
+      "### Step 6b.5: Claim PR Record (pre-work lock)",
+    );
     const nextIdx = content.indexOf("### Step 6c: Dispatch Fix Subagent");
     const section = content.slice(siteIdx, nextIdx);
 
@@ -427,7 +480,9 @@ describe("patch.md — pre-claim fast path skips re-claiming at all three sites 
   });
 
   it("Step 6b.5 falls back to self-claiming on a stale or absent marker", () => {
-    const siteIdx = content.indexOf("### Step 6b.5: Claim PR Record (pre-work lock)");
+    const siteIdx = content.indexOf(
+      "### Step 6b.5: Claim PR Record (pre-work lock)",
+    );
     const nextIdx = content.indexOf("### Step 6c: Dispatch Fix Subagent");
     const section = content.slice(siteIdx, nextIdx);
 
@@ -439,7 +494,10 @@ describe("patch.md — pre-claim fast path skips re-claiming at all three sites 
   });
 
   it("each fast path re-fetches the live head independently (three gh pr view --json headRefOid reads)", () => {
-    const matches = content.match(/gh pr view \{pr\} --repo \{org\}\/\{repo\} --json headRefOid/g) ?? [];
+    const matches =
+      content.match(
+        /gh pr view \{pr\} --repo \{org\}\/\{repo\} --json headRefOid/g,
+      ) ?? [];
     expect(matches.length).toBeGreaterThanOrEqual(3);
   });
 });
@@ -599,7 +657,9 @@ describe("patch.md — POST a rejected ledger entry on rebuttal (PFL-2.2)", () =
     expect(step5dIdx).toBeGreaterThan(-1);
     const section = content.slice(step5c5Idx, step5dIdx);
 
-    expect(section).toContain('"$SHIPWRIGHT_TASK_STORE_URL/prs/$PR_RECORD_ID/findings"');
+    expect(section).toContain(
+      '"$SHIPWRIGHT_TASK_STORE_URL/prs/$PR_RECORD_ID/findings"',
+    );
     expect(section).toContain('\\"source\\": \\"patch\\"');
     expect(section).toContain('\\"disposition\\": \\"rejected\\"');
   });
@@ -645,7 +705,9 @@ describe("patch.md — POST a rejected ledger entry on rebuttal (PFL-2.2)", () =
 
 describe("patch.md — escalate to HITL instead of looping on a second-round disagreement (RPF-1.3)", () => {
   function getStep5a7Section() {
-    const step5a7Idx = content.indexOf("### Step 5a.7: Second-Round Escalation Check (RPF-1.3)");
+    const step5a7Idx = content.indexOf(
+      "### Step 5a.7: Second-Round Escalation Check (RPF-1.3)",
+    );
     const step5bIdx = content.indexOf("### Step 5b: Dispatch Fix Subagent");
     expect(step5a7Idx).toBeGreaterThan(-1);
     expect(step5bIdx).toBeGreaterThan(-1);
@@ -653,8 +715,12 @@ describe("patch.md — escalate to HITL instead of looping on a second-round dis
   }
 
   it("Step 5a.7 exists between Step 5a.6 (claim) and Step 5b (dispatch)", () => {
-    const step5a6Idx = content.indexOf("### Step 5a.6: Claim PR Record (pre-work lock)");
-    const step5a7Idx = content.indexOf("### Step 5a.7: Second-Round Escalation Check (RPF-1.3)");
+    const step5a6Idx = content.indexOf(
+      "### Step 5a.6: Claim PR Record (pre-work lock)",
+    );
+    const step5a7Idx = content.indexOf(
+      "### Step 5a.7: Second-Round Escalation Check (RPF-1.3)",
+    );
     const step5bIdx = content.indexOf("### Step 5b: Dispatch Fix Subagent");
     expect(step5a6Idx).toBeGreaterThan(-1);
     expect(step5a7Idx).toBeGreaterThan(step5a6Idx);
@@ -662,7 +728,9 @@ describe("patch.md — escalate to HITL instead of looping on a second-round dis
   });
 
   it("the claim step (5a.6) hands off to 5a.6b, not straight to 5a.7 or 5b", () => {
-    const step5a6Idx = content.indexOf("### Step 5a.6: Claim PR Record (pre-work lock)");
+    const step5a6Idx = content.indexOf(
+      "### Step 5a.6: Claim PR Record (pre-work lock)",
+    );
     const step5a6bIdx = content.indexOf(
       "### Step 5a.6b: `.claude/**` Path Escalation Check (CDH-1.2)",
     );
@@ -699,22 +767,30 @@ describe("patch.md — escalate to HITL instead of looping on a second-round dis
     expect(section).toMatch(/Step 2\.1|reuse/i);
     expect(section).toContain("references/escalation-pattern.md");
     expect(escalationPatternContent).toContain("-X PATCH");
-    expect(escalationPatternContent).toContain('"$SHIPWRIGHT_TASK_STORE_URL/tasks/$PR_TASK_ID"');
+    expect(escalationPatternContent).toContain(
+      '"$SHIPWRIGHT_TASK_STORE_URL/tasks/$PR_TASK_ID"',
+    );
     expect(escalationPatternContent).toContain('"status": "blocked"');
   });
 
   it("escalation case's {blockedReason} is stated inline, and the shared pattern PATCHes the PR record with blocked: true when no task is linked (PH-1.2)", () => {
     const section = getStep5a7Section();
-    expect(section).toContain("second-round disagreement between reviewer and automated fix");
+    expect(section).toContain(
+      "second-round disagreement between reviewer and automated fix",
+    );
     expect(section).toContain("references/escalation-pattern.md");
     const patchPrSnippet =
       '"$SHIPWRIGHT_TASK_STORE_URL/prs/$PR_RECORD_ID" \\\n  -d \'{"blocked": true, "blockedReason"';
     expect(escalationPatternContent).toContain("PR_TASK_ID` is empty");
-    expect(escalationPatternContent).not.toContain("log a warning and skip the");
+    expect(escalationPatternContent).not.toContain(
+      "log a warning and skip the",
+    );
     expect(escalationPatternContent).toContain(
       `curl -sf -X PATCH -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \\\n  -H "Content-Type: application/json" \\\n  ${patchPrSnippet}`,
     );
-    const emptyBranchIdx = escalationPatternContent.indexOf("PR_TASK_ID` is empty");
+    const emptyBranchIdx = escalationPatternContent.indexOf(
+      "PR_TASK_ID` is empty",
+    );
     const patchPrIdx = escalationPatternContent.indexOf(patchPrSnippet);
     expect(patchPrIdx).toBeGreaterThan(emptyBranchIdx);
   });
@@ -727,7 +803,9 @@ describe("patch.md — escalate to HITL instead of looping on a second-round dis
     expect(escalationPatternContent).toContain(
       "gh pr comment {pr} --repo {org}/{repo} --body-file /tmp/shipwright-patch-{temp_file_slug}-{pr}.txt",
     );
-    expect(escalationPatternContent).toContain("rm /tmp/shipwright-patch-{temp_file_slug}-{pr}.txt");
+    expect(escalationPatternContent).toContain(
+      "rm /tmp/shipwright-patch-{temp_file_slug}-{pr}.txt",
+    );
   });
 
   it("escalation case releases the pre-work claim (via the shared pattern) and skips to the next PR without dispatching a fix subagent", () => {
@@ -766,7 +844,9 @@ describe("patch.md — escalate to HITL instead of looping on a second-round dis
     expect(otherwiseIdx).toBeGreaterThan(-1);
     const otherwiseSection = section.slice(otherwiseIdx);
     expect(otherwiseSection).toContain("proceed normally to Step 5b");
-    expect(otherwiseSection).toContain("RPF-1.1/1.2 behavior applies as before");
+    expect(otherwiseSection).toContain(
+      "RPF-1.1/1.2 behavior applies as before",
+    );
   });
 
   it("frames the escalation as a human-judgment deadlock, explicitly skipping the reviewState reset", () => {
@@ -803,7 +883,9 @@ describe("patch.md — escalate to HITL instead of looping on a second-round dis
 
   it("gates escalation on at least one candidate reply judged SAME_FINDING, not on timestamp precedence alone", () => {
     const section = getStep5a7Section();
-    expect(section).toMatch(/at least one.{0,40}candidate.{0,60}SAME_FINDING/is);
+    expect(section).toMatch(
+      /at least one.{0,40}candidate.{0,60}SAME_FINDING/is,
+    );
     expect(section).not.toContain(
       "If any qualifying review has an author-reply comment dated before its `submittedAt`",
     );
@@ -825,7 +907,9 @@ describe("patch.md — escalate to HITL instead of looping on a second-round dis
     expect(section.toLowerCase()).toContain("inline-thread anchor");
     expect(section).toContain("path");
     expect(section).toContain("line");
-    expect(section.toLowerCase()).toMatch(/freeform (pr-comment )?text matching/);
+    expect(section.toLowerCase()).toMatch(
+      /freeform (pr-comment )?text matching/,
+    );
   });
 
   it("frames the timestamp check as a shared pre-filter with check-patch.ts, and explains why the extra correlation judgment is needed here but not there", () => {
@@ -846,18 +930,24 @@ describe("patch.md — escalate .claude/** path findings to HITL on the first ro
     const step5a6bIdx = content.indexOf(
       "### Step 5a.6b: `.claude/**` Path Escalation Check (CDH-1.2)",
     );
-    const step5a7Idx = content.indexOf("### Step 5a.7: Second-Round Escalation Check (RPF-1.3)");
+    const step5a7Idx = content.indexOf(
+      "### Step 5a.7: Second-Round Escalation Check (RPF-1.3)",
+    );
     expect(step5a6bIdx).toBeGreaterThan(-1);
     expect(step5a7Idx).toBeGreaterThan(step5a6bIdx);
     return content.slice(step5a6bIdx, step5a7Idx);
   }
 
   it("Step 5a.6b exists between Step 5a.6 (claim) and Step 5a.7 (second-round check)", () => {
-    const step5a6Idx = content.indexOf("### Step 5a.6: Claim PR Record (pre-work lock)");
+    const step5a6Idx = content.indexOf(
+      "### Step 5a.6: Claim PR Record (pre-work lock)",
+    );
     const step5a6bIdx = content.indexOf(
       "### Step 5a.6b: `.claude/**` Path Escalation Check (CDH-1.2)",
     );
-    const step5a7Idx = content.indexOf("### Step 5a.7: Second-Round Escalation Check (RPF-1.3)");
+    const step5a7Idx = content.indexOf(
+      "### Step 5a.7: Second-Round Escalation Check (RPF-1.3)",
+    );
     expect(step5a6Idx).toBeGreaterThan(-1);
     expect(step5a6bIdx).toBeGreaterThan(step5a6Idx);
     expect(step5a7Idx).toBeGreaterThan(step5a6bIdx);
@@ -886,11 +976,21 @@ describe("patch.md — escalate .claude/** path findings to HITL on the first ro
     // ...and scoped to the same sentence as a remediation verb.
     expect(flat).toContain("**same sentence**");
     expect(flat).toContain("remediation verb");
-    for (const verb of ["edit", "update", "change", "modify", "rewrite", "delete", "fix"]) {
+    for (const verb of [
+      "edit",
+      "update",
+      "change",
+      "modify",
+      "rewrite",
+      "delete",
+      "fix",
+    ]) {
       expect(flat).toContain(`\`${verb}\``);
     }
     // A bare substring match is explicitly called out as insufficient.
-    expect(flat).toMatch(/bare `\.claude\/` substring anywhere in the body is \*\*not\*\* enough/);
+    expect(flat).toMatch(
+      /bare `\.claude\/` substring anywhere in the body is \*\*not\*\* enough/,
+    );
     // ...with the false-positive risk (incidental context citations) spelled out.
     expect(flat).toMatch(/cite `\.claude\/`-rooted paths as \*context\*/);
     // Ambiguity resolves toward not matching (false-negative is cheaper than false-positive).
@@ -933,7 +1033,9 @@ describe("patch.md — escalate .claude/** path findings to HITL on the first ro
     const section = getStep5a6bSection();
     expect(section).toContain("resolveReviewThread");
     expect(section).toContain("Extra step, unique to this site");
-    expect(section.toLowerCase()).toMatch(/re-qualify for list a|re-flag.{0,40}list a/);
+    expect(section.toLowerCase()).toMatch(
+      /re-qualify for list a|re-flag.{0,40}list a/,
+    );
   });
 
   it("the no-match path leaves this check inapplicable and proceeds to Step 5a.7 unaffected", () => {
@@ -945,7 +1047,9 @@ describe("patch.md — escalate .claude/** path findings to HITL on the first ro
 
 describe("patch.md — skip CI-fix dispatch when an unresolved HITL escalation already exists (CFE-1.1)", () => {
   function getStep6b6Section() {
-    const step6b6Idx = content.indexOf("### Step 6b.6: Escalation Check (CFE-1.1)");
+    const step6b6Idx = content.indexOf(
+      "### Step 6b.6: Escalation Check (CFE-1.1)",
+    );
     const step6cIdx = content.indexOf("### Step 6c: Dispatch Fix Subagent");
     expect(step6b6Idx).toBeGreaterThan(-1);
     expect(step6cIdx).toBeGreaterThan(-1);
@@ -953,8 +1057,12 @@ describe("patch.md — skip CI-fix dispatch when an unresolved HITL escalation a
   }
 
   it("Step 6b.6 exists between Step 6b.5 (claim) and Step 6c (dispatch)", () => {
-    const step6b5Idx = content.indexOf("### Step 6b.5: Claim PR Record (pre-work lock)");
-    const step6b6Idx = content.indexOf("### Step 6b.6: Escalation Check (CFE-1.1)");
+    const step6b5Idx = content.indexOf(
+      "### Step 6b.5: Claim PR Record (pre-work lock)",
+    );
+    const step6b6Idx = content.indexOf(
+      "### Step 6b.6: Escalation Check (CFE-1.1)",
+    );
     const step6cIdx = content.indexOf("### Step 6c: Dispatch Fix Subagent");
     expect(step6b5Idx).toBeGreaterThan(-1);
     expect(step6b6Idx).toBeGreaterThan(step6b5Idx);
@@ -962,8 +1070,12 @@ describe("patch.md — skip CI-fix dispatch when an unresolved HITL escalation a
   });
 
   it("the claim step (6b.5) hands off to 6b.6 in both branches, not straight to 6c", () => {
-    const step6b5Idx = content.indexOf("### Step 6b.5: Claim PR Record (pre-work lock)");
-    const step6b6Idx = content.indexOf("### Step 6b.6: Escalation Check (CFE-1.1)");
+    const step6b5Idx = content.indexOf(
+      "### Step 6b.5: Claim PR Record (pre-work lock)",
+    );
+    const step6b6Idx = content.indexOf(
+      "### Step 6b.6: Escalation Check (CFE-1.1)",
+    );
     const section = content.slice(step6b5Idx, step6b6Idx);
     expect(section).not.toContain("Proceed directly to Step 6c");
     expect(section).not.toContain("Proceed to Step 6c");
@@ -985,7 +1097,9 @@ describe("patch.md — skip CI-fix dispatch when an unresolved HITL escalation a
 
   it("queries GET /tasks?repo=&pr= directly instead of reading PR_RECORD.taskId", () => {
     const section = getStep6b6Section();
-    expect(section).toContain("$SHIPWRIGHT_TASK_STORE_URL/tasks?repo={org}/{repo}&pr={pr}");
+    expect(section).toContain(
+      "$SHIPWRIGHT_TASK_STORE_URL/tasks?repo={org}/{repo}&pr={pr}",
+    );
     // No jq extraction of .taskId off the PR record anymore.
     expect(section).not.toMatch(/jq -r '\.taskId/);
     expect(section).not.toContain('echo "$PR_RECORD" | jq -r \'.taskId');
@@ -1084,9 +1198,7 @@ describe("patch.md — bundle-incomplete self-check before CI-fix dispatch (PH-1
   it("contains [silent] and the fully-interpolated [skip-reason:patch:deferred:bundle-incomplete:{branch}] marker", () => {
     const section = getStep6b7Section();
     expect(section).toContain("[silent]");
-    expect(section).toContain(
-      "[skip-reason:patch:deferred:bundle-incomplete:",
-    );
+    expect(section).toContain("[skip-reason:patch:deferred:bundle-incomplete:");
     expect(section).toContain(
       "[skip-reason:patch:deferred:bundle-incomplete:{branch}]",
     );
@@ -1141,8 +1253,12 @@ describe("patch.md — shared patch model tier resolution (MTR-2.1)", () => {
 
   it("Step 2.1 resolves matched tasks via GET /tasks?repo=&pr= directly, not PullRequest.taskId", () => {
     const section = getStep2_1Section();
-    expect(section).toContain("$SHIPWRIGHT_TASK_STORE_URL/tasks?repo={org}/{repo}&pr={pr}");
-    expect(section).not.toContain("$SHIPWRIGHT_TASK_STORE_URL/prs?repo={org}/{repo}&prNumber={pr}");
+    expect(section).toContain(
+      "$SHIPWRIGHT_TASK_STORE_URL/tasks?repo={org}/{repo}&pr={pr}",
+    );
+    expect(section).not.toContain(
+      "$SHIPWRIGHT_TASK_STORE_URL/prs?repo={org}/{repo}&prNumber={pr}",
+    );
     expect(section).not.toContain(".prs[0].taskId");
   });
 
@@ -1160,7 +1276,7 @@ describe("patch.md — shared patch model tier resolution (MTR-2.1)", () => {
     expect(section).toMatch(/\.tasks\[\]/);
     expect(section).toMatch(/\.model/);
     expect(section).toContain("jq -r");
-    expect(section).toContain("echo \"$MATCHED_TASKS\"");
+    expect(section).toContain('echo "$MATCHED_TASKS"');
     // Must actually assign both output variables from that jq, not just declare them.
     expect(section).toMatch(/PATCH_MODEL=\$\(/);
     expect(section).toMatch(/PR_TASK_ID=\$\(/);
@@ -1171,7 +1287,9 @@ describe("patch.md — shared patch model tier resolution (MTR-2.1)", () => {
     expect(section).toContain("PR_TASK_ID");
     // Must explain the single-scalar choice explicitly, since the model-tier calc now
     // considers multiple matches but downstream consumers still PATCH one task.
-    expect(section.toLowerCase()).toMatch(/downstream|escalation-patch consumers/i);
+    expect(section.toLowerCase()).toMatch(
+      /downstream|escalation-patch consumers/i,
+    );
   });
 
   it("Step 2.1's zero-match fallback is unchanged: PATCH_MODEL=sonnet, warning, not a hard stop", () => {
@@ -1192,7 +1310,9 @@ describe("patch.md — shared patch model tier resolution (MTR-2.1)", () => {
     // Ladder direction: haiku -> sonnet, sonnet -> opus, opus stays opus.
     expect(section).toMatch(/haiku[^\n]{0,40}(->|→)[^\n]{0,10}sonnet/i);
     expect(section).toMatch(/sonnet[^\n]{0,40}(->|→)[^\n]{0,10}opus/i);
-    expect(section).toMatch(/opus[^\n]{0,60}(->|→)[^\n]{0,10}opus|opus.{0,40}stays opus/i);
+    expect(section).toMatch(
+      /opus[^\n]{0,60}(->|→)[^\n]{0,10}opus|opus.{0,40}stays opus/i,
+    );
     // No-task / failed-fetch fallback: plain 'sonnet', no escalation, not a hard stop.
     expect(section).toMatch(/PATCH_MODEL\s*=\s*"?sonnet"?/);
     expect(section.toLowerCase()).toContain("no escalation");
@@ -1209,7 +1329,9 @@ describe("patch.md — shared patch model tier resolution (MTR-2.1)", () => {
   });
 
   it("Step 4b dispatch (conflict resolution) passes model: PATCH_MODEL to the Agent() call", () => {
-    const step4bIdx = content.indexOf("### Step 4b: Dispatch Conflict Resolution Subagent");
+    const step4bIdx = content.indexOf(
+      "### Step 4b: Dispatch Conflict Resolution Subagent",
+    );
     const step4cIdx = content.indexOf("### Step 4c: Handle Subagent Status");
     expect(step4bIdx).toBeGreaterThan(-1);
     expect(step4cIdx).toBeGreaterThan(-1);
@@ -1367,18 +1489,24 @@ describe("patch.md — escalate first-time BLOCKED status to HITL before releasi
   // temp-file-slug parameter values inline.
   function assertSharedPatternSequencing() {
     // status: blocked PATCH to the linked task
-    expect(escalationPatternContent).toContain('"$SHIPWRIGHT_TASK_STORE_URL/tasks/$PR_TASK_ID"');
+    expect(escalationPatternContent).toContain(
+      '"$SHIPWRIGHT_TASK_STORE_URL/tasks/$PR_TASK_ID"',
+    );
     expect(escalationPatternContent).toContain('"status": "blocked"');
 
     // blocked + blockedReason PATCH fallback to the PR record
-    expect(escalationPatternContent).toContain('"$SHIPWRIGHT_TASK_STORE_URL/prs/$PR_RECORD_ID"');
+    expect(escalationPatternContent).toContain(
+      '"$SHIPWRIGHT_TASK_STORE_URL/prs/$PR_RECORD_ID"',
+    );
     expect(escalationPatternContent).toContain("blockedReason");
 
     // PR comment via temp file
     expect(escalationPatternContent).toContain(
       "gh pr comment {pr} --repo {org}/{repo} --body-file /tmp/shipwright-patch-{temp_file_slug}-{pr}.txt",
     );
-    expect(escalationPatternContent).toContain("rm /tmp/shipwright-patch-{temp_file_slug}-{pr}.txt");
+    expect(escalationPatternContent).toContain(
+      "rm /tmp/shipwright-patch-{temp_file_slug}-{pr}.txt",
+    );
 
     // Ordering: status PATCH + comment must occur BEFORE the release call
     const taskPatchIdx = escalationPatternContent.indexOf(
@@ -1387,8 +1515,12 @@ describe("patch.md — escalate first-time BLOCKED status to HITL before releasi
     const prPatchIdx = escalationPatternContent.indexOf(
       '"$SHIPWRIGHT_TASK_STORE_URL/prs/$PR_RECORD_ID"',
     );
-    const commentIdx = escalationPatternContent.indexOf("--body-file /tmp/shipwright-patch-");
-    const releaseIdx = escalationPatternContent.indexOf("/prs/$PR_RECORD_ID/release");
+    const commentIdx = escalationPatternContent.indexOf(
+      "--body-file /tmp/shipwright-patch-",
+    );
+    const releaseIdx = escalationPatternContent.indexOf(
+      "/prs/$PR_RECORD_ID/release",
+    );
 
     expect(releaseIdx).toBeGreaterThan(-1);
     expect(taskPatchIdx).toBeGreaterThan(-1);
@@ -1410,7 +1542,9 @@ describe("patch.md — escalate first-time BLOCKED status to HITL before releasi
     expect(blocked).toContain(
       '"merge-conflict resolution blocked — automated conflict\n    resolution could not complete"',
     );
-    expect(blocked.toLowerCase()).toContain("merge-conflict resolution subagent reported blocked");
+    expect(blocked.toLowerCase()).toContain(
+      "merge-conflict resolution subagent reported blocked",
+    );
     expect(blocked).toContain("`blocked-4c`");
     expect(blocked).toContain("/tmp/shipwright-patch-blocked-4c-{pr}.txt");
     expect(blocked).toContain("Step 2.1");
@@ -1423,7 +1557,9 @@ describe("patch.md — escalate first-time BLOCKED status to HITL before releasi
     expect(blocked).toContain(
       '"review-finding fix blocked — automated fix subagent could not\n    complete"',
     );
-    expect(blocked.toLowerCase()).toContain("review-finding fix subagent reported blocked");
+    expect(blocked.toLowerCase()).toContain(
+      "review-finding fix subagent reported blocked",
+    );
     expect(blocked).toContain("`blocked-5c`");
     expect(blocked).toContain("/tmp/shipwright-patch-blocked-5c-{pr}.txt");
     expect(blocked).toContain("Step 2.1");
@@ -1460,12 +1596,16 @@ describe("patch.md — escalate first-time BLOCKED status to HITL before releasi
   });
 
   it("the existing Step 5a.7 second-round-disagreement escalation is unaffected by the new Step 5c BLOCKED escalation", () => {
-    const step5a7Idx = content.indexOf("### Step 5a.7: Second-Round Escalation Check (RPF-1.3)");
+    const step5a7Idx = content.indexOf(
+      "### Step 5a.7: Second-Round Escalation Check (RPF-1.3)",
+    );
     const step5bIdx = content.indexOf("### Step 5b: Dispatch Fix Subagent");
     expect(step5a7Idx).toBeGreaterThan(-1);
     expect(step5bIdx).toBeGreaterThan(step5a7Idx);
     const step5a7Section = content.slice(step5a7Idx, step5bIdx);
-    expect(step5a7Section).toContain("/tmp/shipwright-patch-escalation-{pr}.txt");
+    expect(step5a7Section).toContain(
+      "/tmp/shipwright-patch-escalation-{pr}.txt",
+    );
     expect(step5a7Section).toContain("second-round disagreement");
   });
 
@@ -1473,14 +1613,18 @@ describe("patch.md — escalate first-time BLOCKED status to HITL before releasi
     const step5a6bIdx = content.indexOf(
       "### Step 5a.6b: `.claude/**` Path Escalation Check (CDH-1.2)",
     );
-    const step5a7Idx = content.indexOf("### Step 5a.7: Second-Round Escalation Check (RPF-1.3)");
+    const step5a7Idx = content.indexOf(
+      "### Step 5a.7: Second-Round Escalation Check (RPF-1.3)",
+    );
     const step5bIdx = content.indexOf("### Step 5b: Dispatch Fix Subagent");
     expect(step5a6bIdx).toBeGreaterThan(-1);
     expect(step5a7Idx).toBeGreaterThan(step5a6bIdx);
     expect(step5bIdx).toBeGreaterThan(step5a7Idx);
 
     const step5a7Section = content.slice(step5a7Idx, step5bIdx);
-    expect(step5a7Section).toContain("/tmp/shipwright-patch-escalation-{pr}.txt");
+    expect(step5a7Section).toContain(
+      "/tmp/shipwright-patch-escalation-{pr}.txt",
+    );
     expect(step5a7Section).toContain("second-round disagreement");
 
     const step5a6bSection = content.slice(step5a6bIdx, step5a7Idx);
@@ -1491,19 +1635,29 @@ describe("patch.md — escalate first-time BLOCKED status to HITL before releasi
   });
 
   it("Step 6d's BLOCKED escalation is consistent with Step 6b.6's pre-dispatch status check (same PATCH targets, via the shared escalation pattern)", () => {
-    const step6b6Idx = content.indexOf("### Step 6b.6: Escalation Check (CFE-1.1)");
+    const step6b6Idx = content.indexOf(
+      "### Step 6b.6: Escalation Check (CFE-1.1)",
+    );
     const step6cIdx = content.indexOf("### Step 6c: Dispatch Fix Subagent");
     const step6b6Section = content.slice(step6b6Idx, step6cIdx);
-    expect(step6b6Section).toContain('"$SHIPWRIGHT_TASK_STORE_URL/prs/$PR_RECORD_ID"');
-    expect(step6b6Section).toContain("$SHIPWRIGHT_TASK_STORE_URL/tasks?repo={org}/{repo}&pr={pr}");
+    expect(step6b6Section).toContain(
+      '"$SHIPWRIGHT_TASK_STORE_URL/prs/$PR_RECORD_ID"',
+    );
+    expect(step6b6Section).toContain(
+      "$SHIPWRIGHT_TASK_STORE_URL/tasks?repo={org}/{repo}&pr={pr}",
+    );
 
     const step6dSection = getStep6dSection();
     const blocked = getBlockedBranch(step6dSection);
     expect(blocked).toContain("references/escalation-pattern.md");
     // The shared pattern Step 6d points at uses the same two PATCH targets as Step 6b.6's
     // own pre-dispatch check.
-    expect(escalationPatternContent).toContain('"$SHIPWRIGHT_TASK_STORE_URL/tasks/$PR_TASK_ID"');
-    expect(escalationPatternContent).toContain('"$SHIPWRIGHT_TASK_STORE_URL/prs/$PR_RECORD_ID"');
+    expect(escalationPatternContent).toContain(
+      '"$SHIPWRIGHT_TASK_STORE_URL/tasks/$PR_TASK_ID"',
+    );
+    expect(escalationPatternContent).toContain(
+      '"$SHIPWRIGHT_TASK_STORE_URL/prs/$PR_RECORD_ID"',
+    );
   });
 });
 
@@ -1515,7 +1669,9 @@ describe("patch.md — docs-first toolchain discovery + per-repo cache (TDF-1.1)
     expect(nextIdx).toBeGreaterThan(stepIdx);
     const section = content.slice(stepIdx, nextIdx);
     expect(section).toContain("state/toolchain-cache/{repo}.json");
-    expect(section).toMatch(/CLAUDE\.md.{0,60}docs\/\*\.md.{0,20}ai-docs\/\*\.md/is);
+    expect(section).toMatch(
+      /CLAUDE\.md.{0,60}docs\/\*\.md.{0,20}ai-docs\/\*\.md/is,
+    );
     expect(section).toMatch(/authoritative if found/i);
   }
 
@@ -1602,16 +1758,24 @@ describe("patch.md — scoped-lint preference at all three lint-command sites (L
 
 describe("patch.md — Step 2.5/Step 3 opening prose reflects single-PR scope (PCG-1.1)", () => {
   function getStep2_5Section() {
-    const step2_5Idx = content.indexOf("## Step 2.5: Handle DIRTY PRs (Auto-Rebase Attempt)");
-    const step3Idx = content.indexOf("## Step 3: Classify PRs into Three Lists");
+    const step2_5Idx = content.indexOf(
+      "## Step 2.5: Handle DIRTY PRs (Auto-Rebase Attempt)",
+    );
+    const step3Idx = content.indexOf(
+      "## Step 3: Classify PRs into Three Lists",
+    );
     expect(step2_5Idx).toBeGreaterThan(-1);
     expect(step3Idx).toBeGreaterThan(-1);
     return content.slice(step2_5Idx, step3Idx);
   }
 
   function getStep3OpeningSection() {
-    const step3Idx = content.indexOf("## Step 3: Classify PRs into Three Lists");
-    const step3aIdx = content.indexOf("### Step 3a: Check for Unaddressed Review Findings");
+    const step3Idx = content.indexOf(
+      "## Step 3: Classify PRs into Three Lists",
+    );
+    const step3aIdx = content.indexOf(
+      "### Step 3a: Check for Unaddressed Review Findings",
+    );
     expect(step3Idx).toBeGreaterThan(-1);
     expect(step3aIdx).toBeGreaterThan(-1);
     return content.slice(step3Idx, step3aIdx);
@@ -1646,11 +1810,15 @@ describe("patch.md — Step 2.5/Step 3 opening prose reflects single-PR scope (P
 
   it("Step 3's List A/C/D labels and multi-list membership note are unchanged", () => {
     const section = getStep3OpeningSection();
-    expect(section).toContain("**List A** — PRs with unresolved review or PR comments");
+    expect(section).toContain(
+      "**List A** — PRs with unresolved review or PR comments",
+    );
     expect(section).toContain("**List C** — PRs with merge conflicts (DIRTY)");
     expect(section).toContain("**List D** — PRs with failing CI");
     expect(section).toMatch(/appear in multiple lists/);
-    expect(section).toContain("processed in the order the steps execute (C → A → D)");
+    expect(section).toContain(
+      "processed in the order the steps execute (C → A → D)",
+    );
   });
 
   it("does not touch the 'move to the next PR in List X' fallback phrasing deeper in Steps 4-6", () => {
@@ -1686,7 +1854,9 @@ describe("patch.md — end-of-run CI verification gate (PCG-1.1)", () => {
 
   it("fires only when at least one of Steps 4/5/6 pushed a commit this cycle, and skips cleanly with a one-line message otherwise", () => {
     const section = getStep6_5Section();
-    expect(section).toMatch(/Step 4.{0,20}Step 5.{0,20}Step 6|Steps 4[/,].{0,10}5[/,].{0,10}6/is);
+    expect(section).toMatch(
+      /Step 4.{0,20}Step 5.{0,20}Step 6|Steps 4[/,].{0,10}5[/,].{0,10}6/is,
+    );
     expect(section.toLowerCase()).toContain("pushed");
     expect(section).toMatch(/skip/i);
     // The skip message is a one-liner, not a multi-paragraph explanation.
@@ -1721,9 +1891,13 @@ describe("patch.md — end-of-run CI verification gate (PCG-1.1)", () => {
   it("on still-red after the poll window, reuses Step 6c's prompt template verbatim instead of duplicating it", () => {
     const section = getStep6_5Section();
     expect(section).toContain("Step 6c");
-    expect(section.toLowerCase()).toMatch(/same prompt template|exact same prompt|reus\w* .{0,40}step 6c/i);
+    expect(section.toLowerCase()).toMatch(
+      /same prompt template|exact same prompt|reus\w* .{0,40}step 6c/i,
+    );
     // Must not duplicate Step 6c's actual prompt body text in Step 6.5.
-    expect(section).not.toContain("You are fixing failing CI on a pull request");
+    expect(section).not.toContain(
+      "You are fixing failing CI on a pull request",
+    );
     expect(section).not.toContain("[A] Diagnose the failures");
   });
 
@@ -1736,7 +1910,9 @@ describe("patch.md — end-of-run CI verification gate (PCG-1.1)", () => {
   it("on BLOCKED from the bonus subagent, reuses Step 6d's existing HITL-escalation branch instead of a new escalation path", () => {
     const section = getStep6_5Section();
     expect(section).toContain("Step 6d");
-    expect(section.toLowerCase()).toMatch(/same (hitl|escalation)|reus\w* .{0,40}step 6d/i);
+    expect(section.toLowerCase()).toMatch(
+      /same (hitl|escalation)|reus\w* .{0,40}step 6d/i,
+    );
     // Must not duplicate Step 6d's escalation procedure text in Step 6.5.
     expect(section).not.toContain("PATCH the linked task to `hitl: true`");
     expect(section).not.toContain("shipwright-patch-blocked-6d-{pr}.txt");
@@ -1754,7 +1930,8 @@ describe("patch.md — drop stale review-patch reference from claim-release step
   });
 
   it("the shared escalation-pattern.md reference uses the corrected 'a subsequent patch run' phrasing (PH-1.2 collapsed the 3 formerly-separate inline copies into this one)", () => {
-    const matches = escalationPatternContent.match(/a subsequent patch run/g) ?? [];
+    const matches =
+      escalationPatternContent.match(/a subsequent patch run/g) ?? [];
     expect(matches.length).toBe(1);
   });
 });
@@ -1794,7 +1971,7 @@ describe("patch.md — capture and report CI failure signature (CSD-1.2)", () =>
   it("Step 6b's signature computation runs after the existing RUN_ID/log-collection block", () => {
     const section = getStep6bSection();
     const runIdIdx = section.indexOf("RUN_ID=$(gh run list");
-    const logsIdx = section.indexOf("gh run view \"$RUN_ID\" --log --failed");
+    const logsIdx = section.indexOf('gh run view "$RUN_ID" --log --failed');
     const signatureIdx = section.indexOf("CI_FAILURE_SIGNATURE=");
     expect(runIdIdx).toBeGreaterThan(-1);
     expect(logsIdx).toBeGreaterThan(runIdIdx);
@@ -1892,7 +2069,9 @@ describe("patch.md — detect stale-cancelled CI, rerun before escalating to CI-
 
   it("gates the rerun-first branch on cancelled-only, no failure/timed_out", () => {
     const section = getStep6b8Section();
-    expect(section.toLowerCase()).toContain("cancelled-only, no failure/timed_out");
+    expect(section.toLowerCase()).toContain(
+      "cancelled-only, no failure/timed_out",
+    );
     expect(section).toContain("CI_HAS_CANCELLED=true");
     expect(section).toContain("CI_HAS_FAILING");
     expect(section).toMatch(/CI_HAS_FAILING.{0,40}NOT also true/is);
@@ -1903,7 +2082,9 @@ describe("patch.md — detect stale-cancelled CI, rerun before escalating to CI-
     expect(section).toMatch(
       /does not hold.{0,400}proceed directly to\s+Step 6c/is,
     );
-    expect(section).toContain("completely unaffected by the cancelled-only branch");
+    expect(section).toContain(
+      "completely unaffected by the cancelled-only branch",
+    );
   });
 
   it("does not treat cancelled as failure-equivalent for concurrency/cancel-in-progress workflows — scoped to run state, not workflow identity", () => {
@@ -1998,9 +2179,7 @@ describe("patch.md — no-op at dispatch skip-reason tag (RVD-2.4)", () => {
   it("Step 3d (empty lists) contains [skip-reason:patch:deferred:no-op-at-dispatch:{pr}] alongside [silent]", () => {
     const section = getStep3dSection();
     expect(section).toContain("[silent]");
-    expect(section).toContain(
-      "[skip-reason:patch:deferred:no-op-at-dispatch:",
-    );
+    expect(section).toContain("[skip-reason:patch:deferred:no-op-at-dispatch:");
     expect(section).toContain(
       "[skip-reason:patch:deferred:no-op-at-dispatch:{pr}]",
     );
@@ -2022,7 +2201,9 @@ describe("patch.md — no-op at dispatch skip-reason tag (RVD-2.4)", () => {
 
 describe("patch.md — dependency-risk detection (DBP-1.2)", () => {
   function getStep3a5Section() {
-    const step3a5Idx = content.indexOf("### Step 3a.5: Dependency-Risk Detection (DBP-1.2)");
+    const step3a5Idx = content.indexOf(
+      "### Step 3a.5: Dependency-Risk Detection (DBP-1.2)",
+    );
     const step3bIdx = content.indexOf("### Step 3b: Check for DIRTY State");
     expect(step3a5Idx).toBeGreaterThan(-1);
     expect(step3bIdx).toBeGreaterThan(step3a5Idx);
@@ -2030,8 +2211,12 @@ describe("patch.md — dependency-risk detection (DBP-1.2)", () => {
   }
 
   it("Step 3a.5 exists between Step 3a and Step 3b", () => {
-    const step3aIdx = content.indexOf('### Step 3a: Check for Unaddressed Review Findings');
-    const step3a5Idx = content.indexOf("### Step 3a.5: Dependency-Risk Detection (DBP-1.2)");
+    const step3aIdx = content.indexOf(
+      "### Step 3a: Check for Unaddressed Review Findings",
+    );
+    const step3a5Idx = content.indexOf(
+      "### Step 3a.5: Dependency-Risk Detection (DBP-1.2)",
+    );
     const step3bIdx = content.indexOf("### Step 3b: Check for DIRTY State");
     expect(step3aIdx).toBeGreaterThan(-1);
     expect(step3a5Idx).toBeGreaterThan(step3aIdx);
@@ -2045,7 +2230,9 @@ describe("patch.md — dependency-risk detection (DBP-1.2)", () => {
     // posted; the GitHub-posted body carries only a condensed one-line clause with no
     // flags (review.md:1118-1126). So no parse step may set DEPENDENCY_RISK_FINDING from
     // a review body — the section must explain that rather than attempt it.
-    expect(section).not.toMatch(/parse\s+`?\{recommendation, flags, reasoning\}`?\s+from/i);
+    expect(section).not.toMatch(
+      /parse\s+`?\{recommendation, flags, reasoning\}`?\s+from/i,
+    );
     expect(section).toContain("PR_REVIEW_{pr}.md");
     expect(section).toContain("review.md:1118-1126");
     expect(section).toMatch(/could never match real posted data/i);
@@ -2063,7 +2250,9 @@ describe("patch.md — dependency-risk detection (DBP-1.2)", () => {
     expect(section).toContain("review.md");
     expect(section).toContain("Step 5.8");
     expect(section).toContain("gh api");
-    expect(section).toContain("gh pr diff {pr} --repo {org}/{repo} --name-only");
+    expect(section).toContain(
+      "gh pr diff {pr} --repo {org}/{repo} --name-only",
+    );
   });
 
   it("has no dependency on any review-session state ever having existed", () => {
@@ -2079,15 +2268,21 @@ describe("patch.md — dependency-risk detection (DBP-1.2)", () => {
 
   it("routes a hold/review recommendation into List A directly, since a dependency-bump-only PR can still get a clean Verdict: APPROVE", () => {
     const section = getStep3a5Section();
-    expect(section).toMatch(/route.{0,60}(?:"hold"|hold).{0,60}(?:"review"|review).{0,80}List A/is);
+    expect(section).toMatch(
+      /route.{0,60}(?:"hold"|hold).{0,60}(?:"review"|review).{0,80}List A/is,
+    );
     expect(section).toContain("Verdict: APPROVE");
     expect(section).toContain("compute-review-verdict.ts");
-    expect(section.toLowerCase()).toContain("regardless of whether step 3a's own criteria");
+    expect(section.toLowerCase()).toContain(
+      "regardless of whether step 3a's own criteria",
+    );
   });
 
   it("a merge recommendation does not affect List A membership", () => {
     const section = getStep3a5Section();
-    expect(section).toMatch(/"merge".{0,60}nothing to remediate and does\s+not\s+affect List A/is);
+    expect(section).toMatch(
+      /"merge".{0,60}nothing to remediate and does\s+not\s+affect List A/is,
+    );
   });
 
   it("has an already-held exclusion so a held finding is not re-routed into List A every cycle", () => {
@@ -2103,7 +2298,9 @@ describe("patch.md — dependency-risk detection (DBP-1.2)", () => {
 
   it("the already-held exclusion reads the findings ledger keyed on a HEAD-SHA-scoped ref, so it self-expires on a new commit", () => {
     const section = getStep3a5Section();
-    expect(section).toContain("$SHIPWRIGHT_TASK_STORE_URL/prs?repo={org}/{repo}&prNumber={pr}");
+    expect(section).toContain(
+      "$SHIPWRIGHT_TASK_STORE_URL/prs?repo={org}/{repo}&prNumber={pr}",
+    );
     expect(section).toContain("dependency-risk@{headRefOid}");
     expect(section).toContain('disposition == "rejected"');
     expect(section).toMatch(/self-expiring/i);
@@ -2113,14 +2310,20 @@ describe("patch.md — dependency-risk detection (DBP-1.2)", () => {
 
   it("the already-held exclusion fails open — a missing or unreadable ledger never suppresses a first-round remediation", () => {
     const section = getStep3a5Section();
-    expect(section).toMatch(/HELD_DEP_FINDINGS.{0,120}(`0`|empty).{0,200}route normally/is);
+    expect(section).toMatch(
+      /HELD_DEP_FINDINGS.{0,120}(`0`|empty).{0,200}route normally/is,
+    );
     expect(section).toMatch(/must never suppress a\s+first-round remediation/i);
   });
 
   it("an excluded already-held finding still leaves ordinary Step 3a findings free to route the PR into List A", () => {
     const section = getStep3a5Section();
-    expect(section).toMatch(/leave its List A\s+membership entirely to Step 3a's own criteria/i);
-    expect(section).toMatch(/omit Step 5b's DEPENDENCY-RISK REMEDIATION PROTOCOL\s+block/i);
+    expect(section).toMatch(
+      /leave its List A\s+membership entirely to Step 3a's own criteria/i,
+    );
+    expect(section).toMatch(
+      /omit Step 5b's DEPENDENCY-RISK REMEDIATION PROTOCOL\s+block/i,
+    );
   });
 
   it("the already-held exclusion clears DEPENDENCY_RISK_FINDING itself, so it reaches Step 5b's gate and not just step 2's routing", () => {
@@ -2133,7 +2336,9 @@ describe("patch.md — dependency-risk detection (DBP-1.2)", () => {
       /clear\s+`DEPENDENCY_RISK_FINDING`\s+back to unset/i,
     );
     expect(section).toMatch(/single source of truth/i);
-    expect(section).toMatch(/rather than only skipping step 2's routing decision/i);
+    expect(section).toMatch(
+      /rather than only skipping step 2's routing decision/i,
+    );
     expect(section).toMatch(/Skipping only step 2's routing would leave/i);
   });
 });
@@ -2165,12 +2370,16 @@ describe("patch.md — dependency-patch protocol injected into Step 5b (DBP-1.2)
     // Both gating sites — the dispatch instruction and the rendered prompt template — must
     // reference the exclusion, not just the raw derived value. Otherwise an already-held
     // finding gets re-injected via an unrelated ordinary Step 3a finding.
-    expect(section).toMatch(/left\s+`DEPENDENCY_RISK_FINDING`\s+set for this PR/i);
+    expect(section).toMatch(
+      /left\s+`DEPENDENCY_RISK_FINDING`\s+set for this PR/i,
+    );
     expect(section).toMatch(/already-held exclusion did not clear it/i);
     expect(section).toMatch(
       /cleared\s+`?DEPENDENCY_RISK_FINDING`?\s+reads the same/i,
     );
-    expect(section).toMatch(/omit the block, even when this PR is in List A on Step 3a's own criteria/i);
+    expect(section).toMatch(
+      /omit the block, even when this PR is in List A on Step 3a's own criteria/i,
+    );
     // The rendered prompt template's own gate comment must carry the same exclusion.
     const templateGateIdx = section.indexOf(
       "{Only present when Step 3a.5 left DEPENDENCY_RISK_FINDING set for this PR",
@@ -2188,7 +2397,9 @@ describe("patch.md — dependency-patch protocol injected into Step 5b (DBP-1.2)
     expect(section).toMatch(/not replac/i);
     // Confirm ordering: the protocol block precedes the [A.5] heading in the rendered prompt.
     const protocolIdx = section.indexOf("DEPENDENCY-RISK REMEDIATION PROTOCOL");
-    const a5Idx = section.indexOf("[A.5] Verify each finding before implementing it");
+    const a5Idx = section.indexOf(
+      "[A.5] Verify each finding before implementing it",
+    );
     expect(protocolIdx).toBeGreaterThan(-1);
     expect(a5Idx).toBeGreaterThan(protocolIdx);
   });
@@ -2204,7 +2415,9 @@ describe("patch.md — dependency-patch protocol injected into Step 5b (DBP-1.2)
     expect(section).toContain("classify it REJECT in [A.5]");
     expect(section).toContain("classify REJECT in [A.5]");
     // [A.5] itself must be untouched by this feature — its own heading and body survive verbatim.
-    const a5Idx = content.indexOf("[A.5] Verify each finding before implementing it");
+    const a5Idx = content.indexOf(
+      "[A.5] Verify each finding before implementing it",
+    );
     expect(a5Idx).toBeGreaterThan(-1);
     const a5Section = content.slice(a5Idx, a5Idx + 1000);
     expect(a5Section).toContain("Reviewers can be wrong");
@@ -2235,7 +2448,9 @@ describe("patch.md — dependency-patch protocol injected into Step 5b (DBP-1.2)
     const section = content.slice(step5cIdx, step5c5Idx);
     expect(section).toContain("dependency-risk@{headRefOid}");
     expect(section).toMatch(/carry it through verbatim/i);
-    expect(section).toMatch(/Step 3a\.5's\s+already-held exclusion matches on that exact string/i);
+    expect(section).toMatch(
+      /Step 3a\.5's\s+already-held exclusion matches on that exact string/i,
+    );
   });
 });
 
@@ -2248,7 +2463,9 @@ describe("patch.md — /prs/claim threads authorLogin/headRef/title for server-s
     const step2Section = content.slice(step2Idx, step2_5Idx);
 
     // Still exactly one `gh pr view {number} ...` call in this step.
-    const ghPrViewCalls = step2Section.match(/gh pr view \{number\} --repo \{org\}\/\{repo\}/g) ?? [];
+    const ghPrViewCalls =
+      step2Section.match(/gh pr view \{number\} --repo \{org\}\/\{repo\}/g) ??
+      [];
     expect(ghPrViewCalls).toHaveLength(1);
     expect(step2Section).toContain(
       "--json number,title,headRefName,headRefOid,additions,deletions,mergeStateStatus,state,author",
@@ -2259,9 +2476,21 @@ describe("patch.md — /prs/claim threads authorLogin/headRef/title for server-s
   });
 
   for (const [label, sectionHeader, nextHeader] of [
-    ["Step 4a.6", "### Step 4a.6: Claim PR Record (pre-work lock)", "### Step 4b: Dispatch Conflict Resolution Subagent"],
-    ["Step 5a.6", "### Step 5a.6: Claim PR Record (pre-work lock)", "### Step 5a.6b: `.claude/**` Path Escalation Check (CDH-1.2)"],
-    ["Step 6b.5", "### Step 6b.5: Claim PR Record (pre-work lock)", "### Step 6b.6: Escalation Check (CFE-1.1)"],
+    [
+      "Step 4a.6",
+      "### Step 4a.6: Claim PR Record (pre-work lock)",
+      "### Step 4b: Dispatch Conflict Resolution Subagent",
+    ],
+    [
+      "Step 5a.6",
+      "### Step 5a.6: Claim PR Record (pre-work lock)",
+      "### Step 5a.6b: `.claude/**` Path Escalation Check (CDH-1.2)",
+    ],
+    [
+      "Step 6b.5",
+      "### Step 6b.5: Claim PR Record (pre-work lock)",
+      "### Step 6b.6: Escalation Check (CFE-1.1)",
+    ],
   ] as const) {
     it(`${label}'s /prs/claim call threads authorLogin/headRef/title from the Step 2 captures`, () => {
       const sectionIdx = content.indexOf(sectionHeader);
@@ -2282,7 +2511,9 @@ describe("patch.md — /prs/claim threads authorLogin/headRef/title for server-s
 
 describe("patch.md — subagent dispatch is foreground, not background (ABD-1.1)", () => {
   it("Step 4b (conflict resolution) has run_in_background: false", () => {
-    const step4bIdx = content.indexOf("### Step 4b: Dispatch Conflict Resolution Subagent");
+    const step4bIdx = content.indexOf(
+      "### Step 4b: Dispatch Conflict Resolution Subagent",
+    );
     const step4cIdx = content.indexOf("### Step 4c: Handle Subagent Status");
     expect(step4bIdx).toBeGreaterThan(-1);
     expect(step4cIdx).toBeGreaterThan(-1);
@@ -2331,9 +2562,15 @@ describe("patch.md — enforced, process-group-aware, non-blocking local validat
       "### Step 4c: Handle Subagent Status",
     );
   const getStep5bValidate = () =>
-    getValidateSection("### Step 5b: Dispatch Fix Subagent", "### Step 5c: Handle Subagent Status");
+    getValidateSection(
+      "### Step 5b: Dispatch Fix Subagent",
+      "### Step 5c: Handle Subagent Status",
+    );
   const getStep6cValidate = () =>
-    getValidateSection("### Step 6c: Dispatch Fix Subagent", "### Step 6d: Handle Subagent Status");
+    getValidateSection(
+      "### Step 6c: Dispatch Fix Subagent",
+      "### Step 6d: Handle Subagent Status",
+    );
 
   for (const [label, getSection] of [
     ["Step 4b", getStep4bValidate],
@@ -2350,7 +2587,9 @@ describe("patch.md — enforced, process-group-aware, non-blocking local validat
       expect(section).toContain("setsid");
       const lower = section.toLowerCase().replace(/\s+/g, " ");
       expect(lower).toMatch(/process(-| )group/);
-      expect(lower).toMatch(/(kill|terminat).{0,60}(whole|entire|-\$|negative).{0,20}(group|pid)|(-\$pid|kill -- -\$)/);
+      expect(lower).toMatch(
+        /(kill|terminat).{0,60}(whole|entire|-\$|negative).{0,20}(group|pid)|(-\$pid|kill -- -\$)/,
+      );
     });
 
     it(`${label} [C] Validate states a local failure or timeout never blocks proceeding to commit/push, naming CI (Gate) as the real arbiter`, () => {
@@ -2394,8 +2633,16 @@ describe("patch.md — record verification outcomes via task-store API (LVB-5.2)
       "### Step 4b: Dispatch Conflict Resolution Subagent",
       "### Step 4c: Handle Subagent Status",
     ],
-    ["Step 5b", "### Step 5b: Dispatch Fix Subagent", "### Step 5c: Handle Subagent Status"],
-    ["Step 6c", "### Step 6c: Dispatch Fix Subagent", "### Step 6d: Handle Subagent Status"],
+    [
+      "Step 5b",
+      "### Step 5b: Dispatch Fix Subagent",
+      "### Step 5c: Handle Subagent Status",
+    ],
+    [
+      "Step 6c",
+      "### Step 6c: Dispatch Fix Subagent",
+      "### Step 6d: Handle Subagent Status",
+    ],
   ];
 
   for (const [label, startMarker, endMarker] of sites) {
@@ -2406,12 +2653,16 @@ describe("patch.md — record verification outcomes via task-store API (LVB-5.2)
 
     it(`${label} [C] Validate POSTs to the verification-checks endpoint`, () => {
       const section = getValidateSection(startMarker, endMarker);
-      expect(section).toContain("$SHIPWRIGHT_TASK_STORE_URL/verification-checks");
+      expect(section).toContain(
+        "$SHIPWRIGHT_TASK_STORE_URL/verification-checks",
+      );
     });
 
     it(`${label} [C] Validate verification-checks call is a POST`, () => {
       const section = getValidateSection(startMarker, endMarker);
-      const idx = section.indexOf("$SHIPWRIGHT_TASK_STORE_URL/verification-checks");
+      const idx = section.indexOf(
+        "$SHIPWRIGHT_TASK_STORE_URL/verification-checks",
+      );
       expect(idx).toBeGreaterThan(-1);
       const nearby = section.slice(Math.max(0, idx - 300), idx);
       expect(nearby).toContain("-X POST");
@@ -2448,10 +2699,105 @@ describe("patch.md — record verification outcomes via task-store API (LVB-5.2)
 
     it(`${label} [C] Validate POST is best-effort (warn-and-continue on failure)`, () => {
       const section = getValidateSection(startMarker, endMarker);
-      const idx = section.indexOf("$SHIPWRIGHT_TASK_STORE_URL/verification-checks");
+      const idx = section.indexOf(
+        "$SHIPWRIGHT_TASK_STORE_URL/verification-checks",
+      );
       expect(idx).toBeGreaterThan(-1);
       const nearby = section.slice(idx, idx + 300);
       expect(nearby).toMatch(/\|\|\s*echo/);
     });
   }
+});
+
+describe("patch.md — skip-locally check before attempting each check, read-only (LVB-4.4)", () => {
+  function getStepSection(stepStartMarker, stepEndMarker) {
+    const stepStartIdx = content.indexOf(stepStartMarker);
+    const stepEndIdx = content.indexOf(stepEndMarker);
+    expect(stepStartIdx).toBeGreaterThan(-1);
+    expect(stepEndIdx).toBeGreaterThan(stepStartIdx);
+    return content.slice(stepStartIdx, stepEndIdx);
+  }
+
+  function getValidateSection(stepStartMarker, stepEndMarker) {
+    const stepSection = getStepSection(stepStartMarker, stepEndMarker);
+    const cIdx = stepSection.indexOf("[C] Validate");
+    expect(cIdx).toBeGreaterThan(-1);
+    const c5Idx = stepSection.indexOf("[C.5] Add test coverage");
+    const dIdx = stepSection.indexOf("[D] Commit");
+    const endIdx = c5Idx > -1 ? c5Idx : dIdx;
+    expect(endIdx).toBeGreaterThan(cIdx);
+    return stepSection.slice(cIdx, endIdx);
+  }
+
+  const sites = [
+    [
+      "Step 4b",
+      "### Step 4b: Dispatch Conflict Resolution Subagent",
+      "### Step 4c: Handle Subagent Status",
+    ],
+    [
+      "Step 5b",
+      "### Step 5b: Dispatch Fix Subagent",
+      "### Step 5c: Handle Subagent Status",
+    ],
+    [
+      "Step 6c",
+      "### Step 6c: Dispatch Fix Subagent",
+      "### Step 6d: Handle Subagent Status",
+    ],
+  ];
+
+  for (const [label, startMarker, endMarker] of sites) {
+    it(`${label} [C] Validate looks up {checkName} in the toolchain doc's skip-locally table before running the enforced-timeout wrapper`, () => {
+      const section = getValidateSection(startMarker, endMarker);
+      expect(section).toMatch(/Skip-locally check \(read before attempting\)/);
+      expect(section).toMatch(/skip-locally table/);
+      expect(section).toMatch(/docsSource\.path/);
+      expect(section).toMatch(/docsSource\.heading/);
+      expect(section).toMatch(/docs\/toolchain\.md/);
+    });
+
+    it(`${label} [C] Validate: on a match, does NOT run the setsid timeout wrapper — no budget spent attempting it`, () => {
+      const section = getValidateSection(startMarker, endMarker);
+      expect(section).toMatch(/do NOT run the `setsid timeout/);
+      expect(section).toMatch(/no budget spent even attempting it/);
+    });
+
+    it(`${label} [C] Validate: on a match, POSTs status skipped, reasonCategory learned_skip, and learnedFromCategory using prId (not taskId)`, () => {
+      const section = getValidateSection(startMarker, endMarker);
+      const idx = section.indexOf("Skip-locally check");
+      expect(idx).toBeGreaterThan(-1);
+      const nearby = section.slice(idx, idx + 1500);
+      expect(nearby).toContain('status: "skipped"');
+      expect(nearby).toContain('reasonCategory: "learned_skip"');
+      expect(nearby).toContain("learnedFromCategory");
+      expect(nearby).toMatch(/--arg prId "\{PR_RECORD_ID\}"/);
+      expect(nearby).not.toContain("taskId");
+    });
+
+    it(`${label} [C] Validate reports the learned skip as 'skip (learned: {reason})' in human-readable results`, () => {
+      const section = getValidateSection(startMarker, endMarker);
+      expect(section).toMatch(/skip \(learned: \{reason\}\)/);
+    });
+
+    it(`${label} [C] Validate states patch.md does not write to the skip-locally table itself — read-only, dev-task.md Step 8 owns the write`, () => {
+      const section = getValidateSection(startMarker, endMarker).replace(
+        /\s+/g,
+        " ",
+      );
+      expect(section).toMatch(/patch\.md`? never writes to this table itself/i);
+      expect(section).toMatch(/only reads classifications dev-task\.md/i);
+    });
+  }
+
+  it("no call site's [C] Validate claims patch.md writes/records a skip-locally classification back to the doc", () => {
+    for (const [, startMarker, endMarker] of sites) {
+      const section = getValidateSection(startMarker, endMarker);
+      // The only "write" language allowed near skip-locally in patch.md is the explicit
+      // disclaimer that patch never writes this table — never an instruction to do so.
+      expect(section).not.toMatch(
+        /write(?:s|ing)? (?:the |a |this )?skip-locally (?:classification|table|entry) back/i,
+      );
+    }
+  });
 });

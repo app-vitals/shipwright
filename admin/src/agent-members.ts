@@ -8,6 +8,7 @@
  */
 
 import type { AgentMember, PrismaClient } from "../prisma/client/client.ts";
+import type { PrismaTransactionClient } from "./prisma-tx.ts";
 
 export type { AgentMember };
 
@@ -43,9 +44,17 @@ export class AgentMemberService {
    * Create a membership row for the given agentId and email.
    * Throws (unique-constraint violation) if the membership already exists —
    * callers are expected to catch and handle "already a member" as a no-op.
+   *
+   * @param client - defaults to `this.prisma`; pass the `tx` argument from a
+   *   caller's `prisma.$transaction(async (tx) => ...)` to make this write
+   *   participate in that transaction (see createAgent() in agents.ts).
    */
-  async add(agentId: string, email: string): Promise<AgentMember> {
-    return this.prisma.agentMember.create({ data: { agentId, email } });
+  async add(
+    agentId: string,
+    email: string,
+    client: PrismaTransactionClient = this.prisma,
+  ): Promise<AgentMember> {
+    return client.agentMember.create({ data: { agentId, email } });
   }
 
   /**
