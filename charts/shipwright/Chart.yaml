@@ -9,7 +9,7 @@ type: application
 # Chart version (SemVer). Bump on every chart change, independent of appVersion.
 # See CHANGELOG.md and the README "Versioning" section — CI enforces this bump
 # via `ct lint --check-version-increment`.
-version: 1.20.120
+version: 1.21.0
 # Version of the Shipwright application this chart deploys by default.
 appVersion: "0.1.0"
 home: https://shipwrightharness.com
@@ -29,16 +29,8 @@ annotations:
   # Artifact Hub change log for this release. Must mirror the matching version
   # entry in CHANGELOG.md (keep the two in sync on every bump).
   artifacthub.io/changes: |
-    - kind: changed
-      description: "auto-bump to chart v1.20.120 triggered by release tag admin-v1.202.0"
-    - kind: changed
-      description: "auto-bump to chart v1.20.120 triggered by release tag agent-v1.313.0"
-    - kind: changed
-      description: "auto-bump to chart v1.20.120 triggered by release tag chat-v1.110.0"
-    - kind: changed
-      description: "auto-bump to chart v1.20.120 triggered by release tag metrics-v1.113.0"
-    - kind: changed
-      description: "auto-bump to chart v1.20.120 triggered by release tag task-store-v1.148.0"
+    - kind: added
+      description: "Optional awsSecurityGroupPolicy — renders an AWS VPC CNI SecurityGroupPolicy so matching pods get a branch ENI carrying operator-chosen security groups (EKS only). Off by default and purely additive: with awsSecurityGroupPolicy.enabled=false nothing renders. Set enabled=true plus groupIds (include the cluster's node SG) to open a pod-level network path to a resource whose security group admits a client SG rather than a CIDR, e.g. an RDS Proxy across a VPC peering."
 dependencies:
   # Bitnami PostgreSQL subchart, pinned to the chart release shipping Postgres 18.x
   # (appVersion 18.6.0). Every current chart release defaults image.tag to `latest`
