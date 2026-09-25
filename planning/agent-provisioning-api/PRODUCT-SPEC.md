@@ -9,6 +9,20 @@
 
 A callable, atomic API for creating a fully-configured Shipwright agent (DB row + type-manifest seeding + repo/allowlist/member attachment + Claude credentials + Kubernetes provisioning), so agent creation can be triggered by something other than a human filling out the `/admin/agents/new` form. This is a narrower slice of a larger goal (supporting many students getting their own hosted agent during a course, not itself in scope here) — but it closes a real gap on its own: today there is no way to create an agent except through an admin-authenticated browser form.
 
+## Status Note (added 2026-09-25, post-review)
+
+**Both features described below have already shipped to `main`, independently of this planning PR's own review/merge status:**
+
+- **Feature 1 (APA-1.1, `createAgent()`)** — merged via PR #3653 (2026-09-24), now living in `admin/src/agents.ts:574-779`.
+- **Feature 2 (APA-2.1, `POST /agents`)** — merged via PR #3661 (2026-09-24), now living in `admin/src/agents-api.ts` (`createAgentRoute` defined at line 358, wired via `app.openapi(createAgentRoute, ...)` at line 1209).
+
+This is the task-store/planning-PR async-execution pattern that exists elsewhere in this repo: `dev-task` pulls ready tasks from the task store independent of whether the planning session's own docs PR has merged. Two consequences for this document:
+
+1. **Every line citation below is a stale, point-in-time snapshot.** The numbers below were accurate against `main` at this session's branch point (commit `144325988`). A review comment on this PR cited different numbers (handler starting at line 1546, rollback at 1765-1780) — those were verified against `main` roughly 11 hours later, after two unrelated PRs (#3634, #3642) had already shifted `admin-ui.ts`'s line numbers, and that snapshot was itself superseded within hours by PR #3653 restructuring the file again. Neither set of numbers is current as of this fix. Re-verify against `main` before relying on any line number in this document — don't treat the ranges below as ground truth for implementation.
+2. **The ABF-3.2 "no in-repo caller" concern raised in review (below) was never actually resolved before `POST /agents` shipped** — see the HITL section after Scope.
+
+
+
 ## Problem Statement
 
 Agent creation today is a multi-step, non-atomic sequence inside a single admin-UI form handler (`admin/src/admin-ui.ts`'s `POST /admin/agents`, ~line 1399): create the DB row, seed tools/plugins from the type manifest (rolling back by delete on failure), attach repos/allowlists/members (each independently rolled back on invalid input), patch in Claude credentials, optionally call the Kubernetes provisioner (rolling back the row on failure), reconcile system crons best-effort, and optionally run inline Slack/GitHub connect branches. There is no equivalent programmatic API — `admin/src/agents-api.ts` explicitly does not implement creation (its own comment states creation happens only via the web UI form). Any future system that needs to create agents without a human in a browser — a course signup flow, a provisioning script, a test harness — has nothing to call.
@@ -30,7 +44,7 @@ Agent creation today is a multi-step, non-atomic sequence inside a single admin-
 **Requirements**:
 - New function, e.g. `createAgent(input): Promise<Agent>` in `admin/src/agents.ts` (alongside the existing `agentService.create()` at line 166), wrapping the full sequence currently spread across `admin-ui.ts` lines ~1460-1641: validate `name`/`typeName` → create the `Agent` row → seed `AgentTool`/`AgentPlugin` from the type manifest → attach repos/allowlists/members → patch Claude credentials → call `provisioner.provision()` if `runtime=in-cluster` → best-effort `reconcileSystemCrons()`.
 - Wrap the DB-writing steps (row creation, tool/plugin seeding, repo/allowlist/member attachment, credential patch) in a single Prisma transaction where the schema allows it, so a mid-sequence failure leaves no partial `Agent` row — replacing today's delete-on-failure rollback pattern.
-- The Kubernetes provisioning call (`provisioner.provision()`) cannot join the DB transaction (it's an external side effect) — on its failure, delete the just-created `Agent` row (matching current behavior at `admin-ui.ts:1618-1633`), and document this as the one step that is still compensating-rollback rather than transactional, since a cluster call can't be part of a database transaction.
+- The Kubernetes provisioning call (`provisioner.provision()`) cannot join the DB transaction (it's an external side effect) — on its failure, delete the just-created `Agent` row (matching current behavior at `admin-ui.ts:1618-1633` as of this session's branch point — see Status Note above; this logic has since moved into `createAgent()` via PR #3653), and document this as the one step that is still compensating-rollback rather than transactional, since a cluster call can't be part of a database transaction.
 - `reconcileSystemCrons()` stays best-effort/non-blocking, matching current behavior — a cron-reconciliation failure should not fail agent creation.
 - Refactor `admin-ui.ts`'s `POST /admin/agents` form handler to call this new function instead of inlining the sequence, so there is exactly one implementation of "create an agent" going forward.
 
@@ -43,11 +57,12 @@ Agent creation today is a multi-step, non-atomic sequence inside a single admin-
 
 **Technical Considerations**: The DB-transaction boundary needs care — `admin/src/agents.ts:166`'s existing `agentService.create()` and whatever repo/allowlist/member attachment functions currently exist may not be written to run inside a caller-supplied transaction; this task may need to thread a Prisma transaction client through them. This is a refactor of live, working code (today's admin UI creation flow) — the acceptance criteria above are deliberately behavior-preservation-focused, not behavior-change.
 
-**Source Map**:
-- `admin/src/admin-ui.ts:1399-1769` — current inlined creation sequence
-- `admin/src/agents.ts:166` — existing `agentService.create()`
+**Source Map** (verified against this session's branch point, commit `144325988` — see Status Note above; already superseded by PR #3653's merge):
+- `admin/src/admin-ui.ts:1399-1769` — inlined creation sequence at branch time. A review comment on this PR cited the handler starting at line 1546 instead; that number is also correct, but for `main` ~11 hours later (after two unrelated merges, #3634/#3642, shifted this file) — not for this branch's own fork point. Both citations are now moot: see below.
+- `admin/src/agents.ts:166` — existing `agentService.create()` at branch time
 - `admin/src/agent-provisioner.ts:242-407` — `KubernetesAgentProvisioner.provision()`, called as the external side-effect step
-- `admin/src/agents-api.ts:5-7` — comment confirming no programmatic creation API exists today
+- `admin/src/agents-api.ts:5-7` — comment confirming no programmatic creation API exists today (also since superseded — see Status Note)
+- **Now implemented** (post-review): `admin/src/agents.ts:574-779` — the real `createAgent()`, merged via PR #3653
 
 **Testing Strategy**: Layer: integration — real Postgres, exercising the full transaction + rollback behavior; the Kubernetes call should use whatever double/fixture the existing `agent-provisioner` tests already use.
 
@@ -97,6 +112,16 @@ Agent creation today is a multi-step, non-atomic sequence inside a single admin-
 - **Trial expiry / auto-deprovisioning** — separate PRD.
 - **Per-agent spend caps** — separate PRD (already queued, PR app-vitals/shipwright#3644).
 
+## HITL: ABF-3.2 Re-run Risk (flagged for Dan/Dave)
+
+`docs/migration.md` documents that `POST /agents` was retired 8 days before this PRD (ABF-3.2, commit `568a4fb15`, PR #3506) because it "had no in-repo caller ... confirmed with Dan (no external caller hits POST /agents on the deployed admin service)." That was an explicit human-in-the-loop decision, not a mechanical cleanup.
+
+Feature 2 of this PRD re-adds the identical route. Feature 1's shared `createAgent()` does resolve ABF-3.2's *other* rationale (duplicated seeding logic between the UI form and the JSON API) — but the "no caller" concern is not resolved anywhere in this document. Feature 2's own stated caller is "an internal script or future external system (e.g., a course signup flow, out of scope here)" — i.e. hypothetical and explicitly deferred, not a real in-repo caller that exists today. Judged honestly, this reproduces the exact condition ABF-3.2 was retired for, rather than resolving it.
+
+**This is flagged as a named HITL item for Dan/Dave, not resolved by this PRD**: either (a) confirm a real caller exists or is imminent enough to justify re-adding a callerless route now, or (b) hold Feature 2 until a real caller exists — e.g. gate it behind the same signup-flow work this PRD currently defers as out of scope.
+
+**Post-review update (2026-09-25)**: this is no longer a hypothetical risk to weigh before building — `POST /agents` (Feature 2 / APA-2.1) already merged to `main` via PR #3661 while this planning PR was still in review (see Status Note above). The route is live today with no confirmed in-repo caller, exactly reproducing ABF-3.2's original condition. That makes Dan/Dave sign-off retroactive rather than a pre-build gate — the open question is now whether to leave it shipped, add the promised caller soon, or re-retire it a second time.
+
 ## Priorities & Sequence
 
 Feature 1 must land before Feature 2 (the route calls the service function). No other ordering constraints.
@@ -110,6 +135,7 @@ Feature 1 must land before Feature 2 (the route calls the service function). No 
 
 ## Resolved Decisions
 
+- **ABF-3.2 re-run risk**: not resolved by this PRD — flagged as a named HITL item for Dan/Dave. See the "HITL: ABF-3.2 Re-run Risk" section above.
 - **Scope boundary**: this PRD covers only making creation atomic and callable — it explicitly does not attempt to solve self-serve triggering, shared-tier GitHub App/Slack architecture, or repo-access-without-org-admin-rights. — Rationale: those require product decisions (Dan/Dave) this session cannot make on its own; shipping a wrong guess on the shared-tier architecture would be worse than shipping nothing and flagging it.
 - **Kubernetes step stays compensating-rollback, not transactional.** — Rationale: a cluster API call cannot participate in a Postgres transaction; matching today's delete-on-failure behavior is the correct scope for this PRD rather than inventing a saga/outbox pattern nobody asked for yet.
 - **Auth tier for the new route: admin-API-key, not a new public tier.** — Rationale: keeps this PRD from accidentally creating the unauthenticated surface flagged as a named blocker above; a future self-serve flow's auth model is a separate, deliberate decision.
