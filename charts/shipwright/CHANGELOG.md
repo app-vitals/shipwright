@@ -10,6 +10,12 @@ independent of `appVersion`. CI enforces this with
 `ct lint --check-version-increment`. Each release here must mirror the
 `artifacthub.io/changes` annotation in `Chart.yaml`.
 
+## [1.22.0] - 2026-09-25
+
+### Added
+
+- Optional `podLabels` for the `admin`, `taskStore`, and `chat` workloads — extra labels on the pod template (`spec.template.metadata.labels`), mirroring the existing `podAnnotations` shape and placement. Empty by default and purely additive: with `podLabels` unset, `helm template` output is byte-identical to chart 1.21.0, so this lands without touching any existing install. It exists so a single workload can opt into a cluster policy that selects pods by label — a `NetworkPolicy`, an admission or scheduling webhook, a service-mesh injector, or a CNI feature such as the chart's own `awsSecurityGroupPolicy` — without widening that policy to every pod in the release, which matters when the policy can reject a pod it matches and the blast radius is admission-time. A new shared `shipwright.podLabels` helper renders the value with two guards: a key that collides with one of the workload's `app.kubernetes.io/*` selector labels is **dropped** rather than applied (a Deployment's `spec.selector` is immutable after creation, so a value able to rewrite the pod template's selector labels would break upgrades outright), and values are coerced to strings (Kubernetes label values are strings, so an unquoted `true` in values.yaml would otherwise render a bool the API server rejects). Covered in `tests/admin_workload_test.yaml`, `tests/task_store_workload_test.yaml`, and `tests/chat_workload_test.yaml` across the empty-default, populated, selector-collision, and non-string-value paths; the chart README gains a values-table row and an "Opting a workload into a label-selecting cluster policy" section, and `docs/deploy-kubernetes-addons.md` shows the pairing with `awsSecurityGroupPolicy`.
+
 ## [1.21.0] - 2026-09-25
 
 ### Added

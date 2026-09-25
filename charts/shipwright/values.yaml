@@ -294,6 +294,19 @@ admin:
   #   podAnnotations:
   #     cluster-autoscaler.kubernetes.io/safe-to-evict: "false"
   podAnnotations: {}
+  # -- Extra labels for the admin pod template (spec.template.metadata.labels).
+  # Empty by default and purely additive — the chart's own
+  # `app.kubernetes.io/*` selector labels always win, so a colliding key here
+  # is dropped rather than breaking the Deployment's immutable selector.
+  # Use this to opt a single workload into a cluster policy that selects pods
+  # by label — a network policy, a scheduling or admission webhook, or a CNI
+  # feature such as an AWS `SecurityGroupPolicy` (see awsSecurityGroupPolicy
+  # below) — without widening it to every pod in the release. Values are
+  # rendered as strings, so `"true"` and `true` both produce a valid label.
+  # Example:
+  #   podLabels:
+  #     example.com/peer-datastore: "true"
+  podLabels: {}
   # -- Optional PodDisruptionBudget for the admin workload. Off by default —
   # purely additive. Pairs with podAnnotations above to protect a
   # single-replica admin pod from voluntary disruption (cluster-autoscaler
@@ -901,6 +914,11 @@ taskStore:
   # cluster autoscaler from voluntarily evicting this pod when a transient NAP
   # node scales down. See admin.podAnnotations for the full example.
   podAnnotations: {}
+  # -- Extra labels for the task-store pod template (spec.template.metadata.
+  # labels). Empty by default and purely additive; the chart's own
+  # `app.kubernetes.io/*` selector labels always win. See admin.podLabels for
+  # the full rationale and example.
+  podLabels: {}
   # -- Optional PodDisruptionBudget for the task-store workload. Off by
   # default — purely additive. See admin.podDisruptionBudget for the full
   # rationale (cluster-autoscaler node churn). Recommended for prod single-replica
@@ -1046,6 +1064,11 @@ chat:
   # cluster autoscaler from voluntarily evicting this pod when a transient NAP
   # node scales down. See admin.podAnnotations for the full example.
   podAnnotations: {}
+  # -- Extra labels for the chat pod template (spec.template.metadata.labels).
+  # Empty by default and purely additive; the chart's own
+  # `app.kubernetes.io/*` selector labels always win. See admin.podLabels for
+  # the full rationale and example.
+  podLabels: {}
   # -- Optional PodDisruptionBudget for the chat workload. Off by default —
   # purely additive. See admin.podDisruptionBudget for the full rationale
   # (cluster-autoscaler node churn). Recommended for prod single-replica installs:

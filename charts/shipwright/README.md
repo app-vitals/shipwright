@@ -181,6 +181,7 @@ environment, set `postgresql.auth.existingSecret` to a pre-created Secret (or se
 | `admin.serviceAccount.name` | `""` | Admin ServiceAccount name (generated if empty). |
 | `admin.resources` | `50m/64Mi → 250m/256Mi` | Admin container resource requests/limits. |
 | `admin.podAnnotations` / `taskStore.podAnnotations` / `chat.podAnnotations` | `{}` | Extra annotations for the pod template (`spec.template.metadata.annotations`) — **not** the ServiceAccount. See [Protecting single-replica services from voluntary eviction](#protecting-single-replica-services-from-voluntary-eviction) below. |
+| `admin.podLabels` / `taskStore.podLabels` / `chat.podLabels` | `{}` | Extra labels for the pod template (`spec.template.metadata.labels`) — purely additive. The chart's own `app.kubernetes.io/*` selector labels always win. See [Opting a workload into a label-selecting cluster policy](#opting-a-workload-into-a-label-selecting-cluster-policy) below. |
 | `admin.podDisruptionBudget` / `taskStore.podDisruptionBudget` / `chat.podDisruptionBudget` | `{enabled: false, minAvailable: 1}` | Optional PodDisruptionBudget for the workload. Off by default — purely additive. See below. |
 | `postgresql.enabled` | `true` | Deploy the bundled Bitnami PostgreSQL subchart. |
 | `postgresql.image.registry` | `docker.io` | PostgreSQL image registry (repoint to a mirror — see below). |
@@ -246,6 +247,48 @@ Both are off/empty by default — enabling them is a deliberate operator
 choice, not a chart default (a `PodDisruptionBudget` with `minAvailable: 1`
 on a single-replica Deployment can otherwise block legitimate node drains
 until you scale up or accept the disruption).
+
+## Opting a workload into a label-selecting cluster policy
+
+Plenty of cluster-level machinery picks its targets by pod label: a
+`NetworkPolicy`, a scheduling or admission webhook, a service-mesh sidecar
+injector, or a CNI feature such as an AWS
+[`SecurityGroupPolicy`](../docs/deploy-kubernetes-addons.md#aws-pod-security-groups-eks-optional).
+`admin.podLabels`, `taskStore.podLabels`, and `chat.podLabels` add labels to
+those workloads' pod templates so a policy can select **exactly** the pods that
+need it, rather than the whole release:
+
+```yaml
+admin:
+  podLabels:
+    example.com/peer-datastore: "true"
+
+taskStore:
+  podLabels:
+    example.com/peer-datastore: "true"
+
+chat:
+  podLabels:
+    example.com/peer-datastore: "true"
+```
+
+Scoping this way matters when the policy is one that can *reject* a pod it
+matches — an admission-time failure then costs you only the opted-in
+workloads, not every pod in the release.
+
+Notes:
+
+- **Purely additive, and the chart's labels win.** A key that collides with one
+  of the chart's `app.kubernetes.io/*` selector labels is dropped, not applied.
+  A Deployment's `spec.selector` is immutable after creation, so a value that
+  could rewrite it would break upgrades outright.
+- **Values render as strings.** Kubernetes label values are strings; `true`
+  and `"true"` both produce a valid `"true"` label.
+- **Empty by default**, and the default render is unchanged from a chart
+  without the hook — nothing is added to `spec.template.metadata.labels`
+  unless you set it.
+- Only `admin`, `taskStore`, and `chat` expose this. It is the DB-dependent
+  set — the workloads a datastore-reachability policy typically targets.
 
 ## Cloud-native install (single chart)
 

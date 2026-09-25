@@ -12,8 +12,12 @@ spec:
       {{- include "shipwright.taskStore.selectorLabels" . | nindent 6 }}
   template:
     metadata:
+      {{- $selectorLabels := include "shipwright.taskStore.selectorLabels" . }}
       labels:
-        {{- include "shipwright.taskStore.selectorLabels" . | nindent 8 }}
+        {{- $selectorLabels | nindent 8 }}
+        {{- with (include "shipwright.podLabels" (dict "podLabels" .Values.taskStore.podLabels "selectorLabels" $selectorLabels)) }}
+        {{- . | nindent 8 }}
+        {{- end }}
       {{- with .Values.taskStore.podAnnotations }}
       annotations:
         {{- toYaml . | nindent 8 }}
