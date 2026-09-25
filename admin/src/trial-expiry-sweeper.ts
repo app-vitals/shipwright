@@ -43,8 +43,9 @@
  * admin service's logs rather than silently going dark forever.
  */
 
+import { WebClient } from "@slack/web-api";
 import type { AgentEnvBundle, AgentEnvService } from "./agent-envs.ts";
-import type { AgentDetail, AgentService } from "./agents.ts";
+import type { AgentService } from "./agents.ts";
 import { type Clock, SystemClock } from "./clock.ts";
 
 // ─── Types ──────────────────────────────────────────────────────────────────
@@ -181,7 +182,6 @@ export async function sendTrialExpiryWarning(
   params: SendSlackWarningParams,
 ): Promise<boolean> {
   try {
-    const { WebClient } = await import("@slack/web-api");
     const client = new WebClient(params.botToken);
     await client.chat.postMessage({
       channel: params.channel,
@@ -314,11 +314,9 @@ export class TrialExpiryWarningSweeper {
       return;
     }
 
-    const updated: AgentDetail = await this.deps.agentService.updateFields(
-      agent.id,
-      { trialExpiryWarnedAt: now },
-    );
-    void updated;
+    await this.deps.agentService.updateFields(agent.id, {
+      trialExpiryWarnedAt: now,
+    });
     result.warned++;
     this.log(
       `[trial-expiry-sweeper] warned ${agent.id} (${agent.name}): trial expires ${trialExpiresAt.toISOString()}`,
