@@ -263,6 +263,14 @@ const GetAgentResultSchema = z
      * this is informational only.
      */
     warning: z.string().optional(),
+    /**
+     * ATE-1.1: trial expiry tracking. trialExpiresAt is settable via
+     * PATCH /agents/:id (see PatchAgentBodySchema). trialExpiryWarnedAt is
+     * written internally by ATE-2.1's warning check — read-only via this
+     * route, GET/PATCH responses only.
+     */
+    trialExpiresAt: z.string().datetime().nullable().optional(),
+    trialExpiryWarnedAt: z.string().datetime().nullable().optional(),
   })
   .openapi("GetAgentResult");
 
@@ -398,7 +406,7 @@ const patchAgentRoute = createRoute({
   path: "/agents/{id}",
   summary: "Update an agent",
   description:
-    "Admin-only. Updates `selfHosted`, `repos`, `reviewAuthorAllowlist`, `patchAuthorAllowlist`, `restrictSlackToMembers`, and/or `slackId`. `typeName` is not updatable via this route. Returns the updated agent, including a `warning` field when `restrictSlackToMembers` is set true on an agent with zero members.",
+    "Admin-only. Updates `selfHosted`, `repos`, `reviewAuthorAllowlist`, `patchAuthorAllowlist`, `restrictSlackToMembers`, `slackId`, and/or `trialExpiresAt`. `typeName` and `trialExpiryWarnedAt` are not updatable via this route. Returns the updated agent, including a `warning` field when `restrictSlackToMembers` is set true on an agent with zero members.",
   request: {
     params: AgentIdParamSchema,
     body: {
@@ -1153,6 +1161,13 @@ export function createAdminApp(deps: AdminDeps): OpenAPIHono<AdminAuthEnv> {
         ? { restrictSlackToMembers: body.restrictSlackToMembers }
         : {}),
       ...(body.slackId !== undefined ? { slackId: body.slackId } : {}),
+      ...(body.trialExpiresAt !== undefined
+        ? {
+            trialExpiresAt: body.trialExpiresAt
+              ? new Date(body.trialExpiresAt)
+              : null,
+          }
+        : {}),
     });
     const warning = await computeRestrictSlackToMembersWarning(
       agentMemberService,
@@ -1864,6 +1879,8 @@ function serializeAgent(
     createdAt: Date;
     updatedAt: Date;
     missingRequiredEnv?: string[];
+    trialExpiresAt?: Date | null;
+    trialExpiryWarnedAt?: Date | null;
   },
   warning?: string,
 ): z.infer<typeof GetAgentResultSchema> {
@@ -1880,6 +1897,12 @@ function serializeAgent(
     createdAt: agent.createdAt.toISOString(),
     updatedAt: agent.updatedAt.toISOString(),
     missingRequiredEnv: agent.missingRequiredEnv ?? [],
+    trialExpiresAt: agent.trialExpiresAt
+      ? agent.trialExpiresAt.toISOString()
+      : null,
+    trialExpiryWarnedAt: agent.trialExpiryWarnedAt
+      ? agent.trialExpiryWarnedAt.toISOString()
+      : null,
     ...(warning !== undefined ? { warning } : {}),
   };
 }

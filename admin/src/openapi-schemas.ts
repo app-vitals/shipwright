@@ -84,6 +84,18 @@ export const PatchAgentBodySchema = z
       .optional()
       .openapi({ example: ["octocat"] }),
     restrictSlackToMembers: z.boolean().optional().openapi({ example: false }),
+    /**
+     * ATE-1.1: trial expiry timestamp. Nullable so it can also be explicitly
+     * cleared. trialExpiryWarnedAt is intentionally NOT part of this schema —
+     * it is written internally by ATE-2.1's warning check, not user-editable
+     * via this route.
+     */
+    trialExpiresAt: z
+      .string()
+      .datetime()
+      .nullable()
+      .optional()
+      .openapi({ example: "2026-12-01T00:00:00.000Z" }),
   })
   .openapi("PatchAgentBody");
 

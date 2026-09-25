@@ -87,6 +87,16 @@ export interface AgentDetail {
    * not a create blocker or provisioning gate (ATS-4.2).
    */
   missingRequiredEnv: string[];
+  /**
+   * ATE-1.1: trial expiry tracking, both additive/nullable. trialExpiresAt is
+   * settable via PATCH /agents/:id (see UpdateSelfHostedInput below).
+   * trialExpiryWarnedAt is written internally by ATE-2.1's warning check —
+   * read-only via this route, GET/PATCH responses only. Optional here (like
+   * `repos` above) so existing test doubles constructing a narrower
+   * AgentDetail literal don't need updating.
+   */
+  trialExpiresAt?: Date | null;
+  trialExpiryWarnedAt?: Date | null;
 }
 
 export interface UpdateSelfHostedInput {
@@ -106,6 +116,11 @@ export interface UpdateSelfHostedInput {
    * explicitly cleared via PATCH /agents/:id.
    */
   slackId?: string | null;
+  /**
+   * ATE-1.1: nullable so it can also be explicitly cleared via
+   * PATCH /agents/:id (omitted entirely means "leave unchanged").
+   */
+  trialExpiresAt?: Date | null;
 }
 
 interface AgentIdAndRepos {
@@ -153,6 +168,8 @@ const DETAIL_SELECT = {
   typeName: true,
   createdAt: true,
   updatedAt: true,
+  trialExpiresAt: true,
+  trialExpiryWarnedAt: true,
 } as const;
 
 // ─── Service ──────────────────────────────────────────────────────────────────
@@ -336,6 +353,9 @@ export class AgentService {
           ? { restrictSlackToMembers: input.restrictSlackToMembers }
           : {}),
         ...(input.slackId !== undefined ? { slackId: input.slackId } : {}),
+        ...(input.trialExpiresAt !== undefined
+          ? { trialExpiresAt: input.trialExpiresAt }
+          : {}),
       },
       select: DETAIL_SELECT,
     });
