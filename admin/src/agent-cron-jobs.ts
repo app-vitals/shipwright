@@ -200,6 +200,23 @@ export class AgentCronJobService {
   }
 
   /**
+   * List all enabled cron jobs belonging to an agent whose trial has expired
+   * (`trialExpiresAt` strictly before `now`) — the working set for the
+   * trial-expiry lockdown sweep (ATE-3.1, admin/src/trial-expiry-sweeper.ts).
+   * A single join query rather than an N+1 per-cron agent lookup: filtering
+   * on the related `agent.trialExpiresAt` happens in the same round-trip.
+   * An agent with `trialExpiresAt` null never matches (Prisma's `lt` filter
+   * excludes null), and `now` itself is exclusive (`lt`, not `lte`) so a
+   * trial expiring at exactly `now` is not yet treated as expired.
+   */
+  async listEnabledWithExpiredTrial(now: Date): Promise<AgentCronJob[]> {
+    return this.prisma.agentCronJob.findMany({
+      where: { enabled: true, agent: { trialExpiresAt: { lt: now } } },
+      orderBy: { createdAt: "asc" },
+    });
+  }
+
+  /**
    * Fetch the "shipwright-loop" cron row for each of a set of agent ids, in
    * a single query — one row per agent that has one (an agent with no
    * shipwright-loop cron simply has no entry in the result). Used by the

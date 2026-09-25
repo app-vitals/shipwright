@@ -130,6 +130,14 @@ interface AgentIdAndRepos {
   patchAuthorAllowlist: string[];
   restrictSlackToMembers: boolean;
   memberEmails: string[];
+  /**
+   * ATE-3.1: read by the runtime config route so the agent process can gate
+   * Slack access once its trial has passed. Optional so pre-existing
+   * fixtures/doubles built against this interface before ATE-3.1 (e.g.
+   * agents.unit.test.ts's getById() `toEqual` fixtures) keep compiling
+   * unchanged.
+   */
+  trialExpiresAt?: Date | null;
 }
 
 export interface AgentOption {
@@ -368,8 +376,8 @@ export class AgentService {
 
   /**
    * Get {id, repos, reviewAuthorAllowlist, patchAuthorAllowlist,
-   * restrictSlackToMembers, memberEmails} for a single agent — used by the
-   * runtime config/crons routes. Returns null if not found.
+   * restrictSlackToMembers, memberEmails, trialExpiresAt} for a single agent
+   * — used by the runtime config/crons routes. Returns null if not found.
    */
   async getById(id: string): Promise<AgentIdAndRepos | null> {
     const row = await this.prisma.agent.findUnique({
@@ -380,6 +388,7 @@ export class AgentService {
         reviewAuthorAllowlist: true,
         patchAuthorAllowlist: true,
         restrictSlackToMembers: true,
+        trialExpiresAt: true,
       },
     });
     if (!row) return null;
