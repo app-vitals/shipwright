@@ -72,10 +72,13 @@ task agent-workspace-pull -- <id-or-name>  # mirror a real, already-deployed age
 
 > _Auto-maintained by Shipwright's toolchain detection — edits here are overwritten on the next run._
 
-- **Scoped lint**: `git diff --name-only --diff-filter=ACMR {base}...{head} -- '*.ts' '*.tsx' '*.js' '*.jsx' | xargs -r bunx biome lint` — scopes lint to changed JS/TS files instead of the whole repo.
-- **Scoped typecheck / test**: no scoped variant available — `task typecheck` type-checks the whole project graph by design, and there's no monorepo affected-graph tool wired in; both run full-repo.
-- **Verification budget**: 150s per check (source: `fallback-10m` in spirit, though the initial estimate was `ci-derived` from CI's "lint / typecheck / test" job at 91s padded 1.5x — that estimate proved undersized for the full local `task test` run, which took ~236s on this machine. Treat local timings as noisier than CI's; a future run may want to bump this to 300s+ or fall back to the flat 10-minute constant.
-- **Skip-locally classifications**: none recorded yet.
+- **Scoped-command variants:** `lintScoped` detected — `git diff --name-only --diff-filter=ACMR {base}...{head} -- '*.ts' '*.tsx' '*.js' '*.jsx' | xargs -r bunx biome lint`, which scopes lint to changed JS/TS files instead of the whole repo. No `typecheckScoped`/`testScoped` variant is available: `task typecheck` type-checks the whole project graph by design, and there's no monorepo affected-graph tool wired in, so both run full-repo.
+- **Enforced per-check verification budget:** `600s` (`fallback-10m` — CI-derived numbers for this repo's `lint / typecheck / test` job were observed non-representative of a fresh sandbox checkout, and an earlier 150s estimate padded from CI's 91s proved undersized against a full local `task test` run at ~236s, so the flat 10-minute constant is used instead).
+- **Skip-locally classifications:** none yet.
+
+  | Check | Reason | Classified At |
+  |-------|--------|----------------|
+  | _(none)_ | | |
 
 ## Before you commit — this repository is going public
 

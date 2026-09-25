@@ -93,6 +93,19 @@ export interface VerificationCheckServiceLike {
     prId: string,
     opts?: { limit?: number; offset?: number },
   ): Promise<ListVerificationChecksResult>;
+  /**
+   * LVB-4.4's history-walk mode: the last few outcomes for one check on one
+   * repo, across ALL tasks/PRs — not scoped to a single parent. Ordered by
+   * `at` DESCENDING (most recent first), a deliberate deviation from
+   * listForTask/listForPr's ascending order — this mode exists so the
+   * skip-locally learning trigger can walk backward from the most recent
+   * outcome and detect a consecutive skipped/timed_out streak.
+   */
+  listByRepoAndCheck(
+    repo: string,
+    checkName: string,
+    opts?: { limit?: number; offset?: number },
+  ): Promise<ListVerificationChecksResult>;
 }
 
 /** Normalizes a possibly-empty-string/null/undefined id field to `string | null`. */
@@ -106,9 +119,7 @@ export class VerificationCheckService implements VerificationCheckServiceLike {
     private clock: Clock = SystemClock(),
   ) {}
 
-  async record(
-    data: RecordVerificationCheckInput,
-  ): Promise<VerificationCheck> {
+  async record(data: RecordVerificationCheckInput): Promise<VerificationCheck> {
     const taskId = normalizeId(data.taskId);
     const prId = normalizeId(data.prId);
 
@@ -222,7 +233,7 @@ export class VerificationCheckService implements VerificationCheckServiceLike {
     if (!existing) {
       throw new NotFoundError("task not found");
     }
-    return this.list({ taskId }, opts);
+    return this.list({ taskId }, opts, "asc");
   }
 
   async listForPr(
@@ -236,12 +247,33 @@ export class VerificationCheckService implements VerificationCheckServiceLike {
     if (!existing) {
       throw new NotFoundError("pr not found");
     }
-    return this.list({ prRecordId: prId }, opts);
+    return this.list({ prRecordId: prId }, opts, "asc");
+  }
+
+  async listByRepoAndCheck(
+    repo: string,
+    checkName: string,
+    opts: { limit?: number; offset?: number } = {},
+  ): Promise<ListVerificationChecksResult> {
+    if (!repo) {
+      throw new BadRequestError("repo is required");
+    }
+    if (!checkName) {
+      throw new BadRequestError("checkName is required");
+    }
+    // No single task/PR parent to existence-check here — this mode spans
+    // every task/PR that ever recorded this repo+checkName pair, so an
+    // unmatched repo/checkName just returns an empty list, not a 404.
+    return this.list({ repo, checkName }, opts, "desc");
   }
 
   private async list(
-    where: { taskId: string } | { prRecordId: string },
+    where:
+      | { taskId: string }
+      | { prRecordId: string }
+      | { repo: string; checkName: string },
     opts: { limit?: number; offset?: number },
+    order: "asc" | "desc",
   ): Promise<ListVerificationChecksResult> {
     const limit = opts.limit ?? 50;
     const offset = opts.offset ?? 0;
@@ -249,7 +281,7 @@ export class VerificationCheckService implements VerificationCheckServiceLike {
     const [checks, total] = await this.prisma.$transaction([
       this.prisma.verificationCheck.findMany({
         where,
-        orderBy: { at: "asc" },
+        orderBy: { at: order },
         take: limit,
         skip: offset,
       }),

@@ -753,6 +753,42 @@ Examples based on detected toolchain:
 - Ruby: `bundle exec rspec` (or `bundle exec rake test`)
 - Multi-layer: run `{test command}`, then each additional entry in `{tests}` (e.g., `npx playwright test` for e2e alongside the default `pytest` for unit/integration)
 
+### Skip-Locally Classification: Read Before Attempting Each Check
+
+Before running EACH check below (install, lint, typecheck, test, and each layer in `{tests}`)
+through the enforced-timeout wrapper, check whether this repo has already learned to stop
+attempting it locally — LVB-4.4's skip-locally classification, read from the toolchain doc.
+
+**Load once per run, up front.** At the start of Step 8, resolve the target doc the same way
+Step 8.6 does — `{worktree-path}/{docsSource.path}` at `docsSource.heading`'s nested `Shipwright
+Learned Facts` marker subsection if `docsSource` was populated at detection time, else the
+default `{worktree-path}/docs/toolchain.md` — and read it if it exists. Parse its skip-locally
+table (see `references/toolchain-patterns.md`'s "Writing Learned Facts Back to Docs" section for
+the exact table format) into an in-memory map of `checkName -> reasonCategory`. A missing file, a
+missing marker subsection, or an empty/absent table all mean the same thing — no learned skips
+yet for this repo — and Step 8 proceeds normally with nothing to load.
+
+**Before running `{checkName}`, look it up in that map:**
+
+- **No match:** proceed to the enforced-timeout wrapper below as normal — nothing changes.
+- **Match found:** do NOT run the `setsid timeout ...` wrapper for this check at all — no budget
+  is spent even attempting it. Instead POST the outcome directly:
+  ```bash
+  LEARNED_REASON="{reasonCategory recorded in the matched skip-locally table row}"
+  VC_BODY=$(jq -n --arg taskId "{id}" --arg repo "$GH_REPO" --arg checkName "$CHECK_NAME" \
+    --arg learnedFrom "$LEARNED_REASON" \
+    '{taskId: $taskId, repo: $repo, checkName: $checkName, status: "skipped",
+      reasonCategory: "learned_skip", learnedFromCategory: $learnedFrom}')
+  curl -sf -X POST -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
+    -H "Content-Type: application/json" \
+    "$SHIPWRIGHT_TASK_STORE_URL/verification-checks" \
+    -d "$VC_BODY" > /dev/null 2>&1 || echo "⚠ verification-check POST for $CHECK_NAME (learned skip) failed — continuing"
+  ```
+  Show this check's row in the PRE-SHIP CHECKS table below as `skip (learned: {reason})` rather
+  than plain `skip` — the recorded reason (an environmental `reasonCategory`, never a
+  correctness judgment) surfaces in this run's structured outcome via both the POST's
+  `learnedFromCategory` field and the human-readable table.
+
 ### Enforced, Process-Group-Aware Timeouts
 
 **Local verification here is best-effort and non-blocking — CI (Step 9b) is the real
@@ -814,11 +850,10 @@ inline per ecosystem (e.g. `{manager} install`, `bun install`, `pip install -e .
 above already gives per-ecosystem example commands, since lint/typecheck/test generally need
 dependencies installed first to run meaningfully.
 
-**Any future skip path must record `status: skipped` too.** LVB-4.4 will later add a
-"skip-locally" classification (read from the toolchain doc) that skips a check without
-attempting it, citing a recorded environmental reasonCategory — when it lands, it only needs
-to emit the same POST shape above with `status: skipped` and the applicable reasonCategory;
-no new recording mechanism is needed.
+**The skip-locally read path reuses this exact POST shape.** LVB-4.4's "Skip-Locally
+Classification: Read Before Attempting Each Check" section above does exactly this — it emits
+the same POST shape as above with `status: "skipped"` and `reasonCategory: "learned_skip"` (plus
+`learnedFromCategory` set to the recorded category); no new recording mechanism was needed.
 
 **Record, don't swallow, each outcome.** After each wrapped invocation, note its status —
 `pass`, `fail`, `timeout`, or `skip` — for the human-readable Pre-Ship Checks output below,
@@ -836,6 +871,71 @@ typecheck:  {pass|fail|timeout|skip}
 test:       {pass|fail|timeout|skip}
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 ```
+
+### Skip-Locally Learning Trigger
+
+After each REAL check attempt above (one that actually ran through the `setsid timeout ...`
+wrapper — not a skip-on-read short-circuit from the "Skip-Locally Classification" section, which
+never reaches here) POSTs its outcome, decide whether this outcome should grow a learned-skip
+streak toward a new skip-locally classification.
+
+**Only `skipped`/`timed_out` outcomes qualify — a `ran_passed` or `ran_failed` outcome never
+does.** If `$VC_STATUS` is `ran_passed` or `ran_failed`, stop here — take no further action for
+this check. A real pass, or a real test/lint failure, is a completely separate, expected outcome
+and must never contribute to this counter or trigger a skip-locally write. A check that reliably
+fails because the code under review is wrong should keep running and keep failing loudly, not get
+silently marked as something the agent stops attempting.
+
+If `$VC_STATUS` is `skipped` or `timed_out` (an environmental `$VC_REASON` — never `learned_skip`
+on this path, since this is the real-check branch, not the skip-on-read branch), query this
+check+repo's history, most-recent-first, via LVB-4.4's repo+checkName mode:
+
+```bash
+HISTORY_STATUSES=$(curl -sf -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
+  "$SHIPWRIGHT_TASK_STORE_URL/verification-checks?repo=$GH_REPO&checkName=$CHECK_NAME&limit=5" \
+  | jq -r '.checks[].status')
+
+STREAK=0
+while IFS= read -r s; do
+  if [ "$s" = "skipped" ] || [ "$s" = "timed_out" ]; then
+    STREAK=$((STREAK + 1))
+  else
+    break
+  fi
+done <<< "$HISTORY_STATUSES"
+```
+
+The endpoint returns rows ordered by `at` DESCENDING (most recent first) specifically so this
+walk can start from the outcome just recorded and count backward. The loop counts the CONSECUTIVE
+run of `skipped`/`timed_out` rows starting from the most recent, and **stops (via `break`) at the
+first `ran_passed` or `ran_failed` row** — that row breaks/resets the streak count at exactly that
+point. A `ran_failed` row anywhere in the history caps everything before it out of the count
+entirely: two timeouts separated by one real failure never sum to a streak of 2, because the
+`ran_failed` row terminates the walk before those two skip/timeout rows are ever counted together.
+This is the mechanism that makes a real, expected `ran_failed` outcome structurally unable to
+contribute to this counter or trigger a skip-locally write on its own — never a ran-failed
+outcome, only ever a run of skipped/timed_out outcomes.
+
+**If `$STREAK -ge 2`:** the just-recorded outcome is the 2nd (or later) consecutive skip/timeout
+for this check+repo — trigger the write, carrying the triggering (this run's own, most recent)
+`$VC_REASON` forward as the new entry's recorded reason:
+
+```bash
+if [ "$STREAK" -ge 2 ]; then
+  echo "⚠ Learned skip-locally for $CHECK_NAME after 2 consecutive $VC_REASON outcomes — recorded in {doc path}"
+  # Reuse Step 8.6's write mechanics (same target-doc resolution, same full-replace of the
+  # Shipwright Learned Facts marker subsection's skip-locally table) invoked here inline, rather
+  # than only at the end of Step 8.6 — this makes the classification available immediately to a
+  # later check in this same Step 8 run with the same checkName, however unlikely. Update this
+  # run's in-memory skip-locally map (the one "Skip-Locally Classification: Read Before
+  # Attempting Each Check" loaded at the top of Step 8) in place too, so a within-run reread of
+  # that map — not just the on-disk doc — stays consistent.
+fi
+```
+
+This write is best-effort and never blocks the pipeline, the same posture as every other write in
+this step — a failure to write or commit it is logged and skipped, and the rest of Step 8
+proceeds regardless.
 
 **Budget derivation.** Prefer deriving `{budget}` from the target repo's real recent CI job
 durations over a guessed constant:
@@ -998,7 +1098,13 @@ recorded — is only derived during Step 8.
 - **Write target:** always inside `${SHIPWRIGHT_WORKTREE_DIR:-$HOME/worktrees}/{repo-slug}-{branch-slug}/`. Never the shared repo checkout.
 - **Facts to record:** the scoped-command variants from the Step 0b cache entry
   (`lintScoped`/`typecheckScoped`/`testScoped`, when present), the `{budget}` Step 8 used plus
-  its `ci-derived`/`fallback-10m` source, and the reserved skip-locally slot.
+  its `ci-derived`/`fallback-10m` source, and this run's skip-locally classifications table — the
+  in-memory `checkName -> reasonCategory` map Step 8's "Skip-Locally Classification: Read Before
+  Attempting Each Check" section loaded at the top of Step 8, as updated in place by any writes
+  the "Skip-Locally Learning Trigger" section performed mid-run. Serializing it here too is a
+  safety net, not a second write mechanism: if an inline trigger write already landed, this
+  full-replace reproduces the same content and is a no-op; if an inline write failed, this is
+  where it still gets captured.
 - **Commit it** on the task's branch so it lands in this task's PR, alongside Step 8.5's
   docs-refresh commit:
   ```bash
