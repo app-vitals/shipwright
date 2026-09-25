@@ -26,8 +26,8 @@ metrics on success.
 > GCP/GKE target (`<your-service-host>`, `<your-gcp-project>`) — unlike the Deploy model
 > detection above, it is not read dynamically from the target repo and needs manual
 > adaptation per repo. In short: this command is proven across App Vitals' own two repos
-> (this repo on `direct`, `vitals-os` on `staged` with the default stage names) — treat it
-> as validated for that shape, not as a general-purpose CI/CD abstraction.
+> (this repo on `direct`, a second internal repo on `staged` with the default stage names) —
+> treat it as validated for that shape, not as a general-purpose CI/CD abstraction.
 
 > **Task store setup:** This command updates task status in the Shipwright task store on deploy completion. If `SHIPWRIGHT_TASK_STORE_URL` or `SHIPWRIGHT_TASK_STORE_TOKEN` is missing, invoke `/shipwright:task-store` for setup instructions.
 
