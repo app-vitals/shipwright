@@ -544,6 +544,17 @@ function buildCombinedApp() {
         updatedAt: new Date(),
         missingRequiredEnv: [],
       }),
+      updateFields: async () => {
+        throw new Error("not implemented");
+      },
+      runTransaction: async (fn) => fn(undefined as never),
+    },
+    agentTypeRegistry: {
+      getManifest: () => {
+        throw new Error("not implemented");
+      },
+      tryGetManifest: () => undefined,
+      listTypes: () => [],
     },
     agentEnvService: {
       upsert: async () => {},

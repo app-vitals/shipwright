@@ -23,8 +23,8 @@ import { callerLabel } from "@shipwright/lib/request-context";
 import type { ErrorCapturingClient } from "@shipwright/lib/sentry";
 import type { AgentEnvService } from "./agent-envs.ts";
 import type { AgentProvisioner, ProvisionResult } from "./agent-provisioner.ts";
-import { createAdminApp } from "./agents-api.ts";
 import type { AdminDeps } from "./agents-api.ts";
+import { createAdminApp } from "./agents-api.ts";
 import { BadGatewayError, NotFoundError } from "./errors.ts";
 
 const AGENT_ID = "agent-test-123";
@@ -118,6 +118,10 @@ function makeBaseDeps(
       updateSelfHosted: async () => {
         throw new Error("not implemented");
       },
+      updateFields: async () => {
+        throw new Error("not implemented");
+      },
+      runTransaction: async (fn) => fn(undefined as never),
     },
     agentEnvService,
     agentCronJobService: {
@@ -179,6 +183,13 @@ function makeBaseDeps(
     agentMemberService: {
       add: async () => ({}) as never,
       listByAgentId: async () => [],
+    },
+    agentTypeRegistry: {
+      getManifest: () => {
+        throw new Error("not implemented");
+      },
+      tryGetManifest: () => undefined,
+      listTypes: () => [],
     },
     agentChatTokenService: {
       upsertDailyByModel: async () => ({}) as never,
