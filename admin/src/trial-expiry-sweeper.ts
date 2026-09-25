@@ -8,7 +8,9 @@
  *      still null (an unset `trialExpiresAt` — the ATE-1.1 default — is never
  *      considered; see isDueForWarning below).
  *   2. For each candidate whose `trialExpiresAt` falls within the configured
- *      warning window (default 3 days, `warningDays`), looks up that agent's
+ *      warning band — up to `warningDays` ahead (default 3) and no more than
+ *      `graceDays` behind (defaults to the same 3, so a trial that lapsed
+ *      long ago is never retroactively alerted) — looks up that agent's
  *      own `SLACK_BOT_TOKEN` / `SLACK_ALERT_CHANNEL` (AgentEnv rows, decrypted
  *      via AgentEnvService.getConfigBundle) and posts one Slack warning
  *      naming the expiry date.
@@ -103,6 +105,11 @@ export interface TrialExpirySweeperDeps {
   clock?: Clock;
   /** How many days out from `trialExpiresAt` the warning should fire. */
   warningDays?: number;
+  /**
+   * How many days *past* `trialExpiresAt` the warning still fires. Defaults
+   * to `warningDays` (a symmetric band around expiry) — see isDueForWarning.
+   */
+  graceDays?: number;
   /** Line logger for per-agent outcomes; defaults to `console.log`. */
   log?: (line: string) => void;
 }
@@ -115,6 +122,12 @@ export interface TrialExpirySweepResult {
   skipped: number;
   /** Due for a warning, Slack config present, but the send itself failed. */
   failed: number;
+  /**
+   * Never warned, and `trialExpiresAt` is now more than `graceDays` in the
+   * past — deliberately not alerted (see isPastWarningGrace), counted so the
+   * decision stays visible in the per-tick summary instead of being silent.
+   */
+  stale: number;
 }
 
 /** Matches the task description's default warning window. */
@@ -125,6 +138,25 @@ const MS_PER_DAY = 24 * 60 * 60 * 1000;
 // ─── Pure helpers ───────────────────────────────────────────────────────────
 
 /**
+ * Whether an agent's `trialExpiresAt` is so far in the past that a warning is
+ * no longer worth sending. `trialExpiresAt` is freely admin-settable to an
+ * arbitrary past date (PATCH /agents/:id applies no future-only validation),
+ * and has been since ATE-1.1 — without this bound the first tick after this
+ * sweeper deploys would Slack-warn *every* long-lapsed trial agent at once,
+ * with wording about an expiry that came and went months ago.
+ *
+ * Exported so the sweeper can count (and surface) these rather than dropping
+ * them silently.
+ */
+export function isPastWarningGrace(
+  trialExpiresAt: Date,
+  now: Date,
+  graceDays: number,
+): boolean {
+  return trialExpiresAt.getTime() - now.getTime() < -graceDays * MS_PER_DAY;
+}
+
+/**
  * Whether an agent is due for a trial-expiry warning right now, given only
  * the two schema fields (trialExpiresAt, trialExpiryWarnedAt) plus the
  * current time and the configured window:
@@ -132,20 +164,32 @@ const MS_PER_DAY = 24 * 60 * 60 * 1000;
  *   - `trialExpiresAt` unset (ATE-1.1 default)      → never due
  *   - `trialExpiryWarnedAt` already set              → never due (dedup —
  *     acceptance criterion 2: a warned agent is never warned twice)
+ *   - `trialExpiresAt` more than `graceDays` in the past → never due (see
+ *     isPastWarningGrace: no retroactive alert burst for trials that lapsed
+ *     long before this sweeper existed)
  *   - otherwise due once `trialExpiresAt` is at most `windowDays` away —
- *     including an already-past `trialExpiresAt` (a trial that expired
- *     before anyone noticed still deserves exactly one warning, not silence)
+ *     still including a *recently*-past `trialExpiresAt` (a trial that
+ *     expired days ago before anyone noticed deserves exactly one warning,
+ *     not silence — the message reads "expired on", see
+ *     buildTrialExpiryWarningMessage)
+ *
+ * `graceDays` defaults to `windowDays`, making the firing band symmetric
+ * around expiry: the same number of days of lateness the sweeper is willing
+ * to warn early about, it is willing to warn late about.
  */
 export function isDueForWarning(
   trialExpiresAt: Date | null,
   trialExpiryWarnedAt: Date | null,
   now: Date,
   windowDays: number = DEFAULT_TRIAL_EXPIRY_WARNING_DAYS,
+  graceDays: number = windowDays,
 ): boolean {
   if (!trialExpiresAt) return false;
   if (trialExpiryWarnedAt) return false;
-  const msUntilExpiry = trialExpiresAt.getTime() - now.getTime();
-  return msUntilExpiry <= windowDays * MS_PER_DAY;
+  if (trialExpiresAt.getTime() - now.getTime() > windowDays * MS_PER_DAY) {
+    return false;
+  }
+  return !isPastWarningGrace(trialExpiresAt, now, graceDays);
 }
 
 /**
@@ -155,12 +199,27 @@ export function isDueForWarning(
  * Slack access blocked, agent never deleted. Naming the actual date (rather
  * than "in N days") matters because the sweeper's own dedup means this is
  * often the *only* warning an operator gets before lockdown.
+ *
+ * Two tenses, because the sweeper deliberately still fires for a trial that
+ * lapsed within the grace window (see isDueForWarning): "expires on ..." for
+ * a future date, "expired on ..." for a past one. Same lockdown consequence
+ * either way — only the tense changes, so a late alert doesn't read as if
+ * the deadline were still ahead.
  */
 export function buildTrialExpiryWarningMessage(
   agentName: string,
   trialExpiresAt: Date,
+  now: Date,
 ): string {
   const dateStr = trialExpiresAt.toISOString().slice(0, 10);
+  const alreadyExpired = trialExpiresAt.getTime() <= now.getTime();
+  if (alreadyExpired) {
+    return (
+      `:warning: Trial for agent \`${agentName}\` expired on ${dateStr}. ` +
+      `This agent's crons will be disabled and its Slack access will be ` +
+      `blocked until the trial is renewed.`
+    );
+  }
   return (
     `:warning: Trial for agent \`${agentName}\` expires on ${dateStr}. ` +
     `After that date this agent's crons will be disabled and its Slack ` +
@@ -171,18 +230,41 @@ export function buildTrialExpiryWarningMessage(
 // ─── Production Slack sender ────────────────────────────────────────────────
 
 /**
- * Production implementation of SendSlackWarning. Constructs a fresh
- * @slack/web-api WebClient per call using *the target agent's own* bot token
- * — mirrors (not reuses, since it's cross-service) the alert-posting pattern
- * in agent/src/cron-handler.ts. There is no long-lived client to share/cache:
- * every tenant agent has a distinct token, and posting is infrequent (at most
- * once per agent, ever, thanks to the dedup gate).
+ * The slice of @slack/web-api's WebClient this module actually calls. Narrow
+ * on purpose so tests can inject a typed double covering the real send path
+ * (same approach as agent/src/startup-dm.ts's injected WebClient).
+ */
+export type SlackPostMessageClient = Pick<WebClient, "chat">;
+
+/** Builds a Slack client for one agent's bot token. */
+export type SlackClientFactory = (botToken: string) => SlackPostMessageClient;
+
+/**
+ * The production factory: a fresh @slack/web-api WebClient per call, built
+ * from *the target agent's own* bot token — mirrors (not reuses, since it's
+ * cross-service) the alert-posting pattern in agent/src/cron-handler.ts.
+ * There is no long-lived client to share/cache: every tenant agent has a
+ * distinct token, and posting is infrequent (at most once per agent, ever,
+ * thanks to the dedup gate).
+ */
+export const defaultSlackClientFactory: SlackClientFactory = (botToken) =>
+  new WebClient(botToken);
+
+/**
+ * Production implementation of SendSlackWarning: posts one message through a
+ * real @slack/web-api client and converts any throw into `false` so a Slack
+ * outage can never abort the sweep.
+ *
+ * `createClient` is injected (defaulting to defaultSlackClientFactory) purely
+ * so tests can exercise this function's own send + try/catch path against a
+ * typed WebClient double instead of a live Slack workspace.
  */
 export async function sendTrialExpiryWarning(
   params: SendSlackWarningParams,
+  createClient: SlackClientFactory = defaultSlackClientFactory,
 ): Promise<boolean> {
   try {
-    const client = new WebClient(params.botToken);
+    const client = createClient(params.botToken);
     await client.chat.postMessage({
       channel: params.channel,
       text: params.text,
@@ -199,6 +281,7 @@ export async function sendTrialExpiryWarning(
 export class TrialExpiryWarningSweeper {
   private readonly clock: Clock;
   private readonly warningDays: number;
+  private readonly graceDays: number;
   private readonly sendSlackMessage: SendSlackWarning;
   private readonly log: (line: string) => void;
   /** True while a sweep is running — mirrors SessionAlertSweeper's guard. */
@@ -207,6 +290,7 @@ export class TrialExpiryWarningSweeper {
   constructor(private readonly deps: TrialExpirySweeperDeps) {
     this.clock = deps.clock ?? SystemClock();
     this.warningDays = deps.warningDays ?? DEFAULT_TRIAL_EXPIRY_WARNING_DAYS;
+    this.graceDays = deps.graceDays ?? this.warningDays;
     this.sendSlackMessage = deps.sendSlackMessage ?? sendTrialExpiryWarning;
     this.log = deps.log ?? ((line) => console.log(line));
   }
@@ -227,7 +311,7 @@ export class TrialExpiryWarningSweeper {
       console.warn(
         "[trial-expiry-sweeper] previous tick still in flight — skipping",
       );
-      return { warned: 0, skipped: 0, failed: 0 };
+      return { warned: 0, skipped: 0, failed: 0, stale: 0 };
     }
     this.sweeping = true;
     try {
@@ -242,6 +326,7 @@ export class TrialExpiryWarningSweeper {
       warned: 0,
       skipped: 0,
       failed: 0,
+      stale: 0,
     };
 
     let candidates: TrialExpiryAgentRow[];
@@ -263,10 +348,10 @@ export class TrialExpiryWarningSweeper {
       }
     }
 
-    const acted = result.warned + result.skipped + result.failed;
+    const acted = result.warned + result.skipped + result.failed + result.stale;
     if (acted > 0) {
       console.log(
-        `[trial-expiry-sweeper] warned=${result.warned} skipped=${result.skipped} failed=${result.failed}`,
+        `[trial-expiry-sweeper] warned=${result.warned} skipped=${result.skipped} failed=${result.failed} stale=${result.stale}`,
       );
     }
 
@@ -284,8 +369,20 @@ export class TrialExpiryWarningSweeper {
         agent.trialExpiryWarnedAt,
         now,
         this.warningDays,
+        this.graceDays,
       )
     ) {
+      // Distinguish "not due yet / already warned" (nothing to say) from
+      // "expired too long ago to be worth warning about" — the latter is a
+      // deliberate non-alert, so count it rather than letting a long-lapsed
+      // trial disappear from the sweep with no trace.
+      if (
+        agent.trialExpiresAt &&
+        !agent.trialExpiryWarnedAt &&
+        isPastWarningGrace(agent.trialExpiresAt, now, this.graceDays)
+      ) {
+        result.stale++;
+      }
       return;
     }
 
@@ -304,7 +401,11 @@ export class TrialExpiryWarningSweeper {
     // trialExpiresAt is guaranteed non-null here (isDueForWarning returned
     // true), but TypeScript can't see through that without a cast.
     const trialExpiresAt = agent.trialExpiresAt as Date;
-    const text = buildTrialExpiryWarningMessage(agent.name, trialExpiresAt);
+    const text = buildTrialExpiryWarningMessage(
+      agent.name,
+      trialExpiresAt,
+      now,
+    );
     const sent = await this.sendSlackMessage({ botToken, channel, text });
     if (!sent) {
       console.error(

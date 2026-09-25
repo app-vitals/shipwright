@@ -9,9 +9,13 @@
  * test-isolation rule (CLAUDE.md).
  */
 
-import { describe, expect, it } from "bun:test";
+import { describe, expect, it, mock } from "bun:test";
+import { WebClient } from "@slack/web-api";
 import { FixedClock } from "./clock.ts";
 import {
+  defaultSlackClientFactory,
+  type SlackPostMessageClient,
+  sendTrialExpiryWarning,
   type TrialExpiryAgentRow,
   type TrialExpiryPrismaLike,
   type TrialExpirySweeperDeps,
@@ -245,6 +249,45 @@ describe("TrialExpiryWarningSweeper", () => {
     expect(agentA.trialExpiryWarnedAt).toBeNull();
   });
 
+  it("does not warn a trial that lapsed further back than the grace window", async () => {
+    // trialExpiresAt is admin-settable to any past date (PATCH /agents/:id
+    // applies no future-only validation), so without the grace bound the
+    // first tick after deploy would alert every long-lapsed trial at once.
+    const longLapsed = makeAgent({
+      id: "agent-long-lapsed",
+      trialExpiresAt: daysFromNow(-90),
+    });
+    const recentlyLapsed = makeAgent({
+      id: "agent-recently-lapsed",
+      trialExpiresAt: daysFromNow(-1),
+    });
+    const deps = buildDeps([longLapsed, recentlyLapsed]);
+    const sweeper = new TrialExpiryWarningSweeper(deps);
+
+    const result = await sweeper.tick();
+
+    expect(deps.sends.map((s) => s.agentId)).toEqual(["agent-recently-lapsed"]);
+    expect(result.warned).toBe(1);
+    expect(result.stale).toBe(1);
+    expect(longLapsed.trialExpiryWarnedAt).toBeNull();
+    // A grace-window alert reads in the past tense.
+    expect(deps.sends[0].text).toContain("expired on");
+  });
+
+  it("honours a custom graceDays wider than the warning window", async () => {
+    const lapsed = makeAgent({
+      id: "agent-lapsed",
+      trialExpiresAt: daysFromNow(-10),
+    });
+    const deps = buildDeps([lapsed]);
+    const sweeper = new TrialExpiryWarningSweeper({ ...deps, graceDays: 14 });
+
+    const result = await sweeper.tick();
+
+    expect(result.warned).toBe(1);
+    expect(result.stale).toBe(0);
+  });
+
   it("ignores an agent whose expiry is outside the warning window", async () => {
     const farOut = makeAgent({
       id: "agent-far",
@@ -323,10 +366,103 @@ describe("TrialExpiryWarningSweeper", () => {
 
     const firstTick = sweeper.tick();
     const secondTick = await sweeper.tick();
-    expect(secondTick).toEqual({ warned: 0, skipped: 0, failed: 0 });
+    expect(secondTick).toEqual({
+      warned: 0,
+      skipped: 0,
+      failed: 0,
+      stale: 0,
+    });
 
     resolveFindMany?.();
     const firstResult = await firstTick;
     expect(firstResult.warned).toBe(1);
+  });
+});
+
+// ─── The real @slack/web-api send path ──────────────────────────────────────
+
+describe("sendTrialExpiryWarning", () => {
+  const params = {
+    botToken: "xoxb-fake-token",
+    channel: "#alerts",
+    text: ":warning: Trial for agent `acme-agent` expires on 2026-09-28.",
+  };
+
+  function makeSlackClient(
+    behaviour: { error?: Error } = {},
+  ): SlackPostMessageClient & {
+    chat: { postMessage: ReturnType<typeof mock> };
+  } {
+    const postMessage = mock(async (_args: unknown) => {
+      if (behaviour.error) throw behaviour.error;
+      return { ok: true, ts: "1737000000.000100" };
+    });
+    return { chat: { postMessage } } as unknown as SlackPostMessageClient & {
+      chat: { postMessage: ReturnType<typeof mock> };
+    };
+  }
+
+  it("builds a client from the agent's own bot token and posts the message", async () => {
+    const client = makeSlackClient();
+    const tokensSeen: string[] = [];
+
+    const sent = await sendTrialExpiryWarning(params, (botToken) => {
+      tokensSeen.push(botToken);
+      return client;
+    });
+
+    expect(sent).toBe(true);
+    expect(tokensSeen).toEqual([params.botToken]);
+    expect(client.chat.postMessage).toHaveBeenCalledTimes(1);
+    expect(client.chat.postMessage).toHaveBeenCalledWith({
+      channel: params.channel,
+      text: params.text,
+    });
+  });
+
+  it("returns false (never throws) when chat.postMessage rejects", async () => {
+    const client = makeSlackClient({
+      error: new Error("An API error occurred: channel_not_found"),
+    });
+    const errors: unknown[][] = [];
+    const originalError = console.error.bind(console);
+    console.error = (...args: unknown[]) => {
+      errors.push(args);
+    };
+
+    try {
+      const sent = await sendTrialExpiryWarning(params, () => client);
+      expect(sent).toBe(false);
+    } finally {
+      console.error = originalError;
+    }
+
+    expect(client.chat.postMessage).toHaveBeenCalledTimes(1);
+    // The failure is logged, not swallowed — a persistently failing agent has
+    // to stay visible in the admin service's logs (see the module header).
+    expect(errors).toHaveLength(1);
+    expect(String(errors[0][0])).toContain("chat.postMessage failed");
+  });
+
+  it("returns false when the client factory itself throws (bad token)", async () => {
+    const originalError = console.error.bind(console);
+    console.error = () => {};
+    try {
+      const sent = await sendTrialExpiryWarning(params, () => {
+        throw new Error("invalid token");
+      });
+      expect(sent).toBe(false);
+    } finally {
+      console.error = originalError;
+    }
+  });
+
+  it("defaults to a real @slack/web-api WebClient built from the bot token", async () => {
+    // The default factory is the production path — assert it really returns a
+    // WebClient with a callable chat.postMessage, without making a network
+    // call (the doubles above cover the send/catch behaviour itself).
+    const client = defaultSlackClientFactory(params.botToken);
+    expect(client).toBeInstanceOf(WebClient);
+    expect(typeof client.chat.postMessage).toBe("function");
   });
 });
