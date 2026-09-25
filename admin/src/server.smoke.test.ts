@@ -72,6 +72,13 @@ function buildComposedApp() {
       getDetail: notImplemented,
       exists: notImplemented,
       updateSelfHosted: notImplemented,
+      updateFields: notImplemented,
+      runTransaction: notImplemented,
+    },
+    agentTypeRegistry: {
+      getManifest: notImplemented,
+      tryGetManifest: notImplemented,
+      listTypes: notImplemented,
     },
     agentEnvService: {
       upsert: notImplemented,

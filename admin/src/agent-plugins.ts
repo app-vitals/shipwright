@@ -12,6 +12,7 @@
 
 import type { AgentPlugin, PrismaClient } from "../prisma/client/client.ts";
 import { NotFoundError } from "./errors.ts";
+import type { PrismaTransactionClient } from "./prisma-tx.ts";
 
 export type { AgentPlugin };
 
@@ -42,13 +43,18 @@ export class AgentPluginService {
   /**
    * Add a plugin for the given agent.
    * Uses upsert so re-adding an existing plugin updates its version and re-enables it.
+   *
+   * @param client - defaults to `this.prisma`; pass the `tx` argument from a
+   *   caller's `prisma.$transaction(async (tx) => ...)` to make this write
+   *   participate in that transaction (see createAgent() in agents.ts).
    */
   async add(
     agentId: string,
     name: string,
     version?: string | null,
+    client: PrismaTransactionClient = this.prisma,
   ): Promise<AgentPlugin> {
-    return this.prisma.agentPlugin.upsert({
+    return client.agentPlugin.upsert({
       where: { agentId_name: { agentId, name } },
       create: { agentId, name, version: version ?? null, enabled: true },
       update: { version: version ?? null, enabled: true },

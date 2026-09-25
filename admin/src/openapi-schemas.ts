@@ -100,6 +100,47 @@ export const PatchAgentBodySchema = z
   .openapi("PatchAgentBody");
 
 /**
+ * POST /agents request body — mirrors createAgent()'s CreateAgentFormInput
+ * (admin/src/agents.ts, APA-1.1) field for field: raw, unparsed strings.
+ * createAgent() owns all of the parsing (multi-line repo/allowlist/member
+ * lists, dedup, format validation), so every optional field here stays a
+ * plain string rather than a pre-parsed array — matching exactly what the
+ * web UI form at /admin/agents/new submits.
+ */
+export const CreateAgentBodySchema = z
+  .object({
+    name: z.string().min(1).openapi({ example: "Bodhi" }),
+    typeName: z.string().min(1).openapi({ example: "coding" }),
+    /**
+     * "in-cluster" means K8s-provisioned; anything else (including absent)
+     * means self-hosted.
+     */
+    runtime: z.string().optional().openapi({ example: "in-cluster" }),
+    /** Newline-separated org/repo list. */
+    reposRaw: z.string().optional().openapi({ example: "my-org/my-repo" }),
+    /** Newline-separated GitHub logins allowed to trigger review/dev-task work. */
+    authorAllowlistRaw: z.string().optional().openapi({ example: "octocat" }),
+    /** Newline-separated GitHub logins allowed to trigger patch runs. */
+    patchAuthorAllowlistRaw: z
+      .string()
+      .optional()
+      .openapi({ example: "octocat" }),
+    /** Newline-separated member emails. */
+    memberEmailsRaw: z
+      .string()
+      .optional()
+      .openapi({ example: "dev@example.com" }),
+    /** Only the literal string "true" enables restrictSlackToMembers. */
+    restrictSlackToMembersRaw: z
+      .string()
+      .optional()
+      .openapi({ example: "true" }),
+    claudeCodeOauthToken: z.string().optional(),
+    anthropicApiKey: z.string().optional(),
+  })
+  .openapi("CreateAgentBody");
+
+/**
  * DELETE /agents/:id request body. Entirely optional — omit it (or the
  * xoxpToken field) to skip automatic Slack app deletion; a present Slack app
  * then becomes a manual checklist entry instead of a hard failure.
@@ -285,15 +326,11 @@ export const AgentCronRunSchema = z
       description:
         "Agent session id this run was executed under. Null for runs with no recorded session.",
     }),
-    lastHeartbeatAt: z
-      .string()
-      .datetime()
-      .nullable()
-      .openapi({
-        example: "2026-01-01T08:00:03.000Z",
-        description:
-          "Most recent debounced progress-push (recordProgress()) timestamp, sourced from the agent's injected Clock. Null for runs that never reported progress (short/legacy runs).",
-      }),
+    lastHeartbeatAt: z.string().datetime().nullable().openapi({
+      example: "2026-01-01T08:00:03.000Z",
+      description:
+        "Most recent debounced progress-push (recordProgress()) timestamp, sourced from the agent's injected Clock. Null for runs that never reported progress (short/legacy runs).",
+    }),
     createdAt: z
       .string()
       .datetime()
@@ -399,16 +436,11 @@ export const PatchAgentCronRunBodySchema = z
       example: "session-abc-123",
       description: "Agent session id this run was executed under.",
     }),
-    lastHeartbeatAt: z
-      .string()
-      .datetime()
-      .nullable()
-      .optional()
-      .openapi({
-        example: "2026-01-01T08:00:03.000Z",
-        description:
-          "Most recent debounced progress-push (recordProgress()) timestamp, sourced from the agent's injected Clock.",
-      }),
+    lastHeartbeatAt: z.string().datetime().nullable().optional().openapi({
+      example: "2026-01-01T08:00:03.000Z",
+      description:
+        "Most recent debounced progress-push (recordProgress()) timestamp, sourced from the agent's injected Clock.",
+    }),
     modelBreakdown: z
       .array(ModelBreakdownEntrySchema)
       .optional()

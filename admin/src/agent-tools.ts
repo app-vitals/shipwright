@@ -9,6 +9,7 @@
 
 import type { AgentTool, PrismaClient } from "../prisma/client/client.ts";
 import { NotFoundError } from "./errors.ts";
+import type { PrismaTransactionClient } from "./prisma-tx.ts";
 
 export type { AgentTool };
 
@@ -28,9 +29,17 @@ export class AgentToolService {
   /**
    * Add a tool pattern for the given agent.
    * Uses upsert so re-adding a disabled pattern re-enables it.
+   *
+   * @param client - defaults to `this.prisma`; pass the `tx` argument from a
+   *   caller's `prisma.$transaction(async (tx) => ...)` to make this write
+   *   participate in that transaction (see createAgent() in agents.ts).
    */
-  async add(agentId: string, pattern: string): Promise<AgentTool> {
-    return this.prisma.agentTool.upsert({
+  async add(
+    agentId: string,
+    pattern: string,
+    client: PrismaTransactionClient = this.prisma,
+  ): Promise<AgentTool> {
+    return client.agentTool.upsert({
       where: { agentId_pattern: { agentId, pattern } },
       create: { agentId, pattern, enabled: true },
       update: { enabled: true },

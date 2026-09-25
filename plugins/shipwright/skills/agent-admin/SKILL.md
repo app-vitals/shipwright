@@ -361,15 +361,40 @@ curl -sf -X DELETE \
 
 ## Creating a New Agent (Admin Only)
 
-The web UI form at `/admin/agents/new` is the sole supported way to create a new agent —
-there is no JSON API for agent creation. (`/admin/provision` still works as a legacy
-redirect to the same page.)
+Two callers, one implementation: `POST /agents` (JSON admin API) and the web UI form at
+`/admin/agents/new` (`POST /admin/agents`, an HTML form endpoint) both delegate to the same
+`createAgent()` function — validate name/typeName, create the Agent row, seed
+AgentTool/AgentPlugin from the selected Agent Type manifest, attach repos/allowlists/members,
+patch Claude credentials, and (for `runtime: "in-cluster"`) provision the Kubernetes workload.
+Creation is transactional: any failure leaves zero rows behind, never a partial-success 200.
+(`/admin/provision` still works as a legacy redirect to the form.)
 
-The form covers both runtime modes — self-hosted and in-cluster (managed) — plus agent
-type selection, Slack app connection, GitHub auth, AI credentials, repos, member emails,
-and author allowlists, all in one flow. Sign in as an admin, open `/admin/agents/new`, and
-walk through the form; it submits to `POST /admin/agents` (an HTML form endpoint, not part
-of the JSON admin API documented elsewhere in this skill).
+```bash
+# POST /agents — admin key or session cookie only (not a per-agent bearer token)
+curl -sf -X POST \
+  -H "Authorization: Bearer $SHIPWRIGHT_ADMIN_API_KEY" \
+  -H "Content-Type: application/json" \
+  "$SHIPWRIGHT_API_URL/agents" \
+  -d '{
+    "name": "My New Agent",
+    "typeName": "coding",
+    "runtime": "in-cluster",
+    "reposRaw": "my-org/my-repo\nmy-org/another-repo"
+  }' | jq .
+```
+
+Every field besides `name`/`typeName` is optional and raw/unparsed — `reposRaw`,
+`authorAllowlistRaw`, `patchAuthorAllowlistRaw`, and `memberEmailsRaw` are newline-separated
+lists (mirroring the form's textareas); `restrictSlackToMembersRaw` is only truthy for the
+literal string `"true"`. On success the response is the created agent, same shape as
+`GET /agents/:id`. On failure the response is `{ "error": "create agent failed: <code>" }`
+with a 4xx status — `<code>` is one of `missing_fields`, `invalid_type`,
+`provisioning_disabled`, `seed_failed`, `invalid_repo_format`,
+`invalid_author_allowlist_format`, or `provision_failed`.
+
+The web UI form at `/admin/agents/new` remains the friendlier path for a human: it covers
+both runtime modes, agent type selection, Slack app connection, GitHub auth, AI credentials,
+repos, member emails, and author allowlists in one guided flow.
 
 After the agent is created, set env vars, add tool patterns, install plugins, and seed
 crons using the endpoints documented elsewhere in this skill.

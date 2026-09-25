@@ -1271,9 +1271,20 @@ export const VerificationCheckListQuerySchema = z
   .object({
     taskId: z.string().optional().openapi({
       example: "clx1234567890",
-      description: "Exactly one of ?taskId=/?prId= is required.",
+      description:
+        "Selects task mode. Exactly one of ?taskId=, ?prId=, or (?repo=+?checkName=) is required.",
     }),
     prId: z.string().optional().openapi({ example: "clx0987654321" }),
+    repo: z.string().optional().openapi({
+      example: "org/repo",
+      description:
+        "Selects repo+checkName mode (LVB-4.4) — paired with ?checkName=, both required together. Returns history for this repo+check across ALL tasks/PRs, ordered by `at` DESCENDING (most recent first) — a deliberate deviation from the taskId/prId modes' ascending order, so a caller can walk backward from the most recent outcome to detect a consecutive skipped/timed_out streak.",
+    }),
+    checkName: z.string().optional().openapi({
+      example: "unit",
+      description:
+        "Paired with ?repo= — supplying only one of the pair is 400.",
+    }),
     limit: z
       .string()
       .optional()
@@ -1290,7 +1301,7 @@ export const VerificationCheckListResponseSchema = z
   .object({
     checks: z.array(VerificationCheckSchema).openapi({
       description:
-        "Verification checks for the given task/PR, ordered by `at` ascending (oldest first).",
+        "Verification checks matching the selected mode. Ordered by `at` ascending (oldest first) for taskId/prId modes; ordered by `at` descending (most recent first) for repo+checkName mode.",
     }),
     total: z.number().int().openapi({ example: 1 }),
     limit: z.number().int().openapi({ example: 50 }),

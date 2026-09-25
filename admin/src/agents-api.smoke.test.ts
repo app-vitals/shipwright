@@ -12,8 +12,8 @@ import type { Prisma } from "../prisma/client/client.ts";
 import type { AgentProvisioner, ProvisionResult } from "./agent-provisioner.ts";
 import type { AgentTokenService } from "./agent-tokens.ts";
 import type { AgentTypeManifest } from "./agent-type-registry.ts";
-import { createAdminApp, parseAdminApiKeys } from "./agents-api.ts";
 import type { AdminDeps } from "./agents-api.ts";
+import { createAdminApp, parseAdminApiKeys } from "./agents-api.ts";
 
 // ─── Fake AgentTypeManifestResolver ────────────────────────────────────────
 //
@@ -289,6 +289,36 @@ function makeMockDeps(): AdminDeps {
         updatedAt: new Date("2024-01-01"),
         missingRequiredEnv: [],
       }),
+      updateFields: async (
+        id: string,
+        input: {
+          name?: string;
+          repos?: string[];
+          reviewAuthorAllowlist?: string[];
+          patchAuthorAllowlist?: string[];
+          restrictSlackToMembers?: boolean;
+          selfHosted?: boolean;
+          slackId?: string | null;
+        },
+      ) => ({
+        id,
+        name: input.name ?? "Existing Agent",
+        slackId: input.slackId ?? null,
+        selfHosted: input.selfHosted ?? false,
+        repos: input.repos ?? [],
+        reviewAuthorAllowlist: input.reviewAuthorAllowlist ?? [],
+        patchAuthorAllowlist: input.patchAuthorAllowlist ?? [],
+        restrictSlackToMembers: input.restrictSlackToMembers ?? false,
+        typeName: "coding",
+        createdAt: new Date("2024-01-01"),
+        updatedAt: new Date("2024-01-01"),
+        missingRequiredEnv: [],
+      }),
+      // In-memory passthrough — no real Prisma transaction, matches the
+      // AgentService.runTransaction contract closely enough for smoke tests
+      // that never need real rollback-on-error semantics.
+      runTransaction: async <T>(fn: (tx: never) => Promise<T>) =>
+        fn(undefined as never),
     },
     agentEnvService: {
       upsert: async () => {},
@@ -1442,11 +1472,183 @@ describe("admin API — plugins", () => {
   });
 });
 
-// POST /agents (agent creation) was retired — creation now happens
-// exclusively via the web UI form at /admin/agents/new (admin-ui.ts).
-// ADMIN_API_KEY is retained below; it's still used by other describe blocks
-// in this file (reconcile, work queue bearer auth, provision).
+// ADMIN_API_KEY is used by several describe blocks in this file (create,
+// reconcile, work queue bearer auth, provision).
 const ADMIN_API_KEY = "admin-key-for-create-tests";
+
+// ─── Create agent smoke tests (APA-2.1) ───────────────────────────────────────
+
+/**
+ * AdminDeps wired with admin API key auth and an agentService.create() that
+ * counts calls — used by the validation-failure tests below to assert zero
+ * Agent rows are created.
+ */
+function makeMockDepsCountingCreateCalls(): {
+  deps: AdminDeps;
+  createCalls: () => number;
+} {
+  let createCalls = 0;
+  const base = makeMockDeps();
+  const deps: AdminDeps = {
+    ...base,
+    adminApiKeys: parseAdminApiKeys(`admin:${ADMIN_API_KEY}:*`),
+    agentService: {
+      ...base.agentService,
+      create: async (...args) => {
+        createCalls++;
+        return base.agentService.create(
+          ...(args as Parameters<typeof base.agentService.create>),
+        );
+      },
+    },
+  };
+  return { deps, createCalls: () => createCalls };
+}
+
+describe("admin API — POST /agents", () => {
+  let cookie: string;
+
+  beforeAll(async () => {
+    cookie = await makeSessionCookie();
+  });
+
+  it("valid input + admin API key → 200 with created agent matching GET /agents/:id shape", async () => {
+    const deps: AdminDeps = {
+      ...makeMockDeps(),
+      adminApiKeys: parseAdminApiKeys(`admin:${ADMIN_API_KEY}:*`),
+    };
+    const app = createAdminApp(deps);
+    const res = await app.request("/agents", {
+      method: "POST",
+      body: JSON.stringify({ name: "New Agent", typeName: "coding" }),
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${ADMIN_API_KEY}`,
+      },
+    });
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    // Same shape GET /agents/:id returns (GetAgentResultSchema).
+    expect(body).toMatchObject({
+      id: expect.any(String),
+      name: "New Agent",
+      slackId: null,
+      selfHosted: true,
+      repos: [],
+      reviewAuthorAllowlist: [],
+      patchAuthorAllowlist: [],
+      restrictSlackToMembers: false,
+      typeName: "coding",
+      missingRequiredEnv: [],
+    });
+    expect(typeof body.createdAt).toBe("string");
+    expect(typeof body.updatedAt).toBe("string");
+  });
+
+  it("valid input + session cookie → 200 (same admin auth tier as other admin-only routes)", async () => {
+    const app = createAdminApp(makeMockDeps());
+    const res = await app.request("/agents", {
+      method: "POST",
+      body: JSON.stringify({ name: "Cookie Agent", typeName: "coding" }),
+      headers: {
+        "Content-Type": "application/json",
+        Cookie: `admin_session=${cookie}`,
+      },
+    });
+    expect(res.status).toBe(200);
+  });
+
+  it("no Authorization header and no session cookie → 401", async () => {
+    const app = createAdminApp(makeMockDeps());
+    const res = await app.request("/agents", {
+      method: "POST",
+      body: JSON.stringify({ name: "New Agent", typeName: "coding" }),
+      headers: { "Content-Type": "application/json" },
+    });
+    expect(res.status).toBe(401);
+  });
+
+  it("invalid admin API key → 401 with WWW-Authenticate header", async () => {
+    const base = makeMockDeps();
+    const deps: AdminDeps = {
+      ...base,
+      adminApiKeys: parseAdminApiKeys(`admin:${ADMIN_API_KEY}:*`),
+      // A bearer token that matches neither the admin API key map nor a real
+      // DB-issued per-agent token — the DB-token fallback path (validate())
+      // must reject it explicitly, not silently accept it as it would with
+      // makeMockDeps()'s default validate() (which always resolves truthy).
+      agentTokenService: {
+        ...base.agentTokenService,
+        validate: async () => null,
+      },
+    };
+    const app = createAdminApp(deps);
+    const res = await app.request("/agents", {
+      method: "POST",
+      body: JSON.stringify({ name: "New Agent", typeName: "coding" }),
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: "Bearer not-a-real-key",
+      },
+    });
+    expect(res.status).toBe(401);
+    expect(res.headers.get("WWW-Authenticate")).toBeTruthy();
+  });
+
+  it("valid but non-admin-scoped bearer token → 403 (not the per-agent bearer tier)", async () => {
+    const deps: AdminDeps = {
+      ...makeMockDeps(),
+      agentTokenService: {
+        ...makeMockDeps().agentTokenService,
+        validate: async () => ({ agentId: AGENT_ID }),
+      },
+    };
+    const app = createAdminApp(deps);
+    const res = await app.request("/agents", {
+      method: "POST",
+      body: JSON.stringify({ name: "New Agent", typeName: "coding" }),
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: "Bearer per-agent-token",
+      },
+    });
+    expect(res.status).toBe(403);
+  });
+
+  it("missing name → 4xx and no Agent row created", async () => {
+    const { deps, createCalls } = makeMockDepsCountingCreateCalls();
+    const app = createAdminApp(deps);
+    const res = await app.request("/agents", {
+      method: "POST",
+      body: JSON.stringify({ typeName: "coding" }),
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${ADMIN_API_KEY}`,
+      },
+    });
+    expect(res.status).toBeGreaterThanOrEqual(400);
+    expect(res.status).toBeLessThan(500);
+    expect(createCalls()).toBe(0);
+  });
+
+  it("unresolvable typeName → 4xx and no Agent row created", async () => {
+    const { deps, createCalls } = makeMockDepsCountingCreateCalls();
+    const app = createAdminApp(deps);
+    const res = await app.request("/agents", {
+      method: "POST",
+      body: JSON.stringify({ name: "New Agent", typeName: "no-such-type" }),
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${ADMIN_API_KEY}`,
+      },
+    });
+    expect(res.status).toBeGreaterThanOrEqual(400);
+    expect(res.status).toBeLessThan(500);
+    expect(createCalls()).toBe(0);
+    const body = await res.json();
+    expect(body.error).toContain("invalid_type");
+  });
+});
 
 // ─── Delete agent smoke tests ─────────────────────────────────────────────────
 
@@ -3590,9 +3792,7 @@ describe("admin API — cron runs", () => {
     );
     expect(listRes.status).toBe(200);
     const listBody = await listRes.json();
-    expect(listBody.items[0].lastHeartbeatAt).toBe(
-      "2026-01-01T08:00:03.000Z",
-    );
+    expect(listBody.items[0].lastHeartbeatAt).toBe("2026-01-01T08:00:03.000Z");
   });
 
   it("PATCH /agents/:id/crons/:cronId/runs/:runId clears lastHeartbeatAt when explicitly set to null", async () => {

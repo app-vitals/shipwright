@@ -24,7 +24,7 @@ These tools are **non-revocable** — they are not derivable from the `AgentTool
 
 ### Configurable allowed tools (`AgentTool` table)
 
-Tools beyond the floor set are configured via the `AgentTool` database table (one row per tool pattern per agent). When the admin console's create form (`POST /admin/agents`, the sole agent-creation path) creates a new agent, it seeds `AgentTool` rows (including high-privilege tools like Bash, WebSearch, WebFetch, Agent, and Monitor) from the resolved Agent Type manifest's `tools[]` (see `agent-types/coding/manifest.yaml` for the default "coding" type). Operators and integrations can then toggle individual tools on/off via the admin UI or the `/agents/:id/tools` CRUD API.
+Tools beyond the floor set are configured via the `AgentTool` database table (one row per tool pattern per agent). When a new agent is created — either via the admin console's web form (`POST /admin/agents`) or the JSON admin API (`POST /agents`) — the creation process seeds `AgentTool` rows (including high-privilege tools like Bash, WebSearch, WebFetch, Agent, and Monitor) from the resolved Agent Type manifest's `tools[]` (see `agent-types/coding/manifest.yaml` for the default "coding" type). Operators and integrations can then toggle individual tools on/off via the admin UI or the `/agents/:id/tools` CRUD API.
 
 The agent's config sync loop (every 60 seconds) fetches the agent's full tool list from `/agents/:id/config`, decrypts it, and merges with the floor tools. Deduplication preserves insertion order (floor-tools-first, then extra-allowed-tools), so floor tools always take precedence in the final list.
 

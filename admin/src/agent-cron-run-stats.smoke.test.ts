@@ -9,8 +9,8 @@
 import { beforeAll, describe, expect, it } from "bun:test";
 import { sign } from "hono/jwt";
 import type { AgentCronRunStatsService } from "./agent-cron-run-stats.ts";
-import { createAdminApp, parseAdminApiKeys } from "./agents-api.ts";
 import type { AdminDeps } from "./agents-api.ts";
+import { createAdminApp, parseAdminApiKeys } from "./agents-api.ts";
 
 const SESSION_SECRET = "test-admin-session-secret-32-bytes!";
 const AGENT_ID = "agent-test-123";
@@ -177,6 +177,10 @@ function makeMockDeps(): AdminDeps {
       updateSelfHosted: async () => {
         throw new Error("not implemented");
       },
+      updateFields: async () => {
+        throw new Error("not implemented");
+      },
+      runTransaction: async (fn) => fn(undefined as never),
     },
     agentEnvService: {
       upsert: async () => {},
@@ -338,6 +342,13 @@ function makeMockDeps(): AdminDeps {
         createdAt: new Date(),
       }),
       listByAgentId: async () => [],
+    },
+    agentTypeRegistry: {
+      getManifest: () => {
+        throw new Error("not implemented");
+      },
+      tryGetManifest: () => undefined,
+      listTypes: () => [],
     },
     agentChatTokenService: {
       upsertDailyByModel: async (

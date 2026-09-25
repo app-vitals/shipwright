@@ -21,8 +21,20 @@
  *                              {taskId? | prId?, repo, checkName, status,
  *                               reasonCategory?, learnedFromCategory?,
  *                               durationMs?, at?}
- *   GET  /verification-checks  list outcomes for a task or PR
- *                              (?taskId= XOR ?prId=, ?limit, ?offset)
+ *   GET  /verification-checks  list outcomes for a task, a PR, or a
+ *                              repo+checkName pair (LVB-4.4)
+ *                              (?taskId= XOR ?prId= XOR (?repo=+?checkName=),
+ *                               ?limit, ?offset)
+ *
+ * The third mode — ?repo=+?checkName= — answers "the last few outcomes for
+ * check X on repo Y, across ALL tasks/PRs" rather than scoping to one parent.
+ * It exists for LVB-4.4's skip-locally learning trigger: after N consecutive
+ * skipped/timed_out outcomes for the same check+repo, dev-task writes a
+ * skip-locally classification back to the project's own docs (LVB-4.2's
+ * append mechanism). Detecting that streak requires walking history backward
+ * from the most recent outcome, which is why this mode orders `at`
+ * DESCENDING — the opposite of the taskId/prId modes' ascending order, which
+ * is unchanged for backward compatibility.
  */
 
 import { createRoute, OpenAPIHono } from "@hono/zod-openapi";
@@ -80,9 +92,10 @@ const listRoute = createRoute({
   method: "get",
   path: "/",
   tags: ["Verification Checks"],
-  summary: "List verification checks for a task or PR",
+  summary:
+    "List verification checks for a task, a PR, or a repo+checkName pair",
   description:
-    "Returns `{ checks, total, limit, offset }` for exactly one of `?taskId=` or `?prId=` (supplying neither or both is `400`), ordered by `at` ascending (oldest first, default `limit=50`, `offset=0`). Returns `404` if the referenced task/pr doesn't exist.",
+    "Returns `{ checks, total, limit, offset }` for exactly one of three mutually-exclusive modes: `?taskId=`, `?prId=`, or `?repo=`+`?checkName=` together (supplying none, or more than one mode, or only half of the repo+checkName pair, is `400`). The `?taskId=`/`?prId=` modes are ordered by `at` ascending (oldest first, default `limit=50`, `offset=0`) and `404` if the referenced task/pr doesn't exist. The `?repo=`+`?checkName=` mode (LVB-4.4) spans every task/PR that recorded that repo+check — there's no single parent to `404` on, so an unmatched pair returns `200` with an empty list — and is ordered by `at` DESCENDING (most recent first) so a caller can walk backward from the latest outcome to detect a consecutive skipped/timed_out streak.",
   request: {
     query: VerificationCheckListQuerySchema,
   },
@@ -95,11 +108,13 @@ const listRoute = createRoute({
     },
     400: {
       content: { "application/json": { schema: ErrorSchema } },
-      description: "Bad request — ?taskId=/?prId= neither or both supplied",
+      description:
+        "Bad request — none, or more than one, of ?taskId=/?prId=/(?repo=+?checkName=) supplied, or only one half of the ?repo=/?checkName= pair given",
     },
     404: {
       content: { "application/json": { schema: ErrorSchema } },
-      description: "Not found",
+      description:
+        "Not found (?taskId=/?prId= modes only — the referenced task/pr doesn't exist)",
     },
   },
 });
@@ -144,15 +159,30 @@ export function createVerificationChecksRoutes(
   app.openapi(listRoute, async (c): Promise<any> => {
     const taskId = c.req.query("taskId");
     const prId = c.req.query("prId");
+    const repo = c.req.query("repo");
+    const checkName = c.req.query("checkName");
 
-    if (!taskId && !prId) {
+    const hasTask = Boolean(taskId);
+    const hasPr = Boolean(prId);
+    const hasRepoCheck = Boolean(repo) && Boolean(checkName);
+    const hasPartialRepoCheck =
+      (Boolean(repo) || Boolean(checkName)) && !hasRepoCheck;
+
+    if (hasPartialRepoCheck) {
       throw new BadRequestError(
-        "exactly one of ?taskId= or ?prId= is required — neither was provided",
+        "?repo= and ?checkName= must both be supplied together",
       );
     }
-    if (taskId && prId) {
+
+    const modeCount = [hasTask, hasPr, hasRepoCheck].filter(Boolean).length;
+    if (modeCount === 0) {
       throw new BadRequestError(
-        "exactly one of ?taskId= or ?prId= is required — both were provided",
+        "exactly one of ?taskId=, ?prId=, or (?repo=+?checkName=) is required — none was provided",
+      );
+    }
+    if (modeCount > 1) {
+      throw new BadRequestError(
+        "exactly one of ?taskId=, ?prId=, or (?repo=+?checkName=) is required — more than one was provided",
       );
     }
 
@@ -167,9 +197,18 @@ export function createVerificationChecksRoutes(
         ? Number.parseInt(offsetRaw, 10) || undefined
         : undefined;
 
-    const result = taskId
-      ? await service.listForTask(taskId, { limit, offset })
-      : await service.listForPr(prId as string, { limit, offset });
+    const result = hasTask
+      ? await service.listForTask(taskId as string, { limit, offset })
+      : hasPr
+        ? await service.listForPr(prId as string, { limit, offset })
+        : await service.listByRepoAndCheck(
+            repo as string,
+            checkName as string,
+            {
+              limit,
+              offset,
+            },
+          );
 
     return c.json(
       {
