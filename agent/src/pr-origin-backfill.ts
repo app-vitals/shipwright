@@ -104,6 +104,14 @@ export function buildBackfillEntries(
   cutoffIso: string,
   taskPrNumbers: Set<number>,
 ): CensusEntry[] {
+  // buildCensusEntry() now needs a lookup (for CPP-1.2's commit-breakdown
+  // ciFixAttempts read), not just a membership check — this backfill pass
+  // only ever had a plain Set of matched PR numbers (it doesn't need the
+  // commit breakdown itself; see this file's module doc comment), so this
+  // is a same-membership shim rather than a real per-PR task-record lookup.
+  const tasksByPr = new Map<number, CensusTaskRecord>(
+    Array.from(taskPrNumbers, (prNumber) => [prNumber, {}]),
+  );
   return prs
     .filter(
       (pr): pr is GhCensusPr & { mergedAt: string } =>
@@ -111,7 +119,7 @@ export function buildBackfillEntries(
         pr.mergedAt !== undefined &&
         pr.mergedAt >= cutoffIso,
     )
-    .map((pr) => buildCensusEntry(repo, pr, taskPrNumbers))
+    .map((pr) => buildCensusEntry(repo, pr, tasksByPr))
     .sort((a, b) => (a.mergedAt ?? "").localeCompare(b.mergedAt ?? ""));
 }
 
