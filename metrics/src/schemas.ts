@@ -167,11 +167,26 @@ const OriginBreakdownSchema = z
   })
   .openapi("OriginBreakdown");
 
+// Commits-per-PR breakdown (CPP-1.3) — average commit count per qualifying
+// PR (origin:"shipwright", non-null commitCount), split by pipeline phase.
+// Distinct from the plugin's "CI first-pass rate" metric — see
+// docs/metrics.md's response-shape section for the full explanation.
+const CommitBreakdownSchema = z
+  .object({
+    docsRefresh: z.number().openapi({ example: 0.4 }),
+    reviewPatch: z.number().openapi({ example: 1.2 }),
+    ciFix: z.number().openapi({ example: 0.3 }),
+    implementation: z.number().openapi({ example: 2.1 }),
+  })
+  .openapi("CommitBreakdown");
+
 const MergedPrsRepoSchema = z
   .object({
     repo: z.string().openapi({ example: "org/repo" }),
     total: z.number().int().openapi({ example: 10 }),
     byOrigin: OriginBreakdownSchema,
+    avgCommitCount: z.number().nullable().openapi({ example: 4 }),
+    commitBreakdown: CommitBreakdownSchema.nullable(),
   })
   .openapi("MergedPrsRepo");
 
