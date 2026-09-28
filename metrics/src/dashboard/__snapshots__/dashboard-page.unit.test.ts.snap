@@ -378,6 +378,21 @@ exports[`renderDashboardPage — snapshot renders full page for a regular user 1
             </div>
           </div>
 
+          <!-- PR Commits -->
+          <div class="quality-panel">
+            <h3 class="panel-title">PR Commits</h3>
+            <div class="stat-row" data-metric="pr-commits-total">
+              <span class="stat-label">Avg per PR<span class="info-icon" data-tooltip="Fleet-wide weighted-average commits per Shipwright PR" tabindex="0" aria-label="Fleet-wide weighted-average commits per Shipwright PR">i</span></span>
+              <span class="stat-value" id="pr-commits-total">--</span>
+            </div>
+            <div class="pr-commits-breakdown" id="pr-commits-breakdown">
+              <div class="bar-item" data-metric="pr-commits-docs-refresh"><span class="bar-label">Docs refresh<span class="info-icon" data-tooltip="Avg commits for documentation updates" tabindex="0" aria-label="Avg commits for documentation updates">i</span></span><div class="bar-track"><div class="bar-fill" id="bar-pr-commits-docs-refresh"></div></div><span class="bar-val" id="val-pr-commits-docs-refresh">--</span></div>
+              <div class="bar-item" data-metric="pr-commits-review-patch"><span class="bar-label">Review patch<span class="info-icon" data-tooltip="Avg commits for review feedback changes" tabindex="0" aria-label="Avg commits for review feedback changes">i</span></span><div class="bar-track"><div class="bar-fill" id="bar-pr-commits-review-patch"></div></div><span class="bar-val" id="val-pr-commits-review-patch">--</span></div>
+              <div class="bar-item" data-metric="pr-commits-ci-fix"><span class="bar-label">CI fix<span class="info-icon" data-tooltip="Avg commits for CI gate fixes" tabindex="0" aria-label="Avg commits for CI gate fixes">i</span></span><div class="bar-track"><div class="bar-fill" id="bar-pr-commits-ci-fix"></div></div><span class="bar-val" id="val-pr-commits-ci-fix">--</span></div>
+              <div class="bar-item" data-metric="pr-commits-implementation"><span class="bar-label">Implementation<span class="info-icon" data-tooltip="Avg commits for implementation work" tabindex="0" aria-label="Avg commits for implementation work">i</span></span><div class="bar-track"><div class="bar-fill" id="bar-pr-commits-implementation"></div></div><span class="bar-val" id="val-pr-commits-implementation">--</span></div>
+            </div>
+          </div>
+
         </div>
       </section>
 
@@ -890,6 +905,21 @@ exports[`renderDashboardPage — snapshot renders full page for an owner 1`] = `
             <div class="stat-row">
               <span class="stat-label">Avg delta<span class="info-icon" data-tooltip="Mean change in line coverage % across all reports" tabindex="0" aria-label="Mean change in line coverage % across all reports">i</span></span>
               <span class="stat-value" id="coverage-delta">--</span>
+            </div>
+          </div>
+
+          <!-- PR Commits -->
+          <div class="quality-panel">
+            <h3 class="panel-title">PR Commits</h3>
+            <div class="stat-row" data-metric="pr-commits-total">
+              <span class="stat-label">Avg per PR<span class="info-icon" data-tooltip="Fleet-wide weighted-average commits per Shipwright PR" tabindex="0" aria-label="Fleet-wide weighted-average commits per Shipwright PR">i</span></span>
+              <span class="stat-value" id="pr-commits-total">--</span>
+            </div>
+            <div class="pr-commits-breakdown" id="pr-commits-breakdown">
+              <div class="bar-item" data-metric="pr-commits-docs-refresh"><span class="bar-label">Docs refresh<span class="info-icon" data-tooltip="Avg commits for documentation updates" tabindex="0" aria-label="Avg commits for documentation updates">i</span></span><div class="bar-track"><div class="bar-fill" id="bar-pr-commits-docs-refresh"></div></div><span class="bar-val" id="val-pr-commits-docs-refresh">--</span></div>
+              <div class="bar-item" data-metric="pr-commits-review-patch"><span class="bar-label">Review patch<span class="info-icon" data-tooltip="Avg commits for review feedback changes" tabindex="0" aria-label="Avg commits for review feedback changes">i</span></span><div class="bar-track"><div class="bar-fill" id="bar-pr-commits-review-patch"></div></div><span class="bar-val" id="val-pr-commits-review-patch">--</span></div>
+              <div class="bar-item" data-metric="pr-commits-ci-fix"><span class="bar-label">CI fix<span class="info-icon" data-tooltip="Avg commits for CI gate fixes" tabindex="0" aria-label="Avg commits for CI gate fixes">i</span></span><div class="bar-track"><div class="bar-fill" id="bar-pr-commits-ci-fix"></div></div><span class="bar-val" id="val-pr-commits-ci-fix">--</span></div>
+              <div class="bar-item" data-metric="pr-commits-implementation"><span class="bar-label">Implementation<span class="info-icon" data-tooltip="Avg commits for implementation work" tabindex="0" aria-label="Avg commits for implementation work">i</span></span><div class="bar-track"><div class="bar-fill" id="bar-pr-commits-implementation"></div></div><span class="bar-val" id="val-pr-commits-implementation">--</span></div>
             </div>
           </div>
 
@@ -1408,6 +1438,21 @@ exports[`renderDashboardPage — MG-1.2 clickable metric graphs snapshot matches
             </div>
           </div>
 
+          <!-- PR Commits -->
+          <div class="quality-panel">
+            <h3 class="panel-title">PR Commits</h3>
+            <div class="stat-row" data-metric="pr-commits-total">
+              <span class="stat-label">Avg per PR<span class="info-icon" data-tooltip="Fleet-wide weighted-average commits per Shipwright PR" tabindex="0" aria-label="Fleet-wide weighted-average commits per Shipwright PR">i</span></span>
+              <span class="stat-value" id="pr-commits-total">--</span>
+            </div>
+            <div class="pr-commits-breakdown" id="pr-commits-breakdown">
+              <div class="bar-item" data-metric="pr-commits-docs-refresh"><span class="bar-label">Docs refresh<span class="info-icon" data-tooltip="Avg commits for documentation updates" tabindex="0" aria-label="Avg commits for documentation updates">i</span></span><div class="bar-track"><div class="bar-fill" id="bar-pr-commits-docs-refresh"></div></div><span class="bar-val" id="val-pr-commits-docs-refresh">--</span></div>
+              <div class="bar-item" data-metric="pr-commits-review-patch"><span class="bar-label">Review patch<span class="info-icon" data-tooltip="Avg commits for review feedback changes" tabindex="0" aria-label="Avg commits for review feedback changes">i</span></span><div class="bar-track"><div class="bar-fill" id="bar-pr-commits-review-patch"></div></div><span class="bar-val" id="val-pr-commits-review-patch">--</span></div>
+              <div class="bar-item" data-metric="pr-commits-ci-fix"><span class="bar-label">CI fix<span class="info-icon" data-tooltip="Avg commits for CI gate fixes" tabindex="0" aria-label="Avg commits for CI gate fixes">i</span></span><div class="bar-track"><div class="bar-fill" id="bar-pr-commits-ci-fix"></div></div><span class="bar-val" id="val-pr-commits-ci-fix">--</span></div>
+              <div class="bar-item" data-metric="pr-commits-implementation"><span class="bar-label">Implementation<span class="info-icon" data-tooltip="Avg commits for implementation work" tabindex="0" aria-label="Avg commits for implementation work">i</span></span><div class="bar-track"><div class="bar-fill" id="bar-pr-commits-implementation"></div></div><span class="bar-val" id="val-pr-commits-implementation">--</span></div>
+            </div>
+          </div>
+
         </div>
       </section>
 
@@ -1923,6 +1968,21 @@ exports[`renderDashboardPage — TK-1.2 token trends chart snapshot matches afte
             </div>
           </div>
 
+          <!-- PR Commits -->
+          <div class="quality-panel">
+            <h3 class="panel-title">PR Commits</h3>
+            <div class="stat-row" data-metric="pr-commits-total">
+              <span class="stat-label">Avg per PR<span class="info-icon" data-tooltip="Fleet-wide weighted-average commits per Shipwright PR" tabindex="0" aria-label="Fleet-wide weighted-average commits per Shipwright PR">i</span></span>
+              <span class="stat-value" id="pr-commits-total">--</span>
+            </div>
+            <div class="pr-commits-breakdown" id="pr-commits-breakdown">
+              <div class="bar-item" data-metric="pr-commits-docs-refresh"><span class="bar-label">Docs refresh<span class="info-icon" data-tooltip="Avg commits for documentation updates" tabindex="0" aria-label="Avg commits for documentation updates">i</span></span><div class="bar-track"><div class="bar-fill" id="bar-pr-commits-docs-refresh"></div></div><span class="bar-val" id="val-pr-commits-docs-refresh">--</span></div>
+              <div class="bar-item" data-metric="pr-commits-review-patch"><span class="bar-label">Review patch<span class="info-icon" data-tooltip="Avg commits for review feedback changes" tabindex="0" aria-label="Avg commits for review feedback changes">i</span></span><div class="bar-track"><div class="bar-fill" id="bar-pr-commits-review-patch"></div></div><span class="bar-val" id="val-pr-commits-review-patch">--</span></div>
+              <div class="bar-item" data-metric="pr-commits-ci-fix"><span class="bar-label">CI fix<span class="info-icon" data-tooltip="Avg commits for CI gate fixes" tabindex="0" aria-label="Avg commits for CI gate fixes">i</span></span><div class="bar-track"><div class="bar-fill" id="bar-pr-commits-ci-fix"></div></div><span class="bar-val" id="val-pr-commits-ci-fix">--</span></div>
+              <div class="bar-item" data-metric="pr-commits-implementation"><span class="bar-label">Implementation<span class="info-icon" data-tooltip="Avg commits for implementation work" tabindex="0" aria-label="Avg commits for implementation work">i</span></span><div class="bar-track"><div class="bar-fill" id="bar-pr-commits-implementation"></div></div><span class="bar-val" id="val-pr-commits-implementation">--</span></div>
+            </div>
+          </div>
+
         </div>
       </section>
 
@@ -2424,6 +2484,21 @@ exports[`renderDashboardPage — PCE-1.4 Cost Efficiency card readOnly page snap
             <div class="stat-row">
               <span class="stat-label">Avg delta<span class="info-icon" data-tooltip="Mean change in line coverage % across all reports" tabindex="0" aria-label="Mean change in line coverage % across all reports">i</span></span>
               <span class="stat-value" id="coverage-delta">--</span>
+            </div>
+          </div>
+
+          <!-- PR Commits -->
+          <div class="quality-panel">
+            <h3 class="panel-title">PR Commits</h3>
+            <div class="stat-row" data-metric="pr-commits-total">
+              <span class="stat-label">Avg per PR<span class="info-icon" data-tooltip="Fleet-wide weighted-average commits per Shipwright PR" tabindex="0" aria-label="Fleet-wide weighted-average commits per Shipwright PR">i</span></span>
+              <span class="stat-value" id="pr-commits-total">--</span>
+            </div>
+            <div class="pr-commits-breakdown" id="pr-commits-breakdown">
+              <div class="bar-item" data-metric="pr-commits-docs-refresh"><span class="bar-label">Docs refresh<span class="info-icon" data-tooltip="Avg commits for documentation updates" tabindex="0" aria-label="Avg commits for documentation updates">i</span></span><div class="bar-track"><div class="bar-fill" id="bar-pr-commits-docs-refresh"></div></div><span class="bar-val" id="val-pr-commits-docs-refresh">--</span></div>
+              <div class="bar-item" data-metric="pr-commits-review-patch"><span class="bar-label">Review patch<span class="info-icon" data-tooltip="Avg commits for review feedback changes" tabindex="0" aria-label="Avg commits for review feedback changes">i</span></span><div class="bar-track"><div class="bar-fill" id="bar-pr-commits-review-patch"></div></div><span class="bar-val" id="val-pr-commits-review-patch">--</span></div>
+              <div class="bar-item" data-metric="pr-commits-ci-fix"><span class="bar-label">CI fix<span class="info-icon" data-tooltip="Avg commits for CI gate fixes" tabindex="0" aria-label="Avg commits for CI gate fixes">i</span></span><div class="bar-track"><div class="bar-fill" id="bar-pr-commits-ci-fix"></div></div><span class="bar-val" id="val-pr-commits-ci-fix">--</span></div>
+              <div class="bar-item" data-metric="pr-commits-implementation"><span class="bar-label">Implementation<span class="info-icon" data-tooltip="Avg commits for implementation work" tabindex="0" aria-label="Avg commits for implementation work">i</span></span><div class="bar-track"><div class="bar-fill" id="bar-pr-commits-implementation"></div></div><span class="bar-val" id="val-pr-commits-implementation">--</span></div>
             </div>
           </div>
 

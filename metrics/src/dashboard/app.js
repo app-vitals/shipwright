@@ -315,6 +315,52 @@
     }
   }
 
+  // ─── Update PR Commits Panel ──────────────────────────────────────────────
+
+  function updatePRCommits(fleetStats) {
+    const $ = (id) => document.getElementById(id);
+
+    if (!fleetStats || fleetStats.avgCommitCount === null) {
+      $("pr-commits-total").textContent = "--";
+      const phases = [
+        "docs-refresh",
+        "review-patch",
+        "ci-fix",
+        "implementation",
+      ];
+      for (const phase of phases) {
+        const val = $(`val-pr-commits-${phase}`);
+        if (val) val.textContent = "--";
+        const bar = $(`bar-pr-commits-${phase}`);
+        if (bar) bar.style.width = "0%";
+      }
+      return;
+    }
+
+    $("pr-commits-total").textContent = fmtNum(fleetStats.avgCommitCount);
+    const breakdown = fleetStats.commitBreakdown || {};
+    const phaseMap = [
+      ["docs-refresh", "docsRefresh"],
+      ["review-patch", "reviewPatch"],
+      ["ci-fix", "ciFix"],
+      ["implementation", "implementation"],
+    ];
+
+    const breakdownValues = [
+      breakdown.docsRefresh || 0,
+      breakdown.reviewPatch || 0,
+      breakdown.ciFix || 0,
+      breakdown.implementation || 0,
+    ];
+    const maxBreakdown = Math.max(...breakdownValues, 0.01);
+
+    for (const [idKey, breakdownKey] of phaseMap) {
+      const val = breakdown[breakdownKey] || 0;
+      $(`val-pr-commits-${idKey}`).textContent = fmtNum(val);
+      $(`bar-pr-commits-${idKey}`).style.width = `${Math.round((val / maxBreakdown) * 100)}%`;
+    }
+  }
+
   // ─── Update Efficiency ───────────────────────────────────────────────────
 
   function updateEfficiency(data) {
@@ -1341,6 +1387,14 @@
       updateTokens(tokensRes);
       renderTokenTrendsChart(lastTokensTrends, activeTokenSeries);
       updateMergedPrs(mergedPrsRes);
+      if (mergedPrsRes && !mergedPrsRes.error && mergedPrsRes.data) {
+        const fleetStats = computeFleetWeightedAvgCommits(
+          mergedPrsRes.data.repos ?? [],
+        );
+        updatePRCommits(fleetStats);
+      } else {
+        updatePRCommits(null);
+      }
       updateCostEfficiency(costEffRes);
     } catch (err) {
       showError(`Failed to load metrics: ${err.message}`);
@@ -1374,6 +1428,69 @@
     });
   }
 
+  // ─── Commits-per-PR aggregation (CPP-1.4) ───────────────────────────────────
+
+  /**
+   * Compute fleet-wide weighted-average commits-per-PR, weighting each repo by
+   * its shipwright origin count (byOrigin.shipwright). Skips repos with zero
+   * shipwright PRs or null avgCommitCount, returning null if no qualifying repos.
+   *
+   * @param {Array} repos - Array of repo objects from /metrics/merged-prs
+   * @returns {Object} { avgCommitCount, commitBreakdown } or both null
+   */
+  function computeFleetWeightedAvgCommits(repos) {
+    if (!repos || repos.length === 0) {
+      return { avgCommitCount: null, commitBreakdown: null };
+    }
+
+    // Filter to repos with qualifying data: shipwright PRs + non-null avgCommitCount
+    const qualifying = repos.filter(
+      (r) =>
+        (r.byOrigin?.shipwright ?? 0) > 0 &&
+        r.avgCommitCount !== null &&
+        r.avgCommitCount !== undefined,
+    );
+
+    if (qualifying.length === 0) {
+      return { avgCommitCount: null, commitBreakdown: null };
+    }
+
+    // Compute weights (shipwright PR counts)
+    let totalWeight = 0;
+    qualifying.forEach((r) => {
+      totalWeight += r.byOrigin?.shipwright ?? 0;
+    });
+
+    if (totalWeight === 0) {
+      return { avgCommitCount: null, commitBreakdown: null };
+    }
+
+    // Weighted average of avgCommitCount
+    let weightedAvgCommits = 0;
+    qualifying.forEach((r) => {
+      const weight = r.byOrigin?.shipwright ?? 0;
+      weightedAvgCommits += r.avgCommitCount * weight;
+    });
+    weightedAvgCommits = weightedAvgCommits / totalWeight;
+
+    // Weighted average of commitBreakdown fields
+    const phases = ["docsRefresh", "reviewPatch", "ciFix", "implementation"];
+    const weightedBreakdown = {};
+    phases.forEach((phase) => {
+      let weighted = 0;
+      qualifying.forEach((r) => {
+        const weight = r.byOrigin?.shipwright ?? 0;
+        weighted += (r.commitBreakdown?.[phase] ?? 0) * weight;
+      });
+      weightedBreakdown[phase] = weighted / totalWeight;
+    });
+
+    return {
+      avgCommitCount: weightedAvgCommits,
+      commitBreakdown: weightedBreakdown,
+    };
+  }
+
   // ─── Boot ─────────────────────────────────────────────────────────────────
 
   // Guarded so this file can be `import`-ed under bun:test (no DOM globals)
@@ -1395,6 +1512,9 @@
     // `window`, so instead of booting the dashboard we expose the pure,
     // DOM-free fetchSequential helper on globalThis for
     // app.unit.test.js to import and exercise directly.
-    globalThis.__dashboardAppTestExports = { fetchSequential };
+    globalThis.__dashboardAppTestExports = {
+      fetchSequential,
+      computeFleetWeightedAvgCommits,
+    };
   }
 })();

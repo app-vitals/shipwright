@@ -115,7 +115,10 @@ Both routes return the same envelope shape (`data` scoped to all repos on the au
 
 A task could have `ci_fix_attempts == 0` (a clean pre-open CI run) and still end up with a high `commitCount` from several rounds of post-open review/patch cycles, or vice versa — the two were never interchangeable, so don't read `avgCommitCount` as a proxy for how cleanly CI passed.
 
-The dashboard's **"Merged PRs by repo"** panel renders this same data as two Chart.js charts: a stacked bar chart (one bar per repo, segments stacked by origin, tooltip shows % of repo total) and a trend line chart (one line per origin over time), plus a repo picker that filters the trend chart when more than one repo has merged PRs in range.
+The dashboard renders commit data in two panels:
+
+- **"PR Commits"** — fleet-wide weighted-average commits per Shipwright PR (weighted by shipwright PR count per repo), broken down by pipeline phase (docs refresh, review patch, CI fix, implementation). Repos with no shipwright PRs or null `avgCommitCount` are excluded from the calculation.
+- **"Merged PRs by repo"** — breakdown of merged PRs by repo and origin (shipwright, ci, dependency_bot, human, unknown) as two Chart.js charts: a stacked bar chart (one bar per repo, segments stacked by origin, tooltip shows % of repo total) and a trend line chart (one line per origin over time), plus a repo picker that filters the trend chart when more than one repo has merged PRs in range.
 
 ### Origin classification rules
 
