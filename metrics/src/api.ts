@@ -934,6 +934,16 @@ function makeMergedPrsHandler(
       const originIdx = result.columns.indexOf("origin");
       const periodIdx = result.columns.indexOf("period");
       const countIdx = result.columns.indexOf("count");
+      // Commits-per-PR aggregation (CPP-1.3) — indices default to -1 (and
+      // toNum(-1-indexed undefined) reads as 0) for any provider double that
+      // hasn't been updated to emit these columns, so an older fixture still
+      // resolves to the correct "no qualifying PRs" → null outcome.
+      const commitSumIdx = result.columns.indexOf("commitSum");
+      const qualifyingCountIdx = result.columns.indexOf("qualifyingCount");
+      const docsRefreshSumIdx = result.columns.indexOf("docsRefreshSum");
+      const reviewPatchSumIdx = result.columns.indexOf("reviewPatchSum");
+      const ciFixSumIdx = result.columns.indexOf("ciFixSum");
+      const implementationSumIdx = result.columns.indexOf("implementationSum");
 
       const repoTotals = new Map<
         string,
@@ -945,6 +955,17 @@ function makeMergedPrsHandler(
           period: string;
           repo: string;
           byOrigin: Record<(typeof ORIGIN_KEYS)[number], number>;
+        }
+      >();
+      const repoCommitAgg = new Map<
+        string,
+        {
+          commitSum: number;
+          qualifyingCount: number;
+          docsRefreshSum: number;
+          reviewPatchSum: number;
+          ciFixSum: number;
+          implementationSum: number;
         }
       >();
 
@@ -970,14 +991,49 @@ function makeMergedPrsHandler(
         };
         trendEntry.byOrigin[origin] += count;
         trendByKey.set(trendKey, trendEntry);
+
+        const commitAgg = repoCommitAgg.get(repo) ?? {
+          commitSum: 0,
+          qualifyingCount: 0,
+          docsRefreshSum: 0,
+          reviewPatchSum: 0,
+          ciFixSum: 0,
+          implementationSum: 0,
+        };
+        commitAgg.commitSum += toNum(row[commitSumIdx]);
+        commitAgg.qualifyingCount += toNum(row[qualifyingCountIdx]);
+        commitAgg.docsRefreshSum += toNum(row[docsRefreshSumIdx]);
+        commitAgg.reviewPatchSum += toNum(row[reviewPatchSumIdx]);
+        commitAgg.ciFixSum += toNum(row[ciFixSumIdx]);
+        commitAgg.implementationSum += toNum(row[implementationSumIdx]);
+        repoCommitAgg.set(repo, commitAgg);
       }
 
       const repos = [...repoTotals.entries()]
-        .map(([repo, byOrigin]) => ({
-          repo,
-          total: Object.values(byOrigin).reduce((a, b) => a + b, 0),
-          byOrigin,
-        }))
+        .map(([repo, byOrigin]) => {
+          const commitAgg = repoCommitAgg.get(repo);
+          const qualifyingCount = commitAgg?.qualifyingCount ?? 0;
+          const avgCommitCount =
+            qualifyingCount > 0 && commitAgg
+              ? commitAgg.commitSum / qualifyingCount
+              : null;
+          const commitBreakdown =
+            qualifyingCount > 0 && commitAgg
+              ? {
+                  docsRefresh: commitAgg.docsRefreshSum / qualifyingCount,
+                  reviewPatch: commitAgg.reviewPatchSum / qualifyingCount,
+                  ciFix: commitAgg.ciFixSum / qualifyingCount,
+                  implementation: commitAgg.implementationSum / qualifyingCount,
+                }
+              : null;
+          return {
+            repo,
+            total: Object.values(byOrigin).reduce((a, b) => a + b, 0),
+            byOrigin,
+            avgCommitCount,
+            commitBreakdown,
+          };
+        })
         .sort((a, b) => a.repo.localeCompare(b.repo));
 
       const trend = [...trendByKey.values()].sort((a, b) =>

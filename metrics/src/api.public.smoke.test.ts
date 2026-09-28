@@ -242,6 +242,11 @@ describe("public metrics surface — merged PRs (POM-2.1)", () => {
           human: 0,
           unknown: 0,
         },
+        // Provider double above doesn't emit the CPP-1.3 commit-sum columns
+        // (mirrors an older/unupgraded provider), so qualifyingCount reads as
+        // 0 → both fields resolve to null, not 0.
+        avgCommitCount: null,
+        commitBreakdown: null,
       },
     ]);
     expect(body.data.trend).toHaveLength(1);
