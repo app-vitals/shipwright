@@ -515,6 +515,51 @@ curl -sf -X PATCH -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
 
 Only run this after the bulk write succeeds — a failed or partial `tasks/bulk` POST must not mark the originating task done.
 
+**Step 6d — Persist the plan to the repo (additive — never blocks the plan):**
+
+Every task's `source` points at `planning/{session}/PLAN.md`, but that file only exists in *this* checkout — and many repos gitignore `planning/`. When the session runs inside an ephemeral agent workspace, the plan is lost with the pod unless it is committed. Open a docs-only PR carrying the plan so the `source` link resolves for everyone once it merges.
+
+Run this after Step 6b succeeds (and after 6c when `--autonomous`). Use a throwaway worktree off the default branch so the current checkout's branch and working tree are never touched:
+
+```bash
+SESSION="{session}"
+BRANCH="docs/plan-$SESSION"
+PLAN_PR_URL=""
+REPO_ROOT=$(git rev-parse --show-toplevel 2>/dev/null)
+if [ -z "$REPO_ROOT" ] || ! command -v gh >/dev/null; then
+  echo "⏭ Plan PR skipped — not a git checkout or gh unavailable."
+elif gh pr list --head "$BRANCH" --state all --json url -q '.[0].url' | grep -q .; then
+  PLAN_PR_URL=$(gh pr list --head "$BRANCH" --state all --json url -q '.[0].url')
+  echo "⏭ Plan PR already exists: $PLAN_PR_URL"
+else
+  git -C "$REPO_ROOT" fetch -q origin
+  DEFAULT=$(git -C "$REPO_ROOT" symbolic-ref --short refs/remotes/origin/HEAD 2>/dev/null || echo origin/main)
+  WT=$(mktemp -d)/plan-wt
+  git -C "$REPO_ROOT" worktree add -q -b "$BRANCH" "$WT" "$DEFAULT"
+  mkdir -p "$WT/planning/$SESSION"
+  for f in PLAN.md PRODUCT-SPEC.md; do
+    [ -f "$REPO_ROOT/planning/$SESSION/$f" ] && cp "$REPO_ROOT/planning/$SESSION/$f" "$WT/planning/$SESSION/$f"
+  done
+  # -f: planning/ is commonly gitignored. Stage only these files — never -A.
+  git -C "$WT" add -f "planning/$SESSION/PLAN.md" "planning/$SESSION/PRODUCT-SPEC.md" 2>/dev/null \
+    || git -C "$WT" add -f "planning/$SESSION/PLAN.md"
+  if git -C "$WT" diff --cached --quiet; then
+    echo "⏭ Plan PR skipped — plan already on $DEFAULT."
+  else
+    git -C "$WT" commit -q -m "docs(planning): add $SESSION plan" \
+      && git -C "$WT" push -q -u origin "$BRANCH" \
+      && PLAN_PR_URL=$(cd "$WT" && gh pr create --head "$BRANCH" --base "${DEFAULT#origin/}" \
+           --title "docs(planning): add $SESSION plan" \
+           --body "Plan for session \`$SESSION\` — the \`source\` of every task in this session.")
+  fi
+  git -C "$REPO_ROOT" worktree remove --force "$WT"
+fi
+```
+
+Before the commit, apply the repo's own pre-commit hygiene to the two staged files (for example, a public repo's banned-string scan, or its CLAUDE.md rules on secrets and client names). If a file fails that check, or any command above fails, print `⚠ Plan PR not opened — {reason}` and continue: the tasks are already queued and the command must never fail on this step. A pre-existing PR for the branch (open or merged) counts as done — do not open a second one.
+
+When a PR was opened (or already existed), surface it in the confirmation as `Plan PR: {url}`; otherwise omit that line.
+
 ---
 
 Confirm with:
@@ -526,6 +571,7 @@ QUEUED
 Session: {session}
 Plan: planning/{session}/PLAN.md
 Plan viz: {url}   ← omit this line if the render step was skipped
+Plan PR: {url}    ← omit this line if Step 6d skipped or failed
 Tasks queued: {count}
 
 READY TO START (no dependencies):

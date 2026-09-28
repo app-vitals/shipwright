@@ -447,6 +447,42 @@ describe("plan-session.md — Step 6c autonomous close-out (PDR-3.1)", () => {
   });
 });
 
+describe("plan-session.md — Step 6d persists the plan to the repo", () => {
+  function step6d(): string {
+    const section = extractStep6bSection(content);
+    const idx = section.indexOf("Step 6d");
+    expect(idx).toBeGreaterThan(-1);
+    return section.slice(idx, section.indexOf("\n---", idx));
+  }
+
+  it("force-adds only the session's planning files, since planning/ is commonly gitignored", () => {
+    const section = step6d();
+    expect(section).toContain('add -f "planning/$SESSION/PLAN.md"');
+    expect(section).toContain("never -A");
+  });
+
+  it("commits from a throwaway worktree on a docs/plan-{session} branch and opens a PR", () => {
+    const section = step6d();
+    expect(section).toContain('BRANCH="docs/plan-$SESSION"');
+    expect(section).toContain("worktree add");
+    expect(section).toContain("worktree remove");
+    expect(section).toContain("gh pr create --head");
+  });
+
+  it("is idempotent — an existing PR for the branch counts as done", () => {
+    const section = step6d();
+    expect(section).toContain("--state all");
+    expect(section.toLowerCase()).toContain("do not open a second one");
+  });
+
+  it("never blocks the plan and surfaces the PR in the confirmation", () => {
+    const section = step6d();
+    expect(section.toLowerCase()).toContain("never blocks the plan");
+    expect(section.toLowerCase()).toContain("must never fail on this step");
+    expect(content).toContain("Plan PR: {url}");
+  });
+});
+
 describe("plan-session.md — Step 5 principles override check + security domain (PCO-1.1)", () => {
   function extractStep5Section(md: string): string {
     const match = md.match(/## Step 5: Task Breakdown[\s\S]*?(?=\n### Complexity and Model Scoring)/);
