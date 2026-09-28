@@ -193,6 +193,16 @@ instead of by Prisma's engine. Two connection-string behaviors change as a resul
   Postgres fronted by a self-signed or private-CA certificate that connected fine under Prisma 6
   can now fail to connect at runtime — and it fails *after* `prisma migrate deploy` has already
   succeeded, because the CLI path runs first at boot.
+- **Legacy `sslmode` aliases are pinned to `verify-full` for `pg`.** `pg` 8 warns at startup
+  that `prefer` / `require` / `verify-ca` will adopt libpq semantics (for `require`: encrypt,
+  verify nothing) in its next major. So a `pg` upgrade can't silently weaken verification, admin,
+  task-store, and chat rewrite those three values to `sslmode=verify-full` in the string they hand
+  to `pg.Pool` (`lib/pg-sslmode.ts`), which also silences the warning. The env var itself is
+  not modified, so the Prisma CLI still sees your original URL. An explicit
+  `uselibpqcompat=true` opts out and is left untouched. Keeping `sslmode=require` in the URL is
+  therefore the recommended form: the Prisma CLI's engine recognizes only
+  `disable` / `prefer` / `require` and reads any other value (including `verify-full` and
+  `no-verify`) as `prefer`.
 
 **Migration**:
 

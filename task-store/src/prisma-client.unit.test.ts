@@ -86,6 +86,14 @@ describe("toPoolConfig", () => {
     expect(config.max).toBeUndefined();
     expect(config.connectionString).not.toContain("connection_limit");
   });
+
+  test("pins a legacy sslmode=require to verify-full alongside Prisma-only params", () => {
+    const config = toPoolConfig(
+      `${BASE_URL}?connection_limit=5&sslmode=require`,
+    );
+
+    expect(config.connectionString).toBe(`${BASE_URL}?sslmode=verify-full`);
+  });
 });
 
 /**

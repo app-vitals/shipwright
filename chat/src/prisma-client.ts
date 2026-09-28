@@ -12,6 +12,7 @@
  */
 
 import { PrismaPg } from "@prisma/adapter-pg";
+import { pinPgSslMode } from "@shipwright/lib/pg-sslmode";
 import pg from "pg";
 import { PrismaClient } from "../prisma/client/client.ts";
 
@@ -49,7 +50,9 @@ export function createChatPool(
   logError: (err: unknown) => void = logIdlePoolError,
 ): pg.Pool {
   const pool = new pg.Pool({
-    connectionString: databaseUrl,
+    // Legacy sslmode aliases are pinned to verify-full so a future pg major
+    // cannot silently drop certificate verification — see lib/pg-sslmode.ts.
+    connectionString: pinPgSslMode(databaseUrl),
     connectionTimeoutMillis: DEFAULT_CONNECT_TIMEOUT_MS,
   });
 
