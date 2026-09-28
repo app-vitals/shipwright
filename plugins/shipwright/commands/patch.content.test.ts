@@ -2540,7 +2540,7 @@ describe("patch.md — subagent dispatch is foreground, not background (ABD-1.1)
   });
 });
 
-describe("patch.md — enforced, process-group-aware, non-blocking local validation (LVB-2.2)", () => {
+describe("patch.md — enforced, non-blocking local validation via run-with-budget.ts (LVB-2.2 / LVBS-1.3)", () => {
   function getValidateSection(stepStartMarker, stepEndMarker) {
     const stepStartIdx = content.indexOf(stepStartMarker);
     const stepEndIdx = content.indexOf(stepEndMarker);
@@ -2582,7 +2582,19 @@ describe("patch.md — enforced, process-group-aware, non-blocking local validat
       expect(section).not.toContain("Re-run until both pass cleanly");
     });
 
-    it(`${label} [C] Validate wraps checks in a process-group-aware enforced timeout: setsid + whole-group kill wording, not just bare timeout`, () => {
+    it(`${label} [C] Validate invokes the shared run-with-budget.ts script instead of inlining the setsid/timeout/kill pattern`, () => {
+      const section = getSection();
+      expect(section).toContain(
+        'bun run "${CLAUDE_PLUGIN_ROOT}/scripts/run-with-budget.ts"',
+      );
+      expect(section).toContain("--budget");
+      expect(section).toContain("--kill-after");
+      expect(section).not.toMatch(
+        /setsid timeout --kill-after=10s 600s \{command\} &/,
+      );
+    });
+
+    it(`${label} [C] Validate still documents the process-group-aware whole-group kill run-with-budget.ts performs, without inlining it`, () => {
       const section = getSection();
       expect(section).toContain("setsid");
       const lower = section.toLowerCase().replace(/\s+/g, " ");
@@ -2660,7 +2672,10 @@ describe("patch.md — record verification outcomes via task-store API (LVB-5.2)
 
     it(`${label} [C] Validate verification-checks call is a POST`, () => {
       const section = getValidateSection(startMarker, endMarker);
-      const idx = section.indexOf(
+      // Use the last occurrence — the Record-each-outcome POST — since the
+      // skip-locally read check (LVBS-1.3) legitimately GETs the same base
+      // endpoint earlier in this section.
+      const idx = section.lastIndexOf(
         "$SHIPWRIGHT_TASK_STORE_URL/verification-checks",
       );
       expect(idx).toBeGreaterThan(-1);
@@ -2699,7 +2714,8 @@ describe("patch.md — record verification outcomes via task-store API (LVB-5.2)
 
     it(`${label} [C] Validate POST is best-effort (warn-and-continue on failure)`, () => {
       const section = getValidateSection(startMarker, endMarker);
-      const idx = section.indexOf(
+      // Same last-occurrence rationale as above — the Record-each-outcome POST.
+      const idx = section.lastIndexOf(
         "$SHIPWRIGHT_TASK_STORE_URL/verification-checks",
       );
       expect(idx).toBeGreaterThan(-1);
@@ -2709,7 +2725,7 @@ describe("patch.md — record verification outcomes via task-store API (LVB-5.2)
   }
 });
 
-describe("patch.md — skip-locally check before attempting each check, read-only (LVB-4.4)", () => {
+describe("patch.md — skip-locally check before attempting each check, read-only, via task-store API (LVB-4.4 / LVBS-1.3)", () => {
   function getStepSection(stepStartMarker, stepEndMarker) {
     const stepStartIdx = content.indexOf(stepStartMarker);
     const stepEndIdx = content.indexOf(stepEndMarker);
@@ -2748,18 +2764,27 @@ describe("patch.md — skip-locally check before attempting each check, read-onl
   ];
 
   for (const [label, startMarker, endMarker] of sites) {
-    it(`${label} [C] Validate looks up {checkName} in the toolchain doc's skip-locally table before running the enforced-timeout wrapper`, () => {
+    it(`${label} [C] Validate queries the task-store /verification-checks GET endpoint before running the enforced-timeout invocation — no doc file read or parsed`, () => {
       const section = getValidateSection(startMarker, endMarker);
       expect(section).toMatch(/Skip-locally check \(read before attempting\)/);
-      expect(section).toMatch(/skip-locally table/);
-      expect(section).toMatch(/docsSource\.path/);
-      expect(section).toMatch(/docsSource\.heading/);
-      expect(section).toMatch(/docs\/toolchain\.md/);
+      expect(section).toContain(
+        '"$SHIPWRIGHT_TASK_STORE_URL/verification-checks?repo=',
+      );
+      expect(section).toContain("checkName=$CHECK_NAME");
+      expect(section).not.toContain("docsSource");
+      expect(section).not.toContain("docs/toolchain.md");
     });
 
-    it(`${label} [C] Validate: on a match, does NOT run the setsid timeout wrapper — no budget spent attempting it`, () => {
+    it(`${label} [C] Validate walks the 5 most-recent rows counting a consecutive skipped/timed_out streak, matching at >= 2`, () => {
       const section = getValidateSection(startMarker, endMarker);
-      expect(section).toMatch(/do NOT run the `setsid timeout/);
+      expect(section).toContain('"$s" = "skipped"');
+      expect(section).toContain('"$s" = "timed_out"');
+      expect(section).toMatch(/STREAK\s*-ge\s*2/);
+    });
+
+    it(`${label} [C] Validate: on a streak match, does NOT run the enforced-timeout invocation — no budget spent attempting it`, () => {
+      const section = getValidateSection(startMarker, endMarker);
+      expect(section).toMatch(/do NOT run the enforced-timeout invocation/);
       expect(section).toMatch(/no budget spent even attempting it/);
     });
 
@@ -2767,7 +2792,7 @@ describe("patch.md — skip-locally check before attempting each check, read-onl
       const section = getValidateSection(startMarker, endMarker);
       const idx = section.indexOf("Skip-locally check");
       expect(idx).toBeGreaterThan(-1);
-      const nearby = section.slice(idx, idx + 1500);
+      const nearby = section.slice(idx, idx + 2500);
       expect(nearby).toContain('status: "skipped"');
       expect(nearby).toContain('reasonCategory: "learned_skip"');
       expect(nearby).toContain("learnedFromCategory");
@@ -2780,23 +2805,25 @@ describe("patch.md — skip-locally check before attempting each check, read-onl
       expect(section).toMatch(/skip \(learned: \{reason\}\)/);
     });
 
-    it(`${label} [C] Validate states patch.md does not write to the skip-locally table itself — read-only, dev-task.md Step 8 owns the write`, () => {
+    it(`${label} [C] Validate states patch.md does not write to the verification-check history itself — read-only, dev-task.md Step 8 owns the write`, () => {
       const section = getValidateSection(startMarker, endMarker).replace(
         /\s+/g,
         " ",
       );
-      expect(section).toMatch(/patch\.md`? never writes to this table itself/i);
+      expect(section).toMatch(
+        /patch\.md`? never writes to this verification-check history itself/i,
+      );
       expect(section).toMatch(/only reads classifications dev-task\.md/i);
     });
   }
 
-  it("no call site's [C] Validate claims patch.md writes/records a skip-locally classification back to the doc", () => {
+  it("no call site's [C] Validate claims patch.md writes/records a skip-locally classification back", () => {
     for (const [, startMarker, endMarker] of sites) {
       const section = getValidateSection(startMarker, endMarker);
       // The only "write" language allowed near skip-locally in patch.md is the explicit
-      // disclaimer that patch never writes this table — never an instruction to do so.
+      // disclaimer that patch never writes this history — never an instruction to do so.
       expect(section).not.toMatch(
-        /write(?:s|ing)? (?:the |a |this )?skip-locally (?:classification|table|entry) back/i,
+        /write(?:s|ing)? (?:the |a |this )?skip-locally (?:classification|entry) back/i,
       );
     }
   });
