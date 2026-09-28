@@ -25,6 +25,19 @@
  * sweep's, and any future change to that precedence table should apply here
  * automatically.
  *
+ * That reuse is why the `--json` field list below requests `commits` and why
+ * the task-store task rows are threaded through as a full
+ * `Map<number, CensusTaskRecord>` rather than a bare membership `Set`: the
+ * shared `buildCensusEntry()` also stamps CPP-1.2's commitCount + four-bucket
+ * breakdown, and the task-store's census upsert writes those five fields
+ * unconditionally whenever supplied. Fetching origin-only data through it
+ * would therefore stamp a false-zero commitCount and an all-zero breakdown
+ * onto every historical shipwright-origin PR. Requesting `commits` costs a
+ * materially heavier `gh` response on this pass's large (`GH_PR_LIST_LIMIT`)
+ * listing than on the incremental sweep's small windows — accepted, since
+ * this is an explicitly-invoked one-off whose per-repo failures are surfaced,
+ * not silent.
+ *
  * Idempotent by construction: `POST /prs/census`'s upsert is
  * first-write-wins (see task-store/src/routes/prs.ts's `stampOrigin()`), so
  * re-running this script after a partial or failed run cannot corrupt
@@ -97,21 +110,19 @@ function emptyOriginBreakdown(): Record<PrOrigin, number> {
  * A PR with a null `mergedAt` is excluded — shouldn't occur for
  * `--state merged` results in practice, but this guards against a `gh`
  * quirk rather than crashing on a string comparison against `null`.
+ *
+ * `tasksByPr` is a full task-record lookup, not a membership `Set`: the
+ * shared `buildCensusEntry()` reads the matched row's `ciFixAttempts` for
+ * CPP-1.2's commit breakdown, so passing placeholder records would stamp
+ * `commitsCiFix: 0` onto every backfilled shipwright-origin PR regardless of
+ * how many CI-fix retries it actually took.
  */
 export function buildBackfillEntries(
   repo: string,
   prs: GhCensusPr[],
   cutoffIso: string,
-  taskPrNumbers: Set<number>,
+  tasksByPr: Map<number, CensusTaskRecord>,
 ): CensusEntry[] {
-  // buildCensusEntry() now needs a lookup (for CPP-1.2's commit-breakdown
-  // ciFixAttempts read), not just a membership check — this backfill pass
-  // only ever had a plain Set of matched PR numbers (it doesn't need the
-  // commit breakdown itself; see this file's module doc comment), so this
-  // is a same-membership shim rather than a real per-PR task-record lookup.
-  const tasksByPr = new Map<number, CensusTaskRecord>(
-    Array.from(taskPrNumbers, (prNumber) => [prNumber, {}]),
-  );
   return prs
     .filter(
       (pr): pr is GhCensusPr & { mergedAt: string } =>
@@ -154,20 +165,23 @@ export async function runBackfillForRepo(
       "--limit",
       String(GH_PR_LIST_LIMIT),
       "--json",
-      "number,title,author,headRefName,createdAt,mergedAt",
+      // `commits` is required by GhCensusPr / buildCensusEntry() — dropping it
+      // would silently stamp false-zero commit counts (see the module doc).
+      "number,title,author,headRefName,createdAt,mergedAt,commits",
       "--repo",
       repo,
     ]);
     fetchedCount = prs.length;
 
     const tasks = await deps.listTasksWithPr(repo);
-    const taskPrNumbers = new Set(
-      tasks
-        .map((task) => task.pr)
-        .filter((pr): pr is number => pr !== null && pr !== undefined),
-    );
+    const tasksByPr = new Map<number, CensusTaskRecord>();
+    for (const task of tasks) {
+      if (task.pr !== null && task.pr !== undefined) {
+        tasksByPr.set(task.pr, task);
+      }
+    }
 
-    const entries = buildBackfillEntries(repo, prs, cutoffIso, taskPrNumbers);
+    const entries = buildBackfillEntries(repo, prs, cutoffIso, tasksByPr);
     inWindowCount = entries.length;
     for (const entry of entries) {
       originBreakdown[entry.origin] += 1;

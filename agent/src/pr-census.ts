@@ -133,22 +133,30 @@ export interface GhCensusPr {
   createdAt: string | null;
   mergedAt: string | null;
   /**
-   * Optional (rather than required): `pr-origin-backfill.ts` (POB-1.1) still
-   * fetches via its own plain `gh pr list --json` field list, which doesn't
-   * request `commits` — reusing this same `GhCensusPr` type without forcing
-   * that module to change. `buildCensusEntry()` treats a missing/undefined
-   * array the same as an empty one. Only `messageHeadline` is read (CPP-1.2's
-   * message-prefix classification rules), so that's all this models — `gh`
-   * itself returns richer objects (`authoredDate`, `authors`, `committedDate`,
-   * `messageBody`, `oid`) that this pass has no use for.
+   * REQUIRED, deliberately: every `GhCensusPr` producer must request
+   * `commits` in its own `gh pr list --json` field list (this file's
+   * incremental sweep AND `pr-origin-backfill.ts`'s plain historical
+   * listing). When the field is absent, `gh` yields `undefined` and
+   * `buildCensusEntry()` cannot tell "this PR has no commits" from "nobody
+   * asked for them" — it would stamp a false-zero `commitCount: 0` plus an
+   * all-zero breakdown onto real PRs, and the task-store's census upsert
+   * writes those fields unconditionally whenever supplied (see
+   * `upsertOriginFields()`), so the zeros would stick. Typing it required
+   * makes forgetting the field a typecheck failure instead of silent bad
+   * metrics.
+   *
+   * Only `messageHeadline` is read (CPP-1.2's message-prefix classification
+   * rules), so that's all this models — `gh` itself returns richer objects
+   * (`authoredDate`, `authors`, `committedDate`, `messageBody`, `oid`) that
+   * this pass has no use for.
    */
-  commits?: { messageHeadline: string }[];
+  commits: { messageHeadline: string }[];
 }
 
 /** Minimal task-store Task shape this pass needs — just enough to test for a `(repo, pr)` match and read the matched row's ci-fix retry counter. */
 export interface CensusTaskRecord {
   pr?: number | null;
-  /** Retry-attempt counter set by `/shipwright:dev-task`'s Step 10a and `/shipwright:patch`'s CI-fix loop (same field/meaning as check-helpers.ts's `Task.ciFixAttempts`). Copied verbatim into `CensusEntry.commitsCiFix` — never derived by scanning commit messages. */
+  /** Retry-attempt counter set by `/shipwright:dev-task`'s Step 10a and `/shipwright:patch`'s CI-fix loop (same field/meaning as check-helpers.ts's `Task.ciFixAttempts`). Read straight off this row into `CensusEntry.commitsCiFix` — never derived by scanning commit messages — but clamped to the commits actually available, so the four breakdown buckets always sum to `commitCount` (see `classifyCommits`). */
   ciFixAttempts?: number | null;
 }
 
@@ -248,12 +256,24 @@ const DOCS_REFRESH_PREFIX = "docs: refresh";
  * construction (`docs: refresh...` vs. `fix: address review findings on
  * #N...`) — so the four buckets never double-count a single commit.
  *
- * `commitsImplementation` is the remainder, floored at 0: `ciFixAttempts` is
- * a retry-attempt counter tracked independently of this PR's actual commit
- * count, so the subtraction can theoretically go negative (e.g. a task
- * retried CI fixes across amended/squashed commits that no longer show up
- * 1:1 in `pr.commits`) — clamp rather than surface a nonsensical negative
- * count.
+ * The four buckets always sum to exactly `commits.length` (the entry's
+ * `commitCount`) — that sum invariant is the structural guarantee downstream
+ * metrics consumers aggregate on, so it holds unconditionally, by
+ * construction, rather than only in the common case.
+ *
+ * That's why `commitsCiFix` is CLAMPED to the budget left over after the two
+ * message-derived buckets rather than copied verbatim from `ciFixAttempts`:
+ * `ciFixAttempts` is a retry-attempt counter tracked independently of this
+ * PR's actual commit count, so it can exceed the commits actually present
+ * (e.g. a task retried CI fixes across amended/squashed commits that no
+ * longer show up 1:1 in `pr.commits`, or a re-run that bumped the counter
+ * without landing a commit). Left unclamped, a `commitCount: 1` PR with
+ * `ciFixAttempts: 5` would report buckets summing to 5. "commitsCiFix equals
+ * ciFixAttempts" therefore holds only when the commit count has room to
+ * represent it — which is every non-degenerate case; the clamp is a
+ * correctness floor for the degenerate ones, not the normal path.
+ * `commitsImplementation` is then the true remainder of that same budget, so
+ * it can never go negative and needs no separate floor of its own.
  */
 export function classifyCommits(
   commits: { messageHeadline: string }[],
@@ -272,11 +292,17 @@ export function classifyCommits(
     }
   }
 
-  const commitsCiFix = ciFixAttempts;
-  const commitsImplementation = Math.max(
+  // Commits not already claimed by a message-derived bucket — the budget
+  // commitsCiFix and commitsImplementation split between them.
+  const remainingBudget = Math.max(
     0,
-    commits.length - commitsDocsRefresh - commitsReviewPatch - commitsCiFix,
+    commits.length - commitsDocsRefresh - commitsReviewPatch,
   );
+  // Lower-bounded at 0 as well as upper-bounded at the budget: a negative
+  // ciFixAttempts (garbage on the task row) would otherwise produce a
+  // negative bucket and an inflated implementation count.
+  const commitsCiFix = Math.min(Math.max(0, ciFixAttempts), remainingBudget);
+  const commitsImplementation = remainingBudget - commitsCiFix;
 
   return {
     commitsDocsRefresh,
