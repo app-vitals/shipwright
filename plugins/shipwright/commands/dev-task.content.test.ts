@@ -803,49 +803,6 @@ describe("toolchain-patterns.md — docsSource pointer + scoped fingerprint (LVB
     expect(section).toMatch(/false cache \*?hit/i);
   });
 
-  it("strips Shipwright's own 'Shipwright Learned Facts' subsection out of the docsSource-populated hash so the write-back mechanism can't self-invalidate the cache (LVB-4.2)", () => {
-    const awkIdx = referencesContent.indexOf("heading_content=$(awk");
-    expect(awkIdx).toBeGreaterThan(-1);
-    const awkBlock = referencesContent.slice(
-      awkIdx,
-      referencesContent.indexOf("```", awkIdx),
-    );
-
-    // The marker subsection is nested under {docsSource.heading}, so the
-    // same-or-shallower boundary rule above *includes* it in the section's
-    // content — it has to be filtered back out before hashing.
-    expect(awkBlock).toMatch(/Shipwright Learned Facts/);
-    // Skip until the next heading at level <= the marker heading's own level,
-    // then resume — not an unconditional exit, which would also drop any
-    // human-authored subsection that follows the marker.
-    expect(awkBlock).toMatch(/RLENGTH\s*<=\s*marker_level/);
-    expect(awkBlock).toMatch(/skip\s*=\s*0/);
-  });
-
-  it("derives the strip pass's marker level from docsSource.heading instead of hardcoding 3, so it still works under a level-3+ pointer heading (LVB-4.2)", () => {
-    const awkIdx = referencesContent.indexOf("heading_content=$(awk");
-    expect(awkIdx).toBeGreaterThan(-1);
-    const awkBlock = referencesContent.slice(
-      awkIdx,
-      referencesContent.indexOf("```", awkIdx),
-    );
-    const stripPassIdx = awkBlock.indexOf("| awk");
-    expect(stripPassIdx).toBeGreaterThan(-1);
-    const stripPass = awkBlock.slice(stripPassIdx);
-
-    // The strip pass needs {docsSource.heading} too — it can't compute the
-    // marker's level without the parent heading it nests under.
-    expect(stripPass).toMatch(/-v h="\{docsSource\.heading\}"/);
-    expect(stripPass).toMatch(/marker_level\s*=\s*RLENGTH\s*\+\s*1/);
-    // Capped at markdown's maximum heading depth.
-    expect(stripPass).toMatch(/marker_level\s*>\s*6/);
-    // The marker pattern is built from that derived level, never a literal '###'
-    // — a hardcoded level-3 strip silently stops matching the moment
-    // docsSource.heading is itself level 3 or deeper.
-    expect(stripPass).not.toMatch(/### Shipwright Learned Facts/);
-    expect(stripPass).not.toMatch(/RLENGTH\s*<=\s*3\b/);
-  });
-
   it("excludes the no-pointer fallback target docs/toolchain.md from the config-file fingerprint pathspec for the same reason (LVB-4.2)", () => {
     const fingerprintIdx = referencesContent.indexOf("**Fingerprint**");
     const nextSectionIdx = referencesContent.indexOf("## Detection Order");
@@ -861,248 +818,24 @@ describe("toolchain-patterns.md — docsSource pointer + scoped fingerprint (LVB
     expect(gitLogLine).toMatch(/:\(exclude\)docs\/toolchain\.md/);
   });
 
-  it("explains both self-invalidation guards as the same exclusion principle already applied to lockfiles", () => {
+  it("explains the no-pointer pathspec exclusion as a self-invalidation guard, the same exclusion principle already applied to lockfiles", () => {
     const fingerprintIdx = referencesContent.indexOf("**Fingerprint**");
     const nextSectionIdx = referencesContent.indexOf("## Detection Order");
     const section = referencesContent.slice(fingerprintIdx, nextSectionIdx);
     expect(section).toMatch(/self-invalidat/i);
-    expect(section).toMatch(/cache miss on essentially every subsequent run/i);
+    expect(section).toMatch(/no-pointer half/i);
   });
-});
 
-describe("toolchain-patterns.md — writing learned facts back to docs (LVB-4.2)", () => {
-  const referencesPath = join(
-    import.meta.dir,
-    "..",
-    "references",
-    "toolchain-patterns.md",
-  );
-  const referencesContent = readFileSync(referencesPath, "utf-8");
-
-  function section(): string {
-    const sectionIdx = referencesContent.indexOf(
-      "## Writing Learned Facts Back to Docs",
+  it("no longer strips a 'Shipwright Learned Facts' marker subsection in the docsSource-populated recipe — the write-back mechanism it guarded against is gone", () => {
+    const awkIdx = referencesContent.indexOf("heading_content=$(awk");
+    expect(awkIdx).toBeGreaterThan(-1);
+    const awkBlock = referencesContent.slice(
+      awkIdx,
+      referencesContent.indexOf("```", awkIdx),
     );
-    expect(sectionIdx).toBeGreaterThan(-1);
-    const nextSectionIdx = referencesContent.indexOf("## Detection Order");
-    expect(nextSectionIdx).toBeGreaterThan(sectionIdx);
-    return referencesContent.slice(sectionIdx, nextSectionIdx);
-  }
-
-  it("is placed after '## Caching Across Runs' and before '## Detection Order'", () => {
-    const cachingIdx = referencesContent.indexOf("## Caching Across Runs");
-    const sectionIdx = referencesContent.indexOf(
-      "## Writing Learned Facts Back to Docs",
-    );
-    const detectionIdx = referencesContent.indexOf("## Detection Order");
-    expect(cachingIdx).toBeGreaterThan(-1);
-    expect(sectionIdx).toBeGreaterThan(cachingIdx);
-    expect(detectionIdx).toBeGreaterThan(sectionIdx);
-  });
-
-  it("defines what counts as a learned fact: scoped commands, the enforced budget, and a reserved skip-locally slot", () => {
-    const s = section();
-    expect(s).toMatch(/lintScoped/);
-    expect(s).toMatch(/typecheckScoped/);
-    expect(s).toMatch(/testScoped/);
-    expect(s).toMatch(/\{budget\}/);
-    expect(s).toMatch(/ci-derived/);
-    expect(s).toMatch(/fallback-10m/);
-    expect(s).toMatch(/skip-locally/i);
-  });
-
-  it("defines a fixed, idempotent 'Shipwright Learned Facts' marker subsection owned exclusively by this mechanism", () => {
-    const s = section();
-    expect(s).toContain("Shipwright Learned Facts");
-    expect(s).toMatch(/full replace/i);
-    expect(s).toMatch(/never an append that duplicates/i);
-    expect(s).toMatch(/auto-maintained/i);
-  });
-
-  it("derives the marker's heading level as one deeper than its parent heading rather than hardcoding level 3 (LVB-4.2)", () => {
-    const s = section();
-    // The heading *text* is fixed; its '#' depth is parent level + 1, capped at
-    // markdown's maximum of 6.
-    expect(s).toMatch(/derived, never hardcoded/i);
-    expect(s).toMatch(/one level deeper/i);
-    expect(s).toMatch(/parent level \+ 1/);
-    expect(s).toMatch(/capped at[^.]{0,40}6/i);
-    // The failure this guards: docsSource.heading can itself be level 3+ (Docs-First
-    // Discovery scans arbitrary docs/*.md and ai-docs/*.md files), and a level-3
-    // marker under a level-3 parent is a *sibling* — under this file's own
-    // same-or-shallower boundary rule it terminates the parent section instead of
-    // nesting inside it.
-    expect(s).toMatch(/sibling/i);
-    expect(s).toMatch(/docs\/\*\.md|ai-docs\/\*\.md/);
-    // Worked example: a level-3 parent yields a level-4 marker.
-    expect(s).toMatch(/`#### Shipwright Learned Facts`/);
-    // And downstream boundary checks key off the same derived level.
-    expect(s).toMatch(/same derived level|that same derived level/i);
-  });
-
-  it("applies the same derivation to the no-pointer default file: a level-1 '# Toolchain' title yields a level-2 marker (LVB-4.2)", () => {
-    const s = section();
-    expect(s).toMatch(/`## Shipwright Learned Facts`/);
-    expect(s).toMatch(/# Toolchain[^.]{0,40}level 1/i);
-  });
-
-  it("reuses the Fingerprint recipe's same-or-shallower heading-boundary technique instead of reinventing it", () => {
-    const s = section();
-    expect(s).toMatch(/same-or-shallower level|same or shallower level/i);
-    // Explicitly ties back to the Fingerprint section's awk recipe rather than
-    // re-describing a parallel heading-boundary rule that could drift from it.
-    expect(s).toMatch(/Fingerprint/);
-  });
-
-  it("pointer-exists case: target is docsSource.path, nested under docsSource.heading, via doc-refresh-recipe.md's Update mechanics — updates the existing doc, not a new file", () => {
-    const s = section();
-    expect(s).toMatch(/docsSource\.path/);
-    expect(s).toMatch(/docsSource\.heading/);
-    expect(s).toMatch(/doc-refresh-recipe\.md/);
-    expect(s).toMatch(/\bUpdate\b/);
-    expect(s).toMatch(/not a new file|never a new file/i);
-  });
-
-  it("no-pointer case: docs/toolchain.md is created as the default fallback target", () => {
-    const s = section();
-    expect(s).toMatch(/docsSource.{0,40}absent/i);
-    expect(s).toMatch(/docs\/toolchain\.md/);
-    expect(s).toMatch(/create/i);
-    // Re-running against an already-created docs/toolchain.md updates just the
-    // marker subsection via Edit mechanics, not a whole-file rewrite.
-    expect(s).toMatch(/whole-file rewrite/i);
-  });
-
-  it("scopes both write targets to the active worktree and forbids writing into the shared pre-worktree repo checkout", () => {
-    const s = section();
-    expect(s).toMatch(/\{worktree-path\}/);
-    // The shared checkout is what every concurrent/future run for this repo
-    // depends on staying clean, and Step 4 git-pulls it.
-    expect(s).toMatch(/SHIPWRIGHT_REPO_DIR/);
-    expect(s).toMatch(/never.{0,60}shared|shared.{0,80}never/i);
-    expect(s).toMatch(/git pull/i);
-  });
-
-  it("defines the skip-locally table format: Check/Reason/Classified At columns, Reason drawn from the ENVIRONMENTAL reasonCategory values (LVB-4.4)", () => {
-    const s = section();
-    expect(s).toMatch(/\|\s*Check\s*\|\s*Reason\s*\|\s*Classified At\s*\|/);
-    expect(s).toContain("check_timeout");
-    expect(s).toContain("install_timeout");
-    expect(s).toContain("resource_limit");
-    expect(s).toContain("missing_tool");
-    expect(s).toContain("missing_secret");
-    expect(s).toContain("missing_dependency");
-    expect(s).toContain("not_configured");
-    expect(s).toMatch(/never `learned_skip` itself/i);
-  });
-
-  it("describes the read side: a match skips the setsid wrapper entirely and POSTs status skipped + reasonCategory learned_skip + learnedFromCategory (LVB-4.4)", () => {
-    const s = section().replace(/\s+/g, " ");
-    expect(s).toMatch(/not attempted at all this run/i);
-    expect(s).toContain('status: "skipped"');
-    expect(s).toContain('reasonCategory: "learned_skip"');
-    expect(s).toContain("learnedFromCategory");
-    expect(s).toMatch(/dev-task\.md Step 8/);
-    expect(s).toMatch(/patch\.md/);
-  });
-
-  it("describes the write side: repo+checkName history mode, descending order, consecutive-streak counting, and the ran_passed/ran_failed break (LVB-4.4)", () => {
-    const s = section().replace(/\s+/g, " ");
-    expect(s).toMatch(/GET \/verification-checks\?repo=&checkName=&limit=/);
-    expect(s).toMatch(/ordered by `at` DESCENDING/);
-    expect(s).toMatch(/CONSECUTIVE run of `skipped`\/`timed_out` rows/);
-    expect(s).toMatch(/breaks\/resets that count/i);
-    expect(s).toMatch(
-      /must never contribute to this counter or by itself trigger a write/i,
-    );
-    expect(s).toMatch(/streak reaches 2/i);
-  });
-
-  it("explicitly scopes the write trigger to dev-task.md only — patch.md is read-only against this table (LVB-4.4)", () => {
-    const s = section().replace(/\s+/g, " ");
-    expect(s).toMatch(/patch\.md`? is read-only against this table/i);
-    expect(s).toMatch(/never writes this table/i);
-    expect(s).toMatch(/no write hook/i);
-    expect(s).toMatch(/never adds new ones itself/i);
-  });
-
-  it("states the write happens at Step 8.6 — after the worktree exists and after Step 8 derives {budget} — not at Step 0b", () => {
-    const s = section();
-    expect(s).toMatch(/Step 8\.6/);
-    // Both sequencing preconditions must be stated as the reason for the hook point.
-    expect(s).toMatch(
-      /Step 0b[\s\S]{0,400}before Step 4|before Step 4[\s\S]{0,400}Step 0b/,
-    );
-    expect(s).toMatch(
-      /\{budget\}[\s\S]{0,200}Step 8|Step 8[\s\S]{0,200}\{budget\}/,
-    );
-    // One hook, not two — no second write hook to keep in sync.
-    expect(s).toMatch(/single write per run|one hook/i);
-    expect(s).toMatch(/best-effort/i);
-    expect(s).toMatch(/never block/i);
-  });
-});
-
-describe("dev-task.md Step 8.6 — wires in toolchain-patterns.md's 'Writing Learned Facts Back to Docs' section (LVB-4.2)", () => {
-  function step86(): string {
-    const stepIdx = content.indexOf(
-      "## Step 8.6: Write Learned Facts Back to Docs",
-    );
-    expect(stepIdx).toBeGreaterThan(-1);
-    const nextStepIdx = content.indexOf("## Step 9: Push & PR");
-    expect(nextStepIdx).toBeGreaterThan(stepIdx);
-    return content.slice(stepIdx, nextStepIdx);
-  }
-
-  it("is sequenced after Step 8.5's docs refresh and before Step 9's push", () => {
-    const docsRefreshIdx = content.indexOf("## Step 8.5: Auto-Refresh Docs");
-    const stepIdx = content.indexOf(
-      "## Step 8.6: Write Learned Facts Back to Docs",
-    );
-    const pushIdx = content.indexOf("## Step 9: Push & PR");
-    expect(docsRefreshIdx).toBeGreaterThan(-1);
-    expect(stepIdx).toBeGreaterThan(docsRefreshIdx);
-    expect(pushIdx).toBeGreaterThan(stepIdx);
-  });
-
-  it("delegates by reference instead of re-embedding the editing mechanics inline", () => {
-    const step = step86();
-    expect(step).toMatch(/Writing Learned Facts Back to Docs/);
-    expect(step).toMatch(/best-effort/i);
-    expect(step).toMatch(/never blocks the pipeline/i);
-    // Naming the subsection is fine, but the actual editing mechanics
-    // (full-replace rule, heading-boundary technique) must not be re-embedded
-    // here; they live only in toolchain-patterns.md.
-    expect(step).not.toMatch(/full replace/i);
-    expect(step).not.toMatch(
-      /same-or-shallower level|same or shallower level/i,
-    );
-  });
-
-  it("writes only into the worktree and commits the result so it lands in this task's PR", () => {
-    const step = step86();
-    expect(step).toMatch(/SHIPWRIGHT_WORKTREE_DIR/);
-    expect(step).toMatch(/Never the shared repo checkout/i);
-    expect(step).toMatch(/git commit/);
-    expect(step).toMatch(/Step 9's push/);
-  });
-
-  it("explains why this hook point, not Step 0b: the worktree doesn't exist yet there and {budget} isn't derived until Step 8", () => {
-    const step = step86();
-    expect(step).toMatch(/Step 0b/);
-    expect(step).toMatch(/pre-worktree|before Step 4|worktree.{0,40}exists/i);
-    expect(step).toMatch(/\{budget\}/);
-    expect(step).toMatch(/Step 8/);
-  });
-
-  it("Step 0b itself performs no doc write and points forward to Step 8.6", () => {
-    const stepIdx = content.indexOf("### 0b. Detect Project Toolchain");
-    expect(stepIdx).toBeGreaterThan(-1);
-    const nextStepIdx = content.indexOf("## Step 2: Mark In-Progress");
-    const step0b = content.slice(stepIdx, nextStepIdx);
-
-    expect(step0b).toMatch(/No doc write happens here/i);
-    expect(step0b).toMatch(/Step 8\.6/);
+    expect(awkBlock).not.toContain("| awk");
+    expect(awkBlock).not.toMatch(/marker_level/);
+    expect(awkBlock).not.toContain("Shipwright Learned Facts");
   });
 });
 
@@ -1721,15 +1454,18 @@ describe("dev-task.md Step 8 — enforced non-blocking verification budgets (LVB
     );
   });
 
-  it("wraps checks in a process-group-aware enforced timeout: setsid + whole-group kill wording, not just 'wrapped in timeout'", () => {
+  it("invokes the shared run-with-budget.ts script instead of inlining the setsid/timeout pattern", () => {
     const section = getStep8Section();
-    expect(section).toContain("setsid");
-    const lower = section.toLowerCase().replace(/\s+/g, " ");
-    expect(lower).toMatch(/process(-| )group/);
-    // Must describe killing the whole group (negative-PID / group kill), not merely naming timeout.
-    expect(lower).toMatch(
-      /(kill|terminat).{0,60}(whole|entire|-\$|negative).{0,20}(group|pid)|(-\$pid|kill -- -\$)/,
+    expect(section).toContain("run-with-budget.ts");
+    expect(section).toContain(
+      'bun run "${CLAUDE_PLUGIN_ROOT}/scripts/run-with-budget.ts"',
     );
+    const lower = section.toLowerCase().replace(/\s+/g, " ");
+    // Explains why: a process-group-aware wrapper is needed so a tool that forks worker
+    // subprocesses can't leave orphaned descendants alive past a timeout — the script
+    // handles this now, so dev-task.md doesn't re-implement the mechanics inline.
+    expect(lower).toMatch(/process(-| )group/);
+    expect(lower).toMatch(/orphan/);
   });
 
   it("states expiry (timeout) never blocks proceeding to Step 9 (Push & PR)", () => {
@@ -1837,9 +1573,9 @@ describe("dev-task.md Step 8 — record verification outcomes via task-store API
 
   it("the verification-checks call is a POST", () => {
     const section = getStep8Section();
-    const idx = section.indexOf(
-      "$SHIPWRIGHT_TASK_STORE_URL/verification-checks",
-    );
+    // The bare (no query string) URL is only ever used by the recording POSTs — the
+    // live skip-locally read (LVB-4.4) hits the same path with a `?repo=...` query.
+    const idx = section.indexOf('"$SHIPWRIGHT_TASK_STORE_URL/verification-checks"');
     expect(idx).toBeGreaterThan(-1);
     const nearby = section.slice(Math.max(0, idx - 300), idx);
     expect(nearby).toContain("-X POST");
@@ -1868,9 +1604,9 @@ describe("dev-task.md Step 8 — record verification outcomes via task-store API
     );
   });
 
-  it("maps timeout (exit 124) to timed_out with a check_timeout/install_timeout reasonCategory", () => {
+  it("maps run-with-budget.ts's 'timeout' status to timed_out with a check_timeout/install_timeout reasonCategory", () => {
     const section = getStep8Section();
-    expect(section).toContain("124");
+    expect(section).toContain('SCRIPT_STATUS" = "timeout"');
     expect(section).toMatch(
       /timed_out[\s\S]{0,200}(check_timeout|install_timeout)/,
     );
@@ -1931,26 +1667,29 @@ describe("dev-task.md Step 8 — Skip-Locally Classification: read before attemp
     expect(timeoutIdx).toBeGreaterThan(skipIdx);
   });
 
-  it("loads the learned-facts doc once per run using the same target resolution as Step 8.6 (docsSource pointer, else default docs/toolchain.md)", () => {
+  it("queries GET /verification-checks?repo=&checkName=&limit= live before each attempt — no doc file is read or parsed", () => {
     const s = section();
-    expect(s).toMatch(/docsSource\.path/);
-    expect(s).toMatch(/docsSource\.heading/);
-    expect(s).toMatch(/docs\/toolchain\.md/);
-    expect(s).toMatch(/Shipwright[\s\S]{0,10}Learned Facts/);
+    expect(s).toContain(
+      "$SHIPWRIGHT_TASK_STORE_URL/verification-checks?repo=$GH_REPO&checkName=$CHECK_NAME&limit=",
+    );
+    expect(s).toMatch(/ordered by `at` DESCENDING/);
+    expect(s).toMatch(/no doc file is read or parsed/i);
+    expect(s).not.toMatch(/docsSource/);
+    expect(s).not.toMatch(/docs\/toolchain\.md/);
   });
 
-  it("checks each check's name against the loaded map before running it, for install/lint/typecheck/test and each layer", () => {
-    const s = section();
-    expect(s).toMatch(/install, lint, typecheck, test/i);
-    expect(s).toMatch(/\{tests\}/);
+  it("walks the check+repo history and counts the CONSECUTIVE skipped/timed_out streak, breaking at the first ran_passed or ran_failed row", () => {
+    const s = section().replace(/\s+/g, " ");
+    expect(s).toMatch(/STREAK/);
+    expect(s).toMatch(/CONSECUTIVE run of `skipped`\/`timed_out` rows/);
     expect(s).toMatch(
-      /checkName\s*->\s*reasonCategory|checkName.{0,10}reasonCategory/,
+      /stops.{0,20}via `break`.{0,60}first `ran_passed` or `ran_failed` row/,
     );
   });
 
-  it("on a match: does NOT run the setsid timeout wrapper — no budget spent attempting the check", () => {
+  it("on STREAK -ge 2: does NOT run run-with-budget.ts — no budget spent attempting the check", () => {
     const s = section();
-    expect(s).toMatch(/do NOT run the `setsid timeout/i);
+    expect(s).toMatch(/do not run\s+`run-with-budget\.ts`/i);
     expect(s).toMatch(/no budget/i);
   });
 
@@ -1970,135 +1709,3 @@ describe("dev-task.md Step 8 — Skip-Locally Classification: read before attemp
   });
 });
 
-describe("dev-task.md Step 8 — Skip-Locally Learning Trigger (LVB-4.4)", () => {
-  function section(): string {
-    const idx = content.indexOf("### Skip-Locally Learning Trigger");
-    expect(idx).toBeGreaterThan(-1);
-    const nextIdx = content.indexOf("**Budget derivation.**");
-    expect(nextIdx).toBeGreaterThan(idx);
-    return content.slice(idx, nextIdx);
-  }
-
-  it("is sequenced after the enforced-timeout block (real check attempts) and before Budget derivation", () => {
-    const timeoutIdx = content.indexOf(
-      "### Enforced, Process-Group-Aware Timeouts",
-    );
-    const triggerIdx = content.indexOf("### Skip-Locally Learning Trigger");
-    const budgetIdx = content.indexOf("**Budget derivation.**");
-    expect(timeoutIdx).toBeGreaterThan(-1);
-    expect(triggerIdx).toBeGreaterThan(timeoutIdx);
-    expect(budgetIdx).toBeGreaterThan(triggerIdx);
-  });
-
-  it("only fires for REAL check attempts — explicitly excludes the skip-on-read short-circuit", () => {
-    const s = section();
-    expect(s).toMatch(/REAL check attempt/);
-    expect(s).toMatch(/not a skip-on-read short-circuit/i);
-  });
-
-  it("a ran_passed or ran_failed outcome stops here — never contributes to the counter or triggers a write", () => {
-    const s = section().replace(/\s+/g, " ");
-    expect(s).toMatch(/ran_passed.{0,20}or.{0,20}ran_failed.{0,60}never does/i);
-    expect(s).toMatch(/stop here/i);
-    expect(s).toMatch(
-      /must never contribute to this counter or trigger a skip-locally write/i,
-    );
-  });
-
-  it("explicitly states a real test/lint failure is a separate, expected outcome that should keep failing loudly, not get silently marked as skipped", () => {
-    const s = section().replace(/\s+/g, " ");
-    expect(s).toMatch(/completely separate, expected outcome/i);
-    expect(s).toMatch(/keep running and keep failing loudly/i);
-    expect(s).toMatch(
-      /not get silently marked as something the agent stops attempting/i,
-    );
-  });
-
-  it("queries GET /verification-checks?repo=&checkName=&limit= — the LVB-4.4 repo+checkName history mode", () => {
-    const s = section();
-    expect(s).toContain(
-      "$SHIPWRIGHT_TASK_STORE_URL/verification-checks?repo=$GH_REPO&checkName=$CHECK_NAME&limit=",
-    );
-    expect(s).toMatch(/ordered by `at` DESCENDING/);
-  });
-
-  it("counts the CONSECUTIVE run of skipped/timed_out rows from most recent backward, stopping (breaking) at the first ran_passed or ran_failed row", () => {
-    const s = section().replace(/\s+/g, " ");
-    expect(s).toMatch(/CONSECUTIVE run of `skipped`\/`timed_out` rows/);
-    expect(s).toMatch(
-      /stops \(via `break`\) at the first `ran_passed` or `ran_failed` row/,
-    );
-    expect(s).toContain("break");
-    expect(s).toMatch(/breaks\/resets the streak/);
-  });
-
-  it("explicitly states a ran_failed row caps everything before it out of the count — two timeouts either side of a failure never sum to a streak of 2", () => {
-    const s = section().replace(/\s+/g, " ");
-    expect(s).toMatch(
-      /ran_failed.{0,80}caps everything before it out of the count/i,
-    );
-    expect(s).toMatch(/never sum to a streak of 2/i);
-    expect(s).toMatch(
-      /structurally unable to contribute to this counter or trigger a skip-locally write/i,
-    );
-  });
-
-  it("triggers the write once the streak reaches 2, carrying the triggering (most recent) reasonCategory forward", () => {
-    const s = section();
-    expect(s).toMatch(/STREAK.{0,10}-ge 2/);
-    expect(s).toMatch(/2nd \(or later\) consecutive skip\/timeout/i);
-    expect(s).toMatch(
-      /carrying the triggering[\s\S]{0,60}\$VC_REASON.{0,20}forward/i,
-    );
-    expect(s).toMatch(
-      /Learned skip-locally for \$CHECK_NAME after 2 consecutive \$VC_REASON outcomes/,
-    );
-  });
-
-  it("reuses Step 8.6's write mechanics by reference (target resolution + full-replace) rather than re-deriving them, and updates the in-memory map for within-run consistency", () => {
-    const s = section();
-    expect(s).toMatch(/Reuse Step 8\.6's write mechanics/i);
-    expect(s).toMatch(/in-memory skip-locally map/i);
-    expect(s).toMatch(/within-run reread/i);
-  });
-
-  it("states the write is best-effort and never blocks the pipeline, matching Step 8's other writes", () => {
-    const s = section();
-    expect(s).toMatch(/best-effort/i);
-    expect(s).toMatch(/never blocks the pipeline/i);
-  });
-});
-
-describe("dev-task.md Step 8.6 — populates the skip-locally list for real (LVB-4.4)", () => {
-  function step86(): string {
-    const stepIdx = content.indexOf(
-      "## Step 8.6: Write Learned Facts Back to Docs",
-    );
-    expect(stepIdx).toBeGreaterThan(-1);
-    const nextStepIdx = content.indexOf("## Step 9: Push & PR");
-    expect(nextStepIdx).toBeGreaterThan(stepIdx);
-    return content.slice(stepIdx, nextStepIdx);
-  }
-
-  it("no longer describes the skip-locally slot as merely reserved — it now reflects this run's actual classifications", () => {
-    const step = step86();
-    expect(step).not.toMatch(/reserved skip-locally slot/i);
-    expect(step).toMatch(/skip-locally classifications table/i);
-  });
-
-  it("ties the recorded list back to the in-memory map loaded/updated earlier in Step 8", () => {
-    const step = step86().replace(/\s+/g, " ");
-    expect(step).toMatch(
-      /Skip-Locally Classification: Read Before Attempting Each Check/,
-    );
-    expect(step).toMatch(/Skip-Locally Learning Trigger/);
-  });
-
-  it("still delegates the write mechanics by reference — does not re-embed 'full replace'/'same-or-shallower' wording here", () => {
-    const step = step86();
-    expect(step).not.toMatch(/full replace/i);
-    expect(step).not.toMatch(
-      /same-or-shallower level|same or shallower level/i,
-    );
-  });
-});

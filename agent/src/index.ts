@@ -23,6 +23,7 @@ import {
   agentSlackMembershipRef,
   resolveSlackMembership,
 } from "./agent-slack-membership-ref.ts";
+import { agentTrialExpiryRef } from "./agent-trial-expiry-ref.ts";
 import { createChatPoller } from "./chat-poller.ts";
 import {
   HttpChatTokenReporter,
@@ -289,6 +290,7 @@ function buildSlackApp() {
     chatTokenReporter,
     (userId, client) => resolveUserEmail(userId, client),
     agentSlackMembershipRef,
+    agentTrialExpiryRef,
   );
 }
 
@@ -419,6 +421,13 @@ if (runtimeClient && agentId) {
           bundle.restrictSlackToMembers,
           bundle.memberEmails,
         ),
+      );
+
+      // Sync the agent's trial-expiry live ref (ATE-3.1) — read by
+      // agent/src/slack.ts's isTrialExpired() gate to block Slack access
+      // once the trial has passed.
+      agentTrialExpiryRef.set(
+        bundle.trialExpiresAt ? new Date(bundle.trialExpiresAt) : null,
       );
     } catch (err) {
       if (

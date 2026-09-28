@@ -52,6 +52,37 @@ app.kubernetes.io/instance: {{ .Release.Name }}
 {{- end }}
 
 {{/*
+Operator-supplied extra pod-template labels for a workload.
+
+Renders a workload's `podLabels` value as YAML, with that workload's own
+selector labels protected: a key that collides with a selector label is
+dropped rather than emitted, so values can never desync a pod template from
+the Deployment's immutable `spec.selector`. Values are coerced to strings —
+Kubernetes label values are strings, and an unquoted `true` in values.yaml
+would otherwise render a bool the API server rejects.
+
+Emits nothing at all when there is nothing left to add, so the default
+(`podLabels: {}`) render is byte-identical to a chart without this hook.
+
+Usage:
+  {{- with (include "shipwright.podLabels" (dict "podLabels" .Values.admin.podLabels "selectorLabels" $selectorLabels)) }}
+  {{- . | nindent 8 }}
+  {{- end }}
+*/}}
+{{- define "shipwright.podLabels" -}}
+{{- $reserved := keys (fromYaml .selectorLabels) -}}
+{{- $extra := dict -}}
+{{- range $key, $value := (.podLabels | default dict) -}}
+{{- if not (has $key $reserved) -}}
+{{- $_ := set $extra $key (toString $value) -}}
+{{- end -}}
+{{- end -}}
+{{- if $extra -}}
+{{- toYaml $extra -}}
+{{- end -}}
+{{- end }}
+
+{{/*
 Create the name of the service account to use.
 */}}
 {{- define "shipwright.serviceAccountName" -}}

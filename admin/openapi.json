@@ -167,6 +167,20 @@
           },
           "warning": {
             "type": "string"
+          },
+          "trialExpiresAt": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "trialExpiryWarnedAt": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
           }
         },
         "required": [
@@ -227,6 +241,14 @@
           "restrictSlackToMembers": {
             "type": "boolean",
             "example": false
+          },
+          "trialExpiresAt": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time",
+            "example": "2026-12-01T00:00:00.000Z"
           }
         }
       },
@@ -1935,6 +1957,14 @@
             "example": [
               "dev@example.com"
             ]
+          },
+          "trialExpiresAt": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time",
+            "example": "2026-12-01T00:00:00.000Z"
           }
         },
         "required": [
@@ -2098,7 +2128,7 @@
       },
       "patch": {
         "summary": "Update an agent",
-        "description": "Admin-only. Updates `selfHosted`, `repos`, `reviewAuthorAllowlist`, `patchAuthorAllowlist`, `restrictSlackToMembers`, and/or `slackId`. `typeName` is not updatable via this route. Returns the updated agent, including a `warning` field when `restrictSlackToMembers` is set true on an agent with zero members.",
+        "description": "Admin-only. Updates `selfHosted`, `repos`, `reviewAuthorAllowlist`, `patchAuthorAllowlist`, `restrictSlackToMembers`, `slackId`, and/or `trialExpiresAt`. `typeName` and `trialExpiryWarnedAt` are not updatable via this route. Returns the updated agent, including a `warning` field when `restrictSlackToMembers` is set true on an agent with zero members.",
         "parameters": [
           {
             "schema": {

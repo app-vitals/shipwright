@@ -927,6 +927,83 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/tasks/{id}/unblock": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Atomically unblock a task back to pending
+         * @description Atomically unblocks a task via a single conditional `UPDATE ... WHERE status='blocked'`, setting `status=pending` and clearing `blockedReason`, `blockedAt`, `claimedBy`, `claimedAt`, and `heartbeatAt`, and resetting `skipCount` to `0` and `lastSkippedAt` to `null` — all in one round-trip. Returns `409` if the task is not currently in `blocked` status (never a silent no-op, unlike `/release` on a non-`in_progress` task).
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Unblocked task */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Task"];
+                    };
+                };
+                /** @description Unauthorized */
+                401: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+                /** @description Forbidden */
+                403: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+                /** @description Not found */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+                /** @description Conflict — task is not currently blocked */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/tasks/{id}/events": {
         parameters: {
             query?: never;
@@ -1261,7 +1338,7 @@ export interface paths {
         put?: never;
         /**
          * Claim a pull request (atomic)
-         * @description Atomic via Postgres row locking, keyed on `(repo, prNumber)`. No existing record creates and returns `201` (a concurrent INSERT loser hits the `@@unique([repo, prNumber])` constraint and gets `409`). Against an existing record, the conflict conditions are re-checked inside the UPDATE's own WHERE clause so only one writer can win: same `commitSha` + same `phase` + already claimed by another agent returns `409` (phase locked); already claimed + same `commitSha` + `reviewState !== pending` (review phase only) returns `409` (already reviewed at this commit); otherwise the row is updated and `200` returned (new cycle). Agent tokens pin `claimedBy` to their own ID; admin tokens supply it in the body. Optional `phase` (default `review`) sets the pipeline phase — `patch`/`deploy` phases preserve `reviewState` as-is rather than resetting it.
+         * @description Atomic via Postgres row locking, keyed on `(repo, prNumber)`. No existing record creates and returns `201` (a concurrent INSERT loser hits the `@@unique([repo, prNumber])` constraint and gets `409`). Against an existing record, the conflict conditions are re-checked inside the UPDATE's own WHERE clause so only one writer can win: same `commitSha` + same `phase` + already claimed by another agent returns `409` (phase locked); already claimed + same `commitSha` + `reviewState !== pending` (review phase only) returns `409` (already reviewed at this commit); otherwise the row is updated and `200` returned (new cycle). Agent tokens pin `claimedBy` to their own ID; admin tokens supply it in the body. Optional `phase` (default `review`) sets the pipeline phase — `patch`/`deploy` phases preserve `reviewState` as-is rather than resetting it. Optional `authorLogin`/`headRef`/`title` (POM-1.2) are forwarded server-side into an atomic origin-stamping write: a linked Task row (matching `repo`+`pr`) always derives `origin='shipwright'`; otherwise `authorLogin`/`headRef` are pattern-matched against known CI/dependency-bot signals, falling back to `human`/`unknown`. Origin is first-write-wins (never overwritten once set); `authorLogin`/`headRef`/`title` are refreshed to the latest value on every claim.
          */
         post: {
             parameters: {
@@ -1390,7 +1467,7 @@ export interface paths {
         put?: never;
         /**
          * Batch upsert PR origin/author/branch/title/state metadata
-         * @description Upserts a PullRequest row for each (repo, prNumber) entry — at most 200 entries per call, all in one transaction. Writes `authorLogin`/`headRef`/`title`/`state`/`mergedAt`/`prCreatedAt` unconditionally; `origin` follows first-write-wins (only applied when the row's existing origin is currently null). Never touches claim/phase/review/patch/blocked fields — safe to run alongside review/patch/deploy's separate POST /prs/claim lock. New rows get `phase=null`, `reviewState='pending'`, `staged=false`. Not part of the public MCP tool surface.
+         * @description Upserts a PullRequest row for each (repo, prNumber) entry — at most 200 entries per call, all in one transaction. Writes `authorLogin`/`headRef`/`title`/`state`/`mergedAt`/`prCreatedAt`/`commitCount`/`commitsDocsRefresh`/`commitsReviewPatch`/`commitsCiFix`/`commitsImplementation` unconditionally; `origin` follows first-write-wins (only applied when the row's existing origin is currently null). Never touches claim/phase/review/patch/blocked fields — safe to run alongside review/patch/deploy's separate POST /prs/claim lock. New rows get `phase=null`, `reviewState='pending'`, `staged=false`. Not part of the public MCP tool surface.
          */
         post: {
             parameters: {
@@ -2179,6 +2256,115 @@ export interface paths {
         };
         trace?: never;
     };
+    "/verification-checks": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List verification checks for a task, a PR, or a repo+checkName pair
+         * @description Returns `{ checks, total, limit, offset }` for exactly one of three mutually-exclusive modes: `?taskId=`, `?prId=`, or `?repo=`+`?checkName=` together (supplying none, or more than one mode, or only half of the repo+checkName pair, is `400`). The `?taskId=`/`?prId=` modes are ordered by `at` ascending (oldest first, default `limit=50`, `offset=0`) and `404` if the referenced task/pr doesn't exist. The `?repo=`+`?checkName=` mode (LVB-4.4) spans every task/PR that recorded that repo+check — there's no single parent to `404` on, so an unmatched pair returns `200` with an empty list — and is ordered by `at` DESCENDING (most recent first) so a caller can walk backward from the latest outcome to detect a consecutive skipped/timed_out streak.
+         */
+        get: {
+            parameters: {
+                query?: {
+                    taskId?: string;
+                    prId?: string;
+                    repo?: string;
+                    checkName?: string;
+                    limit?: string;
+                    offset?: string;
+                };
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Verification check history */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["VerificationCheckListResponse"];
+                    };
+                };
+                /** @description Bad request — none, or more than one, of ?taskId=/?prId=/(?repo=+?checkName=) supplied, or only one half of the ?repo=/?checkName= pair given */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+                /** @description Not found (?taskId=/?prId= modes only — the referenced task/pr doesn't exist) */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+            };
+        };
+        put?: never;
+        /**
+         * Record a single per-check verification outcome
+         * @description Records one VerificationCheck row against exactly one parent — `taskId` (a task still in progress, before a PR exists) or `prId` (an already-open PR); supplying neither or both is `400`. `status` is `ran_passed | ran_failed | skipped | timed_out`. `reasonCategory` is a closed set of ENVIRONMENTAL causes and is only valid alongside `status: skipped | timed_out` — a `ran_failed` row (the check ran and produced a genuine failure) must never carry one; supplying it anyway is `400`, enforced server-side (not just by convention). `learnedFromCategory` is only valid alongside `reasonCategory: learned_skip`, and must not itself be `learned_skip`. `at` defaults to the current time when omitted.
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["CreateVerificationCheckBody"];
+                };
+            };
+            responses: {
+                /** @description Recorded verification check */
+                201: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["VerificationCheck"];
+                    };
+                };
+                /** @description Bad request — missing/invalid fields, taskId/prId neither-or-both, or a status/reasonCategory combination that violates the ran_failed-never-carries-a-reasonCategory rule */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+                /** @description Not found — the referenced task/pr does not exist */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -2637,6 +2823,31 @@ export interface components {
             /** @example Add the origin metrics dimension */
             title?: string | null;
             /**
+             * @description Total commit count on this PR (CPP-1.1). Written unconditionally by POST /prs/census whenever supplied — mirrors authorLogin/headRef/title, not origin's first-write-wins semantic.
+             * @example 12
+             */
+            commitCount?: number | null;
+            /**
+             * @description Commits attributed to the docs-refresher subagent (CPP-1.1).
+             * @example 1
+             */
+            commitsDocsRefresh?: number | null;
+            /**
+             * @description Commits attributed to the review/patch cycle (CPP-1.1).
+             * @example 3
+             */
+            commitsReviewPatch?: number | null;
+            /**
+             * @description Commits attributed to CI-fix cycles (CPP-1.1).
+             * @example 2
+             */
+            commitsCiFix?: number | null;
+            /**
+             * @description Commits attributed to the initial implementation (CPP-1.1).
+             * @example 6
+             */
+            commitsImplementation?: number | null;
+            /**
              * @description Consecutive skip count. Auto-blocks (blocked+blockedReason) once it crosses the threshold (3). POST /prs/:id/skip/reset resets this to 0 and, only when blockedReason matches the skip-auto-block message pattern (contains 'consecutive skips'), also clears blocked/blockedReason — a block set by a different mechanism (e.g. the CI-failure-streak auto-block) is left untouched.
              * @default 0
              * @example 0
@@ -2712,6 +2923,21 @@ export interface components {
              * @example 2026-01-01T00:00:00.000Z
              */
             prCreatedAt?: string;
+            /**
+             * @description PR author's GitHub login (POM-1.2). Used server-side to derive `origin` (first-write-wins) and refreshed unconditionally on every claim.
+             * @example octocat
+             */
+            authorLogin?: string | null;
+            /**
+             * @description PR's head branch name (POM-1.2). Used server-side to derive `origin` (first-write-wins) and refreshed unconditionally on every claim.
+             * @example feat/some-branch
+             */
+            headRef?: string | null;
+            /**
+             * @description PR title (POM-1.2). Refreshed unconditionally on every claim.
+             * @example Add the origin metrics dimension
+             */
+            title?: string | null;
         };
         ClaimNextResponse: {
             pr: components["schemas"]["PullRequest"];
@@ -2763,6 +2989,16 @@ export interface components {
             mergedAt?: string | null;
             /** @example 2026-01-01T00:00:00.000Z */
             prCreatedAt?: string | null;
+            /** @example 12 */
+            commitCount?: number | null;
+            /** @example 1 */
+            commitsDocsRefresh?: number | null;
+            /** @example 3 */
+            commitsReviewPatch?: number | null;
+            /** @example 2 */
+            commitsCiFix?: number | null;
+            /** @example 6 */
+            commitsImplementation?: number | null;
         };
         /** @description Entries to upsert, at most 200 per call — the whole batch runs in one transaction. An over-cap batch is rejected with 400. */
         CensusBody: components["schemas"]["CensusEntry"][];
@@ -2917,6 +3153,95 @@ export interface components {
              * @example true
              */
             archived?: boolean;
+        };
+        VerificationCheck: {
+            /** @example clxvcheck1234567 */
+            id: string;
+            /** @example null */
+            taskId: string | null;
+            /** @example clx0987654321 */
+            prRecordId: string | null;
+            /** @example org/repo */
+            repo: string;
+            /** @example unit */
+            checkName: string;
+            /**
+             * @description Outcome of the check attempt. A 'ran_failed' row must never carry a reasonCategory — that field means the agent could not attempt/complete the check in its own environment, never that the code has a real problem.
+             * @example ran_passed
+             * @enum {string}
+             */
+            status: "ran_passed" | "ran_failed" | "skipped" | "timed_out";
+            /**
+             * @description A closed set of ENVIRONMENTAL causes, only valid alongside status: 'skipped' or 'timed_out'.
+             * @example null
+             * @enum {string|null}
+             */
+            reasonCategory: "check_timeout" | "install_timeout" | "resource_limit" | "missing_tool" | "missing_secret" | "missing_dependency" | "not_configured" | "learned_skip" | null;
+            /**
+             * @description Only valid alongside reasonCategory: 'learned_skip' — the original root-cause category that triggered the learned classification.
+             * @example null
+             * @enum {string|null}
+             */
+            learnedFromCategory: "check_timeout" | "install_timeout" | "resource_limit" | "missing_tool" | "missing_secret" | "missing_dependency" | "not_configured" | "learned_skip" | null;
+            /** @example 4200 */
+            durationMs: number | null;
+            /** @example 2026-09-24T12:00:00.000Z */
+            at: string;
+            /**
+             * Format: date-time
+             * @example 2026-09-24T12:00:00.000Z
+             */
+            createdAt: string;
+        };
+        CreateVerificationCheckBody: {
+            /**
+             * @description Exactly one of taskId/prId is required — supplying neither or both is 400.
+             * @example clx1234567890
+             */
+            taskId?: string;
+            /** @example clx0987654321 */
+            prId?: string;
+            /** @example org/repo */
+            repo: string;
+            /**
+             * @description Free-form check name — 'install', 'lint', 'typecheck', 'unit', 'integration', etc.
+             * @example unit
+             */
+            checkName: string;
+            /**
+             * @example ran_passed
+             * @enum {string}
+             */
+            status: "ran_passed" | "ran_failed" | "skipped" | "timed_out";
+            /**
+             * @description Only valid alongside status: 'skipped' or 'timed_out'. A status:'ran_failed' (or 'ran_passed') request supplying this is 400.
+             * @example missing_tool
+             * @enum {string}
+             */
+            reasonCategory?: "check_timeout" | "install_timeout" | "resource_limit" | "missing_tool" | "missing_secret" | "missing_dependency" | "not_configured" | "learned_skip";
+            /**
+             * @description Only valid alongside reasonCategory: 'learned_skip', and must not itself be 'learned_skip'.
+             * @example missing_tool
+             * @enum {string}
+             */
+            learnedFromCategory?: "check_timeout" | "install_timeout" | "resource_limit" | "missing_tool" | "missing_secret" | "missing_dependency" | "not_configured" | "learned_skip";
+            /** @example 4200 */
+            durationMs?: number;
+            /**
+             * @description ISO timestamp of when the check completed. Defaults to the current time when omitted.
+             * @example 2026-09-24T12:00:00.000Z
+             */
+            at?: string;
+        };
+        VerificationCheckListResponse: {
+            /** @description Verification checks matching the selected mode. Ordered by `at` ascending (oldest first) for taskId/prId modes; ordered by `at` descending (most recent first) for repo+checkName mode. */
+            checks: components["schemas"]["VerificationCheck"][];
+            /** @example 1 */
+            total: number;
+            /** @example 50 */
+            limit: number;
+            /** @example 0 */
+            offset: number;
         };
     };
     responses: never;

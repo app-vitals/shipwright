@@ -288,7 +288,7 @@ test("OpenHands head-to-head prose is current and cited", async ({ page }) => {
 test("compare page shows a verified-date marker", async ({ page }) => {
   await page.goto("/compare");
   const text = (await page.locator("main").textContent()) ?? "";
-  expect(text).toContain("September 5, 2026");
+  expect(text).toContain("September 25, 2026");
   expect(text.toLowerCase()).toContain("facts verified as of");
 });
 

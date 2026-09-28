@@ -91,10 +91,23 @@ type PrOptionalOverrides = Pick<
  * (`open | merged | closed`) and `origin` (POM-1.1's `shipwright | ci |
  * dependency_bot | human | unknown | null`) drive the merged-PRs-by-repo
  * metric (POM-2.1); `authorLogin`/`headRef`/`title` are carried through for
- * completeness but not currently read by any provider query.
+ * completeness but not currently read by any provider query. `commitCount`/
+ * `commitsDocsRefresh`/`commitsReviewPatch`/`commitsCiFix`/
+ * `commitsImplementation` (CPP-1.1's census-sweep-only columns) drive the
+ * merged-PRs-by-repo commits-per-PR aggregation (CPP-1.3).
  */
 export type PrRecord = Pick<PullRequestSchema, "mergedAt"> &
-  Partial<PrOptionalOverrides>;
+  Partial<
+    PrOptionalOverrides &
+      Pick<
+        PullRequestSchema,
+        | "commitCount"
+        | "commitsDocsRefresh"
+        | "commitsReviewPatch"
+        | "commitsCiFix"
+        | "commitsImplementation"
+      >
+  >;
 
 // ─── Error type ───────────────────────────────────────────────────────────────
 

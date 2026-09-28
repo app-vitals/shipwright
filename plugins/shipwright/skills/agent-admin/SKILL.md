@@ -413,9 +413,9 @@ The metrics service exposes task-store-backed pipeline data. Endpoints require B
 | `GET /metrics/queue` | Queue funnel and cycle breakdown |
 | `GET /metrics/tokens` | Token usage by agent and session type |
 
-For structured analysis, use `/shipwright:metrics` instead — it reads local JSONL files
-from `planning/*/metrics.jsonl`, computes fix cascade rates, FTQ rate, CI gate, and other
-quality metrics, and produces a formatted report with actionable recommendations.
+For a human-facing view of the same data — cycle time, FTQ rate, CI gate, and other
+quality metrics — with charts and trend lines, use the server-rendered dashboard at
+`/dashboard` instead of calling the endpoints directly.
 
 ---
 

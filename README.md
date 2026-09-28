@@ -8,17 +8,40 @@
 **The open-source autonomous delivery agent for Claude Code.** A deployable cloud agent and the autonomous coding system that powers it — built on the Shipwright plugin, running on your own codebase.
 
 <p align="center">
-  <video src="https://github.com/app-vitals/shipwright/raw/main/brand/assets/videos/shipwright-intro.mp4" controls muted width="900"></video>
-</p>
-
-<p align="center">
   <img src="assets/demo.gif" alt="Shipwright Harness in a Claude Code terminal: install, then plan → build → review → ship a task end to end." width="900" />
   <br />
   <em>Plan → build → review → ship — one task through the pipeline. (Illustrative.)</em>
 </p>
 
+### It builds itself, and the numbers are public
 
-> **Brand vs. package:** the project is **Shipwright Harness**; the plugin/package you install is **`shipwright`**.
+Shipwright's own delivery pipeline runs on Shipwright. Cycle time, CI first-pass rate,
+review verdicts and estimation accuracy for this repository are public:
+
+**[→ proof.shipwrightharness.com](https://proof.shipwrightharness.com/public/dashboard)**
+
+As of 2026-09-25, trailing 30 days: **336 tasks completed, 60 PRs merged, 85.7% CI
+first-pass rate, ~4.4h median cycle time.** No other autonomous coding agent publishes its
+own delivery metrics — you can check our work before installing anything.
+
+## What is Shipwright Harness?
+
+Two faces, one product:
+
+- **The agent** — deploy it to your cloud (GitHub Actions or self-hosted). It does autonomous coding on your codebase, held to the **same review and test bar as human code**.
+- **The system** — the autonomous coding system, built on the Claude Code **`shipwright` plugin**: plan · build · review · metrics. Use it interactively inside Claude Code, or let the agent run it autonomously.
+
+It runs in **your** environment, on **your** codebase — you own it, it's MIT, and it's free.
+
+## What it does
+
+Shipwright turns a feature idea into shipped, reviewed code through a sequence of Claude Code commands — each stage producing a durable artifact the next stage consumes:
+
+- **Write a PRD** for your idea — a structured product spec ready for /plan-session.
+- **Plan** the spec into a queue of well-scoped, dependency-ordered tasks (tracked in the **Shipwright task store** — a shared queue any agent or contributor can query).
+- **Execute** the next ready task — build, test, and open a PR.
+- **Review** the PR with policy-controlled, inline feedback.
+- **Ship** the merged change.
 
 ## Install
 
@@ -27,6 +50,9 @@
 ```
 
 Requires [Claude Code](https://www.anthropic.com/claude-code). Point it at your own repository — Shipwright is repo-agnostic.
+
+⭐ **If the approach makes sense to you, star the repo** — it's how we gauge whether to keep
+investing in the open-source track.
 
 **Deploying the services to Kubernetes?** The `shipwright` Helm chart is published to a Helm repo on each chart version bump:
 
@@ -100,25 +126,6 @@ Prerequisites: tmux, Docker, PostgreSQL running on localhost:5432, Bun, go-task.
 
 To stop: tmux kill-session -t shipwright
 ```
-
-## What is Shipwright Harness?
-
-Two faces, one product:
-
-- **The agent** — deploy it to your cloud (GitHub Actions or self-hosted). It does autonomous coding on your codebase, held to the **same review and test bar as human code**.
-- **The system** — the autonomous coding system, built on the Claude Code **`shipwright` plugin**: plan · build · review · metrics. Use it interactively inside Claude Code, or let the agent run it autonomously.
-
-It runs in **your** environment, on **your** codebase — you own it, it's MIT, and it's free.
-
-## What it does
-
-Shipwright turns a feature idea into shipped, reviewed code through a sequence of Claude Code commands — each stage producing a durable artifact the next stage consumes:
-
-- **Write a PRD** for your idea — a structured product spec ready for /plan-session.
-- **Plan** the spec into a queue of well-scoped, dependency-ordered tasks (tracked in the **Shipwright task store** — a shared queue any agent or contributor can query).
-- **Execute** the next ready task — build, test, and open a PR.
-- **Review** the PR with policy-controlled, inline feedback.
-- **Ship** the merged change.
 
 ## Why Shipwright Harness
 
@@ -197,3 +204,7 @@ Issues and discussion are welcome. See [`CONTRIBUTING.md`](./CONTRIBUTING.md) fo
 ## License
 
 [MIT](./LICENSE) © 2026 App Vitals
+
+## Naming
+
+> **Brand vs. package:** the project is **Shipwright Harness**; the plugin/package you install is **`shipwright`**.

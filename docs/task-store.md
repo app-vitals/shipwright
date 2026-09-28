@@ -101,12 +101,15 @@ those three. Three call sites write these fields:
    author/branch-based signal — see [metrics.md](./metrics.md#origin-classification-rules) for
    the exact precedence table `deriveOrigin()` implements.
 3. `POST /prs/census` — a batch upsert (`{repo, prNumber, origin?, authorLogin?, headRef?, title?,
-   state?, mergedAt?, prCreatedAt?}[]`, capped at 200 entries per call) used by POM-4.1's
+   state?, mergedAt?, prCreatedAt?, commitCount?, commitsDocsRefresh?, commitsReviewPatch?,
+   commitsCiFix?, commitsImplementation?}[]`, capped at 200 entries per call) used by POM-4.1's
    repo-wide census sweep (see [agent-ops.md](./agent-ops.md#pr-origin-census-sweep)) to backfill
-   origin/author/branch/title for PRs the pipeline never claimed directly. It never touches
-   claim/phase/review/patch/blocked fields, so it's safe to run alongside review/patch/deploy's
-   separate `POST /prs/claim` lock. New rows get `phase=null`, `reviewState="pending"`,
-   `staged=false`.
+   origin/author/branch/title/commit-count metrics for PRs the pipeline never claimed directly. It
+   never touches claim/phase/review/patch/blocked fields, so it's safe to run alongside
+   review/patch/deploy's separate `POST /prs/claim` lock. New rows get `phase=null`,
+   `reviewState="pending"`, `staged=false`. The five commit-count fields (CPP-1.1: `commitCount`,
+   `commitsDocsRefresh`, `commitsReviewPatch`, `commitsCiFix`, `commitsImplementation`) are written
+   unconditionally when supplied.
 
 `GET /prs/census/cursor?repo=org/name` returns `{ cursor }` — the max `mergedAt` among rows scoped
 to `repo` with a non-null `origin`, or `null` when none exist — the incremental search window the
@@ -121,6 +124,16 @@ affects `deploy.md`'s canary-revert PR: it never transitions a task to `pr_open`
 (typically `human`, via author login) once it merges. A canary-revert PR that already merged
 before POM-4.1 shipped stays `origin=null` (`unknown`) permanently — historical backfill is out of
 scope.
+
+### Verification checks
+
+`VerificationCheck` is an append-only per-check outcome record (mirrors `PrFinding`/`TaskEvent` — a race-safe `INSERT`, not a JSON blob) belonging to exactly one parent: a `Task` (recorded while still in progress, before a PR exists) or a `PullRequest` (recorded once a PR is open). Prisma has no schema-level XOR constraint across the two nullable FK columns, so "exactly one of `taskId`/`prId`" is enforced by `VerificationCheckService.record()` — supplying neither or both is `400`.
+
+`status` is `ran_passed | ran_failed | skipped | timed_out`. `reasonCategory` is a closed set of ENVIRONMENTAL causes (`check_timeout | install_timeout | resource_limit | missing_tool | missing_secret | missing_dependency | not_configured | learned_skip`) and is only valid alongside `status: skipped | timed_out` — a `ran_failed` row (the check ran and produced a genuine failure) must never carry one; that combination is rejected server-side, not just by convention. `learnedFromCategory` is only valid alongside `reasonCategory: learned_skip`, and must not itself be `learned_skip` — both rules are enforced in the same `record()` call.
+
+`POST /verification-checks` records one outcome. `GET /verification-checks` supports three mutually-exclusive query modes: `?taskId=` and `?prId=` (ordered by `at` ascending, default `limit=50`/`offset=0`, `404` if the referenced task/PR doesn't exist), and `?repo=`+`?checkName=` together (LVB-4.4's skip-locally learning trigger — spans every task/PR that ever recorded that repo+check pair, so an unmatched pair returns `200` with an empty list rather than `404`, and is ordered by `at` **descending** so a caller can walk backward from the most recent outcome to detect a consecutive skipped/timed_out streak).
+
+Full request/response shapes live in the OpenAPI spec, per this doc's existing pointer convention.
 
 ### Same-branch exclusivity guard
 

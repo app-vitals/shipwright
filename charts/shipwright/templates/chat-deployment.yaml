@@ -12,8 +12,12 @@ spec:
       {{- include "shipwright.chat.selectorLabels" . | nindent 6 }}
   template:
     metadata:
+      {{- $selectorLabels := include "shipwright.chat.selectorLabels" . }}
       labels:
-        {{- include "shipwright.chat.selectorLabels" . | nindent 8 }}
+        {{- $selectorLabels | nindent 8 }}
+        {{- with (include "shipwright.podLabels" (dict "podLabels" .Values.chat.podLabels "selectorLabels" $selectorLabels)) }}
+        {{- . | nindent 8 }}
+        {{- end }}
       {{- with .Values.chat.podAnnotations }}
       annotations:
         {{- toYaml . | nindent 8 }}

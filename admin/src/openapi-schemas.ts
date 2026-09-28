@@ -886,6 +886,17 @@ export const AgentConfigResponseSchema = z
     patchAuthorAllowlist: z.array(z.string()).openapi({ example: ["octocat"] }),
     restrictSlackToMembers: z.boolean().openapi({ example: false }),
     memberEmails: z.array(z.string()).openapi({ example: ["dev@example.com"] }),
+    /**
+     * ATE-3.1: ISO timestamp of trial expiry, or null when no trial is
+     * configured. Optional — mirrors AgentConfigResponse's own
+     * trialExpiresAt (admin/src/api.ts) being optional rather than required.
+     */
+    trialExpiresAt: z
+      .string()
+      .datetime()
+      .nullable()
+      .optional()
+      .openapi({ example: "2026-12-01T00:00:00.000Z" }),
   })
   .openapi("AgentConfigResponse");
 

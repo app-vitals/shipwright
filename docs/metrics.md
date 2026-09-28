@@ -4,7 +4,7 @@
 
 ## Overview
 
-The metrics service exposes pipeline telemetry two ways: machine-readable JSON under `/metrics/*` (for tooling and the `/shipwright:metrics` command) and a human-facing `/dashboard`. All read endpoints are served by a backend-agnostic `MetricsProvider` interface (`metrics/src/metrics-provider.ts`). The active backend is selected at startup by `selectProviderMode()` (`metrics/src/select-provider.ts`) based on env vars, in priority order:
+The metrics service exposes pipeline telemetry two ways: machine-readable JSON under `/metrics/*` (for tooling) and a human-facing `/dashboard`. All read endpoints are served by a backend-agnostic `MetricsProvider` interface (`metrics/src/metrics-provider.ts`). The active backend is selected at startup by `selectProviderMode()` (`metrics/src/select-provider.ts`) based on env vars, in priority order:
 
 1. `METRICS_OFFLINE=true` → **fixtures** mode: an offline `TaskStoreProvider` over recorded cassettes (`createFixtureTaskStoreProvider()`, `metrics/src/fixtures/task-store-fixtures.ts`); auth bypassed.
 2. `METRICS_TASK_STORE_URL` + `METRICS_ADMIN_URL` both `http(s)` → **taskstore** mode: live `TaskStoreProvider` (`metrics/src/providers/task-store-provider.ts`) over an `HttpTaskStoreClient` (`metrics/src/lib/task-store-client.ts`) and an `HttpAdminMetricsClient` (`metrics/src/lib/admin-metrics-client.ts`).
@@ -87,7 +87,9 @@ Both routes return the same envelope shape (`data` scoped to all repos on the au
       {
         "repo": "org/repo",
         "total": 10,
-        "byOrigin": { "shipwright": 4, "ci": 2, "dependency_bot": 3, "human": 1, "unknown": 0 }
+        "byOrigin": { "shipwright": 4, "ci": 2, "dependency_bot": 3, "human": 1, "unknown": 0 },
+        "avgCommitCount": 4,
+        "commitBreakdown": { "docsRefresh": 0.5, "reviewPatch": 1.5, "ciFix": 0.5, "implementation": 1.5 }
       }
     ],
     "trend": [
@@ -103,6 +105,15 @@ Both routes return the same envelope shape (`data` scoped to all repos on the au
 ```
 
 `repos[]` totals each merged PR in the window by repo × origin; `trend[]` breaks the same counts down by time bucket (`period`, a day `YYYY-MM-DD` or Monday-anchored ISO-week start date depending on `groupBy`) × repo. Origin follows the POM-1.1 taxonomy (`shipwright | ci | dependency_bot | human`); a PR whose origin was never stamped (`null`) is counted under `unknown`. Only `state:"merged"` PRs are counted — open and closed PRs are excluded.
+
+**`avgCommitCount` / `commitBreakdown` (CPP-1.3):** each `repos[]` entry also reports the average real commit count per merged PR, scoped to `origin: "shipwright"` PRs with a non-null `commitCount` in the window (the "qualifying" set). `avgCommitCount` is `commitSum / qualifyingCount`; `commitBreakdown` splits that same average across the four pipeline phases the task-store's census sweep tracks — `docsRefresh`, `reviewPatch`, `ciFix`, `implementation` (each phase's summed commit count / `qualifyingCount`, so all five numbers sit on the same per-PR scale and the four breakdown values sum to `avgCommitCount`). A qualifying PR with a null value on one breakdown field (e.g. `commitsCiFix: null`) contributes `0` to that field's sum — only `commitCount` itself gates qualification. **When a repo/window has zero qualifying PRs, both `avgCommitCount` and `commitBreakdown` are `null`** (the whole breakdown object, not a partially-null one) — never `0`, since `0` would misleadingly read as "PRs merged with zero commits" rather than "no data."
+
+**CI first-pass rate vs. commits-per-PR — do not conflate these.** They measure different things, from different systems, at different points in the pipeline:
+
+- **CI first-pass rate** was a per-*task* metric (`% tasks with ci_fix_attempts == 0`) scoped to `/shipwright:dev-task`'s own pre-PR-open CI retry loop — how many times the CI-fix subagent had to retry before the PR was ever opened. It came from the legacy JSONL per-task metrics stream, which has since been retired (CPP-2.1); this service never had an equivalent endpoint for it, so there is no first-pass-rate figure served alongside commits-per-PR today.
+- **commits-per-PR** (`avgCommitCount`/`commitBreakdown`, this endpoint) is a per-*PR* metric: the PR's real total commit count across **every** phase of its life — initial implementation, any review/patch cycles, any CI fixes *after* the PR was opened, and any docs-refresh commits — sourced from the task-store's `PullRequest.commitCount`/`commits*` columns, populated by the census sweep (CPP-1.1).
+
+A task could have `ci_fix_attempts == 0` (a clean pre-open CI run) and still end up with a high `commitCount` from several rounds of post-open review/patch cycles, or vice versa — the two were never interchangeable, so don't read `avgCommitCount` as a proxy for how cleanly CI passed.
 
 The dashboard's **"Merged PRs by repo"** panel renders this same data as two Chart.js charts: a stacked bar chart (one bar per repo, segments stacked by origin, tooltip shows % of repo total) and a trend line chart (one line per origin over time), plus a repo picker that filters the trend chart when more than one repo has merged PRs in range.
 
@@ -197,4 +208,3 @@ See [testing.md](./testing.md).
 ## See also
 
 - [architecture.md](./architecture.md) — where the metrics service sits in the A→B→C→D design.
-- `plugins/shipwright/references/metrics-schema.md` — the `metrics.jsonl` schema the pipeline emits, which feeds these queries.

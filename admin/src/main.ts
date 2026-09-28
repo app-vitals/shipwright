@@ -69,7 +69,11 @@ import {
   NoopTaskStoreProvisioningClient,
 } from "./task-store-provisioning-client.ts";
 import { makeTokenCrypto } from "./token-crypto.ts";
-import { TrialExpiryWarningSweeper } from "./trial-expiry-sweeper.ts";
+import {
+  resolveTrialExpirySweepIntervalMs,
+  TrialExpirySweeper,
+} from "./trial-expiry-sweeper.ts";
+import { TrialExpiryWarningSweeper } from "./trial-expiry-warning-sweeper.ts";
 
 // ─── Migration preflight ──────────────────────────────────────────────────────
 
@@ -357,12 +361,17 @@ export function resolveSessionAlertIntervalMs(
 }
 
 /**
- * Cadence of the trial-expiry warning sweeper (ATE-2.1). Coarser than the
+ * Cadence of the trial-expiry *warning* sweeper (ATE-2.1). Coarser than the
  * session-alert sweeper's 60s default: a trial-expiry warning window is
  * measured in days, not seconds, so hourly polling still leaves enormous
  * margin against ever missing the window.
+ *
+ * Distinct from trial-expiry-sweeper.ts's own
+ * DEFAULT_TRIAL_EXPIRY_SWEEP_INTERVAL_MS (60s), which paces the ATE-3.1
+ * lockdown sweeper — that one should react promptly once a trial lapses,
+ * whereas this one only has to land somewhere inside a multi-day window.
  */
-export const DEFAULT_TRIAL_EXPIRY_SWEEP_INTERVAL_MS = 60 * 60 * 1000;
+export const DEFAULT_TRIAL_EXPIRY_WARNING_SWEEP_INTERVAL_MS = 60 * 60 * 1000;
 
 /**
  * Resolve the trial-expiry sweeper's warning window (in days) from the
@@ -827,27 +836,57 @@ async function startServer(): Promise<void> {
     );
   }
 
-  // Trial-expiry warning sweeper (ATE-2.1) — the admin service's second
-  // background loop, alongside the session alert sweeper above. Registered
-  // HERE, never inside createAdminUIApp()/createAdminApp(), which must stay
+  // Trial-expiry warning sweeper (ATE-2.1) — warns an agent's own Slack alert
+  // channel once, shortly BEFORE its trial lapses. Registered HERE, never
+  // inside createAdminUIApp()/createAdminApp(), which must stay
   // side-effect-free (same rule as the session alert sweeper's registration).
   // Unlike the session alert sweeper, this one needs no external service
   // config to be meaningful — its only dependencies (Prisma, AgentService,
   // AgentEnvService) are always constructed above — so it always starts.
-  const trialExpirySweeper = new TrialExpiryWarningSweeper({
-    prisma: prisma as never,
-    agentService,
-    agentEnvService,
-    warningDays: resolveTrialExpiryWarningDays(process.env),
-  });
-  setInterval(() => {
-    trialExpirySweeper
-      .tick()
-      .catch((err) => console.error("[trial-expiry-sweeper] tick error:", err));
-  }, DEFAULT_TRIAL_EXPIRY_SWEEP_INTERVAL_MS);
-  console.log(
-    `[admin] trial expiry warning sweeper started (interval: ${DEFAULT_TRIAL_EXPIRY_SWEEP_INTERVAL_MS}ms)`,
-  );
+  {
+    const trialExpiryWarningSweeper = new TrialExpiryWarningSweeper({
+      prisma: prisma as never,
+      agentService,
+      agentEnvService,
+      warningDays: resolveTrialExpiryWarningDays(process.env),
+    });
+    setInterval(() => {
+      trialExpiryWarningSweeper
+        .tick()
+        .catch((err) =>
+          console.error("[trial-expiry-warning-sweeper] tick error:", err),
+        );
+    }, DEFAULT_TRIAL_EXPIRY_WARNING_SWEEP_INTERVAL_MS);
+    console.log(
+      `[admin] trial expiry warning sweeper started (interval: ${DEFAULT_TRIAL_EXPIRY_WARNING_SWEEP_INTERVAL_MS}ms)`,
+    );
+  }
+
+  // Trial-expiry sweeper (ATE-3.1) — the lockdown half, running AFTER the
+  // warning sweeper above has had its say: disables every enabled AgentCronJob
+  // belonging to an agent whose trialExpiresAt has passed. Registered HERE,
+  // never inside createAdminUIApp(), same rule as the session alert sweeper
+  // above. Reuses the same agentCronJobService instance constructed earlier
+  // in this function — no HTTP self-call, just the service's setEnabled(),
+  // the identical method the PATCH /agents/:id/crons/:cronId route calls.
+  // Deliberately does NOT deprovision the agent (no deleteAgentFully()) — see
+  // trial-expiry-sweeper.ts's header comment.
+  {
+    const trialExpirySweeper = new TrialExpirySweeper({ agentCronJobService });
+    const trialExpirySweepIntervalMs = resolveTrialExpirySweepIntervalMs(
+      process.env,
+    );
+    setInterval(() => {
+      trialExpirySweeper
+        .tick()
+        .catch((err) =>
+          console.error("[trial-expiry-sweeper] tick error:", err),
+        );
+    }, trialExpirySweepIntervalMs);
+    console.log(
+      `[admin] trial expiry sweeper started (interval: ${trialExpirySweepIntervalMs}ms)`,
+    );
+  }
 
   const server = Bun.serve({ fetch: root.fetch, port });
 
