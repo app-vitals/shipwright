@@ -822,8 +822,7 @@ INSTRUCTIONS — follow in order:
   ```bash
   BUDGET_JSON=$(bun run "${CLAUDE_PLUGIN_ROOT}/scripts/run-with-budget.ts" \
     --budget 600 --kill-after 10 -- {command})
-  RUN_STATUS=$(echo "$BUDGET_JSON" | jq -r '.status')          # pass | fail | timeout
-  EXIT=$(echo "$BUDGET_JSON" | jq -r '.exitCode // 124')       # GNU timeout's own exit code is 124 on expiry
+  RUN_STATUS=$(echo "$BUDGET_JSON" | jq -r '.status')          # pass | fail | timeout ("timeout" == GNU timeout's own exit code 124 on expiry)
   ```
   `run-with-budget.ts` already targets the whole process group by negative PID on both
   `SIGTERM` and `SIGKILL` regardless of outcome — no separate `kill -TERM -$CMD_PID`/`kill
@@ -1464,8 +1463,7 @@ INSTRUCTIONS — follow in order:
   ```bash
   BUDGET_JSON=$(bun run "${CLAUDE_PLUGIN_ROOT}/scripts/run-with-budget.ts" \
     --budget 600 --kill-after 10 -- {command})
-  RUN_STATUS=$(echo "$BUDGET_JSON" | jq -r '.status')          # pass | fail | timeout
-  EXIT=$(echo "$BUDGET_JSON" | jq -r '.exitCode // 124')       # GNU timeout's own exit code is 124 on expiry
+  RUN_STATUS=$(echo "$BUDGET_JSON" | jq -r '.status')          # pass | fail | timeout ("timeout" == GNU timeout's own exit code 124 on expiry)
   ```
   `run-with-budget.ts` already targets the whole process group by negative PID on both
   `SIGTERM` and `SIGKILL` regardless of outcome — no separate `kill -TERM -$CMD_PID`/`kill
@@ -2179,8 +2177,7 @@ INSTRUCTIONS — follow in order:
   ```bash
   BUDGET_JSON=$(bun run "${CLAUDE_PLUGIN_ROOT}/scripts/run-with-budget.ts" \
     --budget 600 --kill-after 10 -- {command})
-  RUN_STATUS=$(echo "$BUDGET_JSON" | jq -r '.status')          # pass | fail | timeout
-  EXIT=$(echo "$BUDGET_JSON" | jq -r '.exitCode // 124')       # GNU timeout's own exit code is 124 on expiry
+  RUN_STATUS=$(echo "$BUDGET_JSON" | jq -r '.status')          # pass | fail | timeout ("timeout" == GNU timeout's own exit code 124 on expiry)
   ```
   `run-with-budget.ts` already targets the whole process group by negative PID on both
   `SIGTERM` and `SIGKILL` regardless of outcome, before any later attempt reuses this

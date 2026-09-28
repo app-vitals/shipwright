@@ -2706,7 +2706,7 @@ describe("patch.md — record verification outcomes via task-store API (LVB-5.2)
       );
     });
 
-    it(`${label} [C] Validate maps timeout (exit 124) to timed_out with a check_timeout reasonCategory`, () => {
+    it(`${label} [C] Validate maps run-with-budget.ts's "timeout" status (GNU timeout's own exit 124) to timed_out with a check_timeout reasonCategory`, () => {
       const section = getValidateSection(startMarker, endMarker);
       expect(section).toContain("124");
       expect(section).toMatch(/timed_out[\s\S]{0,200}check_timeout/);
