@@ -19,8 +19,10 @@ import { beforeEach, describe, expect, test } from "bun:test";
 import { FixedClock } from "./clock.ts";
 import {
   __resetPrCensusThrottleForTests,
+  buildCensusEntry,
   type CensusEntry,
   type CensusTaskRecord,
+  classifyCommits,
   classifyPrOrigin,
   type GhCensusPr,
   type PrCensusDeps,
@@ -99,6 +101,7 @@ function pr(overrides: Partial<GhCensusPr>): GhCensusPr {
     headRefName: "feat/some-branch",
     createdAt: "2026-09-01T00:00:00.000Z",
     mergedAt: "2026-09-02T00:00:00.000Z",
+    commits: [],
     ...overrides,
   };
 }
@@ -229,6 +232,272 @@ describe("classifyPrOrigin", () => {
   });
 });
 
+// ─── classifyCommits ────────────────────────────────────────────────────────
+
+describe("classifyCommits", () => {
+  test("all-implementation: no docs/review-patch commits, no ci-fix attempts", () => {
+    const result = classifyCommits(
+      [
+        { messageHeadline: "feat: add the thing" },
+        { messageHeadline: "test: cover the thing" },
+      ],
+      42,
+      0,
+    );
+    expect(result).toEqual({
+      commitsDocsRefresh: 0,
+      commitsReviewPatch: 0,
+      commitsCiFix: 0,
+      commitsImplementation: 2,
+    });
+  });
+
+  test("docs-refresh commit present: counted in commitsDocsRefresh, not implementation", () => {
+    const result = classifyCommits(
+      [
+        { messageHeadline: "feat: add the thing" },
+        { messageHeadline: "docs: refresh architecture.md" },
+      ],
+      42,
+      0,
+    );
+    expect(result).toEqual({
+      commitsDocsRefresh: 1,
+      commitsReviewPatch: 0,
+      commitsCiFix: 0,
+      commitsImplementation: 1,
+    });
+  });
+
+  test("review-patch commit present (prefix interpolates this PR's own number): counted in commitsReviewPatch, not implementation", () => {
+    const result = classifyCommits(
+      [
+        { messageHeadline: "feat: add the thing" },
+        { messageHeadline: "fix: address review findings on #42 (nit)" },
+      ],
+      42,
+      0,
+    );
+    expect(result).toEqual({
+      commitsDocsRefresh: 0,
+      commitsReviewPatch: 1,
+      commitsCiFix: 0,
+      commitsImplementation: 1,
+    });
+  });
+
+  test("a review-patch-shaped headline for a DIFFERENT PR number does not match — falls into implementation", () => {
+    const result = classifyCommits(
+      [{ messageHeadline: "fix: address review findings on #99" }],
+      42,
+      0,
+    );
+    expect(result).toEqual({
+      commitsDocsRefresh: 0,
+      commitsReviewPatch: 0,
+      commitsCiFix: 0,
+      commitsImplementation: 1,
+    });
+  });
+
+  test("ci-fix attributed via the matched task row's ciFixAttempts, not derived from commit messages", () => {
+    const result = classifyCommits(
+      [
+        { messageHeadline: "feat: add the thing" },
+        { messageHeadline: "feat: add another thing" },
+        { messageHeadline: "feat: yet another thing" },
+      ],
+      42,
+      2,
+    );
+    expect(result).toEqual({
+      commitsDocsRefresh: 0,
+      commitsReviewPatch: 0,
+      commitsCiFix: 2,
+      commitsImplementation: 1,
+    });
+  });
+
+  test("ciFixAttempts exceeding the available commits is clamped to the remaining budget, keeping the buckets summing to commitCount", () => {
+    const result = classifyCommits(
+      [{ messageHeadline: "feat: add the thing" }],
+      42,
+      5,
+    );
+    // commitsCiFix is clamped to 1 (the whole commit count), NOT copied
+    // verbatim as 5 — the four buckets must sum to commitCount.
+    expect(result).toEqual({
+      commitsDocsRefresh: 0,
+      commitsReviewPatch: 0,
+      commitsCiFix: 1,
+      commitsImplementation: 0,
+    });
+  });
+
+  test("ciFixAttempts exceeding only the post-message-bucket budget is clamped to that budget, not to commitCount", () => {
+    const result = classifyCommits(
+      [
+        { messageHeadline: "docs: refresh docs/agent.md" },
+        { messageHeadline: "fix: address review findings on #42" },
+        { messageHeadline: "fix: make CI green" },
+      ],
+      42,
+      9,
+    );
+    expect(result).toEqual({
+      commitsDocsRefresh: 1,
+      commitsReviewPatch: 1,
+      commitsCiFix: 1, // 3 commits - 1 docs - 1 review-patch = 1 left
+      commitsImplementation: 0,
+    });
+  });
+
+  test("zero commits with a non-zero ciFixAttempts: every bucket is 0 (nothing to attribute)", () => {
+    expect(classifyCommits([], 42, 3)).toEqual({
+      commitsDocsRefresh: 0,
+      commitsReviewPatch: 0,
+      commitsCiFix: 0,
+      commitsImplementation: 0,
+    });
+  });
+
+  test("a negative ciFixAttempts never yields a negative bucket or an inflated implementation count", () => {
+    expect(
+      classifyCommits([{ messageHeadline: "feat: add the thing" }], 42, -4),
+    ).toEqual({
+      commitsDocsRefresh: 0,
+      commitsReviewPatch: 0,
+      commitsCiFix: 0,
+      commitsImplementation: 1,
+    });
+  });
+
+  test("the four buckets sum to commitCount for every ciFixAttempts value, clamped or not", () => {
+    const commits = [
+      { messageHeadline: "docs: refresh docs/agent.md" },
+      { messageHeadline: "fix: address review findings on #42" },
+      { messageHeadline: "feat: build the thing" },
+      { messageHeadline: "test: cover the thing" },
+    ];
+    for (const ciFixAttempts of [0, 1, 2, 3, 7, 100]) {
+      const result = classifyCommits(commits, 42, ciFixAttempts);
+      const sum =
+        result.commitsDocsRefresh +
+        result.commitsReviewPatch +
+        result.commitsCiFix +
+        result.commitsImplementation;
+      expect(sum).toBe(commits.length);
+      expect(result.commitsCiFix).toBeGreaterThanOrEqual(0);
+      expect(result.commitsImplementation).toBeGreaterThanOrEqual(0);
+    }
+  });
+});
+
+// ─── buildCensusEntry ───────────────────────────────────────────────────────
+
+describe("buildCensusEntry", () => {
+  test("shipwright-origin PR (task row match): commitCount + all four breakdown buckets populated, summing to commitCount", () => {
+    const entry = buildCensusEntry(
+      "org/repo",
+      pr({
+        number: 7,
+        commits: [
+          { messageHeadline: "docs: refresh docs/agent.md" },
+          { messageHeadline: "fix: address review findings on #7" },
+          { messageHeadline: "feat: build the thing" },
+          { messageHeadline: "feat: build more of the thing" },
+        ],
+      }),
+      new Map([[7, { pr: 7, ciFixAttempts: 1 }]]),
+    );
+
+    expect(entry.origin).toBe("shipwright");
+    expect(entry.commitCount).toBe(4);
+    expect(entry.commitsDocsRefresh).toBe(1);
+    expect(entry.commitsReviewPatch).toBe(1);
+    expect(entry.commitsCiFix).toBe(1);
+    expect(entry.commitsImplementation).toBe(1);
+    expect(
+      (entry.commitsDocsRefresh ?? 0) +
+        (entry.commitsReviewPatch ?? 0) +
+        (entry.commitsCiFix ?? 0) +
+        (entry.commitsImplementation ?? 0),
+    ).toBe(entry.commitCount ?? -1);
+  });
+
+  test("task row present but ciFixAttempts unset: treated as 0, not null, for the arithmetic", () => {
+    const entry = buildCensusEntry(
+      "org/repo",
+      pr({
+        number: 8,
+        commits: [{ messageHeadline: "feat: build the thing" }],
+      }),
+      new Map([[8, { pr: 8 }]]),
+    );
+
+    expect(entry.commitCount).toBe(1);
+    expect(entry.commitsCiFix).toBe(0);
+    expect(entry.commitsImplementation).toBe(1);
+  });
+
+  test("non-shipwright-origin PR (no task row): commitCount populated but all four breakdown buckets are null", () => {
+    const entry = buildCensusEntry(
+      "org/repo",
+      pr({
+        number: 9,
+        author: { login: "some-human" },
+        commits: [
+          { messageHeadline: "docs: refresh docs/agent.md" },
+          { messageHeadline: "feat: do the thing" },
+        ],
+      }),
+      new Map(), // no task row for PR #9
+    );
+
+    expect(entry.origin).toBe("human");
+    expect(entry.commitCount).toBe(2);
+    expect(entry.commitsDocsRefresh).toBeNull();
+    expect(entry.commitsReviewPatch).toBeNull();
+    expect(entry.commitsCiFix).toBeNull();
+    expect(entry.commitsImplementation).toBeNull();
+  });
+
+  test("shipwright-origin PR whose ciFixAttempts exceeds its commit count: buckets still sum to commitCount", () => {
+    const entry = buildCensusEntry(
+      "org/repo",
+      pr({
+        number: 11,
+        commits: [{ messageHeadline: "feat: build the thing" }],
+      }),
+      new Map([[11, { pr: 11, ciFixAttempts: 6 }]]),
+    );
+
+    expect(entry.commitCount).toBe(1);
+    expect(entry.commitsCiFix).toBe(1); // clamped from 6
+    expect(entry.commitsImplementation).toBe(0);
+    expect(
+      (entry.commitsDocsRefresh ?? 0) +
+        (entry.commitsReviewPatch ?? 0) +
+        (entry.commitsCiFix ?? 0) +
+        (entry.commitsImplementation ?? 0),
+    ).toBe(entry.commitCount ?? -1);
+  });
+
+  test("zero-commit PR with a task row match: commitCount 0, all four breakdown buckets 0", () => {
+    const entry = buildCensusEntry(
+      "org/repo",
+      pr({ number: 10, commits: [] }),
+      new Map([[10, { pr: 10, ciFixAttempts: 0 }]]),
+    );
+
+    expect(entry.commitCount).toBe(0);
+    expect(entry.commitsDocsRefresh).toBe(0);
+    expect(entry.commitsReviewPatch).toBe(0);
+    expect(entry.commitsCiFix).toBe(0);
+    expect(entry.commitsImplementation).toBe(0);
+  });
+});
+
 // ─── runPrCensus ────────────────────────────────────────────────────────────
 
 describe("runPrCensus", () => {
@@ -317,6 +586,66 @@ describe("runPrCensus", () => {
 
     expect(postCalls).toHaveLength(1);
     expect(postCalls[0].entries[0].origin).toBe("shipwright");
+  });
+
+  test("requests commits in the --json field list, and threads the matched task row's ciFixAttempts through to commitsCiFix", async () => {
+    const { deps, ghCalls, postCalls } = makeDeps({
+      scopedRepos: ["org/repo-a"],
+      cursorsByRepo: { "org/repo-a": "2026-09-01T00:00:00.000Z" },
+      mergedPrsByRepo: {
+        "org/repo-a": [
+          pr({
+            number: 42,
+            author: { login: "some-human" },
+            commits: [
+              { messageHeadline: "feat: build the thing" },
+              { messageHeadline: "feat: build more of the thing" },
+            ],
+          }),
+        ],
+      },
+      tasksByRepo: {
+        "org/repo-a": [{ pr: 42, ciFixAttempts: 1 }],
+      },
+    });
+
+    await runPrCensus(deps);
+
+    expect(ghCalls[0].args).toContain(
+      "number,title,author,headRefName,createdAt,mergedAt,commits",
+    );
+
+    const entry = postCalls[0].entries[0];
+    expect(entry.commitCount).toBe(2);
+    expect(entry.commitsCiFix).toBe(1);
+    expect(entry.commitsImplementation).toBe(1);
+  });
+
+  test("non-shipwright-origin PR in a full sweep: commitCount populated, all four breakdown buckets null", async () => {
+    const { deps, postCalls } = makeDeps({
+      scopedRepos: ["org/repo-a"],
+      cursorsByRepo: { "org/repo-a": "2026-09-01T00:00:00.000Z" },
+      mergedPrsByRepo: {
+        "org/repo-a": [
+          pr({
+            number: 43,
+            author: { login: "some-human" },
+            commits: [{ messageHeadline: "feat: manual fix" }],
+          }),
+        ],
+      },
+      tasksByRepo: { "org/repo-a": [] }, // no task row for PR #43
+    });
+
+    await runPrCensus(deps);
+
+    const entry = postCalls[0].entries[0];
+    expect(entry.origin).toBe("human");
+    expect(entry.commitCount).toBe(1);
+    expect(entry.commitsDocsRefresh).toBeNull();
+    expect(entry.commitsReviewPatch).toBeNull();
+    expect(entry.commitsCiFix).toBeNull();
+    expect(entry.commitsImplementation).toBeNull();
   });
 
   test("a failed POST for repo A does not stop repo B from being processed in the same tick", async () => {
