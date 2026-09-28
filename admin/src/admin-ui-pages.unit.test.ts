@@ -755,6 +755,26 @@ describe("renderAgentDetailPage — Recent Verification Activity rollup", () => 
     const html = render({ totalChecks: 0, itemCount: 0, counts: {} });
     expect(html).not.toContain("Recent Verification Activity");
   });
+
+  test("renders per-checkName rows with their own status badges", () => {
+    const html = render({
+      totalChecks: 12,
+      itemCount: 3,
+      counts: { ran_passed: 9, ran_failed: 2, skipped: 1 },
+      byCheckName: {
+        unit: { ran_passed: 9 },
+        lint: { ran_passed: 2, ran_failed: 1 },
+      },
+    });
+    // Check-name labels present.
+    expect(html).toContain("unit");
+    expect(html).toContain("lint");
+    // The "passed" label appears once for the aggregate line, once for the
+    // "unit" row, and once for the "lint" row (3 total); "failed" appears
+    // once for the aggregate line and once for the "lint" row (2 total).
+    expect(html.split("passed").length - 1).toBe(3);
+    expect(html.split("failed").length - 1).toBe(2);
+  });
 });
 
 // ─── renderNewLocalAgentPage ──────────────────────────────────────────────────
