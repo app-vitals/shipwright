@@ -247,7 +247,10 @@ Auto-detect the project toolchain (run once, reuse throughout), checking the cro
 
 Refer to `references/toolchain-patterns.md` for the full detection lookup table and the caching protocol.
 
-**No doc write happens here.** Detection's learned facts are written back to the project's own docs later, at Step 8.6 — this step runs before Step 4 creates the worktree, so there is no repo-safe file to edit yet, and Step 8's `{budget}` isn't derived yet either.
+**Toolchain detection results are cached only.** They're stored in
+`state/toolchain-cache/{repo-slug}.json` (Step 0b/Step 4 above) — nothing is ever written back
+to the project's own docs. This step also runs before Step 4 creates the worktree, so there
+would be no repo-safe file to edit yet even if it did.
 
 ## Step 2: Mark In-Progress
 
@@ -756,25 +759,48 @@ Examples based on detected toolchain:
 ### Skip-Locally Classification: Read Before Attempting Each Check
 
 Before running EACH check below (install, lint, typecheck, test, and each layer in `{tests}`)
-through the enforced-timeout wrapper, check whether this repo has already learned to stop
-attempting it locally — LVB-4.4's skip-locally classification, read from the toolchain doc.
+through `run-with-budget.ts`, check whether this repo+check pair has already earned a
+skip-locally classification — LVB-4.4's mechanism, driven directly off the
+`verification-checks` history via a live API call. No doc file is read or parsed.
 
-**Load once per run, up front.** At the start of Step 8, resolve the target doc the same way
-Step 8.6 does — `{worktree-path}/{docsSource.path}` at `docsSource.heading`'s nested `Shipwright
-Learned Facts` marker subsection if `docsSource` was populated at detection time, else the
-default `{worktree-path}/docs/toolchain.md` — and read it if it exists. Parse its skip-locally
-table (see `references/toolchain-patterns.md`'s "Writing Learned Facts Back to Docs" section for
-the exact table format) into an in-memory map of `checkName -> reasonCategory`. A missing file, a
-missing marker subsection, or an empty/absent table all mean the same thing — no learned skips
-yet for this repo — and Step 8 proceeds normally with nothing to load.
+**Query live, immediately before attempting `{checkName}`** — this check+repo's history,
+most-recent-first:
 
-**Before running `{checkName}`, look it up in that map:**
+```bash
+HISTORY_JSON=$(curl -sf -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
+  "$SHIPWRIGHT_TASK_STORE_URL/verification-checks?repo=$GH_REPO&checkName=$CHECK_NAME&limit=5")
+HISTORY_STATUSES=$(echo "$HISTORY_JSON" | jq -r '.checks[].status')
+LEARNED_REASON=$(echo "$HISTORY_JSON" | jq -r '.checks[0].reasonCategory // empty')
 
-- **No match:** proceed to the enforced-timeout wrapper below as normal — nothing changes.
-- **Match found:** do NOT run the `setsid timeout ...` wrapper for this check at all — no budget
-  is spent even attempting it. Instead POST the outcome directly:
+STREAK=0
+while IFS= read -r s; do
+  if [ "$s" = "skipped" ] || [ "$s" = "timed_out" ]; then
+    STREAK=$((STREAK + 1))
+  else
+    break
+  fi
+done <<< "$HISTORY_STATUSES"
+```
+
+The endpoint returns rows ordered by `at` DESCENDING (most recent first), so this walk starts
+from the latest outcome and counts backward. The loop counts the CONSECUTIVE run of
+`skipped`/`timed_out` rows starting from the most recent, and **stops (via `break`) at the
+first `ran_passed` or `ran_failed` row** — a real pass or a real test/lint failure is a
+completely separate, expected outcome and must never contribute to this counter: a check that
+reliably fails because the code under review is wrong keeps running and keeps failing loudly,
+not silently getting marked as something the agent stops attempting. A `ran_failed` row
+anywhere in the history caps everything before it out of the count entirely — two timeouts
+either side of a failure never sum to a streak of 2.
+
+- **`STREAK -lt 2`** (no match — no learned classification yet, or the prior streak was just
+  broken by a real pass/failure): proceed to the `run-with-budget.ts` invocation below as
+  normal — nothing changes.
+- **`STREAK -ge 2`** (match — this check+repo pair has 2+ consecutive skipped/timed_out
+  outcomes immediately behind it): treat it as already learned to skip. Do NOT run
+  `run-with-budget.ts` for this check at all — no budget is spent even attempting it. Instead
+  POST the outcome directly, carrying the most recent row's `reasonCategory` forward as
+  `learnedFromCategory`:
   ```bash
-  LEARNED_REASON="{reasonCategory recorded in the matched skip-locally table row}"
   VC_BODY=$(jq -n --arg taskId "{id}" --arg repo "$GH_REPO" --arg checkName "$CHECK_NAME" \
     --arg learnedFrom "$LEARNED_REASON" \
     '{taskId: $taskId, repo: $repo, checkName: $checkName, status: "skipped",
@@ -789,6 +815,13 @@ yet for this repo — and Step 8 proceeds normally with nothing to load.
   correctness judgment) surfaces in this run's structured outcome via both the POST's
   `learnedFromCategory` field and the human-readable table.
 
+Because this streak-walk runs live before every attempt, there is no separate "learning
+trigger" or doc-write step: the very next check attempt for this repo+checkName — in this run
+or a future one — will see the accumulated history (already populated by every check's own
+outcome POST, learned-skip or real) and reach the same STREAK conclusion on its own. Once two
+consecutive real attempts land on `skipped`/`timed_out`, the third attempt (in this run or the
+next) naturally short-circuits via the branch above.
+
 ### Enforced, Process-Group-Aware Timeouts
 
 **Local verification here is best-effort and non-blocking — CI (Step 9b) is the real
@@ -799,32 +832,27 @@ pause point here. The only remaining real block in this pipeline is Step 5's TDD
 red-green-refactor gate (a different, narrower gate that governs writing the implementation
 itself, not this pre-ship verification pass).
 
-**A bare `timeout <cmd>` is not sufficient.** `timeout` only signals the process it directly
-execs — a tool like npm, turbo, or a test runner that forks worker subprocesses leaves those
-descendants alive after `timeout` reports a clean exit 124, and they keep running and writing
-into `node_modules`/build output/test artifacts, corrupting the worktree for whatever runs
-against it next (a later CI-fix attempt, or a future revisit of the same repo). Every
-enforced-timeout invocation MUST run the wrapped command in its own session/process group via
-`setsid`, and on expiry MUST kill the ENTIRE process group — not just the directly-execed
-process. Use this pattern (adapt `{budget}` and `{command}` per check):
+**Every check runs through the shared `run-with-budget.ts` script (LVBS-1.1,
+`plugins/shipwright/scripts/run-with-budget.ts`) rather than an inline pattern.** A tool like
+npm, turbo, or a test runner that forks worker subprocesses can leave orphaned descendants
+alive past a timeout if they aren't killed as a whole process group, not just the
+directly-execed process — the script already handles this (`setsid --wait timeout
+--kill-after={n}s {budget}s {command}`, plus a group-kill cleanup backstop; see the script's
+own header comment for the full mechanics), so Step 8 just invokes it instead of
+re-implementing the mechanics inline here. Use this pattern (adapt `{budget}`, `{command}`, and
+`{CHECK_NAME}` per check):
 
 ```bash
 CHECK_NAME="{install|lint|typecheck|test|<layer name>}"
-setsid timeout --kill-after=10s {budget}s {command} &
-CMD_PID=$!
-wait $CMD_PID
-EXIT=$?
-# Always kill the whole process group by negative PID, whether the command finished,
-# failed, or timed out (exit 124) — this guarantees no descendant survives the attempt,
-# even ones timeout's own single-process signal never reached.
-kill -TERM -$CMD_PID 2>/dev/null
-kill -KILL -$CMD_PID 2>/dev/null
+RESULT=$(bun run "${CLAUDE_PLUGIN_ROOT}/scripts/run-with-budget.ts" \
+  --budget {budget} --kill-after 10 -- {command})
+SCRIPT_STATUS=$(echo "$RESULT" | jq -r '.status')
 
 # Record this outcome via LVB-5.1's verification-check API — informational only, never a
 # pipeline gate. Run best-effort and warn-and-continue on any failure.
-if [ "$EXIT" -eq 0 ]; then
+if [ "$SCRIPT_STATUS" = "pass" ]; then
   VC_STATUS="ran_passed"; VC_REASON=""
-elif [ "$EXIT" -eq 124 ]; then
+elif [ "$SCRIPT_STATUS" = "timeout" ]; then
   VC_STATUS="timed_out"
   if [ "$CHECK_NAME" = "install" ]; then VC_REASON="install_timeout"; else VC_REASON="check_timeout"; fi
 else
@@ -840,15 +868,12 @@ curl -sf -X POST -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
   -d "$VC_BODY" > /dev/null 2>&1 || echo "⚠ verification-check POST for $CHECK_NAME failed — continuing"
 ```
 
-`setsid` puts `{command}` in its own session/process group with PID `$CMD_PID` as the group
-leader, so `-$CMD_PID` (negative PID) targets the whole group in the `kill` calls — every
-forked descendant, not just the direct child `timeout` wraps. Run this for **install**, then
-**lint**, **typecheck**, and **test** (and each layer in `{tests}` if multi-layer) in turn.
-There is currently no stored `install` command in the Step 0/0b toolchain cache — derive it
-inline per ecosystem (e.g. `{manager} install`, `bun install`, `pip install -e .`,
-`bundle install`, `cargo fetch`), the same way the "Examples based on detected toolchain" list
-above already gives per-ecosystem example commands, since lint/typecheck/test generally need
-dependencies installed first to run meaningfully.
+Run this for **install**, then **lint**, **typecheck**, and **test** (and each layer in
+`{tests}` if multi-layer) in turn. There is currently no stored `install` command in the Step
+0/0b toolchain cache — derive it inline per ecosystem (e.g. `{manager} install`, `bun install`,
+`pip install -e .`, `bundle install`, `cargo fetch`), the same way the "Examples based on
+detected toolchain" list above already gives per-ecosystem example commands, since
+lint/typecheck/test generally need dependencies installed first to run meaningfully.
 
 **The skip-locally read path reuses this exact POST shape.** LVB-4.4's "Skip-Locally
 Classification: Read Before Attempting Each Check" section above does exactly this — it emits
@@ -871,71 +896,6 @@ typecheck:  {pass|fail|timeout|skip}
 test:       {pass|fail|timeout|skip}
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 ```
-
-### Skip-Locally Learning Trigger
-
-After each REAL check attempt above (one that actually ran through the `setsid timeout ...`
-wrapper — not a skip-on-read short-circuit from the "Skip-Locally Classification" section, which
-never reaches here) POSTs its outcome, decide whether this outcome should grow a learned-skip
-streak toward a new skip-locally classification.
-
-**Only `skipped`/`timed_out` outcomes qualify — a `ran_passed` or `ran_failed` outcome never
-does.** If `$VC_STATUS` is `ran_passed` or `ran_failed`, stop here — take no further action for
-this check. A real pass, or a real test/lint failure, is a completely separate, expected outcome
-and must never contribute to this counter or trigger a skip-locally write. A check that reliably
-fails because the code under review is wrong should keep running and keep failing loudly, not get
-silently marked as something the agent stops attempting.
-
-If `$VC_STATUS` is `skipped` or `timed_out` (an environmental `$VC_REASON` — never `learned_skip`
-on this path, since this is the real-check branch, not the skip-on-read branch), query this
-check+repo's history, most-recent-first, via LVB-4.4's repo+checkName mode:
-
-```bash
-HISTORY_STATUSES=$(curl -sf -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
-  "$SHIPWRIGHT_TASK_STORE_URL/verification-checks?repo=$GH_REPO&checkName=$CHECK_NAME&limit=5" \
-  | jq -r '.checks[].status')
-
-STREAK=0
-while IFS= read -r s; do
-  if [ "$s" = "skipped" ] || [ "$s" = "timed_out" ]; then
-    STREAK=$((STREAK + 1))
-  else
-    break
-  fi
-done <<< "$HISTORY_STATUSES"
-```
-
-The endpoint returns rows ordered by `at` DESCENDING (most recent first) specifically so this
-walk can start from the outcome just recorded and count backward. The loop counts the CONSECUTIVE
-run of `skipped`/`timed_out` rows starting from the most recent, and **stops (via `break`) at the
-first `ran_passed` or `ran_failed` row** — that row breaks/resets the streak count at exactly that
-point. A `ran_failed` row anywhere in the history caps everything before it out of the count
-entirely: two timeouts separated by one real failure never sum to a streak of 2, because the
-`ran_failed` row terminates the walk before those two skip/timeout rows are ever counted together.
-This is the mechanism that makes a real, expected `ran_failed` outcome structurally unable to
-contribute to this counter or trigger a skip-locally write on its own — never a ran-failed
-outcome, only ever a run of skipped/timed_out outcomes.
-
-**If `$STREAK -ge 2`:** the just-recorded outcome is the 2nd (or later) consecutive skip/timeout
-for this check+repo — trigger the write, carrying the triggering (this run's own, most recent)
-`$VC_REASON` forward as the new entry's recorded reason:
-
-```bash
-if [ "$STREAK" -ge 2 ]; then
-  echo "⚠ Learned skip-locally for $CHECK_NAME after 2 consecutive $VC_REASON outcomes — recorded in {doc path}"
-  # Reuse Step 8.6's write mechanics (same target-doc resolution, same full-replace of the
-  # Shipwright Learned Facts marker subsection's skip-locally table) invoked here inline, rather
-  # than only at the end of Step 8.6 — this makes the classification available immediately to a
-  # later check in this same Step 8 run with the same checkName, however unlikely. Update this
-  # run's in-memory skip-locally map (the one "Skip-Locally Classification: Read Before
-  # Attempting Each Check" loaded at the top of Step 8) in place too, so a within-run reread of
-  # that map — not just the on-disk doc — stays consistent.
-fi
-```
-
-This write is best-effort and never blocks the pipeline, the same posture as every other write in
-this step — a failure to write or commit it is logged and skipped, and the rest of Step 8
-proceeds regardless.
 
 **Budget derivation.** Prefer deriving `{budget}` from the target repo's real recent CI job
 durations over a guessed constant:
@@ -1077,47 +1037,6 @@ If `auto_docs_updated == true`:
 If `auto_docs_updated == false`:
 ```
 ⏭ Docs refresh skipped ({auto_docs_skipped_reason})
-```
-
----
-
-## Step 8.6: Write Learned Facts Back to Docs
-
-Record what this run learned about the repo's toolchain into the repo's own docs. See
-`references/toolchain-patterns.md`'s "Writing Learned Facts Back to Docs" section for the
-mechanics — update the `Shipwright Learned Facts` subsection in the pointer doc (if
-`docsSource` was populated in Step 0b) or create/update the default `docs/toolchain.md` (if
-not).
-
-This runs here, not at Step 0b, for two reasons: `{worktree-path}` exists by now (Step 0b
-runs pre-worktree, and writing into the shared `${SHIPWRIGHT_REPO_DIR:-$HOME/src}/{repo-slug}`
-checkout would leave uncommitted changes that Step 4's `git pull` and every concurrent run
-for this repo would collide with), and Step 8's `{budget}` — one of the facts being
-recorded — is only derived during Step 8.
-
-- **Write target:** always inside `${SHIPWRIGHT_WORKTREE_DIR:-$HOME/worktrees}/{repo-slug}-{branch-slug}/`. Never the shared repo checkout.
-- **Facts to record:** the scoped-command variants from the Step 0b cache entry
-  (`lintScoped`/`typecheckScoped`/`testScoped`, when present), the `{budget}` Step 8 used plus
-  its `ci-derived`/`fallback-10m` source, and this run's skip-locally classifications table — the
-  in-memory `checkName -> reasonCategory` map Step 8's "Skip-Locally Classification: Read Before
-  Attempting Each Check" section loaded at the top of Step 8, as updated in place by any writes
-  the "Skip-Locally Learning Trigger" section performed mid-run. Serializing it here too is a
-  safety net, not a second write mechanism: if an inline trigger write already landed, this
-  full-replace reproduces the same content and is a no-op; if an inline write failed, this is
-  where it still gets captured.
-- **Commit it** on the task's branch so it lands in this task's PR, alongside Step 8.5's
-  docs-refresh commit:
-  ```bash
-  git add {written doc path}
-  git commit -m "docs: record Shipwright learned facts for {repo-slug}"
-  ```
-  Step 9's push carries it to the PR. If nothing changed (the subsection already matches),
-  there is nothing to commit — skip silently.
-
-Best-effort; never blocks the pipeline. A failed write or failed commit is logged and skipped,
-and Step 9 proceeds regardless:
-```
-⏭ Learned-facts write skipped ({reason})
 ```
 
 ---
