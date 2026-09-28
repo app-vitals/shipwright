@@ -1,6 +1,14 @@
-// Unit tests for run-with-budget.ts — spawns real short-lived processes
-// (no mocking: this script's whole job is orchestrating real subprocesses,
-// so the tests exercise the real setsid/timeout/kill toolchain directly).
+// Integration tests for run-with-budget.ts — spawns real short-lived
+// processes (no mocking: this script's whole job is orchestrating real
+// subprocesses, so the tests exercise the real setsid/timeout/kill
+// toolchain directly).
+//
+// Integration layer, not unit: these tests spawn real subprocesses and touch
+// the filesystem (temp dirs, /proc), which the unit layer forbids outright
+// (docs/testing.md: "no I/O of any kind"). They fall under the integration
+// layer's critical-infrastructure exception — recorded fixtures would miss
+// exactly the runtime-environment behavior under test (real process-group
+// signalling by the host's setsid/timeout).
 //
 // Covers the enforced, process-group-aware timeout wrapper duplicated as
 // inline bash across plugins/shipwright/commands/dev-task.md's Step 8 and
