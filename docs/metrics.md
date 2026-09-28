@@ -4,7 +4,7 @@
 
 ## Overview
 
-The metrics service exposes pipeline telemetry two ways: machine-readable JSON under `/metrics/*` (for tooling and the `/shipwright:metrics` command) and a human-facing `/dashboard`. All read endpoints are served by a backend-agnostic `MetricsProvider` interface (`metrics/src/metrics-provider.ts`). The active backend is selected at startup by `selectProviderMode()` (`metrics/src/select-provider.ts`) based on env vars, in priority order:
+The metrics service exposes pipeline telemetry two ways: machine-readable JSON under `/metrics/*` (for tooling) and a human-facing `/dashboard`. All read endpoints are served by a backend-agnostic `MetricsProvider` interface (`metrics/src/metrics-provider.ts`). The active backend is selected at startup by `selectProviderMode()` (`metrics/src/select-provider.ts`) based on env vars, in priority order:
 
 1. `METRICS_OFFLINE=true` → **fixtures** mode: an offline `TaskStoreProvider` over recorded cassettes (`createFixtureTaskStoreProvider()`, `metrics/src/fixtures/task-store-fixtures.ts`); auth bypassed.
 2. `METRICS_TASK_STORE_URL` + `METRICS_ADMIN_URL` both `http(s)` → **taskstore** mode: live `TaskStoreProvider` (`metrics/src/providers/task-store-provider.ts`) over an `HttpTaskStoreClient` (`metrics/src/lib/task-store-client.ts`) and an `HttpAdminMetricsClient` (`metrics/src/lib/admin-metrics-client.ts`).
@@ -110,10 +110,10 @@ Both routes return the same envelope shape (`data` scoped to all repos on the au
 
 **CI first-pass rate vs. commits-per-PR — do not conflate these.** They measure different things, from different systems, at different points in the pipeline:
 
-- **CI first-pass rate** is defined in `plugins/shipwright/references/metrics-schema.md` as `% tasks with ci_fix_attempts == 0` — a per-*task* metric scoped to `/shipwright:dev-task`'s own pre-PR-open CI retry loop (how many times the CI-fix subagent had to retry before the PR was ever opened). It's sourced from the JSONL-based per-task metrics stream consumed by `/shipwright:metrics`, not by this service — this service has no equivalent endpoint for it.
+- **CI first-pass rate** was a per-*task* metric (`% tasks with ci_fix_attempts == 0`) scoped to `/shipwright:dev-task`'s own pre-PR-open CI retry loop — how many times the CI-fix subagent had to retry before the PR was ever opened. It came from the legacy JSONL per-task metrics stream, which has since been retired (CPP-2.1); this service never had an equivalent endpoint for it, so there is no first-pass-rate figure served alongside commits-per-PR today.
 - **commits-per-PR** (`avgCommitCount`/`commitBreakdown`, this endpoint) is a per-*PR* metric: the PR's real total commit count across **every** phase of its life — initial implementation, any review/patch cycles, any CI fixes *after* the PR was opened, and any docs-refresh commits — sourced from the task-store's `PullRequest.commitCount`/`commits*` columns, populated by the census sweep (CPP-1.1).
 
-A task can have `ci_fix_attempts == 0` (a clean pre-open CI run) and still end up with a high `commitCount` from several rounds of post-open review/patch cycles, or vice versa — the two numbers are not interchangeable and a low one doesn't imply the other is low too.
+A task could have `ci_fix_attempts == 0` (a clean pre-open CI run) and still end up with a high `commitCount` from several rounds of post-open review/patch cycles, or vice versa — the two were never interchangeable, so don't read `avgCommitCount` as a proxy for how cleanly CI passed.
 
 The dashboard's **"Merged PRs by repo"** panel renders this same data as two Chart.js charts: a stacked bar chart (one bar per repo, segments stacked by origin, tooltip shows % of repo total) and a trend line chart (one line per origin over time), plus a repo picker that filters the trend chart when more than one repo has merged PRs in range.
 
@@ -208,4 +208,3 @@ See [testing.md](./testing.md).
 ## See also
 
 - [architecture.md](./architecture.md) — where the metrics service sits in the A→B→C→D design.
-- `plugins/shipwright/references/metrics-schema.md` — the `metrics.jsonl` schema the pipeline emits, which feeds these queries.

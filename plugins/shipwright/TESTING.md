@@ -20,7 +20,6 @@ Manual test scenarios for each command across different project types.
 | 1 | `/plan-session` | Node.js (pnpm) | New feature planning | Toolchain detected, layers auto-detected, template correct |
 | 17 | `/plan-session` | Any | Complexity scoring | Complexity column (1-5) in task table, scores correlate with task characteristics |
 | 18 | `/dev-loop` | Any | Cross-session handoff | Handoff section written after each batch, restored on restart |
-| 19 | `/dev-task --merge` | Any | Persistent metrics | metrics.jsonl appended after each merge, plan-session reads historical data |
 | 20 | `/dev-task` + `/dev-task --merge` | Any (with CI) | CI gate | Checks monitored, failures auto-fixed, merge conflicts resolved, max retries enforced |
 | 2 | `/plan-session` | Python (poetry) | API feature planning | Python toolchain, pytest commands, coverage threshold |
 | 3 | `/plan-session` | Rust (cargo) | CLI feature planning | Cargo commands, clippy in permissions |
@@ -52,9 +51,8 @@ Manual test scenarios for each command across different project types.
 | 35 | `/dev-task` Step 8.5 | Any (with docs/) | Auto-docs refresh on doc-affecting change | `docs: refresh` commit appears on branch before push; PR contains impl + doc edits; metrics record has `auto_docs.updated:true` with non-zero `lines_changed` |
 | 36 | `/dev-task` Step 8.5 | Any (with docs/) | Negative — task changes nothing documented | No `docs: refresh` commit; metrics record has `auto_docs.updated:false`, `skipped_reason:"no_stale_refs"` |
 | 37 | `/dev-task` Step 8.5 | Any (no docs/) | Skip when no docs directory exists | No commit, no agent rework; metrics record has `skipped_reason:"no_docs_dir"`; pipeline continues to push & PR without error |
-| 38 | `/metrics` | Any (multi-task session) | Auto-docs aggregation across session | New "Auto-docs maintenance" section appears with update rate, mean lines/task, and skip breakdown; recommendation #12 fires when rate is low |
 | 39 | `/dev-task` Step 8.5 | Any (with docs/, failing pre-commit hook) | Commit failure does not produce false success | No `✓ Docs refreshed`; `skipped_reason:"commit_failed"`, `commit_sha:null`, `updated:false`; no fabricated metrics; pipeline still continues to Step 9 |
-| 40 | `/dev-task` Step 8.5 | Any | Unparseable agent result is recorded, not silent | Agent returns no/garbled `AUTO_DOCS_METRICS` block; `⚠ ... agent_error` printed; metrics record has `skipped_reason:"agent_error"`, `updated:false`; pipeline continues |
+| 40 | `/dev-task` Step 8.5 | Any | Unparseable agent result is recorded, not silent | Agent returns no/garbled `AUTO_DOCS_METRICS` block; `⚠ ... agent_error` printed; parsed values show `skipped_reason:"agent_error"`, `updated:false`; pipeline continues |
 | 41 | `/plan-session` Step 6a / `/prd` Phase 4 | Any (admin app base URL configured) | Plan viz link after markdown write | `PLAN.md`/`PRODUCT-SPEC.md` written unchanged, then a `${SHIPWRIGHT_ADMIN_APP_BASE_URL}/admin/sessions/{session}` link is constructed and a `Plan viz: {url}` line is surfaced in the confirmation block |
 | 42 | `/plan-session` Step 6a / `/prd` Phase 4 | Any (admin app base URL unset) | Plan viz graceful skip | `⏭ Plan viz skipped — SHIPWRIGHT_ADMIN_APP_BASE_URL unset.` printed; markdown still written; no `Plan viz:` line; command never blocks |
 | 45 | `/plan-session --autonomous` Step 1 | Any (flagged PRD task, no spec file in worktree) | Spec materialized from the task description | `planning/{session}/PRODUCT-SPEC.md` written from the task's `description` with the `Commit as PRODUCT-SPEC.md…` preamble stripped; no "What are we building?" prompt; the originating task is excluded from the duplicate scan; an empty description blocks the task with `plan_session_autonomous_no_spec` |
@@ -436,11 +434,6 @@ Run these across ALL scenarios to verify genericization:
 - [ ] Phase 5 quality check reports Complexity as a required field
 - [ ] Phase 5 fails if any task is missing a Complexity score
 
-### With historical metrics
-- [ ] Place a `planning/test-feature/metrics.jsonl` file with 5 sample entries
-- [ ] Re-run `/plan-session test-repo test-feature` — verify historical estimation accuracy is printed before hour assignment
-- [ ] Delete `metrics.jsonl` — verify no errors on next run (graceful degradation)
-
 ---
 
 ## Scenario 18: Cross-Session Handoff (dev-loop)
@@ -477,35 +470,6 @@ Run these across ALL scenarios to verify genericization:
    - [ ] Orphan check runs before marking in-progress
    - [ ] If a PR exists, it is closed with cleanup comment
    - [ ] Branch is deleted before fresh start
-
----
-
-## Scenario 19: Persistent Metrics (dev-task + dev-loop + plan-session)
-
-### Artifact check — metrics.jsonl written
-1. Complete any `/dev-task {task-id} --merge` on a task that has a Complexity score
-2. Verify:
-   - [ ] `planning/{folder}/metrics.jsonl` exists after merge
-   - [ ] Contains exactly one new JSON line with fields: `task`, `title`, `estimated_h`, `actual_h`, `complexity`, `retries`, `ci_fix_attempts`, `pr`, `hotfixes`, `files_changed`, `ts`
-   - [ ] `complexity` matches the task's Complexity field in the planning doc
-   - [ ] `pr` matches the merged PR number
-
-### Artifact check — dev-loop reads metrics
-1. Complete a `/dev-loop` run with 3+ tasks (metrics.jsonl will be populated)
-2. In the Loop Retrospective, verify:
-   - [ ] "Historical data" block appears with mean estimation error
-   - [ ] Model distribution shows counts per complexity tier
-   - [ ] Per-task table uses actuals from metrics.jsonl (not just git timestamps)
-
-### Artifact check — plan-session reads historical data
-1. After a dev-loop run that produced `metrics.jsonl`, run `/plan-session` on the same folder
-2. Verify:
-   - [ ] Historical estimation accuracy is reported before hour assignment
-   - [ ] Message format: "Historical data ({N} tasks): avg estimation error {+/-N}%..."
-
-### Graceful degradation
-1. Run `/plan-session` on a folder with NO `metrics.jsonl` — no errors, no warnings
-2. Run `/dev-loop` on a folder with NO `metrics.jsonl` — retrospective still runs using git timestamps
 
 ---
 
@@ -553,7 +517,7 @@ Run these across ALL scenarios to verify genericization:
 - [ ] Loop returns to 11b.1 (updates from main again)
 - [ ] Step 11b.2 re-waits for CI
 - [ ] On success, prints `✓ CI checks passed (after 1 fix attempt(s))`
-- [ ] `ci_fix_attempts` recorded correctly in metrics.jsonl
+- [ ] `ciFixAttempts` recorded correctly in the Step 10a task-store PATCH
 
 ### Merge conflict handling
 
@@ -602,52 +566,6 @@ Run these across ALL scenarios to verify genericization:
 #### Verify
 - [ ] Actions API polling uses 10-minute total timeout (20 polls × 30s)
 - [ ] If timeout fires (stuck check), treated as a failure — enters fix loop
-
----
-
-## Enriched Metrics (v1.4.0+)
-
-### dev-task measurement points
-
-#### Verify
-- [ ] Step 8 (Simplify): tallies fix counts by category (dry, dead_code, naming, complexity, consistency)
-- [ ] Step 9 (Requirements): counts MET/PARTIAL/NOT_MET/UNVERIFIABLE verdicts
-- [ ] Step 10 (Coverage): captures coverage_before, coverage_after, coverage_delta (best-effort)
-- [ ] Step 11b.3: records one-line CI failure descriptions in ci_failures array
-- [ ] Step 12c: captures review_verdict, review_findings, review_fixes_applied, review_agents
-- [ ] Step 12e.2: JSONL line includes all new fields (simplify, requirements, review, ci, model, coverage)
-
-### Backward compatibility
-
-#### Verify
-- [ ] Old metrics.jsonl files (without fix cascade fields) are still valid JSONL
-- [ ] dev-loop retrospective handles mixed old + enriched records (excludes old from fix cascade aggregates)
-- [ ] plan-session Phase 4 shows only estimation accuracy line if no enriched fields exist
-- [ ] `/metrics` command loads and analyzes old-format records alongside enriched ones
-
-### /metrics command
-
-#### Verify: No data
-- [ ] With no metrics.jsonl files: prints "No metrics data found" message and stops
-
-#### Verify: Basic analysis
-- [ ] Loads records from all planning/*/metrics.jsonl files
-- [ ] Reports record count, project count, enriched vs legacy count
-- [ ] Computes fix cascade aggregates (first-time quality rate, simplify breakdown, review distribution, CI pass rate)
-- [ ] Computes estimation accuracy by complexity tier
-
-#### Verify: Filtering
-- [ ] Project name filter: only reads planning/{name}/metrics.jsonl
-- [ ] Date range: --from and --to filter records by ts field
-- [ ] Compare mode: side-by-side table for two projects
-
-#### Verify: Trends
-- [ ] With 10+ enriched records: splits into halves and computes improving/declining/stable
-- [ ] With <10 enriched records: prints "Not enough data" message
-
-#### Verify: Recommendations
-- [ ] Generates 1-3 actionable recommendations based on threshold rules
-- [ ] When all metrics are healthy: prints "All metrics are within healthy ranges"
 
 ---
 
@@ -962,7 +880,7 @@ Run these across ALL scenarios to verify genericization:
 - [ ] Step 8.5c prints `✓ Docs refreshed: N file(s), M lines ({sha})`
 - [ ] Step 9 pushes BOTH the implementation commit AND the docs commit
 - [ ] The opened PR contains the doc edits in its diff
-- [ ] `planning/{session}/metrics.jsonl` record for this task contains `"auto_docs":{"updated":true,"files_changed":N,"lines_changed":M,"skipped_reason":null}`
+- [ ] Step 8.5b's parsed values (`auto_docs_updated:true`, `auto_docs_files_changed:N`, `auto_docs_lines_changed:M`, `auto_docs_skipped_reason:null`) are surfaced in the Step 10d handoff summary's `Docs:` line
 
 ---
 
@@ -981,7 +899,7 @@ Run these across ALL scenarios to verify genericization:
 - [ ] Agent runs but finds no candidate docs (pre-filter returns empty) OR finds candidates but all references still resolve
 - [ ] No `docs: refresh` commit on the branch
 - [ ] Step 8.5c prints `⏭ Docs refresh skipped (no_stale_refs)`
-- [ ] Metrics record has `"auto_docs":{"updated":false,"files_changed":0,"lines_changed":0,"skipped_reason":"no_stale_refs"}`
+- [ ] Step 8.5b's parsed values show `"auto_docs":{"updated":false,"files_changed":0,"lines_changed":0,"skipped_reason":"no_stale_refs"}`, surfaced in the Step 10d handoff summary's `Docs:` line
 - [ ] Pipeline proceeds normally to Step 9
 
 ---
@@ -1002,37 +920,9 @@ Run these across ALL scenarios to verify genericization:
 - [ ] Agent's first check fails (no docs dir) and it emits `AUTO_DOCS_METRICS` with `skipped_reason="no_docs_dir"`
 - [ ] No commit, no edits anywhere
 - [ ] Step 8.5c prints `⏭ Docs refresh skipped (no_docs_dir)`
-- [ ] Metrics record has `"auto_docs":{"updated":false,"files_changed":0,"lines_changed":0,"skipped_reason":"no_docs_dir"}`
+- [ ] Step 8.5b's parsed values show `"auto_docs":{"updated":false,"files_changed":0,"lines_changed":0,"skipped_reason":"no_docs_dir"}`, surfaced in the Step 10d handoff summary's `Docs:` line
 - [ ] Pipeline does NOT error or pause — proceeds to Step 9 normally
 - [ ] No `docs/` directory is created by the auto-refresher (creation is only for `/research-docs`)
-
----
-
-## Scenario 38: /metrics — Auto-Docs Aggregation
-
-### Setup
-1. Run `/dev-loop` or a sequence of 3+ `/dev-task` runs in a project with `docs/`, ensuring a mix of outcomes:
-   - At least one task that updated docs
-   - At least one task that skipped with `no_stale_refs`
-2. Optionally, mix in one pre-v4.5.0 record (manually crafted JSONL line with no `auto_docs` field) to verify legacy handling
-
-### Run
-```
-/metrics {session}
-```
-
-### Verify
-- [ ] Report includes an "Auto-docs:" block under the FIX CASCADE section
-- [ ] `Update rate` is computed correctly (% of tasks with `auto_docs.updated == true`)
-- [ ] `Lines/task (all)` includes zeros (mean across every record, including skips)
-- [ ] `Lines/task (when updated)` only averages over records with `updated == true`
-- [ ] Skipped breakdown shows percentages by reason — `no_stale_refs`, `no_source_changes`, `no_docs_dir`, `legacy_record`
-- [ ] `commit_failed` and `agent_error` appear on a separate "Failures:" line, not folded into the benign skip buckets
-- [ ] Legacy records (missing `auto_docs` entirely) appear in the `legacy_record` bucket, not as failures
-- [ ] If update rate < 20% AND avg `files_changed` > 5/task → recommendation #12 appears
-- [ ] If `no_docs_dir` accounts for > 30% of recent records → recommendation #13 appears
-- [ ] If `commit_failed`+`agent_error` > 10% of recent records → recommendation #14 appears
-- [ ] When no records have `auto_docs` data at all (only pre-v4.5.0 records), the Auto-docs section is omitted
 
 ---
 
@@ -1054,7 +944,7 @@ Run these across ALL scenarios to verify genericization:
 - [ ] Step 8.5c prints `⏭ Docs refresh skipped (commit_failed)` — NOT `✓ Docs refreshed`
 - [ ] No `docs: refresh` commit exists on the branch (`git log --oneline`)
 - [ ] `files_changed`/`lines_changed` are `0` — no metrics fabricated from the implementation commit
-- [ ] metrics.jsonl record has `skipped_reason:"commit_failed"`
+- [ ] Step 8.5b's parsed values show `skipped_reason:"commit_failed"`, surfaced in the Step 10d handoff summary's `Docs:` line
 - [ ] Pipeline does NOT stall — proceeds to Step 9 (a docs-refresh failure never blocks the ship)
 
 ---
@@ -1074,8 +964,7 @@ Run these across ALL scenarios to verify genericization:
 - [ ] Step 8.5b finds no parseable `AUTO_DOCS_METRICS` block
 - [ ] Prints `⚠ Docs refresh result unparseable — recording agent_error and continuing`
 - [ ] `auto_docs_updated=false`, `auto_docs_skipped_reason="agent_error"`, `commit_sha=null`
-- [ ] metrics.jsonl record has `"auto_docs":{"updated":false,"files_changed":0,"lines_changed":0,"skipped_reason":"agent_error"}`
-- [ ] `/metrics` later buckets this as `agent_error` (a failure), NOT `legacy_record`
+- [ ] These parsed values are surfaced in the Step 10d handoff summary's `Docs:` line as `skipped (agent_error)`, distinct from a `no_docs_dir`/`no_stale_refs` benign skip
 - [ ] Pipeline continues to Step 9 without stalling
 
 ---
@@ -1256,7 +1145,7 @@ Imported from the former `test-readiness` plugin. These exercise the six `/test-
 
 ### TR-1 — Commands load
 **Steps:** Install/refresh the plugin, run `/help`.
-**Expected:** All six commands listed: `/test-inventory`, `/test-design`, `/test-migration`, `/test-roadmap`, `/test-fix`, `/test-debt`. No collision with the existing `/metrics` command.
+**Expected:** All six commands listed: `/test-inventory`, `/test-design`, `/test-migration`, `/test-roadmap`, `/test-fix`, `/test-debt`. No collision with any existing command.
 
 ### TR-2 — Phase 1 against a small TypeScript repo
 **Steps:** `cd` into a small TS repo (e.g. a Hono service); run `/test-inventory`.
