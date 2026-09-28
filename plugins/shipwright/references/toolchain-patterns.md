@@ -87,7 +87,7 @@ One file per repo (not one shared file keyed by repo) — a shared file read-mod
   git -C {repo-dir} log -1 --format=%H -- CLAUDE.md docs ai-docs package.json Cargo.toml go.mod pyproject.toml setup.py Gemfile Makefile Taskfile.yml justfile Justfile mise.toml .mise.toml pom.xml build.gradle build.gradle.kts ':(exclude)docs/toolchain.md'
   ```
 
-  The `':(exclude)docs/toolchain.md'` pathspec is the no-pointer half of the same self-invalidation guard as the marker-subsection strip above: `docs/toolchain.md` is the file "Writing Learned Facts Back to Docs" below *creates* for this exact case, and it lives inside the `docs` pathspec entry, so without the exclusion every learned-facts commit would move this recipe's `%H` and force a cache miss on the next run.
+  The `':(exclude)docs/toolchain.md'` pathspec is the no-pointer half of the same self-invalidation guard already applied to lockfiles: `docs/toolchain.md` was the file a since-removed learned-facts write mechanism used to create for this exact case, and it lives inside the `docs` pathspec entry, so without the exclusion a learned-facts commit would have moved this recipe's `%H` and forced a cache miss on the next run. Nothing writes to that path anymore, so the exclusion is now a harmless no-op — left in place rather than removed, since removing it is out of scope here.
 
 `{repo-dir}` / `{docsSource.path}` (when relative) is whichever checkout is live at the point detection runs — `${SHIPWRIGHT_REPO_DIR:-$HOME/src}/{repo}` for dev-task's pre-worktree detection (Step 1/0b runs before the worktree exists); the active `{worktree-path}` for patch, which always operates on an already-existing branch.
 
