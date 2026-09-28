@@ -287,29 +287,27 @@ function renderVerificationChecksCard(
  * (e.g. the fetcher isn't configured, or none of the agent's recently
  * dispatched items have recorded verification checks yet).
  */
-function renderVerificationActivityCard(
-  summary?: VerificationActivitySummary,
-): string {
-  if (!summary || summary.totalChecks === 0) return "";
-  const badges = VERIFICATION_STATUS_ORDER.map((status) => {
-    const count = summary.counts[status] ?? 0;
+/** Renders one badge per non-zero status count, in VERIFICATION_STATUS_ORDER. */
+function renderStatusCountBadges(counts: Record<string, number>): string {
+  return VERIFICATION_STATUS_ORDER.map((status) => {
+    const count = counts[status] ?? 0;
     if (count === 0) return "";
     return `<span style="margin-right:12px;font-size:13px">${verificationStatusBadge(status)} ${count}</span>`;
   })
     .filter(Boolean)
     .join("");
+}
+
+function renderVerificationActivityCard(
+  summary?: VerificationActivitySummary,
+): string {
+  if (!summary || summary.totalChecks === 0) return "";
+  const badges = renderStatusCountBadges(summary.counts);
   const byCheckName = summary.byCheckName ?? {};
   const checkNameRows = Object.keys(byCheckName)
     .sort()
     .map((checkName) => {
-      const statusCounts = byCheckName[checkName];
-      const checkBadges = VERIFICATION_STATUS_ORDER.map((status) => {
-        const count = statusCounts[status] ?? 0;
-        if (count === 0) return "";
-        return `<span style="margin-right:12px;font-size:13px">${verificationStatusBadge(status)} ${count}</span>`;
-      })
-        .filter(Boolean)
-        .join("");
+      const checkBadges = renderStatusCountBadges(byCheckName[checkName]);
       return `<div style="margin-bottom:6px">
         <span style="display:inline-block;min-width:100px;font-size:12px;font-family:monospace;color:#6b7280">${escapeHtml(checkName)}</span>
         ${checkBadges}
