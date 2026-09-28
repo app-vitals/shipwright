@@ -170,6 +170,14 @@ export interface VerificationActivitySummary {
   itemCount: number;
   /** Counts keyed by VerificationCheckStatus (e.g. "ran_passed": 9). */
   counts: Record<string, number>;
+  /**
+   * Same counts as `counts`, broken down per checkName (checkName ->
+   * VerificationCheckStatus -> count) — lets the rollup card show a per-check
+   * breakdown (e.g. "lint: 2 passed, 1 failed") alongside the aggregate line.
+   * Optional for backward compatibility with existing callers/fixtures that
+   * predate this field; buildVerificationActivityRollup always populates it.
+   */
+  byCheckName?: Record<string, Record<string, number>>;
 }
 
 // Inline CSS + labels for verification-check status badges, keyed by the raw
@@ -279,21 +287,38 @@ function renderVerificationChecksCard(
  * (e.g. the fetcher isn't configured, or none of the agent's recently
  * dispatched items have recorded verification checks yet).
  */
-function renderVerificationActivityCard(
-  summary?: VerificationActivitySummary,
-): string {
-  if (!summary || summary.totalChecks === 0) return "";
-  const badges = VERIFICATION_STATUS_ORDER.map((status) => {
-    const count = summary.counts[status] ?? 0;
+/** Renders one badge per non-zero status count, in VERIFICATION_STATUS_ORDER. */
+function renderStatusCountBadges(counts: Record<string, number>): string {
+  return VERIFICATION_STATUS_ORDER.map((status) => {
+    const count = counts[status] ?? 0;
     if (count === 0) return "";
     return `<span style="margin-right:12px;font-size:13px">${verificationStatusBadge(status)} ${count}</span>`;
   })
     .filter(Boolean)
     .join("");
+}
+
+function renderVerificationActivityCard(
+  summary?: VerificationActivitySummary,
+): string {
+  if (!summary || summary.totalChecks === 0) return "";
+  const badges = renderStatusCountBadges(summary.counts);
+  const byCheckName = summary.byCheckName ?? {};
+  const checkNameRows = Object.keys(byCheckName)
+    .sort()
+    .map((checkName) => {
+      const checkBadges = renderStatusCountBadges(byCheckName[checkName]);
+      return `<div style="margin-bottom:6px">
+        <span style="display:inline-block;min-width:100px;font-size:12px;font-family:monospace;color:#6b7280">${escapeHtml(checkName)}</span>
+        ${checkBadges}
+      </div>`;
+    })
+    .join("");
   return `<div class="card">
       <div class="card-title">Recent Verification Activity</div>
       <div style="font-size:13px;color:#6b7280;margin-bottom:10px">${summary.totalChecks} check${summary.totalChecks === 1 ? "" : "s"} across ${summary.itemCount} recent item${summary.itemCount === 1 ? "" : "s"}</div>
-      <div>${badges}</div>
+      <div style="margin-bottom:10px">${badges}</div>
+      <div>${checkNameRows}</div>
     </div>`;
 }
 

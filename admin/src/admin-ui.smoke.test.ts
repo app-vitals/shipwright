@@ -1081,6 +1081,8 @@ describe("admin UI — authenticated pages", () => {
     expect(res.status).toBe(200);
     const html = await res.text();
     expect(html).toContain("Recent Verification Activity");
+    expect(html).toContain("unit");
+    expect(html).toContain("lint");
     expect(rollupLimits.length).toBeGreaterThan(0);
     for (const limit of rollupLimits) expect(limit).toBeGreaterThan(50);
   });

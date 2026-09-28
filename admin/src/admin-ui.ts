@@ -831,16 +831,20 @@ async function buildVerificationActivityRollup(
   );
 
   const counts: Record<string, number> = {};
+  const byCheckName: Record<string, Record<string, number>> = {};
   let totalChecks = 0;
   for (const checks of checksPerItem) {
     for (const check of checks) {
       counts[check.status] = (counts[check.status] ?? 0) + 1;
+      const statusCounts = byCheckName[check.checkName] ?? {};
+      statusCounts[check.status] = (statusCounts[check.status] ?? 0) + 1;
+      byCheckName[check.checkName] = statusCounts;
       totalChecks++;
     }
   }
   if (totalChecks === 0) return undefined;
 
-  return { totalChecks, itemCount: distinctItems.length, counts };
+  return { totalChecks, itemCount: distinctItems.length, counts, byCheckName };
 }
 
 // ─── App factory ──────────────────────────────────────────────────────────────
