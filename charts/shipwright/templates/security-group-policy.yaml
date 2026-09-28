@@ -1,0 +1,34 @@
+{{- /*
+AWS VPC CNI SecurityGroupPolicy — opt-in, default off.
+
+Renders nothing unless awsSecurityGroupPolicy.enabled=true, so a default
+install is byte-identical to one from before this template existed. See the
+awsSecurityGroupPolicy block in values.yaml for what the resource does and
+when an EKS operator needs it.
+
+podSelector.matchLabels defaults to the chart's own selector labels (every pod
+this chart renders); set it explicitly to widen the selection to bundled
+subchart pods or narrow it to one component.
+*/ -}}
+{{- if .Values.awsSecurityGroupPolicy.enabled }}
+apiVersion: vpcresources.k8s.aws/v1beta1
+kind: SecurityGroupPolicy
+metadata:
+  name: {{ default (include "shipwright.fullname" .) .Values.awsSecurityGroupPolicy.nameOverride }}
+  labels:
+    {{- include "shipwright.labels" . | nindent 4 }}
+    {{- with .Values.awsSecurityGroupPolicy.extraLabels }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- with .Values.awsSecurityGroupPolicy.podSelector.matchLabels }}
+      {{- toYaml . | nindent 6 }}
+      {{- else }}
+      {{- include "shipwright.selectorLabels" . | nindent 6 }}
+      {{- end }}
+  securityGroups:
+    groupIds:
+      {{- toYaml .Values.awsSecurityGroupPolicy.groupIds | nindent 6 }}
+{{- end }}

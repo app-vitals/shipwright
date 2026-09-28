@@ -297,7 +297,18 @@ describe("TaskStoreProvider.mergedPrsByRepo (unit) — repo × origin × bucket 
       groupBy: "day",
     });
 
-    expect(t.columns).toEqual(["repo", "origin", "period", "count"]);
+    expect(t.columns).toEqual([
+      "repo",
+      "origin",
+      "period",
+      "count",
+      "commitSum",
+      "qualifyingCount",
+      "docsRefreshSum",
+      "reviewPatchSum",
+      "ciFixSum",
+      "implementationSum",
+    ]);
 
     const totals = totalsByRepoOrigin(t);
     expect(totals.get("org/alpha:shipwright")).toBe(1);
@@ -365,5 +376,152 @@ describe("TaskStoreProvider.mergedPrsByRepo (unit) — repo × origin × bucket 
 
     const periods = new Set(t.results.map((r) => r[colIndex(t, "period")]));
     expect(periods).toEqual(new Set(["2026-06-01", "2026-06-08"]));
+  });
+});
+
+// ─── mergedPrsByRepo commit-count aggregation (CPP-1.3) ────────────────────
+
+describe("TaskStoreProvider.mergedPrsByRepo (unit) — commit-count aggregation", () => {
+  const RANGE_WIDE = { from: "2026-05-25", to: "2026-06-15" } as const;
+
+  function rowFor(
+    t: { columns: string[]; results: unknown[][] },
+    repo: string,
+    origin: string,
+  ): unknown[] | undefined {
+    return t.results.find(
+      (r) =>
+        r[colIndex(t, "repo")] === repo && r[colIndex(t, "origin")] === origin,
+    );
+  }
+
+  test("sums commitCount + breakdown fields only for origin:shipwright rows with non-null commitCount", async () => {
+    const prs: PrRecord[] = [
+      {
+        id: "pr-1",
+        repo: "org/alpha",
+        state: "merged",
+        origin: "shipwright",
+        mergedAt: "2026-06-01T12:00:00.000Z",
+        commitCount: 3,
+        commitsDocsRefresh: 1,
+        commitsReviewPatch: 1,
+        commitsCiFix: 0,
+        commitsImplementation: 1,
+      },
+      {
+        id: "pr-2",
+        repo: "org/alpha",
+        state: "merged",
+        origin: "shipwright",
+        mergedAt: "2026-06-02T12:00:00.000Z",
+        commitCount: 5,
+        commitsDocsRefresh: 0,
+        commitsReviewPatch: 2,
+        commitsCiFix: 1,
+        commitsImplementation: 2,
+      },
+      {
+        // Non-shipwright origin — must NOT contribute to the commit sums even
+        // though it carries a non-null commitCount.
+        id: "pr-3",
+        repo: "org/alpha",
+        state: "merged",
+        origin: "ci",
+        mergedAt: "2026-06-01T12:00:00.000Z",
+        commitCount: 100,
+        commitsDocsRefresh: 100,
+        commitsReviewPatch: 100,
+        commitsCiFix: 100,
+        commitsImplementation: 100,
+      },
+      {
+        // shipwright origin but null commitCount — must NOT contribute or
+        // count toward qualifyingCount.
+        id: "pr-4",
+        repo: "org/alpha",
+        state: "merged",
+        origin: "shipwright",
+        mergedAt: "2026-06-01T12:00:00.000Z",
+        commitCount: null,
+      },
+    ];
+
+    const provider = buildProvider([], prs);
+    const t = await provider.query({
+      kind: "mergedPrsByRepo",
+      range: RANGE_WIDE,
+      groupBy: "week",
+    });
+
+    const shipwrightRow = rowFor(t, "org/alpha", "shipwright");
+    expect(shipwrightRow?.[colIndex(t, "count")]).toBe(3); // pr-1, pr-2, pr-4
+    expect(shipwrightRow?.[colIndex(t, "qualifyingCount")]).toBe(2); // pr-1, pr-2 only
+    expect(shipwrightRow?.[colIndex(t, "commitSum")]).toBe(8); // 3 + 5
+    expect(shipwrightRow?.[colIndex(t, "docsRefreshSum")]).toBe(1); // 1 + 0
+    expect(shipwrightRow?.[colIndex(t, "reviewPatchSum")]).toBe(3); // 1 + 2
+    expect(shipwrightRow?.[colIndex(t, "ciFixSum")]).toBe(1); // 0 + 1
+    expect(shipwrightRow?.[colIndex(t, "implementationSum")]).toBe(3); // 1 + 2
+
+    const ciRow = rowFor(t, "org/alpha", "ci");
+    expect(ciRow?.[colIndex(t, "count")]).toBe(1);
+    expect(ciRow?.[colIndex(t, "qualifyingCount")]).toBe(0);
+    expect(ciRow?.[colIndex(t, "commitSum")]).toBe(0);
+  });
+
+  test("a null breakdown field on an otherwise-qualifying PR contributes 0 to that field's sum", async () => {
+    const prs: PrRecord[] = [
+      {
+        id: "pr-1",
+        repo: "org/gamma",
+        state: "merged",
+        origin: "shipwright",
+        mergedAt: "2026-06-01T12:00:00.000Z",
+        commitCount: 4,
+        commitsDocsRefresh: null,
+        commitsReviewPatch: null,
+        commitsCiFix: null,
+        commitsImplementation: null,
+      },
+    ];
+
+    const provider = buildProvider([], prs);
+    const t = await provider.query({
+      kind: "mergedPrsByRepo",
+      range: RANGE_WIDE,
+      groupBy: "week",
+    });
+
+    const row = rowFor(t, "org/gamma", "shipwright");
+    expect(row?.[colIndex(t, "qualifyingCount")]).toBe(1);
+    expect(row?.[colIndex(t, "commitSum")]).toBe(4);
+    expect(row?.[colIndex(t, "docsRefreshSum")]).toBe(0);
+    expect(row?.[colIndex(t, "reviewPatchSum")]).toBe(0);
+    expect(row?.[colIndex(t, "ciFixSum")]).toBe(0);
+    expect(row?.[colIndex(t, "implementationSum")]).toBe(0);
+  });
+
+  test("zero qualifying PRs for a repo → commit columns are all 0 (api.ts turns this into null)", async () => {
+    const prs: PrRecord[] = [
+      {
+        id: "pr-1",
+        repo: "org/delta",
+        state: "merged",
+        origin: "human",
+        mergedAt: "2026-06-01T12:00:00.000Z",
+        commitCount: 7,
+      },
+    ];
+
+    const provider = buildProvider([], prs);
+    const t = await provider.query({
+      kind: "mergedPrsByRepo",
+      range: RANGE_WIDE,
+      groupBy: "week",
+    });
+
+    const row = rowFor(t, "org/delta", "human");
+    expect(row?.[colIndex(t, "qualifyingCount")]).toBe(0);
+    expect(row?.[colIndex(t, "commitSum")]).toBe(0);
   });
 });

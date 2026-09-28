@@ -74,6 +74,45 @@ tests:
           path: spec.template.metadata.annotations["cluster-autoscaler.kubernetes.io/safe-to-evict"]
           value: "false"
 
+  # ── chat.podLabels ────────────────────────────────────────────────────────
+
+  - it: renders only the chart's own selector labels on the pod template by default
+    template: templates/chat-deployment.yaml
+    release:
+      name: r
+    set:
+      chat.enabled: true
+    asserts:
+      - equal:
+          path: spec.template.metadata.labels
+          value:
+            app.kubernetes.io/name: shipwright
+            app.kubernetes.io/instance: r
+            app.kubernetes.io/component: chat
+
+  - it: merges chat.podLabels onto the pod template labels without disturbing the selector labels
+    template: templates/chat-deployment.yaml
+    release:
+      name: r
+    set:
+      chat.enabled: true
+      chat.podLabels:
+        example.com/peer-datastore: "true"
+    asserts:
+      - equal:
+          path: spec.template.metadata.labels
+          value:
+            app.kubernetes.io/name: shipwright
+            app.kubernetes.io/instance: r
+            app.kubernetes.io/component: chat
+            example.com/peer-datastore: "true"
+      - equal:
+          path: spec.selector.matchLabels
+          value:
+            app.kubernetes.io/name: shipwright
+            app.kubernetes.io/instance: r
+            app.kubernetes.io/component: chat
+
   - it: wires DATABASE_URL_SHIPWRIGHT_CHAT from a custom existingSecret
     template: templates/chat-deployment.yaml
     set:

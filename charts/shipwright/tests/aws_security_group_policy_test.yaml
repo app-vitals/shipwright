@@ -1,0 +1,115 @@
+suite: AWS VPC CNI SecurityGroupPolicy (opt-in)
+# This chart ships an opt-in awsSecurityGroupPolicy block. The safety property
+# that makes it landable on its own is that it is OFF by default: with
+# `enabled: false` the template emits no documents at all, so `helm template`
+# against default values is byte-identical to the chart from before it existed.
+# The enabled path renders a vpcresources.k8s.aws/v1beta1 SecurityGroupPolicy
+# whose podSelector and groupIds are both operator-supplied.
+release:
+  name: r
+  namespace: shipwright
+templates:
+  - templates/security-group-policy.yaml
+tests:
+  # ── disabled path (the default) ────────────────────────────────────────────
+  - it: renders nothing by default
+    asserts:
+      - hasDocuments:
+          count: 0
+
+  - it: renders nothing when explicitly disabled, even with groupIds supplied
+    set:
+      awsSecurityGroupPolicy.enabled: false
+      awsSecurityGroupPolicy.groupIds:
+        - sg-aaaaaaaaaaaaaaaaa
+      awsSecurityGroupPolicy.podSelector.matchLabels:
+        app.kubernetes.io/instance: r
+    asserts:
+      - hasDocuments:
+          count: 0
+
+  # ── enabled path ──────────────────────────────────────────────────────────
+  - it: renders a single SecurityGroupPolicy on the VPC CNI CRD group when enabled
+    set:
+      awsSecurityGroupPolicy.enabled: true
+      awsSecurityGroupPolicy.groupIds:
+        - sg-aaaaaaaaaaaaaaaaa
+    asserts:
+      - hasDocuments:
+          count: 1
+      - isKind:
+          of: SecurityGroupPolicy
+      - isAPIVersion:
+          of: vpcresources.k8s.aws/v1beta1
+      - equal:
+          path: metadata.name
+          value: r-shipwright
+
+  - it: defaults podSelector.matchLabels to the chart's own selector labels
+    set:
+      awsSecurityGroupPolicy.enabled: true
+      awsSecurityGroupPolicy.groupIds:
+        - sg-aaaaaaaaaaaaaaaaa
+    asserts:
+      - equal:
+          path: spec.podSelector.matchLabels
+          value:
+            app.kubernetes.io/name: shipwright
+            app.kubernetes.io/instance: r
+
+  - it: uses operator-supplied podSelector.matchLabels verbatim when set
+    set:
+      awsSecurityGroupPolicy.enabled: true
+      awsSecurityGroupPolicy.groupIds:
+        - sg-aaaaaaaaaaaaaaaaa
+      awsSecurityGroupPolicy.podSelector.matchLabels:
+        app.kubernetes.io/instance: r
+        app.kubernetes.io/component: admin
+    asserts:
+      - equal:
+          path: spec.podSelector.matchLabels
+          value:
+            app.kubernetes.io/instance: r
+            app.kubernetes.io/component: admin
+
+  - it: renders every supplied group id under spec.securityGroups.groupIds, in order
+    set:
+      awsSecurityGroupPolicy.enabled: true
+      awsSecurityGroupPolicy.groupIds:
+        - sg-aaaaaaaaaaaaaaaaa
+        - sg-bbbbbbbbbbbbbbbbb
+    asserts:
+      - equal:
+          path: spec.securityGroups.groupIds
+          value:
+            - sg-aaaaaaaaaaaaaaaaa
+            - sg-bbbbbbbbbbbbbbbbb
+
+  - it: honors nameOverride
+    set:
+      awsSecurityGroupPolicy.enabled: true
+      awsSecurityGroupPolicy.nameOverride: my-policy
+      awsSecurityGroupPolicy.groupIds:
+        - sg-aaaaaaaaaaaaaaaaa
+    asserts:
+      - equal:
+          path: metadata.name
+          value: my-policy
+
+  - it: carries the chart's common labels and merges extraLabels on top
+    set:
+      awsSecurityGroupPolicy.enabled: true
+      awsSecurityGroupPolicy.groupIds:
+        - sg-aaaaaaaaaaaaaaaaa
+      awsSecurityGroupPolicy.extraLabels:
+        example.com/owner: platform
+    asserts:
+      - equal:
+          path: metadata.labels["app.kubernetes.io/managed-by"]
+          value: Helm
+      - equal:
+          path: metadata.labels["app.kubernetes.io/instance"]
+          value: r
+      - equal:
+          path: metadata.labels["example.com/owner"]
+          value: platform

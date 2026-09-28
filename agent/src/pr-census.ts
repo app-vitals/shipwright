@@ -124,7 +124,7 @@ export function classifyPrOrigin(input: ClassifyPrOriginInput): PrOrigin {
   return "unknown";
 }
 
-/** Shape of one `gh pr list --json number,title,author,headRefName,createdAt,mergedAt` result. */
+/** Shape of one `gh pr list --json number,title,author,headRefName,createdAt,mergedAt,commits` result. */
 export interface GhCensusPr {
   number: number;
   title: string | null;
@@ -132,11 +132,32 @@ export interface GhCensusPr {
   headRefName: string | null;
   createdAt: string | null;
   mergedAt: string | null;
+  /**
+   * REQUIRED, deliberately: every `GhCensusPr` producer must request
+   * `commits` in its own `gh pr list --json` field list (this file's
+   * incremental sweep AND `pr-origin-backfill.ts`'s plain historical
+   * listing). When the field is absent, `gh` yields `undefined` and
+   * `buildCensusEntry()` cannot tell "this PR has no commits" from "nobody
+   * asked for them" — it would stamp a false-zero `commitCount: 0` plus an
+   * all-zero breakdown onto real PRs, and the task-store's census upsert
+   * writes those fields unconditionally whenever supplied (see
+   * `upsertOriginFields()`), so the zeros would stick. Typing it required
+   * makes forgetting the field a typecheck failure instead of silent bad
+   * metrics.
+   *
+   * Only `messageHeadline` is read (CPP-1.2's message-prefix classification
+   * rules), so that's all this models — `gh` itself returns richer objects
+   * (`authoredDate`, `authors`, `committedDate`, `messageBody`, `oid`) that
+   * this pass has no use for.
+   */
+  commits: { messageHeadline: string }[];
 }
 
-/** Minimal task-store Task shape this pass needs — just enough to test for a `(repo, pr)` match. */
+/** Minimal task-store Task shape this pass needs — just enough to test for a `(repo, pr)` match and read the matched row's ci-fix retry counter. */
 export interface CensusTaskRecord {
   pr?: number | null;
+  /** Retry-attempt counter set by `/shipwright:dev-task`'s Step 10a and `/shipwright:patch`'s CI-fix loop (same field/meaning as check-helpers.ts's `Task.ciFixAttempts`). Read straight off this row into `CensusEntry.commitsCiFix` — never derived by scanning commit messages — but clamped to the commits actually available, so the four breakdown buckets always sum to `commitCount` (see `classifyCommits`). */
+  ciFixAttempts?: number | null;
 }
 
 /** One entry of a `POST /prs/census` batch (mirrors task-store's `CensusEntry` schema). */
@@ -150,6 +171,19 @@ export interface CensusEntry {
   state: "merged";
   mergedAt: string | null;
   prCreatedAt: string | null;
+  /** `pr.commits.length` — always populated once classified, regardless of origin. */
+  commitCount: number | null;
+  /**
+   * The four breakdown buckets below are only populated (non-null) when a
+   * task-store row matched this PR (`hasTaskRowMatch`) — there's no task row
+   * to attribute ci-fix/review-patch/docs-refresh provenance to for a
+   * non-shipwright-origin PR, so this pass doesn't guess; all four are `null`
+   * in that case even though `commitCount` itself is still set.
+   */
+  commitsDocsRefresh: number | null;
+  commitsReviewPatch: number | null;
+  commitsCiFix: number | null;
+  commitsImplementation: number | null;
 }
 
 export interface PrCensusDeps {
@@ -200,23 +234,117 @@ export function __resetPrCensusThrottleForTests(): void {
 
 // ─── Core logic ───────────────────────────────────────────────────────────────
 
+/** Pure result of classifying one PR's commit array into the four CensusEntry breakdown buckets. */
+export interface CommitBreakdown {
+  commitsDocsRefresh: number;
+  commitsReviewPatch: number;
+  commitsCiFix: number;
+  commitsImplementation: number;
+}
+
+/** `docs: refresh` commits (docs-refresher.md's sub-agent commit convention). */
+const DOCS_REFRESH_PREFIX = "docs: refresh";
+
+/**
+ * Deterministic message-prefix commit classifier — only called when a task
+ * row matched the PR (see `buildCensusEntry`); `ciFixAttempts` is the
+ * matched row's counter (already defaulted to 0 by the caller when
+ * null/undefined), NOT derived by scanning commit messages here.
+ *
+ * A commit matches at most one of the two message-derived buckets
+ * (docs-refresh, review-patch) — the prefixes are mutually exclusive by
+ * construction (`docs: refresh...` vs. `fix: address review findings on
+ * #N...`) — so the four buckets never double-count a single commit.
+ *
+ * The four buckets always sum to exactly `commits.length` (the entry's
+ * `commitCount`) — that sum invariant is the structural guarantee downstream
+ * metrics consumers aggregate on, so it holds unconditionally, by
+ * construction, rather than only in the common case.
+ *
+ * That's why `commitsCiFix` is CLAMPED to the budget left over after the two
+ * message-derived buckets rather than copied verbatim from `ciFixAttempts`:
+ * `ciFixAttempts` is a retry-attempt counter tracked independently of this
+ * PR's actual commit count, so it can exceed the commits actually present
+ * (e.g. a task retried CI fixes across amended/squashed commits that no
+ * longer show up 1:1 in `pr.commits`, or a re-run that bumped the counter
+ * without landing a commit). Left unclamped, a `commitCount: 1` PR with
+ * `ciFixAttempts: 5` would report buckets summing to 5. "commitsCiFix equals
+ * ciFixAttempts" therefore holds only when the commit count has room to
+ * represent it — which is every non-degenerate case; the clamp is a
+ * correctness floor for the degenerate ones, not the normal path.
+ * `commitsImplementation` is then the true remainder of that same budget, so
+ * it can never go negative and needs no separate floor of its own.
+ */
+export function classifyCommits(
+  commits: { messageHeadline: string }[],
+  prNumber: number,
+  ciFixAttempts: number,
+): CommitBreakdown {
+  const reviewPatchPrefix = `fix: address review findings on #${prNumber}`;
+
+  let commitsDocsRefresh = 0;
+  let commitsReviewPatch = 0;
+  for (const commit of commits) {
+    if (commit.messageHeadline.startsWith(DOCS_REFRESH_PREFIX)) {
+      commitsDocsRefresh += 1;
+    } else if (commit.messageHeadline.startsWith(reviewPatchPrefix)) {
+      commitsReviewPatch += 1;
+    }
+  }
+
+  // Commits not already claimed by a message-derived bucket — the budget
+  // commitsCiFix and commitsImplementation split between them.
+  const remainingBudget = Math.max(
+    0,
+    commits.length - commitsDocsRefresh - commitsReviewPatch,
+  );
+  // Lower-bounded at 0 as well as upper-bounded at the budget: a negative
+  // ciFixAttempts (garbage on the task row) would otherwise produce a
+  // negative bucket and an inflated implementation count.
+  const commitsCiFix = Math.min(Math.max(0, ciFixAttempts), remainingBudget);
+  const commitsImplementation = remainingBudget - commitsCiFix;
+
+  return {
+    commitsDocsRefresh,
+    commitsReviewPatch,
+    commitsCiFix,
+    commitsImplementation,
+  };
+}
+
 /**
  * Classify one `gh pr list` result against the repo's task-store tasks and
  * build its `POST /prs/census` entry. Exported so pr-origin-backfill.ts
  * (POB-1.1's one-off historical backfill script) can reuse this exact
  * GhCensusPr -> CensusEntry assembly instead of duplicating it.
+ *
+ * `tasksByPr` is a lookup (not just a membership Set) because the commit
+ * breakdown below needs the matched row's `ciFixAttempts`, not just the fact
+ * that a row exists.
  */
 export function buildCensusEntry(
   repo: string,
   pr: GhCensusPr,
-  taskPrNumbers: Set<number>,
+  tasksByPr: Map<number, CensusTaskRecord>,
 ): CensusEntry {
   const authorLogin = pr.author?.login ?? null;
+  const matchedTask = tasksByPr.get(pr.number);
+  const hasTaskRowMatch = matchedTask !== undefined;
   const origin = classifyPrOrigin({
     authorLogin,
     headRefName: pr.headRefName,
-    hasTaskRowMatch: taskPrNumbers.has(pr.number),
+    hasTaskRowMatch,
   });
+
+  const commits = pr.commits ?? [];
+  const commitCount = commits.length;
+
+  // No task row -> no provenance to attribute ci-fix/review-patch/docs-refresh
+  // to for this (non-shipwright-origin) PR. Don't guess: leave all four
+  // breakdown buckets null even though commitCount is still populated.
+  const breakdown = hasTaskRowMatch
+    ? classifyCommits(commits, pr.number, matchedTask.ciFixAttempts ?? 0)
+    : null;
 
   return {
     repo,
@@ -228,6 +356,11 @@ export function buildCensusEntry(
     state: "merged",
     mergedAt: pr.mergedAt ?? null,
     prCreatedAt: pr.createdAt ?? null,
+    commitCount,
+    commitsDocsRefresh: breakdown?.commitsDocsRefresh ?? null,
+    commitsReviewPatch: breakdown?.commitsReviewPatch ?? null,
+    commitsCiFix: breakdown?.commitsCiFix ?? null,
+    commitsImplementation: breakdown?.commitsImplementation ?? null,
   };
 }
 
@@ -260,7 +393,7 @@ async function processRepoCensus(
     "--search",
     `merged:>=${cursor}`,
     "--json",
-    "number,title,author,headRefName,createdAt,mergedAt",
+    "number,title,author,headRefName,createdAt,mergedAt,commits",
     "--repo",
     repo,
   ]);
@@ -268,14 +401,15 @@ async function processRepoCensus(
   if (prs.length === 0) return; // nothing new — zero POSTs
 
   const tasks = await deps.listTasksWithPr(repo);
-  const taskPrNumbers = new Set(
-    tasks
-      .map((task) => task.pr)
-      .filter((pr): pr is number => pr !== null && pr !== undefined),
-  );
+  const tasksByPr = new Map<number, CensusTaskRecord>();
+  for (const task of tasks) {
+    if (task.pr !== null && task.pr !== undefined) {
+      tasksByPr.set(task.pr, task);
+    }
+  }
 
   const entries = prs
-    .map((pr) => buildCensusEntry(repo, pr, taskPrNumbers))
+    .map((pr) => buildCensusEntry(repo, pr, tasksByPr))
     .sort((a, b) => (a.mergedAt ?? "").localeCompare(b.mergedAt ?? ""));
 
   for (let i = 0; i < entries.length; i += CENSUS_CHUNK_SIZE) {

@@ -7,6 +7,10 @@
  *     mergedAt, and confirmation that classification is delegated to
  *     pr-census.ts's classifyPrOrigin()/buildCensusEntry() rather than
  *     reimplemented.
+ *   - runBackfillForRepo()'s own `--json` field list including `commits`, and
+ *     the matched task row (not a placeholder) reaching buildCensusEntry() —
+ *     without both, every backfilled entry would carry a false-zero
+ *     commitCount/breakdown that the task-store then writes unconditionally.
  *   - runBackfillForRepo()'s >200-entry chunking into multiple
  *     postCensusBatch calls, and per-repo error isolation (a thrown
  *     ghJson/postCensusBatch error is caught and surfaced in the returned
@@ -83,6 +87,7 @@ function pr(overrides: Partial<GhCensusPr>): GhCensusPr {
     headRefName: "feat/some-branch",
     createdAt: "2026-06-01T00:00:00.000Z",
     mergedAt: "2026-06-02T00:00:00.000Z",
+    commits: [],
     ...overrides,
   };
 }
@@ -97,7 +102,7 @@ describe("buildBackfillEntries", () => {
       "org/repo",
       [pr({ number: 1, mergedAt: CUTOFF })],
       CUTOFF,
-      new Set(),
+      new Map(),
     );
     expect(entries.map((e) => e.prNumber)).toEqual([1]);
   });
@@ -108,7 +113,7 @@ describe("buildBackfillEntries", () => {
       "org/repo",
       [pr({ number: 1, mergedAt: justBefore })],
       CUTOFF,
-      new Set(),
+      new Map(),
     );
     expect(entries).toHaveLength(0);
   });
@@ -119,7 +124,7 @@ describe("buildBackfillEntries", () => {
       "org/repo",
       [pr({ number: 1, mergedAt: justAfter })],
       CUTOFF,
-      new Set(),
+      new Map(),
     );
     expect(entries.map((e) => e.prNumber)).toEqual([1]);
   });
@@ -129,7 +134,7 @@ describe("buildBackfillEntries", () => {
       "org/repo",
       [pr({ number: 1, mergedAt: null })],
       CUTOFF,
-      new Set(),
+      new Map(),
     );
     expect(entries).toHaveLength(0);
   });
@@ -143,7 +148,7 @@ describe("buildBackfillEntries", () => {
         pr({ number: 2, mergedAt: "2026-07-02T00:00:00.000Z" }),
       ],
       CUTOFF,
-      new Set(),
+      new Map(),
     );
     expect(entries.map((e) => e.prNumber)).toEqual([1, 2, 3]);
   });
@@ -159,7 +164,7 @@ describe("buildBackfillEntries", () => {
         }),
       ],
       CUTOFF,
-      new Set([42]),
+      new Map([[42, { pr: 42 }]]),
     );
     // classifyPrOrigin's documented precedence: a task-row match wins over
     // an author login that would otherwise say dependency_bot. If this
@@ -182,7 +187,7 @@ describe("buildBackfillEntries", () => {
         }),
       ],
       CUTOFF,
-      new Set(),
+      new Map(),
     );
     expect(entries[0].origin).toBe("dependency_bot");
   });
@@ -213,6 +218,86 @@ describe("runBackfillForRepo", () => {
     expect(summary.batchesPosted).toBe(1);
     expect(postCalls).toHaveLength(1);
     expect(postCalls[0].entries.map((e) => e.prNumber)).toEqual([1, 2]);
+  });
+
+  test("requests commits in its own --json field list, so backfilled entries carry real commit counts instead of false zeros", async () => {
+    const { deps, ghCalls, postCalls } = makeDeps({
+      mergedPrsByRepo: {
+        "org/repo-a": [
+          pr({
+            number: 1,
+            mergedAt: "2026-07-01T00:00:00.000Z",
+            commits: [
+              { messageHeadline: "feat: build the thing" },
+              { messageHeadline: "feat: build more of the thing" },
+            ],
+          }),
+        ],
+      },
+    });
+
+    await runBackfillForRepo(deps, "org/repo-a", CUTOFF);
+
+    expect(ghCalls[0].args).toContain(
+      "number,title,author,headRefName,createdAt,mergedAt,commits",
+    );
+    expect(postCalls[0].entries[0].commitCount).toBe(2);
+  });
+
+  test("threads the matched task row's ciFixAttempts through to the breakdown rather than stamping an all-zero one", async () => {
+    const { deps, postCalls } = makeDeps({
+      mergedPrsByRepo: {
+        "org/repo-a": [
+          pr({
+            number: 42,
+            author: { login: "some-human" },
+            mergedAt: "2026-07-01T00:00:00.000Z",
+            commits: [
+              { messageHeadline: "docs: refresh docs/agent.md" },
+              { messageHeadline: "fix: address review findings on #42" },
+              { messageHeadline: "fix: make CI green" },
+              { messageHeadline: "feat: build the thing" },
+            ],
+          }),
+        ],
+      },
+      tasksByRepo: { "org/repo-a": [{ pr: 42, ciFixAttempts: 1 }] },
+    });
+
+    await runBackfillForRepo(deps, "org/repo-a", CUTOFF);
+
+    const entry = postCalls[0].entries[0];
+    expect(entry.origin).toBe("shipwright");
+    expect(entry.commitCount).toBe(4);
+    expect(entry.commitsDocsRefresh).toBe(1);
+    expect(entry.commitsReviewPatch).toBe(1);
+    expect(entry.commitsCiFix).toBe(1); // from the task row, not a placeholder 0
+    expect(entry.commitsImplementation).toBe(1);
+  });
+
+  test("a non-shipwright-origin backfilled PR keeps a real commitCount with a null breakdown", async () => {
+    const { deps, postCalls } = makeDeps({
+      mergedPrsByRepo: {
+        "org/repo-a": [
+          pr({
+            number: 7,
+            author: { login: "some-human" },
+            mergedAt: "2026-07-01T00:00:00.000Z",
+            commits: [{ messageHeadline: "feat: manual fix" }],
+          }),
+        ],
+      },
+    });
+
+    await runBackfillForRepo(deps, "org/repo-a", CUTOFF);
+
+    const entry = postCalls[0].entries[0];
+    expect(entry.origin).toBe("human");
+    expect(entry.commitCount).toBe(1);
+    expect(entry.commitsDocsRefresh).toBeNull();
+    expect(entry.commitsReviewPatch).toBeNull();
+    expect(entry.commitsCiFix).toBeNull();
+    expect(entry.commitsImplementation).toBeNull();
   });
 
   test("chunks a >200-entry batch into multiple postCensusBatch calls of at most 200 entries each", async () => {

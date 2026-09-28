@@ -292,3 +292,22 @@ tests:
     asserts:
       - failedTemplate:
           errorPattern: "issuer"
+
+  # awsSecurityGroupPolicy mirrors cloudSqlProxy's if/then guard — once enabled,
+  # groupIds is required and must hold at least one id. A branch ENI carrying an
+  # empty group list is rejected by the VPC CNI admission webhook, so failing the
+  # render up front is the more actionable error.
+  - it: rejects awsSecurityGroupPolicy.enabled=true with no group ids
+    set:
+      awsSecurityGroupPolicy.enabled: true
+    asserts:
+      - failedTemplate:
+          errorPattern: "at '/awsSecurityGroupPolicy/groupIds': minItems"
+
+  - it: accepts awsSecurityGroupPolicy.enabled=true when at least one group id is supplied
+    set:
+      awsSecurityGroupPolicy.enabled: true
+      awsSecurityGroupPolicy.groupIds:
+        - sg-aaaaaaaaaaaaaaaaa
+    asserts:
+      - notFailedTemplate: {}

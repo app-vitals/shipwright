@@ -72,6 +72,99 @@ tests:
           path: spec.template.metadata.annotations["cluster-autoscaler.kubernetes.io/safe-to-evict"]
           value: "false"
 
+  # ── admin.podLabels ───────────────────────────────────────────────────────
+  # An opt-in hook for attaching a workload to a label-selecting cluster
+  # policy. The default must add nothing, so the rendered chart is unchanged
+  # for every install that does not set it.
+
+  - it: renders only the chart's own selector labels on the pod template by default
+    template: templates/admin-deployment.yaml
+    release:
+      name: r
+    asserts:
+      - equal:
+          path: spec.template.metadata.labels
+          value:
+            app.kubernetes.io/name: shipwright
+            app.kubernetes.io/instance: r
+            app.kubernetes.io/component: admin
+
+  - it: merges admin.podLabels onto the pod template labels without disturbing the selector labels
+    template: templates/admin-deployment.yaml
+    release:
+      name: r
+    set:
+      admin.podLabels:
+        example.com/peer-datastore: "true"
+        example.com/tier: data
+    asserts:
+      - equal:
+          path: spec.template.metadata.labels
+          value:
+            app.kubernetes.io/name: shipwright
+            app.kubernetes.io/instance: r
+            app.kubernetes.io/component: admin
+            example.com/peer-datastore: "true"
+            example.com/tier: data
+      # The selector is immutable on a live Deployment — it must keep matching
+      # the pod template it was created with.
+      - equal:
+          path: spec.selector.matchLabels
+          value:
+            app.kubernetes.io/name: shipwright
+            app.kubernetes.io/instance: r
+            app.kubernetes.io/component: admin
+
+  - it: drops podLabels keys that would clobber an app.kubernetes.io selector label
+    template: templates/admin-deployment.yaml
+    release:
+      name: r
+    set:
+      admin.podLabels:
+        app.kubernetes.io/name: hijacked
+        app.kubernetes.io/instance: hijacked
+        app.kubernetes.io/component: hijacked
+        example.com/kept: "yes"
+    asserts:
+      - equal:
+          path: spec.template.metadata.labels
+          value:
+            app.kubernetes.io/name: shipwright
+            app.kubernetes.io/instance: r
+            app.kubernetes.io/component: admin
+            example.com/kept: "yes"
+
+  # Kubernetes label values are strings; an unquoted `true` in values.yaml
+  # arrives as a bool and would render a manifest the API server rejects.
+  - it: renders a non-string podLabels value as a string
+    template: templates/admin-deployment.yaml
+    set:
+      admin.podLabels:
+        example.com/peer-datastore: true
+        example.com/ordinal: 3
+    asserts:
+      - equal:
+          path: spec.template.metadata.labels["example.com/peer-datastore"]
+          value: "true"
+      - equal:
+          path: spec.template.metadata.labels["example.com/ordinal"]
+          value: "3"
+
+  - it: still renders podAnnotations alongside podLabels
+    template: templates/admin-deployment.yaml
+    set:
+      admin.podLabels:
+        example.com/peer-datastore: "true"
+      admin.podAnnotations:
+        cluster-autoscaler.kubernetes.io/safe-to-evict: "false"
+    asserts:
+      - equal:
+          path: spec.template.metadata.labels["example.com/peer-datastore"]
+          value: "true"
+      - equal:
+          path: spec.template.metadata.annotations["cluster-autoscaler.kubernetes.io/safe-to-evict"]
+          value: "false"
+
   - it: applies the configured admin resources
     template: templates/admin-deployment.yaml
     set:

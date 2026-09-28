@@ -10,6 +10,36 @@ independent of `appVersion`. CI enforces this with
 `ct lint --check-version-increment`. Each release here must mirror the
 `artifacthub.io/changes` annotation in `Chart.yaml`.
 
+## [1.22.3] - 2026-09-28
+
+### Changed
+
+- auto-bump to chart v1.22.3 triggered by release tag(s): `admin-v1.203.0`, `agent-v1.315.0`, `chat-v1.111.0`, `metrics-v1.114.0`, `task-store-v1.150.0`
+
+## [1.22.2] - 2026-09-27
+
+### Changed
+
+- auto-bump to chart v1.22.2 triggered by release tag(s): `task-store-v1.149.0`
+
+## [1.22.1] - 2026-09-27
+
+### Changed
+
+- auto-bump to chart v1.22.1 triggered by release tag(s): `agent-v1.314.0`
+
+## [1.22.0] - 2026-09-25
+
+### Added
+
+- Optional `podLabels` for the `admin`, `taskStore`, and `chat` workloads — extra labels on the pod template (`spec.template.metadata.labels`), mirroring the existing `podAnnotations` shape and placement. Empty by default and purely additive: with `podLabels` unset, `helm template` output is byte-identical to chart 1.21.0, so this lands without touching any existing install. It exists so a single workload can opt into a cluster policy that selects pods by label — a `NetworkPolicy`, an admission or scheduling webhook, a service-mesh injector, or a CNI feature such as the chart's own `awsSecurityGroupPolicy` — without widening that policy to every pod in the release, which matters when the policy can reject a pod it matches and the blast radius is admission-time. A new shared `shipwright.podLabels` helper renders the value with two guards: a key that collides with one of the workload's `app.kubernetes.io/*` selector labels is **dropped** rather than applied (a Deployment's `spec.selector` is immutable after creation, so a value able to rewrite the pod template's selector labels would break upgrades outright), and values are coerced to strings (Kubernetes label values are strings, so an unquoted `true` in values.yaml would otherwise render a bool the API server rejects). Covered in `tests/admin_workload_test.yaml`, `tests/task_store_workload_test.yaml`, and `tests/chat_workload_test.yaml` across the empty-default, populated, selector-collision, and non-string-value paths; the chart README gains a values-table row and an "Opting a workload into a label-selecting cluster policy" section, and `docs/deploy-kubernetes-addons.md` shows the pairing with `awsSecurityGroupPolicy`.
+
+## [1.21.0] - 2026-09-25
+
+### Added
+
+- Optional `awsSecurityGroupPolicy` — an opt-in AWS VPC CNI `SecurityGroupPolicy` (`vpcresources.k8s.aws/v1beta1`) for EKS clusters running security groups for pods. `awsSecurityGroupPolicy.enabled` defaults to `false` and `templates/security-group-policy.yaml` renders no documents at all when off, so `helm template` output for existing values is unchanged. When enabled, the resource selects pods by `awsSecurityGroupPolicy.podSelector.matchLabels` (empty → the chart's own `shipwright.selectorLabels`, i.e. every pod this chart renders but not bundled subchart pods) and attaches `awsSecurityGroupPolicy.groupIds` to their branch ENIs; `nameOverride` renames the resource (default: chart fullname) and `extraLabels` merges onto the chart's common labels. `values.schema.json` gains a matching `if`/`then` guard, mirroring `cloudSqlProxy.connectionName`, that requires at least one entry in `groupIds` once enabled — the VPC CNI admission webhook rejects an empty group list, so failing the render is the more actionable error. This opens the network path for a pod to reach a resource whose security group admits a specific client security group rather than a CIDR (typically a managed database or database proxy in a peered VPC); a branch ENI carries only the listed groups, so the cluster's node security group must be included or the pod loses cluster-internal networking and DNS. Network path only — pointing Shipwright at that database is still `postgresql.enabled: false` plus `externalDatabase`. New `tests/aws_security_group_policy_test.yaml` covers both the disabled and enabled paths, with the schema guard covered in `tests/values_schema_test.yaml`; the chart README gains values-table rows and `docs/deploy-kubernetes-addons.md` a worked "AWS pod security groups (EKS, optional)" section.
+
 ## [1.20.120] - 2026-09-25
 
 ### Changed

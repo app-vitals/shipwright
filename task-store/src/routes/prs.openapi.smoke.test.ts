@@ -14,6 +14,7 @@ import type { TaskStoreAuthEnv } from "../auth.ts";
 import { ApiError, NotFoundError } from "../errors.ts";
 import type { PullRequest } from "../index.ts";
 import type {
+  CensusEntryInput,
   PullRequestListFilters,
   PullRequestListResult,
   PullRequestServiceLike,
@@ -223,8 +224,28 @@ function fakePrService(
       return {} as never;
     },
 
-    async census() {
-      return [];
+    async census(entries: CensusEntryInput[]): Promise<PullRequest[]> {
+      return entries.map((entry) => {
+        const record = makePr({
+          id: `pr-${entry.repo}-${entry.prNumber}`,
+          repo: entry.repo,
+          prNumber: entry.prNumber,
+          origin: entry.origin ?? null,
+          authorLogin: entry.authorLogin ?? null,
+          headRef: entry.headRef ?? null,
+          title: entry.title ?? null,
+          state: entry.state ?? "open",
+          mergedAt: entry.mergedAt ?? null,
+          prCreatedAt: entry.prCreatedAt ?? null,
+          commitCount: entry.commitCount ?? null,
+          commitsDocsRefresh: entry.commitsDocsRefresh ?? null,
+          commitsReviewPatch: entry.commitsReviewPatch ?? null,
+          commitsCiFix: entry.commitsCiFix ?? null,
+          commitsImplementation: entry.commitsImplementation ?? null,
+        });
+        store.set(record.id, record);
+        return record;
+      });
     },
 
     async getCensusCursor() {
@@ -488,6 +509,35 @@ describe("createPrsRoutes — OpenAPIHono migration (TSM-1.3)", () => {
     const body = (await res.json()) as PullRequest;
     expect(body.lastCiFailureSignature).toBe("sig-a");
     expect(body.consecutiveCiFailureCount).toBe(2);
+  });
+
+  it("POST /census accepts the 5 commit-count fields and returns them in the response", async () => {
+    const app = createPrsRoutes(fakePrService());
+    const parent = makeAdminParent(app);
+    const res = await parent.request("/census", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify([
+        {
+          repo: "org/repo",
+          prNumber: 42,
+          commitCount: 12,
+          commitsDocsRefresh: 1,
+          commitsReviewPatch: 3,
+          commitsCiFix: 2,
+          commitsImplementation: 6,
+        },
+      ]),
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { prs: PullRequest[] };
+    expect(body.prs).toHaveLength(1);
+    const [pr] = body.prs;
+    expect(pr.commitCount).toBe(12);
+    expect(pr.commitsDocsRefresh).toBe(1);
+    expect(pr.commitsReviewPatch).toBe(3);
+    expect(pr.commitsCiFix).toBe(2);
+    expect(pr.commitsImplementation).toBe(6);
   });
 
   it("POST /:id/release route is registered", async () => {

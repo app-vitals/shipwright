@@ -725,6 +725,46 @@
         },
         "required": ["connectionName"]
       }
+    },
+    "awsSecurityGroupPolicy": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "enabled": { "type": "boolean" },
+        "nameOverride": { "type": "string" },
+        "extraLabels": {
+          "type": "object",
+          "additionalProperties": { "type": "string" }
+        },
+        "podSelector": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "matchLabels": {
+              "type": "object",
+              "additionalProperties": { "type": "string" }
+            }
+          }
+        },
+        "groupIds": {
+          "type": "array",
+          "items": { "type": "string" }
+        }
+      },
+      "if": {
+        "properties": { "enabled": { "const": true } },
+        "required": ["enabled"]
+      },
+      "then": {
+        "properties": {
+          "groupIds": {
+            "type": "array",
+            "items": { "type": "string" },
+            "minItems": 1
+          }
+        },
+        "required": ["groupIds"]
+      }
     }
   },
   "if": {
