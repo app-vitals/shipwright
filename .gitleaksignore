@@ -17,8 +17,10 @@ d36760ea08f97070d42d1c071c4a33f6064e4fb1:docs/test-readiness/test-system.md:gene
 # Suppressed via HITL task security-gitleaks-secret-shipwright-2026-W37 on 2026-09-08 — confirmed false positive (fake test PEM fixture)
 2e0c9eb31d29a29d0a5759f6008594103f56cffc:admin/src/admin-local-agent.smoke.test.ts:private-key:1161
 # Suppressed via HITL task security-gitleaks-secret-shipwright-2026-W40 on 2026-09-28 — confirmed false positive (public IndexNow verification key, published by protocol design)
+# NOTE: this SHA only exists on the still-open fix/site-bing-seo-indexnow branch (#3596). Once #3596 squash-merges, a follow-up entry with the new post-merge commit SHA will likely be needed for this same file/line (see test-system.md:12/:215 above for this exact precedent).
 03f2c70e3546c2e48c478a222502054d72d222a6:site/scripts/indexnow.mjs:generic-api-key:17
 # Suppressed via HITL task security-gitleaks-secret-shipwright-2026-W40 on 2026-09-28 — confirmed false positive (public IndexNow verification key, published by protocol design)
+# NOTE: this SHA only exists on the still-open fix/site-bing-seo-indexnow branch (#3596). Once #3596 squash-merges, a follow-up entry with the new post-merge commit SHA will likely be needed for this same file/line (see test-system.md:12/:215 above for this exact precedent).
 03f2c70e3546c2e48c478a222502054d72d222a6:site/tests/indexnow.spec.ts:generic-api-key:47
 # Suppressed via HITL task security-gitleaks-secret-shipwright-2026-W40 on 2026-09-28 — confirmed false positive (secret names only, no live value; historical commit predates the wording fix already on main)
 287f0c8fbbd668b42f75d4a1760a0e006edcf64d:docs/test-readiness/test-system.md:generic-api-key:391
