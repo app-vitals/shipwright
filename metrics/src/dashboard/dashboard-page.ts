@@ -342,6 +342,21 @@ export function renderDashboardPage(opts: DashboardPageOptions): string {
             </div>
           </div>
 
+          <!-- PR Commits -->
+          <div class="quality-panel">
+            <h3 class="panel-title">PR Commits</h3>
+            <div class="stat-row" data-metric="pr-commits-total">
+              <span class="stat-label">Avg per PR${infoIcon("Fleet-wide weighted-average commits per Shipwright PR")}</span>
+              <span class="stat-value" id="pr-commits-total">--</span>
+            </div>
+            <div class="pr-commits-breakdown" id="pr-commits-breakdown">
+              <div class="bar-item" data-metric="pr-commits-docs-refresh"><span class="bar-label">Docs refresh${infoIcon("Avg commits for documentation updates")}</span><div class="bar-track"><div class="bar-fill" id="bar-pr-commits-docs-refresh"></div></div><span class="bar-val" id="val-pr-commits-docs-refresh">--</span></div>
+              <div class="bar-item" data-metric="pr-commits-review-patch"><span class="bar-label">Review patch${infoIcon("Avg commits for review feedback changes")}</span><div class="bar-track"><div class="bar-fill" id="bar-pr-commits-review-patch"></div></div><span class="bar-val" id="val-pr-commits-review-patch">--</span></div>
+              <div class="bar-item" data-metric="pr-commits-ci-fix"><span class="bar-label">CI fix${infoIcon("Avg commits for CI gate fixes")}</span><div class="bar-track"><div class="bar-fill" id="bar-pr-commits-ci-fix"></div></div><span class="bar-val" id="val-pr-commits-ci-fix">--</span></div>
+              <div class="bar-item" data-metric="pr-commits-implementation"><span class="bar-label">Implementation${infoIcon("Avg commits for implementation work")}</span><div class="bar-track"><div class="bar-fill" id="bar-pr-commits-implementation"></div></div><span class="bar-val" id="val-pr-commits-implementation">--</span></div>
+            </div>
+          </div>
+
         </div>
       </section>
 
