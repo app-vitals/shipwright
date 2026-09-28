@@ -9,11 +9,12 @@ import {
 } from "./agent-provisioner.ts";
 import type { AgentTokenService } from "./agent-tokens.ts";
 import {
-  DEFAULT_SESSION_ALERT_INTERVAL_MS,
   buildProvisioner,
   checkDbReady,
+  DEFAULT_SESSION_ALERT_INTERVAL_MS,
   resolvePublicRepo,
   resolveSessionAlertIntervalMs,
+  resolveTrialExpiryWarningDays,
   runMigrations,
 } from "./main.ts";
 
@@ -333,6 +334,39 @@ describe("resolveSessionAlertIntervalMs", () => {
           SHIPWRIGHT_ADMIN_SESSION_ALERT_INTERVAL_MS: raw,
         }),
       ).toBe(DEFAULT_SESSION_ALERT_INTERVAL_MS);
+    }
+  });
+});
+
+// ─── resolveTrialExpiryWarningDays ──────────────────────────────────────────
+
+// The pure env rule behind the trial-expiry sweeper's warning window
+// (ATE-2.1). Tested without touching process.env. Unlike
+// resolveSessionAlertIntervalMs, returning `undefined` on an unset/invalid
+// override is intentional: TrialExpiryWarningSweeper's own constructor
+// applies DEFAULT_TRIAL_EXPIRY_WARNING_DAYS when its `warningDays` option is
+// omitted, so this resolver stays a thin env-parsing layer rather than
+// duplicating that default.
+describe("resolveTrialExpiryWarningDays", () => {
+  it("returns undefined when unset, letting the sweeper apply its own default", () => {
+    expect(resolveTrialExpiryWarningDays({})).toBeUndefined();
+  });
+
+  it("uses an explicit positive override", () => {
+    expect(
+      resolveTrialExpiryWarningDays({
+        SHIPWRIGHT_ADMIN_TRIAL_EXPIRY_WARNING_DAYS: "7",
+      }),
+    ).toBe(7);
+  });
+
+  it("returns undefined for blank, non-numeric, zero, or negative values", () => {
+    for (const raw of ["", "   ", "soon", "0", "-1"]) {
+      expect(
+        resolveTrialExpiryWarningDays({
+          SHIPWRIGHT_ADMIN_TRIAL_EXPIRY_WARNING_DAYS: raw,
+        }),
+      ).toBeUndefined();
     }
   });
 });

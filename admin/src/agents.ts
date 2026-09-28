@@ -153,6 +153,12 @@ export interface UpdateAgentFieldsInput {
   restrictSlackToMembers?: boolean;
   selfHosted?: boolean;
   slackId?: string | null;
+  /**
+   * ATE-2.1: stamped internally by TrialExpiryWarningSweeper once a warning
+   * Slack alert has been sent — never accepted from PATCH /agents/:id (see
+   * agents-api.ts's PatchAgentBodySchema, which omits this field entirely).
+   */
+  trialExpiryWarnedAt?: Date | null;
 }
 
 // ─── Select shapes ────────────────────────────────────────────────────────────
@@ -468,6 +474,9 @@ export class AgentService {
           selfHosted: input.selfHosted,
         }),
         ...(input.slackId !== undefined && { slackId: input.slackId }),
+        ...(input.trialExpiryWarnedAt !== undefined && {
+          trialExpiryWarnedAt: input.trialExpiryWarnedAt,
+        }),
       },
       select: DETAIL_SELECT,
     });
