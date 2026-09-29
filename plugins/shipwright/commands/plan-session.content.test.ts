@@ -582,6 +582,44 @@ function extractDispatchSubsection(md: string, heading: string): string {
   return heading + (nextIdx === -1 ? rest : rest.slice(0, nextIdx));
 }
 
+/**
+ * Collapses markdown line-wrapping to single spaces (and lowercases), so a prose assertion
+ * asserts on the sentence rather than on where the paragraph happens to wrap.
+ */
+function prose(text: string): string {
+  return text.replace(/\s+/g, " ").toLowerCase();
+}
+
+/**
+ * Extracts just the `### Inputs` subsection of the dispatch section, so input assertions
+ * can't be satisfied by unrelated prose elsewhere (the section discusses `repo`/`session`
+ * throughout, which makes a whole-section `toContain("repo")` near-zero signal).
+ */
+function extractInputsSubsection(md: string): string {
+  const section = extractMethodologyDispatchSection(md);
+  const idx = section.indexOf("### Inputs");
+  const dispatchIdx = section.indexOf("### Dispatch");
+  expect(idx).toBeGreaterThan(-1);
+  expect(dispatchIdx).toBeGreaterThan(idx);
+  return section.slice(idx, dispatchIdx);
+}
+
+/**
+ * Extracts the single `### Inputs` bullet for one contract field, so each field's
+ * load-bearing wording (notably its omission rule) is asserted against its own bullet
+ * rather than against the whole subsection.
+ */
+function extractInputBullet(md: string, field: string): string {
+  const inputs = extractInputsSubsection(md);
+  const marker = `- **\`${field}\`**`;
+  const idx = inputs.indexOf(marker);
+  expect(idx).toBeGreaterThan(-1);
+  const rest = inputs.slice(idx);
+  // Each input is one markdown list item: it ends at the next top-level bullet or blank line.
+  const nextBullet = rest.indexOf("\n- **");
+  return nextBullet === -1 ? rest : rest.slice(0, nextBullet);
+}
+
 describe("plan-session.md — Step 1 resolves the configured plan-session subagent (PSM-1.2)", () => {
   it("adds the resolution subsection inside Step 1, before Step 2", () => {
     const step1Idx = content.indexOf("## Step 1: Load Context");
@@ -651,9 +689,10 @@ describe("plan-session.md — Configured Methodology Dispatch section (PSM-1.2)"
     expect(lower).toMatch(/skip this (entire )?section|proceed (straight|directly) to step 6/);
   });
 
-  it("constructs every contract input, reusing Step 1's values and loading testLayerDefs/principles explicitly", () => {
-    const section = extractMethodologyDispatchSection(content);
-    for (const input of [
+  it("gives the ### Inputs subsection a bullet for every contract input and no extra ones", () => {
+    const inputs = extractInputsSubsection(content);
+    const declared = [...inputs.matchAll(/^- \*\*`([^`]+)`\*\*/gm)].map((m) => m[1]);
+    expect(declared).toEqual([
       "specContent",
       "repo",
       "session",
@@ -662,13 +701,46 @@ describe("plan-session.md — Configured Methodology Dispatch section (PSM-1.2)"
       "testLayerDefs",
       "principles",
       "autonomous",
-    ]) {
-      expect(section).toContain(input);
-    }
-    expect(section).toContain("docs/test-readiness/test-system.md");
-    expect(section).toContain(".claude/shipwright/principles.md");
-    expect(section).toContain("plugins/shipwright/references/principles.md");
-    expect(section).toContain('{taskId: "{task-id}"}');
+    ]);
+  });
+
+  it("loads testLayerDefs and principles explicitly, since their built-in load sites (Steps 2 and 5) are skipped", () => {
+    const testLayerDefs = extractInputBullet(content, "testLayerDefs");
+    expect(testLayerDefs).toContain("docs/test-readiness/test-system.md");
+    expect(testLayerDefs).toContain("Step 2");
+    const principles = extractInputBullet(content, "principles");
+    expect(principles).toContain(".claude/shipwright/principles.md");
+    expect(principles).toContain("plugins/shipwright/references/principles.md");
+    expect(principles).toContain("Step 5");
+  });
+
+  /**
+   * The contract's omission rules are load-bearing: passing an empty array (or a present-but-
+   * empty field) instead of omitting it is a contract violation the field-name-presence
+   * assertions above cannot catch. Each rule is asserted against its own input bullet.
+   */
+  it("states the contract's omission rule on each optional input's own bullet", () => {
+    expect(extractInputBullet(content, "existingSessionTaskIds").toLowerCase()).toMatch(
+      /omit when empty|omit.*\bempty\b/,
+    );
+    expect(extractInputBullet(content, "openCrossSessionTasks").toLowerCase()).toMatch(
+      /omit entirely when none/,
+    );
+    expect(extractInputBullet(content, "testLayerDefs").toLowerCase()).toMatch(
+      /omit the field when the file is absent/,
+    );
+    expect(extractInputBullet(content, "autonomous").toLowerCase()).toMatch(
+      /omit the field entirely otherwise/,
+    );
+  });
+
+  it("requires exactly the contract's inputs — no more, no less — and passes autonomous as {taskId}", () => {
+    const inputs = extractInputsSubsection(content);
+    expect(inputs).toContain(
+      "plugins/shipwright/references/methodology-contracts/plan-session.md",
+    );
+    expect(inputs.toLowerCase()).toContain("no more, no less");
+    expect(extractInputBullet(content, "autonomous")).toContain('{taskId: "{task-id}"}');
   });
 
   it("dispatches via the Agent tool with subagent_type: PLAN_SESSION_SUBAGENT_TYPE and run_in_background: false (AC2)", () => {
@@ -800,6 +872,51 @@ describe("plan-session.md — Configured Methodology Dispatch: schema validation
     expect(lower).toMatch(/never proceed to step 6/);
   });
 
+  /**
+   * `/tasks/bulk` is create-only: TaskService.bulk() translates Prisma's P2002 into a
+   * ConflictError that rolls the whole batch back server-side. That 409 would land *after*
+   * Step 6a has written PLAN.md, and the dispatch section defines no recovery path for it —
+   * so a collision against already-queued ids has to be caught by this client-side gate.
+   */
+  it("checks returned ids don't collide with existingSessionTaskIds, openCrossSessionTasks, or each other", () => {
+    const sub = extractDispatchSubsection(content, HEADING);
+    const lower = prose(sub);
+    expect(lower).toMatch(/collid/);
+    expect(lower).toMatch(/create-only|p2002|409/);
+    const collisionIdx = sub.indexOf("collides with nothing");
+    expect(collisionIdx).toBeGreaterThan(-1);
+    const check = sub.slice(collisionIdx);
+    expect(check).toContain("existingSessionTaskIds");
+    expect(check).toContain("openCrossSessionTasks");
+    expect(prose(check)).toMatch(/no two tasks|share an `?id/);
+  });
+
+  it("value-checks the contract-constrained model, layer, and session fields the task store stores as free-form strings", () => {
+    const sub = extractDispatchSubsection(content, HEADING);
+    for (const tier of ["haiku", "sonnet", "opus"]) {
+      expect(sub).toContain(tier);
+    }
+    for (const layer of [
+      "API",
+      "Frontend",
+      "Database",
+      "Shared",
+      "Background",
+      "CLI",
+    ]) {
+      expect(sub).toContain(layer);
+    }
+    const lower = prose(sub);
+    expect(lower).toMatch(/free-form string/);
+    expect(lower).toMatch(/rollup|sessions view|alert sweeper/);
+  });
+
+  it("explains why checks 8-11 can't be delegated to the bulk endpoint", () => {
+    const sub = extractDispatchSubsection(content, HEADING);
+    const lower = prose(sub);
+    expect(lower).toMatch(/never fail\s+server-side|does not enum-check|cannot catch them for you/);
+  });
+
   it("on full validation success, hands tasks/planMarkdown/decisionLog to Step 6 exactly as the built-in path would", () => {
     const section = extractMethodologyDispatchSection(content);
     const idx = section.indexOf("#### Schema Validation");
@@ -807,6 +924,66 @@ describe("plan-session.md — Configured Methodology Dispatch: schema validation
     expect(tail).toContain("Step 6");
     expect(tail).toContain("planMarkdown");
     expect(tail).toContain("decisionLog");
+  });
+});
+
+/**
+ * The dispatch replaces Steps 2 through 5.5, which is where BOTH of the built-in path's
+ * interactive approval gates live (Step 4's "do not move to task breakdown until the design is
+ * approved" and Step 5's "iterate until approved"). Step 6 still opens on an approved
+ * breakdown, so without a gate re-established on the dispatch path an interactive run against
+ * a configured methodology would POST tasks and open a plan PR without the human ever seeing
+ * the breakdown.
+ */
+describe("plan-session.md — Configured Methodology Dispatch: interactive approval gate (PSM-1.2)", () => {
+  const HEADING = "#### Interactive Approval";
+
+  it("has an Interactive Approval subsection, placed after the schema gate so invalid output is never presented for approval", () => {
+    const section = extractMethodologyDispatchSection(content);
+    const schemaIdx = section.indexOf("#### Schema Validation");
+    const approvalIdx = section.indexOf(HEADING);
+    expect(schemaIdx).toBeGreaterThan(-1);
+    expect(approvalIdx).toBeGreaterThan(schemaIdx);
+  });
+
+  it("names the built-in approval gates the dispatch replaced", () => {
+    const sub = extractDispatchSubsection(content, HEADING);
+    expect(sub).toContain("Step 4");
+    expect(sub).toContain("Step 5");
+    expect(prose(sub)).toContain("iterate until approved");
+  });
+
+  it("interactively, blocks Step 6 on explicit human approval of the returned breakdown", () => {
+    const sub = extractDispatchSubsection(content, HEADING);
+    const lower = prose(sub);
+    expect(lower).toContain("interactive");
+    expect(lower).toMatch(/do not proceed to step 6 on the first response/);
+    expect(lower).toMatch(/ask for approval explicitly/);
+    expect(lower).toMatch(/until (the human )?approve/);
+    expect(lower).toMatch(/nothing is written to disk and nothing is posted/);
+  });
+
+  it("explains why the caller owns the iterate-with-the-human loop rather than the subagent", () => {
+    const sub = extractDispatchSubsection(content, HEADING);
+    expect(sub).toContain("run_in_background: false");
+    const lower = prose(sub);
+    expect(lower).toMatch(/no channel back to the user/);
+  });
+
+  it("re-dispatches with the human's feedback and re-validates, without consuming the malformed-response retry budget", () => {
+    const sub = extractDispatchSubsection(content, HEADING);
+    expect(sub).toContain("PLAN_SESSION_SUBAGENT_TYPE");
+    const lower = prose(sub);
+    expect(lower).toMatch(/re-?dispatch/);
+    expect(lower).toMatch(/re-?run schema validation/);
+    expect(lower).toMatch(/not a retry|does not consume .*retry budget/);
+  });
+
+  it("under --autonomous there is no gate, matching Step 4/5's accept-first-pass", () => {
+    const sub = extractDispatchSubsection(content, HEADING);
+    expect(sub).toContain("--autonomous");
+    expect(prose(sub)).toContain("accept-first-pass");
+    expect(prose(sub)).toMatch(/no approval gate/);
   });
 });
 
@@ -819,11 +996,76 @@ describe("plan-session.md — Step 6 is path-agnostic (PSM-1.2)", () => {
     return md.slice(idx, bundleIdx);
   }
 
+  function extractStep6aSection(md: string): string {
+    const idx = md.indexOf("**Step 6a — Save the plan to disk:**");
+    const bIdx = md.indexOf("**Step 6b — Write tasks to the store:**");
+    expect(idx).toBeGreaterThan(-1);
+    expect(bIdx).toBeGreaterThan(idx);
+    return md.slice(idx, bIdx);
+  }
+
   it("notes Step 6 runs identically whether the breakdown came from the built-in steps or the configured dispatch", () => {
     const preamble = extractStep6Preamble(content);
     expect(preamble).toContain("Steps 2 through 5.5");
     expect(preamble).toContain("Configured Methodology Dispatch");
     expect(preamble.toLowerCase()).toMatch(/identical|unchanged|either way/);
+  });
+
+  it("states the breakdown reaching Step 6 is already approved on every path, satisfying its own precondition", () => {
+    const preamble = extractStep6Preamble(content);
+    const lower = prose(preamble);
+    expect(lower).toContain("already approved");
+    expect(lower).toContain("interactive approval");
+    expect(lower).toContain("accept-first-pass");
+  });
+
+  /**
+   * The "path-agnostic" claim can't be prose-only: Step 6a's and Step 6b's own bodies
+   * referenced Steps 4-5 / Step 5.5, both skipped on the dispatch path.
+   */
+  it("tells the reader to read Steps 4-5 / Step 5.5 references as whichever path produced the breakdown", () => {
+    const preamble = extractStep6Preamble(content);
+    expect(preamble).toContain("Steps 4-5");
+    expect(preamble).toContain("Step 5.5");
+    expect(prose(preamble)).toContain("whichever path produced this breakdown");
+    expect(prose(preamble)).toMatch(/rather than re-deriving/);
+  });
+
+  it("Step 6a writes the plan markdown verbatim and forbids re-synthesizing it from the task list", () => {
+    const step6a = extractStep6aSection(content);
+    expect(step6a).toContain("verbatim");
+    expect(step6a).toContain("planMarkdown");
+    expect(prose(step6a)).toContain("do not re-synthesize");
+    expect(step6a).toContain("Steps 4–5");
+    expect(step6a).toContain("Configured Methodology Dispatch");
+  });
+
+  it("Step 6b's hitl instruction is source-neutral — the dispatch path's flags are written through, not re-detected", () => {
+    const section = extractStep6bSection(content);
+    expect(section).toContain('Set `"hitl": true`');
+    expect(section).toContain("Step 5.5");
+    expect(section).toContain("Configured Methodology Dispatch");
+    const lower = prose(section);
+    expect(lower).toMatch(/writes the flag through as received/);
+    expect(lower).toMatch(/does not re-run step 5\.5/);
+  });
+
+  /**
+   * Per the contract the Decision Log is already embedded inside `planMarkdown`, so Step 6
+   * has no separate consumer for `decisionLog[]` — saying it "writes" the array invites a
+   * duplicated Decision Log section in PLAN.md.
+   */
+  it("clarifies decisionLog[] is already inside planMarkdown, so Step 6 must not append a second Decision Log", () => {
+    const section = extractMethodologyDispatchSection(content);
+    const idx = section.indexOf("#### Interactive Approval");
+    expect(idx).toBeGreaterThan(-1);
+    const closing = section.slice(idx);
+    expect(closing).toContain("decisionLog");
+    expect(closing).toContain("## Decision Log");
+    const lower = prose(closing);
+    expect(lower).toMatch(/already embedded inside/);
+    expect(lower).toMatch(/do not append a second decision log/);
+    expect(lower).toContain("verbatim");
   });
 });
 

@@ -554,6 +554,25 @@ For each task, check all of:
 5. **`title`** is a non-empty string.
 6. **`status`** is exactly `"pending"`.
 7. **`acceptanceCriteria`** is an array.
+8. **`id` collides with nothing that already exists.** No returned `id` may match an entry in
+   `existingSessionTaskIds` or an `id` in `openCrossSessionTasks`, and no two tasks in this
+   batch may share an `id`. `/tasks/bulk` is create-only: a colliding id raises Prisma `P2002`,
+   which the endpoint turns into a `409 Conflict` that rolls the entire batch back server-side.
+   That 409 lands *after* Step 6a has already written `PLAN.md`, and this command defines no
+   recovery path for it — so the collision has to be caught here, not discovered from the POST.
+9. **`model`** is exactly one of `haiku` | `sonnet` | `opus`. The task store stores this column
+   as a free-form string and does not enum-check it, so a wrong or invented tier is accepted
+   silently and then dispatches the task at the wrong model.
+10. **`layer`** is exactly one of `API` | `Frontend` | `Database` | `Shared` | `Background` |
+    `CLI` — likewise an unvalidated free-form string server-side.
+11. **`session`** equals the `session` slug passed in as an input. A task written with a
+    different (or missing) `session` silently drops out of the session rollup, the admin
+    Sessions view, and the session alert sweeper, even though the POST itself succeeds.
+
+Checks 8 through 11 exist because the bulk endpoint cannot catch them for you: 8 fails
+server-side only as an opaque 409 after the plan is already on disk, and 9-11 never fail
+server-side at all — they are contract-constrained values the task store accepts as plain
+strings.
 
 **Any failing task rejects the WHOLE batch — all-or-nothing.** `/tasks/bulk` is itself a single
 transaction (any row failure rolls back the entire batch), so a partial POST is never the right
@@ -577,8 +596,34 @@ it failed:
 
 Either way, **never proceed to Step 6 on validation failure.**
 
-If every task validates, proceed to Step 6 exactly as the built-in path would, using this
-section's `tasks[]`, `planMarkdown`, and `decisionLog[]` as the breakdown Step 6 writes.
+#### Interactive Approval
+
+The built-in path's two approval gates — Step 4's "do not move to task breakdown until the
+design is approved" and Step 5's "iterate until approved" — both live inside the steps this
+dispatch replaced, and Step 6 still opens on an approved breakdown. Nothing in the dispatch
+itself satisfies that precondition, so the gate is re-established here rather than skipped.
+
+- **Under `--autonomous {task-id}`** — there is no approval gate, exactly as on the built-in
+  path: Step 4's and Step 5's `--autonomous` subsections already replace iterate-until-approved
+  with accept-first-pass. Treat the validated breakdown as approved and proceed to Step 6.
+- **Interactive** — **do not proceed to Step 6 on the first response.** Present the returned
+  breakdown to the human first — the `planMarkdown`'s design summary, its task table and
+  Dependency Map, and any HITL-flagged tasks — then ask for approval explicitly. A subagent
+  dispatched with `run_in_background: false` has no channel back to the user, so it cannot run
+  the contract's interactive "keeps iterating with the human" loop itself; this command owns
+  that loop on its behalf. On feedback, re-dispatch the same `PLAN_SESSION_SUBAGENT_TYPE` with
+  the identical inputs plus the human's feedback appended to the prompt, re-run Schema
+  Validation on the new response, and present it again. Repeat until approved. A re-dispatch
+  for feedback is not a retry of a failed dispatch and does not consume the Malformed or Failed
+  Response retry budget. Nothing is written to disk and nothing is POSTed until the human
+  approves.
+
+Once the breakdown has validated and — interactively — been approved, proceed to Step 6 exactly
+as the built-in path would. Step 6 consumes this section's `tasks[]` as the task list and its
+`planMarkdown` as the plan file's contents, written through verbatim. `decisionLog[]` needs no
+separate handling in Step 6: per the contract its bullets are already embedded inside
+`planMarkdown`'s `## Decision Log` section, so writing `planMarkdown` verbatim already carries
+the decision log — do not append a second Decision Log section to the plan from the array.
 
 ---
 
@@ -587,7 +632,13 @@ section's `tasks[]`, `planMarkdown`, and `decisionLog[]` as the breakdown Step 6
 Once the task breakdown is approved, write the plan to disk and post tasks to the task store.
 Step 6 is path-agnostic: it runs identically whether the breakdown came from the built-in
 Steps 2 through 5.5 or from the Configured Methodology Dispatch section above — either way it
-receives the same task list, plan markdown, and decision log.
+receives the same task list, plan markdown, and decision log, and either way the breakdown
+reaching this step is already approved (by Step 4/5's iterate-until-approved loop, by the
+dispatch section's Interactive Approval subsection, or by `--autonomous`
+accept-first-pass). Where a sub-step below names Steps 4-5 or Step 5.5, read it as "whichever
+path produced this breakdown" — on the dispatch path the equivalent content arrives on the
+returned `planMarkdown` and `tasks[]` instead, and Step 6 writes it through rather than
+re-deriving it.
 
 ### Bundle Model Inheritance (Pre-Write)
 
@@ -603,7 +654,9 @@ A task on its own branch is unaffected. This ensures a `haiku`-scored task bundl
 
 **Step 6a — Save the plan to disk:**
 
-Write the full plan markdown (session name, technical design, and task table from Steps 4–5) to `planning/{session}/PLAN.md`. Create the directory if it doesn't exist.
+Write the full plan markdown — session name, technical design, task table, Dependency Map, Breaking Change Safety notes, and (under `--autonomous`) the `## Decision Log` — **verbatim** to `planning/{session}/PLAN.md`. Create the directory if it doesn't exist.
+
+Source-neutral, and verbatim either way: on the built-in path this markdown is what Steps 4–5 produced; on the Configured Methodology Dispatch path it is the returned `planMarkdown`, which the PSM-1.1 contract requires the caller to write through unchanged. **Do not re-synthesize the plan from the task list** — a re-synthesized plan silently drops the design rationale, the Breaking Change Safety notes, and the embedded Decision Log that the `source` link on every queued task points at.
 
 This mirrors the PRD pattern (`planning/{session}/PRODUCT-SPEC.md`) and keeps the plan co-located with the spec that produced it.
 
@@ -656,7 +709,7 @@ Write the tasks to `/tmp/new-tasks-{session}.json`. Set `source` to `"planning/{
 ]
 ```
 
-Set `"hitl": true` (and include the `## Human steps` section in `description`) for any Type A task flagged in Step 5.5.
+Set `"hitl": true` (and include the `## Human steps` section in `description`) for every Type A HITL task in the breakdown, whichever path produced it — flagged by Step 5.5 on the built-in path, or already carried as `hitl: true` plus an injected `## Human steps` section on the returned `tasks[]` on the Configured Methodology Dispatch path. Step 6b writes the flag through as received on that path; it does not re-run Step 5.5's detection over a dispatched breakdown.
 
 Post the tasks to the store:
 
