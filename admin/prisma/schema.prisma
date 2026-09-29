@@ -47,6 +47,23 @@ model Agent {
   // the PATCH route) but is included in GET/PATCH responses.
   trialExpiresAt         DateTime?
   trialExpiryWarnedAt    DateTime?
+  // APM-1.1: mirrors of the 6 real, currently-markdown-only fields in
+  // state/agent-policy.md (auto_post_reviews, allow_self_review,
+  // min_confidence, max_findings, cleanup_merged_worktrees,
+  // cleanup_after_days). These are fresh additive columns — not a
+  // dual-write/backfill rename like reviewAuthorAllowlist's DBR-2.1→2.4
+  // precedent — so each just carries its documented default; nothing in the
+  // runtime reads these DB fields yet (the agent still reads its own
+  // state/agent-policy.md directly via agent/src/check-helpers.ts). A
+  // separate one-off script (agent/scripts/backfill-agent-policy.ts) exists
+  // to overwrite an already-provisioned agent's row with its file's real
+  // values.
+  autoPostReviews        Boolean  @default(true)
+  allowSelfReview        Boolean  @default(false)
+  minConfidence          Int      @default(75)
+  maxFindings            Int      @default(5)
+  cleanupMergedWorktrees Boolean  @default(true)
+  cleanupAfterDays       Int      @default(14)
   createdAt              DateTime @default(now())
   updatedAt              DateTime @updatedAt
 
