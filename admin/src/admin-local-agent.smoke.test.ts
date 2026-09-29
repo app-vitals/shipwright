@@ -228,6 +228,16 @@ function makeMockDeps(overrides?: Partial<AdminUIDeps>): AdminUIDeps {
         updatedAt: new Date(),
       }),
     },
+    agentPhaseMethodologyService: {
+      list: async () => [],
+      upsert: async (agentId: string, phase: string, subagentType: string | null) => ({
+        id: "pm1",
+        agentId,
+        phase,
+        subagentType,
+        updatedAt: new Date(),
+      }),
+    },
     agentMemberService: {
       listByEmail: async () => [],
       exists: async () => false,

@@ -752,6 +752,7 @@ async function startServer(): Promise<void> {
     agentToolService,
     agentTokenService,
     agentPluginService,
+    agentPhaseMethodologyService,
     agentMemberService,
     agentService,
     provisioner,

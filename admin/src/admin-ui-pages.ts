@@ -30,6 +30,7 @@ import type {
   MessageTokens,
   ThreadStats,
 } from "./http-chat-client.ts";
+import { AGENT_PHASES } from "./openapi-schemas.ts";
 import type { ModelBreakdownEntry } from "./openapi-schemas.ts";
 import { renderPushToggle } from "./push-toggle.ts";
 
@@ -505,6 +506,17 @@ export interface PluginItem {
   version: string | null;
   enabled: boolean;
   createdAt: Date;
+}
+
+/**
+ * View-model row for the Phase Methodology panel — one per configured
+ * override (unconfigured phases are simply absent from the list the caller
+ * passes in; renderAgentDetailPage merges against the fixed AGENT_PHASES set
+ * to show "default" for phases with no row here).
+ */
+export interface PhaseMethodologyItem {
+  phase: string;
+  subagentType: string | null;
 }
 
 export interface MemberItem {
@@ -1192,6 +1204,13 @@ export function renderAgentDetailPage(
      * (or zero total) renders no card.
      */
     verificationActivity?: VerificationActivitySummary;
+    /**
+     * Configured phase-methodology overrides for this agent (PMC-1.2).
+     * Only overridden phases need to be present — renderAgentDetailPage
+     * merges this against the fixed AGENT_PHASES set and renders "default"
+     * for any phase absent here. Defaults to [] (all phases show "default").
+     */
+    phaseMethodology?: PhaseMethodologyItem[];
   },
 ): string {
   // Reference time for relative timestamps — injected by tests for determinism,
@@ -1493,6 +1512,23 @@ export function renderAgentDetailPage(
     </tr>`,
           )
           .join("\n");
+
+  const phaseMethodologyByPhase = new Map(
+    (opts?.phaseMethodology ?? []).map((pm) => [pm.phase, pm.subagentType]),
+  );
+  const phaseMethodologyRows = AGENT_PHASES.map((phase) => {
+    const subagentType = phaseMethodologyByPhase.get(phase) ?? null;
+    return `<tr>
+      <td class="mono">${escapeHtml(phase)}</td>
+      <td>${subagentType ? escapeHtml(subagentType) : '<span style="color:#9ca3af">default</span>'}</td>
+      <td style="white-space:nowrap">
+        <form method="POST" action="/admin/agents/${escapeHtml(agent.id)}/phase-methodology/${escapeHtml(phase)}" style="display:flex;gap:4px">
+          <input name="subagentType" type="text" class="form-input" style="font-size:11px;padding:3px 6px" placeholder="default" value="${subagentType ? escapeHtml(subagentType) : ""}" />
+          <button type="submit" class="btn btn-secondary" style="font-size:11px;padding:3px 8px">Save</button>
+        </form>
+      </td>
+    </tr>`;
+  }).join("\n");
 
   const memberRows =
     members.length === 0
@@ -1940,6 +1976,27 @@ export function renderAgentDetailPage(
           </thead>
           <tbody>
             ${pluginRows}
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-title">Phase Methodology</div>
+      <p style="font-size:12px;color:#6b7280;margin-bottom:12px">
+        Override which subagent type handles each pipeline phase. Clear the field and Save to fall back to the default.
+      </p>
+      <div class="data-table-wrapper">
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th>Phase</th>
+              <th>Subagent Type</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody>
+            ${phaseMethodologyRows}
           </tbody>
         </table>
       </div>

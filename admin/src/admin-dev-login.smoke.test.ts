@@ -169,6 +169,12 @@ function makeMockDeps(overrides?: Partial<AdminUIDeps>): AdminUIDeps {
         throw new Error("not implemented");
       },
     },
+    agentPhaseMethodologyService: {
+      list: async () => [],
+      upsert: async () => {
+        throw new Error("not implemented");
+      },
+    },
     agentMemberService: {
       listByEmail: async () => [],
       exists: async () => false,

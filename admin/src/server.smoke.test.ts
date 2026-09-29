@@ -191,6 +191,10 @@ function buildComposedApp() {
       revoke: notImplemented,
     },
     agentPluginService: { list: notImplemented, add: notImplemented },
+    agentPhaseMethodologyService: {
+      list: notImplemented,
+      upsert: notImplemented,
+    },
     agentMemberService: {
       listByEmail: notImplemented,
       exists: notImplemented,
