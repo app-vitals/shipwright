@@ -16,12 +16,6 @@ Conservative defaults are set for safety. Relax them as trust grows.
   to the owner instead — the owner must explicitly approve before the review
   is posted to GitHub.
 
-### Event Type
-- **allowed_events**: [COMMENT, APPROVE]
-  Never use REQUEST_CHANGES -- it blocks the PR and requires the reviewer to
-  dismiss. COMMENT for issues that should be fixed. APPROVE for clean PRs or
-  style-only suggestions.
-
 ### Scope
 - **review_shipwright_prs**: true
   Review PRs created by this agent (from the task store with status pr_open).

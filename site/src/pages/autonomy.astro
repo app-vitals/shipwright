@@ -7,9 +7,10 @@
 // All copy below is pre-written and pre-approved (Dan, 2026-09-09). Every
 // factual claim traces to src/content/docs/configuring-autonomy.mdx — the
 // cron tables, the state/agent-policy.md fields (auto_post_reviews,
-// allowed_events, allow_self_review, min_confidence, max_findings), and the
-// "Hands-off" / "Bring your own PR" workflow patterns are all sourced from
-// that doc. Do not rewrite this copy or invent capabilities.
+// allow_self_review, min_confidence, max_findings), review.md's hardcoded
+// "never REQUEST_CHANGES" rule, and the "Hands-off" / "Bring your own PR"
+// workflow patterns are all sourced from that doc. Do not rewrite this copy
+// or invent capabilities.
 //
 // Hard constraints (brand/MESSAGING.md D10, D5): no competitor names (this
 // is not a D10-designated surface), no prices or tier names, no compliance
@@ -44,7 +45,7 @@ const dialRows = [
   },
   {
     want: "An agent can never block a human PR",
-    setting: `${code("allowed_events")} excludes ${code("REQUEST_CHANGES")} by default`,
+    setting: `Built into review.md's rules — ${code("REQUEST_CHANGES")} is never used`,
   },
   {
     want: "Agent PRs always need a human reviewer",
