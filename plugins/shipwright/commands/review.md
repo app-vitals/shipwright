@@ -751,12 +751,22 @@ If the retry still fails, branch on what `REVIEW_SUBAGENT_TYPE` resolved to:
   in the main thread using the same rules (see `agents/code-reviewer.md` for the canonical
   rule set) — unchanged from before this task.
 - **Configured override** (`REVIEW_SUBAGENT_TYPE` is a non-default, operator-configured
-  `subagent_type`): do not attempt an inline main-thread review — the main thread has no
-  knowledge of a custom methodology's review rules. Instead, dispatch the built-in
-  `shipwright:code-reviewer` subagent fresh, as the safety net that guarantees the pipeline
-  always produces a valid response. Print a one-line note that the configured subagent
-  `{REVIEW_SUBAGENT_TYPE}` failed after retry and the built-in reviewer was used as a
-  fallback.
+  `subagent_type`): do not attempt an inline main-thread review of the failed override — the
+  main thread has no knowledge of a custom methodology's review rules. Instead, dispatch the
+  built-in `shipwright:code-reviewer` subagent fresh, as the safety net that guarantees the
+  pipeline always produces a valid response. Print a one-line note that the configured
+  subagent `{REVIEW_SUBAGENT_TYPE}` failed after retry and the built-in reviewer was used as
+  a fallback.
+
+  **If that fresh built-in dispatch also fails** (malformed JSON, or the dispatch itself
+  errors), it is governed by the **Built-in default** branch above, exactly as if it had been
+  the originally-resolved subagent: it gets its own single retry with a reminder of the
+  schema, and if that retry still fails, fall back to the inline main-thread review using
+  `agents/code-reviewer.md`'s canonical rule set. The inline review is the terminal fallback
+  — it runs in the main thread, so there is no further dispatch left to fail and the chain
+  always terminates. Do not re-dispatch `{REVIEW_SUBAGENT_TYPE}` again, and do not loop past
+  this point: the sequence is at most override → override retry → built-in → built-in retry →
+  inline.
 
 Either way, Step 7 must end with SOME valid parsed response before Step 8 runs — never leave
 Step 7 without one. Steps 9-11's claim-owning PATCH calls (`reviewedCommitSha`/`reviewState`/

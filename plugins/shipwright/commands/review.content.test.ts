@@ -2339,13 +2339,30 @@ describe("review.md — Step 7 dispatches the phase-methodology-configured subag
     const step7Section = extractStep7Section(content);
     expect(step7Section).toContain("**Configured override**");
     expect(step7Section.toLowerCase()).toContain("do not attempt an inline main-thread review");
-    expect(step7Section).toContain("dispatch the built-in\n  `shipwright:code-reviewer` subagent fresh");
+    expect(step7Section).toContain("dispatch the\n  built-in `shipwright:code-reviewer` subagent fresh");
   });
 
   it("prints a one-line note when the configured-subagent fallback fires", () => {
     const step7Section = extractStep7Section(content);
     expect(step7Section).toContain("Print a one-line note");
-    expect(step7Section).toContain("failed after retry and the built-in reviewer was used as a\n  fallback");
+    expect(step7Section).toContain("failed after retry and the built-in reviewer was used as\n  a fallback");
+  });
+
+  it("a failed fresh built-in dispatch reuses the built-in retry-then-inline procedure, terminating at the inline review", () => {
+    const step7Section = extractStep7Section(content);
+    expect(step7Section).toContain("**If that fresh built-in dispatch also fails**");
+    expect(step7Section).toContain("governed by the **Built-in default** branch above");
+    expect(step7Section).toContain("its own single retry");
+    expect(step7Section).toContain("fall back to the inline main-thread review");
+    expect(step7Section).toContain("terminal fallback");
+  });
+
+  it("bounds the fallback chain -- no re-dispatch of the failed override, no looping", () => {
+    const step7Section = extractStep7Section(content);
+    expect(step7Section).toContain("Do not re-dispatch `{REVIEW_SUBAGENT_TYPE}` again");
+    expect(step7Section).toContain(
+      "override → override retry → built-in → built-in retry →\n  inline",
+    );
   });
 
   it("documents that Step 7 always ends with a valid parsed response so Steps 9-11's claim-owning PATCH calls never hang", () => {
