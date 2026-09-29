@@ -215,6 +215,27 @@ A non-200 (e.g. a 403 when a linked task is assigned to a different agent — ta
 agent tokens are scoped) or zero matching tasks (still the common case today) leaves
 `TASK_MODEL` unset; Step 7 falls back to `'sonnet'`, unchanged from before.
 
+### Resolve the configured review-phase subagent (RVM-1.2)
+
+Runs once here too, same fail-soft, best-effort shape as the model-tier lookup above — any
+failure leaves `REVIEW_SUBAGENT_TYPE` at its built-in default, never a hard stop. Fetches the
+agent's configured phase-methodology override for the review phase (PMC-1.1) off the same
+`GET /agents/{id}/config` endpoint Step 14 already uses for bare-PR-number org/repo inference,
+and `patch.md`'s Step 1 uses for `patchAuthorAllowlist` — same endpoint, same auth header,
+just a different field:
+
+```bash
+REVIEW_SUBAGENT_TYPE=$(curl -sf -H "Authorization: Bearer $SHIPWRIGHT_AGENT_API_KEY" \
+  "$SHIPWRIGHT_API_URL/agents/$SHIPWRIGHT_AGENT_ID/config" | jq -r '.phaseMethodology.review // "shipwright:code-reviewer"')
+REVIEW_SUBAGENT_TYPE=${REVIEW_SUBAGENT_TYPE:-shipwright:code-reviewer}
+```
+
+**Fail-closed, not fail-open.** On any curl failure (the `${...:-shipwright:code-reviewer}`
+default covers the case where the pipeline emits nothing) or when `.phaseMethodology.review`
+is absent or `null` (the jq `//` default covers this), `REVIEW_SUBAGENT_TYPE` resolves to the
+built-in `shipwright:code-reviewer` — identical to today's behavior when no override is
+configured. Step 7 below dispatches whichever `subagent_type` this resolves to.
+
 ---
 
 ## Step 5: Gather Context
@@ -653,10 +674,14 @@ Note which categories are present (even if "none") — this drives review focus.
 
 ## Step 7: Deep Review (dispatch `shipwright:code-reviewer` subagent)
 
-Delegate the per-file review to the bundled `shipwright:code-reviewer` subagent. This
-keeps review context isolated from the main thread (policy, queue, posting).
+Delegate the per-file review to `REVIEW_SUBAGENT_TYPE` — the bundled
+`shipwright:code-reviewer` subagent by default, or an operator-configured override resolved
+at the end of Step 4 (RVM-1.2). This keeps review context isolated from the main thread
+(policy, queue, posting); any compliant subagent, built-in or custom, accepts the same wire
+shape per `references/methodology-contracts/review.md` (RVM-1.1) — this step's inputs and
+output parsing below apply unchanged regardless of which one is dispatched.
 
-Dispatch via the Agent tool with `subagent_type: "shipwright:code-reviewer"`, passing
+Dispatch via the Agent tool with `subagent_type: REVIEW_SUBAGENT_TYPE`, passing
 `model: TASK_MODEL ?? 'sonnet'` (the linked task's model tier resolved at the end of Step 4,
 falling back to `'sonnet'` when no task is linked or the lookup failed) and
 `run_in_background: false`, and pass a single prompt block containing:
@@ -739,9 +764,43 @@ of `priorFindingsStatus[]`. A failed POST (non-2xx, timeout, or any other curl e
 non-fatal: log the warning shown above and continue — the actual review-posting logic must
 not be gated on ledger-write success.
 
-If the subagent returns malformed JSON, retry once with a reminder of the schema. If it
-still fails, fall back to an inline review in the main thread using the same rules
-(see `agents/code-reviewer.md` for the canonical rule set).
+#### Malformed or Failed Response (RVM-1.2)
+
+If the subagent returns malformed JSON, retry once with a reminder of the schema. Treat an
+outright failure of the Agent tool dispatch itself (e.g. it errors, or `REVIEW_SUBAGENT_TYPE`
+names an invalid/nonexistent `subagent_type` from a misconfigured override) identically to a
+malformed response for the purposes of this retry — the failure mode (no response vs. a
+garbled one) doesn't change the recovery path. The retry re-dispatches the exact same
+`REVIEW_SUBAGENT_TYPE` that failed.
+
+If the retry still fails, branch on what `REVIEW_SUBAGENT_TYPE` resolved to:
+- **Built-in default** (`REVIEW_SUBAGENT_TYPE` is `shipwright:code-reviewer` — no override
+  configured, or the override resolved to the built-in name): fall back to an inline review
+  in the main thread using the same rules (see `agents/code-reviewer.md` for the canonical
+  rule set) — unchanged from before this task.
+- **Configured override** (`REVIEW_SUBAGENT_TYPE` is a non-default, operator-configured
+  `subagent_type`): do not attempt an inline main-thread review of the failed override — the
+  main thread has no knowledge of a custom methodology's review rules. Instead, dispatch the
+  built-in `shipwright:code-reviewer` subagent fresh, as the safety net that guarantees the
+  pipeline always produces a valid response. Print a one-line note that the configured
+  subagent `{REVIEW_SUBAGENT_TYPE}` failed after retry and the built-in reviewer was used as
+  a fallback.
+
+  **If that fresh built-in dispatch also fails** (malformed JSON, or the dispatch itself
+  errors), it is governed by the **Built-in default** branch above, exactly as if it had been
+  the originally-resolved subagent: it gets its own single retry with a reminder of the
+  schema, and if that retry still fails, fall back to the inline main-thread review using
+  `agents/code-reviewer.md`'s canonical rule set. The inline review is the terminal fallback
+  — it runs in the main thread, so there is no further dispatch left to fail and the chain
+  always terminates. Do not re-dispatch `{REVIEW_SUBAGENT_TYPE}` again, and do not loop past
+  this point: the sequence is at most override → override retry → built-in → built-in retry →
+  inline.
+
+Either way, Step 7 must end with SOME valid parsed response before Step 8 runs — never leave
+Step 7 without one. Steps 9-11's claim-owning PATCH calls (`reviewedCommitSha`/`reviewState`/
+`reviewedAt`) run unconditionally afterward regardless of which subagent path produced the
+response, so a hanging or unparsed Step 7 is never acceptable — that's what would otherwise
+leave the PR claim outstanding indefinitely.
 
 ---
 
