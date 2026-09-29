@@ -2,18 +2,27 @@
 
 The interface any subagent plugged into the "patch" pipeline phase's classification/fix-strategy
 step must satisfy — whether that's the built-in behavior (Steps 3 through 6 of
-`plugins/shipwright/commands/patch.md`) or a custom, operator-supplied subagent swapped in via a
-per-agent, per-phase `AgentPhaseMethodology` override (`phase -> subagentType or null`). The
+`plugins/shipwright/commands/patch.md`) or a custom, operator-supplied subagent. The
 `/shipwright:patch` command is the caller: it owns resolving the target PR and re-validating it's
 still in scope (Steps 1-2), classifying the PR into Lists A/C/D — unresolved review findings,
 merge conflicts, and failing CI, respectively (Step 3) — worktree setup and toolchain detection
 (Steps 4a/5a/6a), model-tier resolution (Step 2.1), the pre-work claim lock on the PR record, and
 the post-fix commit-bump handback to the task store — none of that is delegated. For each
-qualifying list, the caller dispatches whichever subagent is configured for the patch phase with
+qualifying list, the caller dispatches the patch-phase classification/fix-strategy subagent with
 the inputs below and parses the output shape below regardless of which concrete agent produced
 it. A drop-in replacement for the built-in classification/fix-strategy step must accept exactly
 these inputs and return exactly this output shape — the caller has no other integration point and
 does no phase-specific adaptation.
+
+> **Subagent selection is not wired up yet.** A per-agent, per-phase `AgentPhaseMethodology`
+> record (`{phase, subagentType | null}`, with `patch` as a valid phase key) exists as a Prisma
+> model plus CRUD service in `admin/src/agent-phase-methodology.ts` — but **no dispatcher reads
+> it today**: a repo-wide search of `agent/` and `plugins/` turns up no consumer. The built-in
+> path always dispatches a `general-purpose` subagent, hardcoded at all three of
+> `commands/patch.md`'s dispatch sites (Steps 4b, 5b, and 6c). This contract is therefore
+> specified for forward compatibility — it is the shape a swapped-in subagent would have to
+> satisfy once selection is actually wired up, not a description of a selection mechanism the
+> caller performs today.
 
 `plugins/shipwright/commands/patch.md`'s Steps 3 through 6 are the **reference implementation**
 this contract was extracted from — classifying a PR into Lists A (unaddressed review findings),
