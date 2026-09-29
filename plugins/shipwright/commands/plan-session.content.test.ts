@@ -547,6 +547,287 @@ describe("plan-session.md — Step 5 principles override check + security domain
 });
 
 /**
+ * Phase-methodology dispatch (PSM-1.2).
+ *
+ * Steps 2 through 5.5 (codebase research → design → task breakdown → HITL detection) become
+ * swappable via `phaseMethodology["plan-session"]`, per PSM-1.1's contract
+ * (`references/methodology-contracts/plan-session.md`). With no config, the built-in steps run
+ * exactly as before; with config set, the decomposition is delegated to the configured
+ * subagent and its `tasks[]` output must clear a client-side schema gate before the Step 6b
+ * bulk POST ever runs.
+ */
+
+function extractPlanSessionSubagentSection(md: string): string {
+  const idx = md.indexOf("### Resolve the configured plan-session subagent (PSM-1.2)");
+  const step2Idx = md.indexOf("## Step 2: Explore the Codebase");
+  expect(idx).toBeGreaterThan(-1);
+  expect(step2Idx).toBeGreaterThan(idx);
+  return md.slice(idx, step2Idx);
+}
+
+function extractMethodologyDispatchSection(md: string): string {
+  const idx = md.indexOf("## Configured Methodology Dispatch (PSM-1.2)");
+  const step6Idx = md.indexOf("## Step 6: Write to Queue");
+  expect(idx).toBeGreaterThan(-1);
+  expect(step6Idx).toBeGreaterThan(idx);
+  return md.slice(idx, step6Idx);
+}
+
+function extractDispatchSubsection(md: string, heading: string): string {
+  const section = extractMethodologyDispatchSection(md);
+  const idx = section.indexOf(heading);
+  expect(idx).toBeGreaterThan(-1);
+  const rest = section.slice(idx + heading.length);
+  const nextIdx = rest.indexOf("\n#### ");
+  return heading + (nextIdx === -1 ? rest : rest.slice(0, nextIdx));
+}
+
+describe("plan-session.md — Step 1 resolves the configured plan-session subagent (PSM-1.2)", () => {
+  it("adds the resolution subsection inside Step 1, before Step 2", () => {
+    const step1Idx = content.indexOf("## Step 1: Load Context");
+    const sectionIdx = content.indexOf("### Resolve the configured plan-session subagent (PSM-1.2)");
+    const step2Idx = content.indexOf("## Step 2: Explore the Codebase");
+    expect(step1Idx).toBeGreaterThan(-1);
+    expect(sectionIdx).toBeGreaterThan(step1Idx);
+    expect(step2Idx).toBeGreaterThan(sectionIdx);
+  });
+
+  it("fetches phaseMethodology['plan-session'] from GET /agents/{id}/config, same endpoint/auth as review.md and patch.md", () => {
+    const section = extractPlanSessionSubagentSection(content);
+    expect(section).toContain('curl -sf -H "Authorization: Bearer $SHIPWRIGHT_AGENT_API_KEY"');
+    expect(section).toContain("$SHIPWRIGHT_API_URL/agents/$SHIPWRIGHT_AGENT_ID/config");
+    expect(section).toContain('.phaseMethodology["plan-session"]');
+    expect(section).toContain("PLAN_SESSION_SUBAGENT_TYPE=$(curl");
+  });
+
+  it("resolves to empty when the field is absent, null, or the lookup fails", () => {
+    const section = extractPlanSessionSubagentSection(content);
+    expect(section).toContain("// empty");
+    const lower = section.toLowerCase();
+    expect(lower).toMatch(/fail-soft|best-effort/);
+    expect(lower).toContain("never a hard stop");
+  });
+
+  it("states that an empty/failed lookup leaves the built-in Steps 2 through 5.5 unchanged (AC1)", () => {
+    const section = extractPlanSessionSubagentSection(content);
+    expect(section).toContain("Steps 2 through 5.5");
+    const lower = section.toLowerCase();
+    expect(lower).toMatch(/unchanged|exactly as (they do )?today|identical to today/);
+    expect(lower).toContain("not fail-open");
+  });
+
+  it("documents that there is no built-in subagent_type fallback name, because the built-in decomposition is not dispatchable", () => {
+    const section = extractPlanSessionSubagentSection(content);
+    const lower = section.toLowerCase();
+    expect(lower).toContain("no built-in `subagent_type` fallback name");
+    expect(lower).toContain("not itself a dispatchable subagent");
+    expect(lower).toContain("inline");
+  });
+
+  it("instructs skipping Steps 2 through 5.5 and jumping to the Configured Methodology Dispatch section when set", () => {
+    const section = extractPlanSessionSubagentSection(content);
+    const lower = section.toLowerCase();
+    expect(lower).toContain("skip steps 2 through 5.5");
+    expect(section).toContain("Configured Methodology Dispatch (PSM-1.2)");
+    expect(section).toContain("Step 6");
+  });
+});
+
+describe("plan-session.md — Configured Methodology Dispatch section (PSM-1.2)", () => {
+  it("sits between Step 5.5 and Step 6", () => {
+    const step5_5Idx = content.indexOf("## Step 5.5: HITL Detection");
+    const sectionIdx = content.indexOf("## Configured Methodology Dispatch (PSM-1.2)");
+    const step6Idx = content.indexOf("## Step 6: Write to Queue");
+    expect(step5_5Idx).toBeGreaterThan(-1);
+    expect(sectionIdx).toBeGreaterThan(step5_5Idx);
+    expect(step6Idx).toBeGreaterThan(sectionIdx);
+  });
+
+  it("only runs when PLAN_SESSION_SUBAGENT_TYPE resolved non-empty; otherwise proceed straight to Step 6", () => {
+    const section = extractMethodologyDispatchSection(content);
+    expect(section).toContain("PLAN_SESSION_SUBAGENT_TYPE");
+    const lower = section.toLowerCase();
+    expect(lower).toMatch(/non-empty/);
+    expect(lower).toMatch(/skip this (entire )?section|proceed (straight|directly) to step 6/);
+  });
+
+  it("constructs every contract input, reusing Step 1's values and loading testLayerDefs/principles explicitly", () => {
+    const section = extractMethodologyDispatchSection(content);
+    for (const input of [
+      "specContent",
+      "repo",
+      "session",
+      "existingSessionTaskIds",
+      "openCrossSessionTasks",
+      "testLayerDefs",
+      "principles",
+      "autonomous",
+    ]) {
+      expect(section).toContain(input);
+    }
+    expect(section).toContain("docs/test-readiness/test-system.md");
+    expect(section).toContain(".claude/shipwright/principles.md");
+    expect(section).toContain("plugins/shipwright/references/principles.md");
+    expect(section).toContain('{taskId: "{task-id}"}');
+  });
+
+  it("dispatches via the Agent tool with subagent_type: PLAN_SESSION_SUBAGENT_TYPE and run_in_background: false (AC2)", () => {
+    const section = extractMethodologyDispatchSection(content);
+    expect(section).toContain("Agent tool");
+    expect(section).toContain("subagent_type: PLAN_SESSION_SUBAGENT_TYPE");
+    expect(section).toContain("run_in_background: false");
+  });
+
+  it("points the dispatched subagent at the PSM-1.1 contract file and expects its exact output shape", () => {
+    const section = extractMethodologyDispatchSection(content);
+    expect(section).toContain("plugins/shipwright/references/methodology-contracts/plan-session.md");
+    for (const field of ["tasks", "planMarkdown", "decisionLog", "hardContradiction"]) {
+      expect(section).toContain(field);
+    }
+  });
+});
+
+describe("plan-session.md — Configured Methodology Dispatch: malformed or failed response (PSM-1.2)", () => {
+  const HEADING = "#### Malformed or Failed Response";
+
+  it("retries once on malformed JSON or an outright dispatch failure", () => {
+    const sub = extractDispatchSubsection(content, HEADING);
+    const lower = sub.toLowerCase();
+    expect(lower).toContain("retry once");
+    expect(lower).toMatch(/dispatch itself|dispatch failure/);
+    expect(lower).toMatch(/invalid|nonexistent/);
+  });
+
+  it("abandons after the retry — no built-in fallback, and never claims to fall back to the built-in steps", () => {
+    const sub = extractDispatchSubsection(content, HEADING);
+    const lower = sub.toLowerCase();
+    expect(lower).toContain("no built-in fallback");
+    expect(lower).toContain("abandon");
+    expect(lower).toContain("not itself a dispatchable subagent");
+    expect(lower).not.toMatch(/fall back to (running |the )?steps 2/);
+    expect(lower).not.toMatch(/fall back to an inline/);
+  });
+
+  it("under --autonomous, PATCHes the task to blocked/hitl with a plan_session_methodology_dispatch_failed reason and stops before Step 6", () => {
+    const sub = extractDispatchSubsection(content, HEADING);
+    expect(sub).toContain("--autonomous");
+    expect(sub).toContain("plan_session_methodology_dispatch_failed");
+    expect(sub).toContain('"status": "blocked"');
+    expect(sub).toContain('"hitl": true');
+    expect(sub).toContain("$SHIPWRIGHT_TASK_STORE_URL/tasks/{task-id}");
+    expect(sub.toLowerCase()).toContain("stop before step 6");
+  });
+
+  it("interactively, prints a clear abort message and writes no tasks", () => {
+    const sub = extractDispatchSubsection(content, HEADING);
+    const lower = sub.toLowerCase();
+    expect(lower).toContain("interactive");
+    expect(lower).toMatch(/abort/);
+    expect(lower).toContain("no tasks");
+  });
+});
+
+describe("plan-session.md — Configured Methodology Dispatch: hard contradiction (PSM-1.2)", () => {
+  const HEADING = "#### Hard Contradiction";
+
+  it("mirrors Step 4/5's existing plan_session_autonomous_hard_contradiction escape hatch under --autonomous", () => {
+    const sub = extractDispatchSubsection(content, HEADING);
+    expect(sub).toContain("plan_session_autonomous_hard_contradiction");
+    expect(sub).toContain('"status": "blocked"');
+    expect(sub).toContain('"hitl": true');
+    expect(sub).toContain("blockedReason");
+    expect(sub.toLowerCase()).toContain("stop before step 6");
+  });
+
+  it("treats a non-null hardContradiction outside --autonomous as a contract violation and stops", () => {
+    const sub = extractDispatchSubsection(content, HEADING);
+    const lower = sub.toLowerCase();
+    expect(lower).toContain("contract");
+    expect(lower).toMatch(/violat/);
+    expect(sub).toContain("hardContradiction");
+    expect(lower).toMatch(/always `?null`? outside|null outside `?--autonomous/);
+    expect(lower).toMatch(/no human-iteration loop|there is no human/);
+  });
+});
+
+describe("plan-session.md — Configured Methodology Dispatch: schema validation gate (PSM-1.2, AC3)", () => {
+  const HEADING = "#### Schema Validation";
+
+  it("runs before Step 6 / before the bulk POST", () => {
+    const sub = extractDispatchSubsection(content, HEADING);
+    const lower = sub.toLowerCase();
+    expect(lower).toMatch(/before .*step 6/);
+    expect(lower).toMatch(/before .*(bulk )?post|before ever posting/);
+  });
+
+  it("checks id format, non-empty branch, and dependency-id resolvability", () => {
+    const sub = extractDispatchSubsection(content, HEADING);
+    expect(sub).toContain("{PREFIX}-{N}.{M}");
+    expect(sub).toContain("branch");
+    expect(sub.toLowerCase()).toContain("non-empty string");
+    expect(sub).toContain("dependencies");
+    expect(sub).toContain("existingSessionTaskIds");
+    expect(sub).toContain("openCrossSessionTasks");
+    expect(sub.toLowerCase()).toMatch(/this batch|same batch/);
+  });
+
+  it("checks repo key presence, non-empty title, status pending, and acceptanceCriteria as an array", () => {
+    const sub = extractDispatchSubsection(content, HEADING);
+    expect(sub).toContain("`repo`");
+    expect(sub.toLowerCase()).toMatch(/key is present|key present/);
+    expect(sub).toContain("title");
+    expect(sub).toContain('"pending"');
+    expect(sub).toContain("acceptanceCriteria");
+    expect(sub.toLowerCase()).toContain("array");
+  });
+
+  it("rejects the WHOLE batch on any failing task — all-or-nothing, do not POST anything", () => {
+    const sub = extractDispatchSubsection(content, HEADING);
+    const lower = sub.toLowerCase();
+    expect(lower).toContain("all-or-nothing");
+    expect(lower).toMatch(/whole batch/);
+    expect(lower).toMatch(/do not post/);
+    expect(lower).toMatch(/per-task|which check/);
+  });
+
+  it("under --autonomous, blocks with a plan_session_methodology_schema_invalid reason; interactively prints and stops", () => {
+    const sub = extractDispatchSubsection(content, HEADING);
+    expect(sub).toContain("plan_session_methodology_schema_invalid");
+    expect(sub).toContain('"status": "blocked"');
+    expect(sub).toContain('"hitl": true');
+    const lower = sub.toLowerCase();
+    expect(lower).toContain("interactive");
+    expect(lower).toMatch(/never proceed to step 6/);
+  });
+
+  it("on full validation success, hands tasks/planMarkdown/decisionLog to Step 6 exactly as the built-in path would", () => {
+    const section = extractMethodologyDispatchSection(content);
+    const idx = section.indexOf("#### Schema Validation");
+    const tail = section.slice(idx);
+    expect(tail).toContain("Step 6");
+    expect(tail).toContain("planMarkdown");
+    expect(tail).toContain("decisionLog");
+  });
+});
+
+describe("plan-session.md — Step 6 is path-agnostic (PSM-1.2)", () => {
+  function extractStep6Preamble(md: string): string {
+    const idx = md.indexOf("## Step 6: Write to Queue");
+    const bundleIdx = md.indexOf("### Bundle Model Inheritance (Pre-Write)");
+    expect(idx).toBeGreaterThan(-1);
+    expect(bundleIdx).toBeGreaterThan(idx);
+    return md.slice(idx, bundleIdx);
+  }
+
+  it("notes Step 6 runs identically whether the breakdown came from the built-in steps or the configured dispatch", () => {
+    const preamble = extractStep6Preamble(content);
+    expect(preamble).toContain("Steps 2 through 5.5");
+    expect(preamble).toContain("Configured Methodology Dispatch");
+    expect(preamble.toLowerCase()).toMatch(/identical|unchanged|either way/);
+  });
+});
+
+/**
  * No-target guard (PDR-4.1).
  *
  * `docs/agent-ops.md` and `site/src/content/docs/cron-jobs.mdx` both promise that a
