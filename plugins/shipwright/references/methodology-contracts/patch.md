@@ -14,15 +14,15 @@ it. A drop-in replacement for the built-in classification/fix-strategy step must
 these inputs and return exactly this output shape — the caller has no other integration point and
 does no phase-specific adaptation.
 
-> **Subagent selection is not wired up yet.** A per-agent, per-phase `AgentPhaseMethodology`
+> **Subagent selection is wired up (PTM-1.2).** A per-agent, per-phase `AgentPhaseMethodology`
 > record (`{phase, subagentType | null}`, with `patch` as a valid phase key) exists as a Prisma
-> model plus CRUD service in `admin/src/agent-phase-methodology.ts` — but **no dispatcher reads
-> it today**: a repo-wide search of `agent/` and `plugins/` turns up no consumer. The built-in
-> path always dispatches a `general-purpose` subagent, hardcoded at all three of
-> `commands/patch.md`'s dispatch sites (Steps 4b, 5b, and 6c). This contract is therefore
-> specified for forward compatibility — it is the shape a swapped-in subagent would have to
-> satisfy once selection is actually wired up, not a description of a selection mechanism the
-> caller performs today.
+> model plus CRUD service in `admin/src/agent-phase-methodology.ts`. `commands/patch.md`'s Step
+> 2.2 reads `phaseMethodology.patch` off `GET /agents/{id}/config` once per run and resolves
+> `PATCH_SUBAGENT_TYPE` — falling back to the built-in `general-purpose` when no override is
+> configured, or on any lookup failure (fail-closed, never fail-open). All three of
+> `commands/patch.md`'s dispatch sites (Steps 4b, 5b, and 6c) dispatch `PATCH_SUBAGENT_TYPE`
+> instead of a hardcoded literal. This contract specifies the wire shape any subagent plugged in
+> this way — built-in or operator-configured — must satisfy.
 
 `plugins/shipwright/commands/patch.md`'s Steps 3 through 6 are the **reference implementation**
 this contract was extracted from — classifying a PR into Lists A (unaddressed review findings),

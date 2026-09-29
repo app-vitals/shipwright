@@ -2828,3 +2828,135 @@ describe("patch.md — skip-locally check before attempting each check, read-onl
     }
   });
 });
+
+describe("patch.md — Step 2.2 dispatches the phase-methodology-configured subagent (PTM-1.2)", () => {
+  function extractStep2_2Section(md: string): string {
+    const sectionIdx = md.indexOf(
+      "## Step 2.2: Resolve the Configured Patch-Phase Subagent (PTM-1.2)",
+    );
+    const step2_5Idx = md.indexOf("## Step 2.5: Handle DIRTY PRs");
+    expect(sectionIdx).toBeGreaterThan(-1);
+    expect(step2_5Idx).toBeGreaterThan(sectionIdx);
+    return md.slice(sectionIdx, step2_5Idx);
+  }
+
+  it("resolves PATCH_SUBAGENT_TYPE once, right after Step 2.1's model-tier resolution, before Step 2.5", () => {
+    const step2_1Idx = content.indexOf(
+      "## Step 2.1: Resolve Patch Model Tier (MTR-2.1)",
+    );
+    const step2_2Idx = content.indexOf(
+      "## Step 2.2: Resolve the Configured Patch-Phase Subagent (PTM-1.2)",
+    );
+    const step2_5Idx = content.indexOf("## Step 2.5: Handle DIRTY PRs");
+    expect(step2_1Idx).toBeGreaterThan(-1);
+    expect(step2_2Idx).toBeGreaterThan(step2_1Idx);
+    expect(step2_5Idx).toBeGreaterThan(step2_2Idx);
+  });
+
+  it("fetches phaseMethodology.patch from GET /agents/{id}/config, same endpoint/auth as Step 1's patchAuthorAllowlist fetch", () => {
+    const section = extractStep2_2Section(content);
+    expect(section).toContain(
+      'curl -sf -H "Authorization: Bearer $SHIPWRIGHT_AGENT_API_KEY"',
+    );
+    expect(section).toContain("$SHIPWRIGHT_API_URL/agents/$SHIPWRIGHT_AGENT_ID/config");
+    expect(section).toContain(".phaseMethodology.patch");
+  });
+
+  it("PATCH_SUBAGENT_TYPE defaults to the built-in general-purpose when phaseMethodology.patch is absent or null", () => {
+    const section = extractStep2_2Section(content);
+    expect(section).toContain("PATCH_SUBAGENT_TYPE=$(curl");
+    expect(section).toContain('.phaseMethodology.patch // "general-purpose"');
+  });
+
+  it("PATCH_SUBAGENT_TYPE is fail-closed on curl failure -- shell default also falls back to general-purpose", () => {
+    const section = extractStep2_2Section(content);
+    expect(section).toContain("${PATCH_SUBAGENT_TYPE:-general-purpose}");
+    expect(section).toContain("Fail-closed, not fail-open");
+  });
+
+  it("documents this lookup as fail-soft/best-effort, never a hard stop, and that no-config behavior is unchanged from today", () => {
+    const section = extractStep2_2Section(content);
+    const lower = section.toLowerCase();
+    expect(lower).toMatch(/fail-soft|best-effort/);
+    expect(lower).toContain("never a hard stop");
+    expect(lower).toContain("with no config set, patch behaves identically to today");
+  });
+
+  it("all three dispatch sites (Steps 4b/5b/6c) pass subagent_type PATCH_SUBAGENT_TYPE, not a hardcoded general-purpose literal", () => {
+    expect(content).not.toContain("Dispatch a `general-purpose` subagent via the Agent tool");
+    const matches = content.match(/Dispatch a `PATCH_SUBAGENT_TYPE` subagent via the Agent tool/g);
+    expect(matches).not.toBeNull();
+    expect(matches?.length).toBe(3);
+  });
+
+  it("references the PTM-1.1 methodology contract doc as the wire shape any dispatched subagent must satisfy", () => {
+    const section = extractStep2_2Section(content);
+    expect(section).toContain("references/methodology-contracts/patch.md");
+    expect(section).toContain("PTM-1.1");
+  });
+
+  it("documents that the commit-bump handback (POST /prs/{id}/patch) applies unchanged regardless of which subagent produced the fix", () => {
+    const section = extractStep2_2Section(content);
+    expect(section.toLowerCase()).toContain("commit-bump handback");
+    expect(section).toContain("POST /prs/{id}/patch");
+    expect(section.toLowerCase()).toContain(
+      "never reads which subagent type produced the fix",
+    );
+  });
+
+  it("documents the Unparseable or Failed Dispatch retry-then-fallback handling, mirroring review.md's RVM-1.2 shape", () => {
+    const section = extractStep2_2Section(content);
+    expect(section).toContain("#### Unparseable or Failed Dispatch (PTM-1.2)");
+    expect(section.toLowerCase()).toContain("dispatch itself fails");
+    expect(section.toLowerCase()).toContain("invalid/nonexistent");
+    expect(section).toContain("retry once with the same\n`PATCH_SUBAGENT_TYPE`");
+    expect(section).toContain("**Built-in default**");
+    expect(section).toContain("**Configured override**");
+    expect(section).toContain("RVM-1.2");
+  });
+
+  it("built-in-default failure after retry is treated identically to a BLOCKED report at that dispatch site", () => {
+    const section = extractStep2_2Section(content);
+    expect(section).toContain("treat it identically to a\n  `BLOCKED` report");
+    expect(section).toContain("no parseable status after retry");
+  });
+
+  it("configured-override failure after retry falls back to dispatching the built-in general-purpose subagent fresh, not an immediate BLOCKED", () => {
+    const section = extractStep2_2Section(content);
+    expect(section).toContain(
+      "dispatch the built-in `general-purpose` subagent\n  fresh",
+    );
+    expect(section).toContain("Print a one-line note");
+    expect(section).toContain(
+      "failed after retry and the built-in fixer was used as a fallback",
+    );
+  });
+
+  it("each of Steps 4c/5c/6d's status handling includes a No parseable STATUS branch pointing back at Step 2.2", () => {
+    const sites: Array<[string, string]> = [
+      [
+        "### Step 4c: Handle Subagent Status",
+        "### Step 4c.5: Upsert PR Record",
+      ],
+      [
+        "### Step 5c: Handle Subagent Status",
+        "### Step 5c.5: Upsert PR Record",
+      ],
+      [
+        "### Step 6d: Handle Subagent Status",
+        "### Step 6d.5: Upsert PR Record",
+      ],
+    ];
+    for (const [startMarker, endMarker] of sites) {
+      const startIdx = content.indexOf(startMarker);
+      const endIdx = content.indexOf(endMarker);
+      expect(startIdx).toBeGreaterThan(-1);
+      expect(endIdx).toBeGreaterThan(startIdx);
+      const section = content.slice(startIdx, endIdx);
+      expect(section).toContain("**No parseable STATUS**");
+      expect(section).toContain(
+        "see Step 2.2's \"Unparseable or Failed Dispatch\" handling above",
+      );
+    }
+  });
+});

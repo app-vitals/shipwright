@@ -226,6 +226,78 @@ MATCHED_TASKS=$(curl -sf -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN"
 
 ---
 
+## Step 2.2: Resolve the Configured Patch-Phase Subagent (PTM-1.2)
+
+Runs once here too, same fail-soft, best-effort shape as Step 2.1's model-tier lookup —
+any failure leaves `PATCH_SUBAGENT_TYPE` at its built-in default, never a hard stop.
+Fetches the agent's configured phase-methodology override for the patch phase (PMC-1.1)
+off the same `GET /agents/{id}/config` endpoint Step 1 already uses for
+`patchAuthorAllowlist` and `review.md`'s equivalent lookup uses for its own review-phase
+resolution — same endpoint, same auth header, just a different field:
+
+```bash
+PATCH_SUBAGENT_TYPE=$(curl -sf -H "Authorization: Bearer $SHIPWRIGHT_AGENT_API_KEY" \
+  "$SHIPWRIGHT_API_URL/agents/$SHIPWRIGHT_AGENT_ID/config" | jq -r '.phaseMethodology.patch // "general-purpose"')
+PATCH_SUBAGENT_TYPE=${PATCH_SUBAGENT_TYPE:-general-purpose}
+```
+
+**Fail-closed, not fail-open.** On any curl failure (the `${...:-general-purpose}` default
+covers the case where the pipeline emits nothing) or when `.phaseMethodology.patch` is
+absent or `null` (the jq `//` default covers this), `PATCH_SUBAGENT_TYPE` resolves to the
+built-in `general-purpose` — identical to today's hardcoded dispatch at all three sites
+below. With no config set, patch behaves identically to today.
+
+Steps 4b, 5b, and 6c each dispatch `PATCH_SUBAGENT_TYPE` (resolved once here, reused
+unchanged at all three — the same "resolve once, reuse everywhere" shape `PATCH_MODEL`
+already uses) instead of the literal `general-purpose` string, per
+`references/methodology-contracts/patch.md`'s (PTM-1.1) wire shape — any compliant
+subagent, built-in or custom, accepts the same PR metadata / findings / mergeability /
+CI-status inputs and returns the same STATUS/CONCERNS/BLOCKER shape, so each site's status
+handling (Steps 4c/5c/6d) and the commit-bump handback that follows it (Steps
+4c.5/5c.5/6d.5 — `POST /prs/{id}/patch`, updating `commitSha` and, for a List D fix,
+`ciFailureSignature`) apply unchanged regardless of which one was dispatched. That handback
+is caller-owned bookkeeping that never reads which subagent type produced the fix — it
+fires on any successful fix, on the same path, the same way, whether the classification and
+fix strategy came from the built-in logic or a configured override.
+
+#### Unparseable or Failed Dispatch (PTM-1.2)
+
+If the Agent tool dispatch itself fails (errors, or `PATCH_SUBAGENT_TYPE` names an
+invalid/nonexistent `subagent_type` from a misconfigured override), or the subagent's
+response contains no parseable `STATUS:` line, retry once with the same
+`PATCH_SUBAGENT_TYPE`. The retry re-dispatches the exact same site's prompt unchanged.
+
+If the retry also fails to produce a parseable STATUS, branch on what
+`PATCH_SUBAGENT_TYPE` resolved to:
+
+- **Built-in default** (`PATCH_SUBAGENT_TYPE` is `general-purpose` — no override
+  configured, or the override resolved to the built-in name): treat it identically to a
+  `BLOCKED` report — fall into that site's existing BLOCKED handling (Step 4c, 5c, or 6d)
+  with `{blockedReason}` noting "no parseable status after retry" in place of the
+  subagent's own blocker text.
+- **Configured override** (`PATCH_SUBAGENT_TYPE` is a non-default, operator-configured
+  `subagent_type`): do not escalate yet — dispatch the built-in `general-purpose` subagent
+  fresh, with that same site's prompt, as the safety net that guarantees the pipeline
+  always produces a valid response. Print a one-line note that the configured subagent
+  `{PATCH_SUBAGENT_TYPE}` failed after retry and the built-in fixer was used as a fallback.
+  If the built-in dispatch itself then also fails to produce a parseable STATUS, retry that
+  built-in dispatch once more — the same single-retry-before-terminal treatment the
+  configured override itself already received above, so the built-in safety net isn't held
+  to a laxer bar than the override it's standing in for. Only if that second built-in
+  attempt also fails to produce a parseable STATUS does this fall into that site's BLOCKED
+  handling as above.
+
+Each of Steps 4c/5c/6d must end with SOME valid parsed response before proceeding — never
+leave a dispatch site without one. A hanging or unparsed status report is never acceptable
+here: it would otherwise leave that site's pre-work PR claim (Step 4a.6/5a.6/6b.5) held
+indefinitely, exactly the failure mode `references/methodology-contracts/patch.md` warns a
+compliant subagent's own BLOCKED report must never cause. This mirrors `review.md`'s Step 7
+malformed/failed response handling (RVM-1.2) — the same retry-once-before-terminal shape
+applied at every dispatch attempt in the chain (override → override-retry → built-in-fresh →
+built-in-fresh-retry → BLOCKED), applied here to a free-text STATUS report instead of JSON.
+
+---
+
 ## Step 2.5: Handle DIRTY PRs (Auto-Rebase Attempt)
 
 Using the `mergeStateStatus` field already fetched for the target PR resolved in Step 2, check whether it is DIRTY.
@@ -724,9 +796,10 @@ curl -s -o /dev/null -X POST \
   "$SHIPWRIGHT_TASK_STORE_URL/prs/$PR_RECORD_ID/heartbeat"
 ```
 
-Dispatch a `general-purpose` subagent via the Agent tool, passing `model: PATCH_MODEL`
-(resolved once in Step 2.1) and `run_in_background: false` so the conflict-resolution subagent runs at the escalated
-tier, with this prompt:
+Dispatch a `PATCH_SUBAGENT_TYPE` subagent via the Agent tool (resolved once in Step 2.2 —
+the built-in `general-purpose` by default, or an operator-configured override), passing
+`model: PATCH_MODEL` (resolved once in Step 2.1) and `run_in_background: false` so the
+conflict-resolution subagent runs at the escalated tier, with this prompt:
 
 ```
 You are resolving merge conflicts on a pull request. Merge the base branch, resolve all
@@ -874,6 +947,10 @@ INSTRUCTIONS — follow in order:
 
 Parse the subagent's STATUS:
 
+- **No parseable STATUS** (the dispatch errored, or the response has no `STATUS:` line):
+  see Step 2.2's "Unparseable or Failed Dispatch" handling above — retry once, then either
+  fall back to the built-in subagent (configured-override case) or treat it as BLOCKED
+  (built-in-default case) before continuing.
 - **DONE**: Record the conflicts resolved. Proceed to Step 4c.5 (upsert PR record).
 - **DONE_WITH_CONCERNS**: Read concerns. If the push already happened, log concerns and
   proceed to Step 4c.5 (upsert PR record). If the subagent did not push, note it in the
@@ -1284,9 +1361,11 @@ curl -s -o /dev/null -X POST \
   "$SHIPWRIGHT_TASK_STORE_URL/prs/$PR_RECORD_ID/heartbeat"
 ```
 
-Dispatch a `general-purpose` subagent via the Agent tool, passing `model: PATCH_MODEL`
-(resolved once in Step 2.1) and `run_in_background: false` so the fix subagent runs at the escalated tier, with this
-prompt. When Step 3a.5 left `DEPENDENCY_RISK_FINDING` set for this PR — its step 1 derived a
+Dispatch a `PATCH_SUBAGENT_TYPE` subagent via the Agent tool (resolved once in Step 2.2 —
+the built-in `general-purpose` by default, or an operator-configured override), passing
+`model: PATCH_MODEL` (resolved once in Step 2.1) and `run_in_background: false` so the fix
+subagent runs at the escalated tier, with this prompt. When Step 3a.5 left
+`DEPENDENCY_RISK_FINDING` set for this PR — its step 1 derived a
 finding and its step 3 already-held exclusion did not clear it — with recommendation
 `review` or `hold`, include the DEPENDENCY-RISK REMEDIATION PROTOCOL block below — it is
 additive, injected ahead of (not replacing) the existing [A.5] verify/classify
@@ -1605,6 +1684,10 @@ INSTRUCTIONS — follow in order:
 
 Parse the subagent's STATUS:
 
+- **No parseable STATUS** (the dispatch errored, or the response has no `STATUS:` line):
+  see Step 2.2's "Unparseable or Failed Dispatch" handling above — retry once, then either
+  fall back to the built-in subagent (configured-override case) or treat it as BLOCKED
+  (built-in-default case) before continuing.
 - **DONE**: Record the findings addressed. Proceed to Step 5c.5 (upsert PR record).
 - **DONE_WITH_CONCERNS**: Read concerns. If any concern reports a REJECTed finding (per
   Step 5b Instructions [D], this fires whenever at least one finding was REJECTed —
@@ -2068,9 +2151,10 @@ curl -s -o /dev/null -X POST \
   "$SHIPWRIGHT_TASK_STORE_URL/prs/$PR_RECORD_ID/heartbeat"
 ```
 
-Dispatch a `general-purpose` subagent via the Agent tool, passing `model: PATCH_MODEL`
-(resolved once in Step 2.1) and `run_in_background: false` so the CI-fix subagent runs at the escalated tier, with this
-prompt:
+Dispatch a `PATCH_SUBAGENT_TYPE` subagent via the Agent tool (resolved once in Step 2.2 —
+the built-in `general-purpose` by default, or an operator-configured override), passing
+`model: PATCH_MODEL` (resolved once in Step 2.1) and `run_in_background: false` so the
+CI-fix subagent runs at the escalated tier, with this prompt:
 
 ```
 You are fixing failing CI on a pull request. Diagnose the failures, apply fixes, validate locally, commit, and push.
@@ -2245,6 +2329,10 @@ INSTRUCTIONS — follow in order:
 
 Parse the subagent's STATUS:
 
+- **No parseable STATUS** (the dispatch errored, or the response has no `STATUS:` line):
+  see Step 2.2's "Unparseable or Failed Dispatch" handling above — retry once, then either
+  fall back to the built-in subagent (configured-override case) or treat it as BLOCKED
+  (built-in-default case) before continuing.
 - **DONE**: Record the failures fixed. Proceed to Step 6d.5 (upsert PR record).
 - **DONE_WITH_CONCERNS**: Read concerns. If the push already happened, log concerns and
   proceed to Step 6d.5 (upsert PR record). If the subagent did not push, note it in the
