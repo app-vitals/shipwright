@@ -2283,6 +2283,22 @@ describe("review.md — Step 1 policy read-path is DB-first with file/hardcoded 
     expect(section.toLowerCase()).toContain("transition");
   });
 
+  it("extracts each DB field with a null-only guard so a legitimate false survives tier 1", () => {
+    const section = extractStep1Section(content);
+    for (const field of [
+      "autoPostReviews",
+      "allowSelfReview",
+      "minConfidence",
+      "maxFindings",
+    ]) {
+      expect(section).toContain(`jq -r '.${field} | select(. != null)'`);
+      // jq's `//` treats false as absent, which would silently drop a
+      // deliberately-set `allowSelfReview: false` / `autoPostReviews: false`.
+      expect(section).not.toContain(`.${field} // empty`);
+    }
+    expect(section).toContain("`select(. != null)`, **not** `// empty`");
+  });
+
   it("still reads state/agent-policy.md as the file-fallback tier, and still documents the hardcoded-default table", () => {
     const section = extractStep1Section(content);
     expect(section).toContain("state/agent-policy.md");

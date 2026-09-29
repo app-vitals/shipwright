@@ -1048,6 +1048,15 @@ describe("deploy.md — Step 3a policy read-path is DB-first with file/hardcoded
     expect(section).toContain("allowSelfReview");
   });
 
+  it("extracts allowSelfReview with a null-only guard so a legitimate false survives tier 1", () => {
+    const section = extractStep3aSection(content);
+    expect(section).toContain("jq -r '.allowSelfReview | select(. != null)'");
+    // jq's `//` treats false as absent, which would silently drop a
+    // deliberately-set `allowSelfReview: false` and fall through to the file tier.
+    expect(section).not.toContain(".allowSelfReview // empty");
+    expect(section).toContain("`select(. != null)`, **not** `// empty`");
+  });
+
   it("documents DB tier before the state/agent-policy.md file tier", () => {
     const section = extractStep3aSection(content);
     const dbIdx = section.indexOf("/agents/$SHIPWRIGHT_AGENT_ID/config");

@@ -192,6 +192,15 @@ describe("merge.md — Step 2: Pre-flight Checks", () => {
       expect(section).toContain("allowSelfReview");
     });
 
+    it("extracts allowSelfReview with a null-only guard so a legitimate false survives tier 1", () => {
+      const section = extractStep2Section(content);
+      expect(section).toContain("jq -r '.allowSelfReview | select(. != null)'");
+      // jq's `//` treats false as absent, which would silently drop a
+      // deliberately-set `allowSelfReview: false` and fall through to the file tier.
+      expect(section).not.toContain(".allowSelfReview // empty");
+      expect(section).toContain("`select(. != null)`, **not** `// empty`");
+    });
+
     it("documents DB tier before the state/agent-policy.md file tier", () => {
       const section = extractStep2Section(content);
       const dbIdx = section.indexOf("/agents/$SHIPWRIGHT_AGENT_ID/config");

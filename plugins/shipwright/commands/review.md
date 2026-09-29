@@ -72,13 +72,19 @@ doc changes needed here.
    ```bash
    POLICY_JSON=$(curl -sf -H "Authorization: Bearer $SHIPWRIGHT_AGENT_API_KEY" \
      "$SHIPWRIGHT_API_URL/agents/$SHIPWRIGHT_AGENT_ID/config")
-   AUTO_POST_REVIEWS=$(echo "$POLICY_JSON" | jq -r '.autoPostReviews // empty')
-   ALLOW_SELF_REVIEW=$(echo "$POLICY_JSON" | jq -r '.allowSelfReview // empty')
-   MIN_CONFIDENCE=$(echo "$POLICY_JSON" | jq -r '.minConfidence // empty')
-   MAX_FINDINGS=$(echo "$POLICY_JSON" | jq -r '.maxFindings // empty')
+   AUTO_POST_REVIEWS=$(echo "$POLICY_JSON" | jq -r '.autoPostReviews | select(. != null)')
+   ALLOW_SELF_REVIEW=$(echo "$POLICY_JSON" | jq -r '.allowSelfReview | select(. != null)')
+   MIN_CONFIDENCE=$(echo "$POLICY_JSON" | jq -r '.minConfidence | select(. != null)')
+   MAX_FINDINGS=$(echo "$POLICY_JSON" | jq -r '.maxFindings | select(. != null)')
    ```
    A `null` or absent field means the DB has no record yet (or that field isn't populated
    yet) — fall through to tier 2 for that field, not an error.
+
+   Use `select(. != null)`, **not** `// empty`. jq's `//` alternative operator treats both
+   `null` *and* `false` as absent, so `// empty` would silently discard a deliberately-set
+   `autoPostReviews: false` or `allowSelfReview: false` from the DB and fall through to the
+   file tier — the opposite of what the operator intended. `select(. != null)` filters on
+   null-ness only, so `false` survives as a real tier-1 value.
 2. **File** — for any field still empty after tier 1, read the corresponding snake_case key
    (`auto_post_reviews`/`allow_self_review`/`min_confidence`/`max_findings`) from
    `state/agent-policy.md`.

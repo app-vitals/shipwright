@@ -180,8 +180,12 @@ file tier below; once a future task extends the endpoint, this tier starts retur
 automatically, no further doc changes needed here):
 ```bash
 ALLOW_SELF_REVIEW=$(curl -sf -H "Authorization: Bearer $SHIPWRIGHT_AGENT_API_KEY" \
-  "$SHIPWRIGHT_API_URL/agents/$SHIPWRIGHT_AGENT_ID/config" | jq -r '.allowSelfReview // empty')
+  "$SHIPWRIGHT_API_URL/agents/$SHIPWRIGHT_AGENT_ID/config" | jq -r '.allowSelfReview | select(. != null)')
 ```
+Use `select(. != null)`, **not** `// empty` — jq's `//` treats `false` as absent, so
+`// empty` would silently discard a deliberately-set `allowSelfReview: false` from the DB
+and fall through to the file tier. Same idiom as review.md's Step 1.
+
 If `ALLOW_SELF_REVIEW` is empty (the DB has no record yet), fall back to `allow_self_review`
 from
 `state/agent-policy.md` (default: false — every provisioned agent gets the policy file
