@@ -280,16 +280,21 @@ If the retry also fails to produce a parseable STATUS, branch on what
   fresh, with that same site's prompt, as the safety net that guarantees the pipeline
   always produces a valid response. Print a one-line note that the configured subagent
   `{PATCH_SUBAGENT_TYPE}` failed after retry and the built-in fixer was used as a fallback.
-  If the built-in dispatch itself then also fails to produce a parseable STATUS, fall into
-  that site's BLOCKED handling as above.
+  If the built-in dispatch itself then also fails to produce a parseable STATUS, retry that
+  built-in dispatch once more — the same single-retry-before-terminal treatment the
+  configured override itself already received above, so the built-in safety net isn't held
+  to a laxer bar than the override it's standing in for. Only if that second built-in
+  attempt also fails to produce a parseable STATUS does this fall into that site's BLOCKED
+  handling as above.
 
 Each of Steps 4c/5c/6d must end with SOME valid parsed response before proceeding — never
 leave a dispatch site without one. A hanging or unparsed status report is never acceptable
 here: it would otherwise leave that site's pre-work PR claim (Step 4a.6/5a.6/6b.5) held
 indefinitely, exactly the failure mode `references/methodology-contracts/patch.md` warns a
 compliant subagent's own BLOCKED report must never cause. This mirrors `review.md`'s Step 7
-malformed/failed response handling (RVM-1.2) — the same two-tier retry-then-fallback shape,
-applied here to a free-text STATUS report instead of JSON.
+malformed/failed response handling (RVM-1.2) — the same retry-once-before-terminal shape
+applied at every dispatch attempt in the chain (override → override-retry → built-in-fresh →
+built-in-fresh-retry → BLOCKED), applied here to a free-text STATUS report instead of JSON.
 
 ---
 
