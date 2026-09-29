@@ -71,6 +71,15 @@ describe("deploy.md — inputs", () => {
     expect(content).toContain("staged");
     expect(content).toContain("CLAUDE.md");
   });
+
+  it("describes the ambiguous-Deploy-model fallback as detection poll first, not a direct staged poll", () => {
+    expect(content).toContain("must never guess");
+    // The fallback runs Step 5a's detection poll, and only escalates to the staged poll
+    // if a Deploy workflow run is actually observed — otherwise it lands on Step 5c.
+    expect(content).toContain("Deploy-workflow-detection poll");
+    expect(content).toContain("only proceeds to the full staged");
+    expect(content).toContain("post-merge CI watch (Step 5c)");
+  });
 });
 
 describe("deploy.md — output", () => {

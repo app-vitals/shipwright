@@ -58,8 +58,11 @@ merge completes:
   pipeline — the execution step watches post-merge CI instead) or `staged` (a three-stage
   GitHub Actions pipeline, with optional custom stage names in place of the defaults
   `"Deploy"` / `"Canary"` / `"Promote to Prod"`). When the section is absent, ambiguous, or
-  the reader isn't confident in the read, the execution step must never guess — it falls back
-  to the full staged poll rather than assuming no pipeline exists.
+  the reader isn't confident in the read, the execution step must never guess — it runs the
+  Deploy-workflow-detection poll (Step 5a's 5-minute budget, the same poll the `direct`/`none`
+  case skips) rather than assuming no pipeline exists, and only proceeds to the full staged
+  poll if a Deploy workflow run is actually observed within that window; if none appears it
+  falls through to the post-merge CI watch (Step 5c), same as the explicit no-pipeline path.
 
 ## Output
 
