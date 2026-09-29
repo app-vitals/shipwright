@@ -30,8 +30,8 @@ import type {
   MessageTokens,
   ThreadStats,
 } from "./http-chat-client.ts";
-import { AGENT_PHASES } from "./openapi-schemas.ts";
 import type { ModelBreakdownEntry } from "./openapi-schemas.ts";
+import { AGENT_PHASES } from "./openapi-schemas.ts";
 import { renderPushToggle } from "./push-toggle.ts";
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -355,6 +355,19 @@ export interface AgentDetail {
    * Vars card.
    */
   missingRequiredEnv: string[];
+  /**
+   * APM-1.3: the six real agent-policy fields (APM-1.1 DB columns), surfaced
+   * alongside Phase Methodology in the "Agent Policy" card. Callers resolve
+   * Prisma-column defaults (`?? true`/`?? false`/`?? 75`/`?? 5`/`?? 14`)
+   * before building this literal — see admin-ui.ts's two `agentDetail:
+   * AgentDetail = {...}` build sites.
+   */
+  autoPostReviews: boolean;
+  allowSelfReview: boolean;
+  minConfidence: number;
+  maxFindings: number;
+  cleanupMergedWorktrees: boolean;
+  cleanupAfterDays: number;
 }
 
 export interface CronJobItem {
@@ -1822,6 +1835,14 @@ export function renderAgentDetailPage(
             value="true"
             ${agent.restrictSlackToMembers ? "checked" : ""}
           />
+          <!-- Hidden fallback: unchecked checkboxes are omitted from FormData
+               entirely, so this "false" entry is what a submission of THIS
+               form sends when unchecked. It also lets the shared /settings
+               route (posted to by both this form and the Agent Policy form
+               below) tell "this form was submitted with the box unchecked"
+               apart from "a different form was submitted, this field is
+               absent" — see admin-ui.ts's POST /admin/agents/:id/settings. -->
+          <input type="hidden" name="restrictSlackToMembers" value="false" />
           <label class="form-label" for="restrictSlackToMembers" style="margin-bottom:0">Restrict Slack to members</label>
         </div>
         <p style="font-size:12px;color:#6b7280;margin:4px 0 12px">
@@ -2000,6 +2021,72 @@ export function renderAgentDetailPage(
           </tbody>
         </table>
       </div>
+    </div>
+
+    <div class="card">
+      <div class="card-title">Agent Policy</div>
+      <form method="POST" action="/admin/agents/${escapeHtml(agent.id)}/settings">
+        <div class="form-group" style="display:flex;align-items:center;gap:6px">
+          <input
+            id="autoPostReviews"
+            name="autoPostReviews"
+            type="checkbox"
+            value="true"
+            ${agent.autoPostReviews ? "checked" : ""}
+          />
+          <!-- Hidden "false" fallback so an unchecked box still submits a
+               value (see the Slack access card's checkbox above for why). -->
+          <input type="hidden" name="autoPostReviews" value="false" />
+          <label class="form-label" for="autoPostReviews" style="margin-bottom:0">Auto-post reviews</label>
+        </div>
+        <p style="font-size:12px;color:#6b7280;margin:4px 0 12px">
+          Off stages reviews to state/reviews/ + Slack notify instead of posting directly to GitHub.
+        </p>
+        <div class="form-group" style="display:flex;align-items:center;gap:6px">
+          <input
+            id="allowSelfReview"
+            name="allowSelfReview"
+            type="checkbox"
+            value="true"
+            ${agent.allowSelfReview ? "checked" : ""}
+          />
+          <input type="hidden" name="allowSelfReview" value="false" />
+          <label class="form-label" for="allowSelfReview" style="margin-bottom:0">Allow self-review</label>
+        </div>
+        <p style="font-size:12px;color:#6b7280;margin:4px 0 12px">
+          Whether the agent may review its own open PRs.
+        </p>
+        <div class="form-group" style="display:flex;align-items:center;gap:6px">
+          <input
+            id="cleanupMergedWorktrees"
+            name="cleanupMergedWorktrees"
+            type="checkbox"
+            value="true"
+            ${agent.cleanupMergedWorktrees ? "checked" : ""}
+          />
+          <input type="hidden" name="cleanupMergedWorktrees" value="false" />
+          <label class="form-label" for="cleanupMergedWorktrees" style="margin-bottom:0">Cleanup merged worktrees</label>
+        </div>
+        <p style="font-size:12px;color:#6b7280;margin:4px 0 12px">
+          Remove worktrees for merged PRs each cron cycle.
+        </p>
+        <div class="form-group">
+          <label class="form-label" for="minConfidence">Min confidence (0-100)</label>
+          <input id="minConfidence" name="minConfidence" type="number" value="${agent.minConfidence}" class="form-input" />
+          <p style="font-size:12px;color:#6b7280;margin-top:4px">Minimum finding confidence to surface in a review.</p>
+        </div>
+        <div class="form-group">
+          <label class="form-label" for="maxFindings">Max findings</label>
+          <input id="maxFindings" name="maxFindings" type="number" value="${agent.maxFindings}" class="form-input" />
+          <p style="font-size:12px;color:#6b7280;margin-top:4px">Max findings surfaced per review.</p>
+        </div>
+        <div class="form-group">
+          <label class="form-label" for="cleanupAfterDays">Cleanup after days</label>
+          <input id="cleanupAfterDays" name="cleanupAfterDays" type="number" value="${agent.cleanupAfterDays}" class="form-input" />
+          <p style="font-size:12px;color:#6b7280;margin-top:4px">Remove worktrees older than N days even if the PR is still open.</p>
+        </div>
+        <button type="submit" class="btn btn-primary">Save</button>
+      </form>
     </div>
 
     ${isAdmin ? membersSection : ""}

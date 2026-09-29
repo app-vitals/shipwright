@@ -181,6 +181,30 @@
               "null"
             ],
             "format": "date-time"
+          },
+          "autoPostReviews": {
+            "type": "boolean",
+            "example": true
+          },
+          "allowSelfReview": {
+            "type": "boolean",
+            "example": false
+          },
+          "minConfidence": {
+            "type": "integer",
+            "example": 75
+          },
+          "maxFindings": {
+            "type": "integer",
+            "example": 5
+          },
+          "cleanupMergedWorktrees": {
+            "type": "boolean",
+            "example": true
+          },
+          "cleanupAfterDays": {
+            "type": "integer",
+            "example": 14
           }
         },
         "required": [
@@ -194,7 +218,13 @@
           "typeName",
           "createdAt",
           "updatedAt",
-          "missingRequiredEnv"
+          "missingRequiredEnv",
+          "autoPostReviews",
+          "allowSelfReview",
+          "minConfidence",
+          "maxFindings",
+          "cleanupMergedWorktrees",
+          "cleanupAfterDays"
         ]
       },
       "PatchAgentBody": {
@@ -249,6 +279,30 @@
             ],
             "format": "date-time",
             "example": "2026-12-01T00:00:00.000Z"
+          },
+          "autoPostReviews": {
+            "type": "boolean",
+            "example": true
+          },
+          "allowSelfReview": {
+            "type": "boolean",
+            "example": false
+          },
+          "minConfidence": {
+            "type": "integer",
+            "example": 75
+          },
+          "maxFindings": {
+            "type": "integer",
+            "example": 5
+          },
+          "cleanupMergedWorktrees": {
+            "type": "boolean",
+            "example": true
+          },
+          "cleanupAfterDays": {
+            "type": "integer",
+            "example": 14
           }
         }
       },

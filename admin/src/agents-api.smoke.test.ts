@@ -275,6 +275,12 @@ function makeMockDeps(): AdminDeps {
           repos?: string[];
           restrictSlackToMembers?: boolean;
           slackId?: string | null;
+          autoPostReviews?: boolean;
+          allowSelfReview?: boolean;
+          minConfidence?: number;
+          maxFindings?: number;
+          cleanupMergedWorktrees?: boolean;
+          cleanupAfterDays?: number;
         },
       ) => ({
         id,
@@ -289,6 +295,12 @@ function makeMockDeps(): AdminDeps {
         createdAt: new Date("2024-01-01"),
         updatedAt: new Date("2024-01-01"),
         missingRequiredEnv: [],
+        autoPostReviews: input.autoPostReviews,
+        allowSelfReview: input.allowSelfReview,
+        minConfidence: input.minConfidence,
+        maxFindings: input.maxFindings,
+        cleanupMergedWorktrees: input.cleanupMergedWorktrees,
+        cleanupAfterDays: input.cleanupAfterDays,
       }),
       updateFields: async (
         id: string,
@@ -2596,6 +2608,74 @@ describe("admin API — restrictSlackToMembers field", () => {
     expect(res.status).toBe(200);
     const body = await res.json();
     expect(body.warning).toBeUndefined();
+  });
+});
+
+// ─── agent-policy fields (APM-1.3) ─────────────────────────────────────────────
+
+describe("admin API — agent policy fields", () => {
+  let cookie: string;
+
+  beforeAll(async () => {
+    cookie = await makeSessionCookie();
+  });
+
+  it("GET /agents/:id returns the six agent-policy fields with Prisma-column defaults when unset", async () => {
+    const app = createAdminApp(makeMockDeps());
+    const res = await app.request(`/agents/${AGENT_ID}`, {
+      headers: { Cookie: `admin_session=${cookie}` },
+    });
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.autoPostReviews).toBe(true);
+    expect(body.allowSelfReview).toBe(false);
+    expect(body.minConfidence).toBe(75);
+    expect(body.maxFindings).toBe(5);
+    expect(body.cleanupMergedWorktrees).toBe(true);
+    expect(body.cleanupAfterDays).toBe(14);
+  });
+
+  it("PATCH /agents/:id updates all six agent-policy fields and returns them", async () => {
+    const app = createAdminApp(makeMockDeps());
+    const res = await app.request(`/agents/${AGENT_ID}`, {
+      method: "PATCH",
+      body: JSON.stringify({
+        autoPostReviews: false,
+        allowSelfReview: true,
+        minConfidence: 90,
+        maxFindings: 3,
+        cleanupMergedWorktrees: false,
+        cleanupAfterDays: 30,
+      }),
+      headers: {
+        "Content-Type": "application/json",
+        Cookie: `admin_session=${cookie}`,
+      },
+    });
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.autoPostReviews).toBe(false);
+    expect(body.allowSelfReview).toBe(true);
+    expect(body.minConfidence).toBe(90);
+    expect(body.maxFindings).toBe(3);
+    expect(body.cleanupMergedWorktrees).toBe(false);
+    expect(body.cleanupAfterDays).toBe(30);
+  });
+
+  it("PATCH /agents/:id omitting the agent-policy fields leaves them at their defaults", async () => {
+    const app = createAdminApp(makeMockDeps());
+    const res = await app.request(`/agents/${AGENT_ID}`, {
+      method: "PATCH",
+      body: JSON.stringify({ selfHosted: true }),
+      headers: {
+        "Content-Type": "application/json",
+        Cookie: `admin_session=${cookie}`,
+      },
+    });
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.autoPostReviews).toBe(true);
+    expect(body.minConfidence).toBe(75);
   });
 });
 

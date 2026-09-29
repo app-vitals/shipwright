@@ -1850,6 +1850,12 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
       restrictSlackToMembers: agent.restrictSlackToMembers,
       typeName: agent.typeName,
       missingRequiredEnv: agent.missingRequiredEnv,
+      autoPostReviews: agent.autoPostReviews ?? true,
+      allowSelfReview: agent.allowSelfReview ?? false,
+      minConfidence: agent.minConfidence ?? 75,
+      maxFindings: agent.maxFindings ?? 5,
+      cleanupMergedWorktrees: agent.cleanupMergedWorktrees ?? true,
+      cleanupAfterDays: agent.cleanupAfterDays ?? 14,
     };
 
     if (!(await assertAgentAccess(agentId, c.var.userEmail, c.var.isAdmin))) {
@@ -2227,29 +2233,70 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
     },
   );
 
-  // ─── Slack access settings (restrictSlackToMembers) ────────────────────────
+  // ─── Slack access + Agent Policy settings ──────────────────────────────────
+  //
+  // Shared by two forms on the agent detail page: "Slack access"
+  // (restrictSlackToMembers) and "Agent Policy" (APM-1.3's six DB-backed
+  // policy fields). Each field is read independently and only included in
+  // the updateFields() call when present in THIS submission's form data —
+  // this lets the two forms share one route without a save from one form
+  // silently clobbering the other's fields back to false/defaults. Every
+  // checkbox in both forms renders a hidden "false" fallback alongside it
+  // (see admin-ui-pages.ts) so an unchecked box still submits a real value
+  // rather than being omitted entirely (the standard HTML checkbox gotcha) —
+  // that hidden fallback is what makes "this form's box is unchecked"
+  // distinguishable from "a different form was submitted, this field is
+  // simply absent".
 
   app.post("/admin/agents/:id/settings", requireAuth, async (c) => {
     if (!c.var.isAdmin) return new Response("Forbidden", { status: 403 });
     const agentId = c.req.param("id");
-    let restrictSlackToMembersRaw: string | undefined;
+    let formData: FormData;
     try {
-      const formData = await c.req.formData();
-      restrictSlackToMembersRaw = formData
-        .get("restrictSlackToMembers")
-        ?.toString();
+      formData = await c.req.formData();
     } catch {
       return c.redirect(`/admin/agents/${agentId}`, 302);
     }
-    const restrictSlackToMembers = restrictSlackToMembersRaw === "true";
+
+    const readBool = (name: string): boolean | undefined => {
+      const raw = formData.get(name)?.toString();
+      return raw === undefined ? undefined : raw === "true";
+    };
+    // Defensive: reject non-finite/negative values rather than writing NaN
+    // (or a nonsensical negative count) to Postgres — falls back to
+    // undefined (leave the field unchanged) instead of throwing or silently
+    // persisting garbage. An emptied <input type="number"> submits "" (not
+    // undefined), and Number("") is 0 — so blank/whitespace-only input is
+    // treated as absent too, otherwise clearing a field would silently zero it.
+    const readInt = (name: string): number | undefined => {
+      const raw = formData.get(name)?.toString();
+      if (raw === undefined || raw.trim() === "") return undefined;
+      const parsed = Number(raw);
+      return Number.isFinite(parsed) && parsed >= 0 ? parsed : undefined;
+    };
+
+    const restrictSlackToMembers = readBool("restrictSlackToMembers");
+    const autoPostReviews = readBool("autoPostReviews");
+    const allowSelfReview = readBool("allowSelfReview");
+    const cleanupMergedWorktrees = readBool("cleanupMergedWorktrees");
+    const minConfidence = readInt("minConfidence");
+    const maxFindings = readInt("maxFindings");
+    const cleanupAfterDays = readInt("cleanupAfterDays");
+
     const agent = await agentService.updateFields(agentId, {
-      restrictSlackToMembers,
+      ...(restrictSlackToMembers !== undefined && { restrictSlackToMembers }),
+      ...(autoPostReviews !== undefined && { autoPostReviews }),
+      ...(allowSelfReview !== undefined && { allowSelfReview }),
+      ...(cleanupMergedWorktrees !== undefined && { cleanupMergedWorktrees }),
+      ...(minConfidence !== undefined && { minConfidence }),
+      ...(maxFindings !== undefined && { maxFindings }),
+      ...(cleanupAfterDays !== undefined && { cleanupAfterDays }),
     });
     return redirectWithMembersWarning(
       c,
       agentMemberService,
       agent.id,
-      restrictSlackToMembers,
+      agent.restrictSlackToMembers,
     );
   });
 
@@ -2547,6 +2594,12 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
       restrictSlackToMembers: agent.restrictSlackToMembers,
       typeName: agent.typeName,
       missingRequiredEnv: agent.missingRequiredEnv,
+      autoPostReviews: agent.autoPostReviews ?? true,
+      allowSelfReview: agent.allowSelfReview ?? false,
+      minConfidence: agent.minConfidence ?? 75,
+      maxFindings: agent.maxFindings ?? 5,
+      cleanupMergedWorktrees: agent.cleanupMergedWorktrees ?? true,
+      cleanupAfterDays: agent.cleanupAfterDays ?? 14,
     };
     try {
       const { rawToken } = await agentTokenService.create(agentId, label);

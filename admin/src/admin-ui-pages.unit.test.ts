@@ -72,6 +72,12 @@ const AGENT: AgentDetail = {
   restrictSlackToMembers: false,
   typeName: "coding",
   missingRequiredEnv: [],
+  autoPostReviews: true,
+  allowSelfReview: false,
+  minConfidence: 75,
+  maxFindings: 5,
+  cleanupMergedWorktrees: true,
+  cleanupAfterDays: 14,
 };
 
 const AGENT_LIST_ITEM: AgentListItem = {
