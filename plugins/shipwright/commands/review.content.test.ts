@@ -2252,3 +2252,115 @@ describe("review.md — /prs/claim threads authorLogin/headRef/title for server-
     expect(refreshClaimSnippet).toContain('--arg title "$PR_TITLE"');
   });
 });
+
+describe("review.md — Step 7 dispatches the phase-methodology-configured subagent (RVM-1.2)", () => {
+  function extractConfigSection(md: string): string {
+    const sectionIdx = md.indexOf("### Resolve the configured review-phase subagent (RVM-1.2)");
+    const step5Idx = md.indexOf("## Step 5: Gather Context");
+    expect(sectionIdx).toBeGreaterThan(-1);
+    expect(step5Idx).toBeGreaterThan(sectionIdx);
+    return md.slice(sectionIdx, step5Idx);
+  }
+
+  it("resolves REVIEW_SUBAGENT_TYPE once, after the model-tier lookup, before Step 5", () => {
+    const claimSectionIdx = content.indexOf("### Claim using pre-captured commit SHA");
+    const step5Idx = content.indexOf("## Step 5: Gather Context");
+    const modelTierIdx = content.indexOf("### Resolve the linked task's model tier");
+    const configSectionIdx = content.indexOf("### Resolve the configured review-phase subagent (RVM-1.2)");
+    expect(claimSectionIdx).toBeGreaterThan(-1);
+    expect(modelTierIdx).toBeGreaterThan(claimSectionIdx);
+    expect(configSectionIdx).toBeGreaterThan(modelTierIdx);
+    expect(step5Idx).toBeGreaterThan(configSectionIdx);
+  });
+
+  it("fetches phaseMethodology.review from GET /agents/{id}/config, same endpoint/auth as patch.md's patchAuthorAllowlist fetch and Step 14's repos[0] fetch", () => {
+    const section = extractConfigSection(content);
+    expect(section).toContain('curl -sf -H "Authorization: Bearer $SHIPWRIGHT_AGENT_API_KEY"');
+    expect(section).toContain("$SHIPWRIGHT_API_URL/agents/$SHIPWRIGHT_AGENT_ID/config");
+    expect(section).toContain(".phaseMethodology.review");
+  });
+
+  it("REVIEW_SUBAGENT_TYPE defaults to the built-in shipwright:code-reviewer when phaseMethodology.review is absent or null", () => {
+    const section = extractConfigSection(content);
+    expect(section).toContain('REVIEW_SUBAGENT_TYPE=$(curl');
+    expect(section).toContain('.phaseMethodology.review // "shipwright:code-reviewer"');
+  });
+
+  it("REVIEW_SUBAGENT_TYPE is fail-closed on curl failure -- shell default also falls back to the built-in reviewer", () => {
+    const section = extractConfigSection(content);
+    expect(section).toContain("${REVIEW_SUBAGENT_TYPE:-shipwright:code-reviewer}");
+    expect(section).toContain("Fail-closed, not fail-open");
+  });
+
+  it("documents this lookup as fail-soft/best-effort, never a hard stop", () => {
+    const section = extractConfigSection(content);
+    const lower = section.toLowerCase();
+    expect(lower).toMatch(/fail-soft|best-effort/);
+    expect(lower).toContain("never a hard stop");
+  });
+
+  it("Step 7's Agent tool dispatch passes subagent_type: REVIEW_SUBAGENT_TYPE, not a hardcoded literal", () => {
+    const step7Section = extractStep7Section(content);
+    expect(step7Section).toContain("subagent_type: REVIEW_SUBAGENT_TYPE");
+    expect(step7Section).not.toContain('subagent_type: "shipwright:code-reviewer"');
+  });
+
+  it("Step 7's heading and prompt-block description of the dispatch survive unchanged in outcome -- the built-in reviewer is still named as the default", () => {
+    const step7Section = extractStep7Section(content);
+    expect(content).toContain(
+      "## Step 7: Deep Review (dispatch `shipwright:code-reviewer` subagent)",
+    );
+    expect(step7Section).toContain("the bundled\n`shipwright:code-reviewer` subagent by default");
+  });
+
+  it("Step 7 still documents retrying once on malformed JSON, regardless of which subagent_type was dispatched", () => {
+    const step7Section = extractStep7Section(content);
+    expect(step7Section).toContain("retry once with a reminder of the schema");
+    expect(step7Section).toContain("malformed JSON");
+    expect(step7Section).toContain("The retry re-dispatches the exact same\n`REVIEW_SUBAGENT_TYPE`");
+  });
+
+  it("documents that an outright Agent tool dispatch failure (e.g. an invalid subagent_type) is handled the same as malformed JSON", () => {
+    const step7Section = extractStep7Section(content);
+    const lower = step7Section.toLowerCase();
+    expect(lower).toContain("dispatch itself");
+    expect(lower).toContain("invalid/nonexistent");
+  });
+
+  it("built-in-default failure after retry falls back to the existing inline main-thread review (preserved, unchanged)", () => {
+    const step7Section = extractStep7Section(content);
+    expect(step7Section).toContain("**Built-in default**");
+    expect(step7Section).toContain("fall back to an inline review\n  in the main thread using the same rules");
+    expect(step7Section).toContain("agents/code-reviewer.md");
+    expect(step7Section).toContain("unchanged from before this task");
+  });
+
+  it("configured-override failure after retry falls back to dispatching the built-in shipwright:code-reviewer fresh, not an inline review", () => {
+    const step7Section = extractStep7Section(content);
+    expect(step7Section).toContain("**Configured override**");
+    expect(step7Section.toLowerCase()).toContain("do not attempt an inline main-thread review");
+    expect(step7Section).toContain("dispatch the built-in\n  `shipwright:code-reviewer` subagent fresh");
+  });
+
+  it("prints a one-line note when the configured-subagent fallback fires", () => {
+    const step7Section = extractStep7Section(content);
+    expect(step7Section).toContain("Print a one-line note");
+    expect(step7Section).toContain("failed after retry and the built-in reviewer was used as a\n  fallback");
+  });
+
+  it("documents that Step 7 always ends with a valid parsed response so Steps 9-11's claim-owning PATCH calls never hang", () => {
+    const step7Section = extractStep7Section(content);
+    const lower = step7Section.toLowerCase();
+    expect(lower).toContain("never leave\nstep 7 without one");
+    expect(lower).toContain("steps 9-11's claim-owning patch calls");
+    expect(step7Section).toContain("reviewedCommitSha");
+    expect(step7Section).toContain("reviewState");
+    expect(step7Section).toContain("reviewedAt");
+  });
+
+  it("Step 7 references the RVM-1.1 methodology contract doc as the wire shape any dispatched subagent must satisfy", () => {
+    const step7Section = extractStep7Section(content);
+    expect(step7Section).toContain("references/methodology-contracts/review.md");
+    expect(step7Section).toContain("RVM-1.1");
+  });
+});
