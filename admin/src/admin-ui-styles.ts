@@ -80,6 +80,65 @@ export function baseStyles(): string {
       border-bottom: 1px solid #f3f4f6;
     }
 
+    /* ─── Agent detail page — accordion groups (AGA-1.1) ─── */
+    /* Each group is a details element (class="group") wrapping several
+       existing .card sections. The toggle glyph is a ::before on .group-title (the
+       flush-left flex child) rather than on .group-summary itself -- a
+       ::before on the flex summary would become its own flex item and
+       break the flush-left/flush-right 2-sided layout into an uneven
+       3-way split. See .more-filters below for the anti-pattern this
+       avoids (::before directly on a non-flex <summary> is fine there;
+       .group-summary is display:flex, which is the difference). */
+    .group {
+      margin-bottom: 16px;
+    }
+    .group-summary {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      background: #fff;
+      border: 1px solid #e8e8ee;
+      border-radius: 10px;
+      padding: 14px 24px;
+      cursor: pointer;
+      list-style: none;
+    }
+    .group-summary::-webkit-details-marker { display: none; }
+    .group[open] > .group-summary {
+      border-bottom-left-radius: 0;
+      border-bottom-right-radius: 0;
+    }
+    .group-title {
+      font-size: 14px;
+      font-weight: 600;
+      color: #1a1a2e;
+    }
+    .group-title::before {
+      content: "▸";
+      display: inline-block;
+      margin-right: 8px;
+      transition: transform 0.15s ease;
+    }
+    .group[open] > .group-summary .group-title::before {
+      transform: rotate(90deg);
+    }
+    .group-sub {
+      font-size: 12px;
+      color: #6b7280;
+      white-space: nowrap;
+    }
+    .group-body {
+      border: 1px solid #e8e8ee;
+      border-top: none;
+      border-radius: 0 0 10px 10px;
+      padding: 16px 24px 4px;
+      background: #fafafa;
+    }
+    .group-body .card:last-child {
+      margin-bottom: 16px;
+    }
+
     /* ─── Tables ────────────────────────────────────────── */
     .data-table {
       width: 100%;
@@ -467,6 +526,12 @@ export function baseStyles(): string {
       }
       .card {
         padding: 14px 12px;
+      }
+      .group-summary {
+        padding: 12px 14px;
+      }
+      .group-body {
+        padding: 12px 12px 4px;
       }
       .form-row {
         flex-wrap: wrap;
