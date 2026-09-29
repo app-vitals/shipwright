@@ -216,7 +216,7 @@ export interface paths {
         head?: never;
         /**
          * Update an agent
-         * @description Admin-only. Updates `selfHosted`, `repos`, `reviewAuthorAllowlist`, `patchAuthorAllowlist`, `restrictSlackToMembers`, and/or `slackId`. `typeName` is not updatable via this route. Returns the updated agent, including a `warning` field when `restrictSlackToMembers` is set true on an agent with zero members.
+         * @description Admin-only. Updates `selfHosted`, `repos`, `reviewAuthorAllowlist`, `patchAuthorAllowlist`, `restrictSlackToMembers`, `slackId`, and/or `trialExpiresAt`. `typeName` and `trialExpiryWarnedAt` are not updatable via this route. Returns the updated agent, including a `warning` field when `restrictSlackToMembers` is set true on an agent with zero members.
          */
         patch: {
             parameters: {
@@ -314,7 +314,52 @@ export interface paths {
             };
         };
         put?: never;
-        post?: never;
+        /**
+         * Create an agent
+         * @description Admin-only. Validates name/typeName, creates the Agent row, seeds AgentTool/AgentPlugin rows from the resolved type manifest, attaches repos/allowlists/members, patches Claude credentials, and provisions Kubernetes when `runtime` is "in-cluster" — the same createAgent() implementation (APA-1.1) the web UI form at /admin/agents/new uses. Transactional: on any failure zero rows persist, and this route never returns a partial-success 200. Returns the created agent in the same shape as GET /agents/:id.
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: {
+                content: {
+                    "application/json": components["schemas"]["CreateAgentBody"];
+                };
+            };
+            responses: {
+                /** @description Agent created */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["GetAgentResult"];
+                    };
+                };
+                /** @description Bad request */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+                /** @description Forbidden */
+                403: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+            };
+        };
         delete?: never;
         options?: never;
         head?: never;
@@ -1344,6 +1389,120 @@ export interface paths {
         };
         trace?: never;
     };
+    "/agents/{id}/phase-methodology": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List phase-methodology overrides
+         * @description Returns every phase-methodology override configured for the agent — which subagent type handles each pipeline phase (prd, plan-session, review, patch, deploy, dev-task). A phase with no explicit override is simply absent from this list; see GET /agents/:id/config's `phaseMethodology` map for the full six-phase view with defaults filled in.
+         */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description List of phase-methodology overrides */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["PhaseMethodologyListWrapper"];
+                    };
+                };
+                /** @description Agent not found */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/agents/{id}/phase-methodology/{phase}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Set a phase's subagent-type override
+         * @description Upserts the `subagentType` override for one pipeline phase. Passing `subagentType: null` clears the override (the phase falls back to its default methodology). `phase` must be one of prd, plan-session, review, patch, deploy, dev-task.
+         */
+        put: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                    phase: "prd" | "plan-session" | "review" | "patch" | "deploy" | "dev-task";
+                };
+                cookie?: never;
+            };
+            requestBody?: {
+                content: {
+                    "application/json": components["schemas"]["PutAgentPhaseMethodologyBody"];
+                };
+            };
+            responses: {
+                /** @description Phase-methodology override upserted */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["PhaseMethodologyWrapper"];
+                    };
+                };
+                /** @description Bad request — invalid phase */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+                /** @description Agent not found */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+            };
+        };
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/agents/all/cron-runs/stats": {
         parameters: {
             query?: never;
@@ -1717,6 +1876,22 @@ export interface components {
             updatedAt: string;
             missingRequiredEnv: string[];
             warning?: string;
+            /** Format: date-time */
+            trialExpiresAt?: string | null;
+            /** Format: date-time */
+            trialExpiryWarnedAt?: string | null;
+            /** @example true */
+            autoPostReviews: boolean;
+            /** @example false */
+            allowSelfReview: boolean;
+            /** @example 75 */
+            minConfidence: number;
+            /** @example 5 */
+            maxFindings: number;
+            /** @example true */
+            cleanupMergedWorktrees: boolean;
+            /** @example 14 */
+            cleanupAfterDays: number;
         };
         PatchAgentBody: {
             /** @example U0AALR8M69X */
@@ -1743,6 +1918,23 @@ export interface components {
             patchAuthorAllowlist?: string[];
             /** @example false */
             restrictSlackToMembers?: boolean;
+            /**
+             * Format: date-time
+             * @example 2026-12-01T00:00:00.000Z
+             */
+            trialExpiresAt?: string | null;
+            /** @example true */
+            autoPostReviews?: boolean;
+            /** @example false */
+            allowSelfReview?: boolean;
+            /** @example 75 */
+            minConfidence?: number;
+            /** @example 5 */
+            maxFindings?: number;
+            /** @example true */
+            cleanupMergedWorktrees?: boolean;
+            /** @example 14 */
+            cleanupAfterDays?: number;
         };
         FailedStep: {
             /** @example k8s */
@@ -1783,6 +1975,26 @@ export interface components {
             selfHosted: boolean;
             /** @example coding */
             typeName: string;
+        };
+        CreateAgentBody: {
+            /** @example Bodhi */
+            name: string;
+            /** @example coding */
+            typeName: string;
+            /** @example in-cluster */
+            runtime?: string;
+            /** @example my-org/my-repo */
+            reposRaw?: string;
+            /** @example octocat */
+            authorAllowlistRaw?: string;
+            /** @example octocat */
+            patchAuthorAllowlistRaw?: string;
+            /** @example dev@example.com */
+            memberEmailsRaw?: string;
+            /** @example true */
+            restrictSlackToMembersRaw?: string;
+            claudeCodeOauthToken?: string;
+            anthropicApiKey?: string;
         };
         Ok: {
             /** @enum {boolean} */
@@ -2010,6 +2222,12 @@ export interface components {
             sessionId: string | null;
             /**
              * Format: date-time
+             * @description Most recent debounced progress-push (recordProgress()) timestamp, sourced from the agent's injected Clock. Null for runs that never reported progress (short/legacy runs).
+             * @example 2026-01-01T08:00:03.000Z
+             */
+            lastHeartbeatAt: string | null;
+            /**
+             * Format: date-time
              * @example 2026-01-01T08:00:00.000Z
              */
             createdAt: string;
@@ -2092,6 +2310,12 @@ export interface components {
              * @example session-abc-123
              */
             sessionId?: string | null;
+            /**
+             * Format: date-time
+             * @description Most recent debounced progress-push (recordProgress()) timestamp, sourced from the agent's injected Clock.
+             * @example 2026-01-01T08:00:03.000Z
+             */
+            lastHeartbeatAt?: string | null;
             /** @description Per-model token breakdown for this run */
             modelBreakdown?: components["schemas"]["ModelBreakdownEntry"][];
         };
@@ -2191,6 +2415,34 @@ export interface components {
         PatchAgentPluginBody: {
             /** @example 1.3.0 */
             version?: string | null;
+        };
+        AgentPhaseMethodology: {
+            /** @example clx1234567890 */
+            id: string;
+            /** @example clx1234567890 */
+            agentId: string;
+            /**
+             * @example review
+             * @enum {string}
+             */
+            phase: "prd" | "plan-session" | "review" | "patch" | "deploy" | "dev-task";
+            /** @example shipwright:code-reviewer */
+            subagentType: string | null;
+            /**
+             * Format: date-time
+             * @example 2026-01-01T00:00:00.000Z
+             */
+            updatedAt: string;
+        };
+        PhaseMethodologyListWrapper: {
+            phaseMethodology: components["schemas"]["AgentPhaseMethodology"][];
+        };
+        PhaseMethodologyWrapper: {
+            phaseMethodology: components["schemas"]["AgentPhaseMethodology"];
+        };
+        PutAgentPhaseMethodologyBody: {
+            /** @example shipwright:code-reviewer */
+            subagentType: string | null;
         };
         TokenAggregate: {
             /** @example 600 */
@@ -2386,6 +2638,24 @@ export interface components {
              *     ]
              */
             memberEmails: string[];
+            /**
+             * Format: date-time
+             * @example 2026-12-01T00:00:00.000Z
+             */
+            trialExpiresAt?: string | null;
+            /**
+             * @example {
+             *       "prd": null,
+             *       "plan-session": null,
+             *       "review": "shipwright:code-reviewer",
+             *       "patch": null,
+             *       "deploy": null,
+             *       "dev-task": null
+             *     }
+             */
+            phaseMethodology: {
+                [key: string]: string | null;
+            };
         };
         RuntimeError: {
             /** @example Not found */
