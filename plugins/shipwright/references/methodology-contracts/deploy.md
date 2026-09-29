@@ -78,7 +78,7 @@ A single JSON object:
   "stages": [
     { "name": "Deploy", "run_id": "1234567", "conclusion": "success" },
     { "name": "Canary", "run_id": "1234568", "conclusion": "success" },
-    { "name": "Promote", "run_id": "1234569", "conclusion": "success" }
+    { "name": "Promote to Prod", "run_id": "1234569", "conclusion": "success" }
   ],
   "failure_reason": null,
   "revert_pr_url": null,
@@ -106,8 +106,10 @@ A single JSON object:
   watch for the remainder of the budget (Step 5b's stage-name-mismatch path); `false`
   otherwise, including always `false` when `pipeline_mode` is `"no-pipeline"`.
 - **`stages[]`** — the workflow run(s) observed, each with:
-  - `name` — the workflow name (`"Deploy"` / `"Canary"` / `"Promote"`, a repo's custom stage
-    name, or the underlying CI/build workflow name in the no-pipeline case). `null` when
+  - `name` — the workflow name (`"Deploy"` / `"Canary"` / `"Promote to Prod"`, a repo's custom
+    stage name, or the underlying CI/build workflow name in the no-pipeline case) — the
+    GitHub Actions workflow `.name` value as the API returns it, not the internal stage label
+    (the Promote stage's default workflow `.name` is `"Promote to Prod"`). `null` when
     `sha_only_fallback` is `true`, since there is no `.name` to match against in that mode.
   - `run_id` — the GitHub Actions run id.
   - `conclusion` — the run's terminal `conclusion` (`success`, `failure`, `cancelled`,
@@ -126,7 +128,12 @@ A single JSON object:
 - **`health_check`** — `{status, url}` from Step 7's post-promote probe, or `null` when
   `verdict` is not `promote_succeeded` (the probe only runs after Promote succeeds).
   `status` is `"passed"` (HTTP 200) or a description of the failure (e.g. `"503"` or
-  `"unreachable"`). This field is explicitly informational — it never changes `success` or
+  `"unreachable"`). **One exception to that invariant:** when `sha_only_fallback` is `true`,
+  the SHA-only watch has no `.name` to identify a Promote run, so its all-runs-green terminal
+  condition reports `verdict: "promote_succeeded"` without ever reaching Step 7 — that path
+  stops at the `status: "deployed"` update. So a `promote_succeeded` verdict carries a `null`
+  `health_check` whenever `sha_only_fallback` is `true`; the probe is only guaranteed to have
+  run when `sha_only_fallback` is `false`. This field is explicitly informational — it never changes `success` or
   `verdict`; the deploy is already recorded as successful by the time the probe runs, and a
   failing health check only prompts a human to investigate manually.
 

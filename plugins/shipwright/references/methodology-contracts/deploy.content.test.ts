@@ -100,6 +100,12 @@ describe("deploy.md — output", () => {
     expect(content.toLowerCase()).toContain("sha-only fallback");
   });
 
+  it("uses the real default workflow names, not the internal Promote stage label", () => {
+    expect(content).toContain("Promote to Prod");
+    // `"Promote"` alone is the internal stage label, never a GitHub Actions `.name` value.
+    expect(content).not.toMatch(/"Promote"/);
+  });
+
   it("documents a failure-reason string mirroring the task-store PATCH note/blockedReason", () => {
     expect(content).toContain("failure_reason");
     expect(content).toContain("Deploy stage failed");
@@ -115,6 +121,15 @@ describe("deploy.md — output", () => {
   it("documents the health-check status/URL as informational, never gating", () => {
     expect(content).toContain("health_check");
     expect(content.toLowerCase()).toContain("informational");
+  });
+
+  it("carves out the SHA-only-fallback success path, which never runs the health probe", () => {
+    const healthCheckBullet = content.slice(
+      content.indexOf("- **`health_check`**"),
+      content.indexOf("## Scope"),
+    );
+    expect(healthCheckBullet).toContain("sha_only_fallback");
+    expect(healthCheckBullet.toLowerCase()).toMatch(/exception|never/);
   });
 });
 
