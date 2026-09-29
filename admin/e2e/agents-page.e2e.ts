@@ -253,6 +253,16 @@ test.describe("GET /admin/agents/:id — authenticated", () => {
     await page.setViewportSize({ width: 375, height: 812 });
     await loadAgentDetailPage(page, context);
 
+    // Env Vars now lives inside a collapsed accordion group (AGA-1.1) —
+    // expand it before asserting on the visibility of anything inside.
+    await page
+      .locator("#env-vars")
+      .locator("xpath=ancestor::details[contains(@class, 'group')]")
+      .first()
+      .evaluate((details) => {
+        (details as HTMLDetailsElement).open = true;
+      });
+
     const deleteBtn = page
       .locator(".data-table .btn", { hasText: "Delete" })
       .first();
