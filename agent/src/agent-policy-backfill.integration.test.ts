@@ -7,12 +7,28 @@
  * the backfill against a fixture markdown string with non-default values,
  * assert the DB row now has the correct 6 field values.
  *
+ * Builds its own adapter-backed PrismaClient rather than importing
+ * `createAdminPrismaClient` from `@shipwright/admin`: the agent Docker
+ * build's module-resolution guard (`agent/Dockerfile`'s
+ * `RUN find agent/src -name "*.ts" | xargs bun build ...`) bundles every
+ * `.ts` file under `agent/src`, including this one, but the image only
+ * copies `admin/package.json` and `admin/prisma/` into that build stage —
+ * never `admin/src/` — so a VALUE import from `@shipwright/admin` (as
+ * opposed to the `import type` used elsewhere in `agent/src`, which the
+ * bundler elides) fails to resolve at build time. `admin/prisma/client/`
+ * (the generated Prisma client) IS copied/generated in that stage, so this
+ * imports it directly by relative path and duplicates
+ * `admin/src/prisma-client.ts`'s small adapter-wiring (Prisma 7 needs a
+ * driver adapter, not a bare `datasource.url`) rather than reaching back
+ * into `admin/src`.
+ *
  * Requires DATABASE_URL_ADMIN_TEST to be set; skips otherwise.
  */
 
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
-import type { PrismaClient } from "@shipwright/admin";
-import { createAdminPrismaClient } from "@shipwright/admin";
+import { PrismaPg } from "@prisma/adapter-pg";
+import pg from "pg";
+import { PrismaClient } from "../../admin/prisma/client/client.ts";
 import { backfillAgentPolicy } from "./agent-policy-backfill.ts";
 
 const TEST_DB = process.env.DATABASE_URL_ADMIN_TEST;
@@ -20,7 +36,9 @@ const describeOrSkip = TEST_DB ? describe : describe.skip;
 
 function makePrisma(): PrismaClient {
   // TEST_DB is guaranteed set — the describe block is skipped otherwise.
-  return createAdminPrismaClient(TEST_DB as string);
+  const pool = new pg.Pool({ connectionString: TEST_DB as string });
+  const adapter = new PrismaPg(pool, { disposeExternalPool: true });
+  return new PrismaClient({ adapter });
 }
 
 /** Every field flipped away from its documented default, so a passing round-trip can't be a coincidence of the DB's own column defaults. */
