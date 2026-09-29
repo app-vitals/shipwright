@@ -105,8 +105,18 @@ RUN curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg \
     && rm -rf /var/lib/apt/lists/*
 
 # Install the mise binary to a world-executable location (NOT /root, so the
-# non-root runtime user can invoke it).
-RUN curl https://mise.run | MISE_INSTALL_PATH=/usr/local/bin/mise sh
+# non-root runtime user can invoke it). Downloaded to a file first (rather than
+# piped straight into sh) so curl's own exit code gates the step — dash (this
+# base image's /bin/sh) has no pipefail, so `curl ... | sh` on a transient
+# curl failure (e.g. a mid-download connection reset) sends sh 0 bytes on
+# stdin, which sh happily runs as a no-op and exits 0, silently shipping an
+# image with no /usr/local/bin/mise. The trailing `test -x` is a second,
+# independent gate against the installer itself running but not landing the
+# binary at this exact path.
+RUN curl -fsSL -o /tmp/mise-install.sh https://mise.run \
+    && MISE_INSTALL_PATH=/usr/local/bin/mise sh /tmp/mise-install.sh \
+    && rm /tmp/mise-install.sh \
+    && test -x /usr/local/bin/mise
 
 # Install Node.js + Claude Code CLI system-wide (as root) on /usr/bin.
 # claude is a plain binary on PATH (/usr/bin/claude) backed by system node — it is
