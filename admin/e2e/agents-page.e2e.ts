@@ -264,7 +264,7 @@ test.describe("GET /admin/agents/:id — authenticated", () => {
       });
 
     const deleteBtn = page
-      .locator(".data-table .btn", { hasText: "Delete" })
+      .locator("#env-vars .data-table .btn", { hasText: "Delete" })
       .first();
     await expect(deleteBtn).toBeVisible();
 
