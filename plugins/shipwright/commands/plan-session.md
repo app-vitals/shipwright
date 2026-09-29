@@ -528,14 +528,17 @@ PLAN_PR_URL=""
 REPO_ROOT=$(git rev-parse --show-toplevel 2>/dev/null)
 if [ -z "$REPO_ROOT" ] || ! command -v gh >/dev/null; then
   echo "⏭ Plan PR skipped — not a git checkout or gh unavailable."
-elif gh pr list --head "$BRANCH" --state all --json url -q '.[0].url' | grep -q .; then
-  PLAN_PR_URL=$(gh pr list --head "$BRANCH" --state all --json url -q '.[0].url')
+elif gh pr list --head "$BRANCH" --state all --json url -q '.[0].url // empty' | grep -q .; then
+  PLAN_PR_URL=$(gh pr list --head "$BRANCH" --state all --json url -q '.[0].url // empty')
   echo "⏭ Plan PR already exists: $PLAN_PR_URL"
 else
   git -C "$REPO_ROOT" fetch -q origin
   DEFAULT=$(git -C "$REPO_ROOT" symbolic-ref --short refs/remotes/origin/HEAD 2>/dev/null || echo origin/main)
   WT=$(mktemp -d)/plan-wt
-  git -C "$REPO_ROOT" worktree add -q -b "$BRANCH" "$WT" "$DEFAULT"
+  # -B (not -b): a prior run may have created this branch and then failed after
+  # push but before `gh pr create` — reset it to $DEFAULT instead of erroring out,
+  # so a retry isn't permanently wedged on "branch already exists".
+  git -C "$REPO_ROOT" worktree add -q -B "$BRANCH" "$WT" "$DEFAULT"
   mkdir -p "$WT/planning/$SESSION"
   for f in PLAN.md PRODUCT-SPEC.md; do
     [ -f "$REPO_ROOT/planning/$SESSION/$f" ] && cp "$REPO_ROOT/planning/$SESSION/$f" "$WT/planning/$SESSION/$f"
@@ -543,11 +546,18 @@ else
   # -f: planning/ is commonly gitignored. Stage only these files — never -A.
   git -C "$WT" add -f "planning/$SESSION/PLAN.md" "planning/$SESSION/PRODUCT-SPEC.md" 2>/dev/null \
     || git -C "$WT" add -f "planning/$SESSION/PLAN.md"
+  # Mechanical scrub gate — planning/ is gitignored precisely because it can carry
+  # internal detail, and --autonomous runs with no human present to catch it. Block
+  # the commit on the same class of pattern a secret scanner flags: private key
+  # headers and well-known cloud/vendor token prefixes.
+  SECRET_PATTERN='-----BEGIN [A-Z ]*PRIVATE KEY-----|AKIA[0-9A-Z]{16}|gh[pousr]_[A-Za-z0-9]{36,}|xox[baprs]-[A-Za-z0-9-]+|AIza[0-9A-Za-z_-]{35}'
   if git -C "$WT" diff --cached --quiet; then
     echo "⏭ Plan PR skipped — plan already on $DEFAULT."
+  elif git -C "$WT" diff --cached | grep -qE "$SECRET_PATTERN"; then
+    echo "⚠ Plan PR not opened — staged plan content matched a secret-pattern scan; scrub planning/$SESSION and retry."
   else
     git -C "$WT" commit -q -m "docs(planning): add $SESSION plan" \
-      && git -C "$WT" push -q -u origin "$BRANCH" \
+      && git -C "$WT" push -qf -u origin "$BRANCH" \
       && PLAN_PR_URL=$(cd "$WT" && gh pr create --head "$BRANCH" --base "${DEFAULT#origin/}" \
            --title "docs(planning): add $SESSION plan" \
            --body "Plan for session \`$SESSION\` — the \`source\` of every task in this session.")
@@ -556,7 +566,7 @@ else
 fi
 ```
 
-Before the commit, apply the repo's own pre-commit hygiene to the two staged files (for example, a public repo's banned-string scan, or its CLAUDE.md rules on secrets and client names). If a file fails that check, or any command above fails, print `⚠ Plan PR not opened — {reason}` and continue: the tasks are already queued and the command must never fail on this step. A pre-existing PR for the branch (open or merged) counts as done — do not open a second one.
+The block above runs a mechanical secret-pattern scan over the staged diff before committing — never rely on prose discipline alone here, since `--autonomous` is the only mode this runs in and no human reviews the commit before it lands. If the repo has its own stricter pre-commit hygiene (a public repo's banned-string scan, or its CLAUDE.md rules on client names and internal infra identifiers), apply that too. If a file fails either check, or any command above fails, print `⚠ Plan PR not opened — {reason}` and continue: the tasks are already queued and the command must never fail on this step. A pre-existing PR for the branch (open or merged) counts as done — do not open a second one.
 
 When a PR was opened (or already existed), surface it in the confirmation as `Plan PR: {url}`; otherwise omit that line.
 

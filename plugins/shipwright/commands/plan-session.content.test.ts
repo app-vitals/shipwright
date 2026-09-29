@@ -481,6 +481,38 @@ describe("plan-session.md — Step 6d persists the plan to the repo", () => {
     expect(section.toLowerCase()).toContain("must never fail on this step");
     expect(content).toContain("Plan PR: {url}");
   });
+
+  it("guards the jq existing-PR lookup against an empty array printing the literal string 'null'", () => {
+    const section = step6d();
+    // `.[0].url` on `[]` raw-outputs the literal text "null" (a non-empty string
+    // that would otherwise satisfy `grep -q .`) — `// empty` must be present on
+    // every `.[0].url` lookup so the branch only matches a genuine URL.
+    const jqLookups = section.match(/-q '\.\[0\]\.url[^']*'/g) ?? [];
+    expect(jqLookups.length).toBeGreaterThan(0);
+    for (const lookup of jqLookups) {
+      expect(lookup).toContain("// empty");
+    }
+  });
+
+  it("resets (not errors on) a pre-existing local branch ref before adding the worktree", () => {
+    const section = step6d();
+    // A prior run can push the branch and then fail before `gh pr create` — the
+    // branch ref survives `worktree remove --force`. `-B` resets/creates instead
+    // of `-b`, which would fail outright with "branch already exists" on retry.
+    expect(section).toContain('worktree add -q -B "$BRANCH"');
+    expect(section).not.toMatch(/worktree add -q -b "\$BRANCH"/);
+  });
+
+  it("runs a mechanical secret-pattern scan on the staged diff before committing", () => {
+    const section = step6d();
+    expect(section).toContain("SECRET_PATTERN");
+    expect(section).toContain("PRIVATE KEY");
+    // The scan must gate the commit itself, not just live as prose.
+    const scanIdx = section.indexOf("SECRET_PATTERN");
+    const commitIdx = section.indexOf("git -C \"$WT\" commit");
+    expect(scanIdx).toBeGreaterThan(-1);
+    expect(commitIdx).toBeGreaterThan(scanIdx);
+  });
 });
 
 describe("plan-session.md — Step 5 principles override check + security domain (PCO-1.1)", () => {
