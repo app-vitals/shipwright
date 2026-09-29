@@ -49,6 +49,11 @@ function buildSpecApp() {
         return [];
       },
     },
+    agentPhaseMethodologyService: {
+      async list() {
+        return [];
+      },
+    },
     adminApiKeys: parseAdminApiKeys(`admin:${ADMIN_API_KEY}:*`),
     agentTokenService: { validate: async () => null },
     sessionSecret: SESSION_SECRET,
@@ -301,6 +306,16 @@ function buildSpecApp() {
       }),
       remove: async () => {},
       removeByName: async () => {},
+    },
+    agentPhaseMethodologyService: {
+      list: async () => [],
+      upsert: async () => ({
+        id: "pm1",
+        agentId: "a1",
+        phase: "review",
+        subagentType: null,
+        updatedAt: new Date(),
+      }),
     },
     agentMemberService: {
       add: async (agentId: string, email: string) => ({

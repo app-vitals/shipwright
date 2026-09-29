@@ -19,12 +19,13 @@
  * two routes that need it.
  */
 
-import { OpenAPIHono, createRoute, z } from "@hono/zod-openapi";
+import { createRoute, OpenAPIHono, z } from "@hono/zod-openapi";
 import type { AgentCronJob } from "./agent-cron-jobs.ts";
 import type { AgentEnvBundle } from "./agent-envs.ts";
 import type { AgentTokenService } from "./agent-tokens.ts";
 import { type AdminApiKey, createAdminAuthMiddleware } from "./api-auth.ts";
 import {
+  AGENT_PHASES,
   AgentConfigResponseSchema,
   AgentCronJobSchema,
   AgentIdParamSchema,
@@ -56,6 +57,17 @@ export interface AgentConfigResponse {
    * isTrialExpired() gate reads to block Slack access post-expiry.
    */
   trialExpiresAt?: string | null;
+  /**
+   * PMC-1.1: phase -> subagentType (or null) map, covering all six pipeline
+   * phases regardless of whether the agent has an explicit override row for
+   * each — phases without a row default to null. The live handler always
+   * populates this (see AgentConfigResponseSchema, which requires it), but
+   * the TS interface field stays optional — mirroring trialExpiresAt above —
+   * so existing fixtures/doubles built against this interface before PMC-1.1
+   * (and lib/admin-types.ts's openapi-fetch `paths` type, regenerated
+   * separately from admin/openapi.json) keep compiling unchanged.
+   */
+  phaseMethodology?: Record<string, string | null>;
 }
 
 interface AgentEnvServiceLike {
@@ -96,11 +108,18 @@ interface AgentPluginServiceLike {
   listEnabled(agentId: string): Promise<Array<{ name: string }>>;
 }
 
+interface AgentPhaseMethodologyServiceLike {
+  list(
+    agentId: string,
+  ): Promise<Array<{ phase: string; subagentType: string | null }>>;
+}
+
 export interface AgentRuntimeDeps {
   agentEnvService: AgentEnvServiceLike;
   agentCronJobService: AgentCronJobServiceLike;
   agentService: AgentServiceLike;
   agentPluginService: AgentPluginServiceLike;
+  agentPhaseMethodologyService: AgentPhaseMethodologyServiceLike;
   /** Session secret for cookie auth (SHIPWRIGHT_SESSION_SECRET). */
   sessionSecret: string;
   /** Parsed SHIPWRIGHT_ADMIN_API_KEYS — optional; absent means env key auth is disabled. */
@@ -180,6 +199,7 @@ export function createAgentRuntimeApp(deps: AgentRuntimeDeps): OpenAPIHono {
     agentCronJobService,
     agentService,
     agentPluginService,
+    agentPhaseMethodologyService,
   } = deps;
 
   const app = new OpenAPIHono();
@@ -206,13 +226,29 @@ export function createAgentRuntimeApp(deps: AgentRuntimeDeps): OpenAPIHono {
       return c.json({ error: "Not found" }, 404);
     }
 
-    // Fetch env bundle and plugins in parallel
-    const [bundle, plugins] = await Promise.all([
+    // Fetch env bundle, plugins, and phase-methodology overrides in parallel
+    const [bundle, plugins, phaseMethodologyRows] = await Promise.all([
       agentEnvService.getConfigBundle(id),
       agentPluginService.listEnabled(id),
+      agentPhaseMethodologyService.list(id),
     ]);
 
-    const response: AgentConfigResponse = {
+    // Every phase defaults to null; override rows (if any) fill in the rest.
+    const phaseMethodology: Record<string, string | null> = Object.fromEntries(
+      AGENT_PHASES.map((phase) => [phase, null]),
+    );
+    for (const row of phaseMethodologyRows) {
+      phaseMethodology[row.phase] = row.subagentType;
+    }
+
+    // Not annotated as `: AgentConfigResponse` — that interface's
+    // phaseMethodology field is deliberately optional (see its doc comment)
+    // for downstream consumer/fixture compatibility, but this handler always
+    // populates every field, so leaving the literal un-annotated lets it
+    // infer the fully-required shape the route's Zod response schema (which
+    // requires phaseMethodology) expects. `c.json()` below still structurally
+    // checks this literal against that schema-derived type.
+    const response = {
       env: bundle?.env ?? {},
       allowedTools: bundle?.allowedTools ?? [],
       plugins: plugins.map((p) => {
@@ -234,6 +270,7 @@ export function createAgentRuntimeApp(deps: AgentRuntimeDeps): OpenAPIHono {
       trialExpiresAt: agent.trialExpiresAt
         ? agent.trialExpiresAt.toISOString()
         : null,
+      phaseMethodology,
     };
 
     return c.json(response, 200);

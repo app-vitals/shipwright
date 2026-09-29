@@ -19,17 +19,18 @@ import { AgentCronRunStatsService } from "./agent-cron-run-stats.ts";
 import { AgentCronRunService } from "./agent-cron-runs.ts";
 import { AgentEnvService } from "./agent-envs.ts";
 import { AgentMemberService } from "./agent-members.ts";
+import { AgentPhaseMethodologyService } from "./agent-phase-methodology.ts";
 import { AgentPluginService } from "./agent-plugins.ts";
-import { NoopAgentProvisioner } from "./agent-provisioner.ts";
 import type { AgentProvisioner } from "./agent-provisioner.ts";
+import { NoopAgentProvisioner } from "./agent-provisioner.ts";
 import { AgentTokenService } from "./agent-tokens.ts";
 import { AgentToolService } from "./agent-tools.ts";
 import type { AgentTypeManifestResolver } from "./agent-type-manifest-loader.ts";
 import type { AgentTypeManifest } from "./agent-type-registry.ts";
 import { AgentWorkQueueService } from "./agent-work-queue.ts";
-import { createAdminApp } from "./agents-api.ts";
-import type { AdminDeps } from "./agents-api.ts";
 import { AgentService } from "./agents.ts";
+import type { AdminDeps } from "./agents-api.ts";
+import { createAdminApp } from "./agents-api.ts";
 import { NoopChatServiceProvisioningClient } from "./chat-service-provisioning-client.ts";
 import { createAdminPrismaClient } from "./prisma-client.ts";
 import { NoopTaskStoreProvisioningClient } from "./task-store-provisioning-client.ts";
@@ -149,6 +150,7 @@ function makeDeps(
     agentToolService: new AgentToolService(prisma),
     agentTokenService: new AgentTokenService(prisma),
     agentPluginService: new AgentPluginService(prisma),
+    agentPhaseMethodologyService: new AgentPhaseMethodologyService(prisma),
     agentMemberService: new AgentMemberService(prisma),
     agentTypeRegistry,
     agentChatTokenService: new AgentChatTokenService(prisma),
@@ -177,6 +179,7 @@ describeOrSkip("admin CRUD API (integration)", () => {
     // Clean all tables in FK dependency order
     await prisma.agentWorkQueueSnapshot.deleteMany();
     await prisma.agentPlugin.deleteMany();
+    await prisma.agentPhaseMethodology.deleteMany();
     await prisma.agentToken.deleteMany();
     await prisma.agentCronJob.deleteMany();
     await prisma.agentTool.deleteMany();
@@ -689,5 +692,117 @@ describeOrSkip("admin CRUD API (integration)", () => {
       where: { agentId },
     });
     expect(rows).toHaveLength(0);
+  });
+
+  // ─── Phase Methodology (PMC-1.1) ───────────────────────────────────────────
+
+  it("GET /agents/:id/phase-methodology returns an empty list for an agent with no overrides", async () => {
+    const res = await app.request(`/agents/${agentId}/phase-methodology`, {
+      headers: { Cookie: `admin_session=${cookie}` },
+    });
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.phaseMethodology).toEqual([]);
+  });
+
+  it("PUT /agents/:id/phase-methodology/:phase upserts a subagentType override, reflected on GET", async () => {
+    const putRes = await app.request(
+      `/agents/${agentId}/phase-methodology/review`,
+      {
+        method: "PUT",
+        body: JSON.stringify({ subagentType: "shipwright:code-reviewer" }),
+        headers: {
+          "Content-Type": "application/json",
+          Cookie: `admin_session=${cookie}`,
+        },
+      },
+    );
+    expect(putRes.status).toBe(200);
+    const putBody = await putRes.json();
+    expect(putBody.phaseMethodology.phase).toBe("review");
+    expect(putBody.phaseMethodology.subagentType).toBe(
+      "shipwright:code-reviewer",
+    );
+
+    const getRes = await app.request(`/agents/${agentId}/phase-methodology`, {
+      headers: { Cookie: `admin_session=${cookie}` },
+    });
+    expect(getRes.status).toBe(200);
+    const getBody = await getRes.json();
+    expect(getBody.phaseMethodology).toHaveLength(1);
+    expect(getBody.phaseMethodology[0].phase).toBe("review");
+    expect(getBody.phaseMethodology[0].subagentType).toBe(
+      "shipwright:code-reviewer",
+    );
+
+    // Verify against the real DB row directly.
+    const dbRow = await prisma.agentPhaseMethodology.findFirst({
+      where: { agentId, phase: "review" },
+    });
+    expect(dbRow?.subagentType).toBe("shipwright:code-reviewer");
+  });
+
+  it("PUT /agents/:id/phase-methodology/:phase with subagentType: null clears a previously set override", async () => {
+    await app.request(`/agents/${agentId}/phase-methodology/deploy`, {
+      method: "PUT",
+      body: JSON.stringify({ subagentType: "shipwright:deployer" }),
+      headers: {
+        "Content-Type": "application/json",
+        Cookie: `admin_session=${cookie}`,
+      },
+    });
+
+    const clearRes = await app.request(
+      `/agents/${agentId}/phase-methodology/deploy`,
+      {
+        method: "PUT",
+        body: JSON.stringify({ subagentType: null }),
+        headers: {
+          "Content-Type": "application/json",
+          Cookie: `admin_session=${cookie}`,
+        },
+      },
+    );
+    expect(clearRes.status).toBe(200);
+    const clearBody = await clearRes.json();
+    expect(clearBody.phaseMethodology.subagentType).toBeNull();
+  });
+
+  it("PUT /agents/:id/phase-methodology/:phase rejects an invalid phase with 400", async () => {
+    const res = await app.request(
+      `/agents/${agentId}/phase-methodology/not-a-real-phase`,
+      {
+        method: "PUT",
+        body: JSON.stringify({ subagentType: "claude" }),
+        headers: {
+          "Content-Type": "application/json",
+          Cookie: `admin_session=${cookie}`,
+        },
+      },
+    );
+    expect(res.status).toBe(400);
+  });
+
+  it("GET /agents/:id/phase-methodology returns 404 for an unknown agent", async () => {
+    const res = await app.request(
+      "/agents/nonexistent-agent-id/phase-methodology",
+      { headers: { Cookie: `admin_session=${cookie}` } },
+    );
+    expect(res.status).toBe(404);
+  });
+
+  it("PUT /agents/:id/phase-methodology/:phase returns 404 for an unknown agent", async () => {
+    const res = await app.request(
+      "/agents/nonexistent-agent-id/phase-methodology/review",
+      {
+        method: "PUT",
+        body: JSON.stringify({ subagentType: "claude" }),
+        headers: {
+          "Content-Type": "application/json",
+          Cookie: `admin_session=${cookie}`,
+        },
+      },
+    );
+    expect(res.status).toBe(404);
   });
 });

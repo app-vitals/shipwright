@@ -334,6 +334,16 @@ function makeMockDeps(): AdminDeps {
       remove: async () => {},
       removeByName: async () => {},
     },
+    agentPhaseMethodologyService: {
+      list: async () => [],
+      upsert: async () => ({
+        id: "phase-methodology-id",
+        agentId: AGENT_ID,
+        phase: "review",
+        subagentType: null,
+        updatedAt: new Date(),
+      }),
+    },
     agentMemberService: {
       add: async (agentId: string, email: string) => ({
         id: "member-1",

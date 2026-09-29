@@ -204,6 +204,12 @@ function makeMockDeps(opts?: {
       remove: async () => {},
       removeByName: async () => {},
     },
+    agentPhaseMethodologyService: {
+      list: async () => [],
+      upsert: async () => {
+        throw new Error("not implemented");
+      },
+    },
     agentMemberService: {
       add: async () => {
         throw new Error("not implemented");

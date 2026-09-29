@@ -37,6 +37,7 @@ import type { DeleteAgentFullyDeps } from "./agent-deletion.ts";
 import { deleteAgentFully } from "./agent-deletion.ts";
 import type { AgentEnvService } from "./agent-envs.ts";
 import type { AgentMemberService } from "./agent-members.ts";
+import type { AgentPhaseMethodologyService } from "./agent-phase-methodology.ts";
 import type { AgentPluginService } from "./agent-plugins.ts";
 import type { AgentProvisioner } from "./agent-provisioner.ts";
 import type { AgentTokenService } from "./agent-tokens.ts";
@@ -61,6 +62,7 @@ import {
   AgentEnvPatchBodySchema,
   AgentEnvResponseSchema,
   AgentIdParamSchema,
+  AgentPhaseMethodologySchema,
   AgentPluginSchema,
   AgentSummarySchema,
   AgentTokenSchema,
@@ -91,8 +93,10 @@ import {
   PatchAgentCronRunBodySchema,
   PatchAgentPluginBodySchema,
   PatchAgentToolBodySchema,
+  PhaseParamSchema,
   PluginNameQuerySchema,
   PushWorkQueueSnapshotBodySchema,
+  PutAgentPhaseMethodologyBodySchema,
   TokenIdParamSchema,
   ToolIdParamSchema,
   UpsertChatTokenDailyBodySchema,
@@ -145,6 +149,10 @@ export interface AdminDeps {
   agentPluginService: Pick<
     AgentPluginService,
     "list" | "add" | "remove" | "removeByName"
+  >;
+  agentPhaseMethodologyService: Pick<
+    AgentPhaseMethodologyService,
+    "list" | "upsert"
   >;
   agentMemberService: Pick<AgentMemberService, "add" | "listByAgentId">;
   /**
@@ -297,6 +305,14 @@ const PluginWrapperSchema = z
 const PluginsWrapperSchema = z
   .object({ plugins: z.array(AgentPluginSchema) })
   .openapi("PluginsWrapper");
+
+const PhaseMethodologyWrapperSchema = z
+  .object({ phaseMethodology: AgentPhaseMethodologySchema })
+  .openapi("PhaseMethodologyWrapper");
+
+const PhaseMethodologyListWrapperSchema = z
+  .object({ phaseMethodology: z.array(AgentPhaseMethodologySchema) })
+  .openapi("PhaseMethodologyListWrapper");
 
 const jsonError = {
   content: { "application/json": { schema: ErrorSchema } },
@@ -877,6 +893,50 @@ const deletePluginRoute = createRoute({
   },
 });
 
+const listPhaseMethodologyRoute = createRoute({
+  method: "get",
+  path: "/agents/{id}/phase-methodology",
+  summary: "List phase-methodology overrides",
+  description:
+    "Returns every phase-methodology override configured for the agent — which subagent type handles each pipeline phase (prd, plan-session, review, patch, deploy, dev-task). A phase with no explicit override is simply absent from this list; see GET /agents/:id/config's `phaseMethodology` map for the full six-phase view with defaults filled in.",
+  request: { params: AgentIdParamSchema },
+  responses: {
+    200: {
+      description: "List of phase-methodology overrides",
+      content: {
+        "application/json": { schema: PhaseMethodologyListWrapperSchema },
+      },
+    },
+    404: { description: "Agent not found", ...jsonError },
+  },
+});
+
+const putPhaseMethodologyRoute = createRoute({
+  method: "put",
+  path: "/agents/{id}/phase-methodology/{phase}",
+  summary: "Set a phase's subagent-type override",
+  description:
+    "Upserts the `subagentType` override for one pipeline phase. Passing `subagentType: null` clears the override (the phase falls back to its default methodology). `phase` must be one of prd, plan-session, review, patch, deploy, dev-task.",
+  request: {
+    params: PhaseParamSchema,
+    body: {
+      content: {
+        "application/json": { schema: PutAgentPhaseMethodologyBodySchema },
+      },
+    },
+  },
+  responses: {
+    200: {
+      description: "Phase-methodology override upserted",
+      content: {
+        "application/json": { schema: PhaseMethodologyWrapperSchema },
+      },
+    },
+    400: { description: "Bad request — invalid phase", ...jsonError },
+    404: { description: "Agent not found", ...jsonError },
+  },
+});
+
 const upsertChatTokenDailyRoute = createRoute({
   method: "post",
   path: "/agents/{id}/chat-tokens/daily",
@@ -1019,6 +1079,7 @@ export function createAdminApp(deps: AdminDeps): OpenAPIHono<AdminAuthEnv> {
     agentToolService,
     agentTokenService,
     agentPluginService,
+    agentPhaseMethodologyService,
     agentMemberService,
     agentTypeRegistry,
     agentChatTokenService,
@@ -1629,6 +1690,36 @@ export function createAdminApp(deps: AdminDeps): OpenAPIHono<AdminAuthEnv> {
     return c.body(null, 204);
   });
 
+  // ─── Phase Methodology ───────────────────────────────────────────────────────
+
+  // GET /agents/:id/phase-methodology — list phase-methodology overrides
+  app.openapi(listPhaseMethodologyRoute, async (c) => {
+    const { id: agentId } = c.req.valid("param");
+    if (!(await agentService.exists(agentId))) {
+      throw new NotFoundError(`agent ${agentId} not found`);
+    }
+    const rows = await agentPhaseMethodologyService.list(agentId);
+    return c.json(
+      { phaseMethodology: rows.map(serializePhaseMethodology) },
+      200,
+    );
+  });
+
+  // PUT /agents/:id/phase-methodology/:phase — upsert a phase's override
+  app.openapi(putPhaseMethodologyRoute, async (c) => {
+    const { id: agentId, phase } = c.req.valid("param");
+    if (!(await agentService.exists(agentId))) {
+      throw new NotFoundError(`agent ${agentId} not found`);
+    }
+    const body = c.req.valid("json");
+    const row = await agentPhaseMethodologyService.upsert(
+      agentId,
+      phase,
+      body.subagentType,
+    );
+    return c.json({ phaseMethodology: serializePhaseMethodology(row) }, 200);
+  });
+
   // ─── Cron-run token stats ──────────────────────────────────────────────────
 
   // GET /agents/all/cron-runs/stats — aggregated token stats across all agents
@@ -1863,6 +1954,16 @@ function serializePlugin(plugin: {
     createdAt: plugin.createdAt.toISOString(),
     updatedAt: plugin.updatedAt.toISOString(),
   } as z.infer<typeof AgentPluginSchema>;
+}
+
+function serializePhaseMethodology(row: {
+  updatedAt: Date;
+  [k: string]: unknown;
+}): z.infer<typeof AgentPhaseMethodologySchema> {
+  return {
+    ...row,
+    updatedAt: row.updatedAt.toISOString(),
+  } as z.infer<typeof AgentPhaseMethodologySchema>;
 }
 
 function serializeAgent(

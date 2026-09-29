@@ -180,6 +180,10 @@ function makeBaseDeps(
       remove: async () => {},
       removeByName: async () => {},
     },
+    agentPhaseMethodologyService: {
+      list: async () => [],
+      upsert: async () => ({}) as never,
+    },
     agentMemberService: {
       add: async () => ({}) as never,
       listByAgentId: async () => [],

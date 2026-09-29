@@ -22,6 +22,7 @@ import { AgentCronRunStatsService } from "./agent-cron-run-stats.ts";
 import { AgentCronRunService } from "./agent-cron-runs.ts";
 import { AgentEnvService } from "./agent-envs.ts";
 import { AgentMemberService } from "./agent-members.ts";
+import { AgentPhaseMethodologyService } from "./agent-phase-methodology.ts";
 import { AgentPluginService } from "./agent-plugins.ts";
 import { NoopAgentProvisioner } from "./agent-provisioner.ts";
 import { AgentTokenService } from "./agent-tokens.ts";
@@ -29,9 +30,9 @@ import { AgentToolService } from "./agent-tools.ts";
 import type { AgentTypeManifestResolver } from "./agent-type-manifest-loader.ts";
 import type { AgentTypeManifest } from "./agent-type-registry.ts";
 import { AgentWorkQueueService } from "./agent-work-queue.ts";
-import { createAdminApp } from "./agents-api.ts";
-import type { AdminDeps } from "./agents-api.ts";
 import { AgentService } from "./agents.ts";
+import type { AdminDeps } from "./agents-api.ts";
+import { createAdminApp } from "./agents-api.ts";
 import { NoopChatServiceProvisioningClient } from "./chat-service-provisioning-client.ts";
 import { createAdminPrismaClient } from "./prisma-client.ts";
 import { NoopTaskStoreProvisioningClient } from "./task-store-provisioning-client.ts";
@@ -121,6 +122,7 @@ function makeDeps(prisma: PrismaClient): AdminDeps {
     agentToolService: new AgentToolService(prisma),
     agentTokenService: new AgentTokenService(prisma),
     agentPluginService: new AgentPluginService(prisma),
+    agentPhaseMethodologyService: new AgentPhaseMethodologyService(prisma),
     agentMemberService: new AgentMemberService(prisma),
     agentTypeRegistry: fakeAgentTypeRegistry(),
     agentChatTokenService: new AgentChatTokenService(prisma),

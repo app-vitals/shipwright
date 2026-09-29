@@ -31,6 +31,7 @@ import { AgentCronRunStatsService } from "./agent-cron-run-stats.ts";
 import { AgentCronRunService } from "./agent-cron-runs.ts";
 import { AgentEnvService } from "./agent-envs.ts";
 import { AgentMemberService } from "./agent-members.ts";
+import { AgentPhaseMethodologyService } from "./agent-phase-methodology.ts";
 import { AgentPluginService } from "./agent-plugins.ts";
 import type { AgentProvisioner } from "./agent-provisioner.ts";
 import {
@@ -437,6 +438,7 @@ async function startServer(): Promise<void> {
   const agentToolService = new AgentToolService(prisma);
   const agentTokenService = new AgentTokenService(prisma);
   const agentPluginService = new AgentPluginService(prisma);
+  const agentPhaseMethodologyService = new AgentPhaseMethodologyService(prisma);
   const agentMemberService = new AgentMemberService(prisma);
   const agentChatTokenService = new AgentChatTokenService(prisma);
   const agentCronRunStatsService = new AgentCronRunStatsService(prisma);
@@ -544,6 +546,7 @@ async function startServer(): Promise<void> {
     agentCronJobService,
     agentService,
     agentPluginService,
+    agentPhaseMethodologyService,
     sessionSecret,
     adminApiKeys,
     agentTokenService,
@@ -563,6 +566,7 @@ async function startServer(): Promise<void> {
     agentToolService,
     agentTokenService,
     agentPluginService,
+    agentPhaseMethodologyService,
     agentMemberService,
     agentTypeRegistry: new AgentTypeRegistry(),
     agentChatTokenService,

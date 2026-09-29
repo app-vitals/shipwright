@@ -58,6 +58,7 @@ function buildComposedApp() {
     },
     agentService: { getById: notImplemented },
     agentPluginService: { listEnabled: notImplemented },
+    agentPhaseMethodologyService: { list: notImplemented },
     sessionSecret: SESSION_SECRET,
     agentTokenService: stubAgentTokenService,
   });
@@ -120,6 +121,10 @@ function buildComposedApp() {
       add: notImplemented,
       remove: notImplemented,
       removeByName: notImplemented,
+    },
+    agentPhaseMethodologyService: {
+      list: notImplemented,
+      upsert: notImplemented,
     },
     agentMemberService: { add: notImplemented, listByAgentId: notImplemented },
     agentChatTokenService: {

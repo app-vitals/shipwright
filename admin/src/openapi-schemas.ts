@@ -595,6 +595,56 @@ export const PatchAgentPluginBodySchema = z
   })
   .openapi("PatchAgentPluginBody");
 
+// ─── AgentPhaseMethodology ──────────────────────────────────────────────────────
+//
+// The six pipeline phases a methodology override can target. Must stay in
+// lockstep with the phases the shipwright-loop cron can dispatch (PDR-4.1
+// added "plan-session"/"prd" to the wider pipeline) — see PMC-1.1.
+
+export const AGENT_PHASES = [
+  "prd",
+  "plan-session",
+  "review",
+  "patch",
+  "deploy",
+  "dev-task",
+] as const;
+
+export type AgentPhaseName = (typeof AGENT_PHASES)[number];
+
+export const AgentPhaseMethodologySchema = z
+  .object({
+    id: z.string().openapi({ example: "clx1234567890" }),
+    agentId: z.string().openapi({ example: "clx1234567890" }),
+    phase: z.enum(AGENT_PHASES).openapi({ example: "review" }),
+    subagentType: z
+      .string()
+      .nullable()
+      .openapi({ example: "shipwright:code-reviewer" }),
+    updatedAt: z
+      .string()
+      .datetime()
+      .openapi({ example: "2026-01-01T00:00:00.000Z" }),
+  })
+  .openapi("AgentPhaseMethodology");
+
+export type AgentPhaseMethodology = z.infer<typeof AgentPhaseMethodologySchema>;
+
+export const PutAgentPhaseMethodologyBodySchema = z
+  .object({
+    subagentType: z
+      .string()
+      .min(1)
+      .nullable()
+      .openapi({ example: "shipwright:code-reviewer" }),
+  })
+  .openapi("PutAgentPhaseMethodologyBody");
+
+export const PhaseParamSchema = z.object({
+  id: z.string().openapi({ example: "clx1234567890" }),
+  phase: z.enum(AGENT_PHASES).openapi({ example: "review" }),
+});
+
 // ─── AgentEnv ─────────────────────────────────────────────────────────────────
 
 /**
@@ -897,6 +947,21 @@ export const AgentConfigResponseSchema = z
       .nullable()
       .optional()
       .openapi({ example: "2026-12-01T00:00:00.000Z" }),
+    /**
+     * PMC-1.1: phase -> subagentType (or null) map, covering all six pipeline
+     * phases (see AGENT_PHASES) regardless of whether the agent has an
+     * explicit override row for each — phases without a row default to null.
+     */
+    phaseMethodology: z.record(z.string().nullable()).openapi({
+      example: {
+        prd: null,
+        "plan-session": null,
+        review: "shipwright:code-reviewer",
+        patch: null,
+        deploy: null,
+        "dev-task": null,
+      },
+    }),
   })
   .openapi("AgentConfigResponse");
 

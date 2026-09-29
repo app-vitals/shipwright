@@ -120,6 +120,23 @@ function makeMockAgentPluginService(plugins: Map<string, MockPlugin[]>): {
   };
 }
 
+interface MockPhaseMethodology {
+  phase: string;
+  subagentType: string | null;
+}
+
+function makeMockAgentPhaseMethodologyService(
+  overrides: Map<string, MockPhaseMethodology[]>,
+): {
+  list: (agentId: string) => Promise<MockPhaseMethodology[]>;
+} {
+  return {
+    async list(agentId: string): Promise<MockPhaseMethodology[]> {
+      return overrides.get(agentId) ?? [];
+    },
+  };
+}
+
 // ─── Test data helpers ────────────────────────────────────────────────────────
 
 const KNOWN_AGENT_ID = "agent-123";
@@ -174,6 +191,7 @@ function buildApp(opts?: {
   patchAuthorAllowlist?: string[];
   restrictSlackToMembers?: boolean;
   memberEmails?: string[];
+  phaseMethodology?: MockPhaseMethodology[];
 }) {
   const hasAgent = opts?.hasAgent ?? true;
   const bundle: AgentEnvBundle | null =
@@ -193,11 +211,13 @@ function buildApp(opts?: {
   const patchAuthorAllowlist = opts?.patchAuthorAllowlist ?? [];
   const restrictSlackToMembers = opts?.restrictSlackToMembers ?? false;
   const memberEmails = opts?.memberEmails ?? [];
+  const phaseMethodology = opts?.phaseMethodology ?? [];
 
   const agents = new Map<string, MockAgent>();
   const bundles = new Map<string, AgentEnvBundle | null>();
   const pluginMap = new Map<string, MockPlugin[]>();
   const cronMap = new Map<string, AgentCronJob[]>();
+  const phaseMethodologyMap = new Map<string, MockPhaseMethodology[]>();
 
   if (hasAgent) {
     agents.set(KNOWN_AGENT_ID, {
@@ -212,6 +232,7 @@ function buildApp(opts?: {
     bundles.set(KNOWN_AGENT_ID, bundle);
     pluginMap.set(KNOWN_AGENT_ID, plugins);
     cronMap.set(KNOWN_AGENT_ID, crons);
+    phaseMethodologyMap.set(KNOWN_AGENT_ID, phaseMethodology);
   }
 
   return createAgentRuntimeApp({
@@ -219,6 +240,8 @@ function buildApp(opts?: {
     agentCronJobService: makeMockAgentCronJobService(cronMap),
     agentService: makeMockAgentService(agents),
     agentPluginService: makeMockAgentPluginService(pluginMap),
+    agentPhaseMethodologyService:
+      makeMockAgentPhaseMethodologyService(phaseMethodologyMap),
     adminApiKeys: parseAdminApiKeys(`admin:${VALID_ADMIN_KEY}:*`),
     agentTokenService: { validate: async () => null },
     sessionSecret: SESSION_SECRET,
@@ -245,6 +268,54 @@ describe("GET /:id/config (mounted as GET /agents/:id/config from root)", () => 
       { marketplace: "shipwright", plugin: "shipwright" },
     ]);
     expect(body.repos).toEqual(["org/repo1", "org/repo2"]);
+    expect(body.phaseMethodology).toEqual({
+      prd: null,
+      "plan-session": null,
+      review: null,
+      patch: null,
+      deploy: null,
+      "dev-task": null,
+    });
+  });
+
+  test("200 phaseMethodology defaults all six phases to null when the agent has no overrides", async () => {
+    const app = buildApp({ phaseMethodology: [] });
+    const res = await app.request(`/${KNOWN_AGENT_ID}/config`, {
+      headers: { Authorization: `Bearer ${VALID_ADMIN_KEY}` },
+    });
+
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.phaseMethodology).toEqual({
+      prd: null,
+      "plan-session": null,
+      review: null,
+      patch: null,
+      deploy: null,
+      "dev-task": null,
+    });
+  });
+
+  test("200 phaseMethodology reflects an override while leaving other phases null", async () => {
+    const app = buildApp({
+      phaseMethodology: [
+        { phase: "review", subagentType: "shipwright:code-reviewer" },
+      ],
+    });
+    const res = await app.request(`/${KNOWN_AGENT_ID}/config`, {
+      headers: { Authorization: `Bearer ${VALID_ADMIN_KEY}` },
+    });
+
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.phaseMethodology).toEqual({
+      prd: null,
+      "plan-session": null,
+      review: "shipwright:code-reviewer",
+      patch: null,
+      deploy: null,
+      "dev-task": null,
+    });
   });
 
   test("200 returns repos exactly as stored on the agent, including empty", async () => {
@@ -501,6 +572,11 @@ function buildCombinedApp() {
     },
     agentPluginService: {
       async listEnabled() {
+        return [];
+      },
+    },
+    agentPhaseMethodologyService: {
+      async list() {
         return [];
       },
     },
@@ -763,6 +839,16 @@ function buildCombinedApp() {
       }),
       remove: async () => {},
       removeByName: async () => {},
+    },
+    agentPhaseMethodologyService: {
+      list: async () => [],
+      upsert: async () => ({
+        id: "pm1",
+        agentId: COMBINED_AGENT_ID,
+        phase: "review",
+        subagentType: null,
+        updatedAt: new Date(),
+      }),
     },
     agentMemberService: {
       add: async (agentId: string, email: string) => ({
