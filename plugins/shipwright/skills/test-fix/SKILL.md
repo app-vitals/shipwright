@@ -247,7 +247,8 @@ classification, the registry can change between when `test-readiness-plan.md` wa
 and when this skill runs — a human may have reviewed a prior ambiguous item and added a new
 decision entry since. Never trust the plan's row as still current on this point; re-check live.
 This mirrors `consolidation-fix/SKILL.md`'s Step 3 ("Cross-Check consolidation-decisions.md
-(Once More Before Queueing)") exactly, applied to this skill's registry instead.
+(Once More Before Queueing)") exactly, applied to this skill's registry instead. See
+`references/decisions-registry.md` for the shared decisions-registry pattern this mirrors.
 
 This check runs against **every** row surviving Step 4 — not just rows headed toward a
 rule-(d)/HITL classification in Step 5.2. A registry decision can resolve a row that would

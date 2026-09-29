@@ -44,6 +44,12 @@ describe("SKILL.md — frontmatter", () => {
   });
 });
 
+describe("SKILL.md — cites the shared decisions-registry reference doc (DRU-1.1)", () => {
+  it("Step 0 cites references/decisions-registry.md", () => {
+    expect(content).toContain("references/decisions-registry.md");
+  });
+});
+
 describe("SKILL.md — feature-grouping step", () => {
   it("describes heuristic inference using directory structure, route prefix, and entry point signals", () => {
     expect(content).toMatch(/directory structure/i);

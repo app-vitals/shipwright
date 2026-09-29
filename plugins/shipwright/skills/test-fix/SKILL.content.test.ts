@@ -35,7 +35,9 @@ describe("test-fix — anti-gaming rejection rule for uncited line-coverage task
   it("requires a line-coverage task to cite the specific feature or genuine uncovered error path it maps to", () => {
     const lower = readSkill().toLowerCase();
     expect(lower).toContain("line-coverage");
-    expect(lower).toMatch(/cite (the )?specific feature|cite.{0,60}error path/s);
+    expect(lower).toMatch(
+      /cite (the )?specific feature|cite.{0,60}error path/s,
+    );
   });
 
   it("rejects or flags a citation-less line-coverage row instead of filing it as a normal task", () => {
@@ -47,6 +49,12 @@ describe("test-fix — anti-gaming rejection rule for uncited line-coverage task
   it("names the gaming pattern of padding coverage without closing a real gap", () => {
     const lower = readSkill().toLowerCase();
     expect(lower).toMatch(/gam(e|ing)/);
+  });
+});
+
+describe("test-fix — cites the shared decisions-registry reference doc (DRU-1.1)", () => {
+  it("Step 4.5 cites references/decisions-registry.md", () => {
+    expect(readSkill()).toContain("references/decisions-registry.md");
   });
 });
 
