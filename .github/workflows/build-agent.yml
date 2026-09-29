@@ -111,6 +111,16 @@ jobs:
             -t ghcr.io/app-vitals/shipwright-agent:"$NEW_TAG" \
             .
 
+      - name: Smoke-check image binaries
+        env:
+          NEW_TAG: ${{ steps.tag.outputs.new_tag }}
+        run: |
+          docker run --rm --entrypoint /bin/sh "ghcr.io/app-vitals/shipwright-agent:$NEW_TAG" -c '
+            for b in mise claude gh node bun; do
+              command -v "$b" >/dev/null || { echo "missing: $b"; exit 1; }
+            done
+          '
+
       - name: Push Docker image
         env:
           NEW_TAG: ${{ steps.tag.outputs.new_tag }}
