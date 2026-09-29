@@ -182,6 +182,47 @@ describe("merge.md — Step 2: Pre-flight Checks", () => {
     const section = extractStep2Section(content);
     expect(section).toContain("not all checks are green");
   });
+
+  describe("Step 2a policy read-path is DB-first with file/hardcoded fallback (APM-1.2)", () => {
+    it("fetches GET /agents/:id/config using the established config-fetch curl+jq pattern before reading the file", () => {
+      const section = extractStep2Section(content);
+      expect(section).toContain("$SHIPWRIGHT_AGENT_API_KEY");
+      expect(section).toContain("$SHIPWRIGHT_API_URL");
+      expect(section).toContain("/agents/$SHIPWRIGHT_AGENT_ID/config");
+      expect(section).toContain("allowSelfReview");
+    });
+
+    it("extracts allowSelfReview with a null-only guard so a legitimate false survives tier 1", () => {
+      const section = extractStep2Section(content);
+      expect(section).toContain("jq -r '.allowSelfReview | select(. != null)'");
+      // jq's `//` treats false as absent, which would silently drop a
+      // deliberately-set `allowSelfReview: false` and fall through to the file tier.
+      expect(section).not.toContain(".allowSelfReview // empty");
+      expect(section).toContain("`select(. != null)`, **not** `// empty`");
+    });
+
+    it("documents DB tier before the state/agent-policy.md file tier", () => {
+      const section = extractStep2Section(content);
+      const dbIdx = section.indexOf("/agents/$SHIPWRIGHT_AGENT_ID/config");
+      const fileIdx = section.indexOf("agent-policy.md");
+      expect(dbIdx).toBeGreaterThan(-1);
+      expect(fileIdx).toBeGreaterThan(-1);
+      expect(dbIdx).toBeLessThan(fileIdx);
+    });
+
+    it("still documents the hardcoded false default and its rationale", () => {
+      const section = extractStep2Section(content);
+      expect(section).toContain("allow_self_review: false");
+      expect(section).toContain("internal code-level");
+    });
+
+    it("does not add auto_post_reviews/min_confidence/max_findings reads -- merge.md only needs allow_self_review", () => {
+      const section = extractStep2Section(content);
+      expect(section).not.toContain("autoPostReviews");
+      expect(section).not.toContain("minConfidence");
+      expect(section).not.toContain("maxFindings");
+    });
+  });
 });
 
 describe("merge.md — Step 3: Merge (claim, squash-merge, task-store update)", () => {

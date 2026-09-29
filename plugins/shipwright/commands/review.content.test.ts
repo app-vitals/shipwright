@@ -2381,3 +2381,77 @@ describe("review.md — Step 7 dispatches the phase-methodology-configured subag
     expect(step7Section).toContain("RVM-1.1");
   });
 });
+
+describe("review.md — Step 1 policy read-path is DB-first with file/hardcoded fallback (APM-1.2)", () => {
+  function extractStep1Section(md: string): string {
+    const step1Idx = md.indexOf("## Step 1: Load Policy");
+    const step3Idx = md.indexOf("## Step 3: Resolve Current User and Target");
+    expect(step1Idx).toBeGreaterThan(-1);
+    expect(step3Idx).toBeGreaterThan(step1Idx);
+    return md.slice(step1Idx, step3Idx);
+  }
+
+  it("fetches GET /agents/:id/config using the established config-fetch curl+jq pattern", () => {
+    const section = extractStep1Section(content);
+    expect(section).toContain("$SHIPWRIGHT_AGENT_API_KEY");
+    expect(section).toContain("$SHIPWRIGHT_API_URL");
+    expect(section).toContain("/agents/$SHIPWRIGHT_AGENT_ID/config");
+  });
+
+  it("reads all four camelCase DB fields", () => {
+    const section = extractStep1Section(content);
+    expect(section).toContain("autoPostReviews");
+    expect(section).toContain("allowSelfReview");
+    expect(section).toContain("minConfidence");
+    expect(section).toContain("maxFindings");
+  });
+
+  it("documents the transition-period nature of the DB tier", () => {
+    const section = extractStep1Section(content);
+    expect(section).toContain("APM-1.2");
+    expect(section.toLowerCase()).toContain("transition");
+  });
+
+  it("extracts each DB field with a null-only guard so a legitimate false survives tier 1", () => {
+    const section = extractStep1Section(content);
+    for (const field of [
+      "autoPostReviews",
+      "allowSelfReview",
+      "minConfidence",
+      "maxFindings",
+    ]) {
+      expect(section).toContain(`jq -r '.${field} | select(. != null)'`);
+      // jq's `//` treats false as absent, which would silently drop a
+      // deliberately-set `allowSelfReview: false` / `autoPostReviews: false`.
+      expect(section).not.toContain(`.${field} // empty`);
+    }
+    expect(section).toContain("`select(. != null)`, **not** `// empty`");
+  });
+
+  it("still reads state/agent-policy.md as the file-fallback tier, and still documents the hardcoded-default table", () => {
+    const section = extractStep1Section(content);
+    expect(section).toContain("state/agent-policy.md");
+    expect(section).toContain("| `auto_post_reviews` | true |");
+    expect(section).toContain("| `allow_self_review` | false |");
+    expect(section).toContain("| `min_confidence` | 75 |");
+    expect(section).toContain("| `max_findings` | 5 |");
+  });
+
+  it("documents the three tiers in DB -> file -> hardcoded order", () => {
+    const section = extractStep1Section(content);
+    const dbIdx = section.indexOf("/agents/$SHIPWRIGHT_AGENT_ID/config");
+    const fileIdx = section.indexOf("2. **File**");
+    const hardcodedIdx = section.indexOf("| `auto_post_reviews` | true |");
+
+    expect(dbIdx).toBeGreaterThan(-1);
+    expect(fileIdx).toBeGreaterThan(-1);
+    expect(hardcodedIdx).toBeGreaterThan(-1);
+    expect(dbIdx).toBeLessThan(fileIdx);
+    expect(fileIdx).toBeLessThan(hardcodedIdx);
+  });
+
+  it("still prints the one-line policy summary", () => {
+    const section = extractStep1Section(content);
+    expect(section).toContain("Policy: {staging|auto-posting} reviews");
+  });
+});
