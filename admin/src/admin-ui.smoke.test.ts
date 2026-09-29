@@ -3344,6 +3344,51 @@ describe("admin UI — agent policy fields", () => {
     expect(received).toEqual({ maxFindings: 5 });
   });
 
+  it("POST /admin/agents/:id/settings with a cleared minConfidence leaves it unchanged rather than zeroing it", async () => {
+    let received: Record<string, unknown> | undefined;
+    const app = createAdminUIApp(
+      makeMockDeps({
+        agentService: {
+          ...makeMockDeps().agentService,
+          updateFields: async (_id: string, input: Record<string, unknown>) => {
+            received = input;
+            return {
+              id: AGENT_ID,
+              name: "Test Agent",
+              slackId: "U123456",
+              selfHosted: false,
+              typeName: "coding",
+              createdAt: new Date("2024-01-01"),
+              updatedAt: new Date("2024-01-01"),
+              repos: [],
+              reviewAuthorAllowlist: [],
+              patchAuthorAllowlist: [],
+              restrictSlackToMembers: false,
+              missingRequiredEnv: [],
+            };
+          },
+        },
+      }),
+    );
+    // An emptied <input type="number"> submits "" — Number("") is 0, so
+    // without a blank guard this would silently persist minConfidence: 0.
+    const body = new URLSearchParams({
+      minConfidence: "",
+      maxFindings: "5",
+    });
+    const res = await app.request(`/admin/agents/${AGENT_ID}/settings`, {
+      method: "POST",
+      body: body.toString(),
+      headers: {
+        "Content-Type": "application/x-www-form-urlencoded",
+        Cookie: `admin_session=${cookie}`,
+      },
+    });
+    expect(res.status).toBe(302);
+    expect(received).not.toHaveProperty("minConfidence");
+    expect(received).toEqual({ maxFindings: 5 });
+  });
+
   it("POST /admin/agents/:id/settings with a negative cleanupAfterDays leaves it unchanged", async () => {
     let received: Record<string, unknown> | undefined;
     const app = createAdminUIApp(

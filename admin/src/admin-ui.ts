@@ -2265,10 +2265,12 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
     // Defensive: reject non-finite/negative values rather than writing NaN
     // (or a nonsensical negative count) to Postgres — falls back to
     // undefined (leave the field unchanged) instead of throwing or silently
-    // persisting garbage.
+    // persisting garbage. An emptied <input type="number"> submits "" (not
+    // undefined), and Number("") is 0 — so blank/whitespace-only input is
+    // treated as absent too, otherwise clearing a field would silently zero it.
     const readInt = (name: string): number | undefined => {
       const raw = formData.get(name)?.toString();
-      if (raw === undefined) return undefined;
+      if (raw === undefined || raw.trim() === "") return undefined;
       const parsed = Number(raw);
       return Number.isFinite(parsed) && parsed >= 0 ? parsed : undefined;
     };
