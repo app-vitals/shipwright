@@ -118,7 +118,18 @@ gh pr view {pr} --repo {org}/{repo} --json reviewDecision,reviews \
 
 **If `reviewDecision` is `"APPROVED"`**: Record `approval_source = "github"` and `approvers = [list]`. Proceed to Step 2b.
 
-**If `reviewDecision` is not `"APPROVED"`**: Read `allow_self_review` from
+**If `reviewDecision` is not `"APPROVED"`**: Read `allow_self_review` DB-first, then file,
+then hardcoded default — the same three-tier order as review.md's Step 1 (transition period,
+APM-1.2: today's `GET /agents/:id/config` response does not yet include this field for any
+agent, so this always falls through to the file tier below; once a future task extends the
+endpoint, this tier starts returning a value automatically, no further doc changes needed
+here):
+```bash
+ALLOW_SELF_REVIEW=$(curl -sf -H "Authorization: Bearer $SHIPWRIGHT_AGENT_API_KEY" \
+  "$SHIPWRIGHT_API_URL/agents/$SHIPWRIGHT_AGENT_ID/config" | jq -r '.allowSelfReview // empty')
+```
+If `ALLOW_SELF_REVIEW` is empty (the DB has no record yet), fall back to `allow_self_review`
+from
 `state/agent-policy.md` (default: false — every provisioned agent gets the policy file
 seeded on startup with `allow_self_review: false`; `true` is only the internal code-level
 fallback used if `state/agent-policy.md` is ever missing or unparseable). If

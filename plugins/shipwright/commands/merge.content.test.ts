@@ -184,6 +184,46 @@ describe("merge.md — Step 2: Pre-flight Checks", () => {
   });
 });
 
+describe("merge.md — Step 2a policy read-path is DB-first with file/hardcoded fallback (APM-1.2)", () => {
+  function extractStep2Section(md: string): string {
+    const match = md.match(
+      /## Step 2: Pre-flight Checks[\s\S]*?(?=\n## Step 3)/,
+    );
+    expect(match).not.toBeNull();
+    return match?.[0] ?? "";
+  }
+
+  it("fetches GET /agents/:id/config using the established config-fetch curl+jq pattern before reading the file", () => {
+    const section = extractStep2Section(content);
+    expect(section).toContain("$SHIPWRIGHT_AGENT_API_KEY");
+    expect(section).toContain("$SHIPWRIGHT_API_URL");
+    expect(section).toContain("/agents/$SHIPWRIGHT_AGENT_ID/config");
+    expect(section).toContain("allowSelfReview");
+  });
+
+  it("documents DB tier before the state/agent-policy.md file tier", () => {
+    const section = extractStep2Section(content);
+    const dbIdx = section.indexOf("/agents/$SHIPWRIGHT_AGENT_ID/config");
+    const fileIdx = section.indexOf("agent-policy.md");
+    expect(dbIdx).toBeGreaterThan(-1);
+    expect(fileIdx).toBeGreaterThan(-1);
+    expect(dbIdx).toBeLessThan(fileIdx);
+  });
+
+  it("still documents the hardcoded false default and its rationale", () => {
+    const section = extractStep2Section(content);
+    expect(section).toContain("allow_self_review: false");
+    expect(section).toContain("internal code-level");
+  });
+
+  it("does not add auto_post_reviews/min_confidence/max_findings reads -- merge.md only needs allow_self_review", () => {
+    const section = extractStep2Section(content);
+    expect(section).not.toContain("autoPostReviews");
+    expect(section).not.toContain("minConfidence");
+    expect(section).not.toContain("maxFindings");
+  });
+});
+
 describe("merge.md — Step 3: Merge (claim, squash-merge, task-store update)", () => {
   function extractStep3Section(md: string): string {
     const match = md.match(/## Step 3: Merge[\s\S]*?(?=\n## Step 4)/);
