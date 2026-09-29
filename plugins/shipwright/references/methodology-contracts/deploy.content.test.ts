@@ -110,11 +110,18 @@ describe("deploy.md — output", () => {
 });
 
 describe("deploy.md — scope", () => {
-  it("clarifies the subagent does not touch the task store, GitHub, or the merge/poll machinery directly", () => {
-    expect(content.toLowerCase()).toContain("task store");
+  it("clarifies the subagent does not merge, claim/release, or write task-store status", () => {
+    expect(content.toLowerCase()).toMatch(/task[ -]store/);
     expect(content.toLowerCase()).toMatch(
-      /does not touch the task store|does not merge|does not poll/,
+      /does not merge the pr|does not claim or release|does not write any task-store status/,
     );
+  });
+
+  it("carves out the heartbeat renewal and revert PR as the execution step's own writes", () => {
+    expect(content.toLowerCase()).toContain("heartbeat");
+    expect(content).toContain("revert_pr_url");
+    // The caller surfaces the URL; it does not open the PR itself (the execution step does).
+    expect(content).not.toContain("opening the revert PR itself");
   });
 
   it("draws the caller/subagent boundary explicitly", () => {

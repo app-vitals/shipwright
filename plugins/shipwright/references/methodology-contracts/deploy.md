@@ -6,8 +6,12 @@ step must satisfy — whether that's the built-in behavior (inline in
 same as plan-session) or a custom, operator-supplied subagent swapped in via a per-agent,
 per-phase `AgentPhaseMethodology` override (`phase -> subagentType or null`, phase value
 `"deploy"`). The `/shipwright:deploy` command is the caller: it owns pre-flight (approval and
-CI checks), the merge itself, task-store claim/release/heartbeat plumbing, and printing the
-final handoff — none of that is delegated. Once the merge lands, the caller dispatches
+CI checks), the merge itself, claiming and releasing the `PullRequest` task-store record, every
+task-store status PATCH derived from the execution step's output, and printing the final
+handoff — none of that is delegated. The one task-store call that *is* delegated is renewing
+the claim heartbeat mid-poll (see `PR_RECORD_ID` below): the claim's TTL expires before a
+long pipeline watch finishes, and only the execution step knows how far along its own poll is.
+Once the merge lands, the caller dispatches
 whichever subagent is configured for the deploy phase with the inputs below and parses the
 output shape below regardless of which concrete implementation produced it. A drop-in
 replacement for the built-in execution step must accept exactly these inputs and return
@@ -43,7 +47,10 @@ merge completes:
 - **`PR_RECORD_ID`** — the id of the `PullRequest` task-store record claimed pre-merge in
   Step 4a (`phase: "deploy"`). Used to renew the claim heartbeat (`POST
   /prs/$PR_RECORD_ID/heartbeat`) at roughly the midpoint of a long-running poll, since the
-  claim's TTL is shorter than the full pipeline-watch budget.
+  claim's TTL is shorter than the full pipeline-watch budget. This renewal is the execution
+  step's *only* task-store write — the claim itself, its release, and every status PATCH stay
+  with the caller (reference implementation: the midpoint renewal inside Step 5's poll loop).
+  Best-effort and skipped when absent, so an implementation must tolerate an empty value.
 - **`deploy_started_at`** — the ISO timestamp captured at the start of Step 4, before the
   merge. Used to compute pipeline-duration timing (`pipeline_minutes`) in the output.
 - **Resolved target-repo Deploy model** — the target repo's own `CLAUDE.md` `## Deploy model`
@@ -130,6 +137,9 @@ for the reference implementation's full heuristics). It also says nothing about 
 caller does with the output afterwards: `/shipwright:deploy` continues to own claiming and
 releasing the `PullRequest` task-store record, merging the PR, PATCHing `TASK_IDS`/the PR
 record to `deploying` / `deployed` / `blocked` based on `success`/`verdict`/`failure_reason`,
-opening the revert PR itself using the `revert_pr_url` the subagent reports, and printing the
-final handoff block — the subagent does not touch the task store, GitHub, or the merge/poll
-machinery directly beyond observing the workflow runs needed to determine its own output.
+surfacing the `revert_pr_url` the subagent reports, and printing the final handoff block. The
+subagent does not merge the PR, does not claim or release the `PullRequest` record, and does
+not write any task-store status. Its only writes are the mid-poll heartbeat renewal
+(`PR_RECORD_ID`) and, on canary failure, opening the revert PR it then reports back via
+`revert_pr_url` — everything else it does to GitHub is read-only observation of the workflow
+runs needed to determine its own output.
