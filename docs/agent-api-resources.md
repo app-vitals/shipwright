@@ -112,6 +112,32 @@ Query param: `name` (required). Returns `204`.
 
 ---
 
+## Phase Methodology
+
+Per-phase subagent-type overrides control which subagent type handles each pipeline phase (prd, plan-session, review, patch, deploy, dev-task) for a given agent. By default, each phase uses its global default methodology; setting an override causes that phase to use a custom subagent type instead.
+
+### List phase-methodology overrides
+
+```
+GET /agents/:id/phase-methodology
+```
+
+Returns `{ phaseMethodology: AgentPhaseMethodology[] }` — an array of only the phases with explicit overrides. Phases not in this list are using their default methodology. To see all six phases with defaults filled in, use `GET /agents/:id/config` instead, which returns the full `phaseMethodology` map.
+
+### Set a phase's subagent-type override
+
+```
+PUT /agents/:id/phase-methodology/{phase}
+```
+
+Upserts the `subagentType` override for one pipeline phase. `phase` must be one of `prd`, `plan-session`, `review`, `patch`, `deploy`, or `dev-task`.
+
+Body: `{ subagentType: string | null }`. When `subagentType` is `null`, the override is cleared and the phase falls back to its default methodology.
+
+Returns `201` on creation, `200` on update, with `{ phaseMethodology: AgentPhaseMethodology }` containing the upserted row.
+
+---
+
 ## Chat token usage
 
 Daily aggregate of Slack chat session token usage.
