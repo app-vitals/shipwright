@@ -342,6 +342,20 @@ function makeMockDeps(
         updatedAt: new Date("2024-01-01"),
       }),
     },
+    agentPhaseMethodologyService: {
+      list: async () => [],
+      upsert: async (
+        agentId: string,
+        phase: string,
+        subagentType: string | null,
+      ) => ({
+        id: "pm1",
+        agentId,
+        phase,
+        subagentType,
+        updatedAt: new Date("2024-01-01"),
+      }),
+    },
     agentMemberService: {
       listByEmail: async () => [],
       exists: async () => false,
@@ -2757,6 +2771,218 @@ describe("admin UI — tool mutation routes", () => {
     );
     expect(res.status).toBe(302);
     expect(res.headers.get("Location")).toBe(`/admin/agents/${AGENT_ID}`);
+  });
+});
+
+// ─── Phase methodology panel + mutation routes (PMC-1.2) ──────────────────────
+
+describe("admin UI — phase methodology panel", () => {
+  let cookie: string;
+
+  beforeAll(async () => {
+    cookie = await makeSessionCookie();
+  });
+
+  it("GET /admin/agents/:id renders all six phases, 'default' for unconfigured and the value for configured ones", async () => {
+    const app = createAdminUIApp(
+      makeMockDeps({
+        agentPhaseMethodologyService: {
+          list: async () => [
+            {
+              id: "pm1",
+              agentId: AGENT_ID,
+              phase: "review",
+              subagentType: "shipwright:code-reviewer",
+              updatedAt: new Date("2024-01-01"),
+            },
+          ],
+          upsert: async (
+            agentId: string,
+            phase: string,
+            subagentType: string | null,
+          ) => ({
+            id: "pm1",
+            agentId,
+            phase,
+            subagentType,
+            updatedAt: new Date("2024-01-01"),
+          }),
+        },
+      }),
+    );
+    const res = await app.request(`/admin/agents/${AGENT_ID}`, {
+      headers: { Cookie: `admin_session=${cookie}` },
+    });
+    expect(res.status).toBe(200);
+    const html = await res.text();
+    expect(html).toContain('<div class="card-title">Phase Methodology</div>');
+    // All six fixed phases are shown regardless of override state.
+    for (const phase of [
+      "prd",
+      "plan-session",
+      "review",
+      "patch",
+      "deploy",
+      "dev-task",
+    ]) {
+      expect(html).toContain(`>${phase}<`);
+    }
+    // Configured phase shows its overridden value.
+    expect(html).toContain("shipwright:code-reviewer");
+    // Unconfigured phases show the "default" placeholder.
+    expect(html).toContain(">default<");
+  });
+
+  it("POST /admin/agents/:id/phase-methodology/:phase with a non-empty subagentType sets the override", async () => {
+    const received: {
+      agentId?: string;
+      phase?: string;
+      subagentType?: string | null;
+    } = {};
+    const app = createAdminUIApp(
+      makeMockDeps({
+        agentPhaseMethodologyService: {
+          list: async () => [],
+          upsert: async (
+            agentId: string,
+            phase: string,
+            subagentType: string | null,
+          ) => {
+            received.agentId = agentId;
+            received.phase = phase;
+            received.subagentType = subagentType;
+            return {
+              id: "pm1",
+              agentId,
+              phase,
+              subagentType,
+              updatedAt: new Date("2024-01-01"),
+            };
+          },
+        },
+      }),
+    );
+    const body = new URLSearchParams({
+      subagentType: "shipwright:code-reviewer",
+    });
+    const res = await app.request(
+      `/admin/agents/${AGENT_ID}/phase-methodology/review`,
+      {
+        method: "POST",
+        body: body.toString(),
+        headers: {
+          "Content-Type": "application/x-www-form-urlencoded",
+          Cookie: `admin_session=${cookie}`,
+        },
+      },
+    );
+    expect(res.status).toBe(302);
+    expect(res.headers.get("Location")).toBe(`/admin/agents/${AGENT_ID}`);
+    expect(received).toEqual({
+      agentId: AGENT_ID,
+      phase: "review",
+      subagentType: "shipwright:code-reviewer",
+    });
+  });
+
+  it("POST /admin/agents/:id/phase-methodology/:phase with an empty subagentType clears the override", async () => {
+    const received: {
+      agentId?: string;
+      phase?: string;
+      subagentType?: string | null;
+    } = {};
+    const app = createAdminUIApp(
+      makeMockDeps({
+        agentPhaseMethodologyService: {
+          list: async () => [
+            {
+              id: "pm1",
+              agentId: AGENT_ID,
+              phase: "review",
+              subagentType: "shipwright:code-reviewer",
+              updatedAt: new Date("2024-01-01"),
+            },
+          ],
+          upsert: async (
+            agentId: string,
+            phase: string,
+            subagentType: string | null,
+          ) => {
+            received.agentId = agentId;
+            received.phase = phase;
+            received.subagentType = subagentType;
+            return {
+              id: "pm1",
+              agentId,
+              phase,
+              subagentType,
+              updatedAt: new Date("2024-01-01"),
+            };
+          },
+        },
+      }),
+    );
+    const body = new URLSearchParams({ subagentType: "" });
+    const res = await app.request(
+      `/admin/agents/${AGENT_ID}/phase-methodology/review`,
+      {
+        method: "POST",
+        body: body.toString(),
+        headers: {
+          "Content-Type": "application/x-www-form-urlencoded",
+          Cookie: `admin_session=${cookie}`,
+        },
+      },
+    );
+    expect(res.status).toBe(302);
+    expect(res.headers.get("Location")).toBe(`/admin/agents/${AGENT_ID}`);
+    expect(received).toEqual({
+      agentId: AGENT_ID,
+      phase: "review",
+      subagentType: null,
+    });
+  });
+
+  it("POST /admin/agents/:id/phase-methodology/:phase with an invalid phase is rejected without calling upsert", async () => {
+    let upsertCalled = false;
+    const app = createAdminUIApp(
+      makeMockDeps({
+        agentPhaseMethodologyService: {
+          list: async () => [],
+          upsert: async (
+            agentId: string,
+            phase: string,
+            subagentType: string | null,
+          ) => {
+            upsertCalled = true;
+            return {
+              id: "pm1",
+              agentId,
+              phase,
+              subagentType,
+              updatedAt: new Date("2024-01-01"),
+            };
+          },
+        },
+      }),
+    );
+    const body = new URLSearchParams({ subagentType: "some-value" });
+    const res = await app.request(
+      `/admin/agents/${AGENT_ID}/phase-methodology/not-a-real-phase`,
+      {
+        method: "POST",
+        body: body.toString(),
+        headers: {
+          "Content-Type": "application/x-www-form-urlencoded",
+          Cookie: `admin_session=${cookie}`,
+        },
+      },
+    );
+    expect(res.status).toBe(302);
+    expect(res.headers.get("Location")).toBe(
+      `/admin/agents/${AGENT_ID}?error=invalid_phase`,
+    );
+    expect(upsertCalled).toBe(false);
   });
 });
 

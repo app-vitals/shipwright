@@ -78,6 +78,7 @@ import { deleteAgentFully } from "./agent-deletion.ts";
 import type { ManualStep } from "./agent-deletion-checklist.ts";
 import type { AgentEnvService } from "./agent-envs.ts";
 import type { AgentMemberService } from "./agent-members.ts";
+import type { AgentPhaseMethodologyService } from "./agent-phase-methodology.ts";
 import type { AgentPluginService } from "./agent-plugins.ts";
 import type { AgentProvisioner } from "./agent-provisioner.ts";
 import type { AgentTokenService } from "./agent-tokens.ts";
@@ -107,6 +108,7 @@ import {
   filterSince,
 } from "./http-chat-client.ts";
 import type { OktaAuthClient } from "./okta-auth-client.ts";
+import { AGENT_PHASES } from "./openapi-schemas.ts";
 import type { PrismaTransactionClient } from "./prisma-tx.ts";
 import type { PushService } from "./push-service.ts";
 import {
@@ -304,6 +306,10 @@ export interface AdminUIDeps {
     "listForAgent" | "create" | "revoke"
   >;
   agentPluginService: Pick<AgentPluginService, "list" | "add">;
+  agentPhaseMethodologyService: Pick<
+    AgentPhaseMethodologyService,
+    "list" | "upsert"
+  >;
   agentMemberService: Pick<
     AgentMemberService,
     "listByEmail" | "exists" | "add" | "remove" | "listByAgentId"
@@ -859,6 +865,7 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
     agentToolService,
     agentTokenService,
     agentPluginService,
+    agentPhaseMethodologyService,
     agentMemberService,
     agentService,
     provisioner,
@@ -1541,6 +1548,7 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
       "In-cluster provisioning is not enabled on this admin service — create a self-hosted agent instead.",
     provision_failed:
       "Failed to provision the agent's cluster resources — the agent was not created.",
+    invalid_phase: "Invalid pipeline phase.",
   };
 
   // ─── New agent form (MUST be before /:id to avoid "new" being captured as param)
@@ -1867,20 +1875,29 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
           // verbatim rather than mapped to a fixed key.
           (warningParam ?? undefined);
 
-    const [envResult, crons, tools, tokens, plugins, members, recentRuns] =
-      await Promise.all([
-        agentEnvService
-          .getByAgentId(agentId)
-          .then((e) => e ?? { env: {}, secretKeys: [] }),
-        agentCronJobService.listWithRunSummary(agentId),
-        agentToolService.list(agentId),
-        agentTokenService.listForAgent(agentId),
-        agentPluginService.list(agentId),
-        c.var.isAdmin
-          ? agentMemberService.listByAgentId(agentId)
-          : Promise.resolve([]),
-        agentCronRunService.listForAgent(agentId, { limit: 20 }),
-      ]);
+    const [
+      envResult,
+      crons,
+      tools,
+      tokens,
+      plugins,
+      phaseMethodology,
+      members,
+      recentRuns,
+    ] = await Promise.all([
+      agentEnvService
+        .getByAgentId(agentId)
+        .then((e) => e ?? { env: {}, secretKeys: [] }),
+      agentCronJobService.listWithRunSummary(agentId),
+      agentToolService.list(agentId),
+      agentTokenService.listForAgent(agentId),
+      agentPluginService.list(agentId),
+      agentPhaseMethodologyService.list(agentId),
+      c.var.isAdmin
+        ? agentMemberService.listByAgentId(agentId)
+        : Promise.resolve([]),
+      agentCronRunService.listForAgent(agentId, { limit: 20 }),
+    ]);
 
     // Lightweight rollup of recent verification-check activity (LVB-5.3 AC2)
     // across this agent's recently-dispatched tasks/PRs — see
@@ -1910,6 +1927,10 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
           warning,
           timezone,
           verificationActivity,
+          phaseMethodology: phaseMethodology.map((pm) => ({
+            phase: pm.phase,
+            subagentType: pm.subagentType,
+          })),
         },
       ),
     );
@@ -2464,6 +2485,37 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
     return c.redirect(`/admin/agents/${agentId}`, 302);
   });
 
+  // ─── Phase methodology mutations ─────────────────────────────────────────
+
+  app.post(
+    "/admin/agents/:id/phase-methodology/:phase",
+    requireAuth,
+    async (c) => {
+      const agentId = c.req.param("id");
+      const phase = c.req.param("phase");
+      if (!(await assertAgentAccess(agentId, c.var.userEmail, c.var.isAdmin))) {
+        return new Response("Forbidden", { status: 403 });
+      }
+      if (!(AGENT_PHASES as readonly string[]).includes(phase)) {
+        return c.redirect(`/admin/agents/${agentId}?error=invalid_phase`, 302);
+      }
+      let subagentType: string | null = null;
+      try {
+        const formData = await c.req.formData();
+        const raw = formData.get("subagentType")?.toString().trim() ?? "";
+        subagentType = raw === "" ? null : raw;
+      } catch {
+        return c.redirect(`/admin/agents/${agentId}`, 302);
+      }
+      try {
+        await agentPhaseMethodologyService.upsert(agentId, phase, subagentType);
+      } catch {
+        // ignore errors — redirect back regardless
+      }
+      return c.redirect(`/admin/agents/${agentId}`, 302);
+    },
+  );
+
   // ─── Token mutations ──────────────────────────────────────────────────────
 
   app.post("/admin/agents/:id/tokens", requireAuth, async (c) => {
@@ -2500,7 +2552,7 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
       const { rawToken } = await agentTokenService.create(agentId, label);
       // Render the page directly (200) rather than redirecting with the token in the URL.
       // A redirect would expose the raw token in server access logs and browser history.
-      const [envResult, crons, tools, tokens, plugins, members] =
+      const [envResult, crons, tools, tokens, plugins, phaseMethodology, members] =
         await Promise.all([
           agentEnvService
             .getByAgentId(agentId)
@@ -2509,6 +2561,7 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
           agentToolService.list(agentId),
           agentTokenService.listForAgent(agentId),
           agentPluginService.list(agentId),
+          agentPhaseMethodologyService.list(agentId),
           c.var.isAdmin
             ? agentMemberService.listByAgentId(agentId)
             : Promise.resolve([]),
@@ -2524,7 +2577,14 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
           members,
           c.var.userEmail,
           c.var.isAdmin,
-          { newToken: rawToken, timezone },
+          {
+            newToken: rawToken,
+            timezone,
+            phaseMethodology: phaseMethodology.map((pm) => ({
+              phase: pm.phase,
+              subagentType: pm.subagentType,
+            })),
+          },
         ),
       );
     } catch {
