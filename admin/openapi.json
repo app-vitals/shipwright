@@ -1444,6 +1444,91 @@
           }
         }
       },
+      "AgentPhaseMethodology": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "example": "clx1234567890"
+          },
+          "agentId": {
+            "type": "string",
+            "example": "clx1234567890"
+          },
+          "phase": {
+            "type": "string",
+            "enum": [
+              "prd",
+              "plan-session",
+              "review",
+              "patch",
+              "deploy",
+              "dev-task"
+            ],
+            "example": "review"
+          },
+          "subagentType": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "example": "shipwright:code-reviewer"
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time",
+            "example": "2026-01-01T00:00:00.000Z"
+          }
+        },
+        "required": [
+          "id",
+          "agentId",
+          "phase",
+          "subagentType",
+          "updatedAt"
+        ]
+      },
+      "PhaseMethodologyListWrapper": {
+        "type": "object",
+        "properties": {
+          "phaseMethodology": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AgentPhaseMethodology"
+            }
+          }
+        },
+        "required": [
+          "phaseMethodology"
+        ]
+      },
+      "PhaseMethodologyWrapper": {
+        "type": "object",
+        "properties": {
+          "phaseMethodology": {
+            "$ref": "#/components/schemas/AgentPhaseMethodology"
+          }
+        },
+        "required": [
+          "phaseMethodology"
+        ]
+      },
+      "PutAgentPhaseMethodologyBody": {
+        "type": "object",
+        "properties": {
+          "subagentType": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "minLength": 1,
+            "example": "shipwright:code-reviewer"
+          }
+        },
+        "required": [
+          "subagentType"
+        ]
+      },
       "TokenAggregate": {
         "type": "object",
         "properties": {
@@ -1965,6 +2050,23 @@
             ],
             "format": "date-time",
             "example": "2026-12-01T00:00:00.000Z"
+          },
+          "phaseMethodology": {
+            "type": "object",
+            "additionalProperties": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "example": {
+              "prd": null,
+              "plan-session": null,
+              "review": "shipwright:code-reviewer",
+              "patch": null,
+              "deploy": null,
+              "dev-task": null
+            }
           }
         },
         "required": [
@@ -1975,7 +2077,8 @@
           "reviewAuthorAllowlist",
           "patchAuthorAllowlist",
           "restrictSlackToMembers",
-          "memberEmails"
+          "memberEmails",
+          "phaseMethodology"
         ]
       },
       "RuntimeError": {
@@ -3389,6 +3492,120 @@
           },
           "400": {
             "description": "Bad request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/agents/{id}/phase-methodology": {
+      "get": {
+        "summary": "List phase-methodology overrides",
+        "description": "Returns every phase-methodology override configured for the agent — which subagent type handles each pipeline phase (prd, plan-session, review, patch, deploy, dev-task). A phase with no explicit override is simply absent from this list; see GET /agents/:id/config's `phaseMethodology` map for the full six-phase view with defaults filled in.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "example": "clx1234567890"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "List of phase-methodology overrides",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PhaseMethodologyListWrapper"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Agent not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/agents/{id}/phase-methodology/{phase}": {
+      "put": {
+        "summary": "Set a phase's subagent-type override",
+        "description": "Upserts the `subagentType` override for one pipeline phase. Passing `subagentType: null` clears the override (the phase falls back to its default methodology). `phase` must be one of prd, plan-session, review, patch, deploy, dev-task.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "example": "clx1234567890"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "prd",
+                "plan-session",
+                "review",
+                "patch",
+                "deploy",
+                "dev-task"
+              ],
+              "example": "review"
+            },
+            "required": true,
+            "name": "phase",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PutAgentPhaseMethodologyBody"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Phase-methodology override upserted",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PhaseMethodologyWrapper"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad request — invalid phase",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Agent not found",
             "content": {
               "application/json": {
                 "schema": {

@@ -132,6 +132,7 @@ const CRON_ID = "cron-test-456";
 const TOKEN_ID = "token-test-789";
 const TOOL_ID = "tool-test-abc";
 const PLUGIN_ID = "plugin-test-def";
+const PHASE_METHODOLOGY_ID = "phase-methodology-test-ghi";
 const RUN_ID = "run-test-111";
 const WORK_QUEUE_SNAPSHOT_ID = "wqs-test-222";
 
@@ -507,6 +508,24 @@ function makeMockDeps(): AdminDeps {
       }),
       remove: async () => {},
       removeByName: async () => {},
+    },
+    agentPhaseMethodologyService: {
+      list: async () => [
+        {
+          id: PHASE_METHODOLOGY_ID,
+          agentId: AGENT_ID,
+          phase: "review",
+          subagentType: "shipwright:code-reviewer",
+          updatedAt: new Date("2024-01-01"),
+        },
+      ],
+      upsert: async (agentId: string, phase: string, subagentType) => ({
+        id: PHASE_METHODOLOGY_ID,
+        agentId,
+        phase,
+        subagentType,
+        updatedAt: new Date("2024-01-01"),
+      }),
     },
     agentMemberService: {
       add: async (agentId: string, email: string) => ({
@@ -1469,6 +1488,104 @@ describe("admin API — plugins", () => {
       headers: { Cookie: `admin_session=${cookie}` },
     });
     expect(res.status).toBe(400);
+  });
+});
+
+describe("admin API — phase methodology (PMC-1.1)", () => {
+  let cookie: string;
+
+  beforeAll(async () => {
+    cookie = await makeSessionCookie();
+  });
+
+  it("GET /agents/:id/phase-methodology returns list", async () => {
+    const app = createAdminApp(makeMockDeps());
+    const res = await app.request(`/agents/${AGENT_ID}/phase-methodology`, {
+      headers: { Cookie: `admin_session=${cookie}` },
+    });
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(Array.isArray(body.phaseMethodology)).toBe(true);
+    expect(body.phaseMethodology).toHaveLength(1);
+    expect(body.phaseMethodology[0].phase).toBe("review");
+  });
+
+  it("PUT /agents/:id/phase-methodology/:phase upserts a subagentType override (200)", async () => {
+    const app = createAdminApp(makeMockDeps());
+    const res = await app.request(
+      `/agents/${AGENT_ID}/phase-methodology/review`,
+      {
+        method: "PUT",
+        body: JSON.stringify({ subagentType: "shipwright:code-reviewer" }),
+        headers: {
+          "Content-Type": "application/json",
+          Cookie: `admin_session=${cookie}`,
+        },
+      },
+    );
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.phaseMethodology.phase).toBe("review");
+    expect(body.phaseMethodology.subagentType).toBe("shipwright:code-reviewer");
+  });
+
+  it("PUT /agents/:id/phase-methodology/:phase with subagentType: null clears the override (200)", async () => {
+    const app = createAdminApp(makeMockDeps());
+    const res = await app.request(
+      `/agents/${AGENT_ID}/phase-methodology/deploy`,
+      {
+        method: "PUT",
+        body: JSON.stringify({ subagentType: null }),
+        headers: {
+          "Content-Type": "application/json",
+          Cookie: `admin_session=${cookie}`,
+        },
+      },
+    );
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.phaseMethodology.subagentType).toBeNull();
+  });
+
+  it("PUT /agents/:id/phase-methodology/:phase with an invalid phase returns 400", async () => {
+    const app = createAdminApp(makeMockDeps());
+    const res = await app.request(
+      `/agents/${AGENT_ID}/phase-methodology/not-a-real-phase`,
+      {
+        method: "PUT",
+        body: JSON.stringify({ subagentType: "claude" }),
+        headers: {
+          "Content-Type": "application/json",
+          Cookie: `admin_session=${cookie}`,
+        },
+      },
+    );
+    expect(res.status).toBe(400);
+  });
+
+  it("GET /agents/:id/phase-methodology returns 404 for an unknown agent", async () => {
+    const app = createAdminApp(makeMockDeps());
+    const res = await app.request(
+      "/agents/unknown-agent-id/phase-methodology",
+      { headers: { Cookie: `admin_session=${cookie}` } },
+    );
+    expect(res.status).toBe(404);
+  });
+
+  it("PUT /agents/:id/phase-methodology/:phase returns 404 for an unknown agent", async () => {
+    const app = createAdminApp(makeMockDeps());
+    const res = await app.request(
+      "/agents/unknown-agent-id/phase-methodology/review",
+      {
+        method: "PUT",
+        body: JSON.stringify({ subagentType: "claude" }),
+        headers: {
+          "Content-Type": "application/json",
+          Cookie: `admin_session=${cookie}`,
+        },
+      },
+    );
+    expect(res.status).toBe(404);
   });
 });
 

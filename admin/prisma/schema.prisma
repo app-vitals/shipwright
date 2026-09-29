@@ -1,5 +1,6 @@
 // Shipwright — Admin Service Schema
-// Owns: Agent, AgentEnv, AgentCronJob, AgentTool, AgentToken, AgentPlugin.
+// Owns: Agent, AgentEnv, AgentCronJob, AgentTool, AgentToken, AgentPlugin,
+// AgentPhaseMethodology.
 // Agent is a first-class model (standalone, not embedded in a User model).
 //
 // WARNING: This schema uses DATABASE_URL_SHIPWRIGHT_ADMIN — a dedicated database
@@ -57,6 +58,7 @@ model Agent {
   members          AgentMember[]
   chatTokenUsage   AgentChatTokenUsageDailyByModel[]
   workQueueSnapshot AgentWorkQueueSnapshot?
+  phaseMethodologies AgentPhaseMethodology[]
 }
 
 // ─── Agent Env ────────────────────────────────────────────────────────────────
@@ -156,6 +158,31 @@ model AgentPlugin {
   updatedAt DateTime @updatedAt
 
   @@unique([agentId, name])
+}
+
+// ─── Agent Phase Methodology ──────────────────────────────────────────────────
+// Per-phase subagent-type override. Each row records which subagent type
+// (e.g. a custom Agent Type name) should handle one pipeline phase — prd,
+// plan-session, review, patch, deploy, or dev-task — for a given agent,
+// overriding that phase's default methodology. `subagentType` is nullable:
+// a row with a null value (or the absence of a row) means "use the default".
+// The `phase` value is constrained to the six-value enum at the service/route
+// layer (Zod), not here — Postgres/Prisma has no native enum-column
+// requirement in this schema style (mirrors AgentTool.pattern / AgentCronJob
+// validation living at the service layer). The unique constraint on
+// [agentId, phase] makes upsert-based writes idempotent (one override row per
+// phase per agent), mirroring AgentTool's [agentId, pattern] and AgentPlugin's
+// [agentId, name].
+
+model AgentPhaseMethodology {
+  id           String   @id @default(cuid())
+  agentId      String
+  agent        Agent    @relation(fields: [agentId], references: [id], onDelete: Cascade)
+  phase        String
+  subagentType String?
+  updatedAt    DateTime @updatedAt
+
+  @@unique([agentId, phase])
 }
 
 // ─── Agent Members ────────────────────────────────────────────────────────────
