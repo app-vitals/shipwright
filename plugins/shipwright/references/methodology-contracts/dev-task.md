@@ -6,7 +6,7 @@ must satisfy — whether that's the built-in behavior (Step 5 of
 via a per-agent, per-phase `AgentPhaseMethodology` override (`phase -> subagentType or null`,
 phase value `"dev-task"`). The `/shipwright:dev-task` command is the caller: it owns task
 fetch/claim (Steps 1-2), building the implementation brief (Step 3), worktree setup and
-toolchain detection (Step 4), dispatching whichever subagent is configured for the dev-task
+toolchain detection (Step 4, Step 0/0b), dispatching whichever subagent is configured for the dev-task
 phase's implementation step (Step 5) with the inputs below, and everything that runs after —
 Simplify, spec compliance, requirements verification, pre-ship checks, docs refresh, PR
 creation, the CI-fix loop, and the task-store handoff (Steps 6 through 10) — none of that is
@@ -134,7 +134,7 @@ responsibilities stay entirely with the caller, never delegated to the subagent:
   worktree, checks out the branch, and resolves the test/lint/typecheck/validate commands
   before dispatch; the subagent works inside an already-prepared worktree and does not resolve
   its own toolchain.
-- **Model-tier resolution and escalation** (Step 5c) — the caller resolves which model tier
+- **Model-tier resolution and escalation** (Step 5b/5c) — the caller resolves which model tier
   the dispatch runs at (`task.model ?? 'sonnet'`) and owns the haiku → sonnet → opus escalation
   ladder on a BLOCKED report; the subagent does not choose its own tier.
 - **Claim-heartbeat renewal** (Step 5b/5d) — the caller renews the task-store claim heartbeat
