@@ -96,6 +96,48 @@ export function parseAllowSelfReview(content: string): boolean {
   return match?.[1] === "true"; // default false if missing/unparseable
 }
 
+/**
+ * APM-1.1: parses the `auto_post_reviews` policy field, mirroring
+ * `parseCleanupMergedWorktrees`'s default-true shape (rather than
+ * `parseAllowSelfReview`'s default-false shape) — `true` is the documented
+ * default in `state/agent-policy.md`, so any missing/unparseable value falls
+ * back to `true`.
+ */
+export function parseAutoPostReviews(content: string): boolean {
+  const match = content.match(
+    /`?\*{0,2}\bauto_post_reviews\b\*{0,2}`?\s*[:|]\s*\*{0,2}(true|false)\b/i,
+  );
+  return match?.[1] !== "false"; // default true if missing
+}
+
+/**
+ * APM-1.1: parses the `min_confidence` policy field, mirroring
+ * `parseCleanupAfterDays`'s numeric-capture shape with a 75 default (the
+ * documented default in `state/agent-policy.md`).
+ */
+export function parseMinConfidence(content: string): number {
+  const match = content.match(
+    /`?\*{0,2}\bmin_confidence\b\*{0,2}`?\s*[:|]\s*\*{0,2}(\d+)\b/i,
+  );
+  if (!match) return 75; // default 75 if missing
+  const parsed = Number.parseInt(match[1], 10);
+  return Number.isNaN(parsed) ? 75 : parsed;
+}
+
+/**
+ * APM-1.1: parses the `max_findings` policy field, mirroring
+ * `parseCleanupAfterDays`'s numeric-capture shape with a 5 default (the
+ * documented default in `state/agent-policy.md`).
+ */
+export function parseMaxFindings(content: string): number {
+  const match = content.match(
+    /`?\*{0,2}\bmax_findings\b\*{0,2}`?\s*[:|]\s*\*{0,2}(\d+)\b/i,
+  );
+  if (!match) return 5; // default 5 if missing
+  const parsed = Number.parseInt(match[1], 10);
+  return Number.isNaN(parsed) ? 5 : parsed;
+}
+
 export function parseCleanupMergedWorktrees(content: string): boolean {
   const match = content.match(
     /`?\*{0,2}\bcleanup_merged_worktrees\b\*{0,2}`?\s*[:|]\s*\*{0,2}(true|false)\b/i,

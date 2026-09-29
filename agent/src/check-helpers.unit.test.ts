@@ -565,6 +565,152 @@ describe("readCleanupAfterDays", () => {
 });
 
 // ---------------------------------------------------------------------------
+// parseAutoPostReviews
+// ---------------------------------------------------------------------------
+
+describe("parseAutoPostReviews", () => {
+  test("returns true when the table cell says true", () => {
+    expect(
+      checkHelpers.parseAutoPostReviews("| `auto_post_reviews` | true |"),
+    ).toBe(true);
+  });
+
+  test("returns false when the table cell says false", () => {
+    expect(
+      checkHelpers.parseAutoPostReviews("| `auto_post_reviews` | false |"),
+    ).toBe(false);
+  });
+
+  test("returns false for bold-style false", () => {
+    expect(
+      checkHelpers.parseAutoPostReviews("**auto_post_reviews**: false"),
+    ).toBe(false);
+  });
+
+  test("returns true for bold-style true", () => {
+    expect(
+      checkHelpers.parseAutoPostReviews("**auto_post_reviews**: true"),
+    ).toBe(true);
+  });
+
+  test("returns false for plain YAML frontmatter style false", () => {
+    expect(
+      checkHelpers.parseAutoPostReviews(
+        "---\nauto_post_reviews: false\nallow_self_review: false\n---\n",
+      ),
+    ).toBe(false);
+  });
+
+  test("returns true for plain YAML frontmatter style true", () => {
+    expect(
+      checkHelpers.parseAutoPostReviews(
+        "---\nauto_post_reviews: true\nallow_self_review: false\n---\n",
+      ),
+    ).toBe(true);
+  });
+
+  test("defaults to true when the field is missing entirely", () => {
+    expect(checkHelpers.parseAutoPostReviews("no policy here")).toBe(true);
+  });
+
+  test("defaults to true when content is empty", () => {
+    expect(checkHelpers.parseAutoPostReviews("")).toBe(true);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// parseMinConfidence
+// ---------------------------------------------------------------------------
+
+describe("parseMinConfidence", () => {
+  test("parses numeric value from table format", () => {
+    expect(
+      checkHelpers.parseMinConfidence("| `min_confidence` | 60 |"),
+    ).toBe(60);
+  });
+
+  test("parses numeric value from bold-style format", () => {
+    expect(checkHelpers.parseMinConfidence("**min_confidence**: 90")).toBe(
+      90,
+    );
+  });
+
+  test("parses numeric value from plain YAML frontmatter style", () => {
+    expect(
+      checkHelpers.parseMinConfidence(
+        "---\nauto_post_reviews: true\nmin_confidence: 80\n---\n",
+      ),
+    ).toBe(80);
+  });
+
+  test("defaults to 75 when the field is missing", () => {
+    expect(checkHelpers.parseMinConfidence("no policy here")).toBe(75);
+  });
+
+  test("defaults to 75 when content is empty", () => {
+    expect(checkHelpers.parseMinConfidence("")).toBe(75);
+  });
+
+  test("handles leading/trailing whitespace around numeric value", () => {
+    expect(
+      checkHelpers.parseMinConfidence("**min_confidence**:   80   "),
+    ).toBe(80);
+  });
+
+  test("defaults to 75 when value is not a valid number", () => {
+    expect(checkHelpers.parseMinConfidence("**min_confidence**: abc")).toBe(
+      75,
+    );
+  });
+
+  test("parses zero as a valid value", () => {
+    expect(checkHelpers.parseMinConfidence("**min_confidence**: 0")).toBe(0);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// parseMaxFindings
+// ---------------------------------------------------------------------------
+
+describe("parseMaxFindings", () => {
+  test("parses numeric value from table format", () => {
+    expect(checkHelpers.parseMaxFindings("| `max_findings` | 3 |")).toBe(3);
+  });
+
+  test("parses numeric value from bold-style format", () => {
+    expect(checkHelpers.parseMaxFindings("**max_findings**: 10")).toBe(10);
+  });
+
+  test("parses numeric value from plain YAML frontmatter style", () => {
+    expect(
+      checkHelpers.parseMaxFindings(
+        "---\nmin_confidence: 75\nmax_findings: 8\n---\n",
+      ),
+    ).toBe(8);
+  });
+
+  test("defaults to 5 when the field is missing", () => {
+    expect(checkHelpers.parseMaxFindings("no policy here")).toBe(5);
+  });
+
+  test("defaults to 5 when content is empty", () => {
+    expect(checkHelpers.parseMaxFindings("")).toBe(5);
+  });
+
+  test("handles leading/trailing whitespace around numeric value", () => {
+    expect(checkHelpers.parseMaxFindings("**max_findings**:   8   ")).toBe(8);
+  });
+
+  test("defaults to 5 when value is not a valid number", () => {
+    expect(checkHelpers.parseMaxFindings("**max_findings**: abc")).toBe(5);
+  });
+
+  test("parses zero as a valid value", () => {
+    expect(checkHelpers.parseMaxFindings("**max_findings**: 0")).toBe(0);
+  });
+});
+
+// ---------------------------------------------------------------------------
 // isMergeOnlyUpdate
 // ---------------------------------------------------------------------------
 
