@@ -81,7 +81,6 @@ test("the dial-in-detail table lists the four agent-policy settings", async ({
   const text = (await section.textContent()) ?? "";
 
   expect(text).toContain("auto_post_reviews: false");
-  expect(text).toContain("allowed_events");
   expect(text).toContain("REQUEST_CHANGES");
   expect(text).toContain("allow_self_review: false");
   expect(text).toContain("min_confidence");

@@ -66,7 +66,6 @@ Read `state/agent-policy.md`. If the file doesn't exist, use these conservative 
 | Setting | Default |
 |---------|---------|
 | `auto_post_reviews` | true |
-| `allowed_events` | [COMMENT, APPROVE] |
 | `allow_self_review` | false |
 | `min_confidence` | 75 |
 | `max_findings` | 5 |

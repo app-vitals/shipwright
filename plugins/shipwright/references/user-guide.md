@@ -56,7 +56,7 @@ hand-editing a pod. If it's a judgment call about *how autonomous* the agent sho
 (auto-post reviews? self-review allowed? how many findings per review?) → **Policy Config**,
 `state/agent-policy.md`.
 
-Policy Config fields worth knowing: `auto_post_reviews`, `allowed_events`, `allow_self_review`,
+Policy Config fields worth knowing: `auto_post_reviews`, `allow_self_review`,
 `min_confidence`, `max_findings`, `cleanup_merged_worktrees`, `cleanup_after_days`.
 
 Full reference: [`reference.mdx`](../../../site/src/content/docs/reference.mdx) and

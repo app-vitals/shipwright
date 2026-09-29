@@ -47,3 +47,4 @@ export type { SlackProvisioningClient } from "./slack-provisioning-client.ts";
 export { HttpGoogleAuthClient } from "./google-auth-client.ts";
 export type { GoogleAuthClient } from "./google-auth-client.ts";
 export { PrismaClient } from "../prisma/client/client.ts";
+export { createAdminPrismaClient } from "./prisma-client.ts";
