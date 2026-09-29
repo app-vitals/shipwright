@@ -108,7 +108,7 @@ structure and quality bar. It says nothing about:
 
 2. **Not loop-dispatched.** Per the Shipwright plugin's Design Constitution
    (`plugins/shipwright/CLAUDE.md`, "Candidate Selection Contract" section), the
-   `shipwright-loop` cron's `loop-orchestrator.ts` dispatches exactly four pipeline phases
+   `shipwright-loop` cron's `loop-orchestrator.ts` dispatches exactly five pipeline phases
    via candidate providers: `check-dev-task.ts`, `check-plan.ts` (for plan-session),
    `check-review.ts`, `check-patch.ts`, and `check-deploy.ts`. There is no `check-prd.ts` —
    prd is invoked only directly by a human running `/shipwright:prd {folder-name}`. By
