@@ -31,6 +31,13 @@ interface FakeAgentRow {
   typeName: string;
   createdAt: Date;
   updatedAt: Date;
+  // APM-1.3: the six real agent-policy fields (APM-1.1 DB columns).
+  autoPostReviews: boolean;
+  allowSelfReview: boolean;
+  minConfidence: number;
+  maxFindings: number;
+  cleanupMergedWorktrees: boolean;
+  cleanupAfterDays: number;
 }
 
 /** Projects a row down to just the keys named in a Prisma-style `select` object. */
@@ -88,6 +95,12 @@ function makeFakePrisma(
         typeName: "coding",
         createdAt: new Date("2024-01-01"),
         updatedAt: new Date("2024-01-01"),
+        autoPostReviews: true,
+        allowSelfReview: false,
+        minConfidence: 75,
+        maxFindings: 5,
+        cleanupMergedWorktrees: true,
+        cleanupAfterDays: 14,
       };
       rows.set(row.id, row);
       return row;
@@ -161,6 +174,12 @@ function makeFakePrisma(
         reviewAuthorAllowlist?: string[];
         patchAuthorAllowlist?: string[];
         restrictSlackToMembers?: boolean;
+        autoPostReviews?: boolean;
+        allowSelfReview?: boolean;
+        minConfidence?: number;
+        maxFindings?: number;
+        cleanupMergedWorktrees?: boolean;
+        cleanupAfterDays?: number;
       };
       select?: Partial<Record<keyof FakeAgentRow, boolean>>;
     }): Promise<FakeAgentRow> {
@@ -180,6 +199,24 @@ function makeFakePrisma(
         }),
         ...(data.restrictSlackToMembers !== undefined && {
           restrictSlackToMembers: data.restrictSlackToMembers,
+        }),
+        ...(data.autoPostReviews !== undefined && {
+          autoPostReviews: data.autoPostReviews,
+        }),
+        ...(data.allowSelfReview !== undefined && {
+          allowSelfReview: data.allowSelfReview,
+        }),
+        ...(data.minConfidence !== undefined && {
+          minConfidence: data.minConfidence,
+        }),
+        ...(data.maxFindings !== undefined && {
+          maxFindings: data.maxFindings,
+        }),
+        ...(data.cleanupMergedWorktrees !== undefined && {
+          cleanupMergedWorktrees: data.cleanupMergedWorktrees,
+        }),
+        ...(data.cleanupAfterDays !== undefined && {
+          cleanupAfterDays: data.cleanupAfterDays,
         }),
         updatedAt: new Date("2024-01-02"),
       };
@@ -262,6 +299,12 @@ function seedRow(overrides: Partial<FakeAgentRow> = {}): FakeAgentRow {
     typeName: "coding",
     createdAt: new Date("2024-01-01"),
     updatedAt: new Date("2024-01-01"),
+    autoPostReviews: true,
+    allowSelfReview: false,
+    minConfidence: 75,
+    maxFindings: 5,
+    cleanupMergedWorktrees: true,
+    cleanupAfterDays: 14,
     ...overrides,
   };
 }
@@ -438,7 +481,39 @@ describe("AgentService.getDetail", () => {
       createdAt: row.createdAt,
       updatedAt: row.updatedAt,
       missingRequiredEnv: [],
+      autoPostReviews: true,
+      allowSelfReview: false,
+      minConfidence: 75,
+      maxFindings: 5,
+      cleanupMergedWorktrees: true,
+      cleanupAfterDays: 14,
     });
+  });
+
+  it("returns the six agent-policy fields (APM-1.3) reflecting the seeded row's values", async () => {
+    const row = seedRow({
+      id: "a1",
+      autoPostReviews: false,
+      allowSelfReview: true,
+      minConfidence: 90,
+      maxFindings: 3,
+      cleanupMergedWorktrees: false,
+      cleanupAfterDays: 30,
+    });
+    const prisma = makeFakePrisma([row]) as unknown as FakePrisma;
+    const service = new AgentService(
+      prisma as never,
+      fakeRegistry({ coding: [] }),
+    );
+
+    const detail = await service.getDetail("a1");
+
+    expect(detail?.autoPostReviews).toBe(false);
+    expect(detail?.allowSelfReview).toBe(true);
+    expect(detail?.minConfidence).toBe(90);
+    expect(detail?.maxFindings).toBe(3);
+    expect(detail?.cleanupMergedWorktrees).toBe(false);
+    expect(detail?.cleanupAfterDays).toBe(30);
   });
 
   it("defaults typeName to 'coding' when the row was seeded without an explicit value", async () => {
@@ -581,6 +656,44 @@ describe("AgentService.updateSelfHosted", () => {
     const updated = await service.updateSelfHosted("a1", { selfHosted: true });
 
     expect(updated.repos).toEqual(["org/existing"]);
+  });
+
+  it("updates the six agent-policy fields (APM-1.3) when provided", async () => {
+    const row = seedRow({ id: "a1" });
+    const prisma = makeFakePrisma([row]) as unknown as FakePrisma;
+    const service = new AgentService(prisma as never, fakeRegistry({}));
+
+    const updated = await service.updateSelfHosted("a1", {
+      selfHosted: false,
+      autoPostReviews: false,
+      allowSelfReview: true,
+      minConfidence: 90,
+      maxFindings: 3,
+      cleanupMergedWorktrees: false,
+      cleanupAfterDays: 30,
+    });
+
+    expect(updated.autoPostReviews).toBe(false);
+    expect(updated.allowSelfReview).toBe(true);
+    expect(updated.minConfidence).toBe(90);
+    expect(updated.maxFindings).toBe(3);
+    expect(updated.cleanupMergedWorktrees).toBe(false);
+    expect(updated.cleanupAfterDays).toBe(30);
+  });
+
+  it("leaves the six agent-policy fields untouched when not provided", async () => {
+    const row = seedRow({
+      id: "a1",
+      autoPostReviews: false,
+      cleanupAfterDays: 30,
+    });
+    const prisma = makeFakePrisma([row]) as unknown as FakePrisma;
+    const service = new AgentService(prisma as never, fakeRegistry({}));
+
+    const updated = await service.updateSelfHosted("a1", { selfHosted: true });
+
+    expect(updated.autoPostReviews).toBe(false);
+    expect(updated.cleanupAfterDays).toBe(30);
   });
 
   it("updates reviewAuthorAllowlist when provided", async () => {
@@ -911,7 +1024,56 @@ describe("AgentService.updateFields", () => {
       createdAt: row.createdAt,
       updatedAt: new Date("2024-01-02"),
       missingRequiredEnv: [],
+      autoPostReviews: true,
+      allowSelfReview: false,
+      minConfidence: 75,
+      maxFindings: 5,
+      cleanupMergedWorktrees: true,
+      cleanupAfterDays: 14,
     });
+  });
+
+  it("updates the six agent-policy fields (APM-1.3) when provided", async () => {
+    const row = seedRow({ id: "a1" });
+    const prisma = makeFakePrisma([row]) as unknown as FakePrisma;
+    const service = new AgentService(
+      prisma as never,
+      fakeRegistry({ coding: [] }),
+    );
+
+    const updated = await service.updateFields("a1", {
+      autoPostReviews: false,
+      allowSelfReview: true,
+      minConfidence: 90,
+      maxFindings: 3,
+      cleanupMergedWorktrees: false,
+      cleanupAfterDays: 30,
+    });
+
+    expect(updated.autoPostReviews).toBe(false);
+    expect(updated.allowSelfReview).toBe(true);
+    expect(updated.minConfidence).toBe(90);
+    expect(updated.maxFindings).toBe(3);
+    expect(updated.cleanupMergedWorktrees).toBe(false);
+    expect(updated.cleanupAfterDays).toBe(30);
+  });
+
+  it("leaves the six agent-policy fields untouched when not provided", async () => {
+    const row = seedRow({
+      id: "a1",
+      autoPostReviews: false,
+      minConfidence: 90,
+    });
+    const prisma = makeFakePrisma([row]) as unknown as FakePrisma;
+    const service = new AgentService(
+      prisma as never,
+      fakeRegistry({ coding: [] }),
+    );
+
+    const updated = await service.updateFields("a1", { name: "Renamed" });
+
+    expect(updated.autoPostReviews).toBe(false);
+    expect(updated.minConfidence).toBe(90);
   });
 });
 

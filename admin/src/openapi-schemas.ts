@@ -96,6 +96,17 @@ export const PatchAgentBodySchema = z
       .nullable()
       .optional()
       .openapi({ example: "2026-12-01T00:00:00.000Z" }),
+    /**
+     * APM-1.3: the six real agent-policy fields (APM-1.1 DB columns). No
+     * extra bounds validation beyond int/boolean — matches the existing
+     * looseness of this schema (e.g. no min/max on other numeric fields).
+     */
+    autoPostReviews: z.boolean().optional().openapi({ example: true }),
+    allowSelfReview: z.boolean().optional().openapi({ example: false }),
+    minConfidence: z.number().int().optional().openapi({ example: 75 }),
+    maxFindings: z.number().int().optional().openapi({ example: 5 }),
+    cleanupMergedWorktrees: z.boolean().optional().openapi({ example: true }),
+    cleanupAfterDays: z.number().int().optional().openapi({ example: 14 }),
   })
   .openapi("PatchAgentBody");
 

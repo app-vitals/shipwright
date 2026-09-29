@@ -8,13 +8,13 @@
 
 import { beforeAll, describe, expect, it } from "bun:test";
 import { sign } from "hono/jwt";
-import type { PrListItem } from "./admin-ui-pages.ts";
-import { createAdminUIApp } from "./admin-ui.ts";
 import type {
   AdminUIDeps,
   AdminUIGithubAppClient,
   AdminUISlackClient,
 } from "./admin-ui.ts";
+import { createAdminUIApp } from "./admin-ui.ts";
+import type { PrListItem } from "./admin-ui-pages.ts";
 import type {
   GoogleAuthClient,
   GoogleTokenResponse,
@@ -2983,6 +2983,404 @@ describe("admin UI — phase methodology panel", () => {
       `/admin/agents/${AGENT_ID}?error=invalid_phase`,
     );
     expect(upsertCalled).toBe(false);
+  });
+});
+
+// ─── Agent Policy panel (APM-1.3) ─────────────────────────────────────────────
+
+describe("admin UI — agent policy fields", () => {
+  let cookie: string;
+
+  beforeAll(async () => {
+    cookie = await makeSessionCookie();
+  });
+
+  it("GET /admin/agents/:id renders the Agent Policy card with default field values", async () => {
+    const app = createAdminUIApp(makeMockDeps());
+    const res = await app.request(`/admin/agents/${AGENT_ID}`, {
+      headers: { Cookie: `admin_session=${cookie}` },
+    });
+    expect(res.status).toBe(200);
+    const html = await res.text();
+    expect(html).toContain('<div class="card-title">Agent Policy</div>');
+
+    // Booleans default true/false/true — checkboxes reflect DB column defaults.
+    const autoPostReviewsInput = html.match(
+      /<input[^>]*id="autoPostReviews"[^>]*type="checkbox"[^>]*>/,
+    )?.[0] as string;
+    expect(autoPostReviewsInput).toContain("checked");
+
+    const allowSelfReviewInput = html.match(
+      /<input[^>]*id="allowSelfReview"[^>]*type="checkbox"[^>]*>/,
+    )?.[0] as string;
+    expect(allowSelfReviewInput).not.toContain("checked");
+
+    const cleanupMergedWorktreesInput = html.match(
+      /<input[^>]*id="cleanupMergedWorktrees"[^>]*type="checkbox"[^>]*>/,
+    )?.[0] as string;
+    expect(cleanupMergedWorktreesInput).toContain("checked");
+
+    // Numbers default 75/5/14.
+    expect(html).toContain(
+      '<input id="minConfidence" name="minConfidence" type="number" value="75"',
+    );
+    expect(html).toContain(
+      '<input id="maxFindings" name="maxFindings" type="number" value="5"',
+    );
+    expect(html).toContain(
+      '<input id="cleanupAfterDays" name="cleanupAfterDays" type="number" value="14"',
+    );
+  });
+
+  it("GET /admin/agents/:id renders non-default Agent Policy values from the DB", async () => {
+    const app = createAdminUIApp(
+      makeMockDeps({
+        agentService: {
+          ...makeMockDeps().agentService,
+          getDetail: async () => ({
+            id: AGENT_ID,
+            name: "Test Agent",
+            slackId: "U123456",
+            selfHosted: false,
+            typeName: "coding",
+            createdAt: new Date("2024-01-01"),
+            updatedAt: new Date("2024-01-01"),
+            repos: [],
+            reviewAuthorAllowlist: [],
+            patchAuthorAllowlist: [],
+            restrictSlackToMembers: false,
+            missingRequiredEnv: [],
+            autoPostReviews: false,
+            allowSelfReview: true,
+            minConfidence: 90,
+            maxFindings: 3,
+            cleanupMergedWorktrees: false,
+            cleanupAfterDays: 30,
+          }),
+        },
+      }),
+    );
+    const res = await app.request(`/admin/agents/${AGENT_ID}`, {
+      headers: { Cookie: `admin_session=${cookie}` },
+    });
+    expect(res.status).toBe(200);
+    const html = await res.text();
+
+    const autoPostReviewsInput = html.match(
+      /<input[^>]*id="autoPostReviews"[^>]*type="checkbox"[^>]*>/,
+    )?.[0] as string;
+    expect(autoPostReviewsInput).not.toContain("checked");
+
+    const allowSelfReviewInput = html.match(
+      /<input[^>]*id="allowSelfReview"[^>]*type="checkbox"[^>]*>/,
+    )?.[0] as string;
+    expect(allowSelfReviewInput).toContain("checked");
+
+    const cleanupMergedWorktreesInput = html.match(
+      /<input[^>]*id="cleanupMergedWorktrees"[^>]*type="checkbox"[^>]*>/,
+    )?.[0] as string;
+    expect(cleanupMergedWorktreesInput).not.toContain("checked");
+
+    expect(html).toContain(
+      '<input id="minConfidence" name="minConfidence" type="number" value="90"',
+    );
+    expect(html).toContain(
+      '<input id="maxFindings" name="maxFindings" type="number" value="3"',
+    );
+    expect(html).toContain(
+      '<input id="cleanupAfterDays" name="cleanupAfterDays" type="number" value="30"',
+    );
+  });
+
+  it("GET /admin/agents/:id renders a hidden 'false' fallback after each Agent Policy checkbox (so an unchecked box still submits a value)", async () => {
+    // Regression guard: unchecked HTML checkboxes are omitted from FormData
+    // entirely, so without this fallback, unchecking a box in a real browser
+    // would leave the field unchanged rather than clearing it — see the POST
+    // test below that exercises the actual two-entries-same-key submission
+    // order a browser produces.
+    const app = createAdminUIApp(makeMockDeps());
+    const res = await app.request(`/admin/agents/${AGENT_ID}`, {
+      headers: { Cookie: `admin_session=${cookie}` },
+    });
+    const html = await res.text();
+    for (const name of [
+      "autoPostReviews",
+      "allowSelfReview",
+      "cleanupMergedWorktrees",
+    ]) {
+      expect(html).toContain(
+        `<input type="hidden" name="${name}" value="false" />`,
+      );
+    }
+  });
+
+  it("POST /admin/agents/:id/settings with a real browser's checked-checkbox submission order (checkbox 'true' before hidden 'false') resolves to true", async () => {
+    let received: Record<string, unknown> | undefined;
+    const app = createAdminUIApp(
+      makeMockDeps({
+        agentService: {
+          ...makeMockDeps().agentService,
+          updateFields: async (_id: string, input: Record<string, unknown>) => {
+            received = input;
+            return {
+              id: AGENT_ID,
+              name: "Test Agent",
+              slackId: "U123456",
+              selfHosted: false,
+              typeName: "coding",
+              createdAt: new Date("2024-01-01"),
+              updatedAt: new Date("2024-01-01"),
+              repos: [],
+              reviewAuthorAllowlist: [],
+              patchAuthorAllowlist: [],
+              restrictSlackToMembers: false,
+              missingRequiredEnv: [],
+            };
+          },
+        },
+      }),
+    );
+    // Mirrors exactly what a browser submits for a CHECKED box rendered as
+    // `<input type="checkbox" ...checked /><input type="hidden" value="false" />`:
+    // both entries under the same key, checkbox first.
+    const body = new URLSearchParams([
+      ["autoPostReviews", "true"],
+      ["autoPostReviews", "false"],
+    ]);
+    const res = await app.request(`/admin/agents/${AGENT_ID}/settings`, {
+      method: "POST",
+      body: body.toString(),
+      headers: {
+        "Content-Type": "application/x-www-form-urlencoded",
+        Cookie: `admin_session=${cookie}`,
+      },
+    });
+    expect(res.status).toBe(302);
+    expect(received).toEqual({ autoPostReviews: true });
+  });
+
+  it("POST /admin/agents/:id/settings with a real browser's unchecked-checkbox submission (only the hidden 'false' entry present) resolves to false", async () => {
+    let received: Record<string, unknown> | undefined;
+    const app = createAdminUIApp(
+      makeMockDeps({
+        agentService: {
+          ...makeMockDeps().agentService,
+          updateFields: async (_id: string, input: Record<string, unknown>) => {
+            received = input;
+            return {
+              id: AGENT_ID,
+              name: "Test Agent",
+              slackId: "U123456",
+              selfHosted: false,
+              typeName: "coding",
+              createdAt: new Date("2024-01-01"),
+              updatedAt: new Date("2024-01-01"),
+              repos: [],
+              reviewAuthorAllowlist: [],
+              patchAuthorAllowlist: [],
+              restrictSlackToMembers: false,
+              missingRequiredEnv: [],
+            };
+          },
+        },
+      }),
+    );
+    // Mirrors what a browser submits for an UNCHECKED box: only the hidden
+    // fallback entry, since the checkbox itself is omitted from FormData.
+    const body = new URLSearchParams([["autoPostReviews", "false"]]);
+    const res = await app.request(`/admin/agents/${AGENT_ID}/settings`, {
+      method: "POST",
+      body: body.toString(),
+      headers: {
+        "Content-Type": "application/x-www-form-urlencoded",
+        Cookie: `admin_session=${cookie}`,
+      },
+    });
+    expect(res.status).toBe(302);
+    expect(received).toEqual({ autoPostReviews: false });
+  });
+
+  it("POST /admin/agents/:id/settings with new values for all 6 policy fields updates them", async () => {
+    let received: Record<string, unknown> | undefined;
+    const app = createAdminUIApp(
+      makeMockDeps({
+        agentService: {
+          ...makeMockDeps().agentService,
+          updateFields: async (_id: string, input: Record<string, unknown>) => {
+            received = input;
+            return {
+              id: AGENT_ID,
+              name: "Test Agent",
+              slackId: "U123456",
+              selfHosted: false,
+              typeName: "coding",
+              createdAt: new Date("2024-01-01"),
+              updatedAt: new Date("2024-01-01"),
+              repos: [],
+              reviewAuthorAllowlist: [],
+              patchAuthorAllowlist: [],
+              restrictSlackToMembers: false,
+              missingRequiredEnv: [],
+            };
+          },
+        },
+      }),
+    );
+    const body = new URLSearchParams({
+      autoPostReviews: "false",
+      allowSelfReview: "true",
+      cleanupMergedWorktrees: "false",
+      minConfidence: "90",
+      maxFindings: "3",
+      cleanupAfterDays: "30",
+    });
+    const res = await app.request(`/admin/agents/${AGENT_ID}/settings`, {
+      method: "POST",
+      body: body.toString(),
+      headers: {
+        "Content-Type": "application/x-www-form-urlencoded",
+        Cookie: `admin_session=${cookie}`,
+      },
+    });
+    expect(res.status).toBe(302);
+    expect(received).toEqual({
+      autoPostReviews: false,
+      allowSelfReview: true,
+      cleanupMergedWorktrees: false,
+      minConfidence: 90,
+      maxFindings: 3,
+      cleanupAfterDays: 30,
+    });
+  });
+
+  it("POST /admin/agents/:id/settings from the Agent Policy form (no restrictSlackToMembers field) does not clobber restrictSlackToMembers", async () => {
+    let received: Record<string, unknown> | undefined;
+    const app = createAdminUIApp(
+      makeMockDeps({
+        agentService: {
+          ...makeMockDeps().agentService,
+          updateFields: async (_id: string, input: Record<string, unknown>) => {
+            received = input;
+            return {
+              id: AGENT_ID,
+              name: "Test Agent",
+              slackId: "U123456",
+              selfHosted: false,
+              typeName: "coding",
+              createdAt: new Date("2024-01-01"),
+              updatedAt: new Date("2024-01-01"),
+              repos: [],
+              reviewAuthorAllowlist: [],
+              patchAuthorAllowlist: [],
+              restrictSlackToMembers: true,
+              missingRequiredEnv: [],
+            };
+          },
+        },
+      }),
+    );
+    // Mirrors the Agent Policy card's <form> — it has no
+    // restrictSlackToMembers input at all (that field lives in the separate
+    // Slack access card/form).
+    const body = new URLSearchParams({
+      autoPostReviews: "true",
+      minConfidence: "80",
+    });
+    const res = await app.request(`/admin/agents/${AGENT_ID}/settings`, {
+      method: "POST",
+      body: body.toString(),
+      headers: {
+        "Content-Type": "application/x-www-form-urlencoded",
+        Cookie: `admin_session=${cookie}`,
+      },
+    });
+    expect(res.status).toBe(302);
+    expect(received).not.toHaveProperty("restrictSlackToMembers");
+    expect(received).toEqual({ autoPostReviews: true, minConfidence: 80 });
+  });
+
+  it("POST /admin/agents/:id/settings with a non-numeric minConfidence leaves it unchanged rather than passing NaN", async () => {
+    let received: Record<string, unknown> | undefined;
+    const app = createAdminUIApp(
+      makeMockDeps({
+        agentService: {
+          ...makeMockDeps().agentService,
+          updateFields: async (_id: string, input: Record<string, unknown>) => {
+            received = input;
+            return {
+              id: AGENT_ID,
+              name: "Test Agent",
+              slackId: "U123456",
+              selfHosted: false,
+              typeName: "coding",
+              createdAt: new Date("2024-01-01"),
+              updatedAt: new Date("2024-01-01"),
+              repos: [],
+              reviewAuthorAllowlist: [],
+              patchAuthorAllowlist: [],
+              restrictSlackToMembers: false,
+              missingRequiredEnv: [],
+            };
+          },
+        },
+      }),
+    );
+    const body = new URLSearchParams({
+      minConfidence: "not-a-number",
+      maxFindings: "5",
+    });
+    const res = await app.request(`/admin/agents/${AGENT_ID}/settings`, {
+      method: "POST",
+      body: body.toString(),
+      headers: {
+        "Content-Type": "application/x-www-form-urlencoded",
+        Cookie: `admin_session=${cookie}`,
+      },
+    });
+    // Never crashes (no 500) and never forwards NaN to the mutator.
+    expect(res.status).toBe(302);
+    expect(received).not.toHaveProperty("minConfidence");
+    expect(received?.minConfidence).not.toBeNaN();
+    expect(received).toEqual({ maxFindings: 5 });
+  });
+
+  it("POST /admin/agents/:id/settings with a negative cleanupAfterDays leaves it unchanged", async () => {
+    let received: Record<string, unknown> | undefined;
+    const app = createAdminUIApp(
+      makeMockDeps({
+        agentService: {
+          ...makeMockDeps().agentService,
+          updateFields: async (_id: string, input: Record<string, unknown>) => {
+            received = input;
+            return {
+              id: AGENT_ID,
+              name: "Test Agent",
+              slackId: "U123456",
+              selfHosted: false,
+              typeName: "coding",
+              createdAt: new Date("2024-01-01"),
+              updatedAt: new Date("2024-01-01"),
+              repos: [],
+              reviewAuthorAllowlist: [],
+              patchAuthorAllowlist: [],
+              restrictSlackToMembers: false,
+              missingRequiredEnv: [],
+            };
+          },
+        },
+      }),
+    );
+    const body = new URLSearchParams({ cleanupAfterDays: "-5" });
+    const res = await app.request(`/admin/agents/${AGENT_ID}/settings`, {
+      method: "POST",
+      body: body.toString(),
+      headers: {
+        "Content-Type": "application/x-www-form-urlencoded",
+        Cookie: `admin_session=${cookie}`,
+      },
+    });
+    expect(res.status).toBe(302);
+    expect(received).toEqual({});
   });
 });
 

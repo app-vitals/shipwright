@@ -279,6 +279,13 @@ const GetAgentResultSchema = z
      */
     trialExpiresAt: z.string().datetime().nullable().optional(),
     trialExpiryWarnedAt: z.string().datetime().nullable().optional(),
+    /** APM-1.3: the six real agent-policy fields (APM-1.1 DB columns). */
+    autoPostReviews: z.boolean().openapi({ example: true }),
+    allowSelfReview: z.boolean().openapi({ example: false }),
+    minConfidence: z.number().int().openapi({ example: 75 }),
+    maxFindings: z.number().int().openapi({ example: 5 }),
+    cleanupMergedWorktrees: z.boolean().openapi({ example: true }),
+    cleanupAfterDays: z.number().int().openapi({ example: 14 }),
   })
   .openapi("GetAgentResult");
 
@@ -1229,6 +1236,24 @@ export function createAdminApp(deps: AdminDeps): OpenAPIHono<AdminAuthEnv> {
               : null,
           }
         : {}),
+      ...(body.autoPostReviews !== undefined
+        ? { autoPostReviews: body.autoPostReviews }
+        : {}),
+      ...(body.allowSelfReview !== undefined
+        ? { allowSelfReview: body.allowSelfReview }
+        : {}),
+      ...(body.minConfidence !== undefined
+        ? { minConfidence: body.minConfidence }
+        : {}),
+      ...(body.maxFindings !== undefined
+        ? { maxFindings: body.maxFindings }
+        : {}),
+      ...(body.cleanupMergedWorktrees !== undefined
+        ? { cleanupMergedWorktrees: body.cleanupMergedWorktrees }
+        : {}),
+      ...(body.cleanupAfterDays !== undefined
+        ? { cleanupAfterDays: body.cleanupAfterDays }
+        : {}),
     });
     const warning = await computeRestrictSlackToMembersWarning(
       agentMemberService,
@@ -1982,6 +2007,12 @@ function serializeAgent(
     missingRequiredEnv?: string[];
     trialExpiresAt?: Date | null;
     trialExpiryWarnedAt?: Date | null;
+    autoPostReviews?: boolean;
+    allowSelfReview?: boolean;
+    minConfidence?: number;
+    maxFindings?: number;
+    cleanupMergedWorktrees?: boolean;
+    cleanupAfterDays?: number;
   },
   warning?: string,
 ): z.infer<typeof GetAgentResultSchema> {
@@ -2004,6 +2035,12 @@ function serializeAgent(
     trialExpiryWarnedAt: agent.trialExpiryWarnedAt
       ? agent.trialExpiryWarnedAt.toISOString()
       : null,
+    autoPostReviews: agent.autoPostReviews ?? true,
+    allowSelfReview: agent.allowSelfReview ?? false,
+    minConfidence: agent.minConfidence ?? 75,
+    maxFindings: agent.maxFindings ?? 5,
+    cleanupMergedWorktrees: agent.cleanupMergedWorktrees ?? true,
+    cleanupAfterDays: agent.cleanupAfterDays ?? 14,
     ...(warning !== undefined ? { warning } : {}),
   };
 }

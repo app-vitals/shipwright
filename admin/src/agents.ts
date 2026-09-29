@@ -97,6 +97,18 @@ export interface AgentDetail {
    */
   trialExpiresAt?: Date | null;
   trialExpiryWarnedAt?: Date | null;
+  /**
+   * APM-1.3: the six real agent-policy fields (APM-1.1 DB columns,
+   * Prisma-column defaults noted per field below). Optional here (like
+   * `repos`/`trialExpiresAt` above) so existing test doubles constructing a
+   * narrower AgentDetail literal don't need updating.
+   */
+  autoPostReviews?: boolean;
+  allowSelfReview?: boolean;
+  minConfidence?: number;
+  maxFindings?: number;
+  cleanupMergedWorktrees?: boolean;
+  cleanupAfterDays?: number;
 }
 
 export interface UpdateSelfHostedInput {
@@ -121,6 +133,13 @@ export interface UpdateSelfHostedInput {
    * PATCH /agents/:id (omitted entirely means "leave unchanged").
    */
   trialExpiresAt?: Date | null;
+  /** APM-1.3: see AgentDetail's doc comment for these six fields. */
+  autoPostReviews?: boolean;
+  allowSelfReview?: boolean;
+  minConfidence?: number;
+  maxFindings?: number;
+  cleanupMergedWorktrees?: boolean;
+  cleanupAfterDays?: number;
 }
 
 interface AgentIdAndRepos {
@@ -159,6 +178,13 @@ export interface UpdateAgentFieldsInput {
    * agents-api.ts's PatchAgentBodySchema, which omits this field entirely).
    */
   trialExpiryWarnedAt?: Date | null;
+  /** APM-1.3: see AgentDetail's doc comment for these six fields. */
+  autoPostReviews?: boolean;
+  allowSelfReview?: boolean;
+  minConfidence?: number;
+  maxFindings?: number;
+  cleanupMergedWorktrees?: boolean;
+  cleanupAfterDays?: number;
 }
 
 // ─── Select shapes ────────────────────────────────────────────────────────────
@@ -184,6 +210,12 @@ const DETAIL_SELECT = {
   updatedAt: true,
   trialExpiresAt: true,
   trialExpiryWarnedAt: true,
+  autoPostReviews: true,
+  allowSelfReview: true,
+  minConfidence: true,
+  maxFindings: true,
+  cleanupMergedWorktrees: true,
+  cleanupAfterDays: true,
 } as const;
 
 // ─── Service ──────────────────────────────────────────────────────────────────
@@ -370,6 +402,24 @@ export class AgentService {
         ...(input.trialExpiresAt !== undefined
           ? { trialExpiresAt: input.trialExpiresAt }
           : {}),
+        ...(input.autoPostReviews !== undefined
+          ? { autoPostReviews: input.autoPostReviews }
+          : {}),
+        ...(input.allowSelfReview !== undefined
+          ? { allowSelfReview: input.allowSelfReview }
+          : {}),
+        ...(input.minConfidence !== undefined
+          ? { minConfidence: input.minConfidence }
+          : {}),
+        ...(input.maxFindings !== undefined
+          ? { maxFindings: input.maxFindings }
+          : {}),
+        ...(input.cleanupMergedWorktrees !== undefined
+          ? { cleanupMergedWorktrees: input.cleanupMergedWorktrees }
+          : {}),
+        ...(input.cleanupAfterDays !== undefined
+          ? { cleanupAfterDays: input.cleanupAfterDays }
+          : {}),
       },
       select: DETAIL_SELECT,
     });
@@ -476,6 +526,24 @@ export class AgentService {
         ...(input.slackId !== undefined && { slackId: input.slackId }),
         ...(input.trialExpiryWarnedAt !== undefined && {
           trialExpiryWarnedAt: input.trialExpiryWarnedAt,
+        }),
+        ...(input.autoPostReviews !== undefined && {
+          autoPostReviews: input.autoPostReviews,
+        }),
+        ...(input.allowSelfReview !== undefined && {
+          allowSelfReview: input.allowSelfReview,
+        }),
+        ...(input.minConfidence !== undefined && {
+          minConfidence: input.minConfidence,
+        }),
+        ...(input.maxFindings !== undefined && {
+          maxFindings: input.maxFindings,
+        }),
+        ...(input.cleanupMergedWorktrees !== undefined && {
+          cleanupMergedWorktrees: input.cleanupMergedWorktrees,
+        }),
+        ...(input.cleanupAfterDays !== undefined && {
+          cleanupAfterDays: input.cleanupAfterDays,
         }),
       },
       select: DETAIL_SELECT,
