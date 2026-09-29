@@ -89,6 +89,26 @@ describe("deploy.md — output", () => {
     expect(content.toLowerCase()).toContain("failure");
   });
 
+  it("gives the SHA-only-fallback failure and pending-timeout outcomes their own verdict values", () => {
+    expect(content).toContain("sha_only_fallback_failed");
+    expect(content).toContain("sha_only_fallback_pending_timeout");
+  });
+
+  it("maps each SHA-only-fallback verdict to the right success value and task disposition", () => {
+    const verdictBullet = content.slice(
+      content.indexOf("- **`verdict`**"),
+      content.indexOf("- **`pipeline_minutes`**"),
+    );
+    // Failure blocks the task; the pending timeout still marks it deployed.
+    expect(verdictBullet).toMatch(/sha_only_fallback_failed`,\s*`success: false`/);
+    expect(verdictBullet).toMatch(/sha_only_fallback_pending_timeout`,\s*`success: true`/);
+    expect(verdictBullet).toContain("blocked");
+    expect(verdictBullet).toContain("deployed");
+    // The pending timeout matches the no-pipeline case, NOT the named-stage `pipeline_timeout`.
+    expect(verdictBullet).toContain("post_merge_ci_pending_timeout");
+    expect(verdictBullet).toMatch(/not\W{0,3}`pipeline_timeout`/);
+  });
+
   it("documents pipeline_minutes", () => {
     expect(content).toContain("pipeline_minutes");
   });

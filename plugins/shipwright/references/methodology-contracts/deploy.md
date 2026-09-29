@@ -96,7 +96,20 @@ A single JSON object:
   `post_merge_ci_passed` / `post_merge_ci_failed` / `post_merge_ci_pending_timeout` (no-pipeline
   case, Step 5c) or `deploy_stage_failed` / `canary_failed` / `promote_skipped` /
   `promote_succeeded` / `pipeline_timeout` (staged case, Step 5b). Exactly one of these — the
-  caller does not need to re-derive the outcome from `stages[]`.
+  caller does not need to re-derive the outcome from `stages[]`. When `sha_only_fallback` is
+  `true` the named-stage verdicts are unreachable (there is no `.name` to match a stage
+  against), and Step 5b's SHA-only-fallback branch has exactly three terminal outcomes, each
+  with its own value:
+  - **all runs green** → `promote_succeeded`, `success: true` — no health probe runs on this
+    path (see `health_check` below).
+  - **any run terminally non-green** → `sha_only_fallback_failed`, `success: false` — this path
+    marks the task `blocked`.
+  - **budget exhausted (30 minutes) with runs still pending** → `sha_only_fallback_pending_timeout`,
+    `success: true` — this path marks the task `deployed` and leaves a human to check the
+    pending runs manually, the same disposition as the no-pipeline case's
+    `post_merge_ci_pending_timeout`. It is deliberately *not* `pipeline_timeout`: that is the
+    named-stage budget-exhausted outcome, which marks the task `blocked` and so carries
+    `success: false`.
 - **`pipeline_minutes`** — elapsed minutes from `deploy_started_at` to the terminal condition,
   matching Step 8a's `floor((now - deploy_started_at) / 60)`.
 - **`pipeline_mode`** — `"no-pipeline"` (Step 5a detected no Deploy workflow — watching
@@ -114,13 +127,17 @@ A single JSON object:
   - `run_id` — the GitHub Actions run id.
   - `conclusion` — the run's terminal `conclusion` (`success`, `failure`, `cancelled`,
     `timed_out`, `skipped`, etc.), or `null` for a run still in flight at timeout.
-  Empty when no run of any kind was ever observed (e.g. a `post_merge_ci_pending_timeout` or
-  `pipeline_timeout` verdict where nothing ever appeared).
+  Empty when no run of any kind was ever observed (e.g. a `post_merge_ci_pending_timeout`,
+  `sha_only_fallback_pending_timeout`, or `pipeline_timeout` verdict where nothing ever
+  appeared).
 - **`failure_reason`** — a short, human-readable string on any non-`success` verdict, or
   `null` on success. Mirrors the exact wording the reference implementation writes into the
   task-store PATCH's `note`/`blockedReason` field for that terminal condition — e.g.
   `"Deploy stage failed — run ID: {id}"`, `"canary_blocked: Promote skipped after canary
-  success"`, or `"Pipeline timeout after 30 minutes"`. The caller uses this string verbatim
+  success"`, or `"Pipeline timeout after 30 minutes"`. On `sha_only_fallback_failed` that
+  wording is Step 5c's, not a stage-specific one — the fallback branch reuses Step 5c's
+  update blocks verbatim, so it reports `"Post-merge CI failed — run ID: {id}"` even though
+  its *printed* progress line says "Pipeline monitoring failed". The caller uses this string verbatim
   when it PATCHes `TASK_IDS` to `blocked` or the `PullRequest` record's `blockedReason`.
 - **`revert_pr_url`** — the URL of the auto-opened revert PR, present only when `verdict` is
   `canary_failed` (Step 6: the code already reached prod when Canary failed, so a revert PR is
