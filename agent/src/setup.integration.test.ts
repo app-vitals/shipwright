@@ -5,7 +5,7 @@
  * All file I/O runs against a real temp dir (no mocks needed for fs).
  */
 
-import { afterEach, beforeEach, describe, expect, it } from "bun:test";
+import { afterEach, beforeEach, describe, expect, it, spyOn } from "bun:test";
 import {
   existsSync,
   lstatSync,
@@ -736,6 +736,58 @@ describe("runMiseStartup", () => {
     const content = readFileSync(join(testHome, ".bashrc"), "utf8");
     const count = (content.match(/mise activate bash/g) ?? []).length;
     expect(count).toBe(1);
+  });
+
+  it("does not throw when mise trust execFn throws (non-fatal error handling)", async () => {
+    mkdirSync(join(testHome, "workspace"), { recursive: true });
+    const miseTomlPath = join(testHome, "workspace", "mise.toml");
+    writeFileSync(miseTomlPath, "[tools]\n", "utf8");
+
+    const consoleWarnSpy = spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      const mockExec = async (
+        cmd: string,
+        args: string[],
+        _opts: { cwd: string },
+      ) => {
+        if (cmd === "mise" && args.includes("trust")) {
+          throw new Error('Executable not found in $PATH: "mise"');
+        }
+        return { stdout: "", exitCode: 0 };
+      };
+
+      await expect(runMiseStartup(testHome, mockExec)).resolves.toBeUndefined();
+      expect(consoleWarnSpy).toHaveBeenCalled();
+      expect(consoleWarnSpy.mock.calls.flat().join(" ")).toContain("trust");
+    } finally {
+      consoleWarnSpy.mockRestore();
+    }
+  });
+
+  it("does not throw when mise install execFn throws (non-fatal error handling)", async () => {
+    mkdirSync(join(testHome, "workspace"), { recursive: true });
+    const miseTomlPath = join(testHome, "workspace", "mise.toml");
+    writeFileSync(miseTomlPath, "[tools]\n", "utf8");
+
+    const consoleWarnSpy = spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      const mockExec = async (
+        cmd: string,
+        args: string[],
+        _opts: { cwd: string },
+      ) => {
+        if (cmd === "mise" && args.includes("install")) {
+          throw new Error('Executable not found in $PATH: "mise"');
+        }
+        return { stdout: "", exitCode: 0 };
+      };
+
+      await expect(runMiseStartup(testHome, mockExec)).resolves.toBeUndefined();
+      expect(consoleWarnSpy).toHaveBeenCalled();
+      expect(consoleWarnSpy.mock.calls.flat().join(" ")).toContain("install");
+    } finally {
+      consoleWarnSpy.mockRestore();
+    }
   });
 });
 

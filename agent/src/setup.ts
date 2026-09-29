@@ -691,10 +691,26 @@ export async function runMiseStartup(
   }
 
   // Trust the workspace config so mise doesn't prompt interactively
-  await execFn("mise", ["trust", miseTomlPath], { cwd: workspaceDir });
+  try {
+    await execFn("mise", ["trust", miseTomlPath], { cwd: workspaceDir });
+  } catch (err) {
+    console.warn(
+      `[agent] mise trust failed — tools may be unavailable: ${(err as Error).message}`,
+    );
+    return;
+  }
 
   // Run mise install (idempotent — no-op when tools already cached)
-  const install = await execFn("mise", ["install"], { cwd: workspaceDir });
+  let install: { stdout: string; exitCode: number };
+  try {
+    install = await execFn("mise", ["install"], { cwd: workspaceDir });
+  } catch (err) {
+    console.warn(
+      `[agent] mise install failed — tools may be unavailable: ${(err as Error).message}`,
+    );
+    return;
+  }
+
   if (install.exitCode !== 0) {
     console.warn("[agent] mise install failed — tools may be unavailable");
     return;
