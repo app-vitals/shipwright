@@ -737,6 +737,72 @@ describe("runMiseStartup", () => {
     const count = (content.match(/mise activate bash/g) ?? []).length;
     expect(count).toBe(1);
   });
+
+  it("does not throw when mise trust execFn throws (non-fatal error handling)", async () => {
+    mkdirSync(join(testHome, "workspace"), { recursive: true });
+    const miseTomlPath = join(testHome, "workspace", "mise.toml");
+    writeFileSync(miseTomlPath, "[tools]\n", "utf8");
+
+    let warned = false;
+    let warningMessage = "";
+    const originalWarn = console.warn;
+    console.warn = (msg: string) => {
+      warned = true;
+      warningMessage = msg;
+    };
+
+    const mockExec = async (
+      cmd: string,
+      args: string[],
+      _opts: { cwd: string },
+    ) => {
+      if (cmd === "mise" && args.includes("trust")) {
+        throw new Error("Executable not found in $PATH: \"mise\"");
+      }
+      return { stdout: "", exitCode: 0 };
+    };
+
+    try {
+      await expect(runMiseStartup(testHome, mockExec)).resolves.toBeUndefined();
+      expect(warned).toBe(true);
+      expect(warningMessage).toContain("trust");
+    } finally {
+      console.warn = originalWarn;
+    }
+  });
+
+  it("does not throw when mise install execFn throws (non-fatal error handling)", async () => {
+    mkdirSync(join(testHome, "workspace"), { recursive: true });
+    const miseTomlPath = join(testHome, "workspace", "mise.toml");
+    writeFileSync(miseTomlPath, "[tools]\n", "utf8");
+
+    let warned = false;
+    let warningMessage = "";
+    const originalWarn = console.warn;
+    console.warn = (msg: string) => {
+      warned = true;
+      warningMessage = msg;
+    };
+
+    const mockExec = async (
+      cmd: string,
+      args: string[],
+      _opts: { cwd: string },
+    ) => {
+      if (cmd === "mise" && args.includes("install")) {
+        throw new Error("Executable not found in $PATH: \"mise\"");
+      }
+      return { stdout: "", exitCode: 0 };
+    };
+
+    try {
+      await expect(runMiseStartup(testHome, mockExec)).resolves.toBeUndefined();
+      expect(warned).toBe(true);
+      expect(warningMessage).toContain("install");
+    } finally {
+      console.warn = originalWarn;
+    }
+  });
 });
 
 // ---------------------------------------------------------------------------
