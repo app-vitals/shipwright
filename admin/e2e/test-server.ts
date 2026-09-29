@@ -289,6 +289,20 @@ function buildMockDeps(chatClient: ChatClient | undefined): AdminUIDeps {
       toggle: async () => MOCK_TOOL,
       remove: async () => {},
     },
+    agentPhaseMethodologyService: {
+      list: async () => [],
+      upsert: async (
+        agentId: string,
+        phase: string,
+        subagentType: string | null,
+      ) => ({
+        id: "pm-e2e-1",
+        agentId,
+        phase,
+        subagentType,
+        updatedAt: new Date("2024-01-01"),
+      }),
+    },
     agentTokenService: {
       listForAgent: async () => [MOCK_TOKEN],
       create: async () => ({
