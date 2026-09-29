@@ -5,7 +5,7 @@
  * All file I/O runs against a real temp dir (no mocks needed for fs).
  */
 
-import { afterEach, beforeEach, describe, expect, it } from "bun:test";
+import { afterEach, beforeEach, describe, expect, it, spyOn } from "bun:test";
 import {
   existsSync,
   lstatSync,
@@ -743,31 +743,24 @@ describe("runMiseStartup", () => {
     const miseTomlPath = join(testHome, "workspace", "mise.toml");
     writeFileSync(miseTomlPath, "[tools]\n", "utf8");
 
-    let warned = false;
-    let warningMessage = "";
-    const originalWarn = console.warn;
-    console.warn = (msg: string) => {
-      warned = true;
-      warningMessage = msg;
-    };
-
-    const mockExec = async (
-      cmd: string,
-      args: string[],
-      _opts: { cwd: string },
-    ) => {
-      if (cmd === "mise" && args.includes("trust")) {
-        throw new Error("Executable not found in $PATH: \"mise\"");
-      }
-      return { stdout: "", exitCode: 0 };
-    };
-
+    const consoleWarnSpy = spyOn(console, "warn").mockImplementation(() => {});
     try {
+      const mockExec = async (
+        cmd: string,
+        args: string[],
+        _opts: { cwd: string },
+      ) => {
+        if (cmd === "mise" && args.includes("trust")) {
+          throw new Error('Executable not found in $PATH: "mise"');
+        }
+        return { stdout: "", exitCode: 0 };
+      };
+
       await expect(runMiseStartup(testHome, mockExec)).resolves.toBeUndefined();
-      expect(warned).toBe(true);
-      expect(warningMessage).toContain("trust");
+      expect(consoleWarnSpy).toHaveBeenCalled();
+      expect(consoleWarnSpy.mock.calls.flat().join(" ")).toContain("trust");
     } finally {
-      console.warn = originalWarn;
+      consoleWarnSpy.mockRestore();
     }
   });
 
@@ -776,31 +769,24 @@ describe("runMiseStartup", () => {
     const miseTomlPath = join(testHome, "workspace", "mise.toml");
     writeFileSync(miseTomlPath, "[tools]\n", "utf8");
 
-    let warned = false;
-    let warningMessage = "";
-    const originalWarn = console.warn;
-    console.warn = (msg: string) => {
-      warned = true;
-      warningMessage = msg;
-    };
-
-    const mockExec = async (
-      cmd: string,
-      args: string[],
-      _opts: { cwd: string },
-    ) => {
-      if (cmd === "mise" && args.includes("install")) {
-        throw new Error("Executable not found in $PATH: \"mise\"");
-      }
-      return { stdout: "", exitCode: 0 };
-    };
-
+    const consoleWarnSpy = spyOn(console, "warn").mockImplementation(() => {});
     try {
+      const mockExec = async (
+        cmd: string,
+        args: string[],
+        _opts: { cwd: string },
+      ) => {
+        if (cmd === "mise" && args.includes("install")) {
+          throw new Error('Executable not found in $PATH: "mise"');
+        }
+        return { stdout: "", exitCode: 0 };
+      };
+
       await expect(runMiseStartup(testHome, mockExec)).resolves.toBeUndefined();
-      expect(warned).toBe(true);
-      expect(warningMessage).toContain("install");
+      expect(consoleWarnSpy).toHaveBeenCalled();
+      expect(consoleWarnSpy.mock.calls.flat().join(" ")).toContain("install");
     } finally {
-      console.warn = originalWarn;
+      consoleWarnSpy.mockRestore();
     }
   });
 });
