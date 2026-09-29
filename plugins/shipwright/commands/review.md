@@ -61,7 +61,35 @@ WORKSPACE_ROOT=$(pwd)
 Steps 9-11 and Step 14 use `$WORKSPACE_ROOT` to reference `state/reviews/` — that directory
 only ever exists at the workspace root, never inside a worktree.
 
-Read `state/agent-policy.md`. If the file doesn't exist, use these conservative defaults:
+Read policy in DB-first order — DB record, then `state/agent-policy.md`, then hardcoded
+defaults. This is a transition-period mechanism (APM-1.2): `GET /agents/:id/config` does not
+yet return these fields for any agent (a separate task extends the endpoint to include them),
+so every field today falls through past tier 1 to tier 2 (the file) or tier 3 (hardcoded).
+Once that endpoint extension ships, tier 1 starts returning values automatically — no further
+doc changes needed here.
+
+1. **DB** — same config-fetch pattern as Step 14's `GET /agents/:id/config` call:
+   ```bash
+   POLICY_JSON=$(curl -sf -H "Authorization: Bearer $SHIPWRIGHT_AGENT_API_KEY" \
+     "$SHIPWRIGHT_API_URL/agents/$SHIPWRIGHT_AGENT_ID/config")
+   AUTO_POST_REVIEWS=$(echo "$POLICY_JSON" | jq -r '.autoPostReviews | select(. != null)')
+   ALLOW_SELF_REVIEW=$(echo "$POLICY_JSON" | jq -r '.allowSelfReview | select(. != null)')
+   MIN_CONFIDENCE=$(echo "$POLICY_JSON" | jq -r '.minConfidence | select(. != null)')
+   MAX_FINDINGS=$(echo "$POLICY_JSON" | jq -r '.maxFindings | select(. != null)')
+   ```
+   A `null` or absent field means the DB has no record yet (or that field isn't populated
+   yet) — fall through to tier 2 for that field, not an error.
+
+   Use `select(. != null)`, **not** `// empty`. jq's `//` alternative operator treats both
+   `null` *and* `false` as absent, so `// empty` would silently discard a deliberately-set
+   `autoPostReviews: false` or `allowSelfReview: false` from the DB and fall through to the
+   file tier — the opposite of what the operator intended. `select(. != null)` filters on
+   null-ness only, so `false` survives as a real tier-1 value.
+2. **File** — for any field still empty after tier 1, read the corresponding snake_case key
+   (`auto_post_reviews`/`allow_self_review`/`min_confidence`/`max_findings`) from
+   `state/agent-policy.md`.
+3. **Hardcoded defaults** — for any field still unset after tiers 1-2 (the file doesn't exist
+   either), use these conservative defaults:
 
 | Setting | Default |
 |---------|---------|
