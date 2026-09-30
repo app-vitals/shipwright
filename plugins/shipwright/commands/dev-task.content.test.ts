@@ -951,7 +951,7 @@ describe("dev-task.md Step 5c — BLOCKED dead-end PATCHes task status (BHE-1.2)
   it("PATCHes status:'blocked' with a blockedReason when the model-upgrade ladder is exhausted and the blocker is a genuine dead end", () => {
     const step5cIdx = content.indexOf("### 5c. Handle Subagent Status");
     expect(step5cIdx).toBeGreaterThan(-1);
-    const section = content.slice(step5cIdx, step5cIdx + 2500);
+    const section = content.slice(step5cIdx, step5cIdx + 4200);
 
     expect(section).toContain('"$SHIPWRIGHT_TASK_STORE_URL/tasks/{id}"');
     expect(section).toMatch(/-X PATCH/);
@@ -963,7 +963,7 @@ describe("dev-task.md Step 5c — BLOCKED dead-end PATCHes task status (BHE-1.2)
   it("uses the same curl shape as Steps 1/7/9/9b.5 (curl -sf -X PATCH ... | jq .)", () => {
     const step5cIdx = content.indexOf("### 5c. Handle Subagent Status");
     expect(step5cIdx).toBeGreaterThan(-1);
-    const section = content.slice(step5cIdx, step5cIdx + 2500);
+    const section = content.slice(step5cIdx, step5cIdx + 4200);
 
     expect(section).toContain(
       'curl -sf -X PATCH -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN"',
@@ -975,7 +975,7 @@ describe("dev-task.md Step 5c — BLOCKED dead-end PATCHes task status (BHE-1.2)
   it("does NOT fire the blocked-status PATCH for the context/size/plan cases the step already knows how to resolve", () => {
     const step5cIdx = content.indexOf("### 5c. Handle Subagent Status");
     expect(step5cIdx).toBeGreaterThan(-1);
-    const section = content.slice(step5cIdx, step5cIdx + 2500);
+    const section = content.slice(step5cIdx, step5cIdx + 4200);
 
     // The three self-correcting branches (context, too-large, wrong-plan) must appear
     // BEFORE the blocked-status PATCH, and the PATCH must be scoped to the remaining
@@ -999,7 +999,7 @@ describe("dev-task.md Step 5c — BLOCKED dead-end PATCHes task status (BHE-1.2)
   it("does not comment on or close a PR — Step 5c runs before Step 9 (PR creation), so no PR exists yet", () => {
     const step5cIdx = content.indexOf("### 5c. Handle Subagent Status");
     expect(step5cIdx).toBeGreaterThan(-1);
-    const section = content.slice(step5cIdx, step5cIdx + 2500);
+    const section = content.slice(step5cIdx, step5cIdx + 4200);
 
     expect(section).not.toContain("gh pr comment");
     expect(section).not.toContain("gh pr close");
@@ -1442,10 +1442,10 @@ describe("dev-task.md Step 1 — PRD-shaped task guard (fallback safety net) (PD
 describe("dev-task.md — subagent dispatch is foreground, not background (ABD-1.2)", () => {
   it("Step 5b's implementation-subagent dispatch pins run_in_background: false", () => {
     const anchorIdx = content.indexOf(
-      "Dispatch a `general-purpose` subagent with this prompt",
+      "Dispatch a `DEV_TASK_SUBAGENT_TYPE` subagent via the Agent tool",
     );
     expect(anchorIdx).toBeGreaterThan(-1);
-    const section = content.slice(anchorIdx, anchorIdx + 600);
+    const section = content.slice(anchorIdx, anchorIdx + 700);
     expect(section).toContain("run_in_background: false");
   });
 
@@ -1814,6 +1814,189 @@ describe("dev-task.md Step 8 — Skip-Locally Classification: read before attemp
     expect(s).not.toMatch(
       /skip \(learned: \{reason\}\)[\s\S]{0,40}plain `skip`\s*$/,
     ); // sanity: phrase isn't truncated
+  });
+});
+
+describe("dev-task.md Step 5 — dispatches the phase-methodology-configured subagent (DTM-1.2)", () => {
+  function extractStep5a5Section(md: string): string {
+    const sectionIdx = md.indexOf(
+      "### 5a.5. Resolve the Configured Dev-Task-Phase Subagent (DTM-1.2)",
+    );
+    const step5bIdx = md.indexOf("### 5b. Dispatch Implementation Subagent");
+    expect(sectionIdx).toBeGreaterThan(-1);
+    expect(step5bIdx).toBeGreaterThan(sectionIdx);
+    return md.slice(sectionIdx, step5bIdx);
+  }
+
+  function extractStep5cSection(md: string): string {
+    const sectionIdx = md.indexOf("### 5c. Handle Subagent Status");
+    const step5dIdx = md.indexOf("### 5d. Renew the Claim Heartbeat");
+    expect(sectionIdx).toBeGreaterThan(-1);
+    expect(step5dIdx).toBeGreaterThan(sectionIdx);
+    return md.slice(sectionIdx, step5dIdx);
+  }
+
+  it("adds Step 5a.5 between Step 5a and Step 5b", () => {
+    const step5aIdx = content.indexOf("### 5a. Prepare Subagent Context");
+    const step5a5Idx = content.indexOf(
+      "### 5a.5. Resolve the Configured Dev-Task-Phase Subagent (DTM-1.2)",
+    );
+    const step5bIdx = content.indexOf("### 5b. Dispatch Implementation Subagent");
+    expect(step5aIdx).toBeGreaterThan(-1);
+    expect(step5a5Idx).toBeGreaterThan(step5aIdx);
+    expect(step5bIdx).toBeGreaterThan(step5a5Idx);
+  });
+
+  it("fetches phaseMethodology[\"dev-task\"] from GET /agents/{id}/config, same endpoint/auth as patch.md and review.md, using jq bracket notation for the hyphenated phase key", () => {
+    const section = extractStep5a5Section(content);
+    expect(section).toContain(
+      'curl -sf -H "Authorization: Bearer $SHIPWRIGHT_AGENT_API_KEY"',
+    );
+    expect(section).toContain("$SHIPWRIGHT_API_URL/agents/$SHIPWRIGHT_AGENT_ID/config");
+    expect(section).toContain('.phaseMethodology["dev-task"]');
+    expect(section).not.toContain(".phaseMethodology.dev-task");
+  });
+
+  it("DEV_TASK_SUBAGENT_TYPE defaults to the built-in general-purpose when phaseMethodology[\"dev-task\"] is absent or null", () => {
+    const section = extractStep5a5Section(content);
+    expect(section).toContain("DEV_TASK_SUBAGENT_TYPE=$(curl");
+    expect(section).toContain('.phaseMethodology["dev-task"] // "general-purpose"');
+  });
+
+  it("DEV_TASK_SUBAGENT_TYPE is fail-closed on curl failure -- shell default also falls back to general-purpose", () => {
+    const section = extractStep5a5Section(content);
+    expect(section).toContain("${DEV_TASK_SUBAGENT_TYPE:-general-purpose}");
+    expect(section).toContain("Fail-closed, not fail-open");
+  });
+
+  it("documents this lookup as fail-soft/best-effort, never a hard stop, and that no-config behavior is unchanged from today (AC1)", () => {
+    const section = extractStep5a5Section(content);
+    const lower = section.toLowerCase();
+    expect(lower).toMatch(/fail-soft|best-effort/);
+    expect(lower).toContain("never a hard stop");
+    expect(lower).toContain("dev-task behaves identically to today");
+  });
+
+  it("references the DTM-1.1 methodology contract doc as the wire shape any dispatched subagent must satisfy", () => {
+    const section = extractStep5a5Section(content);
+    expect(section).toContain("references/methodology-contracts/dev-task.md");
+    expect(section).toContain("DTM-1.1");
+  });
+
+  it("documents that Steps 6 onward (Simplify, Spec Compliance, Docs Refresh, CI-fix loop) apply unchanged regardless of which subagent was dispatched", () => {
+    const section = extractStep5a5Section(content);
+    const lower = section.toLowerCase();
+    expect(lower).toContain("step 6 onward");
+    expect(lower).toMatch(/not\s+swappable or bypassable/);
+  });
+
+  it("Step 5b's dispatch site passes subagent_type DEV_TASK_SUBAGENT_TYPE, not a hardcoded general-purpose literal (AC2)", () => {
+    expect(content).not.toContain("Dispatch a `general-purpose` subagent with this prompt");
+    const matches = content.match(
+      /Dispatch a `DEV_TASK_SUBAGENT_TYPE` subagent via the Agent tool/g,
+    );
+    expect(matches).not.toBeNull();
+    expect(matches?.length).toBe(1);
+    const step5bIdx = content.indexOf("### 5b. Dispatch Implementation Subagent");
+    const step5cIdx = content.indexOf("### 5c. Handle Subagent Status");
+    const step5bSection = content.slice(step5bIdx, step5cIdx);
+    expect(step5bSection).toContain("subagent_type: DEV_TASK_SUBAGENT_TYPE");
+    expect(step5bSection).toContain("resolved in Step 5a.5");
+  });
+
+  it("Step 6.5's independently-swappable-via-principles.md dispatch site is untouched -- still the literal general-purpose subagent", () => {
+    expect(content).toContain(
+      "**Dispatch a `general-purpose` subagent** with `model: 'haiku'`",
+    );
+  });
+
+  it("Step 5c documents an 'Unparseable or Failed Dispatch (DTM-1.2)' subsection that retries once with the same DEV_TASK_SUBAGENT_TYPE", () => {
+    const section = extractStep5cSection(content);
+    expect(section).toContain("#### Unparseable or Failed Dispatch (DTM-1.2)");
+    expect(section.toLowerCase()).toContain("dispatch itself");
+    expect(section.toLowerCase()).toContain("invalid/nonexistent");
+    expect(section).toContain("retry once with the same\n`DEV_TASK_SUBAGENT_TYPE`");
+  });
+
+  it("built-in-default failure after retry feeds into the EXISTING model-escalation ladder (haiku->sonnet->opus), not a new one", () => {
+    const section = extractStep5cSection(content);
+    expect(section).toContain("**Built-in default**");
+    expect(section).toContain("no parseable status after retry");
+    expect(section.toLowerCase()).toContain("existing model-escalation ladder");
+    expect(section).toContain("haiku");
+    expect(section).toContain("sonnet");
+    expect(section).toContain("opus");
+  });
+
+  it("configured-override failure after retry falls back to dispatching the built-in general-purpose subagent fresh, with its own single retry, before BLOCKED", () => {
+    const section = extractStep5cSection(content);
+    expect(section).toContain("**Configured override**");
+    expect(section).toContain(
+      "dispatch the built-in `general-purpose` subagent\n  fresh",
+    );
+    expect(section).toContain("Print a one-line note");
+    expect(section).toContain(
+      "failed after retry and the built-in implementer was used as a\n  fallback",
+    );
+    expect(section).toMatch(/retry\s+it once more/);
+  });
+
+  it("Step 5c must end with SOME valid parsed response before proceeding -- never leave it hanging", () => {
+    const section = extractStep5cSection(content);
+    const lower = section.toLowerCase();
+    expect(lower).toContain("must end with some valid parsed response");
+    expect(lower).toMatch(/never leave\s*\n?this step without one/);
+  });
+
+  it("AC3: Steps 6, 6.5, 8.5, and 9b are NOT gated behind any DEV_TASK_SUBAGENT_TYPE conditional, and remain unconditional", () => {
+    expect(content).not.toMatch(/if\s+DEV_TASK_SUBAGENT_TYPE\s+is/i);
+    expect(content).not.toMatch(/when\s+DEV_TASK_SUBAGENT_TYPE\s+is/i);
+    expect(content).not.toMatch(/unless\s+DEV_TASK_SUBAGENT_TYPE/i);
+    const step6Idx = content.indexOf("## Step 6: Simplify");
+    const step65Idx = content.indexOf("## Step 6.5: Spec Compliance Check");
+    const step85Idx = content.indexOf("## Step 8.5: Auto-Refresh Docs");
+    const step9bIdx = content.indexOf("## Step 9b: CI Gate");
+    expect(step6Idx).toBeGreaterThan(-1);
+    expect(step65Idx).toBeGreaterThan(-1);
+    expect(step85Idx).toBeGreaterThan(-1);
+    expect(step9bIdx).toBeGreaterThan(-1);
+  });
+
+  it("AC3: the 'CRITICAL — DO NOT SKIP STEPS 6-10' admonition right after Step 5d is still present verbatim", () => {
+    expect(content).toContain("> **CRITICAL — DO NOT SKIP STEPS 6–10**");
+    expect(content).toContain(
+      "> After the implementation subagent completes (Step 5), you MUST continue through ALL remaining steps: Simplify (6), Spec Compliance Check (6.5), Requirements Verification (7), Pre-Ship Checks (8), Auto-Refresh Docs (8.5), Push & PR (9), CI Gate (9b), Handoff (10). Do NOT stop or ask to run a separate workflow.",
+    );
+  });
+
+  it("AC4: Step 2's atomic claim POST is byte-for-byte unchanged", () => {
+    const step2Idx = content.indexOf("## Step 2: Mark In-Progress");
+    const step3Idx = content.indexOf("## Step 3: Build Feature-Dev Prompt");
+    const step2Section = content.slice(step2Idx, step3Idx);
+    expect(step2Section).toContain(
+      '"$SHIPWRIGHT_TASK_STORE_URL/tasks/{id}/claim")',
+    );
+    expect(step2Section).toContain(
+      "No request body is sent — with an agent token (what `$SHIPWRIGHT_TASK_STORE_TOKEN` is in\nthis deployment), the task-store pins `claimedBy` to the calling agent's own ID\nserver-side and ignores the body.",
+    );
+  });
+
+  it("AC4: Step 10a's PATCH with pr_open is byte-for-byte unchanged", () => {
+    const step10Idx = content.indexOf("## Step 10: Update Queue & Handoff");
+    const step10aSection = content.slice(step10Idx, step10Idx + 1500);
+    expect(step10aSection).toContain(
+      '-d "{\\"status\\": \\"pr_open\\", \\"pr\\": {pr_number}, \\"prCreatedAt\\": \\"$PR_CREATED_AT\\", \\"ciFixAttempts\\": {ci_attempt}, \\"simplifyTotal\\": {simplify_total}, \\"simplifyDry\\": {simplify_dry}, \\"simplifyDeadCode\\": {simplify_dead_code}, \\"simplifyNaming\\": {simplify_naming}, \\"simplifyComplexity\\": {simplify_complexity}, \\"simplifyConsistency\\": {simplify_consistency}, \\"coverageDelta\\": {coverage_delta}, \\"model\\": \\"{EFFECTIVE_MODEL}\\"}"',
+    );
+  });
+
+  it("AC4: Step 4's worktree setup / branch-naming logic is untouched", () => {
+    expect(content).toContain(
+      "All work happens in a worktree — see workspace `CLAUDE.md` for the convention. Branch slug = branch name with `/` replaced by `-`.",
+    );
+  });
+
+  it("AC4: Step 9's PR-creation section header is untouched", () => {
+    expect(content).toContain("## Step 9: Push & PR");
   });
 });
 

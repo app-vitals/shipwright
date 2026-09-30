@@ -798,10 +798,18 @@ describe("deploy.md — bundle-mate sync on Step 5c budget-exhausted deployed ma
   // sites below (originally scoped to single-task TASK_ID under PRB-3.2) were extended to
   // the same TASK_IDS loop per review follow-up on #3452 — see that describe block below.
   function extractSection(): string {
+    // Anchor inside Step 5c itself — Step 4e's generic result-application logic (DEM-1.2)
+    // quotes this same wording when describing the pending-timeout verdict, so an
+    // unscoped indexOf would land on that prose block instead of 5c's bash.
+    const step5cIdx = content.indexOf(
+      "### 5c. Post-Merge CI Watch (no Deploy pipeline)",
+    );
+    expect(step5cIdx).toBeGreaterThan(-1);
     const anchorIdx = content.indexOf(
       "Post-merge CI still pending after 10 minutes",
+      step5cIdx,
     );
-    expect(anchorIdx).toBeGreaterThan(-1);
+    expect(anchorIdx).toBeGreaterThan(step5cIdx);
     return content.slice(anchorIdx, anchorIdx + 1200);
   }
 
@@ -1231,6 +1239,229 @@ describe("deploy.md — /prs/claim threads authorLogin/headRef/title for server-
     expect(section).toContain('--arg title "$PR_TITLE"');
     expect(section).toContain(
       "authorLogin: $authorLogin, headRef: $headRef, title: $title",
+    );
+  });
+});
+
+describe("deploy.md — Steps 4d/4e dispatch the phase-methodology-configured subagent (DEM-1.2)", () => {
+  function extractStep4dSection(md: string): string {
+    const sectionIdx = md.indexOf(
+      "## Step 4d: Resolve the Configured Deploy-Phase Subagent (DEM-1.2)",
+    );
+    const step4eIdx = md.indexOf(
+      "## Step 4e: Dispatch Configured Deploy-Phase Subagent (DEM-1.2)",
+    );
+    expect(sectionIdx).toBeGreaterThan(-1);
+    expect(step4eIdx).toBeGreaterThan(sectionIdx);
+    return md.slice(sectionIdx, step4eIdx);
+  }
+
+  function extractStep4eSection(md: string): string {
+    const sectionIdx = md.indexOf(
+      "## Step 4e: Dispatch Configured Deploy-Phase Subagent (DEM-1.2)",
+    );
+    const step5Idx = md.indexOf("## Step 5: Poll Deploy");
+    expect(sectionIdx).toBeGreaterThan(-1);
+    expect(step5Idx).toBeGreaterThan(sectionIdx);
+    return md.slice(sectionIdx, step5Idx);
+  }
+
+  it("Step 4d exists, positioned after Step 4c and before Step 5", () => {
+    const step4cIdx = content.indexOf(
+      "### 4c. Update PullRequest Record (post-merge)",
+    );
+    const step4dIdx = content.indexOf(
+      "## Step 4d: Resolve the Configured Deploy-Phase Subagent (DEM-1.2)",
+    );
+    const step5Idx = content.indexOf("## Step 5: Poll Deploy");
+    expect(step4cIdx).toBeGreaterThan(-1);
+    expect(step4dIdx).toBeGreaterThan(step4cIdx);
+    expect(step5Idx).toBeGreaterThan(step4dIdx);
+  });
+
+  it("Step 4e exists, positioned after Step 4d and before Step 5", () => {
+    const step4dIdx = content.indexOf(
+      "## Step 4d: Resolve the Configured Deploy-Phase Subagent (DEM-1.2)",
+    );
+    const step4eIdx = content.indexOf(
+      "## Step 4e: Dispatch Configured Deploy-Phase Subagent (DEM-1.2)",
+    );
+    const step5Idx = content.indexOf("## Step 5: Poll Deploy");
+    expect(step4dIdx).toBeGreaterThan(-1);
+    expect(step4eIdx).toBeGreaterThan(step4dIdx);
+    expect(step5Idx).toBeGreaterThan(step4eIdx);
+  });
+
+  it("resolves DEPLOY_SUBAGENT_TYPE from phaseMethodology.deploy via GET /agents/{id}/config with an empty (not named) fallback", () => {
+    const section = extractStep4dSection(content);
+    expect(section).toContain(
+      'curl -sf -H "Authorization: Bearer $SHIPWRIGHT_AGENT_API_KEY"',
+    );
+    expect(section).toContain(
+      "$SHIPWRIGHT_API_URL/agents/$SHIPWRIGHT_AGENT_ID/config",
+    );
+    expect(section).toContain(".phaseMethodology.deploy // empty");
+  });
+
+  it("explains deploy has no built-in subagent_type name to fall back to, unlike patch.md/review.md", () => {
+    const section = extractStep4dSection(content);
+    const lower = section.toLowerCase().replace(/\s+/g, " ");
+    expect(lower).toContain("no built-in subagent_type");
+    expect(lower).toContain("steps 5 through 7");
+  });
+
+  it("states the no-config path proceeds to Step 5 unchanged, and Step 5 is skipped entirely when an override is configured", () => {
+    const section = extractStep4dSection(content);
+    const lower = section.toLowerCase().replace(/\s+/g, " ");
+    expect(lower).toContain("proceed to step 5");
+    expect(lower).toMatch(/skip step 5/);
+  });
+
+  it("references the methodology contract doc and cites DEM-1.1 as the wire shape any dispatched subagent must satisfy", () => {
+    const section = extractStep4dSection(content);
+    expect(section).toContain("references/methodology-contracts/deploy.md");
+    expect(section).toContain("DEM-1.1");
+  });
+
+  it("Step 4e marks the task (and every bundle-mate on TASK_IDS) deploying before dispatch, reusing Step 5's PATCH loop", () => {
+    const section = extractStep4eSection(content);
+    expect(section).toContain("for tid in $TASK_IDS");
+    expect(section).toContain('\\"status\\": \\"deploying\\"');
+  });
+
+  it("Step 4e's dispatch prompt references every contract Input by name", () => {
+    const section = extractStep4eSection(content);
+    for (const field of [
+      "SQUASH_SHA",
+      "org",
+      "repo",
+      "PR_TITLE",
+      "TASK_ID",
+      "TASK_IDS",
+      "PR_RECORD_ID",
+      "deploy_started_at",
+      "Deploy model",
+    ]) {
+      expect(section).toContain(field);
+    }
+  });
+
+  it("Step 4e dispatches via the Agent tool with subagent_type DEPLOY_SUBAGENT_TYPE and run_in_background: false", () => {
+    const section = extractStep4eSection(content);
+    expect(section).toContain("DEPLOY_SUBAGENT_TYPE");
+    expect(section.replace(/\s+/g, " ")).toContain("run_in_background: false");
+  });
+
+  it("explicitly includes the literal target-repo Deploy model CLAUDE.md text in the prompt rather than assuming it's already in the subagent's context", () => {
+    const section = extractStep4eSection(content);
+    const lower = section.toLowerCase().replace(/\s+/g, " ");
+    expect(lower).toContain("fresh subagent");
+    expect(lower).toContain("literal text");
+  });
+
+  it("Step 4e lists every contract Output field name in the dispatch prompt", () => {
+    const section = extractStep4eSection(content);
+    for (const field of [
+      "success",
+      "verdict",
+      "pipeline_minutes",
+      "pipeline_mode",
+      "sha_only_fallback",
+      "stages",
+      "failure_reason",
+      "revert_pr_url",
+      "health_check",
+    ]) {
+      expect(section).toContain(field);
+    }
+  });
+
+  it("has an Unparseable or Failed Dispatch (DEM-1.2) subsection with retry-once-then-fallback language, citing RVM-1.2/PTM-1.2 as precedent", () => {
+    const section = extractStep4eSection(content);
+    expect(section).toContain("Unparseable or Failed Dispatch (DEM-1.2)");
+    expect(section.toLowerCase()).toContain("retry once");
+    expect(section.toLowerCase()).toContain("built-in");
+    const citesPrecedent =
+      section.includes("RVM-1.2") || section.includes("PTM-1.2");
+    expect(citesPrecedent).toBe(true);
+  });
+
+  it("checks for an already-opened revert PR before re-dispatching, so an unparseable report can't cause a second revert PR", () => {
+    const section = extractStep4eSection(content);
+    expect(section).toContain("EXISTING_REVERT_PR");
+    expect(section).toContain('--head "revert/canary-{task_id_or_pr}"');
+    const lower = section.toLowerCase().replace(/[*\s]+/g, " ");
+    expect(lower).toContain("open a second revert pr");
+    expect(lower).toContain("do not re-dispatch at all");
+  });
+
+  it("reconstructs a canary_failed result from the existing revert PR instead of retrying, and carries the guard into the built-in fallback", () => {
+    const section = extractStep4eSection(content);
+    const normalized = section.replace(/\s+/g, " ");
+    expect(normalized).toContain('verdict: "canary_failed"');
+    expect(normalized).toContain("revert_pr_url: {EXISTING_REVERT_PR}");
+    expect(normalized).toContain(
+      "Canary failed after deploy. Revert PR opened: {EXISTING_REVERT_PR}",
+    );
+    expect(normalized.toLowerCase()).toContain(
+      "if step 6 is reached on this path",
+    );
+  });
+
+  it("the fallback note explains the configured subagent failed twice and the built-in execution step was used as a fallback", () => {
+    const section = extractStep4eSection(content);
+    const lower = section.toLowerCase().replace(/\s+/g, " ");
+    expect(lower).toContain("failed twice");
+    expect(lower).toContain("fallback");
+    expect(lower).toContain("step 5");
+  });
+
+  it("result-application logic references success/failure_reason/revert_pr_url and reuses the deployed/blocked PATCH shapes", () => {
+    const section = extractStep4eSection(content);
+    expect(section).toContain("success");
+    expect(section).toContain("failure_reason");
+    expect(section).toContain("revert_pr_url");
+    expect(section).toContain('status: "deployed"');
+    expect(section).toContain('status: "blocked"');
+  });
+
+  it("the success == true branch flags the PR record blocked on the contract's two pending-timeout verdicts, matching Step 5b/5c", () => {
+    const section = extractStep4eSection(content);
+    const normalized = section.replace(/\s+/g, " ");
+    expect(normalized).toContain("post_merge_ci_pending_timeout");
+    expect(normalized).toContain("sha_only_fallback_pending_timeout");
+    expect(normalized).toContain('{"blocked": true, "blockedReason": "..."}');
+    expect(normalized).toContain(
+      "Post-merge CI still pending after 10 minutes — marking deployed, check manually",
+    );
+    expect(normalized).toContain(
+      "Pipeline monitoring still pending after 30 minutes — marking deployed, check manually",
+    );
+  });
+
+  it("the success == true branch only leaves the PR record as-is for non-pending-timeout verdicts", () => {
+    const section = extractStep4eSection(content);
+    const normalized = section.replace(/\*/g, "").replace(/\s+/g, " ");
+    expect(normalized).toContain(
+      "any other `success: true` verdict (`post_merge_ci_passed`, `promote_succeeded`): leave the PR record as-is (no blocked flag)",
+    );
+    expect(normalized.toLowerCase()).toContain("branch on `verdict`");
+  });
+
+  it("states this generic success/failure/revert_pr_url handling is what keeps status bookkeeping wrapper-owned (AC3)", () => {
+    const section = extractStep4eSection(content);
+    expect(section.toLowerCase()).toContain("wrapper-owned");
+  });
+
+  it("Step 5 gains a one-line pointer noting it (and 5a/5b/5c/6/7) only runs when Step 4d found no configured override", () => {
+    const step5Idx = content.indexOf("## Step 5: Poll Deploy");
+    const step5aIdx = content.indexOf("### 5a. No-Pipeline Detection");
+    expect(step5Idx).toBeGreaterThan(-1);
+    expect(step5aIdx).toBeGreaterThan(step5Idx);
+    const section = content.slice(step5Idx, step5aIdx);
+    expect(section).toContain("DEPLOY_SUBAGENT_TYPE");
+    expect(section.toLowerCase().replace(/\s+/g, " ")).toContain(
+      "no configured override",
     );
   });
 });

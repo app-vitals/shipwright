@@ -487,7 +487,211 @@ fi
 
 ---
 
+## Step 4d: Resolve the Configured Deploy-Phase Subagent (DEM-1.2)
+
+Runs once here too, same fail-soft, best-effort shape as patch.md's Step 2.2 model-tier and
+subagent-methodology lookups — any failure leaves `DEPLOY_SUBAGENT_TYPE` at its no-config
+default, never a hard stop. Fetches the agent's configured phase-methodology override for the
+deploy phase off the same `GET /agents/{id}/config` endpoint this file's own Step 3a already
+uses for `allow_self_review` — same endpoint, same auth header, just a different field:
+
+```bash
+DEPLOY_SUBAGENT_TYPE=$(curl -sf -H "Authorization: Bearer $SHIPWRIGHT_AGENT_API_KEY" \
+  "$SHIPWRIGHT_API_URL/agents/$SHIPWRIGHT_AGENT_ID/config" | jq -r '.phaseMethodology.deploy // empty')
+```
+
+**Unlike patch.md's Step 2.2 or review.md's equivalent resolution, deploy has no built-in
+subagent_type name to fall back to.** patch.md/review.md's built-in default behavior is
+already an Agent-tool dispatch to a named subagent_type (`general-purpose` for patch,
+`shipwright:code-reviewer` for review), so their no-config fallback resolves to that literal
+name. Deploy's built-in post-merge execution step is not itself an Agent-tool dispatch at
+all — it is Steps 5 through 7 below, running inline in the main command thread via
+Monitor/Bash polling loops and direct `git`/`gh` commands. There is no subagent_type string
+to name as "the built-in one," so the fallback value here is **empty**, not a literal
+default — hence `// empty` above rather than `// "some-name"`.
+
+- **`DEPLOY_SUBAGENT_TYPE` empty** (no override configured in `phaseMethodology.deploy`, or
+  the curl call above failed): proceed to Step 5 below exactly as documented — unchanged,
+  inline, in the main command thread. This is the literal no-config default path (deploy
+  behaves identically to today, both `direct` and `staged` models).
+- **`DEPLOY_SUBAGENT_TYPE` non-empty** (an override is configured): skip Step 5 (and its
+  5a/5b/5c substeps, Step 6, and Step 7) entirely for this run. Instead follow Step 4e below.
+
+Any subagent plugged in here — built-in reference or custom override — must satisfy
+`references/methodology-contracts/deploy.md`'s (DEM-1.1) wire shape: the exact Inputs
+available at this point and the exact Output JSON shape the caller parses. That contract
+also confirms this command continues to own pre-flight (approval + CI gating, Step 3),
+the merge itself (Step 4), claiming/releasing the `PullRequest` record, every task-store
+status PATCH derived from the execution step's output, and the final handoff (Step 9) —
+none of that is delegated, regardless of which path below runs.
+
+---
+
+## Step 4e: Dispatch Configured Deploy-Phase Subagent (DEM-1.2)
+
+This step only runs when Step 4d found `DEPLOY_SUBAGENT_TYPE` non-empty.
+
+Mark the task (and every bundle-mate task on `TASK_IDS`) `deploying` — the same PATCH loop
+Step 5 below applies, reused unchanged here since this bookkeeping is shared regardless of
+which path executes. Skip if in deploy-only mode:
+
+```bash
+for tid in $TASK_IDS; do
+  curl -sf -X PATCH \
+    -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
+    -H "Content-Type: application/json" \
+    "$SHIPWRIGHT_TASK_STORE_URL/tasks/$tid" \
+    -d "{\"status\": \"deploying\", \"deployingAt\": \"$(date -u +%Y-%m-%dT%H:%M:%SZ)\"}" | jq .
+done
+```
+
+Dispatch a `DEPLOY_SUBAGENT_TYPE` subagent via the Agent tool with `run_in_background:
+false`, passing every Input from `references/methodology-contracts/deploy.md`'s "## Inputs"
+section. A freshly-dispatched subagent has no implicit context the way the main thread
+does — unlike the contract's own wording for `PR_RECORD_ID`'s heartbeat renewal or the
+resolved Deploy model ("already in your context" / "already in context from the worktree
+checkout"), which describes the built-in/inline reference implementation's perspective, not
+a fresh subagent's — so explicitly include the literal text of the target repo's own
+`## Deploy model` CLAUDE.md section in the prompt rather than assuming it carries over:
+
+```
+You are the deploy phase's execution step. Merge has already landed — watch the
+post-merge pipeline (or CI, if there is no pipeline) through to a terminal outcome and
+report back. Do not merge, claim, release, or write any task-store status yourself —
+the caller owns all of that.
+
+SQUASH_SHA: {SQUASH_SHA}
+org: {org}
+repo: {repo}
+pr: {pr}
+PR_TITLE: {PR_TITLE}
+TASK_ID: {TASK_ID}
+TASK_IDS: {TASK_IDS}
+PR_RECORD_ID: {PR_RECORD_ID}
+deploy_started_at: {deploy_started_at}
+
+Target repo's Deploy model (from its own CLAUDE.md):
+"""
+{literal text of the target repo's ## Deploy model CLAUDE.md section}
+"""
+
+Renew the claim heartbeat (POST $SHIPWRIGHT_TASK_STORE_URL/prs/{PR_RECORD_ID}/heartbeat)
+at roughly the midpoint of your poll if it runs long — this is your only task-store write.
+
+Return exactly one JSON object as your final output, matching
+references/methodology-contracts/deploy.md's "## Output" shape — no other text:
+{
+  "success": boolean,
+  "verdict": string,
+  "pipeline_minutes": number,
+  "pipeline_mode": "no-pipeline" | "staged",
+  "sha_only_fallback": boolean,
+  "stages": [{ "name": string | null, "run_id": string, "conclusion": string | null }],
+  "failure_reason": string | null,
+  "revert_pr_url": string | null,
+  "health_check": { "status": string, "url": string } | null
+}
+```
+
+#### Unparseable or Failed Dispatch (DEM-1.2)
+
+If the Agent tool dispatch itself fails (errors, or `DEPLOY_SUBAGENT_TYPE` names an
+invalid/nonexistent `subagent_type` from a misconfigured override), or the subagent's
+response contains no parseable JSON matching the contract's Output shape, retry once with
+the same `DEPLOY_SUBAGENT_TYPE` — but check for an already-opened revert PR first.
+
+**Check for an already-opened revert PR before retrying.** Unlike patch.md's Step 2.2 and
+review.md's RVM-1.2 — whose subagents write nothing outside their own report, so a verbatim
+re-dispatch is side-effect-free — `references/methodology-contracts/deploy.md`'s Scope
+section grants the dispatched subagent exactly one non-heartbeat write: opening a revert PR
+on canary failure, reported back via `revert_pr_url`. An unparseable final report does
+**not** prove the subagent never got that far — it may have completed its poll, opened the
+revert PR, and failed only at the terminal-JSON-formatting step. Re-dispatching the same
+prompt verbatim would then re-observe the same canary failure and open a **second** revert
+PR for it — exactly the duplicate-revert-PR hazard Step 4a's claim exists to prevent. So
+before retrying, look for an existing open revert PR on Step 6's branch convention:
+
+```bash
+EXISTING_REVERT_PR=$(gh pr list --repo {org}/{repo} --state open \
+  --head "revert/canary-{task_id_or_pr}" --json url --jq '.[0].url // empty')
+```
+
+- **`EXISTING_REVERT_PR` non-empty**: the first dispatch already reached canary failure and
+  opened the revert PR, so its poll *did* run to a terminal outcome — do not re-dispatch at
+  all. Reconstruct the result as `success: false`, `verdict: "canary_failed"`,
+  `revert_pr_url: {EXISTING_REVERT_PR}`, and `failure_reason: "Canary failed after deploy.
+  Revert PR opened: {EXISTING_REVERT_PR}"` (Step 6's own wording), then apply it via the
+  Result-Application Logic below. Print a one-line note that the configured subagent
+  `{DEPLOY_SUBAGENT_TYPE}` returned an unparseable report but had already opened a revert
+  PR, so the result was reconstructed from GitHub rather than retried.
+- **`EXISTING_REVERT_PR` empty**: no revert PR exists yet — retry once, re-dispatching the
+  same prompt with one addition: instruct the retry to re-run the same `gh pr list` check
+  above before opening any revert PR of its own, and to reuse that URL as its
+  `revert_pr_url` rather than opening a second one if a revert PR has appeared meanwhile.
+
+If the retry also fails to produce a parseable JSON output: unlike patch.md's Step 2.2 or
+review.md's RVM-1.2, this branch only ever runs when an override IS configured — there is
+no "built-in subagent_type" case to distinguish here, since the no-config path never reaches
+Step 4e at all. So there is exactly one fallback: run Step 5 onward (today's built-in inline
+logic) fresh, as the safety net that guarantees the pipeline always reaches a terminal
+outcome. Print a one-line note that the configured subagent `{DEPLOY_SUBAGENT_TYPE}` failed
+twice and the built-in execution step was used as a fallback. Carry the same revert-PR guard
+into that fallback: if Step 6 is reached on this path, re-run the `EXISTING_REVERT_PR` check
+above first and surface that URL instead of opening a second revert PR. This mirrors review.md's Step
+7 malformed/failed response handling (RVM-1.2) and patch.md's Step 2.2 (PTM-1.2) — the same
+retry-once-before-falling-back-to-the-built-in shape, applied here to a JSON output instead
+of a free-text STATUS report.
+
+#### Result-Application Logic (DEM-1.2)
+
+Once a parseable JSON output IS obtained — on the first try, on the retry, or because Step 5
+ran as the fallback instead — apply it generically rather than re-deriving each of Steps
+5b/5c/6/7's four separate branches. This generic handling is what keeps status bookkeeping
+wrapper-owned (regardless of which path executes) even though the pipeline-watching logic
+itself was delegated:
+
+- **`success == true`**: PATCH every task in `TASK_IDS` to `status: "deployed"`,
+  `deployedAt: {now}` — the same shape Step 8b already uses. In deploy-only mode
+  (`TASK_IDS` empty), branch on `verdict` rather than treating every `success: true` the
+  same, matching what Steps 5b/5c already do inline:
+  - **`verdict` is `post_merge_ci_pending_timeout` or `sha_only_fallback_pending_timeout`** —
+    the contract's two `success: true` pending-timeout verdicts: the deploy is recorded as
+    done, but runs were still in flight when the budget ran out, so a human should still
+    check them. PATCH the PR record `{"blocked": true, "blockedReason": "..."}` exactly as
+    Step 5c's and Step 5b's own pending-timeout branches do, reusing their wording for the
+    matching verdict — `"Post-merge CI still pending after 10 minutes — marking deployed,
+    check manually"` for `post_merge_ci_pending_timeout`, and `"Pipeline monitoring still
+    pending after 30 minutes — marking deployed, check manually"` for
+    `sha_only_fallback_pending_timeout`. This is the one `success == true` case that still
+    flags the PR record; without it, a pending timeout reached through a delegated subagent
+    would silently drop the human-attention signal the inline path sets.
+  - **any other `success: true` verdict** (`post_merge_ci_passed`, `promote_succeeded`):
+    leave the PR record as-is (no blocked flag).
+
+  Print a success handoff
+  block (reuse Step 9's format) with
+  `Pipeline: {pipeline_minutes}m ({pipeline_mode}{", SHA-only fallback" if sha_only_fallback})`
+  and include the `health_check` status/url when non-null.
+- **`success == false`**: PATCH every task in `TASK_IDS` to `status: "blocked"`,
+  `note: {failure_reason}` — or, in deploy-only mode, PATCH the PR record
+  `{"blocked": true, "blockedReason": {failure_reason}}`. The contract says the caller uses
+  `failure_reason` verbatim for this field, so no separate per-verdict message text is
+  needed here.
+- Regardless of `success`, if **`revert_pr_url` is non-null** (only happens on
+  `verdict: "canary_failed"` per the contract): print the same "CANARY FAILED — REVERT PR
+  OPENED" block Step 6 prints today, using the subagent-reported `revert_pr_url` directly —
+  the *subagent* already opened the revert PR per the contract's Scope section, so the
+  caller only surfaces the URL here, it does not open the PR itself on this path.
+
+After applying the result, stop — same as every other terminal branch in this file.
+
+---
+
 ## Step 5: Poll Deploy → Canary → Promote
+
+**This step (and 5a/5b/5c/6/7 below) only runs when Step 4d found no configured override —
+`DEPLOY_SUBAGENT_TYPE` is empty.** When an override is configured, Step 4e above handles
+the post-merge execution step instead and this section is skipped entirely.
 
 Mark the task (and every bundle-mate task on `TASK_IDS`) `deploying` — the merge has landed
 and the deploy pipeline is now in flight. This stamps `deployingAt`, the start of the deploy
