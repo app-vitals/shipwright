@@ -45,6 +45,12 @@ function makeConfig(env: Record<string, string>): AgentConfigResponse {
     patchAuthorAllowlist: [],
     restrictSlackToMembers: false,
     memberEmails: [],
+    autoPostReviews: true,
+    allowSelfReview: false,
+    minConfidence: 75,
+    maxFindings: 5,
+    cleanupMergedWorktrees: true,
+    cleanupAfterDays: 14,
   };
 }
 

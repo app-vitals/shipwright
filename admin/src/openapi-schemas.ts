@@ -945,6 +945,16 @@ export const AgentConfigResponseSchema = z
       .array(z.string())
       .openapi({ example: ["octocat"] }),
     patchAuthorAllowlist: z.array(z.string()).openapi({ example: ["octocat"] }),
+    /**
+     * APM-1.5: direct passthrough of the 6 agent-policy fields APM-1.1 added
+     * to the Agent row — required, populated by the handler unconditionally.
+     */
+    autoPostReviews: z.boolean().openapi({ example: true }),
+    allowSelfReview: z.boolean().openapi({ example: false }),
+    minConfidence: z.number().int().openapi({ example: 75 }),
+    maxFindings: z.number().int().openapi({ example: 5 }),
+    cleanupMergedWorktrees: z.boolean().openapi({ example: true }),
+    cleanupAfterDays: z.number().int().openapi({ example: 14 }),
     restrictSlackToMembers: z.boolean().openapi({ example: false }),
     memberEmails: z.array(z.string()).openapi({ example: ["dev@example.com"] }),
     /**

@@ -157,6 +157,17 @@ interface AgentIdAndRepos {
    * unchanged.
    */
   trialExpiresAt?: Date | null;
+  /**
+   * APM-1.5: the 6 agent-policy fields, read by the runtime GET /:id/config
+   * route for direct passthrough. Required (not optional) since the Prisma
+   * select below always returns them (each column has a schema default).
+   */
+  autoPostReviews: boolean;
+  allowSelfReview: boolean;
+  minConfidence: number;
+  maxFindings: number;
+  cleanupMergedWorktrees: boolean;
+  cleanupAfterDays: number;
 }
 
 export interface AgentOption {
@@ -432,8 +443,9 @@ export class AgentService {
 
   /**
    * Get {id, repos, reviewAuthorAllowlist, patchAuthorAllowlist,
-   * restrictSlackToMembers, memberEmails, trialExpiresAt} for a single agent
-   * — used by the runtime config/crons routes. Returns null if not found.
+   * restrictSlackToMembers, memberEmails, trialExpiresAt, and the 6 APM-1.5
+   * agent-policy fields} for a single agent — used by the runtime
+   * config/crons routes. Returns null if not found.
    */
   async getById(id: string): Promise<AgentIdAndRepos | null> {
     const row = await this.prisma.agent.findUnique({
@@ -445,6 +457,12 @@ export class AgentService {
         patchAuthorAllowlist: true,
         restrictSlackToMembers: true,
         trialExpiresAt: true,
+        autoPostReviews: true,
+        allowSelfReview: true,
+        minConfidence: true,
+        maxFindings: true,
+        cleanupMergedWorktrees: true,
+        cleanupAfterDays: true,
       },
     });
     if (!row) return null;

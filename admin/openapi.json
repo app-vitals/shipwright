@@ -2084,6 +2084,30 @@
               "octocat"
             ]
           },
+          "autoPostReviews": {
+            "type": "boolean",
+            "example": true
+          },
+          "allowSelfReview": {
+            "type": "boolean",
+            "example": false
+          },
+          "minConfidence": {
+            "type": "integer",
+            "example": 75
+          },
+          "maxFindings": {
+            "type": "integer",
+            "example": 5
+          },
+          "cleanupMergedWorktrees": {
+            "type": "boolean",
+            "example": true
+          },
+          "cleanupAfterDays": {
+            "type": "integer",
+            "example": 14
+          },
           "restrictSlackToMembers": {
             "type": "boolean",
             "example": false
@@ -2130,6 +2154,12 @@
           "repos",
           "reviewAuthorAllowlist",
           "patchAuthorAllowlist",
+          "autoPostReviews",
+          "allowSelfReview",
+          "minConfidence",
+          "maxFindings",
+          "cleanupMergedWorktrees",
+          "cleanupAfterDays",
           "restrictSlackToMembers",
           "memberEmails",
           "phaseMethodology"

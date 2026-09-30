@@ -2630,6 +2630,18 @@ export interface components {
              *     ]
              */
             patchAuthorAllowlist: string[];
+            /** @example true */
+            autoPostReviews: boolean;
+            /** @example false */
+            allowSelfReview: boolean;
+            /** @example 75 */
+            minConfidence: number;
+            /** @example 5 */
+            maxFindings: number;
+            /** @example true */
+            cleanupMergedWorktrees: boolean;
+            /** @example 14 */
+            cleanupAfterDays: number;
             /** @example false */
             restrictSlackToMembers: boolean;
             /**
