@@ -2109,6 +2109,33 @@ export function renderAgentDetailPage(
   const accessStat = `${members.length} members · ${activeTokenCount} active tokens`;
   const pluginsToolsStat = `${tools.length} tools · ${plugins.length} plugins`;
 
+  // ─── Stat strip (AGA-1.2) ──────────────────────────────────────────────
+  // 4-tile stat strip rendered above the 4 accordion groups. Each tile
+  // derives its count from parameters already passed into this function.
+  const cronsActiveCount = topLevelCrons.filter((c) => c.enabled).length;
+  const missingEnvVarsCount = agent.missingRequiredEnv.length;
+  const membersCount = members.length;
+  const reposCount = agent.repos.length;
+
+  const statStripHtml = `<div class="stat-strip">
+    <div class="stat-tile">
+      <div class="stat-tile-label">crons active</div>
+      <div class="stat-tile-value"><span>${cronsActiveCount}</span></div>
+    </div>
+    <div class="stat-tile${missingEnvVarsCount > 0 ? " stat-tile-warning" : ""}">
+      <div class="stat-tile-label">missing env vars</div>
+      <div class="stat-tile-value"><span>${missingEnvVarsCount}</span></div>
+    </div>
+    <div class="stat-tile">
+      <div class="stat-tile-label">members</div>
+      <div class="stat-tile-value"><span>${membersCount}</span></div>
+    </div>
+    <div class="stat-tile">
+      <div class="stat-tile-label">repos</div>
+      <div class="stat-tile-value"><span>${reposCount}</span></div>
+    </div>
+  </div>`;
+
   const automationGroup = renderGroup(
     "Automation",
     automationStat,
@@ -2170,6 +2197,8 @@ export function renderAgentDetailPage(
     ${warningHtml}
     ${newTokenHtml}
     ${verificationActivityHtml}
+
+    ${statStripHtml}
 
     ${automationGroup}
     ${configurationGroup}

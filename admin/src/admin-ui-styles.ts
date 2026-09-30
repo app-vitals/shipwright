@@ -139,6 +139,47 @@ export function baseStyles(): string {
       margin-bottom: 16px;
     }
 
+    /* ─── Agent detail page — stat strip (AGA-1.2) ──────────── */
+    .stat-strip {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 16px;
+      margin-bottom: 24px;
+    }
+    .stat-tile {
+      background: #fff;
+      border: 1px solid #e8e8ee;
+      border-radius: 10px;
+      padding: 16px;
+      text-align: center;
+    }
+    .stat-tile-label {
+      font-size: 12px;
+      font-weight: 600;
+      color: #6b7280;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      margin-bottom: 8px;
+    }
+    .stat-tile-value {
+      font-size: 28px;
+      font-weight: 700;
+      color: #1a1a2e;
+    }
+    .stat-tile-value span {
+      display: block;
+    }
+    .stat-tile-warning {
+      background: #fef3c7;
+      border-color: #fde68a;
+    }
+    .stat-tile-warning .stat-tile-label {
+      color: #92400e;
+    }
+    .stat-tile-warning .stat-tile-value {
+      color: #92400e;
+    }
+
     /* ─── Tables ────────────────────────────────────────── */
     .data-table {
       width: 100%;
