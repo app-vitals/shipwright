@@ -832,15 +832,19 @@ else
   else
     git -C "$WT" commit -q -m "docs(planning): add $SESSION plan" \
       && git -C "$WT" push -qf -u origin "$BRANCH" \
+      && (cd "$WT" && gh label create shipwright --description "Opened autonomously by Shipwright" --color 1D76DB --force) \
       && PLAN_PR_URL=$(cd "$WT" && gh pr create --head "$BRANCH" --base "${DEFAULT#origin/}" \
            --title "docs(planning): add $SESSION plan" \
-           --body "Plan for session \`$SESSION\` — the \`source\` of every task in this session.")
+           --body "Plan for session \`$SESSION\` — the \`source\` of every task in this session." \
+           --label shipwright)
   fi
   git -C "$REPO_ROOT" worktree remove --force "$WT"
 fi
 ```
 
 The block above runs a mechanical secret-pattern scan over the staged diff before committing — never rely on prose discipline alone here, since `--autonomous` is the only mode this runs in and no human reviews the commit before it lands. If the repo has its own stricter pre-commit hygiene (a public repo's banned-string scan, or its CLAUDE.md rules on client names and internal infra identifiers), apply that too. If a file fails either check, or any command above fails, print `⚠ Plan PR not opened — {reason}` and continue: the tasks are already queued and the command must never fail on this step. A pre-existing PR for the branch (open or merged) counts as done — do not open a second one.
+
+The `gh label create` step uses `--force` to make it idempotent — it will upsert the label if it already exists rather than erroring — same convention applied across Shipwright skills for autonomously-opened PRs (see `research-docs.md` Step A7.5, `SKILL.md` Step 3.5 in `skills/test-readiness/`).
 
 When a PR was opened (or already existed), surface it in the confirmation as `Plan PR: {url}`; otherwise omit that line.
 
