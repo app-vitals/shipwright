@@ -181,4 +181,5 @@ Missing ledger → exits permissively (one-time bootstrap unlock; the scan that 
 - [`plugins/shipwright/skills/consolidation-fix/SKILL.md`](../plugins/shipwright/skills/consolidation-fix/SKILL.md) — the fix skill
 - [`plugins/shipwright/skills/consolidation-scan/references/ledger-schema.md`](../plugins/shipwright/skills/consolidation-scan/references/ledger-schema.md) — full ledger schema reference with JSON examples
 - [`.claude/shipwright/consolidation-decisions.md`](../.claude/shipwright/consolidation-decisions.md) — the decisions registry
+- [`plugins/shipwright/references/decisions-registry.md`](../plugins/shipwright/references/decisions-registry.md) — the shared decisions-registry pattern this registry is one instance of (also consumed by test-inventory/test-fix)
 - [`plugins/shipwright/scripts/check-consolidation-patrol.ts`](../plugins/shipwright/scripts/check-consolidation-patrol.ts) — the preCheck script
