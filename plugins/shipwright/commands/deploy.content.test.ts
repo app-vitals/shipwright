@@ -798,10 +798,18 @@ describe("deploy.md — bundle-mate sync on Step 5c budget-exhausted deployed ma
   // sites below (originally scoped to single-task TASK_ID under PRB-3.2) were extended to
   // the same TASK_IDS loop per review follow-up on #3452 — see that describe block below.
   function extractSection(): string {
+    // Anchor inside Step 5c itself — Step 4e's generic result-application logic (DEM-1.2)
+    // quotes this same wording when describing the pending-timeout verdict, so an
+    // unscoped indexOf would land on that prose block instead of 5c's bash.
+    const step5cIdx = content.indexOf(
+      "### 5c. Post-Merge CI Watch (no Deploy pipeline)",
+    );
+    expect(step5cIdx).toBeGreaterThan(-1);
     const anchorIdx = content.indexOf(
       "Post-merge CI still pending after 10 minutes",
+      step5cIdx,
     );
-    expect(anchorIdx).toBeGreaterThan(-1);
+    expect(anchorIdx).toBeGreaterThan(step5cIdx);
     return content.slice(anchorIdx, anchorIdx + 1200);
   }
 
@@ -1378,6 +1386,28 @@ describe("deploy.md — Steps 4d/4e dispatch the phase-methodology-configured su
     expect(citesPrecedent).toBe(true);
   });
 
+  it("checks for an already-opened revert PR before re-dispatching, so an unparseable report can't cause a second revert PR", () => {
+    const section = extractStep4eSection(content);
+    expect(section).toContain("EXISTING_REVERT_PR");
+    expect(section).toContain('--head "revert/canary-{task_id_or_pr}"');
+    const lower = section.toLowerCase().replace(/[*\s]+/g, " ");
+    expect(lower).toContain("open a second revert pr");
+    expect(lower).toContain("do not re-dispatch at all");
+  });
+
+  it("reconstructs a canary_failed result from the existing revert PR instead of retrying, and carries the guard into the built-in fallback", () => {
+    const section = extractStep4eSection(content);
+    const normalized = section.replace(/\s+/g, " ");
+    expect(normalized).toContain('verdict: "canary_failed"');
+    expect(normalized).toContain("revert_pr_url: {EXISTING_REVERT_PR}");
+    expect(normalized).toContain(
+      "Canary failed after deploy. Revert PR opened: {EXISTING_REVERT_PR}",
+    );
+    expect(normalized.toLowerCase()).toContain(
+      "if step 6 is reached on this path",
+    );
+  });
+
   it("the fallback note explains the configured subagent failed twice and the built-in execution step was used as a fallback", () => {
     const section = extractStep4eSection(content);
     const lower = section.toLowerCase().replace(/\s+/g, " ");
@@ -1393,6 +1423,29 @@ describe("deploy.md — Steps 4d/4e dispatch the phase-methodology-configured su
     expect(section).toContain("revert_pr_url");
     expect(section).toContain('status: "deployed"');
     expect(section).toContain('status: "blocked"');
+  });
+
+  it("the success == true branch flags the PR record blocked on the contract's two pending-timeout verdicts, matching Step 5b/5c", () => {
+    const section = extractStep4eSection(content);
+    const normalized = section.replace(/\s+/g, " ");
+    expect(normalized).toContain("post_merge_ci_pending_timeout");
+    expect(normalized).toContain("sha_only_fallback_pending_timeout");
+    expect(normalized).toContain('{"blocked": true, "blockedReason": "..."}');
+    expect(normalized).toContain(
+      "Post-merge CI still pending after 10 minutes — marking deployed, check manually",
+    );
+    expect(normalized).toContain(
+      "Pipeline monitoring still pending after 30 minutes — marking deployed, check manually",
+    );
+  });
+
+  it("the success == true branch only leaves the PR record as-is for non-pending-timeout verdicts", () => {
+    const section = extractStep4eSection(content);
+    const normalized = section.replace(/\*/g, "").replace(/\s+/g, " ");
+    expect(normalized).toContain(
+      "any other `success: true` verdict (`post_merge_ci_passed`, `promote_succeeded`): leave the PR record as-is (no blocked flag)",
+    );
+    expect(normalized.toLowerCase()).toContain("branch on `verdict`");
   });
 
   it("states this generic success/failure/revert_pr_url handling is what keeps status bookkeeping wrapper-owned (AC3)", () => {

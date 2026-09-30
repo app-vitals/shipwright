@@ -598,7 +598,36 @@ references/methodology-contracts/deploy.md's "## Output" shape — no other text
 If the Agent tool dispatch itself fails (errors, or `DEPLOY_SUBAGENT_TYPE` names an
 invalid/nonexistent `subagent_type` from a misconfigured override), or the subagent's
 response contains no parseable JSON matching the contract's Output shape, retry once with
-the same `DEPLOY_SUBAGENT_TYPE`. The retry re-dispatches the exact same prompt unchanged.
+the same `DEPLOY_SUBAGENT_TYPE` — but check for an already-opened revert PR first.
+
+**Check for an already-opened revert PR before retrying.** Unlike patch.md's Step 2.2 and
+review.md's RVM-1.2 — whose subagents write nothing outside their own report, so a verbatim
+re-dispatch is side-effect-free — `references/methodology-contracts/deploy.md`'s Scope
+section grants the dispatched subagent exactly one non-heartbeat write: opening a revert PR
+on canary failure, reported back via `revert_pr_url`. An unparseable final report does
+**not** prove the subagent never got that far — it may have completed its poll, opened the
+revert PR, and failed only at the terminal-JSON-formatting step. Re-dispatching the same
+prompt verbatim would then re-observe the same canary failure and open a **second** revert
+PR for it — exactly the duplicate-revert-PR hazard Step 4a's claim exists to prevent. So
+before retrying, look for an existing open revert PR on Step 6's branch convention:
+
+```bash
+EXISTING_REVERT_PR=$(gh pr list --repo {org}/{repo} --state open \
+  --head "revert/canary-{task_id_or_pr}" --json url --jq '.[0].url // empty')
+```
+
+- **`EXISTING_REVERT_PR` non-empty**: the first dispatch already reached canary failure and
+  opened the revert PR, so its poll *did* run to a terminal outcome — do not re-dispatch at
+  all. Reconstruct the result as `success: false`, `verdict: "canary_failed"`,
+  `revert_pr_url: {EXISTING_REVERT_PR}`, and `failure_reason: "Canary failed after deploy.
+  Revert PR opened: {EXISTING_REVERT_PR}"` (Step 6's own wording), then apply it via the
+  Result-Application Logic below. Print a one-line note that the configured subagent
+  `{DEPLOY_SUBAGENT_TYPE}` returned an unparseable report but had already opened a revert
+  PR, so the result was reconstructed from GitHub rather than retried.
+- **`EXISTING_REVERT_PR` empty**: no revert PR exists yet — retry once, re-dispatching the
+  same prompt with one addition: instruct the retry to re-run the same `gh pr list` check
+  above before opening any revert PR of its own, and to reuse that URL as its
+  `revert_pr_url` rather than opening a second one if a revert PR has appeared meanwhile.
 
 If the retry also fails to produce a parseable JSON output: unlike patch.md's Step 2.2 or
 review.md's RVM-1.2, this branch only ever runs when an override IS configured — there is
@@ -606,7 +635,9 @@ no "built-in subagent_type" case to distinguish here, since the no-config path n
 Step 4e at all. So there is exactly one fallback: run Step 5 onward (today's built-in inline
 logic) fresh, as the safety net that guarantees the pipeline always reaches a terminal
 outcome. Print a one-line note that the configured subagent `{DEPLOY_SUBAGENT_TYPE}` failed
-twice and the built-in execution step was used as a fallback. This mirrors review.md's Step
+twice and the built-in execution step was used as a fallback. Carry the same revert-PR guard
+into that fallback: if Step 6 is reached on this path, re-run the `EXISTING_REVERT_PR` check
+above first and surface that URL instead of opening a second revert PR. This mirrors review.md's Step
 7 malformed/failed response handling (RVM-1.2) and patch.md's Step 2.2 (PTM-1.2) — the same
 retry-once-before-falling-back-to-the-built-in shape, applied here to a JSON output instead
 of a free-text STATUS report.
@@ -621,7 +652,23 @@ itself was delegated:
 
 - **`success == true`**: PATCH every task in `TASK_IDS` to `status: "deployed"`,
   `deployedAt: {now}` — the same shape Step 8b already uses. In deploy-only mode
-  (`TASK_IDS` empty), leave the PR record as-is (no blocked flag). Print a success handoff
+  (`TASK_IDS` empty), branch on `verdict` rather than treating every `success: true` the
+  same, matching what Steps 5b/5c already do inline:
+  - **`verdict` is `post_merge_ci_pending_timeout` or `sha_only_fallback_pending_timeout`** —
+    the contract's two `success: true` pending-timeout verdicts: the deploy is recorded as
+    done, but runs were still in flight when the budget ran out, so a human should still
+    check them. PATCH the PR record `{"blocked": true, "blockedReason": "..."}` exactly as
+    Step 5c's and Step 5b's own pending-timeout branches do, reusing their wording for the
+    matching verdict — `"Post-merge CI still pending after 10 minutes — marking deployed,
+    check manually"` for `post_merge_ci_pending_timeout`, and `"Pipeline monitoring still
+    pending after 30 minutes — marking deployed, check manually"` for
+    `sha_only_fallback_pending_timeout`. This is the one `success == true` case that still
+    flags the PR record; without it, a pending timeout reached through a delegated subagent
+    would silently drop the human-attention signal the inline path sets.
+  - **any other `success: true` verdict** (`post_merge_ci_passed`, `promote_succeeded`):
+    leave the PR record as-is (no blocked flag).
+
+  Print a success handoff
   block (reuse Step 9's format) with
   `Pipeline: {pipeline_minutes}m ({pipeline_mode}{", SHA-only fallback" if sha_only_fallback})`
   and include the `health_check` status/url when non-null.
