@@ -1053,7 +1053,7 @@ describe("review.md — Step 5.5 fetches reviewThreads via GraphQL (RUC-1.1)", (
 
     expect(itemBlock).toContain("reviewThreads(first: 100)");
     expect(itemBlock).toContain("isResolved");
-    expect(itemBlock).toContain("author { login }");
+    expect(itemBlock).toContain("author { login __typename }");
     expect(itemBlock).toContain("body");
     expect(itemBlock).toContain("path");
     expect(itemBlock).toContain("line");

@@ -66,9 +66,18 @@
 // plugins/shipwright is a separate, repo-agnostic package from agent/src, see
 // plugins/shipwright/CLAUDE.md; the same rationale compute-review-verdict.ts's
 // VERDICT_APPROVE_LABEL duplication already documents).
+//
+// Every `author` field's `__typename` is optional (RBD-1.1): only callers whose
+// GraphQL query requests it alongside `login` (review.md's Step 3/5.5 query, the
+// only current caller) populate it, with `"Bot"` as the authoritative discriminator
+// for GitHub Apps/bots. This module's own logic never reads `__typename` — it is
+// purely additive for compute-unresolved-comment-check.ts's `isBotOrCiAuthor` (which
+// imports these same types) to consume. Callers/fixtures that omit it (older
+// queries, hand-built test fixtures) are unaffected — this field defaults to
+// `undefined`, never throws, and never changes this module's own behavior.
 
 export interface ReviewNode {
-  author: { login: string };
+  author: { login: string; __typename?: string };
   state: string;
   submittedAt: string;
   commit: { oid: string };
@@ -79,7 +88,7 @@ export interface ReviewThread {
   isResolved: boolean;
   comments: {
     nodes: Array<{
-      author: { login: string };
+      author: { login: string; __typename?: string };
       body: string;
       /**
        * Optional (mirrors agent/src/check-patch.ts's RVG-2.1 precedent):
@@ -96,7 +105,7 @@ export interface ReviewThread {
 }
 
 export interface IssueCommentNode {
-  author: { login: string };
+  author: { login: string; __typename?: string };
   body: string;
   createdAt: string;
 }
