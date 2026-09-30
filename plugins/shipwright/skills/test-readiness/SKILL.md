@@ -198,9 +198,60 @@ artifact. A failure in one repo does not stop the remaining repos in the
 resolved list; move on to the next repo after logging the failure.
 
 After phase 5 (or an early stop due to failure) completes for the current
-repo, return to Step 1's per-repo loop for the next repo in the resolved
-list. Once every repo has been processed (run or skipped for being fresh),
-proceed to Step 4.
+repo, proceed to Step 3.5 to commit and open a PR with the refresh results.
+
+### Step 3.5: Commit and Open PR
+
+After all phases have completed successfully for this repo, push the branch to
+origin and open (or update) a PR for the phase-artifact refresh.
+
+**Push the branch:**
+
+```bash
+git push --set-upstream origin {branch-name}
+```
+
+Where `{branch-name}` is either:
+- The fresh-branch case (from Step 1's fresh-branch flow): `docs/test-readiness-refresh-{YYYYMMDD}` (today's date)
+- The reused-branch case (from Step 1's open-PR supersession flow): the existing earlier-day branch name checked out in this worktree
+
+**Check for an existing open PR on this branch:**
+
+```bash
+gh pr list --repo {org}/{repo} --head {branch-name} --state open --json number
+```
+
+If this command returns a result (PR already exists for this branch), stop here — the push
+already updated the open PR, and no further action is needed. This handles the reused-branch
+case from Step 1, where an earlier-day PR is still open and absorbs today's updates via the
+merged `origin/main` and the newly-pushed phase artifacts.
+
+**If no PR exists (fresh-branch case only), create the label and open the PR:**
+
+Create the idempotent `shipwright` label with `--force`, which upserts rather than
+erroring if the label already exists (matching the pattern applied across Shipwright
+skills — see `plugins/shipwright/commands/research-docs.md` Step A7.5 for the
+consistency rationale):
+
+```bash
+gh label create shipwright \
+  --description "Opened autonomously by Shipwright" \
+  --color 1D76DB \
+  --force
+```
+
+Then open the PR with the shipwright label:
+
+```bash
+gh pr create \
+  --title "docs: test-readiness refresh ({YYYYMMDD})" \
+  --body "Automated test-readiness phase-artifact refresh" \
+  --label shipwright
+```
+
+After the PR is open (or updated in the reused-branch case), return to Step 1's
+per-repo loop for the next repo in the resolved list. Once every repo has been
+processed (run or skipped for being fresh), proceed to Step 4.
 
 ### Step 4: Report
 
