@@ -95,3 +95,67 @@ describe("test-readiness — Step 4 reports the reuse-merge conflict distinctly"
     expect(freshIdx).not.toBe(conflictIdx);
   });
 });
+
+describe("test-readiness — Step 3.5 shipwright label on PR creation", () => {
+  function getStep35Section(): string {
+    const content = readSkill();
+    const step3Idx = content.indexOf("### Step 3:");
+    const step3_5Idx = content.indexOf("### Step 3.5:");
+    const step4Idx = content.indexOf("### Step 4:");
+    expect(step3Idx).toBeGreaterThan(-1);
+    expect(step3_5Idx).toBeGreaterThan(-1);
+    expect(step4Idx).toBeGreaterThan(-1);
+    expect(step3_5Idx).toBeGreaterThan(step3Idx);
+    expect(step3_5Idx).toBeLessThan(step4Idx);
+    return content.slice(step3_5Idx, step4Idx);
+  }
+
+  it("documents pushing the branch to origin", () => {
+    const section = getStep35Section();
+    expect(section).toMatch(/git push|push.*origin/);
+  });
+
+  it("documents checking for an existing PR on the branch before creating a new one", () => {
+    const section = getStep35Section();
+    expect(section).toContain("gh pr list");
+    expect(section).toMatch(/PR.*already exists|existing.*PR|no PR exists/i);
+  });
+
+  it("includes a gh label create shipwright line with --force flag before the gh pr create invocation", () => {
+    const section = getStep35Section();
+    expect(section).toContain("gh label create shipwright");
+    expect(section).toContain("--force");
+    const labelCreateIdx = section.indexOf("gh label create shipwright");
+    const prCreateIdx = section.indexOf("gh pr create");
+    expect(labelCreateIdx).toBeGreaterThan(-1);
+    expect(prCreateIdx).toBeGreaterThan(-1);
+    expect(labelCreateIdx).toBeLessThan(prCreateIdx);
+  });
+
+  it("includes the shipwright label description and color in the label-create command", () => {
+    const section = getStep35Section();
+    expect(section).toContain("Opened autonomously by Shipwright");
+    expect(section).toContain("1D76DB");
+  });
+
+  it("documents opening the PR with the shipwright label", () => {
+    const section = getStep35Section();
+    expect(section).toContain("gh pr create");
+    expect(section).toContain("--label shipwright");
+  });
+
+  it("documents that --force makes the label-create step idempotent", () => {
+    const section = getStep35Section();
+    expect(section.toLowerCase()).toContain("idempotent");
+    expect(section.toLowerCase()).toContain("--force");
+  });
+
+  it("documents handling the reused-branch case from Step 1 (open PR update vs new PR creation)", () => {
+    const section = getStep35Section();
+    expect(
+      section.toLowerCase().includes("reused") ||
+        section.toLowerCase().includes("earlier-day") ||
+        section.toLowerCase().includes("supersession"),
+    ).toBe(true);
+  });
+});

@@ -46,6 +46,14 @@ function extractStep3bSection(md: string): string {
   return match?.[0] ?? "";
 }
 
+function extractStep6Section(md: string): string {
+  const match = md.match(
+    /## Step 6: Canary Failure — Open Revert PR[\s\S]*?(?=\n## Step 7)/,
+  );
+  expect(match).not.toBeNull();
+  return match?.[0] ?? "";
+}
+
 describe("deploy.md — Step 2: task lookup is repo-scoped (DTL-1.1)", () => {
   it("looks up the task via a repo-scoped /tasks?repo=...&pr={pr} query", () => {
     // Unscoped by repo, this cross-matches a same-numbered PR in a different
@@ -955,6 +963,43 @@ describe("deploy.md — PR-level blocked escalation on deploy-only-mode failures
     const handoffSection = content.slice(handoffIdx, handoffIdx + 400);
     expect(handoffSection).not.toContain('"hitl"');
     expect(handoffSection).not.toContain('"blocked": true');
+  });
+});
+
+describe("deploy.md — Step 6 stamps origin=shipwright on the revert PR via /prs/census (POF-3.1)", () => {
+  it("captures the revert PR's URL/number from gh pr create before the census call", () => {
+    const section = extractStep6Section(content);
+    expect(section).toContain('REVERT_PR_URL=$(gh pr create');
+    expect(section).toContain('REVERT_PR_NUMBER=$(basename "$REVERT_PR_URL")');
+  });
+
+  it("calls POST /prs/census with origin: \"shipwright\" and state: \"open\" immediately after gh pr create succeeds", () => {
+    const section = extractStep6Section(content);
+    const censusIdx = section.indexOf("$SHIPWRIGHT_TASK_STORE_URL/prs/census");
+    expect(censusIdx).toBeGreaterThan(-1);
+    const createIdx = section.indexOf("REVERT_PR_URL=$(gh pr create");
+    const patchLoopIdx = section.indexOf("for tid in $TASK_IDS");
+    expect(createIdx).toBeGreaterThan(-1);
+    expect(censusIdx).toBeGreaterThan(createIdx);
+    // Before or alongside the existing TASK_IDS/PR_RECORD_ID PATCH calls, never after.
+    expect(patchLoopIdx).toBeGreaterThan(-1);
+    expect(censusIdx).toBeLessThan(patchLoopIdx);
+
+    const censusBlock = section.slice(censusIdx, censusIdx + 600);
+    expect(censusBlock).toContain('origin: "shipwright"');
+    expect(censusBlock).toContain('state: "open"');
+  });
+
+  it("reuses the existing SHIPWRIGHT_TASK_STORE_TOKEN/SHIPWRIGHT_TASK_STORE_URL credentials -- no new credential plumbing", () => {
+    const section = extractStep6Section(content);
+    const censusIdx = section.indexOf("$SHIPWRIGHT_TASK_STORE_URL/prs/census");
+    const censusBlock = section.slice(
+      Math.max(0, censusIdx - 200),
+      censusIdx + 100,
+    );
+    expect(censusBlock).toContain(
+      "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN",
+    );
   });
 });
 
