@@ -674,3 +674,64 @@ describe("research-docs.md — branch field on auto-mode bulk task payloads", ()
     expect(content).toContain("Document {concern} conventions");
   });
 });
+
+describe("research-docs.md — Step A7.5 shipwright label on PR creation", () => {
+  function getStepA75Section(): string {
+    const stepA75Idx = content.indexOf("### Step A7.5: Commit and Open PR");
+    expect(stepA75Idx).toBeGreaterThan(-1);
+    const stepA8Idx = content.indexOf("### Step A8:", stepA75Idx);
+    expect(stepA8Idx).toBeGreaterThan(stepA75Idx);
+    return content.slice(stepA75Idx, stepA8Idx);
+  }
+
+  it("includes a gh label create shipwright line with --force flag before the gh pr create invocation", () => {
+    const section = getStepA75Section();
+    expect(section).toContain("gh label create shipwright");
+    expect(section).toContain("--force");
+    const labelCreateIdx = section.indexOf("gh label create shipwright");
+    const prCreateIdx = section.indexOf("gh pr create");
+    expect(labelCreateIdx).toBeGreaterThan(-1);
+    expect(prCreateIdx).toBeGreaterThan(-1);
+    expect(labelCreateIdx).toBeLessThan(prCreateIdx);
+  });
+
+  it("includes --label shipwright in the gh pr create invocation", () => {
+    const section = getStepA75Section();
+    expect(section).toContain("--label shipwright");
+  });
+
+  it("includes the label description in gh label create", () => {
+    const section = getStepA75Section();
+    expect(section).toContain("Opened autonomously by Shipwright");
+  });
+
+  it("includes the label color in gh label create", () => {
+    const section = getStepA75Section();
+    expect(section).toContain("1D76DB");
+  });
+
+  it("documents the --force idempotency rationale", () => {
+    const section = getStepA75Section();
+    expect(section.toLowerCase()).toContain("idempotent");
+    expect(section.toLowerCase()).toContain("--force");
+  });
+
+  it("explains that the step skips cleanly if there's nothing to commit", () => {
+    const section = getStepA75Section();
+    const hasSkipLanguage =
+      section.includes("Skip cleanly") ||
+      section.includes("skip cleanly") ||
+      section.includes("no changes") ||
+      section.includes("nothing to commit");
+    expect(hasSkipLanguage).toBe(true);
+  });
+
+  it("mentions creating a dedicated branch for the doc commit", () => {
+    const section = getStepA75Section();
+    const hasBranchLanguage =
+      section.includes("docs/auto-refresh") ||
+      section.includes("docs/{") ||
+      section.includes("dedicated branch");
+    expect(hasBranchLanguage).toBe(true);
+  });
+});

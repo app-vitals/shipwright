@@ -166,6 +166,33 @@ Each missing module produces one task with: `title: "Document {module} module"`,
 
 Additionally, run the Step 3a cross-cutting concerns checklist (same seven categories, same material-presence verification procedure), scoped to `CHANGED_FILES` — the same scoping A7's structural check above already uses. For each concern category verified materially present in `CHANGED_FILES` with no matching doc, union one more task into the same `/tmp/missing-docs-tasks.json` payload before it's posted: `title: "Document {concern} conventions"`, `layer: "CLI"`, `session: "docs-freshness-cron"`, `branch: "docs/{concern-slug}-{YYYYMMDD}"` — `{concern-slug}` is the concern category name kebab-cased by the same rule as `{module-slug}` above: every `/` and run of whitespace collapses to a single `-`, producing one flat segment rather than a nested git ref (e.g. `authorization/access-control` → `authorization-access-control`, and `secrets/credential rotation` → `secrets-credential-rotation`, giving `docs/secrets-credential-rotation-20260909`), same UTC-date computation as above — same session as the structural tasks above, so both are queryable together by downstream tooling. The `"Document {concern} conventions"` title distinguishes concern-based tasks from the structural `"Document {module} module"` tasks in the same payload. If no concern qualifies, the payload is unchanged from the structural-only set.
 
+### Step A7.5: Commit and Open PR
+
+After all doc updates are complete for this repo (Steps A5 and A6), commit and open a PR for the doc-refresh changes, scoped to this repo's working directory.
+
+First, check whether there are any changes to commit. Skip cleanly with no PR if there are no changes:
+
+```bash
+if ! git status --porcelain -- docs/ CLAUDE.md | grep -q .; then
+  echo "No changes to commit — skipping PR."
+  return 0
+fi
+```
+
+If changes exist, create a dedicated branch, commit, push, and open a PR with the shipwright label:
+
+```bash
+YYYYMMDD=$(date -u +%Y%m%d)
+git checkout -b docs/auto-refresh-$YYYYMMDD
+git add docs/ CLAUDE.md
+git commit -m "docs: auto-refresh from docs-freshness cron"
+git push -u origin docs/auto-refresh-$YYYYMMDD
+gh label create shipwright --description "Opened autonomously by Shipwright" --color 1D76DB --force
+gh pr create --title "docs: auto-refresh ($YYYYMMDD)" --body "Automated doc refresh from docs-freshness cron run" --label shipwright
+```
+
+The `gh label create` step uses `--force` to make it idempotent — it will upsert the label if it already exists rather than erroring. This allows reviewers to see this step in the command text without flagging it as a repeated mutation.
+
 ### Step A8: Write Sync Anchor
 
 After all updates complete for this repo, write that repo's own sync anchor (relative to its working directory — see Step A0):
