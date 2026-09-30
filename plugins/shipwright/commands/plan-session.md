@@ -462,7 +462,11 @@ Assemble exactly the inputs `plugins/shipwright/references/methodology-contracts
 specifies — no more, no less:
 
 - **`specContent`** — the verbatim contents of `planning/{session}/PRODUCT-SPEC.md` as loaded
-  (or, under `--autonomous`, materialized) in Step 1.
+  (or, under `--autonomous`, materialized) in Step 1. Required — the contract defines no
+  omission rule for it, so it is never omitted. When Step 1 found no spec file and fell back to
+  asking **"What are we building?"** interactively (a path that never runs under `--autonomous`),
+  pass the description collected in that exchange as `specContent` — the configured methodology
+  receives the same field either way and is never dispatched with `specContent` missing.
 - **`repo`** — the confirmed/dispatched `org/repo` value from the arguments.
 - **`session`** — the session slug from the arguments.
 - **`existingSessionTaskIds`** — the task ids returned by Step 1.3's dedup scan; omit when empty.
@@ -536,12 +540,25 @@ resolve. `tasks[]`/`planMarkdown` are empty or omitted in that case — do not s
 
 #### Schema Validation
 
-Before ever reaching Step 6b's bulk POST, validate every entry in the returned `tasks[]`. This
-gate runs **before Step 6**, client-side — the point is to catch malformed output here rather
-than let it become an opaque Prisma error (or a task that hard-blocks one step downstream in
-`dev-task`) after it has been written.
+Before ever reaching Step 6b's bulk POST, validate the returned response. This gate runs
+**before Step 6**, client-side — the point is to catch malformed output here rather than let it
+become an opaque Prisma error (or a task that hard-blocks one step downstream in `dev-task`)
+after it has been written.
 
-For each task, check all of:
+The gate has two parts: one **top-level** check over the response object itself, then a list of
+**per-task** checks over every entry in `tasks[]`. Keep the distinction in mind when reporting a
+failure — a top-level failure is not attributable to any task id.
+
+**Top-level — check the response object (not per-task):**
+
+1. **`planMarkdown`** is present and a non-empty string. It is a required contract output that
+   Step 6a writes to `planning/{session}/PLAN.md` verbatim, and nothing downstream re-derives it
+   from `tasks[]`. A response carrying a perfectly valid `tasks[]` and an empty or missing
+   `planMarkdown` clears every per-task check below, so without this check an `--autonomous` run
+   — which has no human to notice — would write an empty `PLAN.md` and then point every queued
+   task's `source` link at it.
+
+**Per-task — for each entry in `tasks[]`, check all of:**
 
 1. **`id`** matches `{PREFIX}-{N}.{M}` — a 2-3 letter uppercase prefix, then `-{N}.{M}`.
 2. **`branch`** is present and a non-empty string. `dev-task` hard-blocks any task with no
@@ -568,19 +585,33 @@ For each task, check all of:
 11. **`session`** equals the `session` slug passed in as an input. A task written with a
     different (or missing) `session` silently drops out of the session rollup, the admin
     Sessions view, and the session alert sweeper, even though the POST itself succeeds.
+12. **`hitl`** is present and a boolean, and every task with `hitl: true` also carries a
+    `## Human steps` section in its `description`. The task store column is a nullable boolean
+    it never cross-checks against the description, and `task-store/src/ready.ts` excludes a task
+    from the autonomous-ready set only on `task.hitl === true` — so a Type-A task returned with
+    `hitl` omitted or wrongly `false` is silently queued as autonomous work for `dev-task`, and
+    one returned `true` with no `## Human steps` section reaches `/shipwright:hitl` with no
+    instructions to execute. Step 6b writes this flag through exactly as received on this path
+    and does not re-run Step 5.5's detection over a dispatched breakdown, so this check is the
+    only place it is caught.
 
-Checks 8 through 11 exist because the bulk endpoint cannot catch them for you: 8 fails
-server-side only as an opaque 409 after the plan is already on disk, and 9-11 never fail
+Per-task checks 8 through 12 exist because the bulk endpoint cannot catch them for you: 8 fails
+server-side only as an opaque 409 after the plan is already on disk, and 9-12 never fail
 server-side at all — they are contract-constrained values the task store accepts as plain
-strings.
+strings (or, for `hitl`, as a nullable boolean). The top-level `planMarkdown` check has no
+server-side counterpart at all: `planMarkdown` is never POSTed anywhere, it is only written to
+disk by Step 6a.
 
-**Any failing task rejects the WHOLE batch — all-or-nothing.** `/tasks/bulk` is itself a single
-transaction (any row failure rolls back the entire batch), so a partial POST is never the right
-recovery. Do not POST anything. Print a per-task error listing the task id and which check(s)
-it failed:
+**Any failing check — top-level or per-task — rejects the WHOLE batch, all-or-nothing.**
+`/tasks/bulk` is itself a single transaction (any row failure rolls back the entire batch), so a
+partial POST is never the right recovery, and a bad `planMarkdown` invalidates the response as a
+whole even when every task in it is clean. Do not POST anything and do not write `PLAN.md`.
+Print one line per failure — the task id and which check(s) it failed, or `planMarkdown` for the
+top-level check:
 
 ```
-⚠ Configured methodology {subagent_type} returned schema-invalid tasks — nothing written.
+⚠ Configured methodology {subagent_type} returned schema-invalid output — nothing written.
+planMarkdown — failed: {check}
 {TASK-ID} — failed: {check(s)}
 ...
 ```
@@ -709,7 +740,7 @@ Write the tasks to `/tmp/new-tasks-{session}.json`. Set `source` to `"planning/{
 ]
 ```
 
-Set `"hitl": true` (and include the `## Human steps` section in `description`) for every Type A HITL task in the breakdown, whichever path produced it — flagged by Step 5.5 on the built-in path, or already carried as `hitl: true` plus an injected `## Human steps` section on the returned `tasks[]` on the Configured Methodology Dispatch path. Step 6b writes the flag through as received on that path; it does not re-run Step 5.5's detection over a dispatched breakdown.
+Set `"hitl": true` (and include the `## Human steps` section in `description`) for every Type A HITL task in the breakdown, whichever path produced it — flagged by Step 5.5 on the built-in path, or already carried as `hitl: true` plus an injected `## Human steps` section on the returned `tasks[]` on the Configured Methodology Dispatch path. Step 6b writes the flag through as received on that path; it does not re-run Step 5.5's detection over a dispatched breakdown. That write-through is safe because the dispatch section's Schema Validation gate (check 12) already rejected any returned task whose `hitl` is missing or non-boolean, or whose `hitl: true` came without a `## Human steps` section — nothing unvalidated reaches this step.
 
 Post the tasks to the store:
 

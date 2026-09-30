@@ -734,6 +734,21 @@ describe("plan-session.md — Configured Methodology Dispatch section (PSM-1.2)"
     );
   });
 
+  /**
+   * `specContent` is a required contract input with no omission rule, but Step 1 explicitly
+   * allows an interactive session with no PRODUCT-SPEC.md ("What are we building?"). Without a
+   * rule for that path a human running this command against a configured methodology in a
+   * spec-less repo would dispatch with `specContent` undefined.
+   */
+  it("says what specContent carries on Step 1's interactive no-spec-file path", () => {
+    const specContent = extractInputBullet(content, "specContent");
+    const lower = prose(specContent);
+    expect(lower).toContain("what are we building?");
+    expect(lower).toMatch(/required/);
+    expect(lower).toMatch(/never (omitted|dispatched with `?speccontent`? missing)/);
+    expect(lower).toMatch(/pass the description collected|passed as `?speccontent/);
+  });
+
   it("requires exactly the contract's inputs — no more, no less — and passes autonomous as {taskId}", () => {
     const inputs = extractInputsSubsection(content);
     expect(inputs).toContain(
@@ -911,10 +926,55 @@ describe("plan-session.md — Configured Methodology Dispatch: schema validation
     expect(lower).toMatch(/rollup|sessions view|alert sweeper/);
   });
 
-  it("explains why checks 8-11 can't be delegated to the bulk endpoint", () => {
+  /**
+   * `planMarkdown` is a top-level contract output Step 6a writes verbatim, and it is never
+   * POSTed — so no server-side check exists for it. A response with a clean `tasks[]` and an
+   * empty `planMarkdown` would otherwise pass this gate and write an empty PLAN.md under
+   * `--autonomous`, where no human sees it.
+   */
+  it("checks the top-level planMarkdown is present and non-empty, distinct from the per-task checks", () => {
+    const sub = extractDispatchSubsection(content, HEADING);
+    expect(sub).toContain("planMarkdown");
+    const lower = prose(sub);
+    expect(lower).toMatch(/top-level/);
+    expect(lower).toMatch(/not per-task|per-task/);
+    expect(lower).toMatch(/\*\*`planmarkdown`\*\* is present and a non-empty string/);
+    expect(lower).toMatch(/empty (or missing )?`?planmarkdown/);
+    expect(lower).toMatch(/--autonomous/);
+  });
+
+  it("rejects the whole response — including PLAN.md — when the top-level planMarkdown check fails", () => {
+    const sub = extractDispatchSubsection(content, HEADING);
+    const lower = prose(sub);
+    expect(lower).toMatch(/top-level or per-task/);
+    expect(lower).toMatch(/do not write `?plan\.md/);
+    expect(sub).toContain("planMarkdown — failed:");
+  });
+
+  /**
+   * `hitl` is exactly as contract-constrained as model/layer/session, and Step 6b now writes it
+   * through with no re-detection — so a Type-A task returned with `hitl: false` would land in
+   * ready.ts's autonomous-ready set (it only excludes `task.hitl === true`) and be dispatched to
+   * dev-task with no human in the loop.
+   */
+  it("value-checks hitl as a boolean and requires a `## Human steps` section when it is true", () => {
+    const sub = extractDispatchSubsection(content, HEADING);
+    expect(sub).toContain("`hitl`");
+    expect(sub).toContain("## Human steps");
+    expect(sub).toContain("task-store/src/ready.ts");
+    const lower = prose(sub);
+    expect(lower).toMatch(/present and a boolean/);
+    expect(lower).toMatch(/`hitl: true`/);
+    expect(lower).toMatch(/omitted or wrongly `?false/);
+    expect(lower).toMatch(/does not re-run step 5\.5/);
+  });
+
+  it("explains why checks 8-12 — and the top-level planMarkdown check — can't be delegated to the bulk endpoint", () => {
     const sub = extractDispatchSubsection(content, HEADING);
     const lower = prose(sub);
     expect(lower).toMatch(/never fail\s+server-side|does not enum-check|cannot catch them for you/);
+    expect(lower).toMatch(/checks 8 through 12/);
+    expect(lower).toMatch(/`?planmarkdown`? is never posted/);
   });
 
   it("on full validation success, hands tasks/planMarkdown/decisionLog to Step 6 exactly as the built-in path would", () => {
@@ -1048,6 +1108,18 @@ describe("plan-session.md — Step 6 is path-agnostic (PSM-1.2)", () => {
     const lower = prose(section);
     expect(lower).toMatch(/writes the flag through as received/);
     expect(lower).toMatch(/does not re-run step 5\.5/);
+  });
+
+  /**
+   * Writing `hitl` through unvalidated is only safe because the dispatch section's Schema
+   * Validation gate already checked it — Step 6b should say so, so a future edit that drops the
+   * gate check doesn't leave this write-through silently unguarded.
+   */
+  it("Step 6b points at the Schema Validation gate as what makes the hitl write-through safe", () => {
+    const section = extractStep6bSection(content);
+    expect(section).toContain("Schema Validation");
+    expect(section).toContain("## Human steps");
+    expect(prose(section)).toMatch(/check 12/);
   });
 
   /**
