@@ -114,6 +114,36 @@ Spec: {found / not found}
 
 If no spec exists (and `--autonomous` was not passed — see the `--autonomous` Mode subsection above), ask: **"What are we building?"** and collect enough to proceed. Keep it brief — this is an engineering session, not a discovery session.
 
+### Resolve the configured plan-session subagent (PSM-1.2)
+
+Runs once here, after the spec is loaded. Fetches the agent's configured phase-methodology
+override for the plan-session phase (PMC-1.1) off the same `GET /agents/{id}/config` endpoint
+`review.md`'s Step 4 and `patch.md`'s Step 1 already use — same endpoint, same auth header,
+just a different field. Best-effort and fail-soft: any failure here is never a hard stop.
+
+```bash
+PLAN_SESSION_SUBAGENT_TYPE=$(curl -sf -H "Authorization: Bearer $SHIPWRIGHT_AGENT_API_KEY" \
+  "$SHIPWRIGHT_API_URL/agents/$SHIPWRIGHT_AGENT_ID/config" | jq -r '.phaseMethodology["plan-session"] // empty')
+```
+
+**Fail-soft to the built-in path, not fail-open to an unvalidated dispatch.** When
+`.phaseMethodology["plan-session"]` is absent or `null` (the jq `// empty` default), or the
+curl fails outright, `PLAN_SESSION_SUBAGENT_TYPE` is empty and **Steps 2 through 5.5 run
+unchanged, exactly as they do today** — same codebase exploration, same design loop, same
+task breakdown, same HITL scan. An empty value never means "dispatch something else"; it
+means "run the built-in decomposition."
+
+**There is no built-in `subagent_type` fallback name here.** Unlike `review.md`, whose
+built-in default (`shipwright:code-reviewer`) is itself a dispatchable subagent, this
+command's built-in decomposition is not itself a dispatchable subagent — Steps 2 through 5.5
+are a multi-step flow the main agent thread runs inline in this session (reading code,
+proposing designs, iterating with a human or applying autonomous defaults). So the empty
+value is the built-in path, not a name to dispatch.
+
+**When `PLAN_SESSION_SUBAGENT_TYPE` is non-empty**, skip Steps 2 through 5.5 entirely and
+jump to the **Configured Methodology Dispatch (PSM-1.2)** section that follows Step 5.5, then
+continue to Step 6 from there.
+
 ---
 
 ## Step 2: Explore the Codebase
@@ -419,9 +449,251 @@ HITL scan: no tasks require human steps
 
 ---
 
+## Configured Methodology Dispatch (PSM-1.2)
+
+**Skip this entire section when `PLAN_SESSION_SUBAGENT_TYPE` is empty** — the built-in Steps 2
+through 5.5 already produced the breakdown; proceed straight to Step 6. Everything below runs
+only when Step 1 resolved `PLAN_SESSION_SUBAGENT_TYPE` to a non-empty value, in which case
+Steps 2 through 5.5 were skipped and this section produces the breakdown in their place.
+
+### Inputs
+
+Assemble exactly the inputs `plugins/shipwright/references/methodology-contracts/plan-session.md`
+specifies — no more, no less:
+
+- **`specContent`** — the verbatim contents of `planning/{session}/PRODUCT-SPEC.md` as loaded
+  (or, under `--autonomous`, materialized) in Step 1. Required — the contract defines no
+  omission rule for it, so it is never omitted. When Step 1 found no spec file and fell back to
+  asking **"What are we building?"** interactively (a path that never runs under `--autonomous`),
+  pass the description collected in that exchange as `specContent` — the configured methodology
+  receives the same field either way and is never dispatched with `specContent` missing.
+- **`repo`** — the confirmed/dispatched `org/repo` value from the arguments.
+- **`session`** — the session slug from the arguments.
+- **`existingSessionTaskIds`** — the task ids returned by Step 1.3's dedup scan; omit when empty.
+- **`openCrossSessionTasks`** — the `{id, title, status, session}` entries from Step 1.4's
+  cross-session scan; omit entirely when none exist.
+- **`testLayerDefs`** — normally loaded at the top of the (now-skipped) Step 2, so load it here
+  the same way: if `docs/test-readiness/test-system.md` exists in the repo worktree, read it and
+  pass its layer definitions; omit the field when the file is absent (a compliant subagent then
+  falls back to the four built-in defaults itself).
+- **`principles`** — normally loaded at the top of the (now-skipped) Step 5, so load it here the
+  same way: check `.claude/shipwright/principles.md` in the project root first and pass its
+  verbatim contents if present, otherwise pass `plugins/shipwright/references/principles.md`.
+- **`autonomous`** — `{taskId: "{task-id}"}` when this command was invoked with
+  `--autonomous {task-id}`; omit the field entirely otherwise.
+
+### Dispatch
+
+Dispatch via the Agent tool with `subagent_type: PLAN_SESSION_SUBAGENT_TYPE` and
+`run_in_background: false`, passing a single prompt block that:
+
+1. Points the subagent at `plugins/shipwright/references/methodology-contracts/plan-session.md`
+   as the contract it must satisfy.
+2. Supplies every input above, labelled with its contract field name.
+3. States that the response must be exactly the contract's output JSON object — `tasks`,
+   `planMarkdown`, `decisionLog`, `hardContradiction` — and nothing else.
+
+Parse the response as that JSON object before doing anything with it.
+
+#### Malformed or Failed Response
+
+If the subagent returns malformed JSON, retry once with a reminder of the output schema. Treat
+an outright failure of the dispatch itself (the Agent tool errors, or
+`PLAN_SESSION_SUBAGENT_TYPE` names an invalid/nonexistent `subagent_type` from a misconfigured
+override) identically to a malformed response for this retry — the retry re-dispatches the exact
+same `PLAN_SESSION_SUBAGENT_TYPE`.
+
+If the retry still fails, **abandon the session — there is no built-in fallback to dispatch.**
+The built-in decomposition is not itself a dispatchable subagent (see Step 1's resolution
+subsection), so there is nothing to hand off to; do not attempt to run Steps 2 through 5.5
+inline as a substitute for the configured methodology, and do not re-dispatch a third time.
+
+- **Under `--autonomous {task-id}`** — block the originating task and stop before Step 6:
+  ```bash
+  curl -sf -X PATCH -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
+    -H "Content-Type: application/json" \
+    "$SHIPWRIGHT_TASK_STORE_URL/tasks/{task-id}" \
+    -d '{"status": "blocked", "hitl": true, "blockedReason": "plan_session_methodology_dispatch_failed: {subagent_type} failed after retry"}' | jq .
+  ```
+  Print `⚠ Task {task-id} blocked — configured plan-session methodology {subagent_type} failed after retry (plan_session_methodology_dispatch_failed).` and stop.
+- **Interactive** — print a clear abort message naming the failed `{subagent_type}` and stop.
+  No tasks are written; nothing is POSTed.
+
+#### Hard Contradiction
+
+If the parsed `hardContradiction` is non-null, the subagent hit a contradiction no default can
+resolve. `tasks[]`/`planMarkdown` are empty or omitted in that case — do not salvage them.
+
+- **Under `--autonomous {task-id}`** — mirror the Step 4/5 escape hatch exactly, using the
+  returned text verbatim as the reason detail, and stop before Step 6:
+  ```bash
+  curl -sf -X PATCH -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
+    -H "Content-Type: application/json" \
+    "$SHIPWRIGHT_TASK_STORE_URL/tasks/{task-id}" \
+    -d '{"status": "blocked", "hitl": true, "blockedReason": "plan_session_autonomous_hard_contradiction: {one-line description}"}' | jq .
+  ```
+- **Interactive** — the contract states `hardContradiction` is always `null` outside
+  `--autonomous`, so a non-null value here is the configured subagent violating its own
+  contract. There is no human-iteration loop to hand it to (the built-in Step 4/5 interactive
+  loop lives in the steps this dispatch replaced) and no `{task-id}` to PATCH. Print a clear
+  error naming `{subagent_type}` and the returned text, and stop before Step 6.
+
+#### Schema Validation
+
+Before ever reaching Step 6b's bulk POST, validate the returned response. This gate runs
+**before Step 6**, client-side — the point is to catch malformed output here rather than let it
+become an opaque Prisma error (or a task that hard-blocks one step downstream in `dev-task`)
+after it has been written.
+
+The gate has two parts: two **top-level** checks over the response object itself, then a list of
+**per-task** checks over every entry in `tasks[]`. Keep the distinction in mind when reporting a
+failure — a top-level failure is not attributable to any task id.
+
+**Top-level — check the response object (not per-task):**
+
+1. **`planMarkdown`** is present and a non-empty string. It is a required contract output that
+   Step 6a writes to `planning/{session}/PLAN.md` verbatim, and nothing downstream re-derives it
+   from `tasks[]`. A response carrying a perfectly valid `tasks[]` and an empty or missing
+   `planMarkdown` clears every per-task check below, so without this check an `--autonomous` run
+   — which has no human to notice — would write an empty `PLAN.md` and then point every queued
+   task's `source` link at it.
+2. **`tasks`** is present, an array, and **non-empty**. The contract describes `tasks[]` as
+   "zero or more task objects"; this gate deliberately overrides that operationally and treats
+   zero tasks as invalid output for a planning run, because an empty array is indistinguishable
+   from success everywhere downstream. Every per-task check below passes vacuously over `[]`,
+   and nothing server-side rejects it either: `/tasks/bulk`'s handler only requires a JSON
+   array, and `TaskService.bulk()` gates on the upper `MAX_BULK_TASKS` cap only — an empty batch
+   opens a transaction, creates nothing, and returns `200 {inserted: 0}`. Step 6b would read
+   that as a successful POST, Step 6c would then transition the originating PRD task to `done`,
+   and Step 6d would open a plan PR — so under `--autonomous`, where there is no human to notice
+   zero work got queued, a decomposition that silently produced nothing would close out its own
+   PRD task as complete. A methodology that genuinely has nothing to decompose must say so via
+   `hardContradiction`, which has its own handled path above.
+
+**Per-task — for each entry in `tasks[]`, check all of:**
+
+1. **`id`** matches `{PREFIX}-{N}.{M}` — a 2-3 letter uppercase prefix, then `-{N}.{M}`.
+2. **`branch`** is present and a non-empty string. `dev-task` hard-blocks any task with no
+   branch, so a branchless task is never executable.
+3. Every entry in **`dependencies`** resolves to a real task id — one of: another `id` in
+   this batch's own `tasks[]`, an id in `existingSessionTaskIds`, or an id in
+   `openCrossSessionTasks`. An unresolvable dependency id can never become ready.
+4. **`repo`** equals the `repo` value passed in as an input, exactly. The contract specifies
+   this field as "the `repo` passed in, unchanged" — a value contract, not just key-presence,
+   so key-presence alone is not enough here. The bulk endpoint's own check is weaker in both
+   directions: it requires only that the key exist, and `validateRepo` returns early on a
+   literal `null`, so a task returned with `"repo": null` is written through and then
+   undispatchable — `dev-task` derives its repo path and worktree path from `task.repo`, the
+   same reason check 2 insists on `branch`. In the other direction a wrong or hallucinated
+   `org/repo` passes format validation but fails `validateRepo`'s scope check, 400ing the
+   entire batch *after* Step 6a has already written `PLAN.md`, with no recovery path defined —
+   exactly the failure mode check 8 exists to prevent for colliding ids. Check 11 already
+   holds `session` to this stricter value-equality standard; `repo` gets the same treatment.
+5. **`title`** is a non-empty string.
+6. **`status`** is exactly `"pending"`.
+7. **`acceptanceCriteria`** is an array.
+8. **`id` collides with nothing that already exists.** No returned `id` may match an entry in
+   `existingSessionTaskIds` or an `id` in `openCrossSessionTasks`, and no two tasks in this
+   batch may share an `id`. `/tasks/bulk` is create-only: a colliding id raises Prisma `P2002`,
+   which the endpoint turns into a `409 Conflict` that rolls the entire batch back server-side.
+   That 409 lands *after* Step 6a has already written `PLAN.md`, and this command defines no
+   recovery path for it — so the collision has to be caught here, not discovered from the POST.
+9. **`model`** is exactly one of `haiku` | `sonnet` | `opus`. The task store stores this column
+   as a free-form string and does not enum-check it, so a wrong or invented tier is accepted
+   silently and then dispatches the task at the wrong model.
+10. **`layer`** is exactly one of `API` | `Frontend` | `Database` | `Shared` | `Background` |
+    `CLI` — likewise an unvalidated free-form string server-side.
+11. **`session`** equals the `session` slug passed in as an input. A task written with a
+    different (or missing) `session` silently drops out of the session rollup, the admin
+    Sessions view, and the session alert sweeper, even though the POST itself succeeds.
+12. **`hitl`** is present and a boolean, and every task with `hitl: true` also carries a
+    `## Human steps` section in its `description`. The task store column is a nullable boolean
+    it never cross-checks against the description, and `task-store/src/ready.ts` excludes a task
+    from the autonomous-ready set only on `task.hitl === true` — so a Type-A task returned with
+    `hitl` omitted or wrongly `false` is silently queued as autonomous work for `dev-task`, and
+    one returned `true` with no `## Human steps` section reaches `/shipwright:hitl` with no
+    instructions to execute. Step 6b writes this flag through exactly as received on this path
+    and does not re-run Step 5.5's detection over a dispatched breakdown, so this check is the
+    only place it is caught.
+
+Per-task checks 8 through 12 exist because the bulk endpoint cannot catch them for you: 8 fails
+server-side only as an opaque 409 after the plan is already on disk, and 9-12 never fail
+server-side at all — they are contract-constrained values the task store accepts as plain
+strings (or, for `hitl`, as a nullable boolean). Check 4's value half is the same story from
+both sides — a `null` `repo` is accepted silently, and a wrong one 400s the batch only after
+`PLAN.md` is on disk. Neither top-level check has a server-side counterpart at all:
+`planMarkdown` is never POSTed anywhere, it is only written to disk by Step 6a, and an empty
+`tasks[]` is a clean `200` from `/tasks/bulk` rather than any kind of error.
+
+**Any failing check — top-level or per-task — rejects the WHOLE batch, all-or-nothing.**
+`/tasks/bulk` is itself a single transaction (any row failure rolls back the entire batch), so a
+partial POST is never the right recovery, and a bad `planMarkdown` or an empty `tasks[]`
+invalidates the response as a whole even when every task in it is clean (for an empty `tasks[]`,
+vacuously so). Do not POST anything and do not write `PLAN.md`. Print one line per failure —
+the task id and which check(s) it failed, or `planMarkdown` / `tasks` for the top-level checks:
+
+```
+⚠ Configured methodology {subagent_type} returned schema-invalid output — nothing written.
+planMarkdown — failed: {check}
+tasks — failed: {check}
+{TASK-ID} — failed: {check(s)}
+...
+```
+
+- **Under `--autonomous {task-id}`** — block the originating task and stop:
+  ```bash
+  curl -sf -X PATCH -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
+    -H "Content-Type: application/json" \
+    "$SHIPWRIGHT_TASK_STORE_URL/tasks/{task-id}" \
+    -d '{"status": "blocked", "hitl": true, "blockedReason": "plan_session_methodology_schema_invalid: {summary}"}' | jq .
+  ```
+- **Interactive** — print the error above and stop.
+
+Either way, **never proceed to Step 6 on validation failure.**
+
+#### Interactive Approval
+
+The built-in path's two approval gates — Step 4's "do not move to task breakdown until the
+design is approved" and Step 5's "iterate until approved" — both live inside the steps this
+dispatch replaced, and Step 6 still opens on an approved breakdown. Nothing in the dispatch
+itself satisfies that precondition, so the gate is re-established here rather than skipped.
+
+- **Under `--autonomous {task-id}`** — there is no approval gate, exactly as on the built-in
+  path: Step 4's and Step 5's `--autonomous` subsections already replace iterate-until-approved
+  with accept-first-pass. Treat the validated breakdown as approved and proceed to Step 6.
+- **Interactive** — **do not proceed to Step 6 on the first response.** Present the returned
+  breakdown to the human first — the `planMarkdown`'s design summary, its task table and
+  Dependency Map, and any HITL-flagged tasks — then ask for approval explicitly. A subagent
+  dispatched with `run_in_background: false` has no channel back to the user, so it cannot run
+  the contract's interactive "keeps iterating with the human" loop itself; this command owns
+  that loop on its behalf. On feedback, re-dispatch the same `PLAN_SESSION_SUBAGENT_TYPE` with
+  the identical inputs plus the human's feedback appended to the prompt, re-run Schema
+  Validation on the new response, and present it again. Repeat until approved. A re-dispatch
+  for feedback is not a retry of a failed dispatch and does not consume the Malformed or Failed
+  Response retry budget. Nothing is written to disk and nothing is POSTed until the human
+  approves.
+
+Once the breakdown has validated and — interactively — been approved, proceed to Step 6 exactly
+as the built-in path would. Step 6 consumes this section's `tasks[]` as the task list and its
+`planMarkdown` as the plan file's contents, written through verbatim. `decisionLog[]` needs no
+separate handling in Step 6: per the contract its bullets are already embedded inside
+`planMarkdown`'s `## Decision Log` section, so writing `planMarkdown` verbatim already carries
+the decision log — do not append a second Decision Log section to the plan from the array.
+
+---
+
 ## Step 6: Write to Queue
 
 Once the task breakdown is approved, write the plan to disk and post tasks to the task store.
+Step 6 is path-agnostic: it runs identically whether the breakdown came from the built-in
+Steps 2 through 5.5 or from the Configured Methodology Dispatch section above — either way it
+receives the same task list, plan markdown, and decision log, and either way the breakdown
+reaching this step is already approved (by Step 4/5's iterate-until-approved loop, by the
+dispatch section's Interactive Approval subsection, or by `--autonomous`
+accept-first-pass). Where a sub-step below names Steps 4-5 or Step 5.5, read it as "whichever
+path produced this breakdown" — on the dispatch path the equivalent content arrives on the
+returned `planMarkdown` and `tasks[]` instead, and Step 6 writes it through rather than
+re-deriving it.
 
 ### Bundle Model Inheritance (Pre-Write)
 
@@ -437,7 +709,9 @@ A task on its own branch is unaffected. This ensures a `haiku`-scored task bundl
 
 **Step 6a — Save the plan to disk:**
 
-Write the full plan markdown (session name, technical design, and task table from Steps 4–5) to `planning/{session}/PLAN.md`. Create the directory if it doesn't exist.
+Write the full plan markdown — session name, technical design, task table, Dependency Map, Breaking Change Safety notes, and (under `--autonomous`) the `## Decision Log` — **verbatim** to `planning/{session}/PLAN.md`. Create the directory if it doesn't exist.
+
+Source-neutral, and verbatim either way: on the built-in path this markdown is what Steps 4–5 produced; on the Configured Methodology Dispatch path it is the returned `planMarkdown`, which the PSM-1.1 contract requires the caller to write through unchanged. **Do not re-synthesize the plan from the task list** — a re-synthesized plan silently drops the design rationale, the Breaking Change Safety notes, and the embedded Decision Log that the `source` link on every queued task points at.
 
 This mirrors the PRD pattern (`planning/{session}/PRODUCT-SPEC.md`) and keeps the plan co-located with the spec that produced it.
 
@@ -490,7 +764,7 @@ Write the tasks to `/tmp/new-tasks-{session}.json`. Set `source` to `"planning/{
 ]
 ```
 
-Set `"hitl": true` (and include the `## Human steps` section in `description`) for any Type A task flagged in Step 5.5.
+Set `"hitl": true` (and include the `## Human steps` section in `description`) for every Type A HITL task in the breakdown, whichever path produced it — flagged by Step 5.5 on the built-in path, or already carried as `hitl: true` plus an injected `## Human steps` section on the returned `tasks[]` on the Configured Methodology Dispatch path. Step 6b writes the flag through as received on that path; it does not re-run Step 5.5's detection over a dispatched breakdown. That write-through is safe because the dispatch section's Schema Validation gate (check 12) already rejected any returned task whose `hitl` is missing or non-boolean, or whose `hitl: true` came without a `## Human steps` section — nothing unvalidated reaches this step.
 
 Post the tasks to the store:
 

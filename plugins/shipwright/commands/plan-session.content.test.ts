@@ -547,6 +547,654 @@ describe("plan-session.md — Step 5 principles override check + security domain
 });
 
 /**
+ * Phase-methodology dispatch (PSM-1.2).
+ *
+ * Steps 2 through 5.5 (codebase research → design → task breakdown → HITL detection) become
+ * swappable via `phaseMethodology["plan-session"]`, per PSM-1.1's contract
+ * (`references/methodology-contracts/plan-session.md`). With no config, the built-in steps run
+ * exactly as before; with config set, the decomposition is delegated to the configured
+ * subagent and its `tasks[]` output must clear a client-side schema gate before the Step 6b
+ * bulk POST ever runs.
+ */
+
+function extractPlanSessionSubagentSection(md: string): string {
+  const idx = md.indexOf("### Resolve the configured plan-session subagent (PSM-1.2)");
+  const step2Idx = md.indexOf("## Step 2: Explore the Codebase");
+  expect(idx).toBeGreaterThan(-1);
+  expect(step2Idx).toBeGreaterThan(idx);
+  return md.slice(idx, step2Idx);
+}
+
+function extractMethodologyDispatchSection(md: string): string {
+  const idx = md.indexOf("## Configured Methodology Dispatch (PSM-1.2)");
+  const step6Idx = md.indexOf("## Step 6: Write to Queue");
+  expect(idx).toBeGreaterThan(-1);
+  expect(step6Idx).toBeGreaterThan(idx);
+  return md.slice(idx, step6Idx);
+}
+
+function extractDispatchSubsection(md: string, heading: string): string {
+  const section = extractMethodologyDispatchSection(md);
+  const idx = section.indexOf(heading);
+  expect(idx).toBeGreaterThan(-1);
+  const rest = section.slice(idx + heading.length);
+  const nextIdx = rest.indexOf("\n#### ");
+  return heading + (nextIdx === -1 ? rest : rest.slice(0, nextIdx));
+}
+
+/**
+ * Collapses markdown line-wrapping to single spaces (and lowercases), so a prose assertion
+ * asserts on the sentence rather than on where the paragraph happens to wrap.
+ */
+function prose(text: string): string {
+  return text.replace(/\s+/g, " ").toLowerCase();
+}
+
+/**
+ * Extracts just the `### Inputs` subsection of the dispatch section, so input assertions
+ * can't be satisfied by unrelated prose elsewhere (the section discusses `repo`/`session`
+ * throughout, which makes a whole-section `toContain("repo")` near-zero signal).
+ */
+function extractInputsSubsection(md: string): string {
+  const section = extractMethodologyDispatchSection(md);
+  const idx = section.indexOf("### Inputs");
+  const dispatchIdx = section.indexOf("### Dispatch");
+  expect(idx).toBeGreaterThan(-1);
+  expect(dispatchIdx).toBeGreaterThan(idx);
+  return section.slice(idx, dispatchIdx);
+}
+
+/**
+ * Extracts the single `### Inputs` bullet for one contract field, so each field's
+ * load-bearing wording (notably its omission rule) is asserted against its own bullet
+ * rather than against the whole subsection.
+ */
+function extractInputBullet(md: string, field: string): string {
+  const inputs = extractInputsSubsection(md);
+  const marker = `- **\`${field}\`**`;
+  const idx = inputs.indexOf(marker);
+  expect(idx).toBeGreaterThan(-1);
+  const rest = inputs.slice(idx);
+  // Each input is one markdown list item: it ends at the next top-level bullet or blank line.
+  const nextBullet = rest.indexOf("\n- **");
+  return nextBullet === -1 ? rest : rest.slice(0, nextBullet);
+}
+
+describe("plan-session.md — Step 1 resolves the configured plan-session subagent (PSM-1.2)", () => {
+  it("adds the resolution subsection inside Step 1, before Step 2", () => {
+    const step1Idx = content.indexOf("## Step 1: Load Context");
+    const sectionIdx = content.indexOf("### Resolve the configured plan-session subagent (PSM-1.2)");
+    const step2Idx = content.indexOf("## Step 2: Explore the Codebase");
+    expect(step1Idx).toBeGreaterThan(-1);
+    expect(sectionIdx).toBeGreaterThan(step1Idx);
+    expect(step2Idx).toBeGreaterThan(sectionIdx);
+  });
+
+  it("fetches phaseMethodology['plan-session'] from GET /agents/{id}/config, same endpoint/auth as review.md and patch.md", () => {
+    const section = extractPlanSessionSubagentSection(content);
+    expect(section).toContain('curl -sf -H "Authorization: Bearer $SHIPWRIGHT_AGENT_API_KEY"');
+    expect(section).toContain("$SHIPWRIGHT_API_URL/agents/$SHIPWRIGHT_AGENT_ID/config");
+    expect(section).toContain('.phaseMethodology["plan-session"]');
+    expect(section).toContain("PLAN_SESSION_SUBAGENT_TYPE=$(curl");
+  });
+
+  it("resolves to empty when the field is absent, null, or the lookup fails", () => {
+    const section = extractPlanSessionSubagentSection(content);
+    expect(section).toContain("// empty");
+    const lower = section.toLowerCase();
+    expect(lower).toMatch(/fail-soft|best-effort/);
+    expect(lower).toContain("never a hard stop");
+  });
+
+  it("states that an empty/failed lookup leaves the built-in Steps 2 through 5.5 unchanged (AC1)", () => {
+    const section = extractPlanSessionSubagentSection(content);
+    expect(section).toContain("Steps 2 through 5.5");
+    const lower = section.toLowerCase();
+    expect(lower).toMatch(/unchanged|exactly as (they do )?today|identical to today/);
+    expect(lower).toContain("not fail-open");
+  });
+
+  it("documents that there is no built-in subagent_type fallback name, because the built-in decomposition is not dispatchable", () => {
+    const section = extractPlanSessionSubagentSection(content);
+    const lower = section.toLowerCase();
+    expect(lower).toContain("no built-in `subagent_type` fallback name");
+    expect(lower).toContain("not itself a dispatchable subagent");
+    expect(lower).toContain("inline");
+  });
+
+  it("instructs skipping Steps 2 through 5.5 and jumping to the Configured Methodology Dispatch section when set", () => {
+    const section = extractPlanSessionSubagentSection(content);
+    const lower = section.toLowerCase();
+    expect(lower).toContain("skip steps 2 through 5.5");
+    expect(section).toContain("Configured Methodology Dispatch (PSM-1.2)");
+    expect(section).toContain("Step 6");
+  });
+});
+
+describe("plan-session.md — Configured Methodology Dispatch section (PSM-1.2)", () => {
+  it("sits between Step 5.5 and Step 6", () => {
+    const step5_5Idx = content.indexOf("## Step 5.5: HITL Detection");
+    const sectionIdx = content.indexOf("## Configured Methodology Dispatch (PSM-1.2)");
+    const step6Idx = content.indexOf("## Step 6: Write to Queue");
+    expect(step5_5Idx).toBeGreaterThan(-1);
+    expect(sectionIdx).toBeGreaterThan(step5_5Idx);
+    expect(step6Idx).toBeGreaterThan(sectionIdx);
+  });
+
+  it("only runs when PLAN_SESSION_SUBAGENT_TYPE resolved non-empty; otherwise proceed straight to Step 6", () => {
+    const section = extractMethodologyDispatchSection(content);
+    expect(section).toContain("PLAN_SESSION_SUBAGENT_TYPE");
+    const lower = section.toLowerCase();
+    expect(lower).toMatch(/non-empty/);
+    expect(lower).toMatch(/skip this (entire )?section|proceed (straight|directly) to step 6/);
+  });
+
+  it("gives the ### Inputs subsection a bullet for every contract input and no extra ones", () => {
+    const inputs = extractInputsSubsection(content);
+    const declared = [...inputs.matchAll(/^- \*\*`([^`]+)`\*\*/gm)].map((m) => m[1]);
+    expect(declared).toEqual([
+      "specContent",
+      "repo",
+      "session",
+      "existingSessionTaskIds",
+      "openCrossSessionTasks",
+      "testLayerDefs",
+      "principles",
+      "autonomous",
+    ]);
+  });
+
+  it("loads testLayerDefs and principles explicitly, since their built-in load sites (Steps 2 and 5) are skipped", () => {
+    const testLayerDefs = extractInputBullet(content, "testLayerDefs");
+    expect(testLayerDefs).toContain("docs/test-readiness/test-system.md");
+    expect(testLayerDefs).toContain("Step 2");
+    const principles = extractInputBullet(content, "principles");
+    expect(principles).toContain(".claude/shipwright/principles.md");
+    expect(principles).toContain("plugins/shipwright/references/principles.md");
+    expect(principles).toContain("Step 5");
+  });
+
+  /**
+   * The contract's omission rules are load-bearing: passing an empty array (or a present-but-
+   * empty field) instead of omitting it is a contract violation the field-name-presence
+   * assertions above cannot catch. Each rule is asserted against its own input bullet.
+   */
+  it("states the contract's omission rule on each optional input's own bullet", () => {
+    expect(extractInputBullet(content, "existingSessionTaskIds").toLowerCase()).toMatch(
+      /omit when empty|omit.*\bempty\b/,
+    );
+    expect(extractInputBullet(content, "openCrossSessionTasks").toLowerCase()).toMatch(
+      /omit entirely when none/,
+    );
+    expect(extractInputBullet(content, "testLayerDefs").toLowerCase()).toMatch(
+      /omit the field when the file is absent/,
+    );
+    expect(extractInputBullet(content, "autonomous").toLowerCase()).toMatch(
+      /omit the field entirely otherwise/,
+    );
+  });
+
+  /**
+   * `specContent` is a required contract input with no omission rule, but Step 1 explicitly
+   * allows an interactive session with no PRODUCT-SPEC.md ("What are we building?"). Without a
+   * rule for that path a human running this command against a configured methodology in a
+   * spec-less repo would dispatch with `specContent` undefined.
+   */
+  it("says what specContent carries on Step 1's interactive no-spec-file path", () => {
+    const specContent = extractInputBullet(content, "specContent");
+    const lower = prose(specContent);
+    expect(lower).toContain("what are we building?");
+    expect(lower).toMatch(/required/);
+    expect(lower).toMatch(/never (omitted|dispatched with `?speccontent`? missing)/);
+    expect(lower).toMatch(/pass the description collected|passed as `?speccontent/);
+  });
+
+  it("requires exactly the contract's inputs — no more, no less — and passes autonomous as {taskId}", () => {
+    const inputs = extractInputsSubsection(content);
+    expect(inputs).toContain(
+      "plugins/shipwright/references/methodology-contracts/plan-session.md",
+    );
+    expect(inputs.toLowerCase()).toContain("no more, no less");
+    expect(extractInputBullet(content, "autonomous")).toContain('{taskId: "{task-id}"}');
+  });
+
+  it("dispatches via the Agent tool with subagent_type: PLAN_SESSION_SUBAGENT_TYPE and run_in_background: false (AC2)", () => {
+    const section = extractMethodologyDispatchSection(content);
+    expect(section).toContain("Agent tool");
+    expect(section).toContain("subagent_type: PLAN_SESSION_SUBAGENT_TYPE");
+    expect(section).toContain("run_in_background: false");
+  });
+
+  it("points the dispatched subagent at the PSM-1.1 contract file and expects its exact output shape", () => {
+    const section = extractMethodologyDispatchSection(content);
+    expect(section).toContain("plugins/shipwright/references/methodology-contracts/plan-session.md");
+    for (const field of ["tasks", "planMarkdown", "decisionLog", "hardContradiction"]) {
+      expect(section).toContain(field);
+    }
+  });
+});
+
+describe("plan-session.md — Configured Methodology Dispatch: malformed or failed response (PSM-1.2)", () => {
+  const HEADING = "#### Malformed or Failed Response";
+
+  it("retries once on malformed JSON or an outright dispatch failure", () => {
+    const sub = extractDispatchSubsection(content, HEADING);
+    const lower = sub.toLowerCase();
+    expect(lower).toContain("retry once");
+    expect(lower).toMatch(/dispatch itself|dispatch failure/);
+    expect(lower).toMatch(/invalid|nonexistent/);
+  });
+
+  it("abandons after the retry — no built-in fallback, and never claims to fall back to the built-in steps", () => {
+    const sub = extractDispatchSubsection(content, HEADING);
+    const lower = sub.toLowerCase();
+    expect(lower).toContain("no built-in fallback");
+    expect(lower).toContain("abandon");
+    expect(lower).toContain("not itself a dispatchable subagent");
+    expect(lower).not.toMatch(/fall back to (running |the )?steps 2/);
+    expect(lower).not.toMatch(/fall back to an inline/);
+  });
+
+  it("under --autonomous, PATCHes the task to blocked/hitl with a plan_session_methodology_dispatch_failed reason and stops before Step 6", () => {
+    const sub = extractDispatchSubsection(content, HEADING);
+    expect(sub).toContain("--autonomous");
+    expect(sub).toContain("plan_session_methodology_dispatch_failed");
+    expect(sub).toContain('"status": "blocked"');
+    expect(sub).toContain('"hitl": true');
+    expect(sub).toContain("$SHIPWRIGHT_TASK_STORE_URL/tasks/{task-id}");
+    expect(sub.toLowerCase()).toContain("stop before step 6");
+  });
+
+  it("interactively, prints a clear abort message and writes no tasks", () => {
+    const sub = extractDispatchSubsection(content, HEADING);
+    const lower = sub.toLowerCase();
+    expect(lower).toContain("interactive");
+    expect(lower).toMatch(/abort/);
+    expect(lower).toContain("no tasks");
+  });
+});
+
+describe("plan-session.md — Configured Methodology Dispatch: hard contradiction (PSM-1.2)", () => {
+  const HEADING = "#### Hard Contradiction";
+
+  it("mirrors Step 4/5's existing plan_session_autonomous_hard_contradiction escape hatch under --autonomous", () => {
+    const sub = extractDispatchSubsection(content, HEADING);
+    expect(sub).toContain("plan_session_autonomous_hard_contradiction");
+    expect(sub).toContain('"status": "blocked"');
+    expect(sub).toContain('"hitl": true');
+    expect(sub).toContain("blockedReason");
+    expect(sub.toLowerCase()).toContain("stop before step 6");
+  });
+
+  it("treats a non-null hardContradiction outside --autonomous as a contract violation and stops", () => {
+    const sub = extractDispatchSubsection(content, HEADING);
+    const lower = sub.toLowerCase();
+    expect(lower).toContain("contract");
+    expect(lower).toMatch(/violat/);
+    expect(sub).toContain("hardContradiction");
+    expect(lower).toMatch(/always `?null`? outside|null outside `?--autonomous/);
+    expect(lower).toMatch(/no human-iteration loop|there is no human/);
+  });
+});
+
+describe("plan-session.md — Configured Methodology Dispatch: schema validation gate (PSM-1.2, AC3)", () => {
+  const HEADING = "#### Schema Validation";
+
+  it("runs before Step 6 / before the bulk POST", () => {
+    const sub = extractDispatchSubsection(content, HEADING);
+    const lower = sub.toLowerCase();
+    expect(lower).toMatch(/before .*step 6/);
+    expect(lower).toMatch(/before .*(bulk )?post|before ever posting/);
+  });
+
+  it("checks id format, non-empty branch, and dependency-id resolvability", () => {
+    const sub = extractDispatchSubsection(content, HEADING);
+    expect(sub).toContain("{PREFIX}-{N}.{M}");
+    expect(sub).toContain("branch");
+    expect(sub.toLowerCase()).toContain("non-empty string");
+    expect(sub).toContain("dependencies");
+    expect(sub).toContain("existingSessionTaskIds");
+    expect(sub).toContain("openCrossSessionTasks");
+    expect(sub.toLowerCase()).toMatch(/this batch|same batch/);
+  });
+
+  it("checks non-empty title, status pending, and acceptanceCriteria as an array", () => {
+    const sub = extractDispatchSubsection(content, HEADING);
+    expect(sub).toContain("title");
+    expect(sub).toContain('"pending"');
+    expect(sub).toContain("acceptanceCriteria");
+    expect(sub.toLowerCase()).toContain("array");
+  });
+
+  /**
+   * The PSM-1.1 contract specifies `repo` as "the `repo` passed in, unchanged" — a value
+   * contract, not key-presence. `validateRepo` in task-store/src/routes/tasks.ts returns early
+   * on a literal `null`, so a `null` repo is written through and leaves the task undispatchable
+   * (dev-task derives its worktree paths from `task.repo`), while a wrong/hallucinated
+   * `org/repo` 400s the whole batch after Step 6a already wrote PLAN.md.
+   */
+  it("value-checks repo against the repo input rather than merely asserting key presence", () => {
+    const sub = extractDispatchSubsection(content, HEADING);
+    const repoIdx = sub.indexOf("**`repo`**");
+    expect(repoIdx).toBeGreaterThan(-1);
+    const check = prose(sub.slice(repoIdx));
+    expect(check).toMatch(/equals the `?repo`? value passed in as an input, exactly/);
+    expect(check).toMatch(/value contract, not just key-presence/);
+    expect(check).toMatch(/key-presence alone is not enough/);
+    expect(check).toMatch(/`?"?repo"?: null`?/);
+    expect(check).toMatch(/undispatchable/);
+    expect(check).toMatch(/validaterepo/);
+    // Mirrors check 11's session value-equality standard.
+    expect(check).toMatch(/check 11/);
+  });
+
+  it("rejects the WHOLE batch on any failing task — all-or-nothing, do not POST anything", () => {
+    const sub = extractDispatchSubsection(content, HEADING);
+    const lower = sub.toLowerCase();
+    expect(lower).toContain("all-or-nothing");
+    expect(lower).toMatch(/whole batch/);
+    expect(lower).toMatch(/do not post/);
+    expect(lower).toMatch(/per-task|which check/);
+  });
+
+  it("under --autonomous, blocks with a plan_session_methodology_schema_invalid reason; interactively prints and stops", () => {
+    const sub = extractDispatchSubsection(content, HEADING);
+    expect(sub).toContain("plan_session_methodology_schema_invalid");
+    expect(sub).toContain('"status": "blocked"');
+    expect(sub).toContain('"hitl": true');
+    const lower = sub.toLowerCase();
+    expect(lower).toContain("interactive");
+    expect(lower).toMatch(/never proceed to step 6/);
+  });
+
+  /**
+   * `/tasks/bulk` is create-only: TaskService.bulk() translates Prisma's P2002 into a
+   * ConflictError that rolls the whole batch back server-side. That 409 would land *after*
+   * Step 6a has written PLAN.md, and the dispatch section defines no recovery path for it —
+   * so a collision against already-queued ids has to be caught by this client-side gate.
+   */
+  it("checks returned ids don't collide with existingSessionTaskIds, openCrossSessionTasks, or each other", () => {
+    const sub = extractDispatchSubsection(content, HEADING);
+    const lower = prose(sub);
+    expect(lower).toMatch(/collid/);
+    expect(lower).toMatch(/create-only|p2002|409/);
+    const collisionIdx = sub.indexOf("collides with nothing");
+    expect(collisionIdx).toBeGreaterThan(-1);
+    const check = sub.slice(collisionIdx);
+    expect(check).toContain("existingSessionTaskIds");
+    expect(check).toContain("openCrossSessionTasks");
+    expect(prose(check)).toMatch(/no two tasks|share an `?id/);
+  });
+
+  it("value-checks the contract-constrained model, layer, and session fields the task store stores as free-form strings", () => {
+    const sub = extractDispatchSubsection(content, HEADING);
+    for (const tier of ["haiku", "sonnet", "opus"]) {
+      expect(sub).toContain(tier);
+    }
+    for (const layer of [
+      "API",
+      "Frontend",
+      "Database",
+      "Shared",
+      "Background",
+      "CLI",
+    ]) {
+      expect(sub).toContain(layer);
+    }
+    const lower = prose(sub);
+    expect(lower).toMatch(/free-form string/);
+    expect(lower).toMatch(/rollup|sessions view|alert sweeper/);
+  });
+
+  /**
+   * `planMarkdown` is a top-level contract output Step 6a writes verbatim, and it is never
+   * POSTed — so no server-side check exists for it. A response with a clean `tasks[]` and an
+   * empty `planMarkdown` would otherwise pass this gate and write an empty PLAN.md under
+   * `--autonomous`, where no human sees it.
+   */
+  it("checks the top-level planMarkdown is present and non-empty, distinct from the per-task checks", () => {
+    const sub = extractDispatchSubsection(content, HEADING);
+    expect(sub).toContain("planMarkdown");
+    const lower = prose(sub);
+    expect(lower).toMatch(/top-level/);
+    expect(lower).toMatch(/not per-task|per-task/);
+    expect(lower).toMatch(/\*\*`planmarkdown`\*\* is present and a non-empty string/);
+    expect(lower).toMatch(/empty (or missing )?`?planmarkdown/);
+    expect(lower).toMatch(/--autonomous/);
+  });
+
+  /**
+   * The contract permits "zero or more task objects", but every per-task check passes vacuously
+   * over `[]` and nothing server-side rejects an empty batch either — `/tasks/bulk` only
+   * requires a JSON array and `TaskService.bulk()` gates on the upper MAX_BULK_TASKS cap, so
+   * `[]` returns 200 {inserted: 0}. Step 6c would read that as success and mark the originating
+   * PRD task done, which under --autonomous no human is there to notice.
+   */
+  it("checks the top-level tasks[] is present and non-empty, as a second top-level check", () => {
+    const sub = extractDispatchSubsection(content, HEADING);
+    const lower = prose(sub);
+    expect(lower).toMatch(/two \*\*top-level\*\* checks/);
+    expect(lower).toMatch(
+      /\*\*`tasks`\*\* is present, an array, and \*\*non-empty\*\*/,
+    );
+    expect(lower).toMatch(/zero or more task objects/);
+    expect(lower).toMatch(/vacuous/);
+    expect(lower).toMatch(/nothing server-side rejects it|nothing server-side rejects an empty/);
+    expect(lower).toMatch(/--autonomous/);
+  });
+
+  it("explains that an empty tasks[] would let Step 6c mark the originating PRD task done", () => {
+    const sub = extractDispatchSubsection(content, HEADING);
+    const lower = prose(sub);
+    expect(lower).toMatch(/step 6c/);
+    expect(lower).toMatch(/`?done`?/);
+    expect(lower).toMatch(/zero work got queued/);
+    expect(lower).toMatch(/max_bulk_tasks/);
+    expect(lower).toMatch(/200 \{inserted: 0\}/);
+    // A methodology with genuinely nothing to decompose has a handled path already.
+    expect(lower).toMatch(/hardcontradiction/);
+  });
+
+  it("rejects the whole response — including PLAN.md — when either top-level check fails", () => {
+    const sub = extractDispatchSubsection(content, HEADING);
+    const lower = prose(sub);
+    expect(lower).toMatch(/top-level or per-task/);
+    expect(lower).toMatch(/do not write `?plan\.md/);
+    expect(sub).toContain("planMarkdown — failed:");
+    expect(sub).toContain("tasks — failed:");
+  });
+
+  /**
+   * `hitl` is exactly as contract-constrained as model/layer/session, and Step 6b now writes it
+   * through with no re-detection — so a Type-A task returned with `hitl: false` would land in
+   * ready.ts's autonomous-ready set (it only excludes `task.hitl === true`) and be dispatched to
+   * dev-task with no human in the loop.
+   */
+  it("value-checks hitl as a boolean and requires a `## Human steps` section when it is true", () => {
+    const sub = extractDispatchSubsection(content, HEADING);
+    expect(sub).toContain("`hitl`");
+    expect(sub).toContain("## Human steps");
+    expect(sub).toContain("task-store/src/ready.ts");
+    const lower = prose(sub);
+    expect(lower).toMatch(/present and a boolean/);
+    expect(lower).toMatch(/`hitl: true`/);
+    expect(lower).toMatch(/omitted or wrongly `?false/);
+    expect(lower).toMatch(/does not re-run step 5\.5/);
+  });
+
+  it("explains why checks 8-12 — and the top-level planMarkdown check — can't be delegated to the bulk endpoint", () => {
+    const sub = extractDispatchSubsection(content, HEADING);
+    const lower = prose(sub);
+    expect(lower).toMatch(/never fail\s+server-side|does not enum-check|cannot catch them for you/);
+    expect(lower).toMatch(/checks 8 through 12/);
+    expect(lower).toMatch(/`?planmarkdown`? is never posted/);
+  });
+
+  it("on full validation success, hands tasks/planMarkdown/decisionLog to Step 6 exactly as the built-in path would", () => {
+    const section = extractMethodologyDispatchSection(content);
+    const idx = section.indexOf("#### Schema Validation");
+    const tail = section.slice(idx);
+    expect(tail).toContain("Step 6");
+    expect(tail).toContain("planMarkdown");
+    expect(tail).toContain("decisionLog");
+  });
+});
+
+/**
+ * The dispatch replaces Steps 2 through 5.5, which is where BOTH of the built-in path's
+ * interactive approval gates live (Step 4's "do not move to task breakdown until the design is
+ * approved" and Step 5's "iterate until approved"). Step 6 still opens on an approved
+ * breakdown, so without a gate re-established on the dispatch path an interactive run against
+ * a configured methodology would POST tasks and open a plan PR without the human ever seeing
+ * the breakdown.
+ */
+describe("plan-session.md — Configured Methodology Dispatch: interactive approval gate (PSM-1.2)", () => {
+  const HEADING = "#### Interactive Approval";
+
+  it("has an Interactive Approval subsection, placed after the schema gate so invalid output is never presented for approval", () => {
+    const section = extractMethodologyDispatchSection(content);
+    const schemaIdx = section.indexOf("#### Schema Validation");
+    const approvalIdx = section.indexOf(HEADING);
+    expect(schemaIdx).toBeGreaterThan(-1);
+    expect(approvalIdx).toBeGreaterThan(schemaIdx);
+  });
+
+  it("names the built-in approval gates the dispatch replaced", () => {
+    const sub = extractDispatchSubsection(content, HEADING);
+    expect(sub).toContain("Step 4");
+    expect(sub).toContain("Step 5");
+    expect(prose(sub)).toContain("iterate until approved");
+  });
+
+  it("interactively, blocks Step 6 on explicit human approval of the returned breakdown", () => {
+    const sub = extractDispatchSubsection(content, HEADING);
+    const lower = prose(sub);
+    expect(lower).toContain("interactive");
+    expect(lower).toMatch(/do not proceed to step 6 on the first response/);
+    expect(lower).toMatch(/ask for approval explicitly/);
+    expect(lower).toMatch(/until (the human )?approve/);
+    expect(lower).toMatch(/nothing is written to disk and nothing is posted/);
+  });
+
+  it("explains why the caller owns the iterate-with-the-human loop rather than the subagent", () => {
+    const sub = extractDispatchSubsection(content, HEADING);
+    expect(sub).toContain("run_in_background: false");
+    const lower = prose(sub);
+    expect(lower).toMatch(/no channel back to the user/);
+  });
+
+  it("re-dispatches with the human's feedback and re-validates, without consuming the malformed-response retry budget", () => {
+    const sub = extractDispatchSubsection(content, HEADING);
+    expect(sub).toContain("PLAN_SESSION_SUBAGENT_TYPE");
+    const lower = prose(sub);
+    expect(lower).toMatch(/re-?dispatch/);
+    expect(lower).toMatch(/re-?run schema validation/);
+    expect(lower).toMatch(/not a retry|does not consume .*retry budget/);
+  });
+
+  it("under --autonomous there is no gate, matching Step 4/5's accept-first-pass", () => {
+    const sub = extractDispatchSubsection(content, HEADING);
+    expect(sub).toContain("--autonomous");
+    expect(prose(sub)).toContain("accept-first-pass");
+    expect(prose(sub)).toMatch(/no approval gate/);
+  });
+});
+
+describe("plan-session.md — Step 6 is path-agnostic (PSM-1.2)", () => {
+  function extractStep6Preamble(md: string): string {
+    const idx = md.indexOf("## Step 6: Write to Queue");
+    const bundleIdx = md.indexOf("### Bundle Model Inheritance (Pre-Write)");
+    expect(idx).toBeGreaterThan(-1);
+    expect(bundleIdx).toBeGreaterThan(idx);
+    return md.slice(idx, bundleIdx);
+  }
+
+  function extractStep6aSection(md: string): string {
+    const idx = md.indexOf("**Step 6a — Save the plan to disk:**");
+    const bIdx = md.indexOf("**Step 6b — Write tasks to the store:**");
+    expect(idx).toBeGreaterThan(-1);
+    expect(bIdx).toBeGreaterThan(idx);
+    return md.slice(idx, bIdx);
+  }
+
+  it("notes Step 6 runs identically whether the breakdown came from the built-in steps or the configured dispatch", () => {
+    const preamble = extractStep6Preamble(content);
+    expect(preamble).toContain("Steps 2 through 5.5");
+    expect(preamble).toContain("Configured Methodology Dispatch");
+    expect(preamble.toLowerCase()).toMatch(/identical|unchanged|either way/);
+  });
+
+  it("states the breakdown reaching Step 6 is already approved on every path, satisfying its own precondition", () => {
+    const preamble = extractStep6Preamble(content);
+    const lower = prose(preamble);
+    expect(lower).toContain("already approved");
+    expect(lower).toContain("interactive approval");
+    expect(lower).toContain("accept-first-pass");
+  });
+
+  /**
+   * The "path-agnostic" claim can't be prose-only: Step 6a's and Step 6b's own bodies
+   * referenced Steps 4-5 / Step 5.5, both skipped on the dispatch path.
+   */
+  it("tells the reader to read Steps 4-5 / Step 5.5 references as whichever path produced the breakdown", () => {
+    const preamble = extractStep6Preamble(content);
+    expect(preamble).toContain("Steps 4-5");
+    expect(preamble).toContain("Step 5.5");
+    expect(prose(preamble)).toContain("whichever path produced this breakdown");
+    expect(prose(preamble)).toMatch(/rather than re-deriving/);
+  });
+
+  it("Step 6a writes the plan markdown verbatim and forbids re-synthesizing it from the task list", () => {
+    const step6a = extractStep6aSection(content);
+    expect(step6a).toContain("verbatim");
+    expect(step6a).toContain("planMarkdown");
+    expect(prose(step6a)).toContain("do not re-synthesize");
+    expect(step6a).toContain("Steps 4–5");
+    expect(step6a).toContain("Configured Methodology Dispatch");
+  });
+
+  it("Step 6b's hitl instruction is source-neutral — the dispatch path's flags are written through, not re-detected", () => {
+    const section = extractStep6bSection(content);
+    expect(section).toContain('Set `"hitl": true`');
+    expect(section).toContain("Step 5.5");
+    expect(section).toContain("Configured Methodology Dispatch");
+    const lower = prose(section);
+    expect(lower).toMatch(/writes the flag through as received/);
+    expect(lower).toMatch(/does not re-run step 5\.5/);
+  });
+
+  /**
+   * Writing `hitl` through unvalidated is only safe because the dispatch section's Schema
+   * Validation gate already checked it — Step 6b should say so, so a future edit that drops the
+   * gate check doesn't leave this write-through silently unguarded.
+   */
+  it("Step 6b points at the Schema Validation gate as what makes the hitl write-through safe", () => {
+    const section = extractStep6bSection(content);
+    expect(section).toContain("Schema Validation");
+    expect(section).toContain("## Human steps");
+    expect(prose(section)).toMatch(/check 12/);
+  });
+
+  /**
+   * Per the contract the Decision Log is already embedded inside `planMarkdown`, so Step 6
+   * has no separate consumer for `decisionLog[]` — saying it "writes" the array invites a
+   * duplicated Decision Log section in PLAN.md.
+   */
+  it("clarifies decisionLog[] is already inside planMarkdown, so Step 6 must not append a second Decision Log", () => {
+    const section = extractMethodologyDispatchSection(content);
+    const idx = section.indexOf("#### Interactive Approval");
+    expect(idx).toBeGreaterThan(-1);
+    const closing = section.slice(idx);
+    expect(closing).toContain("decisionLog");
+    expect(closing).toContain("## Decision Log");
+    const lower = prose(closing);
+    expect(lower).toMatch(/already embedded inside/);
+    expect(lower).toMatch(/do not append a second decision log/);
+    expect(lower).toContain("verbatim");
+  });
+});
+
+/**
  * No-target guard (PDR-4.1).
  *
  * `docs/agent-ops.md` and `site/src/content/docs/cron-jobs.mdx` both promise that a
