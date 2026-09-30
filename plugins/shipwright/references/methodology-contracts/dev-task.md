@@ -14,15 +14,15 @@ delegated. A drop-in replacement for the built-in implementation subagent must a
 these inputs and return exactly this output shape — the caller has no other integration point
 and does no phase-specific adaptation.
 
-> **Subagent selection is not wired up yet.** A per-agent, per-phase `AgentPhaseMethodology`
+> **Subagent selection is wired up (DTM-1.2).** A per-agent, per-phase `AgentPhaseMethodology`
 > record (`{phase, subagentType | null}`, with `dev-task` as a valid phase key) exists as a
-> Prisma model plus CRUD service in `admin/src/agent-phase-methodology.ts` — but **no
-> dispatcher reads it today**: a repo-wide search of `agent/` and `plugins/` turns up no
-> consumer. The built-in path always dispatches a `general-purpose` subagent, hardcoded at
-> `commands/dev-task.md`'s Step 5b dispatch site. This contract is therefore specified for
-> forward compatibility — it is the shape a swapped-in subagent would have to satisfy once
-> selection is actually wired up, not a description of a selection mechanism the caller
-> performs today.
+> Prisma model plus CRUD service in `admin/src/agent-phase-methodology.ts`.
+> `commands/dev-task.md`'s Step 5a.5 reads `phaseMethodology["dev-task"]` off
+> `GET /agents/{id}/config` once per run and resolves `DEV_TASK_SUBAGENT_TYPE` — falling back
+> to the built-in `general-purpose` when no override is configured, or on any lookup failure
+> (fail-closed, never fail-open). Step 5b dispatches `DEV_TASK_SUBAGENT_TYPE` instead of a
+> hardcoded literal. This contract specifies the wire shape any subagent plugged in this way
+> — built-in or operator-configured — must satisfy.
 
 `plugins/shipwright/commands/dev-task.md`'s Step 5 (5a through 5d) is the **reference
 implementation** this contract was extracted from — TDD red-green-refactor enforcement,

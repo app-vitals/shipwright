@@ -486,6 +486,38 @@ Before dispatching:
 1. Read `CLAUDE.md` at project root (pass full contents to subagent)
 2. Glob the worktree to identify the files most likely relevant to the task
 
+### 5a.5. Resolve the Configured Dev-Task-Phase Subagent (DTM-1.2)
+
+Runs once here, same fail-soft, best-effort shape as `patch.md`'s Step 2.2 and `review.md`'s
+subagent-resolution lookup — any failure leaves `DEV_TASK_SUBAGENT_TYPE` at its built-in
+default, never a hard stop. Fetches the agent's configured phase-methodology override for the
+dev-task phase (PMC-1.1) off the same `GET /agents/{id}/config` endpoint `patch.md`'s Step 1
+uses for `patchAuthorAllowlist` and `review.md`'s equivalent lookup uses for its own
+review-phase resolution — same endpoint, same auth header, just a different field.
+`dev-task` contains a hyphen, so the phase key must be addressed with jq bracket notation —
+`.phaseMethodology["dev-task"]` — a bare dotted lookup is not valid jq syntax for a
+hyphenated key:
+
+```bash
+DEV_TASK_SUBAGENT_TYPE=$(curl -sf -H "Authorization: Bearer $SHIPWRIGHT_AGENT_API_KEY" \
+  "$SHIPWRIGHT_API_URL/agents/$SHIPWRIGHT_AGENT_ID/config" | jq -r '.phaseMethodology["dev-task"] // "general-purpose"')
+DEV_TASK_SUBAGENT_TYPE=${DEV_TASK_SUBAGENT_TYPE:-general-purpose}
+```
+
+**Fail-closed, not fail-open.** On any curl failure (the `${...:-general-purpose}` default
+covers the case where the pipeline emits nothing) or when `.phaseMethodology["dev-task"]` is
+absent or `null` (the jq `//` default covers this), `DEV_TASK_SUBAGENT_TYPE` resolves to the
+built-in `general-purpose` — identical to today's hardcoded dispatch at Step 5b. With no
+config set, dev-task behaves identically to today.
+
+Step 5b below dispatches whichever `subagent_type` this resolves to, per
+`references/methodology-contracts/dev-task.md`'s (DTM-1.1) wire shape — any compliant
+subagent, built-in or custom, accepts the same Implementation Brief / repo-context / TDD
+inputs and returns the same STATUS/CONCERNS/BLOCKER report, so Step 5c's status handling and
+everything from Step 6 onward (Simplify, Spec Compliance Check, Docs Refresh, the CI-fix
+loop) apply unchanged regardless of which one was dispatched: those four steps are not
+swappable or bypassable per DTM-1.1.
+
 ### 5b. Dispatch Implementation Subagent
 
 Renew the claim heartbeat now, before dispatching — implementation is the widest-duration
@@ -498,7 +530,14 @@ curl -s -o /dev/null -X POST \
   "$SHIPWRIGHT_TASK_STORE_URL/tasks/{id}/heartbeat"
 ```
 
-Dispatch a `general-purpose` subagent with this prompt (fill in all `{placeholders}` from context already collected). Pass `model: task.model ?? 'sonnet'` and `run_in_background: false` to the Agent() call so tasks can opt into a different model tier and this step blocks until the subagent finishes. At dispatch time, set `EFFECTIVE_MODEL = task.model ?? 'sonnet'` — this variable tracks the model the implementation subagent actually runs on, and is written back to the task store as `model` in Step 10a.
+Dispatch a `DEV_TASK_SUBAGENT_TYPE` subagent via the Agent tool (resolved in Step 5a.5 — the
+built-in `general-purpose` by default, or an operator-configured override) with this prompt
+(fill in all `{placeholders}` from context already collected). Pass `model: task.model ??
+'sonnet'`, `subagent_type: DEV_TASK_SUBAGENT_TYPE`, and `run_in_background: false` to the
+Agent() call so tasks can opt into a different model tier and this step blocks until the
+subagent finishes. At dispatch time, set `EFFECTIVE_MODEL = task.model ?? 'sonnet'` — this
+variable tracks the model the implementation subagent actually runs on, and is written back
+to the task store as `model` in Step 10a.
 
 ```
 You are implementing a feature task. Follow TDD (red-green-refactor) strictly — write failing tests BEFORE writing implementation code.
@@ -569,6 +608,40 @@ BLOCKER:  {if BLOCKED: describe what is blocking you}
 ```
 
 ### 5c. Handle Subagent Status
+
+#### Unparseable or Failed Dispatch (DTM-1.2)
+
+If the Agent tool dispatch itself fails (errors, or `DEV_TASK_SUBAGENT_TYPE` names an
+invalid/nonexistent `subagent_type` from a misconfigured override), or the subagent's
+response contains no parseable `STATUS:` line, retry once with the same
+`DEV_TASK_SUBAGENT_TYPE`. The retry re-dispatches Step 5b's exact same prompt unchanged.
+
+If the retry also fails to produce a parseable STATUS, branch on what
+`DEV_TASK_SUBAGENT_TYPE` resolved to:
+
+- **Built-in default** (`DEV_TASK_SUBAGENT_TYPE` is `general-purpose` — no override
+  configured, or the override resolved to the built-in name): treat it identically to a
+  `BLOCKED` report — with "no parseable status after retry" standing in for the subagent's
+  own blocker text — and fall into the existing model-escalation ladder in the `BLOCKED`
+  bullet below (haiku → sonnet → opus), unchanged.
+- **Configured override** (`DEV_TASK_SUBAGENT_TYPE` is a non-default, operator-configured
+  `subagent_type`): do not escalate yet — dispatch the built-in `general-purpose` subagent
+  fresh, with Step 5b's same prompt, as the safety net that guarantees the pipeline always
+  produces a valid response. Print a one-line note that the configured subagent
+  `{DEV_TASK_SUBAGENT_TYPE}` failed after retry and the built-in implementer was used as a
+  fallback. If that fresh built-in dispatch also fails to produce a parseable STATUS, retry
+  it once more — the same single-retry-before-terminal treatment the configured override
+  itself already received above, so the built-in safety net isn't held to a laxer bar than
+  the override it's standing in for. Only if that second built-in attempt also fails to
+  produce a parseable STATUS does this fall into the `BLOCKED` bullet's existing
+  model-escalation ladder below, exactly as the built-in-default branch does.
+
+Step 5c must end with SOME valid parsed response before proceeding to Step 6 — never leave
+this step without one. A hanging or unparsed status report would otherwise leave Step 5d's
+claim-heartbeat renewal, and everything from Step 6 onward, waiting on a dispatch that never
+resolves. This mirrors `patch.md`'s Step 2.2 (PTM-1.2) and `review.md`'s Step 7 (RVM-1.2)
+malformed/failed response handling — the same retry-once-before-terminal shape applied here
+to a free-text STATUS report instead of JSON.
 
 Parse the subagent's STATUS report:
 
