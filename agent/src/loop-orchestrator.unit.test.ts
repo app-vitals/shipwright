@@ -29,19 +29,19 @@ import type {
 } from "./cron-run-reporter.ts";
 import type { CronJobLike } from "./loop-cron-classifier.ts";
 import {
-  type LoopOrchestratorDeps,
-  type LoopOrchestratorProductionOptions,
   buildClaimPrRequest,
   createLoopOrchestrator,
   createLoopOrchestratorGetter,
   formatPreClaimMarker,
+  type LoopOrchestratorDeps,
+  type LoopOrchestratorProductionOptions,
 } from "./loop-orchestrator.ts";
 import type { WorkQueueReporter } from "./work-queue-reporter.ts";
 import {
   type RankedWorkItem,
+  rankWorkItems,
   type WorkPrCandidate,
   type WorkTaskCandidate,
-  rankWorkItems,
 } from "./work-selector.ts";
 
 // ─── Stub reporter ──────────────────────────────────────────────────────────
@@ -4957,5 +4957,41 @@ describe("buildClaimPrRequest", () => {
 
     expect(request.phase).toBe("deploy");
     expect(request.authorLogin).toBe("bodhi-agent");
+  });
+
+  // POF-1.2: mirrors the authorLogin/headRefName/title forwarding above for
+  // the three new is_bot/label signals check-review.ts now sets on
+  // WorkPrCandidate — this is the pure function that actually forwards them
+  // into the claimPr() wrapper's outbound request.
+  test("forwards authorIsBot/hasAutomatedLabel/hasShipwrightLabel from the candidate (POF-1.2)", () => {
+    const candidate = pr("acme/x#9", "2026-01-01T00:00:00Z", "review", {
+      authorIsBot: true,
+      hasAutomatedLabel: false,
+      hasShipwrightLabel: true,
+    });
+
+    const request = buildClaimPrRequest(candidate, {
+      repo: "acme/x",
+      prNumber: 9,
+    });
+
+    expect(request).toMatchObject({
+      authorIsBot: true,
+      hasAutomatedLabel: false,
+      hasShipwrightLabel: true,
+    });
+  });
+
+  test("leaves authorIsBot/hasAutomatedLabel/hasShipwrightLabel undefined when absent from the candidate (POF-1.2)", () => {
+    const candidate = pr("acme/x#9", "2026-01-01T00:00:00Z", "review");
+
+    const request = buildClaimPrRequest(candidate, {
+      repo: "acme/x",
+      prNumber: 9,
+    });
+
+    expect(request.authorIsBot).toBeUndefined();
+    expect(request.hasAutomatedLabel).toBeUndefined();
+    expect(request.hasShipwrightLabel).toBeUndefined();
   });
 });

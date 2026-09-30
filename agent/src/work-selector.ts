@@ -74,6 +74,26 @@ export interface WorkPrCandidate {
    * HTTP boundary in check-helpers.ts's claimPr().
    */
   headRefName?: string;
+  /**
+   * True when the PR author is a bot per the GitHub client's `is_bot` field
+   * (POF-1.1/POF-1.2) — forwarded by loop-orchestrator's claimPr wrapper to
+   * POST /prs/claim alongside authorLogin/headRefName so the task-store can
+   * derive `origin` server-side ahead of the legacy login-string matching.
+   * Mirrors task-store's POF-1.1 `DeriveOriginInput.authorIsBot`.
+   */
+  authorIsBot?: boolean;
+  /**
+   * True when the PR carries a label indicating CI/automation opened it
+   * (POF-1.1/POF-1.2) — forwarded alongside authorIsBot. Mirrors
+   * task-store's POF-1.1 `DeriveOriginInput.hasAutomatedLabel`.
+   */
+  hasAutomatedLabel?: boolean;
+  /**
+   * True when the PR carries a label indicating Shipwright itself opened it
+   * (POF-1.1/POF-1.2) — forwarded alongside authorIsBot. Mirrors
+   * task-store's POF-1.1 `DeriveOriginInput.hasShipwrightLabel`.
+   */
+  hasShipwrightLabel?: boolean;
   commitSha: string;
 }
 

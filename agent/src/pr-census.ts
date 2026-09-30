@@ -77,6 +77,17 @@ export interface ClassifyPrOriginInput {
   authorLogin: string | null | undefined;
   headRefName: string | null | undefined;
   hasTaskRowMatch: boolean;
+  /**
+   * True when the caller's GitHub client (e.g. `gh pr list --json author`)
+   * reports `is_bot: true` for the PR author. Checked ahead of the legacy
+   * login-string matching below (POF-1.2, mirroring task-store's POF-1.1
+   * `deriveOrigin()`).
+   */
+  authorIsBot?: boolean;
+  /** True when the PR carries a label indicating CI/automation opened it (POF-1.2). */
+  hasAutomatedLabel?: boolean;
+  /** True when the PR carries a label indicating Shipwright itself opened it (POF-1.2). */
+  hasShipwrightLabel?: boolean;
 }
 
 /**
@@ -88,23 +99,71 @@ export interface ClassifyPrOriginInput {
 const CI_BRANCH_PATTERN = /^chore\/(chart|plugin-version)-v/;
 
 /**
- * Pure origin classifier — first match wins, NO label arm (the
- * GitHub-label approach was explicitly rejected; task-row match already
- * covers shipwright's own PRs without it). Precedence:
+ * Matches known Renovate/Dependabot login spellings regardless of how the
+ * caller's GitHub client normalized the author: the classic bot-suffixed
+ * login (`renovate[bot]`), gh's `app/<slug>` normalization (`app/renovate`),
+ * or the bare slug — case-insensitively. Mirrors
+ * task-store/src/pr-origin-derivation.ts's `DEPENDENCY_BOT_LOGIN_PATTERN`
+ * exactly (POF-1.2).
+ */
+const DEPENDENCY_BOT_LOGIN_PATTERN =
+  /^(app\/)?(renovate|dependabot)(\[bot\])?$/i;
+
+function isDependencyBotLogin(authorLogin: string | null | undefined): boolean {
+  return (
+    typeof authorLogin === "string" &&
+    DEPENDENCY_BOT_LOGIN_PATTERN.test(authorLogin)
+  );
+}
+
+/**
+ * Pure origin classifier — first match wins. Precedence (mirrors
+ * task-store/src/pr-origin-derivation.ts's `deriveOrigin()` exactly, POF-1.2):
  *
- *   shipwright -> ci -> dependency_bot -> human -> unknown
+ *   1. hasTaskRowMatch OR hasShipwrightLabel                       -> "shipwright"
+ *   2. authorIsBot true AND authorLogin matches a known
+ *      Renovate/Dependabot identity (any login spelling, e.g.
+ *      "renovate[bot]" or gh's normalized "app/renovate")          -> "dependency_bot"
+ *   3. authorIsBot true (any other bot identity)                   -> "ci"
+ *   4. hasAutomatedLabel                                           -> "ci"
+ *   5. authorLogin === "github-actions[bot]" OR headRefName
+ *      matches CI_BRANCH_PATTERN                                   -> "ci"
+ *   6. authorLogin === "renovate[bot]" OR "dependabot[bot]"        -> "dependency_bot"
+ *   7. authorLogin is a non-empty string                           -> "human"
+ *   8. otherwise                                                   -> "unknown"
  *
- * A task-row match (a direct DB join) is checked first and takes precedence
- * over an author login or branch name that would otherwise say `ci` or
- * `dependency_bot` — a task-store row is a more trustworthy signal than
- * inferring origin from author login/branch name, which could theoretically
- * collide (e.g. a bot re-authoring a shipwright-tracked PR). `unknown` is
- * reached only when `authorLogin` is missing/null AND nothing else matched.
+ * A task-row match (a direct DB join) or a Shipwright-applied label is
+ * checked first and takes precedence over any other signal — even one that
+ * would otherwise say `ci` or `dependency_bot` — a task-store row (or a
+ * shipwright-applied label) is a more trustworthy signal than inferring
+ * origin from author login/branch name, which could theoretically collide
+ * (e.g. a bot re-authoring a shipwright-tracked PR). `unknown` is reached
+ * only when `authorLogin` is missing/null AND nothing else matched.
+ *
+ * Steps 2–4 (authorIsBot / hasAutomatedLabel, POF-1.2) exist because `gh pr
+ * list --json author` normalizes bot authors to `app/<slug>` (e.g.
+ * `app/renovate`) while separately reporting `is_bot: true` on the same
+ * object — the literal login-string checks in steps 5–6 can never match what
+ * `gh` actually sends for a bot author, so those checks remain purely as
+ * fallback disambiguation for callers that don't supply the newer signals.
  */
 export function classifyPrOrigin(input: ClassifyPrOriginInput): PrOrigin {
-  const { authorLogin, headRefName, hasTaskRowMatch } = input;
+  const {
+    authorLogin,
+    headRefName,
+    hasTaskRowMatch,
+    authorIsBot,
+    hasAutomatedLabel,
+    hasShipwrightLabel,
+  } = input;
 
-  if (hasTaskRowMatch) return "shipwright";
+  if (hasTaskRowMatch || hasShipwrightLabel) return "shipwright";
+
+  if (authorIsBot) {
+    return isDependencyBotLogin(authorLogin) ? "dependency_bot" : "ci";
+  }
+
+  if (hasAutomatedLabel) return "ci";
 
   if (
     authorLogin === "github-actions[bot]" ||
@@ -124,14 +183,28 @@ export function classifyPrOrigin(input: ClassifyPrOriginInput): PrOrigin {
   return "unknown";
 }
 
-/** Shape of one `gh pr list --json number,title,author,headRefName,createdAt,mergedAt,commits` result. */
+/** Shape of one `gh pr list --json number,title,author,headRefName,createdAt,mergedAt,commits,labels` result. */
 export interface GhCensusPr {
   number: number;
   title: string | null;
-  author: { login: string | null } | null;
+  /**
+   * `is_bot` is returned by `gh` for free whenever `author` is requested —
+   * no extra `--json` field needed (POF-1.2). Checked ahead of the legacy
+   * login-string matching in `classifyPrOrigin()`.
+   */
+  author: { login: string | null; is_bot?: boolean } | null;
   headRefName: string | null;
   createdAt: string | null;
   mergedAt: string | null;
+  /**
+   * Requested via the `labels` `--json` field (POF-1.2), mirroring
+   * check-review.ts's `PrInfo.labels`. Used to detect the "automated" and
+   * "shipwright" labels that feed `classifyPrOrigin()`'s
+   * `hasAutomatedLabel`/`hasShipwrightLabel` inputs. Optional (not required
+   * like `commits` below) — a missing/empty array is simply treated as "no
+   * labels" by `buildCensusEntry()`.
+   */
+  labels?: { name: string }[];
   /**
    * REQUIRED, deliberately: every `GhCensusPr` producer must request
    * `commits` in its own `gh pr list --json` field list (this file's
@@ -330,10 +403,17 @@ export function buildCensusEntry(
   const authorLogin = pr.author?.login ?? null;
   const matchedTask = tasksByPr.get(pr.number);
   const hasTaskRowMatch = matchedTask !== undefined;
+  const hasAutomatedLabel =
+    pr.labels?.some((l) => l.name === "automated") ?? false;
+  const hasShipwrightLabel =
+    pr.labels?.some((l) => l.name === "shipwright") ?? false;
   const origin = classifyPrOrigin({
     authorLogin,
     headRefName: pr.headRefName,
     hasTaskRowMatch,
+    authorIsBot: pr.author?.is_bot,
+    hasAutomatedLabel,
+    hasShipwrightLabel,
   });
 
   const commits = pr.commits ?? [];
@@ -393,7 +473,7 @@ async function processRepoCensus(
     "--search",
     `merged:>=${cursor}`,
     "--json",
-    "number,title,author,headRefName,createdAt,mergedAt,commits",
+    "number,title,author,headRefName,createdAt,mergedAt,commits,labels",
     "--repo",
     repo,
   ]);
