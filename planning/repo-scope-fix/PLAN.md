@@ -60,8 +60,29 @@ update `entropy-scan/SKILL.md` and `security-scan/SKILL.md` to consume a prechec
 repo list the way `research-docs.md` Step A0 already does, falling back to today's
 single-repo (`git remote get-url origin`) behavior only for manual invocation.
 
+### Auto-cloning newly-configured repos (the other direction)
+
+**Group D — `agent/src/index.ts`'s `syncConfig()`.** Groups A-C all gate *acting* on a repo by
+whether it's in the agent's configured scope. The reverse gap also exists: `syncConfig()`
+(runs every 60s) only does `agentReposRef.set(bundle.repos)` — it updates the in-memory scope
+list but never clones anything. Today, adding a repo to an agent's config does nothing until
+a human manually clones it, even though `scripts/lib/clone-plan.ts`'s `computeMissingClones()`
+already does exactly this planning (pure, already unit-tested) for the manual
+`agent-workspace-pull` CLI and `hitl.ts` — it's just never wired into the deployed agent's own
+runtime loop.
+
+**Fix:** right after `agentReposRef.set(bundle.repos)`, reuse `computeMissingClones()` against
+the real `repos/` dir and `gh repo clone` any repo that's configured but not yet on disk,
+mirroring `agent-workspace-pull.ts`'s existing (manual-only) clone pattern. Kept simple per
+explicit decision: runs inline/blocking within the sync tick, not backgrounded. A clone
+failure (auth hiccup, rate limit, invalid repo) is logged and non-fatal — it's retried
+automatically on the next tick since the repo still shows up as missing.
+
 ## Decisions
 
+- **Keep the auto-clone step simple.** `syncConfig()`'s new clone step runs inline and
+  blocking within the sync tick rather than backgrounded — new repos are added rarely, so a
+  one-time clone delaying that tick's env/plugin/tool sync is an acceptable, simple tradeoff.
 - **Always fail closed.** Every point in this design that can't confirm the agent's actual
   configured scope — Group A's `getScopedRepos()` intersection, Group B/C's config-API
   resolver — treats "scope unknown" as "zero repos in scope," never as "act on whatever's
@@ -82,6 +103,7 @@ single-repo (`git remote get-url origin`) behavior only for manual invocation.
 | RSF-2.2 | Wire docs-freshness / test-readiness prechecks to the new resolver | Background | 2 | 3 | sonnet | |
 | RSF-2.3 | Update prose fallbacks in research-docs.md and test-readiness/SKILL.md | Shared | 2 | 3 | sonnet | |
 | RSF-3.1 | Scope entropy/security patrol crons to configured repos | Background | 4 | 4 | sonnet | |
+| RSF-4.1 | Auto-clone newly-configured repos on config sync | Background | 3 | 3 | sonnet | |
 
 ### RSF-1.1 — Scope patch/review/deploy candidate checks to configured repos, fail closed
 
@@ -182,11 +204,37 @@ Acceptance criteria:
 Dependencies: RSF-2.1. Branch: `feat/rsf-3-1-patrol-cron-scoping`. Safe to deploy
 standalone: yes.
 
+### RSF-4.1 — Auto-clone newly-configured repos on config sync
+
+Right after `agentReposRef.set(bundle.repos)` in `agent/src/index.ts`'s `syncConfig()`, reuse
+`scripts/lib/clone-plan.ts`'s `computeMissingClones()` against the real workspace `repos/`
+dir, and `gh repo clone` any repo that's configured but not yet cloned locally — mirroring
+`scripts/agent-workspace-pull.ts`'s existing (manual-only) clone pattern. Runs inline/blocking
+within the sync tick, kept simple per decision above.
+
+Acceptance criteria:
+- On every successful config sync, any repo present in `bundle.repos` but absent from the
+  local `repos/` dir is cloned automatically via `gh repo clone`.
+- A clone failure (auth, rate limit, invalid repo) is logged and does not crash `syncConfig`
+  or block subsequent ticks — it is naturally retried next tick since the repo remains
+  "missing."
+- Already-present repos are left untouched — reuses `computeMissingClones()`'s existing
+  skip-if-exists logic rather than re-implementing it.
+- Test decision: new unit test cases covering `syncConfig`'s clone step, with injected
+  `exists`/`cloneRepo` doubles, asserting: a newly-added repo triggers a clone call with the
+  correct destination path; an already-present repo triggers no clone call; a clone failure
+  is caught and logged without throwing.
+
+Dependencies: none (independent of Groups A-C — this is the reverse direction of the same
+repo/config mismatch). Branch: `feat/rsf-4-1-auto-clone-configured-repos`. Safe to deploy
+standalone: yes.
+
 ## Dependency Map
 
 ```
 [START]
   ├─ RSF-1.1 (no deps)
+  ├─ RSF-4.1 (no deps)
   └─ RSF-2.1 (no deps)
         ├─ RSF-2.2 (needs 2.1)
         ├─ RSF-2.3 (needs 2.1)
@@ -200,14 +248,16 @@ RSF-2.1 | —          | 2.2, 2.3, 3.1 |
 RSF-2.2 | 2.1        | —             |
 RSF-2.3 | 2.1        | —             |
 RSF-3.1 | 2.1        | —             |
+RSF-4.1 | —          | —             |
 ```
 
 ## Breaking Change Safety
 
 No renames or removals of any externally-consumed interface. `hasScopeSynced` removal in
 RSF-1.1 is internal to `check-patch.ts`/`check-review.ts`/`check-deploy.ts` and their own
-tests only (confirmed via grep — no other caller references it). All 5 tasks: safe to deploy
-standalone.
+tests only (confirmed via grep — no other caller references it). RSF-4.1 is purely additive
+(a new step inside an existing function, reusing an existing pure helper). All 6 tasks: safe
+to deploy standalone.
 
 ## HITL Scan
 
