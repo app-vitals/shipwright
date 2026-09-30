@@ -118,12 +118,13 @@ census sweep uses to avoid re-scanning the same PRs every run.
 `GET /prs` accepts `?origin=shipwright,ci` (comma-separated) to filter by any of the given values.
 
 **Known gap:** a PR that never goes through the `pr_open` transition, `POST /prs/claim`, or the
-census sweep has no PullRequest row at all, and therefore no `origin`. In practice this now only
-affects `deploy.md`'s canary-revert PR: it never transitions a task to `pr_open` and never calls
-`/prs/claim`, but it IS a merged PR like any other, so POM-4.1's census sweep classifies it
-(typically `human`, via author login) once it merges. A canary-revert PR that already merged
-before POM-4.1 shipped stays `origin=null` (`unknown`) permanently — historical backfill is out of
-scope.
+census sweep has no PullRequest row at all, and therefore no `origin`. As of POF-3.1, this gap
+has been closed for `deploy.md`'s canary-revert PR: immediately after `gh pr create` succeeds,
+Step 6 calls `POST /prs/census` directly with `origin: "shipwright"` and `state: "open"` to
+stamp the revert PR at creation time, avoiding any reliance on the census sweep to classify it.
+Older canary-revert PRs that merged before POF-3.1 shipped may have `origin=null` (`unknown`),
+though the census sweep will eventually backfill them as `human` (via author login) once it runs.
+Historical backfill via a one-time script remains out of scope.
 
 ### Verification checks
 
