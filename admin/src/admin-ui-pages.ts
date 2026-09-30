@@ -1185,6 +1185,33 @@ function renderConnectAction(
         </details>`;
 }
 
+/**
+ * Renders one collapsible accordion section on the agent detail page
+ * (AGA-1.1) — a `<details class="group">` wrapping a fixed subset of the
+ * page's existing cards. Always renders collapsed (no `open` attribute),
+ * including when `agent.missingRequiredEnv` is non-empty — there is no
+ * auto-open behavior for any group.
+ *
+ * `stat` is a short, pre-formatted, trusted (non-user-controlled) string
+ * (e.g. "5 system · 7 custom") rendered flush-right in the summary row.
+ * `name` (also trusted/static) is the group title, rendered flush-left.
+ * The toggle indicator (▸/▾) is a `::before` on the `.group-title` span
+ * itself — NOT on the flex `.group-summary` — so it stays part of that one
+ * flex child instead of becoming its own third flex item, which would break
+ * the flush-left/flush-right 2-sided layout into an uneven 3-way split.
+ */
+function renderGroup(name: string, stat: string, bodyHtml: string): string {
+  return `<details class="group">
+      <summary class="group-summary">
+        <span class="group-title">${name}</span>
+        <span class="group-sub">${stat}</span>
+      </summary>
+      <div class="group-body">
+        ${bodyHtml}
+      </div>
+    </details>`;
+}
+
 export function renderAgentDetailPage(
   agent: AgentDetail,
   envResult:
@@ -1611,50 +1638,8 @@ export function renderAgentDetailPage(
     opts?.verificationActivity,
   );
 
-  return renderAdminPage({
-    title: `${agent.name} — Shipwright Admin`,
-    body: `${renderAdminToolbar(userName, "/admin/agents")}
-  <div class="vos-page">
-    <div class="page-header">
-      <div>
-        <a href="/admin/agents" style="font-size:13px;color:#6b7280;text-decoration:none">← Agents</a>
-        <h1 class="page-title" style="margin-top:4px">${escapeHtml(agent.name)}</h1>
-        <span style="font-size:13px;color:#6b7280">Type: <span class="mono">${escapeHtml(agent.typeName)}</span></span>
-        ${agent.slackId ? `<span style="font-size:13px;color:#6b7280">Slack ID: <span class="mono">${escapeHtml(agent.slackId)}</span></span>` : ""}
-      </div>
-      ${
-        agent.slackId
-          ? `<div>
-        <details>
-          <summary class="btn btn-secondary" style="cursor:pointer;font-size:12px;list-style:none">Sync Manifest</summary>
-          <div style="position:absolute;right:24px;margin-top:6px;background:#fff;border:1px solid #e5e7eb;border-radius:6px;padding:12px;box-shadow:0 4px 12px rgba(0,0,0,0.08);z-index:10;min-width:320px">
-            <p style="font-size:12px;color:#6b7280;margin:0 0 10px">Syncs the current manifest to the provisioned Slack app. Requires a Slack app configuration token (<span class="mono">xoxe.xoxp-</span>).</p>
-            <form method="POST" action="/admin/agents/${escapeHtml(agent.id)}/sync-manifest" style="display:flex;flex-direction:column;gap:8px">
-              <input
-                name="xoxpToken"
-                type="password"
-                class="form-input mono"
-                placeholder="xoxe.xoxp-..."
-                required
-                style="font-size:12px"
-              />
-              <button type="submit" class="btn btn-primary" style="font-size:12px;align-self:flex-start">Confirm Sync</button>
-            </form>
-          </div>
-        </details>
-      </div>`
-          : ""
-      }
-    </div>
-    ${errorHtml}
-    ${successHtml}
-    ${warningHtml}
-    ${newTokenHtml}
-    ${verificationActivityHtml}
-
-    ${
-      !agent.selfHosted
-        ? `<div class="card" id="env-vars">
+  const envVarsSection = !agent.selfHosted
+    ? `<div class="card" id="env-vars">
       <div class="card-title">Env Vars</div>
       ${
         agent.missingRequiredEnv.length > 0
@@ -1695,10 +1680,9 @@ export function renderAgentDetailPage(
         </table>
       </div>
     </div>`
-        : ""
-    }
+    : "";
 
-    <div class="card">
+  const reposSection = `<div class="card">
       <div class="card-title">Repos</div>
       <form method="POST" action="/admin/agents/${escapeHtml(agent.id)}/repos/add" style="margin-bottom:16px">
         <div class="form-row">
@@ -1737,9 +1721,9 @@ export function renderAgentDetailPage(
           </tbody>
         </table>
       </div>
-    </div>
+    </div>`;
 
-    <div class="card">
+  const authorAllowlistReviewSection = `<div class="card">
       <div class="card-title">Author allowlist (review)</div>
       <form method="POST" action="/admin/agents/${escapeHtml(agent.id)}/review-author-allowlist/add" style="margin-bottom:16px">
         <div class="form-row">
@@ -1778,9 +1762,9 @@ export function renderAgentDetailPage(
           </tbody>
         </table>
       </div>
-    </div>
+    </div>`;
 
-    <div class="card">
+  const authorAllowlistPatchSection = `<div class="card">
       <div class="card-title">Author allowlist (patch)</div>
       <form method="POST" action="/admin/agents/${escapeHtml(agent.id)}/patch-author-allowlist/add" style="margin-bottom:16px">
         <div class="form-row">
@@ -1819,11 +1803,10 @@ export function renderAgentDetailPage(
           </tbody>
         </table>
       </div>
-    </div>
+    </div>`;
 
-    ${
-      isAdmin
-        ? `<div class="card">
+  const slackAccessSection = isAdmin
+    ? `<div class="card">
       <div class="card-title">Slack access</div>
       ${connectActionsHtml}
       <form method="POST" action="/admin/agents/${escapeHtml(agent.id)}/settings">
@@ -1852,10 +1835,9 @@ export function renderAgentDetailPage(
         <button type="submit" class="btn btn-primary">Save</button>
       </form>
     </div>`
-        : ""
-    }
+    : "";
 
-    <div class="card">
+  const cronJobsSection = `<div class="card">
       <div class="card-title">Cron Jobs</div>
 
       ${
@@ -1927,9 +1909,9 @@ export function renderAgentDetailPage(
           </table>
         </div>
       </div>
-    </div>
+    </div>`;
 
-    <div class="card">
+  const toolsSection = `<div class="card">
       <div class="card-title">Tools</div>
       <form method="POST" action="/admin/agents/${escapeHtml(agent.id)}/tools" style="margin-bottom:16px">
         <div class="form-row">
@@ -1954,9 +1936,9 @@ export function renderAgentDetailPage(
           </tbody>
         </table>
       </div>
-    </div>
+    </div>`;
 
-    <div class="card">
+  const tokensSection = `<div class="card">
       <div class="card-title">Task Store Tokens</div>
       <form method="POST" action="/admin/agents/${escapeHtml(agent.id)}/tokens" style="margin-bottom:16px">
         <div class="form-row">
@@ -1981,9 +1963,9 @@ export function renderAgentDetailPage(
           </tbody>
         </table>
       </div>
-    </div>
+    </div>`;
 
-    <div class="card">
+  const pluginsSection = `<div class="card">
       <div class="card-title">Plugins</div>
       <div class="data-table-wrapper">
         <table class="data-table">
@@ -2000,9 +1982,9 @@ export function renderAgentDetailPage(
           </tbody>
         </table>
       </div>
-    </div>
+    </div>`;
 
-    <div class="card">
+  const phaseMethodologySection = `<div class="card">
       <div class="card-title">Phase Methodology</div>
       <p style="font-size:12px;color:#6b7280;margin-bottom:12px">
         Override which subagent type handles each pipeline phase. Clear the field and Save to fall back to the default.
@@ -2021,9 +2003,9 @@ export function renderAgentDetailPage(
           </tbody>
         </table>
       </div>
-    </div>
+    </div>`;
 
-    <div class="card">
+  const agentPolicySection = `<div class="card">
       <div class="card-title">Agent Policy</div>
       <form method="POST" action="/admin/agents/${escapeHtml(agent.id)}/settings">
         <div class="form-group" style="display:flex;align-items:center;gap:6px">
@@ -2087,13 +2069,10 @@ export function renderAgentDetailPage(
         </div>
         <button type="submit" class="btn btn-primary">Save</button>
       </form>
-    </div>
+    </div>`;
 
-    ${isAdmin ? membersSection : ""}
-
-    ${
-      isAdmin
-        ? `<!-- Danger Zone -->
+  const dangerZoneSection = isAdmin
+    ? `<!-- Danger Zone -->
     <div class="card" style="border:1px solid #fca5a5">
       <div class="card-title" style="color:#dc2626">Danger Zone</div>
       <p style="font-size:13px;color:#6b7280;margin-bottom:16px">
@@ -2113,8 +2092,91 @@ export function renderAgentDetailPage(
         });
       </script>
     </div>`
-        : ""
-    }
+    : "";
+
+  // ─── Accordion groups (AGA-1.1) ────────────────────────────────────────
+  // The cards below are grouped into 4 collapsed-by-default
+  // <details class="group"> sections. Grouping is purely presentational —
+  // every card's internal markup/ids/form actions are unchanged, they're
+  // just composed into a new order. Phase Methodology and Agent Policy
+  // (added after this task was originally scoped) land in Configuration
+  // alongside Env Vars/Repos since both are agent-level configuration —
+  // this keeps every card inside exactly one of the 4 groups, with no
+  // stray bare cards besides Danger Zone.
+  const automationStat = `${systemCrons.length} system · ${customCrons.length} custom`;
+  const configurationStat = `${Object.keys(envVars).length} env vars · ${agent.repos.length} repos`;
+  const activeTokenCount = tokens.filter((t) => !t.revokedAt).length;
+  const accessStat = `${members.length} members · ${activeTokenCount} active tokens`;
+  const pluginsToolsStat = `${tools.length} tools · ${plugins.length} plugins`;
+
+  const automationGroup = renderGroup(
+    "Automation",
+    automationStat,
+    cronJobsSection,
+  );
+  const configurationGroup = renderGroup(
+    "Configuration",
+    configurationStat,
+    `${envVarsSection}${reposSection}${phaseMethodologySection}${agentPolicySection}`,
+  );
+  const accessGroup = renderGroup(
+    "Access",
+    accessStat,
+    `${isAdmin ? membersSection : ""}${authorAllowlistReviewSection}${authorAllowlistPatchSection}${slackAccessSection}${tokensSection}`,
+  );
+  const pluginsToolsGroup = renderGroup(
+    "Plugins &amp; Tools",
+    pluginsToolsStat,
+    `${toolsSection}${pluginsSection}`,
+  );
+
+  return renderAdminPage({
+    title: `${agent.name} — Shipwright Admin`,
+    body: `${renderAdminToolbar(userName, "/admin/agents")}
+  <div class="vos-page">
+    <div class="page-header">
+      <div>
+        <a href="/admin/agents" style="font-size:13px;color:#6b7280;text-decoration:none">← Agents</a>
+        <h1 class="page-title" style="margin-top:4px">${escapeHtml(agent.name)}</h1>
+        <span style="font-size:13px;color:#6b7280">Type: <span class="mono">${escapeHtml(agent.typeName)}</span></span>
+        ${agent.slackId ? `<span style="font-size:13px;color:#6b7280">Slack ID: <span class="mono">${escapeHtml(agent.slackId)}</span></span>` : ""}
+      </div>
+      ${
+        agent.slackId
+          ? `<div>
+        <details>
+          <summary class="btn btn-secondary" style="cursor:pointer;font-size:12px;list-style:none">Sync Manifest</summary>
+          <div style="position:absolute;right:24px;margin-top:6px;background:#fff;border:1px solid #e5e7eb;border-radius:6px;padding:12px;box-shadow:0 4px 12px rgba(0,0,0,0.08);z-index:10;min-width:320px">
+            <p style="font-size:12px;color:#6b7280;margin:0 0 10px">Syncs the current manifest to the provisioned Slack app. Requires a Slack app configuration token (<span class="mono">xoxe.xoxp-</span>).</p>
+            <form method="POST" action="/admin/agents/${escapeHtml(agent.id)}/sync-manifest" style="display:flex;flex-direction:column;gap:8px">
+              <input
+                name="xoxpToken"
+                type="password"
+                class="form-input mono"
+                placeholder="xoxe.xoxp-..."
+                required
+                style="font-size:12px"
+              />
+              <button type="submit" class="btn btn-primary" style="font-size:12px;align-self:flex-start">Confirm Sync</button>
+            </form>
+          </div>
+        </details>
+      </div>`
+          : ""
+      }
+    </div>
+    ${errorHtml}
+    ${successHtml}
+    ${warningHtml}
+    ${newTokenHtml}
+    ${verificationActivityHtml}
+
+    ${automationGroup}
+    ${configurationGroup}
+    ${accessGroup}
+    ${pluginsToolsGroup}
+
+    ${dangerZoneSection}
 
   </div>`,
   });

@@ -54,7 +54,7 @@ import {
   type WorkQueueItem,
   type WorkQueueSnapshotItem,
 } from "./admin-ui-pages.ts";
-import { renderAdminToolbar } from "./admin-ui-styles.ts";
+import { baseStyles, renderAdminToolbar } from "./admin-ui-styles.ts";
 import type { ChatMessage, ChatThread } from "./http-chat-client.ts";
 
 // ─── Shared fixtures ──────────────────────────────────────────────────────────
@@ -2546,6 +2546,224 @@ describe("renderAgentDetailPage — patch author allowlist", () => {
     expect(html).toMatch(
       /<div class="data-table-wrapper">\s*<table class="data-table">\s*<thead>\s*<tr>\s*<th>GitHub login<\/th>/,
     );
+  });
+});
+
+// ─── renderAgentDetailPage — accordion groups (AGA-1.1) ──────────────────────
+
+describe("renderAgentDetailPage — accordion groups", () => {
+  /**
+   * All 4 group `<details class="group">` blocks, in document order.
+   * A naive non-greedy `[\s\S]*?<\/details>` regex breaks here because
+   * several cards (e.g. Slack access's "Connect Slack" popover) nest their
+   * own unrelated `<details>` inside a group's body — this walks nesting
+   * depth so each group's true closing tag is found.
+   */
+  function extractGroups(html: string): string[] {
+    const groups: string[] = [];
+    const openTagRe = /<details class="group">/g;
+    let match: RegExpExecArray | null;
+    // biome-ignore lint/suspicious/noAssignInExpressions: standard regex-loop idiom
+    while ((match = openTagRe.exec(html)) !== null) {
+      const start = match.index;
+      let depth = 1;
+      let cursor = start + match[0].length;
+      const tagRe = /<details\b[^>]*>|<\/details>/g;
+      tagRe.lastIndex = cursor;
+      let tagMatch: RegExpExecArray | null;
+      // biome-ignore lint/suspicious/noAssignInExpressions: standard regex-loop idiom
+      while ((tagMatch = tagRe.exec(html)) !== null) {
+        if (tagMatch[0] === "</details>") {
+          depth--;
+        } else {
+          depth++;
+        }
+        if (depth === 0) {
+          cursor = tagRe.lastIndex;
+          break;
+        }
+      }
+      groups.push(html.slice(start, cursor));
+    }
+    return groups;
+  }
+
+  function render(opts?: Parameters<typeof renderAgentDetailPage>[9]): string {
+    return renderAgentDetailPage(
+      AGENT,
+      {},
+      [SYSTEM_CRON, CUSTOM_CRON],
+      [TOOL_ENABLED, TOOL_DISABLED],
+      [TOKEN_ACTIVE, TOKEN_REVOKED],
+      [PLUGIN_ENABLED, PLUGIN_DISABLED],
+      [
+        {
+          id: "m1",
+          email: "member@example.com",
+          createdAt: new Date("2025-01-01"),
+        },
+      ],
+      USER_NAME,
+      true,
+      { timezone: "UTC", ...opts },
+    );
+  }
+
+  test('renders exactly 4 <details class="group"> elements', () => {
+    const html = render();
+    expect(extractGroups(html)).toHaveLength(4);
+  });
+
+  test("groups are named Automation, Configuration, Access, Plugins & Tools in that order", () => {
+    const html = render();
+    const groups = extractGroups(html);
+    expect(groups[0]).toContain('<span class="group-title">Automation</span>');
+    expect(groups[1]).toContain(
+      '<span class="group-title">Configuration</span>',
+    );
+    expect(groups[2]).toContain('<span class="group-title">Access</span>');
+    expect(groups[3]).toContain(
+      '<span class="group-title">Plugins &amp; Tools</span>',
+    );
+  });
+
+  test("all 4 groups render collapsed (no `open` attribute) by default", () => {
+    const html = render();
+    const groupTags = html.match(/<details class="group"[^>]*>/g) ?? [];
+    expect(groupTags).toHaveLength(4);
+    for (const tag of groupTags) {
+      expect(tag).not.toContain("open");
+    }
+  });
+
+  test("groups stay collapsed even when agent.missingRequiredEnv is non-empty", () => {
+    const agent: AgentDetail = { ...AGENT, missingRequiredEnv: ["GH_TOKEN"] };
+    const html = renderAgentDetailPage(
+      agent,
+      {},
+      [SYSTEM_CRON],
+      [],
+      [],
+      [],
+      [],
+      USER_NAME,
+      true,
+      { timezone: "UTC" },
+    );
+    const groupTags = html.match(/<details class="group"[^>]*>/g) ?? [];
+    expect(groupTags).toHaveLength(4);
+    for (const tag of groupTags) {
+      expect(tag).not.toContain("open");
+    }
+  });
+
+  test("Automation group contains the Cron Jobs card", () => {
+    const html = render();
+    const groups = extractGroups(html);
+    expect(groups[0]).toContain('<div class="card-title">Cron Jobs</div>');
+    expect(groups[0]).not.toContain("Env Vars");
+  });
+
+  test("Configuration group contains Env Vars and Repos cards", () => {
+    const html = render();
+    const groups = extractGroups(html);
+    expect(groups[1]).toContain('id="env-vars"');
+    expect(groups[1]).toContain('<div class="card-title">Repos</div>');
+    expect(groups[1]).not.toContain("Cron Jobs");
+  });
+
+  test("Access group contains Members, both author allowlists, Slack access, and Task Store Tokens cards", () => {
+    const html = render();
+    const groups = extractGroups(html);
+    expect(groups[2]).toContain("member@example.com");
+    expect(groups[2]).toContain(
+      '<div class="card-title">Author allowlist (review)</div>',
+    );
+    expect(groups[2]).toContain(
+      '<div class="card-title">Author allowlist (patch)</div>',
+    );
+    expect(groups[2]).toContain('<div class="card-title">Slack access</div>');
+    expect(groups[2]).toContain(
+      '<div class="card-title">Task Store Tokens</div>',
+    );
+  });
+
+  test("Plugins & Tools group contains Tools and Plugins cards", () => {
+    const html = render();
+    const groups = extractGroups(html);
+    expect(groups[3]).toContain('<div class="card-title">Tools</div>');
+    expect(groups[3]).toContain('<div class="card-title">Plugins</div>');
+  });
+
+  test("Danger Zone stays a bare .card outside any group, after the last group", () => {
+    const html = render();
+    const lastGroupEnd = html.lastIndexOf("</details>");
+    const dangerZoneIndex = html.indexOf("Danger Zone");
+    expect(dangerZoneIndex).toBeGreaterThan(lastGroupEnd);
+    // Sits in its own .card, not nested in a .group-body.
+    const dangerZoneCardIndex = html.indexOf(
+      '<div class="card" style="border:1px solid #fca5a5">',
+    );
+    expect(dangerZoneCardIndex).toBeGreaterThan(lastGroupEnd);
+  });
+
+  test("Danger Zone absent for non-admins, groups still render", () => {
+    const html = renderAgentDetailPage(
+      AGENT,
+      {},
+      [],
+      [],
+      [],
+      [],
+      [],
+      USER_NAME,
+      false,
+      { timezone: "UTC" },
+    );
+    expect(html).not.toContain("Danger Zone");
+    expect(extractGroups(html)).toHaveLength(4);
+  });
+
+  test("each group's summary wraps the toggle+title in one span, separate from the stat span", () => {
+    const html = render();
+    const groups = extractGroups(html);
+    for (const group of groups) {
+      // Exactly one flush-left title span and one flush-right stat span
+      // inside the summary -- not a ::before on <summary> itself.
+      expect(group).toMatch(
+        /<summary class="group-summary">\s*<span class="group-title">[^<]*<\/span>\s*<span class="group-sub">[^<]*<\/span>\s*<\/summary>/,
+      );
+    }
+  });
+
+  test("Automation group's stat string reflects system/custom cron counts", () => {
+    const html = render();
+    const groups = extractGroups(html);
+    expect(groups[0]).toContain(
+      '<span class="group-sub">1 system · 1 custom</span>',
+    );
+  });
+
+  test("Plugins & Tools group's stat string reflects tool/plugin counts", () => {
+    const html = render();
+    const groups = extractGroups(html);
+    expect(groups[3]).toContain(
+      '<span class="group-sub">2 tools · 2 plugins</span>',
+    );
+  });
+
+  test("CSS: toggle glyph is a ::before on .group-title, not on the flex .group-summary", () => {
+    const styles = baseStyles();
+    expect(styles).toContain(".group-title::before");
+    expect(styles).not.toMatch(/\.group-summary\s*::before/);
+  });
+
+  test("CSS: .group-summary is a 2-sided flex row (space-between)", () => {
+    const styles = baseStyles();
+    const match = styles.match(/\.group-summary\s*\{[^}]*\}/);
+    expect(match).not.toBeNull();
+    expect(match?.[0]).toContain("display: flex");
+    expect(match?.[0]).toContain("justify-content: space-between");
   });
 });
 
