@@ -2369,6 +2369,92 @@ describe("deriveOrigin() (POM-1.2)", () => {
       deriveOrigin({ hasLinkedTask: true, authorLogin: "renovate[bot]" }),
     ).toBe("shipwright");
   });
+
+  // ── POF-1.1: authorIsBot + label signals ──────────────────────────────────
+
+  test("authorIsBot true with authorLogin 'app/renovate' -> dependency_bot", () => {
+    expect(
+      deriveOrigin({
+        hasLinkedTask: false,
+        authorIsBot: true,
+        authorLogin: "app/renovate",
+      }),
+    ).toBe("dependency_bot");
+  });
+
+  test("authorIsBot true with authorLogin 'app/dependabot' -> dependency_bot", () => {
+    expect(
+      deriveOrigin({
+        hasLinkedTask: false,
+        authorIsBot: true,
+        authorLogin: "app/dependabot",
+      }),
+    ).toBe("dependency_bot");
+  });
+
+  test("authorIsBot true with the literal 'renovate[bot]' login -> dependency_bot", () => {
+    expect(
+      deriveOrigin({
+        hasLinkedTask: false,
+        authorIsBot: true,
+        authorLogin: "renovate[bot]",
+      }),
+    ).toBe("dependency_bot");
+  });
+
+  test("authorIsBot true with a bot identity that isn't Renovate/Dependabot -> ci", () => {
+    expect(
+      deriveOrigin({
+        hasLinkedTask: false,
+        authorIsBot: true,
+        authorLogin: "app/some-other-bot",
+      }),
+    ).toBe("ci");
+  });
+
+  test("authorIsBot true with no authorLogin at all -> ci", () => {
+    expect(deriveOrigin({ hasLinkedTask: false, authorIsBot: true })).toBe(
+      "ci",
+    );
+  });
+
+  test("hasAutomatedLabel true with a human-looking authorLogin -> ci, independent of authorLogin", () => {
+    expect(
+      deriveOrigin({
+        hasLinkedTask: false,
+        hasAutomatedLabel: true,
+        authorLogin: "octocat",
+      }),
+    ).toBe("ci");
+  });
+
+  test("hasShipwrightLabel true with no task row and no authorLogin -> shipwright", () => {
+    expect(
+      deriveOrigin({ hasLinkedTask: false, hasShipwrightLabel: true }),
+    ).toBe("shipwright");
+  });
+
+  test("hasShipwrightLabel true takes precedence over an authorLogin that would otherwise say 'dependency_bot'", () => {
+    expect(
+      deriveOrigin({
+        hasLinkedTask: false,
+        hasShipwrightLabel: true,
+        authorIsBot: true,
+        authorLogin: "app/renovate",
+      }),
+    ).toBe("shipwright");
+  });
+
+  test("authorIsBot true still yields 'dependency_bot' ahead of hasAutomatedLabel (bot-identity check wins first)", () => {
+    expect(
+      deriveOrigin({
+        hasLinkedTask: false,
+        authorIsBot: true,
+        hasAutomatedLabel: true,
+        authorLogin: "app/renovate",
+      }),
+    ).toBe("dependency_bot");
+  });
 });
 
 // ─── PullRequestService.claim() origin stamping (POM-1.2) ──────────────────
@@ -2562,5 +2648,68 @@ describe("PullRequestService.claim() origin stamping (POM-1.2)", () => {
     expect(record.claimedAt).toBe(NOW.toISOString());
     expect(record.heartbeatAt).toBe(NOW.toISOString());
     expect(record.phase).toBe("review" as never);
+  });
+
+  test("POF-1.1: authorIsBot=true with a gh-normalized 'app/renovate' login derives origin='dependency_bot' on create", async () => {
+    const prisma = makeClaimPrismaDouble();
+    const svc = new PullRequestService(prisma as never, clock);
+
+    const { record } = await svc.claim(
+      "org/repo",
+      42,
+      "sha1",
+      "agent-a",
+      "review",
+      undefined,
+      "app/renovate",
+      "renovate/some-branch",
+      "Bump some dependency",
+      true,
+    );
+
+    expect(record.origin).toBe("dependency_bot" as never);
+  });
+
+  test("POF-1.1: hasShipwrightLabel=true derives origin='shipwright' on create with no linked task row", async () => {
+    const prisma = makeClaimPrismaDouble();
+    const svc = new PullRequestService(prisma as never, clock);
+
+    const { record } = await svc.claim(
+      "org/repo",
+      42,
+      "sha1",
+      "agent-a",
+      "review",
+      undefined,
+      "octocat",
+      "feat/x",
+      "Add X",
+      undefined,
+      undefined,
+      true,
+    );
+
+    expect(record.origin).toBe("shipwright" as never);
+  });
+
+  test("POF-1.1: hasAutomatedLabel=true derives origin='ci' on create even with a human-looking authorLogin", async () => {
+    const prisma = makeClaimPrismaDouble();
+    const svc = new PullRequestService(prisma as never, clock);
+
+    const { record } = await svc.claim(
+      "org/repo",
+      42,
+      "sha1",
+      "agent-a",
+      "review",
+      undefined,
+      "octocat",
+      "feat/x",
+      "Add X",
+      undefined,
+      true,
+    );
+
+    expect(record.origin).toBe("ci" as never);
   });
 });

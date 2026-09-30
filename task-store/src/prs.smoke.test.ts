@@ -208,6 +208,9 @@ interface CapturedClaimCall {
   authorLogin?: string | null;
   headRef?: string | null;
   title?: string | null;
+  authorIsBot?: boolean;
+  hasAutomatedLabel?: boolean;
+  hasShipwrightLabel?: boolean;
 }
 
 /** Captured args from each fakePrService.appendFinding() call. */
@@ -306,6 +309,9 @@ function fakePrService(
       authorLogin?: string | null,
       headRef?: string | null,
       title?: string | null,
+      authorIsBot?: boolean,
+      hasAutomatedLabel?: boolean,
+      hasShipwrightLabel?: boolean,
     ): Promise<{ status: 200 | 201; record: PullRequest }> {
       opts.claimCalls?.push({
         repo,
@@ -317,6 +323,9 @@ function fakePrService(
         authorLogin,
         headRef,
         title,
+        authorIsBot,
+        hasAutomatedLabel,
+        hasShipwrightLabel,
       });
       if (opts.claimResult !== undefined) {
         if (opts.claimResult instanceof Error) throw opts.claimResult;
@@ -915,6 +924,50 @@ describe("/prs routes (smoke)", () => {
     expect(body.authorLogin).toBe("octocat");
     expect(body.headRef).toBe("feat/some-branch");
     expect(body.title).toBe("Add the origin metrics dimension");
+  });
+
+  it("POST /prs/claim forwards authorIsBot/hasAutomatedLabel/hasShipwrightLabel from the request body to service.claim() (POF-1.1)", async () => {
+    const claimCalls: CapturedClaimCall[] = [];
+    const app = makeApp({ prService: fakePrService({ claimCalls }) });
+    const res = await app.request("/prs/claim", {
+      method: "POST",
+      headers: { ...adminAuth(), "content-type": "application/json" },
+      body: JSON.stringify({
+        repo: ADMIN_REPO,
+        prNumber: 42,
+        commitSha: "abc123",
+        claimedBy: "agent-1",
+        authorLogin: "app/renovate",
+        authorIsBot: true,
+        hasAutomatedLabel: false,
+        hasShipwrightLabel: false,
+      }),
+    });
+    expect(res.status).toBe(201);
+    expect(claimCalls).toHaveLength(1);
+    expect(claimCalls[0]?.authorIsBot).toBe(true);
+    expect(claimCalls[0]?.hasAutomatedLabel).toBe(false);
+    expect(claimCalls[0]?.hasShipwrightLabel).toBe(false);
+  });
+
+  it("POST /prs/claim omits authorIsBot/hasAutomatedLabel/hasShipwrightLabel when not supplied (leaves them undefined, not coerced to false)", async () => {
+    const claimCalls: CapturedClaimCall[] = [];
+    const app = makeApp({ prService: fakePrService({ claimCalls }) });
+    const res = await app.request("/prs/claim", {
+      method: "POST",
+      headers: { ...adminAuth(), "content-type": "application/json" },
+      body: JSON.stringify({
+        repo: ADMIN_REPO,
+        prNumber: 42,
+        commitSha: "abc123",
+        claimedBy: "agent-1",
+      }),
+    });
+    expect(res.status).toBe(201);
+    expect(claimCalls).toHaveLength(1);
+    expect(claimCalls[0]?.authorIsBot).toBeUndefined();
+    expect(claimCalls[0]?.hasAutomatedLabel).toBeUndefined();
+    expect(claimCalls[0]?.hasShipwrightLabel).toBeUndefined();
   });
 
   it("POST /prs/claim passes an explicit null authorLogin/headRef/title through as null (not undefined)", async () => {

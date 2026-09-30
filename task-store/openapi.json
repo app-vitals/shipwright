@@ -1635,7 +1635,7 @@
           "PRs"
         ],
         "summary": "Claim a pull request (atomic)",
-        "description": "Atomic via Postgres row locking, keyed on `(repo, prNumber)`. No existing record creates and returns `201` (a concurrent INSERT loser hits the `@@unique([repo, prNumber])` constraint and gets `409`). Against an existing record, the conflict conditions are re-checked inside the UPDATE's own WHERE clause so only one writer can win: same `commitSha` + same `phase` + already claimed by another agent returns `409` (phase locked); already claimed + same `commitSha` + `reviewState !== pending` (review phase only) returns `409` (already reviewed at this commit); otherwise the row is updated and `200` returned (new cycle). Agent tokens pin `claimedBy` to their own ID; admin tokens supply it in the body. Optional `phase` (default `review`) sets the pipeline phase — `patch`/`deploy` phases preserve `reviewState` as-is rather than resetting it. Optional `authorLogin`/`headRef`/`title` (POM-1.2) are forwarded server-side into an atomic origin-stamping write: a linked Task row (matching `repo`+`pr`) always derives `origin='shipwright'`; otherwise `authorLogin`/`headRef` are pattern-matched against known CI/dependency-bot signals, falling back to `human`/`unknown`. Origin is first-write-wins (never overwritten once set); `authorLogin`/`headRef`/`title` are refreshed to the latest value on every claim.",
+        "description": "Atomic via Postgres row locking, keyed on `(repo, prNumber)`. No existing record creates and returns `201` (a concurrent INSERT loser hits the `@@unique([repo, prNumber])` constraint and gets `409`). Against an existing record, the conflict conditions are re-checked inside the UPDATE's own WHERE clause so only one writer can win: same `commitSha` + same `phase` + already claimed by another agent returns `409` (phase locked); already claimed + same `commitSha` + `reviewState !== pending` (review phase only) returns `409` (already reviewed at this commit); otherwise the row is updated and `200` returned (new cycle). Agent tokens pin `claimedBy` to their own ID; admin tokens supply it in the body. Optional `phase` (default `review`) sets the pipeline phase — `patch`/`deploy` phases preserve `reviewState` as-is rather than resetting it. Optional `authorLogin`/`headRef`/`title` (POM-1.2) are forwarded server-side into an atomic origin-stamping write: a linked Task row (matching `repo`+`pr`) or `hasShipwrightLabel` (POF-1.1) always derives `origin='shipwright'`; otherwise `authorIsBot`/`hasAutomatedLabel` (POF-1.1) and `authorLogin`/`headRef` are checked against known CI/dependency-bot signals, falling back to `human`/`unknown`. Origin is first-write-wins (never overwritten once set); `authorLogin`/`headRef`/`title` are refreshed to the latest value on every claim (`authorIsBot`/`hasAutomatedLabel`/`hasShipwrightLabel` are pure derivation inputs, not persisted columns).",
         "requestBody": {
           "required": true,
           "content": {
@@ -4061,6 +4061,21 @@
             ],
             "description": "PR title (POM-1.2). Refreshed unconditionally on every claim.",
             "example": "Add the origin metrics dimension"
+          },
+          "authorIsBot": {
+            "type": "boolean",
+            "description": "True when the caller's GitHub client reports `is_bot: true` for the PR author (POF-1.1), e.g. `gh pr list --json author` normalizing a bot author to `app/<slug>`. Used server-side to derive `origin`, checked ahead of the legacy `authorLogin` string matching.",
+            "example": true
+          },
+          "hasAutomatedLabel": {
+            "type": "boolean",
+            "description": "True when the PR carries a label indicating CI/automation opened it (POF-1.1). Used server-side to derive `origin='ci'`, independent of `authorLogin`.",
+            "example": false
+          },
+          "hasShipwrightLabel": {
+            "type": "boolean",
+            "description": "True when the PR carries a label indicating Shipwright itself opened it (POF-1.1). Used server-side to derive `origin='shipwright'` at the same precedence step as a linked Task row — no linked task is required.",
+            "example": false
           }
         },
         "required": [

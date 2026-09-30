@@ -1128,6 +1128,21 @@ export const ClaimPrBodySchema = z
       description:
         "PR title (POM-1.2). Refreshed unconditionally on every claim.",
     }),
+    authorIsBot: z.boolean().optional().openapi({
+      example: true,
+      description:
+        "True when the caller's GitHub client reports `is_bot: true` for the PR author (POF-1.1), e.g. `gh pr list --json author` normalizing a bot author to `app/<slug>`. Used server-side to derive `origin`, checked ahead of the legacy `authorLogin` string matching.",
+    }),
+    hasAutomatedLabel: z.boolean().optional().openapi({
+      example: false,
+      description:
+        "True when the PR carries a label indicating CI/automation opened it (POF-1.1). Used server-side to derive `origin='ci'`, independent of `authorLogin`.",
+    }),
+    hasShipwrightLabel: z.boolean().optional().openapi({
+      example: false,
+      description:
+        "True when the PR carries a label indicating Shipwright itself opened it (POF-1.1). Used server-side to derive `origin='shipwright'` at the same precedence step as a linked Task row — no linked task is required.",
+    }),
   })
   .openapi("ClaimPrBody");
 
