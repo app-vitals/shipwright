@@ -252,4 +252,17 @@ describe("prd.md — Phase 5 is path-agnostic (PRM-1.2)", () => {
     );
     expect(section).toContain("derive every count directly from the written");
   });
+
+  it("carves out the two figures that cannot be reconstructed from the artifact: Complexity Flags is omitted and Resolved Decisions drops its Q8/Phase-2b split", () => {
+    const phase5Idx = content.indexOf("## Phase 5: Summary and Next Steps");
+    const printIdx = content.indexOf("Print:", phase5Idx);
+    const section = content.slice(phase5Idx, printIdx);
+    expect(section).toContain(
+      "Omit the `Complexity Flags:` line entirely when",
+    );
+    expect(section).toMatch(
+      /Print just\s+`Resolved Decisions: \{N decisions recorded\}` on the dispatch path/,
+    );
+    expect(section).toContain("`(N driven from Q8, N from Phase 2b)` split is not");
+  });
 });

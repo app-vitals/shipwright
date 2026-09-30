@@ -364,14 +364,24 @@ on the dispatch path no such tally exists in this thread, so
 derive every count directly from the written `PRODUCT-SPEC.md` (its `### Feature N` headings,
 `Requirements`/`Acceptance Criteria` bullets, and `Resolved Decisions` entries) instead.
 
-**Complexity Flags is the one exception — omit it on the dispatch path.** Per Phase 3's
-mapping rule, a Phase 2b flag the user accepted as-is ("Keep as-is") is reflected nowhere in
-`PRODUCT-SPEC.md` — only a "Simplify" (folded into the feature's own scope) or "Flag for
-engineering review" (written to Resolved Decisions) decision leaves any trace. `N reviewed`
-and `N accepted` therefore cannot be reconstructed from the artifact alone on the dispatch
-path, where no in-session tally exists. Omit the `Complexity Flags:` line entirely when
-printing from the dispatch path; keep it, using the live Phase 2b tally, on the built-in
-path.
+**Two figures are the exceptions — neither is reconstructable from the artifact, so scope
+both out on the dispatch path:**
+
+1. **`Complexity Flags` — omit the line entirely.** Per Phase 3's mapping rule, a Phase 2b
+   flag the user accepted as-is ("Keep as-is") is reflected nowhere in `PRODUCT-SPEC.md` —
+   only a "Simplify" (folded into the feature's own scope) or "Flag for engineering review"
+   (written to Resolved Decisions) decision leaves any trace. `N reviewed` and `N accepted`
+   therefore cannot be reconstructed from the artifact alone on the dispatch path, where no
+   in-session tally exists. Omit the `Complexity Flags:` line entirely when printing from the
+   dispatch path; keep it, using the live Phase 2b tally, on the built-in path.
+2. **`Resolved Decisions` — drop the Q8/Phase-2b parenthetical, keep the total.** Per
+   `references/product-spec-template.md`, a Resolved Decisions entry is written as
+   `- **{topic}**: {decision} — Rationale: {why}` — no entry is tagged with which phase
+   produced it, and on the dispatch path neither Q8 nor Phase 2b ran in this thread. The
+   total is countable from the artifact's `Resolved Decisions` bullets; the
+   `(N driven from Q8, N from Phase 2b)` split is not. Print just
+   `Resolved Decisions: {N decisions recorded}` on the dispatch path; keep the parenthetical,
+   using the live Q8/Phase 2b tally, on the built-in path.
 
 Print:
 
@@ -388,7 +398,7 @@ Features: {N}
   ...
 
 Complexity Flags: {N reviewed — N simplified, N accepted, N flagged for eng}   ← omit this line on the dispatch path
-Resolved Decisions: {N decisions recorded (N driven from Q8, N from Phase 2b)}
+Resolved Decisions: {N decisions recorded (N driven from Q8, N from Phase 2b)}   ← drop the parenthetical on the dispatch path
 External Blockers: {N items require external resolution before plan-session}
 
 NEXT: /plan-session {repo} $ARGUMENTS
@@ -404,8 +414,9 @@ that is the correct fast path. "Small" is NOT a reason to skip planning.
 
 Substitute `{repo}` with the value detected in Phase 0 step 2b. The handoff line must contain two arguments.
 
-On the dispatch path, drop the `Complexity Flags:` line from the printed summary entirely
-(see the note above the template) rather than printing a partial or guessed count.
+On the dispatch path, drop the `Complexity Flags:` line from the printed summary entirely and
+print `Resolved Decisions:` with only its total (see the two exceptions above the template)
+rather than printing a partial or guessed count.
 
 ---
 
