@@ -156,13 +156,18 @@ export const TaskSchema = z
     skipCount: z.number().int().default(0).openapi({
       example: 0,
       description:
-        "Consecutive skip count. Auto-blocks (hitl+blockedReason) once it crosses the threshold (3).",
+        "Consecutive skip count for the current lastSkipReason streak. A skip whose reason differs from lastSkipReason resets this to 1 instead of incrementing. Auto-blocks (hitl+blockedReason) once it crosses the threshold (3).",
     }),
     lastSkippedAt: z
       .string()
       .nullable()
       .optional()
       .openapi({ example: "2026-01-02T00:00:00.000Z" }),
+    lastSkipReason: z.string().nullable().optional().openapi({
+      example: "dev-task:deferred:unmet-hidden-requirement",
+      description:
+        "The skip reason associated with the current skipCount streak. POST /tasks/:id/skip's optional `reason` field (default `\"unspecified\"`) is compared against this value: a match increments skipCount, a difference (including from null) resets skipCount to 1 and stores the new reason here.",
+    }),
     claimedBy: z
       .string()
       .nullable()
@@ -838,6 +843,20 @@ export const FailBodySchema = z
     reason: z.string().optional().openapi({ example: "build failed" }),
   })
   .openapi("FailBody");
+
+/**
+ * Request body for POST /tasks/:id/skip (SRB-1.1). `reason` is optional —
+ * when omitted, the route defaults it server-side to "unspecified" before
+ * calling TaskService.recordSkip(), so recordSkip() always has a concrete
+ * string to compare against the task's current lastSkipReason.
+ */
+export const SkipBodySchema = z
+  .object({
+    reason: z.string().optional().openapi({
+      example: "dev-task:deferred:unmet-hidden-requirement",
+    }),
+  })
+  .openapi("SkipBody");
 
 // ─── PR Route Schemas ─────────────────────────────────────────────────────────
 

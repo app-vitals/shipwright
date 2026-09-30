@@ -58,6 +58,7 @@ import {
   DistinctResponseSchema,
   ErrorSchema,
   FailBodySchema,
+  SkipBodySchema,
   TaskEventsQuerySchema,
   TaskEventsResponseSchema,
   TaskIdParamSchema,
@@ -545,9 +546,13 @@ const skipRoute = createRoute({
   tags: ["tasks"],
   summary: "Record a skip — increments skipCount, auto-blocks at threshold",
   description:
-    'Increments `skipCount` and updates `lastSkippedAt` to now. Called by orchestrators when a task is repeatedly re-selected but produces no visible outcome ([silent] dispatch). When `skipCount` crosses the threshold (3, `SPIN_DETECTION_THRESHOLD`), the task is auto-set to `status=blocked` with `blockedReason="Auto-blocked after {skipCount} consecutive skips (dispatched but found nothing to do)"` to halt further dispatches.',
+    'Increments `skipCount` and updates `lastSkippedAt` to now. Called by orchestrators when a task is repeatedly re-selected but produces no visible outcome ([silent] dispatch). Optional body `{ reason: string }` (SRB-1.1) is compared against the task\'s current `lastSkipReason`: a match increments `skipCount`, a difference (including from no prior reason) resets `skipCount` to 1 and stores the new reason — so only *consecutive occurrences of the same reason* count toward the threshold. `reason` defaults server-side to `"unspecified"` when omitted. When the (possibly-reset) `skipCount` crosses the threshold (3, `SPIN_DETECTION_THRESHOLD`), the task is auto-set to `status=blocked`, `hitl=true`, with `blockedReason` naming the consecutive count and reason.',
   request: {
     params: TaskIdParamSchema,
+    body: {
+      content: { "application/json": { schema: SkipBodySchema } },
+      required: false,
+    },
   },
   responses: {
     200: {
@@ -996,7 +1001,11 @@ export function createTasksRoutes(
     const agentId = c.get("agentId");
     const repos = c.get("repos") ?? [];
     await requireOwnership(taskService, c.req.param("id"), agentId, repos);
-    const task = await taskService.recordSkip(c.req.param("id"));
+    const body = await readJson(c);
+    // SRB-1.1: default server-side so recordSkip() always compares against a
+    // concrete string, never undefined.
+    const reason = typeof body.reason === "string" ? body.reason : "unspecified";
+    const task = await taskService.recordSkip(c.req.param("id"), reason);
     return c.json(task, 200);
   });
 

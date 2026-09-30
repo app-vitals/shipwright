@@ -1579,6 +1579,25 @@ describe("createTaskStoreClient query()", () => {
     expect(capturedInit?.body).toBe("{}");
   });
 
+  test("recordSkip() forwards a supplied reason as the JSON body (SRB-1.1)", async () => {
+    let capturedInit: RequestInit | undefined;
+    const fakeFetch = (async (_url: RequestInfo | URL, init?: RequestInit) => {
+      capturedInit = init;
+      return { ok: true, status: 200, json: async () => ({}) } as Response;
+    }) as unknown as typeof fetch;
+
+    const client = createTaskStoreClient({ fetchFn: fakeFetch });
+    await client.recordSkip(
+      "task",
+      "SKT-2.1",
+      "dev-task:deferred:unmet-hidden-requirement",
+    );
+
+    expect(capturedInit?.body).toBe(
+      JSON.stringify({ reason: "dev-task:deferred:unmet-hidden-requirement" }),
+    );
+  });
+
   test("recordSkip() POSTs to /prs/:id/skip for itemType 'pr'", async () => {
     let capturedUrl: string | undefined;
     const fakeFetch = (async (url: RequestInfo | URL) => {

@@ -659,7 +659,11 @@ export function createTaskStoreClient(opts?: { fetchFn?: FetchFn }): {
     hasAutomatedLabel?: boolean;
     hasShipwrightLabel?: boolean;
   }): Promise<{ id: string; commitSha: string } | null>;
-  recordSkip(itemType: "task" | "pr", id: string): Promise<void>;
+  recordSkip(
+    itemType: "task" | "pr",
+    id: string,
+    reason?: string,
+  ): Promise<void>;
   resetSkip(itemType: "task" | "pr", id: string): Promise<void>;
 } {
   const taskStoreUrl = (process.env.SHIPWRIGHT_TASK_STORE_URL ?? "").trim();
@@ -683,9 +687,16 @@ export function createTaskStoreClient(opts?: { fetchFn?: FetchFn }): {
   // here must not abort or delay the caller (SKT-2.1's recordSkip/resetSkip),
   // so both a network failure and a non-ok response are swallowed and logged
   // rather than thrown — matching HttpCronRunReporter's patchRun pattern.
-  async function postFireAndForget(url: string): Promise<void> {
+  async function postFireAndForget(
+    url: string,
+    body: Record<string, unknown> = {},
+  ): Promise<void> {
     try {
-      const res = await doFetch(url, { method: "POST", headers, body: "{}" });
+      const res = await doFetch(url, {
+        method: "POST",
+        headers,
+        body: JSON.stringify(body),
+      });
       if (!res.ok) {
         console.warn(
           `[task-store] POST ${url} returned ${res.status} — swallowing`,
@@ -835,12 +846,20 @@ export function createTaskStoreClient(opts?: { fetchFn?: FetchFn }): {
       // return type non-nullable.
       return { id: data.id, commitSha: data.commitSha ?? params.commitSha };
     },
-    async recordSkip(itemType: "task" | "pr", id: string): Promise<void> {
+    async recordSkip(
+      itemType: "task" | "pr",
+      id: string,
+      reason?: string,
+    ): Promise<void> {
       const url =
         itemType === "task"
           ? `${baseUrl}/tasks/${id}/skip`
           : `${baseUrl}/prs/${id}/skip`;
-      await postFireAndForget(url);
+      // reason is forwarded regardless of itemType — the task-store's PR
+      // skip route (unlike /tasks/:id/skip, SRB-1.1) declares no body
+      // schema, so an extra `reason` field is simply ignored there, not
+      // rejected.
+      await postFireAndForget(url, reason === undefined ? {} : { reason });
     },
     async resetSkip(itemType: "task" | "pr", id: string): Promise<void> {
       const url =

@@ -53,12 +53,60 @@ export { CLOSED_STATUSES, OPEN_STATUSES };
 
 /**
  * Skip-count auto-block threshold: once a task's skipCount reaches this
- * value, recordSkip() also sets status:'blocked' + blockedReason so the loop
- * orchestrator stops re-selecting it. Mirrors SPIN_DETECTION_THRESHOLD in
- * agent/src/loop-orchestrator.ts:179 — duplicated here (not imported) since
- * agent/ and task-store/ are separate deployables.
+ * value, recordSkip() also sets status:'blocked' + hitl:true + blockedReason
+ * so the loop orchestrator stops re-selecting it. Mirrors
+ * SPIN_DETECTION_THRESHOLD in agent/src/loop-orchestrator.ts:179 —
+ * duplicated here (not imported) since agent/ and task-store/ are separate
+ * deployables.
  */
 const SKIP_BLOCK_THRESHOLD = 3;
+
+/** The subset of a skip-trackable record's state computeSkipStreak() reads. */
+export interface SkipStreakState {
+  skipCount: number;
+  lastSkipReason: string | null;
+}
+
+/** computeSkipStreak()'s result: the next skipCount/lastSkipReason to write, plus whether this crossing trips the auto-block. */
+export interface SkipStreakResult {
+  skipCount: number;
+  lastSkipReason: string;
+  blocked: boolean;
+  /** Descriptive message naming the consecutive count and reason; null unless `blocked`. */
+  blockedReason: string | null;
+}
+
+/**
+ * SRB-1.1: pure, reason-aware skip-streak computation shared by
+ * TaskService.recordSkip() and StaleClaimReaper.reap() (with reason
+ * "stale_claim_timeout") so both apply identical semantics rather than
+ * duplicating the increment/reset/threshold logic.
+ *
+ * When `reason` matches `current.lastSkipReason`, the streak continues:
+ * skipCount increments by 1. When it differs — including when
+ * `current.lastSkipReason` is null (no prior streak) — a new streak starts:
+ * skipCount resets to 1. Either way, crossing SKIP_BLOCK_THRESHOLD (3) sets
+ * `blocked:true` with a `blockedReason` naming the consecutive count and the
+ * reason. A reset (skipCount back down to 1) never trips the threshold, even
+ * if the prior streak's count was at/above it — matches
+ * PullRequestService.patch()'s consecutiveCiFailureCount pattern.
+ */
+export function computeSkipStreak(
+  current: SkipStreakState,
+  reason: string,
+): SkipStreakResult {
+  const skipCount =
+    current.lastSkipReason === reason ? current.skipCount + 1 : 1;
+  const blocked = skipCount >= SKIP_BLOCK_THRESHOLD;
+  return {
+    skipCount,
+    lastSkipReason: reason,
+    blocked,
+    blockedReason: blocked
+      ? `Auto-blocked after ${skipCount} consecutive skips for reason: ${reason}`
+      : null,
+  };
+}
 
 /**
  * Explicit interactive-transaction `timeout` for every write path that now
@@ -382,7 +430,7 @@ export interface TaskServiceLike {
   complete(id: string): Promise<Task>;
   fail(id: string, reason?: string): Promise<Task>;
   release(id: string): Promise<Task>;
-  recordSkip(id: string): Promise<Task>;
+  recordSkip(id: string, reason?: string): Promise<Task>;
   resetSkip(id: string): Promise<Task>;
   unblock(id: string): Promise<Task>;
   getEvents(
@@ -1094,34 +1142,43 @@ export class TaskService implements TaskServiceLike {
   }
 
   /**
-   * Record a skip: atomically increments skipCount and sets lastSkippedAt.
-   * When the new skipCount crosses SKIP_BLOCK_THRESHOLD (3), also sets
-   * status:'blocked' + a descriptive blockedReason in the same update —
-   * mirrors fail()'s status=blocked+reason pattern above. Every call
-   * increments regardless of current count (not a guard), and re-checks the
-   * threshold each time in case a prior resetSkip() brought the count back
-   * down.
+   * Record a skip: reason-aware streak update (SRB-1.1) via
+   * computeSkipStreak(). When `reason` (defaults to "unspecified" — the
+   * route also defaults it, this is a defense-in-depth fallback for direct
+   * callers) matches the task's current lastSkipReason, skipCount
+   * increments; when it differs (including from no prior reason), a new
+   * streak starts at skipCount=1. Either way sets lastSkippedAt to now. When
+   * the (possibly-reset) skipCount crosses SKIP_BLOCK_THRESHOLD (3), also
+   * sets status:'blocked', hitl:true, and a blockedReason naming the
+   * consecutive count and reason, in the same update — mirrors fail()'s
+   * status=blocked+reason pattern above. Every call re-evaluates the streak
+   * from the task's current state (not a guard), so a prior resetSkip() or a
+   * reason change correctly restarts counting from 1.
    */
-  async recordSkip(id: string): Promise<Task> {
+  async recordSkip(id: string, reason?: string): Promise<Task> {
+    const effectiveReason = reason ?? "unspecified";
     const now = this.clock.now().toISOString();
     try {
       return await this.prisma.$transaction(async (tx) => {
-        // Snapshot before the first update so the audit diff spans the whole
-        // recordSkip (both the increment and any threshold auto-block).
+        // Snapshot before the update — both for the audit diff and to read
+        // the current skipCount/lastSkipReason the streak computation needs.
         const before = await tx.task.findUnique({ where: { id } });
-        let updated = await tx.task.update({
-          where: { id },
-          data: { skipCount: { increment: 1 }, lastSkippedAt: now },
-        });
-        if (updated.skipCount >= SKIP_BLOCK_THRESHOLD) {
-          updated = await tx.task.update({
-            where: { id },
-            data: {
-              status: "blocked",
-              blockedReason: `Auto-blocked after ${updated.skipCount} consecutive skips (dispatched but found nothing to do)`,
-            },
-          });
+        if (!before) throw new NotFoundError("task not found");
+        const streak = computeSkipStreak(
+          { skipCount: before.skipCount, lastSkipReason: before.lastSkipReason },
+          effectiveReason,
+        );
+        const data: Prisma.TaskUpdateInput = {
+          skipCount: streak.skipCount,
+          lastSkippedAt: now,
+          lastSkipReason: streak.lastSkipReason,
+        };
+        if (streak.blocked) {
+          data.status = "blocked";
+          data.hitl = true;
+          data.blockedReason = streak.blockedReason;
         }
+        const updated = await tx.task.update({ where: { id }, data });
         // Actor is the claim holder if any; recordSkip can fire on unclaimed
         // tasks (no actor in scope at the route), in which case attribute to
         // "system".
@@ -1141,14 +1198,14 @@ export class TaskService implements TaskServiceLike {
     }
   }
 
-  /** Reset skip tracking — sets skipCount back to 0 and lastSkippedAt to null. */
+  /** Reset skip tracking — sets skipCount back to 0, lastSkippedAt/lastSkipReason back to null. */
   async resetSkip(id: string): Promise<Task> {
     try {
       return await this.prisma.$transaction(async (tx) => {
         const before = await tx.task.findUnique({ where: { id } });
         const record = await tx.task.update({
           where: { id },
-          data: { skipCount: 0, lastSkippedAt: null },
+          data: { skipCount: 0, lastSkippedAt: null, lastSkipReason: null },
         });
         await this.recordTaskTransition(
           tx,
@@ -1181,8 +1238,9 @@ export class TaskService implements TaskServiceLike {
    *
    * On success, clears every field an agent's failed/blocked attempt could
    * have left behind — blockedReason/blockedAt, claimedBy/claimedAt/
-   * heartbeatAt, and the skip-tracking pair (skipCount/lastSkippedAt) — in
-   * the same statement that flips status back to 'pending', so the row can
+   * heartbeatAt, and the skip-tracking triple (skipCount/lastSkippedAt/
+   * lastSkipReason) — in the same statement that flips status back to
+   * 'pending', so the row can
    * never land in an intermediate state that violates the DB-level
    * status='pending' iff claimedBy IS NULL invariant (see
    * task-claim-status-invariant.integration.test.ts).
@@ -1201,6 +1259,7 @@ export class TaskService implements TaskServiceLike {
             "heartbeatAt" = NULL,
             "skipCount" = 0,
             "lastSkippedAt" = NULL,
+            "lastSkipReason" = NULL,
             "updatedAt" = now()
         WHERE id = ${id} AND status = 'blocked'
       `;

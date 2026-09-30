@@ -2844,6 +2844,7 @@ describe("TaskService.unblock() atomic guard (UNB-1.1)", () => {
       heartbeatAt: "2026-08-10T10:05:00.000Z",
       skipCount: 3,
       lastSkippedAt: "2026-08-10T09:00:00.000Z",
+      lastSkipReason: "spun out after 3 skips",
       createdAt: new Date("2026-08-10T09:00:00.000Z"),
       updatedAt: new Date("2026-08-10T09:00:00.000Z"),
       ...overrides,
@@ -2898,6 +2899,7 @@ describe("TaskService.unblock() atomic guard (UNB-1.1)", () => {
           heartbeatAt: null,
           skipCount: 0,
           lastSkippedAt: null,
+          lastSkipReason: null,
           updatedAt: new Date(),
         } as Task;
         return 1;
@@ -2970,7 +2972,7 @@ describe("TaskService.unblock() atomic guard (UNB-1.1)", () => {
     );
   });
 
-  it("unblock() clears blockedReason/blockedAt/claimedBy/claimedAt/heartbeatAt and resets skipCount/lastSkippedAt on success", async () => {
+  it("unblock() clears blockedReason/blockedAt/claimedBy/claimedAt/heartbeatAt and resets skipCount/lastSkippedAt/lastSkipReason on success", async () => {
     const prisma = makeUnblockPrismaDouble(
       makeFullTask({
         status: "blocked",
@@ -2981,6 +2983,7 @@ describe("TaskService.unblock() atomic guard (UNB-1.1)", () => {
         heartbeatAt: "2026-08-10T10:05:00.000Z",
         skipCount: 3,
         lastSkippedAt: "2026-08-10T09:00:00.000Z",
+        lastSkipReason: "dev-task:deferred:unmet-hidden-requirement",
       }),
     );
     const service = new TaskService(
@@ -2998,6 +3001,82 @@ describe("TaskService.unblock() atomic guard (UNB-1.1)", () => {
     expect(result.heartbeatAt).toBeNull();
     expect(result.skipCount).toBe(0);
     expect(result.lastSkippedAt).toBeNull();
+    // SRB-1.1: unblock() must also clear lastSkipReason — otherwise a task
+    // unblocked by a human would resume its old skip-reason streak on the
+    // very next matching skip instead of starting fresh.
+    expect(result.lastSkipReason).toBeNull();
+  });
+});
+
+// ─── TaskService.resetSkip() clears lastSkipReason too (SRB-1.1) ──────────────
+
+describe("TaskService.resetSkip() (SRB-1.1)", () => {
+  interface ResetSkipPrismaDouble {
+    task: {
+      findUnique(args: { where: { id: string } }): Promise<Task | null>;
+      update(args: {
+        where: { id: string };
+        data: Record<string, unknown>;
+      }): Promise<Task>;
+    };
+    taskEvent: { create(): Promise<void> };
+    $transaction<T>(fn: (tx: ResetSkipPrismaDouble) => Promise<T>): Promise<T>;
+  }
+
+  function makeResetSkipPrismaDouble(initialTask: Task): PrismaClient {
+    let row: Task = { ...initialTask };
+    const prisma: ResetSkipPrismaDouble = {
+      task: {
+        findUnique({ where }) {
+          return Promise.resolve(where.id === row.id ? { ...row } : null);
+        },
+        update({ where, data }) {
+          if (where.id !== row.id) throw new Error("not found");
+          row = { ...row, ...data } as Task;
+          return Promise.resolve({ ...row });
+        },
+      },
+      taskEvent: {
+        create(): Promise<void> {
+          return Promise.resolve();
+        },
+      },
+      $transaction<T>(fn: (tx: ResetSkipPrismaDouble) => Promise<T>): Promise<T> {
+        return fn(prisma);
+      },
+    };
+    return prisma as unknown as PrismaClient;
+  }
+
+  function makeSeedTask(overrides: Partial<Task> = {}): Task {
+    return {
+      id: "task-1",
+      title: "A task",
+      status: "pending",
+      skipCount: 2,
+      lastSkippedAt: "2026-08-10T09:00:00.000Z",
+      lastSkipReason: "dev-task:deferred:unmet-hidden-requirement",
+      createdAt: new Date("2026-08-10T09:00:00.000Z"),
+      updatedAt: new Date("2026-08-10T09:00:00.000Z"),
+      ...overrides,
+    } as Task;
+  }
+
+  it("resetSkip() clears skipCount, lastSkippedAt, AND lastSkipReason to null", async () => {
+    const prisma = makeResetSkipPrismaDouble(makeSeedTask());
+    const service = new TaskService(
+      prisma,
+      FixedClock(new Date("2026-08-10T12:00:00.000Z")),
+    );
+
+    const result = await service.resetSkip("task-1");
+
+    expect(result.skipCount).toBe(0);
+    expect(result.lastSkippedAt).toBeNull();
+    // SRB-1.1: resetSkip() must also clear lastSkipReason, consistent with
+    // its existing skipCount/lastSkippedAt reset — otherwise a manually
+    // reset task would still compare future skips against a stale reason.
+    expect(result.lastSkipReason).toBeNull();
   });
 });
 

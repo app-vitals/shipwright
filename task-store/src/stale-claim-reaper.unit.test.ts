@@ -29,6 +29,11 @@ interface TaskEventCreateCall {
   };
 }
 
+interface TaskUpdateCall {
+  id: string;
+  data: Record<string, unknown>;
+}
+
 /** A minimal stale "before" Task row the double's `task.findMany` returns. */
 interface FakeStaleTask {
   id: string;
@@ -37,6 +42,8 @@ interface FakeStaleTask {
   claimedAt: string | null;
   heartbeatAt: string | null;
   startedAt: string | null;
+  skipCount: number;
+  lastSkipReason: string | null;
 }
 
 /**
@@ -61,12 +68,30 @@ function makePrismaDouble(
   const calls: ExecuteRawCall[] = [];
   const queryRawCalls: ExecuteRawCall[] = [];
   const taskEventCreateCalls: TaskEventCreateCall[] = [];
+  const taskUpdateCalls: TaskUpdateCall[] = [];
   const rowsByCall = Array.isArray(prAffectedRows)
     ? prAffectedRows
     : [prAffectedRows];
 
+  // Mutable "current row state" per task id, seeded from staleTasks — both
+  // the RETURNING UPDATE ($queryRaw) and the follow-up skip-tracking update
+  // (task.update, SRB-1.1) write through this map, so task.update's return
+  // value reflects the claim-reset fields the RETURNING UPDATE already
+  // applied earlier in the same reap() call — exactly like a real Postgres
+  // transaction, where a later UPDATE sees an earlier UPDATE's effect on the
+  // same row.
+  const rowsById = new Map<string, Record<string, unknown>>(
+    staleTasks.map((t) => [t.id, { ...t }]),
+  );
+
   interface FakeTx {
-    task: { findMany: () => Promise<FakeStaleTask[]> };
+    task: {
+      findMany: () => Promise<FakeStaleTask[]>;
+      update: (args: {
+        where: { id: string };
+        data: Record<string, unknown>;
+      }) => Promise<Record<string, unknown>>;
+    };
     $queryRaw: (
       strings: TemplateStringsArray,
       ...values: unknown[]
@@ -77,6 +102,13 @@ function makePrismaDouble(
   const tx: FakeTx = {
     task: {
       findMany: () => Promise.resolve(staleTasks),
+      update({ where, data }) {
+        taskUpdateCalls.push({ id: where.id, data });
+        const current = rowsById.get(where.id) ?? { id: where.id };
+        const merged = { ...current, ...data };
+        rowsById.set(where.id, merged);
+        return Promise.resolve(merged);
+      },
     },
     $queryRaw(
       strings: TemplateStringsArray,
@@ -84,16 +116,24 @@ function makePrismaDouble(
     ): Promise<unknown[]> {
       queryRawCalls.push({ strings, values });
       // Mirrors the real UPDATE...RETURNING: every pre-selected stale row is
-      // reset and returned.
+      // reset and returned — and the shared row-state map is updated too, so
+      // a later task.update() (the skip-tracking follow-up) sees these
+      // claim-reset values as its starting point, not the stale pre-reap
+      // ones.
       return Promise.resolve(
-        staleTasks.map((t) => ({
-          id: t.id,
-          status: "pending",
-          claimedBy: null,
-          claimedAt: null,
-          heartbeatAt: null,
-          startedAt: null,
-        })),
+        staleTasks.map((t) => {
+          const resetFields = {
+            id: t.id,
+            status: "pending",
+            claimedBy: null,
+            claimedAt: null,
+            heartbeatAt: null,
+            startedAt: null,
+          };
+          const current = rowsById.get(t.id) ?? { id: t.id };
+          rowsById.set(t.id, { ...current, ...resetFields });
+          return resetFields;
+        }),
       );
     },
     taskEvent: {
@@ -119,6 +159,7 @@ function makePrismaDouble(
     _calls: calls,
     _queryRawCalls: queryRawCalls,
     _taskEventCreateCalls: taskEventCreateCalls,
+    _taskUpdateCalls: taskUpdateCalls,
   };
 
   return prisma as unknown as {
@@ -130,6 +171,7 @@ function makePrismaDouble(
     _calls: ExecuteRawCall[];
     _queryRawCalls: ExecuteRawCall[];
     _taskEventCreateCalls: TaskEventCreateCall[];
+    _taskUpdateCalls: TaskUpdateCall[];
   };
 }
 
@@ -153,6 +195,8 @@ function fakeStaleTask(overrides: Partial<FakeStaleTask> = {}): FakeStaleTask {
     claimedAt: "2026-06-24T10:00:00.000Z",
     heartbeatAt: "2026-06-24T10:00:00.000Z",
     startedAt: "2026-06-24T10:00:00.000Z",
+    skipCount: 0,
+    lastSkipReason: null,
     ...overrides,
   };
 }
@@ -339,14 +383,26 @@ describe("StaleClaimReaper", () => {
 
     await reaper.reap();
 
-    // status/claimedBy/claimedAt/startedAt changed; heartbeatAt is excluded
-    // from the audit trail (matches computeTaskTransitionDiff's
-    // TASK_AUDITED_FIELDS allowlist), so exactly 4 rows are expected.
+    // status/claimedBy/claimedAt/startedAt changed from the claim-reset, and
+    // skipCount/lastSkippedAt/lastSkipReason changed from the SRB-1.1
+    // skip-tracking follow-up update (this task started with skipCount:0,
+    // lastSkipReason:null, so the reap's stale_claim_timeout reason starts a
+    // new streak at 1); heartbeatAt is excluded from the audit trail
+    // (matches computeTaskTransitionDiff's TASK_AUDITED_FIELDS allowlist),
+    // so exactly 7 rows are expected.
     const byField = Object.fromEntries(
       prisma._taskEventCreateCalls.map((c) => [c.data.field, c.data]),
     );
     expect(Object.keys(byField).sort()).toEqual(
-      ["claimedAt", "claimedBy", "startedAt", "status"].sort(),
+      [
+        "claimedAt",
+        "claimedBy",
+        "lastSkipReason",
+        "lastSkippedAt",
+        "skipCount",
+        "startedAt",
+        "status",
+      ].sort(),
     );
 
     expect(byField.status.oldValue).toBe("in_progress");
@@ -363,6 +419,12 @@ describe("StaleClaimReaper", () => {
 
     expect(byField.startedAt.oldValue).toBe("2026-06-24T10:00:00.000Z");
     expect(byField.startedAt.newValue).toBeNull();
+
+    expect(byField.skipCount.oldValue).toBe("0");
+    expect(byField.skipCount.newValue).toBe("1");
+
+    expect(byField.lastSkipReason.oldValue).toBeNull();
+    expect(byField.lastSkipReason.newValue).toBe("stale_claim_timeout");
 
     expect(byField.heartbeatAt).toBeUndefined();
 
@@ -398,8 +460,8 @@ describe("StaleClaimReaper", () => {
       arr.push(call.data);
       byTask.set(call.data.taskId, arr);
     }
-    expect(byTask.get("task-a")?.length).toBe(4);
-    expect(byTask.get("task-b")?.length).toBe(4);
+    expect(byTask.get("task-a")?.length).toBe(7);
+    expect(byTask.get("task-b")?.length).toBe(7);
   });
 
   // ─── PullRequest reaping ────────────────────────────────────────────────────
@@ -620,5 +682,112 @@ describe("StaleClaimReaper", () => {
     expect(heartbeatAt.getTime() < new Date(expectedCutoff).getTime()).toBe(
       true,
     );
+  });
+
+  // ─── SRB-1.1: reap() feeds the reason-aware skip-streak counter ───────────
+
+  test("reap() of a never-skipped task starts a stale_claim_timeout streak at skipCount=1", async () => {
+    const prisma = makePrismaDouble(0, [fakeStaleTask({ id: "task-1" })]);
+    const reaper = new StaleClaimReaper(prisma as never, clock);
+
+    await reaper.reap();
+
+    expect(prisma._taskUpdateCalls).toHaveLength(1);
+    expect(prisma._taskUpdateCalls[0]?.data.skipCount).toBe(1);
+    expect(prisma._taskUpdateCalls[0]?.data.lastSkipReason).toBe(
+      "stale_claim_timeout",
+    );
+  });
+
+  test("reap() of a task already mid-stale_claim_timeout-streak increments skipCount", async () => {
+    const prisma = makePrismaDouble(0, [
+      fakeStaleTask({
+        id: "task-1",
+        skipCount: 1,
+        lastSkipReason: "stale_claim_timeout",
+      }),
+    ]);
+    const reaper = new StaleClaimReaper(prisma as never, clock);
+
+    await reaper.reap();
+
+    expect(prisma._taskUpdateCalls[0]?.data.skipCount).toBe(2);
+    expect(prisma._taskUpdateCalls[0]?.data.lastSkipReason).toBe(
+      "stale_claim_timeout",
+    );
+    expect(prisma._taskUpdateCalls[0]?.data.status).toBeUndefined();
+  });
+
+  test("reap() of a task mid-streak on a DIFFERENT reason resets skipCount to 1 and overwrites lastSkipReason", async () => {
+    const prisma = makePrismaDouble(0, [
+      fakeStaleTask({
+        id: "task-1",
+        skipCount: 2,
+        lastSkipReason: "dev-task:deferred:unmet-hidden-requirement",
+      }),
+    ]);
+    const reaper = new StaleClaimReaper(prisma as never, clock);
+
+    await reaper.reap();
+
+    expect(prisma._taskUpdateCalls[0]?.data.skipCount).toBe(1);
+    expect(prisma._taskUpdateCalls[0]?.data.lastSkipReason).toBe(
+      "stale_claim_timeout",
+    );
+  });
+
+  test("a THIRD consecutive reap with the same stale_claim_timeout streak auto-blocks: status:'blocked', hitl:true, blockedReason names the count+reason", async () => {
+    const prisma = makePrismaDouble(0, [
+      fakeStaleTask({
+        id: "task-1",
+        skipCount: 2,
+        lastSkipReason: "stale_claim_timeout",
+      }),
+    ]);
+    const reaper = new StaleClaimReaper(prisma as never, clock);
+
+    await reaper.reap();
+
+    const data = prisma._taskUpdateCalls[0]?.data;
+    expect(data?.skipCount).toBe(3);
+    expect(data?.status).toBe("blocked");
+    expect(data?.hitl).toBe(true);
+    expect(data?.blockedReason).toContain("3");
+    expect(data?.blockedReason).toContain("stale_claim_timeout");
+  });
+
+  test("reap() sets lastSkippedAt to the reap's own clock timestamp", async () => {
+    const prisma = makePrismaDouble(0, [fakeStaleTask({ id: "task-1" })]);
+    const reaper = new StaleClaimReaper(prisma as never, clock);
+
+    await reaper.reap();
+
+    expect(prisma._taskUpdateCalls[0]?.data.lastSkippedAt).toBe(
+      NOW.toISOString(),
+    );
+  });
+
+  test("each reaped task in a multi-task reap gets its own independent skip-streak update", async () => {
+    const prisma = makePrismaDouble(0, [
+      fakeStaleTask({
+        id: "task-a",
+        skipCount: 2,
+        lastSkipReason: "stale_claim_timeout",
+      }),
+      fakeStaleTask({ id: "task-b", skipCount: 0, lastSkipReason: null }),
+    ]);
+    const reaper = new StaleClaimReaper(prisma as never, clock);
+
+    await reaper.reap();
+
+    const byId = Object.fromEntries(
+      prisma._taskUpdateCalls.map((c) => [c.id, c.data]),
+    );
+    // task-a's 3rd consecutive stale_claim_timeout reap crosses the threshold.
+    expect(byId["task-a"]?.skipCount).toBe(3);
+    expect(byId["task-a"]?.status).toBe("blocked");
+    // task-b's first-ever skip starts a fresh streak, well under threshold.
+    expect(byId["task-b"]?.skipCount).toBe(1);
+    expect(byId["task-b"]?.status).toBeUndefined();
   });
 });

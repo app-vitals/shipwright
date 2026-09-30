@@ -85,6 +85,12 @@ describeOrSkip("StaleClaimReaper Task reaping (integration)", () => {
     expect(row?.claimedAt).toBeNull();
     expect(row?.heartbeatAt).toBeNull();
     expect(row?.startedAt).toBeNull();
+    // SRB-1.1: the reap also feeds the reason-aware skip-streak counter with
+    // the fixed reason "stale_claim_timeout" — this task's first-ever skip
+    // starts a new streak at 1, well under SKIP_BLOCK_THRESHOLD.
+    expect(row?.skipCount).toBe(1);
+    expect(row?.lastSkipReason).toBe("stale_claim_timeout");
+    expect(row?.lastSkippedAt).toBe(NOW.toISOString());
 
     // The fresh control is untouched.
     const freshRow = await prisma.task.findUnique({
@@ -98,14 +104,26 @@ describeOrSkip("StaleClaimReaper Task reaping (integration)", () => {
       orderBy: { field: "asc" },
     });
 
-    // status/claimedBy/claimedAt/startedAt are audited fields that changed;
-    // heartbeatAt is excluded from the audit trail (matches
-    // computeTaskTransitionDiff's TASK_AUDITED_FIELDS allowlist and every
-    // other TaskEvent-writing call site in this codebase — see claim()'s
-    // TCS-1.1 integration test for the identical exclusion).
+    // status/claimedBy/claimedAt/startedAt are audited fields that changed
+    // from the claim-reset, and skipCount/lastSkippedAt/lastSkipReason are
+    // audited fields that changed from the SRB-1.1 skip-tracking follow-up
+    // (this task had never been skipped before, so its first
+    // stale_claim_timeout reap starts a new streak); heartbeatAt is excluded
+    // from the audit trail (matches computeTaskTransitionDiff's
+    // TASK_AUDITED_FIELDS allowlist and every other TaskEvent-writing call
+    // site in this codebase — see claim()'s TCS-1.1 integration test for the
+    // identical exclusion).
     const byField = Object.fromEntries(events.map((e) => [e.field, e]));
     expect(Object.keys(byField).sort()).toEqual(
-      ["claimedAt", "claimedBy", "startedAt", "status"].sort(),
+      [
+        "claimedAt",
+        "claimedBy",
+        "lastSkipReason",
+        "lastSkippedAt",
+        "skipCount",
+        "startedAt",
+        "status",
+      ].sort(),
     );
 
     expect(byField.status.oldValue).toBe("in_progress");
@@ -123,6 +141,12 @@ describeOrSkip("StaleClaimReaper Task reaping (integration)", () => {
 
     expect(byField.startedAt.oldValue).toBe(STALE);
     expect(byField.startedAt.newValue).toBeNull();
+
+    expect(byField.skipCount.oldValue).toBe("0");
+    expect(byField.skipCount.newValue).toBe("1");
+
+    expect(byField.lastSkipReason.oldValue).toBeNull();
+    expect(byField.lastSkipReason.newValue).toBe("stale_claim_timeout");
 
     // No heartbeatAt row, even though heartbeatAt was nulled on the Task row.
     expect(byField.heartbeatAt).toBeUndefined();
@@ -155,6 +179,66 @@ describeOrSkip("StaleClaimReaper Task reaping (integration)", () => {
     expect(reaped).toBe(0);
     const events = await prisma.taskEvent.findMany();
     expect(events).toHaveLength(0);
+  });
+
+  it("(SRB-1.1) three consecutive stale-claim reaps of the same task auto-block it", async () => {
+    const task = await prisma.task.create({
+      data: {
+        title: "repeatedly-stale-task",
+        status: "in_progress",
+        claimedBy: "agent-stale",
+        claimedAt: STALE,
+        heartbeatAt: STALE,
+        startedAt: STALE,
+      },
+    });
+
+    const reaper = new StaleClaimReaper(prisma, FixedClock(NOW));
+
+    // First reap: starts the stale_claim_timeout streak at 1, back to pending.
+    expect(await reaper.reap()).toBe(1);
+    let row = await prisma.task.findUnique({ where: { id: task.id } });
+    expect(row?.status).toBe("pending");
+    expect(row?.skipCount).toBe(1);
+    expect(row?.lastSkipReason).toBe("stale_claim_timeout");
+
+    // Simulate a second claim that also times out (a real agent re-claims
+    // the pending task, then never heartbeats): flip back to in_progress
+    // with a stale heartbeat/claimedAt, independent of the reap mechanism.
+    await prisma.task.update({
+      where: { id: task.id },
+      data: {
+        status: "in_progress",
+        claimedBy: "agent-stale-2",
+        claimedAt: STALE,
+        heartbeatAt: STALE,
+        startedAt: STALE,
+      },
+    });
+    expect(await reaper.reap()).toBe(1);
+    row = await prisma.task.findUnique({ where: { id: task.id } });
+    expect(row?.status).toBe("pending");
+    expect(row?.skipCount).toBe(2);
+    expect(row?.lastSkipReason).toBe("stale_claim_timeout");
+
+    // Third consecutive stale claim, same reason — crosses the threshold.
+    await prisma.task.update({
+      where: { id: task.id },
+      data: {
+        status: "in_progress",
+        claimedBy: "agent-stale-3",
+        claimedAt: STALE,
+        heartbeatAt: STALE,
+        startedAt: STALE,
+      },
+    });
+    expect(await reaper.reap()).toBe(1);
+    row = await prisma.task.findUnique({ where: { id: task.id } });
+    expect(row?.skipCount).toBe(3);
+    expect(row?.status).toBe("blocked");
+    expect(row?.hitl).toBe(true);
+    expect(row?.blockedReason).toContain("3");
+    expect(row?.blockedReason).toContain("stale_claim_timeout");
   });
 });
 

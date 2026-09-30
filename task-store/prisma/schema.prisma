@@ -107,6 +107,14 @@ model Task {
   // auto-sets hitl+blockedReason so the task stops being re-selected forever.
   skipCount     Int     @default(0)
   lastSkippedAt String?
+  // lastSkipReason records the skip-reason text ([skip-reason:...] marker, or
+  // the server-side "unspecified" default) associated with the current
+  // skipCount streak (SRB-1.1). recordSkip() resets skipCount to 1 whenever
+  // the incoming reason differs from this value (a new streak), and
+  // increments skipCount when it matches — so only *consecutive occurrences
+  // of the same reason* count toward SKIP_BLOCK_THRESHOLD. Cleared to null by
+  // resetSkip()/unblock() alongside skipCount/lastSkippedAt.
+  lastSkipReason String?
 
   // ─── Claim / liveness (multi-agent execution) ───
   claimedBy   String? // agent ID that claimed this task

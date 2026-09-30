@@ -89,6 +89,7 @@ export const TASK_AUDITED_FIELDS: ReadonlyArray<keyof Task> = [
   "hitl",
   "skipCount",
   "lastSkippedAt",
+  "lastSkipReason",
   "claimedBy",
   "agentHint",
   "claimedAt",
