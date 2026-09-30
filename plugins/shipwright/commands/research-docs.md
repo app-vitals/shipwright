@@ -170,16 +170,15 @@ Additionally, run the Step 3a cross-cutting concerns checklist (same seven categ
 
 After all doc updates are complete for this repo (Steps A5 and A6), commit and open a PR for the doc-refresh changes, scoped to this repo's working directory.
 
-First, check whether there are any changes to commit. Skip cleanly with no PR if there are no changes:
+First, check whether there are any changes to commit:
 
 ```bash
-if ! git status --porcelain -- docs/ CLAUDE.md | grep -q .; then
-  echo "No changes to commit — skipping PR."
-  return 0
-fi
+git status --porcelain -- docs/ CLAUDE.md
 ```
 
-If changes exist, create a dedicated branch, commit, push, and open a PR with the shipwright label:
+If this prints nothing, there is nothing to commit — print `⏭ No doc changes to commit — skipping PR-open step` and continue to Step A8.
+
+Otherwise, create a dedicated branch, commit, push, and open a PR with the shipwright label:
 
 ```bash
 YYYYMMDD=$(date -u +%Y%m%d)
