@@ -56,6 +56,20 @@ stamping remains the right call wherever the caller already writes task-store st
 (hence task 6 below, closing the still-open `deploy.md` canary-revert gap the same way
 the original ruling intended).
 
+**Reconciling with `pr-census.ts`'s own rejection:** `classifyPrOrigin()`'s docstring
+(`agent/src/pr-census.ts` lines 4-11, 90-103) separately documents a function-level
+decision to ship "WITHOUT the GitHub-label approach that was rejected" — narrower than,
+and independent of, the PR #3462 ruling above: it reasoned that the task-row match
+already identifies shipwright's own PRs, so a label added nothing. That reasoning holds
+for the PRs `classifyPrOrigin()` was built against, but the live census data in root
+cause #3 shows a bucket it didn't anticipate — docs-freshness/test-readiness-refresh/
+plan-session PRs that are neither task-linked nor bot/branch-pattern-matched. POF-1.2
+supersedes only that narrower claim: the `shipwright` label becomes an additive signal
+checked after the existing task-row match, which stays authoritative and unchanged, and
+fills exactly the gap the original "no label arm" design left uncovered. POF-1.2 should
+update this docstring's framing (and the "first match wins, NO label arm" line) to
+reflect that when it lands.
+
 ## Origin taxonomy (final)
 
 1. **shipwright** — linked task row, or `shipwright` label
