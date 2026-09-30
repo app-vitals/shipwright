@@ -10,6 +10,12 @@ independent of `appVersion`. CI enforces this with
 `ct lint --check-version-increment`. Each release here must mirror the
 `artifacthub.io/changes` annotation in `Chart.yaml`.
 
+## [1.22.40] - 2026-09-30
+
+### Changed
+
+- auto-bump to chart v1.22.40 triggered by release tag(s): `admin-v1.214.0`, `agent-v1.335.0`, `chat-v1.117.0`, `metrics-v1.120.0`, `task-store-v1.156.0`
+
 ## [1.22.39] - 2026-09-30
 
 ### Changed
