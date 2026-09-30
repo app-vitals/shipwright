@@ -858,14 +858,34 @@ describe("plan-session.md — Configured Methodology Dispatch: schema validation
     expect(sub.toLowerCase()).toMatch(/this batch|same batch/);
   });
 
-  it("checks repo key presence, non-empty title, status pending, and acceptanceCriteria as an array", () => {
+  it("checks non-empty title, status pending, and acceptanceCriteria as an array", () => {
     const sub = extractDispatchSubsection(content, HEADING);
-    expect(sub).toContain("`repo`");
-    expect(sub.toLowerCase()).toMatch(/key is present|key present/);
     expect(sub).toContain("title");
     expect(sub).toContain('"pending"');
     expect(sub).toContain("acceptanceCriteria");
     expect(sub.toLowerCase()).toContain("array");
+  });
+
+  /**
+   * The PSM-1.1 contract specifies `repo` as "the `repo` passed in, unchanged" — a value
+   * contract, not key-presence. `validateRepo` in task-store/src/routes/tasks.ts returns early
+   * on a literal `null`, so a `null` repo is written through and leaves the task undispatchable
+   * (dev-task derives its worktree paths from `task.repo`), while a wrong/hallucinated
+   * `org/repo` 400s the whole batch after Step 6a already wrote PLAN.md.
+   */
+  it("value-checks repo against the repo input rather than merely asserting key presence", () => {
+    const sub = extractDispatchSubsection(content, HEADING);
+    const repoIdx = sub.indexOf("**`repo`**");
+    expect(repoIdx).toBeGreaterThan(-1);
+    const check = prose(sub.slice(repoIdx));
+    expect(check).toMatch(/equals the `?repo`? value passed in as an input, exactly/);
+    expect(check).toMatch(/value contract, not just key-presence/);
+    expect(check).toMatch(/key-presence alone is not enough/);
+    expect(check).toMatch(/`?"?repo"?: null`?/);
+    expect(check).toMatch(/undispatchable/);
+    expect(check).toMatch(/validaterepo/);
+    // Mirrors check 11's session value-equality standard.
+    expect(check).toMatch(/check 11/);
   });
 
   it("rejects the WHOLE batch on any failing task — all-or-nothing, do not POST anything", () => {
@@ -943,12 +963,45 @@ describe("plan-session.md — Configured Methodology Dispatch: schema validation
     expect(lower).toMatch(/--autonomous/);
   });
 
-  it("rejects the whole response — including PLAN.md — when the top-level planMarkdown check fails", () => {
+  /**
+   * The contract permits "zero or more task objects", but every per-task check passes vacuously
+   * over `[]` and nothing server-side rejects an empty batch either — `/tasks/bulk` only
+   * requires a JSON array and `TaskService.bulk()` gates on the upper MAX_BULK_TASKS cap, so
+   * `[]` returns 200 {inserted: 0}. Step 6c would read that as success and mark the originating
+   * PRD task done, which under --autonomous no human is there to notice.
+   */
+  it("checks the top-level tasks[] is present and non-empty, as a second top-level check", () => {
+    const sub = extractDispatchSubsection(content, HEADING);
+    const lower = prose(sub);
+    expect(lower).toMatch(/two \*\*top-level\*\* checks/);
+    expect(lower).toMatch(
+      /\*\*`tasks`\*\* is present, an array, and \*\*non-empty\*\*/,
+    );
+    expect(lower).toMatch(/zero or more task objects/);
+    expect(lower).toMatch(/vacuous/);
+    expect(lower).toMatch(/nothing server-side rejects it|nothing server-side rejects an empty/);
+    expect(lower).toMatch(/--autonomous/);
+  });
+
+  it("explains that an empty tasks[] would let Step 6c mark the originating PRD task done", () => {
+    const sub = extractDispatchSubsection(content, HEADING);
+    const lower = prose(sub);
+    expect(lower).toMatch(/step 6c/);
+    expect(lower).toMatch(/`?done`?/);
+    expect(lower).toMatch(/zero work got queued/);
+    expect(lower).toMatch(/max_bulk_tasks/);
+    expect(lower).toMatch(/200 \{inserted: 0\}/);
+    // A methodology with genuinely nothing to decompose has a handled path already.
+    expect(lower).toMatch(/hardcontradiction/);
+  });
+
+  it("rejects the whole response — including PLAN.md — when either top-level check fails", () => {
     const sub = extractDispatchSubsection(content, HEADING);
     const lower = prose(sub);
     expect(lower).toMatch(/top-level or per-task/);
     expect(lower).toMatch(/do not write `?plan\.md/);
     expect(sub).toContain("planMarkdown — failed:");
+    expect(sub).toContain("tasks — failed:");
   });
 
   /**

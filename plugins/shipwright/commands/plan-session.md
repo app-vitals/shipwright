@@ -545,7 +545,7 @@ Before ever reaching Step 6b's bulk POST, validate the returned response. This g
 become an opaque Prisma error (or a task that hard-blocks one step downstream in `dev-task`)
 after it has been written.
 
-The gate has two parts: one **top-level** check over the response object itself, then a list of
+The gate has two parts: two **top-level** checks over the response object itself, then a list of
 **per-task** checks over every entry in `tasks[]`. Keep the distinction in mind when reporting a
 failure — a top-level failure is not attributable to any task id.
 
@@ -557,6 +557,18 @@ failure — a top-level failure is not attributable to any task id.
    `planMarkdown` clears every per-task check below, so without this check an `--autonomous` run
    — which has no human to notice — would write an empty `PLAN.md` and then point every queued
    task's `source` link at it.
+2. **`tasks`** is present, an array, and **non-empty**. The contract describes `tasks[]` as
+   "zero or more task objects"; this gate deliberately overrides that operationally and treats
+   zero tasks as invalid output for a planning run, because an empty array is indistinguishable
+   from success everywhere downstream. Every per-task check below passes vacuously over `[]`,
+   and nothing server-side rejects it either: `/tasks/bulk`'s handler only requires a JSON
+   array, and `TaskService.bulk()` gates on the upper `MAX_BULK_TASKS` cap only — an empty batch
+   opens a transaction, creates nothing, and returns `200 {inserted: 0}`. Step 6b would read
+   that as a successful POST, Step 6c would then transition the originating PRD task to `done`,
+   and Step 6d would open a plan PR — so under `--autonomous`, where there is no human to notice
+   zero work got queued, a decomposition that silently produced nothing would close out its own
+   PRD task as complete. A methodology that genuinely has nothing to decompose must say so via
+   `hardContradiction`, which has its own handled path above.
 
 **Per-task — for each entry in `tasks[]`, check all of:**
 
@@ -566,8 +578,17 @@ failure — a top-level failure is not attributable to any task id.
 3. Every entry in **`dependencies`** resolves to a real task id — one of: another `id` in
    this batch's own `tasks[]`, an id in `existingSessionTaskIds`, or an id in
    `openCrossSessionTasks`. An unresolvable dependency id can never become ready.
-4. The **`repo`** key is present (a literal `null` is valid for an unscoped task, but the key
-   must exist — the bulk endpoint rejects the batch otherwise).
+4. **`repo`** equals the `repo` value passed in as an input, exactly. The contract specifies
+   this field as "the `repo` passed in, unchanged" — a value contract, not just key-presence,
+   so key-presence alone is not enough here. The bulk endpoint's own check is weaker in both
+   directions: it requires only that the key exist, and `validateRepo` returns early on a
+   literal `null`, so a task returned with `"repo": null` is written through and then
+   undispatchable — `dev-task` derives its repo path and worktree path from `task.repo`, the
+   same reason check 2 insists on `branch`. In the other direction a wrong or hallucinated
+   `org/repo` passes format validation but fails `validateRepo`'s scope check, 400ing the
+   entire batch *after* Step 6a has already written `PLAN.md`, with no recovery path defined —
+   exactly the failure mode check 8 exists to prevent for colliding ids. Check 11 already
+   holds `session` to this stricter value-equality standard; `repo` gets the same treatment.
 5. **`title`** is a non-empty string.
 6. **`status`** is exactly `"pending"`.
 7. **`acceptanceCriteria`** is an array.
@@ -598,20 +619,23 @@ failure — a top-level failure is not attributable to any task id.
 Per-task checks 8 through 12 exist because the bulk endpoint cannot catch them for you: 8 fails
 server-side only as an opaque 409 after the plan is already on disk, and 9-12 never fail
 server-side at all — they are contract-constrained values the task store accepts as plain
-strings (or, for `hitl`, as a nullable boolean). The top-level `planMarkdown` check has no
-server-side counterpart at all: `planMarkdown` is never POSTed anywhere, it is only written to
-disk by Step 6a.
+strings (or, for `hitl`, as a nullable boolean). Check 4's value half is the same story from
+both sides — a `null` `repo` is accepted silently, and a wrong one 400s the batch only after
+`PLAN.md` is on disk. Neither top-level check has a server-side counterpart at all:
+`planMarkdown` is never POSTed anywhere, it is only written to disk by Step 6a, and an empty
+`tasks[]` is a clean `200` from `/tasks/bulk` rather than any kind of error.
 
 **Any failing check — top-level or per-task — rejects the WHOLE batch, all-or-nothing.**
 `/tasks/bulk` is itself a single transaction (any row failure rolls back the entire batch), so a
-partial POST is never the right recovery, and a bad `planMarkdown` invalidates the response as a
-whole even when every task in it is clean. Do not POST anything and do not write `PLAN.md`.
-Print one line per failure — the task id and which check(s) it failed, or `planMarkdown` for the
-top-level check:
+partial POST is never the right recovery, and a bad `planMarkdown` or an empty `tasks[]`
+invalidates the response as a whole even when every task in it is clean (for an empty `tasks[]`,
+vacuously so). Do not POST anything and do not write `PLAN.md`. Print one line per failure —
+the task id and which check(s) it failed, or `planMarkdown` / `tasks` for the top-level checks:
 
 ```
 ⚠ Configured methodology {subagent_type} returned schema-invalid output — nothing written.
 planMarkdown — failed: {check}
+tasks — failed: {check}
 {TASK-ID} — failed: {check(s)}
 ...
 ```
