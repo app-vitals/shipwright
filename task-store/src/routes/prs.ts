@@ -114,6 +114,16 @@ function numberOrNull(value: unknown): number | null | undefined {
   return undefined;
 }
 
+/** Parse a raw request-body value into a boolean-or-undefined field: a real
+ * boolean is passed through; anything else (undefined, null, wrong type)
+ * becomes undefined. Unlike stringOrNull/numberOrNull these fields (POF-1.1's
+ * `authorIsBot`/`hasAutomatedLabel`/`hasShipwrightLabel`) are pure
+ * deriveOrigin() inputs, not persisted/refreshed columns, so there's no
+ * "explicit null clears it" semantics to preserve. */
+function boolOrUndefined(value: unknown): boolean | undefined {
+  return typeof value === "boolean" ? value : undefined;
+}
+
 // ─── Route definitions ────────────────────────────────────────────────────────
 
 const listRoute = createRoute({
@@ -140,7 +150,7 @@ const claimRoute = createRoute({
   tags: ["PRs"],
   summary: "Claim a pull request (atomic)",
   description:
-    "Atomic via Postgres row locking, keyed on `(repo, prNumber)`. No existing record creates and returns `201` (a concurrent INSERT loser hits the `@@unique([repo, prNumber])` constraint and gets `409`). Against an existing record, the conflict conditions are re-checked inside the UPDATE's own WHERE clause so only one writer can win: same `commitSha` + same `phase` + already claimed by another agent returns `409` (phase locked); already claimed + same `commitSha` + `reviewState !== pending` (review phase only) returns `409` (already reviewed at this commit); otherwise the row is updated and `200` returned (new cycle). Agent tokens pin `claimedBy` to their own ID; admin tokens supply it in the body. Optional `phase` (default `review`) sets the pipeline phase — `patch`/`deploy` phases preserve `reviewState` as-is rather than resetting it. Optional `authorLogin`/`headRef`/`title` (POM-1.2) are forwarded server-side into an atomic origin-stamping write: a linked Task row (matching `repo`+`pr`) always derives `origin='shipwright'`; otherwise `authorLogin`/`headRef` are pattern-matched against known CI/dependency-bot signals, falling back to `human`/`unknown`. Origin is first-write-wins (never overwritten once set); `authorLogin`/`headRef`/`title` are refreshed to the latest value on every claim.",
+    "Atomic via Postgres row locking, keyed on `(repo, prNumber)`. No existing record creates and returns `201` (a concurrent INSERT loser hits the `@@unique([repo, prNumber])` constraint and gets `409`). Against an existing record, the conflict conditions are re-checked inside the UPDATE's own WHERE clause so only one writer can win: same `commitSha` + same `phase` + already claimed by another agent returns `409` (phase locked); already claimed + same `commitSha` + `reviewState !== pending` (review phase only) returns `409` (already reviewed at this commit); otherwise the row is updated and `200` returned (new cycle). Agent tokens pin `claimedBy` to their own ID; admin tokens supply it in the body. Optional `phase` (default `review`) sets the pipeline phase — `patch`/`deploy` phases preserve `reviewState` as-is rather than resetting it. Optional `authorLogin`/`headRef`/`title` (POM-1.2) are forwarded server-side into an atomic origin-stamping write: a linked Task row (matching `repo`+`pr`) or `hasShipwrightLabel` (POF-1.1) always derives `origin='shipwright'`; otherwise `authorIsBot`/`hasAutomatedLabel` (POF-1.1) and `authorLogin`/`headRef` are checked against known CI/dependency-bot signals, falling back to `human`/`unknown`. Origin is first-write-wins (never overwritten once set); `authorLogin`/`headRef`/`title` are refreshed to the latest value on every claim (`authorIsBot`/`hasAutomatedLabel`/`hasShipwrightLabel` are pure derivation inputs, not persisted columns).",
   request: {
     body: {
       content: { "application/json": { schema: ClaimPrBodySchema } },
@@ -568,6 +578,9 @@ export function createPrsRoutes(
       authorLogin,
       headRef,
       title,
+      authorIsBot,
+      hasAutomatedLabel,
+      hasShipwrightLabel,
     } = body;
 
     // Validate required fields
@@ -622,6 +635,9 @@ export function createPrsRoutes(
       stringOrNull(authorLogin),
       stringOrNull(headRef),
       stringOrNull(title),
+      boolOrUndefined(authorIsBot),
+      boolOrUndefined(hasAutomatedLabel),
+      boolOrUndefined(hasShipwrightLabel),
     );
 
     return c.json(record, status);
