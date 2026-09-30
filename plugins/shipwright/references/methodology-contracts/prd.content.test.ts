@@ -63,6 +63,7 @@ describe("prd.md — output section details", () => {
     expect(content).toContain("Technical Constraints");
     expect(content).toContain("Scope");
     expect(content).toContain("Priorities & Sequence");
+    expect(content).toContain("Testing Strategy");
   });
 
   it("documents Resolved Decisions as part of the output contract", () => {
