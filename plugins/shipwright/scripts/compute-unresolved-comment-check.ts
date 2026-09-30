@@ -100,7 +100,10 @@ const KNOWN_CI_ACCOUNTS = new Set([
   "renovate",
 ]);
 
-function isBotOrCiAuthor(author: { login: string; __typename?: string }): boolean {
+function isBotOrCiAuthor(author: {
+  login: string;
+  __typename?: string;
+}): boolean {
   if (author.__typename === "Bot") return true;
   return author.login.includes("[bot]") || KNOWN_CI_ACCOUNTS.has(author.login);
 }

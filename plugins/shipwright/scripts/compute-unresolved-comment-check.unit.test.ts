@@ -142,7 +142,7 @@ describe("computeUnresolvedCommentCheck", () => {
     });
   });
 
-  test("excludes a top-level comment from an author with __typename: \"Bot\" even when the login matches neither the [bot] suffix nor KNOWN_CI_ACCOUNTS", () => {
+  test('excludes a top-level comment from an author with __typename: "Bot" even when the login matches neither the [bot] suffix nor KNOWN_CI_ACCOUNTS', () => {
     // Proves the real GraphQL __typename signal now catches a bot author the
     // old string-only heuristic could never have caught: no "[bot]" suffix,
     // and "acme-integration" is not in KNOWN_CI_ACCOUNTS.
