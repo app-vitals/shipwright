@@ -230,6 +230,121 @@ describe("classifyPrOrigin", () => {
       }),
     ).toBe("shipwright");
   });
+
+  // ── POF-1.2: authorIsBot + label signals (mirrors task-store's POF-1.1
+  // deriveOrigin() suite — see task-store/src/pull-request-service.unit.test.ts) ──
+
+  test("authorIsBot true with authorLogin 'app/renovate' -> dependency_bot", () => {
+    expect(
+      classifyPrOrigin({
+        hasTaskRowMatch: false,
+        authorIsBot: true,
+        authorLogin: "app/renovate",
+        headRefName: null,
+      }),
+    ).toBe("dependency_bot");
+  });
+
+  test("authorIsBot true with authorLogin 'app/dependabot' -> dependency_bot", () => {
+    expect(
+      classifyPrOrigin({
+        hasTaskRowMatch: false,
+        authorIsBot: true,
+        authorLogin: "app/dependabot",
+        headRefName: null,
+      }),
+    ).toBe("dependency_bot");
+  });
+
+  test("authorIsBot true with the literal 'renovate[bot]' login -> dependency_bot", () => {
+    expect(
+      classifyPrOrigin({
+        hasTaskRowMatch: false,
+        authorIsBot: true,
+        authorLogin: "renovate[bot]",
+        headRefName: null,
+      }),
+    ).toBe("dependency_bot");
+  });
+
+  test("authorIsBot true with a bot identity that isn't Renovate/Dependabot -> ci", () => {
+    expect(
+      classifyPrOrigin({
+        hasTaskRowMatch: false,
+        authorIsBot: true,
+        authorLogin: "app/some-other-bot",
+        headRefName: null,
+      }),
+    ).toBe("ci");
+  });
+
+  test("authorIsBot true with no authorLogin at all -> ci", () => {
+    expect(
+      classifyPrOrigin({
+        hasTaskRowMatch: false,
+        authorIsBot: true,
+        authorLogin: null,
+        headRefName: null,
+      }),
+    ).toBe("ci");
+  });
+
+  test("hasAutomatedLabel true with a human-looking authorLogin -> ci, independent of authorLogin", () => {
+    expect(
+      classifyPrOrigin({
+        hasTaskRowMatch: false,
+        hasAutomatedLabel: true,
+        authorLogin: "octocat",
+        headRefName: null,
+      }),
+    ).toBe("ci");
+  });
+
+  test("hasShipwrightLabel true with no task row and no authorLogin -> shipwright", () => {
+    expect(
+      classifyPrOrigin({
+        hasTaskRowMatch: false,
+        hasShipwrightLabel: true,
+        authorLogin: null,
+        headRefName: null,
+      }),
+    ).toBe("shipwright");
+  });
+
+  test("hasShipwrightLabel true takes precedence over an authorLogin that would otherwise say 'dependency_bot'", () => {
+    expect(
+      classifyPrOrigin({
+        hasTaskRowMatch: false,
+        hasShipwrightLabel: true,
+        authorIsBot: true,
+        authorLogin: "app/renovate",
+        headRefName: null,
+      }),
+    ).toBe("shipwright");
+  });
+
+  test("authorIsBot true still yields 'dependency_bot' ahead of hasAutomatedLabel (bot-identity check wins first)", () => {
+    expect(
+      classifyPrOrigin({
+        hasTaskRowMatch: false,
+        authorIsBot: true,
+        hasAutomatedLabel: true,
+        authorLogin: "app/renovate",
+        headRefName: null,
+      }),
+    ).toBe("dependency_bot");
+  });
+
+  test("hasTaskRowMatch takes precedence over authorIsBot (a task row always wins)", () => {
+    expect(
+      classifyPrOrigin({
+        hasTaskRowMatch: true,
+        authorIsBot: true,
+        authorLogin: "app/renovate",
+        headRefName: null,
+      }),
+    ).toBe("shipwright");
+  });
 });
 
 // ─── classifyCommits ────────────────────────────────────────────────────────
@@ -496,6 +611,59 @@ describe("buildCensusEntry", () => {
     expect(entry.commitsCiFix).toBe(0);
     expect(entry.commitsImplementation).toBe(0);
   });
+
+  // ── POF-1.2: reads is_bot off pr.author and labels off pr.labels ──────────
+
+  test("pr.author.is_bot=true with a gh-normalized 'app/renovate' login classifies as dependency_bot", () => {
+    const entry = buildCensusEntry(
+      "org/repo",
+      pr({
+        number: 20,
+        author: { login: "app/renovate", is_bot: true },
+      }),
+      new Map(),
+    );
+
+    expect(entry.origin).toBe("dependency_bot");
+  });
+
+  test("pr.labels containing 'automated' classifies as ci even with a human-looking authorLogin", () => {
+    const entry = buildCensusEntry(
+      "org/repo",
+      pr({
+        number: 21,
+        author: { login: "some-human" },
+        labels: [{ name: "automated" }],
+      }),
+      new Map(),
+    );
+
+    expect(entry.origin).toBe("ci");
+  });
+
+  test("pr.labels containing 'shipwright' classifies as shipwright even with no task row match", () => {
+    const entry = buildCensusEntry(
+      "org/repo",
+      pr({
+        number: 22,
+        author: { login: "some-human" },
+        labels: [{ name: "shipwright" }],
+      }),
+      new Map(),
+    );
+
+    expect(entry.origin).toBe("shipwright");
+  });
+
+  test("missing labels array and missing is_bot are treated as falsy, not an error", () => {
+    const entry = buildCensusEntry(
+      "org/repo",
+      pr({ number: 23, author: { login: "some-human" } }),
+      new Map(),
+    );
+
+    expect(entry.origin).toBe("human");
+  });
 });
 
 // ─── runPrCensus ────────────────────────────────────────────────────────────
@@ -612,7 +780,7 @@ describe("runPrCensus", () => {
     await runPrCensus(deps);
 
     expect(ghCalls[0].args).toContain(
-      "number,title,author,headRefName,createdAt,mergedAt,commits",
+      "number,title,author,headRefName,createdAt,mergedAt,commits,labels",
     );
 
     const entry = postCalls[0].entries[0];

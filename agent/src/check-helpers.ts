@@ -21,7 +21,7 @@
  * - gh CLI execution helper
  */
 
-import { existsSync, readFileSync, readdirSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import type { PrReviewData } from "./check-patch.ts";
 
@@ -648,6 +648,16 @@ export function createTaskStoreClient(opts?: { fetchFn?: FetchFn }): {
      */
     headRefName?: string;
     title?: string;
+    /**
+     * POF-1.2: forwarded to POST /prs/claim alongside authorLogin/headRef/
+     * title so origin can be derived server-side using the is_bot/label
+     * precedence task-store's POF-1.1 deriveOrigin() applies (see
+     * task-store/src/openapi-schemas.ts's ClaimPrBodySchema). Flows through
+     * the implementation's `...rest` spread automatically — no rename needed.
+     */
+    authorIsBot?: boolean;
+    hasAutomatedLabel?: boolean;
+    hasShipwrightLabel?: boolean;
   }): Promise<{ id: string; commitSha: string } | null>;
   recordSkip(itemType: "task" | "pr", id: string): Promise<void>;
   resetSkip(itemType: "task" | "pr", id: string): Promise<void>;
@@ -750,8 +760,7 @@ export function createTaskStoreClient(opts?: { fetchFn?: FetchFn }): {
       // A 404 means the PR genuinely no longer exists — the caller treats
       // that as "not in_progress anymore", not as an error worth throwing.
       if (res.status === 404) return null;
-      if (!res.ok)
-        throw new Error(`task-store GET /prs/${id} → ${res.status}`);
+      if (!res.ok) throw new Error(`task-store GET /prs/${id} → ${res.status}`);
       return res.json() as Promise<unknown>;
     },
     async heartbeatPr(id: string): Promise<void> {
@@ -797,6 +806,9 @@ export function createTaskStoreClient(opts?: { fetchFn?: FetchFn }): {
       authorLogin?: string | null;
       headRefName?: string;
       title?: string;
+      authorIsBot?: boolean;
+      hasAutomatedLabel?: boolean;
+      hasShipwrightLabel?: boolean;
     }): Promise<{ id: string; commitSha: string } | null> {
       // The task-store's /prs/claim body field is `headRef` (its shorter
       // internal column name), not `headRefName` (WorkPrCandidate/GitHub's

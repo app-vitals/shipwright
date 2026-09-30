@@ -117,10 +117,10 @@ import {
 import { parseMarkers } from "./markers.ts";
 import type { WorkQueueReporter } from "./work-queue-reporter.ts";
 import {
-  type WorkPrCandidate,
-  type WorkTaskCandidate,
   rankWorkItems,
   selectNextWorkItem,
+  type WorkPrCandidate,
+  type WorkTaskCandidate,
 } from "./work-selector.ts";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -874,13 +874,11 @@ export function createLoopOrchestrator(
       // capture is decoupled from that — plan still pushes it for observability.
       // Fire-and-forget, same contract as recordProgress below.
       const onEarlySessionId: EarlySessionIdCallback = (sid) => {
-        cronRunReporter
-          .recordSessionId(loopCronId, runId, sid)
-          .catch((err) => {
-            console.warn(
-              `[loop-orchestrator] recordSessionId failed for run ${runId}: ${String(err)} — swallowing`,
-            );
-          });
+        cronRunReporter.recordSessionId(loopCronId, runId, sid).catch((err) => {
+          console.warn(
+            `[loop-orchestrator] recordSessionId failed for run ${runId}: ${String(err)} — swallowing`,
+          );
+        });
       };
 
       // Progress push (CSU-3.1): fired as each new assistant turn completes so
@@ -1957,6 +1955,9 @@ export function buildClaimPrRequest(
   authorLogin?: string;
   headRefName?: string;
   title?: string;
+  authorIsBot?: boolean;
+  hasAutomatedLabel?: boolean;
+  hasShipwrightLabel?: boolean;
 } {
   return {
     repo: parsed.repo,
@@ -1966,6 +1967,12 @@ export function buildClaimPrRequest(
     authorLogin: pr.authorLogin,
     headRefName: pr.headRefName,
     title: pr.title,
+    // POF-1.2: forwarded alongside authorLogin/headRefName/title so the
+    // task-store can derive origin server-side using the same is_bot/label
+    // precedence POF-1.1's deriveOrigin() applies.
+    authorIsBot: pr.authorIsBot,
+    hasAutomatedLabel: pr.hasAutomatedLabel,
+    hasShipwrightLabel: pr.hasShipwrightLabel,
   };
 }
 

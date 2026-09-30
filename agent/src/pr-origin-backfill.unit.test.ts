@@ -239,7 +239,7 @@ describe("runBackfillForRepo", () => {
     await runBackfillForRepo(deps, "org/repo-a", CUTOFF);
 
     expect(ghCalls[0].args).toContain(
-      "number,title,author,headRefName,createdAt,mergedAt,commits",
+      "number,title,author,headRefName,createdAt,mergedAt,commits,labels",
     );
     expect(postCalls[0].entries[0].commitCount).toBe(2);
   });

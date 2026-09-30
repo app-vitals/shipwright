@@ -167,7 +167,9 @@ export async function runBackfillForRepo(
       "--json",
       // `commits` is required by GhCensusPr / buildCensusEntry() — dropping it
       // would silently stamp false-zero commit counts (see the module doc).
-      "number,title,author,headRefName,createdAt,mergedAt,commits",
+      // `labels` (POF-1.2) feeds classifyPrOrigin()'s hasAutomatedLabel/
+      // hasShipwrightLabel inputs via the same buildCensusEntry() reuse.
+      "number,title,author,headRefName,createdAt,mergedAt,commits,labels",
       "--repo",
       repo,
     ]);
