@@ -38,7 +38,9 @@ specifies the wire shape, not implementation policy.
   - **`title`** — the task's title.
   - **`description`** — the task's description.
   - **`acceptanceCriteria`** — the task's acceptance criteria, as a list.
-  - **`layer`** — the task's declared layer (e.g. `unit`, `integration`, `Shared`).
+  - **`layer`** — the task's declared layer (e.g. `Shared`, `API`, `Database`). Distinct from
+    a *test* layer (`unit`/`integration`/`smoke`) — those arrive via the `tests` object in the
+    toolchain commands below.
 - **Repo context**:
   - **`worktree-path`** — the already-prepared worktree the subagent works inside. The
     subagent does **not** create a new branch — Step 4 has already created and checked out
@@ -92,7 +94,7 @@ BLOCKER:  {if BLOCKED}
   the same prompt plus the blocker context appended) and, only after that ladder is exhausted,
   PATCHes the task `blocked` with `blockedReason: "implementation_blocked_after_model_escalation"`
   — the same "caller performs the actual side effect, subagent only reports a verdict" pattern
-  the patch- and review-phase contracts use for their own escalation/status transitions.
+  the patch- and deploy-phase contracts use for their own escalation/status transitions.
 
 ## Scope
 

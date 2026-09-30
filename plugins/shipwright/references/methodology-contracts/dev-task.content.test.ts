@@ -56,6 +56,15 @@ describe("dev-task.md — inputs", () => {
     expect(content).toContain("layer");
   });
 
+  it("documents layer using canonical task-layer values, not test-layer names", () => {
+    const layerLine = content.split("\n").find((l) => l.includes("**`layer`**")) ?? "";
+    expect(layerLine).toContain("Shared");
+    expect(layerLine).toContain("API");
+    expect(layerLine).toContain("Database");
+    expect(layerLine).not.toContain("`unit`");
+    expect(layerLine).not.toContain("`integration`");
+  });
+
   it("documents the worktree-path input and that the subagent does not create a new branch", () => {
     expect(content).toContain("worktree-path");
     expect(content.toLowerCase()).toContain("does not");
@@ -107,6 +116,11 @@ describe("dev-task.md — output", () => {
     expect(content).toContain("haiku");
     expect(content).toContain("sonnet");
     expect(content).toContain("opus");
+  });
+
+  it("attributes the shared caller-performs-the-side-effect pattern to the patch and deploy contracts", () => {
+    expect(content).toContain("the patch- and deploy-phase contracts");
+    expect(content).not.toContain("the patch- and review-phase contracts");
   });
 });
 
