@@ -206,8 +206,8 @@ describe("prd.md — Malformed or Failed Response handling falls back to the bui
 
   it("falls back to running the built-in flow inline when the retry also fails, not to abandoning the session", () => {
     const section = extractDispatchSection(content);
-    expect(section.toLowerCase()).toContain(
-      "fall back to running the built-in flow inline",
+    expect(section.toLowerCase()).toMatch(
+      /fall back to\s+running the built-in flow inline/,
     );
   });
 
@@ -226,8 +226,8 @@ describe("prd.md — Malformed or Failed Response handling falls back to the bui
 
   it("states Phase 5 always runs against a real, structurally valid spec regardless of which path produced it", () => {
     const section = extractDispatchSection(content);
-    expect(section.toLowerCase()).toContain(
-      "phase 5 always runs against a real, structurally valid spec",
+    expect(section.toLowerCase()).toMatch(
+      /phase 5 always\s+runs against a real, structurally valid spec/,
     );
   });
 });

@@ -333,16 +333,25 @@ If the Agent tool dispatch itself fails (errors, or `PRD_SUBAGENT_TYPE` names an
 invalid/nonexistent `subagent_type` from a misconfigured override), or Structural Validation
 above fails, retry once with the same `PRD_SUBAGENT_TYPE` and the same prompt.
 
-If the retry also fails Structural Validation (or fails to dispatch at all), **fall back to running the built-in flow inline**, starting from Phase 0 step 2 (toolchain detection) below, through Phase 4 — the same steps that were skipped when `PRD_SUBAGENT_TYPE` first resolved non-empty.
+If the retry also fails Structural Validation (or fails to dispatch at all), **fall back to
+running the built-in flow inline**, starting from Phase 0 step 2 (toolchain detection) below,
+through Phase 4 — the same steps that were skipped when `PRD_SUBAGENT_TYPE` first resolved
+non-empty.
 
-Unlike `plan-session.md`'s PSM-1.2, which abandons the session outright when its configured methodology fails after retry (its built-in decomposition needs a live codebase-exploration and design pass this command's main thread doesn't already know how to re-run inline), prd's built-in path is exactly the same interactive Q&A this main thread already runs unconditionally today — so falling back here costs the human a restarted conversation, not a lost session with nowhere to go. Print a one-line note first:
+Unlike `plan-session.md`'s PSM-1.2, which abandons the session outright when its configured
+methodology fails after retry (its built-in decomposition needs a live codebase-exploration
+and design pass this command's main thread doesn't already know how to re-run inline), prd's
+built-in path is exactly the same interactive Q&A this main thread already runs
+unconditionally today — so falling back here costs the human a restarted conversation, not a
+lost session with nowhere to go. Print a one-line note first:
 
 ```
 ⚠ Configured prd methodology {PRD_SUBAGENT_TYPE} failed after retry — falling back to the
 built-in PRD flow.
 ```
 
-Either way — configured subagent success, or fallback to the built-in flow — Phase 5 always runs against a real, structurally valid spec on disk.
+Either way — configured subagent success, or fallback to the built-in flow — Phase 5 always
+runs against a real, structurally valid spec on disk.
 
 ## Phase 5: Summary and Next Steps
 
