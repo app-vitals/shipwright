@@ -3,6 +3,11 @@
 Shipwright ships a default principles file (`references/principles.md`, relative to the
 plugin root). You can customize it per project without modifying the plugin.
 
+> **Canonical reference:** see `references/principles-pattern.md` (relative to the plugin
+> root) for the full, skill-agnostic description of this pattern — schema, override
+> semantics, and init flow — shared with `security-scan`. This page covers
+> `entropy-scan`-specific customization recipes.
+
 ---
 
 ## Override path

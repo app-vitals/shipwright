@@ -56,6 +56,10 @@ If the `--init` flag was passed:
 3. Print: "Created `.claude/shipwright/security-principles.md`. Edit it to customize security checks for this project. Re-run `/security-scan` to start scanning."
 4. Stop — do not run the scan.
 
+See `references/principles-pattern.md` (relative to the plugin root) for the canonical
+description of this override pattern — schema, override semantics, and init flow —
+shared with `entropy-scan`.
+
 ---
 
 ## Step 2: Detect Repo + Derive `repo-slug`
