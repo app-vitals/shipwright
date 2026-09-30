@@ -142,6 +142,26 @@ describe("computeUnresolvedCommentCheck", () => {
     });
   });
 
+  test("excludes a top-level comment from an author with __typename: \"Bot\" even when the login matches neither the [bot] suffix nor KNOWN_CI_ACCOUNTS", () => {
+    // Proves the real GraphQL __typename signal now catches a bot author the
+    // old string-only heuristic could never have caught: no "[bot]" suffix,
+    // and "acme-integration" is not in KNOWN_CI_ACCOUNTS.
+    const input = makeInput({
+      comments: {
+        nodes: [
+          {
+            author: { login: "acme-integration", __typename: "Bot" },
+            body: "This build failed, please investigate.",
+            createdAt: "2026-05-26T10:00:00Z",
+          },
+        ],
+      },
+    });
+    expect(computeUnresolvedCommentCheck(input)).toEqual({
+      hasSubstantiveUnresolvedFeedback: false,
+    });
+  });
+
   test("excludes an unresolved inline thread whose first comment is from a bot", () => {
     const input = makeInput({
       reviewThreads: {

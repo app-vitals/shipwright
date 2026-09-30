@@ -294,7 +294,7 @@ configured. Step 7 below dispatches whichever `subagent_type` this resolves to.
          headRefOid
          reviews(first: 50) {
            nodes {
-             author { login }
+             author { login __typename }
              state
              submittedAt
              commit { oid }
@@ -307,7 +307,7 @@ configured. Step 7 below dispatches whichever `subagent_type` this resolves to.
              isResolved
              comments(first: 20) {
                nodes {
-                 author { login }
+                 author { login __typename }
                  body
                  path
                  line
@@ -318,7 +318,7 @@ configured. Step 7 below dispatches whichever `subagent_type` this resolves to.
          }
          comments(first: 50) {
            nodes {
-             author { login }
+             author { login __typename }
              body
              createdAt
            }
@@ -477,8 +477,13 @@ pattern. It reuses `compute-unaddressed-findings.ts`'s exported
 `isAddressedByAuthorReply`/`isThreadAddressedByAuthorReply` helpers (CPF-2.3/URT-1.1) — so a
 `CHANGES_REQUESTED` review, a substantive top-level comment, or an unresolved inline thread
 that the PR author has already replied to and addressed does not count as substantive
-unresolved feedback, the same exclusion Step 9.5's hard gate below already applies. Before
-this fix, Step 5 ran this decision freehand and never applied that exclusion — since Step 5
+unresolved feedback, the same exclusion Step 9.5's hard gate below already applies. Bot/CI
+authors are excluded from counting as unresolved feedback the same way: the query above
+fetches `__typename` alongside `login` on every `author` block (RBD-1.1), and
+`isBotOrCiAuthor` checks `author.__typename === "Bot"` first as the authoritative GraphQL
+signal, falling back to the login-string heuristic (`[bot]` suffix or `KNOWN_CI_ACCOUNTS`)
+only when `__typename` is absent — e.g. an older cached fixture, or a caller whose query
+hasn't been upgraded to request it. Before this fix, Step 5 ran this decision freehand and never applied that exclusion — since Step 5
 runs earlier and stops the pipeline (deferring the review pass silently) on a match, its
 wrong answer won even when Step 9.5's later, correct, mechanized gate would have said the
 finding was resolved. Invoke it with the `reviews`, `comments`, and `reviewThreads` fetched above (no
