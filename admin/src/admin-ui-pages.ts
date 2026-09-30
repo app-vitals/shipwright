@@ -179,6 +179,25 @@ export interface VerificationActivitySummary {
    * predate this field; buildVerificationActivityRollup always populates it.
    */
   byCheckName?: Record<string, Record<string, number>>;
+  /**
+   * Same counts as `counts`, broken down per repo (repo -> VerificationCheckStatus
+   * -> count) — lets the rollup card show which repo an agent's verification
+   * activity happened in when it spans more than one (VEA-1.1). Optional for
+   * backward compatibility with existing callers/fixtures that predate this
+   * field; buildVerificationActivityRollup always populates it.
+   */
+  byRepo?: Record<string, Record<string, number>>;
+  /**
+   * Environmental-cause breakdown (repo -> VerificationCheckReasonCategory ->
+   * count), built only from rows where reasonCategory is non-null — i.e. only
+   * `skipped`/`timed_out` rows (VEA-1.1). `ran_failed` rows never contribute
+   * here: reasonCategory is guardrailed in
+   * task-store/src/verification-check-service.ts to never be set on a
+   * `ran_failed` row. Optional for backward compatibility with existing
+   * callers/fixtures that predate this field; buildVerificationActivityRollup
+   * always populates it.
+   */
+  environmentalByRepo?: Record<string, Record<string, number>>;
 }
 
 // Inline CSS + labels for verification-check status badges, keyed by the raw
@@ -207,6 +226,53 @@ const VERIFICATION_STATUS_ORDER = [
 /** Human label for a verification-check status, falling back to the raw value for an unrecognized status. */
 function verificationStatusLabel(status: string): string {
   return VERIFICATION_STATUS_LABEL[status] ?? status;
+}
+
+// Inline labels for VerificationCheck.reasonCategory values — the closed set
+// of environmental causes a `skipped`/`timed_out` row can carry (see
+// task-store/src/openapi-schemas.ts's VerificationCheckSchema). Mirrors the
+// VERIFICATION_STATUS_LABEL pattern above. `ran_passed`/`ran_failed` rows
+// never carry a reasonCategory (write-path guardrail in
+// task-store/src/verification-check-service.ts), so this map only ever
+// backs the "Environmental issues" sub-section, never a status badge.
+const VERIFICATION_REASON_CATEGORY_LABEL: Record<string, string> = {
+  missing_tool: "missing tool",
+  missing_secret: "missing secret",
+  missing_dependency: "missing dependency",
+  not_configured: "not configured",
+  check_timeout: "check timed out",
+  install_timeout: "install timed out",
+  resource_limit: "resource limit hit",
+  learned_skip: "learned skip",
+};
+const VERIFICATION_REASON_CATEGORY_ORDER = [
+  "missing_tool",
+  "missing_secret",
+  "missing_dependency",
+  "not_configured",
+  "check_timeout",
+  "install_timeout",
+  "resource_limit",
+  "learned_skip",
+];
+const VERIFICATION_REASON_CATEGORY_STYLE = "background:#fde68a;color:#92400e";
+
+/** Human label for a reasonCategory value, falling back to the raw value for an unrecognized one. */
+function verificationReasonCategoryLabel(reasonCategory: string): string {
+  return VERIFICATION_REASON_CATEGORY_LABEL[reasonCategory] ?? reasonCategory;
+}
+
+/** Renders one badge per non-zero reasonCategory count, in VERIFICATION_REASON_CATEGORY_ORDER. */
+function renderReasonCategoryCountBadges(
+  counts: Record<string, number>,
+): string {
+  return VERIFICATION_REASON_CATEGORY_ORDER.map((reasonCategory) => {
+    const count = counts[reasonCategory] ?? 0;
+    if (count === 0) return "";
+    return `<span style="margin-right:12px;font-size:13px"><span class="badge" style="${VERIFICATION_REASON_CATEGORY_STYLE}">${escapeHtml(verificationReasonCategoryLabel(reasonCategory))}</span> ${count}</span>`;
+  })
+    .filter(Boolean)
+    .join("");
 }
 
 /** Renders a status badge for a verification-check row, styled by status. */
@@ -315,11 +381,61 @@ function renderVerificationActivityCard(
       </div>`;
     })
     .join("");
+
+  // Per-repo status breakdown — only worth its own sub-section once the
+  // rollup spans more than one repo; a single-repo rollup is already fully
+  // covered by the top-line summary above.
+  const byRepo = summary.byRepo ?? {};
+  const repoKeys = Object.keys(byRepo);
+  const repoSection =
+    repoKeys.length > 1
+      ? `<div style="font-size:11px;font-weight:600;color:#374151;margin:12px 0 6px;text-transform:uppercase;letter-spacing:.05em">By repo</div>
+      <div>${repoKeys
+        .sort()
+        .map((repo) => {
+          const repoBadges = renderStatusCountBadges(byRepo[repo]);
+          return `<div style="margin-bottom:6px">
+        <span style="display:inline-block;min-width:140px;font-size:12px;font-family:monospace;color:#6b7280">${escapeHtml(repo)}</span>
+        ${repoBadges}
+      </div>`;
+        })
+        .join("")}</div>`
+      : "";
+
+  // Environmental issues — the WHY behind skipped/timed_out rows (VEA-1.1).
+  // Always rendered, including an explicit all-clear line, so "no
+  // environmental issues" is a visible, actionable signal rather than an
+  // absent section that reads as "not checked".
+  const environmentalByRepo = summary.environmentalByRepo ?? {};
+  const environmentalRepoKeys = Object.keys(environmentalByRepo).filter(
+    (repo) =>
+      Object.values(environmentalByRepo[repo]).some((count) => count > 0),
+  );
+  const environmentalRows =
+    environmentalRepoKeys.length > 0
+      ? environmentalRepoKeys
+          .sort()
+          .map((repo) => {
+            const reasonBadges = renderReasonCategoryCountBadges(
+              environmentalByRepo[repo],
+            );
+            return `<div style="margin-bottom:6px">
+        <span style="display:inline-block;min-width:140px;font-size:12px;font-family:monospace;color:#6b7280">${escapeHtml(repo)}</span>
+        ${reasonBadges}
+      </div>`;
+          })
+          .join("")
+      : `<div style="font-size:13px;color:#6b7280">No environmental issues in recent runs</div>`;
+  const environmentalSection = `<div style="font-size:11px;font-weight:600;color:#374151;margin:12px 0 6px;text-transform:uppercase;letter-spacing:.05em">Environmental issues</div>
+      <div>${environmentalRows}</div>`;
+
   return `<div class="card">
       <div class="card-title">Recent Verification Activity</div>
       <div style="font-size:13px;color:#6b7280;margin-bottom:10px">${summary.totalChecks} check${summary.totalChecks === 1 ? "" : "s"} across ${summary.itemCount} recent item${summary.itemCount === 1 ? "" : "s"}</div>
       <div style="margin-bottom:10px">${badges}</div>
       <div>${checkNameRows}</div>
+      ${repoSection}
+      ${environmentalSection}
     </div>`;
 }
 
