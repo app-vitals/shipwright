@@ -515,6 +515,46 @@ describe("plan-session.md — Step 6d persists the plan to the repo", () => {
   });
 });
 
+describe("plan-session.md — Step 6d opens the plan PR with the shipwright label (POF-2.3)", () => {
+  function step6d(): string {
+    const section = extractStep6bSection(content);
+    const idx = section.indexOf("Step 6d");
+    expect(idx).toBeGreaterThan(-1);
+    return section.slice(idx, section.indexOf("\n---", idx));
+  }
+
+  it("includes a gh label create shipwright line with --force flag before the gh pr create invocation", () => {
+    const section = step6d();
+    expect(section).toContain("gh label create shipwright");
+    expect(section).toContain("--force");
+    const labelCreateIdx = section.indexOf("gh label create shipwright");
+    // "gh pr create" (without --head) is a false landmark here: an earlier
+    // comment in this same section ("...failed after push but before `gh pr
+    // create`...") mentions the phrase before the real invocation.
+    const prCreateIdx = section.indexOf("gh pr create --head");
+    expect(labelCreateIdx).toBeGreaterThan(-1);
+    expect(prCreateIdx).toBeGreaterThan(-1);
+    expect(labelCreateIdx).toBeLessThan(prCreateIdx);
+  });
+
+  it("includes --label shipwright in the gh pr create invocation", () => {
+    const section = step6d();
+    expect(section).toContain("--label shipwright");
+  });
+
+  it("includes the shipwright label description and color in the label-create command", () => {
+    const section = step6d();
+    expect(section).toContain("Opened autonomously by Shipwright");
+    expect(section).toContain("1D76DB");
+  });
+
+  it("documents that --force makes the label-create step idempotent", () => {
+    const section = step6d();
+    expect(section.toLowerCase()).toContain("idempotent");
+    expect(section.toLowerCase()).toContain("--force");
+  });
+});
+
 describe("plan-session.md — Step 5 principles override check + security domain (PCO-1.1)", () => {
   function extractStep5Section(md: string): string {
     const match = md.match(/## Step 5: Task Breakdown[\s\S]*?(?=\n### Complexity and Model Scoring)/);

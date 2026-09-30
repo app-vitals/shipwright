@@ -19,7 +19,7 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { PrReviewData, ReviewNode, ReviewThread } from "./check-patch.ts";
+import * as checkHelpers from "./check-helpers.ts";
 import {
   classifyReviewState,
   createBundleCompleteQuery,
@@ -39,7 +39,7 @@ import {
   reviewsAtHeadCommit,
   VERDICT_TERMINAL_LABEL,
 } from "./check-helpers.ts";
-import * as checkHelpers from "./check-helpers.ts";
+import type { PrReviewData, ReviewNode, ReviewThread } from "./check-patch.ts";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -409,25 +409,33 @@ describe("readAllowSelfReview", () => {
 describe("parseCleanupMergedWorktrees", () => {
   test("returns true when the table cell says true", () => {
     expect(
-      checkHelpers.parseCleanupMergedWorktrees("| `cleanup_merged_worktrees` | true |"),
+      checkHelpers.parseCleanupMergedWorktrees(
+        "| `cleanup_merged_worktrees` | true |",
+      ),
     ).toBe(true);
   });
 
   test("returns false when the table cell says false", () => {
     expect(
-      checkHelpers.parseCleanupMergedWorktrees("| `cleanup_merged_worktrees` | false |"),
+      checkHelpers.parseCleanupMergedWorktrees(
+        "| `cleanup_merged_worktrees` | false |",
+      ),
     ).toBe(false);
   });
 
   test("returns false for bold-style false", () => {
     expect(
-      checkHelpers.parseCleanupMergedWorktrees("**cleanup_merged_worktrees**: false"),
+      checkHelpers.parseCleanupMergedWorktrees(
+        "**cleanup_merged_worktrees**: false",
+      ),
     ).toBe(false);
   });
 
   test("returns true for bold-style true", () => {
     expect(
-      checkHelpers.parseCleanupMergedWorktrees("**cleanup_merged_worktrees**: true"),
+      checkHelpers.parseCleanupMergedWorktrees(
+        "**cleanup_merged_worktrees**: true",
+      ),
     ).toBe(true);
   });
 
@@ -448,7 +456,9 @@ describe("parseCleanupMergedWorktrees", () => {
   });
 
   test("defaults to true when the field is missing entirely", () => {
-    expect(checkHelpers.parseCleanupMergedWorktrees("no policy here")).toBe(true);
+    expect(checkHelpers.parseCleanupMergedWorktrees("no policy here")).toBe(
+      true,
+    );
   });
 
   test("defaults to true when content is empty", () => {
@@ -624,15 +634,13 @@ describe("parseAutoPostReviews", () => {
 
 describe("parseMinConfidence", () => {
   test("parses numeric value from table format", () => {
-    expect(
-      checkHelpers.parseMinConfidence("| `min_confidence` | 60 |"),
-    ).toBe(60);
+    expect(checkHelpers.parseMinConfidence("| `min_confidence` | 60 |")).toBe(
+      60,
+    );
   });
 
   test("parses numeric value from bold-style format", () => {
-    expect(checkHelpers.parseMinConfidence("**min_confidence**: 90")).toBe(
-      90,
-    );
+    expect(checkHelpers.parseMinConfidence("**min_confidence**: 90")).toBe(90);
   });
 
   test("parses numeric value from plain YAML frontmatter style", () => {
@@ -652,15 +660,13 @@ describe("parseMinConfidence", () => {
   });
 
   test("handles leading/trailing whitespace around numeric value", () => {
-    expect(
-      checkHelpers.parseMinConfidence("**min_confidence**:   80   "),
-    ).toBe(80);
+    expect(checkHelpers.parseMinConfidence("**min_confidence**:   80   ")).toBe(
+      80,
+    );
   });
 
   test("defaults to 75 when value is not a valid number", () => {
-    expect(checkHelpers.parseMinConfidence("**min_confidence**: abc")).toBe(
-      75,
-    );
+    expect(checkHelpers.parseMinConfidence("**min_confidence**: abc")).toBe(75);
   });
 
   test("parses zero as a valid value", () => {
@@ -1201,7 +1207,9 @@ describe("createTaskStoreClient query()", () => {
     const client = createTaskStoreClient({ fetchFn: fakeFetch });
     const result = await client.getPr("clx0987654321");
 
-    expect(capturedUrl).toBe("https://task-store.example.com/prs/clx0987654321");
+    expect(capturedUrl).toBe(
+      "https://task-store.example.com/prs/clx0987654321",
+    );
     expect(capturedInit?.method ?? "GET").toBe("GET");
     expect(result).toEqual({ ...FAKE_PR, reviewState: "approved" });
   });
@@ -1397,6 +1405,36 @@ describe("createTaskStoreClient query()", () => {
     });
     // The client-side field name must never leak into the outbound request.
     expect(sentBody.headRefName).toBeUndefined();
+  });
+
+  test("claimPr() forwards authorIsBot/hasAutomatedLabel/hasShipwrightLabel in the outbound body (POF-1.2)", async () => {
+    let capturedInit: RequestInit | undefined;
+    const fakeFetch = (async (_url: RequestInfo | URL, init?: RequestInit) => {
+      capturedInit = init;
+      return { ok: true, status: 200, json: async () => FAKE_PR } as Response;
+    }) as unknown as typeof fetch;
+
+    const client = createTaskStoreClient({ fetchFn: fakeFetch });
+    await client.claimPr({
+      repo: "app-vitals/shipwright",
+      prNumber: 42,
+      commitSha: "abc123def456",
+      phase: "review",
+      authorIsBot: true,
+      hasAutomatedLabel: false,
+      hasShipwrightLabel: true,
+    });
+
+    const sentBody = JSON.parse(capturedInit?.body as string);
+    expect(sentBody).toEqual({
+      repo: "app-vitals/shipwright",
+      prNumber: 42,
+      commitSha: "abc123def456",
+      phase: "review",
+      authorIsBot: true,
+      hasAutomatedLabel: false,
+      hasShipwrightLabel: true,
+    });
   });
 
   test("claimPr() omits authorLogin/headRef/title from the outbound body when not supplied", async () => {
@@ -1599,9 +1637,7 @@ describe("createTaskStoreClient query()", () => {
       }) as Response) as unknown as typeof fetch;
 
     const client = createTaskStoreClient({ fetchFn: fakeFetch });
-    await expect(
-      client.recordSkip("task", "SKT-2.1"),
-    ).resolves.toBeUndefined();
+    await expect(client.recordSkip("task", "SKT-2.1")).resolves.toBeUndefined();
   });
 
   test("recordSkip() swallows a network error (does not throw)", async () => {
@@ -1624,9 +1660,7 @@ describe("createTaskStoreClient query()", () => {
       }) as Response) as unknown as typeof fetch;
 
     const client = createTaskStoreClient({ fetchFn: fakeFetch });
-    await expect(
-      client.resetSkip("task", "SKT-2.1"),
-    ).resolves.toBeUndefined();
+    await expect(client.resetSkip("task", "SKT-2.1")).resolves.toBeUndefined();
   });
 
   test("resetSkip() swallows a network error (does not throw)", async () => {
@@ -2601,27 +2635,27 @@ describe("mapReposTolerant", () => {
 
 describe("isTaskBlockedForDispatch", () => {
   test("returns true when hitl is true", () => {
-    expect(
-      isTaskBlockedForDispatch({ status: "pr_open", hitl: true }),
-    ).toBe(true);
+    expect(isTaskBlockedForDispatch({ status: "pr_open", hitl: true })).toBe(
+      true,
+    );
   });
 
   test("returns true when status is 'blocked'", () => {
-    expect(
-      isTaskBlockedForDispatch({ status: "blocked", hitl: false }),
-    ).toBe(true);
+    expect(isTaskBlockedForDispatch({ status: "blocked", hitl: false })).toBe(
+      true,
+    );
   });
 
   test("returns true when both hitl:true and status:'blocked'", () => {
-    expect(
-      isTaskBlockedForDispatch({ status: "blocked", hitl: true }),
-    ).toBe(true);
+    expect(isTaskBlockedForDispatch({ status: "blocked", hitl: true })).toBe(
+      true,
+    );
   });
 
   test("returns false when hitl is false and status is not 'blocked'", () => {
-    expect(
-      isTaskBlockedForDispatch({ status: "pending", hitl: false }),
-    ).toBe(false);
+    expect(isTaskBlockedForDispatch({ status: "pending", hitl: false })).toBe(
+      false,
+    );
   });
 
   test("returns false when hitl is undefined and status is not 'blocked'", () => {

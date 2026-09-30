@@ -1137,12 +1137,34 @@ Generated with [Claude Code](https://claude.com/claude-code)
 ```
 
 ```bash
-gh pr create \
+REVERT_PR_URL=$(gh pr create \
   --repo {org}/{repo} \
   --title "revert: canary failure — PR #{pr}" \
   --body-file /tmp/shipwright-revert-{pr}.txt \
-  --base main
+  --base main)
 rm /tmp/shipwright-revert-{pr}.txt
+REVERT_PR_NUMBER=$(basename "$REVERT_PR_URL")
+```
+
+Stamp `origin: "shipwright"` on the revert PR's task-store record directly, using the same
+`SHIPWRIGHT_TASK_STORE_TOKEN`/`SHIPWRIGHT_TASK_STORE_URL` credentials already used for the
+TASK_IDS/PR_RECORD_ID PATCH calls below — first-write-wins semantics on `origin` mean this
+survives any later reconciler/census-sweep pass, so the census sweep no longer has to guess
+this PR's origin from author/task-row heuristics (see docs/metrics.md's Historical-accuracy
+caveat):
+
+```bash
+curl -sf -X POST \
+  -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
+  -H "Content-Type: application/json" \
+  "$SHIPWRIGHT_TASK_STORE_URL/prs/census" \
+  -d "$(jq -n \
+        --arg repo "{org}/{repo}" \
+        --argjson prNumber "$REVERT_PR_NUMBER" \
+        --arg authorLogin "$AGENT_LOGIN" \
+        --arg headRef "revert/canary-{task_id_or_pr}" \
+        --arg title "revert: canary failure — PR #{pr}" \
+        '[{repo: $repo, prNumber: $prNumber, origin: "shipwright", state: "open", authorLogin: $authorLogin, headRef: $headRef, title: $title}]')" | jq .
 ```
 
 Print:

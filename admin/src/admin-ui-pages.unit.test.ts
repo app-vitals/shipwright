@@ -2765,6 +2765,39 @@ describe("renderAgentDetailPage — accordion groups", () => {
     expect(match?.[0]).toContain("display: flex");
     expect(match?.[0]).toContain("justify-content: space-between");
   });
+
+  test("Expand all button is present and renders as a real <button> element", () => {
+    const html = render();
+    expect(html).toContain('<button');
+    expect(html).toContain("Expand all");
+  });
+
+  test("Collapse all button is present and renders as a real <button> element", () => {
+    const html = render();
+    expect(html).toContain('<button');
+    expect(html).toContain("Collapse all");
+  });
+
+  test("inline script with expand/collapse logic is present in the rendered HTML", () => {
+    const html = render();
+    expect(html).toContain("<script>");
+    expect(html).toContain("document.querySelectorAll");
+    expect(html).toContain(".group");
+  });
+
+  test("inline script sets open=true on all .group elements when Expand all is clicked", () => {
+    const html = render();
+    expect(html).toContain("querySelectorAll");
+    expect(html).toContain(".group");
+    expect(html).toContain("el.open = true");
+  });
+
+  test("inline script sets open=false on all .group elements when Collapse all is clicked", () => {
+    const html = render();
+    expect(html).toContain("querySelectorAll");
+    expect(html).toContain(".group");
+    expect(html).toContain("el.open = false");
+  });
 });
 
 // ─── renderAgentDetailPage — stat strip (AGA-1.2) ────────────────────────────

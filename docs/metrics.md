@@ -122,17 +122,22 @@ The dashboard renders commit data in two panels:
 
 ### Origin classification rules
 
-`PullRequest.origin` is derived by precedence (first match wins), implemented identically by `deriveOrigin()` (task-store, `/prs/claim`, POM-1.2) and `classifyPrOrigin()` (agent, the POM-4.1 census sweep):
+`PullRequest.origin` is derived by precedence (first match wins). `deriveOrigin()` (task-store, `/prs/claim`) is the source of truth for the table below; `classifyPrOrigin()` (agent, the POM-4.1 census sweep) implements the pre-POF-1.1 subset of it (steps 1 and 5–8 below, under their old numbering) and has not yet been updated with the `authorIsBot`/label-signal steps, since the census sweep has no `is_bot`/label data to feed it:
 
 | Order | Condition | Origin |
 |---|---|---|
-| 1 | A task-store `Task` row links `(repo, pr)` | `shipwright` |
-| 2 | `authorLogin` is `github-actions[bot]`, or `headRef` matches `chore/(chart\|plugin-version)-v*` | `ci` |
-| 3 | `authorLogin` is `renovate[bot]` or `dependabot[bot]` | `dependency_bot` |
-| 4 | `authorLogin` is any other non-empty string | `human` |
-| 5 | No `authorLogin` and no task-row match | `unknown` |
+| 1 | A task-store `Task` row links `(repo, pr)`, or the PR carries a Shipwright label (`hasShipwrightLabel`, POF-1.1) | `shipwright` |
+| 2 | `authorIsBot` is true (POF-1.1) and `authorLogin` matches a known Renovate/Dependabot identity, any spelling (e.g. `renovate[bot]` or gh's normalized `app/renovate`) | `dependency_bot` |
+| 3 | `authorIsBot` is true (POF-1.1), any other bot identity | `ci` |
+| 4 | The PR carries an automated-run label (`hasAutomatedLabel`, POF-1.1) | `ci` |
+| 5 | `authorLogin` is `github-actions[bot]`, or `headRef` matches `chore/(chart\|plugin-version)-v*` | `ci` |
+| 6 | `authorLogin` is `renovate[bot]` or `dependabot[bot]` | `dependency_bot` |
+| 7 | `authorLogin` is any other non-empty string | `human` |
+| 8 | No `authorLogin` and no task-row/label match | `unknown` |
 
-A task-row match always wins, even over a bot-looking `authorLogin`. **Historical-accuracy caveat:** `deploy.md`'s canary-revert PR never transitions a task to `pr_open` and never calls `/prs/claim`, but it IS a merged PR like any other, so the census sweep classifies it (typically `human`) once it merges after POM-4.1 shipped. PRs that merged before origin-tracking was deployed (POM-1.1/1.2, deployed 2026-09-16) can be backfilled via POB-1.1's one-time `agent/scripts/backfill-pr-origin.ts` script; without running the backfill, such PRs remain `origin=null` (`unknown`).
+Steps 2–4 exist because `gh pr list --json author` normalizes bot authors to `app/<slug>` (e.g. `app/renovate`) while separately reporting `is_bot: true` — the literal login-string checks in steps 5–6 can never match what `gh` actually sends for a bot author, so those steps remain as fallback disambiguation for callers that don't supply the newer signals (e.g. the census sweep, or legacy callers).
+
+A task-row match (or Shipwright label) always wins, even over a bot-looking `authorLogin`. **Historical-accuracy caveat (closed, POF-3.1):** `deploy.md`'s canary-revert PR never transitions a task to `pr_open` and never calls `/prs/claim`, so it has no task row and no bot/label signal for the precedence rules above to key off of. Step 6 closes this gap directly: immediately after `gh pr create` succeeds, it calls `POST /prs/census` with `origin: "shipwright"` and `state: "open"` for the revert PR, using the same task-store credentials Step 6 already holds. First-write-wins semantics on `origin` mean this stamp survives any later reconciler/census-sweep pass, so the revert PR is classified `shipwright` correctly once merged rather than falling through to the `human` heuristic. PRs that merged before origin-tracking was deployed (POM-1.1/1.2, deployed 2026-09-16) can still be backfilled via POB-1.1's one-time `agent/scripts/backfill-pr-origin.ts` script; without running the backfill, such PRs remain `origin=null` (`unknown`).
 
 ### Utility routes
 

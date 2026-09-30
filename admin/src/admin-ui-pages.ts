@@ -2157,6 +2157,33 @@ export function renderAgentDetailPage(
     `${toolsSection}${pluginsSection}`,
   );
 
+  const expandCollapseControls = `
+    <div style="display:flex;gap:8px;margin-bottom:16px">
+      <button type="button" class="btn btn-secondary" id="expand-all-btn">Expand all</button>
+      <button type="button" class="btn btn-secondary" id="collapse-all-btn">Collapse all</button>
+    </div>
+    <script>
+      (function() {
+        var expandBtn = document.getElementById('expand-all-btn');
+        var collapseBtn = document.getElementById('collapse-all-btn');
+        if (expandBtn) {
+          expandBtn.addEventListener('click', function() {
+            document.querySelectorAll('.group').forEach(function(el) {
+              el.open = true;
+            });
+          });
+        }
+        if (collapseBtn) {
+          collapseBtn.addEventListener('click', function() {
+            document.querySelectorAll('.group').forEach(function(el) {
+              el.open = false;
+            });
+          });
+        }
+      })();
+    </script>
+  `;
+
   return renderAdminPage({
     title: `${agent.name} — Shipwright Admin`,
     body: `${renderAdminToolbar(userName, "/admin/agents")}
@@ -2200,6 +2227,7 @@ export function renderAgentDetailPage(
 
     ${statStripHtml}
 
+    ${expandCollapseControls}
     ${automationGroup}
     ${configurationGroup}
     ${accessGroup}

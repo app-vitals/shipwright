@@ -56,7 +56,7 @@ Mounted at `/admin/sessions*`. **Requires authentication** — session cookie or
 
 ## Session alert sweeper (`session-alert-sweeper.ts`) — background job
 
-`SessionAlertSweeper` is the admin service's first (and, as of SESH-7.4, only) background loop — registered via `setInterval` in `main.ts`, never inside `createAdminUIApp()`, which must stay side-effect-free. Every tick it:
+`SessionAlertSweeper` was the admin service's first background loop (SESH-7.4); as of ATE-2.1 the admin service registers three — this one plus `trial-expiry-sweeper.ts` (ATE-3.1, disables crons for expired trials) and `trial-expiry-warning-sweeper.ts` (ATE-2.1, sends a pre-expiry Slack warning) — all registered via `setInterval` in `main.ts`, never inside `createAdminUIApp()`, which must stay side-effect-free. The other two have no browser-facing surface of their own; see [`agent-key-files.md`](./agent-key-files.md) for their per-file detail. `SessionAlertSweeper` itself, every tick:
 
 1. Fetches the task-store's `waiting` and `closed` sessions (`GET /sessions?state=waiting`/`?state=closed`, admin token, `limit=500`).
 2. Materializes auto-follows: for each user with `UserNotificationPrefs.autoFollowSessions = true` who can already see a waiting session, has no existing `SessionFollow` row, and whose auto-follow boundary (`autoFollowSince`, else the prefs row's `createdAt`) predates the session, upserts a `SessionFollow` row.

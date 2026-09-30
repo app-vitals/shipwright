@@ -308,6 +308,9 @@ export interface PullRequestServiceLike {
     authorLogin?: string | null,
     headRef?: string | null,
     title?: string | null,
+    authorIsBot?: boolean,
+    hasAutomatedLabel?: boolean,
+    hasShipwrightLabel?: boolean,
   ): Promise<{ status: 200 | 201; record: PullRequest }>;
   heartbeat(id: string): Promise<PullRequest>;
   complete(id: string): Promise<PullRequest>;
@@ -578,6 +581,9 @@ export class PullRequestService implements PullRequestServiceLike {
     authorLogin?: string | null,
     headRef?: string | null,
     title?: string | null,
+    authorIsBot?: boolean,
+    hasAutomatedLabel?: boolean,
+    hasShipwrightLabel?: boolean,
   ): Promise<{ status: 200 | 201; record: PullRequest }> {
     const now = this.clock.now().toISOString();
 
@@ -657,6 +663,9 @@ export class PullRequestService implements PullRequestServiceLike {
             authorLogin,
             headRef,
             title,
+            authorIsBot,
+            hasAutomatedLabel,
+            hasShipwrightLabel,
           );
           return { status: 200 as const, record: stamped };
         } catch (err: unknown) {
@@ -720,6 +729,9 @@ export class PullRequestService implements PullRequestServiceLike {
           authorLogin,
           headRef,
           title,
+          authorIsBot,
+          hasAutomatedLabel,
+          hasShipwrightLabel,
         );
         return { status: 201 as const, record: stamped };
       } catch (err: unknown) {
@@ -1340,6 +1352,9 @@ export class PullRequestService implements PullRequestServiceLike {
     authorLogin: string | null | undefined,
     headRef: string | null | undefined,
     title: string | null | undefined,
+    authorIsBot?: boolean,
+    hasAutomatedLabel?: boolean,
+    hasShipwrightLabel?: boolean,
   ): Promise<PullRequest> {
     const linkedTask = await tx.task.findFirst({
       where: { repo, pr: prNumber },
@@ -1349,6 +1364,9 @@ export class PullRequestService implements PullRequestServiceLike {
       hasLinkedTask: linkedTask !== null,
       authorLogin,
       headRef,
+      authorIsBot,
+      hasAutomatedLabel,
+      hasShipwrightLabel,
     });
     return this.stampOrigin(repo, prNumber, { origin, authorLogin, headRef, title }, tx);
   }

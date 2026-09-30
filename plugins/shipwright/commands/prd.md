@@ -16,6 +16,38 @@ Follow all phases in order. Proceed automatically between phases. The only pause
 
 1. **Create the planning folder** if it doesn't exist: `planning/$ARGUMENTS/`
 
+### Resolve the configured prd subagent (PRM-1.2)
+
+Runs once here, immediately after the planning folder is created and before toolchain
+detection below. Fetches the agent's configured phase-methodology override for the prd phase
+(PMC-1.1) off the same `GET /agents/{id}/config` endpoint `review.md`'s Step 4, `patch.md`'s
+Step 1, and `plan-session.md`'s Step 1 already use — same endpoint, same auth header, just a
+different field. Best-effort and fail-soft: any failure here is never a hard stop.
+
+```bash
+PRD_SUBAGENT_TYPE=$(curl -sf -H "Authorization: Bearer $SHIPWRIGHT_AGENT_API_KEY" \
+  "$SHIPWRIGHT_API_URL/agents/$SHIPWRIGHT_AGENT_ID/config" | jq -r '.phaseMethodology.prd // empty')
+```
+
+**Fail-soft to the built-in path, not fail-open to an unvalidated dispatch.** When
+`.phaseMethodology.prd` is absent or `null` (the jq `// empty` default), or the curl fails
+outright, `PRD_SUBAGENT_TYPE` is empty and **step 2 below through Phase 4 run unchanged,
+exactly as they do today** — same toolchain detection, same discovery questions, same
+research, same drafting. An empty value never means "dispatch something else"; it means "run
+the built-in interactive session."
+
+**There is no built-in `subagent_type` fallback name here.** Unlike `review.md`, whose
+built-in default (`shipwright:code-reviewer`) is itself a dispatchable subagent, prd's
+built-in process (toolchain detection, discovery questions, research, drafting) is
+not itself a dispatchable subagent — it's the main thread's own inline conversation with the
+human. So the empty value is the built-in path, not a name to dispatch.
+
+**When `PRD_SUBAGENT_TYPE` is non-empty**, still run step 2b below (repo detection — Phase
+5's handoff line needs `{repo}` regardless of which path produces the spec), then skip the
+rest of step 2, step 3, step 4, and Phases 1 through 4 entirely, and jump straight to the
+**Configured Methodology Dispatch (PRM-1.2)** section that follows Phase 4. Continue to Phase
+5 from there once that section completes.
+
 2. **Detect toolchain** by scanning the project root in this order:
    - `package.json` + lockfile → Node.js (identify package manager from lockfile)
    - `Cargo.toml` → Rust
@@ -234,7 +266,122 @@ Present the complete draft to the user section by section. After presenting each
    line — the agent strips this marker and posts a "View plan" link to the
    bound Slack channel/thread. Omit it if the step was skipped.
 
+## Configured Methodology Dispatch (PRM-1.2)
+
+**Skip this entire section when `PRD_SUBAGENT_TYPE` is empty** — the built-in step 2 onward
+through Phase 4 already produced `PRODUCT-SPEC.md`; proceed straight to Phase 5. Everything
+below runs only when Phase 0's resolution subsection resolved `PRD_SUBAGENT_TYPE` to a
+non-empty value, in which case step 2 onward through Phase 4 were skipped and this section
+produces the spec in their place.
+
+### Inputs
+
+Per `plugins/shipwright/references/methodology-contracts/prd.md` (PRM-1.1), prd has
+no pre-assembled input payload the way review, patch, deploy, and plan-session do — the only
+inputs are:
+
+- **Session folder name** — `$ARGUMENTS`, used to derive `planning/$ARGUMENTS/PRODUCT-SPEC.md`.
+- **Live human interaction** — the configured subagent conducts its own discovery questions,
+  research, complexity review, and drafting directly with the human, one turn at a time,
+  exactly as the built-in Phases 1 through 4 do. There is no pre-gathered answer set to hand
+  it.
+
+### Dispatch
+
+Dispatch via the Agent tool with `subagent_type: PRD_SUBAGENT_TYPE` and
+`run_in_background: false` — this command is always invoked directly by a human in an
+interactive session (never by `loop-orchestrator.ts`; prd has no `check-prd.ts` candidate
+provider, see `plugins/shipwright/CLAUDE.md`'s Design Constitution), so the foreground
+dispatch lets the subagent run its own live, turn-by-turn Q&A directly with that same human
+instead of returning a single batch response for this command to relay.
+
+Pass a single prompt block that:
+
+1. Points the subagent at `plugins/shipwright/references/methodology-contracts/prd.md` as the
+   contract it must satisfy, and at
+   `plugins/shipwright/references/product-spec-template.md` as the required output template.
+2. Supplies the session folder name (`$ARGUMENTS`) and the target output path
+   (`planning/$ARGUMENTS/PRODUCT-SPEC.md`).
+3. States that it must conduct its own interactive discovery, research, and complexity-review
+   process directly with the human (one question at a time, driving every uncertainty to a
+   resolved decision or a named blocker — no "TBD" markers), present the assembled spec for
+   approval, and write the finished spec to that exact path once the human approves it.
+
+This command does not relay questions or answers on the subagent's behalf — the dispatch is a
+single blocking call that returns only once the subagent has finished its own end-to-end
+session and written (or failed to write) the file.
+
+### Structural Validation
+
+Once the dispatch returns, check the following before proceeding to Phase 5 — this is a
+structural sanity check, not a re-grading of content quality (probing depth, decision
+rationale, acceptance-criterion wording, etc. stay the configured subagent's responsibility
+per the contract's Scope section):
+
+1. `planning/$ARGUMENTS/PRODUCT-SPEC.md` exists and is non-empty.
+2. It contains every required top-level section heading from the contract's Required Sections
+   list: `Overview`, `Problem Statement`, `Users & Context`, `Features`,
+   `Technical Constraints`, `Scope`, `Priorities & Sequence`, `Testing Strategy`,
+   `Resolved Decisions`, `Success Criteria`.
+3. It contains no unresolved `TBD` marker (case-insensitive) — the contract's quality bar
+   requires every uncertainty be driven to a decision or a named blocker before the file is
+   written.
+
+### Malformed or Failed Response (PRM-1.2)
+
+If the Agent tool dispatch itself fails (errors, or `PRD_SUBAGENT_TYPE` names an
+invalid/nonexistent `subagent_type` from a misconfigured override), or Structural Validation
+above fails, retry once with the same `PRD_SUBAGENT_TYPE` and the same prompt.
+
+If the retry also fails Structural Validation (or fails to dispatch at all), **fall back to
+running the built-in flow inline**, starting from Phase 0 step 2 (toolchain detection) below,
+through Phase 4 — the same steps that were skipped when `PRD_SUBAGENT_TYPE` first resolved
+non-empty.
+
+Unlike `plan-session.md`'s PSM-1.2, which abandons the session outright when its configured
+methodology fails after retry (its built-in decomposition needs a live codebase-exploration
+and design pass this command's main thread doesn't already know how to re-run inline), prd's
+built-in path is exactly the same interactive Q&A this main thread already runs
+unconditionally today — so falling back here costs the human a restarted conversation, not a
+lost session with nowhere to go. Print a one-line note first:
+
+```
+⚠ Configured prd methodology {PRD_SUBAGENT_TYPE} failed after retry — falling back to the
+built-in PRD flow.
+```
+
+Either way — configured subagent success, or fallback to the built-in flow — Phase 5 always
+runs against a real, structurally valid spec on disk.
+
 ## Phase 5: Summary and Next Steps
+
+Phase 5 is path-agnostic (PRM-1.2): it runs identically whether Phase 0 step 2 through Phase
+4 ran inline above, or that flow was replaced by the Configured Methodology Dispatch section
+— either way, a structurally valid `PRODUCT-SPEC.md` is already on disk by the time this
+phase runs. On the built-in path the counts below (features, requirements, acceptance
+criteria, resolved decisions, external blockers) come from the in-session Phase 1-4 tally;
+on the dispatch path no such tally exists in this thread, so
+derive every count directly from the written `PRODUCT-SPEC.md` (its `### Feature N` headings,
+`Requirements`/`Acceptance Criteria` bullets, and `Resolved Decisions` entries) instead.
+
+**Two figures are the exceptions — neither is reconstructable from the artifact, so scope
+both out on the dispatch path:**
+
+1. **`Complexity Flags` — omit the line entirely.** Per Phase 3's mapping rule, a Phase 2b
+   flag the user accepted as-is ("Keep as-is") is reflected nowhere in `PRODUCT-SPEC.md` —
+   only a "Simplify" (folded into the feature's own scope) or "Flag for engineering review"
+   (written to Resolved Decisions) decision leaves any trace. `N reviewed` and `N accepted`
+   therefore cannot be reconstructed from the artifact alone on the dispatch path, where no
+   in-session tally exists. Omit the `Complexity Flags:` line entirely when printing from the
+   dispatch path; keep it, using the live Phase 2b tally, on the built-in path.
+2. **`Resolved Decisions` — drop the Q8/Phase-2b parenthetical, keep the total.** Per
+   `references/product-spec-template.md`, a Resolved Decisions entry is written as
+   `- **{topic}**: {decision} — Rationale: {why}` — no entry is tagged with which phase
+   produced it, and on the dispatch path neither Q8 nor Phase 2b ran in this thread. The
+   total is countable from the artifact's `Resolved Decisions` bullets; the
+   `(N driven from Q8, N from Phase 2b)` split is not. Print just
+   `Resolved Decisions: {N decisions recorded}` on the dispatch path; keep the parenthetical,
+   using the live Q8/Phase 2b tally, on the built-in path.
 
 Print:
 
@@ -250,8 +397,8 @@ Features: {N}
 {  Feature name} — {N} requirements, {N} acceptance criteria
   ...
 
-Complexity Flags: {N reviewed — N simplified, N accepted, N flagged for eng}
-Resolved Decisions: {N decisions recorded (N driven from Q8, N from Phase 2b)}
+Complexity Flags: {N reviewed — N simplified, N accepted, N flagged for eng}   ← omit this line on the dispatch path
+Resolved Decisions: {N decisions recorded (N driven from Q8, N from Phase 2b)}   ← drop the parenthetical on the dispatch path
 External Blockers: {N items require external resolution before plan-session}
 
 NEXT: /plan-session {repo} $ARGUMENTS
@@ -266,6 +413,10 @@ that is the correct fast path. "Small" is NOT a reason to skip planning.
 ```
 
 Substitute `{repo}` with the value detected in Phase 0 step 2b. The handoff line must contain two arguments.
+
+On the dispatch path, drop the `Complexity Flags:` line from the printed summary entirely and
+print `Resolved Decisions:` with only its total (see the two exceptions above the template)
+rather than printing a partial or guessed count.
 
 ---
 

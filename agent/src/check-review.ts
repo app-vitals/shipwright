@@ -36,9 +36,8 @@
  * pr.createdAt rather than disqualifying the PR.
  */
 
-import { reviewAuthorAllowlistRef } from "./review-author-allowlist-ref.ts";
-import type { ReviewAuthorAllowlistRef } from "./review-author-allowlist-ref.ts";
 import { agentReposRef } from "./agent-repos-ref.ts";
+import type { LinkedTaskInfo } from "./check-helpers.ts";
 import {
   candidateId,
   classifyReviewState,
@@ -56,8 +55,9 @@ import {
   resolveWorkspacePath,
   splitOrgRepo,
 } from "./check-helpers.ts";
-import type { LinkedTaskInfo } from "./check-helpers.ts";
 import type { PrReviewData } from "./check-patch.ts";
+import type { ReviewAuthorAllowlistRef } from "./review-author-allowlist-ref.ts";
+import { reviewAuthorAllowlistRef } from "./review-author-allowlist-ref.ts";
 import type { WorkPrCandidate } from "./work-selector.ts";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -83,7 +83,12 @@ export interface PrFinding {
 export interface PrInfo {
   number: number;
   title: string;
-  author: { login: string };
+  /**
+   * `is_bot` is returned by `gh` for free whenever `author` is requested —
+   * no extra `--json` field needed (POF-1.2, mirrors pr-census.ts's
+   * `GhCensusPr.author`). Forwarded into `WorkPrCandidate.authorIsBot` below.
+   */
+  author: { login: string; is_bot?: boolean };
   headRefName: string;
   headRefOid: string;
   repo?: string;
@@ -720,6 +725,19 @@ export async function getReviewCandidates(
       authorLogin: pr.author.login,
       headRefName: pr.headRefName,
       commitSha: pr.headRefOid,
+      // POF-1.2: forwarded to /prs/claim (via WorkPrCandidate ->
+      // buildClaimPrRequest -> claimPr()) so origin can be derived
+      // server-side from the same is_bot/label signals task-store's POF-1.1
+      // deriveOrigin() consumes. hasAutomatedLabel is always false here in
+      // practice — a PR with the "automated" label is excluded from
+      // candidacy entirely earlier in this loop — but is still computed
+      // (rather than hardcoded false) so this stays a faithful mirror of the
+      // pr.labels check rather than a special case.
+      authorIsBot: pr.author.is_bot,
+      hasAutomatedLabel:
+        pr.labels?.some((l) => l.name === "automated") ?? false,
+      hasShipwrightLabel:
+        pr.labels?.some((l) => l.name === "shipwright") ?? false,
     });
   }
 
@@ -779,7 +797,8 @@ export async function buildProductionDeps(opts: {
   const allRepos = resolveAllRepos(workspacePath);
   const { ghJson: ghJsonFn } = opts;
   const ghGraphqlFn = opts.ghGraphql ?? ghGraphqlDefault;
-  const authorAllowlistRef = opts.authorAllowlistRef ?? reviewAuthorAllowlistRef;
+  const authorAllowlistRef =
+    opts.authorAllowlistRef ?? reviewAuthorAllowlistRef;
 
   return {
     getCurrentUser,

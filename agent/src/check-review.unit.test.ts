@@ -11,21 +11,21 @@
  */
 
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import type { LinkedTaskInfo } from "./check-helpers.ts";
+import type { PrReviewData, ReviewNode } from "./check-patch.ts";
+import {
+  buildProductionDeps,
+  type CheckReviewDeps,
+  getReviewCandidates,
+  hasFreshNonAgentComment,
+  type PrInfo,
+  type PrRecord,
+  traceReviewCandidacyDecision,
+} from "./check-review.ts";
 import {
   createReviewAuthorAllowlistRef,
   reviewAuthorAllowlistRef,
 } from "./review-author-allowlist-ref.ts";
-import type { LinkedTaskInfo } from "./check-helpers.ts";
-import type { PrReviewData, ReviewNode } from "./check-patch.ts";
-import {
-  type CheckReviewDeps,
-  type PrInfo,
-  type PrRecord,
-  buildProductionDeps,
-  getReviewCandidates,
-  hasFreshNonAgentComment,
-  traceReviewCandidacyDecision,
-} from "./check-review.ts";
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -138,6 +138,38 @@ describe("getReviewCandidates", () => {
       title: "Add feature X",
       commitSha: "abc123def456",
     });
+  });
+
+  // POF-1.2: forwards authorIsBot/hasAutomatedLabel/hasShipwrightLabel from
+  // the fetched PrInfo (pr.author.is_bot, pr.labels) into the returned
+  // WorkPrCandidate — mirrors task-store's POF-1.1 deriveOrigin() inputs so
+  // /prs/claim can derive origin server-side from live GitHub signals rather
+  // than the legacy login-string heuristics alone.
+  test("forwards authorIsBot/hasAutomatedLabel/hasShipwrightLabel from pr.author.is_bot and pr.labels (POF-1.2)", async () => {
+    const bot = makePr({
+      author: { login: "app/renovate", is_bot: true },
+      labels: [{ name: "shipwright" }],
+    });
+    const result = await getReviewCandidates(makeDeps([bot], async () => null));
+
+    expect(result).toHaveLength(1);
+    expect(result[0]).toMatchObject({
+      authorIsBot: true,
+      hasAutomatedLabel: false,
+      hasShipwrightLabel: true,
+    });
+  });
+
+  test("hasAutomatedLabel/hasShipwrightLabel default to false and authorIsBot to undefined when absent from the PrInfo fixture (POF-1.2)", async () => {
+    const humanPr = makePr({ author: { login: "danmcaulay" } });
+    const result = await getReviewCandidates(
+      makeDeps([humanPr], async () => null),
+    );
+
+    expect(result).toHaveLength(1);
+    expect(result[0].authorIsBot).toBeUndefined();
+    expect(result[0].hasAutomatedLabel).toBe(false);
+    expect(result[0].hasShipwrightLabel).toBe(false);
   });
 
   test("returns empty array when PR record has matching reviewedCommitSha and reviewState is posted (already reviewed)", async () => {
@@ -2568,7 +2600,7 @@ describe("traceReviewCandidacyDecision", () => {
   // longer bypasses either exclusion, closing that race at the code level
   // instead of relying solely on review.md's procedural ordering rule.
 
-  test("already-reviewed-terminal: a source:\"review\" finding newer than reviewedAt does NOT bypass the terminal-skip exclusion (PFL-3.3)", () => {
+  test('already-reviewed-terminal: a source:"review" finding newer than reviewedAt does NOT bypass the terminal-skip exclusion (PFL-3.3)', () => {
     const pr = makePr({ headRefOid: "sha111" });
     const record: PrRecord = {
       commitSha: "sha111",
@@ -2598,7 +2630,7 @@ describe("traceReviewCandidacyDecision", () => {
     });
   });
 
-  test("already-reviewed-live: a source:\"review\" finding newer than reviewedAt does NOT bypass the live-review-dedup exclusion (PFL-3.3)", () => {
+  test('already-reviewed-live: a source:"review" finding newer than reviewedAt does NOT bypass the live-review-dedup exclusion (PFL-3.3)', () => {
     const pr = makePr({ headRefOid: "sha111" });
     const record: PrRecord = {
       commitSha: "sha111",
