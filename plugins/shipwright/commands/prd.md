@@ -359,10 +359,19 @@ Phase 5 is path-agnostic (PRM-1.2): it runs identically whether Phase 0 step 2 t
 4 ran inline above, or that flow was replaced by the Configured Methodology Dispatch section
 — either way, a structurally valid `PRODUCT-SPEC.md` is already on disk by the time this
 phase runs. On the built-in path the counts below (features, requirements, acceptance
-criteria, complexity flags, resolved decisions, external blockers) come from the
-in-session Phase 1-4 tally; on the dispatch path no such tally exists in this thread, so
+criteria, resolved decisions, external blockers) come from the in-session Phase 1-4 tally;
+on the dispatch path no such tally exists in this thread, so
 derive every count directly from the written `PRODUCT-SPEC.md` (its `### Feature N` headings,
 `Requirements`/`Acceptance Criteria` bullets, and `Resolved Decisions` entries) instead.
+
+**Complexity Flags is the one exception — omit it on the dispatch path.** Per Phase 3's
+mapping rule, a Phase 2b flag the user accepted as-is ("Keep as-is") is reflected nowhere in
+`PRODUCT-SPEC.md` — only a "Simplify" (folded into the feature's own scope) or "Flag for
+engineering review" (written to Resolved Decisions) decision leaves any trace. `N reviewed`
+and `N accepted` therefore cannot be reconstructed from the artifact alone on the dispatch
+path, where no in-session tally exists. Omit the `Complexity Flags:` line entirely when
+printing from the dispatch path; keep it, using the live Phase 2b tally, on the built-in
+path.
 
 Print:
 
@@ -378,7 +387,7 @@ Features: {N}
 {  Feature name} — {N} requirements, {N} acceptance criteria
   ...
 
-Complexity Flags: {N reviewed — N simplified, N accepted, N flagged for eng}
+Complexity Flags: {N reviewed — N simplified, N accepted, N flagged for eng}   ← omit this line on the dispatch path
 Resolved Decisions: {N decisions recorded (N driven from Q8, N from Phase 2b)}
 External Blockers: {N items require external resolution before plan-session}
 
@@ -394,6 +403,9 @@ that is the correct fast path. "Small" is NOT a reason to skip planning.
 ```
 
 Substitute `{repo}` with the value detected in Phase 0 step 2b. The handoff line must contain two arguments.
+
+On the dispatch path, drop the `Complexity Flags:` line from the printed summary entirely
+(see the note above the template) rather than printing a partial or guessed count.
 
 ---
 
