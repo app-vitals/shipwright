@@ -781,6 +781,87 @@ describe("renderAgentDetailPage — Recent Verification Activity rollup", () => 
     expect(html.split("passed").length - 1).toBe(3);
     expect(html.split("failed").length - 1).toBe(2);
   });
+
+  test("renders per-repo status breakdown when byRepo spans multiple repos", () => {
+    const html = render({
+      totalChecks: 6,
+      itemCount: 2,
+      counts: { ran_passed: 4, skipped: 2 },
+      byRepo: {
+        "acme/widgets": { ran_passed: 3, skipped: 1 },
+        "acme/gadgets": { ran_passed: 1, skipped: 1 },
+      },
+    });
+    expect(html).toContain("acme/widgets");
+    expect(html).toContain("acme/gadgets");
+  });
+
+  test("omits per-repo breakdown when byRepo spans only one repo", () => {
+    const html = render({
+      totalChecks: 4,
+      itemCount: 1,
+      counts: { ran_passed: 4 },
+      byRepo: { "acme/widgets": { ran_passed: 4 } },
+    });
+    expect(html).not.toContain("acme/widgets");
+  });
+
+  test("omits per-repo breakdown when byRepo is absent", () => {
+    const html = render({
+      totalChecks: 4,
+      itemCount: 1,
+      counts: { ran_passed: 4 },
+    });
+    // No repo breakdown section should render at all without exploding.
+    expect(html).toContain("Recent Verification Activity");
+  });
+
+  test("renders Environmental issues section with human-readable reasonCategory labels", () => {
+    const html = render({
+      totalChecks: 5,
+      itemCount: 2,
+      counts: { skipped: 3, timed_out: 2 },
+      environmentalByRepo: {
+        "acme/widgets": { missing_tool: 2, missing_secret: 1 },
+        "acme/gadgets": { check_timeout: 2 },
+      },
+    });
+    expect(html).toContain("Environmental issues");
+    expect(html).toContain("missing tool");
+    expect(html).toContain("missing secret");
+    expect(html).toContain("check timed out");
+    expect(html).not.toContain("No environmental issues in recent runs");
+  });
+
+  test("renders an explicit all-clear message when environmentalByRepo is empty", () => {
+    const html = render({
+      totalChecks: 4,
+      itemCount: 1,
+      counts: { ran_passed: 4 },
+      environmentalByRepo: {},
+    });
+    expect(html).toContain("Environmental issues");
+    expect(html).toContain("No environmental issues in recent runs");
+  });
+
+  test("renders an explicit all-clear message when environmentalByRepo entries are all-zero", () => {
+    const html = render({
+      totalChecks: 4,
+      itemCount: 1,
+      counts: { ran_passed: 4 },
+      environmentalByRepo: { "acme/widgets": { missing_tool: 0 } },
+    });
+    expect(html).toContain("No environmental issues in recent runs");
+  });
+
+  test("renders an explicit all-clear message when environmentalByRepo is absent", () => {
+    const html = render({
+      totalChecks: 4,
+      itemCount: 1,
+      counts: { ran_passed: 4 },
+    });
+    expect(html).toContain("No environmental issues in recent runs");
+  });
 });
 
 // ─── renderNewLocalAgentPage ──────────────────────────────────────────────────

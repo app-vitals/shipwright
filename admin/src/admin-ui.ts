@@ -838,6 +838,8 @@ async function buildVerificationActivityRollup(
 
   const counts: Record<string, number> = {};
   const byCheckName: Record<string, Record<string, number>> = {};
+  const byRepo: Record<string, Record<string, number>> = {};
+  const environmentalByRepo: Record<string, Record<string, number>> = {};
   let totalChecks = 0;
   for (const checks of checksPerItem) {
     for (const check of checks) {
@@ -845,12 +847,32 @@ async function buildVerificationActivityRollup(
       const statusCounts = byCheckName[check.checkName] ?? {};
       statusCounts[check.status] = (statusCounts[check.status] ?? 0) + 1;
       byCheckName[check.checkName] = statusCounts;
+
+      const repoStatusCounts = byRepo[check.repo] ?? {};
+      repoStatusCounts[check.status] =
+        (repoStatusCounts[check.status] ?? 0) + 1;
+      byRepo[check.repo] = repoStatusCounts;
+
+      if (check.reasonCategory) {
+        const repoReasonCounts = environmentalByRepo[check.repo] ?? {};
+        repoReasonCounts[check.reasonCategory] =
+          (repoReasonCounts[check.reasonCategory] ?? 0) + 1;
+        environmentalByRepo[check.repo] = repoReasonCounts;
+      }
+
       totalChecks++;
     }
   }
   if (totalChecks === 0) return undefined;
 
-  return { totalChecks, itemCount: distinctItems.length, counts, byCheckName };
+  return {
+    totalChecks,
+    itemCount: distinctItems.length,
+    counts,
+    byCheckName,
+    byRepo,
+    environmentalByRepo,
+  };
 }
 
 // ─── App factory ──────────────────────────────────────────────────────────────

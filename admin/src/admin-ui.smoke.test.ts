@@ -1101,6 +1101,183 @@ describe("admin UI — authenticated pages", () => {
     for (const limit of rollupLimits) expect(limit).toBeGreaterThan(50);
   });
 
+  it("authenticated GET /admin/agents/:id renders per-repo and environmental-issue breakdowns from multi-repo, mixed-reasonCategory verification checks", async () => {
+    const app = createAdminUIApp(
+      makeMockDeps({
+        agentCronRunService: {
+          listForAgent: async () => ({
+            items: [
+              {
+                id: "run-1",
+                cronId: CRON_ID,
+                agentId: AGENT_ID,
+                startedAt: new Date("2026-06-01T10:00:00Z"),
+                completedAt: new Date("2026-06-01T10:00:03Z"),
+                skipped: false,
+                skipReason: null,
+                outcome: "posted",
+                error: null,
+                itemType: "task",
+                itemId: "WLS-2.2",
+                sessionId: null,
+                lastHeartbeatAt: null,
+                phaseId: null,
+                phaseCron: null,
+                createdAt: new Date("2026-06-01T10:00:00Z"),
+                modelBreakdown: [],
+                cron: MOCK_CRON,
+              },
+              {
+                id: "run-2",
+                cronId: CRON_ID,
+                agentId: AGENT_ID,
+                startedAt: new Date("2026-06-01T11:00:00Z"),
+                completedAt: new Date("2026-06-01T11:00:03Z"),
+                skipped: false,
+                skipReason: null,
+                outcome: "posted",
+                error: null,
+                itemType: "pr",
+                itemId: "acme/gadgets#7",
+                sessionId: null,
+                lastHeartbeatAt: null,
+                phaseId: null,
+                phaseCron: null,
+                createdAt: new Date("2026-06-01T11:00:00Z"),
+                modelBreakdown: [],
+                cron: MOCK_CRON,
+              },
+            ],
+            total: 2,
+            limit: 20,
+            offset: 0,
+          }),
+          listAcrossAgents: async () => ({
+            items: [],
+            total: 0,
+            limit: 20,
+            offset: 0,
+          }),
+        },
+        fetchTaskStorePrs: async (params: URLSearchParams) => {
+          expect(params.get("repo")).toBe("acme/gadgets");
+          expect(params.get("prNumber")).toBe("7");
+          return {
+            prs: [
+              {
+                id: "pr-record-7",
+                repo: "acme/gadgets",
+                prNumber: 7,
+                staged: false,
+                state: "open",
+                reviewState: "posted",
+                patchCycles: 0,
+                reviewCycles: 0,
+              },
+            ],
+            total: 1,
+            limit: 50,
+            offset: 0,
+          };
+        },
+        fetchVerificationChecks: async (params: URLSearchParams) => {
+          if (params.get("taskId") === "WLS-2.2") {
+            return {
+              checks: [
+                {
+                  id: "vc-task-1",
+                  taskId: "WLS-2.2",
+                  prRecordId: null,
+                  repo: "acme/widgets",
+                  checkName: "unit",
+                  status: "ran_passed",
+                  reasonCategory: null,
+                  learnedFromCategory: null,
+                  durationMs: 1000,
+                  at: "2026-06-01T10:00:00.000Z",
+                  createdAt: "2026-06-01T10:00:00.000Z",
+                },
+                {
+                  id: "vc-task-2",
+                  taskId: "WLS-2.2",
+                  prRecordId: null,
+                  repo: "acme/widgets",
+                  checkName: "lint",
+                  status: "skipped",
+                  reasonCategory: "missing_tool",
+                  learnedFromCategory: null,
+                  durationMs: null,
+                  at: "2026-06-01T10:05:00.000Z",
+                  createdAt: "2026-06-01T10:05:00.000Z",
+                },
+              ],
+              total: 2,
+              limit: 50,
+              offset: 0,
+            };
+          }
+          if (params.get("prId") === "pr-record-7") {
+            return {
+              checks: [
+                {
+                  id: "vc-pr-1",
+                  taskId: null,
+                  prRecordId: "pr-record-7",
+                  repo: "acme/gadgets",
+                  checkName: "integration",
+                  status: "ran_failed",
+                  reasonCategory: null,
+                  learnedFromCategory: null,
+                  durationMs: 500,
+                  at: "2026-06-01T11:00:00.000Z",
+                  createdAt: "2026-06-01T11:00:00.000Z",
+                },
+                {
+                  id: "vc-pr-2",
+                  taskId: null,
+                  prRecordId: "pr-record-7",
+                  repo: "acme/gadgets",
+                  checkName: "e2e",
+                  status: "timed_out",
+                  reasonCategory: "check_timeout",
+                  learnedFromCategory: null,
+                  durationMs: 600000,
+                  at: "2026-06-01T11:05:00.000Z",
+                  createdAt: "2026-06-01T11:05:00.000Z",
+                },
+              ],
+              total: 2,
+              limit: 50,
+              offset: 0,
+            };
+          }
+          return { checks: [], total: 0, limit: 50, offset: 0 };
+        },
+      }),
+    );
+    const res = await app.request(`/admin/agents/${AGENT_ID}`, {
+      headers: { Cookie: `admin_session=${cookie}` },
+    });
+    expect(res.status).toBe(200);
+    const html = await res.text();
+    expect(html).toContain("Recent Verification Activity");
+    // Per-repo status breakdown: two distinct repos, so the sub-section
+    // should render (it's suppressed when only one repo is represented).
+    expect(html).toContain("acme/widgets");
+    expect(html).toContain("acme/gadgets");
+    // Environmental issues sub-section with human-readable reasonCategory
+    // labels for the skipped/timed_out rows.
+    expect(html).toContain("Environmental issues");
+    expect(html).toContain("missing tool");
+    expect(html).toContain("check timed out");
+    // The ran_failed row (reasonCategory: null) must never surface inside
+    // the environmental-issues sub-section.
+    const envIdx = html.indexOf("Environmental issues");
+    expect(envIdx).toBeGreaterThan(-1);
+    const envSection = html.slice(envIdx, envIdx + 2000);
+    expect(envSection).not.toContain("failed");
+  });
+
   it("authenticated GET /admin/agents/:id renders no Recent Verification Activity card when fetchVerificationChecks is absent", async () => {
     const app = createAdminUIApp(
       makeMockDeps({
