@@ -48,7 +48,7 @@ Env vars are stored encrypted (AES-256-GCM) and decrypted on read. `POST /agents
 GET /agents/:id/config
 ```
 
-Polled by the agent harness on startup and during its config sync loop — the one route on this page the harness itself calls, as opposed to the admin UI or provisioning pipeline. Returns the full config bundle: decrypted env vars, allowed-tools patterns, installed plugins, scoped repos, `reviewAuthorAllowlist`/`patchAuthorAllowlist`/`restrictSlackToMembers`, `phaseMethodology` (map of phase names to subagent-type overrides, with defaults filled in for phases not explicitly overridden), and derived `memberEmails` (empty unless `restrictSlackToMembers` is `true` and members are configured). Returns `404` if the agent doesn't exist.
+Polled by the agent harness on startup and during its config sync loop — the one route on this page the harness itself calls, as opposed to the admin UI or provisioning pipeline. Returns the full config bundle: decrypted env vars, allowed-tools patterns, installed plugins, scoped repos, `reviewAuthorAllowlist`/`patchAuthorAllowlist`/`restrictSlackToMembers`, `phaseMethodology` (map of phase names to subagent-type overrides, with defaults filled in for phases not explicitly overridden), derived `memberEmails` (empty unless `restrictSlackToMembers` is `true` and members are configured), and **APM-1.5:** the six agent-policy fields (`autoPostReviews`, `allowSelfReview`, `minConfidence`, `maxFindings`, `cleanupMergedWorktrees`, `cleanupAfterDays`) for direct passthrough to the runtime. Returns `404` if the agent doesn't exist.
 
 ---
 

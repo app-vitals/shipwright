@@ -68,6 +68,17 @@ export interface AgentConfigResponse {
    * separately from admin/openapi.json) keep compiling unchanged.
    */
   phaseMethodology?: Record<string, string | null>;
+  /**
+   * APM-1.5: direct passthrough of the 6 agent-policy fields APM-1.1 added
+   * to the Agent row. Required fields — no prior-fixture-compat concern
+   * since they didn't exist before this task.
+   */
+  autoPostReviews: boolean;
+  allowSelfReview: boolean;
+  minConfidence: number;
+  maxFindings: number;
+  cleanupMergedWorktrees: boolean;
+  cleanupAfterDays: number;
 }
 
 interface AgentEnvServiceLike {
@@ -101,6 +112,13 @@ interface AgentServiceLike {
     memberEmails: string[];
     /** ATE-3.1: optional so pre-existing test doubles built against this interface keep compiling unchanged. */
     trialExpiresAt?: Date | null;
+    /** APM-1.5: the 6 agent-policy fields, direct-passthrough into the response. */
+    autoPostReviews: boolean;
+    allowSelfReview: boolean;
+    minConfidence: number;
+    maxFindings: number;
+    cleanupMergedWorktrees: boolean;
+    cleanupAfterDays: number;
   } | null>;
 }
 
@@ -271,6 +289,14 @@ export function createAgentRuntimeApp(deps: AgentRuntimeDeps): OpenAPIHono {
         ? agent.trialExpiresAt.toISOString()
         : null,
       phaseMethodology,
+      // APM-1.5: direct passthrough — the DB column always has a value
+      // (Prisma schema default), so no `??` fallback is needed.
+      autoPostReviews: agent.autoPostReviews,
+      allowSelfReview: agent.allowSelfReview,
+      minConfidence: agent.minConfidence,
+      maxFindings: agent.maxFindings,
+      cleanupMergedWorktrees: agent.cleanupMergedWorktrees,
+      cleanupAfterDays: agent.cleanupAfterDays,
     };
 
     return c.json(response, 200);

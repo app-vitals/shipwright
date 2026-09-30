@@ -27,6 +27,12 @@ const SAMPLE_CONFIG: AgentConfigResponse = {
   patchAuthorAllowlist: [],
   restrictSlackToMembers: false,
   memberEmails: [],
+  autoPostReviews: true,
+  allowSelfReview: false,
+  minConfidence: 75,
+  maxFindings: 5,
+  cleanupMergedWorktrees: true,
+  cleanupAfterDays: 14,
 };
 
 const SAMPLE_CRONS: AgentCronJob[] = [

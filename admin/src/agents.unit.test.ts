@@ -735,6 +735,13 @@ describe("AgentService.getById", () => {
       patchAuthorAllowlist: [],
       restrictSlackToMembers: false,
       memberEmails: [],
+      // APM-1.5: getById() now selects these 6 policy fields too.
+      autoPostReviews: true,
+      allowSelfReview: false,
+      minConfidence: 75,
+      maxFindings: 5,
+      cleanupMergedWorktrees: true,
+      cleanupAfterDays: 14,
     });
   });
 
@@ -761,6 +768,13 @@ describe("AgentService.getById", () => {
       patchAuthorAllowlist: [],
       restrictSlackToMembers: false,
       memberEmails: [],
+      // APM-1.5: getById() now selects these 6 policy fields too.
+      autoPostReviews: true,
+      allowSelfReview: false,
+      minConfidence: 75,
+      maxFindings: 5,
+      cleanupMergedWorktrees: true,
+      cleanupAfterDays: 14,
     });
   });
 

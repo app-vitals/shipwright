@@ -38,6 +38,13 @@ interface MockAgent {
   patchAuthorAllowlist: string[];
   restrictSlackToMembers: boolean;
   memberEmails: string[];
+  // APM-1.5: the 6 agent-policy fields passed through by GET /:id/config.
+  autoPostReviews: boolean;
+  allowSelfReview: boolean;
+  minConfidence: number;
+  maxFindings: number;
+  cleanupMergedWorktrees: boolean;
+  cleanupAfterDays: number;
 }
 
 // ─── Mock factories ───────────────────────────────────────────────────────────
@@ -84,6 +91,12 @@ function makeMockAgentService(agents: Map<string, MockAgent>): {
     patchAuthorAllowlist: string[];
     restrictSlackToMembers: boolean;
     memberEmails: string[];
+    autoPostReviews: boolean;
+    allowSelfReview: boolean;
+    minConfidence: number;
+    maxFindings: number;
+    cleanupMergedWorktrees: boolean;
+    cleanupAfterDays: number;
   } | null>;
 } {
   return {
@@ -94,6 +107,12 @@ function makeMockAgentService(agents: Map<string, MockAgent>): {
       patchAuthorAllowlist: string[];
       restrictSlackToMembers: boolean;
       memberEmails: string[];
+      autoPostReviews: boolean;
+      allowSelfReview: boolean;
+      minConfidence: number;
+      maxFindings: number;
+      cleanupMergedWorktrees: boolean;
+      cleanupAfterDays: number;
     } | null> {
       const agent = agents.get(agentId);
       return agent
@@ -104,6 +123,12 @@ function makeMockAgentService(agents: Map<string, MockAgent>): {
             patchAuthorAllowlist: agent.patchAuthorAllowlist,
             restrictSlackToMembers: agent.restrictSlackToMembers,
             memberEmails: agent.memberEmails,
+            autoPostReviews: agent.autoPostReviews,
+            allowSelfReview: agent.allowSelfReview,
+            minConfidence: agent.minConfidence,
+            maxFindings: agent.maxFindings,
+            cleanupMergedWorktrees: agent.cleanupMergedWorktrees,
+            cleanupAfterDays: agent.cleanupAfterDays,
           }
         : null;
     },
@@ -192,6 +217,12 @@ function buildApp(opts?: {
   restrictSlackToMembers?: boolean;
   memberEmails?: string[];
   phaseMethodology?: MockPhaseMethodology[];
+  autoPostReviews?: boolean;
+  allowSelfReview?: boolean;
+  minConfidence?: number;
+  maxFindings?: number;
+  cleanupMergedWorktrees?: boolean;
+  cleanupAfterDays?: number;
 }) {
   const hasAgent = opts?.hasAgent ?? true;
   const bundle: AgentEnvBundle | null =
@@ -212,6 +243,12 @@ function buildApp(opts?: {
   const restrictSlackToMembers = opts?.restrictSlackToMembers ?? false;
   const memberEmails = opts?.memberEmails ?? [];
   const phaseMethodology = opts?.phaseMethodology ?? [];
+  const autoPostReviews = opts?.autoPostReviews ?? true;
+  const allowSelfReview = opts?.allowSelfReview ?? false;
+  const minConfidence = opts?.minConfidence ?? 75;
+  const maxFindings = opts?.maxFindings ?? 5;
+  const cleanupMergedWorktrees = opts?.cleanupMergedWorktrees ?? true;
+  const cleanupAfterDays = opts?.cleanupAfterDays ?? 14;
 
   const agents = new Map<string, MockAgent>();
   const bundles = new Map<string, AgentEnvBundle | null>();
@@ -228,6 +265,12 @@ function buildApp(opts?: {
       patchAuthorAllowlist,
       restrictSlackToMembers,
       memberEmails,
+      autoPostReviews,
+      allowSelfReview,
+      minConfidence,
+      maxFindings,
+      cleanupMergedWorktrees,
+      cleanupAfterDays,
     });
     bundles.set(KNOWN_AGENT_ID, bundle);
     pluginMap.set(KNOWN_AGENT_ID, plugins);
@@ -276,6 +319,37 @@ describe("GET /:id/config (mounted as GET /agents/:id/config from root)", () => 
       deploy: null,
       "dev-task": null,
     });
+    // APM-1.5: additive fields, default values — no behavior change for
+    // existing consumers of this route.
+    expect(body.autoPostReviews).toBe(true);
+    expect(body.allowSelfReview).toBe(false);
+    expect(body.minConfidence).toBe(75);
+    expect(body.maxFindings).toBe(5);
+    expect(body.cleanupMergedWorktrees).toBe(true);
+    expect(body.cleanupAfterDays).toBe(14);
+  });
+
+  test("200 returns the 6 agent-policy fields exactly as stored on the agent (APM-1.5)", async () => {
+    const app = buildApp({
+      autoPostReviews: false,
+      allowSelfReview: true,
+      minConfidence: 90,
+      maxFindings: 12,
+      cleanupMergedWorktrees: false,
+      cleanupAfterDays: 30,
+    });
+    const res = await app.request(`/${KNOWN_AGENT_ID}/config`, {
+      headers: { Authorization: `Bearer ${VALID_ADMIN_KEY}` },
+    });
+
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.autoPostReviews).toBe(false);
+    expect(body.allowSelfReview).toBe(true);
+    expect(body.minConfidence).toBe(90);
+    expect(body.maxFindings).toBe(12);
+    expect(body.cleanupMergedWorktrees).toBe(false);
+    expect(body.cleanupAfterDays).toBe(30);
   });
 
   test("200 phaseMethodology defaults all six phases to null when the agent has no overrides", async () => {
@@ -567,6 +641,13 @@ function buildCombinedApp() {
           patchAuthorAllowlist: [],
           restrictSlackToMembers: false,
           memberEmails: [],
+          // APM-1.5: required by AgentConfigResponseSchema.
+          autoPostReviews: true,
+          allowSelfReview: false,
+          minConfidence: 75,
+          maxFindings: 5,
+          cleanupMergedWorktrees: true,
+          cleanupAfterDays: 14,
         };
       },
     },
