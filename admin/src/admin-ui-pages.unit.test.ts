@@ -2767,6 +2767,200 @@ describe("renderAgentDetailPage — accordion groups", () => {
   });
 });
 
+// ─── renderAgentDetailPage — stat strip (AGA-1.2) ────────────────────────────
+
+describe("renderAgentDetailPage — stat strip", () => {
+  function render(opts?: Parameters<typeof renderAgentDetailPage>[9]): string {
+    return renderAgentDetailPage(
+      AGENT,
+      {},
+      [SYSTEM_CRON, CUSTOM_CRON],
+      [TOOL_ENABLED, TOOL_DISABLED],
+      [TOKEN_ACTIVE, TOKEN_REVOKED],
+      [PLUGIN_ENABLED, PLUGIN_DISABLED],
+      [
+        {
+          id: "m1",
+          email: "member@example.com",
+          createdAt: new Date("2025-01-01"),
+        },
+      ],
+      USER_NAME,
+      true,
+      { timezone: "UTC", ...opts },
+    );
+  }
+
+  test("stat strip renders exactly 4 stat tiles", () => {
+    const html = render();
+    const tiles = html.match(/<div class="stat-tile"[^>]*>/g) ?? [];
+    expect(tiles).toHaveLength(4);
+  });
+
+  test("stat tiles appear in order: crons active, missing env vars, members, repos", () => {
+    const html = render();
+    const cronsIndex = html.indexOf("crons active");
+    const envIndex = html.indexOf("missing env vars");
+    const membersIndex = html.indexOf("members");
+    const reposIndex = html.indexOf("repos");
+
+    expect(cronsIndex).toBeGreaterThan(-1);
+    expect(envIndex).toBeGreaterThan(-1);
+    expect(membersIndex).toBeGreaterThan(-1);
+    expect(reposIndex).toBeGreaterThan(-1);
+    expect(cronsIndex < envIndex).toBe(true);
+    expect(envIndex < membersIndex).toBe(true);
+    expect(membersIndex < reposIndex).toBe(true);
+  });
+
+  test("crons-active count equals enabled rows across system and custom cron tables", () => {
+    // SYSTEM_CRON is enabled: true, CUSTOM_CRON is enabled: false
+    // So 1 enabled total
+    const html = render();
+    expect(html).toMatch(/<div class="stat-tile"[^>]*>[\s\S]*?crons active[\s\S]*?<span[^>]*>\s*1\s*<\/span>/);
+  });
+
+  test("crons-active count correctly reflects enabled crons from different configurations", () => {
+    // Test with multiple enabled/disabled crons
+    const enabledCron: CronJobItem = {
+      ...SYSTEM_CRON,
+      id: "cron-sys-2",
+      enabled: true,
+    };
+    const disabledCron: CronJobItem = {
+      ...CUSTOM_CRON,
+      id: "cron-custom-2",
+      enabled: false,
+    };
+    const html = renderAgentDetailPage(
+      AGENT,
+      {},
+      [SYSTEM_CRON, enabledCron, CUSTOM_CRON, disabledCron],
+      [],
+      [],
+      [],
+      [],
+      USER_NAME,
+      true,
+      { timezone: "UTC" },
+    );
+    // Should have 2 enabled crons (SYSTEM_CRON and enabledCron)
+    expect(html).toMatch(/<div class="stat-tile"[^>]*>[\s\S]*?crons active[\s\S]*?<span[^>]*>\s*2\s*<\/span>/);
+  });
+
+  test("missing-env-vars count equals agent.missingRequiredEnv.length", () => {
+    const html = render();
+    // AGENT fixture has missingRequiredEnv: []
+    expect(html).toMatch(/<div class="stat-tile"[^>]*>[\s\S]*?missing env vars[\s\S]*?<span[^>]*>\s*0\s*<\/span>/);
+  });
+
+  test("missing-env-vars count shows correct value when missingRequiredEnv is non-empty", () => {
+    const agent: AgentDetail = {
+      ...AGENT,
+      missingRequiredEnv: ["GH_TOKEN", "SLACK_APP_TOKEN"],
+    };
+    const html = renderAgentDetailPage(
+      agent,
+      {},
+      [SYSTEM_CRON, CUSTOM_CRON],
+      [],
+      [],
+      [],
+      [],
+      USER_NAME,
+      true,
+      { timezone: "UTC" },
+    );
+    expect(html).toMatch(/<div class="stat-tile"[^>]*>[\s\S]*?missing env vars[\s\S]*?<span[^>]*>\s*2\s*<\/span>/);
+  });
+
+  test("members count equals members array length", () => {
+    const html = render();
+    // render() passes 1 member
+    expect(html).toMatch(/<div class="stat-tile"[^>]*>[\s\S]*?members[\s\S]*?<span[^>]*>\s*1\s*<\/span>/);
+  });
+
+  test("repos count equals agent.repos.length", () => {
+    const agent: AgentDetail = {
+      ...AGENT,
+      repos: ["owner/repo1", "owner/repo2", "owner/repo3"],
+    };
+    const html = renderAgentDetailPage(
+      agent,
+      {},
+      [SYSTEM_CRON, CUSTOM_CRON],
+      [],
+      [],
+      [],
+      [
+        {
+          id: "m1",
+          email: "member@example.com",
+          createdAt: new Date("2025-01-01"),
+        },
+      ],
+      USER_NAME,
+      true,
+      { timezone: "UTC" },
+    );
+    expect(html).toMatch(/<div class="stat-tile"[^>]*>[\s\S]*?repos[\s\S]*?<span[^>]*>\s*3\s*<\/span>/);
+  });
+
+  test("missing-env-vars tile has warning styling when count > 0", () => {
+    const agent: AgentDetail = {
+      ...AGENT,
+      missingRequiredEnv: ["GH_TOKEN"],
+    };
+    const html = renderAgentDetailPage(
+      agent,
+      {},
+      [SYSTEM_CRON, CUSTOM_CRON],
+      [],
+      [],
+      [],
+      [],
+      USER_NAME,
+      true,
+      { timezone: "UTC" },
+    );
+    // Should contain warning class styling
+    expect(html).toMatch(/stat-tile-warning[\s\S]*?missing env vars/);
+  });
+
+  test("missing-env-vars tile has default styling when count is 0", () => {
+    const html = render();
+    // AGENT fixture has empty missingRequiredEnv
+    const tileSectionMatch = html.match(
+      /<div class="stat-tile"[^>]*>[\s\S]*?missing env vars[\s\S]*?<\/div>\s*<\/div>/,
+    );
+    expect(tileSectionMatch).not.toBeNull();
+    // Should NOT have stat-tile-warning class
+    const tileSection = tileSectionMatch?.[0] ?? "";
+    expect(tileSection).not.toContain("stat-tile-warning");
+  });
+
+  test("stat strip renders before accordion groups", () => {
+    const html = render();
+    const statStripIndex = html.indexOf('class="stat-strip"');
+    const automationGroupIndex = html.indexOf('<span class="group-title">Automation</span>');
+
+    expect(statStripIndex).toBeGreaterThan(-1);
+    expect(automationGroupIndex).toBeGreaterThan(-1);
+    expect(statStripIndex < automationGroupIndex).toBe(true);
+  });
+
+  test("CSS: .stat-strip and .stat-tile classes exist in baseStyles", () => {
+    const styles = baseStyles();
+    expect(styles).toContain(".stat-strip");
+    expect(styles).toContain(".stat-tile");
+  });
+
+  test("CSS: .stat-tile-warning class exists for warning styling", () => {
+    const styles = baseStyles();
+    expect(styles).toContain(".stat-tile-warning");
+  });
+});
+
 // ─── renderTasksPage — datalist autocomplete (AFA-1.2) ───────────────────────
 
 describe("renderTasksPage — datalist autocomplete", () => {
