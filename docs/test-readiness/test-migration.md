@@ -1802,12 +1802,14 @@ Phase 2 blueprint into the executable roadmap.
    matching, correctly-layered, same-window test coverage** — the Phase Methodology config
    cluster, the trial-expiry lockdown cluster, and the LVBS-1.x/LVB-5.1 verification-tooling
    work. No Phase 4 action needed for any of them.
-3. **`run-with-budget.ts`'s own bug-fix is worth flagging for Phase 4 awareness, not a
-   migration action:** the file's header comment documents a real false-pass bug in the
-   inline-bash pattern it replaces (`setsid` without `--wait`), caught live on PR #3653 per
-   that comment. A future Phase 4/5 cycle scanning `dev-task.md`/`patch.md` for remaining raw
-   `setsid timeout` call sites not yet migrated to `run-with-budget.ts` would close the loop
-   — worth a quick grep next time this document runs, not urgent enough to block this cycle.
+3. **`run-with-budget.ts`'s migration into its call sites is already complete — verified
+   directly, not left open.** The file's header comment documents a real false-pass bug in
+   the inline-bash pattern it replaces (`setsid` without `--wait`), caught live on PR #3653.
+   `dev-task.md`'s Step 8 (`#3701`) and `patch.md`'s three validate sites (`#3702`, LVBS-1.3)
+   were both wired to `run-with-budget.ts` within this same cycle's window — confirmed via
+   `grep -n "setsid" plugins/shipwright/commands/{dev-task,patch}.md`, which returns zero
+   remaining raw inline `setsid timeout` invocations, only prose/comment references to the
+   shared script. No Phase 4 action needed.
 4. **Isolation-contract audit's pattern set still needs to widen to catch
    singleton-mutation leaks as an automated sweep** — carried forward unchanged, same
    standing recommendation as every prior cycle. One new singleton-ref-shaped file this
