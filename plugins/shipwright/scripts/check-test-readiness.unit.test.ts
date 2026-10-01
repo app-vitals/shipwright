@@ -31,6 +31,7 @@ interface MakeDepsOptions {
   hasTestReadinessDir?: (dir: string) => boolean;
   getMtimeMs?: (dir: string, path: string) => number | null;
   now?: () => number;
+  resolveScopedRepos?: () => Promise<string[]>;
 }
 
 const NOW = 1_000_000_000_000;
@@ -41,11 +42,15 @@ const SINGLE_REPO: RepoDir = {
 };
 
 function makeDeps(overrides: MakeDepsOptions = {}) {
+  const repos = overrides.repos ?? [SINGLE_REPO];
   return {
-    repos: overrides.repos ?? [SINGLE_REPO],
+    repos,
     hasTestReadinessDir: overrides.hasTestReadinessDir ?? (() => true),
     getMtimeMs: overrides.getMtimeMs ?? (() => NOW),
     now: overrides.now ?? (() => NOW),
+    resolveScopedRepos:
+      overrides.resolveScopedRepos ??
+      (() => Promise.resolve(repos.map((r) => r.repo))),
   };
 }
 
@@ -251,5 +256,25 @@ describe("check-test-readiness — multi repo", () => {
     expect(result.exit).toBe(0);
     expect(result.output).toContain("acme/repo-a");
     expect(result.output).toContain("acme/repo-b");
+  });
+
+  test("excludes a repo that's cloned locally but absent from the agent's configured repos[]", async () => {
+    const repoA: RepoDir = { repo: "acme/repo-a", dir: "/repos/repo-a" };
+    const repoB: RepoDir = { repo: "acme/repo-b", dir: "/repos/repo-b" };
+
+    const staleMtime = NOW - (STALE_THRESHOLD_MS + 1);
+    const deps = makeDeps({
+      repos: [repoA, repoB],
+      getMtimeMs: () => staleMtime,
+      // Only repo-a is in the agent's configured repos[] — repo-b is cloned
+      // locally but unconfigured and must be excluded from output even
+      // though it would otherwise qualify (both are stale).
+      resolveScopedRepos: () => Promise.resolve(["acme/repo-a"]),
+    });
+
+    const result = await run(deps);
+    expect(result.exit).toBe(0);
+    expect(result.output).toContain("acme/repo-a");
+    expect(result.output).not.toContain("acme/repo-b");
   });
 });

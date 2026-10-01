@@ -4,7 +4,7 @@
 
 ## Overview
 
-`docs/consolidation.md`-style patrol crons work by pairing a cheap precheck script with a full-check command dispatched only when the precheck finds something worth doing. The repo-scoped `check-docs-freshness.ts` (wired as the `preCheck` for the `shipwright-docs-freshness` cron, see [`docs/architecture.md`](./architecture.md)) answers "has any repo changed source since its docs were last synced?" across every repo under `repos/`. The **site-docs-freshness** mechanism (SDR track) answers the same question at a finer grain: for the `site/` marketing pages specifically, which *individual page* has drifted from the source files it's documenting, tracked with its own last-synced anchor rather than one shared repo-wide anchor.
+`docs/consolidation.md`-style patrol crons work by pairing a cheap precheck script with a full-check command dispatched only when the precheck finds something worth doing. The repo-scoped `check-docs-freshness.ts` (wired as the `preCheck` for the `shipwright-docs-freshness` cron, see [`docs/architecture.md`](./architecture.md)) answers "has any repo changed source since its docs were last synced?" across every repo in the agent's configured `repos[]` (filtered via `resolveScopedRepos`, see [`docs/agent-ops.md`](./agent-ops.md#multi-repo-scoping-via-resolvescopedrepos)). The **site-docs-freshness** mechanism (SDR track) answers the same question at a finer grain: for the `site/` marketing pages specifically, which *individual page* has drifted from the source files it's documenting, tracked with its own last-synced anchor rather than one shared repo-wide anchor.
 
 ## The source map: `site/docs-source-map.json`
 
