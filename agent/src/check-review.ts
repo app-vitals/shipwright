@@ -410,8 +410,8 @@ export interface CheckReviewDeps {
    * fresh on every getReviewCandidates() call — not evaluated once at
    * buildProductionDeps() time — so a DB or state/agent-policy.md edit takes
    * effect on the very next call without requiring an agent process restart
-   * (PLR-1.1). Mirrors this file's own getScopedRepos/hasScopeSynced
-   * live-read pattern. Async because the DB tier is a live config-sync ref
+   * (PLR-1.1). Mirrors this file's own getScopedRepos live-read pattern.
+   * Async because the DB tier is a live config-sync ref
    * (~60s staleness) rather than a synchronous file read.
    * buildProductionDeps() wires this as `() =>
    * readAllowSelfReview(workspacePath)` (check-helpers.ts).
@@ -428,15 +428,6 @@ export interface CheckReviewDeps {
    * very next call.
    */
   getScopedRepos: () => string[];
-  /**
-   * True once the agent's repo scope has been successfully synced at least
-   * once. When false (e.g. a persistent 404 on the agent's config bundle —
-   * see index.ts's syncConfig), getReviewCandidates() fails open and does
-   * not filter by scope at all, matching pre-scoping behavior — otherwise a
-   * config-sync outage would silently exclude every repo from review
-   * candidacy, indistinguishable from "no work found".
-   */
-  hasScopeSynced: () => boolean;
   // Task status lookup for the linked task (if any), used PURELY to source
   // the age field via its createdAt — unlike check-deploy.ts, this is never
   // used as a gating/disqualifying check here. A thrown error is treated the
@@ -491,15 +482,9 @@ export async function getReviewCandidates(
 ): Promise<WorkPrCandidate[]> {
   const currentUser = await deps.getCurrentUser();
 
-  // Fail open when scope has never synced (e.g. a persistent config-bundle
-  // 404) — filtering by an unpopulated scope would silently drop every repo
-  // from candidacy, a failure mode that didn't exist before scoping.
-  const scopeSynced = deps.hasScopeSynced();
   const scopedRepos = new Set(deps.getScopedRepos());
   const allPrs = await deps.listOpenPrs("default");
-  const prs = scopeSynced
-    ? allPrs.filter((pr) => scopedRepos.has(pr.repo ?? ""))
-    : allPrs;
+  const prs = allPrs.filter((pr) => scopedRepos.has(pr.repo ?? ""));
   const candidates: WorkPrCandidate[] = [];
 
   for (const pr of prs) {
@@ -760,7 +745,6 @@ export async function buildProductionDeps(opts: {
   ghGraphql?: <T>(query: string) => Promise<T>;
   fetchFn?: typeof fetch;
   getScopedRepos?: () => string[];
-  hasScopeSynced?: () => boolean;
   /**
    * Optional explicit override for the ref-backed author-allowlist default
    * (used by scripts/hitl.ts's SHIPWRIGHT_HITL_AUTHORS env var, and AAL-3.1).
@@ -806,14 +790,21 @@ export async function buildProductionDeps(opts: {
     getCurrentUser,
     isSelfReviewAllowed: () => readAllowSelfReview(workspacePath),
     getScopedRepos: opts.getScopedRepos ?? agentReposRef.get,
-    hasScopeSynced: opts.hasScopeSynced ?? agentReposRef.hasSynced,
     isAuthorAllowed:
       opts.isAuthorAllowed ??
       ((login: string) =>
         authorAllowlistRef.get().length === 0 ||
         authorAllowlistRef.get().includes(login)),
     listOpenPrs: async (_repo: string) => {
-      return mapReposTolerant(allRepos, "check-review", async (repo) => {
+      // Scope BEFORE issuing any `gh pr list` call (RSF-1.1) — re-evaluated
+      // on every call (not baked in once here) so a scope change takes
+      // effect on the very next call, mirroring pr-state-reconciler.ts's own
+      // unconditional-intersection pattern. A repo present in the
+      // filesystem-scanned allRepos but absent from the live scope never
+      // reaches gh at all.
+      const scopedRepos = new Set((opts.getScopedRepos ?? agentReposRef.get)());
+      const repos = allRepos.filter((repo) => scopedRepos.has(repo));
+      return mapReposTolerant(repos, "check-review", async (repo) => {
         const repoPrs = await ghJsonFn<PrInfo[]>([
           "pr",
           "list",

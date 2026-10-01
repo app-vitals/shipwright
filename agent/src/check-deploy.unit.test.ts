@@ -55,7 +55,6 @@ interface MakeDepsOptions {
   isSelfReviewAllowed?: boolean | (() => boolean);
   taskStatus?: Record<string, LinkedTaskInfo | null>;
   getScopedRepos?: () => string[];
-  hasScopeSynced?: () => boolean;
   isBundleComplete?: (branch: string) => Promise<boolean>;
   // CI runs fixture, keyed by headRefOid (sha) — defaults every unseen sha to
   // a single green run so existing tests that don't care about CI shape
@@ -72,7 +71,6 @@ function makeDeps({
   isSelfReviewAllowed = true,
   taskStatus = {},
   getScopedRepos = () => repos,
-  hasScopeSynced = () => true,
   isBundleComplete,
   ciRuns = {},
 }: MakeDepsOptions = {}): CheckDeployDeps {
@@ -84,7 +82,6 @@ function makeDeps({
         : isSelfReviewAllowed,
     repos,
     getScopedRepos,
-    hasScopeSynced,
     fetchActiveDeployRuns: async () => [],
     listOpenPrs: async (repo: string) => prs[repo] ?? [],
     fetchPrReviews: async (
@@ -614,7 +611,6 @@ describe("getDeployCandidates", () => {
       isSelfReviewAllowed: async () => true,
       repos: ["acme/failing-repo", "acme/example-repo"],
       getScopedRepos: () => ["acme/failing-repo", "acme/example-repo"],
-      hasScopeSynced: () => true,
       fetchActiveDeployRuns: async () => [],
       fetchCiRuns: async () => [GREEN_CI_RUN],
       listOpenPrs: async (repo: string): Promise<GhPr[]> => {
@@ -690,7 +686,6 @@ describe("getDeployCandidates", () => {
       isSelfReviewAllowed: async () => true,
       repos: ["acme/busy-repo", "acme/free-repo"],
       getScopedRepos: () => ["acme/busy-repo", "acme/free-repo"],
-      hasScopeSynced: () => true,
       fetchActiveDeployRuns: async (_org, repo) =>
         repo === "busy-repo" ? [{ name: "Deploy", status: "in_progress" }] : [],
       fetchCiRuns: async () => [GREEN_CI_RUN],
@@ -713,7 +708,6 @@ describe("getDeployCandidates", () => {
       isSelfReviewAllowed: async () => true,
       repos: ["acme/example-repo"],
       getScopedRepos: () => ["acme/example-repo"],
-      hasScopeSynced: () => true,
       clock: () => "2026-06-01T00:00:00.000Z",
       fetchActiveDeployRuns: async () => [
         { name: "Deploy", status: "queued" }, // no createdAt
@@ -737,7 +731,6 @@ describe("getDeployCandidates", () => {
       isSelfReviewAllowed: async () => true,
       repos: ["acme/example-repo"],
       getScopedRepos: () => ["acme/example-repo"],
-      hasScopeSynced: () => true,
       clock: () => "2026-06-01T02:00:00.000Z",
       fetchActiveDeployRuns: async () => [
         {
@@ -766,7 +759,6 @@ describe("getDeployCandidates", () => {
       isSelfReviewAllowed: async () => true,
       repos: ["acme/example-repo"],
       getScopedRepos: () => ["acme/example-repo"],
-      hasScopeSynced: () => true,
       clock: () => "2026-06-01T00:30:00.000Z",
       fetchActiveDeployRuns: async () => [
         {
@@ -810,7 +802,6 @@ describe("getDeployCandidates", () => {
       isSelfReviewAllowed: async () => true,
       repos: ["acme/example-repo"],
       getScopedRepos: () => ["acme/example-repo"],
-      hasScopeSynced: () => true,
       fetchActiveDeployRuns: async () => [],
       fetchCiRuns: async () => [GREEN_CI_RUN],
       listOpenPrs: async () => [goodPr, badPr],
@@ -1167,24 +1158,7 @@ describe("getDeployCandidates", () => {
     expect(second[0].id).toBe("acme/newly-added#50");
   });
 
-  test("fails open (does not filter) when hasScopeSynced() is false, even if getScopedRepos() would otherwise exclude everything", async () => {
-    const pr = makeGhPr({
-      reviewDecision: "APPROVED",
-      mergeStateStatus: "CLEAN",
-    });
-    const result = await getDeployCandidates(
-      makeDeps({
-        repos: ["acme/never-synced"],
-        prs: { "acme/never-synced": [pr] },
-        getScopedRepos: () => [],
-        hasScopeSynced: () => false,
-      }),
-    );
-    expect(result).toHaveLength(1);
-    expect(result[0].id).toBe("acme/never-synced#50");
-  });
-
-  test("filters normally when hasScopeSynced() is true, even if the synced scope is a deliberately empty list", async () => {
+  test("getScopedRepos() returning an empty array filters out all repos — no-op, no crash", async () => {
     const pr = makeGhPr({
       reviewDecision: "APPROVED",
       mergeStateStatus: "CLEAN",
@@ -1194,7 +1168,6 @@ describe("getDeployCandidates", () => {
         repos: ["acme/some-repo"],
         prs: { "acme/some-repo": [pr] },
         getScopedRepos: () => [],
-        hasScopeSynced: () => true,
       }),
     );
     expect(result).toEqual([]);
@@ -1503,26 +1476,22 @@ describe("buildProductionDeps", () => {
     expect(Number.isNaN(new Date(now).getTime())).toBe(false);
   });
 
-  test("getScopedRepos/hasScopeSynced default to the shared agentReposRef when not overridden", async () => {
+  test("getScopedRepos defaults to the shared agentReposRef when not overridden", async () => {
     const deps = await buildProductionDeps({
       ghJson: async <T>() => [] as unknown as T,
     });
 
     expect(typeof deps.getScopedRepos).toBe("function");
-    expect(typeof deps.hasScopeSynced).toBe("function");
     expect(() => deps.getScopedRepos()).not.toThrow();
-    expect(() => deps.hasScopeSynced()).not.toThrow();
   });
 
-  test("an explicit opts.getScopedRepos/hasScopeSynced override the agentReposRef default", async () => {
+  test("an explicit opts.getScopedRepos overrides the agentReposRef default", async () => {
     const deps = await buildProductionDeps({
       ghJson: async <T>() => [] as unknown as T,
       getScopedRepos: () => ["acme/widgets"],
-      hasScopeSynced: () => true,
     });
 
     expect(deps.getScopedRepos()).toEqual(["acme/widgets"]);
-    expect(deps.hasScopeSynced()).toBe(true);
   });
 
   test("isBundleComplete/queryPrRecord/queryTaskStatus are wired and callable (delegate to check-helpers query builders)", async () => {

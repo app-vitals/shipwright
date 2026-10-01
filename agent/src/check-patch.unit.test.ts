@@ -61,7 +61,6 @@ interface MakeDepsOptions {
   listPrCommits?: (_prNumber: number) => Promise<CommitInfo[]>;
   getCurrentUser?: () => Promise<string>;
   getScopedRepos?: () => string[];
-  hasScopeSynced?: () => boolean;
   queryTaskStatus?: (
     repo: string,
     prNumber: number,
@@ -84,7 +83,6 @@ function makeDeps({
   listPrCommits = async () => [],
   getCurrentUser = async () => "the-agent",
   getScopedRepos = () => [...new Set(ownPrs.map((pr) => pr.repo))],
-  hasScopeSynced = () => true,
   queryTaskStatus = async () => null,
   isBundleComplete,
   allowlistedPrs = [],
@@ -93,7 +91,6 @@ function makeDeps({
     listOwnOpenPrs: async (_repo: string) => ownPrs,
     listAllowlistedOpenPrs: async (_repo: string) => allowlistedPrs,
     getScopedRepos,
-    hasScopeSynced,
     fetchPrReviews: async (
       _org: string,
       _repo: string,
@@ -1154,22 +1151,7 @@ describe("getPatchCandidates", () => {
     expect(second[0].id).toBe("example-org/newly-added#10");
   });
 
-  test("fails open (does not filter) when hasScopeSynced() is false, even if getScopedRepos() would otherwise exclude everything", async () => {
-    const pr = makeOwnPr({ number: 10, repo: "example-org/never-synced" });
-    const result = await getPatchCandidates(
-      makeDeps({
-        ownPrs: [pr],
-        reviewDataByPr: {},
-        ciStatusByPr: { 10: { hasFailing: true } },
-        getScopedRepos: () => [],
-        hasScopeSynced: () => false,
-      }),
-    );
-    expect(result).toHaveLength(1);
-    expect(result[0].id).toBe("example-org/never-synced#10");
-  });
-
-  test("filters normally when hasScopeSynced() is true, even if the synced scope is a deliberately empty list", async () => {
+  test("getScopedRepos() returning an empty array filters out all PRs — no-op, no crash", async () => {
     const pr = makeOwnPr({ number: 10, repo: "example-org/some-repo" });
     const result = await getPatchCandidates(
       makeDeps({
@@ -1177,7 +1159,6 @@ describe("getPatchCandidates", () => {
         reviewDataByPr: {},
         ciStatusByPr: { 10: { hasFailing: true } },
         getScopedRepos: () => [],
-        hasScopeSynced: () => true,
       }),
     );
     expect(result).toEqual([]);
@@ -1671,6 +1652,12 @@ describe("buildProductionDeps", () => {
         },
         ghGraphql: async <T>() => ({}) as unknown as T,
         getCurrentUser: async () => "agent-login",
+        // Explicit override so this test is deterministic regardless of the
+        // shared agentReposRef singleton's live state in this Bun test
+        // process (RSF-1.1: scoping now happens inside this closure, before
+        // any gh call, so an unscoped default would otherwise make this
+        // assertion depend on other test files' ref mutations).
+        getScopedRepos: () => ["acme/example-repo"],
       });
 
       const prs = await deps.listOwnOpenPrs("default");
@@ -1698,6 +1685,45 @@ describe("buildProductionDeps", () => {
         "--json",
         "number,title,headRefName,headRefOid,createdAt",
       ]);
+    } finally {
+      rmSync(scratchDir, { recursive: true, force: true });
+    }
+  });
+
+  test("listOwnOpenPrs never calls gh pr list for a repo returned by the filesystem scan but absent from getScopedRepos() (RSF-1.1)", async () => {
+    // Two fake git clones under repos/ — only one is in the live scope.
+    // Asserts the scoping happens BEFORE any gh call is issued, not just as
+    // a post-filter on the result.
+    const scratchDir = mkdtempSync(
+      join(tmpdir(), "check-patch-listOwnOpenPrs-scoped-"),
+    );
+    try {
+      for (const name of ["in-scope-repo", "out-of-scope-repo"]) {
+        const repoDir = join(scratchDir, "repos", name);
+        mkdirSync(join(repoDir, ".git"), { recursive: true });
+        writeFileSync(
+          join(repoDir, ".git", "config"),
+          `[remote "origin"]\n\turl = https://github.com/acme/${name}.git\n`,
+        );
+      }
+      process.env.WORKSPACE_PATH = scratchDir;
+
+      const seenRepos: string[] = [];
+      const deps = await buildProductionDeps({
+        ghJson: async <T>(args: string[]) => {
+          const repoIdx = args.indexOf("--repo");
+          if (repoIdx !== -1) seenRepos.push(args[repoIdx + 1]);
+          return [] as unknown as T;
+        },
+        ghGraphql: async <T>() => ({}) as unknown as T,
+        getCurrentUser: async () => "agent-login",
+        getScopedRepos: () => ["acme/in-scope-repo"],
+      });
+
+      await deps.listOwnOpenPrs("default");
+
+      expect(seenRepos).toEqual(["acme/in-scope-repo"]);
+      expect(seenRepos).not.toContain("acme/out-of-scope-repo");
     } finally {
       rmSync(scratchDir, { recursive: true, force: true });
     }
@@ -1883,34 +1909,30 @@ describe("buildProductionDeps", () => {
     expect(await deps.getCurrentUser()).toBe("specific-agent-login");
   });
 
-  test("getScopedRepos/hasScopeSynced default to the shared agentReposRef when not overridden", async () => {
+  test("getScopedRepos defaults to the shared agentReposRef when not overridden", async () => {
     const deps = await buildProductionDeps({
       ghJson: async <T>() => [] as unknown as T,
       ghGraphql: async <T>() => ({}) as unknown as T,
       getCurrentUser: async () => "the-agent",
     });
 
-    // Both are functions wired to agentReposRef's own get/hasSynced — just
-    // confirm the shape is present and callable without throwing, since the
-    // ref's actual sync state is exercised by check-review.unit.test.ts's
-    // buildProductionDeps suites (shared ref, not check-patch-specific).
+    // Wired to agentReposRef's own get — just confirm the shape is present
+    // and callable without throwing, since the ref's actual sync state is
+    // exercised by check-review.unit.test.ts's buildProductionDeps suites
+    // (shared ref, not check-patch-specific).
     expect(typeof deps.getScopedRepos).toBe("function");
-    expect(typeof deps.hasScopeSynced).toBe("function");
     expect(() => deps.getScopedRepos()).not.toThrow();
-    expect(() => deps.hasScopeSynced()).not.toThrow();
   });
 
-  test("an explicit opts.getScopedRepos/hasScopeSynced override the agentReposRef default", async () => {
+  test("an explicit opts.getScopedRepos overrides the agentReposRef default", async () => {
     const deps = await buildProductionDeps({
       ghJson: async <T>() => [] as unknown as T,
       ghGraphql: async <T>() => ({}) as unknown as T,
       getCurrentUser: async () => "the-agent",
       getScopedRepos: () => ["acme/widgets"],
-      hasScopeSynced: () => true,
     });
 
     expect(deps.getScopedRepos()).toEqual(["acme/widgets"]);
-    expect(deps.hasScopeSynced()).toBe(true);
   });
 
   test("listAllowlistedOpenPrs makes no gh calls when patchAuthorAllowlistRef is empty (default)", async () => {
@@ -1967,6 +1989,11 @@ describe("buildProductionDeps", () => {
         ghGraphql: async <T>() => ({}) as unknown as T,
         getCurrentUser: async () => "the-agent",
         patchAuthorAllowlistRef: allowlistRef,
+        // Explicit override so this test is deterministic regardless of the
+        // shared agentReposRef singleton's live state in this Bun test
+        // process (RSF-1.1: see the identical rationale on
+        // listOwnOpenPrs's own real-repos/-scan test above).
+        getScopedRepos: () => ["acme/example-repo"],
       });
 
       const prs = await deps.listAllowlistedOpenPrs?.("default");
@@ -2009,6 +2036,46 @@ describe("buildProductionDeps", () => {
           ]),
         );
       }
+    } finally {
+      rmSync(scratchDir, { recursive: true, force: true });
+    }
+  });
+
+  test("listAllowlistedOpenPrs never calls gh pr list for a repo returned by the filesystem scan but absent from getScopedRepos() (RSF-1.1)", async () => {
+    const scratchDir = mkdtempSync(
+      join(tmpdir(), "check-patch-listAllowlistedOpenPrs-scoped-"),
+    );
+    try {
+      for (const name of ["in-scope-repo", "out-of-scope-repo"]) {
+        const repoDir = join(scratchDir, "repos", name);
+        mkdirSync(join(repoDir, ".git"), { recursive: true });
+        writeFileSync(
+          join(repoDir, ".git", "config"),
+          `[remote "origin"]\n\turl = https://github.com/acme/${name}.git\n`,
+        );
+      }
+      process.env.WORKSPACE_PATH = scratchDir;
+
+      const allowlistRef = createPatchAuthorAllowlistRef();
+      allowlistRef.set(["allowlisted-one"]);
+
+      const seenRepos: string[] = [];
+      const deps = await buildProductionDeps({
+        ghJson: async <T>(args: string[]) => {
+          const repoIdx = args.indexOf("--repo");
+          if (repoIdx !== -1) seenRepos.push(args[repoIdx + 1]);
+          return [] as unknown as T;
+        },
+        ghGraphql: async <T>() => ({}) as unknown as T,
+        getCurrentUser: async () => "the-agent",
+        patchAuthorAllowlistRef: allowlistRef,
+        getScopedRepos: () => ["acme/in-scope-repo"],
+      });
+
+      await deps.listAllowlistedOpenPrs?.("default");
+
+      expect(seenRepos).toEqual(["acme/in-scope-repo"]);
+      expect(seenRepos).not.toContain("acme/out-of-scope-repo");
     } finally {
       rmSync(scratchDir, { recursive: true, force: true });
     }
