@@ -9,6 +9,32 @@ Scan the codebase for principle violations and write a structured report. This s
 
 ---
 
+## Repo Scope: Resolving Which Repo(s) to Scan
+
+This skill has no multi-repo handling of its own — it operates on the current working
+directory each time it runs Steps 0-6. Before Step 1, determine which repo(s) to scan, in
+this priority order:
+
+1. **Precheck-driven (preferred).** The `entropy-patrol-maintenance` cron's `preCheck`
+   (`shipwright:check-patrol-scope.ts`) already resolved the agent's configured repos and
+   its stdout — which became this prompt (per the agent type manifest's cron `preCheck`
+   contract: "When a preCheck script is set, its stdout becomes the actual prompt sent to
+   Claude") — lists exactly which repo(s) are in scope, one repo name (`org/repo`) and its
+   local clone directory per section. Parse the repo names and directories out of the
+   invoking prompt and use that as the repo list.
+2. **Fallback (manual invocation, or no repo list available in the prompt).** Detect the
+   current repo from git directly (today's single-repo behavior, unchanged): run
+   `git remote get-url origin` and scan just the current working directory.
+
+For each repo in the resolved list, `cd` into its local clone directory and run Steps 1-6
+below scoped to that repo — each repo gets its own `entropy-report.md` and
+`.entropy-patrol/quality-log.jsonl` at its own root, independent of every other repo in the
+list. After the last repo in the resolved list completes Steps 1-6, Step 5's summary is
+printed once per repo processed (a single-repo fallback run prints exactly one summary block,
+as today).
+
+---
+
 ## Setup: Parse Arguments
 
 Before starting, check if any flags were passed:

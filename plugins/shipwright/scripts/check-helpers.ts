@@ -6,11 +6,12 @@
  * Covers:
  * - Workspace path resolution (WORKSPACE_PATH env var or cwd heuristic)
  * - Org/repo resolution from repos/ dir
+ * - Config-driven scoped-repo resolution (agent config repos[] ∩ filesystem scan)
  * - gh CLI execution helper
  */
 
 import { spawnSync } from "node:child_process";
-import { existsSync, readFileSync, readdirSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 
 // ─── Task types ───────────────────────────────────────────────────────────────
@@ -246,6 +247,60 @@ export function resolveRepoDirs(workspacePath: string): RepoDir[] {
   }
 
   return [];
+}
+
+// ─── Scoped repo resolution (agent config intersection) ──────────────────────
+
+/**
+ * Resolve the "owner/repo" strings this agent is scoped to: the intersection
+ * of the agent's configured `repos[]` (read from the admin API's
+ * `GET /agents/{id}/config`) and the repos actually cloned into the
+ * workspace (resolveRepos()).
+ *
+ * Fails closed. If any of SHIPWRIGHT_API_URL, SHIPWRIGHT_AGENT_ID, or
+ * SHIPWRIGHT_AGENT_API_KEY is missing/empty, this returns [] without
+ * attempting a fetch. If the fetch throws (network error, bad JSON) or the
+ * response is non-2xx, this also returns []. There is no fallback to the
+ * unfiltered filesystem scan on any failure path — callers that want "all
+ * cloned repos regardless of scope" should call resolveRepos()/
+ * resolveAllRepos() directly instead.
+ *
+ * `deps.fetchFn` is injectable so callers (and tests) can supply a double
+ * instead of relying on the global `fetch`.
+ */
+export async function resolveScopedRepos(
+  workspacePath: string,
+  deps: { fetchFn?: typeof fetch } = {},
+): Promise<string[]> {
+  const fetchFn = deps.fetchFn ?? fetch;
+  const apiUrl = (process.env.SHIPWRIGHT_API_URL ?? "").trim();
+  const agentId = (process.env.SHIPWRIGHT_AGENT_ID ?? "").trim();
+  const apiKey = (process.env.SHIPWRIGHT_AGENT_API_KEY ?? "").trim();
+  if (!apiUrl || !agentId || !apiKey) return [];
+
+  const baseUrl = apiUrl.replace(/\/$/, "");
+  try {
+    const res = await fetchFn(`${baseUrl}/agents/${agentId}/config`, {
+      headers: { Authorization: `Bearer ${apiKey}` },
+    });
+    if (!res.ok) return [];
+
+    const data = (await res.json()) as unknown;
+    const rawRepos =
+      data !== null &&
+      typeof data === "object" &&
+      Array.isArray((data as Record<string, unknown>).repos)
+        ? (data as Record<string, unknown>).repos
+        : [];
+    const configuredRepos = (rawRepos as unknown[]).filter(
+      (r): r is string => typeof r === "string",
+    );
+
+    const cloned = new Set(resolveRepos(workspacePath));
+    return configuredRepos.filter((r) => cloned.has(r));
+  } catch {
+    return [];
+  }
 }
 
 // ─── Merge-only detection ────────────────────────────────────────────────────
