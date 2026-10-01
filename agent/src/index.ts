@@ -104,6 +104,10 @@ import {
   startSlackIfPossible,
 } from "./slack-startup.ts";
 import { sendBackOnlineDm } from "./startup-dm.ts";
+import {
+  buildProductionDeps as buildSyncConfigCloneDeps,
+  syncClonedRepos,
+} from "./sync-config-clone.ts";
 import { resolveDisplayName, resolveUserEmail } from "./users.ts";
 import { synthesizeSpeech, transcribeAudio } from "./voice.ts";
 import {
@@ -329,6 +333,16 @@ const githubAuthStartDeps = {
     setupGitHubAuth(buildGitHubAuthDeps(agentHome, GITHUB_AUTH_SCRIPTS_BIN)),
 };
 
+// RSF-4.1: shared auto-clone deps for syncConfig()'s repo-clone step, built
+// once so reposDir (join(config.paths.workspace, "repos") — the convention
+// confirmed by setup.ts/worktree-reaper.ts/pr-state-reconciler.ts/
+// check-helpers.ts) and getScopedRepos (agentReposRef.get, read live on every
+// call) aren't re-wired per tick.
+const syncConfigCloneDeps = buildSyncConfigCloneDeps({
+  getScopedRepos: agentReposRef.get,
+  reposDir: join(config.paths.workspace, "repos"),
+});
+
 const healthPort = Number(
   process.env.SHIPWRIGHT_HEALTH_PORT ?? DEFAULT_HEALTH_PORT,
 );
@@ -407,6 +421,27 @@ if (runtimeClient && agentId) {
 
       // Sync the agent's scoped repos live ref
       agentReposRef.set(bundle.repos);
+
+      // RSF-4.1: auto-clone any repo that's newly configured but not yet on
+      // disk — reuses computeMissingClones()'s existing skip-if-exists plan
+      // (the same planner the manual agent-workspace-pull CLI and hitl.ts
+      // already use) against the real repos/ dir. Runs inline/blocking
+      // within this tick (not backgrounded) per explicit product decision.
+      // syncClonedRepos() itself catches and logs each repo's clone failure
+      // without throwing; this try/catch is defense-in-depth against an
+      // unexpected failure in the plan computation itself (e.g. a bad
+      // exists() call), so one bad tick's repo-clone step can never prevent
+      // the rest of this tick's config sync (or crash the process) — a
+      // repo that fails to clone simply stays missing and is retried next
+      // tick.
+      try {
+        await syncClonedRepos(syncConfigCloneDeps);
+      } catch (err) {
+        console.error(
+          "[config-sync] repo clone sync failed (non-fatal):",
+          err instanceof Error ? err.message : String(err),
+        );
+      }
 
       // Sync the agent's review-author-allowlist live ref
       reviewAuthorAllowlistRef.set(
