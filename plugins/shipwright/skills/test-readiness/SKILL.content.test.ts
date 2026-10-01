@@ -159,3 +159,31 @@ describe("test-readiness — Step 3.5 shipwright label on PR creation", () => {
     ).toBe(true);
   });
 });
+
+describe("test-readiness — Step 1 fallback uses the config-driven resolver", () => {
+  function getStep1Section(): string {
+    const content = readSkill();
+    const step1Idx = content.indexOf("### Step 1:");
+    const step2Idx = content.indexOf("### Step 2:");
+    expect(step1Idx).toBeGreaterThan(-1);
+    expect(step2Idx).toBeGreaterThan(-1);
+    return content.slice(step1Idx, step2Idx);
+  }
+
+  it("does not instruct raw repos/* directory iteration as a repo-list source", () => {
+    const section = getStep1Section();
+    expect(section).not.toContain("for dir in repos/*/");
+  });
+
+  it("references resolveScopedRepos as the fallback repo-list source", () => {
+    const section = getStep1Section();
+    expect(section).toContain("resolveScopedRepos");
+    expect(section).toContain("check-helpers.ts");
+  });
+
+  it("documents the fail-closed behavior of the config-driven resolver", () => {
+    const section = getStep1Section();
+    expect(section.toLowerCase()).toContain("fail");
+    expect(section.toLowerCase()).toContain("closed");
+  });
+});
