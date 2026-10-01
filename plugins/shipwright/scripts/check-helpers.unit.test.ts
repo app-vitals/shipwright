@@ -485,12 +485,17 @@ describe("resolveScopedRepos", () => {
     expect(result).toEqual([]);
   });
 
-  test("defaults to the global fetch when no fetchFn is injected", async () => {
-    // No repos cloned, and we don't inject a fetchFn — this exercises the
-    // default-to-global-fetch branch without making a real network call by
-    // pointing SHIPWRIGHT_API_URL at an address nothing is listening on, so
-    // the fetch rejects and the fail-closed path returns [].
-    process.env.SHIPWRIGHT_API_URL = "http://127.0.0.1:1";
+  test("resolves the default fetchFn without I/O when called with no deps", async () => {
+    // Omitting `deps` exercises the `deps.fetchFn ?? fetch` default-resolution
+    // path. The env guard is tripped first (no API key), so the resolved fetch
+    // is never called — no socket, no global override, consistent with this
+    // file's unit layer ("pure logic, no I/O") and the repo's isolation rule
+    // against global.fetch overrides.
+    delete process.env.SHIPWRIGHT_AGENT_API_KEY;
+    const reposDir = join(tmpDir, "repos");
+    mkdirSync(reposDir, { recursive: true });
+    makeGitClone(reposDir, "A", "https://github.com/org/A.git");
+
     const result = await resolveScopedRepos(tmpDir);
     expect(result).toEqual([]);
   });
