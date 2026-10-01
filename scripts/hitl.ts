@@ -71,7 +71,7 @@ import {
   type WriteFn,
   realLogFileTeeTarget,
 } from "./hitl-log-file-tee-target.ts";
-import { computeMissingClones } from "./lib/clone-plan.ts";
+import { computeMissingClones } from "../lib/clone-plan.ts";
 
 // ---------------------------------------------------------------------------
 // Allowed tools — FLOOR_TOOLS + web access, minus Bash/Agent (both can

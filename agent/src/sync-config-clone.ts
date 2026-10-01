@@ -9,24 +9,37 @@
  * onto disk, leaving a human to clone it manually before any dev-task/review/
  * patch/deploy work against it could proceed.
  *
- * This module reuses scripts/lib/clone-plan.ts's computeMissingClones() — the
- * same pure, already-unit-tested planner already used by the manual
+ * This module reuses lib/clone-plan.ts's computeMissingClones() — the same
+ * pure, already-unit-tested planner already used by the manual
  * agent-workspace-pull CLI and hitl.ts — against the real repos/ dir, and
- * clones anything missing via `gh repo clone`, mirroring
- * agent-workspace-pull.ts's realCloneRepo() shell-out.
+ * clones anything missing via `gh repo clone`. The planner lives in `lib/`
+ * (not `scripts/`) precisely because this module imports it: agent/Dockerfile's
+ * runtime stage copies `lib/` but not `scripts/`, so a `scripts/` import would
+ * resolve locally and then crash-loop the deployed pod.
  *
- * Kept deliberately simple (explicit product decision): runs inline/blocking
+ * Kept deliberately simple (explicit product decision): the clone step runs
  * within syncConfig()'s own tick, not backgrounded or queued — no new
- * interval, no fire-and-forget dispatch. A single repo's clone failure (auth
- * hiccup, rate limit, invalid repo name, ...) is caught and logged per-repo —
- * never thrown — so one bad repo can't block the rest of the plan or crash
- * the tick; since the repo stays missing on disk, the very next tick's
- * computeMissingClones() naturally retries it, with no explicit
- * retry/backoff logic needed.
+ * interval, no fire-and-forget dispatch. The `gh` child process itself is
+ * spawned *asynchronously* (`Bun.spawn` + `await proc.exited`, matching
+ * claude.ts's convention for long-running children) rather than with
+ * `Bun.spawnSync`: this runs inside the long-lived server process that also
+ * serves the liveness/readiness probes, and a synchronous clone would block
+ * that process's event loop for the full duration of the clone — long enough
+ * for a probe to fail and restart the pod mid-clone.
+ *
+ * Because the spawn is async, two syncConfig() ticks can now overlap (index.ts
+ * schedules them with a bare `setInterval`, which does not serialize), so an
+ * in-flight set guards against two ticks racing the same destination.
+ *
+ * A single repo's clone failure (auth hiccup, rate limit, invalid repo name,
+ * ...) is caught and logged per-repo — never thrown — so one bad repo can't
+ * block the rest of the plan or crash the tick; the partially-written
+ * destination is removed so the next tick's computeMissingClones() sees it as
+ * missing again and retries it, with no explicit retry/backoff logic needed.
  */
 
-import { existsSync } from "node:fs";
-import { computeMissingClones } from "../../scripts/lib/clone-plan.ts";
+import { existsSync, rmSync } from "node:fs";
+import { computeMissingClones } from "@shipwright/lib/clone-plan";
 
 export interface SyncConfigCloneDeps {
   /**
@@ -42,7 +55,22 @@ export interface SyncConfigCloneDeps {
   exists: (path: string) => boolean;
   /** Clones a single repo ("org/repo") to `dest` via `gh repo clone`. */
   cloneRepo: (repo: string, dest: string) => Promise<void>;
+  /**
+   * Deletes a destination directory left behind by a failed clone, so the
+   * next tick's computeMissingClones() plans it again instead of treating the
+   * half-written directory as an already-cloned repo.
+   */
+  removePartialClone: (dest: string) => void;
 }
+
+/**
+ * Destinations with a clone in flight right now. Module-scoped (not per-deps)
+ * because the hazard it guards is process-wide: index.ts drives this with
+ * `setInterval(() => void syncConfig(), 60_000)`, which never waits for the
+ * previous tick, so a clone slower than 60s would otherwise be started a
+ * second time by the next tick before `gh` has created the destination dir.
+ */
+const inFlightClones = new Set<string>();
 
 /**
  * Clones every configured-but-missing repo onto disk via computeMissingClones()'s
@@ -62,6 +90,10 @@ export async function syncClonedRepos(
   const plan = computeMissingClones(repos, deps.reposDir, deps.exists);
 
   for (const { repo, dest } of plan) {
+    // An overlapping tick is already cloning this destination — skip rather
+    // than racing a second `gh repo clone` into the same directory.
+    if (inFlightClones.has(dest)) continue;
+    inFlightClones.add(dest);
     try {
       await deps.cloneRepo(repo, dest);
     } catch (err) {
@@ -70,27 +102,62 @@ export async function syncClonedRepos(
           err instanceof Error ? err.message : String(err)
         }`,
       );
+      // Clear whatever the failed clone left on disk: a half-written
+      // directory still satisfies the planner's existence check and would
+      // otherwise wedge this repo as "cloned" forever.
+      try {
+        deps.removePartialClone(dest);
+      } catch (rmErr) {
+        console.error(
+          `[config-sync] failed to clean up partial clone at ${dest}: ${
+            rmErr instanceof Error ? rmErr.message : String(rmErr)
+          }`,
+        );
+      }
+    } finally {
+      inFlightClones.delete(dest);
     }
   }
 }
 
-/** Shells out to `gh repo clone <repo> <dest>` — mirrors agent-workspace-pull.ts's realCloneRepo(). */
-async function realCloneRepo(repo: string, dest: string): Promise<void> {
-  const result = Bun.spawnSync(["gh", "repo", "clone", repo, dest], {
-    stdout: "inherit",
-    stderr: "inherit",
-  });
-  if (result.exitCode !== 0) {
-    throw new Error(`gh repo clone failed for ${repo}`);
-  }
+/**
+ * Builds the real `gh repo clone` shell-out. Async by design — see the module
+ * header: `Bun.spawnSync` here would block the event loop of the process that
+ * serves the health probes for the whole duration of the clone.
+ *
+ * The spawner is injectable so unit tests can assert the command, the options
+ * and the exit-code handling without a real `gh` invocation (mirrors
+ * claude.ts's `spawner: typeof Bun.spawn = Bun.spawn` parameter).
+ */
+export function makeCloneRepo(
+  spawn: typeof Bun.spawn = Bun.spawn,
+): (repo: string, dest: string) => Promise<void> {
+  return async (repo: string, dest: string): Promise<void> => {
+    const proc = spawn(["gh", "repo", "clone", repo, dest], {
+      // env: process.env is required — Bun.spawn otherwise snapshots env at
+      // Bun startup and misses runtime mutations. This clone runs inside
+      // syncConfig()'s tick, right after Object.assign(process.env,
+      // bundle.env), so without this a freshly-synced/rotated GH_TOKEN never
+      // reaches `gh`. Mirrors setup.ts's defaultExec and cron-handler.ts,
+      // which document the same gotcha.
+      env: process.env,
+      stdout: "inherit",
+      stderr: "inherit",
+    });
+    const exitCode = await proc.exited;
+    if (exitCode !== 0) {
+      throw new Error(`gh repo clone failed for ${repo} (exit ${exitCode})`);
+    }
+  };
 }
 
 /**
- * Production deps for syncClonedRepos(): real existsSync + real `gh repo
- * clone` shell-out. `reposDir` is passed in by the caller (index.ts, via
- * join(config.paths.workspace, "repos") — the repos dir convention confirmed
- * by setup.ts/worktree-reaper.ts/pr-state-reconciler.ts/check-helpers.ts)
- * rather than re-resolved here, so this module stays free of any direct
+ * Production deps for syncClonedRepos(): real existsSync, real async `gh repo
+ * clone` shell-out, real recursive delete for partial clones. `reposDir` is
+ * passed in by the caller (index.ts, via join(config.paths.workspace,
+ * "repos") — the repos dir convention confirmed by setup.ts/
+ * worktree-reaper.ts/pr-state-reconciler.ts/check-helpers.ts) rather than
+ * re-resolved here, so this module stays free of any direct
  * process.env/AGENT_HOME dependency of its own.
  */
 export function buildProductionDeps(opts: {
@@ -101,6 +168,8 @@ export function buildProductionDeps(opts: {
     getScopedRepos: opts.getScopedRepos,
     reposDir: opts.reposDir,
     exists: existsSync,
-    cloneRepo: realCloneRepo,
+    cloneRepo: makeCloneRepo(),
+    removePartialClone: (dest: string) =>
+      rmSync(dest, { recursive: true, force: true }),
   };
 }

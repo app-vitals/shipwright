@@ -54,7 +54,7 @@ import {
 } from "../agent/src/setup.ts";
 import { HttpShipwrightRuntimeClient } from "../agent/src/shipwright-runtime-client.ts";
 import { SECRET_ENV_VARS } from "../lib/secret-env-vars.ts";
-import { computeMissingClones } from "./lib/clone-plan.ts";
+import { computeMissingClones } from "../lib/clone-plan.ts";
 
 // ---------------------------------------------------------------------------
 // Agent summary (GET /agents list-summary shape — no `repos` field, mirrors

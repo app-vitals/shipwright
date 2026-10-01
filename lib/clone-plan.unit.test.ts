@@ -1,5 +1,5 @@
 /**
- * scripts/lib/clone-plan.unit.test.ts
+ * lib/clone-plan.unit.test.ts
  * Unit tests for computeMissingClones() — relocated from hitl.unit.test.ts
  * (AWP-1.1) when the function was extracted out of scripts/hitl.ts into this
  * shared module. Same assertions, moved not duplicated.

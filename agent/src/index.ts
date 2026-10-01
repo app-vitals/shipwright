@@ -425,8 +425,11 @@ if (runtimeClient && agentId) {
       // RSF-4.1: auto-clone any repo that's newly configured but not yet on
       // disk — reuses computeMissingClones()'s existing skip-if-exists plan
       // (the same planner the manual agent-workspace-pull CLI and hitl.ts
-      // already use) against the real repos/ dir. Runs inline/blocking
-      // within this tick (not backgrounded) per explicit product decision.
+      // already use) against the real repos/ dir. Awaited within this tick
+      // (not backgrounded) per explicit product decision — but the `gh`
+      // child process itself is spawned asynchronously, so the clone never
+      // blocks this process's event loop (and therefore never stalls the
+      // health-probe server sharing it).
       // syncClonedRepos() itself catches and logs each repo's clone failure
       // without throwing; this try/catch is defense-in-depth against an
       // unexpected failure in the plan computation itself (e.g. a bad
