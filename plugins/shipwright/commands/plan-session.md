@@ -827,7 +827,7 @@ else
   SECRET_PATTERN='-----BEGIN [A-Z ]*PRIVATE KEY-----|AKIA[0-9A-Z]{16}|gh[pousr]_[A-Za-z0-9]{36,}|xox[baprs]-[A-Za-z0-9-]+|AIza[0-9A-Za-z_-]{35}'
   if git -C "$WT" diff --cached --quiet; then
     echo "⏭ Plan PR skipped — plan already on $DEFAULT."
-  elif git -C "$WT" diff --cached | grep -qE "$SECRET_PATTERN"; then
+  elif git -C "$WT" diff --cached | grep -qE -- "$SECRET_PATTERN"; then
     echo "⚠ Plan PR not opened — staged plan content matched a secret-pattern scan; scrub planning/$SESSION and retry."
   else
     git -C "$WT" commit -q -m "docs(planning): add $SESSION plan" \

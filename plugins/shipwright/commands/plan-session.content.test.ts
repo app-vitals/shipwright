@@ -512,6 +512,11 @@ describe("plan-session.md — Step 6d persists the plan to the repo", () => {
     const commitIdx = section.indexOf("git -C \"$WT\" commit");
     expect(scanIdx).toBeGreaterThan(-1);
     expect(commitIdx).toBeGreaterThan(scanIdx);
+    // SECRET_PATTERN begins with a literal '-', so without the `--` argument
+    // separator grep parses it as option flags and errors out on every
+    // invocation, making the gate a permanent no-op. The `--` forces grep to
+    // treat the rest of the args as the pattern.
+    expect(section).toContain('grep -qE -- "$SECRET_PATTERN"');
   });
 });
 
