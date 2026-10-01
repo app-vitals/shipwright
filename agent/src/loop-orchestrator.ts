@@ -190,8 +190,17 @@ export interface LoopOrchestratorDeps {
    * claimPr's result at the pre-claim call site) — `itemId` for PR items
    * stays the human-readable "org/repo#123" candidate id used purely for
    * cron-run-reporter tagging, and is the WRONG value to pass here.
+   *
+   * `reason` (SRB-1.1) is the dispatch's parsed `[skip-reason:...]` marker
+   * text (or the "command:no-work" fallback when no marker was tagged),
+   * forwarded unconditionally — no skip-reason category is exempt from the
+   * task-store's reason-aware skip-streak counting.
    */
-  recordSkip: (itemType: "task" | "pr", recordId: string) => Promise<void>;
+  recordSkip: (
+    itemType: "task" | "pr",
+    recordId: string,
+    reason?: string,
+  ) => Promise<void>;
   /**
    * SKT-2.1 — clears a prior skip streak for the given item, called on the
    * real `completed` dispatch branch (any actual progress). Same
@@ -1020,46 +1029,26 @@ export function createLoopOrchestrator(
           itemType,
           itemId,
         );
-        // STD-1.1: skip-reasons follow (or are moving toward) a
-        // `{command}:{category}:{reason}[:{detail}]` taxonomy — a legitimate
-        // defer, not a genuine no-op, is tagged with a `deferred` category
-        // segment (the second colon-delimited field) and is exempt from
-        // SKIP_BLOCK_THRESHOLD counting, same rationale as BBE-1.2's original
-        // fix: counting a legitimate defer toward the HITL auto-block streak
-        // risks the same false auto-block BBE-1.1 fixed at the systemic level.
-        // skipRun above stays unconditional — observability must not change,
-        // only the skip-count side effect is exempted. Any skip-reason that
-        // doesn't parse into at least 2 segments, or whose category segment
-        // isn't exactly 'deferred', falls through to recordSkip exactly as
-        // today — fail-safe default, no automatic exemption without an
-        // explicit 'deferred' tag.
-        //
-        // STD-1.4: review.md's Unresolved Comment Check tags its defer as
-        // `review:deferred:unresolved-human-feedback:{pr}` — it's already
-        // covered by the generic isDeferredCategory check below (no separate
-        // prefix needed) since it follows the taxonomy from day one.
-        const isDeferredCategory = skipReason.split(":")[1] === "deferred";
-        // BBE-1.2 backward-compat: dev-task's Same-Branch Sibling Check has
-        // been retagged (STD-1.2) to the taxonomy-conformant
-        // `dev-task:deferred:same-branch-sibling-busy:{branch}` marker, which
-        // is already covered by the generic isDeferredCategory check above
-        // (its second segment is literally 'deferred') — no separate handling
-        // needed for it. This explicit exact-prefix OR instead matches the OLD
-        // pre-rename marker (no 'deferred' segment), kept purely for backward
-        // compat with an agent whose plugin install lags the deployed
-        // `agent/` binary (plugin version is tracked per-agent in
-        // `AgentPlugin`, decoupled from `agent/`'s own deploy) and may still
-        // emit the old-format string. The branch suffix varies per task, so
-        // match by prefix rather than exact string equality.
-        const isSameBranchSiblingBusy = skipReason.startsWith(
-          "dev-task:same-branch-sibling-busy:",
+        // SRB-1.1: every skip-reason category now counts toward the
+        // task-store's reason-aware skip-streak (recordSkip(id, reason)) —
+        // the former isDeferredCategory/isSameBranchSiblingBusy exemption
+        // (STD-1.1/BBE-1.2) is removed. That exemption existed because
+        // counting a legitimate defer toward SKIP_BLOCK_THRESHOLD risked a
+        // false auto-block on a task that correctly kept re-deferring for
+        // different reasons each tick. Now that recordSkip() only advances
+        // the streak when the *same* reason repeats (resetting to 1 on any
+        // change, including the very first skip), a legitimate defer that
+        // keeps changing reason never crosses the threshold on its own —
+        // only a genuinely stuck task repeating the identical reason three
+        // times in a row does, which is exactly the case that should
+        // auto-block (see SZV-BRT-3.2/FTR-1.4, which this fixes: a task
+        // self-deferring on the same unmet hidden requirement every tick,
+        // invisible to skipCount and therefore to /unblock). `skipReason`
+        // (parsed above, or the "command:no-work" fallback) is forwarded
+        // as-is — no category filtering.
+        await callSkipTracker("recordSkip", () =>
+          recordSkip(itemType, recordId, skipReason),
         );
-        if (!isDeferredCategory && !isSameBranchSiblingBusy) {
-          // SKT-2.1: fire-and-forget — see callSkipTracker's doc comment.
-          await callSkipTracker("recordSkip", () =>
-            recordSkip(itemType, recordId),
-          );
-        }
         return "silent";
       }
 
@@ -2008,7 +1997,8 @@ export async function createProductionLoopOrchestrator(
       }
       return taskStoreClient.claimPr(buildClaimPrRequest(pr, parsed));
     },
-    recordSkip: (itemType, id) => taskStoreClient.recordSkip(itemType, id),
+    recordSkip: (itemType, id, reason) =>
+      taskStoreClient.recordSkip(itemType, id, reason),
     resetSkip: (itemType, id) => taskStoreClient.resetSkip(itemType, id),
     // DTW-1.3: a missing task (getTask → null) stays null, which the resume
     // loop reads as "stop resuming". claimedBy rides along on the same

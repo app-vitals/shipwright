@@ -7,6 +7,14 @@
  * (hitl + blockedReason) that fires once skipCount crosses the threshold (3,
  * mirroring SPIN_DETECTION_THRESHOLD in agent/src/loop-orchestrator.ts).
  *
+ * TaskService.recordSkip() is additionally reason-aware (SRB-1.1): every
+ * test in this file that doesn't explicitly pass a `reason` relies on
+ * recordSkip()'s own "unspecified" default applying identically across
+ * calls, so repeated no-reason calls still form one streak — the dedicated
+ * "reason-aware streak" describe block below covers same-reason increments,
+ * different-reason resets (including from no prior reason), and the
+ * threshold crossing's blockedReason/hitl content explicitly.
+ *
  * Requires DATABASE_URL_SHIPWRIGHT_TASK_STORE_TEST to be set; skips otherwise.
  */
 
@@ -89,6 +97,7 @@ describeOrSkip("TaskService.recordSkip/resetSkip (integration)", () => {
 
     expect(third.skipCount).toBe(3);
     expect(third.status).toBe("blocked");
+    expect(third.hitl).toBe(true);
     expect(third.blockedReason).toBeTruthy();
     expect(third.blockedReason).toContain("3");
   });
@@ -121,6 +130,7 @@ describeOrSkip("TaskService.recordSkip/resetSkip (integration)", () => {
     const reset = await service.resetSkip(task.id);
     expect(reset.skipCount).toBe(0);
     expect(reset.lastSkippedAt).toBeNull();
+    expect(reset.lastSkipReason).toBeNull();
   });
 
   it("resetSkip() works even when skipCount is already 0 (no-op-ish)", async () => {
@@ -132,6 +142,7 @@ describeOrSkip("TaskService.recordSkip/resetSkip (integration)", () => {
     const reset = await service.resetSkip(task.id);
     expect(reset.skipCount).toBe(0);
     expect(reset.lastSkippedAt).toBeNull();
+    expect(reset.lastSkipReason).toBeNull();
   });
 
   it("recordSkip() throws NotFoundError when the task does not exist", async () => {
@@ -154,6 +165,116 @@ describeOrSkip("TaskService.recordSkip/resetSkip (integration)", () => {
       caught = err;
     }
     expect(caught).toBeInstanceOf(NotFoundError);
+  });
+});
+
+// ─── TaskService.recordSkip() reason-aware streak (SRB-1.1) ────────────────────
+//
+// recordSkip(id, reason) resets the streak (skipCount=1, new lastSkipReason)
+// when `reason` differs from the task's current lastSkipReason — including
+// when lastSkipReason is null (no prior streak) — and increments skipCount
+// when it matches. Crossing SKIP_BLOCK_THRESHOLD (3) sets status:'blocked',
+// hitl:true, and a blockedReason naming the consecutive count and reason.
+
+describeOrSkip("TaskService.recordSkip() reason-aware streak (SRB-1.1)", () => {
+  let prisma: PrismaClient;
+
+  beforeEach(async () => {
+    prisma = makePrisma();
+    await prisma.taskEvent.deleteMany();
+    await prisma.task.deleteMany();
+  });
+
+  afterEach(async () => {
+    await prisma.$disconnect();
+  });
+
+  it("first-ever skip (lastSkipReason starts null) starts a streak at skipCount=1 and stores the reason", async () => {
+    const service = new TaskService(prisma, FixedClock(new Date("2026-09-01T00:00:00.000Z")));
+    const task = await prisma.task.create({
+      data: { title: "Reason-aware", status: "pending" },
+    });
+
+    const updated = await service.recordSkip(task.id, "dev-task:deferred:unmet-hidden-requirement");
+
+    expect(updated.skipCount).toBe(1);
+    expect(updated.lastSkipReason).toBe("dev-task:deferred:unmet-hidden-requirement");
+  });
+
+  it("consecutive recordSkip() calls with the SAME reason increment skipCount and keep lastSkipReason", async () => {
+    const service = new TaskService(prisma, FixedClock(new Date("2026-09-01T00:00:00.000Z")));
+    const task = await prisma.task.create({
+      data: { title: "Same reason streak", status: "pending" },
+    });
+
+    await service.recordSkip(task.id, "dev-task:deferred:unmet-hidden-requirement");
+    const second = await service.recordSkip(task.id, "dev-task:deferred:unmet-hidden-requirement");
+
+    expect(second.skipCount).toBe(2);
+    expect(second.lastSkipReason).toBe("dev-task:deferred:unmet-hidden-requirement");
+    expect(second.status).not.toBe("blocked");
+  });
+
+  it("a recordSkip() call with a DIFFERENT reason resets skipCount to 1 and overwrites lastSkipReason", async () => {
+    const service = new TaskService(prisma, FixedClock(new Date("2026-09-01T00:00:00.000Z")));
+    const task = await prisma.task.create({
+      data: { title: "Reason change", status: "pending" },
+    });
+
+    await service.recordSkip(task.id, "reason-a");
+    await service.recordSkip(task.id, "reason-a");
+    const third = await service.recordSkip(task.id, "reason-b");
+
+    expect(third.skipCount).toBe(1);
+    expect(third.lastSkipReason).toBe("reason-b");
+    expect(third.status).not.toBe("blocked");
+  });
+
+  it("three consecutive skips with an identical reason cross the threshold: status:'blocked', hitl:true, blockedReason names the count and reason", async () => {
+    const service = new TaskService(prisma, FixedClock(new Date("2026-09-01T00:00:00.000Z")));
+    const task = await prisma.task.create({
+      data: { title: "Threshold by reason", status: "pending" },
+    });
+
+    await service.recordSkip(task.id, "dev-task:deferred:unmet-hidden-requirement");
+    await service.recordSkip(task.id, "dev-task:deferred:unmet-hidden-requirement");
+    const third = await service.recordSkip(task.id, "dev-task:deferred:unmet-hidden-requirement");
+
+    expect(third.skipCount).toBe(3);
+    expect(third.status).toBe("blocked");
+    expect(third.hitl).toBe(true);
+    expect(third.blockedReason).toContain("3");
+    expect(third.blockedReason).toContain("dev-task:deferred:unmet-hidden-requirement");
+  });
+
+  it("a reason change resets the streak and does NOT trip the threshold, even after 2 prior same-reason skips", async () => {
+    const service = new TaskService(prisma, FixedClock(new Date("2026-09-01T00:00:00.000Z")));
+    const task = await prisma.task.create({
+      data: { title: "Reset avoids false block", status: "pending" },
+    });
+
+    await service.recordSkip(task.id, "reason-a");
+    await service.recordSkip(task.id, "reason-a");
+    const third = await service.recordSkip(task.id, "reason-b");
+
+    expect(third.skipCount).toBe(1);
+    expect(third.status).not.toBe("blocked");
+    expect(third.hitl).not.toBe(true);
+    expect(third.blockedReason).toBeNull();
+  });
+
+  it("an omitted reason defaults server-side to 'unspecified' and still forms a streak", async () => {
+    const service = new TaskService(prisma, FixedClock(new Date("2026-09-01T00:00:00.000Z")));
+    const task = await prisma.task.create({
+      data: { title: "Default reason", status: "pending" },
+    });
+
+    const first = await service.recordSkip(task.id);
+    expect(first.lastSkipReason).toBe("unspecified");
+
+    const second = await service.recordSkip(task.id);
+    expect(second.skipCount).toBe(2);
+    expect(second.lastSkipReason).toBe("unspecified");
   });
 });
 

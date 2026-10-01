@@ -944,7 +944,7 @@
           "tasks"
         ],
         "summary": "Record a skip — increments skipCount, auto-blocks at threshold",
-        "description": "Increments `skipCount` and updates `lastSkippedAt` to now. Called by orchestrators when a task is repeatedly re-selected but produces no visible outcome ([silent] dispatch). When `skipCount` crosses the threshold (3, `SPIN_DETECTION_THRESHOLD`), the task is auto-set to `status=blocked` with `blockedReason=\"Auto-blocked after {skipCount} consecutive skips (dispatched but found nothing to do)\"` to halt further dispatches.",
+        "description": "Increments `skipCount` and updates `lastSkippedAt` to now. Called by orchestrators when a task is repeatedly re-selected but produces no visible outcome ([silent] dispatch). Optional body `{ reason: string }` (SRB-1.1) is compared against the task's current `lastSkipReason`: a match increments `skipCount`, a difference (including from no prior reason) resets `skipCount` to 1 and stores the new reason — so only *consecutive occurrences of the same reason* count toward the threshold. `reason` defaults server-side to `\"unspecified\"` when omitted. When the (possibly-reset) `skipCount` crosses the threshold (3, `SPIN_DETECTION_THRESHOLD`), the task is auto-set to `status=blocked`, `hitl=true`, with `blockedReason` naming the consecutive count and reason.",
         "parameters": [
           {
             "schema": {
@@ -956,6 +956,16 @@
             "in": "path"
           }
         ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SkipBody"
+              }
+            }
+          }
+        },
         "responses": {
           "200": {
             "description": "Updated task",
@@ -2990,7 +3000,7 @@
           "skipCount": {
             "type": "integer",
             "default": 0,
-            "description": "Consecutive skip count. Auto-blocks (hitl+blockedReason) once it crosses the threshold (3).",
+            "description": "Consecutive skip count for the current lastSkipReason streak. A skip whose reason differs from lastSkipReason resets this to 1 instead of incrementing. Auto-blocks (hitl+blockedReason) once it crosses the threshold (3).",
             "example": 0
           },
           "lastSkippedAt": {
@@ -2999,6 +3009,14 @@
               "null"
             ],
             "example": "2026-01-02T00:00:00.000Z"
+          },
+          "lastSkipReason": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The skip reason associated with the current skipCount streak. POST /tasks/:id/skip's optional `reason` field (default `\"unspecified\"`) is compared against this value: a match increments skipCount, a difference (including from null) resets skipCount to 1 and stores the new reason here.",
+            "example": "dev-task:deferred:unmet-hidden-requirement"
           },
           "claimedBy": {
             "type": [
@@ -3371,6 +3389,15 @@
           "reason": {
             "type": "string",
             "example": "build failed"
+          }
+        }
+      },
+      "SkipBody": {
+        "type": "object",
+        "properties": {
+          "reason": {
+            "type": "string",
+            "example": "dev-task:deferred:unmet-hidden-requirement"
           }
         }
       },

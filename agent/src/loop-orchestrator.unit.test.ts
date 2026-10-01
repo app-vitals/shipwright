@@ -182,6 +182,7 @@ function makeRecordingReporter(): {
 interface SkipTrackerCall {
   itemType: "task" | "pr";
   recordId: string;
+  reason?: string;
 }
 
 /**
@@ -189,12 +190,26 @@ interface SkipTrackerCall {
  * makeRecordingReporter above. Both fns never throw by default (matching the
  * fire-and-forget contract); pass a custom `recordSkip`/`resetSkip` fn to
  * script a rejection for the "errors don't propagate" test.
+ *
+ * `recordSkip`'s third `reason` param (SRB-1.1) is recorded on each call —
+ * every skip-reason category now feeds the task-store's reason-aware
+ * skip-streak (the former isDeferredCategory/isSameBranchSiblingBusy
+ * exemption is gone), so tests assert on the captured reason, not just
+ * whether recordSkip fired.
  */
 function makeRecordingSkipTracker(overrides?: {
-  recordSkip?: (itemType: "task" | "pr", recordId: string) => Promise<void>;
+  recordSkip?: (
+    itemType: "task" | "pr",
+    recordId: string,
+    reason?: string,
+  ) => Promise<void>;
   resetSkip?: (itemType: "task" | "pr", recordId: string) => Promise<void>;
 }): {
-  recordSkip: (itemType: "task" | "pr", recordId: string) => Promise<void>;
+  recordSkip: (
+    itemType: "task" | "pr",
+    recordId: string,
+    reason?: string,
+  ) => Promise<void>;
   resetSkip: (itemType: "task" | "pr", recordId: string) => Promise<void>;
   recordCalls: SkipTrackerCall[];
   resetCalls: SkipTrackerCall[];
@@ -205,9 +220,11 @@ function makeRecordingSkipTracker(overrides?: {
   const recordSkip = async (
     itemType: "task" | "pr",
     recordId: string,
+    reason?: string,
   ): Promise<void> => {
-    recordCalls.push({ itemType, recordId });
-    if (overrides?.recordSkip) await overrides.recordSkip(itemType, recordId);
+    recordCalls.push({ itemType, recordId, reason });
+    if (overrides?.recordSkip)
+      await overrides.recordSkip(itemType, recordId, reason);
   };
   const resetSkip = async (
     itemType: "task" | "pr",
@@ -490,7 +507,11 @@ interface MakeDepsOptions {
   ) => Promise<{ id: string; commitSha: string } | null>;
   // Skip-tracking hooks (SKT-2.1). Default to recording stubs that never
   // throw, following the claimTask/claimPr default-stub pattern above.
-  recordSkip?: (itemType: "task" | "pr", recordId: string) => Promise<void>;
+  recordSkip?: (
+    itemType: "task" | "pr",
+    recordId: string,
+    reason?: string,
+  ) => Promise<void>;
   resetSkip?: (itemType: "task" | "pr", recordId: string) => Promise<void>;
   // LO-1.1: optional injected Sentry client double — undefined by default
   // (matching production's optional-by-convention sentryClient), so existing
@@ -1767,7 +1788,9 @@ describe("createLoopOrchestrator", () => {
 
     // skipRun was called (proves ordering context) before recordSkip fires.
     expect(skips).toHaveLength(1);
-    expect(recordCalls).toEqual([{ itemType: "task", recordId: "SWC-1.1" }]);
+    expect(recordCalls).toEqual([
+      { itemType: "task", recordId: "SWC-1.1", reason: "command:no-work" },
+    ]);
     expect(resetCalls).toEqual([]);
   });
 
@@ -1803,7 +1826,11 @@ describe("createLoopOrchestrator", () => {
 
     expect(skips).toHaveLength(1);
     expect(recordCalls).toEqual([
-      { itemType: "pr", recordId: "pr-record-cuid-xyz" },
+      {
+        itemType: "pr",
+        recordId: "pr-record-cuid-xyz",
+        reason: "command:no-work",
+      },
     ]);
     expect(resetCalls).toEqual([]);
   });
@@ -1934,7 +1961,9 @@ describe("createLoopOrchestrator", () => {
       loop([job("shipwright-dev-task", true)]),
     ).resolves.toBeUndefined();
 
-    expect(recordCalls).toEqual([{ itemType: "task", recordId: "SWC-OLD" }]);
+    expect(recordCalls).toEqual([
+      { itemType: "task", recordId: "SWC-OLD", reason: "command:no-work" },
+    ]);
     expectDispatchedCommands(messages, [
       "/shipwright:dev-task SWC-OLD",
       "/shipwright:dev-task SWC-NEW",
@@ -2037,9 +2066,19 @@ describe("createLoopOrchestrator", () => {
     expect(skips[0].skipReason).toBe("command:no-work");
   });
 
-  // ─── skip-reason exemption for dev-task:deferred:same-branch-sibling-busy (BBE-1.2) ─
+  // ─── skip-reason exemption removed — every category now counts (SRB-1.1) ──
+  //
+  // The isDeferredCategory/isSameBranchSiblingBusy exemption block (formerly
+  // BBE-1.2/STD-1.1) is gone: loop-orchestrator.ts now passes every parsed
+  // skip-reason through to recordSkip() unconditionally, and the task-store's
+  // reason-aware streak (SRB-1.1's recordSkip(id, reason)) is what prevents a
+  // false auto-block — a legitimate defer that changes reason each tick
+  // resets the streak instead of accumulating, while a genuinely stuck task
+  // repeating the identical reason three times in a row correctly blocks.
+  // These tests assert recordSkip now fires (with the parsed reason) for
+  // every case the old exemption used to suppress.
 
-  test("a [skip-reason:dev-task:deferred:same-branch-sibling-busy:feat/x] dispatch calls skipRun but NOT recordSkip", async () => {
+  test("a [skip-reason:dev-task:deferred:same-branch-sibling-busy:feat/x] dispatch calls skipRun AND recordSkip with the parsed reason", async () => {
     const consumed = new Set<string>();
     const { reporter, skips } = makeRecordingReporter();
     const { recordSkip, resetSkip, recordCalls } = makeRecordingSkipTracker();
@@ -2066,17 +2105,22 @@ describe("createLoopOrchestrator", () => {
 
     await loop([job("shipwright-dev-task", true)]);
 
-    // Observability is unchanged — skipRun still fires with the parsed reason.
     expect(skips).toHaveLength(1);
     expect(skips[0].skipReason).toBe(
       "dev-task:deferred:same-branch-sibling-busy:feat/x",
     );
-    // But recordSkip must NOT be called — this skip reason is exempt from the
-    // HITL auto-block counter (see BBE-1.1/BBE-1.2).
-    expect(recordCalls).toEqual([]);
+    // recordSkip now fires with the same parsed reason text — no category is
+    // exempt from the task-store's reason-aware skip-streak counting.
+    expect(recordCalls).toEqual([
+      {
+        itemType: "task",
+        recordId: "SWC-1.1",
+        reason: "dev-task:deferred:same-branch-sibling-busy:feat/x",
+      },
+    ]);
   });
 
-  test("a [skip-reason:dev-task:same-branch-sibling-busy:feat/x] (old pre-rename marker) dispatch calls skipRun but NOT recordSkip", async () => {
+  test("a [skip-reason:dev-task:same-branch-sibling-busy:feat/x] (old pre-rename marker) dispatch calls skipRun AND recordSkip with the parsed reason", async () => {
     const consumed = new Set<string>();
     const { reporter, skips } = makeRecordingReporter();
     const { recordSkip, resetSkip, recordCalls } = makeRecordingSkipTracker();
@@ -2103,19 +2147,23 @@ describe("createLoopOrchestrator", () => {
 
     await loop([job("shipwright-dev-task", true)]);
 
-    // Observability is unchanged — skipRun still fires with the parsed reason.
     expect(skips).toHaveLength(1);
     expect(skips[0].skipReason).toBe(
       "dev-task:same-branch-sibling-busy:feat/x",
     );
-    // But recordSkip must NOT be called — this old pre-rename marker (no
-    // 'deferred' segment, so isDeferredCategory is false for it) is still
-    // exempt via the explicit backward-compat prefix check, protecting an
-    // agent whose plugin install lags the deployed agent/ binary.
-    expect(recordCalls).toEqual([]);
+    // The old pre-rename marker (no 'deferred' segment) used to have its own
+    // explicit backward-compat exemption check — that's gone too, so this
+    // now counts identically to every other skip-reason.
+    expect(recordCalls).toEqual([
+      {
+        itemType: "task",
+        recordId: "SWC-1.1",
+        reason: "dev-task:same-branch-sibling-busy:feat/x",
+      },
+    ]);
   });
 
-  test("a [skip-reason:review:deferred:unresolved-human-feedback:123] dispatch calls skipRun but NOT recordSkip (STD-1.4)", async () => {
+  test("a [skip-reason:review:deferred:unresolved-human-feedback:123] dispatch calls skipRun AND recordSkip with the parsed reason (STD-1.4)", async () => {
     const consumed = new Set<string>();
     const { reporter, skips } = makeRecordingReporter();
     const { recordSkip, resetSkip, recordCalls } = makeRecordingSkipTracker();
@@ -2142,17 +2190,20 @@ describe("createLoopOrchestrator", () => {
 
     await loop([job("shipwright-dev-task", true)]);
 
-    // Observability is unchanged — skipRun still fires with the parsed reason.
     expect(skips).toHaveLength(1);
     expect(skips[0].skipReason).toBe(
       "review:deferred:unresolved-human-feedback:123",
     );
-    // But recordSkip must NOT be called — this skip reason is exempt from the
-    // HITL auto-block counter (see BBE-1.2/STD-1.4).
-    expect(recordCalls).toEqual([]);
+    expect(recordCalls).toEqual([
+      {
+        itemType: "task",
+        recordId: "SWC-1.1",
+        reason: "review:deferred:unresolved-human-feedback:123",
+      },
+    ]);
   });
 
-  test("a [skip-reason:deploy:bundle-incomplete:feat/x] dispatch still calls recordSkip — exemption is scoped to the two defer prefixes only", async () => {
+  test("a [skip-reason:deploy:bundle-incomplete:feat/x] dispatch calls recordSkip with the parsed reason", async () => {
     const consumed = new Set<string>();
     const { reporter, skips } = makeRecordingReporter();
     const { recordSkip, resetSkip, recordCalls } = makeRecordingSkipTracker();
@@ -2181,12 +2232,16 @@ describe("createLoopOrchestrator", () => {
 
     expect(skips).toHaveLength(1);
     expect(skips[0].skipReason).toBe("deploy:bundle-incomplete:feat/x");
-    expect(recordCalls).toEqual([{ itemType: "task", recordId: "SWC-1.1" }]);
+    expect(recordCalls).toEqual([
+      {
+        itemType: "task",
+        recordId: "SWC-1.1",
+        reason: "deploy:bundle-incomplete:feat/x",
+      },
+    ]);
   });
 
-  // ─── category-segment allowlist generalization (STD-1.1) ──────────────────
-
-  test("a [skip-reason:command:deferred:some-reason] dispatch calls skipRun but NOT recordSkip", async () => {
+  test("a [skip-reason:command:deferred:some-reason] dispatch calls recordSkip with the parsed reason", async () => {
     const consumed = new Set<string>();
     const { reporter, skips } = makeRecordingReporter();
     const { recordSkip, resetSkip, recordCalls } = makeRecordingSkipTracker();
@@ -2213,15 +2268,18 @@ describe("createLoopOrchestrator", () => {
 
     await loop([job("shipwright-dev-task", true)]);
 
-    // Observability is unchanged — skipRun still fires with the parsed reason.
     expect(skips).toHaveLength(1);
     expect(skips[0].skipReason).toBe("command:deferred:some-reason");
-    // But recordSkip must NOT be called — the 'deferred' category segment is
-    // exempt from the HITL auto-block counter.
-    expect(recordCalls).toEqual([]);
+    expect(recordCalls).toEqual([
+      {
+        itemType: "task",
+        recordId: "SWC-1.1",
+        reason: "command:deferred:some-reason",
+      },
+    ]);
   });
 
-  test("a [skip-reason:command:not-deferred:some-reason] dispatch still calls recordSkip — category segment must be exactly 'deferred'", async () => {
+  test("a [skip-reason:command:not-deferred:some-reason] dispatch calls recordSkip with the parsed reason", async () => {
     const consumed = new Set<string>();
     const { reporter, skips } = makeRecordingReporter();
     const { recordSkip, resetSkip, recordCalls } = makeRecordingSkipTracker();
@@ -2250,10 +2308,16 @@ describe("createLoopOrchestrator", () => {
 
     expect(skips).toHaveLength(1);
     expect(skips[0].skipReason).toBe("command:not-deferred:some-reason");
-    expect(recordCalls).toEqual([{ itemType: "task", recordId: "SWC-1.1" }]);
+    expect(recordCalls).toEqual([
+      {
+        itemType: "task",
+        recordId: "SWC-1.1",
+        reason: "command:not-deferred:some-reason",
+      },
+    ]);
   });
 
-  test("a plain [silent] with no skip-reason marker (command:no-work fallback) still calls recordSkip", async () => {
+  test("a plain [silent] with no skip-reason marker (command:no-work fallback) calls recordSkip with that fallback as reason", async () => {
     const consumed = new Set<string>();
     const { reporter, skips } = makeRecordingReporter();
     const { recordSkip, resetSkip, recordCalls } = makeRecordingSkipTracker();
@@ -2277,7 +2341,66 @@ describe("createLoopOrchestrator", () => {
 
     expect(skips).toHaveLength(1);
     expect(skips[0].skipReason).toBe("command:no-work");
-    expect(recordCalls).toEqual([{ itemType: "task", recordId: "SWC-1.1" }]);
+    expect(recordCalls).toEqual([
+      { itemType: "task", recordId: "SWC-1.1", reason: "command:no-work" },
+    ]);
+  });
+
+  // ─── Regression (SRB-1.1): the counting path itself, independent of BBE-1.1's dispatch-side protection ──
+  //
+  // BBE-1.1 already prevents the automated loop from ever redispatching a
+  // busy same-branch sibling (ready.ts excludes it from candidacy), so in
+  // production this specific scenario can't actually recur 3 ticks running
+  // against a live task-store. This test guards the OTHER half: if it ever
+  // did recur (e.g. a stale candidate snapshot, or a future regression in
+  // the dispatch-side protection), the now-unconditional recordSkip call
+  // must still correctly feed the counting path with a stable, matching
+  // reason each time — proving the removed exemption doesn't quietly leave
+  // some other suppression in its place.
+
+  test("a same-branch-sibling-busy defer recurring 3x with an identical reason calls recordSkip 3 times with that reason, unsuppressed (guards the counting path independent of BBE-1.1)", async () => {
+    const marker =
+      "Deferring to same-branch sibling.\n[skip-reason:dev-task:deferred:same-branch-sibling-busy:feat/x]\n[silent]";
+
+    for (let tick = 1; tick <= 3; tick++) {
+      const consumed = new Set<string>();
+      const { reporter, skips } = makeRecordingReporter();
+      const { recordSkip, resetSkip, recordCalls } =
+        makeRecordingSkipTracker();
+      const devTaskCandidates = [task("SWC-1.1", "2026-01-01T00:00:00Z")];
+      const { runner } = makeDrainingRunner(
+        { devTask: devTaskCandidates },
+        consumed,
+        [{ result: marker }],
+      );
+      const deps = makeDeps({
+        devTaskCandidates,
+        runner,
+        reporter,
+        consumed,
+        recordSkip,
+        resetSkip,
+      });
+      const loop = createLoopOrchestrator(deps);
+
+      await loop([job("shipwright-dev-task", true)]);
+
+      expect(skips).toHaveLength(1);
+      // Every one of the 3 ticks calls recordSkip with the identical reason —
+      // none of them is suppressed the way the old exemption used to
+      // suppress all 3. (The task-store's own recordSkip(id, reason) — unit-
+      // and integration-tested in task-store/src/skip-tracking.integration.test.ts
+      // and task-store/src/task-service.unit.test.ts — is what turns 3
+      // same-reason calls into an auto-block; this test only guards that the
+      // loop orchestrator actually places all 3 calls.)
+      expect(recordCalls).toEqual([
+        {
+          itemType: "task",
+          recordId: "SWC-1.1",
+          reason: "dev-task:deferred:same-branch-sibling-busy:feat/x",
+        },
+      ]);
+    }
   });
 
   test("a runner throw during dispatch reports a failed run, is caught, and does not abort the tick", async () => {

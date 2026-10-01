@@ -136,6 +136,18 @@ Historical backfill via a one-time script remains out of scope.
 
 Full request/response shapes live in the OpenAPI spec, per this doc's existing pointer convention.
 
+### Skip tracking (reason-aware auto-block)
+
+`Task` and `PullRequest` records track repeated no-op dispatches via three fields: `skipCount` (number of consecutive skips with the same reason), `lastSkippedAt` (ISO timestamp of the most recent skip), and `lastSkipReason` (the text reason of the current skip streak). When the loop orchestrator dispatches a task/PR and receives a `[silent]` marker (found nothing to do), it records a skip with a reason via `POST /tasks/:id/skip` (task) or via `PATCH /prs/:id` (PullRequest). The task store's `recordSkip()` / `recordPrSkip()` methods compute the next streak state using reason-aware logic (SRB-1.1):
+
+- **Same reason:** if the incoming reason matches `lastSkipReason`, increment `skipCount` by 1.
+- **Different reason or first skip:** if the reason differs (or `lastSkipReason` is null), reset `skipCount` to 1 and update `lastSkipReason`.
+- **Auto-block threshold:** when `skipCount` reaches 3 (matching `SPIN_DETECTION_THRESHOLD` in `agent/src/loop-orchestrator.ts`), the record is auto-blocked (task `status:"blocked"` + `blockedReason`, or PullRequest `blocked:true` + `blockedReason`) to prevent infinite re-dispatch loops. The `blockedReason` names the count and reason: e.g. "Blocked after 3 consecutive skips: reason-a".
+
+This reason-aware deduplication prevents legitimate but repeated deferrals (e.g., "waiting for dependency") from triggering auto-block, while catching genuine stuck loops where the same reason hits threshold 3 times in a row. No skip-reason category is exempt from counting: every `[skip-reason:...]` marker — including `deferred`-category markers like `dev-task:deferred:same-branch-sibling-busy:*` and `review:deferred:unresolved-human-feedback:*` — is forwarded to `recordSkip()`/`recordPrSkip()` as-is; the loop orchestrator's prior category-based exemption was removed (SRB-1.1) in favor of this reason-aware streak logic alone.
+
+The `POST /tasks/:id/skip` endpoint accepts an optional `reason` field (string); if omitted, the reason defaults to `"unspecified"`. The `lastSkipReason` value is sent by the loop orchestrator from the dispatched command's own `[skip-reason:text]` marker (see `agent/src/markers.ts` and `docs/agent-ops.md`). Callers can query tasks by skip state using `?blockedReason=*` filters or inspect `skipCount`/`lastSkipReason` directly via `GET /tasks/:id`.
+
 ### Same-branch exclusivity guard
 
 A pending task is excluded from the ready set if another task shares its non-null/non-empty `branch` field and is `in_progress` with a fresh claim. This "same-branch exclusivity guard" prevents multiple agents from simultaneously executing tasks bound to the same feature branch — a real dev-task session is likely mid-flight on that shared git branch.
