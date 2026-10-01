@@ -37,18 +37,27 @@ true. When scope has never successfully synced, there is no filtering at all —
 physically present in the workspace is treated as fully in-scope for patch/review candidate
 selection, which drives real write actions (pushing fixes, posting reviews).
 
-`check-deploy.ts` (~lines 212-216) is narrower: it already intersects `deps.repos` with
+`check-deploy.ts` (~lines 212-216) was narrower: it already intersected `deps.repos` with
 `getScopedRepos()` into `scopedRepos` *before* its GitHub fetch calls (busy-repo lookup and
-`listOpenPrs`), so once scope has synced it does not query GitHub for every repo on disk. Its
-gap is the same fail-open edge as the other two, just scoped down to one window: when
-`hasScopeSynced()` is false, it falls back to the full unfiltered `deps.repos` list rather
-than filtering — so only the pre-first-sync period (not steady-state operation) is exposed.
+`listOpenPrs`), so once scope had synced it did not query GitHub for every repo on disk. Its
+only gap was the same fail-open edge as the other two, scoped down to one window: when
+`hasScopeSynced()` was false, it fell back to the full unfiltered `deps.repos` list rather
+than filtering — so only the pre-first-sync period (not steady-state operation) was exposed.
 
 **Fix:** apply the same pattern already used in `pr-state-reconciler.ts`,
 `claim-invariant-reconciler.ts`, `worktree-reaper.ts`, and `pr-census.ts` (WL-4.4) — query
 GitHub only for `getScopedRepos()`, never the raw filesystem list. Decide during planning
 how these three should behave when `hasScopeSynced()` is false (e.g. skip the tick and log,
 rather than failing open to "every repo on disk is in scope").
+
+**Status (2026-10-01): already complete.** This bug was independently fixed and merged to
+`main` via PR app-vitals/shipwright#3841 (merged 2026-10-01T07:05:46Z — an ancestor of this
+plan PR's base), before this spec's tasks were seeded into the task store. Confirmed on
+current `main`: `hasScopeSynced` no longer exists anywhere in `check-patch.ts`,
+`check-review.ts`, or `check-deploy.ts` — the `getScopedRepos()` intersection in all three is
+now unconditional, with no pre-sync fallback window remaining (see PLAN.md's RSF-1.1 Status
+note). This section is retained for historical context only; do not treat it as live,
+unresolved work.
 
 ### 2. Filesystem-only repo resolver behind docs-freshness / test-readiness prechecks
 

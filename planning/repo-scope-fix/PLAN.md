@@ -19,11 +19,14 @@ confirmed via full code + prose audit.
 `gh pr list --repo <repo>` against every one of those before ever consulting configured
 scope; filtering to `getScopedRepos()` happens only after the fetch, and only when
 `hasScopeSynced()` is true — leaving zero filtering during any window where the config
-bundle hasn't synced yet. `check-deploy.ts` is narrower: it already intersects `deps.repos`
-with `getScopedRepos()` into `scopedRepos` *before* its GitHub fetch calls, so once scope has
-synced it does not query GitHub for every repo on disk — its gap is the same fail-open edge,
-just scoped down to the pre-first-sync window, where it falls back to the full unfiltered
-`deps.repos` list rather than filtering. This gap is already flagged in a code comment in
+bundle hasn't synced yet. `check-deploy.ts` was narrower: it already intersected `deps.repos`
+with `getScopedRepos()` into `scopedRepos` *before* its GitHub fetch calls, so once scope had
+synced it did not query GitHub for every repo on disk — its only gap was the same fail-open
+edge, scoped down to the pre-first-sync window, where it fell back to the full unfiltered
+`deps.repos` list rather than filtering. (As of PR #3841, that fallback is gone entirely: the
+`getScopedRepos()` intersection in `getDeployCandidates()` is now unconditional, with no
+pre-sync fallback window remaining — see RSF-1.1's Status note below.) This gap is already
+flagged in a code comment in
 `pr-state-reconciler.ts:300-308`, which (along with `pr-census.ts`, `worktree-reaper.ts`,
 `claim-invariant-reconciler.ts`) was already fixed (WL-4.4) to intersect with
 `getScopedRepos()` unconditionally, before any GitHub call.
