@@ -92,13 +92,15 @@ Determine which repos to process, in this priority order:
    ```
    `resolveScopedRepos()` (`plugins/shipwright/scripts/check-helpers.ts`, added by RSF-2.1)
    intersects the agent's configured `repos[]` (`GET /agents/{id}/config`) with the repos
-   actually cloned under `repos/` — the same config-driven source `check-test-readiness.ts`'s
-   precheck resolves against to produce the priority-1 list above (RSF-2.2). It fails closed
-   to an empty list on any missing env var, fetch error, or non-2xx response — never falling
-   back to an unfiltered directory scan. For each repo name returned, keep it only if its
-   local clone directory has a `docs/test-readiness/` directory; drop the rest. A repo with
-   no `docs/test-readiness/` directory is skipped cleanly — it is never silently treated as
-   the implicit single target.
+   actually cloned under `repos/`. It fails closed to an empty list on any missing env var,
+   fetch error, or non-2xx response — never falling back to an unfiltered directory scan.
+   For each repo name returned, keep it only if its local clone directory has a
+   `docs/test-readiness/` directory; drop the rest. A repo with no `docs/test-readiness/`
+   directory is skipped cleanly — it is never silently treated as the implicit single
+   target. Note: `check-test-readiness.ts`'s own precheck (priority-1 list above) still
+   resolves its repo list via the unfiltered `resolveRepoDirs()`, not this scoped resolver —
+   the two paths are not yet unified, so this fallback can scope more narrowly than the
+   precheck does.
 
 For each resolved repo, match the precheck's `org/repo` name back to its local
 clone directory `repos/{dirname}` by checking each `repos/*/`'s

@@ -44,11 +44,12 @@ Determine the list of repos to process, in this priority order:
    ```
    `resolveScopedRepos()` (`plugins/shipwright/scripts/check-helpers.ts`, added by RSF-2.1)
    intersects the agent's configured `repos[]` (`GET /agents/{id}/config`) with the repos
-   actually cloned under `repos/` — the same config-driven source `check-docs-freshness.ts`'s
-   precheck resolves against to produce the priority-1 list above (RSF-2.2). It fails closed
-   to an empty list on any missing env var, fetch error, or non-2xx response — never falling
-   back to an unfiltered directory scan. Process every repo name it returns; an empty result
-   means nothing configured to process.
+   actually cloned under `repos/`. It fails closed to an empty list on any missing env var,
+   fetch error, or non-2xx response — never falling back to an unfiltered directory scan.
+   Process every repo name it returns; an empty result means nothing configured to process.
+   Note: `check-docs-freshness.ts`'s own precheck (priority-1 list above) still resolves its
+   repo list via the unfiltered `resolveRepoDirs()`, not this scoped resolver — the two paths
+   are not yet unified, so this fallback can scope more narrowly than the precheck does.
 
 For each resolved repo, the local clone directory is `repos/{dirname}` (the directory name from the `repos/` scan — not necessarily the `org/repo` string, since the precheck output identifies repos by their parsed `org/repo` remote but the local clone folder name may differ). Match the precheck's `org/repo` name back to its local directory by checking each `repos/*/`'s `git remote get-url origin` (or `.git/config`) for that owner/repo.
 
