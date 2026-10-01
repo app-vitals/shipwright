@@ -256,15 +256,6 @@ export interface CheckPatchDeps {
    * very next call.
    */
   getScopedRepos: () => string[];
-  /**
-   * True once the agent's repo scope has been successfully synced at least
-   * once. When false (e.g. a persistent 404 on the agent's config bundle —
-   * see index.ts's syncConfig), getPatchCandidates() fails open and does not
-   * filter by scope at all, matching pre-scoping behavior — otherwise a
-   * config-sync outage would silently exclude every repo from patch
-   * candidacy, indistinguishable from "no work found".
-   */
-  hasScopeSynced: () => boolean;
   // Task status lookup for the linked task (if any), used PURELY to source
   // the age field via its createdAt — unlike check-deploy.ts, this is never
   // used as a gating/disqualifying check here. A thrown error is treated the
@@ -436,10 +427,6 @@ export async function getPatchCandidates(
 ): Promise<WorkPrCandidate[]> {
   const currentUser = await deps.getCurrentUser();
 
-  // Fail open when scope has never synced (e.g. a persistent config-bundle
-  // 404) — filtering by an unpopulated scope would silently drop every repo
-  // from candidacy, a failure mode that didn't exist before scoping.
-  const scopeSynced = deps.hasScopeSynced();
   const scopedRepos = new Set(deps.getScopedRepos());
   const allOwnPrs = await deps.listOwnOpenPrs("default");
   // Additive allowlisted-author source (DBR-1.4) — merged with allOwnPrs and
@@ -457,9 +444,7 @@ export async function getPatchCandidates(
     seen.add(id);
     mergedPrs.push(pr);
   }
-  const prs = scopeSynced
-    ? mergedPrs.filter((pr) => scopedRepos.has(pr.repo))
-    : mergedPrs;
+  const prs = mergedPrs.filter((pr) => scopedRepos.has(pr.repo));
   if (prs.length === 0) return [];
 
   const candidates: WorkPrCandidate[] = [];
@@ -638,7 +623,6 @@ export async function buildProductionDeps(opts: {
   getCurrentUser: () => Promise<string>;
   fetchFn?: typeof fetch;
   getScopedRepos?: () => string[];
-  hasScopeSynced?: () => boolean;
   /**
    * Optional override for which PatchAuthorAllowlistRef instance
    * listAllowlistedOpenPrs reads from (DBR-1.4). Defaults to the
@@ -655,12 +639,23 @@ export async function buildProductionDeps(opts: {
   const { ghJson, ghGraphql, getCurrentUser: getUser } = opts;
   const allowlistRef = opts.patchAuthorAllowlistRef ?? patchAuthorAllowlistRef;
 
+  // Scope BEFORE issuing any `gh pr list` call (RSF-1.1) — re-evaluated on
+  // every call (not baked in once here) so a scope change takes effect on
+  // the very next call, mirroring pr-state-reconciler.ts's own
+  // unconditional-intersection pattern. A repo present in the
+  // filesystem-scanned allRepos but absent from the live scope never
+  // reaches gh at all.
+  const getScopedAllRepos = () => {
+    const scopedRepos = new Set((opts.getScopedRepos ?? agentReposRef.get)());
+    return allRepos.filter((repo) => scopedRepos.has(repo));
+  };
+
   return {
     getScopedRepos: opts.getScopedRepos ?? agentReposRef.get,
-    hasScopeSynced: opts.hasScopeSynced ?? agentReposRef.hasSynced,
     listOwnOpenPrs: async (_repo: string) => {
       const user = await getUser();
-      return mapReposTolerant(allRepos, "check-patch", async (repo) => {
+      const repos = getScopedAllRepos();
+      return mapReposTolerant(repos, "check-patch", async (repo) => {
         const items = await ghJson<GhPrListItem[]>([
           "pr",
           "list",
@@ -683,7 +678,8 @@ export async function buildProductionDeps(opts: {
     listAllowlistedOpenPrs: async (_repo: string) => {
       const logins = allowlistRef.get();
       if (logins.length === 0) return [];
-      return mapReposTolerant(allRepos, "check-patch", async (repo) => {
+      const repos = getScopedAllRepos();
+      return mapReposTolerant(repos, "check-patch", async (repo) => {
         const results: OwnPr[] = [];
         for (const login of logins) {
           const items = await ghJson<GhPrListItem[]>([
