@@ -100,15 +100,17 @@ export interface CheckDeployDeps {
   getCurrentUser: () => Promise<string>;
   /**
    * Whether self-review is allowed (the `allow_self_review` policy field,
-   * state/agent-policy.md). A getter, invoked fresh on every
-   * getDeployCandidates() call — not evaluated once at buildProductionDeps()
-   * time — so an edit to state/agent-policy.md takes effect on the very next
-   * call without requiring an agent process restart (PLR-1.1). Mirrors this
-   * file's own getScopedRepos/hasScopeSynced live-read pattern.
+   * DB -> state/agent-policy.md -> hardcoded, APM-1.4). A getter, invoked
+   * fresh on every getDeployCandidates() call — not evaluated once at
+   * buildProductionDeps() time — so a DB or state/agent-policy.md edit takes
+   * effect on the very next call without requiring an agent process restart
+   * (PLR-1.1). Mirrors this file's own getScopedRepos/hasScopeSynced
+   * live-read pattern. Async because the DB tier is a live config-sync ref
+   * (~60s staleness) rather than a synchronous file read.
    * buildProductionDeps() wires this as `() =>
    * readAllowSelfReview(workspacePath)` (check-helpers.ts).
    */
-  isSelfReviewAllowed: () => boolean;
+  isSelfReviewAllowed: () => Promise<boolean>;
   repos: string[];
   listOpenPrs: (repo: string) => Promise<GhPr[]>;
   fetchPrReviews: (
@@ -246,7 +248,7 @@ export async function getDeployCandidates(
       if (pr.reviewDecision === "APPROVED") {
         approved = true;
       } else if (
-        deps.isSelfReviewAllowed() &&
+        (await deps.isSelfReviewAllowed()) &&
         pr.author.login === currentUser
       ) {
         const reviews = await deps.fetchPrReviews(org, repoName, pr.number);

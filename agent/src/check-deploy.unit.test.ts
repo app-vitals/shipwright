@@ -78,10 +78,10 @@ function makeDeps({
 }: MakeDepsOptions = {}): CheckDeployDeps {
   return {
     getCurrentUser: async () => currentUser,
-    isSelfReviewAllowed:
+    isSelfReviewAllowed: async () =>
       typeof isSelfReviewAllowed === "function"
-        ? isSelfReviewAllowed
-        : () => isSelfReviewAllowed,
+        ? isSelfReviewAllowed()
+        : isSelfReviewAllowed,
     repos,
     getScopedRepos,
     hasScopeSynced,
@@ -611,7 +611,7 @@ describe("getDeployCandidates", () => {
 
     const deps: CheckDeployDeps = {
       getCurrentUser: async () => "bodhi-agent",
-      isSelfReviewAllowed: () => true,
+      isSelfReviewAllowed: async () => true,
       repos: ["acme/failing-repo", "acme/example-repo"],
       getScopedRepos: () => ["acme/failing-repo", "acme/example-repo"],
       hasScopeSynced: () => true,
@@ -687,7 +687,7 @@ describe("getDeployCandidates", () => {
     });
     const deps: CheckDeployDeps = {
       getCurrentUser: async () => "bodhi-agent",
-      isSelfReviewAllowed: () => true,
+      isSelfReviewAllowed: async () => true,
       repos: ["acme/busy-repo", "acme/free-repo"],
       getScopedRepos: () => ["acme/busy-repo", "acme/free-repo"],
       hasScopeSynced: () => true,
@@ -710,7 +710,7 @@ describe("getDeployCandidates", () => {
     const pr1 = makeGhPr({ number: 1, headRefOid: "sha1" });
     const deps: CheckDeployDeps = {
       getCurrentUser: async () => "bodhi-agent",
-      isSelfReviewAllowed: () => true,
+      isSelfReviewAllowed: async () => true,
       repos: ["acme/example-repo"],
       getScopedRepos: () => ["acme/example-repo"],
       hasScopeSynced: () => true,
@@ -734,7 +734,7 @@ describe("getDeployCandidates", () => {
     });
     const deps: CheckDeployDeps = {
       getCurrentUser: async () => "bodhi-agent",
-      isSelfReviewAllowed: () => true,
+      isSelfReviewAllowed: async () => true,
       repos: ["acme/example-repo"],
       getScopedRepos: () => ["acme/example-repo"],
       hasScopeSynced: () => true,
@@ -763,7 +763,7 @@ describe("getDeployCandidates", () => {
     });
     const deps: CheckDeployDeps = {
       getCurrentUser: async () => "bodhi-agent",
-      isSelfReviewAllowed: () => true,
+      isSelfReviewAllowed: async () => true,
       repos: ["acme/example-repo"],
       getScopedRepos: () => ["acme/example-repo"],
       hasScopeSynced: () => true,
@@ -807,7 +807,7 @@ describe("getDeployCandidates", () => {
 
     const deps: CheckDeployDeps = {
       getCurrentUser: async () => "bodhi-agent",
-      isSelfReviewAllowed: () => true,
+      isSelfReviewAllowed: async () => true,
       repos: ["acme/example-repo"],
       getScopedRepos: () => ["acme/example-repo"],
       hasScopeSynced: () => true,
@@ -1540,7 +1540,7 @@ describe("buildProductionDeps", () => {
       ghJson: async <T>() => [] as unknown as T,
     });
     expect(typeof deps.isSelfReviewAllowed).toBe("function");
-    expect(deps.isSelfReviewAllowed()).toBe(false);
+    expect(await deps.isSelfReviewAllowed()).toBe(false);
   });
 });
 
