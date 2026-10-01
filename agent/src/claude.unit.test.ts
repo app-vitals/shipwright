@@ -1836,6 +1836,64 @@ describe("session persistence on failure", () => {
     expect(capturedExceptions).toHaveLength(1);
     expect((capturedExceptions[0] as Error).message).toContain("socket closed");
   });
+
+  test("saves the captured session id immediately on the init line, before the run settles (ESP-1.1)", async () => {
+    // Simulates the orchestrator process itself dying mid-run (OOM, pod
+    // restart, redeploy) — not just the spawned `claude` CLI child being
+    // killed. If persistence only happens at settle time (via _saveSession /
+    // _saveSessionFromError), a process death between the init line and the
+    // run settling loses the session id even though the CLI session itself
+    // is already durably resumable. `autoCloseAfterDrip: false` keeps
+    // `exited` pending indefinitely — nothing settles until we `.kill()` it
+    // below — so this test can only pass if the write happens off the init
+    // line itself, not off any catch/finally.
+    const intervalMs = 20;
+    const proc = drippingProc(
+      JSON.stringify({
+        type: "system",
+        subtype: "init",
+        session_id: "early-write-sess-id",
+      }),
+      intervalMs,
+      3, // several drips — exited must stay pending well past the first one
+      false, // never auto-closes; only kill() (called below) settles it
+    );
+    const mockSpawnEarly = mock(
+      () => proc as unknown as ReturnType<typeof Bun.spawn>,
+    );
+
+    mockGetSession.mockClear();
+    mockSetSession.mockClear();
+    mockGetSession.mockReturnValue(undefined);
+
+    const runClaudeEarly = createRunClaude(
+      mockSpawnEarly as typeof Bun.spawn,
+      testSessions,
+      MODEL,
+      WORKSPACE,
+      fakeSentryClient,
+    );
+
+    // Deliberately NOT awaited yet — the run must still be in flight when we
+    // assert below.
+    const pending = runClaudeEarly("hello", "chan:ts");
+
+    // Wait just long enough for the first drip (the init line) to land, but
+    // nowhere near long enough for the process to settle (it never will,
+    // short of the kill() below).
+    await new Promise((r) => setTimeout(r, intervalMs + 30));
+
+    expect(mockSetSession).toHaveBeenCalledWith(
+      "chan:ts",
+      "early-write-sess-id",
+    );
+
+    // Clean up: kill the dripping proc so `exited` resolves, then let the
+    // pending run settle (successfully or not — irrelevant here) so no
+    // dangling timer/promise leaks into later tests.
+    proc.kill();
+    await pending.catch(() => {});
+  });
 });
 
 // ─── _enqueue serialization tests ────────────────────────────────────────────
