@@ -114,13 +114,33 @@ skip feed the same counter instead of bypassing it.
    `status: "blocked"`, `hitl: true`, and a `blockedReason` naming the
    consecutive count and the reason.
 3. `stale-claim-reaper.ts`'s `reap()` invokes the same reason-aware counting
-   logic for every task it reaps, passing the fixed reason
-   `"stale_claim_timeout"`, instead of resetting claim fields while leaving
-   `skipCount`/`lastSkipReason` untouched.
+   logic for every task it reaps, passing `reason` as the task's current
+   `lastSkipReason` when it is non-`null` (continuing whatever streak is
+   already in progress, since a reap on an unresolved condition is further
+   evidence of that same condition recurring, not a new one) or the fixed
+   string `"stale_claim_timeout"` when `lastSkipReason` is `null` (no streak
+   in progress yet) — instead of unconditionally passing the fixed reason
+   and resetting claim fields while leaving `skipCount`/`lastSkipReason`
+   untouched. This keeps a task whose sessions alternate between cleanly
+   deferring and stalling/crashing on the same unresolved cause (e.g.
+   `dependency-unsatisfied:FTR-1.3` one cycle, a reap the next) counted as
+   one continuous streak instead of resetting every other cycle under AC2's
+   exact-match rule.
 4. `loop-orchestrator.ts` removes the `isDeferredCategory`/
    `isSameBranchSiblingBusy` exemption block entirely (~lines 1023-1062) and
-   passes the parsed `[skip-reason:...]` marker text through as `reason` on
-   every `/skip` call — no skip-reason category is exempt from counting.
+   passes the parsed `[skip-reason:...]` marker's full raw text through as
+   `reason` on every `/skip` call, unmodified — no skip-reason category is
+   exempt from counting, and no truncation/normalization is applied. This is
+   safe for every skip-reason template that exists today across
+   `dev-task.md`, `deploy.md`, `merge.md`, `patch.md`, and `review.md`: each
+   one's trailing segment is a stable per-task identifier (a dependency id,
+   a branch name, or a PR number) that does not change across repeated
+   calls for the same task, so consecutive occurrences of the same root
+   cause produce byte-identical `reason` strings. Any skip-reason marker
+   added in the future must preserve this property — its variable
+   segment(s) must stay a stable identifier tied to the task/PR/branch,
+   never free-form or paraphrased prose — since AC2's streak continuation
+   depends on exact string equality between consecutive calls.
 5. `unblock()` and `resetSkip()` additionally clear `lastSkipReason` to `null`,
    consistent with their existing `skipCount`/`lastSkippedAt` reset.
 6. **Test decision:** extend `task-store/src/skip-tracking.integration.test.ts`
