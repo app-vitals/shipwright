@@ -847,6 +847,26 @@ export function createRunClaude(
     const captureEarlySessionId: EarlySessionIdCallback = (sessionId) => {
       capturedSessionId ??= sessionId;
       onEarlySessionId?.(sessionId);
+      // Persist immediately, not just at settle time (_saveSession /
+      // _saveSessionFromError below). If the whole agent process dies before
+      // this call settles (OOM, pod restart, redeploy) — not just the
+      // spawned `claude` CLI child being killed — a settle-time-only write
+      // would leave `sessions` empty even though the CLI already created a
+      // durably resumable session. Fire-and-forget, failure swallowed —
+      // best-effort persistence, same contract as _saveSessionFromError: a
+      // failed write here must never mask or affect control flow. The
+      // redundant write this causes at settle time is expected and safe —
+      // sessions.ts's per-key enqueue() serializes same-key writes,
+      // last-write-wins.
+      if (sessionKey) {
+        try {
+          Promise.resolve(sessions.set(sessionKey, sessionId)).catch(() => {});
+        } catch {
+          // Best-effort persistence — a synchronous throw from a misbehaving
+          // store must never mask or affect control flow either, same as the
+          // async-rejection case above.
+        }
+      }
     };
 
     try {
