@@ -81,15 +81,26 @@ Determine which repos to process, in this priority order:
    and use that as the repo list. Skip any repo not named in the precheck
    output — it had nothing to run.
 2. **Fallback (manual invocation, or no repo list available in the prompt).**
-   Iterate `repos/*` directly and keep only repos with a `docs/test-readiness/`
-   directory (the same opt-in signal the precheck uses):
+   Call the config-driven resolver directly, then keep only repos with a
+   `docs/test-readiness/` directory (the same opt-in signal the precheck uses):
    ```bash
-   for dir in repos/*/; do
-     [ -d "$dir/.git" ] && [ -d "$dir/docs/test-readiness" ] && basename "$dir"
-   done
+   bun run - <<EOF
+   import { resolveScopedRepos, resolveWorkspacePath } from "${CLAUDE_PLUGIN_ROOT}/scripts/check-helpers.ts";
+   const repos = await resolveScopedRepos(resolveWorkspacePath());
+   console.log(repos.join("\n"));
+   EOF
    ```
-   A repo under `repos/` with no `docs/test-readiness/` directory is skipped
-   cleanly — it is never silently treated as the implicit single target.
+   `resolveScopedRepos()` (`plugins/shipwright/scripts/check-helpers.ts`, added by RSF-2.1)
+   intersects the agent's configured `repos[]` (`GET /agents/{id}/config`) with the repos
+   actually cloned under `repos/`. It fails closed to an empty list on any missing env var,
+   fetch error, or non-2xx response — never falling back to an unfiltered directory scan.
+   For each repo name returned, keep it only if its local clone directory has a
+   `docs/test-readiness/` directory; drop the rest. A repo with no `docs/test-readiness/`
+   directory is skipped cleanly — it is never silently treated as the implicit single
+   target. Note: `check-test-readiness.ts`'s own precheck (priority-1 list above) still
+   resolves its repo list via the unfiltered `resolveRepoDirs()`, not this scoped resolver —
+   the two paths are not yet unified, so this fallback can scope more narrowly than the
+   precheck does.
 
 For each resolved repo, match the precheck's `org/repo` name back to its local
 clone directory `repos/{dirname}` by checking each `repos/*/`'s

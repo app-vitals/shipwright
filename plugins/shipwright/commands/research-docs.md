@@ -33,13 +33,23 @@ Mode: auto (unattended)
 Determine the list of repos to process, in this priority order:
 
 1. **Precheck-driven (preferred).** This cron's `preCheck` (`shipwright:check-docs-freshness.ts`) already iterated every repo under `repos/` and its stdout — which became this prompt (per the agent type manifest's cron `preCheck` contract: "When a preCheck script is set, its stdout becomes the actual prompt sent to Claude") — lists exactly which repo(s) have qualifying changes, one repo name (`org/repo`) per section. Parse the repo names out of the invoking prompt and use that as the repo list. Skip any repo not named in the precheck output — it had nothing to check.
-2. **Fallback (manual invocation, or no repo list available in the prompt).** Iterate `repos/*` directly:
+2. **Fallback (manual invocation, or no repo list available in the prompt).** Call the
+   config-driven resolver directly:
    ```bash
-   for dir in repos/*/; do
-     [ -d "$dir/.git" ] && basename "$dir"
-   done
+   bun run - <<EOF
+   import { resolveScopedRepos, resolveWorkspacePath } from "${CLAUDE_PLUGIN_ROOT}/scripts/check-helpers.ts";
+   const repos = await resolveScopedRepos(resolveWorkspacePath());
+   console.log(repos.join("\n"));
+   EOF
    ```
-   Process every git clone found this way.
+   `resolveScopedRepos()` (`plugins/shipwright/scripts/check-helpers.ts`, added by RSF-2.1)
+   intersects the agent's configured `repos[]` (`GET /agents/{id}/config`) with the repos
+   actually cloned under `repos/`. It fails closed to an empty list on any missing env var,
+   fetch error, or non-2xx response — never falling back to an unfiltered directory scan.
+   Process every repo name it returns; an empty result means nothing configured to process.
+   Note: `check-docs-freshness.ts`'s own precheck (priority-1 list above) still resolves its
+   repo list via the unfiltered `resolveRepoDirs()`, not this scoped resolver — the two paths
+   are not yet unified, so this fallback can scope more narrowly than the precheck does.
 
 For each resolved repo, the local clone directory is `repos/{dirname}` (the directory name from the `repos/` scan — not necessarily the `org/repo` string, since the precheck output identifies repos by their parsed `org/repo` remote but the local clone folder name may differ). Match the precheck's `org/repo` name back to its local directory by checking each `repos/*/`'s `git remote get-url origin` (or `.git/config`) for that owner/repo.
 
