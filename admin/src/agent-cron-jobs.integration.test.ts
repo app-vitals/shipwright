@@ -135,7 +135,7 @@ const GOLDEN_CODING_CRONS: GoldenCron[] = [
     prompt:
       '/shipwright:entropy-scan\n/shipwright:entropy-fix\nAfter the fix run completes, write state/entropy-patrol-last-run.json: {"lastRun": "<ISO timestamp>"}. Use [silent] if no pr_worthy findings are found.',
     silent: true,
-    preCheck: null,
+    preCheck: "shipwright:check-patrol-scope.ts",
     enabled: false,
     parentCron: null,
   },
@@ -156,7 +156,7 @@ const GOLDEN_CODING_CRONS: GoldenCron[] = [
     prompt:
       '/shipwright:security-scan\n/shipwright:security-fix\nAfter the fix run completes, write state/security-patrol-last-run.json: {"lastRun": "<ISO timestamp>"}. Use [silent] if no pr_worthy findings are found.',
     silent: true,
-    preCheck: null,
+    preCheck: "shipwright:check-patrol-scope.ts",
     enabled: false,
     parentCron: null,
   },

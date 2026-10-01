@@ -4,6 +4,63 @@ Durable notes for breaking changes and the steps needed to migrate across versio
 
 ---
 
+## Behavior: entropy/security patrol crons gain a fail-closed repo-scope preCheck _(RSF-3.1)_
+
+**Version**: next (RSF-3.1)
+
+**Who this affects**: only agents that had **manually enabled** `entropy-patrol-maintenance` or
+`security-patrol-maintenance` (both ship `enabled: false`). Agents that left them off are
+unaffected — the new gate only runs when the cron ticks.
+
+`entropy-patrol-maintenance` and `security-patrol-maintenance` previously carried no `preCheck`
+and dispatched a bare prompt with no repo argument, leaving the agent to improvise which
+repo(s) under `repos/` to scan. Both now declare
+`preCheck: shipwright:check-patrol-scope.ts` in
+[`agent-types/coding/manifest.yaml`](../agent-types/coding/manifest.yaml), which resolves the
+agent's configured repos and emits the in-scope repo list as the cron's actual prompt.
+
+**What changed on upgrade**: `reconcileSystemCrons()` runs on every agent boot and keeps system
+crons in sync with the manifest, including `preCheck`. It does not diff fields or preserve
+operator state beyond `enabled` and the row id, so the first boot after upgrading past this
+version rewrites these two crons' `preCheck` from `null` to `check-patrol-scope.ts` with no
+prompt and no log line. There is nothing to run by hand — but there is also no signal that it
+happened.
+
+**Impact**: `check-patrol-scope.ts` **fails closed**. If it resolves zero in-scope repos it
+exits 1 with no output, and per the `preCheck` contract that skips the tick *silently* — no
+Claude turn, no Slack message, no error. So an enabled patrol cron that was scanning every week
+can go quiet after the upgrade if any of the following is true for the agent:
+
+- the agent's `repos` list is empty (`GET /agents/:id/config` returns `repos: []`),
+- none of the configured repos is actually cloned into the workspace's `repos/` directory, or
+- the resolver can't reach the admin API — `SHIPWRIGHT_API_URL`, `SHIPWRIGHT_AGENT_ID`, or
+  `SHIPWRIGHT_AGENT_API_KEY` unset, or the config fetch returns non-2xx.
+
+For the common case — an agent with `repos` configured and those repos cloned — the cron keeps
+running, now scoped to exactly those repos instead of whatever it found on disk.
+
+**What to check after upgrading** (only if you had either cron enabled):
+
+1. Confirm the agent has repos configured and cloned:
+   ```bash
+   curl -sf -H "Authorization: Bearer $SHIPWRIGHT_AGENT_API_KEY" \
+     "$SHIPWRIGHT_API_URL/agents/$SHIPWRIGHT_AGENT_ID/config" | jq '.repos'
+   ```
+   Each entry must also exist as a clone under the workspace's `repos/` directory — the
+   resolver intersects the two, so a configured-but-uncloned repo contributes nothing.
+2. Run the precheck directly from the agent's workspace to see what it resolves:
+   ```bash
+   bun plugins/shipwright/scripts/check-patrol-scope.ts; echo "exit=$?"
+   ```
+   `exit=0` plus a `Repos in scope for this patrol:` list means the cron will fire. `exit=1`
+   with no output means it will silently no-op — fix the repo config or clones above.
+3. After the next scheduled tick, confirm the cron ran via the admin cron-logs UI or
+   `GET /agents/:id/cron-runs`. A skipped tick still creates a run record, but with
+   `skipped: true` and `skipReason: "preCheck:no-output"` — look for that rather than a
+   missing run.
+
+---
+
 ## Feature: `POST /agents` JSON API restored — programmatic agent creation _(APA-2.1)_
 
 **Version**: next (APA-2.1)
