@@ -1157,7 +1157,6 @@ async function runLoop(): Promise<void> {
     reviewDeps = await buildReviewDeps({
       ghJson,
       getScopedRepos: () => allRepos,
-      hasScopeSynced: () => true,
       ...(HITL_AUTHORS.length > 0
         ? { isAuthorAllowed: (login: string) => HITL_AUTHORS.includes(login) }
         : {}),
@@ -1167,7 +1166,6 @@ async function runLoop(): Promise<void> {
       ghGraphql,
       getCurrentUser,
       getScopedRepos: () => allRepos,
-      hasScopeSynced: () => true,
     });
   }
 

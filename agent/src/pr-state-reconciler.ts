@@ -320,18 +320,21 @@ export interface PrStateReconcilerDeps {
    */
   delay: (ms: number) => Promise<void>;
   /**
-   * Whether the `cleanup_merged_worktrees` policy field (state/agent-policy.md,
-   * WTR-1.1) is enabled. A getter, invoked fresh inside `reconcileRecord()`
-   * on every call — not evaluated once at `buildProductionDeps()` time — so
-   * an edit to state/agent-policy.md takes effect on the very next reconcile
-   * tick without requiring an agent process restart (PLR-1.1). Mirrors this
-   * same file's `cleanup_after_days`/`readCleanupAfterDays` live-read pattern
-   * (see `removeWorktree`'s production implementation below) and
+   * Whether the `cleanup_merged_worktrees` policy field (DB -> file ->
+   * hardcoded, APM-1.6) is enabled. A getter, invoked fresh inside
+   * `reconcileRecord()` on every call — not evaluated once at
+   * `buildProductionDeps()` time — so a DB-side or state/agent-policy.md
+   * edit takes effect on the very next reconcile tick without requiring an
+   * agent process restart (PLR-1.1). Async since `readCleanupMergedWorktrees()`
+   * now checks a live DB-synced ref before falling back to a synchronous
+   * file read (APM-1.6) — mirrors this same file's
+   * `cleanup_after_days`/`readCleanupAfterDays` live-read pattern (see
+   * `removeWorktree`'s production implementation below) and
    * `check-deploy.ts`/`check-review.ts`'s `isSelfReviewAllowed` getter.
    * `buildProductionDeps()` wires this as `() =>
    * readCleanupMergedWorktrees(workspacePath)` (check-helpers.ts).
    */
-  isCleanupMergedWorktreesEnabled: () => boolean;
+  isCleanupMergedWorktreesEnabled: () => Promise<boolean>;
   /**
    * Remove a local git worktree (WTR-1.3) — called from `reconcileRecord()`
    * after a successful state PATCH to merged/closed, when
@@ -752,7 +755,7 @@ async function reconcileRecord(
 
   await deps.patchPrRecord(record.id, fields);
 
-  if (!deps.isCleanupMergedWorktreesEnabled()) return "patched";
+  if (!(await deps.isCleanupMergedWorktreesEnabled())) return "patched";
   if (!ghState.headRefName) return "patched"; // defensive — no branch to derive a worktree path from
 
   try {
@@ -1658,7 +1661,7 @@ export function buildProductionDeps(opts: {
       // that already governs "remove worktrees older than N days" — a
       // worktree modified more recently than that threshold is presumed
       // still in active use and is left alone rather than force-removed.
-      const cleanupAfterDays = readCleanupAfterDays(workspacePath);
+      const cleanupAfterDays = await readCleanupAfterDays(workspacePath);
       if (!isWorktreeStale(worktreePath, cleanupAfterDays)) {
         console.log(
           `[pr-state-reconciler] skipping removal of ${worktreePath} — modified within the last ${cleanupAfterDays} day(s), may still be in use`,

@@ -21,6 +21,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createAllowSelfReviewRef } from "./allow-self-review-ref.ts";
 import * as checkHelpers from "./check-helpers.ts";
+import { createCleanupAfterDaysRef } from "./cleanup-after-days-ref.ts";
+import { createCleanupMergedWorktreesRef } from "./cleanup-merged-worktrees-ref.ts";
 import {
   classifyReviewState,
   createBundleCompleteQuery,
@@ -528,17 +530,67 @@ describe("readCleanupMergedWorktrees", () => {
     rmSync(tmpDir, { recursive: true, force: true });
   });
 
-  test("reads and parses state/agent-policy.md when present", () => {
+  test("reads and parses state/agent-policy.md when present (file fallback, no injected ref)", async () => {
     mkdirSync(join(tmpDir, "state"), { recursive: true });
     writeFileSync(
       join(tmpDir, "state", "agent-policy.md"),
       "| `cleanup_merged_worktrees` | false |",
     );
-    expect(checkHelpers.readCleanupMergedWorktrees(tmpDir)).toBe(false);
+    expect(await checkHelpers.readCleanupMergedWorktrees(tmpDir)).toBe(false);
   });
 
-  test("defaults to true when the policy file does not exist", () => {
-    expect(checkHelpers.readCleanupMergedWorktrees(tmpDir)).toBe(true);
+  test("defaults to true when the policy file does not exist (hardcoded fallback)", async () => {
+    expect(await checkHelpers.readCleanupMergedWorktrees(tmpDir)).toBe(true);
+  });
+
+  // APM-1.6: DB -> file -> hardcoded read order, same tiering as APM-1.4.
+  // The ref defaults to unsynced (hasSynced() === false), which is why the
+  // two tests above — which pass no explicit ref — already exercise the
+  // file and hardcoded tiers via the process-wide default ref.
+
+  test("DB-hit: an injected ref that has synced false wins over a conflicting file value", async () => {
+    mkdirSync(join(tmpDir, "state"), { recursive: true });
+    writeFileSync(
+      join(tmpDir, "state", "agent-policy.md"),
+      "| `cleanup_merged_worktrees` | true |",
+    );
+    const configRef = createCleanupMergedWorktreesRef();
+    configRef.set(false);
+    expect(
+      await checkHelpers.readCleanupMergedWorktrees(tmpDir, configRef),
+    ).toBe(false);
+  });
+
+  test("DB-hit: an injected ref that has synced true wins over a conflicting file value", async () => {
+    mkdirSync(join(tmpDir, "state"), { recursive: true });
+    writeFileSync(
+      join(tmpDir, "state", "agent-policy.md"),
+      "| `cleanup_merged_worktrees` | false |",
+    );
+    const configRef = createCleanupMergedWorktreesRef();
+    configRef.set(true);
+    expect(
+      await checkHelpers.readCleanupMergedWorktrees(tmpDir, configRef),
+    ).toBe(true);
+  });
+
+  test("DB-miss-fallback-to-file: an injected ref that never synced falls through to the file", async () => {
+    mkdirSync(join(tmpDir, "state"), { recursive: true });
+    writeFileSync(
+      join(tmpDir, "state", "agent-policy.md"),
+      "| `cleanup_merged_worktrees` | false |",
+    );
+    const configRef = createCleanupMergedWorktreesRef();
+    expect(
+      await checkHelpers.readCleanupMergedWorktrees(tmpDir, configRef),
+    ).toBe(false);
+  });
+
+  test("file-missing-fallback-to-hardcoded: an injected ref that never synced and no policy file falls through to true", async () => {
+    const configRef = createCleanupMergedWorktreesRef();
+    expect(
+      await checkHelpers.readCleanupMergedWorktrees(tmpDir, configRef),
+    ).toBe(true);
   });
 });
 
@@ -611,17 +663,48 @@ describe("readCleanupAfterDays", () => {
     rmSync(tmpDir, { recursive: true, force: true });
   });
 
-  test("reads and parses state/agent-policy.md when present", () => {
+  test("reads and parses state/agent-policy.md when present (file fallback, no injected ref)", async () => {
     mkdirSync(join(tmpDir, "state"), { recursive: true });
     writeFileSync(
       join(tmpDir, "state", "agent-policy.md"),
       "| `cleanup_after_days` | 7 |",
     );
-    expect(checkHelpers.readCleanupAfterDays(tmpDir)).toBe(7);
+    expect(await checkHelpers.readCleanupAfterDays(tmpDir)).toBe(7);
   });
 
-  test("defaults to 14 when the policy file does not exist", () => {
-    expect(checkHelpers.readCleanupAfterDays(tmpDir)).toBe(14);
+  test("defaults to 14 when the policy file does not exist (hardcoded fallback)", async () => {
+    expect(await checkHelpers.readCleanupAfterDays(tmpDir)).toBe(14);
+  });
+
+  // APM-1.6: DB -> file -> hardcoded read order, same tiering as APM-1.4.
+  // The ref defaults to unsynced (hasSynced() === false), which is why the
+  // two tests above — which pass no explicit ref — already exercise the
+  // file and hardcoded tiers via the process-wide default ref.
+
+  test("DB-hit: an injected ref that has synced wins over a conflicting file value", async () => {
+    mkdirSync(join(tmpDir, "state"), { recursive: true });
+    writeFileSync(
+      join(tmpDir, "state", "agent-policy.md"),
+      "| `cleanup_after_days` | 7 |",
+    );
+    const configRef = createCleanupAfterDaysRef();
+    configRef.set(30);
+    expect(await checkHelpers.readCleanupAfterDays(tmpDir, configRef)).toBe(30);
+  });
+
+  test("DB-miss-fallback-to-file: an injected ref that never synced falls through to the file", async () => {
+    mkdirSync(join(tmpDir, "state"), { recursive: true });
+    writeFileSync(
+      join(tmpDir, "state", "agent-policy.md"),
+      "| `cleanup_after_days` | 7 |",
+    );
+    const configRef = createCleanupAfterDaysRef();
+    expect(await checkHelpers.readCleanupAfterDays(tmpDir, configRef)).toBe(7);
+  });
+
+  test("file-missing-fallback-to-hardcoded: an injected ref that never synced and no policy file falls through to 14", async () => {
+    const configRef = createCleanupAfterDaysRef();
+    expect(await checkHelpers.readCleanupAfterDays(tmpDir, configRef)).toBe(14);
   });
 });
 
@@ -1628,6 +1711,25 @@ describe("createTaskStoreClient query()", () => {
     );
     expect(capturedInit?.method).toBe("POST");
     expect(capturedInit?.body).toBe("{}");
+  });
+
+  test("recordSkip() forwards a supplied reason as the JSON body (SRB-1.1)", async () => {
+    let capturedInit: RequestInit | undefined;
+    const fakeFetch = (async (_url: RequestInfo | URL, init?: RequestInit) => {
+      capturedInit = init;
+      return { ok: true, status: 200, json: async () => ({}) } as Response;
+    }) as unknown as typeof fetch;
+
+    const client = createTaskStoreClient({ fetchFn: fakeFetch });
+    await client.recordSkip(
+      "task",
+      "SKT-2.1",
+      "dev-task:deferred:unmet-hidden-requirement",
+    );
+
+    expect(capturedInit?.body).toBe(
+      JSON.stringify({ reason: "dev-task:deferred:unmet-hidden-requirement" }),
+    );
   });
 
   test("recordSkip() POSTs to /prs/:id/skip for itemType 'pr'", async () => {

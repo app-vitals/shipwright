@@ -28,6 +28,14 @@ import {
   allowSelfReviewRef,
 } from "./allow-self-review-ref.ts";
 import type { PrReviewData } from "./check-patch.ts";
+import {
+  type CleanupAfterDaysRef,
+  cleanupAfterDaysRef,
+} from "./cleanup-after-days-ref.ts";
+import {
+  type CleanupMergedWorktreesRef,
+  cleanupMergedWorktreesRef,
+} from "./cleanup-merged-worktrees-ref.ts";
 
 // ─── Task types ───────────────────────────────────────────────────────────────
 
@@ -353,13 +361,30 @@ export async function readAllowSelfReview(
 }
 
 /**
- * Read and parse the `cleanup_merged_worktrees` policy field (WTR-1.1) from
- * `state/agent-policy.md`, mirroring `readAllowSelfReview()` exactly:
- * defaults `true` on any read failure (missing file, missing workspace,
- * etc.) — `parseCleanupMergedWorktrees()` itself already defaults `true`
- * when the field is present in the file but simply unset.
+ * Read the `cleanup_merged_worktrees` policy field (WTR-1.1) in DB -> file ->
+ * hardcoded read order (APM-1.6), mirroring `readAllowSelfReview()`'s read
+ * order (APM-1.4) exactly:
+ *
+ * 1. DB — `configRef` (defaults to the process-wide
+ *    `cleanupMergedWorktreesRef`, synced from GET /agents/:id/config every
+ *    ~60s by index.ts's syncConfig()). Used only once `configRef.hasSynced()`
+ *    is true — the underlying Agent row field defaults to `true` in the
+ *    database, so a synced ref always carries a real DB value, never an
+ *    "absent" sentinel.
+ * 2. File — `state/agent-policy.md`, read synchronously as before.
+ * 3. Hardcoded — `true`, on any read failure (missing file, missing
+ *    workspace, etc).
+ *
+ * `configRef` is injectable so callers (and tests) can exercise all three
+ * tiers without depending on the process-wide ref's global state.
  */
-export function readCleanupMergedWorktrees(workspacePath: string): boolean {
+export async function readCleanupMergedWorktrees(
+  workspacePath: string,
+  configRef: CleanupMergedWorktreesRef = cleanupMergedWorktreesRef,
+): Promise<boolean> {
+  if (configRef.hasSynced()) {
+    return configRef.get();
+  }
   try {
     const content = readFileSync(
       join(workspacePath, "state", "agent-policy.md"),
@@ -372,9 +397,11 @@ export function readCleanupMergedWorktrees(workspacePath: string): boolean {
 }
 
 /**
- * Read and parse the `cleanup_after_days` policy field from
- * `state/agent-policy.md`, mirroring `readCleanupMergedWorktrees()` exactly:
- * defaults to 14 on any read failure (missing file, missing workspace, etc.)
+ * Read the `cleanup_after_days` policy field in DB -> file -> hardcoded read
+ * order (APM-1.6), mirroring `readCleanupMergedWorktrees()`'s read order
+ * exactly: DB tier via an injectable `configRef` (defaults to the
+ * process-wide `cleanupAfterDaysRef`), then `state/agent-policy.md`, then a
+ * hardcoded `14` on any read failure (missing file, missing workspace, etc)
  * — `parseCleanupAfterDays()` itself already defaults to 14 when the field
  * is present in the file but simply unset or unparseable.
  *
@@ -387,7 +414,13 @@ export function readCleanupMergedWorktrees(workspacePath: string): boolean {
  * worked on by a concurrent dev-task/patch/deploy session isn't yanked out
  * from under it purely on remote GitHub state.
  */
-export function readCleanupAfterDays(workspacePath: string): number {
+export async function readCleanupAfterDays(
+  workspacePath: string,
+  configRef: CleanupAfterDaysRef = cleanupAfterDaysRef,
+): Promise<number> {
+  if (configRef.hasSynced()) {
+    return configRef.get();
+  }
   try {
     const content = readFileSync(
       join(workspacePath, "state", "agent-policy.md"),
@@ -686,7 +719,11 @@ export function createTaskStoreClient(opts?: { fetchFn?: FetchFn }): {
     hasAutomatedLabel?: boolean;
     hasShipwrightLabel?: boolean;
   }): Promise<{ id: string; commitSha: string } | null>;
-  recordSkip(itemType: "task" | "pr", id: string): Promise<void>;
+  recordSkip(
+    itemType: "task" | "pr",
+    id: string,
+    reason?: string,
+  ): Promise<void>;
   resetSkip(itemType: "task" | "pr", id: string): Promise<void>;
 } {
   const taskStoreUrl = (process.env.SHIPWRIGHT_TASK_STORE_URL ?? "").trim();
@@ -710,9 +747,16 @@ export function createTaskStoreClient(opts?: { fetchFn?: FetchFn }): {
   // here must not abort or delay the caller (SKT-2.1's recordSkip/resetSkip),
   // so both a network failure and a non-ok response are swallowed and logged
   // rather than thrown — matching HttpCronRunReporter's patchRun pattern.
-  async function postFireAndForget(url: string): Promise<void> {
+  async function postFireAndForget(
+    url: string,
+    body: Record<string, unknown> = {},
+  ): Promise<void> {
     try {
-      const res = await doFetch(url, { method: "POST", headers, body: "{}" });
+      const res = await doFetch(url, {
+        method: "POST",
+        headers,
+        body: JSON.stringify(body),
+      });
       if (!res.ok) {
         console.warn(
           `[task-store] POST ${url} returned ${res.status} — swallowing`,
@@ -862,12 +906,20 @@ export function createTaskStoreClient(opts?: { fetchFn?: FetchFn }): {
       // return type non-nullable.
       return { id: data.id, commitSha: data.commitSha ?? params.commitSha };
     },
-    async recordSkip(itemType: "task" | "pr", id: string): Promise<void> {
+    async recordSkip(
+      itemType: "task" | "pr",
+      id: string,
+      reason?: string,
+    ): Promise<void> {
       const url =
         itemType === "task"
           ? `${baseUrl}/tasks/${id}/skip`
           : `${baseUrl}/prs/${id}/skip`;
-      await postFireAndForget(url);
+      // reason is forwarded regardless of itemType — the task-store's PR
+      // skip route (unlike /tasks/:id/skip, SRB-1.1) declares no body
+      // schema, so an extra `reason` field is simply ignored there, not
+      // rejected.
+      await postFireAndForget(url, reason === undefined ? {} : { reason });
     },
     async resetSkip(itemType: "task" | "pr", id: string): Promise<void> {
       const url =

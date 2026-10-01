@@ -341,7 +341,7 @@ gh api graphql -f query='
       headRefOid
       reviews(first: 50) {
         nodes {
-          author { login }
+          author { login __typename }
           state
           submittedAt
           body
@@ -353,7 +353,7 @@ gh api graphql -f query='
           isResolved
           comments(first: 1) {
             nodes {
-              author { login }
+              author { login __typename }
               body
               path
               line
@@ -363,7 +363,7 @@ gh api graphql -f query='
       }
       comments(first: 50) {
         nodes {
-          author { login }
+          author { login __typename }
           body
           createdAt
         }
@@ -375,9 +375,13 @@ gh api graphql -f query='
 
 From the response, extract:
 - `headRefOid` — current HEAD SHA of the PR
-- `reviews.nodes[]` — each with `author.login`, `state`, `submittedAt`, `body`
-- `reviewThreads.nodes[]` — each with `id`, `isResolved`, and the first comment's `author.login`, `body`, `path`, `line`
-- `comments.nodes[]` — PR-level (non-inline) comments with `author.login`, `body`, `createdAt`
+- `reviews.nodes[]` — each with `author.login`, `author.__typename`, `state`, `submittedAt`, `body`
+- `reviewThreads.nodes[]` — each with `id`, `isResolved`, and the first comment's `author.login`, `author.__typename`, `body`, `path`, `line`
+- `comments.nodes[]` — PR-level (non-inline) comments with `author.login`, `author.__typename`, `body`,
+  `createdAt`. Call this array `COMMENTS_JSON` — Step 5a.5 below reuses it unchanged, no new API
+  call. `__typename` is now fetched alongside `login` on all three author blocks above (mirroring
+  review.md's RBD-1.1 fix), giving the bot/CI comment filtering Step 5a.5 performs the authoritative
+  GraphQL discriminator, not just the login-string heuristic.
 
 A PR has **unaddressed findings** when ANY of the following are true:
 - At least one inline thread has `isResolved == false`
@@ -1074,7 +1078,13 @@ From inside the worktree, collect the full picture of what needs fixing:
    with a non-empty `body`, include the full body text.
 
 4. **PR-level comments** (from Step 3a — already fetched, reuse):
-   Include all non-bot comments as additional context.
+   Filter `COMMENTS_JSON` (the `comments.nodes[]` array from Step 3a's query, including
+   `author.__typename`) through the shared bot/CI filter (PBD-1.1) instead of freehand
+   judgment, mirroring `is-ci-green.ts`'s CLI invocation pattern:
+   ```bash
+   FILTERED_COMMENTS=$(bun run "${CLAUDE_PLUGIN_ROOT}/scripts/filter-bot-comments.ts" "$COMMENTS_JSON")
+   ```
+   Use its output (`FILTERED_COMMENTS`, the non-bot/non-CI subset) as additional context.
 
 ### Step 5a.6: Claim PR Record (pre-work lock)
 

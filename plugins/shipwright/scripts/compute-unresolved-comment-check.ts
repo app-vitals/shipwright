@@ -100,7 +100,7 @@ const KNOWN_CI_ACCOUNTS = new Set([
   "renovate",
 ]);
 
-function isBotOrCiAuthor(author: {
+export function isBotOrCiAuthor(author: {
   login: string;
   __typename?: string;
 }): boolean {
