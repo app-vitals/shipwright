@@ -6,7 +6,7 @@ The Shipwright agent has multiple independent repo-discovery code paths that enu
 whatever git clones happen to be present on disk under `repos/` (or `$SHIPWRIGHT_REPOS_DIR`)
 instead of consulting the agent's actual configured repo list — the `repos[]` field returned
 by `GET /agents/{id}/config`, already synced at runtime into `agent/src/agent-repos-ref.ts`'s
-`agentReposRef` and exposed via `getScopedRepos()`/`hasScopeSynced()`.
+`agentReposRef` and exposed via `getScopedRepos()`/`hasSynced()`.
 
 This matters because the workspace filesystem and the agent's configured repo list can
 diverge in both directions: a repo manually cloned into `repos/` for research (not actually
