@@ -2960,3 +2960,77 @@ describe("patch.md — Step 2.2 dispatches the phase-methodology-configured suba
     }
   });
 });
+
+describe("patch.md — share bot/CI comment filter with review.md (PBD-1.1)", () => {
+  function getStep3aSection() {
+    const step3aIdx = content.indexOf(
+      "### Step 3a: Check for Unaddressed Review Findings",
+    );
+    const step3a5Idx = content.indexOf(
+      "### Step 3a.5: Dependency-Risk Detection (DBP-1.2)",
+    );
+    expect(step3aIdx).toBeGreaterThan(-1);
+    expect(step3a5Idx).toBeGreaterThan(step3aIdx);
+    return content.slice(step3aIdx, step3a5Idx);
+  }
+
+  function getStep5a5Section() {
+    const step5a5Idx = content.indexOf(
+      "### Step 5a.5: Detect Project Toolchain",
+    );
+    const step5a6Idx = content.indexOf(
+      "### Step 5a.6: Claim PR Record (pre-work lock)",
+    );
+    expect(step5a5Idx).toBeGreaterThan(-1);
+    expect(step5a6Idx).toBeGreaterThan(step5a5Idx);
+    return content.slice(step5a5Idx, step5a6Idx);
+  }
+
+  it("Step 3a's GraphQL query fetches __typename alongside login on all three author blocks", () => {
+    const section = getStep3aSection();
+    const queryIdx = section.indexOf("gh api graphql -f query=");
+    expect(queryIdx).toBeGreaterThan(-1);
+    const queryEndIdx = section.indexOf("```", queryIdx);
+    expect(queryEndIdx).toBeGreaterThan(queryIdx);
+    const query = section.slice(queryIdx, queryEndIdx);
+
+    const matches = query.match(/author \{ login __typename \}/g) ?? [];
+    expect(matches.length).toBe(3);
+    expect(query).not.toContain("author { login }");
+  });
+
+  it("Step 3a's extraction bullet list mentions __typename is now fetched too, alongside login", () => {
+    const section = getStep3aSection();
+    const extractIdx = section.indexOf("From the response, extract:");
+    expect(extractIdx).toBeGreaterThan(-1);
+    const extractBlock = section.slice(extractIdx, extractIdx + 800);
+    expect(extractBlock).toContain("__typename");
+  });
+
+  it("Step 3a names the PR-level comments array COMMENTS_JSON for Step 5a.5 to reuse", () => {
+    const section = getStep3aSection();
+    expect(section).toContain("COMMENTS_JSON");
+  });
+
+  it("Step 5a.5 item 4 pipes COMMENTS_JSON through filter-bot-comments.ts instead of freehand 'include all non-bot comments' judgment", () => {
+    const section = getStep5a5Section();
+
+    expect(section).not.toContain(
+      "Include all non-bot comments as additional context.",
+    );
+    expect(section).toContain(
+      'bun run "${CLAUDE_PLUGIN_ROOT}/scripts/filter-bot-comments.ts"',
+    );
+    expect(section).toContain("COMMENTS_JSON");
+    expect(section.toLowerCase()).toContain("use its output");
+  });
+
+  it("Step 5a.5 item 4 still documents PR-level comments come from Step 3a, already fetched", () => {
+    const section = getStep5a5Section();
+    const itemIdx = section.indexOf("**PR-level comments**");
+    expect(itemIdx).toBeGreaterThan(-1);
+    const itemBlock = section.slice(itemIdx, itemIdx + 600);
+    expect(itemBlock).toContain("from Step 3a");
+    expect(itemBlock.toLowerCase()).toContain("already fetched");
+  });
+});
