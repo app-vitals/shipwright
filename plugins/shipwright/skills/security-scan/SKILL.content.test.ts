@@ -453,6 +453,32 @@ describe("SKILL.md — Step 3.5a zizmor.yml suppression filter", () => {
   });
 });
 
+describe("SKILL.md — Step 2 consumes a precheck-provided repo list (RSF-3.1)", () => {
+  it("documents the precheck-driven repo list as the preferred source", () => {
+    expect(content).toContain("Precheck-driven (preferred)");
+    expect(content).toContain("shipwright:check-patrol-scope.ts");
+  });
+
+  it("names the security-patrol-maintenance cron whose preCheck supplies the list", () => {
+    expect(content).toContain("security-patrol-maintenance");
+  });
+
+  it("documents that the preCheck's stdout becomes the invoking prompt", () => {
+    const text = content.toLowerCase();
+    expect(text).toContain("stdout becomes the actual prompt");
+  });
+
+  it("preserves manual single-repo invocation as an explicit fallback", () => {
+    expect(content).toContain("Fallback (manual invocation");
+    expect(content).toContain("git remote get-url origin");
+  });
+
+  it("documents running Steps 3-9 once per repo in the resolved list", () => {
+    const text = content.toLowerCase();
+    expect(text).toContain("once per repo in the resolved list");
+  });
+});
+
 describe("SKILL.md — ledger classification with repo-namespaced keys", () => {
   it("references the security-patrol ledger location", () => {
     expect(content).toContain("state/security-patrol-ledger.json");

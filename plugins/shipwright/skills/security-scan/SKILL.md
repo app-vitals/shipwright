@@ -62,16 +62,31 @@ shared with `entropy-scan`.
 
 ---
 
-## Step 2: Detect Repo + Derive `repo-slug`
+## Step 2: Resolve Repo List, Detect Each Repo + Derive `repo-slug`
 
-Detect the current repo from git: run `git remote get-url origin` and strip the
-`https://github.com/` (or `git@github.com:`) prefix and the `.git` suffix to get the
-`org/repo` value — e.g. `app-vitals/shipwright`.
+This skill scans one repo at a time. Before Step 3, determine which repo(s) are in scope, in
+this priority order:
+
+1. **Precheck-driven (preferred).** The `security-patrol-maintenance` cron's `preCheck`
+   (`shipwright:check-patrol-scope.ts`) already resolved the agent's configured repos and its
+   stdout — which became this prompt (per the agent type manifest's cron `preCheck` contract:
+   "When a preCheck script is set, its stdout becomes the actual prompt sent to Claude") —
+   lists exactly which repo(s) are in scope, one repo name (`org/repo`) and its local clone
+   directory per section. Parse the repo names and directories out of the invoking prompt and
+   use that as the repo list.
+2. **Fallback (manual invocation, or no repo list available in the prompt).** Detect the
+   current repo from git directly (today's single-repo behavior, unchanged): run
+   `git remote get-url origin` and scan just the current working directory.
+
+For each repo in the resolved list, `cd` into its local clone directory, then detect that
+repo from git: run `git remote get-url origin` and strip the `https://github.com/` (or
+`git@github.com:`) prefix and the `.git` suffix to get the `org/repo` value — e.g.
+`app-vitals/shipwright`.
 
 Derive `repo-slug` from it: **the last path segment, lowercased** — e.g.
 `app-vitals/shipwright` → `shipwright`. (This mirrors the `repo-slug` derivation used by
-`entropy-fix`, `test-fix`, and `consolidation-fix`.) Compute this once here and reuse it for
-every ledger key and finding ID below.
+`entropy-fix`, `test-fix`, and `consolidation-fix`.) Compute this once per repo and reuse it
+for every ledger key and finding ID below, for that repo.
 
 **Why this matters (critical):** ledger keys and per-finding IDs are namespaced as
 `security-{rule}-{repo-slug}-{YYYY-Www}` — rule + **repo-slug** + ISO week — **not** just
@@ -81,7 +96,13 @@ repos in the same ISO week produces an identical ID, and the second repo's run s
 no-ops because the ID already exists from the first repo. The `{repo-slug}` component keeps
 IDs unique per repo so same-week multi-repo runs never collide.
 
-Compute the ISO week as `YYYY-Www` (e.g. `2026-W29`) from the current UTC date.
+Compute the ISO week as `YYYY-Www` (e.g. `2026-W29`) from the current UTC date — this is
+shared across every repo in the resolved list (the same run, the same week).
+
+Run Steps 3-9 below once per repo in the resolved list, scoped to that repo's working
+directory and its own `repo-slug`. After the last repo completes Step 9, Step 10's summary is
+printed once per repo processed (a single-repo fallback run prints exactly one summary block,
+as today).
 
 ---
 
