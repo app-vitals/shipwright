@@ -639,18 +639,22 @@ export async function buildProductionDeps(opts: {
   const { ghJson, ghGraphql, getCurrentUser: getUser } = opts;
   const allowlistRef = opts.patchAuthorAllowlistRef ?? patchAuthorAllowlistRef;
 
+  // Scope BEFORE issuing any `gh pr list` call (RSF-1.1) — re-evaluated on
+  // every call (not baked in once here) so a scope change takes effect on
+  // the very next call, mirroring pr-state-reconciler.ts's own
+  // unconditional-intersection pattern. A repo present in the
+  // filesystem-scanned allRepos but absent from the live scope never
+  // reaches gh at all.
+  const getScopedAllRepos = () => {
+    const scopedRepos = new Set((opts.getScopedRepos ?? agentReposRef.get)());
+    return allRepos.filter((repo) => scopedRepos.has(repo));
+  };
+
   return {
     getScopedRepos: opts.getScopedRepos ?? agentReposRef.get,
     listOwnOpenPrs: async (_repo: string) => {
       const user = await getUser();
-      // Scope BEFORE issuing any `gh pr list` call (RSF-1.1) — re-evaluated
-      // on every call (not baked in once here) so a scope change takes
-      // effect on the very next call, mirroring pr-state-reconciler.ts's own
-      // unconditional-intersection pattern. A repo present in the
-      // filesystem-scanned allRepos but absent from the live scope never
-      // reaches gh at all.
-      const scopedRepos = new Set((opts.getScopedRepos ?? agentReposRef.get)());
-      const repos = allRepos.filter((repo) => scopedRepos.has(repo));
+      const repos = getScopedAllRepos();
       return mapReposTolerant(repos, "check-patch", async (repo) => {
         const items = await ghJson<GhPrListItem[]>([
           "pr",
@@ -674,9 +678,7 @@ export async function buildProductionDeps(opts: {
     listAllowlistedOpenPrs: async (_repo: string) => {
       const logins = allowlistRef.get();
       if (logins.length === 0) return [];
-      // Scoped live before any gh call, same rationale as listOwnOpenPrs above.
-      const scopedRepos = new Set((opts.getScopedRepos ?? agentReposRef.get)());
-      const repos = allRepos.filter((repo) => scopedRepos.has(repo));
+      const repos = getScopedAllRepos();
       return mapReposTolerant(repos, "check-patch", async (repo) => {
         const results: OwnPr[] = [];
         for (const login of logins) {
