@@ -30,18 +30,19 @@ everywhere else it's missing.
 
 `agent/src/check-helpers.ts`'s `resolveAllRepos()`/`scanReposDir()` scans `workspace/repos/`
 on disk (reading each clone's `.git/config` for its remote origin) to build an unscoped
-`allRepos` list. That list — not `getScopedRepos()` — is what's actually used to query GitHub
-(`gh pr list --repo <repo>`) in:
+`allRepos` list. That list — not `getScopedRepos()` — is what `check-patch.ts` (~line 654) and
+`check-review.ts` (~line 797) actually use to query GitHub (`gh pr list --repo <repo>`): both
+filter down to `getScopedRepos()` only **after** fetching, and only when `hasScopeSynced()` is
+true. When scope has never successfully synced, there is no filtering at all — every repo
+physically present in the workspace is treated as fully in-scope for patch/review candidate
+selection, which drives real write actions (pushing fixes, posting reviews).
 
-- `check-patch.ts` (~line 654)
-- `check-review.ts` (~line 797)
-- `check-deploy.ts` (~lines 383, 390)
-
-Each of these filters down to `getScopedRepos()` only **after** fetching, and only when
-`hasScopeSynced()` is true. When scope has never successfully synced, there is no filtering
-at all — every repo physically present in the workspace is treated as fully in-scope for
-patch/review/deploy candidate selection, which drives real write actions (pushing fixes,
-posting reviews, merging).
+`check-deploy.ts` (~lines 212-216) is narrower: it already intersects `deps.repos` with
+`getScopedRepos()` into `scopedRepos` *before* its GitHub fetch calls (busy-repo lookup and
+`listOpenPrs`), so once scope has synced it does not query GitHub for every repo on disk. Its
+gap is the same fail-open edge as the other two, just scoped down to one window: when
+`hasScopeSynced()` is false, it falls back to the full unfiltered `deps.repos` list rather
+than filtering — so only the pre-first-sync period (not steady-state operation) is exposed.
 
 **Fix:** apply the same pattern already used in `pr-state-reconciler.ts`,
 `claim-invariant-reconciler.ts`, `worktree-reaper.ts`, and `pr-census.ts` (WL-4.4) — query

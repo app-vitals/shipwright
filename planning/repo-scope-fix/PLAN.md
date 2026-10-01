@@ -27,9 +27,15 @@ with `pr-census.ts`, `worktree-reaper.ts`, `claim-invariant-reconciler.ts`) was 
 filesystem-scanned repo list with `getScopedRepos()` *before* any per-repo `gh` call. Per
 decision below, this intersection is now unconditional: delete `hasScopeSynced`/
 `hasScopeSynced()` entirely from `CheckPatchDeps`, `CheckReviewDeps`, `CheckDeployDeps`, and
-their `buildProductionDeps` opts. Confirmed via grep that no caller (`loop-orchestrator.ts`,
-`index.ts`) passes this field explicitly, so removal is self-contained to these 3 files + their
-own unit tests.
+their `buildProductionDeps` opts. Confirmed via grep that no production caller
+(`loop-orchestrator.ts`, `index.ts`) passes this field explicitly — but `scripts/hitl.ts`
+(lines 1160 and 1170) *does* pass `hasScopeSynced: () => true` into `buildReviewDeps()`/
+`buildPatchDeps()`, so removal is **not** self-contained to these 3 files + their own unit
+tests: `scripts/hitl.ts` must also be updated (drop the `hasScopeSynced` option from both call
+sites) as part of this same change, or it will fail to typecheck once the field is deleted
+from `CheckPatchDeps`/`CheckReviewDeps`. `docs/agent-key-files.md`'s `check-review.ts` entry
+also documents `hasScopeSynced` as one of `buildProductionDeps()`'s accepted opts and needs a
+matching update.
 
 ### Shared / config resolution
 
@@ -111,13 +117,20 @@ Intersect the filesystem-scanned repo list with `getScopedRepos()` *before* any 
 `check-patch.ts`'s and `check-review.ts`'s `buildProductionDeps()`; consolidate
 `check-deploy.ts`'s existing early-filter into the same unconditional pattern. Delete
 `hasScopeSynced`/`hasScopeSynced()` entirely from `CheckPatchDeps`, `CheckReviewDeps`,
-`CheckDeployDeps`, and their `buildProductionDeps` opts.
+`CheckDeployDeps`, and their `buildProductionDeps` opts. This also requires updating
+`scripts/hitl.ts`'s two call sites (`buildReviewDeps()` and `buildPatchDeps()`, currently at
+lines 1160 and 1170) to drop the now-nonexistent `hasScopeSynced: () => true` option, and
+updating `docs/agent-key-files.md`'s `check-review.ts` entry, which documents `hasScopeSynced`
+as one of `buildProductionDeps()`'s accepted opts.
 
 Acceptance criteria:
 - `check-patch.ts`, `check-review.ts`, `check-deploy.ts` query GitHub only for
   `getScopedRepos()` ∩ filesystem-cloned repos — never the raw filesystem list.
 - `hasScopeSynced` is removed from all three deps interfaces and their production builders;
-  no dead references remain.
+  no dead references remain, including in `scripts/hitl.ts`'s `buildReviewDeps()`/
+  `buildPatchDeps()` calls.
+- `docs/agent-key-files.md`'s `check-review.ts` entry no longer lists `hasScopeSynced` among
+  `buildProductionDeps()`'s accepted opts.
 - Test decision: update `check-patch.unit.test.ts`, `check-review.unit.test.ts`,
   `check-deploy.unit.test.ts` — remove the fail-open-when-unsynced cases, add/adjust cases
   asserting an empty/never-synced scope yields zero candidates (mirrors
@@ -254,10 +267,11 @@ RSF-4.1 | —          | —             |
 ## Breaking Change Safety
 
 No renames or removals of any externally-consumed interface. `hasScopeSynced` removal in
-RSF-1.1 is internal to `check-patch.ts`/`check-review.ts`/`check-deploy.ts` and their own
-tests only (confirmed via grep — no other caller references it). RSF-4.1 is purely additive
-(a new step inside an existing function, reusing an existing pure helper). All 6 tasks: safe
-to deploy standalone.
+RSF-1.1 is internal to `check-patch.ts`/`check-review.ts`/`check-deploy.ts`, their own tests,
+and `scripts/hitl.ts`'s two call sites (confirmed via grep — these are the only callers that
+reference it; `scripts/hitl.ts` passes it explicitly and must be updated in the same change or
+it will fail to typecheck). RSF-4.1 is purely additive (a new step inside an existing
+function, reusing an existing pure helper). All 6 tasks: safe to deploy standalone.
 
 ## HITL Scan
 
