@@ -14,14 +14,19 @@ confirmed via full code + prose audit.
 ### Business logic
 
 **Group A — `check-patch.ts` / `check-review.ts` / `check-deploy.ts` (agent/src).**
-`buildProductionDeps()` in all three builds an unscoped `allRepos` list from
-`resolveAllRepos()` (a filesystem scan of `repos/`) and fans out `gh pr list --repo <repo>`
-against every one of those before ever consulting configured scope; filtering to
-`getScopedRepos()` happens only after the fetch, and only when `hasScopeSynced()` is true —
-leaving zero filtering during any window where the config bundle hasn't synced yet. This
-gap is already flagged in a code comment in `pr-state-reconciler.ts:300-308`, which (along
-with `pr-census.ts`, `worktree-reaper.ts`, `claim-invariant-reconciler.ts`) was already fixed
-(WL-4.4) to intersect with `getScopedRepos()` unconditionally, before any GitHub call.
+`buildProductionDeps()` in `check-patch.ts` and `check-review.ts` builds an unscoped
+`allRepos` list from `resolveAllRepos()` (a filesystem scan of `repos/`) and fans out
+`gh pr list --repo <repo>` against every one of those before ever consulting configured
+scope; filtering to `getScopedRepos()` happens only after the fetch, and only when
+`hasScopeSynced()` is true — leaving zero filtering during any window where the config
+bundle hasn't synced yet. `check-deploy.ts` is narrower: it already intersects `deps.repos`
+with `getScopedRepos()` into `scopedRepos` *before* its GitHub fetch calls, so once scope has
+synced it does not query GitHub for every repo on disk — its gap is the same fail-open edge,
+just scoped down to the pre-first-sync window, where it falls back to the full unfiltered
+`deps.repos` list rather than filtering. This gap is already flagged in a code comment in
+`pr-state-reconciler.ts:300-308`, which (along with `pr-census.ts`, `worktree-reaper.ts`,
+`claim-invariant-reconciler.ts`) was already fixed (WL-4.4) to intersect with
+`getScopedRepos()` unconditionally, before any GitHub call.
 
 **Fix:** apply the same unconditional-intersection pattern to all three files — intersect the
 filesystem-scanned repo list with `getScopedRepos()` *before* any per-repo `gh` call. Per
@@ -104,14 +109,14 @@ automatically on the next tick since the repo still shows up as missing.
 
 | ID | Title | Layer | Hours | Complexity | Model | HITL |
 |----|-------|-------|-------|------------|-------|------|
-| RSF-1.1 | Scope patch/review/deploy candidate checks to configured repos, fail closed | Background | 3 | 3 | sonnet | |
+| RSF-1.1 | Scope patch/review/deploy candidate checks to configured repos, fail closed — **ALREADY COMPLETE, see PR #3841** | Background | 3 | 3 | sonnet | |
 | RSF-2.1 | Add config-driven repo resolver to plugin check-helpers, fail closed | Shared | 3 | 4 | sonnet | |
 | RSF-2.2 | Wire docs-freshness / test-readiness prechecks to the new resolver | Background | 2 | 3 | sonnet | |
 | RSF-2.3 | Update prose fallbacks in research-docs.md and test-readiness/SKILL.md | Shared | 2 | 3 | sonnet | |
 | RSF-3.1 | Scope entropy/security patrol crons to configured repos | Background | 4 | 4 | sonnet | |
 | RSF-4.1 | Auto-clone newly-configured repos on config sync | Background | 3 | 3 | sonnet | |
 
-### RSF-1.1 — Scope patch/review/deploy candidate checks to configured repos, fail closed
+### RSF-1.1 — Scope patch/review/deploy candidate checks to configured repos, fail closed (ALREADY COMPLETE — PR #3841)
 
 Intersect the filesystem-scanned repo list with `getScopedRepos()` *before* any `gh` call in
 `check-patch.ts`'s and `check-review.ts`'s `buildProductionDeps()`; consolidate
@@ -138,6 +143,14 @@ Acceptance criteria:
 
 Dependencies: none. Branch: `feat/rsf-1-1-scope-candidate-checks`. Safe to deploy
 standalone: yes.
+
+**Status (2026-10-01): already complete.** This task was independently implemented and
+merged to `main` via PR app-vitals/shipwright#3841 (merged 2026-10-01T07:05:46Z — an ancestor
+of this plan PR's base), before this plan's tasks were seeded into the task store. Confirmed
+on current `main`: `hasScopeSynced` no longer exists anywhere in `agent/src/check-patch.ts`,
+`check-review.ts`, `check-deploy.ts`, their unit tests, `scripts/hitl.ts`'s two call sites, or
+`docs/agent-key-files.md`. Do not queue RSF-1.1 as pending work — the section above is
+retained for historical plan context only.
 
 ### RSF-2.1 — Add config-driven repo resolver to plugin check-helpers, fail closed
 

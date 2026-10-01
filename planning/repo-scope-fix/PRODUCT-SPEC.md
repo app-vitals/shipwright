@@ -106,7 +106,13 @@ repos — not the filesystem.
   scans a local directory to decide what to clone. Already correct.
 - `scripts/hitl.ts` — local human-in-the-loop dev CLI with no accounts-service connection by
   design; its own comment notes it has no config bundle to sync scope from. Different
-  execution context, not the deployed agent path.
+  execution context, not the deployed agent path. Caveat: "no changes" refers to hitl.ts's
+  scope *semantics* (it intentionally keeps treating every cloned repo as in-scope). It still
+  took a purely mechanical, signature-following edit as a side effect of RSF-1.1 — deleting
+  `hasScopeSynced` from `CheckPatchDeps`/`CheckReviewDeps` required dropping the now-nonexistent
+  `hasScopeSynced: () => true` option from this file's two `buildReviewDeps()`/
+  `buildPatchDeps()` call sites to keep it typechecking. Already done as part of RSF-1.1 (PR
+  app-vitals/shipwright#3841).
 - `agent/src/worktree-reaper.ts`'s directory read, `process-tree-kill.ts`, `piper-voice.ts`,
   `setup.ts`, `admin/src/agent-type-manifest-loader.ts`,
   `scripts/check-competitive-freshness.ts`, `scripts/check-config-docs.ts`,
