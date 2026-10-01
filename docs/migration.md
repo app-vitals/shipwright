@@ -55,7 +55,9 @@ running, now scoped to exactly those repos instead of whatever it found on disk.
    `exit=0` plus a `Repos in scope for this patrol:` list means the cron will fire. `exit=1`
    with no output means it will silently no-op — fix the repo config or clones above.
 3. After the next scheduled tick, confirm the cron ran via the admin cron-logs UI or
-   `GET /agents/:id/cron-runs`. A skipped tick records no run.
+   `GET /agents/:id/cron-runs`. A skipped tick still creates a run record, but with
+   `skipped: true` and `skipReason: "preCheck:no-output"` — look for that rather than a
+   missing run.
 
 ---
 
