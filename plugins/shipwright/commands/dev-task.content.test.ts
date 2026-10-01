@@ -1712,6 +1712,19 @@ describe("dev-task.md Step 8 — record verification outcomes via task-store API
     );
   });
 
+  it("documents an environmental-failure judgment step before defaulting to ran_failed, naming all four categories", () => {
+    const section = getStep8Section();
+    const idx = section.indexOf("judge whether this failure happened");
+    expect(idx).toBeGreaterThan(-1);
+    const nearby = section.slice(idx, idx + 700);
+    expect(nearby).toContain("missing_tool");
+    expect(nearby).toContain("missing_secret");
+    expect(nearby).toContain("missing_dependency");
+    expect(nearby).toContain("resource_limit");
+    expect(nearby).toMatch(/judgment call/i);
+    expect(nearby).toMatch(/not automatic/i);
+  });
+
   it("maps run-with-budget.ts's 'timeout' status to timed_out with a check_timeout/install_timeout reasonCategory", () => {
     const section = getStep8Section();
     expect(section).toContain('SCRIPT_STATUS" = "timeout"');

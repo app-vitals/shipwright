@@ -928,6 +928,16 @@ if [ "$SCRIPT_STATUS" = "pass" ]; then
 elif [ "$SCRIPT_STATUS" = "timeout" ]; then
   VC_STATUS="timed_out"
   if [ "$CHECK_NAME" = "install" ]; then VC_REASON="install_timeout"; else VC_REASON="check_timeout"; fi
+# Before applying the default failure outcome below, judge whether this failure happened
+# because of the agent's own execution environment — a missing tool, a missing
+# secret/credential, a missing or unreachable dependency (e.g. a database or external
+# service), or a resource limit — rather than a genuine code/test defect. This is a
+# judgment call made by reading the failure output yourself, not automatic
+# stderr/exit-code pattern matching (a missing tool or an unreachable dependency cannot
+# be reliably detected that way). If the failure is environmental, override to
+# VC_STATUS="skipped" and set VC_REASON to the matching category: missing_tool,
+# missing_secret, missing_dependency, or resource_limit. If unsure, default to the
+# generic failure outcome below — never guess toward an environmental label defensively.
 else
   VC_STATUS="ran_failed"; VC_REASON=""
 fi
