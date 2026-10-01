@@ -41,6 +41,8 @@ import {
   type ProgressCallback,
   setLiveClaudeConfig,
 } from "./claude.ts";
+import { cleanupAfterDaysRef } from "./cleanup-after-days-ref.ts";
+import { cleanupMergedWorktreesRef } from "./cleanup-merged-worktrees-ref.ts";
 import { SystemClock } from "./clock.ts";
 import { createConfig } from "./config.ts";
 import { reportCronFailure } from "./cron-failure-reporter.ts";
@@ -435,6 +437,13 @@ if (runtimeClient && agentId) {
       // check-helpers.ts's readAllowSelfReview() as the DB tier before
       // falling back to state/agent-policy.md.
       allowSelfReviewRef.set(bundle.allowSelfReview);
+
+      // Sync the agent's cleanup-merged-worktrees and cleanup-after-days
+      // live refs (APM-1.6) — read by check-helpers.ts's
+      // readCleanupMergedWorktrees()/readCleanupAfterDays() as the DB tier
+      // before falling back to state/agent-policy.md.
+      cleanupMergedWorktreesRef.set(bundle.cleanupMergedWorktrees);
+      cleanupAfterDaysRef.set(bundle.cleanupAfterDays);
     } catch (err) {
       if (
         (err as { statusCode?: number }).statusCode === 404 &&

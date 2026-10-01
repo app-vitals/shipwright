@@ -105,12 +105,14 @@ interface MakeDepsOptions {
   /**
    * WTR-1.3's injected worktree-cleanup policy getter (PLR-1.1: () =>
    * boolean, invoked fresh by reconcileRecord() on every call rather than
-   * once at deps-build time). Defaults to `false` so every pre-existing
-   * test — none of which configures this — never triggers the new
-   * removeWorktree side effect. Also accepts a plain boolean for test
-   * convenience, wrapped into a constant-returning getter.
+   * once at deps-build time; APM-1.6: the production getter is now async,
+   * so this fake wraps whatever's configured — a plain boolean, a sync
+   * getter, or an async getter — into an `() => Promise<boolean>` matching
+   * the real `PrStateReconcilerDeps` interface). Defaults to `false` so
+   * every pre-existing test — none of which configures this — never
+   * triggers the new removeWorktree side effect.
    */
-  cleanupMergedWorktreesEnabled?: boolean | (() => boolean);
+  cleanupMergedWorktreesEnabled?: boolean | (() => boolean | Promise<boolean>);
   /**
    * WTR-1.3's removeWorktree fake. Defaults to a no-op resolve; tests
    * exercising the failure path override this to reject.
@@ -205,10 +207,10 @@ function makeDeps({
     delay: async (ms: number) => {
       delayCalls.push(ms);
     },
-    isCleanupMergedWorktreesEnabled:
+    isCleanupMergedWorktreesEnabled: async () =>
       typeof cleanupMergedWorktreesEnabled === "function"
-        ? cleanupMergedWorktreesEnabled
-        : () => cleanupMergedWorktreesEnabled,
+        ? await cleanupMergedWorktreesEnabled()
+        : cleanupMergedWorktreesEnabled,
     removeWorktree: async (shortRepo: string, worktreeDirName: string) => {
       removeWorktreeCalls.push({ shortRepo, worktreeDirName });
       await removeWorktree(shortRepo, worktreeDirName);
@@ -382,7 +384,7 @@ describe("reconcilePrState", () => {
           { id: "single-task-stand-in", repo: "acme/example-repo" },
         ],
         delay: async () => {},
-        isCleanupMergedWorktreesEnabled: () => false,
+        isCleanupMergedWorktreesEnabled: async () => false,
         removeWorktree: async () => {},
       };
 
