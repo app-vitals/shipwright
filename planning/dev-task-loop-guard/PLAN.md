@@ -70,9 +70,24 @@ winning the pick every tick, deferring every time, forever — invisible to
   accidentally chain into a false auto-block, but the *same* unresolved cause
   repeating 3x correctly trips it.
 - **Remove the `isDeferredCategory`/`isSameBranchSiblingBusy` exemption
-  entirely** rather than narrowing it to an allowlist. Investigation (above)
-  confirmed the same-branch-sibling-busy case no longer needs special
-  protection given BBE-1.1 — no allowlist needed at all.
+  entirely for Task-targeting skips only** (`dev-task:*` markers, dispatched
+  via `POST /tasks/:id/skip`) rather than narrowing it to an allowlist.
+  Investigation (above) confirmed the same-branch-sibling-busy case no longer
+  needs special protection given BBE-1.1 — no allowlist needed on the Task
+  side. The exemption stays in place, unchanged, for PR-targeting skip-reason
+  markers (`review:*`, `patch:*`, `deploy:*`, `merge:*`), which dispatch
+  against `PullRequest` records via a separate `POST /prs/:id/skip` path.
+  That path is reason-blind today — `PullRequestService.recordSkip(id)` takes
+  no `reason` parameter, and `PullRequest` has no `lastSkipReason` column —
+  so removing its exemption would reintroduce the exact false-auto-block risk
+  this mechanism exists to prevent (e.g.
+  `review:deferred:unresolved-human-feedback:{pr}` legitimately recurring for
+  several cycles while waiting on a slow human reviewer), just moved from the
+  taxonomy-category check down to a raw `skipCount` threshold. Extending
+  `lastSkipReason`/reason-aware counting to `PullRequest` (plus its own
+  `stale-claim-reaper.ts` reap path, mirroring AC3) is real, separate work —
+  a new migration and a `reason` param on `POST /prs/:id/skip` — and is
+  deferred to a follow-up task rather than folded into SRB-1.1.
 - **Add `hitl: true` to the auto-block**, not just `status: "blocked"`. Today's
   `recordSkip` threshold branch only sets `status`+`blockedReason`; every other
   dev-task self-block path (missing branch, PRD misroute, requirements-not-met)
@@ -83,6 +98,13 @@ winning the pick every tick, deferring every time, forever — invisible to
   the dependency-resolution level instead of reactively. SRB-1.1's reason-aware
   auto-block already catches this case (3 identical-reason defers → block), so
   it's covered as a safety net; the preventive fix is deferred.
+- **Out of scope (follow-up, not this task):** extending the
+  `lastSkipReason`/reason-aware counting mechanism to `PullRequest` and
+  `POST /prs/:id/skip`, so the `isDeferredCategory`/`isSameBranchSiblingBusy`
+  exemption can eventually be removed for PR-targeting skip-reason markers
+  (`review:*`, `patch:*`, `deploy:*`, `merge:*`) too. Until that follow-up
+  lands, those markers keep the existing category-based exemption — see the
+  "Remove the exemption" decision above.
 
 ## Task
 
@@ -126,21 +148,33 @@ skip feed the same counter instead of bypassing it.
    `dependency-unsatisfied:FTR-1.3` one cycle, a reap the next) counted as
    one continuous streak instead of resetting every other cycle under AC2's
    exact-match rule.
-4. `loop-orchestrator.ts` removes the `isDeferredCategory`/
-   `isSameBranchSiblingBusy` exemption block entirely (~lines 1023-1062) and
-   passes the parsed `[skip-reason:...]` marker's full raw text through as
-   `reason` on every `/skip` call, unmodified — no skip-reason category is
-   exempt from counting, and no truncation/normalization is applied. This is
-   safe for every skip-reason template that exists today across
-   `dev-task.md`, `deploy.md`, `merge.md`, `patch.md`, and `review.md`: each
-   one's trailing segment is a stable per-task identifier (a dependency id,
-   a branch name, or a PR number) that does not change across repeated
-   calls for the same task, so consecutive occurrences of the same root
-   cause produce byte-identical `reason` strings. Any skip-reason marker
-   added in the future must preserve this property — its variable
-   segment(s) must stay a stable identifier tied to the task/PR/branch,
-   never free-form or paraphrased prose — since AC2's streak continuation
-   depends on exact string equality between consecutive calls.
+4. `loop-orchestrator.ts`'s `isDeferredCategory`/`isSameBranchSiblingBusy`
+   exemption block (~lines 1023-1062) becomes scoped by item type instead of
+   removed outright, since only the Task side gains a reason-aware mechanism
+   in this task:
+   - For **Task-targeting** skip-reason markers (`dev-task:*`, dispatched via
+     `POST /tasks/:id/skip`), the exemption is removed entirely, and the
+     parsed `[skip-reason:...]` marker's full raw text is passed through as
+     `reason` on every call, unmodified — no category is exempt from
+     counting, and no truncation/normalization is applied. This is safe for
+     every `dev-task.md` skip-reason template: each one's trailing segment
+     is a stable per-task identifier (a dependency id or a branch name) that
+     does not change across repeated calls for the same task, so consecutive
+     occurrences of the same root cause produce byte-identical `reason`
+     strings. Any Task-targeting skip-reason marker added in the future must
+     preserve this property — its variable segment(s) must stay a stable
+     identifier tied to the task/branch, never free-form or paraphrased
+     prose — since AC2's streak continuation depends on exact string
+     equality between consecutive calls.
+   - For **PR-targeting** skip-reason markers (`review:*`, `patch:*`,
+     `deploy:*`, `merge:*`, dispatched against `PullRequest` records via
+     `POST /prs/:id/skip`), the exemption is left exactly as it is today:
+     `isDeferredCategory`/`isSameBranchSiblingBusy` continue to bypass
+     `recordSkip()`, and no `reason` is passed, because `PullRequest` has no
+     `lastSkipReason` field and `POST /prs/:id/skip` has no `reason` param in
+     this task's scope — see the "Remove the exemption" decision and the
+     matching "Out of scope" bullet above. Making this safe to remove for
+     PR-targeting markers is deferred to a follow-up task.
 5. `unblock()` and `resetSkip()` additionally clear `lastSkipReason` to `null`,
    consistent with their existing `skipCount`/`lastSkippedAt` reset.
 6. **Test decision:** extend `task-store/src/skip-tracking.integration.test.ts`
