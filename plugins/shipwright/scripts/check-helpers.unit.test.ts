@@ -1,8 +1,8 @@
 /**
  * plugins/shipwright/scripts/check-helpers.unit.test.ts
  *
- * Unit tests for resolveRepos(), getCurrentUser(), and createTaskStoreClient()
- * in check-helpers.ts
+ * Unit tests for resolveRepos(), resolveScopedRepos(), getCurrentUser(), and
+ * createTaskStoreClient() in check-helpers.ts
  */
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
@@ -15,14 +15,15 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import * as checkHelpers from "./check-helpers.ts";
 import {
   createTaskStoreClient,
   getCurrentUser,
   resolveAllRepos,
   resolveRepoDirs,
   resolveRepos,
+  resolveScopedRepos,
 } from "./check-helpers.ts";
-import * as checkHelpers from "./check-helpers.ts";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -358,6 +359,140 @@ describe("resolveRepoDirs", () => {
     expect(result).toEqual([
       { repo: "acme/example-repo", dir: join(envReposDir, "example-repo") },
     ]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// resolveScopedRepos
+// ---------------------------------------------------------------------------
+
+describe("resolveScopedRepos", () => {
+  let tmpDir: string;
+  let savedEnv: {
+    apiUrl: string | undefined;
+    agentId: string | undefined;
+    apiKey: string | undefined;
+    reposDir: string | undefined;
+  };
+
+  beforeEach(() => {
+    tmpDir = mkdtempSync(join(tmpdir(), "resolve-scoped-repos-test-"));
+    savedEnv = {
+      apiUrl: process.env.SHIPWRIGHT_API_URL,
+      agentId: process.env.SHIPWRIGHT_AGENT_ID,
+      apiKey: process.env.SHIPWRIGHT_AGENT_API_KEY,
+      reposDir: process.env.SHIPWRIGHT_REPOS_DIR,
+    };
+    process.env.SHIPWRIGHT_API_URL = "https://api.example.com";
+    process.env.SHIPWRIGHT_AGENT_ID = "agent-123";
+    process.env.SHIPWRIGHT_AGENT_API_KEY = "test-api-key";
+    delete process.env.SHIPWRIGHT_REPOS_DIR;
+  });
+
+  afterEach(() => {
+    for (const [key, value] of Object.entries({
+      SHIPWRIGHT_API_URL: savedEnv.apiUrl,
+      SHIPWRIGHT_AGENT_ID: savedEnv.agentId,
+      SHIPWRIGHT_AGENT_API_KEY: savedEnv.apiKey,
+      SHIPWRIGHT_REPOS_DIR: savedEnv.reposDir,
+    })) {
+      if (value !== undefined) {
+        process.env[key] = value;
+      } else {
+        delete process.env[key];
+      }
+    }
+    rmSync(tmpDir, { recursive: true, force: true });
+  });
+
+  test("returns the intersection of configured repos and cloned repos", async () => {
+    const reposDir = join(tmpDir, "repos");
+    mkdirSync(reposDir, { recursive: true });
+    makeGitClone(reposDir, "A", "https://github.com/org/A.git");
+    makeGitClone(reposDir, "B", "https://github.com/org/B.git");
+
+    let calls = 0;
+    const fetchFn = (async (url: string, init?: RequestInit) => {
+      calls++;
+      expect(url).toBe("https://api.example.com/agents/agent-123/config");
+      const headers = init?.headers as Record<string, string>;
+      expect(headers.Authorization).toBe("Bearer test-api-key");
+      return {
+        ok: true,
+        json: async () => ({ repos: ["org/A", "org/C"] }),
+      } as Response;
+    }) as unknown as typeof fetch;
+
+    const result = await resolveScopedRepos(tmpDir, { fetchFn });
+    expect(result).toEqual(["org/A"]);
+    expect(calls).toBe(1);
+  });
+
+  test("returns [] and does not call fetch when an env var is missing", async () => {
+    delete process.env.SHIPWRIGHT_AGENT_API_KEY;
+    const reposDir = join(tmpDir, "repos");
+    mkdirSync(reposDir, { recursive: true });
+    makeGitClone(reposDir, "A", "https://github.com/org/A.git");
+
+    let called = false;
+    const fetchFn = (async () => {
+      called = true;
+      return { ok: true, json: async () => ({ repos: ["org/A"] }) } as Response;
+    }) as unknown as typeof fetch;
+
+    const result = await resolveScopedRepos(tmpDir, { fetchFn });
+    expect(result).toEqual([]);
+    expect(called).toBe(false);
+  });
+
+  test("returns [] when fetch throws", async () => {
+    const reposDir = join(tmpDir, "repos");
+    mkdirSync(reposDir, { recursive: true });
+    makeGitClone(reposDir, "A", "https://github.com/org/A.git");
+
+    const fetchFn = (async () => {
+      throw new Error("network down");
+    }) as unknown as typeof fetch;
+
+    const result = await resolveScopedRepos(tmpDir, { fetchFn });
+    expect(result).toEqual([]);
+  });
+
+  test("returns [] on a non-2xx response", async () => {
+    const reposDir = join(tmpDir, "repos");
+    mkdirSync(reposDir, { recursive: true });
+    makeGitClone(reposDir, "A", "https://github.com/org/A.git");
+
+    const fetchFn = (async () =>
+      ({ ok: false, status: 404 }) as Response) as unknown as typeof fetch;
+
+    const result = await resolveScopedRepos(tmpDir, { fetchFn });
+    expect(result).toEqual([]);
+  });
+
+  test("returns [] when the response body has no repos field", async () => {
+    const reposDir = join(tmpDir, "repos");
+    mkdirSync(reposDir, { recursive: true });
+    makeGitClone(reposDir, "A", "https://github.com/org/A.git");
+
+    const fetchFn = (async () =>
+      ({
+        ok: true,
+        json: async () => ({}),
+      }) as Response) as unknown as typeof fetch;
+
+    const result = await resolveScopedRepos(tmpDir, { fetchFn });
+    expect(result).toEqual([]);
+  });
+
+  test("defaults to the global fetch when no fetchFn is injected", async () => {
+    // No repos cloned, and we don't inject a fetchFn — this exercises the
+    // default-to-global-fetch branch without making a real network call by
+    // pointing SHIPWRIGHT_API_URL at an address nothing is listening on, so
+    // the fetch rejects and the fail-closed path returns [].
+    process.env.SHIPWRIGHT_API_URL = "http://127.0.0.1:1";
+    const result = await resolveScopedRepos(tmpDir);
+    expect(result).toEqual([]);
   });
 });
 
