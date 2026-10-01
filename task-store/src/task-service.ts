@@ -69,7 +69,29 @@ export interface SkipStreakState {
 
 /** computeSkipStreak()'s result: the next skipCount/lastSkipReason to write, plus whether this crossing trips the auto-block. */
 export interface SkipStreakResult {
+  /**
+   * The *projected* post-write skipCount — i.e. what the column will hold if
+   * no concurrent skip interleaves. Used for the threshold check and the
+   * blockedReason message only; callers must write `skipCountUpdate` (not
+   * this) to the column.
+   */
   skipCount: number;
+  /**
+   * The Prisma update value callers must write to the `skipCount` column: the
+   * atomic `{ increment: 1 }` when the streak continues, and the literal `1`
+   * when a new streak starts.
+   *
+   * Writing a literal computed `skipCount` on the increment branch would
+   * reintroduce a lost-update race: under Postgres's default Read Committed
+   * isolation two concurrent skips on the same record can both read the same
+   * prior skipCount and the second write silently clobbers the first,
+   * undercounting the streak and delaying the auto-block. `{ increment: 1 }`
+   * compiles to SQL `"skipCount" = "skipCount" + 1`, which the DB serializes
+   * per row. Mirrors PullRequestService.patch()'s consecutiveCiFailureCount
+   * handling. The reset branch is a plain assignment, so a literal is correct
+   * (and required) there.
+   */
+  skipCountUpdate: { increment: number } | number;
   lastSkipReason: string;
   blocked: boolean;
   /** Descriptive message naming the consecutive count and reason; null unless `blocked`. */
@@ -90,16 +112,24 @@ export interface SkipStreakResult {
  * reason. A reset (skipCount back down to 1) never trips the threshold, even
  * if the prior streak's count was at/above it — matches
  * PullRequestService.patch()'s consecutiveCiFailureCount pattern.
+ *
+ * The increment branch returns `skipCountUpdate: { increment: 1 }` rather than
+ * the literal projected `skipCount`, so the column write stays atomic at the
+ * DB level and concurrent same-record skips can't lost-update each other (see
+ * `SkipStreakResult.skipCountUpdate`). `skipCount` is still returned for the
+ * threshold decision and the blockedReason text — those are inherently
+ * read-derived, exactly as in PullRequestService.patch().
  */
 export function computeSkipStreak(
   current: SkipStreakState,
   reason: string,
 ): SkipStreakResult {
-  const skipCount =
-    current.lastSkipReason === reason ? current.skipCount + 1 : 1;
+  const continued = current.lastSkipReason === reason;
+  const skipCount = continued ? current.skipCount + 1 : 1;
   const blocked = skipCount >= SKIP_BLOCK_THRESHOLD;
   return {
     skipCount,
+    skipCountUpdate: continued ? { increment: 1 } : 1,
     lastSkipReason: reason,
     blocked,
     blockedReason: blocked
@@ -1154,6 +1184,11 @@ export class TaskService implements TaskServiceLike {
    * status=blocked+reason pattern above. Every call re-evaluates the streak
    * from the task's current state (not a guard), so a prior resetSkip() or a
    * reason change correctly restarts counting from 1.
+   *
+   * The column write uses `streak.skipCountUpdate` — Prisma's atomic
+   * `{ increment: 1 }` on the continue branch, a literal `1` on the reset
+   * branch — so two concurrent skips on the same task can't lost-update each
+   * other under Read Committed. See `SkipStreakResult.skipCountUpdate`.
    */
   async recordSkip(id: string, reason?: string): Promise<Task> {
     const effectiveReason = reason ?? "unspecified";
@@ -1169,7 +1204,7 @@ export class TaskService implements TaskServiceLike {
           effectiveReason,
         );
         const data: Prisma.TaskUpdateInput = {
-          skipCount: streak.skipCount,
+          skipCount: streak.skipCountUpdate,
           lastSkippedAt: now,
           lastSkipReason: streak.lastSkipReason,
         };

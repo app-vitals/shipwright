@@ -84,6 +84,30 @@ function makePrismaDouble(
     staleTasks.map((t) => [t.id, { ...t }]),
   );
 
+  /**
+   * Resolve a Prisma update payload against a current row the way the real
+   * client does — in particular an atomic `{ increment: n }` operation
+   * (SQL `"col" = "col" + n`) resolves against the row's current value rather
+   * than being stored verbatim. Without this, `skipCount: { increment: 1 }`
+   * would land in the double's row as an object and the TaskEvent diff would
+   * read `[object Object]` instead of the real post-write number.
+   */
+  const applyUpdateData = (
+    current: Record<string, unknown>,
+    data: Record<string, unknown>,
+  ): Record<string, unknown> => {
+    const next: Record<string, unknown> = { ...current };
+    for (const [key, value] of Object.entries(data)) {
+      if (typeof value === "object" && value !== null && "increment" in value) {
+        const base = (next[key] as number | null) ?? 0;
+        next[key] = base + (value as { increment: number }).increment;
+        continue;
+      }
+      next[key] = value;
+    }
+    return next;
+  };
+
   interface FakeTx {
     task: {
       findMany: () => Promise<FakeStaleTask[]>;
@@ -105,7 +129,7 @@ function makePrismaDouble(
       update({ where, data }) {
         taskUpdateCalls.push({ id: where.id, data });
         const current = rowsById.get(where.id) ?? { id: where.id };
-        const merged = { ...current, ...data };
+        const merged = applyUpdateData(current, data);
         rowsById.set(where.id, merged);
         return Promise.resolve(merged);
       },
@@ -686,20 +710,21 @@ describe("StaleClaimReaper", () => {
 
   // ─── SRB-1.1: reap() feeds the reason-aware skip-streak counter ───────────
 
-  test("reap() of a never-skipped task starts a stale_claim_timeout streak at skipCount=1", async () => {
+  test("reap() of a never-skipped task starts a stale_claim_timeout streak at skipCount=1 via a literal write (reset branch)", async () => {
     const prisma = makePrismaDouble(0, [fakeStaleTask({ id: "task-1" })]);
     const reaper = new StaleClaimReaper(prisma as never, clock);
 
     await reaper.reap();
 
     expect(prisma._taskUpdateCalls).toHaveLength(1);
+    // New streak → plain assignment, so the literal 1 is correct here.
     expect(prisma._taskUpdateCalls[0]?.data.skipCount).toBe(1);
     expect(prisma._taskUpdateCalls[0]?.data.lastSkipReason).toBe(
       "stale_claim_timeout",
     );
   });
 
-  test("reap() of a task already mid-stale_claim_timeout-streak increments skipCount", async () => {
+  test("reap() of a task already mid-stale_claim_timeout-streak increments skipCount via the atomic { increment: 1 } (no lost-update race)", async () => {
     const prisma = makePrismaDouble(0, [
       fakeStaleTask({
         id: "task-1",
@@ -711,14 +736,20 @@ describe("StaleClaimReaper", () => {
 
     await reaper.reap();
 
-    expect(prisma._taskUpdateCalls[0]?.data.skipCount).toBe(2);
+    // The continue branch must hand Prisma the atomic increment operation
+    // (SQL `"skipCount" = "skipCount" + 1`), never a literal computed from
+    // the read-earlier-in-the-transaction value — otherwise two concurrent
+    // skips on the same task clobber each other under Read Committed.
+    expect(prisma._taskUpdateCalls[0]?.data.skipCount).toEqual({
+      increment: 1,
+    });
     expect(prisma._taskUpdateCalls[0]?.data.lastSkipReason).toBe(
       "stale_claim_timeout",
     );
     expect(prisma._taskUpdateCalls[0]?.data.status).toBeUndefined();
   });
 
-  test("reap() of a task mid-streak on a DIFFERENT reason resets skipCount to 1 and overwrites lastSkipReason", async () => {
+  test("reap() of a task mid-streak on a DIFFERENT reason resets skipCount to a literal 1 and overwrites lastSkipReason", async () => {
     const prisma = makePrismaDouble(0, [
       fakeStaleTask({
         id: "task-1",
@@ -749,7 +780,9 @@ describe("StaleClaimReaper", () => {
     await reaper.reap();
 
     const data = prisma._taskUpdateCalls[0]?.data;
-    expect(data?.skipCount).toBe(3);
+    // Still the atomic increment on the column; the threshold decision and
+    // blockedReason text are derived from the projected count (3).
+    expect(data?.skipCount).toEqual({ increment: 1 });
     expect(data?.status).toBe("blocked");
     expect(data?.hitl).toBe(true);
     expect(data?.blockedReason).toContain("3");
@@ -783,10 +816,12 @@ describe("StaleClaimReaper", () => {
     const byId = Object.fromEntries(
       prisma._taskUpdateCalls.map((c) => [c.id, c.data]),
     );
-    // task-a's 3rd consecutive stale_claim_timeout reap crosses the threshold.
-    expect(byId["task-a"]?.skipCount).toBe(3);
+    // task-a's 3rd consecutive stale_claim_timeout reap crosses the threshold
+    // — continue branch, so the column write is the atomic increment.
+    expect(byId["task-a"]?.skipCount).toEqual({ increment: 1 });
     expect(byId["task-a"]?.status).toBe("blocked");
-    // task-b's first-ever skip starts a fresh streak, well under threshold.
+    // task-b's first-ever skip starts a fresh streak (reset branch → literal
+    // 1), well under threshold.
     expect(byId["task-b"]?.skipCount).toBe(1);
     expect(byId["task-b"]?.status).toBeUndefined();
   });

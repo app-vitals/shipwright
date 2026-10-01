@@ -148,7 +148,11 @@ export class StaleClaimReaper {
         // status depends on that row's own prior streak state — reap
         // batches are small (stale in_progress claims are the exception,
         // not the norm), so one extra update per reaped row costs nothing
-        // observable.
+        // observable. The skipCount column is written via
+        // `streak.skipCountUpdate` — Prisma's atomic `{ increment: 1 }` when
+        // the streak continues, a literal `1` when it resets — so a
+        // concurrent recordSkip() on the same row can't lost-update this
+        // write (or vice versa) under Read Committed.
         const streak = computeSkipStreak(
           {
             skipCount: before?.skipCount ?? 0,
@@ -157,7 +161,7 @@ export class StaleClaimReaper {
           STALE_CLAIM_REAP_REASON,
         );
         const skipData: Prisma.TaskUpdateInput = {
-          skipCount: streak.skipCount,
+          skipCount: streak.skipCountUpdate,
           lastSkippedAt: at,
           lastSkipReason: streak.lastSkipReason,
         };

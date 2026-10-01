@@ -12,6 +12,7 @@ import { CLOSED_STATUSES, OPEN_STATUSES } from "./statuses.ts";
 import {
   BULK_TX_PER_TASK_TIMEOUT_MS,
   bulkTxTimeoutMs,
+  computeSkipStreak,
   MAX_BULK_TASKS,
   type TaskListFilters,
   TaskService,
@@ -3077,6 +3078,189 @@ describe("TaskService.resetSkip() (SRB-1.1)", () => {
     // its existing skipCount/lastSkippedAt reset — otherwise a manually
     // reset task would still compare future skips against a stale reason.
     expect(result.lastSkipReason).toBeNull();
+  });
+});
+
+// ─── computeSkipStreak() / recordSkip() atomic skipCount write (SRB-1.1) ───────
+//
+// The streak's *continue* branch must write Prisma's atomic
+// `{ increment: 1 }` (SQL `"skipCount" = "skipCount" + 1`), not a literal
+// computed from the `findUnique` read earlier in the same transaction. With a
+// literal, two concurrent skips on the same task under Postgres's default Read
+// Committed isolation both read the same prior count and the second write
+// silently clobbers the first — undercounting the streak and delaying or
+// missing the auto-block. The *reset* branch is a plain assignment, so the
+// literal `1` is correct there. Mirrors PullRequestService.patch()'s
+// consecutiveCiFailureCount handling.
+
+describe("computeSkipStreak() skipCountUpdate (SRB-1.1)", () => {
+  it("continues an existing same-reason streak with the atomic { increment: 1 }", () => {
+    const streak = computeSkipStreak(
+      { skipCount: 1, lastSkipReason: "reason-a" },
+      "reason-a",
+    );
+
+    expect(streak.skipCountUpdate).toEqual({ increment: 1 });
+    // The projected count is still returned, for the threshold + message.
+    expect(streak.skipCount).toBe(2);
+    expect(streak.blocked).toBe(false);
+  });
+
+  it("still uses the atomic { increment: 1 } on the threshold-crossing call", () => {
+    const streak = computeSkipStreak(
+      { skipCount: 2, lastSkipReason: "reason-a" },
+      "reason-a",
+    );
+
+    expect(streak.skipCountUpdate).toEqual({ increment: 1 });
+    expect(streak.skipCount).toBe(3);
+    expect(streak.blocked).toBe(true);
+  });
+
+  it("uses a literal 1 when a different reason starts a new streak", () => {
+    const streak = computeSkipStreak(
+      { skipCount: 2, lastSkipReason: "reason-a" },
+      "reason-b",
+    );
+
+    expect(streak.skipCountUpdate).toBe(1);
+    expect(streak.skipCount).toBe(1);
+    expect(streak.blocked).toBe(false);
+  });
+
+  it("uses a literal 1 for a first-ever skip (no prior reason)", () => {
+    const streak = computeSkipStreak(
+      { skipCount: 0, lastSkipReason: null },
+      "reason-a",
+    );
+
+    expect(streak.skipCountUpdate).toBe(1);
+    expect(streak.skipCount).toBe(1);
+  });
+});
+
+describe("TaskService.recordSkip() atomic skipCount write (SRB-1.1)", () => {
+  /**
+   * A task/taskEvent-only Prisma double that records every `task.update()`
+   * payload verbatim (so the test can assert on the `skipCount` operation
+   * shape) while resolving `{ increment: n }` against the current row the way
+   * the real client does.
+   */
+  function makeUpdateRecordingDouble(seed: Task): {
+    prisma: PrismaClient;
+    updateData: Record<string, unknown>[];
+  } {
+    const updateData: Record<string, unknown>[] = [];
+    let row: Task = { ...seed };
+
+    const prisma = {
+      task: {
+        findUnique({ where }: { where: { id: string } }): Promise<Task | null> {
+          return Promise.resolve(where.id === row.id ? { ...row } : null);
+        },
+        update({ data }: { data: Record<string, unknown> }): Promise<Task> {
+          updateData.push(data);
+          const next: Record<string, unknown> = { ...row };
+          for (const [key, value] of Object.entries(data)) {
+            if (
+              typeof value === "object" &&
+              value !== null &&
+              "increment" in value
+            ) {
+              const base = (next[key] as number | null) ?? 0;
+              next[key] = base + (value as { increment: number }).increment;
+              continue;
+            }
+            next[key] = value;
+          }
+          row = next as unknown as Task;
+          return Promise.resolve({ ...row });
+        },
+      },
+      taskEvent: {
+        create(): Promise<void> {
+          return Promise.resolve();
+        },
+      },
+      $transaction<T>(fn: (tx: unknown) => Promise<T>): Promise<T> {
+        return fn(prisma);
+      },
+    };
+
+    return { prisma: prisma as unknown as PrismaClient, updateData };
+  }
+
+  function makeSkipSeedTask(overrides: Partial<Task> = {}): Task {
+    return {
+      id: "task-1",
+      title: "A task",
+      status: "pending",
+      claimedBy: null,
+      skipCount: 0,
+      lastSkippedAt: null,
+      lastSkipReason: null,
+      blockedReason: null,
+      createdAt: new Date("2026-09-01T00:00:00.000Z"),
+      updatedAt: new Date("2026-09-01T00:00:00.000Z"),
+      ...overrides,
+    } as Task;
+  }
+
+  const clock = FixedClock(new Date("2026-09-01T12:00:00.000Z"));
+
+  it("passes the atomic { increment: 1 } to Prisma when the reason matches the current streak", async () => {
+    const { prisma, updateData } = makeUpdateRecordingDouble(
+      makeSkipSeedTask({ skipCount: 1, lastSkipReason: "reason-a" } as Partial<Task>),
+    );
+    const service = new TaskService(prisma, clock);
+
+    const updated = await service.recordSkip("task-1", "reason-a");
+
+    expect(updateData).toHaveLength(1);
+    expect(updateData[0]?.skipCount).toEqual({ increment: 1 });
+    expect(updateData[0]?.lastSkipReason).toBe("reason-a");
+    // The DB-resolved value is still the expected next count.
+    expect(updated.skipCount).toBe(2);
+    expect(updated.status).not.toBe("blocked");
+  });
+
+  it("passes the atomic { increment: 1 } even on the auto-blocking third consecutive skip", async () => {
+    const { prisma, updateData } = makeUpdateRecordingDouble(
+      makeSkipSeedTask({ skipCount: 2, lastSkipReason: "reason-a" } as Partial<Task>),
+    );
+    const service = new TaskService(prisma, clock);
+
+    const updated = await service.recordSkip("task-1", "reason-a");
+
+    expect(updateData[0]?.skipCount).toEqual({ increment: 1 });
+    expect(updateData[0]?.status).toBe("blocked");
+    expect(updateData[0]?.hitl).toBe(true);
+    expect(updateData[0]?.blockedReason).toContain("reason-a");
+    expect(updated.skipCount).toBe(3);
+  });
+
+  it("passes a literal 1 when a different reason resets the streak", async () => {
+    const { prisma, updateData } = makeUpdateRecordingDouble(
+      makeSkipSeedTask({ skipCount: 2, lastSkipReason: "reason-a" } as Partial<Task>),
+    );
+    const service = new TaskService(prisma, clock);
+
+    const updated = await service.recordSkip("task-1", "reason-b");
+
+    expect(updateData[0]?.skipCount).toBe(1);
+    expect(updateData[0]?.lastSkipReason).toBe("reason-b");
+    expect(updated.skipCount).toBe(1);
+    expect(updated.status).not.toBe("blocked");
+  });
+
+  it("passes a literal 1 for a first-ever skip (lastSkipReason null)", async () => {
+    const { prisma, updateData } = makeUpdateRecordingDouble(makeSkipSeedTask());
+    const service = new TaskService(prisma, clock);
+
+    const updated = await service.recordSkip("task-1", "reason-a");
+
+    expect(updateData[0]?.skipCount).toBe(1);
+    expect(updated.skipCount).toBe(1);
   });
 });
 
