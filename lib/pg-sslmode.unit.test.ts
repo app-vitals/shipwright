@@ -31,6 +31,19 @@ describe("pinPgSslMode — legacy aliases are pinned to verify-full", () => {
       "postgresql://user:p%40ss%2Fw@localhost:5432/app?sslmode=verify-full",
     );
   });
+
+  test("a duplicate sslmode resolves to the LAST occurrence, like pg-connection-string", () => {
+    // pg-connection-string's parse() iterates every query param and lets
+    // later entries overwrite earlier ones, so `pg` itself connects using
+    // the second `sslmode` here ("require"), not the first ("verify-full").
+    // Using URLSearchParams#get() (first-match) would wrongly see
+    // "verify-full" and skip the rewrite, leaving the string's final
+    // sslmode as the unrewritten legacy "require".
+    const pinned = new URL(
+      pinPgSslMode(`${BASE}?sslmode=verify-full&sslmode=require`),
+    );
+    expect(pinned.searchParams.getAll("sslmode")).toEqual(["verify-full"]);
+  });
 });
 
 describe("pinPgSslMode — inputs left untouched", () => {

@@ -42,7 +42,18 @@ export function pinPgSslMode(connectionString: string): string {
     return connectionString;
   }
 
-  const sslmode = url.searchParams.get("sslmode");
+  // Resolve the effective `sslmode` the same way pg-connection-string's
+  // parse() does: iterate every query param in document order and let later
+  // entries overwrite earlier ones (`config[entry[0]] = entry[1]`). A
+  // duplicate `sslmode` therefore resolves to its LAST occurrence — not the
+  // first, which is what `URLSearchParams#get()` would return — so this must
+  // not use `.get()` here.
+  let sslmode: string | null = null;
+  for (const [key, value] of url.searchParams) {
+    if (key === "sslmode") {
+      sslmode = value;
+    }
+  }
   if (sslmode === null || !LEGACY_VERIFY_FULL_ALIASES.has(sslmode)) {
     return connectionString;
   }
