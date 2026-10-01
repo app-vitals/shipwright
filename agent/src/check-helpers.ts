@@ -23,6 +23,10 @@
 
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
+import {
+  type AllowSelfReviewRef,
+  allowSelfReviewRef,
+} from "./allow-self-review-ref.ts";
 import type { PrReviewData } from "./check-patch.ts";
 
 // ─── Task types ───────────────────────────────────────────────────────────────
@@ -313,7 +317,30 @@ export function classifyReviewState(
   return "posted"; // terminal, non-approve, no finding
 }
 
-export function readAllowSelfReview(workspacePath: string): boolean {
+/**
+ * Read the `allow_self_review` policy field in DB -> file -> hardcoded read
+ * order (APM-1.4), mirroring the markdown-prompt read order APM-1.2 shipped
+ * for review.md/merge.md/deploy.md:
+ *
+ * 1. DB — `configRef` (defaults to the process-wide `allowSelfReviewRef`,
+ *    synced from GET /agents/:id/config every ~60s by index.ts's
+ *    syncConfig()). Used only once `configRef.hasSynced()` is true — the
+ *    underlying Agent row field defaults to `false` in the database, so a
+ *    synced ref always carries a real DB value, never an "absent" sentinel.
+ * 2. File — `state/agent-policy.md`, read synchronously as before.
+ * 3. Hardcoded — `false`, on any read failure (missing file, missing
+ *    workspace, etc).
+ *
+ * `configRef` is injectable so callers (and tests) can exercise all three
+ * tiers without depending on the process-wide ref's global state.
+ */
+export async function readAllowSelfReview(
+  workspacePath: string,
+  configRef: AllowSelfReviewRef = allowSelfReviewRef,
+): Promise<boolean> {
+  if (configRef.hasSynced()) {
+    return configRef.get();
+  }
   try {
     const content = readFileSync(
       join(workspacePath, "state", "agent-policy.md"),

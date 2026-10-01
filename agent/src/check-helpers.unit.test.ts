@@ -19,6 +19,7 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { createAllowSelfReviewRef } from "./allow-self-review-ref.ts";
 import * as checkHelpers from "./check-helpers.ts";
 import {
   classifyReviewState,
@@ -388,17 +389,67 @@ describe("readAllowSelfReview", () => {
     rmSync(tmpDir, { recursive: true, force: true });
   });
 
-  test("reads and parses state/agent-policy.md when present", () => {
+  test("reads and parses state/agent-policy.md when present (file fallback, no injected ref)", async () => {
     mkdirSync(join(tmpDir, "state"), { recursive: true });
     writeFileSync(
       join(tmpDir, "state", "agent-policy.md"),
       "| `allow_self_review` | false |",
     );
-    expect(checkHelpers.readAllowSelfReview(tmpDir)).toBe(false);
+    expect(await checkHelpers.readAllowSelfReview(tmpDir)).toBe(false);
   });
 
-  test("defaults to false when the policy file does not exist", () => {
-    expect(checkHelpers.readAllowSelfReview(tmpDir)).toBe(false);
+  test("defaults to false when the policy file does not exist (hardcoded fallback)", async () => {
+    expect(await checkHelpers.readAllowSelfReview(tmpDir)).toBe(false);
+  });
+
+  // APM-1.4: DB -> file -> hardcoded read order, same tiering as APM-1.2.
+  // The ref defaults to unsynced (hasSynced() === false), which is why the
+  // two tests above — which pass no explicit ref — already exercise the
+  // file and hardcoded tiers via the process-wide default ref.
+
+  test("DB-hit: an injected ref that has synced true wins over a conflicting file value", async () => {
+    mkdirSync(join(tmpDir, "state"), { recursive: true });
+    writeFileSync(
+      join(tmpDir, "state", "agent-policy.md"),
+      "| `allow_self_review` | false |",
+    );
+    const configRef = createAllowSelfReviewRef();
+    configRef.set(true);
+    expect(await checkHelpers.readAllowSelfReview(tmpDir, configRef)).toBe(
+      true,
+    );
+  });
+
+  test("DB-hit: an injected ref that has synced false wins over a conflicting file value", async () => {
+    mkdirSync(join(tmpDir, "state"), { recursive: true });
+    writeFileSync(
+      join(tmpDir, "state", "agent-policy.md"),
+      "| `allow_self_review` | true |",
+    );
+    const configRef = createAllowSelfReviewRef();
+    configRef.set(false);
+    expect(await checkHelpers.readAllowSelfReview(tmpDir, configRef)).toBe(
+      false,
+    );
+  });
+
+  test("DB-miss-fallback-to-file: an injected ref that never synced falls through to the file", async () => {
+    mkdirSync(join(tmpDir, "state"), { recursive: true });
+    writeFileSync(
+      join(tmpDir, "state", "agent-policy.md"),
+      "| `allow_self_review` | true |",
+    );
+    const configRef = createAllowSelfReviewRef();
+    expect(await checkHelpers.readAllowSelfReview(tmpDir, configRef)).toBe(
+      true,
+    );
+  });
+
+  test("file-missing-fallback-to-hardcoded: an injected ref that never synced and no policy file falls through to false", async () => {
+    const configRef = createAllowSelfReviewRef();
+    expect(await checkHelpers.readAllowSelfReview(tmpDir, configRef)).toBe(
+      false,
+    );
   });
 });
 

@@ -84,10 +84,10 @@ function makeDeps(
     listOpenPrs: async (_repo: string) => prs,
     queryPrRecord: queryPrRecordFn,
     getCurrentUser: async () => currentUser,
-    isSelfReviewAllowed:
+    isSelfReviewAllowed: async () =>
       typeof isSelfReviewAllowed === "function"
-        ? isSelfReviewAllowed
-        : () => isSelfReviewAllowed,
+        ? isSelfReviewAllowed()
+        : isSelfReviewAllowed,
     getScopedRepos,
     hasScopeSynced,
     queryTaskStatus,
@@ -383,7 +383,7 @@ describe("getReviewCandidates", () => {
         throw new Error("Network error");
       },
       getCurrentUser: async () => "bodhi-agent",
-      isSelfReviewAllowed: () => false,
+      isSelfReviewAllowed: async () => false,
       getScopedRepos: () => [pr.repo ?? ""],
       hasScopeSynced: () => true,
       fetchPrReviews: defaultFetchPrReviews,
@@ -953,7 +953,7 @@ describe("getReviewCandidates", () => {
         throw new Error("Network error");
       },
       getCurrentUser: async () => "bodhi-agent",
-      isSelfReviewAllowed: () => false,
+      isSelfReviewAllowed: async () => false,
       getScopedRepos: () => [pr.repo ?? ""],
       hasScopeSynced: () => true,
       fetchPrReviews: defaultFetchPrReviews,

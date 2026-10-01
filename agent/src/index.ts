@@ -24,6 +24,7 @@ import {
   resolveSlackMembership,
 } from "./agent-slack-membership-ref.ts";
 import { agentTrialExpiryRef } from "./agent-trial-expiry-ref.ts";
+import { allowSelfReviewRef } from "./allow-self-review-ref.ts";
 import { createChatPoller } from "./chat-poller.ts";
 import {
   HttpChatTokenReporter,
@@ -429,6 +430,11 @@ if (runtimeClient && agentId) {
       agentTrialExpiryRef.set(
         bundle.trialExpiresAt ? new Date(bundle.trialExpiresAt) : null,
       );
+
+      // Sync the agent's allow-self-review live ref (APM-1.4) — read by
+      // check-helpers.ts's readAllowSelfReview() as the DB tier before
+      // falling back to state/agent-policy.md.
+      allowSelfReviewRef.set(bundle.allowSelfReview);
     } catch (err) {
       if (
         (err as { statusCode?: number }).statusCode === 404 &&
