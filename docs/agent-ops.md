@@ -81,6 +81,8 @@ note and the fix (enable `shipwright-loop`).
 | `security-patrol-maintenance` | `0 6 * * 1` (weekly, Mon 06:00) | off | Scans for security vulnerabilities and fixes what's PR-worthy. Via the `check-patrol-scope.ts` preCheck, only repos matching the agent's configured scopes are included in the scan; if no repos are in scope, the cron exits silently (no-op). |
 | `consolidation-patrol-maintenance` | `0 5 * * 1` (weekly, Mon 05:00) | off | Scans for emerging duplicate/similar code patterns that have stabilized across multiple runs and proposes consolidation for what's ready. Recommended to stay disabled after merge until `state/consolidation-ledger.json` has accumulated a few weeks of real signal. |
 
+`entropy-patrol-maintenance` and `security-patrol-maintenance` gained their `check-patrol-scope.ts` preCheck in RSF-3.1, and reconciliation applies it on the next agent boot — if you had either cron **already enabled**, see [migration.md](./migration.md) for what to check so it doesn't go silently quiet (the precheck fails closed when no configured repo resolves).
+
 `shipwright-site-docs-freshness` is not part of the default coding manifest above — its precheck (`check-site-docs-freshness.ts`) and downstream command are scoped to this one repo's own marketing site rather than being generically applicable to every agent's repo, so it isn't seeded by default. It's available to wire in per-agent as a [custom cron](./extending.md#custom-cron-jobs-for-scheduled-automation) using the schedule/prompt/preCheck documented in [`docs/site-docs-freshness.md`](./site-docs-freshness.md).
 
 ## PR origin census sweep
