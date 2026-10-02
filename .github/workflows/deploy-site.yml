@@ -78,3 +78,11 @@ jobs:
           git checkout origin/gh-pages -- index.yaml 2>/dev/null \
             && echo "index.yaml is present on gh-pages — Helm repo intact." \
             || { echo "ERROR: index.yaml is missing from gh-pages after site deploy!"; exit 1; }
+
+      # Tell IndexNow-consuming engines (Bing, DuckDuckGo, et al.) about every deployed URL.
+      # Polls the live key file until GitHub Pages' CDN serves it, then submits the sitemap.
+      # Non-fatal by design — an indexing ping must never fail a deploy.
+      - name: Submit sitemap URLs to IndexNow
+        continue-on-error: true
+        run: bun scripts/indexnow.mjs
+        working-directory: site
