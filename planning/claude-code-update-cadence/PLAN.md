@@ -87,10 +87,20 @@ JSON. Additive field; the liveness probe only checks status code.
 
 ### Risks / complexity flags
 
-- ⚠ `followTag` is not exercised anywhere in this repo today. CCU-1.2 validates the
-  config statically (`renovate-config-validator`); the real proof is Renovate's first
-  PR (expected: bump to the current `stable`, 2.1.285 at time of writing) appearing on
-  the next Monday run. Confirm via the Dependency Dashboard after merge.
+- `followTag` was spiked on 2026-10-02 with a local Renovate run (`--platform=local`)
+  against a scratch repo holding the proposed config, the real `renovate.json`, and an
+  annotated ARG line at 2.1.236. Result: the custom manager extracted
+  `@anthropic-ai/claude-code` / `2.1.236` via the annotation's inline `datasource=npm`,
+  and the lookup proposed **2.1.285** (the `stable` tag — not `latest`, 2.1.287) on
+  branch `renovate/claude-code`, i.e. NOT folded into the generic "routine dependency
+  updates" group. Validated `matchStrings`:
+  `# renovate: datasource=(?<datasource>[a-z-]+) depName=(?<depName>[^\s]+)\s*\nARG CLAUDE_CODE_VERSION=(?<currentValue>[\d.]+)`
+  with `managerFilePatterns: ["/(^|/)Dockerfile$/"]`, plus a packageRule
+  `{matchPackageNames: ["@anthropic-ai/claude-code"], followTag: "stable", groupName: "claude-code"}`
+  appended after the existing rules. Renovate classifies the 236→285 jump as `patch`.
+  Caveat: the hosted app runs from the default branch, so the end-to-end proof is still
+  the first real Renovate PR after CCU-1.1 and CCU-1.2 merge (trigger it from the
+  Dependency Dashboard instead of waiting for Monday).
 - ⚠ Renovate-authored PRs exercise the review/patch pipeline's bot-author paths; expect
   some friction on the first one rather than treating it as a design failure.
 - Merging CCU-1.2 before CCU-1.1 would be a silent no-op (the regex would find no
