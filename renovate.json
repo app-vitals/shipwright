@@ -34,6 +34,22 @@
       "description": "Group routine (non-security) minor/patch bumps to cut down PR noise",
       "matchUpdateTypes": ["minor", "patch"],
       "groupName": "routine dependency updates"
+    },
+    {
+      "description": "Track the claude-code CLI's stable channel (not latest) in its own PR; declared after the routine grouping rule so it is not folded into it. Schedule is inherited (Monday).",
+      "matchPackageNames": ["@anthropic-ai/claude-code"],
+      "followTag": "stable",
+      "groupName": "claude-code"
+    }
+  ],
+  "customManagers": [
+    {
+      "customType": "regex",
+      "description": "Bump the pinned claude-code CLI via the annotated ARG CLAUDE_CODE_VERSION line in agent/Dockerfile",
+      "managerFilePatterns": ["/(^|/)Dockerfile$/"],
+      "matchStrings": [
+        "# renovate: datasource=(?<datasource>[a-z-]+) depName=(?<depName>[^\\s]+)\\s*\\nARG CLAUDE_CODE_VERSION=(?<currentValue>[\\d.]+)"
+      ]
     }
   ]
 }
