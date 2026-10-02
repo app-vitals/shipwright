@@ -1,15 +1,15 @@
 dependencies:
 - name: postgresql
   repository: oci://registry-1.docker.io/bitnamicharts
-  version: 18.11.3
+  version: 18.12.4
 - name: ingress-nginx
   repository: https://kubernetes.github.io/ingress-nginx
   version: 4.15.1
 - name: traefik
   repository: https://traefik.github.io/charts
-  version: 41.4.0
+  version: 41.6.1
 - name: cert-manager
   repository: https://charts.jetstack.io
-  version: v1.21.1
-digest: sha256:fcfd3abe381461071b419d3c3b39b2f84990ab0105f4fb2d277b36a594a58539
-generated: "2026-09-15T22:24:30.401060609Z"
+  version: v1.21.2
+digest: sha256:07d84e1e4c7a50a09e8fd1dcbd19af336456c0b1b7c055662849d9c04f05559d
+generated: "2026-10-02T15:37:31.312420708Z"
