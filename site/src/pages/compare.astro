@@ -15,7 +15,7 @@ import { escapeHtml } from "../lib/html-escape";
 // Every competitor cell below is re-verified against vendor primary sources
 // (see each row's `citations`) as of this date — MESSAGING.md D10 requires a
 // visible verified-date marker on any page naming competitors.
-const verifiedDate = "September 25, 2026";
+const verifiedDate = "October 2, 2026";
 
 // Market structure: 3-pole framing of the AI coding agent space.
 // Shipwright occupies the middle pole — team AI workflow, not copilot UX
@@ -49,7 +49,7 @@ const marketPoles = [
 const landscape = [
   {
     tool: "Devin",
-    verifiedDate: "September 25, 2026",
+    verifiedDate: "October 2, 2026",
     license: "Commercial",
     models: "Proprietary",
     taskQueue: "Yes",
@@ -64,7 +64,7 @@ const landscape = [
   },
   {
     tool: "Cursor",
-    verifiedDate: "September 25, 2026",
+    verifiedDate: "October 2, 2026",
     license: "Commercial (Anysphere, acquired by SpaceX, Aug 2026)",
     models: "Agnostic (multi)",
     taskQueue: "No shared backlog",
@@ -90,12 +90,12 @@ const landscape = [
   },
   {
     tool: "GitHub Copilot Agent",
-    verifiedDate: "September 25, 2026",
+    verifiedDate: "October 2, 2026",
     license: "Commercial",
     models: "Agnostic (Claude / GPT / Gemini / Grok)",
     taskQueue: "Issues-based",
-    teamVisibility: "PR-level",
-    policyControls: "Repo policies",
+    teamVisibility: "PR lifecycle metrics, org-level",
+    policyControls: "Org/enterprise policies, rulesets, repo opt-out",
     humanReviewGate: "PR review",
     cronScheduling: "Yes — scheduled and event automations",
     slackWorkflow: "Yes — Slack and Teams",
@@ -103,8 +103,8 @@ const landscape = [
     self: false,
     citations: [
       {
-        label: "coding agent",
-        url: "https://docs.github.com/en/copilot/concepts/agents/coding-agent/about-coding-agent",
+        label: "cloud agent",
+        url: "https://docs.github.com/en/copilot/concepts/agents/cloud-agent/about-cloud-agent",
       },
       {
         label: "model selection",
@@ -114,7 +114,7 @@ const landscape = [
   },
   {
     tool: "OpenHands",
-    verifiedDate: "September 25, 2026",
+    verifiedDate: "October 2, 2026",
     license: "MIT",
     models: "Agnostic (100+)",
     taskQueue: "Yes",
@@ -138,22 +138,27 @@ const landscape = [
   },
   {
     tool: "Augment Code",
-    verifiedDate: "September 25, 2026",
+    verifiedDate: "October 2, 2026",
     license: "Commercial",
     models: "Agnostic (Claude/GPT/Gemini)",
-    taskQueue: "Yes — Remote Agent queue",
-    teamVisibility: "Slack + PR",
-    policyControls: "SOC 2 Type II, ISO 42001",
-    humanReviewGate: "PR review",
+    taskQueue: "Yes — ticket backlog, dispatcher",
+    teamVisibility: "Automation runs page, ROI analytics",
+    policyControls: "Tenant admin, capability toggles, trigger filters",
+    humanReviewGate: "PR review — design iterated, not gated",
     cronScheduling: "Yes — cron, webhook, event triggers",
     slackWorkflow: "Yes — Slack as tool and trigger",
     testsFirst: "No",
     self: false,
-    citations: [{ label: "source", url: "https://docs.augmentcode.com/cosmos/config-slack" }],
+    citations: [
+      { label: "ticket dispatcher", url: "https://docs.augmentcode.com/cosmos/experts-ticket-dispatcher" },
+      { label: "project builder", url: "https://docs.augmentcode.com/cosmos/experts-project-builder" },
+      { label: "automations", url: "https://docs.augmentcode.com/cosmos/manage-automations" },
+      { label: "Slack", url: "https://docs.augmentcode.com/cosmos/connectors/config-slack" },
+    ],
   },
   {
     tool: "Factory",
-    verifiedDate: "September 25, 2026",
+    verifiedDate: "October 2, 2026",
     license: "Commercial",
     models: "Agnostic (Claude/GPT/Gemini, BYOK)",
     taskQueue: "Yes — Missions",
@@ -165,12 +170,12 @@ const landscape = [
     testsFirst: "No",
     self: false,
     citations: [
-      { label: "source", url: "https://docs.factory.ai/features/missions/overview" },
+      { label: "source", url: "https://docs.factory.com/features/missions/overview" },
     ],
   },
   {
     tool: "Shipwright Harness",
-    verifiedDate: "September 25, 2026",
+    verifiedDate: "October 2, 2026",
     license: "MIT",
     models: "Claude Code",
     taskQueue: "Yes — shared, assignable",
@@ -202,24 +207,26 @@ const landscape = [
 const pillars = [
   {
     title: "Tests are enforced, not offered",
-    body: "Everyone in this table can generate tests. Nobody else makes passing them the default gate. OpenHands is explicit that running the suite is CI's job, not the agent's. Factory's Missions do run QA against your app as they work and self-correct, but nothing holds the merge on a red suite. Augment generates tests when you ask for them, and Cursor's missing-test PR checks are rules you opt into. Shipwright writes the failing test before the implementation and will not merge without green CI. It is the pipeline's rule, not the agent's discretion.",
+    body: "Everyone in this table can generate tests. Nobody else makes passing them the default gate. OpenHands is explicit that running the suite is CI's job, not the agent's. Factory's Missions do run QA against your app as they work and self-correct, but nothing holds the merge on a red suite. Augment's Verifier Expert exercises a change in a running environment and reports evidence-backed findings, but only once the code already exists, and Cursor's missing-test PR checks are rules you opt into. Shipwright writes the failing test before the implementation and will not merge without green CI. It is the pipeline's rule, not the agent's discretion.",
     citations: [
       { label: "OpenHands: QA is CI's job", url: "https://docs.openhands.dev/openhands/usage/use-cases/qa-changes" },
-      { label: "Factory Missions", url: "https://docs.factory.ai/features/missions/overview" },
+      { label: "Factory Missions", url: "https://docs.factory.com/features/missions/overview" },
       { label: "Augment: Agent use cases", url: "https://docs.augmentcode.com/using-augment/agent" },
+      { label: "Augment: Verifier", url: "https://docs.augmentcode.com/cosmos/experts-verifier" },
       { label: "Cursor: test generation", url: "https://cursor.com/for/test-generation" },
     ],
   },
   {
     title: "An opinionated loop you can take apart",
-    body: "OpenHands will plan a task, run it, and open a PR for you to merge. What it does not keep is the middle: the plan is a markdown file, not tracked work, and nothing survives the run. Shipwright turns a plan into a durable backlog with dependency edges and a status lifecycle, and agents pull the next ready task on a schedule for days without anyone re-triggering them. Then you can disable phases, override the review principles per repo, and add your own commands. Their unit of work is a run. Ours is a backlog. The backlog itself is the wider point: Devin's automation triggers start it on a matching Jira or GitHub ticket with no manual assignment, Augment plans against tickets pulled from Jira, Linear, or Slack, and GitHub's coding agent works GitHub Issues as its backlog directly. In every case the queue lives in someone else's SaaS. Shipwright's task store runs on infrastructure you operate, in the repo you forked.",
+    body: "OpenHands will plan a task, run it, and open a PR for you to merge. What it does not keep is the middle: the plan is a markdown file, not tracked work, and nothing survives the run. Shipwright turns a plan into a durable backlog with dependency edges and a status lifecycle, and agents pull the next ready task on a schedule for days without anyone re-triggering them. Then you can disable phases, override the review principles per repo, and add your own commands. For OpenHands the unit of work is a run; for Shipwright it is a backlog. Several others in this cohort now keep a durable backlog too: Devin's automation triggers start it on a matching Jira or GitHub ticket with no manual assignment, Augment's Ticket Dispatcher scans a backlog and dispatches ready work in dependency waves, and GitHub's Copilot cloud agent works GitHub Issues as its backlog directly. The difference that holds is not whether the backlog exists -- it is where it lives. In every one of those cases the queue is in someone else's SaaS. Shipwright's task store runs on infrastructure you operate, in the repo you forked.",
     citations: [
       { label: "OpenHands: trigger to PR workflow", url: "https://www.openhands.dev/blog/ai-agent-workflow-automation" },
       { label: "OpenHands: ephemeral, no cross-run tracking", url: "https://docs.openhands.dev/sdk/guides/github-workflows/todo-management" },
       { label: "Devin: 2026 release notes", url: "https://docs.devin.ai/release-notes/2026" },
       { label: "Devin: Jira integration", url: "https://docs.devin.ai/integrations/jira" },
       { label: "Augment: Remote Agent", url: "https://www.augmentcode.com/blog/introducing-remote-agent" },
-      { label: "GitHub Copilot: coding agent", url: "https://docs.github.com/en/copilot/concepts/agents/coding-agent/about-coding-agent" },
+      { label: "GitHub Copilot: cloud agent", url: "https://docs.github.com/en/copilot/concepts/agents/cloud-agent/about-cloud-agent" },
+      { label: "Augment: Ticket Dispatcher", url: "https://docs.augmentcode.com/cosmos/experts-ticket-dispatcher" },
     ],
   },
   {
@@ -384,9 +391,9 @@ const landscapeRows = landscape.map((row) => {
       <a href="https://www.augmentcode.com/blog/introducing-remote-agent">Remote
       Agent</a> picks up tickets from Jira, Linear, or Slack and lands
       review-ready PRs, GitHub's{" "}
-      <a href="https://docs.github.com/en/copilot/concepts/agents/coding-agent/about-coding-agent">coding
+      <a href="https://docs.github.com/en/copilot/concepts/agents/cloud-agent/about-cloud-agent">Copilot cloud
       agent</a> works GitHub Issues as its backlog directly, and{" "}
-      <a href="https://docs.factory.ai/features/missions/overview">Factory's
+      <a href="https://docs.factory.com/features/missions/overview">Factory's
       Missions</a> decompose a plan into milestones behind an approval gate.
       Being first to say so plainly is more credible than being caught
       understating it.
@@ -502,7 +509,7 @@ helm install shipwright shipwright/shipwright</code></pre>
     <p class="mt-3 max-w-2xl">
       OpenHands is the category leader in open-source autonomous agents — MIT,
       model-agnostic, deployable on your infra,{" "}
-      <a href="https://github.com/OpenHands/OpenHands">~86.3k GitHub stars</a>,
+      <a href="https://github.com/OpenHands/OpenHands">~89.8k GitHub stars</a>,
       and it already runs a delivery pipeline (scheduled tasks, triggers, PR
       review, opening reviewable PRs). It is the closest project to Shipwright
       on this page: both are MIT, both open real PRs against your repository,

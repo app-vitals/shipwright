@@ -272,9 +272,9 @@ test("OpenHands head-to-head prose is current and cited", async ({ page }) => {
   const text = (await section.textContent()) ?? "";
   // Stale, uncited star count is gone; the re-verified figure is cited.
   expect(text).not.toContain("78K");
-  expect(text).toContain("~86.3k");
+  expect(text).toContain("~89.8k");
   await expect(
-    section.getByRole("link", { name: /86\.3k GitHub stars/i }),
+    section.getByRole("link", { name: /89\.8k GitHub stars/i }),
   ).toHaveAttribute("href", "https://github.com/OpenHands/OpenHands");
   // Decision-relevant context the corrected row already substantiates.
   expect(text).toContain("Agent Canvas");
@@ -288,7 +288,7 @@ test("OpenHands head-to-head prose is current and cited", async ({ page }) => {
 test("compare page shows a verified-date marker", async ({ page }) => {
   await page.goto("/compare");
   const text = (await page.locator("main").textContent()) ?? "";
-  expect(text).toContain("September 25, 2026");
+  expect(text).toContain("October 2, 2026");
   expect(text.toLowerCase()).toContain("facts verified as of");
 });
 
@@ -400,7 +400,7 @@ test("each pillar cites the competitors its own body names", async ({
   const testsPillar = card("Tests are enforced, not offered");
   for (const url of [
     "https://docs.openhands.dev/openhands/usage/use-cases/qa-changes",
-    "https://docs.factory.ai/features/missions/overview",
+    "https://docs.factory.com/features/missions/overview",
     "https://docs.augmentcode.com/using-augment/agent",
     "https://cursor.com/for/test-generation",
   ]) {
@@ -417,7 +417,7 @@ test("each pillar cites the competitors its own body names", async ({
   const loopPillar = card("An opinionated loop you can take apart");
   for (const url of [
     "https://docs.openhands.dev/openhands/usage/use-cases/qa-changes",
-    "https://docs.factory.ai/features/missions/overview",
+    "https://docs.factory.com/features/missions/overview",
   ]) {
     await expect(loopPillar.locator(`a[href="${url}"]`)).toHaveCount(0);
   }
@@ -427,7 +427,7 @@ test("each pillar cites the competitors its own body names", async ({
     "https://docs.devin.ai/release-notes/2026",
     "https://docs.devin.ai/integrations/jira",
     "https://www.augmentcode.com/blog/introducing-remote-agent",
-    "https://docs.github.com/en/copilot/concepts/agents/coding-agent/about-coding-agent",
+    "https://docs.github.com/en/copilot/concepts/agents/cloud-agent/about-cloud-agent",
   ]) {
     await expect(loopPillar.locator(`a[href="${url}"]`)).toHaveCount(1);
   }
@@ -478,7 +478,9 @@ test("pillar 2 states the run-vs-backlog distinction and leaves OpenHands' human
 }) => {
   await page.goto("/compare");
   const text = (await page.locator("main").textContent()) ?? "";
-  expect(text).toContain("Their unit of work is a run. Ours is a backlog.");
+  expect(text).toContain(
+    "For OpenHands the unit of work is a run; for Shipwright it is a backlog.",
+  );
   expect(text).toContain(
     "the plan is a markdown file, not tracked work, and nothing survives the run",
   );
@@ -495,7 +497,10 @@ test("pillar 2 states the ownable-queue point", async ({ page }) => {
   await page.goto("/compare");
   const text = (await page.locator("main").textContent()) ?? "";
   expect(text).toContain(
-    "In every case the queue lives in someone else's SaaS.",
+    "The difference that holds is not whether the backlog exists",
+  );
+  expect(text).toContain(
+    "In every one of those cases the queue is in someone else's SaaS.",
   );
   expect(text).toContain(
     "Shipwright's task store runs on infrastructure you operate, in the repo you forked.",
@@ -520,8 +525,8 @@ test("landscape intro strengthens the contested claim with per-vendor citations"
   // count of 1.
   for (const url of [
     "https://docs.devin.ai/release-notes/2026",
-    "https://docs.github.com/en/copilot/concepts/agents/coding-agent/about-coding-agent",
-    "https://docs.factory.ai/features/missions/overview",
+    "https://docs.github.com/en/copilot/concepts/agents/cloud-agent/about-cloud-agent",
+    "https://docs.factory.com/features/missions/overview",
   ]) {
     const count = await section.locator(`a[href="${url}"]`).count();
     expect(count).toBeGreaterThan(0);
