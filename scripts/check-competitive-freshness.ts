@@ -7,10 +7,12 @@
  *
  * Mirrors plugins/shipwright/scripts/check-site-docs-freshness.ts's structure
  * and exit 0/1 contract, but compares DATES instead of git SHAs: every page
- * under site/src/pages/vs/*.astro carries a top-level
- * `const verifiedDate = "<Month D, YYYY>";`, and site/src/pages/compare.astro
- * carries the same field per entry in its `landscape` array (MESSAGING.md
- * D10's "facts verified as of {date}" marker, tracked per competitor claim).
+ * under site/src/pages/vs/*.astro, plus site/src/pages/self-hosted.astro,
+ * carries a top-level `const verifiedDate = "<Month D, YYYY>";`.
+ * site/src/pages/compare.astro carries that same top-level const (the value
+ * its visible marker renders) AND the same field per entry in its `landscape`
+ * array (MESSAGING.md D10's "facts verified as of {date}" marker, tracked per
+ * competitor claim); both are evaluated.
  *
  * A page/row qualifies (is stale) when its verifiedDate is more than a
  * configurable threshold old (default 30 days). A missing or unparseable
@@ -35,9 +37,11 @@ import { join } from "node:path";
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 interface Deps {
-  /** Raw file content of each site/src/pages/vs/*.astro page, keyed by a
-   *  repo-relative path used for display (e.g. "site/src/pages/vs/devin.astro"). */
-  vsPages: Record<string, string>;
+  /** Raw file content of each page carrying a top-level
+   *  `const verifiedDate` (every site/src/pages/vs/*.astro plus
+   *  site/src/pages/self-hosted.astro), keyed by a repo-relative path used for
+   *  display (e.g. "site/src/pages/vs/devin.astro"). */
+  constDatePages: Record<string, string>;
   /** Raw file content of site/src/pages/compare.astro, or null if it could
    *  not be read (treated as qualifying — permissive on unknown state). */
   compareSource: string | null;
@@ -105,8 +109,8 @@ function evaluateDate(
 
 // ─── Per-source evaluation ──────────────────────────────────────────────────
 
-/** Evaluate one vs/*.astro page's top-level `const verifiedDate = "...";`. */
-function evaluateVsPage(
+/** Evaluate a page's top-level `const verifiedDate = "...";`. */
+function evaluateConstDatePage(
   label: string,
   content: string,
   now: Date,
@@ -166,9 +170,9 @@ export async function run(deps: Deps): Promise<RunResult> {
   const thresholdDays = deps.thresholdDays ?? DEFAULT_THRESHOLD_DAYS;
   const findings: Finding[] = [];
 
-  for (const [label, content] of Object.entries(deps.vsPages)) {
+  for (const [label, content] of Object.entries(deps.constDatePages)) {
     try {
-      const finding = evaluateVsPage(label, content, now, thresholdDays);
+      const finding = evaluateConstDatePage(label, content, now, thresholdDays);
       if (finding) findings.push(finding);
     } catch (err) {
       process.stderr.write(
@@ -186,6 +190,13 @@ export async function run(deps: Deps): Promise<RunResult> {
     findings.push({ label: "compare.astro", daysSince: null, reason: "missing" });
   } else {
     try {
+      const marker = evaluateConstDatePage(
+        "compare.astro (page marker)",
+        deps.compareSource,
+        now,
+        thresholdDays,
+      );
+      if (marker) findings.push(marker);
       findings.push(...evaluateCompareRows(deps.compareSource, now, thresholdDays));
     } catch (err) {
       process.stderr.write(
@@ -230,23 +241,30 @@ function buildProductionDeps(): Deps {
   const vsDir = join(repoDir, "site", "src", "pages", "vs");
   const compareFilePath = join(repoDir, "site", "src", "pages", "compare.astro");
 
-  const vsPages: Record<string, string> = {};
+  const constDatePages: Record<string, string> = {};
+  const readConstDatePage = (label: string, path: string): void => {
+    try {
+      constDatePages[label] = readFileSync(path, "utf-8");
+    } catch (err) {
+      process.stderr.write(
+        `check-competitive-freshness: failed to read ${label}: ${String(err)} — treating as qualifying\n`,
+      );
+      // Empty content has no verifiedDate match — evaluates as "missing",
+      // which is the correct permissive outcome for an unreadable page.
+      constDatePages[label] = "";
+    }
+  };
+
   if (existsSync(vsDir)) {
     for (const entry of readdirSync(vsDir)) {
       if (!entry.endsWith(".astro")) continue;
-      const label = `site/src/pages/vs/${entry}`;
-      try {
-        vsPages[label] = readFileSync(join(vsDir, entry), "utf-8");
-      } catch (err) {
-        process.stderr.write(
-          `check-competitive-freshness: failed to read ${label}: ${String(err)} — treating as qualifying\n`,
-        );
-        // Empty content has no verifiedDate match — evaluates as "missing",
-        // which is the correct permissive outcome for an unreadable page.
-        vsPages[label] = "";
-      }
+      readConstDatePage(`site/src/pages/vs/${entry}`, join(vsDir, entry));
     }
   }
+  readConstDatePage(
+    "site/src/pages/self-hosted.astro",
+    join(repoDir, "site", "src", "pages", "self-hosted.astro"),
+  );
 
   let compareSource: string | null = null;
   try {
@@ -261,7 +279,7 @@ function buildProductionDeps(): Deps {
   }
 
   return {
-    vsPages,
+    constDatePages,
     compareSource,
     now: () => new Date(),
     thresholdDays: DEFAULT_THRESHOLD_DAYS,

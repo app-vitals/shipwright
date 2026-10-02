@@ -36,6 +36,7 @@ const src = { home: "https://example.com" };
 
 function compareSourceWithRows(
   rows: Array<{ tool: string; verifiedDate: string | null }>,
+  pageDate: string | null = FRESH_DATE,
 ): string {
   const entries = rows
     .map(
@@ -48,8 +49,9 @@ function compareSourceWithRows(
   },`,
     )
     .join("\n");
+  const constLine = pageDate === null ? "" : `const verifiedDate = "${pageDate}";`;
   return `---
-const verifiedDate = "September 5, 2026";
+${constLine}
 const landscape = [
 ${entries}
 ];
@@ -58,7 +60,7 @@ ${entries}
 }
 
 interface MakeDepsOptions {
-  vsPages?: Record<string, string>;
+  constDatePages?: Record<string, string>;
   compareSource?: string | null;
   now?: () => Date;
   thresholdDays?: number;
@@ -70,7 +72,7 @@ interface MakeDepsOptions {
 // exercise the "compare.astro unreadable" case pass `compareSource: null`.
 function makeDeps(overrides: MakeDepsOptions = {}) {
   return {
-    vsPages: overrides.vsPages ?? {},
+    constDatePages: overrides.constDatePages ?? {},
     compareSource:
       overrides.compareSource === undefined
         ? compareSourceWithRows([])
@@ -85,7 +87,7 @@ function makeDeps(overrides: MakeDepsOptions = {}) {
 describe("check-competitive-freshness — vs/*.astro pages", () => {
   test("exits 1 with no output when every page's verifiedDate is fresh", async () => {
     const deps = makeDeps({
-      vsPages: {
+      constDatePages: {
         "site/src/pages/vs/devin.astro": vsPageContent(FRESH_DATE),
         "site/src/pages/vs/factory.astro": vsPageContent(FRESH_DATE),
       },
@@ -97,7 +99,7 @@ describe("check-competitive-freshness — vs/*.astro pages", () => {
 
   test("exits 0 and names the page when its verifiedDate is more than the threshold old", async () => {
     const deps = makeDeps({
-      vsPages: {
+      constDatePages: {
         "site/src/pages/vs/factory.astro": vsPageContent(STALE_DATE),
       },
     });
@@ -109,7 +111,7 @@ describe("check-competitive-freshness — vs/*.astro pages", () => {
 
   test("treats a missing verifiedDate const as qualifying", async () => {
     const deps = makeDeps({
-      vsPages: {
+      constDatePages: {
         "site/src/pages/vs/openhands.astro": vsPageContent(null),
       },
     });
@@ -120,7 +122,7 @@ describe("check-competitive-freshness — vs/*.astro pages", () => {
 
   test("treats an unparseable verifiedDate as qualifying", async () => {
     const deps = makeDeps({
-      vsPages: {
+      constDatePages: {
         "site/src/pages/vs/openhands.astro": vsPageContent("not-a-real-date"),
       },
     });
@@ -132,7 +134,7 @@ describe("check-competitive-freshness — vs/*.astro pages", () => {
   test("a page exactly at the threshold does not qualify (only 'more than' the threshold does)", async () => {
     // Exactly 30 days before NOW.
     const deps = makeDeps({
-      vsPages: {
+      constDatePages: {
         "site/src/pages/vs/devin.astro": vsPageContent("August 26, 2026"),
       },
       thresholdDays: 30,
@@ -144,7 +146,7 @@ describe("check-competitive-freshness — vs/*.astro pages", () => {
 
   test("respects a configurable threshold (7 days) instead of the 30-day default", async () => {
     const deps = makeDeps({
-      vsPages: {
+      constDatePages: {
         "site/src/pages/vs/devin.astro": vsPageContent(FRESH_DATE), // 5 days old
       },
       thresholdDays: 7,
@@ -153,7 +155,7 @@ describe("check-competitive-freshness — vs/*.astro pages", () => {
     expect(result1.exit).toBe(1);
 
     const deps2 = makeDeps({
-      vsPages: {
+      constDatePages: {
         "site/src/pages/vs/devin.astro": vsPageContent(FRESH_DATE), // still 5 days old
       },
       thresholdDays: 3,
@@ -165,7 +167,7 @@ describe("check-competitive-freshness — vs/*.astro pages", () => {
 
   test("one page's evaluation failure is isolated and does not suppress a sibling page's real finding", async () => {
     const deps = makeDeps({
-      vsPages: {
+      constDatePages: {
         // Not a string at runtime (simulates an unexpected read/parse failure)
         // despite the Deps type saying string — forces evaluation to throw.
         "site/src/pages/vs/broken.astro": null as unknown as string,
@@ -240,12 +242,103 @@ describe("check-competitive-freshness — compare.astro landscape rows", () => {
   });
 });
 
+// ─── compare.astro top-level page marker ────────────────────────────────────
+
+describe("check-competitive-freshness — compare.astro page marker", () => {
+  test("a stale top-level const is reported even when every landscape row is fresh", async () => {
+    const deps = makeDeps({
+      compareSource: compareSourceWithRows(
+        [{ tool: "Devin", verifiedDate: FRESH_DATE }],
+        STALE_DATE,
+      ),
+    });
+    const result = await run(deps);
+    expect(result.exit).toBe(0);
+    expect(result.output).toContain("compare.astro (page marker)");
+    expect(result.output).toContain("45");
+    expect(result.output).not.toContain("compare.astro: Devin");
+  });
+
+  test("a missing top-level const is reported under the page-marker label", async () => {
+    const deps = makeDeps({
+      compareSource: compareSourceWithRows(
+        [{ tool: "Devin", verifiedDate: FRESH_DATE }],
+        null,
+      ),
+    });
+    const result = await run(deps);
+    expect(result.exit).toBe(0);
+    expect(result.output).toContain("compare.astro (page marker): missing verifiedDate");
+  });
+
+  test("a stale row is labelled separately from a fresh page marker", async () => {
+    const deps = makeDeps({
+      compareSource: compareSourceWithRows([
+        { tool: "Cursor", verifiedDate: STALE_DATE },
+      ]),
+    });
+    const result = await run(deps);
+    expect(result.exit).toBe(0);
+    expect(result.output).toContain("compare.astro: Cursor");
+    expect(result.output).not.toContain("(page marker)");
+  });
+});
+
+// ─── self-hosted.astro ──────────────────────────────────────────────────────
+
+describe("check-competitive-freshness — self-hosted.astro", () => {
+  const SELF_HOSTED = "site/src/pages/self-hosted.astro";
+
+  test("exits 1 when self-hosted.astro's verifiedDate is fresh", async () => {
+    const deps = makeDeps({
+      constDatePages: { [SELF_HOSTED]: vsPageContent(FRESH_DATE) },
+    });
+    const result = await run(deps);
+    expect(result.exit).toBe(1);
+    expect(result.output).toBe("");
+  });
+
+  test("a stale self-hosted.astro is reported under its repo-relative path", async () => {
+    const deps = makeDeps({
+      constDatePages: { [SELF_HOSTED]: vsPageContent(STALE_DATE) },
+    });
+    const result = await run(deps);
+    expect(result.exit).toBe(0);
+    expect(result.output).toContain(`- ${SELF_HOSTED}: 45 days since last verified`);
+  });
+
+  test("a missing verifiedDate on self-hosted.astro qualifies", async () => {
+    const deps = makeDeps({
+      constDatePages: { [SELF_HOSTED]: vsPageContent(null) },
+    });
+    const result = await run(deps);
+    expect(result.exit).toBe(0);
+    expect(result.output).toContain(`- ${SELF_HOSTED}: missing verifiedDate`);
+  });
+
+  test("an unparseable verifiedDate on self-hosted.astro qualifies", async () => {
+    const deps = makeDeps({
+      constDatePages: { [SELF_HOSTED]: vsPageContent("not-a-real-date") },
+    });
+    const result = await run(deps);
+    expect(result.exit).toBe(0);
+    expect(result.output).toContain(`- ${SELF_HOSTED}: unparseable verifiedDate`);
+  });
+
+  test("an unreadable (empty-string) self-hosted.astro evaluates as missing", async () => {
+    const deps = makeDeps({ constDatePages: { [SELF_HOSTED]: "" } });
+    const result = await run(deps);
+    expect(result.exit).toBe(0);
+    expect(result.output).toContain(`- ${SELF_HOSTED}: missing verifiedDate`);
+  });
+});
+
 // ─── Cross-source behavior ──────────────────────────────────────────────────
 
 describe("check-competitive-freshness — combined vs pages + compare rows", () => {
   test("exits 1 with no output when both sources are entirely fresh", async () => {
     const deps = makeDeps({
-      vsPages: {
+      constDatePages: {
         "site/src/pages/vs/devin.astro": vsPageContent(FRESH_DATE),
       },
       compareSource: compareSourceWithRows([
@@ -259,7 +352,7 @@ describe("check-competitive-freshness — combined vs pages + compare rows", () 
 
   test("a stale vs/*.astro page does not suppress a stale compare.astro row, or vice versa", async () => {
     const deps = makeDeps({
-      vsPages: {
+      constDatePages: {
         "site/src/pages/vs/factory.astro": vsPageContent(STALE_DATE),
       },
       compareSource: compareSourceWithRows([
@@ -278,7 +371,7 @@ describe("check-competitive-freshness — combined vs pages + compare rows", () 
 describe("check-competitive-freshness — exit-0 stdout shape", () => {
   test("names every qualifying page/row and explicitly instructs following the refresh runbook", async () => {
     const deps = makeDeps({
-      vsPages: {
+      constDatePages: {
         "site/src/pages/vs/factory.astro": vsPageContent(STALE_DATE),
       },
       compareSource: compareSourceWithRows([
@@ -300,7 +393,7 @@ describe("check-competitive-freshness — exit-0 stdout shape", () => {
 
   test("exit-1 output is truly empty, not whitespace or a placeholder", async () => {
     const deps = makeDeps({
-      vsPages: {
+      constDatePages: {
         "site/src/pages/vs/devin.astro": vsPageContent(FRESH_DATE),
       },
       compareSource: compareSourceWithRows([
