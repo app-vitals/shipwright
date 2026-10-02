@@ -172,17 +172,25 @@ schedule.
 via an injected exec, parses the semver, and falls back to `"unknown"` on any failure or
 timeout (never blocks or crashes startup). Log it at startup and include
 `claudeCodeVersion` in the `/health` JSON served by `startHealthServer` in
-`agent/src/health.ts`.
+`agent/src/health.ts`. The detected version reaches the server as a new trailing optional
+parameter on `startHealthServer`'s positional signature (after `sentryClient`), passed in
+by the startup code that already calls it; when omitted it defaults to `"unknown"`.
 
 **Acceptance criteria:**
-- `GET /health` includes `claudeCodeVersion` (string); existing fields and status-code
-  semantics (200 vs 500 on Slack wedge) are unchanged.
+- `GET /health` includes `claudeCodeVersion` (string) in both the 200 and the 500 (wedge)
+  bodies; the pre-existing `ok` and `slack` fields and the status-code semantics (200 vs
+  500 on Slack wedge) are unchanged.
 - A startup log line records the detected version.
 - A failing or hanging `claude --version` yields `"unknown"` without delaying startup
   beyond a bounded timeout.
 - Test decision: unit tests for the version parser and fail-soft paths (injected exec,
-  no `mock.module`); extend `health.smoke.test.ts` to assert the field via in-process
-  `app.request()`. No existing tests are retired.
+  no `mock.module`). `startHealthServer` is a bare `Bun.serve()` with no Hono app, so
+  there is no in-process `app.request()` seam; the existing real-socket
+  `health.smoke.test.ts` (live `fetch()` against ports 19901-19914) is updated, not
+  retired. Its exact-match `toEqual({ ok, slack })` body assertions are updated (add the
+  new field, or switch to `toMatchObject` where the version is not the point of the
+  test), and a new case passes an explicit version through the new parameter and asserts
+  `claudeCodeVersion` in the response. Status-code assertions are untouched.
 
 **Dependencies:** none
 **Branch:** `feat/ccu-1-3-claude-code-version-health`
