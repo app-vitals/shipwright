@@ -4,30 +4,32 @@
 // Factory-specific claim below is sourced from Factory's own announcement and
 // docs (see `src` below) and cited inline. Re-verify before any future edit —
 // see brand/MESSAGING.md D10 for the surface-scoped competitor-naming policy
-// this page operates under.
+// this page operates under. Last re-verified 2026-10-02 (Factory Private added
+// to Deployment; all sources migrated from factory.ai to factory.com).
 import BaseLayout from "../../layouts/BaseLayout.astro";
 import ChooseWhenGrid from "../../components/ChooseWhenGrid.astro";
 import ComparisonTable from "../../components/ComparisonTable.astro";
 import TryItCta from "../../components/TryItCta.astro";
 import { escapeHtml } from "../../lib/html-escape";
 
-const verifiedDate = "August 25, 2026";
+const verifiedDate = "October 2, 2026";
 
 // Sources.
 const src = {
-  missions: "https://factory.ai/news/missions",
-  missionsDocs: "https://docs.factory.ai/features/missions/overview",
-  slack: "https://docs.factory.ai/integrations/slack",
+  missions: "https://factory.com/news/missions",
+  missionsDocs: "https://docs.factory.com/features/missions/overview",
+  slack: "https://docs.factory.com/integrations/slack",
   // Dedicated trust/security sources for the Enterprise-security row's
   // bundled claims — mirrors vs/devin.astro's `src.trust` pattern (a
   // dedicated trust-center domain, not a general product-launch
   // announcement) for the compliance claim, plus Factory's docs for the
   // more specific platform-security claims.
-  trust: "https://trust.factory.ai",
-  identityAndAccess: "https://docs.factory.ai/enterprise/identity-and-access",
-  droidShield: "https://docs.factory.ai/autonomy-and-safety/droid-shield",
-  otel: "https://docs.factory.ai/enterprise/compliance-audit-and-monitoring",
-  deployment: "https://docs.factory.ai/enterprise/network-and-deployment",
+  trust: "https://trust.factory.com",
+  identityAndAccess: "https://docs.factory.com/enterprise/identity-and-access",
+  droidShield: "https://docs.factory.com/autonomy-and-safety/droid-shield",
+  otel: "https://docs.factory.com/enterprise/compliance-audit-and-monitoring",
+  deployment: "https://docs.factory.com/enterprise/network-and-deployment",
+  factoryPrivate: "https://factory.com/news/factory-private",
 };
 
 const comparisonRows = [
@@ -40,8 +42,13 @@ const comparisonRows = [
   {
     dimension: "Deployment",
     shipwright: "Self-host: Docker or your own Kubernetes.",
-    factory: "Cloud-managed, hybrid, or airgapped.",
-    citation: src.missions,
+    factory:
+      "Cloud-managed, hybrid, airgapped, or Factory Private in your own VPC or on-prem — private preview, by request.",
+    citation: null,
+    citations: [
+      { label: "Missions", url: src.missions },
+      { label: "Factory Private", url: src.factoryPrivate },
+    ],
   },
   {
     dimension: "Models",
