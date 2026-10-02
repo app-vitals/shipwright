@@ -28,11 +28,14 @@ task test:coverage  # bun test --coverage --coverage-reporter=lcov, then gate on
 Run a single package or file directly:
 
 ```bash
-bun test --filter metrics            # one workspace
-bun test --filter agent
-bun test --filter plugins/shipwright
+cd metrics && bun test               # one workspace (each package.json's `test` script)
+cd agent && bun test
+cd plugins/shipwright && bun test
 bun test path/to/file.test.ts        # one file
+bun test '**/*.unit.test.ts'         # one layer, via positional glob
 ```
+
+> `bun test` has no real `--filter` flag — it is silently ignored and the next word is treated as a path-substring filter, so `bun test --filter agent` would also match `admin/src/agent-*.test.ts`. Run from inside the package or pass positional paths/globs.
 
 The marketing site is **not** part of the root `bun test` scan — run its Playwright suite separately:
 
@@ -46,13 +49,13 @@ cd site && npm test                  # playwright (*.spec.ts)
 
 | Component | Layers in use | Run command |
 |---|---|---|
-| Plugin (`plugins/shipwright`) | unit, integration (real subprocess/filesystem I/O), content | `bun test --filter plugins/shipwright` |
-| Metrics (`metrics`) | unit, integration, smoke, e2e | `bun test --filter metrics` (unit/integration/smoke); `task e2e` (e2e) |
-| Agent (`agent`) | unit, integration (real I/O), smoke | `bun test --filter agent` (Note: integration tests include real Playwright/Chromium browser launches to verify containerized execution under restricted securityContext, beyond recorded fixture coverage) |
-| Admin (`admin`) | unit, integration, smoke, e2e | `bun test --filter admin` (unit/integration/smoke); `cd admin && bunx playwright test` (e2e) |
-| Chat (`chat`) | unit, integration, smoke | `bun test --filter chat` |
-| Task Store (`task-store`) | unit, integration, smoke | `bun test --filter task-store` |
-| MCP Server (`mcp-server`) | unit, integration, smoke | `bun test --filter mcp-server` |
+| Plugin (`plugins/shipwright`) | unit, integration (real subprocess/filesystem I/O), content | `cd plugins/shipwright && bun test` |
+| Metrics (`metrics`) | unit, integration, smoke, e2e | `cd metrics && bun test` (unit/integration/smoke); `task e2e` (e2e) |
+| Agent (`agent`) | unit, integration (real I/O), smoke | `cd agent && bun test` (Note: integration tests include real Playwright/Chromium browser launches to verify containerized execution under restricted securityContext, beyond recorded fixture coverage) |
+| Admin (`admin`) | unit, integration, smoke, e2e | `cd admin && bun test` (unit/integration/smoke); `cd admin && bunx playwright test` (e2e) |
+| Chat (`chat`) | unit, integration, smoke | `cd chat && bun test` |
+| Task Store (`task-store`) | unit, integration, smoke | `cd task-store && bun test` |
+| MCP Server (`mcp-server`) | unit, integration, smoke | `cd mcp-server && bun test` |
 
 The plugin has **no smoke/e2e layer** (no HTTP surface, no browser surface). Its one integration test is `scripts/run-with-budget.integration.test.ts`, which exercises the real `setsid`/`timeout` process-group toolchain its script wraps — the critical-infrastructure exception in the layer table above, since recorded fixtures cannot reproduce real process-group signalling. Everything else in the plugin is unit or content. Chat and Task Store are Hono apps backed by Prisma (Postgres); integration tests cover the Prisma-backed services against a real DB (`describeOrSkip`-gated on `DATABASE_URL_SHIPWRIGHT_CHAT` / `DATABASE_URL_SHIPWRIGHT_TASK_STORE_TEST`), and smoke tests drive the Hono app via `app.request()`. MCP Server is a Hono app with no database; integration tests inject a recorded fetch implementation, and smoke tests drive the Hono app via `app.request()`. E2E (Playwright) covers the marketing site (`site/tests/home.spec.ts`, `site/tests/docs-platform.spec.ts`, `site/tests/docs-redirect.spec.ts`, `site/tests/docs-search.spec.ts`, and others), the metrics dashboard UI (`metrics/e2e/dashboard.e2e.ts`), and the admin UI (`admin/e2e/agents-page.e2e.ts`, `admin/e2e/login-page.e2e.ts`).
 

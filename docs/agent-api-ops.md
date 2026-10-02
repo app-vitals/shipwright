@@ -22,7 +22,7 @@ One nuance the spec doesn't carry: reconcile's parent-linking (Pass 2) self-heal
 
 Cron runs record each execution of a cron job, including token usage and cost. `POST`/`GET /agents/:id/crons/:cronId/runs` and `PATCH .../runs/:runId` are fully described in the spec.
 
-`skipReason` follows a `{command}:{category}:{reason}[:{detail}]` taxonomy (STD-1.1) rather than free text. On a `[silent]`-marker dispatch it's populated from the dispatched command's own `[skip-reason:text]` marker when present (DBV-1.1), falling back to `"command:no-work"` otherwise. Skip reasons with a `deferred` category segment are exempt from `SKIP_BLOCK_THRESHOLD` counting, so a legitimate defer (e.g. waiting on a dependency) doesn't trip auto-blocking the way a genuine no-op would — see `agent/src/markers.ts` and `agent/src/loop-orchestrator.ts`.
+`skipReason` follows a `{command}:{category}:{reason}[:{detail}]` taxonomy (STD-1.1) rather than free text. On a `[silent]`-marker dispatch it's populated from the dispatched command's own `[skip-reason:text]` marker when present (DBV-1.1), falling back to `"command:no-work"` otherwise. No category is exempt (SRB-1.1): every skip reason, including `deferred` ones, is forwarded to the task store's reason-aware streak counter, so only the same reason repeating three times in a row auto-blocks — see `agent/src/markers.ts` and `agent/src/loop-orchestrator.ts`.
 
 ### Cron run stats
 

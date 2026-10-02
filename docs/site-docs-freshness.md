@@ -54,7 +54,7 @@ Unit-tested via `plugins/shipwright/scripts/check-site-docs-freshness.unit.test.
 
 ## Wiring status
 
-**Available to wire per-agent — not part of the generic coding manifest.** Unlike the repo-scoped `shipwright-docs-freshness` cron (generically useful across every repo under `repos/`, and seeded onto every `coding`-type agent via `agent-types/coding/manifest.yaml`), `shipwright-site-docs-freshness`'s precheck and downstream command are both scoped to this one repo's own marketing site (`site/docs-source-map.json`, `site/src/content/docs/`). That scoping means it doesn't belong in the generic manifest every `coding`-type agent gets by default — it's only relevant to an agent that maintains *this* repo's site.
+**Available to wire per-agent — not part of the generic coding manifest.** Unlike the repo-scoped `shipwright-docs-freshness` cron (generically useful across every repo in the agent's configured `repos[]`, and seeded onto every `coding`-type agent via `agent-types/coding/manifest.yaml`), `shipwright-site-docs-freshness`'s precheck and downstream command are both scoped to this one repo's own marketing site (`site/docs-source-map.json`, `site/src/content/docs/`). That scoping means it doesn't belong in the generic manifest every `coding`-type agent gets by default — it's only relevant to an agent that maintains *this* repo's site.
 
 An operator who wants it can wire it as a [custom cron](./extending.md#custom-cron-jobs-for-scheduled-automation) via `POST /agents/:id/crons`, mirroring `shipwright-docs-freshness`'s shape:
 

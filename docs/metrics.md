@@ -122,7 +122,7 @@ The dashboard renders commit data in two panels:
 
 ### Origin classification rules
 
-`PullRequest.origin` is derived by precedence (first match wins). `deriveOrigin()` (task-store, `/prs/claim`) is the source of truth for the table below; `classifyPrOrigin()` (agent, the POM-4.1 census sweep) implements the pre-POF-1.1 subset of it (steps 1 and 5–8 below, under their old numbering) and has not yet been updated with the `authorIsBot`/label-signal steps, since the census sweep has no `is_bot`/label data to feed it:
+`PullRequest.origin` is derived by precedence (first match wins). `deriveOrigin()` (task-store, `/prs/claim`) is the source of truth for the table below; `classifyPrOrigin()` (agent, `agent/src/pr-census.ts`, the POM-4.1 census sweep) mirrors the same eight steps (POF-1.2), with the census sweep supplying `is_bot` and label data from `gh pr list --json`:
 
 | Order | Condition | Origin |
 |---|---|---|
@@ -135,7 +135,7 @@ The dashboard renders commit data in two panels:
 | 7 | `authorLogin` is any other non-empty string | `human` |
 | 8 | No `authorLogin` and no task-row/label match | `unknown` |
 
-Steps 2–4 exist because `gh pr list --json author` normalizes bot authors to `app/<slug>` (e.g. `app/renovate`) while separately reporting `is_bot: true` — the literal login-string checks in steps 5–6 can never match what `gh` actually sends for a bot author, so those steps remain as fallback disambiguation for callers that don't supply the newer signals (e.g. the census sweep, or legacy callers).
+Steps 2–4 exist because `gh pr list --json author` normalizes bot authors to `app/<slug>` (e.g. `app/renovate`) while separately reporting `is_bot: true` — the literal login-string checks in steps 5–6 can never match what `gh` actually sends for a bot author, so those steps remain as fallback disambiguation for callers that don't supply the newer signals (e.g. legacy callers).
 
 A task-row match (or Shipwright label) always wins, even over a bot-looking `authorLogin`. **Historical-accuracy caveat (closed, POF-3.1):** `deploy.md`'s canary-revert PR never transitions a task to `pr_open` and never calls `/prs/claim`, so it has no task row and no bot/label signal for the precedence rules above to key off of. Step 6 closes this gap directly: immediately after `gh pr create` succeeds, it calls `POST /prs/census` with `origin: "shipwright"` and `state: "open"` for the revert PR, using the same task-store credentials Step 6 already holds. First-write-wins semantics on `origin` mean this stamp survives any later reconciler/census-sweep pass, so the revert PR is classified `shipwright` correctly once merged rather than falling through to the `human` heuristic. PRs that merged before origin-tracking was deployed (POM-1.1/1.2, deployed 2026-09-16) can still be backfilled via POB-1.1's one-time `agent/scripts/backfill-pr-origin.ts` script; without running the backfill, such PRs remain `origin=null` (`unknown`).
 
@@ -183,6 +183,9 @@ The `/public/*` endpoints require **no authentication**. Access is controlled by
 | `METRICS_DASHBOARD_DEV_AUTH` | | `false` | Bypasses `/dashboard` and `/metrics/*` auth for local dev (no login flow in `task stack`). Must not be enabled in production. |
 | `SENTRY_DSN` | | — | Optional Sentry error reporting DSN. When set, the metrics service initializes Sentry and mounts error-capture middleware that reports 5xx and unhandled exceptions. When unset, Sentry is disabled (zero telemetry overhead). Env-var-only (secret). |
 | `SENTRY_ENVIRONMENT` | | — | Sentry environment tag (e.g., `production`, `staging`). Defaults to `NODE_ENV` if unset, then `production`. Passed as the `environment` field in Sentry init options. Optional alongside `SENTRY_DSN`. |
+| `METRICS_ADMIN_APP_URL` | | — | Base URL of the admin console used to make the dashboard toolbar's Agents/Tasks/PRs links absolute when it runs on a different origin (local `task stack`); falls back to same-origin relative links when unset. |
+| `SHIPWRIGHT_METRICS_PUBLIC_MODE` | | `false` | When `true` or `1`, mounts the unauthenticated, repo-scoped `/public/*` surface alongside the authenticated routes. Requires `SHIPWRIGHT_METRICS_PUBLIC_REPO`. |
+| `SHIPWRIGHT_METRICS_PUBLIC_REPO` | | — | Repo the `/public/*` surface is scoped to. Startup throws if `SHIPWRIGHT_METRICS_PUBLIC_MODE` is on and this is unset. |
 | `GCP_PROJECT_ID` | | — | Optional — enables GCP Secret Manager as an env-absent fallback for secrets. |
 | `SHIPWRIGHT_ENV_FILE` | | `~/.shipwright/.env` | Dotenv file loaded at startup (existing vars win). |
 
@@ -205,7 +208,7 @@ The `/public/*` endpoints require **no authentication**. Access is controlled by
 
 ## Testing
 
-Unit + integration + smoke layers (`bun test --filter metrics`). Integration tests for the task-store backend inject `RecordedTaskStoreClient` + `RecordedAdminMetricsClient` doubles (from `metrics/src/providers/task-store-recorded.ts`) over canned cassettes and a fixed clock — pre-recorded sample results, no network calls; smoke tests drive the Hono app via `app.request()`. The suite stays fully offline with no external service URLs configured.
+Unit + integration + smoke layers (`cd metrics && bun test`). Integration tests for the task-store backend inject `RecordedTaskStoreClient` + `RecordedAdminMetricsClient` doubles (from `metrics/src/providers/task-store-recorded.ts`) over canned cassettes and a fixed clock — pre-recorded sample results, no network calls; smoke tests drive the Hono app via `app.request()`. The suite stays fully offline with no external service URLs configured.
 
 The dashboard client (`metrics/src/dashboard/app.js`) is a plain browser `<script>` (not an ES module) that largely handles DOM manipulation and chart rendering — untestable in-process without browser globals. Its pure, injectable-fetch logic (`fetchSequential`) is extracted and unit-tested via a test-only export (`metrics/src/dashboard/app.unit.test.js`), while the bulk of `app.js` remains excluded from coverage as its code paths require a real browser. E2E Playwright tests cover the full dashboard UI (`metrics/e2e/dashboard.e2e.ts`).
 
