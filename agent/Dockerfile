@@ -127,9 +127,26 @@ RUN curl -fsSL -o /tmp/mise-install.sh https://mise.run \
 # deb.nodesource.com (see that stage's comment).
 COPY --from=node-source /usr/local/bin/node /usr/local/bin/node
 COPY --from=node-source /usr/local/lib/node_modules/npm /usr/local/lib/node_modules/npm
+# renovate: datasource=npm depName=@anthropic-ai/claude-code
+ARG CLAUDE_CODE_VERSION=2.1.236
+# The trailing check fails the build if the installed CLI doesn't report exactly
+# the pinned version (e.g. a registry/tag mismatch), so a drifted image can't ship.
 RUN ln -s /usr/local/lib/node_modules/npm/bin/npm-cli.js /usr/local/bin/npm \
     && ln -s /usr/local/lib/node_modules/npm/bin/npx-cli.js /usr/local/bin/npx \
-    && npm install -g @anthropic-ai/claude-code@2.1.236
+    && npm install -g @anthropic-ai/claude-code@${CLAUDE_CODE_VERSION} \
+    && INSTALLED="$(claude --version)" \
+    && echo "claude --version: ${INSTALLED}" \
+    && case "${INSTALLED}" in \
+         "${CLAUDE_CODE_VERSION} "*) ;; \
+         *) echo "claude --version reported '${INSTALLED}', expected ${CLAUDE_CODE_VERSION}" >&2; exit 1 ;; \
+       esac
+
+# Anthropic's container guidance for reproducible builds: pin the version above
+# and disable the in-container auto-updater. Self-update can't work here anyway
+# (root-owned npm global dir, uid 1000 runtime, ephemeral pods). Set in the base
+# stage so it carries into runtime; agent/src/claude.ts builds the child env
+# from process.env, so spawned claude processes inherit it.
+ENV DISABLE_AUTOUPDATER=1
 
 # ─── Build stage ──────────────────────────────────────────────────────────────
 
