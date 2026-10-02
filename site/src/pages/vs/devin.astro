@@ -14,6 +14,12 @@
 // retired page-wide for the same reason: it is environment-scoped, and
 // Outposts made it imprecise. Per MESSAGING.md, claim the control plane
 // ("proprietary" / "vendor-controlled"), never the environment.
+//
+// 2026-10-02 re-verification: every claim re-checked against Devin's own
+// deployment overview and 2026 release notes; no drift found. The brain still
+// always resides in Cognition's cloud (shared Outposts for automation
+// sessions, shipped 2026-09-25, move more workload but not the brain), and
+// nothing deploy-related shipped. Date bump only.
 import BaseLayout from "../../layouts/BaseLayout.astro";
 import ChooseWhenGrid from "../../components/ChooseWhenGrid.astro";
 import ComparisonTable from "../../components/ComparisonTable.astro";
@@ -21,7 +27,7 @@ import TryItCta from "../../components/TryItCta.astro";
 import { LICENSE_URL } from "../../consts";
 import { escapeHtml } from "../../lib/html-escape";
 
-const verifiedDate = "September 9, 2026";
+const verifiedDate = "October 2, 2026";
 
 // Sources (Appendix, devin-alternative-positioning-research.md).
 const src = {
