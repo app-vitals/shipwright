@@ -60,7 +60,7 @@ install in `agent/Dockerfile`.
    baseline too — so not a regression of this window, and missed by every prior sweep) and
    **does not leak**: `beforeEach` saves `globalThis.fetch`, `afterEach` restores it. But it
    still contradicts root CLAUDE.md's hard rule ("no `global.fetch`/`global.*` overrides") that
-   the repo's other HTTP clients (`metrics/src/lib/*-client.ts`, `agent/src/check-helpers.ts`) satisfy via an injected fetch
+   the repo's other HTTP clients (`metrics/src/lib/*-client.ts`, `agent/src/check-helpers.ts`) satisfy via an injected fetch (`fetchFn` in `agent/src/check-helpers.ts:663`)
    (`createTaskStoreClient()` at `plugins/shipwright/scripts/check-helpers.ts:351` takes no such
    seam and calls bare `fetch(...)`). Bucketed **Promote / deepen** below. The other
    `globalThis.fetch` mentions (`metrics/src/lib/*-client.integration.test.ts` test titles,
@@ -1537,7 +1537,7 @@ delta list, not re-read in full where unchanged.
 
 | Test | Gap | Why Promote, not Rebuild | Effort |
 |---|---|---|---|
-| `plugins/shipwright/scripts/check-helpers.unit.test.ts` — the `createTaskStoreClient` describe block (4 tests at ~lines 600-650) | Overrides `globalThis.fetch` directly (save in `beforeEach`, restore in `afterEach`) because `createTaskStoreClient()` (`check-helpers.ts:351`) has no injected-fetch seam. Violates root CLAUDE.md's "no `global.fetch`/`global.*` overrides" hard rule. | Right layer (unit), right framework, adequate assertions (envelope-unwrapping cases), fast, and the override is restored per test — so it is not leaking today. The fix is mechanical: add an optional `fetchImpl` parameter (default `fetch`) to `createTaskStoreClient()` and pass a fake from the 4 tests, matching the metrics clients' and `agent/src/check-helpers.ts`'s existing convention. No assertion changes. | small |
+| `plugins/shipwright/scripts/check-helpers.unit.test.ts` — the `createTaskStoreClient` describe block (4 tests at ~lines 600-650) | Overrides `globalThis.fetch` directly (save in `beforeEach`, restore in `afterEach`) because `createTaskStoreClient()` (`check-helpers.ts:351`) has no injected-fetch seam. Violates root CLAUDE.md's "no `global.fetch`/`global.*` overrides" hard rule. | Right layer (unit), right framework, adequate assertions (envelope-unwrapping cases), fast, and the override is restored per test — so it is not leaking today. The fix is mechanical: add an optional `opts?: { fetchFn?: FetchFn }` parameter (default global `fetch`) to `createTaskStoreClient()` and pass a fake from the 4 tests, mirroring the exact signature `agent/src/check-helpers.ts:663` already uses for its own `createTaskStoreClient`. (Note: the plugin copy has no non-test caller in the repo — `scripts/hitl.ts` and the agent import the `agent/src/check-helpers.ts` twin — so deleting the unused export plus its 4-test suite is an equally valid fix if the implementer confirms it's dead; default is to add the seam.) No assertion changes. | small |
 
 Also widen the isolation sweep's pattern to `global(This)?\.` so this class is caught
 automatically (see Next step, item 4). Not a risk-callout case (nothing is deleted or rebuilt).
@@ -1933,7 +1933,7 @@ Phase 2 blueprint into the executable roadmap.
 
 **Candidate Phase 4 inputs from this document (2026-10-02 cycle):**
 
-1. **One small Promote/deepen item to queue:** add an optional `fetchImpl` seam to
+1. **One small Promote/deepen item to queue:** add an optional `opts?: { fetchFn?: FetchFn }` seam (mirroring `agent/src/check-helpers.ts:663`) to
    `createTaskStoreClient()` (`plugins/shipwright/scripts/check-helpers.ts:351`) and convert the
    4 `globalThis.fetch`-overriding tests in `check-helpers.unit.test.ts` (~lines 600-650) to inject
    a fake. Mechanical, no assertion changes; removes the repo's only direct global-fetch
