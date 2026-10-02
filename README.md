@@ -181,7 +181,7 @@ Shipwright Harness is a [Claude Code](https://www.anthropic.com/claude-code) plu
 
 ## See it in the wild
 
-- **Compare it** — how Shipwright's plan → queue → loop differs from [Devin](https://app-vitals.com/blog/shipwright-vs-devin/) and from [Claude Code orchestrators](https://app-vitals.com/blog/shipwright-vs-claude-code-orchestrators/).
+- **Compare it** — how Shipwright's plan → queue → loop model differs from the commercial agent tier and from other Claude Code orchestrators: see the [comparison pages](https://shipwrightharness.com/compare).
 - **Have us run it on your pipeline** — the [design-partner program](https://app-vitals.com/shipwright/design-partners/): the people who built Shipwright, hands-on on your codebase.
 - **Read the full story** — [shipwrightharness.com](https://shipwrightharness.com).
 
