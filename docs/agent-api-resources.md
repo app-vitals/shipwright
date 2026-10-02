@@ -16,7 +16,7 @@ The allowed-tools list controls which Claude Code tools the agent can call.
 POST /agents/:id/tools
 ```
 
-Body: `{ pattern: string, enabled?: boolean }`. Pattern is a glob or exact tool name (e.g. `"Read"`, `"Bash"`, `"mcp__*"`). Returns `201`.
+Body: `{ pattern: string }`. Pattern is a glob or exact tool name (e.g. `"Read"`, `"Bash"`, `"mcp__*"`). The tool is created enabled. Returns `201`.
 
 ### List tools
 
@@ -32,7 +32,7 @@ Returns `{ tools: AgentTool[] }` where each entry has `id`, `pattern`, and `enab
 PATCH /agents/:id/tools/:toolId
 ```
 
-Body: `{ pattern?: string, enabled?: boolean }`. Returns the updated tool.
+Body: `{ enabled: boolean }` (required). Returns the updated tool.
 
 ### Delete tool
 
@@ -54,7 +54,7 @@ Per-agent bearer tokens for scoped API access. The raw token is returned once at
 POST /agents/:id/tokens
 ```
 
-Body (optional): `{ label?: string }`. Returns `201` with `{ id, label, createdAt, revokedAt, token }` where `token` is the raw value — save it immediately.
+Body (optional): `{ label?: string }`. Returns `201` with `{ token: { id, agentId, label, createdAt, revokedAt }, rawToken }` where `rawToken` is the raw value — save it immediately.
 
 ### List tokens
 
@@ -62,7 +62,7 @@ Body (optional): `{ label?: string }`. Returns `201` with `{ id, label, createdA
 GET /agents/:id/tokens
 ```
 
-Returns `{ tokens: AgentToken[] }` with hash and metadata. Raw token values are never returned after creation.
+Returns `{ tokens: AgentToken[] }` (metadata only — the hash is never returned). Raw token values are never returned after creation.
 
 ### Revoke token
 
@@ -84,7 +84,7 @@ Plugins are Claude Code marketplace plugins installed for the agent.
 POST /agents/:id/plugins
 ```
 
-Body: `{ name: string, version?: string, enabled?: boolean }`. Returns `201`.
+Body: `{ name: string, version?: string | null }`. The plugin is installed enabled. Returns `201`.
 
 ### List plugins
 
@@ -100,7 +100,7 @@ Returns `{ plugins: AgentPlugin[] }`.
 PATCH /agents/:id/plugins
 ```
 
-Query param: `name` (required). Body: `{ version?: string, enabled?: boolean }`. Returns the updated plugin.
+Query param: `name` (required). Body: `{ version?: string | null }`. Returns the updated plugin.
 
 ### Remove plugin
 
@@ -134,7 +134,7 @@ Upserts the `subagentType` override for one pipeline phase. `phase` must be one 
 
 Body: `{ subagentType: string | null }`. When `subagentType` is `null`, the override is cleared and the phase falls back to its default methodology.
 
-Returns `201` on creation, `200` on update, with `{ phaseMethodology: AgentPhaseMethodology }` containing the upserted row.
+Returns `200` with `{ phaseMethodology: AgentPhaseMethodology }` containing the upserted row.
 
 ---
 
@@ -155,7 +155,7 @@ Body:
 | Field | Required | Description |
 |-------|----------|-------------|
 | `date` | yes | `YYYY-MM-DD` |
-| `modelBreakdown` | yes | Array of per-model usage entries. Each entry: `{ model: string, inputTokens: number, outputTokens: number, cacheReadTokens: number, cacheCreationTokens: number, costUsd?: number }` |
+| `modelBreakdown` | yes | Array of per-model usage entries. Each entry: `{ model: string, inputTokens: number, outputTokens: number, cacheReadTokens: number, cacheCreationTokens: number, costUsd: number }` |
 
 Returns an array of updated daily rows (one per model in the breakdown).
 

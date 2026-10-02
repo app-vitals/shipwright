@@ -94,10 +94,12 @@ those three. Three call sites write these fields:
    `status: "pr_open"` with `pr` null (neither supplied nor already on the row) is rejected with
    `400` — this invariant is enforced server-side, not just by convention.
 2. `PullRequestService.claim()` (`POST /prs/claim`) — accepts optional `authorLogin`, `headRef`,
-   and `title` fields, which are stored unconditionally (latest value always wins). After every
+   and `title` fields, which are stored unconditionally (latest value always wins), plus the
+   origin-only signals `authorIsBot`, `hasAutomatedLabel`, and `hasShipwrightLabel` (consumed by
+   `deriveOrigin()` and not persisted). After every
    successful claim (update or create branch), looks up whether a Task row links `(repo, prNumber)`
    and derives a `PrOrigin` via the pure `deriveOrigin()` helper (`task-store/src/pr-origin-derivation.ts`),
-   then calls `stampOrigin()` atomically with the claim write. A task-row match always wins over any
+   then calls `stampOrigin()` atomically with the claim write. A task-row match or `hasShipwrightLabel` wins over any
    author/branch-based signal — see [metrics.md](./metrics.md#origin-classification-rules) for
    the exact precedence table `deriveOrigin()` implements.
 3. `POST /prs/census` — a batch upsert (`{repo, prNumber, origin?, authorLogin?, headRef?, title?,
@@ -138,15 +140,16 @@ Full request/response shapes live in the OpenAPI spec, per this doc's existing p
 
 ### Skip tracking (reason-aware auto-block)
 
-`Task` and `PullRequest` records track repeated no-op dispatches via three fields: `skipCount` (number of consecutive skips with the same reason), `lastSkippedAt` (ISO timestamp of the most recent skip), and `lastSkipReason` (the text reason of the current skip streak). When the loop orchestrator dispatches a task/PR and receives a `[silent]` marker (found nothing to do), it records a skip with a reason via `POST /tasks/:id/skip` (task) or via `PATCH /prs/:id` (PullRequest). The task store's `recordSkip()` / `recordPrSkip()` methods compute the next streak state using reason-aware logic (SRB-1.1):
+`Task` records track repeated no-op dispatches via three fields: `skipCount` (number of consecutive skips with the same reason), `lastSkippedAt` (ISO timestamp of the most recent skip), and `lastSkipReason` (the text reason of the current skip streak). `PullRequest` records track only `skipCount` and `lastSkippedAt` — there is no `lastSkipReason` column, and `POST /prs/:id/skip` takes no body and increments `skipCount` on every call, so the reason-aware logic below applies to the task path only. When the loop orchestrator dispatches a task/PR and receives a `[silent]` marker (found nothing to do), it records a skip via `POST /tasks/:id/skip` (task, with a reason) or `POST /prs/:id/skip` (PullRequest). For tasks, `TaskService.recordSkip()` computes the next streak state using reason-aware logic (SRB-1.1):
 
 - **Same reason:** if the incoming reason matches `lastSkipReason`, increment `skipCount` by 1.
 - **Different reason or first skip:** if the reason differs (or `lastSkipReason` is null), reset `skipCount` to 1 and update `lastSkipReason`.
-- **Auto-block threshold:** when `skipCount` reaches 3 (matching `SPIN_DETECTION_THRESHOLD` in `agent/src/loop-orchestrator.ts`), the record is auto-blocked (task `status:"blocked"` + `blockedReason`, or PullRequest `blocked:true` + `blockedReason`) to prevent infinite re-dispatch loops. The `blockedReason` names the count and reason: e.g. "Blocked after 3 consecutive skips: reason-a".
+- **Auto-block threshold:** when `skipCount` reaches 3 (`SKIP_BLOCK_THRESHOLD` in `task-store/src/task-service.ts`), the record is auto-blocked to prevent infinite re-dispatch loops. A task gets `status:"blocked"`, `hitl: true`, and a `blockedReason` naming the count and reason, e.g. "Auto-blocked after 3 consecutive skips for reason: reason-a". A PullRequest gets `blocked: true` and `blockedReason` "Auto-blocked after 3 consecutive skips (dispatched but found nothing to do)" (no reason in the streak).
+- **Reap-triggered streak:** `StaleClaimReaper.reap()` feeds the same streak counter with the fixed reason `stale_claim_timeout` (`STALE_CLAIM_REAP_REASON`, `task-store/src/stale-claim-reaper.ts`), so a task whose claim is reaped three times in a row (no intervening progress or differently-reasoned skip) auto-blocks with `hitl: true` instead of cycling back to pending forever.
 
-This reason-aware deduplication prevents legitimate but repeated deferrals (e.g., "waiting for dependency") from triggering auto-block, while catching genuine stuck loops where the same reason hits threshold 3 times in a row. No skip-reason category is exempt from counting: every `[skip-reason:...]` marker — including `deferred`-category markers like `dev-task:deferred:same-branch-sibling-busy:*` and `review:deferred:unresolved-human-feedback:*` — is forwarded to `recordSkip()`/`recordPrSkip()` as-is; the loop orchestrator's prior category-based exemption was removed (SRB-1.1) in favor of this reason-aware streak logic alone.
+This reason-aware deduplication prevents legitimate but repeated deferrals (e.g., "waiting for dependency") from triggering auto-block, while catching genuine stuck loops where the same reason hits threshold 3 times in a row. No skip-reason category is exempt from counting: every `[skip-reason:...]` marker — including `deferred`-category markers like `dev-task:deferred:same-branch-sibling-busy:*` and `review:deferred:unresolved-human-feedback:*` — is forwarded to `recordSkip()` as-is; the loop orchestrator's prior category-based exemption was removed (SRB-1.1) in favor of this reason-aware streak logic alone.
 
-The `POST /tasks/:id/skip` endpoint accepts an optional `reason` field (string); if omitted, the reason defaults to `"unspecified"`. The `lastSkipReason` value is sent by the loop orchestrator from the dispatched command's own `[skip-reason:text]` marker (see `agent/src/markers.ts` and `docs/agent-ops.md`). Callers can query tasks by skip state using `?blockedReason=*` filters or inspect `skipCount`/`lastSkipReason` directly via `GET /tasks/:id`.
+The `POST /tasks/:id/skip` endpoint accepts an optional `reason` field (string); if omitted, the reason defaults to `"unspecified"`. The `lastSkipReason` value is sent by the loop orchestrator from the dispatched command's own `[skip-reason:text]` marker (see `agent/src/markers.ts` and `docs/agent-ops.md`). Callers can find auto-blocked tasks with `GET /tasks?status=blocked` or inspect `skipCount`/`lastSkipReason` directly via `GET /tasks/:id`.
 
 ### Same-branch exclusivity guard
 
@@ -192,7 +195,7 @@ All `/tokens` endpoints are admin-only — create, list, update (relabel/rescope
 
 ### `?ready=true` returns empty
 
-If `GET /tasks?ready=true` returns `{ tasks: [], total: 0 }` even though tasks exist, check in order: (1) an unfiltered `?assignee=` query can still exclude tasks assigned elsewhere — use an admin token or drop the filter; (2) `hitl: true` (Type A — requires direct human execution) or (3) `kind: "prd"` (a product spec awaiting an autonomous plan session) may be set — query `?status=pending` to check; (4) a same-branch sibling may hold the [exclusivity guard](#same-branch-exclusivity-guard) — query `?status=in_progress` to check, and note a stale claim (>65 min, no heartbeat) is reaped automatically; (5) [dependencies](#dependency-satisfaction-rules) may be unsatisfied; (6) the queue may simply be empty — confirm with `?status=pending`.
+If `GET /tasks?ready=true` returns `{ tasks: [], total: 0 }` even though tasks exist, check in order: (1) an unfiltered `?assignee=` query can still exclude tasks assigned elsewhere — use an admin token or drop the filter; (2) `hitl: true` (Type A — requires direct human execution) or (3) `kind: "prd"` (a product spec awaiting an autonomous plan session) may be set — query `?status=pending` to check; (4) a same-branch sibling may hold the [exclusivity guard](#same-branch-exclusivity-guard) — query `?status=in_progress` to check, and note a stale claim (>65 min, no heartbeat) is reaped automatically (three consecutive reaps auto-block the task); (5) [dependencies](#dependency-satisfaction-rules) may be unsatisfied; (6) the queue may simply be empty — confirm with `?status=pending`.
 
 ### 401 Unauthorized
 
