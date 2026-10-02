@@ -128,7 +128,7 @@ RUN curl -fsSL -o /tmp/mise-install.sh https://mise.run \
 COPY --from=node-source /usr/local/bin/node /usr/local/bin/node
 COPY --from=node-source /usr/local/lib/node_modules/npm /usr/local/lib/node_modules/npm
 # renovate: datasource=npm depName=@anthropic-ai/claude-code
-ARG CLAUDE_CODE_VERSION=2.1.236
+ARG CLAUDE_CODE_VERSION=2.1.285
 # The trailing check fails the build if the installed CLI doesn't report exactly
 # the pinned version (e.g. a registry/tag mismatch), so a drifted image can't ship.
 RUN ln -s /usr/local/lib/node_modules/npm/bin/npm-cli.js /usr/local/bin/npm \
