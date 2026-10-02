@@ -12,9 +12,10 @@ import { afterEach, describe, expect, it } from "bun:test";
 import type { Server } from "bun";
 import { FixedClock } from "./clock.ts";
 import {
-  SLACK_DOWN_GRACE_MS,
+  claudeVersionState,
   markSlackConnected,
   markSlackDisconnected,
+  SLACK_DOWN_GRACE_MS,
   slackState,
   startHealthServer,
 } from "./health.ts";
@@ -27,6 +28,7 @@ describe("startHealthServer", () => {
     servers.length = 0;
     slackState.connected = false;
     slackState.downSince = null;
+    claudeVersionState.version = "unknown";
   });
 
   function serve(port: number): Server<undefined> {
@@ -42,7 +44,11 @@ describe("startHealthServer", () => {
     const res = await fetch("http://localhost:19901/health");
     expect(res.status).toBe(200);
     const body = await res.json();
-    expect(body).toEqual({ ok: true, slack: "disconnected" });
+    expect(body).toEqual({
+      ok: true,
+      slack: "disconnected",
+      claudeCodeVersion: "unknown",
+    });
   });
 
   it("GET /health returns slack connected when slackState.connected is true", async () => {
@@ -51,7 +57,11 @@ describe("startHealthServer", () => {
     const res = await fetch("http://localhost:19902/health");
     expect(res.status).toBe(200);
     const body = await res.json();
-    expect(body).toEqual({ ok: true, slack: "connected" });
+    expect(body).toEqual({
+      ok: true,
+      slack: "connected",
+      claudeCodeVersion: "unknown",
+    });
   });
 
   it("reflects state changes at runtime without restart", async () => {
@@ -69,6 +79,26 @@ describe("startHealthServer", () => {
     slackState.connected = false;
     const res3 = await fetch("http://localhost:19903/health");
     expect((await res3.json()).slack).toBe("disconnected");
+  });
+
+  it("GET /health reports the detected claudeCodeVersion", async () => {
+    claudeVersionState.version = "2.1.236";
+    serve(19906);
+    const res = await fetch("http://localhost:19906/health");
+    expect(res.status).toBe(200);
+    expect((await res.json()).claudeCodeVersion).toBe("2.1.236");
+  });
+
+  it("GET /health includes claudeCodeVersion on the 500 wedge response too", async () => {
+    claudeVersionState.version = "2.1.236";
+    const downAt = new Date("2026-06-06T00:00:00.000Z").getTime();
+    const clock = FixedClock(new Date(downAt + SLACK_DOWN_GRACE_MS + 1_000));
+    slackState.connected = false;
+    slackState.downSince = downAt;
+    servers.push(startHealthServer(19907, undefined, clock));
+    const res = await fetch("http://localhost:19907/health");
+    expect(res.status).toBe(500);
+    expect((await res.json()).claudeCodeVersion).toBe("2.1.236");
   });
 
   it("returns 404 for unknown paths", async () => {
@@ -96,7 +126,11 @@ describe("startHealthServer", () => {
     servers.push(s);
     const res = await fetch("http://localhost:19910/health");
     expect(res.status).toBe(200);
-    expect(await res.json()).toEqual({ ok: true, slack: "connected" });
+    expect(await res.json()).toEqual({
+      ok: true,
+      slack: "connected",
+      claudeCodeVersion: "unknown",
+    });
   });
 
   // A2: Disconnected but within grace window → 200 disconnected
@@ -110,7 +144,11 @@ describe("startHealthServer", () => {
     servers.push(s);
     const res = await fetch("http://localhost:19911/health");
     expect(res.status).toBe(200);
-    expect(await res.json()).toEqual({ ok: true, slack: "disconnected" });
+    expect(await res.json()).toEqual({
+      ok: true,
+      slack: "disconnected",
+      claudeCodeVersion: "unknown",
+    });
   });
 
   // A3: Disconnected beyond grace window → 500 disconnected
@@ -124,7 +162,11 @@ describe("startHealthServer", () => {
     servers.push(s);
     const res = await fetch("http://localhost:19912/health");
     expect(res.status).toBe(500);
-    expect(await res.json()).toEqual({ ok: false, slack: "disconnected" });
+    expect(await res.json()).toEqual({
+      ok: false,
+      slack: "disconnected",
+      claudeCodeVersion: "unknown",
+    });
   });
 
   // A4: Recovery — markSlackConnected clears downSince → 200 again
@@ -145,7 +187,11 @@ describe("startHealthServer", () => {
 
     const recovered = await fetch("http://localhost:19913/health");
     expect(recovered.status).toBe(200);
-    expect(await recovered.json()).toEqual({ ok: true, slack: "connected" });
+    expect(await recovered.json()).toEqual({
+      ok: true,
+      slack: "connected",
+      claudeCodeVersion: "unknown",
+    });
   });
 
   // A5: Cold start / never connected → 200 (not killed during initial connect)
@@ -157,7 +203,11 @@ describe("startHealthServer", () => {
     servers.push(s);
     const res = await fetch("http://localhost:19914/health");
     expect(res.status).toBe(200);
-    expect(await res.json()).toEqual({ ok: true, slack: "disconnected" });
+    expect(await res.json()).toEqual({
+      ok: true,
+      slack: "disconnected",
+      claudeCodeVersion: "unknown",
+    });
   });
 
   // A6: Repeated markSlackDisconnected does not push downSince forward
