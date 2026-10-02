@@ -12,17 +12,20 @@
 > (worktree: `docs/test-readiness-refresh-20261002`, base `ea1412b66`), from
 > `docs/test-readiness/test-inventory.md` (generated 2026-09-30, commit `d656f0d0a`).
 >
-> **Re-verified, not re-architected, this cycle.** 42 commits landed on `main` since the last
-> refresh (2026-09-30). The only test-relevant deltas are: an agent-side auto-clone step
-> (`agent/src/sync-config-clone.ts`, with `computeMissingClones` relocated from `scripts/lib/`
-> to `lib/clone-plan.ts`), two small plugin-script additions (`filter-bot-comments.ts`,
-> `check-patrol-scope.ts`), widened `check-helpers.ts` / `check-test-readiness.ts` /
-> `check-docs-freshness.ts` logic, task-store stale-claim-reaper / skip-tracking changes (one
-> Prisma migration, no new service), more command/skill markdown with `*.content.test.ts`
-> coverage, and a root `renovate.content.test.ts`. Every one slots into an already-modeled
-> category (injected-exec boundary, pure logic, Prisma-backed service, content layer) with no new
-> framework, external dependency, CI job, or deploy-model change (`bunfig.toml`, `Taskfile.yml`,
-> `.github/` and `scripts/check-coverage.ts` are unchanged since 2026-09-30; CI Postgres is
+> **Re-verified, not re-architected, this cycle.** 96 commits landed on `main` since the
+> inventory's baseline (`d656f0d0a`; 42 of them since the 2026-09-30 refresh merged). The only
+> test-relevant deltas are: an agent-side auto-clone step (`agent/src/sync-config-clone.ts`,
+> with `computeMissingClones` relocated from `scripts/lib/` to `lib/clone-plan.ts`), three small
+> agent config-ref singletons (`allow-self-review-ref.ts`, `cleanup-after-days-ref.ts`,
+> `cleanup-merged-worktrees-ref.ts` — same shape as the already-modeled `agent-trial-expiry-ref.ts`),
+> two plugin-script additions (`filter-bot-comments.ts`, `check-patrol-scope.ts`), widened
+> `check-helpers.ts` / `check-test-readiness.ts` / `check-docs-freshness.ts` logic, task-store
+> stale-claim-reaper / skip-tracking changes (one Prisma migration, no new service), more
+> command/skill markdown with `*.content.test.ts` coverage, and a root `renovate.content.test.ts`.
+> Every one slots into an already-modeled category (injected-exec boundary, pure logic,
+> Prisma-backed service, content layer) with no new framework, external dependency, CI job, or
+> deploy-model change (`bunfig.toml`, `Taskfile.yml`, `.github/` and `scripts/check-coverage.ts`
+> are unchanged since 2026-09-30; CI Postgres is
 > still `postgres:18`). Nothing below needed architectural revision; see the two targeted edits
 > (Local execution architecture, Shared helpers) for the one design constraint this cycle's
 > deltas surfaced — where a shared exec interface may live.
