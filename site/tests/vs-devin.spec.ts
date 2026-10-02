@@ -91,7 +91,7 @@ test("every Devin claim carries a citation link, and the page shows a verified-a
   page,
 }) => {
   await page.goto("/vs/devin");
-  await expect(page.getByText(/facts verified as of/i)).toBeVisible();
+  await expect(page.getByText(/facts verified as of October 2, 2026/i)).toBeVisible();
   // At least the deployment-overview and pricing sources are linked.
   await expect(
     page.locator('a[href*="docs.devin.ai"]').first(),

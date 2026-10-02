@@ -11,13 +11,18 @@
 // the surface-scoped competitor-naming policy this page operates under, and
 // D5 for the price-free rule (no dollar figures, no tier names — "their
 // commercial offering", never "Enterprise tier" or "Cloud plan").
+//
+// 2026-10-02 re-verification: every claim re-checked against OpenHands' own
+// OSS-vs-commercial comparison table and 2026-09-24 commercial release post;
+// no drift found. The September additions landed on the commercial side,
+// which the existing rows already say. Date bump only.
 import BaseLayout from "../../layouts/BaseLayout.astro";
 import ChooseWhenGrid from "../../components/ChooseWhenGrid.astro";
 import ComparisonTable from "../../components/ComparisonTable.astro";
 import TryItCta from "../../components/TryItCta.astro";
 import { escapeHtml } from "../../lib/html-escape";
 
-const verifiedDate = "September 5, 2026";
+const verifiedDate = "October 2, 2026";
 
 // Sources — the 7 primary URLs fetched and verified for this page.
 const src = {

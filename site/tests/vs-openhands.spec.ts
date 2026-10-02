@@ -110,7 +110,7 @@ test("every OpenHands claim carries a citation link, and the page shows a verifi
   page,
 }) => {
   await page.goto("/vs/openhands");
-  await expect(page.getByText(/facts verified as of September 5, 2026/i)).toBeVisible();
+  await expect(page.getByText(/facts verified as of October 2, 2026/i)).toBeVisible();
   await expect(
     page.locator('a[href*="openhands.dev"]').first(),
   ).toBeVisible();
