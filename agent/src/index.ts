@@ -41,6 +41,7 @@ import {
   type ProgressCallback,
   setLiveClaudeConfig,
 } from "./claude.ts";
+import { bunExec, detectClaudeCodeVersion } from "./claude-version.ts";
 import { cleanupAfterDaysRef } from "./cleanup-after-days-ref.ts";
 import { cleanupMergedWorktreesRef } from "./cleanup-merged-worktrees-ref.ts";
 import { SystemClock } from "./clock.ts";
@@ -59,6 +60,7 @@ import {
   startGitHubAuthIfPossible,
 } from "./github-auth-startup.ts";
 import {
+  claudeVersionState,
   DEFAULT_HEALTH_PORT,
   markSlackConnected,
   markSlackDisconnected,
@@ -346,6 +348,8 @@ const syncConfigCloneDeps = buildSyncConfigCloneDeps({
 const healthPort = Number(
   process.env.SHIPWRIGHT_HEALTH_PORT ?? DEFAULT_HEALTH_PORT,
 );
+claudeVersionState.version = await detectClaudeCodeVersion(bunExec);
+console.log(`[agent] claude code version: ${claudeVersionState.version}`);
 startHealthServer(
   healthPort,
   cronDeps,

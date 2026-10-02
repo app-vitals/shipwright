@@ -2,11 +2,12 @@ import type { ErrorCapturingClient } from "@shipwright/lib/sentry";
 import type { Server } from "bun";
 import { Hono } from "hono";
 import { reportClaudeError } from "./claude.ts";
+import { UNKNOWN_CLAUDE_CODE_VERSION } from "./claude-version.ts";
 import { type Clock, SystemClock } from "./clock.ts";
 import {
   type CronHandlerDeps,
-  ValidationError,
   handleCronRequest,
+  ValidationError,
 } from "./cron-handler.ts";
 
 /**
@@ -20,6 +21,11 @@ import {
 export const slackState = {
   connected: false,
   downSince: null as number | null,
+};
+
+/** Claude Code CLI version detected at startup (set by index.ts); reported in /health. */
+export const claudeVersionState = {
+  version: UNKNOWN_CLAUDE_CODE_VERSION,
 };
 
 /**
@@ -70,9 +76,9 @@ export function createHealthApp(): Hono {
 /**
  * Start a minimal HTTP health server for K8s liveness probes.
  *
- * GET  /health → 200 { ok: true, slack: "connected" | "disconnected" }
- *              → 500 { ok: false, slack: "disconnected" } when the socket has
- *                been down longer than `graceMs` (sustained wedge)
+ * GET  /health → 200 { ok: true, slack: "connected" | "disconnected", claudeCodeVersion }
+ *              → 500 { ok: false, slack: "disconnected", claudeCodeVersion } when
+ *                the socket has been down longer than `graceMs` (sustained wedge)
  * GET  /cron   → 405 Method Not Allowed
  * POST /cron   → run a cron prompt through Claude and post result to Slack
  *               503 if cronDeps not configured
@@ -112,13 +118,18 @@ export function startHealthServer(
           clock.now().getTime() - slackState.downSince > graceMs;
         if (wedged) {
           return Response.json(
-            { ok: false, slack: "disconnected" },
+            {
+              ok: false,
+              slack: "disconnected",
+              claudeCodeVersion: claudeVersionState.version,
+            },
             { status: 500 },
           );
         }
         return Response.json({
           ok: true,
           slack: slackState.connected ? "connected" : "disconnected",
+          claudeCodeVersion: claudeVersionState.version,
         });
       }
 
