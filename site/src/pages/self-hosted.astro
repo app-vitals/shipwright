@@ -3,8 +3,9 @@
 // "self-hosted AI coding agent" query — the fully-in-your-cloud vs hybrid
 // architecture split is the sorting criterion. Every competitor claim below
 // is sourced from goals/drafts/devin-alternative-positioning-research.md's
-// safe-to-print register (2026-07-14) and cited inline. Re-verify before any
-// future edit — see brand/MESSAGING.md D10 for the surface-scoped
+// safe-to-print register (2026-07-14), re-verified against vendor primary
+// sources on 2026-10-02 (Cursor and Factory rows updated), and cited inline.
+// Re-verify before any future edit — see brand/MESSAGING.md D10 for the surface-scoped
 // competitor-naming policy this page operates under. OpenCode is
 // deliberately not named (unverified — never-print list).
 import BaseLayout from "../layouts/BaseLayout.astro";
@@ -12,18 +13,19 @@ import ComparisonTable from "../components/ComparisonTable.astro";
 import TryItCta from "../components/TryItCta.astro";
 import { escapeHtml } from "../lib/html-escape";
 
-const verifiedDate = "August 11, 2026";
+const verifiedDate = "October 2, 2026";
 
 // Sources (Appendix, devin-alternative-positioning-research.md).
 const src = {
-  cursor: "https://cursor.com/blog/self-hosted-cloud-agents",
-  openhandsPricing: "https://openhands.dev/pricing",
+  cursor: "https://cursor.com/changelog/self-hosted-machines",
+  openhandsPricing: "https://www.openhands.dev/pricing",
   openhandsLicense: "https://github.com/OpenHands/OpenHands/blob/main/LICENSE",
   coder: "https://coder.com/docs",
   devinDeployment: "https://docs.devin.ai/enterprise/deployment/overview",
   devinReleaseNotes: "https://docs.devin.ai/release-notes/2026",
-  factoryDeployment: "https://docs.factory.ai/enterprise/network-and-deployment",
-  factoryPricing: "https://factory.ai/pricing",
+  factoryDeployment: "https://docs.factory.com/enterprise/network-and-deployment",
+  factoryPrivate: "https://factory.com/news/factory-private",
+  factoryPricing: "https://factory.com/pricing",
 };
 
 const architectureRows = [
@@ -39,9 +41,9 @@ const architectureRows = [
   {
     tool: "Cursor (self-hosted cloud agents)",
     license: "Proprietary",
-    architecture: "Hybrid — inference and orchestration stay in Cursor's cloud.",
+    architecture: "Hybrid — no documented customer-controlled control plane.",
     detail:
-      "Only tool execution and artifacts run on your infrastructure. No spec phase, no deploy stage.",
+      "Self-hosted machines keep your codebase, build outputs and secrets on your own infrastructure, across eight supported compute providers, and the agent runs tool calls there. Cursor documents no option to run the orchestration layer yourself. No spec phase, no deploy stage.",
     citation: src.cursor,
     self: false,
   },
@@ -75,10 +77,10 @@ const architectureRows = [
   {
     tool: "Factory",
     license: "Proprietary",
-    architecture: "Cloud-orchestrated by default — full airgap is sales-gated.",
+    architecture: "Cloud-orchestrated by default — running it yourself is sales-gated.",
     detail:
-      "Cloud-Managed and Hybrid both keep orchestration in Factory's cloud (Hybrid limits it to metadata). Their fully-airgapped deployment mode genuinely removes Factory's servers from the loop at runtime, including orchestration — but it ships only through their sales-gated commercial flow, with no self-serve path.",
-    citation: [src.factoryDeployment, src.factoryPricing],
+      "Cloud-Managed and Hybrid both keep orchestration in Factory's cloud (Hybrid limits it to metadata). Factory Private, launched September 2026, does put the control plane in your own VPC or on-premises environment, with air-gapped configurations available — so it genuinely removes Factory's servers from the loop at runtime. It is in private preview and reachable only by contacting their team, with no self-serve path.",
+    citation: [src.factoryDeployment, src.factoryPrivate, src.factoryPricing],
     self: false,
   },
 ];
