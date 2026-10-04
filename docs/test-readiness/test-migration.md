@@ -1736,7 +1736,7 @@ without a PR reference this clear.
 ### Tier 1 — aggregate (measured this pass, 2026-10-02)
 
 - **Run:** [36969562510](https://github.com/app-vitals/shipwright/actions/runs/36969562510)
-  (CI on commit `ea1412b66`, this worktree's exact base), 2026-10-02T05:34:43Z. Fully green
+  (CI on commit `ea1412b66`, prior cycle's base), 2026-10-02T05:34:43Z. Fully green
   (all 8 jobs `success`) — fetched via `gh run list` / `gh run view --json jobs` +
   `gh run view --log`, not assumed.
 - **Job wall-clock:** 1m42s (`lint / typecheck / test`, 05:34:59Z–05:36:41Z), of which the

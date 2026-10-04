@@ -22,7 +22,7 @@ rendered verbatim below.
 
 Note (2026-10-03): the exact line-coverage percentage is carried forward from the 2026-10-02 pull below; the newer CI run on `b14ea6eb3` (run 37030376034) logged `Coverage gate passed` (>=90%) but its percentage was not extracted, and the one-file delta cannot move it materially. Original sourcing: `linePct`/`lineSource` from the prior cycle's live CI pull
 ([run 36969562510](https://github.com/app-vitals/shipwright/actions/runs/36969562510) @
-`ea1412b66`, this worktree's exact base, fetched via `gh run list`/`gh run view --log` per
+`ea1412b66`, the prior cycle's base, fetched via `gh run list`/`gh run view --log` per
 `test-migration.md`'s Speed measurement section); `featurePct`/`featureSource` from
 `test-inventory.md`'s `feature_coverage_pct` (100%, 25/25 features, carried forward — no
 feature added since). Computed via:
@@ -95,8 +95,8 @@ regression, no status churn.
 | Compile-time-only (unformalized) | 1 `*.check.ts` (`blocked-by-type-parity.check.ts`) | `admin/src/blocked-by-type-parity.check.ts` | None — wired into CI's `typecheck` step; only a taxonomy question open (see Open risks) |
 
 **Total: 406 `bun test`-scanned files** (201 unit + 91 integration + 55 smoke + 59 content —
-matches this cycle's live CI run's own summary line, "Ran 10427 tests across 406 files."
-exactly) **+ 27 site E2E + 7 admin/metrics E2E = 440 test files** — up +10 vs. the 2026-09-30
+matches the 2026-10-02 CI run's own summary line, "Ran 10427 tests across 406 files."
+exactly; the newer `b14ea6eb3` run in the header reports 10,448 / 407 after the one-file delta) **+ 27 site E2E + 7 admin/metrics E2E = 440 test files** — up +10 vs. the 2026-09-30
 pass's 430 (6 new unit files: `sync-config-clone`, `filter-bot-comments`, `check-patrol-scope`,
 `allow-self-review-ref`, `cleanup-after-days-ref`, `cleanup-merged-worktrees-ref`; 4 new content
 files). See `test-migration.md`'s Summary for the reconciliation.
@@ -129,13 +129,13 @@ across every cycle to date. See Milestone 3.
 
 | Aggregate wall-clock | Budget | Ratio |
 |---|---|---|
-| 1m42s ([run 36969562510](https://github.com/app-vitals/shipwright/actions/runs/36969562510), 2026-10-02T05:34:59Z–05:36:41Z, commit `ea1412b66` — this worktree's base) | <15 min (Full PR pipeline) | ~11% of budget |
+| 1m42s ([run 36969562510](https://github.com/app-vitals/shipwright/actions/runs/36969562510), 2026-10-02T05:34:59Z–05:36:41Z, commit `ea1412b66` — prior cycle's base) | <15 min (Full PR pipeline) | ~11% of budget |
 
 Fully green run (all 8 jobs). Main `bun test` step: 29.38s. **10,427 tests across 406 files**
-(+278 tests / +10 files vs. the 2026-09-30 pass). Coverage: **92.54%** lines (38634/41749),
+(2026-10-02 run, carried forward; `b14ea6eb3` is 10,448 / 407) (+278 tests / +10 files vs. the 2026-09-30 pass). Coverage: **92.54%** lines (38634/41749),
 **90.98%** functions (3146/3458) — against the 90%/89% thresholds, `✅ Coverage gate passed`.
 Test-count trajectory: …→ 9,288 (2026-09-23) → 10,149 (2026-09-30) → **10,427 (2026-10-02,
-this pass)**.
+this pass's carried-forward baseline)**.
 
 **Tier 2 triggered:** no — the escalation formula (aggregate wall-clock >7.5 min, sustained
 across 2 consecutive measurements) is nowhere near tripped (~11% of budget). No per-layer p95
@@ -237,7 +237,7 @@ consistent with every prior cycle, **no task is minted for it**.
 
 **Tier 2 triggered:** no. Per-layer numbers are not fabricated here — Tier 1's aggregate is
 the complete, sufficient measurement this cycle. Growth trajectory (406 files, 10,149 →
-10,427 tests since the 2026-09-30 baseline) is proportionate to the window, and the aggregate
+10,427 tests since the 2026-09-30 baseline, carried forward from 2026-10-02) is proportionate to the window, and the aggregate
 ratio held flat at ~11%, consistent with the job's wall-clock being dominated by fixed
 overhead rather than scaling with test count at this suite size.
 
