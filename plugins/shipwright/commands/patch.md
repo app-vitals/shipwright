@@ -53,11 +53,13 @@ Otherwise, proceed to Step 1.
 
 ## Step 1: Get Own GH Login
 
-Resolve the current GitHub CLI user once and remember the value — substitute it directly
-into all subsequent commands that need it:
+Resolve the current GitHub identity once and remember the value — substitute it directly
+into all subsequent commands that need it. `CURRENT_USER` is the **canonical** login (the
+`app/` prefix and `[bot]` suffix stripped, lowercased) from the shared login-identity helper,
+which resolves it via GraphQL `viewer` — the REST `/user` endpoint 403s under installation tokens:
 
 ```bash
-CURRENT_USER=$(gh api /user -q '.login')
+CURRENT_USER=$(bun run "${CLAUDE_PLUGIN_ROOT}/scripts/login-identity.ts")
 ```
 
 Also resolve the agent's configured patch-author allowlist (PAS-1.1) — an additive list of
@@ -118,13 +120,16 @@ call sites below (Steps 4a.6/5a.6/6b.5) so `/prs/claim` can derive `origin` serv
 Then evaluate the in-scope test with an **exact** membership check — never a substring one:
 
 ```bash
-# In scope iff PR_AUTHOR is CURRENT_USER, or equals an allowlist entry exactly.
-# `jq -e` exits 0 only when some element is character-for-character equal to
-# $PR_AUTHOR, and exits non-zero on `false` OR on malformed/empty input — so a
-# failed config fetch in Step 1 fails closed here rather than widening scope.
-if [ "$PR_AUTHOR" = "$CURRENT_USER" ] || \
+# In scope iff PR_AUTHOR is CURRENT_USER, or equals an allowlist entry exactly — both
+# compared in canonical form (CURRENT_USER is already canonical; `gh pr view` reports a bot
+# as "app/<slug>", so strip/lowercase PR_AUTHOR and each allowlist entry the same way).
+# `jq -e` exits 0 only when some element is equal to $a, and exits non-zero on `false` OR
+# on malformed/empty input — so a failed config fetch in Step 1 fails closed here rather
+# than widening scope.
+PR_AUTHOR_CANON=$(printf '%s' "$PR_AUTHOR" | sed -E 's#^app/##; s#\[bot\]$##' | tr '[:upper:]' '[:lower:]')
+if [ "$PR_AUTHOR_CANON" = "$CURRENT_USER" ] || \
    printf '%s' "$PATCH_AUTHOR_ALLOWLIST" \
-     | jq -e --arg a "$PR_AUTHOR" 'any(.[]; . == $a)' >/dev/null 2>&1; then
+     | jq -e --arg a "$PR_AUTHOR_CANON" 'def canon: sub("^app/"; "") | sub("\\[bot\\]$"; "") | ascii_downcase; any(.[]; canon == $a)' >/dev/null 2>&1; then
   IN_SCOPE=true
 else
   IN_SCOPE=false
@@ -138,8 +143,8 @@ patch act on an out-of-scope PR. This mirrors `check-patch.ts`'s server-side
 `listAllowlistedOpenPrs`, which queries `gh pr list --author {login}` once per allowlist
 entry and is therefore exact by construction.
 
-- **Not found, or `state != "OPEN"`, or `IN_SCOPE` is false (i.e. `author.login != CURRENT_USER`
-  AND `author.login` is not exactly equal to any entry in `PATCH_AUTHOR_ALLOWLIST`)**: this PR
+- **Not found, or `state != "OPEN"`, or `IN_SCOPE` is false (i.e. canonical `author.login != CURRENT_USER`
+  AND canonical `author.login` is not equal to any entry in `PATCH_AUTHOR_ALLOWLIST`)**: this PR
   is not workable by patch (per the Independence Principles' "own PRs only" scope, widened by
   PAS-1.1 to include any agent-configured `patchAuthorAllowlist` entry from Step 1). Print
   `⚠ PR {org}/{repo}#{number} not found among own open PRs.` and stop.

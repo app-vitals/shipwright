@@ -97,17 +97,23 @@ Gate will still catch it on any bundle-mate's next deploy attempt.
 
 ### 2a. Own-PRs-Only Check
 
-Get the current agent's own GH login and verify the PR was authored by the agent:
+Get the current agent's own canonical GH login (via the login-identity helper — the REST `/user` endpoint 403s under installation tokens) and verify the PR was authored by the agent:
 
 ```bash
-AGENT_LOGIN=$(gh api user --jq '.login')
+AGENT_LOGIN=$(bun run "${CLAUDE_PLUGIN_ROOT}/scripts/login-identity.ts")
 PR_META=$(gh pr view {pr} --repo {org}/{repo} --json author,title,headRefName)
 PR_AUTHOR=$(jq -r '.author.login' <<< "$PR_META")
 PR_TITLE=$(jq -r '.title' <<< "$PR_META")
 PR_HEAD_REF=$(jq -r '.headRefName' <<< "$PR_META")
 ```
 
-If `PR_AUTHOR != AGENT_LOGIN`, this PR was not authored by the current agent — skip it silently and stop. Only PRs we authored go through this deploy pipeline. Respond `[silent]`.
+Compare canonical forms on both sides — `gh pr view` reports a bot as `app/<slug>`, which `AGENT_LOGIN` never carries:
+
+```bash
+PR_AUTHOR_CANON=$(printf '%s' "$PR_AUTHOR" | sed -E 's#^app/##; s#\[bot\]$##' | tr '[:upper:]' '[:lower:]')
+```
+
+If `PR_AUTHOR_CANON != AGENT_LOGIN`, this PR was not authored by the current agent — skip it silently and stop. Only PRs we authored go through this deploy pipeline. Respond `[silent]`.
 
 `PR_AUTHOR`/`PR_TITLE`/`PR_HEAD_REF` are reused unchanged by the `/prs/claim` call in Step 4a
 below so `/prs/claim` can derive `origin` server-side (POM-1.2) — since deploy only ever
@@ -1151,7 +1157,7 @@ Stamp `origin: "shipwright"` on the revert PR's task-store record directly, usin
 TASK_IDS/PR_RECORD_ID PATCH calls below — first-write-wins semantics on `origin` mean this
 survives any later reconciler/census-sweep pass, so the census sweep no longer has to guess
 this PR's origin from author/task-row heuristics (see docs/metrics.md's Historical-accuracy
-caveat):
+caveat). `authorLogin` is sent as `PR_AUTHOR` — the raw `gh pr view` form (`app/<slug>` for a bot), not the canonical `AGENT_LOGIN` — so it keeps matching existing records:
 
 ```bash
 curl -sf -X POST \
@@ -1161,7 +1167,7 @@ curl -sf -X POST \
   -d "$(jq -n \
         --arg repo "{org}/{repo}" \
         --argjson prNumber "$REVERT_PR_NUMBER" \
-        --arg authorLogin "$AGENT_LOGIN" \
+        --arg authorLogin "$PR_AUTHOR" \
         --arg headRef "revert/canary-{task_id_or_pr}" \
         --arg title "revert: canary failure — PR #{pr}" \
         '[{repo: $repo, prNumber: $prNumber, origin: "shipwright", state: "open", authorLogin: $authorLogin, headRef: $headRef, title: $title}]')" | jq .

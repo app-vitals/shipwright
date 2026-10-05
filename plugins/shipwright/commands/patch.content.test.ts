@@ -67,7 +67,8 @@ describe("patch.md — patch-author allowlist (PAS-1.1)", () => {
     const step2Idx = content.indexOf("## Step 2: Resolve Target PR");
     expect(step2Idx).toBeGreaterThan(-1);
     const step1Section = content.slice(step1Idx, step2Idx);
-    expect(step1Section).toContain("CURRENT_USER=$(gh api /user -q '.login')");
+    expect(step1Section).toContain("CURRENT_USER=$(bun run");
+    expect(step1Section).toContain("scripts/login-identity.ts");
     expect(step1Section).toContain("/agents/$SHIPWRIGHT_AGENT_ID/config");
     expect(step1Section).toContain("patchAuthorAllowlist");
     expect(step1Section).toContain("PATCH_AUTHOR_ALLOWLIST");
@@ -105,9 +106,8 @@ describe("patch.md — patch-author allowlist (PAS-1.1)", () => {
     const step2_5Idx = content.indexOf("## Step 2.5:");
     const step2Section = content.slice(step2Idx, step2_5Idx);
     // The mechanical check must be shown, not just described in prose.
-    expect(step2Section).toContain(
-      `jq -e --arg a "$PR_AUTHOR" 'any(.[]; . == $a)'`,
-    );
+    expect(step2Section).toContain(`jq -e --arg a "$PR_AUTHOR_CANON"`);
+    expect(step2Section).toContain("any(.[]; canon == $a)");
     // And the unsafe substring alternative must be called out as forbidden.
     expect(step2Section).toContain(
       `[[ "$PATCH_AUTHOR_ALLOWLIST" == *"$PR_AUTHOR"* ]]`,
@@ -2871,7 +2871,9 @@ describe("patch.md — Step 2.2 dispatches the phase-methodology-configured suba
     expect(section).toContain(
       'curl -sf -H "Authorization: Bearer $SHIPWRIGHT_AGENT_API_KEY"',
     );
-    expect(section).toContain("$SHIPWRIGHT_API_URL/agents/$SHIPWRIGHT_AGENT_ID/config");
+    expect(section).toContain(
+      "$SHIPWRIGHT_API_URL/agents/$SHIPWRIGHT_AGENT_ID/config",
+    );
     expect(section).toContain(".phaseMethodology.patch");
   });
 
@@ -2892,12 +2894,18 @@ describe("patch.md — Step 2.2 dispatches the phase-methodology-configured suba
     const lower = section.toLowerCase();
     expect(lower).toMatch(/fail-soft|best-effort/);
     expect(lower).toContain("never a hard stop");
-    expect(lower).toContain("with no config set, patch behaves identically to today");
+    expect(lower).toContain(
+      "with no config set, patch behaves identically to today",
+    );
   });
 
   it("all three dispatch sites (Steps 4b/5b/6c) pass subagent_type PATCH_SUBAGENT_TYPE, not a hardcoded general-purpose literal", () => {
-    expect(content).not.toContain("Dispatch a `general-purpose` subagent via the Agent tool");
-    const matches = content.match(/Dispatch a `PATCH_SUBAGENT_TYPE` subagent via the Agent tool/g);
+    expect(content).not.toContain(
+      "Dispatch a `general-purpose` subagent via the Agent tool",
+    );
+    const matches = content.match(
+      /Dispatch a `PATCH_SUBAGENT_TYPE` subagent via the Agent tool/g,
+    );
     expect(matches).not.toBeNull();
     expect(matches?.length).toBe(3);
   });
@@ -2922,7 +2930,9 @@ describe("patch.md — Step 2.2 dispatches the phase-methodology-configured suba
     expect(section).toContain("#### Unparseable or Failed Dispatch (PTM-1.2)");
     expect(section.toLowerCase()).toContain("dispatch itself fails");
     expect(section.toLowerCase()).toContain("invalid/nonexistent");
-    expect(section).toContain("retry once with the same\n`PATCH_SUBAGENT_TYPE`");
+    expect(section).toContain(
+      "retry once with the same\n`PATCH_SUBAGENT_TYPE`",
+    );
     expect(section).toContain("**Built-in default**");
     expect(section).toContain("**Configured override**");
     expect(section).toContain("RVM-1.2");
@@ -2968,7 +2978,7 @@ describe("patch.md — Step 2.2 dispatches the phase-methodology-configured suba
       const section = content.slice(startIdx, endIdx);
       expect(section).toContain("**No parseable STATUS**");
       expect(section).toContain(
-        "see Step 2.2's \"Unparseable or Failed Dispatch\" handling above",
+        'see Step 2.2\'s "Unparseable or Failed Dispatch" handling above',
       );
     }
   });
