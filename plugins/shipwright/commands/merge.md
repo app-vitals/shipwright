@@ -52,14 +52,20 @@ todos update will be performed.
 
 ### 1a. Own-PRs-Only Check
 
-Get the current agent's own GH login and verify the PR was authored by the agent:
+Get the current agent's own canonical GH login (via the login-identity helper — the REST `/user` endpoint 403s under installation tokens) and verify the PR was authored by the agent:
 
 ```bash
-AGENT_LOGIN=$(gh api user --jq '.login')
+AGENT_LOGIN=$(bun run "${CLAUDE_PLUGIN_ROOT}/scripts/login-identity.ts")
 PR_AUTHOR=$(gh pr view {pr} --repo {org}/{repo} --json author --jq '.author.login')
 ```
 
-If `PR_AUTHOR != AGENT_LOGIN`, this PR was not authored by the current agent — skip it silently and stop. Only PRs we authored go through this merge command.
+Compare canonical forms on both sides — `gh pr view` reports a bot as `app/<slug>`, which `AGENT_LOGIN` never carries:
+
+```bash
+PR_AUTHOR_CANON=$(printf '%s' "$PR_AUTHOR" | sed -E 's#^app/##; s#\[bot\]$##' | tr '[:upper:]' '[:lower:]')
+```
+
+If `PR_AUTHOR_CANON != AGENT_LOGIN`, this PR was not authored by the current agent — skip it silently and stop. Only PRs we authored go through this merge command.
 
 Print:
 ```

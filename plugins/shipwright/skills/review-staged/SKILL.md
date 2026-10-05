@@ -38,10 +38,13 @@ fix (those records had their verdict omitted from the staging PATCH).
 
 If no staged records exist across all repos: print `No staged reviews. Run /shipwright:review to stage some.` and stop.
 
-Resolve the current GitHub user once and remember it for the rest of the run:
+Resolve the current GitHub identity once and remember it for the rest of the run. This is the
+canonical login (`app/` prefix and `[bot]` suffix stripped, lowercased) from the shared
+login-identity helper — the REST `/user` endpoint 403s under installation tokens — so compare it against
+canonicalized author logins:
 
 ```bash
-gh api /user -q '.login'
+bun run "${CLAUDE_PLUGIN_ROOT}/scripts/login-identity.ts"
 ```
 
 ---

@@ -107,12 +107,17 @@ Policy: {staging|auto-posting} reviews
 
 ## Step 3: Resolve Current User and Target
 
-Resolve the current GitHub CLI user once and remember the value — substitute it directly
-into all subsequent commands that need it:
+Resolve the current GitHub identity once and remember the value — substitute it directly
+into all subsequent commands that need it. This is the **canonical** login (`app/` prefix and
+`[bot]` suffix stripped, lowercased) from the shared login-identity helper, which resolves it
+via GraphQL `viewer` — the REST `/user` endpoint 403s under installation tokens:
 
 ```bash
-gh api /user -q '.login'
+bun run "${CLAUDE_PLUGIN_ROOT}/scripts/login-identity.ts"
 ```
+
+Every comparison against `CURRENT_USER` below compares canonical forms on both sides —
+canonicalize `author.login` / `PR_AUTHOR` the same way before testing equality.
 
 Staged reviews (`staged: true` records) are entirely out of scope for this command —
 listing, walking, and posting them is owned exclusively by `/shipwright:review-staged`.
@@ -1087,7 +1092,7 @@ Follow `references/post-review-guide.md` for the full mechanics.
 
 **The event/verdict decision is mechanical, not freehand.** Three inputs are already computed
 by this point in the procedure:
-- `selfReview` = `true` if `PR_AUTHOR == CURRENT_USER` (captured in Step 5 from the PR
+- `selfReview` = `true` if canonical `PR_AUTHOR == CURRENT_USER` (captured in Step 5 from the PR
   metadata's `author.login`), else `false`.
 - `unaddressedFindings` = the boolean Step 9.5's hard gate computed (real unresolved findings
   from BEFORE this review pass — unresolved prior GitHub review threads/comments — present at
