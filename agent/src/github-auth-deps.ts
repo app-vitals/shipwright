@@ -10,6 +10,7 @@
 
 import { join } from "node:path";
 import { createGitHubTokenManager, getBotIdentity } from "./github-app-auth.ts";
+import { writeTokenFiles } from "./gh-token-files.ts";
 import type { GitHubAuthDeps } from "./setup-github-auth.ts";
 
 /**
@@ -37,7 +38,7 @@ export function buildGitHubAuthDeps(
       return { status: proc.exitCode };
     },
     writeToken: (token: string) => {
-      Bun.write(tokenPath, token);
+      writeTokenFiles(agentHome, { defaultToken: token });
     },
     tokenPath,
     credentialHelperPath: join(scriptsBin, "git-credential-shipwright.sh"),
