@@ -7,12 +7,16 @@
  */
 
 import { describe, expect, it } from "bun:test";
+import { createAgentReposRef } from "./agent-repos-ref.ts";
 import {
   createGitHubAuthActiveRef,
   createGitHubAuthStartGuard,
+  createGitHubInstallationsManagerRef,
   githubAuthActiveRef,
   hasGitHubAppCredentials,
+  reconcileGitHubInstallations,
   type StartGitHubAuthDeps,
+  scopeOwnersOf,
   startGitHubAuthIfPossible,
 } from "./github-auth-startup.ts";
 
@@ -40,6 +44,7 @@ function buildFakeDeps(envOverrides?: Record<string, string | undefined>) {
     markActive: () => activeRef.setActive(true),
     setupGitHubAuth: async () => {
       calls.setupGitHubAuth++;
+      return true;
     },
     guard,
   };
@@ -58,13 +63,13 @@ describe("hasGitHubAppCredentials", () => {
     ).toBe(false);
   });
 
-  it("is false when GH_APP_INSTALLATION_ID is missing", () => {
+  it("is true when GH_APP_INSTALLATION_ID is missing (the installation id is an optional pin)", () => {
     expect(
       hasGitHubAppCredentials({
         ...COMPLETE_ENV,
         GH_APP_INSTALLATION_ID: undefined,
       }),
-    ).toBe(false);
+    ).toBe(true);
   });
 
   it("is false when GH_APP_PRIVATE_KEY is missing", () => {
@@ -122,15 +127,42 @@ describe("startGitHubAuthIfPossible", () => {
     expect(calls.setupGitHubAuth).toBe(0);
   });
 
-  it("a tick with incomplete credentials (missing GH_APP_INSTALLATION_ID) does not attempt setup", async () => {
+  it("a tick with App id + key but no GH_APP_INSTALLATION_ID pin attempts setup (discovery may find installations)", async () => {
     const { deps, calls } = buildFakeDeps({
       GH_APP_INSTALLATION_ID: undefined,
     });
 
     const started = await startGitHubAuthIfPossible(deps);
 
-    expect(started).toBe(false);
-    expect(calls.setupGitHubAuth).toBe(0);
+    expect(started).toBe(true);
+    expect(calls.setupGitHubAuth).toBe(1);
+  });
+
+  it("setup that does not activate App auth (e.g. zero installations) is not marked active and is retried next tick", async () => {
+    const { deps, calls, activeRef, guard } = buildFakeDeps({
+      GH_APP_INSTALLATION_ID: undefined,
+    });
+    deps.setupGitHubAuth = async () => {
+      calls.setupGitHubAuth++;
+      return false;
+    };
+
+    expect(await startGitHubAuthIfPossible(deps)).toBe(false);
+    expect(activeRef.isActive()).toBe(false);
+    expect(guard.isInFlight()).toBe(false);
+
+    expect(await startGitHubAuthIfPossible(deps)).toBe(false);
+    expect(calls.setupGitHubAuth).toBe(2);
+
+    // Installations appear later: setup activates exactly once, then stops.
+    deps.setupGitHubAuth = async () => {
+      calls.setupGitHubAuth++;
+      return true;
+    };
+    expect(await startGitHubAuthIfPossible(deps)).toBe(true);
+    expect(await startGitHubAuthIfPossible(deps)).toBe(false);
+    expect(calls.setupGitHubAuth).toBe(3);
+    expect(activeRef.isActive()).toBe(true);
   });
 
   it("a tick with incomplete credentials (missing GH_APP_PRIVATE_KEY) does not attempt setup", async () => {
@@ -165,6 +197,7 @@ describe("startGitHubAuthIfPossible", () => {
     deps.setupGitHubAuth = async () => {
       await setupGate;
       calls.setupGitHubAuth++;
+      return true;
     };
 
     const firstCall = startGitHubAuthIfPossible(deps);
@@ -199,6 +232,7 @@ describe("startGitHubAuthIfPossible", () => {
     // Retry with working deps — should succeed since setup never actually completed.
     deps.setupGitHubAuth = async () => {
       calls.setupGitHubAuth++;
+      return true;
     };
     const started = await startGitHubAuthIfPossible(deps);
     expect(started).toBe(true);
@@ -241,5 +275,51 @@ describe("githubAuthActiveRef (process-wide singleton)", () => {
 
     // Reset the process-wide singleton so this test doesn't leak state into siblings.
     githubAuthActiveRef.setActive(false);
+  });
+});
+
+describe("scopeOwnersOf", () => {
+  it("is null while scope has never synced (pinned-only)", () => {
+    expect(scopeOwnersOf(createAgentReposRef())).toBeNull();
+  });
+
+  it("returns the unique, lowercased owners of the synced repos", () => {
+    const ref = createAgentReposRef();
+    ref.set(["Acme/api", "acme/web", "Other/tool"]);
+    expect(scopeOwnersOf(ref)).toEqual(["acme", "other"]);
+  });
+
+  it("is an empty list (not null) when synced to an empty scope", () => {
+    const ref = createAgentReposRef();
+    ref.set([]);
+    expect(scopeOwnersOf(ref)).toEqual([]);
+  });
+});
+
+describe("reconcileGitHubInstallations", () => {
+  it("is a no-op when no installations manager is active", async () => {
+    const managerRef = createGitHubInstallationsManagerRef();
+    const reposRef = createAgentReposRef();
+    reposRef.set(["acme/api"]);
+    await expect(
+      reconcileGitHubInstallations(managerRef, reposRef),
+    ).resolves.toBe(false);
+  });
+
+  it("reconciles the active manager against the current scope owners", async () => {
+    const managerRef = createGitHubInstallationsManagerRef();
+    const reposRef = createAgentReposRef();
+    const seen: (string[] | null)[] = [];
+    managerRef.set({
+      reconcile: async (owners) => {
+        seen.push(owners);
+      },
+    });
+
+    expect(await reconcileGitHubInstallations(managerRef, reposRef)).toBe(true);
+    reposRef.set(["Acme/api"]);
+    expect(await reconcileGitHubInstallations(managerRef, reposRef)).toBe(true);
+
+    expect(seen).toEqual([null, ["acme"]]);
   });
 });

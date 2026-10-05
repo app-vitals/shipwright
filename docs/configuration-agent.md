@@ -63,9 +63,9 @@ Provide either the GitHub App vars (recommended) or `GH_TOKEN` (PAT). App auth i
 
 | Name | Type | Default | Description |
 |---|---|---|---|
-| `GH_APP_ID` | `string` | required for App auth | GitHub App ID (integer as string). Settable via the admin UI agent detail page's "Set up GitHub App" action (UAP-2.3) or as an env var. Env-var-only (secret). |
-| `GH_APP_INSTALLATION_ID` | `string` | required for App auth | Installation ID for the target org/repo. Env-var-only (secret). |
-| `GH_APP_PRIVATE_KEY` | `string` | required for App auth | PEM private key for the GitHub App (newlines may be `\n`-escaped). Env-var-only (secret). |
+| `GH_APP_ID` | `string` | required for App auth | GitHub App ID (integer as string). With `GH_APP_PRIVATE_KEY`, enables App auth; `GH_APP_INSTALLATION_ID` is an optional pin. Settable via the admin UI agent detail page's "Set up GitHub App" action (UAP-2.3) or as an env var. Env-var-only (secret). |
+| `GH_APP_INSTALLATION_ID` | `string` | — (optional pin) | Optional pin: an installation ID that is always used (and is the default `gh-token` installation) even before repo scope syncs. Without it, the agent discovers the App's installations and uses those whose owner is in the agent's repo scope; App auth engages only if the pin is set or at least one usable installation is found, otherwise the `GH_TOKEN` PAT path (if set) runs and discovery retries each config-sync tick. Env-var-only (secret). |
+| `GH_APP_PRIVATE_KEY` | `string` | required for App auth | PEM private key for the GitHub App (newlines may be `\n`-escaped). Required with `GH_APP_ID`; `GH_APP_INSTALLATION_ID` is an optional pin. Env-var-only (secret). |
 | `GH_APP_CLIENT_ID` | `string` | — | OAuth client ID for the GitHub App, persisted from the manifest-flow exchange so the App's OAuth settings can be reconfigured later without redoing the manifest flow. Env-var-only (not secret). |
 | `GH_APP_CLIENT_SECRET` | `string` | — | OAuth client secret for the GitHub App, persisted from the manifest-flow exchange. Env-var-only (secret). |
 | `GH_TOKEN` | `string` | — | Personal Access Token. Settable via the admin UI agent detail page's "Add GitHub PAT" action (UAP-2.3) or as an env var. Used only when GitHub App vars are absent. Env-var-only (secret). |
