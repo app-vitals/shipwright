@@ -25,6 +25,7 @@
 // are both optional. `prAuthor` defaults to `currentUser` when absent, same
 // as compute-unaddressed-findings.ts's RAS-1.1 convention.
 
+import { canonicalLogin } from "./login-identity.ts";
 import {
   type IssueCommentNode,
   type ReviewNode,
@@ -173,7 +174,7 @@ export function computeUnresolvedCommentCheck(
   const hasUnresolvedChangesRequestedReview = input.reviews.nodes.some(
     (r) =>
       r.state === "CHANGES_REQUESTED" &&
-      r.author.login !== currentUser &&
+      canonicalLogin(r.author.login) !== canonicalLogin(currentUser) &&
       !isBotOrCiAuthor(r.author) &&
       r.commit.oid === headRefOid &&
       !isAddressedByAuthorReply(r, input.comments.nodes, prAuthor),
@@ -181,8 +182,8 @@ export function computeUnresolvedCommentCheck(
 
   const hasSubstantiveUnresolvedComment = input.comments.nodes.some(
     (c) =>
-      c.author.login !== currentUser &&
-      c.author.login !== prAuthor &&
+      canonicalLogin(c.author.login) !== canonicalLogin(currentUser) &&
+      canonicalLogin(c.author.login) !== canonicalLogin(prAuthor) &&
       !isBotOrCiAuthor(c.author) &&
       !isTrivialAcknowledgement(c.body) &&
       new Date(c.createdAt).getTime() > lastPushAt &&
@@ -198,8 +199,8 @@ export function computeUnresolvedCommentCheck(
     if (!first) return false;
     return (
       !t.isResolved &&
-      first.author.login !== currentUser &&
-      first.author.login !== prAuthor &&
+      canonicalLogin(first.author.login) !== canonicalLogin(currentUser) &&
+      canonicalLogin(first.author.login) !== canonicalLogin(prAuthor) &&
       !isBotOrCiAuthor(first.author) &&
       !isThreadAddressedByAuthorReply(t, prAuthor)
     );

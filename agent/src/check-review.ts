@@ -59,6 +59,7 @@ import type { PrReviewData } from "./check-patch.ts";
 import type { ReviewAuthorAllowlistRef } from "./review-author-allowlist-ref.ts";
 import { reviewAuthorAllowlistRef } from "./review-author-allowlist-ref.ts";
 import type { WorkPrCandidate } from "./work-selector.ts";
+import { canonicalLogin } from "../../plugins/shipwright/scripts/login-identity.ts";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -169,14 +170,14 @@ export function hasFreshNonAgentComment(
   const hasFreshTopLevelReply =
     reviewData?.comments.nodes.some(
       (c) =>
-        c.author.login !== currentUser &&
+        canonicalLogin(c.author.login) !== canonicalLogin(currentUser) &&
         new Date(c.createdAt).getTime() > reviewedAtMs,
     ) ?? false;
   const hasFreshThreadReply =
     reviewData?.reviewThreads.nodes.some((t) =>
       t.comments.nodes.some(
         (c) =>
-          c.author.login !== currentUser &&
+          canonicalLogin(c.author.login) !== canonicalLogin(currentUser) &&
           c.createdAt !== undefined &&
           new Date(c.createdAt).getTime() > reviewedAtMs,
       ),
@@ -519,11 +520,11 @@ export async function getReviewCandidates(
     // either — DBR-3.3 removed that pre-filter, so they now fall through to
     // the isAuthorAllowed gate below like any other author.
     const isRequestedReviewer =
-      pr.reviewRequests?.some((r) => r.login === currentUser) ?? false;
+      pr.reviewRequests?.some((r) => canonicalLogin(r.login) === canonicalLogin(currentUser)) ?? false;
 
     if (
       !(await deps.isSelfReviewAllowed()) &&
-      pr.author.login === currentUser &&
+      canonicalLogin(pr.author.login) === canonicalLogin(currentUser) &&
       !isRequestedReviewer
     ) {
       logSkippedCandidacy(pr, {

@@ -597,7 +597,9 @@ describe("review.md — Step 14 live-review pre-check (RVD-1.2)", () => {
     );
     const section = step14Section.slice(preCheckIdx, fastPathIdx);
 
-    expect(section).toContain(".author.login != $currentUser");
+    expect(section).toContain(
+      "(.author.login | canon) != ($currentUser | canon)",
+    );
     expect(section).not.toContain(".author.login == $pr.author.login");
   });
 
