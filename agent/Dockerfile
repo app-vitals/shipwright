@@ -25,7 +25,7 @@
 # setup script through bash — that endpoint intermittently 403s in CI,
 # blocking every build. node:22-trixie-slim matches oven/bun:1-slim's Debian
 # release (trixie) so the copied binary is glibc-compatible.
-FROM node:22-trixie-slim AS node-source
+FROM node:24-trixie-slim AS node-source
 
 # ─── Base: system tooling installed as root ───────────────────────────────────
 
