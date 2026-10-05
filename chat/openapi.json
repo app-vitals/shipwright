@@ -724,8 +724,8 @@
         "tags": [
           "messages"
         ],
-        "summary": "Stream a message's attachment (ephemeral — cleared after read)",
-        "description": "Streams the stored `attachmentBytes` once with `Content-Type: application/octet-stream` and a `Content-Disposition` header set to the message's `attachmentFilename`. Ephemeral retention: after the bytes are served, they are dropped from the row (`clearAttachmentBytes`), so the content is not retained once the agent has pulled it into its workspace — a second call returns 404 (no attachment). Also 404 if the thread or message doesn't exist.",
+        "summary": "Stream a message's attachment (ephemeral for user messages — cleared after read)",
+        "description": "Streams the stored `attachmentBytes` once with `Content-Type: application/octet-stream` and a `Content-Disposition` header set to the message's `attachmentFilename`. Ephemeral retention applies only to `role: \"user\"` messages: after the bytes are served, they are dropped from the row (`clearAttachmentBytes`), so the content is not retained once the agent has pulled it into its workspace — a second call returns 404 (no attachment). `role: \"assistant\"` attachments are retained instead — the bytes stay on the row and can be fetched repeatedly (e.g. a member re-downloading a report from the chat UI). Also 404 if the thread or message doesn't exist.",
         "parameters": [
           {
             "schema": {
@@ -1166,6 +1166,35 @@
           }
         }
       },
+      "ThreadListResponse": {
+        "type": "object",
+        "properties": {
+          "threads": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Thread"
+            }
+          },
+          "total": {
+            "type": "integer",
+            "example": 10
+          },
+          "limit": {
+            "type": "integer",
+            "example": 50
+          },
+          "offset": {
+            "type": "integer",
+            "example": 0
+          }
+        },
+        "required": [
+          "threads",
+          "total",
+          "limit",
+          "offset"
+        ]
+      },
       "Thread": {
         "type": "object",
         "properties": {
@@ -1207,35 +1236,6 @@
           "agentId",
           "createdAt",
           "updatedAt"
-        ]
-      },
-      "ThreadListResponse": {
-        "type": "object",
-        "properties": {
-          "threads": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/Thread"
-            }
-          },
-          "total": {
-            "type": "integer",
-            "example": 10
-          },
-          "limit": {
-            "type": "integer",
-            "example": 50
-          },
-          "offset": {
-            "type": "integer",
-            "example": 0
-          }
-        },
-        "required": [
-          "threads",
-          "total",
-          "limit",
-          "offset"
         ]
       },
       "CreateThreadBody": {
@@ -1303,6 +1303,35 @@
             "example": "member-id-123"
           }
         }
+      },
+      "MessageListResponse": {
+        "type": "object",
+        "properties": {
+          "messages": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Message"
+            }
+          },
+          "total": {
+            "type": "integer",
+            "example": 10
+          },
+          "limit": {
+            "type": "integer",
+            "example": 50
+          },
+          "offset": {
+            "type": "integer",
+            "example": 0
+          }
+        },
+        "required": [
+          "messages",
+          "total",
+          "limit",
+          "offset"
+        ]
       },
       "Message": {
         "type": "object",
@@ -1434,35 +1463,6 @@
           "role",
           "body",
           "createdAt"
-        ]
-      },
-      "MessageListResponse": {
-        "type": "object",
-        "properties": {
-          "messages": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/Message"
-            }
-          },
-          "total": {
-            "type": "integer",
-            "example": 10
-          },
-          "limit": {
-            "type": "integer",
-            "example": 50
-          },
-          "offset": {
-            "type": "integer",
-            "example": 0
-          }
-        },
-        "required": [
-          "messages",
-          "total",
-          "limit",
-          "offset"
         ]
       },
       "CreateMessageBody": {

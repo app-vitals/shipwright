@@ -664,7 +664,7 @@ export const PhaseParamSchema = z.object({
  */
 export const AgentEnvResponseSchema = z
   .object({
-    env: z.record(z.string()).openapi({ example: { MY_VAR: "value" } }),
+    env: z.record(z.string(), z.string()).openapi({ example: { MY_VAR: "value" } }),
     secretKeys: z.array(z.string()).openapi({ example: ["MY_SECRET"] }),
   })
   .openapi("AgentEnvResponse");
@@ -672,7 +672,7 @@ export const AgentEnvResponseSchema = z
 /**
  * POST /agents/:id/envs body — a plain key/value map (full replace).
  */
-export const AgentEnvBodySchema = z.record(z.string()).openapi("AgentEnvBody");
+export const AgentEnvBodySchema = z.record(z.string(), z.string()).openapi("AgentEnvBody");
 
 /**
  * PATCH /agents/:id/envs body — partial update with optional secret designation.
@@ -681,7 +681,7 @@ export const AgentEnvBodySchema = z.record(z.string()).openapi("AgentEnvBody");
  */
 export const AgentEnvPatchBodySchema = z
   .object({
-    env: z.record(z.string()).openapi({ example: { MY_VAR: "value" } }),
+    env: z.record(z.string(), z.string()).openapi({ example: { MY_VAR: "value" } }),
     secretKeys: z
       .array(z.string())
       .optional()
@@ -988,7 +988,7 @@ const AgentConfigPluginSchema = z
 export const AgentConfigResponseSchema = z
   .object({
     env: z
-      .record(z.string())
+      .record(z.string(), z.string())
       .openapi({ example: { SLACK_BOT_TOKEN: "xoxb-..." } }),
     allowedTools: z.array(z.string()).openapi({ example: ["Read", "Write"] }),
     plugins: z.array(AgentConfigPluginSchema),
@@ -1025,7 +1025,7 @@ export const AgentConfigResponseSchema = z
      * phases (see AGENT_PHASES) regardless of whether the agent has an
      * explicit override row for each — phases without a row default to null.
      */
-    phaseMethodology: z.record(z.string().nullable()).openapi({
+    phaseMethodology: z.record(z.string(), z.string().nullable()).openapi({
       example: {
         prd: null,
         "plan-session": null,

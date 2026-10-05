@@ -26,6 +26,8 @@ type PackageRule = {
   matchPackageNames?: string[];
   followTag?: string;
   groupName?: string;
+  matchUpdateTypes?: string[];
+  separateMajorMinor?: boolean;
   schedule?: unknown;
 };
 
@@ -116,5 +118,33 @@ describe("renovate.json claude-code packageRule", () => {
     expect(config.schedule).toEqual(["before 6am on monday"]);
     expect(rules()[claudeRuleIndex()].schedule).toBeUndefined();
     expect(claudeCodeManager().schedule).toBeUndefined();
+  });
+});
+
+describe("renovate.json zod / @hono/zod-openapi group rule (ZOD-1.1)", () => {
+  const rules = () => loadConfig().packageRules ?? [];
+  const zodRuleIndex = () =>
+    rules().findIndex((r) => (r.matchPackageNames ?? []).includes("zod"));
+
+  it("groups zod and @hono/zod-openapi into one PR", () => {
+    const rule = rules()[zodRuleIndex()];
+    expect(rule).toBeDefined();
+    expect(rule.matchPackageNames).toContain("@hono/zod-openapi");
+    expect(rule.groupName).toBeTruthy();
+    expect(rule.groupName).not.toBe(GENERIC_GROUP);
+  });
+
+  it("is declared after the generic grouping rule so minor/patch bumps stay paired too", () => {
+    const genericIndex = rules().findIndex(
+      (r) => r.groupName === GENERIC_GROUP,
+    );
+    expect(zodRuleIndex()).toBeGreaterThan(genericIndex);
+  });
+
+  it("covers major updates (no matchUpdateTypes filter that would exclude them, majors not split out)", () => {
+    const rule = rules()[zodRuleIndex()];
+    const types = rule.matchUpdateTypes;
+    expect(types === undefined || types.includes("major")).toBe(true);
+    expect(rule.separateMajorMinor).toBe(false);
   });
 });
