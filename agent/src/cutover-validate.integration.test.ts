@@ -179,12 +179,12 @@ describe("validateCutover", () => {
     expect(names).not.toContain("SLACK_BOT_TOKEN");
   });
 
-  it("fails when GH_APP_INSTALLATION_ID is missing (partial App creds)", async () => {
+  it("passes with App id + key and no GH_APP_INSTALLATION_ID (the installation id is an optional pin)", async () => {
     const env: Record<string, string> = {
       SLACK_BOT_TOKEN: "xoxb-test-token",
       GH_APP_ID: "12345",
       GH_APP_PRIVATE_KEY: "some-key",
-      // GH_APP_INSTALLATION_ID intentionally omitted
+      // GH_APP_INSTALLATION_ID intentionally omitted — discovered at runtime
     };
     const client = new RecordedShipwrightConfigClient(makeConfig(env), [
       makeCron("cron-1"),
@@ -192,7 +192,23 @@ describe("validateCutover", () => {
     const results = await validateCutover(client, AGENT_ID);
     const githubCheck = results.find((r) => r.name === "github_auth");
     expect(githubCheck).toBeDefined();
+    expect(githubCheck?.passed).toBe(true);
+  });
+
+  it("fails when GH_APP_PRIVATE_KEY is missing (partial App creds)", async () => {
+    const env: Record<string, string> = {
+      SLACK_BOT_TOKEN: "xoxb-test-token",
+      GH_APP_ID: "12345",
+      GH_APP_INSTALLATION_ID: "67890",
+    };
+    const client = new RecordedShipwrightConfigClient(makeConfig(env), [
+      makeCron("cron-1"),
+    ]);
+    const results = await validateCutover(client, AGENT_ID);
+    const githubCheck = results.find((r) => r.name === "github_auth");
     expect(githubCheck?.passed).toBe(false);
+    expect(githubCheck?.message).toContain("GH_APP_ID + GH_APP_PRIVATE_KEY");
+    expect(githubCheck?.message).not.toContain("+ GH_APP_INSTALLATION_ID");
   });
 
   it("fails when only disabled crons are present", async () => {
