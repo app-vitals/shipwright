@@ -34,3 +34,40 @@ export function computeMissingClones(
     }))
     .filter(({ dest }) => !exists(dest));
 }
+
+export interface RepoNameCollision {
+  /** The later-listed repo — the one a sync should skip. */
+  repo: string;
+  /** The earlier-listed repo that already claimed the `repos/<name>` folder. */
+  collidesWith: string;
+}
+
+function splitRepo(repo: string): { owner: string; name: string } {
+  const i = repo.lastIndexOf("/");
+  return {
+    owner: repo.slice(0, i).toLowerCase(),
+    name: repo.slice(i + 1).toLowerCase(),
+  };
+}
+
+/**
+ * Reports repos whose basename matches an earlier-listed repo under a
+ * different owner (case-insensitive). `repos/<name>` is keyed by basename
+ * alone, so two such repos would share one folder and a clone/push could
+ * land on the wrong customer's repo. The later-listed repo is the collider;
+ * identical repos (same owner and name) are not collisions.
+ */
+export function findRepoNameCollisions(repos: string[]): RepoNameCollision[] {
+  const firstByName = new Map<string, { repo: string; owner: string }>();
+  const collisions: RepoNameCollision[] = [];
+  for (const repo of repos) {
+    const { owner, name } = splitRepo(repo);
+    const first = firstByName.get(name);
+    if (!first) {
+      firstByName.set(name, { repo, owner });
+    } else if (first.owner !== owner) {
+      collisions.push({ repo, collidesWith: first.repo });
+    }
+  }
+  return collisions;
+}

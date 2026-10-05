@@ -6,7 +6,7 @@
  */
 
 import { describe, expect, test } from "bun:test";
-import { computeMissingClones } from "./clone-plan.ts";
+import { computeMissingClones, findRepoNameCollisions } from "./clone-plan.ts";
 
 describe("computeMissingClones", () => {
   test("returns [] for an empty repos list", () => {
@@ -44,5 +44,26 @@ describe("computeMissingClones", () => {
     expect(missing).toEqual([
       { repo: "some-org/other-repo", dest: "/ws/repos/other-repo" },
     ]);
+  });
+});
+
+describe("findRepoNameCollisions", () => {
+  test("reports the later-listed same-basename repo under a different owner", () => {
+    expect(
+      findRepoNameCollisions(["acme/api", "other/web", "globex/api"]),
+    ).toEqual([{ repo: "globex/api", collidesWith: "acme/api" }]);
+  });
+
+  test("is case-insensitive on owner and name", () => {
+    expect(findRepoNameCollisions(["Acme/API", "globex/api"])).toEqual([
+      { repo: "globex/api", collidesWith: "Acme/API" },
+    ]);
+    expect(findRepoNameCollisions(["Acme/api", "acme/API"])).toEqual([]);
+  });
+
+  test("ignores identical repos and distinct names", () => {
+    expect(findRepoNameCollisions(["acme/api", "acme/api"])).toEqual([]);
+    expect(findRepoNameCollisions(["acme/api", "acme/web"])).toEqual([]);
+    expect(findRepoNameCollisions([])).toEqual([]);
   });
 });
