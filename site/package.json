@@ -14,7 +14,7 @@
     "build:check": "astro build && npm run brand-lint"
   },
   "dependencies": {
-    "@astrojs/mdx": "^7.0.4",
+    "@astrojs/mdx": "^8.0.0",
     "@astrojs/sitemap": "^3.7.3",
     "@astrojs/tailwind": "^6.0.2",
     "astro": "^7.2.8",
