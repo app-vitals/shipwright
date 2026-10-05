@@ -161,6 +161,26 @@ describe("GitHubInstallationsManager", () => {
     expect(h.mintCalls).toHaveLength(0);
   });
 
+  it("recovers a suspended installation after it is unsuspended", async () => {
+    const h = makeHarness();
+    h.setInstalls([{ id: 1, owner: "a", suspended: true }]);
+    await h.manager.reconcile(["a"]);
+    await h.manager.refresh();
+    expect(h.manager.getState().installations[0]).toMatchObject({
+      health: "broken",
+      reason: "suspended",
+    });
+    h.setInstalls([{ id: 1, owner: "a" }]);
+    await h.manager.reconcile(["a"]);
+    await h.manager.refresh();
+    expect(h.manager.getState().installations[0]).toMatchObject({
+      health: "ok",
+      reason: null,
+    });
+    expect(h.mintCalls).toEqual([1]);
+    expect(await h.manager.getToken(1)).toContain("_1_");
+  });
+
   it("marks 404/422 broken but keeps 5xx and network errors transient", async () => {
     const h = makeHarness();
     h.setInstalls([

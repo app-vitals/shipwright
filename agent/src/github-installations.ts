@@ -350,11 +350,14 @@ export class GitHubInstallationsManager {
           id: sel.id,
           owner: sel.owner,
           pinned: sel.pinned,
-          // A mint rejection is retried after a reconcile; suspension is not.
+          // A mint rejection or lifted suspension is retried after a reconcile.
           health: suspended ? "broken" : (existing?.state.health ?? "unknown"),
           reason: suspended ? "suspended" : (existing?.state.reason ?? null),
         };
-        if (!suspended && state.reason === "mint_rejected") {
+        if (
+          !suspended &&
+          (state.reason === "mint_rejected" || state.reason === "suspended")
+        ) {
           state.health = "unknown";
           state.reason = null;
         }
