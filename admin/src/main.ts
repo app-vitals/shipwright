@@ -754,6 +754,7 @@ async function startServer(): Promise<void> {
     agentCronJobService,
     agentCronRunService,
     agentWorkQueueService,
+    agentGitHubInstallationsService,
     agentToolService,
     agentTokenService,
     agentPluginService,

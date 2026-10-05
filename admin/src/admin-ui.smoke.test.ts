@@ -957,6 +957,56 @@ describe("admin UI — authenticated pages", () => {
     expect(html).toContain("admin@example.com");
   });
 
+  it("authenticated GET /admin/agents/:id renders the GitHub Installations card from the stored snapshot", async () => {
+    const reads: string[] = [];
+    const app = createAdminUIApp(
+      makeMockDeps({
+        agentGitHubInstallationsService: {
+          get: async (agentId: string) => {
+            reads.push(agentId);
+            return {
+              id: "snap-1",
+              agentId,
+              reportedAt: new Date(),
+              installations: [
+                { owner: "app-vitals", installationId: 1, state: "ok" },
+                {
+                  owner: "broken-org",
+                  installationId: 2,
+                  state: "broken",
+                  lastError: "installation suspended",
+                },
+              ],
+              createdAt: new Date(),
+            };
+          },
+        },
+      }),
+    );
+    const res = await app.request(`/admin/agents/${AGENT_ID}`, {
+      headers: { Cookie: `admin_session=${cookie}` },
+    });
+    expect(res.status).toBe(200);
+    const html = await res.text();
+    expect(html).toContain("GitHub Installations");
+    expect(html).toContain("app-vitals");
+    expect(html).toContain("installation suspended");
+    expect(reads).toEqual([AGENT_ID]);
+  });
+
+  it("authenticated GET /admin/agents/:id omits the GitHub Installations card when there is no snapshot", async () => {
+    const app = createAdminUIApp(
+      makeMockDeps({
+        agentGitHubInstallationsService: { get: async () => null },
+      }),
+    );
+    const res = await app.request(`/admin/agents/${AGENT_ID}`, {
+      headers: { Cookie: `admin_session=${cookie}` },
+    });
+    expect(res.status).toBe(200);
+    expect(await res.text()).not.toContain("GitHub Installations");
+  });
+
   it("authenticated GET /admin/agents/:id renders a Recent Verification Activity rollup from recent cron-run dispatch targets", async () => {
     const rollupLimits: number[] = [];
     const app = createAdminUIApp(
