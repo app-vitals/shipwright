@@ -177,6 +177,12 @@ describeOrSkip(
           },
           get: async () => null,
         },
+        agentGitHubInstallationsService: {
+          push: async () => {
+            throw new Error("not implemented");
+          },
+          get: async () => null,
+        },
         prisma,
         provisioner: {
           provision: async () => {

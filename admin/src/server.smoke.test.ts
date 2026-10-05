@@ -132,6 +132,10 @@ function buildComposedApp() {
       queryStats: notImplemented,
     },
     agentWorkQueueService: { push: notImplemented, get: notImplemented },
+    agentGitHubInstallationsService: {
+      push: notImplemented,
+      get: notImplemented,
+    },
     prisma: stubPrisma,
     provisioner: {
       canProvision: false,

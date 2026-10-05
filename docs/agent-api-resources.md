@@ -1,6 +1,6 @@
 # Agent Admin API — Agent Resources
 
-Per-agent resource endpoints for the [Agent Admin API](./agent-api.md): the allowed-tools list, API tokens, plugins, chat token usage, and the work-queue snapshot. See [`docs/agent-api.md`](./agent-api.md) for core agent CRUD, authentication, environment variables, and runtime config, and [`docs/agent-api-ops.md`](./agent-api-ops.md) for cron jobs and cron runs.
+Per-agent resource endpoints for the [Agent Admin API](./agent-api.md): the allowed-tools list, API tokens, plugins, chat token usage, the work-queue snapshot, and the GitHub installations snapshot. See [`docs/agent-api.md`](./agent-api.md) for core agent CRUD, authentication, environment variables, and runtime config, and [`docs/agent-api-ops.md`](./agent-api-ops.md) for cron jobs and cron runs.
 
 Base path: `/agents` (same resource as the core API — these are additional routes under it).
 
@@ -209,3 +209,44 @@ GET /agents/:id/work-queue
 ```
 
 Returns `200` with the latest pushed snapshot in the same `{ snapshot: { id, agentId, computedAt, items, createdAt } }` format, or `404` if the agent has never pushed one.
+
+---
+
+## GitHub installations snapshot
+
+One row per agent, holding the agent's most recently reported GitHub App installations. Replace-all: each `PUT` overwrites the stored list wholesale, so an installation absent from the latest body is dropped. The row is deleted when the agent is deleted. Auth is the same as the work-queue routes: an admin key/session, or the agent's own bearer token (a token owned by a different agent gets `403`).
+
+### Put snapshot
+
+```
+PUT /agents/:id/github-installations
+```
+
+Body (closed schema — any unknown field, such as a token, is rejected with `400`):
+
+| Field | Required | Description |
+|-------|----------|-------------|
+| `reportedAt` | yes | ISO timestamp when the agent reported this list |
+| `installations` | yes | Array of `{ owner: string, installationId: positive integer, state: string (max 50), lastError?: string \| null (max 500, sanitized) }`; each entry is also closed |
+
+Returns `200` with:
+
+```json
+{
+  "snapshot": {
+    "id": "string",
+    "agentId": "string",
+    "reportedAt": "ISO timestamp",
+    "installations": [{ "owner": "string", "installationId": 123, "state": "string", "lastError": "string (optional)" }],
+    "createdAt": "ISO timestamp"
+  }
+}
+```
+
+### Get snapshot
+
+```
+GET /agents/:id/github-installations
+```
+
+Returns `200` with the latest snapshot in the same `{ snapshot: { ... } }` format, or `404` if the agent has never reported one.

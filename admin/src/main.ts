@@ -30,6 +30,7 @@ import { AgentCronJobService } from "./agent-cron-jobs.ts";
 import { AgentCronRunStatsService } from "./agent-cron-run-stats.ts";
 import { AgentCronRunService } from "./agent-cron-runs.ts";
 import { AgentEnvService } from "./agent-envs.ts";
+import { AgentGitHubInstallationsService } from "./agent-github-installations.ts";
 import { AgentMemberService } from "./agent-members.ts";
 import { AgentPhaseMethodologyService } from "./agent-phase-methodology.ts";
 import { AgentPluginService } from "./agent-plugins.ts";
@@ -443,6 +444,9 @@ async function startServer(): Promise<void> {
   const agentChatTokenService = new AgentChatTokenService(prisma);
   const agentCronRunStatsService = new AgentCronRunStatsService(prisma);
   const agentWorkQueueService = new AgentWorkQueueService(prisma);
+  const agentGitHubInstallationsService = new AgentGitHubInstallationsService(
+    prisma,
+  );
 
   // Real K8s provisioner when SHIPWRIGHT_K8S_PROVISIONING=enabled, else Noop.
   const provisioner = buildProvisioner(process.env, agentTokenService);
@@ -571,6 +575,7 @@ async function startServer(): Promise<void> {
     agentTypeRegistry: new AgentTypeRegistry(),
     agentChatTokenService,
     agentWorkQueueService,
+    agentGitHubInstallationsService,
     prisma,
     provisioner,
     taskStore: deletionTaskStore,

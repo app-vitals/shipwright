@@ -2011,6 +2011,111 @@
           "items"
         ]
       },
+      "GitHubInstallation": {
+        "type": "object",
+        "properties": {
+          "owner": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200,
+            "example": "app-vitals"
+          },
+          "installationId": {
+            "type": "integer",
+            "exclusiveMinimum": 0,
+            "example": 12345678
+          },
+          "state": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 50,
+            "example": "active"
+          },
+          "lastError": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 500,
+            "description": "Sanitized last error message (max 500 chars). Must not contain credentials.",
+            "example": "installation suspended"
+          }
+        },
+        "required": [
+          "owner",
+          "installationId",
+          "state"
+        ],
+        "additionalProperties": false
+      },
+      "AgentGitHubInstallationsSnapshot": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "example": "clx1234567890"
+          },
+          "agentId": {
+            "type": "string",
+            "example": "clx1234567890"
+          },
+          "reportedAt": {
+            "type": "string",
+            "format": "date-time",
+            "example": "2026-01-01T00:00:00.000Z"
+          },
+          "installations": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/GitHubInstallation"
+            }
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time",
+            "example": "2026-01-01T00:00:00.000Z"
+          }
+        },
+        "required": [
+          "id",
+          "agentId",
+          "reportedAt",
+          "installations",
+          "createdAt"
+        ]
+      },
+      "GitHubInstallationsSnapshotWrapper": {
+        "type": "object",
+        "properties": {
+          "snapshot": {
+            "$ref": "#/components/schemas/AgentGitHubInstallationsSnapshot"
+          }
+        },
+        "required": [
+          "snapshot"
+        ]
+      },
+      "PutGitHubInstallationsBody": {
+        "type": "object",
+        "properties": {
+          "reportedAt": {
+            "type": "string",
+            "format": "date-time",
+            "example": "2026-01-01T00:00:00.000Z"
+          },
+          "installations": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/GitHubInstallation"
+            }
+          }
+        },
+        "required": [
+          "reportedAt",
+          "installations"
+        ],
+        "additionalProperties": false
+      },
       "AgentConfigPlugin": {
         "type": "object",
         "properties": {
@@ -3956,6 +4061,131 @@
           },
           "404": {
             "description": "No snapshot pushed yet",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/agents/{id}/github-installations": {
+      "put": {
+        "summary": "Replace the agent's GitHub installations snapshot",
+        "description": "Upserts the agent's single GitHub App installations snapshot (owner, installation id, state, sanitized lastError), replacing the prior list wholesale — an installation absent from the body is dropped. The body schema is closed: unknown fields (e.g. tokens) are rejected with 400.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "example": "clx1234567890"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PutGitHubInstallationsBody"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Snapshot replaced",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GitHubInstallationsSnapshotWrapper"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden — token does not own this agent",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      },
+      "get": {
+        "summary": "Get the latest GitHub installations snapshot",
+        "description": "Returns the most recently reported GitHub installations snapshot, or 404 if the agent has never reported one.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "example": "clx1234567890"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Latest GitHub installations snapshot",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GitHubInstallationsSnapshotWrapper"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden — token does not own this agent",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No snapshot reported yet",
             "content": {
               "application/json": {
                 "schema": {
