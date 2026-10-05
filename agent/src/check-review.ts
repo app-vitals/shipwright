@@ -520,7 +520,7 @@ export async function getReviewCandidates(
     // either — DBR-3.3 removed that pre-filter, so they now fall through to
     // the isAuthorAllowed gate below like any other author.
     const isRequestedReviewer =
-      pr.reviewRequests?.some((r) => canonicalLogin(r.login) === canonicalLogin(currentUser)) ?? false;
+      pr.reviewRequests?.some((r) => canonicalLogin(r.login ?? "") === canonicalLogin(currentUser)) ?? false;
 
     if (
       !(await deps.isSelfReviewAllowed()) &&
