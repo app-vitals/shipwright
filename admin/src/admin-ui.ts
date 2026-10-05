@@ -89,7 +89,7 @@ import {
 } from "./agent-type-manifest-loader.ts";
 import type { AgentWorkQueueService } from "./agent-work-queue.ts";
 import type { AgentService } from "./agents.ts";
-import { createAgent } from "./agents.ts";
+import { createAgent, describeRepoNameCollision } from "./agents.ts";
 import { publicNoAuthMiddleware } from "./api-auth.ts";
 import {
   audioContentTypeForFilename,
@@ -1713,7 +1713,10 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
       },
     );
     if (!result.ok) {
-      return c.redirect(`/admin/agents/new?error=${result.errorCode}`, 302);
+      return c.redirect(
+        `/admin/agents/new?error=${encodeURIComponent(result.errorMessage ?? result.errorCode)}`,
+        302,
+      );
     }
     const { agent, restrictSlackToMembers } = result;
 
@@ -2090,6 +2093,13 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
     }
     const existing = agent.repos ?? [];
     const deduped = existing.includes(repo) ? existing : [...existing, repo];
+    const collision = describeRepoNameCollision(deduped);
+    if (collision) {
+      return c.redirect(
+        `/admin/agents/${agentId}?error=${encodeURIComponent(collision)}`,
+        302,
+      );
+    }
     await agentService.updateFields(agentId, { repos: deduped });
     return c.redirect(`/admin/agents/${agentId}`, 302);
   });

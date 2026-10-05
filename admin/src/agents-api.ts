@@ -45,7 +45,7 @@ import type { AgentToolService } from "./agent-tools.ts";
 import type { AgentTypeManifestResolver } from "./agent-type-manifest-loader.ts";
 import type { AgentWorkQueueService } from "./agent-work-queue.ts";
 import type { AgentService } from "./agents.ts";
-import { createAgent } from "./agents.ts";
+import { createAgent, describeRepoNameCollision } from "./agents.ts";
 import type { AdminApiKey, AdminAuthEnv } from "./api-auth.ts";
 import { createAdminAuthMiddleware, parseAdminApiKeys } from "./api-auth.ts";
 import {
@@ -1216,6 +1216,11 @@ export function createAdminApp(deps: AdminDeps): OpenAPIHono<AdminAuthEnv> {
     if (!existing) {
       throw new NotFoundError(`agent ${agentId} not found`);
     }
+    const collision =
+      body.repos !== undefined ? describeRepoNameCollision(body.repos) : null;
+    if (collision) {
+      throw new BadRequestError(collision);
+    }
     const agent = await agentService.updateSelfHosted(agentId, {
       selfHosted: body.selfHosted,
       ...(body.repos !== undefined ? { repos: body.repos } : {}),
@@ -1353,7 +1358,9 @@ export function createAdminApp(deps: AdminDeps): OpenAPIHono<AdminAuthEnv> {
       // createAgent()'s transactional design guarantees zero rows persist on
       // any of these failure codes — no partial-success 200, no redundant
       // cleanup needed here.
-      throw new BadRequestError(`create agent failed: ${result.errorCode}`);
+      throw new BadRequestError(
+        result.errorMessage ?? `create agent failed: ${result.errorCode}`,
+      );
     }
 
     return c.json(serializeAgent(result.agent), 200);

@@ -1687,6 +1687,26 @@ describe("admin API — POST /agents", () => {
     expect(res.status).toBe(200);
   });
 
+  it("same-basename repos under different owners → 400 naming both repos", async () => {
+    const app = createAdminApp(makeMockDeps());
+    const res = await app.request("/agents", {
+      method: "POST",
+      body: JSON.stringify({
+        name: "Collider",
+        typeName: "coding",
+        reposRaw: "acme/api\nglobex/api",
+      }),
+      headers: {
+        "Content-Type": "application/json",
+        Cookie: `admin_session=${cookie}`,
+      },
+    });
+    expect(res.status).toBe(400);
+    const text = await res.text();
+    expect(text).toContain("acme/api");
+    expect(text).toContain("globex/api");
+  });
+
   it("no Authorization header and no session cookie → 401", async () => {
     const app = createAdminApp(makeMockDeps());
     const res = await app.request("/agents", {
@@ -4292,3 +4312,36 @@ function makeMockDepsWithRunSummary(): AdminDeps {
     },
   };
 }
+
+describe("admin API — PATCH /agents/:id repo collisions", () => {
+  it("repos with same-basename different-owner entries → 400 naming both repos", async () => {
+    const cookie = await makeSessionCookie();
+    const app = createAdminApp(makeMockDeps());
+    const res = await app.request(`/agents/${AGENT_ID}`, {
+      method: "PATCH",
+      body: JSON.stringify({ repos: ["acme/api", "globex/api"] }),
+      headers: {
+        "Content-Type": "application/json",
+        Cookie: `admin_session=${cookie}`,
+      },
+    });
+    expect(res.status).toBe(400);
+    const text = await res.text();
+    expect(text).toContain("acme/api");
+    expect(text).toContain("globex/api");
+  });
+
+  it("repos with the same owner and name listed twice are not a collision", async () => {
+    const cookie = await makeSessionCookie();
+    const app = createAdminApp(makeMockDeps());
+    const res = await app.request(`/agents/${AGENT_ID}`, {
+      method: "PATCH",
+      body: JSON.stringify({ repos: ["acme/api", "acme/web"] }),
+      headers: {
+        "Content-Type": "application/json",
+        Cookie: `admin_session=${cookie}`,
+      },
+    });
+    expect(res.status).toBe(200);
+  });
+});

@@ -9323,6 +9323,52 @@ describe("admin UI — repos mutation routes", () => {
     );
   });
 
+  it("POST /admin/agents/:id/repos/add with a same-basename repo under another owner redirects with an error naming both repos", async () => {
+    const deps = makeMockDeps();
+    deps.agentService = {
+      ...deps.agentService,
+      getDetail: async () => ({ id: AGENT_ID, repos: ["acme/api"] }) as never,
+    };
+    const app = createAdminUIApp(deps);
+    const res = await app.request(`/admin/agents/${AGENT_ID}/repos/add`, {
+      method: "POST",
+      body: new URLSearchParams({ repo: "globex/api" }).toString(),
+      headers: {
+        "Content-Type": "application/x-www-form-urlencoded",
+        Cookie: `admin_session=${cookie}`,
+      },
+    });
+    expect(res.status).toBe(302);
+    const location = decodeURIComponent(res.headers.get("Location") ?? "");
+    expect(location).toContain("acme/api");
+    expect(location).toContain("globex/api");
+  });
+
+  it("POST /admin/agents with colliding repos redirects to the form with an error naming both repos", async () => {
+    const app = createAdminUIApp(makeMockDeps());
+    const res = await app.request("/admin/agents", {
+      method: "POST",
+      body: new URLSearchParams({
+        name: "Test Agent",
+        type: "coding",
+        repos: "acme/api\nglobex/api",
+      }).toString(),
+      headers: {
+        "Content-Type": "application/x-www-form-urlencoded",
+        Cookie: `admin_session=${cookie}`,
+      },
+    });
+    expect(res.status).toBe(302);
+    const location = res.headers.get("Location") ?? "";
+    expect(location.startsWith("/admin/agents/new?error=")).toBe(true);
+    const follow = await app.request(location, {
+      headers: { Cookie: `admin_session=${cookie}` },
+    });
+    const page = await follow.text();
+    expect(page).toContain("acme/api");
+    expect(page).toContain("globex/api");
+  });
+
   it("POST /admin/agents/:id/repos/add returns 404 when agent not found", async () => {
     const deps = makeMockDeps();
     deps.agentService = {
