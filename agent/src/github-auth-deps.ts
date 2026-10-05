@@ -28,6 +28,11 @@ import {
   scopeOwnersOf,
 } from "./github-auth-startup.ts";
 import { GitHubInstallationsManager } from "./github-installations.ts";
+import {
+  type GitHubInstallationsReporter,
+  NoopGitHubInstallationsReporter,
+  startInstallationsHeartbeat,
+} from "./github-installations-reporter.ts";
 import type {
   GitHubAuthDeps,
   GitHubInstallationsDeps,
@@ -40,6 +45,7 @@ type InstallationAuthFn = ConstructorParameters<
 /** Production installations manager built from live GH_APP_* env vars. */
 function createInstallationsManager(
   onTokensChanged: () => void,
+  reporter: GitHubInstallationsReporter,
 ): GitHubInstallationsManager {
   const env = process.env;
   const appAuth = createAppAuth({
@@ -51,14 +57,19 @@ function createInstallationsManager(
       params as Parameters<typeof appAuth>[0],
     ) as ReturnType<InstallationAuthFn>;
   const pin = Number(env.GH_APP_INSTALLATION_ID);
-  return new GitHubInstallationsManager({
+  const manager: GitHubInstallationsManager = new GitHubInstallationsManager({
     auth,
     pinnedId: Number.isInteger(pin) && pin > 0 ? pin : null,
     onEvent: (event) => {
       if (event.type === "minted") onTokensChanged();
     },
-    onChange: () => onTokensChanged(),
+    onChange: (state) => {
+      onTokensChanged();
+      void reporter.report(state);
+    },
   });
+  startInstallationsHeartbeat(reporter, () => manager.getState());
+  return manager;
 }
 
 /**
@@ -69,14 +80,22 @@ function createInstallationsManager(
 export function buildGitHubAuthDeps(
   agentHome: string,
   scriptsBin: string,
-  opts: { withInstallations?: boolean } = {},
+  opts: {
+    withInstallations?: boolean;
+    installationsReporter?: GitHubInstallationsReporter;
+  } = {},
 ): GitHubAuthDeps {
   const tokenPath = join(agentHome, "gh-token");
 
   const installations: GitHubInstallationsDeps | undefined =
     opts.withInstallations
       ? {
-          createManager: createInstallationsManager,
+          createManager: (onTokensChanged) =>
+            createInstallationsManager(
+              onTokensChanged,
+              opts.installationsReporter ??
+                new NoopGitHubInstallationsReporter(),
+            ),
           getScopeOwners: () => scopeOwnersOf(agentReposRef),
           writeTokenFiles: (input) => writeTokenFiles(agentHome, input),
           onActivated: (manager) => githubInstallationsManagerRef.set(manager),
