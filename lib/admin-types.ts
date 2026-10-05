@@ -1774,6 +1774,130 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/agents/{id}/github-installations": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get the latest GitHub installations snapshot
+         * @description Returns the most recently reported GitHub installations snapshot, or 404 if the agent has never reported one.
+         */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Latest GitHub installations snapshot */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["GitHubInstallationsSnapshotWrapper"];
+                    };
+                };
+                /** @description Unauthorized */
+                401: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+                /** @description Forbidden — token does not own this agent */
+                403: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+                /** @description No snapshot reported yet */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+            };
+        };
+        /**
+         * Replace the agent's GitHub installations snapshot
+         * @description Upserts the agent's single GitHub App installations snapshot (owner, installation id, state, sanitized lastError), replacing the prior list wholesale — an installation absent from the body is dropped. The body schema is closed: unknown fields (e.g. tokens) are rejected with 400.
+         */
+        put: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: {
+                content: {
+                    "application/json": components["schemas"]["PutGitHubInstallationsBody"];
+                };
+            };
+            responses: {
+                /** @description Snapshot replaced */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["GitHubInstallationsSnapshotWrapper"];
+                    };
+                };
+                /** @description Bad request */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+                /** @description Unauthorized */
+                401: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+                /** @description Forbidden — token does not own this agent */
+                403: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+            };
+        };
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/agents/{id}/config": {
         parameters: {
             query?: never;
@@ -2587,6 +2711,47 @@ export interface components {
              */
             computedAt: string;
             items: components["schemas"]["RankedWorkItem"][];
+        };
+        GitHubInstallation: {
+            /** @example app-vitals */
+            owner: string;
+            /** @example 12345678 */
+            installationId: number;
+            /** @example active */
+            state: string;
+            /**
+             * @description Sanitized last error message (max 500 chars). Must not contain credentials.
+             * @example installation suspended
+             */
+            lastError?: string | null;
+        };
+        AgentGitHubInstallationsSnapshot: {
+            /** @example clx1234567890 */
+            id: string;
+            /** @example clx1234567890 */
+            agentId: string;
+            /**
+             * Format: date-time
+             * @example 2026-01-01T00:00:00.000Z
+             */
+            reportedAt: string;
+            installations: components["schemas"]["GitHubInstallation"][];
+            /**
+             * Format: date-time
+             * @example 2026-01-01T00:00:00.000Z
+             */
+            createdAt: string;
+        };
+        GitHubInstallationsSnapshotWrapper: {
+            snapshot: components["schemas"]["AgentGitHubInstallationsSnapshot"];
+        };
+        PutGitHubInstallationsBody: {
+            /**
+             * Format: date-time
+             * @example 2026-01-01T00:00:00.000Z
+             */
+            reportedAt: string;
+            installations: components["schemas"]["GitHubInstallation"][];
         };
         AgentConfigPlugin: {
             /** @example shipwright */

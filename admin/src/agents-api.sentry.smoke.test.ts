@@ -216,6 +216,12 @@ function makeBaseDeps(
       },
       get: async () => null,
     },
+    agentGitHubInstallationsService: {
+      push: async () => {
+        throw new Error("not implemented");
+      },
+      get: async () => null,
+    },
     prisma: {
       agent: {} as never,
       agentEnv: { findMany: async () => [] },

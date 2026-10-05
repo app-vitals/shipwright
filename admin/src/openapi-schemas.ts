@@ -756,6 +756,58 @@ export const AgentWorkQueueSnapshotSchema = z
   })
   .openapi("AgentWorkQueueSnapshot");
 
+// ─── AgentGitHubInstallationsSnapshot ─────────────────────────────────────────
+
+/**
+ * One GitHub App installation as reported by an agent. The schema is CLOSED
+ * (.strict()): unknown fields — notably tokens or other credentials — are
+ * rejected with 400 rather than silently stored.
+ */
+export const GitHubInstallationSchema = z
+  .object({
+    owner: z.string().min(1).max(200).openapi({ example: "app-vitals" }),
+    installationId: z.number().int().positive().openapi({ example: 12345678 }),
+    state: z.string().min(1).max(50).openapi({ example: "active" }),
+    lastError: z.string().max(500).nullable().optional().openapi({
+      description:
+        "Sanitized last error message (max 500 chars). Must not contain credentials.",
+      example: "installation suspended",
+    }),
+  })
+  .strict()
+  .openapi("GitHubInstallation");
+
+/**
+ * PUT /agents/:id/github-installations body. Replace-all: the installations
+ * array overwrites whatever was previously stored.
+ */
+export const PutGitHubInstallationsBodySchema = z
+  .object({
+    reportedAt: z
+      .string()
+      .datetime()
+      .openapi({ example: "2026-01-01T00:00:00.000Z" }),
+    installations: z.array(GitHubInstallationSchema),
+  })
+  .strict()
+  .openapi("PutGitHubInstallationsBody");
+
+export const AgentGitHubInstallationsSnapshotSchema = z
+  .object({
+    id: z.string().openapi({ example: "clx1234567890" }),
+    agentId: z.string().openapi({ example: "clx1234567890" }),
+    reportedAt: z
+      .string()
+      .datetime()
+      .openapi({ example: "2026-01-01T00:00:00.000Z" }),
+    installations: z.array(GitHubInstallationSchema),
+    createdAt: z
+      .string()
+      .datetime()
+      .openapi({ example: "2026-01-01T00:00:00.000Z" }),
+  })
+  .openapi("AgentGitHubInstallationsSnapshot");
+
 // ─── Path param schemas ───────────────────────────────────────────────────────
 
 export const AgentIdParamSchema = z.object({

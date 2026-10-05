@@ -75,6 +75,7 @@ model Agent {
   members          AgentMember[]
   chatTokenUsage   AgentChatTokenUsageDailyByModel[]
   workQueueSnapshot AgentWorkQueueSnapshot?
+  githubInstallationsSnapshot AgentGitHubInstallationsSnapshot?
   phaseMethodologies AgentPhaseMethodology[]
 }
 
@@ -318,6 +319,21 @@ model AgentWorkQueueSnapshot {
   computedAt DateTime
   items      Json     // RankedWorkItem[]
   createdAt  DateTime @default(now())
+}
+
+// ─── Agent GitHub Installations Snapshot ────────────────────────────────────
+// One row per agent holding the agent's most recently reported GitHub App
+// installations (owner, installation id, state, sanitized lastError). PUT
+// replaces the whole list — a dropped installation disappears. No tokens or
+// other credentials are ever stored here.
+
+model AgentGitHubInstallationsSnapshot {
+  id            String   @id @default(cuid())
+  agentId       String   @unique
+  agent         Agent    @relation(fields: [agentId], references: [id], onDelete: Cascade)
+  reportedAt    DateTime
+  installations Json     // GitHubInstallation[]
+  createdAt     DateTime @default(now())
 }
 
 // ─── Push Subscription ──────────────────────────────────────────────────────
