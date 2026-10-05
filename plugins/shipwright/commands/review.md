@@ -1496,7 +1496,7 @@ precheck=$(gh api graphql -f query='
       }
     }
   }
-}' | jq --arg currentUser "$CURRENT_USER" '.data.repository.pullRequest as $pr | ([$pr.reviews.nodes[] | select(.commit.oid == $pr.headRefOid and ((.body | test("verdict\\**\\s*:\\s*\\**(approve|comment)\\b"; "i")) or .state == "APPROVED")) | .submittedAt] | max) as $maxTerminalSubmittedAt | {headRefOid: $pr.headRefOid, terminal: (if $maxTerminalSubmittedAt != null then ([$pr.comments.nodes[] | select(.author.login != $currentUser and (.createdAt > $maxTerminalSubmittedAt)) | .createdAt] | length == 0) else false end), authorLogin: $pr.author.login, title: $pr.title, headRefName: $pr.headRefName}')
+}' | jq --arg currentUser "$CURRENT_USER" 'def canon: sub("^app/"; "") | sub("\\[bot\\]$"; "") | ascii_downcase; .data.repository.pullRequest as $pr | ([$pr.reviews.nodes[] | select(.commit.oid == $pr.headRefOid and ((.body | test("verdict\\**\\s*:\\s*\\**(approve|comment)\\b"; "i")) or .state == "APPROVED")) | .submittedAt] | max) as $maxTerminalSubmittedAt | {headRefOid: $pr.headRefOid, terminal: (if $maxTerminalSubmittedAt != null then ([$pr.comments.nodes[] | select((.author.login | canon) != ($currentUser | canon) and (.createdAt > $maxTerminalSubmittedAt)) | .createdAt] | length == 0) else false end), authorLogin: $pr.author.login, title: $pr.title, headRefName: $pr.headRefName}')
 headRefOid=$(echo "$precheck" | jq -r '.headRefOid')
 terminal=$(echo "$precheck" | jq -r '.terminal')
 ```

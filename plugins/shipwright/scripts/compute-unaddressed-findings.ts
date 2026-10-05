@@ -59,6 +59,8 @@
 // `currentUser` is not the PR's author (e.g. review.md's Step 9.5, which
 // gates verdicts on any PR the bot reviews, including third-party PRs).
 
+import { canonicalLogin } from "./login-identity.ts";
+
 // ─── Types ────────────────────────────────────────────────────────────────────
 //
 // Mirrors agent/src/check-patch.ts's ReviewNode/ReviewThread/IssueCommentNode/
@@ -241,7 +243,7 @@ export function isSelfCleanApprove(
   review: Pick<ReviewNode, "author" | "body">,
   currentUser: string,
 ): boolean {
-  if (review.author.login !== currentUser) return false;
+  if (canonicalLogin(review.author.login) !== canonicalLogin(currentUser)) return false;
 
   return isCleanApproveBody(review.body);
 }
@@ -275,7 +277,7 @@ export function isAddressedByAuthorReply(
   const reviewedAt = new Date(review.submittedAt).getTime();
   return comments.some(
     (c) =>
-      c.author.login === prAuthor &&
+      canonicalLogin(c.author.login) === canonicalLogin(prAuthor) &&
       new Date(c.createdAt).getTime() > reviewedAt,
   );
 }
@@ -306,7 +308,7 @@ export function isThreadAddressedByAuthorReply(
   const flaggedAt = new Date(first.createdAt).getTime();
   return rest.some(
     (c) =>
-      c.author.login === prAuthor &&
+      canonicalLogin(c.author.login) === canonicalLogin(prAuthor) &&
       c.createdAt !== undefined &&
       new Date(c.createdAt).getTime() > flaggedAt,
   );
@@ -347,12 +349,12 @@ export function isSupersededBySelfReview(
   allReviews: ReviewNode[],
   currentUser: string,
 ): boolean {
-  if (review.author.login !== currentUser) return false;
+  if (canonicalLogin(review.author.login) !== canonicalLogin(currentUser)) return false;
 
   const reviewedAt = new Date(review.submittedAt).getTime();
   return allReviews.some(
     (r) =>
-      r.author.login === currentUser &&
+      canonicalLogin(r.author.login) === canonicalLogin(currentUser) &&
       new Date(r.submittedAt).getTime() > reviewedAt &&
       isCleanApproveBody(r.body),
   );

@@ -46,6 +46,7 @@ import type { WorkPrCandidate } from "./work-selector.ts";
 // Mirrors check-patch.ts's own import of
 // plugins/shipwright/scripts/compute-unaddressed-findings.ts.
 import { isCiGreen } from "../../plugins/shipwright/scripts/is-ci-green.ts";
+import { canonicalLogin } from "../../plugins/shipwright/scripts/login-identity.ts";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -181,7 +182,7 @@ function isActiveRun(run: WorkflowRun, now: string): boolean {
 
 function hasSelfApproveReview(reviews: GhReview[], userLogin: string): boolean {
   return reviews.some(
-    (r) => r.author.login === userLogin && isCleanApproveBody(r.body),
+    (r) => canonicalLogin(r.author.login) === canonicalLogin(userLogin) && isCleanApproveBody(r.body),
   );
 }
 
@@ -234,7 +235,7 @@ export async function getDeployCandidates(
         approved = true;
       } else if (
         (await deps.isSelfReviewAllowed()) &&
-        pr.author.login === currentUser
+        canonicalLogin(pr.author.login) === canonicalLogin(currentUser)
       ) {
         const reviews = await deps.fetchPrReviews(org, repoName, pr.number);
         if (hasSelfApproveReview(reviews, currentUser)) {
@@ -245,7 +246,7 @@ export async function getDeployCandidates(
       if (!approved) continue;
 
       // Hard authorship filter: only deploy PRs authored by the current user
-      if (pr.author.login !== currentUser) continue;
+      if (canonicalLogin(pr.author.login) !== canonicalLogin(currentUser)) continue;
 
       const ciRuns = await deps.fetchCiRuns(org, repoName, pr.headRefOid);
       if (!isCiGreen(ciRuns)) continue;
