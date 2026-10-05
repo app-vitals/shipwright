@@ -62,6 +62,10 @@ import {
   startGitHubAuthIfPossible,
 } from "./github-auth-startup.ts";
 import {
+  HttpGitHubInstallationsReporter,
+  NoopGitHubInstallationsReporter,
+} from "./github-installations-reporter.ts";
+import {
   claudeVersionState,
   DEFAULT_HEALTH_PORT,
   markSlackConnected,
@@ -236,6 +240,17 @@ const workQueueReporter =
       })
     : new NoopWorkQueueReporter();
 
+const githubInstallationsReporter =
+  config.shipwright.apiUrl &&
+  config.shipwright.apiKey &&
+  config.shipwright.agentId
+    ? new HttpGitHubInstallationsReporter({
+        apiUrl: config.shipwright.apiUrl,
+        agentId: config.shipwright.agentId,
+        apiKey: config.shipwright.apiKey,
+      })
+    : new NoopGitHubInstallationsReporter();
+
 const cronDeps: CronHandlerDeps = {
   // SLK-1.1: a getter, not a plain field — Slack may start after boot (see
   // slack-startup.ts's startSlackIfPossible()), so cron dispatch must read
@@ -337,6 +352,7 @@ const githubAuthStartDeps = {
     setupGitHubAuth(
       buildGitHubAuthDeps(agentHome, GITHUB_AUTH_SCRIPTS_BIN, {
         withInstallations: true,
+        installationsReporter: githubInstallationsReporter,
       }),
     ),
 };
