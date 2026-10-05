@@ -153,6 +153,16 @@ describe("setupGitHubAuth — App path", () => {
     );
     expect(spawnSync).toHaveBeenCalledWith(
       "git",
+      [
+        "config",
+        "--global",
+        "credential.https://github.com.useHttpPath",
+        "true",
+      ],
+      { stdio: "inherit", env: expectedEnv },
+    );
+    expect(spawnSync).toHaveBeenCalledWith(
+      "git",
       ["config", "--global", "user.name", "keanu-hifriends[bot]"],
       { stdio: "inherit", env: expectedEnv },
     );
@@ -176,7 +186,7 @@ describe("setupGitHubAuth — App path", () => {
     for (const call of spawnSync.mock.calls) {
       expect(call[0]).not.toBe("gh");
     }
-    expect(spawnSync).toHaveBeenCalledTimes(4);
+    expect(spawnSync).toHaveBeenCalledTimes(5);
     expect(startBackgroundRefresh).toHaveBeenCalledTimes(1);
   });
 

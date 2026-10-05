@@ -152,6 +152,15 @@ async function configureAppGit(deps: GitHubAuthDeps): Promise<AppIdentity> {
     env,
     logger,
   );
+  // Makes git send the repo path to the helper so it can pick the per-owner
+  // token. Host-scoped only; the helper ignores it unless gh-token.d exists.
+  runOrWarn(
+    spawnSync,
+    "git",
+    ["config", "--global", "credential.https://github.com.useHttpPath", "true"],
+    env,
+    logger,
+  );
 
   const { slug, userId } = await deps.getBotIdentity();
   const botEmail = `${userId}+${slug}[bot]@users.noreply.github.com`;
