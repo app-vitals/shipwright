@@ -3,13 +3,14 @@
 # $GH_TOKEN_FILE before exec'ing the real `gh`. If $GH_TOKEN_FILE is
 # unset or the file is missing, the wrapper passes through without
 # touching GH_TOKEN.
+#
+# Multi-installation: when the gh-token.d directory next to $GH_TOKEN_FILE
+# exists, the target owner is resolved (resolve-gh-owner.ts) and GH_TOKEN comes
+# from gh-token.d/<owner>; owners the resolver cannot determine use the default
+# token. An owner with no token file fails naming the org. No bun process is
+# spawned when gh-token.d is absent.
 
 set -euo pipefail
-
-if [[ -n "${GH_TOKEN_FILE:-}" && -f "$GH_TOKEN_FILE" ]]; then
-  GH_TOKEN=$(cat "$GH_TOKEN_FILE")
-  export GH_TOKEN
-fi
 
 source="${BASH_SOURCE[0]}"
 while [[ -L "$source" ]]; do
@@ -18,6 +19,25 @@ while [[ -L "$source" ]]; do
   [[ "$source" != /* ]] && source="$dir/$source"
 done
 self_dir=$(cd -P "$(dirname "$source")" && pwd)
+
+if [[ -n "${GH_TOKEN_FILE:-}" && -f "$GH_TOKEN_FILE" ]]; then
+  token_file=$GH_TOKEN_FILE
+  owner_dir="$(dirname "$GH_TOKEN_FILE")/gh-token.d"
+  if [[ -d "$owner_dir" ]]; then
+    # Sentinel is not a valid owner, so the resolver echoes it when nothing matched.
+    owner=$(bun "$self_dir/../resolve-gh-owner.ts" --default __default__ -- "$@")
+    if [[ "$owner" != "__default__" ]]; then
+      owner=${owner,,}
+      token_file="$owner_dir/$owner"
+      if [[ ! -f "$token_file" ]]; then
+        echo "gh wrapper: no GitHub App installation token for org '$owner'" >&2
+        exit 1
+      fi
+    fi
+  fi
+  GH_TOKEN=$(cat "$token_file")
+  export GH_TOKEN
+fi
 
 new_path=""
 IFS=':' read -r -a path_entries <<< "${PATH:-}"
