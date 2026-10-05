@@ -39,7 +39,11 @@
  */
 
 import { existsSync, rmSync } from "node:fs";
-import { computeMissingClones } from "@shipwright/lib/clone-plan";
+import { join } from "node:path";
+import {
+  computeMissingClones,
+  findRepoNameCollisions,
+} from "@shipwright/lib/clone-plan";
 
 export interface SyncConfigCloneDeps {
   /**
@@ -61,6 +65,11 @@ export interface SyncConfigCloneDeps {
    * half-written directory as an already-cloned repo.
    */
   removePartialClone: (dest: string) => void;
+  /**
+   * Returns the owner of an existing clone's `origin` remote, or null when it
+   * can't be determined. Optional — when omitted, no owner check is made.
+   */
+  getRemoteOwner?: (dest: string) => string | null;
 }
 
 /**
@@ -87,7 +96,41 @@ export async function syncClonedRepos(
   deps: SyncConfigCloneDeps,
 ): Promise<void> {
   const repos = deps.getScopedRepos();
-  const plan = computeMissingClones(repos, deps.reposDir, deps.exists);
+
+  // repos/<name> is keyed by basename only: skip the later-listed repo of any
+  // cross-owner name collision so it can never share (or push from) the
+  // earlier repo's folder.
+  const skipped = new Set<string>();
+  for (const { repo, collidesWith } of findRepoNameCollisions(repos)) {
+    skipped.add(repo);
+    console.error(
+      `[config-sync] repo name collision: ${repo} and ${collidesWith} share the folder name — skipping ${repo}`,
+    );
+  }
+
+  // An existing folder whose remote belongs to a different owner is the same
+  // hazard from the other direction (e.g. repos/<name> cloned for another org).
+  if (deps.getRemoteOwner) {
+    for (const repo of repos) {
+      if (skipped.has(repo)) continue;
+      const dest = join(deps.reposDir, repo.slice(repo.lastIndexOf("/") + 1));
+      if (!deps.exists(dest)) continue;
+      const actual = deps.getRemoteOwner(dest);
+      const expected = repo.slice(0, repo.lastIndexOf("/"));
+      if (actual && actual.toLowerCase() !== expected.toLowerCase()) {
+        skipped.add(repo);
+        console.error(
+          `[config-sync] repo name collision: ${dest} has a remote owned by ${actual}, not ${expected} — skipping ${repo}`,
+        );
+      }
+    }
+  }
+
+  const plan = computeMissingClones(
+    repos.filter((r) => !skipped.has(r)),
+    deps.reposDir,
+    deps.exists,
+  );
 
   for (const { repo, dest } of plan) {
     // An overlapping tick is already cloning this destination — skip rather
@@ -171,5 +214,23 @@ export function buildProductionDeps(opts: {
     cloneRepo: makeCloneRepo(),
     removePartialClone: (dest: string) =>
       rmSync(dest, { recursive: true, force: true }),
+    getRemoteOwner: readRemoteOwner,
   };
+}
+
+/**
+ * Parses the owner out of a clone's `origin` URL (https or ssh form); null
+ * when the folder has no readable origin.
+ */
+export function readRemoteOwner(
+  dest: string,
+  spawnSync: typeof Bun.spawnSync = Bun.spawnSync,
+): string | null {
+  const proc = spawnSync(["git", "-C", dest, "remote", "get-url", "origin"]);
+  if (proc.exitCode !== 0) return null;
+  const m = proc.stdout
+    .toString()
+    .trim()
+    .match(/[:/]([^/:]+)\/[^/]+?(?:\.git)?$/);
+  return m?.[1] ?? null;
 }
