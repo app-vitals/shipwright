@@ -64,17 +64,18 @@ export interface GithubAppProvisioningClient {
  * GitHub sends the user after app creation (manifest flow's `redirect_url`,
  * distinct from the OAuth `callback_urls`). `setupUrl` is where the user
  * lands after installing the app (`setup_url`). Both are omitted when not
- * provided.
+ * provided. `public` (default false) makes the App installable on other
+ * orgs besides the one that owns it.
  *
  * No `hook_attributes` is set — no webhook receiver exists in this codebase.
  */
 export function buildAgentAppManifest(
   appName: string,
-  opts?: { redirectUri?: string; setupUrl?: string },
+  opts?: { redirectUri?: string; setupUrl?: string; public?: boolean },
 ): GithubAppManifest {
   return {
     name: appName,
-    public: false,
+    public: opts?.public === true,
     default_permissions: {
       contents: "write",
       pull_requests: "write",

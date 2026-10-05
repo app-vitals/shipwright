@@ -291,6 +291,7 @@ export class GithubProvisioningService {
     agentId: string,
     githubOrg: string | undefined,
     urls: { redirectUri: string; setupUrl: string },
+    opts?: { public?: boolean },
   ): Promise<StartAppAutoConnectResult> {
     if (!githubOrg || !GITHUB_ORG_PATTERN.test(githubOrg)) {
       return {
@@ -311,6 +312,7 @@ export class GithubProvisioningService {
     const manifest = buildAgentAppManifest(agent.name, {
       redirectUri: urls.redirectUri,
       setupUrl: urls.setupUrl,
+      public: opts?.public,
     });
 
     return { ok: true, provisionStateToken, githubOrg, manifest };
@@ -428,6 +430,7 @@ export class GithubProvisioningService {
         GH_APP_PRIVATE_KEY: exchangeResult.pem,
         GH_APP_CLIENT_ID: exchangeResult.clientId,
         GH_APP_CLIENT_SECRET: exchangeResult.clientSecret,
+        GH_APP_SLUG: exchangeResult.slug,
       },
       this.deps.secretEnvVars,
     );

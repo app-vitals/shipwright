@@ -1258,9 +1258,12 @@ interface ConnectActionConfig {
   hiddenFields?: Record<string, string>;
   inputs: Array<{
     name: string;
-    type: "text" | "password" | "file";
+    type: "text" | "password" | "file" | "checkbox";
     placeholder?: string;
     mono?: boolean;
+    /** Checkbox only: visible label text; `value` is submitted when checked. */
+    label?: string;
+    value?: string;
   }>;
 }
 
@@ -1277,8 +1280,13 @@ function renderConnectAction(
     .join("\n              ");
   const hasFileInput = cfg.inputs.some((input) => input.type === "file");
   const visibleInputs = cfg.inputs
-    .map(
-      (input) => `<input
+    .map((input) =>
+      input.type === "checkbox"
+        ? `<label style="font-size:12px;display:flex;gap:6px;align-items:center">
+                <input name="${escapeHtml(input.name)}" type="checkbox" value="${escapeHtml(input.value ?? "true")}" />
+                ${escapeHtml(input.label ?? input.name)}
+              </label>`
+        : `<input
                 name="${escapeHtml(input.name)}"
                 type="${input.type}"
                 class="form-input${input.mono ? " mono" : ""}"
@@ -1430,7 +1438,15 @@ export function renderAgentDetailPage(
         "Creates a GitHub App for this agent from a manifest. You'll be redirected to GitHub to finish creating it under the chosen org.",
       action: `/admin/agents/${escapeHtml(agent.id)}/connect-github`,
       hiddenFields: { ghAuthMode: "app", ghAppMode: "auto" },
-      inputs: [{ name: "githubOrg", type: "text", placeholder: "my-org" }],
+      inputs: [
+        { name: "githubOrg", type: "text", placeholder: "my-org" },
+        {
+          name: "ghAppPublic",
+          type: "checkbox",
+          value: "true",
+          label: "Installable on multiple orgs (public App)",
+        },
+      ],
     },
     {
       envKey: "GH_APP_ID",

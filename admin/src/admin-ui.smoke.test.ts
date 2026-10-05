@@ -1401,6 +1401,8 @@ describe("admin UI — authenticated pages", () => {
 
       expect(html).toContain("Connect Slack");
       expect(html).toContain("Set up GitHub App");
+      expect(html).toContain('name="ghAppPublic"');
+      expect(html).toContain("Installable on multiple orgs");
       expect(html).toContain("Add GitHub PAT");
 
       expect(html).toContain(
@@ -6042,6 +6044,31 @@ describe("admin UI — POST /admin/agents/:id/connect-github (mode=app, app-auto
     expect(payload.agentId).toBe(AGENT_ID);
   });
 
+  it.each([
+    ["ghAppPublic=true", { ghAppPublic: "true" }, true],
+    ["checkbox unchecked", {}, false],
+  ])("%s → manifest public flag is %p", async (_label, extra, expectPublic) => {
+    const app = createAdminUIApp(makeMockDeps());
+    const body = new URLSearchParams({
+      ghAuthMode: "app",
+      ghAppMode: "auto",
+      githubOrg: "my-org",
+      ...extra,
+    });
+    const res = await app.request(`/admin/agents/${AGENT_ID}/connect-github`, {
+      method: "POST",
+      body: body.toString(),
+      headers: {
+        "Content-Type": "application/x-www-form-urlencoded",
+        Cookie: `admin_session=${adminCookie}`,
+      },
+    });
+    const html = await res.text();
+    expect(html).toMatch(
+      new RegExp(`(&quot;|")public(&quot;|"):${expectPublic}`),
+    );
+  });
+
   it("invalid githubOrg → error before any redirect page is rendered", async () => {
     const app = createAdminUIApp(makeMockDeps());
 
@@ -6157,9 +6184,13 @@ describe("admin UI — GET /admin/agents/:id/connect-github/callback", () => {
     expect(
       patchCalls.some((c) => c.env.GH_APP_CLIENT_SECRET === "gh-client-secret"),
     ).toBe(true);
+    expect(
+      patchCalls.some((c) => c.env.GH_APP_SLUG === "my-shipwright-agent"),
+    ).toBe(true);
     const clientIdCall = patchCalls.find(
       (c) => c.env.GH_APP_CLIENT_ID === "gh-client-id",
     );
+    expect(clientIdCall?.secretKeys?.has("GH_APP_SLUG")).toBe(false);
     expect(clientIdCall?.secretKeys?.has("GH_APP_CLIENT_SECRET")).toBe(true);
     expect(clientIdCall?.secretKeys?.has("GH_APP_CLIENT_ID")).toBe(false);
   });
