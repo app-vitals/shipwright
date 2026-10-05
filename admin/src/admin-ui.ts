@@ -33,6 +33,7 @@ import {
   type AgentDetail,
   type AgentOption,
   buildMergedWorkQueueRows,
+  type GitHubInstallationsCardData,
   type PrListItem,
   type PullRequestItem,
   renderAgentDetailPage,
@@ -77,6 +78,7 @@ import type { DeleteAgentFullyDeps } from "./agent-deletion.ts";
 import { deleteAgentFully } from "./agent-deletion.ts";
 import type { ManualStep } from "./agent-deletion-checklist.ts";
 import type { AgentEnvService } from "./agent-envs.ts";
+import type { AgentGitHubInstallationsService } from "./agent-github-installations.ts";
 import type { AgentMemberService } from "./agent-members.ts";
 import type { AgentPhaseMethodologyService } from "./agent-phase-methodology.ts";
 import type { AgentPluginService } from "./agent-plugins.ts";
@@ -297,6 +299,11 @@ export interface AdminUIDeps {
     "listForAgent" | "listAcrossAgents"
   >;
   agentWorkQueueService: Pick<AgentWorkQueueService, "get" | "getMany">;
+  /** Optional: when absent the agent detail page omits the installations card. */
+  agentGitHubInstallationsService?: Pick<
+    AgentGitHubInstallationsService,
+    "get"
+  >;
   agentToolService: Pick<
     AgentToolService,
     "list" | "add" | "toggle" | "remove"
@@ -884,6 +891,7 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
     agentCronJobService,
     agentCronRunService,
     agentWorkQueueService,
+    agentGitHubInstallationsService,
     agentToolService,
     agentTokenService,
     agentPluginService,
@@ -1940,6 +1948,12 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
       fetchTaskStorePrs,
     );
 
+    // Stored snapshot only — admin never calls GitHub or the agent here.
+    // A read failure just omits the card.
+    const githubInstallations =
+      (await agentGitHubInstallationsService?.get(agentId).catch(() => null)) ??
+      null;
+
     return html(
       renderAgentDetailPage(
         agentDetail,
@@ -1952,6 +1966,11 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
         c.var.userEmail,
         c.var.isAdmin,
         {
+          githubInstallations: githubInstallations && {
+            reportedAt: githubInstallations.reportedAt,
+            installations:
+              githubInstallations.installations as GitHubInstallationsCardData["installations"],
+          },
           error,
           newToken,
           successMsg,
@@ -2637,20 +2656,27 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
       const { rawToken } = await agentTokenService.create(agentId, label);
       // Render the page directly (200) rather than redirecting with the token in the URL.
       // A redirect would expose the raw token in server access logs and browser history.
-      const [envResult, crons, tools, tokens, plugins, phaseMethodology, members] =
-        await Promise.all([
-          agentEnvService
-            .getByAgentId(agentId)
-            .then((e) => e ?? { env: {}, secretKeys: [] }),
-          agentCronJobService.listWithRunSummary(agentId),
-          agentToolService.list(agentId),
-          agentTokenService.listForAgent(agentId),
-          agentPluginService.list(agentId),
-          agentPhaseMethodologyService.list(agentId),
-          c.var.isAdmin
-            ? agentMemberService.listByAgentId(agentId)
-            : Promise.resolve([]),
-        ]);
+      const [
+        envResult,
+        crons,
+        tools,
+        tokens,
+        plugins,
+        phaseMethodology,
+        members,
+      ] = await Promise.all([
+        agentEnvService
+          .getByAgentId(agentId)
+          .then((e) => e ?? { env: {}, secretKeys: [] }),
+        agentCronJobService.listWithRunSummary(agentId),
+        agentToolService.list(agentId),
+        agentTokenService.listForAgent(agentId),
+        agentPluginService.list(agentId),
+        agentPhaseMethodologyService.list(agentId),
+        c.var.isAdmin
+          ? agentMemberService.listByAgentId(agentId)
+          : Promise.resolve([]),
+      ]);
       return html(
         renderAgentDetailPage(
           agentDetail,
