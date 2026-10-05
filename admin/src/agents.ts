@@ -6,6 +6,7 @@
  * etc.) so route handlers never call prisma.agent.* directly.
  */
 
+import { findRepoNameCollisions } from "@shipwright/lib/clone-plan";
 import { isGithubLogin } from "@shipwright/lib/github-login";
 import { isOrgRepo } from "@shipwright/lib/org-repo";
 import { SECRET_ENV_VARS } from "@shipwright/lib/secret-env-vars";
@@ -615,12 +616,24 @@ export type CreateAgentErrorCode =
   | "provisioning_disabled"
   | "seed_failed"
   | "invalid_repo_format"
+  | "repo_name_collision"
   | "invalid_author_allowlist_format"
   | "provision_failed";
 
 export type CreateAgentResult =
   | { ok: true; agent: AgentDetail; restrictSlackToMembers: boolean }
-  | { ok: false; errorCode: CreateAgentErrorCode };
+  | { ok: false; errorCode: CreateAgentErrorCode; errorMessage?: string };
+
+/**
+ * Returns a message naming both repos of the first same-basename collision
+ * (different owners) in `repos`, or null when there is none. `repos/<name>`
+ * is keyed by basename alone, so such repos would share one clone folder.
+ */
+export function describeRepoNameCollision(repos: string[]): string | null {
+  const [collision] = findRepoNameCollisions(repos);
+  if (!collision) return null;
+  return `repos ${collision.collidesWith} and ${collision.repo} share the same name — repos/<name> clones would collide`;
+}
 
 /**
  * Injected service dependencies for createAgent() — the same instances
@@ -662,7 +675,7 @@ function parseLines(
 /** Discriminated outcome of the transactional portion of createAgent(). */
 type CreateAgentTxOutcome =
   | { ok: true; agent: AgentDetail }
-  | { ok: false; errorCode: CreateAgentErrorCode };
+  | { ok: false; errorCode: CreateAgentErrorCode; errorMessage?: string };
 
 /**
  * Atomically create an agent: validate name/typeName, create the Agent row,
@@ -774,6 +787,15 @@ export async function createAgent(
           await deps.agentService.delete(agent.id, tx);
           return { ok: false, errorCode: "invalid_repo_format" };
         }
+        const collision = describeRepoNameCollision(repos);
+        if (collision) {
+          await deps.agentService.delete(agent.id, tx);
+          return {
+            ok: false,
+            errorCode: "repo_name_collision",
+            errorMessage: collision,
+          };
+        }
         if (repos.length > 0) {
           await deps.agentService.updateFields(agent.id, { repos }, tx);
         }
@@ -840,7 +862,11 @@ export async function createAgent(
   );
 
   if (!txResult.ok) {
-    return { ok: false, errorCode: txResult.errorCode };
+    return {
+      ok: false,
+      errorCode: txResult.errorCode,
+      errorMessage: txResult.errorMessage,
+    };
   }
   const agent = txResult.agent;
 
