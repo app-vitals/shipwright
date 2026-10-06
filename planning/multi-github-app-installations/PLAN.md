@@ -30,7 +30,7 @@ One per-engineer GitHub App, installed on several customer orgs, lets a single a
 
 **Admin connect flow (Feature 5)**: a `public` option on the manifest builder plus a form checkbox (default off); the manifest flow stores a non-secret `GH_APP_SLUG`; the installed callback stops overwriting a stored installation id; an "Add another org" redirect is shown only when the slug exists.
 
-**Own-login fix (Feature 1)**: a standalone canonical-login helper (strip `app/` and `[bot]`, lowercase), applied on both sides of every own-login comparison in `compute-unaddressed-findings.ts`, `review.md`, `patch.md`, `merge.md` and `deploy.md`. `deploy.md` keeps writing the `app/<slug>` form to the task store.
+**Own-login fix (Feature 1)**: a standalone canonical-login helper (strip `app/` and `[bot]`, lowercase), applied on both sides of every own-login comparison in `compute-unaddressed-findings.ts`, `review.md`, `patch.md`, `merge.md` and `deploy.md`, plus `compute-unresolved-comment-check.ts`, the `review.md` Step 14 pre-check jq and `agent/src/check-review.ts`. `deploy.md` keeps writing the `app/<slug>` form to the task store.
 
 **Docs**: new `docs/github-multi-org.md` (`configuration-agent.md` is already 224 lines), a `GH_APP_SLUG` row, a `CLAUDE.md` reference line.
 
@@ -100,7 +100,7 @@ MGI-3.2 depends on 2.4 because both edit `setup-github-auth.ts`; MGI-1.3 depends
 | Task | Title | Layer | Hours | Complexity | Model |
 |------|-------|-------|-------|-----------|-------|
 | MGI-1.1 | Add canonical login helper | Shared | 3 | 2 | haiku |
-| MGI-1.2 | Canonicalize own-login comparisons in findings logic and review jq | Shared | 5 | 3 | sonnet |
+| MGI-1.2 | Canonicalize own-login comparisons in findings logic, comment-check script, check-review.ts and review jq | Shared | 5 | 3 | sonnet |
 | MGI-1.3 | Resolve own login via the helper in five commands | CLI | 4 | 3 | sonnet |
 | MGI-2.1 | Add installation discovery and selection | Background | 5 | 4 | sonnet |
 | MGI-2.2 | Add GitHubInstallationsManager | Background | 8 | 5 | opus |

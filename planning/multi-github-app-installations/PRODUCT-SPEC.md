@@ -34,7 +34,7 @@ An agent holds one `GH_APP_INSTALLATION_ID`, one installation token, one token f
 - The five call sites (`review.md`, `patch.md`, `merge.md`, `deploy.md`, `review-staged/SKILL.md`) resolve the login through the existing normalized lookup (`name[bot]` becomes `app/name`).
 - PAT behavior is unchanged: a PAT agent resolves the same login as today.
 - Under an installation token the same bot appears in three forms: GraphQL `viewer.login` is `<slug>[bot]`, `gh pr view --json author` is `app/<slug>`, and GraphQL PR and review authors are the bare `<slug>`. Every comparison of the agent's own login against a PR or review author compares a canonical form (strip `app/` and `[bot]`, lowercase) on both sides.
-- Comparison sites include `compute-unaddressed-findings.ts` (`isSelfCleanApprove`, `isSupersededBySelfReview`, `hasUnaddressedFindings`), `review.md` (`selfReview`, the unresolved-comment jq), the `patch.md` scope check, and the `merge.md` and `deploy.md` own-PR checks. The login written to the task store by `deploy.md` keeps its existing `app/<slug>` form.
+- Comparison sites include `compute-unaddressed-findings.ts` (`isSelfCleanApprove`, `isSupersededBySelfReview`, `hasUnaddressedFindings`), `review.md` (`selfReview`, the unresolved-comment jq), the `patch.md` scope check, the `merge.md` and `deploy.md` own-PR checks, `plugins/shipwright/scripts/compute-unresolved-comment-check.ts` (`currentUser` and `prAuthor` comparisons), the `review.md` Step 14 live pre-check jq (`.author.login != $currentUser`, the fresh-comment exception), and `agent/src/check-review.ts` (`hasFreshNonAgentComment` against `currentUser`). A repo-wide grep for `author.login` comparisons confirms the list during MGI-1.2/1.3. The login written to the task store by `deploy.md` keeps its existing `app/<slug>` form.
 
 **Acceptance Criteria**:
 - [ ] No `gh api /user` or `gh api user` remains in the five files.
@@ -42,6 +42,7 @@ An agent holds one `GH_APP_INSTALLATION_ID`, one installation token, one token f
 - [ ] A unit test using the three observed forms (`<slug>[bot]`, `app/<slug>`, `<slug>`) shows they canonicalize to the same value, and a PAT login passes through unchanged apart from lowercasing.
 - [ ] A unit test with a bot-reviewing-a-bot-authored-PR fixture shows the self-clean-approve, supersession and unaddressed-findings logic match the bot's own reviews.
 - [ ] Existing `*.content.test.ts` suites for those files pass unchanged.
+- [ ] Fresh-comment case: with the agent's `currentUser` in `app/<slug>` form and its own review and comments authored as the bare `<slug>`, `hasFreshNonAgentComment` and the `review.md` Step 14 pre-check treat them as the agent's own, so `reviewedAt` is not bumped and the PR is not re-selected every tick.
 
 **Technical Considerations**: Reuse `getCurrentUser()` in `plugins/shipwright/scripts/check-helpers.ts`. Verified read-only against a real installation token after the PRD session: `gh api /user` returns 403, and the three login forms above differ with no two matching. A bot review on a bot-authored PR was not observed, so the self-review case is covered by fixtures plus the end-to-end task.
 
@@ -52,6 +53,8 @@ An agent holds one `GH_APP_INSTALLATION_ID`, one installation token, one token f
 - `plugins/shipwright/commands/deploy.md` (line 103)
 - `plugins/shipwright/skills/review-staged/SKILL.md` (line 44)
 - `plugins/shipwright/scripts/check-helpers.ts`
+- `plugins/shipwright/scripts/compute-unresolved-comment-check.ts`
+- `agent/src/check-review.ts`
 
 **Testing Strategy**: Layer: content for the markdown, plus unit for any script — no new I/O boundary.
 
