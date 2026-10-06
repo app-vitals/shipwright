@@ -25,6 +25,7 @@
 import { createRoute, OpenAPIHono, z } from "@hono/zod-openapi";
 import { callerLabel } from "@shipwright/lib/request-context";
 import type { ErrorCapturingClient } from "@shipwright/lib/sentry";
+import { HTTPException } from "hono/http-exception";
 import type { PrismaClient } from "../prisma/client/client.ts";
 import type { AgentChatTokenService } from "./agent-chat-tokens.ts";
 import type {
@@ -1193,6 +1194,12 @@ export function createAdminApp(deps: AdminDeps): OpenAPIHono<AdminAuthEnv> {
     if (err instanceof ApiError) {
       sentryClient?.captureException(err);
       return c.json({ error: err.message }, err.statusCode as 500 | 502);
+    }
+    // zod-openapi 1.x throws an HTTPException for request-shape problems —
+    // 415 for a non-JSON Content-Type on a JSON-body route, 400 for an
+    // unparseable body. Client errors: respond with the exception's status.
+    if (err instanceof HTTPException && err.status < 500) {
+      return c.json({ error: err.message }, err.status as 400 | 415);
     }
     sentryClient?.captureException(err);
     console.error(

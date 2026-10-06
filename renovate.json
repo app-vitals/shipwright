@@ -36,6 +36,12 @@
       "groupName": "routine dependency updates"
     },
     {
+      "description": "zod 4 and @hono/zod-openapi 1.x are a coupled pair (zod-to-openapi 9 requires zod ^4); keep their updates, including majors, in one PR",
+      "matchPackageNames": ["zod", "@hono/zod-openapi"],
+      "groupName": "zod and zod-openapi",
+      "separateMajorMinor": false
+    },
+    {
       "description": "Track the claude-code CLI's stable channel (not latest) in its own PR; declared after the routine grouping rule so it is not folded into it. Schedule is inherited (Monday).",
       "matchPackageNames": ["@anthropic-ai/claude-code"],
       "followTag": "stable",

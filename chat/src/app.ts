@@ -18,6 +18,7 @@
 
 import type { ReplyNotificationEvent } from "@shipwright/lib/chat-notify";
 import { Hono } from "hono";
+import { HTTPException } from "hono/http-exception";
 import { type ChatAuthEnv, createBearerAuthMiddleware } from "./auth.ts";
 import { ApiError } from "./errors.ts";
 import type { MessageServiceLike } from "./message-service.ts";
@@ -48,6 +49,12 @@ export function createChatServiceApp(deps: ChatServiceDeps): Hono<ChatAuthEnv> {
   app.onError((err, c) => {
     if (err instanceof ApiError) {
       return c.json({ error: err.message }, err.statusCode as 400);
+    }
+    // zod-openapi 1.x throws an HTTPException for request-shape problems —
+    // 415 for a non-JSON Content-Type on a JSON-body route, 400 for an
+    // unparseable body. Client errors: respond with the exception's status.
+    if (err instanceof HTTPException && err.status < 500) {
+      return c.json({ error: err.message }, err.status as 400 | 415);
     }
     console.error("[chat] unhandled error:", err);
     const message = err instanceof Error ? err.message : String(err);

@@ -76,10 +76,11 @@
                   }
                 }
               ],
-              "description": "Filter by repo (`org/repo` format). Repeatable — pass `?repo=` multiple times to match any repo in the list (e.g. `?repo=org/a&repo=org/b`). A single `?repo=` behaves identically to before (exact match).",
-              "example": "org/repo"
+              "example": "org/repo",
+              "description": "Filter by repo (`org/repo` format). Repeatable — pass `?repo=` multiple times to match any repo in the list (e.g. `?repo=org/a&repo=org/b`). A single `?repo=` behaves identically to before (exact match)."
             },
             "required": false,
+            "description": "Filter by repo (`org/repo` format). Repeatable — pass `?repo=` multiple times to match any repo in the list (e.g. `?repo=org/a&repo=org/b`). A single `?repo=` behaves identically to before (exact match).",
             "name": "repo",
             "in": "query"
           },
@@ -96,10 +97,11 @@
                   }
                 }
               ],
-              "description": "Filter by org — matches any repo whose `org/repo` string starts with `<org>/`. Repeatable — pass `?org=` multiple times to match any of several orgs. Combines with `repo` as an AND filter.",
-              "example": "org"
+              "example": "org",
+              "description": "Filter by org — matches any repo whose `org/repo` string starts with `<org>/`. Repeatable — pass `?org=` multiple times to match any of several orgs. Combines with `repo` as an AND filter."
             },
             "required": false,
+            "description": "Filter by org — matches any repo whose `org/repo` string starts with `<org>/`. Repeatable — pass `?org=` multiple times to match any of several orgs. Combines with `repo` as an AND filter.",
             "name": "org",
             "in": "query"
           },
@@ -190,10 +192,11 @@
                 "dev",
                 "prd"
               ],
-              "description": "Filter by TaskKind. Combines with every other filter as an AND. Note `?kind=prd&ready=true` is always empty — ready.ts excludes the PRD slice structurally.",
-              "example": "prd"
+              "example": "prd",
+              "description": "Filter by TaskKind. Combines with every other filter as an AND. Note `?kind=prd&ready=true` is always empty — ready.ts excludes the PRD slice structurally."
             },
             "required": false,
+            "description": "Filter by TaskKind. Combines with every other filter as an AND. Note `?kind=prd&ready=true` is always empty — ready.ts excludes the PRD slice structurally.",
             "name": "kind",
             "in": "query"
           },
@@ -213,10 +216,11 @@
           {
             "schema": {
               "type": "string",
-              "description": "Only return tasks with updatedAt >= this ISO timestamp. A conservative pre-filter, not a precise sync anchor.",
-              "example": "2026-01-01T00:00:00.000Z"
+              "example": "2026-01-01T00:00:00.000Z",
+              "description": "Only return tasks with updatedAt >= this ISO timestamp. A conservative pre-filter, not a precise sync anchor."
             },
             "required": false,
+            "description": "Only return tasks with updatedAt >= this ISO timestamp. A conservative pre-filter, not a precise sync anchor.",
             "name": "updatedSince",
             "in": "query"
           }
@@ -1164,20 +1168,22 @@
           {
             "schema": {
               "type": "string",
-              "description": "Max records to return",
-              "example": "50"
+              "example": "50",
+              "description": "Max records to return"
             },
             "required": false,
+            "description": "Max records to return",
             "name": "limit",
             "in": "query"
           },
           {
             "schema": {
               "type": "string",
-              "description": "Pagination offset",
-              "example": "0"
+              "example": "0",
+              "description": "Pagination offset"
             },
             "required": false,
+            "description": "Pagination offset",
             "name": "offset",
             "in": "query"
           }
@@ -1462,10 +1468,11 @@
                   }
                 }
               ],
-              "description": "Filter by repo. Repeatable (?repo=a&repo=b) to match any of several repos.",
-              "example": "org/repo"
+              "example": "org/repo",
+              "description": "Filter by repo. Repeatable (?repo=a&repo=b) to match any of several repos."
             },
             "required": false,
+            "description": "Filter by repo. Repeatable (?repo=a&repo=b) to match any of several repos.",
             "name": "repo",
             "in": "query"
           },
@@ -1482,20 +1489,22 @@
                   }
                 }
               ],
-              "description": "Filter by org — matches repos whose 'org/repo' starts with '<org>/'. Repeatable (?org=a&org=b) to match any of several orgs. Composable with repo (AND).",
-              "example": "org"
+              "example": "org",
+              "description": "Filter by org — matches repos whose 'org/repo' starts with '<org>/'. Repeatable (?org=a&org=b) to match any of several orgs. Composable with repo (AND)."
             },
             "required": false,
+            "description": "Filter by org — matches repos whose 'org/repo' starts with '<org>/'. Repeatable (?org=a&org=b) to match any of several orgs. Composable with repo (AND).",
             "name": "org",
             "in": "query"
           },
           {
             "schema": {
               "type": "string",
-              "description": "PR number (parsed as integer)",
-              "example": "42"
+              "example": "42",
+              "description": "PR number (parsed as integer)"
             },
             "required": false,
+            "description": "PR number (parsed as integer)",
             "name": "prNumber",
             "in": "query"
           },
@@ -1535,30 +1544,33 @@
                 "true",
                 "false"
               ],
-              "description": "Filter by staged flag",
-              "example": "false"
+              "example": "false",
+              "description": "Filter by staged flag"
             },
             "required": false,
+            "description": "Filter by staged flag",
             "name": "staged",
             "in": "query"
           },
           {
             "schema": {
               "type": "string",
-              "description": "Max records to return",
-              "example": "50"
+              "example": "50",
+              "description": "Max records to return"
             },
             "required": false,
+            "description": "Max records to return",
             "name": "limit",
             "in": "query"
           },
           {
             "schema": {
               "type": "string",
-              "description": "Pagination offset",
-              "example": "0"
+              "example": "0",
+              "description": "Pagination offset"
             },
             "required": false,
+            "description": "Pagination offset",
             "name": "offset",
             "in": "query"
           },
@@ -1569,10 +1581,11 @@
                 "true",
                 "false"
               ],
-              "description": "When true, return only unclaimed PRs (claimedBy IS NULL) — mirrors /tasks?ready=true. Composable with other filters (repo, state, reviewState); does not itself apply state/reviewState eligibility rules the way claim-next does.",
-              "example": "true"
+              "example": "true",
+              "description": "When true, return only unclaimed PRs (claimedBy IS NULL) — mirrors /tasks?ready=true. Composable with other filters (repo, state, reviewState); does not itself apply state/reviewState eligibility rules the way claim-next does."
             },
             "required": false,
+            "description": "When true, return only unclaimed PRs (claimedBy IS NULL) — mirrors /tasks?ready=true. Composable with other filters (repo, state, reviewState); does not itself apply state/reviewState eligibility rules the way claim-next does.",
             "name": "ready",
             "in": "query"
           },
@@ -1583,10 +1596,11 @@
                 "true",
                 "false"
               ],
-              "description": "When true, return only PRs considered blocked: pr.blocked===true OR (linked task exists AND task.status==='blocked'). Task.hitl is not consulted — post-redesign, Type A tasks (the only ones that keep hitl:true) never have a linked PR. Composable with other filters (e.g. state=open).",
-              "example": "true"
+              "example": "true",
+              "description": "When true, return only PRs considered blocked: pr.blocked===true OR (linked task exists AND task.status==='blocked'). Task.hitl is not consulted — post-redesign, Type A tasks (the only ones that keep hitl:true) never have a linked PR. Composable with other filters (e.g. state=open)."
             },
             "required": false,
+            "description": "When true, return only PRs considered blocked: pr.blocked===true OR (linked task exists AND task.status==='blocked'). Task.hitl is not consulted — post-redesign, Type A tasks (the only ones that keep hitl:true) never have a linked PR. Composable with other filters (e.g. state=open).",
             "name": "blocked",
             "in": "query"
           },
@@ -1597,30 +1611,33 @@
                 "asc",
                 "desc"
               ],
-              "description": "Order results by createdAt. Default is ascending (asc), preserving current behavior for existing callers. Unrelated to claim-next's own deterministic ordering.",
-              "example": "asc"
+              "example": "asc",
+              "description": "Order results by createdAt. Default is ascending (asc), preserving current behavior for existing callers. Unrelated to claim-next's own deterministic ordering."
             },
             "required": false,
+            "description": "Order results by createdAt. Default is ascending (asc), preserving current behavior for existing callers. Unrelated to claim-next's own deterministic ordering.",
             "name": "sort",
             "in": "query"
           },
           {
             "schema": {
               "type": "string",
-              "description": "Only return PRs with updatedAt >= this ISO timestamp. A conservative pre-filter, not a precise sync anchor.",
-              "example": "2026-01-01T00:00:00.000Z"
+              "example": "2026-01-01T00:00:00.000Z",
+              "description": "Only return PRs with updatedAt >= this ISO timestamp. A conservative pre-filter, not a precise sync anchor."
             },
             "required": false,
+            "description": "Only return PRs with updatedAt >= this ISO timestamp. A conservative pre-filter, not a precise sync anchor.",
             "name": "updatedSince",
             "in": "query"
           },
           {
             "schema": {
               "type": "string",
-              "description": "Comma-separated list of PrOrigin values (shipwright, ci, dependency_bot, human, unknown). Matches rows whose origin is any of the given values.",
-              "example": "shipwright,ci"
+              "example": "shipwright,ci",
+              "description": "Comma-separated list of PrOrigin values (shipwright, ci, dependency_bot, human, unknown). Matches rows whose origin is any of the given values."
             },
             "required": false,
+            "description": "Comma-separated list of PrOrigin values (shipwright, ci, dependency_bot, human, unknown). Matches rows whose origin is any of the given values.",
             "name": "origin",
             "in": "query"
           }
@@ -1806,10 +1823,11 @@
           {
             "schema": {
               "type": "string",
-              "description": "Repository in org/repo format.",
-              "example": "org/repo"
+              "example": "org/repo",
+              "description": "Repository in org/repo format."
             },
             "required": true,
+            "description": "Repository in org/repo format.",
             "name": "repo",
             "in": "query"
           }
@@ -2284,20 +2302,22 @@
           {
             "schema": {
               "type": "string",
-              "description": "Max records to return",
-              "example": "50"
+              "example": "50",
+              "description": "Max records to return"
             },
             "required": false,
+            "description": "Max records to return",
             "name": "limit",
             "in": "query"
           },
           {
             "schema": {
               "type": "string",
-              "description": "Pagination offset",
-              "example": "0"
+              "example": "0",
+              "description": "Pagination offset"
             },
             "required": false,
+            "description": "Pagination offset",
             "name": "offset",
             "in": "query"
           }
@@ -2345,10 +2365,11 @@
                 "archived",
                 "all"
               ],
-              "description": "Omitted: archived===false AND state!=='closed'. A named state (waiting/active/closed/empty) matches rollup.state alone (not additionally archived-filtered). 'archived': archived===true (rollup state ignored). 'all': no filtering.",
-              "example": "waiting"
+              "example": "waiting",
+              "description": "Omitted: archived===false AND state!=='closed'. A named state (waiting/active/closed/empty) matches rollup.state alone (not additionally archived-filtered). 'archived': archived===true (rollup state ignored). 'all': no filtering."
             },
             "required": false,
+            "description": "Omitted: archived===false AND state!=='closed'. A named state (waiting/active/closed/empty) matches rollup.state alone (not additionally archived-filtered). 'archived': archived===true (rollup state ignored). 'all': no filtering.",
             "name": "state",
             "in": "query"
           },
@@ -2359,20 +2380,22 @@
                 "waitingSince",
                 "lastActivityAt"
               ],
-              "description": "'waitingSince': waiting sessions first (oldest waitingSince first), then non-waiting sessions by lastActivityAt desc. Default (or 'lastActivityAt'): all sessions by lastActivityAt desc, nulls last.",
-              "example": "waitingSince"
+              "example": "waitingSince",
+              "description": "'waitingSince': waiting sessions first (oldest waitingSince first), then non-waiting sessions by lastActivityAt desc. Default (or 'lastActivityAt'): all sessions by lastActivityAt desc, nulls last."
             },
             "required": false,
+            "description": "'waitingSince': waiting sessions first (oldest waitingSince first), then non-waiting sessions by lastActivityAt desc. Default (or 'lastActivityAt'): all sessions by lastActivityAt desc, nulls last.",
             "name": "sort",
             "in": "query"
           },
           {
             "schema": {
               "type": "string",
-              "description": "Only sessions whose rollup.agentIds includes this agent.",
-              "example": "agent-id-123"
+              "example": "agent-id-123",
+              "description": "Only sessions whose rollup.agentIds includes this agent."
             },
             "required": false,
+            "description": "Only sessions whose rollup.agentIds includes this agent.",
             "name": "agentId",
             "in": "query"
           },
@@ -2389,10 +2412,11 @@
                   }
                 }
               ],
-              "description": "Only sessions whose rollup.repos includes any of the given repo(s). Repeatable (?repo=a&repo=b).",
-              "example": "org/repo"
+              "example": "org/repo",
+              "description": "Only sessions whose rollup.repos includes any of the given repo(s). Repeatable (?repo=a&repo=b)."
             },
             "required": false,
+            "description": "Only sessions whose rollup.repos includes any of the given repo(s). Repeatable (?repo=a&repo=b).",
             "name": "repo",
             "in": "query"
           },
@@ -2409,20 +2433,22 @@
                   }
                 }
               ],
-              "description": "Only sessions with a repo whose `org/repo` string starts with `<org>/`. Repeatable — pass `?org=` multiple times to match any of several orgs (e.g. `?org=a&org=b`).",
-              "example": "org"
+              "example": "org",
+              "description": "Only sessions with a repo whose `org/repo` string starts with `<org>/`. Repeatable — pass `?org=` multiple times to match any of several orgs (e.g. `?org=a&org=b`)."
             },
             "required": false,
+            "description": "Only sessions with a repo whose `org/repo` string starts with `<org>/`. Repeatable — pass `?org=` multiple times to match any of several orgs (e.g. `?org=a&org=b`).",
             "name": "org",
             "in": "query"
           },
           {
             "schema": {
               "type": "string",
-              "description": "Case-insensitive substring match against slug OR title.",
-              "example": "launch"
+              "example": "launch",
+              "description": "Case-insensitive substring match against slug OR title."
             },
             "required": false,
+            "description": "Case-insensitive substring match against slug OR title.",
             "name": "q",
             "in": "query"
           },
@@ -2650,10 +2676,11 @@
           {
             "schema": {
               "type": "string",
-              "description": "Selects task mode. Exactly one of ?taskId=, ?prId=, or (?repo=+?checkName=) is required.",
-              "example": "clx1234567890"
+              "example": "clx1234567890",
+              "description": "Selects task mode. Exactly one of ?taskId=, ?prId=, or (?repo=+?checkName=) is required."
             },
             "required": false,
+            "description": "Selects task mode. Exactly one of ?taskId=, ?prId=, or (?repo=+?checkName=) is required.",
             "name": "taskId",
             "in": "query"
           },
@@ -2669,40 +2696,44 @@
           {
             "schema": {
               "type": "string",
-              "description": "Selects repo+checkName mode (LVB-4.4) — paired with ?checkName=, both required together. Returns history for this repo+check across ALL tasks/PRs, ordered by `at` DESCENDING (most recent first) — a deliberate deviation from the taskId/prId modes' ascending order, so a caller can walk backward from the most recent outcome to detect a consecutive skipped/timed_out streak.",
-              "example": "org/repo"
+              "example": "org/repo",
+              "description": "Selects repo+checkName mode (LVB-4.4) — paired with ?checkName=, both required together. Returns history for this repo+check across ALL tasks/PRs, ordered by `at` DESCENDING (most recent first) — a deliberate deviation from the taskId/prId modes' ascending order, so a caller can walk backward from the most recent outcome to detect a consecutive skipped/timed_out streak."
             },
             "required": false,
+            "description": "Selects repo+checkName mode (LVB-4.4) — paired with ?checkName=, both required together. Returns history for this repo+check across ALL tasks/PRs, ordered by `at` DESCENDING (most recent first) — a deliberate deviation from the taskId/prId modes' ascending order, so a caller can walk backward from the most recent outcome to detect a consecutive skipped/timed_out streak.",
             "name": "repo",
             "in": "query"
           },
           {
             "schema": {
               "type": "string",
-              "description": "Paired with ?repo= — supplying only one of the pair is 400.",
-              "example": "unit"
+              "example": "unit",
+              "description": "Paired with ?repo= — supplying only one of the pair is 400."
             },
             "required": false,
+            "description": "Paired with ?repo= — supplying only one of the pair is 400.",
             "name": "checkName",
             "in": "query"
           },
           {
             "schema": {
               "type": "string",
-              "description": "Max records to return",
-              "example": "50"
+              "example": "50",
+              "description": "Max records to return"
             },
             "required": false,
+            "description": "Max records to return",
             "name": "limit",
             "in": "query"
           },
           {
             "schema": {
               "type": "string",
-              "description": "Pagination offset",
-              "example": "0"
+              "example": "0",
+              "description": "Pagination offset"
             },
             "required": false,
+            "description": "Pagination offset",
             "name": "offset",
             "in": "query"
           }
@@ -2744,6 +2775,31 @@
   },
   "components": {
     "schemas": {
+      "TaskListResponse": {
+        "type": "object",
+        "properties": {
+          "tasks": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Task"
+            }
+          },
+          "total": {
+            "type": "integer",
+            "example": 10
+          },
+          "scopeDegraded": {
+            "type": "boolean",
+            "example": false,
+            "description": "True only when the agent token's repo-scope resolver call itself failed upstream (network error, timeout, non-2xx, malformed JSON) — distinct from a legitimate empty repo scope. Always false for admin tokens."
+          }
+        },
+        "required": [
+          "tasks",
+          "total",
+          "scopeDegraded"
+        ]
+      },
       "Task": {
         "type": "object",
         "properties": {
@@ -2994,14 +3050,14 @@
               "prd"
             ],
             "default": "dev",
-            "description": "What the task is: `dev` (ordinary work item, the default) or `prd` (a product spec awaiting an autonomous plan session). A `prd` task is never part of the `?ready=true` set.",
-            "example": "dev"
+            "example": "dev",
+            "description": "What the task is: `dev` (ordinary work item, the default) or `prd` (a product spec awaiting an autonomous plan session). A `prd` task is never part of the `?ready=true` set."
           },
           "skipCount": {
             "type": "integer",
             "default": 0,
-            "description": "Consecutive skip count for the current lastSkipReason streak. A skip whose reason differs from lastSkipReason resets this to 1 instead of incrementing. Auto-blocks (hitl+blockedReason) once it crosses the threshold (3).",
-            "example": 0
+            "example": 0,
+            "description": "Consecutive skip count for the current lastSkipReason streak. A skip whose reason differs from lastSkipReason resets this to 1 instead of incrementing. Auto-blocks (hitl+blockedReason) once it crosses the threshold (3)."
           },
           "lastSkippedAt": {
             "type": [
@@ -3015,8 +3071,8 @@
               "string",
               "null"
             ],
-            "description": "The skip reason associated with the current skipCount streak. POST /tasks/:id/skip's optional `reason` field (default `\"unspecified\"`) is compared against this value: a match increments skipCount, a difference (including from null) resets skipCount to 1 and stores the new reason here.",
-            "example": "dev-task:deferred:unmet-hidden-requirement"
+            "example": "dev-task:deferred:unmet-hidden-requirement",
+            "description": "The skip reason associated with the current skipCount streak. POST /tasks/:id/skip's optional `reason` field (default `\"unspecified\"`) is compared against this value: a match increments skipCount, a difference (including from null) resets skipCount to 1 and stores the new reason here."
           },
           "claimedBy": {
             "type": [
@@ -3166,31 +3222,6 @@
           "updatedAt"
         ]
       },
-      "TaskListResponse": {
-        "type": "object",
-        "properties": {
-          "tasks": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/Task"
-            }
-          },
-          "total": {
-            "type": "integer",
-            "example": 10
-          },
-          "scopeDegraded": {
-            "type": "boolean",
-            "description": "True only when the agent token's repo-scope resolver call itself failed upstream (network error, timeout, non-2xx, malformed JSON) — distinct from a legitimate empty repo scope. Always false for admin tokens.",
-            "example": false
-          }
-        },
-        "required": [
-          "tasks",
-          "total",
-          "scopeDegraded"
-        ]
-      },
       "Error": {
         "type": "object",
         "properties": {
@@ -3275,10 +3306,11 @@
               "dev",
               "prd"
             ],
-            "description": "What the task is (TKD-1.1). Defaults to `dev`.",
-            "example": "dev"
+            "example": "dev",
+            "description": "What the task is (TKD-1.1). Defaults to `dev`."
           }
-        }
+        },
+        "additionalProperties": {}
       },
       "BulkInsertResponse": {
         "type": "object",
@@ -3296,8 +3328,8 @@
             "items": {
               "type": "string"
             },
-            "description": "Always empty on success (TSW-1.3). bulk() is atomic — a single task id collision (P2002) now hard-fails the whole batch with 409 instead of skipping that task and continuing. This field is retained only for response-shape backward compatibility.",
-            "example": []
+            "example": [],
+            "description": "Always empty on success (TSW-1.3). bulk() is atomic — a single task id collision (P2002) now hard-fails the whole batch with 409 instead of skipping that task and continuing. This field is retained only for response-shape backward compatibility."
           }
         },
         "required": [
@@ -3328,7 +3360,8 @@
               ],
               "example": "org/repo"
             }
-          }
+          },
+          "additionalProperties": {}
         },
         "maxItems": 500,
         "description": "Tasks to insert, at most 500 per call (TSW-1.3: the whole array runs in one transaction, and the cap bounds that transaction's budget). An over-cap batch is rejected with 400 — split it."
@@ -3401,6 +3434,36 @@
           }
         }
       },
+      "TaskEventsResponse": {
+        "type": "object",
+        "properties": {
+          "events": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/TaskEvent"
+            },
+            "description": "This task's TaskEvent audit trail, ordered by `at` ascending (oldest first)."
+          },
+          "total": {
+            "type": "integer",
+            "example": 1
+          },
+          "limit": {
+            "type": "integer",
+            "example": 50
+          },
+          "offset": {
+            "type": "integer",
+            "example": 0
+          }
+        },
+        "required": [
+          "events",
+          "total",
+          "limit",
+          "offset"
+        ]
+      },
       "TaskEvent": {
         "type": "object",
         "properties": {
@@ -3461,36 +3524,6 @@
           "method",
           "at",
           "createdAt"
-        ]
-      },
-      "TaskEventsResponse": {
-        "type": "object",
-        "properties": {
-          "events": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/TaskEvent"
-            },
-            "description": "This task's TaskEvent audit trail, ordered by `at` ascending (oldest first)."
-          },
-          "total": {
-            "type": "integer",
-            "example": 1
-          },
-          "limit": {
-            "type": "integer",
-            "example": 50
-          },
-          "offset": {
-            "type": "integer",
-            "example": 0
-          }
-        },
-        "required": [
-          "events",
-          "total",
-          "limit",
-          "offset"
         ]
       },
       "TaskToken": {
@@ -3565,6 +3598,342 @@
           }
         }
       },
+      "PrListResponse": {
+        "type": "object",
+        "properties": {
+          "prs": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PullRequest"
+            },
+            "description": "Array of pull requests"
+          },
+          "total": {
+            "type": "integer",
+            "example": 1
+          },
+          "limit": {
+            "type": "integer",
+            "example": 50
+          },
+          "offset": {
+            "type": "integer",
+            "example": 0
+          }
+        },
+        "required": [
+          "prs",
+          "total",
+          "limit",
+          "offset"
+        ]
+      },
+      "PullRequest": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "example": "clx0987654321"
+          },
+          "repo": {
+            "type": "string",
+            "example": "org/repo"
+          },
+          "prNumber": {
+            "type": "integer",
+            "example": 42
+          },
+          "staged": {
+            "type": "boolean",
+            "default": false,
+            "example": false
+          },
+          "state": {
+            "type": "string",
+            "enum": [
+              "open",
+              "merged",
+              "closed"
+            ],
+            "default": "open",
+            "example": "open"
+          },
+          "reviewState": {
+            "type": "string",
+            "enum": [
+              "pending",
+              "in_progress",
+              "posted",
+              "approved"
+            ],
+            "default": "pending",
+            "example": "pending"
+          },
+          "commitSha": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "example": "abc123def456"
+          },
+          "reviewedCommitSha": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "example": "abc123def456",
+            "description": "The review pipeline's exclusive commit-tracking field, separate from the shared commitSha field written by claim()/patch()/deploy for their own multi-phase bookkeeping."
+          },
+          "patchCycles": {
+            "type": "integer",
+            "default": 0,
+            "example": 1
+          },
+          "reviewCycles": {
+            "type": "integer",
+            "default": 0,
+            "example": 0
+          },
+          "agentId": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "example": "agent-id-123"
+          },
+          "reviewedAt": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "example": "2026-01-03T00:00:00.000Z"
+          },
+          "patchedAt": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "example": null
+          },
+          "mergedAt": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "example": null
+          },
+          "prCreatedAt": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "example": "2026-01-01T00:00:00.000Z",
+            "description": "ISO timestamp of the GitHub PR's actual creation time. Set once via POST /prs/claim (first claim only); read-only thereafter."
+          },
+          "claimedBy": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "example": "agent-id-123"
+          },
+          "claimedAt": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "example": "2026-01-02T00:00:00.000Z"
+          },
+          "heartbeatAt": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "example": "2026-01-06T12:00:00.000Z"
+          },
+          "phase": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "enum": [
+              "review",
+              "patch",
+              "deploy",
+              null
+            ],
+            "example": "review"
+          },
+          "readyForReviewAt": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "example": "2026-01-02T00:00:00.000Z"
+          },
+          "readyForPatchAt": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "example": null
+          },
+          "readyForDeployAt": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "example": null
+          },
+          "blocked": {
+            "type": "boolean",
+            "default": false,
+            "example": false
+          },
+          "blockedReason": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "example": "no linked task"
+          },
+          "origin": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "enum": [
+              "shipwright",
+              "ci",
+              "dependency_bot",
+              "human",
+              "unknown",
+              null
+            ],
+            "example": "shipwright",
+            "description": "Where this PR record first learned about the PR — first-write-wins (see PullRequestService.stampOrigin()). Null means the row has never been stamped (POM-1.1's accepted gap: a PR that never passes through the pr_open transition, POST /prs/claim, or the census sweep has no origin at all)."
+          },
+          "authorLogin": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "example": "octocat"
+          },
+          "headRef": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "example": "feat/some-branch"
+          },
+          "title": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "example": "Add the origin metrics dimension"
+          },
+          "commitCount": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "example": 12,
+            "description": "Total commit count on this PR (CPP-1.1). Written unconditionally by POST /prs/census whenever supplied — mirrors authorLogin/headRef/title, not origin's first-write-wins semantic."
+          },
+          "commitsDocsRefresh": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "example": 1,
+            "description": "Commits attributed to the docs-refresher subagent (CPP-1.1)."
+          },
+          "commitsReviewPatch": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "example": 3,
+            "description": "Commits attributed to the review/patch cycle (CPP-1.1)."
+          },
+          "commitsCiFix": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "example": 2,
+            "description": "Commits attributed to CI-fix cycles (CPP-1.1)."
+          },
+          "commitsImplementation": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "example": 6,
+            "description": "Commits attributed to the initial implementation (CPP-1.1)."
+          },
+          "skipCount": {
+            "type": "integer",
+            "default": 0,
+            "example": 0,
+            "description": "Consecutive skip count. Auto-blocks (blocked+blockedReason) once it crosses the threshold (3). POST /prs/:id/skip/reset resets this to 0 and, only when blockedReason matches the skip-auto-block message pattern (contains 'consecutive skips'), also clears blocked/blockedReason — a block set by a different mechanism (e.g. the CI-failure-streak auto-block) is left untouched."
+          },
+          "lastSkippedAt": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "example": "2026-01-02T00:00:00.000Z"
+          },
+          "lastCiFailureSignature": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "example": "npm-test-failed-foo.unit.test.ts",
+            "description": "Signature of the most recent CI failure reported via POST /prs/:id/patch's ciFailureSignature field. Used to detect consecutive patch cycles hitting the same CI failure."
+          },
+          "consecutiveCiFailureCount": {
+            "type": "integer",
+            "default": 0,
+            "example": 0,
+            "description": "Count of consecutive patch() calls whose ciFailureSignature matched lastCiFailureSignature. Auto-blocks (blocked+blockedReason) once it crosses the threshold (3)."
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time",
+            "example": "2026-01-01T00:00:00.000Z"
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time",
+            "example": "2026-01-06T12:00:00.000Z"
+          },
+          "findings": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PrFinding"
+            },
+            "description": "Review/patch findings recorded against this PR, if the caller's query included them (GET /prs/:id and list responses always include this array)."
+          },
+          "events": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PullRequestEvent"
+            },
+            "description": "Field-level state transition audit trail for this PR, if the caller's query included them (GET /prs/:id and list responses always include this array)."
+          }
+        },
+        "required": [
+          "id",
+          "repo",
+          "prNumber",
+          "createdAt",
+          "updatedAt"
+        ]
+      },
       "PrFinding": {
         "type": "object",
         "properties": {
@@ -3610,8 +3979,8 @@
               "string",
               "null"
             ],
-            "description": "Agent instance that triaged this finding, if any.",
-            "example": "agent-abc123"
+            "example": "agent-abc123",
+            "description": "Agent instance that triaged this finding, if any."
           },
           "createdAt": {
             "type": "string",
@@ -3693,362 +4062,28 @@
           "createdAt"
         ]
       },
-      "PullRequest": {
-        "type": "object",
-        "properties": {
-          "id": {
-            "type": "string",
-            "example": "clx0987654321"
-          },
-          "repo": {
-            "type": "string",
-            "example": "org/repo"
-          },
-          "prNumber": {
-            "type": "integer",
-            "example": 42
-          },
-          "staged": {
-            "type": "boolean",
-            "default": false,
-            "example": false
-          },
-          "state": {
-            "type": "string",
-            "enum": [
-              "open",
-              "merged",
-              "closed"
-            ],
-            "default": "open",
-            "example": "open"
-          },
-          "reviewState": {
-            "type": "string",
-            "enum": [
-              "pending",
-              "in_progress",
-              "posted",
-              "approved"
-            ],
-            "default": "pending",
-            "example": "pending"
-          },
-          "commitSha": {
-            "type": [
-              "string",
-              "null"
-            ],
-            "example": "abc123def456"
-          },
-          "reviewedCommitSha": {
-            "type": [
-              "string",
-              "null"
-            ],
-            "description": "The review pipeline's exclusive commit-tracking field, separate from the shared commitSha field written by claim()/patch()/deploy for their own multi-phase bookkeeping.",
-            "example": "abc123def456"
-          },
-          "patchCycles": {
-            "type": "integer",
-            "default": 0,
-            "example": 1
-          },
-          "reviewCycles": {
-            "type": "integer",
-            "default": 0,
-            "example": 0
-          },
-          "agentId": {
-            "type": [
-              "string",
-              "null"
-            ],
-            "example": "agent-id-123"
-          },
-          "reviewedAt": {
-            "type": [
-              "string",
-              "null"
-            ],
-            "example": "2026-01-03T00:00:00.000Z"
-          },
-          "patchedAt": {
-            "type": [
-              "string",
-              "null"
-            ],
-            "example": null
-          },
-          "mergedAt": {
-            "type": [
-              "string",
-              "null"
-            ],
-            "example": null
-          },
-          "prCreatedAt": {
-            "type": [
-              "string",
-              "null"
-            ],
-            "description": "ISO timestamp of the GitHub PR's actual creation time. Set once via POST /prs/claim (first claim only); read-only thereafter.",
-            "example": "2026-01-01T00:00:00.000Z"
-          },
-          "claimedBy": {
-            "type": [
-              "string",
-              "null"
-            ],
-            "example": "agent-id-123"
-          },
-          "claimedAt": {
-            "type": [
-              "string",
-              "null"
-            ],
-            "example": "2026-01-02T00:00:00.000Z"
-          },
-          "heartbeatAt": {
-            "type": [
-              "string",
-              "null"
-            ],
-            "example": "2026-01-06T12:00:00.000Z"
-          },
-          "phase": {
-            "type": [
-              "string",
-              "null"
-            ],
-            "enum": [
-              "review",
-              "patch",
-              "deploy"
-            ],
-            "example": "review"
-          },
-          "readyForReviewAt": {
-            "type": [
-              "string",
-              "null"
-            ],
-            "example": "2026-01-02T00:00:00.000Z"
-          },
-          "readyForPatchAt": {
-            "type": [
-              "string",
-              "null"
-            ],
-            "example": null
-          },
-          "readyForDeployAt": {
-            "type": [
-              "string",
-              "null"
-            ],
-            "example": null
-          },
-          "blocked": {
-            "type": "boolean",
-            "default": false,
-            "example": false
-          },
-          "blockedReason": {
-            "type": [
-              "string",
-              "null"
-            ],
-            "example": "no linked task"
-          },
-          "origin": {
-            "type": [
-              "string",
-              "null"
-            ],
-            "enum": [
-              "shipwright",
-              "ci",
-              "dependency_bot",
-              "human",
-              "unknown"
-            ],
-            "description": "Where this PR record first learned about the PR — first-write-wins (see PullRequestService.stampOrigin()). Null means the row has never been stamped (POM-1.1's accepted gap: a PR that never passes through the pr_open transition, POST /prs/claim, or the census sweep has no origin at all).",
-            "example": "shipwright"
-          },
-          "authorLogin": {
-            "type": [
-              "string",
-              "null"
-            ],
-            "example": "octocat"
-          },
-          "headRef": {
-            "type": [
-              "string",
-              "null"
-            ],
-            "example": "feat/some-branch"
-          },
-          "title": {
-            "type": [
-              "string",
-              "null"
-            ],
-            "example": "Add the origin metrics dimension"
-          },
-          "commitCount": {
-            "type": [
-              "integer",
-              "null"
-            ],
-            "description": "Total commit count on this PR (CPP-1.1). Written unconditionally by POST /prs/census whenever supplied — mirrors authorLogin/headRef/title, not origin's first-write-wins semantic.",
-            "example": 12
-          },
-          "commitsDocsRefresh": {
-            "type": [
-              "integer",
-              "null"
-            ],
-            "description": "Commits attributed to the docs-refresher subagent (CPP-1.1).",
-            "example": 1
-          },
-          "commitsReviewPatch": {
-            "type": [
-              "integer",
-              "null"
-            ],
-            "description": "Commits attributed to the review/patch cycle (CPP-1.1).",
-            "example": 3
-          },
-          "commitsCiFix": {
-            "type": [
-              "integer",
-              "null"
-            ],
-            "description": "Commits attributed to CI-fix cycles (CPP-1.1).",
-            "example": 2
-          },
-          "commitsImplementation": {
-            "type": [
-              "integer",
-              "null"
-            ],
-            "description": "Commits attributed to the initial implementation (CPP-1.1).",
-            "example": 6
-          },
-          "skipCount": {
-            "type": "integer",
-            "default": 0,
-            "description": "Consecutive skip count. Auto-blocks (blocked+blockedReason) once it crosses the threshold (3). POST /prs/:id/skip/reset resets this to 0 and, only when blockedReason matches the skip-auto-block message pattern (contains 'consecutive skips'), also clears blocked/blockedReason — a block set by a different mechanism (e.g. the CI-failure-streak auto-block) is left untouched.",
-            "example": 0
-          },
-          "lastSkippedAt": {
-            "type": [
-              "string",
-              "null"
-            ],
-            "example": "2026-01-02T00:00:00.000Z"
-          },
-          "lastCiFailureSignature": {
-            "type": [
-              "string",
-              "null"
-            ],
-            "description": "Signature of the most recent CI failure reported via POST /prs/:id/patch's ciFailureSignature field. Used to detect consecutive patch cycles hitting the same CI failure.",
-            "example": "npm-test-failed-foo.unit.test.ts"
-          },
-          "consecutiveCiFailureCount": {
-            "type": "integer",
-            "default": 0,
-            "description": "Count of consecutive patch() calls whose ciFailureSignature matched lastCiFailureSignature. Auto-blocks (blocked+blockedReason) once it crosses the threshold (3).",
-            "example": 0
-          },
-          "createdAt": {
-            "type": "string",
-            "format": "date-time",
-            "example": "2026-01-01T00:00:00.000Z"
-          },
-          "updatedAt": {
-            "type": "string",
-            "format": "date-time",
-            "example": "2026-01-06T12:00:00.000Z"
-          },
-          "findings": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/PrFinding"
-            },
-            "description": "Review/patch findings recorded against this PR, if the caller's query included them (GET /prs/:id and list responses always include this array)."
-          },
-          "events": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/PullRequestEvent"
-            },
-            "description": "Field-level state transition audit trail for this PR, if the caller's query included them (GET /prs/:id and list responses always include this array)."
-          }
-        },
-        "required": [
-          "id",
-          "repo",
-          "prNumber",
-          "createdAt",
-          "updatedAt"
-        ]
-      },
-      "PrListResponse": {
-        "type": "object",
-        "properties": {
-          "prs": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/PullRequest"
-            },
-            "description": "Array of pull requests"
-          },
-          "total": {
-            "type": "integer",
-            "example": 1
-          },
-          "limit": {
-            "type": "integer",
-            "example": 50
-          },
-          "offset": {
-            "type": "integer",
-            "example": 0
-          }
-        },
-        "required": [
-          "prs",
-          "total",
-          "limit",
-          "offset"
-        ]
-      },
       "ClaimPrBody": {
         "type": "object",
         "properties": {
           "repo": {
             "type": "string",
-            "description": "Repository in org/repo format",
-            "example": "org/repo"
+            "example": "org/repo",
+            "description": "Repository in org/repo format"
           },
           "prNumber": {
             "type": "integer",
-            "description": "Pull request number",
-            "example": 42
+            "example": 42,
+            "description": "Pull request number"
           },
           "commitSha": {
             "type": "string",
-            "description": "Commit SHA to associate",
-            "example": "abc123def456"
+            "example": "abc123def456",
+            "description": "Commit SHA to associate"
           },
           "claimedBy": {
             "type": "string",
-            "description": "Agent claiming this PR (admin tokens only)",
-            "example": "agent-id-123"
+            "example": "agent-id-123",
+            "description": "Agent claiming this PR (admin tokens only)"
           },
           "phase": {
             "type": "string",
@@ -4057,52 +4092,52 @@
               "patch",
               "deploy"
             ],
-            "description": "Pipeline phase this claim is for (defaults to 'review' when omitted)",
-            "example": "patch"
+            "example": "patch",
+            "description": "Pipeline phase this claim is for (defaults to 'review' when omitted)"
           },
           "prCreatedAt": {
             "type": "string",
-            "description": "ISO timestamp of the GitHub PR's actual creation time. Only applied on first claim (record creation); ignored on subsequent claims since the field is immutable once set.",
-            "example": "2026-01-01T00:00:00.000Z"
+            "example": "2026-01-01T00:00:00.000Z",
+            "description": "ISO timestamp of the GitHub PR's actual creation time. Only applied on first claim (record creation); ignored on subsequent claims since the field is immutable once set."
           },
           "authorLogin": {
             "type": [
               "string",
               "null"
             ],
-            "description": "PR author's GitHub login (POM-1.2). Used server-side to derive `origin` (first-write-wins) and refreshed unconditionally on every claim.",
-            "example": "octocat"
+            "example": "octocat",
+            "description": "PR author's GitHub login (POM-1.2). Used server-side to derive `origin` (first-write-wins) and refreshed unconditionally on every claim."
           },
           "headRef": {
             "type": [
               "string",
               "null"
             ],
-            "description": "PR's head branch name (POM-1.2). Used server-side to derive `origin` (first-write-wins) and refreshed unconditionally on every claim.",
-            "example": "feat/some-branch"
+            "example": "feat/some-branch",
+            "description": "PR's head branch name (POM-1.2). Used server-side to derive `origin` (first-write-wins) and refreshed unconditionally on every claim."
           },
           "title": {
             "type": [
               "string",
               "null"
             ],
-            "description": "PR title (POM-1.2). Refreshed unconditionally on every claim.",
-            "example": "Add the origin metrics dimension"
+            "example": "Add the origin metrics dimension",
+            "description": "PR title (POM-1.2). Refreshed unconditionally on every claim."
           },
           "authorIsBot": {
             "type": "boolean",
-            "description": "True when the caller's GitHub client reports `is_bot: true` for the PR author (POF-1.1), e.g. `gh pr list --json author` normalizing a bot author to `app/<slug>`. Used server-side to derive `origin`, checked ahead of the legacy `authorLogin` string matching.",
-            "example": true
+            "example": true,
+            "description": "True when the caller's GitHub client reports `is_bot: true` for the PR author (POF-1.1), e.g. `gh pr list --json author` normalizing a bot author to `app/<slug>`. Used server-side to derive `origin`, checked ahead of the legacy `authorLogin` string matching."
           },
           "hasAutomatedLabel": {
             "type": "boolean",
-            "description": "True when the PR carries a label indicating CI/automation opened it (POF-1.1). Used server-side to derive `origin='ci'`, independent of `authorLogin`.",
-            "example": false
+            "example": false,
+            "description": "True when the PR carries a label indicating CI/automation opened it (POF-1.1). Used server-side to derive `origin='ci'`, independent of `authorLogin`."
           },
           "hasShipwrightLabel": {
             "type": "boolean",
-            "description": "True when the PR carries a label indicating Shipwright itself opened it (POF-1.1). Used server-side to derive `origin='shipwright'` at the same precedence step as a linked Task row — no linked task is required.",
-            "example": false
+            "example": false,
+            "description": "True when the PR carries a label indicating Shipwright itself opened it (POF-1.1). Used server-side to derive `origin='shipwright'` at the same precedence step as a linked Task row — no linked task is required."
           }
         },
         "required": [
@@ -4137,13 +4172,13 @@
         "properties": {
           "agentId": {
             "type": "string",
-            "description": "Agent ID (admin tokens only; agent tokens use token identity)",
-            "example": "agent-id-123"
+            "example": "agent-id-123",
+            "description": "Agent ID (admin tokens only; agent tokens use token identity)"
           },
           "maxConcurrent": {
             "type": "integer",
-            "description": "Maximum concurrent PRs to claim",
-            "example": 1
+            "example": 1,
+            "description": "Maximum concurrent PRs to claim"
           }
         }
       },
@@ -4161,6 +4196,14 @@
         "required": [
           "prs"
         ]
+      },
+      "CensusBody": {
+        "type": "array",
+        "items": {
+          "$ref": "#/components/schemas/CensusEntry"
+        },
+        "maxItems": 200,
+        "description": "Entries to upsert, at most 200 per call — the whole batch runs in one transaction. An over-cap batch is rejected with 400."
       },
       "CensusEntry": {
         "type": "object",
@@ -4182,8 +4225,8 @@
               "human",
               "unknown"
             ],
-            "description": "First-write-wins: only applied when the row's existing origin is currently null.",
-            "example": "unknown"
+            "example": "unknown",
+            "description": "First-write-wins: only applied when the row's existing origin is currently null."
           },
           "authorLogin": {
             "type": [
@@ -4270,14 +4313,6 @@
           "prNumber"
         ]
       },
-      "CensusBody": {
-        "type": "array",
-        "items": {
-          "$ref": "#/components/schemas/CensusEntry"
-        },
-        "maxItems": 200,
-        "description": "Entries to upsert, at most 200 per call — the whole batch runs in one transaction. An over-cap batch is rejected with 400."
-      },
       "CensusCursorResponse": {
         "type": "object",
         "properties": {
@@ -4286,8 +4321,8 @@
               "string",
               "null"
             ],
-            "description": "Max mergedAt (ISO string) among rows scoped to `repo` whose origin is not null, or null when no such row exists.",
-            "example": "2026-01-04T00:00:00.000Z"
+            "example": "2026-01-04T00:00:00.000Z",
+            "description": "Max mergedAt (ISO string) among rows scoped to `repo` whose origin is not null, or null when no such row exists."
           }
         },
         "required": [
@@ -4303,13 +4338,13 @@
         "properties": {
           "commitSha": {
             "type": "string",
-            "description": "Current head commit SHA. When provided and it differs from the record's stored commitSha, reviewState resets to pending and commitSha is updated. When it matches, reviewState is left untouched (no-op patch cycle). When omitted, reviewState unconditionally resets to pending (legacy behavior).",
-            "example": "abc123def456"
+            "example": "abc123def456",
+            "description": "Current head commit SHA. When provided and it differs from the record's stored commitSha, reviewState resets to pending and commitSha is updated. When it matches, reviewState is left untouched (no-op patch cycle). When omitted, reviewState unconditionally resets to pending (legacy behavior)."
           },
           "ciFailureSignature": {
             "type": "string",
-            "description": "Signature identifying the current CI failure (e.g. which check + which test). When it matches the record's stored lastCiFailureSignature, consecutiveCiFailureCount increments; when it differs (or none is stored), the count resets to 1 and the new signature is stored. Crossing CI_FAILURE_BLOCK_THRESHOLD (3) auto-sets blocked:true plus a descriptive blockedReason. When omitted (e.g. merge-conflict/review-fix patch calls unrelated to CI), both fields are left untouched.",
-            "example": "npm-test-failed-foo.unit.test.ts"
+            "example": "npm-test-failed-foo.unit.test.ts",
+            "description": "Signature identifying the current CI failure (e.g. which check + which test). When it matches the record's stored lastCiFailureSignature, consecutiveCiFailureCount increments; when it differs (or none is stored), the count resets to 1 and the new signature is stored. Crossing CI_FAILURE_BLOCK_THRESHOLD (3) auto-sets blocked:true plus a descriptive blockedReason. When omitted (e.g. merge-conflict/review-fix patch calls unrelated to CI), both fields are left untouched."
           }
         }
       },
@@ -4318,8 +4353,8 @@
         "properties": {
           "ref": {
             "type": "string",
-            "description": "Identifier for the finding (e.g. file:line or a slug).",
-            "example": "src/foo.ts:42"
+            "example": "src/foo.ts:42",
+            "description": "Identifier for the finding (e.g. file:line or a slug)."
           },
           "disposition": {
             "type": "string",
@@ -4328,8 +4363,8 @@
               "superseded",
               "rejected"
             ],
-            "description": "Triage outcome. source:'patch' may only submit 'rejected' — server-enforced (400 otherwise); source:'review' may submit any value.",
-            "example": "resolved"
+            "example": "resolved",
+            "description": "Triage outcome. source:'patch' may only submit 'rejected' — server-enforced (400 otherwise); source:'review' may submit any value."
           },
           "source": {
             "type": "string",
@@ -4337,8 +4372,8 @@
               "review",
               "patch"
             ],
-            "description": "Which pipeline phase is recording this finding.",
-            "example": "review"
+            "example": "review",
+            "description": "Which pipeline phase is recording this finding."
           },
           "evidence": {
             "type": "string",
@@ -4346,13 +4381,13 @@
           },
           "at": {
             "type": "string",
-            "description": "ISO timestamp of when the finding was triaged. Defaults to the current time when omitted.",
-            "example": "2026-08-17T12:00:00.000Z"
+            "example": "2026-08-17T12:00:00.000Z",
+            "description": "ISO timestamp of when the finding was triaged. Defaults to the current time when omitted."
           },
           "agentId": {
             "type": "string",
-            "description": "Agent instance that triaged this finding.",
-            "example": "agent-abc123"
+            "example": "agent-abc123",
+            "description": "Agent instance that triaged this finding."
           }
         },
         "required": [
@@ -4387,6 +4422,35 @@
         },
         "required": [
           "events",
+          "total",
+          "limit",
+          "offset"
+        ]
+      },
+      "SessionListResponse": {
+        "type": "object",
+        "properties": {
+          "sessions": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Session"
+            }
+          },
+          "total": {
+            "type": "integer",
+            "example": 10
+          },
+          "limit": {
+            "type": "integer",
+            "example": 50
+          },
+          "offset": {
+            "type": "integer",
+            "example": 0
+          }
+        },
+        "required": [
+          "sessions",
           "total",
           "limit",
           "offset"
@@ -4544,35 +4608,6 @@
           "archived"
         ]
       },
-      "SessionListResponse": {
-        "type": "object",
-        "properties": {
-          "sessions": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/Session"
-            }
-          },
-          "total": {
-            "type": "integer",
-            "example": 10
-          },
-          "limit": {
-            "type": "integer",
-            "example": 50
-          },
-          "offset": {
-            "type": "integer",
-            "example": 0
-          }
-        },
-        "required": [
-          "sessions",
-          "total",
-          "limit",
-          "offset"
-        ]
-      },
       "SessionPatchBody": {
         "type": "object",
         "properties": {
@@ -4581,13 +4616,13 @@
               "string",
               "null"
             ],
-            "description": "Omitted: title untouched. A string: set. null: clears the title.",
-            "example": "May launch prep"
+            "example": "May launch prep",
+            "description": "Omitted: title untouched. A string: set. null: clears the title."
           },
           "archived": {
             "type": "boolean",
-            "description": "Omitted: archive fields untouched. true: stamps archivedAt/archivedBy. false: clears both.",
-            "example": true
+            "example": true,
+            "description": "Omitted: archive fields untouched. true: stamps archivedAt/archivedBy. false: clears both."
           }
         }
       },
@@ -4628,8 +4663,8 @@
               "skipped",
               "timed_out"
             ],
-            "description": "Outcome of the check attempt. A 'ran_failed' row must never carry a reasonCategory — that field means the agent could not attempt/complete the check in its own environment, never that the code has a real problem.",
-            "example": "ran_passed"
+            "example": "ran_passed",
+            "description": "Outcome of the check attempt. A 'ran_failed' row must never carry a reasonCategory — that field means the agent could not attempt/complete the check in its own environment, never that the code has a real problem."
           },
           "reasonCategory": {
             "type": [
@@ -4644,10 +4679,11 @@
               "missing_secret",
               "missing_dependency",
               "not_configured",
-              "learned_skip"
+              "learned_skip",
+              null
             ],
-            "description": "A closed set of ENVIRONMENTAL causes, only valid alongside status: 'skipped' or 'timed_out'.",
-            "example": null
+            "example": null,
+            "description": "A closed set of ENVIRONMENTAL causes, only valid alongside status: 'skipped' or 'timed_out'."
           },
           "learnedFromCategory": {
             "type": [
@@ -4662,10 +4698,11 @@
               "missing_secret",
               "missing_dependency",
               "not_configured",
-              "learned_skip"
+              "learned_skip",
+              null
             ],
-            "description": "Only valid alongside reasonCategory: 'learned_skip' — the original root-cause category that triggered the learned classification.",
-            "example": null
+            "example": null,
+            "description": "Only valid alongside reasonCategory: 'learned_skip' — the original root-cause category that triggered the learned classification."
           },
           "durationMs": {
             "type": [
@@ -4703,8 +4740,8 @@
         "properties": {
           "taskId": {
             "type": "string",
-            "description": "Exactly one of taskId/prId is required — supplying neither or both is 400.",
-            "example": "clx1234567890"
+            "example": "clx1234567890",
+            "description": "Exactly one of taskId/prId is required — supplying neither or both is 400."
           },
           "prId": {
             "type": "string",
@@ -4716,8 +4753,8 @@
           },
           "checkName": {
             "type": "string",
-            "description": "Free-form check name — 'install', 'lint', 'typecheck', 'unit', 'integration', etc.",
-            "example": "unit"
+            "example": "unit",
+            "description": "Free-form check name — 'install', 'lint', 'typecheck', 'unit', 'integration', etc."
           },
           "status": {
             "type": "string",
@@ -4741,8 +4778,8 @@
               "not_configured",
               "learned_skip"
             ],
-            "description": "Only valid alongside status: 'skipped' or 'timed_out'. A status:'ran_failed' (or 'ran_passed') request supplying this is 400.",
-            "example": "missing_tool"
+            "example": "missing_tool",
+            "description": "Only valid alongside status: 'skipped' or 'timed_out'. A status:'ran_failed' (or 'ran_passed') request supplying this is 400."
           },
           "learnedFromCategory": {
             "type": "string",
@@ -4756,8 +4793,8 @@
               "not_configured",
               "learned_skip"
             ],
-            "description": "Only valid alongside reasonCategory: 'learned_skip', and must not itself be 'learned_skip'.",
-            "example": "missing_tool"
+            "example": "missing_tool",
+            "description": "Only valid alongside reasonCategory: 'learned_skip', and must not itself be 'learned_skip'."
           },
           "durationMs": {
             "type": "integer",
@@ -4765,8 +4802,8 @@
           },
           "at": {
             "type": "string",
-            "description": "ISO timestamp of when the check completed. Defaults to the current time when omitted.",
-            "example": "2026-09-24T12:00:00.000Z"
+            "example": "2026-09-24T12:00:00.000Z",
+            "description": "ISO timestamp of when the check completed. Defaults to the current time when omitted."
           }
         },
         "required": [

@@ -6,6 +6,7 @@
 import { callerLabel } from "@shipwright/lib/request-context";
 import type { ErrorCapturingClient } from "@shipwright/lib/sentry";
 import type { Context } from "hono";
+import { HTTPException } from "hono/http-exception";
 import type { AuthEnv } from "./api-auth.ts";
 
 export class ApiError extends Error {
@@ -82,6 +83,10 @@ export function makeOnError(
   return (err: Error, c: Context<AuthEnv>) => {
     if (err.message.includes("Malformed JSON")) {
       return c.json({ error: "Invalid JSON body" }, 400);
+    }
+    // zod-openapi 1.x: 415 for a non-JSON Content-Type on a JSON-body route.
+    if (err instanceof HTTPException && err.status < 500) {
+      return c.json({ error: err.message }, err.status as 400 | 415);
     }
     if (err instanceof ApiError) {
       if (err.statusCode >= 500) {

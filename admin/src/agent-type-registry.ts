@@ -11,7 +11,7 @@
  * ./agent-manifest.ts and the Slack app manifest. This module is unrelated
  * to either — it's a declarative spec fed into scripts/CLI tooling, not a
  * wire type, so it uses plain `zod` rather than `@hono/zod-openapi`'s
- * `.openapi()`-augmented `z` (kept simple for zod-to-json-schema conversion).
+ * `.openapi()`-augmented `z` (kept simple for JSON Schema conversion).
  *
  * Manifests are treated as a trust boundary: they may originate from
  * third-party contributors, so every object schema is `.strict()` (unknown
@@ -23,7 +23,6 @@
 
 import { parse as parseYaml } from "yaml";
 import { z } from "zod";
-import { zodToJsonSchema } from "zod-to-json-schema";
 import { isOrgRepo } from "@shipwright/lib/org-repo";
 
 /** RFC1123 label pattern (see admin/src/agent-manifest.ts's sanitizeAgentName). */
@@ -170,7 +169,7 @@ export const AgentTypeManifestSchema = z
       if (cron.parentCron === undefined) return;
       if (cron.parentCron === cron.name) {
         ctx.addIssue({
-          code: z.ZodIssueCode.custom,
+          code: "custom",
           path: ["crons", index, "parentCron"],
           message: `parentCron "${cron.parentCron}" cannot reference its own cron entry`,
         });
@@ -178,7 +177,7 @@ export const AgentTypeManifestSchema = z
       }
       if (!cronNames.has(cron.parentCron)) {
         ctx.addIssue({
-          code: z.ZodIssueCode.custom,
+          code: "custom",
           path: ["crons", index, "parentCron"],
           message: `parentCron "${cron.parentCron}" does not match any cron name in this manifest`,
         });
@@ -219,14 +218,19 @@ export function parseAgentTypeManifest(content: string): AgentTypeManifest {
  *
  * Pure — no file I/O — so both scripts/generate-agent-type-schema.ts's CLI
  * entrypoint and its content test can call this directly instead of shelling
- * out. The `zod-to-json-schema` import is kept in this module (rather than
- * in the scripts/ entrypoint) so Bun's node_modules resolution — which walks
- * up from the *importing file's* directory — finds it via admin/node_modules,
- * where it's declared as a direct dependency.
+ * out. Uses zod 4's built-in `z.toJSONSchema` (draft-07 target, to stay
+ * contract-compatible with the previous zod-to-json-schema output).
  */
 export function buildAgentTypeJsonSchema(): Record<string, unknown> {
-  return zodToJsonSchema(
-    AgentTypeManifestSchema,
-    "AgentTypeManifest",
-  ) as Record<string, unknown>;
+  const { $schema, ...definition } = z.toJSONSchema(AgentTypeManifestSchema, {
+    target: "draft-7",
+    io: "input",
+  });
+  // Wrap as a named definition (`$ref` + `definitions`) — the shape the
+  // previous zod-to-json-schema output used, so consumers see no change.
+  return {
+    $ref: "#/definitions/AgentTypeManifest",
+    definitions: { AgentTypeManifest: definition },
+    $schema,
+  };
 }

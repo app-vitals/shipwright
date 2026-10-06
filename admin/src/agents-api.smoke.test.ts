@@ -839,6 +839,32 @@ describe("admin API — env vars", () => {
     expect(res.status).toBe(201);
   });
 
+  it("POST /agents/:id/envs with a non-JSON Content-Type returns 415", async () => {
+    const app = createAdminApp(makeMockDeps());
+    const res = await app.request(`/agents/${AGENT_ID}/envs`, {
+      method: "POST",
+      body: JSON.stringify({ FOO: "bar" }),
+      headers: {
+        "Content-Type": "text/plain",
+        Cookie: `admin_session=${cookie}`,
+      },
+    });
+    expect(res.status).toBe(415);
+  });
+
+  it("POST /agents/:id/envs with a non-string value returns 400", async () => {
+    const app = createAdminApp(makeMockDeps());
+    const res = await app.request(`/agents/${AGENT_ID}/envs`, {
+      method: "POST",
+      body: JSON.stringify({ FOO: 123 }),
+      headers: {
+        "Content-Type": "application/json",
+        Cookie: `admin_session=${cookie}`,
+      },
+    });
+    expect(res.status).toBe(400);
+  });
+
   it("GET /agents/:id/envs returns decrypted env vars", async () => {
     const app = createAdminApp(makeMockDeps());
     const res = await app.request(`/agents/${AGENT_ID}/envs`, {
