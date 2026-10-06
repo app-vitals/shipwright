@@ -3228,7 +3228,31 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
 
       // result.outcome === "success"
       deleteCookie(c, GITHUB_PROVISION_STATE_COOKIE);
-      return html(renderGithubAppInstalledPage(userEmail, { success: true }));
+      return html(
+        renderGithubAppInstalledPage(userEmail, {
+          success: true,
+          alreadyStored: result.alreadyStored,
+        }),
+      );
+    },
+  );
+
+  app.get(
+    "/admin/agents/:id/connect-github/add-org",
+    requireAuth,
+    async (c) => {
+      const agentId = c.req.param("id");
+      if (!(await assertAgentAccess(agentId, c.var.userEmail, c.var.isAdmin))) {
+        return new Response("Forbidden", { status: 403 });
+      }
+      const result = await githubProvisioningService.getAddOrgUrl(agentId);
+      if (!result.ok) {
+        return c.redirect(
+          `/admin/agents/${agentId}?error=${encodeURIComponent(result.error)}`,
+          302,
+        );
+      }
+      return c.redirect(result.url, 302);
     },
   );
 

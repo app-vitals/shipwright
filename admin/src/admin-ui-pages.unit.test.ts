@@ -26,6 +26,7 @@ import {
   type PrListItem,
   type PullRequestItem,
   partitionCronsForActivityDisplay,
+  renderAddAnotherOrgAction,
   renderAgentDetailPage,
   renderAgentsPage,
   renderChatMessageBubble,
@@ -11460,5 +11461,26 @@ describe("renderGitHubInstallationsCard", () => {
     );
     expect(html).not.toContain("<script>x");
     expect(html).not.toContain("<b>boom");
+  });
+});
+
+describe("renderAddAnotherOrgAction", () => {
+  test("links to the add-org route when GH_APP_SLUG is set", () => {
+    const out = renderAddAnotherOrgAction("a1", {
+      GH_APP_ID: "1",
+      GH_APP_SLUG: "my-app",
+    });
+    expect(out).toContain("/admin/agents/a1/connect-github/add-org");
+    expect(out).toContain("Add another org");
+  });
+
+  test("points at the docs when GH_APP_SLUG is absent", () => {
+    const out = renderAddAnotherOrgAction("a1", { GH_APP_ID: "1" });
+    expect(out).not.toContain("connect-github/add-org");
+    expect(out).toContain("configuration-agent.md");
+  });
+
+  test("renders nothing without a GitHub App", () => {
+    expect(renderAddAnotherOrgAction("a1", {})).toBe("");
   });
 });

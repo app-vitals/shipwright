@@ -1563,9 +1563,10 @@ export function renderAgentDetailPage(
       ],
     },
   ];
-  const connectActions = connectActionConfigs
-    .map((cfg) => renderConnectAction(envVars, cfg))
-    .filter(Boolean);
+  const connectActions = [
+    ...connectActionConfigs.map((cfg) => renderConnectAction(envVars, cfg)),
+    renderAddAnotherOrgAction(agent.id, envVars),
+  ].filter(Boolean);
 
   const connectActionsHtml =
     connectActions.length === 0
@@ -2537,16 +2538,41 @@ export function renderGithubAppInstallPage(
 }
 
 /**
+ * "Add another org" action for the agent detail page. Hidden until the agent
+ * has a GitHub App (GH_APP_ID); links to the add-org redirect when GH_APP_SLUG
+ * is stored, otherwise points at the docs.
+ */
+export function renderAddAnotherOrgAction(
+  agentId: string,
+  envVars: Record<string, string>,
+): string {
+  if (!("GH_APP_ID" in envVars)) return "";
+  if (envVars.GH_APP_SLUG) {
+    return `<a href="/admin/agents/${escapeHtml(agentId)}/connect-github/add-org" class="btn btn-secondary" style="font-size:12px" rel="noopener noreferrer">Add another org</a>`;
+  }
+  return `<span style="font-size:12px;color:#6b7280">To install this App on another org, see <a href="https://github.com/app-vitals/shipwright/blob/main/docs/configuration-agent.md" rel="noopener noreferrer">the docs</a> (GH_APP_SLUG).</span>`;
+}
+
+/**
  * Shown after GET /admin/provision/github-app/installed succeeds or fails —
  * the manifest flow's `setup_url` target.
  */
 export function renderGithubAppInstalledPage(
   userName: string,
-  opts: { success: boolean; error?: string },
+  opts: {
+    success: boolean;
+    error?: string;
+    /** Stored installation ID was kept; this was an additional-org install. */
+    alreadyStored?: boolean;
+  },
 ): string {
   const bodyHtml = opts.success
     ? `<div class="alert alert-success">
-        <strong>GitHub App installed!</strong> — installation ID stored.
+        ${
+          opts.alreadyStored
+            ? "<strong>Install received.</strong> — the agent's existing installation ID was left unchanged."
+            : "<strong>GitHub App installed!</strong> — installation ID stored."
+        }
       </div>
       <a href="/admin/provision" class="btn btn-secondary">Back to Provisioning</a>`
     : `<div class="alert alert-error">${escapeHtml(opts.error ?? "GitHub App installation failed.")}</div>
