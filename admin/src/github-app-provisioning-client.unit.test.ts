@@ -51,6 +51,19 @@ describe("buildAgentAppManifest", () => {
     });
   });
 
+  describe("public option", () => {
+    it("emits public: true only when the option is on", () => {
+      expect(buildAgentAppManifest(NAME, { public: true }).public).toBe(true);
+    });
+
+    it("emits public: false when the option is false or omitted", () => {
+      expect(buildAgentAppManifest(NAME, { public: false }).public).toBe(false);
+      expect(
+        buildAgentAppManifest(NAME, { redirectUri: REDIRECT }).public,
+      ).toBe(false);
+    });
+  });
+
   describe("provisioning (with redirectUri and setupUrl)", () => {
     const manifest = buildAgentAppManifest(NAME, {
       redirectUri: REDIRECT,

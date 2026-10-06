@@ -3010,6 +3010,7 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
     let ghAppInstallationId: string | undefined;
     let ghAppPrivateKey: string | undefined;
     let githubOrg: string | undefined;
+    let ghAppPublic = false;
     try {
       const formData = await c.req.formData();
       ghAuthMode = formData.get("ghAuthMode")?.toString() ?? "pat";
@@ -3028,6 +3029,7 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
           ? await ghAppPrivateKeyFile.text()
           : formData.get("ghAppPrivateKey")?.toString();
       githubOrg = formData.get("githubOrg")?.toString()?.trim();
+      ghAppPublic = formData.get("ghAppPublic")?.toString() === "true";
     } catch {
       return html(
         renderProvisionCompletePage(userEmail, {
@@ -3068,6 +3070,7 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
           redirectUri: `${appBaseUrl}/admin/agents/${agentId}/connect-github/callback`,
           setupUrl: `${appBaseUrl}/admin/agents/${agentId}/connect-github/installed`,
         },
+        { public: ghAppPublic },
       );
       if (!result.ok) {
         return html(

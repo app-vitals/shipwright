@@ -1282,7 +1282,7 @@ describe("renderAgentDetailPage — connect-later actions", () => {
     expect(html).not.toContain("Connect Slack<");
   });
 
-  test("Set up GitHub App (auto) action renders exactly one field (single-input backward compat)", () => {
+  test("Set up GitHub App (auto) action renders githubOrg plus the public-App checkbox", () => {
     const html = render({});
     const forms = html.match(
       /action="\/admin\/agents\/agent-123\/connect-github"[\s\S]*?<\/form>/g,
@@ -1290,9 +1290,10 @@ describe("renderAgentDetailPage — connect-later actions", () => {
     const autoForm = forms.find((f) => f.includes('value="auto"')) as string;
     expect(autoForm).toBeDefined();
     const inputCount = (autoForm.match(/<input\b/g) ?? []).length;
-    // 2 hidden fields (ghAuthMode, ghAppMode) + 1 visible githubOrg field.
-    expect(inputCount).toBe(3);
+    // 2 hidden fields (ghAuthMode, ghAppMode) + githubOrg + ghAppPublic checkbox.
+    expect(inputCount).toBe(4);
     expect(autoForm).toMatch(/name="githubOrg"[^>]*type="text"/);
+    expect(autoForm).toMatch(/name="ghAppPublic" type="checkbox"/);
   });
 
   test("Add GitHub PAT action renders exactly one field (single-input backward compat)", () => {
