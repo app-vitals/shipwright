@@ -6401,6 +6401,40 @@ describe("admin UI — GET /admin/agents/:id/connect-github/installed", () => {
     expect(reconcileCalls).toContain(AGENT_ID);
   });
 
+  it("stored GH_APP_INSTALLATION_ID → left unchanged, renders install-received page", async () => {
+    const patchCalls: Array<Record<string, string>> = [];
+    const app = createAdminUIApp(
+      makeMockDeps({
+        agentEnvService: {
+          getByAgentId: async () => ({
+            env: { GH_APP_INSTALLATION_ID: "111" },
+            secretKeys: [],
+          }),
+          upsert: async () => {},
+          patch: async (_id: string, env: Record<string, string>) => {
+            patchCalls.push(env);
+          },
+          deleteKey: async () => {},
+          getConfigBundle: async () => null,
+        },
+      }),
+    );
+    const stateCookie = await makeProvisionStateCookie();
+    const res = await app.request(
+      `/admin/agents/${AGENT_ID}/connect-github/installed?installation_id=778899`,
+      {
+        headers: {
+          Cookie: `admin_session=${adminCookie}; ${GITHUB_PROVISION_STATE_COOKIE}=${stateCookie}`,
+        },
+      },
+    );
+    expect(res.status).toBe(200);
+    const html = await res.text();
+    expect(html).toContain("alert-success");
+    expect(html).toContain("Install received");
+    expect(patchCalls.some((e) => "GH_APP_INSTALLATION_ID" in e)).toBe(false);
+  });
+
   it("reconcileSystemCrons rejecting → still renders success (best-effort, non-fatal)", async () => {
     const app = createAdminUIApp(
       makeMockDeps({
@@ -6485,6 +6519,61 @@ describe("admin UI — GET /admin/agents/:id/connect-github/installed", () => {
     expect(res.status).toBe(200);
     const html = await res.text();
     expect(html.toLowerCase()).toContain("error");
+  });
+});
+
+describe("admin UI — GET /admin/agents/:id/connect-github/add-org", () => {
+  let adminCookie: string;
+
+  beforeAll(async () => {
+    adminCookie = await makeSessionCookie();
+  });
+
+  function appWithEnv(env: Record<string, string>) {
+    return createAdminUIApp(
+      makeMockDeps({
+        agentEnvService: {
+          getByAgentId: async () => ({ env, secretKeys: [] }),
+          upsert: async () => {},
+          patch: async () => {},
+          deleteKey: async () => {},
+          getConfigBundle: async () => null,
+        },
+      }),
+    );
+  }
+
+  it("redirects to the App install URL for the stored slug", async () => {
+    const res = await appWithEnv({ GH_APP_SLUG: "my-app" }).request(
+      `/admin/agents/${AGENT_ID}/connect-github/add-org`,
+      { headers: { Cookie: `admin_session=${adminCookie}` } },
+    );
+    expect(res.status).toBe(302);
+    expect(res.headers.get("location")).toBe(
+      "https://github.com/apps/my-app/installations/new",
+    );
+  });
+
+  it("rejects an invalid slug without redirecting to GitHub", async () => {
+    const res = await appWithEnv({ GH_APP_SLUG: "evil/../x?y" }).request(
+      `/admin/agents/${AGENT_ID}/connect-github/add-org`,
+      { headers: { Cookie: `admin_session=${adminCookie}` } },
+    );
+    expect(res.status).toBe(302);
+    const location = res.headers.get("location") ?? "";
+    expect(location).toContain(`/admin/agents/${AGENT_ID}?error=`);
+    expect(location).not.toContain("github.com/apps");
+  });
+
+  it("missing slug redirects back with an error", async () => {
+    const res = await appWithEnv({}).request(
+      `/admin/agents/${AGENT_ID}/connect-github/add-org`,
+      { headers: { Cookie: `admin_session=${adminCookie}` } },
+    );
+    expect(res.status).toBe(302);
+    expect(res.headers.get("location")).toContain(
+      `/admin/agents/${AGENT_ID}?error=`,
+    );
   });
 });
 
