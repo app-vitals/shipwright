@@ -2564,6 +2564,7 @@ export interface components {
              * @enum {string}
              */
             kind?: "dev" | "prd";
+            [key: string]: unknown;
         };
         BulkInsertResponse: {
             /** @example 3 */
@@ -2584,6 +2585,7 @@ export interface components {
             status?: string;
             /** @example org/repo */
             repo?: string | null;
+            [key: string]: unknown;
         }[];
         DistinctResponse: {
             /**

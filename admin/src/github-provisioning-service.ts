@@ -115,15 +115,17 @@ type CompleteInstalledResult =
       error: string;
     }
   | {
-      /** Success — installation ID stored. */
+      /** Success — installation ID stored, or already stored and left alone. */
       outcome: "success";
       agentId: string;
+      /** True when a stored installation ID was kept (an additional-org install). */
+      alreadyStored: boolean;
     };
 
 interface GithubProvisioningServiceDeps {
   githubAppClient: AdminUIGithubAppClient;
   agentService: Pick<AgentService, "getDetail">;
-  agentEnvService: Pick<AgentEnvService, "patch">;
+  agentEnvService: Pick<AgentEnvService, "patch" | "getByAgentId">;
   agentCronJobService: Pick<AgentCronJobService, "reconcileSystemCrons">;
   sessionSecret: string;
   appBaseUrl: string;
@@ -147,6 +149,14 @@ function isValidGithubAppInstallationId(
   value: string | undefined,
 ): value is string {
   return isNumericId(value);
+}
+
+/** GitHub App slugs: alphanumerics and hyphens, max 39 chars (like logins). */
+function isValidGithubAppSlug(value: string | undefined): value is string {
+  return (
+    Boolean(value) &&
+    /^[A-Za-z0-9](?:[A-Za-z0-9-]{0,38})$/.test(value as string)
+  );
 }
 
 /** Validates a pasted GitHub App private key (PEM-encoded). */
@@ -291,6 +301,7 @@ export class GithubProvisioningService {
     agentId: string,
     githubOrg: string | undefined,
     urls: { redirectUri: string; setupUrl: string },
+    opts?: { public?: boolean },
   ): Promise<StartAppAutoConnectResult> {
     if (!githubOrg || !GITHUB_ORG_PATTERN.test(githubOrg)) {
       return {
@@ -311,6 +322,7 @@ export class GithubProvisioningService {
     const manifest = buildAgentAppManifest(agent.name, {
       redirectUri: urls.redirectUri,
       setupUrl: urls.setupUrl,
+      public: opts?.public,
     });
 
     return { ok: true, provisionStateToken, githubOrg, manifest };
@@ -428,6 +440,7 @@ export class GithubProvisioningService {
         GH_APP_PRIVATE_KEY: exchangeResult.pem,
         GH_APP_CLIENT_ID: exchangeResult.clientId,
         GH_APP_CLIENT_SECRET: exchangeResult.clientSecret,
+        GH_APP_SLUG: exchangeResult.slug,
       },
       this.deps.secretEnvVars,
     );
@@ -473,9 +486,17 @@ export class GithubProvisioningService {
       };
     }
 
-    await this.deps.agentEnvService.patch(state.agentId, {
-      GH_APP_INSTALLATION_ID: installationId,
-    });
+    // A stored installation ID is left alone: additional-org installs of a
+    // public App also land here, and overwriting would repoint the agent at
+    // the newly added org. Only a first install stores its ID.
+    const stored = (await this.deps.agentEnvService.getByAgentId(state.agentId))
+      ?.env.GH_APP_INSTALLATION_ID;
+    const alreadyStored = Boolean(stored);
+    if (!alreadyStored) {
+      await this.deps.agentEnvService.patch(state.agentId, {
+        GH_APP_INSTALLATION_ID: installationId,
+      });
+    }
 
     // Best-effort, mirroring the same call at agent boot (agent/src/index.ts)
     // and SlackProvisioningService.saveAppToken()'s parity call.
@@ -491,6 +512,34 @@ export class GithubProvisioningService {
       );
     }
 
-    return { outcome: "success", agentId: state.agentId };
+    return { outcome: "success", agentId: state.agentId, alreadyStored };
+  }
+
+  /**
+   * Builds the GitHub install URL for adding another org to the agent's App.
+   * The slug comes from stored env and is validated before interpolation.
+   */
+  async getAddOrgUrl(
+    agentId: string,
+  ): Promise<{ ok: true; url: string } | { ok: false; error: string }> {
+    const slug = (await this.deps.agentEnvService.getByAgentId(agentId))?.env
+      .GH_APP_SLUG;
+    if (!slug) {
+      return {
+        ok: false,
+        error:
+          "GH_APP_SLUG is not set — add another org from the App's GitHub install page (see docs/configuration-agent.md).",
+      };
+    }
+    if (!isValidGithubAppSlug(slug)) {
+      return {
+        ok: false,
+        error: "Stored GH_APP_SLUG is not a valid GitHub App slug.",
+      };
+    }
+    return {
+      ok: true,
+      url: `https://github.com/apps/${slug}/installations/new`,
+    };
   }
 }

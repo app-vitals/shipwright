@@ -32,8 +32,7 @@ const content = readFileSync(DOC_PATH, "utf-8");
 
 /**
  * Minimal structural shape shared by every Zod schema instance's internal
- * `_def` — enough to walk ZodObject/ZodOptional/ZodDefault/ZodArray/
- * ZodEffects wrappers without importing the `zod` package directly. Avoiding
+ * `_zod.def` — enough to walk object/optional/default/array wrappers without importing the `zod` package directly. Avoiding
  * a direct `zod` import matters here: this test lives under docs/, which is
  * not a Bun workspace with `zod` as a direct dependency, so Bun's
  * node_modules resolution (which walks up from the *importing file's*
@@ -41,28 +40,26 @@ const content = readFileSync(DOC_PATH, "utf-8");
  * only imports `parseAgentTypeManifest`, never `zod` itself.
  */
 interface ZodLike {
-  _def: {
-    typeName: string;
-    innerType?: ZodLike;
-    type?: ZodLike;
-    schema?: ZodLike;
+  _zod: {
+    def: {
+      type: string;
+      innerType?: ZodLike;
+      element?: ZodLike;
+    };
   };
   shape?: Record<string, ZodLike>;
 }
 
+// Zod 4: `_zod.def.type` is the lowercase kind ("object", "optional", ...);
+// refinements (superRefine) are checks on the same schema, not a wrapper.
 function unwrap(schema: ZodLike): ZodLike {
   let current = schema;
   for (;;) {
-    const { typeName } = current._def;
-    if (
-      (typeName === "ZodOptional" || typeName === "ZodDefault") &&
-      current._def.innerType
-    ) {
-      current = current._def.innerType;
-    } else if (typeName === "ZodArray" && current._def.type) {
-      current = current._def.type;
-    } else if (typeName === "ZodEffects" && current._def.schema) {
-      current = current._def.schema;
+    const { type, innerType, element } = current._zod.def;
+    if ((type === "optional" || type === "default") && innerType) {
+      current = innerType;
+    } else if (type === "array" && element) {
+      current = element;
     } else {
       return current;
     }
@@ -74,7 +71,7 @@ function collectFieldKeys(
   seen = new Set<string>(),
 ): Set<string> {
   const resolved = unwrap(schema);
-  if (resolved._def.typeName === "ZodObject" && resolved.shape) {
+  if (resolved._zod.def.type === "object" && resolved.shape) {
     for (const [key, value] of Object.entries(resolved.shape)) {
       seen.add(key);
       collectFieldKeys(value, seen);
@@ -260,7 +257,9 @@ describe("docs/agent-types.md — GitHub source references section", () => {
 
   it("documents the pinning rule — @ref required, tag or commit SHA only, no branch tracking", () => {
     expect(section).toMatch(/tag or commit sha/i);
-    expect(section).toMatch(/no branch(es)? tracking|not a branch|branches? (are|is) not/i);
+    expect(section).toMatch(
+      /no branch(es)? tracking|not a branch|branches? (are|is) not/i,
+    );
   });
 
   it("documents owner/repo validation via lib/org-repo.ts's isOrgRepo", () => {
@@ -270,7 +269,9 @@ describe("docs/agent-types.md — GitHub source references section", () => {
 
   it("documents the conventional layout — manifest.yaml required, identity templates dir optional", () => {
     expect(section).toContain("manifest.yaml");
-    expect(section).toMatch(/identity templates?( directory| dir)?.{0,40}optional|optional.{0,40}identity templates?/i);
+    expect(section).toMatch(
+      /identity templates?( directory| dir)?.{0,40}optional|optional.{0,40}identity templates?/i,
+    );
   });
 
   it("documents private-repo auth via the agent-env mechanism and GitHub App auth", () => {

@@ -397,6 +397,12 @@ function makeMockDeps(): AdminDeps {
       },
       get: async () => null,
     },
+    agentGitHubInstallationsService: {
+      push: async () => {
+        throw new Error("not implemented");
+      },
+      get: async () => null,
+    },
     agentCronRunService: {
       create: async () => ({
         id: "run-id",

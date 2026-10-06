@@ -447,6 +447,85 @@ export interface AgentListItem {
   selfHosted?: boolean;
 }
 
+export interface GitHubInstallationsCardData {
+  reportedAt: Date | string;
+  installations: Array<{
+    owner: string;
+    installationId: number;
+    state: string;
+    lastError?: string | null;
+  }>;
+}
+
+/** A snapshot older than this renders a stale warning (MGI-4.3). */
+export const GITHUB_INSTALLATIONS_STALE_MS = 90 * 60 * 1000;
+
+function githubInstallationStateBadge(state: string): string {
+  switch (state) {
+    case "ok":
+    case "active":
+    case "in_scope":
+      return '<span class="badge badge-green">in scope</span>';
+    case "not_in_scope":
+    case "discovered":
+      return '<span class="badge badge-gray">discovered, not in scope</span>';
+    case "broken":
+      return '<span class="badge badge-warning">broken</span>';
+    case "pinned":
+      return '<span class="badge badge-teal">pinned</span>';
+    default:
+      return `<span class="badge badge-gray">${escapeHtml(state)}</span>`;
+  }
+}
+
+/**
+ * Renders the "GitHub Installations" card on the agent detail page (MGI-4.3)
+ * from the snapshot the agent last pushed. Returns "" when there is no
+ * snapshot. Read-only: admin never calls GitHub or the agent for this.
+ */
+export function renderGitHubInstallationsCard(
+  snapshot: GitHubInstallationsCardData | null | undefined,
+  now: Date,
+  timezone: string,
+): string {
+  if (!snapshot) return "";
+  const reported = new Date(snapshot.reportedAt);
+  const validDate = !Number.isNaN(reported.getTime());
+  const fmt = validDate
+    ? reported.toLocaleString("en-US", {
+        dateStyle: "medium",
+        timeStyle: "short",
+        timeZone: timezone,
+      })
+    : String(snapshot.reportedAt);
+  const stale =
+    validDate &&
+    now.getTime() - reported.getTime() > GITHUB_INSTALLATIONS_STALE_MS;
+  const staleHtml = stale
+    ? `<div class="alert alert-warning">Stale: last reported ${escapeHtml(fmt)} (over 90 minutes ago). The agent may be down or unable to reach admin.</div>`
+    : "";
+  const rows =
+    snapshot.installations.length === 0
+      ? `<tr><td colspan="3" style="padding:8px 12px;color:#9ca3af;font-size:13px">No installations reported.</td></tr>`
+      : snapshot.installations
+          .map(
+            (i) => `<tr>
+      <td style="padding:8px 12px;font-size:13px;font-family:monospace">${escapeHtml(i.owner)}</td>
+      <td style="padding:8px 12px;font-size:13px">${githubInstallationStateBadge(i.state)}</td>
+      <td style="padding:8px 12px;font-size:13px;color:#6b7280">${i.lastError ? escapeHtml(i.lastError) : ""}</td>
+    </tr>`,
+          )
+          .join("");
+  return `<div class="card" id="github-installations" style="margin-bottom:16px">
+      <div class="card-title">GitHub Installations</div>
+      ${staleHtml}
+      <table class="detail-table"><thead><tr><th>Owner</th><th>State</th><th>Last error</th></tr></thead><tbody>
+        ${rows}
+      </tbody></table>
+      <div style="font-size:11px;color:#9ca3af;margin-top:8px" title="${escapeHtml(String(snapshot.reportedAt instanceof Date ? snapshot.reportedAt.toISOString() : snapshot.reportedAt))}">Reported ${escapeHtml(fmt)}</div>
+    </div>`;
+}
+
 export interface AgentDetail {
   id: string;
   name: string;
@@ -1258,9 +1337,12 @@ interface ConnectActionConfig {
   hiddenFields?: Record<string, string>;
   inputs: Array<{
     name: string;
-    type: "text" | "password" | "file";
+    type: "text" | "password" | "file" | "checkbox";
     placeholder?: string;
     mono?: boolean;
+    /** Checkbox only: visible label text; `value` is submitted when checked. */
+    label?: string;
+    value?: string;
   }>;
 }
 
@@ -1277,8 +1359,13 @@ function renderConnectAction(
     .join("\n              ");
   const hasFileInput = cfg.inputs.some((input) => input.type === "file");
   const visibleInputs = cfg.inputs
-    .map(
-      (input) => `<input
+    .map((input) =>
+      input.type === "checkbox"
+        ? `<label style="font-size:12px;display:flex;gap:6px;align-items:center">
+                <input name="${escapeHtml(input.name)}" type="checkbox" value="${escapeHtml(input.value ?? "true")}" />
+                ${escapeHtml(input.label ?? input.name)}
+              </label>`
+        : `<input
                 name="${escapeHtml(input.name)}"
                 type="${input.type}"
                 class="form-input${input.mono ? " mono" : ""}"
@@ -1360,6 +1447,8 @@ export function renderAgentDetailPage(
      * (or zero total) renders no card.
      */
     verificationActivity?: VerificationActivitySummary;
+    /** Latest GitHub installations snapshot (MGI-4.3); absent renders no card. */
+    githubInstallations?: GitHubInstallationsCardData | null;
     /**
      * Configured phase-methodology overrides for this agent (PMC-1.2).
      * Only overridden phases need to be present — renderAgentDetailPage
@@ -1430,7 +1519,15 @@ export function renderAgentDetailPage(
         "Creates a GitHub App for this agent from a manifest. You'll be redirected to GitHub to finish creating it under the chosen org.",
       action: `/admin/agents/${escapeHtml(agent.id)}/connect-github`,
       hiddenFields: { ghAuthMode: "app", ghAppMode: "auto" },
-      inputs: [{ name: "githubOrg", type: "text", placeholder: "my-org" }],
+      inputs: [
+        { name: "githubOrg", type: "text", placeholder: "my-org" },
+        {
+          name: "ghAppPublic",
+          type: "checkbox",
+          value: "true",
+          label: "Installable on multiple orgs (public App)",
+        },
+      ],
     },
     {
       envKey: "GH_APP_ID",
@@ -1466,9 +1563,10 @@ export function renderAgentDetailPage(
       ],
     },
   ];
-  const connectActions = connectActionConfigs
-    .map((cfg) => renderConnectAction(envVars, cfg))
-    .filter(Boolean);
+  const connectActions = [
+    ...connectActionConfigs.map((cfg) => renderConnectAction(envVars, cfg)),
+    renderAddAnotherOrgAction(agent.id, envVars),
+  ].filter(Boolean);
 
   const connectActionsHtml =
     connectActions.length === 0
@@ -1752,6 +1850,12 @@ export function renderAgentDetailPage(
 
   const verificationActivityHtml = renderVerificationActivityCard(
     opts?.verificationActivity,
+  );
+
+  const githubInstallationsHtml = renderGitHubInstallationsCard(
+    opts?.githubInstallations,
+    opts?.now ?? new Date(),
+    opts?.timezone ?? "UTC",
   );
 
   const envVarsSection = !agent.selfHosted
@@ -2340,6 +2444,7 @@ export function renderAgentDetailPage(
     ${warningHtml}
     ${newTokenHtml}
     ${verificationActivityHtml}
+    ${githubInstallationsHtml}
 
     ${statStripHtml}
 
@@ -2433,16 +2538,41 @@ export function renderGithubAppInstallPage(
 }
 
 /**
+ * "Add another org" action for the agent detail page. Hidden until the agent
+ * has a GitHub App (GH_APP_ID); links to the add-org redirect when GH_APP_SLUG
+ * is stored, otherwise points at the docs.
+ */
+export function renderAddAnotherOrgAction(
+  agentId: string,
+  envVars: Record<string, string>,
+): string {
+  if (!("GH_APP_ID" in envVars)) return "";
+  if (envVars.GH_APP_SLUG) {
+    return `<a href="/admin/agents/${escapeHtml(agentId)}/connect-github/add-org" class="btn btn-secondary" style="font-size:12px" rel="noopener noreferrer">Add another org</a>`;
+  }
+  return `<span style="font-size:12px;color:#6b7280">To install this App on another org, see <a href="https://github.com/app-vitals/shipwright/blob/main/docs/configuration-agent.md" rel="noopener noreferrer">the docs</a> (GH_APP_SLUG).</span>`;
+}
+
+/**
  * Shown after GET /admin/provision/github-app/installed succeeds or fails —
  * the manifest flow's `setup_url` target.
  */
 export function renderGithubAppInstalledPage(
   userName: string,
-  opts: { success: boolean; error?: string },
+  opts: {
+    success: boolean;
+    error?: string;
+    /** Stored installation ID was kept; this was an additional-org install. */
+    alreadyStored?: boolean;
+  },
 ): string {
   const bodyHtml = opts.success
     ? `<div class="alert alert-success">
-        <strong>GitHub App installed!</strong> — installation ID stored.
+        ${
+          opts.alreadyStored
+            ? "<strong>Install received.</strong> — the agent's existing installation ID was left unchanged."
+            : "<strong>GitHub App installed!</strong> — installation ID stored."
+        }
       </div>
       <a href="/admin/provision" class="btn btn-secondary">Back to Provisioning</a>`
     : `<div class="alert alert-error">${escapeHtml(opts.error ?? "GitHub App installation failed.")}</div>

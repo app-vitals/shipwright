@@ -6,7 +6,7 @@ Base path: `/agents`
 
 **Full endpoint reference** — every route, parameter, request/response shape, and status code — lives in the generated [`admin/openapi.json`](../admin/openapi.json) spec. **Practical usage** — curl-based examples for common agent-management calls — lives in the [`agent-admin`](../plugins/shipwright/skills/agent-admin/SKILL.md) skill.
 
-This page covers only the auth model and behavioral nuance the spec doesn't carry. Cron jobs and cron runs are documented in [`docs/agent-api-ops.md`](./agent-api-ops.md). The allowed-tools list, API tokens, plugins, chat token usage, and the work-queue snapshot are documented in [`docs/agent-api-resources.md`](./agent-api-resources.md).
+This page covers only the auth model and behavioral nuance the spec doesn't carry. Cron jobs and cron runs are documented in [`docs/agent-api-ops.md`](./agent-api-ops.md). The allowed-tools list, API tokens, plugins, chat token usage, the work-queue snapshot, and the GitHub installations snapshot are documented in [`docs/agent-api-resources.md`](./agent-api-resources.md).
 
 ---
 
@@ -55,5 +55,5 @@ Polled by the agent harness on startup and during its config sync loop — the o
 ## Related
 
 - Cron jobs and cron runs: [`docs/agent-api-ops.md`](./agent-api-ops.md)
-- Allowed-tools, API tokens, plugins, chat token usage, work-queue snapshot: [`docs/agent-api-resources.md`](./agent-api-resources.md)
+- Allowed-tools, API tokens, plugins, chat token usage, work-queue snapshot, GitHub installations snapshot: [`docs/agent-api-resources.md`](./agent-api-resources.md)
 - Practical curl usage: the [`agent-admin`](../plugins/shipwright/skills/agent-admin/SKILL.md) skill

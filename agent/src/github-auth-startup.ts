@@ -4,9 +4,10 @@
  * Decision logic + live "already active" flag for (re)starting GitHub App
  * auth once credentials are available — whether that happens at boot
  * (entrypoint-main.ts's one-shot setupGitHubAuth() call, Step 5) or later,
- * when index.ts's syncConfig() picks up a GH_APP_ID / GH_APP_INSTALLATION_ID
- * / GH_APP_PRIVATE_KEY triple that was saved to the admin DB after this
- * agent-server process already started.
+ * when index.ts's syncConfig() picks up GH_APP_ID / GH_APP_PRIVATE_KEY
+ * (plus the optional GH_APP_INSTALLATION_ID pin) saved to the admin DB after
+ * this agent-server process already started, or when an App installation
+ * appears later.
  *
  * Why this exists: entrypoint-main.ts spawns index.ts as a SEPARATE child
  * process (spawnAgentServer) and just waits for it to exit — index.ts does
@@ -41,13 +42,75 @@
  * createGitHubAuthStartGuard()).
  */
 
-/** True iff all three GitHub App credential env vars are present. */
+import type { AgentReposRef } from "./agent-repos-ref.ts";
+
+/**
+ * True iff the GitHub App id and private key are present. The installation
+ * id (GH_APP_INSTALLATION_ID) is an optional pin — without it, installations
+ * are discovered at setup time, so credentials alone don't guarantee setup
+ * activates (see setupGitHubAuth's boolean result).
+ */
 export function hasGitHubAppCredentials(
   env: Record<string, string | undefined>,
 ): boolean {
-  return Boolean(
-    env.GH_APP_ID && env.GH_APP_INSTALLATION_ID && env.GH_APP_PRIVATE_KEY,
-  );
+  return Boolean(env.GH_APP_ID && env.GH_APP_PRIVATE_KEY);
+}
+
+/** The slice of GitHubInstallationsManager the config-sync tick needs. */
+export interface ReconcilableInstallations {
+  reconcile(scopeOwners: string[] | null): Promise<void>;
+}
+
+export interface GitHubInstallationsManagerRef {
+  /** The installations manager App auth activated with, or null if none. */
+  get(): ReconcilableInstallations | null;
+  set(manager: ReconcilableInstallations | null): void;
+}
+
+export function createGitHubInstallationsManagerRef(): GitHubInstallationsManagerRef {
+  let manager: ReconcilableInstallations | null = null;
+  return {
+    get: () => manager,
+    set: (next) => {
+      manager = next;
+    },
+  };
+}
+
+/**
+ * Process-wide installations manager ref — set by setupGitHubAuth() once App
+ * auth activates via the manager, read by index.ts's syncConfig() tick.
+ */
+export const githubInstallationsManagerRef: GitHubInstallationsManagerRef =
+  createGitHubInstallationsManagerRef();
+
+/**
+ * Unique lowercase repo owners the agent is scoped to, or null while scope
+ * has never synced — the installations manager treats null as pinned-only.
+ */
+export function scopeOwnersOf(
+  reposRef: Pick<AgentReposRef, "get" | "hasSynced">,
+): string[] | null {
+  if (!reposRef.hasSynced()) return null;
+  const owners = reposRef
+    .get()
+    .map((repo) => repo.split("/")[0]?.toLowerCase())
+    .filter((owner): owner is string => Boolean(owner));
+  return [...new Set(owners)];
+}
+
+/**
+ * Re-runs installation discovery/selection against the current repo scope.
+ * Returns false (no-op) when App auth hasn't activated via the manager.
+ */
+export async function reconcileGitHubInstallations(
+  managerRef: GitHubInstallationsManagerRef,
+  reposRef: Pick<AgentReposRef, "get" | "hasSynced">,
+): Promise<boolean> {
+  const manager = managerRef.get();
+  if (!manager) return false;
+  await manager.reconcile(scopeOwnersOf(reposRef));
+  return true;
 }
 
 export interface GitHubAuthActiveRef {
@@ -113,8 +176,13 @@ export interface StartGitHubAuthDeps {
   isActive: () => boolean;
   /** Records that setup succeeded so isActive() reflects it on the next call. */
   markActive: () => void;
-  /** Performs the actual setup — real prod wiring or a test fake. Errors propagate. */
-  setupGitHubAuth: () => Promise<void>;
+  /**
+   * Performs the actual setup — real prod wiring or a test fake. Resolves
+   * true iff GitHub App auth activated; false (e.g. zero usable
+   * installations, PAT path) leaves it inactive so the next tick retries.
+   * Errors propagate.
+   */
+  setupGitHubAuth: () => Promise<boolean>;
   /** Start-in-flight guard — defaults to the process-wide singleton; tests inject their own. */
   guard?: GitHubAuthStartGuard;
 }
@@ -125,9 +193,10 @@ export interface StartGitHubAuthDeps {
  * Safe to call on every syncConfig() tick: a no-op when credentials are
  * still incomplete, and a no-op once a prior call already succeeded.
  *
- * Returns true iff this call actually ran setup; false for every no-op path
- * (incomplete credentials, already active, or a racing call that lost the
- * in-flight guard).
+ * Returns true iff this call ran setup AND App auth activated; false for
+ * every no-op path (incomplete credentials, already active, a racing call
+ * that lost the in-flight guard) and for a setup that did not activate (no
+ * pin and no usable installation yet) — that case is retried next tick.
  *
  * Errors from `setupGitHubAuth()` propagate to the caller (not swallowed
  * here) so index.ts's call site can log a start failure distinctly from a
@@ -151,7 +220,7 @@ export async function startGitHubAuthIfPossible(
     // keeps the invariant obvious even if that ordering ever changes).
     if (deps.isActive()) return false;
 
-    await deps.setupGitHubAuth();
+    if (!(await deps.setupGitHubAuth())) return false;
     deps.markActive();
     return true;
   } finally {

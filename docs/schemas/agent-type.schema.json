@@ -107,12 +107,12 @@
                 "type": "string"
               },
               "silent": {
-                "type": "boolean",
-                "default": false
+                "default": false,
+                "type": "boolean"
               },
               "enabled": {
-                "type": "boolean",
-                "default": true
+                "default": true,
+                "type": "boolean"
               },
               "parentCron": {
                 "type": "string"
@@ -169,7 +169,26 @@
             "optional": {
               "type": "array",
               "items": {
-                "$ref": "#/definitions/AgentTypeManifest/properties/env/properties/required/items"
+                "type": "object",
+                "properties": {
+                  "key": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "description": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "secret": {
+                    "type": "boolean"
+                  }
+                },
+                "required": [
+                  "key",
+                  "description",
+                  "secret"
+                ],
+                "additionalProperties": false
               }
             }
           },
@@ -216,7 +235,19 @@
               "additionalProperties": false
             },
             "limits": {
-              "$ref": "#/definitions/AgentTypeManifest/properties/resources/properties/requests"
+              "type": "object",
+              "properties": {
+                "cpu": {
+                  "type": "string"
+                },
+                "memory": {
+                  "type": "string"
+                },
+                "ephemeral-storage": {
+                  "type": "string"
+                }
+              },
+              "additionalProperties": false
             }
           },
           "additionalProperties": false

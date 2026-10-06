@@ -21,6 +21,7 @@ import { AgentCronJobService } from "./agent-cron-jobs.ts";
 import { AgentCronRunStatsService } from "./agent-cron-run-stats.ts";
 import { AgentCronRunService } from "./agent-cron-runs.ts";
 import { AgentEnvService } from "./agent-envs.ts";
+import { AgentGitHubInstallationsService } from "./agent-github-installations.ts";
 import { AgentMemberService } from "./agent-members.ts";
 import { AgentPhaseMethodologyService } from "./agent-phase-methodology.ts";
 import { AgentPluginService } from "./agent-plugins.ts";
@@ -127,6 +128,9 @@ function makeDeps(prisma: PrismaClient): AdminDeps {
     agentTypeRegistry: fakeAgentTypeRegistry(),
     agentChatTokenService: new AgentChatTokenService(prisma),
     agentWorkQueueService: new AgentWorkQueueService(prisma),
+    agentGitHubInstallationsService: new AgentGitHubInstallationsService(
+      prisma,
+    ),
     prisma,
     provisioner: new NoopAgentProvisioner(),
     taskStore: new NoopTaskStoreProvisioningClient(),

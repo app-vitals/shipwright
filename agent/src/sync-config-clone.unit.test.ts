@@ -12,6 +12,7 @@ import { describe, expect, test } from "bun:test";
 import { join } from "node:path";
 import {
   makeCloneRepo,
+  readRemoteOwner,
   type SyncConfigCloneDeps,
   syncClonedRepos,
 } from "./sync-config-clone.ts";
@@ -280,7 +281,9 @@ describe("makeCloneRepo", () => {
 
     await expect(
       makeCloneRepo(spawn)("app-vitals/shipwright", join(REPOS_DIR, "x")),
-    ).rejects.toThrow("gh repo clone failed for app-vitals/shipwright (exit 1)");
+    ).rejects.toThrow(
+      "gh repo clone failed for app-vitals/shipwright (exit 1)",
+    );
   });
 
   test("awaits the child process asynchronously rather than blocking", async () => {
@@ -306,5 +309,87 @@ describe("makeCloneRepo", () => {
     release(0);
     await clonePromise;
     expect(settled).toBe(true);
+  });
+});
+
+describe("syncClonedRepos name collisions (MGI-3.3)", () => {
+  test("skips the later colliding repo and logs an error naming both", async () => {
+    const { deps, cloneCalls } = makeDeps({
+      scopedRepos: ["acme/api", "globex/api", "acme/web"],
+    });
+    const errors: string[] = [];
+    const orig = console.error;
+    console.error = (...a: unknown[]) => void errors.push(a.join(" "));
+    try {
+      await syncClonedRepos(deps);
+    } finally {
+      console.error = orig;
+    }
+
+    expect(cloneCalls.map((c) => c.repo)).toEqual(["acme/api", "acme/web"]);
+    expect(
+      errors.some((e) => e.includes("globex/api") && e.includes("acme/api")),
+    ).toBe(true);
+  });
+
+  test("an existing folder whose remote owner differs is skipped and logged", async () => {
+    const dest = join(REPOS_DIR, "api");
+    const { deps, cloneCalls } = makeDeps({
+      scopedRepos: ["acme/api"],
+      existingDests: [dest],
+    });
+    deps.getRemoteOwner = () => "globex";
+    const errors: string[] = [];
+    const orig = console.error;
+    console.error = (...a: unknown[]) => void errors.push(a.join(" "));
+    try {
+      await syncClonedRepos(deps);
+    } finally {
+      console.error = orig;
+    }
+
+    expect(cloneCalls).toEqual([]);
+    expect(errors.some((e) => e.includes("globex") && e.includes("acme"))).toBe(
+      true,
+    );
+  });
+
+  test("an existing folder with a matching owner (case-insensitive) is not a collision", async () => {
+    const dest = join(REPOS_DIR, "api");
+    const { deps } = makeDeps({
+      scopedRepos: ["Acme/api"],
+      existingDests: [dest],
+    });
+    deps.getRemoteOwner = () => "acme";
+    const errors: string[] = [];
+    const orig = console.error;
+    console.error = (...a: unknown[]) => void errors.push(a.join(" "));
+    try {
+      await syncClonedRepos(deps);
+    } finally {
+      console.error = orig;
+    }
+    expect(errors).toEqual([]);
+  });
+});
+
+describe("readRemoteOwner", () => {
+  const fake = (code: number, out: string) =>
+    (() => ({
+      exitCode: code,
+      stdout: Buffer.from(out),
+    })) as unknown as typeof Bun.spawnSync;
+
+  test("parses https and ssh origin URLs", () => {
+    expect(
+      readRemoteOwner("/x", fake(0, "https://github.com/acme/api.git\n")),
+    ).toBe("acme");
+    expect(
+      readRemoteOwner("/x", fake(0, "git@github.com:acme/api.git\n")),
+    ).toBe("acme");
+  });
+
+  test("returns null when git fails", () => {
+    expect(readRemoteOwner("/x", fake(128, ""))).toBeNull();
   });
 });

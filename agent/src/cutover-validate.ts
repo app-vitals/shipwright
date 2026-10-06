@@ -6,8 +6,8 @@
  * Checks:
  *  - SLACK_BOT_TOKEN reported (informational — absence means a chat-only agent,
  *    which is a supported configuration, so this check never fails)
- *  - GitHub auth credentials present (App: GH_APP_ID + GH_APP_PRIVATE_KEY +
- *    GH_APP_INSTALLATION_ID; or PAT: GH_TOKEN)
+ *  - GitHub auth credentials present (App: GH_APP_ID + GH_APP_PRIVATE_KEY,
+ *    with GH_APP_INSTALLATION_ID as an optional pin; or PAT: GH_TOKEN)
  *  - At least one cron job configured
  */
 
@@ -30,10 +30,8 @@ export interface CheckResult {
 // ─── Validation ───────────────────────────────────────────────────────────────
 
 function hasGitHubAuth(env: Record<string, string>): boolean {
-  const hasAppCreds =
-    Boolean(env.GH_APP_ID) &&
-    Boolean(env.GH_APP_PRIVATE_KEY) &&
-    Boolean(env.GH_APP_INSTALLATION_ID);
+  // GH_APP_INSTALLATION_ID is an optional pin — installations are discovered.
+  const hasAppCreds = Boolean(env.GH_APP_ID) && Boolean(env.GH_APP_PRIVATE_KEY);
   const hasPat = Boolean(env.GH_TOKEN);
   return hasAppCreds || hasPat;
 }
@@ -71,7 +69,7 @@ export async function validateCutover(
       passed: hasGithub,
       message: hasGithub
         ? "GitHub auth credentials are present"
-        : "GitHub auth credentials missing — need GH_TOKEN or GH_APP_ID + GH_APP_PRIVATE_KEY + GH_APP_INSTALLATION_ID",
+        : "GitHub auth credentials missing — need GH_TOKEN or GH_APP_ID + GH_APP_PRIVATE_KEY (GH_APP_INSTALLATION_ID optional pin)",
     },
     {
       name: "crons",

@@ -204,6 +204,36 @@ function makeInMemoryWorkQueueService(): AdminDeps["agentWorkQueueService"] {
   };
 }
 
+// ─── In-memory AgentGitHubInstallationsService double ─────────────────────────
+
+function makeInMemoryGitHubInstallationsService(): AdminDeps["agentGitHubInstallationsService"] {
+  const rows = new Map<
+    string,
+    {
+      id: string;
+      agentId: string;
+      reportedAt: Date;
+      installations: Prisma.JsonValue;
+      createdAt: Date;
+    }
+  >();
+  return {
+    push: async (agentId, input) => {
+      const existing = rows.get(agentId);
+      const row = {
+        id: existing?.id ?? "ghi-test-333",
+        agentId,
+        reportedAt: input.reportedAt,
+        installations: input.installations as Prisma.JsonValue,
+        createdAt: existing?.createdAt ?? new Date("2024-01-01"),
+      };
+      rows.set(agentId, row);
+      return row;
+    },
+    get: async (agentId) => rows.get(agentId) ?? null,
+  };
+}
+
 function makeMockDeps(): AdminDeps {
   return {
     agentService: {
@@ -591,6 +621,7 @@ function makeMockDeps(): AdminDeps {
       }),
     },
     agentWorkQueueService: makeInMemoryWorkQueueService(),
+    agentGitHubInstallationsService: makeInMemoryGitHubInstallationsService(),
     prisma: {
       agent: {
         create: async (args: {
@@ -806,6 +837,32 @@ describe("admin API — env vars", () => {
       },
     });
     expect(res.status).toBe(201);
+  });
+
+  it("POST /agents/:id/envs with a non-JSON Content-Type returns 415", async () => {
+    const app = createAdminApp(makeMockDeps());
+    const res = await app.request(`/agents/${AGENT_ID}/envs`, {
+      method: "POST",
+      body: JSON.stringify({ FOO: "bar" }),
+      headers: {
+        "Content-Type": "text/plain",
+        Cookie: `admin_session=${cookie}`,
+      },
+    });
+    expect(res.status).toBe(415);
+  });
+
+  it("POST /agents/:id/envs with a non-string value returns 400", async () => {
+    const app = createAdminApp(makeMockDeps());
+    const res = await app.request(`/agents/${AGENT_ID}/envs`, {
+      method: "POST",
+      body: JSON.stringify({ FOO: 123 }),
+      headers: {
+        "Content-Type": "application/json",
+        Cookie: `admin_session=${cookie}`,
+      },
+    });
+    expect(res.status).toBe(400);
   });
 
   it("GET /agents/:id/envs returns decrypted env vars", async () => {
@@ -1301,6 +1358,147 @@ describe("admin API — work queue snapshot", () => {
   });
 });
 
+// ─── GitHub installations snapshot routes ─────────────────────────────────────
+
+describe("admin API — GitHub installations snapshot", () => {
+  let cookie: string;
+  const BODY = {
+    reportedAt: "2026-01-01T00:00:00.000Z",
+    installations: [
+      { owner: "app-vitals", installationId: 11, state: "active" },
+      {
+        owner: "acme",
+        installationId: 22,
+        state: "error",
+        lastError: "bad credentials",
+      },
+    ],
+  };
+  const put = (app: ReturnType<typeof createAdminApp>, body: unknown, h = {}) =>
+    app.request(`/agents/${AGENT_ID}/github-installations`, {
+      method: "PUT",
+      body: JSON.stringify(body),
+      headers: {
+        "Content-Type": "application/json",
+        Cookie: `admin_session=${cookie}`,
+        ...h,
+      },
+    });
+
+  beforeAll(async () => {
+    cookie = await makeSessionCookie();
+  });
+
+  it("PUT then GET round-trips the snapshot (200)", async () => {
+    const app = createAdminApp(makeMockDeps());
+    const res = await put(app, BODY);
+    expect(res.status).toBe(200);
+    expect((await res.json()).snapshot.installations).toEqual(
+      BODY.installations,
+    );
+    const getRes = await app.request(
+      `/agents/${AGENT_ID}/github-installations`,
+      { headers: { Cookie: `admin_session=${cookie}` } },
+    );
+    expect(getRes.status).toBe(200);
+    const body = await getRes.json();
+    expect(body.snapshot.agentId).toBe(AGENT_ID);
+    expect(body.snapshot.reportedAt).toBe(BODY.reportedAt);
+  });
+
+  it("a second PUT replaces the first, dropping a removed installation", async () => {
+    const app = createAdminApp(makeMockDeps());
+    await put(app, BODY);
+    await put(app, {
+      reportedAt: "2026-01-02T00:00:00.000Z",
+      installations: [BODY.installations[0]],
+    });
+    const getRes = await app.request(
+      `/agents/${AGENT_ID}/github-installations`,
+      { headers: { Cookie: `admin_session=${cookie}` } },
+    );
+    expect((await getRes.json()).snapshot.installations).toEqual([
+      BODY.installations[0],
+    ]);
+  });
+
+  it("rejects an extra top-level field (400)", async () => {
+    const app = createAdminApp(makeMockDeps());
+    const res = await put(app, { ...BODY, token: "ghs_secret" });
+    expect(res.status).toBe(400);
+  });
+
+  it("rejects an extra field on an installation, e.g. a token (400)", async () => {
+    const app = createAdminApp(makeMockDeps());
+    const res = await put(app, {
+      reportedAt: BODY.reportedAt,
+      installations: [{ ...BODY.installations[0], token: "ghs_secret" }],
+    });
+    expect(res.status).toBe(400);
+  });
+
+  it("rejects an over-long lastError (400)", async () => {
+    const app = createAdminApp(makeMockDeps());
+    const res = await put(app, {
+      reportedAt: BODY.reportedAt,
+      installations: [{ ...BODY.installations[1], lastError: "x".repeat(501) }],
+    });
+    expect(res.status).toBe(400);
+  });
+
+  it("GET returns 404 when nothing has been reported", async () => {
+    const app = createAdminApp(makeMockDeps());
+    const res = await app.request(`/agents/${AGENT_ID}/github-installations`, {
+      headers: { Cookie: `admin_session=${cookie}` },
+    });
+    expect(res.status).toBe(404);
+  });
+
+  it("unauthenticated PUT and GET return 401", async () => {
+    const app = createAdminApp(makeMockDeps());
+    const putRes = await app.request(
+      `/agents/${AGENT_ID}/github-installations`,
+      {
+        method: "PUT",
+        body: JSON.stringify(BODY),
+        headers: { "Content-Type": "application/json" },
+      },
+    );
+    expect(putRes.status).toBe(401);
+    const getRes = await app.request(
+      `/agents/${AGENT_ID}/github-installations`,
+    );
+    expect(getRes.status).toBe(401);
+  });
+
+  it("the agent's own bearer token is accepted (200)", async () => {
+    const app = createAdminApp(
+      makeDepsWithTokenValidation(async () => ({ agentId: AGENT_ID })),
+    );
+    const res = await put(app, BODY, {
+      Cookie: "",
+      Authorization: `Bearer ${VALID_BEARER_TOKEN}`,
+    });
+    expect(res.status).toBe(200);
+  });
+
+  it("a bearer token owned by a different agent is rejected (403)", async () => {
+    const app = createAdminApp(
+      makeDepsWithTokenValidation(async () => ({ agentId: "other-agent" })),
+    );
+    const putRes = await put(app, BODY, {
+      Cookie: "",
+      Authorization: `Bearer ${VALID_BEARER_TOKEN}`,
+    });
+    expect(putRes.status).toBe(403);
+    const getRes = await app.request(
+      `/agents/${AGENT_ID}/github-installations`,
+      { headers: { Authorization: `Bearer ${VALID_BEARER_TOKEN}` } },
+    );
+    expect(getRes.status).toBe(403);
+  });
+});
+
 // ─── Tool routes ──────────────────────────────────────────────────────────────
 
 describe("admin API — tools", () => {
@@ -1685,6 +1883,26 @@ describe("admin API — POST /agents", () => {
       },
     });
     expect(res.status).toBe(200);
+  });
+
+  it("same-basename repos under different owners → 400 naming both repos", async () => {
+    const app = createAdminApp(makeMockDeps());
+    const res = await app.request("/agents", {
+      method: "POST",
+      body: JSON.stringify({
+        name: "Collider",
+        typeName: "coding",
+        reposRaw: "acme/api\nglobex/api",
+      }),
+      headers: {
+        "Content-Type": "application/json",
+        Cookie: `admin_session=${cookie}`,
+      },
+    });
+    expect(res.status).toBe(400);
+    const text = await res.text();
+    expect(text).toContain("acme/api");
+    expect(text).toContain("globex/api");
   });
 
   it("no Authorization header and no session cookie → 401", async () => {
@@ -4292,3 +4510,36 @@ function makeMockDepsWithRunSummary(): AdminDeps {
     },
   };
 }
+
+describe("admin API — PATCH /agents/:id repo collisions", () => {
+  it("repos with same-basename different-owner entries → 400 naming both repos", async () => {
+    const cookie = await makeSessionCookie();
+    const app = createAdminApp(makeMockDeps());
+    const res = await app.request(`/agents/${AGENT_ID}`, {
+      method: "PATCH",
+      body: JSON.stringify({ repos: ["acme/api", "globex/api"] }),
+      headers: {
+        "Content-Type": "application/json",
+        Cookie: `admin_session=${cookie}`,
+      },
+    });
+    expect(res.status).toBe(400);
+    const text = await res.text();
+    expect(text).toContain("acme/api");
+    expect(text).toContain("globex/api");
+  });
+
+  it("repos with the same owner and name listed twice are not a collision", async () => {
+    const cookie = await makeSessionCookie();
+    const app = createAdminApp(makeMockDeps());
+    const res = await app.request(`/agents/${AGENT_ID}`, {
+      method: "PATCH",
+      body: JSON.stringify({ repos: ["acme/api", "acme/web"] }),
+      headers: {
+        "Content-Type": "application/json",
+        Cookie: `admin_session=${cookie}`,
+      },
+    });
+    expect(res.status).toBe(200);
+  });
+});

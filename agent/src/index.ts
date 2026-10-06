@@ -57,8 +57,14 @@ import { markdownToSlack } from "./format.ts";
 import { buildGitHubAuthDeps } from "./github-auth-deps.ts";
 import {
   githubAuthActiveRef,
+  githubInstallationsManagerRef,
+  reconcileGitHubInstallations,
   startGitHubAuthIfPossible,
 } from "./github-auth-startup.ts";
+import {
+  HttpGitHubInstallationsReporter,
+  NoopGitHubInstallationsReporter,
+} from "./github-installations-reporter.ts";
 import {
   claudeVersionState,
   DEFAULT_HEALTH_PORT,
@@ -234,6 +240,17 @@ const workQueueReporter =
       })
     : new NoopWorkQueueReporter();
 
+const githubInstallationsReporter =
+  config.shipwright.apiUrl &&
+  config.shipwright.apiKey &&
+  config.shipwright.agentId
+    ? new HttpGitHubInstallationsReporter({
+        apiUrl: config.shipwright.apiUrl,
+        agentId: config.shipwright.agentId,
+        apiKey: config.shipwright.apiKey,
+      })
+    : new NoopGitHubInstallationsReporter();
+
 const cronDeps: CronHandlerDeps = {
   // SLK-1.1: a getter, not a plain field — Slack may start after boot (see
   // slack-startup.ts's startSlackIfPossible()), so cron dispatch must read
@@ -332,7 +349,12 @@ const githubAuthStartDeps = {
   isActive: githubAuthActiveRef.isActive,
   markActive: () => githubAuthActiveRef.setActive(true),
   setupGitHubAuth: () =>
-    setupGitHubAuth(buildGitHubAuthDeps(agentHome, GITHUB_AUTH_SCRIPTS_BIN)),
+    setupGitHubAuth(
+      buildGitHubAuthDeps(agentHome, GITHUB_AUTH_SCRIPTS_BIN, {
+        withInstallations: true,
+        installationsReporter: githubInstallationsReporter,
+      }),
+    ),
 };
 
 // RSF-4.1: shared auto-clone deps for syncConfig()'s repo-clone step, built
@@ -425,6 +447,15 @@ if (runtimeClient && agentId) {
 
       // Sync the agent's scoped repos live ref
       agentReposRef.set(bundle.repos);
+
+      // MGI-2.4: re-run GitHub App installation discovery against the new
+      // scope — a no-op until App auth has activated via the installations
+      // manager (startGitHubAuthIfPossible below). Never starts a second
+      // refresh interval; reconcile() itself never throws.
+      await reconcileGitHubInstallations(
+        githubInstallationsManagerRef,
+        agentReposRef,
+      );
 
       // RSF-4.1: auto-clone any repo that's newly configured but not yet on
       // disk — reuses computeMissingClones()'s existing skip-if-exists plan
@@ -522,9 +553,10 @@ if (runtimeClient && agentId) {
     }
 
     // ABF-2.1: retry GitHub App auth setup on every successful tick — a
-    // no-op unless GH_APP_ID/GH_APP_INSTALLATION_ID/GH_APP_PRIVATE_KEY are
-    // newly complete against live process.env AND setup hasn't already
-    // succeeded in this process (see startGitHubAuthIfPossible's own
+    // no-op unless GH_APP_ID/GH_APP_PRIVATE_KEY are present in live
+    // process.env AND setup hasn't already activated in this process (it
+    // stays inactive — and is retried — while there is no
+    // GH_APP_INSTALLATION_ID pin and no usable in-scope installation) (see startGitHubAuthIfPossible's own
     // guards). Kept in its own try/catch, separate from both the
     // fetch/env-sync try above and the Slack-retry try above, so a GitHub
     // auth start failure is logged distinctly rather than being

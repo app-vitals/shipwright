@@ -26,11 +26,13 @@ import {
   type PrListItem,
   type PullRequestItem,
   partitionCronsForActivityDisplay,
+  renderAddAnotherOrgAction,
   renderAgentDetailPage,
   renderAgentsPage,
   renderChatMessageBubble,
   renderChatPage,
   renderChatThreadPage,
+  renderGitHubInstallationsCard,
   renderGithubAppInstalledPage,
   renderGithubAppInstallPage,
   renderGithubAppManifestRedirectPage,
@@ -1281,7 +1283,7 @@ describe("renderAgentDetailPage — connect-later actions", () => {
     expect(html).not.toContain("Connect Slack<");
   });
 
-  test("Set up GitHub App (auto) action renders exactly one field (single-input backward compat)", () => {
+  test("Set up GitHub App (auto) action renders githubOrg plus the public-App checkbox", () => {
     const html = render({});
     const forms = html.match(
       /action="\/admin\/agents\/agent-123\/connect-github"[\s\S]*?<\/form>/g,
@@ -1289,9 +1291,10 @@ describe("renderAgentDetailPage — connect-later actions", () => {
     const autoForm = forms.find((f) => f.includes('value="auto"')) as string;
     expect(autoForm).toBeDefined();
     const inputCount = (autoForm.match(/<input\b/g) ?? []).length;
-    // 2 hidden fields (ghAuthMode, ghAppMode) + 1 visible githubOrg field.
-    expect(inputCount).toBe(3);
+    // 2 hidden fields (ghAuthMode, ghAppMode) + githubOrg + ghAppPublic checkbox.
+    expect(inputCount).toBe(4);
     expect(autoForm).toMatch(/name="githubOrg"[^>]*type="text"/);
+    expect(autoForm).toMatch(/name="ghAppPublic" type="checkbox"/);
   });
 
   test("Add GitHub PAT action renders exactly one field (single-input backward compat)", () => {
@@ -11369,5 +11372,115 @@ describe("resolveAgentNameFilterAndPaginate", () => {
     });
 
     expect(result).toEqual({ items: [], total: 0, filterActive: true });
+  });
+});
+
+// ─── renderGitHubInstallationsCard (MGI-4.3) ─────────────────────────────────
+
+describe("renderGitHubInstallationsCard", () => {
+  const NOW = new Date("2026-01-15T12:00:00.000Z");
+  const FRESH = new Date("2026-01-15T11:30:00.000Z");
+
+  test("omitted when there is no snapshot", () => {
+    expect(renderGitHubInstallationsCard(null, NOW, "UTC")).toBe("");
+    expect(renderGitHubInstallationsCard(undefined, NOW, "UTC")).toBe("");
+  });
+
+  test("renders in-scope, not-in-scope, pinned and broken states with last error", () => {
+    const html = renderGitHubInstallationsCard(
+      {
+        reportedAt: FRESH,
+        installations: [
+          { owner: "in-org", installationId: 1, state: "ok" },
+          { owner: "other-org", installationId: 2, state: "not_in_scope" },
+          { owner: "pin-org", installationId: 3, state: "pinned" },
+          {
+            owner: "bad-org",
+            installationId: 4,
+            state: "broken",
+            lastError: "installation token mint rejected",
+          },
+        ],
+      },
+      NOW,
+      "UTC",
+    );
+    expect(html).toContain("in scope");
+    expect(html).toContain("discovered, not in scope");
+    expect(html).toContain("pinned");
+    expect(html).toContain("broken");
+    expect(html).toContain("installation token mint rejected");
+    expect(html).not.toContain("Stale");
+  });
+
+  test("renders an empty state when the snapshot has no installations", () => {
+    const html = renderGitHubInstallationsCard(
+      { reportedAt: FRESH, installations: [] },
+      NOW,
+      "UTC",
+    );
+    expect(html).toContain("No installations reported");
+  });
+
+  test("warns when reportedAt is older than 90 minutes, not at exactly 90", () => {
+    const stale = renderGitHubInstallationsCard(
+      {
+        reportedAt: new Date(NOW.getTime() - 91 * 60 * 1000),
+        installations: [],
+      },
+      NOW,
+      "UTC",
+    );
+    expect(stale).toContain("Stale");
+    const edge = renderGitHubInstallationsCard(
+      {
+        reportedAt: new Date(NOW.getTime() - 90 * 60 * 1000),
+        installations: [],
+      },
+      NOW,
+      "UTC",
+    );
+    expect(edge).not.toContain("Stale");
+  });
+
+  test("escapes owner and error text", () => {
+    const html = renderGitHubInstallationsCard(
+      {
+        reportedAt: FRESH,
+        installations: [
+          {
+            owner: "<script>x</script>",
+            installationId: 1,
+            state: "broken",
+            lastError: "<b>boom</b>",
+          },
+        ],
+      },
+      NOW,
+      "UTC",
+    );
+    expect(html).not.toContain("<script>x");
+    expect(html).not.toContain("<b>boom");
+  });
+});
+
+describe("renderAddAnotherOrgAction", () => {
+  test("links to the add-org route when GH_APP_SLUG is set", () => {
+    const out = renderAddAnotherOrgAction("a1", {
+      GH_APP_ID: "1",
+      GH_APP_SLUG: "my-app",
+    });
+    expect(out).toContain("/admin/agents/a1/connect-github/add-org");
+    expect(out).toContain("Add another org");
+  });
+
+  test("points at the docs when GH_APP_SLUG is absent", () => {
+    const out = renderAddAnotherOrgAction("a1", { GH_APP_ID: "1" });
+    expect(out).not.toContain("connect-github/add-org");
+    expect(out).toContain("configuration-agent.md");
+  });
+
+  test("renders nothing without a GitHub App", () => {
+    expect(renderAddAnotherOrgAction("a1", {})).toBe("");
   });
 });

@@ -237,6 +237,12 @@ function makeMockDeps(opts?: {
       },
       get: async () => null,
     },
+    agentGitHubInstallationsService: {
+      push: async () => {
+        throw new Error("not implemented");
+      },
+      get: async () => null,
+    },
     agentCronRunStatsService: {
       query: async () => ({
         totals: {

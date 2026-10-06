@@ -664,7 +664,7 @@ export const PhaseParamSchema = z.object({
  */
 export const AgentEnvResponseSchema = z
   .object({
-    env: z.record(z.string()).openapi({ example: { MY_VAR: "value" } }),
+    env: z.record(z.string(), z.string()).openapi({ example: { MY_VAR: "value" } }),
     secretKeys: z.array(z.string()).openapi({ example: ["MY_SECRET"] }),
   })
   .openapi("AgentEnvResponse");
@@ -672,7 +672,7 @@ export const AgentEnvResponseSchema = z
 /**
  * POST /agents/:id/envs body — a plain key/value map (full replace).
  */
-export const AgentEnvBodySchema = z.record(z.string()).openapi("AgentEnvBody");
+export const AgentEnvBodySchema = z.record(z.string(), z.string()).openapi("AgentEnvBody");
 
 /**
  * PATCH /agents/:id/envs body — partial update with optional secret designation.
@@ -681,7 +681,7 @@ export const AgentEnvBodySchema = z.record(z.string()).openapi("AgentEnvBody");
  */
 export const AgentEnvPatchBodySchema = z
   .object({
-    env: z.record(z.string()).openapi({ example: { MY_VAR: "value" } }),
+    env: z.record(z.string(), z.string()).openapi({ example: { MY_VAR: "value" } }),
     secretKeys: z
       .array(z.string())
       .optional()
@@ -755,6 +755,58 @@ export const AgentWorkQueueSnapshotSchema = z
       .openapi({ example: "2026-01-01T00:00:00.000Z" }),
   })
   .openapi("AgentWorkQueueSnapshot");
+
+// ─── AgentGitHubInstallationsSnapshot ─────────────────────────────────────────
+
+/**
+ * One GitHub App installation as reported by an agent. The schema is CLOSED
+ * (.strict()): unknown fields — notably tokens or other credentials — are
+ * rejected with 400 rather than silently stored.
+ */
+export const GitHubInstallationSchema = z
+  .object({
+    owner: z.string().min(1).max(200).openapi({ example: "app-vitals" }),
+    installationId: z.number().int().positive().openapi({ example: 12345678 }),
+    state: z.string().min(1).max(50).openapi({ example: "active" }),
+    lastError: z.string().max(500).nullable().optional().openapi({
+      description:
+        "Sanitized last error message (max 500 chars). Must not contain credentials.",
+      example: "installation suspended",
+    }),
+  })
+  .strict()
+  .openapi("GitHubInstallation");
+
+/**
+ * PUT /agents/:id/github-installations body. Replace-all: the installations
+ * array overwrites whatever was previously stored.
+ */
+export const PutGitHubInstallationsBodySchema = z
+  .object({
+    reportedAt: z
+      .string()
+      .datetime()
+      .openapi({ example: "2026-01-01T00:00:00.000Z" }),
+    installations: z.array(GitHubInstallationSchema),
+  })
+  .strict()
+  .openapi("PutGitHubInstallationsBody");
+
+export const AgentGitHubInstallationsSnapshotSchema = z
+  .object({
+    id: z.string().openapi({ example: "clx1234567890" }),
+    agentId: z.string().openapi({ example: "clx1234567890" }),
+    reportedAt: z
+      .string()
+      .datetime()
+      .openapi({ example: "2026-01-01T00:00:00.000Z" }),
+    installations: z.array(GitHubInstallationSchema),
+    createdAt: z
+      .string()
+      .datetime()
+      .openapi({ example: "2026-01-01T00:00:00.000Z" }),
+  })
+  .openapi("AgentGitHubInstallationsSnapshot");
 
 // ─── Path param schemas ───────────────────────────────────────────────────────
 
@@ -936,7 +988,7 @@ const AgentConfigPluginSchema = z
 export const AgentConfigResponseSchema = z
   .object({
     env: z
-      .record(z.string())
+      .record(z.string(), z.string())
       .openapi({ example: { SLACK_BOT_TOKEN: "xoxb-..." } }),
     allowedTools: z.array(z.string()).openapi({ example: ["Read", "Write"] }),
     plugins: z.array(AgentConfigPluginSchema),
@@ -973,7 +1025,7 @@ export const AgentConfigResponseSchema = z
      * phases (see AGENT_PHASES) regardless of whether the agent has an
      * explicit override row for each — phases without a row default to null.
      */
-    phaseMethodology: z.record(z.string().nullable()).openapi({
+    phaseMethodology: z.record(z.string(), z.string().nullable()).openapi({
       example: {
         prd: null,
         "plan-session": null,

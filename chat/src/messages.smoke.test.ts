@@ -1215,3 +1215,27 @@ describe("POST /threads/:id/messages/:msgId/reply — reply notifier", () => {
     expect(calls).toHaveLength(1);
   });
 });
+
+// ─── Request validation (ZOD-1.1) ─────────────────────────────────────────────
+
+describe("POST /threads/:id/messages request validation", () => {
+  it("returns 415 for a non-JSON Content-Type", async () => {
+    const app = buildApp(fakeThreadService(), fakeMessageService());
+    const res = await app.request("/threads/t-1/messages", {
+      method: "POST",
+      headers: { ...H.get, "content-type": "text/plain" },
+      body: JSON.stringify({ role: "user", body: "hi" }),
+    });
+    expect(res.status).toBe(415);
+  });
+
+  it("returns 400 for a body that fails schema validation", async () => {
+    const app = buildApp(fakeThreadService(), fakeMessageService());
+    const res = await app.request("/threads/t-1/messages", {
+      method: "POST",
+      headers: { ...H.get, "content-type": "application/json" },
+      body: JSON.stringify({ role: "not-a-role" }),
+    });
+    expect(res.status).toBe(400);
+  });
+});

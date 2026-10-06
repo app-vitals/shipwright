@@ -25,6 +25,7 @@
 import { createRoute, OpenAPIHono, z } from "@hono/zod-openapi";
 import { callerLabel } from "@shipwright/lib/request-context";
 import type { ErrorCapturingClient } from "@shipwright/lib/sentry";
+import { HTTPException } from "hono/http-exception";
 import type { PrismaClient } from "../prisma/client/client.ts";
 import type { AgentChatTokenService } from "./agent-chat-tokens.ts";
 import type {
@@ -36,6 +37,7 @@ import type { AgentCronRunService } from "./agent-cron-runs.ts";
 import type { DeleteAgentFullyDeps } from "./agent-deletion.ts";
 import { deleteAgentFully } from "./agent-deletion.ts";
 import type { AgentEnvService } from "./agent-envs.ts";
+import type { AgentGitHubInstallationsService } from "./agent-github-installations.ts";
 import type { AgentMemberService } from "./agent-members.ts";
 import type { AgentPhaseMethodologyService } from "./agent-phase-methodology.ts";
 import type { AgentPluginService } from "./agent-plugins.ts";
@@ -45,7 +47,7 @@ import type { AgentToolService } from "./agent-tools.ts";
 import type { AgentTypeManifestResolver } from "./agent-type-manifest-loader.ts";
 import type { AgentWorkQueueService } from "./agent-work-queue.ts";
 import type { AgentService } from "./agents.ts";
-import { createAgent } from "./agents.ts";
+import { createAgent, describeRepoNameCollision } from "./agents.ts";
 import type { AdminApiKey, AdminAuthEnv } from "./api-auth.ts";
 import { createAdminAuthMiddleware, parseAdminApiKeys } from "./api-auth.ts";
 import {
@@ -61,6 +63,7 @@ import {
   AgentEnvBodySchema,
   AgentEnvPatchBodySchema,
   AgentEnvResponseSchema,
+  AgentGitHubInstallationsSnapshotSchema,
   AgentIdParamSchema,
   AgentPhaseMethodologySchema,
   AgentPluginSchema,
@@ -97,6 +100,7 @@ import {
   PluginNameQuerySchema,
   PushWorkQueueSnapshotBodySchema,
   PutAgentPhaseMethodologyBodySchema,
+  PutGitHubInstallationsBodySchema,
   TokenIdParamSchema,
   ToolIdParamSchema,
   UpsertChatTokenDailyBodySchema,
@@ -169,6 +173,10 @@ export interface AdminDeps {
     "upsertDailyByModel" | "queryStats"
   >;
   agentWorkQueueService: Pick<AgentWorkQueueService, "push" | "get">;
+  agentGitHubInstallationsService: Pick<
+    AgentGitHubInstallationsService,
+    "push" | "get"
+  >;
   /**
    * Retained solely as a pass-through to deleteAgentFully() (DELETE /agents/:id),
    * which has its own internal prisma.agent/prisma.agentEnv access — out of
@@ -324,6 +332,10 @@ const PhaseMethodologyListWrapperSchema = z
 const jsonError = {
   content: { "application/json": { schema: ErrorSchema } },
 };
+
+const GitHubInstallationsSnapshotWrapperSchema = z
+  .object({ snapshot: AgentGitHubInstallationsSnapshotSchema })
+  .openapi("GitHubInstallationsSnapshotWrapper");
 
 const WorkQueueSnapshotWrapperSchema = z
   .object({ snapshot: AgentWorkQueueSnapshotSchema })
@@ -1014,6 +1026,63 @@ const getWorkQueueSnapshotRoute = createRoute({
   },
 });
 
+const putGitHubInstallationsRoute = createRoute({
+  method: "put",
+  path: "/agents/{id}/github-installations",
+  summary: "Replace the agent's GitHub installations snapshot",
+  description:
+    "Upserts the agent's single GitHub App installations snapshot (owner, installation id, state, sanitized lastError), replacing the prior list wholesale — an installation absent from the body is dropped. The body schema is closed: unknown fields (e.g. tokens) are rejected with 400.",
+  request: {
+    params: AgentIdParamSchema,
+    body: {
+      content: {
+        "application/json": { schema: PutGitHubInstallationsBodySchema },
+      },
+    },
+  },
+  responses: {
+    200: {
+      description: "Snapshot replaced",
+      content: {
+        "application/json": {
+          schema: GitHubInstallationsSnapshotWrapperSchema,
+        },
+      },
+    },
+    400: { description: "Bad request", ...jsonError },
+    401: { description: "Unauthorized", ...jsonError },
+    403: {
+      description: "Forbidden — token does not own this agent",
+      ...jsonError,
+    },
+  },
+});
+
+const getGitHubInstallationsRoute = createRoute({
+  method: "get",
+  path: "/agents/{id}/github-installations",
+  summary: "Get the latest GitHub installations snapshot",
+  description:
+    "Returns the most recently reported GitHub installations snapshot, or 404 if the agent has never reported one.",
+  request: { params: AgentIdParamSchema },
+  responses: {
+    200: {
+      description: "Latest GitHub installations snapshot",
+      content: {
+        "application/json": {
+          schema: GitHubInstallationsSnapshotWrapperSchema,
+        },
+      },
+    },
+    401: { description: "Unauthorized", ...jsonError },
+    403: {
+      description: "Forbidden — token does not own this agent",
+      ...jsonError,
+    },
+    404: { description: "No snapshot reported yet", ...jsonError },
+  },
+});
+
 const cronRunStatsQuerySchema = z
   .object({
     from: z
@@ -1091,6 +1160,7 @@ export function createAdminApp(deps: AdminDeps): OpenAPIHono<AdminAuthEnv> {
     agentTypeRegistry,
     agentChatTokenService,
     agentWorkQueueService,
+    agentGitHubInstallationsService,
     prisma,
     provisioner,
     taskStore,
@@ -1124,6 +1194,12 @@ export function createAdminApp(deps: AdminDeps): OpenAPIHono<AdminAuthEnv> {
     if (err instanceof ApiError) {
       sentryClient?.captureException(err);
       return c.json({ error: err.message }, err.statusCode as 500 | 502);
+    }
+    // zod-openapi 1.x throws an HTTPException for request-shape problems —
+    // 415 for a non-JSON Content-Type on a JSON-body route, 400 for an
+    // unparseable body. Client errors: respond with the exception's status.
+    if (err instanceof HTTPException && err.status < 500) {
+      return c.json({ error: err.message }, err.status as 400 | 415);
     }
     sentryClient?.captureException(err);
     console.error(
@@ -1215,6 +1291,11 @@ export function createAdminApp(deps: AdminDeps): OpenAPIHono<AdminAuthEnv> {
     const existing = await agentService.exists(agentId);
     if (!existing) {
       throw new NotFoundError(`agent ${agentId} not found`);
+    }
+    const collision =
+      body.repos !== undefined ? describeRepoNameCollision(body.repos) : null;
+    if (collision) {
+      throw new BadRequestError(collision);
     }
     const agent = await agentService.updateSelfHosted(agentId, {
       selfHosted: body.selfHosted,
@@ -1353,7 +1434,9 @@ export function createAdminApp(deps: AdminDeps): OpenAPIHono<AdminAuthEnv> {
       // createAgent()'s transactional design guarantees zero rows persist on
       // any of these failure codes — no partial-success 200, no redundant
       // cleanup needed here.
-      throw new BadRequestError(`create agent failed: ${result.errorCode}`);
+      throw new BadRequestError(
+        result.errorMessage ?? `create agent failed: ${result.errorCode}`,
+      );
     }
 
     return c.json(serializeAgent(result.agent), 200);
@@ -1824,6 +1907,37 @@ export function createAdminApp(deps: AdminDeps): OpenAPIHono<AdminAuthEnv> {
     return c.json({ snapshot: serializeWorkQueueSnapshot(snapshot) }, 200);
   });
 
+  // ─── GitHub installations snapshot ─────────────────────────────────────────
+
+  // PUT /agents/:id/github-installations — replace-all upsert of the single row
+  app.openapi(putGitHubInstallationsRoute, async (c) => {
+    const { id: agentId } = c.req.valid("param");
+    const body = c.req.valid("json");
+    const snapshot = await agentGitHubInstallationsService.push(agentId, {
+      reportedAt: new Date(body.reportedAt),
+      installations: body.installations,
+    });
+    return c.json(
+      { snapshot: serializeGitHubInstallationsSnapshot(snapshot) },
+      200,
+    );
+  });
+
+  // GET /agents/:id/github-installations — latest snapshot, 404 if none yet
+  app.openapi(getGitHubInstallationsRoute, async (c) => {
+    const { id: agentId } = c.req.valid("param");
+    const snapshot = await agentGitHubInstallationsService.get(agentId);
+    if (!snapshot) {
+      throw new NotFoundError(
+        `no github-installations snapshot for agent ${agentId}`,
+      );
+    }
+    return c.json(
+      { snapshot: serializeGitHubInstallationsSnapshot(snapshot) },
+      200,
+    );
+  });
+
   return app;
 }
 
@@ -2062,6 +2176,24 @@ async function computeRestrictSlackToMembersWarning(
   const members = await agentMemberService.listByAgentId(agentId);
   if (members.length > 0) return undefined;
   return "this agent has no members — enabling this will block all Slack senders";
+}
+
+function serializeGitHubInstallationsSnapshot(snapshot: {
+  id: string;
+  agentId: string;
+  reportedAt: Date;
+  installations: unknown;
+  createdAt: Date;
+}): z.infer<typeof AgentGitHubInstallationsSnapshotSchema> {
+  return {
+    id: snapshot.id,
+    agentId: snapshot.agentId,
+    reportedAt: snapshot.reportedAt.toISOString(),
+    installations: snapshot.installations as z.infer<
+      typeof AgentGitHubInstallationsSnapshotSchema
+    >["installations"],
+    createdAt: snapshot.createdAt.toISOString(),
+  };
 }
 
 function serializeWorkQueueSnapshot(snapshot: {

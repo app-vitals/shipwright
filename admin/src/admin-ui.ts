@@ -33,6 +33,7 @@ import {
   type AgentDetail,
   type AgentOption,
   buildMergedWorkQueueRows,
+  type GitHubInstallationsCardData,
   type PrListItem,
   type PullRequestItem,
   renderAgentDetailPage,
@@ -77,6 +78,7 @@ import type { DeleteAgentFullyDeps } from "./agent-deletion.ts";
 import { deleteAgentFully } from "./agent-deletion.ts";
 import type { ManualStep } from "./agent-deletion-checklist.ts";
 import type { AgentEnvService } from "./agent-envs.ts";
+import type { AgentGitHubInstallationsService } from "./agent-github-installations.ts";
 import type { AgentMemberService } from "./agent-members.ts";
 import type { AgentPhaseMethodologyService } from "./agent-phase-methodology.ts";
 import type { AgentPluginService } from "./agent-plugins.ts";
@@ -89,7 +91,7 @@ import {
 } from "./agent-type-manifest-loader.ts";
 import type { AgentWorkQueueService } from "./agent-work-queue.ts";
 import type { AgentService } from "./agents.ts";
-import { createAgent } from "./agents.ts";
+import { createAgent, describeRepoNameCollision } from "./agents.ts";
 import { publicNoAuthMiddleware } from "./api-auth.ts";
 import {
   audioContentTypeForFilename,
@@ -297,6 +299,11 @@ export interface AdminUIDeps {
     "listForAgent" | "listAcrossAgents"
   >;
   agentWorkQueueService: Pick<AgentWorkQueueService, "get" | "getMany">;
+  /** Optional: when absent the agent detail page omits the installations card. */
+  agentGitHubInstallationsService?: Pick<
+    AgentGitHubInstallationsService,
+    "get"
+  >;
   agentToolService: Pick<
     AgentToolService,
     "list" | "add" | "toggle" | "remove"
@@ -884,6 +891,7 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
     agentCronJobService,
     agentCronRunService,
     agentWorkQueueService,
+    agentGitHubInstallationsService,
     agentToolService,
     agentTokenService,
     agentPluginService,
@@ -1713,7 +1721,10 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
       },
     );
     if (!result.ok) {
-      return c.redirect(`/admin/agents/new?error=${result.errorCode}`, 302);
+      return c.redirect(
+        `/admin/agents/new?error=${encodeURIComponent(result.errorMessage ?? result.errorCode)}`,
+        302,
+      );
     }
     const { agent, restrictSlackToMembers } = result;
 
@@ -1937,6 +1948,12 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
       fetchTaskStorePrs,
     );
 
+    // Stored snapshot only — admin never calls GitHub or the agent here.
+    // A read failure just omits the card.
+    const githubInstallations =
+      (await agentGitHubInstallationsService?.get(agentId).catch(() => null)) ??
+      null;
+
     return html(
       renderAgentDetailPage(
         agentDetail,
@@ -1949,6 +1966,11 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
         c.var.userEmail,
         c.var.isAdmin,
         {
+          githubInstallations: githubInstallations && {
+            reportedAt: githubInstallations.reportedAt,
+            installations:
+              githubInstallations.installations as GitHubInstallationsCardData["installations"],
+          },
           error,
           newToken,
           successMsg,
@@ -2090,6 +2112,13 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
     }
     const existing = agent.repos ?? [];
     const deduped = existing.includes(repo) ? existing : [...existing, repo];
+    const collision = describeRepoNameCollision(deduped);
+    if (collision) {
+      return c.redirect(
+        `/admin/agents/${agentId}?error=${encodeURIComponent(collision)}`,
+        302,
+      );
+    }
     await agentService.updateFields(agentId, { repos: deduped });
     return c.redirect(`/admin/agents/${agentId}`, 302);
   });
@@ -2627,20 +2656,27 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
       const { rawToken } = await agentTokenService.create(agentId, label);
       // Render the page directly (200) rather than redirecting with the token in the URL.
       // A redirect would expose the raw token in server access logs and browser history.
-      const [envResult, crons, tools, tokens, plugins, phaseMethodology, members] =
-        await Promise.all([
-          agentEnvService
-            .getByAgentId(agentId)
-            .then((e) => e ?? { env: {}, secretKeys: [] }),
-          agentCronJobService.listWithRunSummary(agentId),
-          agentToolService.list(agentId),
-          agentTokenService.listForAgent(agentId),
-          agentPluginService.list(agentId),
-          agentPhaseMethodologyService.list(agentId),
-          c.var.isAdmin
-            ? agentMemberService.listByAgentId(agentId)
-            : Promise.resolve([]),
-        ]);
+      const [
+        envResult,
+        crons,
+        tools,
+        tokens,
+        plugins,
+        phaseMethodology,
+        members,
+      ] = await Promise.all([
+        agentEnvService
+          .getByAgentId(agentId)
+          .then((e) => e ?? { env: {}, secretKeys: [] }),
+        agentCronJobService.listWithRunSummary(agentId),
+        agentToolService.list(agentId),
+        agentTokenService.listForAgent(agentId),
+        agentPluginService.list(agentId),
+        agentPhaseMethodologyService.list(agentId),
+        c.var.isAdmin
+          ? agentMemberService.listByAgentId(agentId)
+          : Promise.resolve([]),
+      ]);
       return html(
         renderAgentDetailPage(
           agentDetail,
@@ -2974,6 +3010,7 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
     let ghAppInstallationId: string | undefined;
     let ghAppPrivateKey: string | undefined;
     let githubOrg: string | undefined;
+    let ghAppPublic = false;
     try {
       const formData = await c.req.formData();
       ghAuthMode = formData.get("ghAuthMode")?.toString() ?? "pat";
@@ -2992,6 +3029,7 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
           ? await ghAppPrivateKeyFile.text()
           : formData.get("ghAppPrivateKey")?.toString();
       githubOrg = formData.get("githubOrg")?.toString()?.trim();
+      ghAppPublic = formData.get("ghAppPublic")?.toString() === "true";
     } catch {
       return html(
         renderProvisionCompletePage(userEmail, {
@@ -3032,6 +3070,7 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
           redirectUri: `${appBaseUrl}/admin/agents/${agentId}/connect-github/callback`,
           setupUrl: `${appBaseUrl}/admin/agents/${agentId}/connect-github/installed`,
         },
+        { public: ghAppPublic },
       );
       if (!result.ok) {
         return html(
@@ -3189,7 +3228,31 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
 
       // result.outcome === "success"
       deleteCookie(c, GITHUB_PROVISION_STATE_COOKIE);
-      return html(renderGithubAppInstalledPage(userEmail, { success: true }));
+      return html(
+        renderGithubAppInstalledPage(userEmail, {
+          success: true,
+          alreadyStored: result.alreadyStored,
+        }),
+      );
+    },
+  );
+
+  app.get(
+    "/admin/agents/:id/connect-github/add-org",
+    requireAuth,
+    async (c) => {
+      const agentId = c.req.param("id");
+      if (!(await assertAgentAccess(agentId, c.var.userEmail, c.var.isAdmin))) {
+        return new Response("Forbidden", { status: 403 });
+      }
+      const result = await githubProvisioningService.getAddOrgUrl(agentId);
+      if (!result.ok) {
+        return c.redirect(
+          `/admin/agents/${agentId}?error=${encodeURIComponent(result.error)}`,
+          302,
+        );
+      }
+      return c.redirect(result.url, 302);
     },
   );
 
