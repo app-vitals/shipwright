@@ -237,6 +237,55 @@ describe("renderLoginPage", () => {
       'href="/admin/auth/okta?returnTo=%2Fadmin%2Fagents"',
     );
   });
+
+  test("google off + okta on shows only the Okta button", () => {
+    const html = renderLoginPage({ googleEnabled: false, oktaEnabled: true });
+    expect(html).toContain("Sign in with Okta");
+    expect(html).not.toContain("Sign in with Google");
+    expect(html).not.toContain("No sign-in provider is configured");
+  });
+
+  test("both providers on shows both buttons", () => {
+    const html = renderLoginPage({ googleEnabled: true, oktaEnabled: true });
+    expect(html).toContain("Sign in with Google");
+    expect(html).toContain("Sign in with Okta");
+    expect(html).not.toContain("No sign-in provider is configured");
+  });
+
+  test("neither provider on shows the misconfiguration notice and no buttons", () => {
+    const html = renderLoginPage({ googleEnabled: false, oktaEnabled: false });
+    expect(html).toContain("No sign-in provider is configured");
+    expect(html).toContain("alert-error");
+    expect(html).not.toContain("Sign in with Google");
+    expect(html).not.toContain("Sign in with Okta");
+  });
+
+  test("returnTo is preserved on each rendered button", () => {
+    const returnTo = "/admin/agents";
+    const both = renderLoginPage({
+      googleEnabled: true,
+      oktaEnabled: true,
+      returnTo,
+    });
+    expect(both).toContain(
+      'href="/admin/auth/google?returnTo=%2Fadmin%2Fagents"',
+    );
+    expect(both).toContain(
+      'href="/admin/auth/okta?returnTo=%2Fadmin%2Fagents"',
+    );
+    const googleOnly = renderLoginPage({ googleEnabled: true, returnTo });
+    expect(googleOnly).toContain(
+      'href="/admin/auth/google?returnTo=%2Fadmin%2Fagents"',
+    );
+    const oktaOnly = renderLoginPage({
+      googleEnabled: false,
+      oktaEnabled: true,
+      returnTo,
+    });
+    expect(oktaOnly).toContain(
+      'href="/admin/auth/okta?returnTo=%2Fadmin%2Fagents"',
+    );
+  });
 });
 
 // ─── renderAgentsPage ─────────────────────────────────────────────────────────
@@ -2852,13 +2901,13 @@ describe("renderAgentDetailPage — accordion groups", () => {
 
   test("Expand all button is present and renders as a real <button> element", () => {
     const html = render();
-    expect(html).toContain('<button');
+    expect(html).toContain("<button");
     expect(html).toContain("Expand all");
   });
 
   test("Collapse all button is present and renders as a real <button> element", () => {
     const html = render();
-    expect(html).toContain('<button');
+    expect(html).toContain("<button");
     expect(html).toContain("Collapse all");
   });
 
@@ -2934,7 +2983,9 @@ describe("renderAgentDetailPage — stat strip", () => {
     // SYSTEM_CRON is enabled: true, CUSTOM_CRON is enabled: false
     // So 1 enabled total
     const html = render();
-    expect(html).toMatch(/<div class="stat-tile"[^>]*>[\s\S]*?crons active[\s\S]*?<span[^>]*>\s*1\s*<\/span>/);
+    expect(html).toMatch(
+      /<div class="stat-tile"[^>]*>[\s\S]*?crons active[\s\S]*?<span[^>]*>\s*1\s*<\/span>/,
+    );
   });
 
   test("crons-active count correctly reflects enabled crons from different configurations", () => {
@@ -2962,13 +3013,17 @@ describe("renderAgentDetailPage — stat strip", () => {
       { timezone: "UTC" },
     );
     // Should have 2 enabled crons (SYSTEM_CRON and enabledCron)
-    expect(html).toMatch(/<div class="stat-tile"[^>]*>[\s\S]*?crons active[\s\S]*?<span[^>]*>\s*2\s*<\/span>/);
+    expect(html).toMatch(
+      /<div class="stat-tile"[^>]*>[\s\S]*?crons active[\s\S]*?<span[^>]*>\s*2\s*<\/span>/,
+    );
   });
 
   test("missing-env-vars count equals agent.missingRequiredEnv.length", () => {
     const html = render();
     // AGENT fixture has missingRequiredEnv: []
-    expect(html).toMatch(/<div class="stat-tile"[^>]*>[\s\S]*?missing env vars[\s\S]*?<span[^>]*>\s*0\s*<\/span>/);
+    expect(html).toMatch(
+      /<div class="stat-tile"[^>]*>[\s\S]*?missing env vars[\s\S]*?<span[^>]*>\s*0\s*<\/span>/,
+    );
   });
 
   test("missing-env-vars count shows correct value when missingRequiredEnv is non-empty", () => {
@@ -2988,13 +3043,17 @@ describe("renderAgentDetailPage — stat strip", () => {
       true,
       { timezone: "UTC" },
     );
-    expect(html).toMatch(/<div class="stat-tile"[^>]*>[\s\S]*?missing env vars[\s\S]*?<span[^>]*>\s*2\s*<\/span>/);
+    expect(html).toMatch(
+      /<div class="stat-tile"[^>]*>[\s\S]*?missing env vars[\s\S]*?<span[^>]*>\s*2\s*<\/span>/,
+    );
   });
 
   test("members count equals members array length", () => {
     const html = render();
     // render() passes 1 member
-    expect(html).toMatch(/<div class="stat-tile"[^>]*>[\s\S]*?members[\s\S]*?<span[^>]*>\s*1\s*<\/span>/);
+    expect(html).toMatch(
+      /<div class="stat-tile"[^>]*>[\s\S]*?members[\s\S]*?<span[^>]*>\s*1\s*<\/span>/,
+    );
   });
 
   test("repos count equals agent.repos.length", () => {
@@ -3020,7 +3079,9 @@ describe("renderAgentDetailPage — stat strip", () => {
       true,
       { timezone: "UTC" },
     );
-    expect(html).toMatch(/<div class="stat-tile"[^>]*>[\s\S]*?repos[\s\S]*?<span[^>]*>\s*3\s*<\/span>/);
+    expect(html).toMatch(
+      /<div class="stat-tile"[^>]*>[\s\S]*?repos[\s\S]*?<span[^>]*>\s*3\s*<\/span>/,
+    );
   });
 
   test("missing-env-vars tile has warning styling when count > 0", () => {
@@ -3059,7 +3120,9 @@ describe("renderAgentDetailPage — stat strip", () => {
   test("stat strip renders before accordion groups", () => {
     const html = render();
     const statStripIndex = html.indexOf('class="stat-strip"');
-    const automationGroupIndex = html.indexOf('<span class="group-title">Automation</span>');
+    const automationGroupIndex = html.indexOf(
+      '<span class="group-title">Automation</span>',
+    );
 
     expect(statStripIndex).toBeGreaterThan(-1);
     expect(automationGroupIndex).toBeGreaterThan(-1);

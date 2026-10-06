@@ -901,8 +901,10 @@ function applyInline(s: string): string {
 export function renderLoginPage(opts?: {
   error?: string;
   returnTo?: string;
+  googleEnabled?: boolean;
   oktaEnabled?: boolean;
 }): string {
+  const googleEnabled = opts?.googleEnabled ?? true;
   const errorHtml = opts?.error
     ? `<div class="alert alert-error">${escapeHtml(opts.error)}</div>`
     : "";
@@ -915,9 +917,18 @@ export function renderLoginPage(opts?: {
     ? `/admin/auth/okta?returnTo=${encodeURIComponent(opts.returnTo)}`
     : "/admin/auth/okta";
 
+  const googleButtonHtml = googleEnabled
+    ? `<a href="${googleHref}" class="btn btn-primary" style="width:100%;justify-content:center;text-decoration:none">Sign in with Google</a>`
+    : "";
+
   const oktaButtonHtml = opts?.oktaEnabled
     ? `<a href="${oktaHref}" class="btn btn-primary" style="width:100%;justify-content:center;text-decoration:none">Sign in with Okta</a>`
     : "";
+
+  const noProviderHtml =
+    !googleEnabled && !opts?.oktaEnabled
+      ? `<div class="alert alert-error">No sign-in provider is configured. Set GOOGLE_CLIENT_ID/GOOGLE_CLIENT_SECRET or OKTA_*.</div>`
+      : "";
 
   return renderAdminPage({
     title: "Admin Login — Shipwright",
@@ -926,7 +937,8 @@ export function renderLoginPage(opts?: {
       <h1 class="login-title">Shipwright Admin</h1>
       <p class="login-subtitle">Sign in to manage your agents.</p>
       ${errorHtml}
-      <a href="${googleHref}" class="btn btn-primary" style="width:100%;justify-content:center;text-decoration:none">Sign in with Google</a>
+      ${noProviderHtml}
+      ${googleButtonHtml}
       ${oktaButtonHtml}
     </div>
   </div>`,
