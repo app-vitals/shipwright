@@ -533,6 +533,30 @@ describe("admin UI — login page", () => {
     expect(body).not.toContain('type="password"');
     expect(body).not.toContain('name="password"');
   });
+
+  it("GET /admin/login shows only Okta when Google creds are empty", async () => {
+    const app = createAdminUIApp(
+      makeMockDeps({ googleClientId: "", googleClientSecret: "" }),
+    );
+    const html = await (await app.request("/admin/login")).text();
+    expect(html).toContain("Sign in with Okta");
+    expect(html).not.toContain("Sign in with Google");
+  });
+
+  it("GET /admin/login shows the misconfiguration notice when no provider is set", async () => {
+    const app = createAdminUIApp(
+      makeMockDeps({
+        googleClientId: "",
+        googleClientSecret: "",
+        oktaClientId: "",
+        oktaIssuer: "",
+      }),
+    );
+    const html = await (await app.request("/admin/login")).text();
+    expect(html).toContain("No sign-in provider is configured");
+    expect(html).not.toContain("Sign in with Google");
+    expect(html).not.toContain("Sign in with Okta");
+  });
 });
 
 // ─── OAuth routes ─────────────────────────────────────────────────────────────
