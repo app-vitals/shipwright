@@ -131,7 +131,8 @@ Configured via `SHIPWRIGHT_AGENT_PR_CENSUS_ENABLED` (kill switch) and `SHIPWRIGH
 | `SHIPWRIGHT_ENCRYPTION_KEY` | secrets at rest | 64-char hex (32 bytes) for AES-256-GCM. **If unset, secrets are stored in plain text** (logged warning) — set it in any real deployment. |
 | `GH_APP_ID` | GitHub App auth | GitHub App ID (integer as string). Required when using the App auth path. |
 | `GH_APP_PRIVATE_KEY` | GitHub App auth | PEM private key for the GitHub App (newlines may be `\n`-escaped). Required when using the App auth path. |
-| `GH_APP_INSTALLATION_ID` | GitHub App auth | Installation ID for the target org/repo. Required when using the App auth path. |
+| `GH_APP_INSTALLATION_ID` | GitHub App auth | Optional pin: an installation ID that is always used (and is the default `gh-token` installation). Without it, the agent discovers the App's installations and uses those matching its repo scope. |
+| `GH_APP_SLUG` | GitHub App auth | URL slug of the GitHub App, persisted from the manifest-flow exchange so the install link (`https://github.com/apps/<slug>/installations/new`) can be rebuilt for additional-org installs. |
 | `GH_APP_CLIENT_ID` | GitHub App auth | OAuth client ID for the GitHub App, persisted from the manifest-flow exchange so the App's OAuth settings can be reconfigured later without redoing the manifest flow. |
 | `GH_APP_CLIENT_SECRET` | GitHub App auth | OAuth client secret for the GitHub App, persisted from the manifest-flow exchange. |
 | `GH_TOKEN` | GitHub PAT auth | Personal Access Token for the legacy `gh auth setup-git` path. Used only if the App env vars are absent. |
