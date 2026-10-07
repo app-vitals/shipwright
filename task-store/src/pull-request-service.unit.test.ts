@@ -760,6 +760,7 @@ describe("PullRequestService.recordSkip()", () => {
     const record: Partial<PullRequest> = {
       id: "pr-1",
       skipCount: initialSkipCount,
+      commitSha: "abc123",
       blocked: false,
       blockedReason: null,
     };
@@ -792,6 +793,11 @@ describe("PullRequestService.recordSkip()", () => {
           return Promise.resolve({ ...record });
         },
       },
+      prFinding: {
+        findFirst(_args: unknown): Promise<{ id: string } | null> {
+          return Promise.resolve({ id: "finding-latest" });
+        },
+      },
       _updateCalls: updateCalls,
     });
 
@@ -821,6 +827,15 @@ describe("PullRequestService.recordSkip()", () => {
     expect(data.lastSkippedAt).toBe(NOW.toISOString());
     expect("blocked" in data).toBe(false);
     expect("blockedReason" in data).toBe(false);
+    for (const k of [
+      "blockedHeadSha",
+      "blockedReviewId",
+      "blockedAt",
+      "lastAutoBlockReason",
+      "lastAutoBlockedAt",
+    ]) {
+      expect(k in data).toBe(false);
+    }
     expect(result.skipCount).toBe(2);
   });
 
@@ -837,6 +852,11 @@ describe("PullRequestService.recordSkip()", () => {
     expect(blockUpdate.blockedReason).toContain("3");
     expect("hitl" in blockUpdate).toBe(false);
     expect(result.blocked).toBe(true);
+    expect(blockUpdate.blockedHeadSha).toBe("abc123");
+    expect(blockUpdate.blockedReviewId).toBe("finding-latest");
+    expect(blockUpdate.blockedAt).toBe(NOW.toISOString());
+    expect(blockUpdate.lastAutoBlockReason).toBe(blockUpdate.blockedReason);
+    expect(blockUpdate.lastAutoBlockedAt).toBe(NOW.toISOString());
   });
 
   test("recordSkip() exactly at threshold (skipCount reaching 3) sets blocked:true", async () => {
@@ -2288,7 +2308,10 @@ describe("PullRequestService.getCensusCursor() (POM-1.1)", () => {
 describe("deriveOrigin() (POM-1.2)", () => {
   test("authorLogin 'github-actions[bot]' -> ci", () => {
     expect(
-      deriveOrigin({ hasLinkedTask: false, authorLogin: "github-actions[bot]" }),
+      deriveOrigin({
+        hasLinkedTask: false,
+        authorLogin: "github-actions[bot]",
+      }),
     ).toBe("ci");
   });
 
@@ -2334,15 +2357,15 @@ describe("deriveOrigin() (POM-1.2)", () => {
   });
 
   test("a task-row match with a human authorLogin -> shipwright", () => {
-    expect(
-      deriveOrigin({ hasLinkedTask: true, authorLogin: "octocat" }),
-    ).toBe("shipwright");
+    expect(deriveOrigin({ hasLinkedTask: true, authorLogin: "octocat" })).toBe(
+      "shipwright",
+    );
   });
 
   test("a human login with no task-row match -> human", () => {
-    expect(
-      deriveOrigin({ hasLinkedTask: false, authorLogin: "octocat" }),
-    ).toBe("human");
+    expect(deriveOrigin({ hasLinkedTask: false, authorLogin: "octocat" })).toBe(
+      "human",
+    );
   });
 
   test("missing authorLogin and no task-row match -> unknown", () => {
@@ -2534,7 +2557,9 @@ function makeClaimPrismaDouble(
         const match = taskRows.find(
           (t) => t.repo === where.repo && t.pr === where.pr,
         );
-        return Promise.resolve(match ? { id: `task-${match.repo}-${match.pr}` } : null);
+        return Promise.resolve(
+          match ? { id: `task-${match.repo}-${match.pr}` } : null,
+        );
       },
     },
     $transaction<T>(fn: (tx: unknown) => Promise<T>): Promise<T> {

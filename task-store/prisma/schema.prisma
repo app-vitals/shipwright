@@ -323,6 +323,21 @@ model PullRequest {
   lastCiFailureSignature    String?
   consecutiveCiFailureCount Int     @default(0)
 
+  // ─── Block-time state (PSL-3.1) ───
+  // All five nullable, purely additive columns. recordSkip() fills them when
+  // it crosses SKIP_BLOCK_THRESHOLD so block frequency and the head/review the
+  // PR was blocked on are directly queryable. blockedHeadSha/blockedReviewId/
+  // blockedAt describe the live block; resetSkip() leaves them as-is (they are
+  // overwritten by the next block). lastAutoBlockReason/lastAutoBlockedAt are
+  // the preserved auto-block history — resetSkip() never clears them.
+  // blockedReviewId is the id of the latest review-source PrFinding known at
+  // block time (no GitHub review id is tracked on PullRequest).
+  blockedHeadSha      String?
+  blockedReviewId     String?
+  blockedAt           String?
+  lastAutoBlockReason String?
+  lastAutoBlockedAt   String?
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 

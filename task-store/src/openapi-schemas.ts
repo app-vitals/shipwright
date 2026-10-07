@@ -488,6 +488,26 @@ export const PullRequestSchema = z
       description:
         "Count of consecutive patch() calls whose ciFailureSignature matched lastCiFailureSignature. Auto-blocks (blocked+blockedReason) once it crosses the threshold (3).",
     }),
+    blockedHeadSha: z.string().nullable().optional().openapi({
+      description:
+        "Head commit SHA at the moment recordSkip() auto-blocked this PR (PSL-3.1). Null until a skip auto-block has occurred.",
+    }),
+    blockedReviewId: z.string().nullable().optional().openapi({
+      description:
+        "Id of the latest review-source finding known when recordSkip() auto-blocked this PR (PSL-3.1). Null if none existed.",
+    }),
+    blockedAt: z.string().nullable().optional().openapi({
+      description:
+        "ISO timestamp of the most recent skip auto-block (PSL-3.1).",
+    }),
+    lastAutoBlockReason: z.string().nullable().optional().openapi({
+      description:
+        "blockedReason of the most recent skip auto-block; preserved across POST /prs/:id/skip/reset (PSL-3.1).",
+    }),
+    lastAutoBlockedAt: z.string().nullable().optional().openapi({
+      description:
+        "ISO timestamp of the most recent skip auto-block; preserved across POST /prs/:id/skip/reset (PSL-3.1).",
+    }),
     createdAt: z
       .string()
       .datetime()

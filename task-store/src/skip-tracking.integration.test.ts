@@ -86,7 +86,10 @@ describeOrSkip("TaskService.recordSkip/resetSkip (integration)", () => {
   });
 
   it("recordSkip() crossing skipCount>=3 sets status:'blocked' and a descriptive blockedReason", async () => {
-    const service = new TaskService(prisma, FixedClock(new Date("2026-07-21T09:00:00.000Z")));
+    const service = new TaskService(
+      prisma,
+      FixedClock(new Date("2026-07-21T09:00:00.000Z")),
+    );
     const task = await prisma.task.create({
       data: { title: "Skip until blocked", status: "pending" },
     });
@@ -103,7 +106,10 @@ describeOrSkip("TaskService.recordSkip/resetSkip (integration)", () => {
   });
 
   it("recordSkip() past the threshold keeps incrementing and stays blocked (idempotent-ish, not a guard)", async () => {
-    const service = new TaskService(prisma, FixedClock(new Date("2026-07-21T09:00:00.000Z")));
+    const service = new TaskService(
+      prisma,
+      FixedClock(new Date("2026-07-21T09:00:00.000Z")),
+    );
     const task = await prisma.task.create({
       data: { title: "Skip past threshold", status: "pending" },
     });
@@ -119,7 +125,10 @@ describeOrSkip("TaskService.recordSkip/resetSkip (integration)", () => {
   });
 
   it("resetSkip() sets skipCount back to 0 and lastSkippedAt back to null", async () => {
-    const service = new TaskService(prisma, FixedClock(new Date("2026-07-21T09:00:00.000Z")));
+    const service = new TaskService(
+      prisma,
+      FixedClock(new Date("2026-07-21T09:00:00.000Z")),
+    );
     const task = await prisma.task.create({
       data: { title: "Skip then reset", status: "pending" },
     });
@@ -190,33 +199,55 @@ describeOrSkip("TaskService.recordSkip() reason-aware streak (SRB-1.1)", () => {
   });
 
   it("first-ever skip (lastSkipReason starts null) starts a streak at skipCount=1 and stores the reason", async () => {
-    const service = new TaskService(prisma, FixedClock(new Date("2026-09-01T00:00:00.000Z")));
+    const service = new TaskService(
+      prisma,
+      FixedClock(new Date("2026-09-01T00:00:00.000Z")),
+    );
     const task = await prisma.task.create({
       data: { title: "Reason-aware", status: "pending" },
     });
 
-    const updated = await service.recordSkip(task.id, "dev-task:deferred:unmet-hidden-requirement");
+    const updated = await service.recordSkip(
+      task.id,
+      "dev-task:deferred:unmet-hidden-requirement",
+    );
 
     expect(updated.skipCount).toBe(1);
-    expect(updated.lastSkipReason).toBe("dev-task:deferred:unmet-hidden-requirement");
+    expect(updated.lastSkipReason).toBe(
+      "dev-task:deferred:unmet-hidden-requirement",
+    );
   });
 
   it("consecutive recordSkip() calls with the SAME reason increment skipCount and keep lastSkipReason", async () => {
-    const service = new TaskService(prisma, FixedClock(new Date("2026-09-01T00:00:00.000Z")));
+    const service = new TaskService(
+      prisma,
+      FixedClock(new Date("2026-09-01T00:00:00.000Z")),
+    );
     const task = await prisma.task.create({
       data: { title: "Same reason streak", status: "pending" },
     });
 
-    await service.recordSkip(task.id, "dev-task:deferred:unmet-hidden-requirement");
-    const second = await service.recordSkip(task.id, "dev-task:deferred:unmet-hidden-requirement");
+    await service.recordSkip(
+      task.id,
+      "dev-task:deferred:unmet-hidden-requirement",
+    );
+    const second = await service.recordSkip(
+      task.id,
+      "dev-task:deferred:unmet-hidden-requirement",
+    );
 
     expect(second.skipCount).toBe(2);
-    expect(second.lastSkipReason).toBe("dev-task:deferred:unmet-hidden-requirement");
+    expect(second.lastSkipReason).toBe(
+      "dev-task:deferred:unmet-hidden-requirement",
+    );
     expect(second.status).not.toBe("blocked");
   });
 
   it("a recordSkip() call with a DIFFERENT reason resets skipCount to 1 and overwrites lastSkipReason", async () => {
-    const service = new TaskService(prisma, FixedClock(new Date("2026-09-01T00:00:00.000Z")));
+    const service = new TaskService(
+      prisma,
+      FixedClock(new Date("2026-09-01T00:00:00.000Z")),
+    );
     const task = await prisma.task.create({
       data: { title: "Reason change", status: "pending" },
     });
@@ -231,24 +262,41 @@ describeOrSkip("TaskService.recordSkip() reason-aware streak (SRB-1.1)", () => {
   });
 
   it("three consecutive skips with an identical reason cross the threshold: status:'blocked', hitl:true, blockedReason names the count and reason", async () => {
-    const service = new TaskService(prisma, FixedClock(new Date("2026-09-01T00:00:00.000Z")));
+    const service = new TaskService(
+      prisma,
+      FixedClock(new Date("2026-09-01T00:00:00.000Z")),
+    );
     const task = await prisma.task.create({
       data: { title: "Threshold by reason", status: "pending" },
     });
 
-    await service.recordSkip(task.id, "dev-task:deferred:unmet-hidden-requirement");
-    await service.recordSkip(task.id, "dev-task:deferred:unmet-hidden-requirement");
-    const third = await service.recordSkip(task.id, "dev-task:deferred:unmet-hidden-requirement");
+    await service.recordSkip(
+      task.id,
+      "dev-task:deferred:unmet-hidden-requirement",
+    );
+    await service.recordSkip(
+      task.id,
+      "dev-task:deferred:unmet-hidden-requirement",
+    );
+    const third = await service.recordSkip(
+      task.id,
+      "dev-task:deferred:unmet-hidden-requirement",
+    );
 
     expect(third.skipCount).toBe(3);
     expect(third.status).toBe("blocked");
     expect(third.hitl).toBe(true);
     expect(third.blockedReason).toContain("3");
-    expect(third.blockedReason).toContain("dev-task:deferred:unmet-hidden-requirement");
+    expect(third.blockedReason).toContain(
+      "dev-task:deferred:unmet-hidden-requirement",
+    );
   });
 
   it("a reason change resets the streak and does NOT trip the threshold, even after 2 prior same-reason skips", async () => {
-    const service = new TaskService(prisma, FixedClock(new Date("2026-09-01T00:00:00.000Z")));
+    const service = new TaskService(
+      prisma,
+      FixedClock(new Date("2026-09-01T00:00:00.000Z")),
+    );
     const task = await prisma.task.create({
       data: { title: "Reset avoids false block", status: "pending" },
     });
@@ -264,7 +312,10 @@ describeOrSkip("TaskService.recordSkip() reason-aware streak (SRB-1.1)", () => {
   });
 
   it("an omitted reason defaults server-side to 'unspecified' and still forms a streak", async () => {
-    const service = new TaskService(prisma, FixedClock(new Date("2026-09-01T00:00:00.000Z")));
+    const service = new TaskService(
+      prisma,
+      FixedClock(new Date("2026-09-01T00:00:00.000Z")),
+    );
     const task = await prisma.task.create({
       data: { title: "Default reason", status: "pending" },
     });
@@ -289,6 +340,7 @@ describeOrSkip("PullRequestService.recordSkip/resetSkip (integration)", () => {
     // rows before their parent PullRequest rows, since recordSkip/resetSkip
     // now write them.
     await prisma.pullRequestEvent.deleteMany();
+    await prisma.prFinding.deleteMany();
     await prisma.pullRequest.deleteMany();
   });
 
@@ -369,7 +421,10 @@ describeOrSkip("PullRequestService.recordSkip/resetSkip (integration)", () => {
   });
 
   it("resetSkip() sets skipCount back to 0 and lastSkippedAt back to null", async () => {
-    const service = new PullRequestService(prisma, FixedClock(new Date("2026-07-21T09:00:00.000Z")));
+    const service = new PullRequestService(
+      prisma,
+      FixedClock(new Date("2026-07-21T09:00:00.000Z")),
+    );
     const pr = await prisma.pullRequest.create({
       data: { repo: "app-vitals/shipwright", prNumber: 9005 },
     });
@@ -413,5 +468,96 @@ describeOrSkip("PullRequestService.recordSkip/resetSkip (integration)", () => {
       caught = err;
     }
     expect(caught).toBeInstanceOf(NotFoundError);
+  });
+
+  describe("block-time state (PSL-3.1)", () => {
+    const NOW = new Date("2026-10-07T12:00:00.000Z");
+
+    it("recordSkip() below the threshold sets none of the block-time fields", async () => {
+      const service = new PullRequestService(prisma, FixedClock(NOW));
+      const pr = await prisma.pullRequest.create({
+        data: {
+          repo: "app-vitals/shipwright",
+          prNumber: 9101,
+          commitSha: "sha1",
+        },
+      });
+
+      await service.recordSkip(pr.id);
+      const second = await service.recordSkip(pr.id);
+
+      expect(second.blocked).toBe(false);
+      expect(second.blockedHeadSha).toBeNull();
+      expect(second.blockedReviewId).toBeNull();
+      expect(second.blockedAt).toBeNull();
+      expect(second.lastAutoBlockReason).toBeNull();
+      expect(second.lastAutoBlockedAt).toBeNull();
+    });
+
+    it("recordSkip() at the threshold records head SHA, latest review, and auto-block history", async () => {
+      const service = new PullRequestService(prisma, FixedClock(NOW));
+      const pr = await prisma.pullRequest.create({
+        data: {
+          repo: "app-vitals/shipwright",
+          prNumber: 9102,
+          commitSha: "sha2",
+        },
+      });
+      await prisma.prFinding.create({
+        data: {
+          prRecordId: pr.id,
+          ref: "old",
+          disposition: "resolved",
+          source: "review",
+          evidence: "e",
+          at: NOW.toISOString(),
+          createdAt: new Date("2026-10-07T10:00:00.000Z"),
+        },
+      });
+      const latest = await prisma.prFinding.create({
+        data: {
+          prRecordId: pr.id,
+          ref: "new",
+          disposition: "resolved",
+          source: "review",
+          evidence: "e",
+          at: NOW.toISOString(),
+          createdAt: new Date("2026-10-07T11:00:00.000Z"),
+        },
+      });
+
+      await service.recordSkip(pr.id);
+      await service.recordSkip(pr.id);
+      const third = await service.recordSkip(pr.id);
+
+      expect(third.blocked).toBe(true);
+      expect(third.blockedHeadSha).toBe("sha2");
+      expect(third.blockedReviewId).toBe(latest.id);
+      expect(third.blockedAt).toBe(NOW.toISOString());
+      expect(third.lastAutoBlockReason).toBe(third.blockedReason);
+      expect(third.lastAutoBlockedAt).toBe(NOW.toISOString());
+    });
+
+    it("resetSkip() clears the live block but retains lastAutoBlock* history", async () => {
+      const service = new PullRequestService(prisma, FixedClock(NOW));
+      const pr = await prisma.pullRequest.create({
+        data: {
+          repo: "app-vitals/shipwright",
+          prNumber: 9103,
+          commitSha: "sha3",
+        },
+      });
+      await service.recordSkip(pr.id);
+      await service.recordSkip(pr.id);
+      const blocked = await service.recordSkip(pr.id);
+
+      const reset = await service.resetSkip(pr.id);
+
+      expect(reset.blocked).toBe(false);
+      expect(reset.blockedReason).toBeNull();
+      expect(reset.skipCount).toBe(0);
+      expect(reset.lastAutoBlockReason).toBe(blocked.blockedReason);
+      expect(reset.lastAutoBlockedAt).toBe(NOW.toISOString());
+    });
   });
 });
