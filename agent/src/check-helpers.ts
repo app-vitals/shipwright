@@ -1308,24 +1308,45 @@ export async function ghRun(args: string[]): Promise<void> {
   }
 }
 
+const GH_GRAPHQL_MAX_ATTEMPTS = 3;
+const GH_GRAPHQL_BASE_DELAY_MS = 500;
+const GH_TRANSIENT_STDERR = /HTTP 50[234]\b|timed? ?out/i;
+
 /**
  * Run a gh API graphql command and return the raw response.
+ *
+ * Retries (exponential backoff) when gh fails with a transient gateway error
+ * (HTTP 502/503/504 or a timeout). Any other failure — auth, query errors —
+ * throws immediately. After exhausting retries the last error is thrown in
+ * the same format as a non-retried failure.
  */
-export async function ghGraphql<T>(query: string): Promise<T> {
-  const proc = Bun.spawn(["gh", "api", "graphql", "-f", `query=${query}`], {
-    env: process.env,
-    stdout: "pipe",
-    stderr: "pipe",
-  });
-  const [stdout, stderr, status] = await Promise.all([
-    new Response(proc.stdout).text(),
-    new Response(proc.stderr).text(),
-    proc.exited,
-  ]);
-  if (status !== 0) {
-    throw new Error(`gh api graphql failed (exit ${status}): ${stderr}`);
+export async function ghGraphql<T>(
+  query: string,
+  opts: { baseDelayMs?: number } = {},
+): Promise<T> {
+  const baseDelayMs = opts.baseDelayMs ?? GH_GRAPHQL_BASE_DELAY_MS;
+  for (let attempt = 1; ; attempt++) {
+    const proc = Bun.spawn(["gh", "api", "graphql", "-f", `query=${query}`], {
+      env: process.env,
+      stdout: "pipe",
+      stderr: "pipe",
+    });
+    const [stdout, stderr, status] = await Promise.all([
+      new Response(proc.stdout).text(),
+      new Response(proc.stderr).text(),
+      proc.exited,
+    ]);
+    if (status === 0) {
+      return JSON.parse(stdout) as T;
+    }
+    if (
+      attempt >= GH_GRAPHQL_MAX_ATTEMPTS ||
+      !GH_TRANSIENT_STDERR.test(stderr)
+    ) {
+      throw new Error(`gh api graphql failed (exit ${status}): ${stderr}`);
+    }
+    await Bun.sleep(baseDelayMs * 2 ** (attempt - 1));
   }
-  return JSON.parse(stdout) as T;
 }
 
 /**
