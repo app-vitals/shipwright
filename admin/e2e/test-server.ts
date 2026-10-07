@@ -244,6 +244,7 @@ function buildMockDeps(chatClient: ChatClient | undefined): AdminUIDeps {
         OPENAI_API_KEY: "sk-secret-value",
       }),
       upsert: async () => {},
+      patch: async () => {},
       deleteKey: async () => {},
       getConfigBundle: async () => null,
     },

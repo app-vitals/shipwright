@@ -12,16 +12,15 @@
  */
 
 import { beforeAll, describe, expect, it } from "bun:test";
+import { DEFAULT_AGENT_ENV } from "@shipwright/lib/default-agent-env";
 import { sign } from "hono/jwt";
-import { createAdminUIApp } from "./admin-ui.ts";
 import type {
   AdminUIDeps,
   AdminUIGithubAppClient,
   AdminUISlackClient,
 } from "./admin-ui.ts";
-import type {
-  GoogleAuthClient,
-} from "./google-auth-client.ts";
+import { createAdminUIApp } from "./admin-ui.ts";
+import type { GoogleAuthClient } from "./google-auth-client.ts";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -230,7 +229,11 @@ function makeMockDeps(overrides?: Partial<AdminUIDeps>): AdminUIDeps {
     },
     agentPhaseMethodologyService: {
       list: async () => [],
-      upsert: async (agentId: string, phase: string, subagentType: string | null) => ({
+      upsert: async (
+        agentId: string,
+        phase: string,
+        subagentType: string | null,
+      ) => ({
         id: "pm1",
         agentId,
         phase,
@@ -341,6 +344,18 @@ function makeMockDeps(overrides?: Partial<AdminUIDeps>): AdminUIDeps {
 }
 
 // ─── Tests ────────────────────────────────────────────────────────────────────
+
+/**
+ * New agents are always seeded with the non-secret DEFAULT_AGENT_ENV; a "no env
+ * writes" scenario means nothing beyond those defaults (no credentials) landed.
+ */
+function expectOnlyDefaultEnv(
+  patches: Array<{ env: Record<string, string> }>,
+): void {
+  for (const patch of patches) {
+    expect(patch.env).toEqual({ ...DEFAULT_AGENT_ENV });
+  }
+}
 
 describe("admin UI — new local agent create flow", () => {
   let adminCookie: string;
@@ -1022,14 +1037,14 @@ describe("admin UI — new local agent create flow", () => {
     expect(patch?.secretKeys?.has("CLAUDE_CODE_OAUTH_TOKEN")).toBe(true);
   });
 
-  it("no Claude token supplied → no env patch at all", async () => {
+  it("no Claude token supplied → only the non-secret default env is patched", async () => {
     const { deps, calls } = makeProvisioningDeps();
     await postAgent(deps, {
       name: "no-creds",
       type: "coding",
       runtime: "in-cluster",
     });
-    expect(calls.envPatches).toEqual([]);
+    expectOnlyDefaultEnv(calls.envPatches);
   });
 
   // ── UAP-2.1: unified create page — Anthropic key, Connect Slack, GitHub auth ──
@@ -1071,7 +1086,7 @@ describe("admin UI — new local agent create flow", () => {
     });
     expect(res.status).toBe(302);
     expect(res.headers.get("Location")).toBe(`/admin/agents/${NEW_AGENT_ID}`);
-    expect(calls.envPatches).toEqual([]);
+    expectOnlyDefaultEnv(calls.envPatches);
   });
 
   it("Connect Slack checked redirects into the Slack OAuth URL for the newly created agent", async () => {
@@ -1293,7 +1308,7 @@ describe("admin UI — new local agent create flow", () => {
     });
     expect(res.status).toBe(302);
     expect(res.headers.get("Location")).toBe(`/admin/agents/${NEW_AGENT_ID}`);
-    expect(calls.envPatches).toEqual([]);
+    expectOnlyDefaultEnv(calls.envPatches);
   });
 
   it("both Connect Slack and GitHub PAT requested — GitHub PAT is stored first, then Slack's OAuth redirect is returned", async () => {
@@ -1375,7 +1390,7 @@ describe("admin UI — new local agent create flow", () => {
     expect(res.headers.get("Set-Cookie") ?? "").not.toContain(
       "slack_provision_state=",
     );
-    expect(calls.envPatches).toEqual([]);
+    expectOnlyDefaultEnv(calls.envPatches);
     expect(calls.provisioned).toEqual([]);
   });
 
@@ -1393,7 +1408,7 @@ describe("admin UI — new local agent create flow", () => {
     expect(res.headers.get("Set-Cookie") ?? "").not.toContain(
       "github_provision_state=",
     );
-    expect(calls.envPatches).toEqual([]);
+    expectOnlyDefaultEnv(calls.envPatches);
   });
 
   it("runtime=self-hosted with ghAuthMode=pat performs no GH_TOKEN write", async () => {
@@ -1408,7 +1423,7 @@ describe("admin UI — new local agent create flow", () => {
     expect(res.status).toBe(302);
     expect(res.headers.get("Location")).toBe(`/admin/agents/${NEW_AGENT_ID}`);
     expect(calls.envPatches.find((p) => p.env.GH_TOKEN)).toBeUndefined();
-    expect(calls.envPatches).toEqual([]);
+    expectOnlyDefaultEnv(calls.envPatches);
   });
 
   it("runtime=self-hosted with both connectSlack=true and ghAuthMode=app set (raw POST bypassing the UI) performs no provisioning of either kind", async () => {
@@ -1432,7 +1447,7 @@ describe("admin UI — new local agent create flow", () => {
     expect(res.headers.get("Set-Cookie") ?? "").not.toContain(
       "github_provision_state=",
     );
-    expect(calls.envPatches).toEqual([]);
+    expectOnlyDefaultEnv(calls.envPatches);
     expect(calls.created?.selfHosted).toBe(true);
     expect(calls.provisioned).toEqual([]);
   });

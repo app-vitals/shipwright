@@ -6,6 +6,7 @@
  */
 
 import { describe, expect, it } from "bun:test";
+import { DEFAULT_AGENT_ENV } from "@shipwright/lib/default-agent-env";
 import type { AgentTypeManifestResolver } from "./agent-type-manifest-loader.ts";
 import type { AgentTypeManifest } from "./agent-type-registry.ts";
 import type {
@@ -105,11 +106,7 @@ function makeFakePrisma(
       rows.set(row.id, row);
       return row;
     },
-    async delete({
-      where,
-    }: {
-      where: { id: string };
-    }): Promise<FakeAgentRow> {
+    async delete({ where }: { where: { id: string } }): Promise<FakeAgentRow> {
       const row = rows.get(where.id);
       if (!row) throw new Error("record not found");
       rows.delete(where.id);
@@ -1218,7 +1215,8 @@ function makeCreateAgentHarness(
     // simply threaded through as `undefined`, mirroring exactly what
     // admin-ui.ts's own non-transactional fallback does for test doubles
     // that don't implement runTransaction (see AdminUIDeps.agentService).
-    runTransaction: async (fn) => fn(undefined as unknown as PrismaTransactionClient),
+    runTransaction: async (fn) =>
+      fn(undefined as unknown as PrismaTransactionClient),
   };
 
   const agentToolService: CreateAgentDeps["agentToolService"] = {
@@ -1464,7 +1462,9 @@ describe("createAgent()", () => {
 
     const result = await createAgent(
       deps,
-      baseCreateAgentInput({ authorAllowlistRaw: "octocat\nnot a valid login!" }),
+      baseCreateAgentInput({
+        authorAllowlistRaw: "octocat\nnot a valid login!",
+      }),
     );
 
     expect(result).toEqual({
@@ -1531,6 +1531,7 @@ describe("createAgent()", () => {
       {
         agentId: result.agent.id,
         env: {
+          ...DEFAULT_AGENT_ENV,
           CLAUDE_CODE_OAUTH_TOKEN: "tok-123",
           ANTHROPIC_API_KEY: "key-456",
         },
@@ -1538,12 +1539,20 @@ describe("createAgent()", () => {
     ]);
   });
 
-  it("does not call agentEnvService.patch when no credentials are provided", async () => {
+  it("seeds only the non-secret default env when no credentials are provided", async () => {
     const { deps, calls } = makeCreateAgentHarness();
 
-    await createAgent(deps, baseCreateAgentInput());
+    const result = await createAgent(deps, baseCreateAgentInput());
 
-    expect(calls.envPatched).toEqual([]);
+    expect(result.ok).toBe(true);
+    if (!result.ok) throw new Error("expected success");
+    expect(calls.envPatched).toEqual([
+      { agentId: result.agent.id, env: { ...DEFAULT_AGENT_ENV } },
+    ]);
+    expect(DEFAULT_AGENT_ENV.ANTHROPIC_MODEL).toBeTruthy();
+    expect(Object.keys(DEFAULT_AGENT_ENV)).not.toContain(
+      "CLAUDE_CODE_OAUTH_TOKEN",
+    );
   });
 
   it("provisions Kubernetes resources when runtime=in-cluster and the provisioner allows it", async () => {

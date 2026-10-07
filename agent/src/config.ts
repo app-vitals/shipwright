@@ -1,5 +1,6 @@
 import { join } from "node:path";
 import { DEFAULT_CLAUDE_TIMEOUT_MS } from "@shipwright/lib/claim-ttl";
+import { DEFAULT_ANTHROPIC_MODEL } from "@shipwright/lib/default-agent-env";
 
 /**
  * Idle-reset timeout default (25min) — cleared/restarted on every stdout line
@@ -30,7 +31,7 @@ function positiveIntMs(key: string, fallback: number): number {
 function buildConfig(agentHome: string) {
   return {
     claude: {
-      model: optional("ANTHROPIC_MODEL") ?? "claude-sonnet-4-6",
+      model: optional("ANTHROPIC_MODEL") ?? DEFAULT_ANTHROPIC_MODEL,
       fallbackModel: optional("ANTHROPIC_FALLBACK_MODEL"),
       effortLevel: optional("ANTHROPIC_EFFORT_LEVEL"),
       timeoutMs: positiveIntMs(
