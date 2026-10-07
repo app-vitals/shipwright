@@ -822,7 +822,7 @@ taskStore:
   enabled: false
   image:
     repository: ghcr.io/app-vitals/shipwright-task-store
-    tag: task-store-v1.162.0
+    tag: task-store-v1.163.0
     pullPolicy: ""    # defaults to top-level imagePullPolicy when empty
   service:
     # -- Service type for the task-store service. ClusterIP is Minikube-friendly.
