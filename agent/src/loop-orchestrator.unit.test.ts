@@ -1844,6 +1844,7 @@ describe("createLoopOrchestrator", () => {
     const silentPrRun = async (opts: {
       getPrProgress?: LoopOrchestratorDeps["getPrProgress"];
       itemType?: "pr" | "task";
+      result?: string;
     }) => {
       const consumed = new Set<string>();
       const { reporter, skips } = makeRecordingReporter();
@@ -1855,7 +1856,7 @@ describe("createLoopOrchestrator", () => {
       const { runner } = makeDrainingRunner(
         { review: reviewCandidates },
         consumed,
-        [{ result: "Posted review.\n[silent]" }],
+        [{ result: opts.result ?? "Posted review.\n[silent]" }],
       );
       const deps = makeDeps({
         reviewCandidates,
@@ -1892,10 +1893,16 @@ describe("createLoopOrchestrator", () => {
       };
     };
 
-    test("changed reviewState calls resetSkip (not recordSkip) and still reports skipRun", async () => {
+    // The "before" snapshot is taken after claimPr, so it models the claimed
+    // record (reviewState=in_progress); "after" models a real review post.
+    test("claimed in_progress -> posted (no skip-reason) calls resetSkip (not recordSkip) and still reports skipRun", async () => {
       const { skips, recordCalls, resetCalls } = await silentPrRun({
         getPrProgress: sequencedGetPrState([
-          { reviewState: "pending", reviewedCommitSha: null, commitSha: "a" },
+          {
+            reviewState: "in_progress",
+            reviewedCommitSha: null,
+            commitSha: "a",
+          },
           { reviewState: "posted", reviewedCommitSha: "a", commitSha: "a" },
         ]),
       });
@@ -1915,6 +1922,41 @@ describe("createLoopOrchestrator", () => {
       });
       expect(recordCalls).toEqual([]);
       expect(resetCalls).toHaveLength(1);
+    });
+
+    test("claimed in_progress -> posted ending [silent] with a skip-reason defer still calls recordSkip", async () => {
+      // Models review.md's unresolved-human-feedback defer: it PATCHes
+      // reviewState=posted + reviewedCommitSha away from the claimed baseline
+      // but is a deliberate no-op that must keep advancing the SRB-1.1 streak.
+      const reason = "review:deferred:unresolved-human-feedback:9";
+      const { skips, recordCalls, resetCalls } = await silentPrRun({
+        result: `Deferring.\n[skip-reason:${reason}]\n[silent]`,
+        getPrProgress: sequencedGetPrState([
+          {
+            reviewState: "in_progress",
+            reviewedCommitSha: null,
+            commitSha: "a",
+          },
+          { reviewState: "posted", reviewedCommitSha: "a", commitSha: "a" },
+        ]),
+      });
+      expect(skips).toHaveLength(1);
+      expect(recordCalls).toEqual([
+        { itemType: "pr", recordId: "pr-record-cuid-xyz", reason },
+      ]);
+      expect(resetCalls).toEqual([]);
+    });
+
+    test("claimed in_progress -> released back to pending is not progress", async () => {
+      // Models review.md's stale-head abort / failed-post release().
+      const { recordCalls, resetCalls } = await silentPrRun({
+        getPrProgress: sequencedGetPrState([
+          { reviewState: "in_progress", commitSha: "a" },
+          { reviewState: "pending", commitSha: "a" },
+        ]),
+      });
+      expect(recordCalls).toHaveLength(1);
+      expect(resetCalls).toEqual([]);
     });
 
     test("unchanged record calls recordSkip with the reason", async () => {
@@ -2507,8 +2549,7 @@ describe("createLoopOrchestrator", () => {
     for (let tick = 1; tick <= 3; tick++) {
       const consumed = new Set<string>();
       const { reporter, skips } = makeRecordingReporter();
-      const { recordSkip, resetSkip, recordCalls } =
-        makeRecordingSkipTracker();
+      const { recordSkip, resetSkip, recordCalls } = makeRecordingSkipTracker();
       const devTaskCandidates = [task("SWC-1.1", "2026-01-01T00:00:00Z")];
       const { runner } = makeDrainingRunner(
         { devTask: devTaskCandidates },

@@ -332,9 +332,11 @@ export interface LoopOrchestratorDeps {
   /**
    * PSL-2.1 — reads the PR record fields that move when a review/patch phase
    * makes real progress (reviewState, reviewedCommitSha, commitSha). Called
-   * before and after a PR dispatch; if the dispatch ends `[silent]` and any
-   * field changed, the run did real work, so the skip streak is reset instead
-   * of advanced (skipRun is still reported). Kept separate from getPrState so
+   * before and after a PR dispatch; if the dispatch ends `[silent]` without
+   * a `[skip-reason:...]` marker and the record made progress (new
+   * commitSha/reviewedCommitSha, or reviewState moved somewhere other than
+   * `pending`), the skip streak is reset instead of advanced (skipRun is
+   * still reported). Kept separate from getPrState so
    * the resume gate's call sequence is unaffected. Returns null if the PR is
    * missing; a rejection or null on either read fails closed to recordSkip.
    *
@@ -724,26 +726,53 @@ export function createLoopOrchestrator(
   >();
 
   /**
-   * PSL-2.1: serializes the PR fields that change when a review/patch phase
-   * makes progress. Returns null (fail closed) when getPrProgress isn't wired,
-   * the PR is missing, or the read rejects.
+   * PSL-2.1: reads the PR fields that change when a review/patch phase makes
+   * progress. Returns null (fail closed) when getPrProgress isn't wired, the
+   * PR is missing, or the read rejects.
    */
-  async function snapshotPrProgress(prId: string): Promise<string | null> {
+  type PrProgressSnapshot = {
+    reviewState: string | null;
+    reviewedCommitSha: string | null;
+    commitSha: string | null;
+  };
+  async function snapshotPrProgress(
+    prId: string,
+  ): Promise<PrProgressSnapshot | null> {
     if (!getPrProgress) return null;
     try {
       const pr = await getPrProgress(prId);
       if (!pr) return null;
-      return JSON.stringify([
-        pr.reviewState ?? null,
-        pr.reviewedCommitSha ?? null,
-        pr.commitSha ?? null,
-      ]);
+      return {
+        reviewState: pr.reviewState ?? null,
+        reviewedCommitSha: pr.reviewedCommitSha ?? null,
+        commitSha: pr.commitSha ?? null,
+      };
     } catch (err) {
       console.warn(
         `[loop-orchestrator] PR progress snapshot failed for ${prId}: ${String(err)} — treating as no progress`,
       );
       return null;
     }
+  }
+
+  /**
+   * PSL-2.1: did the PR record move in a way that reflects real work? The
+   * "before" snapshot is taken after the pre-claim (claimPr has already set
+   * reviewState=in_progress), so a bare reviewState change is not enough: a
+   * release() back to `pending` (stale-head abort, failed post) is a retreat,
+   * not progress. A new commitSha/reviewedCommitSha, or a reviewState change
+   * to anything other than `pending`, counts.
+   */
+  function prMadeProgress(
+    before: PrProgressSnapshot,
+    after: PrProgressSnapshot,
+  ): boolean {
+    return (
+      before.commitSha !== after.commitSha ||
+      before.reviewedCommitSha !== after.reviewedCommitSha ||
+      (before.reviewState !== after.reviewState &&
+        after.reviewState !== "pending")
+    );
   }
 
   /**
@@ -965,10 +994,12 @@ export function createLoopOrchestrator(
       };
 
       // PSL-2.1: for a PR item, snapshot the progress-bearing PR fields
-      // before dispatch so a [silent] ending can be told apart from a
-      // no-op — a review/patch that did real work then ended [silent] must
-      // not advance the skip streak. Null on a task item, a missing dep, or a
-      // read failure (fail closed: behaves exactly as before).
+      // before dispatch (this runs after the pre-claim, so the baseline is
+      // the claimed in_progress state — see prMadeProgress) so a [silent]
+      // ending can be told apart from a no-op — a review/patch that did real
+      // work then ended [silent] must not advance the skip streak. Null on a
+      // task item, a missing dep, or a read failure (fail closed: behaves
+      // exactly as before).
       const prProgressBefore =
         itemType === "pr" ? await snapshotPrProgress(recordId) : null;
 
@@ -1096,15 +1127,21 @@ export function createLoopOrchestrator(
         // (parsed above, or the "command:no-work" fallback) is forwarded
         // as-is — no category filtering.
         // PSL-2.1: the run is still reported as skipped above, but if the PR
-        // record's reviewState/reviewedCommitSha/commitSha moved during the
-        // dispatch it did real work — clear the streak instead of advancing it.
-        const prProgressAfter = prProgressBefore
-          ? await snapshotPrProgress(recordId)
-          : null;
+        // record moved during the dispatch it did real work — clear the streak
+        // instead of advancing it. A run that tagged an explicit
+        // [skip-reason:...] is a deliberate defer (e.g. review's
+        // unresolved-human-feedback / already-reviewed-at-head defers, which
+        // PATCH reviewState/reviewedCommitSha away from the claimed
+        // in_progress baseline) and must keep advancing the same-reason
+        // streak (SRB-1.1), so it never takes the reset branch.
+        const prProgressAfter =
+          prProgressBefore && !skipReasonMarker
+            ? await snapshotPrProgress(recordId)
+            : null;
         if (
           prProgressBefore &&
           prProgressAfter &&
-          prProgressBefore !== prProgressAfter
+          prMadeProgress(prProgressBefore, prProgressAfter)
         ) {
           await callSkipTracker("resetSkip", () =>
             resetSkip(itemType, recordId),
