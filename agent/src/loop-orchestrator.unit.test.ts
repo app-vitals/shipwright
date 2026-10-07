@@ -513,6 +513,10 @@ interface MakeDepsOptions {
     reason?: string,
   ) => Promise<void>;
   resetSkip?: (itemType: "task" | "pr", recordId: string) => Promise<void>;
+  // PSL-2.1: PR progress reader used to snapshot progress around a [silent]
+  // dispatch. Undefined by default (production-optional), so existing tests
+  // are unaffected.
+  getPrProgress?: LoopOrchestratorDeps["getPrProgress"];
   // LO-1.1: optional injected Sentry client double — undefined by default
   // (matching production's optional-by-convention sentryClient), so existing
   // tests that don't pass this option are unaffected.
@@ -602,6 +606,7 @@ function makeDeps(options: MakeDepsOptions = {}): LoopOrchestratorDeps {
     recordSkip: options.recordSkip ?? (async () => {}),
     resetSkip: options.resetSkip ?? (async () => {}),
     getTaskState: options.getTaskState ?? (async () => null),
+    getPrProgress: options.getPrProgress,
     agentId: options.agentId,
     clearSessionKey: options.clearSessionKey,
     sentryClient: options.sentryClient,
@@ -1835,6 +1840,185 @@ describe("createLoopOrchestrator", () => {
     expect(resetCalls).toEqual([]);
   });
 
+  describe("PSL-2.1 progress-aware [silent] PR dispatches", () => {
+    const silentPrRun = async (opts: {
+      getPrProgress?: LoopOrchestratorDeps["getPrProgress"];
+      itemType?: "pr" | "task";
+      result?: string;
+    }) => {
+      const consumed = new Set<string>();
+      const { reporter, skips } = makeRecordingReporter();
+      const { recordSkip, resetSkip, recordCalls, resetCalls } =
+        makeRecordingSkipTracker();
+      const reviewCandidates = [
+        pr("acme/x#9", "2026-01-01T00:00:00Z", "review"),
+      ];
+      const { runner } = makeDrainingRunner(
+        { review: reviewCandidates },
+        consumed,
+        [{ result: opts.result ?? "Posted review.\n[silent]" }],
+      );
+      const deps = makeDeps({
+        reviewCandidates,
+        runner,
+        reporter,
+        consumed,
+        recordSkip,
+        resetSkip,
+        getPrProgress: opts.getPrProgress,
+        claimPr: async (c: WorkPrCandidate) => ({
+          id: "pr-record-cuid-xyz",
+          commitSha: c.commitSha,
+        }),
+      });
+      await createLoopOrchestrator(deps)([job("shipwright-review", true)]);
+      return { skips, recordCalls, resetCalls };
+    };
+
+    const sequencedGetPrState = (
+      states: Array<
+        | {
+            reviewState?: string;
+            reviewedCommitSha?: string | null;
+            commitSha?: string | null;
+          }
+        | Error
+      >,
+    ): LoopOrchestratorDeps["getPrProgress"] => {
+      let i = 0;
+      return async () => {
+        const next = states[Math.min(i++, states.length - 1)];
+        if (next instanceof Error) throw next;
+        return next;
+      };
+    };
+
+    // The "before" snapshot is taken after claimPr, so it models the claimed
+    // record (reviewState=in_progress); "after" models a real review post.
+    test("claimed in_progress -> posted (no skip-reason) calls resetSkip (not recordSkip) and still reports skipRun", async () => {
+      const { skips, recordCalls, resetCalls } = await silentPrRun({
+        getPrProgress: sequencedGetPrState([
+          {
+            reviewState: "in_progress",
+            reviewedCommitSha: null,
+            commitSha: "a",
+          },
+          { reviewState: "posted", reviewedCommitSha: "a", commitSha: "a" },
+        ]),
+      });
+      expect(skips).toHaveLength(1);
+      expect(recordCalls).toEqual([]);
+      expect(resetCalls).toEqual([
+        { itemType: "pr", recordId: "pr-record-cuid-xyz" },
+      ]);
+    });
+
+    test("changed commitSha alone counts as progress", async () => {
+      const { recordCalls, resetCalls } = await silentPrRun({
+        getPrProgress: sequencedGetPrState([
+          { reviewState: "pending", commitSha: "a" },
+          { reviewState: "pending", commitSha: "b" },
+        ]),
+      });
+      expect(recordCalls).toEqual([]);
+      expect(resetCalls).toHaveLength(1);
+    });
+
+    test("claimed in_progress -> posted ending [silent] with a skip-reason defer still calls recordSkip", async () => {
+      // Models review.md's unresolved-human-feedback defer: it PATCHes
+      // reviewState=posted + reviewedCommitSha away from the claimed baseline
+      // but is a deliberate no-op that must keep advancing the SRB-1.1 streak.
+      const reason = "review:deferred:unresolved-human-feedback:9";
+      const { skips, recordCalls, resetCalls } = await silentPrRun({
+        result: `Deferring.\n[skip-reason:${reason}]\n[silent]`,
+        getPrProgress: sequencedGetPrState([
+          {
+            reviewState: "in_progress",
+            reviewedCommitSha: null,
+            commitSha: "a",
+          },
+          { reviewState: "posted", reviewedCommitSha: "a", commitSha: "a" },
+        ]),
+      });
+      expect(skips).toHaveLength(1);
+      expect(recordCalls).toEqual([
+        { itemType: "pr", recordId: "pr-record-cuid-xyz", reason },
+      ]);
+      expect(resetCalls).toEqual([]);
+    });
+
+    test("claimed in_progress -> released back to pending is not progress", async () => {
+      // Models review.md's stale-head abort / failed-post release().
+      const { recordCalls, resetCalls } = await silentPrRun({
+        getPrProgress: sequencedGetPrState([
+          { reviewState: "in_progress", commitSha: "a" },
+          { reviewState: "pending", commitSha: "a" },
+        ]),
+      });
+      expect(recordCalls).toHaveLength(1);
+      expect(resetCalls).toEqual([]);
+    });
+
+    test("unchanged record calls recordSkip with the reason", async () => {
+      const { recordCalls, resetCalls } = await silentPrRun({
+        getPrProgress: sequencedGetPrState([
+          { reviewState: "pending", reviewedCommitSha: null, commitSha: "a" },
+        ]),
+      });
+      expect(recordCalls).toEqual([
+        {
+          itemType: "pr",
+          recordId: "pr-record-cuid-xyz",
+          reason: "command:no-work",
+        },
+      ]);
+      expect(resetCalls).toEqual([]);
+    });
+
+    test("snapshot read failure (before or after) fails closed to recordSkip", async () => {
+      for (const states of [
+        [new Error("boom")],
+        [{ reviewState: "pending", commitSha: "a" }, new Error("boom")],
+      ]) {
+        const { recordCalls, resetCalls } = await silentPrRun({
+          getPrProgress: sequencedGetPrState(states),
+        });
+        expect(recordCalls).toHaveLength(1);
+        expect(resetCalls).toEqual([]);
+      }
+    });
+
+    test("a [silent] task dispatch never snapshots and calls recordSkip", async () => {
+      let reads = 0;
+      const consumed = new Set<string>();
+      const { reporter } = makeRecordingReporter();
+      const { recordSkip, resetSkip, recordCalls, resetCalls } =
+        makeRecordingSkipTracker();
+      const devTaskCandidates = [task("T-1", "2026-01-01T00:00:00Z")];
+      const { runner } = makeDrainingRunner(
+        { devTask: devTaskCandidates },
+        consumed,
+        [{ result: "Nothing.\n[silent]" }],
+      );
+      const deps = makeDeps({
+        devTaskCandidates,
+        runner,
+        reporter,
+        consumed,
+        recordSkip,
+        resetSkip,
+        getPrProgress: async () => {
+          reads++;
+          return { reviewState: "x" };
+        },
+      });
+      await createLoopOrchestrator(deps)([job("shipwright-dev-task", true)]);
+      expect(reads).toBe(0);
+      expect(recordCalls).toHaveLength(1);
+      expect(resetCalls).toEqual([]);
+    });
+  });
+
   test("a normal completed task dispatch calls resetSkip('task', <task-id>), not recordSkip", async () => {
     const consumed = new Set<string>();
     const { reporter, completes } = makeRecordingReporter();
@@ -2365,8 +2549,7 @@ describe("createLoopOrchestrator", () => {
     for (let tick = 1; tick <= 3; tick++) {
       const consumed = new Set<string>();
       const { reporter, skips } = makeRecordingReporter();
-      const { recordSkip, resetSkip, recordCalls } =
-        makeRecordingSkipTracker();
+      const { recordSkip, resetSkip, recordCalls } = makeRecordingSkipTracker();
       const devTaskCandidates = [task("SWC-1.1", "2026-01-01T00:00:00Z")];
       const { runner } = makeDrainingRunner(
         { devTask: devTaskCandidates },
