@@ -3953,12 +3953,48 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
 
   // ─── Chat routes ─────────────────────────────────────────────────────────
 
-  app.get("/admin/chat", requireAuth, async (c) => {
-    if (!c.var.isAdmin) return new Response("Forbidden", { status: 403 });
+  /**
+   * Chat access gate (admins: always; members: only agents they belong to).
+   * The chat service is reached with a single admin token, so for non-admins
+   * the thread must also be verified to belong to the URL's agent — otherwise a
+   * member could pass their own agentId with another agent's threadId.
+   */
+  async function canAccessChat(
+    userEmail: string,
+    isAdmin: boolean,
+    agentId: string,
+    threadId?: string,
+  ): Promise<boolean> {
+    if (isAdmin) return true;
+    if (!agentId || !(await assertAgentAccess(agentId, userEmail, false))) {
+      return false;
+    }
+    if (!threadId) return true;
+    if (!chatClient) return true;
+    try {
+      const thread = await chatClient.getThread(threadId);
+      return thread.agentId === agentId;
+    } catch {
+      return false;
+    }
+  }
 
+  app.get("/admin/chat", requireAuth, async (c) => {
     const selectedAgentId = c.req.query("agentId") || undefined;
     const q = c.req.query("q") || undefined;
-    const agents: AgentOption[] = await agentService.listOptions();
+    const agents: AgentOption[] = c.var.isAdmin
+      ? await agentService.listOptions()
+      : (await resolveAccessibleAgents(c.var.userEmail, false)).map((a) => ({
+          id: a.id,
+          name: a.name,
+        }));
+    if (
+      selectedAgentId &&
+      !c.var.isAdmin &&
+      !agents.some((a) => a.id === selectedAgentId)
+    ) {
+      return new Response("Forbidden", { status: 403 });
+    }
 
     if (!chatClient) {
       return html(
@@ -3989,7 +4025,16 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
   });
 
   app.get("/admin/chat/:agentId/threads/:threadId", requireAuth, async (c) => {
-    if (!c.var.isAdmin) return new Response("Forbidden", { status: 403 });
+    if (
+      !(await canAccessChat(
+        c.var.userEmail,
+        c.var.isAdmin,
+        c.req.param("agentId") ?? "",
+        c.req.param("threadId"),
+      ))
+    ) {
+      return new Response("Forbidden", { status: 403 });
+    }
 
     const agentId = c.req.param("agentId");
     const threadId = c.req.param("threadId");
@@ -4039,7 +4084,16 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
   });
 
   app.post("/admin/chat/:agentId/threads", requireAuth, async (c) => {
-    if (!c.var.isAdmin) return new Response("Forbidden", { status: 403 });
+    if (
+      !(await canAccessChat(
+        c.var.userEmail,
+        c.var.isAdmin,
+        c.req.param("agentId") ?? "",
+        c.req.param("threadId"),
+      ))
+    ) {
+      return new Response("Forbidden", { status: 403 });
+    }
 
     const agentId = c.req.param("agentId");
 
@@ -4082,7 +4136,16 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
     "/admin/chat/:agentId/threads/:threadId/messages/upload",
     requireAuth,
     async (c) => {
-      if (!c.var.isAdmin) return new Response("Forbidden", { status: 403 });
+      if (
+        !(await canAccessChat(
+          c.var.userEmail,
+          c.var.isAdmin,
+          c.req.param("agentId") ?? "",
+          c.req.param("threadId"),
+        ))
+      ) {
+        return new Response("Forbidden", { status: 403 });
+      }
 
       const agentId = c.req.param("agentId");
       const threadId = c.req.param("threadId");
@@ -4157,7 +4220,16 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
     "/admin/chat/:agentId/threads/:threadId/messages/:messageId/attachment",
     requireAuth,
     async (c) => {
-      if (!c.var.isAdmin) return new Response("Forbidden", { status: 403 });
+      if (
+        !(await canAccessChat(
+          c.var.userEmail,
+          c.var.isAdmin,
+          c.req.param("agentId") ?? "",
+          c.req.param("threadId"),
+        ))
+      ) {
+        return new Response("Forbidden", { status: 403 });
+      }
 
       if (!chatClient) {
         return c.json({ error: "chat service not configured" }, 503);
@@ -4191,7 +4263,16 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
     "/admin/chat/:agentId/threads/:threadId/messages",
     requireAuth,
     async (c) => {
-      if (!c.var.isAdmin) return new Response("Forbidden", { status: 403 });
+      if (
+        !(await canAccessChat(
+          c.var.userEmail,
+          c.var.isAdmin,
+          c.req.param("agentId") ?? "",
+          c.req.param("threadId"),
+        ))
+      ) {
+        return new Response("Forbidden", { status: 403 });
+      }
 
       const agentId = c.req.param("agentId");
       const threadId = c.req.param("threadId");
@@ -4262,7 +4343,16 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
     "/admin/chat/:agentId/threads/:threadId/rename",
     requireAuth,
     async (c) => {
-      if (!c.var.isAdmin) return new Response("Forbidden", { status: 403 });
+      if (
+        !(await canAccessChat(
+          c.var.userEmail,
+          c.var.isAdmin,
+          c.req.param("agentId") ?? "",
+          c.req.param("threadId"),
+        ))
+      ) {
+        return new Response("Forbidden", { status: 403 });
+      }
 
       const agentId = c.req.param("agentId");
       const threadId = c.req.param("threadId");
@@ -4299,7 +4389,16 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
     "/admin/chat/:agentId/threads/:threadId/delete",
     requireAuth,
     async (c) => {
-      if (!c.var.isAdmin) return new Response("Forbidden", { status: 403 });
+      if (
+        !(await canAccessChat(
+          c.var.userEmail,
+          c.var.isAdmin,
+          c.req.param("agentId") ?? "",
+          c.req.param("threadId"),
+        ))
+      ) {
+        return new Response("Forbidden", { status: 403 });
+      }
 
       const agentId = c.req.param("agentId");
       const threadId = c.req.param("threadId");
@@ -4330,7 +4429,16 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
     "/admin/chat/:agentId/threads/:threadId/messages.json",
     requireAuth,
     async (c) => {
-      if (!c.var.isAdmin) return new Response("Forbidden", { status: 403 });
+      if (
+        !(await canAccessChat(
+          c.var.userEmail,
+          c.var.isAdmin,
+          c.req.param("agentId") ?? "",
+          c.req.param("threadId"),
+        ))
+      ) {
+        return new Response("Forbidden", { status: 403 });
+      }
 
       const agentId = c.req.param("agentId");
       const threadId = c.req.param("threadId");
@@ -4379,7 +4487,16 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
     "/admin/chat/:agentId/threads/:threadId/messages.json",
     requireAuth,
     async (c) => {
-      if (!c.var.isAdmin) return new Response("Forbidden", { status: 403 });
+      if (
+        !(await canAccessChat(
+          c.var.userEmail,
+          c.var.isAdmin,
+          c.req.param("agentId") ?? "",
+          c.req.param("threadId"),
+        ))
+      ) {
+        return new Response("Forbidden", { status: 403 });
+      }
 
       const threadId = c.req.param("threadId");
 
@@ -4420,7 +4537,16 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
   // toggle (which is itself absent in that case) degrades cleanly.
 
   app.post("/admin/chat/:agentId/push/subscribe", requireAuth, async (c) => {
-    if (!c.var.isAdmin) return new Response("Forbidden", { status: 403 });
+    if (
+      !(await canAccessChat(
+        c.var.userEmail,
+        c.var.isAdmin,
+        c.req.param("agentId") ?? "",
+        c.req.param("threadId"),
+      ))
+    ) {
+      return new Response("Forbidden", { status: 403 });
+    }
     if (!pushEnabled) return c.json({ error: "push_disabled" }, 503);
 
     let payload: { endpoint?: string; p256dh?: string; auth?: string };
@@ -4449,7 +4575,16 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
   });
 
   app.post("/admin/chat/:agentId/push/unsubscribe", requireAuth, async (c) => {
-    if (!c.var.isAdmin) return new Response("Forbidden", { status: 403 });
+    if (
+      !(await canAccessChat(
+        c.var.userEmail,
+        c.var.isAdmin,
+        c.req.param("agentId") ?? "",
+        c.req.param("threadId"),
+      ))
+    ) {
+      return new Response("Forbidden", { status: 403 });
+    }
     if (!pushEnabled) return c.json({ error: "push_disabled" }, 503);
 
     let endpoint: string | undefined;

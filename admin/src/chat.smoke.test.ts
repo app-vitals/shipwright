@@ -1496,3 +1496,212 @@ describe("GET /admin/chat/:agentId/threads/:threadId — conversation window", (
     expect(html).toContain("send-btn");
   });
 });
+
+// ─── Agent-member access ──────────────────────────────────────────────────────
+
+const MEMBER_EMAIL = "member@example.com";
+const OTHER_AGENT_ID = "agent-other-789";
+
+function makeMemberDeps(
+  overrides?: Partial<AdminUIDeps>,
+  memberOf: string[] = [AGENT_ID],
+): AdminUIDeps {
+  const base = makeBaseDeps();
+  return makeBaseDeps({
+    agentMemberService: {
+      ...base.agentMemberService,
+      exists: async (agentId: string, email: string) =>
+        email === MEMBER_EMAIL && memberOf.includes(agentId),
+      listByEmail: async (email: string) =>
+        email === MEMBER_EMAIL
+          ? memberOf.map((agentId) => ({
+              id: `m-${agentId}`,
+              agentId,
+              email,
+              createdAt: new Date(),
+            }))
+          : [],
+    },
+    agentService: {
+      ...base.agentService,
+      listByIds: async (ids: string[]) =>
+        ids.map((id) => ({
+          id,
+          name: `Agent ${id}`,
+          slackId: null,
+          createdAt: new Date("2024-01-01"),
+        })) as never,
+    },
+    ...overrides,
+  });
+}
+
+describe("chat routes — agent member access", () => {
+  let memberCookie: string;
+  let strangerCookie: string;
+
+  beforeAll(async () => {
+    memberCookie = await makeSessionCookie(
+      SESSION_SECRET,
+      "sub-member",
+      MEMBER_EMAIL,
+      false,
+    );
+    strangerCookie = await makeSessionCookie(
+      SESSION_SECRET,
+      "sub-stranger",
+      "stranger@example.com",
+      false,
+    );
+  });
+
+  const get = (
+    app: ReturnType<typeof createAdminUIApp>,
+    path: string,
+    cookie: string,
+  ) => app.request(path, { headers: { Cookie: `admin_session=${cookie}` } });
+
+  it("member can open the chat page for their own agent", async () => {
+    const app = createAdminUIApp(
+      makeMemberDeps({ chatClient: makeMockChatClient() }),
+    );
+    const res = await get(app, `/admin/chat?agentId=${AGENT_ID}`, memberCookie);
+    expect(res.status).toBe(200);
+  });
+
+  it("chat page lists only the agents the member belongs to", async () => {
+    const app = createAdminUIApp(
+      makeMemberDeps({ chatClient: makeMockChatClient() }),
+    );
+    const res = await get(app, "/admin/chat", memberCookie);
+    expect(res.status).toBe(200);
+    const html = await res.text();
+    expect(html).toContain(`Agent ${AGENT_ID}`);
+    expect(html).not.toContain("Test Agent");
+  });
+
+  it("member is forbidden from the chat page of an agent they don't belong to", async () => {
+    const app = createAdminUIApp(
+      makeMemberDeps({ chatClient: makeMockChatClient() }),
+    );
+    const res = await get(
+      app,
+      `/admin/chat?agentId=${OTHER_AGENT_ID}`,
+      memberCookie,
+    );
+    expect(res.status).toBe(403);
+  });
+
+  it("non-member is forbidden from an agent's thread", async () => {
+    const app = createAdminUIApp(
+      makeMemberDeps({ chatClient: makeMockChatClient() }),
+    );
+    const res = await get(
+      app,
+      `/admin/chat/${AGENT_ID}/threads/${THREAD_ID}`,
+      strangerCookie,
+    );
+    expect(res.status).toBe(403);
+  });
+
+  it("member can open a thread owned by their agent", async () => {
+    const app = createAdminUIApp(
+      makeMemberDeps({ chatClient: makeMockChatClient() }),
+    );
+    const res = await get(
+      app,
+      `/admin/chat/${AGENT_ID}/threads/${THREAD_ID}`,
+      memberCookie,
+    );
+    expect(res.status).toBe(200);
+  });
+
+  it("member cannot read another agent's thread by pairing it with their own agentId", async () => {
+    const chatClient = makeMockChatClient({
+      getThread: async () => ({ ...MOCK_THREAD, agentId: OTHER_AGENT_ID }),
+    });
+    const app = createAdminUIApp(makeMemberDeps({ chatClient }));
+    for (const suffix of ["", "/messages.json"]) {
+      const res = await get(
+        app,
+        `/admin/chat/${AGENT_ID}/threads/${THREAD_ID}${suffix}`,
+        memberCookie,
+      );
+      expect(res.status).toBe(403);
+    }
+  });
+
+  it("member cannot send to, rename, or delete another agent's thread", async () => {
+    let writes = 0;
+    const chatClient = makeMockChatClient({
+      getThread: async () => ({ ...MOCK_THREAD, agentId: OTHER_AGENT_ID }),
+      createMessage: async () => {
+        writes++;
+        return MOCK_MESSAGE;
+      },
+      updateThread: async () => {
+        writes++;
+        return MOCK_THREAD;
+      },
+      deleteThread: async () => {
+        writes++;
+      },
+    });
+    const app = createAdminUIApp(makeMemberDeps({ chatClient }));
+    const base = `/admin/chat/${AGENT_ID}/threads/${THREAD_ID}`;
+    for (const path of [
+      `${base}/messages`,
+      `${base}/messages/upload`,
+      `${base}/messages.json`,
+      `${base}/rename`,
+      `${base}/delete`,
+    ]) {
+      const res = await app.request(path, {
+        method: "POST",
+        headers: {
+          Cookie: `admin_session=${memberCookie}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ body: "hi", title: "x" }),
+      });
+      expect(res.status).toBe(403);
+    }
+    expect(writes).toBe(0);
+  });
+
+  it("member can create a thread and post a message on their own agent", async () => {
+    const app = createAdminUIApp(
+      makeMemberDeps({ chatClient: makeMockChatClient() }),
+    );
+    const created = await app.request(`/admin/chat/${AGENT_ID}/threads`, {
+      method: "POST",
+      headers: { Cookie: `admin_session=${memberCookie}` },
+      body: new FormData(),
+    });
+    expect(created.status).toBe(302);
+    const posted = await app.request(
+      `/admin/chat/${AGENT_ID}/threads/${THREAD_ID}/messages.json`,
+      {
+        method: "POST",
+        headers: {
+          Cookie: `admin_session=${memberCookie}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ body: "hello" }),
+      },
+    );
+    expect(posted.status).toBe(200);
+  });
+
+  it("member cannot create a thread on an agent they don't belong to", async () => {
+    const app = createAdminUIApp(
+      makeMemberDeps({ chatClient: makeMockChatClient() }),
+    );
+    const res = await app.request(`/admin/chat/${OTHER_AGENT_ID}/threads`, {
+      method: "POST",
+      headers: { Cookie: `admin_session=${memberCookie}` },
+      body: new FormData(),
+    });
+    expect(res.status).toBe(403);
+  });
+});

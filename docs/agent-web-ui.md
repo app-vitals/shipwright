@@ -11,7 +11,7 @@
 
 ## Admin chat UI (`admin-ui-pages.ts`, `http-chat-client.ts`) — authenticated
 
-Mounted at `/admin/chat*`. **Admin-only** — requires session cookie or bearer token (same auth as admin CRUD API). When `chatClient` is present in `AdminUIDeps`, renders an agent thread browser with thread list, thread detail, and message creation. When `chatClient` is absent, all routes render in degraded mode (notice + empty state). Gracefully handles missing or unavailable chat service.
+Mounted at `/admin/chat*`. Requires session cookie or bearer token (same auth as admin CRUD API). Admins see every agent; agent members (non-admins) see and use only the agents they are members of — every route checks membership, and thread-scoped routes also verify the thread belongs to the URL's agent. When `chatClient` is present in `AdminUIDeps`, renders an agent thread browser with thread list, thread detail, and message creation. When `chatClient` is absent, all routes render in degraded mode (notice + empty state). Gracefully handles missing or unavailable chat service.
 
 | Method | Path | Auth | Description |
 |---|---|---|---|

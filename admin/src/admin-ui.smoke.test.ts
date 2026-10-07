@@ -11868,7 +11868,7 @@ describe("admin UI — Okta-authenticated access control", () => {
     expect(upsertCalledWith.length).toBeGreaterThan(0);
   });
 
-  it("/admin/chat returns 403 for an Okta-authenticated non-admin", async () => {
+  it("/admin/chat?agentId=<unrelated agent> returns 403 for an Okta-authenticated non-member", async () => {
     const memberCookie = await makeSessionCookie(
       SESSION_SECRET,
       "okta-sub-member",
@@ -11876,7 +11876,7 @@ describe("admin UI — Okta-authenticated access control", () => {
       false,
     );
     const app = createAdminUIApp(makeMockDeps());
-    const res = await app.request("/admin/chat", {
+    const res = await app.request("/admin/chat?agentId=not-my-agent", {
       headers: { Cookie: `admin_session=${memberCookie}` },
     });
     expect(res.status).toBe(403);
