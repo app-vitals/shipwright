@@ -1453,7 +1453,7 @@
           "PRs"
         ],
         "summary": "List pull requests",
-        "description": "Returns `{ prs, total, limit, offset }`. `?ready=true` returns only unclaimed PRs (`claimedBy IS NULL`); `?blocked=true` returns PRs where `pr.blocked===true` OR a linked task has `status='blocked'` (resolved live via `(Task.repo, Task.pr)`, so a PR shared by several bundled tasks is blocked if any one of them is). `repo`/`org` are repeatable query params combined via AND; `sort` orders by `createdAt` (`asc` default).",
+        "description": "Returns `{ prs, total, limit, offset }`. `?ready=true` returns only unclaimed PRs (`claimedBy IS NULL`); `?blocked=true` returns PRs where `pr.blocked===true` OR a linked task has `status='blocked'` (resolved live via `(Task.repo, Task.pr)`, so a PR shared by several bundled tasks is blocked if any one of them is). `repo`/`org` are repeatable query params combined via AND; `sort` orders by `createdAt` (`asc` default). Agent tokens only see PRs in their configured repos (ANDed with `repo`/`org`); `repos: []` means zero access and returns an empty list (`total: 0`), never all PRs. Admin tokens see all.",
         "parameters": [
           {
             "schema": {
@@ -1695,7 +1695,7 @@
             }
           },
           "400": {
-            "description": "Bad request",
+            "description": "Bad request — malformed body, or `repo` is outside the agent token's scope (400, not 403/404)",
             "content": {
               "application/json": {
                 "schema": {
@@ -1872,7 +1872,7 @@
           "PRs"
         ],
         "summary": "Fetch a single pull request",
-        "description": "Fetches a single PR record by its ID. Returns `404` if not found.",
+        "description": "Fetches a single PR record by its ID. Returns `404` if not found or out of the token's repo scope. Agent tokens with `repos: []` have zero access.",
         "parameters": [
           {
             "schema": {
@@ -1896,7 +1896,7 @@
             }
           },
           "404": {
-            "description": "Not found",
+            "description": "Not found — the PR does not exist, or its repo is outside the token's scope (indistinguishable by design)",
             "content": {
               "application/json": {
                 "schema": {
@@ -1956,7 +1956,7 @@
             }
           },
           "404": {
-            "description": "Not found",
+            "description": "Not found — the PR does not exist, or its repo is outside the token's scope (indistinguishable by design)",
             "content": {
               "application/json": {
                 "schema": {
@@ -1996,6 +1996,16 @@
                 }
               }
             }
+          },
+          "404": {
+            "description": "Not found — the PR does not exist, or its repo is outside the token's scope (indistinguishable by design)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
           }
         }
       }
@@ -2030,7 +2040,7 @@
             }
           },
           "404": {
-            "description": "Not found",
+            "description": "Not found — the PR does not exist, or its repo is outside the token's scope (indistinguishable by design)",
             "content": {
               "application/json": {
                 "schema": {
@@ -2082,7 +2092,7 @@
             }
           },
           "404": {
-            "description": "Not found",
+            "description": "Not found — the PR does not exist, or its repo is outside the token's scope (indistinguishable by design)",
             "content": {
               "application/json": {
                 "schema": {
@@ -2124,7 +2134,7 @@
             }
           },
           "404": {
-            "description": "Not found",
+            "description": "Not found — the PR does not exist, or its repo is outside the token's scope (indistinguishable by design)",
             "content": {
               "application/json": {
                 "schema": {
@@ -2166,7 +2176,7 @@
             }
           },
           "404": {
-            "description": "Not found",
+            "description": "Not found — the PR does not exist, or its repo is outside the token's scope (indistinguishable by design)",
             "content": {
               "application/json": {
                 "schema": {
@@ -2208,7 +2218,7 @@
             }
           },
           "404": {
-            "description": "Not found",
+            "description": "Not found — the PR does not exist, or its repo is outside the token's scope (indistinguishable by design)",
             "content": {
               "application/json": {
                 "schema": {
@@ -2270,7 +2280,7 @@
             }
           },
           "404": {
-            "description": "Not found",
+            "description": "Not found — the PR does not exist, or its repo is outside the token's scope (indistinguishable by design)",
             "content": {
               "application/json": {
                 "schema": {
@@ -2334,7 +2344,7 @@
             }
           },
           "404": {
-            "description": "Not found",
+            "description": "Not found — the PR does not exist, or its repo is outside the token's scope (indistinguishable by design)",
             "content": {
               "application/json": {
                 "schema": {

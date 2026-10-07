@@ -117,6 +117,16 @@ those three. Three call sites write these fields:
 to `repo` with a non-null `origin`, or `null` when none exist — the incremental search window the
 census sweep uses to avoid re-scanning the same PRs every run.
 
+**PR repo scoping.** Agent-token access to `/prs` is limited to the token's `repos`; admin tokens are unrestricted. An empty array (`repos: []`, including the resolver-outage fail-safe above) means *zero access*, never "all repos". Out-of-scope behavior by route:
+
+| Route | Out-of-scope / `repos: []` result |
+|-------|------------------------------------|
+| `GET /prs` | Filtered to scoped repos (ANDed with `?repo`/`?org`); `[]` returns an empty list |
+| `POST /prs/claim` | `400` |
+| `POST /prs/claim-next` | Only in-scope PRs are eligible (`204` when none) |
+| `POST /prs/census`, `GET /prs/census/cursor` | `403` |
+| `/prs/:id` and `/prs/:id/*` | `404` — identical to a missing PR, so out-of-scope ids can't be probed |
+
 `GET /prs` accepts `?origin=shipwright,ci` (comma-separated) to filter by any of the given values.
 
 **Known gap:** a PR that never goes through the `pr_open` transition, `POST /prs/claim`, or the
@@ -203,7 +213,7 @@ The bearer token is missing, malformed, or revoked. Verify `SHIPWRIGHT_TASK_STOR
 
 ### 400 on writes to a task or PR
 
-Agent tokens are repo-scoped — a write to a task or PR outside the token's configured `repos` is rejected with `400`. Check the agent's `repos` array (`GET /agents/:id` on the admin service) against the task's `repo` field.
+Agent tokens are repo-scoped — a write to a task or PR outside the token's configured `repos` is rejected with `400` (`POST /prs/claim`), `403` (`POST /prs/census`, `GET /prs/census/cursor`), or `404` (`/prs/:id/*` routes, indistinguishable from a missing PR). Check the agent's `repos` array (`GET /agents/:id` on the admin service) against the task's `repo` field.
 
 ### Tasks not appearing after creation
 

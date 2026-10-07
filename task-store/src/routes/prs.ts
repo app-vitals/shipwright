@@ -8,6 +8,9 @@
  * Agent tokens (agentId set) are repo-scoped:
  *   - writes validate that the PR's repo is in c.get('repos')
  *   - GET /prs is filtered to c.get('repos') (ANDed with ?repo/?org)
+ *   - /prs/:id/* routes 404 when the PR's repo is out of scope (same as missing)
+ *   - repos === [] means zero access (never "all"); POST /prs/claim → 400,
+ *     POST /prs/census + GET /prs/census/cursor → 403, /prs/:id/* → 404
  * Admin tokens (agentId null) have no restrictions.
  *
  * Routes:
@@ -133,7 +136,7 @@ const listRoute = createRoute({
   tags: ["PRs"],
   summary: "List pull requests",
   description:
-    "Returns `{ prs, total, limit, offset }`. `?ready=true` returns only unclaimed PRs (`claimedBy IS NULL`); `?blocked=true` returns PRs where `pr.blocked===true` OR a linked task has `status='blocked'` (resolved live via `(Task.repo, Task.pr)`, so a PR shared by several bundled tasks is blocked if any one of them is). `repo`/`org` are repeatable query params combined via AND; `sort` orders by `createdAt` (`asc` default).",
+    "Returns `{ prs, total, limit, offset }`. `?ready=true` returns only unclaimed PRs (`claimedBy IS NULL`); `?blocked=true` returns PRs where `pr.blocked===true` OR a linked task has `status='blocked'` (resolved live via `(Task.repo, Task.pr)`, so a PR shared by several bundled tasks is blocked if any one of them is). `repo`/`org` are repeatable query params combined via AND; `sort` orders by `createdAt` (`asc` default). Agent tokens only see PRs in their configured repos (ANDed with `repo`/`org`); `repos: []` means zero access and returns an empty list (`total: 0`), never all PRs. Admin tokens see all.",
   request: {
     query: PrListQuerySchema,
   },
@@ -169,7 +172,8 @@ const claimRoute = createRoute({
     },
     400: {
       content: { "application/json": { schema: ErrorSchema } },
-      description: "Bad request",
+      description:
+        "Bad request — malformed body, or `repo` is outside the agent token's scope (400, not 403/404)",
     },
     409: {
       content: { "application/json": { schema: ErrorSchema } },
@@ -216,7 +220,7 @@ const getOneRoute = createRoute({
   tags: ["PRs"],
   summary: "Fetch a single pull request",
   description:
-    "Fetches a single PR record by its ID. Returns `404` if not found.",
+    "Fetches a single PR record by its ID. Returns `404` if not found or out of the token's repo scope. Agent tokens with `repos: []` have zero access.",
   request: {
     params: PrIdParamSchema,
   },
@@ -227,7 +231,8 @@ const getOneRoute = createRoute({
     },
     404: {
       content: { "application/json": { schema: ErrorSchema } },
-      description: "Not found",
+      description:
+        "Not found — the PR does not exist, or its repo is outside the token's scope (indistinguishable by design)",
     },
   },
 });
@@ -257,7 +262,8 @@ const updateRoute = createRoute({
     },
     404: {
       content: { "application/json": { schema: ErrorSchema } },
-      description: "Not found",
+      description:
+        "Not found — the PR does not exist, or its repo is outside the token's scope (indistinguishable by design)",
     },
   },
 });
@@ -276,6 +282,11 @@ const heartbeatRoute = createRoute({
     200: {
       content: { "application/json": { schema: PullRequestSchema } },
       description: "PR with updated heartbeatAt",
+    },
+    404: {
+      content: { "application/json": { schema: ErrorSchema } },
+      description:
+        "Not found — the PR does not exist, or its repo is outside the token's scope (indistinguishable by design)",
     },
   },
 });
@@ -297,7 +308,8 @@ const completeRoute = createRoute({
     },
     404: {
       content: { "application/json": { schema: ErrorSchema } },
-      description: "Not found",
+      description:
+        "Not found — the PR does not exist, or its repo is outside the token's scope (indistinguishable by design)",
     },
   },
 });
@@ -324,7 +336,8 @@ const patchRoute = createRoute({
     },
     404: {
       content: { "application/json": { schema: ErrorSchema } },
-      description: "Not found",
+      description:
+        "Not found — the PR does not exist, or its repo is outside the token's scope (indistinguishable by design)",
     },
   },
 });
@@ -346,7 +359,8 @@ const releaseRoute = createRoute({
     },
     404: {
       content: { "application/json": { schema: ErrorSchema } },
-      description: "Not found",
+      description:
+        "Not found — the PR does not exist, or its repo is outside the token's scope (indistinguishable by design)",
     },
   },
 });
@@ -368,7 +382,8 @@ const skipRoute = createRoute({
     },
     404: {
       content: { "application/json": { schema: ErrorSchema } },
-      description: "Not found",
+      description:
+        "Not found — the PR does not exist, or its repo is outside the token's scope (indistinguishable by design)",
     },
   },
 });
@@ -391,7 +406,8 @@ const skipResetRoute = createRoute({
     },
     404: {
       content: { "application/json": { schema: ErrorSchema } },
-      description: "Not found",
+      description:
+        "Not found — the PR does not exist, or its repo is outside the token's scope (indistinguishable by design)",
     },
   },
 });
@@ -423,7 +439,8 @@ const findingsRoute = createRoute({
     },
     404: {
       content: { "application/json": { schema: ErrorSchema } },
-      description: "Not found",
+      description:
+        "Not found — the PR does not exist, or its repo is outside the token's scope (indistinguishable by design)",
     },
   },
 });
@@ -447,7 +464,8 @@ const eventsRoute = createRoute({
     },
     404: {
       content: { "application/json": { schema: ErrorSchema } },
-      description: "Not found",
+      description:
+        "Not found — the PR does not exist, or its repo is outside the token's scope (indistinguishable by design)",
     },
   },
 });
