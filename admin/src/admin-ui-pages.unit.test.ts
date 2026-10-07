@@ -11547,3 +11547,99 @@ describe("renderAddAnotherOrgAction", () => {
     expect(renderAddAnotherOrgAction("a1", {})).toBe("");
   });
 });
+
+describe("renderChatThreadPage — poll auto-scroll (CSR-1.1)", () => {
+  const THREAD: ChatThread = {
+    id: "thread-abc",
+    agentId: "agent-xyz",
+    title: "T",
+    memberId: null,
+    createdAt: "2024-01-01T00:00:00.000Z",
+    updatedAt: "2024-01-01T00:00:00.000Z",
+  };
+
+  // Runs the page's inline script against an injected stub DOM/fetch (no
+  // global overrides) and returns the messages container plus the first poll.
+  function boot(scrollTop: number) {
+    const html = renderChatThreadPage("agent-xyz", THREAD, [], "alice");
+    const script = html.match(
+      /<script>\n\(function\(\) \{[\s\S]*?\n<\/script>/,
+    );
+    if (!script) throw new Error("inline chat script not found");
+    const code = script[0].replace(/^<script>/, "").replace(/<\/script>$/, "");
+
+    const makeEl = (): Record<string, unknown> => ({
+      style: {},
+      classList: { add() {}, remove() {}, toggle() {} },
+      addEventListener() {},
+      setAttribute() {},
+      getAttribute: () => null,
+      appendChild() {},
+      insertBefore() {},
+      querySelectorAll: () => [],
+      querySelector: () => null,
+    });
+    const container = {
+      ...makeEl(),
+      scrollTop,
+      scrollHeight: 1000,
+      clientHeight: 400,
+    };
+    const document = {
+      getElementById: (id: string) =>
+        id === "messages-container"
+          ? container
+          : id === "live-status-bubble"
+            ? null
+            : makeEl(),
+      createElement: makeEl,
+      querySelectorAll: () => [],
+    };
+    const fetchStub = () =>
+      Promise.resolve({ json: () => Promise.resolve({ messages: [] }) });
+    const timers: Array<() => void> = [];
+    new Function(
+      "document",
+      "fetch",
+      "setTimeout",
+      "clearTimeout",
+      "setInterval",
+      "clearInterval",
+      "window",
+      code,
+    )(
+      document,
+      fetchStub,
+      (fn: () => void) => {
+        timers.push(fn);
+        return timers.length;
+      },
+      () => {},
+      () => 0,
+      () => {},
+      { addEventListener() {} },
+    );
+    return { container, timers };
+  }
+
+  test("user scrolled up -> poll leaves scrollTop unchanged", async () => {
+    const { container, timers } = boot(100);
+    container.scrollTop = 100; // user scrolled up (900 - 100 gap > 80px)
+    timers[timers.length - 1]();
+    await new Promise((r) => setTimeout(r, 0));
+    expect(container.scrollTop).toBe(100);
+  });
+
+  test("near bottom -> poll scrolls to bottom", async () => {
+    const { container, timers } = boot(0);
+    container.scrollTop = 560; // 1000 - 560 - 400 = 40px from bottom
+    timers[timers.length - 1]();
+    await new Promise((r) => setTimeout(r, 0));
+    expect(container.scrollTop).toBe(1000);
+  });
+
+  test("initial page load still scrolls to the bottom unconditionally", () => {
+    const { container } = boot(0);
+    expect(container.scrollTop).toBe(1000);
+  });
+});

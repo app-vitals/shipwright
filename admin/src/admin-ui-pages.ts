@@ -6708,9 +6708,16 @@ export function renderChatThreadPage(
     return true;
   }
 
+  // True when the user is within ~80px of the bottom, i.e. hasn't scrolled up
+  // to read history. Polls only auto-scroll in that case.
+  function isNearBottom() {
+    return container.scrollHeight - container.scrollTop - container.clientHeight < 80;
+  }
+
   // Ensure the live status bubble exists (creating it on the client when the
-  // user just sent a message and the server hasn't rendered one).
-  function ensureLiveStatusBubble(createdAtMs) {
+  // user just sent a message and the server hasn't rendered one). Scrolls to
+  // the bottom unless noScroll is true (poll with the user scrolled up).
+  function ensureLiveStatusBubble(createdAtMs, noScroll) {
     var live = document.getElementById(LIVE_STATUS_BUBBLE_ID);
     if (live) return live;
     live = document.createElement('div');
@@ -6724,7 +6731,7 @@ export function renderChatThreadPage(
       + '<span id="' + LIVE_STATUS_ELAPSED_ID + '">working… (0s)</span>'
       + '</div></div>';
     container.appendChild(live);
-    container.scrollTop = container.scrollHeight;
+    if (!noScroll) container.scrollTop = container.scrollHeight;
     return live;
   }
 
@@ -6811,6 +6818,9 @@ export function renderChatThreadPage(
       .then(function(data) {
         var msgs = data.messages || [];
 
+        // Capture before rendering new bubbles grows scrollHeight.
+        var stickToBottom = isNearBottom();
+
         // Render every new (un-rendered) message from the server, in order —
         // fixes "only the last reply appears" and "agent-initiated messages
         // need a reload". Assistant/user/system all go through server
@@ -6830,7 +6840,7 @@ export function renderChatThreadPage(
         if (pending) {
           // Keep the live status bubble present and in sync.
           var createdAtMs = pending.createdAt ? new Date(pending.createdAt).getTime() : Date.now();
-          var live = ensureLiveStatusBubble(createdAtMs);
+          var live = ensureLiveStatusBubble(createdAtMs, !stickToBottom);
           live.setAttribute('data-created-at', String(createdAtMs));
           startTicker();
           updateMilestone(pending.progressPhase);
@@ -6844,7 +6854,7 @@ export function renderChatThreadPage(
           }
           live.setAttribute('data-progress-seq', String(seq));
 
-          container.scrollTop = container.scrollHeight;
+          if (stickToBottom) container.scrollTop = container.scrollHeight;
           schedulePoll(POLL_PENDING_MS);
         } else {
           // No reply pending: reply landed (or nothing in flight). Tear down
@@ -6853,7 +6863,7 @@ export function renderChatThreadPage(
           removeLiveStatusBubble();
           stopTicker();
           enableSend();
-          container.scrollTop = container.scrollHeight;
+          if (stickToBottom) container.scrollTop = container.scrollHeight;
           schedulePoll(POLL_IDLE_MS);
         }
       })
