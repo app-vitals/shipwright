@@ -678,7 +678,7 @@ describeOrSkip("PullRequestService.list() repoScope (integration)", () => {
 
   it("restricts results to the scoped repos", async () => {
     const r = await service.list({ repoScope: [A, B] });
-    expect(repos(r)).toEqual([A, B]);
+    expect(repos(r)).toEqual([A, B].sort());
     expect(r.total).toBe(2);
   });
 
@@ -688,7 +688,7 @@ describeOrSkip("PullRequestService.list() repoScope (integration)", () => {
     ]);
     expect(
       repos(await service.list({ repoScope: [A, B], org: "app-vitals" })),
-    ).toEqual([A, B]);
+    ).toEqual([A, B].sort());
     const out = await service.list({ repoScope: [A], repo: C });
     expect(out.prs).toEqual([]);
     expect(out.total).toBe(0);
