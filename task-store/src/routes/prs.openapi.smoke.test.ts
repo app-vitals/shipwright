@@ -299,9 +299,9 @@ describe("createPrsRoutes — OpenAPIHono migration (TSM-1.3)", () => {
   it("GET /:id responds to single-record requests", async () => {
     const store = new Map<string, PullRequest>();
     store.set("pr-1", makePr({ id: "pr-1" }));
-    const app = createPrsRoutes(fakePrService({ store }));
+    const app = makeAdminParent(createPrsRoutes(fakePrService({ store })));
     const res = await app.request("/pr-1");
-    expect([200, 401]).toContain(res.status);
+    expect(res.status).toBe(200);
   });
 
   it("GET /?updatedSince=<iso> passes updatedSince through to prService.list()", async () => {
@@ -499,7 +499,7 @@ describe("createPrsRoutes — OpenAPIHono migration (TSM-1.3)", () => {
         consecutiveCiFailureCount: 1,
       }),
     );
-    const app = createPrsRoutes(fakePrService({ store }));
+    const app = makeAdminParent(createPrsRoutes(fakePrService({ store })));
     const res = await app.request("/pr-1/patch", {
       method: "POST",
       headers: { "content-type": "application/json" },

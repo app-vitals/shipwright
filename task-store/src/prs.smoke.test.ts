@@ -272,6 +272,8 @@ function fakePrService(
           orgs.some((org) => p.repo.startsWith(`${org}/`)),
         );
       }
+      if (filters?.repoScope)
+        prs = prs.filter((p) => filters.repoScope?.includes(p.repo));
       if (filters?.staged !== undefined)
         prs = prs.filter((p) => p.staged === filters.staged);
       return {
@@ -1237,6 +1239,62 @@ describe("/prs routes (smoke)", () => {
     expect(body.prs.map((p) => p.repo).sort()).toEqual(["org-a/x", "org-b/y"]);
   });
 
+  it("GET /prs with an agent token only returns PRs in the token's repos", async () => {
+    const store = new Map<string, PullRequest>();
+    store.set("pr-1", makePr({ id: "pr-1", repo: ADMIN_REPO }));
+    store.set("pr-2", makePr({ id: "pr-2", repo: "other-org/secret" }));
+    const app = makeApp({
+      prService: fakePrService({ store }),
+      tokenService: fakeAgentTokenService(),
+      scopeResolver: makeScopeResolver([ADMIN_REPO]),
+    });
+
+    const res = await app.request("/prs", { headers: agentAuth() });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as PullRequestListResult;
+    expect(body.prs.map((p) => p.id)).toEqual(["pr-1"]);
+  });
+
+  it("GET /prs?repo=<out-of-scope> with an agent token returns an empty list", async () => {
+    const store = new Map<string, PullRequest>();
+    store.set("pr-2", makePr({ id: "pr-2", repo: "other-org/secret" }));
+    const app = makeApp({
+      prService: fakePrService({ store }),
+      tokenService: fakeAgentTokenService(),
+      scopeResolver: makeScopeResolver([ADMIN_REPO]),
+    });
+
+    for (const q of ["repo=other-org/secret", "org=other-org"]) {
+      const res = await app.request(`/prs?${q}`, { headers: agentAuth() });
+      expect(res.status).toBe(200);
+      const body = (await res.json()) as PullRequestListResult;
+      expect(body.prs).toEqual([]);
+      expect(body.total).toBe(0);
+    }
+  });
+
+  it("GET /prs with an agent token whose scope is [] returns nothing; admin sees all", async () => {
+    const store = new Map<string, PullRequest>();
+    store.set("pr-1", makePr({ id: "pr-1", repo: ADMIN_REPO }));
+    store.set("pr-2", makePr({ id: "pr-2", repo: "other-org/secret" }));
+    const prService = fakePrService({ store });
+
+    const scoped = makeApp({
+      prService,
+      tokenService: fakeAgentTokenService(),
+      scopeResolver: makeScopeResolver([]),
+    });
+    const res = await scoped.request("/prs", { headers: agentAuth() });
+    const body = (await res.json()) as PullRequestListResult;
+    expect(body.prs).toEqual([]);
+    expect(body.total).toBe(0);
+
+    const admin = makeApp({ prService });
+    const adminRes = await admin.request("/prs", { headers: adminAuth() });
+    const adminBody = (await adminRes.json()) as PullRequestListResult;
+    expect(adminBody.prs.map((p) => p.id)).toEqual(["pr-1", "pr-2"]);
+  });
+
   it("GET /prs without repo/org leaves both filters undefined (not empty arrays)", async () => {
     let capturedFilters: PullRequestListFilters | undefined;
     const store = new Map<string, PullRequest>();
@@ -1665,7 +1723,7 @@ describe("/prs routes (smoke)", () => {
     expect(body.reviewedCommitSha).toBe("abc123def456");
   });
 
-  it("PATCH /prs/:id returns 400 for agent token with out-of-scope repo", async () => {
+  it("PATCH /prs/:id returns 404 for agent token with out-of-scope repo", async () => {
     const store = new Map<string, PullRequest>();
     store.set("pr-1", makePr({ id: "pr-1", repo: "other-org/other-repo" }));
     const app = makeApp({
@@ -1679,8 +1737,96 @@ describe("/prs routes (smoke)", () => {
       headers: { ...agentAuth(), "content-type": "application/json" },
       body: JSON.stringify({ staged: true }),
     });
-    expect(res.status).toBe(400);
+    expect(res.status).toBe(404);
   });
+
+  // ─── Shared :id scope guard (PRG-1.3) ─────────────────────────────────────
+
+  const ID_ROUTES: Array<{
+    name: string;
+    method: string;
+    path: string;
+    body?: unknown;
+  }> = [
+    { name: "GET /:id", method: "GET", path: "/prs/pr-1" },
+    { name: "GET /:id/events", method: "GET", path: "/prs/pr-1/events" },
+    {
+      name: "PATCH /:id",
+      method: "PATCH",
+      path: "/prs/pr-1",
+      body: { staged: true },
+    },
+    { name: "heartbeat", method: "POST", path: "/prs/pr-1/heartbeat" },
+    { name: "complete", method: "POST", path: "/prs/pr-1/complete" },
+    { name: "patch", method: "POST", path: "/prs/pr-1/patch", body: {} },
+    { name: "release", method: "POST", path: "/prs/pr-1/release" },
+    { name: "skip", method: "POST", path: "/prs/pr-1/skip" },
+    { name: "skip-reset", method: "POST", path: "/prs/pr-1/skip/reset" },
+    {
+      name: "findings",
+      method: "POST",
+      path: "/prs/pr-1/findings",
+      body: {
+        ref: "r",
+        disposition: "rejected",
+        source: "patch",
+        evidence: "e",
+      },
+    },
+  ];
+
+  function idRouteRequest(
+    app: ReturnType<typeof makeApp>,
+    r: (typeof ID_ROUTES)[number],
+    headers: Record<string, string>,
+  ) {
+    return app.request(r.path, {
+      method: r.method,
+      headers:
+        r.body !== undefined
+          ? { ...headers, "content-type": "application/json" }
+          : headers,
+      body: r.body !== undefined ? JSON.stringify(r.body) : undefined,
+    });
+  }
+
+  for (const r of ID_ROUTES) {
+    it(`${r.name}: out-of-scope agent token and repos [] get 404 with no write; in-scope and admin pass`, async () => {
+      const mk = () =>
+        new Map<string, PullRequest>([
+          ["pr-1", makePr({ id: "pr-1", repo: SCOPED_REPO })],
+        ]);
+      const snapshot = (m: Map<string, PullRequest>) =>
+        JSON.stringify(m.get("pr-1"));
+
+      for (const scope of [["other-org/other-repo"], []]) {
+        const store = mk();
+        const before = snapshot(store);
+        const app = makeApp({
+          tokenService: fakeAgentTokenService(),
+          scopeResolver: makeScopeResolver(scope),
+          prService: fakePrService({ store }),
+        });
+        const res = await idRouteRequest(app, r, agentAuth());
+        expect(res.status).toBe(404);
+        expect(snapshot(store)).toBe(before);
+      }
+
+      const inScope = makeApp({
+        tokenService: fakeAgentTokenService(),
+        scopeResolver: makeScopeResolver([SCOPED_REPO]),
+        prService: fakePrService({ store: mk() }),
+      });
+      expect((await idRouteRequest(inScope, r, agentAuth())).status).not.toBe(
+        404,
+      );
+
+      const admin = makeApp({ prService: fakePrService({ store: mk() }) });
+      expect((await idRouteRequest(admin, r, adminAuth())).status).not.toBe(
+        404,
+      );
+    });
+  }
 
   // ─── reviewCycles ─────────────────────────────────────────────────────────
 

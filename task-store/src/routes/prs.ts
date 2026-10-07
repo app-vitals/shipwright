@@ -7,6 +7,7 @@
  *
  * Agent tokens (agentId set) are repo-scoped:
  *   - writes validate that the PR's repo is in c.get('repos')
+ *   - GET /prs is filtered to c.get('repos') (ANDed with ?repo/?org)
  * Admin tokens (agentId null) have no restrictions.
  *
  * Routes:
@@ -34,13 +35,13 @@ import { createRoute, OpenAPIHono } from "@hono/zod-openapi";
 import { readJson } from "@shipwright/lib/http";
 import type { TaskStoreAuthEnv } from "../auth.ts";
 import { BadRequestError, ForbiddenError, NotFoundError } from "../errors.ts";
-import { PrOrigin } from "../index.ts";
 import type {
   PrFindingDisposition,
   PrFindingSource,
   PrState,
   PullRequest,
 } from "../index.ts";
+import { PrOrigin } from "../index.ts";
 import {
   CensusBodySchema,
   CensusCursorQuerySchema,
@@ -513,6 +514,22 @@ export function createPrsRoutes(
 ): OpenAPIHono<TaskStoreAuthEnv> {
   const app = new OpenAPIHono<TaskStoreAuthEnv>();
 
+  // Shared :id guard: load the PR and 404 ("pr not found") when it is missing
+  // or its repo is outside the token's scope — indistinguishable on purpose, so
+  // an out-of-scope id can't be probed. repos === null (admin) bypasses;
+  // repos === [] denies all. Runs before any write.
+  async function loadScopedPr(c: {
+    req: { param(name: string): string };
+    get(key: "repos"): string[] | null;
+  }): Promise<PullRequest> {
+    const pr = await prService.get(c.req.param("id"));
+    const repos = c.get("repos");
+    if (!pr || (repos !== null && !repos?.includes(pr.repo))) {
+      throw new NotFoundError("pr not found");
+    }
+    return pr;
+  }
+
   // ─── List ──────────────────────────────────────────────────────────────────
   // biome-ignore lint/suspicious/noExplicitAny: service returns Prisma types; JSON serialization handles Date→string correctly at runtime
   app.openapi(listRoute, async (c): Promise<any> => {
@@ -535,6 +552,7 @@ export function createPrsRoutes(
       : undefined;
 
     const result = await prService.list({
+      repoScope: c.get("repos"),
       repo: c.req.queries("repo"),
       org: c.req.queries("org"),
       prNumber:
@@ -770,8 +788,7 @@ export function createPrsRoutes(
   // ─── Get one ───────────────────────────────────────────────────────────────
   // biome-ignore lint/suspicious/noExplicitAny: service returns Prisma types; JSON serialization handles Date→string correctly at runtime
   app.openapi(getOneRoute, async (c): Promise<any> => {
-    const pr = await prService.get(c.req.param("id"));
-    if (!pr) throw new NotFoundError("pr not found");
+    const pr = await loadScopedPr(c);
     return c.json(pr, 200);
   });
 
@@ -814,16 +831,8 @@ export function createPrsRoutes(
 
   // biome-ignore lint/suspicious/noExplicitAny: service returns Prisma types; JSON serialization handles Date→string correctly at runtime
   app.openapi(updateRoute, async (c): Promise<any> => {
-    const agentId = c.get("agentId");
-    const repos = c.get("repos");
     const body = await readJson(c);
-
-    // For agent tokens, validate the existing PR's repo is in scope
-    if (agentId !== null) {
-      const pr = await prService.get(c.req.param("id"));
-      if (!pr) throw new NotFoundError("pr not found");
-      validateRepo(pr.repo, repos);
-    }
+    await loadScopedPr(c);
 
     // Apply field allowlist — silently drop any fields not in the list
     const filtered: Partial<PullRequest> = {};
@@ -843,6 +852,7 @@ export function createPrsRoutes(
   // ─── Heartbeat ─────────────────────────────────────────────────────────────
   // biome-ignore lint/suspicious/noExplicitAny: service returns Prisma types; JSON serialization handles Date→string correctly at runtime
   app.openapi(heartbeatRoute, async (c): Promise<any> => {
+    await loadScopedPr(c);
     const pr = await prService.heartbeat(c.req.param("id"));
     return c.json(pr, 200);
   });
@@ -850,6 +860,7 @@ export function createPrsRoutes(
   // ─── Complete ──────────────────────────────────────────────────────────────
   // biome-ignore lint/suspicious/noExplicitAny: service returns Prisma types; JSON serialization handles Date→string correctly at runtime
   app.openapi(completeRoute, async (c): Promise<any> => {
+    await loadScopedPr(c);
     const pr = await prService.complete(c.req.param("id"));
     return c.json(pr, 200);
   });
@@ -857,6 +868,7 @@ export function createPrsRoutes(
   // ─── Patch ─────────────────────────────────────────────────────────────────
   // biome-ignore lint/suspicious/noExplicitAny: service returns Prisma types; JSON serialization handles Date→string correctly at runtime
   app.openapi(patchRoute, async (c): Promise<any> => {
+    await loadScopedPr(c);
     const body = await readJson(c);
     const commitSha =
       typeof body.commitSha === "string" && body.commitSha
@@ -877,6 +889,7 @@ export function createPrsRoutes(
   // ─── Release ───────────────────────────────────────────────────────────────
   // biome-ignore lint/suspicious/noExplicitAny: service returns Prisma types; JSON serialization handles Date→string correctly at runtime
   app.openapi(releaseRoute, async (c): Promise<any> => {
+    await loadScopedPr(c);
     const pr = await prService.release(c.req.param("id"));
     return c.json(pr, 200);
   });
@@ -884,6 +897,7 @@ export function createPrsRoutes(
   // ─── Skip ──────────────────────────────────────────────────────────────────
   // biome-ignore lint/suspicious/noExplicitAny: service returns Prisma types; JSON serialization handles Date→string correctly at runtime
   app.openapi(skipRoute, async (c): Promise<any> => {
+    await loadScopedPr(c);
     const pr = await prService.recordSkip(c.req.param("id"));
     return c.json(pr, 200);
   });
@@ -891,6 +905,7 @@ export function createPrsRoutes(
   // ─── Skip reset ────────────────────────────────────────────────────────────
   // biome-ignore lint/suspicious/noExplicitAny: service returns Prisma types; JSON serialization handles Date→string correctly at runtime
   app.openapi(skipResetRoute, async (c): Promise<any> => {
+    await loadScopedPr(c);
     const pr = await prService.resetSkip(c.req.param("id"));
     return c.json(pr, 200);
   });
@@ -903,6 +918,7 @@ export function createPrsRoutes(
   // source:"review" may write any disposition.
   // biome-ignore lint/suspicious/noExplicitAny: service returns Prisma types; JSON serialization handles Date→string correctly at runtime
   app.openapi(findingsRoute, async (c): Promise<any> => {
+    await loadScopedPr(c);
     const body = await readJson(c);
     const { ref, evidence, at, agentId } = body;
 
@@ -947,6 +963,7 @@ export function createPrsRoutes(
   // ─── Events ────────────────────────────────────────────────────────────────
   // biome-ignore lint/suspicious/noExplicitAny: service returns Prisma types; JSON serialization handles Date→string correctly at runtime
   app.openapi(eventsRoute, async (c): Promise<any> => {
+    await loadScopedPr(c);
     const limitRaw = c.req.query("limit");
     const offsetRaw = c.req.query("offset");
     const limit =
