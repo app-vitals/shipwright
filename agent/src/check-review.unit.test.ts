@@ -2993,6 +2993,85 @@ describe("traceReviewCandidacyDecision", () => {
   });
 });
 
+const skipBlocked = {
+  id: "pr-rec-1",
+  blocked: true,
+  blockedReason:
+    "Auto-blocked after 3 consecutive skips (dispatched but found nothing to do)",
+  blockedHeadSha: "old-sha",
+  blockedReviewId: null,
+};
+
+describe("getReviewCandidates skip-block auto-clear (PSL-3.2)", () => {
+  function setup(record: PrRecord, resetFails = false) {
+    const pr = makePr({ headRefOid: "new-sha" });
+    const resets: string[] = [];
+    const deps = makeDeps([pr], async () => record);
+    deps.resetSkip = async (id: string) => {
+      resets.push(id);
+      if (resetFails) throw new Error("boom");
+    };
+    return { deps, resets };
+  }
+  const base = { reviewState: "pending", commitSha: "old-sha" };
+
+  test("changed head SHA clears the block via resetSkip and the PR becomes a candidate", async () => {
+    const { deps, resets } = setup({ ...base, ...skipBlocked });
+    const result = await getReviewCandidates(deps);
+    expect(result).toHaveLength(1);
+    expect(resets).toEqual(["pr-rec-1"]);
+  });
+
+  test("a new review-source finding clears the block even at the same head", async () => {
+    const { deps, resets } = setup({
+      ...base,
+      ...skipBlocked,
+      blockedHeadSha: "new-sha",
+      findings: [
+        {
+          id: "f-new",
+          prRecordId: "pr-rec-1",
+          ref: "x",
+          disposition: "rejected",
+          source: "review",
+          evidence: "",
+          at: "2026-10-07T18:39:00Z",
+          createdAt: "2026-10-07T18:39:00Z",
+        },
+      ],
+    });
+    expect(await getReviewCandidates(deps)).toHaveLength(1);
+    expect(resets).toEqual(["pr-rec-1"]);
+  });
+
+  test("unchanged state stays blocked", async () => {
+    const { deps, resets } = setup({ ...base, ...skipBlocked, blockedHeadSha: "new-sha" });
+    expect(await getReviewCandidates(deps)).toEqual([]);
+    expect(resets).toEqual([]);
+  });
+
+  test("legacy block (null blockedHeadSha) stays blocked", async () => {
+    const { deps, resets } = setup({ ...base, ...skipBlocked, blockedHeadSha: null });
+    expect(await getReviewCandidates(deps)).toEqual([]);
+    expect(resets).toEqual([]);
+  });
+
+  test("CI-streak block stays blocked", async () => {
+    const { deps, resets } = setup({
+      ...base,
+      ...skipBlocked,
+      blockedReason: "Auto-blocked after 3 consecutive CI failures",
+    });
+    expect(await getReviewCandidates(deps)).toEqual([]);
+    expect(resets).toEqual([]);
+  });
+
+  test("resetSkip error stays blocked", async () => {
+    const { deps } = setup({ ...base, ...skipBlocked }, true);
+    expect(await getReviewCandidates(deps)).toEqual([]);
+  });
+});
+
 describe("buildProductionDeps isAuthorAllowed default (AAL-2.2)", () => {
   beforeEach(() => {
     reviewAuthorAllowlistRef.set([]);

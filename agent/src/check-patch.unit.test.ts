@@ -1233,6 +1233,88 @@ describe("getPatchCandidates", () => {
 
 // ─── hasFailingCi (CPC-1.1) ────────────────────────────────────────────────────
 
+const skipBlocked: Record<string, unknown> = {
+  id: "pr-rec-1",
+  blocked: true,
+  blockedReason:
+    "Auto-blocked after 3 consecutive skips (dispatched but found nothing to do)",
+  blockedHeadSha: "old-sha",
+  blockedReviewId: null,
+};
+
+describe("getPatchCandidates skip-block auto-clear (PSL-3.2)", () => {
+  function setup(record: Record<string, unknown>, resetFails = false) {
+    const pr = makeOwnPr({ number: 10, headRefOid: "new-sha" });
+    const deps = makeDeps({
+      ownPrs: [pr],
+      reviewDataByPr: {},
+      ciStatusByPr: { 10: { hasFailing: true } },
+    });
+    const resets: string[] = [];
+    deps.queryPrRecord = async () => record as never;
+    deps.resetSkip = async (id: string) => {
+      resets.push(id);
+      if (resetFails) throw new Error("boom");
+    };
+    return { deps, resets };
+  }
+
+  test("changed head SHA clears the block via resetSkip and the PR becomes a candidate", async () => {
+    const { deps, resets } = setup(skipBlocked);
+    const result = await getPatchCandidates(deps);
+    expect(result.map((c) => c.id)).toEqual(["acme/example-repo#10"]);
+    expect(resets).toEqual(["pr-rec-1"]);
+  });
+
+  test("a new review-source finding clears the block even at the same head", async () => {
+    const { deps, resets } = setup({
+      ...skipBlocked,
+      blockedHeadSha: "new-sha",
+      findings: [
+        {
+          id: "f-new",
+          prRecordId: "pr-rec-1",
+          ref: "x",
+          disposition: "rejected",
+          source: "review",
+          evidence: "",
+          at: "2026-10-07T18:39:00Z",
+          createdAt: "2026-10-07T18:39:00Z",
+        },
+      ],
+    });
+    const result = await getPatchCandidates(deps);
+    expect(result).toHaveLength(1);
+    expect(resets).toEqual(["pr-rec-1"]);
+  });
+
+  test("unchanged state stays blocked", async () => {
+    const { deps, resets } = setup({ ...skipBlocked, blockedHeadSha: "new-sha" });
+    expect(await getPatchCandidates(deps)).toEqual([]);
+    expect(resets).toEqual([]);
+  });
+
+  test("legacy block (null blockedHeadSha) stays blocked", async () => {
+    const { deps, resets } = setup({ ...skipBlocked, blockedHeadSha: null });
+    expect(await getPatchCandidates(deps)).toEqual([]);
+    expect(resets).toEqual([]);
+  });
+
+  test("CI-streak block stays blocked", async () => {
+    const { deps, resets } = setup({
+      ...skipBlocked,
+      blockedReason: "Auto-blocked after 3 consecutive CI failures",
+    });
+    expect(await getPatchCandidates(deps)).toEqual([]);
+    expect(resets).toEqual([]);
+  });
+
+  test("resetSkip error stays blocked", async () => {
+    const { deps } = setup(skipBlocked, true);
+    expect(await getPatchCandidates(deps)).toEqual([]);
+  });
+});
+
 describe("hasFailingCi", () => {
   test("returns false when a workflow's earlier run failed but a later rerun (same workflow_id, higher run_number) succeeded", () => {
     const runs = [

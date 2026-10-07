@@ -38,8 +38,10 @@ import {
   candidateId,
   createBundleCompleteQuery,
   createPrRecordQuery,
+  createPrSkipResetter,
   createTaskStatusQuery,
   isMergeOnlyUpdate,
+  clearStaleSkipBlock,
   isPrRecordBlockedForDispatch,
   isTaskBlockedForDispatch,
   mapReposTolerant,
@@ -186,9 +188,14 @@ export interface PrFinding {
 }
 
 export interface PrRecord {
+  id?: string;
   readyForPatchAt?: string | null;
   claimedBy?: string | null;
   blocked?: boolean | null;
+  /** Skip auto-block state (PSL-3.1), consulted by clearStaleSkipBlock (PSL-3.2). */
+  blockedReason?: string | null;
+  blockedHeadSha?: string | null;
+  blockedReviewId?: string | null;
   /**
    * Ledger findings for this PR (PFL-1.2's POST /prs/:id/findings). Already
    * present on the task-store /prs record returned by queryPrRecord below —
@@ -247,6 +254,11 @@ export interface CheckPatchDeps {
    * which would collapse both cases into the same empty result.
    */
   queryPrRecord?: (repo: string, prNumber: number) => Promise<PrRecord | null>;
+  /**
+   * POST /prs/:id/skip/reset, used to auto-clear a stale skip-count block
+   * (PSL-3.2). Must throw on failure so the block stays in place.
+   */
+  resetSkip?: (prRecordId: string) => Promise<void>;
   /**
    * Returns the agent's currently configured repo scope (org/repo strings).
    * Called at the top of every getPatchCandidates() invocation — not once at
@@ -482,7 +494,14 @@ export async function getPatchCandidates(
       // writes blocked:true directly on the PR record when there's no linked
       // task to flag — via the shared isPrRecordBlockedForDispatch helper).
       // Uses the same fetched `record` above — no new network call.
-      if (isPrRecordBlockedForDispatch(record)) continue;
+      // A skip-count block whose head SHA / latest review has since changed
+      // is auto-cleared and the PR treated as unblocked (PSL-3.2).
+      if (
+        isPrRecordBlockedForDispatch(record) &&
+        !(await clearStaleSkipBlock(record, pr.headRefOid, deps.resetSkip))
+      ) {
+        continue;
+      }
     }
 
     let needsPatch = false;
@@ -814,6 +833,7 @@ export async function buildProductionDeps(opts: {
     },
     getCurrentUser: getUser,
     queryPrRecord: createPrRecordQuery<PrRecord>({ fetchFn: opts.fetchFn }),
+    resetSkip: createPrSkipResetter({ fetchFn: opts.fetchFn }),
     queryTaskStatus: createTaskStatusQuery({ fetchFn: opts.fetchFn }),
     isBundleComplete: createBundleCompleteQuery({ fetchFn: opts.fetchFn }),
   };

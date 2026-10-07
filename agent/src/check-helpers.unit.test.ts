@@ -2975,3 +2975,99 @@ describe("redactBodySnippet", () => {
     expect(redactBodySnippet("")).toBe("");
   });
 });
+
+// ─── clearStaleSkipBlock (PSL-3.2) ───────────────────────────────────────────
+
+describe("clearStaleSkipBlock", () => {
+  const blocked = {
+    id: "pr-rec-1",
+    blocked: true,
+    blockedReason:
+      "Auto-blocked after 3 consecutive skips (dispatched but found nothing to do)",
+    blockedHeadSha: "sha-old",
+    blockedReviewId: "finding-1",
+    findings: [
+      { id: "finding-1", source: "review", createdAt: "2026-10-07T10:00:00Z" },
+    ],
+  };
+
+  function recorder(fail = false) {
+    const calls: string[] = [];
+    const fn = async (id: string) => {
+      calls.push(id);
+      if (fail) throw new Error("boom");
+    };
+    return { calls, fn };
+  }
+
+  test("clears when the live head SHA differs", async () => {
+    const r = recorder();
+    expect(await checkHelpers.clearStaleSkipBlock(blocked, "sha-new", r.fn)).toBe(true);
+    expect(r.calls).toEqual(["pr-rec-1"]);
+  });
+
+  test("clears when a newer review-source finding exists", async () => {
+    const r = recorder();
+    const record = {
+      ...blocked,
+      findings: [
+        ...blocked.findings,
+        { id: "finding-2", source: "review", createdAt: "2026-10-07T12:00:00Z" },
+      ],
+    };
+    expect(await checkHelpers.clearStaleSkipBlock(record, "sha-old", r.fn)).toBe(true);
+    expect(r.calls).toEqual(["pr-rec-1"]);
+  });
+
+  test("stays blocked when head SHA and latest review are unchanged", async () => {
+    const r = recorder();
+    expect(await checkHelpers.clearStaleSkipBlock(blocked, "sha-old", r.fn)).toBe(false);
+    expect(r.calls).toEqual([]);
+  });
+
+  test("ignores patch-source findings when finding the latest review", async () => {
+    const r = recorder();
+    const record = {
+      ...blocked,
+      findings: [
+        ...blocked.findings,
+        { id: "patch-1", source: "patch", createdAt: "2026-10-07T12:00:00Z" },
+      ],
+    };
+    expect(await checkHelpers.clearStaleSkipBlock(record, "sha-old", r.fn)).toBe(false);
+  });
+
+  test("legacy block (null blockedHeadSha) stays blocked", async () => {
+    const r = recorder();
+    const record = { ...blocked, blockedHeadSha: null };
+    expect(await checkHelpers.clearStaleSkipBlock(record, "sha-new", r.fn)).toBe(false);
+    expect(r.calls).toEqual([]);
+  });
+
+  test("CI-failure-streak block stays blocked even when the head moved", async () => {
+    const r = recorder();
+    const record = {
+      ...blocked,
+      blockedReason: "Auto-blocked after 3 consecutive CI failures",
+    };
+    expect(await checkHelpers.clearStaleSkipBlock(record, "sha-new", r.fn)).toBe(false);
+    expect(r.calls).toEqual([]);
+  });
+
+  test("a resetSkip error leaves the PR blocked", async () => {
+    const r = recorder(true);
+    expect(await checkHelpers.clearStaleSkipBlock(blocked, "sha-new", r.fn)).toBe(false);
+  });
+
+  test("no resetSkip dep, no record id, or unblocked record -> false", async () => {
+    const r = recorder();
+    expect(await checkHelpers.clearStaleSkipBlock(blocked, "sha-new", undefined)).toBe(false);
+    expect(
+      await checkHelpers.clearStaleSkipBlock({ ...blocked, id: undefined }, "sha-new", r.fn),
+    ).toBe(false);
+    expect(
+      await checkHelpers.clearStaleSkipBlock({ ...blocked, blocked: false }, "sha-new", r.fn),
+    ).toBe(false);
+    expect(r.calls).toEqual([]);
+  });
+});

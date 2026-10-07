@@ -1074,6 +1074,97 @@ export function isPrRecordBlockedForDispatch(
   return pr?.blocked === true;
 }
 
+/** Minimal PR-record shape consulted by clearStaleSkipBlock (PSL-3.2). */
+export interface SkipBlockRecord {
+  id?: string;
+  blocked?: boolean | null;
+  blockedReason?: string | null;
+  blockedHeadSha?: string | null;
+  blockedReviewId?: string | null;
+  findings?: { id: string; source: string; createdAt: string }[];
+}
+
+/**
+ * Build a `(prRecordId) => Promise<void>` that POSTs /prs/:id/skip/reset.
+ * Unlike createTaskStoreClient's fire-and-forget resetSkip, this THROWS on
+ * missing config, a non-ok response, or a network error, so
+ * clearStaleSkipBlock can leave the PR blocked when the reset didn't land
+ * (PSL-3.2 — a failed clear must stay conservative).
+ */
+export function createPrSkipResetter(opts?: {
+  fetchFn?: FetchFn;
+}): (prRecordId: string) => Promise<void> {
+  const taskStoreUrl = (process.env.SHIPWRIGHT_TASK_STORE_URL ?? "").trim();
+  const taskStoreToken = (process.env.SHIPWRIGHT_TASK_STORE_TOKEN ?? "").trim();
+  const doFetch: FetchFn = opts?.fetchFn ?? fetch;
+
+  return async (prRecordId: string): Promise<void> => {
+    if (!taskStoreUrl || !taskStoreToken) {
+      throw new Error(
+        "SHIPWRIGHT_TASK_STORE_URL/SHIPWRIGHT_TASK_STORE_TOKEN not configured",
+      );
+    }
+    const res = await doFetch(
+      `${taskStoreUrl.replace(/\/$/, "")}/prs/${prRecordId}/skip/reset`,
+      {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${taskStoreToken}`,
+          "Content-Type": "application/json",
+        },
+        body: "{}",
+      },
+    );
+    if (!res.ok) {
+      throw new Error(`task-store POST /prs/${prRecordId}/skip/reset → ${res.status}`);
+    }
+  };
+}
+
+/**
+ * Auto-clear a skip-count block whose underlying state has moved on (PSL-3.2).
+ *
+ * Only a block set by recordSkip() (blockedReason contains "consecutive
+ * skips") WITH a recorded blockedHeadSha (PSL-3.1) is eligible. If the live
+ * head SHA differs from blockedHeadSha, or the latest review-source finding
+ * id differs from blockedReviewId, calls resetSkip and returns true so the
+ * caller treats the PR as unblocked. A re-dispatch that skips again restarts
+ * the 3-strike count and re-blocks (with fresh blockedHeadSha/blockedReviewId).
+ *
+ * Conservative — returns false (stay blocked) for legacy blocks (no
+ * blockedHeadSha), other block mechanisms (e.g. CI-failure streak), unchanged
+ * state, a missing record id/resetSkip, and any resetSkip error.
+ */
+export async function clearStaleSkipBlock(
+  record: SkipBlockRecord | null | undefined,
+  liveHeadSha: string | null | undefined,
+  resetSkip: ((prRecordId: string) => Promise<void>) | undefined,
+): Promise<boolean> {
+  if (!record || !resetSkip || !record.id) return false;
+  if (!isPrRecordBlockedForDispatch(record)) return false;
+  if (!record.blockedReason?.includes("consecutive skips")) return false;
+  if (!record.blockedHeadSha) return false;
+
+  const headChanged = !!liveHeadSha && liveHeadSha !== record.blockedHeadSha;
+  let reviewChanged = false;
+  if (record.findings) {
+    let latest: { id: string; createdAt: string } | undefined;
+    for (const f of record.findings) {
+      if (f.source !== "review") continue;
+      if (!latest || f.createdAt > latest.createdAt) latest = f;
+    }
+    reviewChanged = (latest?.id ?? null) !== (record.blockedReviewId ?? null);
+  }
+  if (!headChanged && !reviewChanged) return false;
+
+  try {
+    await resetSkip(record.id);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 /**
  * Merge every task matched by a `?repo=&pr=` lookup into a single
  * LinkedTaskInfo, OR-ing the blocked/hitl signal across ALL of them (PTL-1.1).
