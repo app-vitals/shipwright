@@ -14,6 +14,7 @@ As you read on, you'll run into two categorically different systems. The **deliv
 - **[Metrics dashboard](./metrics.md)** — the provider-agnostic metrics service (fixtures / task-store): JSON endpoints, dashboard, auth, and environment.
 - **[Shipwright agent](./agent.md)** — the autonomous runner: runtime + admin APIs, data model, and environment.
 - **[Deploying to Kubernetes](./deploy-kubernetes.md)** — the Helm chart's auth modes, with companion docs for the [networking model](./deploy-kubernetes-networking.md) and [agent provisioning model](./deploy-kubernetes-provisioning.md); see [Cloud provider guides](./deploy-kubernetes-providers.md) for the Minikube, GKE (Gateway API + cert-manager), EKS (ALB), Traefik, and cloud-native walkthroughs, and [Optional add-ons](./deploy-kubernetes-addons.md) for agent voice (STT/TTS), Web Push notifications, bring-your-own-PostgreSQL, and the bundled ingress-controller/cert-manager subcharts.
+- **[Multi-org GitHub App](./github-multi-org.md)** — one App installed on several orgs: discovery, per-owner token routing, setup, status card, troubleshooting.
 - **[Test system](./test-readiness/test-system.md)** — the full authoritative test blueprint (source for [Testing](./testing.md)).
 - **[Configuration](./configuration.md)** — all configuration options: plugin env vars, agent env vars, and policy fields.
 

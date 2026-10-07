@@ -198,6 +198,7 @@ To load additional context into a session, add `@docs/filename.md` entries here 
 - **docs/agent-api.md** — the admin CRUD API (D): agent CRUD, auth paths, env vars, and runtime config
 - **docs/agent-api-ops.md** — the admin CRUD API (D), operational surfaces: cron jobs and cron run endpoints (create/update/delete, system-cron reconciliation, run records and token/cost stats)
 - **docs/agent-api-resources.md** — the admin CRUD API (D), per-agent resources: allowed-tools list, API tokens, plugins, chat-token-usage endpoints, and the work-queue snapshot
+- **docs/github-multi-org.md** — multi-org GitHub App: one App installed on several orgs, discovery and per-owner token routing, operator and org-admin setup, the admin installations card, and troubleshooting
 - **docs/extending.md** — extending Shipwright without forking it: installing a companion plugin, command namespacing, custom crons for repo-specific automation, and the lightweight `.claude/shipwright/` override pattern
 - **docs/task-store.md** — task store service (D): the sole HTTP-service backend — tasks, PR tracking, tokens — and troubleshooting
 - **docs/mcp-tools.md** — generated MCP server tool reference (name, description, HTTP method/path, parameters, body) derived from task-store/openapi.json + the tool allowlist; regenerate with `bun run generate:mcp-docs`
