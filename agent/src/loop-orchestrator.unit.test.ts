@@ -513,10 +513,10 @@ interface MakeDepsOptions {
     reason?: string,
   ) => Promise<void>;
   resetSkip?: (itemType: "task" | "pr", recordId: string) => Promise<void>;
-  // PSL-2.1: PR record reader used to snapshot progress around a [silent]
+  // PSL-2.1: PR progress reader used to snapshot progress around a [silent]
   // dispatch. Undefined by default (production-optional), so existing tests
   // are unaffected.
-  getPrState?: LoopOrchestratorDeps["getPrState"];
+  getPrProgress?: LoopOrchestratorDeps["getPrProgress"];
   // LO-1.1: optional injected Sentry client double — undefined by default
   // (matching production's optional-by-convention sentryClient), so existing
   // tests that don't pass this option are unaffected.
@@ -606,7 +606,7 @@ function makeDeps(options: MakeDepsOptions = {}): LoopOrchestratorDeps {
     recordSkip: options.recordSkip ?? (async () => {}),
     resetSkip: options.resetSkip ?? (async () => {}),
     getTaskState: options.getTaskState ?? (async () => null),
-    getPrState: options.getPrState,
+    getPrProgress: options.getPrProgress,
     agentId: options.agentId,
     clearSessionKey: options.clearSessionKey,
     sentryClient: options.sentryClient,
@@ -1842,7 +1842,7 @@ describe("createLoopOrchestrator", () => {
 
   describe("PSL-2.1 progress-aware [silent] PR dispatches", () => {
     const silentPrRun = async (opts: {
-      getPrState?: LoopOrchestratorDeps["getPrState"];
+      getPrProgress?: LoopOrchestratorDeps["getPrProgress"];
       itemType?: "pr" | "task";
     }) => {
       const consumed = new Set<string>();
@@ -1864,7 +1864,7 @@ describe("createLoopOrchestrator", () => {
         consumed,
         recordSkip,
         resetSkip,
-        getPrState: opts.getPrState,
+        getPrProgress: opts.getPrProgress,
         claimPr: async (c: WorkPrCandidate) => ({
           id: "pr-record-cuid-xyz",
           commitSha: c.commitSha,
@@ -1883,18 +1883,18 @@ describe("createLoopOrchestrator", () => {
           }
         | Error
       >,
-    ): LoopOrchestratorDeps["getPrState"] => {
+    ): LoopOrchestratorDeps["getPrProgress"] => {
       let i = 0;
       return async () => {
         const next = states[Math.min(i++, states.length - 1)];
         if (next instanceof Error) throw next;
-        return { ...next, claimedBy: null };
+        return next;
       };
     };
 
     test("changed reviewState calls resetSkip (not recordSkip) and still reports skipRun", async () => {
       const { skips, recordCalls, resetCalls } = await silentPrRun({
-        getPrState: sequencedGetPrState([
+        getPrProgress: sequencedGetPrState([
           { reviewState: "pending", reviewedCommitSha: null, commitSha: "a" },
           { reviewState: "posted", reviewedCommitSha: "a", commitSha: "a" },
         ]),
@@ -1908,7 +1908,7 @@ describe("createLoopOrchestrator", () => {
 
     test("changed commitSha alone counts as progress", async () => {
       const { recordCalls, resetCalls } = await silentPrRun({
-        getPrState: sequencedGetPrState([
+        getPrProgress: sequencedGetPrState([
           { reviewState: "pending", commitSha: "a" },
           { reviewState: "pending", commitSha: "b" },
         ]),
@@ -1919,7 +1919,7 @@ describe("createLoopOrchestrator", () => {
 
     test("unchanged record calls recordSkip with the reason", async () => {
       const { recordCalls, resetCalls } = await silentPrRun({
-        getPrState: sequencedGetPrState([
+        getPrProgress: sequencedGetPrState([
           { reviewState: "pending", reviewedCommitSha: null, commitSha: "a" },
         ]),
       });
@@ -1939,7 +1939,7 @@ describe("createLoopOrchestrator", () => {
         [{ reviewState: "pending", commitSha: "a" }, new Error("boom")],
       ]) {
         const { recordCalls, resetCalls } = await silentPrRun({
-          getPrState: sequencedGetPrState(states),
+          getPrProgress: sequencedGetPrState(states),
         });
         expect(recordCalls).toHaveLength(1);
         expect(resetCalls).toEqual([]);
@@ -1965,9 +1965,9 @@ describe("createLoopOrchestrator", () => {
         consumed,
         recordSkip,
         resetSkip,
-        getPrState: async () => {
+        getPrProgress: async () => {
           reads++;
-          return { reviewState: "x", claimedBy: null };
+          return { reviewState: "x" };
         },
       });
       await createLoopOrchestrator(deps)([job("shipwright-dev-task", true)]);

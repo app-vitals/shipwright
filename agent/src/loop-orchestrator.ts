@@ -326,11 +326,25 @@ export interface LoopOrchestratorDeps {
    * a PR-phase dispatch never resumes — it runs exactly one attempt, identical
    * to pre-CRT-1.3 behavior.
    */
-  getPrState?: (prId: string) => Promise<{
-    reviewState?: string;
+  getPrState?: (
+    prId: string,
+  ) => Promise<{ reviewState?: string; claimedBy: string | null } | null>;
+  /**
+   * PSL-2.1 — reads the PR record fields that move when a review/patch phase
+   * makes real progress (reviewState, reviewedCommitSha, commitSha). Called
+   * before and after a PR dispatch; if the dispatch ends `[silent]` and any
+   * field changed, the run did real work, so the skip streak is reset instead
+   * of advanced (skipRun is still reported). Kept separate from getPrState so
+   * the resume gate's call sequence is unaffected. Returns null if the PR is
+   * missing; a rejection or null on either read fails closed to recordSkip.
+   *
+   * Optional: when undefined, every `[silent]` PR dispatch calls recordSkip
+   * exactly as before.
+   */
+  getPrProgress?: (prId: string) => Promise<{
+    reviewState?: string | null;
     reviewedCommitSha?: string | null;
     commitSha?: string | null;
-    claimedBy: string | null;
   } | null>;
   /**
    * CRT-1.2 — renews a claimed PR's `heartbeatAt` (POST /prs/{id}/heartbeat)
@@ -667,6 +681,7 @@ export function createLoopOrchestrator(
     agentId,
     heartbeatTask,
     getPrState,
+    getPrProgress,
     heartbeatPr,
     clearSessionKey,
     runner,
@@ -710,13 +725,13 @@ export function createLoopOrchestrator(
 
   /**
    * PSL-2.1: serializes the PR fields that change when a review/patch phase
-   * makes progress. Returns null (fail closed) when getPrState isn't wired,
+   * makes progress. Returns null (fail closed) when getPrProgress isn't wired,
    * the PR is missing, or the read rejects.
    */
   async function snapshotPrProgress(prId: string): Promise<string | null> {
-    if (!getPrState) return null;
+    if (!getPrProgress) return null;
     try {
-      const pr = await getPrState(prId);
+      const pr = await getPrProgress(prId);
       if (!pr) return null;
       return JSON.stringify([
         pr.reviewState ?? null,
@@ -2076,11 +2091,20 @@ export async function createProductionLoopOrchestrator(
         pr
           ? {
               reviewState: (pr as { reviewState?: string }).reviewState,
+              claimedBy:
+                (pr as { claimedBy?: string | null }).claimedBy ?? null,
+            }
+          : null,
+      ),
+    // PSL-2.1: progress snapshot for [silent] PR dispatches (null = PR missing).
+    getPrProgress: (id) =>
+      taskStoreClient.getPr(id).then((pr) =>
+        pr
+          ? {
+              reviewState: (pr as { reviewState?: string | null }).reviewState,
               reviewedCommitSha: (pr as { reviewedCommitSha?: string | null })
                 .reviewedCommitSha,
               commitSha: (pr as { commitSha?: string | null }).commitSha,
-              claimedBy:
-                (pr as { claimedBy?: string | null }).claimedBy ?? null,
             }
           : null,
       ),
