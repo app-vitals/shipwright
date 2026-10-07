@@ -1723,7 +1723,7 @@ describe("/prs routes (smoke)", () => {
     expect(body.reviewedCommitSha).toBe("abc123def456");
   });
 
-  it("PATCH /prs/:id returns 400 for agent token with out-of-scope repo", async () => {
+  it("PATCH /prs/:id returns 404 for agent token with out-of-scope repo", async () => {
     const store = new Map<string, PullRequest>();
     store.set("pr-1", makePr({ id: "pr-1", repo: "other-org/other-repo" }));
     const app = makeApp({
@@ -1737,8 +1737,96 @@ describe("/prs routes (smoke)", () => {
       headers: { ...agentAuth(), "content-type": "application/json" },
       body: JSON.stringify({ staged: true }),
     });
-    expect(res.status).toBe(400);
+    expect(res.status).toBe(404);
   });
+
+  // ─── Shared :id scope guard (PRG-1.3) ─────────────────────────────────────
+
+  const ID_ROUTES: Array<{
+    name: string;
+    method: string;
+    path: string;
+    body?: unknown;
+  }> = [
+    { name: "GET /:id", method: "GET", path: "/prs/pr-1" },
+    { name: "GET /:id/events", method: "GET", path: "/prs/pr-1/events" },
+    {
+      name: "PATCH /:id",
+      method: "PATCH",
+      path: "/prs/pr-1",
+      body: { staged: true },
+    },
+    { name: "heartbeat", method: "POST", path: "/prs/pr-1/heartbeat" },
+    { name: "complete", method: "POST", path: "/prs/pr-1/complete" },
+    { name: "patch", method: "POST", path: "/prs/pr-1/patch", body: {} },
+    { name: "release", method: "POST", path: "/prs/pr-1/release" },
+    { name: "skip", method: "POST", path: "/prs/pr-1/skip" },
+    { name: "skip-reset", method: "POST", path: "/prs/pr-1/skip/reset" },
+    {
+      name: "findings",
+      method: "POST",
+      path: "/prs/pr-1/findings",
+      body: {
+        ref: "r",
+        disposition: "rejected",
+        source: "patch",
+        evidence: "e",
+      },
+    },
+  ];
+
+  function idRouteRequest(
+    app: ReturnType<typeof makeApp>,
+    r: (typeof ID_ROUTES)[number],
+    headers: Record<string, string>,
+  ) {
+    return app.request(r.path, {
+      method: r.method,
+      headers:
+        r.body !== undefined
+          ? { ...headers, "content-type": "application/json" }
+          : headers,
+      body: r.body !== undefined ? JSON.stringify(r.body) : undefined,
+    });
+  }
+
+  for (const r of ID_ROUTES) {
+    it(`${r.name}: out-of-scope agent token and repos [] get 404 with no write; in-scope and admin pass`, async () => {
+      const mk = () =>
+        new Map<string, PullRequest>([
+          ["pr-1", makePr({ id: "pr-1", repo: SCOPED_REPO })],
+        ]);
+      const snapshot = (m: Map<string, PullRequest>) =>
+        JSON.stringify(m.get("pr-1"));
+
+      for (const scope of [["other-org/other-repo"], []]) {
+        const store = mk();
+        const before = snapshot(store);
+        const app = makeApp({
+          tokenService: fakeAgentTokenService(),
+          scopeResolver: makeScopeResolver(scope),
+          prService: fakePrService({ store }),
+        });
+        const res = await idRouteRequest(app, r, agentAuth());
+        expect(res.status).toBe(404);
+        expect(snapshot(store)).toBe(before);
+      }
+
+      const inScope = makeApp({
+        tokenService: fakeAgentTokenService(),
+        scopeResolver: makeScopeResolver([SCOPED_REPO]),
+        prService: fakePrService({ store: mk() }),
+      });
+      expect((await idRouteRequest(inScope, r, agentAuth())).status).not.toBe(
+        404,
+      );
+
+      const admin = makeApp({ prService: fakePrService({ store: mk() }) });
+      expect((await idRouteRequest(admin, r, adminAuth())).status).not.toBe(
+        404,
+      );
+    });
+  }
 
   // ─── reviewCycles ─────────────────────────────────────────────────────────
 
