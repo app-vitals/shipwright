@@ -132,6 +132,39 @@ describe("getPatchCandidates", () => {
     expect(result).toEqual([]);
   });
 
+  test("is not a candidate when a body-only COMMENTED review is followed by the same reviewer's same-head APPROVED (PSL-1.1)", async () => {
+    const pr = makeOwnPr({ number: 12, headRefOid: "sha-approved" });
+    const result = await getPatchCandidates(
+      makeDeps({
+        ownPrs: [pr],
+        reviewDataByPr: {
+          12: makePrReviewData({
+            headRefOid: "sha-approved",
+            reviews: {
+              nodes: [
+                {
+                  author: { login: "reviewer1" },
+                  state: "COMMENTED",
+                  submittedAt: "2026-05-26T10:00:00Z",
+                  commit: { oid: "sha-approved" },
+                  body: "Body-only finding",
+                },
+                {
+                  author: { login: "reviewer1" },
+                  state: "APPROVED",
+                  submittedAt: "2026-05-26T11:00:00Z",
+                  commit: { oid: "sha-approved" },
+                  body: "",
+                },
+              ],
+            },
+          }),
+        },
+      }),
+    );
+    expect(result).toEqual([]);
+  });
+
   test("collects ALL PRs with unaddressed findings, not just the first (no early-return)", async () => {
     const prs = [
       makeOwnPr({ number: 10, headRefOid: "sha-dirty-1" }),

@@ -36,6 +36,7 @@ import {
   isAddressedByAuthorReply,
   isResolvedByLedger,
   isSelfCleanApprove,
+  isSupersededBySameHeadApproval,
   isSupersededBySelfReview,
   isThreadAddressedByAuthorReply,
   parseCliInput,
@@ -1275,6 +1276,137 @@ describe("isSupersededBySelfReview", () => {
     expect(isSupersededBySelfReview(review, allReviews, "the-agent")).toBe(
       false,
     );
+  });
+});
+
+describe("isSupersededBySameHeadApproval / hasUnaddressedFindings (PSL-1.1)", () => {
+  const rev = (
+    login: string,
+    state: string,
+    submittedAt: string,
+    oid: string,
+    body = "",
+  ): ReviewNode => ({
+    author: { login },
+    state,
+    submittedAt,
+    commit: { oid },
+    body,
+  });
+  const commented = rev(
+    "reviewer1",
+    "COMMENTED",
+    "2026-05-26T10:00:00Z",
+    "current-head-sha",
+    "Body-only finding",
+  );
+
+  test("same reviewer's later APPROVED on the same head supersedes the COMMENTED review", () => {
+    const approval = rev(
+      "reviewer1",
+      "APPROVED",
+      "2026-05-26T11:00:00Z",
+      "current-head-sha",
+    );
+    expect(isSupersededBySameHeadApproval(commented, [commented, approval])).toBe(
+      true,
+    );
+    expect(
+      hasUnaddressedFindings(
+        makeData({ reviews: { nodes: [commented, approval] } }),
+        "the-agent",
+      ),
+    ).toBe(false);
+  });
+
+  test("APPROVED on a newer head does not supersede", () => {
+    const approval = rev(
+      "reviewer1",
+      "APPROVED",
+      "2026-05-26T11:00:00Z",
+      "newer-head-sha",
+    );
+    expect(isSupersededBySameHeadApproval(commented, [commented, approval])).toBe(
+      false,
+    );
+    expect(
+      hasUnaddressedFindings(
+        makeData({ reviews: { nodes: [commented, approval] } }),
+        "the-agent",
+      ),
+    ).toBe(true);
+  });
+
+  test("APPROVED by a different reviewer does not supersede", () => {
+    const approval = rev(
+      "reviewer2",
+      "APPROVED",
+      "2026-05-26T11:00:00Z",
+      "current-head-sha",
+    );
+    expect(isSupersededBySameHeadApproval(commented, [commented, approval])).toBe(
+      false,
+    );
+    expect(
+      hasUnaddressedFindings(
+        makeData({ reviews: { nodes: [commented, approval] } }),
+        "the-agent",
+      ),
+    ).toBe(true);
+  });
+
+  test("an APPROVED earlier than the COMMENTED review does not supersede", () => {
+    const approval = rev(
+      "reviewer1",
+      "APPROVED",
+      "2026-05-26T09:00:00Z",
+      "current-head-sha",
+    );
+    expect(isSupersededBySameHeadApproval(commented, [approval, commented])).toBe(
+      false,
+    );
+  });
+
+  test("unresolved inline threads still count even after a same-head approval", () => {
+    const empty = rev(
+      "reviewer1",
+      "COMMENTED",
+      "2026-05-26T10:00:00Z",
+      "current-head-sha",
+    );
+    const approval = rev(
+      "reviewer1",
+      "APPROVED",
+      "2026-05-26T11:00:00Z",
+      "current-head-sha",
+    );
+    const data = makeData({
+      reviews: { nodes: [empty, approval] },
+      reviewThreads: {
+        nodes: [
+          {
+            isResolved: false,
+            comments: {
+              nodes: [{ author: { login: "reviewer1" }, body: "Fix this" }],
+            },
+          },
+        ],
+      },
+    });
+    // The superseded review no longer qualifies, so the review-level gate
+    // returns false; pair with another qualifying review to prove threads count.
+    const other = rev(
+      "reviewer3",
+      "COMMENTED",
+      "2026-05-26T10:30:00Z",
+      "current-head-sha",
+    );
+    expect(
+      hasUnaddressedFindings(
+        { ...data, reviews: { nodes: [empty, approval, other] } },
+        "the-agent",
+      ),
+    ).toBe(true);
   });
 });
 
