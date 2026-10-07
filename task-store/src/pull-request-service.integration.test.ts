@@ -655,7 +655,7 @@ describeOrSkip("PullRequestService.list() repoScope (integration)", () => {
   let prisma: PrismaClient;
   let service: PullRequestService;
   const A = "app-vitals/shipwright";
-  const B = "app-vitals/vitals-os";
+  const B = "app-vitals/other-repo";
   const C = "other-org/secret";
 
   beforeEach(async () => {
