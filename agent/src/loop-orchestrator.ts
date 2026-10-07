@@ -326,9 +326,12 @@ export interface LoopOrchestratorDeps {
    * a PR-phase dispatch never resumes — it runs exactly one attempt, identical
    * to pre-CRT-1.3 behavior.
    */
-  getPrState?: (
-    prId: string,
-  ) => Promise<{ reviewState?: string; claimedBy: string | null } | null>;
+  getPrState?: (prId: string) => Promise<{
+    reviewState?: string;
+    reviewedCommitSha?: string | null;
+    commitSha?: string | null;
+    claimedBy: string | null;
+  } | null>;
   /**
    * CRT-1.2 — renews a claimed PR's `heartbeatAt` (POST /prs/{id}/heartbeat)
    * so the task-store's claim TTL doesn't release the claim out from
@@ -706,6 +709,29 @@ export function createLoopOrchestrator(
   >();
 
   /**
+   * PSL-2.1: serializes the PR fields that change when a review/patch phase
+   * makes progress. Returns null (fail closed) when getPrState isn't wired,
+   * the PR is missing, or the read rejects.
+   */
+  async function snapshotPrProgress(prId: string): Promise<string | null> {
+    if (!getPrState) return null;
+    try {
+      const pr = await getPrState(prId);
+      if (!pr) return null;
+      return JSON.stringify([
+        pr.reviewState ?? null,
+        pr.reviewedCommitSha ?? null,
+        pr.commitSha ?? null,
+      ]);
+    } catch (err) {
+      console.warn(
+        `[loop-orchestrator] PR progress snapshot failed for ${prId}: ${String(err)} — treating as no progress`,
+      );
+      return null;
+    }
+  }
+
+  /**
    * SKT-2.1 guard around recordSkip/resetSkip: both are documented
    * never-throwing (the production client swallows fetch errors and non-ok
    * responses internally, matching HttpCronRunReporter.patchRun's pattern),
@@ -923,6 +949,14 @@ export function createLoopOrchestrator(
           });
       };
 
+      // PSL-2.1: for a PR item, snapshot the progress-bearing PR fields
+      // before dispatch so a [silent] ending can be told apart from a
+      // no-op — a review/patch that did real work then ended [silent] must
+      // not advance the skip streak. Null on a task item, a missing dep, or a
+      // read failure (fail closed: behaves exactly as before).
+      const prProgressBefore =
+        itemType === "pr" ? await snapshotPrProgress(recordId) : null;
+
       let runResult: ClaudeRunResult;
       try {
         runResult = await runner(
@@ -1046,9 +1080,25 @@ export function createLoopOrchestrator(
         // invisible to skipCount and therefore to /unblock). `skipReason`
         // (parsed above, or the "command:no-work" fallback) is forwarded
         // as-is — no category filtering.
-        await callSkipTracker("recordSkip", () =>
-          recordSkip(itemType, recordId, skipReason),
-        );
+        // PSL-2.1: the run is still reported as skipped above, but if the PR
+        // record's reviewState/reviewedCommitSha/commitSha moved during the
+        // dispatch it did real work — clear the streak instead of advancing it.
+        const prProgressAfter = prProgressBefore
+          ? await snapshotPrProgress(recordId)
+          : null;
+        if (
+          prProgressBefore &&
+          prProgressAfter &&
+          prProgressBefore !== prProgressAfter
+        ) {
+          await callSkipTracker("resetSkip", () =>
+            resetSkip(itemType, recordId),
+          );
+        } else {
+          await callSkipTracker("recordSkip", () =>
+            recordSkip(itemType, recordId, skipReason),
+          );
+        }
         return "silent";
       }
 
@@ -2026,6 +2076,9 @@ export async function createProductionLoopOrchestrator(
         pr
           ? {
               reviewState: (pr as { reviewState?: string }).reviewState,
+              reviewedCommitSha: (pr as { reviewedCommitSha?: string | null })
+                .reviewedCommitSha,
+              commitSha: (pr as { commitSha?: string | null }).commitSha,
               claimedBy:
                 (pr as { claimedBy?: string | null }).claimedBy ?? null,
             }
