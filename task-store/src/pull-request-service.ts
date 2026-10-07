@@ -1138,11 +1138,22 @@ export class PullRequestService implements PullRequestServiceLike {
           data: { skipCount: { increment: 1 }, lastSkippedAt: now },
         });
         if (updated.skipCount >= SKIP_BLOCK_THRESHOLD) {
+          const latestReview = await tx.prFinding.findFirst({
+            where: { prRecordId: id, source: "review" },
+            orderBy: { createdAt: "desc" },
+            select: { id: true },
+          });
+          const blockedReason = `Auto-blocked after ${updated.skipCount} consecutive skips (dispatched but found nothing to do)`;
           updated = await tx.pullRequest.update({
             where: { id },
             data: {
               blocked: true,
-              blockedReason: `Auto-blocked after ${updated.skipCount} consecutive skips (dispatched but found nothing to do)`,
+              blockedReason,
+              blockedHeadSha: updated.commitSha ?? updated.reviewedCommitSha,
+              blockedReviewId: latestReview?.id ?? null,
+              blockedAt: now,
+              lastAutoBlockReason: blockedReason,
+              lastAutoBlockedAt: now,
             },
           });
         }
@@ -1169,7 +1180,8 @@ export class PullRequestService implements PullRequestServiceLike {
    * skip-auto-block message pattern set by recordSkip() (contains
    * "consecutive skips"), also clears blocked:false and blockedReason:null
    * in the same update — giving a human-retried PR a way back into
-   * candidacy. A block set by a different mechanism (e.g. the CI-failure-
+   * candidacy. The preserved lastAutoBlockReason/lastAutoBlockedAt history
+   * (PSL-3.1) is never cleared. A block set by a different mechanism (e.g. the CI-failure-
    * streak auto-block in patch()) is left untouched.
    */
   async resetSkip(id: string): Promise<PullRequest> {
