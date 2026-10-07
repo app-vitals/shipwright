@@ -41,8 +41,10 @@ import type { LinkedTaskInfo } from "./check-helpers.ts";
 import {
   candidateId,
   classifyReviewState,
+  clearStaleSkipBlock,
   createBundleCompleteQuery,
   createPrRecordQuery,
+  createPrSkipResetter,
   createTaskStatusQuery,
   getCurrentUser,
   ghGraphql as ghGraphqlDefault,
@@ -100,6 +102,7 @@ export interface PrInfo {
 }
 
 export interface PrRecord {
+  id?: string;
   commitSha?: string | null;
   /**
    * The review pipeline's exclusive commit-tracking field (RCS-1.2),
@@ -115,6 +118,10 @@ export interface PrRecord {
   readyForReviewAt?: string | null;
   claimedBy?: string | null;
   blocked?: boolean | null;
+  /** Skip auto-block state (PSL-3.1), consulted by clearStaleSkipBlock (PSL-3.2). */
+  blockedReason?: string | null;
+  blockedHeadSha?: string | null;
+  blockedReviewId?: string | null;
   staged?: boolean;
   /**
    * Timestamp of the last review pass written by review.md, used as the
@@ -421,6 +428,11 @@ export interface CheckReviewDeps {
   listOpenPrs: (repo: string) => Promise<PrInfo[]>;
   queryPrRecord: (repo: string, prNumber: number) => Promise<PrRecord | null>;
   /**
+   * POST /prs/:id/skip/reset, used to auto-clear a stale skip-count block
+   * (PSL-3.2). Must throw on failure so the block stays in place.
+   */
+  resetSkip?: (prRecordId: string) => Promise<void>;
+  /**
    * Returns the agent's currently configured repo scope (org/repo strings).
    * Called at the top of every getReviewCandidates() invocation — not once at
    * deps-build time — so a repo present in the local clone list (and
@@ -666,6 +678,12 @@ export async function getReviewCandidates(
       // Fetch failed → treat as "no terminal review" (no dedup)
     }
 
+    // Auto-clear a skip-count block whose head SHA / latest review has since
+    // changed (PSL-3.2), so pr-record-blocked below no longer excludes it.
+    if (await clearStaleSkipBlock(record, pr.headRefOid, deps.resetSkip)) {
+      record = record && { ...record, blocked: false, blockedReason: null };
+    }
+
     // Task-store task lookup, used to source the age field from the linked
     // task's createdAt (LPF-3.2) and to gate on hitl (CBD-2.2). A thrown error
     // is treated as "no linked task" so a lookup failure never disqualifies
@@ -820,6 +838,7 @@ export async function buildProductionDeps(opts: {
       });
     },
     queryPrRecord: createPrRecordQuery<PrRecord>({ fetchFn: opts.fetchFn }),
+    resetSkip: createPrSkipResetter({ fetchFn: opts.fetchFn }),
     queryTaskStatus: createTaskStatusQuery({ fetchFn: opts.fetchFn }),
     isBundleComplete: createBundleCompleteQuery({ fetchFn: opts.fetchFn }),
     fetchPrReviews: async (org: string, repo: string, pr: number) => {
