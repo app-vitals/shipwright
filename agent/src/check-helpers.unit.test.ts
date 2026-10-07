@@ -14,6 +14,7 @@ import {
   chmodSync,
   mkdirSync,
   mkdtempSync,
+  readFileSync,
   rmSync,
   writeFileSync,
 } from "node:fs";
@@ -21,8 +22,6 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createAllowSelfReviewRef } from "./allow-self-review-ref.ts";
 import * as checkHelpers from "./check-helpers.ts";
-import { createCleanupAfterDaysRef } from "./cleanup-after-days-ref.ts";
-import { createCleanupMergedWorktreesRef } from "./cleanup-merged-worktrees-ref.ts";
 import {
   classifyReviewState,
   createBundleCompleteQuery,
@@ -30,6 +29,7 @@ import {
   createTaskStatusQuery,
   createTaskStoreClient,
   getCurrentUser,
+  ghGraphql,
   hasAnyReviewAtHead,
   isCleanApproveBody,
   isPrRecordBlockedForDispatch,
@@ -43,6 +43,8 @@ import {
   VERDICT_TERMINAL_LABEL,
 } from "./check-helpers.ts";
 import type { PrReviewData, ReviewNode, ReviewThread } from "./check-patch.ts";
+import { createCleanupAfterDaysRef } from "./cleanup-after-days-ref.ts";
+import { createCleanupMergedWorktreesRef } from "./cleanup-merged-worktrees-ref.ts";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -992,6 +994,67 @@ describe("getCurrentUser", () => {
     writeFailingGhBinary(tmpDir, 1, "not authenticated");
     process.env.PATH = `${tmpDir}:${savedPath}`;
     await expect(getCurrentUser()).rejects.toThrow("gh api graphql failed");
+  });
+});
+
+describe("ghGraphql retry", () => {
+  let tmpDir: string;
+  let savedPath: string | undefined;
+
+  beforeEach(() => {
+    tmpDir = mkdtempSync(join(tmpdir(), "gh-graphql-retry-test-"));
+    savedPath = process.env.PATH;
+    process.env.PATH = `${tmpDir}:${savedPath}`;
+  });
+
+  afterEach(() => {
+    if (savedPath !== undefined) {
+      process.env.PATH = savedPath;
+    }
+    rmSync(tmpDir, { recursive: true, force: true });
+  });
+
+  /** Fake gh that fails `failures` times with `stderr`, then succeeds. Counts calls. */
+  function writeFlakyGh(failures: number, stderr: string): string {
+    const counter = join(tmpDir, "count");
+    writeFileSync(counter, "0");
+    writeFileSync(
+      join(tmpDir, "gh"),
+      `#!/bin/sh
+n=$(cat "${counter}"); n=$((n+1)); echo $n > "${counter}"
+if [ $n -le ${failures} ]; then printf '%s\\n' '${stderr}' >&2; exit 1; fi
+printf '%s\\n' '{"ok":true}'
+`,
+    );
+    chmodSync(join(tmpDir, "gh"), 0o755);
+    return counter;
+  }
+
+  const calls = (counter: string) => Number(readFileSync(counter, "utf8"));
+
+  test("retries a transient 504 and succeeds", async () => {
+    const counter = writeFlakyGh(2, "gh: HTTP 504");
+    const result = await ghGraphql<{ ok: boolean }>("query {}", {
+      baseDelayMs: 1,
+    });
+    expect(result).toEqual({ ok: true });
+    expect(calls(counter)).toBe(3);
+  });
+
+  test("throws the standard error after exhausting retries", async () => {
+    const counter = writeFlakyGh(99, "gh: HTTP 504");
+    await expect(ghGraphql("query {}", { baseDelayMs: 1 })).rejects.toThrow(
+      "gh api graphql failed (exit 1): gh: HTTP 504",
+    );
+    expect(calls(counter)).toBe(3);
+  });
+
+  test("does not retry a non-transient failure", async () => {
+    const counter = writeFlakyGh(99, "gh: HTTP 401 bad credentials");
+    await expect(ghGraphql("query {}", { baseDelayMs: 1 })).rejects.toThrow(
+      "gh api graphql failed",
+    );
+    expect(calls(counter)).toBe(1);
   });
 });
 
