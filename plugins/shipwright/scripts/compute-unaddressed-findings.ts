@@ -361,6 +361,34 @@ export function isSupersededBySelfReview(
 }
 
 /**
+ * Returns true when `review` (any reviewer) is superseded by a LATER APPROVED
+ * review from the same reviewer (matched via `canonicalLogin`) on the SAME
+ * `commit.oid` (PSL-1.1). A reviewer who posts a body-only COMMENTED review and
+ * then approves the identical head has withdrawn the earlier concern; counting
+ * the stale COMMENTED body as an unaddressed finding produced identical
+ * `patch:deferred:no-op-at-dispatch` dispatches (PRs #2426/#2428).
+ *
+ * An approval on a newer commit supersedes nothing (the reviewer has not seen
+ * the code the COMMENTED review was about, and such a review is no longer at
+ * HEAD anyway), and an approval by a different reviewer never clears someone
+ * else's review. This predicate only concerns review bodies —
+ * `hasUnaddressedFindings` still counts unresolved inline threads separately.
+ */
+export function isSupersededBySameHeadApproval(
+  review: Pick<ReviewNode, "author" | "submittedAt" | "commit">,
+  allReviews: ReviewNode[],
+): boolean {
+  const reviewedAt = new Date(review.submittedAt).getTime();
+  return allReviews.some(
+    (r) =>
+      r.state === "APPROVED" &&
+      canonicalLogin(r.author.login) === canonicalLogin(review.author.login) &&
+      r.commit.oid === review.commit.oid &&
+      new Date(r.submittedAt).getTime() > reviewedAt,
+  );
+}
+
+/**
  * Derives a canonical, collision-resistant identifier for a review, used to
  * match a durable findings-ledger entry's `ref` (PFL-3.2), or a
  * `priorFindingsStatus[]` attestation's `ref` (PVD-1.2), back to the specific
@@ -469,13 +497,15 @@ export function hasUnaddressedFindings(
   // Find qualifying reviews: state COMMENTED or CHANGES_REQUESTED at current
   // HEAD, excluding self-authored clean-APPROVE reviews (CPF-2.1), self-reviews
   // superseded by a later clean self-review (DRO-1.2), and reviews
-  // resolved/superseded per the task-store ledger (PFL-3.2).
+  // resolved/superseded per the task-store ledger (PFL-3.2), and reviews
+  // superseded by the same reviewer's later APPROVED on the same head (PSL-1.1).
   const qualifyingReviews = reviews.nodes.filter(
     (r) =>
       (r.state === "COMMENTED" || r.state === "CHANGES_REQUESTED") &&
       r.commit.oid === headRefOid &&
       !isSelfCleanApprove(r, currentUser) &&
       !isSupersededBySelfReview(r, reviews.nodes, currentUser) &&
+      !isSupersededBySameHeadApproval(r, reviews.nodes) &&
       !isResolvedByLedger(reviewRef(r), findings),
   );
 
