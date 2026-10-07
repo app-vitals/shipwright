@@ -18,6 +18,7 @@
     "./progress-phases": "./progress-phases.ts",
     "./request-context": "./request-context.ts",
     "./secret-env-vars": "./secret-env-vars.ts",
+    "./default-agent-env": "./default-agent-env.ts",
     "./sentry": "./sentry.ts",
     "./task-store-types": "./task-store-types.ts",
     "./web/*": "./web/*"

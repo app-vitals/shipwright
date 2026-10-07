@@ -1,3 +1,4 @@
+import { DEFAULT_ANTHROPIC_MODEL } from "@shipwright/lib/default-agent-env";
 import type { ProgressPhase } from "@shipwright/lib/progress-phases";
 import type { ErrorCapturingClient } from "@shipwright/lib/sentry";
 import {
@@ -20,7 +21,7 @@ export interface LiveClaudeConfig {
  * Updated at runtime by setLiveClaudeConfig (e.g. from agent config polling).
  */
 export const liveClaudeConfig: LiveClaudeConfig = {
-  model: process.env.ANTHROPIC_MODEL ?? "claude-sonnet-4-6",
+  model: process.env.ANTHROPIC_MODEL ?? DEFAULT_ANTHROPIC_MODEL,
   fallbackModel: process.env.ANTHROPIC_FALLBACK_MODEL,
   effortLevel: process.env.ANTHROPIC_EFFORT_LEVEL,
   allowedTools: process.env.AGENT_ALLOWED_TOOLS

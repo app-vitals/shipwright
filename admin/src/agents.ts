@@ -7,6 +7,7 @@
  */
 
 import { findRepoNameCollisions } from "@shipwright/lib/clone-plan";
+import { DEFAULT_AGENT_ENV } from "@shipwright/lib/default-agent-env";
 import { isGithubLogin } from "@shipwright/lib/github-login";
 import { isOrgRepo } from "@shipwright/lib/org-repo";
 import { SECRET_ENV_VARS } from "@shipwright/lib/secret-env-vars";
@@ -876,20 +877,21 @@ export async function createAgent(
   // its own internal transaction) and not rolled back on failure, matching
   // pre-APA-1.1 behavior: an uncaught error here propagates to the caller,
   // leaving the already-committed agent row in place.
-  const claudeEnv: Record<string, string> = {};
+  // Non-secret defaults (e.g. ANTHROPIC_MODEL) are seeded alongside so they
+  // show up in the agent's env view; the secret credentials below are
+  // operator-supplied only and never defaulted.
+  const initialEnv: Record<string, string> = { ...DEFAULT_AGENT_ENV };
   if (input.claudeCodeOauthToken) {
-    claudeEnv.CLAUDE_CODE_OAUTH_TOKEN = input.claudeCodeOauthToken;
+    initialEnv.CLAUDE_CODE_OAUTH_TOKEN = input.claudeCodeOauthToken;
   }
   if (input.anthropicApiKey) {
-    claudeEnv.ANTHROPIC_API_KEY = input.anthropicApiKey;
+    initialEnv.ANTHROPIC_API_KEY = input.anthropicApiKey;
   }
-  if (Object.keys(claudeEnv).length > 0) {
-    await deps.agentEnvService.patch(
-      agent.id,
-      claudeEnv,
-      new Set(SECRET_ENV_VARS),
-    );
-  }
+  await deps.agentEnvService.patch(
+    agent.id,
+    initialEnv,
+    new Set(SECRET_ENV_VARS),
+  );
 
   if (inCluster) {
     // Kubernetes provisioning is an external side effect that cannot join
