@@ -7,6 +7,7 @@
  *
  * Agent tokens (agentId set) are repo-scoped:
  *   - writes validate that the PR's repo is in c.get('repos')
+ *   - GET /prs is filtered to c.get('repos') (ANDed with ?repo/?org)
  * Admin tokens (agentId null) have no restrictions.
  *
  * Routes:
@@ -34,13 +35,13 @@ import { createRoute, OpenAPIHono } from "@hono/zod-openapi";
 import { readJson } from "@shipwright/lib/http";
 import type { TaskStoreAuthEnv } from "../auth.ts";
 import { BadRequestError, ForbiddenError, NotFoundError } from "../errors.ts";
-import { PrOrigin } from "../index.ts";
 import type {
   PrFindingDisposition,
   PrFindingSource,
   PrState,
   PullRequest,
 } from "../index.ts";
+import { PrOrigin } from "../index.ts";
 import {
   CensusBodySchema,
   CensusCursorQuerySchema,
@@ -535,6 +536,7 @@ export function createPrsRoutes(
       : undefined;
 
     const result = await prService.list({
+      repoScope: c.get("repos"),
       repo: c.req.queries("repo"),
       org: c.req.queries("org"),
       prNumber:

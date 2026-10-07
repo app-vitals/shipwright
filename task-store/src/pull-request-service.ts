@@ -197,6 +197,13 @@ export interface PullRequestListFilters {
    * current (unfiltered) behavior.
    */
   origin?: PrOrigin[];
+  /**
+   * Agent-token repo scope (PRG-1.2). `null`/omitted = unrestricted (admin
+   * token); an array restricts results to PRs whose repo is a member, ANDed
+   * with any caller `repo`/`org` filter — so an out-of-scope filter yields an
+   * empty list rather than leaking. `[]` matches nothing (fail-closed).
+   */
+  repoScope?: string[] | null;
 }
 
 /** Paginated list result from PullRequestService.list. */
@@ -376,31 +383,39 @@ export class PullRequestService implements PullRequestServiceLike {
   async list(
     filters: PullRequestListFilters = {},
   ): Promise<PullRequestListResult> {
-    const where: Prisma.PullRequestWhereInput = {};
+    const callerWhere: Prisma.PullRequestWhereInput = {};
     if (typeof filters.repo === "string" && filters.org === undefined) {
       // Preserves today's exact-match behavior for a single repo string.
-      where.repo = filters.repo;
+      callerWhere.repo = filters.repo;
     } else if (filters.repo !== undefined || filters.org !== undefined) {
       Object.assign(
-        where,
+        callerWhere,
         buildRepoOrgWhere({
           repos: toArray(filters.repo),
           orgs: toArray(filters.org),
         }),
       );
     }
-    if (filters.prNumber !== undefined) where.prNumber = filters.prNumber;
-    if (filters.state) where.state = filters.state as PullRequest["state"];
+    if (filters.prNumber !== undefined) callerWhere.prNumber = filters.prNumber;
+    if (filters.state)
+      callerWhere.state = filters.state as PullRequest["state"];
     if (filters.reviewState)
-      where.reviewState = filters.reviewState as PullRequest["reviewState"];
-    if (filters.staged !== undefined) where.staged = filters.staged;
-    if (filters.ready) where.claimedBy = null;
+      callerWhere.reviewState =
+        filters.reviewState as PullRequest["reviewState"];
+    if (filters.staged !== undefined) callerWhere.staged = filters.staged;
+    if (filters.ready) callerWhere.claimedBy = null;
     if (filters.origin && filters.origin.length > 0) {
-      where.origin = { in: filters.origin };
+      callerWhere.origin = { in: filters.origin };
     }
     if (filters.updatedSince) {
-      where.updatedAt = { gte: parseUpdatedSince(filters.updatedSince) };
+      callerWhere.updatedAt = { gte: parseUpdatedSince(filters.updatedSince) };
     }
+
+    // AND the token scope on top of the caller's own repo/org filters (never
+    // merged into callerWhere — buildRepoOrgWhere may already own `AND`/`OR`).
+    const where: Prisma.PullRequestWhereInput = filters.repoScope
+      ? { AND: [callerWhere, { repo: { in: filters.repoScope } }] }
+      : callerWhere;
 
     const limit = filters.limit ?? 50;
     const offset = filters.offset ?? 0;
@@ -1368,7 +1383,12 @@ export class PullRequestService implements PullRequestServiceLike {
       hasAutomatedLabel,
       hasShipwrightLabel,
     });
-    return this.stampOrigin(repo, prNumber, { origin, authorLogin, headRef, title }, tx);
+    return this.stampOrigin(
+      repo,
+      prNumber,
+      { origin, authorLogin, headRef, title },
+      tx,
+    );
   }
 
   async stampOrigin(

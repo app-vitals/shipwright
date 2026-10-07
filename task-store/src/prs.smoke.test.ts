@@ -272,6 +272,8 @@ function fakePrService(
           orgs.some((org) => p.repo.startsWith(`${org}/`)),
         );
       }
+      if (filters?.repoScope)
+        prs = prs.filter((p) => filters.repoScope?.includes(p.repo));
       if (filters?.staged !== undefined)
         prs = prs.filter((p) => p.staged === filters.staged);
       return {
@@ -1235,6 +1237,62 @@ describe("/prs routes (smoke)", () => {
     expect(res.status).toBe(200);
     const body = (await res.json()) as PullRequestListResult;
     expect(body.prs.map((p) => p.repo).sort()).toEqual(["org-a/x", "org-b/y"]);
+  });
+
+  it("GET /prs with an agent token only returns PRs in the token's repos", async () => {
+    const store = new Map<string, PullRequest>();
+    store.set("pr-1", makePr({ id: "pr-1", repo: ADMIN_REPO }));
+    store.set("pr-2", makePr({ id: "pr-2", repo: "other-org/secret" }));
+    const app = makeApp({
+      prService: fakePrService({ store }),
+      tokenService: fakeAgentTokenService(),
+      scopeResolver: makeScopeResolver([ADMIN_REPO]),
+    });
+
+    const res = await app.request("/prs", { headers: agentAuth() });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as PullRequestListResult;
+    expect(body.prs.map((p) => p.id)).toEqual(["pr-1"]);
+  });
+
+  it("GET /prs?repo=<out-of-scope> with an agent token returns an empty list", async () => {
+    const store = new Map<string, PullRequest>();
+    store.set("pr-2", makePr({ id: "pr-2", repo: "other-org/secret" }));
+    const app = makeApp({
+      prService: fakePrService({ store }),
+      tokenService: fakeAgentTokenService(),
+      scopeResolver: makeScopeResolver([ADMIN_REPO]),
+    });
+
+    for (const q of ["repo=other-org/secret", "org=other-org"]) {
+      const res = await app.request(`/prs?${q}`, { headers: agentAuth() });
+      expect(res.status).toBe(200);
+      const body = (await res.json()) as PullRequestListResult;
+      expect(body.prs).toEqual([]);
+      expect(body.total).toBe(0);
+    }
+  });
+
+  it("GET /prs with an agent token whose scope is [] returns nothing; admin sees all", async () => {
+    const store = new Map<string, PullRequest>();
+    store.set("pr-1", makePr({ id: "pr-1", repo: ADMIN_REPO }));
+    store.set("pr-2", makePr({ id: "pr-2", repo: "other-org/secret" }));
+    const prService = fakePrService({ store });
+
+    const scoped = makeApp({
+      prService,
+      tokenService: fakeAgentTokenService(),
+      scopeResolver: makeScopeResolver([]),
+    });
+    const res = await scoped.request("/prs", { headers: agentAuth() });
+    const body = (await res.json()) as PullRequestListResult;
+    expect(body.prs).toEqual([]);
+    expect(body.total).toBe(0);
+
+    const admin = makeApp({ prService });
+    const adminRes = await admin.request("/prs", { headers: adminAuth() });
+    const adminBody = (await adminRes.json()) as PullRequestListResult;
+    expect(adminBody.prs.map((p) => p.id)).toEqual(["pr-1", "pr-2"]);
   });
 
   it("GET /prs without repo/org leaves both filters undefined (not empty arrays)", async () => {
