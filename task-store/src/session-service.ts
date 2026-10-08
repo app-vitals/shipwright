@@ -400,12 +400,9 @@ export class SessionService implements SessionServiceLike {
    *   discards it (including the already-successful Task insert). ON
    *   CONFLICT DO NOTHING has no such window. It is deliberately
    *   target-less (unlike a native upsert's `ON CONFLICT ("accountId",
-   *   "slug")`): until SSP-6.9 drops the legacy `slug` primary key, a second
-   *   account writing a slug another account already owns would otherwise
-   *   violate that PK and fail the task write. Under the legacy PK that
-   *   second account simply gets no Session row of its own (its rollups and
-   *   lists never see the other account's row); once the PK is gone it gets
-   *   its own row.
+   *   "slug")`) so it stays correct however the [accountId, slug] unique is
+   *   named; with the slug-only primary key gone (SSP-6.9), a second account
+   *   writing a slug another account owns gets its own row.
    * - The create sets only `slug` + `accountId` — this call site has no
    *   title to provide, so `title` is left null and `createdAt`/`updatedAt`
    *   fall back to their schema defaults.

@@ -43,9 +43,13 @@ const MIGRATION_SQL_PATH = join(
  * Later migrations that alter the Session table. afterAll() replays their
  * Session statements after re-creating the table so the rest of the run sees
  * the fully-migrated shape — notably SSP-6.1's `accountId` column and
- * `[accountId, slug]` unique, which SessionService keys on since SSP-6.7.
+ * `[accountId, slug]` unique, which SessionService keys on since SSP-6.7, and
+ * SSP-6.9's drop of the slug-only primary key.
  */
-const LATER_SESSION_MIGRATION_DIRS = ["20261008000000_add_account_id"];
+const LATER_SESSION_MIGRATION_DIRS = [
+  "20261008000000_add_account_id",
+  "20261008130000_drop_session_slug_pk",
+];
 
 function makePrisma(): PrismaClient {
   // TEST_DB is guaranteed set — the describe block is skipped otherwise.

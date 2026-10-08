@@ -130,7 +130,7 @@ describeOrSkip("add accountId migration (integration)", () => {
     }
   });
 
-  it("is additive: Session slug PK still enforced; old PullRequest unique dropped (SSP-6.4)", async () => {
+  it("is additive: Session slug unique enforced per account; old PullRequest unique dropped (SSP-6.4)", async () => {
     await runMigration(prisma);
 
     await prisma.$executeRawUnsafe(
@@ -146,6 +146,11 @@ describeOrSkip("add accountId migration (integration)", () => {
     await prisma.$executeRawUnsafe(
       `INSERT INTO "Session" ("slug","updatedAt") VALUES ('s-dup', now());`,
     );
+    // Same slug, different account: allowed (SSP-6.9 dropped the slug-only PK).
+    await prisma.$executeRawUnsafe(
+      `INSERT INTO "Session" ("slug","accountId","updatedAt") VALUES ('s-dup','acct-2', now());`,
+    );
+    // Same slug and account: the [accountId, slug] unique rejects it.
     await expect(
       (async () =>
         prisma.$executeRawUnsafe(
