@@ -72,7 +72,7 @@ export interface InstructionDensity {
 }
 
 /** Strip a leading YAML frontmatter block and fenced code, preserving line count. */
-function maskNonProse(text: string): string[] {
+export function maskNonProse(text: string): string[] {
   const lines = text.split("\n");
   let inFence = false;
   let start = 0;
