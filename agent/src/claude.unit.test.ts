@@ -31,6 +31,7 @@ const {
   dominantModel,
   ClaudeTimeoutError,
   reportClaudeError,
+  ClaudeRunError,
 } = await import("./claude.ts");
 
 // ─── Stream-json fixtures (hand-authored per the public CLI schema) ───────────
@@ -46,6 +47,9 @@ const cleanExitNoResult = await import(
 );
 const progressPhases = await import(
   "./fixtures/stream-json/progress-phases.ts"
+);
+const skillAttribution = await import(
+  "./fixtures/stream-json/skill-attribution.ts"
 );
 
 // ─── Shared test session store ────────────────────────────────────────────────
@@ -2933,5 +2937,106 @@ describe("reportClaudeError", () => {
       ),
     ).not.toThrow();
     expect(() => reportClaudeError(undefined, new Error("boom"))).not.toThrow();
+  });
+});
+
+// ─── run telemetry (first-turn baseline, counts, skill attribution) ──────────
+
+describe("runClaude — run telemetry", () => {
+  beforeEach(() => {
+    mockGetSession.mockReset();
+    mockSetSession.mockReset();
+    mockClearSession.mockReset();
+  });
+
+  test("a clean session returns the fixture's expected telemetry alongside the result", async () => {
+    const mockSpawn = mock(
+      () => ndjsonProc(skillAttribution.lines) as ReturnType<typeof Bun.spawn>,
+    );
+    const runClaude = createRunClaude(
+      mockSpawn as typeof Bun.spawn,
+      testSessions,
+      MODEL,
+      WORKSPACE,
+      fakeSentryClient,
+    );
+
+    const output = await runClaude("go");
+
+    expect(output.result).toBe("done");
+    expect(output.telemetry).toEqual(skillAttribution.expectedTelemetry);
+  });
+
+  test("a resumed session (-r) drops the first-turn baseline but keeps counts and attribution", async () => {
+    mockGetSession.mockImplementation(() => "sess-prior");
+    const mockSpawn = mock(
+      () => ndjsonProc(skillAttribution.lines) as ReturnType<typeof Bun.spawn>,
+    );
+    const runClaude = createRunClaude(
+      mockSpawn as typeof Bun.spawn,
+      testSessions,
+      MODEL,
+      WORKSPACE,
+      fakeSentryClient,
+    );
+
+    const output = await runClaude("go", "thread-1");
+
+    const cmd = (mockSpawn.mock.calls[0] as unknown[])[0] as string[];
+    expect(cmd).toContain("-r");
+    expect(output.telemetry?.firstTurn).toBeUndefined();
+    expect(output.telemetry?.turns).toBe(
+      skillAttribution.expectedTelemetry.turns,
+    );
+    expect(output.telemetry?.skillUsage).toEqual(
+      skillAttribution.expectedTelemetry.skillUsage,
+    );
+  });
+
+  test("a clean exit with no result event still carries telemetry on the streamIncomplete shape", async () => {
+    const mockSpawn = mock(
+      () => ndjsonProc(cleanExitNoResult.lines) as ReturnType<typeof Bun.spawn>,
+    );
+    const runClaude = createRunClaude(
+      mockSpawn as typeof Bun.spawn,
+      testSessions,
+      MODEL,
+      WORKSPACE,
+      fakeSentryClient,
+    );
+
+    const output = await runClaude("go");
+
+    expect(output.streamIncomplete).toBe(true);
+    expect(output.telemetry?.turns).toBeGreaterThan(0);
+    expect(output.telemetry?.firstTurn).toBeDefined();
+  });
+
+  test("a non-zero exit after usage was seen attaches partialTelemetry to the ClaudeRunError", async () => {
+    const mockSpawn = mock(
+      () =>
+        ndjsonProc(truncatedNoResult.lines, "boom", 1) as ReturnType<
+          typeof Bun.spawn
+        >,
+    );
+    const runClaude = createRunClaude(
+      mockSpawn as typeof Bun.spawn,
+      testSessions,
+      MODEL,
+      WORKSPACE,
+      fakeSentryClient,
+    );
+
+    let caught: unknown;
+    try {
+      await runClaude("go");
+    } catch (err) {
+      caught = err;
+    }
+    expect(caught).toBeInstanceOf(ClaudeRunError);
+    const telemetry = (caught as InstanceType<typeof ClaudeRunError>)
+      .partialTelemetry;
+    expect(telemetry?.turns).toBeGreaterThan(0);
+    expect(telemetry?.firstTurn).toBeDefined();
   });
 });
