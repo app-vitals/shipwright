@@ -16,6 +16,7 @@
 
 import { describe, expect, it } from "bun:test";
 import { OpenAPIHono } from "@hono/zod-openapi";
+import { DEFAULT_ACCOUNT_ID } from "@shipwright/lib/default-account";
 import type { TaskStoreAuthEnv } from "../auth.ts";
 import { ApiError, NotFoundError } from "../errors.ts";
 import type {
@@ -59,6 +60,11 @@ function fakeSessionService(records: FakeSessionRecord[]): SessionServiceLike {
   return {
     async list(filters: SessionListFilters = {}): Promise<SessionListResult> {
       let items = records.filter((r) => visible(r, filters.agentScope));
+
+      if (filters.accountId != null) {
+        const accountId = filters.accountId;
+        items = items.filter((r) => r.accountId === accountId);
+      }
 
       if (filters.q) {
         const needle = filters.q.toLowerCase();
@@ -131,8 +137,11 @@ function fakeSessionService(records: FakeSessionRecord[]): SessionServiceLike {
     async get(
       slug: string,
       agentScope?: { agentId: string; repos: string[] },
+      accountId: string = DEFAULT_ACCOUNT_ID,
     ): Promise<SessionListItem | null> {
-      const record = records.find((r) => r.slug === slug);
+      const record = records.find(
+        (r) => r.slug === slug && r.accountId === accountId,
+      );
       if (!record) return null;
       if (!visible(record, agentScope)) return null;
       return toItem(record);
@@ -142,8 +151,11 @@ function fakeSessionService(records: FakeSessionRecord[]): SessionServiceLike {
       slug: string,
       patch: SessionUpdatePatch,
       actor: string,
+      accountId: string = DEFAULT_ACCOUNT_ID,
     ): Promise<SessionListItem> {
-      const record = records.find((r) => r.slug === slug);
+      const record = records.find(
+        (r) => r.slug === slug && r.accountId === accountId,
+      );
       if (!record) throw new NotFoundError("session not found");
       if ("title" in patch) record.title = patch.title ?? null;
       if (patch.archived === true) {
@@ -165,6 +177,7 @@ function fakeSessionService(records: FakeSessionRecord[]): SessionServiceLike {
 function makeRecord(overrides: Partial<FakeSessionRecord>): FakeSessionRecord {
   return {
     slug: "session-1",
+    accountId: DEFAULT_ACCOUNT_ID,
     title: null,
     createdAt: new Date("2026-01-01T00:00:00.000Z"),
     updatedAt: new Date("2026-01-01T00:00:00.000Z"),
@@ -265,11 +278,13 @@ function makeParent(
   app: OpenAPIHono<TaskStoreAuthEnv>,
   agentId: string | null,
   repos: string[] | null,
+  accountId: string | null = agentId === null ? null : DEFAULT_ACCOUNT_ID,
 ) {
   const parent = new OpenAPIHono<TaskStoreAuthEnv>();
   parent.use("*", async (c, next) => {
     c.set("agentId", agentId);
     c.set("repos", repos);
+    c.set("accountId", accountId);
     c.set("scopeDegraded", false);
     await next();
   });
@@ -291,8 +306,9 @@ function makeAgentParent(
   app: OpenAPIHono<TaskStoreAuthEnv>,
   agentId: string,
   repos: string[] = [],
+  accountId: string = DEFAULT_ACCOUNT_ID,
 ) {
-  return makeParent(app, agentId, repos);
+  return makeParent(app, agentId, repos, accountId);
 }
 
 function makeApp(records: FakeSessionRecord[] = FIXTURES) {
@@ -624,6 +640,116 @@ describe("PATCH /sessions/:slug (smoke)", () => {
   it("admin token, nonexistent slug returns 404", async () => {
     const parent = makeAdminParent(makeApp());
     const res = await parent.request("/does-not-exist", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ archived: true }),
+    });
+    expect(res.status).toBe(404);
+  });
+});
+
+// ─── SSP-6.7: account scoping ─────────────────────────────────────────────────
+
+/** Same slug in two accounts, plus a default-account session. */
+function accountFixtures(): FakeSessionRecord[] {
+  return [
+    makeRecord({
+      slug: "shared",
+      accountId: "acct-a",
+      title: "A",
+      scopeTasks: [{ assignee: "agent-a", repo: "org/a" }],
+    }),
+    makeRecord({
+      slug: "shared",
+      accountId: "acct-b",
+      title: "B",
+      scopeTasks: [{ assignee: "agent-b", repo: "org/b" }],
+    }),
+    makeRecord({ slug: "legacy", title: "default" }),
+  ];
+}
+
+describe("/sessions account scoping (smoke, SSP-6.7)", () => {
+  it("(AC4) admin token without ?accountId lists sessions for all accounts, each labeled by accountId", async () => {
+    const parent = makeAdminParent(makeApp(accountFixtures()));
+    const res = await parent.request("/?state=all");
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as SessionListResult;
+    expect(body.total).toBe(3);
+    expect(body.sessions.map((s) => `${s.accountId}/${s.slug}`).sort()).toEqual(
+      ["acct-a/shared", "acct-b/shared", "default/legacy"],
+    );
+  });
+
+  it("admin token with ?accountId narrows the list to that account", async () => {
+    const parent = makeAdminParent(makeApp(accountFixtures()));
+    const res = await parent.request("/?state=all&accountId=acct-b");
+    const body = (await res.json()) as SessionListResult;
+    expect(body.sessions.map((s) => s.title)).toEqual(["B"]);
+  });
+
+  it("agent token is pinned to its own account; ?accountId is ignored", async () => {
+    const parent = makeAgentParent(
+      makeApp(accountFixtures()),
+      "agent-b",
+      ["org/a", "org/b"],
+      "acct-b",
+    );
+    const res = await parent.request("/?state=all&accountId=acct-a");
+    const body = (await res.json()) as SessionListResult;
+    expect(body.sessions.map((s) => s.accountId)).toEqual(["acct-b"]);
+  });
+
+  it("GET /:slug with admin ?accountId returns that account's row", async () => {
+    const parent = makeAdminParent(makeApp(accountFixtures()));
+    const res = await parent.request("/shared?accountId=acct-a");
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as SessionListItem;
+    expect(body.accountId).toBe("acct-a");
+    expect(body.title).toBe("A");
+  });
+
+  it("GET /:slug with admin token and no ?accountId resolves the default account (unchanged behavior)", async () => {
+    const parent = makeAdminParent(makeApp(accountFixtures()));
+    expect((await parent.request("/legacy")).status).toBe(200);
+    expect((await parent.request("/shared")).status).toBe(404);
+  });
+
+  it("GET /:slug for an agent token resolves within its own account only", async () => {
+    const parent = makeAgentParent(
+      makeApp(accountFixtures()),
+      "agent-a",
+      ["org/a"],
+      "acct-b",
+    );
+    // agent-a's qualifying task lives in acct-a; pinned to acct-b it sees nothing.
+    const res = await parent.request("/shared?accountId=acct-a");
+    expect(res.status).toBe(404);
+  });
+
+  it("PATCH /:slug with admin ?accountId only updates that account's session", async () => {
+    const records = accountFixtures();
+    const parent = makeAdminParent(makeApp(records));
+    const res = await parent.request("/shared?accountId=acct-b", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ archived: true, title: "B renamed" }),
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as SessionListItem;
+    expect(body.accountId).toBe("acct-b");
+    expect(body.title).toBe("B renamed");
+
+    const a = records.find(
+      (r) => r.slug === "shared" && r.accountId === "acct-a",
+    );
+    expect(a?.title).toBe("A");
+    expect(a?.archived).toBe(false);
+  });
+
+  it("PATCH /:slug with admin token and no ?accountId targets the default account", async () => {
+    const parent = makeAdminParent(makeApp(accountFixtures()));
+    const res = await parent.request("/shared", {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ archived: true }),

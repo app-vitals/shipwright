@@ -2403,7 +2403,7 @@
           "sessions"
         ],
         "summary": "List sessions",
-        "description": "Returns `{ sessions, total, limit, offset }` — each session's Task rows rolled up into a single object (`state`, `waitingSince`, `lastActivityAt`, per-status `counts`, distinct `agentIds`/`repos`, `waitingTasks`) flattened with the Session row's own fields. Omitting `?state` defaults to non-archived, non-closed sessions. Every agent token (agentId set) is scoped: it only sees sessions with at least one qualifying task — one where `assignee === agentId` OR the task's repo is in the agent's resolved scope; a token with no resolved repos degrades to assignee-only matching rather than unrestricted visibility. Only admin tokens see every session unrestricted.",
+        "description": "Returns `{ sessions, total, limit, offset }` — each session's Task rows rolled up into a single object (`state`, `waitingSince`, `lastActivityAt`, per-status `counts`, distinct `agentIds`/`repos`, `waitingTasks`) flattened with the Session row's own fields. Omitting `?state` defaults to non-archived, non-closed sessions. Every agent token (agentId set) is scoped: it only sees sessions with at least one qualifying task — one where `assignee === agentId` OR the task's repo is in the agent's resolved scope; a token with no resolved repos degrades to assignee-only matching rather than unrestricted visibility. Only admin tokens see every session unrestricted. Agent tokens are pinned to their own account; admin tokens see every account's sessions (each labeled by `accountId`) unless `?accountId=` narrows to one. A session's rollup only counts tasks from its own account.",
         "parameters": [
           {
             "schema": {
@@ -2506,6 +2506,17 @@
           {
             "schema": {
               "type": "string",
+              "example": "default",
+              "description": "Admin tokens only: restrict to one account's sessions. Omitted: every account's sessions, each labeled by `accountId`. Ignored for agent tokens, which are pinned to their own account."
+            },
+            "required": false,
+            "description": "Admin tokens only: restrict to one account's sessions. Omitted: every account's sessions, each labeled by `accountId`. Ignored for agent tokens, which are pinned to their own account.",
+            "name": "accountId",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
               "example": "50"
             },
             "required": false,
@@ -2552,7 +2563,7 @@
           "sessions"
         ],
         "summary": "Get a session by slug",
-        "description": "Returns the same flattened session+rollup shape as the list route. Returns `404` if the session doesn't exist, or if an agent token has no qualifying task in it (same visibility rule as list) — the two cases are indistinguishable to the caller by design.",
+        "description": "Returns the same flattened session+rollup shape as the list route. Returns `404` if the session doesn't exist, or if an agent token has no qualifying task in it (same visibility rule as list) — the two cases are indistinguishable to the caller by design. Sessions are keyed by `[accountId, slug]`: agent tokens resolve the slug within their own account; admin tokens address `?accountId=` (default: `default`).",
         "parameters": [
           {
             "schema": {
@@ -2562,6 +2573,17 @@
             "required": true,
             "name": "slug",
             "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "example": "default",
+              "description": "Admin tokens only: the account whose session to address (default: 'default'). Ignored for agent tokens, which are pinned to their own account."
+            },
+            "required": false,
+            "description": "Admin tokens only: the account whose session to address (default: 'default'). Ignored for agent tokens, which are pinned to their own account.",
+            "name": "accountId",
+            "in": "query"
           }
         ],
         "responses": {
@@ -2602,7 +2624,7 @@
           "sessions"
         ],
         "summary": "Rename/archive a session — admin-only",
-        "description": "Admin-only, no exceptions — agent tokens get `403` regardless of ownership. Body: `{ title?: string | null, archived?: boolean }`, both optional (an empty body is a no-op). `title: null` clears the title; `archived: true` sets `archivedAt`/`archivedBy`, `archived: false` clears both. Returns `404` if the session doesn't exist.",
+        "description": "Admin-only, no exceptions — agent tokens get `403` regardless of ownership. Body: `{ title?: string | null, archived?: boolean }`, both optional (an empty body is a no-op). `title: null` clears the title; `archived: true` sets `archivedAt`/`archivedBy`, `archived: false` clears both. Returns `404` if the session doesn't exist. Only the `[accountId, slug]` row is touched — `?accountId=` (default: `default`) — so another account's same-slug session is never renamed or archived.",
         "parameters": [
           {
             "schema": {
@@ -2612,6 +2634,17 @@
             "required": true,
             "name": "slug",
             "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "example": "default",
+              "description": "Admin tokens only: the account whose session to address (default: 'default'). Ignored for agent tokens, which are pinned to their own account."
+            },
+            "required": false,
+            "description": "Admin tokens only: the account whose session to address (default: 'default'). Ignored for agent tokens, which are pinned to their own account.",
+            "name": "accountId",
+            "in": "query"
           }
         ],
         "requestBody": {
@@ -4549,6 +4582,11 @@
             "type": "string",
             "example": "shipwright-may-launch"
           },
+          "accountId": {
+            "type": "string",
+            "example": "default",
+            "description": "The account this session belongs to. Sessions are keyed by [accountId, slug]; two accounts may use the same slug independently."
+          },
           "title": {
             "type": [
               "string",
@@ -4682,6 +4720,7 @@
         },
         "required": [
           "slug",
+          "accountId",
           "createdAt",
           "updatedAt",
           "state",

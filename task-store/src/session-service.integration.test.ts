@@ -23,6 +23,7 @@
  */
 
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
+import { DEFAULT_ACCOUNT_ID } from "@shipwright/lib/default-account";
 import { type PrismaClient, createPrismaClient } from "./prisma-client.ts";
 import { ConflictError, WebhookDeliveryError } from "./errors.ts";
 import { SessionService } from "./session-service.ts";
@@ -68,7 +69,9 @@ describeOrSkip(
       });
       expect(task.session).toBe("x");
 
-      const row = await prisma.session.findUnique({ where: { slug: "x" } });
+      const row = await prisma.session.findUnique({
+        where: { accountId_slug: { accountId: DEFAULT_ACCOUNT_ID, slug: "x" } },
+      });
       expect(row).not.toBeNull();
       expect(row?.slug).toBe("x");
       expect(row?.title).toBeNull();
@@ -88,7 +91,7 @@ describeOrSkip(
         session: "x",
       });
       const afterFirst = await prisma.session.findUnique({
-        where: { slug: "x" },
+        where: { accountId_slug: { accountId: DEFAULT_ACCOUNT_ID, slug: "x" } },
       });
       expect(afterFirst?.title).toBe("My Session Title");
       expect(afterFirst?.createdAt.getTime()).toBe(seeded.createdAt.getTime());
@@ -101,7 +104,7 @@ describeOrSkip(
         session: "x",
       });
       const afterSecond = await prisma.session.findUnique({
-        where: { slug: "x" },
+        where: { accountId_slug: { accountId: DEFAULT_ACCOUNT_ID, slug: "x" } },
       });
       expect(afterSecond?.title).toBe("My Session Title");
       expect(afterSecond?.createdAt.getTime()).toBe(seeded.createdAt.getTime());
@@ -128,7 +131,12 @@ describeOrSkip(
       });
 
       const row = await prisma.session.findUnique({
-        where: { slug: "archived-session" },
+        where: {
+          accountId_slug: {
+            accountId: DEFAULT_ACCOUNT_ID,
+            slug: "archived-session",
+          },
+        },
       });
       expect(row?.archivedAt).toBeNull();
       // archivedBy is untouched by the upsert hook — out of scope for v1.
@@ -147,11 +155,15 @@ describeOrSkip(
       expect(result.skipped).toEqual([]);
 
       const rowX = await prisma.session.findUnique({
-        where: { slug: "bulk-x" },
+        where: {
+          accountId_slug: { accountId: DEFAULT_ACCOUNT_ID, slug: "bulk-x" },
+        },
       });
       expect(rowX).not.toBeNull();
       const rowY = await prisma.session.findUnique({
-        where: { slug: "bulk-y" },
+        where: {
+          accountId_slug: { accountId: DEFAULT_ACCOUNT_ID, slug: "bulk-y" },
+        },
       });
       expect(rowY).not.toBeNull();
 
@@ -173,7 +185,12 @@ describeOrSkip(
       expect(result.inserted).toBe(1);
 
       const row = await prisma.session.findUnique({
-        where: { slug: "bulk-archived" },
+        where: {
+          accountId_slug: {
+            accountId: DEFAULT_ACCOUNT_ID,
+            slug: "bulk-archived",
+          },
+        },
       });
       expect(row?.archivedAt).toBeNull();
     });
@@ -200,14 +217,21 @@ describeOrSkip(
 
       // The colliding task's session upsert must not have run.
       const shouldNotExist = await prisma.session.findUnique({
-        where: { slug: "should-not-exist" },
+        where: {
+          accountId_slug: {
+            accountId: DEFAULT_ACCOUNT_ID,
+            slug: "should-not-exist",
+          },
+        },
       });
       expect(shouldNotExist).toBeNull();
 
       // The WHOLE batch rolled back — "fine task"'s session upsert, which ran
       // earlier in the same transaction, must also not have landed.
       const fine = await prisma.session.findUnique({
-        where: { slug: "bulk-ok" },
+        where: {
+          accountId_slug: { accountId: DEFAULT_ACCOUNT_ID, slug: "bulk-ok" },
+        },
       });
       expect(fine).toBeNull();
 
@@ -433,7 +457,12 @@ describeOrSkip("SessionService.list() / get() (integration)", () => {
       session: "archived-session",
     });
     await prisma.session.update({
-      where: { slug: "archived-session" },
+      where: {
+        accountId_slug: {
+          accountId: DEFAULT_ACCOUNT_ID,
+          slug: "archived-session",
+        },
+      },
       data: { archivedAt: new Date() },
     });
 
@@ -456,7 +485,12 @@ describeOrSkip("SessionService.list() / get() (integration)", () => {
       session: "archived-session",
     });
     await prisma.session.update({
-      where: { slug: "archived-session" },
+      where: {
+        accountId_slug: {
+          accountId: DEFAULT_ACCOUNT_ID,
+          slug: "archived-session",
+        },
+      },
       data: { archivedAt: new Date() },
     });
 
@@ -472,7 +506,12 @@ describeOrSkip("SessionService.list() / get() (integration)", () => {
       session: "closed-archived-session",
     });
     await prisma.session.update({
-      where: { slug: "closed-archived-session" },
+      where: {
+        accountId_slug: {
+          accountId: DEFAULT_ACCOUNT_ID,
+          slug: "closed-archived-session",
+        },
+      },
       data: { archivedAt: new Date() },
     });
 
@@ -693,6 +732,30 @@ describeOrSkip("SessionService.list() / get() (integration)", () => {
     expect(result).toBeNull();
   });
 
+  it("(SSP-6.7 regression) list()/get() without an account resolve default-account sessions exactly as before", async () => {
+    await taskService.create({
+      title: "default task",
+      status: "pending",
+      session: "legacy-session",
+    });
+
+    const listed = await sessionService.list();
+    expect(listed.sessions.map((s) => [s.accountId, s.slug])).toEqual([
+      [DEFAULT_ACCOUNT_ID, "legacy-session"],
+    ]);
+    expect(listed.sessions[0]?.counts).toEqual({
+      total: 1,
+      open: 1,
+      closed: 0,
+    });
+
+    const got = await sessionService.get("legacy-session");
+    expect(got?.accountId).toBe(DEFAULT_ACCOUNT_ID);
+    expect(
+      await sessionService.get("legacy-session", undefined, "other"),
+    ).toBeNull();
+  });
+
   it("get() returns the flattened session+rollup shape for a visible session", async () => {
     await taskService.create({
       title: "a task",
@@ -703,6 +766,7 @@ describeOrSkip("SessionService.list() / get() (integration)", () => {
     const result = await sessionService.get("flat-session");
     expect(result).not.toBeNull();
     expect(result?.slug).toBe("flat-session");
+    expect(result?.accountId).toBe(DEFAULT_ACCOUNT_ID);
     expect(result?.state).toBe("active");
     expect(result?.counts).toEqual({ total: 1, open: 1, closed: 0 });
     expect(result?.archived).toBe(false);
@@ -754,7 +818,9 @@ describeOrSkip("SessionService.update() (integration)", () => {
     expect(result.archivedAt).not.toBeNull();
 
     const row = await prisma.session.findUnique({
-      where: { slug: "to-archive" },
+      where: {
+        accountId_slug: { accountId: DEFAULT_ACCOUNT_ID, slug: "to-archive" },
+      },
     });
     expect(row?.archivedAt).not.toBeNull();
     expect(row?.archivedBy).toBe("dan");
@@ -767,7 +833,9 @@ describeOrSkip("SessionService.update() (integration)", () => {
       session: "to-unarchive",
     });
     await prisma.session.update({
-      where: { slug: "to-unarchive" },
+      where: {
+        accountId_slug: { accountId: DEFAULT_ACCOUNT_ID, slug: "to-unarchive" },
+      },
       data: { archivedAt: new Date(), archivedBy: "someone" },
     });
 
@@ -782,7 +850,9 @@ describeOrSkip("SessionService.update() (integration)", () => {
     expect(result.archivedAt).toBeNull();
 
     const row = await prisma.session.findUnique({
-      where: { slug: "to-unarchive" },
+      where: {
+        accountId_slug: { accountId: DEFAULT_ACCOUNT_ID, slug: "to-unarchive" },
+      },
     });
     expect(row?.archivedAt).toBeNull();
     expect(row?.archivedBy).toBeNull();
@@ -804,7 +874,9 @@ describeOrSkip("SessionService.update() (integration)", () => {
     expect(result.title).toBe("New Title");
 
     const row = await prisma.session.findUnique({
-      where: { slug: "to-rename" },
+      where: {
+        accountId_slug: { accountId: DEFAULT_ACCOUNT_ID, slug: "to-rename" },
+      },
     });
     expect(row?.title).toBe("New Title");
   });
@@ -816,7 +888,12 @@ describeOrSkip("SessionService.update() (integration)", () => {
       session: "to-clear-title",
     });
     await prisma.session.update({
-      where: { slug: "to-clear-title" },
+      where: {
+        accountId_slug: {
+          accountId: DEFAULT_ACCOUNT_ID,
+          slug: "to-clear-title",
+        },
+      },
       data: { title: "Old Title" },
     });
 
@@ -829,7 +906,12 @@ describeOrSkip("SessionService.update() (integration)", () => {
     expect(result.title).toBeNull();
 
     const row = await prisma.session.findUnique({
-      where: { slug: "to-clear-title" },
+      where: {
+        accountId_slug: {
+          accountId: DEFAULT_ACCOUNT_ID,
+          slug: "to-clear-title",
+        },
+      },
     });
     expect(row?.title).toBeNull();
   });
@@ -841,7 +923,12 @@ describeOrSkip("SessionService.update() (integration)", () => {
       session: "untouched-fields",
     });
     await prisma.session.update({
-      where: { slug: "untouched-fields" },
+      where: {
+        accountId_slug: {
+          accountId: DEFAULT_ACCOUNT_ID,
+          slug: "untouched-fields",
+        },
+      },
       data: { title: "Keep Me" },
     });
 

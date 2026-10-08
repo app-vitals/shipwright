@@ -12,6 +12,7 @@
  */
 
 import { beforeEach, describe, expect, it } from "bun:test";
+import { DEFAULT_ACCOUNT_ID } from "@shipwright/lib/default-account";
 import { type PrismaClient, createPrismaClient } from "./prisma-client.ts";
 import { FixedClock } from "./clock.ts";
 import { SessionRetentionReaper } from "./session-retention-reaper.ts";
@@ -43,7 +44,7 @@ function withFaultyUpdate(real: PrismaClient, failSlug: string): PrismaClient {
     get(target, prop, receiver) {
       if (prop === "update") {
         return (args: Parameters<typeof real.session.update>[0]) => {
-          if (args.where.slug === failSlug) {
+          if (args.where.accountId_slug?.slug === failSlug) {
             return Promise.reject(
               new Error(`simulated DB fault archiving "${failSlug}"`),
             );
@@ -113,7 +114,9 @@ describeOrSkip("SessionRetentionReaper.sweep() (integration)", () => {
 
     expect(archived).toBe(1);
     const row = await prisma.session.findUniqueOrThrow({
-      where: { slug: "sess-31-days" },
+      where: {
+        accountId_slug: { accountId: DEFAULT_ACCOUNT_ID, slug: "sess-31-days" },
+      },
     });
     expect(row.archivedAt).not.toBeNull();
     expect(row.archivedBy).toBe("system");
@@ -135,7 +138,9 @@ describeOrSkip("SessionRetentionReaper.sweep() (integration)", () => {
 
     expect(archived).toBe(0);
     const row = await prisma.session.findUniqueOrThrow({
-      where: { slug: "sess-29-days" },
+      where: {
+        accountId_slug: { accountId: DEFAULT_ACCOUNT_ID, slug: "sess-29-days" },
+      },
     });
     expect(row.archivedAt).toBeNull();
     expect(row.archivedBy).toBeNull();
@@ -165,7 +170,12 @@ describeOrSkip("SessionRetentionReaper.sweep() (integration)", () => {
 
     expect(archived).toBe(0);
     const row = await prisma.session.findUniqueOrThrow({
-      where: { slug: "sess-open-task" },
+      where: {
+        accountId_slug: {
+          accountId: DEFAULT_ACCOUNT_ID,
+          slug: "sess-open-task",
+        },
+      },
     });
     expect(row.archivedAt).toBeNull();
   });
@@ -178,7 +188,9 @@ describeOrSkip("SessionRetentionReaper.sweep() (integration)", () => {
 
     expect(archived).toBe(0);
     const row = await prisma.session.findUniqueOrThrow({
-      where: { slug: "sess-phantom" },
+      where: {
+        accountId_slug: { accountId: DEFAULT_ACCOUNT_ID, slug: "sess-phantom" },
+      },
     });
     expect(row.archivedAt).toBeNull();
   });
@@ -220,7 +232,12 @@ describeOrSkip("SessionRetentionReaper.sweep() (integration)", () => {
 
     expect(archived).toBe(0);
     const row = await prisma.session.findUniqueOrThrow({
-      where: { slug: "sess-cron-owned" },
+      where: {
+        accountId_slug: {
+          accountId: DEFAULT_ACCOUNT_ID,
+          slug: "sess-cron-owned",
+        },
+      },
     });
     expect(row.archivedAt).toBeNull();
   });
@@ -258,7 +275,12 @@ describeOrSkip("SessionRetentionReaper.sweep() (integration)", () => {
     });
 
     const reactivated = await prisma.session.findUniqueOrThrow({
-      where: { slug: "sess-reactivated" },
+      where: {
+        accountId_slug: {
+          accountId: DEFAULT_ACCOUNT_ID,
+          slug: "sess-reactivated",
+        },
+      },
     });
     expect(reactivated.archivedAt).toBeNull();
 
@@ -267,7 +289,12 @@ describeOrSkip("SessionRetentionReaper.sweep() (integration)", () => {
 
     expect(archived).toBe(0);
     const row = await prisma.session.findUniqueOrThrow({
-      where: { slug: "sess-reactivated" },
+      where: {
+        accountId_slug: {
+          accountId: DEFAULT_ACCOUNT_ID,
+          slug: "sess-reactivated",
+        },
+      },
     });
     expect(row.archivedAt).toBeNull();
   });
@@ -305,13 +332,17 @@ describeOrSkip("SessionRetentionReaper.sweep() (integration)", () => {
     expect(archived).toBe(1);
 
     const good = await prisma.session.findUniqueOrThrow({
-      where: { slug: "sess-good" },
+      where: {
+        accountId_slug: { accountId: DEFAULT_ACCOUNT_ID, slug: "sess-good" },
+      },
     });
     expect(good.archivedAt).not.toBeNull();
     expect(good.archivedBy).toBe("system");
 
     const bad = await prisma.session.findUniqueOrThrow({
-      where: { slug: "sess-bad" },
+      where: {
+        accountId_slug: { accountId: DEFAULT_ACCOUNT_ID, slug: "sess-bad" },
+      },
     });
     expect(bad.archivedAt).toBeNull();
   });
@@ -339,7 +370,12 @@ describeOrSkip("SessionRetentionReaper.sweep() (integration)", () => {
 
     expect(archived).toBe(0);
     const row = await prisma.session.findUniqueOrThrow({
-      where: { slug: "sess-would-archive" },
+      where: {
+        accountId_slug: {
+          accountId: DEFAULT_ACCOUNT_ID,
+          slug: "sess-would-archive",
+        },
+      },
     });
     expect(row.archivedAt).toBeNull();
   });

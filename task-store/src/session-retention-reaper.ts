@@ -8,6 +8,11 @@
  * 1-hour interval in main.ts rather than StaleClaimReaper's 60s interval —
  * session archival is a low-urgency housekeeping pass, not a liveness check.
  *
+ * Account keying (SSP-6.7): each Session row is identified by
+ * [accountId, slug] and is evaluated against only the tasks with the same
+ * slug AND the same accountId, then archived via that compound key — so two
+ * accounts sharing a slug are aged independently.
+ *
  * Archive rule — a Session row is archived when ALL of:
  *   1. it is not already archived (`archivedAt IS NULL`)
  *   2. every one of its tasks is terminal (`counts.open === 0`)
@@ -113,8 +118,10 @@ export class SessionRetentionReaper {
 
     for (const session of candidates) {
       try {
+        // SSP-6.7: only this session's own account's tasks count — another
+        // account's tasks under the same slug never keep it alive or age it.
         const tasks = await this.prisma.task.findMany({
-          where: { session: session.slug },
+          where: { session: session.slug, accountId: session.accountId },
         });
 
         const rollup = computeSessionRollup(tasks, new Set(), this.clock);
@@ -128,17 +135,22 @@ export class SessionRetentionReaper {
         if (!isStale) continue;
 
         await this.prisma.session.update({
-          where: { slug: session.slug },
+          where: {
+            accountId_slug: {
+              accountId: session.accountId,
+              slug: session.slug,
+            },
+          },
           data: { archivedAt: now, archivedBy: "system" },
         });
 
         archivedCount++;
         console.log(
-          `[session-retention-reaper] archived session "${session.slug}" (last activity ${rollup.lastActivityAt})`,
+          `[session-retention-reaper] archived session "${session.slug}" (account "${session.accountId}", last activity ${rollup.lastActivityAt})`,
         );
       } catch (err) {
         console.error(
-          `[session-retention-reaper] failed to process session "${session.slug}":`,
+          `[session-retention-reaper] failed to process session "${session.slug}" (account "${session.accountId}"):`,
           err,
         );
       }

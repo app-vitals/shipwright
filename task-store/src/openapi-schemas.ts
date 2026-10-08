@@ -539,6 +539,11 @@ export type PullRequest = z.infer<typeof PullRequestSchema>;
 export const SessionSchema = z
   .object({
     slug: z.string().openapi({ example: "shipwright-may-launch" }),
+    accountId: z.string().openapi({
+      example: "default",
+      description:
+        "The account this session belongs to. Sessions are keyed by [accountId, slug]; two accounts may use the same slug independently.",
+    }),
     title: z
       .string()
       .nullable()
@@ -595,6 +600,17 @@ export const SessionSlugParamSchema = z
   })
   .openapi("SessionSlugParam");
 
+/** Query for GET/PATCH /sessions/:slug — which account's session to address. */
+export const SessionAccountQuerySchema = z
+  .object({
+    accountId: z.string().optional().openapi({
+      example: "default",
+      description:
+        "Admin tokens only: the account whose session to address (default: 'default'). Ignored for agent tokens, which are pinned to their own account.",
+    }),
+  })
+  .openapi("SessionAccountQuery");
+
 /** Query params for GET /sessions */
 export const SessionListQuerySchema = z
   .object({
@@ -634,6 +650,11 @@ export const SessionListQuerySchema = z
     q: z.string().optional().openapi({
       example: "launch",
       description: "Case-insensitive substring match against slug OR title.",
+    }),
+    accountId: z.string().optional().openapi({
+      example: "default",
+      description:
+        "Admin tokens only: restrict to one account's sessions. Omitted: every account's sessions, each labeled by `accountId`. Ignored for agent tokens, which are pinned to their own account.",
     }),
     limit: z.string().optional().openapi({ example: "50" }),
     offset: z.string().optional().openapi({ example: "0" }),

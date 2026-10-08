@@ -875,7 +875,8 @@ export class TaskService implements TaskServiceLike {
         }
         throw err;
       }
-      await this.sessionService.upsert(tx, task.session);
+      // SSP-6.7: the Session row belongs to the task's own account.
+      await this.sessionService.upsert(tx, task.session, task.accountId);
       // Fires after the task row + its session upsert have both landed, still
       // inside this transaction — a thrown WebhookDeliveryError propagates
       // uncaught here, so Prisma rolls back the create (and the session
@@ -943,7 +944,11 @@ export class TaskService implements TaskServiceLike {
             }
             throw err;
           }
-          await this.sessionService.upsert(tx, created.session);
+          await this.sessionService.upsert(
+            tx,
+            created.session,
+            created.accountId,
+          );
           rows.push(created);
         }
         // Fires once for the whole batch, after every row has landed, still
