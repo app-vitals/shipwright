@@ -52,6 +52,8 @@ export interface AgentRecord {
   typeName: string;
   createdAt: Date;
   updatedAt: Date;
+  /** Owning account (SSP-5.2 admin Account column); null for legacy agents. */
+  accountId?: string | null;
   /**
    * Optional here even though listAll()/listByIds()/searchByName() below
    * always return the full Prisma row (repos included, since none of them
