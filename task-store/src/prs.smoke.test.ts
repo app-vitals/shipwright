@@ -26,7 +26,9 @@
  */
 
 import { describe, expect, it } from "bun:test";
+import { DEFAULT_ACCOUNT_ID } from "@shipwright/lib/default-account";
 import { createTaskStoreApp } from "./app.ts";
+import type { ScopeResolver } from "./auth.ts";
 import { BadRequestError, ConflictError, NotFoundError } from "./errors.ts";
 import type { PrFinding, PullRequest, PullRequestEvent } from "./index.ts";
 import type {
@@ -38,7 +40,6 @@ import type {
 import type { SessionServiceLike } from "./session-service.ts";
 import type { TaskServiceLike } from "./task-service.ts";
 import type { TokenServiceLike } from "./token-service.ts";
-import type { ScopeResolver } from "./auth.ts";
 
 /** No-op SessionService double — session routes aren't under test here. */
 function fakeSessionService(): SessionServiceLike {
@@ -67,6 +68,7 @@ const SCOPED_REPO = "acme-inc/backend-api";
 function makePr(overrides: Partial<PullRequest> = {}): PullRequest {
   return {
     id: "pr-1",
+    accountId: DEFAULT_ACCOUNT_ID,
     repo: ADMIN_REPO,
     prNumber: 42,
     staged: false,
@@ -1822,6 +1824,44 @@ describe("/prs routes (smoke)", () => {
       expect((await idRouteRequest(inScope, r, agentAuth())).status).not.toBe(
         404,
       );
+
+      const admin = makeApp({ prService: fakePrService({ store: mk() }) });
+      expect((await idRouteRequest(admin, r, adminAuth())).status).not.toBe(
+        404,
+      );
+    });
+  }
+
+  // SSP-6.6: a PR owned by another account is a 404 on every :id route, and
+  // the same row stays reachable for its own account and for an admin token.
+  for (const r of ID_ROUTES) {
+    it(`${r.name}: another account's PR gets 404 with no write; own account and admin pass`, async () => {
+      const mk = () =>
+        new Map<string, PullRequest>([
+          [
+            "pr-1",
+            makePr({ id: "pr-1", repo: SCOPED_REPO, accountId: "acct-b" }),
+          ],
+        ]);
+      const store = mk();
+      const before = JSON.stringify(store.get("pr-1"));
+      const other = makeApp({
+        tokenService: fakeAgentTokenService(),
+        scopeResolver: makeScopeResolver([SCOPED_REPO]),
+        prService: fakePrService({ store }),
+      });
+      expect((await idRouteRequest(other, r, agentAuth())).status).toBe(404);
+      expect(JSON.stringify(store.get("pr-1"))).toBe(before);
+
+      const own = makeApp({
+        tokenService: fakeAgentTokenService(),
+        scopeResolver: async () => ({
+          repos: [SCOPED_REPO],
+          accountId: "acct-b",
+        }),
+        prService: fakePrService({ store: mk() }),
+      });
+      expect((await idRouteRequest(own, r, agentAuth())).status).not.toBe(404);
 
       const admin = makeApp({ prService: fakePrService({ store: mk() }) });
       expect((await idRouteRequest(admin, r, adminAuth())).status).not.toBe(

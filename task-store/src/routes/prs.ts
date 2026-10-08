@@ -36,7 +36,11 @@
 
 import { createRoute, OpenAPIHono } from "@hono/zod-openapi";
 import { readJson } from "@shipwright/lib/http";
-import { resolveWriteAccountId } from "../account-scope.ts";
+import type { Context } from "hono";
+import {
+  resolveAccountScope,
+  resolveWriteAccountId,
+} from "../account-scope.ts";
 import type { TaskStoreAuthEnv } from "../auth.ts";
 import { BadRequestError, ForbiddenError, NotFoundError } from "../errors.ts";
 import type {
@@ -537,13 +541,19 @@ export function createPrsRoutes(
   // or its repo is outside the token's scope — indistinguishable on purpose, so
   // an out-of-scope id can't be probed. repos === null (admin) bypasses;
   // repos === [] denies all. Runs before any write.
-  async function loadScopedPr(c: {
-    req: { param(name: string): string };
-    get(key: "repos"): string[] | null;
-  }): Promise<PullRequest> {
-    const pr = await prService.get(c.req.param("id"));
+  // SSP-6.6: also 404s when the PR belongs to another account (agent token:
+  // its resolved account; admin: only when narrowed via ?accountId=).
+  async function loadScopedPr(
+    c: Context<TaskStoreAuthEnv>,
+  ): Promise<PullRequest> {
+    const pr = await prService.get(c.req.param("id") ?? "");
     const repos = c.get("repos");
-    if (!pr || (repos !== null && !repos?.includes(pr.repo))) {
+    const accountScope = resolveAccountScope(c);
+    if (
+      !pr ||
+      (repos !== null && !repos?.includes(pr.repo)) ||
+      (accountScope !== null && pr.accountId !== accountScope)
+    ) {
       throw new NotFoundError("pr not found");
     }
     return pr;
@@ -572,6 +582,7 @@ export function createPrsRoutes(
 
     const result = await prService.list({
       repoScope: c.get("repos"),
+      accountScope: resolveAccountScope(c),
       repo: c.req.queries("repo"),
       org: c.req.queries("org"),
       prNumber:
@@ -715,6 +726,7 @@ export function createPrsRoutes(
       resolvedAgentId,
       resolvedMaxConcurrent,
       agentId !== null ? (repos ?? undefined) : undefined,
+      resolveAccountScope(c),
     );
 
     if (result === null) {

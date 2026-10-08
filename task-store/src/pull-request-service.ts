@@ -149,6 +149,11 @@ export interface PullRequestListFilters {
    */
   repo?: string | string[];
   /**
+   * Restrict to one account's rows (SSP-6.6). null/undefined = unrestricted
+   * (admin token with no ?accountId=). ANDed with the repo scope.
+   */
+  accountScope?: string | null;
+  /**
    * Org filter — matched via `repo: { startsWith: "<org>/" }` (there's no
    * dedicated org column). Built via the shared `buildRepoOrgWhere` helper.
    */
@@ -357,6 +362,7 @@ export interface PullRequestServiceLike {
     agentId: string,
     maxConcurrent: number,
     repos?: string[],
+    accountId?: string | null,
   ): Promise<{ pr: PullRequest; phase: PrPhase } | null>;
   appendFinding(prId: string, data: AppendFindingInput): Promise<PrFinding>;
   getEvents(
@@ -442,9 +448,15 @@ export class PullRequestService implements PullRequestServiceLike {
 
     // AND the token scope on top of the caller's own repo/org filters (never
     // merged into callerWhere — buildRepoOrgWhere may already own `AND`/`OR`).
-    const where: Prisma.PullRequestWhereInput = filters.repoScope
-      ? { AND: [callerWhere, { repo: { in: filters.repoScope } }] }
-      : callerWhere;
+    const scopeClauses: Prisma.PullRequestWhereInput[] = [];
+    if (filters.repoScope)
+      scopeClauses.push({ repo: { in: filters.repoScope } });
+    if (filters.accountScope)
+      scopeClauses.push({ accountId: filters.accountScope });
+    const where: Prisma.PullRequestWhereInput =
+      scopeClauses.length > 0
+        ? { AND: [callerWhere, ...scopeClauses] }
+        : callerWhere;
 
     const limit = filters.limit ?? 50;
     const offset = filters.offset ?? 0;
@@ -994,6 +1006,7 @@ export class PullRequestService implements PullRequestServiceLike {
     agentId: string,
     maxConcurrent: number,
     repos?: string[],
+    accountId?: string | null,
   ): Promise<{ pr: PullRequest; phase: PrPhase } | null> {
     const now = this.clock.now();
     const nowIso = now.toISOString();
@@ -1026,6 +1039,12 @@ export class PullRequestService implements PullRequestServiceLike {
           ? Prisma.sql`AND "repo" = ANY(${repos})`
           : Prisma.sql``;
 
+      // SSP-6.6: a scoped caller only ever claims its own account's PRs, even
+      // for an identical repo string. null/undefined = unrestricted (admin).
+      const accountFilter = accountId
+        ? Prisma.sql`AND "accountId" = ${accountId}`
+        : Prisma.sql``;
+
       const rows = await tx.$queryRaw<{ id: string }[]>`
         SELECT id
           FROM "PullRequest"
@@ -1033,6 +1052,7 @@ export class PullRequestService implements PullRequestServiceLike {
            AND "state" = 'open'
            AND "reviewState" IN ('pending', 'posted', 'approved')
            ${repoFilter}
+           ${accountFilter}
          ORDER BY COALESCE("readyForReviewAt", "readyForPatchAt", "readyForDeployAt") ASC NULLS LAST,
                   "createdAt" ASC
          LIMIT 1
