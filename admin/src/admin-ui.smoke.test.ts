@@ -54,6 +54,7 @@ const MOCK_CRON = {
   name: null,
   system: false,
   parentCronId: null,
+  lockdownDisabledAt: null,
   silent: false,
   preCheck: null,
   createdAt: new Date("2024-01-01"),
@@ -2051,6 +2052,7 @@ describe("admin UI — authenticated pages", () => {
       name: "shipwright-loop",
       system: true,
       parentCronId: null,
+      lockdownDisabledAt: null,
       lastRun: null,
       runCountToday: 0,
     };

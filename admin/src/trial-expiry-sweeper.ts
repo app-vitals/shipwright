@@ -3,7 +3,8 @@
  *
  * TrialExpirySweeper — disables crons for agents whose trial has expired
  * (ATE-3.1). Every tick it finds every enabled AgentCronJob belonging to an
- * agent whose trialExpiresAt has passed and PATCHes each to enabled:false via
+ * agent whose trialExpiresAt has passed and PATCHes each to enabled:false (stamping
+ * lockdownDisabledAt so the lockdown can later be undone) via
  * AgentCronJobService.setEnabled() — the same service method the
  * PATCH /agents/:id/crons/:cronId route itself calls (admin/src/agents-api.ts),
  * invoked in-process rather than over HTTP (mirrors session-alert-sweeper.ts
@@ -41,6 +42,7 @@ export interface TrialExpiryCronJobServiceLike {
     agentId: string,
     cronId: string,
     enabled: boolean,
+    opts?: { lockdown?: boolean },
   ): Promise<unknown>;
 }
 
@@ -110,6 +112,7 @@ export class TrialExpirySweeper {
           row.agentId,
           row.id,
           false,
+          { lockdown: true },
         );
         disabled++;
       } catch (err) {

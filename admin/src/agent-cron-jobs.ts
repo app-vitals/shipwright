@@ -331,7 +331,12 @@ export class AgentCronJobService {
         user,
         silent,
         ...(input.preCheck !== undefined && { preCheck: input.preCheck }),
-        ...(input.enabled !== undefined && { enabled: input.enabled }),
+        // Any explicit enabled change is a user decision — clear the lockdown
+        // marker so restoreLockdownDisabled() never overrides it.
+        ...(input.enabled !== undefined && {
+          enabled: input.enabled,
+          lockdownDisabledAt: null,
+        }),
       },
     });
   }
@@ -382,18 +387,41 @@ export class AgentCronJobService {
   /**
    * Enable or disable a cron job.
    * Throws NotFoundError if the cronId doesn't exist or belongs to a different agent.
+   *
+   * `lockdownDisabledAt` tracks who disabled the cron: passing
+   * `{ lockdown: true }` with `enabled: false` stamps it (trial-expiry
+   * lockdown); every other call clears it, so a manual disable or re-enable
+   * never leaves a stale marker for restoreLockdownDisabled() to act on.
    */
   async setEnabled(
     agentId: string,
     cronId: string,
     enabled: boolean,
+    opts?: { lockdown?: boolean },
   ): Promise<AgentCronJob> {
     await this.get(agentId, cronId);
 
     return this.prisma.agentCronJob.update({
       where: { id: cronId },
-      data: { enabled },
+      data: {
+        enabled,
+        lockdownDisabledAt: !enabled && opts?.lockdown ? new Date() : null,
+      },
     });
+  }
+
+  /**
+   * Re-enable exactly the crons the lockdown disabled for the given agents
+   * (lockdownDisabledAt set) and clear the marker. Crons the user disabled
+   * manually carry no marker and are left alone. Returns the number restored.
+   */
+  async restoreLockdownDisabled(agentIds: string[]): Promise<number> {
+    if (agentIds.length === 0) return 0;
+    const { count } = await this.prisma.agentCronJob.updateMany({
+      where: { agentId: { in: agentIds }, lockdownDisabledAt: { not: null } },
+      data: { enabled: true, lockdownDisabledAt: null },
+    });
+    return count;
   }
 
   /**

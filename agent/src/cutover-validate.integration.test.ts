@@ -32,6 +32,7 @@ function makeCron(id: string): AgentCronJob {
     updatedAt: new Date("2026-01-01"),
     system: false,
     parentCronId: null,
+    lockdownDisabledAt: null,
   };
 }
 

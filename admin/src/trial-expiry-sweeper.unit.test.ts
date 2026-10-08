@@ -33,6 +33,7 @@ interface SetEnabledCall {
   agentId: string;
   cronId: string;
   enabled: boolean;
+  lockdown?: boolean;
 }
 
 /**
@@ -65,8 +66,13 @@ function fakeCronJobService(
         .filter((r) => r.enabled)
         .map((r) => ({ id: r.id, agentId: r.agentId }));
     },
-    setEnabled: async (agentId: string, cronId: string, enabled: boolean) => {
-      calls.push({ agentId, cronId, enabled });
+    setEnabled: async (
+      agentId: string,
+      cronId: string,
+      enabled: boolean,
+      setOpts?: { lockdown?: boolean },
+    ) => {
+      calls.push({ agentId, cronId, enabled, lockdown: setOpts?.lockdown });
       if (opts.failSetEnabledFor?.(cronId)) throw new Error("boom");
       const row = rows.find((r) => r.id === cronId);
       if (!row) throw new Error(`no such cron ${cronId}`);
@@ -161,9 +167,9 @@ describe("TrialExpirySweeper.tick — disabling expired-trial crons", () => {
     expect(result).toEqual({ disabled: 3 });
     expect(rows.every((r) => r.enabled === false)).toBe(true);
     expect(calls).toEqual([
-      { agentId: "agt_1", cronId: "cron_a", enabled: false },
-      { agentId: "agt_1", cronId: "cron_b", enabled: false },
-      { agentId: "agt_2", cronId: "cron_c", enabled: false },
+      { agentId: "agt_1", cronId: "cron_a", enabled: false, lockdown: true },
+      { agentId: "agt_1", cronId: "cron_b", enabled: false, lockdown: true },
+      { agentId: "agt_2", cronId: "cron_c", enabled: false, lockdown: true },
     ]);
   });
 
@@ -353,15 +359,19 @@ describe("TrialExpirySweeper.tick — scope", () => {
     ]);
     // A double that also fails loudly on anything deprovision-shaped: if the
     // sweeper ever grew a deleteAgentFully()-style call, it would land here.
-    const recording: TrialExpiryCronJobServiceLike &
-      Record<string, unknown> = {
+    const recording: TrialExpiryCronJobServiceLike & Record<string, unknown> = {
       listEnabledWithExpiredTrial: (now: Date) => {
         seen.push("listEnabledWithExpiredTrial");
         return base.service.listEnabledWithExpiredTrial(now);
       },
-      setEnabled: (agentId: string, cronId: string, enabled: boolean) => {
+      setEnabled: (
+        agentId: string,
+        cronId: string,
+        enabled: boolean,
+        opts?: { lockdown?: boolean },
+      ) => {
         seen.push("setEnabled");
-        return base.service.setEnabled(agentId, cronId, enabled);
+        return base.service.setEnabled(agentId, cronId, enabled, opts);
       },
       deleteAgentFully: () => {
         throw new Error("sweeper must never deprovision an agent");
@@ -375,6 +385,7 @@ describe("TrialExpirySweeper.tick — scope", () => {
       "setEnabled",
     ]);
     expect(base.calls.every((c) => c.enabled === false)).toBe(true);
+    expect(base.calls.every((c) => c.lockdown === true)).toBe(true);
     expect(base.rows.every((r) => r.enabled === false)).toBe(true);
   });
 });
