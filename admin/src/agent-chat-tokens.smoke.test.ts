@@ -244,6 +244,7 @@ function makeMockDeps(opts?: {
       get: async () => null,
     },
     agentCronRunStatsService: {
+      outcomes: async () => ({ series: [] }),
       query: async () => ({
         totals: {
           input: 0,

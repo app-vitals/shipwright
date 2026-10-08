@@ -739,6 +739,7 @@ function makeMockDeps(): AdminDeps {
       }),
     },
     agentCronRunStatsService: {
+      outcomes: async () => ({ series: [] }),
       query: async () => ({
         totals: {
           input: 0,
