@@ -65,6 +65,7 @@ enum TaskKind {
 
 model Task {
   id     String     @id @default(cuid())
+  accountId String @default("default") // SSP-6.1: tenant scope; DEFAULT_ACCOUNT_ID in lib/default-account.ts
   title  String
   status TaskStatus
 
@@ -149,6 +150,7 @@ model Task {
   @@index([assignee])
   @@index([claimedBy])
   @@index([updatedAt])
+  @@index([accountId])
 }
 
 // ─── Task Event ───────────────────────────────────────────────────────────────
@@ -253,6 +255,7 @@ enum PrOrigin {
 
 model PullRequest {
   id                String        @id @default(cuid())
+  accountId String @default("default") // SSP-6.1: tenant scope; DEFAULT_ACCOUNT_ID in lib/default-account.ts
   repo              String // org/repo format
   prNumber          Int
   staged            Boolean       @default(false) // true = review written but not yet posted
@@ -346,6 +349,8 @@ model PullRequest {
   verificationChecks VerificationCheck[]
 
   @@unique([repo, prNumber])
+  @@unique([accountId, repo, prNumber])
+  @@index([accountId])
   @@index([state])
   @@index([reviewState])
   @@index([updatedAt])
@@ -539,6 +544,7 @@ enum VerificationCheckReasonCategory {
 
 model VerificationCheck {
   id String @id @default(cuid())
+  accountId String @default("default") // SSP-6.1: tenant scope; DEFAULT_ACCOUNT_ID in lib/default-account.ts
 
   taskId String?
   task   Task?   @relation(fields: [taskId], references: [id])
@@ -567,6 +573,7 @@ model VerificationCheck {
   @@index([taskId, at])
   @@index([prRecordId, at])
   @@index([repo, checkName])
+  @@index([accountId])
 }
 
 // ─── Session ──────────────────────────────────────────────────────────────────
@@ -585,6 +592,10 @@ model Session {
   updatedAt  DateTime  @updatedAt
   archivedAt DateTime?
   archivedBy String?
+  accountId  String @default("default") // SSP-6.1: tenant scope; DEFAULT_ACCOUNT_ID in lib/default-account.ts
+
+  @@unique([accountId, slug])
+  @@index([accountId])
 }
 
 // ─── Task Token ───────────────────────────────────────────────────────────────

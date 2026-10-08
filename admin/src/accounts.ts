@@ -94,6 +94,15 @@ export class AccountService {
     return this.prisma.account.update({ where: { id }, data });
   }
 
+  /** Ids of every agent owned by the account. */
+  async listAgentIds(accountId: string): Promise<string[]> {
+    const agents = await this.prisma.agent.findMany({
+      where: { accountId },
+      select: { id: true },
+    });
+    return agents.map((a) => a.id);
+  }
+
   async countAgents(
     accountId: string,
     client: PrismaTransactionClient = this.prisma,

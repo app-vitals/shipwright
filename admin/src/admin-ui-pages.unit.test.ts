@@ -7,6 +7,7 @@
  */
 
 import { describe, expect, test } from "bun:test";
+import { renderZeroQuotaNotice } from "./admin-ui-account-pages.ts";
 import {
   type AgentDetail,
   type AgentListItem,
@@ -11653,5 +11654,55 @@ describe("renderChatThreadPage — poll auto-scroll (CSR-1.1)", () => {
   test("initial page load still scrolls to the bottom unconditionally", () => {
     const { container } = boot(0);
     expect(container.scrollTop).toBe(1000);
+  });
+});
+
+describe("renderNewLocalAgentPage — self-serve account user (SSP-4.2)", () => {
+  const CODING_TYPE = { name: "coding", displayName: "Coding Agent" };
+  const selfServe = { remaining: 2, max: 3, contactEmail: "help@example.com" };
+
+  test("shows remaining quota and the credential prerequisites", () => {
+    const html = renderNewLocalAgentPage(USER_NAME, [CODING_TYPE], {
+      selfServe,
+    });
+    expect(html).toContain("2 of 3");
+    expect(html).toContain("Slack App Configuration Token");
+    expect(html).toContain("GitHub");
+    expect(html).toContain("Claude API key");
+  });
+
+  test("forces the coding type via a hidden input instead of a type select", () => {
+    const html = renderNewLocalAgentPage(USER_NAME, [CODING_TYPE], {
+      selfServe,
+    });
+    expect(html).toContain('<input type="hidden" name="type" value="coding"');
+    expect(html).not.toMatch(/<select[^>]*name="type"/);
+  });
+
+  test("at zero remaining, explains the limit and points at the contact email", () => {
+    const html = renderNewLocalAgentPage(USER_NAME, [CODING_TYPE], {
+      selfServe: { ...selfServe, remaining: 0 },
+    });
+    expect(html).toContain("agent limit");
+    expect(html).toContain("help@example.com");
+  });
+
+  test("admin form (no selfServe opt) is unchanged", () => {
+    const html = renderNewLocalAgentPage(USER_NAME, [CODING_TYPE]);
+    expect(html).not.toContain("Agent quota");
+    expect(html).toMatch(/<select[^>]*name="type"/);
+  });
+});
+
+describe("renderAgentsPage zero-quota notice (SSP-3.2)", () => {
+  test("replaces the create CTA with the notice and a disabled button", () => {
+    const html = renderAgentsPage([], "u@x.com", true, "UTC", {
+      zeroQuotaNotice: renderZeroQuotaNotice("dan@app-vitals.com"),
+    });
+    expect(html).toContain("Email dan@app-vitals.com to request a trial");
+    expect(html).toContain("disabled");
+    expect(html).not.toContain(
+      '<a href="/admin/agents/new" class="btn btn-primary">',
+    );
   });
 });

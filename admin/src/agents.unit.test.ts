@@ -1302,6 +1302,65 @@ function baseCreateAgentInput(
 }
 
 describe("createAgent()", () => {
+  it("passes accountId through to agentService.create and tolerates an undefined tx (SSP-4.1)", async () => {
+    const { deps, calls } = makeCreateAgentHarness();
+    let seen: string | undefined;
+    const origCreate = deps.agentService.create;
+    deps.agentService.create = async (input, tx) => {
+      seen = input.accountId;
+      return origCreate(input, tx);
+    };
+
+    const result = await createAgent(
+      deps,
+      baseCreateAgentInput({ accountId: "acct-1" }),
+    );
+
+    expect(result.ok).toBe(true);
+    expect(seen).toBe("acct-1");
+    expect(calls.created).toHaveLength(1);
+  });
+
+  it("does not set accountId when none is supplied (regression)", async () => {
+    const { deps } = makeCreateAgentHarness();
+    let seen: Record<string, unknown> | undefined;
+    const origCreate = deps.agentService.create;
+    deps.agentService.create = async (input, tx) => {
+      seen = input as unknown as Record<string, unknown>;
+      return origCreate(input, tx);
+    };
+
+    await createAgent(deps, baseCreateAgentInput());
+
+    expect(seen && "accountId" in seen).toBe(false);
+  });
+
+  it.each(["quota_exceeded", "account_inactive"] as const)(
+    "surfaces %s from the quota check without creating anything",
+    async (code) => {
+      const { deps, calls } = makeCreateAgentHarness();
+      const fakeTx = {
+        $queryRaw: async () =>
+          code === "account_inactive"
+            ? [{ status: "suspended", maxAgents: 5 }]
+            : [{ status: "active", maxAgents: 1 }],
+        agent: { count: async () => 1 },
+      };
+      deps.agentService.runTransaction = (async (fn: (tx: unknown) => unknown) =>
+        fn(fakeTx)) as typeof deps.agentService.runTransaction;
+
+      const result = await createAgent(
+        deps,
+        baseCreateAgentInput({ accountId: "acct-1" }),
+      );
+
+      expect(result).toEqual({ ok: false, errorCode: code });
+      expect(calls.created).toEqual([]);
+      expect(calls.envPatched).toEqual([]);
+      expect(calls.provisioned).toEqual([]);
+    },
+  );
+
   it("returns missing_fields and creates nothing when name is empty", async () => {
     const { deps, calls } = makeCreateAgentHarness();
 

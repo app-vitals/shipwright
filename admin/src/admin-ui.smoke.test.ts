@@ -731,6 +731,196 @@ describe("admin UI — GET /admin/auth/callback", () => {
   });
 });
 
+describe("admin UI — Google callback self-serve signup (SSP-3.1)", () => {
+  const nonce = "test-nonce-abc";
+  const callbackRequest = (n: string) =>
+    new Request(
+      `https://example.com/admin/auth/callback?state=${n}&code=auth-code-123`,
+      {
+        headers: {
+          Cookie: `oauth_state=${encodeURIComponent(JSON.stringify({ nonce: n }))}`,
+        },
+      },
+    );
+  const identity = (over: Record<string, unknown> = {}) =>
+    makeGoogleClient({
+      getUserInfo: () =>
+        Promise.resolve({
+          sub: "google-sub-new",
+          email: "New.User@Example.com",
+          email_verified: true,
+          name: "New User",
+          ...over,
+        }),
+    });
+  const enabled = { enabled: true, defaultMaxAgents: 2, contactEmail: "x@y.z" };
+
+  it("flag on: unknown verified email is provisioned, gets a session cookie, lands on /admin/agents", async () => {
+    const calls: string[] = [];
+    const app = createAdminUIApp(
+      makeMockDeps({
+        googleClient: identity(),
+        selfServe: enabled,
+        accountOnboarding: {
+          provisionForEmail: async (email) => {
+            calls.push(email);
+            return { kind: "created", accountId: "acc-1" };
+          },
+        },
+      }),
+    );
+    const res = await app.request(callbackRequest(nonce));
+    expect(res.status).toBe(302);
+    expect(res.headers.get("Location")).toBe("/admin/agents");
+    expect(res.headers.get("Set-Cookie")).toContain("admin_session=");
+    expect(calls).toEqual(["new.user@example.com"]);
+  });
+
+  it("created account notifies once; a throwing notifier does not fail login", async () => {
+    const notified: unknown[] = [];
+    const run = async (
+      kind: "created" | "joined" | "existing",
+      throws = false,
+    ) => {
+      const app = createAdminUIApp(
+        makeMockDeps({
+          googleClient: identity(),
+          selfServe: enabled,
+          accountOnboarding: {
+            provisionForEmail: async () => ({ kind, accountId: "acc-1" }),
+          },
+          accountCreatedNotifier: async (info) => {
+            notified.push(info);
+            if (throws) throw new Error("push down");
+          },
+        }),
+      );
+      return app.request(callbackRequest(nonce));
+    };
+    const res = await run("created", true);
+    expect(res.status).toBe(302);
+    expect(res.headers.get("Location")).toBe("/admin/agents");
+    expect(res.headers.get("Set-Cookie")).toContain("admin_session=");
+    expect(notified).toEqual([
+      { accountId: "acc-1", emailDomain: "example.com" },
+    ]);
+
+    notified.length = 0;
+    await run("joined");
+    await run("existing");
+    expect(notified).toEqual([]);
+  });
+
+  it("flag off: unknown email still gets 403 and nothing is provisioned", async () => {
+    let called = false;
+    const app = createAdminUIApp(
+      makeMockDeps({
+        googleClient: identity(),
+        selfServe: { ...enabled, enabled: false },
+        accountOnboarding: {
+          provisionForEmail: async () => {
+            called = true;
+            return { kind: "created", accountId: "acc-1" };
+          },
+        },
+      }),
+    );
+    const res = await app.request(callbackRequest(nonce));
+    expect(res.status).toBe(403);
+    expect(called).toBe(false);
+  });
+
+  it("flag on: unverified email creates nothing", async () => {
+    let called = false;
+    const app = createAdminUIApp(
+      makeMockDeps({
+        googleClient: identity({ email_verified: false }),
+        selfServe: enabled,
+        accountOnboarding: {
+          provisionForEmail: async () => {
+            called = true;
+            return { kind: "created", accountId: "acc-1" };
+          },
+        },
+      }),
+    );
+    const res = await app.request(callbackRequest(nonce));
+    expect(res.status).toBe(302);
+    expect(res.headers.get("Location")).toContain("error=auth_failed");
+    expect(called).toBe(false);
+  });
+
+  it("flag on: platform admin logs in without touching onboarding", async () => {
+    let called = false;
+    const app = createAdminUIApp(
+      makeMockDeps({
+        googleClient: identity({ email: "admin@example.com" }),
+        selfServe: enabled,
+        accountOnboarding: {
+          provisionForEmail: async () => {
+            called = true;
+            return { kind: "created", accountId: "acc-1" };
+          },
+        },
+      }),
+    );
+    const res = await app.request(callbackRequest(nonce));
+    expect(res.status).toBe(302);
+    expect(called).toBe(false);
+  });
+
+  it("flag on: Okta callback never auto-provisions (403 for unknown email)", async () => {
+    let called = false;
+    const oauthState = encodeURIComponent(JSON.stringify({ nonce }));
+    const app = createAdminUIApp(
+      makeMockDeps({
+        selfServe: enabled,
+        accountOnboarding: {
+          provisionForEmail: async () => {
+            called = true;
+            return { kind: "created", accountId: "acc-1" };
+          },
+        },
+        oktaClient: makeOktaClient({
+          getUserInfo: () =>
+            Promise.resolve({
+              sub: "okta-sub-new",
+              email: "stranger@example.com",
+              email_verified: true,
+              name: "Stranger",
+            }),
+        }),
+      }),
+    );
+    const res = await app.request(
+      new Request(
+        `https://example.com/admin/auth/okta/callback?state=${nonce}&code=c`,
+        { headers: { Cookie: `oauth_state=${oauthState}` } },
+      ),
+    );
+    expect(res.status).toBe(403);
+    expect(called).toBe(false);
+  });
+
+  it("flag on: provisioning failure redirects to server_error without a session", async () => {
+    const app = createAdminUIApp(
+      makeMockDeps({
+        googleClient: identity(),
+        selfServe: enabled,
+        accountOnboarding: {
+          provisionForEmail: async () => {
+            throw new Error("db down");
+          },
+        },
+      }),
+    );
+    const res = await app.request(callbackRequest(nonce));
+    expect(res.status).toBe(302);
+    expect(res.headers.get("Location")).toContain("error=server_error");
+    expect(res.headers.get("Set-Cookie") ?? "").not.toContain("admin_session=");
+  });
+});
+
 describe("admin UI — GET /admin/auth/okta", () => {
   it("redirects to the Okta authorization URL and sets oauth_state cookie", async () => {
     const app = createAdminUIApp(makeMockDeps());
@@ -1785,7 +1975,17 @@ describe("admin UI — authenticated pages", () => {
             getConfigBundle: async () => null,
           },
           agentMemberService: {
-            listByEmail: async () => [],
+            listByEmail: async (email: string) =>
+              email === MEMBER_EMAIL
+                ? [
+                    {
+                      id: "m1",
+                      agentId: AGENT_ID,
+                      email,
+                      createdAt: new Date(),
+                    },
+                  ]
+                : [],
             exists: async (_agentId: string, email: string) =>
               email === MEMBER_EMAIL,
             add: async () => ({
@@ -3864,7 +4064,10 @@ describe("admin UI — member access control", () => {
         },
       },
       agentMemberService: {
-        listByEmail: async () => [],
+        listByEmail: async (email: string) =>
+          email === MEMBER_EMAIL
+            ? [{ id: "m1", agentId: AGENT_ID, email, createdAt: new Date() }]
+            : [],
         exists: async (_agentId: string, email: string) =>
           email === MEMBER_EMAIL,
         add: async () => ({
@@ -3896,6 +4099,32 @@ describe("admin UI — member access control", () => {
       headers: { Cookie: `admin_session=${outsiderCookie}` },
     });
     expect(res.status).toBe(403);
+  });
+
+  it("account member can open their account's agent but gets 403 on another account's (SSP-2.1)", async () => {
+    const cookie = await makeSessionCookie(
+      SESSION_SECRET,
+      "google-sub-acct",
+      "acct-user@example.com",
+      false,
+    );
+    const app = createAdminUIApp(
+      makeMockDeps({
+        callerScopeResolver: async () => ({
+          kind: "scoped",
+          accountId: "acct-a",
+          agentIds: [AGENT_ID],
+        }),
+      }),
+    );
+    const own = await app.request(`/admin/agents/${AGENT_ID}`, {
+      headers: { Cookie: `admin_session=${cookie}` },
+    });
+    expect(own.status).toBe(200);
+    const other = await app.request("/admin/agents/agent-in-account-b", {
+      headers: { Cookie: `admin_session=${cookie}` },
+    });
+    expect(other.status).toBe(403);
   });
 
   it("non-admin sees only their agents in the agents list", async () => {
@@ -11911,7 +12140,10 @@ describe("admin UI — Okta-authenticated access control", () => {
     let upsertCalledWith: unknown[] = [];
     const deps = makeMockDeps({
       agentMemberService: {
-        listByEmail: async () => [],
+        listByEmail: async (email: string) =>
+          email === OKTA_MEMBER_EMAIL
+            ? [{ id: "m1", agentId: AGENT_ID, email, createdAt: new Date() }]
+            : [],
         exists: async (_agentId: string, email: string) =>
           email === OKTA_MEMBER_EMAIL,
         add: async () => ({

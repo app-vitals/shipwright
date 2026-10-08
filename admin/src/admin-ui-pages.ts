@@ -952,7 +952,12 @@ export function renderAgentsPage(
   userName: string,
   isAdmin: boolean,
   timezone: string,
-  opts?: { successMsg?: string; manualSteps?: ManualStep[] },
+  opts?: {
+    successMsg?: string;
+    manualSteps?: ManualStep[];
+    /** Pre-rendered zero-quota notice + disabled button (replaces the CTA). */
+    zeroQuotaNotice?: string;
+  },
 ): string {
   const successHtml = opts?.successMsg
     ? `<div class="alert alert-success">${escapeHtml(opts.successMsg)}</div>`
@@ -989,9 +994,11 @@ export function renderAgentsPage(
 
   // Single CTA to create an agent — the /admin/agents/new page handles agent
   // creation and provides inline options to connect Slack/GitHub if desired.
-  const createAgentButtons = isAdmin
-    ? `<a href="/admin/agents/new" class="btn btn-primary">+ New agent</a>`
-    : "";
+  const createAgentButtons = opts?.zeroQuotaNotice
+    ? opts.zeroQuotaNotice
+    : isAdmin
+      ? `<a href="/admin/agents/new" class="btn btn-primary">+ New agent</a>`
+      : "";
 
   return renderAdminPage({
     title: "Agents — Shipwright Admin",
@@ -1039,9 +1046,19 @@ function runtimeSectionsOnchange(display: "" | "none"): string {
 export function renderNewLocalAgentPage(
   userName: string,
   types: AgentTypeOption[],
-  opts?: { error?: string; canProvision?: boolean },
+  opts?: {
+    error?: string;
+    canProvision?: boolean;
+    /**
+     * Set for self-serve account users (SSP-4.2): shows the account's
+     * remaining agent quota and the prerequisites, and pins the type to
+     * "coding" (the server forces it regardless).
+     */
+    selfServe?: { remaining: number; max: number; contactEmail: string };
+  },
 ): string {
   const error = opts?.error;
+  const selfServe = opts?.selfServe;
   // Whether the admin service can actually create cluster resources. When it
   // can't (NoopAgentProvisioner — SHIPWRIGHT_K8S_PROVISIONING unset), offering
   // "in-cluster" would silently produce an agent row with no pod, so the option
@@ -1061,6 +1078,35 @@ export function renderNewLocalAgentPage(
         `<option value="${escapeHtml(t.name)}">${escapeHtml(t.displayName)}</option>`,
     )
     .join("\n");
+  const selfServeHtml = selfServe
+    ? `<div class="card" style="margin-bottom:16px">
+      <p style="font-size:14px;font-weight:600;margin-bottom:8px">
+        Agent quota: ${selfServe.remaining} of ${selfServe.max} remaining
+      </p>
+      ${
+        selfServe.remaining <= 0
+          ? `<p style="font-size:13px;color:#b91c1c;margin-bottom:8px">
+        This account has reached its agent limit. Delete an agent to free a slot,
+        or contact <a href="mailto:${escapeHtml(selfServe.contactEmail)}">${escapeHtml(selfServe.contactEmail)}</a> for more.
+      </p>`
+          : ""
+      }
+      <p style="font-size:13px;color:#6b7280;margin-bottom:4px">Have these ready before you start:</p>
+      <ul style="font-size:13px;color:#6b7280;margin-left:20px">
+        <li>A Slack App Configuration Token</li>
+        <li>A GitHub org with an App, or a personal access token (PAT)</li>
+        <li>A Claude API key or OAuth token</li>
+      </ul>
+    </div>`
+    : "";
+  const typeFieldHtml = selfServe
+    ? `<input type="hidden" name="type" value="coding" />`
+    : `<div class="form-group">
+          <label class="form-label" for="type">Agent type <span style="color:#ef4444">*</span></label>
+          <select id="type" name="type" class="form-input" required>
+            ${typeOptions}
+          </select>
+        </div>`;
   return renderAdminPage({
     title: "New Agent — Shipwright Admin",
     body: `${renderAdminToolbar(userName, "/admin/agents")}
@@ -1072,6 +1118,7 @@ export function renderNewLocalAgentPage(
       </div>
     </div>
     ${errorHtml}
+    ${selfServeHtml}
     <div class="card">
       <p style="font-size:14px;color:#6b7280;margin-bottom:20px">
         Create an agent and choose where it runs. Slack and GitHub connections
@@ -1092,12 +1139,7 @@ export function renderNewLocalAgentPage(
             autofocus
           />
         </div>
-        <div class="form-group">
-          <label class="form-label" for="type">Agent type <span style="color:#ef4444">*</span></label>
-          <select id="type" name="type" class="form-input" required>
-            ${typeOptions}
-          </select>
-        </div>
+        ${typeFieldHtml}
         <fieldset style="border:1px solid #e8e8ee;border-radius:8px;padding:16px">
           <legend style="font-size:13px;font-weight:600;padding:0 8px">Runtime</legend>
           <div class="form-group" style="margin-bottom:0">

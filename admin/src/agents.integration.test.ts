@@ -19,6 +19,7 @@
 
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import type { PrismaClient } from "../prisma/client/client.ts";
+import { deleteAgentFully } from "./agent-deletion.ts";
 import { AgentCronJobService } from "./agent-cron-jobs.ts";
 import { AgentEnvService } from "./agent-envs.ts";
 import { AgentMemberService } from "./agent-members.ts";
@@ -151,6 +152,7 @@ describeOrSkip("createAgent() — integration (real Postgres)", () => {
     await prisma.agentEnv.deleteMany();
     await prisma.agentCronJob.deleteMany();
     await prisma.agent.deleteMany();
+    await prisma.account.deleteMany();
   });
 
   afterEach(async () => {
@@ -323,4 +325,157 @@ describeOrSkip("createAgent() — integration (real Postgres)", () => {
     if (!result.ok) throw new Error("expected success");
     expect(await prisma.agent.findUnique({ where: { id: result.agent.id } })).not.toBeNull();
   });
+  describe("account quota (SSP-4.1)", () => {
+    async function makeAccount(
+      overrides: { status?: string; maxAgents?: number } = {},
+    ) {
+      return prisma.account.create({
+        data: { name: "Acme", status: "active", maxAgents: 2, ...overrides },
+      });
+    }
+
+    it("allows creates up to maxAgents then fails with quota_exceeded, writing nothing", async () => {
+      const account = await makeAccount({ maxAgents: 2 });
+      await prisma.agent.create({
+        data: { name: "existing", accountId: account.id },
+      });
+      const provisioned: string[] = [];
+      const d = deps({
+        provisioner: makeProvisioner({
+          canProvision: true,
+          provision: async (id) => {
+            provisioned.push(id);
+            return { resourceName: "r", secretName: "s", deploymentName: "d" };
+          },
+        }),
+      });
+
+      const second = await createAgent(
+        d,
+        baseInput({ name: "second", runtime: "in-cluster", accountId: account.id }),
+      );
+      expect(second.ok).toBe(true);
+      expect(provisioned).toHaveLength(1);
+
+      const third = await createAgent(
+        d,
+        baseInput({
+          name: "third",
+          runtime: "in-cluster",
+          accountId: account.id,
+          claudeCodeOauthToken: "tok",
+        }),
+      );
+      expect(third).toEqual({ ok: false, errorCode: "quota_exceeded" });
+      expect(provisioned).toHaveLength(1);
+      expect(await prisma.agent.count({ where: { accountId: account.id } })).toBe(2);
+      expect(await prisma.agent.findFirst({ where: { name: "third" } })).toBeNull();
+      expect(await prisma.agentEnv.findMany({ where: { agent: { name: "third" } } })).toEqual([]);
+    });
+
+    it("concurrent creates with one slot left produce exactly one agent", async () => {
+      const account = await makeAccount({ maxAgents: 1 });
+
+      const results = await Promise.all(
+        ["a", "b", "c", "d"].map((n) =>
+          createAgent(deps(), baseInput({ name: n, accountId: account.id })),
+        ),
+      );
+
+      expect(results.filter((r) => r.ok)).toHaveLength(1);
+      expect(
+        results.filter((r) => !r.ok && r.errorCode === "quota_exceeded"),
+      ).toHaveLength(3);
+      expect(await prisma.agent.count({ where: { accountId: account.id } })).toBe(1);
+    });
+
+    it.each(["suspended", "trial_expired"])(
+      "fails with account_inactive for a %s account",
+      async (status) => {
+        const account = await makeAccount({ status, maxAgents: 5 });
+        const result = await createAgent(
+          deps(),
+          baseInput({ accountId: account.id }),
+        );
+        expect(result).toEqual({ ok: false, errorCode: "account_inactive" });
+        expect(await prisma.agent.count()).toBe(0);
+      },
+    );
+
+    it("fails with account_inactive for an unknown account id", async () => {
+      const result = await createAgent(deps(), baseInput({ accountId: "nope" }));
+      expect(result).toEqual({ ok: false, errorCode: "account_inactive" });
+    });
+
+    it("a provision_failed rollback leaves the account's agent count unchanged and frees the slot", async () => {
+      const account = await makeAccount({ maxAgents: 1 });
+      const failing = deps({
+        provisioner: makeProvisioner({
+          canProvision: true,
+          provision: async () => {
+            throw new Error("k8s down");
+          },
+        }),
+      });
+
+      const failed = await createAgent(
+        failing,
+        baseInput({ runtime: "in-cluster", accountId: account.id }),
+      );
+      expect(failed).toEqual({ ok: false, errorCode: "provision_failed" });
+      expect(await prisma.agent.count({ where: { accountId: account.id } })).toBe(0);
+
+      const retry = await createAgent(deps(), baseInput({ accountId: account.id }));
+      expect(retry.ok).toBe(true);
+    });
+
+    it("create-delete-create cycle: deleting via deleteAgentFully frees the quota slot (SSP-4.2)", async () => {
+      const account = await makeAccount({ maxAgents: 1 });
+      const first = await createAgent(
+        deps(),
+        baseInput({ name: "first", accountId: account.id }),
+      );
+      expect(first.ok).toBe(true);
+      if (!first.ok) throw new Error("expected success");
+
+      const blocked = await createAgent(
+        deps(),
+        baseInput({ name: "second", accountId: account.id }),
+      );
+      expect(blocked).toEqual({ ok: false, errorCode: "quota_exceeded" });
+
+      const deleted = await deleteAgentFully(first.agent.id, {
+        prisma,
+        provisioner: { deprovision: async () => {} },
+        taskStore: {
+          listTokensForAgent: async () => [],
+          revokeToken: async () => {},
+        },
+        chatService: {
+          listTokensForAgent: async () => [],
+          revokeToken: async () => {},
+          deleteThreadsForAgent: async () => ({ deleted: 0 }),
+        },
+        slack: { deleteApp: async () => {} },
+        decrypt: (v) => v,
+      });
+      expect(deleted.agentDeleted).toBe(true);
+      expect(await prisma.agent.count({ where: { accountId: account.id } })).toBe(0);
+
+      const again = await createAgent(
+        deps(),
+        baseInput({ name: "second", accountId: account.id }),
+      );
+      expect(again.ok).toBe(true);
+    });
+
+    it("agents created without accountId are unaffected", async () => {
+      const result = await createAgent(deps(), baseInput());
+      expect(result.ok).toBe(true);
+      if (!result.ok) throw new Error("expected success");
+      const row = await prisma.agent.findUnique({ where: { id: result.agent.id } });
+      expect(row?.accountId).toBeNull();
+    });
+  });
+
 });

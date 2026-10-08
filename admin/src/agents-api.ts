@@ -35,6 +35,12 @@ import type {
 import type { AgentCronRunStatsService } from "./agent-cron-run-stats.ts";
 import type { AgentCronRunService } from "./agent-cron-runs.ts";
 import type { DeleteAgentFullyDeps } from "./agent-deletion.ts";
+import {
+  ACCOUNT_CREATE_ERROR_MESSAGES,
+  SELF_SERVE_AGENT_TYPE,
+  accountIdFromScope,
+  isAccountCreateErrorCode,
+} from "./account-agent-create.ts";
 import { deleteAgentFully } from "./agent-deletion.ts";
 import type { AgentEnvService } from "./agent-envs.ts";
 import type { AgentGitHubInstallationsService } from "./agent-github-installations.ts";
@@ -50,6 +56,10 @@ import type { AgentService } from "./agents.ts";
 import { createAgent, describeRepoNameCollision } from "./agents.ts";
 import type { AdminApiKey, AdminAuthEnv } from "./api-auth.ts";
 import { createAdminAuthMiddleware, parseAdminApiKeys } from "./api-auth.ts";
+import {
+  type CallerScopeResolver,
+  memberOnlyCallerScopeResolver,
+} from "./caller-scope.ts";
 import {
   ApiError,
   BadRequestError,
@@ -167,6 +177,8 @@ export interface AdminDeps {
     AgentMemberService,
     "add" | "listByAgentId" | "exists" | "listByEmail"
   >;
+  /** Account-aware caller-scope resolver (SSP-2.1); defaults to AgentMember-only. */
+  callerScopeResolver?: CallerScopeResolver;
   /**
    * Resolves an agent-type name to its parsed Agent Type manifest. Consumed
    * by POST /agents (createAgentRoute, APA-2.1) to seed AgentTool/AgentPlugin
@@ -1200,6 +1212,9 @@ export function createAdminApp(deps: AdminDeps): OpenAPIHono<AdminAuthEnv> {
     adminApiKeys,
     sentryClient,
   } = deps;
+  const callerScopeResolver =
+    deps.callerScopeResolver ??
+    memberOnlyCallerScopeResolver(agentMemberService);
 
   const app = new OpenAPIHono<AdminAuthEnv>({
     // Fires when Zod request validation fails — surface a 400 with the issues.
@@ -1243,6 +1258,7 @@ export function createAdminApp(deps: AdminDeps): OpenAPIHono<AdminAuthEnv> {
     agentTokenService,
     adminApiKeys,
     agentMemberService,
+    callerScopeResolver,
   });
 
   // Admin, or a session-cookie caller (membership of the route's agent already
@@ -1422,8 +1438,8 @@ export function createAdminApp(deps: AdminDeps): OpenAPIHono<AdminAuthEnv> {
       return c.json(agents, 200);
     }
     // Non-admin session: only agents the caller has an AgentMember row for.
-    const memberships = await agentMemberService.listByEmail(email);
-    const memberAgentIds = new Set(memberships.map((m) => m.agentId));
+    const scope = await callerScopeResolver(email, false);
+    const memberAgentIds = new Set(scope.kind === "all" ? [] : scope.agentIds);
     return c.json(
       agents.filter((a) => memberAgentIds.has(a.id)),
       200,
@@ -1435,10 +1451,24 @@ export function createAdminApp(deps: AdminDeps): OpenAPIHono<AdminAuthEnv> {
   // /admin/agents form handler calls, so this route is a second caller, not a
   // second implementation.
   app.openapi(createAgentRoute, async (c) => {
-    if (c.get("isAdmin") !== true) {
-      throw new ForbiddenError("Admin access required to create agent");
-    }
     const body = c.req.valid("json");
+
+    // SSP-4.2: platform admins keep today's behavior (and may create
+    // unassigned agents). A session user with an account (flag on) may create
+    // agents in THEIR account only: accountId comes from the resolved scope —
+    // never the body — and the type is forced to "coding".
+    let accountId: string | undefined;
+    if (c.get("isAdmin") !== true) {
+      const email = c.get("callerEmail");
+      const callerAccountId =
+        email === undefined
+          ? null
+          : accountIdFromScope(await callerScopeResolver(email, false));
+      if (callerAccountId === null) {
+        throw new ForbiddenError("Admin access required to create agent");
+      }
+      accountId = callerAccountId;
+    }
 
     const result = await createAgent(
       {
@@ -1464,7 +1494,9 @@ export function createAdminApp(deps: AdminDeps): OpenAPIHono<AdminAuthEnv> {
       },
       {
         name: body.name,
-        typeName: body.typeName,
+        typeName:
+          accountId !== undefined ? SELF_SERVE_AGENT_TYPE : body.typeName,
+        ...(accountId !== undefined ? { accountId } : {}),
         runtime: body.runtime,
         reposRaw: body.reposRaw,
         authorAllowlistRaw: body.authorAllowlistRaw,
@@ -1480,6 +1512,11 @@ export function createAdminApp(deps: AdminDeps): OpenAPIHono<AdminAuthEnv> {
       // createAgent()'s transactional design guarantees zero rows persist on
       // any of these failure codes — no partial-success 200, no redundant
       // cleanup needed here.
+      if (isAccountCreateErrorCode(result.errorCode)) {
+        throw new ForbiddenError(
+          ACCOUNT_CREATE_ERROR_MESSAGES[result.errorCode],
+        );
+      }
       throw new BadRequestError(
         result.errorMessage ?? `create agent failed: ${result.errorCode}`,
       );

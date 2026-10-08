@@ -24,6 +24,10 @@ import { sentry } from "@sentry/hono/bun";
 import { registerGracefulShutdown } from "@shipwright/lib/graceful-shutdown";
 import { buildSentryInitOptions, initSentry } from "@shipwright/lib/sentry";
 import { Hono } from "hono";
+import { createAccountCreatedNotifier } from "./account-created-notifier.ts";
+import { AccountInviteService } from "./account-invites.ts";
+import { AccountMemberService } from "./account-members.ts";
+import { AccountOnboardingService } from "./account-onboarding.ts";
 import { AccountService } from "./accounts.ts";
 import { createAccountsApp } from "./accounts-api.ts";
 import { createAdminUIApp } from "./admin-ui.ts";
@@ -48,6 +52,10 @@ import { AgentWorkQueueService } from "./agent-work-queue.ts";
 import { AgentService } from "./agents.ts";
 import { createAdminApp, parseAdminApiKeys } from "./agents-api.ts";
 import { createAgentRuntimeApp } from "./api.ts";
+import {
+  callerScopeDepsFromServices,
+  createCallerScopeResolver,
+} from "./caller-scope.ts";
 import type { ChatServiceProvisioningClient } from "./chat-service-provisioning-client.ts";
 import {
   HttpChatServiceProvisioningClient,
@@ -444,6 +452,16 @@ async function startServer(): Promise<void> {
   const agentPluginService = new AgentPluginService(prisma);
   const agentPhaseMethodologyService = new AgentPhaseMethodologyService(prisma);
   const agentMemberService = new AgentMemberService(prisma);
+  // Account-aware caller scope (SSP-2.1). Account membership contributes
+  // agents only when the self-serve flag is on; off → AgentMember-only.
+  const accountService = new AccountService(prisma);
+  const callerScopeResolver = createCallerScopeResolver(
+    callerScopeDepsFromServices({
+      accountService,
+      agentMemberService,
+    }),
+    process.env.SHIPWRIGHT_SELF_SERVE_ENABLED === "enabled",
+  );
   const agentChatTokenService = new AgentChatTokenService(prisma);
   const agentCronRunStatsService = new AgentCronRunStatsService(prisma);
   const agentWorkQueueService = new AgentWorkQueueService(prisma);
@@ -578,6 +596,7 @@ async function startServer(): Promise<void> {
     agentPluginService,
     agentPhaseMethodologyService,
     agentMemberService,
+    callerScopeResolver,
     agentTypeRegistry: new AgentTypeRegistry(),
     agentChatTokenService,
     agentWorkQueueService,
@@ -779,6 +798,7 @@ async function startServer(): Promise<void> {
     agentPluginService,
     agentPhaseMethodologyService,
     agentMemberService,
+    callerScopeResolver,
     agentService,
     provisioner,
     taskStore: deletionTaskStore,
@@ -801,6 +821,23 @@ async function startServer(): Promise<void> {
     publicRepo,
     devAuthEnabled: isDevAuthAllowed(process.env),
     selfServe,
+    accountService,
+    accountOnboarding: new AccountOnboardingService(
+      prisma,
+      selfServe.defaultMaxAgents,
+    ),
+    ...(() => {
+      const accountCreatedNotifier = createAccountCreatedNotifier({
+        ...(pushService ? { pushService } : {}),
+        adminEmails: adminAllowedEmails,
+      });
+      return accountCreatedNotifier ? { accountCreatedNotifier } : {};
+    })(),
+    accountServices: {
+      accounts: new AccountService(prisma),
+      members: new AccountMemberService(prisma),
+      invites: new AccountInviteService(prisma),
+    },
     timezone: adminTz,
     ...(chatClient ? { chatClient } : {}),
     ...(pushService

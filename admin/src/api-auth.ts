@@ -14,6 +14,11 @@ import { getCookie } from "hono/cookie";
 import { verify } from "hono/jwt";
 import type { AgentMemberService } from "./agent-members.ts";
 import type { AgentTokenService } from "./agent-tokens.ts";
+import {
+  type CallerScopeResolver,
+  memberOnlyCallerScopeResolver,
+  scopeIncludesAgent,
+} from "./caller-scope.ts";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -126,20 +131,34 @@ export function createAdminAuthMiddleware(deps: {
   agentTokenService: Pick<AgentTokenService, "validate">;
   adminApiKeys?: Map<string, AdminApiKey>;
   /** Required to authorize non-admin cookie sessions; absent → they are denied on agent routes. */
-  agentMemberService?: Pick<AgentMemberService, "exists">;
+  agentMemberService?: Pick<AgentMemberService, "listByEmail">;
+  /**
+   * Account-aware caller-scope resolver (SSP-2.1). Defaults to the
+   * AgentMember-only resolver built from agentMemberService.
+   */
+  callerScopeResolver?: CallerScopeResolver;
 }): MiddlewareHandler<AdminAuthEnv> {
   const { sessionSecret, agentTokenService, adminApiKeys, agentMemberService } =
     deps;
+  const callerScopeResolver =
+    deps.callerScopeResolver ??
+    (agentMemberService
+      ? memberOnlyCallerScopeResolver(agentMemberService)
+      : undefined);
 
   async function isSessionRouteAllowed(
     method: string,
     path: string,
     email: string,
   ): Promise<boolean> {
-    if (path === "/agents" || path === "/agents/") return method === "GET";
+    // POST /agents (SSP-4.2): the handler resolves the caller's account and
+    // denies callers without one, so the middleware only lets it through.
+    if (path === "/agents" || path === "/agents/") {
+      return method === "GET" || method === "POST";
+    }
     const agentId = extractAgentId(path);
-    if (!agentId || !agentMemberService) return false;
-    return agentMemberService.exists(agentId, email);
+    if (!agentId || !callerScopeResolver) return false;
+    return scopeIncludesAgent(await callerScopeResolver(email, false), agentId);
   }
 
   return async (c, next) => {

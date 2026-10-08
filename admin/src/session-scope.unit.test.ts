@@ -197,3 +197,31 @@ describe("deriveSessionVisibilityFromTasks", () => {
     ).toBe(false);
   });
 });
+
+describe("visibleAgentIdsFor with account-derived ids (SSP-2.1)", () => {
+  it("unions account agent ids with memberships, deduplicated", () => {
+    expect(
+      visibleAgentIdsFor(
+        false,
+        [makeMembership({ agentId: "a2" }), makeMembership({ agentId: "a9" })],
+        ["a1", "a2"],
+      ),
+    ).toEqual(["a1", "a2", "a9"]);
+  });
+
+  it("admin stays all regardless of account ids", () => {
+    expect(visibleAgentIdsFor(true, [], ["a1"])).toBe("all");
+  });
+
+  it("an account-only caller sees account agents' sessions", () => {
+    const scope = makeScope({
+      agentIds: visibleAgentIdsFor(false, [], ["a1"]),
+    });
+    expect(isSessionVisible(makeSession({ agentIds: ["a1"] }), scope)).toBe(
+      true,
+    );
+    expect(isSessionVisible(makeSession({ agentIds: ["b1"] }), scope)).toBe(
+      false,
+    );
+  });
+});
