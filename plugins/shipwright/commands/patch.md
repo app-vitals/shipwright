@@ -840,110 +840,50 @@ INSTRUCTIONS — follow in order:
     changes are the goal; base is just catching up
   - Stage resolved files: `git add {file}`
 
-[C] Validate (enforced, non-blocking — CI Gate is the real arbiter)
-  Local validation here is best-effort, not a gate: fix what you can, but a lingering
-  failure or timeout must never stop [D]'s commit/push — this PR's CI Gate is what actually
-  decides mergeability.
+[C] Validate (best-effort — CI Gate is the real arbiter)
+  Verifications are crucial to ensuring your work is valid — run {lint command} and
+  {test command} (and each additional test layer listed in TOOLCHAIN above) before
+  committing. Fix any failure you can clearly attribute to your change; note anything else
+  (pre-existing, flaky) in CONCERNS and continue to the next step regardless — never loop
+  waiting for a clean pass, and a failed, timed-out, or skipped check never blocks the
+  commit/push.
 
-  **Skip-locally check (read before attempting).** Before running each check below, query
-  this check's recent history directly via the task-store API (LVB-5.1's
-  `/verification-checks?repo=&checkName=` mode) — no doc file is read or parsed. Fetch the 5
-  most-recent outcomes for this repo+checkName, already ordered most-recent-first:
+  Run each check with the Bash tool's `timeout` parameter set to `600000` ms (10 minutes). If
+  a verification exceeds 10 minutes, skip the local run for it and rely on CI — this PR's CI
+  Gate is what actually decides mergeability.
+
+  **Record every outcome** — passes and failures included, not just skips — by POSTing to
+  `$SHIPWRIGHT_TASK_STORE_URL/verification-checks` with `prId` (the PR Record ID from the top
+  of this prompt — substitute its literal value; `$PR_RECORD_ID` is not set in your shell),
+  `repo` (`{org}/{repo}`), `checkName`, `status`, and an optional `reasonCategory`:
+
+  - `status` is one of `ran_passed`, `ran_failed`, `skipped`, `timed_out`.
+  - `reasonCategory` is only valid with `skipped` or `timed_out` — never send it with
+    `ran_passed` or `ran_failed`. Values: `check_timeout`, `install_timeout`,
+    `resource_limit`, `missing_tool`, `missing_secret`, `missing_dependency`,
+    `not_configured`, `learned_skip` (`learned_skip` also takes `learnedFromCategory`).
+  - A failure caused by the agent's own environment (missing tool, secret, or dependency, or a
+    resource limit) rather than the code is a judgment call from reading the output: record
+    it as `skipped` with the matching category. If unsure, record `ran_failed`.
+
   ```bash
-  CHECK_HISTORY=$(curl -sf -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
-    "$SHIPWRIGHT_TASK_STORE_URL/verification-checks?repo={org}/{repo}&checkName=$CHECK_NAME&limit=5" \
-    | jq -c '.checks')
-
-  STREAK=0
-  while IFS= read -r s; do
-    if [ "$s" = "skipped" ] || [ "$s" = "timed_out" ]; then
-      STREAK=$((STREAK + 1))
-    else
-      break
-    fi
-  done <<< "$(echo "$CHECK_HISTORY" | jq -r '.[].status')"
-  ```
-  This is the exact same consecutive-streak walk dev-task.md's Step 8 "Skip-Locally Learning
-  Trigger" uses when deciding whether a check has earned a skip-locally classification — the
-  same 2-consecutive threshold, reused here on the read side so both sides agree on what
-  counts as "learned": `$STREAK -ge 2` means this check is classified skip-locally right now.
-  If `$STREAK -lt 2`, no match — proceed to the enforced-timeout invocation below as normal.
-
-  On a match (`$STREAK -ge 2`), do NOT run the enforced-timeout invocation for that check at
-  all — no budget spent even attempting it. Carry forward the reason from the most recent
-  matching row — its own `reasonCategory`, or, if that row was itself a `learned_skip`, its
-  `learnedFromCategory` (since `learned_skip` is a meta-category, never the underlying
-  environmental reason) — and POST the outcome directly:
-  ```bash
-  LEARNED_REASON=$(echo "$CHECK_HISTORY" | jq -r '.[0] | if .reasonCategory == "learned_skip" then .learnedFromCategory else .reasonCategory end')
-  VC_BODY=$(jq -n --arg prId "{PR_RECORD_ID}" --arg repo "{org}/{repo}" --arg checkName "$CHECK_NAME" \
-    --arg learnedFrom "$LEARNED_REASON" \
-    '{prId: $prId, repo: $repo, checkName: $checkName, status: "skipped",
-      reasonCategory: "learned_skip", learnedFromCategory: $learnedFrom}')
   curl -sf -X POST -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
     -H "Content-Type: application/json" \
     "$SHIPWRIGHT_TASK_STORE_URL/verification-checks" \
-    -d "$VC_BODY" > /dev/null 2>&1 || echo "⚠ verification-check POST for $CHECK_NAME (learned skip) failed — continuing"
+    -d '{"prId": "{PR_RECORD_ID}", "repo": "{org}/{repo}", "checkName": "{checkName}", "status": "{status}"}' \
+    > /dev/null 2>&1 || echo "⚠ verification-check POST for {checkName} failed — continuing"
   ```
-  Report it in the human-readable results as `skip (learned: {reason})` rather than plain `skip`
-  — the recorded reason surfaces via both the POST's `learnedFromCategory` field and the
-  human-readable output. `patch.md` never writes to this verification-check history itself —
-  it only reads classifications dev-task.md's Step 8 has already learned (LVB-4.2 only wired
-  the write mechanism into dev-task.md; LVB-4.4 preserves that asymmetry rather than adding a
-  second, parallel write path here).
 
-  Run {lint command} and {test command} (and each additional test
-  layer listed in TOOLCHAIN above) through the shared `run-with-budget.ts` script (LVBS-1.1)
-  instead of inlining a `setsid`/`timeout`/`kill` sequence by hand. The script wraps the
-  command as `setsid --wait timeout --kill-after={n}s {budget}s {command}` and kills the
-  whole process group itself on expiry — a bare `timeout <cmd>` only signals the process it
-  directly execs, and a tool that forks worker subprocesses (npm, turbo, a test runner) would
-  otherwise leave descendants alive after `timeout` reports a clean exit 124, and those
-  descendants keep writing into this worktree, corrupting it for whatever reuses it next (a
-  later patch attempt on this same PR). Invoke it directly:
-  ```bash
-  BUDGET_JSON=$(bun run "${CLAUDE_PLUGIN_ROOT}/scripts/run-with-budget.ts" \
-    --budget 600 --kill-after 10 -- {command})
-  RUN_STATUS=$(echo "$BUDGET_JSON" | jq -r '.status')          # pass | fail | timeout ("timeout" == GNU timeout's own exit code 124 on expiry)
-  ```
-  `run-with-budget.ts` already targets the whole process group by negative PID on both
-  `SIGTERM` and `SIGKILL` regardless of outcome — no separate `kill -TERM -$CMD_PID`/`kill
-  -KILL -$CMD_PID` cleanup is needed here. Use a flat 600s (10-minute) budget with a 10s
-  kill-after grace period per check. Fix any failure you can clearly attribute to the merge;
-  note anything else (pre-existing, flaky, or a timeout with no obvious cause) in CONCERNS and
-  continue to [D] regardless — never loop waiting for a clean pass.
+  **Learned skip.** Before running a check, fetch its recent history:
 
-  **Record each outcome.** Immediately after `$RUN_STATUS` is known for each invocation, POST
-  one verification-check record to the task-store API (LVB-5.1) — informational only, never a
-  gate. Run best-effort and warn-and-continue on any failure:
   ```bash
-  CHECK_NAME="{lint|test|<layer name>}"
-  if [ "$RUN_STATUS" = "pass" ]; then
-    VC_STATUS="ran_passed"; VC_REASON=""
-  elif [ "$RUN_STATUS" = "timeout" ]; then
-    VC_STATUS="timed_out"; VC_REASON="check_timeout"
-  # Before applying the default failure outcome below, judge whether this failure happened
-  # because of the agent's own execution environment — a missing tool, a missing
-  # secret/credential, a missing or unreachable dependency (e.g. a database or external
-  # service), or a resource limit — rather than a genuine code/test defect. This is a
-  # judgment call made by reading the failure output yourself, not automatic
-  # stderr/exit-code pattern matching (a missing tool or an unreachable dependency cannot
-  # be reliably detected that way). If the failure is environmental, override to
-  # VC_STATUS="skipped" and set VC_REASON to the matching category: missing_tool,
-  # missing_secret, missing_dependency, or resource_limit. If unsure, default to the
-  # generic failure outcome below — never guess toward an environmental label defensively.
-  else
-    VC_STATUS="ran_failed"; VC_REASON=""
-  fi
-  VC_BODY=$(jq -n --arg prId "{PR_RECORD_ID}" --arg repo "{org}/{repo}" --arg checkName "$CHECK_NAME" \
-    --arg status "$VC_STATUS" --arg reason "$VC_REASON" \
-    '{prId: $prId, repo: $repo, checkName: $checkName, status: $status}
-     + (if $reason != "" then {reasonCategory: $reason} else {} end)')
-  curl -sf -X POST -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
-    -H "Content-Type: application/json" \
-    "$SHIPWRIGHT_TASK_STORE_URL/verification-checks" \
-    -d "$VC_BODY" > /dev/null 2>&1 || echo "⚠ verification-check POST for $CHECK_NAME failed — continuing"
+  curl -sf -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
+    "$SHIPWRIGHT_TASK_STORE_URL/verification-checks?repo={org}/{repo}&checkName={checkName}&limit=2" | jq '.checks'
   ```
+
+  Rows come back most-recent-first. If both rows are `skipped` or `timed_out`, skip the check
+  locally and record `skipped` with `reasonCategory: "learned_skip"` and
+  `learnedFromCategory` set to the most recent row's `reasonCategory`.
 
 [D] Commit and push
   - Complete the merge: `git commit -m "Merge branch '{base}' into {branch}"`
@@ -1503,117 +1443,57 @@ INSTRUCTIONS — follow in order:
   - If a finding is unclear or contradictory, apply the most conservative interpretation
     (preserve existing behavior; add the narrowest fix that satisfies the concern)
 
-[C] Validate (enforced, non-blocking — CI Gate is the real arbiter)
-  Local validation here is best-effort, not a gate: fix what you can, but a lingering
-  failure or timeout must never stop [D]'s commit/push — this PR's CI Gate is what actually
-  decides mergeability.
+[C] Validate (best-effort — CI Gate is the real arbiter)
+  Verifications are crucial to ensuring your work is valid — run {lint command} and
+  {test command} (and each additional test layer listed in TOOLCHAIN above) before
+  committing. Fix any failure you can clearly attribute to your change; note anything else
+  (pre-existing, flaky) in CONCERNS and continue to the next step regardless — never loop
+  waiting for a clean pass, and a failed, timed-out, or skipped check never blocks the
+  commit/push.
 
-  **Skip-locally check (read before attempting).** Before running each check below, query
-  this check's recent history directly via the task-store API (LVB-5.1's
-  `/verification-checks?repo=&checkName=` mode) — no doc file is read or parsed. Fetch the 5
-  most-recent outcomes for this repo+checkName, already ordered most-recent-first:
+  Run each check with the Bash tool's `timeout` parameter set to `600000` ms (10 minutes). If
+  a verification exceeds 10 minutes, skip the local run for it and rely on CI — this PR's CI
+  Gate is what actually decides mergeability.
+
+  **Record every outcome** — passes and failures included, not just skips — by POSTing to
+  `$SHIPWRIGHT_TASK_STORE_URL/verification-checks` with `prId` (the PR Record ID from the top
+  of this prompt — substitute its literal value; `$PR_RECORD_ID` is not set in your shell),
+  `repo` (`{org}/{repo}`), `checkName`, `status`, and an optional `reasonCategory`:
+
+  - `status` is one of `ran_passed`, `ran_failed`, `skipped`, `timed_out`.
+  - `reasonCategory` is only valid with `skipped` or `timed_out` — never send it with
+    `ran_passed` or `ran_failed`. Values: `check_timeout`, `install_timeout`,
+    `resource_limit`, `missing_tool`, `missing_secret`, `missing_dependency`,
+    `not_configured`, `learned_skip` (`learned_skip` also takes `learnedFromCategory`).
+  - A failure caused by the agent's own environment (missing tool, secret, or dependency, or a
+    resource limit) rather than the code is a judgment call from reading the output: record
+    it as `skipped` with the matching category. If unsure, record `ran_failed`.
+
   ```bash
-  CHECK_HISTORY=$(curl -sf -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
-    "$SHIPWRIGHT_TASK_STORE_URL/verification-checks?repo={org}/{repo}&checkName=$CHECK_NAME&limit=5" \
-    | jq -c '.checks')
-
-  STREAK=0
-  while IFS= read -r s; do
-    if [ "$s" = "skipped" ] || [ "$s" = "timed_out" ]; then
-      STREAK=$((STREAK + 1))
-    else
-      break
-    fi
-  done <<< "$(echo "$CHECK_HISTORY" | jq -r '.[].status')"
-  ```
-  This is the exact same consecutive-streak walk dev-task.md's Step 8 "Skip-Locally Learning
-  Trigger" uses when deciding whether a check has earned a skip-locally classification — the
-  same 2-consecutive threshold, reused here on the read side so both sides agree on what
-  counts as "learned": `$STREAK -ge 2` means this check is classified skip-locally right now.
-  If `$STREAK -lt 2`, no match — proceed to the enforced-timeout invocation below as normal.
-
-  On a match (`$STREAK -ge 2`), do NOT run the enforced-timeout invocation for that check at
-  all — no budget spent even attempting it. Carry forward the reason from the most recent
-  matching row — its own `reasonCategory`, or, if that row was itself a `learned_skip`, its
-  `learnedFromCategory` (since `learned_skip` is a meta-category, never the underlying
-  environmental reason) — and POST the outcome directly:
-  ```bash
-  LEARNED_REASON=$(echo "$CHECK_HISTORY" | jq -r '.[0] | if .reasonCategory == "learned_skip" then .learnedFromCategory else .reasonCategory end')
-  VC_BODY=$(jq -n --arg prId "{PR_RECORD_ID}" --arg repo "{org}/{repo}" --arg checkName "$CHECK_NAME" \
-    --arg learnedFrom "$LEARNED_REASON" \
-    '{prId: $prId, repo: $repo, checkName: $checkName, status: "skipped",
-      reasonCategory: "learned_skip", learnedFromCategory: $learnedFrom}')
   curl -sf -X POST -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
     -H "Content-Type: application/json" \
     "$SHIPWRIGHT_TASK_STORE_URL/verification-checks" \
-    -d "$VC_BODY" > /dev/null 2>&1 || echo "⚠ verification-check POST for $CHECK_NAME (learned skip) failed — continuing"
+    -d '{"prId": "{PR_RECORD_ID}", "repo": "{org}/{repo}", "checkName": "{checkName}", "status": "{status}"}' \
+    > /dev/null 2>&1 || echo "⚠ verification-check POST for {checkName} failed — continuing"
   ```
-  Report it in the human-readable results as `skip (learned: {reason})` rather than plain `skip`
-  — the recorded reason surfaces via both the POST's `learnedFromCategory` field and the
-  human-readable output. `patch.md` never writes to this verification-check history itself —
-  it only reads classifications dev-task.md's Step 8 has already learned (LVB-4.2 only wired
-  the write mechanism into dev-task.md; LVB-4.4 preserves that asymmetry rather than adding a
-  second, parallel write path here).
 
-  Run {lint command} and {test command} (and each additional test
-  layer listed in TOOLCHAIN above) through the shared `run-with-budget.ts` script (LVBS-1.1)
-  instead of inlining a `setsid`/`timeout`/`kill` sequence by hand. The script wraps the
-  command as `setsid --wait timeout --kill-after={n}s {budget}s {command}` and kills the
-  whole process group itself on expiry — a bare `timeout <cmd>` only signals the process it
-  directly execs, and a tool that forks worker subprocesses (npm, turbo, a test runner) would
-  otherwise leave descendants alive after `timeout` reports a clean exit 124, and those
-  descendants keep writing into this worktree, corrupting it for whatever reuses it next (a
-  later patch attempt on this same PR). Invoke it directly:
-  ```bash
-  BUDGET_JSON=$(bun run "${CLAUDE_PLUGIN_ROOT}/scripts/run-with-budget.ts" \
-    --budget 600 --kill-after 10 -- {command})
-  RUN_STATUS=$(echo "$BUDGET_JSON" | jq -r '.status')          # pass | fail | timeout ("timeout" == GNU timeout's own exit code 124 on expiry)
-  ```
-  `run-with-budget.ts` already targets the whole process group by negative PID on both
-  `SIGTERM` and `SIGKILL` regardless of outcome — no separate `kill -TERM -$CMD_PID`/`kill
-  -KILL -$CMD_PID` cleanup is needed here. Use a flat 600s (10-minute) budget with a 10s
-  kill-after grace period per check. Fix any failure you can clearly attribute to your changes;
-  note anything else (pre-existing, flaky, or a timeout with no obvious cause) in CONCERNS
-  and continue to [C.5]/[D] regardless — never loop waiting for a clean pass.
+  **Learned skip.** Before running a check, fetch its recent history:
 
-  **Record each outcome.** Immediately after `$RUN_STATUS` is known for each invocation, POST
-  one verification-check record to the task-store API (LVB-5.1) — informational only, never a
-  gate. Run best-effort and warn-and-continue on any failure:
   ```bash
-  CHECK_NAME="{lint|test|<layer name>}"
-  if [ "$RUN_STATUS" = "pass" ]; then
-    VC_STATUS="ran_passed"; VC_REASON=""
-  elif [ "$RUN_STATUS" = "timeout" ]; then
-    VC_STATUS="timed_out"; VC_REASON="check_timeout"
-  # Before applying the default failure outcome below, judge whether this failure happened
-  # because of the agent's own execution environment — a missing tool, a missing
-  # secret/credential, a missing or unreachable dependency (e.g. a database or external
-  # service), or a resource limit — rather than a genuine code/test defect. This is a
-  # judgment call made by reading the failure output yourself, not automatic
-  # stderr/exit-code pattern matching (a missing tool or an unreachable dependency cannot
-  # be reliably detected that way). If the failure is environmental, override to
-  # VC_STATUS="skipped" and set VC_REASON to the matching category: missing_tool,
-  # missing_secret, missing_dependency, or resource_limit. If unsure, default to the
-  # generic failure outcome below — never guess toward an environmental label defensively.
-  else
-    VC_STATUS="ran_failed"; VC_REASON=""
-  fi
-  VC_BODY=$(jq -n --arg prId "{PR_RECORD_ID}" --arg repo "{org}/{repo}" --arg checkName "$CHECK_NAME" \
-    --arg status "$VC_STATUS" --arg reason "$VC_REASON" \
-    '{prId: $prId, repo: $repo, checkName: $checkName, status: $status}
-     + (if $reason != "" then {reasonCategory: $reason} else {} end)')
-  curl -sf -X POST -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
-    -H "Content-Type: application/json" \
-    "$SHIPWRIGHT_TASK_STORE_URL/verification-checks" \
-    -d "$VC_BODY" > /dev/null 2>&1 || echo "⚠ verification-check POST for $CHECK_NAME failed — continuing"
+  curl -sf -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
+    "$SHIPWRIGHT_TASK_STORE_URL/verification-checks?repo={org}/{repo}&checkName={checkName}&limit=2" | jq '.checks'
   ```
+
+  Rows come back most-recent-first. If both rows are `skipped` or `timed_out`, skip the check
+  locally and record `skipped` with `reasonCategory: "learned_skip"` and
+  `learnedFromCategory` set to the most recent row's `reasonCategory`.
 
 [C.5] Add test coverage
   - Detect the test framework and file-naming conventions from nearby existing tests in
     the repo
   - Add or update a test covering the new or changed behavior, following those existing
     patterns
-  - Re-run {test command} from [C] (same `run-with-budget.ts` invocation) to confirm the new
+  - Re-run {test command} from [C] to confirm the new
     test passes alongside the rest
   - If no test is needed (test-file-only change, config change, or pure deletion with no
     new behavior), state that explicitly instead of adding one
@@ -2231,119 +2111,57 @@ INSTRUCTIONS — follow in order:
   - If a failure is caused by a flaky test or an external dependency, note it in concerns
     rather than patching around it
 
-[C] Validate (enforced, non-blocking — CI Gate is the real arbiter)
-  Local validation here is best-effort, not a gate: fix what you can, but a lingering
-  failure or timeout must never stop [D]'s commit/push — this PR's CI Gate is what actually
-  decides mergeability.
+[C] Validate (best-effort — CI Gate is the real arbiter)
+  Verifications are crucial to ensuring your work is valid — run {lint command} and
+  {test command} (and each additional test layer listed in TOOLCHAIN above) before
+  committing. Fix any failure you can clearly attribute to your change; note anything else
+  (pre-existing, flaky) in CONCERNS and continue to the next step regardless — never loop
+  waiting for a clean pass, and a failed, timed-out, or skipped check never blocks the
+  commit/push.
 
-  **Skip-locally check (read before attempting).** Before running each check below, query
-  this check's recent history directly via the task-store API (LVB-5.1's
-  `/verification-checks?repo=&checkName=` mode) — no doc file is read or parsed. Fetch the 5
-  most-recent outcomes for this repo+checkName, already ordered most-recent-first:
+  Run each check with the Bash tool's `timeout` parameter set to `600000` ms (10 minutes). If
+  a verification exceeds 10 minutes, skip the local run for it and rely on CI — this PR's CI
+  Gate is what actually decides mergeability.
+
+  **Record every outcome** — passes and failures included, not just skips — by POSTing to
+  `$SHIPWRIGHT_TASK_STORE_URL/verification-checks` with `prId` (the PR Record ID from the top
+  of this prompt — substitute its literal value; `$PR_RECORD_ID` is not set in your shell),
+  `repo` (`{org}/{repo}`), `checkName`, `status`, and an optional `reasonCategory`:
+
+  - `status` is one of `ran_passed`, `ran_failed`, `skipped`, `timed_out`.
+  - `reasonCategory` is only valid with `skipped` or `timed_out` — never send it with
+    `ran_passed` or `ran_failed`. Values: `check_timeout`, `install_timeout`,
+    `resource_limit`, `missing_tool`, `missing_secret`, `missing_dependency`,
+    `not_configured`, `learned_skip` (`learned_skip` also takes `learnedFromCategory`).
+  - A failure caused by the agent's own environment (missing tool, secret, or dependency, or a
+    resource limit) rather than the code is a judgment call from reading the output: record
+    it as `skipped` with the matching category. If unsure, record `ran_failed`.
+
   ```bash
-  CHECK_HISTORY=$(curl -sf -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
-    "$SHIPWRIGHT_TASK_STORE_URL/verification-checks?repo={org}/{repo}&checkName=$CHECK_NAME&limit=5" \
-    | jq -c '.checks')
-
-  STREAK=0
-  while IFS= read -r s; do
-    if [ "$s" = "skipped" ] || [ "$s" = "timed_out" ]; then
-      STREAK=$((STREAK + 1))
-    else
-      break
-    fi
-  done <<< "$(echo "$CHECK_HISTORY" | jq -r '.[].status')"
-  ```
-  This is the exact same consecutive-streak walk dev-task.md's Step 8 "Skip-Locally Learning
-  Trigger" uses when deciding whether a check has earned a skip-locally classification — the
-  same 2-consecutive threshold, reused here on the read side so both sides agree on what
-  counts as "learned": `$STREAK -ge 2` means this check is classified skip-locally right now.
-  If `$STREAK -lt 2`, no match — proceed to the enforced-timeout invocation below as normal.
-
-  On a match (`$STREAK -ge 2`), do NOT run the enforced-timeout invocation for that check at
-  all — no budget spent even attempting it. Carry forward the reason from the most recent
-  matching row — its own `reasonCategory`, or, if that row was itself a `learned_skip`, its
-  `learnedFromCategory` (since `learned_skip` is a meta-category, never the underlying
-  environmental reason) — and POST the outcome directly:
-  ```bash
-  LEARNED_REASON=$(echo "$CHECK_HISTORY" | jq -r '.[0] | if .reasonCategory == "learned_skip" then .learnedFromCategory else .reasonCategory end')
-  VC_BODY=$(jq -n --arg prId "{PR_RECORD_ID}" --arg repo "{org}/{repo}" --arg checkName "$CHECK_NAME" \
-    --arg learnedFrom "$LEARNED_REASON" \
-    '{prId: $prId, repo: $repo, checkName: $checkName, status: "skipped",
-      reasonCategory: "learned_skip", learnedFromCategory: $learnedFrom}')
   curl -sf -X POST -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
     -H "Content-Type: application/json" \
     "$SHIPWRIGHT_TASK_STORE_URL/verification-checks" \
-    -d "$VC_BODY" > /dev/null 2>&1 || echo "⚠ verification-check POST for $CHECK_NAME (learned skip) failed — continuing"
+    -d '{"prId": "{PR_RECORD_ID}", "repo": "{org}/{repo}", "checkName": "{checkName}", "status": "{status}"}' \
+    > /dev/null 2>&1 || echo "⚠ verification-check POST for {checkName} failed — continuing"
   ```
-  Report it in the human-readable results as `skip (learned: {reason})` rather than plain `skip`
-  — the recorded reason surfaces via both the POST's `learnedFromCategory` field and the
-  human-readable output. `patch.md` never writes to this verification-check history itself —
-  it only reads classifications dev-task.md's Step 8 has already learned (LVB-4.2 only wired
-  the write mechanism into dev-task.md; LVB-4.4 preserves that asymmetry rather than adding a
-  second, parallel write path here).
 
-  Run {lint command} and {test command} (and each additional test
-  layer listed in TOOLCHAIN above) through the shared `run-with-budget.ts` script (LVBS-1.1)
-  instead of inlining a `setsid`/`timeout`/`kill` sequence by hand. The script wraps the
-  command as `setsid --wait timeout --kill-after={n}s {budget}s {command}` and kills the
-  whole process group itself on expiry — a bare `timeout <cmd>` only signals the process it
-  directly execs, and a tool that forks worker subprocesses (npm, turbo, a test runner) would
-  otherwise leave descendants alive after `timeout` reports a clean exit 124, and those
-  descendants keep writing into this worktree, corrupting it for whatever reuses it next —
-  notably a later CI-fix attempt against this same PR, reusing this same worktree. Invoke it
-  directly:
-  ```bash
-  BUDGET_JSON=$(bun run "${CLAUDE_PLUGIN_ROOT}/scripts/run-with-budget.ts" \
-    --budget 600 --kill-after 10 -- {command})
-  RUN_STATUS=$(echo "$BUDGET_JSON" | jq -r '.status')          # pass | fail | timeout ("timeout" == GNU timeout's own exit code 124 on expiry)
-  ```
-  `run-with-budget.ts` already targets the whole process group by negative PID on both
-  `SIGTERM` and `SIGKILL` regardless of outcome, before any later attempt reuses this
-  worktree — no separate `kill -TERM -$CMD_PID`/`kill -KILL -$CMD_PID` cleanup is needed here.
-  Use a flat 600s (10-minute) budget with a 10s kill-after grace period per check. Fix any
-  failure you can clearly attribute to your fix; note anything else (pre-existing, flaky, or a
-  timeout with no obvious cause) in CONCERNS and continue to [C.5]/[D] regardless — never loop
-  waiting for a clean pass.
+  **Learned skip.** Before running a check, fetch its recent history:
 
-  **Record each outcome.** Immediately after `$RUN_STATUS` is known for each invocation, POST
-  one verification-check record to the task-store API (LVB-5.1) — informational only, never a
-  gate. Run best-effort and warn-and-continue on any failure:
   ```bash
-  CHECK_NAME="{lint|test|<layer name>}"
-  if [ "$RUN_STATUS" = "pass" ]; then
-    VC_STATUS="ran_passed"; VC_REASON=""
-  elif [ "$RUN_STATUS" = "timeout" ]; then
-    VC_STATUS="timed_out"; VC_REASON="check_timeout"
-  # Before applying the default failure outcome below, judge whether this failure happened
-  # because of the agent's own execution environment — a missing tool, a missing
-  # secret/credential, a missing or unreachable dependency (e.g. a database or external
-  # service), or a resource limit — rather than a genuine code/test defect. This is a
-  # judgment call made by reading the failure output yourself, not automatic
-  # stderr/exit-code pattern matching (a missing tool or an unreachable dependency cannot
-  # be reliably detected that way). If the failure is environmental, override to
-  # VC_STATUS="skipped" and set VC_REASON to the matching category: missing_tool,
-  # missing_secret, missing_dependency, or resource_limit. If unsure, default to the
-  # generic failure outcome below — never guess toward an environmental label defensively.
-  else
-    VC_STATUS="ran_failed"; VC_REASON=""
-  fi
-  VC_BODY=$(jq -n --arg prId "{PR_RECORD_ID}" --arg repo "{org}/{repo}" --arg checkName "$CHECK_NAME" \
-    --arg status "$VC_STATUS" --arg reason "$VC_REASON" \
-    '{prId: $prId, repo: $repo, checkName: $checkName, status: $status}
-     + (if $reason != "" then {reasonCategory: $reason} else {} end)')
-  curl -sf -X POST -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
-    -H "Content-Type: application/json" \
-    "$SHIPWRIGHT_TASK_STORE_URL/verification-checks" \
-    -d "$VC_BODY" > /dev/null 2>&1 || echo "⚠ verification-check POST for $CHECK_NAME failed — continuing"
+  curl -sf -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
+    "$SHIPWRIGHT_TASK_STORE_URL/verification-checks?repo={org}/{repo}&checkName={checkName}&limit=2" | jq '.checks'
   ```
+
+  Rows come back most-recent-first. If both rows are `skipped` or `timed_out`, skip the check
+  locally and record `skipped` with `reasonCategory: "learned_skip"` and
+  `learnedFromCategory` set to the most recent row's `reasonCategory`.
 
 [C.5] Add test coverage
   - Detect the test framework and file-naming conventions from nearby existing tests in
     the repo
   - Add or update a test covering the new or changed behavior, following those existing
     patterns
-  - Re-run {test command} from [C] (same `run-with-budget.ts` invocation) to confirm the new
+  - Re-run {test command} from [C] to confirm the new
     test passes alongside the rest
   - If no test is needed (test-file-only change, config change, or pure deletion with no
     new behavior), state that explicitly instead of adding one

@@ -2540,7 +2540,7 @@ describe("patch.md — subagent dispatch is foreground, not background (ABD-1.1)
   });
 });
 
-describe("patch.md — enforced, non-blocking local validation via run-with-budget.ts (LVB-2.2 / LVBS-1.3)", () => {
+describe("patch.md — simplified local validation: 10-minute timeout, CI fallback, record all outcomes by prId (VAR-1.2)", () => {
   function getValidateSection(stepStartMarker, stepEndMarker) {
     const stepStartIdx = content.indexOf(stepStartMarker);
     const stepEndIdx = content.indexOf(stepEndMarker);
@@ -2556,290 +2556,103 @@ describe("patch.md — enforced, non-blocking local validation via run-with-budg
     return stepSection.slice(cIdx, endIdx);
   }
 
-  const getStep4bValidate = () =>
-    getValidateSection(
-      "### Step 4b: Dispatch Conflict Resolution Subagent",
-      "### Step 4c: Handle Subagent Status",
-    );
-  const getStep5bValidate = () =>
-    getValidateSection(
-      "### Step 5b: Dispatch Fix Subagent",
-      "### Step 5c: Handle Subagent Status",
-    );
-  const getStep6cValidate = () =>
-    getValidateSection(
-      "### Step 6c: Dispatch Fix Subagent",
-      "### Step 6d: Handle Subagent Status",
-    );
-
-  for (const [label, getSection] of [
-    ["Step 4b", getStep4bValidate],
-    ["Step 5b", getStep5bValidate],
-    ["Step 6c", getStep6cValidate],
-  ]) {
-    it(`${label} [C] Validate no longer contains the old bare "Re-run until both pass cleanly" wording`, () => {
-      const section = getSection();
-      expect(section).not.toContain("Re-run until both pass cleanly");
-    });
-
-    it(`${label} [C] Validate invokes the shared run-with-budget.ts script instead of inlining the setsid/timeout/kill pattern`, () => {
-      const section = getSection();
-      expect(section).toContain(
-        'bun run "${CLAUDE_PLUGIN_ROOT}/scripts/run-with-budget.ts"',
-      );
-      expect(section).toContain("--budget");
-      expect(section).toContain("--kill-after");
-      expect(section).not.toMatch(
-        /setsid timeout --kill-after=10s 600s \{command\} &/,
-      );
-    });
-
-    it(`${label} [C] Validate still documents the process-group-aware whole-group kill run-with-budget.ts performs, without inlining it`, () => {
-      const section = getSection();
-      expect(section).toContain("setsid");
-      const lower = section.toLowerCase().replace(/\s+/g, " ");
-      expect(lower).toMatch(/process(-| )group/);
-      expect(lower).toMatch(
-        /(kill|terminat).{0,60}(whole|entire|-\$|negative).{0,20}(group|pid)|(-\$pid|kill -- -\$)/,
-      );
-    });
-
-    it(`${label} [C] Validate states a local failure or timeout never blocks proceeding to commit/push, naming CI (Gate) as the real arbiter`, () => {
-      const section = getSection();
-      const lower = section.toLowerCase().replace(/\s+/g, " ");
-      expect(lower).toMatch(/(timeout|fail).{0,160}never (stop|block)/);
-      expect(lower).toContain("ci gate");
-    });
-
-    it(`${label} [C] Validate documents a flat enforced budget (minutes)`, () => {
-      const section = getSection();
-      const lower = section.toLowerCase().replace(/\s+/g, " ");
-      expect(lower).toMatch(/\d+[- ]minute/);
-    });
-  }
-});
-
-describe("patch.md — record verification outcomes via task-store API (LVB-5.2)", () => {
-  function getStepSection(stepStartMarker, stepEndMarker) {
-    const stepStartIdx = content.indexOf(stepStartMarker);
-    const stepEndIdx = content.indexOf(stepEndMarker);
-    expect(stepStartIdx).toBeGreaterThan(-1);
-    expect(stepEndIdx).toBeGreaterThan(stepStartIdx);
-    return content.slice(stepStartIdx, stepEndIdx);
-  }
-
-  function getValidateSection(stepStartMarker, stepEndMarker) {
-    const stepSection = getStepSection(stepStartMarker, stepEndMarker);
-    const cIdx = stepSection.indexOf("[C] Validate");
-    expect(cIdx).toBeGreaterThan(-1);
-    const c5Idx = stepSection.indexOf("[C.5] Add test coverage");
-    const dIdx = stepSection.indexOf("[D] Commit");
-    const endIdx = c5Idx > -1 ? c5Idx : dIdx;
-    expect(endIdx).toBeGreaterThan(cIdx);
-    return stepSection.slice(cIdx, endIdx);
-  }
-
   const sites = [
     [
       "Step 4b",
-      "### Step 4b: Dispatch Conflict Resolution Subagent",
-      "### Step 4c: Handle Subagent Status",
+      () =>
+        getValidateSection(
+          "### Step 4b: Dispatch Conflict Resolution Subagent",
+          "### Step 4c: Handle Subagent Status",
+        ),
     ],
     [
       "Step 5b",
-      "### Step 5b: Dispatch Fix Subagent",
-      "### Step 5c: Handle Subagent Status",
+      () =>
+        getValidateSection(
+          "### Step 5b: Dispatch Fix Subagent",
+          "### Step 5c: Handle Subagent Status",
+        ),
     ],
     [
       "Step 6c",
-      "### Step 6c: Dispatch Fix Subagent",
-      "### Step 6d: Handle Subagent Status",
+      () =>
+        getValidateSection(
+          "### Step 6c: Dispatch Fix Subagent",
+          "### Step 6d: Handle Subagent Status",
+        ),
     ],
   ];
 
-  for (const [label, startMarker, endMarker] of sites) {
-    it(`${label} subagent prompt header includes a PR Record ID line`, () => {
-      const section = getStepSection(startMarker, endMarker);
-      expect(section).toMatch(/PR Record ID:\s*\{PR_RECORD_ID\}/);
-    });
-
-    it(`${label} [C] Validate POSTs to the verification-checks endpoint`, () => {
-      const section = getValidateSection(startMarker, endMarker);
-      expect(section).toContain(
-        "$SHIPWRIGHT_TASK_STORE_URL/verification-checks",
-      );
-    });
-
-    it(`${label} [C] Validate verification-checks call is a POST`, () => {
-      const section = getValidateSection(startMarker, endMarker);
-      // Use the last occurrence — the Record-each-outcome POST — since the
-      // skip-locally read check (LVBS-1.3) legitimately GETs the same base
-      // endpoint earlier in this section.
-      const idx = section.lastIndexOf(
-        "$SHIPWRIGHT_TASK_STORE_URL/verification-checks",
-      );
-      expect(idx).toBeGreaterThan(-1);
-      const nearby = section.slice(Math.max(0, idx - 300), idx);
-      expect(nearby).toContain("-X POST");
-    });
-
-    it(`${label} [C] Validate uses prId (PR Record ID), not a task id, as the parent id`, () => {
-      const section = getValidateSection(startMarker, endMarker);
-      expect(section).toContain("prId");
-      expect(section).toMatch(/--arg prId "\{PR_RECORD_ID\}"/);
-      expect(section).not.toContain("taskId");
-    });
-
-    it(`${label} [C] Validate references all four status values: ran_passed, ran_failed, timed_out, skipped`, () => {
-      const section = getValidateSection(startMarker, endMarker);
-      expect(section).toContain("ran_passed");
-      expect(section).toContain("ran_failed");
-      expect(section).toContain("timed_out");
-    });
-
-    it(`${label} [C] Validate never unconditionally attaches a reasonCategory value alongside a ran_failed outcome`, () => {
-      const section = getValidateSection(startMarker, endMarker);
-      const nearby = section.match(/ran_failed[\s\S]{0,120}/)?.[0] ?? "";
-      expect(nearby.length).toBeGreaterThan(0);
-      expect(nearby).not.toMatch(
-        /reasonCategory["']?\s*[:=]\s*["'](check_timeout|install_timeout|resource_limit|missing_tool|missing_secret|missing_dependency|not_configured|learned_skip)/,
-      );
-    });
-
-    it(`${label} [C] Validate documents an environmental-failure judgment step before defaulting to ran_failed, naming all four categories`, () => {
-      const section = getValidateSection(startMarker, endMarker);
-      const idx = section.indexOf("judge whether this failure happened");
-      expect(idx).toBeGreaterThan(-1);
-      const nearby = section.slice(idx, idx + 700);
-      expect(nearby).toContain("missing_tool");
-      expect(nearby).toContain("missing_secret");
-      expect(nearby).toContain("missing_dependency");
-      expect(nearby).toContain("resource_limit");
-      expect(nearby).toMatch(/judgment call/i);
-      expect(nearby).toMatch(/not automatic/i);
-    });
-
-    it(`${label} [C] Validate maps run-with-budget.ts's "timeout" status (GNU timeout's own exit 124) to timed_out with a check_timeout reasonCategory`, () => {
-      const section = getValidateSection(startMarker, endMarker);
-      expect(section).toContain("124");
-      expect(section).toMatch(/timed_out[\s\S]{0,200}check_timeout/);
-    });
-
-    it(`${label} [C] Validate POST is best-effort (warn-and-continue on failure)`, () => {
-      const section = getValidateSection(startMarker, endMarker);
-      // Same last-occurrence rationale as above — the Record-each-outcome POST.
-      const idx = section.lastIndexOf(
-        "$SHIPWRIGHT_TASK_STORE_URL/verification-checks",
-      );
-      expect(idx).toBeGreaterThan(-1);
-      const nearby = section.slice(idx, idx + 300);
-      expect(nearby).toMatch(/\|\|\s*echo/);
-    });
-  }
-});
-
-describe("patch.md — skip-locally check before attempting each check, read-only, via task-store API (LVB-4.4 / LVBS-1.3)", () => {
-  function getStepSection(stepStartMarker, stepEndMarker) {
-    const stepStartIdx = content.indexOf(stepStartMarker);
-    const stepEndIdx = content.indexOf(stepEndMarker);
-    expect(stepStartIdx).toBeGreaterThan(-1);
-    expect(stepEndIdx).toBeGreaterThan(stepStartIdx);
-    return content.slice(stepStartIdx, stepEndIdx);
-  }
-
-  function getValidateSection(stepStartMarker, stepEndMarker) {
-    const stepSection = getStepSection(stepStartMarker, stepEndMarker);
-    const cIdx = stepSection.indexOf("[C] Validate");
-    expect(cIdx).toBeGreaterThan(-1);
-    const c5Idx = stepSection.indexOf("[C.5] Add test coverage");
-    const dIdx = stepSection.indexOf("[D] Commit");
-    const endIdx = c5Idx > -1 ? c5Idx : dIdx;
-    expect(endIdx).toBeGreaterThan(cIdx);
-    return stepSection.slice(cIdx, endIdx);
-  }
-
-  const sites = [
-    [
-      "Step 4b",
-      "### Step 4b: Dispatch Conflict Resolution Subagent",
-      "### Step 4c: Handle Subagent Status",
-    ],
-    [
-      "Step 5b",
-      "### Step 5b: Dispatch Fix Subagent",
-      "### Step 5c: Handle Subagent Status",
-    ],
-    [
-      "Step 6c",
-      "### Step 6c: Dispatch Fix Subagent",
-      "### Step 6d: Handle Subagent Status",
-    ],
-  ];
-
-  for (const [label, startMarker, endMarker] of sites) {
-    it(`${label} [C] Validate queries the task-store /verification-checks GET endpoint before running the enforced-timeout invocation — no doc file read or parsed`, () => {
-      const section = getValidateSection(startMarker, endMarker);
-      expect(section).toMatch(/Skip-locally check \(read before attempting\)/);
-      expect(section).toContain(
-        '"$SHIPWRIGHT_TASK_STORE_URL/verification-checks?repo=',
-      );
-      expect(section).toContain("checkName=$CHECK_NAME");
-      expect(section).not.toContain("docsSource");
-      expect(section).not.toContain("docs/toolchain.md");
-    });
-
-    it(`${label} [C] Validate walks the 5 most-recent rows counting a consecutive skipped/timed_out streak, matching at >= 2`, () => {
-      const section = getValidateSection(startMarker, endMarker);
-      expect(section).toContain('"$s" = "skipped"');
-      expect(section).toContain('"$s" = "timed_out"');
-      expect(section).toMatch(/STREAK\s*-ge\s*2/);
-    });
-
-    it(`${label} [C] Validate: on a streak match, does NOT run the enforced-timeout invocation — no budget spent attempting it`, () => {
-      const section = getValidateSection(startMarker, endMarker);
-      expect(section).toMatch(/do NOT run the enforced-timeout invocation/);
-      expect(section).toMatch(/no budget spent even attempting it/);
-    });
-
-    it(`${label} [C] Validate: on a match, POSTs status skipped, reasonCategory learned_skip, and learnedFromCategory using prId (not taskId)`, () => {
-      const section = getValidateSection(startMarker, endMarker);
-      const idx = section.indexOf("Skip-locally check");
-      expect(idx).toBeGreaterThan(-1);
-      const nearby = section.slice(idx, idx + 2500);
-      expect(nearby).toContain('status: "skipped"');
-      expect(nearby).toContain('reasonCategory: "learned_skip"');
-      expect(nearby).toContain("learnedFromCategory");
-      expect(nearby).toMatch(/--arg prId "\{PR_RECORD_ID\}"/);
-      expect(nearby).not.toContain("taskId");
-    });
-
-    it(`${label} [C] Validate reports the learned skip as 'skip (learned: {reason})' in human-readable results`, () => {
-      const section = getValidateSection(startMarker, endMarker);
-      expect(section).toMatch(/skip \(learned: \{reason\}\)/);
-    });
-
-    it(`${label} [C] Validate states patch.md does not write to the verification-check history itself — read-only, dev-task.md Step 8 owns the write`, () => {
-      const section = getValidateSection(startMarker, endMarker).replace(
-        /\s+/g,
-        " ",
-      );
-      expect(section).toMatch(
-        /patch\.md`? never writes to this verification-check history itself/i,
-      );
-      expect(section).toMatch(/only reads classifications dev-task\.md/i);
-    });
-  }
-
-  it("no call site's [C] Validate claims patch.md writes/records a skip-locally classification back", () => {
-    for (const [, startMarker, endMarker] of sites) {
-      const section = getValidateSection(startMarker, endMarker);
-      // The only "write" language allowed near skip-locally in patch.md is the explicit
-      // disclaimer that patch never writes this history — never an instruction to do so.
-      expect(section).not.toMatch(
-        /write(?:s|ing)? (?:the |a |this )?skip-locally (?:classification|entry) back/i,
-      );
-    }
+  it("patch.md no longer references run-with-budget, setsid, VC_BODY, or the streak walk", () => {
+    expect(content).not.toContain("run-with-budget");
+    expect(content).not.toContain("setsid");
+    expect(content).not.toContain("VC_BODY");
+    expect(content).not.toContain("STREAK");
   });
+
+  it("all three validate sites carry byte-identical prose", () => {
+    const [first, ...rest] = sites.map(([, get]) => get());
+    for (const other of rest) expect(other).toBe(first);
+  });
+
+  for (const [label, getSection] of sites) {
+    it(`${label} [C] Validate says verifications are crucial`, () => {
+      expect(getSection()).toContain("Verifications are crucial");
+    });
+
+    it(`${label} [C] Validate sets the Bash timeout to 600000 ms and falls back to CI past 10 minutes`, () => {
+      const section = getSection();
+      expect(section).toContain("`timeout` parameter set to `600000` ms");
+      const lower = section.toLowerCase().replace(/\s+/g, " ");
+      expect(lower).toMatch(/exceeds 10 minutes, skip the local run.{0,40}rely on ci/);
+      expect(lower).toMatch(/never blocks the commit\/push/);
+    });
+
+    it(`${label} [C] Validate records every outcome via POST /verification-checks with prId`, () => {
+      const section = getSection();
+      expect(section).toContain("Record every outcome");
+      expect(section).toContain(
+        "-X POST -H \"Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN\"",
+      );
+      expect(section).toContain(
+        "$SHIPWRIGHT_TASK_STORE_URL/verification-checks",
+      );
+      expect(section).toContain('"prId": "{PR_RECORD_ID}"');
+      expect(section).not.toContain('"taskId"');
+      expect(section).toContain("literal value");
+    });
+
+    it(`${label} [C] Validate lists statuses, reasonCategory values, and the status/reasonCategory constraint`, () => {
+      const section = getSection();
+      for (const v of [
+        "ran_passed",
+        "ran_failed",
+        "skipped",
+        "timed_out",
+        "check_timeout",
+        "install_timeout",
+        "resource_limit",
+        "missing_tool",
+        "missing_secret",
+        "missing_dependency",
+        "not_configured",
+        "learned_skip",
+        "learnedFromCategory",
+      ]) {
+        expect(section).toContain(v);
+      }
+      expect(section).toContain("never send it with");
+    });
+
+    it(`${label} [C] Validate has a learned skip: GET history (limit=2), skip if both rows skipped/timed_out`, () => {
+      const section = getSection();
+      expect(section).toContain("Learned skip");
+      expect(section).toContain(
+        "verification-checks?repo={org}/{repo}&checkName={checkName}&limit=2",
+      );
+      expect(section).toMatch(/both rows are `skipped` or `timed_out`/);
+    });
+  }
 });
 
 describe("patch.md — Step 2.2 dispatches the phase-methodology-configured subagent (PTM-1.2)", () => {
