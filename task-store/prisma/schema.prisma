@@ -245,7 +245,7 @@ enum PrOrigin {
 // ─── Pull Request ─────────────────────────────────────────────────────────────
 // Tracks a GitHub PR through the Shipwright review → patch → deploy pipeline.
 // repo is in org/repo format (e.g. "app-vitals/shipwright").
-// @@unique([repo, prNumber]) ensures one record per GitHub PR.
+// @@unique([accountId, repo, prNumber]) ensures one record per GitHub PR per account.
 //
 // Review state semantics:
 //   staged      — review content has been written but not yet posted to GitHub
@@ -348,7 +348,6 @@ model PullRequest {
   events             PullRequestEvent[]
   verificationChecks VerificationCheck[]
 
-  @@unique([repo, prNumber])
   @@unique([accountId, repo, prNumber])
   @@index([accountId])
   @@index([state])
