@@ -23,6 +23,7 @@ import {
   type ProgressCallback,
 } from "./claude.ts";
 import { FixedClock } from "./clock.ts";
+import type { RunContextStamp } from "./context-stamp.ts";
 import type {
   CronRunReporter,
   ModelBreakdownEntry,
@@ -36,6 +37,7 @@ import {
   type LoopOrchestratorDeps,
   type LoopOrchestratorProductionOptions,
 } from "./loop-orchestrator.ts";
+import type { RunTelemetry } from "./run-telemetry.ts";
 import type { WorkQueueReporter } from "./work-queue-reporter.ts";
 import {
   type RankedWorkItem,
@@ -56,15 +58,7 @@ interface CompleteCall {
   cronId: string;
   runId: string | null;
   outcome: "completed" | "failed";
-  opts?: {
-    error?: string;
-    inputTokens?: number;
-    outputTokens?: number;
-    cacheReadTokens?: number;
-    cacheCreationTokens?: number;
-    modelBreakdown?: import("./cron-run-reporter.ts").ModelBreakdownEntry[];
-    sessionId?: string;
-  };
+  opts?: import("./cron-run-reporter.ts").RunReportOpts;
   phaseId?: string;
   itemType?: string;
   itemId?: string;
@@ -73,15 +67,7 @@ interface SkipCall {
   cronId: string;
   runId: string | null;
   skipReason: string;
-  opts?: {
-    error?: string;
-    inputTokens?: number;
-    outputTokens?: number;
-    cacheReadTokens?: number;
-    cacheCreationTokens?: number;
-    modelBreakdown?: import("./cron-run-reporter.ts").ModelBreakdownEntry[];
-    sessionId?: string;
-  };
+  opts?: import("./cron-run-reporter.ts").RunReportOpts;
   phaseId?: string;
   itemType?: string;
   itemId?: string;
@@ -5299,5 +5285,205 @@ describe("buildClaimPrRequest", () => {
     expect(request.authorIsBot).toBeUndefined();
     expect(request.hasAutomatedLabel).toBeUndefined();
     expect(request.hasShipwrightLabel).toBeUndefined();
+  });
+});
+
+// ─── prompt-audit telemetry forwarding (PAU-1.4) ─────────────────────────────
+
+describe("createLoopOrchestrator — run telemetry forwarding", () => {
+  const telemetry: RunTelemetry = {
+    firstTurn: {
+      model: "claude-sonnet-4-6",
+      messageId: "msg_1",
+      inputTokens: 2,
+      cacheCreationTokens: 100,
+      cacheReadTokens: 50,
+      contextTokens: 152,
+    },
+    turns: 4,
+    toolCalls: 2,
+    skillUsage: [
+      {
+        kind: "root",
+        name: "root",
+        invocations: 0,
+        turns: 4,
+        inputTokens: 1,
+        outputTokens: 2,
+        cacheReadTokens: 3,
+        cacheCreationTokens: 4,
+        invokeContextDelta: null,
+      },
+    ],
+  };
+  const stamp: RunContextStamp = {
+    contextFingerprint: "abc123def456",
+    pluginVersion: "1.2.3",
+    claudeCodeVersion: "2.1.0",
+  };
+  const expectedFields = {
+    contextBaseline: {
+      model: "claude-sonnet-4-6",
+      contextTokens: 152,
+      inputTokens: 2,
+      cacheCreationTokens: 100,
+      cacheReadTokens: 50,
+    },
+    turns: 4,
+    toolCalls: 2,
+    contextFingerprint: "abc123def456",
+    pluginVersion: "1.2.3",
+    claudeCodeVersion: "2.1.0",
+  };
+
+  test("completion forwards telemetry and the context stamp to completeRun", async () => {
+    const consumed = new Set<string>();
+    const devTaskCandidates = [task("PAU-A", "2026-01-01T00:00:00Z")];
+    const { reporter, completes } = makeRecordingReporter();
+    const { runner } = makeDrainingRunner(
+      { devTask: devTaskCandidates },
+      consumed,
+      [{ result: "done", telemetry }],
+    );
+    const deps = {
+      ...makeDeps({ devTaskCandidates, runner, reporter, consumed }),
+      contextStamp: () => stamp,
+    };
+    await createLoopOrchestrator(deps)([job("shipwright-dev-task", true)]);
+
+    expect(completes).toHaveLength(1);
+    expect(completes[0]?.opts).toMatchObject(expectedFields);
+    expect(completes[0]?.opts?.skillUsage).toEqual(telemetry.skillUsage);
+  });
+
+  test("[silent] skip forwards telemetry and the context stamp to skipRun", async () => {
+    const consumed = new Set<string>();
+    const devTaskCandidates = [task("PAU-B", "2026-01-01T00:00:00Z")];
+    const { reporter, skips } = makeRecordingReporter();
+    const { runner } = makeDrainingRunner(
+      { devTask: devTaskCandidates },
+      consumed,
+      [{ result: "Nothing.\n[silent]", telemetry }],
+    );
+    const deps = {
+      ...makeDeps({ devTaskCandidates, runner, reporter, consumed }),
+      contextStamp: () => stamp,
+    };
+    await createLoopOrchestrator(deps)([job("shipwright-dev-task", true)]);
+
+    expect(skips).toHaveLength(1);
+    expect(skips[0]?.opts).toMatchObject(expectedFields);
+  });
+
+  test("a ClaudeTimeoutError's partialTelemetry is forwarded on the failed completeRun", async () => {
+    const consumed = new Set<string>();
+    const devTaskCandidates = [task("PAU-C", "2026-01-01T00:00:00Z")];
+    const { reporter, completes } = makeRecordingReporter();
+    const runner = async (): Promise<ClaudeRunResult> => {
+      throw new ClaudeTimeoutError(
+        600_000,
+        "ceiling",
+        undefined,
+        undefined,
+        telemetry,
+      );
+    };
+    const deps = {
+      ...makeDeps({
+        devTaskCandidates,
+        runner,
+        reporter,
+        consumed,
+        claimTask: consumingClaimTask(consumed),
+      }),
+      contextStamp: () => stamp,
+    };
+    await createLoopOrchestrator(deps)([job("shipwright-dev-task", true)]);
+
+    expect(completes).toHaveLength(1);
+    expect(completes[0]?.outcome).toBe("failed");
+    expect(completes[0]?.opts).toMatchObject(expectedFields);
+  });
+
+  test("a ClaudeRunError's partialTelemetry is forwarded on the failed completeRun", async () => {
+    const consumed = new Set<string>();
+    const devTaskCandidates = [task("PAU-D", "2026-01-01T00:00:00Z")];
+    const { reporter, completes } = makeRecordingReporter();
+    const runner = async (): Promise<ClaudeRunResult> => {
+      throw new ClaudeRunError(
+        "boom",
+        undefined,
+        "boom",
+        undefined,
+        undefined,
+        telemetry,
+      );
+    };
+    const deps = makeDeps({
+      devTaskCandidates,
+      runner,
+      reporter,
+      consumed,
+      claimTask: consumingClaimTask(consumed),
+    });
+    await createLoopOrchestrator(deps)([job("shipwright-dev-task", true)]);
+
+    expect(completes).toHaveLength(1);
+    expect(completes[0]?.opts?.turns).toBe(4);
+    expect(completes[0]?.opts?.toolCalls).toBe(2);
+    expect(completes[0]?.opts?.contextFingerprint).toBeUndefined();
+  });
+
+  test("without a contextStamp dep nothing extra is reported and dispatch does not error", async () => {
+    const consumed = new Set<string>();
+    const devTaskCandidates = [task("PAU-E", "2026-01-01T00:00:00Z")];
+    const { reporter, completes } = makeRecordingReporter();
+    const { runner } = makeDrainingRunner(
+      { devTask: devTaskCandidates },
+      consumed,
+      [{ result: "done" }],
+    );
+    await createLoopOrchestrator(
+      makeDeps({ devTaskCandidates, runner, reporter, consumed }),
+    )([job("shipwright-dev-task", true)]);
+
+    expect(completes).toHaveLength(1);
+    expect(completes[0]?.outcome).toBe("completed");
+    for (const k of [
+      "contextBaseline",
+      "turns",
+      "toolCalls",
+      "skillUsage",
+      "contextFingerprint",
+      "pluginVersion",
+      "claudeCodeVersion",
+    ]) {
+      expect(completes[0]?.opts).not.toHaveProperty(k);
+    }
+  });
+
+  test("a throwing contextStamp reader is warn-logged and the run proceeds unstamped", async () => {
+    const consumed = new Set<string>();
+    const devTaskCandidates = [task("PAU-F", "2026-01-01T00:00:00Z")];
+    const { reporter, completes } = makeRecordingReporter();
+    const { runner } = makeDrainingRunner(
+      { devTask: devTaskCandidates },
+      consumed,
+      [{ result: "done", telemetry }],
+    );
+    const deps = {
+      ...makeDeps({ devTaskCandidates, runner, reporter, consumed }),
+      contextStamp: (): RunContextStamp => {
+        throw new Error("fs boom");
+      },
+    };
+    const warnings = await withCapturedWarnings(async () => {
+      await createLoopOrchestrator(deps)([job("shipwright-dev-task", true)]);
+    });
+
+    expect(warnings.some((w) => w.includes("context stamp failed"))).toBe(true);
+    expect(completes[0]?.outcome).toBe("completed");
+    expect(completes[0]?.opts?.turns).toBe(4);
+    expect(completes[0]?.opts?.contextFingerprint).toBeUndefined();
   });
 });
