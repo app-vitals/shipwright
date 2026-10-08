@@ -10,11 +10,11 @@ independent of `appVersion`. CI enforces this with
 `ct lint --check-version-increment`. Each release here must mirror the
 `artifacthub.io/changes` annotation in `Chart.yaml`.
 
-## [1.24.0] - 2026-10-08
+## [1.23.9] - 2026-10-08
 
-### Added
+### Changed
 
-- add opt-in tenant NetworkPolicy (selfServe.networkPolicy.enabled) isolating tenant agent pods
+- auto-bump to chart v1.23.9 triggered by release tag(s): `agent-v1.381.1`
 
 ## [1.23.8] - 2026-10-08
 
