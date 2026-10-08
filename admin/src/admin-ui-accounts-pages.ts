@@ -130,11 +130,11 @@ export function renderAccountDetailPage(opts: AccountDetailPageOpts): string {
 
   const agentRows =
     opts.agents.length === 0
-      ? `<tr><td class="empty-state">No agents.</td></tr>`
+      ? `<tr><td colspan="2" class="empty-state">No agents.</td></tr>`
       : opts.agents
           .map(
             (a) =>
-              `<tr><td><a href="/admin/agents/${escapeHtml(a.id)}" class="agent-link">${escapeHtml(a.name)}</a></td></tr>`,
+              `<tr><td><a href="/admin/agents/${escapeHtml(a.id)}" class="agent-link">${escapeHtml(a.name)}</a></td><td style="text-align:right">${postForm(id, "agents/unassign", { agentId: a.id }, "Unassign", true)}</td></tr>`,
           )
           .join("\n");
 
@@ -172,6 +172,11 @@ export function renderAccountDetailPage(opts: AccountDetailPageOpts): string {
     <div class="card">
       <div class="card-title">Agents</div>
       <table class="data-table"><tbody>${agentRows}</tbody></table>
+      <form method="POST" action="${base}/agents/assign" style="display:flex;gap:8px;margin-top:12px">
+        <input name="agentId" class="form-input" required placeholder="Agent ID" style="max-width:280px" />
+        <button type="submit" class="btn btn-primary">Assign agent</button>
+      </form>
+      <p class="help-text" style="font-size:12px;margin-top:8px">Assigning or unassigning an agent updates its scope immediately and re-applies its tenant pod settings. Historical task-store rows (tasks, PRs) are not moved to the new account.</p>
     </div>
     <div class="card">
       <div class="card-title">Members</div>

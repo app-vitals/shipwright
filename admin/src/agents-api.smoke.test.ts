@@ -84,6 +84,11 @@ class RecordingProvisioner implements AgentProvisioner {
 
   readonly provisioned: string[] = [];
   readonly deprovisioned: string[] = [];
+  readonly reconciled: Array<{
+    id: string;
+    slug?: string;
+    accountId?: string | null;
+  }> = [];
   reconcileResult: {
     recreated: string[];
     updated: string[];
@@ -115,12 +120,15 @@ class RecordingProvisioner implements AgentProvisioner {
     this.deprovisioned.push(agentId);
   }
 
-  async reconcile(_agents: Array<{ id: string; slug?: string }>): Promise<{
+  async reconcile(
+    agents: Array<{ id: string; slug?: string; accountId?: string | null }>,
+  ): Promise<{
     recreated: string[];
     updated: string[];
     orphans: string[];
     failed: Array<{ agentId: string; error: string }>;
   }> {
+    this.reconciled.push(...agents);
     return this.reconcileResult;
   }
 }
@@ -304,6 +312,7 @@ function makeMockDeps(): AdminDeps {
         id: string,
         input: {
           selfHosted?: boolean;
+          accountId?: string | null;
           repos?: string[];
           restrictSlackToMembers?: boolean;
           slackId?: string | null;
@@ -319,6 +328,7 @@ function makeMockDeps(): AdminDeps {
         name: "Existing Agent",
         slackId: input.slackId ?? null,
         selfHosted: input.selfHosted ?? false,
+        accountId: input.accountId,
         repos: input.repos ?? [],
         reviewAuthorAllowlist: [],
         patchAuthorAllowlist: [],
@@ -5119,5 +5129,141 @@ describe("admin API — account users create and delete agents (SSP-4.2)", () =>
       headers: { Cookie: `admin_session=${await accountCookie()}` },
     });
     expect(res.status).toBe(403);
+  });
+});
+
+// ─── SSP-5.3: admin assigns / reassigns an agent to an account ──────────────
+
+describe("admin API — PATCH /agents/:id accountId (SSP-5.3)", () => {
+  const patch = (
+    app: ReturnType<typeof createAdminApp>,
+    body: unknown,
+    headers: Record<string, string>,
+  ) =>
+    app.request(`/agents/${AGENT_ID}`, {
+      method: "PATCH",
+      body: JSON.stringify(body),
+      headers: { "Content-Type": "application/json", ...headers },
+    });
+
+  it("admin sets accountId and the in-cluster agent is reconciled with it", async () => {
+    const provisioner = new RecordingProvisioner();
+    const app = createAdminApp({ ...makeMockDeps(), provisioner });
+    const cookie = await makeSessionCookie();
+    const res = await patch(
+      app,
+      { accountId: "acct-b" },
+      { Cookie: `admin_session=${cookie}` },
+    );
+    expect(res.status).toBe(200);
+    expect(((await res.json()) as { accountId: string }).accountId).toBe(
+      "acct-b",
+    );
+    expect(provisioner.reconciled).toEqual([
+      { id: AGENT_ID, slug: "Existing Agent", accountId: "acct-b" },
+    ]);
+  });
+
+  it("admin clears accountId with null and reconciles", async () => {
+    const provisioner = new RecordingProvisioner();
+    const app = createAdminApp({ ...makeMockDeps(), provisioner });
+    const cookie = await makeSessionCookie();
+    const res = await patch(
+      app,
+      { accountId: null },
+      { Cookie: `admin_session=${cookie}` },
+    );
+    expect(res.status).toBe(200);
+    expect(((await res.json()) as { accountId: unknown }).accountId).toBeNull();
+    expect(provisioner.reconciled).toEqual([
+      { id: AGENT_ID, slug: "Existing Agent", accountId: null },
+    ]);
+  });
+
+  it("skips reconcile for a self-hosted agent", async () => {
+    const provisioner = new RecordingProvisioner();
+    const app = createAdminApp({ ...makeMockDeps(), provisioner });
+    const cookie = await makeSessionCookie();
+    const res = await patch(
+      app,
+      { accountId: "acct-b", selfHosted: true },
+      { Cookie: `admin_session=${cookie}` },
+    );
+    expect(res.status).toBe(200);
+    expect(provisioner.reconciled).toEqual([]);
+  });
+
+  it("does not reconcile when accountId is not in the body", async () => {
+    const provisioner = new RecordingProvisioner();
+    const app = createAdminApp({ ...makeMockDeps(), provisioner });
+    const cookie = await makeSessionCookie();
+    const res = await patch(
+      app,
+      { repos: ["org/repo"] },
+      { Cookie: `admin_session=${cookie}` },
+    );
+    expect(res.status).toBe(200);
+    expect(provisioner.reconciled).toEqual([]);
+  });
+
+  it("returns 404 when the account does not exist (FK violation)", async () => {
+    const base = makeMockDeps();
+    const app = createAdminApp({
+      ...base,
+      agentService: {
+        ...base.agentService,
+        updateSelfHosted: async () => {
+          throw Object.assign(new Error("fk"), { code: "P2003" });
+        },
+      },
+    });
+    const cookie = await makeSessionCookie();
+    const res = await patch(
+      app,
+      { accountId: "nope" },
+      { Cookie: `admin_session=${cookie}` },
+    );
+    expect(res.status).toBe(404);
+  });
+
+  it("non-admin session member gets 403 and nothing changes", async () => {
+    const provisioner = new RecordingProvisioner();
+    const base = makeMockDeps();
+    let updated = false;
+    const app = createAdminApp({
+      ...base,
+      provisioner,
+      callerScopeResolver: async () => ({
+        kind: "scoped",
+        accountId: "acct-a",
+        agentIds: [AGENT_ID],
+      }),
+      agentService: {
+        ...base.agentService,
+        updateSelfHosted: async (...args) => {
+          updated = true;
+          return base.agentService.updateSelfHosted(...args);
+        },
+      },
+    });
+    const cookie = await sign(
+      {
+        isAdmin: false,
+        userId: "user-acct",
+        email: "owner@acct-a.example.com",
+        iat: Math.floor(Date.now() / 1000),
+        exp: Math.floor(Date.now() / 1000) + 3600,
+      },
+      SESSION_SECRET,
+      "HS256",
+    );
+    const res = await patch(
+      app,
+      { accountId: "acct-evil" },
+      { Cookie: `admin_session=${cookie}` },
+    );
+    expect(res.status).toBe(403);
+    expect(updated).toBe(false);
+    expect(provisioner.reconciled).toEqual([]);
   });
 });

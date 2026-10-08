@@ -126,6 +126,8 @@ export interface AgentDetail {
 }
 
 export interface UpdateSelfHostedInput {
+  /** SSP-5.3: owning account; null clears it (unassigned/platform agent). */
+  accountId?: string | null;
   /**
    * Optional to mirror Prisma's generated AgentUpdateInput shape (undefined
    * means "leave unchanged"); callers such as PATCH /agents/:id currently
@@ -191,6 +193,8 @@ export interface AgentOption {
 
 export interface UpdateAgentFieldsInput {
   name?: string;
+  /** SSP-5.3: owning account; null clears it (unassigned/platform agent). */
+  accountId?: string | null;
   repos?: string[];
   reviewAuthorAllowlist?: string[];
   patchAuthorAllowlist?: string[];
@@ -418,6 +422,9 @@ export class AgentService {
       where: { id },
       data: {
         selfHosted: input.selfHosted,
+        ...(input.accountId !== undefined
+          ? { accountId: input.accountId }
+          : {}),
         ...(input.repos !== undefined ? { repos: input.repos } : {}),
         ...(input.reviewAuthorAllowlist !== undefined
           ? { reviewAuthorAllowlist: input.reviewAuthorAllowlist }
@@ -547,6 +554,7 @@ export class AgentService {
       where: { id },
       data: {
         ...(input.name !== undefined && { name: input.name }),
+        ...(input.accountId !== undefined && { accountId: input.accountId }),
         ...(input.repos !== undefined && { repos: input.repos }),
         ...(input.reviewAuthorAllowlist !== undefined && {
           reviewAuthorAllowlist: input.reviewAuthorAllowlist,
