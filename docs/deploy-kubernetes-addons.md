@@ -222,7 +222,7 @@ taskStore:
 
 Archiving is non-destructive (it only hides a session from the default list view) and reversible
 (any new task written into an archived session un-archives it automatically) — see
-[`task-store.md`](./task-store.md#session-archive-sweep) for the full sweep rules. There is no
+[`task-store-pr-tracking.md`](./task-store-pr-tracking.md#session-archive-sweep) for the full sweep rules. There is no
 purge/delete endpoint anywhere in this pipeline; nothing this chart configures ever deletes a
 session or its tasks.
 
