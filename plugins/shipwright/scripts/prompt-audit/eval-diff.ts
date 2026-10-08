@@ -19,6 +19,7 @@ export interface EvalResult {
 export type Verdict =
   | "regression-detected"
   | "improvement-detected"
+  | "inconclusive-unpaired-cases"
   | "no-regression-detected-within-MDE";
 
 export interface EvalDiff {
@@ -96,7 +97,9 @@ export function diffEvals(before: EvalResult, after: EvalResult): EvalDiff {
       ? "regression-detected"
       : pValue < ALPHA && c > b
         ? "improvement-detected"
-        : "no-regression-detected-within-MDE";
+        : unpairedCases.length > 0
+          ? "inconclusive-unpaired-cases"
+          : "no-regression-detected-within-MDE";
   return {
     before: before.arm,
     after: after.arm,
@@ -117,7 +120,9 @@ export function renderDiff(d: EvalDiff): string {
     `minimum detectable effect: ${(d.mde * 100).toFixed(1)} pp`,
     `verdict: ${d.verdict}`,
     ...(d.unpairedCases.length
-      ? [`unpaired (excluded): ${d.unpairedCases.join(", ")}`]
+      ? [
+          `unpaired (excluded, verdict inconclusive): ${d.unpairedCases.join(", ")}`,
+        ]
       : []),
   ].join("\n");
 }

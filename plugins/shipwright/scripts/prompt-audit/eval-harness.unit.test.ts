@@ -10,6 +10,7 @@ import {
   diffEvals,
   type EvalResult,
   estimateEvalCost,
+  extractSteps,
   mcnemarExact,
   prepareEvals,
   runEvalDiff,
@@ -137,6 +138,14 @@ const arm = (name: string, cases: Record<string, boolean[]>): EvalResult => ({
   cases,
 });
 
+describe("extractSteps", () => {
+  test("skips headings inside fenced code blocks", () => {
+    const md =
+      "## Step 1: Real\n```md\n## Fake heading\n```\n~~~\n### Also fake\n~~~\n### Step 2: Also real\n";
+    expect(extractSteps(md)).toEqual(["1: Real", "2: Also real"]);
+  });
+});
+
 describe("diffEvals", () => {
   test("exact McNemar", () => {
     expect(mcnemarExact(0, 0)).toBe(1);
@@ -168,6 +177,7 @@ describe("diffEvals", () => {
       arm("b", { x: [true, true, true] }),
     );
     expect(d.unpairedCases).toEqual(["z"]);
+    expect(d.verdict).toBe("inconclusive-unpaired-cases");
     expect(() =>
       diffEvals(arm("a", { x: [true, true] }), arm("b", { x: [true, true] })),
     ).toThrow("seeds");

@@ -76,7 +76,15 @@ const TRIGGER_TEMPLATES = [
 /** Step headings (## / ###) of a command file, minus numbering noise. */
 export function extractSteps(markdown: string): string[] {
   const out: string[] = [];
+  let fence: string | null = null;
   for (const line of markdown.split("\n")) {
+    const f = /^\s*(`{3,}|~{3,})/.exec(line);
+    if (f) {
+      if (fence === null) fence = f[1][0];
+      else if (f[1][0] === fence) fence = null;
+      continue;
+    }
+    if (fence !== null) continue;
     const m = /^#{2,3}\s+(?:Step\s+)?(.+?)\s*$/.exec(line);
     if (m && !/^(arguments?|notes?)$/i.test(m[1])) out.push(m[1]);
   }
