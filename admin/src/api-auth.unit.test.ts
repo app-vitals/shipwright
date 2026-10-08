@@ -12,7 +12,11 @@ import { Hono } from "hono";
 import { sign } from "hono/jwt";
 import type { AgentTokenService, AgentTokenValidated } from "./agent-tokens.ts";
 import type { AdminAuthEnv } from "./api-auth.ts";
-import { createAdminAuthMiddleware, parseAdminApiKeys } from "./api-auth.ts";
+import {
+  createAdminAuthMiddleware,
+  extractAgentId,
+  parseAdminApiKeys,
+} from "./api-auth.ts";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -26,6 +30,7 @@ const AGENT_ID = "agent-abc-123";
 async function makeSessionJwt(secret = SESSION_SECRET): Promise<string> {
   return sign(
     {
+      isAdmin: true,
       userId: "user-1",
       email: "admin@example.com",
       iat: Math.floor(Date.now() / 1000),
@@ -431,5 +436,163 @@ describe("createAdminAuthMiddleware — shared Caller", () => {
       name: "admin@example.com",
       scope: "session",
     });
+  });
+});
+
+// ─── Non-admin cookie scoping ─────────────────────────────────────────────────
+
+async function makeMemberJwt(
+  email = "Member@Example.com",
+  isAdmin?: boolean,
+): Promise<string> {
+  return sign(
+    {
+      ...(isAdmin === undefined ? {} : { isAdmin }),
+      userId: "user-2",
+      email,
+      iat: Math.floor(Date.now() / 1000),
+      exp: Math.floor(Date.now() / 1000) + 3600,
+    },
+    SESSION_SECRET,
+    "HS256",
+  );
+}
+
+function buildScopedApp(memberOf: Array<[string, string]>) {
+  const app = new Hono<AdminAuthEnv>();
+  app.use(
+    "*",
+    createAdminAuthMiddleware({
+      sessionSecret: SESSION_SECRET,
+      agentTokenService: { validate: async () => null },
+      agentMemberService: {
+        exists: async (agentId, email) =>
+          memberOf.some(([a, e]) => a === agentId && e === email),
+      },
+    }),
+  );
+  app.all("*", (c) =>
+    c.json({
+      isAdmin: c.get("isAdmin"),
+      callerEmail: c.get("callerEmail"),
+    }),
+  );
+  return app;
+}
+
+describe("createAdminAuthMiddleware — non-admin session cookie scoping", () => {
+  const member: Array<[string, string]> = [[AGENT_ID, "member@example.com"]];
+
+  it("treats a cookie without the isAdmin claim as non-admin and exposes the lowercased email", async () => {
+    const app = buildScopedApp(member);
+    const jwt = await makeMemberJwt();
+    const res = await app.request("/agents", {
+      headers: { Cookie: `admin_session=${jwt}` },
+    });
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({
+      isAdmin: false,
+      callerEmail: "member@example.com",
+    });
+  });
+
+  it("treats isAdmin: false the same as a missing claim", async () => {
+    const app = buildScopedApp(member);
+    const jwt = await makeMemberJwt("member@example.com", false);
+    const res = await app.request("/agents/other-agent/envs", {
+      headers: { Cookie: `admin_session=${jwt}` },
+    });
+    expect(res.status).toBe(403);
+  });
+
+  it("allows /agents/:id/** for a member agent", async () => {
+    const app = buildScopedApp(member);
+    const jwt = await makeMemberJwt();
+    const res = await app.request(`/agents/${AGENT_ID}/crons`, {
+      method: "PATCH",
+      headers: { Cookie: `admin_session=${jwt}` },
+    });
+    expect(res.status).toBe(200);
+  });
+
+  it("returns 403 for an agent outside the membership", async () => {
+    const app = buildScopedApp(member);
+    const jwt = await makeMemberJwt();
+    for (const method of ["GET", "PATCH", "DELETE"]) {
+      const res = await app.request("/agents/other-agent", {
+        method,
+        headers: { Cookie: `admin_session=${jwt}` },
+      });
+      expect(res.status).toBe(403);
+    }
+  });
+
+  it("returns 403 for POST /agents, POST /agents/reconcile, and cross-agent stats routes", async () => {
+    const app = buildScopedApp(member);
+    const jwt = await makeMemberJwt();
+    const cases: Array<[string, string]> = [
+      ["POST", "/agents"],
+      ["POST", "/agents/reconcile"],
+      ["GET", "/agents/all/cron-runs/stats"],
+      ["GET", "/agents/chat-tokens/daily/stats"],
+    ];
+    for (const [method, path] of cases) {
+      const res = await app.request(path, {
+        method,
+        headers: { Cookie: `admin_session=${jwt}` },
+      });
+      expect(res.status).toBe(403);
+    }
+  });
+
+  it("returns 403 for non-agent paths", async () => {
+    const app = buildScopedApp(member);
+    const jwt = await makeMemberJwt();
+    const res = await app.request("/other", {
+      headers: { Cookie: `admin_session=${jwt}` },
+    });
+    expect(res.status).toBe(403);
+  });
+
+  it("denies agent routes when no agentMemberService is wired (fail closed)", async () => {
+    const app = new Hono<AdminAuthEnv>();
+    app.use(
+      "*",
+      createAdminAuthMiddleware({
+        sessionSecret: SESSION_SECRET,
+        agentTokenService: { validate: async () => null },
+      }),
+    );
+    app.all("*", (c) => c.json({ ok: true }));
+    const jwt = await makeMemberJwt();
+    const res = await app.request(`/agents/${AGENT_ID}/envs`, {
+      headers: { Cookie: `admin_session=${jwt}` },
+    });
+    expect(res.status).toBe(403);
+  });
+
+  it("admin cookie bypasses membership checks", async () => {
+    const app = buildScopedApp([]);
+    const jwt = await makeMemberJwt("admin@example.com", true);
+    const res = await app.request("/agents/reconcile", {
+      method: "POST",
+      headers: { Cookie: `admin_session=${jwt}` },
+    });
+    expect(res.status).toBe(200);
+    expect((await res.json()) as { isAdmin: boolean }).toMatchObject({
+      isAdmin: true,
+    });
+  });
+});
+
+describe("extractAgentId", () => {
+  it("returns the first segment after /agents/", () => {
+    expect(extractAgentId("/agents/abc/crons/x")).toBe("abc");
+    expect(extractAgentId("/agents/abc")).toBe("abc");
+  });
+
+  it("returns null when there is no agent segment", () => {
+    expect(extractAgentId("/agents")).toBeNull();
+    expect(extractAgentId("/other/abc")).toBeNull();
   });
 });

@@ -740,7 +740,9 @@ export const PhaseParamSchema = z.object({
  */
 export const AgentEnvResponseSchema = z
   .object({
-    env: z.record(z.string(), z.string()).openapi({ example: { MY_VAR: "value" } }),
+    env: z
+      .record(z.string(), z.string())
+      .openapi({ example: { MY_VAR: "value" } }),
     secretKeys: z.array(z.string()).openapi({ example: ["MY_SECRET"] }),
   })
   .openapi("AgentEnvResponse");
@@ -748,7 +750,9 @@ export const AgentEnvResponseSchema = z
 /**
  * POST /agents/:id/envs body — a plain key/value map (full replace).
  */
-export const AgentEnvBodySchema = z.record(z.string(), z.string()).openapi("AgentEnvBody");
+export const AgentEnvBodySchema = z
+  .record(z.string(), z.string())
+  .openapi("AgentEnvBody");
 
 /**
  * PATCH /agents/:id/envs body — partial update with optional secret designation.
@@ -757,7 +761,9 @@ export const AgentEnvBodySchema = z.record(z.string(), z.string()).openapi("Agen
  */
 export const AgentEnvPatchBodySchema = z
   .object({
-    env: z.record(z.string(), z.string()).openapi({ example: { MY_VAR: "value" } }),
+    env: z
+      .record(z.string(), z.string())
+      .openapi({ example: { MY_VAR: "value" } }),
     secretKeys: z
       .array(z.string())
       .optional()
@@ -1017,6 +1023,42 @@ const DailyTokenAggregateSchema = TokenAggregateSchema.extend({
   period: z.string().openapi({ example: "2026-01-10" }),
 }).openapi("DailyTokenAggregate");
 
+/** Per-(kind, name) skill / subagent usage rollup (PAU-1.6). */
+const SkillUsageAggregateSchema = z
+  .object({
+    kind: z.string().openapi({ example: "skill" }),
+    name: z.string().openapi({ example: "shipwright:dev-task" }),
+    runs: z.number().int().openapi({ example: 4 }),
+    invocations: z.number().int().openapi({ example: 5 }),
+    turns: z.number().int().openapi({ example: 40 }),
+    input: z.number().int().openapi({ example: 600 }),
+    output: z.number().int().openapi({ example: 300 }),
+    cacheRead: z.number().int().openapi({ example: 60 }),
+    cacheCreation: z.number().int().openapi({ example: 30 }),
+    avgInvokeContextDelta: z.number().nullable().openapi({ example: 1200 }),
+  })
+  .openapi("SkillUsageAggregate");
+
+/** First-turn context baseline per (contextFingerprint, baselineModel, phase). */
+const ContextBaselineAggregateSchema = z
+  .object({
+    contextFingerprint: z.string().nullable().openapi({ example: "a1b2c3" }),
+    baselineModel: z
+      .string()
+      .nullable()
+      .openapi({ example: "claude-sonnet-5-5" }),
+    phase: z.string().nullable().openapi({ example: "dev-task" }),
+    runs: z.number().int().openapi({ example: 12 }),
+    avgContextTokens: z.number().openapi({ example: 24000 }),
+    minContextTokens: z.number().int().openapi({ example: 23000 }),
+    maxContextTokens: z.number().int().openapi({ example: 25000 }),
+    avgTurns: z.number().nullable().openapi({ example: 30 }),
+    avgToolCalls: z.number().nullable().openapi({ example: 55 }),
+    firstSeen: z.string().openapi({ example: "2026-01-10T09:00:00.000Z" }),
+    lastSeen: z.string().openapi({ example: "2026-01-15T09:00:00.000Z" }),
+  })
+  .openapi("ContextBaselineAggregate");
+
 /**
  * Response shape for GET /agents/all/cron-runs/stats.
  * Matches the CronRunTokenStats interface in admin-metrics-client.ts exactly.
@@ -1031,10 +1073,44 @@ export const CronRunTokenStatsSchema = z
     byCronModel: z.array(DoubleKeyedTokenAggregateSchema),
     /** Keyed by phase (dev-task/review/patch/deploy). Runs with a null phase are excluded. */
     byPhase: z.array(KeyedTokenAggregateSchema),
+    /** Per (kind, name); skipped runs excluded. */
+    bySkill: z.array(SkillUsageAggregateSchema).optional(),
+    /** Per (fingerprint, model, phase); skipped runs included, runs without a baseline excluded. */
+    baselines: z.array(ContextBaselineAggregateSchema).optional(),
   })
   .openapi("CronRunTokenStats");
 
 export type CronRunTokenStatsType = z.infer<typeof CronRunTokenStatsSchema>;
+
+/** One (phase, contextFingerprint) outcome series for GET /agents/all/cron-runs/outcomes. */
+const CronRunOutcomeSeriesSchema = z
+  .object({
+    phase: z.string().nullable().openapi({ example: "dev-task" }),
+    contextFingerprint: z
+      .string()
+      .nullable()
+      .openapi({ example: "a1b2c3d4e5f6" }),
+    runs: z.number().int(),
+    completed: z.number().int(),
+    failed: z.number().int(),
+    skipped: z.number().int(),
+    skipReasons: z
+      .record(z.string(), z.number().int())
+      .openapi({ example: { "no-ready-task": 3 } }),
+    avgDurationMs: z.number().nullable(),
+    p50DurationMs: z.number().nullable(),
+    avgTurns: z.number().nullable(),
+    avgToolCalls: z.number().nullable(),
+    avgContextTokens: z.number().nullable(),
+  })
+  .openapi("CronRunOutcomeSeries");
+
+/** Response shape for GET /agents/all/cron-runs/outcomes. */
+export const CronRunOutcomesSchema = z
+  .object({ series: z.array(CronRunOutcomeSeriesSchema) })
+  .openapi("CronRunOutcomes");
+
+export type CronRunOutcomesType = z.infer<typeof CronRunOutcomesSchema>;
 
 /**
  * Response shape for GET /agents/chat-tokens/daily/stats.

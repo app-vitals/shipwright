@@ -145,6 +145,7 @@ function makeBaseDeps(
       patch: async () => ({}) as never,
     },
     agentCronRunStatsService: {
+      outcomes: async () => ({ series: [] }),
       query: async () => ({
         totals: {
           input: 0,
@@ -185,6 +186,8 @@ function makeBaseDeps(
       upsert: async () => ({}) as never,
     },
     agentMemberService: {
+      exists: async () => false,
+      listByEmail: async () => [],
       add: async () => ({}) as never,
       listByAgentId: async () => [],
     },

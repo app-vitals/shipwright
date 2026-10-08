@@ -81,6 +81,7 @@ import {
   CreateAgentToolBodySchema,
   CronIdParamSchema,
   CronRunIdParamSchema,
+  CronRunOutcomesSchema,
   CronRunsListSchema,
   CronRunTokenStatsSchema,
   CronsWithSummaryWrapperSchema,
@@ -141,7 +142,10 @@ export interface AdminDeps {
     | "updatePreCheck"
   >;
   agentCronRunService: Pick<AgentCronRunService, "create" | "list" | "patch">;
-  agentCronRunStatsService: Pick<AgentCronRunStatsService, "query">;
+  agentCronRunStatsService: Pick<
+    AgentCronRunStatsService,
+    "query" | "outcomes"
+  >;
   agentToolService: Pick<
     AgentToolService,
     "list" | "add" | "remove" | "toggle"
@@ -158,7 +162,10 @@ export interface AdminDeps {
     AgentPhaseMethodologyService,
     "list" | "upsert"
   >;
-  agentMemberService: Pick<AgentMemberService, "add" | "listByAgentId">;
+  agentMemberService: Pick<
+    AgentMemberService,
+    "add" | "listByAgentId" | "exists" | "listByEmail"
+  >;
   /**
    * Resolves an agent-type name to its parsed Agent Type manifest. Consumed
    * by POST /agents (createAgentRoute, APA-2.1) to seed AgentTool/AgentPlugin
@@ -1117,6 +1124,25 @@ const cronRunTokenStatsRoute = createRoute({
   },
 });
 
+const cronRunOutcomesRoute = createRoute({
+  method: "get",
+  path: "/agents/all/cron-runs/outcomes",
+  summary: "Get cron-run outcomes per phase and context fingerprint",
+  description:
+    "Admin-only. Returns, per (phase, contextFingerprint): run, completed, failed, and skipped counts, a skipReasons histogram, avg and p50 duration, avg turns, avg tool calls, and avg first-turn context tokens. Optional `from`/`to` ISO datetime query params bound the range on startedAt.",
+  request: {
+    query: cronRunStatsQuerySchema,
+  },
+  responses: {
+    200: {
+      description: "Outcome series per (phase, contextFingerprint)",
+      content: { "application/json": { schema: CronRunOutcomesSchema } },
+    },
+    401: { description: "Unauthorized", ...jsonError },
+    403: { description: "Forbidden — requires admin scope", ...jsonError },
+  },
+});
+
 const chatTokenDailyStatsQuerySchema = z
   .object({
     from: z.string().date().optional().openapi({ example: "2026-01-01" }),
@@ -1213,7 +1239,14 @@ export function createAdminApp(deps: AdminDeps): OpenAPIHono<AdminAuthEnv> {
     sessionSecret,
     agentTokenService,
     adminApiKeys,
+    agentMemberService,
   });
+
+  // Admin, or a session-cookie caller (membership of the route's agent already
+  // enforced by the auth middleware). Bearer non-admins stay denied.
+  const isAdminOrSessionMember = (c: {
+    get: (k: "isAdmin" | "callerEmail") => unknown;
+  }) => c.get("isAdmin") === true || c.get("callerEmail") !== undefined;
 
   // Apply combined auth (bearer token OR session cookie) to all /agents/* routes.
   app.use("/agents/*", authMiddleware);
@@ -1246,7 +1279,7 @@ export function createAdminApp(deps: AdminDeps): OpenAPIHono<AdminAuthEnv> {
   // POST /agents/:id/provision — provision a single agent's K8s workload (admin only).
   // Idempotent: safe to call on an already-provisioned agent.
   app.openapi(provisionAgentRoute, async (c) => {
-    if (c.get("isAdmin") !== true) {
+    if (!isAdminOrSessionMember(c)) {
       throw new ForbiddenError(
         "Only admin bearers and session users can provision agents",
       );
@@ -1269,7 +1302,7 @@ export function createAdminApp(deps: AdminDeps): OpenAPIHono<AdminAuthEnv> {
 
   // GET /agents/:id — get full agent record including selfHosted and repos
   app.openapi(getAgentRoute, async (c) => {
-    if (c.get("isAdmin") !== true) {
+    if (!isAdminOrSessionMember(c)) {
       throw new ForbiddenError("Admin access required to get agent");
     }
     const { id: agentId } = c.req.valid("param");
@@ -1282,7 +1315,7 @@ export function createAdminApp(deps: AdminDeps): OpenAPIHono<AdminAuthEnv> {
 
   // PATCH /agents/:id — update agent fields (selfHosted, repos)
   app.openapi(patchAgentRoute, async (c) => {
-    if (c.get("isAdmin") !== true) {
+    if (!isAdminOrSessionMember(c)) {
       throw new ForbiddenError("Admin access required to update agent");
     }
     const { id: agentId } = c.req.valid("param");
@@ -1346,7 +1379,7 @@ export function createAdminApp(deps: AdminDeps): OpenAPIHono<AdminAuthEnv> {
 
   // DELETE /agents/:id — delete an agent and tear down its workload (admin only)
   app.openapi(deleteAgentRoute, async (c) => {
-    if (c.get("isAdmin") !== true) {
+    if (!isAdminOrSessionMember(c)) {
       throw new ForbiddenError(
         "Only admin bearers and session users can delete agents",
       );
@@ -1377,11 +1410,21 @@ export function createAdminApp(deps: AdminDeps): OpenAPIHono<AdminAuthEnv> {
 
   // GET /agents — list all agents (id + name + selfHosted) for metrics name resolution.
   app.openapi(listAgentsRoute, async (c) => {
-    if (c.get("isAdmin") !== true) {
+    const email = c.get("callerEmail");
+    if (c.get("isAdmin") !== true && email === undefined) {
       throw new ForbiddenError("Admin access required to list agents");
     }
     const agents = await agentService.list();
-    return c.json(agents, 200);
+    if (c.get("isAdmin") === true || email === undefined) {
+      return c.json(agents, 200);
+    }
+    // Non-admin session: only agents the caller has an AgentMember row for.
+    const memberships = await agentMemberService.listByEmail(email);
+    const memberAgentIds = new Set(memberships.map((m) => m.agentId));
+    return c.json(
+      agents.filter((a) => memberAgentIds.has(a.id)),
+      200,
+    );
   });
 
   // POST /agents — create a new agent (admin only). Delegates to createAgent()
@@ -1857,6 +1900,18 @@ export function createAdminApp(deps: AdminDeps): OpenAPIHono<AdminAuthEnv> {
     const { from, to } = c.req.valid("query");
     const stats = await agentCronRunStatsService.query(from, to);
     return c.json(stats, 200);
+  });
+
+  // GET /agents/all/cron-runs/outcomes — per-(phase, contextFingerprint) outcomes
+  app.openapi(cronRunOutcomesRoute, async (c) => {
+    if (c.get("isAdmin") !== true) {
+      throw new ForbiddenError(
+        "Only admin bearers and session users can access cross-agent stats",
+      );
+    }
+    const { from, to } = c.req.valid("query");
+    const outcomes = await agentCronRunStatsService.outcomes(from, to);
+    return c.json(outcomes, 200);
   });
 
   // GET /agents/chat-tokens/daily/stats — aggregated daily chat token stats

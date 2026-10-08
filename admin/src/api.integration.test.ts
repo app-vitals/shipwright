@@ -112,6 +112,7 @@ describeOrSkip(
           },
         },
         agentCronRunStatsService: {
+          outcomes: async () => ({ series: [] }),
           query: async () => ({
             totals: {
               input: 0,
@@ -142,6 +143,8 @@ describeOrSkip(
         agentPluginService,
         agentPhaseMethodologyService,
         agentMemberService: {
+          exists: async () => false,
+          listByEmail: async () => [],
           add: async () => {
             throw new Error("not implemented");
           },

@@ -952,6 +952,8 @@ function buildCombinedApp() {
       }),
     },
     agentMemberService: {
+      exists: async () => false,
+      listByEmail: async () => [],
       add: async (agentId: string, email: string) => ({
         id: "member-1",
         agentId,
@@ -1004,6 +1006,7 @@ function buildCombinedApp() {
       get: async () => null,
     },
     agentCronRunStatsService: {
+      outcomes: async () => ({ series: [] }),
       query: async () => ({
         totals: {
           input: 0,

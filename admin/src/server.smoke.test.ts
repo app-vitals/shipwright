@@ -103,7 +103,10 @@ function buildComposedApp() {
       list: notImplemented,
       patch: notImplemented,
     },
-    agentCronRunStatsService: { query: notImplemented },
+    agentCronRunStatsService: {
+      query: notImplemented,
+      outcomes: notImplemented,
+    },
     agentToolService: {
       list: notImplemented,
       add: notImplemented,
@@ -126,7 +129,12 @@ function buildComposedApp() {
       list: notImplemented,
       upsert: notImplemented,
     },
-    agentMemberService: { add: notImplemented, listByAgentId: notImplemented },
+    agentMemberService: {
+      add: notImplemented,
+      listByAgentId: notImplemented,
+      exists: async () => false,
+      listByEmail: async () => [],
+    },
     agentChatTokenService: {
       upsertDailyByModel: notImplemented,
       queryStats: notImplemented,

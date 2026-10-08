@@ -24,6 +24,7 @@ const UNKNOWN_AGENT_ID = "agent-does-not-exist";
 async function makeSessionCookie(secret = SESSION_SECRET): Promise<string> {
   return sign(
     {
+      isAdmin: true,
       userId: "user-123",
       email: "admin@example.com",
       name: "Admin User",
@@ -211,6 +212,8 @@ function makeMockDeps(opts?: {
       },
     },
     agentMemberService: {
+      exists: async () => false,
+      listByEmail: async () => [],
       add: async () => {
         throw new Error("not implemented");
       },
@@ -244,6 +247,7 @@ function makeMockDeps(opts?: {
       get: async () => null,
     },
     agentCronRunStatsService: {
+      outcomes: async () => ({ series: [] }),
       query: async () => ({
         totals: {
           input: 0,
