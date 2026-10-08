@@ -104,6 +104,24 @@ describe("createTaskStoreFetchers — accountId forwarding (SSP-6.8)", () => {
     expect(calls[4]?.body).toBe(JSON.stringify({ archived: true }));
   });
 
+  it("percent-encodes by-id path segments so #, ? and / cannot truncate the accountId query", async () => {
+    const { calls, fetchers } = make();
+    for (const id of ["B-1#", "B-1?x=1", "B/../admin"]) {
+      await fetchers.fetchTaskStoreTask(id, "acct-a");
+      await fetchers.releaseTask(id, "acct-a");
+      await fetchers.fetchTaskStorePrById(id, "acct-a");
+    }
+    expect(calls).toHaveLength(9);
+    for (const call of calls) {
+      expect(call.url.hash).toBe("");
+      expect(call.url.searchParams.get("accountId")).toBe("acct-a");
+      expect(call.url.searchParams.has("x")).toBe(false);
+    }
+    expect(calls[0]?.url.pathname).toBe("/tasks/B-1%23");
+    expect(calls[3]?.url.pathname).toBe("/tasks/B-1%3Fx%3D1");
+    expect(calls[6]?.url.pathname).toBe("/tasks/B%2F..%2Fadmin");
+  });
+
   it("maps a 404 on by-id reads and the session patch to null", async () => {
     const { fetchers } = make(() => new Response("{}", { status: 404 }));
     expect(await fetchers.fetchTaskStoreTask("T-x", "acct-a")).toBeNull();

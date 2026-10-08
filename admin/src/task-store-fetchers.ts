@@ -73,11 +73,15 @@ export function createTaskStoreFetchers(config: TaskStoreFetchersConfig) {
       getJson<T>("/tasks", params, accountId, "/tasks"),
 
     fetchTaskStoreTask: <T>(id: string, accountId?: string) =>
-      getJsonOrNull<T>(`/tasks/${id}`, accountId),
+      getJsonOrNull<T>(`/tasks/${encodeURIComponent(id)}`, accountId),
 
     releaseTask: async (id: string, accountId?: string): Promise<void> => {
       const res = await doFetch(
-        path(`/tasks/${id}/release`, new URLSearchParams(), accountId),
+        path(
+          `/tasks/${encodeURIComponent(id)}/release`,
+          new URLSearchParams(),
+          accountId,
+        ),
         { method: "POST", headers: auth },
       );
       if (!res.ok)
@@ -96,7 +100,7 @@ export function createTaskStoreFetchers(config: TaskStoreFetchersConfig) {
       getJson<T>("/prs", params, accountId, "/prs"),
 
     fetchTaskStorePrById: <T>(id: string, accountId?: string) =>
-      getJsonOrNull<T>(`/prs/${id}`, accountId),
+      getJsonOrNull<T>(`/prs/${encodeURIComponent(id)}`, accountId),
 
     fetchVerificationChecks: <T>(params: URLSearchParams, accountId?: string) =>
       getJson<T>(
