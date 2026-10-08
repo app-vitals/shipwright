@@ -22,6 +22,11 @@ export interface ShipwrightToolbarOptions {
   readOnly?: boolean;
   /** Public task board URL, used only in readOnly mode. Defaults to "/public/tasks". */
   tasksUrl?: string;
+  /**
+   * Render the "Account" nav entry (self-serve accounts, admin service only).
+   * Defaults to false so other services sharing this toolbar never show it.
+   */
+  showAccount?: boolean;
 }
 
 export function baseStyles(): string {
@@ -225,7 +230,7 @@ export function renderShipwrightToolbar(
       <a href="${adminBase}/admin/prs" class="vos-nav-link${active("/admin/prs")}">PRs</a>
       <a href="${adminBase}/admin/chat" class="vos-nav-link${active("/admin/chat")}">Chat</a>
       <a href="${adminBase}/admin/queue-activity" class="vos-nav-link${isQueueActivity ? " active" : ""}">Queue &amp; Activity</a>
-      <a href="${metricsUrl}" class="vos-nav-link${active(metricsUrl)}">Metrics</a>
+      ${opts.showAccount ? `<a href="${adminBase}/admin/account" class="vos-nav-link${active("/admin/account")}">Account</a>\n      ` : ""}<a href="${metricsUrl}" class="vos-nav-link${active(metricsUrl)}">Metrics</a>
     </div>
     <div class="vos-user">
       <span class="vos-username">${escapeHtml(userName)}</span>
