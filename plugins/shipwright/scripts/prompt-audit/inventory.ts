@@ -70,7 +70,7 @@ function basename(p: string): string {
   return p.slice(p.lastIndexOf("/") + 1);
 }
 
-function joinNormalized(dir: string, rel: string): string {
+export function joinNormalized(dir: string, rel: string): string {
   const parts = (dir ? dir.split("/") : []).concat(rel.split("/"));
   const out: string[] = [];
   for (const part of parts) {
