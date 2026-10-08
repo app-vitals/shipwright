@@ -71,6 +71,8 @@ export interface AgentSummary {
   name: string;
   selfHosted: boolean;
   typeName: string;
+  /** Owning account; null/absent for platform agents. */
+  accountId?: string | null;
 }
 
 export interface AgentDetail {
@@ -217,6 +219,7 @@ const SUMMARY_SELECT = {
   name: true,
   selfHosted: true,
   typeName: true,
+  accountId: true,
 } as const;
 
 const DETAIL_SELECT = {
@@ -958,7 +961,10 @@ export async function createAgent(
     // committed. Roll the row back explicitly on failure so a retry with the
     // same name doesn't collide with a half-created agent.
     try {
-      await deps.provisioner.provision(agent.id, { slug: agent.name });
+      await deps.provisioner.provision(agent.id, {
+        slug: agent.name,
+        accountId: agent.accountId,
+      });
     } catch (err) {
       console.error(
         "[agents] createAgent: provisioning failed, rolling back:",

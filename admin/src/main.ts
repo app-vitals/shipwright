@@ -182,11 +182,13 @@ export function buildProvisioner(
   // an empty string, when unset) so resolveAgentContainerResources's default
   // fallback applies field-by-field.
   const cpuRequest = env.SHIPWRIGHT_K8S_AGENT_CPU_REQUEST;
+  const cpuLimit = env.SHIPWRIGHT_K8S_AGENT_CPU_LIMIT;
   const memoryRequest = env.SHIPWRIGHT_K8S_AGENT_MEMORY_REQUEST;
   const memoryLimit = env.SHIPWRIGHT_K8S_AGENT_MEMORY_LIMIT;
   const ephemeralStorage = env.SHIPWRIGHT_K8S_AGENT_EPHEMERAL_STORAGE;
   const resources = {
     ...(cpuRequest ? { cpuRequest } : {}),
+    ...(cpuLimit ? { cpuLimit } : {}),
     ...(memoryRequest ? { memoryRequest } : {}),
     ...(memoryLimit ? { memoryLimit } : {}),
     ...(ephemeralStorage ? { ephemeralStorage } : {}),

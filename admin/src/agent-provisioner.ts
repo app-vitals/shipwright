@@ -30,6 +30,7 @@ import {
   buildAgentDeploymentManifest,
   buildAgentSecretManifest,
   sanitizeAgentName,
+  TENANT_LABEL,
 } from "./agent-manifest.ts";
 import type { AgentTokenService } from "./agent-tokens.ts";
 import type { ChatServiceProvisioningClient } from "./chat-service-provisioning-client.ts";
@@ -92,7 +93,7 @@ export interface AgentProvisioner {
   /** Mint a token and create the agent's Secret + Deployment. Idempotent. */
   provision(
     agentId: string,
-    opts?: { slug?: string },
+    opts?: { slug?: string; accountId?: string | null },
   ): Promise<ProvisionResult>;
   /**
    * Delete the agent's Deployment, Secret, and PVC. Tolerates already-absent
@@ -106,7 +107,7 @@ export interface AgentProvisioner {
    * Deployments that have no corresponding agent.
    */
   reconcile(
-    agents: Array<{ id: string; slug?: string }>,
+    agents: Array<{ id: string; slug?: string; accountId?: string | null }>,
   ): Promise<ReconcileResult>;
 }
 
@@ -272,7 +273,11 @@ export class KubernetesAgentProvisioner implements AgentProvisioner {
    * The desired Deployment manifest for an agent — the single source of truth
    * used both to create (provision) and to drift-correct (reconcile).
    */
-  private deploymentManifestFor(agentId: string, slug?: string) {
+  private deploymentManifestFor(
+    agentId: string,
+    slug?: string,
+    accountId?: string | null,
+  ) {
     const resourceName = this.resourceName(agentId);
     return buildAgentDeploymentManifest({
       agentId,
@@ -288,12 +293,13 @@ export class KubernetesAgentProvisioner implements AgentProvisioner {
       voice: this.config.voice,
       taskStoreUrl: this.config.taskStoreUrl,
       chatServiceUrl: this.config.chatServiceUrl,
+      accountId,
     });
   }
 
   async provision(
     agentId: string,
-    opts?: { slug?: string },
+    opts?: { slug?: string; accountId?: string | null },
   ): Promise<ProvisionResult> {
     const resourceName = this.resourceName(agentId);
     const secretName = this.secretNameFor(resourceName);
@@ -380,7 +386,7 @@ export class KubernetesAgentProvisioner implements AgentProvisioner {
     try {
       await this.k8s.createDeploymentManifest(
         this.config.namespace,
-        this.deploymentManifestFor(agentId, opts?.slug),
+        this.deploymentManifestFor(agentId, opts?.slug, opts?.accountId),
       );
     } catch (err) {
       if (isConflict(err)) {
@@ -423,7 +429,7 @@ export class KubernetesAgentProvisioner implements AgentProvisioner {
   }
 
   async reconcile(
-    agents: Array<{ id: string; slug?: string }>,
+    agents: Array<{ id: string; slug?: string; accountId?: string | null }>,
   ): Promise<ReconcileResult> {
     const labelSelector =
       "app.kubernetes.io/name=shipwright-agent,app.kubernetes.io/managed-by=shipwright-admin";
@@ -437,7 +443,10 @@ export class KubernetesAgentProvisioner implements AgentProvisioner {
 
     // Build a map from sanitized resource name → original agent entry, and track
     // the full set of expected k8s names.
-    const expectedNames = new Map<string, { id: string; slug?: string }>(); // resourceName → agent
+    const expectedNames = new Map<
+      string,
+      { id: string; slug?: string; accountId?: string | null }
+    >(); // resourceName → agent
     for (const agent of agents) {
       expectedNames.set(this.resourceName(agent.id), agent);
     }
@@ -464,7 +473,10 @@ export class KubernetesAgentProvisioner implements AgentProvisioner {
           );
         }
         try {
-          await this.provision(agent.id, { slug: agent.slug });
+          await this.provision(agent.id, {
+            slug: agent.slug,
+            accountId: agent.accountId,
+          });
           recreated.push(agent.id);
         } catch (err) {
           failed.push({
@@ -485,15 +497,44 @@ export class KubernetesAgentProvisioner implements AgentProvisioner {
             resourceName,
           );
           const current = deployment.spec.template.spec.containers[0];
-          const desired = this.deploymentManifestFor(agent.id, agent.slug).spec
-            .template.spec.containers[0];
-          if (current && desired && containerDrifted(current, desired)) {
+          const desiredDeployment = this.deploymentManifestFor(
+            agent.id,
+            agent.slug,
+            agent.accountId,
+          );
+          const desired = desiredDeployment.spec.template.spec.containers[0];
+          const desiredLabels = desiredDeployment.spec.template.metadata.labels;
+          const labelsDrifted =
+            desiredLabels[TENANT_LABEL] !== undefined &&
+            deployment.spec.template.metadata?.labels?.[TENANT_LABEL] !==
+              desiredLabels[TENANT_LABEL];
+          if (
+            current &&
+            desired &&
+            (labelsDrifted || containerDrifted(current, desired))
+          ) {
             await this.k8s.patchDeployment(
               this.config.namespace,
               resourceName,
               {
+                ...(labelsDrifted
+                  ? {
+                      metadata: {
+                        labels: { [TENANT_LABEL]: desiredLabels[TENANT_LABEL] },
+                      },
+                    }
+                  : {}),
                 spec: {
                   template: {
+                    ...(labelsDrifted
+                      ? {
+                          metadata: {
+                            labels: {
+                              [TENANT_LABEL]: desiredLabels[TENANT_LABEL],
+                            },
+                          },
+                        }
+                      : {}),
                     spec: {
                       containers: [
                         {
@@ -654,7 +695,7 @@ export class NoopAgentProvisioner implements AgentProvisioner {
   }
 
   async reconcile(
-    _agents: Array<{ id: string; slug?: string }>,
+    _agents: Array<{ id: string; slug?: string; accountId?: string | null }>,
   ): Promise<ReconcileResult> {
     return { recreated: [], updated: [], orphans: [], failed: [] };
   }

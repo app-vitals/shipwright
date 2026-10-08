@@ -436,8 +436,7 @@ export class HttpKubernetesClient implements KubernetesClient {
     this.apiServer = opts?.apiServer ?? defaultApiServer();
     this.token = opts?.token;
     this.tokenPath = opts?.tokenPath ?? `${SA_DIR}/token`;
-    this.caCert =
-      opts?.caCert ?? readCa(opts?.caPath, opts?.saDir ?? SA_DIR);
+    this.caCert = opts?.caCert ?? readCa(opts?.caPath, opts?.saDir ?? SA_DIR);
     this.fetchFn = opts?.fetchFn ?? fetch;
   }
 
@@ -728,6 +727,7 @@ export class RecordedKubernetesClient implements KubernetesClient {
     const p = patch as {
       spec?: {
         template?: {
+          metadata?: { labels?: Record<string, string> };
           spec?: {
             containers?: KubernetesContainer[];
           };
@@ -738,6 +738,13 @@ export class RecordedKubernetesClient implements KubernetesClient {
     // container fields are replaced, except env (merges by name) and
     // resources.requests/limits (merges key-by-key) — patched entries win,
     // unmentioned live entries (e.g. Autopilot-injected cpu keys) survive.
+    const patchLabels = p.spec?.template?.metadata?.labels;
+    if (patchLabels) {
+      dep.spec.template.metadata.labels = {
+        ...dep.spec.template.metadata.labels,
+        ...patchLabels,
+      };
+    }
     const patchContainer = p.spec?.template?.spec?.containers?.[0];
     const existing = dep.spec.template.spec.containers[0];
     if (patchContainer !== undefined && existing !== undefined) {
