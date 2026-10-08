@@ -40,6 +40,9 @@ model Agent {
   patchAuthorAllowlist   String[] @default([])
   restrictSlackToMembers Boolean  @default(false)
   typeName               String   @default("coding")
+  // SSP-1.2: owning account. Nullable/additive — existing agents keep NULL.
+  accountId              String?
+  account                Account? @relation(fields: [accountId], references: [id], onDelete: Restrict)
   // ATE-1.1: trial expiry tracking. Both nullable/additive — null means "no
   // trial configured" / "no warning sent yet". trialExpiresAt is settable via
   // PATCH /agents/:id like other nullable scalar fields; trialExpiryWarnedAt
@@ -77,6 +80,8 @@ model Agent {
   workQueueSnapshot AgentWorkQueueSnapshot?
   githubInstallationsSnapshot AgentGitHubInstallationsSnapshot?
   phaseMethodologies AgentPhaseMethodology[]
+
+  @@index([accountId])
 }
 
 // ─── Agent Env ────────────────────────────────────────────────────────────────
@@ -216,6 +221,52 @@ model AgentMember {
   agent     Agent    @relation(fields: [agentId], references: [id], onDelete: Cascade)
 
   @@unique([agentId, email])
+  @@index([email])
+}
+
+// ─── Accounts ─────────────────────────────────────────────────────────────────
+// SSP-1.2: self-serve agent provisioning. An Account owns agents and has
+// members (email-keyed) and pending invites. Phase 1: one account per email
+// (UNIQUE(email) on AccountMember). Enum-like strings are validated in the
+// service layer, matching the rest of this schema.
+
+model Account {
+  id                  String    @id @default(cuid())
+  name                String
+  status              String    @default("active") // 'active' | 'suspended' | 'trial_expired'
+  maxAgents           Int       @default(0)
+  plan                String?
+  trialExpiresAt      DateTime?
+  trialExpiryWarnedAt DateTime?
+  createdAt           DateTime  @default(now())
+  updatedAt           DateTime  @updatedAt
+
+  agents  Agent[]
+  members AccountMember[]
+  invites AccountInvite[]
+}
+
+model AccountMember {
+  id        String   @id @default(cuid())
+  accountId String
+  email     String   @unique // lowercased; one account per email in Phase 1
+  role      String   // 'owner' | 'member'
+  createdAt DateTime @default(now())
+  account   Account  @relation(fields: [accountId], references: [id], onDelete: Cascade)
+
+  @@unique([accountId, email])
+}
+
+model AccountInvite {
+  id         String    @id @default(cuid())
+  accountId  String
+  email      String    // lowercased
+  invitedBy  String
+  createdAt  DateTime  @default(now())
+  acceptedAt DateTime?
+  account    Account   @relation(fields: [accountId], references: [id], onDelete: Cascade)
+
+  @@unique([accountId, email])
   @@index([email])
 }
 
