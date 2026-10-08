@@ -67,6 +67,7 @@ export interface TaskForVisibility {
  * The caller's accessible-agent-ids scope: "all" for an admin (bypasses
  * every check), or the specific list of agent ids a member belongs to
  * (possibly empty — a member with zero memberships resolves to []).
+ * Account-derived ids (SSP-2.1) are already folded in by the caller.
  */
 export type AgentIdScope = "all" | string[];
 
@@ -95,9 +96,23 @@ export interface VisibilityScope {
 export function visibleAgentIdsFor(
   isAdmin: boolean,
   memberships: MembershipForScope[],
+  accountAgentIds: string[] = [],
 ): AgentIdScope {
   if (isAdmin) return "all";
-  return memberships.map((membership) => membership.agentId);
+  return [
+    ...new Set([
+      ...accountAgentIds,
+      ...memberships.map((membership) => membership.agentId),
+    ]),
+  ];
+}
+
+/** Map a resolved CallerScope (caller-scope.ts) onto the AgentIdScope shape. */
+export function agentIdScopeFromCallerScope(scope: {
+  kind: "all" | "scoped";
+  agentIds?: string[];
+}): AgentIdScope {
+  return scope.kind === "all" ? "all" : (scope.agentIds ?? []);
 }
 
 // ─── Derivation from a session's tasks ──────────────────────────────────────

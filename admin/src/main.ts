@@ -24,6 +24,7 @@ import { sentry } from "@sentry/hono/bun";
 import { registerGracefulShutdown } from "@shipwright/lib/graceful-shutdown";
 import { buildSentryInitOptions, initSentry } from "@shipwright/lib/sentry";
 import { Hono } from "hono";
+import { AccountService } from "./accounts.ts";
 import { createAdminUIApp } from "./admin-ui.ts";
 import { AgentChatTokenService } from "./agent-chat-tokens.ts";
 import { AgentCronJobService } from "./agent-cron-jobs.ts";
@@ -46,6 +47,10 @@ import { AgentWorkQueueService } from "./agent-work-queue.ts";
 import { AgentService } from "./agents.ts";
 import { createAdminApp, parseAdminApiKeys } from "./agents-api.ts";
 import { createAgentRuntimeApp } from "./api.ts";
+import {
+  callerScopeDepsFromServices,
+  createCallerScopeResolver,
+} from "./caller-scope.ts";
 import type { ChatServiceProvisioningClient } from "./chat-service-provisioning-client.ts";
 import {
   HttpChatServiceProvisioningClient,
@@ -444,6 +449,15 @@ async function startServer(): Promise<void> {
   const agentPluginService = new AgentPluginService(prisma);
   const agentPhaseMethodologyService = new AgentPhaseMethodologyService(prisma);
   const agentMemberService = new AgentMemberService(prisma);
+  // Account-aware caller scope (SSP-2.1). Account membership contributes
+  // agents only when the self-serve flag is on; off → AgentMember-only.
+  const callerScopeResolver = createCallerScopeResolver(
+    callerScopeDepsFromServices({
+      accountService: new AccountService(prisma),
+      agentMemberService,
+    }),
+    process.env.SHIPWRIGHT_SELF_SERVE_ENABLED === "enabled",
+  );
   const agentChatTokenService = new AgentChatTokenService(prisma);
   const agentCronRunStatsService = new AgentCronRunStatsService(prisma);
   const agentWorkQueueService = new AgentWorkQueueService(prisma);
@@ -578,6 +592,7 @@ async function startServer(): Promise<void> {
     agentPluginService,
     agentPhaseMethodologyService,
     agentMemberService,
+    callerScopeResolver,
     agentTypeRegistry: new AgentTypeRegistry(),
     agentChatTokenService,
     agentWorkQueueService,
@@ -767,6 +782,7 @@ async function startServer(): Promise<void> {
     agentPluginService,
     agentPhaseMethodologyService,
     agentMemberService,
+    callerScopeResolver,
     agentService,
     provisioner,
     taskStore: deletionTaskStore,

@@ -1785,7 +1785,17 @@ describe("admin UI — authenticated pages", () => {
             getConfigBundle: async () => null,
           },
           agentMemberService: {
-            listByEmail: async () => [],
+            listByEmail: async (email: string) =>
+              email === MEMBER_EMAIL
+                ? [
+                    {
+                      id: "m1",
+                      agentId: AGENT_ID,
+                      email,
+                      createdAt: new Date(),
+                    },
+                  ]
+                : [],
             exists: async (_agentId: string, email: string) =>
               email === MEMBER_EMAIL,
             add: async () => ({
@@ -3864,7 +3874,10 @@ describe("admin UI — member access control", () => {
         },
       },
       agentMemberService: {
-        listByEmail: async () => [],
+        listByEmail: async (email: string) =>
+          email === MEMBER_EMAIL
+            ? [{ id: "m1", agentId: AGENT_ID, email, createdAt: new Date() }]
+            : [],
         exists: async (_agentId: string, email: string) =>
           email === MEMBER_EMAIL,
         add: async () => ({
@@ -3896,6 +3909,32 @@ describe("admin UI — member access control", () => {
       headers: { Cookie: `admin_session=${outsiderCookie}` },
     });
     expect(res.status).toBe(403);
+  });
+
+  it("account member can open their account's agent but gets 403 on another account's (SSP-2.1)", async () => {
+    const cookie = await makeSessionCookie(
+      SESSION_SECRET,
+      "google-sub-acct",
+      "acct-user@example.com",
+      false,
+    );
+    const app = createAdminUIApp(
+      makeMockDeps({
+        callerScopeResolver: async () => ({
+          kind: "scoped",
+          accountId: "acct-a",
+          agentIds: [AGENT_ID],
+        }),
+      }),
+    );
+    const own = await app.request(`/admin/agents/${AGENT_ID}`, {
+      headers: { Cookie: `admin_session=${cookie}` },
+    });
+    expect(own.status).toBe(200);
+    const other = await app.request("/admin/agents/agent-in-account-b", {
+      headers: { Cookie: `admin_session=${cookie}` },
+    });
+    expect(other.status).toBe(403);
   });
 
   it("non-admin sees only their agents in the agents list", async () => {
@@ -11911,7 +11950,10 @@ describe("admin UI — Okta-authenticated access control", () => {
     let upsertCalledWith: unknown[] = [];
     const deps = makeMockDeps({
       agentMemberService: {
-        listByEmail: async () => [],
+        listByEmail: async (email: string) =>
+          email === OKTA_MEMBER_EMAIL
+            ? [{ id: "m1", agentId: AGENT_ID, email, createdAt: new Date() }]
+            : [],
         exists: async (_agentId: string, email: string) =>
           email === OKTA_MEMBER_EMAIL,
         add: async () => ({

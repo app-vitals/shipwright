@@ -28,11 +28,15 @@ import {
 import { escapeHtml, renderAdminToolbar } from "./admin-ui-styles.ts";
 import type { AgentMemberService } from "./agent-members.ts";
 import type { AgentService } from "./agents.ts";
+import {
+  type CallerScopeResolver,
+  memberOnlyCallerScopeResolver,
+} from "./caller-scope.ts";
 import type { SessionFollowService } from "./session-follow-service.ts";
 import {
+  agentIdScopeFromCallerScope,
   isSessionVisible,
   type VisibilityScope,
-  visibleAgentIdsFor,
 } from "./session-scope.ts";
 
 const SESSIONS_LIST_PATH = "/admin/sessions";
@@ -79,6 +83,8 @@ export type SessionsListAgentService = Pick<
 export interface SessionsListDeps {
   requireAuth: MiddlewareHandler<AdminUIEnv>;
   agentMemberService: SessionsListAgentMemberService;
+  /** Account-aware scope resolver (SSP-2.1); defaults to AgentMember-only. */
+  callerScopeResolver?: CallerScopeResolver;
   agentService: SessionsListAgentService;
   /**
    * Resolves which sessions the current user already follows (SESH-6.1/
@@ -144,15 +150,14 @@ interface SessionsListFilters {
 export async function resolveVisibilityScope(
   isAdmin: boolean,
   userEmail: string,
-  agentMemberService: SessionsListAgentMemberService,
+  callerScopeResolver: CallerScopeResolver,
   agentService: SessionsListAgentService,
 ): Promise<VisibilityScope> {
   if (isAdmin) return { agentIds: "all", repos: [] };
 
-  const memberships = await agentMemberService.listByEmail(
-    userEmail.toLowerCase(),
+  const agentIdScope = agentIdScopeFromCallerScope(
+    await callerScopeResolver(userEmail, false),
   );
-  const agentIdScope = visibleAgentIdsFor(false, memberships);
   if (agentIdScope === "all" || agentIdScope.length === 0) {
     return { agentIds: [], repos: [] };
   }
@@ -487,7 +492,8 @@ export function registerSessionsListRoutes(
     const scope = await resolveVisibilityScope(
       isAdmin,
       userEmail,
-      deps.agentMemberService,
+      deps.callerScopeResolver ??
+        memberOnlyCallerScopeResolver(deps.agentMemberService),
       deps.agentService,
     );
 

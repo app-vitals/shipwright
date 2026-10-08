@@ -18,17 +18,23 @@ import type { Hono, MiddlewareHandler } from "hono";
 import type { AdminUIEnv } from "./admin-ui.ts";
 import type { AgentMemberService } from "./agent-members.ts";
 import type { AgentService } from "./agents.ts";
+import {
+  type CallerScopeResolver,
+  memberOnlyCallerScopeResolver,
+} from "./caller-scope.ts";
 import type { SessionFollowService } from "./session-follow-service.ts";
 import {
-  type SessionForVisibility,
+  agentIdScopeFromCallerScope,
   isSessionVisible,
-  visibleAgentIdsFor,
+  type SessionForVisibility,
 } from "./session-scope.ts";
 
 export interface SessionFollowRoutesDeps {
   requireAuth: MiddlewareHandler<AdminUIEnv>;
   sessionFollowService: Pick<SessionFollowService, "follow" | "unfollow">;
   agentMemberService: Pick<AgentMemberService, "listByEmail">;
+  /** Account-aware scope resolver (SSP-2.1); defaults to AgentMember-only. */
+  callerScopeResolver?: CallerScopeResolver;
   agentService: Pick<AgentService, "listByIds">;
   /**
    * Resolve a session's agentIds/repos for visibility checks. Only consulted
@@ -63,14 +69,16 @@ async function memberCanSeeSession(
   }
   if (!session) return false;
 
-  const memberships = await deps.agentMemberService.listByEmail(
-    userEmail.toLowerCase(),
+  const resolver =
+    deps.callerScopeResolver ??
+    memberOnlyCallerScopeResolver(deps.agentMemberService);
+  const agentIds = agentIdScopeFromCallerScope(
+    await resolver(userEmail, false),
   );
-  const agentIds = visibleAgentIdsFor(false, memberships);
   const agents =
-    memberships.length === 0
+    agentIds === "all" || agentIds.length === 0
       ? []
-      : await deps.agentService.listByIds(memberships.map((m) => m.agentId));
+      : await deps.agentService.listByIds(agentIds);
   const repos = agents.flatMap((agent) => agent.repos ?? []);
 
   return isSessionVisible(session, { agentIds, repos });
