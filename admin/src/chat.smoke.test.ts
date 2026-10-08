@@ -1706,3 +1706,146 @@ describe("chat routes — agent member access", () => {
     expect(res.status).toBe(403);
   });
 });
+
+// ─── SSP-8.4: account-status send gate ────────────────────────────────────────
+
+describe("account status gates chat message-send (SSP-8.4)", () => {
+  const ACCOUNT_ID = "acct-gate";
+  const SEND_PATHS: {
+    suffix: string;
+    init: { headers: Record<string, string>; body: BodyInit };
+  }[] = [
+    {
+      suffix: "/messages",
+      init: {
+        headers: { "Content-Type": "application/x-www-form-urlencoded" },
+        body: "body=hi",
+      },
+    },
+    {
+      suffix: "/messages.json",
+      init: {
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ body: "hi" }),
+      },
+    },
+    {
+      suffix: "/messages/upload",
+      init: {
+        headers: {},
+        body: (() => {
+          const fd = new FormData();
+          fd.set("file", new File(["x"], "x.txt"));
+          return fd;
+        })(),
+      },
+    },
+  ];
+
+  function gateDeps(status: string | null, writes: { n: number }) {
+    const base = makeBaseDeps();
+    return makeBaseDeps({
+      chatClient: makeMockChatClient({
+        createMessage: async () => {
+          writes.n++;
+          return MOCK_MESSAGE;
+        },
+      }),
+      callerScopeResolver: async () => ({
+        kind: "scoped",
+        accountId: ACCOUNT_ID,
+        agentIds: [AGENT_ID],
+      }),
+      accountService: {
+        getById: async () =>
+          status ? ({ id: ACCOUNT_ID, status } as never) : null,
+        countAgents: async () => 0,
+        listAgentIds: async () => [AGENT_ID],
+      },
+      agentService: {
+        ...base.agentService,
+        getDetail: async () =>
+          ({
+            id: AGENT_ID,
+            accountId: status === "none" ? null : ACCOUNT_ID,
+          }) as never,
+      },
+    });
+  }
+
+  async function send(
+    app: ReturnType<typeof createAdminUIApp>,
+    p: (typeof SEND_PATHS)[number],
+    cookie: string,
+  ) {
+    return app.request(
+      `/admin/chat/${AGENT_ID}/threads/${THREAD_ID}${p.suffix}`,
+      {
+        method: "POST",
+        ...p.init,
+        headers: { ...p.init.headers, Cookie: `admin_session=${cookie}` },
+      },
+    );
+  }
+
+  let userCookie: string;
+  let adminCookie: string;
+  beforeAll(async () => {
+    userCookie = await makeSessionCookie(
+      SESSION_SECRET,
+      "sub-acct-user",
+      "acct-user@example.com",
+      false,
+    );
+    adminCookie = await makeSessionCookie();
+  });
+
+  for (const status of ["suspended", "trial_expired"]) {
+    it(`rejects sends from account users when ${status}, but history still reads`, async () => {
+      const writes = { n: 0 };
+      const app = createAdminUIApp(gateDeps(status, writes));
+      for (const p of SEND_PATHS) {
+        const res = await send(app, p, userCookie);
+        expect(res.status).toBe(403);
+        expect(await res.text()).toContain(
+          status === "suspended" ? "suspended" : "trial has expired",
+        );
+      }
+      expect(writes.n).toBe(0);
+      const history = await app.request(
+        `/admin/chat/${AGENT_ID}/threads/${THREAD_ID}/messages.json`,
+        { headers: { Cookie: `admin_session=${userCookie}` } },
+      );
+      expect(history.status).toBe(200);
+      const thread = await app.request(
+        `/admin/chat/${AGENT_ID}/threads/${THREAD_ID}`,
+        { headers: { Cookie: `admin_session=${userCookie}` } },
+      );
+      expect(thread.status).toBe(200);
+    });
+
+    it(`allows platform admins to send when ${status}`, async () => {
+      const writes = { n: 0 };
+      const app = createAdminUIApp(gateDeps(status, writes));
+      const res = await send(app, SEND_PATHS[1], adminCookie);
+      expect(res.status).toBe(200);
+      expect(writes.n).toBe(1);
+    });
+  }
+
+  it("allows sends when the account is active", async () => {
+    const writes = { n: 0 };
+    const app = createAdminUIApp(gateDeps("active", writes));
+    const res = await send(app, SEND_PATHS[1], userCookie);
+    expect(res.status).toBe(200);
+    expect(writes.n).toBe(1);
+  });
+
+  it("is unaffected for agents with no account", async () => {
+    const writes = { n: 0 };
+    const app = createAdminUIApp(gateDeps("none", writes));
+    const res = await send(app, SEND_PATHS[1], userCookie);
+    expect(res.status).toBe(200);
+    expect(writes.n).toBe(1);
+  });
+});
