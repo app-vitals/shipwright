@@ -587,6 +587,16 @@ agent:
       # -- Groq API key. Empty with provider=groq means STT is unconfigured.
       apiKey: ""
 
+# -- Self-serve agent provisioning (SSP-1.3). OFF by default: with `enabled`
+# false the chart injects NO self-serve env and admin behavior is unchanged.
+selfServe:
+  # -- Set true to inject SHIPWRIGHT_SELF_SERVE_ENABLED=enabled and the quota/contact env.
+  enabled: false
+  # -- Default per-account agent quota (integer >= 0).
+  defaultMaxAgents: 0
+  # -- Contact address shown when a user needs more quota.
+  contactEmail: dan@app-vitals.com
+
 # -- Authentication mode for the admin service.
 auth:
   # -- Admin auth mode:

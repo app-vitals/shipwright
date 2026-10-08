@@ -1,0 +1,51 @@
+suite: admin self-serve env (SSP-1.3)
+templates:
+  - templates/admin-deployment.yaml
+release:
+  name: r
+tests:
+  - it: renders no self-serve env by default
+    asserts:
+      - notContains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: SHIPWRIGHT_SELF_SERVE_ENABLED
+            value: "enabled"
+      - notContains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: SHIPWRIGHT_SELF_SERVE_DEFAULT_MAX_AGENTS
+            value: "0"
+      - notContains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: SHIPWRIGHT_SELF_SERVE_CONTACT_EMAIL
+            value: "dan@app-vitals.com"
+
+  - it: renders all three env vars when enabled
+    set:
+      selfServe.enabled: true
+      selfServe.defaultMaxAgents: 3
+      selfServe.contactEmail: ops@example.com
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: SHIPWRIGHT_SELF_SERVE_ENABLED
+            value: "enabled"
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: SHIPWRIGHT_SELF_SERVE_DEFAULT_MAX_AGENTS
+            value: "3"
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: SHIPWRIGHT_SELF_SERVE_CONTACT_EMAIL
+            value: ops@example.com
+
+  - it: rejects a negative defaultMaxAgents via the schema
+    set:
+      selfServe.defaultMaxAgents: -1
+    asserts:
+      - failedTemplate: {}

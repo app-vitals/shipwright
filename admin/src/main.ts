@@ -52,6 +52,7 @@ import {
   NoopChatServiceProvisioningClient,
 } from "./chat-service-provisioning-client.ts";
 import { isDevAuthAllowed } from "./dev-auth-guard.ts";
+import { parseSelfServeConfig } from "./self-serve-config.ts";
 import { HttpGithubAppProvisioningClient } from "./github-app-provisioning-client.ts";
 import { HttpGoogleAuthClient } from "./google-auth-client.ts";
 import { HttpChatClient } from "./http-chat-client.ts";
@@ -479,6 +480,9 @@ async function startServer(): Promise<void> {
   // the board renders unauthenticated, scoped to this repo; when absent the route
   // stays in degraded mode (no tasks).
   const publicRepo = resolvePublicRepo(process.env);
+  // Self-serve provisioning config (SSP-1.3) — read once at startup and
+  // injected as deps; no consumers yet.
+  const selfServe = parseSelfServeConfig(process.env);
 
   const googleClient = new HttpGoogleAuthClient();
   // Constructed only when an issuer is configured — HttpOktaAuthClient requires
@@ -585,6 +589,7 @@ async function startServer(): Promise<void> {
     sessionSecret,
     adminApiKeys,
     sentryClient: process.env.SENTRY_DSN ? Sentry : undefined,
+    selfServe,
   });
   root.route("/", adminApiApp);
 
@@ -781,6 +786,7 @@ async function startServer(): Promise<void> {
     appVersion,
     publicRepo,
     devAuthEnabled: isDevAuthAllowed(process.env),
+    selfServe,
     timezone: adminTz,
     ...(chatClient ? { chatClient } : {}),
     ...(pushService
