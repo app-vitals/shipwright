@@ -88,8 +88,11 @@ export interface ReviewNode {
 }
 
 export interface ReviewThread {
+  /** Thread node id + comment count form the PHS-1.2 ledger ref. */
+  id?: string;
   isResolved: boolean;
   comments: {
+    totalCount?: number;
     nodes: Array<{
       author: { login: string };
       body: string;
@@ -740,8 +743,10 @@ export async function buildProductionDeps(opts: {
       }
       reviewThreads(first: 100) {
         nodes {
+          id
           isResolved
           comments(first: 1) {
+            totalCount
             nodes {
               author { login }
               body

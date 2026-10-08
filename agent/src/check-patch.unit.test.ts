@@ -1812,6 +1812,45 @@ describe("getPatchCandidates — PHS-1.1 characterization", () => {
     }
   });
 
+  test("PHS-1.2: a bot no-feedback COMMENTED review with a patch-source rejected entry at its ref is not a candidate; without the entry (or at another submittedAt) it still is", async () => {
+    const bot = () =>
+      rev({
+        author: { login: "review-bot", __typename: "Bot" },
+        body: "No feedback to provide.",
+      });
+    const ref = `${HEAD}@2026-05-26T10:00:00Z`;
+    const settled = await run(
+      makePrReviewData({ headRefOid: HEAD, reviews: { nodes: [bot()] } }),
+      {
+        record: {
+          findings: [ledgerEntry(ref, { source: "patch", disposition: "rejected" })],
+        } as never,
+      },
+    );
+    expect(settled).toEqual([]);
+
+    const noEntry = await run(
+      makePrReviewData({ headRefOid: HEAD, reviews: { nodes: [bot()] } }),
+      { record: { findings: [] } as never },
+    );
+    expect(noEntry).toHaveLength(1);
+
+    const otherRef = await run(
+      makePrReviewData({ headRefOid: HEAD, reviews: { nodes: [bot()] } }),
+      {
+        record: {
+          findings: [
+            ledgerEntry(`${HEAD}@2026-05-26T11:00:00Z`, {
+              source: "patch",
+              disposition: "rejected",
+            }),
+          ],
+        } as never,
+      },
+    );
+    expect(otherRef).toHaveLength(1);
+  });
+
   test("URT-1.1: own PR — an unresolved thread the agent (= PR author) replied to after the flag is not a candidate", async () => {
     const result = await run(
       makePrReviewData({

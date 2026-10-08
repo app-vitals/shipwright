@@ -86,6 +86,7 @@ import {
   type ReviewThread,
   hasUnaddressedFindings,
   isAddressedByAuthorReply,
+  isRejectedByPatchLedger,
   isResolvedByLedger,
   isSelfCleanApprove,
   isSupersededBySameHeadApproval,
@@ -93,6 +94,7 @@ import {
   isThreadAddressedByAuthorReply,
   parseCliInput,
   reviewRef,
+  threadRef,
 } from "./compute-unaddressed-findings.ts";
 
 function makeData(overrides: Partial<PrReviewData> = {}): PrReviewData {
@@ -2113,5 +2115,155 @@ describe("PHS-1.1 characterization", () => {
       },
     });
     expect(hasUnaddressedFindings(data, "the-agent")).toBe(true);
+  });
+});
+
+describe("PHS-1.2 patch-source rejected ledger entries", () => {
+  const HEAD = "current-head-sha";
+  const review = (overrides: Partial<ReviewNode> = {}): ReviewNode => ({
+    author: { login: "reviewer1" },
+    state: "COMMENTED",
+    submittedAt: "2026-05-26T10:00:00Z",
+    commit: { oid: HEAD },
+    body: "No feedback to provide.",
+    ...overrides,
+  });
+  const thread = (
+    id: string | undefined,
+    count: number,
+    overrides: Partial<ReviewThread> = {},
+  ): ReviewThread => ({
+    id,
+    isResolved: false,
+    comments: {
+      totalCount: count,
+      nodes: [{ author: { login: "reviewer1" }, body: "x" }],
+    },
+    ...overrides,
+  });
+  const entry = (ref: string, overrides: Partial<PrFinding> = {}): PrFinding => ({
+    id: "f",
+    prRecordId: "p",
+    ref,
+    disposition: "rejected",
+    source: "patch",
+    evidence: "e",
+    at: "2026-05-27T00:00:00Z",
+    createdAt: "2026-05-27T00:00:00Z",
+    ...overrides,
+  });
+
+  test("review body with a matching patch rejected entry is not an unaddressed finding", () => {
+    const r = review();
+    const data = makeData({
+      reviews: { nodes: [r] },
+      findings: [entry(reviewRef(r))],
+    });
+    expect(hasUnaddressedFindings(data, "the-agent")).toBe(false);
+  });
+
+  test("same review without an entry, or with an entry at a different submittedAt/commit, still counts", () => {
+    const r = review();
+    const base = { reviews: { nodes: [r] } };
+    expect(hasUnaddressedFindings(makeData(base), "the-agent")).toBe(true);
+    for (const ref of [
+      reviewRef(review({ submittedAt: "2026-05-26T11:00:00Z" })),
+      reviewRef(review({ commit: { oid: "other-sha" } })),
+    ]) {
+      const data = makeData({ ...base, findings: [entry(ref)] });
+      expect(hasUnaddressedFindings(data, "the-agent")).toBe(true);
+    }
+  });
+
+  test("a rejected review-body entry also clears the review when unresolved threads are absent but does not hide an unresolved thread", () => {
+    const r = review();
+    const data = makeData({
+      reviews: { nodes: [r] },
+      reviewThreads: { nodes: [thread("T1", 1)] },
+      findings: [entry(reviewRef(r))],
+    });
+    // The review itself is settled, so it no longer qualifies — and with no
+    // qualifying review the thread check is never reached.
+    expect(hasUnaddressedFindings(data, "the-agent")).toBe(false);
+  });
+
+  test("an unresolved thread with a matching patch rejected entry is excluded", () => {
+    const t = thread("T1", 1);
+    const data = makeData({
+      reviews: { nodes: [review({ body: "" })] },
+      reviewThreads: { nodes: [t] },
+      findings: [entry(threadRef(t) as string)],
+    });
+    expect(hasUnaddressedFindings(data, "the-agent")).toBe(false);
+  });
+
+  test("a new comment in the thread changes its ref and re-qualifies it", () => {
+    const settled = thread("T1", 1);
+    const data = makeData({
+      reviews: { nodes: [review({ body: "" })] },
+      reviewThreads: { nodes: [thread("T1", 2)] },
+      findings: [entry(threadRef(settled) as string)],
+    });
+    expect(hasUnaddressedFindings(data, "the-agent")).toBe(true);
+  });
+
+  test("a rejected entry for a different thread id does not settle this thread", () => {
+    const data = makeData({
+      reviews: { nodes: [review({ body: "" })] },
+      reviewThreads: { nodes: [thread("T1", 1)] },
+      findings: [entry(threadRef(thread("T2", 1)) as string)],
+    });
+    expect(hasUnaddressedFindings(data, "the-agent")).toBe(true);
+  });
+
+  test("a thread without an id is never ledger-settled", () => {
+    const t = thread(undefined, 1);
+    expect(threadRef(t)).toBeNull();
+    const data = makeData({
+      reviews: { nodes: [review({ body: "" })] },
+      reviewThreads: { nodes: [t] },
+      findings: [entry("thread:undefined@1")],
+    });
+    expect(hasUnaddressedFindings(data, "the-agent")).toBe(true);
+  });
+
+  test("threadRef falls back to nodes.length when totalCount is absent", () => {
+    const t: ReviewThread = {
+      id: "T9",
+      isResolved: false,
+      comments: {
+        nodes: [
+          { author: { login: "a" }, body: "x" },
+          { author: { login: "b" }, body: "y" },
+        ],
+      },
+    };
+    expect(threadRef(t)).toBe("thread:T9@2");
+  });
+
+  test("source:review resolved/superseded still settles; a patch entry never counts as resolved/superseded", () => {
+    const r = review();
+    for (const disposition of ["resolved", "superseded"] as const) {
+      const settled = makeData({
+        reviews: { nodes: [r] },
+        findings: [entry(reviewRef(r), { source: "review", disposition })],
+      });
+      expect(hasUnaddressedFindings(settled, "the-agent")).toBe(false);
+
+      const patchOnly = makeData({
+        reviews: { nodes: [r] },
+        findings: [entry(reviewRef(r), { source: "patch", disposition })],
+      });
+      expect(hasUnaddressedFindings(patchOnly, "the-agent")).toBe(true);
+      expect(isResolvedByLedger(reviewRef(r), patchOnly.findings ?? [])).toBe(false);
+    }
+  });
+
+  test("isRejectedByPatchLedger requires source:patch AND disposition:rejected", () => {
+    const ref = "r";
+    expect(isRejectedByPatchLedger(ref, [entry(ref)])).toBe(true);
+    expect(isRejectedByPatchLedger(ref, [entry(ref, { source: "review" })])).toBe(false);
+    expect(isRejectedByPatchLedger(ref, [entry(ref, { disposition: "resolved" })])).toBe(false);
+    expect(isRejectedByPatchLedger(null, [entry(ref)])).toBe(false);
   });
 });

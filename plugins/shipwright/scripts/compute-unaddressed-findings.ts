@@ -87,8 +87,20 @@ export interface ReviewNode {
 }
 
 export interface ReviewThread {
+  /**
+   * GraphQL node id (PHS-1.2). Optional: only callers whose query requests
+   * `id` can have a patch-source `rejected` ledger entry honored for the
+   * thread (see threadRef) — absent means the thread is never ledger-settled.
+   */
+  id?: string;
   isResolved: boolean;
   comments: {
+    /**
+     * Total comment count (PHS-1.2). Optional: threadRef falls back to
+     * `nodes.length` when absent, which is only accurate for callers that
+     * fetch every comment — prefer requesting `totalCount`.
+     */
+    totalCount?: number;
     nodes: Array<{
       author: { login: string; __typename?: string };
       body: string;
@@ -438,6 +450,41 @@ export function isResolvedByLedger(
 }
 
 /**
+ * Derives the ledger `ref` for an inline review thread (PHS-1.2): the thread's
+ * GraphQL node id plus its total comment count, joined by `@`. A new comment
+ * (from the author, a reviewer, or anyone) changes the count and therefore the
+ * ref, so a patch `rejected` entry written for the thread as it stood
+ * self-expires the moment the thread is re-opened for discussion. Returns
+ * `null` when the thread carries no `id` (callers whose query predates
+ * PHS-1.2), in which case no ledger entry can match.
+ */
+export function threadRef(
+  thread: Pick<ReviewThread, "id" | "comments">,
+): string | null {
+  if (!thread.id) return null;
+  const count = thread.comments.totalCount ?? thread.comments.nodes.length;
+  return `thread:${thread.id}@${count}`;
+}
+
+/**
+ * Returns true when a durable ledger entry exists for `ref` with
+ * `source: "patch"` and `disposition: "rejected"` (PHS-1.2) — patch's record
+ * that it examined the finding and decided not to act on it. Counterpart to
+ * isResolvedByLedger: that predicate honors only `source: "review"`
+ * resolved/superseded entries, and a patch entry never satisfies it (nor does
+ * a review-source `rejected` entry satisfy this one).
+ */
+export function isRejectedByPatchLedger(
+  ref: string | null,
+  findings: PrFinding[],
+): boolean {
+  if (ref === null) return false;
+  return findings.some(
+    (f) => f.ref === ref && f.source === "patch" && f.disposition === "rejected",
+  );
+}
+
+/**
  * Returns true if the PR has unaddressed findings:
  * - At least one COMMENTED or CHANGES_REQUESTED review posted at the current HEAD
  * - AND (has a non-empty review body OR has at least one unresolved inline thread)
@@ -463,6 +510,12 @@ export function isResolvedByLedger(
  * isResolvedByLedger, PFL-3.2) — not gated on self-authorship, since ledger
  * entries are written by the code-reviewer subagent independent of whose
  * review is being resolved.
+ *
+ * A review or an inline thread is also settled by a `source: "patch"`,
+ * `disposition: "rejected"` ledger entry at its ref (see
+ * isRejectedByPatchLedger, PHS-1.2): `reviewRef(review)` for review bodies,
+ * `threadRef(thread)` for threads. Both refs self-expire (new head / new
+ * comment), so a rejection never outlives the state patch actually examined.
  *
  * Separately, an unresolved inline thread (isResolved == false) is excluded
  * from the unresolved-threads check when the PR author has replied within
@@ -506,7 +559,8 @@ export function hasUnaddressedFindings(
       !isSelfCleanApprove(r, currentUser) &&
       !isSupersededBySelfReview(r, reviews.nodes, currentUser) &&
       !isSupersededBySameHeadApproval(r, reviews.nodes) &&
-      !isResolvedByLedger(reviewRef(r), findings),
+      !isResolvedByLedger(reviewRef(r), findings) &&
+      !isRejectedByPatchLedger(reviewRef(r), findings),
   );
 
   if (qualifyingReviews.length === 0) return false;
@@ -514,7 +568,10 @@ export function hasUnaddressedFindings(
   // Check for unresolved threads, excluding ones the PR author has already
   // replied to and addressed within the thread itself (URT-1.1).
   const unresolvedThreads = reviewThreads.nodes.filter(
-    (t) => !t.isResolved && !isThreadAddressedByAuthorReply(t, prAuthor),
+    (t) =>
+      !t.isResolved &&
+      !isThreadAddressedByAuthorReply(t, prAuthor) &&
+      !isRejectedByPatchLedger(threadRef(t), findings),
   );
 
   if (unresolvedThreads.length > 0) return true;
