@@ -882,8 +882,14 @@ async function fetchRecentVerificationChecks(
  * string task-store expects), then each item's verification checks are
  * fetched and aggregated in parallel. A failed lookup for one item is
  * swallowed so it never breaks the whole rollup — returns undefined (no
- * card) when the fetcher is absent, no items qualify, or nothing came back.
+ * card) only when the fetcher is absent; when no items qualify or nothing
+ * came back it returns a zero-check summary so the card renders an empty
+ * state instead of silently disappearing.
  */
+function emptyVerificationActivity(): VerificationActivitySummary {
+  return { totalChecks: 0, itemCount: 0, counts: {} };
+}
+
 async function buildVerificationActivityRollup(
   runs: { itemType?: string | null; itemId?: string | null }[],
   fetchVerificationChecks: FetchVerificationChecks | undefined,
@@ -905,7 +911,7 @@ async function buildVerificationActivityRollup(
     distinctItems.push({ itemType: run.itemType, itemId: run.itemId });
     if (distinctItems.length >= maxItems) break;
   }
-  if (distinctItems.length === 0) return undefined;
+  if (distinctItems.length === 0) return emptyVerificationActivity();
 
   const checksPerItem = await Promise.all(
     distinctItems.map(async (item): Promise<VerificationCheckItem[]> => {
@@ -961,7 +967,7 @@ async function buildVerificationActivityRollup(
       totalChecks++;
     }
   }
-  if (totalChecks === 0) return undefined;
+  if (totalChecks === 0) return emptyVerificationActivity();
 
   return {
     totalChecks,
