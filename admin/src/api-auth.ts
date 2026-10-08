@@ -12,12 +12,22 @@ import type { Caller } from "@shipwright/lib/request-context";
 import type { MiddlewareHandler } from "hono";
 import { getCookie } from "hono/cookie";
 import { verify } from "hono/jwt";
+import type { AgentMemberService } from "./agent-members.ts";
 import type { AgentTokenService } from "./agent-tokens.ts";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 export type AdminAuthEnv = {
-  Variables: { isAdmin: boolean; caller: Caller };
+  Variables: {
+    isAdmin: boolean;
+    caller: Caller;
+    /**
+     * Lowercased session email. Set only for session-cookie callers (admin or
+     * member) — never for bearer callers. For a non-admin cookie, the
+     * middleware has already verified AgentMember access to the route's agent.
+     */
+    callerEmail?: string;
+  };
 };
 
 /**
@@ -37,6 +47,15 @@ const SESSION_COOKIE = "admin_session";
 
 // Matches /agents/{agentId}/... routes — used for per-agent scope enforcement.
 const AGENT_ROUTE_RE = /^\/agents\/([^/]+)/;
+
+/**
+ * Extract the agent id from an /agents/{id}/... path, or null if the path has
+ * no agent segment. Static segments (reconcile, all, chat-tokens) are returned
+ * as-is; they never match an AgentMember row, so scoped callers are denied.
+ */
+export function extractAgentId(path: string): string | null {
+  return AGENT_ROUTE_RE.exec(path)?.[1] ?? null;
+}
 
 // ─── Admin API key parsing ────────────────────────────────────────────────────
 
@@ -106,8 +125,22 @@ export function createAdminAuthMiddleware(deps: {
   sessionSecret: string;
   agentTokenService: Pick<AgentTokenService, "validate">;
   adminApiKeys?: Map<string, AdminApiKey>;
+  /** Required to authorize non-admin cookie sessions; absent → they are denied on agent routes. */
+  agentMemberService?: Pick<AgentMemberService, "exists">;
 }): MiddlewareHandler<AdminAuthEnv> {
-  const { sessionSecret, agentTokenService, adminApiKeys } = deps;
+  const { sessionSecret, agentTokenService, adminApiKeys, agentMemberService } =
+    deps;
+
+  async function isSessionRouteAllowed(
+    method: string,
+    path: string,
+    email: string,
+  ): Promise<boolean> {
+    if (path === "/agents" || path === "/agents/") return method === "GET";
+    const agentId = extractAgentId(path);
+    if (!agentId || !agentMemberService) return false;
+    return agentMemberService.exists(agentId, email);
+  }
 
   return async (c, next) => {
     const authHeader = c.req.header("Authorization");
@@ -171,6 +204,7 @@ export function createAdminAuthMiddleware(deps: {
       return c.json({ error: "Unauthorized" }, 401);
     }
     let email: string;
+    let sessionIsAdmin: boolean;
     try {
       const payload = (await verify(
         sessionToken,
@@ -185,13 +219,22 @@ export function createAdminAuthMiddleware(deps: {
       ) {
         return c.json({ error: "Unauthorized" }, 401);
       }
-      email = payload.email;
+      email = payload.email.toLowerCase();
+      // Strict: a missing/non-true claim (e.g. a pre-claim cookie) is non-admin.
+      sessionIsAdmin = payload.isAdmin === true;
     } catch {
       return c.json({ error: "Unauthorized" }, 401);
     }
-    // Session cookie — admin.
-    c.set("isAdmin", true);
+    c.set("isAdmin", sessionIsAdmin);
     c.set("caller", { name: email, scope: "session" });
+    c.set("callerEmail", email);
+    if (sessionIsAdmin) return next();
+
+    // Non-admin cookie: GET /agents (handler filters to memberships) and
+    // /agents/:id/** for member agents only. Everything else is 403.
+    if (!(await isSessionRouteAllowed(c.req.method, c.req.path, email))) {
+      return c.json({ error: "Forbidden" }, 403);
+    }
     return next();
   };
 }

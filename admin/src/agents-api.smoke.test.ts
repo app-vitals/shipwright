@@ -142,6 +142,7 @@ const WORK_QUEUE_SNAPSHOT_ID = "wqs-test-222";
 async function makeSessionCookie(secret = SESSION_SECRET): Promise<string> {
   return sign(
     {
+      isAdmin: true,
       userId: "user-123",
       email: "admin@example.com",
       name: "Admin User",
@@ -571,6 +572,8 @@ function makeMockDeps(): AdminDeps {
       }),
     },
     agentMemberService: {
+      exists: async () => false,
+      listByEmail: async () => [],
       add: async (agentId: string, email: string) => ({
         id: "member-test-id",
         agentId,
@@ -4781,5 +4784,136 @@ describe("admin API — PATCH /agents/:id repo collisions", () => {
       },
     });
     expect(res.status).toBe(200);
+  });
+});
+
+// ─── Non-admin (member) cookie scoping ─────────────────────────────────────────
+
+describe("non-admin session cookie scoping", () => {
+  const MEMBER_EMAIL = "member@example.com";
+  let memberCookie: string;
+  let adminCookie: string;
+
+  beforeAll(async () => {
+    const mk = (isAdmin: boolean) =>
+      sign(
+        {
+          isAdmin,
+          userId: "user-m",
+          email: MEMBER_EMAIL,
+          iat: Math.floor(Date.now() / 1000),
+          exp: Math.floor(Date.now() / 1000) + 3600,
+        },
+        SESSION_SECRET,
+        "HS256",
+      );
+    memberCookie = await mk(false);
+    adminCookie = await mk(true);
+  });
+
+  function makeMemberDeps(): AdminDeps {
+    const base = makeMockDeps();
+    return {
+      ...base,
+      agentMemberService: {
+        ...base.agentMemberService,
+        exists: async (agentId: string, email: string) =>
+          agentId === AGENT_ID && email === MEMBER_EMAIL,
+        listByEmail: async (email: string) =>
+          email === MEMBER_EMAIL
+            ? [
+                {
+                  id: "m1",
+                  agentId: AGENT_ID,
+                  email,
+                  createdAt: new Date("2024-01-01"),
+                },
+              ]
+            : [],
+      },
+    };
+  }
+
+  const req = (
+    app: ReturnType<typeof createAdminApp>,
+    cookie: string,
+    path: string,
+    method = "GET",
+    body?: unknown,
+  ) =>
+    app.request(path, {
+      method,
+      body: body === undefined ? undefined : JSON.stringify(body),
+      headers: {
+        "Content-Type": "application/json",
+        Cookie: `admin_session=${cookie}`,
+      },
+    });
+
+  it("GET /agents returns only member agents for a non-admin cookie", async () => {
+    const app = createAdminApp(makeMemberDeps());
+    const res = await req(app, memberCookie, "/agents");
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as Array<{ id: string }>;
+    expect(body.map((a) => a.id)).toEqual([AGENT_ID]);
+  });
+
+  it("GET /agents returns all agents for an admin cookie", async () => {
+    const app = createAdminApp(makeMemberDeps());
+    const res = await req(app, adminCookie, "/agents");
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as Array<{ id: string }>;
+    expect(body.length).toBeGreaterThan(1);
+  });
+
+  it("GET /agents/:id succeeds for a member agent", async () => {
+    const app = createAdminApp(makeMemberDeps());
+    const res = await req(app, memberCookie, `/agents/${AGENT_ID}`);
+    expect(res.status).toBe(200);
+  });
+
+  it("GET/PATCH/DELETE on an agent outside membership return 403", async () => {
+    const app = createAdminApp(makeMemberDeps());
+    for (const method of ["GET", "PATCH", "DELETE"]) {
+      const res = await req(
+        app,
+        memberCookie,
+        "/agents/agent-other-id",
+        method,
+        method === "PATCH" ? { selfHosted: true } : undefined,
+      );
+      expect(res.status).toBe(403);
+    }
+    expect(
+      (await req(app, memberCookie, "/agents/agent-other-id/envs")).status,
+    ).toBe(403);
+  });
+
+  it("POST /agents, POST /agents/reconcile, and cross-agent stats return 403", async () => {
+    const app = createAdminApp(makeMemberDeps());
+    expect(
+      (await req(app, memberCookie, "/agents", "POST", { name: "x" })).status,
+    ).toBe(403);
+    expect(
+      (await req(app, memberCookie, "/agents/reconcile", "POST")).status,
+    ).toBe(403);
+    expect(
+      (
+        await req(
+          app,
+          memberCookie,
+          "/agents/all/cron-runs/stats?from=2026-01-01&to=2026-01-02",
+        )
+      ).status,
+    ).toBe(403);
+    expect(
+      (
+        await req(
+          app,
+          memberCookie,
+          "/agents/chat-tokens/daily/stats?from=2026-01-01&to=2026-01-02",
+        )
+      ).status,
+    ).toBe(403);
   });
 });

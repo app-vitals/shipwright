@@ -143,6 +143,8 @@ describeOrSkip(
         agentPluginService,
         agentPhaseMethodologyService,
         agentMemberService: {
+          exists: async () => false,
+          listByEmail: async () => [],
           add: async () => {
             throw new Error("not implemented");
           },
