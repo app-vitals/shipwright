@@ -1,5 +1,11 @@
 import { describe, expect, test } from "bun:test";
-import { OPUS_MODEL, RATES, calculateCost, normalizeModelToRateKey } from "./pricing.ts";
+import {
+  CONTEXT_WINDOW,
+  OPUS_MODEL,
+  RATES,
+  calculateCost,
+  normalizeModelToRateKey,
+} from "./pricing.ts";
 
 const SAMPLE_USAGE = {
   input_tokens: 100,
@@ -149,5 +155,60 @@ describe("normalizeModelToRateKey — unknown inputs", () => {
 
   test('"gpt-4" returns null', () => {
     expect(normalizeModelToRateKey("gpt-4")).toBeNull();
+  });
+});
+
+describe("normalizeModelToRateKey — 5.x ids price as themselves", () => {
+  for (const id of [
+    "claude-fable-5-1",
+    "claude-opus-5-5",
+    "claude-sonnet-5-5",
+    "claude-haiku-5-5",
+  ]) {
+    test(`${id} resolves to itself`, () => {
+      expect(normalizeModelToRateKey(id)).toBe(id);
+      expect(RATES[id]).toBeDefined();
+    });
+
+    test(`${id} dated snapshot resolves to itself`, () => {
+      expect(normalizeModelToRateKey(`${id}-20260101`)).toBe(id);
+    });
+  }
+});
+
+describe("5.x rates match the published rate card", () => {
+  test.each([
+    ["claude-fable-5-1", 10, 50],
+    ["claude-opus-5-5", 4, 20],
+    ["claude-sonnet-5-5", 2, 10],
+    ["claude-haiku-5-5", 0.1, 0.5],
+  ])("%s is $%d in / $%d out per MTok", (key, input, output) => {
+    expect(RATES[key]).toEqual({ input, output });
+  });
+});
+
+describe("normalizeModelToRateKey — bare aliases stay on 4.x keys", () => {
+  test("haiku/sonnet/opus aliases are unchanged until the alias bump", () => {
+    expect(normalizeModelToRateKey("haiku")).toBe("claude-haiku-4-5");
+    expect(normalizeModelToRateKey("sonnet")).toBe("claude-sonnet-4-6");
+    expect(normalizeModelToRateKey("opus")).toBe("claude-opus-4-8");
+  });
+});
+
+describe("CONTEXT_WINDOW", () => {
+  test("has exactly the same keys as RATES", () => {
+    expect(Object.keys(CONTEXT_WINDOW).sort()).toEqual(Object.keys(RATES).sort());
+  });
+
+  test("every window is a positive integer", () => {
+    for (const size of Object.values(CONTEXT_WINDOW)) {
+      expect(Number.isInteger(size) && size > 0).toBe(true);
+    }
+  });
+
+  test("haiku 4.x is 200k; 5.x models are 1M", () => {
+    expect(CONTEXT_WINDOW["claude-haiku-4-5"]).toBe(200_000);
+    expect(CONTEXT_WINDOW["claude-opus-5-5"]).toBe(1_000_000);
+    expect(CONTEXT_WINDOW["claude-haiku-5-5"]).toBe(1_000_000);
   });
 });
