@@ -8864,6 +8864,18 @@ describe("renderChatThreadPage — mic input + audio playback (VM-3.1)", () => {
     expect(sendFormEndIdx).toBeGreaterThan(-1);
   });
 
+  test("mic handler offers audio/mp4, uses .m4a, and normalizes non-audio types (VMF-1.1)", () => {
+    const html = renderChatThreadPage(
+      "agent-vm31",
+      THREAD,
+      [USER_MSG],
+      "alice",
+    );
+    expect(html).toContain("'audio/mp4'");
+    expect(html).toContain("'m4a'");
+    expect(html).toContain("rawType.replace(");
+  });
+
   test("inline script references MediaRecorder / getUserMedia for the mic flow", () => {
     const html = renderChatThreadPage(
       "agent-vm31",

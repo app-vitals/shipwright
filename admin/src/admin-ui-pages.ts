@@ -6891,7 +6891,7 @@ export function renderChatThreadPage(
   // relabels to a stop icon) to stop and send. Candidate MIME types are
   // ordered by preference; attachment-validation.ts's allowlist accepts all
   // three so whichever the browser actually supports still uploads cleanly.
-  var MIC_MIME_CANDIDATES = ['audio/webm;codecs=opus', 'audio/webm', 'audio/ogg'];
+  var MIC_MIME_CANDIDATES = ['audio/webm;codecs=opus', 'audio/webm', 'audio/ogg', 'audio/mp4'];
   var mediaRecorder = null;
   var micStream = null;
   var recordedChunks = [];
@@ -6948,11 +6948,14 @@ export function renderChatThreadPage(
           mediaRecorder.addEventListener('stop', function() {
             stopMicStream();
             setMicRecordingUI(false);
-            var blobType = mediaRecorder.mimeType || mimeType || 'audio/webm';
+            var rawType = mediaRecorder.mimeType || mimeType || 'audio/webm';
+            // Chromium reports audio-only recordings as video/webm; normalize so
+            // the File is never non-audio/*.
+            var blobType = rawType.indexOf('audio/') === 0 ? rawType : rawType.replace(/^[^;/]*/, 'audio');
             var blob = new Blob(recordedChunks, { type: blobType });
             recordedChunks = [];
             if (blob.size === 0) return;
-            var ext = blobType.indexOf('ogg') !== -1 ? 'ogg' : 'webm';
+            var ext = blobType.indexOf('ogg') !== -1 ? 'ogg' : blobType.indexOf('mp4') !== -1 ? 'm4a' : 'webm';
             var file = new File([blob], 'recording-' + Date.now() + '.' + ext, { type: blobType });
             sendText('', file);
           });
