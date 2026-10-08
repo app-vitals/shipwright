@@ -2060,18 +2060,6 @@ export interface components {
             /** @example 14 */
             cleanupAfterDays?: number;
         };
-        FailedStep: {
-            /** @example k8s */
-            step: string;
-            /** @example k8s API timeout */
-            error: string;
-        };
-        ManualStep: {
-            /** @example GH_TOKEN */
-            key: string;
-            /** @example GH_TOKEN was not automatically revoked — rotate or revoke it manually. */
-            message: string;
-        };
         DeleteAgentResult: {
             /** @example true */
             agentDeleted: boolean;
@@ -2085,6 +2073,18 @@ export interface components {
             completed: string[];
             failed: components["schemas"]["FailedStep"][];
             manualStepsRequired: components["schemas"]["ManualStep"][];
+        };
+        FailedStep: {
+            /** @example k8s */
+            step: string;
+            /** @example k8s API timeout */
+            error: string;
+        };
+        ManualStep: {
+            /** @example GH_TOKEN */
+            key: string;
+            /** @example GH_TOKEN was not automatically revoked — rotate or revoke it manually. */
+            message: string;
         };
         DeleteAgentBody: {
             /** @example xoxp-user-token */
@@ -2159,6 +2159,9 @@ export interface components {
              */
             secretKeys?: string[];
         };
+        CronWrapper: {
+            cron: components["schemas"]["AgentCronJob"];
+        };
         AgentCronJob: {
             /** @example clx1234567890 */
             id: string;
@@ -2194,9 +2197,6 @@ export interface components {
              * @example 2026-01-01T00:00:00.000Z
              */
             updatedAt: string;
-        };
-        CronWrapper: {
-            cron: components["schemas"]["AgentCronJob"];
         };
         CreateAgentCronJobBody: {
             /** @example 0 9 * * 1-5 */
@@ -2237,6 +2237,14 @@ export interface components {
             /** @example true */
             enabled?: boolean;
         };
+        CronsWithSummaryWrapper: {
+            crons: components["schemas"]["AgentCronJobWithRunSummary"][];
+        };
+        AgentCronJobWithRunSummary: components["schemas"]["AgentCronJob"] & {
+            lastRun: components["schemas"]["CronRunLastRun"];
+            /** @example 3 */
+            runCountToday: number;
+        };
         /** @example null */
         CronRunLastRun: {
             /**
@@ -2254,80 +2262,8 @@ export interface components {
             /** @example success */
             outcome: string | null;
         } | null;
-        AgentCronJobWithRunSummary: components["schemas"]["AgentCronJob"] & {
-            lastRun: components["schemas"]["CronRunLastRun"];
-            /** @example 3 */
-            runCountToday: number;
-        };
-        CronsWithSummaryWrapper: {
-            crons: components["schemas"]["AgentCronJobWithRunSummary"][];
-        };
-        ModelBreakdownEntry: {
-            /** @example claude-sonnet-4-5 */
-            model: string;
-            /**
-             * @default 0
-             * @example 200
-             */
-            inputTokens: number;
-            /**
-             * @default 0
-             * @example 100
-             */
-            outputTokens: number;
-            /**
-             * @default 0
-             * @example 8
-             */
-            cacheReadTokens: number;
-            /**
-             * @default 0
-             * @example 4
-             */
-            cacheCreationTokens: number;
-            /**
-             * @default 0
-             * @example 0.002
-             */
-            costUsd: number;
-        };
-        ContextBaselineEntry: {
-            /** @example claude-sonnet-4-6 */
-            model: string;
-            /** @example 79188 */
-            contextTokens: number;
-            /** @example 2 */
-            inputTokens: number;
-            /** @example 41415 */
-            cacheCreationTokens: number;
-            /** @example 37771 */
-            cacheReadTokens: number;
-        };
-        SkillUsageEntry: {
-            /**
-             * @example skill
-             * @enum {string}
-             */
-            kind: "skill" | "agent" | "root";
-            /** @example shipwright:task-store */
-            name: string;
-            /** @example 1 */
-            invocations: number;
-            /** @example 3 */
-            turns: number;
-            /** @example 12 */
-            inputTokens: number;
-            /** @example 100 */
-            outputTokens: number;
-            /** @example 219200 */
-            cacheReadTokens: number;
-            /** @example 9300 */
-            cacheCreationTokens: number;
-            /**
-             * @description input + cacheCreation of the first usage-bearing turn after the skill's first invoke — the new context admitted when its body loaded. Null for root/agent rows.
-             * @example 9103
-             */
-            invokeContextDelta?: number | null;
+        CronRunWrapper: {
+            run: components["schemas"]["AgentCronRun"];
         };
         AgentCronRun: {
             /** @example clx1234567890 */
@@ -2395,7 +2331,18 @@ export interface components {
             createdAt: string;
             modelBreakdown?: components["schemas"]["ModelBreakdownEntry"][];
             /** @description First-turn context baseline (null for resumed sessions and runs from older agent builds). */
-            contextBaseline?: components["schemas"]["ContextBaselineEntry"] | null;
+            contextBaseline?: {
+                /** @example claude-sonnet-4-6 */
+                model: string;
+                /** @example 79188 */
+                contextTokens: number;
+                /** @example 2 */
+                inputTokens: number;
+                /** @example 41415 */
+                cacheCreationTokens: number;
+                /** @example 37771 */
+                cacheReadTokens: number;
+            } | null;
             /** @example 12 */
             turns?: number | null;
             /** @example 7 */
@@ -2407,8 +2354,34 @@ export interface components {
             /** @example 2.1.285 */
             claudeCodeVersion?: string | null;
         };
-        CronRunWrapper: {
-            run: components["schemas"]["AgentCronRun"];
+        ModelBreakdownEntry: {
+            /** @example claude-sonnet-4-5 */
+            model: string;
+            /**
+             * @default 0
+             * @example 200
+             */
+            inputTokens: number;
+            /**
+             * @default 0
+             * @example 100
+             */
+            outputTokens: number;
+            /**
+             * @default 0
+             * @example 8
+             */
+            cacheReadTokens: number;
+            /**
+             * @default 0
+             * @example 4
+             */
+            cacheCreationTokens: number;
+            /**
+             * @default 0
+             * @example 0.002
+             */
+            costUsd: number;
         };
         CreateAgentCronRunBody: {
             /**
@@ -2492,7 +2465,6 @@ export interface components {
             lastHeartbeatAt?: string | null;
             /** @description Per-model token breakdown for this run */
             modelBreakdown?: components["schemas"]["ModelBreakdownEntry"][];
-            /** @description First-turn context baseline: usage of the run's first assistant message. contextTokens = input + cacheCreation + cacheRead — the full always-loaded context independent of cache warmth. Omitted for resumed sessions. */
             contextBaseline?: components["schemas"]["ContextBaselineEntry"];
             /**
              * @description Distinct usage-bearing assistant turns in the run.
@@ -2516,6 +2488,48 @@ export interface components {
             /** @description Per-skill / per-subagent token attribution rows for this run; upserted per [kind, name]. */
             skillUsage?: components["schemas"]["SkillUsageEntry"][];
         };
+        /** @description First-turn context baseline: usage of the run's first assistant message. contextTokens = input + cacheCreation + cacheRead — the full always-loaded context independent of cache warmth. Omitted for resumed sessions. */
+        ContextBaselineEntry: {
+            /** @example claude-sonnet-4-6 */
+            model: string;
+            /** @example 79188 */
+            contextTokens: number;
+            /** @example 2 */
+            inputTokens: number;
+            /** @example 41415 */
+            cacheCreationTokens: number;
+            /** @example 37771 */
+            cacheReadTokens: number;
+        };
+        SkillUsageEntry: {
+            /**
+             * @example skill
+             * @enum {string}
+             */
+            kind: "skill" | "agent" | "root";
+            /** @example shipwright:task-store */
+            name: string;
+            /** @example 1 */
+            invocations: number;
+            /** @example 3 */
+            turns: number;
+            /** @example 12 */
+            inputTokens: number;
+            /** @example 100 */
+            outputTokens: number;
+            /** @example 219200 */
+            cacheReadTokens: number;
+            /** @example 9300 */
+            cacheCreationTokens: number;
+            /**
+             * @description input + cacheCreation of the first usage-bearing turn after the skill's first invoke — the new context admitted when its body loaded. Null for root/agent rows.
+             * @example 9103
+             */
+            invokeContextDelta?: number | null;
+        };
+        ToolWrapper: {
+            tool: components["schemas"]["AgentTool"];
+        };
         AgentTool: {
             /** @example clx1234567890 */
             id: string;
@@ -2531,9 +2545,6 @@ export interface components {
              */
             createdAt: string;
         };
-        ToolWrapper: {
-            tool: components["schemas"]["AgentTool"];
-        };
         CreateAgentToolBody: {
             /** @example Bash */
             pattern: string;
@@ -2544,6 +2555,11 @@ export interface components {
         PatchAgentToolBody: {
             /** @example false */
             enabled: boolean;
+        };
+        CreateAgentTokenResponse: {
+            token: components["schemas"]["AgentToken"];
+            /** @example swt_v1_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx */
+            rawToken: string;
         };
         AgentToken: {
             /** @example clx1234567890 */
@@ -2563,17 +2579,15 @@ export interface components {
              */
             revokedAt?: string | null;
         };
-        CreateAgentTokenResponse: {
-            token: components["schemas"]["AgentToken"];
-            /** @example swt_v1_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx */
-            rawToken: string;
-        };
         CreateAgentTokenBody: {
             /** @example ci-runner */
             label?: string;
         };
         TokensWrapper: {
             tokens: components["schemas"]["AgentToken"][];
+        };
+        PluginWrapper: {
+            plugin: components["schemas"]["AgentPlugin"];
         };
         AgentPlugin: {
             /** @example clx1234567890 */
@@ -2597,9 +2611,6 @@ export interface components {
              */
             updatedAt: string;
         };
-        PluginWrapper: {
-            plugin: components["schemas"]["AgentPlugin"];
-        };
         CreateAgentPluginBody: {
             /** @example @shipwright/plugin */
             name: string;
@@ -2612,6 +2623,9 @@ export interface components {
         PatchAgentPluginBody: {
             /** @example 1.3.0 */
             version?: string | null;
+        };
+        PhaseMethodologyListWrapper: {
+            phaseMethodology: components["schemas"]["AgentPhaseMethodology"][];
         };
         AgentPhaseMethodology: {
             /** @example clx1234567890 */
@@ -2631,15 +2645,23 @@ export interface components {
              */
             updatedAt: string;
         };
-        PhaseMethodologyListWrapper: {
-            phaseMethodology: components["schemas"]["AgentPhaseMethodology"][];
-        };
         PhaseMethodologyWrapper: {
             phaseMethodology: components["schemas"]["AgentPhaseMethodology"];
         };
         PutAgentPhaseMethodologyBody: {
             /** @example shipwright:code-reviewer */
             subagentType: string | null;
+        };
+        CronRunTokenStats: {
+            totals: components["schemas"]["TokenAggregate"];
+            byAgent: components["schemas"]["KeyedTokenAggregate"][];
+            byCron: components["schemas"]["DoubleKeyedTokenAggregate"][];
+            byModel: components["schemas"]["DoubleKeyedTokenAggregate"][];
+            daily: components["schemas"]["DailyTokenAggregate"][];
+            byCronModel: components["schemas"]["DoubleKeyedTokenAggregate"][];
+            byPhase: components["schemas"]["KeyedTokenAggregate"][];
+            bySkill?: components["schemas"]["SkillUsageAggregate"][];
+            baselines?: components["schemas"]["ContextBaselineAggregate"][];
         };
         TokenAggregate: {
             /** @example 600 */
@@ -2671,14 +2693,51 @@ export interface components {
             /** @example 2026-01-10 */
             period: string;
         };
-        CronRunTokenStats: {
-            totals: components["schemas"]["TokenAggregate"];
-            byAgent: components["schemas"]["KeyedTokenAggregate"][];
-            byCron: components["schemas"]["DoubleKeyedTokenAggregate"][];
-            byModel: components["schemas"]["DoubleKeyedTokenAggregate"][];
-            daily: components["schemas"]["DailyTokenAggregate"][];
-            byCronModel: components["schemas"]["DoubleKeyedTokenAggregate"][];
-            byPhase: components["schemas"]["KeyedTokenAggregate"][];
+        SkillUsageAggregate: {
+            /** @example skill */
+            kind: string;
+            /** @example shipwright:dev-task */
+            name: string;
+            /** @example 4 */
+            runs: number;
+            /** @example 5 */
+            invocations: number;
+            /** @example 40 */
+            turns: number;
+            /** @example 600 */
+            input: number;
+            /** @example 300 */
+            output: number;
+            /** @example 60 */
+            cacheRead: number;
+            /** @example 30 */
+            cacheCreation: number;
+            /** @example 1200 */
+            avgInvokeContextDelta: number | null;
+        };
+        ContextBaselineAggregate: {
+            /** @example a1b2c3 */
+            contextFingerprint: string | null;
+            /** @example claude-sonnet-5-5 */
+            baselineModel: string | null;
+            /** @example dev-task */
+            phase: string | null;
+            /** @example 12 */
+            runs: number;
+            /** @example 24000 */
+            avgContextTokens: number;
+            /** @example 23000 */
+            minContextTokens: number;
+            /** @example 25000 */
+            maxContextTokens: number;
+            /** @example 30 */
+            avgTurns: number | null;
+            /** @example 55 */
+            avgToolCalls: number | null;
+            /** @example 2026-01-10T09:00:00.000Z */
+            firstSeen: string;
+            /** @example 2026-01-15T09:00:00.000Z */
+            lastSeen: string;
         };
         ChatTokenStats: {
             totals: components["schemas"]["TokenAggregate"];
@@ -2716,6 +2775,12 @@ export interface components {
              */
             updatedAt: string;
         };
+        UpsertChatTokenDailyBody: {
+            /** @example 2026-01-15 */
+            date: string;
+            /** @description Per-model token usage increments */
+            modelBreakdown: components["schemas"]["ChatTokenModelEntry"][];
+        };
         ChatTokenModelEntry: {
             /** @example claude-sonnet-4-5 */
             model: string;
@@ -2730,11 +2795,25 @@ export interface components {
             /** @example 0.0012 */
             costUsd: number;
         };
-        UpsertChatTokenDailyBody: {
-            /** @example 2026-01-15 */
-            date: string;
-            /** @description Per-model token usage increments */
-            modelBreakdown: components["schemas"]["ChatTokenModelEntry"][];
+        WorkQueueSnapshotWrapper: {
+            snapshot: components["schemas"]["AgentWorkQueueSnapshot"];
+        };
+        AgentWorkQueueSnapshot: {
+            /** @example clx1234567890 */
+            id: string;
+            /** @example clx1234567890 */
+            agentId: string;
+            /**
+             * Format: date-time
+             * @example 2026-01-01T00:00:00.000Z
+             */
+            computedAt: string;
+            items: components["schemas"]["RankedWorkItem"][];
+            /**
+             * Format: date-time
+             * @example 2026-01-01T00:00:00.000Z
+             */
+            createdAt: string;
         };
         RankedWorkItem: {
             /**
@@ -2757,26 +2836,6 @@ export interface components {
              */
             age: string;
         };
-        AgentWorkQueueSnapshot: {
-            /** @example clx1234567890 */
-            id: string;
-            /** @example clx1234567890 */
-            agentId: string;
-            /**
-             * Format: date-time
-             * @example 2026-01-01T00:00:00.000Z
-             */
-            computedAt: string;
-            items: components["schemas"]["RankedWorkItem"][];
-            /**
-             * Format: date-time
-             * @example 2026-01-01T00:00:00.000Z
-             */
-            createdAt: string;
-        };
-        WorkQueueSnapshotWrapper: {
-            snapshot: components["schemas"]["AgentWorkQueueSnapshot"];
-        };
         PushWorkQueueSnapshotBody: {
             /**
              * Format: date-time
@@ -2785,18 +2844,8 @@ export interface components {
             computedAt: string;
             items: components["schemas"]["RankedWorkItem"][];
         };
-        GitHubInstallation: {
-            /** @example app-vitals */
-            owner: string;
-            /** @example 12345678 */
-            installationId: number;
-            /** @example active */
-            state: string;
-            /**
-             * @description Sanitized last error message (max 500 chars). Must not contain credentials.
-             * @example installation suspended
-             */
-            lastError?: string | null;
+        GitHubInstallationsSnapshotWrapper: {
+            snapshot: components["schemas"]["AgentGitHubInstallationsSnapshot"];
         };
         AgentGitHubInstallationsSnapshot: {
             /** @example clx1234567890 */
@@ -2815,8 +2864,18 @@ export interface components {
              */
             createdAt: string;
         };
-        GitHubInstallationsSnapshotWrapper: {
-            snapshot: components["schemas"]["AgentGitHubInstallationsSnapshot"];
+        GitHubInstallation: {
+            /** @example app-vitals */
+            owner: string;
+            /** @example 12345678 */
+            installationId: number;
+            /** @example active */
+            state: string;
+            /**
+             * @description Sanitized last error message (max 500 chars). Must not contain credentials.
+             * @example installation suspended
+             */
+            lastError?: string | null;
         };
         PutGitHubInstallationsBody: {
             /**
@@ -2825,12 +2884,6 @@ export interface components {
              */
             reportedAt: string;
             installations: components["schemas"]["GitHubInstallation"][];
-        };
-        AgentConfigPlugin: {
-            /** @example shipwright */
-            marketplace: string;
-            /** @example shipwright */
-            plugin: string;
         };
         AgentConfigResponse: {
             /**
@@ -2906,6 +2959,12 @@ export interface components {
             phaseMethodology: {
                 [key: string]: string | null;
             };
+        };
+        AgentConfigPlugin: {
+            /** @example shipwright */
+            marketplace: string;
+            /** @example shipwright */
+            plugin: string;
         };
         RuntimeError: {
             /** @example Not found */

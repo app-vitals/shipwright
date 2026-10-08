@@ -108,6 +108,7 @@ describeOrSkip("AgentCronRunStatsService (integration)", () => {
 
   beforeEach(async () => {
     prisma = makePrisma();
+    await prisma.agentCronRunSkillUsage.deleteMany();
     await prisma.agentCronRunModelBreakdown.deleteMany();
     await prisma.agentCronRun.deleteMany();
     await prisma.agentToken.deleteMany();
@@ -1145,5 +1146,158 @@ describeOrSkip("AgentCronRunStatsService (integration)", () => {
     expect(stats.byCronModel[0].key1).toBe(`${agentId}:legacy-cron`);
     expect(stats.byCronModel[0].key2).toBe("legacy-unattributed");
     expect(stats.byCronModel[0].input).toBe(500);
+  });
+
+  // ─── bySkill / baselines (PAU-1.6) ───────────────────────────────────────────
+
+  it("query() returns empty bySkill and baselines when nothing reported", async () => {
+    const agentId = await createAgent(prisma);
+    const cronId = await createCron(cronJobService, agentId);
+    await runService.create(cronId, agentId, {
+      startedAt: new Date("2026-01-10T09:00:00Z"),
+      skipped: false,
+    });
+
+    const stats = await statsService.query();
+
+    expect(stats.bySkill).toEqual([]);
+    expect(stats.baselines).toEqual([]);
+  });
+
+  it("query() aggregates bySkill per (kind,name) and excludes skipped runs", async () => {
+    const agentId = await createAgent(prisma);
+    const cronId = await createCron(cronJobService, agentId);
+    const run1 = await runService.create(cronId, agentId, {
+      startedAt: new Date("2026-01-10T09:00:00Z"),
+      skipped: false,
+    });
+    const run2 = await runService.create(cronId, agentId, {
+      startedAt: new Date("2026-01-11T09:00:00Z"),
+      skipped: false,
+    });
+    const skippedRun = await runService.create(cronId, agentId, {
+      startedAt: new Date("2026-01-12T09:00:00Z"),
+      skipped: true,
+    });
+
+    const usage = (
+      cronRunId: string,
+      kind: string,
+      name: string,
+      n: number,
+      invokeContextDelta: number | null,
+    ) => ({
+      cronRunId,
+      kind,
+      name,
+      invocations: n,
+      turns: n * 2,
+      inputTokens: n * 10,
+      outputTokens: n * 5,
+      cacheReadTokens: n * 3,
+      cacheCreationTokens: n,
+      invokeContextDelta,
+    });
+    await prisma.agentCronRunSkillUsage.createMany({
+      data: [
+        usage(run1.id, "skill", "shipwright:review", 1, 1000),
+        usage(run2.id, "skill", "shipwright:review", 2, 2000),
+        usage(run2.id, "subagent", "general-purpose", 1, null),
+        usage(skippedRun.id, "skill", "shipwright:review", 50, 99999),
+      ],
+    });
+
+    const stats = await statsService.query();
+
+    expect(stats.bySkill).toHaveLength(2);
+    const review = stats.bySkill?.find((s) => s.name === "shipwright:review");
+    expect(review).toEqual({
+      kind: "skill",
+      name: "shipwright:review",
+      runs: 2,
+      invocations: 3,
+      turns: 6,
+      input: 30,
+      output: 15,
+      cacheRead: 9,
+      cacheCreation: 3,
+      avgInvokeContextDelta: 1500,
+    });
+    const sub = stats.bySkill?.find((s) => s.kind === "subagent");
+    expect(sub?.runs).toBe(1);
+    expect(sub?.avgInvokeContextDelta).toBeNull();
+  });
+
+  it("query() groups baselines by (fingerprint,model,phase), includes skipped, excludes no-baseline runs, orders by first appearance", async () => {
+    const agentId = await createAgent(prisma);
+    const cronId = await createCron(cronJobService, agentId);
+    const devPhase = await createPhaseCron(cronJobService, agentId, "dev-task");
+    const reviewPhase = await createPhaseCron(
+      cronJobService,
+      agentId,
+      "review",
+    );
+
+    const baseline = (
+      tokens: number,
+      fp: string,
+      turns: number | null,
+      toolCalls: number | null,
+    ) => ({
+      baselineModel: "claude-sonnet-5-5",
+      baselineContextTokens: tokens,
+      contextFingerprint: fp,
+      turns,
+      toolCalls,
+    });
+    const mk = async (
+      startedAt: string,
+      extra: Record<string, unknown>,
+      phaseId?: string,
+    ) => {
+      const run = await runService.create(cronId, agentId, {
+        startedAt: new Date(startedAt),
+        skipped: (extra.skipped as boolean | undefined) ?? false,
+        phaseId,
+      });
+      const { skipped: _skipped, ...data } = extra;
+      await prisma.agentCronRun.update({ where: { id: run.id }, data });
+    };
+
+    // Second-seen group inserted first to prove ordering is by startedAt.
+    await mk("2026-01-12T09:00:00Z", baseline(500, "fp-b", 4, 8), reviewPhase);
+    await mk("2026-01-10T09:00:00Z", baseline(100, "fp-a", 10, 20), devPhase);
+    await mk("2026-01-11T09:00:00Z", baseline(300, "fp-a", 20, null), devPhase);
+    await mk(
+      "2026-01-13T09:00:00Z",
+      { ...baseline(200, "fp-a", null, null), skipped: true },
+      devPhase,
+    );
+    // No baseline reported → excluded.
+    await mk("2026-01-09T09:00:00Z", {}, devPhase);
+
+    const stats = await statsService.query();
+
+    expect(stats.baselines).toHaveLength(2);
+    const [first, second] = stats.baselines ?? [];
+    expect(first).toMatchObject({
+      contextFingerprint: "fp-a",
+      baselineModel: "claude-sonnet-5-5",
+      phase: "dev-task",
+      runs: 3,
+      avgContextTokens: 200,
+      minContextTokens: 100,
+      maxContextTokens: 300,
+      avgTurns: 15,
+      avgToolCalls: 20,
+      firstSeen: "2026-01-10T09:00:00.000Z",
+      lastSeen: "2026-01-13T09:00:00.000Z",
+    });
+    expect(second).toMatchObject({
+      contextFingerprint: "fp-b",
+      phase: "review",
+      runs: 1,
+      avgContextTokens: 500,
+    });
   });
 });

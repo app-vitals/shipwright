@@ -8,6 +8,13 @@
  * byPhase additionally excludes runs with a null phaseId (legacy five-job
  * crons, or runs that predate phase tracking, or runs whose agent hasn't
  * reconciled its phase child rows yet).
+ *
+ * bySkill (PAU-1.6) aggregates AgentCronRunSkillUsage per (kind, name) over
+ * non-skipped runs only. baselines groups the first-turn context baseline per
+ * (contextFingerprint, baselineModel, phase) — skipped runs ARE included
+ * (their baseline is still a valid measurement), runs with no baseline
+ * (baselineContextTokens NULL) are excluded; rows are ordered by first
+ * appearance. Both are empty arrays when nothing has been reported.
  * Uses $queryRaw for all dimensions — Prisma groupBy doesn't support the
  * LEFT JOIN needed for byCron.
  *
@@ -25,8 +32,8 @@
  * five separate crons.
  */
 
-import { Prisma } from "../prisma/client/client.ts";
 import type { PrismaClient } from "../prisma/client/client.ts";
+import { Prisma } from "../prisma/client/client.ts";
 
 // ─── Types (mirrored from metrics/src/lib/admin-metrics-client.ts) ───────────
 // These types are defined here to keep admin self-contained (rootDir constraint).
@@ -69,6 +76,39 @@ export interface CronRunTokenStats {
   daily: DailyTokenAggregate[];
   byCronModel: DoubleKeyedTokenAggregate[]; // key1=agentId:cronName, key2=model
   byPhase: KeyedTokenAggregate[]; // key=phase; runs with a null phase are excluded
+  bySkill?: SkillUsageAggregate[]; // per (kind,name); skipped runs excluded
+  baselines?: ContextBaselineAggregate[]; // per (fingerprint,model,phase); runs w/o baseline excluded
+}
+
+/** Per-skill / per-subagent usage rollup across runs. */
+export interface SkillUsageAggregate {
+  kind: string;
+  name: string;
+  runs: number;
+  invocations: number;
+  turns: number;
+  input: number;
+  output: number;
+  cacheRead: number;
+  cacheCreation: number;
+  /** Mean invokeContextDelta over rows that reported one; null when none did. */
+  avgInvokeContextDelta: number | null;
+}
+
+/** First-turn context baseline rollup for runs sharing a fingerprint/model/phase. */
+export interface ContextBaselineAggregate {
+  contextFingerprint: string | null;
+  baselineModel: string | null;
+  phase: string | null;
+  runs: number;
+  avgContextTokens: number;
+  minContextTokens: number;
+  maxContextTokens: number;
+  /** Mean over runs that reported a value; null when none did. */
+  avgTurns: number | null;
+  avgToolCalls: number | null;
+  firstSeen: string;
+  lastSeen: string;
 }
 
 // ─── Raw row types from $queryRaw ────────────────────────────────────────────
@@ -141,6 +181,33 @@ interface ByPhaseRow {
   cache_read: bigint | null;
   cache_creation: bigint | null;
   cost_usd: number | null;
+}
+
+interface BySkillRow {
+  kind: string;
+  name: string;
+  runs: bigint;
+  invocations: bigint | null;
+  turns: bigint | null;
+  input: bigint | null;
+  output: bigint | null;
+  cache_read: bigint | null;
+  cache_creation: bigint | null;
+  avg_invoke_context_delta: number | null;
+}
+
+interface BaselineRow {
+  context_fingerprint: string | null;
+  baseline_model: string | null;
+  phase: string | null;
+  runs: bigint;
+  avg_context_tokens: number;
+  min_context_tokens: number;
+  max_context_tokens: number;
+  avg_turns: number | null;
+  avg_tool_calls: number | null;
+  first_seen: Date;
+  last_seen: Date;
 }
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -231,6 +298,8 @@ export class AgentCronRunStatsService {
       dailyRows,
       byCronModelRows,
       byPhaseRows,
+      bySkillRows,
+      baselineRows,
     ] = await Promise.all([
       this.queryTotals(filterR),
       this.queryByAgent(filterR),
@@ -239,6 +308,8 @@ export class AgentCronRunStatsService {
       this.queryDaily(filterR),
       this.queryByCronModel(filterR),
       this.queryByPhase(filterR),
+      this.queryBySkill(filterR),
+      this.queryBaselines(filterR),
     ]);
 
     const totalsRow = totalsRows[0];
@@ -283,7 +354,44 @@ export class AgentCronRunStatsService {
       key: row.phase,
     }));
 
-    return { totals, byAgent, byCron, byModel, daily, byCronModel, byPhase };
+    const bySkill: SkillUsageAggregate[] = bySkillRows.map((row) => ({
+      kind: row.kind,
+      name: row.name,
+      runs: num(row.runs),
+      invocations: num(row.invocations),
+      turns: num(row.turns),
+      input: num(row.input),
+      output: num(row.output),
+      cacheRead: num(row.cache_read),
+      cacheCreation: num(row.cache_creation),
+      avgInvokeContextDelta: row.avg_invoke_context_delta,
+    }));
+
+    const baselines: ContextBaselineAggregate[] = baselineRows.map((row) => ({
+      contextFingerprint: row.context_fingerprint,
+      baselineModel: row.baseline_model,
+      phase: row.phase,
+      runs: num(row.runs),
+      avgContextTokens: row.avg_context_tokens,
+      minContextTokens: row.min_context_tokens,
+      maxContextTokens: row.max_context_tokens,
+      avgTurns: row.avg_turns,
+      avgToolCalls: row.avg_tool_calls,
+      firstSeen: row.first_seen.toISOString(),
+      lastSeen: row.last_seen.toISOString(),
+    }));
+
+    return {
+      totals,
+      byAgent,
+      byCron,
+      byModel,
+      daily,
+      byCronModel,
+      byPhase,
+      bySkill,
+      baselines,
+    };
   }
 
   // ─── Private query methods ──────────────────────────────────────────────────
@@ -440,6 +548,55 @@ export class AgentCronRunStatsService {
       ${filter}
       GROUP BY p.name
       ORDER BY p.name
+    `;
+  }
+
+  private queryBySkill(filter: Prisma.Sql): Promise<BySkillRow[]> {
+    // Skipped runs excluded (same rule as every token dimension). AVG ignores
+    // NULL invokeContextDelta rows, so a skill never measured yields NULL.
+    return this.prisma.$queryRaw<BySkillRow[]>`
+      SELECT
+        u.kind                              AS kind,
+        u.name                              AS name,
+        COUNT(DISTINCT r.id)                AS runs,
+        SUM(u.invocations)                  AS invocations,
+        SUM(u.turns)                        AS turns,
+        SUM(u."inputTokens")                AS input,
+        SUM(u."outputTokens")               AS output,
+        SUM(u."cacheReadTokens")            AS cache_read,
+        SUM(u."cacheCreationTokens")        AS cache_creation,
+        AVG(u."invokeContextDelta")::float8 AS avg_invoke_context_delta
+      FROM "AgentCronRun" r
+      INNER JOIN "AgentCronRunSkillUsage" u ON u."cronRunId" = r.id
+      WHERE r.skipped = false
+      ${filter}
+      GROUP BY u.kind, u.name
+      ORDER BY u.kind, u.name
+    `;
+  }
+
+  private queryBaselines(filter: Prisma.Sql): Promise<BaselineRow[]> {
+    // Skipped runs are deliberately included; runs with no baseline are not.
+    // NULL fingerprint/model/phase each collapse into a single group.
+    return this.prisma.$queryRaw<BaselineRow[]>`
+      SELECT
+        r."contextFingerprint"                       AS context_fingerprint,
+        r."baselineModel"                            AS baseline_model,
+        REGEXP_REPLACE(p.name, '^shipwright-', '')   AS phase,
+        COUNT(*)                                     AS runs,
+        AVG(r."baselineContextTokens")::float8       AS avg_context_tokens,
+        MIN(r."baselineContextTokens")               AS min_context_tokens,
+        MAX(r."baselineContextTokens")               AS max_context_tokens,
+        AVG(r.turns)::float8                         AS avg_turns,
+        AVG(r."toolCalls")::float8                   AS avg_tool_calls,
+        MIN(r."startedAt")                           AS first_seen,
+        MAX(r."startedAt")                           AS last_seen
+      FROM "AgentCronRun" r
+      LEFT JOIN "AgentCronJob" p ON p.id = r."phaseId"
+      WHERE r."baselineContextTokens" IS NOT NULL
+      ${filter}
+      GROUP BY r."contextFingerprint", r."baselineModel", p.name
+      ORDER BY MIN(r."startedAt"), r."contextFingerprint", r."baselineModel", p.name
     `;
   }
 }
