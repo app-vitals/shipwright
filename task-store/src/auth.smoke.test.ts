@@ -24,7 +24,7 @@ import { describe, expect, it } from "bun:test";
 import { Hono } from "hono";
 import type { Caller } from "@shipwright/lib/request-context";
 import { DEFAULT_ACCOUNT_ID } from "@shipwright/lib/default-account";
-import { resolveAccountScope } from "./account-scope.ts";
+import { resolveAccountScope, resolveWriteAccountId } from "./account-scope.ts";
 import { NO_ACCESS_ACCOUNT_ID, createBearerAuthMiddleware } from "./auth.ts";
 import type {
   ScopeResolution,
@@ -76,6 +76,9 @@ function makeAuthApp(
     });
   });
   app.get("/scope", (c) => c.json({ scope: resolveAccountScope(c) }));
+  app.get("/write-account", (c) =>
+    c.json({ accountId: resolveWriteAccountId(c) }),
+  );
   return app;
 }
 
@@ -382,5 +385,29 @@ describe("bearer auth middleware — account scope", () => {
     expect(await (await app.request("/scope", { headers })).json()).toEqual({
       scope: null,
     });
+  });
+
+  it("resolveWriteAccountId: agent token → resolved account, ignoring ?accountId=", async () => {
+    const app = makeAuthApp(fakeAgentTokenService(), async () => ({
+      repos: [],
+      accountId: "acct-x",
+    }));
+    const res = await app.request("/write-account?accountId=acct-other", {
+      headers: { Authorization: `Bearer ${AGENT_TOKEN}` },
+    });
+    expect(await res.json()).toEqual({ accountId: "acct-x" });
+  });
+
+  it("resolveWriteAccountId: admin token → ?accountId=, else DEFAULT_ACCOUNT_ID", async () => {
+    const app = makeAuthApp(fakeAdminTokenService());
+    const headers = { Authorization: `Bearer ${ADMIN_TOKEN}` };
+    expect(
+      await (
+        await app.request("/write-account?accountId=acct-y", { headers })
+      ).json(),
+    ).toEqual({ accountId: "acct-y" });
+    expect(
+      await (await app.request("/write-account", { headers })).json(),
+    ).toEqual({ accountId: DEFAULT_ACCOUNT_ID });
   });
 });

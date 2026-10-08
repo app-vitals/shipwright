@@ -87,7 +87,7 @@ const noopPrService: PullRequestServiceLike = {
   async lookupBlockedPrNumbers(_pairs) {
     return new Set();
   },
-  async stampOrigin(_repo, _prNumber, _data, _client?) {
+  async stampOrigin(_repo, _prNumber, _data, _client?, _accountId?) {
     return {} as never;
   },
   async census(_entries) {

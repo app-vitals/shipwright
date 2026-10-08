@@ -8,6 +8,7 @@
  */
 
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
+import { DEFAULT_ACCOUNT_ID } from "@shipwright/lib/default-account";
 import { type PrismaClient, createPrismaClient } from "./prisma-client.ts";
 import { createTaskStoreApp } from "./app.ts";
 import { FixedClock } from "./clock.ts";
@@ -617,7 +618,13 @@ describeOrSkip(
       // sha and a different (bogus) prCreatedAt — it must not be applied since
       // the field is read-only once set.
       const releaseTarget = await prisma.pullRequest.findUnique({
-        where: { repo_prNumber: { repo, prNumber } },
+        where: {
+          accountId_repo_prNumber: {
+            accountId: DEFAULT_ACCOUNT_ID,
+            repo,
+            prNumber,
+          },
+        },
       });
       if (!releaseTarget) throw new Error("expected record to exist");
       await service.release(releaseTarget.id);
@@ -1325,7 +1332,11 @@ describeOrSkip("PullRequestService.lookupBlockedPrNumbers() (integration)", () =
     });
 
     const result = await service.lookupBlockedPrNumbers([
-      { repo: "app-vitals/shipwright", prNumber: 2001 },
+      {
+        accountId: DEFAULT_ACCOUNT_ID,
+        repo: "app-vitals/shipwright",
+        prNumber: 2001,
+      },
     ]);
     expect(result.has(2001)).toBe(true);
   });
@@ -1340,7 +1351,11 @@ describeOrSkip("PullRequestService.lookupBlockedPrNumbers() (integration)", () =
     });
 
     const result = await service.lookupBlockedPrNumbers([
-      { repo: "app-vitals/shipwright", prNumber: 2002 },
+      {
+        accountId: DEFAULT_ACCOUNT_ID,
+        repo: "app-vitals/shipwright",
+        prNumber: 2002,
+      },
     ]);
     expect(result.has(2002)).toBe(false);
   });
@@ -1356,7 +1371,11 @@ describeOrSkip("PullRequestService.lookupBlockedPrNumbers() (integration)", () =
     });
 
     const result = await service.lookupBlockedPrNumbers([
-      { repo: "app-vitals/shipwright", prNumber: 2003 },
+      {
+        accountId: DEFAULT_ACCOUNT_ID,
+        repo: "app-vitals/shipwright",
+        prNumber: 2003,
+      },
     ]);
     expect(result.has(2003)).toBe(false);
   });
@@ -1376,9 +1395,21 @@ describeOrSkip("PullRequestService.lookupBlockedPrNumbers() (integration)", () =
     });
 
     const result = await service.lookupBlockedPrNumbers([
-      { repo: "app-vitals/shipwright", prNumber: 2010 },
-      { repo: "app-vitals/shipwright", prNumber: 2011 },
-      { repo: "app-vitals/other-repo", prNumber: 2012 },
+      {
+        accountId: DEFAULT_ACCOUNT_ID,
+        repo: "app-vitals/shipwright",
+        prNumber: 2010,
+      },
+      {
+        accountId: DEFAULT_ACCOUNT_ID,
+        repo: "app-vitals/shipwright",
+        prNumber: 2011,
+      },
+      {
+        accountId: DEFAULT_ACCOUNT_ID,
+        repo: "app-vitals/other-repo",
+        prNumber: 2012,
+      },
     ]);
     expect(result).toEqual(new Set([2010, 2012]));
   });

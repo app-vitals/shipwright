@@ -8,6 +8,7 @@
  * Requires DATABASE_URL_SHIPWRIGHT_TASK_STORE_TEST to be set; skips otherwise.
  */
 
+import { DEFAULT_ACCOUNT_ID } from "@shipwright/lib/default-account";
 import { beforeEach, describe, expect, it } from "bun:test";
 import { DEFAULT_CLAIM_TTL_MS } from "@shipwright/lib/claim-ttl";
 import { type PrismaClient, createPrismaClient } from "./prisma-client.ts";
@@ -325,7 +326,13 @@ describeOrSkip("StaleClaimReaper PR reaping (integration)", () => {
 
     const byNumber = async (prNumber: number) => {
       const row = await prisma.pullRequest.findUnique({
-        where: { repo_prNumber: { repo: "app-vitals/shipwright", prNumber } },
+        where: {
+          accountId_repo_prNumber: {
+            accountId: DEFAULT_ACCOUNT_ID,
+            repo: "app-vitals/shipwright",
+            prNumber,
+          },
+        },
       });
       if (!row) throw new Error(`expected PR ${prNumber} to exist`);
       return row;

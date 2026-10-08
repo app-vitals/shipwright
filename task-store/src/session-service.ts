@@ -42,7 +42,7 @@ import {
 export type PrismaTxClient = Pick<Prisma.TransactionClient, "session">;
 
 /**
- * Batched (repo, prNumber) → blocked-prNumbers lookup, mirroring
+ * Batched (accountId, repo, prNumber) → blocked-prNumbers lookup, mirroring
  * PullRequestService.lookupBlockedPrNumbers()'s signature exactly (SESH-2.2).
  * Injected as a plain function (rather than a PullRequestServiceLike
  * dependency) to keep SessionService decoupled from pull-request-service.ts —
@@ -51,7 +51,7 @@ export type PrismaTxClient = Pick<Prisma.TransactionClient, "session">;
  * is unaffected.
  */
 export type LookupBlockedPrNumbers = (
-  pairs: { repo: string; prNumber: number }[],
+  pairs: { accountId: string; repo: string; prNumber: number }[],
 ) => Promise<Set<number>>;
 
 /**
@@ -173,17 +173,19 @@ function activityTime(value: string | null): number {
   return value === null ? Number.NEGATIVE_INFINITY : new Date(value).getTime();
 }
 
-/** Extract the (repo, prNumber) pairs lookupBlockedPrNumbers() needs from a
- * task set — only tasks with both fields set can ever be "pr_blocked". */
+/** Extract the (accountId, repo, prNumber) keys lookupBlockedPrNumbers()
+ * needs from a task set — only tasks with both repo and pr set can ever be
+ * "pr_blocked". Each key carries the task's own accountId so a blocked PR in
+ * another account never matches (SSP-6.3). */
 function toBlockedLookupKeys(
   tasks: Task[],
-): { repo: string; prNumber: number }[] {
+): { accountId: string; repo: string; prNumber: number }[] {
   return tasks
     .filter(
       (t): t is Task & { repo: string; pr: number } =>
         t.repo !== null && t.pr !== null,
     )
-    .map((t) => ({ repo: t.repo, prNumber: t.pr }));
+    .map((t) => ({ accountId: t.accountId, repo: t.repo, prNumber: t.pr }));
 }
 
 /**

@@ -322,6 +322,47 @@ function matchesTaskFilters(task: Task, filters: TaskListPostFilters): boolean {
   return true;
 }
 
+/**
+ * True when `accountId` restricts a query to one account (SSP-6.5). Any
+ * string counts — including NO_ACCESS_ACCOUNT_ID (""), which deliberately
+ * matches no rows. null/undefined = unrestricted (admin token).
+ */
+function isAccountScoped(
+  accountId: string | null | undefined,
+): accountId is string {
+  return typeof accountId === "string";
+}
+
+/** Keeps only the rows in `accountId` — dependencies never cross accounts. */
+function sameAccount(tasks: Task[], accountId: string): Task[] {
+  return tasks.filter((t) => t.accountId === accountId);
+}
+
+/**
+ * Partitions tasks by accountId, preserving each partition's input order, so
+ * an unrestricted (admin) whole-table load still resolves every dependency
+ * graph within a single account.
+ */
+function groupByAccount(tasks: Task[]): Map<string, Task[]> {
+  const groups = new Map<string, Task[]>();
+  for (const t of tasks) {
+    const group = groups.get(t.accountId);
+    if (group) group.push(t);
+    else groups.set(t.accountId, [t]);
+  }
+  return groups;
+}
+
+/** P2002 = Prisma unique-constraint violation (here: Task.id already exists). */
+function isUniqueViolation(err: unknown): boolean {
+  return (
+    typeof err === "object" &&
+    err !== null &&
+    "code" in err &&
+    (err as { code: string }).code === "P2002"
+  );
+}
+
 /** A Task augmented with a computed blockedBy array. */
 export type TaskWithBlockedBy = Task & { blockedBy: BlockedByEntry[] };
 
@@ -414,6 +455,13 @@ export interface TaskListFilters {
    * A separate `?repo=X` filter still applies as an additional AND condition.
    */
   agentScope?: { agentId: string; repos: string[] };
+  /**
+   * Account (tenant) scope (SSP-6.5). A string restricts the result to rows
+   * with that accountId; null/undefined is unrestricted (admin token without
+   * `?accountId=`). Applied as an AND condition on top of every other
+   * filter, including agentScope.
+   */
+  accountId?: string | null;
 }
 
 /** Paginated list result from TaskService.list. */
@@ -437,18 +485,21 @@ export interface TaskServiceLike {
     agentId?: string,
     repos?: string[],
     filters?: TaskListPostFilters,
+    accountId?: string | null,
   ): Promise<Task[]>;
   listBlocked(
     agentId?: string,
     repos?: string[],
     sort?: "asc" | "desc",
     filters?: TaskListPostFilters,
+    accountId?: string | null,
   ): Promise<TaskWithBlockedBy[]>;
   distinct(
     agentId?: string,
     scopeRepos?: string[],
+    accountId?: string | null,
   ): Promise<{ sessions: string[]; repos: string[]; orgs: string[] }>;
-  get(id: string): Promise<TaskWithBlockedBy | null>;
+  get(id: string, accountId?: string | null): Promise<TaskWithBlockedBy | null>;
   create(data: Prisma.TaskCreateInput): Promise<Task>;
   bulk(
     tasks: Prisma.TaskCreateInput[],
@@ -560,6 +611,7 @@ export class TaskService implements TaskServiceLike {
       }
     }
     if (filters.assignee) where.assignee = filters.assignee;
+    if (isAccountScoped(filters.accountId)) where.accountId = filters.accountId;
 
     const limit = filters.limit ?? 50;
     const offset = filters.offset ?? 0;
@@ -590,9 +642,12 @@ export class TaskService implements TaskServiceLike {
       ? await this.prisma.task.findMany({ where: { id: { in: depIds } } })
       : [];
 
+    // Dependencies only ever resolve within the dependent's own account —
+    // a same-id row in another account must never satisfy (or even
+    // describe) the dependency (SSP-6.5).
     const tasks: TaskWithBlockedBy[] = pageTasks.map((t: Task) => ({
       ...t,
-      blockedBy: computeBlockedBy(t, allTasks),
+      blockedBy: computeBlockedBy(t, sameAccount(allTasks, t.accountId)),
     }));
 
     return { tasks, total, limit, offset };
@@ -624,17 +679,30 @@ export class TaskService implements TaskServiceLike {
     agentId?: string,
     repos?: string[],
     filters?: TaskListPostFilters,
+    accountId?: string | null,
   ): Promise<Task[]> {
-    // Load all tasks so dependency resolution sees the full graph, then filter
-    // the result set to the caller's agent if one is specified.
+    // Load the caller's whole account graph (or every account, for an
+    // unrestricted admin caller) so dependency resolution sees every task it
+    // could depend on, then filter the result set to the caller's agent if
+    // one is specified. The accountId filter is applied BEFORE resolution
+    // (SSP-6.5) — and an unrestricted load is still resolved per account —
+    // so one tenant's task ids can never satisfy another tenant's
+    // dependencies or same-branch exclusivity check.
     const tasks = await this.prisma.task.findMany({
+      where: isAccountScoped(accountId) ? { accountId } : {},
       orderBy: { createdAt: "asc" },
     });
-    const ready = await resolveReadyTasks(
-      tasks,
-      async () => false,
-      () => this.clock.now(),
-    );
+    const readyIds = new Set<string>();
+    for (const accountTasks of groupByAccount(tasks).values()) {
+      const accountReady = await resolveReadyTasks(
+        accountTasks,
+        async () => false,
+        () => this.clock.now(),
+      );
+      for (const t of accountReady) readyIds.add(t.id);
+    }
+    // Re-derive from `tasks` to keep the global ascending createdAt order.
+    const ready = tasks.filter((t) => readyIds.has(t.id));
     const scoped = agentId
       ? ready.filter(
           (t) =>
@@ -681,16 +749,24 @@ export class TaskService implements TaskServiceLike {
     repos?: string[],
     sort?: "asc" | "desc",
     filters?: TaskListPostFilters,
+    accountId?: string | null,
   ): Promise<TaskWithBlockedBy[]> {
+    // accountId narrows the graph BEFORE computeBlockedBy (SSP-6.5); an
+    // unrestricted load still resolves each task within its own account.
     const allTasks = await this.prisma.task.findMany({
+      where: isAccountScoped(accountId) ? { accountId } : {},
       orderBy: { createdAt: sort ?? "asc" },
     });
+    const byAccount = groupByAccount(allTasks);
     const useRepoScope =
       agentId !== undefined && repos !== undefined && repos.length > 0;
     const closedStatuses = new Set<string>(CLOSED_STATUSES);
     const effective = effectiveFilters(agentId, repos, filters);
     return allTasks
-      .map((t: Task) => ({ ...t, blockedBy: computeBlockedBy(t, allTasks) }))
+      .map((t: Task) => ({
+        ...t,
+        blockedBy: computeBlockedBy(t, byAccount.get(t.accountId) ?? []),
+      }))
       .filter((t: TaskWithBlockedBy) => {
         if (agentId) {
           const ownedByAssignee = t.assignee === agentId;
@@ -708,6 +784,7 @@ export class TaskService implements TaskServiceLike {
   async distinct(
     agentId?: string,
     scopeRepos?: string[],
+    accountId?: string | null,
   ): Promise<{ sessions: string[]; repos: string[]; orgs: string[] }> {
     const useRepoScope =
       agentId !== undefined &&
@@ -719,6 +796,7 @@ export class TaskService implements TaskServiceLike {
         ? { OR: [{ assignee: agentId }, { repo: { in: scopeRepos } }] }
         : { assignee: agentId };
     }
+    if (isAccountScoped(accountId)) where = { ...where, accountId };
     const rows = await this.prisma.task.findMany({
       where,
       select: { session: true, repo: true },
@@ -750,14 +828,26 @@ export class TaskService implements TaskServiceLike {
     return { sessions, repos, orgs };
   }
 
-  async get(id: string): Promise<TaskWithBlockedBy | null> {
-    const task = await this.prisma.task.findUnique({ where: { id } });
+  /**
+   * `accountId` (SSP-6.5): when set, a task in any other account is reported
+   * as missing (null → 404 at the route), never as forbidden, so its
+   * existence isn't revealed. null/undefined = unrestricted (admin).
+   */
+  async get(
+    id: string,
+    accountId?: string | null,
+  ): Promise<TaskWithBlockedBy | null> {
+    // findUnique on the id PK plus a non-unique accountId filter (Prisma's
+    // extended unique where) — a row in another account reads as missing.
+    const task = await this.prisma.task.findUnique({
+      where: isAccountScoped(accountId) ? { id, accountId } : { id },
+    });
     if (!task) return null;
     // Scope the dependency lookup to only the IDs this task depends on —
     // avoids a full-table scan when GET /tasks/:id is called frequently.
     const allTasks = task.dependencies?.length
       ? await this.prisma.task.findMany({
-          where: { id: { in: task.dependencies } },
+          where: { id: { in: task.dependencies }, accountId: task.accountId },
         })
       : [];
     return { ...task, blockedBy: computeBlockedBy(task, allTasks) };
@@ -774,7 +864,17 @@ export class TaskService implements TaskServiceLike {
    */
   async create(data: Prisma.TaskCreateInput): Promise<Task> {
     return this.prisma.$transaction(async (tx) => {
-      const task = await tx.task.create({ data });
+      let task: Task;
+      try {
+        task = await tx.task.create({ data });
+      } catch (err: unknown) {
+        // Same P2002 → 409 translation as bulk() below (SSP-6.5): previously
+        // an id collision here surfaced as an unhandled 500.
+        if (isUniqueViolation(err)) {
+          throw new ConflictError(`task '${data.id}' already exists`);
+        }
+        throw err;
+      }
       // SSP-6.7: the Session row belongs to the task's own account.
       await this.sessionService.upsert(tx, task.session, task.accountId);
       // Fires after the task row + its session upsert have both landed, still
@@ -837,12 +937,7 @@ export class TaskService implements TaskServiceLike {
             // P2002 = unique constraint violation (id already exists) —
             // translate to ConflictError so it propagates uncaught and rolls
             // back the whole transaction, rather than being swallowed/skipped.
-            if (
-              typeof err === "object" &&
-              err !== null &&
-              "code" in err &&
-              (err as { code: string }).code === "P2002"
-            ) {
+            if (isUniqueViolation(err)) {
               throw new ConflictError(
                 `task '${task.id}' already exists — bulk() is all-or-nothing, the whole batch was rolled back`,
               );
@@ -940,11 +1035,13 @@ export class TaskService implements TaskServiceLike {
           resultingPr !== null &&
           typeof resultingRepo === "string"
         ) {
+          // SSP-6.3: the PR row belongs to the task's own account.
           await this.pullRequestService.stampOrigin(
             resultingRepo,
             resultingPr,
             { origin: "shipwright" },
             tx,
+            record.accountId,
           );
         }
 
@@ -1205,7 +1302,10 @@ export class TaskService implements TaskServiceLike {
         const before = await tx.task.findUnique({ where: { id } });
         if (!before) throw new NotFoundError("task not found");
         const streak = computeSkipStreak(
-          { skipCount: before.skipCount, lastSkipReason: before.lastSkipReason },
+          {
+            skipCount: before.skipCount,
+            lastSkipReason: before.lastSkipReason,
+          },
           effectiveReason,
         );
         const data: Prisma.TaskUpdateInput = {

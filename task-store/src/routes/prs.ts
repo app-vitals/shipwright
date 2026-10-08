@@ -36,6 +36,7 @@
 
 import { createRoute, OpenAPIHono } from "@hono/zod-openapi";
 import { readJson } from "@shipwright/lib/http";
+import { resolveWriteAccountId } from "../account-scope.ts";
 import type { TaskStoreAuthEnv } from "../auth.ts";
 import { BadRequestError, ForbiddenError, NotFoundError } from "../errors.ts";
 import type {
@@ -674,6 +675,9 @@ export function createPrsRoutes(
       boolOrUndefined(authorIsBot),
       boolOrUndefined(hasAutomatedLabel),
       boolOrUndefined(hasShipwrightLabel),
+      // SSP-6.3: key/stamp the PR by the caller's account (agent token:
+      // resolved account; admin token: ?accountId= or 'default').
+      resolveWriteAccountId(c),
     );
 
     return c.json(record, status);
@@ -784,7 +788,7 @@ export function createPrsRoutes(
       },
     );
 
-    const prs = await prService.census(entries);
+    const prs = await prService.census(entries, resolveWriteAccountId(c));
     return c.json({ prs }, 200);
   });
 
@@ -799,7 +803,10 @@ export function createPrsRoutes(
     }
     validateCensusRepoScope(repo, agentId !== null ? repos : null);
 
-    const cursor = await prService.getCensusCursor(repo);
+    const cursor = await prService.getCensusCursor(
+      repo,
+      resolveWriteAccountId(c),
+    );
     return c.json({ cursor }, 200);
   });
 

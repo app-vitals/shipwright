@@ -13,6 +13,18 @@
  *     null/unassigned (pool task) when omitted — not forced to agentId
  * Admin tokens (agentId null) have no restrictions.
  *
+ * Account (tenant) scope (SSP-6.5), layered on top of the agent/repo rules:
+ *   - every read and /:id route filters by the caller's account
+ *     (resolveAccountScope: agent → its resolved account; admin → all
+ *     accounts, or just `?accountId=` when given). Another account's task is
+ *     a 404, never a 403, so its existence isn't revealed.
+ *   - ready/blocked dependency resolution runs within one account's graph.
+ *   - creates stamp accountId from the caller (agent → its account; admin →
+ *     `?accountId=` or DEFAULT_ACCOUNT_ID), ignoring any body value.
+ *   - Task.id is still a GLOBAL primary key (Phase 1 limitation): an agent
+ *     token's id collision gets a generic 409 "task id unavailable" that is
+ *     identical whether the id is taken in its own account or another.
+ *
  * Routes:
  *   GET    /tasks               list (?status, ?state=open|closed, ?session, ?assignee, ?pr, ?branch, ?hitl=true|false, ?kind=dev|prd, ?limit, ?offset, ?ready=true)
  *                              returns { tasks, total, scopeDegraded } — scopeDegraded
@@ -46,9 +58,17 @@
  */
 
 import { createRoute, OpenAPIHono } from "@hono/zod-openapi";
+import { DEFAULT_ACCOUNT_ID } from "@shipwright/lib/default-account";
 import { readJson } from "@shipwright/lib/http";
-import type { TaskStoreAuthEnv } from "../auth.ts";
-import { BadRequestError, ForbiddenError, NotFoundError } from "../errors.ts";
+import type { Context } from "hono";
+import { resolveAccountScope } from "../account-scope.ts";
+import { NO_ACCESS_ACCOUNT_ID, type TaskStoreAuthEnv } from "../auth.ts";
+import {
+  BadRequestError,
+  ConflictError,
+  ForbiddenError,
+  NotFoundError,
+} from "../errors.ts";
 import type { Prisma, TaskKind } from "../index.ts";
 import {
   BulkInsertBodySchema,
@@ -144,7 +164,48 @@ function validateRepo(repo: unknown, repos: string[] | null): void {
   }
 }
 
-/** Fetch a task and enforce agent ownership. Throws 404 or 403 as appropriate.
+/**
+ * The accountId a create should stamp (SSP-6.5). Agent tokens always get
+ * their resolved account; an agent whose scope resolution failed
+ * (NO_ACCESS_ACCOUNT_ID) can't create at all. Admin tokens use `?accountId=`
+ * or fall back to DEFAULT_ACCOUNT_ID — never a body-supplied value.
+ */
+function accountIdForCreate(c: Context<TaskStoreAuthEnv>): string {
+  const callerAccountId = c.get("accountId");
+  if (callerAccountId === NO_ACCESS_ACCOUNT_ID) {
+    throw new ForbiddenError("account scope unavailable — cannot create tasks");
+  }
+  return callerAccountId ?? (c.req.query("accountId") || DEFAULT_ACCOUNT_ID);
+}
+
+/** Generic id-collision message for account-scoped callers (SSP-6.5). */
+const TASK_ID_UNAVAILABLE = "task id unavailable";
+
+/**
+ * Task.id is a global primary key (Phase 1 limitation), so a create can
+ * collide with a task in another account. For account-scoped (agent) tokens,
+ * any ConflictError is replaced with one fixed body so the response never
+ * reveals whether — or in which account — the id exists. Admin tokens keep
+ * the detailed message.
+ */
+async function withGenericIdConflict<T>(
+  c: Context<TaskStoreAuthEnv>,
+  fn: () => Promise<T>,
+): Promise<T> {
+  try {
+    return await fn();
+  } catch (err) {
+    if (err instanceof ConflictError && c.get("accountId") !== null) {
+      throw new ConflictError(TASK_ID_UNAVAILABLE);
+    }
+    throw err;
+  }
+}
+
+/** Fetch a task and enforce account scope + agent ownership. Throws 404 or 403 as appropriate.
+ *
+ * A task outside `accountId` (non-null = account-scoped caller) is a 404,
+ * exactly like a missing id — never a 403 (SSP-6.5).
  *
  * Ownership is granted when any of:
  *   1. agentId is null (admin token — unrestricted)
@@ -156,9 +217,10 @@ async function requireOwnership(
   taskService: TaskServiceLike,
   id: string,
   agentId: string | null,
-  repos: string[] = [],
+  repos: string[],
+  accountId: string | null,
 ) {
-  const task = await taskService.get(id);
+  const task = await taskService.get(id, accountId);
   if (!task) throw new NotFoundError("task not found");
   if (agentId !== null) {
     const ownedByAssignee = task.assignee === agentId;
@@ -179,7 +241,7 @@ const listRoute = createRoute({
   tags: ["tasks"],
   summary: "List tasks",
   description:
-    "Returns `{ tasks, total, limit, offset, scopeDegraded }`. `?ready=true` (or `?state=ready`) is an unpaginated convenience endpoint that computes over the whole dependency graph and returns only tasks that are `pending`, non-HITL, non-autonomous-plan-session, free of a fresh same-branch in-progress sibling, and fully dependency-satisfied — always oldest-first. `?state=blocked` similarly walks the whole graph to compute each task's `blockedBy` entries. Agent tokens with repo scope see the OR union of tasks assigned to them and unassigned pool tasks in their scoped repos; agent tokens without repo scope see only their own assigned tasks; admin tokens see everything matching the filters.",
+    "Returns `{ tasks, total, limit, offset, scopeDegraded }`. `?ready=true` (or `?state=ready`) is an unpaginated convenience endpoint that computes over the whole dependency graph and returns only tasks that are `pending`, non-HITL, non-autonomous-plan-session, free of a fresh same-branch in-progress sibling, and fully dependency-satisfied — always oldest-first. `?state=blocked` similarly walks the whole graph to compute each task's `blockedBy` entries. Agent tokens with repo scope see the OR union of tasks assigned to them and unassigned pool tasks in their scoped repos; agent tokens without repo scope see only their own assigned tasks; admin tokens see everything matching the filters. Every result is additionally limited to the caller's account: agent tokens only ever see their own account's tasks (a client-supplied `?accountId=` is ignored), and admin tokens see all accounts unless `?accountId=` narrows them to one. Ready/blocked dependency resolution never crosses accounts — a dependency id that only exists in another account is unresolved.",
   request: {
     query: TaskListQuerySchema,
   },
@@ -201,7 +263,7 @@ const createTaskRoute = createRoute({
   tags: ["tasks"],
   summary: "Create a task",
   description:
-    "Creates a single task. `title`, `status`, and `repo` are required — the `repo` key must be present, though `null` is a valid value for tasks not scoped to a specific repository. Agent tokens leave `assignee` as supplied by the caller, defaulting to `null` (unassigned/pool task) when omitted. Returns `201` with the created task; an existing `id` collision is not given dedicated handling and surfaces as an unhandled error rather than a clean `409` (use `POST /tasks/bulk` for collision-safe inserts).",
+    "Creates a single task. `title`, `status`, and `repo` are required — the `repo` key must be present, though `null` is a valid value for tasks not scoped to a specific repository. Agent tokens leave `assignee` as supplied by the caller, defaulting to `null` (unassigned/pool task) when omitted. `accountId` is stamped from the caller, never the body: agent tokens get their own account, admin tokens get `?accountId=` or `default`. Returns `201` with the created task, or `409` when the `id` already exists. Task ids are globally unique across accounts, so for agent tokens the `409` body is always the generic `task id unavailable` — identical whether the id is taken in the caller's account or another.",
   request: {
     body: {
       content: { "application/json": { schema: CreateTaskBodySchema } },
@@ -220,6 +282,16 @@ const createTaskRoute = createRoute({
       description: "Unauthorized",
       content: { "application/json": { schema: ErrorSchema } },
     },
+    403: {
+      description:
+        "Forbidden — the agent token's account scope could not be resolved",
+      content: { "application/json": { schema: ErrorSchema } },
+    },
+    409: {
+      description:
+        "Conflict — the task id is unavailable (agent tokens always get the generic `task id unavailable` body)",
+      content: { "application/json": { schema: ErrorSchema } },
+    },
   },
 });
 
@@ -228,7 +300,7 @@ const bulkRoute = createRoute({
   path: "/bulk",
   tags: ["tasks"],
   summary: "Bulk insert tasks",
-  description: `Inserts the whole array in one transaction (TSW-1.3): a single task's id collision or a webhook delivery failure rolls back the entire batch, not just that task. At most ${MAX_BULK_TASKS} tasks per call — the transaction's budget scales with batch size, and this cap bounds it.`,
+  description: `Inserts the whole array in one transaction (TSW-1.3): a single task's id collision or a webhook delivery failure rolls back the entire batch, not just that task. At most ${MAX_BULK_TASKS} tasks per call — the transaction's budget scales with batch size, and this cap bounds it. Every task's \`accountId\` is stamped from the caller exactly as for \`POST /tasks\`; an agent token's id collision returns the generic \`task id unavailable\` 409 body.`,
   request: {
     body: {
       content: { "application/json": { schema: BulkInsertBodySchema } },
@@ -247,9 +319,14 @@ const bulkRoute = createRoute({
       description: "Unauthorized",
       content: { "application/json": { schema: ErrorSchema } },
     },
+    403: {
+      description:
+        "Forbidden — the agent token's account scope could not be resolved",
+      content: { "application/json": { schema: ErrorSchema } },
+    },
     409: {
       description:
-        "Conflict — a task id in the batch already exists; the entire batch was rolled back",
+        "Conflict — a task id in the batch is unavailable; the entire batch was rolled back",
       content: { "application/json": { schema: ErrorSchema } },
     },
     502: {
@@ -284,7 +361,7 @@ const getOneRoute = createRoute({
   tags: ["tasks"],
   summary: "Get a task by ID",
   description:
-    "Fetches a single task by its ID. Returns `404` if the task doesn't exist or is outside the calling agent token's ownership/repo scope.",
+    "Fetches a single task by its ID. Returns `404` if the task doesn't exist or belongs to another account (never `403`, so existence isn't revealed); `403` if it's in the caller's account but outside the agent token's ownership/repo scope.",
   request: {
     params: TaskIdParamSchema,
   },
@@ -683,6 +760,7 @@ export function createTasksRoutes(
     const agentId = c.get("agentId");
     const repos = c.get("repos");
     const scopeDegraded = c.get("scopeDegraded");
+    const accountId = resolveAccountScope(c);
     const stateRaw = c.req.query("state");
     const prRaw = c.req.query("pr");
     const hitl =
@@ -721,6 +799,7 @@ export function createTasksRoutes(
           hitl,
           kind,
         },
+        accountId,
       );
       return c.json({ tasks, total: tasks.length, scopeDegraded }, 200);
     }
@@ -743,6 +822,7 @@ export function createTasksRoutes(
           hitl,
           kind,
         },
+        accountId,
       );
       return c.json({ tasks, total: tasks.length, scopeDegraded }, 200);
     }
@@ -787,6 +867,7 @@ export function createTasksRoutes(
           : undefined,
       sort: c.req.query("sort") === "desc" ? "desc" : undefined,
       updatedSince: c.req.query("updatedSince"),
+      accountId,
       // Use agentScope for repo-scoped agent tokens; otherwise use assignee filter.
       // Under agentScope, an explicit caller-supplied ?assignee= further narrows
       // the already-visible OR set (assigned-to-me OR in-my-repo-pool) — safe,
@@ -825,7 +906,10 @@ export function createTasksRoutes(
       );
     }
     validateRepo(body.repo, agentId !== null ? repos : null);
-    const created = await taskService.create(body as Prisma.TaskCreateInput);
+    body.accountId = accountIdForCreate(c);
+    const created = await withGenericIdConflict(c, () =>
+      taskService.create(body as Prisma.TaskCreateInput),
+    );
     return c.json(created, 201);
   });
 
@@ -843,7 +927,8 @@ export function createTasksRoutes(
     if (!Array.isArray(body)) {
       throw new BadRequestError("body must be a JSON array of tasks");
     }
-    // Validate repo presence and format on each task.
+    // Validate repo presence and format on each task, and stamp accountId.
+    const accountId = accountIdForCreate(c);
     for (const task of body as Record<string, unknown>[]) {
       stripRemovedFields(task);
       if (!("repo" in task)) {
@@ -852,8 +937,11 @@ export function createTasksRoutes(
         );
       }
       validateRepo(task.repo, agentId !== null ? repos : null);
+      task.accountId = accountId;
     }
-    const result = await taskService.bulk(body as Prisma.TaskCreateInput[]);
+    const result = await withGenericIdConflict(c, () =>
+      taskService.bulk(body as Prisma.TaskCreateInput[]),
+    );
     return c.json(result, 200);
   });
 
@@ -867,6 +955,7 @@ export function createTasksRoutes(
       await taskService.distinct(
         agentId ?? undefined,
         repos !== null ? repos : undefined,
+        resolveAccountScope(c),
       ),
       200,
     );
@@ -882,6 +971,7 @@ export function createTasksRoutes(
       c.req.param("id"),
       agentId,
       repos,
+      resolveAccountScope(c),
     );
     return c.json(task, 200);
   });
@@ -896,10 +986,15 @@ export function createTasksRoutes(
       c.req.param("id"),
       agentId,
       repos ?? [],
+      resolveAccountScope(c),
     );
     const body = await readJson(c);
     stripRemovedFields(body);
     assertNoLifecycleFieldWrite(body, agentId);
+    // Only admin tokens may move a task between accounts.
+    if (agentId !== null && "accountId" in body) {
+      throw new BadRequestError("agent tokens cannot set 'accountId'");
+    }
     validateRepo(body.repo, agentId !== null ? repos : null);
     // Prevent agent tokens from reassigning tasks outside their ownership scope.
     // Only force-assign when the acting agent is the explicit assignee or claimedBy.
@@ -926,7 +1021,13 @@ export function createTasksRoutes(
   app.openapi(deleteRoute, async (c): Promise<any> => {
     const agentId = c.get("agentId");
     const repos = c.get("repos") ?? [];
-    await requireOwnership(taskService, c.req.param("id"), agentId, repos);
+    await requireOwnership(
+      taskService,
+      c.req.param("id"),
+      agentId,
+      repos,
+      resolveAccountScope(c),
+    );
     await taskService.remove(c.req.param("id"));
     return c.body(null, 204);
   });
@@ -936,7 +1037,13 @@ export function createTasksRoutes(
   app.openapi(claimRoute, async (c): Promise<any> => {
     const agentId = c.get("agentId");
     const repos = c.get("repos") ?? [];
-    await requireOwnership(taskService, c.req.param("id"), agentId, repos);
+    await requireOwnership(
+      taskService,
+      c.req.param("id"),
+      agentId,
+      repos,
+      resolveAccountScope(c),
+    );
     // Agent tokens: pin claimedBy to the token's agentId (ignore request body).
     // Admin tokens: read claimedBy from the request body (existing behaviour).
     let claimedBy: string;
@@ -958,7 +1065,13 @@ export function createTasksRoutes(
   app.openapi(heartbeatRoute, async (c): Promise<any> => {
     const agentId = c.get("agentId");
     const repos = c.get("repos") ?? [];
-    await requireOwnership(taskService, c.req.param("id"), agentId, repos);
+    await requireOwnership(
+      taskService,
+      c.req.param("id"),
+      agentId,
+      repos,
+      resolveAccountScope(c),
+    );
     const task = await taskService.heartbeat(c.req.param("id"));
     return c.json(task, 200);
   });
@@ -968,7 +1081,13 @@ export function createTasksRoutes(
   app.openapi(completeRoute, async (c): Promise<any> => {
     const agentId = c.get("agentId");
     const repos = c.get("repos") ?? [];
-    await requireOwnership(taskService, c.req.param("id"), agentId, repos);
+    await requireOwnership(
+      taskService,
+      c.req.param("id"),
+      agentId,
+      repos,
+      resolveAccountScope(c),
+    );
     const task = await taskService.complete(c.req.param("id"));
     return c.json(task, 200);
   });
@@ -978,7 +1097,13 @@ export function createTasksRoutes(
   app.openapi(failRoute, async (c): Promise<any> => {
     const agentId = c.get("agentId");
     const repos = c.get("repos") ?? [];
-    await requireOwnership(taskService, c.req.param("id"), agentId, repos);
+    await requireOwnership(
+      taskService,
+      c.req.param("id"),
+      agentId,
+      repos,
+      resolveAccountScope(c),
+    );
     const body = await readJson(c);
     const reason = typeof body.reason === "string" ? body.reason : undefined;
     const task = await taskService.fail(c.req.param("id"), reason);
@@ -990,7 +1115,13 @@ export function createTasksRoutes(
   app.openapi(releaseRoute, async (c): Promise<any> => {
     const agentId = c.get("agentId");
     const repos = c.get("repos") ?? [];
-    await requireOwnership(taskService, c.req.param("id"), agentId, repos);
+    await requireOwnership(
+      taskService,
+      c.req.param("id"),
+      agentId,
+      repos,
+      resolveAccountScope(c),
+    );
     const task = await taskService.release(c.req.param("id"));
     return c.json(task, 200);
   });
@@ -1000,11 +1131,18 @@ export function createTasksRoutes(
   app.openapi(skipRoute, async (c): Promise<any> => {
     const agentId = c.get("agentId");
     const repos = c.get("repos") ?? [];
-    await requireOwnership(taskService, c.req.param("id"), agentId, repos);
+    await requireOwnership(
+      taskService,
+      c.req.param("id"),
+      agentId,
+      repos,
+      resolveAccountScope(c),
+    );
     const body = await readJson(c);
     // SRB-1.1: default server-side so recordSkip() always compares against a
     // concrete string, never undefined.
-    const reason = typeof body.reason === "string" ? body.reason : "unspecified";
+    const reason =
+      typeof body.reason === "string" ? body.reason : "unspecified";
     const task = await taskService.recordSkip(c.req.param("id"), reason);
     return c.json(task, 200);
   });
@@ -1014,7 +1152,13 @@ export function createTasksRoutes(
   app.openapi(skipResetRoute, async (c): Promise<any> => {
     const agentId = c.get("agentId");
     const repos = c.get("repos") ?? [];
-    await requireOwnership(taskService, c.req.param("id"), agentId, repos);
+    await requireOwnership(
+      taskService,
+      c.req.param("id"),
+      agentId,
+      repos,
+      resolveAccountScope(c),
+    );
     const task = await taskService.resetSkip(c.req.param("id"));
     return c.json(task, 200);
   });
@@ -1024,7 +1168,13 @@ export function createTasksRoutes(
   app.openapi(unblockRoute, async (c): Promise<any> => {
     const agentId = c.get("agentId");
     const repos = c.get("repos") ?? [];
-    await requireOwnership(taskService, c.req.param("id"), agentId, repos);
+    await requireOwnership(
+      taskService,
+      c.req.param("id"),
+      agentId,
+      repos,
+      resolveAccountScope(c),
+    );
     const task = await taskService.unblock(c.req.param("id"));
     return c.json(task, 200);
   });
@@ -1034,7 +1184,13 @@ export function createTasksRoutes(
   app.openapi(eventsRoute, async (c): Promise<any> => {
     const agentId = c.get("agentId");
     const repos = c.get("repos") ?? [];
-    await requireOwnership(taskService, c.req.param("id"), agentId, repos);
+    await requireOwnership(
+      taskService,
+      c.req.param("id"),
+      agentId,
+      repos,
+      resolveAccountScope(c),
+    );
 
     const limitRaw = c.req.query("limit");
     const offsetRaw = c.req.query("offset");

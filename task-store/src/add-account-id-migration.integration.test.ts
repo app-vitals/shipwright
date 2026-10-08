@@ -130,21 +130,18 @@ describeOrSkip("add accountId migration (integration)", () => {
     }
   });
 
-  it("is additive: old PullRequest unique and Session slug PK still enforced", async () => {
+  it("is additive: Session slug PK still enforced; old PullRequest unique dropped (SSP-6.4)", async () => {
     await runMigration(prisma);
 
     await prisma.$executeRawUnsafe(
       `INSERT INTO "PullRequest" ("id","accountId","repo","prNumber","updatedAt")
        VALUES ('pr-a','default','app-vitals/shipwright', 9402, now());`,
     );
-    // Same repo+prNumber, different account: rejected until SSP-6.4 drops the old unique.
-    await expect(
-      (async () =>
-        prisma.$executeRawUnsafe(
-          `INSERT INTO "PullRequest" ("id","accountId","repo","prNumber","updatedAt")
-           VALUES ('pr-b','acct-2','app-vitals/shipwright', 9402, now());`,
-        ))(),
-    ).rejects.toThrow();
+    // Same repo+prNumber, different account: allowed now that SSP-6.4 dropped the old unique.
+    await prisma.$executeRawUnsafe(
+      `INSERT INTO "PullRequest" ("id","accountId","repo","prNumber","updatedAt")
+       VALUES ('pr-b','acct-2','app-vitals/shipwright', 9402, now());`,
+    );
 
     await prisma.$executeRawUnsafe(
       `INSERT INTO "Session" ("slug","updatedAt") VALUES ('s-dup', now());`,
