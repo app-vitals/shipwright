@@ -52,6 +52,8 @@ export interface AgentRecord {
   typeName: string;
   createdAt: Date;
   updatedAt: Date;
+  /** Owning account (SSP-5.2 admin Account column); null for legacy agents. */
+  accountId?: string | null;
   /**
    * Optional here even though listAll()/listByIds()/searchByName() below
    * always return the full Prisma row (repos included, since none of them
@@ -83,7 +85,11 @@ export interface AgentDetail {
   patchAuthorAllowlist: string[];
   restrictSlackToMembers: boolean;
   typeName: string;
-  /** Owning account; null/absent for platform agents. */
+  /**
+   * Owning account, null for unassigned (platform) agents. Optional here so
+   * existing test doubles constructing a narrower AgentDetail literal don't
+   * need updating.
+   */
   accountId?: string | null;
   createdAt: Date;
   updatedAt: Date;

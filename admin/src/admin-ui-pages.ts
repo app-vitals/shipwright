@@ -445,6 +445,7 @@ export interface AgentListItem {
   slackId: string | null;
   createdAt: Date;
   selfHosted?: boolean;
+  accountId?: string | null;
 }
 
 export interface GitHubInstallationsCardData {
@@ -957,8 +958,19 @@ export function renderAgentsPage(
     manualSteps?: ManualStep[];
     /** Pre-rendered zero-quota notice + disabled button (replaces the CTA). */
     zeroQuotaNotice?: string;
+    /**
+     * accountId -> name. Admin-only (SSP-5.2): when set AND isAdmin, an
+     * Account column is rendered. Ignored for non-admins.
+     */
+    accountNames?: Map<string, string>;
   },
 ): string {
+  const showAccount = isAdmin && opts?.accountNames !== undefined;
+  const accountCell = (a: AgentListItem): string => {
+    if (!showAccount) return "";
+    const name = a.accountId ? opts?.accountNames?.get(a.accountId) : undefined;
+    return `<td>${a.accountId && name ? `<a href="/admin/accounts/${escapeHtml(a.accountId)}">${escapeHtml(name)}</a>` : '<span style="color:#9ca3af">—</span>'}</td>`;
+  };
   const successHtml = opts?.successMsg
     ? `<div class="alert alert-success">${escapeHtml(opts.successMsg)}</div>`
     : "";
@@ -977,12 +989,13 @@ export function renderAgentsPage(
 
   const rows =
     agents.length === 0
-      ? `<tr><td colspan="4" class="empty-state">${isAdmin ? 'No agents yet. <a href="/admin/agents/new">Create one →</a>' : "No agents."}</td></tr>`
+      ? `<tr><td colspan="${showAccount ? 5 : 4}" class="empty-state">${isAdmin ? 'No agents yet. <a href="/admin/agents/new">Create one →</a>' : "No agents."}</td></tr>`
       : agents
           .map(
             (a) => `<tr>
     <td><a href="/admin/agents/${escapeHtml(a.id)}" class="agent-link">${escapeHtml(a.name)}</a></td>
     <td class="mono">${a.slackId ? escapeHtml(a.slackId) : '<span style="color:#9ca3af">—</span>'}</td>
+    ${accountCell(a)}
     <td>${escapeHtml(new Date(a.createdAt).toLocaleDateString("en-US", { timeZone: timezone }))}</td>
     <td>
       <a href="/admin/agents/${escapeHtml(a.id)}" class="btn btn-secondary" style="font-size:12px;padding:4px 10px">Manage</a>
@@ -1016,6 +1029,7 @@ export function renderAgentsPage(
           <tr>
             <th>Name</th>
             <th>Slack ID</th>
+            ${showAccount ? "<th>Account</th>" : ""}
             <th>Created</th>
             <th></th>
           </tr>
@@ -1482,6 +1496,12 @@ export function renderAgentDetailPage(
   userName: string,
   isAdmin: boolean,
   opts?: {
+    /**
+     * SSP-4.3: render the Members / Slack access / Danger Zone cards. Defaults
+     * to isAdmin; the caller passes true for agent-access holders when
+     * self-serve is enabled.
+     */
+    canManage?: boolean;
     error?: string;
     newToken?: string;
     successMsg?: string;
@@ -2079,7 +2099,9 @@ export function renderAgentDetailPage(
       </div>
     </div>`;
 
-  const slackAccessSection = isAdmin
+  const canManage = opts?.canManage ?? isAdmin;
+
+  const slackAccessSection = canManage
     ? `<div class="card">
       <div class="card-title">Slack access</div>
       ${connectActionsHtml}
@@ -2345,7 +2367,7 @@ export function renderAgentDetailPage(
       </form>
     </div>`;
 
-  const dangerZoneSection = isAdmin
+  const dangerZoneSection = canManage
     ? `<!-- Danger Zone -->
     <div class="card" style="border:1px solid #fca5a5">
       <div class="card-title" style="color:#dc2626">Danger Zone</div>
@@ -2423,7 +2445,7 @@ export function renderAgentDetailPage(
   const accessGroup = renderGroup(
     "Access",
     accessStat,
-    `${isAdmin ? membersSection : ""}${authorAllowlistReviewSection}${authorAllowlistPatchSection}${slackAccessSection}${tokensSection}`,
+    `${canManage ? membersSection : ""}${authorAllowlistReviewSection}${authorAllowlistPatchSection}${slackAccessSection}${tokensSection}`,
   );
   const pluginsToolsGroup = renderGroup(
     "Plugins &amp; Tools",

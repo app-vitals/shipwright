@@ -20,6 +20,18 @@ Agent tokens are repo-scoped via a remote scope resolver. If the resolver call f
 
 Every authenticated request also resolves a shared `Caller` identity (`lib/request-context.ts`, common to admin/task-store/metrics) onto the context as `caller`: admin tokens → `{name: "admin", scope: "*"}`, agent tokens → `{name: agentId, scope: agentId}`. `callerLabel()` renders it as `name (scope)` (or `anonymous` when unresolved) and the unhandled-error log line embeds it for observability — e.g. `[task-store] unhandled error (caller: agent-42 (agent-42)): ...`.
 
+### Account scope (tasks)
+
+Every task row carries an `accountId` (`default` for single-tenant installs — never `NULL`). The auth middleware resolves the caller's account alongside its repos, and `task-store/src/account-scope.ts`'s `resolveAccountScope()` turns it into a filter:
+
+- **Agent tokens** see and mutate only their own account's tasks. An unassigned agent belongs to `default`; an agent whose scope lookup failed gets a sentinel that matches no rows and cannot create tasks (403). A client-supplied `?accountId=` is ignored. Repo/assignee scoping still applies on top.
+- **Admin tokens** see every account unless `?accountId=` narrows them to one.
+- **Reads** — `GET /tasks` (incl. `?ready=true` / `?state=ready` / `?state=blocked`), `GET /tasks/distinct`, `GET /tasks/:id`, and every `/tasks/:id/*` route — filter by the caller's account. Another account's task is a `404`, never a `403`, so its existence isn't revealed.
+- **Dependencies never cross accounts.** Ready/blocked resolution loads only the caller's account graph, and an unrestricted admin load is resolved one account at a time, so a dependency id that exists only in another account is always unresolved — and another account's in-progress tasks never trip the [same-branch exclusivity guard](#same-branch-exclusivity-guard).
+- **Writes** — `POST /tasks` and `POST /tasks/bulk` stamp `accountId` from the caller (agent → its account; admin → `?accountId=` or `default`), ignoring any body value. Only admin tokens may change a task's `accountId` via `PATCH`.
+
+**Phase 1 limitation — task ids are global.** `Task.id` is still a single global primary key, so two accounts cannot both use the same id (e.g. `SSP-1.1`). When an agent token's create or bulk insert collides, the response is always `409 {"error": "task id unavailable"}` — the same body whether the id is taken in the caller's own account or in another one, so the collision never reveals another tenant's ids. Pick a different id (e.g. a different session prefix) and retry; bulk inserts remain all-or-nothing. Admin tokens still get the detailed `task '<id>' already exists` message.
+
 ### Error handling
 
 A single `app.onError` hook (`task-store/src/app.ts`) dispatches every thrown error across **three** tiers:

@@ -28,6 +28,7 @@ import type {
   TaskWithBlockedBy,
 } from "./task-service.ts";
 import type { TokenServiceLike } from "./token-service.ts";
+import type { ScopeResolver } from "./auth.ts";
 
 /** No-op SessionService double — session routes aren't under test here. */
 function fakeSessionService(): SessionServiceLike {
@@ -288,7 +289,7 @@ function makeApp(
   deps: {
     taskService?: TaskServiceLike;
     tokenService?: TokenServiceLike;
-    scopeResolver?: (agentId: string) => Promise<string[]>;
+    scopeResolver?: ScopeResolver;
   } = {},
 ) {
   return createTaskStoreApp({
@@ -300,10 +301,11 @@ function makeApp(
 }
 
 /** Build a scope resolver that returns fixed repos for agent-1. */
-function makeScopeResolver(
-  repos: string[],
-): (agentId: string) => Promise<string[]> {
-  return async (agentId: string) => (agentId === "agent-1" ? repos : []);
+function makeScopeResolver(repos: string[]): ScopeResolver {
+  return async (agentId: string) => ({
+    repos: agentId === "agent-1" ? repos : [],
+    accountId: null,
+  });
 }
 
 function auth(token = VALID_TOKEN): Record<string, string> {
@@ -1336,5 +1338,201 @@ describe("task-store API (smoke)", () => {
     });
 
     expect(res.status).toBe(404);
+  });
+});
+
+// ─── SSP-6.5: accountId context var → TaskService scope ──────────────────────
+
+describe("task-store API (smoke) — account scope (SSP-6.5)", () => {
+  interface ScopeCalls {
+    list: (string | null | undefined)[];
+    listReady: (string | null | undefined)[];
+    listBlocked: (string | null | undefined)[];
+    distinct: (string | null | undefined)[];
+    get: (string | null | undefined)[];
+    created: Record<string, unknown>[];
+  }
+
+  /** Wraps fakeTaskService, recording the account scope each call receives. */
+  function recordingTaskService(
+    opts: { createThrows?: Error; bulkThrows?: Error } = {},
+  ): { service: TaskServiceLike; calls: ScopeCalls } {
+    const base = fakeTaskService();
+    const calls: ScopeCalls = {
+      list: [],
+      listReady: [],
+      listBlocked: [],
+      distinct: [],
+      get: [],
+      created: [],
+    };
+    const service: TaskServiceLike = {
+      ...base,
+      async list(filters) {
+        calls.list.push(filters?.accountId);
+        return base.list(filters);
+      },
+      async listReady(agentId, repos, filters, accountId) {
+        calls.listReady.push(accountId);
+        return base.listReady(agentId, repos, filters, accountId);
+      },
+      async listBlocked(agentId, repos, sort, filters, accountId) {
+        calls.listBlocked.push(accountId);
+        return base.listBlocked(agentId, repos, sort, filters, accountId);
+      },
+      async distinct(agentId, repos, accountId) {
+        calls.distinct.push(accountId);
+        return base.distinct(agentId, repos, accountId);
+      },
+      async get(id, accountId) {
+        calls.get.push(accountId);
+        return base.get(id, accountId);
+      },
+      async create(data) {
+        if (opts.createThrows) throw opts.createThrows;
+        calls.created.push(data as Record<string, unknown>);
+        return base.create(data);
+      },
+      async bulk(tasks) {
+        if (opts.bulkThrows) throw opts.bulkThrows;
+        for (const t of tasks) calls.created.push(t as Record<string, unknown>);
+        return base.bulk(tasks);
+      },
+    };
+    return { service, calls };
+  }
+
+  const acctResolver: ScopeResolver = async () => ({
+    repos: ["org/repo"],
+    accountId: "acct-a",
+  });
+
+  function scopedApp(service: TaskServiceLike, agent = true) {
+    return {
+      app: makeApp({
+        taskService: service,
+        tokenService: agent ? fakeAgentTokenService() : fakeTokenService(),
+        scopeResolver: acctResolver,
+      }),
+      token: agent ? AGENT_TOKEN : VALID_TOKEN,
+    };
+  }
+
+  it("passes the agent's resolved accountId to every read, ignoring ?accountId=", async () => {
+    const { service, calls } = recordingTaskService();
+    const { app, token } = scopedApp(service);
+    const h = auth(token);
+    await app.request("/tasks?accountId=acct-b", { headers: h });
+    await app.request("/tasks?ready=true&accountId=acct-b", { headers: h });
+    await app.request("/tasks?state=blocked", { headers: h });
+    await app.request("/tasks/distinct", { headers: h });
+    await app.request("/tasks/task-1", { headers: h });
+    await app.request("/tasks/task-1/claim", { method: "POST", headers: h });
+    expect(calls.list).toEqual(["acct-a"]);
+    expect(calls.listReady).toEqual(["acct-a"]);
+    expect(calls.listBlocked).toEqual(["acct-a"]);
+    expect(calls.distinct).toEqual(["acct-a"]);
+    expect(calls.get).toEqual(["acct-a", "acct-a"]);
+  });
+
+  it("admin tokens are unrestricted (null) unless ?accountId= narrows them", async () => {
+    const { service, calls } = recordingTaskService();
+    const { app, token } = scopedApp(service, false);
+    await app.request("/tasks", { headers: auth(token) });
+    await app.request("/tasks?accountId=acct-b", { headers: auth(token) });
+    await app.request("/tasks/task-1", { headers: auth(token) });
+    expect(calls.list).toEqual([null, "acct-b"]);
+    expect(calls.get).toEqual([null]);
+  });
+
+  it("POST /tasks and /tasks/bulk stamp accountId from the caller, overriding the body", async () => {
+    const { service, calls } = recordingTaskService();
+    const { app, token } = scopedApp(service);
+    const task = {
+      title: "t",
+      status: "pending",
+      repo: "org/repo",
+      accountId: "acct-b",
+    };
+    await app.request("/tasks", {
+      method: "POST",
+      headers: { ...auth(token), "content-type": "application/json" },
+      body: JSON.stringify(task),
+    });
+    await app.request("/tasks/bulk", {
+      method: "POST",
+      headers: { ...auth(token), "content-type": "application/json" },
+      body: JSON.stringify([task]),
+    });
+    expect(calls.created.map((t) => t.accountId)).toEqual(["acct-a", "acct-a"]);
+  });
+
+  it("admin POST /tasks stamps ?accountId= or falls back to 'default'", async () => {
+    const { service, calls } = recordingTaskService();
+    const { app, token } = scopedApp(service, false);
+    const body = JSON.stringify({ title: "t", status: "pending", repo: null });
+    const headers = { ...auth(token), "content-type": "application/json" };
+    await app.request("/tasks", { method: "POST", headers, body });
+    await app.request("/tasks?accountId=acct-b", {
+      method: "POST",
+      headers,
+      body,
+    });
+    expect(calls.created.map((t) => t.accountId)).toEqual([
+      "default",
+      "acct-b",
+    ]);
+  });
+
+  it("agent-token id collisions on POST /tasks and /tasks/bulk return a generic 409", async () => {
+    const { service } = recordingTaskService({
+      createThrows: new ConflictError("task 'X' already exists"),
+      bulkThrows: new ConflictError("task 'X' already exists — rolled back"),
+    });
+    const { app, token } = scopedApp(service);
+    const headers = { ...auth(token), "content-type": "application/json" };
+    const task = { id: "X", title: "t", status: "pending", repo: "org/repo" };
+    for (const [path, body] of [
+      ["/tasks", task],
+      ["/tasks/bulk", [task]],
+    ] as const) {
+      const res = await app.request(path, {
+        method: "POST",
+        headers,
+        body: JSON.stringify(body),
+      });
+      expect(res.status).toBe(409);
+      expect(await res.json()).toEqual({ error: "task id unavailable" });
+    }
+  });
+
+  it("PATCH /tasks/:id rejects accountId from an agent token", async () => {
+    const { app, token } = scopedApp(
+      fakeTaskService({ getResult: makeTask({ assignee: "agent-1" }) }),
+    );
+    const res = await app.request("/tasks/task-1", {
+      method: "PATCH",
+      headers: { ...auth(token), "content-type": "application/json" },
+      body: JSON.stringify({ accountId: "acct-b" }),
+    });
+    expect(res.status).toBe(400);
+  });
+
+  it("rejects creates from an agent whose account scope could not be resolved", async () => {
+    const { service, calls } = recordingTaskService();
+    const app = makeApp({
+      taskService: service,
+      tokenService: fakeAgentTokenService(),
+      scopeResolver: async () => {
+        throw new Error("agents service down");
+      },
+    });
+    const res = await app.request("/tasks", {
+      method: "POST",
+      headers: { ...auth(AGENT_TOKEN), "content-type": "application/json" },
+      body: JSON.stringify({ title: "t", status: "pending", repo: null }),
+    });
+    expect(res.status).toBe(403);
+    expect(calls.created).toEqual([]);
   });
 });

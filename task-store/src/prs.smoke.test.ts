@@ -26,7 +26,9 @@
  */
 
 import { describe, expect, it } from "bun:test";
+import { DEFAULT_ACCOUNT_ID } from "@shipwright/lib/default-account";
 import { createTaskStoreApp } from "./app.ts";
+import type { ScopeResolver } from "./auth.ts";
 import { BadRequestError, ConflictError, NotFoundError } from "./errors.ts";
 import type { PrFinding, PullRequest, PullRequestEvent } from "./index.ts";
 import type {
@@ -66,6 +68,7 @@ const SCOPED_REPO = "acme-inc/backend-api";
 function makePr(overrides: Partial<PullRequest> = {}): PullRequest {
   return {
     id: "pr-1",
+    accountId: DEFAULT_ACCOUNT_ID,
     repo: ADMIN_REPO,
     prNumber: 42,
     staged: false,
@@ -191,10 +194,11 @@ function fakeAgentTokenService(): TokenServiceLike {
   };
 }
 
-function makeScopeResolver(
-  repos: string[],
-): (agentId: string) => Promise<string[]> {
-  return async (agentId: string) => (agentId === "agent-1" ? repos : []);
+function makeScopeResolver(repos: string[]): ScopeResolver {
+  return async (agentId: string) => ({
+    repos: agentId === "agent-1" ? repos : [],
+    accountId: null,
+  });
 }
 
 /** Captured args from each fakePrService.claim() call — for asserting phase forwarding. */
@@ -669,7 +673,7 @@ function makeApp(
   deps: {
     prService?: PullRequestServiceLike;
     tokenService?: TokenServiceLike;
-    scopeResolver?: (agentId: string) => Promise<string[]>;
+    scopeResolver?: ScopeResolver;
   } = {},
 ) {
   return createTaskStoreApp({
@@ -1820,6 +1824,44 @@ describe("/prs routes (smoke)", () => {
       expect((await idRouteRequest(inScope, r, agentAuth())).status).not.toBe(
         404,
       );
+
+      const admin = makeApp({ prService: fakePrService({ store: mk() }) });
+      expect((await idRouteRequest(admin, r, adminAuth())).status).not.toBe(
+        404,
+      );
+    });
+  }
+
+  // SSP-6.6: a PR owned by another account is a 404 on every :id route, and
+  // the same row stays reachable for its own account and for an admin token.
+  for (const r of ID_ROUTES) {
+    it(`${r.name}: another account's PR gets 404 with no write; own account and admin pass`, async () => {
+      const mk = () =>
+        new Map<string, PullRequest>([
+          [
+            "pr-1",
+            makePr({ id: "pr-1", repo: SCOPED_REPO, accountId: "acct-b" }),
+          ],
+        ]);
+      const store = mk();
+      const before = JSON.stringify(store.get("pr-1"));
+      const other = makeApp({
+        tokenService: fakeAgentTokenService(),
+        scopeResolver: makeScopeResolver([SCOPED_REPO]),
+        prService: fakePrService({ store }),
+      });
+      expect((await idRouteRequest(other, r, agentAuth())).status).toBe(404);
+      expect(JSON.stringify(store.get("pr-1"))).toBe(before);
+
+      const own = makeApp({
+        tokenService: fakeAgentTokenService(),
+        scopeResolver: async () => ({
+          repos: [SCOPED_REPO],
+          accountId: "acct-b",
+        }),
+        prService: fakePrService({ store: mk() }),
+      });
+      expect((await idRouteRequest(own, r, agentAuth())).status).not.toBe(404);
 
       const admin = makeApp({ prService: fakePrService({ store: mk() }) });
       expect((await idRouteRequest(admin, r, adminAuth())).status).not.toBe(

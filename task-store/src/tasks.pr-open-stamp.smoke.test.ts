@@ -30,6 +30,7 @@
  *     PATCH) never calls stampOrigin, even if the row is already pr_open
  */
 
+import { DEFAULT_ACCOUNT_ID } from "@shipwright/lib/default-account";
 import { describe, expect, it } from "bun:test";
 import { createTaskStoreApp } from "./app.ts";
 import { FixedClock } from "./clock.ts";
@@ -101,7 +102,8 @@ function adminAuth(): Record<string, string> {
  */
 function makeInMemoryPrisma() {
   const tasks = new Map<string, Record<string, unknown>>();
-  // Keyed by `${repo}#${prNumber}`, mirroring the real @@unique([repo, prNumber]).
+  // Keyed by `${accountId}|${repo}#${prNumber}`, mirroring the real
+  // @@unique([accountId, repo, prNumber]).
   const pullRequests = new Map<string, Record<string, unknown>>();
   let nextPrId = 0;
 
@@ -139,10 +141,16 @@ function makeInMemoryPrisma() {
       async findUnique({
         where,
       }: {
-        where: { repo_prNumber: { repo: string; prNumber: number } };
+        where: {
+          accountId_repo_prNumber: {
+            accountId: string;
+            repo: string;
+            prNumber: number;
+          };
+        };
       }) {
-        const { repo, prNumber } = where.repo_prNumber;
-        return pullRequests.get(`${repo}#${prNumber}`) ?? null;
+        const { accountId, repo, prNumber } = where.accountId_repo_prNumber;
+        return pullRequests.get(`${accountId}|${repo}#${prNumber}`) ?? null;
       },
       async update({
         where,
@@ -179,7 +187,10 @@ function makeInMemoryPrisma() {
           updatedAt: new Date(),
           ...data,
         };
-        pullRequests.set(`${data.repo}#${data.prNumber}`, record);
+        pullRequests.set(
+          `${data.accountId}|${data.repo}#${data.prNumber}`,
+          record,
+        );
         return record;
       },
     },
@@ -200,6 +211,7 @@ function seedTask(
 ): void {
   const task = {
     id: "task-1",
+    accountId: DEFAULT_ACCOUNT_ID,
     title: "A task",
     status: "in_progress",
     repo: "org/repo",
@@ -239,8 +251,34 @@ describe("PATCH /tasks/:id — pr_open origin stamp (POM-1.1)", () => {
     expect(body.status).toBe("pr_open");
     expect(body.pr).toBe(42);
 
-    const pr = pullRequests.get("org/repo#42");
+    const pr = pullRequests.get("default|org/repo#42");
     expect(pr).toBeDefined();
+    expect(pr?.origin).toBe("shipwright");
+  });
+
+  it("stamps the PullRequest row with the task's own accountId (SSP-6.3)", async () => {
+    const { prisma, tasks, pullRequests } = makeInMemoryPrisma();
+    seedTask(tasks, { accountId: "acct-a", repo: "org/repo", pr: null });
+    const taskService = new TaskService(
+      prisma as never,
+      FixedClock(new Date("2026-09-16T00:00:00.000Z")),
+    );
+    const app = createTaskStoreApp({
+      taskService,
+      tokenService: fakeAdminTokenService(),
+      sessionService: fakeSessionService(),
+    });
+
+    const res = await app.request("/tasks/task-1", {
+      method: "PATCH",
+      headers: adminAuth(),
+      body: JSON.stringify({ status: "pr_open", pr: 43 }),
+    });
+
+    expect(res.status).toBe(200);
+    expect(pullRequests.get("default|org/repo#43")).toBeUndefined();
+    const pr = pullRequests.get("acct-a|org/repo#43");
+    expect(pr?.accountId).toBe("acct-a");
     expect(pr?.origin).toBe("shipwright");
   });
 
@@ -264,7 +302,7 @@ describe("PATCH /tasks/:id — pr_open origin stamp (POM-1.1)", () => {
     });
 
     expect(res.status).toBe(200);
-    const pr = pullRequests.get("org/repo#99");
+    const pr = pullRequests.get("default|org/repo#99");
     expect(pr).toBeDefined();
     expect(pr?.origin).toBe("shipwright");
   });
@@ -314,7 +352,7 @@ describe("PATCH /tasks/:id — pr_open origin stamp (POM-1.1)", () => {
     });
 
     expect(res.status).toBe(200);
-    expect(pullRequests.get("org/repo#7")?.origin).toBe("shipwright");
+    expect(pullRequests.get("default|org/repo#7")?.origin).toBe("shipwright");
   });
 
   it("does not call stampOrigin (no PullRequest row created) for a PATCH that doesn't set status:'pr_open', even on an already-pr_open task", async () => {
@@ -343,7 +381,7 @@ describe("PATCH /tasks/:id — pr_open origin stamp (POM-1.1)", () => {
   it("does not overwrite an already-non-null origin on a second pr_open PATCH (first-write-wins)", async () => {
     const { prisma, tasks, pullRequests } = makeInMemoryPrisma();
     seedTask(tasks, { repo: "org/repo", pr: 11, status: "in_progress" });
-    pullRequests.set("org/repo#11", {
+    pullRequests.set("default|org/repo#11", {
       id: "pr-existing",
       repo: "org/repo",
       prNumber: 11,
@@ -366,6 +404,6 @@ describe("PATCH /tasks/:id — pr_open origin stamp (POM-1.1)", () => {
     });
 
     expect(res.status).toBe(200);
-    expect(pullRequests.get("org/repo#11")?.origin).toBe("human");
+    expect(pullRequests.get("default|org/repo#11")?.origin).toBe("human");
   });
 });

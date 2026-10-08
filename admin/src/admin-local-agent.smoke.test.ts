@@ -1583,7 +1583,14 @@ describe("admin UI — account users create / delete agents (SSP-4.2)", () => {
     const deleted: string[] = [];
     const base = makeMockDeps();
     const deps = makeMockDeps({
-      callerScopeResolver: scoped("acct-a"),
+      // SSP-4.3: delete is gated by agent access + self-serve on, so the
+      // caller's scope only includes the agent when its account owns it.
+      selfServe: { enabled: true, defaultMaxAgents: 2, contactEmail: "x@y.z" },
+      callerScopeResolver: (async () => ({
+        kind: "scoped" as const,
+        accountId: "acct-a",
+        agentIds: ownerAccount === "acct-a" ? [ACCOUNT_AGENT_ID] : [],
+      })) satisfies NonNullable<AdminUIDeps["callerScopeResolver"]>,
       accountService: {
         ...accountServiceStub(),
         listAgentIds: async (id: string) =>
@@ -1626,13 +1633,13 @@ describe("admin UI — account users create / delete agents (SSP-4.2)", () => {
     expect(deleted).toEqual([ACCOUNT_AGENT_ID]);
   });
 
-  it("POST /admin/agents/:id/delete — another account's agent is 404 and untouched", async () => {
+  it("POST /admin/agents/:id/delete — another account's agent is 403 and untouched", async () => {
     const { deps, deleted } = deleteDeps("acct-b");
     const res = await createAdminUIApp(deps).request(
       `/admin/agents/${ACCOUNT_AGENT_ID}/delete`,
       { method: "POST", headers: { Cookie: `admin_session=${accountCookie}` } },
     );
-    expect(res.status).toBe(404);
+    expect(res.status).toBe(403);
     expect(deleted).toEqual([]);
   });
 

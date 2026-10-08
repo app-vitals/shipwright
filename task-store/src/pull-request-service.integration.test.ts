@@ -15,6 +15,7 @@
  * Requires DATABASE_URL_SHIPWRIGHT_TASK_STORE_TEST to be set; skips otherwise.
  */
 
+import { DEFAULT_ACCOUNT_ID } from "@shipwright/lib/default-account";
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { ConflictError, NotFoundError } from "./errors.ts";
 import { createPrismaClient, type PrismaClient } from "./prisma-client.ts";
@@ -120,7 +121,13 @@ describeOrSkip(
 
       // Exactly one claim landed in the DB, held by the winner.
       const row = await prisma.pullRequest.findUnique({
-        where: { repo_prNumber: { repo, prNumber } },
+        where: {
+          accountId_repo_prNumber: {
+            accountId: DEFAULT_ACCOUNT_ID,
+            repo,
+            prNumber,
+          },
+        },
       });
       expect(row).not.toBeNull();
       if (!row) return;
@@ -160,7 +167,13 @@ describeOrSkip(
 
       // The original claim is untouched.
       const row = await prisma.pullRequest.findUnique({
-        where: { repo_prNumber: { repo, prNumber } },
+        where: {
+          accountId_repo_prNumber: {
+            accountId: DEFAULT_ACCOUNT_ID,
+            repo,
+            prNumber,
+          },
+        },
       });
       expect(row?.claimedBy).toBe("agent-a");
     });
@@ -205,7 +218,13 @@ describeOrSkip(
 
       // Still held by the original claimant.
       const row = await prisma.pullRequest.findUnique({
-        where: { repo_prNumber: { repo, prNumber } },
+        where: {
+          accountId_repo_prNumber: {
+            accountId: DEFAULT_ACCOUNT_ID,
+            repo,
+            prNumber,
+          },
+        },
       });
       expect(row?.claimedBy).toBe("agent-x");
     });

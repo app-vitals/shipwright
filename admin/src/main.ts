@@ -29,6 +29,7 @@ import { AccountInviteService } from "./account-invites.ts";
 import { AccountMemberService } from "./account-members.ts";
 import { AccountOnboardingService } from "./account-onboarding.ts";
 import { AccountService } from "./accounts.ts";
+import { createAccountsApp } from "./accounts-api.ts";
 import { createAdminUIApp } from "./admin-ui.ts";
 import { AgentChatTokenService } from "./agent-chat-tokens.ts";
 import { AgentCronJobService } from "./agent-cron-jobs.ts";
@@ -614,6 +615,18 @@ async function startServer(): Promise<void> {
     selfServe,
   });
   root.route("/", adminApiApp);
+
+  // 3b. Accounts API — /accounts/* — admin-only, flag-gated (SSP-5.1)
+  root.route(
+    "/",
+    createAccountsApp({
+      accountService: new AccountService(prisma),
+      selfServe,
+      sessionSecret,
+      adminApiKeys,
+      agentTokenService,
+    }),
+  );
 
   // 4. Admin UI — /admin/* — session JWT
   const taskStoreUrl = process.env.SHIPWRIGHT_TASK_STORE_URL;

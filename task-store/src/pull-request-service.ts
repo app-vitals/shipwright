@@ -4,20 +4,28 @@
  * Shipwright review → patch → deploy pipeline.
  *
  * claim() is atomic via a Prisma $transaction:
- *   1. Find existing record by @@unique([repo, prNumber])
+ *   1. Find existing record by @@unique([accountId, repo, prNumber])
  *   2. Update with the conflict conditions re-checked in the UPDATE's own WHERE
  *      clause (so Postgres, holding the row lock, is the sole arbiter of a
  *      concurrent claim — not a possibly-stale JS snapshot). A write that no
  *      longer matches affects 0 rows → P2025 → ConflictError(409) (or, if the
  *      row was deleted, NotFoundError). Otherwise → update (200)
- *   3. No record → create (201); a concurrent INSERT loser hits the
- *      @@unique([repo, prNumber]) constraint → P2002 → ConflictError(409)
+ *   3. No record → create (201), stamping the caller's accountId; a
+ *      concurrent INSERT loser hits the @@unique([accountId, repo, prNumber])
+ *      constraint → P2002 → ConflictError(409). (Until SSP-6.4 drops the old
+ *      @@unique([repo, prNumber]), a cross-account INSERT for an existing
+ *      repo#prNumber also lands here as a 409.)
+ *
+ * Every write that creates a row stamps `accountId` (DEFAULT_ACCOUNT_ID when
+ * the caller omits it — never NULL), and every repo+prNumber lookup is also
+ * keyed by accountId (SSP-6.3).
  *
  * Timestamp fields are stored as ISO strings to match the application contract;
  * only createdAt/updatedAt are DateTime columns.
  */
 
 import { DEFAULT_CLAIM_TTL_MS } from "@shipwright/lib/claim-ttl";
+import { DEFAULT_ACCOUNT_ID } from "@shipwright/lib/default-account";
 import { type Clock, SystemClock } from "./clock.ts";
 import { BadRequestError, ConflictError, NotFoundError } from "./errors.ts";
 import {
@@ -80,9 +88,12 @@ interface LinkedTaskBlockedInfo {
   status: string;
 }
 
-/** Map key for the repo+prNumber task join — mirrors GET /tasks?repo=&pr=. */
-function prKey(repo: string, prNumber: number): string {
-  return `${repo}#${prNumber}`;
+/**
+ * Map key for the accountId+repo+prNumber task join — mirrors
+ * GET /tasks?repo=&pr= within a single account (SSP-6.3).
+ */
+function prKey(accountId: string, repo: string, prNumber: number): string {
+  return `${accountId}|${repo}#${prNumber}`;
 }
 
 /**
@@ -137,6 +148,11 @@ export interface PullRequestListFilters {
    * built via `buildRepoOrgWhere` into a `{ repo: { in: [...] } }` clause.
    */
   repo?: string | string[];
+  /**
+   * Restrict to one account's rows (SSP-6.6). null/undefined = unrestricted
+   * (admin token with no ?accountId=). ANDed with the repo scope.
+   */
+  accountScope?: string | null;
   /**
    * Org filter — matched via `repo: { startsWith: "<org>/" }` (there's no
    * dedicated org column). Built via the shared `buildRepoOrgWhere` helper.
@@ -285,7 +301,19 @@ export interface PrOriginStamper {
     prNumber: number,
     data: StampOriginInput,
     client?: PullRequestTxClient,
+    accountId?: string,
   ): Promise<PullRequest>;
+}
+
+/**
+ * One (accountId, repo, prNumber) key for lookupBlockedPrNumbers(). The
+ * accountId is the linked task's own account, so a blocked PR in another
+ * account never matches (SSP-6.3).
+ */
+export interface BlockedPrLookupKey {
+  accountId: string;
+  repo: string;
+  prNumber: number;
 }
 
 /** Input for PullRequestService.appendFinding. */
@@ -318,6 +346,7 @@ export interface PullRequestServiceLike {
     authorIsBot?: boolean,
     hasAutomatedLabel?: boolean,
     hasShipwrightLabel?: boolean,
+    accountId?: string,
   ): Promise<{ status: 200 | 201; record: PullRequest }>;
   heartbeat(id: string): Promise<PullRequest>;
   complete(id: string): Promise<PullRequest>;
@@ -333,43 +362,49 @@ export interface PullRequestServiceLike {
     agentId: string,
     maxConcurrent: number,
     repos?: string[],
+    accountId?: string | null,
   ): Promise<{ pr: PullRequest; phase: PrPhase } | null>;
   appendFinding(prId: string, data: AppendFindingInput): Promise<PrFinding>;
   getEvents(
     prId: string,
     opts?: { limit?: number; offset?: number },
   ): Promise<GetEventsResult>;
-  lookupBlockedPrNumbers(
-    pairs: { repo: string; prNumber: number }[],
-  ): Promise<Set<number>>;
+  lookupBlockedPrNumbers(pairs: BlockedPrLookupKey[]): Promise<Set<number>>;
   /**
    * Upsert a PullRequest row for (repo, prNumber): authorLogin/headRef/title
    * are written unconditionally when supplied; origin follows first-write-
    * wins (see StampOriginInput). When `client` is supplied, runs against it
    * directly (no nested transaction) so a caller — e.g. TaskService.update()
    * — can fold this into its own $transaction; when omitted, wraps the write
-   * in its own transaction.
+   * in its own transaction. Keyed by (accountId, repo, prNumber);
+   * `accountId` defaults to DEFAULT_ACCOUNT_ID.
    */
   stampOrigin(
     repo: string,
     prNumber: number,
     data: StampOriginInput,
     client?: PullRequestTxClient,
+    accountId?: string,
   ): Promise<PullRequest>;
   /**
    * Batch upsert for POST /prs/census (max MAX_CENSUS_ENTRIES per call, all
    * in one transaction). Never touches claim/phase/review/patch/blocked
    * fields; new rows get phase=null, reviewState='pending', staged=false.
    * The five commit-count fields (CPP-1.1) are written unconditionally
-   * whenever supplied, same as authorLogin/headRef/title.
+   * whenever supplied, same as authorLogin/headRef/title. Every entry is
+   * keyed/stamped with `accountId` (default DEFAULT_ACCOUNT_ID).
    */
-  census(entries: CensusEntryInput[]): Promise<PullRequest[]>;
+  census(
+    entries: CensusEntryInput[],
+    accountId?: string,
+  ): Promise<PullRequest[]>;
   /**
    * Max `mergedAt` (ISO string) among rows scoped to `repo` whose `origin`
    * is not null, or null when no such row exists — the incremental search
-   * window POM-4.1's census sweep reads via GET /prs/census/cursor.
+   * window POM-4.1's census sweep reads via GET /prs/census/cursor. Only rows
+   * in `accountId` (default DEFAULT_ACCOUNT_ID) are considered.
    */
-  getCensusCursor(repo: string): Promise<string | null>;
+  getCensusCursor(repo: string, accountId?: string): Promise<string | null>;
 }
 
 export class PullRequestService implements PullRequestServiceLike {
@@ -413,9 +448,15 @@ export class PullRequestService implements PullRequestServiceLike {
 
     // AND the token scope on top of the caller's own repo/org filters (never
     // merged into callerWhere — buildRepoOrgWhere may already own `AND`/`OR`).
-    const where: Prisma.PullRequestWhereInput = filters.repoScope
-      ? { AND: [callerWhere, { repo: { in: filters.repoScope } }] }
-      : callerWhere;
+    const scopeClauses: Prisma.PullRequestWhereInput[] = [];
+    if (filters.repoScope)
+      scopeClauses.push({ repo: { in: filters.repoScope } });
+    if (filters.accountScope)
+      scopeClauses.push({ accountId: filters.accountScope });
+    const where: Prisma.PullRequestWhereInput =
+      scopeClauses.length > 0
+        ? { AND: [callerWhere, ...scopeClauses] }
+        : callerWhere;
 
     const limit = filters.limit ?? 50;
     const offset = filters.offset ?? 0;
@@ -436,29 +477,37 @@ export class PullRequestService implements PullRequestServiceLike {
         include: { findings: true, events: true },
       });
 
-      // Over-fetch on repo × prNumber (a cheap cross-product pre-filter,
+      // Over-fetch on accountId × repo × prNumber (a cheap cross-product pre-filter,
       // since Prisma can't express "any of these (repo, pr) pairs" without
       // an OR-per-candidate query), then match exact pairs in JS below.
+      const accountIds = [...new Set(candidates.map((pr) => pr.accountId))];
       const repos = [...new Set(candidates.map((pr) => pr.repo))];
       const prNumbers = [...new Set(candidates.map((pr) => pr.prNumber))];
       const tasks = candidates.length
         ? await this.prisma.task.findMany({
-            where: { repo: { in: repos }, pr: { in: prNumbers } },
-            select: { repo: true, pr: true, status: true },
+            where: {
+              accountId: { in: accountIds },
+              repo: { in: repos },
+              pr: { in: prNumbers },
+            },
+            select: { accountId: true, repo: true, pr: true, status: true },
           })
         : [];
 
       const tasksByPr = new Map<string, LinkedTaskBlockedInfo[]>();
       for (const task of tasks) {
         if (task.repo === null || task.pr === null) continue;
-        const key = prKey(task.repo, task.pr);
+        const key = prKey(task.accountId, task.repo, task.pr);
         const bucket = tasksByPr.get(key);
         if (bucket) bucket.push(task);
         else tasksByPr.set(key, [task]);
       }
 
       const blockedPrs = candidates.filter((pr) =>
-        isPrBlocked(pr, tasksByPr.get(prKey(pr.repo, pr.prNumber)) ?? []),
+        isPrBlocked(
+          pr,
+          tasksByPr.get(prKey(pr.accountId, pr.repo, pr.prNumber)) ?? [],
+        ),
       );
 
       return {
@@ -575,7 +624,8 @@ export class PullRequestService implements PullRequestServiceLike {
    *     reviewState !== 'pending' → 409
    *
    * Origin stamping (POM-1.2): after the claim write succeeds (update or
-   * create branch), looks up whether a Task row exists for (repo, prNumber),
+   * create branch), looks up whether a Task row exists for (accountId, repo,
+   * prNumber),
    * derives a PrOrigin via deriveOrigin() (a task-row match always wins,
    * taking precedence over any author/branch-based signal), and calls
    * stampOrigin() with the same `tx` so it's atomic with the claim write.
@@ -599,12 +649,13 @@ export class PullRequestService implements PullRequestServiceLike {
     authorIsBot?: boolean,
     hasAutomatedLabel?: boolean,
     hasShipwrightLabel?: boolean,
+    accountId: string = DEFAULT_ACCOUNT_ID,
   ): Promise<{ status: 200 | 201; record: PullRequest }> {
     const now = this.clock.now().toISOString();
 
     const result = await this.prisma.$transaction(async (tx) => {
       const existing = await tx.pullRequest.findUnique({
-        where: { repo_prNumber: { repo, prNumber } },
+        where: { accountId_repo_prNumber: { accountId, repo, prNumber } },
       });
 
       if (existing) {
@@ -673,6 +724,7 @@ export class PullRequestService implements PullRequestServiceLike {
           await this.recordTransition(tx, existing, record, "claim", claimedBy);
           const stamped = await this.stampClaimOrigin(
             tx,
+            accountId,
             repo,
             prNumber,
             authorLogin,
@@ -710,12 +762,16 @@ export class PullRequestService implements PullRequestServiceLike {
         }
       }
 
-      // No existing record → create.
+      // No existing record → create, stamped with the caller's accountId.
       // Guard against a concurrent INSERT winning the race: Postgres enforces
-      // @@unique([repo, prNumber]) and the losing writer gets a P2002. Map that
-      // to ConflictError(409) so callers see a clean error instead of a raw 500.
+      // @@unique([accountId, repo, prNumber]) and the losing writer gets a
+      // P2002. Map that to ConflictError(409) so callers see a clean error
+      // instead of a raw 500. (Until SSP-6.4 drops the old
+      // @@unique([repo, prNumber]), a different account's row for the same
+      // repo#prNumber also trips P2002 here — same 409, no row is touched.)
       try {
         const createData: Prisma.PullRequestCreateInput = {
+          accountId,
           repo,
           prNumber,
           commitSha,
@@ -739,6 +795,7 @@ export class PullRequestService implements PullRequestServiceLike {
         await tx.pullRequest.create({ data: createData });
         const stamped = await this.stampClaimOrigin(
           tx,
+          accountId,
           repo,
           prNumber,
           authorLogin,
@@ -949,6 +1006,7 @@ export class PullRequestService implements PullRequestServiceLike {
     agentId: string,
     maxConcurrent: number,
     repos?: string[],
+    accountId?: string | null,
   ): Promise<{ pr: PullRequest; phase: PrPhase } | null> {
     const now = this.clock.now();
     const nowIso = now.toISOString();
@@ -981,6 +1039,12 @@ export class PullRequestService implements PullRequestServiceLike {
           ? Prisma.sql`AND "repo" = ANY(${repos})`
           : Prisma.sql``;
 
+      // SSP-6.6: a scoped caller only ever claims its own account's PRs, even
+      // for an identical repo string. null/undefined = unrestricted (admin).
+      const accountFilter = accountId
+        ? Prisma.sql`AND "accountId" = ${accountId}`
+        : Prisma.sql``;
+
       const rows = await tx.$queryRaw<{ id: string }[]>`
         SELECT id
           FROM "PullRequest"
@@ -988,6 +1052,7 @@ export class PullRequestService implements PullRequestServiceLike {
            AND "state" = 'open'
            AND "reviewState" IN ('pending', 'posted', 'approved')
            ${repoFilter}
+           ${accountFilter}
          ORDER BY COALESCE("readyForReviewAt", "readyForPatchAt", "readyForDeployAt") ASC NULLS LAST,
                   "createdAt" ASC
          LIMIT 1
@@ -1313,8 +1378,9 @@ export class PullRequestService implements PullRequestServiceLike {
   }
 
   /**
-   * Given a batch of (repo, prNumber) pairs — typically every linked-PR
-   * reference across a set of tasks — return the subset of prNumbers whose
+   * Given a batch of (accountId, repo, prNumber) keys — typically every
+   * linked-PR reference across a set of tasks, each carrying its task's own
+   * accountId — return the subset of prNumbers whose
    * PullRequest record has `blocked === true`, in ONE query. Built for
    * SessionService.list()/get() (SESH-2.2): computeSessionRollup()'s
    * `prBlockedSet` param needs exactly this signal, and batching the lookup
@@ -1337,25 +1403,29 @@ export class PullRequestService implements PullRequestServiceLike {
    * field alone, without its repo, is what's compared against the set).
    */
   async lookupBlockedPrNumbers(
-    pairs: { repo: string; prNumber: number }[],
+    pairs: BlockedPrLookupKey[],
   ): Promise<Set<number>> {
     if (pairs.length === 0) return new Set();
 
+    const accountIds = [...new Set(pairs.map((p) => p.accountId))];
     const repos = [...new Set(pairs.map((p) => p.repo))];
     const prNumbers = [...new Set(pairs.map((p) => p.prNumber))];
     const rows = await this.prisma.pullRequest.findMany({
       where: {
+        accountId: { in: accountIds },
         repo: { in: repos },
         prNumber: { in: prNumbers },
         blocked: true,
       },
-      select: { repo: true, prNumber: true },
+      select: { accountId: true, repo: true, prNumber: true },
     });
 
-    const exactPairs = new Set(pairs.map((p) => prKey(p.repo, p.prNumber)));
+    const exactPairs = new Set(
+      pairs.map((p) => prKey(p.accountId, p.repo, p.prNumber)),
+    );
     const result = new Set<number>();
     for (const row of rows) {
-      if (exactPairs.has(prKey(row.repo, row.prNumber))) {
+      if (exactPairs.has(prKey(row.accountId, row.repo, row.prNumber))) {
         result.add(row.prNumber);
       }
     }
@@ -1366,7 +1436,7 @@ export class PullRequestService implements PullRequestServiceLike {
 
   /**
    * claim()'s origin-stamping tail call (POM-1.2): looks up whether a Task
-   * row links (repo, prNumber), derives a PrOrigin via deriveOrigin() (a
+   * row in the same account links (repo, prNumber), derives a PrOrigin via deriveOrigin() (a
    * task-row match always wins over any author/branch-based signal), and
    * calls stampOrigin() against the same `tx` so the origin write is atomic
    * with the claim write that preceded it. Returns stampOrigin()'s record —
@@ -1374,6 +1444,7 @@ export class PullRequestService implements PullRequestServiceLike {
    */
   private async stampClaimOrigin(
     tx: Prisma.TransactionClient,
+    accountId: string,
     repo: string,
     prNumber: number,
     authorLogin: string | null | undefined,
@@ -1384,7 +1455,7 @@ export class PullRequestService implements PullRequestServiceLike {
     hasShipwrightLabel?: boolean,
   ): Promise<PullRequest> {
     const linkedTask = await tx.task.findFirst({
-      where: { repo, pr: prNumber },
+      where: { accountId, repo, pr: prNumber },
       select: { id: true },
     });
     const origin = deriveOrigin({
@@ -1400,6 +1471,7 @@ export class PullRequestService implements PullRequestServiceLike {
       prNumber,
       { origin, authorLogin, headRef, title },
       tx,
+      accountId,
     );
   }
 
@@ -1408,15 +1480,21 @@ export class PullRequestService implements PullRequestServiceLike {
     prNumber: number,
     data: StampOriginInput,
     client?: PullRequestTxClient,
+    accountId: string = DEFAULT_ACCOUNT_ID,
   ): Promise<PullRequest> {
     const entry: CensusEntryInput = { repo, prNumber, ...data };
     if (client) {
-      return this.upsertOriginFields(client, entry);
+      return this.upsertOriginFields(client, entry, accountId);
     }
-    return this.prisma.$transaction((tx) => this.upsertOriginFields(tx, entry));
+    return this.prisma.$transaction((tx) =>
+      this.upsertOriginFields(tx, entry, accountId),
+    );
   }
 
-  async census(entries: CensusEntryInput[]): Promise<PullRequest[]> {
+  async census(
+    entries: CensusEntryInput[],
+    accountId: string = DEFAULT_ACCOUNT_ID,
+  ): Promise<PullRequest[]> {
     if (entries.length > MAX_CENSUS_ENTRIES) {
       throw new BadRequestError(
         `census accepts at most ${MAX_CENSUS_ENTRIES} entries per call (received ${entries.length}) — split the batch`,
@@ -1425,15 +1503,23 @@ export class PullRequestService implements PullRequestServiceLike {
     return this.prisma.$transaction(async (tx) => {
       const results: PullRequest[] = [];
       for (const entry of entries) {
-        results.push(await this.upsertOriginFields(tx, entry));
+        results.push(await this.upsertOriginFields(tx, entry, accountId));
       }
       return results;
     });
   }
 
-  async getCensusCursor(repo: string): Promise<string | null> {
+  async getCensusCursor(
+    repo: string,
+    accountId: string = DEFAULT_ACCOUNT_ID,
+  ): Promise<string | null> {
     const row = await this.prisma.pullRequest.findFirst({
-      where: { repo, origin: { not: null }, mergedAt: { not: null } },
+      where: {
+        accountId,
+        repo,
+        origin: { not: null },
+        mergedAt: { not: null },
+      },
       orderBy: { mergedAt: "desc" },
       select: { mergedAt: true },
     });
@@ -1442,7 +1528,8 @@ export class PullRequestService implements PullRequestServiceLike {
 
   /**
    * Core upsert shared by stampOrigin() and census(): findUnique by the
-   * (repo, prNumber) unique key, then either update (authorLogin/headRef/
+   * (accountId, repo, prNumber) unique key (new rows are stamped with
+   * `accountId`), then either update (authorLogin/headRef/
    * title/state/mergedAt/prCreatedAt/commitCount/commitsDocsRefresh/
    * commitsReviewPatch/commitsCiFix/commitsImplementation written
    * unconditionally when supplied; origin only when currently null) or
@@ -1457,13 +1544,14 @@ export class PullRequestService implements PullRequestServiceLike {
    * pr-transition-diff.ts's AUDITED_FIELDS allowlist.
    *
    * A concurrent create race (two callers upserting the same never-before-
-   * seen (repo, prNumber) at once) surfaces as Prisma P2002; the loser
+   * seen (accountId, repo, prNumber) at once) surfaces as Prisma P2002; the loser
    * retries once as a plain update against the now-existing row rather than
    * surfacing a 409 — stampOrigin/census are idempotent upserts, not claims.
    */
   private async upsertOriginFields(
     client: PullRequestTxClient,
     entry: CensusEntryInput,
+    accountId: string,
   ): Promise<PullRequest> {
     const {
       repo,
@@ -1483,7 +1571,7 @@ export class PullRequestService implements PullRequestServiceLike {
     } = entry;
 
     const existing = await client.pullRequest.findUnique({
-      where: { repo_prNumber: { repo, prNumber } },
+      where: { accountId_repo_prNumber: { accountId, repo, prNumber } },
     });
 
     // First-write-wins: only apply `origin` when it was supplied AND the
@@ -1522,6 +1610,7 @@ export class PullRequestService implements PullRequestServiceLike {
     try {
       return await client.pullRequest.create({
         data: {
+          accountId,
           repo,
           prNumber,
           authorLogin: authorLogin ?? null,
@@ -1547,7 +1636,7 @@ export class PullRequestService implements PullRequestServiceLike {
       ) {
         // Lost a concurrent create race — the row now exists; retry once as
         // a plain update against it.
-        return this.upsertOriginFields(client, entry);
+        return this.upsertOriginFields(client, entry, accountId);
       }
       throw err;
     }

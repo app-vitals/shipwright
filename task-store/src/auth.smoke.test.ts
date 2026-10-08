@@ -23,8 +23,14 @@
 import { describe, expect, it } from "bun:test";
 import { Hono } from "hono";
 import type { Caller } from "@shipwright/lib/request-context";
-import { createBearerAuthMiddleware } from "./auth.ts";
-import type { TaskStoreAuthEnv } from "./auth.ts";
+import { DEFAULT_ACCOUNT_ID } from "@shipwright/lib/default-account";
+import { resolveAccountScope, resolveWriteAccountId } from "./account-scope.ts";
+import { NO_ACCESS_ACCOUNT_ID, createBearerAuthMiddleware } from "./auth.ts";
+import type {
+  ScopeResolution,
+  ScopeResolver,
+  TaskStoreAuthEnv,
+} from "./auth.ts";
 import type { TokenServiceLike } from "./token-service.ts";
 
 // ─── Fakes ────────────────────────────────────────────────────────────────────
@@ -55,7 +61,7 @@ function fakeAgentTokenService(): Pick<TokenServiceLike, "validate"> {
  *  the resolved `repos`/`scopeDegraded` on GET /whoami for inspection. */
 function makeAuthApp(
   tokenService: Pick<TokenServiceLike, "validate">,
-  scopeResolver?: (agentId: string) => Promise<string[]>,
+  scopeResolver?: ScopeResolver,
 ) {
   const app = new Hono<TaskStoreAuthEnv>();
   app.use("*", createBearerAuthMiddleware({ tokenService, scopeResolver }));
@@ -66,8 +72,13 @@ function makeAuthApp(
       repos: c.get("repos"),
       caller: c.get("caller"),
       scopeDegraded: c.get("scopeDegraded"),
+      accountId: c.get("accountId"),
     });
   });
+  app.get("/scope", (c) => c.json({ scope: resolveAccountScope(c) }));
+  app.get("/write-account", (c) =>
+    c.json({ accountId: resolveWriteAccountId(c) }),
+  );
   return app;
 }
 
@@ -133,7 +144,10 @@ describe("bearer auth middleware — base 401 paths", () => {
 
 describe("bearer auth middleware — scope resolver", () => {
   it("populates repos from scope resolver for agent tokens", async () => {
-    const resolver = async (_agentId: string) => ["org/repo-a", "org/repo-b"];
+    const resolver = async (_agentId: string) => ({
+      repos: ["org/repo-a", "org/repo-b"],
+      accountId: null,
+    });
 
     const app = makeAuthApp(fakeAgentTokenService(), resolver);
     const res = await app.request("/whoami", {
@@ -158,7 +172,7 @@ describe("bearer auth middleware — scope resolver", () => {
   });
 
   it("defaults repos to [] when scope resolver throws (no crash)", async () => {
-    const resolver = async (_agentId: string): Promise<string[]> => {
+    const resolver = async (_agentId: string): Promise<ScopeResolution> => {
       throw new Error("agents service unavailable");
     };
 
@@ -176,7 +190,7 @@ describe("bearer auth middleware — scope resolver", () => {
     let resolverCalled = false;
     const resolver = async (_agentId: string) => {
       resolverCalled = true;
-      return ["org/should-not-appear"];
+      return { repos: ["org/should-not-appear"], accountId: "acct-x" };
     };
 
     const app = makeAuthApp(fakeAdminTokenService(), resolver);
@@ -195,7 +209,7 @@ describe("bearer auth middleware — scope resolver", () => {
   });
 
   it("sets scopeDegraded: true when the scope resolver throws/rejects", async () => {
-    const resolver = async (_agentId: string): Promise<string[]> => {
+    const resolver = async (_agentId: string): Promise<ScopeResolution> => {
       throw new Error("agents service unavailable");
     };
 
@@ -214,7 +228,10 @@ describe("bearer auth middleware — scope resolver", () => {
   });
 
   it("sets scopeDegraded: false when the resolver resolves to a legitimate empty array", async () => {
-    const resolver = async (_agentId: string): Promise<string[]> => [];
+    const resolver = async (_agentId: string): Promise<ScopeResolution> => ({
+      repos: [],
+      accountId: null,
+    });
 
     const app = makeAuthApp(fakeAgentTokenService(), resolver);
     const res = await app.request("/whoami", {
@@ -234,7 +251,7 @@ describe("bearer auth middleware — scope resolver", () => {
     let resolverCalled = false;
     const resolver = async (_agentId: string) => {
       resolverCalled = true;
-      return ["org/should-not-appear"];
+      return { repos: ["org/should-not-appear"], accountId: "acct-x" };
     };
 
     const app = makeAuthApp(fakeAdminTokenService(), resolver);
@@ -276,5 +293,121 @@ describe("bearer auth middleware — shared Caller", () => {
     expect(res.status).toBe(200);
     const body = (await res.json()) as { caller: Caller };
     expect(body.caller).toEqual({ name: AGENT_ID, scope: AGENT_ID });
+  });
+});
+
+describe("bearer auth middleware — account scope", () => {
+  const whoami = async (app: ReturnType<typeof makeAuthApp>, token: string) =>
+    (await (
+      await app.request("/whoami", {
+        headers: { Authorization: `Bearer ${token}` },
+      })
+    ).json()) as {
+      accountId: string | null;
+      repos: string[];
+      scopeDegraded: boolean;
+    };
+
+  it("gives an agent the accountId its resolver returned", async () => {
+    const app = makeAuthApp(fakeAgentTokenService(), async () => ({
+      repos: ["org/a"],
+      accountId: "acct-x",
+    }));
+    expect((await whoami(app, AGENT_TOKEN)).accountId).toBe("acct-x");
+  });
+
+  it("maps a null agent accountId to the default account", async () => {
+    const app = makeAuthApp(fakeAgentTokenService(), async () => ({
+      repos: [],
+      accountId: null,
+    }));
+    const body = await whoami(app, AGENT_TOKEN);
+    expect(body.accountId).toBe(DEFAULT_ACCOUNT_ID);
+    expect(body.scopeDegraded).toBe(false);
+  });
+
+  it("gives admin tokens accountId null (unrestricted)", async () => {
+    const app = makeAuthApp(fakeAdminTokenService(), async () => ({
+      repos: [],
+      accountId: "acct-x",
+    }));
+    expect((await whoami(app, ADMIN_TOKEN)).accountId).toBeNull();
+  });
+
+  it("fails closed when the resolver rejects: degraded, no repos, never the default account", async () => {
+    const app = makeAuthApp(fakeAgentTokenService(), async () => {
+      throw new Error("agents service unavailable");
+    });
+    const body = await whoami(app, AGENT_TOKEN);
+    expect(body.scopeDegraded).toBe(true);
+    expect(body.repos).toEqual([]);
+    expect(body.accountId).toBe(NO_ACCESS_ACCOUNT_ID);
+    expect(body.accountId).not.toBe(DEFAULT_ACCOUNT_ID);
+  });
+
+  it.each([
+    ["missing accountId", { repos: [] }],
+    ["non-string accountId", { repos: [], accountId: 7 }],
+    ["non-array repos", { repos: "x", accountId: null }],
+    ["an array", []],
+    ["null", null],
+  ])(
+    "fails closed when the resolver returns a malformed shape (%s)",
+    async (_n, shape) => {
+      const app = makeAuthApp(
+        fakeAgentTokenService(),
+        async () => shape as unknown as ScopeResolution,
+      );
+      const body = await whoami(app, AGENT_TOKEN);
+      expect(body.scopeDegraded).toBe(true);
+      expect(body.repos).toEqual([]);
+      expect(body.accountId).toBe(NO_ACCESS_ACCOUNT_ID);
+    },
+  );
+
+  it("ignores ?accountId= for agent tokens", async () => {
+    const app = makeAuthApp(fakeAgentTokenService(), async () => ({
+      repos: [],
+      accountId: "acct-x",
+    }));
+    const res = await app.request("/scope?accountId=acct-other", {
+      headers: { Authorization: `Bearer ${AGENT_TOKEN}` },
+    });
+    expect(await res.json()).toEqual({ scope: "acct-x" });
+  });
+
+  it("honors ?accountId= for admin tokens, unrestricted without it", async () => {
+    const app = makeAuthApp(fakeAdminTokenService());
+    const headers = { Authorization: `Bearer ${ADMIN_TOKEN}` };
+    expect(
+      await (await app.request("/scope?accountId=acct-y", { headers })).json(),
+    ).toEqual({ scope: "acct-y" });
+    expect(await (await app.request("/scope", { headers })).json()).toEqual({
+      scope: null,
+    });
+  });
+
+  it("resolveWriteAccountId: agent token → resolved account, ignoring ?accountId=", async () => {
+    const app = makeAuthApp(fakeAgentTokenService(), async () => ({
+      repos: [],
+      accountId: "acct-x",
+    }));
+    const res = await app.request("/write-account?accountId=acct-other", {
+      headers: { Authorization: `Bearer ${AGENT_TOKEN}` },
+    });
+    expect(await res.json()).toEqual({ accountId: "acct-x" });
+  });
+
+  it("resolveWriteAccountId: admin token → ?accountId=, else DEFAULT_ACCOUNT_ID", async () => {
+    const app = makeAuthApp(fakeAdminTokenService());
+    const headers = { Authorization: `Bearer ${ADMIN_TOKEN}` };
+    expect(
+      await (
+        await app.request("/write-account?accountId=acct-y", { headers })
+      ).json(),
+    ).toEqual({ accountId: "acct-y" });
+    expect(
+      await (await app.request("/write-account", { headers })).json(),
+    ).toEqual({ accountId: DEFAULT_ACCOUNT_ID });
   });
 });

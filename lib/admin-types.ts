@@ -120,7 +120,7 @@ export interface paths {
         };
         /**
          * Get an agent
-         * @description Admin-only. Returns the full agent record including `selfHosted`, `repos`, `reviewAuthorAllowlist`, `patchAuthorAllowlist`, `restrictSlackToMembers`, `typeName`, and `missingRequiredEnv` — required env keys declared by the agent's type manifest with no corresponding AgentEnv row yet (informational only).
+         * @description Admin-only. Returns the full agent record including `selfHosted`, `repos`, `reviewAuthorAllowlist`, `patchAuthorAllowlist`, `restrictSlackToMembers`, `typeName`, `accountId` (null for unassigned agents), and `missingRequiredEnv` — required env keys declared by the agent's type manifest with no corresponding AgentEnv row yet (informational only).
          */
         get: {
             parameters: {
@@ -2054,6 +2054,7 @@ export interface components {
             patchAuthorAllowlist: string[];
             restrictSlackToMembers: boolean;
             typeName: string;
+            accountId: string | null;
             /** Format: date-time */
             createdAt: string;
             /** Format: date-time */

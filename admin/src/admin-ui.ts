@@ -40,6 +40,7 @@ import type { AccountMemberService } from "./account-members.ts";
 import type { AccountOnboardingService } from "./account-onboarding.ts";
 import type { AccountService } from "./accounts.ts";
 import { registerAccountRoutes } from "./admin-ui-account.ts";
+import { registerAdminAccountsRoutes } from "./admin-ui-accounts.ts";
 import { runWithAccountNav } from "./admin-ui-account-nav.ts";
 import { renderZeroQuotaNotice } from "./admin-ui-account-pages.ts";
 import {
@@ -437,11 +438,16 @@ export interface AdminUIDeps {
   accountServices?: {
     accounts: Pick<
       AccountService,
-      "getByMemberEmail" | "update" | "countAgents"
+      | "getByMemberEmail"
+      | "update"
+      | "countAgents"
+      | "listWithCounts"
+      | "getWithCounts"
+      | "listAgents"
     >;
     members: Pick<
       AccountMemberService,
-      "listByAccount" | "getByEmail" | "remove" | "promote" | "demote"
+      "listByAccount" | "getByEmail" | "add" | "remove" | "promote" | "demote"
     >;
     invites: Pick<AccountInviteService, "create" | "listPending" | "revoke">;
   };
@@ -1594,8 +1600,19 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
         zeroQuotaContactEmail = selfServe.contactEmail;
       }
     }
+    // SSP-5.2: admins get an Account column (flag on only).
+    let accountNames: Map<string, string> | undefined;
+    if (c.var.isAdmin && accountNavEnabled && accountServices) {
+      accountNames = new Map(
+        (await accountServices.accounts.listWithCounts()).map((a) => [
+          a.id,
+          a.name,
+        ]),
+      );
+    }
     return html(
       renderAgentsPage(agents, c.var.userEmail, c.var.isAdmin, timezone, {
+        accountNames,
         successMsg,
         manualSteps,
         zeroQuotaNotice: zeroQuotaContactEmail
@@ -1696,6 +1713,24 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
       await callerScopeResolver(userEmail, false),
       agentId,
     );
+  }
+
+  /**
+   * SSP-4.3: with self-serve on, anyone who passes assertAgentAccess for an
+   * agent (owner or member) fully controls it — settings, members, delete.
+   * Flag off: admin-only, so existing platform AgentMembers gain no power.
+   */
+  const canManageAgents = (isAdmin: boolean): boolean =>
+    isAdmin || deps.selfServe?.enabled === true;
+
+  async function assertCanManageAgent(
+    agentId: string,
+    userEmail: string,
+    isAdmin: boolean,
+  ): Promise<boolean> {
+    if (isAdmin) return true;
+    if (!canManageAgents(false)) return false;
+    return assertAgentAccess(agentId, userEmail, false);
   }
 
   const ERROR_MESSAGES: Record<string, string> = {
@@ -2112,7 +2147,7 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
       agentTokenService.listForAgent(agentId),
       agentPluginService.list(agentId),
       agentPhaseMethodologyService.list(agentId),
-      c.var.isAdmin
+      canManageAgents(c.var.isAdmin)
         ? agentMemberService.listByAgentId(agentId)
         : Promise.resolve([]),
       agentCronRunService.listForAgent(agentId, { limit: 20 }),
@@ -2146,6 +2181,7 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
         c.var.userEmail,
         c.var.isAdmin,
         {
+          canManage: canManageAgents(c.var.isAdmin),
           githubInstallations: githubInstallations && {
             reportedAt: githubInstallations.reportedAt,
             installations:
@@ -2480,8 +2516,12 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
   // simply absent".
 
   app.post("/admin/agents/:id/settings", requireAuth, async (c) => {
-    if (!c.var.isAdmin) return new Response("Forbidden", { status: 403 });
     const agentId = c.req.param("id");
+    if (
+      !(await assertCanManageAgent(agentId, c.var.userEmail, c.var.isAdmin))
+    ) {
+      return new Response("Forbidden", { status: 403 });
+    }
     let formData: FormData;
     try {
       formData = await c.req.formData();
@@ -2853,7 +2893,7 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
         agentTokenService.listForAgent(agentId),
         agentPluginService.list(agentId),
         agentPhaseMethodologyService.list(agentId),
-        c.var.isAdmin
+        canManageAgents(c.var.isAdmin)
           ? agentMemberService.listByAgentId(agentId)
           : Promise.resolve([]),
       ]);
@@ -2869,6 +2909,7 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
           c.var.userEmail,
           c.var.isAdmin,
           {
+            canManage: canManageAgents(c.var.isAdmin),
             newToken: rawToken,
             timezone,
             phaseMethodology: phaseMethodology.map((pm) => ({
@@ -3440,11 +3481,15 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
 
   app.get("/admin/provision", (c) => c.redirect("/admin/agents/new", 302));
 
-  // ─── Member management (admin only) ──────────────────────────────────────
+  // ─── Member management (admin, or any agent-access holder when self-serve is on) ──────────────────────────────────────
 
   app.post("/admin/agents/:id/members", requireAuth, async (c) => {
-    if (!c.var.isAdmin) return new Response("Forbidden", { status: 403 });
     const agentId = c.req.param("id");
+    if (
+      !(await assertCanManageAgent(agentId, c.var.userEmail, c.var.isAdmin))
+    ) {
+      return new Response("Forbidden", { status: 403 });
+    }
     let email: string | undefined;
     try {
       const formData = await c.req.formData();
@@ -3463,8 +3508,12 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
   });
 
   app.post("/admin/agents/:id/members/delete", requireAuth, async (c) => {
-    if (!c.var.isAdmin) return new Response("Forbidden", { status: 403 });
     const agentId = c.req.param("id");
+    if (
+      !(await assertCanManageAgent(agentId, c.var.userEmail, c.var.isAdmin))
+    ) {
+      return new Response("Forbidden", { status: 403 });
+    }
     let memberId: string | undefined;
     try {
       const formData = await c.req.formData();
@@ -3888,6 +3937,12 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
 
   if (accountServices) {
     registerAccountRoutes(app, {
+      enabled: accountNavEnabled,
+      requireAuth,
+      ...accountServices,
+      html,
+    });
+    registerAdminAccountsRoutes(app, {
       enabled: accountNavEnabled,
       requireAuth,
       ...accountServices,
@@ -4833,18 +4888,10 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
 
   app.post("/admin/agents/:id/delete", requireAuth, async (c) => {
     const agentId = c.req.param("id");
-    if (!c.var.isAdmin) {
-      // SSP-4.2: account users may delete agents owned by their own account.
-      // No account (flag off / no membership) → 403; someone else's (or a
-      // missing) agent → 404 so existence isn't revealed.
-      const accountId = await resolveCreateAccountId(c.var.userEmail, false);
-      if (accountId === null) {
-        return new Response("Forbidden", { status: 403 });
-      }
-      const owned = (await accountService?.listAgentIds(accountId)) ?? [];
-      if (!owned.includes(agentId)) {
-        return new Response("Not found", { status: 404 });
-      }
+    if (
+      !(await assertCanManageAgent(agentId, c.var.userEmail, c.var.isAdmin))
+    ) {
+      return new Response("Forbidden", { status: 403 });
     }
     try {
       // Full teardown: K8s workload, task-store + chat-service tokens/threads,

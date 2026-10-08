@@ -18,7 +18,7 @@
           "tasks"
         ],
         "summary": "List tasks",
-        "description": "Returns `{ tasks, total, limit, offset, scopeDegraded }`. `?ready=true` (or `?state=ready`) is an unpaginated convenience endpoint that computes over the whole dependency graph and returns only tasks that are `pending`, non-HITL, non-autonomous-plan-session, free of a fresh same-branch in-progress sibling, and fully dependency-satisfied — always oldest-first. `?state=blocked` similarly walks the whole graph to compute each task's `blockedBy` entries. Agent tokens with repo scope see the OR union of tasks assigned to them and unassigned pool tasks in their scoped repos; agent tokens without repo scope see only their own assigned tasks; admin tokens see everything matching the filters.",
+        "description": "Returns `{ tasks, total, limit, offset, scopeDegraded }`. `?ready=true` (or `?state=ready`) is an unpaginated convenience endpoint that computes over the whole dependency graph and returns only tasks that are `pending`, non-HITL, non-autonomous-plan-session, free of a fresh same-branch in-progress sibling, and fully dependency-satisfied — always oldest-first. `?state=blocked` similarly walks the whole graph to compute each task's `blockedBy` entries. Agent tokens with repo scope see the OR union of tasks assigned to them and unassigned pool tasks in their scoped repos; agent tokens without repo scope see only their own assigned tasks; admin tokens see everything matching the filters. Every result is additionally limited to the caller's account: agent tokens only ever see their own account's tasks (a client-supplied `?accountId=` is ignored), and admin tokens see all accounts unless `?accountId=` narrows them to one. Ready/blocked dependency resolution never crosses accounts — a dependency id that only exists in another account is unresolved.",
         "parameters": [
           {
             "schema": {
@@ -175,6 +175,17 @@
           {
             "schema": {
               "type": "string",
+              "example": "default",
+              "description": "Admin tokens only: narrow results to one account. Ignored for agent tokens, which are always pinned to their own account."
+            },
+            "required": false,
+            "description": "Admin tokens only: narrow results to one account. Ignored for agent tokens, which are always pinned to their own account.",
+            "name": "accountId",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
               "enum": [
                 "true",
                 "false"
@@ -253,7 +264,7 @@
           "tasks"
         ],
         "summary": "Create a task",
-        "description": "Creates a single task. `title`, `status`, and `repo` are required — the `repo` key must be present, though `null` is a valid value for tasks not scoped to a specific repository. Agent tokens leave `assignee` as supplied by the caller, defaulting to `null` (unassigned/pool task) when omitted. Returns `201` with the created task; an existing `id` collision is not given dedicated handling and surfaces as an unhandled error rather than a clean `409` (use `POST /tasks/bulk` for collision-safe inserts).",
+        "description": "Creates a single task. `title`, `status`, and `repo` are required — the `repo` key must be present, though `null` is a valid value for tasks not scoped to a specific repository. Agent tokens leave `assignee` as supplied by the caller, defaulting to `null` (unassigned/pool task) when omitted. `accountId` is stamped from the caller, never the body: agent tokens get their own account, admin tokens get `?accountId=` or `default`. Returns `201` with the created task, or `409` when the `id` already exists. Task ids are globally unique across accounts, so for agent tokens the `409` body is always the generic `task id unavailable` — identical whether the id is taken in the caller's account or another.",
         "requestBody": {
           "content": {
             "application/json": {
@@ -293,6 +304,26 @@
                 }
               }
             }
+          },
+          "403": {
+            "description": "Forbidden — the agent token's account scope could not be resolved",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict — the task id is unavailable (agent tokens always get the generic `task id unavailable` body)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
           }
         }
       }
@@ -303,7 +334,7 @@
           "tasks"
         ],
         "summary": "Bulk insert tasks",
-        "description": "Inserts the whole array in one transaction (TSW-1.3): a single task's id collision or a webhook delivery failure rolls back the entire batch, not just that task. At most 500 tasks per call — the transaction's budget scales with batch size, and this cap bounds it.",
+        "description": "Inserts the whole array in one transaction (TSW-1.3): a single task's id collision or a webhook delivery failure rolls back the entire batch, not just that task. At most 500 tasks per call — the transaction's budget scales with batch size, and this cap bounds it. Every task's `accountId` is stamped from the caller exactly as for `POST /tasks`; an agent token's id collision returns the generic `task id unavailable` 409 body.",
         "requestBody": {
           "content": {
             "application/json": {
@@ -344,8 +375,18 @@
               }
             }
           },
+          "403": {
+            "description": "Forbidden — the agent token's account scope could not be resolved",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
           "409": {
-            "description": "Conflict — a task id in the batch already exists; the entire batch was rolled back",
+            "description": "Conflict — a task id in the batch is unavailable; the entire batch was rolled back",
             "content": {
               "application/json": {
                 "schema": {
@@ -404,7 +445,7 @@
           "tasks"
         ],
         "summary": "Get a task by ID",
-        "description": "Fetches a single task by its ID. Returns `404` if the task doesn't exist or is outside the calling agent token's ownership/repo scope.",
+        "description": "Fetches a single task by its ID. Returns `404` if the task doesn't exist or belongs to another account (never `403`, so existence isn't revealed); `403` if it's in the caller's account but outside the agent token's ownership/repo scope.",
         "parameters": [
           {
             "schema": {

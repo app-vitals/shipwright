@@ -26,7 +26,11 @@ import {
 } from "@shipwright/lib/sentry";
 import { Hono } from "hono";
 import { HTTPException } from "hono/http-exception";
-import { createBearerAuthMiddleware, type TaskStoreAuthEnv } from "./auth.ts";
+import {
+  createBearerAuthMiddleware,
+  type ScopeResolver,
+  type TaskStoreAuthEnv,
+} from "./auth.ts";
 import { ApiError } from "./errors.ts";
 import type { PullRequestServiceLike } from "./pull-request-service.ts";
 import { createPrsRoutes } from "./routes/prs.ts";
@@ -83,7 +87,7 @@ const noopPrService: PullRequestServiceLike = {
   async lookupBlockedPrNumbers(_pairs) {
     return new Set();
   },
-  async stampOrigin(_repo, _prNumber, _data, _client?) {
+  async stampOrigin(_repo, _prNumber, _data, _client?, _accountId?) {
     return {} as never;
   },
   async census(_entries) {
@@ -117,7 +121,7 @@ export interface TaskStoreDeps {
   pullRequestService?: PullRequestServiceLike;
   verificationCheckService?: VerificationCheckServiceLike;
   /** Optional scope resolver for agent tokens — returns repos from agents service. */
-  scopeResolver?: (agentId: string) => Promise<string[]>;
+  scopeResolver?: ScopeResolver;
   /**
    * Optional Sentry client for reporting unhandled errors. Undefined means
    * Sentry is not initialized (SENTRY_DSN unset) — onError simply skips the
