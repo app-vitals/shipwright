@@ -20,7 +20,7 @@
 // asking the LLM to recompute the definition by hand.
 //
 // A qualifying review is excluded from counting as an unaddressed finding by
-// either of two exclusions:
+// the exclusions audited in the PHS-4.1 block below, among them:
 //   1. isAddressedByAuthorReply (CPF-2.3) — a third-party review addressed by a
 //      subsequent PR-author reply. Scoped to the real PR author via `prAuthor`
 //      (RAS-1.1), which defaults to `currentUser` when absent.
@@ -51,6 +51,54 @@
 //      (see patch.md's own admission of the same gap), so this exclusion
 //      cannot reuse isAddressedByAuthorReply's review-level comparison.
 //
+// PHS-4.1 audit — every "handled finding" exclusion, and whether it survives.
+//
+// Criterion for removal: a ledger entry (review-source resolved/superseded, or
+// patch-source rejected) is guaranteed to exist for the same scenario by the time
+// the exclusion matters, so every PHS-1.1 characterization test would still pass
+// through isResolvedByLedger / isRejectedByPatchLedger alone. No exclusion met it,
+// so none was removed and no test changed.
+//
+//   isResolvedByLedger (PFL-3.2) .......... KEPT — the authoritative path.
+//     Tests: "ledger exclusion is per review", "ledger-resolved sole qualifying
+//     review short-circuits...", "excludes a THIRD-PARTY review's finding via a
+//     matching ledger entry", "excludes a finding via the ledger even when...".
+//   isRejectedByPatchLedger (PHS-1.2) ..... KEPT — authoritative path for patch.
+//     Tests: the "PHS-1.2 patch-source rejected ledger entries" suite.
+//   isSelfCleanApprove (CPF-2.1) .......... KEPT — PFL-5.1 fallback: a PR whose
+//     only review is a clean self-approve is never re-reviewed, so review.md's
+//     Step 5.5 never writes its ledger entry. Removal belongs to PFL-5.4.
+//     Tests: "self-authored COMMENTED ... APPROVE body", "bold-wrapped APPROVE",
+//     "narrative ending in Verdict: APPROVE", "self clean-APPROVE matched via
+//     canonicalLogin variants", "third-party leading-APPROVE body is NOT excluded".
+//   isSupersededBySelfReview (DRO-1.2) .... KEPT — same PFL-5.1/PFL-5.4 reasoning.
+//     Tests: "earlier self-authored COMMENT review is superseded by a later clean
+//     self-review" and its negative/ordering variants, "self-review supersede is
+//     not scoped to the later review's commit".
+//   isSupersededBySameHeadApproval (PSL-1.1) KEPT — a third-party reviewer's own
+//     later APPROVED has no ledger entry (the review pipeline only attests the
+//     agent's own reviews, patch only writes after a dispatch); dropping it would
+//     re-dispatch patch on every such PR just to write a `rejected` entry.
+//     Tests: the "isSupersededBySameHeadApproval / hasUnaddressedFindings
+//     (PSL-1.1)" suite, "same-head supersede requires state APPROVED".
+//   isAddressedByAuthorReply (CPF-2.3) .... KEPT, explicitly — a PR author's
+//     reply to a human review ("fixed in abc123") never gets a ledger entry, so
+//     this is the only thing clearing it.
+//     Tests: "followed by a PR-author reply (mirrors PR #1432)", "reply predates
+//     the review", the prAuthor (RAS-1.1) pair, "author reply at the exact review
+//     timestamp does not address the review (strict >)".
+//   isThreadAddressedByAuthorReply (URT-1.1) KEPT — same reasoning as CPF-2.3 for
+//     inline threads: a human reply in a thread leaves no ledger entry.
+//     Tests: the URT-1.1 thread cases and "thread-level exclusion is per thread".
+//
+// Duplicated copies reviewed and kept: agent/src/check-patch.ts's
+// hasMergeOnlyStaleFindings (a different question — stale-commit findings — that
+// shares only isSelfCleanApprove/isAddressedByAuthorReply, imported from here, not
+// copied), agent/src/check-helpers.ts's classifyReviewState/isCleanApproveBody
+// (identity-agnostic reconciler, not a candidacy gate), and check-review.ts (no
+// copy of these predicates). patch.md/review.md prose describing removed logic:
+// none, since nothing was removed.
+
 // CLI:
 //   bun run plugins/shipwright/scripts/compute-unaddressed-findings.ts '{"currentUser":"the-agent","headRefOid":"abc123","reviews":{"nodes":[...]},"reviewThreads":{"nodes":[...]},"comments":{"nodes":[...]},"priorFindingsStatus":[...],"findings":[...],"prAuthor":"pr-author-login"}'
 // or pipe the same JSON blob via stdin. `priorFindingsStatus` and `findings`
