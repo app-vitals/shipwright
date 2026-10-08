@@ -43,7 +43,7 @@ Admin-service env vars (read once at startup by `admin/src/self-serve-config.ts`
 
 | Name | Type | Default | Description |
 |---|---|---|---|
-| `SHIPWRIGHT_SELF_SERVE_ENABLED` | `string` | — | Set to `enabled` to turn self-serve provisioning on. Any other value (or unset) leaves it off. |
+| `SHIPWRIGHT_SELF_SERVE_ENABLED` | `string` | — | Set to `enabled` to turn self-serve provisioning on. Any other value (or unset) leaves it off. When on, anyone with access to an agent (owner or member) can edit its settings, manage its members and delete it; when off those routes stay admin-only. |
 | `SHIPWRIGHT_SELF_SERVE_DEFAULT_MAX_AGENTS` | `int` | `0` | Default per-account agent quota. Must be an integer >= 0; an invalid value (negative, non-integer) logs a warning and falls back to `0`. |
 | `SHIPWRIGHT_SELF_SERVE_CONTACT_EMAIL` | `string` | `dan@app-vitals.com` | Contact address shown when a user needs more quota. |
 

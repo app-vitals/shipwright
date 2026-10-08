@@ -1482,6 +1482,12 @@ export function renderAgentDetailPage(
   userName: string,
   isAdmin: boolean,
   opts?: {
+    /**
+     * SSP-4.3: render the Members / Slack access / Danger Zone cards. Defaults
+     * to isAdmin; the caller passes true for agent-access holders when
+     * self-serve is enabled.
+     */
+    canManage?: boolean;
     error?: string;
     newToken?: string;
     successMsg?: string;
@@ -2079,7 +2085,9 @@ export function renderAgentDetailPage(
       </div>
     </div>`;
 
-  const slackAccessSection = isAdmin
+  const canManage = opts?.canManage ?? isAdmin;
+
+  const slackAccessSection = canManage
     ? `<div class="card">
       <div class="card-title">Slack access</div>
       ${connectActionsHtml}
@@ -2345,7 +2353,7 @@ export function renderAgentDetailPage(
       </form>
     </div>`;
 
-  const dangerZoneSection = isAdmin
+  const dangerZoneSection = canManage
     ? `<!-- Danger Zone -->
     <div class="card" style="border:1px solid #fca5a5">
       <div class="card-title" style="color:#dc2626">Danger Zone</div>
@@ -2423,7 +2431,7 @@ export function renderAgentDetailPage(
   const accessGroup = renderGroup(
     "Access",
     accessStat,
-    `${isAdmin ? membersSection : ""}${authorAllowlistReviewSection}${authorAllowlistPatchSection}${slackAccessSection}${tokensSection}`,
+    `${canManage ? membersSection : ""}${authorAllowlistReviewSection}${authorAllowlistPatchSection}${slackAccessSection}${tokensSection}`,
   );
   const pluginsToolsGroup = renderGroup(
     "Plugins &amp; Tools",
