@@ -11655,3 +11655,40 @@ describe("renderChatThreadPage — poll auto-scroll (CSR-1.1)", () => {
     expect(container.scrollTop).toBe(1000);
   });
 });
+
+describe("renderAgentDetailPage — canManage gating (SSP-4.3)", () => {
+  const render = (
+    isAdmin: boolean,
+    opts?: Parameters<typeof renderAgentDetailPage>[9],
+  ) =>
+    renderAgentDetailPage(
+      AGENT,
+      { env: {}, secretKeys: [] },
+      [],
+      [],
+      [],
+      [],
+      [],
+      "user@example.com",
+      isAdmin,
+      opts,
+    );
+
+  test("non-admin without canManage: no Danger Zone / Slack access / Members cards", () => {
+    const html = render(false);
+    expect(html).not.toContain("Danger Zone");
+    expect(html).not.toContain('<div class="card-title">Slack access</div>');
+    expect(html).not.toContain("/members");
+  });
+
+  test("non-admin with canManage: all three cards render", () => {
+    const html = render(false, { canManage: true });
+    expect(html).toContain("Danger Zone");
+    expect(html).toContain('<div class="card-title">Slack access</div>');
+    expect(html).toContain(`/admin/agents/${AGENT.id}/members`);
+  });
+
+  test("admin defaults to canManage", () => {
+    expect(render(true)).toContain("Danger Zone");
+  });
+});

@@ -12303,3 +12303,114 @@ describe("admin UI — POST /admin/push/notify", () => {
     });
   });
 });
+
+// ─── SSP-4.3: agent-access holders manage their agent when self-serve is on ──
+
+describe("admin UI — self-serve agent management (SSP-4.3)", () => {
+  const HOLDER = "holder@example.com";
+  const selfServe = (enabled: boolean) => ({
+    enabled,
+    defaultMaxAgents: 1,
+    contactEmail: "ops@example.com",
+  });
+  const scopedTo = (agentIds: string[]) => async () => ({
+    kind: "scoped" as const,
+    accountId: "acct-a",
+    agentIds,
+  });
+  const holderCookie = () =>
+    makeSessionCookie(SESSION_SECRET, "google-sub-holder", HOLDER, false);
+  const form = (fields: Record<string, string>) => ({
+    method: "POST",
+    body: new URLSearchParams(fields).toString(),
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+  });
+
+  const routes: Array<[string, Record<string, string>]> = [
+    ["settings", { restrictSlackToMembers: "true" }],
+    ["members", { email: "new@example.com" }],
+    ["members/delete", { memberId: "m1" }],
+    ["delete", {}],
+  ];
+
+  for (const [path, fields] of routes) {
+    it(`flag on: access holder is not blocked on POST /admin/agents/:id/${path}`, async () => {
+      const cookie = await holderCookie();
+      const app = createAdminUIApp(
+        makeMockDeps({
+          selfServe: selfServe(true),
+          callerScopeResolver: scopedTo([AGENT_ID]),
+        }),
+      );
+      const res = await app.request(`/admin/agents/${AGENT_ID}/${path}`, {
+        ...form(fields),
+        headers: {
+          ...form(fields).headers,
+          Cookie: `admin_session=${cookie}`,
+        },
+      });
+      expect(res.status).not.toBe(403);
+    });
+
+    it(`flag on: user without access gets 403 on POST /admin/agents/:id/${path}`, async () => {
+      const cookie = await holderCookie();
+      const app = createAdminUIApp(
+        makeMockDeps({
+          selfServe: selfServe(true),
+          callerScopeResolver: scopedTo(["some-other-agent"]),
+        }),
+      );
+      const res = await app.request(`/admin/agents/${AGENT_ID}/${path}`, {
+        ...form(fields),
+        headers: {
+          ...form(fields).headers,
+          Cookie: `admin_session=${cookie}`,
+        },
+      });
+      expect(res.status).toBe(403);
+    });
+
+    it(`flag off: access holder gets 403 on POST /admin/agents/:id/${path} (regression)`, async () => {
+      const cookie = await holderCookie();
+      const app = createAdminUIApp(
+        makeMockDeps({
+          selfServe: selfServe(false),
+          callerScopeResolver: scopedTo([AGENT_ID]),
+        }),
+      );
+      const res = await app.request(`/admin/agents/${AGENT_ID}/${path}`, {
+        ...form(fields),
+        headers: {
+          ...form(fields).headers,
+          Cookie: `admin_session=${cookie}`,
+        },
+      });
+      expect(res.status).toBe(403);
+    });
+  }
+
+  for (const [enabled, shown] of [
+    [true, true],
+    [false, false],
+  ] as const) {
+    it(`agent detail for an access holder ${shown ? "renders" : "hides"} Danger Zone / Slack access / Members cards when flag is ${enabled ? "on" : "off"}`, async () => {
+      const cookie = await holderCookie();
+      const app = createAdminUIApp(
+        makeMockDeps({
+          selfServe: selfServe(enabled),
+          callerScopeResolver: scopedTo([AGENT_ID]),
+        }),
+      );
+      const res = await app.request(`/admin/agents/${AGENT_ID}`, {
+        headers: { Cookie: `admin_session=${cookie}` },
+      });
+      expect(res.status).toBe(200);
+      const html = await res.text();
+      expect(html.includes("Danger Zone")).toBe(shown);
+      expect(html.includes('<div class="card-title">Slack access</div>')).toBe(
+        shown,
+      );
+      expect(html.includes(`/admin/agents/${AGENT_ID}/members`)).toBe(shown);
+    });
+  }
+});
