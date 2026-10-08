@@ -248,7 +248,7 @@ const updateRoute = createRoute({
   tags: ["PRs"],
   summary: "Update pull request fields",
   description:
-    "Writable fields: `staged`, `commitSha`, `reviewedCommitSha`, `agentId`, `state`, `mergedAt`, `reviewState`, `reviewedAt`, `phase`, `readyForReviewAt`, `readyForPatchAt`, `readyForDeployAt`, `blocked`, `blockedReason` — every other field is managed by a lifecycle endpoint instead. Returns `400` if no writable field is provided. Unlike the lifecycle endpoints, PATCH does not record a PullRequestEvent audit row; it's meant for late-stage corrections (e.g. force-setting `state=merged` after GitHub confirms it) that don't need transactional field-diff auditing. Setting `state` to `merged`/`closed`, or `reviewState` to `posted`/`approved`, clears the claim fields (`claimedBy`, `claimedAt`, `heartbeatAt`, `phase`) as a side effect so a completed PR isn't left held by a stale claim. Setting `reviewState=posted` together with `reviewedCommitSha` records the commit-level dedup marker the review phase's staged-review guard reads to decide whether re-review is needed.",
+    "Writable fields: `staged`, `commitSha`, `reviewedCommitSha`, `agentId`, `state`, `mergedAt`, `reviewState`, `reviewedAt`, `phase`, `readyForReviewAt`, `readyForPatchAt`, `readyForDeployAt`, `blocked`, `blockedReason`, `blockedHeadSha` (string or null; null clears it, omitting leaves it unchanged; any other type returns `400`) — every other field is managed by a lifecycle endpoint instead. Returns `400` if no writable field is provided. Unlike the lifecycle endpoints, PATCH does not record a PullRequestEvent audit row; it's meant for late-stage corrections (e.g. force-setting `state=merged` after GitHub confirms it) that don't need transactional field-diff auditing. Setting `state` to `merged`/`closed`, or `reviewState` to `posted`/`approved`, clears the claim fields (`claimedBy`, `claimedAt`, `heartbeatAt`, `phase`) as a side effect so a completed PR isn't left held by a stale claim. Setting `reviewState=posted` together with `reviewedCommitSha` records the commit-level dedup marker the review phase's staged-review guard reads to decide whether re-review is needed.",
   request: {
     params: PrIdParamSchema,
     body: {
@@ -842,7 +842,7 @@ export function createPrsRoutes(
   //   the review/patch/deploy skills to record when a PR enters each phase
   //
   // PR-level block (blocks automation on a PR with no linked Task):
-  //   blocked, blockedReason
+  //   blocked, blockedReason, blockedHeadSha
   const PATCH_ALLOWED_FIELDS: Array<keyof PullRequest> = [
     "staged",
     "commitSha",
@@ -864,6 +864,7 @@ export function createPrsRoutes(
     "readyForDeployAt",
     "blocked",
     "blockedReason",
+    "blockedHeadSha",
   ];
 
   // biome-ignore lint/suspicious/noExplicitAny: service returns Prisma types; JSON serialization handles Date→string correctly at runtime
@@ -877,6 +878,13 @@ export function createPrsRoutes(
       if (key in body) {
         (filtered as Record<string, unknown>)[key] = body[key];
       }
+    }
+    if (
+      "blockedHeadSha" in filtered &&
+      filtered.blockedHeadSha !== null &&
+      typeof filtered.blockedHeadSha !== "string"
+    ) {
+      throw new BadRequestError("blockedHeadSha must be a string or null");
     }
     if (Object.keys(filtered).length === 0) {
       throw new BadRequestError("no updatable fields provided");
