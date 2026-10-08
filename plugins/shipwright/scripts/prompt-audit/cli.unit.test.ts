@@ -7,7 +7,13 @@
 
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { execFileSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import {
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { type CliDeps, nodeCliDeps, parseArgs, runCli } from "./cli.ts";
@@ -200,6 +206,33 @@ describe("scan", () => {
     for (const f of parse(res.stdout).findings)
       expect(f.file.startsWith("plugins/")).toBe(true);
   });
+
+  test("--scope does not resolve or drop out-of-scope tracked findings", async () => {
+    const deps = memDeps();
+    const scan = (...extra: string[]) =>
+      runCli(
+        ["scan", "--repo", "/r", "--model", "claude-sonnet-5-5", ...extra],
+        deps,
+      );
+    await scan();
+    const path = "state/prompt-audit-ledger.json";
+    const seeded = parse(deps.files[path]);
+    const [fp, entry] = Object.entries(seeded.findings).find(
+      ([, e]) => (e as { file: string }).file === "CLAUDE.md",
+    ) as [string, { status: string; rule: string }];
+    entry.status = "queued";
+    deps.files[path] = JSON.stringify(seeded);
+
+    const res = await scan("--scope", "plugins/", "--json");
+    expect(res.exit).toBe(0);
+    for (const f of parse(res.stdout).findings)
+      expect(f.file.startsWith("plugins/")).toBe(true);
+
+    const ledger = parse(deps.files[path]);
+    expect(ledger.findings[fp].status).toBe("queued");
+    expect(ledger.findings[fp].lastSeen).toBe(ledger.lastRun);
+    expect(deps.files["prompt-audit-report.md"]).toContain(entry.rule);
+  });
 });
 
 describe("blast", () => {
@@ -354,6 +387,61 @@ describe("measure (temp git repo)", () => {
     );
     expect(ledger.findings.abc123def456.measured.delta).toBe(-750);
     expect(ledger.findings.abc123def456.status).toBe("measured");
+  });
+
+  test("an invalid ref fails with exit 1 and --record writes nothing", async () => {
+    const ledgerPath = join(repo, "state/prompt-audit-ledger.json");
+    const before = readFileSync(ledgerPath, "utf8");
+    const res = await runCli(
+      [
+        "measure",
+        "--repo",
+        repo,
+        "--finding",
+        "abc123def456",
+        "--before",
+        "no-such-ref",
+        "--after",
+        "HEAD",
+        "--model",
+        "claude-sonnet-5-5",
+        "--record",
+      ],
+      deps(),
+    );
+    expect(res.exit).toBe(1);
+    expect(res.stdout).toContain("invalid git ref: no-such-ref");
+    expect(readFileSync(ledgerPath, "utf8")).toBe(before);
+  });
+
+  test("a valid ref where the file is absent counts as zero tokens", async () => {
+    git("rm", "-q", "docs/a.md");
+    git("commit", "-q", "-m", "remove");
+    try {
+      const res = await runCli(
+        [
+          "measure",
+          "--repo",
+          repo,
+          "--finding",
+          "abc123def456",
+          "--before",
+          "before",
+          "--after",
+          "HEAD",
+          "--model",
+          "claude-sonnet-5-5",
+          "--json",
+        ],
+        deps(),
+      );
+      expect(res.exit).toBe(0);
+      const out = parse(res.stdout);
+      expect(out.after.tokens).toBe(0);
+      expect(out.tokenDelta).toBe(-1000);
+    } finally {
+      git("reset", "-q", "--hard", "HEAD~1");
+    }
   });
 
   test("unknown finding fails with exit 1", async () => {

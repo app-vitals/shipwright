@@ -191,17 +191,21 @@ async function runScan(args: ParsedArgs, deps: CliDeps): Promise<CliResult> {
     // not a git checkout
   }
 
+  // The ledger merge always sees the full finding set: mergeScan resolves any
+  // queued/measured entry absent from the scan, so merging a scoped subset
+  // would falsely resolve every out-of-scope finding. --scope filters output only.
   const blastCache = new Map<string, BlastReport>();
-  const findings: ScanFinding[] = runAllRules(ctx)
-    .filter((f) => !scope || f.file.startsWith(scope))
-    .map((f) => {
-      let b = blastCache.get(f.file);
-      if (!b) {
-        b = blastRadius(f.file, root, deps.fs);
-        blastCache.set(f.file, b);
-      }
-      return { ...f, blastRadius: b, scannedAt: sha };
-    });
+  const allFindings: ScanFinding[] = runAllRules(ctx).map((f) => {
+    let b = blastCache.get(f.file);
+    if (!b) {
+      b = blastRadius(f.file, root, deps.fs);
+      blastCache.set(f.file, b);
+    }
+    return { ...f, blastRadius: b, scannedAt: sha };
+  });
+  const findings = scope
+    ? allFindings.filter((f) => f.file.startsWith(scope))
+    : allFindings;
 
   const baselines: Record<string, Record<string, Baseline>> = {};
   for (const context of CONTEXTS) {
@@ -228,7 +232,7 @@ async function runScan(args: ParsedArgs, deps: CliDeps): Promise<CliResult> {
   const ledger = mergeScan(
     readLedger(ledgerFs, LEDGER_PATH),
     {
-      findings,
+      findings: allFindings,
       models,
       baselines,
       claudeCodeVersion: deps.env.CLAUDE_CODE_VERSION,
@@ -277,6 +281,21 @@ async function runMeasure(args: ParsedArgs, deps: CliDeps): Promise<CliResult> {
   if (!entry)
     return { exit: 1, stdout: `finding ${finding} is not in ${LEDGER_PATH}\n` };
 
+  // An invalid ref must error out rather than read as an empty file: otherwise
+  // tokenDelta becomes the whole file and --record persists a bogus measurement.
+  for (const ref of [before, after]) {
+    try {
+      deps.exec(root, [
+        "git",
+        "rev-parse",
+        "--verify",
+        "--quiet",
+        `${ref}^{commit}`,
+      ]);
+    } catch {
+      return { exit: 1, stdout: `invalid git ref: ${ref}\n` };
+    }
+  }
   const show = (ref: string): string => {
     try {
       return deps.exec(root, ["git", "show", `${ref}:${entry.file}`]);
