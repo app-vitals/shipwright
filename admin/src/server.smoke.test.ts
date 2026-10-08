@@ -126,7 +126,12 @@ function buildComposedApp() {
       list: notImplemented,
       upsert: notImplemented,
     },
-    agentMemberService: { add: notImplemented, listByAgentId: notImplemented },
+    agentMemberService: {
+      add: notImplemented,
+      listByAgentId: notImplemented,
+      exists: async () => false,
+      listByEmail: async () => [],
+    },
     agentChatTokenService: {
       upsertDailyByModel: notImplemented,
       queryStats: notImplemented,

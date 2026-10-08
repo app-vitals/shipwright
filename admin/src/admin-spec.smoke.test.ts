@@ -318,6 +318,8 @@ function buildSpecApp() {
       }),
     },
     agentMemberService: {
+      exists: async () => false,
+      listByEmail: async () => [],
       add: async (agentId: string, email: string) => ({
         id: "member-1",
         agentId,

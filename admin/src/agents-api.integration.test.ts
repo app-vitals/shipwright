@@ -47,6 +47,7 @@ const REAL_KEY =
 async function makeSessionCookie(): Promise<string> {
   return sign(
     {
+      isAdmin: true,
       userId: "user-123",
       email: "admin@example.com",
       name: "Admin User",

@@ -20,6 +20,7 @@ const VALID_BEARER_TOKEN = "valid-bearer-token-value";
 async function makeSessionCookie(secret = SESSION_SECRET): Promise<string> {
   return sign(
     {
+      isAdmin: true,
       userId: "user-123",
       email: "admin@example.com",
       name: "Admin User",
@@ -345,6 +346,8 @@ function makeMockDeps(): AdminDeps {
       }),
     },
     agentMemberService: {
+      exists: async () => false,
+      listByEmail: async () => [],
       add: async (agentId: string, email: string) => ({
         id: "member-1",
         agentId,

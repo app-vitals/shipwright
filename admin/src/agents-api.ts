@@ -158,7 +158,10 @@ export interface AdminDeps {
     AgentPhaseMethodologyService,
     "list" | "upsert"
   >;
-  agentMemberService: Pick<AgentMemberService, "add" | "listByAgentId">;
+  agentMemberService: Pick<
+    AgentMemberService,
+    "add" | "listByAgentId" | "exists" | "listByEmail"
+  >;
   /**
    * Resolves an agent-type name to its parsed Agent Type manifest. Consumed
    * by POST /agents (createAgentRoute, APA-2.1) to seed AgentTool/AgentPlugin
@@ -1213,7 +1216,14 @@ export function createAdminApp(deps: AdminDeps): OpenAPIHono<AdminAuthEnv> {
     sessionSecret,
     agentTokenService,
     adminApiKeys,
+    agentMemberService,
   });
+
+  // Admin, or a session-cookie caller (membership of the route's agent already
+  // enforced by the auth middleware). Bearer non-admins stay denied.
+  const isAdminOrSessionMember = (c: {
+    get: (k: "isAdmin" | "callerEmail") => unknown;
+  }) => c.get("isAdmin") === true || c.get("callerEmail") !== undefined;
 
   // Apply combined auth (bearer token OR session cookie) to all /agents/* routes.
   app.use("/agents/*", authMiddleware);
@@ -1246,7 +1256,7 @@ export function createAdminApp(deps: AdminDeps): OpenAPIHono<AdminAuthEnv> {
   // POST /agents/:id/provision — provision a single agent's K8s workload (admin only).
   // Idempotent: safe to call on an already-provisioned agent.
   app.openapi(provisionAgentRoute, async (c) => {
-    if (c.get("isAdmin") !== true) {
+    if (!isAdminOrSessionMember(c)) {
       throw new ForbiddenError(
         "Only admin bearers and session users can provision agents",
       );
@@ -1269,7 +1279,7 @@ export function createAdminApp(deps: AdminDeps): OpenAPIHono<AdminAuthEnv> {
 
   // GET /agents/:id — get full agent record including selfHosted and repos
   app.openapi(getAgentRoute, async (c) => {
-    if (c.get("isAdmin") !== true) {
+    if (!isAdminOrSessionMember(c)) {
       throw new ForbiddenError("Admin access required to get agent");
     }
     const { id: agentId } = c.req.valid("param");
@@ -1282,7 +1292,7 @@ export function createAdminApp(deps: AdminDeps): OpenAPIHono<AdminAuthEnv> {
 
   // PATCH /agents/:id — update agent fields (selfHosted, repos)
   app.openapi(patchAgentRoute, async (c) => {
-    if (c.get("isAdmin") !== true) {
+    if (!isAdminOrSessionMember(c)) {
       throw new ForbiddenError("Admin access required to update agent");
     }
     const { id: agentId } = c.req.valid("param");
@@ -1346,7 +1356,7 @@ export function createAdminApp(deps: AdminDeps): OpenAPIHono<AdminAuthEnv> {
 
   // DELETE /agents/:id — delete an agent and tear down its workload (admin only)
   app.openapi(deleteAgentRoute, async (c) => {
-    if (c.get("isAdmin") !== true) {
+    if (!isAdminOrSessionMember(c)) {
       throw new ForbiddenError(
         "Only admin bearers and session users can delete agents",
       );
@@ -1377,11 +1387,21 @@ export function createAdminApp(deps: AdminDeps): OpenAPIHono<AdminAuthEnv> {
 
   // GET /agents — list all agents (id + name + selfHosted) for metrics name resolution.
   app.openapi(listAgentsRoute, async (c) => {
-    if (c.get("isAdmin") !== true) {
+    const email = c.get("callerEmail");
+    if (c.get("isAdmin") !== true && email === undefined) {
       throw new ForbiddenError("Admin access required to list agents");
     }
     const agents = await agentService.list();
-    return c.json(agents, 200);
+    if (c.get("isAdmin") === true || email === undefined) {
+      return c.json(agents, 200);
+    }
+    // Non-admin session: only agents the caller has an AgentMember row for.
+    const memberships = await agentMemberService.listByEmail(email);
+    const memberAgentIds = new Set(memberships.map((m) => m.agentId));
+    return c.json(
+      agents.filter((a) => memberAgentIds.has(a.id)),
+      200,
+    );
   });
 
   // POST /agents — create a new agent (admin only). Delegates to createAgent()
