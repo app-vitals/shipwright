@@ -29,6 +29,7 @@ import type {
   ModelBreakdownEntry,
 } from "./cron-run-reporter.ts";
 import type { CronJobLike } from "./loop-cron-classifier.ts";
+import type { PatchStateSnapshot } from "./patch-outcome-check.ts";
 import {
   buildClaimPrRequest,
   createLoopOrchestrator,
@@ -504,6 +505,8 @@ interface MakeDepsOptions {
   // dispatch. Undefined by default (production-optional), so existing tests
   // are unaffected.
   getPrProgress?: LoopOrchestratorDeps["getPrProgress"];
+  // SLS-1.1: live patch-state reader/escalator. Undefined by default.
+  patchOutcome?: LoopOrchestratorDeps["patchOutcome"];
   // LO-1.1: optional injected Sentry client double — undefined by default
   // (matching production's optional-by-convention sentryClient), so existing
   // tests that don't pass this option are unaffected.
@@ -594,6 +597,7 @@ function makeDeps(options: MakeDepsOptions = {}): LoopOrchestratorDeps {
     resetSkip: options.resetSkip ?? (async () => {}),
     getTaskState: options.getTaskState ?? (async () => null),
     getPrProgress: options.getPrProgress,
+    patchOutcome: options.patchOutcome,
     agentId: options.agentId,
     clearSessionKey: options.clearSessionKey,
     sentryClient: options.sentryClient,
@@ -1861,6 +1865,131 @@ describe("createLoopOrchestrator", () => {
       },
     ]);
     expect(resetCalls).toEqual([]);
+  });
+
+  describe("SLS-1.1 live-state [silent] patch dispatches", () => {
+    const live = (
+      over: Partial<PatchStateSnapshot> = {},
+    ): PatchStateSnapshot => ({
+      headSha: "aaaaaaa1",
+      findingRefs: ["thread:T@1"],
+      mergeDirty: false,
+      ciFailing: false,
+      ...over,
+    });
+
+    const sequencedProgress = (
+      states: Array<{ reviewState?: string; commitSha?: string | null }>,
+    ): LoopOrchestratorDeps["getPrProgress"] => {
+      let i = 0;
+      return async () => states[Math.min(i++, states.length - 1)];
+    };
+
+    const silentPatchRun = async (opts: {
+      snapshots: Array<PatchStateSnapshot | null>;
+      result?: string;
+      getPrProgress?: LoopOrchestratorDeps["getPrProgress"];
+    }) => {
+      const consumed = new Set<string>();
+      const { reporter } = makeRecordingReporter();
+      const { recordSkip, resetSkip, recordCalls, resetCalls } =
+        makeRecordingSkipTracker();
+      const patchCandidates = [pr("acme/x#9", "2026-01-01T00:00:00Z", "patch")];
+      const { runner } = makeDrainingRunner(
+        { patch: patchCandidates },
+        consumed,
+        [{ result: opts.result ?? "Updated branch.\n[silent]" }],
+      );
+      let i = 0;
+      const deps = makeDeps({
+        patchCandidates,
+        runner,
+        reporter,
+        consumed,
+        recordSkip,
+        resetSkip,
+        getPrProgress: opts.getPrProgress,
+        patchOutcome: {
+          snapshot: async () =>
+            opts.snapshots[Math.min(i++, opts.snapshots.length - 1)],
+          escalate: async () => {},
+        },
+        claimPr: async (c: WorkPrCandidate) => ({
+          id: "pr-record-cuid-xyz",
+          commitSha: c.commitSha,
+        }),
+      });
+      await createLoopOrchestrator(deps)([job("shipwright-patch", true)]);
+      return { recordCalls, resetCalls };
+    };
+
+    test("update-branch-style push (head changed, record fields unchanged) calls resetSkip", async () => {
+      const { recordCalls, resetCalls } = await silentPatchRun({
+        snapshots: [live(), live({ headSha: "bbbbbbb2" })],
+        getPrProgress: async () => ({
+          reviewState: "in_progress",
+          reviewedCommitSha: null,
+          commitSha: "a",
+        }),
+      });
+      expect(recordCalls).toEqual([]);
+      expect(resetCalls).toEqual([
+        { itemType: "pr", recordId: "pr-record-cuid-xyz" },
+      ]);
+    });
+
+    test("settled PR (nothing left to patch, same head) calls resetSkip", async () => {
+      const { recordCalls, resetCalls } = await silentPatchRun({
+        snapshots: [
+          live({ mergeDirty: true, findingRefs: [] }),
+          live({ findingRefs: [] }),
+        ],
+      });
+      expect(recordCalls).toEqual([]);
+      expect(resetCalls).toHaveLength(1);
+    });
+
+    test("identical live state calls recordSkip with the same reason as before, even if record fields moved", async () => {
+      const { recordCalls, resetCalls } = await silentPatchRun({
+        snapshots: [live(), live()],
+        getPrProgress: sequencedProgress([
+          { reviewState: "in_progress", commitSha: "a" },
+          { reviewState: "posted", commitSha: "b" },
+        ]),
+      });
+      expect(recordCalls).toEqual([
+        {
+          itemType: "pr",
+          recordId: "pr-record-cuid-xyz",
+          reason: "command:no-work",
+        },
+      ]);
+      expect(resetCalls).toEqual([]);
+    });
+
+    test("an explicit [skip-reason:...] keeps advancing the streak despite a changed head", async () => {
+      const reason = "patch:deferred:waiting-on-author:9";
+      const { recordCalls, resetCalls } = await silentPatchRun({
+        result: `Deferring.\n[skip-reason:${reason}]\n[silent]`,
+        snapshots: [live(), live({ headSha: "bbbbbbb2" })],
+      });
+      expect(recordCalls).toEqual([
+        { itemType: "pr", recordId: "pr-record-cuid-xyz", reason },
+      ]);
+      expect(resetCalls).toEqual([]);
+    });
+
+    test("unreadable live state falls back to the PR record fields", async () => {
+      const { recordCalls, resetCalls } = await silentPatchRun({
+        snapshots: [null],
+        getPrProgress: sequencedProgress([
+          { reviewState: "in_progress", commitSha: "a" },
+          { reviewState: "in_progress", commitSha: "b" },
+        ]),
+      });
+      expect(recordCalls).toEqual([]);
+      expect(resetCalls).toHaveLength(1);
+    });
   });
 
   describe("PSL-2.1 progress-aware [silent] PR dispatches", () => {

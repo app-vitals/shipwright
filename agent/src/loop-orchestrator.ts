@@ -888,6 +888,16 @@ export function createLoopOrchestrator(
    * bare Sentry.setTag() global mutation) is required for correctness under
    * concurrent/sequential dispatches.
    */
+  /**
+   * SLS-1.1: the pre-dispatch live patch-state snapshot for an in-flight patch
+   * PR dispatch, keyed by itemId. Set by dispatch() and read by the `[silent]`
+   * branch in dispatchItem(); always deleted when the dispatch exits.
+   */
+  const patchLiveBefore = new Map<
+    string,
+    { before: PatchStateSnapshot | null; prAuthor?: string }
+  >();
+
   async function dispatchItem(
     phase: LoopPhase,
     phaseId: string | null,
@@ -1226,15 +1236,30 @@ export function createLoopOrchestrator(
         // PATCH reviewState/reviewedCommitSha away from the claimed
         // in_progress baseline) and must keep advancing the same-reason
         // streak (SRB-1.1), so it never takes the reset branch.
+        // SLS-1.1: patch dispatches decide from the live-state outcome
+        // (patch-outcome-check) instead of the PR record fields — a push via
+        // `gh pr update-branch` moves the head without writing any of them.
+        // changed/settled resets; unchanged records. When the live state is
+        // unreadable, fall back to the record-field check above.
+        const patchLive = patchLiveBefore.get(itemId);
+        const patchLiveAfter =
+          patchLive && !skipReasonMarker && patchOutcome
+            ? await patchOutcome
+                .snapshot(itemId, patchLive.prAuthor)
+                .catch(() => null)
+            : null;
         const prProgressAfter =
           prProgressBefore && !skipReasonMarker
             ? await snapshotPrProgress(recordId)
             : null;
-        if (
-          prProgressBefore &&
-          prProgressAfter &&
-          prMadeProgress(prProgressBefore, prProgressAfter)
-        ) {
+        const madeProgress =
+          patchLive?.before && patchLiveAfter
+            ? evaluatePatchOutcome(patchLive.before, patchLiveAfter).kind !==
+              "escalated"
+            : prProgressBefore &&
+              prProgressAfter &&
+              prMadeProgress(prProgressBefore, prProgressAfter);
+        if (madeProgress) {
           await callSkipTracker("resetSkip", () =>
             resetSkip(itemType, recordId),
           );
@@ -1575,6 +1600,7 @@ export function createLoopOrchestrator(
       );
     }
     const before = await patchOutcome.snapshot(itemId, prAuthor);
+    patchLiveBefore.set(itemId, { before, prAuthor });
     try {
       await dispatchScoped(
         phase,
@@ -1586,6 +1612,7 @@ export function createLoopOrchestrator(
         commandArgs,
       );
     } finally {
+      patchLiveBefore.delete(itemId);
       try {
         const after = before
           ? await patchOutcome.snapshot(itemId, prAuthor)
