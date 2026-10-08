@@ -1979,6 +1979,63 @@ describe("createLoopOrchestrator", () => {
       expect(resetCalls).toEqual([]);
     });
 
+    test("SLS-1.2: no-op-at-dispatch marker with a changed head calls resetSkip", async () => {
+      const { recordCalls, resetCalls } = await silentPatchRun({
+        result:
+          "Updated branch.\n[skip-reason:patch:deferred:no-op-at-dispatch:9]\n[silent]",
+        snapshots: [live(), live({ headSha: "bbbbbbb2" })],
+      });
+      expect(recordCalls).toEqual([]);
+      expect(resetCalls).toEqual([
+        { itemType: "pr", recordId: "pr-record-cuid-xyz" },
+      ]);
+    });
+
+    test("SLS-1.2: no-op-at-dispatch marker with identical live state records the marker reason", async () => {
+      const reason = "patch:deferred:no-op-at-dispatch:9";
+      const { recordCalls, resetCalls } = await silentPatchRun({
+        result: `Nothing to do.\n[skip-reason:${reason}]\n[silent]`,
+        snapshots: [live(), live()],
+      });
+      expect(recordCalls).toEqual([
+        { itemType: "pr", recordId: "pr-record-cuid-xyz", reason },
+      ]);
+      expect(resetCalls).toEqual([]);
+    });
+
+    test("SLS-1.2: review marker dispatch still records the skip", async () => {
+      const reason = "review:deferred:already-reviewed-at-head:9";
+      const consumed = new Set<string>();
+      const { reporter } = makeRecordingReporter();
+      const { recordSkip, resetSkip, recordCalls, resetCalls } =
+        makeRecordingSkipTracker();
+      const reviewCandidates = [
+        pr("acme/x#9", "2026-01-01T00:00:00Z", "review"),
+      ];
+      const { runner } = makeDrainingRunner(
+        { review: reviewCandidates },
+        consumed,
+        [{ result: `Deferring.\n[skip-reason:${reason}]\n[silent]` }],
+      );
+      const deps = makeDeps({
+        reviewCandidates,
+        runner,
+        reporter,
+        consumed,
+        recordSkip,
+        resetSkip,
+        claimPr: async (c: WorkPrCandidate) => ({
+          id: "pr-record-cuid-xyz",
+          commitSha: c.commitSha,
+        }),
+      });
+      await createLoopOrchestrator(deps)([job("shipwright-review", true)]);
+      expect(recordCalls).toEqual([
+        { itemType: "pr", recordId: "pr-record-cuid-xyz", reason },
+      ]);
+      expect(resetCalls).toEqual([]);
+    });
+
     test("unreadable live state falls back to the PR record fields", async () => {
       const { recordCalls, resetCalls } = await silentPatchRun({
         snapshots: [null],
