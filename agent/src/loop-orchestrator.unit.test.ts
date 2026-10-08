@@ -33,6 +33,7 @@ import {
   buildClaimPrRequest,
   createLoopOrchestrator,
   createLoopOrchestratorGetter,
+  DISPATCH_ERROR_SKIP_REASON,
   formatPreClaimMarker,
   type LoopOrchestratorDeps,
   type LoopOrchestratorProductionOptions,
@@ -1637,6 +1638,42 @@ describe("createLoopOrchestrator", () => {
     expect(completes).toHaveLength(1);
     expect(completes[0]?.outcome).toBe("failed");
     expect(completes[0]?.opts?.sessionId).toBeUndefined();
+  });
+
+  // ─── Dispatch-error skip tracking (PHS-3.3) ─────────────────────────────────
+
+  test("a thrown runner error calls recordSkip with DISPATCH_ERROR_SKIP_REASON, not resetSkip, and still reports failed", async () => {
+    const consumed = new Set<string>();
+    const devTaskCandidates = [task("SWC-ERR1", "2026-01-01T00:00:00Z")];
+    const { reporter, completes } = makeRecordingReporter();
+    const { recordSkip, resetSkip, recordCalls, resetCalls } =
+      makeRecordingSkipTracker();
+    const runner = async (): Promise<ClaudeRunResult> => {
+      consumed.add("SWC-ERR1");
+      throw new Error("runner crashed");
+    };
+    const deps = makeDeps({
+      devTaskCandidates,
+      runner,
+      reporter,
+      consumed,
+      claimTask: consumingClaimTask(consumed),
+      recordSkip,
+      resetSkip,
+    });
+    const loop = createLoopOrchestrator(deps);
+
+    await loop([job("shipwright-dev-task", true)]);
+
+    expect(completes[0]?.outcome).toBe("failed");
+    expect(recordCalls).toEqual([
+      {
+        itemType: "task",
+        recordId: "SWC-ERR1",
+        reason: DISPATCH_ERROR_SKIP_REASON,
+      },
+    ]);
+    expect(resetCalls).toEqual([]);
   });
 
   // ─── Work queue reporter tests (AWQ-1.3) ────────────────────────────────────
