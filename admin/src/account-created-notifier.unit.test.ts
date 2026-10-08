@@ -33,6 +33,7 @@ describe("createAccountCreatedNotifier", () => {
     const payload = JSON.parse(build("preview"));
     expect(payload.title).toBe("New account created");
     expect(payload.body).toBe("");
+    expect(payload.url).toBe("/admin/agents");
     expect(JSON.stringify(payload)).not.toContain("example.com");
   });
 });

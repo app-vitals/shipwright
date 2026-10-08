@@ -43,7 +43,7 @@ export function createAccountCreatedNotifier(deps: {
       JSON.stringify({
         title: TITLE,
         body: "",
-        url: `/admin/accounts/${encodeURIComponent(info.accountId)}`,
+        url: "/admin/agents",
         tag: `account-created:${info.accountId}`,
       }),
     );
