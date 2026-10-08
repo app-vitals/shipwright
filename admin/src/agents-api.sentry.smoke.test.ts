@@ -145,6 +145,7 @@ function makeBaseDeps(
       patch: async () => ({}) as never,
     },
     agentCronRunStatsService: {
+      outcomes: async () => ({ series: [] }),
       query: async () => ({
         totals: {
           input: 0,

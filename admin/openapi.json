@@ -1953,6 +1953,104 @@
           }
         ]
       },
+      "CronRunOutcomes": {
+        "type": "object",
+        "properties": {
+          "series": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CronRunOutcomeSeries"
+            }
+          }
+        },
+        "required": [
+          "series"
+        ]
+      },
+      "CronRunOutcomeSeries": {
+        "type": "object",
+        "properties": {
+          "phase": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "example": "dev-task"
+          },
+          "contextFingerprint": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "example": "a1b2c3d4e5f6"
+          },
+          "runs": {
+            "type": "integer"
+          },
+          "completed": {
+            "type": "integer"
+          },
+          "failed": {
+            "type": "integer"
+          },
+          "skipped": {
+            "type": "integer"
+          },
+          "skipReasons": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "example": {
+              "no-ready-task": 3
+            }
+          },
+          "avgDurationMs": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "p50DurationMs": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "avgTurns": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "avgToolCalls": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "avgContextTokens": {
+            "type": [
+              "number",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "phase",
+          "contextFingerprint",
+          "runs",
+          "completed",
+          "failed",
+          "skipped",
+          "skipReasons",
+          "avgDurationMs",
+          "p50DurationMs",
+          "avgTurns",
+          "avgToolCalls",
+          "avgContextTokens"
+        ]
+      },
       "ChatTokenStats": {
         "type": "object",
         "properties": {
@@ -4051,6 +4149,66 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/CronRunTokenStats"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden — requires admin scope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/agents/all/cron-runs/outcomes": {
+      "get": {
+        "summary": "Get cron-run outcomes per phase and context fingerprint",
+        "description": "Admin-only. Returns, per (phase, contextFingerprint): run, completed, failed, and skipped counts, a skipReasons histogram, avg and p50 duration, avg turns, avg tool calls, and avg first-turn context tokens. Optional `from`/`to` ISO datetime query params bound the range on startedAt.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "date-time",
+              "example": "2026-01-01T00:00:00Z"
+            },
+            "required": false,
+            "name": "from",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "date-time",
+              "example": "2026-02-01T00:00:00Z"
+            },
+            "required": false,
+            "name": "to",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Outcome series per (phase, contextFingerprint)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CronRunOutcomes"
                 }
               }
             }

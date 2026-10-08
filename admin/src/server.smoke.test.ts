@@ -103,7 +103,10 @@ function buildComposedApp() {
       list: notImplemented,
       patch: notImplemented,
     },
-    agentCronRunStatsService: { query: notImplemented },
+    agentCronRunStatsService: {
+      query: notImplemented,
+      outcomes: notImplemented,
+    },
     agentToolService: {
       list: notImplemented,
       add: notImplemented,
