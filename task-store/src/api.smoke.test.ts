@@ -28,6 +28,7 @@ import type {
   TaskWithBlockedBy,
 } from "./task-service.ts";
 import type { TokenServiceLike } from "./token-service.ts";
+import type { ScopeResolver } from "./auth.ts";
 
 /** No-op SessionService double — session routes aren't under test here. */
 function fakeSessionService(): SessionServiceLike {
@@ -288,7 +289,7 @@ function makeApp(
   deps: {
     taskService?: TaskServiceLike;
     tokenService?: TokenServiceLike;
-    scopeResolver?: (agentId: string) => Promise<string[]>;
+    scopeResolver?: ScopeResolver;
   } = {},
 ) {
   return createTaskStoreApp({
@@ -300,10 +301,11 @@ function makeApp(
 }
 
 /** Build a scope resolver that returns fixed repos for agent-1. */
-function makeScopeResolver(
-  repos: string[],
-): (agentId: string) => Promise<string[]> {
-  return async (agentId: string) => (agentId === "agent-1" ? repos : []);
+function makeScopeResolver(repos: string[]): ScopeResolver {
+  return async (agentId: string) => ({
+    repos: agentId === "agent-1" ? repos : [],
+    accountId: null,
+  });
 }
 
 function auth(token = VALID_TOKEN): Record<string, string> {

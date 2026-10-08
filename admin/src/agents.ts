@@ -81,6 +81,12 @@ export interface AgentDetail {
   patchAuthorAllowlist: string[];
   restrictSlackToMembers: boolean;
   typeName: string;
+  /**
+   * Owning account, null for unassigned (platform) agents. Optional here so
+   * existing test doubles constructing a narrower AgentDetail literal don't
+   * need updating.
+   */
+  accountId?: string | null;
   createdAt: Date;
   updatedAt: Date;
   /**
@@ -221,6 +227,7 @@ const DETAIL_SELECT = {
   patchAuthorAllowlist: true,
   restrictSlackToMembers: true,
   typeName: true,
+  accountId: true,
   createdAt: true,
   updatedAt: true,
   trialExpiresAt: true,

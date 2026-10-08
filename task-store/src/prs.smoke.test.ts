@@ -38,6 +38,7 @@ import type {
 import type { SessionServiceLike } from "./session-service.ts";
 import type { TaskServiceLike } from "./task-service.ts";
 import type { TokenServiceLike } from "./token-service.ts";
+import type { ScopeResolver } from "./auth.ts";
 
 /** No-op SessionService double — session routes aren't under test here. */
 function fakeSessionService(): SessionServiceLike {
@@ -191,10 +192,11 @@ function fakeAgentTokenService(): TokenServiceLike {
   };
 }
 
-function makeScopeResolver(
-  repos: string[],
-): (agentId: string) => Promise<string[]> {
-  return async (agentId: string) => (agentId === "agent-1" ? repos : []);
+function makeScopeResolver(repos: string[]): ScopeResolver {
+  return async (agentId: string) => ({
+    repos: agentId === "agent-1" ? repos : [],
+    accountId: null,
+  });
 }
 
 /** Captured args from each fakePrService.claim() call — for asserting phase forwarding. */
@@ -669,7 +671,7 @@ function makeApp(
   deps: {
     prService?: PullRequestServiceLike;
     tokenService?: TokenServiceLike;
-    scopeResolver?: (agentId: string) => Promise<string[]>;
+    scopeResolver?: ScopeResolver;
   } = {},
 ) {
   return createTaskStoreApp({

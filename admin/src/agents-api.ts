@@ -287,6 +287,8 @@ const GetAgentResultSchema = z
     patchAuthorAllowlist: z.array(z.string()),
     restrictSlackToMembers: z.boolean(),
     typeName: z.string(),
+    /** Owning account; null for unassigned agents (task-store maps null to its 'default' account). */
+    accountId: z.string().nullable(),
     createdAt: z.string().datetime(),
     updatedAt: z.string().datetime(),
     /**
@@ -446,7 +448,7 @@ const getAgentRoute = createRoute({
   path: "/agents/{id}",
   summary: "Get an agent",
   description:
-    "Admin-only. Returns the full agent record including `selfHosted`, `repos`, `reviewAuthorAllowlist`, `patchAuthorAllowlist`, `restrictSlackToMembers`, `typeName`, and `missingRequiredEnv` — required env keys declared by the agent's type manifest with no corresponding AgentEnv row yet (informational only).",
+    "Admin-only. Returns the full agent record including `selfHosted`, `repos`, `reviewAuthorAllowlist`, `patchAuthorAllowlist`, `restrictSlackToMembers`, `typeName`, `accountId` (null for unassigned agents), and `missingRequiredEnv` — required env keys declared by the agent's type manifest with no corresponding AgentEnv row yet (informational only).",
   request: { params: AgentIdParamSchema },
   responses: {
     200: {
@@ -2258,6 +2260,7 @@ function serializeAgent(
     patchAuthorAllowlist?: string[];
     restrictSlackToMembers?: boolean;
     typeName: string;
+    accountId?: string | null;
     createdAt: Date;
     updatedAt: Date;
     missingRequiredEnv?: string[];
@@ -2282,6 +2285,7 @@ function serializeAgent(
     patchAuthorAllowlist: agent.patchAuthorAllowlist ?? [],
     restrictSlackToMembers: agent.restrictSlackToMembers ?? false,
     typeName: agent.typeName,
+    accountId: agent.accountId ?? null,
     createdAt: agent.createdAt.toISOString(),
     updatedAt: agent.updatedAt.toISOString(),
     missingRequiredEnv: agent.missingRequiredEnv ?? [],
