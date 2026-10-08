@@ -829,145 +829,52 @@ Examples based on detected toolchain:
 - Ruby: `bundle exec rspec` (or `bundle exec rake test`)
 - Multi-layer: run `{test command}`, then each additional entry in `{tests}` (e.g., `npx playwright test` for e2e alongside the default `pytest` for unit/integration)
 
-### Skip-Locally Classification: Read Before Attempting Each Check
+### Run and Record Verifications
 
-Before running EACH check below (install, lint, typecheck, test, and each layer in `{tests}`)
-through `run-with-budget.ts`, check whether this repo+check pair has already earned a
-skip-locally classification — LVB-4.4's mechanism, driven directly off the
-`verification-checks` history via a live API call. No doc file is read or parsed.
+Verifications are crucial to ensuring your work is valid — run each discovered check
+(install, lint, typecheck, test, and each layer in `{tests}`, using scoped lint where the
+Build & Lint section below says to) before shipping. There is currently no stored `install`
+command in the Step 0/0b toolchain cache — derive it inline per ecosystem (e.g.
+`{manager} install`, `bun install`, `pip install -e .`, `bundle install`, `cargo fetch`),
+since lint/typecheck/test generally need dependencies installed first.
 
-**Query live, immediately before attempting `{checkName}`** — this check+repo's history,
-most-recent-first:
+Run each check with the Bash tool's `timeout` parameter set to `600000` ms (10 minutes). If a
+verification exceeds 10 minutes, skip the local run for it and rely on CI (Step 9b) — CI is
+the real arbiter. A failed, timed-out, or skipped check never blocks proceeding to Step 9
+(Push & PR); only Step 5's TDD red-green-refactor gate is a real block in this pipeline.
 
-```bash
-HISTORY_JSON=$(curl -sf -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
-  "$SHIPWRIGHT_TASK_STORE_URL/verification-checks?repo=$GH_REPO&checkName=$CHECK_NAME&limit=5")
-HISTORY_STATUSES=$(echo "$HISTORY_JSON" | jq -r '.checks[].status')
-LEARNED_REASON=$(echo "$HISTORY_JSON" | jq -r '.checks[0].reasonCategory // empty')
+**Record every outcome** — passes and failures included, not just skips — by POSTing to
+`$SHIPWRIGHT_TASK_STORE_URL/verification-checks` with `taskId` (`{id}`), `repo` (`$GH_REPO`),
+`checkName`, `status`, and an optional `reasonCategory`:
 
-STREAK=0
-while IFS= read -r s; do
-  if [ "$s" = "skipped" ] || [ "$s" = "timed_out" ]; then
-    STREAK=$((STREAK + 1))
-  else
-    break
-  fi
-done <<< "$HISTORY_STATUSES"
-```
-
-The endpoint returns rows ordered by `at` DESCENDING (most recent first), so this walk starts
-from the latest outcome and counts backward. The loop counts the CONSECUTIVE run of
-`skipped`/`timed_out` rows starting from the most recent, and **stops (via `break`) at the
-first `ran_passed` or `ran_failed` row** — a real pass or a real test/lint failure is a
-completely separate, expected outcome and must never contribute to this counter: a check that
-reliably fails because the code under review is wrong keeps running and keeps failing loudly,
-not silently getting marked as something the agent stops attempting. A `ran_failed` row
-anywhere in the history caps everything before it out of the count entirely — two timeouts
-either side of a failure never sum to a streak of 2.
-
-- **`STREAK -lt 2`** (no match — no learned classification yet, or the prior streak was just
-  broken by a real pass/failure): proceed to the `run-with-budget.ts` invocation below as
-  normal — nothing changes.
-- **`STREAK -ge 2`** (match — this check+repo pair has 2+ consecutive skipped/timed_out
-  outcomes immediately behind it): treat it as already learned to skip. Do NOT run
-  `run-with-budget.ts` for this check at all — no budget is spent even attempting it. Instead
-  POST the outcome directly, carrying the most recent row's `reasonCategory` forward as
-  `learnedFromCategory`:
-  ```bash
-  VC_BODY=$(jq -n --arg taskId "{id}" --arg repo "$GH_REPO" --arg checkName "$CHECK_NAME" \
-    --arg learnedFrom "$LEARNED_REASON" \
-    '{taskId: $taskId, repo: $repo, checkName: $checkName, status: "skipped",
-      reasonCategory: "learned_skip", learnedFromCategory: $learnedFrom}')
-  curl -sf -X POST -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
-    -H "Content-Type: application/json" \
-    "$SHIPWRIGHT_TASK_STORE_URL/verification-checks" \
-    -d "$VC_BODY" > /dev/null 2>&1 || echo "⚠ verification-check POST for $CHECK_NAME (learned skip) failed — continuing"
-  ```
-  Show this check's row in the PRE-SHIP CHECKS table below as `skip (learned: {reason})` rather
-  than plain `skip` — the recorded reason (an environmental `reasonCategory`, never a
-  correctness judgment) surfaces in this run's structured outcome via both the POST's
-  `learnedFromCategory` field and the human-readable table.
-
-Because this streak-walk runs live before every attempt, there is no separate "learning
-trigger" or doc-write step: the very next check attempt for this repo+checkName — in this run
-or a future one — will see the accumulated history (already populated by every check's own
-outcome POST, learned-skip or real) and reach the same STREAK conclusion on its own. Once two
-consecutive real attempts land on `skipped`/`timed_out`, the third attempt (in this run or the
-next) naturally short-circuits via the branch above.
-
-### Enforced, Process-Group-Aware Timeouts
-
-**Local verification here is best-effort and non-blocking — CI (Step 9b) is the real
-arbiter.** Every install/lint/typecheck/test invocation in this step runs under an enforced,
-per-check timeout budget so a hung or runaway command can never stall the pipeline. Failure,
-timeout, or skip of ANY of these checks ALWAYS proceeds to Step 9 (Push & PR) — there is no
-pause point here. The only remaining real block in this pipeline is Step 5's TDD
-red-green-refactor gate (a different, narrower gate that governs writing the implementation
-itself, not this pre-ship verification pass).
-
-**Every check runs through the shared `run-with-budget.ts` script (LVBS-1.1,
-`plugins/shipwright/scripts/run-with-budget.ts`) rather than an inline pattern.** A tool like
-npm, turbo, or a test runner that forks worker subprocesses can leave orphaned descendants
-alive past a timeout if they aren't killed as a whole process group, not just the
-directly-execed process — the script already handles this (`setsid --wait timeout
---kill-after={n}s {budget}s {command}`, plus a group-kill cleanup backstop; see the script's
-own header comment for the full mechanics), so Step 8 just invokes it instead of
-re-implementing the mechanics inline here. Use this pattern (adapt `{budget}`, `{command}`, and
-`{CHECK_NAME}` per check):
+- `status` is one of `ran_passed`, `ran_failed`, `skipped`, `timed_out`.
+- `reasonCategory` is only valid with `skipped` or `timed_out` — never send it with
+  `ran_passed` or `ran_failed`. Values: `check_timeout`, `install_timeout`, `resource_limit`,
+  `missing_tool`, `missing_secret`, `missing_dependency`, `not_configured`, `learned_skip`
+  (`learned_skip` also takes `learnedFromCategory`).
+- A failure caused by the agent's own environment (missing tool, secret, or dependency, or a
+  resource limit) rather than the code is a judgment call from reading the output: record it as
+  `skipped` with the matching category. If unsure, record `ran_failed`.
 
 ```bash
-CHECK_NAME="{install|lint|typecheck|test|<layer name>}"
-RESULT=$(bun run "${CLAUDE_PLUGIN_ROOT}/scripts/run-with-budget.ts" \
-  --budget {budget} --kill-after 10 -- {command})
-SCRIPT_STATUS=$(echo "$RESULT" | jq -r '.status')
-
-# Record this outcome via LVB-5.1's verification-check API — informational only, never a
-# pipeline gate. Run best-effort and warn-and-continue on any failure.
-if [ "$SCRIPT_STATUS" = "pass" ]; then
-  VC_STATUS="ran_passed"; VC_REASON=""
-elif [ "$SCRIPT_STATUS" = "timeout" ]; then
-  VC_STATUS="timed_out"
-  if [ "$CHECK_NAME" = "install" ]; then VC_REASON="install_timeout"; else VC_REASON="check_timeout"; fi
-# Before applying the default failure outcome below, judge whether this failure happened
-# because of the agent's own execution environment — a missing tool, a missing
-# secret/credential, a missing or unreachable dependency (e.g. a database or external
-# service), or a resource limit — rather than a genuine code/test defect. This is a
-# judgment call made by reading the failure output yourself, not automatic
-# stderr/exit-code pattern matching (a missing tool or an unreachable dependency cannot
-# be reliably detected that way). If the failure is environmental, override to
-# VC_STATUS="skipped" and set VC_REASON to the matching category: missing_tool,
-# missing_secret, missing_dependency, or resource_limit. If unsure, default to the
-# generic failure outcome below — never guess toward an environmental label defensively.
-else
-  VC_STATUS="ran_failed"; VC_REASON=""
-fi
-VC_BODY=$(jq -n --arg taskId "{id}" --arg repo "$GH_REPO" --arg checkName "$CHECK_NAME" \
-  --arg status "$VC_STATUS" --arg reason "$VC_REASON" \
-  '{taskId: $taskId, repo: $repo, checkName: $checkName, status: $status}
-   + (if $reason != "" then {reasonCategory: $reason} else {} end)')
 curl -sf -X POST -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
   -H "Content-Type: application/json" \
   "$SHIPWRIGHT_TASK_STORE_URL/verification-checks" \
-  -d "$VC_BODY" > /dev/null 2>&1 || echo "⚠ verification-check POST for $CHECK_NAME failed — continuing"
+  -d '{"taskId": "{id}", "repo": "'"$GH_REPO"'", "checkName": "{checkName}", "status": "{status}"}' \
+  > /dev/null 2>&1 || echo "⚠ verification-check POST for {checkName} failed — continuing"
 ```
 
-Run this for **install**, then **lint**, **typecheck**, and **test** (and each layer in
-`{tests}` if multi-layer) in turn. There is currently no stored `install` command in the Step
-0/0b toolchain cache — derive it inline per ecosystem (e.g. `{manager} install`, `bun install`,
-`pip install -e .`, `bundle install`, `cargo fetch`), the same way the "Examples based on
-detected toolchain" list above already gives per-ecosystem example commands, since
-lint/typecheck/test generally need dependencies installed first to run meaningfully.
+**Learned skip.** Before running a check, fetch its recent history:
 
-**The skip-locally read path reuses this exact POST shape.** LVB-4.4's "Skip-Locally
-Classification: Read Before Attempting Each Check" section above does exactly this — it emits
-the same POST shape as above with `status: "skipped"` and `reasonCategory: "learned_skip"` (plus
-`learnedFromCategory` set to the recorded category); no new recording mechanism was needed.
+```bash
+curl -sf -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
+  "$SHIPWRIGHT_TASK_STORE_URL/verification-checks?repo=$GH_REPO&checkName={checkName}&limit=2" | jq '.checks'
+```
 
-**Record, don't swallow, each outcome.** After each wrapped invocation, note its status —
-`pass`, `fail`, `timeout`, or `skip` — for the human-readable Pre-Ship Checks output below,
-and POST one verification-check record to the task-store API per the pattern above (LVB-5.1)
-— never silently drop a check's result. The printed table below is additive to, not a
-replacement for, that recorded outcome:
+Rows come back most-recent-first. If both rows are `skipped` or `timed_out`, skip the check
+locally and record `skipped` with `reasonCategory: "learned_skip"` and `learnedFromCategory`
+set to the most recent row's `reasonCategory`. Show it in the table below as
+`skip (learned: {reason})`.
 
 ```
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -979,22 +886,6 @@ typecheck:  {pass|fail|timeout|skip}
 test:       {pass|fail|timeout|skip}
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 ```
-
-**Budget derivation.** Prefer deriving `{budget}` from the target repo's real recent CI job
-durations over a guessed constant:
-
-```bash
-RUN_ID=$(gh run list --repo "$GH_REPO" --branch main --status success --limit 1 --json databaseId --jq '.[0].databaseId')
-gh run view "$RUN_ID" --repo "$GH_REPO" --json jobs \
-  --jq '.jobs[] | {name, startedAt, completedAt}'
-```
-
-Use the duration of the job closest in purpose to the check being budgeted (e.g. the CI job
-that runs `lint`/`typecheck`/`test`), and pad it (e.g. 1.5x) to absorb local-machine variance.
-**Fall back to a flat constant of 10 minutes per check** when CI history isn't obtainable —
-no CI configured, an API error, or no runs yet on `main`/the default branch. State explicitly
-in the Pre-Ship Checks output which source (`ci-derived` or `fallback-10m`) produced
-`{budget}`.
 
 ### Coverage Gate
 
