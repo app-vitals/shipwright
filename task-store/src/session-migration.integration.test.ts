@@ -31,14 +31,21 @@ const describeOrSkip = TEST_DB ? describe : describe.skip;
 /** Directory name of the migration under test. */
 const MIGRATION_DIR = "20260910000000_add_session_model";
 
+const MIGRATIONS_ROOT = join(import.meta.dir, "..", "prisma", "migrations");
+
 const MIGRATION_SQL_PATH = join(
-  import.meta.dir,
-  "..",
-  "prisma",
-  "migrations",
+  MIGRATIONS_ROOT,
   MIGRATION_DIR,
   "migration.sql",
 );
+
+/**
+ * Later migrations that alter the Session table. afterAll() replays their
+ * Session statements after re-creating the table so the rest of the run sees
+ * the fully-migrated shape — notably SSP-6.1's `accountId` column and
+ * `[accountId, slug]` unique, which SessionService keys on since SSP-6.7.
+ */
+const LATER_SESSION_MIGRATION_DIRS = ["20261008000000_add_account_id"];
 
 function makePrisma(): PrismaClient {
   // TEST_DB is guaranteed set — the describe block is skipped otherwise.
@@ -51,8 +58,8 @@ function makePrisma(): PrismaClient {
  * keeps this test honest: it fails if the migration ever stops creating the
  * Session table.
  */
-function migrationStatements(): string[] {
-  return readFileSync(MIGRATION_SQL_PATH, "utf8")
+function migrationStatements(path: string = MIGRATION_SQL_PATH): string[] {
+  return readFileSync(path, "utf8")
     .replace(/\/\*[\s\S]*?\*\//g, "")
     .split(";")
     .map((statement) =>
@@ -155,6 +162,14 @@ describeOrSkip("add Session model migration (integration)", () => {
       if (!(await hasSessionTable(restore))) {
         for (const statement of migrationStatements()) {
           await restore.$executeRawUnsafe(statement);
+        }
+        for (const dir of LATER_SESSION_MIGRATION_DIRS) {
+          const sessionStatements = migrationStatements(
+            join(MIGRATIONS_ROOT, dir, "migration.sql"),
+          ).filter((statement) => /"Session"/.test(statement));
+          for (const statement of sessionStatements) {
+            await restore.$executeRawUnsafe(statement);
+          }
         }
       }
     } finally {
@@ -293,5 +308,17 @@ describeOrSkip("add Session model migration (integration)", () => {
     expect(sessions).toHaveLength(1);
     expect(sessions[0]?.slug).toBe("test-session-1");
     expect(sessions[0]?.title).toBe("Test Session");
+  });
+
+  it("afterAll's restore replays later Session migrations (SSP-6.1 accountId + [accountId, slug] unique)", () => {
+    const replayed = LATER_SESSION_MIGRATION_DIRS.flatMap((dir) =>
+      migrationStatements(join(MIGRATIONS_ROOT, dir, "migration.sql")),
+    ).filter((statement) => /"Session"/.test(statement));
+    expect(replayed.some((s) => s.includes('ADD COLUMN "accountId"'))).toBe(
+      true,
+    );
+    expect(replayed.some((s) => s.includes("Session_accountId_slug_key"))).toBe(
+      true,
+    );
   });
 });

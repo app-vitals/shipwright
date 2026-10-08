@@ -2,10 +2,15 @@
  * task-store/src/session-service.ts
  * SessionService — upserts Session rows in lockstep with Task writes.
  *
- * v1 scope (SESH-1.2): upsert only. get/list/update/purge land in later
- * tasks. Task.session (String?) is a free-text field that maps 1:1 to
- * Session.slug whenever it's non-blank — a task write with a blank/absent
- * session performs no Session write at all (see isBlankSession below).
+ * Task.session (String?) is a free-text field that maps to Session.slug
+ * whenever it's non-blank — a task write with a blank/absent session performs
+ * no Session write at all (see isBlankSession below).
+ *
+ * Account keying (SSP-6.7): a Session row is identified by [accountId, slug],
+ * and its tasks are those with `task.session === slug AND task.accountId ===
+ * session.accountId`. Two accounts may use the same slug without sharing a
+ * title, archive state or rollup. Every method takes the account it operates
+ * in; the upsert hook stamps the writing task's own accountId.
  *
  * upsert() is designed to run inside the SAME transaction as the Task write
  * that triggers it: it accepts an explicit tx-compatible client
@@ -15,6 +20,7 @@
  * on and get one atomic write across both tables.
  */
 
+import { DEFAULT_ACCOUNT_ID } from "@shipwright/lib/default-account";
 import type { Clock } from "./clock.ts";
 import { SystemClock } from "./clock.ts";
 import { NotFoundError } from "./errors.ts";
@@ -75,6 +81,13 @@ export interface SessionListFilters {
    * every session unconditionally.
    */
   agentScope?: { agentId: string; repos: string[] };
+  /**
+   * Account scope (SSP-6.7). A string restricts to that account's sessions;
+   * null/undefined (admin token without ?accountId) lists every account's
+   * sessions, each labeled by its `accountId`. Either way a session's rollup
+   * only ever counts tasks from its own account.
+   */
+  accountId?: string | null;
 }
 
 /**
@@ -84,6 +97,7 @@ export interface SessionListFilters {
  */
 export interface SessionListItem {
   slug: string;
+  accountId: string;
   title: string | null;
   createdAt: Date;
   updatedAt: Date;
@@ -125,12 +139,19 @@ export interface SessionServiceLike {
   get(
     slug: string,
     agentScope?: { agentId: string; repos: string[] },
+    accountId?: string,
   ): Promise<SessionListItem | null>;
   update(
     slug: string,
     patch: SessionUpdatePatch,
     actor: string,
+    accountId?: string,
   ): Promise<SessionListItem>;
+}
+
+/** Map key joining a Session row to its tasks: same account AND same slug. */
+function sessionKey(accountId: string, slug: string): string {
+  return `${accountId}\u0000${slug}`;
 }
 
 /** True when at least one task satisfies the agentScope OR-visibility rule
@@ -205,6 +226,7 @@ export class SessionService implements SessionServiceLike {
    */
   async list(filters: SessionListFilters = {}): Promise<SessionListResult> {
     const where: Prisma.SessionWhereInput = {};
+    if (filters.accountId != null) where.accountId = filters.accountId;
     if (filters.q) {
       where.OR = [
         { slug: { contains: filters.q, mode: "insensitive" } },
@@ -213,17 +235,30 @@ export class SessionService implements SessionServiceLike {
     }
 
     const sessionRows = await this.prisma.session.findMany({ where });
-    const slugs = sessionRows.map((s) => s.slug);
-    const tasks = slugs.length
-      ? await this.prisma.task.findMany({ where: { session: { in: slugs } } })
+    // Over-fetch on accountId × slug, then keep only tasks whose exact
+    // (accountId, slug) pair has a Session row — a task in account B never
+    // lands in account A's same-slug bucket.
+    const slugs = [...new Set(sessionRows.map((s) => s.slug))];
+    const accountIds = [...new Set(sessionRows.map((s) => s.accountId))];
+    const sessionKeys = new Set(
+      sessionRows.map((s) => sessionKey(s.accountId, s.slug)),
+    );
+    const fetched = slugs.length
+      ? await this.prisma.task.findMany({
+          where: { session: { in: slugs }, accountId: { in: accountIds } },
+        })
       : [];
 
-    const tasksBySlug = new Map<string, Task[]>();
-    for (const task of tasks) {
+    const tasks: Task[] = [];
+    const tasksBySession = new Map<string, Task[]>();
+    for (const task of fetched) {
       if (task.session === null) continue;
-      const bucket = tasksBySlug.get(task.session);
+      const key = sessionKey(task.accountId, task.session);
+      if (!sessionKeys.has(key)) continue;
+      tasks.push(task);
+      const bucket = tasksBySession.get(key);
       if (bucket) bucket.push(task);
-      else tasksBySlug.set(task.session, [task]);
+      else tasksBySession.set(key, [task]);
     }
 
     const prBlockedSet = await this.lookupBlockedPrNumbers(
@@ -231,7 +266,8 @@ export class SessionService implements SessionServiceLike {
     );
 
     let items: SessionListItem[] = sessionRows.map((session) => {
-      const sessionTasks = tasksBySlug.get(session.slug) ?? [];
+      const sessionTasks =
+        tasksBySession.get(sessionKey(session.accountId, session.slug)) ?? [];
       const rollup = computeSessionRollup(
         sessionTasks,
         prBlockedSet,
@@ -244,7 +280,10 @@ export class SessionService implements SessionServiceLike {
     if (filters.agentScope) {
       const agentScope = filters.agentScope;
       items = items.filter((item) =>
-        hasQualifyingTask(tasksBySlug.get(item.slug) ?? [], agentScope),
+        hasQualifyingTask(
+          tasksBySession.get(sessionKey(item.accountId, item.slug)) ?? [],
+          agentScope,
+        ),
       );
     }
 
@@ -307,19 +346,25 @@ export class SessionService implements SessionServiceLike {
   }
 
   /**
-   * Fetch a single session by slug, flattened with its rollup. Returns null
-   * when missing OR when an agentScope is set and no task in the session
-   * qualifies (mirrors list()'s visibility rule) — both map to a route-level
-   * 404, indistinguishable to the caller by design.
+   * Fetch a single session by (accountId, slug), flattened with its rollup
+   * computed from that account's tasks only. Returns null when missing OR
+   * when an agentScope is set and no task in the session qualifies (mirrors
+   * list()'s visibility rule) — both map to a route-level 404,
+   * indistinguishable to the caller by design.
    */
   async get(
     slug: string,
     agentScope?: { agentId: string; repos: string[] },
+    accountId: string = DEFAULT_ACCOUNT_ID,
   ): Promise<SessionListItem | null> {
-    const session = await this.prisma.session.findUnique({ where: { slug } });
+    const session = await this.prisma.session.findUnique({
+      where: { accountId_slug: { accountId, slug } },
+    });
     if (!session) return null;
 
-    const tasks = await this.prisma.task.findMany({ where: { session: slug } });
+    const tasks = await this.prisma.task.findMany({
+      where: { session: slug, accountId },
+    });
 
     if (agentScope && !hasQualifyingTask(tasks, agentScope)) {
       return null;
@@ -337,31 +382,37 @@ export class SessionService implements SessionServiceLike {
   }
 
   /**
-   * Upsert the Session row implied by a task write's `session` value.
+   * Upsert the [accountId, slug] Session row implied by a task write's
+   * `session` value. `accountId` is the writing task's own account
+   * (DEFAULT_ACCOUNT_ID when omitted — never null).
    *
    * - Blank (see isBlankSession): a pure no-op — does not touch the DB at
    *   all, so tasks with session: null/""/"   " never create a Session row.
-   * - The actual write is Prisma's native `upsert()` — a single atomic
-   *   `INSERT ... ON CONFLICT (slug) DO UPDATE` statement, not a separate
-   *   findUnique-then-create/update. That matters under concurrency: two
-   *   overlapping task writes into the same brand-new slug both running a
-   *   plain findUnique-then-create would race on the create(), and a caught
-   *   P2002 from *inside* a Prisma interactive transaction doesn't actually
-   *   recover it — Postgres marks the whole transaction aborted after any
-   *   failed statement, so a subsequent COMMIT silently discards it
-   *   (including the already-successful Task insert) without Prisma
-   *   surfacing an error. A single-statement ON CONFLICT upsert has no such
-   *   window: it always cleanly creates-or-updates, never errors on a
-   *   concurrent slug collision.
-   * - `create` sets only `slug` — this call site has no title to provide, so
-   *   `title` is left null and `createdAt`/`updatedAt` fall back to their
-   *   schema defaults.
-   * - `update` sets only `archivedAt: null` — `title` and `createdAt` are
-   *   never part of the update payload, so a second write into the same
-   *   session can't overwrite an already-set title or reset createdAt.
-   *   Setting `archivedAt: null` un-archives a currently-archived row; it's
-   *   a harmless no-op value-wise when the row is already un-archived
-   *   (though Prisma still issues the UPDATE, bumping `updatedAt`).
+   * - Create is `createMany({ skipDuplicates: true })` — a single
+   *   `INSERT ... ON CONFLICT DO NOTHING` statement, not a findUnique-then-
+   *   create. That matters under concurrency: two overlapping task writes
+   *   into the same brand-new slug both running a plain create() would race,
+   *   and a caught P2002 from *inside* a Prisma interactive transaction
+   *   doesn't actually recover it — Postgres marks the whole transaction
+   *   aborted after any failed statement, so a subsequent COMMIT silently
+   *   discards it (including the already-successful Task insert). ON
+   *   CONFLICT DO NOTHING has no such window. It is deliberately
+   *   target-less (unlike a native upsert's `ON CONFLICT ("accountId",
+   *   "slug")`): until SSP-6.9 drops the legacy `slug` primary key, a second
+   *   account writing a slug another account already owns would otherwise
+   *   violate that PK and fail the task write. Under the legacy PK that
+   *   second account simply gets no Session row of its own (its rollups and
+   *   lists never see the other account's row); once the PK is gone it gets
+   *   its own row.
+   * - The create sets only `slug` + `accountId` — this call site has no
+   *   title to provide, so `title` is left null and `createdAt`/`updatedAt`
+   *   fall back to their schema defaults.
+   * - The follow-up `updateMany` sets only `archivedAt: null` on this
+   *   account's row — `title` and `createdAt` are never touched, so a second
+   *   write into the same session can't overwrite an already-set title or
+   *   reset createdAt. It un-archives a currently-archived row and is a
+   *   value-wise no-op otherwise (still bumping `updatedAt`); another
+   *   account's same-slug row is never matched.
    *
    * The pre-write `findUnique` read below exists solely to decide whether to
    * log an un-archive transition (mirroring StaleClaimReaper's console.log
@@ -372,22 +423,30 @@ export class SessionService implements SessionServiceLike {
   async upsert(
     client: PrismaTxClient,
     session: string | null | undefined,
+    accountId: string = DEFAULT_ACCOUNT_ID,
   ): Promise<void> {
     if (isBlankSession(session)) return;
     // Non-null/undefined per isBlankSession's guard above.
     const slug = session as string;
 
-    const existing = await client.session.findUnique({ where: { slug } });
+    const existing = await client.session.findUnique({
+      where: { accountId_slug: { accountId, slug } },
+    });
 
-    await client.session.upsert({
-      where: { slug },
-      create: { slug },
-      update: { archivedAt: null },
+    if (!existing) {
+      await client.session.createMany({
+        data: [{ slug, accountId }],
+        skipDuplicates: true,
+      });
+    }
+    await client.session.updateMany({
+      where: { accountId, slug },
+      data: { archivedAt: null },
     });
 
     if (existing?.archivedAt) {
       console.log(
-        `[session-service] un-archived session "${slug}" on task write at ${this.clock.now().toISOString()}`,
+        `[session-service] un-archived session "${slug}" (account "${accountId}") on task write at ${this.clock.now().toISOString()}`,
       );
     }
   }
@@ -395,17 +454,19 @@ export class SessionService implements SessionServiceLike {
   // ─── Write (SESH-3.1) ────────────────────────────────────────────────────────
 
   /**
-   * Rename and/or archive/un-archive a session. Admin-only at the route
-   * layer (routes/sessions.ts) — `actor` is whatever identity the caller
-   * attributes the change to (the route passes a fixed "admin" since only
-   * admin tokens ever reach this method).
+   * Rename and/or archive/un-archive the [accountId, slug] session — another
+   * account's same-slug session is never touched. Admin-only at the route
+   * layer (routes/sessions.ts, which passes ?accountId or the default
+   * account) — `actor` is whatever identity the caller attributes the change
+   * to (the route passes a fixed "admin" since only admin tokens ever reach
+   * this method).
    *
    * `archived: true` stamps `archivedAt: this.clock.now()` and
    * `archivedBy: actor`; `archived: false` clears both; omitted leaves the
    * archive fields untouched. `title` follows the same omit/set/null-clear
    * shape (see SessionUpdatePatch).
    *
-   * Throws NotFoundError when `slug` has no Session row — Prisma's own
+   * Throws NotFoundError when (accountId, slug) has no Session row — Prisma's own
    * P2025 (record not found) on the update is translated, mirroring
    * TaskService.update()'s translateNotFound() convention.
    *
@@ -417,6 +478,7 @@ export class SessionService implements SessionServiceLike {
     slug: string,
     patch: SessionUpdatePatch,
     actor: string,
+    accountId: string = DEFAULT_ACCOUNT_ID,
   ): Promise<SessionListItem> {
     const data: Prisma.SessionUpdateInput = {};
     if ("title" in patch) {
@@ -431,7 +493,10 @@ export class SessionService implements SessionServiceLike {
     }
 
     try {
-      await this.prisma.session.update({ where: { slug }, data });
+      await this.prisma.session.update({
+        where: { accountId_slug: { accountId, slug } },
+        data,
+      });
     } catch (err: unknown) {
       throw this.translateNotFound(err, "session not found");
     }
@@ -439,11 +504,11 @@ export class SessionService implements SessionServiceLike {
     // The row we just wrote unconditionally exists and update() is
     // admin-only (no agentScope), so get() cannot legitimately return null
     // here — the fallback exists only to satisfy the type checker.
-    const updated = await this.get(slug);
+    const updated = await this.get(slug, undefined, accountId);
     if (!updated) throw new NotFoundError("session not found");
 
     console.log(
-      `[session-service] session "${slug}" updated by ${actor}: ` +
+      `[session-service] session "${slug}" (account "${accountId}") updated by ${actor}: ` +
         `counts=${JSON.stringify(updated.counts)}`,
     );
 

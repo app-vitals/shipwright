@@ -14,8 +14,15 @@
  * visibility inside SessionService's `hasQualifyingTask()`, rather than to
  * unrestricted visibility. Only admin tokens (agentId null) are unrestricted.
  *
+ * Account scope (SSP-6.7): sessions are keyed by [accountId, slug]. Agent
+ * tokens are pinned to their resolved account (a client `?accountId=` is
+ * ignored). Admin tokens list every account's sessions (each labeled by
+ * `accountId`) unless they pass `?accountId=`; the single-session routes
+ * (GET/PATCH /:slug) address one account's row — the admin's `?accountId=`,
+ * or DEFAULT_ACCOUNT_ID when omitted.
+ *
  * Routes:
- *   GET   /sessions        list (?state, ?sort, ?agentId, ?repo, ?org, ?q, ?limit, ?offset)
+ *   GET   /sessions        list (?state, ?sort, ?agentId, ?repo, ?org, ?q, ?limit, ?offset, ?accountId)
  *                          returns { sessions, total, limit, offset }
  *   GET   /sessions/:slug  fetch one (404 when missing or out of agent scope)
  *   PATCH /sessions/:slug  rename/archive (SESH-3.1) — admin-only, 403 for
@@ -25,7 +32,10 @@
  */
 
 import { OpenAPIHono, createRoute } from "@hono/zod-openapi";
+import { DEFAULT_ACCOUNT_ID } from "@shipwright/lib/default-account";
 import { readJson } from "@shipwright/lib/http";
+import type { Context } from "hono";
+import { resolveAccountScope } from "../account-scope.ts";
 import type { TaskStoreAuthEnv } from "../auth.ts";
 import { BadRequestError, ForbiddenError, NotFoundError } from "../errors.ts";
 import {
@@ -35,6 +45,7 @@ import {
   SessionPatchBodySchema,
   SessionSchema,
   SessionSlugParamSchema,
+  SessionAccountQuerySchema,
 } from "../openapi-schemas.ts";
 import type {
   SessionListFilters,
@@ -50,7 +61,7 @@ const listRoute = createRoute({
   tags: ["sessions"],
   summary: "List sessions",
   description:
-    "Returns `{ sessions, total, limit, offset }` — each session's Task rows rolled up into a single object (`state`, `waitingSince`, `lastActivityAt`, per-status `counts`, distinct `agentIds`/`repos`, `waitingTasks`) flattened with the Session row's own fields. Omitting `?state` defaults to non-archived, non-closed sessions. Every agent token (agentId set) is scoped: it only sees sessions with at least one qualifying task — one where `assignee === agentId` OR the task's repo is in the agent's resolved scope; a token with no resolved repos degrades to assignee-only matching rather than unrestricted visibility. Only admin tokens see every session unrestricted.",
+    "Returns `{ sessions, total, limit, offset }` — each session's Task rows rolled up into a single object (`state`, `waitingSince`, `lastActivityAt`, per-status `counts`, distinct `agentIds`/`repos`, `waitingTasks`) flattened with the Session row's own fields. Omitting `?state` defaults to non-archived, non-closed sessions. Every agent token (agentId set) is scoped: it only sees sessions with at least one qualifying task — one where `assignee === agentId` OR the task's repo is in the agent's resolved scope; a token with no resolved repos degrades to assignee-only matching rather than unrestricted visibility. Only admin tokens see every session unrestricted. Agent tokens are pinned to their own account; admin tokens see every account's sessions (each labeled by `accountId`) unless `?accountId=` narrows to one. A session's rollup only counts tasks from its own account.",
   request: {
     query: SessionListQuerySchema,
   },
@@ -72,9 +83,10 @@ const getOneRoute = createRoute({
   tags: ["sessions"],
   summary: "Get a session by slug",
   description:
-    "Returns the same flattened session+rollup shape as the list route. Returns `404` if the session doesn't exist, or if an agent token has no qualifying task in it (same visibility rule as list) — the two cases are indistinguishable to the caller by design.",
+    "Returns the same flattened session+rollup shape as the list route. Returns `404` if the session doesn't exist, or if an agent token has no qualifying task in it (same visibility rule as list) — the two cases are indistinguishable to the caller by design. Sessions are keyed by `[accountId, slug]`: agent tokens resolve the slug within their own account; admin tokens address `?accountId=` (default: `default`).",
   request: {
     params: SessionSlugParamSchema,
+    query: SessionAccountQuerySchema,
   },
   responses: {
     200: {
@@ -98,9 +110,10 @@ const patchRoute = createRoute({
   tags: ["sessions"],
   summary: "Rename/archive a session — admin-only",
   description:
-    "Admin-only, no exceptions — agent tokens get `403` regardless of ownership. Body: `{ title?: string | null, archived?: boolean }`, both optional (an empty body is a no-op). `title: null` clears the title; `archived: true` sets `archivedAt`/`archivedBy`, `archived: false` clears both. Returns `404` if the session doesn't exist.",
+    "Admin-only, no exceptions — agent tokens get `403` regardless of ownership. Body: `{ title?: string | null, archived?: boolean }`, both optional (an empty body is a no-op). `title: null` clears the title; `archived: true` sets `archivedAt`/`archivedBy`, `archived: false` clears both. Returns `404` if the session doesn't exist. Only the `[accountId, slug]` row is touched — `?accountId=` (default: `default`) — so another account's same-slug session is never renamed or archived.",
   request: {
     params: SessionSlugParamSchema,
+    query: SessionAccountQuerySchema,
     body: {
       content: { "application/json": { schema: SessionPatchBodySchema } },
     },
@@ -124,6 +137,17 @@ const patchRoute = createRoute({
     },
   },
 });
+
+// ─── Helpers ──────────────────────────────────────────────────────────────────
+
+/**
+ * The single account a GET/PATCH /:slug addresses: the caller's account scope
+ * (agent: pinned; admin: ?accountId=), else DEFAULT_ACCOUNT_ID so an admin
+ * without ?accountId= keeps the pre-SSP-6.7 default-account behavior.
+ */
+function slugAccountId(c: Context<TaskStoreAuthEnv>): string {
+  return resolveAccountScope(c) ?? DEFAULT_ACCOUNT_ID;
+}
 
 // ─── Factory ──────────────────────────────────────────────────────────────────
 
@@ -153,6 +177,7 @@ export function createSessionsRoutes(
       repo: c.req.queries("repo"),
       org: c.req.queries("org"),
       q: c.req.query("q"),
+      accountId: resolveAccountScope(c),
       limit:
         limitRaw !== undefined
           ? Number.parseInt(limitRaw, 10) || undefined
@@ -183,6 +208,7 @@ export function createSessionsRoutes(
       useAgentScope
         ? { agentId: agentId as string, repos: repos ?? [] }
         : undefined,
+      slugAccountId(c),
     );
     if (!session) throw new NotFoundError("session not found");
     return c.json(session, 200);
@@ -217,6 +243,7 @@ export function createSessionsRoutes(
       c.req.param("slug"),
       patch,
       "admin",
+      slugAccountId(c),
     );
     return c.json(updated, 200);
   });
