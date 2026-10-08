@@ -14,9 +14,11 @@
 
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import type { PrismaClient } from "../prisma/client/client.ts";
+import { AccountLifecycle } from "./account-lifecycle.ts";
 import { AccountMemberService } from "./account-members.ts";
 import { AccountService } from "./accounts.ts";
 import { createAccountsApp } from "./accounts-api.ts";
+import { AgentCronJobService } from "./agent-cron-jobs.ts";
 import { createAdminPrismaClient } from "./prisma-client.ts";
 
 const TEST_DB = process.env.DATABASE_URL_ADMIN_TEST;
@@ -33,6 +35,7 @@ describeOrSkip("/accounts API (integration)", () => {
 
   beforeEach(async () => {
     prisma = createAdminPrismaClient(TEST_DB as string);
+    await prisma.agentCronJob.deleteMany();
     await prisma.accountInvite.deleteMany();
     await prisma.accountMember.deleteMany();
     await prisma.agent.deleteMany();
@@ -48,6 +51,11 @@ describeOrSkip("/accounts API (integration)", () => {
       adminApiKeys: new Map([["k", { name: "t", scope: "*" }]]),
       agentTokenService: { validate: async () => null } as never,
       accountService: accounts,
+      accountLifecycle: new AccountLifecycle({
+        accounts,
+        cronJobs: new AgentCronJobService(prisma),
+        log: () => {},
+      }),
     });
   });
 
@@ -119,5 +127,70 @@ describeOrSkip("/accounts API (integration)", () => {
       accounts: unknown[];
     };
     expect(list.accounts).toHaveLength(1);
+  });
+
+  // ─── SSP-8.2: status transitions drive the cron lockdown ──────────────────
+
+  async function agentWithCrons(accountId: string) {
+    const agent = await prisma.agent.create({
+      data: { name: "bot", accountId },
+    });
+    const mk = (enabled: boolean) =>
+      prisma.agentCronJob.create({
+        data: {
+          agentId: agent.id,
+          schedule: "0 * * * *",
+          prompt: "p",
+          channel: "C1",
+          silent: false,
+          enabled,
+        },
+      });
+    return { on: await mk(true), userOff: await mk(false) };
+  }
+
+  const patch = (id: string, body: unknown) =>
+    app.request(`/accounts/${id}`, {
+      method: "PATCH",
+      headers,
+      body: JSON.stringify(body),
+    });
+
+  const cron = (id: string) =>
+    prisma.agentCronJob.findUniqueOrThrow({ where: { id } });
+
+  it("PATCH status=suspended locks down crons; status=active restores only those", async () => {
+    const a = await accounts.create("A", "a@x.com");
+    const { on, userOff } = await agentWithCrons(a.id);
+
+    expect((await patch(a.id, { status: "suspended" })).status).toBe(200);
+    const locked = await cron(on.id);
+    expect(locked.enabled).toBe(false);
+    expect(locked.lockdownDisabledAt).not.toBeNull();
+    expect((await cron(userOff.id)).lockdownDisabledAt).toBeNull();
+
+    const res = await patch(a.id, { status: "active" });
+    expect(res.status).toBe(200);
+    expect(await res.json()).toMatchObject({ status: "active" });
+    expect((await cron(on.id)).enabled).toBe(true);
+    expect((await cron(userOff.id)).enabled).toBe(false);
+  });
+
+  it("PATCH status=active with a lapsed trial -> 422 and nothing restored", async () => {
+    const a = await accounts.create("A", "a@x.com", {
+      status: "trial_expired",
+      trialExpiresAt: new Date("2020-01-01T00:00:00.000Z"),
+    });
+    const res = await patch(a.id, { status: "active" });
+    expect(res.status).toBe(422);
+    expect(
+      (await prisma.account.findUniqueOrThrow({ where: { id: a.id } })).status,
+    ).toBe("trial_expired");
+
+    const ok = await patch(a.id, {
+      status: "active",
+      trialExpiresAt: "2099-01-01T00:00:00.000Z",
+    });
+    expect(ok.status).toBe(200);
   });
 });

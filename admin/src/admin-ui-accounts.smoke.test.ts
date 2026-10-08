@@ -16,6 +16,7 @@ import {
   type AdminAccountsRouteDeps,
   registerAdminAccountsRoutes,
 } from "./admin-ui-accounts.ts";
+import { UnprocessableEntityError } from "./errors.ts";
 
 const d = new Date("2026-01-01T00:00:00Z");
 
@@ -58,6 +59,7 @@ function setup(opts: { enabled?: boolean } = {}) {
   }> = [];
   const withCounts = () =>
     ({ ...account, agentCount: 1, memberCount: members.length }) as never;
+  const lifecycleCalls: Array<{ id: string; data: unknown }> = [];
   const owners = () => members.filter((m) => m.role === "owner").length;
 
   const deps: AdminAccountsRouteDeps = {
@@ -79,12 +81,20 @@ function setup(opts: { enabled?: boolean } = {}) {
       async getWithCounts(id) {
         return id === "a1" ? withCounts() : null;
       },
-      async update(_id, data) {
-        Object.assign(account, data);
-        return account as never;
-      },
       async listAgents() {
         return [{ id: "g1", name: "Bot" }];
+      },
+    },
+    lifecycle: {
+      async update(id, data) {
+        lifecycleCalls.push({ id, data });
+        if (data.status === "active" && account.status === "trial_expired") {
+          throw new UnprocessableEntityError(
+            "Clear or extend trialExpiresAt before reactivating.",
+          );
+        }
+        Object.assign(account, data);
+        return account as never;
       },
     },
     members: {
@@ -160,7 +170,14 @@ function setup(opts: { enabled?: boolean } = {}) {
   };
   const app = new Hono<AdminUIEnv>();
   registerAdminAccountsRoutes(app, deps);
-  return { app, account, members: () => members, agentAccounts, reconciled };
+  return {
+    app,
+    account,
+    members: () => members,
+    agentAccounts,
+    reconciled,
+    lifecycleCalls,
+  };
 }
 
 const ADMIN = { "x-test-admin": "1" };
@@ -324,6 +341,25 @@ describe("/admin/accounts", () => {
       );
     }
     expect(account.maxAgents).toBe(2);
+  });
+
+  it("suspend and reactivate go through the account lifecycle (SSP-8.2)", async () => {
+    const { app, lifecycleCalls } = setup();
+    await post(app, "/admin/accounts/a1/suspend", {});
+    await post(app, "/admin/accounts/a1/reactivate", {});
+    expect(lifecycleCalls).toEqual([
+      { id: "a1", data: { status: "suspended" } },
+      { id: "a1", data: { status: "active" } },
+    ]);
+  });
+
+  it("reactivate rejected by the lifecycle renders a 400 with the reason", async () => {
+    const { app, account } = setup();
+    account.status = "trial_expired";
+    const res = await post(app, "/admin/accounts/a1/reactivate", {});
+    expect(res.status).toBe(400);
+    expect(await res.text()).toContain("Clear or extend trialExpiresAt");
+    expect(account.status).toBe("trial_expired");
   });
 
   it("suspend and reactivate set status", async () => {

@@ -217,6 +217,30 @@ export class AgentCronJobService {
   }
 
   /**
+   * List all enabled cron jobs belonging to an agent whose account is locked
+   * (status 'suspended' or 'trial_expired') — the working set for the
+   * account-level lockdown (SSP-8.2, admin/src/account-lifecycle.ts).
+   * Optionally narrowed to one account. Agents with accountId null never
+   * match.
+   */
+  async listEnabledInLockedAccounts(
+    accountId?: string,
+  ): Promise<AgentCronJob[]> {
+    return this.prisma.agentCronJob.findMany({
+      where: {
+        enabled: true,
+        agent: {
+          account: {
+            status: { in: ["suspended", "trial_expired"] },
+            ...(accountId !== undefined ? { id: accountId } : {}),
+          },
+        },
+      },
+      orderBy: { createdAt: "asc" },
+    });
+  }
+
+  /**
    * Fetch the "shipwright-loop" cron row for each of a set of agent ids, in
    * a single query — one row per agent that has one (an agent with no
    * shipwright-loop cron simply has no entry in the result). Used by the

@@ -8,10 +8,15 @@
  * POST /accounts goes through AccountService.create(), which seeds the owner
  * AccountMember row — so that owner's first login joins this account instead
  * of creating a new one.
+ *
+ * PATCH /accounts/:id routes through AccountLifecycle.update() (SSP-8.2):
+ * status=suspended locks down the account's agents' crons, status=active
+ * restores the lockdown-disabled ones (422 if trialExpiresAt is still past).
  */
 
 import { createRoute, OpenAPIHono } from "@hono/zod-openapi";
 import { HTTPException } from "hono/http-exception";
+import type { AccountLifecycle } from "./account-lifecycle.ts";
 import type { AccountService, UpdateAccountInput } from "./accounts.ts";
 import type { AgentTokenService } from "./agent-tokens.ts";
 import {
@@ -38,8 +43,13 @@ import type { SelfServeConfig } from "./self-serve-config.ts";
 export interface AccountsApiDeps {
   accountService: Pick<
     AccountService,
-    "listWithCounts" | "getWithCounts" | "create" | "update"
+    "listWithCounts" | "getWithCounts" | "create"
   >;
+  /**
+   * PATCH goes through the lifecycle so a status change runs its cron
+   * lockdown/restore side effect (SSP-8.2).
+   */
+  accountLifecycle: Pick<AccountLifecycle, "update">;
   selfServe?: SelfServeConfig;
   sessionSecret: string;
   adminApiKeys?: Map<string, AdminApiKey>;
@@ -115,7 +125,7 @@ const patchAccountRoute = createRoute({
   tags: ["accounts"],
   summary: "Update an account",
   description:
-    "Admin-only, flag-gated. Updates name, maxAgents, plan, status and/or trialExpiresAt.",
+    "Admin-only, flag-gated. Updates name, maxAgents, plan, status and/or trialExpiresAt. status=suspended (or trial_expired) disables every enabled cron of the account's agents with a lockdown marker; status=active re-enables exactly those, and requires trialExpiresAt to be cleared or in the future (422 otherwise). Nothing is deleted.",
   request: {
     params: AccountIdParamSchema,
     body: {
@@ -128,6 +138,10 @@ const patchAccountRoute = createRoute({
       content: { "application/json": { schema: AccountResponseSchema } },
     },
     400: { description: "Bad request", ...jsonError },
+    422: {
+      description: "Reactivation with trialExpiresAt still in the past",
+      ...jsonError,
+    },
     ...errorResponses,
   },
 });
@@ -265,7 +279,7 @@ export function createAccountsApp(
         ? { trialExpiresAt: trialExpiresAt ? new Date(trialExpiresAt) : null }
         : {}),
     };
-    await accountService.update(id, data);
+    await deps.accountLifecycle.update(id, data);
     const account = await accountService.getWithCounts(id);
     if (!account) throw new NotFoundError(`account ${id} not found`);
     return c.json(serialize(account), 200);

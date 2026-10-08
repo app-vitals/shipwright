@@ -61,6 +61,9 @@ import {
   HttpChatServiceProvisioningClient,
   NoopChatServiceProvisioningClient,
 } from "./chat-service-provisioning-client.ts";
+import { AccountLifecycle } from "./account-lifecycle.ts";
+import { AccountTrialExpirySweeper } from "./account-trial-expiry-sweeper.ts";
+import { AccountTrialWarningSweeper } from "./account-trial-warning-sweeper.ts";
 import { isDevAuthAllowed } from "./dev-auth-guard.ts";
 import { HttpGithubAppProvisioningClient } from "./github-app-provisioning-client.ts";
 import { HttpGoogleAuthClient } from "./google-auth-client.ts";
@@ -506,6 +509,12 @@ async function startServer(): Promise<void> {
   // Self-serve provisioning config (SSP-1.3) — read once at startup and
   // injected as deps; no consumers yet.
   const selfServe = parseSelfServeConfig(process.env);
+  // Account status transitions → cron lockdown/restore (SSP-8.2). Shared by
+  // the /accounts PATCH handler, the admin UI and the account sweepers.
+  const accountLifecycle = new AccountLifecycle({
+    accounts: accountService,
+    cronJobs: agentCronJobService,
+  });
 
   const googleClient = new HttpGoogleAuthClient();
   // Constructed only when an issuer is configured — HttpOktaAuthClient requires
@@ -622,6 +631,7 @@ async function startServer(): Promise<void> {
     "/",
     createAccountsApp({
       accountService: new AccountService(prisma),
+      accountLifecycle,
       selfServe,
       sessionSecret,
       adminApiKeys,
@@ -733,6 +743,7 @@ async function startServer(): Promise<void> {
       accounts: new AccountService(prisma),
       members: new AccountMemberService(prisma),
       invites: new AccountInviteService(prisma),
+      lifecycle: accountLifecycle,
     },
     timezone: adminTz,
     ...(chatClient ? { chatClient } : {}),
@@ -852,6 +863,44 @@ async function startServer(): Promise<void> {
     }, trialExpirySweepIntervalMs);
     console.log(
       `[admin] trial expiry sweeper started (interval: ${trialExpirySweepIntervalMs}ms)`,
+    );
+  }
+
+  // Account trial sweepers (SSP-8.2) — the account-level counterparts of the
+  // two per-agent sweepers above (which keep running unchanged). Flag-gated:
+  // accounts only exist when self-serve is enabled. Same cadences as the
+  // per-agent pair: hourly warning, minutely expiry/lockdown. Registered
+  // HERE, never inside an app factory. No deleteAgentFully call anywhere.
+  if (selfServe.enabled) {
+    const accountTrialWarningSweeper = new AccountTrialWarningSweeper({
+      accounts: accountService,
+      agentEnvService,
+      warningDays: resolveTrialExpiryWarningDays(process.env),
+    });
+    setInterval(() => {
+      accountTrialWarningSweeper
+        .tick()
+        .catch((err) =>
+          console.error("[account-trial-warning-sweeper] tick error:", err),
+        );
+    }, DEFAULT_TRIAL_EXPIRY_WARNING_SWEEP_INTERVAL_MS);
+
+    const accountTrialExpirySweeper = new AccountTrialExpirySweeper({
+      accounts: accountService,
+      lifecycle: accountLifecycle,
+    });
+    const accountTrialExpiryIntervalMs = resolveTrialExpirySweepIntervalMs(
+      process.env,
+    );
+    setInterval(() => {
+      accountTrialExpirySweeper
+        .tick()
+        .catch((err) =>
+          console.error("[account-trial-expiry-sweeper] tick error:", err),
+        );
+    }, accountTrialExpiryIntervalMs);
+    console.log(
+      `[admin] account trial sweepers started (warning: ${DEFAULT_TRIAL_EXPIRY_WARNING_SWEEP_INTERVAL_MS}ms, expiry: ${accountTrialExpiryIntervalMs}ms)`,
     );
   }
 

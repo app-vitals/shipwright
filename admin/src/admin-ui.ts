@@ -37,6 +37,7 @@ import {
 import type { AccountCreatedNotifier } from "./account-created-notifier.ts";
 import { fireAccountCreatedNotification } from "./account-created-notifier.ts";
 import type { AccountInviteService } from "./account-invites.ts";
+import type { AccountLifecycle } from "./account-lifecycle.ts";
 import type { AccountMemberService } from "./account-members.ts";
 import type { AccountOnboardingService } from "./account-onboarding.ts";
 import type { AccountService } from "./accounts.ts";
@@ -453,6 +454,8 @@ export interface AdminUIDeps {
       "listByAccount" | "getByEmail" | "add" | "remove" | "promote" | "demote"
     >;
     invites: Pick<AccountInviteService, "create" | "listPending" | "revoke">;
+    /** SSP-8.2: admin account edits + suspend/reactivate side effects. */
+    lifecycle: Pick<AccountLifecycle, "update">;
   };
   /**
    * Fetch tasks from the task-store service. If absent, the tasks page renders
