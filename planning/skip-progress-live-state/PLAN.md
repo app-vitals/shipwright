@@ -11,7 +11,8 @@ Another agent reported PRs auto-blocked by the skip streak although their own co
 
 ## Findings
 
-- Timeline: the incident predates the patch-handled-state PRs (merged 19:06-19:54 UTC the same day). The progress-reset (#3960) and auto-clear (#3966) PRs merged 2026-10-07 21:52 / 22:14 UTC, so were probably live.
+- Root cause of the reported incident (verified from Sentry logs): the `ok-wow` agent pod had not restarted since 2026-10-04 15:15 UTC and ran the 2026-10-02 build (plugin 1.349.1, same as this agent), which predates the progress-reset (#3960, 2026-10-07 21:52 UTC) and auto-clear (#3966) PRs. Every `[silent]` run, including two that did real work, was counted as a skip - the pre-#3960 behavior. Not a new bug in the progress check. Agent image rollout is a separate issue tracked outside this session.
+- The update-branch gap below is real by code reading but was NOT demonstrated by the incident (the old build counted everything).
 - The skip counter's "did real work" check (PSL-2.1 `prMadeProgress`) compares three PR-record fields: `commitSha`, `reviewedCommitSha`, `reviewState`. `gh pr update-branch` pushes a commit and writes none of them back (only worktree fix paths 4c.5/5c.5/6d.5 do), so it reads as no progress.
 - PHS-3.1 already built a live-state reader (`agent/src/patch-outcome-check.ts`: head SHA, open finding refs, merge-dirty, CI failing). The skip counter does not use it, so two definitions of "progress" coexist.
 - With PHS-3.1's first-occurrence escalation, inherited-red CI would now BLOCK on the first no-op patch run rather than loop. That needs a settle record, same pattern as PHS-1.2.
@@ -27,7 +28,8 @@ Another agent reported PRs auto-blocked by the skip streak although their own co
 ## Out of scope / held
 
 - check-deploy not calling `clearStaleSkipBlock` (inconsistent with patch/review): left alone as higher risk (decided).
-- A review run counted as a skip (#2589, 17:04): cause unknown, needs the run's `skipReason` and the PR record from the other agent; to be added as a defined task once diagnosed with the owner.
+- A review run counted as a skip (#2589, 17:04): explained by the stale agent image (pre-#3960), no separate bug.
+- Agent image rollout / tenant pods not rolling with chart bumps: tracked in a separate session.
 
 ## Tasks
 
@@ -36,11 +38,17 @@ Another agent reported PRs auto-blocked by the skip streak although their own co
 | SLS-1.1 | Patch [silent]: reset or record skip from the live-state outcome | Background | - | sonnet |
 | SLS-2.1 | Shared ciFailureSignature helper; honor a ci:{headSha}:{signature} rejected ledger ref in candidacy and the snapshot | Shared | - | sonnet |
 | SLS-2.2 | patch.md: write the CI ref when a CI failure is judged not the PR's | CLI | 2.1 | sonnet |
+| SLS-1.2 | Patch live-state "changed" resets the streak even with a no-op skip-reason marker | Background | 1.1 | sonnet |
 
 All separate PRs, safe to deploy standalone; additive except SLS-1.1 may delete `prMadeProgress` for patch if it becomes dead code.
+
+## Follow-up found after SLS-1.1 merged
+
+SLS-1.1 gates the live-state reset on `!skipReasonMarker` (kept from PSL-2.1). A patch run whose only work was `gh pr update-branch` (Step 2.5) reaches Step 3d and emits `[skip-reason:patch:deferred:no-op-at-dispatch:{pr}]`, so it still records a skip even though the head moved. SLS-1.2 fixes this: for patch, live-state changed/settled resets regardless of that marker; unchanged live state still records the marker's reason. Review/deploy marker behavior is untouched.
 
 ## Decision Log
 
 - Replace (not supplement) the record-field progress check for patch: two definitions of progress is how this arose.
 - No base-branch CI comparison: reuse the ledger instead.
 - Deploy clear-stale-block parity deferred.
+- SLS-1.1 left as merged; marker gap handled by new task SLS-1.2 rather than editing a task already in flight.
