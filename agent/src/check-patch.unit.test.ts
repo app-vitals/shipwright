@@ -29,6 +29,41 @@ import {
 } from "./check-patch.ts";
 import { createPatchAuthorAllowlistRef } from "./patch-author-allowlist-ref.ts";
 
+// ─── PHS-1.1 characterization inventory ─────────────────────────────────────
+// Exclusion path -> tests. "EXISTING" = pre-PHS-1.1 (by name); "PHS-1.1" =
+// the "getPatchCandidates — PHS-1.1 characterization" describe at file bottom.
+// The pure hasUnaddressedFindings matrix lives in
+// plugins/shipwright/scripts/compute-unaddressed-findings.unit.test.ts (its
+// header maps those); here we pin the getPatchCandidates/hasMergeOnlyStaleFindings
+// wiring.
+//
+// Head-level exclusions reached through getPatchCandidates:
+//   PSL-1.1 same-head approval: EXISTING "is not a candidate when a body-only
+//     COMMENTED review is followed by the same reviewer's same-head APPROVED".
+//   CPF-2.1/PFL-5.1 self clean-APPROVE, empty ledger: EXISTING "self-authored
+//     clean-APPROVE at current HEAD with no task-store record ...".
+//   DRO-1.2/PFL-5.1 self-review supersede, empty ledger: PHS-1.1.
+//   PFL-3.2/5.3 ledger via record.findings: EXISTING "a qualifying THIRD-PARTY
+//     review with a matching ... ledger entry ...", "does NOT exclude ... non-matching
+//     ref"; PHS-1.1 adds source:patch / rejected via the record, and an allowlisted PR.
+//   CPF-2.3 author reply (self-authored): EXISTING "self-authored PR: prAuthor still
+//     defaults to currentUser".
+//   URT-1.1 thread reply: PHS-1.1 (own PR, allowlisted PR real author, allowlisted PR
+//     agent reply). NOTE: production fetchPrReviews requests comments(first: 1) with
+//     no createdAt, so URT-1.1 can never fire from buildProductionDeps data; these
+//     tests inject richer data.
+// prAuthor vs currentUser (RAS-1.1 / DBR-1.4 / ok-wow-agency PR #80 incident):
+//   EXISTING "allowlisted PR: a reply from the REAL author ...", "... a comment from the
+//     AGENT (not the PR author) does not address ...", "... hasMergeOnlyStaleFindings also
+//     uses the real author ...".
+//   PHS-1.1: allowlisted PR keeps isSelfCleanApprove keyed on currentUser (agent's own
+//     clean approve), authorLogin on candidates.
+// hasMergeOnlyStaleFindings (stale commit, merge-only since):
+//   EXISTING CPF-1.1/1.2 self clean-APPROVE vs real-finding tests, third-party author
+//     reply (CPF-2.3) both directions, anchor sort, unresolved-thread test.
+//   PHS-1.1 pins what the stale path does NOT apply: ledger, URT-1.1 thread replies,
+//     DRO-1.2 supersede, PSL-1.1 same-head approval (each still yields a candidate).
+
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 function makeOwnPr(overrides: Partial<OwnPr> = {}): OwnPr {
@@ -1681,6 +1716,294 @@ describe("getPatchCandidates — allowlisted authors (DBR-1.4)", () => {
     const result = await getPatchCandidates(deps);
 
     expect(result).toEqual([]);
+  });
+});
+
+// ─── PHS-1.1 characterization ─────────────────────────────────────────────────
+
+describe("getPatchCandidates — PHS-1.1 characterization", () => {
+  const HEAD = "current-head-sha";
+  const rev = (overrides: Record<string, unknown> = {}) => ({
+    author: { login: "reviewer1" },
+    state: "COMMENTED",
+    submittedAt: "2026-05-26T10:00:00Z",
+    commit: { oid: HEAD },
+    body: "Please fix this.",
+    ...overrides,
+  });
+  const ledgerEntry = (ref: string, overrides: Record<string, unknown> = {}) => ({
+    id: "f1",
+    prRecordId: "pr1",
+    ref,
+    disposition: "resolved" as const,
+    source: "review" as const,
+    evidence: "e",
+    at: "2026-05-27T00:00:00Z",
+    createdAt: "2026-05-27T00:00:00Z",
+    ...overrides,
+  });
+  const threadWith = (
+    comments: Array<{ login: string; createdAt: string }>,
+  ) => ({
+    isResolved: false,
+    comments: {
+      nodes: comments.map((c) => ({
+        author: { login: c.login },
+        body: "x",
+        createdAt: c.createdAt,
+      })),
+    },
+  });
+  const run = (
+    reviewData: PrReviewData,
+    opts: Partial<MakeDepsOptions> & {
+      record?: Parameters<NonNullable<CheckPatchDeps["queryPrRecord"]>> extends unknown
+        ? Awaited<ReturnType<NonNullable<CheckPatchDeps["queryPrRecord"]>>>
+        : never;
+    } = {},
+  ) => {
+    const { record, ...rest } = opts;
+    const deps = makeDeps({
+      ownPrs: [makeOwnPr({ number: 10, headRefOid: reviewData.headRefOid })],
+      reviewDataByPr: { 10: reviewData },
+      ...rest,
+    });
+    if (record !== undefined) deps.queryPrRecord = async () => record;
+    return getPatchCandidates(deps);
+  };
+  const mergeOnly = (stale: string, head: string) => async () => [
+    { sha: stale, parents: [{ sha: "p0" }] },
+    { sha: head, parents: [{ sha: "a" }, { sha: "b" }] },
+  ];
+
+  // --- head-level ---
+
+  test("DRO-1.2/PFL-5.1: earlier self COMMENT superseded by a later clean self-review is not a candidate with an empty ledger", async () => {
+    const result = await run(
+      makePrReviewData({
+        headRefOid: HEAD,
+        reviews: {
+          nodes: [
+            rev({
+              author: { login: "the-agent" },
+              body: "Verdict: COMMENT — bug.",
+            }),
+            rev({
+              author: { login: "the-agent" },
+              body: "Verdict: APPROVE",
+              submittedAt: "2026-05-26T11:00:00Z",
+            }),
+          ],
+        },
+      }),
+      { record: null },
+    );
+    expect(result).toEqual([]);
+  });
+
+  test("PFL-3.2: ledger entries with source:patch or disposition:rejected on the PR record do NOT exclude a third-party review", async () => {
+    const ref = `${HEAD}@2026-05-26T10:00:00Z`;
+    for (const override of [{ source: "patch" }, { disposition: "rejected" }]) {
+      const result = await run(
+        makePrReviewData({ headRefOid: HEAD, reviews: { nodes: [rev()] } }),
+        { record: { findings: [ledgerEntry(ref, override)] } as never },
+      );
+      expect(result).toHaveLength(1);
+    }
+  });
+
+  test("URT-1.1: own PR — an unresolved thread the agent (= PR author) replied to after the flag is not a candidate", async () => {
+    const result = await run(
+      makePrReviewData({
+        headRefOid: HEAD,
+        reviews: { nodes: [rev({ body: "" })] },
+        reviewThreads: {
+          nodes: [
+            threadWith([
+              { login: "reviewer1", createdAt: "2026-05-26T10:00:00Z" },
+              { login: "the-agent", createdAt: "2026-05-26T11:00:00Z" },
+            ]),
+          ],
+        },
+      }),
+    );
+    expect(result).toEqual([]);
+  });
+
+  test("URT-1.1 x DBR-1.4: allowlisted PR — a thread reply by the REAL author addresses the thread; a reply by the agent does not", async () => {
+    const mk = (replier: string) =>
+      makePrReviewData({
+        headRefOid: "allow-sha",
+        reviews: { nodes: [rev({ body: "", commit: { oid: "allow-sha" } })] },
+        reviewThreads: {
+          nodes: [
+            threadWith([
+              { login: "reviewer1", createdAt: "2026-05-26T10:00:00Z" },
+              { login: replier, createdAt: "2026-05-26T11:00:00Z" },
+            ]),
+          ],
+        },
+      });
+    const go = (replier: string) =>
+      getPatchCandidates(
+        makeDeps({
+          ownPrs: [],
+ getScopedRepos: () => ["acme/example-repo"],
+          allowlistedPrs: [
+            makeOwnPr({ number: 20, headRefOid: "allow-sha", author: "allowlisted-one" }),
+          ],
+          reviewDataByPr: { 20: mk(replier) },
+        }),
+      );
+    expect(await go("allowlisted-one")).toEqual([]);
+    expect(await go("the-agent")).toHaveLength(1);
+  });
+
+  test("PFL-3.2 x DBR-1.4: allowlisted PR — a ledger entry on the PR record excludes the third-party review", async () => {
+    const reviewData = makePrReviewData({
+      headRefOid: "allow-sha",
+      reviews: { nodes: [rev({ commit: { oid: "allow-sha" } })] },
+    });
+    const deps = makeDeps({
+      ownPrs: [],
+ getScopedRepos: () => ["acme/example-repo"],
+      allowlistedPrs: [
+        makeOwnPr({ number: 20, headRefOid: "allow-sha", author: "allowlisted-one" }),
+      ],
+      reviewDataByPr: { 20: reviewData },
+    });
+    deps.queryPrRecord = async () => ({
+      findings: [ledgerEntry("allow-sha@2026-05-26T10:00:00Z")],
+    });
+    expect(await getPatchCandidates(deps)).toEqual([]);
+  });
+
+  test("RAS-1.1 x CPF-2.1: allowlisted PR — the agent's OWN clean self-approve is still excluded (keyed on currentUser, not prAuthor)", async () => {
+    const result = await getPatchCandidates(
+      makeDeps({
+        ownPrs: [],
+ getScopedRepos: () => ["acme/example-repo"],
+        allowlistedPrs: [
+          makeOwnPr({ number: 20, headRefOid: "allow-sha", author: "allowlisted-one" }),
+        ],
+        reviewDataByPr: {
+          20: makePrReviewData({
+            headRefOid: "allow-sha",
+            reviews: {
+              nodes: [
+                rev({
+                  author: { login: "the-agent" },
+                  body: "Verdict: APPROVE",
+                  commit: { oid: "allow-sha" },
+                }),
+              ],
+            },
+          }),
+        },
+      }),
+    );
+    expect(result).toEqual([]);
+  });
+
+  test("DBR-1.4: candidate authorLogin is the allowlisted author for allowlisted PRs and undefined for self-authored PRs", async () => {
+    const result = await getPatchCandidates(
+      makeDeps({
+        ownPrs: [makeOwnPr({ number: 10 })],
+        allowlistedPrs: [makeOwnPr({ number: 20, author: "allowlisted-one" })],
+        reviewDataByPr: {},
+        mergeStatusByPr: { 10: { isDirty: true }, 20: { isDirty: true } },
+      }),
+    );
+    const byId = Object.fromEntries(result.map((c) => [c.id, c.authorLogin]));
+    expect(byId["acme/example-repo#10"]).toBeUndefined();
+    expect(byId["acme/example-repo#20"]).toBe("allowlisted-one");
+  });
+
+  // --- stale-commit / merge-only path: exclusions it does NOT apply ---
+  // NOTE: these pin asymmetries between hasUnaddressedFindings and
+  // hasMergeOnlyStaleFindings. They may be unintended but are pinned as-is.
+
+  test("stale path does not consult the ledger: a ledger-resolved stale third-party review with merge-only commits since is still a candidate", async () => {
+    const result = await run(
+      makePrReviewData({
+        headRefOid: "merge-sha",
+        reviews: { nodes: [rev({ commit: { oid: "stale-sha" } })] },
+      }),
+      {
+        record: {
+          findings: [ledgerEntry("stale-sha@2026-05-26T10:00:00Z")],
+        } as never,
+        listPrCommits: mergeOnly("stale-sha", "merge-sha"),
+      },
+    );
+    expect(result).toHaveLength(1);
+  });
+
+  test("stale path does not apply URT-1.1: an author-replied stale thread still counts as unresolved", async () => {
+    const result = await run(
+      makePrReviewData({
+        headRefOid: "merge-sha",
+        reviews: {
+          nodes: [rev({ body: "", commit: { oid: "stale-sha" } })],
+        },
+        reviewThreads: {
+          nodes: [
+            threadWith([
+              { login: "reviewer1", createdAt: "2026-05-26T10:00:00Z" },
+              { login: "the-agent", createdAt: "2026-05-26T11:00:00Z" },
+            ]),
+          ],
+        },
+      }),
+      { listPrCommits: mergeOnly("stale-sha", "merge-sha") },
+    );
+    expect(result).toHaveLength(1);
+  });
+
+  test("stale path does not apply DRO-1.2: an earlier self COMMENT with a real finding stays a stale finding even after a later clean self-review", async () => {
+    const result = await run(
+      makePrReviewData({
+        headRefOid: "merge-sha",
+        reviews: {
+          nodes: [
+            rev({
+              author: { login: "the-agent" },
+              body: "Verdict: COMMENT — bug.",
+              commit: { oid: "stale-sha" },
+            }),
+            rev({
+              author: { login: "the-agent" },
+              body: "Verdict: APPROVE",
+              submittedAt: "2026-05-26T11:00:00Z",
+              commit: { oid: "stale-sha" },
+            }),
+          ],
+        },
+      }),
+      { listPrCommits: mergeOnly("stale-sha", "merge-sha") },
+    );
+    expect(result).toHaveLength(1);
+  });
+
+  test("stale path does not apply PSL-1.1: a stale COMMENTED review followed by the same reviewer's same-head APPROVED is still a candidate", async () => {
+    const result = await run(
+      makePrReviewData({
+        headRefOid: "merge-sha",
+        reviews: {
+          nodes: [
+            rev({ commit: { oid: "stale-sha" } }),
+            rev({
+              state: "APPROVED",
+              body: "",
+              submittedAt: "2026-05-26T11:00:00Z",
+              commit: { oid: "stale-sha" },
+            }),
+          ],
+        },
+      }),
+      { listPrCommits: mergeOnly("stale-sha", "merge-sha") },
+    );
+    expect(result).toHaveLength(1);
   });
 });
 
