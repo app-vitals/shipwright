@@ -14,6 +14,10 @@ import type { ErrorCapturingClient } from "@shipwright/lib/sentry";
 import type { App } from "@slack/bolt";
 import type { WebAPIPlatformError } from "@slack/web-api";
 import {
+  type AgentAccountStatusRef,
+  agentAccountStatusRef,
+} from "./agent-account-status-ref.ts";
+import {
   type AgentSlackMembershipRef,
   agentSlackMembershipRef,
 } from "./agent-slack-membership-ref.ts";
@@ -222,6 +226,40 @@ export function isTrialExpired(
   const trialExpiresAt = trialExpiryRef.get();
   if (!trialExpiresAt) return false;
   return trialExpiresAt.getTime() < now().getTime();
+}
+
+/**
+ * The message posted (once per inbound event) when isAccountPaused() rejects a
+ * Slack message/mention/reaction — SSP-8.3.
+ */
+export const ACCOUNT_PAUSED_NOTICE =
+  "This agent is paused because its account is not active — contact us to resume.";
+
+/**
+ * The shared account-status gate used by all three event handlers — SSP-8.3.
+ * Paused when the owning account is 'suspended' or 'trial_expired'. Fails OPEN
+ * while the ref has never synced, and for agents with no account (null) or an
+ * active account. Self-heals on the next config sync after reactivation.
+ */
+export function isAccountPaused(
+  accountStatusRef: AgentAccountStatusRef,
+): boolean {
+  if (!accountStatusRef.hasSynced()) return false;
+  const status = accountStatusRef.get();
+  return status === "suspended" || status === "trial_expired";
+}
+
+/**
+ * Returns the notice to reply with when an inbound event must be rejected
+ * (trial ended, or account paused), or null when the event may proceed.
+ */
+function gateNotice(
+  trialExpiryRef: AgentTrialExpiryRef,
+  accountStatusRef: AgentAccountStatusRef,
+): string | null {
+  if (isTrialExpired(trialExpiryRef)) return TRIAL_EXPIRED_NOTICE;
+  if (isAccountPaused(accountStatusRef)) return ACCOUNT_PAUSED_NOTICE;
+  return null;
 }
 
 /**
@@ -540,6 +578,7 @@ export function createSlackApp(
   resolveUserEmailFn: ResolveUserEmailFn = async () => undefined,
   membershipRef: AgentSlackMembershipRef = agentSlackMembershipRef,
   trialExpiryRef: AgentTrialExpiryRef = agentTrialExpiryRef,
+  accountStatusRef: AgentAccountStatusRef = agentAccountStatusRef,
 ): App {
   const app = appFactory({
     token: slackConfig.botToken,
@@ -628,9 +667,10 @@ export function createSlackApp(
         return;
     }
 
-    if (isTrialExpired(trialExpiryRef)) {
+    const gateMsg = gateNotice(trialExpiryRef, accountStatusRef);
+    if (gateMsg) {
       await say({
-        text: TRIAL_EXPIRED_NOTICE,
+        text: gateMsg,
         thread_ts: msg.thread_ts ?? msg.ts,
       });
       return;
@@ -830,8 +870,9 @@ export function createSlackApp(
       return;
     }
 
-    if (isTrialExpired(trialExpiryRef)) {
-      await say({ text: TRIAL_EXPIRED_NOTICE, thread_ts: replyTs });
+    const gateMsg = gateNotice(trialExpiryRef, accountStatusRef);
+    if (gateMsg) {
+      await say({ text: gateMsg, thread_ts: replyTs });
       return;
     }
 
@@ -1028,10 +1069,11 @@ export function createSlackApp(
     if (!botUserId || ev.item_user !== botUserId) return;
     if (!ev.item.channel.startsWith("D")) return;
 
-    if (isTrialExpired(trialExpiryRef)) {
+    const gateMsg = gateNotice(trialExpiryRef, accountStatusRef);
+    if (gateMsg) {
       await client.chat.postMessage({
         channel: ev.item.channel,
-        text: TRIAL_EXPIRED_NOTICE,
+        text: gateMsg,
       });
       return;
     }

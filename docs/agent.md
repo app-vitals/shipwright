@@ -44,7 +44,7 @@ Mounted at `/agents/*`. The harness polls this every ~60s. Auth: same admin-key 
 
 | Method | Path | Description |
 |---|---|---|
-| GET | `/agents/:id/config` | Agent config bundle: decrypted `env`, `allowedTools`, installed `plugins` (with derived marketplace), `repos`, the review/patch author allowlists, the six agent-policy fields, `restrictSlackToMembers` + `memberEmails`, `trialExpiresAt`, and `phaseMethodology`. `404` if the agent doesn't exist. |
+| GET | `/agents/:id/config` | Agent config bundle: decrypted `env`, `allowedTools`, installed `plugins` (with derived marketplace), `repos`, the review/patch author allowlists, the six agent-policy fields, `restrictSlackToMembers` + `memberEmails`, `trialExpiresAt`, `accountStatus` (owning account's status, `null` when the agent has no account; synced live into `agentAccountStatusRef` so `agent/src/slack.ts`'s `isAccountPaused()` gate rejects Slack messages, mentions and reactions with a paused notice while it is `suspended` or `trial_expired` — SSP-8.3), and `phaseMethodology`. `404` if the agent doesn't exist. |
 | GET | `/agents/:id/crons` | Enabled cron jobs for the agent. `404` if the agent doesn't exist. |
 
 ### Admin CRUD API (`agents-api.ts`) — human-facing
