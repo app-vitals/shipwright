@@ -20,25 +20,48 @@ import {
   type TokenUsage,
 } from "./claude.ts";
 import { type Clock, SystemClock } from "./clock.ts";
+import type { RunContextStamp } from "./context-stamp.ts";
 import { markCronRunFailureReported } from "./cron-failure-reporter.ts";
 import type {
+  ContextBaselineEntry,
   CronRunReporter,
   ModelBreakdownEntry,
+  SkillUsageEntry,
 } from "./cron-run-reporter.ts";
+import type { RunTelemetry } from "./run-telemetry.ts";
 import { markdownToSlack } from "./format.ts";
 import { parseMarkers } from "./markers.ts";
 import { dispatchMarkers, type SynthesizeSpeechFn } from "./slack.ts";
 import type { VoiceConfig } from "./voice.ts";
 
+/**
+ * Optional per-run measurement folded into the token payload: the stream
+ * telemetry (`run-telemetry.ts`) and the always-loaded-context stamp
+ * (`context-stamp.ts`). Both are additive — a caller that passes neither
+ * gets exactly the pre-existing payload shape.
+ */
+export interface TokenPayloadExtras {
+  telemetry?: RunTelemetry;
+  contextStamp?: RunContextStamp;
+}
+
 export function buildTokenPayload(
   usage: TokenUsage | undefined,
   modelUsage: ModelUsage | undefined,
+  extras?: TokenPayloadExtras,
 ): {
   inputTokens?: number;
   outputTokens?: number;
   cacheReadTokens?: number;
   cacheCreationTokens?: number;
   modelBreakdown?: ModelBreakdownEntry[];
+  contextBaseline?: ContextBaselineEntry;
+  turns?: number;
+  toolCalls?: number;
+  skillUsage?: SkillUsageEntry[];
+  contextFingerprint?: string;
+  pluginVersion?: string;
+  claudeCodeVersion?: string;
 } {
   // Build per-model breakdown when modelUsage has entries
   let modelBreakdown: ModelBreakdownEntry[] | undefined;
@@ -53,12 +76,38 @@ export function buildTokenPayload(
     }));
   }
 
+  const telemetry = extras?.telemetry;
+  const stamp = extras?.contextStamp;
+  const firstTurn = telemetry?.firstTurn;
+
   return {
     inputTokens: usage?.input_tokens,
     outputTokens: usage?.output_tokens,
     cacheReadTokens: usage?.cache_read_input_tokens,
     cacheCreationTokens: usage?.cache_creation_input_tokens,
     ...(modelBreakdown !== undefined && { modelBreakdown }),
+    ...(firstTurn !== undefined && {
+      contextBaseline: {
+        model: firstTurn.model,
+        contextTokens: firstTurn.contextTokens,
+        inputTokens: firstTurn.inputTokens,
+        cacheCreationTokens: firstTurn.cacheCreationTokens,
+        cacheReadTokens: firstTurn.cacheReadTokens,
+      },
+    }),
+    ...(telemetry !== undefined && {
+      turns: telemetry.turns,
+      toolCalls: telemetry.toolCalls,
+    }),
+    ...(telemetry !== undefined &&
+      telemetry.skillUsage.length > 0 && { skillUsage: telemetry.skillUsage }),
+    ...(stamp !== undefined && {
+      contextFingerprint: stamp.contextFingerprint,
+    }),
+    ...(stamp?.pluginVersion != null && { pluginVersion: stamp.pluginVersion }),
+    ...(stamp?.claudeCodeVersion != null && {
+      claudeCodeVersion: stamp.claudeCodeVersion,
+    }),
   };
 }
 
@@ -146,6 +195,13 @@ export interface CronHandlerDeps {
   /** Clock for deterministic time in tests. Defaults to SystemClock(). */
   clock?: Clock;
   /**
+   * Reads the always-loaded-context stamp (workspace CLAUDE.md + rules +
+   * plugin version fingerprint, see context-stamp.ts) once per run, so the
+   * run row can be grouped by what the model was given. Optional: when
+   * absent, runs are reported without a fingerprint.
+   */
+  contextStamp?: () => RunContextStamp;
+  /**
    * Spawner used to run the preCheck script. Defaults to the real
    * Bun.spawn — overridable in tests to inject a fake process instead of
    * spawning ~15 real bun child processes per test run (CPS-1.1).
@@ -178,6 +234,7 @@ export async function handleCronRequest(
     cronRunReporter,
     agentId: _agentId,
     clock = SystemClock(),
+    contextStamp,
     spawner = Bun.spawn,
   } = deps;
 
@@ -377,6 +434,23 @@ export async function handleCronRequest(
   let modelUsage: ModelUsage | undefined;
   let result: string;
   let sessionId: string | undefined;
+  let telemetry: RunTelemetry | undefined;
+  // Stamp the always-loaded context once, before the run, so a concurrent
+  // workspace edit mid-run can't make the fingerprint disagree with what
+  // this run's first turn actually loaded. Fail-soft: a reader error just
+  // leaves the run unstamped.
+  let stamp: RunContextStamp | undefined;
+  try {
+    stamp = contextStamp?.();
+  } catch (err) {
+    console.warn(
+      `[agent:cron] job "${jobId}" context stamp failed: ${String(err)} — running unstamped`,
+    );
+  }
+  const extras = (t: RunTelemetry | undefined): TokenPayloadExtras => ({
+    telemetry: t,
+    contextStamp: stamp,
+  });
 
   // Progress push (CSU-3.2): fired as each new assistant turn completes so
   // token totals survive an agent-process OOM/deploy-kill mid-run, not just
@@ -449,6 +523,7 @@ export async function handleCronRequest(
     modelUsage = runResult.modelUsage;
     result = runResult.result;
     sessionId = runResult.sessionId;
+    telemetry = runResult.telemetry;
   } catch (err) {
     // Partial-usage-on-failure (CSU-3.2): a ClaudeTimeoutError carries
     // whatever per-model usage was accumulated before the process was
@@ -459,10 +534,23 @@ export async function handleCronRequest(
     // `modelUsage` field — any other error (including ClaudeRunError) falls
     // back to { error } only, unchanged. Mirrors loop-orchestrator.ts's
     // catch-path handling (CSU-3.1).
+    // Telemetry (first-turn baseline, counts, attribution) rides along on
+    // both error types' `partialTelemetry` — it's additive and never changes
+    // which error paths forward token totals.
+    const partialTelemetry =
+      err instanceof ClaudeTimeoutError || err instanceof ClaudeRunError
+        ? err.partialTelemetry
+        : undefined;
     const tokenPayload =
       err instanceof ClaudeTimeoutError
-        ? buildTokenPayload(undefined, err.partialModelUsage)
-        : undefined;
+        ? buildTokenPayload(
+            undefined,
+            err.partialModelUsage,
+            extras(partialTelemetry),
+          )
+        : partialTelemetry !== undefined
+          ? buildTokenPayload(undefined, undefined, extras(partialTelemetry))
+          : undefined;
 
     // sessionId (CSI-2.2): only ClaudeRunError/ClaudeTimeoutError (CSI-1.1)
     // carry a sessionId field — a timed-out or failed run may still have
@@ -493,7 +581,7 @@ export async function handleCronRequest(
   if (silent) {
     console.log(`[agent:cron] job "${jobId}" completed (silent — no post)`);
     await cronRunReporter?.completeRun(jobId, runId, clock.now(), "completed", {
-      ...buildTokenPayload(usage, modelUsage),
+      ...buildTokenPayload(usage, modelUsage, extras(telemetry)),
       sessionId,
     });
     return;
@@ -504,7 +592,7 @@ export async function handleCronRequest(
     // DMs always get a reply — [silent] is ignored when routing to a DM
     console.log(`[agent:cron] job "${jobId}" completed (silent — no post)`);
     await cronRunReporter?.completeRun(jobId, runId, clock.now(), "completed", {
-      ...buildTokenPayload(usage, modelUsage),
+      ...buildTokenPayload(usage, modelUsage, extras(telemetry)),
       sessionId,
     });
     return;
@@ -518,7 +606,7 @@ export async function handleCronRequest(
       `[agent:cron] job "${jobId}" completed but Slack is not configured — delivery skipped (set SLACK_BOT_TOKEN + SLACK_APP_TOKEN, or mark the job silent)`,
     );
     await cronRunReporter?.completeRun(jobId, runId, clock.now(), "completed", {
-      ...buildTokenPayload(usage, modelUsage),
+      ...buildTokenPayload(usage, modelUsage, extras(telemetry)),
       sessionId,
     });
     return;
@@ -536,7 +624,7 @@ export async function handleCronRequest(
     // Record completion before Slack delivery — a Slack error must not
     // overwrite a successful run with outcome='failed'.
     await cronRunReporter?.completeRun(jobId, runId, clock.now(), "completed", {
-      ...buildTokenPayload(usage, modelUsage),
+      ...buildTokenPayload(usage, modelUsage, extras(telemetry)),
       sessionId,
     });
 
@@ -576,7 +664,7 @@ export async function handleCronRequest(
     // fail (network error or null channel), and we must not leave the
     // AgentCronRun row permanently open if it does.
     await cronRunReporter?.completeRun(jobId, runId, clock.now(), "completed", {
-      ...buildTokenPayload(usage, modelUsage),
+      ...buildTokenPayload(usage, modelUsage, extras(telemetry)),
       sessionId,
     });
 

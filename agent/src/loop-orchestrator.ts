@@ -106,7 +106,13 @@ import {
 } from "./claude.ts";
 import { type Clock, SystemClock } from "./clock.ts";
 import { markCronRunFailureReported } from "./cron-failure-reporter.ts";
-import { buildTokenPayload, formatCronMessage } from "./cron-handler.ts";
+import type { RunContextStamp } from "./context-stamp.ts";
+import {
+  buildTokenPayload,
+  formatCronMessage,
+  type TokenPayloadExtras,
+} from "./cron-handler.ts";
+import type { RunTelemetry } from "./run-telemetry.ts";
 import type { CronRunReporter } from "./cron-run-reporter.ts";
 import {
   type CronJobLike,
@@ -398,6 +404,12 @@ export interface LoopOrchestratorDeps {
   loopCronId: string;
   /** Clock for deterministic run timestamps. Defaults to SystemClock(). */
   clock?: Clock;
+  /**
+   * Reads the always-loaded-context stamp (see context-stamp.ts) once per
+   * dispatch so the run row can be grouped by what the model was given.
+   * Optional: absent → runs are reported without a fingerprint.
+   */
+  contextStamp?: () => RunContextStamp;
   /**
    * LO-1.1 — optional injected Sentry client, mirroring cron-failure-
    * reporter.ts's sentryClient?.captureException pattern (undefined when
@@ -691,6 +703,7 @@ export function createLoopOrchestrator(
     workQueueReporter,
     loopCronId,
     clock = SystemClock(),
+    contextStamp,
     sentryClient,
   } = deps;
 
@@ -1003,6 +1016,22 @@ export function createLoopOrchestrator(
       const prProgressBefore =
         itemType === "pr" ? await snapshotPrProgress(recordId) : null;
 
+      // Stamp the always-loaded context once per dispatch, before the run,
+      // so a mid-run workspace edit can't make the fingerprint disagree with
+      // what this run's first turn loaded. Fail-soft: unstamped on error.
+      let stamp: RunContextStamp | undefined;
+      try {
+        stamp = contextStamp?.();
+      } catch (err) {
+        console.warn(
+          `[loop-orchestrator] context stamp failed for run ${runId}: ${String(err)} — running unstamped`,
+        );
+      }
+      const extras = (t: RunTelemetry | undefined): TokenPayloadExtras => ({
+        telemetry: t,
+        contextStamp: stamp,
+      });
+
       let runResult: ClaudeRunResult;
       try {
         runResult = await runner(
@@ -1033,10 +1062,24 @@ export function createLoopOrchestrator(
         // ClaudeTimeoutError's `partialModelUsage` field, not ClaudeRunError's
         // differently-named `modelUsage` field — any other error (including
         // ClaudeRunError) falls back to { error } only, unchanged.
+        const partialTelemetry =
+          err instanceof ClaudeTimeoutError || err instanceof ClaudeRunError
+            ? err.partialTelemetry
+            : undefined;
         const tokenPayload =
           err instanceof ClaudeTimeoutError
-            ? buildTokenPayload(undefined, err.partialModelUsage)
-            : undefined;
+            ? buildTokenPayload(
+                undefined,
+                err.partialModelUsage,
+                extras(partialTelemetry),
+              )
+            : partialTelemetry !== undefined
+              ? buildTokenPayload(
+                  undefined,
+                  undefined,
+                  extras(partialTelemetry),
+                )
+              : undefined;
 
         // CSI-2.3: mirror cron-handler.ts's (CSI-2.2) session-id extraction —
         // only ClaudeRunError/ClaudeTimeoutError carry a sessionId field; any
@@ -1102,7 +1145,11 @@ export function createLoopOrchestrator(
           clock.now(),
           skipReason,
           {
-            ...buildTokenPayload(runResult.usage, runResult.modelUsage),
+            ...buildTokenPayload(
+              runResult.usage,
+              runResult.modelUsage,
+              extras(runResult.telemetry),
+            ),
             sessionId: runResult.sessionId,
           },
           phaseId ?? undefined,
@@ -1160,7 +1207,11 @@ export function createLoopOrchestrator(
         clock.now(),
         "completed",
         {
-          ...buildTokenPayload(runResult.usage, runResult.modelUsage),
+          ...buildTokenPayload(
+            runResult.usage,
+            runResult.modelUsage,
+            extras(runResult.telemetry),
+          ),
           sessionId: runResult.sessionId,
         },
         phaseId ?? undefined,
@@ -1939,6 +1990,8 @@ export interface LoopOrchestratorGetterDeps {
   sentryClient?: ErrorCapturingClient;
   /** DTW-1.3 — see LoopOrchestratorDeps's clearSessionKey doc comment. */
   clearSessionKey?: (key: string) => Promise<void>;
+  /** See LoopOrchestratorDeps's contextStamp doc comment. */
+  contextStamp?: () => RunContextStamp;
 }
 
 /**
@@ -1975,6 +2028,7 @@ export function createLoopOrchestratorGetter(
         loopCronId,
         sentryClient: deps.sentryClient,
         clearSessionKey: deps.clearSessionKey,
+        contextStamp: deps.contextStamp,
       })
         .then((orch) => {
           orchestrator = orch;
@@ -2009,6 +2063,8 @@ export interface LoopOrchestratorProductionOptions {
   sentryClient?: ErrorCapturingClient;
   /** DTW-1.3 — see LoopOrchestratorDeps's clearSessionKey doc comment. */
   clearSessionKey?: (key: string) => Promise<void>;
+  /** See LoopOrchestratorDeps's contextStamp doc comment. */
+  contextStamp?: () => RunContextStamp;
 }
 
 /**
@@ -2151,6 +2207,7 @@ export async function createProductionLoopOrchestrator(
     // "stop resuming".
     heartbeatPr: (id) => taskStoreClient.heartbeatPr(id),
     clearSessionKey: opts.clearSessionKey,
+    contextStamp: opts.contextStamp,
     runner: opts.runner,
     cronRunReporter: opts.cronRunReporter,
     workQueueReporter: opts.workQueueReporter,

@@ -47,6 +47,31 @@ export interface DailyTokenAggregate extends TokenAggregate {
   period: string;
 }
 
+/** Per-skill / per-subagent token attribution (prompt-audit metrics). */
+export interface SkillTokenAggregate extends TokenAggregate {
+  kind: string; // skill | agent | root
+  name: string;
+  runs: number;
+  invocations: number;
+  turns: number;
+  avgInvokeContextDelta: number | null;
+}
+
+/** Always-loaded-context baseline series, keyed by what the model was given. */
+export interface ContextBaselineAggregate {
+  contextFingerprint: string | null;
+  baselineModel: string;
+  phase: string | null;
+  runs: number;
+  avgContextTokens: number;
+  minContextTokens: number;
+  maxContextTokens: number;
+  avgTurns: number | null;
+  avgToolCalls: number | null;
+  firstSeen: string;
+  lastSeen: string;
+}
+
 /** Cron-run-sourced stats: carries per-cron + per-model groupings. */
 export interface CronRunTokenStats {
   totals: TokenAggregate;
@@ -56,6 +81,10 @@ export interface CronRunTokenStats {
   daily: DailyTokenAggregate[];
   byCronModel: DoubleKeyedTokenAggregate[]; // key1=agentId:cronName, key2=model
   byPhase: KeyedTokenAggregate[]; // key=phase; runs with a null phase are excluded
+  /** Optional: absent from admin builds that predate the prompt-audit metrics. */
+  bySkill?: SkillTokenAggregate[];
+  /** Optional: absent from admin builds that predate the prompt-audit metrics. */
+  baselines?: ContextBaselineAggregate[];
 }
 
 /** Chat-daily-sourced stats: per-agent + per-model + daily. */

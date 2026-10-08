@@ -190,6 +190,18 @@ Controls how the admin service provisions the Kubernetes workload backing each a
 | `SHIPWRIGHT_STARTUP_TIMEOUT_MS` | `number` | `180000` | Maximum milliseconds the entrypoint startup sequence may take before the agent exits. Override to a lower value (e.g. `10000`) in dev for faster fail-fast feedback. |
 | `AGENT_ALLOWED_TOOLS` | `string` (JSON array) | — | JSON array of allowed Claude tool patterns. Set by the admin service config sync; do not set manually in production. |
 
+### Telemetry (optional)
+
+The agent records per-run token telemetry itself — the first-turn context baseline, turn/tool-call counts, per-skill attribution, and the always-loaded-context fingerprint — straight from the Claude CLI stream and reports it to the admin API (see [`docs/agent-api-ops.md`](./agent-api-ops.md#cron-run-stats)). No env var is needed for that path.
+
+Claude Code's own OpenTelemetry export is an independent, operator-side alternative for per-skill cost that is **not** wired into any manifest or chart. It needs a collector/backend of your own and is unavailable on Bedrock/Vertex or when telemetry is disabled:
+
+| Variable | Description |
+|----------|-------------|
+| `CLAUDE_CODE_ENABLE_TELEMETRY` | Set to `1` in the spawned CLI's environment to emit `claude_code.token.usage` / `claude_code.cost.usage` metrics and `claude_code.api_request` events, attributed by `skill.name`, `plugin.name`, `agent.name`, and `model`. |
+| `OTEL_LOG_TOOL_DETAILS` | Set to `1` to keep skill and plugin names in the attributes; they are redacted by default. |
+| `OTEL_METRICS_EXPORTER`, `OTEL_EXPORTER_OTLP_ENDPOINT` | Standard OTLP exporter configuration for the collector. |
+
 ### Voice
 
 Optional. When unset, voice transcription and synthesis are disabled.

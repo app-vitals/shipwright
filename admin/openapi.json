@@ -306,6 +306,40 @@
           }
         }
       },
+      "FailedStep": {
+        "type": "object",
+        "properties": {
+          "step": {
+            "type": "string",
+            "example": "k8s"
+          },
+          "error": {
+            "type": "string",
+            "example": "k8s API timeout"
+          }
+        },
+        "required": [
+          "step",
+          "error"
+        ]
+      },
+      "ManualStep": {
+        "type": "object",
+        "properties": {
+          "key": {
+            "type": "string",
+            "example": "GH_TOKEN"
+          },
+          "message": {
+            "type": "string",
+            "example": "GH_TOKEN was not automatically revoked — rotate or revoke it manually."
+          }
+        },
+        "required": [
+          "key",
+          "message"
+        ]
+      },
       "DeleteAgentResult": {
         "type": "object",
         "properties": {
@@ -342,40 +376,6 @@
           "completed",
           "failed",
           "manualStepsRequired"
-        ]
-      },
-      "FailedStep": {
-        "type": "object",
-        "properties": {
-          "step": {
-            "type": "string",
-            "example": "k8s"
-          },
-          "error": {
-            "type": "string",
-            "example": "k8s API timeout"
-          }
-        },
-        "required": [
-          "step",
-          "error"
-        ]
-      },
-      "ManualStep": {
-        "type": "object",
-        "properties": {
-          "key": {
-            "type": "string",
-            "example": "GH_TOKEN"
-          },
-          "message": {
-            "type": "string",
-            "example": "GH_TOKEN was not automatically revoked — rotate or revoke it manually."
-          }
-        },
-        "required": [
-          "key",
-          "message"
         ]
       },
       "DeleteAgentBody": {
@@ -536,17 +536,6 @@
           "env"
         ]
       },
-      "CronWrapper": {
-        "type": "object",
-        "properties": {
-          "cron": {
-            "$ref": "#/components/schemas/AgentCronJob"
-          }
-        },
-        "required": [
-          "cron"
-        ]
-      },
       "AgentCronJob": {
         "type": "object",
         "properties": {
@@ -639,6 +628,17 @@
           "parentCronId",
           "createdAt",
           "updatedAt"
+        ]
+      },
+      "CronWrapper": {
+        "type": "object",
+        "properties": {
+          "cron": {
+            "$ref": "#/components/schemas/AgentCronJob"
+          }
+        },
+        "required": [
+          "cron"
         ]
       },
       "CreateAgentCronJobBody": {
@@ -755,43 +755,6 @@
           }
         }
       },
-      "CronsWithSummaryWrapper": {
-        "type": "object",
-        "properties": {
-          "crons": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/AgentCronJobWithRunSummary"
-            }
-          }
-        },
-        "required": [
-          "crons"
-        ]
-      },
-      "AgentCronJobWithRunSummary": {
-        "allOf": [
-          {
-            "$ref": "#/components/schemas/AgentCronJob"
-          },
-          {
-            "type": "object",
-            "properties": {
-              "lastRun": {
-                "$ref": "#/components/schemas/CronRunLastRun"
-              },
-              "runCountToday": {
-                "type": "integer",
-                "example": 3
-              }
-            },
-            "required": [
-              "lastRun",
-              "runCountToday"
-            ]
-          }
-        ]
-      },
       "CronRunLastRun": {
         "type": [
           "object",
@@ -831,16 +794,115 @@
         ],
         "example": null
       },
-      "CronRunWrapper": {
+      "AgentCronJobWithRunSummary": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/AgentCronJob"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "lastRun": {
+                "$ref": "#/components/schemas/CronRunLastRun"
+              },
+              "runCountToday": {
+                "type": "integer",
+                "example": 3
+              }
+            },
+            "required": [
+              "lastRun",
+              "runCountToday"
+            ]
+          }
+        ]
+      },
+      "CronsWithSummaryWrapper": {
         "type": "object",
         "properties": {
-          "run": {
-            "$ref": "#/components/schemas/AgentCronRun"
+          "crons": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AgentCronJobWithRunSummary"
+            }
           }
         },
         "required": [
-          "run"
+          "crons"
         ]
+      },
+      "ModelBreakdownEntry": {
+        "type": "object",
+        "properties": {
+          "model": {
+            "type": "string",
+            "example": "claude-sonnet-4-5"
+          },
+          "inputTokens": {
+            "type": "integer",
+            "default": 0,
+            "example": 200
+          },
+          "outputTokens": {
+            "type": "integer",
+            "default": 0,
+            "example": 100
+          },
+          "cacheReadTokens": {
+            "type": "integer",
+            "default": 0,
+            "example": 8
+          },
+          "cacheCreationTokens": {
+            "type": "integer",
+            "default": 0,
+            "example": 4
+          },
+          "costUsd": {
+            "type": "number",
+            "default": 0,
+            "example": 0.002
+          }
+        },
+        "required": [
+          "model"
+        ]
+      },
+      "ContextBaselineEntry": {
+        "type": [
+          "object",
+          "null"
+        ],
+        "properties": {
+          "model": {
+            "type": "string",
+            "example": "claude-sonnet-4-6"
+          },
+          "contextTokens": {
+            "type": "integer",
+            "example": 79188
+          },
+          "inputTokens": {
+            "type": "integer",
+            "example": 2
+          },
+          "cacheCreationTokens": {
+            "type": "integer",
+            "example": 41415
+          },
+          "cacheReadTokens": {
+            "type": "integer",
+            "example": 37771
+          }
+        },
+        "required": [
+          "model",
+          "contextTokens",
+          "inputTokens",
+          "cacheCreationTokens",
+          "cacheReadTokens"
+        ],
+        "description": "First-turn context baseline (null for resumed sessions and runs from older agent builds)."
       },
       "AgentCronRun": {
         "type": "object",
@@ -900,24 +962,24 @@
               "string",
               "null"
             ],
-            "example": "clx0987654321",
-            "description": "Child AgentCronJob id (FK) of the pipeline phase this run served (dev-task/review/patch/deploy). Null for legacy five-job crons or ticks with no phase attribution."
+            "description": "Child AgentCronJob id (FK) of the pipeline phase this run served (dev-task/review/patch/deploy). Null for legacy five-job crons or ticks with no phase attribution.",
+            "example": "clx0987654321"
           },
           "itemType": {
             "type": [
               "string",
               "null"
             ],
-            "example": "task",
-            "description": "Work item type this run was dispatched against (\"task\" | \"pr\"). Null when the tick had no dispatch (skipped tick, empty queue)."
+            "description": "Work item type this run was dispatched against (\"task\" | \"pr\"). Null when the tick had no dispatch (skipped tick, empty queue).",
+            "example": "task"
           },
           "itemId": {
             "type": [
               "string",
               "null"
             ],
-            "example": "WLS-2.2",
-            "description": "Work item id this run was dispatched against (e.g. \"WLS-2.2\" or \"acme/x#123\"). Null when the tick had no dispatch."
+            "description": "Work item id this run was dispatched against (e.g. \"WLS-2.2\" or \"acme/x#123\"). Null when the tick had no dispatch.",
+            "example": "WLS-2.2"
           },
           "inputTokens": {
             "type": [
@@ -952,8 +1014,8 @@
               "string",
               "null"
             ],
-            "example": "session-abc-123",
-            "description": "Agent session id this run was executed under. Null for runs with no recorded session."
+            "description": "Agent session id this run was executed under. Null for runs with no recorded session.",
+            "example": "session-abc-123"
           },
           "lastHeartbeatAt": {
             "type": [
@@ -961,8 +1023,8 @@
               "null"
             ],
             "format": "date-time",
-            "example": "2026-01-01T08:00:03.000Z",
-            "description": "Most recent debounced progress-push (recordProgress()) timestamp, sourced from the agent's injected Clock. Null for runs that never reported progress (short/legacy runs)."
+            "description": "Most recent debounced progress-push (recordProgress()) timestamp, sourced from the agent's injected Clock. Null for runs that never reported progress (short/legacy runs).",
+            "example": "2026-01-01T08:00:03.000Z"
           },
           "createdAt": {
             "type": "string",
@@ -974,6 +1036,44 @@
             "items": {
               "$ref": "#/components/schemas/ModelBreakdownEntry"
             }
+          },
+          "contextBaseline": {
+            "$ref": "#/components/schemas/ContextBaselineEntry"
+          },
+          "turns": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "example": 12
+          },
+          "toolCalls": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "example": 7
+          },
+          "contextFingerprint": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "example": "abc123def456"
+          },
+          "pluginVersion": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "example": "1.363.0"
+          },
+          "claudeCodeVersion": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "example": "2.1.285"
           }
         },
         "required": [
@@ -998,41 +1098,15 @@
           "createdAt"
         ]
       },
-      "ModelBreakdownEntry": {
+      "CronRunWrapper": {
         "type": "object",
         "properties": {
-          "model": {
-            "type": "string",
-            "example": "claude-sonnet-4-5"
-          },
-          "inputTokens": {
-            "type": "integer",
-            "default": 0,
-            "example": 200
-          },
-          "outputTokens": {
-            "type": "integer",
-            "default": 0,
-            "example": 100
-          },
-          "cacheReadTokens": {
-            "type": "integer",
-            "default": 0,
-            "example": 8
-          },
-          "cacheCreationTokens": {
-            "type": "integer",
-            "default": 0,
-            "example": 4
-          },
-          "costUsd": {
-            "type": "number",
-            "default": 0,
-            "example": 0.002
+          "run": {
+            "$ref": "#/components/schemas/AgentCronRun"
           }
         },
         "required": [
-          "model"
+          "run"
         ]
       },
       "CreateAgentCronRunBody": {
@@ -1081,24 +1155,24 @@
               "string",
               "null"
             ],
-            "example": "clx0987654321",
-            "description": "Child AgentCronJob id (FK) of the pipeline phase this run served (dev-task/review/patch/deploy)"
+            "description": "Child AgentCronJob id (FK) of the pipeline phase this run served (dev-task/review/patch/deploy)",
+            "example": "clx0987654321"
           },
           "itemType": {
             "type": [
               "string",
               "null"
             ],
-            "example": "task",
-            "description": "Work item type this run was dispatched against (\"task\" | \"pr\")"
+            "description": "Work item type this run was dispatched against (\"task\" | \"pr\")",
+            "example": "task"
           },
           "itemId": {
             "type": [
               "string",
               "null"
             ],
-            "example": "WLS-2.2",
-            "description": "Work item id this run was dispatched against (e.g. \"WLS-2.2\" or \"acme/x#123\")"
+            "description": "Work item id this run was dispatched against (e.g. \"WLS-2.2\" or \"acme/x#123\")",
+            "example": "WLS-2.2"
           }
         },
         "required": [
@@ -1143,6 +1217,66 @@
         },
         "required": [
           "run"
+        ]
+      },
+      "SkillUsageEntry": {
+        "type": "object",
+        "properties": {
+          "kind": {
+            "type": "string",
+            "enum": [
+              "skill",
+              "agent",
+              "root"
+            ],
+            "example": "skill"
+          },
+          "name": {
+            "type": "string",
+            "example": "shipwright:task-store"
+          },
+          "invocations": {
+            "type": "integer",
+            "example": 1
+          },
+          "turns": {
+            "type": "integer",
+            "example": 3
+          },
+          "inputTokens": {
+            "type": "integer",
+            "example": 12
+          },
+          "outputTokens": {
+            "type": "integer",
+            "example": 100
+          },
+          "cacheReadTokens": {
+            "type": "integer",
+            "example": 219200
+          },
+          "cacheCreationTokens": {
+            "type": "integer",
+            "example": 9300
+          },
+          "invokeContextDelta": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "description": "input + cacheCreation of the first usage-bearing turn after the skill's first invoke — the new context admitted when its body loaded. Null for root/agent rows.",
+            "example": 9103
+          }
+        },
+        "required": [
+          "kind",
+          "name",
+          "invocations",
+          "turns",
+          "inputTokens",
+          "outputTokens",
+          "cacheReadTokens",
+          "cacheCreationTokens"
         ]
       },
       "PatchAgentCronRunBody": {
@@ -1214,8 +1348,8 @@
               "string",
               "null"
             ],
-            "example": "session-abc-123",
-            "description": "Agent session id this run was executed under."
+            "description": "Agent session id this run was executed under.",
+            "example": "session-abc-123"
           },
           "lastHeartbeatAt": {
             "type": [
@@ -1223,8 +1357,8 @@
               "null"
             ],
             "format": "date-time",
-            "example": "2026-01-01T08:00:03.000Z",
-            "description": "Most recent debounced progress-push (recordProgress()) timestamp, sourced from the agent's injected Clock."
+            "description": "Most recent debounced progress-push (recordProgress()) timestamp, sourced from the agent's injected Clock.",
+            "example": "2026-01-01T08:00:03.000Z"
           },
           "modelBreakdown": {
             "type": "array",
@@ -1232,19 +1366,64 @@
               "$ref": "#/components/schemas/ModelBreakdownEntry"
             },
             "description": "Per-model token breakdown for this run"
+          },
+          "contextBaseline": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/ContextBaselineEntry"
+              },
+              {
+                "type": "object",
+                "description": "First-turn context baseline: usage of the run's first assistant message. contextTokens = input + cacheCreation + cacheRead — the full always-loaded context independent of cache warmth. Omitted for resumed sessions."
+              }
+            ]
+          },
+          "turns": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "description": "Distinct usage-bearing assistant turns in the run.",
+            "example": 12
+          },
+          "toolCalls": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "description": "Distinct tool_use blocks in the run.",
+            "example": 7
+          },
+          "contextFingerprint": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "sha256[:12] over the workspace's always-loaded markdown (CLAUDE.md, its @imports, no-`paths` rules) + plugin version. Groups runs by what the model was given.",
+            "example": "abc123def456"
+          },
+          "pluginVersion": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "example": "1.363.0"
+          },
+          "claudeCodeVersion": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "example": "2.1.285"
+          },
+          "skillUsage": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SkillUsageEntry"
+            },
+            "description": "Per-skill / per-subagent token attribution rows for this run; upserted per [kind, name]."
           }
         }
-      },
-      "ToolWrapper": {
-        "type": "object",
-        "properties": {
-          "tool": {
-            "$ref": "#/components/schemas/AgentTool"
-          }
-        },
-        "required": [
-          "tool"
-        ]
       },
       "AgentTool": {
         "type": "object",
@@ -1277,6 +1456,17 @@
           "pattern",
           "enabled",
           "createdAt"
+        ]
+      },
+      "ToolWrapper": {
+        "type": "object",
+        "properties": {
+          "tool": {
+            "$ref": "#/components/schemas/AgentTool"
+          }
+        },
+        "required": [
+          "tool"
         ]
       },
       "CreateAgentToolBody": {
@@ -1318,22 +1508,6 @@
           "enabled"
         ]
       },
-      "CreateAgentTokenResponse": {
-        "type": "object",
-        "properties": {
-          "token": {
-            "$ref": "#/components/schemas/AgentToken"
-          },
-          "rawToken": {
-            "type": "string",
-            "example": "swt_v1_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
-          }
-        },
-        "required": [
-          "token",
-          "rawToken"
-        ]
-      },
       "AgentToken": {
         "type": "object",
         "properties": {
@@ -1372,6 +1546,22 @@
           "createdAt"
         ]
       },
+      "CreateAgentTokenResponse": {
+        "type": "object",
+        "properties": {
+          "token": {
+            "$ref": "#/components/schemas/AgentToken"
+          },
+          "rawToken": {
+            "type": "string",
+            "example": "swt_v1_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+          }
+        },
+        "required": [
+          "token",
+          "rawToken"
+        ]
+      },
       "CreateAgentTokenBody": {
         "type": "object",
         "properties": {
@@ -1393,17 +1583,6 @@
         },
         "required": [
           "tokens"
-        ]
-      },
-      "PluginWrapper": {
-        "type": "object",
-        "properties": {
-          "plugin": {
-            "$ref": "#/components/schemas/AgentPlugin"
-          }
-        },
-        "required": [
-          "plugin"
         ]
       },
       "AgentPlugin": {
@@ -1452,6 +1631,17 @@
           "updatedAt"
         ]
       },
+      "PluginWrapper": {
+        "type": "object",
+        "properties": {
+          "plugin": {
+            "$ref": "#/components/schemas/AgentPlugin"
+          }
+        },
+        "required": [
+          "plugin"
+        ]
+      },
       "CreateAgentPluginBody": {
         "type": "object",
         "properties": {
@@ -1498,20 +1688,6 @@
           }
         }
       },
-      "PhaseMethodologyListWrapper": {
-        "type": "object",
-        "properties": {
-          "phaseMethodology": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/AgentPhaseMethodology"
-            }
-          }
-        },
-        "required": [
-          "phaseMethodology"
-        ]
-      },
       "AgentPhaseMethodology": {
         "type": "object",
         "properties": {
@@ -1556,6 +1732,20 @@
           "updatedAt"
         ]
       },
+      "PhaseMethodologyListWrapper": {
+        "type": "object",
+        "properties": {
+          "phaseMethodology": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AgentPhaseMethodology"
+            }
+          }
+        },
+        "required": [
+          "phaseMethodology"
+        ]
+      },
       "PhaseMethodologyWrapper": {
         "type": "object",
         "properties": {
@@ -1581,59 +1771,6 @@
         },
         "required": [
           "subagentType"
-        ]
-      },
-      "CronRunTokenStats": {
-        "type": "object",
-        "properties": {
-          "totals": {
-            "$ref": "#/components/schemas/TokenAggregate"
-          },
-          "byAgent": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/KeyedTokenAggregate"
-            }
-          },
-          "byCron": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/DoubleKeyedTokenAggregate"
-            }
-          },
-          "byModel": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/DoubleKeyedTokenAggregate"
-            }
-          },
-          "daily": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/DailyTokenAggregate"
-            }
-          },
-          "byCronModel": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/DoubleKeyedTokenAggregate"
-            }
-          },
-          "byPhase": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/KeyedTokenAggregate"
-            }
-          }
-        },
-        "required": [
-          "totals",
-          "byAgent",
-          "byCron",
-          "byModel",
-          "daily",
-          "byCronModel",
-          "byPhase"
         ]
       },
       "TokenAggregate": {
@@ -1741,6 +1878,198 @@
           }
         ]
       },
+      "SkillTokenAggregate": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/TokenAggregate"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "kind": {
+                "type": "string",
+                "description": "skill | agent | root",
+                "example": "skill"
+              },
+              "name": {
+                "type": "string",
+                "example": "shipwright:task-store"
+              },
+              "runs": {
+                "type": "integer",
+                "example": 3
+              },
+              "invocations": {
+                "type": "integer",
+                "example": 3
+              },
+              "turns": {
+                "type": "integer",
+                "example": 9
+              },
+              "avgInvokeContextDelta": {
+                "type": [
+                  "number",
+                  "null"
+                ],
+                "description": "Mean of invokeContextDelta (input + cacheCreation of the first turn after the skill's first invoke) over rows where it was recorded; null if none.",
+                "example": 9103
+              }
+            },
+            "required": [
+              "kind",
+              "name",
+              "runs",
+              "invocations",
+              "turns",
+              "avgInvokeContextDelta"
+            ]
+          }
+        ]
+      },
+      "ContextBaselineAggregate": {
+        "type": "object",
+        "properties": {
+          "contextFingerprint": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "example": "abc123def456"
+          },
+          "baselineModel": {
+            "type": "string",
+            "example": "claude-sonnet-4-6"
+          },
+          "phase": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "example": "dev-task"
+          },
+          "runs": {
+            "type": "integer",
+            "example": 4
+          },
+          "avgContextTokens": {
+            "type": "number",
+            "example": 79188
+          },
+          "minContextTokens": {
+            "type": "number",
+            "example": 78000
+          },
+          "maxContextTokens": {
+            "type": "number",
+            "example": 80500
+          },
+          "avgTurns": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "example": 12.5
+          },
+          "avgToolCalls": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "example": 7
+          },
+          "firstSeen": {
+            "type": "string",
+            "format": "date-time",
+            "example": "2026-01-10T08:00:00.000Z"
+          },
+          "lastSeen": {
+            "type": "string",
+            "format": "date-time",
+            "example": "2026-01-12T08:00:00.000Z"
+          }
+        },
+        "required": [
+          "contextFingerprint",
+          "baselineModel",
+          "phase",
+          "runs",
+          "avgContextTokens",
+          "minContextTokens",
+          "maxContextTokens",
+          "avgTurns",
+          "avgToolCalls",
+          "firstSeen",
+          "lastSeen"
+        ]
+      },
+      "CronRunTokenStats": {
+        "type": "object",
+        "properties": {
+          "totals": {
+            "$ref": "#/components/schemas/TokenAggregate"
+          },
+          "byAgent": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/KeyedTokenAggregate"
+            }
+          },
+          "byCron": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/DoubleKeyedTokenAggregate"
+            }
+          },
+          "byModel": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/DoubleKeyedTokenAggregate"
+            }
+          },
+          "daily": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/DailyTokenAggregate"
+            }
+          },
+          "byCronModel": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/DoubleKeyedTokenAggregate"
+            }
+          },
+          "byPhase": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/KeyedTokenAggregate"
+            }
+          },
+          "bySkill": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SkillTokenAggregate"
+            }
+          },
+          "baselines": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ContextBaselineAggregate"
+            }
+          }
+        },
+        "required": [
+          "totals",
+          "byAgent",
+          "byCron",
+          "byModel",
+          "daily",
+          "byCronModel",
+          "byPhase",
+          "bySkill",
+          "baselines"
+        ]
+      },
       "ChatTokenStats": {
         "type": "object",
         "properties": {
@@ -1837,28 +2166,6 @@
           "updatedAt"
         ]
       },
-      "UpsertChatTokenDailyBody": {
-        "type": "object",
-        "properties": {
-          "date": {
-            "type": "string",
-            "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
-            "example": "2026-01-15"
-          },
-          "modelBreakdown": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/ChatTokenModelEntry"
-            },
-            "minItems": 1,
-            "description": "Per-model token usage increments"
-          }
-        },
-        "required": [
-          "date",
-          "modelBreakdown"
-        ]
-      },
       "ChatTokenModelEntry": {
         "type": "object",
         "properties": {
@@ -1901,15 +2208,69 @@
           "costUsd"
         ]
       },
-      "WorkQueueSnapshotWrapper": {
+      "UpsertChatTokenDailyBody": {
         "type": "object",
         "properties": {
-          "snapshot": {
-            "$ref": "#/components/schemas/AgentWorkQueueSnapshot"
+          "date": {
+            "type": "string",
+            "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+            "example": "2026-01-15"
+          },
+          "modelBreakdown": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ChatTokenModelEntry"
+            },
+            "minItems": 1,
+            "description": "Per-model token usage increments"
           }
         },
         "required": [
-          "snapshot"
+          "date",
+          "modelBreakdown"
+        ]
+      },
+      "RankedWorkItem": {
+        "type": "object",
+        "properties": {
+          "type": {
+            "type": "string",
+            "enum": [
+              "task",
+              "pr"
+            ],
+            "example": "task"
+          },
+          "id": {
+            "type": "string",
+            "example": "WLS-2.2"
+          },
+          "title": {
+            "type": "string",
+            "example": "Add work queue snapshot endpoints"
+          },
+          "phase": {
+            "type": "string",
+            "enum": [
+              "dev-task",
+              "plan",
+              "review",
+              "patch",
+              "deploy"
+            ],
+            "example": "dev-task"
+          },
+          "age": {
+            "type": "string",
+            "description": "ISO timestamp",
+            "example": "2026-01-01T00:00:00.000Z"
+          }
+        },
+        "required": [
+          "type",
+          "id",
+          "phase",
+          "age"
         ]
       },
       "AgentWorkQueueSnapshot": {
@@ -1948,47 +2309,15 @@
           "createdAt"
         ]
       },
-      "RankedWorkItem": {
+      "WorkQueueSnapshotWrapper": {
         "type": "object",
         "properties": {
-          "type": {
-            "type": "string",
-            "enum": [
-              "task",
-              "pr"
-            ],
-            "example": "task"
-          },
-          "id": {
-            "type": "string",
-            "example": "WLS-2.2"
-          },
-          "title": {
-            "type": "string",
-            "example": "Add work queue snapshot endpoints"
-          },
-          "phase": {
-            "type": "string",
-            "enum": [
-              "dev-task",
-              "plan",
-              "review",
-              "patch",
-              "deploy"
-            ],
-            "example": "dev-task"
-          },
-          "age": {
-            "type": "string",
-            "example": "2026-01-01T00:00:00.000Z",
-            "description": "ISO timestamp"
+          "snapshot": {
+            "$ref": "#/components/schemas/AgentWorkQueueSnapshot"
           }
         },
         "required": [
-          "type",
-          "id",
-          "phase",
-          "age"
+          "snapshot"
         ]
       },
       "PushWorkQueueSnapshotBody": {
@@ -2009,53 +2338,6 @@
         "required": [
           "computedAt",
           "items"
-        ]
-      },
-      "GitHubInstallationsSnapshotWrapper": {
-        "type": "object",
-        "properties": {
-          "snapshot": {
-            "$ref": "#/components/schemas/AgentGitHubInstallationsSnapshot"
-          }
-        },
-        "required": [
-          "snapshot"
-        ]
-      },
-      "AgentGitHubInstallationsSnapshot": {
-        "type": "object",
-        "properties": {
-          "id": {
-            "type": "string",
-            "example": "clx1234567890"
-          },
-          "agentId": {
-            "type": "string",
-            "example": "clx1234567890"
-          },
-          "reportedAt": {
-            "type": "string",
-            "format": "date-time",
-            "example": "2026-01-01T00:00:00.000Z"
-          },
-          "installations": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/GitHubInstallation"
-            }
-          },
-          "createdAt": {
-            "type": "string",
-            "format": "date-time",
-            "example": "2026-01-01T00:00:00.000Z"
-          }
-        },
-        "required": [
-          "id",
-          "agentId",
-          "reportedAt",
-          "installations",
-          "createdAt"
         ]
       },
       "GitHubInstallation": {
@@ -2095,6 +2377,53 @@
         ],
         "additionalProperties": false
       },
+      "AgentGitHubInstallationsSnapshot": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "example": "clx1234567890"
+          },
+          "agentId": {
+            "type": "string",
+            "example": "clx1234567890"
+          },
+          "reportedAt": {
+            "type": "string",
+            "format": "date-time",
+            "example": "2026-01-01T00:00:00.000Z"
+          },
+          "installations": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/GitHubInstallation"
+            }
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time",
+            "example": "2026-01-01T00:00:00.000Z"
+          }
+        },
+        "required": [
+          "id",
+          "agentId",
+          "reportedAt",
+          "installations",
+          "createdAt"
+        ]
+      },
+      "GitHubInstallationsSnapshotWrapper": {
+        "type": "object",
+        "properties": {
+          "snapshot": {
+            "$ref": "#/components/schemas/AgentGitHubInstallationsSnapshot"
+          }
+        },
+        "required": [
+          "snapshot"
+        ]
+      },
       "PutGitHubInstallationsBody": {
         "type": "object",
         "properties": {
@@ -2115,6 +2444,23 @@
           "installations"
         ],
         "additionalProperties": false
+      },
+      "AgentConfigPlugin": {
+        "type": "object",
+        "properties": {
+          "marketplace": {
+            "type": "string",
+            "example": "shipwright"
+          },
+          "plugin": {
+            "type": "string",
+            "example": "shipwright"
+          }
+        },
+        "required": [
+          "marketplace",
+          "plugin"
+        ]
       },
       "AgentConfigResponse": {
         "type": "object",
@@ -2251,23 +2597,6 @@
           "restrictSlackToMembers",
           "memberEmails",
           "phaseMethodology"
-        ]
-      },
-      "AgentConfigPlugin": {
-        "type": "object",
-        "properties": {
-          "marketplace": {
-            "type": "string",
-            "example": "shipwright"
-          },
-          "plugin": {
-            "type": "string",
-            "example": "shipwright"
-          }
-        },
-        "required": [
-          "marketplace",
-          "plugin"
         ]
       },
       "RuntimeError": {

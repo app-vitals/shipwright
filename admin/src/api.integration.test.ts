@@ -126,6 +126,8 @@ describeOrSkip(
             daily: [],
             byCronModel: [],
             byPhase: [],
+            bySkill: [],
+            baselines: [],
           }),
         },
         agentToolService: {

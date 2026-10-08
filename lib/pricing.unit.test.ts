@@ -1,5 +1,11 @@
 import { describe, expect, test } from "bun:test";
-import { OPUS_MODEL, RATES, calculateCost, normalizeModelToRateKey } from "./pricing.ts";
+import {
+  CONTEXT_WINDOW,
+  OPUS_MODEL,
+  RATES,
+  calculateCost,
+  normalizeModelToRateKey,
+} from "./pricing.ts";
 
 const SAMPLE_USAGE = {
   input_tokens: 100,
@@ -50,11 +56,15 @@ describe("normalizeModelToRateKey — haiku family", () => {
   });
 
   test('"claude-haiku-4-5" maps to haiku canonical key', () => {
-    expect(normalizeModelToRateKey("claude-haiku-4-5")).toBe("claude-haiku-4-5");
+    expect(normalizeModelToRateKey("claude-haiku-4-5")).toBe(
+      "claude-haiku-4-5",
+    );
   });
 
   test('"claude-haiku-4-6" maps to haiku canonical key', () => {
-    expect(normalizeModelToRateKey("claude-haiku-4-6")).toBe("claude-haiku-4-5");
+    expect(normalizeModelToRateKey("claude-haiku-4-6")).toBe(
+      "claude-haiku-4-5",
+    );
   });
 });
 
@@ -64,7 +74,9 @@ describe("normalizeModelToRateKey — sonnet family", () => {
   });
 
   test('"claude-sonnet-4-6" maps to sonnet canonical key', () => {
-    expect(normalizeModelToRateKey("claude-sonnet-4-6")).toBe("claude-sonnet-4-6");
+    expect(normalizeModelToRateKey("claude-sonnet-4-6")).toBe(
+      "claude-sonnet-4-6",
+    );
   });
 });
 
@@ -133,7 +145,7 @@ describe("normalizeModelToRateKey — dated CLI snapshot IDs", () => {
     );
   });
 
-  test('unknown dated snapshot still returns null (no crash)', () => {
+  test("unknown dated snapshot still returns null (no crash)", () => {
     expect(normalizeModelToRateKey("claude-nope-1-0-20251001")).toBeNull();
   });
 });
@@ -143,11 +155,58 @@ describe("normalizeModelToRateKey — unknown inputs", () => {
     expect(normalizeModelToRateKey("unknown-model")).toBeNull();
   });
 
-  test('empty string returns null', () => {
+  test("empty string returns null", () => {
     expect(normalizeModelToRateKey("")).toBeNull();
   });
 
   test('"gpt-4" returns null', () => {
     expect(normalizeModelToRateKey("gpt-4")).toBeNull();
+  });
+});
+
+describe("current-generation (5.x) models", () => {
+  const CURRENT = [
+    "claude-fable-5-1",
+    "claude-opus-5-5",
+    "claude-sonnet-5-5",
+    "claude-haiku-5-5",
+  ];
+
+  test.each(CURRENT)("%s has rates and prices non-zero", (model) => {
+    expect(RATES[model]).toBeDefined();
+    expect(calculateCost(SAMPLE_USAGE, model)).toBeGreaterThan(0);
+  });
+
+  test.each(CURRENT)(
+    "%s normalizes to itself (with or without a date suffix)",
+    (model) => {
+      expect(normalizeModelToRateKey(model)).toBe(model);
+      expect(normalizeModelToRateKey(`${model}-20260901`)).toBe(model);
+    },
+  );
+
+  test("Sonnet 5.5 is priced below Sonnet 4.6 per the current rate card", () => {
+    expect(RATES["claude-sonnet-5-5"].input).toBeLessThan(
+      RATES["claude-sonnet-4-6"].input,
+    );
+  });
+
+  test("bare aliases still resolve to the 4.x fleet keys until the measured model bump", () => {
+    expect(normalizeModelToRateKey("sonnet")).toBe("claude-sonnet-4-6");
+    expect(normalizeModelToRateKey("opus")).toBe("claude-opus-4-8");
+    expect(normalizeModelToRateKey("haiku")).toBe("claude-haiku-4-5");
+  });
+});
+
+describe("CONTEXT_WINDOW", () => {
+  test("every RATES key has a context window", () => {
+    for (const key of Object.keys(RATES)) {
+      expect(CONTEXT_WINDOW[key]).toBeGreaterThan(0);
+    }
+  });
+
+  test("current-generation models have a 1M window; haiku 4.x has 200K", () => {
+    expect(CONTEXT_WINDOW["claude-sonnet-5-5"]).toBe(1_000_000);
+    expect(CONTEXT_WINDOW["claude-haiku-4-5"]).toBe(200_000);
   });
 });

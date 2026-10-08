@@ -2291,6 +2291,44 @@ export interface components {
              */
             costUsd: number;
         };
+        ContextBaselineEntry: {
+            /** @example claude-sonnet-4-6 */
+            model: string;
+            /** @example 79188 */
+            contextTokens: number;
+            /** @example 2 */
+            inputTokens: number;
+            /** @example 41415 */
+            cacheCreationTokens: number;
+            /** @example 37771 */
+            cacheReadTokens: number;
+        };
+        SkillUsageEntry: {
+            /**
+             * @example skill
+             * @enum {string}
+             */
+            kind: "skill" | "agent" | "root";
+            /** @example shipwright:task-store */
+            name: string;
+            /** @example 1 */
+            invocations: number;
+            /** @example 3 */
+            turns: number;
+            /** @example 12 */
+            inputTokens: number;
+            /** @example 100 */
+            outputTokens: number;
+            /** @example 219200 */
+            cacheReadTokens: number;
+            /** @example 9300 */
+            cacheCreationTokens: number;
+            /**
+             * @description input + cacheCreation of the first usage-bearing turn after the skill's first invoke — the new context admitted when its body loaded. Null for root/agent rows.
+             * @example 9103
+             */
+            invokeContextDelta?: number | null;
+        };
         AgentCronRun: {
             /** @example clx1234567890 */
             id: string;
@@ -2356,6 +2394,18 @@ export interface components {
              */
             createdAt: string;
             modelBreakdown?: components["schemas"]["ModelBreakdownEntry"][];
+            /** @description First-turn context baseline (null for resumed sessions and runs from older agent builds). */
+            contextBaseline?: components["schemas"]["ContextBaselineEntry"] | null;
+            /** @example 12 */
+            turns?: number | null;
+            /** @example 7 */
+            toolCalls?: number | null;
+            /** @example abc123def456 */
+            contextFingerprint?: string | null;
+            /** @example 1.363.0 */
+            pluginVersion?: string | null;
+            /** @example 2.1.285 */
+            claudeCodeVersion?: string | null;
         };
         CronRunWrapper: {
             run: components["schemas"]["AgentCronRun"];
@@ -2442,6 +2492,29 @@ export interface components {
             lastHeartbeatAt?: string | null;
             /** @description Per-model token breakdown for this run */
             modelBreakdown?: components["schemas"]["ModelBreakdownEntry"][];
+            /** @description First-turn context baseline: usage of the run's first assistant message. contextTokens = input + cacheCreation + cacheRead — the full always-loaded context independent of cache warmth. Omitted for resumed sessions. */
+            contextBaseline?: components["schemas"]["ContextBaselineEntry"];
+            /**
+             * @description Distinct usage-bearing assistant turns in the run.
+             * @example 12
+             */
+            turns?: number | null;
+            /**
+             * @description Distinct tool_use blocks in the run.
+             * @example 7
+             */
+            toolCalls?: number | null;
+            /**
+             * @description sha256[:12] over the workspace's always-loaded markdown (CLAUDE.md, its @imports, no-`paths` rules) + plugin version. Groups runs by what the model was given.
+             * @example abc123def456
+             */
+            contextFingerprint?: string | null;
+            /** @example 1.363.0 */
+            pluginVersion?: string | null;
+            /** @example 2.1.285 */
+            claudeCodeVersion?: string | null;
+            /** @description Per-skill / per-subagent token attribution rows for this run; upserted per [kind, name]. */
+            skillUsage?: components["schemas"]["SkillUsageEntry"][];
         };
         AgentTool: {
             /** @example clx1234567890 */
@@ -2606,6 +2679,64 @@ export interface components {
             daily: components["schemas"]["DailyTokenAggregate"][];
             byCronModel: components["schemas"]["DoubleKeyedTokenAggregate"][];
             byPhase: components["schemas"]["KeyedTokenAggregate"][];
+            bySkill: components["schemas"]["SkillTokenAggregate"][];
+            baselines: components["schemas"]["ContextBaselineAggregate"][];
+        };
+        SkillTokenAggregate: {
+            input: number;
+            output: number;
+            cacheRead: number;
+            cacheCreation: number;
+            total: number;
+            costUsd?: number;
+            /**
+             * @example skill
+             * @enum {string}
+             */
+            kind: "skill" | "agent" | "root";
+            /** @example shipwright:task-store */
+            name: string;
+            /** @example 3 */
+            runs: number;
+            /** @example 3 */
+            invocations: number;
+            /** @example 9 */
+            turns: number;
+            /**
+             * @description Mean of invokeContextDelta (input + cacheCreation of the first turn after the skill's first invoke) over rows where it was recorded; null if none.
+             * @example 9103
+             */
+            avgInvokeContextDelta: number | null;
+        };
+        ContextBaselineAggregate: {
+            /** @example abc123def456 */
+            contextFingerprint: string | null;
+            /** @example claude-sonnet-4-6 */
+            baselineModel: string;
+            /** @example dev-task */
+            phase: string | null;
+            /** @example 4 */
+            runs: number;
+            /** @example 79188 */
+            avgContextTokens: number;
+            /** @example 78000 */
+            minContextTokens: number;
+            /** @example 80500 */
+            maxContextTokens: number;
+            /** @example 12.5 */
+            avgTurns: number | null;
+            /** @example 7 */
+            avgToolCalls: number | null;
+            /**
+             * Format: date-time
+             * @example 2026-01-10T08:00:00.000Z
+             */
+            firstSeen: string;
+            /**
+             * Format: date-time
+             * @example 2026-01-12T08:00:00.000Z
+             */
+            lastSeen: string;
         };
         ChatTokenStats: {
             totals: components["schemas"]["TokenAggregate"];

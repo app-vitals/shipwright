@@ -39,7 +39,7 @@ import type {
   ProgressCallback,
   TokenUsage,
 } from "./claude.ts";
-import { handleCronRequest } from "./cron-handler.ts";
+import { buildTokenPayload, handleCronRequest } from "./cron-handler.ts";
 import type { CronRunReporter } from "./cron-run-reporter.ts";
 
 // ─── Fake spawn helpers (mirrors claude.unit.test.ts) ──────────────────────
@@ -837,5 +837,98 @@ describe("handleCronRequest — onEarlySessionId wiring (CES-1.1)", () => {
     expect(warnMessages.some((m) => m.includes("recordSessionId failed"))).toBe(
       true,
     );
+  });
+});
+
+// ─── buildTokenPayload — telemetry + context-stamp extras ────────────────────
+
+describe("buildTokenPayload — extras", () => {
+  const usage = {
+    input_tokens: 10,
+    output_tokens: 20,
+    cache_read_input_tokens: 30,
+    cache_creation_input_tokens: 40,
+  };
+
+  test("without extras the payload shape is unchanged", () => {
+    const payload = buildTokenPayload(usage, undefined);
+    expect(payload).toEqual({
+      inputTokens: 10,
+      outputTokens: 20,
+      cacheReadTokens: 30,
+      cacheCreationTokens: 40,
+    });
+  });
+
+  test("telemetry maps firstTurn → contextBaseline and forwards counts and skillUsage", () => {
+    const payload = buildTokenPayload(usage, undefined, {
+      telemetry: {
+        firstTurn: {
+          model: "claude-sonnet-4-6",
+          messageId: "msg_1",
+          inputTokens: 2,
+          cacheCreationTokens: 41_415,
+          cacheReadTokens: 37_771,
+          contextTokens: 79_188,
+        },
+        turns: 5,
+        toolCalls: 3,
+        skillUsage: [
+          {
+            kind: "root",
+            name: "root",
+            invocations: 0,
+            turns: 1,
+            inputTokens: 2,
+            outputTokens: 10,
+            cacheReadTokens: 0,
+            cacheCreationTokens: 0,
+            invokeContextDelta: null,
+          },
+        ],
+      },
+      contextStamp: {
+        contextFingerprint: "abc123def456",
+        pluginVersion: "1.363.0",
+        claudeCodeVersion: "2.1.285",
+      },
+    });
+
+    expect(payload.contextBaseline).toEqual({
+      model: "claude-sonnet-4-6",
+      contextTokens: 79_188,
+      inputTokens: 2,
+      cacheCreationTokens: 41_415,
+      cacheReadTokens: 37_771,
+    });
+    expect(payload.turns).toBe(5);
+    expect(payload.toolCalls).toBe(3);
+    expect(payload.skillUsage).toHaveLength(1);
+    expect(payload.contextFingerprint).toBe("abc123def456");
+    expect(payload.pluginVersion).toBe("1.363.0");
+    expect(payload.claudeCodeVersion).toBe("2.1.285");
+  });
+
+  test("telemetry without a firstTurn (resumed session) omits contextBaseline but keeps counts", () => {
+    const payload = buildTokenPayload(undefined, undefined, {
+      telemetry: { turns: 2, toolCalls: 0, skillUsage: [] },
+    });
+    expect("contextBaseline" in payload).toBe(false);
+    expect("skillUsage" in payload).toBe(false);
+    expect(payload.turns).toBe(2);
+    expect(payload.toolCalls).toBe(0);
+  });
+
+  test("a stamp with null versions sends only the fingerprint", () => {
+    const payload = buildTokenPayload(undefined, undefined, {
+      contextStamp: {
+        contextFingerprint: "feedfacecafe",
+        pluginVersion: null,
+        claudeCodeVersion: null,
+      },
+    });
+    expect(payload.contextFingerprint).toBe("feedfacecafe");
+    expect("pluginVersion" in payload).toBe(false);
+    expect("claudeCodeVersion" in payload).toBe(false);
   });
 });

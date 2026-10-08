@@ -155,6 +155,36 @@ const MOCK_STATS = {
       costUsd: 0.002,
     },
   ],
+  bySkill: [
+    {
+      kind: "skill",
+      name: "shipwright:task-store",
+      runs: 3,
+      invocations: 3,
+      turns: 9,
+      input: 36,
+      output: 300,
+      cacheRead: 600,
+      cacheCreation: 27_900,
+      total: 28_836,
+      avgInvokeContextDelta: 9_103,
+    },
+  ],
+  baselines: [
+    {
+      contextFingerprint: "abc123def456",
+      baselineModel: "claude-sonnet-4-6",
+      phase: "dev-task",
+      runs: 4,
+      avgContextTokens: 79_188,
+      minContextTokens: 78_000,
+      maxContextTokens: 80_500,
+      avgTurns: 12.5,
+      avgToolCalls: 7,
+      firstSeen: "2026-01-10T08:00:00.000Z",
+      lastSeen: "2026-01-12T08:00:00.000Z",
+    },
+  ],
 };
 
 function makeMockStatsService(): Pick<AgentCronRunStatsService, "query"> {
@@ -419,6 +449,16 @@ function makeMockDeps(): AdminDeps {
         itemId: null,
         sessionId: null,
         lastHeartbeatAt: null,
+        baselineModel: null,
+        baselineContextTokens: null,
+        baselineInputTokens: null,
+        baselineCacheCreationTokens: null,
+        baselineCacheReadTokens: null,
+        turns: null,
+        toolCalls: null,
+        contextFingerprint: null,
+        pluginVersion: null,
+        claudeCodeVersion: null,
         phaseId: null,
         inputTokens: null,
         outputTokens: null,
@@ -444,6 +484,16 @@ function makeMockDeps(): AdminDeps {
         itemId: null,
         sessionId: null,
         lastHeartbeatAt: null,
+        baselineModel: null,
+        baselineContextTokens: null,
+        baselineInputTokens: null,
+        baselineCacheCreationTokens: null,
+        baselineCacheReadTokens: null,
+        turns: null,
+        toolCalls: null,
+        contextFingerprint: null,
+        pluginVersion: null,
+        claudeCodeVersion: null,
         phaseId: null,
         inputTokens: null,
         outputTokens: null,
@@ -555,6 +605,8 @@ describe("admin API — GET /agents/all/cron-runs/stats", () => {
     expect(body.byModel).toBeDefined();
     expect(body.daily).toBeDefined();
     expect(body.byPhase).toBeDefined();
+    expect(body.bySkill).toBeDefined();
+    expect(body.baselines).toBeDefined();
 
     // Verify totals shape
     expect(typeof body.totals.input).toBe("number");
@@ -609,6 +661,12 @@ describe("admin API — GET /agents/all/cron-runs/stats", () => {
     expect(body.daily).toHaveLength(3);
     expect(body.byPhase).toHaveLength(2);
     expect(body.byPhase[0].key).toBe("dev-task");
+    expect(body.bySkill).toHaveLength(1);
+    expect(body.bySkill[0].name).toBe("shipwright:task-store");
+    expect(body.bySkill[0].avgInvokeContextDelta).toBe(9_103);
+    expect(body.baselines).toHaveLength(1);
+    expect(body.baselines[0].contextFingerprint).toBe("abc123def456");
+    expect(body.baselines[0].avgContextTokens).toBe(79_188);
   });
 
   it("accepts from/to query params without error", async () => {

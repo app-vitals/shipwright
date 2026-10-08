@@ -258,6 +258,8 @@ function makeMockDeps(opts?: {
         daily: [],
         byCronModel: [],
         byPhase: [],
+        bySkill: [],
+        baselines: [],
       }),
     },
     prisma: {

@@ -8,6 +8,9 @@ import {
   removeRunCgroup,
 } from "./process-tree-kill.ts";
 import { type ContentBlock, phaseForBlock } from "./progress-milestones.ts";
+import { type RunTelemetry, RunTelemetryAccumulator } from "./run-telemetry.ts";
+
+export type { RunTelemetry } from "./run-telemetry.ts";
 
 export interface LiveClaudeConfig {
   model: string;
@@ -108,6 +111,15 @@ export interface ClaudeRunResult {
    * #64153.
    */
   streamIncomplete?: boolean;
+  /**
+   * Per-run measurement accumulated from the `assistant` stream lines: the
+   * first-turn context baseline, turn/tool-call counts, and per-skill token
+   * attribution (see `run-telemetry.ts`). Present whenever the stream was
+   * consumed at all — including the `streamIncomplete` return shape — and
+   * carried as `partialTelemetry` on the thrown error types. Always a lower
+   * bound on output tokens for the same reason `modelUsage` is (see above).
+   */
+  telemetry?: RunTelemetry;
 }
 
 /**
@@ -180,6 +192,8 @@ interface ClaudeAssistantEvent {
     usage?: TokenUsage;
     content?: ContentBlock[];
   };
+  /** Set on sub-agent turns: the parent session's `Agent` tool_use id. */
+  parent_tool_use_id?: string | null;
 }
 
 export class ClaudeRunError extends Error {
@@ -190,6 +204,8 @@ export class ClaudeRunError extends Error {
     readonly sessionId: string | undefined,
     /** Accumulated per-model usage at the point of failure, if any. */
     readonly modelUsage?: ModelUsage,
+    /** Telemetry accumulated before the failure, if the stream was consumed. */
+    readonly partialTelemetry?: RunTelemetry,
   ) {
     super(message);
     this.name = "ClaudeRunError";
@@ -226,6 +242,8 @@ export class ClaudeAbortedError extends Error {
     readonly sessionId?: string,
     /** Per-model usage accumulated before the process was killed, if any. */
     readonly partialModelUsage?: ModelUsage,
+    /** Telemetry accumulated before the process was killed, if any. */
+    readonly partialTelemetry?: RunTelemetry,
   ) {
     super("Claude session was cancelled");
     this.name = "ClaudeAbortedError";
@@ -252,6 +270,8 @@ export class ClaudeTimeoutError extends Error {
      * id), so this is the only way a timeout can still carry one.
      */
     readonly sessionId?: string,
+    /** Telemetry accumulated before the process was killed, if any. */
+    readonly partialTelemetry?: RunTelemetry,
   ) {
     super(`Claude session timed out after ${timeoutMs / 1000}s (${reason})`);
     this.name = "ClaudeTimeoutError";
@@ -407,11 +427,13 @@ export function createRunClaude(
     modelUsage: ModelUsage;
     raw: string;
     sessionId?: string;
+    telemetry: RunTelemetry;
   }> {
     const reader = stream.getReader();
     const decoder = new TextDecoder();
     const accumulated: ModelUsage = {};
     const seenMessageIds = new Set<string>();
+    const telemetry = new RunTelemetryAccumulator();
     let result: ClaudeResultEvent | undefined;
     let buffer = "";
     let raw = "";
@@ -461,7 +483,13 @@ export function createRunClaude(
       }
       if (event.type !== "assistant") return; // ignore user/etc.
 
-      const { message } = parsed as ClaudeAssistantEvent;
+      const { message, parent_tool_use_id: parentToolUseId } =
+        parsed as ClaudeAssistantEvent;
+
+      // Tool-call counting and Skill/Agent attribution switches happen on
+      // every line (deduped by tool_use id inside the accumulator), before
+      // the usage guard — a tool_use-only line carries no `usage` yet.
+      telemetry.observeContent(message?.content);
 
       // Walk message.content for a progress phase BEFORE the usage guard
       // below, so a tool_use-only line (no `usage` field yet) can still fire
@@ -484,6 +512,12 @@ export function createRunClaude(
       seenMessageIds.add(message.id);
 
       const model = message.model ?? "unknown";
+      telemetry.observeUsage(
+        message.id,
+        model,
+        message.usage,
+        parentToolUseId ?? undefined,
+      );
       let entry = accumulated[model];
       if (!entry) {
         entry = {
@@ -535,7 +569,13 @@ export function createRunClaude(
       reader.releaseLock();
     }
 
-    return { result, modelUsage: accumulated, raw, sessionId: earlySessionId };
+    return {
+      result,
+      modelUsage: accumulated,
+      raw,
+      sessionId: earlySessionId,
+      telemetry: telemetry.snapshot(),
+    };
   }
 
   async function _spawnOnce(
@@ -648,7 +688,13 @@ export function createRunClaude(
     resetIdleTimer();
 
     const [
-      { result, modelUsage, raw, sessionId: earlySessionId },
+      {
+        result,
+        modelUsage,
+        raw,
+        sessionId: earlySessionId,
+        telemetry: rawTelemetry,
+      },
       stderr,
       exitCode,
     ] = await Promise.all([
@@ -671,11 +717,21 @@ export function createRunClaude(
       if (cgroupPath) removeRunCgroup(cgroupPath);
     });
 
+    // A resumed session (`-r`) replays prior conversation into its first
+    // turn, so that turn is not a cold always-loaded-context baseline. Keep
+    // the rest of the telemetry (turns, tool calls, attribution) but drop
+    // the baseline so the admin series only ever contains fresh-session
+    // numbers.
+    const { firstTurn: _firstTurn, ...resumedTelemetry } = rawTelemetry;
+    const telemetry: RunTelemetry = args.includes("-r")
+      ? resumedTelemetry
+      : rawTelemetry;
+
     // Aborted must be checked BEFORE timedOut and the exitCode checks: kill()
     // yields exit 143, which the exitCode !== 0 branch would otherwise
     // misclassify as a normal run failure.
     if (aborted) {
-      throw new ClaudeAbortedError(earlySessionId, modelUsage);
+      throw new ClaudeAbortedError(earlySessionId, modelUsage, telemetry);
     }
 
     if (timedOut) {
@@ -684,6 +740,7 @@ export function createRunClaude(
         timeoutReason,
         modelUsage,
         earlySessionId,
+        telemetry,
       );
     }
 
@@ -695,6 +752,7 @@ export function createRunClaude(
           result.result,
           result.session_id,
           result.modelUsage ?? modelUsage,
+          telemetry,
         );
       }
       // A truncated stream that still carried some usage: surface it on the
@@ -707,6 +765,7 @@ export function createRunClaude(
           diagnostic,
           result?.session_id ?? earlySessionId,
           modelUsage,
+          telemetry,
         );
       }
       throw new Error(
@@ -723,6 +782,7 @@ export function createRunClaude(
         sessionId: earlySessionId,
         modelUsage,
         streamIncomplete: true,
+        telemetry,
       };
     }
     if (result.is_error) {
@@ -732,6 +792,7 @@ export function createRunClaude(
         result.result,
         result.session_id,
         result.modelUsage ?? modelUsage,
+        telemetry,
       );
     }
 
@@ -741,6 +802,7 @@ export function createRunClaude(
       usage: result.usage,
       totalCostUsd: result.total_cost_usd,
       modelUsage: result.modelUsage,
+      telemetry,
     };
   }
 
