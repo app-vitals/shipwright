@@ -26,6 +26,8 @@ import { buildSentryInitOptions, initSentry } from "@shipwright/lib/sentry";
 import { Hono } from "hono";
 import { createAccountCreatedNotifier } from "./account-created-notifier.ts";
 import { AccountOnboardingService } from "./account-onboarding.ts";
+import { AccountInviteService } from "./account-invites.ts";
+import { AccountMemberService } from "./account-members.ts";
 import { AccountService } from "./accounts.ts";
 import { createAdminUIApp } from "./admin-ui.ts";
 import { AgentChatTokenService } from "./agent-chat-tokens.ts";
@@ -816,6 +818,11 @@ async function startServer(): Promise<void> {
       });
       return accountCreatedNotifier ? { accountCreatedNotifier } : {};
     })(),
+    accountServices: {
+      accounts: new AccountService(prisma),
+      members: new AccountMemberService(prisma),
+      invites: new AccountInviteService(prisma),
+    },
     timezone: adminTz,
     ...(chatClient ? { chatClient } : {}),
     ...(pushService

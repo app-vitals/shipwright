@@ -2,9 +2,8 @@
  * plugins/shipwright/scripts/prompt-audit/eval-harness.ts
  *
  * Entry for the prompt-audit eval harness (case building, mechanical graders,
- * cost gate, paired diff). Does not run any eval: the plugin-eval runner is a
- * separate task. All fs/exec access is injected; nothing here spawns claude or
- * touches the network.
+ * cost gate, paired diff). Evals are run by eval-runner.ts. All fs/exec
+ * access is injected; nothing here spawns claude or touches the network.
  */
 
 import { buildEvalCases, type CaseDeps, writeEvalCases } from "./eval-cases.ts";
@@ -20,6 +19,7 @@ export * from "./eval-cases.ts";
 export * from "./eval-cost.ts";
 export * from "./eval-diff.ts";
 export * from "./eval-graders.ts";
+export * from "./eval-runner.ts";
 
 export interface HarnessDeps extends CaseDeps {
   readFile(path: string): string;
