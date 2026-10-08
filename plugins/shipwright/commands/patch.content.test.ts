@@ -2604,7 +2604,9 @@ describe("patch.md — simplified local validation: 10-minute timeout, CI fallba
       const section = getSection();
       expect(section).toContain("`timeout` parameter set to `600000` ms");
       const lower = section.toLowerCase().replace(/\s+/g, " ");
-      expect(lower).toMatch(/exceeds 10 minutes, skip the local run.{0,40}rely on ci/);
+      expect(lower).toMatch(
+        /exceeds 10 minutes, skip the local run.{0,40}rely on ci/,
+      );
       expect(lower).toMatch(/never blocks the commit\/push/);
     });
 
@@ -2612,7 +2614,7 @@ describe("patch.md — simplified local validation: 10-minute timeout, CI fallba
       const section = getSection();
       expect(section).toContain("Record every outcome");
       expect(section).toContain(
-        "-X POST -H \"Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN\"",
+        '-X POST -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN"',
       );
       expect(section).toContain(
         "$SHIPWRIGHT_TASK_STORE_URL/verification-checks",
@@ -2868,5 +2870,61 @@ describe("patch.md — share bot/CI comment filter with review.md (PBD-1.1)", ()
     const itemBlock = section.slice(itemIdx, itemIdx + 600);
     expect(itemBlock).toContain("from Step 3a");
     expect(itemBlock.toLowerCase()).toContain("already fetched");
+  });
+});
+
+describe("patch.md — settle-with-rejected outcome for nothing-actionable List A (PHS-2.1)", () => {
+  const stepSection = (heading: string, nextHeading: string) => {
+    const start = content.indexOf(heading);
+    const end = content.indexOf(nextHeading, start + heading.length);
+    expect(start).toBeGreaterThan(-1);
+    expect(end).toBeGreaterThan(start);
+    return content.slice(start, end);
+  };
+
+  it("Step 3d forbids [silent] while List A items remain unsettled and points at settle-with-rejected", () => {
+    const section = stepSection("### Step 3d: Summary", "## Step 4:");
+    expect(section).toContain("settle-with-rejected");
+    expect(section).toContain(
+      "must never exit `[silent]` while List A items remain unsettled",
+    );
+  });
+
+  it("Step 3d's genuinely-empty wording is unchanged", () => {
+    const section = stepSection("### Step 3d: Summary", "## Step 4:");
+    expect(section).toContain("If all three lists are empty:");
+    expect(section).toContain("No PRs need attention.");
+    expect(section).toContain(
+      "[skip-reason:patch:deferred:no-op-at-dispatch:{pr}]",
+    );
+  });
+
+  it("Step 3a fetches commit.oid and thread totalCount so the PHS-1.2 refs can be built", () => {
+    const section = stepSection("### Step 3a:", "### Step 3a.5:");
+    expect(section).toContain("commit { oid }");
+    expect(section).toContain("totalCount");
+  });
+
+  it("Step 5c captures a ref for every unfixed List A item in the PHS-1.2 format", () => {
+    const section = stepSection("### Step 5c:", "### Step 5c.5:");
+    expect(section).toContain("thread:{thread.id}@{comments.totalCount}");
+    expect(section).toContain("{review.commit.oid}@{review.submittedAt}");
+    expect(section).toContain("Settle every List A item that was not fixed");
+    expect(section).toContain("no feedback to provide");
+  });
+
+  it("Step 5c.5 writes a patch-source rejected entry per unfixed List A item and states the outcome", () => {
+    const section = stepSection("### Step 5c.5:", "### Step 5d:");
+    expect(section).toContain('"disposition\\": \\"rejected\\"');
+    expect(section).toContain('\\"source\\": \\"patch\\"');
+    expect(section).toContain("Outcome: settle-with-rejected");
+    expect(section).toContain("Do **not** emit");
+    expect(section).toContain("`thread:{id}@{count}`");
+  });
+
+  it("Step 5b [D] posts the author comment for a nothing-actionable review too", () => {
+    expect(content).toContain(
+      "a List A\n    review has nothing actionable at all",
+    );
   });
 });
