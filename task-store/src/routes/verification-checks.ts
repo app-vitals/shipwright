@@ -39,6 +39,8 @@
 
 import { createRoute, OpenAPIHono } from "@hono/zod-openapi";
 import { readJson } from "@shipwright/lib/http";
+import type { Context } from "hono";
+import { resolveAccountScope } from "../account-scope.ts";
 import type { TaskStoreAuthEnv } from "../auth.ts";
 import { BadRequestError } from "../errors.ts";
 import type {
@@ -52,7 +54,10 @@ import {
   VerificationCheckListResponseSchema,
   VerificationCheckSchema,
 } from "../openapi-schemas.ts";
-import type { VerificationCheckServiceLike } from "../verification-check-service.ts";
+import type {
+  VerificationCheckScope,
+  VerificationCheckServiceLike,
+} from "../verification-check-service.ts";
 
 // ─── Route definitions ────────────────────────────────────────────────────────
 
@@ -62,7 +67,7 @@ const recordRoute = createRoute({
   tags: ["Verification Checks"],
   summary: "Record a single per-check verification outcome",
   description:
-    "Records one VerificationCheck row against exactly one parent — `taskId` (a task still in progress, before a PR exists) or `prId` (an already-open PR); supplying neither or both is `400`. `status` is `ran_passed | ran_failed | skipped | timed_out`. `reasonCategory` is a closed set of ENVIRONMENTAL causes and is only valid alongside `status: skipped | timed_out` — a `ran_failed` row (the check ran and produced a genuine failure) must never carry one; supplying it anyway is `400`, enforced server-side (not just by convention). `learnedFromCategory` is only valid alongside `reasonCategory: learned_skip`, and must not itself be `learned_skip`. `at` defaults to the current time when omitted.",
+    "Records one VerificationCheck row against exactly one parent — `taskId` (a task still in progress, before a PR exists) or `prId` (an already-open PR); supplying neither or both is `400`. `status` is `ran_passed | ran_failed | skipped | timed_out`. `reasonCategory` is a closed set of ENVIRONMENTAL causes and is only valid alongside `status: skipped | timed_out` — a `ran_failed` row (the check ran and produced a genuine failure) must never carry one; supplying it anyway is `400`, enforced server-side (not just by convention). `learnedFromCategory` is only valid alongside `reasonCategory: learned_skip`, and must not itself be `learned_skip`. `at` defaults to the current time when omitted. Agent tokens are scoped (SSP-6.10): `repo` must be in the token's repos (else `403`), and the parent task/PR must be in the token's repos and account (else `404`, indistinguishable from missing). The row is stamped with the parent's `accountId`. Admin tokens are unrestricted.",
   request: {
     body: {
       content: {
@@ -81,9 +86,14 @@ const recordRoute = createRoute({
       description:
         "Bad request — missing/invalid fields, taskId/prId neither-or-both, or a status/reasonCategory combination that violates the ran_failed-never-carries-a-reasonCategory rule",
     },
+    403: {
+      content: { "application/json": { schema: ErrorSchema } },
+      description: "Forbidden — `repo` is not in the agent token's scope",
+    },
     404: {
       content: { "application/json": { schema: ErrorSchema } },
-      description: "Not found — the referenced task/pr does not exist",
+      description:
+        "Not found — the referenced task/pr does not exist or is outside the token's repo/account scope",
     },
   },
 });
@@ -95,7 +105,7 @@ const listRoute = createRoute({
   summary:
     "List verification checks for a task, a PR, or a repo+checkName pair",
   description:
-    "Returns `{ checks, total, limit, offset }` for exactly one of three mutually-exclusive modes: `?taskId=`, `?prId=`, or `?repo=`+`?checkName=` together (supplying none, or more than one mode, or only half of the repo+checkName pair, is `400`). The `?taskId=`/`?prId=` modes are ordered by `at` ascending (oldest first, default `limit=50`, `offset=0`) and `404` if the referenced task/pr doesn't exist. The `?repo=`+`?checkName=` mode (LVB-4.4) spans every task/PR that recorded that repo+check — there's no single parent to `404` on, so an unmatched pair returns `200` with an empty list — and is ordered by `at` DESCENDING (most recent first) so a caller can walk backward from the latest outcome to detect a consecutive skipped/timed_out streak.",
+    "Returns `{ checks, total, limit, offset }` for exactly one of three mutually-exclusive modes: `?taskId=`, `?prId=`, or `?repo=`+`?checkName=` together (supplying none, or more than one mode, or only half of the repo+checkName pair, is `400`). The `?taskId=`/`?prId=` modes are ordered by `at` ascending (oldest first, default `limit=50`, `offset=0`) and `404` if the referenced task/pr doesn't exist. The `?repo=`+`?checkName=` mode (LVB-4.4) spans every task/PR that recorded that repo+check — there's no single parent to `404` on, so an unmatched pair returns `200` with an empty list — and is ordered by `at` DESCENDING (most recent first) so a caller can walk backward from the latest outcome to detect a consecutive skipped/timed_out streak. Agent tokens only see rows in their own account; an out-of-scope `?taskId=`/`?prId=` is `404`, and an out-of-scope `?repo=` returns an empty list. Admin tokens are unrestricted and may narrow with `?accountId=`.",
   request: {
     query: VerificationCheckListQuerySchema,
   },
@@ -121,6 +131,11 @@ const listRoute = createRoute({
 
 // ─── Factory ──────────────────────────────────────────────────────────────────
 
+/** Caller scope: repos null = admin; accountId null = admin without ?accountId=. */
+function callerScope(c: Context<TaskStoreAuthEnv>): VerificationCheckScope {
+  return { repos: c.get("repos"), accountId: resolveAccountScope(c) };
+}
+
 export function createVerificationChecksRoutes(
   service: VerificationCheckServiceLike,
 ): OpenAPIHono<TaskStoreAuthEnv> {
@@ -132,24 +147,27 @@ export function createVerificationChecksRoutes(
     const body = await readJson(c);
     const { taskId, prId, repo, checkName, status, at } = body;
 
-    const check = await service.record({
-      taskId: typeof taskId === "string" && taskId ? taskId : undefined,
-      prId: typeof prId === "string" && prId ? prId : undefined,
-      repo: typeof repo === "string" ? repo : "",
-      checkName: typeof checkName === "string" ? checkName : "",
-      status: status as VerificationCheckStatus,
-      reasonCategory:
-        typeof body.reasonCategory === "string"
-          ? (body.reasonCategory as VerificationCheckReasonCategory)
-          : undefined,
-      learnedFromCategory:
-        typeof body.learnedFromCategory === "string"
-          ? (body.learnedFromCategory as VerificationCheckReasonCategory)
-          : undefined,
-      durationMs:
-        typeof body.durationMs === "number" ? body.durationMs : undefined,
-      at: typeof at === "string" && at ? at : undefined,
-    });
+    const check = await service.record(
+      {
+        taskId: typeof taskId === "string" && taskId ? taskId : undefined,
+        prId: typeof prId === "string" && prId ? prId : undefined,
+        repo: typeof repo === "string" ? repo : "",
+        checkName: typeof checkName === "string" ? checkName : "",
+        status: status as VerificationCheckStatus,
+        reasonCategory:
+          typeof body.reasonCategory === "string"
+            ? (body.reasonCategory as VerificationCheckReasonCategory)
+            : undefined,
+        learnedFromCategory:
+          typeof body.learnedFromCategory === "string"
+            ? (body.learnedFromCategory as VerificationCheckReasonCategory)
+            : undefined,
+        durationMs:
+          typeof body.durationMs === "number" ? body.durationMs : undefined,
+        at: typeof at === "string" && at ? at : undefined,
+      },
+      callerScope(c),
+    );
 
     return c.json(check, 201);
   });
@@ -197,17 +215,16 @@ export function createVerificationChecksRoutes(
         ? Number.parseInt(offsetRaw, 10) || undefined
         : undefined;
 
+    const scope = callerScope(c);
     const result = hasTask
-      ? await service.listForTask(taskId as string, { limit, offset })
+      ? await service.listForTask(taskId as string, { limit, offset }, scope)
       : hasPr
-        ? await service.listForPr(prId as string, { limit, offset })
+        ? await service.listForPr(prId as string, { limit, offset }, scope)
         : await service.listByRepoAndCheck(
             repo as string,
             checkName as string,
-            {
-              limit,
-              offset,
-            },
+            { limit, offset },
+            scope,
           );
 
     return c.json(

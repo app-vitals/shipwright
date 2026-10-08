@@ -33,7 +33,7 @@
  */
 
 import { type Clock, SystemClock } from "./clock.ts";
-import { BadRequestError, NotFoundError } from "./errors.ts";
+import { BadRequestError, ForbiddenError, NotFoundError } from "./errors.ts";
 import type {
   PrismaClient,
   VerificationCheck,
@@ -58,6 +58,34 @@ const REASON_CATEGORY_ELIGIBLE_STATUSES: ReadonlySet<string> = new Set([
   StatusEnum.skipped,
   StatusEnum.timed_out,
 ]);
+
+/**
+ * Caller scope (SSP-6.10). `repos: null` = admin (unrestricted); an array
+ * restricts to those repos ([] = zero access). `accountId: null` = no account
+ * restriction (admin); a string restricts to rows in that account.
+ * Omitting the scope entirely is equivalent to unrestricted.
+ */
+export interface VerificationCheckScope {
+  repos: string[] | null;
+  accountId: string | null;
+}
+
+const UNRESTRICTED_SCOPE: VerificationCheckScope = {
+  repos: null,
+  accountId: null,
+};
+
+/** True when a parent task/PR row is visible under `scope`. */
+function inScope(
+  row: { repo: string | null; accountId: string },
+  scope: VerificationCheckScope,
+): boolean {
+  if (scope.repos !== null && !(row.repo && scope.repos.includes(row.repo)))
+    return false;
+  if (scope.accountId !== null && row.accountId !== scope.accountId)
+    return false;
+  return true;
+}
 
 export interface RecordVerificationCheckInput {
   /** Exactly one of taskId/prId is required. */
@@ -84,14 +112,19 @@ export interface ListVerificationChecksResult {
 
 /** The subset of VerificationCheckService the routes depend on. */
 export interface VerificationCheckServiceLike {
-  record(data: RecordVerificationCheckInput): Promise<VerificationCheck>;
+  record(
+    data: RecordVerificationCheckInput,
+    scope?: VerificationCheckScope,
+  ): Promise<VerificationCheck>;
   listForTask(
     taskId: string,
     opts?: { limit?: number; offset?: number },
+    scope?: VerificationCheckScope,
   ): Promise<ListVerificationChecksResult>;
   listForPr(
     prId: string,
     opts?: { limit?: number; offset?: number },
+    scope?: VerificationCheckScope,
   ): Promise<ListVerificationChecksResult>;
   /**
    * LVB-4.4's history-walk mode: the last few outcomes for one check on one
@@ -105,6 +138,7 @@ export interface VerificationCheckServiceLike {
     repo: string,
     checkName: string,
     opts?: { limit?: number; offset?: number },
+    scope?: VerificationCheckScope,
   ): Promise<ListVerificationChecksResult>;
 }
 
@@ -119,7 +153,10 @@ export class VerificationCheckService implements VerificationCheckServiceLike {
     private clock: Clock = SystemClock(),
   ) {}
 
-  async record(data: RecordVerificationCheckInput): Promise<VerificationCheck> {
+  async record(
+    data: RecordVerificationCheckInput,
+    scope: VerificationCheckScope = UNRESTRICTED_SCOPE,
+  ): Promise<VerificationCheck> {
     const taskId = normalizeId(data.taskId);
     const prId = normalizeId(data.prId);
 
@@ -189,26 +226,20 @@ export class VerificationCheckService implements VerificationCheckServiceLike {
       );
     }
 
-    if (taskId !== null) {
-      const existing = await this.prisma.task.findUnique({
-        where: { id: taskId },
-        select: { id: true },
-      });
-      if (!existing) {
-        throw new NotFoundError("task not found");
-      }
-    } else if (prId !== null) {
-      const existing = await this.prisma.pullRequest.findUnique({
-        where: { id: prId },
-        select: { id: true },
-      });
-      if (!existing) {
-        throw new NotFoundError("pr not found");
-      }
+    if (scope.repos !== null && !scope.repos.includes(data.repo)) {
+      throw new ForbiddenError(`repo '${data.repo}' is not in this scope`);
     }
+
+    // The parent must exist AND be visible to the caller — an out-of-scope id
+    // is indistinguishable from a missing one so it can't be probed.
+    const parent =
+      taskId !== null
+        ? await this.findScopedTask(taskId, scope)
+        : await this.findScopedPr(prId as string, scope);
 
     return this.prisma.verificationCheck.create({
       data: {
+        accountId: parent.accountId,
         taskId,
         prRecordId: prId,
         repo: data.repo,
@@ -222,31 +253,49 @@ export class VerificationCheckService implements VerificationCheckServiceLike {
     });
   }
 
+  private async findScopedTask(
+    id: string,
+    scope: VerificationCheckScope,
+  ): Promise<{ accountId: string }> {
+    const task = await this.prisma.task.findUnique({
+      where: { id },
+      select: { id: true, repo: true, accountId: true },
+    });
+    if (!task || !inScope(task, scope)) {
+      throw new NotFoundError("task not found");
+    }
+    return task;
+  }
+
+  private async findScopedPr(
+    id: string,
+    scope: VerificationCheckScope,
+  ): Promise<{ accountId: string }> {
+    const pr = await this.prisma.pullRequest.findUnique({
+      where: { id },
+      select: { id: true, repo: true, accountId: true },
+    });
+    if (!pr || !inScope(pr, scope)) {
+      throw new NotFoundError("pr not found");
+    }
+    return pr;
+  }
+
   async listForTask(
     taskId: string,
     opts: { limit?: number; offset?: number } = {},
+    scope: VerificationCheckScope = UNRESTRICTED_SCOPE,
   ): Promise<ListVerificationChecksResult> {
-    const existing = await this.prisma.task.findUnique({
-      where: { id: taskId },
-      select: { id: true },
-    });
-    if (!existing) {
-      throw new NotFoundError("task not found");
-    }
+    await this.findScopedTask(taskId, scope);
     return this.list({ taskId }, opts, "asc");
   }
 
   async listForPr(
     prId: string,
     opts: { limit?: number; offset?: number } = {},
+    scope: VerificationCheckScope = UNRESTRICTED_SCOPE,
   ): Promise<ListVerificationChecksResult> {
-    const existing = await this.prisma.pullRequest.findUnique({
-      where: { id: prId },
-      select: { id: true },
-    });
-    if (!existing) {
-      throw new NotFoundError("pr not found");
-    }
+    await this.findScopedPr(prId, scope);
     return this.list({ prRecordId: prId }, opts, "asc");
   }
 
@@ -254,6 +303,7 @@ export class VerificationCheckService implements VerificationCheckServiceLike {
     repo: string,
     checkName: string,
     opts: { limit?: number; offset?: number } = {},
+    scope: VerificationCheckScope = UNRESTRICTED_SCOPE,
   ): Promise<ListVerificationChecksResult> {
     if (!repo) {
       throw new BadRequestError("repo is required");
@@ -263,15 +313,27 @@ export class VerificationCheckService implements VerificationCheckServiceLike {
     }
     // No single task/PR parent to existence-check here — this mode spans
     // every task/PR that ever recorded this repo+checkName pair, so an
-    // unmatched repo/checkName just returns an empty list, not a 404.
-    return this.list({ repo, checkName }, opts, "desc");
+    // unmatched repo/checkName just returns an empty list, not a 404. An
+    // out-of-scope repo likewise returns an empty list (mirrors GET /prs).
+    if (scope.repos !== null && !scope.repos.includes(repo)) {
+      return { checks: [], total: 0 };
+    }
+    return this.list(
+      {
+        repo,
+        checkName,
+        ...(scope.accountId !== null ? { accountId: scope.accountId } : {}),
+      },
+      opts,
+      "desc",
+    );
   }
 
   private async list(
     where:
       | { taskId: string }
       | { prRecordId: string }
-      | { repo: string; checkName: string },
+      | { repo: string; checkName: string; accountId?: string },
     opts: { limit?: number; offset?: number },
     order: "asc" | "desc",
   ): Promise<ListVerificationChecksResult> {
