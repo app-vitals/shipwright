@@ -1562,18 +1562,21 @@ describe("dev-task.md Step 8 — enforced non-blocking verification budgets (LVB
     );
   });
 
-  it("invokes the shared run-with-budget.ts script instead of inlining the setsid/timeout pattern", () => {
+  it("runs each check with the Bash tool timeout set to 600000 ms and falls back to CI past 10 minutes", () => {
     const section = getStep8Section();
-    expect(section).toContain("run-with-budget.ts");
-    expect(section).toContain(
-      'bun run "${CLAUDE_PLUGIN_ROOT}/scripts/run-with-budget.ts"',
-    );
+    expect(section).toContain("600000");
     const lower = section.toLowerCase().replace(/\s+/g, " ");
-    // Explains why: a process-group-aware wrapper is needed so a tool that forks worker
-    // subprocesses can't leave orphaned descendants alive past a timeout — the script
-    // handles this now, so dev-task.md doesn't re-implement the mechanics inline.
-    expect(lower).toMatch(/process(-| )group/);
-    expect(lower).toMatch(/orphan/);
+    expect(lower).toMatch(/exceeds 10 minutes.{0,60}skip the local run.{0,40}rely on ci/);
+    expect(lower).toMatch(/verifications are crucial/);
+  });
+
+  it("no longer references the run-with-budget wrapper, setsid, or the budget derivation", () => {
+    const section = getStep8Section();
+    expect(section).not.toContain("run-with-budget");
+    expect(section).not.toContain("setsid");
+    expect(section).not.toContain("VC_BODY");
+    expect(section).not.toContain("gh run list");
+    expect(section).not.toContain("STREAK");
   });
 
   it("states expiry (timeout) never blocks proceeding to Step 9 (Push & PR)", () => {
@@ -1588,14 +1591,6 @@ describe("dev-task.md Step 8 — enforced non-blocking verification budgets (LVB
     expect(lower).toMatch(/fail.{0,120}never block/);
     expect(lower).toContain("step 5");
     expect(lower).toMatch(/only.{0,60}step 5.{0,80}(real|actual) block/);
-  });
-
-  it("derives the per-check budget from real recent CI job durations via gh run list, with a documented flat fallback constant", () => {
-    const section = getStep8Section();
-    expect(section).toContain("gh run list");
-    const lower = section.toLowerCase().replace(/\s+/g, " ");
-    expect(lower).toMatch(/fallback/);
-    expect(lower).toMatch(/\d+[- ]minute/);
   });
 
   it("records each check's outcome (pass/fail/timeout/skip) for the printed Pre-Ship Checks output", () => {
@@ -1712,25 +1707,37 @@ describe("dev-task.md Step 8 — record verification outcomes via task-store API
     );
   });
 
-  it("documents an environmental-failure judgment step before defaulting to ran_failed, naming all four categories", () => {
+  it("documents the environmental-failure judgment step, naming all four categories", () => {
     const section = getStep8Section();
-    const idx = section.indexOf("judge whether this failure happened");
+    const idx = section.indexOf("judgment call");
     expect(idx).toBeGreaterThan(-1);
-    const nearby = section.slice(idx, idx + 700);
+    const nearby = section.slice(Math.max(0, idx - 300), idx + 400);
     expect(nearby).toContain("missing_tool");
-    expect(nearby).toContain("missing_secret");
-    expect(nearby).toContain("missing_dependency");
     expect(nearby).toContain("resource_limit");
-    expect(nearby).toMatch(/judgment call/i);
-    expect(nearby).toMatch(/not automatic/i);
+    expect(nearby.toLowerCase()).toMatch(/missing tool, secret, or dependency/);
   });
 
-  it("maps run-with-budget.ts's 'timeout' status to timed_out with a check_timeout/install_timeout reasonCategory", () => {
+  it("lists every reasonCategory value and constrains it to skipped/timed_out only", () => {
     const section = getStep8Section();
-    expect(section).toContain('SCRIPT_STATUS" = "timeout"');
-    expect(section).toMatch(
-      /timed_out[\s\S]{0,200}(check_timeout|install_timeout)/,
-    );
+    for (const c of [
+      "check_timeout",
+      "install_timeout",
+      "resource_limit",
+      "missing_tool",
+      "missing_secret",
+      "missing_dependency",
+      "not_configured",
+      "learned_skip",
+    ]) {
+      expect(section).toContain(c);
+    }
+    expect(section).toMatch(/only valid with `skipped` or `timed_out`/);
+    expect(section).toMatch(/never send it with\s+`ran_passed` or `ran_failed`/);
+  });
+
+  it("records passes and failures, not just skips", () => {
+    const section = getStep8Section();
+    expect(section).toMatch(/Record every outcome.{0,40}passes and failures/s);
   });
 
   it("records the scoped-lint empty-filtered-list skip with status skipped and reasonCategory not_configured", () => {
@@ -1746,87 +1753,38 @@ describe("dev-task.md Step 8 — record verification outcomes via task-store API
     expect(nearby).toContain("not_configured");
   });
 
-  it("confirms the skip-locally read path (LVB-4.4) reuses this exact POST shape — no separate recording mechanism", () => {
-    const section = getStep8Section();
-    expect(section).toMatch(/skip-locally read path/i);
-    expect(section).toMatch(/reuses this exact POST shape/i);
-    expect(section).toContain('reasonCategory: "learned_skip"');
-    expect(section).toMatch(/no new recording mechanism was needed/i);
-  });
-
-  it("updates the 'Record, don't swallow' prose to mention posting to the task-store API, not just printing", () => {
-    const section = getStep8Section();
-    const idx = section.indexOf("Record, don't swallow, each outcome");
-    expect(idx).toBeGreaterThan(-1);
-    const nearby = section.slice(idx, idx + 400);
-    expect(nearby.toLowerCase()).toMatch(/post/);
-    expect(nearby).toContain("verification-check");
-  });
 });
 
-describe("dev-task.md Step 8 — Skip-Locally Classification: read before attempting (LVB-4.4)", () => {
+describe("dev-task.md Step 8 — simplified learned skip", () => {
   function section(): string {
-    const idx = content.indexOf(
-      "### Skip-Locally Classification: Read Before Attempting Each Check",
-    );
+    const idx = content.indexOf("**Learned skip.**");
     expect(idx).toBeGreaterThan(-1);
-    const nextIdx = content.indexOf(
-      "### Enforced, Process-Group-Aware Timeouts",
-    );
+    const nextIdx = content.indexOf("### Coverage Gate", idx);
     expect(nextIdx).toBeGreaterThan(idx);
     return content.slice(idx, nextIdx);
   }
 
-  it("is sequenced before the enforced-timeout wrapper, so a skip-locally match never runs it", () => {
-    const skipIdx = content.indexOf(
-      "### Skip-Locally Classification: Read Before Attempting Each Check",
-    );
-    const timeoutIdx = content.indexOf(
-      "### Enforced, Process-Group-Aware Timeouts",
-    );
-    expect(skipIdx).toBeGreaterThan(-1);
-    expect(timeoutIdx).toBeGreaterThan(skipIdx);
-  });
-
-  it("queries GET /verification-checks?repo=&checkName=&limit= live before each attempt — no doc file is read or parsed", () => {
+  it("reads GET /verification-checks?repo=&checkName=&limit= before running a check", () => {
     const s = section();
     expect(s).toContain(
-      "$SHIPWRIGHT_TASK_STORE_URL/verification-checks?repo=$GH_REPO&checkName=$CHECK_NAME&limit=",
+      "$SHIPWRIGHT_TASK_STORE_URL/verification-checks?repo=$GH_REPO&checkName={checkName}&limit=",
     );
-    expect(s).toMatch(/ordered by `at` DESCENDING/);
-    expect(s).toMatch(/no doc file is read or parsed/i);
-    expect(s).not.toMatch(/docsSource/);
-    expect(s).not.toMatch(/docs\/toolchain\.md/);
   });
 
-  it("walks the check+repo history and counts the CONSECUTIVE skipped/timed_out streak, breaking at the first ran_passed or ran_failed row", () => {
+  it("skips locally when the two most recent rows are skipped/timed_out", () => {
     const s = section().replace(/\s+/g, " ");
-    expect(s).toMatch(/STREAK/);
-    expect(s).toMatch(/CONSECUTIVE run of `skipped`\/`timed_out` rows/);
-    expect(s).toMatch(
-      /stops.{0,20}via `break`.{0,60}first `ran_passed` or `ran_failed` row/,
-    );
+    expect(s).toMatch(/both rows are `skipped` or `timed_out`/);
   });
 
-  it("on STREAK -ge 2: does NOT run run-with-budget.ts — no budget spent attempting the check", () => {
+  it("records skipped/learned_skip with learnedFromCategory", () => {
     const s = section();
-    expect(s).toMatch(/do not run\s+`run-with-budget\.ts`/i);
-    expect(s).toMatch(/no budget/i);
-  });
-
-  it("on a match: POSTs status skipped, reasonCategory learned_skip, and learnedFromCategory carrying the recorded category", () => {
-    const s = section();
-    expect(s).toContain('status: "skipped"');
+    expect(s).toContain("`skipped`");
     expect(s).toContain('reasonCategory: "learned_skip"');
-    expect(s).toContain("learnedFromCategory: $learnedFrom");
+    expect(s).toContain("learnedFromCategory");
   });
 
-  it("surfaces the recorded reason in the human-readable PRE-SHIP CHECKS output as 'skip (learned: {reason})'", () => {
-    const s = section();
-    expect(s).toMatch(/skip \(learned: \{reason\}\)/);
-    expect(s).not.toMatch(
-      /skip \(learned: \{reason\}\)[\s\S]{0,40}plain `skip`\s*$/,
-    ); // sanity: phrase isn't truncated
+  it("surfaces the reason as 'skip (learned: {reason})'", () => {
+    expect(section()).toContain("skip (learned: {reason})");
   });
 });
 
