@@ -35,7 +35,9 @@ import type {
   ModelBreakdownEntry,
 } from "./cron-run-reporter.ts";
 import type { CronJobLike } from "./loop-cron-classifier.ts";
+import type { CheckPatchDeps } from "./check-patch.ts";
 import { createLoopOrchestrator } from "./loop-orchestrator.ts";
+import { createPatchStateSnapshotter } from "./patch-outcome-check.ts";
 import type { WorkQueueReporter } from "./work-queue-reporter.ts";
 import type { WorkPrCandidate, WorkTaskCandidate } from "./work-selector.ts";
 
@@ -2115,5 +2117,160 @@ describe("loop-orchestrator + same-session auto-resume (DTW-1.3 / CRT-1.3)", () 
     expect(sessionKeys[0]).toBe("dev-task:CRT-9.1");
     expect(sessionKeys[1]).toMatch(nonceKeyPattern("patch", "acme/x#30"));
     expect(cleared).toEqual([sessionKeys[0], sessionKeys[1]] as string[]);
+  });
+});
+
+// ─── Patch outcome check (PHS-3.1) ──────────────────────────────────────────
+
+describe("loop-orchestrator + patch outcome check (PHS-3.1)", () => {
+  // biome-ignore lint/suspicious/noExplicitAny: Server type param varies by bun version
+  let server: ReturnType<typeof Bun.serve<any>>;
+  let patches: { path: string; body: Record<string, unknown> }[];
+  let skips: string[];
+  let savedEnv: { url?: string; token?: string };
+
+  beforeEach(() => {
+    patches = [];
+    skips = [];
+    server = Bun.serve({
+      port: 0,
+      fetch: async (req) => {
+        const path = new URL(req.url).pathname;
+        if (req.method === "PATCH") {
+          patches.push({ path, body: await req.json() });
+          return new Response("{}", { status: 200 });
+        }
+        if (req.method === "POST" && path.endsWith("/skip")) {
+          skips.push(path);
+          return new Response("{}", { status: 200 });
+        }
+        return new Response("not found", { status: 404 });
+      },
+    });
+    savedEnv = {
+      url: process.env.SHIPWRIGHT_TASK_STORE_URL,
+      token: process.env.SHIPWRIGHT_TASK_STORE_TOKEN,
+    };
+    process.env.SHIPWRIGHT_TASK_STORE_URL = `http://localhost:${server.port}`;
+    process.env.SHIPWRIGHT_TASK_STORE_TOKEN = "test-token";
+  });
+
+  afterEach(async () => {
+    await server.stop(true);
+    if (savedEnv.url !== undefined)
+      process.env.SHIPWRIGHT_TASK_STORE_URL = savedEnv.url;
+    else delete process.env.SHIPWRIGHT_TASK_STORE_URL;
+    if (savedEnv.token !== undefined)
+      process.env.SHIPWRIGHT_TASK_STORE_TOKEN = savedEnv.token;
+    else delete process.env.SHIPWRIGHT_TASK_STORE_TOKEN;
+  });
+
+  function patchDeps(headSha: () => string): CheckPatchDeps {
+    return {
+      getCurrentUser: async () => "agent",
+      getScopedRepos: () => ["acme/x"],
+      listOwnOpenPrs: async () => [],
+      listPrCommits: async () => [],
+      fetchMergeStatus: async () => ({ isDirty: false }),
+      fetchCiStatus: async () => ({ hasFailing: false }),
+      // A non-actionable bot COMMENTED review: unsettled at the current head.
+      fetchPrReviews: async () => ({
+        headRefOid: headSha(),
+        reviews: {
+          nodes: [
+            {
+              author: { login: "bot" },
+              state: "COMMENTED",
+              submittedAt: "2026-01-01T00:00:00Z",
+              commit: { oid: headSha() },
+              body: "no feedback to provide",
+            },
+          ],
+        },
+        reviewThreads: { nodes: [] },
+        comments: { nodes: [] },
+      }),
+    };
+  }
+
+  async function runPatchTick(opts: {
+    headSha: () => string;
+    result: () => Promise<ClaudeRunResult>;
+  }) {
+    let consumed = false;
+    const client = createTaskStoreClient();
+    const loop = createLoopOrchestrator({
+      getDevTaskCandidates: async () => [],
+      getReviewCandidates: async () => [],
+      getPatchCandidates: async () =>
+        consumed ? [] : [pr("acme/x#7", "2026-01-01T00:00:00Z", "patch")],
+      getDeployCandidates: async () => [],
+      claimTask: async () => true,
+      claimPr: async (p) => {
+        consumed = true;
+        return { id: "pr-record-1", commitSha: p.commitSha };
+      },
+      recordSkip: (t, id, reason) => client.recordSkip(t, id, reason),
+      resetSkip: async () => {},
+      getTaskState: async () => null,
+      patchOutcome: {
+        snapshot: createPatchStateSnapshotter(patchDeps(opts.headSha)),
+        escalate: (recordId, _candidateId, reason) =>
+          client.blockPr(recordId, "acme/x", reason),
+      },
+      runner: opts.result,
+      cronRunReporter: {
+        async createRun() {
+          return "run-1";
+        },
+        async completeRun() {},
+        async skipRun() {},
+        async recordProgress() {},
+        async recordSessionId() {},
+      },
+      workQueueReporter: { async reportSnapshot() {} },
+      loopCronId: "shipwright-loop",
+      clock: FixedClock(new Date("2026-07-18T00:00:00Z")),
+    });
+    await loop(ALL_PHASES_ON);
+  }
+
+  test("a silent patch run that leaves a bot review unsettled escalates the PR on the first occurrence", async () => {
+    await runPatchTick({
+      headSha: () => "sha1",
+      result: async () => ({ result: "nothing to do [silent]" }),
+    });
+    expect(patches).toHaveLength(1);
+    expect(patches[0].path).toBe("/prs/pr-record-1");
+    expect(patches[0].body.blocked).toBe(true);
+    expect(patches[0].body.repo).toBe("acme/x");
+    expect(String(patches[0].body.blockedReason)).toContain(
+      "sha1@2026-01-01T00:00:00Z",
+    );
+    // The existing skip streak still records the silent run, unchanged.
+    expect(skips).toEqual(["/prs/pr-record-1/skip"]);
+  });
+
+  test("a thrown patch run is also checked (and still propagates to the drain's isolation)", async () => {
+    await runPatchTick({
+      headSha: () => "sha1",
+      result: async () => {
+        throw new Error("claude crashed");
+      },
+    });
+    expect(patches).toHaveLength(1);
+    expect(patches[0].body.blocked).toBe(true);
+  });
+
+  test("a run that pushed a commit is not escalated", async () => {
+    let head = "sha1";
+    await runPatchTick({
+      headSha: () => head,
+      result: async () => {
+        head = "sha2";
+        return { result: "pushed fix" };
+      },
+    });
+    expect(patches).toHaveLength(0);
   });
 });
