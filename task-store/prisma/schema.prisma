@@ -577,15 +577,16 @@ model VerificationCheck {
 
 // ─── Session ──────────────────────────────────────────────────────────────────
 // A session groups multiple related tasks. Sessions are identified by a human-
-// readable slug (primary key) rather than a numeric ID, allowing sessions to be
-// cited as a meaningful organizational unit.
+// readable slug within an account (SSP-6.9: the [accountId, slug] compound
+// unique is the sole identity — there is no slug-only primary key), allowing
+// sessions to be cited as a meaningful organizational unit.
 //
 // The Task.session field remains a free string (not a foreign key) for backward
 // compatibility — existing tasks that reference sessions by slug continue to work
 // without requiring schema migrations.
 
 model Session {
-  slug       String    @id // Human-readable identifier, e.g. "shipwright-may-launch"
+  slug       String // Human-readable identifier, e.g. "shipwright-may-launch"
   title      String?
   createdAt  DateTime  @default(now())
   updatedAt  DateTime  @updatedAt
