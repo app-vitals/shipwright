@@ -129,6 +129,40 @@ describe("validateAttachment", () => {
     expect(result.ok).toBe(true);
   });
 
+  it("accepts video/webm;codecs=opus and video/webm for a .webm filename (Chromium audio-only recordings)", () => {
+    expect(
+      validateAttachment("recording.webm", 1024, "video/webm;codecs=opus").ok,
+    ).toBe(true);
+    expect(validateAttachment("recording.webm", 1024, "video/webm").ok).toBe(
+      true,
+    );
+  });
+
+  it("rejects video/webm with a non-.webm filename", () => {
+    const result = validateAttachment("clip.mp4", 1024, "video/webm");
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.status).toBe(415);
+    }
+  });
+
+  it("accepts audio/mp4, audio/mpeg and audio/wav", () => {
+    expect(validateAttachment("recording.m4a", 1024, "audio/mp4").ok).toBe(
+      true,
+    );
+    expect(validateAttachment("a.mp3", 1024, "audio/mpeg").ok).toBe(true);
+    expect(validateAttachment("a.wav", 1024, "audio/wav").ok).toBe(true);
+  });
+
+  it("strips MIME parameters and case before matching", () => {
+    expect(
+      validateAttachment("a.m4a", 1024, "Audio/MP4;codecs=mp4a.40.2").ok,
+    ).toBe(true);
+    expect(
+      validateAttachment("a.txt", 1024, "TEXT/Plain; charset=utf-8").ok,
+    ).toBe(true);
+  });
+
   it("still rejects an unrelated audio type not in the allowlist", () => {
     const result = validateAttachment("clip.aac", 1024, "audio/aac");
     expect(result.ok).toBe(false);
@@ -172,6 +206,8 @@ describe("audioContentTypeForFilename", () => {
     expect(audioContentTypeForFilename("a.ogg")).toBe("audio/ogg");
     expect(audioContentTypeForFilename("a.wav")).toBe("audio/wav");
     expect(audioContentTypeForFilename("a.mp3")).toBe("audio/mpeg");
+    expect(audioContentTypeForFilename("x.m4a")).toBe("audio/mp4");
+    expect(isAudioFilename("x.m4a")).toBe(true);
   });
 
   it("returns null for a non-audio or missing filename", () => {

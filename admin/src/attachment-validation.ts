@@ -29,6 +29,10 @@ export const ALLOWED_MIME_EXACT = new Set([
   "audio/webm",
   "audio/webm;codecs=opus",
   "audio/ogg",
+  // Safari/iOS MediaRecorder output, plus common TTS/upload audio formats.
+  "audio/mp4",
+  "audio/mpeg",
+  "audio/wav",
 ]);
 
 /**
@@ -39,13 +43,14 @@ export const ALLOWED_MIME_EXACT = new Set([
  * MediaRecorder-authored user attachments (.webm/.ogg, this task) and
  * TTS-authored assistant attachments (.wav/.mp3, from VM-2.1's chat-poller).
  */
-const AUDIO_FILE_EXTENSIONS = [".wav", ".mp3", ".webm", ".ogg"];
+const AUDIO_FILE_EXTENSIONS = [".wav", ".mp3", ".webm", ".ogg", ".m4a"];
 
 const AUDIO_CONTENT_TYPES: Record<string, string> = {
   ".wav": "audio/wav",
   ".mp3": "audio/mpeg",
   ".webm": "audio/webm",
   ".ogg": "audio/ogg",
+  ".m4a": "audio/mp4",
 };
 
 /**
@@ -93,9 +98,19 @@ export function validateAttachment(
     };
   }
 
+  // Strip parameters (";codecs=opus") and case before matching; the exact set
+  // still lists the codecs variant for backward compatibility.
+  const baseType = mimeType.split(";")[0].trim().toLowerCase();
+  // Chromium reports audio-only MediaRecorder output as video/webm — accept it
+  // only for .webm filenames so arbitrary video uploads stay rejected.
+  const isWebmRecording =
+    baseType === "video/webm" && filename.toLowerCase().endsWith(".webm");
+
   const isAllowed =
     ALLOWED_MIME_EXACT.has(mimeType) ||
-    ALLOWED_MIME_PREFIXES.some((prefix) => mimeType.startsWith(prefix));
+    ALLOWED_MIME_EXACT.has(baseType) ||
+    isWebmRecording ||
+    ALLOWED_MIME_PREFIXES.some((prefix) => baseType.startsWith(prefix));
 
   if (!isAllowed) {
     return {
