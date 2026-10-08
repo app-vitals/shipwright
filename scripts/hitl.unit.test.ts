@@ -11,6 +11,7 @@ import { describe, expect, test } from "bun:test";
 import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import type { PatchStateSnapshot } from "../agent/src/patch-outcome-check.ts";
 import type { LogFileTeeTarget } from "./hitl-log-file-tee-target.ts";
 import {
   HITL_ALLOWED_TOOLS,
@@ -29,6 +30,7 @@ import {
   parseHitlAuthors,
   parseHitlRepos,
   parseTasksResponse,
+  runWithPatchOutcomeCheck,
 } from "./hitl.ts";
 
 /**
@@ -80,7 +82,9 @@ function redirect(location: string, setCookie?: string): Response {
  * path mints a session here because POST /admin/agents is session-gated
  * (there is no POST /agents JSON API anymore — ABF-3.2).
  */
-function devLoginRoute(setCookie = "admin_session=dev-sess; Path=/; HttpOnly"): Route {
+function devLoginRoute(
+  setCookie = "admin_session=dev-sess; Path=/; HttpOnly",
+): Route {
   return {
     method: "GET",
     match: (url) => url.endsWith("/admin/dev-login"),
@@ -597,7 +601,9 @@ describe("parseCreatedAgentId", () => {
   });
 
   test("returns null for the /admin/agents/new error redirect", () => {
-    expect(parseCreatedAgentId("/admin/agents/new?error=invalid_type")).toBeNull();
+    expect(
+      parseCreatedAgentId("/admin/agents/new?error=invalid_type"),
+    ).toBeNull();
     expect(parseCreatedAgentId("/admin/agents/new")).toBeNull();
   });
 
@@ -675,7 +681,9 @@ describe("ensureHitlAgent", () => {
         respond: () => json([]),
       },
       devLoginRoute(),
-      createFormRoute("/admin/agents/agent-9?warning=restrict_slack_no_members"),
+      createFormRoute(
+        "/admin/agents/agent-9?warning=restrict_slack_no_members",
+      ),
     ]);
 
     expect(await ensureHitlAgent(fetchDouble, [])).toBe("agent-9");
@@ -1002,5 +1010,140 @@ describe("ensureHitlAgent", () => {
     const id = await ensureHitlAgent(fetchDouble, ["org/repo"], ["new-user"]);
 
     expect(id).toBe("agent-1");
+  });
+});
+
+describe("runWithPatchOutcomeCheck", () => {
+  const PR = "org/repo#7";
+  const unsettled: PatchStateSnapshot = {
+    headSha: "aaaaaaa1111",
+    findingRefs: ["f1"],
+    mergeDirty: false,
+    ciFailing: false,
+  };
+
+  function harness(snaps: Array<PatchStateSnapshot | null>) {
+    const escalations: Array<{ recordId: string; reason: string }> = [];
+    let i = 0;
+    return {
+      escalations,
+      snapshot: async () => snaps[Math.min(i++, snaps.length - 1)] ?? null,
+      escalate: async (recordId: string, _id: string, reason: string) => {
+        escalations.push({ recordId, reason });
+      },
+    };
+  }
+
+  test("escalates an unchanged, unsettled run", async () => {
+    const h = harness([unsettled, { ...unsettled }]);
+    const code = await runWithPatchOutcomeCheck({
+      phase: "patch",
+      prId: PR,
+      recordId: "rec1",
+      spawn: async () => 0,
+      snapshot: h.snapshot,
+      escalate: h.escalate,
+    });
+    expect(code).toBe(0);
+    expect(h.escalations).toHaveLength(1);
+    expect(h.escalations[0]?.recordId).toBe("rec1");
+  });
+
+  test("does not escalate a settled run", async () => {
+    const h = harness([
+      unsettled,
+      { ...unsettled, headSha: "bbbbbbb2222", findingRefs: [] },
+    ]);
+    await runWithPatchOutcomeCheck({
+      phase: "patch",
+      prId: PR,
+      recordId: "rec1",
+      spawn: async () => 0,
+      snapshot: h.snapshot,
+      escalate: h.escalate,
+    });
+    expect(h.escalations).toHaveLength(0);
+  });
+
+  test("does not escalate a changed run", async () => {
+    const h = harness([unsettled, { ...unsettled, headSha: "ccccccc3333" }]);
+    await runWithPatchOutcomeCheck({
+      phase: "patch",
+      prId: PR,
+      recordId: "rec1",
+      spawn: async () => 0,
+      snapshot: h.snapshot,
+      escalate: h.escalate,
+    });
+    expect(h.escalations).toHaveLength(0);
+  });
+
+  test("nonzero exit code goes through the same check", async () => {
+    const h = harness([unsettled, { ...unsettled }]);
+    const code = await runWithPatchOutcomeCheck({
+      phase: "patch",
+      prId: PR,
+      recordId: "rec1",
+      spawn: async () => 137,
+      snapshot: h.snapshot,
+      escalate: h.escalate,
+    });
+    expect(code).toBe(137);
+    expect(h.escalations).toHaveLength(1);
+  });
+
+  test("a throwing spawn still runs the check and rethrows", async () => {
+    const h = harness([unsettled, { ...unsettled }]);
+    await expect(
+      runWithPatchOutcomeCheck({
+        phase: "patch",
+        prId: PR,
+        recordId: "rec1",
+        spawn: async () => {
+          throw new Error("boom");
+        },
+        snapshot: h.snapshot,
+        escalate: h.escalate,
+      }),
+    ).rejects.toThrow("boom");
+    expect(h.escalations).toHaveLength(1);
+  });
+
+  test("review dispatches and failed snapshots skip the check", async () => {
+    const h = harness([unsettled, { ...unsettled }]);
+    await runWithPatchOutcomeCheck({
+      phase: "review",
+      prId: PR,
+      recordId: "rec1",
+      spawn: async () => 0,
+      snapshot: h.snapshot,
+      escalate: h.escalate,
+    });
+    const h2 = harness([null, { ...unsettled }]);
+    await runWithPatchOutcomeCheck({
+      phase: "patch",
+      prId: PR,
+      recordId: "rec1",
+      spawn: async () => 0,
+      snapshot: h2.snapshot,
+      escalate: h2.escalate,
+    });
+    expect(h.escalations).toHaveLength(0);
+    expect(h2.escalations).toHaveLength(0);
+  });
+
+  test("escalation failure is swallowed", async () => {
+    const h = harness([unsettled, { ...unsettled }]);
+    const code = await runWithPatchOutcomeCheck({
+      phase: "patch",
+      prId: PR,
+      recordId: "rec1",
+      spawn: async () => 0,
+      snapshot: h.snapshot,
+      escalate: async () => {
+        throw new Error("store down");
+      },
+    });
+    expect(code).toBe(0);
   });
 });

@@ -59,6 +59,11 @@ import {
   getReviewCandidates,
 } from "../agent/src/check-review.ts";
 import { FLOOR_TOOLS } from "../agent/src/claude.ts";
+import {
+  type PatchStateSnapshot,
+  createPatchStateSnapshotter,
+  evaluatePatchOutcome,
+} from "../agent/src/patch-outcome-check.ts";
 import { installPlugins } from "../agent/src/setup.ts";
 import {
   type WorkPrCandidate,
@@ -1124,6 +1129,52 @@ export function buildClaudeSpawnEnv(
   };
 }
 
+/**
+ * PHS-3.2 — runs one spawned dispatch under the shared state-based patch
+ * outcome check (PHS-3.1). For patch PR dispatches, snapshots candidacy
+ * before, runs `spawn` (resolving to claude's exit code), then recomputes it
+ * on every exit — including a nonzero code or a throw, which still
+ * propagates. An unchanged, unsettled PR is escalated via `escalate` (the
+ * PR-level blocked mechanism) so the loop's next candidate query skips it
+ * instead of re-dispatching. Best-effort: snapshot/escalation failures are
+ * logged and never fail the dispatch. Non-patch dispatches pass through.
+ */
+export async function runWithPatchOutcomeCheck(opts: {
+  phase: string | undefined;
+  prId: string;
+  recordId: string;
+  spawn: () => Promise<number>;
+  snapshot?: (candidateId: string) => Promise<PatchStateSnapshot | null>;
+  escalate: (
+    recordId: string,
+    candidateId: string,
+    reason: string,
+  ) => Promise<void>;
+}): Promise<number> {
+  const { phase, prId, recordId, spawn, snapshot, escalate } = opts;
+  if (phase !== "patch" || !snapshot) return spawn();
+
+  const before = await snapshot(prId).catch(() => null);
+  try {
+    return await spawn();
+  } finally {
+    try {
+      const after = before ? await snapshot(prId) : null;
+      if (before && after) {
+        const outcome = evaluatePatchOutcome(before, after);
+        if (outcome.kind === "escalated") {
+          log(`${prId}: ${outcome.reason} — escalating`);
+          await escalate(recordId, prId, outcome.reason);
+        }
+      }
+    } catch (err) {
+      log(
+        `patch outcome check failed for ${prId}: ${err instanceof Error ? err.message : err} — swallowing`,
+      );
+    }
+  }
+}
+
 async function runLoop(): Promise<void> {
   log(`task loop started — polling ${TASK_STORE_URL}`);
   log(`admin UI: ${ADMIN_URL}/admin/dev-login`);
@@ -1204,6 +1255,7 @@ async function runLoop(): Promise<void> {
 
     let command: string;
     let label: string;
+    let prRecord: { id: string; phase: string; repo: string } | undefined;
 
     if (next.type === "task") {
       let claimed: boolean;
@@ -1252,6 +1304,11 @@ async function runLoop(): Promise<void> {
         continue;
       }
 
+      prRecord = {
+        id: claimResult.id,
+        phase: next.pr.phase,
+        repo: parsed.repo,
+      };
       command = buildPrCommand(next.pr.id, next.pr.phase, claimResult);
       label = `${next.pr.id} — ${next.pr.title ?? ""}`;
     }
@@ -1263,27 +1320,48 @@ async function runLoop(): Promise<void> {
     log("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
     console.log("");
 
-    const claude = Bun.spawn(
-      [
-        "claude",
-        command,
-        "--permission-mode",
-        "auto",
-        "--allowedTools",
-        ...HITL_ALLOWED_TOOLS,
-      ],
-      {
-        cwd: WORKSPACE,
-        env: buildClaudeSpawnEnv(process.env),
-        stdout: "inherit",
-        stderr: "inherit",
-        stdin: "inherit",
-      },
-    );
+    let exitCode: number | null = null;
+    const spawnClaude = async (): Promise<number> => {
+      const claude = Bun.spawn(
+        [
+          "claude",
+          command,
+          "--permission-mode",
+          "auto",
+          "--allowedTools",
+          ...HITL_ALLOWED_TOOLS,
+        ],
+        {
+          cwd: WORKSPACE,
+          env: buildClaudeSpawnEnv(process.env),
+          stdout: "inherit",
+          stderr: "inherit",
+          stdin: "inherit",
+        },
+      );
+      await claude.exited;
+      exitCode = claude.exitCode;
+      return claude.exitCode ?? 0;
+    };
 
-    await claude.exited;
+    if (next.type === "pr" && prRecord) {
+      const record = prRecord;
+      await runWithPatchOutcomeCheck({
+        phase: record.phase,
+        prId: next.pr.id,
+        recordId: record.id,
+        spawn: spawnClaude,
+        snapshot: patchDeps
+          ? createPatchStateSnapshotter(patchDeps)
+          : undefined,
+        escalate: (recordId, _candidateId, reason) =>
+          client.blockPr(recordId, record.repo, reason),
+      });
+    } else {
+      await spawnClaude();
+    }
 
-    log(`claude exited (code ${claude.exitCode}) — continuing loop`);
+    log(`claude exited (code ${exitCode}) — continuing loop`);
     console.log("");
   }
 }
