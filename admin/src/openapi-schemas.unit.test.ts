@@ -36,6 +36,7 @@ const validCronJob = {
   name: "morning-brief",
   system: false,
   parentCronId: null,
+  lockdownDisabledAt: null,
   createdAt: now,
   updatedAt: now,
 };
@@ -100,6 +101,7 @@ describe("AgentCronJobSchema", () => {
       name: null,
       system: false,
       parentCronId: null,
+      lockdownDisabledAt: null,
       createdAt: now,
       updatedAt: now,
     };

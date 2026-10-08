@@ -228,4 +228,91 @@ describeOrSkip("TrialExpirySweeper (integration)", () => {
     expect(await getCronEnabled(prisma, badCronId)).toBe(true);
     expect(await getCronEnabled(prisma, goodCronId)).toBe(false);
   });
+
+  // ─── SSP-8.1: lockdown marker + restore ─────────────────────────────────────
+
+  it("stamps lockdownDisabledAt on swept crons but not on user-disabled ones", async () => {
+    const agentId = await createAgent(prisma, { trialExpiresAt: PAST });
+    const swept = await createCron(prisma, agentId, { enabled: true });
+    const userDisabled = await createCron(prisma, agentId, { enabled: false });
+
+    await sweeper.tick();
+
+    const sweptRow = await prisma.agentCronJob.findUniqueOrThrow({
+      where: { id: swept },
+    });
+    const userRow = await prisma.agentCronJob.findUniqueOrThrow({
+      where: { id: userDisabled },
+    });
+    expect(sweptRow.enabled).toBe(false);
+    expect(sweptRow.lockdownDisabledAt).not.toBeNull();
+    expect(userRow.lockdownDisabledAt).toBeNull();
+  });
+
+  it("restoreLockdownDisabled re-enables only lockdown-disabled crons and clears the marker", async () => {
+    const agentId = await createAgent(prisma, { trialExpiresAt: PAST });
+    const swept = await createCron(prisma, agentId, { enabled: true });
+    const userDisabled = await createCron(prisma, agentId, { enabled: false });
+    await sweeper.tick();
+
+    const service = new AgentCronJobService(prisma);
+    const restored = await service.restoreLockdownDisabled([agentId]);
+
+    expect(restored).toBe(1);
+    const sweptRow = await prisma.agentCronJob.findUniqueOrThrow({
+      where: { id: swept },
+    });
+    expect(sweptRow.enabled).toBe(true);
+    expect(sweptRow.lockdownDisabledAt).toBeNull();
+    expect(await getCronEnabled(prisma, userDisabled)).toBe(false);
+  });
+
+  it("restoreLockdownDisabled ignores agents not listed and empty input", async () => {
+    const agentId = await createAgent(prisma, { trialExpiresAt: PAST });
+    const other = await createAgent(prisma, { name: "Other" });
+    const cron = await createCron(prisma, agentId, { enabled: true });
+    await sweeper.tick();
+
+    const service = new AgentCronJobService(prisma);
+    expect(await service.restoreLockdownDisabled([])).toBe(0);
+    expect(await service.restoreLockdownDisabled([other])).toBe(0);
+    expect(await getCronEnabled(prisma, cron)).toBe(false);
+  });
+
+  it("a manual setEnabled call clears a stale lockdown marker", async () => {
+    const agentId = await createAgent(prisma, { trialExpiresAt: PAST });
+    const cron = await createCron(prisma, agentId, { enabled: true });
+    await sweeper.tick();
+
+    const service = new AgentCronJobService(prisma);
+    await service.setEnabled(agentId, cron, true);
+    const row = await prisma.agentCronJob.findUniqueOrThrow({
+      where: { id: cron },
+    });
+    expect(row.lockdownDisabledAt).toBeNull();
+  });
+
+  it("a content update() with an explicit enabled value clears the lockdown marker", async () => {
+    const agentId = await createAgent(prisma, { trialExpiresAt: PAST });
+    const cron = await createCron(prisma, agentId, { enabled: true });
+    await sweeper.tick();
+
+    const service = new AgentCronJobService(prisma);
+    const before = await prisma.agentCronJob.findUniqueOrThrow({
+      where: { id: cron },
+    });
+    await service.update(agentId, cron, {
+      schedule: before.schedule,
+      prompt: before.prompt,
+      channel: before.channel,
+      enabled: false,
+    });
+
+    const row = await prisma.agentCronJob.findUniqueOrThrow({
+      where: { id: cron },
+    });
+    expect(row.lockdownDisabledAt).toBeNull();
+    expect(await service.restoreLockdownDisabled([agentId])).toBe(0);
+    expect(await getCronEnabled(prisma, cron)).toBe(false);
+  });
 });

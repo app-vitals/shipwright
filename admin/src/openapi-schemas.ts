@@ -85,6 +85,16 @@ export const PatchAgentBodySchema = z
       .openapi({ example: ["octocat"] }),
     restrictSlackToMembers: z.boolean().optional().openapi({ example: false }),
     /**
+     * SSP-5.3: assign the agent to an account (or null to clear). Platform
+     * admin only. Does not move historical task-store rows.
+     */
+    accountId: z
+      .string()
+      .min(1)
+      .nullable()
+      .optional()
+      .openapi({ example: "acct_123" }),
+    /**
      * ATE-1.1: trial expiry timestamp. Nullable so it can also be explicitly
      * cleared. trialExpiryWarnedAt is intentionally NOT part of this schema —
      * it is written internally by ATE-2.1's warning check, not user-editable

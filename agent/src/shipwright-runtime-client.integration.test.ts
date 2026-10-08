@@ -49,6 +49,7 @@ const SAMPLE_CRONS: AgentCronJob[] = [
     preCheck: null,
     system: false,
     parentCronId: null,
+    lockdownDisabledAt: null,
     createdAt: new Date("2025-01-01T00:00:00Z"),
     updatedAt: new Date("2025-01-01T00:00:00Z"),
   },

@@ -27,6 +27,13 @@ import { callerLabel } from "@shipwright/lib/request-context";
 import type { ErrorCapturingClient } from "@shipwright/lib/sentry";
 import { HTTPException } from "hono/http-exception";
 import type { PrismaClient } from "../prisma/client/client.ts";
+import {
+  ACCOUNT_CREATE_ERROR_MESSAGES,
+  accountIdFromScope,
+  isAccountCreateErrorCode,
+  SELF_SERVE_AGENT_TYPE,
+} from "./account-agent-create.ts";
+import { reconcileAgentAfterAccountChange } from "./agent-account-assignment.ts";
 import type { AgentChatTokenService } from "./agent-chat-tokens.ts";
 import type {
   AgentCronJobService,
@@ -35,12 +42,6 @@ import type {
 import type { AgentCronRunStatsService } from "./agent-cron-run-stats.ts";
 import type { AgentCronRunService } from "./agent-cron-runs.ts";
 import type { DeleteAgentFullyDeps } from "./agent-deletion.ts";
-import {
-  ACCOUNT_CREATE_ERROR_MESSAGES,
-  SELF_SERVE_AGENT_TYPE,
-  accountIdFromScope,
-  isAccountCreateErrorCode,
-} from "./account-agent-create.ts";
 import { deleteAgentFully } from "./agent-deletion.ts";
 import type { AgentEnvService } from "./agent-envs.ts";
 import type { AgentGitHubInstallationsService } from "./agent-github-installations.ts";
@@ -465,7 +466,7 @@ const patchAgentRoute = createRoute({
   path: "/agents/{id}",
   summary: "Update an agent",
   description:
-    "Admin-only. Updates `selfHosted`, `repos`, `reviewAuthorAllowlist`, `patchAuthorAllowlist`, `restrictSlackToMembers`, `slackId`, and/or `trialExpiresAt`. `typeName` and `trialExpiryWarnedAt` are not updatable via this route. Returns the updated agent, including a `warning` field when `restrictSlackToMembers` is set true on an agent with zero members.",
+    "Admin-only. Updates `selfHosted`, `repos`, `reviewAuthorAllowlist`, `patchAuthorAllowlist`, `restrictSlackToMembers`, `slackId`, `trialExpiresAt`, and/or `accountId` (platform admin only — 403 for session members; `null` clears it; reconciles the workload of in-cluster agents; does not move historical task-store rows). `typeName` and `trialExpiryWarnedAt` are not updatable via this route. Returns the updated agent, including a `warning` field when `restrictSlackToMembers` is set true on an agent with zero members.",
   request: {
     params: AgentIdParamSchema,
     body: {
@@ -1353,55 +1354,78 @@ export function createAdminApp(deps: AdminDeps): OpenAPIHono<AdminAuthEnv> {
     if (!existing) {
       throw new NotFoundError(`agent ${agentId} not found`);
     }
+    // SSP-5.3: assigning an agent to an account is platform-admin only —
+    // session members (admitted by isAdminOrSessionMember) must not move
+    // agents between tenants.
+    if (body.accountId !== undefined) {
+      if (c.get("isAdmin") !== true) {
+        throw new ForbiddenError("Admin access required to change accountId");
+      }
+    }
     const collision =
       body.repos !== undefined ? describeRepoNameCollision(body.repos) : null;
     if (collision) {
       throw new BadRequestError(collision);
     }
-    const agent = await agentService.updateSelfHosted(agentId, {
-      selfHosted: body.selfHosted,
-      ...(body.repos !== undefined ? { repos: body.repos } : {}),
-      ...(body.reviewAuthorAllowlist !== undefined
-        ? { reviewAuthorAllowlist: body.reviewAuthorAllowlist }
-        : {}),
-      ...(body.patchAuthorAllowlist !== undefined
-        ? { patchAuthorAllowlist: body.patchAuthorAllowlist }
-        : {}),
-      ...(body.restrictSlackToMembers !== undefined
-        ? { restrictSlackToMembers: body.restrictSlackToMembers }
-        : {}),
-      ...(body.slackId !== undefined ? { slackId: body.slackId } : {}),
-      ...(body.trialExpiresAt !== undefined
-        ? {
-            trialExpiresAt: body.trialExpiresAt
-              ? new Date(body.trialExpiresAt)
-              : null,
-          }
-        : {}),
-      ...(body.autoPostReviews !== undefined
-        ? { autoPostReviews: body.autoPostReviews }
-        : {}),
-      ...(body.allowSelfReview !== undefined
-        ? { allowSelfReview: body.allowSelfReview }
-        : {}),
-      ...(body.minConfidence !== undefined
-        ? { minConfidence: body.minConfidence }
-        : {}),
-      ...(body.maxFindings !== undefined
-        ? { maxFindings: body.maxFindings }
-        : {}),
-      ...(body.cleanupMergedWorktrees !== undefined
-        ? { cleanupMergedWorktrees: body.cleanupMergedWorktrees }
-        : {}),
-      ...(body.cleanupAfterDays !== undefined
-        ? { cleanupAfterDays: body.cleanupAfterDays }
-        : {}),
-    });
-    const warning = await computeRestrictSlackToMembersWarning(
+    const agent = await agentService
+      .updateSelfHosted(agentId, {
+        selfHosted: body.selfHosted,
+        ...(body.accountId !== undefined ? { accountId: body.accountId } : {}),
+        ...(body.repos !== undefined ? { repos: body.repos } : {}),
+        ...(body.reviewAuthorAllowlist !== undefined
+          ? { reviewAuthorAllowlist: body.reviewAuthorAllowlist }
+          : {}),
+        ...(body.patchAuthorAllowlist !== undefined
+          ? { patchAuthorAllowlist: body.patchAuthorAllowlist }
+          : {}),
+        ...(body.restrictSlackToMembers !== undefined
+          ? { restrictSlackToMembers: body.restrictSlackToMembers }
+          : {}),
+        ...(body.slackId !== undefined ? { slackId: body.slackId } : {}),
+        ...(body.trialExpiresAt !== undefined
+          ? {
+              trialExpiresAt: body.trialExpiresAt
+                ? new Date(body.trialExpiresAt)
+                : null,
+            }
+          : {}),
+        ...(body.autoPostReviews !== undefined
+          ? { autoPostReviews: body.autoPostReviews }
+          : {}),
+        ...(body.allowSelfReview !== undefined
+          ? { allowSelfReview: body.allowSelfReview }
+          : {}),
+        ...(body.minConfidence !== undefined
+          ? { minConfidence: body.minConfidence }
+          : {}),
+        ...(body.maxFindings !== undefined
+          ? { maxFindings: body.maxFindings }
+          : {}),
+        ...(body.cleanupMergedWorktrees !== undefined
+          ? { cleanupMergedWorktrees: body.cleanupMergedWorktrees }
+          : {}),
+        ...(body.cleanupAfterDays !== undefined
+          ? { cleanupAfterDays: body.cleanupAfterDays }
+          : {}),
+      })
+      .catch((err: unknown) => {
+        // FK violation: Agent.accountId references a nonexistent Account.
+        if ((err as { code?: string } | null)?.code === "P2003") {
+          throw new NotFoundError(`account ${body.accountId} not found`);
+        }
+        throw err;
+      });
+    const slackWarning = await computeRestrictSlackToMembersWarning(
       agentMemberService,
       agentId,
       agent.restrictSlackToMembers,
     );
+    const reconcileWarning =
+      body.accountId !== undefined
+        ? await reconcileAgentAfterAccountChange(provisioner, agent)
+        : undefined;
+    const warning =
+      [slackWarning, reconcileWarning].filter(Boolean).join("; ") || undefined;
     return c.json(serializeAgent(agent, warning), 200);
   });
 
