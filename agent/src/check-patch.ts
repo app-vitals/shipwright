@@ -28,8 +28,10 @@
  */
 
 import {
+  ciRef,
   hasUnaddressedFindings,
   isAddressedByAuthorReply,
+  isRejectedByPatchLedger,
   isSelfCleanApprove,
 } from "../../plugins/shipwright/scripts/compute-unaddressed-findings.ts";
 import { agentReposRef } from "./agent-repos-ref.ts";
@@ -167,6 +169,13 @@ export interface CiCheckStatus {
    * rerun. `undefined` when `hasCancelled` is false.
    */
   cancelledRunId?: number;
+  /**
+   * patch.md Step 6b's `ciFailureSignature` — failing job names, sorted and
+   * comma-joined (SLS-2.1). Used with the head SHA to build the `ci:` ledger
+   * ref (see ciRef). Absent/empty when unknown or cancelled-only, in which
+   * case the ref is `ci:{headSha}:`.
+   */
+  ciFailureSignature?: string;
 }
 
 export interface MergeStatusInfo {
@@ -357,6 +366,35 @@ export function findCancelledRuns<
   },
 >(runs: T[]): T[] {
   return latestRunPerWorkflow(runs).filter((r) => r.conclusion === "cancelled");
+}
+
+/** patch.md Step 6b's signature: failing job names, sorted and comma-joined. */
+export function ciFailureSignatureFromJobs(
+  jobs: { name: string; conclusion: string | null }[],
+): string {
+  return jobs
+    .filter((j) => j.conclusion === "failure")
+    .map((j) => j.name)
+    .sort()
+    .join(",");
+}
+
+/**
+ * Whether CI makes a PR a patch candidate (SLS-2.1): failing or cancelled CI,
+ * unless a `source: "patch"`, `disposition: "rejected"` ledger entry exists at
+ * `ci:{headSha}:{ciFailureSignature}`. Shared by getPatchCandidates and the
+ * PHS-3.1 outcome snapshot so candidacy cannot drift between them.
+ */
+export function isCiPatchTrigger(
+  ci: CiCheckStatus,
+  headSha: string,
+  findings: PrFinding[] = [],
+): boolean {
+  if (!ci.hasFailing && !ci.hasCancelled) return false;
+  return !isRejectedByPatchLedger(
+    ciRef(headSha, ci.ciFailureSignature ?? ""),
+    findings,
+  );
 }
 
 // ─── Staleness check (mirrors patch.md Step 3b) ───────────────────────────────
@@ -562,7 +600,7 @@ export async function getPatchCandidates(
         // still a valid patch candidate (PCC-1.1) — patch.md's Step 6b.8
         // rerun-first branch is what actually resolves it, but candidacy
         // itself is decided here per the Candidate Selection Contract.
-        if (ciStatus.hasFailing || ciStatus.hasCancelled) {
+        if (isCiPatchTrigger(ciStatus, pr.headRefOid, record?.findings)) {
           needsPatch = true;
         }
       }
@@ -795,10 +833,33 @@ export async function buildProductionDeps(opts: {
         const cancelledRunId = cancelledRuns.sort(
           (a, b) => b.run_number - a.run_number,
         )[0]?.id;
+        // patch.md Step 6b's signature: failing job names of the most recent
+        // failed run, sorted + comma-joined. Only fetched when CI is failing,
+        // and a jobs-lookup error degrades to "" (the ref then just won't
+        // match a ledger entry — fail open to candidacy).
+        let ciFailureSignature = "";
+        if (hasFailing) {
+          const latestFailed = latestRunPerWorkflow(data.workflow_runs)
+            .filter(
+              (r) => r.conclusion === "failure" || r.conclusion === "timed_out",
+            )
+            .sort((a, b) => b.id - a.id)[0];
+          if (latestFailed) {
+            try {
+              const jobs = await ghJson<{
+                jobs: { name: string; conclusion: string | null }[];
+              }>(["api", `repos/${org}/${repo}/actions/runs/${latestFailed.id}/jobs`]);
+              ciFailureSignature = ciFailureSignatureFromJobs(jobs.jobs);
+            } catch {
+              // fall through with ""
+            }
+          }
+        }
         return {
           hasFailing,
           hasCancelled: cancelledRuns.length > 0,
           ...(cancelledRunId !== undefined ? { cancelledRunId } : {}),
+          ...(ciFailureSignature ? { ciFailureSignature } : {}),
         };
       } catch (err) {
         process.stderr.write(

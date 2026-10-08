@@ -23,6 +23,7 @@ import {
   type OwnPr,
   type PrReviewData,
   buildProductionDeps,
+  ciFailureSignatureFromJobs,
   findCancelledRuns,
   getPatchCandidates,
   hasFailingCi,
@@ -2476,5 +2477,75 @@ describe("buildProductionDeps", () => {
     } finally {
       rmSync(scratchDir, { recursive: true, force: true });
     }
+  });
+});
+
+describe("getPatchCandidates — SLS-2.1 ci rejected ref", () => {
+  const HEAD = "ci-head-sha";
+  const SIG = "lint,test";
+  const entry = (ref: string, overrides: Record<string, unknown> = {}) => ({
+    id: "f1",
+    prRecordId: "pr1",
+    ref,
+    disposition: "rejected" as const,
+    source: "patch" as const,
+    evidence: "e",
+    at: "2026-05-27T00:00:00Z",
+    createdAt: "2026-05-27T00:00:00Z",
+    ...overrides,
+  });
+  const run = async (
+    ci: CiCheckStatus,
+    findings: ReturnType<typeof entry>[],
+    mergeDirty = false,
+  ) => {
+    const deps = makeDeps({
+      ownPrs: [makeOwnPr({ number: 10, headRefOid: HEAD })],
+      reviewDataByPr: { 10: makePrReviewData({ headRefOid: HEAD }) },
+      ciStatusByPr: { 10: ci },
+      mergeStatusByPr: { 10: { isDirty: mergeDirty } },
+    });
+    deps.queryPrRecord = async () => ({ findings }) as never;
+    return getPatchCandidates(deps);
+  };
+  const failing = { hasFailing: true, ciFailureSignature: SIG };
+
+  test("failing CI with a matching ci rejected entry is not a candidate", async () => {
+    expect(await run(failing, [entry(`ci:${HEAD}:${SIG}`)])).toEqual([]);
+  });
+
+  test("a cancelled-only state is settled by a ci:{sha}: entry", async () => {
+    expect(
+      await run({ hasFailing: false, hasCancelled: true }, [entry(`ci:${HEAD}:`)]),
+    ).toEqual([]);
+  });
+
+  test("a new head or a different signature qualifies again", async () => {
+    expect(await run(failing, [entry(`ci:old-sha:${SIG}`)])).toHaveLength(1);
+    expect(await run(failing, [entry(`ci:${HEAD}:other`)])).toHaveLength(1);
+  });
+
+  test("only a patch-source rejected entry settles it", async () => {
+    const ref = `ci:${HEAD}:${SIG}`;
+    expect(await run(failing, [entry(ref, { source: "review" })])).toHaveLength(1);
+    expect(
+      await run(failing, [entry(ref, { disposition: "resolved" })]),
+    ).toHaveLength(1);
+  });
+
+  test("merge-conflict candidacy is unaffected by a ci rejected entry", async () => {
+    expect(await run(failing, [entry(`ci:${HEAD}:${SIG}`)], true)).toHaveLength(1);
+  });
+});
+
+describe("ciFailureSignatureFromJobs", () => {
+  test("sorts and comma-joins only failed jobs", () => {
+    expect(
+      ciFailureSignatureFromJobs([
+        { name: "test", conclusion: "failure" },
+        { name: "build", conclusion: "success" },
+        { name: "lint", conclusion: "failure" },
+      ]),
+    ).toBe("lint,test");
   });
 });
