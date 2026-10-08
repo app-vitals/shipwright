@@ -1563,6 +1563,66 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/agents/all/cron-runs/outcomes": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get cron-run outcomes per phase and context fingerprint
+         * @description Admin-only. Returns, per (phase, contextFingerprint): run, completed, failed, and skipped counts, a skipReasons histogram, avg and p50 duration, avg turns, avg tool calls, and avg first-turn context tokens. Optional `from`/`to` ISO datetime query params bound the range on startedAt.
+         */
+        get: {
+            parameters: {
+                query?: {
+                    from?: string;
+                    to?: string;
+                };
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Outcome series per (phase, contextFingerprint) */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["CronRunOutcomes"];
+                    };
+                };
+                /** @description Unauthorized */
+                401: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+                /** @description Forbidden — requires admin scope */
+                403: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/agents/chat-tokens/daily/stats": {
         parameters: {
             query?: never;
@@ -2738,6 +2798,30 @@ export interface components {
             firstSeen: string;
             /** @example 2026-01-15T09:00:00.000Z */
             lastSeen: string;
+        };
+        CronRunOutcomes: {
+            series: components["schemas"]["CronRunOutcomeSeries"][];
+        };
+        CronRunOutcomeSeries: {
+            /** @example dev-task */
+            phase: string | null;
+            /** @example a1b2c3d4e5f6 */
+            contextFingerprint: string | null;
+            runs: number;
+            completed: number;
+            failed: number;
+            skipped: number;
+            /** @example {
+             *       "no-ready-task": 3
+             *     } */
+            skipReasons: {
+                [key: string]: number;
+            };
+            avgDurationMs: number | null;
+            p50DurationMs: number | null;
+            avgTurns: number | null;
+            avgToolCalls: number | null;
+            avgContextTokens: number | null;
         };
         ChatTokenStats: {
             totals: components["schemas"]["TokenAggregate"];

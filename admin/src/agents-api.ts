@@ -81,6 +81,7 @@ import {
   CreateAgentToolBodySchema,
   CronIdParamSchema,
   CronRunIdParamSchema,
+  CronRunOutcomesSchema,
   CronRunsListSchema,
   CronRunTokenStatsSchema,
   CronsWithSummaryWrapperSchema,
@@ -141,7 +142,10 @@ export interface AdminDeps {
     | "updatePreCheck"
   >;
   agentCronRunService: Pick<AgentCronRunService, "create" | "list" | "patch">;
-  agentCronRunStatsService: Pick<AgentCronRunStatsService, "query">;
+  agentCronRunStatsService: Pick<
+    AgentCronRunStatsService,
+    "query" | "outcomes"
+  >;
   agentToolService: Pick<
     AgentToolService,
     "list" | "add" | "remove" | "toggle"
@@ -1117,6 +1121,25 @@ const cronRunTokenStatsRoute = createRoute({
   },
 });
 
+const cronRunOutcomesRoute = createRoute({
+  method: "get",
+  path: "/agents/all/cron-runs/outcomes",
+  summary: "Get cron-run outcomes per phase and context fingerprint",
+  description:
+    "Admin-only. Returns, per (phase, contextFingerprint): run, completed, failed, and skipped counts, a skipReasons histogram, avg and p50 duration, avg turns, avg tool calls, and avg first-turn context tokens. Optional `from`/`to` ISO datetime query params bound the range on startedAt.",
+  request: {
+    query: cronRunStatsQuerySchema,
+  },
+  responses: {
+    200: {
+      description: "Outcome series per (phase, contextFingerprint)",
+      content: { "application/json": { schema: CronRunOutcomesSchema } },
+    },
+    401: { description: "Unauthorized", ...jsonError },
+    403: { description: "Forbidden — requires admin scope", ...jsonError },
+  },
+});
+
 const chatTokenDailyStatsQuerySchema = z
   .object({
     from: z.string().date().optional().openapi({ example: "2026-01-01" }),
@@ -1857,6 +1880,18 @@ export function createAdminApp(deps: AdminDeps): OpenAPIHono<AdminAuthEnv> {
     const { from, to } = c.req.valid("query");
     const stats = await agentCronRunStatsService.query(from, to);
     return c.json(stats, 200);
+  });
+
+  // GET /agents/all/cron-runs/outcomes — per-(phase, contextFingerprint) outcomes
+  app.openapi(cronRunOutcomesRoute, async (c) => {
+    if (c.get("isAdmin") !== true) {
+      throw new ForbiddenError(
+        "Only admin bearers and session users can access cross-agent stats",
+      );
+    }
+    const { from, to } = c.req.valid("query");
+    const outcomes = await agentCronRunStatsService.outcomes(from, to);
+    return c.json(outcomes, 200);
   });
 
   // GET /agents/chat-tokens/daily/stats — aggregated daily chat token stats

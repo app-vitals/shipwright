@@ -1082,6 +1082,36 @@ export const CronRunTokenStatsSchema = z
 
 export type CronRunTokenStatsType = z.infer<typeof CronRunTokenStatsSchema>;
 
+/** One (phase, contextFingerprint) outcome series for GET /agents/all/cron-runs/outcomes. */
+const CronRunOutcomeSeriesSchema = z
+  .object({
+    phase: z.string().nullable().openapi({ example: "dev-task" }),
+    contextFingerprint: z
+      .string()
+      .nullable()
+      .openapi({ example: "a1b2c3d4e5f6" }),
+    runs: z.number().int(),
+    completed: z.number().int(),
+    failed: z.number().int(),
+    skipped: z.number().int(),
+    skipReasons: z
+      .record(z.string(), z.number().int())
+      .openapi({ example: { "no-ready-task": 3 } }),
+    avgDurationMs: z.number().nullable(),
+    p50DurationMs: z.number().nullable(),
+    avgTurns: z.number().nullable(),
+    avgToolCalls: z.number().nullable(),
+    avgContextTokens: z.number().nullable(),
+  })
+  .openapi("CronRunOutcomeSeries");
+
+/** Response shape for GET /agents/all/cron-runs/outcomes. */
+export const CronRunOutcomesSchema = z
+  .object({ series: z.array(CronRunOutcomeSeriesSchema) })
+  .openapi("CronRunOutcomes");
+
+export type CronRunOutcomesType = z.infer<typeof CronRunOutcomesSchema>;
+
 /**
  * Response shape for GET /agents/chat-tokens/daily/stats.
  * Matches the ChatTokenStats interface in admin-metrics-client.ts exactly.

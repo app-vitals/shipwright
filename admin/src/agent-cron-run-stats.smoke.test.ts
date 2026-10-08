@@ -8,7 +8,10 @@
 
 import { beforeAll, describe, expect, it } from "bun:test";
 import { sign } from "hono/jwt";
-import type { AgentCronRunStatsService } from "./agent-cron-run-stats.ts";
+import type {
+  AgentCronRunStatsService,
+  CronRunOutcomes,
+} from "./agent-cron-run-stats.ts";
 import type { AdminDeps } from "./agents-api.ts";
 import { createAdminApp, parseAdminApiKeys } from "./agents-api.ts";
 
@@ -186,9 +189,46 @@ const MOCK_STATS = {
   ],
 };
 
-function makeMockStatsService(): Pick<AgentCronRunStatsService, "query"> {
+const MOCK_OUTCOMES: CronRunOutcomes = {
+  series: [
+    {
+      phase: "dev-task",
+      contextFingerprint: "abc123def456",
+      runs: 5,
+      completed: 3,
+      failed: 1,
+      skipped: 1,
+      skipReasons: { "no-ready-task": 1 },
+      avgDurationMs: 120000,
+      p50DurationMs: 90000,
+      avgTurns: 40,
+      avgToolCalls: 55,
+      avgContextTokens: 21000,
+    },
+    {
+      phase: null,
+      contextFingerprint: null,
+      runs: 1,
+      completed: 0,
+      failed: 0,
+      skipped: 1,
+      skipReasons: { unknown: 1 },
+      avgDurationMs: null,
+      p50DurationMs: null,
+      avgTurns: null,
+      avgToolCalls: null,
+      avgContextTokens: null,
+    },
+  ],
+};
+
+function makeMockStatsService(): Pick<
+  AgentCronRunStatsService,
+  "query" | "outcomes"
+> {
   return {
     query: async (_from?: string, _to?: string) => MOCK_STATS,
+    outcomes: async () => MOCK_OUTCOMES,
   };
 }
 
@@ -721,6 +761,78 @@ describe("admin API — GET /agents/all/cron-runs/stats", () => {
     };
     const app = createAdminApp(deps);
     const res = await app.request("/agents/all/cron-runs/stats", {
+      headers: { Authorization: `Bearer ${VALID_BEARER_TOKEN}` },
+    });
+    expect(res.status).toBe(403);
+  });
+});
+
+describe("admin API — GET /agents/all/cron-runs/outcomes", () => {
+  let cookie: string;
+
+  beforeAll(async () => {
+    cookie = await makeSessionCookie();
+  });
+
+  it("returns 200 with the per-(phase, contextFingerprint) series shape", async () => {
+    const app = createAdminApp(makeMockDeps());
+    const res = await app.request("/agents/all/cron-runs/outcomes", {
+      headers: { Cookie: `admin_session=${cookie}` },
+    });
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.series).toHaveLength(2);
+    expect(body.series[0]).toEqual(MOCK_OUTCOMES.series[0]);
+    expect(body.series[1].phase).toBeNull();
+    expect(body.series[1].avgDurationMs).toBeNull();
+  });
+
+  it("passes from/to through to the service", async () => {
+    const calls: Array<[string | undefined, string | undefined]> = [];
+    const deps = makeMockDeps();
+    deps.agentCronRunStatsService = {
+      ...makeMockStatsService(),
+      outcomes: async (from?: string, to?: string) => {
+        calls.push([from, to]);
+        return MOCK_OUTCOMES;
+      },
+    };
+    const app = createAdminApp(deps);
+    const res = await app.request(
+      "/agents/all/cron-runs/outcomes?from=2026-01-01T00:00:00Z&to=2026-01-31T00:00:00Z",
+      { headers: { Cookie: `admin_session=${cookie}` } },
+    );
+    expect(res.status).toBe(200);
+    expect(calls).toEqual([["2026-01-01T00:00:00Z", "2026-01-31T00:00:00Z"]]);
+  });
+
+  it("returns 200 with admin bearer token", async () => {
+    const app = createAdminApp({
+      ...makeMockDeps(),
+      adminApiKeys: parseAdminApiKeys(`admin:${ADMIN_API_KEY}:*`),
+    });
+    const res = await app.request("/agents/all/cron-runs/outcomes", {
+      headers: { Authorization: `Bearer ${ADMIN_API_KEY}` },
+    });
+    expect(res.status).toBe(200);
+  });
+
+  it("unauthenticated request returns 401", async () => {
+    const app = createAdminApp(makeMockDeps());
+    const res = await app.request("/agents/all/cron-runs/outcomes");
+    expect(res.status).toBe(401);
+  });
+
+  it("agent-scoped bearer token returns 403", async () => {
+    const deps: AdminDeps = {
+      ...makeMockDeps(),
+      agentTokenService: {
+        ...makeMockDeps().agentTokenService,
+        validate: async () => ({ agentId: AGENT_ID }),
+      },
+    };
+    const app = createAdminApp(deps);
+    const res = await app.request("/agents/all/cron-runs/outcomes", {
       headers: { Authorization: `Bearer ${VALID_BEARER_TOKEN}` },
     });
     expect(res.status).toBe(403);

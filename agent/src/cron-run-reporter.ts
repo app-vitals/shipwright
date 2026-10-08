@@ -18,6 +18,32 @@ export interface ModelBreakdownEntry {
   costUsd: number;
 }
 
+/**
+ * The first assistant turn's usage — the measured always-loaded context for
+ * this run (system prompt + tool schemas + CLAUDE.md/rules + skill listing +
+ * cron prompt), independent of cache warmth. See agent/src/run-telemetry.ts.
+ */
+export interface ContextBaselineEntry {
+  model: string;
+  contextTokens: number;
+  inputTokens: number;
+  cacheCreationTokens: number;
+  cacheReadTokens: number;
+}
+
+/** Per-skill / per-subagent token attribution row. See agent/src/run-telemetry.ts. */
+export interface SkillUsageEntry {
+  kind: "skill" | "agent" | "root";
+  name: string;
+  invocations: number;
+  turns: number;
+  inputTokens: number;
+  outputTokens: number;
+  cacheReadTokens: number;
+  cacheCreationTokens: number;
+  invokeContextDelta: number | null;
+}
+
 /** Optional error/token fields shared by completeRun() and skipRun()'s opts. */
 export interface RunReportOpts {
   error?: string;
@@ -27,6 +53,14 @@ export interface RunReportOpts {
   cacheCreationTokens?: number;
   modelBreakdown?: ModelBreakdownEntry[];
   sessionId?: string;
+  contextBaseline?: ContextBaselineEntry;
+  turns?: number;
+  toolCalls?: number;
+  skillUsage?: SkillUsageEntry[];
+  /** sha256[:12] of the workspace's always-loaded markdown + plugin version. */
+  contextFingerprint?: string;
+  pluginVersion?: string;
+  claudeCodeVersion?: string;
 }
 
 export interface CronRunReporter {
@@ -135,6 +169,17 @@ function applyRunReportOpts(
   if (opts?.modelBreakdown !== undefined)
     body.modelBreakdown = opts.modelBreakdown;
   if (opts?.sessionId !== undefined) body.sessionId = opts.sessionId;
+  if (opts?.contextBaseline !== undefined)
+    body.contextBaseline = opts.contextBaseline;
+  if (opts?.turns !== undefined) body.turns = opts.turns;
+  if (opts?.toolCalls !== undefined) body.toolCalls = opts.toolCalls;
+  if (opts?.skillUsage !== undefined) body.skillUsage = opts.skillUsage;
+  if (opts?.contextFingerprint !== undefined)
+    body.contextFingerprint = opts.contextFingerprint;
+  if (opts?.pluginVersion !== undefined)
+    body.pluginVersion = opts.pluginVersion;
+  if (opts?.claudeCodeVersion !== undefined)
+    body.claudeCodeVersion = opts.claudeCodeVersion;
 }
 
 export class HttpCronRunReporter implements CronRunReporter {

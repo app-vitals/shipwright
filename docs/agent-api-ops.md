@@ -34,6 +34,21 @@ GET /agents/all/cron-runs/stats
 
 Admin-only, described in the spec. One nuance: `byPhase` excludes runs with no phase attribution (legacy five-job crons, runs dispatched without a phase cron) from that dimension only — those runs still count toward `totals` and every other breakdown (`byAgent`, `byCron`, `byModel`, `byCronModel`, `daily`). `bySkill` (per `(kind, name)` skill/subagent usage) excludes skipped runs; `baselines` (first-turn context baseline per `(contextFingerprint, baselineModel, phase)`, ordered by first appearance) includes skipped runs but excludes runs that reported no baseline. Both are empty arrays when nothing was reported.
 
+### Cron run outcomes
+
+```
+GET /agents/all/cron-runs/outcomes
+```
+
+Admin-only. Returns per-(phase, contextFingerprint) outcome series, primarily for prompt-audit before/after comparison. Unlike the `stats` endpoint, outcomes include skipped runs in the run count and in a `skipReasons` histogram, but exclude them from duration, turn, tool-call, and context-token averages. Each series row contains:
+
+- **Counts:** `runs` (total), `completed`, `failed`, `skipped`
+- **Skip reasons:** `skipReasons` histogram mapping reason → count (across this series' skipped runs; null reasons key as `"unknown"`)
+- **Timing:** `avgDurationMs` and `p50DurationMs` (over non-skipped runs with a `completedAt`; null when none)
+- **Telemetry:** `avgTurns`, `avgToolCalls`, `avgContextTokens` (over non-skipped runs that reported each metric; null when none)
+
+Supports optional `from`/`to` ISO datetime query parameters to bound the date range on `startedAt`.
+
 ---
 
 ## Related

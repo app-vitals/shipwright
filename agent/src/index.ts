@@ -46,6 +46,7 @@ import { cleanupAfterDaysRef } from "./cleanup-after-days-ref.ts";
 import { cleanupMergedWorktreesRef } from "./cleanup-merged-worktrees-ref.ts";
 import { SystemClock } from "./clock.ts";
 import { createConfig } from "./config.ts";
+import { createContextStampReader } from "./context-stamp.ts";
 import { reportCronFailure } from "./cron-failure-reporter.ts";
 import type { CronHandlerDeps } from "./cron-handler.ts";
 import { handleCronRequest } from "./cron-handler.ts";
@@ -251,6 +252,25 @@ const githubInstallationsReporter =
       })
     : new NoopGitHubInstallationsReporter();
 
+// Always-loaded-context stamp (context-stamp.ts): fingerprints the workspace
+// CLAUDE.md + its imports + no-`paths` rules + the plugin version, read once
+// per run so cron-run rows can be grouped by what the model was given. The
+// plugin.json path resolves to the in-image copy of the shipwright plugin,
+// whose version the Dockerfile stamps at build time (sync-version.ts).
+const contextStamp = createContextStampReader({
+  workspace: config.paths.workspace,
+  pluginJsonPath: join(
+    import.meta.dir,
+    "..",
+    "..",
+    "plugins",
+    "shipwright",
+    ".claude-plugin",
+    "plugin.json",
+  ),
+  claudeCodeVersion: () => claudeVersionState.version,
+});
+
 const cronDeps: CronHandlerDeps = {
   // SLK-1.1: a getter, not a plain field — Slack may start after boot (see
   // slack-startup.ts's startSlackIfPossible()), so cron dispatch must read
@@ -283,6 +303,7 @@ const cronDeps: CronHandlerDeps = {
   alertsChannel: config.alerts.channel,
   cronRunReporter,
   agentId: config.shipwright.agentId,
+  contextStamp,
 };
 
 // SLK-1.1: shared Slack-start deps, built once so both the Step 4
@@ -789,6 +810,7 @@ const getLoopOrchestrator = createLoopOrchestratorGetter({
   // — there is no cross-dispatch state to preserve for those three phases,
   // so no terminal-status check gates their clear.
   clearSessionKey: (key: string) => sessions.clear(key),
+  contextStamp,
   // LO-1.1: same optional-by-convention pattern as every other sentryClient
   // call site in this file (undefined, i.e. fully inert, when SENTRY_DSN is
   // unset) — see LoopOrchestratorDeps's sentryClient doc comment.

@@ -697,3 +697,110 @@ describe("NoopCronRunReporter", () => {
     ).resolves.toBeUndefined();
   });
 });
+
+// ─── run telemetry + context stamp fields (prompt-audit metrics) ─────────────
+
+describe("HttpCronRunReporter — telemetry and context-stamp fields", () => {
+  // biome-ignore lint/suspicious/noExplicitAny: Server type param varies by bun version
+  let server: ReturnType<typeof Bun.serve<any>>;
+  let state: StubState;
+  let baseUrl: string;
+
+  beforeEach(() => {
+    state = { captured: [], postStatusToReturn: 201, patchStatusToReturn: 200 };
+    server = startStubServer(0, state);
+    baseUrl = `http://localhost:${server.port}`;
+  });
+
+  afterEach(async () => {
+    await server.stop(true);
+  });
+
+  test("completeRun forwards contextBaseline, turns, toolCalls, skillUsage, and stamp fields verbatim", async () => {
+    const reporter = new HttpCronRunReporter({
+      apiUrl: baseUrl,
+      agentId: "agent-abc",
+      apiKey: "k",
+    });
+
+    await reporter.completeRun(
+      "cron-1",
+      "run-1",
+      new Date("2026-01-01T08:00:05.000Z"),
+      "completed",
+      {
+        contextBaseline: {
+          model: "claude-sonnet-4-6",
+          contextTokens: 79_188,
+          inputTokens: 2,
+          cacheCreationTokens: 41_415,
+          cacheReadTokens: 37_771,
+        },
+        turns: 12,
+        toolCalls: 7,
+        skillUsage: [
+          {
+            kind: "skill",
+            name: "shipwright:task-store",
+            invocations: 1,
+            turns: 3,
+            inputTokens: 12,
+            outputTokens: 100,
+            cacheReadTokens: 0,
+            cacheCreationTokens: 9_300,
+            invokeContextDelta: 103,
+          },
+        ],
+        contextFingerprint: "abc123def456",
+        pluginVersion: "1.363.0",
+        claudeCodeVersion: "2.1.285",
+      },
+    );
+
+    const body = state.captured[0].body as Record<string, unknown>;
+    expect(body.contextBaseline).toEqual({
+      model: "claude-sonnet-4-6",
+      contextTokens: 79_188,
+      inputTokens: 2,
+      cacheCreationTokens: 41_415,
+      cacheReadTokens: 37_771,
+    });
+    expect(body.turns).toBe(12);
+    expect(body.toolCalls).toBe(7);
+    expect(body.skillUsage).toEqual([
+      expect.objectContaining({ name: "shipwright:task-store", turns: 3 }),
+    ]);
+    expect(body.contextFingerprint).toBe("abc123def456");
+    expect(body.pluginVersion).toBe("1.363.0");
+    expect(body.claudeCodeVersion).toBe("2.1.285");
+  });
+
+  test("skipRun omits every telemetry/stamp field when none is provided", async () => {
+    const reporter = new HttpCronRunReporter({
+      apiUrl: baseUrl,
+      agentId: "agent-abc",
+      apiKey: "k",
+    });
+
+    await reporter.skipRun(
+      "cron-1",
+      "run-1",
+      new Date("2026-01-01T08:00:05.000Z"),
+      "command:no-work",
+      { sessionId: "s" },
+    );
+
+    const body = state.captured[0].body as Record<string, unknown>;
+    for (const key of [
+      "contextBaseline",
+      "turns",
+      "toolCalls",
+      "skillUsage",
+      "contextFingerprint",
+      "pluginVersion",
+      "claudeCodeVersion",
+    ]) {
+      expect(key in body).toBe(false);
+    }
+  });
+});
