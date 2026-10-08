@@ -350,6 +350,7 @@ gh api graphql -f query='
           state
           submittedAt
           body
+          commit { oid }
         }
       }
       reviewThreads(first: 100) {
@@ -357,6 +358,7 @@ gh api graphql -f query='
           id
           isResolved
           comments(first: 1) {
+            totalCount
             nodes {
               author { login __typename }
               body
@@ -380,8 +382,8 @@ gh api graphql -f query='
 
 From the response, extract:
 - `headRefOid` — current HEAD SHA of the PR
-- `reviews.nodes[]` — each with `author.login`, `author.__typename`, `state`, `submittedAt`, `body`
-- `reviewThreads.nodes[]` — each with `id`, `isResolved`, and the first comment's `author.login`, `author.__typename`, `body`, `path`, `line`
+- `reviews.nodes[]` — each with `author.login`, `author.__typename`, `state`, `submittedAt`, `body`, `commit.oid`
+- `reviewThreads.nodes[]` — each with `id`, `isResolved`, `comments.totalCount`, and the first comment's `author.login`, `author.__typename`, `body`, `path`, `line`
 - `comments.nodes[]` — PR-level (non-inline) comments with `author.login`, `author.__typename`, `body`,
   `createdAt`. Call this array `COMMENTS_JSON` — Step 5a.5 below reuses it unchanged, no new API
   call. `__typename` is now fetched alongside `login` on all three author blocks above (mirroring
@@ -677,6 +679,14 @@ the target PR number) — order relative to `[silent]` does not matter, both are
 of position. The skip-reason marker records exactly which PR found no work in the `AgentCronRun.skipReason`
 field (visible in the admin cron-logs UI) instead of the generic `command:no-work` reason, letting the
 loop orchestrator's SKIP_BLOCK_THRESHOLD handling classify this correctly.
+
+**`[silent]` is reserved for the genuinely-empty case above.** A PR that is in List A but has
+nothing to fix (e.g. a bot COMMENTED review saying "no feedback to provide", or every finding
+classified REJECT) is **not** this case: its outcome is *settle-with-rejected*, defined in
+Step 5c.5 — a `source: "patch"`, `disposition: "rejected"` ledger entry (with evidence) for
+every List A item not fixed, plus the one-line author comment from Step 5b [D], and then a
+normal non-silent end. A run must never exit `[silent]` while List A items remain unsettled:
+a silent exit records nothing, leaves the PR a candidate, and re-dispatches it every tick.
 
 **Design note:** Reaching Step 3d is most likely a genuine race (CI went green, or a human fixed the
 issue directly, between candidate selection and dispatch). Unlike `review.md`'s RVD-2.2/2.3 write-back
@@ -1511,7 +1521,9 @@ INSTRUCTIONS — follow in order:
     - Push: `git push origin {branch}`
 
   - **If any finding was classified REJECT in [A.5]** (regardless of whether other
-    findings in the same run were ACCEPTED/MODIFIED and handled above): post a PR-level
+    findings in the same run were ACCEPTED/MODIFIED and handled above) — **or a List A
+    review has nothing actionable at all** (e.g. a bot review saying "no feedback to
+    provide"; treat it as REJECT with that as the reason, PHS-2.1): post a PR-level
     rebuttal comment explaining why each REJECTed finding was rejected, so the review is
     not left looking unaddressed. Write the comment body to a temp file first to avoid
     heredoc syntax in the command string (heredocs break permission glob matching and
@@ -1630,9 +1642,12 @@ Parse the subagent's STATUS:
   (independent of push/no-push — a mixed ACCEPT+REJECT run that also pushed a commit still
   has REJECTed findings needing a ledger entry). For each REJECTed finding in the
   subagent's CONCERNS, capture:
-  - **`ref`**: the same identifier already used to resolve that finding's thread in Step 5b
-    Instructions [D] — the inline thread's `path:line` for inline findings, or a short slug
-    for PR-body-level findings with no inline thread. For a dependency-risk finding that
+  - **`ref`**: the identifier `compute-unaddressed-findings.ts` matches when it honors a
+    patch `rejected` entry (PHS-1.2) — `thread:{thread.id}@{comments.totalCount}` for an
+    inline-thread finding (from Step 3a's `reviewThreads.nodes[]`; the count makes the ref
+    self-expire on any new comment), `{review.commit.oid}@{review.submittedAt}` (the full
+    commit SHA, not a short one) for a review-body finding (from Step 3a's `reviews.nodes[]`),
+    or a short slug for any other PR-body-level finding. For a dependency-risk finding that
     slug is the `dependency-risk@{headRefOid}` ref Step 5b's DEPENDENCY-RISK REMEDIATION
     PROTOCOL block told the subagent to use — carry it through verbatim, since Step 3a.5's
     already-held exclusion matches on that exact string.
@@ -1642,6 +1657,16 @@ Parse the subagent's STATUS:
   Set `REJECTED_FINDINGS_THIS_CYCLE` to this list (empty if no finding was REJECTed this
   cycle, e.g. the plain `DONE` case above or a `DONE_WITH_CONCERNS` run with only
   non-REJECT concerns) before proceeding to Step 5c.5.
+
+  **Settle every List A item that was not fixed (PHS-2.1).** `REJECTED_FINDINGS_THIS_CYCLE`
+  must cover every List A item this run did not fix — each unresolved inline thread and each
+  qualifying review body whose finding was not ACCEPTed/MODIFIEd and committed — not only the
+  ones the subagent explicitly REJECTed. This includes a non-actionable review (e.g. a bot
+  COMMENTED review with "no feedback to provide") the subagent found nothing to fix in: add
+  its review-body ref with the subagent's observation ("review contains no actionable
+  finding") as `evidence`. If the subagent's report leaves any such item unaccounted for,
+  settle it here with `evidence` stating that no change was made and why, rather than leaving
+  it unsettled.
 - **BLOCKED**: This is a first-round BLOCKED report from the fix subagent itself — distinct
   from Step 5a.7's (RPF-1.3) second-round-disagreement escalation, which fires *before*
   dispatch when the same finding was already rebutted once. Here the subagent was dispatched
@@ -1698,13 +1723,22 @@ fi
 
 Run the ledger-write `curl` once for each entry in `REJECTED_FINDINGS_THIS_CYCLE` (assigned
 in Step 5c — see there for how it's populated), POSTing one `source: "patch"`,
-`disposition: "rejected"` finding per REJECTed finding this cycle to
-`/prs/$PR_RECORD_ID/findings`, with `ref` set to that finding's identifying `path:line` (or
-slug, for PR-body-level findings) and `evidence` set to the rejection reason already used in
+`disposition: "rejected"` finding per List A item not fixed this cycle to
+`/prs/$PR_RECORD_ID/findings`, with `ref` set to the PHS-1.2 ref format Step 5c captured
+(`thread:{id}@{count}` for inline threads, `{commit.oid}@{submittedAt}` for review bodies —
+a `path:line` ref no longer settles anything) and `evidence` set to the rejection reason already used in
 the rebuttal comment. If `REJECTED_FINDINGS_THIS_CYCLE` is empty, skip this call entirely —
 there is nothing to record. This runs unconditionally whenever
 `REJECTED_FINDINGS_THIS_CYCLE` is non-empty, on both a no-push all-REJECT cycle and a mixed
 ACCEPT+REJECT run that pushed a commit.
+
+**Outcome: settle-with-rejected (PHS-2.1).** When a PR is in List A and this run fixes
+nothing (no commit pushed) — a bot review with no actionable feedback, or every finding
+REJECTed — the run ends *settled*, never `[silent]`: this step's ledger writes record every
+List A item as rejected with evidence, Step 5b [D]'s one-line author comment gives humans
+visibility, and the final report states the PR was settled (list the refs). Do **not** emit
+`[silent]` or the `no-op-at-dispatch` skip-reason on this path. Never exit `[silent]` while
+List A items remain unsettled.
 
 This ledger POST is now the sole mechanism that makes a no-push rebuttal cycle re-qualify
 for review: `agent/src/check-review.ts`'s `hasFreshLedgerFinding` (PFL-3.1) treats any
