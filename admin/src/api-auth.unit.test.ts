@@ -530,11 +530,15 @@ describe("createAdminAuthMiddleware — non-admin session cookie scoping", () =>
     }
   });
 
-  it("returns 403 for POST /agents, POST /agents/reconcile, and cross-agent stats routes", async () => {
+  it("lets a scoped cookie reach POST /agents (handler enforces the account) but not other collection routes", async () => {
     const app = buildScopedApp(member);
     const jwt = await makeMemberJwt();
+    const create = await app.request("/agents", {
+      method: "POST",
+      headers: { Cookie: `admin_session=${jwt}` },
+    });
+    expect(create.status).toBe(200);
     const cases: Array<[string, string]> = [
-      ["POST", "/agents"],
       ["POST", "/agents/reconcile"],
       ["GET", "/agents/all/cron-runs/stats"],
       ["GET", "/agents/chat-tokens/daily/stats"],

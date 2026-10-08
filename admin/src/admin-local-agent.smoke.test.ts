@@ -1452,3 +1452,200 @@ describe("admin UI — new local agent create flow", () => {
     expect(calls.provisioned).toEqual([]);
   });
 });
+
+// ─── SSP-4.2: account users create and delete their own agents ──────────────
+
+describe("admin UI — account users create / delete agents (SSP-4.2)", () => {
+  const ACCOUNT_AGENT_ID = "agent-in-acct-a";
+  let accountCookie: string;
+
+  beforeAll(async () => {
+    accountCookie = await makeSessionCookie(false, "owner@acct-a.example.com");
+  });
+
+  const scoped = (accountId: string | null) =>
+    (async () => ({
+      kind: "scoped" as const,
+      accountId,
+      agentIds: accountId ? [ACCOUNT_AGENT_ID] : [],
+    })) satisfies NonNullable<AdminUIDeps["callerScopeResolver"]>;
+
+  function accountServiceStub(
+    over: { maxAgents?: number; count?: number } = {},
+  ): NonNullable<AdminUIDeps["accountService"]> {
+    return {
+      getById: async (id: string) =>
+        ({
+          id,
+          maxAgents: over.maxAgents ?? 3,
+          status: "active",
+        }) as never,
+      countAgents: async () => over.count ?? 1,
+      listAgentIds: async (accountId: string) =>
+        accountId === "acct-a" ? [ACCOUNT_AGENT_ID] : ["someone-elses-agent"],
+    };
+  }
+
+  function depsCapturingCreate(accountId: string | null) {
+    const created: Array<Record<string, unknown>> = [];
+    const base = makeMockDeps();
+    const deps = makeMockDeps({
+      callerScopeResolver: scoped(accountId),
+      accountService: accountServiceStub(),
+      agentService: {
+        ...base.agentService,
+        create: async (input) => {
+          created.push(input as unknown as Record<string, unknown>);
+          return base.agentService.create(input);
+        },
+      },
+    });
+    return { deps, created };
+  }
+
+  const form = (cookie: string, fields: Record<string, string>) => ({
+    method: "POST",
+    body: new URLSearchParams(fields).toString(),
+    headers: {
+      "Content-Type": "application/x-www-form-urlencoded",
+      Cookie: `admin_session=${cookie}`,
+    },
+  });
+
+  it("GET /admin/agents/new — account user sees remaining quota and prerequisites", async () => {
+    const { deps } = depsCapturingCreate("acct-a");
+    const res = await createAdminUIApp(deps).request("/admin/agents/new", {
+      headers: { Cookie: `admin_session=${accountCookie}` },
+    });
+    expect(res.status).toBe(200);
+    const html = await res.text();
+    expect(html).toContain("2 of 3");
+    expect(html).toContain("Slack App Configuration Token");
+  });
+
+  it("GET /admin/agents/new — non-admin without an account gets 403", async () => {
+    const { deps } = depsCapturingCreate(null);
+    const res = await createAdminUIApp(deps).request("/admin/agents/new", {
+      headers: { Cookie: `admin_session=${accountCookie}` },
+    });
+    expect(res.status).toBe(403);
+  });
+
+  it("POST /admin/agents — account user's agent is stamped with their account and forced to coding", async () => {
+    const { deps, created } = depsCapturingCreate("acct-a");
+    const res = await createAdminUIApp(deps).request(
+      "/admin/agents",
+      form(accountCookie, {
+        name: "mine",
+        type: "other",
+        accountId: "acct-b",
+      }),
+    );
+    expect(res.status).toBe(302);
+    expect(created).toHaveLength(1);
+    expect(created[0]).toMatchObject({
+      accountId: "acct-a",
+      typeName: "coding",
+    });
+  });
+
+  it("POST /admin/agents — non-admin without an account gets 403", async () => {
+    const { deps, created } = depsCapturingCreate(null);
+    const res = await createAdminUIApp(deps).request(
+      "/admin/agents",
+      form(accountCookie, { name: "nope", type: "coding" }),
+    );
+    expect(res.status).toBe(403);
+    expect(created).toHaveLength(0);
+  });
+
+  it("POST /admin/agents — quota_exceeded redirects back to the form with a clear message", async () => {
+    const { deps } = depsCapturingCreate("acct-a");
+    const base = deps.agentService;
+    const res = await createAdminUIApp({
+      ...deps,
+      agentService: {
+        ...base,
+        runTransaction: async () =>
+          ({ ok: false, errorCode: "quota_exceeded" }) as never,
+      },
+    }).request(
+      "/admin/agents",
+      form(accountCookie, { name: "x", type: "coding" }),
+    );
+    expect(res.status).toBe(302);
+    expect(res.headers.get("Location")).toBe(
+      `/admin/agents/new?error=${encodeURIComponent("quota_exceeded")}`,
+    );
+  });
+
+  function deleteDeps(ownerAccount: string) {
+    const deleted: string[] = [];
+    const base = makeMockDeps();
+    const deps = makeMockDeps({
+      callerScopeResolver: scoped("acct-a"),
+      accountService: {
+        ...accountServiceStub(),
+        listAgentIds: async (id: string) =>
+          id === ownerAccount ? [ACCOUNT_AGENT_ID] : [],
+      },
+      prisma: {
+        ...base.prisma,
+        agent: {
+          ...base.prisma.agent,
+          findUnique: async () =>
+            ({
+              id: ACCOUNT_AGENT_ID,
+              name: "Mine",
+              slackId: null,
+              selfHosted: true,
+              repos: [],
+              createdAt: new Date("2024-01-01"),
+              updatedAt: new Date("2024-01-01"),
+            }) as never,
+          delete: async ({ where }: { where: { id: string } }) => {
+            deleted.push(where.id);
+            return {} as never;
+          },
+        },
+        agentEnv: { findMany: async () => [] },
+        agentPlugin: { findMany: async () => [] },
+      } as AdminUIDeps["prisma"],
+    });
+    return { deps, deleted };
+  }
+
+  it("POST /admin/agents/:id/delete — account user deletes their own account's agent", async () => {
+    const { deps, deleted } = deleteDeps("acct-a");
+    const res = await createAdminUIApp(deps).request(
+      `/admin/agents/${ACCOUNT_AGENT_ID}/delete`,
+      { method: "POST", headers: { Cookie: `admin_session=${accountCookie}` } },
+    );
+    expect(res.status).toBe(302);
+    expect(res.headers.get("Location")).toBe("/admin/agents?success=deleted");
+    expect(deleted).toEqual([ACCOUNT_AGENT_ID]);
+  });
+
+  it("POST /admin/agents/:id/delete — another account's agent is 404 and untouched", async () => {
+    const { deps, deleted } = deleteDeps("acct-b");
+    const res = await createAdminUIApp(deps).request(
+      `/admin/agents/${ACCOUNT_AGENT_ID}/delete`,
+      { method: "POST", headers: { Cookie: `admin_session=${accountCookie}` } },
+    );
+    expect(res.status).toBe(404);
+    expect(deleted).toEqual([]);
+  });
+
+  it("POST /admin/agents/:id/delete — non-admin without an account still gets 403", async () => {
+    const { deps, deleted } = deleteDeps("acct-a");
+    const res = await createAdminUIApp({
+      ...deps,
+      callerScopeResolver: scoped(null),
+    }).request(`/admin/agents/${ACCOUNT_AGENT_ID}/delete`, {
+      method: "POST",
+      headers: { Cookie: `admin_session=${accountCookie}` },
+    });
+    expect(res.status).toBe(403);
+    expect(deleted).toEqual([]);
+  });
+});

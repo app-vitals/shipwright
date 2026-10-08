@@ -14,6 +14,7 @@ independent of `appVersion`. CI enforces this with
 
 ### Changed
 
+- auto-bump to chart v1.22.113 triggered by release tag(s): `admin-v1.243.0`
 - add agent.provisioning.resources.limits.cpu (SHIPWRIGHT_K8S_AGENT_CPU_LIMIT) — CPU limit applied to tenant agent pods only
 
 ## [1.22.112] - 2026-10-08

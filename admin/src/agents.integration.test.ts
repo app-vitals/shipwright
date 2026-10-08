@@ -19,6 +19,7 @@
 
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import type { PrismaClient } from "../prisma/client/client.ts";
+import { deleteAgentFully } from "./agent-deletion.ts";
 import { AgentCronJobService } from "./agent-cron-jobs.ts";
 import { AgentEnvService } from "./agent-envs.ts";
 import { AgentMemberService } from "./agent-members.ts";
@@ -426,6 +427,46 @@ describeOrSkip("createAgent() — integration (real Postgres)", () => {
 
       const retry = await createAgent(deps(), baseInput({ accountId: account.id }));
       expect(retry.ok).toBe(true);
+    });
+
+    it("create-delete-create cycle: deleting via deleteAgentFully frees the quota slot (SSP-4.2)", async () => {
+      const account = await makeAccount({ maxAgents: 1 });
+      const first = await createAgent(
+        deps(),
+        baseInput({ name: "first", accountId: account.id }),
+      );
+      expect(first.ok).toBe(true);
+      if (!first.ok) throw new Error("expected success");
+
+      const blocked = await createAgent(
+        deps(),
+        baseInput({ name: "second", accountId: account.id }),
+      );
+      expect(blocked).toEqual({ ok: false, errorCode: "quota_exceeded" });
+
+      const deleted = await deleteAgentFully(first.agent.id, {
+        prisma,
+        provisioner: { deprovision: async () => {} },
+        taskStore: {
+          listTokensForAgent: async () => [],
+          revokeToken: async () => {},
+        },
+        chatService: {
+          listTokensForAgent: async () => [],
+          revokeToken: async () => {},
+          deleteThreadsForAgent: async () => ({ deleted: 0 }),
+        },
+        slack: { deleteApp: async () => {} },
+        decrypt: (v) => v,
+      });
+      expect(deleted.agentDeleted).toBe(true);
+      expect(await prisma.agent.count({ where: { accountId: account.id } })).toBe(0);
+
+      const again = await createAgent(
+        deps(),
+        baseInput({ name: "second", accountId: account.id }),
+      );
+      expect(again.ok).toBe(true);
     });
 
     it("agents created without accountId are unaffected", async () => {
