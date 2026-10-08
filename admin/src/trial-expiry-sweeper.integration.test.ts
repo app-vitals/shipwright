@@ -304,6 +304,7 @@ describeOrSkip("TrialExpirySweeper (integration)", () => {
     await service.update(agentId, cron, {
       schedule: before.schedule,
       prompt: before.prompt,
+      channel: before.channel,
       enabled: false,
     });
 
