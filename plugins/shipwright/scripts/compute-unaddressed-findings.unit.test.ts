@@ -14,16 +14,11 @@
 // isResolvedByPriorFindingsStatus exclusions from hasUnaddressedFindings
 // (production ledger data confirmed isResolvedByLedger, PFL-3.2, covers
 // every case they caught) and deleted the now-dead isResolvedByPriorFindingsStatus
-// entirely. PFL-5.1 restored isSelfCleanApprove/isSupersededBySelfReview as
-// fallback exclusions alongside isResolvedByLedger: a PR whose only review
-// ever posted is a clean self-approve never gets a subsequent review pass
-// (nothing changed to re-review), so review.md's Step 5.5 never gets a
-// chance to retroactively ledger it as a "prior" review, and
-// isResolvedByLedger stays false for it forever. isResolvedByPriorFindingsStatus
-// remains removed (PVD-1.3 had no other caller). isSelfCleanApprove and
-// isSupersededBySelfReview themselves are still exported and still tested
-// directly below — review.md's Step 5.5 still calls them to decide what to
-// write to the findings ledger.
+// entirely. PFL-5.1 temporarily restored isSelfCleanApprove/isSupersededBySelfReview
+// as fallbacks; PFL-5.2 ledgers self-reviews at post time, so PFL-5.4 removed
+// them again. isSelfCleanApprove and isSupersededBySelfReview themselves are
+// still exported and tested directly below — review.md's Step 5.5 and
+// check-patch.ts still use them.
 //
 // ─── PHS-1.1 characterization inventory ─────────────────────────────────────
 // Maps every handled-finding exclusion in hasUnaddressedFindings to the tests
@@ -34,22 +29,10 @@
 // Qualification gate (COMMENTED/CHANGES_REQUESTED at headRefOid):
 //   EXISTING "returns false when there are no COMMENT/CHANGES_REQUESTED reviews";
 //   EXISTING "returns false when the COMMENT review was posted at an older commit ..."
-// CPF-2.1 / PFL-5.1 self clean-APPROVE (isSelfCleanApprove):
-//   EXISTING "...self-authored COMMENTED ... non-empty APPROVE body", "...bold-wrapped
-//   APPROVE verdict", "...narrative ending in Verdict: APPROVE", "...trails reasoning
-//   after Verdict: APPROVE (verbatim shipwright PR #1272 case)", "...different
-//   reviewer's CHANGES_REQUESTED finding" (x2), "...non-APPROVE body with a real finding",
-//   "...Verdict: CHANGES_REQUESTED".
-//   PHS-1.1: "self clean-APPROVE matched via canonicalLogin variants (app/ prefix, [bot]
-//   suffix, case)", "self-authored CHANGES_REQUESTED with APPROVE body is still excluded
-//   (state is not consulted)", "third-party leading-APPROVE body is NOT excluded".
-// DRO-1.2 / PFL-5.1 self-review supersede (isSupersededBySelfReview):
-//   EXISTING "...earlier self-authored COMMENT review is superseded by a later clean
-//   self-review", "...LATER self-review that is itself non-clean", "does NOT supersede
-//   ... (order matters)", "does NOT supersede a THIRD-PARTY review's finding ...".
-//   PHS-1.1: "self-review supersede is not scoped to the later review's commit",
-//   "an earlier clean self-approve stays excluded while a later non-clean self-review
-//   still counts".
+// CPF-2.1 / DRO-1.2 self-review exclusions: removed (PFL-5.4); ledger-covered.
+//   Remaining negative cases (still true): self-APPROVE alongside a third-party
+//   CHANGES_REQUESTED, non-APPROVE self-review bodies, order-matters, third-party
+//   leading-APPROVE body is NOT excluded.
 // PSL-1.1 same-head approval supersede (isSupersededBySameHeadApproval):
 //   EXISTING the whole "isSupersededBySameHeadApproval / hasUnaddressedFindings
 //   (PSL-1.1)" describe (same head, newer head, different reviewer, earlier APPROVED,
@@ -173,23 +156,6 @@ describe("hasUnaddressedFindings", () => {
 
   // ─── Self-authored review exclusion (CPF-1.1, restored PFL-5.1) ───────────
 
-  test("returns false when only review is self-authored COMMENTED at current HEAD with non-empty APPROVE body", () => {
-    const data = makeData({
-      reviews: {
-        nodes: [
-          {
-            author: { login: "the-agent" },
-            state: "COMMENTED",
-            submittedAt: "2026-05-26T10:00:00Z",
-            commit: { oid: "current-head-sha" },
-            body: "APPROVE — looks good, no changes needed.",
-          },
-        ],
-      },
-    });
-    expect(hasUnaddressedFindings(data, "the-agent")).toBe(false);
-  });
-
   test("returns true when self-authored clean-APPROVE review coexists with a different reviewer's CHANGES_REQUESTED finding", () => {
     const data = makeData({
       reviews: {
@@ -235,58 +201,7 @@ describe("hasUnaddressedFindings", () => {
 
   // ─── Bold-wrapped self-APPROVE verdicts (CPF-1.3, restored PFL-5.1) ────────
 
-  test("returns false when only review is self-authored COMMENTED at current HEAD with a bold-wrapped APPROVE verdict", () => {
-    const data = makeData({
-      reviews: {
-        nodes: [
-          {
-            author: { login: "the-agent" },
-            state: "COMMENTED",
-            submittedAt: "2026-05-26T10:00:00Z",
-            commit: { oid: "current-head-sha" },
-            body: "**APPROVE** — looks good, no changes needed.",
-          },
-        ],
-      },
-    });
-    expect(hasUnaddressedFindings(data, "the-agent")).toBe(false);
-  });
-
   // ─── Narrative "Verdict: APPROVE" self-reviews (CPF-2.1, restored PFL-5.1) ─
-
-  test("returns false when only review is self-authored COMMENTED at current HEAD with a narrative ending in Verdict: APPROVE", () => {
-    const data = makeData({
-      reviews: {
-        nodes: [
-          {
-            author: { login: "the-agent" },
-            state: "COMMENTED",
-            submittedAt: "2026-05-26T10:00:00Z",
-            commit: { oid: "current-head-sha" },
-            body: "Reviewed the diff for correctness and style. Everything checks out, no issues found.\n\nVerdict: APPROVE",
-          },
-        ],
-      },
-    });
-    expect(hasUnaddressedFindings(data, "the-agent")).toBe(false);
-  });
-
-  test("returns false when self-authored review trails reasoning after Verdict: APPROVE on the same line (verbatim shipwright PR #1272 case)", () => {
-    const data = makeData({
-      reviews: {
-        nodes: [
-          {
-            author: { login: "the-agent" },
-            state: "COMMENTED",
-            submittedAt: "2026-05-26T10:00:00Z",
-            commit: { oid: "current-head-sha" },
-            body: "Clean, well-scoped PR. Verified the generator output is byte-identical to the committed `docs/mcp-tools.md` (no drift), all 9 sections match the allowlist's filtered tool set exactly, unit tests (10/10) and lint pass, and no Helm/Kubernetes content leaked into the doc. All 5 acceptance criteria met. Verdict: APPROVE (posted as COMMENT — GitHub disallows self-approval via the API).",
-          },
-        ],
-      },
-    });
-    expect(hasUnaddressedFindings(data, "the-agent")).toBe(false);
-  });
 
   test("returns true when a narrative Verdict: APPROVE self-review coexists with a different reviewer's CHANGES_REQUESTED finding", () => {
     const data = makeData({
@@ -330,30 +245,6 @@ describe("hasUnaddressedFindings", () => {
   });
 
   // ─── Self-review superseded by a later clean self-review (DRO-1.2, restored PFL-5.1) ──
-
-  test("returns false when an earlier self-authored COMMENT review is superseded by a later clean self-review", () => {
-    const data = makeData({
-      reviews: {
-        nodes: [
-          {
-            author: { login: "the-agent" },
-            state: "COMMENTED",
-            submittedAt: "2026-05-26T10:00:00Z",
-            commit: { oid: "current-head-sha" },
-            body: "Verdict: COMMENT — found a race condition in the retry logic, needs a fix before merge.",
-          },
-          {
-            author: { login: "the-agent" },
-            state: "COMMENTED",
-            submittedAt: "2026-05-27T10:00:00Z",
-            commit: { oid: "current-head-sha" },
-            body: "Verified the race condition is fixed. Verdict: APPROVE",
-          },
-        ],
-      },
-    });
-    expect(hasUnaddressedFindings(data, "the-agent")).toBe(false);
-  });
 
   test("returns true when an earlier self-authored COMMENT review is followed by a LATER self-review that is itself non-clean", () => {
     const data = makeData({
@@ -1869,33 +1760,6 @@ describe("PHS-1.1 characterization", () => {
 
   // --- CPF-2.1 / PFL-5.1 self clean-APPROVE ---
 
-  test("self clean-APPROVE matched via canonicalLogin variants (app/ prefix, [bot] suffix, case)", () => {
-    for (const login of ["app/The-Agent", "the-agent[bot]", "THE-AGENT"]) {
-      const data = makeData({
-        reviews: {
-          nodes: [review({ author: { login }, body: "Verdict: APPROVE" })],
-        },
-      });
-      expect(hasUnaddressedFindings(data, "the-agent")).toBe(false);
-    }
-  });
-
-  test("self-authored CHANGES_REQUESTED with an APPROVE body is still excluded (review state is not consulted)", () => {
-    // NOTE: odd but pinned — isSelfCleanApprove only looks at author + body.
-    const data = makeData({
-      reviews: {
-        nodes: [
-          review({
-            author: { login: "the-agent" },
-            state: "CHANGES_REQUESTED",
-            body: "APPROVE",
-          }),
-        ],
-      },
-    });
-    expect(hasUnaddressedFindings(data, "the-agent")).toBe(false);
-  });
-
   test("third-party leading-APPROVE body is NOT excluded (clean-APPROVE exclusion is self-gated)", () => {
     const data = makeData({
       reviews: { nodes: [review({ body: "APPROVE with nits: rename foo." })] },
@@ -1904,24 +1768,6 @@ describe("PHS-1.1 characterization", () => {
   });
 
   // --- DRO-1.2 / PFL-5.1 self-review supersede ---
-
-  test("self-review supersede is not scoped to the later review's commit", () => {
-    // NOTE: the later clean self-review is at an OLDER commit, yet still
-    // supersedes — isSupersededBySelfReview compares only author + time + body.
-    const early = review({
-      author: { login: "the-agent" },
-      body: "Verdict: COMMENT — found a bug.",
-      submittedAt: "2026-05-26T10:00:00Z",
-    });
-    const later = review({
-      author: { login: "the-agent" },
-      body: "Verdict: APPROVE",
-      submittedAt: "2026-05-26T11:00:00Z",
-      commit: { oid: "older-sha" },
-    });
-    const data = makeData({ reviews: { nodes: [early, later] } });
-    expect(hasUnaddressedFindings(data, "the-agent")).toBe(false);
-  });
 
   test("an earlier clean self-approve stays excluded while a later non-clean self-review still counts", () => {
     const early = review({

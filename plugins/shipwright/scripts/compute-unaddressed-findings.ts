@@ -65,16 +65,10 @@
 //     matching ledger entry", "excludes a finding via the ledger even when...".
 //   isRejectedByPatchLedger (PHS-1.2) ..... KEPT — authoritative path for patch.
 //     Tests: the "PHS-1.2 patch-source rejected ledger entries" suite.
-//   isSelfCleanApprove (CPF-2.1) .......... KEPT — PFL-5.1 fallback: a PR whose
-//     only review is a clean self-approve is never re-reviewed, so review.md's
-//     Step 5.5 never writes its ledger entry. Removal belongs to PFL-5.4.
-//     Tests: "self-authored COMMENTED ... APPROVE body", "bold-wrapped APPROVE",
-//     "narrative ending in Verdict: APPROVE", "self clean-APPROVE matched via
-//     canonicalLogin variants", "third-party leading-APPROVE body is NOT excluded".
-//   isSupersededBySelfReview (DRO-1.2) .... KEPT — same PFL-5.1/PFL-5.4 reasoning.
-//     Tests: "earlier self-authored COMMENT review is superseded by a later clean
-//     self-review" and its negative/ordering variants, "self-review supersede is
-//     not scoped to the later review's commit".
+//   isSelfCleanApprove (CPF-2.1) /
+//   isSupersededBySelfReview (DRO-1.2) .... REMOVED (PFL-4.1, restored PFL-5.1,
+//     removed again PFL-5.4) — isResolvedByLedger is the sole path now that
+//     review.md's Step 11 ledgers a self-review at post time (PFL-5.2).
 //   isSupersededBySameHeadApproval (PSL-1.1) KEPT — a third-party reviewer's own
 //     later APPROVED has no ledger entry (the review pipeline only attests the
 //     agent's own reviews, patch only writes after a dispatch); dropping it would
@@ -577,18 +571,11 @@ export function isRejectedByPatchLedger(
  * against its own timestamps, not the review that (may have) raised it.
  *
  * PFL-4.1 removed `isSelfCleanApprove`/`isSupersededBySelfReview` as
- * exclusions here, on the premise that `isResolvedByLedger` alone covers
- * every case they caught once review.md's Step 5.5 durably records those same
- * judgments to the ledger. That premise breaks for a PR whose only review
- * ever posted is a clean self-approve: Step 5.5 only writes a ledger entry
- * for a *prior* review, evaluated at the start of a *subsequent* review pass
- * — and a PR with nothing new to review (headRefOid unchanged, reviewState
- * already posted) never gets a subsequent pass from check-review.ts's own
- * candidacy gate. No subsequent pass means Step 5.5 never runs, so no ledger
- * entry is ever written, and `isResolvedByLedger` stays false for that review
- * forever (PFL-5.1). Restored here as fallback exclusions alongside
- * `isResolvedByLedger`, not instead of it — a PR that does get re-reviewed
- * and does have a matching ledger entry is unaffected either way.
+ * exclusions here (`isResolvedByLedger` covers every case they caught). PFL-5.1
+ * temporarily restored them as fallbacks for a PR whose only review was a clean
+ * self-approve and so never got a ledger entry; PFL-5.2 closed that gap at the
+ * root (review.md's Step 11 ledgers the self-review at post time), and PFL-5.4
+ * removed the fallbacks again once production confirmed the post-time write.
  */
 export function hasUnaddressedFindings(
   data: PrReviewData,
@@ -615,16 +602,13 @@ export function unaddressedFindingRefs(
   const prAuthor = data.prAuthor ?? currentUser;
 
   // Find qualifying reviews: state COMMENTED or CHANGES_REQUESTED at current
-  // HEAD, excluding self-authored clean-APPROVE reviews (CPF-2.1), self-reviews
-  // superseded by a later clean self-review (DRO-1.2), and reviews
-  // resolved/superseded per the task-store ledger (PFL-3.2), and reviews
-  // superseded by the same reviewer's later APPROVED on the same head (PSL-1.1).
+  // HEAD, excluding reviews resolved/superseded per the task-store ledger
+  // (PFL-3.2) and reviews superseded by the same reviewer's later APPROVED on
+  // the same head (PSL-1.1).
   const qualifyingReviews = reviews.nodes.filter(
     (r) =>
       (r.state === "COMMENTED" || r.state === "CHANGES_REQUESTED") &&
       r.commit.oid === headRefOid &&
-      !isSelfCleanApprove(r, currentUser) &&
-      !isSupersededBySelfReview(r, reviews.nodes, currentUser) &&
       !isSupersededBySameHeadApproval(r, reviews.nodes) &&
       !isResolvedByLedger(reviewRef(r), findings) &&
       !isRejectedByPatchLedger(reviewRef(r), findings),
