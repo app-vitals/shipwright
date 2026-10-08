@@ -167,9 +167,9 @@ describe("TrialExpirySweeper.tick — disabling expired-trial crons", () => {
     expect(result).toEqual({ disabled: 3 });
     expect(rows.every((r) => r.enabled === false)).toBe(true);
     expect(calls).toEqual([
-      { agentId: "agt_1", cronId: "cron_a", enabled: false },
-      { agentId: "agt_1", cronId: "cron_b", enabled: false },
-      { agentId: "agt_2", cronId: "cron_c", enabled: false },
+      { agentId: "agt_1", cronId: "cron_a", enabled: false, lockdown: true },
+      { agentId: "agt_1", cronId: "cron_b", enabled: false, lockdown: true },
+      { agentId: "agt_2", cronId: "cron_c", enabled: false, lockdown: true },
     ]);
   });
 
@@ -359,8 +359,7 @@ describe("TrialExpirySweeper.tick — scope", () => {
     ]);
     // A double that also fails loudly on anything deprovision-shaped: if the
     // sweeper ever grew a deleteAgentFully()-style call, it would land here.
-    const recording: TrialExpiryCronJobServiceLike &
-      Record<string, unknown> = {
+    const recording: TrialExpiryCronJobServiceLike & Record<string, unknown> = {
       listEnabledWithExpiredTrial: (now: Date) => {
         seen.push("listEnabledWithExpiredTrial");
         return base.service.listEnabledWithExpiredTrial(now);
