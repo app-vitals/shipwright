@@ -14,7 +14,11 @@
 
 import { unaddressedFindingRefs } from "../../plugins/shipwright/scripts/compute-unaddressed-findings.ts";
 import { splitOrgRepo } from "./check-helpers.ts";
-import type { CheckPatchDeps, PrReviewData } from "./check-patch.ts";
+import {
+  type CheckPatchDeps,
+  isCiPatchTrigger,
+  type PrReviewData,
+} from "./check-patch.ts";
 
 /** The slice of live PR state that decides patch candidacy. */
 export interface PatchStateSnapshot {
@@ -22,7 +26,7 @@ export interface PatchStateSnapshot {
   /** Refs of findings `hasUnaddressedFindings` still counts (sorted). */
   findingRefs: string[];
   mergeDirty: boolean;
-  /** Failing or cancelled CI at `headSha`. */
+  /** Failing or cancelled CI at `headSha`, not settled by a `ci:` rejected ref. */
   ciFailing: boolean;
 }
 
@@ -105,7 +109,7 @@ export function createPatchStateSnapshotter(
         headSha,
         findingRefs: unaddressedFindingRefs(reviewData, currentUser).sort(),
         mergeDirty: merge.isDirty,
-        ciFailing: ci.hasFailing || ci.hasCancelled === true,
+        ciFailing: isCiPatchTrigger(ci, headSha, record?.findings),
       };
     } catch (err) {
       console.warn(

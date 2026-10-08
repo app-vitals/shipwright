@@ -511,6 +511,18 @@ export function threadRef(
 }
 
 /**
+ * Derives the ledger `ref` for a failing/cancelled-CI patch trigger (SLS-2.1):
+ * `ci:{headSha}:{ciFailureSignature}`, where the signature is patch.md Step
+ * 6b's sorted, comma-joined failing job names (empty for a cancelled-only
+ * state). A new head or a different failing-job set yields a ref with no
+ * ledger entry, so a patch `rejected` entry self-expires exactly like
+ * threadRef's does.
+ */
+export function ciRef(headSha: string, ciFailureSignature: string): string {
+  return `ci:${headSha}:${ciFailureSignature}`;
+}
+
+/**
  * Returns true when a durable ledger entry exists for `ref` with
  * `source: "patch"` and `disposition: "rejected"` (PHS-1.2) — patch's record
  * that it examined the finding and decided not to act on it. Counterpart to

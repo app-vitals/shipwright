@@ -141,4 +141,42 @@ describe("createPatchStateSnapshotter", () => {
     expect(await createPatchStateSnapshotter(throwing)("acme/x#7")).toBeNull();
     expect(await createPatchStateSnapshotter(deps())("nonsense")).toBeNull();
   });
+  describe("SLS-2.1 ci rejected ref", () => {
+    const ciEntry = (ref: string) => ({
+      id: "f1",
+      prRecordId: "pr1",
+      ref,
+      source: "patch" as const,
+      disposition: "rejected" as const,
+      evidence: "e",
+      at: "2026-01-01T00:00:00Z",
+      createdAt: "2026-01-01T00:00:00Z",
+    });
+    const failingCi = async () => ({
+      hasFailing: true,
+      ciFailureSignature: "lint",
+    });
+
+    test("ciFailing is false when a ci rejected entry matches head + signature", async () => {
+      const snap = await createPatchStateSnapshotter(
+        deps({
+          fetchCiStatus: failingCi,
+          queryPrRecord: async () => ({ findings: [ciEntry("ci:sha1:lint")] }),
+        }),
+      )("acme/x#7");
+      expect(snap?.ciFailing).toBe(false);
+    });
+
+    test("ciFailing stays true for a different signature or a new head", async () => {
+      for (const ref of ["ci:sha1:test", "ci:sha0:lint"]) {
+        const snap = await createPatchStateSnapshotter(
+          deps({
+            fetchCiStatus: failingCi,
+            queryPrRecord: async () => ({ findings: [ciEntry(ref)] }),
+          }),
+        )("acme/x#7");
+        expect(snap?.ciFailing).toBe(true);
+      }
+    });
+  });
 });
