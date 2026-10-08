@@ -450,9 +450,10 @@ async function startServer(): Promise<void> {
   const agentMemberService = new AgentMemberService(prisma);
   // Account-aware caller scope (SSP-2.1). Account membership contributes
   // agents only when the self-serve flag is on; off → AgentMember-only.
+  const accountService = new AccountService(prisma);
   const callerScopeResolver = createCallerScopeResolver(
     callerScopeDepsFromServices({
-      accountService: new AccountService(prisma),
+      accountService,
       agentMemberService,
     }),
     process.env.SHIPWRIGHT_SELF_SERVE_ENABLED === "enabled",
@@ -804,6 +805,7 @@ async function startServer(): Promise<void> {
     publicRepo,
     devAuthEnabled: isDevAuthAllowed(process.env),
     selfServe,
+    accountService,
     accountOnboarding: new AccountOnboardingService(
       prisma,
       selfServe.defaultMaxAgents,

@@ -76,6 +76,11 @@ import {
 import type { AgentCronJobService } from "./agent-cron-jobs.ts";
 import type { AgentCronRunService } from "./agent-cron-runs.ts";
 import type { DeleteAgentFullyDeps } from "./agent-deletion.ts";
+import {
+  SELF_SERVE_AGENT_TYPE,
+  accountIdFromScope,
+} from "./account-agent-create.ts";
+import type { AccountService } from "./accounts.ts";
 import { deleteAgentFully } from "./agent-deletion.ts";
 import type { ManualStep } from "./agent-deletion-checklist.ts";
 import type { AgentEnvService } from "./agent-envs.ts";
@@ -129,7 +134,10 @@ import {
   renderPwaHeadTags,
   sanitizeStartUrl,
 } from "./pwa.ts";
-import type { SelfServeConfig } from "./self-serve-config.ts";
+import {
+  DEFAULT_SELF_SERVE_CONTACT_EMAIL,
+  type SelfServeConfig,
+} from "./self-serve-config.ts";
 import {
   type SessionFollowPrismaLike,
   SessionFollowService,
@@ -333,6 +341,14 @@ export interface AdminUIDeps {
    * AgentMember-only resolver, i.e. today's behavior with the flag off.
    */
   callerScopeResolver?: CallerScopeResolver;
+  /**
+   * Account lookups for the new-agent form's remaining-quota display
+   * (SSP-4.2). Absent → the quota line is omitted.
+   */
+  accountService?: Pick<
+    AccountService,
+    "getById" | "countAgents" | "listAgentIds"
+  >;
   agentService: Pick<
     AgentService,
     | "listAll"
@@ -919,6 +935,7 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
     agentService,
     provisioner,
     selfServe,
+    accountService,
     accountOnboarding,
     agentTypeRegistry = new AgentTypeRegistry(),
     callerScopeResolver = memberOnlyCallerScopeResolver(agentMemberService),
@@ -1634,8 +1651,40 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
 
   // ─── New agent form (MUST be before /:id to avoid "new" being captured as param)
 
-  app.get("/admin/agents/new", requireAuth, (c) => {
-    if (!c.var.isAdmin) return new Response("Forbidden", { status: 403 });
+  // Account the caller may create agents in (SSP-4.2): null for platform
+  // admins (unassigned agents, today's behavior) and for non-admins without an
+  // account (flag off / no membership) — the latter are denied by the callers.
+  async function resolveCreateAccountId(
+    userEmail: string,
+    isAdmin: boolean,
+  ): Promise<string | null> {
+    if (isAdmin) return null;
+    return accountIdFromScope(await callerScopeResolver(userEmail, false));
+  }
+
+  app.get("/admin/agents/new", requireAuth, async (c) => {
+    const accountId = await resolveCreateAccountId(
+      c.var.userEmail,
+      c.var.isAdmin,
+    );
+    if (!c.var.isAdmin && accountId === null) {
+      return new Response("Forbidden", { status: 403 });
+    }
+    let selfServeOpts:
+      | { remaining: number; max: number; contactEmail: string }
+      | undefined;
+    if (accountId !== null && accountService) {
+      const [account, count] = await Promise.all([
+        accountService.getById(accountId),
+        accountService.countAgents(accountId),
+      ]);
+      selfServeOpts = {
+        remaining: Math.max(0, (account?.maxAgents ?? 0) - count),
+        max: account?.maxAgents ?? 0,
+        contactEmail:
+          selfServe?.contactEmail ?? DEFAULT_SELF_SERVE_CONTACT_EMAIL,
+      };
+    }
     const rawError = c.req.query("error") ?? undefined;
     const error = rawError ? (ERROR_MESSAGES[rawError] ?? rawError) : undefined;
     const types = agentTypeRegistry.listTypes();
@@ -1643,6 +1692,7 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
       renderNewLocalAgentPage(c.var.userEmail, types, {
         error,
         canProvision: provisioner.canProvision,
+        ...(selfServeOpts ? { selfServe: selfServeOpts } : {}),
       }),
     );
   });
@@ -1650,7 +1700,13 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
   // ─── Create agent (self-hosted or provisioned in-cluster) ────────────────
 
   app.post("/admin/agents", requireAuth, async (c) => {
-    if (!c.var.isAdmin) return new Response("Forbidden", { status: 403 });
+    const accountId = await resolveCreateAccountId(
+      c.var.userEmail,
+      c.var.isAdmin,
+    );
+    if (!c.var.isAdmin && accountId === null) {
+      return new Response("Forbidden", { status: 403 });
+    }
     let name: string | undefined;
     let typeName: string | undefined;
     let reposRaw: string | undefined;
@@ -1710,6 +1766,9 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
       return c.redirect("/admin/agents/new", 302);
     }
     const connectSlack = connectSlackRaw === "true";
+    // SSP-4.2: account users always create "coding" agents in their own
+    // account — any submitted type/accountId is ignored.
+    if (accountId !== null) typeName = SELF_SERVE_AGENT_TYPE;
     // Absent/unrecognized runtime means self-hosted — the historical behavior
     // of this form. createAgent() below re-derives this same value itself
     // (it owns the runtime/provisioning validation); it's recomputed here
@@ -1769,6 +1828,7 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
         restrictSlackToMembersRaw,
         claudeCodeOauthToken,
         anthropicApiKey,
+        ...(accountId !== null ? { accountId } : {}),
       },
     );
     if (!result.ok) {
@@ -4692,8 +4752,20 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
   // ─── Agent delete (danger zone) ───────────────────────────────────────────
 
   app.post("/admin/agents/:id/delete", requireAuth, async (c) => {
-    if (!c.var.isAdmin) return new Response("Forbidden", { status: 403 });
     const agentId = c.req.param("id");
+    if (!c.var.isAdmin) {
+      // SSP-4.2: account users may delete agents owned by their own account.
+      // No account (flag off / no membership) → 403; someone else's (or a
+      // missing) agent → 404 so existence isn't revealed.
+      const accountId = await resolveCreateAccountId(c.var.userEmail, false);
+      if (accountId === null) {
+        return new Response("Forbidden", { status: 403 });
+      }
+      const owned = (await accountService?.listAgentIds(accountId)) ?? [];
+      if (!owned.includes(agentId)) {
+        return new Response("Not found", { status: 404 });
+      }
+    }
     try {
       // Full teardown: K8s workload, task-store + chat-service tokens/threads,
       // optional Slack app deletion, then the Agent row itself (deleted last,
