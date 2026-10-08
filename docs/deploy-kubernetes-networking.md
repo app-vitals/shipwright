@@ -171,3 +171,33 @@ external path routing is operator-driven.
 See [configuration-agent.md](./configuration-agent.md#metrics--admin--chat--task-store-services)
 for the full list of MCP server env vars and their defaults.
 
+### Tenant agent NetworkPolicy (self-serve, opt-in)
+
+Self-serve tenant agents run user-controlled workloads in the shared agent
+namespace (`agent.provisioning.namespace`, else the release namespace), so they
+must not be able to reach other pods, the node, the cloud metadata service, or
+the in-cluster API server. Set `selfServe.networkPolicy.enabled=true` to render
+`templates/tenant-networkpolicy.yaml` (default `false` renders nothing).
+**Do not enable tenant agents without this policy.**
+
+The policy selects pods labelled `shipwright.dev/tenant=true` and allows:
+
+| Direction | Allowed | Details |
+|-----------|---------|---------|
+| Egress | DNS | `kube-dns` pods (`k8s-app=kube-dns`) in `kube-system`, port 53 UDP and TCP |
+| Egress | Shipwright services | admin, task-store and chat pods in the release namespace (selected by the chart's `app.kubernetes.io/{name,instance,component}` labels) |
+| Egress | Public internet | `0.0.0.0/0` with `ipBlock.except`: `10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16`, `169.254.0.0/16` |
+| Ingress | Admin only | admin pods in the release namespace; everything else is denied |
+
+The `except` list is what blocks other pods, nodes, the metadata endpoint
+(`169.254.169.254`) and the in-cluster API server (a private ClusterIP).
+Traffic to the Shipwright services above is allowed by the explicit pod
+selectors, not by the `ipBlock`.
+
+> **CNI requirement:** a NetworkPolicy is only enforced if the cluster's CNI
+> implements it. Without enforcement the resource is accepted and silently does
+> nothing. The default `kindnet` (kind) and the stock minikube CNI do **not**
+> enforce NetworkPolicy (minikube needs `--cni=calico` or similar); GKE needs
+> network policy enforcement (or Dataplane V2) enabled on the cluster; EKS needs
+> the VPC CNI network policy feature or Calico/Cilium. Verify enforcement
+> before enabling tenants.

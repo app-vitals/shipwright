@@ -599,6 +599,13 @@ selfServe:
   defaultMaxAgents: 0
   # -- Contact address shown when a user needs more quota.
   contactEmail: dan@app-vitals.com
+  networkPolicy:
+    # -- Render a NetworkPolicy isolating tenant agent pods (label
+    # shipwright.dev/tenant=true) in the agent namespace: egress to DNS, the
+    # Shipwright services and the public internet only (RFC1918 + link-local
+    # blocked); ingress from the admin pods only. Only enforced if the cluster
+    # CNI supports NetworkPolicy. Enable before allowing any tenant agents.
+    enabled: false
 
 # -- Authentication mode for the admin service.
 auth:

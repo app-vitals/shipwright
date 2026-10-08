@@ -511,7 +511,14 @@
       "properties": {
         "enabled": { "type": "boolean" },
         "defaultMaxAgents": { "type": "integer", "minimum": 0 },
-        "contactEmail": { "type": "string" }
+        "contactEmail": { "type": "string" },
+        "networkPolicy": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "enabled": { "type": "boolean" }
+          }
+        }
       }
     },
     "auth": {

@@ -1,0 +1,72 @@
+{{- /*
+Tenant agent NetworkPolicy (SSP-7.2) — opt-in, default off.
+
+Renders nothing unless selfServe.networkPolicy.enabled=true. Selects the
+tenant agent pods the admin service provisions for self-serve accounts
+(label shipwright.dev/tenant=true, SSP-7.1) in the agent namespace
+(agent.provisioning.namespace, else the release namespace).
+
+Egress allowed: cluster DNS, the Shipwright admin / task-store / chat pods in
+the release namespace, and the public internet — 0.0.0.0/0 minus the RFC1918
+ranges and link-local (169.254.0.0/16), which blocks other pods, node and
+cloud-metadata endpoints, and the in-cluster API server. Ingress: only from
+the admin pods. NetworkPolicy is only enforced when the cluster CNI supports
+it — see docs/deploy-kubernetes-networking.md.
+*/ -}}
+{{- if .Values.selfServe.networkPolicy.enabled }}
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "shipwright.fullname" . }}-tenant
+  namespace: {{ default .Release.Namespace .Values.agent.provisioning.namespace }}
+  labels:
+    {{- include "shipwright.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      shipwright.dev/tenant: "true"
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: {{ .Release.Namespace }}
+          podSelector:
+            matchLabels:
+              {{- include "shipwright.admin.selectorLabels" . | nindent 14 }}
+  egress:
+    # Cluster DNS (kube-dns / CoreDNS).
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+          podSelector:
+            matchLabels:
+              k8s-app: kube-dns
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+    # Shipwright services: admin, task-store, chat.
+    {{- range $selectors := list (include "shipwright.admin.selectorLabels" .) (include "shipwright.taskStore.selectorLabels" .) (include "shipwright.chat.selectorLabels" .) }}
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: {{ $.Release.Namespace }}
+          podSelector:
+            matchLabels:
+              {{- $selectors | nindent 14 }}
+    {{- end }}
+    # Public internet only: no other pods, nodes, metadata service or API server.
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+            except:
+              - 10.0.0.0/8
+              - 172.16.0.0/12
+              - 192.168.0.0/16
+              - 169.254.0.0/16
+{{- end }}
