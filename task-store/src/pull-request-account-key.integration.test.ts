@@ -447,3 +447,41 @@ describeOrSkip("PR routes stamp the caller's account (integration)", () => {
     expect(((await res.json()) as { cursor: string | null }).cursor).toBeNull();
   });
 });
+
+describeOrSkip("PullRequest unique key after dropping [repo, prNumber] (SSP-6.4)", () => {
+  let prisma: PrismaClient;
+
+  beforeEach(async () => {
+    prisma = makePrisma();
+    await resetTables(prisma);
+  });
+
+  afterEach(async () => {
+    await prisma.$disconnect();
+  });
+
+  it("allows the same repo/prNumber under two different accountIds", async () => {
+    await prisma.pullRequest.create({
+      data: { accountId: ACCOUNT_A, repo: REPO, prNumber: 77 },
+    });
+    await prisma.pullRequest.create({
+      data: { accountId: ACCOUNT_B, repo: REPO, prNumber: 77 },
+    });
+
+    expect(
+      await prisma.pullRequest.count({ where: { repo: REPO, prNumber: 77 } }),
+    ).toBe(2);
+  });
+
+  it("rejects the same repo/prNumber under the same accountId with P2002", async () => {
+    await prisma.pullRequest.create({
+      data: { accountId: ACCOUNT_A, repo: REPO, prNumber: 78 },
+    });
+
+    const attempt = (async () =>
+      prisma.pullRequest.create({
+        data: { accountId: ACCOUNT_A, repo: REPO, prNumber: 78 },
+      }))();
+    await expect(attempt).rejects.toMatchObject({ code: "P2002" });
+  });
+});
