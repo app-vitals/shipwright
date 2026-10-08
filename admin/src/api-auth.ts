@@ -151,7 +151,11 @@ export function createAdminAuthMiddleware(deps: {
     path: string,
     email: string,
   ): Promise<boolean> {
-    if (path === "/agents" || path === "/agents/") return method === "GET";
+    // POST /agents (SSP-4.2): the handler resolves the caller's account and
+    // denies callers without one, so the middleware only lets it through.
+    if (path === "/agents" || path === "/agents/") {
+      return method === "GET" || method === "POST";
+    }
     const agentId = extractAgentId(path);
     if (!agentId || !callerScopeResolver) return false;
     return scopeIncludesAgent(await callerScopeResolver(email, false), agentId);

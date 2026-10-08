@@ -4892,7 +4892,12 @@ describe("non-admin session cookie scoping", () => {
   it("POST /agents, POST /agents/reconcile, and cross-agent stats return 403", async () => {
     const app = createAdminApp(makeMemberDeps());
     expect(
-      (await req(app, memberCookie, "/agents", "POST", { name: "x" })).status,
+      (
+        await req(app, memberCookie, "/agents", "POST", {
+          name: "x",
+          typeName: "coding",
+        })
+      ).status,
     ).toBe(403);
     expect(
       (await req(app, memberCookie, "/agents/reconcile", "POST")).status,
@@ -4915,5 +4920,182 @@ describe("non-admin session cookie scoping", () => {
         )
       ).status,
     ).toBe(403);
+  });
+});
+
+// ─── SSP-4.2: account users create / delete their own agents ────────────────
+
+describe("admin API — account users create and delete agents (SSP-4.2)", () => {
+  const ACCOUNT_EMAIL = "owner@acct-a.example.com";
+  const ACCOUNT_AGENT_ID = "agent-in-acct-a";
+
+  async function accountCookie(email = ACCOUNT_EMAIL): Promise<string> {
+    return sign(
+      {
+        isAdmin: false,
+        userId: "user-acct",
+        email,
+        iat: Math.floor(Date.now() / 1000),
+        exp: Math.floor(Date.now() / 1000) + 3600,
+      },
+      SESSION_SECRET,
+      "HS256",
+    );
+  }
+
+  function makeAccountDeps(accountId: string | null): {
+    deps: AdminDeps;
+    created: Array<Record<string, unknown>>;
+  } {
+    const base = makeMockDeps();
+    const created: Array<Record<string, unknown>> = [];
+    const deps: AdminDeps = {
+      ...base,
+      callerScopeResolver: async () => ({
+        kind: "scoped",
+        accountId,
+        agentIds: accountId ? [ACCOUNT_AGENT_ID] : [],
+      }),
+      agentService: {
+        ...base.agentService,
+        create: async (input, tx) => {
+          created.push(input as unknown as Record<string, unknown>);
+          return base.agentService.create(input, tx);
+        },
+      },
+    };
+    return { deps, created };
+  }
+
+  const post = (
+    app: ReturnType<typeof createAdminApp>,
+    body: unknown,
+    cookie: string,
+  ) =>
+    app.request("/agents", {
+      method: "POST",
+      body: JSON.stringify(body),
+      headers: {
+        "Content-Type": "application/json",
+        Cookie: `admin_session=${cookie}`,
+      },
+    });
+
+  it("account user creates an agent stamped with their own accountId and typeName coding", async () => {
+    const { deps, created } = makeAccountDeps("acct-a");
+    const res = await post(
+      createAdminApp(deps),
+      { name: "Mine", typeName: "coding" },
+      await accountCookie(),
+    );
+    expect(res.status).toBe(200);
+    expect(created).toHaveLength(1);
+    expect(created[0]).toMatchObject({
+      accountId: "acct-a",
+      typeName: "coding",
+    });
+  });
+
+  it("ignores a client-supplied accountId and typeName", async () => {
+    const { deps, created } = makeAccountDeps("acct-a");
+    const res = await post(
+      createAdminApp(deps),
+      { name: "Sneaky", typeName: "other-type", accountId: "acct-b" },
+      await accountCookie(),
+    );
+    expect(res.status).toBe(200);
+    expect(created[0]).toMatchObject({
+      accountId: "acct-a",
+      typeName: "coding",
+    });
+  });
+
+  it("non-admin without an account (flag off / no membership) gets 403 on create", async () => {
+    const { deps, created } = makeAccountDeps(null);
+    const res = await post(
+      createAdminApp(deps),
+      { name: "Nope", typeName: "coding" },
+      await accountCookie(),
+    );
+    expect(res.status).toBe(403);
+    expect(created).toHaveLength(0);
+  });
+
+  it("platform admin create stays unassigned (no accountId)", async () => {
+    const { deps, created } = makeAccountDeps("acct-a");
+    const res = await post(
+      createAdminApp(deps),
+      { name: "Admin Made", typeName: "coding", accountId: "acct-b" },
+      await makeSessionCookie(),
+    );
+    expect(res.status).toBe(200);
+    expect(created[0]?.accountId).toBeUndefined();
+  });
+
+  it.each([
+    ["quota_exceeded", "agent limit"],
+    ["account_inactive", "not active"],
+  ])("surfaces %s as a clear 403 error", async (code, fragment) => {
+    const { deps } = makeAccountDeps("acct-a");
+    const app = createAdminApp({
+      ...deps,
+      agentService: {
+        ...deps.agentService,
+        // Real createAgent() reports quota/inactive from inside the tx.
+        runTransaction: async () => ({ ok: false, errorCode: code }) as never,
+      },
+    });
+    const res = await post(
+      app,
+      { name: "Q", typeName: "coding" },
+      await accountCookie(),
+    );
+    expect(res.status).toBe(403);
+    expect(((await res.json()) as { error: string }).error).toContain(fragment);
+  });
+
+  it("account user can delete an agent in their account scope", async () => {
+    const { deps } = makeAccountDeps("acct-a");
+    const base = deps.prisma;
+    const app = createAdminApp({
+      ...deps,
+      prisma: {
+        ...base,
+        agent: {
+          ...base.agent,
+          findUnique: async () => ({
+            id: ACCOUNT_AGENT_ID,
+            name: "Mine",
+            slackId: null,
+            selfHosted: true,
+            repos: [],
+            createdAt: new Date("2024-01-01"),
+            updatedAt: new Date("2024-01-01"),
+          }),
+        },
+      } as unknown as AdminDeps["prisma"],
+    });
+    const res = await app.request(`/agents/${ACCOUNT_AGENT_ID}`, {
+      method: "DELETE",
+      headers: { Cookie: `admin_session=${await accountCookie()}` },
+    });
+    expect(res.status).toBe(200);
+  });
+
+  it("account user gets 403 deleting another account's agent", async () => {
+    const { deps } = makeAccountDeps("acct-a");
+    const res = await createAdminApp(deps).request("/agents/agent-in-acct-b", {
+      method: "DELETE",
+      headers: { Cookie: `admin_session=${await accountCookie()}` },
+    });
+    expect(res.status).toBe(403);
+  });
+
+  it("account user gets 403 reading another account's agent", async () => {
+    const { deps } = makeAccountDeps("acct-a");
+    const res = await createAdminApp(deps).request("/agents/agent-in-acct-b", {
+      headers: { Cookie: `admin_session=${await accountCookie()}` },
+    });
+    expect(res.status).toBe(403);
   });
 });
