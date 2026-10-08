@@ -24,6 +24,7 @@ import { sentry } from "@sentry/hono/bun";
 import { registerGracefulShutdown } from "@shipwright/lib/graceful-shutdown";
 import { buildSentryInitOptions, initSentry } from "@shipwright/lib/sentry";
 import { Hono } from "hono";
+import { AccountOnboardingService } from "./account-onboarding.ts";
 import { AccountService } from "./accounts.ts";
 import { createAdminUIApp } from "./admin-ui.ts";
 import { AgentChatTokenService } from "./agent-chat-tokens.ts";
@@ -57,7 +58,6 @@ import {
   NoopChatServiceProvisioningClient,
 } from "./chat-service-provisioning-client.ts";
 import { isDevAuthAllowed } from "./dev-auth-guard.ts";
-import { parseSelfServeConfig } from "./self-serve-config.ts";
 import { HttpGithubAppProvisioningClient } from "./github-app-provisioning-client.ts";
 import { HttpGoogleAuthClient } from "./google-auth-client.ts";
 import { HttpChatClient } from "./http-chat-client.ts";
@@ -66,6 +66,7 @@ import { HttpOktaAuthClient } from "./okta-auth-client.ts";
 import { createAdminPrismaClient } from "./prisma-client.ts";
 import { isPushEnabled } from "./push-sender.ts";
 import { PushService } from "./push-service.ts";
+import { parseSelfServeConfig } from "./self-serve-config.ts";
 import {
   SessionAlertSweeper,
   type SessionForAlert,
@@ -803,6 +804,10 @@ async function startServer(): Promise<void> {
     publicRepo,
     devAuthEnabled: isDevAuthAllowed(process.env),
     selfServe,
+    accountOnboarding: new AccountOnboardingService(
+      prisma,
+      selfServe.defaultMaxAgents,
+    ),
     timezone: adminTz,
     ...(chatClient ? { chatClient } : {}),
     ...(pushService

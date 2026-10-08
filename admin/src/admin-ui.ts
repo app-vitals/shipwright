@@ -29,6 +29,7 @@ import { SECRET_ENV_VARS } from "@shipwright/lib/secret-env-vars";
 import { type Context, Hono, type MiddlewareHandler } from "hono";
 import { deleteCookie, getCookie, setCookie } from "hono/cookie";
 import { sign, verify } from "hono/jwt";
+import type { AccountOnboardingService } from "./account-onboarding.ts";
 import {
   type AgentDetail,
   type AgentOption,
@@ -128,6 +129,7 @@ import {
   renderPwaHeadTags,
   sanitizeStartUrl,
 } from "./pwa.ts";
+import type { SelfServeConfig } from "./self-serve-config.ts";
 import {
   type SessionFollowPrismaLike,
   SessionFollowService,
@@ -137,7 +139,6 @@ import {
   isSessionVisible,
   type SessionForVisibility,
 } from "./session-scope.ts";
-import type { SelfServeConfig } from "./self-serve-config.ts";
 import type { AppManifest } from "./slack-provisioning-client.ts";
 import {
   AGENT_BOT_SCOPES,
@@ -397,8 +398,13 @@ export interface AdminUIDeps {
   appBaseUrl: string;
   /** Enable the /admin/dev-login route. Hard-blocked in production regardless of this value. */
   devAuthEnabled?: boolean;
-  /** Resolved self-serve provisioning config (SSP-1.3). No consumers yet. */
+  /** Resolved self-serve provisioning config (SSP-1.3). */
   selfServe?: SelfServeConfig;
+  /**
+   * First-login account provisioning (SSP-3.1). Consulted by the Google
+   * callback only, and only when selfServe.enabled; absent → no auto-create.
+   */
+  accountOnboarding?: Pick<AccountOnboardingService, "provisionForEmail">;
   /**
    * Fetch tasks from the task-store service. If absent, the tasks page renders
    * in degraded mode (empty table + yellow notice) rather than returning 500.
@@ -912,6 +918,8 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
     agentMemberService,
     agentService,
     provisioner,
+    selfServe,
+    accountOnboarding,
     agentTypeRegistry = new AgentTypeRegistry(),
     callerScopeResolver = memberOnlyCallerScopeResolver(agentMemberService),
     taskStore,
@@ -1079,6 +1087,7 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
     c: Context<AdminUIEnv, any>,
     userInfo: { sub: string; email?: string; email_verified?: boolean },
     returnTo: string | undefined,
+    opts: { selfServeSignup?: boolean } = {},
   ): Promise<Response> {
     if (!userInfo.email) {
       return c.redirect("/admin/login?error=auth_failed", 302);
@@ -1098,7 +1107,30 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
         userInfo.email.toLowerCase(),
       );
       if (memberships.length === 0) {
-        return new Response("Forbidden", { status: 403 });
+        // Self-serve (SSP-3.1): a verified Google email with no AgentMember
+        // rows joins its invited account or gets a new one. Okta and flag-off
+        // keep the existing 403.
+        const onboarding = accountOnboarding;
+        if (!(opts.selfServeSignup && selfServe?.enabled && onboarding)) {
+          return new Response("Forbidden", { status: 403 });
+        }
+        const email = userInfo.email.toLowerCase();
+        let result: Awaited<ReturnType<typeof onboarding.provisionForEmail>>;
+        try {
+          result = await onboarding.provisionForEmail(email);
+        } catch (err) {
+          console.error("[admin] self-serve account provisioning failed", err);
+          return c.redirect("/admin/login?error=server_error", 302);
+        }
+        if (result.kind !== "existing") {
+          console.log(
+            JSON.stringify({
+              event: `account_${result.kind}`,
+              accountId: result.accountId,
+              emailDomain: email.slice(email.lastIndexOf("@") + 1),
+            }),
+          );
+        }
       }
     }
 
@@ -1336,7 +1368,7 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
       return c.redirect("/admin/login?error=auth_failed", 302);
     }
 
-    return completeLogin(c, userInfo, returnTo);
+    return completeLogin(c, userInfo, returnTo, { selfServeSignup: true });
   });
 
   app.get("/admin/auth/okta", (c) => {
