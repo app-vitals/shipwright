@@ -47,7 +47,39 @@ const FIXTURE: Record<string, string> = {
   "plugins/p/agents/reviewer.md":
     "---\nname: reviewer\ndescription: r\n---\nUses /shipwright:scan.\n",
   "plugins/p/commands/other.content.test.ts":
-    'const f = "dev-task.md";\nexpect(readFile(f)).toMatch(/Build/);\n',
+    'const f = join(import.meta.dir, "dev-task.md");\nexpect(readFile(f)).toMatch(/Build/);\n',
+  // Mentions dev-task.md only in prose: a title and a comment.
+  "plugins/p/commands/prose.content.test.ts": [
+    'it("works unlike dev-task.md", () => {',
+    "  // see dev-task.md",
+    '  expect(x).toContain("y");',
+    "});",
+    "",
+  ].join("\n"),
+  // Same basename, different directory.
+  "plugins/p/references/dev-task.md": "Reference contract.\n",
+  "plugins/p/references/contract.content.test.ts": [
+    'const P = join(import.meta.dir, "dev-task.md");',
+    'expect(read(P)).toContain("Reference");',
+    "",
+  ].join("\n"),
+  // References the target from inside one block only.
+  "plugins/p/test/mixed.content.test.ts": [
+    'const ROOT = join(import.meta.dir, "..");',
+    'describe("a", () => {',
+    '  const c = read(join(ROOT, "commands/dev-task.md"));',
+    '  it("pins", () => {',
+    '    expect(c).toContain("Build it");',
+    "  });",
+    "});",
+    'describe("b", () => {',
+    '  const d = read(join(ROOT, "commands/scan.md"));',
+    '  it("other", () => {',
+    '    expect(d).toContain("Scan");',
+    "  });",
+    "});",
+    "",
+  ].join("\n"),
   "plugins/p/commands/lonely.md": "---\ndescription: nobody\n---\nAlone.\n",
   "agent-types/coding/manifest.yaml": MANIFEST,
   "site/docs-source-map.json": JSON.stringify({
@@ -97,6 +129,7 @@ describe("blastRadius", () => {
     expect(report.pinningTests.map((t) => t.file)).toEqual([
       "plugins/p/commands/dev-task.content.test.ts",
       "plugins/p/commands/other.content.test.ts",
+      "plugins/p/test/mixed.content.test.ts",
     ]);
     expect(report.pinningTests[0].assertions).toEqual([
       { line: 1, text: 'expect(content).toContain("Build it");' },
@@ -106,6 +139,34 @@ describe("blastRadius", () => {
       "local-dev": "on-invoke",
       "agent-runtime": "on-invoke",
     });
+  });
+
+  test("a basename mentioned only in a test title or comment is not a pinning test", () => {
+    const files = blastRadius("plugins/p/commands/dev-task.md", root, deps)
+      .pinningTests.map((t) => t.file);
+    expect(files).not.toContain("plugins/p/commands/prose.content.test.ts");
+  });
+
+  test("a same-named file in another directory is not conflated", () => {
+    expect(
+      blastRadius("plugins/p/commands/dev-task.md", root, deps).pinningTests.map((t) => t.file),
+    ).not.toContain("plugins/p/references/contract.content.test.ts");
+    expect(
+      blastRadius("plugins/p/references/dev-task.md", root, deps).pinningTests.map((t) => t.file),
+    ).toEqual(["plugins/p/references/contract.content.test.ts"]);
+  });
+
+  test("assertions are limited to the blocks that reference the target", () => {
+    const mixed = (target: string) =>
+      blastRadius(target, root, deps).pinningTests.find(
+        (t) => t.file === "plugins/p/test/mixed.content.test.ts",
+      )?.assertions;
+    expect(mixed("plugins/p/commands/dev-task.md")).toEqual([
+      { line: 5, text: 'expect(c).toContain("Build it");' },
+    ]);
+    expect(mixed("plugins/p/commands/scan.md")).toEqual([
+      { line: 11, text: 'expect(d).toContain("Scan");' },
+    ]);
   });
 
   test("resolves @ imports as referrers and non-loop crons have no phase", () => {

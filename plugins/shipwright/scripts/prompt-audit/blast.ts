@@ -206,6 +206,89 @@ function findCrons(
 
 const ASSERTION_RE = /\bexpect\(.*(?:["'`]|\/[^/]+\/[a-z]*\)|\bregex\b)/;
 
+const PATH_ARGS = String.raw`((?:\s*,\s*["'][^"'\n]*["'])*)\s*\)`;
+const BASE_CONST_RE = new RegExp(
+  String.raw`\bconst\s+(\w+)\s*=\s*(?:join|resolve)\(\s*import\.meta\.dir${PATH_ARGS}`,
+  "g",
+);
+const PATH_CALL_RE = new RegExp(
+  String.raw`\b(?:join|resolve)\(\s*(import\.meta\.dir|\w+)${PATH_ARGS}`,
+  "g",
+);
+const STRING_LIT_RE = /["'`]([^"'`$\s]+)["'`]/g;
+const BLOCK_START_RE = /^(\s*)(?:describe|it|test)(?:\.\w+)*\(/;
+
+function literalArgs(args: string): string[] {
+  return [...args.matchAll(/["']([^"'\n]*)["']/g)].map((m) => m[1]);
+}
+
+/**
+ * 0-based lines of `text` (a test at `test`) that reference `file` by path:
+ * the full root-relative path, a `/`-containing relative path, a
+ * `join`/`resolve(import.meta.dir, ...)` call (or one rooted at a const bound
+ * to such a call), or a `/`-containing string literal that resolves to `file`
+ * against the test dir or such a const. A bare basename never counts on its
+ * own, so prose like "unlike review.md" in a test title is not a reference
+ * and same-named files in other directories are not conflated.
+ */
+function pathReferenceLines(file: string, test: string, text: string): number[] {
+  const testDir = dirname(test);
+  const bases = new Map<string, string>();
+  for (const m of text.matchAll(BASE_CONST_RE)) {
+    bases.set(m[1], joinNormalized(testDir, literalArgs(m[2]).join("/")));
+  }
+  const literalBases = [testDir, ...bases.values()];
+  const needles = mentionPatterns(file, "");
+  const rel = relativeFrom(test, file);
+  if (rel.includes("/")) {
+    needles.push(new RegExp(`(?<![\\w/-])${escapeRe(rel)}(?![\\w-])`));
+  }
+  const hits: number[] = [];
+  text.split("\n").forEach((line, i) => {
+    const hit =
+      needles.some((re) => re.test(line)) ||
+      [...line.matchAll(PATH_CALL_RE)].some((m) => {
+        const base = m[1] === "import.meta.dir" ? testDir : bases.get(m[1]);
+        return (
+          base !== undefined &&
+          joinNormalized(base, literalArgs(m[2]).join("/")) === file
+        );
+      }) ||
+      [...line.matchAll(STRING_LIT_RE)].some(
+        (m) =>
+          m[1].includes("/") &&
+          literalBases.some((b) => joinNormalized(b, m[1]) === file),
+      );
+    if (hit) hits.push(i);
+  });
+  return hits;
+}
+
+/**
+ * [start, end] (0-based, inclusive) of the innermost `describe`/`it`/`test`
+ * block containing line `at`, or null when `at` is at module top level.
+ * Relies on formatter-consistent indentation: a block closes at the next line
+ * with the same indent that starts with `}`.
+ */
+function enclosingBlock(lines: string[], at: number): [number, number] | null {
+  for (let start = at; start >= 0; start--) {
+    const open = BLOCK_START_RE.exec(lines[start]);
+    if (!open) continue;
+    const indent = open[1].length;
+    let end = start;
+    for (let j = start + 1; j < lines.length; j++) {
+      const ind = lines[j].length - lines[j].trimStart().length;
+      if (ind === indent && lines[j].trimStart().startsWith("}")) {
+        end = j;
+        break;
+      }
+      if (ind < indent && lines[j].trim() !== "") break;
+    }
+    if (end >= at) return [start, end];
+  }
+  return null;
+}
+
 function findPinningTests(
   file: string,
   files: string[],
@@ -217,14 +300,18 @@ function findPinningTests(
   const out: PinningTest[] = [];
   for (const test of files.filter((f) => CONTENT_TEST_RE.test(f))) {
     const text = deps.readFile(root, test);
-    const mentions =
-      test === sibling ||
-      firstMentionLine(text, mentionPatterns(file, test)) > 0 ||
-      firstMentionLine(text, [new RegExp(`(?<![\\w.-])${escapeRe(basename(file))}(?![\\w-])`)]) > 0;
-    if (!mentions) continue;
+    const lines = text.split("\n");
+    const refs = pathReferenceLines(file, test, text);
+    if (test !== sibling && refs.length === 0) continue;
+    // A sibling test or a top-level reference pins the whole file; otherwise
+    // only the blocks that contain a reference contribute assertions.
+    const blocks = refs.map((r) => enclosingBlock(lines, r));
+    const wholeFile = test === sibling || blocks.some((b) => b === null);
+    const inScope = (i: number) =>
+      wholeFile || blocks.some((b) => b !== null && i >= b[0] && i <= b[1]);
     const assertions: PinningAssertion[] = [];
-    text.split("\n").forEach((line, i) => {
-      if (ASSERTION_RE.test(line)) {
+    lines.forEach((line, i) => {
+      if (inScope(i) && ASSERTION_RE.test(line)) {
         assertions.push({ line: i + 1, text: line.trim() });
       }
     });
