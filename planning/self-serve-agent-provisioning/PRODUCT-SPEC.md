@@ -390,3 +390,13 @@ Gate for enabling the flag anywhere: Features 1, 2, 3, 4, 6 and 7 complete.
 - A platform admin can create, inspect, resize, suspend and reactivate accounts from the admin UI and API.
 - With `SHIPWRIGHT_SELF_SERVE_ENABLED` unset, a self-hosted deployment behaves exactly as before and all existing tests pass.
 - `task ci` passes with no coverage regression, and the migrations are additive.
+
+## Amendments from plan-session (2026-10-08)
+
+Where these differ from the sections above, these win (details in `PLAN.md`):
+
+- **Feature 7:** a per-account `ResourceQuota` is not possible in a shared namespace (quotas are per namespace). Per-account bounds are `maxAgents` × fixed per-pod limits, enforced in admin, plus a CPU limit on tenant pods. NetworkPolicy ships as a static, flag-gated chart template keyed on label `shipwright.dev/tenant="true"`.
+- **Feature 6:** task-store `accountId` is `NOT NULL DEFAULT 'default'` (not NULL); `Session` is a real table and is keyed by `[accountId, slug]`; the `PullRequest` unique is `[accountId, repo, prNumber]`. Task ids stay globally unique and cross-account collisions return a generic 409.
+- **Feature 1:** the task-store default account id is the constant `DEFAULT_ACCOUNT_ID = "default"`; `Agent.accountId` in admin stays nullable.
+- **Feature 4:** elevated member powers (settings, members, delete) apply only when `SHIPWRIGHT_SELF_SERVE_ENABLED` is on.
+- **Feature 8:** the admin web chat is also gated for suspended accounts.
