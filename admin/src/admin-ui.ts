@@ -1581,6 +1581,8 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
       "In-cluster provisioning is not enabled on this admin service — create a self-hosted agent instead.",
     provision_failed:
       "Failed to provision the agent's cluster resources — the agent was not created.",
+    quota_exceeded: "This account has reached its agent limit.",
+    account_inactive: "This account is not active.",
     invalid_phase: "Invalid pipeline phase.",
   };
 
