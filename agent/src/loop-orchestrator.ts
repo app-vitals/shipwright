@@ -89,6 +89,11 @@ import {
   getPatchCandidates,
 } from "./check-patch.ts";
 import {
+  createPatchStateSnapshotter,
+  evaluatePatchOutcome,
+  type PatchStateSnapshot,
+} from "./patch-outcome-check.ts";
+import {
   buildProductionDeps as buildPlanDeps,
   getPlanCandidates,
 } from "./check-plan.ts";
@@ -354,6 +359,28 @@ export interface LoopOrchestratorDeps {
     reviewedCommitSha?: string | null;
     commitSha?: string | null;
   } | null>;
+  /**
+   * PHS-3.1 — post-dispatch outcome check for patch dispatches. `snapshot`
+   * reads a PR's live patch-candidacy state (head, open finding refs, merge
+   * conflict, failing CI) by candidate id ("org/repo#n"); it is called before
+   * the dispatch and again after it on EVERY exit (completed, `[silent]`, or
+   * thrown). If the PR is still a patch candidate at the same head with the
+   * same unsettled state, `escalate` flags the PR record blocked with a
+   * specific reason instead of letting the next tick re-dispatch it. A null
+   * snapshot (read failure) or a rejecting `escalate` never fails the
+   * dispatch. Optional: when undefined, patch dispatches are unchanged.
+   */
+  patchOutcome?: {
+    snapshot: (
+      candidateId: string,
+      prAuthor?: string,
+    ) => Promise<PatchStateSnapshot | null>;
+    escalate: (
+      recordId: string,
+      candidateId: string,
+      reason: string,
+    ) => Promise<void>;
+  };
   /**
    * CRT-1.2 — renews a claimed PR's `heartbeatAt` (POST /prs/{id}/heartbeat)
    * so the task-store's claim TTL doesn't release the claim out from
@@ -696,6 +723,7 @@ export function createLoopOrchestrator(
     heartbeatTask,
     getPrState,
     getPrProgress,
+    patchOutcome,
     heartbeatPr,
     clearSessionKey,
     runner,
@@ -1464,7 +1492,7 @@ export function createLoopOrchestrator(
    * implements captureException) — identical behavior to today for every
    * existing caller/test that doesn't opt in.
    */
-  async function dispatch(
+  async function dispatchScoped(
     phase: LoopPhase,
     phaseId: string | null,
     itemType: "task" | "pr",
@@ -1497,6 +1525,70 @@ export function createLoopOrchestrator(
         commandArgs,
       );
     });
+  }
+
+  /**
+   * PHS-3.1 — wraps dispatchScoped() for patch dispatches with the state-based
+   * outcome check: snapshot the PR's candidacy before, run the dispatch, and
+   * on every exit (including a throw, which still propagates unchanged)
+   * recompute it. Same head + same unsettled state means the run broke the
+   * "settled, changed, or escalated" invariant, so escalate the PR record
+   * (blocked + specific reason) rather than let the next tick re-dispatch it.
+   * Everything here is best-effort: a failed read or escalation is logged and
+   * never fails the dispatch. Non-patch phases pass straight through.
+   */
+  async function dispatch(
+    phase: LoopPhase,
+    phaseId: string | null,
+    itemType: "task" | "pr",
+    itemId: string,
+    recordId: string,
+    preClaimMarker?: string,
+    commandArgs?: string,
+    prAuthor?: string,
+  ): Promise<void> {
+    if (phase !== "patch" || itemType !== "pr" || !patchOutcome) {
+      return dispatchScoped(
+        phase,
+        phaseId,
+        itemType,
+        itemId,
+        recordId,
+        preClaimMarker,
+        commandArgs,
+      );
+    }
+    const before = await patchOutcome.snapshot(itemId, prAuthor);
+    try {
+      await dispatchScoped(
+        phase,
+        phaseId,
+        itemType,
+        itemId,
+        recordId,
+        preClaimMarker,
+        commandArgs,
+      );
+    } finally {
+      try {
+        const after = before
+          ? await patchOutcome.snapshot(itemId, prAuthor)
+          : null;
+        if (before && after) {
+          const outcome = evaluatePatchOutcome(before, after);
+          if (outcome.kind === "escalated") {
+            console.warn(
+              `[loop-orchestrator] ${itemId}: ${outcome.reason} — escalating`,
+            );
+            await patchOutcome.escalate(recordId, itemId, outcome.reason);
+          }
+        }
+      } catch (err) {
+        console.warn(
+          `[loop-orchestrator] patch outcome check failed for ${itemId}: ${String(err)} — swallowing`,
+        );
+      }
+    }
   }
 
   return async function runLoopTick(jobs: CronJobLike[]): Promise<void> {
@@ -1900,6 +1992,7 @@ export function createLoopOrchestrator(
             recordId,
             preClaimMarker,
             commandArgs,
+            item.type === "pr" ? item.pr.authorLogin : undefined,
           );
         } catch (err) {
           // Throw isolation for the runner itself: dispatch() already
@@ -2191,6 +2284,14 @@ export async function createProductionLoopOrchestrator(
           : null,
       ),
     // PSL-2.1: progress snapshot for [silent] PR dispatches (null = PR missing).
+    patchOutcome: {
+      snapshot: createPatchStateSnapshotter(patchDeps),
+      escalate: (recordId, candidateId, reason) => {
+        const parsed = parseCandidateId(candidateId);
+        if (!parsed) return Promise.resolve();
+        return taskStoreClient.blockPr(recordId, parsed.repo, reason);
+      },
+    },
     getPrProgress: (id) =>
       taskStoreClient.getPr(id).then((pr) =>
         pr

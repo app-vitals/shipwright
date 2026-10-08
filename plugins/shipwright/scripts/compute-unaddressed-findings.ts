@@ -255,7 +255,8 @@ export function isSelfCleanApprove(
   review: Pick<ReviewNode, "author" | "body">,
   currentUser: string,
 ): boolean {
-  if (canonicalLogin(review.author.login) !== canonicalLogin(currentUser)) return false;
+  if (canonicalLogin(review.author.login) !== canonicalLogin(currentUser))
+    return false;
 
   return isCleanApproveBody(review.body);
 }
@@ -361,7 +362,8 @@ export function isSupersededBySelfReview(
   allReviews: ReviewNode[],
   currentUser: string,
 ): boolean {
-  if (canonicalLogin(review.author.login) !== canonicalLogin(currentUser)) return false;
+  if (canonicalLogin(review.author.login) !== canonicalLogin(currentUser))
+    return false;
 
   const reviewedAt = new Date(review.submittedAt).getTime();
   return allReviews.some(
@@ -480,7 +482,8 @@ export function isRejectedByPatchLedger(
 ): boolean {
   if (ref === null) return false;
   return findings.some(
-    (f) => f.ref === ref && f.source === "patch" && f.disposition === "rejected",
+    (f) =>
+      f.ref === ref && f.source === "patch" && f.disposition === "rejected",
   );
 }
 
@@ -543,6 +546,22 @@ export function hasUnaddressedFindings(
   data: PrReviewData,
   currentUser: string,
 ): boolean {
+  return unaddressedFindingRefs(data, currentUser).length > 0;
+}
+
+/**
+ * The refs of every finding `hasUnaddressedFindings` counts as unaddressed
+ * (PHS-3.1) — empty exactly when it returns false. Unresolved, unsettled
+ * inline threads yield their `threadRef` (or a `thread:<index>` fallback for a
+ * query that predates PHS-1.2 and carries no node id); otherwise each
+ * qualifying review with a non-empty, unreplied body yields its `reviewRef`.
+ * Lets a caller compare "which findings are still open" across two points in
+ * time without re-deriving the exclusion rules.
+ */
+export function unaddressedFindingRefs(
+  data: PrReviewData,
+  currentUser: string,
+): string[] {
   const { headRefOid, reviews, reviewThreads, comments } = data;
   const findings = data.findings ?? [];
   const prAuthor = data.prAuthor ?? currentUser;
@@ -563,26 +582,30 @@ export function hasUnaddressedFindings(
       !isRejectedByPatchLedger(reviewRef(r), findings),
   );
 
-  if (qualifyingReviews.length === 0) return false;
+  if (qualifyingReviews.length === 0) return [];
 
   // Check for unresolved threads, excluding ones the PR author has already
   // replied to and addressed within the thread itself (URT-1.1).
-  const unresolvedThreads = reviewThreads.nodes.filter(
-    (t) =>
-      !t.isResolved &&
-      !isThreadAddressedByAuthorReply(t, prAuthor) &&
-      !isRejectedByPatchLedger(threadRef(t), findings),
-  );
+  const unresolvedThreadRefs = reviewThreads.nodes
+    .filter(
+      (t) =>
+        !t.isResolved &&
+        !isThreadAddressedByAuthorReply(t, prAuthor) &&
+        !isRejectedByPatchLedger(threadRef(t), findings),
+    )
+    .map((t) => threadRef(t) ?? `thread:${reviewThreads.nodes.indexOf(t)}`);
 
-  if (unresolvedThreads.length > 0) return true;
+  if (unresolvedThreadRefs.length > 0) return unresolvedThreadRefs;
 
   // No unresolved threads — check if any qualifying review has a non-empty
   // body that hasn't been addressed by a subsequent author reply.
-  return qualifyingReviews.some(
-    (r) =>
-      r.body.trim().length > 0 &&
-      !isAddressedByAuthorReply(r, comments.nodes, prAuthor),
-  );
+  return qualifyingReviews
+    .filter(
+      (r) =>
+        r.body.trim().length > 0 &&
+        !isAddressedByAuthorReply(r, comments.nodes, prAuthor),
+    )
+    .map((r) => reviewRef(r));
 }
 
 // ─── CLI ──────────────────────────────────────────────────────────────────────

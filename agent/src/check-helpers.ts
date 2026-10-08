@@ -725,6 +725,12 @@ export function createTaskStoreClient(opts?: { fetchFn?: FetchFn }): {
     reason?: string,
   ): Promise<void>;
   resetSkip(itemType: "task" | "pr", id: string): Promise<void>;
+  /**
+   * PHS-3.1 — flags a PR record blocked (PATCH /prs/{id}) with a specific
+   * reason: the PR-level escalation patch.md Step 5a.7 uses when no task is
+   * linked. Throws on a non-ok status; `repo` is required in the body.
+   */
+  blockPr(id: string, repo: string, reason: string): Promise<void>;
 } {
   const taskStoreUrl = (process.env.SHIPWRIGHT_TASK_STORE_URL ?? "").trim();
   const taskStoreToken = (process.env.SHIPWRIGHT_TASK_STORE_TOKEN ?? "").trim();
@@ -921,6 +927,15 @@ export function createTaskStoreClient(opts?: { fetchFn?: FetchFn }): {
       // rejected.
       await postFireAndForget(url, reason === undefined ? {} : { reason });
     },
+    async blockPr(id: string, repo: string, reason: string): Promise<void> {
+      const res = await doFetch(`${baseUrl}/prs/${id}`, {
+        method: "PATCH",
+        headers,
+        body: JSON.stringify({ repo, blocked: true, blockedReason: reason }),
+      });
+      if (!res.ok)
+        throw new Error(`task-store PATCH /prs/${id} → ${res.status}`);
+    },
     async resetSkip(itemType: "task" | "pr", id: string): Promise<void> {
       const url =
         itemType === "task"
@@ -1116,7 +1131,9 @@ export function createPrSkipResetter(opts?: {
       },
     );
     if (!res.ok) {
-      throw new Error(`task-store POST /prs/${prRecordId}/skip/reset → ${res.status}`);
+      throw new Error(
+        `task-store POST /prs/${prRecordId}/skip/reset → ${res.status}`,
+      );
     }
   };
 }
