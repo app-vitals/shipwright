@@ -33,6 +33,8 @@ import {
   accountIdFromScope,
   SELF_SERVE_AGENT_TYPE,
 } from "./account-agent-create.ts";
+import type { AccountCreatedNotifier } from "./account-created-notifier.ts";
+import { fireAccountCreatedNotification } from "./account-created-notifier.ts";
 import type { AccountInviteService } from "./account-invites.ts";
 import type { AccountMemberService } from "./account-members.ts";
 import type { AccountOnboardingService } from "./account-onboarding.ts";
@@ -426,6 +428,8 @@ export interface AdminUIDeps {
    * callback only, and only when selfServe.enabled; absent → no auto-create.
    */
   accountOnboarding?: Pick<AccountOnboardingService, "provisionForEmail">;
+  /** Best-effort operator push on auto-created accounts (SSP-3.3). */
+  accountCreatedNotifier?: AccountCreatedNotifier;
   /**
    * Account page + nav services (SSP-3.2). Used only when selfServe.enabled;
    * absent → no /admin/account routes content, no nav entry, no quota notice.
@@ -957,6 +961,7 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
     selfServe,
     accountService,
     accountOnboarding,
+    accountCreatedNotifier,
     accountServices,
     agentTypeRegistry = new AgentTypeRegistry(),
     callerScopeResolver = memberOnlyCallerScopeResolver(agentMemberService),
@@ -1190,6 +1195,13 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
               emailDomain: email.slice(email.lastIndexOf("@") + 1),
             }),
           );
+        }
+        // Only a brand-new account notifies; invite-joins do not.
+        if (result.kind === "created") {
+          fireAccountCreatedNotification(accountCreatedNotifier, {
+            accountId: result.accountId,
+            emailDomain: email.slice(email.lastIndexOf("@") + 1),
+          });
         }
       }
     }
