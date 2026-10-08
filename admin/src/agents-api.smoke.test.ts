@@ -9,6 +9,7 @@
 import { beforeAll, describe, expect, it } from "bun:test";
 import { sign } from "hono/jwt";
 import type { Prisma } from "../prisma/client/client.ts";
+import type { PatchAgentCronRunInput } from "./agent-cron-runs.ts";
 import type { AgentProvisioner, ProvisionResult } from "./agent-provisioner.ts";
 import type { AgentTokenService } from "./agent-tokens.ts";
 import type { AgentTypeManifest } from "./agent-type-registry.ts";
@@ -689,6 +690,16 @@ function makeMockDeps(): AdminDeps {
         itemId: null,
         sessionId: null,
         lastHeartbeatAt: null,
+        baselineModel: null,
+        baselineContextTokens: null,
+        baselineInputTokens: null,
+        baselineCacheCreationTokens: null,
+        baselineCacheReadTokens: null,
+        turns: null,
+        toolCalls: null,
+        contextFingerprint: null,
+        pluginVersion: null,
+        claudeCodeVersion: null,
         phaseId: null,
         createdAt: new Date("2024-01-01T09:00:00.000Z"),
       }),
@@ -712,6 +723,16 @@ function makeMockDeps(): AdminDeps {
         itemId: null,
         sessionId: null,
         lastHeartbeatAt: null,
+        baselineModel: null,
+        baselineContextTokens: null,
+        baselineInputTokens: null,
+        baselineCacheCreationTokens: null,
+        baselineCacheReadTokens: null,
+        turns: null,
+        toolCalls: null,
+        contextFingerprint: null,
+        pluginVersion: null,
+        claudeCodeVersion: null,
         phaseId: null,
         createdAt: new Date("2024-01-01T09:00:00.000Z"),
         modelBreakdown: [],
@@ -4238,6 +4259,145 @@ describe("admin API — cron runs", () => {
     expect(clearBody.run.lastHeartbeatAt).toBeNull();
   });
 
+  it("PATCH /agents/:id/crons/:cronId/runs/:runId forwards run telemetry + skillUsage to the service and serializes the new fields", async () => {
+    const { deps, calls } = makeMockDepsWithTelemetryRunService();
+    const app = createAdminApp(deps);
+    const skillRow = {
+      kind: "skill",
+      name: "shipwright:task-store",
+      invocations: 1,
+      turns: 3,
+      inputTokens: 12,
+      outputTokens: 100,
+      cacheReadTokens: 219_200,
+      cacheCreationTokens: 9_300,
+      invokeContextDelta: 9_103,
+    };
+    const res = await app.request(
+      `/agents/${AGENT_ID}/crons/${CRON_ID}/runs/${RUN_ID}`,
+      {
+        method: "PATCH",
+        body: JSON.stringify({
+          outcome: "completed",
+          contextBaseline: {
+            model: "claude-sonnet-4-6",
+            contextTokens: 79_188,
+            inputTokens: 2,
+            cacheCreationTokens: 41_415,
+            cacheReadTokens: 37_771,
+          },
+          turns: 12,
+          toolCalls: 7,
+          contextFingerprint: "abc123def456",
+          pluginVersion: "1.363.0",
+          claudeCodeVersion: "2.1.285",
+          skillUsage: [skillRow],
+        }),
+        headers: {
+          "Content-Type": "application/json",
+          Cookie: `admin_session=${cookie}`,
+        },
+      },
+    );
+    expect(res.status).toBe(200);
+    expect(calls).toHaveLength(1);
+    expect(calls[0]).toMatchObject({
+      contextBaseline: {
+        model: "claude-sonnet-4-6",
+        contextTokens: 79_188,
+        inputTokens: 2,
+        cacheCreationTokens: 41_415,
+        cacheReadTokens: 37_771,
+      },
+      turns: 12,
+      toolCalls: 7,
+      contextFingerprint: "abc123def456",
+      pluginVersion: "1.363.0",
+      claudeCodeVersion: "2.1.285",
+      skillUsage: [skillRow],
+    });
+    const body = await res.json();
+    expect(body.run.contextBaseline).toEqual({
+      model: "claude-sonnet-4-6",
+      contextTokens: 79_188,
+      inputTokens: 2,
+      cacheCreationTokens: 41_415,
+      cacheReadTokens: 37_771,
+    });
+    expect(body.run.turns).toBe(12);
+    expect(body.run.toolCalls).toBe(7);
+    expect(body.run.contextFingerprint).toBe("abc123def456");
+    expect(body.run.pluginVersion).toBe("1.363.0");
+    expect(body.run.claudeCodeVersion).toBe("2.1.285");
+  });
+
+  it("PATCH /agents/:id/crons/:cronId/runs/:runId from a pre-telemetry agent build succeeds and serializes telemetry as null", async () => {
+    const { deps, calls } = makeMockDepsWithTelemetryRunService();
+    const app = createAdminApp(deps);
+    const res = await app.request(
+      `/agents/${AGENT_ID}/crons/${CRON_ID}/runs/${RUN_ID}`,
+      {
+        method: "PATCH",
+        body: JSON.stringify({ outcome: "completed" }),
+        headers: {
+          "Content-Type": "application/json",
+          Cookie: `admin_session=${cookie}`,
+        },
+      },
+    );
+    expect(res.status).toBe(200);
+    expect(calls).toHaveLength(1);
+    for (const key of [
+      "contextBaseline",
+      "turns",
+      "toolCalls",
+      "contextFingerprint",
+      "pluginVersion",
+      "claudeCodeVersion",
+      "skillUsage",
+    ]) {
+      expect(key in calls[0]).toBe(false);
+    }
+    const body = await res.json();
+    expect(body.run.contextBaseline).toBeNull();
+    expect(body.run.turns).toBeNull();
+    expect(body.run.toolCalls).toBeNull();
+    expect(body.run.contextFingerprint).toBeNull();
+    expect(body.run.pluginVersion).toBeNull();
+    expect(body.run.claudeCodeVersion).toBeNull();
+  });
+
+  it("PATCH /agents/:id/crons/:cronId/runs/:runId rejects a skillUsage row with an unknown kind (400)", async () => {
+    const { deps, calls } = makeMockDepsWithTelemetryRunService();
+    const app = createAdminApp(deps);
+    const res = await app.request(
+      `/agents/${AGENT_ID}/crons/${CRON_ID}/runs/${RUN_ID}`,
+      {
+        method: "PATCH",
+        body: JSON.stringify({
+          skillUsage: [
+            {
+              kind: "bogus",
+              name: "x",
+              invocations: 1,
+              turns: 1,
+              inputTokens: 0,
+              outputTokens: 0,
+              cacheReadTokens: 0,
+              cacheCreationTokens: 0,
+            },
+          ],
+        }),
+        headers: {
+          "Content-Type": "application/json",
+          Cookie: `admin_session=${cookie}`,
+        },
+      },
+    );
+    expect(res.status).toBe(400);
+    expect(calls).toHaveLength(0);
+  });
+
   it("GET /agents/:id/crons/summary response includes lastRun and runCountToday", async () => {
     const deps = makeMockDepsWithRunSummary();
     const app = createAdminApp(deps);
@@ -4352,6 +4512,16 @@ function makeMockDepsWithRunService(opts?: {
     itemId: opts?.itemId ?? null,
     sessionId: null,
     lastHeartbeatAt: null,
+    baselineModel: null,
+    baselineContextTokens: null,
+    baselineInputTokens: null,
+    baselineCacheCreationTokens: null,
+    baselineCacheReadTokens: null,
+    turns: null,
+    toolCalls: null,
+    contextFingerprint: null,
+    pluginVersion: null,
+    claudeCodeVersion: null,
     phaseId: opts?.phaseId ?? null,
     createdAt: new Date("2026-01-01T08:00:00.000Z"),
   };
@@ -4441,6 +4611,16 @@ function makeMockDepsWithStatefulRunService(): AdminDeps {
       itemId: null,
       sessionId: null,
       lastHeartbeatAt: null,
+      baselineModel: null,
+      baselineContextTokens: null,
+      baselineInputTokens: null,
+      baselineCacheCreationTokens: null,
+      baselineCacheReadTokens: null,
+      turns: null,
+      toolCalls: null,
+      contextFingerprint: null,
+      pluginVersion: null,
+      claudeCodeVersion: null,
       phaseId: null,
       createdAt: new Date("2026-01-01T08:00:00.000Z"),
       modelBreakdown: [],
@@ -4474,6 +4654,65 @@ function makeMockDepsWithStatefulRunService(): AdminDeps {
       },
     },
   };
+}
+
+/**
+ * patch() records each input it receives and returns a run whose telemetry
+ * columns mirror that input the way AgentCronRunService.patch() persists
+ * them (contextBaseline spread onto baseline* columns) — so a smoke test can
+ * assert both the route→service passthrough and the serialized shape.
+ */
+function makeMockDepsWithTelemetryRunService(): {
+  deps: AdminDeps;
+  calls: Array<Record<string, unknown>>;
+} {
+  const calls: Array<Record<string, unknown>> = [];
+  const base = makeMockDeps();
+  const deps: AdminDeps = {
+    ...base,
+    agentCronRunService: {
+      ...base.agentCronRunService,
+      patch: async (
+        _runId: string,
+        _agentId: string,
+        _cronId: string,
+        input: PatchAgentCronRunInput,
+      ) => {
+        calls.push({ ...input });
+        return {
+          id: RUN_ID,
+          cronId: CRON_ID,
+          agentId: AGENT_ID,
+          startedAt: new Date("2026-01-01T08:00:00.000Z"),
+          completedAt: null,
+          skipped: false,
+          skipReason: null,
+          outcome: input.outcome ?? null,
+          error: null,
+          itemType: null,
+          itemId: null,
+          sessionId: null,
+          lastHeartbeatAt: null,
+          phaseId: null,
+          createdAt: new Date("2026-01-01T08:00:00.000Z"),
+          baselineModel: input.contextBaseline?.model ?? null,
+          baselineContextTokens: input.contextBaseline?.contextTokens ?? null,
+          baselineInputTokens: input.contextBaseline?.inputTokens ?? null,
+          baselineCacheCreationTokens:
+            input.contextBaseline?.cacheCreationTokens ?? null,
+          baselineCacheReadTokens:
+            input.contextBaseline?.cacheReadTokens ?? null,
+          turns: input.turns ?? null,
+          toolCalls: input.toolCalls ?? null,
+          contextFingerprint: input.contextFingerprint ?? null,
+          pluginVersion: input.pluginVersion ?? null,
+          claudeCodeVersion: input.claudeCodeVersion ?? null,
+          modelBreakdown: [],
+        };
+      },
+    },
+  };
+  return { deps, calls };
 }
 
 function makeMockDepsWithRunSummary(): AdminDeps {

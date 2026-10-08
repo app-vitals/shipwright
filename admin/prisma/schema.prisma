@@ -257,12 +257,65 @@ model AgentCronRun {
   phaseId   String?
   phaseCron AgentCronJob? @relation("PhaseRuns", fields: [phaseId], references: [id], onDelete: SetNull)
 
+  // ── Run telemetry (prompt-audit metrics; all additive/nullable) ──────────
+  // First-turn context baseline: the usage of the run's first assistant
+  // message. baselineContextTokens = input + cacheCreation + cacheRead of
+  // that turn — the full always-loaded context (system prompt, tool schemas,
+  // CLAUDE.md/rules, skill listing, cron prompt) independent of cache
+  // warmth. Null for resumed sessions (their first turn replays history)
+  // and for runs reported by older agent builds.
+  baselineModel               String?
+  baselineContextTokens       Int?
+  baselineInputTokens         Int?
+  baselineCacheCreationTokens Int?
+  baselineCacheReadTokens     Int?
+  // Distinct usage-bearing assistant turns / distinct tool_use blocks.
+  turns     Int?
+  toolCalls Int?
+  // sha256[:12] over the workspace's always-loaded markdown (CLAUDE.md, its
+  // @imports, no-`paths` rules) + plugin version — groups runs by what the
+  // model was given, so before/after series for a markdown change key on
+  // content rather than merge date. Computed agent-side.
+  contextFingerprint String?
+  pluginVersion      String?
+  claudeCodeVersion  String?
+
   modelBreakdown AgentCronRunModelBreakdown[]
+  skillUsage     AgentCronRunSkillUsage[]
 
   @@index([cronId])
   @@index([agentId, startedAt])
   @@index([phaseId])
   @@index([startedAt])
+  @@index([contextFingerprint])
+}
+
+// ─── Agent Cron Run Skill Usage ──────────────────────────────────────────────
+// Per-skill / per-subagent token attribution for a cron run, derived from the
+// Claude CLI stream by the agent. `kind` is "skill" (a plugin
+// skill invoked via the Skill tool), "agent" (a subagent type invoked via the
+// Agent tool), or "root" (turns before any skill was invoked). Attribution is
+// last-wins: every turn after an invoke is charged to the most recently
+// invoked skill. invokeContextDelta is input + cacheCreation of the first
+// turn after the skill's first invoke — the new context admitted when its
+// body loaded. The unique constraint on [cronRunId, kind, name] allows upsert.
+
+model AgentCronRunSkillUsage {
+  id                  String       @id @default(cuid())
+  cronRunId           String
+  kind                String
+  name                String
+  invocations         Int          @default(0)
+  turns               Int          @default(0)
+  inputTokens         Int          @default(0)
+  outputTokens        Int          @default(0)
+  cacheReadTokens     Int          @default(0)
+  cacheCreationTokens Int          @default(0)
+  invokeContextDelta  Int?
+  cronRun             AgentCronRun @relation(fields: [cronRunId], references: [id], onDelete: Cascade)
+
+  @@unique([cronRunId, kind, name])
+  @@index([kind, name])
 }
 
 // ─── Agent Cron Run Model Breakdown ──────────────────────────────────────────

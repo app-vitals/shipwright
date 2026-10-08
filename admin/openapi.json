@@ -974,6 +974,77 @@
             "items": {
               "$ref": "#/components/schemas/ModelBreakdownEntry"
             }
+          },
+          "contextBaseline": {
+            "type": [
+              "object",
+              "null"
+            ],
+            "properties": {
+              "model": {
+                "type": "string",
+                "example": "claude-sonnet-4-6"
+              },
+              "contextTokens": {
+                "type": "integer",
+                "example": 79188
+              },
+              "inputTokens": {
+                "type": "integer",
+                "example": 2
+              },
+              "cacheCreationTokens": {
+                "type": "integer",
+                "example": 41415
+              },
+              "cacheReadTokens": {
+                "type": "integer",
+                "example": 37771
+              }
+            },
+            "required": [
+              "model",
+              "contextTokens",
+              "inputTokens",
+              "cacheCreationTokens",
+              "cacheReadTokens"
+            ],
+            "description": "First-turn context baseline (null for resumed sessions and runs from older agent builds)."
+          },
+          "turns": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "example": 12
+          },
+          "toolCalls": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "example": 7
+          },
+          "contextFingerprint": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "example": "abc123def456"
+          },
+          "pluginVersion": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "example": "1.363.0"
+          },
+          "claudeCodeVersion": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "example": "2.1.285"
           }
         },
         "required": [
@@ -1232,8 +1303,149 @@
               "$ref": "#/components/schemas/ModelBreakdownEntry"
             },
             "description": "Per-model token breakdown for this run"
+          },
+          "contextBaseline": {
+            "$ref": "#/components/schemas/ContextBaselineEntry"
+          },
+          "turns": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "example": 12,
+            "description": "Distinct usage-bearing assistant turns in the run."
+          },
+          "toolCalls": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "example": 7,
+            "description": "Distinct tool_use blocks in the run."
+          },
+          "contextFingerprint": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "example": "abc123def456",
+            "description": "sha256[:12] over the workspace's always-loaded markdown (CLAUDE.md, its @imports, no-`paths` rules) + plugin version. Groups runs by what the model was given."
+          },
+          "pluginVersion": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "example": "1.363.0"
+          },
+          "claudeCodeVersion": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "example": "2.1.285"
+          },
+          "skillUsage": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SkillUsageEntry"
+            },
+            "description": "Per-skill / per-subagent token attribution rows for this run; upserted per [kind, name]."
           }
         }
+      },
+      "ContextBaselineEntry": {
+        "type": "object",
+        "properties": {
+          "model": {
+            "type": "string",
+            "example": "claude-sonnet-4-6"
+          },
+          "contextTokens": {
+            "type": "integer",
+            "example": 79188
+          },
+          "inputTokens": {
+            "type": "integer",
+            "example": 2
+          },
+          "cacheCreationTokens": {
+            "type": "integer",
+            "example": 41415
+          },
+          "cacheReadTokens": {
+            "type": "integer",
+            "example": 37771
+          }
+        },
+        "required": [
+          "model",
+          "contextTokens",
+          "inputTokens",
+          "cacheCreationTokens",
+          "cacheReadTokens"
+        ],
+        "description": "First-turn context baseline: usage of the run's first assistant message. contextTokens = input + cacheCreation + cacheRead — the full always-loaded context independent of cache warmth. Omitted for resumed sessions."
+      },
+      "SkillUsageEntry": {
+        "type": "object",
+        "properties": {
+          "kind": {
+            "type": "string",
+            "enum": [
+              "skill",
+              "agent",
+              "root"
+            ],
+            "example": "skill"
+          },
+          "name": {
+            "type": "string",
+            "example": "shipwright:task-store"
+          },
+          "invocations": {
+            "type": "integer",
+            "example": 1
+          },
+          "turns": {
+            "type": "integer",
+            "example": 3
+          },
+          "inputTokens": {
+            "type": "integer",
+            "example": 12
+          },
+          "outputTokens": {
+            "type": "integer",
+            "example": 100
+          },
+          "cacheReadTokens": {
+            "type": "integer",
+            "example": 219200
+          },
+          "cacheCreationTokens": {
+            "type": "integer",
+            "example": 9300
+          },
+          "invokeContextDelta": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "example": 9103,
+            "description": "input + cacheCreation of the first usage-bearing turn after the skill's first invoke — the new context admitted when its body loaded. Null for root/agent rows."
+          }
+        },
+        "required": [
+          "kind",
+          "name",
+          "invocations",
+          "turns",
+          "inputTokens",
+          "outputTokens",
+          "cacheReadTokens",
+          "cacheCreationTokens"
+        ]
       },
       "ToolWrapper": {
         "type": "object",

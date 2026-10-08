@@ -57,6 +57,33 @@ export interface ModelBreakdownEntry {
   costUsd: number;
 }
 
+/**
+ * First-turn context baseline reported by the agent: the usage of the run's
+ * first assistant message, whose input + cacheCreation + cacheRead is the
+ * full always-loaded context independent of cache warmth
+ * (computed agent-side from the Claude CLI stream).
+ */
+export interface ContextBaselineEntry {
+  model: string;
+  contextTokens: number;
+  inputTokens: number;
+  cacheCreationTokens: number;
+  cacheReadTokens: number;
+}
+
+/** Per-skill / per-subagent token attribution row reported by the agent. */
+export interface SkillUsageEntry {
+  kind: string;
+  name: string;
+  invocations: number;
+  turns: number;
+  inputTokens: number;
+  outputTokens: number;
+  cacheReadTokens: number;
+  cacheCreationTokens: number;
+  invokeContextDelta?: number | null;
+}
+
 export interface PatchAgentCronRunInput {
   completedAt?: Date | null;
   outcome?: string | null;
@@ -76,6 +103,15 @@ export interface PatchAgentCronRunInput {
    */
   lastHeartbeatAt?: Date | null;
   modelBreakdown?: ModelBreakdownEntry[];
+  /** Spread onto the baseline* columns. */
+  contextBaseline?: ContextBaselineEntry;
+  turns?: number | null;
+  toolCalls?: number | null;
+  contextFingerprint?: string | null;
+  pluginVersion?: string | null;
+  claudeCodeVersion?: string | null;
+  /** Upserted per [cronRunId, kind, name], like modelBreakdown per model. */
+  skillUsage?: SkillUsageEntry[];
 }
 
 export interface ListAgentCronRunsOptions {
@@ -214,39 +250,89 @@ export class AgentCronRunService {
       ...(input.lastHeartbeatAt !== undefined && {
         lastHeartbeatAt: input.lastHeartbeatAt,
       }),
+      ...(input.contextBaseline !== undefined && {
+        baselineModel: input.contextBaseline.model,
+        baselineContextTokens: input.contextBaseline.contextTokens,
+        baselineInputTokens: input.contextBaseline.inputTokens,
+        baselineCacheCreationTokens: input.contextBaseline.cacheCreationTokens,
+        baselineCacheReadTokens: input.contextBaseline.cacheReadTokens,
+      }),
+      ...(input.turns !== undefined && { turns: input.turns }),
+      ...(input.toolCalls !== undefined && { toolCalls: input.toolCalls }),
+      ...(input.contextFingerprint !== undefined && {
+        contextFingerprint: input.contextFingerprint,
+      }),
+      ...(input.pluginVersion !== undefined && {
+        pluginVersion: input.pluginVersion,
+      }),
+      ...(input.claudeCodeVersion !== undefined && {
+        claudeCodeVersion: input.claudeCodeVersion,
+      }),
     };
 
-    if (input.modelBreakdown && input.modelBreakdown.length > 0) {
-      // Wrap the run update and all breakdown upserts in a single transaction
-      // so the two writes are atomic — partial breakdown rows are never visible.
-      // The run update (with its modelBreakdown include) must be the LAST
-      // statement in the array: Prisma's array-form $transaction issues
-      // statements in order, so an earlier include would return breakdown
-      // rows as they stood before this call's upserts ran.
+    const breakdownUpserts = (input.modelBreakdown ?? []).map((entry) =>
+      this.prisma.agentCronRunModelBreakdown.upsert({
+        where: {
+          cronRunId_model: { cronRunId: runId, model: entry.model },
+        },
+        create: {
+          cronRunId: runId,
+          model: entry.model,
+          inputTokens: entry.inputTokens,
+          outputTokens: entry.outputTokens,
+          cacheReadTokens: entry.cacheReadTokens,
+          cacheCreationTokens: entry.cacheCreationTokens,
+          costUsd: entry.costUsd,
+        },
+        update: {
+          inputTokens: entry.inputTokens,
+          outputTokens: entry.outputTokens,
+          cacheReadTokens: entry.cacheReadTokens,
+          cacheCreationTokens: entry.cacheCreationTokens,
+          costUsd: entry.costUsd,
+        },
+      }),
+    );
+    // Per-skill attribution rows follow the same upsert-per-key pattern as
+    // the model breakdown (unique on [cronRunId, kind, name]).
+    const skillUsageUpserts = (input.skillUsage ?? []).map((entry) => {
+      const fields = {
+        invocations: entry.invocations,
+        turns: entry.turns,
+        inputTokens: entry.inputTokens,
+        outputTokens: entry.outputTokens,
+        cacheReadTokens: entry.cacheReadTokens,
+        cacheCreationTokens: entry.cacheCreationTokens,
+        invokeContextDelta: entry.invokeContextDelta ?? null,
+      };
+      return this.prisma.agentCronRunSkillUsage.upsert({
+        where: {
+          cronRunId_kind_name: {
+            cronRunId: runId,
+            kind: entry.kind,
+            name: entry.name,
+          },
+        },
+        create: {
+          cronRunId: runId,
+          kind: entry.kind,
+          name: entry.name,
+          ...fields,
+        },
+        update: fields,
+      });
+    });
+
+    if (breakdownUpserts.length > 0 || skillUsageUpserts.length > 0) {
+      // Wrap the run update and all child upserts in a single transaction
+      // so the writes are atomic — partial breakdown/attribution rows are
+      // never visible. The run update (with its modelBreakdown include) must
+      // be the LAST statement in the array: Prisma's array-form $transaction
+      // issues statements in order, so an earlier include would return
+      // breakdown rows as they stood before this call's upserts ran.
       const results = await this.prisma.$transaction([
-        ...input.modelBreakdown.map((entry) =>
-          this.prisma.agentCronRunModelBreakdown.upsert({
-            where: {
-              cronRunId_model: { cronRunId: runId, model: entry.model },
-            },
-            create: {
-              cronRunId: runId,
-              model: entry.model,
-              inputTokens: entry.inputTokens,
-              outputTokens: entry.outputTokens,
-              cacheReadTokens: entry.cacheReadTokens,
-              cacheCreationTokens: entry.cacheCreationTokens,
-              costUsd: entry.costUsd,
-            },
-            update: {
-              inputTokens: entry.inputTokens,
-              outputTokens: entry.outputTokens,
-              cacheReadTokens: entry.cacheReadTokens,
-              cacheCreationTokens: entry.cacheCreationTokens,
-              costUsd: entry.costUsd,
-            },
-          }),
-        ),
+        ...breakdownUpserts,
+        ...skillUsageUpserts,
         this.prisma.agentCronRun.update({
           where: { id: runId },
           data: runData,
@@ -254,7 +340,7 @@ export class AgentCronRunService {
         }),
       ]);
       const updatedRun = results[
-        input.modelBreakdown.length
+        results.length - 1
       ] as AgentCronRunWithModelBreakdown;
       return updatedRun;
     }

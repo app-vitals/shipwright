@@ -1300,3 +1300,192 @@ describeOrSkip("AgentCronRunService (integration)", () => {
     expect(items[0].cron.id).toBe(cronId1);
   });
 });
+
+// ─── run telemetry: baseline columns + skill-usage upserts (prompt-audit) ───
+
+describeOrSkip("AgentCronRunService — run telemetry (integration)", () => {
+  let prisma: PrismaClient;
+  let cronJobService: AgentCronJobService;
+  let runService: AgentCronRunService;
+
+  beforeEach(async () => {
+    prisma = makePrisma();
+    await prisma.agentCronRunSkillUsage.deleteMany();
+    await prisma.agentCronRunModelBreakdown.deleteMany();
+    await prisma.agentCronRun.deleteMany();
+    await prisma.agentToken.deleteMany();
+    await prisma.agentCronJob.deleteMany();
+    await prisma.agentTool.deleteMany();
+    await prisma.agentEnv.deleteMany();
+    await prisma.agent.deleteMany();
+    cronJobService = new AgentCronJobService(prisma, FixedClock(FIXED_NOW));
+    runService = new AgentCronRunService(prisma);
+  });
+
+  afterEach(async () => {
+    await prisma.$disconnect();
+  });
+
+  it("patch() spreads contextBaseline onto the baseline* columns and stores counts, fingerprint, and versions", async () => {
+    const agentId = await createAgent(prisma);
+    const cronId = await createCron(cronJobService, agentId);
+    const run = await runService.create(cronId, agentId, {
+      startedAt: FIXED_NOW,
+    });
+
+    await runService.patch(run.id, agentId, cronId, {
+      completedAt: FIXED_NOW,
+      outcome: "completed",
+      contextBaseline: {
+        model: "claude-sonnet-4-6",
+        contextTokens: 79_188,
+        inputTokens: 2,
+        cacheCreationTokens: 41_415,
+        cacheReadTokens: 37_771,
+      },
+      turns: 12,
+      toolCalls: 7,
+      contextFingerprint: "abc123def456",
+      pluginVersion: "1.363.0",
+      claudeCodeVersion: "2.1.285",
+    });
+
+    const stored = await prisma.agentCronRun.findUniqueOrThrow({
+      where: { id: run.id },
+    });
+    expect(stored.baselineModel).toBe("claude-sonnet-4-6");
+    expect(stored.baselineContextTokens).toBe(79_188);
+    expect(stored.baselineInputTokens).toBe(2);
+    expect(stored.baselineCacheCreationTokens).toBe(41_415);
+    expect(stored.baselineCacheReadTokens).toBe(37_771);
+    expect(stored.turns).toBe(12);
+    expect(stored.toolCalls).toBe(7);
+    expect(stored.contextFingerprint).toBe("abc123def456");
+    expect(stored.pluginVersion).toBe("1.363.0");
+    expect(stored.claudeCodeVersion).toBe("2.1.285");
+  });
+
+  it("patch() without telemetry leaves every telemetry column null", async () => {
+    const agentId = await createAgent(prisma);
+    const cronId = await createCron(cronJobService, agentId);
+    const run = await runService.create(cronId, agentId, {
+      startedAt: FIXED_NOW,
+    });
+
+    await runService.patch(run.id, agentId, cronId, { outcome: "completed" });
+
+    const stored = await prisma.agentCronRun.findUniqueOrThrow({
+      where: { id: run.id },
+    });
+    expect(stored.baselineModel).toBeNull();
+    expect(stored.baselineContextTokens).toBeNull();
+    expect(stored.turns).toBeNull();
+    expect(stored.contextFingerprint).toBeNull();
+  });
+
+  it("patch() upserts skillUsage rows per [cronRunId, kind, name], alongside modelBreakdown, in one call", async () => {
+    const agentId = await createAgent(prisma);
+    const cronId = await createCron(cronJobService, agentId);
+    const run = await runService.create(cronId, agentId, {
+      startedAt: FIXED_NOW,
+    });
+
+    const row = {
+      kind: "skill",
+      name: "shipwright:task-store",
+      invocations: 1,
+      turns: 3,
+      inputTokens: 12,
+      outputTokens: 100,
+      cacheReadTokens: 219_200,
+      cacheCreationTokens: 9_300,
+      invokeContextDelta: 103,
+    };
+    await runService.patch(run.id, agentId, cronId, {
+      modelBreakdown: [
+        {
+          model: "claude-sonnet-4-6",
+          inputTokens: 514,
+          outputTokens: 150,
+          cacheReadTokens: 0,
+          cacheCreationTokens: 0,
+          costUsd: 0.42,
+        },
+      ],
+      skillUsage: [
+        row,
+        {
+          kind: "root",
+          name: "root",
+          invocations: 0,
+          turns: 1,
+          inputTokens: 2,
+          outputTokens: 10,
+          cacheReadTokens: 30_000,
+          cacheCreationTokens: 40_000,
+          invokeContextDelta: null,
+        },
+      ],
+    });
+
+    // Second PATCH with updated numbers for the same key — must update, not duplicate.
+    await runService.patch(run.id, agentId, cronId, {
+      skillUsage: [{ ...row, turns: 4, inputTokens: 20 }],
+    });
+
+    const rows = await prisma.agentCronRunSkillUsage.findMany({
+      where: { cronRunId: run.id },
+      orderBy: { kind: "asc" },
+    });
+    expect(rows).toHaveLength(2);
+    const skill = rows.find((r) => r.kind === "skill");
+    expect(skill).toMatchObject({
+      name: "shipwright:task-store",
+      invocations: 1,
+      turns: 4,
+      inputTokens: 20,
+      invokeContextDelta: 103,
+    });
+    const root = rows.find((r) => r.kind === "root");
+    expect(root).toMatchObject({
+      name: "root",
+      turns: 1,
+      invokeContextDelta: null,
+    });
+
+    const breakdown = await prisma.agentCronRunModelBreakdown.findMany({
+      where: { cronRunId: run.id },
+    });
+    expect(breakdown).toHaveLength(1);
+  });
+
+  it("skillUsage rows cascade-delete with their run", async () => {
+    const agentId = await createAgent(prisma);
+    const cronId = await createCron(cronJobService, agentId);
+    const run = await runService.create(cronId, agentId, {
+      startedAt: FIXED_NOW,
+    });
+    await runService.patch(run.id, agentId, cronId, {
+      skillUsage: [
+        {
+          kind: "agent",
+          name: "Explore",
+          invocations: 1,
+          turns: 1,
+          inputTokens: 500,
+          outputTokens: 40,
+          cacheReadTokens: 0,
+          cacheCreationTokens: 0,
+          invokeContextDelta: null,
+        },
+      ],
+    });
+
+    await prisma.agentCronRun.delete({ where: { id: run.id } });
+    expect(
+      await prisma.agentCronRunSkillUsage.count({
+        where: { cronRunId: run.id },
+      }),
+    ).toBe(0);
+  });
+});
