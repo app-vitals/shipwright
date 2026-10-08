@@ -1046,6 +1046,24 @@ describe("handleCronRequest — telemetry forwarding", () => {
     expect(completes[0]?.opts?.inputTokens).toBeUndefined();
   });
 
+  test("a streamIncomplete run's telemetry is forwarded on the failed completeRun", async () => {
+    const { reporter, completes } = recordingReporter();
+    const runner = mock(
+      async (): Promise<ClaudeRunResult> => ({
+        result: "",
+        streamIncomplete: true,
+        telemetry,
+      }),
+    );
+    await handleCronRequest(
+      { jobId: "j-tel-si", prompt: "p", silent: true },
+      { ...deps, runner, cronRunReporter: reporter },
+    ).catch(() => {});
+    expect(completes[0]?.outcome).toBe("failed");
+    expect(completes[0]?.opts?.turns).toBe(4);
+    expect(completes[0]?.opts?.toolCalls).toBe(2);
+  });
+
   test("without a contextStamp dep nothing extra is reported and the run does not error", async () => {
     const { reporter, completes } = recordingReporter();
     const runner = mock(

@@ -1051,6 +1051,7 @@ export function createLoopOrchestrator(
             "stream incomplete — no terminal result event",
             runResult.sessionId,
             runResult.modelUsage,
+            runResult.telemetry,
           );
         }
       } catch (err) {

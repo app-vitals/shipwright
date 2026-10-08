@@ -517,6 +517,7 @@ export async function handleCronRequest(
         "stream incomplete — no terminal result event",
         runResult.sessionId,
         runResult.modelUsage,
+        runResult.telemetry,
       );
     }
     usage = runResult.usage;

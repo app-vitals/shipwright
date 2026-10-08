@@ -5434,6 +5434,30 @@ describe("createLoopOrchestrator — run telemetry forwarding", () => {
     expect(completes[0]?.opts?.contextFingerprint).toBeUndefined();
   });
 
+  test("a streamIncomplete run's telemetry is forwarded on the failed completeRun", async () => {
+    const consumed = new Set<string>();
+    const devTaskCandidates = [task("PAU-SI", "2026-01-01T00:00:00Z")];
+    const { reporter, completes } = makeRecordingReporter();
+    const runner = async (): Promise<ClaudeRunResult> => ({
+      result: "",
+      streamIncomplete: true,
+      telemetry,
+    });
+    const deps = makeDeps({
+      devTaskCandidates,
+      runner,
+      reporter,
+      consumed,
+      claimTask: consumingClaimTask(consumed),
+    });
+    await createLoopOrchestrator(deps)([job("shipwright-dev-task", true)]);
+
+    expect(completes).toHaveLength(1);
+    expect(completes[0]?.outcome).toBe("failed");
+    expect(completes[0]?.opts?.turns).toBe(4);
+    expect(completes[0]?.opts?.toolCalls).toBe(2);
+  });
+
   test("without a contextStamp dep nothing extra is reported and dispatch does not error", async () => {
     const consumed = new Set<string>();
     const devTaskCandidates = [task("PAU-E", "2026-01-01T00:00:00Z")];
