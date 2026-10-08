@@ -32,15 +32,19 @@ import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { WebClient } from "@slack/web-api";
-import type {
-  ClaudeRunResult,
-  EarlySessionIdCallback,
-  ModelUsage,
-  ProgressCallback,
-  TokenUsage,
+import {
+  ClaudeRunError,
+  type ClaudeRunResult,
+  ClaudeTimeoutError,
+  type EarlySessionIdCallback,
+  type ModelUsage,
+  type ProgressCallback,
+  type TokenUsage,
 } from "./claude.ts";
-import { handleCronRequest } from "./cron-handler.ts";
-import type { CronRunReporter } from "./cron-run-reporter.ts";
+import type { RunContextStamp } from "./context-stamp.ts";
+import { buildTokenPayload, handleCronRequest } from "./cron-handler.ts";
+import type { CronRunReporter, RunReportOpts } from "./cron-run-reporter.ts";
+import type { RunTelemetry } from "./run-telemetry.ts";
 
 // ─── Fake spawn helpers (mirrors claude.unit.test.ts) ──────────────────────
 
@@ -837,5 +841,272 @@ describe("handleCronRequest — onEarlySessionId wiring (CES-1.1)", () => {
     expect(warnMessages.some((m) => m.includes("recordSessionId failed"))).toBe(
       true,
     );
+  });
+});
+
+// ─── buildTokenPayload — telemetry + context-stamp extras ────────────────────
+
+describe("buildTokenPayload — extras", () => {
+  const usage = {
+    input_tokens: 10,
+    output_tokens: 20,
+    cache_read_input_tokens: 30,
+    cache_creation_input_tokens: 40,
+  };
+
+  test("without extras the payload shape is unchanged", () => {
+    const payload = buildTokenPayload(usage, undefined);
+    expect(payload).toEqual({
+      inputTokens: 10,
+      outputTokens: 20,
+      cacheReadTokens: 30,
+      cacheCreationTokens: 40,
+    });
+  });
+
+  test("telemetry maps firstTurn → contextBaseline and forwards counts and skillUsage", () => {
+    const payload = buildTokenPayload(usage, undefined, {
+      telemetry: {
+        firstTurn: {
+          model: "claude-sonnet-4-6",
+          messageId: "msg_1",
+          inputTokens: 2,
+          cacheCreationTokens: 41_415,
+          cacheReadTokens: 37_771,
+          contextTokens: 79_188,
+        },
+        turns: 5,
+        toolCalls: 3,
+        skillUsage: [
+          {
+            kind: "root",
+            name: "root",
+            invocations: 0,
+            turns: 1,
+            inputTokens: 2,
+            outputTokens: 10,
+            cacheReadTokens: 0,
+            cacheCreationTokens: 0,
+            invokeContextDelta: null,
+          },
+        ],
+      },
+      contextStamp: {
+        contextFingerprint: "abc123def456",
+        pluginVersion: "1.363.0",
+        claudeCodeVersion: "2.1.285",
+      },
+    });
+
+    expect(payload.contextBaseline).toEqual({
+      model: "claude-sonnet-4-6",
+      contextTokens: 79_188,
+      inputTokens: 2,
+      cacheCreationTokens: 41_415,
+      cacheReadTokens: 37_771,
+    });
+    expect(payload.turns).toBe(5);
+    expect(payload.toolCalls).toBe(3);
+    expect(payload.skillUsage).toHaveLength(1);
+    expect(payload.contextFingerprint).toBe("abc123def456");
+    expect(payload.pluginVersion).toBe("1.363.0");
+    expect(payload.claudeCodeVersion).toBe("2.1.285");
+  });
+
+  test("telemetry without a firstTurn (resumed session) omits contextBaseline but keeps counts", () => {
+    const payload = buildTokenPayload(undefined, undefined, {
+      telemetry: { turns: 2, toolCalls: 0, skillUsage: [] },
+    });
+    expect("contextBaseline" in payload).toBe(false);
+    expect("skillUsage" in payload).toBe(false);
+    expect(payload.turns).toBe(2);
+    expect(payload.toolCalls).toBe(0);
+  });
+
+  test("a stamp with null versions sends only the fingerprint", () => {
+    const payload = buildTokenPayload(undefined, undefined, {
+      contextStamp: {
+        contextFingerprint: "feedfacecafe",
+        pluginVersion: null,
+        claudeCodeVersion: null,
+      },
+    });
+    expect(payload.contextFingerprint).toBe("feedfacecafe");
+    expect("pluginVersion" in payload).toBe(false);
+    expect("claudeCodeVersion" in payload).toBe(false);
+  });
+});
+
+// ─── handleCronRequest — telemetry + context-stamp forwarding (PAU-1.4) ──────
+
+describe("handleCronRequest — telemetry forwarding", () => {
+  const telemetry: RunTelemetry = {
+    firstTurn: {
+      model: "claude-sonnet-4-6",
+      messageId: "msg_1",
+      inputTokens: 2,
+      cacheCreationTokens: 100,
+      cacheReadTokens: 50,
+      contextTokens: 152,
+    },
+    turns: 4,
+    toolCalls: 2,
+    skillUsage: [],
+  };
+  const stamp: RunContextStamp = {
+    contextFingerprint: "abc123def456",
+    pluginVersion: "1.2.3",
+    claudeCodeVersion: "2.1.0",
+  };
+
+  function recordingReporter(): {
+    reporter: CronRunReporter;
+    completes: Array<{ outcome: string; opts?: RunReportOpts }>;
+  } {
+    const completes: Array<{ outcome: string; opts?: RunReportOpts }> = [];
+    const reporter: CronRunReporter = {
+      async createRun() {
+        return "run-t1";
+      },
+      async completeRun(_c, _r, _t, outcome, opts) {
+        completes.push({ outcome, opts });
+      },
+      async skipRun() {},
+      async recordProgress() {},
+      async recordSessionId() {},
+    };
+    return { reporter, completes };
+  }
+
+  test("completion forwards telemetry and the stamp to completeRun", async () => {
+    const { reporter, completes } = recordingReporter();
+    const runner = mock(
+      async (): Promise<ClaudeRunResult> => ({
+        result: "ok",
+        sessionId: "s1",
+        telemetry,
+      }),
+    );
+    await handleCronRequest(
+      { jobId: "j-tel", prompt: "p", silent: true },
+      { ...deps, runner, cronRunReporter: reporter, contextStamp: () => stamp },
+    );
+    expect(completes).toHaveLength(1);
+    expect(completes[0]?.opts).toMatchObject({
+      turns: 4,
+      toolCalls: 2,
+      contextFingerprint: "abc123def456",
+      pluginVersion: "1.2.3",
+      claudeCodeVersion: "2.1.0",
+      contextBaseline: { model: "claude-sonnet-4-6", contextTokens: 152 },
+    });
+  });
+
+  test("a ClaudeTimeoutError's partialTelemetry is forwarded on the failed completeRun", async () => {
+    const { reporter, completes } = recordingReporter();
+    const runner = mock(async (): Promise<ClaudeRunResult> => {
+      throw new ClaudeTimeoutError(
+        1000,
+        "ceiling",
+        undefined,
+        undefined,
+        telemetry,
+      );
+    });
+    await handleCronRequest(
+      { jobId: "j-tel-to", prompt: "p", silent: true },
+      { ...deps, runner, cronRunReporter: reporter, contextStamp: () => stamp },
+    ).catch(() => {});
+    expect(completes[0]?.outcome).toBe("failed");
+    expect(completes[0]?.opts).toMatchObject({
+      turns: 4,
+      contextFingerprint: "abc123def456",
+    });
+  });
+
+  test("a ClaudeRunError's partialTelemetry is forwarded; tokens are not", async () => {
+    const { reporter, completes } = recordingReporter();
+    const runner = mock(async (): Promise<ClaudeRunResult> => {
+      throw new ClaudeRunError(
+        "boom",
+        undefined,
+        "boom",
+        undefined,
+        undefined,
+        telemetry,
+      );
+    });
+    await handleCronRequest(
+      { jobId: "j-tel-re", prompt: "p", silent: true },
+      { ...deps, runner, cronRunReporter: reporter },
+    ).catch(() => {});
+    expect(completes[0]?.outcome).toBe("failed");
+    expect(completes[0]?.opts?.toolCalls).toBe(2);
+    expect(completes[0]?.opts?.contextFingerprint).toBeUndefined();
+    expect(completes[0]?.opts?.inputTokens).toBeUndefined();
+  });
+
+  test("a streamIncomplete run's telemetry is forwarded on the failed completeRun", async () => {
+    const { reporter, completes } = recordingReporter();
+    const runner = mock(
+      async (): Promise<ClaudeRunResult> => ({
+        result: "",
+        streamIncomplete: true,
+        telemetry,
+      }),
+    );
+    await handleCronRequest(
+      { jobId: "j-tel-si", prompt: "p", silent: true },
+      { ...deps, runner, cronRunReporter: reporter },
+    ).catch(() => {});
+    expect(completes[0]?.outcome).toBe("failed");
+    expect(completes[0]?.opts?.turns).toBe(4);
+    expect(completes[0]?.opts?.toolCalls).toBe(2);
+  });
+
+  test("without a contextStamp dep nothing extra is reported and the run does not error", async () => {
+    const { reporter, completes } = recordingReporter();
+    const runner = mock(
+      async (): Promise<ClaudeRunResult> => ({ result: "ok" }),
+    );
+    await handleCronRequest(
+      { jobId: "j-tel-none", prompt: "p", silent: true },
+      { ...deps, runner, cronRunReporter: reporter },
+    );
+    expect(completes[0]?.outcome).toBe("completed");
+    expect(completes[0]?.opts).not.toHaveProperty("contextFingerprint");
+    expect(completes[0]?.opts).not.toHaveProperty("turns");
+    expect(completes[0]?.opts).not.toHaveProperty("contextBaseline");
+  });
+
+  test("a throwing contextStamp reader is warn-logged and the run proceeds unstamped", async () => {
+    const { reporter, completes } = recordingReporter();
+    const runner = mock(
+      async (): Promise<ClaudeRunResult> => ({ result: "ok", telemetry }),
+    );
+    const warnings: string[] = [];
+    const originalWarn = console.warn;
+    console.warn = (...a: unknown[]) => {
+      warnings.push(a.map(String).join(" "));
+    };
+    try {
+      await handleCronRequest(
+        { jobId: "j-tel-throw", prompt: "p", silent: true },
+        {
+          ...deps,
+          runner,
+          cronRunReporter: reporter,
+          contextStamp: () => {
+            throw new Error("fs boom");
+          },
+        },
+      );
+    } finally {
+      console.warn = originalWarn;
+    }
+    expect(warnings.some((w) => w.includes("context stamp failed"))).toBe(true);
+    expect(completes[0]?.outcome).toBe("completed");
+    expect(completes[0]?.opts?.turns).toBe(4);
+    expect(completes[0]?.opts?.contextFingerprint).toBeUndefined();
   });
 });
