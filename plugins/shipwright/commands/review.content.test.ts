@@ -2457,3 +2457,23 @@ describe("review.md — Step 1 policy read-path is DB-first with file/hardcoded 
     expect(section).toContain("Policy: {staging|auto-posting} reviews");
   });
 });
+
+describe("review.md — Step 9.5 passes the findings ledger so patch-source rejected entries settle (PHS-1.2)", () => {
+  const content = readFileSync(join(import.meta.dir, "review.md"), "utf-8");
+
+  it("Step 5.5 fetches the PR's ledger as PR_FINDINGS_JSON and the thread query requests totalCount", () => {
+    expect(content).toContain("PR_FINDINGS_JSON=$(curl");
+    expect(content).toContain('"$SHIPWRIGHT_TASK_STORE_URL/prs/${PR_RECORD_ID}"');
+    expect(content).toContain("isRejectedByPatchLedger");
+    expect(content).toContain("threadRef");
+    const threadsIdx = content.indexOf("reviewThreads(first: 100)");
+    expect(content.slice(threadsIdx, threadsIdx + 400)).toContain("totalCount");
+  });
+
+  it("Step 9.5's compute-unaddressed-findings.ts invocation threads findings through", () => {
+    const idx = content.indexOf("compute-unaddressed-findings.ts\" \\");
+    const window = content.slice(idx, idx + 900);
+    expect(window).toContain('--argjson findings "$PR_FINDINGS_JSON"');
+    expect(window).toContain("findings: $findings");
+  });
+});

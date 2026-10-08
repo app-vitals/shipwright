@@ -311,6 +311,7 @@ configured. Step 7 below dispatches whichever `subagent_type` this resolves to.
              id
              isResolved
              comments(first: 20) {
+               totalCount
                nodes {
                  author { login __typename }
                  body
@@ -357,6 +358,15 @@ configured. Step 7 below dispatches whichever `subagent_type` this resolves to.
    `COMMENTS_JSON.nodes[]` holds each comment — the same shape patch.md's Step 3a extracts, and
    `LAST_PUSH_DATE` is the ISO-8601 `pushedDate` of the most recent commit at the current head.
    Used below by the Unresolved Comment Check and by the unaddressed-findings gate before Step 10.
+
+   Also fetch the PR's durable findings ledger (PHS-1.2) — Step 9.5's `isResolvedByLedger`
+   (review-source `resolved`/`superseded`) and `isRejectedByPatchLedger` (patch-source
+   `rejected`, matched by `reviewRef` for review bodies and `threadRef` for inline threads)
+   both read it. Fail soft: an unreachable task store yields `[]`, exactly the pre-ledger behavior:
+   ```bash
+   PR_FINDINGS_JSON=$(curl -sf -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
+     "$SHIPWRIGHT_TASK_STORE_URL/prs/${PR_RECORD_ID}" | jq -c '.findings // []' 2>/dev/null || echo '[]')
+   ```
 
    #### Prior Qualifying Reviews for Subagent Attestation (PVD-1.2)
 
@@ -1000,11 +1010,12 @@ bun run "${CLAUDE_PLUGIN_ROOT}/scripts/compute-unaddressed-findings.ts" \
     --argjson reviewThreads "$REVIEW_THREADS_JSON" \
     --argjson comments "$COMMENTS_JSON" \
     --argjson priorFindingsStatus "$PRIOR_FINDINGS_STATUS_JSON" \
-    '{currentUser: $currentUser, prAuthor: $prAuthor, headRefOid: $headRefOid, reviews: $reviews, reviewThreads: $reviewThreads, comments: $comments, priorFindingsStatus: $priorFindingsStatus}')"
+    --argjson findings "$PR_FINDINGS_JSON" \
+    '{currentUser: $currentUser, prAuthor: $prAuthor, headRefOid: $headRefOid, reviews: $reviews, reviewThreads: $reviewThreads, comments: $comments, priorFindingsStatus: $priorFindingsStatus, findings: $findings}')"
 # -> {"unaddressedFindings":true|false}
 ```
 
-`HEAD_REF_OID`, `REVIEWS_JSON`, `REVIEW_THREADS_JSON`, and `COMMENTS_JSON` are the
+`HEAD_REF_OID`, `REVIEWS_JSON`, `REVIEW_THREADS_JSON`, `COMMENTS_JSON` (and `PR_FINDINGS_JSON`, the Step 5.5 ledger fetch) are the
 `headRefOid`, `reviews`, `reviewThreads`, and `comments` values from Step 5.5's GraphQL
 response — pass them through unchanged, do not re-fetch or re-shape them. `PRIOR_FINDINGS_STATUS_JSON`
 is the subagent's `priorFindingsStatus[]` array parsed in Step 7 (PVD-1.2's `{ ref, resolved, evidence }`
