@@ -7,6 +7,7 @@
  */
 
 import { describe, expect, test } from "bun:test";
+import { renderZeroQuotaNotice } from "./admin-ui-account-pages.ts";
 import {
   type AgentDetail,
   type AgentListItem,
@@ -11690,5 +11691,18 @@ describe("renderNewLocalAgentPage — self-serve account user (SSP-4.2)", () => 
     const html = renderNewLocalAgentPage(USER_NAME, [CODING_TYPE]);
     expect(html).not.toContain("Agent quota");
     expect(html).toMatch(/<select[^>]*name="type"/);
+  });
+});
+
+describe("renderAgentsPage zero-quota notice (SSP-3.2)", () => {
+  test("replaces the create CTA with the notice and a disabled button", () => {
+    const html = renderAgentsPage([], "u@x.com", true, "UTC", {
+      zeroQuotaNotice: renderZeroQuotaNotice("dan@app-vitals.com"),
+    });
+    expect(html).toContain("Email dan@app-vitals.com to request a trial");
+    expect(html).toContain("disabled");
+    expect(html).not.toContain(
+      '<a href="/admin/agents/new" class="btn btn-primary">',
+    );
   });
 });

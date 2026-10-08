@@ -126,9 +126,7 @@ describe("renderShipwrightToolbar", () => {
         logoutAction: "/auth/logout",
       });
       expect(activeHref(html)).toBe("/admin/queue-activity");
-      expect(html).toContain(
-        '<a href="/admin/agents" class="vos-nav-link">',
-      );
+      expect(html).toContain('<a href="/admin/agents" class="vos-nav-link">');
     });
   });
 
@@ -206,5 +204,40 @@ describe("renderShipwrightToolbar", () => {
       expect(html).toContain("<script>");
       expect(html).toContain("change");
     });
+  });
+});
+
+describe("renderShipwrightToolbar Account entry (SSP-3.2)", () => {
+  const base = {
+    userName: "Alice",
+    activePath: "/admin/agents",
+    logoutAction: "/auth/logout",
+  };
+
+  test("omits the Account link by default so other services never render it", () => {
+    expect(renderShipwrightToolbar(base)).not.toContain("/admin/account");
+  });
+
+  test("renders the Account link when showAccount is true", () => {
+    const html = renderShipwrightToolbar({ ...base, showAccount: true });
+    expect(html).toContain('href="/admin/account" class="vos-nav-link');
+  });
+
+  test("highlights Account when it is the active path", () => {
+    const html = renderShipwrightToolbar({
+      ...base,
+      activePath: "/admin/account",
+      showAccount: true,
+    });
+    expect(html).toContain('href="/admin/account" class="vos-nav-link active"');
+  });
+
+  test("readOnly mode never renders Account even when showAccount is true", () => {
+    const html = renderShipwrightToolbar({
+      ...base,
+      readOnly: true,
+      showAccount: true,
+    });
+    expect(html).not.toContain("/admin/account");
   });
 });
