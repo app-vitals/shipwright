@@ -1196,3 +1196,53 @@ export const RuntimeErrorSchema = z
     error: z.string().openapi({ example: "Not found" }),
   })
   .openapi("RuntimeError");
+
+// ─── Accounts (SSP-5.1) ───────────────────────────────────────────────────────
+
+export const AccountIdParamSchema = z.object({
+  id: z
+    .string()
+    .min(1)
+    .openapi({ param: { name: "id", in: "path" }, example: "clx1abc" }),
+});
+
+const AccountStatusSchema = z.enum(["active", "suspended", "trial_expired"]);
+
+export const AccountResponseSchema = z
+  .object({
+    id: z.string().openapi({ example: "clx1abc" }),
+    name: z.string().openapi({ example: "Acme" }),
+    status: AccountStatusSchema,
+    maxAgents: z.number().int().openapi({ example: 3 }),
+    plan: z.string().nullable(),
+    trialExpiresAt: z.string().datetime().nullable(),
+    createdAt: z.string().datetime(),
+    updatedAt: z.string().datetime(),
+    agentCount: z.number().int().openapi({ example: 1 }),
+    memberCount: z.number().int().openapi({ example: 2 }),
+  })
+  .openapi("Account");
+
+export const AccountsListResponseSchema = z
+  .object({ accounts: z.array(AccountResponseSchema) })
+  .openapi("AccountsList");
+
+export const CreateAccountBodySchema = z
+  .object({
+    name: z.string().trim().min(1).openapi({ example: "Acme" }),
+    ownerEmail: z.string().trim().email().openapi({ example: "o@acme.com" }),
+    maxAgents: z.number().int().min(0).openapi({ example: 3 }),
+    plan: z.string().nullable().optional(),
+    trialExpiresAt: z.string().datetime().nullable().optional(),
+  })
+  .openapi("CreateAccountBody");
+
+export const PatchAccountBodySchema = z
+  .object({
+    name: z.string().trim().min(1).optional(),
+    maxAgents: z.number().int().min(0).optional(),
+    plan: z.string().nullable().optional(),
+    status: AccountStatusSchema.optional(),
+    trialExpiresAt: z.string().datetime().nullable().optional(),
+  })
+  .openapi("PatchAccountBody");

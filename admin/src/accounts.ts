@@ -11,6 +11,12 @@ export type { Account };
 
 export type AccountStatus = "active" | "suspended" | "trial_expired";
 
+/** An Account plus its agent and member row counts (admin /accounts API). */
+export type AccountWithCounts = Account & {
+  agentCount: number;
+  memberCount: number;
+};
+
 export interface CreateAccountOpts {
   status?: AccountStatus;
   maxAgents?: number;
@@ -68,6 +74,22 @@ export class AccountService {
     return this.prisma.account.findMany({ orderBy: { createdAt: "asc" } });
   }
 
+  async listWithCounts(): Promise<AccountWithCounts[]> {
+    const rows = await this.prisma.account.findMany({
+      orderBy: { createdAt: "asc" },
+      include: { _count: { select: { agents: true, members: true } } },
+    });
+    return rows.map(withCounts);
+  }
+
+  async getWithCounts(id: string): Promise<AccountWithCounts | null> {
+    const row = await this.prisma.account.findUnique({
+      where: { id },
+      include: { _count: { select: { agents: true, members: true } } },
+    });
+    return row ? withCounts(row) : null;
+  }
+
   async update(id: string, data: UpdateAccountInput): Promise<Account> {
     return this.prisma.account.update({ where: { id }, data });
   }
@@ -87,4 +109,15 @@ export class AccountService {
   ): Promise<number> {
     return client.agent.count({ where: { accountId } });
   }
+}
+
+function withCounts(
+  row: Account & { _count: { agents: number; members: number } },
+): AccountWithCounts {
+  const { _count, ...account } = row;
+  return {
+    ...account,
+    agentCount: _count.agents,
+    memberCount: _count.members,
+  };
 }
