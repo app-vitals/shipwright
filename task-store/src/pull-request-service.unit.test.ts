@@ -7,6 +7,7 @@
  * for the reference pattern).
  */
 
+import { DEFAULT_ACCOUNT_ID } from "@shipwright/lib/default-account";
 import { describe, expect, test } from "bun:test";
 import { FixedClock } from "./clock.ts";
 import { BadRequestError, NotFoundError } from "./errors.ts";
@@ -1843,7 +1844,10 @@ describe("PullRequestService.getEvents()", () => {
 function makeOriginPrismaDouble(seed: Partial<PullRequest>[] = []) {
   const rows = new Map<string, Partial<PullRequest>>();
   for (const row of seed) {
-    rows.set(`${row.repo}#${row.prNumber}`, { ...row });
+    rows.set(
+      `${row.accountId ?? DEFAULT_ACCOUNT_ID}|${row.repo}#${row.prNumber}`,
+      { ...row },
+    );
   }
   let nextId = rows.size;
   const createCalls: Record<string, unknown>[] = [];
@@ -1857,10 +1861,18 @@ function makeOriginPrismaDouble(seed: Partial<PullRequest>[] = []) {
       findUnique({
         where,
       }: {
-        where: { repo_prNumber: { repo: string; prNumber: number } };
+        where: {
+          accountId_repo_prNumber: {
+            accountId: string;
+            repo: string;
+            prNumber: number;
+          };
+        };
       }) {
-        const { repo, prNumber } = where.repo_prNumber;
-        return Promise.resolve(rows.get(`${repo}#${prNumber}`) ?? null);
+        const { accountId, repo, prNumber } = where.accountId_repo_prNumber;
+        return Promise.resolve(
+          rows.get(`${accountId}|${repo}#${prNumber}`) ?? null,
+        );
       },
       update({
         where,
@@ -1883,7 +1895,7 @@ function makeOriginPrismaDouble(seed: Partial<PullRequest>[] = []) {
         createCalls.push(data);
         nextId += 1;
         const record = { id: `pr-${nextId}`, ...data };
-        rows.set(`${data.repo}#${data.prNumber}`, record);
+        rows.set(`${data.accountId}|${data.repo}#${data.prNumber}`, record);
         return Promise.resolve(record);
       },
       findFirst({
@@ -1891,6 +1903,7 @@ function makeOriginPrismaDouble(seed: Partial<PullRequest>[] = []) {
         orderBy: _orderBy,
       }: {
         where: {
+          accountId: string;
           repo: string;
           origin?: { not: null };
           mergedAt?: { not: null };
@@ -1898,6 +1911,9 @@ function makeOriginPrismaDouble(seed: Partial<PullRequest>[] = []) {
         orderBy?: unknown;
       }) {
         const candidates = Array.from(rows.values())
+          .filter(
+            (r) => (r.accountId ?? DEFAULT_ACCOUNT_ID) === where.accountId,
+          )
           .filter((r) => r.repo === where.repo)
           .filter((r) => (where.origin ? r.origin !== null : true))
           .filter((r) => (where.mergedAt ? r.mergedAt !== null : true))
@@ -1962,7 +1978,9 @@ describe("PullRequestService.stampOrigin() (POM-1.1)", () => {
     // no-op) and the pre-existing row is returned unchanged.
     expect(prisma._updateCalls).toHaveLength(0);
     expect(record.origin).toBe("human" as never);
-    expect(prisma._rows.get("org/repo#42")?.origin).toBe("human" as never);
+    expect(prisma._rows.get("default|org/repo#42")?.origin).toBe(
+      "human" as never,
+    );
   });
 
   test("first-write-wins: applies origin when the existing row's origin is currently null", async () => {
@@ -2001,8 +2019,8 @@ describe("PullRequestService.stampOrigin() (POM-1.1)", () => {
     // null, not present in the update payload at all).
     expect(data.headRef).toBeUndefined();
     expect(data.title).toBeUndefined();
-    expect(prisma._rows.get("org/repo#42")?.headRef).toBe("old-ref");
-    expect(prisma._rows.get("org/repo#42")?.title).toBe("old title");
+    expect(prisma._rows.get("default|org/repo#42")?.headRef).toBe("old-ref");
+    expect(prisma._rows.get("default|org/repo#42")?.title).toBe("old title");
   });
 
   test("an explicit null authorLogin clears it (distinct from omitting the field)", async () => {
@@ -2018,7 +2036,7 @@ describe("PullRequestService.stampOrigin() (POM-1.1)", () => {
 
     await svc.stampOrigin("org/repo", 42, { authorLogin: null });
 
-    expect(prisma._rows.get("org/repo#42")?.authorLogin).toBeNull();
+    expect(prisma._rows.get("default|org/repo#42")?.authorLogin).toBeNull();
   });
 
   test("runs against a supplied tx client directly (no nested transaction) when `client` is provided", async () => {
@@ -2037,7 +2055,9 @@ describe("PullRequestService.stampOrigin() (POM-1.1)", () => {
     await svc.stampOrigin("org/repo", 7, { origin: "unknown" }, txSpy as never);
 
     expect(transactionCalls).toBe(0);
-    expect(prisma._rows.get("org/repo#7")?.origin).toBe("unknown" as never);
+    expect(prisma._rows.get("default|org/repo#7")?.origin).toBe(
+      "unknown" as never,
+    );
   });
 });
 
@@ -2147,8 +2167,10 @@ describe("PullRequestService.census() (POM-1.1)", () => {
     ]);
 
     expect(records).toHaveLength(2);
-    expect(prisma._rows.get("org/repo#1")?.origin).toBe("human" as never);
-    expect(prisma._rows.get("org/repo#2")?.origin).toBe("ci" as never);
+    expect(prisma._rows.get("default|org/repo#1")?.origin).toBe(
+      "human" as never,
+    );
+    expect(prisma._rows.get("default|org/repo#2")?.origin).toBe("ci" as never);
   });
 });
 
@@ -2217,7 +2239,9 @@ describe("PullRequestService.census() commit-count fields (CPP-1.1)", () => {
     expect(record.commitsReviewPatch).toBe(5 as never);
     expect(record.commitsCiFix).toBe(4 as never);
     expect(record.commitsImplementation).toBe(9 as never);
-    expect(prisma._rows.get("org/repo#42")?.commitCount).toBe(20 as never);
+    expect(prisma._rows.get("default|org/repo#42")?.commitCount).toBe(
+      20 as never,
+    );
   });
 
   test("omitting the commit-count fields on an existing row leaves previously-set values untouched", async () => {
@@ -2501,11 +2525,14 @@ interface ClaimPrismaSeedRow extends Partial<PullRequest> {
  */
 function makeClaimPrismaDouble(
   seed: ClaimPrismaSeedRow[] = [],
-  taskRows: { repo: string; pr: number }[] = [],
+  taskRows: { accountId?: string; repo: string; pr: number }[] = [],
 ) {
   const rows = new Map<string, Partial<PullRequest>>();
   for (const row of seed) {
-    rows.set(`${row.repo}#${row.prNumber}`, { ...row });
+    rows.set(
+      `${row.accountId ?? DEFAULT_ACCOUNT_ID}|${row.repo}#${row.prNumber}`,
+      { ...row },
+    );
   }
   let nextId = rows.size;
 
@@ -2514,10 +2541,18 @@ function makeClaimPrismaDouble(
       findUnique({
         where,
       }: {
-        where: { repo_prNumber: { repo: string; prNumber: number } };
+        where: {
+          accountId_repo_prNumber: {
+            accountId: string;
+            repo: string;
+            prNumber: number;
+          };
+        };
       }) {
-        const { repo, prNumber } = where.repo_prNumber;
-        return Promise.resolve(rows.get(`${repo}#${prNumber}`) ?? null);
+        const { accountId, repo, prNumber } = where.accountId_repo_prNumber;
+        return Promise.resolve(
+          rows.get(`${accountId}|${repo}#${prNumber}`) ?? null,
+        );
       },
       update({
         where,
@@ -2543,7 +2578,7 @@ function makeClaimPrismaDouble(
         // first-write-wins check tests `existing.origin === null` and would
         // otherwise wrongly treat an omitted key as "already has an origin".
         const record = { id: `pr-${nextId}`, origin: null, ...data };
-        rows.set(`${data.repo}#${data.prNumber}`, record);
+        rows.set(`${data.accountId}|${data.repo}#${data.prNumber}`, record);
         return Promise.resolve(record);
       },
     },
@@ -2553,9 +2588,16 @@ function makeClaimPrismaDouble(
       },
     },
     task: {
-      findFirst({ where }: { where: { repo: string; pr: number } }) {
+      findFirst({
+        where,
+      }: {
+        where: { accountId: string; repo: string; pr: number };
+      }) {
         const match = taskRows.find(
-          (t) => t.repo === where.repo && t.pr === where.pr,
+          (t) =>
+            (t.accountId ?? DEFAULT_ACCOUNT_ID) === where.accountId &&
+            t.repo === where.repo &&
+            t.pr === where.pr,
         );
         return Promise.resolve(
           match ? { id: `task-${match.repo}-${match.pr}` } : null,

@@ -11,6 +11,7 @@
  *   string = restrict to this account (NO_ACCESS_ACCOUNT_ID matches no rows)
  */
 
+import { DEFAULT_ACCOUNT_ID } from "@shipwright/lib/default-account";
 import type { Context } from "hono";
 import type { TaskStoreAuthEnv } from "./auth.ts";
 
@@ -21,4 +22,13 @@ export function resolveAccountScope(
   if (callerAccountId !== null) return callerAccountId;
   const requested = c.req.query("accountId");
   return requested ? requested : null;
+}
+
+/**
+ * The account a write should stamp on rows it creates (SSP-6.3): the agent
+ * token's resolved account, or for an admin token its `?accountId=` (falling
+ * back to DEFAULT_ACCOUNT_ID — never null).
+ */
+export function resolveWriteAccountId(c: Context<TaskStoreAuthEnv>): string {
+  return resolveAccountScope(c) ?? DEFAULT_ACCOUNT_ID;
 }
