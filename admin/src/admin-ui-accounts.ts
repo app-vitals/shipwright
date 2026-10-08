@@ -15,13 +15,16 @@ import {
   LastOwnerError,
 } from "./account-members.ts";
 import type { AccountService } from "./accounts.ts";
+import type { AdminUIEnv } from "./admin-ui.ts";
 import {
-  ADMIN_ACCOUNTS_PATH,
   type AccountAgentRef,
+  ADMIN_ACCOUNTS_PATH,
   renderAccountDetailPage,
   renderAccountsListPage,
 } from "./admin-ui-accounts-pages.ts";
-import type { AdminUIEnv } from "./admin-ui.ts";
+import { reconcileAgentAfterAccountChange } from "./agent-account-assignment.ts";
+import type { AgentProvisioner } from "./agent-provisioner.ts";
+import type { AgentService } from "./agents.ts";
 
 export interface AdminAccountsRouteDeps {
   /** SHIPWRIGHT_SELF_SERVE_ENABLED === "enabled". */
@@ -36,6 +39,9 @@ export interface AdminAccountsRouteDeps {
     "listByAccount" | "getByEmail" | "add" | "remove" | "promote" | "demote"
   >;
   invites: Pick<AccountInviteService, "listPending">;
+  /** SSP-5.3: assign/unassign agents (admin only). */
+  agents: Pick<AgentService, "getDetail" | "updateFields">;
+  provisioner: Pick<AgentProvisioner, "reconcile">;
   html: (content: string, opts?: { status?: number }) => Response;
 }
 
@@ -189,6 +195,40 @@ export function registerAdminAccountsRoutes(
   action("reactivate", async ({ id }) => {
     await deps.accounts.update(id, { status: "active" });
     return undefined;
+  });
+
+  /** SSP-5.3: set (accountId) or clear (null) Agent.accountId, then reconcile. */
+  async function setAgentAccount(
+    agentId: string,
+    accountId: string | null,
+  ): Promise<undefined> {
+    const updated = await deps.agents.updateFields(agentId, { accountId });
+    // The change is committed; a reconcile failure is logged, not surfaced as
+    // a form error (the next reconcile pass converges the workload).
+    const warning = await reconcileAgentAfterAccountChange(
+      deps.provisioner,
+      updated,
+    );
+    if (warning) console.warn(`[admin-accounts] ${agentId}: ${warning}`);
+    return undefined;
+  }
+
+  action("agents/assign", async ({ id, form }) => {
+    const agentId = field(form, "agentId");
+    if (!agentId) return "Agent ID is required.";
+    if (!(await deps.agents.getDetail(agentId))) {
+      return `Agent ${agentId} not found.`;
+    }
+    return setAgentAccount(agentId, id);
+  });
+
+  action("agents/unassign", async ({ id, form }) => {
+    const agentId = field(form, "agentId");
+    const agent = await deps.agents.getDetail(agentId);
+    if (!agent || agent.accountId !== id) {
+      return "Agent is not assigned to this account.";
+    }
+    return setAgentAccount(agentId, null);
   });
 
   action("members/add", async ({ id, form }) => {

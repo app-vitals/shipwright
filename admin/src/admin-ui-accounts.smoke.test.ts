@@ -5,17 +5,17 @@
  */
 
 import { describe, expect, it } from "bun:test";
-import { Hono } from "hono";
 import type { MiddlewareHandler } from "hono";
+import { Hono } from "hono";
 import {
   AccountMemberNotFoundError,
   LastOwnerError,
 } from "./account-members.ts";
+import type { AdminUIEnv } from "./admin-ui.ts";
 import {
   type AdminAccountsRouteDeps,
   registerAdminAccountsRoutes,
 } from "./admin-ui-accounts.ts";
-import type { AdminUIEnv } from "./admin-ui.ts";
 
 const d = new Date("2026-01-01T00:00:00Z");
 
@@ -47,6 +47,15 @@ function setup(opts: { enabled?: boolean } = {}) {
       createdAt: d,
     },
   ];
+  const agentAccounts: Record<string, string | null> = {
+    g1: "a1",
+    free: null,
+  };
+  const reconciled: Array<{
+    id: string;
+    slug?: string;
+    accountId?: string | null;
+  }> = [];
   const withCounts = () =>
     ({ ...account, agentCount: 1, memberCount: members.length }) as never;
   const owners = () => members.filter((m) => m.role === "owner").length;
@@ -121,10 +130,37 @@ function setup(opts: { enabled?: boolean } = {}) {
         return [];
       },
     },
+    agents: {
+      async getDetail(id) {
+        return id in agentAccounts
+          ? ({
+              id,
+              name: id,
+              selfHosted: false,
+              accountId: agentAccounts[id],
+            } as never)
+          : null;
+      },
+      async updateFields(id, input) {
+        agentAccounts[id] = input.accountId ?? null;
+        return {
+          id,
+          name: id,
+          selfHosted: false,
+          accountId: agentAccounts[id],
+        } as never;
+      },
+    },
+    provisioner: {
+      async reconcile(agents) {
+        reconciled.push(...agents);
+        return { recreated: [], orphans: [], failed: [], updated: [] };
+      },
+    },
   };
   const app = new Hono<AdminUIEnv>();
   registerAdminAccountsRoutes(app, deps);
-  return { app, account, members: () => members };
+  return { app, account, members: () => members, agentAccounts, reconciled };
 }
 
 const ADMIN = { "x-test-admin": "1" };
@@ -140,6 +176,46 @@ function post(
     body: new URLSearchParams(fields),
   });
 }
+
+describe("/admin/accounts agent assignment (SSP-5.3)", () => {
+  it("assigns an agent, then reconciles it with the new accountId", async () => {
+    const { app, agentAccounts, reconciled } = setup();
+    const res = await post(app, "/admin/accounts/a1/agents/assign", {
+      agentId: "free",
+    });
+    expect(res.status).toBe(302);
+    expect(agentAccounts.free).toBe("a1");
+    expect(reconciled).toEqual([{ id: "free", slug: "free", accountId: "a1" }]);
+  });
+
+  it("rejects an unknown agent without changing anything", async () => {
+    const { app, reconciled } = setup();
+    const res = await post(app, "/admin/accounts/a1/agents/assign", {
+      agentId: "nope",
+    });
+    expect(res.status).toBe(400);
+    expect(reconciled).toEqual([]);
+  });
+
+  it("unassigns an agent and reconciles with a null accountId", async () => {
+    const { app, agentAccounts, reconciled } = setup();
+    const res = await post(app, "/admin/accounts/a1/agents/unassign", {
+      agentId: "g1",
+    });
+    expect(res.status).toBe(302);
+    expect(agentAccounts.g1).toBeNull();
+    expect(reconciled).toEqual([{ id: "g1", slug: "g1", accountId: null }]);
+  });
+
+  it("refuses to unassign an agent owned by another account", async () => {
+    const { app, agentAccounts } = setup();
+    const res = await post(app, "/admin/accounts/a1/agents/unassign", {
+      agentId: "free",
+    });
+    expect(res.status).toBe(400);
+    expect(agentAccounts.free).toBeNull();
+  });
+});
 
 describe("/admin/accounts", () => {
   it("lists accounts for admin", async () => {
@@ -163,6 +239,8 @@ describe("/admin/accounts", () => {
       "members/remove",
       "members/promote",
       "members/demote",
+      "agents/assign",
+      "agents/unassign",
     ]) {
       const res = await post(
         app,

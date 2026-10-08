@@ -40,9 +40,9 @@ import type { AccountMemberService } from "./account-members.ts";
 import type { AccountOnboardingService } from "./account-onboarding.ts";
 import type { AccountService } from "./accounts.ts";
 import { registerAccountRoutes } from "./admin-ui-account.ts";
-import { registerAdminAccountsRoutes } from "./admin-ui-accounts.ts";
 import { runWithAccountNav } from "./admin-ui-account-nav.ts";
 import { renderZeroQuotaNotice } from "./admin-ui-account-pages.ts";
+import { registerAdminAccountsRoutes } from "./admin-ui-accounts.ts";
 import {
   type AgentDetail,
   type AgentOption,
@@ -3946,6 +3946,8 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
       enabled: accountNavEnabled,
       requireAuth,
       ...accountServices,
+      agents: agentService,
+      provisioner,
       html,
     });
   }
