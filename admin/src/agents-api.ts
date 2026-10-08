@@ -51,6 +51,10 @@ import { createAgent, describeRepoNameCollision } from "./agents.ts";
 import type { AdminApiKey, AdminAuthEnv } from "./api-auth.ts";
 import { createAdminAuthMiddleware, parseAdminApiKeys } from "./api-auth.ts";
 import {
+  type CallerScopeResolver,
+  memberOnlyCallerScopeResolver,
+} from "./caller-scope.ts";
+import {
   ApiError,
   BadRequestError,
   ForbiddenError,
@@ -167,6 +171,8 @@ export interface AdminDeps {
     AgentMemberService,
     "add" | "listByAgentId" | "exists" | "listByEmail"
   >;
+  /** Account-aware caller-scope resolver (SSP-2.1); defaults to AgentMember-only. */
+  callerScopeResolver?: CallerScopeResolver;
   /**
    * Resolves an agent-type name to its parsed Agent Type manifest. Consumed
    * by POST /agents (createAgentRoute, APA-2.1) to seed AgentTool/AgentPlugin
@@ -1200,6 +1206,9 @@ export function createAdminApp(deps: AdminDeps): OpenAPIHono<AdminAuthEnv> {
     adminApiKeys,
     sentryClient,
   } = deps;
+  const callerScopeResolver =
+    deps.callerScopeResolver ??
+    memberOnlyCallerScopeResolver(agentMemberService);
 
   const app = new OpenAPIHono<AdminAuthEnv>({
     // Fires when Zod request validation fails — surface a 400 with the issues.
@@ -1243,6 +1252,7 @@ export function createAdminApp(deps: AdminDeps): OpenAPIHono<AdminAuthEnv> {
     agentTokenService,
     adminApiKeys,
     agentMemberService,
+    callerScopeResolver,
   });
 
   // Admin, or a session-cookie caller (membership of the route's agent already
@@ -1422,8 +1432,8 @@ export function createAdminApp(deps: AdminDeps): OpenAPIHono<AdminAuthEnv> {
       return c.json(agents, 200);
     }
     // Non-admin session: only agents the caller has an AgentMember row for.
-    const memberships = await agentMemberService.listByEmail(email);
-    const memberAgentIds = new Set(memberships.map((m) => m.agentId));
+    const scope = await callerScopeResolver(email, false);
+    const memberAgentIds = new Set(scope.kind === "all" ? [] : scope.agentIds);
     return c.json(
       agents.filter((a) => memberAgentIds.has(a.id)),
       200,

@@ -17,6 +17,7 @@ import {
   extractAgentId,
   parseAdminApiKeys,
 } from "./api-auth.ts";
+import { createCallerScopeResolver } from "./caller-scope.ts";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -466,8 +467,10 @@ function buildScopedApp(memberOf: Array<[string, string]>) {
       sessionSecret: SESSION_SECRET,
       agentTokenService: { validate: async () => null },
       agentMemberService: {
-        exists: async (agentId, email) =>
-          memberOf.some(([a, e]) => a === agentId && e === email),
+        listByEmail: async (email) =>
+          memberOf
+            .filter(([, e]) => e === email)
+            .map(([agentId]) => ({ agentId }) as never),
       },
     }),
   );
@@ -582,6 +585,47 @@ describe("createAdminAuthMiddleware — non-admin session cookie scoping", () =>
     expect((await res.json()) as { isAdmin: boolean }).toMatchObject({
       isAdmin: true,
     });
+  });
+});
+
+describe("createAdminAuthMiddleware — account-scoped callers (SSP-2.1)", () => {
+  function buildAccountApp() {
+    const app = new Hono<AdminAuthEnv>();
+    app.use(
+      "*",
+      createAdminAuthMiddleware({
+        sessionSecret: SESSION_SECRET,
+        agentTokenService: { validate: async () => null },
+        callerScopeResolver: createCallerScopeResolver(
+          {
+            getAccountIdByEmail: async (e) =>
+              e === "a@example.com" ? "acct-a" : null,
+            listAgentIdsByAccount: async (id) =>
+              id === "acct-a" ? ["agent-in-a"] : [],
+            listMemberAgentIds: async () => [],
+          },
+          true,
+        ),
+      }),
+    );
+    app.all("*", (c) => c.json({ ok: true }));
+    return app;
+  }
+
+  it("allows an account member on their account's agent", async () => {
+    const jwt = await makeMemberJwt("a@example.com");
+    const res = await buildAccountApp().request("/agents/agent-in-a/envs", {
+      headers: { Cookie: `admin_session=${jwt}` },
+    });
+    expect(res.status).toBe(200);
+  });
+
+  it("denies the same caller on another account's agent", async () => {
+    const jwt = await makeMemberJwt("a@example.com");
+    const res = await buildAccountApp().request("/agents/agent-in-b/envs", {
+      headers: { Cookie: `admin_session=${jwt}` },
+    });
+    expect(res.status).toBe(403);
   });
 });
 

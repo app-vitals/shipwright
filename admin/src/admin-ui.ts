@@ -97,6 +97,11 @@ import {
   audioContentTypeForFilename,
   validateAttachment,
 } from "./attachment-validation.ts";
+import {
+  type CallerScopeResolver,
+  memberOnlyCallerScopeResolver,
+  scopeIncludesAgent,
+} from "./caller-scope.ts";
 import { ForbiddenError, UnprocessableEntityError } from "./errors.ts";
 import {
   GITHUB_PROVISION_STATE_COOKIE,
@@ -322,6 +327,11 @@ export interface AdminUIDeps {
     AgentMemberService,
     "listByEmail" | "exists" | "add" | "remove" | "listByAgentId"
   >;
+  /**
+   * Account-aware caller-scope resolver (SSP-2.1). Defaults to the
+   * AgentMember-only resolver, i.e. today's behavior with the flag off.
+   */
+  callerScopeResolver?: CallerScopeResolver;
   agentService: Pick<
     AgentService,
     | "listAll"
@@ -903,6 +913,7 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
     agentService,
     provisioner,
     agentTypeRegistry = new AgentTypeRegistry(),
+    callerScopeResolver = memberOnlyCallerScopeResolver(agentMemberService),
     taskStore,
     chatService,
     slack,
@@ -1444,11 +1455,8 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
     if (isAdmin) {
       return agentService.listAll();
     }
-    const memberships = await agentMemberService.listByEmail(
-      userEmail.toLowerCase(),
-    );
-    const agentIds = memberships.map((m) => m.agentId);
-    return agentService.listByIds(agentIds);
+    const scope = await callerScopeResolver(userEmail, false);
+    return agentService.listByIds(scope.kind === "all" ? [] : scope.agentIds);
   }
 
   app.get("/admin/agents", requireAuth, async (c) => {
@@ -1566,7 +1574,10 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
     isAdmin: boolean,
   ): Promise<boolean> {
     if (isAdmin) return true;
-    return agentMemberService.exists(agentId, userEmail.toLowerCase());
+    return scopeIncludesAgent(
+      await callerScopeResolver(userEmail, false),
+      agentId,
+    );
   }
 
   const ERROR_MESSAGES: Record<string, string> = {
@@ -3572,6 +3583,7 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
   registerSessionsListRoutes(app, {
     requireAuth,
     agentMemberService,
+    callerScopeResolver,
     agentService,
     sessionFollowService,
     fetchTaskStoreSessions,
@@ -3633,7 +3645,7 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
       const scope = await resolveVisibilityScope(
         c.var.isAdmin,
         c.var.userEmail,
-        agentMemberService,
+        callerScopeResolver,
         agentService,
       );
       if (scope.agentIds !== "all") {
@@ -3697,6 +3709,7 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
     requireAuth,
     sessionFollowService,
     agentMemberService,
+    callerScopeResolver,
     agentService,
     fetchTaskStoreSession,
   });
