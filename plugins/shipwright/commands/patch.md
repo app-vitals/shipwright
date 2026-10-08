@@ -2087,7 +2087,38 @@ gh run list --workflow {workflow-name-or-id} --repo {org}/{repo} --status succes
 ```
 
 Store both durations (or a note that typical duration was unavailable) as
-`{repeated-timeout-context}` for use in Step 6c's prompt. Proceed to Step 6c.
+`{repeated-timeout-context}` for use in Step 6c's prompt. Proceed to Step 6b.9.
+
+### Step 6b.9: Out-of-Scope CI Judgment (SLS-2.2)
+
+Having read the CI logs in Step 6b, decide whether the failing check is caused by this PR.
+If it is not — for example the same check already fails on the base branch, or the failure
+is in code this PR does not touch and no change to the PR can fix it — the run must not end
+with nothing recorded: without a ledger entry, `check-patch.ts` re-selects the PR every tick.
+Write the `ci` ref before ending, and **never exit `[silent]` without it**.
+
+Reuse `CI_FAILURE_SIGNATURE` from Step 6b (no new computation) and the head SHA the PR
+record is keyed on. The ref is `ci:{headSha}:{ciFailureSignature}` — the format SLS-2.1's
+`check-patch.ts` honors, where a matching `source: "patch"`, `disposition: "rejected"` entry
+settles that exact failure state at that exact head. POST it with the same ledger shape as
+Step 5c.5, with `evidence` naming the failing check(s) and why the failure is out of scope:
+
+```bash
+HEAD_SHA=$(gh pr view {pr} --repo {org}/{repo} --json headRefOid --jq .headRefOid)
+curl -sf -X POST \
+  -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
+  -H "Content-Type: application/json" \
+  "$SHIPWRIGHT_TASK_STORE_URL/prs/$PR_RECORD_ID/findings" \
+  -d "{\"ref\": \"ci:$HEAD_SHA:$CI_FAILURE_SIGNATURE\", \"disposition\": \"rejected\", \"source\": \"patch\", \"evidence\": \"{failing check} is not caused by this PR: {why out of scope}\", \"agentId\": \"$SHIPWRIGHT_AGENT_ID\"}" \
+  > /dev/null 2>&1 || \
+  echo "⚠ POST /prs/$PR_RECORD_ID/findings (ci rejected) failed — continuing"
+```
+
+Then release the pre-work claim from Step 6b.5, skip Steps 6c–6e for this PR, and end its
+cycle (move to the next PR in List D). The final report states the PR was settled as
+out-of-scope CI, with the ref. A push by a later commit changes `$HEAD_SHA`, so the entry
+stops matching and the PR re-qualifies automatically. If the failure *is* caused by this PR,
+or you cannot tell, write nothing and proceed to Step 6c.
 
 ### Step 6c: Dispatch Fix Subagent
 

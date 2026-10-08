@@ -2927,4 +2927,15 @@ describe("patch.md — settle-with-rejected outcome for nothing-actionable List 
       "a List A\n    review has nothing actionable at all",
     );
   });
+
+  it("Step 6b.9 writes the SLS-2.1 ci ref when CI is judged out of scope (SLS-2.2)", () => {
+    const section = stepSection("### Step 6b.9:", "### Step 6c:");
+    expect(section).toContain("ci:{headSha}:{ciFailureSignature}");
+    expect(section).toContain("ci:$HEAD_SHA:$CI_FAILURE_SIGNATURE");
+    expect(section).toContain("CI_FAILURE_SIGNATURE");
+    expect(section).toContain('\\"disposition\\": \\"rejected\\"');
+    expect(section).toContain('\\"source\\": \\"patch\\"');
+    expect(section).toContain("/findings");
+    expect(section).toContain("never exit `[silent]` without it");
+  });
 });
