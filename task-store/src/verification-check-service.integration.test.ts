@@ -81,6 +81,12 @@ describeOrSkip("VerificationCheckService scoping (integration)", () => {
   });
 
   afterEach(async () => {
+    // VerificationCheck FKs are ON DELETE RESTRICT — leave nothing behind that
+    // would block other integration files' task/pullRequest deleteMany().
+    await prisma.verificationCheck.deleteMany();
+    await prisma.taskEvent.deleteMany();
+    await prisma.task.deleteMany();
+    await prisma.pullRequest.deleteMany();
     await prisma.$disconnect();
   });
 
