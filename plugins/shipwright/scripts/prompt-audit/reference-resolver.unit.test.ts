@@ -33,6 +33,8 @@ const FIXTURE: Record<string, string> = {
   "plugins/p/skills/scan/SKILL.md": "---\nname: scan\n---\nbody\n",
   "docs/good.md":
     "See `src/real.ts` and `task ci`, `bun run build`.\nRun `/shipwright:scan --dry-run` with REAL_TOKEN via `REAL_TOKEN`.\nModel `claude-sonnet-5-5-20260101`.\n",
+  "docs/rel/doc.md": "See `../good.md` and `./own.md`.\n",
+  "docs/rel/own.md": "own\n",
   "docs/bad.md": [
     "Uses claude-sonnet-4-5 here.",
     "Read `src/gone.ts` first.",
@@ -112,6 +114,10 @@ describe("parseTaskNames", () => {
 describe("resolveReferences", () => {
   test("a doc whose references all resolve yields nothing", () => {
     expect(resolveReferences(root, deps, ["docs/good.md"])).toEqual([]);
+  });
+
+  test("resolves ./ and ../ relative paths against the referencing file", () => {
+    expect(resolveReferences(root, deps, ["docs/rel/doc.md"])).toEqual([]);
   });
 
   test("reports the retired model id, unresolvable path, command, flag and env var", () => {

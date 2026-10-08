@@ -9,7 +9,11 @@
  * Pure core: all filesystem access goes through the injected `ResolverDeps`.
  */
 
-import { type InventoryDeps, walkInventory } from "./inventory.ts";
+import {
+  type InventoryDeps,
+  joinNormalized,
+  walkInventory,
+} from "./inventory.ts";
 
 export type RefKind = "path" | "command" | "flag" | "model-id" | "env-var";
 
@@ -254,7 +258,7 @@ function envVarsInSource(
 
 function pathExists(index: RepoIndex, from: string, value: string): boolean {
   const dir = from.includes("/") ? from.slice(0, from.lastIndexOf("/")) : "";
-  const candidates = [value, dir ? `${dir}/${value}` : value];
+  const candidates = [value, joinNormalized(dir, value)];
   return candidates.some((c) => {
     const norm = c.replace(/\/$/, "");
     return (
