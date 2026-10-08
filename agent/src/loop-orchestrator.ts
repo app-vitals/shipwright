@@ -1241,9 +1241,21 @@ export function createLoopOrchestrator(
         // `gh pr update-branch` moves the head without writing any of them.
         // changed/settled resets; unchanged records. When the live state is
         // unreadable, fall back to the record-field check above.
+        // SLS-1.2: a no-op-at-dispatch marker doesn't veto the live-state
+        // check — a patch run whose only work was `gh pr update-branch` still
+        // emits [skip-reason:patch:deferred:no-op-at-dispatch:{pr}] even
+        // though the head moved. Unchanged live state still records the
+        // marker's reason via recordSkip below. Other markers (e.g.
+        // waiting-on-author) remain deliberate defers.
         const patchLive = patchLiveBefore.get(itemId);
+        const markerAllowsLiveState =
+          !skipReasonMarker ||
+          (skipReasonMarker.type === "skip-reason" &&
+            skipReasonMarker.reason.startsWith(
+              "patch:deferred:no-op-at-dispatch",
+            ));
         const patchLiveAfter =
-          patchLive && !skipReasonMarker && patchOutcome
+          patchLive && markerAllowsLiveState && patchOutcome
             ? await patchOutcome
                 .snapshot(itemId, patchLive.prAuthor)
                 .catch(() => null)
