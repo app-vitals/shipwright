@@ -331,7 +331,12 @@ export class AgentCronJobService {
         user,
         silent,
         ...(input.preCheck !== undefined && { preCheck: input.preCheck }),
-        ...(input.enabled !== undefined && { enabled: input.enabled }),
+        // Any explicit enabled change is a user decision — clear the lockdown
+        // marker so restoreLockdownDisabled() never overrides it.
+        ...(input.enabled !== undefined && {
+          enabled: input.enabled,
+          lockdownDisabledAt: null,
+        }),
       },
     });
   }

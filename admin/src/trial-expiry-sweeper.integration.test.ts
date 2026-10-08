@@ -291,4 +291,27 @@ describeOrSkip("TrialExpirySweeper (integration)", () => {
     });
     expect(row.lockdownDisabledAt).toBeNull();
   });
+
+  it("a content update() with an explicit enabled value clears the lockdown marker", async () => {
+    const agentId = await createAgent(prisma, { trialExpiresAt: PAST });
+    const cron = await createCron(prisma, agentId, { enabled: true });
+    await sweeper.tick();
+
+    const service = new AgentCronJobService(prisma);
+    const before = await prisma.agentCronJob.findUniqueOrThrow({
+      where: { id: cron },
+    });
+    await service.update(agentId, cron, {
+      schedule: before.schedule,
+      prompt: before.prompt,
+      enabled: false,
+    });
+
+    const row = await prisma.agentCronJob.findUniqueOrThrow({
+      where: { id: cron },
+    });
+    expect(row.lockdownDisabledAt).toBeNull();
+    expect(await service.restoreLockdownDisabled([agentId])).toBe(0);
+    expect(await getCronEnabled(prisma, cron)).toBe(false);
+  });
 });
