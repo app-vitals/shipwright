@@ -132,6 +132,7 @@ import {
   isSessionVisible,
   type SessionForVisibility,
 } from "./session-scope.ts";
+import type { SelfServeConfig } from "./self-serve-config.ts";
 import type { AppManifest } from "./slack-provisioning-client.ts";
 import {
   AGENT_BOT_SCOPES,
@@ -386,6 +387,8 @@ export interface AdminUIDeps {
   appBaseUrl: string;
   /** Enable the /admin/dev-login route. Hard-blocked in production regardless of this value. */
   devAuthEnabled?: boolean;
+  /** Resolved self-serve provisioning config (SSP-1.3). No consumers yet. */
+  selfServe?: SelfServeConfig;
   /**
    * Fetch tasks from the task-store service. If absent, the tasks page renders
    * in degraded mode (empty table + yellow notice) rather than returning 500.

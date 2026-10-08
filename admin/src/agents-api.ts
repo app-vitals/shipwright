@@ -105,6 +105,7 @@ import {
   ToolIdParamSchema,
   UpsertChatTokenDailyBodySchema,
 } from "./openapi-schemas.ts";
+import type { SelfServeConfig } from "./self-serve-config.ts";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -214,6 +215,8 @@ export interface AdminDeps {
    * `@sentry/bun` only when SENTRY_DSN is set.
    */
   sentryClient?: ErrorCapturingClient;
+  /** Resolved self-serve provisioning config (SSP-1.3). No consumers yet. */
+  selfServe?: SelfServeConfig;
 }
 
 export type { AdminApiKey };

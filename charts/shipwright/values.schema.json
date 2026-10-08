@@ -504,6 +504,15 @@
         }
       ]
     },
+    "selfServe": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "enabled": { "type": "boolean" },
+        "defaultMaxAgents": { "type": "integer", "minimum": 0 },
+        "contactEmail": { "type": "string" }
+      }
+    },
     "auth": {
       "type": "object",
       "additionalProperties": false,

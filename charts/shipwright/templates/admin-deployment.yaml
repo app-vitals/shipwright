@@ -349,6 +349,18 @@ spec:
             - name: SENTRY_ENVIRONMENT
               value: {{ .Values.admin.sentry.environment | quote }}
             {{- end }}
+            {{- with .Values.selfServe }}
+            {{- if .enabled }}
+            # ── Self-serve provisioning env (SSP-1.3) ─────────────────────────
+            # Injected ONLY when selfServe.enabled. Read by admin/src/self-serve-config.ts.
+            - name: SHIPWRIGHT_SELF_SERVE_ENABLED
+              value: "enabled"
+            - name: SHIPWRIGHT_SELF_SERVE_DEFAULT_MAX_AGENTS
+              value: {{ .defaultMaxAgents | default 0 | quote }}
+            - name: SHIPWRIGHT_SELF_SERVE_CONTACT_EMAIL
+              value: {{ .contactEmail | quote }}
+            {{- end }}
+            {{- end }}
             {{- with .Values.admin.extraEnv }}
             # admin.extraEnv: caller-supplied env vars appended last so they can
             # override anything above if needed.

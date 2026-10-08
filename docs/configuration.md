@@ -37,6 +37,18 @@ Configuration for the Shipwright Claude Code plugin (`plugins/shipwright/`). The
 
 ---
 
+## Self-Serve Provisioning
+
+Admin-service env vars (read once at startup by `admin/src/self-serve-config.ts`) controlling self-serve agent provisioning. With the flag unset, behavior is unchanged. Set via the Helm chart's `selfServe` values block.
+
+| Name | Type | Default | Description |
+|---|---|---|---|
+| `SHIPWRIGHT_SELF_SERVE_ENABLED` | `string` | — | Set to `enabled` to turn self-serve provisioning on. Any other value (or unset) leaves it off. |
+| `SHIPWRIGHT_SELF_SERVE_DEFAULT_MAX_AGENTS` | `int` | `0` | Default per-account agent quota. Must be an integer >= 0; an invalid value (negative, non-integer) logs a warning and falls back to `0`. |
+| `SHIPWRIGHT_SELF_SERVE_CONTACT_EMAIL` | `string` | `dan@app-vitals.com` | Contact address shown when a user needs more quota. |
+
+---
+
 ## Agent Config
 
 Configuration for the Shipwright agent runtime (`agent/` and `admin/`) — moved to
