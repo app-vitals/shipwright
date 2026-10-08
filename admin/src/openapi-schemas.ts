@@ -292,6 +292,34 @@ export type ModelBreakdownEntry = z.infer<typeof ModelBreakdownEntrySchema>;
 
 // ─── AgentCronRun ─────────────────────────────────────────────────────────────
 
+export const ContextBaselineEntrySchema = z
+  .object({
+    model: z.string().openapi({ example: "claude-sonnet-4-6" }),
+    contextTokens: z.number().int().openapi({ example: 79188 }),
+    inputTokens: z.number().int().openapi({ example: 2 }),
+    cacheCreationTokens: z.number().int().openapi({ example: 41415 }),
+    cacheReadTokens: z.number().int().openapi({ example: 37771 }),
+  })
+  .openapi("ContextBaselineEntry");
+
+export const SkillUsageEntrySchema = z
+  .object({
+    kind: z.enum(["skill", "agent", "root"]).openapi({ example: "skill" }),
+    name: z.string().openapi({ example: "shipwright:task-store" }),
+    invocations: z.number().int().openapi({ example: 1 }),
+    turns: z.number().int().openapi({ example: 3 }),
+    inputTokens: z.number().int().openapi({ example: 12 }),
+    outputTokens: z.number().int().openapi({ example: 100 }),
+    cacheReadTokens: z.number().int().openapi({ example: 219200 }),
+    cacheCreationTokens: z.number().int().openapi({ example: 9300 }),
+    invokeContextDelta: z.number().int().nullable().optional().openapi({
+      example: 9103,
+      description:
+        "input + cacheCreation of the first usage-bearing turn after the skill's first invoke — the new context admitted when its body loaded. Null for root/agent rows.",
+    }),
+  })
+  .openapi("SkillUsageEntry");
+
 export const AgentCronRunSchema = z
   .object({
     id: z.string().openapi({ example: "clx1234567890" }),
@@ -347,6 +375,27 @@ export const AgentCronRunSchema = z
       .datetime()
       .openapi({ example: "2026-01-01T08:00:00.000Z" }),
     modelBreakdown: z.array(ModelBreakdownEntrySchema).optional(),
+    contextBaseline: ContextBaselineEntrySchema.nullable().optional().openapi({
+      description:
+        "First-turn context baseline (null for resumed sessions and runs from older agent builds).",
+    }),
+    turns: z.number().int().nullable().optional().openapi({ example: 12 }),
+    toolCalls: z.number().int().nullable().optional().openapi({ example: 7 }),
+    contextFingerprint: z
+      .string()
+      .nullable()
+      .optional()
+      .openapi({ example: "abc123def456" }),
+    pluginVersion: z
+      .string()
+      .nullable()
+      .optional()
+      .openapi({ example: "1.363.0" }),
+    claudeCodeVersion: z
+      .string()
+      .nullable()
+      .optional()
+      .openapi({ example: "2.1.285" }),
   })
   .openapi("AgentCronRun");
 
@@ -456,6 +505,33 @@ export const PatchAgentCronRunBodySchema = z
       .array(ModelBreakdownEntrySchema)
       .optional()
       .openapi({ description: "Per-model token breakdown for this run" }),
+    contextBaseline: ContextBaselineEntrySchema.optional().openapi({
+      description:
+        "First-turn context baseline: usage of the run's first assistant message. contextTokens = input + cacheCreation + cacheRead — the full always-loaded context independent of cache warmth. Omitted for resumed sessions.",
+    }),
+    turns: z.number().int().nullable().optional().openapi({
+      example: 12,
+      description: "Distinct usage-bearing assistant turns in the run.",
+    }),
+    toolCalls: z.number().int().nullable().optional().openapi({
+      example: 7,
+      description: "Distinct tool_use blocks in the run.",
+    }),
+    contextFingerprint: z.string().nullable().optional().openapi({
+      example: "abc123def456",
+      description:
+        "sha256[:12] over the workspace's always-loaded markdown (CLAUDE.md, its @imports, no-`paths` rules) + plugin version. Groups runs by what the model was given.",
+    }),
+    pluginVersion: z.string().nullable().optional().openapi({
+      example: "1.363.0",
+    }),
+    claudeCodeVersion: z.string().nullable().optional().openapi({
+      example: "2.1.285",
+    }),
+    skillUsage: z.array(SkillUsageEntrySchema).optional().openapi({
+      description:
+        "Per-skill / per-subagent token attribution rows for this run; upserted per [kind, name].",
+    }),
   })
   .openapi("PatchAgentCronRunBody");
 

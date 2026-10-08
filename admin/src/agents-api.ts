@@ -1673,6 +1673,21 @@ export function createAdminApp(deps: AdminDeps): OpenAPIHono<AdminAuthEnv> {
       ...(body.modelBreakdown !== undefined && {
         modelBreakdown: body.modelBreakdown,
       }),
+      ...(body.contextBaseline !== undefined && {
+        contextBaseline: body.contextBaseline,
+      }),
+      ...(body.turns !== undefined && { turns: body.turns }),
+      ...(body.toolCalls !== undefined && { toolCalls: body.toolCalls }),
+      ...(body.contextFingerprint !== undefined && {
+        contextFingerprint: body.contextFingerprint,
+      }),
+      ...(body.pluginVersion !== undefined && {
+        pluginVersion: body.pluginVersion,
+      }),
+      ...(body.claudeCodeVersion !== undefined && {
+        claudeCodeVersion: body.claudeCodeVersion,
+      }),
+      ...(body.skillUsage !== undefined && { skillUsage: body.skillUsage }),
     });
 
     return c.json({ run: serializeCronRun(run) }, 200);
@@ -2015,7 +2030,33 @@ function serializeCronRun(run: {
   lastHeartbeatAt: Date | null;
   createdAt: Date;
   modelBreakdown?: ModelBreakdownEntry[];
+  baselineModel?: string | null;
+  baselineContextTokens?: number | null;
+  baselineInputTokens?: number | null;
+  baselineCacheCreationTokens?: number | null;
+  baselineCacheReadTokens?: number | null;
+  turns?: number | null;
+  toolCalls?: number | null;
+  contextFingerprint?: string | null;
+  pluginVersion?: string | null;
+  claudeCodeVersion?: string | null;
 }): z.infer<typeof AgentCronRunSchema> {
+  // The baseline is reported as one object; null unless every column is set
+  // (an older agent build, or a resumed session, leaves them all null).
+  const contextBaseline =
+    run.baselineModel != null &&
+    run.baselineContextTokens != null &&
+    run.baselineInputTokens != null &&
+    run.baselineCacheCreationTokens != null &&
+    run.baselineCacheReadTokens != null
+      ? {
+          model: run.baselineModel,
+          contextTokens: run.baselineContextTokens,
+          inputTokens: run.baselineInputTokens,
+          cacheCreationTokens: run.baselineCacheCreationTokens,
+          cacheReadTokens: run.baselineCacheReadTokens,
+        }
+      : null;
   // Token totals are no longer columns on AgentCronRun — they're summed from
   // the per-model breakdown, the sole source of truth post-consolidation.
   // A run with no breakdown rows reports null (unknown), not zero.
@@ -2060,6 +2101,12 @@ function serializeCronRun(run: {
       : null,
     ...tokenTotals,
     createdAt: run.createdAt.toISOString(),
+    contextBaseline,
+    turns: run.turns ?? null,
+    toolCalls: run.toolCalls ?? null,
+    contextFingerprint: run.contextFingerprint ?? null,
+    pluginVersion: run.pluginVersion ?? null,
+    claudeCodeVersion: run.claudeCodeVersion ?? null,
     ...(run.modelBreakdown !== undefined && {
       modelBreakdown: run.modelBreakdown.map((entry) => ({
         model: entry.model,
