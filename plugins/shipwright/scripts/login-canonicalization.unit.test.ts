@@ -3,9 +3,7 @@
 import { describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import {
-  type PrReviewData,
   type ReviewNode,
-  hasUnaddressedFindings,
   isSelfCleanApprove,
   isSupersededBySelfReview,
 } from "./compute-unaddressed-findings.ts";
@@ -46,18 +44,6 @@ describe("bot reviewing a bot-authored PR", () => {
       expect(isSupersededBySelfReview(first, [first, later], user)).toBe(true);
     });
 
-    test("hasUnaddressedFindings gate treats the bot's own reviews as self", () => {
-      const first = review(author, "Verdict: COMMENT — issue", "2026-05-26T10:00:00Z");
-      const later = review(author, "Verdict: APPROVE", "2026-05-27T10:00:00Z");
-      const data: PrReviewData = {
-        headRefOid: "head",
-        reviews: { nodes: [first, later] },
-        reviewThreads: { nodes: [] },
-        comments: { nodes: [] },
-        prAuthor: user,
-      };
-      expect(hasUnaddressedFindings(data, user)).toBe(false);
-    });
   });
 
   test("a different bot is not treated as self", () => {

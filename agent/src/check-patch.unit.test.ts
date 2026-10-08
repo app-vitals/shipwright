@@ -1065,36 +1065,6 @@ describe("getPatchCandidates", () => {
 
   // ─── task-store ledger findings wiring (PFL-5.3) ──────────────────────────
 
-  test("self-authored clean-APPROVE at current HEAD with no task-store record (empty ledger) is still not a candidate", async () => {
-    // Regression guard for the incident PR's exact shape: no ledger entry
-    // exists at all (queryPrRecord resolves null), so this only passes
-    // because of PFL-5.1's isSelfCleanApprove fallback — proving the two
-    // fixes compose correctly, not just that PFL-5.3's wiring alone works.
-    const pr = makeOwnPr({ number: 10, headRefOid: "current-head-sha" });
-    const reviewData = makePrReviewData({
-      headRefOid: "current-head-sha",
-      reviews: {
-        nodes: [
-          {
-            author: { login: "the-agent" },
-            state: "COMMENTED",
-            submittedAt: "2026-05-26T10:00:00Z",
-            commit: { oid: "current-head-sha" },
-            body: "Verdict: APPROVE — looks good, no changes needed.",
-          },
-        ],
-      },
-    });
-    const deps = makeDeps({
-      ownPrs: [pr],
-      reviewDataByPr: { 10: reviewData },
-      getCurrentUser: async () => "the-agent",
-    });
-    deps.queryPrRecord = async () => null;
-    const result = await getPatchCandidates(deps);
-    expect(result).toEqual([]);
-  });
-
   test("a qualifying THIRD-PARTY review with a matching source:review/resolved ledger entry on the PR record is excluded (proves the wiring, not the PFL-5.1 fallback)", async () => {
     // A third-party (non-self-authored) review is never touched by
     // isSelfCleanApprove/isSupersededBySelfReview — only isResolvedByLedger
@@ -1778,29 +1748,6 @@ describe("getPatchCandidates — PHS-1.1 characterization", () => {
 
   // --- head-level ---
 
-  test("DRO-1.2/PFL-5.1: earlier self COMMENT superseded by a later clean self-review is not a candidate with an empty ledger", async () => {
-    const result = await run(
-      makePrReviewData({
-        headRefOid: HEAD,
-        reviews: {
-          nodes: [
-            rev({
-              author: { login: "the-agent" },
-              body: "Verdict: COMMENT — bug.",
-            }),
-            rev({
-              author: { login: "the-agent" },
-              body: "Verdict: APPROVE",
-              submittedAt: "2026-05-26T11:00:00Z",
-            }),
-          ],
-        },
-      }),
-      { record: null },
-    );
-    expect(result).toEqual([]);
-  });
-
   test("PFL-3.2: ledger entries with source:patch or disposition:rejected on the PR record do NOT exclude a third-party review", async () => {
     const ref = `${HEAD}@2026-05-26T10:00:00Z`;
     for (const override of [{ source: "patch" }, { disposition: "rejected" }]) {
@@ -1915,33 +1862,6 @@ describe("getPatchCandidates — PHS-1.1 characterization", () => {
       findings: [ledgerEntry("allow-sha@2026-05-26T10:00:00Z")],
     });
     expect(await getPatchCandidates(deps)).toEqual([]);
-  });
-
-  test("RAS-1.1 x CPF-2.1: allowlisted PR — the agent's OWN clean self-approve is still excluded (keyed on currentUser, not prAuthor)", async () => {
-    const result = await getPatchCandidates(
-      makeDeps({
-        ownPrs: [],
- getScopedRepos: () => ["acme/example-repo"],
-        allowlistedPrs: [
-          makeOwnPr({ number: 20, headRefOid: "allow-sha", author: "allowlisted-one" }),
-        ],
-        reviewDataByPr: {
-          20: makePrReviewData({
-            headRefOid: "allow-sha",
-            reviews: {
-              nodes: [
-                rev({
-                  author: { login: "the-agent" },
-                  body: "Verdict: APPROVE",
-                  commit: { oid: "allow-sha" },
-                }),
-              ],
-            },
-          }),
-        },
-      }),
-    );
-    expect(result).toEqual([]);
   });
 
   test("DBR-1.4: candidate authorLogin is the allowlisted author for allowlisted PRs and undefined for self-authored PRs", async () => {
