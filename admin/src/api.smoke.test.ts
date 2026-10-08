@@ -38,6 +38,7 @@ interface MockAgent {
   patchAuthorAllowlist: string[];
   restrictSlackToMembers: boolean;
   memberEmails: string[];
+  accountStatus?: string | null;
   // APM-1.5: the 6 agent-policy fields passed through by GET /:id/config.
   autoPostReviews: boolean;
   allowSelfReview: boolean;
@@ -91,6 +92,7 @@ function makeMockAgentService(agents: Map<string, MockAgent>): {
     patchAuthorAllowlist: string[];
     restrictSlackToMembers: boolean;
     memberEmails: string[];
+    accountStatus?: string | null;
     autoPostReviews: boolean;
     allowSelfReview: boolean;
     minConfidence: number;
@@ -107,6 +109,7 @@ function makeMockAgentService(agents: Map<string, MockAgent>): {
       patchAuthorAllowlist: string[];
       restrictSlackToMembers: boolean;
       memberEmails: string[];
+      accountStatus?: string | null;
       autoPostReviews: boolean;
       allowSelfReview: boolean;
       minConfidence: number;
@@ -123,6 +126,7 @@ function makeMockAgentService(agents: Map<string, MockAgent>): {
             patchAuthorAllowlist: agent.patchAuthorAllowlist,
             restrictSlackToMembers: agent.restrictSlackToMembers,
             memberEmails: agent.memberEmails,
+            accountStatus: agent.accountStatus,
             autoPostReviews: agent.autoPostReviews,
             allowSelfReview: agent.allowSelfReview,
             minConfidence: agent.minConfidence,
@@ -216,6 +220,7 @@ function buildApp(opts?: {
   patchAuthorAllowlist?: string[];
   restrictSlackToMembers?: boolean;
   memberEmails?: string[];
+  accountStatus?: string | null;
   phaseMethodology?: MockPhaseMethodology[];
   autoPostReviews?: boolean;
   allowSelfReview?: boolean;
@@ -265,6 +270,7 @@ function buildApp(opts?: {
       patchAuthorAllowlist,
       restrictSlackToMembers,
       memberEmails,
+      accountStatus: opts?.accountStatus,
       autoPostReviews,
       allowSelfReview,
       minConfidence,
@@ -350,6 +356,24 @@ describe("GET /:id/config (mounted as GET /agents/:id/config from root)", () => 
     expect(body.maxFindings).toBe(12);
     expect(body.cleanupMergedWorktrees).toBe(false);
     expect(body.cleanupAfterDays).toBe(30);
+  });
+
+  test("200 returns accountStatus null when the agent has no account", async () => {
+    const app = buildApp({});
+    const res = await app.request(`/${KNOWN_AGENT_ID}/config`, {
+      headers: { Authorization: `Bearer ${VALID_ADMIN_KEY}` },
+    });
+    expect(res.status).toBe(200);
+    expect((await res.json()).accountStatus).toBeNull();
+  });
+
+  test("200 returns accountStatus exactly as stored on the owning account", async () => {
+    const app = buildApp({ accountStatus: "suspended" });
+    const res = await app.request(`/${KNOWN_AGENT_ID}/config`, {
+      headers: { Authorization: `Bearer ${VALID_ADMIN_KEY}` },
+    });
+    expect(res.status).toBe(200);
+    expect((await res.json()).accountStatus).toBe("suspended");
   });
 
   test("200 phaseMethodology defaults all six phases to null when the agent has no overrides", async () => {

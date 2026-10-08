@@ -58,6 +58,13 @@ export interface AgentConfigResponse {
    */
   trialExpiresAt?: string | null;
   /**
+   * SSP-8.3: status of the agent's owning Account ('active' | 'suspended' |
+   * 'trial_expired'), or null/absent when the agent has no account. Optional
+   * for the same fixture-compat reason as trialExpiresAt. Read by
+   * agent/src/index.ts's syncConfig() to drive slack.ts's isAccountPaused().
+   */
+  accountStatus?: string | null;
+  /**
    * PMC-1.1: phase -> subagentType (or null) map, covering all six pipeline
    * phases regardless of whether the agent has an explicit override row for
    * each — phases without a row default to null. The live handler always
@@ -112,6 +119,8 @@ interface AgentServiceLike {
     memberEmails: string[];
     /** ATE-3.1: optional so pre-existing test doubles built against this interface keep compiling unchanged. */
     trialExpiresAt?: Date | null;
+    /** SSP-8.3: owning account status; optional for pre-existing test doubles. */
+    accountStatus?: string | null;
     /** APM-1.5: the 6 agent-policy fields, direct-passthrough into the response. */
     autoPostReviews: boolean;
     allowSelfReview: boolean;
@@ -288,6 +297,7 @@ export function createAgentRuntimeApp(deps: AgentRuntimeDeps): OpenAPIHono {
       trialExpiresAt: agent.trialExpiresAt
         ? agent.trialExpiresAt.toISOString()
         : null,
+      accountStatus: agent.accountStatus ?? null,
       phaseMethodology,
       // APM-1.5: direct passthrough — the DB column always has a value
       // (Prisma schema default), so no `??` fallback is needed.

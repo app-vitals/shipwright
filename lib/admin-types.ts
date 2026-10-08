@@ -3030,6 +3030,8 @@ export interface components {
              * @example 2026-12-01T00:00:00.000Z
              */
             trialExpiresAt?: string | null;
+            /** @example active */
+            accountStatus?: string | null;
             /**
              * @example {
              *       "prd": null,

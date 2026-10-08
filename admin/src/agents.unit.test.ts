@@ -732,6 +732,7 @@ describe("AgentService.getById", () => {
       patchAuthorAllowlist: [],
       restrictSlackToMembers: false,
       memberEmails: [],
+      accountStatus: null,
       // APM-1.5: getById() now selects these 6 policy fields too.
       autoPostReviews: true,
       allowSelfReview: false,
@@ -765,6 +766,7 @@ describe("AgentService.getById", () => {
       patchAuthorAllowlist: [],
       restrictSlackToMembers: false,
       memberEmails: [],
+      accountStatus: null,
       // APM-1.5: getById() now selects these 6 policy fields too.
       autoPostReviews: true,
       allowSelfReview: false,

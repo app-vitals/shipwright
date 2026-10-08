@@ -1173,6 +1173,16 @@ export const AgentConfigResponseSchema = z
       .optional()
       .openapi({ example: "2026-12-01T00:00:00.000Z" }),
     /**
+     * SSP-8.3: status of the agent's owning Account, or null when the agent
+     * has no account. The agent runtime pauses Slack for 'suspended' and
+     * 'trial_expired'. Optional, mirroring trialExpiresAt.
+     */
+    accountStatus: z
+      .string()
+      .nullable()
+      .optional()
+      .openapi({ example: "active" }),
+    /**
      * PMC-1.1: phase -> subagentType (or null) map, covering all six pipeline
      * phases (see AGENT_PHASES) regardless of whether the agent has an
      * explicit override row for each — phases without a row default to null.
