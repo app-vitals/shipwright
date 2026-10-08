@@ -20,7 +20,9 @@ One nuance the spec doesn't carry: reconcile's parent-linking (Pass 2) self-heal
 
 ## Cron runs
 
-Cron runs record each execution of a cron job, including token usage and cost. `POST`/`GET /agents/:id/crons/:cronId/runs` and `PATCH .../runs/:runId` are fully described in the spec.
+Cron runs record each execution of a cron job, including token usage, cost, and telemetry. `POST`/`GET /agents/:id/crons/:cronId/runs` and `PATCH .../runs/:runId` are fully described in the spec.
+
+**Telemetry fields** (nullable; populated by agent builds with prompt-audit support, older builds leave these unset): first-turn context baseline (`baselineModel`, `baselineContextTokens`, `baselineInputTokens`, `baselineCacheCreationTokens`, `baselineCacheReadTokens` — the measured always-loaded context independent of cache warmth), run-level counts (`turns` distinct usage-bearing assistant turns, `toolCalls` distinct tool_use blocks), content fingerprinting (`contextFingerprint` sha256[:12] grouping runs by what the model was given, `pluginVersion`, `claudeCodeVersion`), and per-skill attribution (separate `skillUsage` rows per skill/subagent, tracking invocations, turns, token breakdown per skill, and the context delta on first invoke). See `admin/src/agent-cron-runs.ts` for the `PatchAgentCronRunInput` shape (fields `contextBaseline`, `turns`, `toolCalls`, `contextFingerprint`, `pluginVersion`, `claudeCodeVersion`, `skillUsage`).
 
 `skipReason` follows a `{command}:{category}:{reason}[:{detail}]` taxonomy (STD-1.1) rather than free text. On a `[silent]`-marker dispatch it's populated from the dispatched command's own `[skip-reason:text]` marker when present (DBV-1.1), falling back to `"command:no-work"` otherwise. No category is exempt (SRB-1.1): every skip reason, including `deferred` ones, is forwarded to the task store's reason-aware streak counter, so only the same reason repeating three times in a row auto-blocks — see `agent/src/markers.ts` and `agent/src/loop-orchestrator.ts`.
 
