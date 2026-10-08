@@ -9,6 +9,7 @@ import { sign } from "hono/jwt";
 import type { AccountWithCounts } from "./accounts.ts";
 import { createAccountsApp } from "./accounts-api.ts";
 import { parseAdminApiKeys } from "./api-auth.ts";
+import { UnprocessableEntityError } from "./errors.ts";
 
 const SESSION_SECRET = "accounts-smoke-secret-32-bytes!!!";
 const ADMIN_KEY = "admin-key";
@@ -49,7 +50,10 @@ function cookie(isAdmin: boolean): Promise<string> {
 
 function build(enabled = true) {
   const calls: Array<{ fn: string; args: unknown[] }> = [];
-  const store = new Map<string, AccountWithCounts>([["acc1", acct()]]);
+  const store = new Map<string, AccountWithCounts>([
+    ["acc1", acct()],
+    ["expired1", acct({ id: "expired1", status: "trial_expired" })],
+  ]);
   const app = createAccountsApp({
     selfServe: { enabled, defaultMaxAgents: 0, contactEmail: "c@x.com" },
     sessionSecret: SESSION_SECRET,
@@ -73,11 +77,16 @@ function build(enabled = true) {
         store.set(a.id, a);
         return a;
       },
+    },
+    accountLifecycle: {
       update: async (...args: unknown[]) => {
         calls.push({ fn: "update", args });
         const [id, data] = args as [string, Partial<AccountWithCounts>];
         const cur = store.get(id);
         if (!cur) throw Object.assign(new Error("nf"), { code: "P2025" });
+        if (data.status === "active" && cur.status === "trial_expired") {
+          throw new UnprocessableEntityError("trial still lapsed");
+        }
         const next = { ...cur, ...data };
         store.set(id, next);
         return next;
@@ -259,5 +268,25 @@ describe("behaviour", () => {
         })
       ).status,
     ).toBe(404);
+  });
+
+  it("PATCH routes status changes through the account lifecycle (SSP-8.2)", async () => {
+    const { app, calls } = build();
+    const res = await req(app, "PATCH", "/accounts/acc1", adminHeaders, {
+      status: "suspended",
+    });
+    expect(res.status).toBe(200);
+    expect(calls).toEqual([
+      { fn: "update", args: ["acc1", { status: "suspended" }] },
+    ]);
+  });
+
+  it("PATCH reactivation rejected by the lifecycle -> 422", async () => {
+    const { app } = build();
+    const res = await req(app, "PATCH", "/accounts/expired1", adminHeaders, {
+      status: "active",
+    });
+    expect(res.status).toBe(422);
+    expect(await res.json()).toEqual({ error: "trial still lapsed" });
   });
 });

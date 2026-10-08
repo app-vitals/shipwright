@@ -16,6 +16,18 @@ independent of `appVersion`. CI enforces this with
 
 - add opt-in tenant NetworkPolicy (selfServe.networkPolicy.enabled) isolating tenant agent pods
 
+## [1.23.5] - 2026-10-08
+
+### Changed
+
+- auto-bump to chart v1.23.5 triggered by release tag(s): `admin-v1.254.0`, `task-store-v1.184.0`
+
+## [1.23.4] - 2026-10-08
+
+### Changed
+
+- auto-bump to chart v1.23.4 triggered by release tag(s): `admin-v1.253.0`, `agent-v1.380.0`, `chat-v1.136.0`, `metrics-v1.139.0`, `task-store-v1.183.0`
+
 ## [1.23.3] - 2026-10-08
 
 ### Changed

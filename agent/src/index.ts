@@ -18,6 +18,7 @@ import * as Sentry from "@sentry/bun";
 import { initSentry } from "@shipwright/lib/sentry";
 import { WebClient } from "@slack/web-api";
 import nodeCron from "node-cron";
+import { agentAccountStatusRef } from "./agent-account-status-ref.ts";
 import { agentReposRef } from "./agent-repos-ref.ts";
 import {
   agentSlackMembershipRef,
@@ -338,6 +339,7 @@ function buildSlackApp() {
     (userId, client) => resolveUserEmail(userId, client),
     agentSlackMembershipRef,
     agentTrialExpiryRef,
+    agentAccountStatusRef,
   );
 }
 
@@ -526,6 +528,11 @@ if (runtimeClient && agentId) {
       agentTrialExpiryRef.set(
         bundle.trialExpiresAt ? new Date(bundle.trialExpiresAt) : null,
       );
+
+      // Sync the agent's owning-account status live ref (SSP-8.3) — read by
+      // agent/src/slack.ts's isAccountPaused() gate to pause Slack access
+      // while the account is suspended or trial_expired.
+      agentAccountStatusRef.set(bundle.accountStatus ?? null);
 
       // Sync the agent's allow-self-review live ref (APM-1.4) — read by
       // check-helpers.ts's readAllowSelfReview() as the DB tier before

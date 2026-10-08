@@ -24,6 +24,7 @@ import {
 } from "./caller-scope.ts";
 import type { SessionFollowService } from "./session-follow-service.ts";
 import {
+  accountIdFromCallerScope,
   agentIdScopeFromCallerScope,
   isSessionVisible,
   type SessionForVisibility,
@@ -43,6 +44,7 @@ export interface SessionFollowRoutesDeps {
    */
   fetchTaskStoreSession?: (
     slug: string,
+    accountId?: string,
   ) => Promise<SessionForVisibility | null>;
 }
 
@@ -58,9 +60,17 @@ async function memberCanSeeSession(
 ): Promise<boolean> {
   if (!deps.fetchTaskStoreSession) return false;
 
+  const resolver =
+    deps.callerScopeResolver ??
+    memberOnlyCallerScopeResolver(deps.agentMemberService);
+  const callerScope = await resolver(userEmail, false);
+  // SSP-6.8: an account user addresses the slug within their own account
+  // only — another account's same-slug session is simply not found.
+  const accountId = accountIdFromCallerScope(callerScope);
+
   let session: SessionForVisibility | null;
   try {
-    session = await deps.fetchTaskStoreSession(slug);
+    session = await deps.fetchTaskStoreSession(slug, accountId ?? undefined);
   } catch (err) {
     // Fail closed, but leave an operational signal: without this, a task-store
     // outage degrades every member's follow into an indistinguishable 404.
@@ -69,19 +79,14 @@ async function memberCanSeeSession(
   }
   if (!session) return false;
 
-  const resolver =
-    deps.callerScopeResolver ??
-    memberOnlyCallerScopeResolver(deps.agentMemberService);
-  const agentIds = agentIdScopeFromCallerScope(
-    await resolver(userEmail, false),
-  );
+  const agentIds = agentIdScopeFromCallerScope(callerScope);
   const agents =
-    agentIds === "all" || agentIds.length === 0
+    accountId !== null || agentIds === "all" || agentIds.length === 0
       ? []
       : await deps.agentService.listByIds(agentIds);
   const repos = agents.flatMap((agent) => agent.repos ?? []);
 
-  return isSessionVisible(session, { agentIds, repos });
+  return isSessionVisible(session, { agentIds, repos, accountId });
 }
 
 /**

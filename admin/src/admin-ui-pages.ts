@@ -136,6 +136,8 @@ export interface PrListItem {
   blockedReason?: string | null;
   skipCount?: number | null;
   lastSkippedAt?: string | null;
+  /** Tenant account (SSP-6.1); always present on task-store responses. */
+  accountId?: string;
 }
 
 // Inline type mirroring VerificationCheck fields (LVB-5.1,
@@ -773,6 +775,8 @@ export interface TaskItem {
   blockedBy?: BlockedByEntry[] | null;
   skipCount?: number | null;
   lastSkippedAt?: string | null;
+  /** Tenant account (SSP-6.1); always present on task-store responses. */
+  accountId?: string;
 }
 
 // ─── Inline markdown renderer ─────────────────────────────────────────────────
@@ -4518,6 +4522,12 @@ export function renderSessionDetailPage(
   isAdmin = false,
   notice?: { kind: "success" | "error"; message: string },
   isFollowing = false,
+  /**
+   * Query string appended to the action forms' URLs (SSP-6.8) — e.g.
+   * `?accountId=acct-b` when a platform admin is viewing another account's
+   * session, so the action addresses that account's same-slug row.
+   */
+  actionsQuery = "",
 ): string {
   const degradedHtml = degraded
     ? `<div class="alert alert-warning">Task store unavailable — data shown may be stale or empty.</div>`
@@ -4533,18 +4543,20 @@ export function renderSessionDetailPage(
   // task-store's SessionService.update() treats either as a harmless,
   // idempotent re-stamp when already in that state, and this route has no
   // cheap access to the session's current archived flag without an extra
-  // fetch. Never rendered at all for a non-admin caller.
+  // fetch. Never rendered at all for a caller who can't manage the session
+  // (`isAdmin` is true for platform admins and, under SSP-6.8, for an
+  // account user viewing their own account's session).
   const adminActionsHtml = isAdmin
     ? `<div class="card" style="margin-bottom:16px">
       <div style="font-size:12px;font-weight:600;color:#374151;margin-bottom:12px;text-transform:uppercase;letter-spacing:.05em">Admin actions</div>
       <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
-        <form method="POST" action="/admin/sessions/${encodeURIComponent(sessionId)}/archive" style="margin:0">
+        <form method="POST" action="/admin/sessions/${encodeURIComponent(sessionId)}/archive${escapeHtml(actionsQuery)}" style="margin:0">
           <button type="submit" class="btn btn-secondary">Archive</button>
         </form>
-        <form method="POST" action="/admin/sessions/${encodeURIComponent(sessionId)}/unarchive" style="margin:0">
+        <form method="POST" action="/admin/sessions/${encodeURIComponent(sessionId)}/unarchive${escapeHtml(actionsQuery)}" style="margin:0">
           <button type="submit" class="btn btn-secondary">Unarchive</button>
         </form>
-        <form method="POST" action="/admin/sessions/${encodeURIComponent(sessionId)}/rename" style="margin:0;display:flex;gap:6px;align-items:center">
+        <form method="POST" action="/admin/sessions/${encodeURIComponent(sessionId)}/rename${escapeHtml(actionsQuery)}" style="margin:0;display:flex;gap:6px;align-items:center">
           <input type="text" name="newTitle" placeholder="New title (blank clears it)" class="form-input" style="max-width:240px" />
           <button type="submit" class="btn btn-secondary">Rename</button>
         </form>

@@ -23,6 +23,7 @@
  */
 
 import { join } from "node:path";
+import { DEFAULT_ACCOUNT_ID } from "@shipwright/lib/default-account";
 import { isGithubLogin } from "@shipwright/lib/github-login";
 import { isOrgRepo } from "@shipwright/lib/org-repo";
 import { SECRET_ENV_VARS } from "@shipwright/lib/secret-env-vars";
@@ -36,6 +37,7 @@ import {
 import type { AccountCreatedNotifier } from "./account-created-notifier.ts";
 import { fireAccountCreatedNotification } from "./account-created-notifier.ts";
 import type { AccountInviteService } from "./account-invites.ts";
+import type { AccountLifecycle } from "./account-lifecycle.ts";
 import type { AccountMemberService } from "./account-members.ts";
 import type { AccountOnboardingService } from "./account-onboarding.ts";
 import type { AccountService } from "./accounts.ts";
@@ -115,6 +117,8 @@ import {
   type CallerScopeResolver,
   memberOnlyCallerScopeResolver,
   scopeIncludesAgent,
+  type TaskStoreViewScope,
+  taskStoreViewScope,
 } from "./caller-scope.ts";
 import { ForbiddenError, UnprocessableEntityError } from "./errors.ts";
 import {
@@ -450,12 +454,17 @@ export interface AdminUIDeps {
       "listByAccount" | "getByEmail" | "add" | "remove" | "promote" | "demote"
     >;
     invites: Pick<AccountInviteService, "create" | "listPending" | "revoke">;
+    /** SSP-8.2: admin account edits + suspend/reactivate side effects. */
+    lifecycle: Pick<AccountLifecycle, "update">;
   };
   /**
    * Fetch tasks from the task-store service. If absent, the tasks page renders
    * in degraded mode (empty table + yellow notice) rather than returning 500.
    */
-  fetchTaskStoreTasks?: (params: URLSearchParams) => Promise<{
+  fetchTaskStoreTasks?: (
+    params: URLSearchParams,
+    accountId?: string,
+  ) => Promise<{
     tasks: TaskItem[];
     total: number;
     limit: number;
@@ -465,17 +474,20 @@ export interface AdminUIDeps {
    * Fetch a single task by ID from the task-store service. If absent, the
    * detail route redirects back to the list.
    */
-  fetchTaskStoreTask?: (id: string) => Promise<TaskItem | null>;
+  fetchTaskStoreTask?: (
+    id: string,
+    accountId?: string,
+  ) => Promise<TaskItem | null>;
   /**
    * Release a task (unclaim → pending) via the task-store service.
    */
-  releaseTask?: (id: string) => Promise<void>;
+  releaseTask?: (id: string, accountId?: string) => Promise<void>;
   /**
    * Fetch distinct session and repo values from the task-store service.
    * Used to populate datalist autocomplete suggestions in the tasks filter form.
    * If absent, no datalists are rendered (inputs remain plain text).
    */
-  fetchDistinctTaskValues?: () => Promise<{
+  fetchDistinctTaskValues?: (accountId?: string) => Promise<{
     sessions: string[];
     repos: string[];
     orgs: string[];
@@ -489,7 +501,10 @@ export interface AdminUIDeps {
    * Fetch a paginated list of pull requests from the task-store service.
    * If absent, the PRs page renders in degraded mode (empty table + warning banner).
    */
-  fetchTaskStorePrs?: (params: URLSearchParams) => Promise<{
+  fetchTaskStorePrs?: (
+    params: URLSearchParams,
+    accountId?: string,
+  ) => Promise<{
     prs: PrListItem[];
     total: number;
     limit: number;
@@ -499,7 +514,10 @@ export interface AdminUIDeps {
    * Fetch a single pull request by its ID from the task-store service.
    * If absent or returns null, the PR detail route redirects to /admin/prs.
    */
-  fetchTaskStorePrById?: (id: string) => Promise<PrListItem | null>;
+  fetchTaskStorePrById?: (
+    id: string,
+    accountId?: string,
+  ) => Promise<PrListItem | null>;
   /**
    * Fetch recorded verification-check outcomes (LVB-5.1) for a task or PR
    * from the task-store service, via exactly one of `?taskId=` or `?prId=`.
@@ -508,7 +526,10 @@ export interface AdminUIDeps {
    * Activity rollup — the same graceful-degradation convention as every
    * other optional task-store fetcher in this file.
    */
-  fetchVerificationChecks?: (params: URLSearchParams) => Promise<{
+  fetchVerificationChecks?: (
+    params: URLSearchParams,
+    accountId?: string,
+  ) => Promise<{
     checks: VerificationCheckItem[];
     total: number;
     limit: number;
@@ -519,7 +540,10 @@ export interface AdminUIDeps {
    * If absent, the sessions list page renders in degraded mode (empty
    * sections + a warning banner).
    */
-  fetchTaskStoreSessions?: (params: URLSearchParams) => Promise<{
+  fetchTaskStoreSessions?: (
+    params: URLSearchParams,
+    accountId?: string,
+  ) => Promise<{
     sessions: Session[];
     total: number;
     limit: number;
@@ -534,6 +558,7 @@ export interface AdminUIDeps {
    */
   fetchTaskStoreSession?: (
     slug: string,
+    accountId?: string,
   ) => Promise<SessionForVisibility | null>;
   /**
    * Apply a rename/archive patch to a session via the task-store's
@@ -545,6 +570,7 @@ export interface AdminUIDeps {
   patchTaskStoreSession?: (
     slug: string,
     patch: { title?: string | null; archived?: boolean },
+    accountId?: string,
   ) => Promise<unknown>;
   /**
    * Resolve whether the current user follows a session, for the session
@@ -2157,10 +2183,15 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
     // across this agent's recently-dispatched tasks/PRs — see
     // buildVerificationActivityRollup()'s doc comment for why this reuses
     // cron-run dispatch targets rather than a dedicated task-store query.
+    // SSP-6.8: a non-admin's rollup reads only the agent's own account, so
+    // a repo#number shared with another account can't surface its checks.
+    const rollupTs = scopedTaskStore(
+      c.var.isAdmin ? undefined : (agent.accountId ?? DEFAULT_ACCOUNT_ID),
+    );
     const verificationActivity = await buildVerificationActivityRollup(
       recentRuns.items,
-      fetchVerificationChecks,
-      fetchTaskStorePrs,
+      rollupTs.fetchChecks,
+      rollupTs.fetchPrs,
     );
 
     // Stored snapshot only — admin never calls GitHub or the agent here.
@@ -3531,10 +3562,74 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
     return c.redirect(`/admin/agents/${agentId}`, 302);
   });
 
+  // ─── Task-store view scoping (SSP-6.8) ─────────────────────────────────────
+
+  /**
+   * Who may read the Tasks/PRs/Sessions views, and over which account:
+   * platform admins see every account (no filter), an account user (flag
+   * on) exactly their own, anyone else nothing (Tasks/PRs stay admin-only).
+   */
+  async function resolveTaskStoreView(
+    isAdmin: boolean,
+    userEmail: string,
+  ): Promise<TaskStoreViewScope> {
+    if (isAdmin) return { kind: "all" };
+    return taskStoreViewScope(await callerScopeResolver(userEmail, false));
+  }
+
+  /**
+   * The task-store fetchers bound to one account (`?accountId=`, sent with
+   * the admin token) — or unbound (every account) when `accountId` is
+   * undefined. Each route reads through these, so every task-store call it
+   * makes, including PR/task joins and suggestion lookups, stays in scope.
+   */
+  function scopedTaskStore(accountId: string | undefined) {
+    return {
+      fetchTasks:
+        fetchTaskStoreTasks &&
+        ((params: URLSearchParams) => fetchTaskStoreTasks(params, accountId)),
+      fetchTask:
+        fetchTaskStoreTask &&
+        ((id: string) => fetchTaskStoreTask(id, accountId)),
+      release: releaseTask && ((id: string) => releaseTask(id, accountId)),
+      fetchDistinct:
+        fetchDistinctTaskValues && (() => fetchDistinctTaskValues(accountId)),
+      fetchPrs:
+        fetchTaskStorePrs &&
+        ((params: URLSearchParams) => fetchTaskStorePrs(params, accountId)),
+      fetchPrById:
+        fetchTaskStorePrById &&
+        ((id: string) => fetchTaskStorePrById(id, accountId)),
+      fetchChecks:
+        fetchVerificationChecks &&
+        ((params: URLSearchParams) =>
+          fetchVerificationChecks(params, accountId)),
+    };
+  }
+
+  /** Agent-name suggestions: an account user only sees their own agents. */
+  async function agentSuggestions(view: TaskStoreViewScope): Promise<string[]> {
+    const agents =
+      view.kind === "account"
+        ? await agentService.listByIds(view.agentIds)
+        : await agentService.listOptions();
+    return agents.map((a) => a.name);
+  }
+
+  const NOT_FOUND = () => new Response("Not Found", { status: 404 });
+
   // ─── Tasks page ───────────────────────────────────────────────────────────
 
   app.get("/admin/tasks", requireAuth, async (c) => {
-    if (!c.var.isAdmin) return new Response("Forbidden", { status: 403 });
+    const scopeView = await resolveTaskStoreView(
+      c.var.isAdmin,
+      c.var.userEmail,
+    );
+    if (scopeView.kind === "none")
+      return new Response("Forbidden", { status: 403 });
+    const ts = scopedTaskStore(
+      scopeView.kind === "account" ? scopeView.accountId : undefined,
+    );
     // AXR-1.3: the board is the default layout; ?view=table opts back into
     // the pre-redesign dense table (any other/absent value falls back to
     // the board, matching AC1's "defaults to board" requirement).
@@ -3584,7 +3679,9 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
       orgs: string[];
     } | null = null;
 
-    if (!fetchTaskStoreTasks) {
+    const fetchTasks = ts.fetchTasks;
+    const fetchDistinct = ts.fetchDistinct;
+    if (!fetchTasks) {
       degraded = true;
     } else {
       try {
@@ -3623,12 +3720,12 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
               params.set("limit", String(fetchLimit));
               params.set("offset", String(fetchOffset));
               params.set("sort", "desc");
-              const fetched = await fetchTaskStoreTasks(params);
+              const fetched = await fetchTasks(params);
               return { items: fetched.tasks, total: fetched.total };
             },
           }),
-          fetchDistinctTaskValues
-            ? fetchDistinctTaskValues().catch(() => null)
+          fetchDistinct
+            ? fetchDistinct().catch(() => null)
             : Promise.resolve(null),
         ]);
         tasks = result.items;
@@ -3656,17 +3753,17 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
     // Resolve each task's linked PR (AXR-1.2) — same pattern as GET
     // /admin/prs's linkedTasksByPr join, and the single-task version at GET
     // /admin/tasks/:id, just batched.
-    const prsByTaskId = await joinPrsByTaskId(tasks, fetchTaskStorePrs);
+    const prsByTaskId = await joinPrsByTaskId(tasks, ts.fetchPrs);
 
     // Build suggestions for autocomplete datalists only when task-store integration is active.
     // Skip the DB query entirely when fetchDistinctTaskValues is not configured.
     const suggestions =
-      fetchDistinctTaskValues && distinctValues
+      fetchDistinct && distinctValues
         ? {
             sessions: distinctValues.sessions,
             repos: distinctValues.repos,
             orgs: distinctValues.orgs,
-            agents: (await agentService.listOptions()).map((a) => a.name),
+            agents: await agentSuggestions(scopeView),
           }
         : undefined;
 
@@ -3693,17 +3790,24 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
   });
 
   app.get("/admin/tasks/:id", requireAuth, async (c) => {
-    if (!c.var.isAdmin) return new Response("Forbidden", { status: 403 });
+    const view = await resolveTaskStoreView(c.var.isAdmin, c.var.userEmail);
+    if (view.kind === "none") return new Response("Forbidden", { status: 403 });
+    const ts = scopedTaskStore(
+      view.kind === "account" ? view.accountId : undefined,
+    );
     const taskId = c.req.param("id");
     const backHref = resolveTaskDetailBackHref(c.req.query("from"));
-    if (!fetchTaskStoreTask)
+    if (!ts.fetchTask)
       return c.redirect("/admin/tasks?error=task_store_unavailable", 302);
     let task: TaskItem | null = null;
     try {
-      task = await fetchTaskStoreTask(taskId);
+      task = await ts.fetchTask(taskId);
     } catch {
       return c.redirect("/admin/tasks?error=task_fetch_failed", 302);
     }
+    // SSP-6.8: for an account user a missing task and another account's task
+    // are the same 404, so ids from other accounts can't be probed.
+    if (!task && view.kind === "account") return NOT_FOUND();
     if (!task) return c.redirect("/admin/tasks?error=task_not_found", 302);
 
     // Resolve agent IDs → names from the local admin DB
@@ -3720,9 +3824,9 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
     // absence of the fetcher, or the task missing repo/pr renders the page
     // without a PR section.
     let pullRequest: PullRequestItem | undefined;
-    if (fetchTaskStorePrs && task.repo && task.pr) {
+    if (ts.fetchPrs && task.repo && task.pr) {
       try {
-        const result = await fetchTaskStorePrs(
+        const result = await ts.fetchPrs(
           new URLSearchParams({ repo: task.repo, prNumber: String(task.pr) }),
         );
         pullRequest = result.prs[0];
@@ -3735,10 +3839,10 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
     // absence of the fetcher or a failed lookup renders the page without a
     // Verification Checks section, never a 500.
     let verificationChecks: VerificationCheckItem[] = [];
-    if (fetchVerificationChecks) {
+    if (ts.fetchChecks) {
       try {
         verificationChecks = await fetchRecentVerificationChecks(
-          fetchVerificationChecks,
+          ts.fetchChecks,
           { taskId },
         );
       } catch {
@@ -3760,12 +3864,28 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
   });
 
   app.post("/admin/tasks/:id/release", requireAuth, async (c) => {
-    if (!c.var.isAdmin) return new Response("Forbidden", { status: 403 });
+    const view = await resolveTaskStoreView(c.var.isAdmin, c.var.userEmail);
+    if (view.kind === "none") return new Response("Forbidden", { status: 403 });
+    const ts = scopedTaskStore(
+      view.kind === "account" ? view.accountId : undefined,
+    );
     const taskId = c.req.param("id");
-    if (!releaseTask)
+    if (!ts.release)
       return c.redirect("/admin/tasks?error=task_store_unavailable", 302);
+    // SSP-6.8: an account user may only release a task in their own account.
+    // The task-store enforces this too (?accountId= on the release call);
+    // checking first turns another account's id into a clean 404.
+    if (view.kind === "account") {
+      let owned: TaskItem | null = null;
+      try {
+        owned = ts.fetchTask ? await ts.fetchTask(taskId) : null;
+      } catch {
+        return c.redirect("/admin/tasks?error=release_failed", 302);
+      }
+      if (!owned) return NOT_FOUND();
+    }
     try {
-      await releaseTask(taskId);
+      await ts.release(taskId);
     } catch {
       return c.redirect("/admin/tasks?error=release_failed", 302);
     }
@@ -3810,10 +3930,23 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
     const sessionId = c.req.param("id");
     const backHref = resolveSessionDetailBackHref(c.req.query("from"));
 
+    // SSP-6.8: an account user is pinned to their own account (a supplied
+    // ?accountId= is ignored); a platform admin may address another
+    // account's same-slug session via ?accountId= (the list links carry it).
+    const view = await resolveTaskStoreView(c.var.isAdmin, c.var.userEmail);
+    const accountId =
+      view.kind === "account"
+        ? view.accountId
+        : view.kind === "all"
+          ? c.req.query("accountId") || undefined
+          : undefined;
+    const ts = scopedTaskStore(accountId);
+    const fetchTasks = ts.fetchTasks;
+
     let tasks: TaskItem[] = [];
     let degraded = false;
 
-    if (!fetchTaskStoreTasks) {
+    if (!fetchTasks) {
       degraded = true;
     } else {
       const params = new URLSearchParams();
@@ -3824,7 +3957,7 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
       params.set("offset", "0");
       params.set("sort", "desc");
       try {
-        const result = await fetchTaskStoreTasks(params);
+        const result = await fetchTasks(params);
         tasks = result.tasks;
       } catch {
         degraded = true;
@@ -3834,7 +3967,7 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
     // SESH-5.1: resolve each waiting-candidate task's linked PR so
     // renderSessionDetailPage can classify "pr_blocked" rows — a failed join
     // never breaks the page, it just means no task classifies that way.
-    const prsByTaskId = await joinPrsByTaskId(tasks, fetchTaskStorePrs);
+    const prsByTaskId = await joinPrsByTaskId(tasks, ts.fetchPrs);
 
     // SESH-4.2: replaces the old flat `if (!isAdmin) 403` gate with a
     // session-scope.ts-based visibility check — an admin always sees the
@@ -3908,9 +4041,13 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
         degraded,
         backHref,
         prsByTaskId,
-        c.var.isAdmin,
+        // SSP-6.8: account users may rename/archive their own sessions.
+        c.var.isAdmin || view.kind === "account",
         notice,
         isFollowing,
+        view.kind === "all" && accountId
+          ? `?accountId=${encodeURIComponent(accountId)}`
+          : "",
       ),
     );
   });
@@ -3931,6 +4068,7 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
   registerSessionAdminActionsRoutes(app, {
     requireAuth,
     patchTaskStoreSession,
+    callerScopeResolver,
   });
 
   // ─── Account page (SSP-3.2) ───────────────────────────────────────────────
@@ -3967,7 +4105,11 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
   // ─── PRs ─────────────────────────────────────────────────────────────────
 
   app.get("/admin/prs", requireAuth, async (c) => {
-    if (!c.var.isAdmin) return new Response("Forbidden", { status: 403 });
+    const view = await resolveTaskStoreView(c.var.isAdmin, c.var.userEmail);
+    if (view.kind === "none") return new Response("Forbidden", { status: 403 });
+    const ts = scopedTaskStore(
+      view.kind === "account" ? view.accountId : undefined,
+    );
 
     const stateParam = c.req.query("state") ?? undefined;
     const reviewState = c.req.query("reviewState") ?? undefined;
@@ -3988,7 +4130,9 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
     let total = 0;
     let degraded = false;
 
-    if (!fetchTaskStorePrs) {
+    const fetchPrs = ts.fetchPrs;
+    const fetchTask = ts.fetchTask;
+    if (!fetchPrs) {
       degraded = true;
     } else {
       // The taskId filter is resolved live against the task-store rather than
@@ -4000,11 +4144,11 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
       let taskFilterPr: number | undefined;
       let taskFilterUnresolved = false;
       if (taskId) {
-        if (!fetchTaskStoreTask) {
+        if (!fetchTask) {
           taskFilterUnresolved = true;
         } else {
           try {
-            const task = await fetchTaskStoreTask(taskId);
+            const task = await fetchTask(taskId);
             if (task?.repo && task.pr) {
               taskFilterRepo = task.repo;
               taskFilterPr = task.pr;
@@ -4051,7 +4195,7 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
         params.set("offset", String(offset));
         params.set("sort", "desc");
         try {
-          const result = await fetchTaskStorePrs(params);
+          const result = await fetchPrs(params);
           prs = result.prs;
           total = result.total;
         } catch {
@@ -4078,7 +4222,8 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
     // avoid an N+1 sequential-await chain (PTL-2.1). Falls back to an empty
     // task list per row if the fetcher is absent or a lookup throws.
     const linkedTasksByPr: Record<string, TaskItem[]> = {};
-    if (fetchTaskStoreTasks && prs.length > 0) {
+    const fetchTasks = ts.fetchTasks;
+    if (fetchTasks && prs.length > 0) {
       const distinctPairs = new Map<string, { repo: string; pr: number }>();
       for (const pr of prs) {
         distinctPairs.set(`${pr.repo}#${pr.prNumber}`, {
@@ -4090,7 +4235,7 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
         [...distinctPairs.entries()].map(
           async ([key, { repo: r, pr: p }]): Promise<[string, TaskItem[]]> => {
             try {
-              const result = await fetchTaskStoreTasks(
+              const result = await fetchTasks(
                 new URLSearchParams({ repo: r, pr: String(p) }),
               );
               return [key, result.tasks];
@@ -4107,8 +4252,9 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
       }
     }
 
-    const suggestions = fetchDistinctTaskValues
-      ? await fetchDistinctTaskValues()
+    const suggestions = ts.fetchDistinct
+      ? await ts
+          .fetchDistinct()
           .then((v) => ({ repos: v.repos, orgs: v.orgs }))
           .catch(() => ({}))
       : {};
@@ -4136,15 +4282,21 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
   });
 
   app.get("/admin/prs/:id", requireAuth, async (c) => {
-    if (!c.var.isAdmin) return new Response("Forbidden", { status: 403 });
-    if (!fetchTaskStorePrById) return c.redirect("/admin/prs", 302);
+    const view = await resolveTaskStoreView(c.var.isAdmin, c.var.userEmail);
+    if (view.kind === "none") return new Response("Forbidden", { status: 403 });
+    const ts = scopedTaskStore(
+      view.kind === "account" ? view.accountId : undefined,
+    );
+    if (!ts.fetchPrById) return c.redirect("/admin/prs", 302);
     const prId = c.req.param("id");
     let pr: PrListItem | null = null;
     try {
-      pr = await fetchTaskStorePrById(prId);
+      pr = await ts.fetchPrById(prId);
     } catch {
       return c.redirect("/admin/prs", 302);
     }
+    // SSP-6.8: another account's PR id is indistinguishable from a missing one.
+    if (!pr && view.kind === "account") return NOT_FOUND();
     if (!pr) return c.redirect("/admin/prs", 302);
 
     const agentIds = [pr.agentId, pr.claimedBy].filter(
@@ -4160,9 +4312,9 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
     // mirroring the list page's per-row lookup (PTL-2.1). Falls back to an
     // empty task list if the fetcher is absent or the lookup throws.
     let linkedTasks: TaskItem[] = [];
-    if (fetchTaskStoreTasks) {
+    if (ts.fetchTasks) {
       try {
-        const result = await fetchTaskStoreTasks(
+        const result = await ts.fetchTasks(
           new URLSearchParams({ repo: pr.repo, pr: String(pr.prNumber) }),
         );
         linkedTasks = result.tasks;
@@ -4175,10 +4327,10 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
     // absence of the fetcher or a failed lookup renders the page without a
     // Verification Checks section, never a 500.
     let verificationChecks: VerificationCheckItem[] = [];
-    if (fetchVerificationChecks) {
+    if (ts.fetchChecks) {
       try {
         verificationChecks = await fetchRecentVerificationChecks(
-          fetchVerificationChecks,
+          ts.fetchChecks,
           { prId },
         );
       } catch {

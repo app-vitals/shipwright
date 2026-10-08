@@ -1,6 +1,7 @@
 /**
  * admin/src/accounts.ts
- * AccountService — self-serve accounts (SSP-1.2). No routes/UI yet.
+ * AccountService — self-serve accounts (SSP-1.2), plus the trial
+ * expiry/warning queries the account lifecycle sweepers use (SSP-8.2).
  */
 
 import type { Account, PrismaClient } from "../prisma/client/client.ts";
@@ -112,6 +113,79 @@ export class AccountService {
       select: { id: true, name: true },
       orderBy: { name: "asc" },
     });
+  }
+
+  /**
+   * Id + own per-agent trialExpiresAt of every agent owned by the account
+   * (SSP-8.2 reactivation skips agents whose own trial has lapsed).
+   */
+  async listAgentTrialStates(
+    accountId: string,
+  ): Promise<Array<{ id: string; trialExpiresAt: Date | null }>> {
+    return this.prisma.agent.findMany({
+      where: { accountId },
+      select: { id: true, trialExpiresAt: true },
+    });
+  }
+
+  /**
+   * Active accounts with a trial set that have not been warned yet — the
+   * account trial-warning sweeper's candidates (SSP-8.2). The window check
+   * itself is applied in code (isAccountTrialWarningDue).
+   */
+  async listTrialWarningCandidates(): Promise<
+    Array<
+      Pick<Account, "id" | "name" | "trialExpiresAt" | "trialExpiryWarnedAt">
+    >
+  > {
+    return this.prisma.account.findMany({
+      where: {
+        status: "active",
+        trialExpiresAt: { not: null },
+        trialExpiryWarnedAt: null,
+      },
+      select: {
+        id: true,
+        name: true,
+        trialExpiresAt: true,
+        trialExpiryWarnedAt: true,
+      },
+      orderBy: { createdAt: "asc" },
+    });
+  }
+
+  /**
+   * Stamp trialExpiryWarnedAt only if still unset. Returns false when another
+   * writer got there first (or the account is gone).
+   */
+  async markTrialWarned(id: string, at: Date): Promise<boolean> {
+    const { count } = await this.prisma.account.updateMany({
+      where: { id, trialExpiryWarnedAt: null },
+      data: { trialExpiryWarnedAt: at },
+    });
+    return count > 0;
+  }
+
+  /** Ids of active accounts whose trialExpiresAt is strictly before `now`. */
+  async listExpiredActiveIds(now: Date): Promise<string[]> {
+    const rows = await this.prisma.account.findMany({
+      where: { status: "active", trialExpiresAt: { lt: now } },
+      select: { id: true },
+      orderBy: { createdAt: "asc" },
+    });
+    return rows.map((r) => r.id);
+  }
+
+  /**
+   * Flip one account to trial_expired, conditional on it still being active
+   * with a lapsed trial — so a concurrent reactivation/extension wins.
+   */
+  async expireTrial(id: string, now: Date): Promise<boolean> {
+    const { count } = await this.prisma.account.updateMany({
+      where: { id, status: "active", trialExpiresAt: { lt: now } },
+      data: { status: "trial_expired" },
+    });
+    return count > 0;
   }
 
   async countAgents(

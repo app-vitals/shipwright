@@ -2,13 +2,14 @@
  * admin/src/admin-ui-accounts.ts
  * GET/POST /admin/accounts[/:id] — platform-admin account management
  * (SSP-5.2). Admin only (403 otherwise) and flag-gated (404 when self-serve
- * is off). Suspend/reactivate only set Account.status; lockdown side effects
- * are SSP-8.2.
+ * is off). Status and trial edits go through AccountLifecycle (SSP-8.2), so
+ * suspend locks down the account's crons and reactivate restores them.
  */
 
 import type { Context, Hono, MiddlewareHandler } from "hono";
 import { normalizeEmail } from "./account-email.ts";
 import type { AccountInviteService } from "./account-invites.ts";
+import type { AccountLifecycle } from "./account-lifecycle.ts";
 import {
   AccountMemberNotFoundError,
   type AccountMemberService,
@@ -25,6 +26,7 @@ import {
 import { reconcileAgentAfterAccountChange } from "./agent-account-assignment.ts";
 import type { AgentProvisioner } from "./agent-provisioner.ts";
 import type { AgentService } from "./agents.ts";
+import { UnprocessableEntityError } from "./errors.ts";
 
 export interface AdminAccountsRouteDeps {
   /** SHIPWRIGHT_SELF_SERVE_ENABLED === "enabled". */
@@ -32,8 +34,10 @@ export interface AdminAccountsRouteDeps {
   requireAuth: MiddlewareHandler<AdminUIEnv>;
   accounts: Pick<
     AccountService,
-    "listWithCounts" | "getWithCounts" | "update" | "listAgents"
+    "listWithCounts" | "getWithCounts" | "listAgents"
   >;
+  /** SSP-8.2: account edits + status transitions (cron lockdown/restore). */
+  lifecycle: Pick<AccountLifecycle, "update">;
   members: Pick<
     AccountMemberService,
     "listByAccount" | "getByEmail" | "add" | "remove" | "promote" | "demote"
@@ -178,7 +182,7 @@ export function registerAdminAccountsRoutes(
         return "Trial expiry must be a valid date.";
       }
     }
-    await deps.accounts.update(id, {
+    await deps.lifecycle.update(id, {
       name,
       maxAgents,
       plan: field(form, "plan") || null,
@@ -188,12 +192,17 @@ export function registerAdminAccountsRoutes(
   });
 
   action("suspend", async ({ id }) => {
-    await deps.accounts.update(id, { status: "suspended" });
+    await deps.lifecycle.update(id, { status: "suspended" });
     return undefined;
   });
 
   action("reactivate", async ({ id }) => {
-    await deps.accounts.update(id, { status: "active" });
+    try {
+      await deps.lifecycle.update(id, { status: "active" });
+    } catch (err) {
+      if (err instanceof UnprocessableEntityError) return err.message;
+      throw err;
+    }
     return undefined;
   });
 

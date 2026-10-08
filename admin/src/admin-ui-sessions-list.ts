@@ -18,6 +18,7 @@
  * registerSessionSettingsRoutes()/admin-ui-sessions.ts.
  */
 
+import { DEFAULT_ACCOUNT_ID } from "@shipwright/lib/default-account";
 import type { Hono, MiddlewareHandler } from "hono";
 import type { AdminUIEnv } from "./admin-ui.ts";
 import { renderAdminPage } from "./admin-ui-layout.ts";
@@ -34,6 +35,7 @@ import {
 } from "./caller-scope.ts";
 import type { SessionFollowService } from "./session-follow-service.ts";
 import {
+  accountIdFromCallerScope,
   agentIdScopeFromCallerScope,
   isSessionVisible,
   type VisibilityScope,
@@ -66,6 +68,8 @@ export interface Session {
     kind: "hitl" | "blocked" | "pr_blocked";
   }>;
   archived: boolean;
+  /** The session's account (SSP-6.7); every task-store row carries one. */
+  accountId?: string;
 }
 
 /** The narrow slice of AgentMemberService this module calls. */
@@ -98,7 +102,10 @@ export interface SessionsListDeps {
    * Fetch sessions from the task-store service. If absent, the page renders
    * in degraded mode (empty sections + a warning banner) rather than 500ing.
    */
-  fetchTaskStoreSessions?: (params: URLSearchParams) => Promise<{
+  fetchTaskStoreSessions?: (
+    params: URLSearchParams,
+    accountId?: string,
+  ) => Promise<{
     sessions: Session[];
     total: number;
     limit: number;
@@ -111,7 +118,7 @@ export interface SessionsListDeps {
    * Tasks page's identically-named dep. If absent, the filter fields still
    * render (no crash) but with no autocomplete suggestions.
    */
-  fetchDistinctTaskValues?: () => Promise<{
+  fetchDistinctTaskValues?: (accountId?: string) => Promise<{
     sessions: string[];
     repos: string[];
     orgs: string[];
@@ -141,7 +148,9 @@ interface SessionsListFilters {
  * An admin sees every session ("all", repos unused). A non-admin member's
  * scope is the union of their memberships' agent ids plus those agents'
  * own repos[] — a member with zero memberships resolves to an empty scope
- * (no I/O beyond the membership lookup, no throw).
+ * (no I/O beyond the membership lookup, no throw). An account user
+ * (SSP-6.8, flag on) instead gets an account scope: their account's sessions,
+ * fetched server-side via the task-store's `?accountId=`.
  *
  * Shared by both the sessions list route (this module) and the session
  * detail route's updated gate (admin-ui.ts), so both apply the exact same
@@ -155,9 +164,19 @@ export async function resolveVisibilityScope(
 ): Promise<VisibilityScope> {
   if (isAdmin) return { agentIds: "all", repos: [] };
 
-  const agentIdScope = agentIdScopeFromCallerScope(
-    await callerScopeResolver(userEmail, false),
-  );
+  const callerScope = await callerScopeResolver(userEmail, false);
+  const agentIdScope = agentIdScopeFromCallerScope(callerScope);
+  // SSP-6.8: an account user (flag on) sees exactly their account's
+  // sessions — account membership, not agent/repo overlap, decides — so
+  // they keep access even before their account has any agents.
+  const accountId = accountIdFromCallerScope(callerScope);
+  if (accountId !== null) {
+    return {
+      agentIds: agentIdScope === "all" ? [] : agentIdScope,
+      repos: [],
+      accountId,
+    };
+  }
   if (agentIdScope === "all" || agentIdScope.length === 0) {
     return { agentIds: [], repos: [] };
   }
@@ -203,6 +222,7 @@ function sessionRow(
   agentNames: Record<string, string>,
   followedSlugs: Set<string>,
   timezone?: string,
+  showAccount = false,
 ): string {
   const title = session.title?.trim() || session.slug;
   // The Slug row renders only when it actually differs from the title —
@@ -218,8 +238,18 @@ function sessionRow(
   // since there's one per row — the page's single delegated <script>
   // (renderSessionsListPage) handles clicks for every row via that class.
   const isFollowing = followedSlugs.has(session.slug);
+  // SSP-6.8: an admin's link into a non-default account's session carries
+  // that account, so the detail page (and its actions) address the right
+  // [accountId, slug] row rather than the default account's.
+  const accountQuery =
+    showAccount && session.accountId && session.accountId !== DEFAULT_ACCOUNT_ID
+      ? `?accountId=${encodeURIComponent(session.accountId)}`
+      : "";
+  const accountCell = showAccount
+    ? `<td style="font-size:12px">${badgeList(session.accountId ? [session.accountId] : [], "badge-gray")}</td>`
+    : "";
   return `<tr>
-    <td><a href="/admin/sessions/${encodeURIComponent(session.slug)}" style="color:#6366f1;text-decoration:none;font-weight:500">${escapeHtml(title)}</a>${slugHtml}</td>
+    <td><a href="/admin/sessions/${encodeURIComponent(session.slug)}${accountQuery}" style="color:#6366f1;text-decoration:none;font-weight:500">${escapeHtml(title)}</a>${slugHtml}</td>${accountCell}
     <td style="font-size:12px">${badgeList(agentLabels, "badge-gray")}</td>
     <td style="font-size:12px">${badgeList(session.repos, "badge-purple")}</td>
     <td style="font-size:12px">${session.counts.open}/${session.counts.total}</td>
@@ -237,6 +267,7 @@ function renderSection(
   agentNames: Record<string, string>,
   followedSlugs: Set<string>,
   timezone?: string,
+  showAccount = false,
 ): string {
   return `<div class="card" style="margin-bottom:16px">
     <div class="card-title" style="font-size:12px;font-weight:600;color:#374151;text-transform:uppercase;letter-spacing:.05em;margin-bottom:12px">${escapeHtml(label)} (${sessions.length})</div>
@@ -244,7 +275,7 @@ function renderSection(
       <table class="data-table">
         <thead>
           <tr>
-            <th>Session</th>
+            <th>Session</th>${showAccount ? "\n            <th>Account</th>" : ""}
             <th>Agents</th>
             <th>Repos</th>
             <th>Open/Total</th>
@@ -256,10 +287,16 @@ function renderSection(
         <tbody>
           ${
             sessions.length === 0
-              ? `<tr><td colspan="7" class="empty-state">No sessions.</td></tr>`
+              ? `<tr><td colspan="${showAccount ? 8 : 7}" class="empty-state">No sessions.</td></tr>`
               : sessions
                   .map((s) =>
-                    sessionRow(s, agentNames, followedSlugs, timezone),
+                    sessionRow(
+                      s,
+                      agentNames,
+                      followedSlugs,
+                      timezone,
+                      showAccount,
+                    ),
                   )
                   .join("\n")
           }
@@ -294,6 +331,8 @@ function renderSessionsListPage(
   },
   suggestions?: { orgs?: string[]; repos?: string[]; agents?: string[] },
   timezone?: string,
+  /** Platform admins get an Account column (SSP-6.8). */
+  showAccount = false,
 ): string {
   const degradedHtml = degraded
     ? `<div class="alert alert-warning">Task store unavailable — data shown may be stale or empty.</div>`
@@ -354,6 +393,7 @@ function renderSessionsListPage(
       agentNames,
       followedSlugs,
       timezone,
+      showAccount,
     );
   } else {
     const bySection = new Map<string, Session[]>();
@@ -374,6 +414,7 @@ function renderSessionsListPage(
         agentNames,
         followedSlugs,
         timezone,
+        showAccount,
       ),
     ).join("\n");
   }
@@ -497,10 +538,18 @@ export function registerSessionsListRoutes(
       deps.agentService,
     );
 
+    // SSP-6.8: an account user's sessions are filtered server-side.
+    const accountId =
+      typeof scope.accountId === "string" ? scope.accountId : undefined;
+
     // A member with zero memberships can see nothing — short-circuit
     // without ever calling the task store, rendering an empty page rather
     // than an error (AC2).
-    if (scope.agentIds !== "all" && scope.agentIds.length === 0) {
+    if (
+      accountId === undefined &&
+      scope.agentIds !== "all" &&
+      scope.agentIds.length === 0
+    ) {
       return deps.html(
         renderSessionsListPage([], filters, false, userEmail, {}, new Set(), {
           total: 0,
@@ -553,12 +602,12 @@ export function registerSessionsListRoutes(
               if (q) params.set("q", q);
               params.set("limit", String(fetchLimit));
               params.set("offset", String(fetchOffset));
-              const fetched = await fetchTaskStoreSessions(params);
+              const fetched = await fetchTaskStoreSessions(params, accountId);
               return { items: fetched.sessions, total: fetched.total };
             },
           }),
           deps.fetchDistinctTaskValues
-            ? deps.fetchDistinctTaskValues().catch(() => null)
+            ? deps.fetchDistinctTaskValues(accountId).catch(() => null)
             : Promise.resolve(null),
         ]);
         sessions = result.items;
@@ -574,10 +623,16 @@ export function registerSessionsListRoutes(
     // access-control filter is applied client-side against the full
     // fetched page, on top of (not instead of) the user's own repo/agent/q
     // filters already forwarded above.
-    const scoped = scope.agentIds !== "all";
-    if (scoped) {
+    // An account user's page is already exactly their account's rows
+    // (server-side), so the pagination summary stays accurate for them; the
+    // isSessionVisible pass below is defense in depth.
+    const scoped = scope.agentIds !== "all" && accountId === undefined;
+    if (scope.agentIds !== "all") {
       sessions = sessions.filter((s) =>
-        isSessionVisible({ agentIds: s.agentIds, repos: s.repos }, scope),
+        isSessionVisible(
+          { agentIds: s.agentIds, repos: s.repos, accountId: s.accountId },
+          scope,
+        ),
       );
     }
 
@@ -619,7 +674,13 @@ export function registerSessionsListRoutes(
         ? {
             orgs: distinctValues.orgs,
             repos: distinctValues.repos,
-            agents: (await deps.agentService.listOptions()).map((a) => a.name),
+            // An account user is only offered their own agents' names.
+            agents: (accountId !== undefined
+              ? await deps.agentService.listByIds(
+                  scope.agentIds === "all" ? [] : scope.agentIds,
+                )
+              : await deps.agentService.listOptions()
+            ).map((a) => a.name),
           }
         : undefined;
 
@@ -641,6 +702,7 @@ export function registerSessionsListRoutes(
         },
         suggestions,
         deps.timezone,
+        isAdmin,
       ),
     );
   });

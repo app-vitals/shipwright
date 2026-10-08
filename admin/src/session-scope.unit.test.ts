@@ -225,3 +225,74 @@ describe("visibleAgentIdsFor with account-derived ids (SSP-2.1)", () => {
     );
   });
 });
+
+describe("account-scoped visibility (SSP-6.8)", () => {
+  it("an account scope sees exactly its own account's sessions, ignoring agent/repo overlap", () => {
+    const scope = makeScope({
+      agentIds: ["a1"],
+      repos: ["org/shared"],
+      accountId: "acct-a",
+    });
+    expect(
+      isSessionVisible(
+        makeSession({ agentIds: [], repos: [], accountId: "acct-a" }),
+        scope,
+      ),
+    ).toBe(true);
+    // Same agent and repo, but another account's session: hidden.
+    expect(
+      isSessionVisible(
+        makeSession({
+          agentIds: ["a1"],
+          repos: ["org/shared"],
+          accountId: "acct-b",
+        }),
+        scope,
+      ),
+    ).toBe(false);
+  });
+
+  it("fails closed for an account scope when the session carries no accountId", () => {
+    const scope = makeScope({ agentIds: ["a1"], accountId: "acct-a" });
+    expect(isSessionVisible(makeSession({ agentIds: ["a1"] }), scope)).toBe(
+      false,
+    );
+  });
+
+  it("admin 'all' scope still sees every account's sessions", () => {
+    expect(
+      isSessionVisible(
+        makeSession({ accountId: "acct-b" }),
+        makeScope({ agentIds: "all" }),
+      ),
+    ).toBe(true);
+  });
+
+  it("a null accountId keeps the membership rule (flag off / no account)", () => {
+    const scope = makeScope({ agentIds: ["a1"], accountId: null });
+    expect(
+      isSessionVisible(
+        makeSession({ agentIds: ["a1"], accountId: "acct-b" }),
+        scope,
+      ),
+    ).toBe(true);
+  });
+
+  it("deriveSessionVisibilityFromTasks carries the tasks' shared accountId", () => {
+    expect(
+      deriveSessionVisibilityFromTasks([
+        { assignee: "a1", repo: "org/r", accountId: "acct-a" },
+        { assignee: "a2", repo: "org/r", accountId: "acct-a" },
+      ]).accountId,
+    ).toBe("acct-a");
+  });
+
+  it("deriveSessionVisibilityFromTasks leaves accountId unset when tasks span accounts", () => {
+    expect(
+      deriveSessionVisibilityFromTasks([
+        { assignee: "a1", accountId: "acct-a" },
+        { assignee: "a2", accountId: "acct-b" },
+      ]).accountId,
+    ).toBeUndefined();
+  });
+});

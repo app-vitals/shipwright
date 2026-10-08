@@ -2683,6 +2683,13 @@
             "format": "date-time",
             "example": "2026-12-01T00:00:00.000Z"
           },
+          "accountStatus": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "example": "active"
+          },
           "phaseMethodology": {
             "type": "object",
             "additionalProperties": {

@@ -174,6 +174,12 @@ interface AgentIdAndRepos {
    */
   trialExpiresAt?: Date | null;
   /**
+   * SSP-8.3: status of the owning Account, or null when the agent has none.
+   * Read by the runtime config route so the agent process can pause Slack.
+   * Optional for the same fixture-compat reason as trialExpiresAt.
+   */
+  accountStatus?: string | null;
+  /**
    * APM-1.5: the 6 agent-policy fields, read by the runtime GET /:id/config
    * route for direct passthrough. Required (not optional) since the Prisma
    * select below always returns them (each column has a schema default).
@@ -469,7 +475,7 @@ export class AgentService {
 
   /**
    * Get {id, repos, reviewAuthorAllowlist, patchAuthorAllowlist,
-   * restrictSlackToMembers, memberEmails, trialExpiresAt, and the 6 APM-1.5
+   * restrictSlackToMembers, memberEmails, trialExpiresAt, accountStatus, and the 6 APM-1.5
    * agent-policy fields} for a single agent — used by the runtime
    * config/crons routes. Returns null if not found.
    */
@@ -483,6 +489,7 @@ export class AgentService {
         patchAuthorAllowlist: true,
         restrictSlackToMembers: true,
         trialExpiresAt: true,
+        account: { select: { status: true } },
         autoPostReviews: true,
         allowSelfReview: true,
         minConfidence: true,
@@ -495,7 +502,8 @@ export class AgentService {
 
     const members = await this.agentMemberService.listByAgentId(id);
     const memberEmails = members.map((m) => m.email);
-    return { ...row, memberEmails };
+    const { account, ...rest } = row;
+    return { ...rest, memberEmails, accountStatus: account?.status ?? null };
   }
 
   /**

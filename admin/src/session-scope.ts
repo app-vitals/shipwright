@@ -43,6 +43,8 @@
 export interface SessionForVisibility {
   agentIds: string[];
   repos: string[];
+  /** The session's account (SSP-6.7). Required for account-scoped callers. */
+  accountId?: string;
 }
 
 /**
@@ -61,6 +63,7 @@ export interface TaskForVisibility {
   assignee?: string | null;
   claimedBy?: string | null;
   repo?: string | null;
+  accountId?: string;
 }
 
 /**
@@ -83,6 +86,13 @@ export type AgentIdScope = "all" | string[];
 export interface VisibilityScope {
   agentIds: AgentIdScope;
   repos: string[];
+  /**
+   * SSP-6.8: set for an account user (self-serve flag on). Visibility is then
+   * exactly "the session belongs to this account" — agent/repo overlap is
+   * ignored, because two accounts can share agent ids or repo strings.
+   * null/undefined keeps the AgentMember agent/repo rule (flag off).
+   */
+  accountId?: string | null;
 }
 
 // ─── Scope resolution ───────────────────────────────────────────────────────
@@ -105,6 +115,17 @@ export function visibleAgentIdsFor(
       ...memberships.map((membership) => membership.agentId),
     ]),
   ];
+}
+
+/**
+ * The account an account-scoped caller is pinned to (SSP-6.8), or null for an
+ * admin or a caller without an account (flag off / no membership).
+ */
+export function accountIdFromCallerScope(scope: {
+  kind: "all" | "scoped";
+  accountId?: string | null;
+}): string | null {
+  return scope.kind === "scoped" ? (scope.accountId ?? null) : null;
 }
 
 /** Map a resolved CallerScope (caller-scope.ts) onto the AgentIdScope shape. */
@@ -134,7 +155,12 @@ export function agentIdScopeFromCallerScope(scope: {
 export function deriveSessionVisibilityFromTasks(
   tasks: TaskForVisibility[],
 ): SessionForVisibility {
+  // A session's tasks all share its account (SSP-6.7); report it only when
+  // that holds, so a mixed (admin, unscoped) fetch never claims one account.
+  const accountIds = new Set(tasks.map((t) => t.accountId));
+  const [accountId] = accountIds;
   return {
+    ...(accountIds.size === 1 && accountId !== undefined ? { accountId } : {}),
     agentIds: [
       ...new Set(
         tasks
@@ -167,6 +193,9 @@ export function isSessionVisible(
   scope: VisibilityScope,
 ): boolean {
   if (scope.agentIds === "all") return true;
+  if (typeof scope.accountId === "string") {
+    return session.accountId === scope.accountId;
+  }
 
   return (
     intersects(session.agentIds, scope.agentIds) ||

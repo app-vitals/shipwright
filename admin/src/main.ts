@@ -61,6 +61,9 @@ import {
   HttpChatServiceProvisioningClient,
   NoopChatServiceProvisioningClient,
 } from "./chat-service-provisioning-client.ts";
+import { AccountLifecycle } from "./account-lifecycle.ts";
+import { AccountTrialExpirySweeper } from "./account-trial-expiry-sweeper.ts";
+import { AccountTrialWarningSweeper } from "./account-trial-warning-sweeper.ts";
 import { isDevAuthAllowed } from "./dev-auth-guard.ts";
 import { HttpGithubAppProvisioningClient } from "./github-app-provisioning-client.ts";
 import { HttpGoogleAuthClient } from "./google-auth-client.ts";
@@ -76,6 +79,7 @@ import {
   type SessionForAlert,
 } from "./session-alert-sweeper.ts";
 import { HttpSlackProvisioningClient } from "./slack-provisioning-client.ts";
+import { createTaskStoreFetchers } from "./task-store-fetchers.ts";
 import type { TaskStoreProvisioningClient } from "./task-store-provisioning-client.ts";
 import {
   HttpTaskStoreProvisioningClient,
@@ -505,6 +509,12 @@ async function startServer(): Promise<void> {
   // Self-serve provisioning config (SSP-1.3) — read once at startup and
   // injected as deps; no consumers yet.
   const selfServe = parseSelfServeConfig(process.env);
+  // Account status transitions → cron lockdown/restore (SSP-8.2). Shared by
+  // the /accounts PATCH handler, the admin UI and the account sweepers.
+  const accountLifecycle = new AccountLifecycle({
+    accounts: accountService,
+    cronJobs: agentCronJobService,
+  });
 
   const googleClient = new HttpGoogleAuthClient();
   // Constructed only when an issuer is configured — HttpOktaAuthClient requires
@@ -621,6 +631,7 @@ async function startServer(): Promise<void> {
     "/",
     createAccountsApp({
       accountService: new AccountService(prisma),
+      accountLifecycle,
       selfServe,
       sessionSecret,
       adminApiKeys,
@@ -631,122 +642,15 @@ async function startServer(): Promise<void> {
   // 4. Admin UI — /admin/* — session JWT
   const taskStoreUrl = process.env.SHIPWRIGHT_TASK_STORE_URL;
   const taskStoreAdminToken = process.env.SHIPWRIGHT_TASK_STORE_ADMIN_TOKEN;
+  // Single admin token; each fetcher takes an optional trailing accountId
+  // forwarded as ?accountId= so account users' views are filtered by the
+  // task-store itself (SSP-6.8, admin/src/task-store-fetchers.ts).
   const taskStoreFetchers =
     taskStoreUrl && taskStoreAdminToken
-      ? {
-          fetchTaskStoreTasks: async (params: URLSearchParams) => {
-            const url = `${taskStoreUrl}/tasks${params.size > 0 ? `?${params}` : ""}`;
-            const res = await fetch(url, {
-              headers: { Authorization: `Bearer ${taskStoreAdminToken}` },
-            });
-            if (!res.ok)
-              throw new Error(`task-store GET /tasks → ${res.status}`);
-            return res.json();
-          },
-          fetchTaskStoreTask: async (id: string) => {
-            const res = await fetch(`${taskStoreUrl}/tasks/${id}`, {
-              headers: { Authorization: `Bearer ${taskStoreAdminToken}` },
-            });
-            if (res.status === 404) return null;
-            if (!res.ok)
-              throw new Error(`task-store GET /tasks/${id} → ${res.status}`);
-            return res.json();
-          },
-          releaseTask: async (id: string) => {
-            const res = await fetch(`${taskStoreUrl}/tasks/${id}/release`, {
-              method: "POST",
-              headers: { Authorization: `Bearer ${taskStoreAdminToken}` },
-            });
-            if (!res.ok)
-              throw new Error(
-                `task-store POST /tasks/${id}/release → ${res.status}`,
-              );
-          },
-          fetchDistinctTaskValues: async () => {
-            const res = await fetch(`${taskStoreUrl}/tasks/distinct`, {
-              headers: { Authorization: `Bearer ${taskStoreAdminToken}` },
-            });
-            if (!res.ok)
-              throw new Error(`task-store GET /tasks/distinct → ${res.status}`);
-            return res.json() as Promise<{
-              sessions: string[];
-              repos: string[];
-              orgs: string[];
-            }>;
-          },
-          fetchTaskStorePrs: async (params: URLSearchParams) => {
-            const url = `${taskStoreUrl}/prs${params.size > 0 ? `?${params}` : ""}`;
-            const res = await fetch(url, {
-              headers: { Authorization: `Bearer ${taskStoreAdminToken}` },
-            });
-            if (!res.ok) throw new Error(`task-store GET /prs → ${res.status}`);
-            return res.json();
-          },
-          fetchTaskStorePrById: async (id: string) => {
-            const res = await fetch(`${taskStoreUrl}/prs/${id}`, {
-              headers: { Authorization: `Bearer ${taskStoreAdminToken}` },
-            });
-            if (res.status === 404) return null;
-            if (!res.ok)
-              throw new Error(`task-store GET /prs/${id} → ${res.status}`);
-            return res.json();
-          },
-          fetchVerificationChecks: async (params: URLSearchParams) => {
-            const url = `${taskStoreUrl}/verification-checks${params.size > 0 ? `?${params}` : ""}`;
-            const res = await fetch(url, {
-              headers: { Authorization: `Bearer ${taskStoreAdminToken}` },
-            });
-            if (!res.ok)
-              throw new Error(
-                `task-store GET /verification-checks → ${res.status}`,
-              );
-            return res.json();
-          },
-          fetchTaskStoreSessions: async (params: URLSearchParams) => {
-            const url = `${taskStoreUrl}/sessions${params.size > 0 ? `?${params}` : ""}`;
-            const res = await fetch(url, {
-              headers: { Authorization: `Bearer ${taskStoreAdminToken}` },
-            });
-            if (!res.ok)
-              throw new Error(`task-store GET /sessions → ${res.status}`);
-            return res.json();
-          },
-          fetchTaskStoreSession: async (slug: string) => {
-            const res = await fetch(
-              `${taskStoreUrl}/sessions/${encodeURIComponent(slug)}`,
-              {
-                headers: { Authorization: `Bearer ${taskStoreAdminToken}` },
-              },
-            );
-            if (res.status === 404) return null;
-            if (!res.ok)
-              throw new Error(
-                `task-store GET /sessions/${slug} → ${res.status}`,
-              );
-            return res.json();
-          },
-          patchTaskStoreSession: async (
-            slug: string,
-            patch: { title?: string | null; archived?: boolean },
-          ) => {
-            const res = await fetch(
-              `${taskStoreUrl}/sessions/${encodeURIComponent(slug)}`,
-              {
-                method: "PATCH",
-                headers: {
-                  Authorization: `Bearer ${taskStoreAdminToken}`,
-                  "Content-Type": "application/json",
-                },
-                body: JSON.stringify(patch),
-              },
-            );
-            if (!res.ok)
-              throw new Error(
-                `task-store PATCH /sessions/${slug} → ${res.status}`,
-              );
-            return res.json();
-          },
-        }
+      ? createTaskStoreFetchers({
+          url: taskStoreUrl,
+          adminToken: taskStoreAdminToken,
+        })
       : {};
 
   // Validate SHIPWRIGHT_ADMIN_TZ at startup — toLocaleDateString/toLocaleString
@@ -839,6 +743,7 @@ async function startServer(): Promise<void> {
       accounts: new AccountService(prisma),
       members: new AccountMemberService(prisma),
       invites: new AccountInviteService(prisma),
+      lifecycle: accountLifecycle,
     },
     timezone: adminTz,
     ...(chatClient ? { chatClient } : {}),
@@ -865,6 +770,9 @@ async function startServer(): Promise<void> {
       pushService,
       agentMemberService,
       agentService,
+      // SSP-6.8: account users are alerted only for their own account's
+      // sessions (fetchSessions below lists every account's).
+      callerScopeResolver,
       fetchSessions: async (state) => {
         const res = await fetch(
           `${taskStoreUrl}/sessions?state=${state}&limit=500`,
@@ -955,6 +863,44 @@ async function startServer(): Promise<void> {
     }, trialExpirySweepIntervalMs);
     console.log(
       `[admin] trial expiry sweeper started (interval: ${trialExpirySweepIntervalMs}ms)`,
+    );
+  }
+
+  // Account trial sweepers (SSP-8.2) — the account-level counterparts of the
+  // two per-agent sweepers above (which keep running unchanged). Flag-gated:
+  // accounts only exist when self-serve is enabled. Same cadences as the
+  // per-agent pair: hourly warning, minutely expiry/lockdown. Registered
+  // HERE, never inside an app factory. No deleteAgentFully call anywhere.
+  if (selfServe.enabled) {
+    const accountTrialWarningSweeper = new AccountTrialWarningSweeper({
+      accounts: accountService,
+      agentEnvService,
+      warningDays: resolveTrialExpiryWarningDays(process.env),
+    });
+    setInterval(() => {
+      accountTrialWarningSweeper
+        .tick()
+        .catch((err) =>
+          console.error("[account-trial-warning-sweeper] tick error:", err),
+        );
+    }, DEFAULT_TRIAL_EXPIRY_WARNING_SWEEP_INTERVAL_MS);
+
+    const accountTrialExpirySweeper = new AccountTrialExpirySweeper({
+      accounts: accountService,
+      lifecycle: accountLifecycle,
+    });
+    const accountTrialExpiryIntervalMs = resolveTrialExpirySweepIntervalMs(
+      process.env,
+    );
+    setInterval(() => {
+      accountTrialExpirySweeper
+        .tick()
+        .catch((err) =>
+          console.error("[account-trial-expiry-sweeper] tick error:", err),
+        );
+    }, accountTrialExpiryIntervalMs);
+    console.log(
+      `[admin] account trial sweepers started (warning: ${DEFAULT_TRIAL_EXPIRY_WARNING_SWEEP_INTERVAL_MS}ms, expiry: ${accountTrialExpiryIntervalMs}ms)`,
     );
   }
 
