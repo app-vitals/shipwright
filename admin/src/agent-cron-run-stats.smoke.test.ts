@@ -23,6 +23,7 @@ const VALID_BEARER_TOKEN = "valid-bearer-token-value";
 async function makeSessionCookie(secret = SESSION_SECRET): Promise<string> {
   return sign(
     {
+      isAdmin: true,
       userId: "user-123",
       email: "admin@example.com",
       name: "Admin User",
@@ -156,6 +157,35 @@ const MOCK_STATS = {
       cacheCreation: 10,
       total: 330,
       costUsd: 0.002,
+    },
+  ],
+  bySkill: [
+    {
+      kind: "skill",
+      name: "shipwright:dev-task",
+      runs: 2,
+      invocations: 3,
+      turns: 10,
+      input: 100,
+      output: 50,
+      cacheRead: 10,
+      cacheCreation: 5,
+      avgInvokeContextDelta: 1200,
+    },
+  ],
+  baselines: [
+    {
+      contextFingerprint: "fp-1",
+      baselineModel: "claude-sonnet-5-5",
+      phase: "dev-task",
+      runs: 3,
+      avgContextTokens: 24000,
+      minContextTokens: 23000,
+      maxContextTokens: 25000,
+      avgTurns: 30,
+      avgToolCalls: null,
+      firstSeen: "2026-01-10T09:00:00.000Z",
+      lastSeen: "2026-01-12T09:00:00.000Z",
     },
   ],
 };
@@ -385,6 +415,8 @@ function makeMockDeps(): AdminDeps {
       }),
     },
     agentMemberService: {
+      exists: async () => false,
+      listByEmail: async () => [],
       add: async (agentId: string, email: string) => ({
         id: "member-1",
         agentId,
@@ -669,6 +701,29 @@ describe("admin API — GET /agents/all/cron-runs/stats", () => {
     expect(body.daily).toHaveLength(3);
     expect(body.byPhase).toHaveLength(2);
     expect(body.byPhase[0].key).toBe("dev-task");
+  });
+
+  it("returns bySkill and baselines with the documented shape", async () => {
+    const app = createAdminApp(makeMockDeps());
+    const res = await app.request("/agents/all/cron-runs/stats", {
+      headers: { Cookie: `admin_session=${cookie}` },
+    });
+    expect(res.status).toBe(200);
+    const body = await res.json();
+
+    expect(body.bySkill).toHaveLength(1);
+    expect(body.bySkill[0].kind).toBe("skill");
+    expect(body.bySkill[0].name).toBe("shipwright:dev-task");
+    expect(body.bySkill[0].invocations).toBe(3);
+    expect(body.bySkill[0].avgInvokeContextDelta).toBe(1200);
+
+    expect(body.baselines).toHaveLength(1);
+    expect(body.baselines[0].contextFingerprint).toBe("fp-1");
+    expect(body.baselines[0].baselineModel).toBe("claude-sonnet-5-5");
+    expect(body.baselines[0].phase).toBe("dev-task");
+    expect(body.baselines[0].avgContextTokens).toBe(24000);
+    expect(body.baselines[0].avgToolCalls).toBeNull();
+    expect(typeof body.baselines[0].firstSeen).toBe("string");
   });
 
   it("accepts from/to query params without error", async () => {

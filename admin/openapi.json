@@ -1836,6 +1836,18 @@
             "items": {
               "$ref": "#/components/schemas/KeyedTokenAggregate"
             }
+          },
+          "bySkill": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SkillUsageAggregate"
+            }
+          },
+          "baselines": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ContextBaselineAggregate"
+            }
           }
         },
         "required": [
@@ -1951,6 +1963,143 @@
               "period"
             ]
           }
+        ]
+      },
+      "SkillUsageAggregate": {
+        "type": "object",
+        "properties": {
+          "kind": {
+            "type": "string",
+            "example": "skill"
+          },
+          "name": {
+            "type": "string",
+            "example": "shipwright:dev-task"
+          },
+          "runs": {
+            "type": "integer",
+            "example": 4
+          },
+          "invocations": {
+            "type": "integer",
+            "example": 5
+          },
+          "turns": {
+            "type": "integer",
+            "example": 40
+          },
+          "input": {
+            "type": "integer",
+            "example": 600
+          },
+          "output": {
+            "type": "integer",
+            "example": 300
+          },
+          "cacheRead": {
+            "type": "integer",
+            "example": 60
+          },
+          "cacheCreation": {
+            "type": "integer",
+            "example": 30
+          },
+          "avgInvokeContextDelta": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "example": 1200
+          }
+        },
+        "required": [
+          "kind",
+          "name",
+          "runs",
+          "invocations",
+          "turns",
+          "input",
+          "output",
+          "cacheRead",
+          "cacheCreation",
+          "avgInvokeContextDelta"
+        ]
+      },
+      "ContextBaselineAggregate": {
+        "type": "object",
+        "properties": {
+          "contextFingerprint": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "example": "a1b2c3"
+          },
+          "baselineModel": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "example": "claude-sonnet-5-5"
+          },
+          "phase": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "example": "dev-task"
+          },
+          "runs": {
+            "type": "integer",
+            "example": 12
+          },
+          "avgContextTokens": {
+            "type": "number",
+            "example": 24000
+          },
+          "minContextTokens": {
+            "type": "integer",
+            "example": 23000
+          },
+          "maxContextTokens": {
+            "type": "integer",
+            "example": 25000
+          },
+          "avgTurns": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "example": 30
+          },
+          "avgToolCalls": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "example": 55
+          },
+          "firstSeen": {
+            "type": "string",
+            "example": "2026-01-10T09:00:00.000Z"
+          },
+          "lastSeen": {
+            "type": "string",
+            "example": "2026-01-15T09:00:00.000Z"
+          }
+        },
+        "required": [
+          "contextFingerprint",
+          "baselineModel",
+          "phase",
+          "runs",
+          "avgContextTokens",
+          "minContextTokens",
+          "maxContextTokens",
+          "avgTurns",
+          "avgToolCalls",
+          "firstSeen",
+          "lastSeen"
         ]
       },
       "CronRunOutcomes": {

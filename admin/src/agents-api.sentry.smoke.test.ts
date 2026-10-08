@@ -186,6 +186,8 @@ function makeBaseDeps(
       upsert: async () => ({}) as never,
     },
     agentMemberService: {
+      exists: async () => false,
+      listByEmail: async () => [],
       add: async () => ({}) as never,
       listByAgentId: async () => [],
     },
