@@ -39,7 +39,7 @@ Configuration for the Shipwright Claude Code plugin (`plugins/shipwright/`). The
 
 ## Self-Serve Provisioning
 
-Admin-service env vars (read once at startup by `admin/src/self-serve-config.ts`) controlling self-serve agent provisioning. With the flag unset, behavior is unchanged. Set via the Helm chart's `selfServe` values block.
+Admin-service env vars (read once at startup by `admin/src/self-serve-config.ts`) controlling self-serve agent provisioning. With the flag unset, behavior is unchanged. Set via the Helm chart's `selfServe` values block. See [self-serve.md](./self-serve.md) for the full model.
 
 | Name | Type | Default | Description |
 |---|---|---|---|
