@@ -52,7 +52,6 @@ import {
   NoopChatServiceProvisioningClient,
 } from "./chat-service-provisioning-client.ts";
 import { isDevAuthAllowed } from "./dev-auth-guard.ts";
-import { parseSelfServeConfig } from "./self-serve-config.ts";
 import { HttpGithubAppProvisioningClient } from "./github-app-provisioning-client.ts";
 import { HttpGoogleAuthClient } from "./google-auth-client.ts";
 import { HttpChatClient } from "./http-chat-client.ts";
@@ -61,6 +60,7 @@ import { HttpOktaAuthClient } from "./okta-auth-client.ts";
 import { createAdminPrismaClient } from "./prisma-client.ts";
 import { isPushEnabled } from "./push-sender.ts";
 import { PushService } from "./push-service.ts";
+import { parseSelfServeConfig } from "./self-serve-config.ts";
 import {
   SessionAlertSweeper,
   type SessionForAlert,
@@ -172,11 +172,13 @@ export function buildProvisioner(
   // an empty string, when unset) so resolveAgentContainerResources's default
   // fallback applies field-by-field.
   const cpuRequest = env.SHIPWRIGHT_K8S_AGENT_CPU_REQUEST;
+  const cpuLimit = env.SHIPWRIGHT_K8S_AGENT_CPU_LIMIT;
   const memoryRequest = env.SHIPWRIGHT_K8S_AGENT_MEMORY_REQUEST;
   const memoryLimit = env.SHIPWRIGHT_K8S_AGENT_MEMORY_LIMIT;
   const ephemeralStorage = env.SHIPWRIGHT_K8S_AGENT_EPHEMERAL_STORAGE;
   const resources = {
     ...(cpuRequest ? { cpuRequest } : {}),
+    ...(cpuLimit ? { cpuLimit } : {}),
     ...(memoryRequest ? { memoryRequest } : {}),
     ...(memoryLimit ? { memoryLimit } : {}),
     ...(ephemeralStorage ? { ephemeralStorage } : {}),

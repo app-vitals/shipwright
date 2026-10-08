@@ -502,8 +502,11 @@ agent:
         # -- Memory request override for the provisioned agent container, e.g. "3Gi".
         memory: ""
       limits:
+        # -- CPU limit override for TENANT agent pods only (agents owned by an
+        # account), e.g. "2". Empty keeps the provisioner's own default (2).
+        # Platform agents never get a CPU limit.
+        cpu: ""
         # -- Memory limit override for the provisioned agent container, e.g. "9Gi".
-        # No CPU limit is ever set (CPU contention throttles instead of evicting).
         memory: ""
       # -- ephemeral-storage override for the provisioned agent container,
       # applied to both request and limit, e.g. "5Gi".

@@ -271,6 +271,10 @@ spec:
             - name: SHIPWRIGHT_K8S_AGENT_CPU_REQUEST
               value: {{ . | quote }}
             {{- end }}
+            {{- with .Values.agent.provisioning.resources.limits.cpu }}
+            - name: SHIPWRIGHT_K8S_AGENT_CPU_LIMIT
+              value: {{ . | quote }}
+            {{- end }}
             {{- with .Values.agent.provisioning.resources.requests.memory }}
             - name: SHIPWRIGHT_K8S_AGENT_MEMORY_REQUEST
               value: {{ . | quote }}

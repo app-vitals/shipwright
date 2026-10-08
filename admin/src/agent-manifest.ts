@@ -41,8 +41,13 @@ const AGENT_WORKTREE_DIR = `${AGENT_HOME_MOUNT_PATH}/workspace/worktrees`;
  * left unset falls back to the default in `resolveAgentContainerResources`.
  */
 export interface AgentContainerResourceOverrides {
-  /** CPU request, e.g. "500m". No CPU limit is ever set (see rationale below). */
+  /** CPU request, e.g. "500m". */
   cpuRequest?: string;
+  /**
+   * CPU limit, e.g. "2". Applied to tenant pods ONLY (agents with an
+   * accountId); platform agents never get a CPU limit.
+   */
+  cpuLimit?: string;
   /** Memory request, e.g. "2Gi". */
   memoryRequest?: string;
   /** Memory limit, e.g. "8Gi". */
@@ -53,6 +58,9 @@ export interface AgentContainerResourceOverrides {
    */
   ephemeralStorage?: string;
 }
+
+/** Default CPU limit for tenant pods (agents with an accountId). */
+const DEFAULT_TENANT_CPU_LIMIT = "2";
 
 /**
  * Resolve the agent container's resources.requests/limits, applying any
@@ -73,8 +81,11 @@ export interface AgentContainerResourceOverrides {
  * before these were explicit. The memory limit exists to contain a runaway
  * Claude run to its own container (OOM-kill) rather than letting it grow
  * until the kubelet evicts neighbouring pods under node memory pressure
- * (observed: ~11.6Gi used against the 2Gi request). No CPU limit — CPU
- * contention throttles instead of evicting.
+ * (observed: ~11.6Gi used against the 2Gi request). No CPU limit for
+ * platform agents — CPU contention throttles instead of evicting. Tenant pods
+ * (`tenant: true`) get `DEFAULT_TENANT_CPU_LIMIT` (or `overrides.cpuLimit`) so
+ * one account's agent cannot starve neighbours in the shared namespace; with
+ * no ResourceQuota, per-account bounds are maxAgents x these fixed limits.
  *
  * ephemeral-storage defaults to 4Gi, not the 1Gi Autopilot default: 1Gi left
  * no room for a single build step's scratch space, and agents were evicted
@@ -87,6 +98,7 @@ export interface AgentContainerResourceOverrides {
  */
 export function resolveAgentContainerResources(
   overrides?: AgentContainerResourceOverrides,
+  tenant = false,
 ): { requests: Record<string, string>; limits: Record<string, string> } {
   const ephemeralStorage = overrides?.ephemeralStorage ?? "4Gi";
   return {
@@ -96,6 +108,9 @@ export function resolveAgentContainerResources(
       "ephemeral-storage": ephemeralStorage,
     },
     limits: {
+      ...(tenant
+        ? { cpu: overrides?.cpuLimit ?? DEFAULT_TENANT_CPU_LIMIT }
+        : {}),
       memory: overrides?.memoryLimit ?? "8Gi",
       "ephemeral-storage": ephemeralStorage,
     },
@@ -115,6 +130,8 @@ const NAME_LABEL = "app.kubernetes.io/name";
 const INSTANCE_LABEL = "app.kubernetes.io/instance";
 const MANAGED_BY_LABEL = "app.kubernetes.io/managed-by";
 const AGENT_ID_LABEL = "shipwright.dev/agent-id";
+/** Marks pods belonging to a tenant account (set only when accountId is present). */
+export const TENANT_LABEL = "shipwright.dev/tenant";
 const AGENT_APP_NAME = "shipwright-agent";
 
 // ─── Name sanitization ──────────────────────────────────────────────────────
@@ -214,6 +231,12 @@ export interface AgentDeploymentOpts {
   tokenSecretKey?: string;
   /** Replica count. Defaults to 1. */
   replicas?: number;
+  /**
+   * Owning account. When set the pod is a tenant pod: the tenant label is added
+   * to the Deployment and pod template, and a CPU limit is applied. Omit for
+   * platform agents (manifest unchanged).
+   */
+  accountId?: string | null;
   /**
    * Optional container resource overrides, merged field-by-field over the
    * defaults in `resolveAgentContainerResources`. Omit (or leave individual
@@ -360,6 +383,9 @@ export function buildAgentDeploymentManifest(
     [AGENT_ID_LABEL]: opts.agentId,
   };
 
+  const tenant = Boolean(opts.accountId);
+  if (tenant) labels[TENANT_LABEL] = "true";
+
   // Selectors are immutable post-create and must not include volatile values;
   // the instance label is the stable per-agent identity.
   const selectorLabels: Record<string, string> = {
@@ -382,7 +408,11 @@ export function buildAgentDeploymentManifest(
       strategy: { type: "Recreate" },
       selector: { matchLabels: selectorLabels },
       template: {
-        metadata: { labels: selectorLabels },
+        metadata: {
+          labels: tenant
+            ? { ...selectorLabels, [TENANT_LABEL]: "true" }
+            : selectorLabels,
+        },
         spec: {
           securityContext: {
             fsGroup: AGENT_RUN_AS,
@@ -404,7 +434,7 @@ export function buildAgentDeploymentManifest(
               name: AGENT_APP_NAME,
               image: `${opts.image}:${opts.imageTag}`,
               ports: [{ containerPort: AGENT_HEALTH_PORT, protocol: "TCP" }],
-              resources: resolveAgentContainerResources(opts.resources),
+              resources: resolveAgentContainerResources(opts.resources, tenant),
               env: [
                 { name: "SHIPWRIGHT_AGENT_ID", value: opts.agentId },
                 { name: "SHIPWRIGHT_API_URL", value: opts.apiUrl },

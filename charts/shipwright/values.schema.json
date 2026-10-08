@@ -394,6 +394,7 @@
                       "type": "object",
                       "additionalProperties": false,
                       "properties": {
+                        "cpu": { "type": "string" },
                         "memory": { "type": "string" }
                       }
                     },

@@ -13,10 +13,10 @@ import {
   sanitizeAgentName,
 } from "./agent-manifest.ts";
 import {
+  containerDrifted,
   KubernetesAgentProvisioner,
   type KubernetesAgentProvisionerConfig,
   NoopAgentProvisioner,
-  containerDrifted,
 } from "./agent-provisioner.ts";
 import type { AgentTokenService } from "./agent-tokens.ts";
 import type { ChatServiceProvisioningClient } from "./chat-service-provisioning-client.ts";
@@ -961,5 +961,57 @@ describe("canProvision", () => {
       BASE_CONFIG,
     );
     expect(provisioner.canProvision).toBe(true);
+  });
+});
+
+describe("KubernetesAgentProvisioner.reconcile() — tenant drift (SSP-7.1)", () => {
+  const agentId = "cmqalfjcm000m4101iharq28k";
+  const resourceName = sanitizeAgentName(agentId);
+
+  async function seededWithPlatformManifest() {
+    const k8s = new RecordedKubernetesClient({
+      deployments: {},
+      secrets: {},
+      pvcs: {},
+    });
+    const provisioner = new KubernetesAgentProvisioner(
+      k8s,
+      stubTokens() as AgentTokenService,
+      BASE_CONFIG,
+    );
+    await provisioner.provision(agentId); // created as a platform agent
+    return { k8s, provisioner };
+  }
+
+  it("detects a missing tenant label + CPU limit as drift and patches", async () => {
+    const { k8s, provisioner } = await seededWithPlatformManifest();
+
+    const result = await provisioner.reconcile([
+      { id: agentId, accountId: "acct_1" },
+    ]);
+
+    expect(result.updated).toEqual([agentId]);
+    const dep = await k8s.getDeployment(NAMESPACE, resourceName);
+    expect(dep.spec.template.metadata.labels["shipwright.dev/tenant"]).toBe(
+      "true",
+    );
+    expect(dep.spec.template.spec.containers[0]?.resources?.limits?.cpu).toBe(
+      "2",
+    );
+  });
+
+  it("is a no-op once the tenant Deployment matches", async () => {
+    const { provisioner } = await seededWithPlatformManifest();
+    await provisioner.reconcile([{ id: agentId, accountId: "acct_1" }]);
+    const second = await provisioner.reconcile([
+      { id: agentId, accountId: "acct_1" },
+    ]);
+    expect(second.updated).toEqual([]);
+  });
+
+  it("does not touch platform agents (no accountId)", async () => {
+    const { provisioner } = await seededWithPlatformManifest();
+    const result = await provisioner.reconcile([{ id: agentId }]);
+    expect(result.updated).toEqual([]);
   });
 });

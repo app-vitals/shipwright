@@ -1274,7 +1274,11 @@ export function createAdminApp(deps: AdminDeps): OpenAPIHono<AdminAuthEnv> {
     // Self-hosted agents manage their own workloads — exclude them from K8s reconciliation.
     const managedAgents = agents.filter((a) => !a.selfHosted);
     const result = await provisioner.reconcile(
-      managedAgents.map((a) => ({ id: a.id, slug: a.name })),
+      managedAgents.map((a) => ({
+        id: a.id,
+        slug: a.name,
+        accountId: a.accountId,
+      })),
     );
     return c.json(result, 200);
   });
@@ -1299,7 +1303,10 @@ export function createAdminApp(deps: AdminDeps): OpenAPIHono<AdminAuthEnv> {
     }
 
     const { resourceName, secretName, deploymentName } =
-      await provisioner.provision(agent.id, { slug: agent.name });
+      await provisioner.provision(agent.id, {
+        slug: agent.name,
+        accountId: agent.accountId,
+      });
     return c.json({ resourceName, secretName, deploymentName }, 200);
   });
 

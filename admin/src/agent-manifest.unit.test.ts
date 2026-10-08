@@ -17,6 +17,7 @@ import {
   buildAgentSecretManifest,
   resolveAgentContainerResources,
   sanitizeAgentName,
+  TENANT_LABEL,
 } from "./agent-manifest.ts";
 
 // ─── Shared fixtures ────────────────────────────────────────────────────────
@@ -623,5 +624,54 @@ describe("buildAgentDeploymentManifest — task-store env", () => {
     expect(tsUrlIdx).toBeGreaterThan(agentHomeIdx);
     expect(whisperIdx).toBeGreaterThan(tsUrlIdx);
     expect(whisperIdx).toBeGreaterThan(tsTokenIdx);
+  });
+});
+
+// ─── Tenant pods (SSP-7.1) ──────────────────────────────────────────────────
+
+describe("buildAgentDeploymentManifest — tenant pods", () => {
+  it("labels Deployment + pod template and sets a CPU limit when accountId is set", () => {
+    const d = buildAgentDeploymentManifest({
+      ...deployOpts,
+      accountId: "acct_1",
+    });
+    expect(d.metadata.labels?.[TENANT_LABEL]).toBe("true");
+    expect(d.spec.template.metadata.labels[TENANT_LABEL]).toBe("true");
+    // selector stays immutable-safe: no tenant label
+    expect(d.spec.selector.matchLabels[TENANT_LABEL]).toBeUndefined();
+    expect(d.spec.template.spec.containers[0]?.resources?.limits?.cpu).toBe(
+      "2",
+    );
+  });
+
+  it("honours a cpuLimit override for tenant pods", () => {
+    const d = buildAgentDeploymentManifest({
+      ...deployOpts,
+      accountId: "acct_1",
+      resources: { cpuLimit: "1500m" },
+    });
+    expect(d.spec.template.spec.containers[0]?.resources?.limits?.cpu).toBe(
+      "1500m",
+    );
+  });
+
+  it("golden: no accountId (or null) is byte-identical to the platform manifest", () => {
+    const base = JSON.stringify(buildAgentDeploymentManifest(deployOpts));
+    expect(
+      JSON.stringify(
+        buildAgentDeploymentManifest({ ...deployOpts, accountId: null }),
+      ),
+    ).toBe(base);
+    expect(base).not.toContain("shipwright.dev/tenant");
+  });
+
+  it("never applies cpuLimit to platform agents", () => {
+    const d = buildAgentDeploymentManifest({
+      ...deployOpts,
+      resources: { cpuLimit: "1" },
+    });
+    expect(
+      d.spec.template.spec.containers[0]?.resources?.limits?.cpu,
+    ).toBeUndefined();
   });
 });

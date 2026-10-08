@@ -122,3 +122,31 @@ tests:
           path: spec.template.spec.containers[0].env
           content:
             name: SHIPWRIGHT_K8S_AGENT_EPHEMERAL_STORAGE
+
+  # ── SSP-7.1: tenant-only CPU limit ─────────────────────────────────────────
+  - it: injects SHIPWRIGHT_K8S_AGENT_CPU_LIMIT when agent.provisioning.resources.limits.cpu is set
+    template: templates/admin-deployment.yaml
+    set:
+      agent.provisioning.enabled: true
+      agent.provisioning.resources.limits.cpu: "2"
+    release:
+      name: r
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: SHIPWRIGHT_K8S_AGENT_CPU_LIMIT
+            value: "2"
+
+  - it: omits SHIPWRIGHT_K8S_AGENT_CPU_LIMIT by default
+    template: templates/admin-deployment.yaml
+    set:
+      agent.provisioning.enabled: true
+    release:
+      name: r
+    asserts:
+      - notContains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: SHIPWRIGHT_K8S_AGENT_CPU_LIMIT
+            value: ""
