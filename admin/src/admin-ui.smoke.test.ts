@@ -1640,7 +1640,7 @@ describe("admin UI — authenticated pages", () => {
     expect(html).not.toContain("Recent Verification Activity");
   });
 
-  it("authenticated GET /admin/agents/:id renders no Recent Verification Activity card when no recent runs carry a dispatch target", async () => {
+  it("authenticated GET /admin/agents/:id renders the Recent Verification Activity empty state when no recent runs carry a dispatch target", async () => {
     const app = createAdminUIApp(
       makeMockDeps({
         agentCronRunService: {
@@ -1701,7 +1701,8 @@ describe("admin UI — authenticated pages", () => {
     });
     expect(res.status).toBe(200);
     const html = await res.text();
-    expect(html).not.toContain("Recent Verification Activity");
+    expect(html).toContain("Recent Verification Activity");
+    expect(html).toContain("No recent verification checks recorded");
   });
 
   describe("connect-later actions (UAP-2.3)", () => {

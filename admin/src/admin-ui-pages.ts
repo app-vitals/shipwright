@@ -350,9 +350,9 @@ function renderVerificationChecksCard(
 /**
  * Renders the "Recent Verification Activity" rollup card on the agent detail
  * page (LVB-5.3 AC2) — a lightweight counts-by-status summary, not a full
- * history browser. Returns "" when the summary is absent or has zero checks
- * (e.g. the fetcher isn't configured, or none of the agent's recently
- * dispatched items have recorded verification checks yet).
+ * history browser. Returns "" only when the summary is absent (the fetcher
+ * isn't configured, so there is nothing to show); a zero-check summary
+ * renders an explicit empty state rather than hiding the card.
  */
 /** Renders one badge per non-zero status count, in VERIFICATION_STATUS_ORDER. */
 function renderStatusCountBadges(counts: Record<string, number>): string {
@@ -368,7 +368,13 @@ function renderStatusCountBadges(counts: Record<string, number>): string {
 function renderVerificationActivityCard(
   summary?: VerificationActivitySummary,
 ): string {
-  if (!summary || summary.totalChecks === 0) return "";
+  if (!summary) return "";
+  if (summary.totalChecks === 0) {
+    return `<div class="card">
+      <div class="card-title">Recent Verification Activity</div>
+      <div style="font-size:13px;color:#6b7280">No recent verification checks recorded</div>
+    </div>`;
+  }
   const badges = renderStatusCountBadges(summary.counts);
   const byCheckName = summary.byCheckName ?? {};
   const checkNameRows = Object.keys(byCheckName)

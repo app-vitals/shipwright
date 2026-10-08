@@ -809,9 +809,10 @@ describe("renderAgentDetailPage — Recent Verification Activity rollup", () => 
     expect(html).toContain("skipped");
   });
 
-  test("no rollup card when totalChecks is 0", () => {
+  test("renders empty-state message when totalChecks is 0", () => {
     const html = render({ totalChecks: 0, itemCount: 0, counts: {} });
-    expect(html).not.toContain("Recent Verification Activity");
+    expect(html).toContain("Recent Verification Activity");
+    expect(html).toContain("No recent verification checks recorded");
   });
 
   test("renders per-checkName rows with their own status badges", () => {
