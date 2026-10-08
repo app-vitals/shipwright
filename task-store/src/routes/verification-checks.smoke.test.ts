@@ -35,6 +35,7 @@
 
 import { describe, expect, it } from "bun:test";
 import { createTaskStoreApp } from "../app.ts";
+import type { ScopeResolver } from "../auth.ts";
 import { FixedClock } from "../clock.ts";
 import type { PrismaClient } from "../index.ts";
 import type { SessionServiceLike } from "../session-service.ts";
@@ -153,23 +154,50 @@ function fakeAdminTokenService(): TokenServiceLike {
 // with a real in-memory verificationCheck store (create/findMany/count) so
 // GET after POST round-trips through actual data rather than a stub.
 
-function makePrismaDouble(
-  opts: { taskIds?: string[]; prIds?: string[] } = {},
-): PrismaClient {
-  const taskIds = new Set(opts.taskIds ?? ["task-1"]);
-  const prIds = new Set(opts.prIds ?? ["pr-1"]);
+interface ParentRow {
+  id: string;
+  repo: string;
+  accountId: string;
+}
+
+interface DoubleOpts {
+  taskIds?: string[];
+  prIds?: string[];
+  /** Overrides the default in-scope parent rows (repo org/repo, account "default"). */
+  tasks?: ParentRow[];
+  prs?: ParentRow[];
+}
+
+function makePrismaDouble(opts: DoubleOpts = {}): PrismaClient {
+  const defaultRow = (id: string): ParentRow => ({
+    id,
+    repo: "org/repo",
+    accountId: "default",
+  });
+  const tasks = new Map(
+    (opts.tasks ?? (opts.taskIds ?? ["task-1"]).map(defaultRow)).map((r) => [
+      r.id,
+      r,
+    ]),
+  );
+  const prs = new Map(
+    (opts.prs ?? (opts.prIds ?? ["pr-1"]).map(defaultRow)).map((r) => [
+      r.id,
+      r,
+    ]),
+  );
   const rows: Record<string, unknown>[] = [];
   let counter = 0;
 
   const prisma = {
     task: {
       findUnique({ where }: { where: { id: string } }) {
-        return Promise.resolve(taskIds.has(where.id) ? { id: where.id } : null);
+        return Promise.resolve(tasks.get(where.id) ?? null);
       },
     },
     pullRequest: {
       findUnique({ where }: { where: { id: string } }) {
-        return Promise.resolve(prIds.has(where.id) ? { id: where.id } : null);
+        return Promise.resolve(prs.get(where.id) ?? null);
       },
     },
     verificationCheck: {
@@ -221,7 +249,12 @@ function makePrismaDouble(
   return prisma as unknown as PrismaClient;
 }
 
-function makeApp(opts: { taskIds?: string[]; prIds?: string[] } = {}) {
+function makeApp(
+  opts: DoubleOpts & {
+    tokenService?: TokenServiceLike;
+    scopeResolver?: ScopeResolver;
+  } = {},
+) {
   const prisma = makePrismaDouble(opts);
   const verificationCheckService = new VerificationCheckService(
     prisma,
@@ -229,10 +262,31 @@ function makeApp(opts: { taskIds?: string[]; prIds?: string[] } = {}) {
   );
   return createTaskStoreApp({
     taskService: fakeTaskService(),
-    tokenService: fakeAdminTokenService(),
+    tokenService: opts.tokenService ?? fakeAdminTokenService(),
     sessionService: fakeSessionService(),
     verificationCheckService,
+    scopeResolver: opts.scopeResolver,
   });
+}
+
+const AGENT_TOKEN = "agent-token";
+
+function fakeAgentTokenService(): TokenServiceLike {
+  return {
+    ...fakeAdminTokenService(),
+    async validate(raw: string) {
+      if (raw === AGENT_TOKEN) return { id: "tok-2", agentId: "agent-1" };
+      return raw === ADMIN_TOKEN ? { id: "tok-1", agentId: null } : null;
+    },
+  };
+}
+
+function agentAuth(): Record<string, string> {
+  return { Authorization: `Bearer ${AGENT_TOKEN}` };
+}
+
+function makeScopeResolver(repos: string[], accountId: string): ScopeResolver {
+  return async () => ({ repos, accountId });
 }
 
 function adminAuth(): Record<string, string> {
@@ -607,5 +661,171 @@ describe("/verification-checks routes (smoke)", () => {
       { headers: adminAuth() },
     );
     expect(res.status).toBe(400);
+  });
+  // ─── Repo/account scoping (SSP-6.10) ──────────────────────────────────────
+
+  const IN_SCOPE_TASK: ParentRow = {
+    id: "task-1",
+    repo: "org/repo",
+    accountId: "acct-a",
+  };
+  const OTHER_REPO_TASK: ParentRow = {
+    id: "task-2",
+    repo: "other/repo",
+    accountId: "acct-a",
+  };
+  const OTHER_ACCT_TASK: ParentRow = {
+    id: "task-3",
+    repo: "org/repo",
+    accountId: "acct-b",
+  };
+  const IN_SCOPE_PR: ParentRow = {
+    id: "pr-1",
+    repo: "org/repo",
+    accountId: "acct-a",
+  };
+
+  function scopedApp() {
+    return makeApp({
+      tasks: [IN_SCOPE_TASK, OTHER_REPO_TASK, OTHER_ACCT_TASK],
+      prs: [IN_SCOPE_PR],
+      tokenService: fakeAgentTokenService(),
+      scopeResolver: makeScopeResolver(["org/repo"], "acct-a"),
+    });
+  }
+
+  function post(
+    app: ReturnType<typeof makeApp>,
+    headers: Record<string, string>,
+    body: Record<string, unknown>,
+  ) {
+    return app.request("/verification-checks", {
+      method: "POST",
+      headers: { ...headers, "content-type": "application/json" },
+      body: JSON.stringify({
+        repo: "org/repo",
+        checkName: "unit",
+        status: "ran_passed",
+        ...body,
+      }),
+    });
+  }
+
+  it("agent POST in scope — 201, row stamped with the parent's accountId", async () => {
+    const res = await post(scopedApp(), agentAuth(), { taskId: "task-1" });
+    expect(res.status).toBe(201);
+    const body = (await res.json()) as Record<string, unknown>;
+    expect(body.accountId).toBe("acct-a");
+  });
+
+  it("agent POST with a repo outside its scope — 403", async () => {
+    const res = await post(scopedApp(), agentAuth(), {
+      taskId: "task-1",
+      repo: "other/repo",
+    });
+    expect(res.status).toBe(403);
+  });
+
+  it("agent POST against a task in another repo or another account — 404", async () => {
+    const app = scopedApp();
+    expect((await post(app, agentAuth(), { taskId: "task-2" })).status).toBe(
+      404,
+    );
+    expect((await post(app, agentAuth(), { taskId: "task-3" })).status).toBe(
+      404,
+    );
+  });
+
+  it("agent with repos [] — POST 403, GET by task 404", async () => {
+    const app = makeApp({
+      tasks: [IN_SCOPE_TASK],
+      tokenService: fakeAgentTokenService(),
+      scopeResolver: makeScopeResolver([], "acct-a"),
+    });
+    expect((await post(app, agentAuth(), { taskId: "task-1" })).status).toBe(
+      403,
+    );
+    const res = await app.request("/verification-checks?taskId=task-1", {
+      headers: agentAuth(),
+    });
+    expect(res.status).toBe(404);
+  });
+
+  it("agent GET ?taskId=/?prId= for out-of-scope parents — 404; in-scope — 200", async () => {
+    const app = scopedApp();
+    for (const q of ["taskId=task-2", "taskId=task-3"]) {
+      const res = await app.request(`/verification-checks?${q}`, {
+        headers: agentAuth(),
+      });
+      expect(res.status).toBe(404);
+    }
+    for (const q of ["taskId=task-1", "prId=pr-1"]) {
+      const res = await app.request(`/verification-checks?${q}`, {
+        headers: agentAuth(),
+      });
+      expect(res.status).toBe(200);
+    }
+  });
+
+  it("agent GET ?repo=&checkName= only sees its own account's rows in scope; out-of-scope repo is empty", async () => {
+    const app = makeApp({
+      tasks: [IN_SCOPE_TASK, OTHER_REPO_TASK, OTHER_ACCT_TASK],
+      tokenService: fakeAgentTokenService(),
+      scopeResolver: makeScopeResolver(["org/repo", "other/repo"], "acct-a"),
+    });
+    // Admin seeds rows for both accounts on the same repo.
+    for (const taskId of ["task-1", "task-3"]) {
+      await post(app, adminAuth(), { taskId });
+    }
+    await post(app, adminAuth(), { taskId: "task-2", repo: "other/repo" });
+
+    const res = await app.request(
+      "/verification-checks?repo=org/repo&checkName=unit",
+      { headers: agentAuth() },
+    );
+    const body = (await res.json()) as {
+      checks: Array<{ taskId: string }>;
+      total: number;
+    };
+    expect(res.status).toBe(200);
+    expect(body.checks.map((c) => c.taskId)).toEqual(["task-1"]);
+    expect(body.total).toBe(1);
+
+    const narrow = makeApp({
+      tasks: [OTHER_REPO_TASK],
+      tokenService: fakeAgentTokenService(),
+      scopeResolver: makeScopeResolver(["org/repo"], "acct-a"),
+    });
+    await post(narrow, adminAuth(), { taskId: "task-2", repo: "other/repo" });
+    const out = await narrow.request(
+      "/verification-checks?repo=other/repo&checkName=unit",
+      { headers: agentAuth() },
+    );
+    expect(out.status).toBe(200);
+    expect(((await out.json()) as { total: number }).total).toBe(0);
+  });
+
+  it("admin token is unrestricted across repos/accounts (regression)", async () => {
+    const app = scopedApp();
+    expect(
+      (await post(app, adminAuth(), { taskId: "task-2", repo: "other/repo" }))
+        .status,
+    ).toBe(201);
+    const res = await app.request("/verification-checks?taskId=task-3", {
+      headers: adminAuth(),
+    });
+    expect(res.status).toBe(200);
+  });
+
+  it("admin ?accountId= narrows the repo+checkName history to one account", async () => {
+    const app = scopedApp();
+    await post(app, adminAuth(), { taskId: "task-1" });
+    await post(app, adminAuth(), { taskId: "task-3" });
+    const res = await app.request(
+      "/verification-checks?repo=org/repo&checkName=unit&accountId=acct-b",
+      { headers: adminAuth() },
+    );
+    const body = (await res.json()) as { checks: Array<{ taskId: string }> };
+    expect(body.checks.map((c) => c.taskId)).toEqual(["task-3"]);
   });
 });

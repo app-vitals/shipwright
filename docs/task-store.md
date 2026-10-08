@@ -146,6 +146,8 @@ Historical backfill via a one-time script remains out of scope.
 
 `POST /verification-checks` records one outcome. `GET /verification-checks` supports three mutually-exclusive query modes: `?taskId=` and `?prId=` (ordered by `at` ascending, default `limit=50`/`offset=0`, `404` if the referenced task/PR doesn't exist), and `?repo=`+`?checkName=` together (LVB-4.4's skip-locally learning trigger — spans every task/PR that ever recorded that repo+check pair, so an unmatched pair returns `200` with an empty list rather than `404`, and is ordered by `at` **descending** so a caller can walk backward from the most recent outcome to detect a consecutive skipped/timed_out streak).
 
+**Scoping (SSP-6.10).** Agent tokens are restricted to their repos and account. `POST` requires `repo` in the token's repos (`403` otherwise) and a parent task/PR inside the token's repos and account (`404`, indistinguishable from missing); the row is stamped with the parent's `accountId`. `?taskId=`/`?prId=` reads `404` for out-of-scope parents; `?repo=`+`?checkName=` returns only the caller's account rows, and an out-of-scope `repo` returns an empty list. Admin tokens are unrestricted and may narrow the repo+check history with `?accountId=`.
+
 Full request/response shapes live in the OpenAPI spec, per this doc's existing pointer convention.
 
 ### Skip tracking (reason-aware auto-block)
