@@ -935,11 +935,13 @@ export class TaskService implements TaskServiceLike {
           resultingPr !== null &&
           typeof resultingRepo === "string"
         ) {
+          // SSP-6.3: the PR row belongs to the task's own account.
           await this.pullRequestService.stampOrigin(
             resultingRepo,
             resultingPr,
             { origin: "shipwright" },
             tx,
+            record.accountId,
           );
         }
 
@@ -1200,7 +1202,10 @@ export class TaskService implements TaskServiceLike {
         const before = await tx.task.findUnique({ where: { id } });
         if (!before) throw new NotFoundError("task not found");
         const streak = computeSkipStreak(
-          { skipCount: before.skipCount, lastSkipReason: before.lastSkipReason },
+          {
+            skipCount: before.skipCount,
+            lastSkipReason: before.lastSkipReason,
+          },
           effectiveReason,
         );
         const data: Prisma.TaskUpdateInput = {
