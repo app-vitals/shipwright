@@ -1,3 +1,4 @@
+import { shouldShowAccountNav } from "./admin-ui-account-nav.ts";
 import {
   escapeHtml,
   renderShipwrightToolbar,
@@ -650,5 +651,6 @@ export function renderAdminToolbar(userName: string, activePath = ""): string {
     activePath,
     logoutAction: "/admin/logout",
     metricsUrl: process.env.METRICS_DASHBOARD_URL ?? "/dashboard",
+    showAccount: shouldShowAccountNav(),
   });
 }

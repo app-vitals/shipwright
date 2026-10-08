@@ -7,6 +7,7 @@
  */
 
 import { describe, expect, test } from "bun:test";
+import { renderZeroQuotaNotice } from "./admin-ui-account-pages.ts";
 import {
   type AgentDetail,
   type AgentListItem,
@@ -11653,5 +11654,18 @@ describe("renderChatThreadPage — poll auto-scroll (CSR-1.1)", () => {
   test("initial page load still scrolls to the bottom unconditionally", () => {
     const { container } = boot(0);
     expect(container.scrollTop).toBe(1000);
+  });
+});
+
+describe("renderAgentsPage zero-quota notice (SSP-3.2)", () => {
+  test("replaces the create CTA with the notice and a disabled button", () => {
+    const html = renderAgentsPage([], "u@x.com", true, "UTC", {
+      zeroQuotaNotice: renderZeroQuotaNotice("dan@app-vitals.com"),
+    });
+    expect(html).toContain("Email dan@app-vitals.com to request a trial");
+    expect(html).toContain("disabled");
+    expect(html).not.toContain(
+      '<a href="/admin/agents/new" class="btn btn-primary">',
+    );
   });
 });
