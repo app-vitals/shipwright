@@ -40,6 +40,8 @@ export interface CreateAgentInput {
   patchAuthorAllowlist?: string[];
   /** Initial restrictSlackToMembers flag. Omitted means the column default (false) applies. */
   restrictSlackToMembers?: boolean;
+  /** Owning Account (SSP-4.1). Omitted means the agent has no account (legacy behavior). */
+  accountId?: string;
 }
 
 export interface AgentRecord {
@@ -277,6 +279,9 @@ export class AgentService {
           : {}),
         ...(input.restrictSlackToMembers !== undefined
           ? { restrictSlackToMembers: input.restrictSlackToMembers }
+          : {}),
+        ...(input.accountId !== undefined
+          ? { accountId: input.accountId }
           : {}),
       },
     });
@@ -609,6 +614,13 @@ export interface CreateAgentFormInput {
   restrictSlackToMembersRaw: string | undefined;
   claudeCodeOauthToken: string | undefined;
   anthropicApiKey: string | undefined;
+  /**
+   * Owning Account (SSP-4.1). Service-level input only — callers must
+   * resolve it from the authenticated principal, never from a request body.
+   * When set, the account's status and maxAgents quota are enforced
+   * race-safely inside the creation transaction.
+   */
+  accountId?: string;
 }
 
 /**
@@ -625,7 +637,9 @@ export type CreateAgentErrorCode =
   | "invalid_repo_format"
   | "repo_name_collision"
   | "invalid_author_allowlist_format"
-  | "provision_failed";
+  | "provision_failed"
+  | "quota_exceeded"
+  | "account_inactive";
 
 export type CreateAgentResult =
   | { ok: true; agent: AgentDetail; restrictSlackToMembers: boolean }
@@ -677,6 +691,26 @@ function parseLines(
     .map((l) => (opts.lower ? l.trim().toLowerCase() : l.trim()))
     .filter((l) => l.length > 0);
   return opts.dedup ? [...new Set(lines)] : lines;
+}
+
+/**
+ * Locks the account row (SELECT ... FOR UPDATE) so concurrent creates for the
+ * same account serialize, then checks it is active and under its maxAgents
+ * quota. Returns the failing error code, or null when a slot is available.
+ * The lock is held until the surrounding transaction commits, so the count
+ * below cannot be invalidated by a concurrent create.
+ */
+async function checkAccountQuota(
+  tx: PrismaTransactionClient,
+  accountId: string,
+): Promise<"account_inactive" | "quota_exceeded" | null> {
+  const rows = await tx.$queryRaw<{ status: string; maxAgents: number }[]>`
+    SELECT "status", "maxAgents" FROM "Account" WHERE "id" = ${accountId} FOR UPDATE`;
+  const account = rows[0];
+  if (!account) return "account_inactive";
+  if (account.status !== "active") return "account_inactive";
+  const count = await tx.agent.count({ where: { accountId } });
+  return count >= account.maxAgents ? "quota_exceeded" : null;
 }
 
 /** Discriminated outcome of the transactional portion of createAgent(). */
@@ -749,8 +783,24 @@ export async function createAgent(
 
   const txResult = await deps.agentService.runTransaction<CreateAgentTxOutcome>(
     async (tx) => {
+      // Quota enforcement must precede the create so a rejected request
+      // writes nothing. Skipped when tx is undefined (admin-ui.ts test
+      // doubles without runTransaction pass no real transaction).
+      if (input.accountId !== undefined && tx) {
+        const denied = await checkAccountQuota(tx, input.accountId);
+        if (denied) return { ok: false, errorCode: denied };
+      }
+
       const agent = await deps.agentService.create(
-        { name, selfHosted: !inCluster, typeName, restrictSlackToMembers },
+        {
+          name,
+          selfHosted: !inCluster,
+          typeName,
+          restrictSlackToMembers,
+          ...(input.accountId !== undefined
+            ? { accountId: input.accountId }
+            : {}),
+        },
         tx,
       );
 

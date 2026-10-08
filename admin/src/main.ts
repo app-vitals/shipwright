@@ -24,6 +24,9 @@ import { sentry } from "@sentry/hono/bun";
 import { registerGracefulShutdown } from "@shipwright/lib/graceful-shutdown";
 import { buildSentryInitOptions, initSentry } from "@shipwright/lib/sentry";
 import { Hono } from "hono";
+import { AccountOnboardingService } from "./account-onboarding.ts";
+import { AccountInviteService } from "./account-invites.ts";
+import { AccountMemberService } from "./account-members.ts";
 import { AccountService } from "./accounts.ts";
 import { createAdminUIApp } from "./admin-ui.ts";
 import { AgentChatTokenService } from "./agent-chat-tokens.ts";
@@ -805,6 +808,15 @@ async function startServer(): Promise<void> {
     publicRepo,
     devAuthEnabled: isDevAuthAllowed(process.env),
     selfServe,
+    accountOnboarding: new AccountOnboardingService(
+      prisma,
+      selfServe.defaultMaxAgents,
+    ),
+    accountServices: {
+      accounts: new AccountService(prisma),
+      members: new AccountMemberService(prisma),
+      invites: new AccountInviteService(prisma),
+    },
     timezone: adminTz,
     ...(chatClient ? { chatClient } : {}),
     ...(pushService

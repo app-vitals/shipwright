@@ -29,6 +29,10 @@ import { SECRET_ENV_VARS } from "@shipwright/lib/secret-env-vars";
 import { type Context, Hono, type MiddlewareHandler } from "hono";
 import { deleteCookie, getCookie, setCookie } from "hono/cookie";
 import { sign, verify } from "hono/jwt";
+import type { AccountInviteService } from "./account-invites.ts";
+import type { AccountMemberService } from "./account-members.ts";
+import type { AccountOnboardingService } from "./account-onboarding.ts";
+import type { AccountService } from "./accounts.ts";
 import {
   type AgentDetail,
   type AgentOption,
@@ -66,6 +70,9 @@ import {
   SESSION_ADMIN_ACTION_MESSAGES,
 } from "./admin-ui-session-admin-actions.ts";
 import { registerSessionFollowRoutes } from "./admin-ui-session-follow.ts";
+import { registerAccountRoutes } from "./admin-ui-account.ts";
+import { runWithAccountNav } from "./admin-ui-account-nav.ts";
+import { renderZeroQuotaNotice } from "./admin-ui-account-pages.ts";
 import { registerSessionSettingsRoutes } from "./admin-ui-sessions.ts";
 import {
   registerSessionsListRoutes,
@@ -128,6 +135,7 @@ import {
   renderPwaHeadTags,
   sanitizeStartUrl,
 } from "./pwa.ts";
+import type { SelfServeConfig } from "./self-serve-config.ts";
 import {
   type SessionFollowPrismaLike,
   SessionFollowService,
@@ -137,7 +145,6 @@ import {
   isSessionVisible,
   type SessionForVisibility,
 } from "./session-scope.ts";
-import type { SelfServeConfig } from "./self-serve-config.ts";
 import type { AppManifest } from "./slack-provisioning-client.ts";
 import {
   AGENT_BOT_SCOPES,
@@ -397,8 +404,28 @@ export interface AdminUIDeps {
   appBaseUrl: string;
   /** Enable the /admin/dev-login route. Hard-blocked in production regardless of this value. */
   devAuthEnabled?: boolean;
-  /** Resolved self-serve provisioning config (SSP-1.3). No consumers yet. */
+  /** Resolved self-serve provisioning config (SSP-1.3). */
   selfServe?: SelfServeConfig;
+  /**
+   * First-login account provisioning (SSP-3.1). Consulted by the Google
+   * callback only, and only when selfServe.enabled; absent → no auto-create.
+   */
+  accountOnboarding?: Pick<AccountOnboardingService, "provisionForEmail">;
+  /**
+   * Account page + nav services (SSP-3.2). Used only when selfServe.enabled;
+   * absent → no /admin/account routes content, no nav entry, no quota notice.
+   */
+  accountServices?: {
+    accounts: Pick<
+      AccountService,
+      "getByMemberEmail" | "update" | "countAgents"
+    >;
+    members: Pick<
+      AccountMemberService,
+      "listByAccount" | "getByEmail" | "remove" | "promote" | "demote"
+    >;
+    invites: Pick<AccountInviteService, "create" | "listPending" | "revoke">;
+  };
   /**
    * Fetch tasks from the task-store service. If absent, the tasks page renders
    * in degraded mode (empty table + yellow notice) rather than returning 500.
@@ -912,6 +939,9 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
     agentMemberService,
     agentService,
     provisioner,
+    selfServe,
+    accountOnboarding,
+    accountServices,
     agentTypeRegistry = new AgentTypeRegistry(),
     callerScopeResolver = memberOnlyCallerScopeResolver(agentMemberService),
     taskStore,
@@ -960,6 +990,28 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
   const app = new Hono<AdminUIEnv>();
 
   const requireAuth = createUIAuthMiddleware(sessionSecret);
+
+  // SSP-3.2: show the toolbar's "Account" entry only for signed-in users who
+  // belong to an account, and only while self-serve is on. The flag is carried
+  // in AsyncLocalStorage so renderAdminToolbar() needs no extra parameter.
+  const accountNavEnabled = Boolean(selfServe?.enabled && accountServices);
+  if (accountNavEnabled && accountServices) {
+    app.use("/admin/*", async (c, next) => {
+      const token = getCookie(c, SESSION_COOKIE);
+      const user = token ? await getSessionUser(token, sessionSecret) : null;
+      let showAccount = false;
+      if (user) {
+        try {
+          showAccount =
+            (await accountServices.accounts.getByMemberEmail(user.email)) !==
+            null;
+        } catch {
+          // nav is cosmetic — never fail the page over the lookup
+        }
+      }
+      return runWithAccountNav(showAccount, () => next());
+    });
+  }
 
   // SES-6.1's service — CRUD over SessionFollow + UserNotificationPrefs.
   // Constructed here (not injected via AdminUIDeps) since it needs only the
@@ -1079,6 +1131,7 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
     c: Context<AdminUIEnv, any>,
     userInfo: { sub: string; email?: string; email_verified?: boolean },
     returnTo: string | undefined,
+    opts: { selfServeSignup?: boolean } = {},
   ): Promise<Response> {
     if (!userInfo.email) {
       return c.redirect("/admin/login?error=auth_failed", 302);
@@ -1098,7 +1151,30 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
         userInfo.email.toLowerCase(),
       );
       if (memberships.length === 0) {
-        return new Response("Forbidden", { status: 403 });
+        // Self-serve (SSP-3.1): a verified Google email with no AgentMember
+        // rows joins its invited account or gets a new one. Okta and flag-off
+        // keep the existing 403.
+        const onboarding = accountOnboarding;
+        if (!(opts.selfServeSignup && selfServe?.enabled && onboarding)) {
+          return new Response("Forbidden", { status: 403 });
+        }
+        const email = userInfo.email.toLowerCase();
+        let result: Awaited<ReturnType<typeof onboarding.provisionForEmail>>;
+        try {
+          result = await onboarding.provisionForEmail(email);
+        } catch (err) {
+          console.error("[admin] self-serve account provisioning failed", err);
+          return c.redirect("/admin/login?error=server_error", 302);
+        }
+        if (result.kind !== "existing") {
+          console.log(
+            JSON.stringify({
+              event: `account_${result.kind}`,
+              accountId: result.accountId,
+              emailDomain: email.slice(email.lastIndexOf("@") + 1),
+            }),
+          );
+        }
       }
     }
 
@@ -1336,7 +1412,7 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
       return c.redirect("/admin/login?error=auth_failed", 302);
     }
 
-    return completeLogin(c, userInfo, returnTo);
+    return completeLogin(c, userInfo, returnTo, { selfServeSignup: true });
   });
 
   app.get("/admin/auth/okta", (c) => {
@@ -1479,10 +1555,24 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
         // malformed/tampered query param — render without the panel
       }
     }
+    // SSP-3.2: a zero-quota account sees a request-a-trial message and a
+    // disabled create button instead of the create CTA.
+    let zeroQuotaContactEmail: string | undefined;
+    if (accountNavEnabled && accountServices && selfServe) {
+      const account = await accountServices.accounts.getByMemberEmail(
+        c.var.userEmail,
+      );
+      if (account && account.maxAgents === 0) {
+        zeroQuotaContactEmail = selfServe.contactEmail;
+      }
+    }
     return html(
       renderAgentsPage(agents, c.var.userEmail, c.var.isAdmin, timezone, {
         successMsg,
         manualSteps,
+        zeroQuotaNotice: zeroQuotaContactEmail
+          ? renderZeroQuotaNotice(zeroQuotaContactEmail)
+          : undefined,
       }),
     );
   });
@@ -1595,6 +1685,8 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
       "In-cluster provisioning is not enabled on this admin service — create a self-hosted agent instead.",
     provision_failed:
       "Failed to provision the agent's cluster resources — the agent was not created.",
+    quota_exceeded: "This account has reached its agent limit.",
+    account_inactive: "This account is not active.",
     invalid_phase: "Invalid pipeline phase.",
   };
 
@@ -3720,6 +3812,17 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
     requireAuth,
     patchTaskStoreSession,
   });
+
+  // ─── Account page (SSP-3.2) ───────────────────────────────────────────────
+
+  if (accountServices) {
+    registerAccountRoutes(app, {
+      enabled: accountNavEnabled,
+      requireAuth,
+      ...accountServices,
+      html,
+    });
+  }
 
   // ─── Notification settings (SESH-6.3) ─────────────────────────────────────
 
