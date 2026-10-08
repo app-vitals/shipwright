@@ -10,6 +10,7 @@
  */
 
 import { describe, expect, it } from "bun:test";
+import type { CallerScopeResolver } from "./caller-scope.ts";
 import { FixedClock } from "./clock.ts";
 import type {
   PushDetailLevel,
@@ -1215,7 +1216,9 @@ describe("SessionAlertSweeper — detailLevel", () => {
 describe("SessionAlertSweeper — admin allowlist", () => {
   it("alerts an allowlisted admin who holds no agent memberships", async () => {
     const { prisma } = fakePrisma({
-      follows: [{ userEmail: "admin@example.com", sessionSlug: WAITING_SESSION.slug }],
+      follows: [
+        { userEmail: "admin@example.com", sessionSlug: WAITING_SESSION.slug },
+      ],
     });
     const { pushService, sent } = fakePushService();
     const scope = fakeScopeServices({}); // no memberships for anyone
@@ -1250,7 +1253,9 @@ describe("SessionAlertSweeper — admin allowlist", () => {
 
   it("still skips a non-admin follower with no covering membership, and says so in the log", async () => {
     const { prisma } = fakePrisma({
-      follows: [{ userEmail: "member@example.com", sessionSlug: WAITING_SESSION.slug }],
+      follows: [
+        { userEmail: "member@example.com", sessionSlug: WAITING_SESSION.slug },
+      ],
     });
     const { pushService, sent } = fakePushService();
     const scope = fakeScopeServices({ "member@example.com": [] });
@@ -1271,12 +1276,16 @@ describe("SessionAlertSweeper — admin allowlist", () => {
     expect(result.immediate).toBe(0);
     expect(sent).toHaveLength(0);
     expect(lines).toHaveLength(1);
-    expect(lines[0]).toContain("skip member@example.com for sess-waiting: not visible");
+    expect(lines[0]).toContain(
+      "skip member@example.com for sess-waiting: not visible",
+    );
   });
 
   it("never consults memberships for an allowlisted admin", async () => {
     const { prisma } = fakePrisma({
-      follows: [{ userEmail: "admin@example.com", sessionSlug: WAITING_SESSION.slug }],
+      follows: [
+        { userEmail: "admin@example.com", sessionSlug: WAITING_SESSION.slug },
+      ],
     });
     const { pushService } = fakePushService();
     let membershipLookups = 0;
@@ -1300,5 +1309,111 @@ describe("SessionAlertSweeper — admin allowlist", () => {
     const result = await sweeper.tick();
     expect(result.immediate).toBe(1);
     expect(membershipLookups).toBe(0);
+  });
+});
+
+describe("SessionAlertSweeper — account-scoped followers (SSP-6.8)", () => {
+  // Account A and account B each have a waiting session; B's reuses A's slug
+  // and even A's agent id/repo, so only the accountId tells them apart.
+  const A_SESSION: SessionForAlert = {
+    slug: "shared-slug",
+    title: "A's session",
+    agentIds: ["agt_a"],
+    repos: ["org/shared"],
+    accountId: "acct-a",
+  };
+  const B_SESSION: SessionForAlert = {
+    slug: "shared-slug",
+    title: "B's session",
+    agentIds: ["agt_a"],
+    repos: ["org/shared"],
+    accountId: "acct-b",
+  };
+  const B_ONLY: SessionForAlert = {
+    slug: "b-only",
+    title: "B only",
+    agentIds: ["agt_a"],
+    repos: ["org/shared"],
+    accountId: "acct-b",
+  };
+
+  const callerScopeResolver: CallerScopeResolver = async (email, isAdmin) =>
+    isAdmin
+      ? { kind: "all" }
+      : email === "a-user@example.com"
+        ? { kind: "scoped", accountId: "acct-a", agentIds: ["agt_a"] }
+        : { kind: "scoped", accountId: null, agentIds: [] };
+
+  it("alerts an account user only for their own account's sessions, without pruning on a slug collision", async () => {
+    const { prisma, store } = fakePrisma({
+      follows: [
+        { userEmail: "a-user@example.com", sessionSlug: "shared-slug" },
+        { userEmail: "a-user@example.com", sessionSlug: "b-only" },
+      ],
+      prefs: [{ userEmail: "a-user@example.com", autoFollowSessions: false }],
+    });
+    const { pushService, sent } = fakePushService();
+    const sweeper = new SessionAlertSweeper({
+      prisma,
+      pushService,
+      ...fakeScopeServices({ "a-user@example.com": ["agt_a"] }),
+      callerScopeResolver,
+      fetchSessions: fetchSessionsDouble({
+        waiting: [A_SESSION, B_SESSION, B_ONLY],
+      }),
+      clock: FixedClock(new Date("2026-03-02T17:00:00Z")),
+      timezone: TZ,
+    });
+
+    const first = await sweeper.tick();
+    expect(first.immediate).toBe(1);
+    expect(first.pruned).toBe(0);
+    expect(sent).toHaveLength(1);
+    expect(sent[0]?.title).toBe("A's session");
+    // A's dedup stamp for the shared slug survives B's same-slug session.
+    expect(
+      store.alertStates.filter((s) => s.sessionSlug === "shared-slug"),
+    ).toHaveLength(1);
+
+    const second = await sweeper.tick();
+    expect(second.immediate).toBe(0);
+    expect(sent).toHaveLength(1);
+  });
+
+  it("auto-follows an account user only into their own account's sessions", async () => {
+    const { prisma, store } = fakePrisma({
+      prefs: [{ userEmail: "a-user@example.com", autoFollowSessions: true }],
+    });
+    const { pushService } = fakePushService();
+    await new SessionAlertSweeper({
+      prisma,
+      pushService,
+      ...fakeScopeServices({ "a-user@example.com": ["agt_a"] }),
+      callerScopeResolver,
+      fetchSessions: fetchSessionsDouble({ waiting: [B_ONLY, A_SESSION] }),
+      clock: FixedClock(new Date("2026-03-02T17:00:00Z")),
+      timezone: TZ,
+    }).tick();
+
+    expect(store.follows.map((f) => f.sessionSlug)).toEqual(["shared-slug"]);
+  });
+
+  it("an allowlisted admin still covers every account's sessions", async () => {
+    const { prisma } = fakePrisma({
+      follows: [{ userEmail: "ops@example.com", sessionSlug: "b-only" }],
+      prefs: [{ userEmail: "ops@example.com", autoFollowSessions: false }],
+    });
+    const { pushService, sent } = fakePushService();
+    await new SessionAlertSweeper({
+      prisma,
+      pushService,
+      ...fakeScopeServices({}),
+      callerScopeResolver,
+      adminAllowedEmails: ["ops@example.com"],
+      fetchSessions: fetchSessionsDouble({ waiting: [B_ONLY] }),
+      clock: FixedClock(new Date("2026-03-02T17:00:00Z")),
+      timezone: TZ,
+    }).tick();
+    expect(sent).toHaveLength(1);
   });
 });

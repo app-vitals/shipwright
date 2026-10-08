@@ -51,6 +51,7 @@
  * `autoFollowSessions` off.
  */
 
+import type { CallerScopeResolver } from "./caller-scope.ts";
 import { type Clock, SystemClock } from "./clock.ts";
 import { type PushDetailLevel, resolveDetailLevel } from "./push-content.ts";
 import type { PushService } from "./push-service.ts";
@@ -59,8 +60,10 @@ import type {
   UserNotificationPrefsRow,
 } from "./session-follow-service.ts";
 import {
-  type VisibilityScope,
+  accountIdFromCallerScope,
+  agentIdScopeFromCallerScope,
   isSessionVisible,
+  type VisibilityScope,
   visibleAgentIdsFor,
 } from "./session-scope.ts";
 
@@ -131,6 +134,8 @@ export interface SessionForAlert {
   title?: string | null;
   agentIds: string[];
   repos: string[];
+  /** The session's account (SSP-6.7); account users see only their own. */
+  accountId?: string;
   /**
    * ISO timestamps the auto-follow opt-in boundary is measured against —
    * `waitingSince` when the task-store has one, `createdAt` otherwise. Both
@@ -170,6 +175,12 @@ export interface SessionAlertSweeperDeps {
   pushService: Pick<PushService, "notifySession">;
   agentMemberService: MembershipLookup;
   agentService: AgentReposLookup;
+  /**
+   * Account-aware caller-scope resolver (SSP-2.1/SSP-6.8) — the same one the
+   * admin UI uses. When given, an account user's alerts cover exactly their
+   * account's sessions. Absent → the AgentMember-only rule (flag off).
+   */
+  callerScopeResolver?: CallerScopeResolver;
   /**
    * Fetches the task-store sessions in the given state. Injected (rather than
    * calling fetch() in here) so tests use a plain async function and never
@@ -649,6 +660,12 @@ export class SessionAlertSweeper {
     cache: Map<string, VisibilityScope>,
   ): Promise<boolean> {
     if (await this.canSee(userEmail, session, cache)) return true;
+    // Follow/alert rows are keyed by slug alone, so another account's session
+    // reusing this follower's slug is not "their" session at all: skip it,
+    // but keep the dedup stamp that belongs to their own same-slug session —
+    // pruning it would re-fire their immediate alert on every tick.
+    const scope = await this.scopeFor(userEmail, cache);
+    if (typeof scope.accountId === "string") return false;
     result.pruned += await this.pruneAlertState(userEmail, session.slug);
     return false;
   }
@@ -686,6 +703,22 @@ export class SessionAlertSweeper {
     if (cached) return cached;
 
     const isAdmin = this.adminEmails.has(key);
+    if (this.deps.callerScopeResolver) {
+      const callerScope = await this.deps.callerScopeResolver(key, isAdmin);
+      const accountId = accountIdFromCallerScope(callerScope);
+      const agentIds = agentIdScopeFromCallerScope(callerScope);
+      const agents =
+        accountId !== null || agentIds === "all" || agentIds.length === 0
+          ? []
+          : await this.deps.agentService.listByIds(agentIds);
+      const scope: VisibilityScope = {
+        agentIds,
+        repos: agents.flatMap((agent) => agent.repos ?? []),
+        accountId,
+      };
+      cache.set(key, scope);
+      return scope;
+    }
     const memberships = isAdmin
       ? []
       : await this.deps.agentMemberService.listByEmail(key);

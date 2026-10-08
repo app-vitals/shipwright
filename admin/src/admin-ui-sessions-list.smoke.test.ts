@@ -474,7 +474,7 @@ describe("GET /admin/sessions — row actions", () => {
     expect(html).toContain(">Follow</button>");
   });
 
-  it("fails open to \"not following\" when listByUser() rejects, still rendering the page", async () => {
+  it('fails open to "not following" when listByUser() rejects, still rendering the page', async () => {
     const sessions = [
       makeSession({ slug: "s-waiting", title: "Waiting session" }),
       makeSession({
@@ -602,7 +602,9 @@ describe("GET /admin/sessions — agent names", () => {
 // ─── SPT-1.2 AC3: merged Session/Slug column ────────────────────────────────
 
 describe("GET /admin/sessions — merged Session/Slug column", () => {
-  it("has 7 columns, not 8 (no separate Slug <th>)", async () => {
+  // SSP-6.8 added an Account column for platform admins (this suite's
+  // default caller), so the admin view has 8 columns — still no Slug <th>.
+  it("has no separate Slug <th> (8 columns for an admin, incl. Account)", async () => {
     const app = buildApp({
       fetchTaskStoreSessions: async () => ({
         sessions: [],
@@ -614,8 +616,9 @@ describe("GET /admin/sessions — merged Session/Slug column", () => {
     const res = await app.request("/admin/sessions");
     const html = await res.text();
     expect(html).not.toContain("<th>Slug</th>");
-    expect(html).toContain('colspan="7"');
-    expect(html).not.toContain('colspan="8"');
+    expect(html).toContain("<th>Account</th>");
+    expect(html).toContain('colspan="8"');
+    expect(html).not.toContain('colspan="9"');
   });
 
   it("shows the slug underneath the title only when it differs from the title", async () => {

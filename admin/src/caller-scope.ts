@@ -62,6 +62,28 @@ export function scopeIncludesAgent(
   return scope.kind === "all" || scope.agentIds.includes(agentId);
 }
 
+/**
+ * How a caller may read the admin UI's task-store views — Tasks, PRs and
+ * Sessions (SSP-6.8). Platform admins see every account; an account user
+ * (self-serve flag on, so the resolver produced an accountId) sees exactly
+ * their account, filtered server-side via the task-store's `?accountId=`;
+ * anyone else keeps today's admin-only gate.
+ */
+export type TaskStoreViewScope =
+  | { kind: "all" }
+  | { kind: "account"; accountId: string; agentIds: string[] }
+  | { kind: "none" };
+
+export function taskStoreViewScope(scope: CallerScope): TaskStoreViewScope {
+  if (scope.kind === "all") return { kind: "all" };
+  if (scope.accountId === null) return { kind: "none" };
+  return {
+    kind: "account",
+    accountId: scope.accountId,
+    agentIds: scope.agentIds,
+  };
+}
+
 /** Per-request resolver with the flag already bound. */
 export type CallerScopeResolver = (
   email: string,
