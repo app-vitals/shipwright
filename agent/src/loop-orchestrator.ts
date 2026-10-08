@@ -89,11 +89,6 @@ import {
   getPatchCandidates,
 } from "./check-patch.ts";
 import {
-  createPatchStateSnapshotter,
-  evaluatePatchOutcome,
-  type PatchStateSnapshot,
-} from "./patch-outcome-check.ts";
-import {
   buildProductionDeps as buildPlanDeps,
   getPlanCandidates,
 } from "./check-plan.ts";
@@ -125,6 +120,11 @@ import {
   resolveLoopPhaseToggles,
 } from "./loop-cron-classifier.ts";
 import { parseMarkers } from "./markers.ts";
+import {
+  createPatchStateSnapshotter,
+  evaluatePatchOutcome,
+  type PatchStateSnapshot,
+} from "./patch-outcome-check.ts";
 import type { RunTelemetry } from "./run-telemetry.ts";
 import type { WorkQueueReporter } from "./work-queue-reporter.ts";
 import {
@@ -517,6 +517,13 @@ export function buildPlanCommandArgs(task: WorkTaskCandidate): string | null {
  * times in a row, a console.warn is emitted to signal a potential infinite loop.
  */
 const SPIN_DETECTION_THRESHOLD = 3;
+
+/**
+ * PHS-3.3: skip-reason recorded when dispatch()'s runner throws (crash,
+ * timeout, stream-incomplete). Distinct from every command-tagged
+ * [skip-reason:...] and the "command:no-work" fallback.
+ */
+export const DISPATCH_ERROR_SKIP_REASON = "dispatch:runner-error";
 
 /**
  * SKT-2.2 — empty-queue backoff defaults. When the queue has been genuinely
@@ -1142,6 +1149,15 @@ export function createLoopOrchestrator(
         // than rethrowing out of the tick) — this is a genuinely new Sentry
         // Issue capture point, not a duplicate of cron-failure-reporter.ts's.
         reportClaudeError(sentryClient, err);
+        // PHS-3.3: a runner error (crash, timeout, throw) is a skip-streak
+        // input too, so a deterministically crashing item hits the existing
+        // SKIP_BLOCK_THRESHOLD auto-block instead of only tripping spin
+        // detection. A single stable reason keeps the same-reason streak
+        // semantics: repeated crashes advance it, any other reason resets it,
+        // and a later successful run clears it via the resetSkip path below.
+        await callSkipTracker("recordSkip", () =>
+          recordSkip(itemType, recordId, DISPATCH_ERROR_SKIP_REASON),
+        );
         throw err;
       }
 

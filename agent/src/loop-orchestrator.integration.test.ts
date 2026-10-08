@@ -23,9 +23,10 @@
 
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { createTaskStoreClient } from "./check-helpers.ts";
+import type { CheckPatchDeps } from "./check-patch.ts";
 import {
-  ClaudeTimeoutError,
   type ClaudeRunResult,
+  ClaudeTimeoutError,
   type ModelUsage,
   type ProgressCallback,
 } from "./claude.ts";
@@ -35,8 +36,10 @@ import type {
   ModelBreakdownEntry,
 } from "./cron-run-reporter.ts";
 import type { CronJobLike } from "./loop-cron-classifier.ts";
-import type { CheckPatchDeps } from "./check-patch.ts";
-import { createLoopOrchestrator } from "./loop-orchestrator.ts";
+import {
+  createLoopOrchestrator,
+  DISPATCH_ERROR_SKIP_REASON,
+} from "./loop-orchestrator.ts";
 import { createPatchStateSnapshotter } from "./patch-outcome-check.ts";
 import type { WorkQueueReporter } from "./work-queue-reporter.ts";
 import type { WorkPrCandidate, WorkTaskCandidate } from "./work-selector.ts";
@@ -2127,11 +2130,13 @@ describe("loop-orchestrator + patch outcome check (PHS-3.1)", () => {
   let server: ReturnType<typeof Bun.serve<any>>;
   let patches: { path: string; body: Record<string, unknown> }[];
   let skips: string[];
+  let skipBodies: Record<string, unknown>[];
   let savedEnv: { url?: string; token?: string };
 
   beforeEach(() => {
     patches = [];
     skips = [];
+    skipBodies = [];
     server = Bun.serve({
       port: 0,
       fetch: async (req) => {
@@ -2142,6 +2147,7 @@ describe("loop-orchestrator + patch outcome check (PHS-3.1)", () => {
         }
         if (req.method === "POST" && path.endsWith("/skip")) {
           skips.push(path);
+          skipBodies.push(await req.json().catch(() => ({})));
           return new Response("{}", { status: 200 });
         }
         return new Response("not found", { status: 404 });
@@ -2260,6 +2266,21 @@ describe("loop-orchestrator + patch outcome check (PHS-3.1)", () => {
     });
     expect(patches).toHaveLength(1);
     expect(patches[0].body.blocked).toBe(true);
+  });
+
+  test("repeated crashing patch runs record the same dispatch-error skip reason each time (PHS-3.3)", async () => {
+    for (let i = 0; i < 3; i++) {
+      await runPatchTick({
+        headSha: () => "sha1",
+        result: async () => {
+          throw new Error("claude crashed");
+        },
+      });
+    }
+    expect(skips).toEqual(Array(3).fill("/prs/pr-record-1/skip"));
+    expect(skipBodies.map((b) => b.reason)).toEqual(
+      Array(3).fill(DISPATCH_ERROR_SKIP_REASON),
+    );
   });
 
   test("a run that pushed a commit is not escalated", async () => {
