@@ -24,9 +24,10 @@ import { sentry } from "@sentry/hono/bun";
 import { registerGracefulShutdown } from "@shipwright/lib/graceful-shutdown";
 import { buildSentryInitOptions, initSentry } from "@shipwright/lib/sentry";
 import { Hono } from "hono";
-import { AccountOnboardingService } from "./account-onboarding.ts";
+import { createAccountCreatedNotifier } from "./account-created-notifier.ts";
 import { AccountInviteService } from "./account-invites.ts";
 import { AccountMemberService } from "./account-members.ts";
+import { AccountOnboardingService } from "./account-onboarding.ts";
 import { AccountService } from "./accounts.ts";
 import { createAdminUIApp } from "./admin-ui.ts";
 import { AgentChatTokenService } from "./agent-chat-tokens.ts";
@@ -452,9 +453,10 @@ async function startServer(): Promise<void> {
   const agentMemberService = new AgentMemberService(prisma);
   // Account-aware caller scope (SSP-2.1). Account membership contributes
   // agents only when the self-serve flag is on; off → AgentMember-only.
+  const accountService = new AccountService(prisma);
   const callerScopeResolver = createCallerScopeResolver(
     callerScopeDepsFromServices({
-      accountService: new AccountService(prisma),
+      accountService,
       agentMemberService,
     }),
     process.env.SHIPWRIGHT_SELF_SERVE_ENABLED === "enabled",
@@ -806,10 +808,18 @@ async function startServer(): Promise<void> {
     publicRepo,
     devAuthEnabled: isDevAuthAllowed(process.env),
     selfServe,
+    accountService,
     accountOnboarding: new AccountOnboardingService(
       prisma,
       selfServe.defaultMaxAgents,
     ),
+    ...(() => {
+      const accountCreatedNotifier = createAccountCreatedNotifier({
+        ...(pushService ? { pushService } : {}),
+        adminEmails: adminAllowedEmails,
+      });
+      return accountCreatedNotifier ? { accountCreatedNotifier } : {};
+    })(),
     accountServices: {
       accounts: new AccountService(prisma),
       members: new AccountMemberService(prisma),

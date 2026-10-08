@@ -29,10 +29,19 @@ import { SECRET_ENV_VARS } from "@shipwright/lib/secret-env-vars";
 import { type Context, Hono, type MiddlewareHandler } from "hono";
 import { deleteCookie, getCookie, setCookie } from "hono/cookie";
 import { sign, verify } from "hono/jwt";
+import {
+  accountIdFromScope,
+  SELF_SERVE_AGENT_TYPE,
+} from "./account-agent-create.ts";
+import type { AccountCreatedNotifier } from "./account-created-notifier.ts";
+import { fireAccountCreatedNotification } from "./account-created-notifier.ts";
 import type { AccountInviteService } from "./account-invites.ts";
 import type { AccountMemberService } from "./account-members.ts";
 import type { AccountOnboardingService } from "./account-onboarding.ts";
 import type { AccountService } from "./accounts.ts";
+import { registerAccountRoutes } from "./admin-ui-account.ts";
+import { runWithAccountNav } from "./admin-ui-account-nav.ts";
+import { renderZeroQuotaNotice } from "./admin-ui-account-pages.ts";
 import {
   type AgentDetail,
   type AgentOption,
@@ -70,9 +79,6 @@ import {
   SESSION_ADMIN_ACTION_MESSAGES,
 } from "./admin-ui-session-admin-actions.ts";
 import { registerSessionFollowRoutes } from "./admin-ui-session-follow.ts";
-import { registerAccountRoutes } from "./admin-ui-account.ts";
-import { runWithAccountNav } from "./admin-ui-account-nav.ts";
-import { renderZeroQuotaNotice } from "./admin-ui-account-pages.ts";
 import { registerSessionSettingsRoutes } from "./admin-ui-sessions.ts";
 import {
   registerSessionsListRoutes,
@@ -135,7 +141,10 @@ import {
   renderPwaHeadTags,
   sanitizeStartUrl,
 } from "./pwa.ts";
-import type { SelfServeConfig } from "./self-serve-config.ts";
+import {
+  DEFAULT_SELF_SERVE_CONTACT_EMAIL,
+  type SelfServeConfig,
+} from "./self-serve-config.ts";
 import {
   type SessionFollowPrismaLike,
   SessionFollowService,
@@ -339,6 +348,14 @@ export interface AdminUIDeps {
    * AgentMember-only resolver, i.e. today's behavior with the flag off.
    */
   callerScopeResolver?: CallerScopeResolver;
+  /**
+   * Account lookups for the new-agent form's remaining-quota display
+   * (SSP-4.2). Absent → the quota line is omitted.
+   */
+  accountService?: Pick<
+    AccountService,
+    "getById" | "countAgents" | "listAgentIds"
+  >;
   agentService: Pick<
     AgentService,
     | "listAll"
@@ -411,6 +428,8 @@ export interface AdminUIDeps {
    * callback only, and only when selfServe.enabled; absent → no auto-create.
    */
   accountOnboarding?: Pick<AccountOnboardingService, "provisionForEmail">;
+  /** Best-effort operator push on auto-created accounts (SSP-3.3). */
+  accountCreatedNotifier?: AccountCreatedNotifier;
   /**
    * Account page + nav services (SSP-3.2). Used only when selfServe.enabled;
    * absent → no /admin/account routes content, no nav entry, no quota notice.
@@ -940,7 +959,9 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
     agentService,
     provisioner,
     selfServe,
+    accountService,
     accountOnboarding,
+    accountCreatedNotifier,
     accountServices,
     agentTypeRegistry = new AgentTypeRegistry(),
     callerScopeResolver = memberOnlyCallerScopeResolver(agentMemberService),
@@ -1174,6 +1195,13 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
               emailDomain: email.slice(email.lastIndexOf("@") + 1),
             }),
           );
+        }
+        // Only a brand-new account notifies; invite-joins do not.
+        if (result.kind === "created") {
+          fireAccountCreatedNotification(accountCreatedNotifier, {
+            accountId: result.accountId,
+            emailDomain: email.slice(email.lastIndexOf("@") + 1),
+          });
         }
       }
     }
@@ -1710,8 +1738,40 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
 
   // ─── New agent form (MUST be before /:id to avoid "new" being captured as param)
 
-  app.get("/admin/agents/new", requireAuth, (c) => {
-    if (!c.var.isAdmin) return new Response("Forbidden", { status: 403 });
+  // Account the caller may create agents in (SSP-4.2): null for platform
+  // admins (unassigned agents, today's behavior) and for non-admins without an
+  // account (flag off / no membership) — the latter are denied by the callers.
+  async function resolveCreateAccountId(
+    userEmail: string,
+    isAdmin: boolean,
+  ): Promise<string | null> {
+    if (isAdmin) return null;
+    return accountIdFromScope(await callerScopeResolver(userEmail, false));
+  }
+
+  app.get("/admin/agents/new", requireAuth, async (c) => {
+    const accountId = await resolveCreateAccountId(
+      c.var.userEmail,
+      c.var.isAdmin,
+    );
+    if (!c.var.isAdmin && accountId === null) {
+      return new Response("Forbidden", { status: 403 });
+    }
+    let selfServeOpts:
+      | { remaining: number; max: number; contactEmail: string }
+      | undefined;
+    if (accountId !== null && accountService) {
+      const [account, count] = await Promise.all([
+        accountService.getById(accountId),
+        accountService.countAgents(accountId),
+      ]);
+      selfServeOpts = {
+        remaining: Math.max(0, (account?.maxAgents ?? 0) - count),
+        max: account?.maxAgents ?? 0,
+        contactEmail:
+          selfServe?.contactEmail ?? DEFAULT_SELF_SERVE_CONTACT_EMAIL,
+      };
+    }
     const rawError = c.req.query("error") ?? undefined;
     const error = rawError ? (ERROR_MESSAGES[rawError] ?? rawError) : undefined;
     const types = agentTypeRegistry.listTypes();
@@ -1719,6 +1779,7 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
       renderNewLocalAgentPage(c.var.userEmail, types, {
         error,
         canProvision: provisioner.canProvision,
+        ...(selfServeOpts ? { selfServe: selfServeOpts } : {}),
       }),
     );
   });
@@ -1726,7 +1787,13 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
   // ─── Create agent (self-hosted or provisioned in-cluster) ────────────────
 
   app.post("/admin/agents", requireAuth, async (c) => {
-    if (!c.var.isAdmin) return new Response("Forbidden", { status: 403 });
+    const accountId = await resolveCreateAccountId(
+      c.var.userEmail,
+      c.var.isAdmin,
+    );
+    if (!c.var.isAdmin && accountId === null) {
+      return new Response("Forbidden", { status: 403 });
+    }
     let name: string | undefined;
     let typeName: string | undefined;
     let reposRaw: string | undefined;
@@ -1786,6 +1853,9 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
       return c.redirect("/admin/agents/new", 302);
     }
     const connectSlack = connectSlackRaw === "true";
+    // SSP-4.2: account users always create "coding" agents in their own
+    // account — any submitted type/accountId is ignored.
+    if (accountId !== null) typeName = SELF_SERVE_AGENT_TYPE;
     // Absent/unrecognized runtime means self-hosted — the historical behavior
     // of this form. createAgent() below re-derives this same value itself
     // (it owns the runtime/provisioning validation); it's recomputed here
@@ -1845,6 +1915,7 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
         restrictSlackToMembersRaw,
         claudeCodeOauthToken,
         anthropicApiKey,
+        ...(accountId !== null ? { accountId } : {}),
       },
     );
     if (!result.ok) {
