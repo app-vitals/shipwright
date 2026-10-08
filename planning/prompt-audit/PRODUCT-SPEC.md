@@ -45,7 +45,7 @@ Two **contexts** are reported everywhere because load class differs by cwd:
 - `buildTokenPayload(usage, modelUsage, extras?)` forwards `contextBaseline`, `turns`, `toolCalls`, `skillUsage`, `contextFingerprint`, `pluginVersion`, `claudeCodeVersion` through `CronRunReporter` to the admin PATCH on every completion, skip, and failure path in `cron-handler.ts` and `loop-orchestrator.ts`; `contextStamp` is an optional injected dep on `CronHandlerDeps`, `LoopOrchestratorDeps`, the getter deps, and production options, wired in `index.ts`.
 - Admin: nullable additive columns on `AgentCronRun` (`baselineModel`, `baselineContextTokens`, `baselineInputTokens`, `baselineCacheCreationTokens`, `baselineCacheReadTokens`, `turns`, `toolCalls`, `contextFingerprint` + index, `pluginVersion`, `claudeCodeVersion`); new `AgentCronRunSkillUsage` table unique on `[cronRunId, kind, name]`, cascade-deleted with its run; one migration; PATCH accepts the new fields and upserts `skillUsage` in the same transaction as `modelBreakdown`; OpenAPI schemas and the serialized run response include them; `lib/admin-types.ts` stays in sync.
 - Stats: `GET /agents/all/cron-runs/stats` gains `bySkill` (per `(kind, name)`: runs, invocations, turns, token sums, `avgInvokeContextDelta`; skipped runs excluded) and `baselines` (per `(contextFingerprint, baselineModel, phase)`: runs, avg/min/max `contextTokens`, avg turns, avg tool calls, first/last seen; skipped runs **included** because a `[silent]` dispatch still paid its first-turn context; ordered by first appearance). The metrics client types mirror both as optional fields.
-- Outcome series: new admin `GET /agents/all/cron-runs/outcomes?from&to` returning, per `(phase, contextFingerprint)`: runs, completed, failed, skipped, `skipReasons` histogram, avg and p50 duration, avg turns, avg tool calls, avg context tokens. Task-store `PullRequest` gains `lastReviewVerdict` + `lastReviewVerdictAt`, written by the review command's record step, so verdict distribution is queryable.
+- Outcome series: new admin `GET /agents/all/cron-runs/outcomes?from&to` returning, per `(phase, contextFingerprint)`: runs, completed, failed, skipped, `skipReasons` histogram, avg and p50 duration, avg turns, avg tool calls, avg context tokens. PR outcomes are read-only and add no schema or core-loop change: the metrics service aggregates existing task-store `PullRequest` fields (`reviewState` approved vs posted mix, `reviewCycles`, `patchCycles`, time from open to merge) over the window between a fingerprint's first and last seen timestamps (from `baselines`). The series is a time-window correlation, not a per-PR attribution, and is labelled as such. No `review.md` change: it never issues REQUEST_CHANGES, so a verdict column would only ever hold what `reviewState` already encodes.
 - Pricing: `lib/pricing.ts` adds `claude-opus-5-5`, `claude-sonnet-5-5`, `claude-haiku-5-5`, `claude-fable-5-1` (rates from the current rate card, never guessed) and a `CONTEXT_WINDOW` map per rate key; `normalizeModelToRateKey` maps 5.x ids to themselves; bare `sonnet`/`opus`/`haiku` aliases stay on the 4.x keys until Feature 2.
 - Docs: `docs/agent-api-ops.md` (new dimensions, telemetry PATCH fields, outcomes endpoint), `docs/agent.md` (model table + count), `docs/agent-key-files.md` (new modules), `docs/configuration-agent.md` (OpenTelemetry documented as an optional operator-side alternative, not wired).
 
@@ -78,8 +78,7 @@ Two **contexts** are reported everywhere because load class differs by cwd:
 - `admin/src/agent-cron-run-stats.ts` — `bySkill`, `baselines`, outcomes queries
 - `admin/openapi.json`, `lib/admin-types.ts` — regenerated / hand-synced
 - `metrics/src/lib/admin-metrics-client.ts` — mirrored types
-- `task-store/prisma/schema.prisma`, `task-store/src/` PR record routes — `lastReviewVerdict`
-- `plugins/shipwright/commands/review.md` — record step writes the verdict
+- `metrics/src/lib/task-store-client.ts` — read-only PR outcome aggregation from existing `PullRequest` fields (verify the client already exposes `reviewCycles`/`patchCycles`; add fields to the read types only)
 - `lib/pricing.ts`, `lib/pricing.unit.test.ts`
 - `docs/agent-api-ops.md`, `docs/agent.md`, `docs/agent-key-files.md`, `docs/configuration-agent.md`
 
@@ -139,8 +138,10 @@ Two **contexts** are reported everywhere because load class differs by cwd:
   - `blame-age.ts` — max/median line age and oldest line via injected `git blame`.
   - `rules.ts` — one function per rule; thresholds documented in `skills/prompt-scan/references/thresholds.md`.
   - `fingerprint.ts` (sha256(class|rule|file|normalizedEvidence)[:12], no line numbers), `ledger.ts` (read/merge/write with injected `now`), `report.ts` (`prompt-audit-report.md`).
-  - `cli.ts` — `scan --repo <dir> --model <id>… --scope <path> [--json] [--dry-run] [--since-days 28]` and `measure --finding <fp> --before <ref> --after <ref> --model <id>` (same-model token delta of a file at two refs).
+  - `blast.ts` — `blastRadius(file, deps)`: reverse index of who loads or pins a file: referrers (commands/skills/agents/`@` imports/`see` mentions), cron prompts in `agent-types/*/manifest.yaml` that invoke it (and the loop phase), `*.content.test.ts` assertions that pin its wording (file + assertion), `site/docs-source-map.json` pages mapped to it, load class per context. Prose-based, so a lower bound; the report says so.
+  - `cli.ts` — `scan --repo <dir> --model <id>… --scope <path> [--json] [--dry-run] [--since-days 28]` and `measure --finding <fp> --before <ref> --after <ref> --model <id>` (same-model token delta of a file at two refs), `blast --file <path> [--json]`, and `watch` (see Feature 4).
   - `plugins/shipwright/scripts/check-prompt-audit.ts` — precheck: missing ledger → exit 0 (bootstrap); `lastRun` < 7 days and no `proposed` findings → exit 1; else exit 0 + summary; mirrors `check-consolidation-patrol.ts` with a unit test.
+- Every finding carries a `blastRadius` block (output of `blast.ts` at scan time, plus `scannedAt` sha).
 - Finding record: `{fingerprint, class, rule, file, line, lineEnd?, loadClass, contexts[], evidence, metrics:{before, projectedAfter?, units, estimated}, measurement:{tier: static|eval, evals?:[{kind, estCostUsd}], acceptance}, confidence, action, severity}`. Every row is labelled **cost-only** or **quality-claimed**.
 - Finding classes and v1 rules:
   - (a) always-loaded cost: `claude-md-over-200-lines`, `always-set-tokens` (per context × model), `rule-without-paths`, `import-chain`, `listing-budget-share`, `listing-entry-over-1536`. Static proof: `count_tokens` per model, share of window, listing chars vs 1% budget, measured `baselineContextTokens` when reachable.
@@ -165,7 +166,7 @@ Two **contexts** are reported everywhere because load class differs by cwd:
 - [ ] Content tests assert the SKILL.md and stub: flags, step order, Constraints section, citations of `decisions-registry.md`.
 - [ ] The cron ships `enabled: false` and any manifest content test enumerating cron names is extended.
 
-**Technical Considerations**: Official loading rules drive `loadClass`: `@` imports load at launch (they do not reduce cost), `paths:` rules and skill bodies load on demand, skill descriptions are always in context under a 1%-of-window budget with a 1,536-char cap per entry, block-level HTML comments in CLAUDE.md are stripped. Token counts must be model-specific (`count_tokens`, never tiktoken). The `Clock` pattern in `plugins/shipwright/scripts/clock.ts` and the shared `check-helpers.ts` are reused. Evidence caveat enforced in the report: file size alone has no measured adherence effect (arXiv 2605.10039), so every "shorten" finding is cost-only unless an eval says otherwise.
+**Technical Considerations**: Official loading rules drive `loadClass`: `@` imports load at launch (they do not reduce cost), `paths:` rules and skill bodies load on demand, skill descriptions are always in context under a 1%-of-window budget with a 1,536-char cap per entry, block-level HTML comments in CLAUDE.md are stripped. Token counts must be model-specific (`count_tokens`, never tiktoken). The `Clock` pattern in `plugins/shipwright/scripts/clock.ts` and the shared `check-helpers.ts` are reused. Evidence caveat enforced in the report: the two relevant studies are narrow. arXiv 2602.11988 (SWE-bench Lite plus a 138-issue set) found repository context files do not generally raise task success and add over 20% cost, while instructions in them are followed. arXiv 2605.10039 (1,650 Claude Code sessions, a trivial annotation-compliance target, TypeScript coding tasks) found no detectable effect of file size, position, architecture or contradictions, with Bayes factors supporting the size and conflict nulls only, and a within-session compliance decay of about 5.6% per generated function. Neither studies multi-step orchestration prompts, and neither tested trimming an existing file. So "shorten" findings are cost-only (reduced tokens are certain; unchanged quality is unmeasured) and the report must say "no effect detected in these settings", never "no effect".
 
 **Source Map**:
 - `plugins/shipwright/scripts/prompt-audit/*` (new), `plugins/shipwright/scripts/check-prompt-audit.ts` (new)
@@ -183,7 +184,7 @@ Two **contexts** are reported everywhere because load class differs by cwd:
 ### Feature 4: `prompt-fix` (queue fixes with embedded measurement plans)
 
 **Priority**: Medium
-**Description**: Turn `proposed` findings into task-store tasks whose bodies carry the evidence, the projected metric, the measurement plan, and acceptance criteria the executing agent must prove, so no markdown change merges on a hypothesis.
+**Description**: Turn `proposed` findings into task-store tasks whose bodies carry the evidence, the projected metric, the measurement plan, the blast-radius report, and acceptance criteria the executing agent must prove, so no markdown change merges on a hypothesis. The executing agent sees one file; the task body is how it learns who else depends on that file. Launches propose-only: every task is `hitl: true` until a human promotes a rule.
 
 **User Stories**:
 - As an operator, I want each queued fix to say exactly which number it will move and how that will be verified before merge.
@@ -192,34 +193,50 @@ Two **contexts** are reported everywhere because load class differs by cwd:
 **Requirements**:
 - Skill `plugins/shipwright/skills/prompt-fix/SKILL.md` + stub `commands/prompt-fix.md`; flags `--dry-run`, `--class <a-f>`, `--finding <fp>`.
 - Steps: report exists → filter `proposed` → live registry re-check → pre-filing verification (`file:line` still matches) → `--dry-run` preview → cap 10 tasks/run (class c first, then by projected saving) → dedup `GET /tasks?status=pending|in_progress&repo=…&limit=1000` on the `prompt-` id prefix with the pagination guard → `POST /tasks/bulk` → mark ledger `queued` + `taskId`.
-- Task shape: `id: prompt-{class}-{fp8}-shipwright-{YYYY-Www}`, `title: "Prompt audit: {rule} — {file}"`, `source: prompt-fix`, `branch: chore/prompt-{fp8}-{slug}`, `layer: Docs`, `hitl: true` for class d/e changes that remove or move behavioral text, else `false`.
+- Task shape: `id: prompt-{class}-{fp8}-shipwright-{YYYY-Www}`, `title: "Prompt audit: {rule} — {file}"`, `source: prompt-fix`, `branch: chore/prompt-{fp8}-{slug}`, `layer: Docs`, `hitl` is computed deterministically (see Guardrails below), never judged by the model.
 - Body template: evidence; static metric before → projected after (model, estimated?); measurement plan (tier, evals + estimated cost); acceptance criteria: (1) `cli.ts measure --finding {fp} --before main --after HEAD --model {m}` reports `tokenDelta ≤ −N`; (2) if eval tier, `/shipwright:prompt-eval --finding {fp} --kind {…} --max-cost-usd {X}` reports score delta ≥ 0 and the JSON is attached to the PR; (3) ledger `measured` populated and cited in the PR body; plus "suppress instead: add a registry entry".
 - Quality-claimed findings can never be queued with `hitl: false`.
+
+**Guardrails for automated prompt edits** (design: the executing agent has a limited view and prose has no compiler, so regressions are silent):
+- **Propose-only at launch.** Every `prompt-fix` task is `hitl: true` (ready.ts never auto-dispatches these; a human runs them via `/shipwright:hitl`). A rule is promoted to `hitl: false` only by a human-edited entry in `.claude/shipwright/prompt-audit-decisions.md` (`**Autonomy:** rule, evidence`), after at least 5 accepted proposals for that rule with no human edit or rejection. The autonomy list is therefore itself human-controlled.
+- **Even a promoted rule is `hitl: true`** unless all hold: pure fact repair (class c, e.g. an unresolvable path or retired model id, replacement verified by command); file is not high-fanout (never `agent/workspace/*.template`, root or plugin `CLAUDE.md`, `.claude/**`, `commands/*.md`, `agents/*.md`, `references/methodology-contracts/*`, or any file invoked by a cron prompt); no content test pins the changed lines; no description/frontmatter change; diff is 20 lines or fewer; single lever per diff. Computed from the embedded blast-radius report.
+- **Blast-radius report in every task body** (from `blast.ts`): load class and contexts, referrers, cron prompts and loop phases that invoke it, pinning content tests, source-map pages, change class, max diff lines, revert command. The executing agent re-runs `cli.ts blast --file`; if the output differs from the embedded report it stops and escalates rather than proceeding with a stale picture.
+- **PR must prove** (cited in the PR body): relevant content tests pass; same-model token delta; every removed line listed with its disposition (relocated to a named file, or stale with command output); the always-loaded set did not grow; for behavioral edits an eval or production-series result per Feature 5. PR title must carry `docs:` or `chore:`.
+- **Cutover freeze.** `prompt-fix` files nothing between PAU-2.3 (agent env cutover) and PAU-2.4 (decision note), so prompt edits are not confounded with the model change.
+- **Rate limit.** At most 2 prompt-fix tasks open or merged per ISO week, so each change is isolable in the series.
+- **Post-merge watch.** `cli.ts watch` compares, per phase, the series before and after a merged finding's change (first/last seen fingerprints): cost per run, turns, skip rate, patch cycles. With fewer than 20 runs per phase on either side it reports "insufficient data". On a regression beyond a documented threshold it marks the finding `regressed` and files a `hitl: true` revert-proposal. It never reverts or merges anything.
+- **Visibility.** `prompt-scan`'s summary lists open prompt-fix HITL tasks older than 14 days, so the queue cannot age invisibly.
+- **Known gap.** `hitl: true` blocks agent pickup, not merge: branch protection requires 0 approvals and the merging account is a bypass actor, so a hand-opened PR can still merge unreviewed. A CODEOWNERS path rule with required code-owner review would close it but conflicts with the documented bypass-actor design; this is an Open Question, not scheduled work.
 
 **Acceptance Criteria**:
 - [ ] `/shipwright:prompt-fix --dry-run` prints every task it would create, with the full body, and writes nothing to the task store or ledger.
 - [ ] A real run creates ≤ 10 tasks, each visible via the task-store query, with ids matching `prompt-{class}-{fp8}-shipwright-{YYYY-Www}` and bodies containing all three acceptance criteria.
 - [ ] Re-running does not create a duplicate for a finding already `pending`/`in_progress` (dedup by id prefix across paginated results).
 - [ ] A finding whose `file:line` no longer matches is skipped with a printed reason and left `proposed`.
-- [ ] A class-d or class-e finding that removes or moves behavioral text is queued with `hitl: true`; a class-c finding with `hitl: false`.
+- [ ] With no promoted rule, every task is queued `hitl: true`, including class c.
+- [ ] A promoted class-c rule yields `hitl: false` only for a low-fanout, unpinned, ≤ 20-line, single-lever fix; changing any one condition (high-fanout file, content-test-pinned lines, description change, 21 lines) flips it to `hitl: true`. `hitl` comes from a pure function with a unit table, not model judgment.
+- [ ] Every task body embeds the blast-radius block and the staleness rule; a test shows the executing instructions stop when `cli.ts blast` output differs.
+- [ ] `prompt-fix` refuses to file while the cutover window is open and when 2 prompt-fix tasks are already open or merged this ISO week, and prints why.
+- [ ] `cli.ts watch` returns "insufficient data" under 20 runs per phase per side, flags a synthetic regression fixture, and files a `hitl: true` revert-proposal but performs no git or merge action.
 - [ ] Content tests assert the stub, the flags, the step order, the cap, the task-id format string, and the acceptance-criteria template.
 
-**Technical Considerations**: Mirrors `entropy-fix` / `consolidation-fix` exactly (cap, dedup, bulk POST, `hitl` classification). Task-store connection is env-var-only (`SHIPWRIGHT_TASK_STORE_URL` + `SHIPWRIGHT_TASK_STORE_TOKEN`).
+**Technical Considerations**: Mirrors `entropy-fix` / `consolidation-fix` for cap, dedup and bulk POST, but deliberately stricter on `hitl`: those skills allow model judgment for mechanical fixes, whereas silent prompt regressions justify a deterministic, human-promoted rule. Task-store connection is env-var-only (`SHIPWRIGHT_TASK_STORE_URL` + `SHIPWRIGHT_TASK_STORE_TOKEN`).
 
 **Source Map**:
 - `plugins/shipwright/skills/prompt-fix/SKILL.md` (new), `plugins/shipwright/commands/prompt-fix.md` (new)
+- `plugins/shipwright/scripts/prompt-audit/{blast,watch,hitl-policy}.ts` (new) with unit tests
 - `plugins/shipwright/skills/prompt-scan/references/ledger-schema.md` — `queued`/`taskId` fields
 - `plugins/shipwright/references/pre-filing-verification.md` — cited
 - `docs/prompt-audit.md`, `plugins/shipwright/README.md`, `plugins/shipwright/TESTING.md`
 
-**Testing Strategy**: Layer: content — the skill is markdown executed by the model; its contracts (flags, cap, id format, body template) are asserted as static content, and task-store I/O is exercised manually per `TESTING.md`.
+**Testing Strategy**: Layer: unit for `hitl-policy.ts`, `blast.ts` and `watch.ts`; content — the skill is markdown executed by the model; its contracts (flags, cap, id format, body template) are asserted as static content, and task-store I/O is exercised manually per `TESTING.md`.
 
 ---
 
 ### Feature 5: `prompt-eval` (eval tier: with/without, A/B, trigger sets, production series)
 
 **Priority**: Medium
-**Description**: The gated measurement channel for changes that could affect quality. Builds a frozen case set per finding, runs it with/without or on two checkouts, measures trigger precision/recall for description changes, or reads the production series for CLAUDE.md-class findings, always with the cost estimated and capped before anything runs.
+**Description**: The gated measurement channel for changes that could affect quality. It is not assumed to be valid: production runs are the primary evidence (Feature 1), and synthetic cases generated from a command's own steps mostly test whether the model follows the steps it was given, which is circular and tends to be too easy. This tier is built to be calibrated against known outcomes before it may support any quality claim. Output wording is "no regression detected within minimum detectable effect X", never "quality unchanged".
 
 **User Stories**:
 - As an operator, I want to see the estimated spend before an eval runs and refuse it with a cap.
@@ -227,24 +244,30 @@ Two **contexts** are reported everywhere because load class differs by cwd:
 
 **Requirements**:
 - Skill `plugins/shipwright/skills/prompt-eval/SKILL.md` + stub `commands/prompt-eval.md`; flags `--finding <fp>`, `--kind with-without|ab|trigger|production-series`, `--max-cost-usd <n>` (default 5), `--model <id>`, `--runs <n>` (default 3).
-- Harness `plugins/shipwright/scripts/prompt-audit/eval-harness.ts`: `buildEvalCases(finding, repoDir, deps)` (20–30 frozen prompts derived from the command's own steps; trigger sets = should/shouldn't prompts with a `tool_used: Skill` grader) written as `evals/<case>/prompt.md` + `graders/*.md`; `runPluginEval` wrapping `claude plugin eval --json --trust-plugin --no-publish --max-cost-usd`; `abOnTwoCheckouts` (`git worktree add` base/head, same cases, diff JSON); `productionSeries` reading `/outcomes` + `/stats` by `contextFingerprint`.
+- Design rules: mechanical (code) graders first (tests pass, expected task-store state reached, required steps present in the transcript, `tool_used: Skill`); an LLM judge only for subjective items, from a different model family than the generator and validated against human labels (Cohen's kappa reported); paired design (same cases both arms) with at least 3 seeds per case, analyzed paired (McNemar or mixed model), repeats not treated as independent; a stated minimum detectable effect (about 33 points at 30 unpaired cases, 80% power, baseline pass rate 0.7, by normal approximation) printed with every result; a case set seeded from real historical tasks where feasible (repo reset to the pre-task commit, final diff and review outcome hidden, mechanical outcomes only), with purely synthetic cases demoted to smoke tests. Commands that mutate GitHub or the task store may not be replayable; for those the tier degrades to cost-only plus the production series, and the report says so.
+- Harness `plugins/shipwright/scripts/prompt-audit/eval-harness.ts`: `buildEvalCases(finding, repoDir, deps)` (frozen paired cases; trigger sets = should/shouldn't prompts with a `tool_used: Skill` grader) written as `evals/<case>/prompt.md` + `graders/*.md`; `runPluginEval` wrapping `claude plugin eval --json --trust-plugin --no-publish --max-cost-usd`; `abOnTwoCheckouts` (`git worktree add` base/head, same cases, diff JSON); `productionSeries` reading `/outcomes` + `/stats` by `contextFingerprint`.
 - Prints the estimated cost (cases × runs × arms × last per-case cost, default $0.10) **before** running and refuses without a cap.
 - Writes `ledger.findings[fp].measured` (kind, before, after, delta, costUsd, series or artifacts, runAt) and prints a PR-citable block.
 - Caveat enforced: `claude plugin eval` loads only the plugin under test, so CLAUDE.md-class findings use `production-series` or `with-without` with `append_system_prompt`.
 - Evals never run from the cron; only inside a fix task or by a human.
+- **Calibration gate (PAU-5.4, HITL).** `prompt-eval` refuses to emit a quality result unless a signed calibration record exists at `docs/prompt-audit-calibration.md`. The record must show, for a representative command: (1) 3–5 deliberately degraded variants (a key step removed, an instruction contradicted) are flagged as regressions; (2) an A/A run of an unchanged or no-op-rewritten file is not flagged, with the observed false-positive rate; (3) a human-labelled gold set of 20–30 items, with judge-vs-human kappa if any LLM judge is used; (4) the minimum detectable effect, compared to the 5–10 point changes the audit expects. Acceptable pass thresholds are recorded in the file (suggested: all known-bad variants flagged, A/A false positives at most 10%). **Failing calibration is an accepted outcome:** the tier stays off, quality claims remain banned, and only cost-only findings plus the production series are used. The Sonnet 4.6 to 5.5 cutover (Feature 2) is the natural first real-world cross-check: the eval, run on both models, should agree in direction with the production series.
 
 **Acceptance Criteria**:
 - [ ] `/shipwright:prompt-eval --finding <fp> --kind ab --max-cost-usd 2` prints the estimate first, runs on two checkouts with identical cases, and writes `measured` with before/after score, delta, and cost.
 - [ ] Without `--max-cost-usd` (or with the estimate above the cap) the skill refuses to run and says why.
+- [ ] Without a calibration record the skill refuses to report any quality result and says why; with a failed record it reports cost-only output.
+- [ ] Results print the minimum detectable effect and use "no regression detected within MDE" wording; a fixture result with a difference below the MDE is not called a win or a loss.
+- [ ] Cases are paired across arms with at least 3 seeds; the diff reports paired statistics.
 - [ ] A `trigger` run writes should/shouldn't cases with a `tool_used: Skill` grader and reports precision and recall.
 - [ ] A `production-series` run reads `/outcomes` and `/stats` for the finding's before/after `contextFingerprint`, refuses to call a result with < 20 runs per arm, and records both run counts.
 - [ ] Unit tests cover case generation, cost estimation, JSON diffing, and the series reader with injected `exec`/`fetchFn`; nothing spawns `claude` or hits the network in tests.
 - [ ] Content tests assert the stub, flags, cost-gate wording, and the sandbox caveat.
 
-**Technical Considerations**: `claude plugin eval` JSON exposes a top-level `costUsd` and per-case `score`/`delta` but no per-case tokens; version A/B is not built in, hence two checkouts. Decision rules follow the cost-optimization method: one lever per diff, pass rate and cost per task read together, revert anything that gives back accuracy, never decide on a one-case swing.
+**Technical Considerations**: `claude plugin eval` JSON exposes a top-level `costUsd` and per-case `score`/`delta` but no per-case tokens; version A/B is not built in, hence two checkouts. Decision rules follow the cost-optimization method: one lever per diff, pass rate and cost per task read together, revert anything that gives back accuracy, never decide on a one-case swing. Production-series pitfalls stay in force: stratify by phase, pin the model, annotate change dates, one prompt change at a time, and treat the series as detecting only large sustained shifts.
 
 **Source Map**:
 - `plugins/shipwright/scripts/prompt-audit/eval-harness.ts` (new)
+- `docs/prompt-audit-calibration.md` (new, written by PAU-5.4)
 - `plugins/shipwright/skills/prompt-eval/SKILL.md` (new), `plugins/shipwright/commands/prompt-eval.md` (new)
 - `plugins/shipwright/skills/prompt-scan/references/ledger-schema.md` — `measured` field
 - `docs/prompt-audit.md`, `plugins/shipwright/README.md`, `plugins/shipwright/TESTING.md`
@@ -284,11 +307,11 @@ Two **contexts** are reported everywhere because load class differs by cwd:
 ## Priorities & Sequence
 
 Strict order, each feature gated on the previous:
-1. **Feature 1 (metrics production)** first; nothing downstream is measurable without it. Within it, the agent/admin/pricing core before the outcomes endpoint and review verdict.
+1. **Feature 1 (metrics production)** first; nothing downstream is measurable without it. Within it, the agent/admin/pricing core before the outcomes endpoint and PR outcome aggregates.
 2. **Feature 2 (model bump)** only after ≥ 2 weeks or ≥ 20 runs per phase of Feature 1 data.
 3. **Feature 3 (`prompt-scan`)** can start in parallel with Feature 2's waiting period; scripts and precheck before the skill; the bootstrap checklist is its exit gate.
 4. **Feature 4 (`prompt-fix`)** after Feature 3 (it reads the report and ledger).
-5. **Feature 5 (`prompt-eval`)** after Feature 4 (fix tasks cite its command) and after Feature 1's outcomes endpoint (the production-series kind reads it).
+5. **Feature 5 (`prompt-eval`)** after Feature 4 (fix tasks cite its command) and after Feature 1's outcomes endpoint (the production-series kind reads it). Its skill ships last and only after the calibration gate (PAU-5.4); until then fix tasks rely on cost-only proof plus the production series.
 
 ## Testing Strategy
 
@@ -297,7 +320,7 @@ Strict order, each feature gated on the previous:
 | 1. Metrics production | unit + integration + smoke | pure accumulator/stamp/payload/pricing are unit; reporter PATCH body and admin upserts/aggregation need a stub server and real test Postgres; route shapes are in-process smoke |
 | 2. Model bump | unit | constants and alias mapping are pure; the measurement is a documented read of production series |
 | 3. `prompt-scan` | unit + content | scripts are pure with injected fs/fetch/git/clock and recorded `count_tokens` fixtures; skill and stub markdown are content-asserted; precheck unit-tested like siblings |
-| 4. `prompt-fix` | content | markdown executed by the model; contracts (flags, cap, id format, body template) are static assertions; task-store I/O is exercised via `TESTING.md` scenarios |
+| 4. `prompt-fix` | unit + content | the `hitl` policy function, `blast.ts` and `watch` are pure and unit-tested with injected fs/fetch/git/clock; the skill markdown (flags, cap, id format, body template, guardrail wording) is content-asserted; task-store I/O is exercised via `TESTING.md` scenarios |
 | 5. `prompt-eval` | unit + content | harness with injected exec/fetch and recorded eval JSON; skill and stub content-asserted |
 
 ## Resolved Decisions
@@ -306,7 +329,7 @@ Strict order, each feature gated on the previous:
 - **Scope**: Shipwright repo only for the first delivery. — Rationale: user decision; the repo is both the plugin source and its first target, and producing the missing metrics is only possible here.
 - **Home**: New patrol pair inside the shipwright plugin (`prompt-scan` / `prompt-fix` / `prompt-eval`) mirroring entropy/consolidation/security/error. — Rationale: user decision; reuses scheduling, task-store queuing, prechecks, registries, and the test/version machinery.
 - **Target model**: Sonnet 5.5, with the fleet bump from 4.6 as its own measured change (Feature 2). — Rationale: user decision; auditing for the model being moved to avoids re-auditing after the bump.
-- **Every change carries a measurable result**: findings are labelled cost-only or quality-claimed; quality-claimed changes require an eval or production series and can never be queued `hitl: false`. — Rationale: user's hard requirement; empirical evidence (arXiv 2602.11988, 2605.10039) shows length alone is not a quality lever.
+- **Every change carries a measurable result**: findings are labelled cost-only or quality-claimed; quality-claimed changes require an eval or production series and can never be queued `hitl: false`. — Rationale: user's hard requirement; empirical evidence (arXiv 2602.11988, 2605.10039) shows context files add cost without a general success gain and that size had no detectable adherence effect in the settings tested; it does not show trimming is safe for orchestration prompts, hence measurement is required.
 - **Attribution source**: computed in-stream by the agent, not from transcript JSONL files. — Rationale: the stream already carries every event; the container `$HOME` is not the persistent volume, so files can vanish.
 - **Baseline definition**: `input + cache_creation + cache_read` of the first non-subagent assistant turn; dropped on resumed sessions. — Rationale: cache-warmth independent; a resumed first turn replays history.
 - **Series key**: `contextFingerprint` over the always-loaded set + plugin version, not merge date. — Rationale: compares what the model was given.
@@ -319,10 +342,24 @@ Strict order, each feature gated on the previous:
 - **Existing implementation**: branch `feat/prompt-audit-metrics` (closed PR #3977) holds most of Feature 1 and may be cherry-picked by the Feature 1 tasks. — Rationale: avoids redoing tested work; the PR was closed to re-plan through this PRD, not for defects.
 - **Generated admin types**: hand-synced until the generator is fixed. — Rationale: `openapi-typescript@7` crashes under TypeScript 7 in this repo; fixing it is out of scope.
 
+- **Core loop untouched**: no edit to `review.md`, `dev-task.md`, `patch.md` or `deploy.md`; telemetry rides the existing stream and cron-run PATCH; PR outcomes are derived read-only from existing `PullRequest` fields. — Rationale: user requirement; the agent-side reconciler was inspected and rejected (poll-only, skips approved records, first-50 reviews, GraphQL load).
+- **Propose-only prompt-fix**: all tasks `hitl: true` until a human promotes a rule via the decisions registry; `hitl` computed deterministically from a blast-radius report. — Rationale: user concern that an executing agent with a limited view could silently degrade prompts; silent regressions throw no errors.
+- **Eval tier gated by calibration**: quality claims need a signed calibration record; a failed calibration is acceptable and leaves cost-only plus production series. — Rationale: user question on whether synthetic evals are realistic; practitioner evidence flags circularity, easy cases and small-N noise, and 20–30 unpaired cases only detect very large effects.
+- **No automatic revert or merge**: post-merge watch only flags and files a `hitl: true` revert-proposal. — Rationale: attribution from observational series is noisy and confounded.
+
 ## Success Criteria
 
 - Every cron run on an upgraded agent reports a first-turn baseline, counts, attribution, and a fingerprint, visible in `bySkill`, `baselines`, and `/outcomes`.
 - The model bump is decided from before/after numbers per phase, written down, and either kept or reverted on evidence.
 - The first `/shipwright:prompt-scan --with-doctor` on this repo reproduces the ten bootstrap findings, and every row states its metric, tier, and cost-only/quality-claimed label.
 - Every `prompt-fix` task body contains an acceptance command whose output proves a same-model token delta, and quality-claimed tasks additionally cite an eval or production series in their PR.
+- No core-loop phase file (`dev-task`, `review`, `patch`, `deploy`) is modified by this work.
+- No prompt-fix task is dispatched without a human until a rule has been explicitly promoted, and no prompt edit lands during the model cutover window.
+- The eval tier either passes a recorded calibration or stays off; no quality claim is made without one.
 - The patrol runs weekly, disabled by default, and can be enabled per agent with no other configuration.
+
+## Open Questions
+
+- **CODEOWNERS enforcement**: should `plugins/shipwright/**`, `agent/workspace/**`, root `CLAUDE.md` and `.claude/**` require code-owner review? It is the only structural way to stop an unreviewed merge of a prompt edit, but conflicts with the documented bypass-actor merge design (0 required approvals). Owner decision; not scheduled.
+- **Per-agent plugin pinning for a real canary**: the plugin is installed from one checkout, so a true canary agent does not exist today. Phase 1 relies on the post-merge series comparison instead. Revisit if prompt-fix autonomy is ever widened.
+- **Replay feasibility**: whether dev-task/review/patch can be replayed against historical tasks without GitHub or task-store side effects is unproven; PAU-5.4 decides it empirically.
