@@ -29,6 +29,8 @@ import { SECRET_ENV_VARS } from "@shipwright/lib/secret-env-vars";
 import { type Context, Hono, type MiddlewareHandler } from "hono";
 import { deleteCookie, getCookie, setCookie } from "hono/cookie";
 import { sign, verify } from "hono/jwt";
+import type { AccountCreatedNotifier } from "./account-created-notifier.ts";
+import { fireAccountCreatedNotification } from "./account-created-notifier.ts";
 import type { AccountOnboardingService } from "./account-onboarding.ts";
 import {
   type AgentDetail,
@@ -405,6 +407,8 @@ export interface AdminUIDeps {
    * callback only, and only when selfServe.enabled; absent → no auto-create.
    */
   accountOnboarding?: Pick<AccountOnboardingService, "provisionForEmail">;
+  /** Best-effort operator push on auto-created accounts (SSP-3.3). */
+  accountCreatedNotifier?: AccountCreatedNotifier;
   /**
    * Fetch tasks from the task-store service. If absent, the tasks page renders
    * in degraded mode (empty table + yellow notice) rather than returning 500.
@@ -920,6 +924,7 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
     provisioner,
     selfServe,
     accountOnboarding,
+    accountCreatedNotifier,
     agentTypeRegistry = new AgentTypeRegistry(),
     callerScopeResolver = memberOnlyCallerScopeResolver(agentMemberService),
     taskStore,
@@ -1130,6 +1135,13 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
               emailDomain: email.slice(email.lastIndexOf("@") + 1),
             }),
           );
+        }
+        // Only a brand-new account notifies; invite-joins do not.
+        if (result.kind === "created") {
+          fireAccountCreatedNotification(accountCreatedNotifier, {
+            accountId: result.accountId,
+            emailDomain: email.slice(email.lastIndexOf("@") + 1),
+          });
         }
       }
     }

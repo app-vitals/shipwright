@@ -776,6 +776,41 @@ describe("admin UI — Google callback self-serve signup (SSP-3.1)", () => {
     expect(calls).toEqual(["new.user@example.com"]);
   });
 
+  it("created account notifies once; a throwing notifier does not fail login", async () => {
+    const notified: unknown[] = [];
+    const run = async (
+      kind: "created" | "joined" | "existing",
+      throws = false,
+    ) => {
+      const app = createAdminUIApp(
+        makeMockDeps({
+          googleClient: identity(),
+          selfServe: enabled,
+          accountOnboarding: {
+            provisionForEmail: async () => ({ kind, accountId: "acc-1" }),
+          },
+          accountCreatedNotifier: async (info) => {
+            notified.push(info);
+            if (throws) throw new Error("push down");
+          },
+        }),
+      );
+      return app.request(callbackRequest(nonce));
+    };
+    const res = await run("created", true);
+    expect(res.status).toBe(302);
+    expect(res.headers.get("Location")).toBe("/admin/agents");
+    expect(res.headers.get("Set-Cookie")).toContain("admin_session=");
+    expect(notified).toEqual([
+      { accountId: "acc-1", emailDomain: "example.com" },
+    ]);
+
+    notified.length = 0;
+    await run("joined");
+    await run("existing");
+    expect(notified).toEqual([]);
+  });
+
   it("flag off: unknown email still gets 403 and nothing is provisioned", async () => {
     let called = false;
     const app = createAdminUIApp(

@@ -24,6 +24,7 @@ import { sentry } from "@sentry/hono/bun";
 import { registerGracefulShutdown } from "@shipwright/lib/graceful-shutdown";
 import { buildSentryInitOptions, initSentry } from "@shipwright/lib/sentry";
 import { Hono } from "hono";
+import { createAccountCreatedNotifier } from "./account-created-notifier.ts";
 import { AccountOnboardingService } from "./account-onboarding.ts";
 import { AccountService } from "./accounts.ts";
 import { createAdminUIApp } from "./admin-ui.ts";
@@ -808,6 +809,13 @@ async function startServer(): Promise<void> {
       prisma,
       selfServe.defaultMaxAgents,
     ),
+    ...(() => {
+      const accountCreatedNotifier = createAccountCreatedNotifier({
+        ...(pushService ? { pushService } : {}),
+        adminEmails: adminAllowedEmails,
+      });
+      return accountCreatedNotifier ? { accountCreatedNotifier } : {};
+    })(),
     timezone: adminTz,
     ...(chatClient ? { chatClient } : {}),
     ...(pushService
