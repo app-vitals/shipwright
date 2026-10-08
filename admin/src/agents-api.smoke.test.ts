@@ -2951,6 +2951,28 @@ describe("admin API — typeName field", () => {
     const body = await res.json();
     expect(body.typeName).toBe("coding");
   });
+
+  it.each([
+    ["maps an unassigned agent to accountId null", undefined, null],
+    ["exposes the owning accountId", "acct-a", "acct-a"],
+  ])("GET /agents/:id %s", async (_name, stored, expected) => {
+    const base = makeMockDeps();
+    const deps: AdminDeps = {
+      ...base,
+      agentService: {
+        ...base.agentService,
+        getDetail: async (id: string) => ({
+          ...(await base.agentService.getDetail(id))!,
+          ...(stored !== undefined ? { accountId: stored } : {}),
+        }),
+      },
+    };
+    const res = await createAdminApp(deps).request(`/agents/${AGENT_ID}`, {
+      headers: { Cookie: `admin_session=${cookie}` },
+    });
+    expect(res.status).toBe(200);
+    expect((await res.json()).accountId).toBe(expected);
+  });
 });
 
 // ─── missingRequiredEnv field smoke tests (ATS-4.2) ────────────────────────────

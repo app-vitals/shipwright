@@ -151,6 +151,12 @@
           "typeName": {
             "type": "string"
           },
+          "accountId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
           "createdAt": {
             "type": "string",
             "format": "date-time"
@@ -216,6 +222,7 @@
           "patchAuthorAllowlist",
           "restrictSlackToMembers",
           "typeName",
+          "accountId",
           "createdAt",
           "updatedAt",
           "missingRequiredEnv",
@@ -2832,7 +2839,7 @@
     "/agents/{id}": {
       "get": {
         "summary": "Get an agent",
-        "description": "Admin-only. Returns the full agent record including `selfHosted`, `repos`, `reviewAuthorAllowlist`, `patchAuthorAllowlist`, `restrictSlackToMembers`, `typeName`, and `missingRequiredEnv` — required env keys declared by the agent's type manifest with no corresponding AgentEnv row yet (informational only).",
+        "description": "Admin-only. Returns the full agent record including `selfHosted`, `repos`, `reviewAuthorAllowlist`, `patchAuthorAllowlist`, `restrictSlackToMembers`, `typeName`, `accountId` (null for unassigned agents), and `missingRequiredEnv` — required env keys declared by the agent's type manifest with no corresponding AgentEnv row yet (informational only).",
         "parameters": [
           {
             "schema": {

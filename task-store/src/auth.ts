@@ -21,6 +21,16 @@
  *   the resolver isn't invoked or resolves successfully (including to []),
  *   and always false for admin tokens.
  *
+ * Account scope:
+ *   The resolver also returns the agent's `accountId` (null = unassigned
+ *   agent, mapped to DEFAULT_ACCOUNT_ID). It is stored as `accountId` on the
+ *   context: admin tokens get null (unrestricted); agent tokens get the
+ *   resolved account. FAIL CLOSED: when the resolver rejects (or returns a
+ *   malformed shape, which the resolver itself turns into a rejection), the
+ *   agent gets `repos: []`, `scopeDegraded: true`, and the NO_ACCESS_ACCOUNT_ID
+ *   sentinel — never the default account. See account-scope.ts for the
+ *   helper later tasks use to read it.
+ *
  * Caller:
  *   A shared `Caller` (see lib/request-context.ts) is also stored as `caller`,
  *   for use in logging (e.g. app.ts's onError handler). Admin tokens resolve
@@ -29,8 +39,24 @@
  */
 
 import type { MiddlewareHandler } from "hono";
+import { DEFAULT_ACCOUNT_ID } from "@shipwright/lib/default-account";
 import type { Caller } from "@shipwright/lib/request-context";
 import type { TokenServiceLike } from "./token-service.ts";
+
+/** What a scope resolver returns for an agent. */
+export interface ScopeResolution {
+  repos: string[];
+  /** The agent's account; null for unassigned agents (treated as the default account). */
+  accountId: string | null;
+}
+
+export type ScopeResolver = (agentId: string) => Promise<ScopeResolution>;
+
+/**
+ * Sentinel accountId for an agent whose scope could not be resolved. No row
+ * carries this accountId, so any accountId filter matches nothing.
+ */
+export const NO_ACCESS_ACCOUNT_ID = "";
 
 export type TaskStoreAuthEnv = {
   Variables: {
@@ -52,6 +78,13 @@ export type TaskStoreAuthEnv = {
      * not change any authz decision.
      */
     scopeDegraded: boolean;
+    /**
+     * Account the caller is scoped to.
+     * null  = admin token (unrestricted).
+     * string = agent token's account (DEFAULT_ACCOUNT_ID for unassigned agents).
+     * NO_ACCESS_ACCOUNT_ID = scope resolution failed (scopeDegraded) — matches no rows.
+     */
+    accountId: string | null;
     /** Shared caller identity, derived from agentId — see lib/request-context.ts. */
     caller: Caller;
   };
@@ -59,8 +92,8 @@ export type TaskStoreAuthEnv = {
 
 export function createBearerAuthMiddleware(deps: {
   tokenService: Pick<TokenServiceLike, "validate">;
-  /** Optional resolver that returns the repos for a given agent ID. */
-  scopeResolver?: (agentId: string) => Promise<string[]>;
+  /** Optional resolver that returns the repos and account for a given agent ID. */
+  scopeResolver?: ScopeResolver;
 }): MiddlewareHandler<TaskStoreAuthEnv> {
   const { tokenService, scopeResolver } = deps;
 
@@ -108,24 +141,43 @@ export function createBearerAuthMiddleware(deps: {
     if (result.agentId === null) {
       c.set("repos", null);
       c.set("scopeDegraded", false);
+      c.set("accountId", null);
     } else if (scopeResolver !== undefined) {
       let repos: string[];
+      let accountId: string;
       let scopeDegraded = false;
       try {
-        repos = await scopeResolver(result.agentId);
+        const resolution = await scopeResolver(result.agentId);
+        if (!isScopeResolution(resolution)) {
+          throw new Error("scope resolver returned a malformed resolution");
+        }
+        repos = resolution.repos;
+        accountId = resolution.accountId ?? DEFAULT_ACCOUNT_ID;
       } catch {
         repos = [];
+        accountId = NO_ACCESS_ACCOUNT_ID;
         scopeDegraded = true;
       }
       c.set("repos", repos);
       c.set("scopeDegraded", scopeDegraded);
+      c.set("accountId", accountId);
     } else {
       c.set("repos", []);
       c.set("scopeDegraded", false);
+      c.set("accountId", DEFAULT_ACCOUNT_ID);
     }
 
     return next();
   };
+}
+
+function isScopeResolution(v: unknown): v is ScopeResolution {
+  if (!v || typeof v !== "object" || Array.isArray(v)) return false;
+  const r = v as Record<string, unknown>;
+  return (
+    Array.isArray(r.repos) &&
+    (r.accountId === null || typeof r.accountId === "string")
+  );
 }
 
 /**
@@ -134,7 +186,8 @@ export function createBearerAuthMiddleware(deps: {
  * GET {baseUrl}/agents/{agentId}
  *   Authorization: Bearer {adminApiKey}
  *
- * Returns the `repos` array from the response body.
+ * Returns `{repos, accountId}` from the response body (`accountId` null =
+ * unassigned agent).
  *
  * Infra failures (fetch throwing/timeout, non-2xx status, malformed JSON
  * body) are genuine failures of the resolver call itself — these propagate
@@ -143,16 +196,16 @@ export function createBearerAuthMiddleware(deps: {
  * `scopeDegraded` signal).
  *
  * A successful response with a malformed *shape* (missing `repos` key,
- * `repos` not an array, body is an array/null) is not an infra failure —
- * the call itself succeeded — so that case still returns [] rather than
- * throwing.
+ * `repos` not an array, missing/non-string `accountId`, body is an
+ * array/null) also rejects: guessing an account would risk granting
+ * default-account access, so the middleware fails closed on it.
  */
 export function createScopeResolver(
   baseUrl: string,
   adminApiKey: string,
-): (agentId: string) => Promise<string[]> {
+): ScopeResolver {
   const normalizedBaseUrl = baseUrl.replace(/\/$/, "");
-  return async (agentId: string): Promise<string[]> => {
+  return async (agentId: string): Promise<ScopeResolution> => {
     let res: Response;
     try {
       res = await fetch(`${normalizedBaseUrl}/agents/${agentId}`, {
@@ -164,9 +217,7 @@ export function createScopeResolver(
     }
 
     if (!res.ok) {
-      throw new Error(
-        `scope resolver received non-ok status: ${res.status}`,
-      );
+      throw new Error(`scope resolver received non-ok status: ${res.status}`);
     }
 
     let body: unknown;
@@ -178,16 +229,13 @@ export function createScopeResolver(
       });
     }
 
-    if (
-      body &&
-      typeof body === "object" &&
-      !Array.isArray(body) &&
-      Array.isArray((body as Record<string, unknown>).repos)
-    ) {
-      const repos = (body as Record<string, unknown>).repos as unknown[];
-      return repos.filter((r): r is string => typeof r === "string");
+    if (isScopeResolution(body)) {
+      return {
+        repos: body.repos.filter((r): r is string => typeof r === "string"),
+        accountId: body.accountId,
+      };
     }
 
-    return [];
+    throw new Error("scope resolver received malformed response shape");
   };
 }

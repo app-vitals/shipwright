@@ -238,7 +238,10 @@ function makeAgentApp(
     tokenService,
     sessionService: fakeSessionService(),
     // Scope resolver returns the repos the agent was configured with.
-    scopeResolver: async (_agentId: string) => scopedRepos,
+    scopeResolver: async (_agentId: string) => ({
+      repos: scopedRepos,
+      accountId: null,
+    }),
   });
 }
 
