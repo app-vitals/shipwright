@@ -2257,15 +2257,16 @@ describe("loop-orchestrator + patch outcome check (PHS-3.1)", () => {
     expect(skips).toEqual(["/prs/pr-record-1/skip"]);
   });
 
-  test("a thrown patch run is also checked (and still propagates to the drain's isolation)", async () => {
+  test("a thrown patch run with unchanged state is not escalated; the crash-budget skip still records (POH-1.1)", async () => {
     await runPatchTick({
       headSha: () => "sha1",
       result: async () => {
         throw new Error("claude crashed");
       },
     });
-    expect(patches).toHaveLength(1);
-    expect(patches[0].body.blocked).toBe(true);
+    expect(patches).toHaveLength(0);
+    expect(skips).toEqual(["/prs/pr-record-1/skip"]);
+    expect(skipBodies.map((b) => b.reason)).toEqual([DISPATCH_ERROR_SKIP_REASON]);
   });
 
   test("repeated crashing patch runs record the same dispatch-error skip reason each time (PHS-3.3)", async () => {

@@ -1571,8 +1571,8 @@ export function createLoopOrchestrator(
   /**
    * PHS-3.1 — wraps dispatchScoped() for patch dispatches with the state-based
    * outcome check: snapshot the PR's candidacy before, run the dispatch, and
-   * on every exit (including a throw, which still propagates unchanged)
-   * recompute it. Same head + same unsettled state means the run broke the
+   * on every non-throwing exit (a throw propagates unchanged and skips the
+   * check, leaving it to the PHS-3.3 crash budget) recompute it. Same head + same unsettled state means the run broke the
    * "settled, changed, or escalated" invariant, so escalate the PR record
    * (blocked + specific reason) rather than let the next tick re-dispatch it.
    * Everything here is best-effort: a failed read or escalation is logged and
@@ -1601,6 +1601,7 @@ export function createLoopOrchestrator(
     }
     const before = await patchOutcome.snapshot(itemId, prAuthor);
     patchLiveBefore.set(itemId, { before, prAuthor });
+    let completed = false;
     try {
       await dispatchScoped(
         phase,
@@ -1611,12 +1612,16 @@ export function createLoopOrchestrator(
         preClaimMarker,
         commandArgs,
       );
+      completed = true;
     } finally {
       patchLiveBefore.delete(itemId);
       try {
-        const after = before
-          ? await patchOutcome.snapshot(itemId, prAuthor)
-          : null;
+        // A thrown dispatch (crash/timeout) is left to the PHS-3.3 crash budget
+        // (recordSkip with the error reason) — escalating here would bypass it.
+        const after =
+          before && completed
+            ? await patchOutcome.snapshot(itemId, prAuthor)
+            : null;
         if (before && after) {
           const outcome = evaluatePatchOutcome(before, after);
           if (outcome.kind === "escalated") {
