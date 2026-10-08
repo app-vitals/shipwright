@@ -25,8 +25,8 @@
  * five separate crons.
  */
 
-import { Prisma } from "../prisma/client/client.ts";
 import type { PrismaClient } from "../prisma/client/client.ts";
+import { Prisma } from "../prisma/client/client.ts";
 
 // ─── Types (mirrored from metrics/src/lib/admin-metrics-client.ts) ───────────
 // These types are defined here to keep admin self-contained (rootDir constraint).
@@ -69,6 +69,51 @@ export interface CronRunTokenStats {
   daily: DailyTokenAggregate[];
   byCronModel: DoubleKeyedTokenAggregate[]; // key1=agentId:cronName, key2=model
   byPhase: KeyedTokenAggregate[]; // key=phase; runs with a null phase are excluded
+}
+
+export interface CronRunOutcomeSeries {
+  /** Pipeline phase ("dev-task", "review", ...); null for runs without a phaseId. */
+  phase: string | null;
+  /** Context fingerprint stamped by the agent; null for runs that predate it. */
+  contextFingerprint: string | null;
+  runs: number;
+  completed: number;
+  failed: number;
+  skipped: number;
+  /** skipReason → count, over this series' skipped runs (null reasons key as "unknown"). */
+  skipReasons: Record<string, number>;
+  /** Over non-skipped runs with a completedAt; null when there are none. */
+  avgDurationMs: number | null;
+  p50DurationMs: number | null;
+  /** Over non-skipped runs that reported the metric; null when none did. */
+  avgTurns: number | null;
+  avgToolCalls: number | null;
+  avgContextTokens: number | null;
+}
+
+export interface CronRunOutcomes {
+  series: CronRunOutcomeSeries[];
+}
+
+interface OutcomeRow {
+  phase: string | null;
+  context_fingerprint: string | null;
+  runs: bigint;
+  completed: bigint;
+  failed: bigint;
+  skipped: bigint;
+  avg_duration_ms: number | null;
+  p50_duration_ms: number | null;
+  avg_turns: number | null;
+  avg_tool_calls: number | null;
+  avg_context_tokens: number | null;
+}
+
+interface SkipReasonRow {
+  phase: string | null;
+  context_fingerprint: string | null;
+  skip_reason: string | null;
+  n: bigint;
 }
 
 // ─── Raw row types from $queryRaw ────────────────────────────────────────────
@@ -284,6 +329,86 @@ export class AgentCronRunStatsService {
     }));
 
     return { totals, byAgent, byCron, byModel, daily, byCronModel, byPhase };
+  }
+
+  /**
+   * Per-(phase, contextFingerprint) outcome series for the prompt-audit
+   * before/after comparison. Unlike query(), skipped runs are counted here
+   * (in `skipped` and `skipReasons`) but excluded from the duration, turn,
+   * tool-call, and context-token averages.
+   */
+  async outcomes(from?: string, to?: string): Promise<CronRunOutcomes> {
+    const filter = dateFilter(
+      from ? new Date(from) : null,
+      to ? new Date(to) : null,
+      "r",
+    );
+    const [rows, reasonRows] = await Promise.all([
+      this.prisma.$queryRaw<OutcomeRow[]>`
+        SELECT
+          REGEXP_REPLACE(p.name, '^shipwright-', '') AS phase,
+          r."contextFingerprint"                      AS context_fingerprint,
+          COUNT(*)                                    AS runs,
+          COUNT(*) FILTER (WHERE r.skipped = false AND r.outcome = 'completed') AS completed,
+          COUNT(*) FILTER (WHERE r.skipped = false AND r.outcome = 'failed')    AS failed,
+          COUNT(*) FILTER (WHERE r.skipped = true)                              AS skipped,
+          (AVG(EXTRACT(EPOCH FROM (r."completedAt" - r."startedAt")) * 1000)
+            FILTER (WHERE r.skipped = false AND r."completedAt" IS NOT NULL))::float8 AS avg_duration_ms,
+          (PERCENTILE_CONT(0.5) WITHIN GROUP (
+            ORDER BY EXTRACT(EPOCH FROM (r."completedAt" - r."startedAt")) * 1000
+          ) FILTER (WHERE r.skipped = false AND r."completedAt" IS NOT NULL))::float8 AS p50_duration_ms,
+          (AVG(r.turns) FILTER (WHERE r.skipped = false))::float8                AS avg_turns,
+          (AVG(r."toolCalls") FILTER (WHERE r.skipped = false))::float8          AS avg_tool_calls,
+          (AVG(r."baselineContextTokens") FILTER (WHERE r.skipped = false))::float8 AS avg_context_tokens
+        FROM "AgentCronRun" r
+        LEFT JOIN "AgentCronJob" p ON p.id = r."phaseId"
+        WHERE true
+        ${filter}
+        GROUP BY p.name, r."contextFingerprint"
+        ORDER BY p.name NULLS LAST, r."contextFingerprint" NULLS LAST
+      `,
+      this.prisma.$queryRaw<SkipReasonRow[]>`
+        SELECT
+          REGEXP_REPLACE(p.name, '^shipwright-', '') AS phase,
+          r."contextFingerprint"                      AS context_fingerprint,
+          r."skipReason"                              AS skip_reason,
+          COUNT(*)                                    AS n
+        FROM "AgentCronRun" r
+        LEFT JOIN "AgentCronJob" p ON p.id = r."phaseId"
+        WHERE r.skipped = true
+        ${filter}
+        GROUP BY p.name, r."contextFingerprint", r."skipReason"
+      `,
+    ]);
+
+    const keyOf = (phase: string | null, fp: string | null) =>
+      JSON.stringify([phase, fp]);
+    const reasons = new Map<string, Record<string, number>>();
+    for (const r of reasonRows) {
+      const k = keyOf(r.phase, r.context_fingerprint);
+      const hist = reasons.get(k) ?? {};
+      const reason = r.skip_reason ?? "unknown";
+      hist[reason] = (hist[reason] ?? 0) + Number(r.n);
+      reasons.set(k, hist);
+    }
+
+    return {
+      series: rows.map((row) => ({
+        phase: row.phase,
+        contextFingerprint: row.context_fingerprint,
+        runs: Number(row.runs),
+        completed: Number(row.completed),
+        failed: Number(row.failed),
+        skipped: Number(row.skipped),
+        skipReasons:
+          reasons.get(keyOf(row.phase, row.context_fingerprint)) ?? {},
+        avgDurationMs: row.avg_duration_ms,
+        p50DurationMs: row.p50_duration_ms,
+        avgTurns: row.avg_turns,
+        avgToolCalls: row.avg_tool_calls,
+        avgContextTokens: row.avg_context_tokens,
+      })),
+    };
   }
 
   // ─── Private query methods ──────────────────────────────────────────────────
