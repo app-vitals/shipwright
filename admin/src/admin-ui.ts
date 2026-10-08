@@ -40,9 +40,9 @@ import type { AccountMemberService } from "./account-members.ts";
 import type { AccountOnboardingService } from "./account-onboarding.ts";
 import type { AccountService } from "./accounts.ts";
 import { registerAccountRoutes } from "./admin-ui-account.ts";
-import { registerAdminAccountsRoutes } from "./admin-ui-accounts.ts";
 import { runWithAccountNav } from "./admin-ui-account-nav.ts";
 import { renderZeroQuotaNotice } from "./admin-ui-account-pages.ts";
+import { registerAdminAccountsRoutes } from "./admin-ui-accounts.ts";
 import {
   type AgentDetail,
   type AgentOption,
@@ -4224,6 +4224,28 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
     }
   }
 
+  /**
+   * SSP-8.4: message-send gate. A suspended / trial-expired account's agents
+   * stop accepting chat messages (read-only history stays available). Platform
+   * admins are exempt; agents with no account are unaffected.
+   */
+  async function chatSendBlockedMessage(
+    agentId: string,
+    isAdmin: boolean,
+  ): Promise<string | null> {
+    if (isAdmin || !accountService) return null;
+    const agent = await agentService.getDetail(agentId);
+    if (!agent?.accountId) return null;
+    const account = await accountService.getById(agent.accountId);
+    if (account?.status === "suspended") {
+      return "This account is suspended — chat messages can't be sent. Contact support to reactivate it.";
+    }
+    if (account?.status === "trial_expired") {
+      return "This account's trial has expired — chat messages can't be sent. Upgrade to continue.";
+    }
+    return null;
+  }
+
   app.get("/admin/chat", requireAuth, async (c) => {
     const selectedAgentId = c.req.query("agentId") || undefined;
     const q = c.req.query("q") || undefined;
@@ -4392,6 +4414,17 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
         return new Response("Forbidden", { status: 403 });
       }
 
+      const sendBlocked = await chatSendBlockedMessage(
+        c.req.param("agentId") ?? "",
+        c.var.isAdmin,
+      );
+      if (sendBlocked) {
+        return c.json(
+          { error: "account_suspended", message: sendBlocked },
+          403,
+        );
+      }
+
       const agentId = c.req.param("agentId");
       const threadId = c.req.param("threadId");
 
@@ -4517,6 +4550,14 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
         ))
       ) {
         return new Response("Forbidden", { status: 403 });
+      }
+
+      const sendBlocked = await chatSendBlockedMessage(
+        c.req.param("agentId") ?? "",
+        c.var.isAdmin,
+      );
+      if (sendBlocked) {
+        return new Response(sendBlocked, { status: 403 });
       }
 
       const agentId = c.req.param("agentId");
@@ -4741,6 +4782,17 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
         ))
       ) {
         return new Response("Forbidden", { status: 403 });
+      }
+
+      const sendBlocked = await chatSendBlockedMessage(
+        c.req.param("agentId") ?? "",
+        c.var.isAdmin,
+      );
+      if (sendBlocked) {
+        return c.json(
+          { error: "account_suspended", message: sendBlocked },
+          403,
+        );
       }
 
       const threadId = c.req.param("threadId");
