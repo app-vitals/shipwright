@@ -4,6 +4,7 @@ import {
   type CallerScopeDeps,
   resolveCallerScope,
   scopeIncludesAgent,
+  taskStoreViewScope,
 } from "./caller-scope.ts";
 
 function makeDeps(opts: {
@@ -89,5 +90,27 @@ describe("scopeIncludesAgent", () => {
     };
     expect(scopeIncludesAgent(s, "a")).toBe(true);
     expect(scopeIncludesAgent(s, "b")).toBe(false);
+  });
+});
+
+describe("taskStoreViewScope (SSP-6.8)", () => {
+  it("platform admins see every account", () => {
+    expect(taskStoreViewScope({ kind: "all" })).toEqual({ kind: "all" });
+  });
+
+  it("an account user is narrowed to their account, keeping their agent ids", () => {
+    expect(
+      taskStoreViewScope({
+        kind: "scoped",
+        accountId: "acct-a",
+        agentIds: ["a1"],
+      }),
+    ).toEqual({ kind: "account", accountId: "acct-a", agentIds: ["a1"] });
+  });
+
+  it("a caller with no account (flag off, or no membership) gets no task-store views", () => {
+    expect(
+      taskStoreViewScope({ kind: "scoped", accountId: null, agentIds: ["a1"] }),
+    ).toEqual({ kind: "none" });
   });
 });

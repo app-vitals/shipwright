@@ -76,6 +76,7 @@ import {
   type SessionForAlert,
 } from "./session-alert-sweeper.ts";
 import { HttpSlackProvisioningClient } from "./slack-provisioning-client.ts";
+import { createTaskStoreFetchers } from "./task-store-fetchers.ts";
 import type { TaskStoreProvisioningClient } from "./task-store-provisioning-client.ts";
 import {
   HttpTaskStoreProvisioningClient,
@@ -629,122 +630,15 @@ async function startServer(): Promise<void> {
   // 4. Admin UI — /admin/* — session JWT
   const taskStoreUrl = process.env.SHIPWRIGHT_TASK_STORE_URL;
   const taskStoreAdminToken = process.env.SHIPWRIGHT_TASK_STORE_ADMIN_TOKEN;
+  // Single admin token; each fetcher takes an optional trailing accountId
+  // forwarded as ?accountId= so account users' views are filtered by the
+  // task-store itself (SSP-6.8, admin/src/task-store-fetchers.ts).
   const taskStoreFetchers =
     taskStoreUrl && taskStoreAdminToken
-      ? {
-          fetchTaskStoreTasks: async (params: URLSearchParams) => {
-            const url = `${taskStoreUrl}/tasks${params.size > 0 ? `?${params}` : ""}`;
-            const res = await fetch(url, {
-              headers: { Authorization: `Bearer ${taskStoreAdminToken}` },
-            });
-            if (!res.ok)
-              throw new Error(`task-store GET /tasks → ${res.status}`);
-            return res.json();
-          },
-          fetchTaskStoreTask: async (id: string) => {
-            const res = await fetch(`${taskStoreUrl}/tasks/${id}`, {
-              headers: { Authorization: `Bearer ${taskStoreAdminToken}` },
-            });
-            if (res.status === 404) return null;
-            if (!res.ok)
-              throw new Error(`task-store GET /tasks/${id} → ${res.status}`);
-            return res.json();
-          },
-          releaseTask: async (id: string) => {
-            const res = await fetch(`${taskStoreUrl}/tasks/${id}/release`, {
-              method: "POST",
-              headers: { Authorization: `Bearer ${taskStoreAdminToken}` },
-            });
-            if (!res.ok)
-              throw new Error(
-                `task-store POST /tasks/${id}/release → ${res.status}`,
-              );
-          },
-          fetchDistinctTaskValues: async () => {
-            const res = await fetch(`${taskStoreUrl}/tasks/distinct`, {
-              headers: { Authorization: `Bearer ${taskStoreAdminToken}` },
-            });
-            if (!res.ok)
-              throw new Error(`task-store GET /tasks/distinct → ${res.status}`);
-            return res.json() as Promise<{
-              sessions: string[];
-              repos: string[];
-              orgs: string[];
-            }>;
-          },
-          fetchTaskStorePrs: async (params: URLSearchParams) => {
-            const url = `${taskStoreUrl}/prs${params.size > 0 ? `?${params}` : ""}`;
-            const res = await fetch(url, {
-              headers: { Authorization: `Bearer ${taskStoreAdminToken}` },
-            });
-            if (!res.ok) throw new Error(`task-store GET /prs → ${res.status}`);
-            return res.json();
-          },
-          fetchTaskStorePrById: async (id: string) => {
-            const res = await fetch(`${taskStoreUrl}/prs/${id}`, {
-              headers: { Authorization: `Bearer ${taskStoreAdminToken}` },
-            });
-            if (res.status === 404) return null;
-            if (!res.ok)
-              throw new Error(`task-store GET /prs/${id} → ${res.status}`);
-            return res.json();
-          },
-          fetchVerificationChecks: async (params: URLSearchParams) => {
-            const url = `${taskStoreUrl}/verification-checks${params.size > 0 ? `?${params}` : ""}`;
-            const res = await fetch(url, {
-              headers: { Authorization: `Bearer ${taskStoreAdminToken}` },
-            });
-            if (!res.ok)
-              throw new Error(
-                `task-store GET /verification-checks → ${res.status}`,
-              );
-            return res.json();
-          },
-          fetchTaskStoreSessions: async (params: URLSearchParams) => {
-            const url = `${taskStoreUrl}/sessions${params.size > 0 ? `?${params}` : ""}`;
-            const res = await fetch(url, {
-              headers: { Authorization: `Bearer ${taskStoreAdminToken}` },
-            });
-            if (!res.ok)
-              throw new Error(`task-store GET /sessions → ${res.status}`);
-            return res.json();
-          },
-          fetchTaskStoreSession: async (slug: string) => {
-            const res = await fetch(
-              `${taskStoreUrl}/sessions/${encodeURIComponent(slug)}`,
-              {
-                headers: { Authorization: `Bearer ${taskStoreAdminToken}` },
-              },
-            );
-            if (res.status === 404) return null;
-            if (!res.ok)
-              throw new Error(
-                `task-store GET /sessions/${slug} → ${res.status}`,
-              );
-            return res.json();
-          },
-          patchTaskStoreSession: async (
-            slug: string,
-            patch: { title?: string | null; archived?: boolean },
-          ) => {
-            const res = await fetch(
-              `${taskStoreUrl}/sessions/${encodeURIComponent(slug)}`,
-              {
-                method: "PATCH",
-                headers: {
-                  Authorization: `Bearer ${taskStoreAdminToken}`,
-                  "Content-Type": "application/json",
-                },
-                body: JSON.stringify(patch),
-              },
-            );
-            if (!res.ok)
-              throw new Error(
-                `task-store PATCH /sessions/${slug} → ${res.status}`,
-              );
-            return res.json();
-          },
-        }
+      ? createTaskStoreFetchers({
+          url: taskStoreUrl,
+          adminToken: taskStoreAdminToken,
+        })
       : {};
 
   // Validate SHIPWRIGHT_ADMIN_TZ at startup — toLocaleDateString/toLocaleString
@@ -863,6 +757,9 @@ async function startServer(): Promise<void> {
       pushService,
       agentMemberService,
       agentService,
+      // SSP-6.8: account users are alerted only for their own account's
+      // sessions (fetchSessions below lists every account's).
+      callerScopeResolver,
       fetchSessions: async (state) => {
         const res = await fetch(
           `${taskStoreUrl}/sessions?state=${state}&limit=500`,
