@@ -585,6 +585,17 @@ API server would reject the resource as an unknown kind.
 
 ---
 
+## Tenant NetworkPolicy (self-serve, optional)
+
+Self-serve tenant agent pods should be network-isolated. Setting
+`selfServe.networkPolicy.enabled=true` renders a NetworkPolicy allowing egress
+only to DNS, the Shipwright admin/task-store/chat pods, and the public internet
+(excluding `10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16`, `169.254.0.0/16`),
+with ingress only from the admin pods. It is only enforced on a CNI that
+supports NetworkPolicy (not default kindnet/minikube; GKE needs it enabled).
+See [Tenant agent NetworkPolicy](./deploy-kubernetes-networking.md#tenant-agent-networkpolicy-self-serve-opt-in)
+for the exact rules.
+
 ## See also
 
 - [`deploy-kubernetes.md`](./deploy-kubernetes.md) — core deploy concerns: networking model, cloud provider guides, agent runtime provisioning, and authentication modes.

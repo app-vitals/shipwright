@@ -152,7 +152,7 @@ subcharts. These are documented in a companion doc:
 
 ## See also
 
-- [`deploy-kubernetes-networking.md`](./deploy-kubernetes-networking.md) — the full networking model: `networking.type` modes, exposing the task-store externally, and the opt-in chat and MCP server services.
+- [`deploy-kubernetes-networking.md`](./deploy-kubernetes-networking.md) — the full networking model: `networking.type` modes, exposing the task-store externally, and the opt-in chat and MCP server services, and the tenant agent NetworkPolicy (`selfServe.networkPolicy.enabled`; requires a CNI that enforces NetworkPolicy).
 - [`deploy-kubernetes-provisioning.md`](./deploy-kubernetes-provisioning.md) — the full agent runtime provisioning model: RBAC, the provisioner env contract, provisioning values, and the task-store claim TTL constraint.
 - [`deploy-kubernetes-addons.md`](./deploy-kubernetes-addons.md) — optional add-ons: agent voice, Web Push notifications, bringing your own PostgreSQL, and bundled ingress-controllers/cert-manager.
 - [`helm-repo.md`](./helm-repo.md) — installing from the published Helm repo and how publishing is triggered.

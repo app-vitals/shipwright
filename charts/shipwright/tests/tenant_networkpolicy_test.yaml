@@ -1,0 +1,106 @@
+suite: tenant NetworkPolicy (SSP-7.2, opt-in)
+release:
+  name: r
+  namespace: shipwright
+templates:
+  - templates/tenant-networkpolicy.yaml
+tests:
+  - it: renders nothing by default
+    asserts:
+      - hasDocuments:
+          count: 0
+
+  - it: renders nothing when selfServe is enabled but networkPolicy is not
+    set:
+      selfServe.enabled: true
+    asserts:
+      - hasDocuments:
+          count: 0
+
+  - it: selects tenant pods in the release namespace when enabled
+    set:
+      selfServe.networkPolicy.enabled: true
+    asserts:
+      - hasDocuments:
+          count: 1
+      - isKind:
+          of: NetworkPolicy
+      - equal:
+          path: metadata.namespace
+          value: shipwright
+      - equal:
+          path: spec.podSelector.matchLabels
+          value:
+            shipwright.dev/tenant: "true"
+      - equal:
+          path: spec.policyTypes
+          value: [Ingress, Egress]
+
+  - it: renders into the provisioning namespace when set
+    set:
+      selfServe.networkPolicy.enabled: true
+      agent.provisioning.namespace: agents
+    asserts:
+      - equal:
+          path: metadata.namespace
+          value: agents
+
+  - it: allows ingress only from the admin pods
+    set:
+      selfServe.networkPolicy.enabled: true
+    asserts:
+      - lengthEqual:
+          path: spec.ingress
+          count: 1
+      - equal:
+          path: spec.ingress[0].from[0].podSelector.matchLabels["app.kubernetes.io/component"]
+          value: admin
+      - equal:
+          path: spec.ingress[0].from[0].namespaceSelector.matchLabels["kubernetes.io/metadata.name"]
+          value: shipwright
+
+  - it: allows DNS egress on 53 udp and tcp
+    set:
+      selfServe.networkPolicy.enabled: true
+    asserts:
+      - equal:
+          path: spec.egress[0].to[0].podSelector.matchLabels["k8s-app"]
+          value: kube-dns
+      - equal:
+          path: spec.egress[0].ports
+          value:
+            - protocol: UDP
+              port: 53
+            - protocol: TCP
+              port: 53
+
+  - it: allows egress to the admin, task-store and chat pods
+    set:
+      selfServe.networkPolicy.enabled: true
+    asserts:
+      - equal:
+          path: spec.egress[1].to[0].podSelector.matchLabels["app.kubernetes.io/component"]
+          value: admin
+      - equal:
+          path: spec.egress[2].to[0].podSelector.matchLabels["app.kubernetes.io/component"]
+          value: task-store
+      - equal:
+          path: spec.egress[3].to[0].podSelector.matchLabels["app.kubernetes.io/component"]
+          value: chat
+
+  - it: allows the internet except private, link-local and metadata ranges
+    set:
+      selfServe.networkPolicy.enabled: true
+    asserts:
+      - lengthEqual:
+          path: spec.egress
+          count: 5
+      - equal:
+          path: spec.egress[4].to[0].ipBlock
+          value:
+            cidr: 0.0.0.0/0
+            except:
+              - 10.0.0.0/8
+              - 172.16.0.0/12
+              - 192.168.0.0/16
+              - 169.254.0.0/16
