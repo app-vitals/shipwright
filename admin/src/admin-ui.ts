@@ -29,10 +29,17 @@ import { SECRET_ENV_VARS } from "@shipwright/lib/secret-env-vars";
 import { type Context, Hono, type MiddlewareHandler } from "hono";
 import { deleteCookie, getCookie, setCookie } from "hono/cookie";
 import { sign, verify } from "hono/jwt";
+import {
+  accountIdFromScope,
+  SELF_SERVE_AGENT_TYPE,
+} from "./account-agent-create.ts";
 import type { AccountInviteService } from "./account-invites.ts";
 import type { AccountMemberService } from "./account-members.ts";
 import type { AccountOnboardingService } from "./account-onboarding.ts";
 import type { AccountService } from "./accounts.ts";
+import { registerAccountRoutes } from "./admin-ui-account.ts";
+import { runWithAccountNav } from "./admin-ui-account-nav.ts";
+import { renderZeroQuotaNotice } from "./admin-ui-account-pages.ts";
 import {
   type AgentDetail,
   type AgentOption,
@@ -70,9 +77,6 @@ import {
   SESSION_ADMIN_ACTION_MESSAGES,
 } from "./admin-ui-session-admin-actions.ts";
 import { registerSessionFollowRoutes } from "./admin-ui-session-follow.ts";
-import { registerAccountRoutes } from "./admin-ui-account.ts";
-import { runWithAccountNav } from "./admin-ui-account-nav.ts";
-import { renderZeroQuotaNotice } from "./admin-ui-account-pages.ts";
 import { registerSessionSettingsRoutes } from "./admin-ui-sessions.ts";
 import {
   registerSessionsListRoutes,
@@ -82,11 +86,6 @@ import {
 import type { AgentCronJobService } from "./agent-cron-jobs.ts";
 import type { AgentCronRunService } from "./agent-cron-runs.ts";
 import type { DeleteAgentFullyDeps } from "./agent-deletion.ts";
-import {
-  SELF_SERVE_AGENT_TYPE,
-  accountIdFromScope,
-} from "./account-agent-create.ts";
-import type { AccountService } from "./accounts.ts";
 import { deleteAgentFully } from "./agent-deletion.ts";
 import type { ManualStep } from "./agent-deletion-checklist.ts";
 import type { AgentEnvService } from "./agent-envs.ts";
