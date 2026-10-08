@@ -136,11 +136,17 @@ describe("abOnTwoCheckouts", () => {
 });
 
 describe("productionSeries", () => {
-  const row = (fp: string, runs: number, completed: number) => ({
+  const row = (
+    fp: string,
+    runs: number,
+    completed: number,
+    skipped = 0,
+  ) => ({
     phase: "dev-task",
     contextFingerprint: fp,
     runs,
     completed,
+    failed: runs - completed - skipped,
   });
   const mkFetch =
     (series: unknown[], urls: string[] = []): SeriesFetch =>
@@ -174,9 +180,27 @@ describe("productionSeries", () => {
     expect(m.before).toBe(0.5);
     expect(m.after).toBe(0.75);
     expect(m.delta).toBe(0.25);
-    expect(m.costUsd).toBe(12.5);
+    expect(m.costUsd).toBe(0);
     expect(m.series).toMatchObject({ beforeRuns: 20, afterRuns: 40 });
     expect(urls[0]).toBe("https://admin.test/agents/all/cron-runs/outcomes");
+  });
+
+  test("excludes skipped runs from the rate and the 20-run floor", async () => {
+    const m = await productionSeries(
+      opts,
+      mkFetch([row("aaa", 40, 10, 20), row("bbb", 40, 15, 20)]),
+      () => NOW,
+    );
+    expect(m.before).toBe(0.5);
+    expect(m.after).toBe(0.75);
+    expect(m.series).toMatchObject({ beforeRuns: 20, afterRuns: 20 });
+    await expect(
+      productionSeries(
+        opts,
+        mkFetch([row("aaa", 20, 2, 18), row("bbb", 40, 30)]),
+        () => NOW,
+      ),
+    ).rejects.toThrow(/before 2, after 40/);
   });
 
   test("refuses fewer than 20 runs in either arm", async () => {

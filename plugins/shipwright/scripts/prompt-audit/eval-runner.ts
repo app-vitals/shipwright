@@ -215,16 +215,7 @@ interface OutcomeRow {
   contextFingerprint: string | null;
   runs: number;
   completed: number;
-}
-
-interface StatsBody {
-  baselines?: {
-    phase: string | null;
-    contextFingerprint: string | null;
-    runs: number;
-  }[];
-  byCron?: unknown;
-  totals?: { costUsd?: number };
+  failed: number;
 }
 
 async function getJson<T>(
@@ -242,7 +233,7 @@ async function getJson<T>(
 /**
  * Compare two context fingerprints by completion rate from production runs.
  * Refuses to produce a result unless both arms have at least MIN_SERIES_RUNS
- * runs; both run counts are recorded in `series`.
+ * non-skipped runs (completed + failed); both run counts are recorded in `series`.
  */
 export async function productionSeries(
   opts: SeriesOptions,
@@ -260,32 +251,31 @@ export async function productionSeries(
     `${base}/agents/all/cron-runs/outcomes${q}`,
     opts.token,
   );
-  const stats = await getJson<StatsBody>(
-    fetchFn,
-    `${base}/agents/all/cron-runs/stats${q}`,
-    opts.token,
-  );
   const find = (fp: string) =>
     (outcomes.series ?? []).find(
       (s) => s.phase === opts.phase && s.contextFingerprint === fp,
     );
   const before = find(opts.beforeFingerprint);
   const after = find(opts.afterFingerprint);
-  const beforeRuns = before?.runs ?? 0;
-  const afterRuns = after?.runs ?? 0;
+  // `runs` is COUNT(*) and includes skipped runs; only completed + failed are
+  // real samples, so skips must not deflate the rate or satisfy the floor.
+  const sample = (r?: OutcomeRow) => (r ? r.completed + r.failed : 0);
+  const beforeRuns = sample(before);
+  const afterRuns = sample(after);
   if (!before || !after || beforeRuns < min || afterRuns < min) {
     throw new Error(
       `refusing to call production series: need >= ${min} runs per arm ` +
         `(before ${beforeRuns}, after ${afterRuns})`,
     );
   }
-  const rate = (r: OutcomeRow) => r.completed / r.runs;
+  const rate = (r: OutcomeRow) => r.completed / sample(r);
   return {
     kind: "production-series",
     before: rate(before),
     after: rate(after),
     delta: +(rate(after) - rate(before)).toFixed(6),
-    costUsd: stats.totals?.costUsd ?? 0,
+    // The stats endpoint is fleet-wide, not scoped to these two arms.
+    costUsd: 0,
     series: {
       phase: opts.phase,
       beforeFingerprint: opts.beforeFingerprint,
