@@ -952,7 +952,12 @@ export function renderAgentsPage(
   userName: string,
   isAdmin: boolean,
   timezone: string,
-  opts?: { successMsg?: string; manualSteps?: ManualStep[] },
+  opts?: {
+    successMsg?: string;
+    manualSteps?: ManualStep[];
+    /** Pre-rendered zero-quota notice + disabled button (replaces the CTA). */
+    zeroQuotaNotice?: string;
+  },
 ): string {
   const successHtml = opts?.successMsg
     ? `<div class="alert alert-success">${escapeHtml(opts.successMsg)}</div>`
@@ -989,9 +994,11 @@ export function renderAgentsPage(
 
   // Single CTA to create an agent — the /admin/agents/new page handles agent
   // creation and provides inline options to connect Slack/GitHub if desired.
-  const createAgentButtons = isAdmin
-    ? `<a href="/admin/agents/new" class="btn btn-primary">+ New agent</a>`
-    : "";
+  const createAgentButtons = opts?.zeroQuotaNotice
+    ? opts.zeroQuotaNotice
+    : isAdmin
+      ? `<a href="/admin/agents/new" class="btn btn-primary">+ New agent</a>`
+      : "";
 
   return renderAdminPage({
     title: "Agents — Shipwright Admin",
