@@ -103,6 +103,17 @@ export class AccountService {
     return agents.map((a) => a.id);
   }
 
+  /** Id + name of every agent owned by the account (admin account detail). */
+  async listAgents(
+    accountId: string,
+  ): Promise<Array<{ id: string; name: string }>> {
+    return this.prisma.agent.findMany({
+      where: { accountId },
+      select: { id: true, name: true },
+      orderBy: { name: "asc" },
+    });
+  }
+
   async countAgents(
     accountId: string,
     client: PrismaTransactionClient = this.prisma,

@@ -40,6 +40,7 @@ import type { AccountMemberService } from "./account-members.ts";
 import type { AccountOnboardingService } from "./account-onboarding.ts";
 import type { AccountService } from "./accounts.ts";
 import { registerAccountRoutes } from "./admin-ui-account.ts";
+import { registerAdminAccountsRoutes } from "./admin-ui-accounts.ts";
 import { runWithAccountNav } from "./admin-ui-account-nav.ts";
 import { renderZeroQuotaNotice } from "./admin-ui-account-pages.ts";
 import {
@@ -437,11 +438,16 @@ export interface AdminUIDeps {
   accountServices?: {
     accounts: Pick<
       AccountService,
-      "getByMemberEmail" | "update" | "countAgents"
+      | "getByMemberEmail"
+      | "update"
+      | "countAgents"
+      | "listWithCounts"
+      | "getWithCounts"
+      | "listAgents"
     >;
     members: Pick<
       AccountMemberService,
-      "listByAccount" | "getByEmail" | "remove" | "promote" | "demote"
+      "listByAccount" | "getByEmail" | "add" | "remove" | "promote" | "demote"
     >;
     invites: Pick<AccountInviteService, "create" | "listPending" | "revoke">;
   };
@@ -1594,8 +1600,19 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
         zeroQuotaContactEmail = selfServe.contactEmail;
       }
     }
+    // SSP-5.2: admins get an Account column (flag on only).
+    let accountNames: Map<string, string> | undefined;
+    if (c.var.isAdmin && accountNavEnabled && accountServices) {
+      accountNames = new Map(
+        (await accountServices.accounts.listWithCounts()).map((a) => [
+          a.id,
+          a.name,
+        ]),
+      );
+    }
     return html(
       renderAgentsPage(agents, c.var.userEmail, c.var.isAdmin, timezone, {
+        accountNames,
         successMsg,
         manualSteps,
         zeroQuotaNotice: zeroQuotaContactEmail
@@ -3920,6 +3937,12 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
 
   if (accountServices) {
     registerAccountRoutes(app, {
+      enabled: accountNavEnabled,
+      requireAuth,
+      ...accountServices,
+      html,
+    });
+    registerAdminAccountsRoutes(app, {
       enabled: accountNavEnabled,
       requireAuth,
       ...accountServices,
