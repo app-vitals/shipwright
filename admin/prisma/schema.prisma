@@ -119,6 +119,10 @@ model AgentCronJob {
   preCheck  String?  // optional pre-check script e.g. "shipwright:check-docs-freshness.ts"
   name      String?  // stable key for system crons; null for user-created crons
   system    Boolean  @default(false)
+  // Set when the trial-expiry lockdown (not the user) disabled this cron, so
+  // restoreLockdownDisabled() can re-enable exactly those crons. Null for
+  // enabled crons and for crons the user disabled manually.
+  lockdownDisabledAt DateTime?
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
