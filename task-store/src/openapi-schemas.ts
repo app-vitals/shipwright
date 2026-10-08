@@ -735,6 +735,11 @@ export const TaskListQuerySchema = z.object({
   limit: z.string().optional().openapi({ example: "50" }),
   offset: z.string().optional().openapi({ example: "0" }),
   ready: z.enum(["true", "false"]).optional().openapi({ example: "true" }),
+  accountId: z.string().optional().openapi({
+    example: "default",
+    description:
+      "Admin tokens only: narrow results to one account. Ignored for agent tokens, which are always pinned to their own account.",
+  }),
   hitl: z.enum(["true", "false"]).optional().openapi({ example: "true" }),
   kind: z.enum(["dev", "prd"]).optional().openapi({
     example: "prd",
