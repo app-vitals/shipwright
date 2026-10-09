@@ -257,6 +257,14 @@ spec:
             # agent.provisioning.apiUrl for an external gateway.
             - name: SHIPWRIGHT_API_URL
               value: {{ .Values.agent.provisioning.apiUrl | default (printf "http://%s:%v" (include "shipwright.admin.fullname" .) .Values.admin.service.port) | quote }}
+            {{- if .Values.agent.provisioning.claudePolicy.enabled }}
+            # Managed Claude Code policy (ACP-2.1): ConfigMap name + sha256 of the
+            # rendered managed-settings.json (changes roll agent pods).
+            - name: SHIPWRIGHT_K8S_AGENT_CLAUDE_POLICY_CONFIGMAP
+              value: {{ include "shipwright.agent.claudePolicy.configMapName" . | quote }}
+            - name: SHIPWRIGHT_K8S_AGENT_CLAUDE_POLICY_HASH
+              value: {{ include "shipwright.agent.claudePolicy.json" . | sha256sum | quote }}
+            {{- end }}
             {{- with .Values.agent.provisioning.pvcNameTemplate }}
             # PVC name template: when set, the provisioner substitutes {name} with
             # the agent's human-readable name (slug) to derive the PVC name. Used

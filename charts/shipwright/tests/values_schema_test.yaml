@@ -311,3 +311,34 @@ tests:
         - sg-aaaaaaaaaaaaaaaaa
     asserts:
       - notFailedTemplate: {}
+
+  - it: rejects an unknown key under agent.provisioning.claudePolicy
+    set:
+      agent.provisioning.claudePolicy.bogus: true
+    asserts:
+      - failedTemplate:
+          errorPattern: "claudePolicy"
+
+  - it: rejects a non-boolean agent.provisioning.claudePolicy.enabled
+    set:
+      agent.provisioning.claudePolicy.enabled: "yes"
+    asserts:
+      - failedTemplate:
+          errorPattern: "claudePolicy"
+
+  - it: rejects a non-object agent.provisioning.claudePolicy.settings
+    set:
+      agent.provisioning.claudePolicy.settings: "not-an-object"
+    asserts:
+      - failedTemplate:
+          errorPattern: "claudePolicy"
+
+  - it: accepts agent.provisioning.claudePolicy with free-form settings
+    set:
+      agent.provisioning.enabled: true
+      agent.provisioning.claudePolicy.enabled: true
+      agent.provisioning.claudePolicy.settings:
+        anything:
+          goes: [1, 2]
+    asserts:
+      - notFailedTemplate: {}

@@ -511,6 +511,19 @@ agent:
       # -- ephemeral-storage override for the provisioned agent container,
       # applied to both request and limit, e.g. "5Gi".
       ephemeralStorage: ""
+    # -- Managed Claude Code policy for provisioned agent pods. OFF by default: no
+    # ConfigMap renders and no SHIPWRIGHT_K8S_AGENT_CLAUDE_POLICY_* env is injected.
+    # When enabled, the chart renders a ConfigMap whose single key
+    # managed-settings.json is `settings` as JSON; the admin provisioner mounts it
+    # at /etc/claude-code in agent pods. Requires agent.provisioning.enabled=true
+    # and non-empty settings. Only provisioned agent pods consume it.
+    claudePolicy:
+      # -- Render the policy ConfigMap and inject the admin env that mounts it.
+      enabled: false
+      # -- Claude Code managed settings (free-form object), e.g.
+      # {"permissions": {"deny": ["Bash(curl:*)"]}}. A change to any value changes
+      # the hash env var, rolling agent pods.
+      settings: {}
     # -- Provisioned workspace PVCs: created per-agent when the provisioner spins
     # up a new agent pod. These settings are surfaced for the agent manifest
     # builder's future use. NOTE: buildProvisioner does not read these as env

@@ -105,6 +105,26 @@ removing the mount and hash annotation as needed). See
 [`configuration-agent.md`](./configuration-agent.md#agent-provisioning-admin-service)
 for details.
 
+The chart can render that ConfigMap and inject both env vars for you via
+`agent.provisioning.claudePolicy`:
+
+```yaml
+agent:
+  provisioning:
+    enabled: true
+    claudePolicy:
+      enabled: true
+      settings:                    # free-form Claude Code managed settings, rendered as managed-settings.json
+        permissions:
+          deny: ["Bash(curl:*)"]
+```
+
+The ConfigMap lives in `agent.provisioning.namespace` (else the release
+namespace), and `SHIPWRIGHT_K8S_AGENT_CLAUDE_POLICY_HASH` is the sha256 of the
+rendered JSON, so any settings change rolls the agent pods. Rendering fails if
+`claudePolicy.enabled` is set without `agent.provisioning.enabled` or with empty
+`settings`.
+
 ### Chat service provisioning (opt-in)
 
 By default the admin service **does not** mint chat-service tokens — provisioned agents carry no chat-service credentials. Per-agent chat-service token provisioning at agent-creation time is enabled the same way the admin console's Chat tab is: via the top-level `chat.enabled` + `chat.adminToken.existingSecret` chart values described in [Chat service (opt-in)](./deploy-kubernetes-networking.md#chat-service-opt-in) — there is no separate `agent.provisioning.chatService.*` value block.

@@ -69,6 +69,11 @@ Checks (each `fail`s independently — first failing check wins):
      competing ingress controllers into the same cluster, almost certainly
      unintentional. Bundling only one (or neither, bring-your-own) is
      supported.
+  7. `agent.provisioning.claudePolicy.enabled=true` (ACP-2.1) with
+     agent.provisioning.enabled=false (nothing would consume the policy) or
+     with empty `settings` (an empty policy is almost certainly a mistake).
+     Also included from templates/agent-claude-policy-configmap.yaml so the
+     check fires on every manifest render, not only from NOTES.txt.
 */}}
 {{- define "shipwright.validate" -}}
 {{- $ingress := .Values.networking.ingress -}}
@@ -96,5 +101,22 @@ Checks (each `fail`s independently — first failing check wins):
 {{- end -}}
 {{- if and (index .Values "ingress-nginx" "enabled") (.Values.traefik.enabled) -}}
 {{- fail "ingress-nginx.enabled=true and traefik.enabled=true are both set — both bundled ingress controller subcharts are enabled at once. Enable only one (or neither, to bring your own)." -}}
+{{- end -}}
+{{- include "shipwright.validate.claudePolicy" . -}}
+{{- end -}}
+
+{{/*
+shipwright.validate.claudePolicy — the agent.provisioning.claudePolicy guards (check 7
+above), split out so templates/agent-claude-policy-configmap.yaml can run just
+these on every manifest render without re-running the ingress checks.
+*/}}
+{{- define "shipwright.validate.claudePolicy" -}}
+{{- if .Values.agent.provisioning.claudePolicy.enabled -}}
+{{- if not .Values.agent.provisioning.enabled -}}
+{{- fail "agent.provisioning.claudePolicy.enabled=true requires agent.provisioning.enabled=true — only provisioned agent pods consume the policy." -}}
+{{- end -}}
+{{- if not .Values.agent.provisioning.claudePolicy.settings -}}
+{{- fail "agent.provisioning.claudePolicy.enabled=true requires non-empty agent.provisioning.claudePolicy.settings." -}}
+{{- end -}}
 {{- end -}}
 {{- end -}}
