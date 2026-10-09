@@ -134,6 +134,16 @@ const AGENT_ID_LABEL = "shipwright.dev/agent-id";
 export const TENANT_LABEL = "shipwright.dev/tenant";
 const AGENT_APP_NAME = "shipwright-agent";
 
+/** Volume name, mount dir, and ConfigMap key for the Claude Code managed policy. */
+const CLAUDE_POLICY_VOLUME = "claude-policy";
+export const CLAUDE_POLICY_MOUNT_PATH = "/etc/claude-code";
+const CLAUDE_POLICY_FILE = "managed-settings.json";
+/** Pod-template annotation carrying the policy hash so a policy change rolls pods. */
+export const CLAUDE_POLICY_HASH_ANNOTATION =
+  "shipwright.dev/claude-policy-hash";
+/** 0444 — policy is read-only to the agent user. */
+const CLAUDE_POLICY_FILE_MODE = 292;
+
 // ─── Name sanitization ──────────────────────────────────────────────────────
 
 /**
@@ -277,6 +287,14 @@ export interface AgentDeploymentOpts {
    * Defaults to "chat-service-token".
    */
   chatServiceTokenSecretKey?: string;
+  /**
+   * When set, mount the named ConfigMap's `managed-settings.json` read-only at
+   * /etc/claude-code (Claude Code's managed-policy directory). `hash` is
+   * optional: when non-empty it is stamped on the pod template as an annotation
+   * so a policy change rolls the pods; when absent/empty no annotation is added.
+   * Omit entirely for an unchanged manifest.
+   */
+  claudePolicy?: { configMapName: string; hash?: string };
 }
 
 /**
@@ -393,6 +411,8 @@ export function buildAgentDeploymentManifest(
     [INSTANCE_LABEL]: name,
   };
 
+  const policy = opts.claudePolicy;
+
   return {
     apiVersion: "apps/v1",
     kind: "Deployment",
@@ -412,6 +432,9 @@ export function buildAgentDeploymentManifest(
           labels: tenant
             ? { ...selectorLabels, [TENANT_LABEL]: "true" }
             : selectorLabels,
+          ...(policy?.hash
+            ? { annotations: { [CLAUDE_POLICY_HASH_ANNOTATION]: policy.hash } }
+            : {}),
         },
         spec: {
           securityContext: {
@@ -428,6 +451,20 @@ export function buildAgentDeploymentManifest(
               name: volumeName,
               persistentVolumeClaim: { claimName: opts.pvcName },
             },
+            ...(policy
+              ? [
+                  {
+                    name: CLAUDE_POLICY_VOLUME,
+                    configMap: {
+                      name: policy.configMapName,
+                      items: [
+                        { key: CLAUDE_POLICY_FILE, path: CLAUDE_POLICY_FILE },
+                      ],
+                      defaultMode: CLAUDE_POLICY_FILE_MODE,
+                    },
+                  },
+                ]
+              : []),
           ],
           containers: [
             {
@@ -461,6 +498,16 @@ export function buildAgentDeploymentManifest(
               ],
               volumeMounts: [
                 { name: volumeName, mountPath: AGENT_HOME_MOUNT_PATH },
+                // Directory mount (not subPath) so ConfigMap updates propagate.
+                ...(policy
+                  ? [
+                      {
+                        name: CLAUDE_POLICY_VOLUME,
+                        mountPath: CLAUDE_POLICY_MOUNT_PATH,
+                        readOnly: true,
+                      },
+                    ]
+                  : []),
               ],
               // Gate liveness/readiness until the agent's health server binds.
               // Startup runs `mise install` + plugin install, which can exceed a
