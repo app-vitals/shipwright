@@ -11,6 +11,7 @@ import { runCli, type CliDeps } from "./cli.ts";
 import {
   buildRevertProposal,
   evaluateWatch,
+  fetchWatchSeries,
   type OutcomeRow,
   type PrOutcomeRow,
   watchFinding,
@@ -150,6 +151,42 @@ describe("evaluateWatch", () => {
     const r = evaluateWatch(FP, OPTS, { outcomes: flat, prOutcomes: [] });
     expect(r.caveats.join(" ")).toContain("model cutover");
     expect(r.caveats.join(" ")).toContain("imultaneous");
+  });
+});
+
+describe("fetchWatchSeries", () => {
+  test("closes a from-only range at now so pr-outcomes is not half-open", async () => {
+    const urls: string[] = [];
+    const fetchFn: WatchFetch = async (url) => {
+      urls.push(url);
+      return { ok: true, status: 200, json: async () => ({ series: [] }) };
+    };
+    await fetchWatchSeries(
+      { ...OPTS, from: "2026-09-01T00:00:00.000Z", to: undefined },
+      fetchFn,
+      () => NOW,
+    );
+    for (const u of urls) {
+      expect(u).toContain("from=");
+      expect(u).toContain(`to=${encodeURIComponent(NOW.toISOString())}`);
+    }
+  });
+
+  test("a failed PR fetch warns and yields an empty PR series", async () => {
+    const warn = console.warn;
+    const warnings: string[] = [];
+    console.warn = (m: string) => warnings.push(m);
+    try {
+      const fetchFn: WatchFetch = async (url) =>
+        url.includes("pr-outcomes")
+          ? { ok: false, status: 400, json: async () => ({}) }
+          : { ok: true, status: 200, json: async () => ({ series: flat }) };
+      const s = await fetchWatchSeries(OPTS, fetchFn, () => NOW);
+      expect(s.prOutcomes).toEqual([]);
+      expect(warnings.join(" ")).toContain("patchCycles");
+    } finally {
+      console.warn = warn;
+    }
   });
 });
 

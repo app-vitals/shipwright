@@ -126,12 +126,16 @@ async function getJson<T>(
 export async function fetchWatchSeries(
   opts: WatchOptions,
   fetchFn: WatchFetch,
+  now: () => Date = () => new Date(),
 ): Promise<WatchSeries> {
   const qs = new URLSearchParams();
   if (opts.from) qs.set("from", opts.from);
-  if (opts.to) qs.set("to", opts.to);
+  // /metrics/pr-outcomes rejects a half-open range, so close it at now.
+  const to = opts.to ?? (opts.from ? now().toISOString() : undefined);
+  if (to) qs.set("to", to);
   const q = qs.size ? `?${qs}` : "";
   const base = opts.baseUrl.replace(/\/$/, "");
+  let prFetchError: string | undefined;
   const [outcomes, prs] = await Promise.all([
     getJson<{ series?: OutcomeRow[] }>(
       fetchFn,
@@ -142,8 +146,16 @@ export async function fetchWatchSeries(
       fetchFn,
       `${base}/metrics/pr-outcomes${q}`,
       opts.token,
-    ).catch(() => ({ series: [] as PrOutcomeRow[] })),
+    ).catch((err) => {
+      prFetchError = err instanceof Error ? err.message : String(err);
+      return { series: [] as PrOutcomeRow[] };
+    }),
   ]);
+  if (prFetchError) {
+    console.warn(
+      `prompt-audit watch: PR outcome series unavailable, skipping patchCycles comparison (${prFetchError})`,
+    );
+  }
   return { outcomes: outcomes.series ?? [], prOutcomes: prs.series ?? [] };
 }
 
@@ -347,7 +359,7 @@ export async function watchFinding(
 ): Promise<WatchOutcome> {
   const entry = ledger.findings[fingerprint];
   if (!entry) throw new Error(`finding ${fingerprint} is not in the ledger`);
-  const series = await fetchWatchSeries(opts, deps.fetchFn);
+  const series = await fetchWatchSeries(opts, deps.fetchFn, deps.now);
   const result = evaluateWatch(fingerprint, opts, series);
   if (result.verdict !== "regressed" || entry.status === "regressed") {
     return { result, ledger, filed: false };
