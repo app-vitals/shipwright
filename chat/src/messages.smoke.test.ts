@@ -1239,3 +1239,124 @@ describe("POST /threads/:id/messages request validation", () => {
     expect(res.status).toBe(400);
   });
 });
+
+// ─── attachmentBytes never leaks into message JSON ───────────────────────────
+// The raw bytea column is served only by GET /:id/attachment. Serializing a
+// Uint8Array through JSON.stringify expands it to `{"0":12,"1":34,...}` at
+// ~10-14 chars per byte, so a thread with a couple of retained voice replies
+// (a few MB) became a ~36 MB list response on every poll and OOM-killed the
+// admin service that parsed it. Every message-shaped response must omit it.
+
+describe("message JSON responses omit attachmentBytes", () => {
+  const bytes = new Uint8Array([1, 2, 3, 4, 5]);
+
+  async function seedAttachedMessage(
+    ms: ReturnType<typeof fakeMessageService>,
+    threadId: string,
+    role: "user" | "assistant" = "assistant",
+  ) {
+    return ms.create(threadId, {
+      role,
+      body: "voice reply",
+      attachmentFilename: "response.wav",
+      attachmentSize: bytes.byteLength,
+      attachmentBytes: bytes,
+    });
+  }
+
+  it("GET /threads/:id/messages keeps attachment metadata but drops the bytes", async () => {
+    const ts = fakeThreadService();
+    const ms = fakeMessageService();
+    const thread = await ts.create({ agentId: "a1" });
+    await seedAttachedMessage(ms, thread.id);
+    const app = buildApp(ts, ms);
+
+    const res = await app.request(`/threads/${thread.id}/messages`, {
+      headers: H.get,
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { messages: Record<string, unknown>[] };
+    expect(body.messages).toHaveLength(1);
+    expect(body.messages[0]).not.toHaveProperty("attachmentBytes");
+    expect(body.messages[0].attachmentFilename).toBe("response.wav");
+    expect(body.messages[0].attachmentSize).toBe(5);
+  });
+
+  it("GET /threads/:id/messages/:msgId drops the bytes", async () => {
+    const ts = fakeThreadService();
+    const ms = fakeMessageService();
+    const thread = await ts.create({ agentId: "a1" });
+    const msg = await seedAttachedMessage(ms, thread.id);
+    const app = buildApp(ts, ms);
+
+    const res = await app.request(`/threads/${thread.id}/messages/${msg.id}`, {
+      headers: H.get,
+    });
+    expect(res.status).toBe(200);
+    expect(await res.json()).not.toHaveProperty("attachmentBytes");
+  });
+
+  it("POST /threads/:id/messages/claim drops the bytes from the claimed message", async () => {
+    const ts = fakeThreadService();
+    const ms = fakeMessageService();
+    const thread = await ts.create({ agentId: "a1" });
+    await seedAttachedMessage(ms, thread.id, "user");
+    const app = buildApp(ts, ms);
+
+    const res = await app.request(`/threads/${thread.id}/messages/claim`, {
+      method: "POST",
+      headers: H.get,
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as Record<string, unknown>;
+    expect(body.claimed).toBe(true);
+    expect(body).not.toHaveProperty("attachmentBytes");
+  });
+
+  it("POST /threads/:id/messages/:msgId/reply drops the bytes from the assistant message", async () => {
+    const ts = fakeThreadService();
+    const ms = fakeMessageService();
+    const thread = await ts.create({ agentId: "a1" });
+    const userMsg = await ms.create(thread.id, { role: "user", body: "Hi" });
+    const app = buildApp(ts, ms);
+
+    const res = await app.request(
+      `/threads/${thread.id}/messages/${userMsg.id}/reply`,
+      {
+        method: "POST",
+        headers: H.post,
+        body: JSON.stringify({
+          body: "",
+          attachmentFilename: "response.wav",
+          attachmentSize: bytes.byteLength,
+          attachmentBytes: Buffer.from(bytes).toString("base64"),
+        }),
+      },
+    );
+    expect(res.status).toBe(201);
+    const body = (await res.json()) as {
+      userMessage: Record<string, unknown>;
+      assistantMessage: Record<string, unknown>;
+    };
+    expect(body.assistantMessage.attachmentFilename).toBe("response.wav");
+    expect(body.assistantMessage).not.toHaveProperty("attachmentBytes");
+    expect(body.userMessage).not.toHaveProperty("attachmentBytes");
+  });
+
+  it("GET /threads/:id/messages/:msgId/attachment still serves the bytes", async () => {
+    const ts = fakeThreadService();
+    const ms = fakeMessageService();
+    const thread = await ts.create({ agentId: "a1" });
+    const msg = await seedAttachedMessage(ms, thread.id);
+    const app = buildApp(ts, ms);
+
+    const res = await app.request(
+      `/threads/${thread.id}/messages/${msg.id}/attachment`,
+      { headers: H.get },
+    );
+    expect(res.status).toBe(200);
+    expect(Array.from(new Uint8Array(await res.arrayBuffer()))).toEqual([
+      1, 2, 3, 4, 5,
+    ]);
+  });
+});

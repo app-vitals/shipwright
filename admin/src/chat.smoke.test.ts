@@ -1091,6 +1091,44 @@ describe("GET /admin/chat/:agentId/threads/:threadId/messages.json", () => {
     );
   });
 
+  // The chat service once leaked the raw `attachmentBytes` column into its
+  // message list; passing that straight through turned every poll into a
+  // ~36 MB response and OOM-killed this service. messages.json must emit an
+  // explicit field set, so an upstream leak can never reach the browser.
+  it("emits only the known message fields, never an upstream attachmentBytes", async () => {
+    const leaked = {
+      ...MOCK_ASSISTANT_MESSAGE,
+      attachmentFilename: "response.wav",
+      attachmentSize: 3,
+      attachmentBytes: { 0: 7, 1: 8, 2: 9 },
+    } as ChatMessage;
+    const chatClient = makeMockChatClient({
+      listMessages: async () => ({
+        messages: [leaked],
+        total: 1,
+        limit: 50,
+        offset: 0,
+      }),
+    });
+    const app = createAdminUIApp(makeBaseDeps({ chatClient }));
+    const res = await app.request(
+      `/admin/chat/${AGENT_ID}/threads/${THREAD_ID}/messages.json`,
+      { headers: { Cookie: `admin_session=${sessionCookie}` } },
+    );
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { messages: Record<string, unknown>[] };
+    expect(body.messages).toHaveLength(1);
+    const m = body.messages[0];
+    expect(m).not.toHaveProperty("attachmentBytes");
+    expect(m.id).toBe(MOCK_ASSISTANT_MESSAGE.id);
+    expect(m.role).toBe("assistant");
+    expect(m.createdAt).toBe(MOCK_ASSISTANT_MESSAGE.createdAt);
+    expect(m.repliedAt).toBe(MOCK_ASSISTANT_MESSAGE.repliedAt);
+    expect(m.attachmentFilename).toBe("response.wav");
+    expect(m.attachmentSize).toBe(3);
+    expect(typeof m.bubbleHtml).toBe("string");
+  });
+
   // CFB-2.3: ?since=<messageId> returns only messages ordered after that id.
   it("filters messages with ?since=<messageId>", async () => {
     const older: ChatMessage = { ...MOCK_MESSAGE, id: "older-1" };
