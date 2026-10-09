@@ -107,6 +107,34 @@ describeOrSkip("AgentChatTokenService (integration)", () => {
     expect(row.costUsd).toBeCloseTo(0.003);
   });
 
+  // ─── upsertDailyByModel: values beyond INT4 ─────────────────────────────────
+
+  it("upsertDailyByModel() accumulates totals past 2^31 without overflowing", async () => {
+    const agentId = await createAgent(prisma);
+    const tokens = {
+      inputTokens: 2_000_000_000,
+      outputTokens: 2_000_000_000,
+      cacheReadTokens: 2_000_000_000,
+      cacheCreationTokens: 2_000_000_000,
+      costUsd: 1,
+    };
+
+    await service.upsertDailyByModel(agentId, "2026-01-15", "m", tokens);
+    const row = await service.upsertDailyByModel(
+      agentId,
+      "2026-01-15",
+      "m",
+      tokens,
+    );
+
+    expect(row.inputTokens).toBe(4_000_000_000);
+    expect(row.cacheCreationTokens).toBe(4_000_000_000);
+
+    const stats = await service.queryStats();
+    expect(stats.totals.input).toBe(4_000_000_000);
+    expect(stats.totals.total).toBe(16_000_000_000);
+  });
+
   // ─── upsertDailyByModel: different models are independent ────────────────────
 
   it("upsertDailyByModel() for different models on same (agentId, date) creates separate records", async () => {
@@ -135,9 +163,9 @@ describeOrSkip("AgentChatTokenService (integration)", () => {
 
     expect(records).toHaveLength(2);
     expect(records[0].model).toBe("claude-haiku-3-5");
-    expect(records[0].inputTokens).toBe(200);
+    expect(records[0].inputTokens).toBe(200n);
     expect(records[1].model).toBe("claude-sonnet-4-5");
-    expect(records[1].inputTokens).toBe(100);
+    expect(records[1].inputTokens).toBe(100n);
   });
 
   // ─── upsertDailyByModel: concurrent ──────────────────────────────────────────
@@ -172,15 +200,17 @@ describeOrSkip("AgentChatTokenService (integration)", () => {
     });
 
     expect(final).not.toBeNull();
-    expect(final?.inputTokens).toBe(tokens1.inputTokens + tokens2.inputTokens);
+    expect(final?.inputTokens).toBe(
+      BigInt(tokens1.inputTokens + tokens2.inputTokens),
+    );
     expect(final?.outputTokens).toBe(
-      tokens1.outputTokens + tokens2.outputTokens,
+      BigInt(tokens1.outputTokens + tokens2.outputTokens),
     );
     expect(final?.cacheReadTokens).toBe(
-      tokens1.cacheReadTokens + tokens2.cacheReadTokens,
+      BigInt(tokens1.cacheReadTokens + tokens2.cacheReadTokens),
     );
     expect(final?.cacheCreationTokens).toBe(
-      tokens1.cacheCreationTokens + tokens2.cacheCreationTokens,
+      BigInt(tokens1.cacheCreationTokens + tokens2.cacheCreationTokens),
     );
     expect(final?.costUsd).toBeCloseTo(tokens1.costUsd + tokens2.costUsd);
   });
