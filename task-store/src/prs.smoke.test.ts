@@ -1712,6 +1712,33 @@ describe("/prs routes (smoke)", () => {
     expect(body.blockedReason).toBe("no linked task");
   });
 
+  it("PATCH /prs/:id sets, preserves, and clears blockedHeadSha", async () => {
+    const store = new Map<string, PullRequest>();
+    store.set("pr-1", makePr({ id: "pr-1", blockedHeadSha: null }));
+    const app = makeApp({ prService: fakePrService({ store }) });
+    const patch = (body: unknown) =>
+      app.request("/prs/pr-1", {
+        method: "PATCH",
+        headers: { ...adminAuth(), "content-type": "application/json" },
+        body: JSON.stringify(body),
+      });
+
+    let res = await patch({ blockedHeadSha: "abc123" });
+    expect(res.status).toBe(200);
+    expect(((await res.json()) as PullRequest).blockedHeadSha).toBe("abc123");
+
+    res = await patch({ blockedReason: "escalated" });
+    expect(res.status).toBe(200);
+    expect(((await res.json()) as PullRequest).blockedHeadSha).toBe("abc123");
+
+    res = await patch({ blockedHeadSha: null });
+    expect(res.status).toBe(200);
+    expect(((await res.json()) as PullRequest).blockedHeadSha).toBeNull();
+
+    res = await patch({ blockedHeadSha: 123 });
+    expect(res.status).toBe(400);
+  });
+
   it("PATCH /prs/:id can set and read back reviewedCommitSha", async () => {
     const store = new Map<string, PullRequest>();
     store.set("pr-1", makePr({ id: "pr-1", reviewedCommitSha: null }));

@@ -490,7 +490,7 @@ export const PullRequestSchema = z
     }),
     blockedHeadSha: z.string().nullable().optional().openapi({
       description:
-        "Head commit SHA at the moment recordSkip() auto-blocked this PR (PSL-3.1). Null until a skip auto-block has occurred.",
+        "Head commit SHA at the moment this PR was blocked — set by recordSkip() on a skip auto-block (PSL-3.1) or written directly via PATCH /prs/:id by an escalation. Null until then.",
     }),
     blockedReviewId: z.string().nullable().optional().openapi({
       description:
