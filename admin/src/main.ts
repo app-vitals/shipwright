@@ -79,6 +79,7 @@ import {
   type SessionForAlert,
 } from "./session-alert-sweeper.ts";
 import { HttpSlackProvisioningClient } from "./slack-provisioning-client.ts";
+import { runStartupPolicyReconcile } from "./startup-policy-reconcile.ts";
 import { createTaskStoreFetchers } from "./task-store-fetchers.ts";
 import type { TaskStoreProvisioningClient } from "./task-store-provisioning-client.ts";
 import {
@@ -927,6 +928,17 @@ async function startServer(): Promise<void> {
   isShuttingDown = shutdown.isShuttingDown;
 
   console.log(`[admin] admin service listening on port ${port}`);
+
+  // Policy-only reconcile (ACP-1.3): a Claude policy change restarts admin via
+  // the chart's policy-hash env var, so rolling only the agents whose policy
+  // wiring drifted happens here. Runs even with no policy configured so agents
+  // lose the mount once it is disabled. Fire-and-forget: it never throws and
+  // must not delay serving.
+  void runStartupPolicyReconcile({
+    agentService,
+    provisioner,
+    logger: console,
+  });
 }
 
 // Run directly when invoked as main entry
