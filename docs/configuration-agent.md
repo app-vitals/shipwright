@@ -43,6 +43,8 @@ Unlike the env vars below, these fields live on the Agent database record, not t
 | `ANTHROPIC_API_KEY` | `string` | — | Anthropic API key. Env-var-only (secret). |
 | `CLAUDE_CODE_OAUTH_TOKEN` | `string` | — | Claude Code OAuth token (alternative to `ANTHROPIC_API_KEY`). Env-var-only (secret). |
 
+**Run telemetry is not OpenTelemetry.** Per-run measurements (first-turn context baseline, turns, tool calls, per-skill attribution, context fingerprint) are captured from the Claude CLI stream and stored on `AgentCronRun` through the admin API; no env var configures them. The agent does not emit or wire OpenTelemetry. Operators who want OTel metrics can enable Claude Code's own OpenTelemetry export on the operator side as an optional alternative.
+
 ### Slack
 
 Slack vars are env-var-only (secrets); the agent does not function as a Slack bot without them.
