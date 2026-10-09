@@ -29,6 +29,9 @@ import {
   type AgentVoiceEnv,
   buildAgentDeploymentManifest,
   buildAgentSecretManifest,
+  CLAUDE_POLICY_HASH_ANNOTATION,
+  CLAUDE_POLICY_MOUNT_PATH,
+  CLAUDE_POLICY_VOLUME,
   sanitizeAgentName,
   TENANT_LABEL,
 } from "./agent-manifest.ts";
@@ -38,6 +41,7 @@ import { ConflictError, NotFoundError } from "./errors.ts";
 import type {
   KubernetesClient,
   KubernetesContainer,
+  KubernetesDeployment,
   KubernetesEnvVar,
   PvcSpec,
   SecretSpec,
@@ -75,7 +79,8 @@ export interface ReconcileResult {
   failed: Array<{ agentId: string; error: string }>;
   /**
    * Agent IDs whose Deployments had drifted from the desired container spec
-   * (image, env, or resources) and have been patched back to it.
+   * (image, env, resources) or Claude policy wiring and have been patched
+   * back to it.
    */
   updated: string[];
 }
@@ -105,9 +110,14 @@ export interface AgentProvisioner {
    * Reconcile K8s Deployment state against a list of known agent IDs.
    * Re-provisions agents whose Deployments are missing; surfaces orphaned
    * Deployments that have no corresponding agent.
+   *
+   * `opts.policyOnly` restricts drift correction of existing Deployments to the
+   * Claude policy wiring (volume, mount, hash annotation); image, env and
+   * resource drift is left untouched. Missing Deployments are still recreated.
    */
   reconcile(
     agents: Array<{ id: string; slug?: string; accountId?: string | null }>,
+    opts?: { policyOnly?: boolean },
   ): Promise<ReconcileResult>;
 }
 
@@ -235,6 +245,95 @@ export function containerDrifted(
   }
 
   return false;
+}
+
+type PolicyVolume = NonNullable<
+  KubernetesDeployment["spec"]["template"]["spec"]["volumes"]
+>[number];
+type PolicyMount = NonNullable<KubernetesContainer["volumeMounts"]>[number];
+
+/** The policy-relevant slice of a Deployment; parts are undefined when absent. */
+function policyParts(dep: KubernetesDeployment): {
+  volume?: PolicyVolume;
+  mount?: PolicyMount;
+  hash?: string;
+} {
+  return {
+    volume: dep.spec.template.spec.volumes?.find(
+      (v) => v.name === CLAUDE_POLICY_VOLUME,
+    ),
+    // Keyed by mountPath, the strategic-merge key the patch operates on, so a
+    // stray same-named mount elsewhere can't make every pass look drifted.
+    mount: dep.spec.template.spec.containers[0]?.volumeMounts?.find(
+      (m) => m.mountPath === CLAUDE_POLICY_MOUNT_PATH,
+    ),
+    hash: dep.spec.template.metadata?.annotations?.[
+      CLAUDE_POLICY_HASH_ANNOTATION
+    ],
+  };
+}
+
+/**
+ * Strategic-merge fragments that bring the live Claude policy wiring (pod-level
+ * volume, container mount, hash annotation) to the desired state. A field is
+ * omitted when that part is already in sync.
+ *
+ * Removal needs explicit directives: strategic merge keys volumes by `name` and
+ * volumeMounts by `mountPath`, so omitting an entry would leave it in place.
+ * `$patch: delete` removes it, and a null annotation value deletes the key.
+ */
+export interface PolicyPatch {
+  volumes?: object[];
+  volumeMounts?: object[];
+  annotations?: Record<string, string | null>;
+}
+
+/** The policy patch for a live Deployment, or undefined when already in sync. */
+export function policyPatch(
+  live: KubernetesDeployment,
+  desired: KubernetesDeployment,
+): PolicyPatch | undefined {
+  const cur = policyParts(live);
+  const want = policyParts(desired);
+  const patch: PolicyPatch = {};
+
+  if (want.volume) {
+    if (cur.volume?.configMap?.name !== want.volume.configMap?.name) {
+      patch.volumes = [want.volume];
+    }
+  } else if (cur.volume) {
+    patch.volumes = [{ name: CLAUDE_POLICY_VOLUME, $patch: "delete" }];
+  }
+
+  if (want.mount) {
+    if (
+      cur.mount?.name !== want.mount.name ||
+      cur.mount.readOnly !== want.mount.readOnly
+    ) {
+      patch.volumeMounts = [want.mount];
+    }
+  } else if (cur.mount) {
+    patch.volumeMounts = [{ mountPath: cur.mount.mountPath, $patch: "delete" }];
+  }
+
+  if (cur.hash !== want.hash) {
+    patch.annotations = { [CLAUDE_POLICY_HASH_ANNOTATION]: want.hash ?? null };
+  }
+
+  return Object.keys(patch).length > 0 ? patch : undefined;
+}
+
+/**
+ * True when the live Deployment's Claude policy wiring differs from the desired
+ * one: a missing, extra or differently-pointed volume, a missing or extra
+ * mount, or a differing hash annotation. Covers "policy disabled but still
+ * present" too.
+ */
+export function policyDrifted(
+  live: KubernetesDeployment,
+  desired: KubernetesDeployment,
+): boolean {
+  return policyPatch(live, desired) !== undefined;
 }
 
 function isConflict(err: unknown): boolean {
@@ -438,7 +537,9 @@ export class KubernetesAgentProvisioner implements AgentProvisioner {
 
   async reconcile(
     agents: Array<{ id: string; slug?: string; accountId?: string | null }>,
+    opts?: { policyOnly?: boolean },
   ): Promise<ReconcileResult> {
+    const policyOnly = opts?.policyOnly === true;
     const labelSelector =
       "app.kubernetes.io/name=shipwright-agent,app.kubernetes.io/managed-by=shipwright-admin";
 
@@ -513,14 +614,41 @@ export class KubernetesAgentProvisioner implements AgentProvisioner {
           const desired = desiredDeployment.spec.template.spec.containers[0];
           const desiredLabels = desiredDeployment.spec.template.metadata.labels;
           const labelsDrifted =
+            !policyOnly &&
             desiredLabels[TENANT_LABEL] !== undefined &&
             deployment.spec.template.metadata?.labels?.[TENANT_LABEL] !==
               desiredLabels[TENANT_LABEL];
-          if (
-            current &&
-            desired &&
-            (labelsDrifted || containerDrifted(current, desired))
-          ) {
+          const policy = policyPatch(deployment, desiredDeployment);
+          const containerDrift =
+            !policyOnly &&
+            current !== undefined &&
+            desired !== undefined &&
+            containerDrifted(current, desired);
+          if (desired && (labelsDrifted || containerDrift || policy)) {
+            // Under policyOnly the container entry carries only the mount
+            // change (if any); image/env/resources are left to other actors.
+            const container = {
+              name: desired.name,
+              ...(policyOnly
+                ? {}
+                : {
+                    image: desired.image,
+                    env: desired.env,
+                    resources: desired.resources,
+                  }),
+              ...(policy?.volumeMounts
+                ? { volumeMounts: policy.volumeMounts }
+                : {}),
+            };
+            const includeContainer = !policyOnly || policy?.volumeMounts;
+            const podMetadata = {
+              ...(labelsDrifted
+                ? { labels: { [TENANT_LABEL]: desiredLabels[TENANT_LABEL] } }
+                : {}),
+              ...(policy?.annotations
+                ? { annotations: policy.annotations }
+                : {}),
+            };
             await this.k8s.patchDeployment(
               this.config.namespace,
               resourceName,
@@ -534,24 +662,12 @@ export class KubernetesAgentProvisioner implements AgentProvisioner {
                   : {}),
                 spec: {
                   template: {
-                    ...(labelsDrifted
-                      ? {
-                          metadata: {
-                            labels: {
-                              [TENANT_LABEL]: desiredLabels[TENANT_LABEL],
-                            },
-                          },
-                        }
+                    ...(Object.keys(podMetadata).length > 0
+                      ? { metadata: podMetadata }
                       : {}),
                     spec: {
-                      containers: [
-                        {
-                          name: desired.name,
-                          image: desired.image,
-                          env: desired.env,
-                          resources: desired.resources,
-                        },
-                      ],
+                      ...(includeContainer ? { containers: [container] } : {}),
+                      ...(policy?.volumes ? { volumes: policy.volumes } : {}),
                     },
                   },
                 },
@@ -704,6 +820,7 @@ export class NoopAgentProvisioner implements AgentProvisioner {
 
   async reconcile(
     _agents: Array<{ id: string; slug?: string; accountId?: string | null }>,
+    _opts?: { policyOnly?: boolean },
   ): Promise<ReconcileResult> {
     return { recreated: [], updated: [], orphans: [], failed: [] };
   }

@@ -236,5 +236,82 @@
       "reason": "NotFound",
       "code": 404
     }
+  },
+  "listDeployments_policy": {
+    "status": 200,
+    "body": {
+      "kind": "DeploymentList",
+      "apiVersion": "apps/v1",
+      "items": [{ "metadata": { "name": "agent-abc" } }]
+    }
+  },
+  "getDeployment_policy": {
+    "status": 200,
+    "body": {
+      "apiVersion": "apps/v1",
+      "kind": "Deployment",
+      "metadata": {
+        "name": "agent-abc",
+        "namespace": "shipwright",
+        "labels": { "app.kubernetes.io/name": "shipwright-agent" }
+      },
+      "spec": {
+        "replicas": 1,
+        "strategy": { "type": "Recreate" },
+        "selector": { "matchLabels": { "app": "agent-abc" } },
+        "template": {
+          "metadata": {
+            "labels": { "app": "agent-abc" },
+            "annotations": {
+              "shipwright.dev/claude-policy-hash": "stale-hash"
+            }
+          },
+          "spec": {
+            "volumes": [
+              {
+                "name": "agent-home",
+                "persistentVolumeClaim": { "claimName": "agent-abc-home" }
+              },
+              {
+                "name": "claude-policy",
+                "configMap": {
+                  "name": "claude-policy-cm",
+                  "items": [
+                    {
+                      "key": "managed-settings.json",
+                      "path": "managed-settings.json"
+                    }
+                  ],
+                  "defaultMode": 292
+                }
+              }
+            ],
+            "containers": [
+              {
+                "name": "shipwright-agent",
+                "image": "ghcr.io/example/agent:stale",
+                "volumeMounts": [
+                  { "name": "agent-home", "mountPath": "/home/agent" },
+                  {
+                    "name": "claude-policy",
+                    "mountPath": "/etc/claude-code",
+                    "readOnly": true
+                  }
+                ]
+              }
+            ]
+          }
+        }
+      },
+      "status": { "replicas": 1, "readyReplicas": 1 }
+    }
+  },
+  "patchDeployment_policy_success": {
+    "status": 200,
+    "body": {
+      "apiVersion": "apps/v1",
+      "kind": "Deployment",
+      "metadata": { "name": "agent-abc", "namespace": "shipwright" }
+    }
   }
 }

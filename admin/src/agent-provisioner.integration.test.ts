@@ -11,6 +11,7 @@
  */
 
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
+import { readFileSync } from "node:fs";
 import type { PrismaClient } from "../prisma/client/client.ts";
 import {
   type DeleteAgentFullyDeps,
@@ -31,6 +32,7 @@ import type { ChatServiceProvisioningClient } from "./chat-service-provisioning-
 import { ConflictError } from "./errors.ts";
 import {
   type DeploymentSpec,
+  HttpKubernetesClient,
   type KubernetesClient,
   type KubernetesDeployment,
   type KubernetesSecret,
@@ -944,5 +946,125 @@ describe("NoopAgentProvisioner", () => {
 
   it("ConflictError remains importable for typed-error narrowing", () => {
     expect(new ConflictError().statusCode).toBe(409);
+  });
+});
+
+// ─── Claude policy reconcile through the recorded k8s cassette ──────────────
+// Not DB-backed: reconcile() on an existing Deployment never touches the token
+// service, so these run everywhere. The real HttpKubernetesClient is driven by
+// an injected fetchFn replaying canned API-server responses.
+
+interface PolicyCassetteEntry {
+  status: number;
+  body: unknown;
+}
+
+const POLICY_CASSETTE: Record<string, PolicyCassetteEntry> = JSON.parse(
+  readFileSync(
+    new URL("./fixtures/k8s-cassette.json", import.meta.url).pathname,
+    "utf-8",
+  ),
+);
+
+/** Routes list/get/patch to cassette entries and records PATCH bodies. */
+function policyCassetteClient(): {
+  client: KubernetesClient;
+  patches: Array<{ contentType: string | null; body: unknown }>;
+} {
+  const patches: Array<{ contentType: string | null; body: unknown }> = [];
+  const fetchFn = (async (input: RequestInfo | URL, init?: RequestInit) => {
+    const url = typeof input === "string" ? input : input.toString();
+    const method = init?.method ?? "GET";
+    let key: string;
+    if (method === "PATCH") {
+      key = "patchDeployment_policy_success";
+      patches.push({
+        contentType: new Headers(init?.headers).get("content-type"),
+        body: JSON.parse(String(init?.body)),
+      });
+    } else if (url.includes("/deployments/")) {
+      key = "getDeployment_policy";
+    } else {
+      key = "listDeployments_policy";
+    }
+    const entry = POLICY_CASSETTE[key];
+    if (!entry) throw new Error(`cassette key not found: ${key}`);
+    return new Response(JSON.stringify(entry.body), {
+      status: entry.status,
+      headers: { "Content-Type": "application/json" },
+    });
+  }) as typeof fetch;
+  const client = new HttpKubernetesClient({
+    apiServer: "https://kubernetes.default.svc",
+    token: "test-sa-token",
+    caCert: "test-ca",
+    fetchFn,
+  });
+  return { client, patches };
+}
+
+describe("KubernetesAgentProvisioner.reconcile() — claude policy (cassette)", () => {
+  // Never invoked: the Deployment exists, so reconcile only reads and patches.
+  const tokens = {} as unknown as AgentTokenService;
+
+  it("sends a strategic-merge patch that removes the policy when it is disabled", async () => {
+    const { client, patches } = policyCassetteClient();
+    const provisioner = new KubernetesAgentProvisioner(client, tokens, CONFIG);
+
+    const result = await provisioner.reconcile([{ id: "agent-abc" }], {
+      policyOnly: true,
+    });
+
+    expect(result.updated).toEqual(["agent-abc"]);
+    expect(result.failed).toEqual([]);
+    expect(patches).toHaveLength(1);
+    expect(patches[0]?.contentType).toBe(
+      "application/strategic-merge-patch+json",
+    );
+    expect(patches[0]?.body).toEqual({
+      spec: {
+        template: {
+          metadata: {
+            annotations: { "shipwright.dev/claude-policy-hash": null },
+          },
+          spec: {
+            volumes: [{ name: "claude-policy", $patch: "delete" }],
+            containers: [
+              {
+                name: "shipwright-agent",
+                volumeMounts: [
+                  { mountPath: "/etc/claude-code", $patch: "delete" },
+                ],
+              },
+            ],
+          },
+        },
+      },
+    });
+  });
+
+  it("updates only the hash annotation when the recorded policy has a stale hash", async () => {
+    const { client, patches } = policyCassetteClient();
+    const provisioner = new KubernetesAgentProvisioner(client, tokens, {
+      ...CONFIG,
+      claudePolicy: { configMapName: "claude-policy-cm", hash: "fresh-hash" },
+    });
+
+    const result = await provisioner.reconcile([{ id: "agent-abc" }], {
+      policyOnly: true,
+    });
+
+    expect(result.updated).toEqual(["agent-abc"]);
+    expect(patches).toHaveLength(1);
+    expect(patches[0]?.body).toEqual({
+      spec: {
+        template: {
+          metadata: {
+            annotations: { "shipwright.dev/claude-policy-hash": "fresh-hash" },
+          },
+          spec: {},
+        },
+      },
+    });
   });
 });

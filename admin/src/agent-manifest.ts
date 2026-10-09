@@ -135,7 +135,7 @@ export const TENANT_LABEL = "shipwright.dev/tenant";
 const AGENT_APP_NAME = "shipwright-agent";
 
 /** Volume name, mount dir, and ConfigMap key for the Claude Code managed policy. */
-const CLAUDE_POLICY_VOLUME = "claude-policy";
+export const CLAUDE_POLICY_VOLUME = "claude-policy";
 export const CLAUDE_POLICY_MOUNT_PATH = "/etc/claude-code";
 const CLAUDE_POLICY_FILE = "managed-settings.json";
 /** Pod-template annotation carrying the policy hash so a policy change rolls pods. */
