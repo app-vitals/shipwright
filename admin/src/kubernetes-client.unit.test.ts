@@ -7,12 +7,12 @@
 import { describe, expect, it } from "bun:test";
 import { ConflictError, NotFoundError } from "./errors.ts";
 import {
-  HttpKubernetesClient,
-  RecordedKubernetesClient,
   deploymentBody,
   deploymentUrl,
+  HttpKubernetesClient,
   pvcBody,
   pvcUrl,
+  RecordedKubernetesClient,
   secretBody,
   secretUrl,
 } from "./kubernetes-client.ts";
@@ -517,5 +517,115 @@ describe("secretBody", () => {
   it("produces empty data for an empty stringData map", () => {
     const body = secretBody("ns", { name: "empty", stringData: {} });
     expect(body.data).toEqual({});
+  });
+});
+
+// ─── RecordedKubernetesClient: patchDeployment volumes/mounts/annotations ────
+
+describe("RecordedKubernetesClient.patchDeployment() — policy shapes", () => {
+  const seed = () =>
+    new RecordedKubernetesClient({
+      deployments: {
+        "shipwright/agent-abc": {
+          apiVersion: "apps/v1" as const,
+          kind: "Deployment" as const,
+          metadata: { name: "agent-abc", namespace: "shipwright" },
+          spec: {
+            replicas: 1,
+            selector: { matchLabels: { app: "agent-abc" } },
+            template: {
+              metadata: {
+                labels: { app: "agent-abc" },
+                annotations: { keep: "me", drop: "me" },
+              },
+              spec: {
+                volumes: [
+                  { name: "home", persistentVolumeClaim: { claimName: "h" } },
+                  { name: "claude-policy", configMap: { name: "old" } },
+                ],
+                containers: [
+                  {
+                    name: "agent-abc",
+                    image: "img",
+                    volumeMounts: [
+                      { name: "home", mountPath: "/home/agent" },
+                      { name: "claude-policy", mountPath: "/etc/claude-code" },
+                    ],
+                  },
+                ],
+              },
+            },
+          },
+        },
+      },
+      secrets: {},
+    });
+
+  it("merges volumes by name and volumeMounts by mountPath", async () => {
+    const rec = seed();
+    await rec.patchDeployment("shipwright", "agent-abc", {
+      spec: {
+        template: {
+          spec: {
+            volumes: [{ name: "claude-policy", configMap: { name: "new" } }],
+            containers: [
+              {
+                name: "agent-abc",
+                volumeMounts: [
+                  {
+                    name: "claude-policy",
+                    mountPath: "/etc/claude-code",
+                    readOnly: true,
+                  },
+                ],
+              },
+            ],
+          },
+        },
+      },
+    });
+    const dep = await rec.getDeployment("shipwright", "agent-abc");
+    expect(dep.spec.template.spec.volumes).toEqual([
+      { name: "home", persistentVolumeClaim: { claimName: "h" } },
+      { name: "claude-policy", configMap: { name: "new" } },
+    ]);
+    expect(dep.spec.template.spec.containers[0]?.volumeMounts).toEqual([
+      { name: "home", mountPath: "/home/agent" },
+      { name: "claude-policy", mountPath: "/etc/claude-code", readOnly: true },
+    ]);
+    expect(dep.spec.template.spec.containers[0]?.image).toBe("img");
+  });
+
+  it("removes entries with $patch: delete and annotation keys with null", async () => {
+    const rec = seed();
+    await rec.patchDeployment("shipwright", "agent-abc", {
+      spec: {
+        template: {
+          metadata: { annotations: { drop: null, added: "x" } },
+          spec: {
+            volumes: [{ name: "claude-policy", $patch: "delete" }],
+            containers: [
+              {
+                name: "agent-abc",
+                volumeMounts: [
+                  { mountPath: "/etc/claude-code", $patch: "delete" },
+                ],
+              },
+            ],
+          },
+        },
+      },
+    });
+    const dep = await rec.getDeployment("shipwright", "agent-abc");
+    expect(dep.spec.template.spec.volumes).toEqual([
+      { name: "home", persistentVolumeClaim: { claimName: "h" } },
+    ]);
+    expect(dep.spec.template.spec.containers[0]?.volumeMounts).toEqual([
+      { name: "home", mountPath: "/home/agent" },
+    ]);
+    expect(dep.spec.template.metadata.annotations).toEqual({
+      keep: "me",
+      added: "x",
+    });
   });
 });

@@ -635,6 +635,30 @@ interface KubernetesCassette {
 }
 
 /**
+ * Strategic-merge a list of objects by a merge key: patch entries replace
+ * (field-merge into) live entries with the same key, new keys are appended, and
+ * an entry carrying `$patch: "delete"` removes the live entry. Order of live
+ * entries is preserved.
+ */
+function mergeListByKey(
+  live: object[],
+  patch: object[],
+  key: string,
+): object[] {
+  const out = [...live] as Array<Record<string, unknown>>;
+  for (const entry of patch as Array<Record<string, unknown>>) {
+    const idx = out.findIndex((o) => o[key] === entry[key]);
+    if (entry.$patch === "delete") {
+      if (idx >= 0) out.splice(idx, 1);
+      continue;
+    }
+    if (idx >= 0) out[idx] = { ...out[idx], ...entry };
+    else out.push(entry);
+  }
+  return out;
+}
+
+/**
  * Pure in-memory KubernetesClient for tests. Replays from a seeded cassette and
  * supports create/get/delete with the same typed errors as the HTTP client
  * (404 → NotFoundError, 409 → ConflictError on duplicate create).
@@ -735,9 +759,13 @@ export class RecordedKubernetesClient implements KubernetesClient {
     const p = patch as {
       spec?: {
         template?: {
-          metadata?: { labels?: Record<string, string> };
+          metadata?: {
+            labels?: Record<string, string>;
+            annotations?: Record<string, string | null>;
+          };
           spec?: {
             containers?: KubernetesContainer[];
+            volumes?: Array<Record<string, unknown>>;
           };
         };
       };
@@ -753,10 +781,37 @@ export class RecordedKubernetesClient implements KubernetesClient {
         ...patchLabels,
       };
     }
+    // Annotations merge key-by-key; a null value deletes the key.
+    const patchAnnotations = p.spec?.template?.metadata?.annotations;
+    if (patchAnnotations) {
+      const annotations = { ...dep.spec.template.metadata.annotations };
+      for (const [k, v] of Object.entries(patchAnnotations)) {
+        if (v === null) delete annotations[k];
+        else annotations[k] = v;
+      }
+      dep.spec.template.metadata.annotations = annotations;
+    }
+    // Pod volumes merge by name; `$patch: delete` removes the entry.
+    const patchVolumes = p.spec?.template?.spec?.volumes;
+    if (patchVolumes) {
+      dep.spec.template.spec.volumes = mergeListByKey(
+        dep.spec.template.spec.volumes ?? [],
+        patchVolumes,
+        "name",
+      ) as NonNullable<typeof dep.spec.template.spec.volumes>;
+    }
     const patchContainer = p.spec?.template?.spec?.containers?.[0];
     const existing = dep.spec.template.spec.containers[0];
     if (patchContainer !== undefined && existing !== undefined) {
       const merged: KubernetesContainer = { ...existing, ...patchContainer };
+      if (patchContainer.volumeMounts) {
+        // volumeMounts merge by mountPath (not name).
+        merged.volumeMounts = mergeListByKey(
+          existing.volumeMounts ?? [],
+          patchContainer.volumeMounts,
+          "mountPath",
+        ) as NonNullable<KubernetesContainer["volumeMounts"]>;
+      }
       if (patchContainer.env && existing.env) {
         const byName = new Map(existing.env.map((e) => [e.name, e]));
         for (const entry of patchContainer.env) byName.set(entry.name, entry);

@@ -627,6 +627,8 @@ Agent tokens (as opposed to admin tokens) can now have a scoped list of reposito
   }
   ```
 
+- **`reconcile(agents, opts?: { policyOnly?: boolean })`**: the optional second parameter is **backward compatible**. `updated` now also covers drift in the Claude managed-policy wiring (the `claude-policy` volume, its `/etc/claude-code` mount, and the `shipwright.dev/claude-policy-hash` pod annotation) — including removing them when the policy is disabled. With `policyOnly: true`, existing Deployments are patched for policy drift only; image, env, resource and tenant-label drift is ignored. `NoopAgentProvisioner` ignores the option.
+
 ---
 
 ## `Task.requiresHumanApproval` field removed _(RHA-1)_

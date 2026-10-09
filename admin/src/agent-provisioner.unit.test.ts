@@ -17,6 +17,7 @@ import {
   KubernetesAgentProvisioner,
   type KubernetesAgentProvisionerConfig,
   NoopAgentProvisioner,
+  policyDrifted,
 } from "./agent-provisioner.ts";
 import type { AgentTokenService } from "./agent-tokens.ts";
 import type { ChatServiceProvisioningClient } from "./chat-service-provisioning-client.ts";
@@ -1013,5 +1014,318 @@ describe("KubernetesAgentProvisioner.reconcile() — tenant drift (SSP-7.1)", ()
     const { provisioner } = await seededWithPlatformManifest();
     const result = await provisioner.reconcile([{ id: agentId }]);
     expect(result.updated).toEqual([]);
+  });
+});
+
+// ─── Claude policy drift + reconcile patch ──────────────────────────────────
+
+const POLICY_AGENT_ID = "cmqalfjcm000m4101iharq28k";
+const POLICY_RESOURCE = sanitizeAgentName(POLICY_AGENT_ID);
+const POLICY_VOLUME_PATH = "claude-policy";
+
+function manifestWith(
+  claudePolicy?: { configMapName: string; hash?: string },
+  overrides: { imageTag?: string } = {},
+) {
+  return buildAgentDeploymentManifest({
+    agentId: POLICY_AGENT_ID,
+    namespace: NAMESPACE,
+    image: BASE_CONFIG.image,
+    imageTag: overrides.imageTag ?? BASE_CONFIG.imageTag,
+    apiUrl: BASE_CONFIG.apiUrl,
+    pvcName: `${POLICY_RESOURCE}-home`,
+    secretName: `${POLICY_RESOURCE}-token`,
+    tokenSecretKey: "token",
+    claudePolicy,
+  });
+}
+
+/** Records every patch body sent through the client. */
+function patchSpy(rec: RecordedKubernetesClient): {
+  client: KubernetesClient;
+  patches: object[];
+} {
+  const patches: object[] = [];
+  const client: KubernetesClient = {
+    createDeployment: (ns, spec) => rec.createDeployment(ns, spec),
+    createDeploymentManifest: (ns, m) => rec.createDeploymentManifest(ns, m),
+    getDeployment: (ns, n) => rec.getDeployment(ns, n),
+    deploymentExists: (ns, n) => rec.deploymentExists(ns, n),
+    listDeployments: (ns, s) => rec.listDeployments(ns, s),
+    deleteDeployment: (ns, n) => rec.deleteDeployment(ns, n),
+    patchDeployment: async (ns, n, patch) => {
+      patches.push(patch);
+      return rec.patchDeployment(ns, n, patch);
+    },
+    createSecret: (ns, s) => rec.createSecret(ns, s),
+    getSecret: (ns, n) => rec.getSecret(ns, n),
+    deleteSecret: (ns, n) => rec.deleteSecret(ns, n),
+    createPvc: (ns, s) => rec.createPvc(ns, s),
+    getPvc: (ns, n) => rec.getPvc(ns, n),
+    deletePvc: (ns, n) => rec.deletePvc(ns, n),
+  };
+  return { client, patches };
+}
+
+function seeded(live: ReturnType<typeof manifestWith>) {
+  return new RecordedKubernetesClient({
+    deployments: { [`${NAMESPACE}/${POLICY_RESOURCE}`]: live },
+    secrets: {},
+    pvcs: {},
+  });
+}
+
+const POLICY_A = { configMapName: "claude-policy-cm", hash: "hash-a" };
+
+describe("policyDrifted()", () => {
+  it("is drifted when the policy is desired but the live Deployment lacks it", () => {
+    expect(policyDrifted(manifestWith(), manifestWith(POLICY_A))).toBe(true);
+  });
+
+  it("is drifted when the hash annotation differs", () => {
+    expect(
+      policyDrifted(
+        manifestWith({ ...POLICY_A, hash: "old" }),
+        manifestWith(POLICY_A),
+      ),
+    ).toBe(true);
+  });
+
+  it("is not drifted when the hash matches", () => {
+    expect(policyDrifted(manifestWith(POLICY_A), manifestWith(POLICY_A))).toBe(
+      false,
+    );
+  });
+
+  it("is drifted when the volume points at a different ConfigMap", () => {
+    expect(
+      policyDrifted(
+        manifestWith({ ...POLICY_A, configMapName: "other" }),
+        manifestWith(POLICY_A),
+      ),
+    ).toBe(true);
+  });
+
+  it("is drifted when only the mount is missing", () => {
+    const live = manifestWith(POLICY_A);
+    const c = live.spec.template.spec.containers[0];
+    if (c) {
+      c.volumeMounts = c.volumeMounts?.filter(
+        (m) => m.mountPath !== "/etc/claude-code",
+      );
+    }
+    expect(policyDrifted(live, manifestWith(POLICY_A))).toBe(true);
+  });
+
+  it("is drifted when a live hash annotation is extra (desired hash absent)", () => {
+    expect(
+      policyDrifted(
+        manifestWith(POLICY_A),
+        manifestWith({ configMapName: POLICY_A.configMapName }),
+      ),
+    ).toBe(true);
+  });
+
+  it("is drifted when the policy is disabled but the live Deployment still has it", () => {
+    expect(policyDrifted(manifestWith(POLICY_A), manifestWith())).toBe(true);
+  });
+
+  it("is not drifted when the policy is disabled and absent", () => {
+    expect(policyDrifted(manifestWith(), manifestWith())).toBe(false);
+  });
+});
+
+describe("KubernetesAgentProvisioner.reconcile() — claude policy", () => {
+  function provisionerFor(
+    client: KubernetesClient,
+    claudePolicy?: { configMapName: string; hash?: string },
+  ) {
+    return new KubernetesAgentProvisioner(
+      client,
+      stubTokens() as AgentTokenService,
+      { ...BASE_CONFIG, claudePolicy },
+    );
+  }
+
+  it("adds the volume, mount and annotation when the policy is configured", async () => {
+    const rec = seeded(manifestWith());
+    const { client, patches } = patchSpy(rec);
+    const result = await provisionerFor(client, POLICY_A).reconcile([
+      { id: POLICY_AGENT_ID },
+    ]);
+
+    expect(result.updated).toEqual([POLICY_AGENT_ID]);
+    const desired = manifestWith(POLICY_A);
+    const volume = desired.spec.template.spec.volumes?.find(
+      (v) => v.name === POLICY_VOLUME_PATH,
+    );
+    const mount = desired.spec.template.spec.containers[0]?.volumeMounts?.find(
+      (m) => m.name === POLICY_VOLUME_PATH,
+    );
+    expect(patches).toHaveLength(1);
+    expect(patches[0]).toMatchObject({
+      spec: {
+        template: {
+          metadata: {
+            annotations: { "shipwright.dev/claude-policy-hash": "hash-a" },
+          },
+          spec: {
+            volumes: [volume],
+            containers: [{ volumeMounts: [mount] }],
+          },
+        },
+      },
+    });
+
+    // Converged: a second pass is a no-op.
+    const again = await provisionerFor(client, POLICY_A).reconcile([
+      { id: POLICY_AGENT_ID },
+    ]);
+    expect(again.updated).toEqual([]);
+    expect(patches).toHaveLength(1);
+  });
+
+  it("updates the hash annotation without touching the volume or mount", async () => {
+    const rec = seeded(manifestWith({ ...POLICY_A, hash: "old" }));
+    const { client, patches } = patchSpy(rec);
+    await provisionerFor(client, POLICY_A).reconcile([{ id: POLICY_AGENT_ID }]);
+
+    expect(patches).toHaveLength(1);
+    const tpl = (
+      patches[0] as {
+        spec: { template: { spec: Record<string, unknown> } };
+      }
+    ).spec.template;
+    expect(tpl).toMatchObject({
+      metadata: {
+        annotations: { "shipwright.dev/claude-policy-hash": "hash-a" },
+      },
+    });
+    expect(tpl.spec.volumes).toBeUndefined();
+    const live = await rec.getDeployment(NAMESPACE, POLICY_RESOURCE);
+    expect(
+      live.spec.template.metadata.annotations?.[
+        "shipwright.dev/claude-policy-hash"
+      ],
+    ).toBe("hash-a");
+  });
+
+  it("removes the volume, mount and annotation when the policy is disabled", async () => {
+    const rec = seeded(manifestWith(POLICY_A));
+    const { client, patches } = patchSpy(rec);
+    const result = await provisionerFor(client, undefined).reconcile([
+      { id: POLICY_AGENT_ID },
+    ]);
+
+    expect(result.updated).toEqual([POLICY_AGENT_ID]);
+    expect(patches).toHaveLength(1);
+    expect(patches[0]).toMatchObject({
+      spec: {
+        template: {
+          metadata: {
+            annotations: { "shipwright.dev/claude-policy-hash": null },
+          },
+          spec: {
+            volumes: [{ name: "claude-policy", $patch: "delete" }],
+            containers: [
+              {
+                volumeMounts: [
+                  { mountPath: "/etc/claude-code", $patch: "delete" },
+                ],
+              },
+            ],
+          },
+        },
+      },
+    });
+
+    // The delete directives actually remove the entries.
+    const live = await rec.getDeployment(NAMESPACE, POLICY_RESOURCE);
+    expect(
+      live.spec.template.spec.volumes?.some((v) => v.name === "claude-policy"),
+    ).toBe(false);
+    expect(
+      live.spec.template.spec.containers[0]?.volumeMounts?.some(
+        (m) => m.mountPath === "/etc/claude-code",
+      ),
+    ).toBe(false);
+    expect(
+      live.spec.template.metadata.annotations?.[
+        "shipwright.dev/claude-policy-hash"
+      ],
+    ).toBeUndefined();
+    // The PVC volume and home mount survive.
+    expect(live.spec.template.spec.volumes?.length).toBe(1);
+    expect(live.spec.template.spec.containers[0]?.volumeMounts?.length).toBe(1);
+  });
+
+  it("does not patch when nothing drifted", async () => {
+    const rec = seeded(manifestWith(POLICY_A));
+    const { client, patches } = patchSpy(rec);
+    await provisionerFor(client, POLICY_A).reconcile([{ id: POLICY_AGENT_ID }]);
+    expect(patches).toEqual([]);
+  });
+
+  it("policyOnly leaves image drift alone", async () => {
+    const rec = seeded(manifestWith(POLICY_A, { imageTag: "v0.0.1" }));
+    const { client, patches } = patchSpy(rec);
+    const result = await provisionerFor(client, POLICY_A).reconcile(
+      [{ id: POLICY_AGENT_ID }],
+      { policyOnly: true },
+    );
+    expect(result.updated).toEqual([]);
+    expect(patches).toEqual([]);
+  });
+
+  it("policyOnly patches only policy fields when both kinds drifted", async () => {
+    const rec = seeded(manifestWith(undefined, { imageTag: "v0.0.1" }));
+    const { client, patches } = patchSpy(rec);
+    const result = await provisionerFor(client, POLICY_A).reconcile(
+      [{ id: POLICY_AGENT_ID }],
+      { policyOnly: true },
+    );
+    expect(result.updated).toEqual([POLICY_AGENT_ID]);
+    expect(patches).toHaveLength(1);
+    const container = (
+      patches[0] as {
+        spec: { template: { spec: { containers: Array<object> } } };
+      }
+    ).spec.template.spec.containers[0];
+    expect(Object.keys(container ?? {}).sort()).toEqual([
+      "name",
+      "volumeMounts",
+    ]);
+    const live = await rec.getDeployment(NAMESPACE, POLICY_RESOURCE);
+    expect(live.spec.template.spec.containers[0]?.image).toBe(
+      `${BASE_CONFIG.image}:v0.0.1`,
+    );
+  });
+
+  it("without policyOnly, image and policy drift go in one patch", async () => {
+    const rec = seeded(manifestWith(undefined, { imageTag: "v0.0.1" }));
+    const { client, patches } = patchSpy(rec);
+    await provisionerFor(client, POLICY_A).reconcile([{ id: POLICY_AGENT_ID }]);
+    expect(patches).toHaveLength(1);
+    const live = await rec.getDeployment(NAMESPACE, POLICY_RESOURCE);
+    expect(live.spec.template.spec.containers[0]?.image).toBe(
+      `${BASE_CONFIG.image}:${BASE_CONFIG.imageTag}`,
+    );
+    expect(
+      live.spec.template.spec.volumes?.some((v) => v.name === "claude-policy"),
+    ).toBe(true);
+  });
+});
+
+describe("NoopAgentProvisioner.reconcile()", () => {
+  it("accepts the policyOnly option", async () => {
+    const result = await new NoopAgentProvisioner().reconcile([{ id: "a" }], {
+      policyOnly: true,
+    });
+    expect(result).toEqual({
+      recreated: [],
+      updated: [],
+      orphans: [],
+      failed: [],
+    });
   });
 });
