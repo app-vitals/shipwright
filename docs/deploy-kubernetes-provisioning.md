@@ -99,7 +99,9 @@ Provisioned agent pods can also receive a Claude Code managed-policy file: set
 `SHIPWRIGHT_K8S_AGENT_CLAUDE_POLICY_CONFIGMAP` to the name of a ConfigMap whose
 `managed-settings.json` key is mounted read-only at `/etc/claude-code`, and
 optionally `SHIPWRIGHT_K8S_AGENT_CLAUDE_POLICY_HASH` to roll pods when the policy
-changes. Both are unset by default (no mount). See
+changes. Both are unset by default (no mount). The provisioner's `reconcile()`
+pass also brings existing agent Deployments in line with the policy (adding or
+removing the mount and hash annotation as needed). See
 [`configuration-agent.md`](./configuration-agent.md#agent-provisioning-admin-service)
 for details.
 
