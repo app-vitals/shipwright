@@ -119,11 +119,44 @@ agent:
           deny: ["Bash(curl:*)"]
 ```
 
-The ConfigMap lives in `agent.provisioning.namespace` (else the release
-namespace), and `SHIPWRIGHT_K8S_AGENT_CLAUDE_POLICY_HASH` is the sha256 of the
-rendered JSON, so any settings change rolls the agent pods. Rendering fails if
-`claudePolicy.enabled` is set without `agent.provisioning.enabled` or with empty
-`settings`.
+How it behaves:
+
+- **Values block.** `claudePolicy.enabled` (default `false`) turns the feature
+  on; `claudePolicy.settings` is a free-form object rendered as pretty-printed
+  JSON into the ConfigMap's single `managed-settings.json` key. With the default
+  values nothing renders: no ConfigMap and no
+  `SHIPWRIGHT_K8S_AGENT_CLAUDE_POLICY_*` env on admin. Rendering fails if
+  `claudePolicy.enabled` is set without `agent.provisioning.enabled` or with
+  empty `settings`.
+- **Mount path.** The provisioner mounts the ConfigMap read-only at
+  `/etc/claude-code`, so the file lands at
+  `/etc/claude-code/managed-settings.json` — the system-wide path Claude Code
+  reads managed policy from on Linux.
+- **Read-only.** The mount is read-only and lives outside the agent's home
+  PVC, so neither the agent nor a Claude run inside it can edit or remove the
+  policy. Managed settings also override user and project settings, so the
+  agent cannot loosen it from its own `settings.json`.
+- **Automatic rollout.** `SHIPWRIGHT_K8S_AGENT_CLAUDE_POLICY_HASH` is the
+  sha256 of the rendered JSON. Because it is an env var on the admin
+  Deployment, changing any `settings` value (or toggling `enabled`) restarts
+  admin on `helm upgrade`. On startup admin runs a policy-only reconcile across
+  every managed (non-self-hosted) agent, patching only the policy volume, mount
+  and `shipwright.dev/claude-policy-hash` pod annotation. Only agents whose
+  policy actually drifted roll; disabling the policy removes the mount from
+  existing agents the same way.
+- **Agent pods only.** The policy is mounted only into provisioned agent pods.
+  Admin, task-store, chat, metrics and mcp-server pods never receive it, and
+  self-hosted agents (which manage their own workloads) are not touched.
+- **Namespace.** The ConfigMap is rendered into `agent.provisioning.namespace`
+  (else the release namespace), next to the agent pods that mount it. The chart
+  does not create a separate agent namespace — when
+  `agent.provisioning.namespace` is set, that namespace must already exist
+  before `helm install`/`helm upgrade`, or the ConfigMap fails to apply.
+- **Precedence.** Claude Code managed settings delivered remotely (via the
+  Claude admin console) take precedence over a local
+  `managed-settings.json`. If your organization already pushes remote managed
+  settings, the file from this chart does not apply; use one mechanism or the
+  other.
 
 ### Chat service provisioning (opt-in)
 

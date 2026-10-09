@@ -16,6 +16,10 @@ independent of `appVersion`. CI enforces this with
 
 - `agent.provisioning.claudePolicy` (`enabled`, `settings`): renders a `managed-settings.json` ConfigMap for provisioned agent pods and injects `SHIPWRIGHT_K8S_AGENT_CLAUDE_POLICY_CONFIGMAP` / `SHIPWRIGHT_K8S_AGENT_CLAUDE_POLICY_HASH` into the admin Deployment (ACP-2.1). Off by default; fails fast when enabled without provisioning or with empty settings.
 
+### Changed
+
+- Document `agent.provisioning.claudePolicy` in `values.yaml` and `docs/deploy-kubernetes-provisioning.md`: mount path, read-only behavior, automatic rollout via admin restart and policy-only reconcile, agent-pods-only scope, the pre-existing agent namespace requirement, and remote managed-settings precedence (ACP-2.2).
+
 ## [1.24.26] - 2026-10-09
 
 ### Changed

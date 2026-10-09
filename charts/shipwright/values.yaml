@@ -515,14 +515,20 @@ agent:
     # ConfigMap renders and no SHIPWRIGHT_K8S_AGENT_CLAUDE_POLICY_* env is injected.
     # When enabled, the chart renders a ConfigMap whose single key
     # managed-settings.json is `settings` as JSON; the admin provisioner mounts it
-    # at /etc/claude-code in agent pods. Requires agent.provisioning.enabled=true
-    # and non-empty settings. Only provisioned agent pods consume it.
+    # read-only at /etc/claude-code (file: /etc/claude-code/managed-settings.json)
+    # in agent pods. Requires agent.provisioning.enabled=true and non-empty
+    # settings. Only provisioned agent pods consume it; admin, task-store, chat,
+    # metrics and mcp-server never mount it. The ConfigMap renders into
+    # agent.provisioning.namespace (else the release namespace), which must
+    # already exist. Remote managed settings (Claude admin console) take
+    # precedence over this file. See docs/deploy-kubernetes-provisioning.md.
     claudePolicy:
       # -- Render the policy ConfigMap and inject the admin env that mounts it.
       enabled: false
       # -- Claude Code managed settings (free-form object), e.g.
       # {"permissions": {"deny": ["Bash(curl:*)"]}}. A change to any value changes
-      # the hash env var, rolling agent pods.
+      # the SHIPWRIGHT_K8S_AGENT_CLAUDE_POLICY_HASH env var, which restarts admin;
+      # on startup admin reconciles policy drift and rolls only affected agents.
       settings: {}
     # -- Provisioned workspace PVCs: created per-agent when the provisioner spins
     # up a new agent pod. These settings are surfaced for the agent manifest
