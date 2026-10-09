@@ -1971,3 +1971,52 @@ describe("dev-task.md Step 5 — dispatches the phase-methodology-configured sub
   });
 });
 
+
+describe("dev-task.md — verification recording (VRW-1.1)", () => {
+  const section = (from: string, to: string) => {
+    const start = content.indexOf(from);
+    return content.slice(start, content.indexOf(to, start));
+  };
+
+  it("Step 5 brief [F] carries the timeout rule, recording instruction, and learned-skip read", () => {
+    const f = section("[F] Validation", "━━━━ REPORT BACK");
+    expect(f).toContain("`timeout` parameter set to `600000` ms");
+    expect(f).toContain("**Record every outcome**");
+    expect(f).toContain("$SHIPWRIGHT_TASK_STORE_URL/verification-checks");
+    expect(f).toContain("`taskId`");
+    expect(f).toContain('"taskId": "{id}"');
+    expect(f).toContain("not set in your shell");
+    expect(f).toContain("`ran_passed`, `ran_failed`, `skipped`, `timed_out`");
+    for (const reason of [
+      "check_timeout",
+      "install_timeout",
+      "resource_limit",
+      "missing_tool",
+      "missing_secret",
+      "missing_dependency",
+      "not_configured",
+      "learned_skip",
+    ]) {
+      expect(f).toContain(reason);
+    }
+    expect(f).toContain("learnedFromCategory");
+    expect(f).toContain("**Learned skip.**");
+    expect(f).toContain("checkName={checkName}&limit=2");
+  });
+
+  it("Step 9 opens with the required pre-push verification gate before git push", () => {
+    const step9 = content.slice(content.indexOf("## Step 9: Push & PR"));
+    const gateIdx = step9.indexOf("Required pre-push gate");
+    const pushIdx = step9.indexOf("2. Push to remote");
+    expect(gateIdx).toBeGreaterThan(-1);
+    expect(gateIdx).toBeLessThan(pushIdx);
+    const gate = step9.slice(gateIdx, pushIdx);
+    expect(gate).toContain("verification-checks?taskId={id}&limit=1");
+    expect(gate).toContain("If the result is empty, record each check");
+    expect(gate).toContain("This gate never blocks the push.");
+  });
+
+  it("does not reference run-with-budget or any script for recording", () => {
+    expect(content).not.toContain("run-with-budget");
+  });
+});

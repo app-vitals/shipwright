@@ -595,6 +595,43 @@ INSTRUCTIONS — follow in order:
   2. Fix any errors
   3. {If Test Type specified: "Ensure a {test-type} test exists and passes"}
 
+  Run each check with the Bash tool's `timeout` parameter set to `600000` ms (10 minutes). If
+  a verification exceeds 10 minutes, skip the local run for it and rely on CI — CI is the real
+  arbiter. A failed, timed-out, or skipped check never blocks committing.
+
+  **Record every outcome** — passes and failures included, not just skips — by POSTing to
+  `$SHIPWRIGHT_TASK_STORE_URL/verification-checks` with `taskId` (the task id "{id}" —
+  substitute its literal value; it is not set in your shell), `repo` (`{org}/{repo}`),
+  `checkName`, `status`, and an optional `reasonCategory`:
+
+  - `status` is one of `ran_passed`, `ran_failed`, `skipped`, `timed_out`.
+  - `reasonCategory` is only valid with `skipped` or `timed_out` — never send it with
+    `ran_passed` or `ran_failed`. Values: `check_timeout`, `install_timeout`,
+    `resource_limit`, `missing_tool`, `missing_secret`, `missing_dependency`,
+    `not_configured`, `learned_skip` (`learned_skip` also takes `learnedFromCategory`).
+  - A failure caused by the agent's own environment (missing tool, secret, or dependency, or a
+    resource limit) rather than the code is a judgment call from reading the output: record
+    it as `skipped` with the matching category. If unsure, record `ran_failed`.
+
+  ```bash
+  curl -sf -X POST -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
+    -H "Content-Type: application/json" \
+    "$SHIPWRIGHT_TASK_STORE_URL/verification-checks" \
+    -d '{"taskId": "{id}", "repo": "{org}/{repo}", "checkName": "{checkName}", "status": "{status}"}' \
+    > /dev/null 2>&1 || echo "⚠ verification-check POST for {checkName} failed — continuing"
+  ```
+
+  **Learned skip.** Before running a check, fetch its recent history:
+
+  ```bash
+  curl -sf -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
+    "$SHIPWRIGHT_TASK_STORE_URL/verification-checks?repo={org}/{repo}&checkName={checkName}&limit=2" | jq '.checks'
+  ```
+
+  Rows come back most-recent-first. If both rows are `skipped` or `timed_out`, skip the check
+  locally and record `skipped` with `reasonCategory: "learned_skip"` and
+  `learnedFromCategory` set to the most recent row's `reasonCategory`.
+
 Commit all changes: use conventional commit format (e.g., "feat: {task title}")
 
 ━━━━ REPORT BACK ━━━━
@@ -1016,6 +1053,17 @@ If `auto_docs_updated == false`:
 ---
 
 ## Step 9: Push & PR
+
+**Required pre-push gate — verification record.** Before `git push`, check that this task's
+verification outcomes were recorded:
+
+```bash
+curl -sf -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
+  "$SHIPWRIGHT_TASK_STORE_URL/verification-checks?taskId={id}&limit=1" | jq '.checks'
+```
+
+If the result is empty, record each check that was run (or skipped, and why) now, using the
+POST shape from Step 5's brief [F], then continue. This gate never blocks the push.
 
 1. Run `git status` and `git diff --stat`
 2. Push to remote (use `-u origin {branch}` if no upstream exists)
