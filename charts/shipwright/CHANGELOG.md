@@ -16,6 +16,12 @@ independent of `appVersion`. CI enforces this with
 
 - `agent.provisioning.claudePolicy` (`enabled`, `settings`): renders a `managed-settings.json` ConfigMap for provisioned agent pods and injects `SHIPWRIGHT_K8S_AGENT_CLAUDE_POLICY_CONFIGMAP` / `SHIPWRIGHT_K8S_AGENT_CLAUDE_POLICY_HASH` into the admin Deployment (ACP-2.1). Off by default; fails fast when enabled without provisioning or with empty settings.
 
+## [1.24.26] - 2026-10-09
+
+### Changed
+
+- auto-bump to chart v1.24.26 triggered by release tag(s): `agent-v1.397.0`
+
 ## [1.24.25] - 2026-10-09
 
 ### Changed

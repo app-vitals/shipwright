@@ -58,3 +58,33 @@ counts and line numbers so a finding keeps its fingerprint as numbers drift.
 
 Class f rules apply to claude-md, rule, import, skill, command, agent and
 template items; fenced code and frontmatter are ignored.
+
+## Post-merge regression watch
+
+`cli.ts watch` (`watch.ts`, constants `WATCH_THRESHOLDS` / `MIN_WATCH_RUNS`)
+compares a merged prompt-fix finding's before and after context fingerprints,
+per phase. Sources: admin `/agents/all/cron-runs/outcomes` and metrics
+`/metrics/pr-outcomes`.
+
+| Metric | Source | Regressed when |
+|--------|--------|----------------|
+| cost per run | `avgContextTokens` (first-turn context tokens; the outcomes endpoint has no per-run dollar cost) | after > before by more than 20% |
+| turns | `avgTurns` | after > before by more than 20% |
+| skip rate | `skipped / runs` | after - before > 0.10 (absolute) |
+| patch cycles | `avgPatchCycles` per PR window | after - before > 0.5 (absolute); ignored under 20 PRs on either side |
+
+**Insufficient data.** Fewer than 20 non-skipped runs (completed + failed) in a
+phase on either side reports `insufficient-data` for that phase; no verdict and
+no task. The finding is `regressed` if any phase regresses, `ok` if at least one
+phase is `ok` and none regress, else `insufficient-data`.
+
+**On regression** the ledger entry becomes `regressed` and exactly one
+`hitl: true` revert-proposal task is filed per finding (id
+`PAU-REVERT-<fingerprint>`, so a rerun gets a 409 and a `regressed` finding is
+not re-filed). The watch never reverts, merges, or edits files.
+
+**Confounds.** Every report and task body states: the series are time-window
+correlations, not per-run attribution; simultaneous prompt changes land in the
+same window; the model cutover moves cost, turns and skip rate for every phase at
+once and cannot be separated from this change; patch cycles are per
+fingerprint window, not per phase.

@@ -9,6 +9,8 @@
  *   measure --finding <fp> --before <ref> --after <ref> --model <id>
  *           [--repo <dir>] [--json] [--record]
  *   blast   --file <path> [--repo <dir>] [--json]
+ *   watch   --finding <fp> [--before-fp <fp> --after-fp <fp>] [--phase <p>]
+ *           [--from <iso>] [--task-repo <org/repo>] [--repo <dir>] [--json]
  *
  * `scan` writes state/prompt-audit-ledger.json and prompt-audit-report.md
  * (neither on --dry-run; the token cache is the only other write). All
@@ -55,6 +57,12 @@ import {
   readLocalSkillStats,
   type SkillStat,
 } from "./usage-attribution.ts";
+import {
+  formatWatch,
+  type WatchFetch,
+  type WatchPostFetch,
+  watchFinding,
+} from "./watch.ts";
 
 export const DEFAULT_MODELS = ["claude-sonnet-5-5", "claude-sonnet-4-6"];
 const DEFAULT_SINCE_DAYS = 28;
@@ -77,6 +85,11 @@ export interface CliDeps {
   ): Promise<Record<string, TokenCount[]>>;
   loadUsage(opts: { sinceDays: number }): Promise<SkillStat[] | null>;
   env: Record<string, string | undefined>;
+  /** HTTP for `watch`; absent means the watch cannot reach the services. */
+  http?: {
+    get: WatchFetch;
+    post: WatchPostFetch;
+  };
 }
 
 export interface CliResult {
@@ -390,6 +403,78 @@ function runBlast(args: ParsedArgs, deps: CliDeps): CliResult {
   };
 }
 
+// ─── watch ───────────────────────────────────────────────────────────────────
+
+async function runWatch(args: ParsedArgs, deps: CliDeps): Promise<CliResult> {
+  const finding = args.values.finding;
+  if (!finding) {
+    return {
+      exit: 2,
+      stdout:
+        "usage: watch --finding <fp> [--before-fp <fp> --after-fp <fp>] [--phase <p>] [--from <iso>] [--task-repo <org/repo>] [--repo <dir>] [--json]\n",
+    };
+  }
+  const root = resolve(args.values.repo ?? ".");
+  const ledgerFs: LedgerFs = {
+    exists: (p) => deps.fs.exists(root, p),
+    read: (p) => deps.fs.readFile(root, p),
+    write: (p, c) => deps.fs.writeFile(root, p, c),
+  };
+  const ledger = readLedger(ledgerFs, LEDGER_PATH);
+  const series = ledger.findings[finding]?.measured?.series as
+    | { beforeFingerprint?: string; afterFingerprint?: string; phase?: string }
+    | undefined;
+  const beforeFingerprint =
+    args.values["before-fp"] ?? series?.beforeFingerprint;
+  const afterFingerprint = args.values["after-fp"] ?? series?.afterFingerprint;
+  if (!beforeFingerprint || !afterFingerprint) {
+    return {
+      exit: 2,
+      stdout:
+        "watch needs --before-fp and --after-fp (none recorded for this finding)\n",
+    };
+  }
+  const baseUrl = (deps.env.SHIPWRIGHT_API_URL ?? "").trim();
+  const token = (deps.env.SHIPWRIGHT_AGENT_API_KEY ?? "").trim();
+  if (!deps.http || !baseUrl || !token) {
+    return {
+      exit: 1,
+      stdout: "watch needs SHIPWRIGHT_API_URL and SHIPWRIGHT_AGENT_API_KEY\n",
+    };
+  }
+  const out = await watchFinding(
+    ledger,
+    finding,
+    {
+      baseUrl,
+      token,
+      beforeFingerprint,
+      afterFingerprint,
+      phase: args.values.phase ?? series?.phase,
+      from: args.values.from,
+    },
+    args.values["task-repo"] ?? "app-vitals/shipwright",
+    {
+      fetchFn: deps.http.get,
+      postFn: deps.http.post,
+      now: deps.now,
+      taskStoreUrl: deps.env.SHIPWRIGHT_TASK_STORE_URL,
+      taskStoreToken: deps.env.SHIPWRIGHT_TASK_STORE_TOKEN,
+    },
+  );
+  if (out.ledger !== ledger) writeLedger(ledgerFs, LEDGER_PATH, out.ledger);
+  if (args.flags.has("json")) {
+    return {
+      exit: 0,
+      stdout: `${JSON.stringify({ ...out.result, task: out.task, filed: out.filed }, null, 2)}\n`,
+    };
+  }
+  return {
+    exit: 0,
+    stdout: `${formatWatch(out.result)}${out.task ? `revert proposal ${out.task.id}: ${out.filed ? "filed (hitl)" : "not filed"}\n` : ""}`,
+  };
+}
+
 // ─── entry ───────────────────────────────────────────────────────────────────
 
 export async function runCli(
@@ -405,10 +490,12 @@ export async function runCli(
         return await runMeasure(args, deps);
       case "blast":
         return runBlast(args, deps);
+      case "watch":
+        return await runWatch(args, deps);
       default:
         return {
           exit: 2,
-          stdout: "usage: cli.ts <scan|measure|blast> [options]\n",
+          stdout: "usage: cli.ts <scan|measure|blast|watch> [options]\n",
         };
     }
   } catch (err) {
@@ -458,6 +545,10 @@ export function nodeCliDeps(): CliDeps {
       return (await fetchCronSkillStats({ from })) ?? readLocalSkillStats();
     },
     env: process.env,
+    http: {
+      get: (url, init) => fetch(url, init),
+      post: (url, init) => fetch(url, init),
+    },
   };
 }
 
