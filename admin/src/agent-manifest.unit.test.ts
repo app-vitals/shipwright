@@ -682,6 +682,11 @@ describe("buildAgentDeploymentManifest — claude policy", () => {
     expect(d.spec.template.spec.volumes).toHaveLength(1);
     expect(d.spec.template.spec.containers[0]?.volumeMounts).toHaveLength(1);
     expect("annotations" in d.spec.template.metadata).toBe(false);
+    // The provisioner forwards `claudePolicy: undefined` when unset — that
+    // must build exactly the same manifest as omitting the key.
+    expect(
+      buildAgentDeploymentManifest({ ...deployOpts, claudePolicy: undefined }),
+    ).toEqual(d);
   });
 });
 
