@@ -95,6 +95,14 @@ overridden per field via `SHIPWRIGHT_K8S_AGENT_CPU_REQUEST`,
 CPU limit). See [`configuration-agent.md`](./configuration-agent.md#agent-provisioning-admin-service)
 for full defaults and rationale.
 
+Provisioned agent pods can also receive a Claude Code managed-policy file: set
+`SHIPWRIGHT_K8S_AGENT_CLAUDE_POLICY_CONFIGMAP` to the name of a ConfigMap whose
+`managed-settings.json` key is mounted read-only at `/etc/claude-code`, and
+optionally `SHIPWRIGHT_K8S_AGENT_CLAUDE_POLICY_HASH` to roll pods when the policy
+changes. Both are unset by default (no mount). See
+[`configuration-agent.md`](./configuration-agent.md#agent-provisioning-admin-service)
+for details.
+
 ### Chat service provisioning (opt-in)
 
 By default the admin service **does not** mint chat-service tokens — provisioned agents carry no chat-service credentials. Per-agent chat-service token provisioning at agent-creation time is enabled the same way the admin console's Chat tab is: via the top-level `chat.enabled` + `chat.adminToken.existingSecret` chart values described in [Chat service (opt-in)](./deploy-kubernetes-networking.md#chat-service-opt-in) — there is no separate `agent.provisioning.chatService.*` value block.

@@ -212,6 +212,18 @@ export function buildProvisioner(
     ...(env.ELEVENLABS_VOICE_ID ? { voiceId: env.ELEVENLABS_VOICE_ID } : {}),
   };
 
+  // Claude Code managed-policy ConfigMap. Empty/unset name disables the
+  // feature; the hash is optional and only stamped on pods when non-empty.
+  const claudePolicyConfigMap =
+    env.SHIPWRIGHT_K8S_AGENT_CLAUDE_POLICY_CONFIGMAP;
+  const claudePolicyHash = env.SHIPWRIGHT_K8S_AGENT_CLAUDE_POLICY_HASH;
+  const claudePolicy = claudePolicyConfigMap
+    ? {
+        configMapName: claudePolicyConfigMap,
+        ...(claudePolicyHash ? { hash: claudePolicyHash } : {}),
+      }
+    : undefined;
+
   const taskStoreUrl = env.SHIPWRIGHT_TASK_STORE_URL;
   const taskStoreAdminToken = env.SHIPWRIGHT_TASK_STORE_ADMIN_TOKEN;
   const taskStore =
@@ -244,6 +256,7 @@ export function buildProvisioner(
       : {}),
     ...(Object.keys(resources).length > 0 ? { resources } : {}),
     ...(Object.keys(voice).length > 0 ? { voice } : {}),
+    ...(claudePolicy ? { claudePolicy } : {}),
     // When SHIPWRIGHT_AGENT_PVC_NAME_TEMPLATE is set (e.g. "acme-agent-{name}-home"),
     // substitute {name} with the pre-sanitized name resolved by pvcNameFor()
     // (slug sanitized via sanitizeAgentName, or falls back to resourceName).

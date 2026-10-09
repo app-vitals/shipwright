@@ -187,6 +187,13 @@ export interface KubernetesAgentProvisionerConfig {
    * Deployment as SHIPWRIGHT_CHAT_SERVICE_URL. Required when chatService is set.
    */
   chatServiceUrl?: string;
+  /**
+   * Claude Code managed-policy ConfigMap to mount into provisioned agent pods
+   * (see AgentDeploymentOpts.claudePolicy). Sourced from
+   * SHIPWRIGHT_K8S_AGENT_CLAUDE_POLICY_CONFIGMAP / _HASH in main.ts. Omit to
+   * leave the manifest unchanged.
+   */
+  claudePolicy?: { configMapName: string; hash?: string };
 }
 
 function envEntryEqual(a: KubernetesEnvVar, b: KubernetesEnvVar): boolean {
@@ -293,6 +300,7 @@ export class KubernetesAgentProvisioner implements AgentProvisioner {
       voice: this.config.voice,
       taskStoreUrl: this.config.taskStoreUrl,
       chatServiceUrl: this.config.chatServiceUrl,
+      claudePolicy: this.config.claudePolicy,
       accountId,
     });
   }

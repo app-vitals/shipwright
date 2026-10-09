@@ -112,12 +112,20 @@ export interface KubernetesDeployment {
     strategy?: { type: string; [key: string]: unknown };
     selector: { matchLabels: Record<string, string> };
     template: {
-      metadata: { labels: Record<string, string> };
+      metadata: {
+        labels: Record<string, string>;
+        annotations?: Record<string, string>;
+      };
       spec: {
         containers: KubernetesContainer[];
         volumes?: Array<{
           name: string;
           persistentVolumeClaim?: { claimName: string };
+          configMap?: {
+            name: string;
+            items?: Array<{ key: string; path: string }>;
+            defaultMode?: number;
+          };
           [key: string]: unknown;
         }>;
         securityContext?: Record<string, unknown>;

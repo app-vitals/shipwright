@@ -126,6 +126,48 @@ describe("buildProvisioner", () => {
     expect(config.pvcStorageGi).toBe(80);
   });
 
+  it("passes claudePolicy through when the policy ConfigMap env is set", () => {
+    const provisioner = buildProvisioner(
+      {
+        SHIPWRIGHT_K8S_PROVISIONING: "enabled",
+        SHIPWRIGHT_K8S_AGENT_CLAUDE_POLICY_CONFIGMAP: "claude-policy",
+        SHIPWRIGHT_K8S_AGENT_CLAUDE_POLICY_HASH: "abc123",
+      },
+      stubAgentTokenService(),
+    );
+    expect(configOf(provisioner).claudePolicy).toEqual({
+      configMapName: "claude-policy",
+      hash: "abc123",
+    });
+  });
+
+  it("omits the hash when only the ConfigMap env is set", () => {
+    const provisioner = buildProvisioner(
+      {
+        SHIPWRIGHT_K8S_PROVISIONING: "enabled",
+        SHIPWRIGHT_K8S_AGENT_CLAUDE_POLICY_CONFIGMAP: "claude-policy",
+      },
+      stubAgentTokenService(),
+    );
+    expect(configOf(provisioner).claudePolicy).toEqual({
+      configMapName: "claude-policy",
+    });
+  });
+
+  it("omits claudePolicy when the ConfigMap env is unset or empty", () => {
+    for (const cm of [undefined, ""]) {
+      const provisioner = buildProvisioner(
+        {
+          SHIPWRIGHT_K8S_PROVISIONING: "enabled",
+          SHIPWRIGHT_K8S_AGENT_CLAUDE_POLICY_CONFIGMAP: cm,
+          SHIPWRIGHT_K8S_AGENT_CLAUDE_POLICY_HASH: "abc123",
+        },
+        stubAgentTokenService(),
+      );
+      expect(configOf(provisioner).claudePolicy).toBeUndefined();
+    }
+  });
+
   it("ignores non-finite numeric env (NaN) rather than passing it through", () => {
     const provisioner = buildProvisioner(
       {

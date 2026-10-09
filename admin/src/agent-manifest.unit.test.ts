@@ -627,6 +627,69 @@ describe("buildAgentDeploymentManifest — task-store env", () => {
   });
 });
 
+describe("buildAgentDeploymentManifest — claude policy", () => {
+  const claudePolicy = { configMapName: "claude-policy", hash: "abc123" };
+
+  it("adds a claude-policy configMap volume with defaultMode 292", () => {
+    const d = buildAgentDeploymentManifest({ ...deployOpts, claudePolicy });
+    const volumes = d.spec.template.spec.volumes ?? [];
+    expect(volumes).toHaveLength(2);
+    expect(volumes[1]).toEqual({
+      name: "claude-policy",
+      configMap: {
+        name: "claude-policy",
+        items: [
+          { key: "managed-settings.json", path: "managed-settings.json" },
+        ],
+        defaultMode: 292,
+      },
+    });
+  });
+
+  it("mounts the policy directory read-only at /etc/claude-code (no subPath)", () => {
+    const d = buildAgentDeploymentManifest({ ...deployOpts, claudePolicy });
+    const mounts = d.spec.template.spec.containers[0]?.volumeMounts ?? [];
+    expect(mounts).toHaveLength(2);
+    expect(mounts[1]).toEqual({
+      name: "claude-policy",
+      mountPath: "/etc/claude-code",
+      readOnly: true,
+    });
+  });
+
+  it("annotates the pod template with the policy hash", () => {
+    const d = buildAgentDeploymentManifest({ ...deployOpts, claudePolicy });
+    expect(
+      d.spec.template.metadata.annotations?.[
+        "shipwright.dev/claude-policy-hash"
+      ],
+    ).toBe("abc123");
+  });
+
+  it("omits the annotation when the hash is empty or absent", () => {
+    for (const hash of [undefined, ""]) {
+      const d = buildAgentDeploymentManifest({
+        ...deployOpts,
+        claudePolicy: { configMapName: "claude-policy", hash },
+      });
+      expect(d.spec.template.metadata.annotations).toBeUndefined();
+      expect(d.spec.template.spec.volumes).toHaveLength(2);
+    }
+  });
+
+  it("leaves the manifest unchanged when claudePolicy is unset", () => {
+    const d = buildAgentDeploymentManifest(deployOpts);
+    expect(d.spec.template.spec.volumes).toHaveLength(1);
+    expect(d.spec.template.spec.containers[0]?.volumeMounts).toHaveLength(1);
+    expect("annotations" in d.spec.template.metadata).toBe(false);
+    // The provisioner forwards `claudePolicy: undefined` when unset — that
+    // must build exactly the same manifest as omitting the key.
+    expect(
+      buildAgentDeploymentManifest({ ...deployOpts, claudePolicy: undefined }),
+    ).toEqual(d);
+  });
+});
+
 // ─── Tenant pods (SSP-7.1) ──────────────────────────────────────────────────
 
 describe("buildAgentDeploymentManifest — tenant pods", () => {
