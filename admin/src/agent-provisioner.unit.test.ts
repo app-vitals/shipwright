@@ -1117,6 +1117,24 @@ describe("policyDrifted()", () => {
     expect(policyDrifted(live, manifestWith(POLICY_A))).toBe(true);
   });
 
+  it("is drifted when the policy mount is not read-only", () => {
+    const live = manifestWith(POLICY_A);
+    const mount = live.spec.template.spec.containers[0]?.volumeMounts?.find(
+      (m) => m.mountPath === "/etc/claude-code",
+    );
+    if (mount) mount.readOnly = false;
+    expect(policyDrifted(live, manifestWith(POLICY_A))).toBe(true);
+  });
+
+  it("ignores a same-named mount at another path once the policy mount is in sync", () => {
+    const live = manifestWith(POLICY_A);
+    live.spec.template.spec.containers[0]?.volumeMounts?.unshift({
+      name: "claude-policy",
+      mountPath: "/etc/other",
+    });
+    expect(policyDrifted(live, manifestWith(POLICY_A))).toBe(false);
+  });
+
   it("is drifted when a live hash annotation is extra (desired hash absent)", () => {
     expect(
       policyDrifted(

@@ -262,10 +262,10 @@ function policyParts(dep: KubernetesDeployment): {
     volume: dep.spec.template.spec.volumes?.find(
       (v) => v.name === CLAUDE_POLICY_VOLUME,
     ),
+    // Keyed by mountPath, the strategic-merge key the patch operates on, so a
+    // stray same-named mount elsewhere can't make every pass look drifted.
     mount: dep.spec.template.spec.containers[0]?.volumeMounts?.find(
-      (m) =>
-        m.name === CLAUDE_POLICY_VOLUME ||
-        m.mountPath === CLAUDE_POLICY_MOUNT_PATH,
+      (m) => m.mountPath === CLAUDE_POLICY_MOUNT_PATH,
     ),
     hash: dep.spec.template.metadata?.annotations?.[
       CLAUDE_POLICY_HASH_ANNOTATION
@@ -306,7 +306,10 @@ export function policyPatch(
   }
 
   if (want.mount) {
-    if (cur.mount?.name !== want.mount.name) {
+    if (
+      cur.mount?.name !== want.mount.name ||
+      cur.mount.readOnly !== want.mount.readOnly
+    ) {
       patch.volumeMounts = [want.mount];
     }
   } else if (cur.mount) {
