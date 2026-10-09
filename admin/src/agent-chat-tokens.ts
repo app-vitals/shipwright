@@ -17,6 +17,17 @@ import type {
 } from "../prisma/client/client.ts";
 import { NotFoundError } from "./errors.ts";
 
+/** Row shape returned to callers — BIGINT token columns are narrowed to number. */
+export type ChatTokenUsageDailyRow = Omit<
+  AgentChatTokenUsageDailyByModel,
+  "inputTokens" | "outputTokens" | "cacheReadTokens" | "cacheCreationTokens"
+> & {
+  inputTokens: number;
+  outputTokens: number;
+  cacheReadTokens: number;
+  cacheCreationTokens: number;
+};
+
 export type { AgentChatTokenUsageDailyByModel };
 
 // ─── Stats types (mirrored from metrics/src/lib/admin-metrics-client.ts) ─────
@@ -79,7 +90,7 @@ export class AgentChatTokenService {
     date: string,
     model: string,
     tokens: DailyTokenInput,
-  ): Promise<AgentChatTokenUsageDailyByModel> {
+  ): Promise<ChatTokenUsageDailyRow> {
     // Check agent existence upfront to surface a clean 404.
     const agent = await this.prisma.agent.findUnique({
       where: { id: agentId },
@@ -108,7 +119,14 @@ export class AgentChatTokenService {
       RETURNING *
     `;
 
-    return rows[0];
+    const row = rows[0];
+    return {
+      ...row,
+      inputTokens: Number(row.inputTokens),
+      outputTokens: Number(row.outputTokens),
+      cacheReadTokens: Number(row.cacheReadTokens),
+      cacheCreationTokens: Number(row.cacheCreationTokens),
+    };
   }
 
   /**
@@ -208,16 +226,16 @@ export class AgentChatTokenService {
   }
 
   private toAggregate(sum: {
-    inputTokens?: number | null;
-    outputTokens?: number | null;
-    cacheReadTokens?: number | null;
-    cacheCreationTokens?: number | null;
+    inputTokens?: bigint | null;
+    outputTokens?: bigint | null;
+    cacheReadTokens?: bigint | null;
+    cacheCreationTokens?: bigint | null;
     costUsd?: number | null;
   }): TokenAggregate {
-    const input = sum.inputTokens ?? 0;
-    const output = sum.outputTokens ?? 0;
-    const cacheRead = sum.cacheReadTokens ?? 0;
-    const cacheCreation = sum.cacheCreationTokens ?? 0;
+    const input = Number(sum.inputTokens ?? 0);
+    const output = Number(sum.outputTokens ?? 0);
+    const cacheRead = Number(sum.cacheReadTokens ?? 0);
+    const cacheCreation = Number(sum.cacheCreationTokens ?? 0);
     const result: TokenAggregate = {
       input,
       output,
