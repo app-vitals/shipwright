@@ -29,7 +29,6 @@ import type {
   ModelBreakdownEntry,
 } from "./cron-run-reporter.ts";
 import type { CronJobLike } from "./loop-cron-classifier.ts";
-import type { PatchStateSnapshot } from "./patch-outcome-check.ts";
 import {
   buildClaimPrRequest,
   createLoopOrchestrator,
@@ -39,6 +38,7 @@ import {
   type LoopOrchestratorDeps,
   type LoopOrchestratorProductionOptions,
 } from "./loop-orchestrator.ts";
+import type { PatchStateSnapshot } from "./patch-outcome-check.ts";
 import type { RunTelemetry } from "./run-telemetry.ts";
 import type { WorkQueueReporter } from "./work-queue-reporter.ts";
 import {
@@ -507,6 +507,9 @@ interface MakeDepsOptions {
   getPrProgress?: LoopOrchestratorDeps["getPrProgress"];
   // SLS-1.1: live patch-state reader/escalator. Undefined by default.
   patchOutcome?: LoopOrchestratorDeps["patchOutcome"];
+  // PRL-1.3: live PR claim reader + release hook. Undefined by default.
+  getPrState?: LoopOrchestratorDeps["getPrState"];
+  releasePr?: LoopOrchestratorDeps["releasePr"];
   // LO-1.1: optional injected Sentry client double — undefined by default
   // (matching production's optional-by-convention sentryClient), so existing
   // tests that don't pass this option are unaffected.
@@ -598,6 +601,8 @@ function makeDeps(options: MakeDepsOptions = {}): LoopOrchestratorDeps {
     getTaskState: options.getTaskState ?? (async () => null),
     getPrProgress: options.getPrProgress,
     patchOutcome: options.patchOutcome,
+    getPrState: options.getPrState,
+    releasePr: options.releasePr,
     agentId: options.agentId,
     clearSessionKey: options.clearSessionKey,
     sentryClient: options.sentryClient,
@@ -5732,5 +5737,103 @@ describe("createLoopOrchestrator — run telemetry forwarding", () => {
     expect(completes[0]?.outcome).toBe("completed");
     expect(completes[0]?.opts?.turns).toBe(4);
     expect(completes[0]?.opts?.contextFingerprint).toBeUndefined();
+  });
+  describe("PRL-1.3 release of a still-held patch pre-claim", () => {
+    const snap = (headSha: string): PatchStateSnapshot => ({
+      headSha,
+      findingRefs: ["thread:T@1"],
+      mergeDirty: false,
+      ciFailing: false,
+    });
+
+    let escalations = 0;
+    const run = async (opts: {
+      result: string;
+      claimedBy: string | null;
+      escalate?: boolean;
+      releasePr?: (id: string) => Promise<void>;
+    }) => {
+      const consumed = new Set<string>();
+      const { reporter } = makeRecordingReporter();
+      const released: string[] = [];
+      const patchCandidates = [pr("acme/x#9", "2026-01-01T00:00:00Z", "patch")];
+      const { runner } = makeDrainingRunner(
+        { patch: patchCandidates },
+        consumed,
+        [{ result: opts.result }],
+      );
+      const deps = makeDeps({
+        patchCandidates,
+        runner,
+        reporter,
+        consumed,
+        agentId: "agent-me",
+        patchOutcome: {
+          snapshot: async () => snap("aaaaaaa1"),
+          escalate: async () => {
+            escalations++;
+          },
+        },
+        getPrState: async () => ({ claimedBy: opts.claimedBy }),
+        releasePr:
+          opts.releasePr ??
+          (async (id: string) => {
+            released.push(id);
+          }),
+        claimPr: async (c: WorkPrCandidate) => ({
+          id: "pr-record-cuid-xyz",
+          commitSha: c.commitSha,
+        }),
+      });
+      await createLoopOrchestrator(deps)([job("shipwright-patch", true)]);
+      return released;
+    };
+
+    test("silent + still held by this agent releases the claim", async () => {
+      const released = await run({
+        result: "nothing\n[silent]",
+        claimedBy: "agent-me",
+      });
+      expect(released).toEqual(["pr-record-cuid-xyz"]);
+    });
+
+    test("silent + held by a sibling does not release", async () => {
+      const released = await run({
+        result: "nothing\n[silent]",
+        claimedBy: "agent-other",
+      });
+      expect(released).toEqual([]);
+    });
+
+    test("completed (non-silent) run does not release", async () => {
+      const released = await run({
+        result: "pushed fix",
+        claimedBy: "agent-me",
+      });
+      expect(released).toEqual([]);
+    });
+
+    test("silent + escalated (unsettled, same head) and still held releases", async () => {
+      // identical before/after snapshots with findings => PHS-3.1 escalation
+      escalations = 0;
+      const released = await run({
+        result: "nothing\n[silent]",
+        claimedBy: "agent-me",
+      });
+      expect(escalations).toBe(1);
+      expect(released).toEqual(["pr-record-cuid-xyz"]);
+    });
+
+    test("releasePr rejection is swallowed and the dispatch still resolves", async () => {
+      await expect(
+        run({
+          result: "nothing\n[silent]",
+          claimedBy: "agent-me",
+          releasePr: async () => {
+            throw new Error("boom");
+          },
+        }),
+      ).resolves.toEqual([]);
+    });
   });
 });

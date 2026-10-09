@@ -1472,6 +1472,41 @@ describe("createTaskStoreClient query()", () => {
     );
   });
 
+  // ─── releasePr() (PRL-1.3) ────────────────────────────────────────────────
+
+  test("releasePr() POSTs to /prs/:id/release with a valid empty JSON body", async () => {
+    let capturedUrl: string | undefined;
+    let capturedInit: RequestInit | undefined;
+    const fakeFetch = (async (url: RequestInfo | URL, init?: RequestInit) => {
+      capturedUrl = String(url);
+      capturedInit = init;
+      return { ok: true, status: 200, json: async () => FAKE_PR } as Response;
+    }) as unknown as typeof fetch;
+
+    const client = createTaskStoreClient({ fetchFn: fakeFetch });
+    await client.releasePr("clx0987654321");
+
+    expect(capturedUrl).toBe(
+      "https://task-store.example.com/prs/clx0987654321/release",
+    );
+    expect(capturedInit?.method).toBe("POST");
+    expect(capturedInit?.body).toBe("{}");
+  });
+
+  test("releasePr() throws on a non-ok status", async () => {
+    const fakeFetch = (async () =>
+      ({
+        ok: false,
+        status: 409,
+        json: async () => ({}),
+      }) as Response) as unknown as typeof fetch;
+
+    const client = createTaskStoreClient({ fetchFn: fakeFetch });
+    await expect(client.releasePr("clx0987654321")).rejects.toThrow(
+      "task-store POST /prs/clx0987654321/release → 409",
+    );
+  });
+
   test("claim() POSTs to /tasks/:id/claim", async () => {
     let capturedUrl: string | undefined;
     let capturedInit: RequestInit | undefined;
@@ -1807,7 +1842,12 @@ describe("createTaskStoreClient query()", () => {
     await client.blockPr("rec-1", "acme/x", "why");
 
     expect(bodies).toEqual([
-      { repo: "acme/x", blocked: true, blockedReason: "why", blockedHeadSha: "sha-A" },
+      {
+        repo: "acme/x",
+        blocked: true,
+        blockedReason: "why",
+        blockedHeadSha: "sha-A",
+      },
       { repo: "acme/x", blocked: true, blockedReason: "why" },
     ]);
   });
@@ -3019,7 +3059,9 @@ describe("clearStaleSkipBlock", () => {
 
   test("clears when the live head SHA differs", async () => {
     const r = recorder();
-    expect(await checkHelpers.clearStaleSkipBlock(blocked, "sha-new", r.fn)).toBe(true);
+    expect(
+      await checkHelpers.clearStaleSkipBlock(blocked, "sha-new", r.fn),
+    ).toBe(true);
     expect(r.calls).toEqual(["pr-rec-1"]);
   });
 
@@ -3029,16 +3071,24 @@ describe("clearStaleSkipBlock", () => {
       ...blocked,
       findings: [
         ...blocked.findings,
-        { id: "finding-2", source: "review", createdAt: "2026-10-07T12:00:00Z" },
+        {
+          id: "finding-2",
+          source: "review",
+          createdAt: "2026-10-07T12:00:00Z",
+        },
       ],
     };
-    expect(await checkHelpers.clearStaleSkipBlock(record, "sha-old", r.fn)).toBe(true);
+    expect(
+      await checkHelpers.clearStaleSkipBlock(record, "sha-old", r.fn),
+    ).toBe(true);
     expect(r.calls).toEqual(["pr-rec-1"]);
   });
 
   test("stays blocked when head SHA and latest review are unchanged", async () => {
     const r = recorder();
-    expect(await checkHelpers.clearStaleSkipBlock(blocked, "sha-old", r.fn)).toBe(false);
+    expect(
+      await checkHelpers.clearStaleSkipBlock(blocked, "sha-old", r.fn),
+    ).toBe(false);
     expect(r.calls).toEqual([]);
   });
 
@@ -3051,13 +3101,17 @@ describe("clearStaleSkipBlock", () => {
         { id: "patch-1", source: "patch", createdAt: "2026-10-07T12:00:00Z" },
       ],
     };
-    expect(await checkHelpers.clearStaleSkipBlock(record, "sha-old", r.fn)).toBe(false);
+    expect(
+      await checkHelpers.clearStaleSkipBlock(record, "sha-old", r.fn),
+    ).toBe(false);
   });
 
   test("legacy block (null blockedHeadSha) stays blocked", async () => {
     const r = recorder();
     const record = { ...blocked, blockedHeadSha: null };
-    expect(await checkHelpers.clearStaleSkipBlock(record, "sha-new", r.fn)).toBe(false);
+    expect(
+      await checkHelpers.clearStaleSkipBlock(record, "sha-new", r.fn),
+    ).toBe(false);
     expect(r.calls).toEqual([]);
   });
 
@@ -3071,13 +3125,17 @@ describe("clearStaleSkipBlock", () => {
 
     test("clears when the live head differs", async () => {
       const r = recorder();
-      expect(await checkHelpers.clearStaleSkipBlock(escalated, "sha-new", r.fn)).toBe(true);
+      expect(
+        await checkHelpers.clearStaleSkipBlock(escalated, "sha-new", r.fn),
+      ).toBe(true);
       expect(r.calls).toEqual(["pr-rec-1"]);
     });
 
     test("stays blocked on the same head", async () => {
       const r = recorder();
-      expect(await checkHelpers.clearStaleSkipBlock(escalated, "sha-old", r.fn)).toBe(false);
+      expect(
+        await checkHelpers.clearStaleSkipBlock(escalated, "sha-old", r.fn),
+      ).toBe(false);
       expect(r.calls).toEqual([]);
     });
 
@@ -3091,14 +3149,18 @@ describe("clearStaleSkipBlock", () => {
           { id: "rev-1", source: "review", createdAt: "2026-10-01T00:00:00Z" },
         ],
       };
-      expect(await checkHelpers.clearStaleSkipBlock(record, "sha-old", r.fn)).toBe(false);
+      expect(
+        await checkHelpers.clearStaleSkipBlock(record, "sha-old", r.fn),
+      ).toBe(false);
       expect(r.calls).toEqual([]);
     });
 
     test("without a blockedHeadSha stays blocked", async () => {
       const r = recorder();
       const record = { ...escalated, blockedHeadSha: null };
-      expect(await checkHelpers.clearStaleSkipBlock(record, "sha-new", r.fn)).toBe(false);
+      expect(
+        await checkHelpers.clearStaleSkipBlock(record, "sha-new", r.fn),
+      ).toBe(false);
     });
 
     test("human-written block (no prefix) is untouched even with a stamped head", async () => {
@@ -3107,7 +3169,9 @@ describe("clearStaleSkipBlock", () => {
         ...escalated,
         blockedReason: "Escalated: needs human decision (patch Step 5a.7)",
       };
-      expect(await checkHelpers.clearStaleSkipBlock(record, "sha-new", r.fn)).toBe(false);
+      expect(
+        await checkHelpers.clearStaleSkipBlock(record, "sha-new", r.fn),
+      ).toBe(false);
       expect(r.calls).toEqual([]);
     });
   });
@@ -3118,23 +3182,37 @@ describe("clearStaleSkipBlock", () => {
       ...blocked,
       blockedReason: "Auto-blocked after 3 consecutive CI failures",
     };
-    expect(await checkHelpers.clearStaleSkipBlock(record, "sha-new", r.fn)).toBe(false);
+    expect(
+      await checkHelpers.clearStaleSkipBlock(record, "sha-new", r.fn),
+    ).toBe(false);
     expect(r.calls).toEqual([]);
   });
 
   test("a resetSkip error leaves the PR blocked", async () => {
     const r = recorder(true);
-    expect(await checkHelpers.clearStaleSkipBlock(blocked, "sha-new", r.fn)).toBe(false);
+    expect(
+      await checkHelpers.clearStaleSkipBlock(blocked, "sha-new", r.fn),
+    ).toBe(false);
   });
 
   test("no resetSkip dep, no record id, or unblocked record -> false", async () => {
     const r = recorder();
-    expect(await checkHelpers.clearStaleSkipBlock(blocked, "sha-new", undefined)).toBe(false);
     expect(
-      await checkHelpers.clearStaleSkipBlock({ ...blocked, id: undefined }, "sha-new", r.fn),
+      await checkHelpers.clearStaleSkipBlock(blocked, "sha-new", undefined),
     ).toBe(false);
     expect(
-      await checkHelpers.clearStaleSkipBlock({ ...blocked, blocked: false }, "sha-new", r.fn),
+      await checkHelpers.clearStaleSkipBlock(
+        { ...blocked, id: undefined },
+        "sha-new",
+        r.fn,
+      ),
+    ).toBe(false);
+    expect(
+      await checkHelpers.clearStaleSkipBlock(
+        { ...blocked, blocked: false },
+        "sha-new",
+        r.fn,
+      ),
     ).toBe(false);
     expect(r.calls).toEqual([]);
   });

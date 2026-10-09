@@ -400,6 +400,18 @@ export interface LoopOrchestratorDeps {
    */
   heartbeatPr?: (prId: string) => Promise<void>;
   /**
+   * PRL-1.3 — mechanical safety net behind the patch skill's prose-level
+   * release (PRL-1.2): releases the PR record's claim (POST /prs/{id}/release).
+   * Called after a patch dispatch ends `[silent]` (including the PHS-3.1
+   * escalation path, since blockPr does not release the claim) when the live
+   * claimedBy is still this agent. Best-effort: a rejection is logged and
+   * swallowed, never failing the dispatch. Requires getPrState and agentId to
+   * take effect.
+   *
+   * Optional: when undefined, a silent patch dispatch leaves the claim as-is.
+   */
+  releasePr?: (prId: string) => Promise<void>;
+  /**
    * Clears a persisted session-store entry by key. Called (best-effort) when a
    * dispatch's resume loop exits — but WHEN it's called differs per phase,
    * matching the two sessionKey shapes described on `runner` above:
@@ -733,6 +745,7 @@ export function createLoopOrchestrator(
     getPrProgress,
     patchOutcome,
     heartbeatPr,
+    releasePr,
     clearSessionKey,
     runner,
     cronRunReporter,
@@ -898,6 +911,12 @@ export function createLoopOrchestrator(
     string,
     { before: PatchStateSnapshot | null; prAuthor?: string }
   >();
+  /**
+   * PRL-1.3: itemIds of patch PR dispatches that ended `[silent]`, recorded by
+   * dispatchItem() and consumed (deleted) by dispatch() to decide whether a
+   * still-held pre-claim needs releasing.
+   */
+  const silentPatchItems = new Set<string>();
 
   async function dispatchItem(
     phase: LoopPhase,
@@ -1281,6 +1300,8 @@ export function createLoopOrchestrator(
             recordSkip(itemType, recordId, skipReason),
           );
         }
+        if (phase === "patch" && itemType === "pr")
+          silentPatchItems.add(itemId);
         return "silent";
       }
 
@@ -1628,6 +1649,7 @@ export function createLoopOrchestrator(
       completed = true;
     } finally {
       patchLiveBefore.delete(itemId);
+      const endedSilent = silentPatchItems.delete(itemId);
       try {
         // A thrown dispatch (crash/timeout) is left to the PHS-3.3 crash budget
         // (recordSkip with the error reason) — escalating here would bypass it.
@@ -1654,6 +1676,25 @@ export function createLoopOrchestrator(
           `[loop-orchestrator] patch outcome check failed for ${itemId}: ${String(err)} — swallowing`,
         );
       }
+      if (completed && endedSilent) await releaseHeldPatchClaim(recordId);
+    }
+  }
+
+  /**
+   * PRL-1.3 — after a silent patch dispatch, releases the pre-claim only if it
+   * is still held by this agent (a completed run releases via /patch; a claim
+   * held by a sibling is not ours to release). Best-effort: never throws.
+   */
+  async function releaseHeldPatchClaim(recordId: string): Promise<void> {
+    if (!releasePr || !getPrState || !agentId) return;
+    try {
+      const live = await getPrState(recordId);
+      if (live?.claimedBy !== agentId) return;
+      await releasePr(recordId);
+    } catch (err) {
+      console.warn(
+        `[loop-orchestrator] releasePr failed for ${recordId}: ${String(err)} — swallowing`,
+      );
     }
   }
 
@@ -2374,6 +2415,7 @@ export async function createProductionLoopOrchestrator(
     // claim TTL. Throws on a non-ok response — the resume gate reads that as
     // "stop resuming".
     heartbeatPr: (id) => taskStoreClient.heartbeatPr(id),
+    releasePr: (id) => taskStoreClient.releasePr(id),
     clearSessionKey: opts.clearSessionKey,
     contextStamp: opts.contextStamp,
     runner: opts.runner,
