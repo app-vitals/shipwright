@@ -901,6 +901,18 @@ INSTRUCTIONS — follow in order:
 [D] Commit and push
   - Complete the merge: `git commit -m "Merge branch '{base}' into {branch}"`
     (or `git merge --continue` if git is waiting for a commit)
+  **Required pre-push gate — verification record.** Before `git push`, check that this PR's
+  verification outcomes were recorded (substitute the literal PR Record ID from the top of this
+  prompt; `$PR_RECORD_ID` is not set in your shell):
+
+  ```bash
+  curl -sf -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
+    "$SHIPWRIGHT_TASK_STORE_URL/verification-checks?prId={PR_RECORD_ID}&limit=1" | jq '.checks'
+  ```
+
+  If the result is empty, record each check that was run (or skipped, and why) now, using the
+  POST shape from [C] Validate, then continue. This gate never blocks the push.
+
   - Push: `git push origin {branch}`
 
 [E] Report back
@@ -1521,6 +1533,18 @@ INSTRUCTIONS — follow in order:
     - Stage only the files you changed: `git add {changed files}`
     - Commit with a conventional commit message describing what was fixed:
       "fix: address review findings on #{pr} — {one-line summary of changes}"
+    **Required pre-push gate — verification record.** Before `git push`, check that this PR's
+    verification outcomes were recorded (substitute the literal PR Record ID from the top of this
+    prompt; `$PR_RECORD_ID` is not set in your shell):
+
+    ```bash
+    curl -sf -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
+      "$SHIPWRIGHT_TASK_STORE_URL/verification-checks?prId={PR_RECORD_ID}&limit=1" | jq '.checks'
+    ```
+
+    If the result is empty, record each check that was run (or skipped, and why) now, using the
+    POST shape from [C] Validate, then continue. This gate never blocks the push.
+
     - Push: `git push origin {branch}`
 
   - **If any finding was classified REJECT in [A.5]** (regardless of whether other
@@ -2239,6 +2263,18 @@ INSTRUCTIONS — follow in order:
   - Stage only the files you changed: `git add {changed files}`
   - Commit with a conventional commit message describing what was fixed:
     "fix: resolve CI failures on #{pr} — {one-line summary of changes}"
+  **Required pre-push gate — verification record.** Before `git push`, check that this PR's
+  verification outcomes were recorded (substitute the literal PR Record ID from the top of this
+  prompt; `$PR_RECORD_ID` is not set in your shell):
+
+  ```bash
+  curl -sf -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
+    "$SHIPWRIGHT_TASK_STORE_URL/verification-checks?prId={PR_RECORD_ID}&limit=1" | jq '.checks'
+  ```
+
+  If the result is empty, record each check that was run (or skipped, and why) now, using the
+  POST shape from [C] Validate, then continue. This gate never blocks the push.
+
   - Push: `git push origin {branch}`
 
 [E] Report back

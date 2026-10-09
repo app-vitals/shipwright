@@ -3034,3 +3034,61 @@ describe("patch.md — Step 3a classifies List A via compute-unaddressed-finding
     expect(content).not.toContain("Step 3a's own clean-APPROVE exclusion");
   });
 });
+
+describe("patch.md — pre-push verification gate in fix-subagent briefs (VRW-1.2)", () => {
+  const GATE_START = "**Required pre-push gate — verification record.**";
+  const PUSH = "git push origin {branch}";
+  const normalize = (s: string) =>
+    s
+      .split("\n")
+      .map((l) => l.trim())
+      .join("\n");
+
+  const gates = () => {
+    const out: { gate: string; gateIdx: number; pushIdx: number }[] = [];
+    let from = 0;
+    for (;;) {
+      const gateIdx = content.indexOf(GATE_START, from);
+      if (gateIdx === -1) break;
+      const pushIdx = content.indexOf(PUSH, gateIdx);
+      out.push({
+        gate: normalize(content.slice(gateIdx, pushIdx)),
+        gateIdx,
+        pushIdx,
+      });
+      from = gateIdx + 1;
+    }
+    return out;
+  };
+
+  it("all three briefs carry the gate ahead of the push step", () => {
+    const found = gates();
+    expect(found).toHaveLength(3);
+    for (const { gateIdx, pushIdx } of found) {
+      expect(pushIdx).toBeGreaterThan(gateIdx);
+    }
+    expect(content.split(PUSH).length - 1).toBe(3);
+    // each gate is the nearest thing before its push: no other push in between
+    for (const { gateIdx, pushIdx } of found) {
+      expect(content.slice(gateIdx, pushIdx)).not.toContain(PUSH);
+    }
+  });
+
+  it("gate wording is identical across the three sites", () => {
+    const [a, b, c] = gates().map((g) => g.gate);
+    expect(b).toBe(a);
+    expect(c).toBe(a);
+  });
+
+  it("gate uses prId with the literal PR record id and never blocks the push", () => {
+    const { gate } = gates()[0];
+    expect(gate).toContain("verification-checks?prId={PR_RECORD_ID}&limit=1");
+    expect(gate).toContain("`$PR_RECORD_ID` is not set in your shell");
+    expect(gate).toContain("If the result is empty, record each check");
+    expect(gate).toContain("This gate never blocks the push.");
+  });
+
+  it("adds no script or run-with-budget reference", () => {
+    expect(content).not.toContain("run-with-budget");
+  });
+});
