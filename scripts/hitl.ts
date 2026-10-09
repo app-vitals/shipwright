@@ -1149,6 +1149,7 @@ export async function runWithPatchOutcomeCheck(opts: {
     recordId: string,
     candidateId: string,
     reason: string,
+    headSha: string,
   ) => Promise<void>;
 }): Promise<number> {
   const { phase, prId, recordId, spawn, snapshot, escalate } = opts;
@@ -1164,7 +1165,7 @@ export async function runWithPatchOutcomeCheck(opts: {
         const outcome = evaluatePatchOutcome(before, after);
         if (outcome.kind === "escalated") {
           log(`${prId}: ${outcome.reason} — escalating`);
-          await escalate(recordId, prId, outcome.reason);
+          await escalate(recordId, prId, outcome.reason, outcome.headSha);
         }
       }
     } catch (err) {
@@ -1354,8 +1355,8 @@ async function runLoop(): Promise<void> {
         snapshot: patchDeps
           ? createPatchStateSnapshotter(patchDeps)
           : undefined,
-        escalate: (recordId, _candidateId, reason) =>
-          client.blockPr(recordId, record.repo, reason),
+        escalate: (recordId, _candidateId, reason, headSha) =>
+          client.blockPr(recordId, record.repo, reason, headSha),
       });
     } else {
       await spawnClaude();

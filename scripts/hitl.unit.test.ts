@@ -1023,13 +1023,22 @@ describe("runWithPatchOutcomeCheck", () => {
   };
 
   function harness(snaps: Array<PatchStateSnapshot | null>) {
-    const escalations: Array<{ recordId: string; reason: string }> = [];
+    const escalations: Array<{
+      recordId: string;
+      reason: string;
+      headSha: string;
+    }> = [];
     let i = 0;
     return {
       escalations,
       snapshot: async () => snaps[Math.min(i++, snaps.length - 1)] ?? null,
-      escalate: async (recordId: string, _id: string, reason: string) => {
-        escalations.push({ recordId, reason });
+      escalate: async (
+        recordId: string,
+        _id: string,
+        reason: string,
+        headSha: string,
+      ) => {
+        escalations.push({ recordId, reason, headSha });
       },
     };
   }
@@ -1047,6 +1056,7 @@ describe("runWithPatchOutcomeCheck", () => {
     expect(code).toBe(0);
     expect(h.escalations).toHaveLength(1);
     expect(h.escalations[0]?.recordId).toBe("rec1");
+    expect(h.escalations[0]?.headSha).toBe(unsettled.headSha);
   });
 
   test("does not escalate a settled run", async () => {
