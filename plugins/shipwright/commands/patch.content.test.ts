@@ -2939,3 +2939,69 @@ describe("patch.md — settle-with-rejected outcome for nothing-actionable List 
     expect(section).toContain("never exit `[silent]` without it");
   });
 });
+
+describe("patch.md — Step 3a classifies List A via compute-unaddressed-findings.ts (PRL-1.1)", () => {
+  function getStep3aSection() {
+    const step3aIdx = content.indexOf(
+      "### Step 3a: Check for Unaddressed Review Findings",
+    );
+    const step3a5Idx = content.indexOf(
+      "### Step 3a.5: Dependency-Risk Detection (DBP-1.2)",
+    );
+    expect(step3aIdx).toBeGreaterThan(-1);
+    expect(step3a5Idx).toBeGreaterThan(step3aIdx);
+    return content.slice(step3aIdx, step3a5Idx);
+  }
+
+  it("invokes compute-unaddressed-findings.ts with the full input shape", () => {
+    const section = getStep3aSection();
+    expect(section).toContain(
+      'bun run "${CLAUDE_PLUGIN_ROOT}/scripts/compute-unaddressed-findings.ts"',
+    );
+    for (const field of [
+      "currentUser",
+      "prAuthor",
+      "headRefOid",
+      "reviews",
+      "reviewThreads",
+      "comments",
+      "findings",
+    ]) {
+      expect(section).toContain(`${field}: $${field}`);
+    }
+    expect(section).toContain('"unaddressedFindings":true|false');
+  });
+
+  it("fetches ledger findings via the pre-claim record id, else by repo and PR number", () => {
+    const section = getStep3aSection();
+    expect(section).toContain("PR_FINDINGS_JSON");
+    expect(section).toContain("/prs/$PRECLAIM_RECORD_ID");
+    expect(section).toContain("/prs?repo={org}/{repo}&prNumber={pr}");
+    expect(section).toContain("echo '[]'");
+  });
+
+  it("states a clean self-APPROVE with no ledger entry IS in List A, settled by Step 5c.5", () => {
+    const section = getStep3aSection();
+    expect(section).toMatch(
+      /A clean self-APPROVE with no ledger entry IS in List A/,
+    );
+    expect(section).toContain("Step 5c.5");
+  });
+
+  it("no longer carries the removed clean-APPROVE / superseded-self-review exclusion prose", () => {
+    const section = getStep3aSection();
+    expect(section).not.toContain("**Clean-APPROVE exclusion**");
+    expect(section).not.toContain("DRO-1.2");
+    expect(section).not.toContain("Self-review superseded by a later clean");
+  });
+
+  it("Step 5c's settle rule covers a review-body-only List A item", () => {
+    expect(content).toContain(
+      "a clean self-authored\n  `Verdict: APPROVE` review with no ledger entry",
+    );
+  });
+
+  it("Step 3a.5 no longer cites a Step 3a clean-APPROVE exclusion", () => {
+    expect(content).not.toContain("Step 3a's own clean-APPROVE exclusion");
+  });
+});

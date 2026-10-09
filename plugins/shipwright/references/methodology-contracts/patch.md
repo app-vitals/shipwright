@@ -26,8 +26,9 @@ does no phase-specific adaptation.
 
 `plugins/shipwright/commands/patch.md`'s Steps 3 through 6 are the **reference implementation**
 this contract was extracted from — classifying a PR into Lists A (unaddressed review findings),
-C (DIRTY/merge-conflicted), and D (failing CI), the clean-APPROVE/reply-addressed/superseded-self-
-review exclusions that keep List A from looping forever, the dependency-risk detection and
+C (DIRTY/merge-conflicted), and D (failing CI), the mechanical `compute-unaddressed-findings.ts`
+List A gate (ledger, same-head-approval, and author-reply exclusions) that keeps List A from
+looping forever, the dependency-risk detection and
 remediation protocol, and the per-list fix-dispatch/validate/commit/push sequence. Consult it for
 the full built-in classification and fix logic; this doc only specifies the wire shape, not
 classification or fix-strategy policy.
@@ -54,10 +55,11 @@ input shape per dispatch.
     resolve the thread via the `resolveReviewThread` mutation once fixed), `path`, `line`,
     `body`, and the commenting author's login.
   - **review bodies** — non-excluded COMMENTED/CHANGES_REQUESTED review submissions (author
-    login, submission timestamp, body). Clean-APPROVE verdicts, reviews addressed by a
-    subsequent author reply, and self-authored reviews superseded by a later clean self-review
-    are excluded by the caller before this input is ever assembled — the subagent never sees
-    those.
+    login, submission timestamp, body). Reviews settled by a task-store ledger entry, superseded
+    by the same reviewer's later same-head `APPROVED`, or addressed by a subsequent author reply
+    are excluded by the caller (via `compute-unaddressed-findings.ts`) before this input is ever
+    assembled — the subagent never sees those. A clean self-`APPROVE` with no ledger entry is
+    NOT excluded: it reaches the subagent and is settled as `rejected` (no actionable finding).
   - **PR-level comments** — non-inline comments that may need a reply.
   - **`DEPENDENCY_RISK_FINDING`** (optional) — a nullable `{recommendation, flags, reasoning}`
     shape (per `references/dependency-risk-analysis.md`), present only when the PR also carries

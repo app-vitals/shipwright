@@ -421,6 +421,47 @@ describe("hasUnaddressedFindings", () => {
     expect(hasUnaddressedFindings(data, "the-agent")).toBe(false);
   });
 
+  test("returns true for a self-authored COMMENTED 'Verdict: APPROVE' review at head with no ledger entry (PRL-1.1)", () => {
+    const data = makeData({
+      reviews: {
+        nodes: [
+          {
+            author: { login: "the-agent" },
+            state: "COMMENTED",
+            submittedAt: "2026-05-26T10:00:00Z",
+            commit: { oid: "current-head-sha" },
+            body: "Verdict: APPROVE",
+          },
+        ],
+      },
+    });
+    expect(hasUnaddressedFindings(data, "the-agent")).toBe(true);
+  });
+
+  test("returns false for that same self-authored 'Verdict: APPROVE' review once a matching resolved ledger entry exists (PRL-1.1)", () => {
+    const review: ReviewNode = {
+      author: { login: "the-agent" },
+      state: "COMMENTED",
+      submittedAt: "2026-05-26T10:00:00Z",
+      commit: { oid: "current-head-sha" },
+      body: "Verdict: APPROVE",
+    };
+    const findings: PrFinding[] = [
+      {
+        id: "f1",
+        prRecordId: "pr1",
+        ref: reviewRef(review),
+        disposition: "resolved",
+        source: "review",
+        evidence: "Clean self-review.",
+        at: "2026-05-27T10:00:00Z",
+        createdAt: "2026-05-27T10:00:00Z",
+      },
+    ];
+    const data = makeData({ reviews: { nodes: [review] }, findings });
+    expect(hasUnaddressedFindings(data, "the-agent")).toBe(false);
+  });
+
   test("returns false when a qualifying review's ledger entry has disposition superseded (source: review)", () => {
     const finding: ReviewNode = {
       author: { login: "the-agent" },
