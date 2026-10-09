@@ -390,91 +390,75 @@ From the response, extract:
   review.md's RBD-1.1 fix), giving the bot/CI comment filtering Step 5a.5 performs the authoritative
   GraphQL discriminator, not just the login-string heuristic.
 
-A PR has **unaddressed findings** when ANY of the following are true:
-- At least one inline thread has `isResolved == false`
-- At least one review with `state == "COMMENTED"` or `state == "CHANGES_REQUESTED"` has a
-  non-empty `body` (a review body without matching inline threads is itself a finding),
-  excluding clean-APPROVE reviews (see below), reviews addressed via a subsequent author
-  reply (see below), and self-authored reviews superseded by a later clean self-review
-  (see below)
+Capture the response (`RESPONSE`) into the shell variables the script invocation below consumes,
+keeping each `_JSON` value as the **full connection object** (`{ nodes: [...] }`), not the bare
+inner array:
 
-A PR has **no findings** (skip it) when ALL of the following are true:
-- All inline threads are resolved (`isResolved == true` for every thread)
-- No COMMENTED or CHANGES_REQUESTED review has a non-empty body, other than clean-APPROVE
-  reviews (see below), reviews addressed via a subsequent author reply (see below), and
-  self-authored reviews superseded by a later clean self-review (see below)
+```bash
+HEAD_REF_OID=$(jq -r '.data.repository.pullRequest.headRefOid' <<< "$RESPONSE")
+REVIEWS_JSON=$(jq -c '.data.repository.pullRequest.reviews' <<< "$RESPONSE")
+REVIEW_THREADS_JSON=$(jq -c '.data.repository.pullRequest.reviewThreads' <<< "$RESPONSE")
+COMMENTS_JSON=$(jq -c '.data.repository.pullRequest.comments' <<< "$RESPONSE")
+```
 
-**Clean-APPROVE exclusion**: A review is excluded from the body check above when its body is
-a clean APPROVE verdict, matched either by:
-- leading markdown bold markers (`**`) stripped, the body starts with `APPROVE`, or
-- a `Verdict: APPROVE` label appears anywhere in the body (case-insensitive, optional bold
-  markers around either word) — **not** anchored to end-of-line, since the agent's narrative
-  self-reviews often trail reasoning after the verdict on the same line, e.g.
-  `"...All 5 acceptance criteria met. Verdict: APPROVE (posted as COMMENT — GitHub disallows
-  self-approval via the API)."` (verbatim from shipwright PR #1272, the case that motivated
-  this).
+Also fetch the PR's durable findings ledger — the task-store `PullRequest` record's `findings`
+array, which `isResolvedByLedger` and `isRejectedByPatchLedger` read below. Use the pre-claim
+record id (`PRECLAIM_RECORD_ID`, Step 0) when present, else look the record up by repo and PR
+number. Fail soft: an unreachable task store or a PR with no record yields `[]` — exactly the
+pre-ledger behavior, never a hard stop:
 
-Not restricted to self-authored reviews (SRV-1.1): multiple distinct Shipwright agents
-operate under different GitHub identities in the same repo, so WHO posted a clean APPROVE
-verdict is not meaningful — the verdict text itself is the ground truth. Per review.md's
-Step 10 mechanical verdict computation (the `selfReview` input), GitHub rejects self-APPROVE
-via the API, so an agent's own clean approval of its own PR is always posted as `COMMENTED`
-with a body like
-`"APPROVE — looks good, no changes needed."` or a narrative containing `"Verdict: APPROVE"`
-instead of an `APPROVED` review. Without this exclusion, that clean approval would look
-identical to a real finding and loop the patch cron forever on an already-approved PR. The
-exclusion is scoped to clean APPROVE verdicts only — a review whose body neither starts with
-`APPROVE` nor contains a `Verdict: APPROVE` label (e.g. it contains `Verdict:
-CHANGES_REQUESTED`, meaning the reviewer found a real issue) still counts as a finding,
-regardless of who posted it.
+```bash
+if [ -n "$PRECLAIM_RECORD_ID" ]; then
+  PR_FINDINGS_JSON=$(curl -sf -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
+    "$SHIPWRIGHT_TASK_STORE_URL/prs/$PRECLAIM_RECORD_ID" | jq -c '.findings // []' 2>/dev/null || echo '[]')
+else
+  PR_FINDINGS_JSON=$(curl -sf -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
+    "$SHIPWRIGHT_TASK_STORE_URL/prs?repo={org}/{repo}&prNumber={pr}" | jq -c '.prs[0].findings // []' 2>/dev/null || echo '[]')
+fi
+```
 
-**Third-party review body addressed via reply (CPF-2.3)**: A review's non-empty body is
-excluded from the finding check when the PR author has posted a PR-level comment (from
-`comments.nodes`, already fetched by this same query) with `createdAt` after that review's
-`submittedAt`. This exclusion is distinct from and independent of the clean-APPROVE
-exclusion above — a review can be excluded by either one on its own.
+**List A membership is computed mechanically, not freehand.** `compute-unaddressed-findings.ts`
+(PVD-1.1) is the single exported, tested implementation of `hasUnaddressedFindings` — the same
+module `check-patch.ts` qualifies candidates with and `review.md`'s Step 9.5 invokes. Build its
+input from the query response above (`reviews`, `reviewThreads`, `comments` are the full
+connection objects — `{ nodes: [...] }` — passed through unchanged), plus `CURRENT_USER`
+(Step 1), `PR_AUTHOR` (Step 0) as `prAuthor`, and `PR_FINDINGS_JSON`:
 
-The self-review "Verdict: APPROVE" rewrite (via the `updatePullRequestReview` mutation)
-only works because `updatePullRequestReview` can only edit a review's OWN author's body —
-it cannot be used on a third-party reviewer's review (e.g. a review posted by a distinct
-GitHub identity like `dodizzle`). When a third-party review flags a real finding, the fix
-subagent replies with a rebuttal or fix explanation and resolves the inline thread, but the
-review's own body text remains exactly as the third party wrote it — it can never be
-rewritten to signal the finding was addressed. A subsequent PR-author reply is therefore
-the only available signal that a third-party review's finding was addressed (fixed or
-rejected with a rebuttal), so it is treated the same as a body rewrite would be for a
-self-authored review. This exclusion still requires all inline threads to be resolved
-(`isResolved == true`) — an unresolved thread on the same review continues to count as a
-finding regardless of any reply.
+```bash
+bun run "${CLAUDE_PLUGIN_ROOT}/scripts/compute-unaddressed-findings.ts" \
+  "$(jq -n --arg currentUser "$CURRENT_USER" \
+    --arg prAuthor "$PR_AUTHOR" \
+    --argjson headRefOid "$(jq -Rs . <<< "$HEAD_REF_OID")" \
+    --argjson reviews "$REVIEWS_JSON" \
+    --argjson reviewThreads "$REVIEW_THREADS_JSON" \
+    --argjson comments "$COMMENTS_JSON" \
+    --argjson findings "$PR_FINDINGS_JSON" \
+    '{currentUser: $currentUser, prAuthor: $prAuthor, headRefOid: $headRefOid, reviews: $reviews, reviewThreads: $reviewThreads, comments: $comments, findings: $findings}')"
+# -> {"unaddressedFindings":true|false}
+```
 
-**Self-review superseded by a later clean self-review (DRO-1.2)**: review.md's own Step
-10/11 procedure always posts a *new* review object each pass rather than rewriting a prior
-one's body (see Step 10's "the initial-review and re-review paths run identically"), so a
-self-authored PR that goes through N review rounds — each finding and fixing one real issue
-— ends up with N-1 COMMENT-bodied self-reviews on the PR even after every finding has been
-fixed. None of those qualifies for the clean-APPROVE exclusion above (their bodies read
-`Verdict: COMMENT`, not `Verdict: APPROVE`), and the reply exclusion doesn't apply either
-(self-reviews aren't "third-party," and this PR's convention never posts a PR-level author
-reply) — so without this exclusion, `unaddressedFindings` computes `true` forever and a
-self-authored PR can never reach a clean verdict once it has had more than one review round.
-An earlier self-authored COMMENTED review's body is excluded from the finding check when a
-**later** review exists whose `author.login` is the same self-review identity AND that later
-review's own body is a clean verdict (matched by the clean-APPROVE exclusion's pattern above
-— i.e. the later self-review itself reads `Verdict: APPROVE` or leads with `APPROVE`, whether
-or not GitHub's API forced its `state` to `COMMENTED`). This mirrors what an
-`updatePullRequestReview` body rewrite would have signaled had review.md instead edited the
-prior review in place — a later clean self-review is functionally the same "this round found
-nothing new, prior issues are fixed" signal, just expressed as a new review object instead of
-an edit to an old one. It does **not** exclude a later self-review that is itself non-clean
-(e.g. `Verdict: COMMENT` because *this* round found a fresh issue) — only a prior self-review
-is superseded, and only when the later one is genuinely clean. All inline threads must still
-be resolved for the PR overall, same as the other two exclusions.
+If `unaddressedFindings` is `true`, add it to **List A**; if `false`, skip it — it does not
+belong in List A. Do not override the script's answer by narrative judgment. Only these settle
+a review or thread, and `compute-unaddressed-findings.ts`'s own unit tests are the authoritative
+behavioral spec for them (not restated here, to avoid another divergent copy):
+- a task-store ledger entry for the review (`isResolvedByLedger` — `source: "review"`,
+  `resolved`/`superseded`) or a patch `rejected` entry for the review or thread
+  (`isRejectedByPatchLedger`);
+- a later `APPROVED` review by the same reviewer at the same head
+  (`isSupersededBySameHeadApproval`);
+- a PR-author reply: after the review's `submittedAt` for a review body
+  (`isAddressedByAuthorReply`), or within the thread after its flagging comment for an inline
+  thread (`isThreadAddressedByAuthorReply`).
 
-If neither condition applies (e.g., no reviews at all, only approved reviews, or only an
-excluded clean-APPROVE, reply-addressed, or superseded-self-review), skip the PR — it does
-not belong in List A.
+**A clean self-APPROVE with no ledger entry IS in List A.** The script no longer infers
+"clean" from the review body's text, so a self-authored `COMMENTED` review reading
+`Verdict: APPROVE` that has no ledger entry (e.g. one posted before PFL-5.2 started ledgering
+self-reviews at post time) counts as unaddressed. Such a PR is not skipped here and the run must
+not exit `[silent]`: Step 5c.5 settles it by writing a `rejected` ledger entry for the review
+body (its subagent observation — "review contains no actionable finding" — as `evidence`), which
+is what stops the PR being re-dispatched.
 
-If a PR has unaddressed findings, add it to **List A**. Store the unresolved threads (with their
+When a PR is in **List A**, store the unresolved threads (with their
 `id` — needed for the `resolveReviewThread` mutation in Step 5) and review bodies for use in
 Step 5.
 
@@ -539,8 +523,8 @@ the finding first.
    `Verdict: ...` output but deliberately excludes it from `compute-review-verdict.ts`'s
    event computation (review.md:1118-1125). A dependency-bump-only PR with a `hold`/`review`
    recommendation and no other findings therefore still gets a clean `Verdict: APPROVE` —
-   which Step 3a's own clean-APPROVE exclusion would otherwise keep out of List A
-   indefinitely. Without this rule, Step 5b's DEPENDENCY-RISK REMEDIATION PROTOCOL block is
+   which Step 3a's ledger exclusion (`isResolvedByLedger` — review.md ledgers a clean
+   self-review `resolved` at post time) would otherwise keep out of List A indefinitely. Without this rule, Step 5b's DEPENDENCY-RISK REMEDIATION PROTOCOL block is
    unreachable for exactly the scenario it targets: a dependency-bump PR carrying a
    hold/review recommendation with no unrelated ordinary finding to piggyback List A
    membership on.
@@ -548,7 +532,7 @@ the finding first.
 3. **Already-held exclusion — clear `DEPENDENCY_RISK_FINDING` when this same finding is
    already held at this same HEAD.** Every one of Step 3a's own finding criteria carries its own
    "this was dealt with" state (a thread's `isResolved`, an author reply post-dating a
-   review, a later clean self-review superseding an earlier one). Step 1's finding carries
+   review, a ledger entry settling a review or thread). Step 1's finding carries
    none — it is synthesized fresh from the diff on every cycle, with no dependence on prior
    review or reply state — so step 2 needs an exclusion of its own. Without one, a PR whose
    fix subagent hits `references/dependency-patch.md`'s no-safe-strategy exit
@@ -674,6 +658,21 @@ If all three lists are empty:
 No PRs need attention.
 ```
 
+**Release the orchestrator pre-claim first.** If `PRECLAIM_RECORD_ID` is set (Step 2 extracted a
+`[preclaim:...]` marker), release it by record id before emitting `[silent]` or the skip-reason —
+this exit precedes all three claim sites (Steps 4a.6/5a.6/6b.5), so none of them ever adopts or
+releases the pre-claim. Release by record id regardless of head SHA: the pre-claim is held
+against whatever SHA the orchestrator saw, and a stale marker must still be given back. A failed
+call is non-fatal — the TTL reaper remains the backstop. With no marker, call nothing.
+
+```bash
+if [ -n "$PRECLAIM_RECORD_ID" ]; then
+  curl -s -o /dev/null -X POST \
+    -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
+    "$SHIPWRIGHT_TASK_STORE_URL/prs/$PRECLAIM_RECORD_ID/release" || true
+fi
+```
+
 Emit `[skip-reason:patch:deferred:no-op-at-dispatch:{pr}]` alongside `[silent]` (interpolating
 the target PR number) — order relative to `[silent]` does not matter, both are recognized regardless
 of position. The skip-reason marker records exactly which PR found no work in the `AgentCronRun.skipReason`
@@ -689,11 +688,15 @@ normal non-silent end. A run must never exit `[silent]` while List A items remai
 a silent exit records nothing, leaves the PR a candidate, and re-dispatches it every tick.
 
 **Design note:** Reaching Step 3d is most likely a genuine race (CI went green, or a human fixed the
-issue directly, between candidate selection and dispatch). Unlike `review.md`'s RVD-2.2/2.3 write-back
-gaps, `getPatchCandidates()` re-derives DIRTY/CI/findings status fresh from live GitHub every tick with
-no persisted "needs patch" cache field to drift, so there is no stale state to correct via a write-back
-here. If telemetry later shows this recurring for the same PR repeatedly, that is the signal for a
-follow-up write-back task, not something to speculatively build now.
+issue directly, between candidate selection and dispatch). Candidacy needs no write-back: unlike
+`review.md`'s RVD-2.2/2.3 write-back gaps, `getPatchCandidates()` re-derives DIRTY/CI/findings status
+fresh from live GitHub every tick, with no persisted "needs patch" cache field to drift. The
+orchestrator's pre-claim (CBD-1.3) is a different matter: it is persisted state this run must give
+back, which is why the release above is required. Skipping it leaves the PR locked until TTL expiry,
+after which it is re-dispatched. The release is safe to call unconditionally because `release()`
+always clears the claim fields but leaves a terminal `posted`/`approved` reviewState untouched, so it
+cannot clobber a verdict. If telemetry shows this recurring for the same PR repeatedly, that is the
+signal for a follow-up task, not something to speculatively build now.
 
 Print a summary before proceeding:
 
@@ -1661,7 +1664,8 @@ Parse the subagent's STATUS:
   **Settle every List A item that was not fixed (PHS-2.1).** `REJECTED_FINDINGS_THIS_CYCLE`
   must cover every List A item this run did not fix — each unresolved inline thread and each
   qualifying review body whose finding was not ACCEPTed/MODIFIEd and committed — not only the
-  ones the subagent explicitly REJECTed. This includes a non-actionable review (e.g. a bot
+  ones the subagent explicitly REJECTed. This includes a non-actionable review (e.g. a clean self-authored
+  `Verdict: APPROVE` review with no ledger entry, which Step 3a puts in List A, or a bot
   COMMENTED review with "no feedback to provide") the subagent found nothing to fix in: add
   its review-body ref with the subagent's observation ("review contains no actionable
   finding") as `evidence`. If the subagent's report leaves any such item unaccounted for,

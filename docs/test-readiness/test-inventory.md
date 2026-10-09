@@ -109,7 +109,7 @@ Also observed but not declared in CLAUDE.md: `.github/workflows/test-*.sh` — p
 | `agent/src/loop-orchestrator.ts` (`createLoopOrchestrator`; redispatch-cooldown key phase-scoped `${pr.id}:${phase}`) | 2. Service-boundary code (orchestrates claim/dispatch across task-store + GitHub) | integration | critical | n/a |
 | `agent/src/claim-invariant-reconciler.ts` (self-heal pass for `status`/`claimedBy` invariant violations) | 2. Service-boundary code | integration | critical | n/a |
 | `agent/src/check-deploy.ts`, `check-dev-task.ts` (native candidate providers) | 2. Service-boundary code | integration | critical | n/a |
-| `agent/src/check-patch.ts` (native candidate provider; `isSupersededBySelfReview` predicate wired into `compute-unaddressed-findings.ts`) | 2. Service-boundary code | integration | critical | n/a |
+| `agent/src/check-patch.ts` (native candidate provider; uses `hasUnaddressedFindings` from `compute-unaddressed-findings.ts` for List A qualification, PRL-1.1) | 2. Service-boundary code | integration | critical | n/a |
 | `agent/src/check-review.ts` (native candidate provider; staged-review guard keys on `reviewedCommitSha`) | 2. Service-boundary code | integration | critical | n/a |
 | `agent/src/check-plan.ts` (native candidate provider for the `plan-session --autonomous` cron phase) | 2. Service-boundary code | integration | critical | n/a |
 | `agent/src/pr-census.ts` (repo-wide merged-PR census sweep) | 2. Service-boundary code | integration | medium | n/a |
@@ -280,7 +280,7 @@ Also observed but not declared in CLAUDE.md: `.github/workflows/test-*.sh` — p
 | `plugins/shipwright/scripts/check-site-docs-freshness.ts` (page-scoped precheck for the `shipwright-site-docs-freshness` cron) | 2. Service-boundary code | integration | high | n/a |
 | `plugins/shipwright/scripts/ci-checks.ts` (`parseActionsChecks`) | 1. Pure business logic | unit | medium | n/a |
 | `plugins/shipwright/scripts/clock.ts` (`Clock`/`SystemClock`) | 1. Pure business logic | unit | medium | n/a |
-| `plugins/shipwright/scripts/compute-unaddressed-findings.ts` (`hasUnaddressedFindings` + 6 exclusion predicates, incl. `isSupersededBySelfReview`, `isThreadAddressedByAuthorReply`) | 1. Pure business logic | unit | critical | n/a |
+| `plugins/shipwright/scripts/compute-unaddressed-findings.ts` (`hasUnaddressedFindings` + 5 active exclusion predicates for the gate (isResolvedByLedger, isRejectedByPatchLedger, isSupersededBySameHeadApproval, isAddressedByAuthorReply, isThreadAddressedByAuthorReply) + 2 exported for other use (isSelfCleanApprove, isSupersededBySelfReview), PRL-1.1) | 1. Pure business logic | unit | critical | n/a |
 | `plugins/shipwright/commands/*.md` (29 slash-command prompt files — `metrics.md` retired this cycle, CPP-2.1) | content (prompt/markdown) | content | high | n/a |
 | `plugins/shipwright/agents/*.md` (code-reviewer, docs-refresher, learning-dreamer, researcher) | content (prompt/markdown) | content | high | n/a |
 | `plugins/shipwright/skills/*/SKILL.md` (~26 skill prompt files) | content (prompt/markdown) | content | high | n/a |
