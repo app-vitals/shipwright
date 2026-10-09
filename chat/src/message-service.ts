@@ -36,10 +36,15 @@ export interface MessageServiceLike {
 
   findById(id: string): Promise<Message | null>;
 
+  /**
+   * List a thread's messages without their `attachmentBytes` — the bytea
+   * column is loaded only by `findById` for the attachment route, so a poll
+   * over a thread with retained audio replies never pulls megabytes per call.
+   */
   list(
     threadId: string,
     filter?: { limit?: number; offset?: number },
-  ): Promise<{ messages: Message[]; total: number }>;
+  ): Promise<{ messages: Omit<Message, "attachmentBytes">[]; total: number }>;
 
   update(
     id: string,
@@ -162,7 +167,7 @@ export class MessageService implements MessageServiceLike {
   async list(
     threadId: string,
     filter: { limit?: number; offset?: number } = {},
-  ): Promise<{ messages: Message[]; total: number }> {
+  ): Promise<{ messages: Omit<Message, "attachmentBytes">[]; total: number }> {
     const limit = Math.min(filter.limit ?? 50, 200);
     const offset = filter.offset ?? 0;
 
@@ -172,6 +177,7 @@ export class MessageService implements MessageServiceLike {
         orderBy: { createdAt: "asc" },
         take: limit,
         skip: offset,
+        omit: { attachmentBytes: true },
       }),
       this.prisma.message.count({ where: { threadId } }),
     ]);

@@ -170,6 +170,40 @@ export function filterSince(
   return idx === -1 ? messages : messages.slice(idx + 1);
 }
 
+/**
+ * Project a chat-service message onto the explicit field set the admin's
+ * messages.json poll response carries, plus any extras the caller computes
+ * (e.g. the server-rendered `bubbleHtml`). Never spread the upstream object:
+ * the chat service once leaked its raw `attachmentBytes` column, and passing
+ * that through JSON-expanded a few MB of audio into ~36 MB per poll.
+ */
+export function toPolledMessage<Extra extends Record<string, unknown>>(
+  m: ChatMessage,
+  extra: Extra,
+): ChatMessage & Extra {
+  return {
+    id: m.id,
+    threadId: m.threadId,
+    role: m.role,
+    body: m.body,
+    createdAt: m.createdAt,
+    claimedBy: m.claimedBy,
+    claimed: m.claimed,
+    claimedAt: m.claimedAt,
+    heartbeatAt: m.heartbeatAt,
+    repliedAt: m.repliedAt,
+    tokens: m.tokens,
+    costUsd: m.costUsd,
+    errorKind: m.errorKind,
+    attachmentFilename: m.attachmentFilename,
+    attachmentSize: m.attachmentSize,
+    progressPhase: m.progressPhase,
+    progressSeq: m.progressSeq,
+    cancelRequestedAt: m.cancelRequestedAt,
+    ...extra,
+  };
+}
+
 // ─── Http implementation ──────────────────────────────────────────────────────
 
 export class HttpChatClient implements ChatClient {

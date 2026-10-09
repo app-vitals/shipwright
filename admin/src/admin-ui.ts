@@ -131,6 +131,7 @@ import {
   type ChatClient,
   type ChatThread,
   filterSince,
+  toPolledMessage,
 } from "./http-chat-client.ts";
 import type { OktaAuthClient } from "./okta-auth-client.ts";
 import { AGENT_PHASES } from "./openapi-schemas.ts";
@@ -4912,16 +4913,22 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
         const ordered = since
           ? filterSince(result.messages, since)
           : result.messages;
-        // Attach the server-rendered bubbleHtml so polled bubbles are
-        // byte-identical to a full reload's server-rendered bubble.
-        const messages = ordered.map((m) => ({
-          ...m,
-          bubbleHtml: renderChatMessageBubble(
-            m,
-            retryBodyByMessageId.get(m.id) ?? null,
-            agentId,
-          ),
-        }));
+        // Emit an explicit field set rather than spreading the upstream
+        // message: the chat service once leaked its raw `attachmentBytes`
+        // column here, which JSON-expanded a few MB of audio into ~36 MB per
+        // poll and OOM-killed this service. The browser's poll loop reads
+        // id/role/createdAt/repliedAt/progressPhase/progressSeq/bubbleHtml.
+        // bubbleHtml is the server-rendered bubble so polled bubbles are
+        // byte-identical to a full reload's.
+        const messages = ordered.map((m) =>
+          toPolledMessage(m, {
+            bubbleHtml: renderChatMessageBubble(
+              m,
+              retryBodyByMessageId.get(m.id) ?? null,
+              agentId,
+            ),
+          }),
+        );
         return c.json({ messages });
       } catch {
         return c.json({ messages: [] });

@@ -124,6 +124,27 @@ describeOrSkip("MessageService (integration)", () => {
   // ─── list() ─────────────────────────────────────────────────────────────────
 
   describe("list()", () => {
+    it("does not load attachmentBytes — the bytea column is served only by the attachment route", async () => {
+      const threadId = await createThread(prisma);
+      await prisma.message.create({
+        data: {
+          threadId,
+          role: "assistant",
+          body: "",
+          attachmentFilename: "response.wav",
+          attachmentSize: 3,
+          attachmentBytes: new Uint8Array([7, 8, 9]),
+        },
+      });
+
+      const { messages, total } = await service.list(threadId);
+
+      expect(total).toBe(1);
+      expect(messages[0].attachmentFilename).toBe("response.wav");
+      expect(messages[0].attachmentSize).toBe(3);
+      expect(messages[0]).not.toHaveProperty("attachmentBytes");
+    });
+
     it("returns messages for a thread ordered oldest-first", async () => {
       const threadId = await createThread(prisma);
       const first = await prisma.message.create({
@@ -641,7 +662,9 @@ describeOrSkip("MessageService (integration)", () => {
       ).toEqual(Buffer.from(attachmentBytes));
 
       // Re-read to confirm it was actually persisted, not just echoed back.
-      const read = await service.findById(result?.assistantMessage.id as string);
+      const read = await service.findById(
+        result?.assistantMessage.id as string,
+      );
       expect(read?.attachmentFilename).toBe("report.pdf");
       expect(read?.attachmentSize).toBe(4);
       expect(Buffer.from(read?.attachmentBytes as Uint8Array)).toEqual(

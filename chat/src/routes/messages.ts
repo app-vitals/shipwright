@@ -39,7 +39,7 @@ import {
 import type { JsonValue, MessageServiceLike } from "../message-service.ts";
 import { ErrorSchema, MessageSchema } from "../openapi-schemas.ts";
 import type { ThreadServiceLike } from "../thread-service.ts";
-import { parseIntParam } from "./utils.ts";
+import { parseIntParam, toApiMessage } from "./utils.ts";
 
 /** Maximum allowed size for message attachment bytes (10 MB). */
 export const MAX_ATTACHMENT_BYTES = 10 * 1024 * 1024;
@@ -484,7 +484,10 @@ export function createMessagesRoutes(
       limit,
       offset,
     });
-    return c.json({ messages, total, limit, offset }, 200);
+    return c.json(
+      { messages: messages.map(toApiMessage), total, limit, offset },
+      200,
+    );
   });
 
   // ─── Create ────────────────────────────────────────────────────────────────
@@ -524,7 +527,7 @@ export function createMessagesRoutes(
           : undefined,
       attachmentBytes,
     });
-    return c.json(message, 201);
+    return c.json(toApiMessage(message), 201);
   });
 
   // ─── Claim (queue API) ─────────────────────────────────────────────────────
@@ -539,7 +542,7 @@ export function createMessagesRoutes(
 
     const claimed = await messageService.claim(threadId, claimedBy);
     if (!claimed) throw new NotFoundError("no unclaimed messages in thread");
-    return c.json(claimed, 200);
+    return c.json(toApiMessage(claimed), 200);
   });
 
   // ─── Get attachment (ephemeral for user messages) ────────────────────────────
@@ -598,7 +601,7 @@ export function createMessagesRoutes(
 
     const updated = await messageService.requestCancel(c.req.param("id"));
     if (!updated) throw new NotFoundError("message not found");
-    return c.json(updated, 200);
+    return c.json(toApiMessage(updated), 200);
   });
 
   // ─── Get ───────────────────────────────────────────────────────────────────
@@ -610,7 +613,7 @@ export function createMessagesRoutes(
     const message = await messageService.findById(c.req.param("id"));
     if (!message || message.threadId !== threadId)
       throw new NotFoundError("message not found");
-    return c.json(message, 200);
+    return c.json(toApiMessage(message), 200);
   });
 
   // ─── Update ────────────────────────────────────────────────────────────────
@@ -639,7 +642,7 @@ export function createMessagesRoutes(
           : undefined,
     });
     if (!updated) throw new NotFoundError("message not found");
-    return c.json(updated, 200);
+    return c.json(toApiMessage(updated), 200);
   });
 
   // ─── Delete ────────────────────────────────────────────────────────────────
@@ -654,7 +657,7 @@ export function createMessagesRoutes(
 
     const deleted = await messageService.delete(c.req.param("id"));
     if (!deleted) throw new NotFoundError("message not found");
-    return c.json(deleted, 200);
+    return c.json(toApiMessage(deleted), 200);
   });
 
   // ─── Heartbeat (queue API) ──────────────────────────────────────────────────
@@ -680,7 +683,7 @@ export function createMessagesRoutes(
       phase,
     );
     if (!updated) throw new NotFoundError("message not found");
-    return c.json(updated, 200);
+    return c.json(toApiMessage(updated), 200);
   });
 
   // ─── Reply (queue API) ─────────────────────────────────────────────────────
@@ -743,7 +746,13 @@ export function createMessagesRoutes(
       }
     }
 
-    return c.json(result, 201);
+    return c.json(
+      {
+        userMessage: toApiMessage(result.userMessage),
+        assistantMessage: toApiMessage(result.assistantMessage),
+      },
+      201,
+    );
   });
 
   return app;
