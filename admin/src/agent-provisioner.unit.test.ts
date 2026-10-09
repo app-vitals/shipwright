@@ -1295,6 +1295,30 @@ describe("KubernetesAgentProvisioner.reconcile() — claude policy", () => {
     expect(patches).toEqual([]);
   });
 
+  it("policyOnly leaves env and resource drift alone", async () => {
+    const live = manifestWith(POLICY_A);
+    const c = live.spec.template.spec.containers[0];
+    if (c) {
+      c.env = (c.env ?? []).map((e) =>
+        e.value !== undefined ? { ...e, value: `${e.value}-stale` } : e,
+      );
+      c.resources = { requests: { memory: "1Mi" }, limits: { memory: "1Mi" } };
+    }
+    const { client, patches } = patchSpy(seeded(live));
+    const result = await provisionerFor(client, POLICY_A).reconcile(
+      [{ id: POLICY_AGENT_ID }],
+      { policyOnly: true },
+    );
+    expect(result.updated).toEqual([]);
+    expect(patches).toEqual([]);
+
+    // Sanity: without policyOnly the same live state is drifted.
+    const full = await provisionerFor(client, POLICY_A).reconcile([
+      { id: POLICY_AGENT_ID },
+    ]);
+    expect(full.updated).toEqual([POLICY_AGENT_ID]);
+  });
+
   it("policyOnly patches only policy fields when both kinds drifted", async () => {
     const rec = seeded(manifestWith(undefined, { imageTag: "v0.0.1" }));
     const { client, patches } = patchSpy(rec);
