@@ -208,6 +208,40 @@ export const MergedPrsResultSchema = z
   })
   .openapi("MergedPrsResult");
 
+// ─── PR outcomes schemas (PAU-1.8) ───────────────────────────────────────────
+
+const PrOutcomesSeriesSchema = z
+  .object({
+    contextFingerprint: z.string().openapi({ example: "a1b2c3d4" }),
+    windowFrom: z.string().openapi({ example: "2026-06-01T00:00:00.000Z" }),
+    windowTo: z.string().openapi({ example: "2026-06-07T23:59:59.999Z" }),
+    prs: z.number().int().openapi({ example: 12 }),
+    merged: z.number().int().openapi({ example: 10 }),
+    reviewState: z
+      .object({
+        approved: z.number().int(),
+        posted: z.number().int(),
+        other: z.number().int(),
+      })
+      .openapi({ description: "PR count per reviewState" }),
+    avgReviewCycles: z.number().nullable().openapi({ example: 1.4 }),
+    avgPatchCycles: z.number().nullable().openapi({ example: 0.6 }),
+    medianTimeToMergeMs: z.number().nullable().openapi({ example: 3600000 }),
+  })
+  .openapi("PrOutcomesSeries");
+
+export const PrOutcomesResultSchema = z
+  .object({
+    from: z.string().openapi({ example: "2026-06-01T00:00:00.000Z" }),
+    to: z.string().openapi({ example: "2026-06-07T23:59:59.999Z" }),
+    attribution: z.literal("window-correlation").openapi({
+      description:
+        "Each series aggregates every PR in the window between a context fingerprint's first and last seen — a time-window correlation, not per-PR attribution to that fingerprint.",
+    }),
+    series: z.array(PrOutcomesSeriesSchema),
+  })
+  .openapi("PrOutcomesResult");
+
 // ─── Tokens schemas ───────────────────────────────────────────────────────────
 
 export const TokensQuerySchema = DateRangeQuerySchema;

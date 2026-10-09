@@ -46,6 +46,7 @@ import {
   FeaturesResultSchema,
   MergedPrsQuerySchema,
   MergedPrsResultSchema,
+  PrOutcomesResultSchema,
   QueueResultSchema,
   SummaryResultSchema,
   TokensResultSchema,
@@ -269,6 +270,33 @@ const mergedPrsRoute = createRoute({
     200: {
       description: "Merged PRs by repo",
       content: { "application/json": { schema: MergedPrsResultSchema } },
+    },
+    400: {
+      description: "Invalid parameters",
+      content: { "application/json": { schema: ErrorSchema } },
+    },
+    401: {
+      description: "Unauthorized",
+      content: { "application/json": { schema: ErrorSchema } },
+    },
+    500: {
+      description: "Query error",
+      content: { "application/json": { schema: ErrorSchema } },
+    },
+  },
+});
+
+const prOutcomesRoute = createRoute({
+  method: "get",
+  path: "/metrics/pr-outcomes",
+  summary: "PR outcome aggregates per context fingerprint window",
+  description:
+    "Read-only PR outcomes derived from existing PullRequest fields, per context fingerprint: reviewState mix, avg reviewCycles, avg patchCycles, and median time-to-merge over the window between the fingerprint's first and last seen. A time-window correlation, not per-PR attribution.",
+  request: { query: DateRangeQuerySchema },
+  responses: {
+    200: {
+      description: "PR outcome series per context fingerprint window",
+      content: { "application/json": { schema: PrOutcomesResultSchema } },
     },
     400: {
       description: "Invalid parameters",
@@ -885,6 +913,59 @@ function makeQueueHandler(
   };
 }
 
+// ─── /metrics/pr-outcomes (PAU-1.8) ───────────────────────────────────────
+
+function makePrOutcomesHandler(
+  provider: MetricsProvider,
+): AppHandler<typeof prOutcomesRoute> {
+  return async (c) => {
+    const { preset, from, to } = c.req.valid("query");
+
+    if ((from && !to) || (!from && to)) {
+      return c.json({ error: "custom range requires both from and to" }, 400);
+    }
+    if (from && to) {
+      const rangeError = validateCustomRange(from, to);
+      if (rangeError) return c.json({ error: rangeError }, 400);
+    }
+
+    const dateRangeMeta = resolveDateRangeForMeta(preset, from, to);
+
+    try {
+      const result = await provider.query({
+        kind: "prOutcomes",
+        range: resolveDateRange(preset, from, to),
+      });
+      const series = resultToRows(result).map((r) => ({
+        contextFingerprint: String(r.context_fingerprint),
+        windowFrom: String(r.window_from),
+        windowTo: String(r.window_to),
+        prs: toNum(r.prs),
+        merged: toNum(r.merged),
+        reviewState: {
+          approved: toNum(r.approved),
+          posted: toNum(r.posted),
+          other: toNum(r.other),
+        },
+        avgReviewCycles: toNumOrNull(r.avg_review_cycles),
+        avgPatchCycles: toNumOrNull(r.avg_patch_cycles),
+        medianTimeToMergeMs: toNumOrNull(r.median_time_to_merge_ms),
+      }));
+      return c.json(
+        {
+          from: dateRangeMeta.from,
+          to: dateRangeMeta.to,
+          attribution: "window-correlation" as const,
+          series,
+        },
+        200,
+      );
+    } catch (err) {
+      return handleQueryError(c, err);
+    }
+  };
+}
+
 // ─── /metrics/merged-prs (POM-2.1) ────────────────────────────────────────
 
 const ORIGIN_KEYS = [
@@ -1391,6 +1472,12 @@ export function createMetricsApp(
     mergedPrsRoute,
     metricsPolicy,
     makeMergedPrsHandler(provider),
+  );
+  registerWithAuthz(
+    app,
+    prOutcomesRoute,
+    metricsPolicy,
+    makePrOutcomesHandler(provider),
   );
 
   // ─── Dashboard static files ───────────────────────────────────────────────

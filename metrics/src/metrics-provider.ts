@@ -41,6 +41,7 @@ export type MetricQuery =
       range: QueryDateRange;
       groupBy: MergedPrsGroupBy;
     }
+  | { kind: "prOutcomes"; range: QueryDateRange }
   | { kind: "tokensTotals"; range: QueryDateRange }
   | { kind: "tokensBySessionType"; range: QueryDateRange }
   | { kind: "tokensByAgent"; range: QueryDateRange }
