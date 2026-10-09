@@ -2190,12 +2190,41 @@ describe("patch.md — no-op at dispatch skip-reason tag (RVD-2.4)", () => {
     expect(section).toContain("does not matter");
   });
 
-  it("explains that this differs from review.md's RVD-2.2/2.3 because getPatchCandidates() has no persisted cache drift", () => {
+  it("explains that candidacy needs no write-back because getPatchCandidates() has no persisted cache drift", () => {
     const section = getStep3dSection();
-    const hasExplanation =
-      section.indexOf("getPatchCandidates") > -1 &&
-      section.indexOf("no persisted") > -1;
-    expect(hasExplanation).toBe(true);
+    expect(section).toContain("getPatchCandidates");
+    expect(section).toContain("Candidacy needs no write-back");
+    expect(section).toContain("no persisted");
+  });
+
+  it("design note says the pre-claim is persisted state to give back, citing release()'s posted/approved guard", () => {
+    const section = getStep3dSection();
+    expect(section.replace(/\s+/g, " ")).toContain(
+      "persisted state this run must give back",
+    );
+    expect(section).toMatch(/terminal `posted`\/`approved` reviewState/);
+    expect(section).not.toContain("no stale state to correct via a write-back");
+  });
+
+  it("releases PRECLAIM_RECORD_ID by record id before emitting the skip-reason and [silent]", () => {
+    const section = getStep3dSection();
+    const releaseIdx = section.indexOf(
+      '"$SHIPWRIGHT_TASK_STORE_URL/prs/$PRECLAIM_RECORD_ID/release"',
+    );
+    const skipIdx = section.indexOf(
+      "Emit `[skip-reason:patch:deferred:no-op-at-dispatch:",
+    );
+    expect(releaseIdx).toBeGreaterThan(-1);
+    expect(skipIdx).toBeGreaterThan(releaseIdx);
+    expect(section).toContain("regardless of head SHA");
+  });
+
+  it("guards the release on PRECLAIM_RECORD_ID being set and treats failure as non-fatal", () => {
+    const section = getStep3dSection();
+    expect(section).toContain('if [ -n "$PRECLAIM_RECORD_ID" ]; then');
+    expect(section).toContain("|| true");
+    expect(section).toContain("non-fatal");
+    expect(section).toContain("With no marker, call nothing");
   });
 });
 

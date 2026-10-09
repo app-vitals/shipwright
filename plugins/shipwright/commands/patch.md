@@ -658,6 +658,21 @@ If all three lists are empty:
 No PRs need attention.
 ```
 
+**Release the orchestrator pre-claim first.** If `PRECLAIM_RECORD_ID` is set (Step 2 extracted a
+`[preclaim:...]` marker), release it by record id before emitting `[silent]` or the skip-reason —
+this exit precedes all three claim sites (Steps 4a.6/5a.6/6b.5), so none of them ever adopts or
+releases the pre-claim. Release by record id regardless of head SHA: the pre-claim is held
+against whatever SHA the orchestrator saw, and a stale marker must still be given back. A failed
+call is non-fatal — the TTL reaper remains the backstop. With no marker, call nothing.
+
+```bash
+if [ -n "$PRECLAIM_RECORD_ID" ]; then
+  curl -s -o /dev/null -X POST \
+    -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
+    "$SHIPWRIGHT_TASK_STORE_URL/prs/$PRECLAIM_RECORD_ID/release" || true
+fi
+```
+
 Emit `[skip-reason:patch:deferred:no-op-at-dispatch:{pr}]` alongside `[silent]` (interpolating
 the target PR number) — order relative to `[silent]` does not matter, both are recognized regardless
 of position. The skip-reason marker records exactly which PR found no work in the `AgentCronRun.skipReason`
@@ -673,11 +688,15 @@ normal non-silent end. A run must never exit `[silent]` while List A items remai
 a silent exit records nothing, leaves the PR a candidate, and re-dispatches it every tick.
 
 **Design note:** Reaching Step 3d is most likely a genuine race (CI went green, or a human fixed the
-issue directly, between candidate selection and dispatch). Unlike `review.md`'s RVD-2.2/2.3 write-back
-gaps, `getPatchCandidates()` re-derives DIRTY/CI/findings status fresh from live GitHub every tick with
-no persisted "needs patch" cache field to drift, so there is no stale state to correct via a write-back
-here. If telemetry later shows this recurring for the same PR repeatedly, that is the signal for a
-follow-up write-back task, not something to speculatively build now.
+issue directly, between candidate selection and dispatch). Candidacy needs no write-back: unlike
+`review.md`'s RVD-2.2/2.3 write-back gaps, `getPatchCandidates()` re-derives DIRTY/CI/findings status
+fresh from live GitHub every tick, with no persisted "needs patch" cache field to drift. The
+orchestrator's pre-claim (CBD-1.3) is a different matter: it is persisted state this run must give
+back, which is why the release above is required. Skipping it leaves the PR locked until TTL expiry,
+after which it is re-dispatched. The release is safe to call unconditionally because `release()`
+always clears the claim fields but leaves a terminal `posted`/`approved` reviewState untouched, so it
+cannot clobber a verdict. If telemetry shows this recurring for the same PR repeatedly, that is the
+signal for a follow-up task, not something to speculatively build now.
 
 Print a summary before proceeding:
 
