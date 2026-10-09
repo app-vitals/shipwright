@@ -31,6 +31,10 @@ Deploy these together with SLS-1.2, SLS-2.1 and SLS-2.2 before the stale agent i
 
 All separate PRs; additive and safe to deploy standalone (2.2 after 2.1 is deployed).
 
+## Addendum: server-side clear gap (found after POH-2.1 merged)
+
+POH-2.2 clears an escalation block by calling the existing `resetSkip`, but the server's `PullRequestService.resetSkip` clears `blocked`/`blockedReason` only when the reason contains "consecutive skips". An escalation block therefore stays `blocked: true` on the record even though patch treats it as cleared for that tick; review and deploy still see it blocked. POH-2.1 merged without this part, so it is a separate task, POH-2.3: `resetSkip` also clears a block whose reason starts with the escalation prefix (constant mirrored from `agent/src/check-helpers.ts`, as `SKIP_BLOCK_THRESHOLD` already is). The POH-2.2 unit tests mock `resetSkip`, so nothing covered this path. Crashes are treated as a skip (POH-1.1 as shipped; decided).
+
 ## Decision Log
 
 - A new head clears an escalation block: approved.
