@@ -692,6 +692,11 @@ export function createTaskStoreClient(opts?: { fetchFn?: FetchFn }): {
    * prove is still fresh", so the failure must be visible to the caller.
    */
   heartbeatPr(id: string): Promise<void>;
+  /**
+   * PRL-1.3 — releases a claimed PR record (POST /prs/{id}/release). Throws on
+   * any non-ok status; the orchestrator swallows and logs it.
+   */
+  releasePr(id: string): Promise<void>;
   update(id: string, fields: Record<string, unknown>): Promise<Task>;
   claim(id: string): Promise<boolean>;
   claimPr(params: {
@@ -856,6 +861,15 @@ export function createTaskStoreClient(opts?: { fetchFn?: FetchFn }): {
       });
       if (!res.ok)
         throw new Error(`task-store POST /prs/${id}/heartbeat → ${res.status}`);
+    },
+    async releasePr(id: string): Promise<void> {
+      const res = await doFetch(`${baseUrl}/prs/${id}/release`, {
+        method: "POST",
+        headers,
+        body: "{}",
+      });
+      if (!res.ok)
+        throw new Error(`task-store POST /prs/${id}/release → ${res.status}`);
     },
     async update(id: string, fields: Record<string, unknown>): Promise<Task> {
       const res = await doFetch(`${baseUrl}/tasks/${id}`, {
