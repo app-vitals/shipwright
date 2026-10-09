@@ -49,6 +49,8 @@ Admin-only. Returns per-(phase, contextFingerprint) outcome series, primarily fo
 
 Supports optional `from`/`to` ISO datetime query parameters to bound the date range on `startedAt`.
 
+PR-side outcomes (review state mix, review/patch cycles, time to merge) are not served here — they are read-only aggregates over existing task-store `PullRequest` fields, exposed by the metrics service at `GET /metrics/pr-outcomes` (see [`docs/metrics.md`](./metrics.md)).
+
 ---
 
 ## Related
