@@ -921,6 +921,57 @@ describe("PullRequestService.resetSkip()", () => {
     );
   });
 
+  test("clears blocked/blockedReason when the PR was blocked by the patch no-progress escalation", async () => {
+    const prisma = makePrismaDouble({
+      id: "pr-1",
+      skipCount: 0,
+      blocked: true,
+      blockedReason:
+        "patch dispatch made no progress at abc1234 — still unsettled: ci",
+    } as Partial<PullRequest>);
+    const svc = new PullRequestService(prisma as never, clock);
+
+    const result = await svc.resetSkip("pr-1");
+
+    const { data } = prisma._updateCalls[0];
+    expect(data.blocked).toBe(false);
+    expect(data.blockedReason).toBeNull();
+    expect(result.blocked).toBe(false);
+    expect(result.blockedReason).toBeNull();
+  });
+
+  test("does NOT clear a human-written block", async () => {
+    const prisma = makePrismaDouble({
+      id: "pr-1",
+      skipCount: 0,
+      blocked: true,
+      blockedReason: "Waiting on design decision — see thread",
+    } as Partial<PullRequest>);
+    const svc = new PullRequestService(prisma as never, clock);
+
+    const result = await svc.resetSkip("pr-1");
+
+    const { data } = prisma._updateCalls[0];
+    expect("blocked" in data).toBe(false);
+    expect("blockedReason" in data).toBe(false);
+    expect(result.blocked).toBe(true);
+  });
+
+  test("does NOT clear a block that merely mentions the escalation text mid-reason", async () => {
+    const prisma = makePrismaDouble({
+      id: "pr-1",
+      skipCount: 0,
+      blocked: true,
+      blockedReason: "human note: patch dispatch made no progress, investigate",
+    } as Partial<PullRequest>);
+    const svc = new PullRequestService(prisma as never, clock);
+
+    await svc.resetSkip("pr-1");
+
+    const { data } = prisma._updateCalls[0];
+    expect("blocked" in data).toBe(false);
+  });
+
   test("no-ops on blocked fields when the PR is not currently blocked", async () => {
     const prisma = makePrismaDouble({
       id: "pr-1",

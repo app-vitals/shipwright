@@ -440,10 +440,18 @@ function fakePrService(
     async resetSkip(id: string): Promise<PullRequest> {
       const existing = store.get(id);
       if (!existing) throw new NotFoundError("pr not found");
+      // Mirrors PullRequestService.resetSkip's block-clearing rule.
+      const clearsBlock =
+        existing.blocked &&
+        (existing.blockedReason?.includes("consecutive skips") ||
+          existing.blockedReason?.startsWith(
+            "patch dispatch made no progress",
+          ));
       const updated = {
         ...existing,
         skipCount: 0,
         lastSkippedAt: null,
+        ...(clearsBlock ? { blocked: false, blockedReason: null } : {}),
         updatedAt: new Date(),
       } as PullRequest;
       store.set(id, updated);
@@ -1975,6 +1983,46 @@ describe("/prs routes (smoke)", () => {
     const body = (await res.json()) as PullRequest;
     expect(body.skipCount).toBe(0);
     expect(body.lastSkippedAt).toBeNull();
+  });
+
+  it("POST /prs/:id/skip/reset clears a patch no-progress escalation block but leaves a human block", async () => {
+    const store = new Map<string, PullRequest>();
+    store.set(
+      "pr-1",
+      makePr({
+        id: "pr-1",
+        skipCount: 0,
+        blocked: true,
+        blockedReason:
+          "patch dispatch made no progress at abc1234 — still unsettled: ci",
+      }),
+    );
+    store.set(
+      "pr-2",
+      makePr({
+        id: "pr-2",
+        skipCount: 0,
+        blocked: true,
+        blockedReason: "Waiting on a human decision",
+      }),
+    );
+    const app = makeApp({ prService: fakePrService({ store }) });
+
+    const cleared = await app.request("/prs/pr-1/skip/reset", {
+      method: "POST",
+      headers: adminAuth(),
+    });
+    expect(cleared.status).toBe(200);
+    const clearedBody = (await cleared.json()) as PullRequest;
+    expect(clearedBody.blocked).toBe(false);
+    expect(clearedBody.blockedReason).toBeNull();
+
+    const kept = await app.request("/prs/pr-2/skip/reset", {
+      method: "POST",
+      headers: adminAuth(),
+    });
+    const keptBody = (await kept.json()) as PullRequest;
+    expect(keptBody.blocked).toBe(true);
   });
 
   it("POST /prs/:id/skip returns 404 when pr not found", async () => {

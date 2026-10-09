@@ -140,6 +140,15 @@ const SKIP_BLOCK_THRESHOLD = 3;
  */
 const CI_FAILURE_BLOCK_THRESHOLD = 3;
 
+/**
+ * Prefix of the blockedReason the agent's patch no-progress escalation sets
+ * (see PATCH_NO_PROGRESS_REASON_PREFIX in agent/src/check-helpers.ts).
+ * resetSkip() clears a block carrying this prefix so a PR whose head moved
+ * re-enters candidacy. Mirrors that constant — duplicated here (not
+ * imported) since agent/ and task-store/ are separate deployables.
+ */
+const PATCH_NO_PROGRESS_REASON_PREFIX = "patch dispatch made no progress";
+
 /** Filters accepted by PullRequestService.list. */
 export interface PullRequestListFilters {
   /**
@@ -1243,7 +1252,8 @@ export class PullRequestService implements PullRequestServiceLike {
    * Reset skip tracking — sets skipCount back to 0 and lastSkippedAt to null.
    * If the PR is currently blocked AND its blockedReason matches the
    * skip-auto-block message pattern set by recordSkip() (contains
-   * "consecutive skips"), also clears blocked:false and blockedReason:null
+   * "consecutive skips") or the patch no-progress escalation prefix
+   * (PATCH_NO_PROGRESS_REASON_PREFIX), also clears blocked:false and blockedReason:null
    * in the same update — giving a human-retried PR a way back into
    * candidacy. The preserved lastAutoBlockReason/lastAutoBlockedAt history
    * (PSL-3.1) is never cleared. A block set by a different mechanism (e.g. the CI-failure-
@@ -1275,7 +1285,8 @@ export class PullRequestService implements PullRequestServiceLike {
         };
         if (
           existing.blocked &&
-          existing.blockedReason?.includes("consecutive skips")
+          (existing.blockedReason?.includes("consecutive skips") ||
+            existing.blockedReason?.startsWith(PATCH_NO_PROGRESS_REASON_PREFIX))
         ) {
           updateData.blocked = false;
           updateData.blockedReason = null;
