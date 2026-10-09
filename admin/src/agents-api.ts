@@ -118,6 +118,7 @@ import {
   UpsertChatTokenDailyBodySchema,
 } from "./openapi-schemas.ts";
 import type { SelfServeConfig } from "./self-serve-config.ts";
+import { managedReconcileTargets } from "./startup-policy-reconcile.ts";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -1289,15 +1290,8 @@ export function createAdminApp(deps: AdminDeps): OpenAPIHono<AdminAuthEnv> {
         "Only admin bearers and session users can reconcile agents",
       );
     }
-    const agents = await agentService.list();
-    // Self-hosted agents manage their own workloads — exclude them from K8s reconciliation.
-    const managedAgents = agents.filter((a) => !a.selfHosted);
     const result = await provisioner.reconcile(
-      managedAgents.map((a) => ({
-        id: a.id,
-        slug: a.name,
-        accountId: a.accountId,
-      })),
+      managedReconcileTargets(await agentService.list()),
     );
     return c.json(result, 200);
   });
