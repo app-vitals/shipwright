@@ -3081,6 +3081,20 @@ describe("clearStaleSkipBlock", () => {
       expect(r.calls).toEqual([]);
     });
 
+    test("stays blocked on the same head even with a review-source finding and null blockedReviewId", async () => {
+      const r = recorder();
+      const record = {
+        ...blocked,
+        blockedReason: escalated.blockedReason,
+        blockedReviewId: null,
+        findings: [
+          { id: "rev-1", source: "review", createdAt: "2026-10-01T00:00:00Z" },
+        ],
+      };
+      expect(await checkHelpers.clearStaleSkipBlock(record, "sha-old", r.fn)).toBe(false);
+      expect(r.calls).toEqual([]);
+    });
+
     test("without a blockedHeadSha stays blocked", async () => {
       const r = recorder();
       const record = { ...escalated, blockedHeadSha: null };

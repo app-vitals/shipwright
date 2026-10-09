@@ -1193,7 +1193,13 @@ export async function clearStaleSkipBlock(
 
   const headChanged = !!liveHeadSha && liveHeadSha !== record.blockedHeadSha;
   let reviewChanged = false;
-  if (record.findings) {
+  // The patch no-progress block is written via blockPr, which never stamps
+  // blockedReviewId (PATCH /prs/:id doesn't accept it) — comparing review ids
+  // would clear it immediately at the same head. Decide on head alone.
+  const isNoProgressBlock = !!record.blockedReason?.startsWith(
+    PATCH_NO_PROGRESS_REASON_PREFIX,
+  );
+  if (record.findings && !isNoProgressBlock) {
     let latest: { id: string; createdAt: string } | undefined;
     for (const f of record.findings) {
       if (f.source !== "review") continue;
