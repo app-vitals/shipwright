@@ -730,7 +730,12 @@ export function createTaskStoreClient(opts?: { fetchFn?: FetchFn }): {
    * reason: the PR-level escalation patch.md Step 5a.7 uses when no task is
    * linked. Throws on a non-ok status; `repo` is required in the body.
    */
-  blockPr(id: string, repo: string, reason: string): Promise<void>;
+  blockPr(
+    id: string,
+    repo: string,
+    reason: string,
+    blockedHeadSha?: string,
+  ): Promise<void>;
 } {
   const taskStoreUrl = (process.env.SHIPWRIGHT_TASK_STORE_URL ?? "").trim();
   const taskStoreToken = (process.env.SHIPWRIGHT_TASK_STORE_TOKEN ?? "").trim();
@@ -927,11 +932,21 @@ export function createTaskStoreClient(opts?: { fetchFn?: FetchFn }): {
       // rejected.
       await postFireAndForget(url, reason === undefined ? {} : { reason });
     },
-    async blockPr(id: string, repo: string, reason: string): Promise<void> {
+    async blockPr(
+      id: string,
+      repo: string,
+      reason: string,
+      blockedHeadSha?: string,
+    ): Promise<void> {
       const res = await doFetch(`${baseUrl}/prs/${id}`, {
         method: "PATCH",
         headers,
-        body: JSON.stringify({ repo, blocked: true, blockedReason: reason }),
+        body: JSON.stringify({
+          repo,
+          blocked: true,
+          blockedReason: reason,
+          ...(blockedHeadSha ? { blockedHeadSha } : {}),
+        }),
       });
       if (!res.ok)
         throw new Error(`task-store PATCH /prs/${id} → ${res.status}`);
@@ -1089,6 +1104,14 @@ export function isPrRecordBlockedForDispatch(
   return pr?.blocked === true;
 }
 
+/**
+ * Reason prefix of the patch no-progress escalation block (built in
+ * patch-outcome-check.ts). clearStaleSkipBlock recognizes it, alongside the
+ * skip-streak reason, as a block that self-clears on a new head.
+ */
+export const PATCH_NO_PROGRESS_REASON_PREFIX =
+  "patch dispatch made no progress";
+
 /** Minimal PR-record shape consulted by clearStaleSkipBlock (PSL-3.2). */
 export interface SkipBlockRecord {
   id?: string;
@@ -1142,7 +1165,9 @@ export function createPrSkipResetter(opts?: {
  * Auto-clear a skip-count block whose underlying state has moved on (PSL-3.2).
  *
  * Only a block set by recordSkip() (blockedReason contains "consecutive
- * skips") WITH a recorded blockedHeadSha (PSL-3.1) is eligible. If the live
+ * skips") or by the patch no-progress escalation (blockedReason starts with
+ * PATCH_NO_PROGRESS_REASON_PREFIX) WITH a recorded blockedHeadSha (PSL-3.1)
+ * is eligible. If the live
  * head SHA differs from blockedHeadSha, or the latest review-source finding
  * id differs from blockedReviewId, calls resetSkip and returns true so the
  * caller treats the PR as unblocked. A re-dispatch that skips again restarts
@@ -1159,7 +1184,11 @@ export async function clearStaleSkipBlock(
 ): Promise<boolean> {
   if (!record || !resetSkip || !record.id) return false;
   if (!isPrRecordBlockedForDispatch(record)) return false;
-  if (!record.blockedReason?.includes("consecutive skips")) return false;
+  if (
+    !record.blockedReason?.includes("consecutive skips") &&
+    !record.blockedReason?.startsWith(PATCH_NO_PROGRESS_REASON_PREFIX)
+  )
+    return false;
   if (!record.blockedHeadSha) return false;
 
   const headChanged = !!liveHeadSha && liveHeadSha !== record.blockedHeadSha;

@@ -1795,6 +1795,23 @@ describe("createTaskStoreClient query()", () => {
     );
   });
 
+  test("blockPr() PATCHes blocked + reason, and blockedHeadSha only when supplied (POH-2.2)", async () => {
+    const bodies: unknown[] = [];
+    const fakeFetch = (async (_url: RequestInfo | URL, init?: RequestInit) => {
+      bodies.push(JSON.parse(String(init?.body)));
+      return { ok: true, status: 200, json: async () => ({}) } as Response;
+    }) as unknown as typeof fetch;
+
+    const client = createTaskStoreClient({ fetchFn: fakeFetch });
+    await client.blockPr("rec-1", "acme/x", "why", "sha-A");
+    await client.blockPr("rec-1", "acme/x", "why");
+
+    expect(bodies).toEqual([
+      { repo: "acme/x", blocked: true, blockedReason: "why", blockedHeadSha: "sha-A" },
+      { repo: "acme/x", blocked: true, blockedReason: "why" },
+    ]);
+  });
+
   test("recordSkip() POSTs to /prs/:id/skip for itemType 'pr'", async () => {
     let capturedUrl: string | undefined;
     const fakeFetch = (async (url: RequestInfo | URL) => {
@@ -3042,6 +3059,43 @@ describe("clearStaleSkipBlock", () => {
     const record = { ...blocked, blockedHeadSha: null };
     expect(await checkHelpers.clearStaleSkipBlock(record, "sha-new", r.fn)).toBe(false);
     expect(r.calls).toEqual([]);
+  });
+
+  describe("patch no-progress escalation block (POH-2.2)", () => {
+    const escalated = {
+      ...blocked,
+      blockedReason: `${checkHelpers.PATCH_NO_PROGRESS_REASON_PREFIX} at sha-old — still unsettled: f1`,
+      blockedReviewId: null,
+      findings: undefined,
+    };
+
+    test("clears when the live head differs", async () => {
+      const r = recorder();
+      expect(await checkHelpers.clearStaleSkipBlock(escalated, "sha-new", r.fn)).toBe(true);
+      expect(r.calls).toEqual(["pr-rec-1"]);
+    });
+
+    test("stays blocked on the same head", async () => {
+      const r = recorder();
+      expect(await checkHelpers.clearStaleSkipBlock(escalated, "sha-old", r.fn)).toBe(false);
+      expect(r.calls).toEqual([]);
+    });
+
+    test("without a blockedHeadSha stays blocked", async () => {
+      const r = recorder();
+      const record = { ...escalated, blockedHeadSha: null };
+      expect(await checkHelpers.clearStaleSkipBlock(record, "sha-new", r.fn)).toBe(false);
+    });
+
+    test("human-written block (no prefix) is untouched even with a stamped head", async () => {
+      const r = recorder();
+      const record = {
+        ...escalated,
+        blockedReason: "Escalated: needs human decision (patch Step 5a.7)",
+      };
+      expect(await checkHelpers.clearStaleSkipBlock(record, "sha-new", r.fn)).toBe(false);
+      expect(r.calls).toEqual([]);
+    });
   });
 
   test("CI-failure-streak block stays blocked even when the head moved", async () => {

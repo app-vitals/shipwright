@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test";
+import { PATCH_NO_PROGRESS_REASON_PREFIX } from "./check-helpers.ts";
 import type { CheckPatchDeps } from "./check-patch.ts";
 import {
   createPatchStateSnapshotter,
@@ -57,6 +58,8 @@ describe("evaluatePatchOutcome", () => {
     if (out.kind === "escalated") {
       expect(out.reason).toContain(base.findingRefs[0]);
       expect(out.reason).toContain("abcdef1");
+      expect(out.reason.startsWith(PATCH_NO_PROGRESS_REASON_PREFIX)).toBe(true);
+      expect(out.headSha).toBe(base.headSha);
     }
   });
 

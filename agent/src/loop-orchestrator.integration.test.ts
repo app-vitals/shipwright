@@ -2221,8 +2221,8 @@ describe("loop-orchestrator + patch outcome check (PHS-3.1)", () => {
       getTaskState: async () => null,
       patchOutcome: {
         snapshot: createPatchStateSnapshotter(patchDeps(opts.headSha)),
-        escalate: (recordId, _candidateId, reason) =>
-          client.blockPr(recordId, "acme/x", reason),
+        escalate: (recordId, _candidateId, reason, headSha) =>
+          client.blockPr(recordId, "acme/x", reason, headSha),
       },
       runner: opts.result,
       cronRunReporter: {
@@ -2250,6 +2250,7 @@ describe("loop-orchestrator + patch outcome check (PHS-3.1)", () => {
     expect(patches[0].path).toBe("/prs/pr-record-1");
     expect(patches[0].body.blocked).toBe(true);
     expect(patches[0].body.repo).toBe("acme/x");
+    expect(patches[0].body.blockedHeadSha).toBe("sha1");
     expect(String(patches[0].body.blockedReason)).toContain(
       "sha1@2026-01-01T00:00:00Z",
     );

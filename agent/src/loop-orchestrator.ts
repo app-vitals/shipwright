@@ -379,6 +379,7 @@ export interface LoopOrchestratorDeps {
       recordId: string,
       candidateId: string,
       reason: string,
+      headSha: string,
     ) => Promise<void>;
   };
   /**
@@ -1640,7 +1641,12 @@ export function createLoopOrchestrator(
             console.warn(
               `[loop-orchestrator] ${itemId}: ${outcome.reason} — escalating`,
             );
-            await patchOutcome.escalate(recordId, itemId, outcome.reason);
+            await patchOutcome.escalate(
+              recordId,
+              itemId,
+              outcome.reason,
+              outcome.headSha,
+            );
           }
         }
       } catch (err) {
@@ -2346,10 +2352,10 @@ export async function createProductionLoopOrchestrator(
     // PSL-2.1: progress snapshot for [silent] PR dispatches (null = PR missing).
     patchOutcome: {
       snapshot: createPatchStateSnapshotter(patchDeps),
-      escalate: (recordId, candidateId, reason) => {
+      escalate: (recordId, candidateId, reason, headSha) => {
         const parsed = parseCandidateId(candidateId);
         if (!parsed) return Promise.resolve();
-        return taskStoreClient.blockPr(recordId, parsed.repo, reason);
+        return taskStoreClient.blockPr(recordId, parsed.repo, reason, headSha);
       },
     },
     getPrProgress: (id) =>

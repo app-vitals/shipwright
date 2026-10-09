@@ -13,7 +13,10 @@
  */
 
 import { unaddressedFindingRefs } from "../../plugins/shipwright/scripts/compute-unaddressed-findings.ts";
-import { splitOrgRepo } from "./check-helpers.ts";
+import {
+  PATCH_NO_PROGRESS_REASON_PREFIX,
+  splitOrgRepo,
+} from "./check-helpers.ts";
 import {
   type CheckPatchDeps,
   isCiPatchTrigger,
@@ -33,7 +36,7 @@ export interface PatchStateSnapshot {
 export type PatchOutcome =
   | { kind: "settled" }
   | { kind: "changed" }
-  | { kind: "escalated"; reason: string };
+  | { kind: "escalated"; reason: string; headSha: string };
 
 function isCandidate(s: PatchStateSnapshot): boolean {
   return s.findingRefs.length > 0 || s.mergeDirty || s.ciFailing;
@@ -68,7 +71,8 @@ export function evaluatePatchOutcome(
   ];
   return {
     kind: "escalated",
-    reason: `patch dispatch made no progress at ${after.headSha.slice(0, 7)} — still unsettled: ${unsettled.join(", ")}`,
+    headSha: after.headSha,
+    reason: `${PATCH_NO_PROGRESS_REASON_PREFIX} at ${after.headSha.slice(0, 7)} — still unsettled: ${unsettled.join(", ")}`,
   };
 }
 
