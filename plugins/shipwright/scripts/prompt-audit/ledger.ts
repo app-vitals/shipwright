@@ -15,6 +15,7 @@ export type FindingStatus =
   | "proposed"
   | "queued"
   | "measured"
+  | "regressed"
   | "resolved"
   | "suppressed";
 
