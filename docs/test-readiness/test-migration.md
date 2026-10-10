@@ -10,6 +10,10 @@
 > `docs/test-readiness-refresh-20261009`, base `e78514a1e`; blueprint refreshed 2026-10-09,
 > inventory last refreshed 2026-10-08 and not yet covering the families in the top-up below).
 
+## Method note (second pass, 2026-10-09)
+
+Top-up covering `e78514a1e..54018b659` (inventory refreshed 2026-10-09 at `54018b659`, which now catalogues the account and prompt-audit families). New/changed test files via `git diff --name-status e78514a1e HEAD`: added `admin/src/startup-policy-reconcile.unit.test.ts`, `metrics/src/api.pr-outcomes.smoke.test.ts`, `metrics/src/providers/task-store-provider.pr-outcomes.unit.test.ts`, `plugins/shipwright/scripts/prompt-audit/watch.unit.test.ts`; modified `admin/src/{agent-provisioner.{unit,integration},kubernetes-client.unit,chat.smoke}.test.ts`, `chat/src/{message-service.integration,messages.smoke}.test.ts`, `plugins/shipwright/commands/{dev-task,patch}.content.test.ts`. Ran the unit/smoke subset locally: **242 pass, 0 fail across 8 files** (integration files rest on static review; no test DB in sandbox). Buckets: all new tests **Reuse** at their canonical layer; `startup-policy-reconcile.ts`, `watch.ts`, and metrics PR-outcomes (recorded fixture `list-prs-outcomes.json`) now have direct coverage. Inventory-flagged gaps unchanged from the prior note: net-new (small) `admin/src/account-agent-create.ts`; promote/deepen (low) for prompt-audit leaf modules `eval-cases/eval-cost/eval-diff/eval-graders/finding/frontmatter/rules-*` and `account-members/account-invites/admin-ui-account-nav`. No Rebuild or Delete changes; no speed-budget regressions observed.
+
 ## Method note (this cycle, 2026-10-09)
 
 Top-up covering `44b21ec1c..e78514a1e` (211 commits; 116 test files touched). Verified via
