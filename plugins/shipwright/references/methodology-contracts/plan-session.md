@@ -75,7 +75,7 @@ A single JSON object:
       "source": "planning/{session}/PLAN.md",
       "session": "{session}",
       "repo": "org/repo",
-      "title": "Add billing schema migration",
+      "title": "feat: add billing schema migration",
       "description": "What to build, not how.",
       "acceptanceCriteria": ["Criterion 1", "Criterion 2"],
       "layer": "API",
@@ -111,7 +111,7 @@ A single JSON object:
   - `repo` — the `repo` passed in, unchanged. Maps to `Task.repo` (`String?`); the bulk
     endpoint requires the `repo` key be present on every item (a literal `null` is valid for
     an unscoped task, but the key must exist).
-  - `title` — short, verb-first. Maps to `Task.title` (`String`, required by the bulk
+  - `title` — a Conventional-Commit subject, `type: verb-first summary` (type from `feat fix perf revert docs refactor test build ci chore`). Maps to `Task.title` (`String`, required by the bulk
     endpoint).
   - `description` — what to build, not how; carries the injected `## Human steps` section for
     HITL-flagged tasks (see `hitl` below). Maps to `Task.description` (`String?`).

@@ -263,7 +263,7 @@ Let its `architecture`, `testing`, and `security` domain entries inform each tas
 
 For each task:
 - **ID**: `{PREFIX}-{N}.{M}` — prefix is 2-3 letters from the feature name
-- **Title**: short, verb-first (e.g., "Add billing schema migration")
+- **Title**: a Conventional-Commit subject, `type: verb-first summary` (e.g., "feat: add billing schema migration"). dev-task uses the title verbatim as the PR title, which the repo's pr-title-lint checks. `type` must be one of `feat`, `fix`, `perf`, `revert`, `docs`, `refactor`, `test`, `build`, `ci`, `chore`, chosen by the nature of the work: docs-only → `docs`; tests only → `test`; CI/workflow → `ci`; build/dependency → `build`; behavior change → `feat` or `fix`; refactor → `refactor`; otherwise `chore`
 - **Description**: what to build, not how
 - **Acceptance Criteria**: 2-5 bullet points — specific, testable. Every task **must** include at least one test decision bullet that names: (a) which test layers are affected, (b) what tests are added (layer + scenario, e.g., "add integration test for X"), and (c) what existing tests are retired and why (be specific — "remove mocked unit test Y because real integration test now covers this path", not just "update tests"). If no test change is needed, state that explicitly and justify it.
 - **Dependencies**: which tasks must complete before this task is ready — task IDs from this session or from prior open sessions (listed in Step 1.4); empty if none
@@ -748,7 +748,7 @@ Write the tasks to `/tmp/new-tasks-{session}.json`. Set `source` to `"planning/{
     "source": "planning/{session}/PLAN.md",
     "session": "{session}",
     "repo": "{repo}",
-    "title": "...",
+    "title": "feat: verb-first summary",
     "description": "...",
     "acceptanceCriteria": ["...", "..."],
     "layer": "API | Frontend | Database | Shared | Background | CLI",
