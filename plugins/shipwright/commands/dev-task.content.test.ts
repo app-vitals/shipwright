@@ -2020,3 +2020,13 @@ describe("dev-task.md — verification recording (VRW-1.1)", () => {
     expect(content).not.toContain("run-with-budget");
   });
 });
+
+describe("dev-task.md — no size exemption rule", () => {
+  it("states near the top that task size or docs-only is never grounds for skipping a step", () => {
+    const rule =
+      "Task size or docs-only scope is never grounds for skipping a step.";
+    const idx = content.indexOf(rule);
+    expect(idx).toBeGreaterThan(-1);
+    expect(idx).toBeLessThan(content.indexOf("## Arguments"));
+  });
+});
