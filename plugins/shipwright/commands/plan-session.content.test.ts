@@ -22,6 +22,23 @@ function extractStep6bSection(md: string): string {
   return match?.[0] ?? "";
 }
 
+describe("plan-session.md — Step 5 task titles are Conventional-Commit subjects (PTP-1.1)", () => {
+  it("requires `type: verb-first summary` with the allowed type list and selection guidance", () => {
+    const line = content.split("\n").find((l) => l.startsWith("- **Title**")) ?? "";
+    expect(line).toContain("Conventional-Commit subject");
+    expect(line).toContain("`type: verb-first summary`");
+    for (const t of ["feat", "fix", "perf", "revert", "docs", "refactor", "test", "build", "ci", "chore"]) {
+      expect(line).toContain(`\`${t}\``);
+    }
+    expect(line).toContain("docs-only → `docs`");
+    expect(line).toContain("CI/workflow → `ci`");
+  });
+
+  it("uses the new form in the task JSON template", () => {
+    expect(content).toContain('"title": "feat: verb-first summary"');
+  });
+});
+
 describe("plan-session.md — Step 5.5 is a 2-way HITL classification (RHA-1.2)", () => {
   it("explicitly names the Type A classification", () => {
     const section = extractStep5_5Section(content);
