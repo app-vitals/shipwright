@@ -6,6 +6,11 @@
  * class sorted by projected weekly token saving.
  */
 
+import {
+  type CommandAdherence,
+  commandOfFile,
+  rankAdherence,
+} from "./adherence.ts";
 import { CONTEXTS, type FindingClass } from "./finding.ts";
 import type { Ledger, LedgerEntry, ScanFinding } from "./ledger.ts";
 import { listingBudget } from "./token-count.ts";
@@ -34,6 +39,39 @@ export interface ReportInput {
   generatedAt: Date;
   /** Runs per week used to scale per-run token savings; default 1. */
   weeklyRuns?: number;
+  /** Per-command adherence; null/absent when the data is unavailable. */
+  adherence?: CommandAdherence[] | null;
+}
+
+const pct = (rate: number) => `${(rate * 100).toFixed(1)}%`;
+
+function adherenceSection(adherence: CommandAdherence[] | null): string[] {
+  if (adherence === null) {
+    return [
+      "## Step adherence",
+      "",
+      "Adherence data unavailable (admin API unreachable or not configured); findings are ranked by projected saving only.",
+    ];
+  }
+  if (adherence.length === 0) {
+    return [
+      "## Step adherence",
+      "",
+      "No adherence data in the window; findings are ranked by projected saving only.",
+    ];
+  }
+  return [
+    "## Step adherence",
+    "",
+    "Share of runs where every mandatory, measurable step ran (a dispatch proves a step started, not that it was done well). Findings for lower-adherence commands rank first.",
+    "",
+    "| Command | Adherence | Adherent runs | Runs |",
+    "|---|---|---|---|",
+    ...rankAdherence(adherence).map(
+      (a) =>
+        `| ${a.command} | ${pct(a.rate)} | ${a.adherentRuns} | ${a.runs} |`,
+    ),
+  ];
 }
 
 function blastSummary(f: ScanFinding): string {
@@ -69,7 +107,14 @@ export function renderReport({
   ledger,
   generatedAt,
   weeklyRuns = 1,
+  adherence = null,
 }: ReportInput): string {
+  const rateOf = new Map((adherence ?? []).map((a) => [a.command, a.rate]));
+  // Rates are <= 1, so 2 sorts commands with no rate after every rated one.
+  const rateFor = (file: string): number => {
+    const cmd = commandOfFile(file);
+    return (cmd ? rateOf.get(cmd) : undefined) ?? 2;
+  };
   const baselineRows = CONTEXTS.flatMap((c) =>
     Object.entries(ledger.baselines[c] ?? {}).map(([model, b]) => ({
       c,
@@ -110,6 +155,8 @@ export function renderReport({
       return `| ${c} | ${model} | ${fmt(b.listingChars)} | ${budget === undefined ? "unknown" : fmt(budget)} | ${budget ? `${((b.listingChars / budget) * 100).toFixed(1)}%` : "n/a"} |`;
     }),
     "",
+    ...adherenceSection(adherence),
+    "",
     "## Findings",
   ];
 
@@ -126,6 +173,7 @@ export function renderReport({
       .filter((f) => f.class === cls)
       .sort(
         (a, b) =>
+          rateFor(a.file) - rateFor(b.file) ||
           projectedSaving(b, weeklyRuns) - projectedSaving(a, weeklyRuns) ||
           a.file.localeCompare(b.file) ||
           a.rule.localeCompare(b.rule),

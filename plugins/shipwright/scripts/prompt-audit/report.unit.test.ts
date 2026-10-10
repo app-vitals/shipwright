@@ -183,3 +183,52 @@ describe("renderReport", () => {
     );
   });
 });
+
+describe("renderReport adherence", () => {
+  const ledger = build([
+    f("patch", { file: "plugins/shipwright/commands/patch.md" }),
+    f("devtask", {
+      file: "plugins/shipwright/commands/dev-task.md",
+      metrics: {
+        before: 500,
+        projectedAfter: 400,
+        units: "tokens",
+        estimated: true,
+      },
+    }),
+    f("other", { file: "docs/other.md" }),
+  ]);
+  const adherence = [
+    { command: "dev-task", runs: 10, adherentRuns: 4, rate: 0.4 },
+  ];
+
+  test("shows per-command adherence and ranks lowest-rate command findings first", () => {
+    const out = renderReport({ ledger, generatedAt: NOW, adherence });
+    expect(out).toContain("## Step adherence");
+    expect(out).toContain("| dev-task | 40.0% | 4 | 10 |");
+    const at = (s: string) => out.indexOf(s);
+    // dev-task has a lower rate and a smaller saving, but ranks above the rest.
+    expect(at("commands/dev-task.md")).toBeGreaterThan(-1);
+    expect(at("commands/dev-task.md")).toBeLessThan(at("commands/patch.md"));
+    expect(at("commands/dev-task.md")).toBeLessThan(at("docs/other.md"));
+  });
+
+  test("without adherence data the scan renders, says so, and ranks by saving", () => {
+    for (const adherenceInput of [null, undefined]) {
+      const out = renderReport({
+        ledger,
+        generatedAt: NOW,
+        adherence: adherenceInput,
+      });
+      expect(out).toContain("Adherence data unavailable");
+      expect(out.indexOf("commands/patch.md")).toBeLessThan(
+        out.indexOf("commands/dev-task.md"),
+      );
+    }
+  });
+
+  test("empty adherence says there is no data in the window", () => {
+    const out = renderReport({ ledger, generatedAt: NOW, adherence: [] });
+    expect(out).toContain("No adherence data in the window");
+  });
+});
