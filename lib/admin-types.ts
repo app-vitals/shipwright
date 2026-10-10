@@ -2366,6 +2366,11 @@ export interface components {
              * @example WLS-2.2
              */
             itemId: string | null;
+            /**
+             * @description Slash-command variant this dispatch ran ("default" | "alternate"). Null when the run had no variant attribution.
+             * @example default
+             */
+            commandVariant: string | null;
             /** @example 1234 */
             inputTokens: number | null;
             /** @example 567 */
@@ -2478,6 +2483,11 @@ export interface components {
              * @example WLS-2.2
              */
             itemId?: string | null;
+            /**
+             * @description Slash-command variant this dispatch ran ("default" | "alternate")
+             * @example alternate
+             */
+            commandVariant?: string | null;
         };
         CronRunsList: {
             items: components["schemas"]["AgentCronRun"][];

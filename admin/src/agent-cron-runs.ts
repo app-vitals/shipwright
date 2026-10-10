@@ -46,6 +46,8 @@ export interface CreateAgentCronRunInput {
   itemType?: string | null;
   /** Work item id this run was dispatched against (e.g. "WLS-2.2" or "acme/x#123"). Null when the tick had no dispatch. */
   itemId?: string | null;
+  /** Slash-command variant this dispatch ran ("default" | "alternate"). Null when the run had no variant attribution. */
+  commandVariant?: string | null;
 }
 
 export interface ModelBreakdownEntry {
@@ -204,6 +206,7 @@ export class AgentCronRunService {
         phaseId: input.phaseId ?? null,
         itemType: input.itemType ?? null,
         itemId: input.itemId ?? null,
+        commandVariant: input.commandVariant ?? null,
       },
     });
   }

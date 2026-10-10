@@ -33,6 +33,7 @@ import {
   buildClaimPrRequest,
   createLoopOrchestrator,
   createLoopOrchestratorGetter,
+  resolvePhaseCommand,
   DISPATCH_ERROR_SKIP_REASON,
   formatPreClaimMarker,
   type LoopOrchestratorDeps,
@@ -51,6 +52,7 @@ import {
 // ─── Stub reporter ──────────────────────────────────────────────────────────
 
 interface CreateCall {
+  commandVariant?: string;
   cronId: string;
   phaseId?: string;
   itemType?: string;
@@ -102,8 +104,15 @@ function makeRecordingReporter(): {
   let counter = 0;
 
   const reporter: CronRunReporter = {
-    async createRun(cronId, _startedAt, phaseId, itemType, itemId) {
-      creates.push({ cronId, phaseId, itemType, itemId });
+    async createRun(
+      cronId,
+      _startedAt,
+      phaseId,
+      itemType,
+      itemId,
+      commandVariant,
+    ) {
+      creates.push({ cronId, phaseId, itemType, itemId, commandVariant });
       counter += 1;
       return `run-${counter}`;
     },
@@ -5214,6 +5223,7 @@ describe("createLoopOrchestrator — autonomous plan phase (PDR-4.1)", () => {
 
       expect(creates).toHaveLength(1);
       expect(creates[0]).toEqual({
+        commandVariant: "default",
         cronId: "shipwright-loop",
         phaseId: "shipwright-plan",
         itemType: "task",
@@ -5835,5 +5845,161 @@ describe("createLoopOrchestrator — run telemetry forwarding", () => {
         }),
       ).resolves.toEqual([]);
     });
+  });
+});
+
+// ─── DTA-1.3 — per-run command variant switch ────────────────────────────────
+
+describe("command variant switch (DTA-1.3)", () => {
+  const ALT = "SHIPWRIGHT_LOOP_DEV_TASK_ALT_COMMAND";
+  const SHARE = "SHIPWRIGHT_LOOP_DEV_TASK_ALT_SHARE";
+
+  async function withVariantEnv(
+    env: Record<string, string>,
+    fn: () => Promise<void>,
+  ): Promise<void> {
+    const saved = { [ALT]: process.env[ALT], [SHARE]: process.env[SHARE] };
+    delete process.env[ALT];
+    delete process.env[SHARE];
+    Object.assign(process.env, env);
+    try {
+      await fn();
+    } finally {
+      for (const [name, value] of Object.entries(saved)) {
+        if (value === undefined) delete process.env[name];
+        else process.env[name] = value;
+      }
+    }
+  }
+
+  /** Runs one dev-task dispatch per id and returns messages + recorded creates. */
+  async function dispatchTasks(
+    ids: string[],
+    extra: Partial<LoopOrchestratorDeps>,
+  ) {
+    const consumed = new Set<string>();
+    const { reporter, creates } = makeRecordingReporter();
+    const devTaskCandidates = ids.map((id, i) =>
+      task(id, `2026-01-0${i + 1}T00:00:00Z`),
+    );
+    // claimTask (below) consumes each task, so a plain recording runner is
+    // enough — a draining runner would double-consume the pool.
+    const { runner, messages } = makeRunner();
+    const loop = createLoopOrchestrator({
+      ...makeDeps({
+        devTaskCandidates,
+        runner,
+        reporter,
+        consumed,
+        claimTask: consumingClaimTask(consumed),
+      }),
+      ...extra,
+    });
+    await loop([job("shipwright-dev-task", true)]);
+    return { messages, creates };
+  }
+
+  test("with no config every run uses the default command and records the default variant", async () => {
+    await withVariantEnv({}, async () => {
+      const { messages, creates } = await dispatchTasks(["T-1", "T-2"], {
+        random: () => 0,
+        commandExists: () => true,
+      });
+      expect(messages.every((m) => m.includes("/shipwright:dev-task T-"))).toBe(
+        true,
+      );
+      expect(creates.map((c) => c.commandVariant)).toEqual([
+        "default",
+        "default",
+      ]);
+    });
+  });
+
+  test("a zero share never selects the alternate even when configured", async () => {
+    await withVariantEnv(
+      { [ALT]: "/shipwright:hitl", [SHARE]: "0" },
+      async () => {
+        const { messages } = await dispatchTasks(["T-1"], {
+          random: () => 0,
+          commandExists: () => true,
+        });
+        expect(messages[0]).toContain("/shipwright:dev-task T-1");
+      },
+    );
+  });
+
+  test("a configured share splits runs by the random draw and records the variant per run", async () => {
+    await withVariantEnv(
+      { [ALT]: "/shipwright:hitl", [SHARE]: "50" },
+      async () => {
+        const draws = [0.1, 0.9]; // 10 < 50 → alternate; 90 >= 50 → default
+        const { messages, creates } = await dispatchTasks(["T-1", "T-2"], {
+          random: () => draws.shift() ?? 0.99,
+          commandExists: () => true,
+        });
+        expect(messages[0]).toContain("/shipwright:hitl T-1");
+        expect(messages[1]).toContain("/shipwright:dev-task T-2");
+        expect(creates.map((c) => c.commandVariant)).toEqual([
+          "alternate",
+          "default",
+        ]);
+      },
+    );
+  });
+
+  test("an alternate command that fails validation falls back to the default", async () => {
+    await withVariantEnv(
+      { [ALT]: "/shipwright:does-not-exist", [SHARE]: "100" },
+      async () => {
+        const { messages, creates } = await dispatchTasks(["T-1"], {
+          random: () => 0,
+          commandExists: () => false,
+        });
+        expect(messages[0]).toContain("/shipwright:dev-task T-1");
+        expect(creates[0]?.commandVariant).toBe("default");
+      },
+    );
+  });
+});
+
+describe("resolvePhaseCommand default existence check (DTA-1.3)", () => {
+  const KEY = "SHIPWRIGHT_LOOP_REVIEW_ALT_COMMAND";
+  const SHARE = "SHIPWRIGHT_LOOP_REVIEW_ALT_SHARE";
+
+  function withEnv(command: string, fn: () => void): void {
+    const saved = [process.env[KEY], process.env[SHARE]];
+    process.env[KEY] = command;
+    process.env[SHARE] = "100";
+    try {
+      fn();
+    } finally {
+      for (const [name, value] of [
+        [KEY, saved[0]],
+        [SHARE, saved[1]],
+      ] as const) {
+        if (value === undefined) delete process.env[name];
+        else process.env[name] = value;
+      }
+    }
+  }
+
+  test("accepts a real plugin command", () => {
+    withEnv("/shipwright:merge", () => {
+      expect(resolvePhaseCommand("review", () => 0)).toEqual({
+        command: "/shipwright:merge",
+        variant: "alternate",
+      });
+    });
+  });
+
+  test("rejects a nonexistent or malformed command", () => {
+    for (const bad of ["/shipwright:does-not-exist", "merge", "/other:merge"]) {
+      withEnv(bad, () => {
+        expect(resolvePhaseCommand("review", () => 0)).toEqual({
+          command: "/shipwright:review",
+          variant: "default",
+        });
+      });
+    }
   });
 });

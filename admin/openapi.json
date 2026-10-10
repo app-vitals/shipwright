@@ -934,6 +934,14 @@
             "example": "WLS-2.2",
             "description": "Work item id this run was dispatched against (e.g. \"WLS-2.2\" or \"acme/x#123\"). Null when the tick had no dispatch."
           },
+          "commandVariant": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "example": "default",
+            "description": "Slash-command variant this dispatch ran (\"default\" | \"alternate\"). Null when the run had no variant attribution."
+          },
           "inputTokens": {
             "type": [
               "integer",
@@ -1075,6 +1083,7 @@
           "phaseId",
           "itemType",
           "itemId",
+          "commandVariant",
           "inputTokens",
           "outputTokens",
           "cacheReadTokens",
@@ -1185,6 +1194,14 @@
             ],
             "example": "WLS-2.2",
             "description": "Work item id this run was dispatched against (e.g. \"WLS-2.2\" or \"acme/x#123\")"
+          },
+          "commandVariant": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "example": "alternate",
+            "description": "Slash-command variant this dispatch ran (\"default\" | \"alternate\")"
           }
         },
         "required": [

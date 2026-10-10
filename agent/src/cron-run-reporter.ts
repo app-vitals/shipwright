@@ -87,6 +87,7 @@ export interface CronRunReporter {
     phaseId?: string,
     itemType?: string,
     itemId?: string,
+    commandVariant?: string,
   ): Promise<string | null>;
   /** Called when run completes (success or error). Includes token data for non-error. */
   completeRun(
@@ -217,6 +218,7 @@ export class HttpCronRunReporter implements CronRunReporter {
     phaseId?: string,
     itemType?: string,
     itemId?: string,
+    commandVariant?: string,
   ): Promise<string | null> {
     const { apiUrl, agentId, apiKey } = this.opts;
     const url = `${apiUrl}/agents/${agentId}/crons/${cronId}/runs`;
@@ -227,6 +229,7 @@ export class HttpCronRunReporter implements CronRunReporter {
     if (phaseId !== undefined) startBody.phaseId = phaseId;
     if (itemType !== undefined) startBody.itemType = itemType;
     if (itemId !== undefined) startBody.itemId = itemId;
+    if (commandVariant !== undefined) startBody.commandVariant = commandVariant;
 
     try {
       const res = await fetch(url, {
