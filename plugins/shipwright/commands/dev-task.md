@@ -9,6 +9,8 @@ Given a task id, fetch that task from the task store, build the feature, simplif
 
 **This command runs autonomously. Do not pause for user input unless a build or test failure cannot be auto-resolved.**
 
+**Task size or docs-only scope is never grounds for skipping a step.** Run every step below regardless of how small or documentation-only the change is.
+
 > **Task store setup:** This command reads from and writes to the Shipwright task store. If `SHIPWRIGHT_TASK_STORE_URL` or `SHIPWRIGHT_TASK_STORE_TOKEN` is missing, invoke `/shipwright:task-store` for setup instructions.
 
 ---
