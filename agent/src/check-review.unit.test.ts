@@ -11,6 +11,9 @@
  */
 
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import type { LinkedTaskInfo } from "./check-helpers.ts";
 import type { PrReviewData, ReviewNode } from "./check-patch.ts";
 import {
@@ -3210,5 +3213,37 @@ describe("buildProductionDeps isAuthorAllowed default — never-synced equivalen
 
     // cleanup so this doesn't leak into other describe blocks in the file
     reviewAuthorAllowlistRef.set([]);
+  });
+});
+
+describe("buildProductionDeps listOpenPrs repo re-scan (LRR-1.1)", () => {
+  test("a repo cloned after deps were built is included on the next listOpenPrs call", async () => {
+    const scratchDir = mkdtempSync(join(tmpdir(), "check-review-lrr-1-1-"));
+    try {
+      const seenRepos: string[] = [];
+      const deps = await buildProductionDeps({
+        ghJson: async <T>(args: string[]) => {
+          seenRepos.push(args[args.indexOf("--repo") + 1] as string);
+          return [] as unknown as T;
+        },
+        workspacePath: scratchDir,
+        getScopedRepos: () => ["acme/late-clone"],
+      });
+
+      await deps.listOpenPrs("default");
+      expect(seenRepos).toEqual([]);
+
+      const repoDir = join(scratchDir, "repos", "late-clone");
+      mkdirSync(join(repoDir, ".git"), { recursive: true });
+      writeFileSync(
+        join(repoDir, ".git", "config"),
+        `[remote "origin"]\n\turl = https://github.com/acme/late-clone.git\n`,
+      );
+
+      await deps.listOpenPrs("default");
+      expect(seenRepos).toEqual(["acme/late-clone"]);
+    } finally {
+      rmSync(scratchDir, { recursive: true, force: true });
+    }
   });
 });

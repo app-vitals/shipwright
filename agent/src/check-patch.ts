@@ -695,7 +695,6 @@ export async function buildProductionDeps(opts: {
   patchAuthorAllowlistRef?: PatchAuthorAllowlistRef;
 }): Promise<CheckPatchDeps> {
   const workspacePath = resolveWorkspacePath();
-  const allRepos = resolveAllRepos(workspacePath);
   const { ghJson, ghGraphql, getCurrentUser: getUser } = opts;
   const allowlistRef = opts.patchAuthorAllowlistRef ?? patchAuthorAllowlistRef;
 
@@ -707,7 +706,11 @@ export async function buildProductionDeps(opts: {
   // reaches gh at all.
   const getScopedAllRepos = () => {
     const scopedRepos = new Set((opts.getScopedRepos ?? agentReposRef.get)());
-    return allRepos.filter((repo) => scopedRepos.has(repo));
+    // Re-scanned per call (LRR-1.1) so a repo auto-cloned after deps were
+    // built becomes a candidate without a restart.
+    return resolveAllRepos(workspacePath).filter((repo) =>
+      scopedRepos.has(repo),
+    );
   };
 
   return {
@@ -890,7 +893,7 @@ export async function buildProductionDeps(opts: {
       }
     },
     listPrCommits: async (prNumber: number, repo?: string) => {
-      const targetRepo = repo ?? allRepos[0];
+      const targetRepo = repo ?? resolveAllRepos(workspacePath)[0];
       return await ghJson<CommitInfo[]>([
         "api",
         `repos/${targetRepo}/pulls/${prNumber}/commits`,
