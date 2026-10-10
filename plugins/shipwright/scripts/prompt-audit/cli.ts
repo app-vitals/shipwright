@@ -5,7 +5,7 @@
  * Prompt-audit CLI.
  *
  *   scan    [--repo <dir>] [--model <id>]... [--scope <path>] [--json]
- *           [--dry-run] [--since-days 28]
+ *           [--dry-run] [--since-days 28] [--include-unresolvable]
  *   measure --finding <fp> --before <ref> --after <ref> --model <id>
  *           [--repo <dir>] [--json] [--record]
  *   blast   --file <path> [--repo <dir>] [--json]
@@ -104,7 +104,12 @@ export interface ParsedArgs {
   multi: Record<string, string[]>;
 }
 
-const BOOLEAN_FLAGS = new Set(["json", "dry-run", "record"]);
+const BOOLEAN_FLAGS = new Set([
+  "json",
+  "dry-run",
+  "record",
+  "include-unresolvable",
+]);
 
 export function parseArgs(argv: string[]): ParsedArgs {
   const [command = "", ...rest] = argv;
@@ -253,7 +258,12 @@ async function runScan(args: ParsedArgs, deps: CliDeps): Promise<CliResult> {
     now,
   );
   const weeklyRuns = totalRuns > 0 ? (totalRuns * WEEK_DAYS) / sinceDays : 1;
-  const report = renderReport({ ledger, generatedAt: now, weeklyRuns });
+  const report = renderReport({
+    ledger,
+    generatedAt: now,
+    weeklyRuns,
+    includeUnresolvable: args.flags.has("include-unresolvable"),
+  });
 
   if (!dryRun) {
     writeLedger(ledgerFs, LEDGER_PATH, ledger);
