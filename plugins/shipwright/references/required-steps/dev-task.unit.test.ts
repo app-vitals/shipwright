@@ -12,7 +12,7 @@ const DEV_TASK_MD_PATH = join(
 );
 
 interface RequiredStep {
-  stepNumber: number | string;
+  stepNumber: string;
   title: string;
   mandatory: boolean;
   proofOfRunning: string;
@@ -70,13 +70,10 @@ describe("dev-task.json — file structure and schema", () => {
     });
   });
 
-  it("stepNumber is a number or string (e.g., 5, 6, 6.5, '9b')", () => {
+  it("stepNumber is a string (e.g., '5', '6.5', '9b')", () => {
     requiredStepsContent = loadRequiredSteps();
     requiredStepsContent?.steps?.forEach((step) => {
-      expect(
-        typeof step.stepNumber === "number" ||
-          typeof step.stepNumber === "string",
-      ).toBe(true);
+      expect(typeof step.stepNumber).toBe("string");
     });
   });
 
@@ -101,7 +98,17 @@ describe("dev-task.json — step sequence and content", () => {
   it("contains steps in the correct order: 5, 6, 6.5, 7, 8, 8.5, 9, 9b, 10", () => {
     requiredStepsContent = loadRequiredSteps();
     const stepNumbers = requiredStepsContent?.steps?.map((s) => s.stepNumber);
-    expect(stepNumbers).toEqual([5, 6, 6.5, 7, 8, 8.5, 9, "9b", 10]);
+    expect(stepNumbers).toEqual([
+      "5",
+      "6",
+      "6.5",
+      "7",
+      "8",
+      "8.5",
+      "9",
+      "9b",
+      "10",
+    ]);
   });
 
   it("all steps except 9b have mandatory: true", () => {
@@ -117,9 +124,9 @@ describe("dev-task.json — step sequence and content", () => {
 
   it("steps 5, 6.5, and 8.5 have agent dispatch in proofOfRunning", () => {
     requiredStepsContent = loadRequiredSteps();
-    const agentSteps = [5, 6.5, 8.5];
+    const agentSteps = ["5", "6.5", "8.5"];
     requiredStepsContent?.steps?.forEach((step) => {
-      if (agentSteps.includes(step.stepNumber as number)) {
+      if (agentSteps.includes(step.stepNumber)) {
         expect(step.proofOfRunning.toLowerCase()).toContain("agent");
       }
     });
@@ -128,7 +135,7 @@ describe("dev-task.json — step sequence and content", () => {
   it("steps 6 and 7 have 'marker needed' or 'unmeasured' in proofOfRunning", () => {
     requiredStepsContent = loadRequiredSteps();
     requiredStepsContent?.steps?.forEach((step) => {
-      if (step.stepNumber === 6 || step.stepNumber === 7) {
+      if (step.stepNumber === "6" || step.stepNumber === "7") {
         const proof = step.proofOfRunning.toLowerCase();
         expect(proof.includes("marker") || proof.includes("unmeasured")).toBe(
           true,
@@ -140,7 +147,7 @@ describe("dev-task.json — step sequence and content", () => {
   it("steps 6 and 7 have measurable: false", () => {
     requiredStepsContent = loadRequiredSteps();
     requiredStepsContent?.steps?.forEach((step) => {
-      if (step.stepNumber === 6 || step.stepNumber === 7) {
+      if (step.stepNumber === "6" || step.stepNumber === "7") {
         expect(step.measurable).toBe(false);
       }
     });
@@ -149,7 +156,7 @@ describe("dev-task.json — step sequence and content", () => {
   it("step 8.5 mentions docs-refresher dispatch", () => {
     requiredStepsContent = loadRequiredSteps();
     const step85 = requiredStepsContent?.steps?.find(
-      (s) => s.stepNumber === 8.5,
+      (s) => s.stepNumber === "8.5",
     );
     expect(step85?.proofOfRunning.toLowerCase()).toContain("docs-refresher");
   });
@@ -164,7 +171,9 @@ describe("dev-task.json — step titles match dev-task.md headings", () => {
   it("step 5 title matches '## Step 5: ...' heading", () => {
     requiredStepsContent = loadRequiredSteps();
     devTaskMdContent = loadDevTaskMd();
-    const step5 = requiredStepsContent?.steps?.find((s) => s.stepNumber === 5);
+    const step5 = requiredStepsContent?.steps?.find(
+      (s) => s.stepNumber === "5",
+    );
     const step5Heading = devTaskMdContent.match(/## Step 5: (.+)/);
     expect(step5Heading).not.toBeNull();
     expect(step5?.title).toContain(step5Heading?.[1].split(":")[0] || "");
@@ -172,7 +181,9 @@ describe("dev-task.json — step titles match dev-task.md headings", () => {
 
   it("step 6 title matches '## Step 6: ...' heading", () => {
     requiredStepsContent = loadRequiredSteps();
-    const step6 = requiredStepsContent?.steps?.find((s) => s.stepNumber === 6);
+    const step6 = requiredStepsContent?.steps?.find(
+      (s) => s.stepNumber === "6",
+    );
     const step6Heading = devTaskMdContent.match(/## Step 6: (.+)/);
     expect(step6Heading).not.toBeNull();
     expect(step6?.title).toContain(step6Heading?.[1].split(":")[0] || "");
@@ -181,7 +192,7 @@ describe("dev-task.json — step titles match dev-task.md headings", () => {
   it("step 6.5 title matches '## Step 6.5: ...' heading", () => {
     requiredStepsContent = loadRequiredSteps();
     const step65 = requiredStepsContent?.steps?.find(
-      (s) => s.stepNumber === 6.5,
+      (s) => s.stepNumber === "6.5",
     );
     const step65Heading = devTaskMdContent.match(/## Step 6\.5: (.+)/);
     expect(step65Heading).not.toBeNull();
@@ -190,7 +201,9 @@ describe("dev-task.json — step titles match dev-task.md headings", () => {
 
   it("step 7 title matches '## Step 7: ...' heading", () => {
     requiredStepsContent = loadRequiredSteps();
-    const step7 = requiredStepsContent?.steps?.find((s) => s.stepNumber === 7);
+    const step7 = requiredStepsContent?.steps?.find(
+      (s) => s.stepNumber === "7",
+    );
     const step7Heading = devTaskMdContent.match(/## Step 7: (.+)/);
     expect(step7Heading).not.toBeNull();
     expect(step7?.title).toContain(step7Heading?.[1].split(":")[0] || "");
@@ -198,7 +211,9 @@ describe("dev-task.json — step titles match dev-task.md headings", () => {
 
   it("step 8 title matches '## Step 8: ...' heading", () => {
     requiredStepsContent = loadRequiredSteps();
-    const step8 = requiredStepsContent?.steps?.find((s) => s.stepNumber === 8);
+    const step8 = requiredStepsContent?.steps?.find(
+      (s) => s.stepNumber === "8",
+    );
     const step8Heading = devTaskMdContent.match(/## Step 8: (.+)/);
     expect(step8Heading).not.toBeNull();
     expect(step8?.title).toContain(step8Heading?.[1].split(":")[0] || "");
@@ -207,7 +222,7 @@ describe("dev-task.json — step titles match dev-task.md headings", () => {
   it("step 8.5 title matches '## Step 8.5: ...' heading", () => {
     requiredStepsContent = loadRequiredSteps();
     const step85 = requiredStepsContent?.steps?.find(
-      (s) => s.stepNumber === 8.5,
+      (s) => s.stepNumber === "8.5",
     );
     const step85Heading = devTaskMdContent.match(/## Step 8\.5: (.+)/);
     expect(step85Heading).not.toBeNull();
@@ -216,7 +231,9 @@ describe("dev-task.json — step titles match dev-task.md headings", () => {
 
   it("step 9 title matches '## Step 9: ...' heading", () => {
     requiredStepsContent = loadRequiredSteps();
-    const step9 = requiredStepsContent?.steps?.find((s) => s.stepNumber === 9);
+    const step9 = requiredStepsContent?.steps?.find(
+      (s) => s.stepNumber === "9",
+    );
     const step9Heading = devTaskMdContent.match(/## Step 9: (.+)/);
     expect(step9Heading).not.toBeNull();
     expect(step9?.title).toContain(step9Heading?.[1].split(":")[0] || "");
@@ -235,7 +252,7 @@ describe("dev-task.json — step titles match dev-task.md headings", () => {
   it("step 10 title matches '## Step 10: ...' heading", () => {
     requiredStepsContent = loadRequiredSteps();
     const step10 = requiredStepsContent?.steps?.find(
-      (s) => s.stepNumber === 10,
+      (s) => s.stepNumber === "10",
     );
     const step10Heading = devTaskMdContent.match(/## Step 10: (.+)/);
     expect(step10Heading).not.toBeNull();
