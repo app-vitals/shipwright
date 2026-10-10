@@ -68,6 +68,8 @@
  */
 
 import { randomUUID } from "node:crypto";
+import { existsSync } from "node:fs";
+import { join } from "node:path";
 import type { ErrorCapturingClient } from "@shipwright/lib/sentry";
 import {
   buildProductionDeps as buildDeployDeps,
@@ -471,6 +473,19 @@ export interface LoopOrchestratorDeps {
    * absent.
    */
   sentryClient?: ErrorCapturingClient;
+  /**
+   * DTA-1.3 — random source for the per-run command variant draw, returning
+   * a float in [0, 1). Optional: defaults to Math.random. Injected so tests
+   * can pin the draw deterministically.
+   */
+  random?: () => number;
+  /**
+   * DTA-1.3 — validates that a configured alternate slash command exists
+   * before it is dispatched. Optional: defaults to checking the shipwright
+   * plugin's commands directory (`/shipwright:<name>` → `<name>.md`). A
+   * command that fails the check falls back to the default command.
+   */
+  commandExists?: (command: string) => boolean;
 }
 
 // ─── Command routing ──────────────────────────────────────────────────────────
@@ -488,6 +503,73 @@ const PHASE_COMMANDS: Record<LoopPhase, string> = {
   patch: "/shipwright:patch",
   deploy: "/shipwright:deploy",
 };
+
+/** Which slash-command variant a dispatch ran (DTA-1.3). */
+export type CommandVariant = "default" | "alternate";
+
+/**
+ * Default existence check for a configured alternate command: it must be a
+ * `/shipwright:<name>` slash command backed by a `<name>.md` file in the
+ * plugin's commands directory.
+ */
+function pluginCommandExists(command: string): boolean {
+  const match = /^\/shipwright:([a-z0-9-]+)$/.exec(command);
+  if (!match) return false;
+  return existsSync(
+    join(
+      import.meta.dir,
+      "../../plugins/shipwright/commands",
+      `${match[1]}.md`,
+    ),
+  );
+}
+
+/**
+ * Reads a phase's A/B config from `SHIPWRIGHT_LOOP_<PHASE>_ALT_COMMAND` and
+ * `SHIPWRIGHT_LOOP_<PHASE>_ALT_SHARE` (percentage, 0-100). Read fresh on every
+ * call so an env change takes effect on the next dispatch. A missing,
+ * non-numeric or out-of-range share is treated as 0 (alternate never used),
+ * so with nothing configured every run uses the default command.
+ */
+function readVariantConfig(phase: LoopPhase): {
+  alternate: string | undefined;
+  share: number;
+} {
+  const key = `SHIPWRIGHT_LOOP_${phase.toUpperCase().replace(/-/g, "_")}_ALT`;
+  const alternate = process.env[`${key}_COMMAND`]?.trim() || undefined;
+  const share = Number(process.env[`${key}_SHARE`]);
+  return {
+    alternate,
+    share: Number.isFinite(share) && share > 0 ? Math.min(share, 100) : 0,
+  };
+}
+
+/**
+ * DTA-1.3 — picks the slash command for one dispatch. Returns the default
+ * `PHASE_COMMANDS` entry unless an alternate is configured with a positive
+ * share, the random draw lands inside that share, AND the alternate passes
+ * the existence check (a bad value falls back to the default, with a warning).
+ */
+export function resolvePhaseCommand(
+  phase: LoopPhase,
+  random: () => number,
+  commandExists: (command: string) => boolean = pluginCommandExists,
+): { command: string; variant: CommandVariant } {
+  const fallback = {
+    command: PHASE_COMMANDS[phase],
+    variant: "default" as const,
+  };
+  const { alternate, share } = readVariantConfig(phase);
+  if (!alternate || share <= 0) return fallback;
+  if (random() * 100 >= share) return fallback;
+  if (!commandExists(alternate)) {
+    console.warn(
+      `[loop-orchestrator] ${phase} alternate command "${alternate}" does not exist — falling back to ${fallback.command}`,
+    );
+    return fallback;
+  }
+  return { command: alternate, variant: "alternate" };
+}
 
 /**
  * PDR-4.1 — the code-level kill switch gating the autonomous plan-session
@@ -754,6 +836,8 @@ export function createLoopOrchestrator(
     clock = SystemClock(),
     contextStamp,
     sentryClient,
+    random = Math.random,
+    commandExists = pluginCommandExists,
   } = deps;
 
   // Persisted across ticks: guards against a second concurrent drain.
@@ -935,9 +1019,13 @@ export function createLoopOrchestrator(
     // everywhere else (cron-run-reporter tagging, spin detection,
     // recordSkip/resetSkip dedup) regardless.
     const args = commandArgs ?? itemId;
+    // DTA-1.3: drawn once per dispatch (not per resume attempt) so every
+    // attempt of one run uses the same variant, and recorded on the run row.
+    const { command: phaseCommand, variant: commandVariant } =
+      resolvePhaseCommand(phase, random, commandExists);
     const command = preClaimMarker
-      ? `${PHASE_COMMANDS[phase]} ${args} ${preClaimMarker}`
-      : `${PHASE_COMMANDS[phase]} ${args}`;
+      ? `${phaseCommand} ${args} ${preClaimMarker}`
+      : `${phaseCommand} ${args}`;
     const message = formatCronMessage(loopCronId, command);
 
     // DTW-1.3/DTR-1.1/CRT-1.3: a session identity, so a follow-up attempt
@@ -1020,6 +1108,7 @@ export function createLoopOrchestrator(
         phaseId ?? undefined,
         itemType,
         itemId,
+        commandVariant,
       );
 
       // DTW-1.3/CES-1.2: push the session id into the cron-run row the moment
