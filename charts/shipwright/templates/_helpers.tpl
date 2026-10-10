@@ -923,3 +923,20 @@ at the caller's `nindent 8` (matches every existing call site's indentation).
   restartPolicy: Always
   {{- end }}
 {{- end }}
+
+{{/*
+shipwright.agent.claudePolicy.configMapName — name of the managed Claude Code
+policy ConfigMap. Single source of truth shared by the ConfigMap and the admin
+SHIPWRIGHT_K8S_AGENT_CLAUDE_POLICY_CONFIGMAP env.
+*/}}
+{{- define "shipwright.agent.claudePolicy.configMapName" -}}
+{{- printf "%s-agent-claude-policy" (include "shipwright.admin.fullname" .) | trunc 63 | trimSuffix "-" }}
+{{- end }}
+
+{{/*
+shipwright.agent.claudePolicy.json — managed-settings.json content (settings as
+pretty JSON). Shared by the ConfigMap data and the admin policy hash env.
+*/}}
+{{- define "shipwright.agent.claudePolicy.json" -}}
+{{- .Values.agent.provisioning.claudePolicy.settings | toPrettyJson }}
+{{- end }}
