@@ -41,6 +41,8 @@ export interface ReportInput {
   weeklyRuns?: number;
   /** Per-command adherence; null/absent when the data is unavailable. */
   adherence?: CommandAdherence[] | null;
+  /** Show low-severity unresolvable-path findings; hidden (and counted) by default. */
+  includeUnresolvable?: boolean;
 }
 
 const pct = (rate: number) => `${(rate * 100).toFixed(1)}%`;
@@ -73,6 +75,8 @@ function adherenceSection(adherence: CommandAdherence[] | null): string[] {
     ),
   ];
 }
+
+const QUIETED_RULE = "unresolvable-path";
 
 function blastSummary(f: ScanFinding): string {
   const b = f.blastRadius;
@@ -108,6 +112,7 @@ export function renderReport({
   generatedAt,
   weeklyRuns = 1,
   adherence = null,
+  includeUnresolvable = false,
 }: ReportInput): string {
   const rateOf = new Map((adherence ?? []).map((a) => [a.command, a.rate]));
   // Rates are <= 1, so 2 sorts commands with no rate after every rated one.
@@ -160,12 +165,21 @@ export function renderReport({
     "## Findings",
   ];
 
-  const active = Object.values(ledger.findings).filter(
+  const seen = Object.values(ledger.findings).filter(
     (f) =>
       f.lastSeen === ledger.lastRun &&
       f.status !== "suppressed" &&
       f.status !== "resolved",
   );
+  const active = includeUnresolvable
+    ? seen
+    : seen.filter((f) => f.rule !== QUIETED_RULE);
+  const hidden = seen.length - active.length;
+  if (hidden > 0)
+    out.push(
+      "",
+      `${fmt(hidden)} low-severity \`${QUIETED_RULE}\` finding${hidden === 1 ? "" : "s"} hidden; pass \`--include-unresolvable\` to show.`,
+    );
   const classes = [...new Set(active.map((f) => f.class))].sort();
   if (classes.length === 0) out.push("", "No findings.");
   for (const cls of classes) {

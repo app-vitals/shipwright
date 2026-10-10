@@ -122,7 +122,12 @@ describe("renderReport", () => {
       },
     }),
   ]);
-  const out = renderReport({ ledger, generatedAt: NOW, weeklyRuns: 1 });
+  const out = renderReport({
+    ledger,
+    generatedAt: NOW,
+    weeklyRuns: 1,
+    includeUnresolvable: true,
+  });
 
   test("header lists models, contexts, Claude Code version and estimate state", () => {
     expect(out).toMatch(/^# Prompt Audit Report/);
@@ -169,6 +174,23 @@ describe("renderReport", () => {
 
   test("states the evidence caveat without claiming no effect", () => {
     expect(out).toContain("no effect detected in these settings");
+  });
+
+  test("hides unresolvable-path findings by default and states the count", () => {
+    const hiddenOut = renderReport({ ledger, generatedAt: NOW });
+    expect(hiddenOut).not.toContain("docs/stale.md");
+    expect(hiddenOut).not.toContain("### Class c");
+    expect(hiddenOut).toContain(
+      "1 low-severity `unresolvable-path` finding hidden",
+    );
+    expect(hiddenOut).toContain("--include-unresolvable");
+    expect(hiddenOut).toContain("docs/big.md");
+  });
+
+  test("includeUnresolvable restores them and drops the hidden note", () => {
+    expect(out).toContain("docs/stale.md");
+    expect(out).toContain("### Class c");
+    expect(out).not.toContain("hidden");
   });
 
   test("omits resolved and suppressed findings and findings not seen this run", () => {

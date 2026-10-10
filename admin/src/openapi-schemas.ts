@@ -366,6 +366,11 @@ export const AgentCronRunSchema = z
       description:
         'Work item id this run was dispatched against (e.g. "WLS-2.2" or "acme/x#123"). Null when the tick had no dispatch.',
     }),
+    commandVariant: z.string().nullable().openapi({
+      example: "default",
+      description:
+        'Slash-command variant this dispatch ran ("default" | "alternate"). Null when the run had no variant attribution.',
+    }),
     inputTokens: z.number().int().nullable().openapi({ example: 1234 }),
     outputTokens: z.number().int().nullable().openapi({ example: 567 }),
     cacheReadTokens: z.number().int().nullable().openapi({ example: 89 }),
@@ -454,6 +459,11 @@ export const CreateAgentCronRunBodySchema = z
       example: "WLS-2.2",
       description:
         'Work item id this run was dispatched against (e.g. "WLS-2.2" or "acme/x#123")',
+    }),
+    commandVariant: z.string().nullable().optional().openapi({
+      example: "alternate",
+      description:
+        'Slash-command variant this dispatch ran ("default" | "alternate")',
     }),
   })
   .openapi("CreateAgentCronRunBody");
