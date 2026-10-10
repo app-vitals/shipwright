@@ -49,6 +49,20 @@ Admin-only. Returns per-(phase, contextFingerprint) outcome series, primarily fo
 
 Supports optional `from`/`to` ISO datetime query parameters to bound the date range on `startedAt`.
 
+### Command step adherence
+
+```
+GET /agents/all/cron-runs/dev-task-adherence
+```
+
+Admin-only. Returns per-command step adherence metrics from the `dev-task` audit, used by the prompt-audit tool to rank findings by command reliability. Each series row contains:
+
+- **Command:** `command` (string, e.g., `"dev-task"`)
+- **Counts:** `runs` (total runs in the window), `adherentRuns` (runs where every mandatory, dispatch-measurable step executed)
+- **Rate:** `rate` (adherentRuns / runs, a number in [0, 1])
+
+Supports optional `from`/`to` ISO datetime query parameters to bound the date range on `startedAt`. Returns `null` when the endpoint is unreachable or no runs are present in the window; never throws.
+
 PR-side outcomes (review state mix, review/patch cycles, time to merge) are not served here — they are read-only aggregates over existing task-store `PullRequest` fields, exposed by the metrics service at `GET /metrics/pr-outcomes` (see [`docs/metrics.md`](./metrics.md)).
 
 ---
