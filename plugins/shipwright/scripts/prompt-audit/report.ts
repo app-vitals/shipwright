@@ -34,7 +34,11 @@ export interface ReportInput {
   generatedAt: Date;
   /** Runs per week used to scale per-run token savings; default 1. */
   weeklyRuns?: number;
+  /** Show low-severity unresolvable-path findings; hidden (and counted) by default. */
+  includeUnresolvable?: boolean;
 }
+
+const QUIETED_RULE = "unresolvable-path";
 
 function blastSummary(f: ScanFinding): string {
   const b = f.blastRadius;
@@ -69,6 +73,7 @@ export function renderReport({
   ledger,
   generatedAt,
   weeklyRuns = 1,
+  includeUnresolvable = false,
 }: ReportInput): string {
   const baselineRows = CONTEXTS.flatMap((c) =>
     Object.entries(ledger.baselines[c] ?? {}).map(([model, b]) => ({
@@ -113,12 +118,21 @@ export function renderReport({
     "## Findings",
   ];
 
-  const active = Object.values(ledger.findings).filter(
+  const seen = Object.values(ledger.findings).filter(
     (f) =>
       f.lastSeen === ledger.lastRun &&
       f.status !== "suppressed" &&
       f.status !== "resolved",
   );
+  const active = includeUnresolvable
+    ? seen
+    : seen.filter((f) => f.rule !== QUIETED_RULE);
+  const hidden = seen.length - active.length;
+  if (hidden > 0)
+    out.push(
+      "",
+      `${fmt(hidden)} low-severity \`${QUIETED_RULE}\` finding${hidden === 1 ? "" : "s"} hidden; pass \`--include-unresolvable\` to show.`,
+    );
   const classes = [...new Set(active.map((f) => f.class))].sort();
   if (classes.length === 0) out.push("", "No findings.");
   for (const cls of classes) {
