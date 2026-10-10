@@ -2088,6 +2088,38 @@ describe("buildProductionDeps", () => {
     }
   });
 
+  test("listOwnOpenPrs includes a repo cloned after deps were built (LRR-1.1)", async () => {
+    const scratchDir = mkdtempSync(join(tmpdir(), "check-patch-lrr-1-1-"));
+    try {
+      process.env.WORKSPACE_PATH = scratchDir;
+      const seenRepos: string[] = [];
+      const deps = await buildProductionDeps({
+        ghJson: async <T>(args: string[]) => {
+          seenRepos.push(args[args.indexOf("--repo") + 1] as string);
+          return [] as unknown as T;
+        },
+        ghGraphql: async <T>() => ({}) as unknown as T,
+        getCurrentUser: async () => "agent-login",
+        getScopedRepos: () => ["acme/late-clone"],
+      });
+
+      await deps.listOwnOpenPrs("default");
+      expect(seenRepos).toEqual([]);
+
+      const repoDir = join(scratchDir, "repos", "late-clone");
+      mkdirSync(join(repoDir, ".git"), { recursive: true });
+      writeFileSync(
+        join(repoDir, ".git", "config"),
+        `[remote "origin"]\n\turl = https://github.com/acme/late-clone.git\n`,
+      );
+
+      await deps.listOwnOpenPrs("default");
+      expect(seenRepos).toEqual(["acme/late-clone"]);
+    } finally {
+      rmSync(scratchDir, { recursive: true, force: true });
+    }
+  });
+
   test("listOwnOpenPrs never calls gh pr list for a repo returned by the filesystem scan but absent from getScopedRepos() (RSF-1.1)", async () => {
     // Two fake git clones under repos/ — only one is in the live scope.
     // Asserts the scoping happens BEFORE any gh call is issued, not just as
