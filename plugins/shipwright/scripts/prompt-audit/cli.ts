@@ -26,6 +26,7 @@ import {
   writeFileSync,
 } from "node:fs";
 import { dirname, join, resolve } from "node:path";
+import { type CommandAdherence, fetchCommandAdherence } from "./adherence.ts";
 import { analyzeBlameAge, type BlameAge } from "./blame-age.ts";
 import { type BlastReport, blastRadius } from "./blast.ts";
 import { CONTEXTS, type RuleContext } from "./finding.ts";
@@ -84,6 +85,10 @@ export interface CliDeps {
     deps?: CountTokensDeps,
   ): Promise<Record<string, TokenCount[]>>;
   loadUsage(opts: { sinceDays: number }): Promise<SkillStat[] | null>;
+  /** Per-command step adherence; null when unavailable. Optional so older deps still work. */
+  loadAdherence?(opts: {
+    sinceDays: number;
+  }): Promise<CommandAdherence[] | null>;
   env: Record<string, string | undefined>;
   /** HTTP for `watch`; absent means the watch cannot reach the services. */
   http?: {
@@ -185,6 +190,7 @@ async function runScan(args: ParsedArgs, deps: CliDeps): Promise<CliResult> {
   }
 
   const usage = await deps.loadUsage({ sinceDays });
+  const adherence = (await deps.loadAdherence?.({ sinceDays })) ?? null;
   const totalRuns = Math.max(0, ...(usage ?? []).map((s) => s.runs));
   const ctx: RuleContext = {
     items,
@@ -262,6 +268,7 @@ async function runScan(args: ParsedArgs, deps: CliDeps): Promise<CliResult> {
     ledger,
     generatedAt: now,
     weeklyRuns,
+    adherence,
     includeUnresolvable: args.flags.has("include-unresolvable"),
   });
 
@@ -554,6 +561,10 @@ export function nodeCliDeps(): CliDeps {
       const from = new Date(Date.now() - sinceDays * 86_400_000).toISOString();
       return (await fetchCronSkillStats({ from })) ?? readLocalSkillStats();
     },
+    loadAdherence: ({ sinceDays }) =>
+      fetchCommandAdherence({
+        from: new Date(Date.now() - sinceDays * 86_400_000).toISOString(),
+      }),
     env: process.env,
     http: {
       get: (url, init) => fetch(url, init),

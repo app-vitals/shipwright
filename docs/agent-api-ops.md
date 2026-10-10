@@ -49,6 +49,23 @@ Admin-only. Returns per-(phase, contextFingerprint) outcome series, primarily fo
 
 Supports optional `from`/`to` ISO datetime query parameters to bound the date range on `startedAt`.
 
+### Command step adherence
+
+```
+GET /agents/all/cron-runs/dev-task-adherence
+```
+
+Admin-only. Returns the `dev-task` step-adherence report: per run, which required steps ran or were skipped (judged from skill-usage subagent dispatches), plus per-step adherence rates overall and per variant (`contextFingerprint`). A dispatch proves a step started, not that it was done well. The response (`DevTaskAdherenceReport` in `admin/src/dev-task-adherence.ts`) contains:
+
+- **`disclaimer`:** caveat on what a dispatch does and does not prove
+- **`runs[]`:** per-run results — `runId`, `itemId`, `contextFingerprint`, `steps[]` (`stepNumber`, `status`: `ran` / `skipped` / `unmeasured`), `adherent`, `missingSteps`
+- **`overall`** and **`byVariant[]`:** series with `variant` (null for runs without a fingerprint), `runs`, `adherentRuns` (runs where every mandatory, dispatch-measurable step ran), and `steps[]`
+- **`steps[]` rows:** `stepNumber`, `title`, `mandatory`, `measured`, `ran`, `skipped`, and `rate` (ran / (ran + skipped); null when the step is unmeasured or has no runs)
+
+Supports optional `from`/`to` ISO datetime query parameters to bound the date range on `startedAt`. Returns `404` when adherence reporting is not configured.
+
+The prompt-audit tool consumes this through `fetchCommandAdherence` (`plugins/shipwright/scripts/prompt-audit/adherence.ts`), which reads `overall.runs` and `overall.adherentRuns` to rank findings by `dev-task` adherence. That client returns `null` when the endpoint is unreachable, returns a non-OK status, or the body is unusable, and never throws.
+
 PR-side outcomes (review state mix, review/patch cycles, time to merge) are not served here — they are read-only aggregates over existing task-store `PullRequest` fields, exposed by the metrics service at `GET /metrics/pr-outcomes` (see [`docs/metrics.md`](./metrics.md)).
 
 ---
