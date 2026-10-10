@@ -40,6 +40,7 @@ import type {
   AgentCronJobWithRunSummary,
 } from "./agent-cron-jobs.ts";
 import type { AgentCronRunStatsService } from "./agent-cron-run-stats.ts";
+import type { DevTaskAdherenceService } from "./dev-task-adherence.ts";
 import type { AgentCronRunService } from "./agent-cron-runs.ts";
 import type { DeleteAgentFullyDeps } from "./agent-deletion.ts";
 import { deleteAgentFully } from "./agent-deletion.ts";
@@ -159,6 +160,8 @@ export interface AdminDeps {
     AgentCronRunStatsService,
     "query" | "outcomes"
   >;
+  /** DTA-1.2 — optional so existing deps/mocks need no change; route 404s when absent. */
+  devTaskAdherenceService?: Pick<DevTaskAdherenceService, "report">;
   agentToolService: Pick<
     AgentToolService,
     "list" | "add" | "remove" | "toggle"
@@ -1162,6 +1165,28 @@ const cronRunOutcomesRoute = createRoute({
   },
 });
 
+const devTaskAdherenceRoute = createRoute({
+  method: "get",
+  path: "/agents/all/cron-runs/dev-task-adherence",
+  summary: "Get dev-task adherence report",
+  description:
+    "Admin-only. Per dev-task run, compares skill-usage subagent dispatches against the required-steps table and reports per-step ran/skipped, with per-step adherence rates overall and per variant (contextFingerprint). A dispatch proves a step started, not that it was done well. Optional `from`/`to` ISO datetime params bound startedAt.",
+  request: {
+    query: cronRunStatsQuerySchema,
+  },
+  responses: {
+    200: {
+      description: "Dev-task adherence report",
+      content: {
+        "application/json": { schema: z.record(z.string(), z.unknown()) },
+      },
+    },
+    401: { description: "Unauthorized", ...jsonError },
+    403: { description: "Forbidden — requires admin scope", ...jsonError },
+    404: { description: "Adherence reporting not configured", ...jsonError },
+  },
+});
+
 const chatTokenDailyStatsQuerySchema = z
   .object({
     from: z.string().date().optional().openapi({ example: "2026-01-01" }),
@@ -1197,6 +1222,7 @@ export function createAdminApp(deps: AdminDeps): OpenAPIHono<AdminAuthEnv> {
     agentCronJobService,
     agentCronRunService,
     agentCronRunStatsService,
+    devTaskAdherenceService,
     agentToolService,
     agentTokenService,
     agentPluginService,
@@ -1979,6 +2005,21 @@ export function createAdminApp(deps: AdminDeps): OpenAPIHono<AdminAuthEnv> {
     const { from, to } = c.req.valid("query");
     const outcomes = await agentCronRunStatsService.outcomes(from, to);
     return c.json(outcomes, 200);
+  });
+
+  // GET /agents/all/cron-runs/dev-task-adherence — per-step dev-task adherence
+  app.openapi(devTaskAdherenceRoute, async (c) => {
+    if (c.get("isAdmin") !== true) {
+      throw new ForbiddenError(
+        "Only admin bearers and session users can access cross-agent stats",
+      );
+    }
+    if (!devTaskAdherenceService) {
+      return c.json({ error: "Adherence reporting not configured" }, 404);
+    }
+    const { from, to } = c.req.valid("query");
+    const report = await devTaskAdherenceService.report(from, to);
+    return c.json(report, 200);
   });
 
   // GET /agents/chat-tokens/daily/stats — aggregated daily chat token stats

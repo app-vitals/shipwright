@@ -20,6 +20,18 @@ independent of `appVersion`. CI enforces this with
 
 - Document `agent.provisioning.claudePolicy` in `values.yaml` and `docs/deploy-kubernetes-provisioning.md`: mount path, read-only behavior, automatic rollout via admin restart and policy-only reconcile, agent-pods-only scope, the pre-existing agent namespace requirement, and remote managed-settings precedence (ACP-2.2).
 
+## [1.24.31] - 2026-10-10
+
+### Changed
+
+- auto-bump to chart v1.24.31 triggered by release tag(s): `agent-v1.399.0`
+
+## [1.24.30] - 2026-10-10
+
+### Changed
+
+- auto-bump to chart v1.24.30 triggered by release tag(s): `agent-v1.398.0`
+
 ## [1.24.29] - 2026-10-10
 
 ### Changed

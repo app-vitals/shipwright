@@ -1,0 +1,67 @@
+{
+  "steps": [
+    {
+      "stepNumber": "5",
+      "title": "Dispatch Implementation Subagent",
+      "mandatory": true,
+      "proofOfRunning": "agent dispatch (subagent_type varies; default: general-purpose)",
+      "measurable": true
+    },
+    {
+      "stepNumber": "6",
+      "title": "Simplify",
+      "mandatory": true,
+      "proofOfRunning": "marker needed; unmeasured at first",
+      "measurable": false
+    },
+    {
+      "stepNumber": "6.5",
+      "title": "Spec Compliance Check",
+      "mandatory": true,
+      "proofOfRunning": "agent dispatch (general-purpose)",
+      "measurable": true
+    },
+    {
+      "stepNumber": "7",
+      "title": "Requirements Verification",
+      "mandatory": true,
+      "proofOfRunning": "marker needed; unmeasured at first",
+      "measurable": false
+    },
+    {
+      "stepNumber": "8",
+      "title": "Pre-Ship Checks",
+      "mandatory": true,
+      "proofOfRunning": "lint/test commands ran (partial)",
+      "measurable": true
+    },
+    {
+      "stepNumber": "8.5",
+      "title": "Auto-Refresh Docs",
+      "mandatory": true,
+      "proofOfRunning": "agent dispatch (shipwright:docs-refresher; skip reason is fine)",
+      "measurable": true
+    },
+    {
+      "stepNumber": "9",
+      "title": "Push & PR",
+      "mandatory": true,
+      "proofOfRunning": "PR visible in outcomes",
+      "measurable": true
+    },
+    {
+      "stepNumber": "9b",
+      "title": "CI Gate",
+      "mandatory": false,
+      "proofOfRunning": "CI and handoff visible in outcomes (only on failure)",
+      "measurable": true
+    },
+    {
+      "stepNumber": "10",
+      "title": "Update Queue & Handoff",
+      "mandatory": true,
+      "proofOfRunning": "handoff visible in outcomes",
+      "measurable": true
+    }
+  ]
+}
