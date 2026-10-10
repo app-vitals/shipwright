@@ -213,7 +213,12 @@ export interface PrOpenTaskRecord {
 }
 
 export interface PrStateReconcilerDeps {
-  repos: string[];
+  /**
+   * Returns the local-clone repo list, read fresh on every call so repos
+   * cloned after startup are visible to the long-lived reconciler passes
+   * (the built deps are memoized in index.ts).
+   */
+  getRepos: () => string[];
   /** Page size for listing state:"open" records; defaults to the task-store's own default (50). */
   pageLimit?: number;
   /**
@@ -300,7 +305,7 @@ export interface PrStateReconcilerDeps {
    * Returns the agent's currently-configured repo scope (WL-4.2's live
    * agent-repos-ref.ts), read fresh on every reconcilePrState() call — not
    * closed over at buildProductionDeps time — so a scope change takes effect
-   * on the very next tick. `repos` above is the local-clone filesystem scan
+   * on the very next tick. `getRepos` above is the local-clone filesystem scan
    * (built once); this filter is intersected with it at call time so a repo
    * cloned locally for reference but absent from this list never gets
    * reconciled (see WL-4.4). This scope-filtering is new as of WL-4.4 —
@@ -359,12 +364,13 @@ export interface PrReviewStateRecord {
 }
 
 export interface PrReviewStateReconcilerDeps {
-  repos: string[];
+  /** Returns the local-clone repo list, read fresh on every call (see PrStateReconcilerDeps.getRepos). */
+  getRepos: () => string[];
   /**
    * Returns the agent's currently-configured repo scope, read fresh on
    * every reconcileReviewState() call — mirrors PrStateReconcilerDeps's own
-   * getScopedRepos field (WL-4.4/PSR-1.3). `repos` above is the local-clone
-   * filesystem scan (built once); this filter is intersected with it at
+   * getScopedRepos field (WL-4.4/PSR-1.3). `getRepos` above is the local-clone
+   * filesystem scan (re-read per call); this filter is intersected with it at
    * call time so a repo cloned locally for reference but absent from this
    * list never gets reconciled.
    */
@@ -784,7 +790,7 @@ function resolveTaskRepo(
   task: PrOpenTaskRecord,
 ): string | undefined {
   if (task.repo?.includes("/")) return task.repo;
-  return deps.repos[0];
+  return deps.getRepos()[0];
 }
 
 /**
@@ -1003,7 +1009,9 @@ export async function reconcilePrState(
   deps: PrStateReconcilerDeps,
 ): Promise<void> {
   const scopedReposSet = new Set(deps.getScopedRepos());
-  const scopedRepos = deps.repos.filter((repo) => scopedReposSet.has(repo));
+  const scopedRepos = deps
+    .getRepos()
+    .filter((repo) => scopedReposSet.has(repo));
 
   const summary = newPassSummary();
 
@@ -1203,7 +1211,9 @@ export async function reconcileReviewState(
   const updatedSince = computeUpdatedSinceCutoff(deps.clock.now().getTime());
 
   const scopedReposSet = new Set(deps.getScopedRepos());
-  const scopedRepos = deps.repos.filter((repo) => scopedReposSet.has(repo));
+  const scopedRepos = deps
+    .getRepos()
+    .filter((repo) => scopedReposSet.has(repo));
 
   const pendingSummary = newPassSummary();
 
@@ -1498,7 +1508,6 @@ export function buildProductionDeps(opts: {
   workspacePath?: string;
 }): PrStateReconcilerDeps {
   const workspacePath = opts.workspacePath ?? resolveWorkspacePath();
-  const repos = resolveAllRepos(workspacePath);
   const { ghJson } = opts;
 
   const taskStoreUrl = (process.env.SHIPWRIGHT_TASK_STORE_URL ?? "").trim();
@@ -1578,7 +1587,7 @@ export function buildProductionDeps(opts: {
   // reference — see its doc comment for why that matters for post-construction
   // test overrides of the delay dep.
   const deps: PrStateReconcilerDeps = {
-    repos,
+    getRepos: () => resolveAllRepos(workspacePath),
     getScopedRepos: opts.getScopedRepos,
     listOpenPrRecords: async (
       repo: string,
@@ -1719,7 +1728,6 @@ export function buildReviewStateProductionDeps(opts: {
   workspacePath?: string;
 }): PrReviewStateReconcilerDeps {
   const workspacePath = opts.workspacePath ?? resolveWorkspacePath();
-  const repos = resolveAllRepos(workspacePath);
   const { ghGraphql } = opts;
 
   const taskStoreUrl = (process.env.SHIPWRIGHT_TASK_STORE_URL ?? "").trim();
@@ -1773,7 +1781,7 @@ export function buildReviewStateProductionDeps(opts: {
   };
 
   return {
-    repos,
+    getRepos: () => resolveAllRepos(workspacePath),
     getScopedRepos: opts.getScopedRepos,
     clock: opts.clock ?? SystemClock(),
     claimTtlMs: Number(
