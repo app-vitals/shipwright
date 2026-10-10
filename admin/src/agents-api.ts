@@ -1721,6 +1721,7 @@ export function createAdminApp(deps: AdminDeps): OpenAPIHono<AdminAuthEnv> {
       phaseId: body.phaseId,
       itemType: body.itemType,
       itemId: body.itemId,
+      commandVariant: body.commandVariant,
     });
     return c.json({ run: serializeCronRun(run) }, 201);
   });
@@ -2148,6 +2149,7 @@ function serializeCronRun(run: {
   phaseId: string | null;
   itemType: string | null;
   itemId: string | null;
+  commandVariant: string | null;
   sessionId: string | null;
   lastHeartbeatAt: Date | null;
   createdAt: Date;
@@ -2217,6 +2219,7 @@ function serializeCronRun(run: {
     phaseId: run.phaseId,
     itemType: run.itemType,
     itemId: run.itemId,
+    commandVariant: run.commandVariant,
     sessionId: run.sessionId,
     lastHeartbeatAt: run.lastHeartbeatAt
       ? run.lastHeartbeatAt.toISOString()
