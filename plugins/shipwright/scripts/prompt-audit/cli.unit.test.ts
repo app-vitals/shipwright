@@ -472,3 +472,18 @@ describe("measure (temp git repo)", () => {
     expect(res.exit).toBe(2);
   });
 });
+
+describe("scan adherence", () => {
+  test("report shows adherence when loadAdherence returns data, and says so when it does not", async () => {
+    for (const [data, expected] of [
+      [[{ command: "dev-task", runs: 5, adherentRuns: 1, rate: 0.2 }], "20.0%"],
+      [null, "Adherence data unavailable"],
+    ] as const) {
+      const deps = memDeps();
+      deps.loadAdherence = async () => data as never;
+      const res = await runCli(["scan", "--repo", "/r"], deps);
+      expect(res.exit).toBe(0);
+      expect(deps.files["prompt-audit-report.md"]).toContain(expected);
+    }
+  });
+});
