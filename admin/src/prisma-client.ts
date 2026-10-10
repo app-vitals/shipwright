@@ -12,6 +12,7 @@
  */
 
 import { PrismaPg } from "@prisma/adapter-pg";
+import { pinPgSslMode } from "@shipwright/lib/pg-sslmode";
 import pg from "pg";
 import { PrismaClient } from "../prisma/client/client.ts";
 
@@ -50,7 +51,9 @@ export function createAdminPgPool(databaseUrl: string): pg.Pool {
   }
 
   const pool = new pg.Pool({
-    connectionString: databaseUrl,
+    // Legacy sslmode aliases are pinned to verify-full so a future pg major
+    // cannot silently drop certificate verification — see lib/pg-sslmode.ts.
+    connectionString: pinPgSslMode(databaseUrl),
     connectionTimeoutMillis: DB_CONNECT_TIMEOUT_MS,
   });
 
@@ -83,7 +86,8 @@ export function createAdminPgPool(databaseUrl: string): pg.Pool {
  * Note for BYO-Postgres operators: the connection string is parsed by `pg`, not
  * by Prisma's old query engine, so Prisma-only query params (`schema`,
  * `connection_limit`, `pool_timeout`, `pgbouncer`) are ignored at runtime and
- * `sslmode=require` now verifies the server certificate. See
+ * `sslmode=require` now verifies the server certificate (pinned explicitly to
+ * `verify-full` by `pinPgSslMode`, so a pg upgrade cannot weaken it). See
  * `docs/migration.md` ("Breaking: admin's `DATABASE_URL_SHIPWRIGHT_ADMIN` is
  * now parsed by `pg`, not Prisma").
  */

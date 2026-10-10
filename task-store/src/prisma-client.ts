@@ -15,6 +15,7 @@
  */
 
 import { PrismaPg } from "@prisma/adapter-pg";
+import { pinPgSslMode } from "@shipwright/lib/pg-sslmode";
 import pg from "pg";
 import { PrismaClient } from "../prisma/client/client.ts";
 
@@ -82,7 +83,9 @@ export function toPoolConfig(databaseUrl: string): pg.PoolConfig {
   for (const param of PRISMA_ONLY_PARAMS) url.searchParams.delete(param);
 
   return {
-    connectionString: url.toString(),
+    // Legacy sslmode aliases are pinned to verify-full so a future pg major
+    // cannot silently drop certificate verification — see lib/pg-sslmode.ts.
+    connectionString: pinPgSslMode(url.toString()),
     connectionTimeoutMillis: Math.max(poolTimeoutMs, CONNECT_TIMEOUT_MS),
     ...overrides,
   };
