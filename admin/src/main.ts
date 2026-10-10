@@ -34,6 +34,7 @@ import { createAdminUIApp } from "./admin-ui.ts";
 import { AgentChatTokenService } from "./agent-chat-tokens.ts";
 import { AgentCronJobService } from "./agent-cron-jobs.ts";
 import { AgentCronRunStatsService } from "./agent-cron-run-stats.ts";
+import { DevTaskAdherenceService } from "./dev-task-adherence.ts";
 import { AgentCronRunService } from "./agent-cron-runs.ts";
 import { AgentEnvService } from "./agent-envs.ts";
 import { AgentGitHubInstallationsService } from "./agent-github-installations.ts";
@@ -484,6 +485,7 @@ async function startServer(): Promise<void> {
   );
   const agentChatTokenService = new AgentChatTokenService(prisma);
   const agentCronRunStatsService = new AgentCronRunStatsService(prisma);
+  const devTaskAdherenceService = new DevTaskAdherenceService(prisma);
   const agentWorkQueueService = new AgentWorkQueueService(prisma);
   const agentGitHubInstallationsService = new AgentGitHubInstallationsService(
     prisma,
@@ -617,6 +619,7 @@ async function startServer(): Promise<void> {
     agentCronJobService,
     agentCronRunService,
     agentCronRunStatsService,
+    devTaskAdherenceService,
     agentToolService,
     agentTokenService,
     agentPluginService,
