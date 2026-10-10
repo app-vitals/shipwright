@@ -28,21 +28,21 @@ import { DEFAULT_CLAIM_TTL_MS } from "@shipwright/lib/claim-ttl";
 import type { PrReviewData, ReviewNode, ReviewThread } from "./check-patch.ts";
 import { type Clock, FixedClock } from "./clock.ts";
 import {
+  __resetPrOpenTasksCursorForTests,
+  buildProductionDeps,
+  buildReviewStateProductionDeps,
   type GhPrView,
+  isPrNotFoundError,
+  isWorktreeStale,
   type PrOpenTaskRecord,
   type PrReviewStateReconcilerDeps,
   type PrReviewStateRecord,
   type PrStateReconcilerDeps,
   type PrStateRecord,
-  SCOPE_DEGRADED,
-  __resetPrOpenTasksCursorForTests,
-  buildProductionDeps,
-  buildReviewStateProductionDeps,
-  isPrNotFoundError,
-  isWorktreeStale,
   reconcilePrOpenTasks,
   reconcilePrState,
   reconcileReviewState,
+  SCOPE_DEGRADED,
 } from "./pr-state-reconciler.ts";
 
 // ─── Fakes ────────────────────────────────────────────────────────────────────
@@ -157,7 +157,7 @@ function makeDeps({
   }> = [];
 
   const deps: PrStateReconcilerDeps = {
-    repos,
+    getRepos: () => repos,
     getScopedRepos,
     pageLimit,
     listOpenPrRecords: async (
@@ -354,7 +354,7 @@ describe("reconcilePrState", () => {
       const patchCalls: PatchCall[] = [];
 
       const deps: PrStateReconcilerDeps = {
-        repos: ["acme/example-repo"],
+        getRepos: () => ["acme/example-repo"],
         getScopedRepos: () => ["acme/example-repo"],
         listOpenPrRecords: async (
           _repo: string,
@@ -1006,7 +1006,7 @@ function makeReviewStateDeps({
   const delayCalls: number[] = [];
 
   const deps: PrReviewStateReconcilerDeps = {
-    repos,
+    getRepos: () => repos,
     getScopedRepos,
     pageLimit,
     clock,
@@ -1851,7 +1851,7 @@ describe("reconcileReviewState — posted-scan pass (CHU-2.4)", () => {
     });
 
     const deps: PrReviewStateReconcilerDeps = {
-      repos: ["acme/repo-a", "acme/repo-b"],
+      getRepos: () => ["acme/repo-a", "acme/repo-b"],
       getScopedRepos: () => ["acme/repo-a", "acme/repo-b"],
       pageLimit: 50,
       clock: FixedClock(new Date("2026-07-15T12:00:00.000Z")),
@@ -3847,5 +3847,70 @@ describe("reconcileReviewState — per-pass summary logging (RCO-1.5)", () => {
       expect(text).toContain("patched=0");
       expect(text).toContain("errored=2");
     }
+  });
+});
+
+// ─── getRepos() is re-read per call (LRR-1.3) ──────────────────────────────────
+
+describe("buildProductionDeps / buildReviewStateProductionDeps — getRepos() sees post-build clones (LRR-1.3)", () => {
+  let workspacePath: string;
+
+  beforeEach(() => {
+    workspacePath = mkdtempSync(join(tmpdir(), "lrr-1-3-"));
+  });
+
+  afterEach(() => {
+    rmSync(workspacePath, { recursive: true, force: true });
+  });
+
+  /** Create workspace/repos/<name>/.git/config with an origin remote. */
+  function cloneRepo(name: string, orgRepo: string): void {
+    const gitDir = join(workspacePath, "repos", name, ".git");
+    mkdirSync(gitDir, { recursive: true });
+    writeFileSync(
+      join(gitDir, "config"),
+      `[remote "origin"]\n\turl = https://github.com/${orgRepo}.git\n`,
+    );
+  }
+
+  test("buildProductionDeps: a clone created after build is visible and reconciled", async () => {
+    const deps = buildProductionDeps({
+      ghJson: <T>() => Promise.resolve({}) as Promise<T>,
+      getScopedRepos: () => ["acme/late-clone"],
+      workspacePath,
+    });
+    expect(deps.getRepos()).toEqual([]);
+
+    cloneRepo("late-clone", "acme/late-clone");
+    expect(deps.getRepos()).toEqual(["acme/late-clone"]);
+
+    const listed: string[] = [];
+    deps.listOpenPrRecords = async (repo: string) => {
+      listed.push(repo);
+      return [];
+    };
+    await reconcilePrState(deps);
+    expect(listed).toContain("acme/late-clone");
+  });
+
+  test("buildReviewStateProductionDeps: a clone created after build is visible and reconciled", async () => {
+    const deps = buildReviewStateProductionDeps({
+      ghGraphql: <T>() => Promise.resolve({}) as Promise<T>,
+      getScopedRepos: () => ["acme/late-clone"],
+      workspacePath,
+    });
+    expect(deps.getRepos()).toEqual([]);
+
+    cloneRepo("late-clone", "acme/late-clone");
+    expect(deps.getRepos()).toEqual(["acme/late-clone"]);
+
+    const listed: string[] = [];
+    deps.listPendingReviewRecords = async (repo: string) => {
+      listed.push(repo);
+      return [];
+    };
+    deps.listPostedReviewRecords = async () => [];
+    await reconcileReviewState(deps);
+    expect(listed).toContain("acme/late-clone");
   });
 });

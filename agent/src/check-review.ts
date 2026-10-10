@@ -799,7 +799,6 @@ export async function buildProductionDeps(opts: {
   workspacePath?: string;
 }): Promise<CheckReviewDeps> {
   const workspacePath = opts.workspacePath ?? resolveWorkspacePath();
-  const allRepos = resolveAllRepos(workspacePath);
   const { ghJson: ghJsonFn } = opts;
   const ghGraphqlFn = opts.ghGraphql ?? ghGraphqlDefault;
   const authorAllowlistRef =
@@ -822,7 +821,11 @@ export async function buildProductionDeps(opts: {
       // filesystem-scanned allRepos but absent from the live scope never
       // reaches gh at all.
       const scopedRepos = new Set((opts.getScopedRepos ?? agentReposRef.get)());
-      const repos = allRepos.filter((repo) => scopedRepos.has(repo));
+      // Re-scanned per call (LRR-1.1) so a repo auto-cloned after deps were
+      // built becomes a candidate without a restart.
+      const repos = resolveAllRepos(workspacePath).filter((repo) =>
+        scopedRepos.has(repo),
+      );
       return mapReposTolerant(repos, "check-review", async (repo) => {
         const repoPrs = await ghJsonFn<PrInfo[]>([
           "pr",

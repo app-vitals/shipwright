@@ -80,7 +80,7 @@ function makeDeps({
       typeof isSelfReviewAllowed === "function"
         ? isSelfReviewAllowed()
         : isSelfReviewAllowed,
-    repos,
+    getRepos: () => repos,
     getScopedRepos,
     fetchActiveDeployRuns: async () => [],
     listOpenPrs: async (repo: string) => prs[repo] ?? [],
@@ -609,7 +609,7 @@ describe("getDeployCandidates", () => {
     const deps: CheckDeployDeps = {
       getCurrentUser: async () => "bodhi-agent",
       isSelfReviewAllowed: async () => true,
-      repos: ["acme/failing-repo", "acme/example-repo"],
+      getRepos: () => ["acme/failing-repo", "acme/example-repo"],
       getScopedRepos: () => ["acme/failing-repo", "acme/example-repo"],
       fetchActiveDeployRuns: async () => [],
       fetchCiRuns: async () => [GREEN_CI_RUN],
@@ -684,7 +684,7 @@ describe("getDeployCandidates", () => {
     const deps: CheckDeployDeps = {
       getCurrentUser: async () => "bodhi-agent",
       isSelfReviewAllowed: async () => true,
-      repos: ["acme/busy-repo", "acme/free-repo"],
+      getRepos: () => ["acme/busy-repo", "acme/free-repo"],
       getScopedRepos: () => ["acme/busy-repo", "acme/free-repo"],
       fetchActiveDeployRuns: async (_org, repo) =>
         repo === "busy-repo" ? [{ name: "Deploy", status: "in_progress" }] : [],
@@ -706,7 +706,7 @@ describe("getDeployCandidates", () => {
     const deps: CheckDeployDeps = {
       getCurrentUser: async () => "bodhi-agent",
       isSelfReviewAllowed: async () => true,
-      repos: ["acme/example-repo"],
+      getRepos: () => ["acme/example-repo"],
       getScopedRepos: () => ["acme/example-repo"],
       clock: () => "2026-06-01T00:00:00.000Z",
       fetchActiveDeployRuns: async () => [
@@ -729,7 +729,7 @@ describe("getDeployCandidates", () => {
     const deps: CheckDeployDeps = {
       getCurrentUser: async () => "bodhi-agent",
       isSelfReviewAllowed: async () => true,
-      repos: ["acme/example-repo"],
+      getRepos: () => ["acme/example-repo"],
       getScopedRepos: () => ["acme/example-repo"],
       clock: () => "2026-06-01T02:00:00.000Z",
       fetchActiveDeployRuns: async () => [
@@ -757,7 +757,7 @@ describe("getDeployCandidates", () => {
     const deps: CheckDeployDeps = {
       getCurrentUser: async () => "bodhi-agent",
       isSelfReviewAllowed: async () => true,
-      repos: ["acme/example-repo"],
+      getRepos: () => ["acme/example-repo"],
       getScopedRepos: () => ["acme/example-repo"],
       clock: () => "2026-06-01T00:30:00.000Z",
       fetchActiveDeployRuns: async () => [
@@ -800,7 +800,7 @@ describe("getDeployCandidates", () => {
     const deps: CheckDeployDeps = {
       getCurrentUser: async () => "bodhi-agent",
       isSelfReviewAllowed: async () => true,
-      repos: ["acme/example-repo"],
+      getRepos: () => ["acme/example-repo"],
       getScopedRepos: () => ["acme/example-repo"],
       fetchActiveDeployRuns: async () => [],
       fetchCiRuns: async () => [GREEN_CI_RUN],
@@ -1110,7 +1110,7 @@ describe("getDeployCandidates", () => {
 
   // ─── agent-scope filtering (WL-4.3) ──────────────────────────────────────
 
-  test("excludes a repo returned by the local-clone scan (deps.repos) but absent from getScopedRepos()", async () => {
+  test("excludes a repo returned by the local-clone scan (deps.getRepos()) but absent from getScopedRepos()", async () => {
     const inScopePr = makeGhPr({
       number: 50,
       reviewDecision: "APPROVED",
@@ -1246,7 +1246,7 @@ describe("buildProductionDeps", () => {
     const deps = await buildProductionDeps({
       ghJson: async <T>() => [] as unknown as T,
     });
-    expect(deps.repos).toEqual([]);
+    expect(deps.getRepos()).toEqual([]);
   });
 
   test("repos reflects a real repos/ scan under WORKSPACE_PATH", async () => {
@@ -1266,7 +1266,31 @@ describe("buildProductionDeps", () => {
         ghJson: async <T>() => [] as unknown as T,
       });
 
-      expect(deps.repos).toEqual(["acme/example-repo"]);
+      expect(deps.getRepos()).toEqual(["acme/example-repo"]);
+    } finally {
+      rmSync(scratchDir, { recursive: true, force: true });
+    }
+  });
+
+  test("getRepos() picks up a clone created after buildProductionDeps()", async () => {
+    const scratchDir = mkdtempSync(
+      join(tmpdir(), "check-deploy-buildProductionDeps-"),
+    );
+    try {
+      process.env.WORKSPACE_PATH = scratchDir;
+      const deps = await buildProductionDeps({
+        ghJson: async <T>() => [] as unknown as T,
+      });
+      expect(deps.getRepos()).toEqual([]);
+
+      const repoDir = join(scratchDir, "repos", "late-repo");
+      mkdirSync(join(repoDir, ".git"), { recursive: true });
+      writeFileSync(
+        join(repoDir, ".git", "config"),
+        `[remote "origin"]\n\turl = https://github.com/acme/late-repo.git\n`,
+      );
+
+      expect(deps.getRepos()).toEqual(["acme/late-repo"]);
     } finally {
       rmSync(scratchDir, { recursive: true, force: true });
     }

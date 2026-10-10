@@ -112,7 +112,11 @@ export interface CheckDeployDeps {
    * readAllowSelfReview(workspacePath)` (check-helpers.ts).
    */
   isSelfReviewAllowed: () => Promise<boolean>;
-  repos: string[];
+  /**
+   * Local clone list, resolved fresh on every getDeployCandidates() call so a
+   * repo cloned after buildProductionDeps() is picked up without a restart.
+   */
+  getRepos: () => string[];
   listOpenPrs: (repo: string) => Promise<GhPr[]>;
   fetchPrReviews: (
     org: string,
@@ -201,7 +205,7 @@ export async function getDeployCandidates(
   // than 1 hour are treated as stuck/ghost and ignored.
   const now = deps.clock ? deps.clock() : new Date().toISOString();
   const scopedRepos = new Set(deps.getScopedRepos());
-  const repos = deps.repos.filter((repo) => scopedRepos.has(repo));
+  const repos = deps.getRepos().filter((repo) => scopedRepos.has(repo));
 
   const busyRepos = new Set(
     await mapReposTolerant(repos, "check-deploy", async (repo) => {
@@ -367,14 +371,13 @@ export async function buildProductionDeps(opts: {
   getScopedRepos?: () => string[];
 }): Promise<CheckDeployDeps> {
   const workspacePath = resolveWorkspacePath();
-  const allRepos = resolveAllRepos(workspacePath);
   const clock = () => new Date().toISOString();
   const { ghJson } = opts;
 
   return {
     getCurrentUser,
     isSelfReviewAllowed: () => readAllowSelfReview(workspacePath),
-    repos: allRepos,
+    getRepos: () => resolveAllRepos(workspacePath),
     getScopedRepos: opts.getScopedRepos ?? agentReposRef.get,
     clock,
     fetchActiveDeployRuns: async (org: string, repo: string) => {
