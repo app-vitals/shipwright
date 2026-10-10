@@ -2030,3 +2030,53 @@ describe("dev-task.md — no size exemption rule", () => {
     expect(idx).toBeLessThan(content.indexOf("## Arguments"));
   });
 });
+
+describe("dev-task.md — Step 9 conventional PR title derivation", () => {
+  const getStep9 = () =>
+    content.slice(
+      content.indexOf("## Step 9: Push & PR"),
+      content.indexOf("### PR Failure Cleanup"),
+    );
+  const getDerivation = () => {
+    const step9 = getStep9();
+    return step9.slice(
+      step9.indexOf("Derive the PR title"),
+      step9.indexOf("gh pr create"),
+    );
+  };
+
+  it("defines a PR-title derivation before gh pr create", () => {
+    const step9 = getStep9();
+    expect(step9.indexOf("Derive the PR title")).toBeGreaterThan(-1);
+    expect(step9.indexOf("Derive the PR title")).toBeLessThan(
+      step9.indexOf("gh pr create"),
+    );
+  });
+
+  it("lists the allowed conventional types", () => {
+    const derivation = getDerivation();
+    expect(derivation).toContain(
+      "feat, fix, perf, revert, docs, refactor, test, build, ci, chore",
+    );
+  });
+
+  it("keeps an existing conventional prefix (optional scope and !) unchanged", () => {
+    const derivation = getDerivation();
+    expect(derivation).toContain("optionally with a `(scope)` and/or `!`");
+    expect(derivation).toContain("use it unchanged");
+  });
+
+  it("falls back to the branch-prefix type when allowed, else feat", () => {
+    const derivation = getDerivation();
+    expect(derivation).toContain("`{type}: {title}`");
+    expect(derivation).toContain("segment before the first `/`");
+    expect(derivation).toContain("else `feat`");
+  });
+
+  it("gh pr create uses the derived title and still uses --body-file", () => {
+    expect(getStep9()).toContain(
+      'gh pr create --title "{pr-title}" --body-file /tmp/shipwright-pr-body-{task-id}.txt',
+    );
+    expect(getStep9()).not.toContain('--title "{title}"');
+  });
+});

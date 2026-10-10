@@ -1099,10 +1099,14 @@ Draft a PR body:
 Generated with [Claude Code](https://claude.com/claude-code)
 ```
 
+**Derive the PR title** (`{pr-title}`) so it passes `pr-title-lint` — the raw task title may lack a conventional prefix (legacy tasks, tasks from other planners). Allowed types: feat, fix, perf, revert, docs, refactor, test, build, ci, chore.
+- If the task title already starts with an allowed type, optionally with a `(scope)` and/or `!`, followed by `: `, use it unchanged.
+- Otherwise use `{type}: {title}`, where `{type}` is the branch prefix (the segment before the first `/`) when it is an allowed type, else `feat`.
+
 **Write the PR body to a temp file** to avoid heredoc syntax in the command string (heredocs break permission glob matching and cause repeated approval prompts during `/dev-loop`):
 ```
 Write the PR body content to /tmp/shipwright-pr-body-{task-id}.txt
-gh pr create --title "{title}" --body-file /tmp/shipwright-pr-body-{task-id}.txt
+gh pr create --title "{pr-title}" --body-file /tmp/shipwright-pr-body-{task-id}.txt
 rm /tmp/shipwright-pr-body-{task-id}.txt
 ```
 The temp file path MUST include the task ID to avoid collisions — `/tmp` is shared across all worktrees.
