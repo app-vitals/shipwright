@@ -1,6 +1,6 @@
 {
   "name": "shipwright-monorepo",
-  "version": "1.403.1",
+  "version": "1.403.2",
   "private": true,
   "workspaces": [
     "lib",
@@ -41,10 +41,10 @@
     "typescript": "^7.0.0"
   },
   "dependencies": {
-    "@prisma/client": "^6.19.2"
+    "@prisma/client": "^7.0.0"
   },
   "overrides": {
-    "uuid": "14.0.2",
+    "uuid": "14.0.3",
     "@hono/node-server": "^2.0.12",
     "minimatch": "^10.2.5",
     "brace-expansion": "^5.0.12",
