@@ -12,6 +12,8 @@
 > (worktree: `docs/test-readiness-refresh-20261009`, base `e78514a1e`), from
 > `docs/test-readiness/test-inventory.md` (refreshed 2026-10-08).
 >
+> **2026-10-12 delta (re-verified, not re-architected).** Inventory refreshed at `d7af2240a` (delta `54018b659..d7af2240a`): the only new units are the dev-task adherence report (`admin/src/dev-task-adherence.ts`, Prisma-backed, integration) and `prompt-audit/adherence.ts` (pure, unit). Both fit the existing layer matrix, local substitutes (real Postgres via the typed service layer, injected fetch) and speed budgets; no blueprint change.
+>
 > **2026-10-09 (second pass) delta (re-verified, not re-architected).** Since base `e78514a1e` (#4164) a small delta landed on `54018b659`: `admin/src/startup-policy-reconcile.ts` (ACP-1.3, injected-deps unit), `plugins/shipwright/scripts/prompt-audit/watch.ts` (post-merge regression watch; injected clock/fs/exec, unit), `metrics` PR-outcomes (`task-store-provider.ts`, `list-prs-outcomes.json` recorded fixture, unit + in-process smoke), and chat message/route tweaks. All slot into already-modeled categories; no framework, dependency, CI job, speed-budget, or deploy-model change (`direct` unchanged). The Phase 1 inventory now catalogues the account and prompt-audit families (refreshed 2026-10-09), closing the gap noted below.
 >
 > **2026-10-09 delta (re-verified, not re-architected).** 211 commits have landed since the
