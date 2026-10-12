@@ -32,7 +32,7 @@ export const DEFAULT_PIPER_VOICE = "en_US-hfc_female-medium";
  */
 export const VOICES_DIR = "/app/agent/voices/";
 
-export type ReaddirFn = (dir: string) => string[];
+type ReaddirFn = (dir: string) => string[];
 
 const defaultReaddirFn: ReaddirFn = (dir: string): string[] => {
   try {

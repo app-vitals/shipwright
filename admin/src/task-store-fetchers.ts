@@ -16,7 +16,7 @@
  * inline `res.json()` returns were; admin-ui.ts's AdminUIDeps pins the shapes.
  */
 
-export interface TaskStoreFetchersConfig {
+interface TaskStoreFetchersConfig {
   url: string;
   adminToken: string;
   /** Injected for tests; defaults to the global fetch. */
@@ -24,7 +24,7 @@ export interface TaskStoreFetchersConfig {
 }
 
 /** Copy of `params` with `accountId` set when given (never mutates input). */
-export function withAccountId(
+function withAccountId(
   params: URLSearchParams,
   accountId?: string,
 ): URLSearchParams {

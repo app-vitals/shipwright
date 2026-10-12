@@ -149,7 +149,7 @@ export interface CronRunReporter {
   ): Promise<void>;
 }
 
-export interface HttpCronRunReporterOptions {
+interface HttpCronRunReporterOptions {
   apiUrl: string;
   agentId: string;
   apiKey: string;

@@ -18,7 +18,7 @@ import type {
 import { NotFoundError } from "./errors.ts";
 
 /** Row shape returned to callers — BIGINT token columns are narrowed to number. */
-export type ChatTokenUsageDailyRow = Omit<
+type ChatTokenUsageDailyRow = Omit<
   AgentChatTokenUsageDailyByModel,
   "inputTokens" | "outputTokens" | "cacheReadTokens" | "cacheCreationTokens"
 > & {
@@ -63,7 +63,7 @@ export interface ChatTokenStats {
   daily: DailyTokenAggregate[];
 }
 
-export interface DailyTokenInput {
+interface DailyTokenInput {
   inputTokens: number;
   outputTokens: number;
   cacheReadTokens: number;

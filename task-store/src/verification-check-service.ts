@@ -87,7 +87,7 @@ function inScope(
   return true;
 }
 
-export interface RecordVerificationCheckInput {
+interface RecordVerificationCheckInput {
   /** Exactly one of taskId/prId is required. */
   taskId?: string | null;
   prId?: string | null;
@@ -105,7 +105,7 @@ export interface RecordVerificationCheckInput {
 }
 
 /** Result from VerificationCheckService.listForTask/listForPr. */
-export interface ListVerificationChecksResult {
+interface ListVerificationChecksResult {
   checks: VerificationCheck[];
   total: number;
 }

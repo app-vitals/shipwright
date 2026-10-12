@@ -56,7 +56,7 @@ const BOLD_IMPERATIVE = new RegExp(
   "gi",
 );
 
-export interface InstructionDensity {
+interface InstructionDensity {
   totalLines: number;
   nonBlankLines: number;
   imperatives: number;

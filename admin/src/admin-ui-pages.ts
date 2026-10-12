@@ -467,7 +467,7 @@ export interface GitHubInstallationsCardData {
 }
 
 /** A snapshot older than this renders a stale warning (MGI-4.3). */
-export const GITHUB_INSTALLATIONS_STALE_MS = 90 * 60 * 1000;
+const GITHUB_INSTALLATIONS_STALE_MS = 90 * 60 * 1000;
 
 function githubInstallationStateBadge(state: string): string {
   switch (state) {
@@ -731,7 +731,7 @@ export interface PluginItem {
  * passes in; renderAgentDetailPage merges against the fixed AGENT_PHASES set
  * to show "default" for phases with no row here).
  */
-export interface PhaseMethodologyItem {
+interface PhaseMethodologyItem {
   phase: string;
   subagentType: string | null;
 }

@@ -10,7 +10,7 @@
 export const DEFAULT_SELF_SERVE_CONTACT_EMAIL = "dan@app-vitals.com";
 
 /** Structural env shape — accepts `process.env` or a plain test object. */
-export type SelfServeEnv = Readonly<Record<string, string | undefined>>;
+type SelfServeEnv = Readonly<Record<string, string | undefined>>;
 
 export interface SelfServeConfig {
   /** True only when SHIPWRIGHT_SELF_SERVE_ENABLED === "enabled". */

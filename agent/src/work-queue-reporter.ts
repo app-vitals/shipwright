@@ -18,7 +18,7 @@ import type { RankedWorkItem } from "./work-selector.ts";
 /** Cap on the number of items sent per snapshot POST. */
 export const MAX_WORK_QUEUE_ITEMS = 50;
 
-export interface WorkQueueSnapshot {
+interface WorkQueueSnapshot {
   computedAt: string;
   items: RankedWorkItem[];
 }
@@ -36,7 +36,7 @@ export interface WorkQueueReporter {
   reportSnapshot(snapshot: WorkQueueSnapshot): Promise<void>;
 }
 
-export interface HttpWorkQueueReporterOptions {
+interface HttpWorkQueueReporterOptions {
   apiUrl: string;
   agentId: string;
   apiKey: string;

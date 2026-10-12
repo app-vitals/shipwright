@@ -29,7 +29,7 @@ export function base64UrlDecode(str: string): Uint8Array {
 
 // ─── RFC 8291 aes128gcm encryption ───────────────────────────────────────────
 
-export interface EncryptPushPayloadArgs {
+interface EncryptPushPayloadArgs {
   /** UTF-8 plaintext to encrypt. */
   plaintext: string;
   /** UA public key (base64url, uncompressed P-256 point) — the `p256dh` value. */

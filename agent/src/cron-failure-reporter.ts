@@ -37,7 +37,7 @@ import { reportClaudeError } from "./claude.ts";
 import type { Clock } from "./clock.ts";
 import type { CronRunReporter } from "./cron-run-reporter.ts";
 
-export interface ReportCronFailureDeps {
+interface ReportCronFailureDeps {
   cronRunReporter: CronRunReporter;
   sentryClient?: ErrorCapturingClient;
   clock: Clock;

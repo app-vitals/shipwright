@@ -23,7 +23,7 @@
  */
 const AGENT_APP_HOMEPAGE_URL = "https://shipwrightharness.com";
 
-export interface GithubAppManifest {
+interface GithubAppManifest {
   name: string;
   public: boolean;
   default_permissions: {

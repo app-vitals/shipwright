@@ -17,7 +17,7 @@
 import { diffEvals, type EvalDiff, type EvalResult } from "./eval-diff.ts";
 import type { Measured } from "./ledger.ts";
 
-export const MIN_SERIES_RUNS = 20;
+const MIN_SERIES_RUNS = 20;
 
 export interface RunnerDeps {
   exec(cwd: string, cmd: string[]): string;
@@ -27,13 +27,13 @@ export interface RunnerDeps {
 }
 
 /** Normalised result of one `claude plugin eval --json` run. */
-export interface PluginEvalRun extends EvalResult {
+interface PluginEvalRun extends EvalResult {
   /** Pass rate over all case x seed results, 0..1. */
   score: number;
   costUsd: number;
 }
 
-export interface PluginEvalOptions {
+interface PluginEvalOptions {
   /** Required cap passed through as --max-cost-usd. */
   maxCostUsd: number;
   /** With/without runs for CLAUDE.md-class findings. */
@@ -114,7 +114,7 @@ export function runPluginEval(
   return parsePluginEvalJson(arm, deps.exec(pluginDir, cmd));
 }
 
-export interface AbOptions {
+interface AbOptions {
   repoDir: string;
   baseRef: string;
   headRef: string;
@@ -126,7 +126,7 @@ export interface AbOptions {
   maxCostUsd: number;
 }
 
-export interface AbResult {
+interface AbResult {
   measured: Measured;
   diff: EvalDiff;
   base: PluginEvalRun;
@@ -198,7 +198,7 @@ export type SeriesFetch = (
   init: { headers: Record<string, string> },
 ) => Promise<{ ok: boolean; status: number; json(): Promise<unknown> }>;
 
-export interface SeriesOptions {
+interface SeriesOptions {
   baseUrl: string;
   token: string;
   phase: string;

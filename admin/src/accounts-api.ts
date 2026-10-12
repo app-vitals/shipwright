@@ -40,7 +40,7 @@ import {
 } from "./openapi-schemas.ts";
 import type { SelfServeConfig } from "./self-serve-config.ts";
 
-export interface AccountsApiDeps {
+interface AccountsApiDeps {
   accountService: Pick<
     AccountService,
     "listWithCounts" | "getWithCounts" | "create"

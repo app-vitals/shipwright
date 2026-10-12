@@ -183,7 +183,7 @@ export interface IssueCommentNode {
  *               Required in both cases; an empty/whitespace `evidence` is
  *               treated as no attestation for exclusion purposes (PVD-1.3).
  */
-export interface PriorFindingStatus {
+interface PriorFindingStatus {
   ref: string;
   resolved: boolean;
   evidence: string;

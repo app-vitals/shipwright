@@ -19,24 +19,24 @@
 const DEFAULT_HARD_DEADLINE_MS = 20_000;
 
 /** Mirrors Bun.serve()'s return value: stop() waits for in-flight requests, stop(true) force-closes. */
-export interface ShutdownServer {
+interface ShutdownServer {
   stop(closeActiveConnections?: boolean): unknown;
 }
 
 /** Run in order on shutdown; a throw is logged and does not block later cleanup fns or the final exit. */
-export type CleanupFn = () => Promise<void>;
+type CleanupFn = () => Promise<void>;
 
 /** Narrowed to the one method this module needs — satisfied by the real `process`. */
-export interface SignalSource {
+interface SignalSource {
   on(event: "SIGTERM" | "SIGINT", listener: () => void): unknown;
 }
 
-export interface GracefulShutdownLogger {
+interface GracefulShutdownLogger {
   log: (...args: unknown[]) => void;
   error: (...args: unknown[]) => void;
 }
 
-export interface GracefulShutdownOptions {
+interface GracefulShutdownOptions {
   /** The Bun.serve() return value (or anything shaped like it). */
   server: ShutdownServer;
   /** Cleanup fns run sequentially, in order, after the server stops accepting new work. */
@@ -56,7 +56,7 @@ export interface GracefulShutdownOptions {
   serviceName?: string;
 }
 
-export interface GracefulShutdown {
+interface GracefulShutdown {
   /** True once a shutdown signal has been received — gate readiness probes on this. */
   isShuttingDown: () => boolean;
 }

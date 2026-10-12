@@ -31,7 +31,7 @@ export interface FoundAgent {
 }
 
 /** Minimal Prisma interface needed by the poll function — injected for testability. */
-export interface WaitPrisma {
+interface WaitPrisma {
   agent: {
     findFirst(args: {
       orderBy: { createdAt: "asc" };

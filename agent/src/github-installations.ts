@@ -21,11 +21,11 @@ export interface DiscoveredInstallation {
   suspendedAt: string | null;
 }
 
-export type DiscoveryResult =
+type DiscoveryResult =
   | { ok: true; installations: DiscoveredInstallation[] }
   | { ok: false; error: string };
 
-export interface SelectedInstallation {
+interface SelectedInstallation {
   id: number;
   /** null only for a pinned id GitHub did not return from discovery. */
   owner: string | null;
@@ -33,7 +33,7 @@ export interface SelectedInstallation {
   pinned: boolean;
 }
 
-export interface InstallationSelection {
+interface InstallationSelection {
   installations: SelectedInstallation[];
   /** The pin if set, else the lowest selected id; null when nothing selected. */
   defaultId: number | null;
@@ -112,7 +112,7 @@ export async function discoverInstallations(
 
 // ─── Selection ────────────────────────────────────────────────────────────────
 
-export interface SelectInstallationsInput {
+interface SelectInstallationsInput {
   discovered: DiscoveredInstallation[];
   /** Scoped repos as `org/repo` strings (agentReposRef.get()). */
   scopedRepos: string[];
@@ -185,7 +185,7 @@ type ManagerAuthFn = ConstructorParameters<
 >[0]["auth"];
 
 /** Status classes carried on mint-failed events — never an error message. */
-export type MintFailureClass = "4xx" | "5xx" | "network" | "other";
+type MintFailureClass = "4xx" | "5xx" | "network" | "other";
 
 export type InstallationEvent =
   | { type: "discovered"; installationId: number; owner: string | null }
@@ -200,7 +200,7 @@ export type InstallationEvent =
     }
   | { type: "discovery_failed" };
 
-export type InstallationHealth = "ok" | "broken" | "unknown";
+type InstallationHealth = "ok" | "broken" | "unknown";
 
 export interface InstallationState {
   id: number;
@@ -216,7 +216,7 @@ export interface InstallationsSnapshot {
   defaultId: number | null;
 }
 
-export interface GitHubInstallationsManagerOptions {
+interface GitHubInstallationsManagerOptions {
   /** @octokit/auth-app auth function (App JWT via `type: "app"`). */
   auth: ManagerAuthFn;
   fetchFn?: FetchFn;

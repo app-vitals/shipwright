@@ -7,7 +7,7 @@
  * (--max-cost-usd) or when the estimate exceeds it.
  */
 
-export const DEFAULT_COST_PER_CASE_USD = 0.1;
+const DEFAULT_COST_PER_CASE_USD = 0.1;
 export const MIN_SEEDS = 3;
 
 export interface CostInput {
@@ -35,7 +35,7 @@ export function parseMaxCostUsd(raw: string | undefined): number | undefined {
   return Number.isFinite(n) && n > 0 ? n : undefined;
 }
 
-export interface GateResult {
+interface GateResult {
   estimateUsd: number;
   maxCostUsd: number;
 }

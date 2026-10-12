@@ -82,7 +82,7 @@ export const SummaryResultSchema = z
   })
   .openapi("SummaryResult");
 
-export const TrendsPeriodSchema = z.object({
+const TrendsPeriodSchema = z.object({
   period: z.string(),
   tasksCompleted: z.number().int(),
   ciGates: z.number().int(),
@@ -117,7 +117,7 @@ export const TrendsResultSchema = z
   })
   .openapi("TrendsResult");
 
-export const FeatureMetricSchema = z
+const FeatureMetricSchema = z
   .object({
     prefix: z.string().openapi({ example: "MQ" }),
     tasksCompleted: z.number().int().openapi({ example: 3 }),
@@ -244,7 +244,7 @@ export const PrOutcomesResultSchema = z
 
 // ─── Tokens schemas ───────────────────────────────────────────────────────────
 
-export const TokensQuerySchema = DateRangeQuerySchema;
+const TokensQuerySchema = DateRangeQuerySchema;
 export type TokensQuery = z.infer<typeof TokensQuerySchema>;
 
 const TokenTotalsSchema = z
@@ -419,7 +419,7 @@ export const CostEfficiencyResultSchema = z
 
 // ─── Response envelope schema ─────────────────────────────────────────────────
 
-export const MetaSchema = z
+const MetaSchema = z
   .object({
     dateRange: z.object({
       from: z.string().openapi({ example: "2026-04-01T00:00:00.000Z" }),

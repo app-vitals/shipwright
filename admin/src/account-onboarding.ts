@@ -13,7 +13,7 @@
 import type { PrismaClient } from "../prisma/client/client.ts";
 import { normalizeEmail } from "./account-email.ts";
 
-export type OnboardingResult =
+type OnboardingResult =
   | { kind: "created"; accountId: string }
   | { kind: "joined"; accountId: string }
   | { kind: "existing"; accountId: string };

@@ -18,7 +18,7 @@ export type CallerScope =
   | { kind: "all" }
   | { kind: "scoped"; accountId: string | null; agentIds: string[] };
 
-export interface CallerScopeInput {
+interface CallerScopeInput {
   email: string;
   isAdmin: boolean;
   flagEnabled: boolean;

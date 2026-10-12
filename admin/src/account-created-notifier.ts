@@ -11,7 +11,7 @@
 
 import type { PushDetailLevel } from "./push-content.ts";
 
-export interface AccountCreatedInfo {
+interface AccountCreatedInfo {
   accountId: string;
   emailDomain: string;
 }
@@ -20,7 +20,7 @@ export type AccountCreatedNotifier = (
   info: AccountCreatedInfo,
 ) => Promise<void>;
 
-export interface AccountCreatedPushLike {
+interface AccountCreatedPushLike {
   sendToUsers(
     emails: string[],
     buildPayload: (level: PushDetailLevel) => string,

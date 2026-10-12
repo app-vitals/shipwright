@@ -282,14 +282,14 @@ function policyParts(dep: KubernetesDeployment): {
  * volumeMounts by `mountPath`, so omitting an entry would leave it in place.
  * `$patch: delete` removes it, and a null annotation value deletes the key.
  */
-export interface PolicyPatch {
+interface PolicyPatch {
   volumes?: object[];
   volumeMounts?: object[];
   annotations?: Record<string, string | null>;
 }
 
 /** The policy patch for a live Deployment, or undefined when already in sync. */
-export function policyPatch(
+function policyPatch(
   live: KubernetesDeployment,
   desired: KubernetesDeployment,
 ): PolicyPatch | undefined {

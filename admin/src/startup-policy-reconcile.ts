@@ -17,7 +17,7 @@
 import type { AgentProvisioner } from "./agent-provisioner.ts";
 import type { AgentService, AgentSummary } from "./agents.ts";
 
-export interface StartupPolicyReconcileDeps {
+interface StartupPolicyReconcileDeps {
   agentService: Pick<AgentService, "list">;
   provisioner: Pick<AgentProvisioner, "canProvision" | "reconcile">;
   logger: Pick<Console, "log" | "error">;

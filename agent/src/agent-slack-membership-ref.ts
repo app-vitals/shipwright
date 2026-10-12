@@ -9,7 +9,7 @@
  * isolation — mirrors review-author-allowlist-ref.ts's style.
  */
 
-export interface SlackMembershipConfig {
+interface SlackMembershipConfig {
   restrict: boolean;
   emails: string[];
 }

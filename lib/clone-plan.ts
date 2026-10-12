@@ -35,7 +35,7 @@ export function computeMissingClones(
     .filter(({ dest }) => !exists(dest));
 }
 
-export interface RepoNameCollision {
+interface RepoNameCollision {
   /** The later-listed repo — the one a sync should skip. */
   repo: string;
   /** The earlier-listed repo that already claimed the `repos/<name>` folder. */

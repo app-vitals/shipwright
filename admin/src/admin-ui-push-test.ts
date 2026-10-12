@@ -37,7 +37,7 @@ export interface PushTestRouteDeps {
   pushService?: Pick<PushService, "sendToUsers">;
 }
 
-export interface PushTestResponse {
+interface PushTestResponse {
   ok: true;
   delivered: number;
   pruned: number;

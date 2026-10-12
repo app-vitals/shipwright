@@ -35,7 +35,7 @@ const DEV_AGENT_TYPE = "coding";
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 /** Minimal Prisma interface needed by the seed function — injected for testability. */
-export interface SeedPrisma {
+interface SeedPrisma {
   agent: {
     upsert(args: {
       where: { id: string };

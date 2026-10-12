@@ -62,13 +62,13 @@ export { CLOSED_STATUSES, OPEN_STATUSES };
 const SKIP_BLOCK_THRESHOLD = 3;
 
 /** The subset of a skip-trackable record's state computeSkipStreak() reads. */
-export interface SkipStreakState {
+interface SkipStreakState {
   skipCount: number;
   lastSkipReason: string | null;
 }
 
 /** computeSkipStreak()'s result: the next skipCount/lastSkipReason to write, plus whether this crossing trips the auto-block. */
-export interface SkipStreakResult {
+interface SkipStreakResult {
   /**
    * The *projected* post-write skipCount — i.e. what the column will hold if
    * no concurrent skip interleaves. Used for the threshold check and the
@@ -392,7 +392,7 @@ export type TaskWithBlockedBy = Task & { blockedBy: BlockedByEntry[] };
  * structural change to which tasks are considered ready/blocked in the
  * first place.
  */
-export interface TaskListPostFilters {
+interface TaskListPostFilters {
   session?: string;
   source?: string;
   /** Array-any-match, mirrors buildRepoOrgWhere's `{ repo: { in: repos } }`. */
@@ -473,7 +473,7 @@ export interface TaskListResult {
 }
 
 /** Result from TaskService.getEvents. */
-export interface GetTaskEventsResult {
+interface GetTaskEventsResult {
   events: TaskEvent[];
   total: number;
 }

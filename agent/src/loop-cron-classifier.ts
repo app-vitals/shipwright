@@ -77,14 +77,14 @@ export interface CronJobLike {
   parentCronId: string | null;
 }
 
-export type CronDispatchKind = "loop" | "generic";
+type CronDispatchKind = "loop" | "generic";
 
-export interface ScheduledCronJob<T extends CronJobLike> {
+interface ScheduledCronJob<T extends CronJobLike> {
   job: T;
   dispatch: CronDispatchKind;
 }
 
-export interface LoopPhaseToggles {
+interface LoopPhaseToggles {
   devTask: boolean;
   review: boolean;
   patch: boolean;

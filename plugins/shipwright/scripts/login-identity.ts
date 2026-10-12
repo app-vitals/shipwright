@@ -17,7 +17,7 @@
 import { spawnSync } from "node:child_process";
 
 /** Runs `gh` with the given args and returns stdout; throws on failure. */
-export type GhRunner = (args: string[]) => string;
+type GhRunner = (args: string[]) => string;
 
 const VIEWER_QUERY = "query { viewer { login } }";
 
@@ -29,7 +29,7 @@ export function canonicalLogin(login: string): string {
   return result.toLowerCase();
 }
 
-export const defaultGhRunner: GhRunner = (args) => {
+const defaultGhRunner: GhRunner = (args) => {
   const result = spawnSync("gh", args, { encoding: "utf8" });
   if (result.status !== 0) {
     throw new Error(

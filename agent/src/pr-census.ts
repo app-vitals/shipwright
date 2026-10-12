@@ -73,7 +73,7 @@ export type PrOrigin =
  * result plus a pre-resolved "does a task-store row exist for this PR"
  * boolean (the caller, `runPrCensus`, resolves that lookup so this function
  * stays pure and independently testable). */
-export interface ClassifyPrOriginInput {
+interface ClassifyPrOriginInput {
   authorLogin: string | null | undefined;
   headRefName: string | null | undefined;
   hasTaskRowMatch: boolean;

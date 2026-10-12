@@ -23,7 +23,7 @@ import { PrismaClient } from "../prisma/client/client.ts";
  * 5s preserves the pre-upgrade behaviour: a wedged/unreachable Postgres surfaces
  * as a fast error instead of a request that hangs until the client gives up.
  */
-export const DEFAULT_CONNECT_TIMEOUT_MS = 5000;
+const DEFAULT_CONNECT_TIMEOUT_MS = 5000;
 
 /** Default sink for idle-client pool errors. */
 function logIdlePoolError(err: unknown): void {

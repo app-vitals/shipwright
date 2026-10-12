@@ -12,7 +12,7 @@ import type { PrismaClient, ChatToken } from "./index.ts";
 
 export type { ChatToken };
 
-export interface ChatTokenValidated {
+interface ChatTokenValidated {
   /** The ChatToken row id. */
   id: string;
   /** null = admin token; set = agent token scoped to this agent ID. */

@@ -1127,7 +1127,7 @@ export const PATCH_NO_PROGRESS_REASON_PREFIX =
   "patch dispatch made no progress";
 
 /** Minimal PR-record shape consulted by clearStaleSkipBlock (PSL-3.2). */
-export interface SkipBlockRecord {
+interface SkipBlockRecord {
   id?: string;
   blocked?: boolean | null;
   blockedReason?: string | null;

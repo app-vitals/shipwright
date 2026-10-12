@@ -18,10 +18,10 @@ import {
 } from "./eval-graders.ts";
 import type { Finding } from "./finding.ts";
 
-export const MIN_CASES = 20;
-export const MAX_CASES = 30;
+const MIN_CASES = 20;
+const MAX_CASES = 30;
 
-export interface HistoricalTask {
+interface HistoricalTask {
   id: string;
   /** Prompt with the outcome hidden. */
   prompt: string;
@@ -30,7 +30,7 @@ export interface HistoricalTask {
   expectedState?: { field: string; expected: string };
 }
 
-export interface EvalCase {
+interface EvalCase {
   id: string;
   kind: "trigger-should" | "trigger-shouldnt" | "step" | "historical";
   prompt: string;
@@ -91,7 +91,7 @@ export function extractSteps(markdown: string): string[] {
   return [...new Set(out)];
 }
 
-export function skillNameOf(file: string): string {
+function skillNameOf(file: string): string {
   const base = file.split("/").pop() ?? file;
   return base === "SKILL.md"
     ? (file.split("/").slice(-2, -1)[0] ?? base)
