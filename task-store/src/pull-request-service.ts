@@ -58,7 +58,7 @@ type PrismaTxClient = Pick<
   Prisma.TransactionClient,
   "pullRequest" | "pullRequestEvent"
 >;
-export type PullRequestTxClient = PrismaTxClient;
+type PullRequestTxClient = PrismaTxClient;
 
 /**
  * Parses an `updatedSince` filter value into a Date, matching the
@@ -319,14 +319,14 @@ export interface PrOriginStamper {
  * accountId is the linked task's own account, so a blocked PR in another
  * account never matches (SSP-6.3).
  */
-export interface BlockedPrLookupKey {
+interface BlockedPrLookupKey {
   accountId: string;
   repo: string;
   prNumber: number;
 }
 
 /** Input for PullRequestService.appendFinding. */
-export interface AppendFindingInput {
+interface AppendFindingInput {
   ref: string;
   disposition: PrFindingDisposition;
   source: PrFindingSource;

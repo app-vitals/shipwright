@@ -16,7 +16,7 @@ import type {
 
 export type { AgentGitHubInstallationsSnapshot };
 
-export interface PushGitHubInstallationsInput {
+interface PushGitHubInstallationsInput {
   reportedAt: Date;
   installations: Prisma.InputJsonValue;
 }

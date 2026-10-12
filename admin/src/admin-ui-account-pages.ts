@@ -12,7 +12,7 @@ import { escapeHtml, renderAdminToolbar } from "./admin-ui-styles.ts";
 
 export const ACCOUNT_PATH = "/admin/account";
 
-export interface AccountPageOpts {
+interface AccountPageOpts {
   userEmail: string;
   account: Account;
   agentCount: number;

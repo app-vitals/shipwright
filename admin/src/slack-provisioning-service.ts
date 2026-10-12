@@ -31,7 +31,7 @@ export const PROVISION_STATE_TTL_SECONDS = 300; // 5 min
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
-export interface ProvisionStatePayload {
+interface ProvisionStatePayload {
   agentId: string;
   clientId: string;
   clientSecret: string;
@@ -48,7 +48,7 @@ export interface ProvisionStatePayload {
   redirectUri?: string;
 }
 
-export type StartConnectResult =
+type StartConnectResult =
   | {
       ok: true;
       /** Signed JWT to store in the PROVISION_STATE_COOKIE. */
@@ -94,11 +94,11 @@ export type CompleteConnectResult =
       ghConnectError?: string;
     };
 
-export type SaveAppTokenResult =
+type SaveAppTokenResult =
   | { ok: true; agentId: string }
   | { ok: false; agentId: string; error: string };
 
-export interface SlackAppManifestResult {
+interface SlackAppManifestResult {
   appId: string;
   oauthRedirectUrl: string;
   clientId: string;
@@ -106,7 +106,7 @@ export interface SlackAppManifestResult {
   signingSecret: string;
 }
 
-export interface SlackProvisioningServiceDeps {
+interface SlackProvisioningServiceDeps {
   slackClient: AdminUISlackClient;
   agentService: Pick<AgentService, "getDetail" | "updateFields">;
   agentEnvService: Pick<AgentEnvService, "patch" | "getConfigBundle">;

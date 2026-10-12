@@ -19,9 +19,9 @@
 
 import type { Ledger, LedgerEntry } from "./ledger.ts";
 
-export const MIN_WATCH_RUNS = 20;
+const MIN_WATCH_RUNS = 20;
 
-export const WATCH_THRESHOLDS = {
+const WATCH_THRESHOLDS = {
   /** Relative increase in avg first-turn context tokens (the cost proxy). */
   costRelative: 0.2,
   /** Relative increase in avg turns per run. */
@@ -32,7 +32,7 @@ export const WATCH_THRESHOLDS = {
   patchCyclesAbsolute: 0.5,
 } as const;
 
-export const WATCH_CAVEATS = [
+const WATCH_CAVEATS = [
   "Time-window correlation, not per-run attribution: simultaneous prompt changes landing in the same window confound the series.",
   "The model cutover shifts cost, turns and skip rate for every phase at once and is not separable from this change.",
   "Patch cycles come from PR windows per context fingerprint, not per phase.",
@@ -67,16 +67,16 @@ export interface PrOutcomeRow {
 
 export type Metric = "cost" | "turns" | "skipRate" | "patchCycles";
 
-export interface MetricCompare {
+interface MetricCompare {
   metric: Metric;
   before: number;
   after: number;
   regressed: boolean;
 }
 
-export type PhaseVerdict = "ok" | "regressed" | "insufficient-data";
+type PhaseVerdict = "ok" | "regressed" | "insufficient-data";
 
-export interface PhaseWatch {
+interface PhaseWatch {
   phase: string;
   verdict: PhaseVerdict;
   beforeRuns: number;
@@ -84,14 +84,14 @@ export interface PhaseWatch {
   comparisons: MetricCompare[];
 }
 
-export interface WatchResult {
+interface WatchResult {
   fingerprint: string;
   verdict: PhaseVerdict;
   phases: PhaseWatch[];
   caveats: readonly string[];
 }
 
-export interface WatchSeries {
+interface WatchSeries {
   outcomes: OutcomeRow[];
   prOutcomes: PrOutcomeRow[];
 }
@@ -278,7 +278,7 @@ export function evaluateWatch(
 
 // ─── revert-proposal task ────────────────────────────────────────────────────
 
-export interface RevertProposalTask {
+interface RevertProposalTask {
   id: string;
   title: string;
   status: "pending";
@@ -330,14 +330,14 @@ export function buildRevertProposal(
   };
 }
 
-export interface WatchOutcome {
+interface WatchOutcome {
   result: WatchResult;
   ledger: Ledger;
   task?: RevertProposalTask;
   filed: boolean;
 }
 
-export interface WatchDeps {
+interface WatchDeps {
   fetchFn: WatchFetch;
   postFn: WatchPostFetch;
   now: () => Date;

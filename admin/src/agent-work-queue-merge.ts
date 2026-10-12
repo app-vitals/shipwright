@@ -46,7 +46,7 @@ export interface AgentSnapshotForMerge<T extends { type: string; id: string }> {
  * queuedByAgentIds follows the order snapshots were passed in (and, within
  * one agent's snapshot, the order items appeared) — no re-sorting.
  */
-export type MergedWorkItem<T extends { type: string; id: string }> = T & {
+type MergedWorkItem<T extends { type: string; id: string }> = T & {
   queuedByAgentIds: string[];
 };
 
@@ -69,7 +69,7 @@ export interface AgentForEligibility {
 }
 
 /** repo -> agentId[], built once from the fleet's agent list. */
-export type EligibilityIndex = Map<string, string[]>;
+type EligibilityIndex = Map<string, string[]>;
 
 // ─── Merge / dedupe ─────────────────────────────────────────────────────────
 

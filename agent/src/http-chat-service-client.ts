@@ -41,12 +41,12 @@ export interface Message {
  * proves liveness returns whether a cancel was requested, so there is no second
  * polling loop and no inbound HTTP surface on the agent.
  */
-export interface HeartbeatResult {
+interface HeartbeatResult {
   /** True when cancelRequestedAt is set on the message — the run should abort. */
   cancelRequested: boolean;
 }
 
-export interface ReplyResult {
+interface ReplyResult {
   userMessage: Message;
   assistantMessage: Message;
 }
@@ -64,7 +64,7 @@ export interface ListThreadsResult {
   offset: number;
 }
 
-export interface ReplyOptions {
+interface ReplyOptions {
   body: string;
   tokens?: unknown;
   costUsd?: number;

@@ -97,7 +97,7 @@ import type { ModelUsage } from "./claude.ts";
 // biome-ignore lint/suspicious/noExplicitAny: Bolt client type is complex
 type SlackClient = any;
 
-export interface SlackProgressOptions {
+interface SlackProgressOptions {
   client: SlackClient;
   channel: string;
   threadTs: string;
@@ -126,7 +126,7 @@ export interface SlackProgressOptions {
   recipientTeamId?: string;
 }
 
-export interface SlackProgressStartOptions {
+interface SlackProgressStartOptions {
   /**
    * True when the caller (ThreadStatusTracker.enter()'s inverse — see
    * slack-thread-status-tracker.ts) signals another message on this thread

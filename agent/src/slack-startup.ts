@@ -71,7 +71,7 @@ export const slackClientRef: SlackClientRef = createSlackClientRef();
  * an independent, disposable guard instead of mutating shared state that
  * would otherwise leak between test cases.
  */
-export interface SlackStartGuard {
+interface SlackStartGuard {
   isInFlight(): boolean;
   set(inFlight: boolean): void;
 }
@@ -93,7 +93,7 @@ export function createSlackStartGuard(): SlackStartGuard {
  * each other; tests should construct their own via createSlackStartGuard()
  * instead of reusing this singleton.
  */
-export const slackStartGuard: SlackStartGuard = createSlackStartGuard();
+const slackStartGuard: SlackStartGuard = createSlackStartGuard();
 
 export interface StartSlackDeps {
   /** Reads live env-derived Slack config (botToken/appToken/signingSecret) at call time — not a static snapshot. */

@@ -31,7 +31,7 @@ function statusBadge(status: string): string {
   return `<span class="badge ${cls}">${escapeHtml(status)}</span>`;
 }
 
-export interface AccountsListPageOpts {
+interface AccountsListPageOpts {
   userEmail: string;
   accounts: AccountWithCounts[];
   /** accountId -> owner emails. */
@@ -73,7 +73,7 @@ export function renderAccountsListPage(opts: AccountsListPageOpts): string {
   });
 }
 
-export interface AccountDetailPageOpts {
+interface AccountDetailPageOpts {
   userEmail: string;
   account: AccountWithCounts;
   agents: AccountAgentRef[];

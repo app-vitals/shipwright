@@ -23,7 +23,7 @@
 /** Runs a command in `cwd`, returning trimmed stdout; throws on failure. */
 export type ExecFn = (cmd: string, args: string[], cwd: string) => string;
 
-export interface ResolveGhOwnerOptions {
+interface ResolveGhOwnerOptions {
   defaultOwner: string;
   cwd?: string;
   exec?: ExecFn;

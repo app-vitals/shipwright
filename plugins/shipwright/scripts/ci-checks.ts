@@ -1,9 +1,9 @@
-export interface CiCheck {
+interface CiCheck {
   name: string;
   conclusion: string;
 }
 
-export interface ActionsJob {
+interface ActionsJob {
   name: string;
   conclusion: string | null;
 }

@@ -12,7 +12,7 @@ import type { PrismaTransactionClient } from "./prisma-tx.ts";
 
 export type { AccountMember };
 
-export type AccountRole = "owner" | "member";
+type AccountRole = "owner" | "member";
 
 export class LastOwnerError extends Error {
   constructor(public readonly accountId: string) {

@@ -16,7 +16,7 @@ import { NotFoundError } from "./errors.ts";
 export type { AgentCronRun };
 
 /** An AgentCronRun with its per-model token/cost breakdown rows attached. */
-export type AgentCronRunWithModelBreakdown = Prisma.AgentCronRunGetPayload<{
+type AgentCronRunWithModelBreakdown = Prisma.AgentCronRunGetPayload<{
   include: { modelBreakdown: true };
 }>;
 
@@ -25,7 +25,7 @@ export type AgentCronRunWithModelBreakdown = Prisma.AgentCronRunGetPayload<{
  * owning cron's id/name/schedule attached — used by cross-cron listings
  * (e.g. listForAgent) so callers don't need N+1 cron lookups.
  */
-export type AgentCronRunWithCron = Prisma.AgentCronRunGetPayload<{
+type AgentCronRunWithCron = Prisma.AgentCronRunGetPayload<{
   include: {
     modelBreakdown: true;
     cron: { select: { id: true; name: true; schedule: true } };
@@ -33,7 +33,7 @@ export type AgentCronRunWithCron = Prisma.AgentCronRunGetPayload<{
   };
 }>;
 
-export interface CreateAgentCronRunInput {
+interface CreateAgentCronRunInput {
   startedAt: Date;
   completedAt?: Date | null;
   skipped?: boolean;
@@ -116,7 +116,7 @@ export interface PatchAgentCronRunInput {
   skillUsage?: SkillUsageEntry[];
 }
 
-export interface ListAgentCronRunsOptions {
+interface ListAgentCronRunsOptions {
   limit?: number;
   offset?: number;
   /** Narrow to runs dispatched against this work item (e.g. "WLS-2.2" or "acme/x#123"). */
@@ -125,14 +125,14 @@ export interface ListAgentCronRunsOptions {
   phaseId?: string;
 }
 
-export interface AgentCronRunList {
+interface AgentCronRunList {
   items: AgentCronRunWithModelBreakdown[];
   total: number;
   limit: number;
   offset: number;
 }
 
-export interface ListForAgentOptions {
+interface ListForAgentOptions {
   /** Narrow to a single cron. Still scoped to agentId — a cronId belonging
    * to a different agent yields an empty result, not an error. */
   cronId?: string;
@@ -147,7 +147,7 @@ export interface ListForAgentOptions {
   offset?: number;
 }
 
-export interface AgentCronRunListForAgent {
+interface AgentCronRunListForAgent {
   items: AgentCronRunWithCron[];
   total: number;
   limit: number;
@@ -159,7 +159,7 @@ export interface AgentCronRunListForAgent {
  * the agent scoping itself comes from the `agentIds` array argument, not
  * from an option here.
  */
-export interface ListAcrossAgentsOptions {
+interface ListAcrossAgentsOptions {
   /** Narrow to a single cron, still scoped to the given agentIds. */
   cronId?: string;
   /**

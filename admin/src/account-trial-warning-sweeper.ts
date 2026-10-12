@@ -47,7 +47,7 @@ export interface AccountTrialWarningSweeperDeps {
   log?: (line: string) => void;
 }
 
-export interface AccountTrialWarningSweepResult {
+interface AccountTrialWarningSweepResult {
   /** Accounts warned (≥1 post sent) and stamped. */
   warned: number;
   /** Due, but no agent of the account had usable Slack config. */
@@ -63,7 +63,7 @@ type Candidate = Awaited<
 >[number];
 
 /** Slack text for one account's warning, posted through one of its agents. */
-export function buildAccountTrialWarningMessage(
+function buildAccountTrialWarningMessage(
   accountName: string,
   trialExpiresAt: Date,
   now: Date,

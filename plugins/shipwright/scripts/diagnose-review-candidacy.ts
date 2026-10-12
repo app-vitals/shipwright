@@ -50,7 +50,7 @@ import {
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
-export type DiagnoseTarget = { org: string; repo: string; prNumber: number };
+type DiagnoseTarget = { org: string; repo: string; prNumber: number };
 
 export interface DiagnoseDeps {
   fetchPrInfo: (org: string, repo: string, prNumber: number) => Promise<PrInfo>;
@@ -202,7 +202,7 @@ export async function fetchPrInfoViaGh(
 }
 
 /** Wire production implementations — real gh CLI + task-store calls. */
-export async function buildDiagnoseDeps(): Promise<DiagnoseDeps> {
+async function buildDiagnoseDeps(): Promise<DiagnoseDeps> {
   const productionDeps = await buildProductionDeps({ ghJson, ghGraphql });
   return {
     fetchPrInfo: (org: string, repo: string, prNumber: number) =>

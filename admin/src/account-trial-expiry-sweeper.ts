@@ -25,14 +25,14 @@ import type { AccountLifecycle } from "./account-lifecycle.ts";
 import type { AccountService } from "./accounts.ts";
 import { type Clock, SystemClock } from "./clock.ts";
 
-export interface AccountTrialExpirySweeperDeps {
+interface AccountTrialExpirySweeperDeps {
   accounts: Pick<AccountService, "listExpiredActiveIds" | "expireTrial">;
   lifecycle: Pick<AccountLifecycle, "lockDown">;
   clock?: Clock;
   log?: (line: string) => void;
 }
 
-export interface AccountTrialExpirySweepResult {
+interface AccountTrialExpirySweepResult {
   /** Accounts flipped active → trial_expired this tick. */
   expired: number;
   /** Crons disabled (lockdown-marked) this tick. */

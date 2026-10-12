@@ -74,7 +74,7 @@ export interface BackfillDeps {
 }
 
 /** Per-repo result of `runBackfillForRepo()` — printed by the CLI as a human-readable summary so a run's output is directly sanity-checkable, no separate verification tooling needed. */
-export interface RepoBackfillSummary {
+interface RepoBackfillSummary {
   repo: string;
   fetchedCount: number;
   inWindowCount: number;
@@ -92,7 +92,7 @@ export interface RepoBackfillSummary {
  * 1000-result cap at all), so this just needs to comfortably exceed
  * realistic repo history rather than the specific window size.
  */
-export const GH_PR_LIST_LIMIT = 5000;
+const GH_PR_LIST_LIMIT = 5000;
 
 // ─── Core logic ───────────────────────────────────────────────────────────────
 

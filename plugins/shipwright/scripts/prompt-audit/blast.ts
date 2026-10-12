@@ -22,7 +22,7 @@ import {
   walkInventory,
 } from "./inventory.ts";
 
-export type ReferrerVia = "import" | "path" | "invoke";
+type ReferrerVia = "import" | "path" | "invoke";
 
 export interface Referrer {
   path: string;
@@ -32,18 +32,18 @@ export interface Referrer {
   line: number;
 }
 
-export interface CronInvoker {
+interface CronInvoker {
   name: string;
   /** Loop phase (`dev-task`, `review`, ...) for crons dispatched by the loop. */
   loopPhase: string | null;
 }
 
-export interface PinningAssertion {
+interface PinningAssertion {
   line: number;
   text: string;
 }
 
-export interface PinningTest {
+interface PinningTest {
   file: string;
   assertions: PinningAssertion[];
 }
@@ -60,7 +60,7 @@ export interface BlastReport {
   loadClass: Record<AuditContext, LoadClass> | null;
 }
 
-export const LOWER_BOUND_NOTE =
+const LOWER_BOUND_NOTE =
   "Lower bound: derived from prose references, so mentions spelled in ways the scan does not recognise are not counted.";
 
 const MANIFEST_RE = /(?:^|\/)agent-types\/[^/]+\/manifest\.yaml$/;

@@ -15,7 +15,7 @@ import {
   walkInventory,
 } from "./inventory.ts";
 
-export type RefKind = "path" | "command" | "flag" | "model-id" | "env-var";
+type RefKind = "path" | "command" | "flag" | "model-id" | "env-var";
 
 export type ResolverRule =
   | "unresolvable-path"

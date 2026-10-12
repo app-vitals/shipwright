@@ -26,7 +26,7 @@ import type { PrismaTransactionClient } from "./prisma-tx.ts";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
-export interface CreateAgentInput {
+interface CreateAgentInput {
   name: string;
   slackId?: string | null;
   selfHosted?: boolean;
@@ -125,7 +125,7 @@ export interface AgentDetail {
   cleanupAfterDays?: number;
 }
 
-export interface UpdateSelfHostedInput {
+interface UpdateSelfHostedInput {
   /** SSP-5.3: owning account; null clears it (unassigned/platform agent). */
   accountId?: string | null;
   /**
@@ -651,7 +651,7 @@ export interface CreateAgentFormInput {
  * drop-in replacement: admin-ui.ts maps `errorCode` straight into the
  * redirect URL (`/admin/agents/new?error=${errorCode}`).
  */
-export type CreateAgentErrorCode =
+type CreateAgentErrorCode =
   | "missing_fields"
   | "invalid_type"
   | "provisioning_disabled"
@@ -663,7 +663,7 @@ export type CreateAgentErrorCode =
   | "quota_exceeded"
   | "account_inactive";
 
-export type CreateAgentResult =
+type CreateAgentResult =
   | { ok: true; agent: AgentDetail; restrictSlackToMembers: boolean }
   | { ok: false; errorCode: CreateAgentErrorCode; errorMessage?: string };
 

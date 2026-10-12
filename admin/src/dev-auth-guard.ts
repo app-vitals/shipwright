@@ -9,7 +9,7 @@
  * reads). Production is hard-blocked regardless of the ADMIN_DEV_AUTH flag.
  */
 
-export interface DevAuthGuardEnv {
+interface DevAuthGuardEnv {
   ADMIN_DEV_AUTH?: string;
   NODE_ENV?: string;
 }

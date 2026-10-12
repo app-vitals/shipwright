@@ -20,7 +20,7 @@
  *   - Subscribes via navigator.serviceWorker.ready → pushManager.subscribe.
  */
 
-export interface PushToggleArgs {
+interface PushToggleArgs {
   pushEnabled: boolean;
   vapidPublicKey: string;
   agentId: string;

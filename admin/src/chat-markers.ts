@@ -15,7 +15,7 @@
  * admin and agent are separate workspace packages with no cross-imports.
  */
 
-export interface ParseChatMarkersResult {
+interface ParseChatMarkersResult {
   /** Message body with all markers removed. */
   cleaned: string;
   /** Extracted upload file paths (in order of occurrence). */

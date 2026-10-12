@@ -48,7 +48,7 @@ export interface Deps {
   stderr: (chunk: string) => void;
 }
 
-export interface SlackSayResult {
+interface SlackSayResult {
   exit: 0;
 }
 

@@ -25,7 +25,7 @@ type ManifestCron = AgentTypeManifest["crons"][number];
 
 export type { AgentCronJob };
 
-export interface CronRunSummary {
+interface CronRunSummary {
   startedAt: Date;
   completedAt: Date | null;
   skipped: boolean;

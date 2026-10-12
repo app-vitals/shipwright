@@ -24,7 +24,7 @@ export function clearCache(): void {
   cache.clear();
 }
 
-export interface UserResolverClient {
+interface UserResolverClient {
   users: {
     info(args: { user: string }): Promise<{
       user?: {

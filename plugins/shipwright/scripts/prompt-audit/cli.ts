@@ -65,11 +65,11 @@ import {
   watchFinding,
 } from "./watch.ts";
 
-export const DEFAULT_MODELS = ["claude-sonnet-5-5", "claude-sonnet-4-6"];
+const DEFAULT_MODELS = ["claude-sonnet-5-5", "claude-sonnet-4-6"];
 const DEFAULT_SINCE_DAYS = 28;
 const WEEK_DAYS = 7;
 
-export interface CliFs extends InventoryDeps {
+interface CliFs extends InventoryDeps {
   exists(root: string, relPath: string): boolean;
   writeFile(root: string, relPath: string, content: string): void;
 }
@@ -97,7 +97,7 @@ export interface CliDeps {
   };
 }
 
-export interface CliResult {
+interface CliResult {
   exit: number;
   stdout: string;
 }
@@ -376,7 +376,7 @@ async function runMeasure(args: ParsedArgs, deps: CliDeps): Promise<CliResult> {
 
 // ─── blast ───────────────────────────────────────────────────────────────────
 
-export function formatBlast(r: BlastReport): string {
+function formatBlast(r: BlastReport): string {
   const list = <T>(rows: T[], f: (x: T) => string) =>
     rows.length ? rows.map((x) => `  - ${f(x)}`) : ["  (none)"];
   return `${[

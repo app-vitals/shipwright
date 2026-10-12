@@ -419,7 +419,7 @@ export async function installPlugins(
  * Throws if required directories cannot be created.
  */
 /** Filesystem ops used by ensureDotClaudeSymlink — injectable for tests. */
-export interface DotClaudeFs {
+interface DotClaudeFs {
   mkdirSync: typeof mkdirSync;
   lstatSync: typeof lstatSync;
   unlinkSync: typeof unlinkSync;
@@ -517,7 +517,7 @@ export function ensureDotClaudeSymlink(
  * doesn't dangle once the First-Run Ritual deletes BOOTSTRAP.md itself.
  * No-op if the path or the include line doesn't exist.
  */
-export function stripBootstrapInclude(claudeMdPath: string): void {
+function stripBootstrapInclude(claudeMdPath: string): void {
   if (!existsSync(claudeMdPath)) return;
   const content = readFileSync(claudeMdPath, "utf8");
   const lines = content.split("\n");

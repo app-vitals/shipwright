@@ -10,10 +10,10 @@
 export const MAX_ATTACHMENT_BYTES = 10 * 1024 * 1024;
 
 /** MIME type prefixes accepted wholesale (e.g. any text/* file). */
-export const ALLOWED_MIME_PREFIXES = ["text/"];
+const ALLOWED_MIME_PREFIXES = ["text/"];
 
 /** Exact MIME types accepted beyond the prefix list. */
-export const ALLOWED_MIME_EXACT = new Set([
+const ALLOWED_MIME_EXACT = new Set([
   "image/jpeg",
   "image/png",
   "image/gif",
@@ -75,7 +75,7 @@ export function isAudioFilename(filename: string | null | undefined): boolean {
   return audioContentTypeForFilename(filename) !== null;
 }
 
-export type AttachmentValidationResult =
+type AttachmentValidationResult =
   | { ok: false; error: string; status: 413 | 415 }
   | { ok: true; filename: string; size: number };
 

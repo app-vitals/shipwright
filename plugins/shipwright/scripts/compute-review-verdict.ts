@@ -17,22 +17,22 @@
 
 export type Verdict = "APPROVE" | "COMMENT";
 
-export type ComputeVerdictInput = {
+type ComputeVerdictInput = {
   selfReview: boolean;
   unaddressedFindings: boolean;
   currentPassHasBlockingFindings: boolean;
 };
 
-export type ComputeVerdictResult = {
+type ComputeVerdictResult = {
   event: Verdict;
   verdictLabel: Verdict;
 };
 
-export type ValidateReviewVerdictInput = ComputeVerdictInput & {
+type ValidateReviewVerdictInput = ComputeVerdictInput & {
   body: string;
 };
 
-export type ValidateReviewVerdictResult = {
+type ValidateReviewVerdictResult = {
   valid: boolean;
   error?: string;
 };

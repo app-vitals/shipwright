@@ -45,7 +45,7 @@ export interface Measured {
   runAt: string;
 }
 
-export interface HistoryEvent {
+interface HistoryEvent {
   at: string;
   event: string;
   status: FindingStatus;
@@ -76,14 +76,14 @@ export interface LedgerFs {
   write(path: string, content: string): void;
 }
 
-export interface ScanResult {
+interface ScanResult {
   findings: ScanFinding[];
   models: string[];
   baselines: Ledger["baselines"];
   claudeCodeVersion?: string;
 }
 
-export interface MergeOptions {
+interface MergeOptions {
   /**
    * Registry check. When given, matching findings become `suppressed` and
    * previously suppressed findings that no longer match return to tracking.

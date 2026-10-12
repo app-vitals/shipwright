@@ -32,7 +32,7 @@
 
 import type { ContentBlock } from "./progress-milestones.ts";
 
-export interface FirstTurnUsage {
+interface FirstTurnUsage {
   model: string;
   messageId: string;
   inputTokens: number;
@@ -42,7 +42,7 @@ export interface FirstTurnUsage {
   contextTokens: number;
 }
 
-export type AttributionKind = "skill" | "agent" | "root";
+type AttributionKind = "skill" | "agent" | "root";
 
 export interface SkillUsageRow {
   kind: AttributionKind;
@@ -73,7 +73,7 @@ export interface RunTelemetry {
 }
 
 /** Minimal usage shape shared by stream-json and transcript lines. */
-export interface TurnUsageLike {
+interface TurnUsageLike {
   input_tokens?: number;
   output_tokens?: number;
   cache_read_input_tokens?: number;

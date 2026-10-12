@@ -12,7 +12,7 @@
  */
 
 /** Parsed flag values, keyed by the exact flag string passed in `flagSpecs` (e.g. `"--agent-id"`). */
-export type ParsedFlags<Flags extends readonly string[]> = Record<
+type ParsedFlags<Flags extends readonly string[]> = Record<
   Flags[number],
   string | undefined
 >;

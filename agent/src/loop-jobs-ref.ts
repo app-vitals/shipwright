@@ -25,7 +25,7 @@
  * loop-cron-classifier.ts's style.
  */
 
-export interface JobsRef<T> {
+interface JobsRef<T> {
   /** Returns the most recently set jobs list, or [] if set() was never called. */
   get(): T[];
   /** Replaces the current jobs list. */

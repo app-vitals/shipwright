@@ -144,7 +144,7 @@ import {
  * four it is gated behind BOTH its manifest cron toggle and the
  * SHIPWRIGHT_AGENT_AUTONOMOUS_PLAN_SESSION_ENABLED kill switch.
  */
-export type LoopPhase = "dev-task" | "plan" | "review" | "patch" | "deploy";
+type LoopPhase = "dev-task" | "plan" | "review" | "patch" | "deploy";
 
 export interface LoopOrchestratorDeps {
   /** WL-2.2 dev-task qualification, pre-wired over its own production deps. */
@@ -505,7 +505,7 @@ const PHASE_COMMANDS: Record<LoopPhase, string> = {
 };
 
 /** Which slash-command variant a dispatch ran (DTA-1.3). */
-export type CommandVariant = "default" | "alternate";
+type CommandVariant = "default" | "alternate";
 
 /**
  * Default existence check for a configured alternate command: it must be a
@@ -600,7 +600,7 @@ function readBooleanEnv(name: string): boolean {
  * provider can't produce a `/shipwright:plan-session undefined undefined`
  * dispatch.
  */
-export function buildPlanCommandArgs(task: WorkTaskCandidate): string | null {
+function buildPlanCommandArgs(task: WorkTaskCandidate): string | null {
   const repo = task.repo?.trim();
   const session = task.session?.trim();
   if (!repo || !session) return null;
@@ -2265,7 +2265,7 @@ export function createLoopOrchestrator(
 
 // ─── Getter factory ────────────────────────────────────────────────────────────
 
-export interface LoopOrchestratorGetterDeps {
+interface LoopOrchestratorGetterDeps {
   /** DTW-1.3 — see LoopOrchestratorDeps's runner doc comment. */
   runner: (
     message: string,
@@ -2413,7 +2413,7 @@ export function buildClaimPrRequest(
   };
 }
 
-export async function createProductionLoopOrchestrator(
+async function createProductionLoopOrchestrator(
   opts: LoopOrchestratorProductionOptions,
 ): Promise<(jobs: CronJobLike[]) => Promise<void>> {
   const devTaskDeps = buildDevTaskDeps();

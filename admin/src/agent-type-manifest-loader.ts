@@ -36,17 +36,17 @@ import {
 export const DEFAULT_AGENT_TYPE_NAME = "coding";
 
 /** Reads a manifest's raw YAML text for a type; throws if it does not exist. */
-export type ManifestReader = (typeName: string) => string;
+type ManifestReader = (typeName: string) => string;
 
 /** Sink for the unknown-typeName warning (defaults to console.warn). */
-export type WarnFn = (message: string) => void;
+type WarnFn = (message: string) => void;
 
 /**
  * Lists the typeName of every discoverable agent type directory (e.g. the
  * names of the subdirectories under agent-types/). Used by listTypes() to
  * discover candidates before resolving each one's manifest via `read`.
  */
-export type TypeDirLister = () => string[];
+type TypeDirLister = () => string[];
 
 /** A discovered agent type, as surfaced to the new-agent type picker. */
 export interface AgentTypeOption {

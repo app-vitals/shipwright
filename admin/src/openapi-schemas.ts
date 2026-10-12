@@ -287,7 +287,7 @@ export const PatchAgentCronJobBodySchema = z
 
 // ─── Model breakdown entry ────────────────────────────────────────────────────
 
-export const ModelBreakdownEntrySchema = z
+const ModelBreakdownEntrySchema = z
   .object({
     model: z.string().openapi({ example: "claude-sonnet-4-5" }),
     inputTokens: z.number().int().default(0).openapi({ example: 200 }),
@@ -302,7 +302,7 @@ export type ModelBreakdownEntry = z.infer<typeof ModelBreakdownEntrySchema>;
 
 // ─── AgentCronRun ─────────────────────────────────────────────────────────────
 
-export const ContextBaselineEntrySchema = z
+const ContextBaselineEntrySchema = z
   .object({
     model: z.string().openapi({ example: "claude-sonnet-4-6" }),
     contextTokens: z.number().int().openapi({ example: 79188 }),
@@ -312,7 +312,7 @@ export const ContextBaselineEntrySchema = z
   })
   .openapi("ContextBaselineEntry");
 
-export const SkillUsageEntrySchema = z
+const SkillUsageEntrySchema = z
   .object({
     kind: z.enum(["skill", "agent", "root"]).openapi({ example: "skill" }),
     name: z.string().openapi({ example: "shipwright:task-store" }),
@@ -804,7 +804,7 @@ export const AgentEnvPatchBodySchema = z
  * tick, so a phase the agent can emit but this enum doesn't list 400s the
  * whole snapshot (PDR-4.1 added "plan").
  */
-export const RankedWorkItemSchema = z
+const RankedWorkItemSchema = z
   .object({
     type: z.enum(["task", "pr"]).openapi({ example: "task" }),
     id: z.string().openapi({ example: "WLS-2.2" }),
@@ -865,7 +865,7 @@ export const AgentWorkQueueSnapshotSchema = z
  * (.strict()): unknown fields — notably tokens or other credentials — are
  * rejected with 400 rather than silently stored.
  */
-export const GitHubInstallationSchema = z
+const GitHubInstallationSchema = z
   .object({
     owner: z.string().min(1).max(200).openapi({ example: "app-vitals" }),
     installationId: z.number().int().positive().openapi({ example: 12345678 }),

@@ -27,7 +27,7 @@ import {
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
-export type ChatRunner = (
+type ChatRunner = (
   message: string,
   sessionKey?: string,
   onProgress?: ProgressCallback,
@@ -58,7 +58,7 @@ const AUDIO_EXTENSION_REGEX = /\.(webm|ogg|wav|m4a|mp3)$/i;
  */
 const HEARTBEAT_INTERVAL_MS = 3_000;
 
-export interface ChatPollerOptions {
+interface ChatPollerOptions {
   client: ChatServiceClient;
   runner: ChatRunner;
   /** Poll interval in ms. Default: 5000 */
@@ -82,7 +82,7 @@ export interface ChatPollerOptions {
   voiceConfig?: VoiceConfig;
 }
 
-export interface ChatPoller {
+interface ChatPoller {
   /** Start the poll interval. */
   start(): void;
   /** Stop the poll interval. */

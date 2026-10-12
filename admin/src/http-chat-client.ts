@@ -61,7 +61,7 @@ export interface ThreadStats {
 }
 
 /** Optional file attachment carried alongside a created message. */
-export interface MessageAttachment {
+interface MessageAttachment {
   filename: string;
   size: number;
   bytes: Uint8Array;
@@ -74,7 +74,7 @@ export interface ListThreadsResult {
   offset: number;
 }
 
-export interface ListMessagesResult {
+interface ListMessagesResult {
   messages: ChatMessage[];
   total: number;
   limit: number;
@@ -86,7 +86,7 @@ export interface ListThreadsOptions {
   offset?: number;
 }
 
-export interface ListMessagesOptions {
+interface ListMessagesOptions {
   limit?: number;
   offset?: number;
   /**
@@ -98,12 +98,12 @@ export interface ListMessagesOptions {
   since?: string;
 }
 
-export interface CreateThreadOptions {
+interface CreateThreadOptions {
   title?: string;
   memberId?: string;
 }
 
-export interface UpdateThreadOptions {
+interface UpdateThreadOptions {
   title?: string;
 }
 

@@ -249,7 +249,7 @@ export function buildTrialExpiryWarningMessage(
 export type SlackPostMessageClient = Pick<WebClient, "chat">;
 
 /** Builds a Slack client for one agent's bot token. */
-export type SlackClientFactory = (botToken: string) => SlackPostMessageClient;
+type SlackClientFactory = (botToken: string) => SlackPostMessageClient;
 
 /**
  * The production factory: a fresh @slack/web-api WebClient per call, built

@@ -52,7 +52,7 @@ export interface GitHubAuthDeps {
 }
 
 /** The slice of GitHubInstallationsManager setupGitHubAuth drives. */
-export interface InstallationsManagerLike {
+interface InstallationsManagerLike {
   reconcile(scopeOwners: string[] | null): Promise<void>;
   getState(): InstallationsSnapshot;
   getToken(installationId: number): Promise<string>;

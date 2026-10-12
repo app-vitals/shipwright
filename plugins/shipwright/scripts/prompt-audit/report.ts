@@ -34,7 +34,7 @@ export function projectedSaving(f: ScanFinding, weeklyRuns = 1): number {
   return Math.max(0, f.metrics.before - after) * weeklyRuns;
 }
 
-export interface ReportInput {
+interface ReportInput {
   ledger: Ledger;
   generatedAt: Date;
   /** Runs per week used to scale per-run token savings; default 1. */

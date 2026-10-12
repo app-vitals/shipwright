@@ -5,14 +5,14 @@
  */
 
 /** The two read-backend modes the server can run in. */
-export type ProviderMode = "fixtures" | "taskstore";
+type ProviderMode = "fixtures" | "taskstore";
 
 /**
  * Minimal env shape the selector reads (subset of process.env). The index
  * signature keeps `process.env` (ProcessEnv) assignable while documenting the
  * keys actually consumed.
  */
-export interface ProviderEnv {
+interface ProviderEnv {
   METRICS_OFFLINE?: string;
   /** Base URL of the Shipwright task-store service (read-only tasks + PRs). */
   METRICS_TASK_STORE_URL?: string;

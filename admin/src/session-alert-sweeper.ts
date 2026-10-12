@@ -147,7 +147,7 @@ export interface SessionForAlert {
 }
 
 /** Per-tick counters, also the value `tick()` resolves to. */
-export interface SessionAlertSweepResult {
+interface SessionAlertSweepResult {
   immediate: number;
   reminders: number;
   completions: number;
@@ -161,16 +161,16 @@ export interface SessionAlertSweepResult {
  * session-scope.ts declares its own MembershipForScope: the real service
  * satisfies it, and test doubles don't have to fabricate a full AgentMember.
  */
-export interface MembershipLookup {
+interface MembershipLookup {
   listByEmail(email: string): Promise<Array<{ agentId: string }>>;
 }
 
 /** Likewise for AgentService.listByIds — only `repos` is read. */
-export interface AgentReposLookup {
+interface AgentReposLookup {
   listByIds(ids: string[]): Promise<Array<{ repos?: string[] }>>;
 }
 
-export interface SessionAlertSweeperDeps {
+interface SessionAlertSweeperDeps {
   prisma: SessionAlertPrismaLike;
   pushService: Pick<PushService, "notifySession">;
   agentMemberService: MembershipLookup;
@@ -213,10 +213,10 @@ export interface SessionAlertSweeperDeps {
 }
 
 /** Matches UserNotificationPrefs.reminderHourLocal's schema default. */
-export const DEFAULT_REMINDER_HOUR_LOCAL = 9;
+const DEFAULT_REMINDER_HOUR_LOCAL = 9;
 
 /** Matches admin-ui-pages.ts's default for the same SHIPWRIGHT_ADMIN_TZ concept. */
-export const DEFAULT_ALERT_TIMEZONE = "America/Los_Angeles";
+const DEFAULT_ALERT_TIMEZONE = "America/Los_Angeles";
 
 // ─── Pure helpers ───────────────────────────────────────────────────────────
 

@@ -163,13 +163,13 @@ export type ClaudeRunner = (
   extraEnv?: Record<string, string>,
 ) => Promise<ClaudeRunResult>;
 
-export type ResolveUserFn = (
+type ResolveUserFn = (
   userId: string,
   // biome-ignore lint/suspicious/noExplicitAny: Bolt client is complex
   client: any,
 ) => Promise<string>;
 
-export type ResolveUserEmailFn = (
+type ResolveUserEmailFn = (
   userId: string,
   // biome-ignore lint/suspicious/noExplicitAny: Bolt client is complex
   client: any,
@@ -204,7 +204,7 @@ export function isAllowedSlackSender(
  * shouldRejectSlackSender (which silently drops the message), the caller
  * always replies with this so the user isn't met with unexplained silence.
  */
-export const TRIAL_EXPIRED_NOTICE =
+const TRIAL_EXPIRED_NOTICE =
   "This trial has ended — contact us to continue.";
 
 /**

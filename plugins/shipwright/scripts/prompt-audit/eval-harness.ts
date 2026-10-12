@@ -21,7 +21,7 @@ export * from "./eval-diff.ts";
 export * from "./eval-graders.ts";
 export * from "./eval-runner.ts";
 
-export interface HarnessDeps extends CaseDeps {
+interface HarnessDeps extends CaseDeps {
   readFile(path: string): string;
 }
 

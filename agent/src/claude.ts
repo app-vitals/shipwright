@@ -12,7 +12,7 @@ import { type RunTelemetry, RunTelemetryAccumulator } from "./run-telemetry.ts";
 
 export type { RunTelemetry } from "./run-telemetry.ts";
 
-export interface LiveClaudeConfig {
+interface LiveClaudeConfig {
   model: string;
   fallbackModel?: string;
   effortLevel?: string;
@@ -72,7 +72,7 @@ export interface TokenUsage {
  * Per-model token usage entry, as emitted by the Claude CLI's `modelUsage`
  * map (camelCase) — distinct from the snake_case top-level `usage` shape.
  */
-export interface ModelUsageEntry {
+interface ModelUsageEntry {
   inputTokens: number;
   outputTokens: number;
   cacheReadInputTokens: number;
@@ -251,7 +251,7 @@ export class ClaudeAbortedError extends Error {
 }
 
 /** Which timer fired: idle-reset (no stdout activity) or the hard ceiling. */
-export type ClaudeTimeoutReason = "idle" | "ceiling";
+type ClaudeTimeoutReason = "idle" | "ceiling";
 
 export class ClaudeTimeoutError extends Error {
   constructor(
