@@ -89,7 +89,7 @@ import {
 } from "../openapi-schemas.ts";
 import { CLOSED_STATUSES, OPEN_STATUSES } from "../statuses.ts";
 import { MAX_BULK_TASKS, type TaskServiceLike } from "../task-service.ts";
-import { isOrgRepo } from "../validate.ts";
+import { isOrgRepo, normalizePr } from "../validate.ts";
 
 // Fields that gate task claim ownership. Agent tokens must go through the
 // dedicated /claim and /release routes to change these — never generic PATCH.
@@ -151,6 +151,15 @@ function stripRemovedFields(body: Record<string, unknown>): void {
   for (const key of REMOVED_TASK_FIELDS) {
     delete body[key];
   }
+}
+
+// Task.pr is Int? — normalize integer / integer string / github PR URL to the
+// number in place; anything else is a 400 rather than a Prisma 500.
+function normalizePrField(body: Record<string, unknown>): void {
+  if (!("pr" in body)) return;
+  const result = normalizePr(body.pr);
+  if (!result.ok) throw new BadRequestError(result.error);
+  body.pr = result.value;
 }
 
 // repos === null means admin token — bypass scope check; still enforce format.
@@ -906,6 +915,7 @@ export function createTasksRoutes(
       );
     }
     validateRepo(body.repo, agentId !== null ? repos : null);
+    normalizePrField(body);
     body.accountId = accountIdForCreate(c);
     const created = await withGenericIdConflict(c, () =>
       taskService.create(body as Prisma.TaskCreateInput),
@@ -937,6 +947,7 @@ export function createTasksRoutes(
         );
       }
       validateRepo(task.repo, agentId !== null ? repos : null);
+      normalizePrField(task);
       task.accountId = accountId;
     }
     const result = await withGenericIdConflict(c, () =>
@@ -996,6 +1007,7 @@ export function createTasksRoutes(
       throw new BadRequestError("agent tokens cannot set 'accountId'");
     }
     validateRepo(body.repo, agentId !== null ? repos : null);
+    normalizePrField(body);
     // Prevent agent tokens from reassigning tasks outside their ownership scope.
     // Only force-assign when the acting agent is the explicit assignee or claimedBy.
     // Skip force-assign when access is purely via repo scope — the task may belong

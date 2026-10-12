@@ -788,6 +788,16 @@ export const TaskListResponseSchema = z
   })
   .openapi("TaskListResponse");
 
+/** Accepted forms for a client-supplied `pr` (normalized to the integer PR number server-side). */
+const PrInputSchema = z
+  .unknown()
+  .optional()
+  .openapi({
+    example: 42,
+    description:
+      'PR number. Accepts a positive integer, an integer string (`"42"`), or a github.com pull-request URL (`https://github.com/<owner>/<repo>/pull/<n>`); stored as the integer. Any other value is rejected with 400 by the handler (not the schema, so the error message names the accepted forms).',
+  });
+
 /** Request body for POST /tasks.
  * Required fields (title, status, repo) are validated by the handler rather
  * than by Zod so custom error messages are returned instead of ZodError objects.
@@ -806,6 +816,7 @@ export const CreateTaskBodySchema = z
     description: z.string().optional().openapi({ example: "Task description" }),
     layer: z.string().optional().openapi({ example: "service" }),
     branch: z.string().optional().openapi({ example: "feat/feature-x" }),
+    pr: PrInputSchema,
     dependencies: z.array(z.string()).optional().openapi({ example: [] }),
     acceptanceCriteria: z.array(z.string()).optional().openapi({ example: [] }),
     assignee: z.string().optional().openapi({ example: "user@example.com" }),
@@ -822,7 +833,8 @@ export const CreateTaskBodySchema = z
 
 /** Request body for PATCH /tasks/:id */
 export const UpdateTaskBodySchema = z
-  .record(z.string(), z.unknown())
+  .object({ pr: PrInputSchema })
+  .passthrough()
   .openapi("UpdateTaskBody");
 
 /** Single item in a bulk insert array.
@@ -838,6 +850,7 @@ const BulkInsertItemSchema = z
       .openapi({ example: "Implement feature X" }),
     status: z.string().min(1).optional().openapi({ example: "pending" }),
     repo: z.string().nullable().optional().openapi({ example: "org/repo" }),
+    pr: PrInputSchema,
   })
   .passthrough();
 
