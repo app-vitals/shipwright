@@ -123,3 +123,21 @@ describe("decisions-registry.md — points to both concrete instances", () => {
     expect(content).toContain("test-fix");
   });
 });
+
+describe("decisions-registry.md — third instance: prompt-audit", () => {
+  it("points to .claude/shipwright/prompt-audit-decisions.md", () => {
+    expect(content).toContain(".claude/shipwright/prompt-audit-decisions.md");
+  });
+
+  it("names prompt-scan as the consumer of the prompt-audit instance", () => {
+    expect(content).toContain("prompt-scan");
+  });
+
+  it("names the Finding first-field name", () => {
+    expect(content).toContain("`Finding`");
+  });
+
+  it("says three concrete instances", () => {
+    expect(content).toContain("three concrete instances");
+  });
+});
