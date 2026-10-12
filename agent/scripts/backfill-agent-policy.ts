@@ -27,7 +27,7 @@
  *       --agent-id <id> --file <path> [--agent-id <id> --file <path> ...]
  *
  * Flags:
- *   --agent-id <id>   Repeatable, paired with the --file immediately after it.
+ *   --agent-id <id>   Repeatable, paired in order with --file.
  *                      The Agent row's DB id (not its Slack/display name).
  *   --file <path>      Local path to that agent's copied-out
  *                      state/agent-policy.md content.
@@ -43,6 +43,7 @@
 
 import { readFileSync } from "node:fs";
 import { createAdminPrismaClient, type PrismaClient } from "@shipwright/admin";
+import { parseFlags } from "../../lib/cli-flags.ts";
 import {
   type AgentPolicyBackfillDeps,
   type AgentPolicyBackfillResult,
@@ -55,7 +56,7 @@ Required env vars:
   DATABASE_URL_SHIPWRIGHT_ADMIN — Postgres connection string for the admin DB
 
 Flags:
-  --agent-id <id>  Repeatable, paired with the --file immediately after it.
+  --agent-id <id>  Repeatable, paired in order with --file.
                      The Agent row's DB id.
   --file <path>      Local path to that agent's copied-out
                      state/agent-policy.md content (e.g. via kubectl cp).
@@ -86,36 +87,22 @@ interface AgentFilePair {
 }
 
 function parseArgs(argv: string[]): AgentFilePair[] {
-  const pairs: AgentFilePair[] = [];
+  const flags = parseFlags(argv, [], { multi: ["--agent-id", "--file"] });
+  const agentIds = flags["--agent-id"];
+  const files = flags["--file"];
 
-  for (let i = 0; i < argv.length; i++) {
-    const arg = argv[i];
-    if (arg !== "--agent-id") continue;
-
-    const agentId = argv[++i];
-    if (!agentId) {
-      console.error("Error: --agent-id requires a value\n");
-      console.error(USAGE);
-      process.exit(1);
-    }
-
-    if (argv[++i] !== "--file") {
-      console.error(
-        `Error: --agent-id ${agentId} must be immediately followed by --file <path>\n`,
-      );
-      console.error(USAGE);
-      process.exit(1);
-    }
-
-    const filePath = argv[++i];
-    if (!filePath) {
-      console.error("Error: --file requires a value (path)\n");
-      console.error(USAGE);
-      process.exit(1);
-    }
-
-    pairs.push({ agentId, filePath });
+  // Pair the Nth --agent-id with the Nth --file.
+  if (agentIds.length !== files.length) {
+    console.error(
+      `Error: each --agent-id needs a matching --file <path> (got ${agentIds.length} --agent-id, ${files.length} --file)\n`,
+    );
+    console.error(USAGE);
+    process.exit(1);
   }
+  const pairs = agentIds.map((agentId, i) => ({
+    agentId,
+    filePath: files[i],
+  }));
 
   if (pairs.length === 0) {
     console.error(
