@@ -30,7 +30,7 @@ export function allowedHexes(t: typeof tokens = tokens): Set<string> {
   return set;
 }
 
-export interface LintResult {
+interface LintResult {
   offBrandHexes: string[];
 }
 

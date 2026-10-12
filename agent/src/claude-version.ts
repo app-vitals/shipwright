@@ -10,10 +10,10 @@
 export const UNKNOWN_CLAUDE_CODE_VERSION = "unknown";
 
 /** Upper bound on how long `claude --version` may delay startup. */
-export const CLAUDE_VERSION_TIMEOUT_MS = 5_000;
+const CLAUDE_VERSION_TIMEOUT_MS = 5_000;
 
 /** Runs a command and resolves to its stdout; rejects on non-zero exit. */
-export type VersionExec = (cmd: string[]) => Promise<string>;
+type VersionExec = (cmd: string[]) => Promise<string>;
 
 const SEMVER_RE = /\b(\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?)\b/;
 

@@ -430,7 +430,7 @@ export function computeProvisionPlan(
 // processes, touching the filesystem, or booting services.
 // ---------------------------------------------------------------------------
 
-export type HitlStepKind =
+type HitlStepKind =
   | "mkdir"
   | "seed-file"
   | "clone"
@@ -463,7 +463,7 @@ export type HitlStep = {
 };
 
 /** Runs a single planned step. Injected so tests can record instead of act. */
-export type StepExecFn = (step: HitlStep) => void | Promise<void>;
+type StepExecFn = (step: HitlStep) => void | Promise<void>;
 
 /**
  * Plans the workspace provisioning steps: the dirs to create and the template
@@ -706,7 +706,7 @@ type ServiceHandle = {
 };
 
 /** A service the bootstrap boots: what to run, where, and with what env. */
-export type ServiceSpec = {
+type ServiceSpec = {
   label: string;
   argv: string[];
   cwd: string;

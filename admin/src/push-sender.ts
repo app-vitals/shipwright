@@ -35,7 +35,7 @@ export interface PushSubscriptionLike {
   auth: string;
 }
 
-export interface SendResult {
+interface SendResult {
   ok: boolean;
   /** True when the subscription should be pruned (404/410). */
   pruned: boolean;

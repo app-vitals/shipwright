@@ -59,7 +59,7 @@ export interface MembershipForScope {
  * Minimal task shape deriveSessionVisibilityFromTasks needs — a subset of
  * both admin-ui-pages.ts's TaskItem and task-store's Task row.
  */
-export interface TaskForVisibility {
+interface TaskForVisibility {
   assignee?: string | null;
   claimedBy?: string | null;
   repo?: string | null;
@@ -72,7 +72,7 @@ export interface TaskForVisibility {
  * (possibly empty — a member with zero memberships resolves to []).
  * Account-derived ids (SSP-2.1) are already folded in by the caller.
  */
-export type AgentIdScope = "all" | string[];
+type AgentIdScope = "all" | string[];
 
 /**
  * The full visibility scope consumed by isSessionVisible(): the caller's

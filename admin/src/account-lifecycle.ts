@@ -49,7 +49,7 @@ export function isLockedStatus(status: string): boolean {
   return LOCKED_STATUSES.has(status);
 }
 
-export type LockdownAction = "lockdown" | "restore" | "none";
+type LockdownAction = "lockdown" | "restore" | "none";
 
 /** Cron side effect implied by moving an account from `prev` to `next`. */
 export function resolveLockdownAction(
@@ -92,7 +92,7 @@ export function isAccountTrialWarningDue(
 
 // ─── Service ────────────────────────────────────────────────────────────────
 
-export interface AccountLifecycleDeps {
+interface AccountLifecycleDeps {
   accounts: Pick<AccountService, "getById" | "update" | "listAgentTrialStates">;
   cronJobs: Pick<
     AgentCronJobService,

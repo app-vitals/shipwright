@@ -28,7 +28,7 @@ export interface GitHubInstallationsReporter {
   report(snapshot: InstallationsSnapshot): Promise<void>;
 }
 
-export interface ReportedInstallation {
+interface ReportedInstallation {
   owner: string;
   installationId: number;
   state: InstallationState["health"];
@@ -49,7 +49,7 @@ function toReported(i: InstallationState): ReportedInstallation {
   };
 }
 
-export interface HttpGitHubInstallationsReporterOptions {
+interface HttpGitHubInstallationsReporterOptions {
   apiUrl: string;
   agentId: string;
   apiKey: string;

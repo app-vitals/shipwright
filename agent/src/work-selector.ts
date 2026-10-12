@@ -97,7 +97,7 @@ export interface WorkPrCandidate {
   commitSha: string;
 }
 
-export type WorkItem =
+type WorkItem =
   | { type: "task"; task: WorkTaskCandidate }
   | { type: "pr"; pr: WorkPrCandidate };
 

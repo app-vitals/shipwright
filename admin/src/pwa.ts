@@ -29,7 +29,7 @@ export const PWA_ASSETS_DIR = join(import.meta.dir, "..", "pwa-assets");
 
 // ─── Icon metadata ────────────────────────────────────────────────────────────
 
-export interface PwaIconSpec {
+interface PwaIconSpec {
   filename: string;
   size: number;
   purpose: "any" | "maskable" | "apple-touch-icon";
@@ -52,7 +52,7 @@ export const PWA_ICONS: readonly PwaIconSpec[] = [
 
 // ─── Manifest ─────────────────────────────────────────────────────────────────
 
-export interface WebAppManifest {
+interface WebAppManifest {
   name: string;
   short_name: string;
   scope: string;

@@ -17,7 +17,7 @@ export type QueryDateRange = DatePreset | DateRange;
 export type TrendsGroupBy = "day" | "week" | "hour";
 
 /** Grouping granularity for the merged-PRs-by-repo endpoint (no "hour" bucket — PR merges are sparse enough that day/week are the only useful buckets). */
-export type MergedPrsGroupBy = "day" | "week";
+type MergedPrsGroupBy = "day" | "week";
 
 /** Dashboard timezone — all date windows are anchored to LA wall clock. */
 export const DASHBOARD_TZ = "America/Los_Angeles";

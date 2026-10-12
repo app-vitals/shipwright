@@ -15,7 +15,7 @@ import type {
 
 export type { AgentWorkQueueSnapshot };
 
-export interface PushWorkQueueSnapshotInput {
+interface PushWorkQueueSnapshotInput {
   computedAt: Date;
   items: Prisma.InputJsonValue;
 }

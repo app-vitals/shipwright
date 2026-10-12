@@ -135,7 +135,7 @@ export function createFileSessionStore(
 export const SESSION_PRUNE_INTERVAL_MS = 6 * 60 * 60 * 1000;
 
 /** The slice of the store startSessionPruner needs — keeps callers/tests thin. */
-export interface PrunableSessionStore {
+interface PrunableSessionStore {
   prune: () => Promise<number>;
 }
 

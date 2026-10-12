@@ -8,7 +8,7 @@
  * Pure — no I/O, no process.env reads at module level.
  */
 
-export interface CliArgs {
+interface CliArgs {
   agentId: string | undefined;
   apiUrl: string | undefined;
   apiKey: string | undefined;

@@ -151,7 +151,7 @@ function readFileOrNull(absPath: string): string | null {
 }
 
 /** Reads `version` from a plugin.json / package.json-shaped file, or null. */
-export function readVersionFile(absPath: string): string | null {
+function readVersionFile(absPath: string): string | null {
   const raw = readFileOrNull(absPath);
   if (raw === null) return null;
   try {
@@ -162,7 +162,7 @@ export function readVersionFile(absPath: string): string | null {
   }
 }
 
-export interface ContextStampReaderOptions {
+interface ContextStampReaderOptions {
   workspace: string;
   /** Path to the shipwright plugin's `plugin.json` (its `version` is the plugin version). */
   pluginJsonPath: string;

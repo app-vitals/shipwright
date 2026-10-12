@@ -33,8 +33,8 @@ export type LoadClass =
 
 export type AuditContext = "local-dev" | "agent-runtime";
 
-export const MAX_IMPORT_HOPS = 4;
-export const AGENT_RUNTIME_ALWAYS_FILE = "agent/workspace/CLAUDE.md.template";
+const MAX_IMPORT_HOPS = 4;
+const AGENT_RUNTIME_ALWAYS_FILE = "agent/workspace/CLAUDE.md.template";
 
 export interface InventoryDeps {
   /** Every file under root, as root-relative posix paths. */

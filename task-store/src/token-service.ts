@@ -12,7 +12,7 @@ import type { PrismaClient, TaskToken } from "./index.ts";
 
 export type { TaskToken };
 
-export interface TaskTokenValidated {
+interface TaskTokenValidated {
   /** The TaskToken row id. */
   id: string;
   /** null = admin token; set = agent token scoped to this agent ID. */

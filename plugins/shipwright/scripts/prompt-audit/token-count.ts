@@ -65,7 +65,7 @@ export function estimateTokens(text: string): number {
   return Math.ceil(Buffer.byteLength(text, "utf8") / 4);
 }
 
-export function cacheKey(model: string, content: string): string {
+function cacheKey(model: string, content: string): string {
   return createHash("sha256")
     .update(model)
     .update("\0")

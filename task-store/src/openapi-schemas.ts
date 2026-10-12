@@ -303,7 +303,7 @@ export type PrFinding = z.infer<typeof PrFindingSchema>;
 // Defined ahead of PullRequestSchema so PullRequestSchema's `events` field can
 // reference it directly, mirroring the PrFindingSchema pattern above.
 
-export const PullRequestEventSchema = z
+const PullRequestEventSchema = z
   .object({
     id: z.string().openapi({ example: "clxevent123456" }),
     prRecordId: z.string().openapi({ example: "clx0987654321" }),
@@ -322,7 +322,7 @@ export const PullRequestEventSchema = z
 
 export type PullRequestEvent = z.infer<typeof PullRequestEventSchema>;
 
-export const TaskEventSchema = z
+const TaskEventSchema = z
   .object({
     id: z.string().openapi({ example: "clxevent123456" }),
     taskId: z.string().openapi({ example: "clx0987654321" }),

@@ -31,7 +31,7 @@ export class ShipwrightClientError extends Error {
 
 // ─── Interface ────────────────────────────────────────────────────────────────
 
-export interface ShipwrightRuntimeClient {
+interface ShipwrightRuntimeClient {
   getAgentConfigBundle(agentId: string): Promise<AgentConfigResponse>;
   listAgentCronJobs(agentId: string): Promise<AgentCronJob[]>;
   reconcileSystemCrons(agentId: string): Promise<void>;

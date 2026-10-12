@@ -7,7 +7,7 @@
 
 const DAY_SECONDS = 86_400;
 
-export type BlameExec = (cmd: string[]) => string;
+type BlameExec = (cmd: string[]) => string;
 
 export interface BlameAge {
   lines: number;
@@ -17,7 +17,7 @@ export interface BlameAge {
   oldestLine: { line: number; ageDays: number } | null;
 }
 
-export interface BlameAgeDeps {
+interface BlameAgeDeps {
   exec: BlameExec;
   /** Current time in epoch seconds; injected for deterministic tests. */
   now: number;

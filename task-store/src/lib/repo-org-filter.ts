@@ -14,24 +14,24 @@
  */
 
 /** Input filters: repos and/or orgs to scope a query to. */
-export interface RepoOrgFilter {
+interface RepoOrgFilter {
   orgs?: string[];
   repos?: string[];
 }
 
 /** A single repo-matching clause: exact membership. */
-export interface RepoInClause {
+interface RepoInClause {
   repo: { in: string[] };
 }
 
 /** A single org-matching clause: repo prefix match. */
-export interface RepoStartsWithClause {
+interface RepoStartsWithClause {
   repo: { startsWith: string };
 }
 
 /** The shape returned by buildRepoOrgWhere — usable as a fragment of
  * Prisma.TaskWhereInput or Prisma.PullRequestWhereInput. */
-export type RepoOrgWhere =
+type RepoOrgWhere =
   | Record<string, never>
   | RepoInClause
   | { OR: RepoStartsWithClause[] }

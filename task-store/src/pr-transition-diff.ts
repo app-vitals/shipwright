@@ -28,7 +28,7 @@
 import type { PullRequest } from "./index.ts";
 
 /** A single field-level change between a before/after PR state. */
-export interface PrTransitionChange {
+interface PrTransitionChange {
   field: string;
   /** Prior value, stringified; null when the field was null/absent before. */
   oldValue: string | null;

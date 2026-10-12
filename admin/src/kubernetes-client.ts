@@ -399,7 +399,7 @@ function mapError(status: number, body: unknown): ApiError {
 
 // ─── HTTP implementation ──────────────────────────────────────────────────────
 
-export interface HttpKubernetesClientOpts {
+interface HttpKubernetesClientOpts {
   /** Defaults to KUBERNETES_SERVICE_HOST/PORT or https://kubernetes.default.svc. */
   apiServer?: string;
   /** ServiceAccount Bearer token. If omitted, read from `tokenPath`. */

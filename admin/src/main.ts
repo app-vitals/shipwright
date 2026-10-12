@@ -405,7 +405,7 @@ export function resolveSessionAlertIntervalMs(
  * lockdown sweeper — that one should react promptly once a trial lapses,
  * whereas this one only has to land somewhere inside a multi-day window.
  */
-export const DEFAULT_TRIAL_EXPIRY_WARNING_SWEEP_INTERVAL_MS = 60 * 60 * 1000;
+const DEFAULT_TRIAL_EXPIRY_WARNING_SWEEP_INTERVAL_MS = 60 * 60 * 1000;
 
 /**
  * Resolve the trial-expiry sweeper's warning window (in days) from the

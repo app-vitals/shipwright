@@ -57,11 +57,11 @@ export function hasGitHubAppCredentials(
 }
 
 /** The slice of GitHubInstallationsManager the config-sync tick needs. */
-export interface ReconcilableInstallations {
+interface ReconcilableInstallations {
   reconcile(scopeOwners: string[] | null): Promise<void>;
 }
 
-export interface GitHubInstallationsManagerRef {
+interface GitHubInstallationsManagerRef {
   /** The installations manager App auth activated with, or null if none. */
   get(): ReconcilableInstallations | null;
   set(manager: ReconcilableInstallations | null): void;
@@ -145,7 +145,7 @@ export const githubAuthActiveRef: GitHubAuthActiveRef =
  * guard instead of mutating shared state that would otherwise leak between
  * test cases.
  */
-export interface GitHubAuthStartGuard {
+interface GitHubAuthStartGuard {
   isInFlight(): boolean;
   set(inFlight: boolean): void;
 }
@@ -166,7 +166,7 @@ export function createGitHubAuthStartGuard(): GitHubAuthStartGuard {
  * overlapping ticks can't race each other; tests should construct their own
  * via createGitHubAuthStartGuard() instead of reusing this singleton.
  */
-export const githubAuthStartGuard: GitHubAuthStartGuard =
+const githubAuthStartGuard: GitHubAuthStartGuard =
   createGitHubAuthStartGuard();
 
 export interface StartGitHubAuthDeps {

@@ -30,7 +30,7 @@ import {
 
 // The narrow slice of PrismaClient this service touches. Injected so the unit
 // tests use a plain object double instead of a real client.
-export interface PushPrismaLike {
+interface PushPrismaLike {
   chatThreadWatch: {
     findMany(args: {
       where: { threadId: string };
@@ -75,14 +75,14 @@ export interface PushPrismaLike {
 /** Outcome of PushService.subscribe — distinguishes the three response shapes
  * the route handler maps to HTTP status (503 unavailable / 500 store_failed /
  * 200 ok). */
-export type PushSubscribeResult =
+type PushSubscribeResult =
   | { ok: true }
   | { ok: false; reason: "unavailable" | "store_failed" };
 
 /** Outcome of PushService.unsubscribe — delete failures are swallowed/logged
  * inside the service (best-effort), so only "unavailable" (model missing) is
  * distinguished from success. */
-export type PushUnsubscribeResult =
+type PushUnsubscribeResult =
   | { ok: true }
   | { ok: false; reason: "unavailable" };
 

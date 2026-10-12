@@ -50,7 +50,7 @@ export type PrismaTxClient = Pick<Prisma.TransactionClient, "session">;
  * every existing caller of `new SessionService(prisma, clock)` (TaskService)
  * is unaffected.
  */
-export type LookupBlockedPrNumbers = (
+type LookupBlockedPrNumbers = (
   pairs: { accountId: string; repo: string; prNumber: number }[],
 ) => Promise<Set<number>>;
 

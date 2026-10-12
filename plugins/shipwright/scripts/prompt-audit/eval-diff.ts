@@ -56,7 +56,7 @@ export function mcnemarExact(b: number, c: number): number {
 }
 
 /** MDE of a paired binary comparison: (z_a + z_b) * sqrt(discordant rate / pairs). */
-export function minimumDetectableEffect(
+function minimumDetectableEffect(
   pairs: number,
   discordant: number,
 ): number {

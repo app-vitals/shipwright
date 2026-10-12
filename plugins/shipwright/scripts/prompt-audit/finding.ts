@@ -55,7 +55,7 @@ const EVAL_RUNS = 3;
 const EVAL_COST_PER_CASE_USD = 0.1;
 
 export type FindingClass = "a" | "b" | "c" | "e" | "f";
-export type EvalKind = "with-without" | "ab" | "trigger" | "production-series";
+type EvalKind = "with-without" | "ab" | "trigger" | "production-series";
 export type Claim = "cost-only" | "quality-claimed";
 
 export interface Finding {
@@ -105,7 +105,7 @@ export interface RuleContext {
 
 export type Rule = (ctx: RuleContext) => Finding[];
 
-export interface FindingInput {
+interface FindingInput {
   class: FindingClass;
   rule: string;
   item: InventoryItem;
@@ -128,7 +128,7 @@ export interface FindingInput {
 
 export const CONTEXTS: AuditContext[] = ["local-dev", "agent-runtime"];
 
-export function estEvalCostUsd(kind: EvalKind): number {
+function estEvalCostUsd(kind: EvalKind): number {
   if (kind === "production-series") return 0;
   const arms = kind === "trigger" ? 1 : 2;
   return +(EVAL_CASES * EVAL_RUNS * arms * EVAL_COST_PER_CASE_USD).toFixed(2);

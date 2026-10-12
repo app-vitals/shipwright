@@ -16,7 +16,7 @@
 
 import { baseStyles, escapeHtml } from "./admin-ui-styles.ts";
 
-export interface RenderAdminPageOptions {
+interface RenderAdminPageOptions {
   /** Raw, unescaped page title — HTML-escaped internally before rendering. */
   title: string;
   /** Extra CSS rules appended inside <style> after baseStyles(). */

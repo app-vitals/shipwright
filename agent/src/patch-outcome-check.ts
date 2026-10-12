@@ -33,7 +33,7 @@ export interface PatchStateSnapshot {
   ciFailing: boolean;
 }
 
-export type PatchOutcome =
+type PatchOutcome =
   | { kind: "settled" }
   | { kind: "changed" }
   | { kind: "escalated"; reason: string; headSha: string };

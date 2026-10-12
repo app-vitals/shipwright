@@ -28,7 +28,7 @@ import { createTokensRoutes } from "./routes/tokens.ts";
 import type { ThreadServiceLike } from "./thread-service.ts";
 import type { ChatTokenServiceLike } from "./token-service.ts";
 
-export interface ChatServiceDeps {
+interface ChatServiceDeps {
   tokenService: ChatTokenServiceLike;
   threadService: ThreadServiceLike;
   messageService: MessageServiceLike;

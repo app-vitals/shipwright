@@ -75,7 +75,7 @@ export interface UserNotificationPrefsRow {
 }
 
 /** Fields updatePrefs() accepts. Omitted fields are left untouched. */
-export interface UpdatePrefsInput {
+interface UpdatePrefsInput {
   autoFollowSessions?: boolean;
   reminderHourLocal?: number;
 }

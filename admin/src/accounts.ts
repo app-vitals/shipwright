@@ -10,7 +10,7 @@ import type { PrismaTransactionClient } from "./prisma-tx.ts";
 
 export type { Account };
 
-export type AccountStatus = "active" | "suspended" | "trial_expired";
+type AccountStatus = "active" | "suspended" | "trial_expired";
 
 /** An Account plus its agent and member row counts (admin /accounts API). */
 export type AccountWithCounts = Account & {
@@ -18,7 +18,7 @@ export type AccountWithCounts = Account & {
   memberCount: number;
 };
 
-export interface CreateAccountOpts {
+interface CreateAccountOpts {
   status?: AccountStatus;
   maxAgents?: number;
   plan?: string | null;

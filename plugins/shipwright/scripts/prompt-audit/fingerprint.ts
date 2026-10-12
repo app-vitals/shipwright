@@ -8,9 +8,9 @@
 
 import { createHash } from "node:crypto";
 
-export const FINGERPRINT_LENGTH = 12;
+const FINGERPRINT_LENGTH = 12;
 
-export interface FingerprintInput {
+interface FingerprintInput {
   rule: string;
   file: string;
   evidence: string;

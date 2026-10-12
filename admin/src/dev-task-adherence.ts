@@ -32,14 +32,14 @@ export interface SkillUsageRow {
   invocations: number;
 }
 
-export type StepStatus = "ran" | "skipped" | "unmeasured";
+type StepStatus = "ran" | "skipped" | "unmeasured";
 
-export interface RunStepResult {
+interface RunStepResult {
   stepNumber: string;
   status: StepStatus;
 }
 
-export interface RunAdherence {
+interface RunAdherence {
   runId: string;
   itemId: string | null;
   contextFingerprint: string | null;
@@ -49,7 +49,7 @@ export interface RunAdherence {
   missingSteps: string[];
 }
 
-export interface StepAdherenceRate {
+interface StepAdherenceRate {
   stepNumber: string;
   title: string;
   mandatory: boolean;
@@ -60,7 +60,7 @@ export interface StepAdherenceRate {
   rate: number | null;
 }
 
-export interface AdherenceSeries {
+interface AdherenceSeries {
   /** Variant tag (contextFingerprint); null for runs without one. */
   variant: string | null;
   runs: number;
@@ -68,7 +68,7 @@ export interface AdherenceSeries {
   steps: StepAdherenceRate[];
 }
 
-export interface DevTaskAdherenceReport {
+interface DevTaskAdherenceReport {
   disclaimer: string;
   runs: RunAdherence[];
   overall: AdherenceSeries;
@@ -106,7 +106,7 @@ function invocationsOf(rows: SkillUsageRow[], name: string): number {
  * general-purpose dispatch beyond the one Step 5 consumed (when Step 5 used
  * the built-in implementer). Step 8.5 ran = a docs-refresher dispatch.
  */
-export function evaluateRun(
+function evaluateRun(
   steps: RequiredStep[],
   usage: SkillUsageRow[],
 ): RunStepResult[] {
@@ -170,7 +170,7 @@ export function buildRunAdherence(
   };
 }
 
-export function summarize(
+function summarize(
   steps: RequiredStep[],
   runs: RunAdherence[],
   variant: string | null,

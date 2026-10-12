@@ -54,7 +54,7 @@ import { join } from "node:path";
 /** Where the cgroup v2 unified hierarchy is mounted on Linux. */
 export const CGROUP_MOUNT_ROOT = "/sys/fs/cgroup";
 
-export interface CgroupSupport {
+interface CgroupSupport {
   usable: boolean;
   /** The delegated directory new run-cgroups are created under. */
   base?: string;
@@ -62,7 +62,7 @@ export interface CgroupSupport {
   reason: string;
 }
 
-export interface KillableProcess {
+interface KillableProcess {
   readonly pid?: number;
   kill: (signal?: number | NodeJS.Signals) => void;
 }
@@ -149,7 +149,7 @@ let cachedSupport: CgroupSupport | undefined;
 let runCounter = 0;
 
 /** Probe once per process, then reuse the answer. */
-export function cgroupSupport(base?: string): CgroupSupport {
+function cgroupSupport(base?: string): CgroupSupport {
   cachedSupport ??= probeCgroupDelegation(base);
   return cachedSupport;
 }

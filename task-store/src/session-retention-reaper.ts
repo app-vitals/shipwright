@@ -63,7 +63,7 @@ import type { SessionService } from "./session-service.ts";
 const DEFAULT_ARCHIVE_AFTER_DAYS = 30;
 const DAY_MS = 24 * 60 * 60 * 1000;
 
-export interface SessionRetentionReaperOptions {
+interface SessionRetentionReaperOptions {
   archiveAfterDays?: number;
 }
 

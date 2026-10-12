@@ -70,7 +70,7 @@ export interface UnresolvedCommentCheckInput {
   reviewThreads: { nodes: ReviewThread[] };
 }
 
-export interface UnresolvedCommentCheckResult {
+interface UnresolvedCommentCheckResult {
   hasSubstantiveUnresolvedFeedback: boolean;
 }
 

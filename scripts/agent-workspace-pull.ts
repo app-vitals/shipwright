@@ -74,7 +74,7 @@ export interface AgentSummary {
 // assertion).
 // ---------------------------------------------------------------------------
 
-export type ResolveAgentResult =
+type ResolveAgentResult =
   | { ok: true; agent: AgentSummary }
   | { ok: false; reason: "not-found" | "ambiguous"; message: string };
 
@@ -211,7 +211,7 @@ export interface PullAgentWorkspaceDeps {
   warn: (line: string) => void;
 }
 
-export interface PullAgentWorkspaceResult {
+interface PullAgentWorkspaceResult {
   agent: AgentSummary;
   workspaceRoot: string;
   clonedRepos: string[];

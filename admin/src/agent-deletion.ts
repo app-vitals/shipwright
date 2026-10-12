@@ -52,7 +52,7 @@ import type { TaskStoreProvisioningClient } from "./task-store-provisioning-clie
  * `completed` list and to tag entries in the `failed` array so a caller (or a
  * test) can tell exactly which dependency broke.
  */
-export type DeleteAgentStep =
+type DeleteAgentStep =
   | "k8s"
   | "task-store-tokens"
   | "chat-service-tokens-and-threads"
@@ -96,7 +96,7 @@ export interface DeleteAgentResult {
  * structural shape rather than `Pick<PrismaClient, ...>` so tests can inject a
  * tiny in-memory double without pulling in the generated client.
  */
-export interface DeleteAgentPrisma {
+interface DeleteAgentPrisma {
   agent: {
     findUnique(args: {
       where: { id: string };
@@ -130,7 +130,7 @@ export interface DeleteAgentFullyDeps {
   decrypt(value: string): string;
 }
 
-export interface DeleteAgentFullyOpts {
+interface DeleteAgentFullyOpts {
   /**
    * Slack user token (xoxp-) authorizing the Slack app deletion. Supplied
    * per-request (same UX as the sync-manifest flow) — when omitted, a Slack app

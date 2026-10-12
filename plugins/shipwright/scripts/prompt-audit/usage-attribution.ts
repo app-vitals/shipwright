@@ -35,9 +35,9 @@ export interface TranscriptFs {
   readFile(path: string): string;
 }
 
-export const DEFAULT_PROJECTS_ROOT = join(homedir(), ".claude", "projects");
+const DEFAULT_PROJECTS_ROOT = join(homedir(), ".claude", "projects");
 
-export const nodeTranscriptFs: TranscriptFs = {
+const nodeTranscriptFs: TranscriptFs = {
   listTranscripts(root) {
     const out: string[] = [];
     for (const project of readdirSync(root, { withFileTypes: true })) {

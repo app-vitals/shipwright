@@ -39,7 +39,7 @@ export interface ChatTokenReporter {
   ): Promise<void>;
 }
 
-export interface HttpChatTokenReporterOptions {
+interface HttpChatTokenReporterOptions {
   apiUrl: string;
   agentId: string;
   apiKey: string;

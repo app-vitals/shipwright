@@ -41,7 +41,7 @@ import { connect } from "node:net";
 // ---------------------------------------------------------------------------
 
 export const SESSION_NAME = "shipwright";
-export const WINDOW_INDEX = 0;
+const WINDOW_INDEX = 0;
 export const METRICS_PORT = 3460;
 export const ADMIN_PORT = 3001;
 export const TASK_STORE_PORT = 3002;
@@ -68,7 +68,7 @@ const DUMMY_AGENT_API_KEY = "dev-agent-key";
 // console can read/manage tasks + PRs. NOT a secret — local DB only, public-safe.
 // Bootstrap admin token seeded into the task-store on startup. Not a real
 // secret — used only against the local dev Postgres instance.
-export const DEV_TASK_STORE_ADMIN_TOKEN = "dev-task-store-admin-token";
+const DEV_TASK_STORE_ADMIN_TOKEN = "dev-task-store-admin-token";
 // Bootstrap chat-service tokens, seeded (hashed) into the chat DB by a
 // preflight. The admin token enables the /admin/chat UI; the agent-scoped
 // token enables the agent's chat poll loop. NOT secrets — local DB only.
@@ -132,7 +132,7 @@ export type Pane = {
 };
 
 /** Kinds of emitted commands, for ordering assertions and clarity. */
-export type TmuxCommandKind =
+type TmuxCommandKind =
   | "new-session"
   | "set-option"
   | "split-window"
@@ -140,7 +140,7 @@ export type TmuxCommandKind =
   | "send-keys"
   | "select-pane";
 
-export type TmuxCommand = {
+type TmuxCommand = {
   kind: TmuxCommandKind;
   /** argv passed to `tmux` (for tmux commands) or to the shell (preflight). */
   argv: string[];
@@ -649,7 +649,7 @@ export function sessionExistsMessage(name: string): string {
 }
 
 /** What the entrypoint should do about state/dev-agent.env, per devAgentEnvPreflight(). */
-export type DevAgentEnvDecision =
+type DevAgentEnvDecision =
   | { action: "proceed" }
   | { action: "copy_and_exit"; message: string }
   | { action: "fail"; message: string };
@@ -778,14 +778,14 @@ export function brewFormulaInstalled(
 }
 
 /** One provisioning command shown to the user and (on yes) executed. */
-export interface SetupStep {
+interface SetupStep {
   /** Human-readable command shown before the y/N prompt. */
   display: string;
   /** argv executed to perform the step. */
   argv: string[];
 }
 
-export interface PostgresPlan {
+interface PostgresPlan {
   /** True if the server already accepts connections (no bring-up needed). */
   serverReady: boolean;
   /** Ordered server bring-up commands (install/start) — empty when ready. */

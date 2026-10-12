@@ -47,7 +47,7 @@ interface ReapedTaskRow {
  * it, exactly like three consecutive recordSkip() calls with a matching
  * reason.
  */
-export const STALE_CLAIM_REAP_REASON = "stale_claim_timeout";
+const STALE_CLAIM_REAP_REASON = "stale_claim_timeout";
 
 export class StaleClaimReaper {
   /** The resolved claim TTL (ms), read once at construction. Exposed so
