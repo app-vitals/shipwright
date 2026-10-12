@@ -1,8 +1,9 @@
 # Decisions Registry Pattern
 
-A generic description of the **decisions registry** pattern shared by two independent
+A generic description of the **decisions registry** pattern shared by three independent
 patrol pipelines in this plugin: consolidation patrol (`consolidation-scan` /
-`consolidation-fix`) and the test-readiness pipeline (`test-inventory` / `test-fix`). This
+`consolidation-fix`), the test-readiness pipeline (`test-inventory` / `test-fix`) and the
+prompt-audit patrol (`prompt-scan`). This
 doc describes the pattern's shape once, abstracted from either concrete instance, so both
 pipelines can point here instead of re-explaining the same mechanics twice. It does not
 replace either instance's own full documentation — see "Concrete instances" below for where
@@ -33,9 +34,10 @@ Each decision is one `###` heading with four fixed fields, always in this order:
 
 - **Pattern / Item** — the first field: a description of what this entry covers, concrete
   enough that a later automated pass can match a current candidate against it. The field is
-  named `Pattern` in the consolidation instance (a duplication pattern) and `Item` in the
-  test-readiness instance (an ambiguous coverage item) — same role, different name, because
-  the two instances describe different kinds of things.
+  named `Pattern` in the consolidation instance (a duplication pattern), `Item` in the
+  test-readiness instance (an ambiguous coverage item) and `Finding` in the prompt-audit
+  instance (a rule id and file) — same role, different name, because the instances describe
+  different kinds of things.
 - **Decision** — the explicit call: accept as debt, resolve at a given layer, reject a
   proposal, or any other unambiguous outcome.
 - **Rationale** — why that call is justified, for a future reader (human or the consuming
@@ -80,7 +82,7 @@ known-intentional pattern from being flagged).
 
 ## Concrete instances
 
-This pattern currently has two concrete instances in this plugin. Each instance's own full
+This pattern currently has three concrete instances in this plugin. Each instance's own full
 entry-format documentation, ownership detail, and worked examples live with the instance
 itself — this doc only describes the shared shape, not either instance's complete detail.
 
@@ -91,3 +93,6 @@ itself — this doc only describes the shared shape, not either instance's compl
 - **`.claude/shipwright/test-readiness-decisions.md`** — consumed by `test-inventory`
   (Step 0: loads it as a decisions list) and `test-fix` (Step 4.5: cross-checks it once more
   before filing any task). Full documentation: the file's own top-of-file doc-comment.
+- **`.claude/shipwright/prompt-audit-decisions.md`** — consumed by `prompt-scan` (Step 1:
+  loads it as a suppression list; a matching finding is recorded `suppressed` in the
+  ledger). Full documentation: the file's own top-of-file doc-comment.
