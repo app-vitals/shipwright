@@ -126,6 +126,7 @@ scanning repos for stale docs, or querying Sentry for unresolved errors), with n
 | `error-patrol-maintenance` | daily 04:00 | `/shipwright:error-scan` → `/shipwright:error-fix` → `/shipwright:error-resolve` | error-scan, error-fix, error-resolve | off | Scans for unresolved Sentry errors and fixes what's PR-worthy. |
 | `security-patrol-maintenance` | weekly Mon 06:00 | `/shipwright:security-scan` → `/shipwright:security-fix` | security-scan, security-fix | off | Scans for security vulnerabilities and fixes what's PR-worthy. |
 | `consolidation-patrol-maintenance` | weekly Mon 05:00 | `/shipwright:consolidation-scan` → `/shipwright:consolidation-fix` | consolidation-scan, consolidation-fix | off | Proposes consolidation for duplicate patterns that have stabilized over time. |
+| `prompt-audit-maintenance` | weekly Mon 07:00 | `/shipwright:prompt-scan --with-doctor` → `/shipwright:prompt-fix` | prompt-scan, prompt-fix | off | Scans plugin prompts for drift and proposes fixes (propose-only). |
 
 `shipwright-site-docs-freshness` isn't in the table above — its precheck and command are scoped to this repo's own marketing site rather than being useful for every agent's repo, so it's available to wire in per-agent as a custom, non-system cron rather than being seeded by default.
 
