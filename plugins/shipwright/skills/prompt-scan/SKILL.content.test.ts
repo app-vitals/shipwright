@@ -102,10 +102,33 @@ describe("prompt-scan — SKILL.md", () => {
     expect(text).toContain("two consecutive runs");
   });
 
+  it("Step 6 spells out the class (d)/(e) promotions and the consecutiveRuns counter", () => {
+    const step6 = skill()
+      .split("## Step 6: Fingerprint, Suppress and Merge")[1]
+      ?.split("## Step 7")[0];
+    expect(step6).toBeDefined();
+    expect(step6).toContain("**Class (d) counter.**");
+    expect(step6).toContain("**Class (d) promotion.**");
+    expect(step6).toContain("**Class (e) promotion.**");
+    expect(step6).toContain("`consecutiveRuns >= 2`");
+    expect(step6).toContain("`consecutiveRuns: 0`");
+    expect(step6).toContain("`promoted`");
+    expect(step6).toContain("Promotion applies only to `tracking`.");
+  });
+
+  it("Step 5 and Step 6 agree that a miss resets the counter but not the status", () => {
+    const text = skill();
+    expect(text).toContain("resets to `0` on any run it is missed");
+    expect(text).toContain("left unchanged by the miss");
+    expect(text).not.toContain("Absent fingerprint: leave unchanged,");
+  });
+
   it("skips ledger and report writes under the right flags", () => {
     const text = skill();
     expect(text).toContain("Skip this step if `--dry-run` was passed");
-    expect(text).toContain("Skip this step if `--summary` or `--dry-run` was passed");
+    expect(text).toContain(
+      "Skip this step if `--summary` or `--dry-run` was passed",
+    );
   });
 
   it("has a Constraints section forbidding edits and CLI writes", () => {
@@ -150,5 +173,15 @@ describe("prompt-scan — ledger-schema.md", () => {
     const text = readFileSync(LEDGER_SCHEMA_PATH, "utf8");
     expect(text).toContain("sha256(class|rule|file|normalizedEvidence)[:12]");
     expect(text).toContain("append-only");
+  });
+
+  it("documents the consecutiveRuns counter and class (d)/(e) promotion", () => {
+    const text = readFileSync(LEDGER_SCHEMA_PATH, "utf8");
+    expect(text).toContain("`consecutiveRuns >= 2`");
+    expect(text).toContain("history event `promoted`");
+    expect(text).toContain("Promotion only ever leaves `tracking`.");
+    expect(text).toContain(
+      "`mergeScan` and `LedgerEntry` do not implement them yet",
+    );
   });
 });

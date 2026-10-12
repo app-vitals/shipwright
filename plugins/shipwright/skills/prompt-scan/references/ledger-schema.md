@@ -69,9 +69,14 @@ class `d`.
   (`stopped-reproducing`). A vanished `tracking`, `proposed` or `suppressed` entry is
   left alone: a scan is a sample, one miss is not evidence of resolution.
 - **Class (d) promotion** → a dated-model finding stays `tracking` until it has been
-  observed on two consecutive runs (`consecutiveRuns >= 2`), then moves to `proposed`.
-  Class (e) findings, whose rules are deterministic, are `proposed` once the judgment
-  pass confirms them.
+  observed on two consecutive runs (`consecutiveRuns >= 2`), then moves to `proposed`
+  (history event `promoted`). `consecutiveRuns` is set to `1` on first sighting, + 1 on
+  each run it is seen, and `0` on each run it is missed (status unchanged by the miss).
+  Class (e) findings, whose rules are deterministic, move from `tracking` to `proposed`
+  (history event `promoted`) on any run the judgment pass confirms them, including the
+  first. Promotion only ever leaves `tracking`.
+- `consecutiveRuns` and both promotions are applied by the `prompt-scan` skill after the
+  `mergeScan` semantics above; `mergeScan` and `LedgerEntry` do not implement them yet.
 - `queued`, `measured` and `regressed` are set by `prompt-fix`, `measure` and `watch`,
   never by `prompt-scan`.
 

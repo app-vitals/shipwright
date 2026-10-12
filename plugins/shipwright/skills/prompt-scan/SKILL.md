@@ -124,20 +124,21 @@ forced step-by-step restatement, and stale capability or limit claims.
    sentence free of counts and line numbers. Fingerprint it with the same formula as the
    CLI: `sha256(class|rule|file|normalizedEvidence)[:12]`.
 3. **Promote only after two consecutive runs.** A class (d) finding is judgment-only, so one
-   observation is not evidence. In Step 6, `consecutiveRuns` increments when a class (d)
-   fingerprint is seen again and resets to `0` when a previously tracked one is missed. It
-   moves from `tracking` to `proposed` at `consecutiveRuns >= 2`. Class (d) findings are
-   never reported before then.
+   observation is not evidence. In Step 6, `consecutiveRuns` increments each run a class (d)
+   fingerprint is seen and resets to `0` on any run it is missed; the entry's status is
+   left unchanged by the miss. It moves from `tracking` to `proposed` at
+   `consecutiveRuns >= 2`. Class (d) findings are never reported before then.
 
 ---
 
 ## Step 6: Fingerprint, Suppress and Merge
 
 1. Combine the CLI findings (minus any dropped in Step 4) with the class (d) findings.
-2. **Suppress via the registry.** For each finding, compare it to each registry entry's
-   **Finding** by reading both and deciding whether they describe the same rule on the same
-   file. This is a judgment match, not exact-string equality, as in
-   `references/decisions-registry.md`. A match suppresses the finding unless the entry's
+2. **Suppress via the registry.** For each finding, compare its rule id and file (the
+   identifying parts of its fingerprint) to each registry entry's **Finding**, which names a
+   rule id and file in prose rather than a fingerprint hash. Read both and decide whether
+   they describe the same rule on the same file. This is a judgment match, not
+   exact-string equality, as in `references/decisions-registry.md`. A match suppresses the finding unless the entry's
    **Revisit** condition is now met (a stated threshold exceeded, a stated event occurred, a
    date passed), in which case the entry no longer applies. Check the condition live against
    current baselines and files.
@@ -149,9 +150,26 @@ forced step-by-step restatement, and stale capability or limit claims.
      match on a non-`suppressed` entry sets `suppressed` (history event `suppressed`). A
      `suppressed` entry the registry no longer matches, or a `resolved` entry that
      reproduces, returns to `tracking` (history event `reappeared`).
-   - Absent fingerprint: leave unchanged, except `queued` and `measured` entries, which
-     become `resolved` (`stopped-reproducing`).
+   - Absent fingerprint: leave the status unchanged, except `queued` and `measured`
+     entries, which become `resolved` (`stopped-reproducing`). A class (d) entry also gets
+     `consecutiveRuns: 0`.
    - Never truncate `history`.
+
+   Then apply the two promotion rules that `mergeScan` does not implement, in this order:
+
+   - **Class (d) counter.** For every class (d) finding seen this run, set
+     `consecutiveRuns` to the prior value + 1, or `1` for a new fingerprint or an entry
+     that has no `consecutiveRuns` field. Non-(d) entries never carry the field.
+   - **Class (d) promotion.** A class (d) entry whose status is `tracking` after the
+     merge and whose `consecutiveRuns >= 2` moves to `proposed` (history event
+     `promoted`). A new class (d) fingerprint is therefore never `proposed` on its first
+     run.
+   - **Class (e) promotion.** A class (e) `move-to-path-rule` finding seen this run (so
+     confirmed in Step 4) whose status is `tracking` after the merge moves to `proposed`
+     (history event `promoted`). A new class (e) fingerprint gets its `first-seen` event
+     and then the `promoted` event in the same run.
+   - Promotion applies only to `tracking`. `suppressed`, `resolved`, `queued`, `measured`,
+     `regressed` and already-`proposed` entries keep the status the merge gave them.
 4. Merge the **full** finding set. `--scope` must not shrink it, or every out-of-scope
    `queued`/`measured` entry would be falsely resolved.
 5. Replace `models` and `baselines` with this run's values and set `lastRun` to the current
