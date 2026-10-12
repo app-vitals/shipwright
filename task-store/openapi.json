@@ -3364,6 +3364,10 @@
             "type": "string",
             "example": "feat/feature-x"
           },
+          "pr": {
+            "example": 42,
+            "description": "PR number. Accepts a positive integer, an integer string (`\"42\"`), or a github.com pull-request URL (`https://github.com/<owner>/<repo>/pull/<n>`); stored as the integer. Any other value is rejected with 400 by the handler (not the schema, so the error message names the accepted forms)."
+          },
           "dependencies": {
             "type": "array",
             "items": {
@@ -3453,6 +3457,10 @@
                 "null"
               ],
               "example": "org/repo"
+            },
+            "pr": {
+              "example": 42,
+              "description": "PR number. Accepts a positive integer, an integer string (`\"42\"`), or a github.com pull-request URL (`https://github.com/<owner>/<repo>/pull/<n>`); stored as the integer. Any other value is rejected with 400 by the handler (not the schema, so the error message names the accepted forms)."
             }
           },
           "additionalProperties": {}
@@ -3499,6 +3507,12 @@
       },
       "UpdateTaskBody": {
         "type": "object",
+        "properties": {
+          "pr": {
+            "example": 42,
+            "description": "PR number. Accepts a positive integer, an integer string (`\"42\"`), or a github.com pull-request URL (`https://github.com/<owner>/<repo>/pull/<n>`); stored as the integer. Any other value is rejected with 400 by the handler (not the schema, so the error message names the accepted forms)."
+          }
+        },
         "additionalProperties": {}
       },
       "ClaimBody": {
