@@ -33,15 +33,6 @@ annotations:
       description: "agent.provisioning.claudePolicy renders a managed-settings.json ConfigMap and injects SHIPWRIGHT_K8S_AGENT_CLAUDE_POLICY_CONFIGMAP/_HASH into the admin Deployment (ACP-2.1)"
     - kind: changed
       description: "Document agent.provisioning.claudePolicy: mount path, read-only behavior, rollout via admin restart and policy-only reconcile, agent-pods-only scope, namespace prerequisite and remote managed-settings precedence (ACP-2.2)"
-      description: "auto-bump to chart v1.24.39 triggered by release tag admin-v1.265.0"
-    - kind: changed
-      description: "auto-bump to chart v1.24.39 triggered by release tag agent-v1.403.1"
-    - kind: changed
-      description: "auto-bump to chart v1.24.39 triggered by release tag chat-v1.139.0"
-    - kind: changed
-      description: "auto-bump to chart v1.24.39 triggered by release tag metrics-v1.142.0"
-    - kind: changed
-      description: "auto-bump to chart v1.24.39 triggered by release tag task-store-v1.188.0"
 dependencies:
   # Bitnami PostgreSQL subchart, pinned to the chart release shipping Postgres 18.x
   # (appVersion 18.6.0). Every current chart release defaults image.tag to `latest`
