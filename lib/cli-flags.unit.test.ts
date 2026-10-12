@@ -58,7 +58,10 @@ describe("parseFlags — mixed syntax", () => {
 
 describe("parseFlags — missing flag", () => {
   test("returns undefined for a declared flag that is not present in argv", () => {
-    const result = parseFlags(["--agent-id", "agent-abc"], ["--agent-id", "--api-url"]);
+    const result = parseFlags(
+      ["--agent-id", "agent-abc"],
+      ["--agent-id", "--api-url"],
+    );
     expect(result["--api-url"]).toBeUndefined();
   });
 
@@ -76,14 +79,59 @@ describe("parseFlags — missing flag", () => {
 
 describe("parseFlags — unknown flags are ignored (tolerant behavior)", () => {
   test("skips a flag not declared in flagSpecs", () => {
-    const result = parseFlags(["--unknown", "value", "--agent-id", "x"], ["--agent-id"]);
+    const result = parseFlags(
+      ["--unknown", "value", "--agent-id", "x"],
+      ["--agent-id"],
+    );
     expect(result["--agent-id"]).toBe("x");
     expect(result).not.toHaveProperty("--unknown");
   });
 
   test("skips an unknown flag in `--flag=value` form", () => {
-    const result = parseFlags(["--unknown=value", "--agent-id=x"], ["--agent-id"]);
+    const result = parseFlags(
+      ["--unknown=value", "--agent-id=x"],
+      ["--agent-id"],
+    );
     expect(result["--agent-id"]).toBe("x");
     expect(result).not.toHaveProperty("--unknown");
+  });
+});
+
+describe("parseFlags — boolean flags", () => {
+  test("true when present, false when absent, never consumes next token", () => {
+    const r = parseFlags(["--dry-run", "--name", "x"], ["--name"], {
+      booleans: ["--dry-run", "--verbose"],
+    });
+    expect(r["--dry-run"]).toBe(true);
+    expect(r["--verbose"]).toBe(false);
+    expect(r["--name"]).toBe("x");
+  });
+
+  test("honours --flag=false", () => {
+    const r = parseFlags(["--dry-run=false"], [], { booleans: ["--dry-run"] });
+    expect(r["--dry-run"]).toBe(false);
+  });
+});
+
+describe("parseFlags — repeatable flags", () => {
+  test("collects every occurrence in order, both syntaxes", () => {
+    const r = parseFlags(["--repo", "a/b", "--repo=c/d", "--repo", "e/f"], [], {
+      multi: ["--repo"],
+    });
+    expect(r["--repo"]).toEqual(["a/b", "c/d", "e/f"]);
+  });
+
+  test("empty array when absent; trailing flag without value is skipped", () => {
+    expect(parseFlags([], [], { multi: ["--repo"] })["--repo"]).toEqual([]);
+    expect(parseFlags(["--repo"], [], { multi: ["--repo"] })["--repo"]).toEqual(
+      [],
+    );
+  });
+
+  test("string-only call shape is unchanged", () => {
+    expect(parseFlags(["--a", "1"], ["--a", "--b"])).toEqual({
+      "--a": "1",
+      "--b": undefined,
+    });
   });
 });

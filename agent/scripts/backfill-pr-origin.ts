@@ -41,6 +41,7 @@
  * module doc comment in agent/src/pr-origin-backfill.ts.
  */
 
+import { parseFlags } from "../../lib/cli-flags.ts";
 import { ghJson } from "../src/check-helpers.ts";
 import type { CensusEntry, CensusTaskRecord } from "../src/pr-census.ts";
 import { type BackfillDeps, runBackfill } from "../src/pr-origin-backfill.ts";
@@ -95,29 +96,26 @@ function reposFromEnv(): string[] {
 }
 
 function parseArgs(argv: string[]): { repos: string[]; days: number } {
-  const repos: string[] = [];
-  let days = DEFAULT_DAYS;
+  const flags = parseFlags(argv, ["--days"], { multi: ["--repo"] });
+  const repos = flags["--repo"];
 
-  for (let i = 0; i < argv.length; i++) {
-    const arg = argv[i];
-    if (arg === "--repo") {
-      const val = argv[++i];
-      if (!val) {
-        console.error("Error: --repo requires a value (org/repo)\n");
-        console.error(USAGE);
-        process.exit(1);
-      }
-      repos.push(val);
-    } else if (arg === "--days") {
-      const val = argv[++i];
-      const parsed = val ? Number(val) : Number.NaN;
-      if (!val || Number.isNaN(parsed) || parsed <= 0) {
-        console.error("Error: --days requires a positive number\n");
-        console.error(USAGE);
-        process.exit(1);
-      }
-      days = parsed;
+  // parseFlags silently drops a trailing value-less `--repo`; keep the loud failure.
+  if (argv.at(-1) === "--repo" || repos.some((repo) => !repo)) {
+    console.error("Error: --repo requires a value (org/repo)\n");
+    console.error(USAGE);
+    process.exit(1);
+  }
+
+  let days = DEFAULT_DAYS;
+  if (argv.some((arg) => arg === "--days" || arg.startsWith("--days="))) {
+    const val = flags["--days"];
+    const parsed = val ? Number(val) : Number.NaN;
+    if (!val || Number.isNaN(parsed) || parsed <= 0) {
+      console.error("Error: --days requires a positive number\n");
+      console.error(USAGE);
+      process.exit(1);
     }
+    days = parsed;
   }
 
   const resolvedRepos = repos.length > 0 ? repos : reposFromEnv();
