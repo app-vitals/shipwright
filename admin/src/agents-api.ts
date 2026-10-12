@@ -1170,7 +1170,7 @@ const devTaskAdherenceRoute = createRoute({
   path: "/agents/all/cron-runs/dev-task-adherence",
   summary: "Get dev-task adherence report",
   description:
-    "Admin-only. Per dev-task run, compares skill-usage subagent dispatches against the required-steps table and reports per-step ran/skipped, with per-step adherence rates overall and per variant (contextFingerprint). A dispatch proves a step started, not that it was done well. Optional `from`/`to` ISO datetime params bound startedAt.",
+    "Admin-only. Per dev-task run, compares skill-usage subagent dispatches against the required-steps table and reports per-step ran/skipped, with per-step adherence rates overall, per variant (contextFingerprint) and per commandVariant (default vs alternate). Rates cover task-bearing runs only (dispatched against a work item); `counts` separates them from silent no-ready-task ticks. A dispatch proves a step started, not that it was done well. Optional `from`/`to` ISO datetime params bound startedAt.",
   request: {
     query: cronRunStatsQuerySchema,
   },

@@ -5,8 +5,20 @@
  * kind="agent", name=<subagent_type>) against the required-steps table
  * (plugins/shipwright/references/required-steps/dev-task.json, DTA-2.1) and
  * records per-step ran/skipped. Aggregates per-step adherence rates over a
- * time window and per variant (the run's contextFingerprint, the only
- * variant-like tag AgentCronRun carries; null when absent).
+ * time window, per contextFingerprint (byVariant; null when absent) and per
+ * commandVariant (byCommandVariant: "default" | "alternate", DTA-1.3; null for
+ * unattributed runs) — the key the DTA-2.3 A/B trial splits on.
+ *
+ * Task-bearing vs silent: a run is task-bearing when it was dispatched against
+ * a work item (itemId set). Non-skipped runs with no itemId are silent /
+ * no-ready-task ticks that never executed the command; they are listed
+ * (taskBearing=false) and counted, but excluded from every series so rates
+ * cover only runs that actually executed dev-task.
+ *
+ * Step detection check: a run whose skill usage contains an
+ * agent/general-purpose row (the Step 5 implementation subagent) is reported
+ * as Step 5 ran — covered by a unit fixture. A single dispatch does not also
+ * satisfy 6.5 (see evaluateRun).
  *
  * IMPORTANT: a dispatch proves a step *started*, not that it was done well.
  * Steps whose proof is not an agent dispatch (6, 7, 8, 9, 9b, 10) are
@@ -43,6 +55,9 @@ interface RunAdherence {
   runId: string;
   itemId: string | null;
   contextFingerprint: string | null;
+  commandVariant: string | null;
+  /** True when dispatched against a work item; false for silent ticks. */
+  taskBearing: boolean;
   steps: RunStepResult[];
   /** True when every mandatory, dispatch-measurable step ran. */
   adherent: boolean;
@@ -65,14 +80,32 @@ interface AdherenceSeries {
   variant: string | null;
   runs: number;
   adherentRuns: number;
+  /** adherentRuns / runs; null when there are no runs. */
+  adherenceRate: number | null;
   steps: StepAdherenceRate[];
+}
+
+interface CommandVariantSeries extends Omit<AdherenceSeries, "variant"> {
+  /** "default" | "alternate"; null for runs without attribution. */
+  commandVariant: string | null;
+}
+
+interface RunCounts {
+  /** All non-skipped dev-task runs in the window. */
+  totalRuns: number;
+  /** Runs dispatched against a work item; the denominator for all rates. */
+  taskBearingRuns: number;
+  /** Non-skipped runs with no work item (empty-queue ticks). */
+  silentTicks: number;
 }
 
 interface DevTaskAdherenceReport {
   disclaimer: string;
+  counts: RunCounts;
   runs: RunAdherence[];
   overall: AdherenceSeries;
   byVariant: AdherenceSeries[];
+  byCommandVariant: CommandVariantSeries[];
 }
 
 export const ADHERENCE_DISCLAIMER =
@@ -149,7 +182,12 @@ function evaluateRun(
 
 export function buildRunAdherence(
   steps: RequiredStep[],
-  run: { id: string; itemId: string | null; contextFingerprint: string | null },
+  run: {
+    id: string;
+    itemId: string | null;
+    contextFingerprint: string | null;
+    commandVariant?: string | null;
+  },
   usage: SkillUsageRow[],
 ): RunAdherence {
   const results = evaluateRun(steps, usage);
@@ -164,6 +202,8 @@ export function buildRunAdherence(
     runId: run.id,
     itemId: run.itemId,
     contextFingerprint: run.contextFingerprint,
+    commandVariant: run.commandVariant ?? null,
+    taskBearing: run.itemId !== null,
     steps: results,
     adherent: missingSteps.length === 0,
     missingSteps,
@@ -175,10 +215,12 @@ function summarize(
   runs: RunAdherence[],
   variant: string | null,
 ): AdherenceSeries {
+  const adherentRuns = runs.filter((r) => r.adherent).length;
   return {
     variant,
     runs: runs.length,
-    adherentRuns: runs.filter((r) => r.adherent).length,
+    adherentRuns,
+    adherenceRate: runs.length === 0 ? null : adherentRuns / runs.length,
     steps: steps.map((step) => {
       let ran = 0;
       let skipped = 0;
@@ -201,23 +243,46 @@ function summarize(
   };
 }
 
+function groupBy(
+  runs: RunAdherence[],
+  key: (r: RunAdherence) => string | null,
+): Map<string | null, RunAdherence[]> {
+  const groups = new Map<string | null, RunAdherence[]>();
+  for (const r of runs) {
+    const g = groups.get(key(r)) ?? [];
+    g.push(r);
+    groups.set(key(r), g);
+  }
+  return groups;
+}
+
 export function buildReport(
   steps: RequiredStep[],
   runs: RunAdherence[],
 ): DevTaskAdherenceReport {
-  const groups = new Map<string | null, RunAdherence[]>();
-  for (const r of runs) {
-    const g = groups.get(r.contextFingerprint) ?? [];
-    g.push(r);
-    groups.set(r.contextFingerprint, g);
-  }
+  const taskBearing = runs.filter((r) => r.taskBearing);
   return {
     disclaimer: ADHERENCE_DISCLAIMER,
+    counts: {
+      totalRuns: runs.length,
+      taskBearingRuns: taskBearing.length,
+      silentTicks: runs.length - taskBearing.length,
+    },
     runs,
-    overall: summarize(steps, runs, null),
-    byVariant: [...groups.entries()].map(([variant, rs]) =>
-      summarize(steps, rs, variant),
+    overall: summarize(steps, taskBearing, null),
+    byVariant: [...groupBy(taskBearing, (r) => r.contextFingerprint)].map(
+      ([variant, rs]) => summarize(steps, rs, variant),
     ),
+    byCommandVariant: [...groupBy(taskBearing, (r) => r.commandVariant)]
+      .sort(([a], [b]) => (a ?? "\uffff").localeCompare(b ?? "\uffff"))
+      .map(([commandVariant, rs]) => {
+        const { variant: _variant, ...series } = summarize(
+          steps,
+          rs,
+          commandVariant,
+        );
+        return { commandVariant, ...series };
+      }),
   };
 }
 
@@ -243,6 +308,7 @@ export class DevTaskAdherenceService {
         id: true,
         itemId: true,
         contextFingerprint: true,
+        commandVariant: true,
         skillUsage: { select: { kind: true, name: true, invocations: true } },
       },
       orderBy: { startedAt: "asc" },

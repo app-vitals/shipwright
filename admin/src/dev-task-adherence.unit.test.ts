@@ -13,10 +13,15 @@ const agent = (name: string, invocations = 1): SkillUsageRow => ({
   invocations,
 });
 
-const run = (id: string, fp: string | null = null) => ({
+const run = (
+  id: string,
+  fp: string | null = null,
+  commandVariant: string | null = null,
+) => ({
   id,
   itemId: id,
   contextFingerprint: fp,
+  commandVariant,
 });
 
 // The nine known sessions skipped the Step 5 and 6.5 dispatches: no
@@ -99,5 +104,51 @@ describe("dev-task adherence", () => {
     expect(step6).toMatchObject({ measured: false, rate: null });
     expect(report.disclaimer).toBe(ADHERENCE_DISCLAIMER);
     expect(report.disclaimer).toContain("started, not that it was done well");
+  });
+
+  it("reports a general-purpose dispatch fixture as Step 5 ran", () => {
+    const r = buildRunAdherence(REQUIRED_STEPS, run("gp"), [
+      agent("general-purpose"),
+    ]);
+    expect(r.steps.find((s) => s.stepNumber === "5")?.status).toBe("ran");
+    expect(r.missingSteps).not.toContain("5");
+  });
+
+  it("splits adherence by commandVariant over task-bearing runs only", () => {
+    const good = [
+      agent("general-purpose", 2),
+      agent("shipwright:docs-refresher"),
+    ];
+    const runs = [
+      buildRunAdherence(REQUIRED_STEPS, run("d1", null, "default"), good),
+      buildRunAdherence(REQUIRED_STEPS, run("d2", null, "default"), []),
+      buildRunAdherence(REQUIRED_STEPS, run("a1", null, "alternate"), good),
+      buildRunAdherence(REQUIRED_STEPS, run("n1"), good),
+      // Silent tick: no work item, no usage — must not drag rates down.
+      buildRunAdherence(
+        REQUIRED_STEPS,
+        { id: "s1", itemId: null, contextFingerprint: null, commandVariant: "alternate" },
+        [],
+      ),
+    ];
+    const report = buildReport(REQUIRED_STEPS, runs);
+    expect(report.counts).toEqual({
+      totalRuns: 5,
+      taskBearingRuns: 4,
+      silentTicks: 1,
+    });
+    expect(report.overall.runs).toBe(4);
+    expect(
+      report.byCommandVariant.map((v) => [
+        v.commandVariant,
+        v.runs,
+        v.adherentRuns,
+        v.adherenceRate,
+      ]),
+    ).toEqual([
+      ["alternate", 1, 1, 1],
+      ["default", 2, 1, 0.5],
+      [null, 1, 1, 1],
+    ]);
   });
 });

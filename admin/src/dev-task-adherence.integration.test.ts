@@ -49,7 +49,8 @@ describeOrSkip("DevTaskAdherenceService (integration)", () => {
     cronId: string,
     phaseId: string,
     opts: {
-      itemId: string;
+      itemId: string | null;
+      commandVariant?: string;
       startedAt: string;
       skipped?: boolean;
       usage: { name: string; invocations: number }[];
@@ -60,6 +61,7 @@ describeOrSkip("DevTaskAdherenceService (integration)", () => {
       skipped: opts.skipped ?? false,
       phaseId,
       itemId: opts.itemId,
+      commandVariant: opts.commandVariant,
     });
     for (const u of opts.usage) {
       await prisma.agentCronRunSkillUsage.create({
@@ -117,12 +119,29 @@ describeOrSkip("DevTaskAdherenceService (integration)", () => {
       usage: [],
     });
 
+    // Silent tick: non-skipped, no work item. Excluded from rates.
+    await seedRun(agent.id, loop.id, devTask.id, {
+      itemId: null,
+      commandVariant: "alternate",
+      startedAt: "2026-01-12T09:00:00Z",
+      usage: [],
+    });
+
     const report = await service.report(
       "2026-01-01T00:00:00Z",
       "2026-02-01T00:00:00Z",
     );
 
-    expect(report.runs.map((r) => r.itemId)).toEqual(["VRW-1.1", "OK-1.1"]);
+    expect(report.runs.map((r) => r.itemId)).toEqual([
+      "VRW-1.1",
+      "OK-1.1",
+      null,
+    ]);
+    expect(report.counts).toEqual({
+      totalRuns: 3,
+      taskBearingRuns: 2,
+      silentTicks: 1,
+    });
     const [bad, good] = report.runs;
     expect(bad?.adherent).toBe(false);
     expect(bad?.missingSteps).toEqual(
