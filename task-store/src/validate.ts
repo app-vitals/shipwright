@@ -1,5 +1,7 @@
 export { isOrgRepo } from "@shipwright/lib/org-repo";
 
+// Task.pr is Postgres INT4.
+const PR_MAX = 2147483647;
 const PR_URL_RE = /^https:\/\/github\.com\/[^/\s]+\/[^/\s]+\/pull\/(\d+)\/?$/;
 const PR_ACCEPTED_FORMS =
   "a positive integer, an integer string, or a github.com pull-request URL (https://github.com/<owner>/<repo>/pull/<n>)";
@@ -25,7 +27,7 @@ export function normalizePr(
     if (m) n = Number(m[1]);
     else if (/^\d+$/.test(s)) n = Number(s);
   }
-  if (n === undefined || !Number.isSafeInteger(n) || n <= 0) {
+  if (n === undefined || !Number.isSafeInteger(n) || n <= 0 || n > PR_MAX) {
     return {
       ok: false,
       error: `pr must be ${PR_ACCEPTED_FORMS}`,

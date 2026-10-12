@@ -8,6 +8,7 @@ describe("normalizePr", () => {
   });
   it("accepts integers and integer strings", () => {
     expect(normalizePr(12)).toEqual({ ok: true, value: 12 });
+    expect(normalizePr(2147483647)).toEqual({ ok: true, value: 2147483647 });
     expect(normalizePr("12")).toEqual({ ok: true, value: 12 });
   });
   it("extracts the number from a github pull URL", () => {
@@ -24,6 +25,9 @@ describe("normalizePr", () => {
     1.5,
     Number.NaN,
     "https://github.com/a/b/pull/x",
+    2147483648,
+    "99999999999",
+    "https://github.com/a/b/pull/99999999999",
     {},
     [[]],
   ])("rejects %p", (v) => {
