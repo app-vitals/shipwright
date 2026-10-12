@@ -41,7 +41,7 @@
     "typescript": "^7.0.0"
   },
   "dependencies": {
-    "@prisma/client": "^6.19.2"
+    "@prisma/client": "^7.0.0"
   },
   "overrides": {
     "uuid": "14.0.2",
