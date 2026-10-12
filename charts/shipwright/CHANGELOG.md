@@ -10,6 +10,12 @@ independent of `appVersion`. CI enforces this with
 `ct lint --check-version-increment`. Each release here must mirror the
 `artifacthub.io/changes` annotation in `Chart.yaml`.
 
+## [1.25.3] - 2026-10-12
+
+### Changed
+
+- allow NodeLocal DNSCache in the tenant NetworkPolicy via selfServe.networkPolicy.dnsCidrs
+
 ## [1.25.2] - 2026-10-12
 
 ### Changed
