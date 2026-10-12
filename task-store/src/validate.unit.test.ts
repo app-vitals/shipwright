@@ -12,7 +12,7 @@ describe("normalizePr", () => {
   });
   it("extracts the number from a github pull URL", () => {
     expect(
-      normalizePr("https://github.com/app-vitals/vitals-os/pull/6296"),
+      normalizePr("https://github.com/app-vitals/shipwright/pull/6296"),
     ).toEqual({ ok: true, value: 6296 });
   });
   it.each([

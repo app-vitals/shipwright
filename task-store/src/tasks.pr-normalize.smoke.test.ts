@@ -209,8 +209,8 @@ describe("pr normalization on PATCH/POST /tasks (smoke)", () => {
     [42, 42],
     ["42", 42],
     [" 42 ", 42],
-    ["https://github.com/app-vitals/vitals-os/pull/6296", 6296],
-    ["https://github.com/app-vitals/vitals-os/pull/6296/", 6296],
+    ["https://github.com/app-vitals/shipwright/pull/6296", 6296],
+    ["https://github.com/app-vitals/shipwright/pull/6296/", 6296],
     [null, null],
   ])("PATCH pr=%p stores %p", async (input, expected) => {
     const captured: unknown[] = [];
@@ -226,7 +226,7 @@ describe("pr normalization on PATCH/POST /tasks (smoke)", () => {
     4.5,
     0,
     -3,
-    "https://github.com/app-vitals/vitals-os/issues/6296",
+    "https://github.com/app-vitals/shipwright/issues/6296",
     "https://example.com/a/b/pull/1",
     { n: 1 },
     true,
