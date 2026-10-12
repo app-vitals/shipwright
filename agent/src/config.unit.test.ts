@@ -76,11 +76,11 @@ describe("config.claude", () => {
     expect(cfg.claude.anthropicApiKey).toBeUndefined();
   });
 
-  test("model defaults to claude-sonnet-4-6 when ANTHROPIC_MODEL not set", () => {
+  test("model defaults to claude-sonnet-5-5 when ANTHROPIC_MODEL not set", () => {
     const saved = process.env.ANTHROPIC_MODEL;
     delete process.env.ANTHROPIC_MODEL;
     const { config: cfg } = createConfig(AGENT_HOME);
-    expect(cfg.claude.model).toBe("claude-sonnet-4-6");
+    expect(cfg.claude.model).toBe("claude-sonnet-5-5");
     process.env.ANTHROPIC_MODEL = saved;
   });
 

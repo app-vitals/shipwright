@@ -52,7 +52,7 @@ describe("calculateCost — non-zero for known keys", () => {
 
 describe("normalizeModelToRateKey — haiku family", () => {
   test('"haiku" maps to haiku canonical key', () => {
-    expect(normalizeModelToRateKey("haiku")).toBe("claude-haiku-4-5");
+    expect(normalizeModelToRateKey("haiku")).toBe("claude-haiku-5-5");
   });
 
   test('"claude-haiku-4-5" maps to haiku canonical key', () => {
@@ -66,7 +66,7 @@ describe("normalizeModelToRateKey — haiku family", () => {
 
 describe("normalizeModelToRateKey — sonnet family", () => {
   test('"sonnet" maps to sonnet canonical key', () => {
-    expect(normalizeModelToRateKey("sonnet")).toBe("claude-sonnet-4-6");
+    expect(normalizeModelToRateKey("sonnet")).toBe("claude-sonnet-5-5");
   });
 
   test('"claude-sonnet-4-6" maps to sonnet canonical key', () => {
@@ -76,7 +76,7 @@ describe("normalizeModelToRateKey — sonnet family", () => {
 
 describe("normalizeModelToRateKey — opus family", () => {
   test('"opus" maps to opus canonical key', () => {
-    expect(normalizeModelToRateKey("opus")).toBe("claude-opus-4-8");
+    expect(normalizeModelToRateKey("opus")).toBe("claude-opus-5-5");
   });
 
   test('"claude-opus-4-8" maps to opus canonical key', () => {
@@ -187,11 +187,11 @@ describe("5.x rates match the published rate card", () => {
   });
 });
 
-describe("normalizeModelToRateKey — bare aliases stay on 4.x keys", () => {
-  test("haiku/sonnet/opus aliases are unchanged until the alias bump", () => {
-    expect(normalizeModelToRateKey("haiku")).toBe("claude-haiku-4-5");
-    expect(normalizeModelToRateKey("sonnet")).toBe("claude-sonnet-4-6");
-    expect(normalizeModelToRateKey("opus")).toBe("claude-opus-4-8");
+describe("normalizeModelToRateKey — bare aliases resolve to 5.5 keys", () => {
+  test("haiku/sonnet/opus aliases map to the 5.5 generation", () => {
+    expect(normalizeModelToRateKey("haiku")).toBe("claude-haiku-5-5");
+    expect(normalizeModelToRateKey("sonnet")).toBe("claude-sonnet-5-5");
+    expect(normalizeModelToRateKey("opus")).toBe("claude-opus-5-5");
   });
 });
 
