@@ -185,6 +185,7 @@ The policy selects pods labelled `shipwright.dev/tenant=true` and allows:
 | Direction | Allowed | Details |
 |-----------|---------|---------|
 | Egress | DNS | `kube-dns` pods (`k8s-app=kube-dns`) in `kube-system`, port 53 UDP and TCP |
+| Egress | Node-local DNS | each CIDR in `selfServe.networkPolicy.dnsCidrs` (default `169.254.20.10/32`, the GKE NodeLocal DNSCache), port 53 UDP and TCP |
 | Egress | Shipwright services | admin, task-store and chat pods in the release namespace (selected by the chart's `app.kubernetes.io/{name,instance,component}` labels) |
 | Egress | Public internet | `0.0.0.0/0` with `ipBlock.except`: `10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16`, `169.254.0.0/16` |
 | Ingress | Admin only | admin pods in the release namespace; everything else is denied |
@@ -193,6 +194,14 @@ The `except` list is what blocks other pods, nodes, the metadata endpoint
 (`169.254.169.254`) and the in-cluster API server (a private ClusterIP).
 Traffic to the Shipwright services above is allowed by the explicit pod
 selectors, not by the `ipBlock`.
+
+**Cluster resolver.** Clusters using a node-local DNS cache (GKE NodeLocal
+DNSCache, Dataplane V2) point pods at a link-local address that the
+`169.254.0.0/16` exclusion would otherwise drop, so every lookup fails. The
+default `dnsCidrs` covers GKE's `169.254.20.10`. On other clusters, find the
+resolver with `cat /etc/resolv.conf` in any pod (the `nameserver` line) and set
+`selfServe.networkPolicy.dnsCidrs` to its `/32`, e.g.
+`--set 'selfServe.networkPolicy.dnsCidrs={10.96.0.10/32}'`.
 
 > **CNI requirement:** a NetworkPolicy is only enforced if the cluster's CNI
 > implements it. Without enforcement the resource is accepted and silently does

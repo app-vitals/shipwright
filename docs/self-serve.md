@@ -61,7 +61,7 @@ The create path is shared with `POST /agents`; see [Agent API](./agent-api.md).
 
 Phase 1 is "option A": tenants share one Kubernetes namespace (`SHIPWRIGHT_K8S_NAMESPACE`) with these controls:
 
-- **NetworkPolicy** on tenant pods (label `shipwright.dev/tenant=true`): egress to DNS, the Shipwright services and the public internet only, with private ranges, link-local and the metadata endpoint blocked; ingress from admin only. It is flag-gated by `selfServe.networkPolicy.enabled` and only enforced if the cluster CNI supports NetworkPolicy. **Enable it before allowing any tenant agents.** See [Tenant agent NetworkPolicy](./deploy-kubernetes-networking.md#tenant-agent-networkpolicy-self-serve-opt-in).
+- **NetworkPolicy** on tenant pods (label `shipwright.dev/tenant=true`): egress to DNS (kube-dns plus the node-local resolver in `selfServe.networkPolicy.dnsCidrs`), the Shipwright services and the public internet only, with private ranges, link-local and the metadata endpoint blocked; ingress from admin only. It is flag-gated by `selfServe.networkPolicy.enabled` and only enforced if the cluster CNI supports NetworkPolicy. **Enable it before allowing any tenant agents.** See [Tenant agent NetworkPolicy](./deploy-kubernetes-networking.md#tenant-agent-networkpolicy-self-serve-opt-in).
 - **CPU limit** on tenant containers, tunable through the `SHIPWRIGHT_K8S_AGENT_*` overrides (see [agent provisioning](./deploy-kubernetes-provisioning.md)).
 - **Task-store tenancy:** tasks, PRs, sessions and verification checks carry an `accountId`; account-scoped tokens only read and write their own rows. Existing platform rows use the `default` account.
 
