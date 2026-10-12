@@ -243,6 +243,7 @@ crons — each fully self-contained, doing its own discovery with no dependency 
 | `error-patrol-maintenance` | off | Scans unresolved Sentry errors and fixes what's PR-worthy. |
 | `security-patrol-maintenance` | off | Scans for security vulnerabilities and fixes what's PR-worthy. |
 | `consolidation-patrol-maintenance` | off | Proposes consolidation for duplicate patterns that have stabilized over time. |
+| `prompt-audit-maintenance` | off | Scans plugin prompts for drift and proposes fixes (propose-only). |
 
 `shipwright-site-docs-freshness` (page-scoped staleness checks for this repo's own marketing site) isn't in this list — its precheck is scoped to `site/`, so it doesn't belong in the generic manifest every agent gets. It's available to wire per-agent as a [custom cron](../../../docs/extending.md#custom-cron-jobs-for-scheduled-automation); see [`docs/site-docs-freshness.md`](../../../docs/site-docs-freshness.md) for the schedule/prompt/preCheck shape.
 

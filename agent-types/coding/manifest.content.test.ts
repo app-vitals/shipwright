@@ -88,12 +88,12 @@ describe("agent-types/coding/manifest.yaml — required top-level sections", () 
   });
 });
 
-// ─── Acceptance criterion 2 — exactly 13 cron entries ──────────────────────
+// ─── Acceptance criterion 2 — exactly 14 cron entries ──────────────────────
 
 describe("agent-types/coding/manifest.yaml — cron count", () => {
-  it("has exactly 13 cron entries", () => {
+  it("has exactly 14 cron entries", () => {
     const manifest = parseAgentTypeManifest(rawContent);
-    expect(manifest.crons).toHaveLength(13);
+    expect(manifest.crons).toHaveLength(14);
   });
 });
 
@@ -251,5 +251,27 @@ describe("agent-types/coding/manifest.yaml — error-patrol-maintenance chaining
       errorPatrol?.prompt.includes(keyword),
     );
     expect(hasAllKeywords).toBe(true);
+  });
+});
+
+// ─── PAU-3.11 — prompt-audit-maintenance cron ──────────────────────────────
+
+describe("agent-types/coding/manifest.yaml — prompt-audit-maintenance cron", () => {
+  const manifest = parseAgentTypeManifest(rawContent);
+  const cron = manifest.crons.find(
+    (c) => c.name === "prompt-audit-maintenance",
+  );
+
+  it("declares the cron with the scan + fix prompt, weekly schedule and preCheck", () => {
+    expect(cron).toBeDefined();
+    expect(cron?.schedule).toBe("0 7 * * 1");
+    expect(cron?.prompt).toContain("/shipwright:prompt-scan --with-doctor");
+    expect(cron?.prompt).toContain("/shipwright:prompt-fix");
+    expect(cron?.preCheck).toBe("shipwright:check-prompt-audit.ts");
+    expect(cron?.silent).toBe(true);
+  });
+
+  it("ships disabled", () => {
+    expect(cron?.enabled).toBe(false);
   });
 });

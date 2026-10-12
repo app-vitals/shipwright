@@ -155,6 +155,14 @@ crons:
     silent: true
     preCheck: shipwright:check-consolidation-patrol.ts
     enabled: false
+  - name: prompt-audit-maintenance
+    schedule: "0 7 * * 1"
+    prompt: |-
+      /shipwright:prompt-scan --with-doctor
+      /shipwright:prompt-fix
+    silent: true
+    preCheck: shipwright:check-prompt-audit.ts
+    enabled: false
 plugins:
   - shipwright
 tools:
