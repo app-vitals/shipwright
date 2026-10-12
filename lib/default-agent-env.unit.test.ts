@@ -12,4 +12,8 @@ describe("DEFAULT_AGENT_ENV", () => {
   it("defaults ANTHROPIC_MODEL to a non-empty value", () => {
     expect(DEFAULT_AGENT_ENV.ANTHROPIC_MODEL).toMatch(/^claude-/);
   });
+
+  it("defaults ANTHROPIC_MODEL to claude-sonnet-5-5", () => {
+    expect(DEFAULT_AGENT_ENV.ANTHROPIC_MODEL).toBe("claude-sonnet-5-5");
+  });
 });

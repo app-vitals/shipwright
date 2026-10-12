@@ -14,7 +14,7 @@ export const pluginEnvVars: ConfigVar[] = [
 ];
 
 export const agentClaudeVars: ConfigVar[] = [
-  { name: "ANTHROPIC_MODEL", type: "string", def: "claude-sonnet-4-6", desc: "Claude model used for each agent invocation." },
+  { name: "ANTHROPIC_MODEL", type: "string", def: "claude-sonnet-5-5", desc: "Claude model used for each agent invocation." },
   { name: "ANTHROPIC_FALLBACK_MODEL", type: "string", def: "—", desc: "Fallback model if the primary is unavailable." },
   { name: "ANTHROPIC_EFFORT_LEVEL", type: "string", def: "—", desc: "Effort/thinking level passed to Claude (e.g. extended, auto, none)." },
   { name: "SHIPWRIGHT_CLAUDE_TIMEOUT_MS", type: "number", def: "3600000", desc: "Hard ceiling timeout in milliseconds for a single claude -p session spawned by the agent runner — a backstop, not the primary timeout (see SHIPWRIGHT_CLAUDE_IDLE_TIMEOUT_MS). Fires only for a continuously-active-but-never-converging session. Falls back to the default when unset or not a positive integer. When raising this, raise SHIPWRIGHT_TASK_STORE_CLAIM_TTL_MS in step (keep the ~5 min buffer) or the stale-claim reaper re-dispatches a duplicate run." },

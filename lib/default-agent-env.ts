@@ -7,7 +7,7 @@
  */
 
 /** Model used when an agent has no ANTHROPIC_MODEL set. */
-export const DEFAULT_ANTHROPIC_MODEL = "claude-sonnet-4-6";
+export const DEFAULT_ANTHROPIC_MODEL = "claude-sonnet-5-5";
 
 /** Env vars written to a new agent's AgentEnv at creation. Operator-supplied values win. */
 export const DEFAULT_AGENT_ENV: Readonly<Record<string, string>> = {

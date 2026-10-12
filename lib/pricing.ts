@@ -63,9 +63,7 @@ export function calculateCost(usage: TokenUsage, model: string): number {
 export function normalizeModelToRateKey(model: string): string | null {
   const bareModel = model.replace(/-\d{8}$/, "");
   // Current-generation ids price as themselves. The bare "sonnet"/"opus"/
-  // "haiku" aliases below deliberately still resolve to the 4.x keys: the
-  // fleet default is claude-sonnet-4-6 and the alias mapping moves with the
-  // measured model bump, not here.
+  // "haiku" aliases resolve to the 5.5 keys; 4.x ids keep their own mapping.
   if (
     bareModel === "claude-fable-5-1" ||
     bareModel === "claude-opus-5-5" ||
@@ -74,18 +72,19 @@ export function normalizeModelToRateKey(model: string): string | null {
   ) {
     return bareModel;
   }
+  if (bareModel === "haiku") return "claude-haiku-5-5";
+  if (bareModel === "opus") return "claude-opus-5-5";
+  if (bareModel === "sonnet") return "claude-sonnet-5-5";
   if (
-    bareModel === "haiku" ||
     bareModel === "claude-haiku-4-5" ||
     bareModel === "claude-haiku-4-6"
   ) {
     return "claude-haiku-4-5";
   }
-  if (bareModel === "sonnet" || bareModel === "claude-sonnet-4-6") {
+  if (bareModel === "claude-sonnet-4-6") {
     return "claude-sonnet-4-6";
   }
   if (
-    bareModel === "opus" ||
     bareModel === "claude-opus-4-8" ||
     bareModel === "claude-opus-4-7" ||
     bareModel === "claude-opus-4-6"
