@@ -625,6 +625,13 @@ selfServe:
     # blocked); ingress from the admin pods only. Only enforced if the cluster
     # CNI supports NetworkPolicy. Enable before allowing any tenant agents.
     enabled: false
+    # -- CIDRs of node-local / cluster DNS resolvers tenant pods may reach on
+    # port 53 (UDP and TCP), in addition to the kube-dns pods. Default is the
+    # GKE NodeLocal DNSCache address; set your cluster's resolver on other
+    # CNIs (find it with `cat /etc/resolv.conf` in any pod). Empty list
+    # renders no extra rule.
+    dnsCidrs:
+      - 169.254.20.10/32
 
 # -- Authentication mode for the admin service.
 auth:

@@ -524,7 +524,8 @@
           "type": "object",
           "additionalProperties": false,
           "properties": {
-            "enabled": { "type": "boolean" }
+            "enabled": { "type": "boolean" },
+            "dnsCidrs": { "type": "array", "items": { "type": "string" } }
           }
         }
       }

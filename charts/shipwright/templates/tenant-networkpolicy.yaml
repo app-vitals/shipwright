@@ -6,7 +6,8 @@ tenant agent pods the admin service provisions for self-serve accounts
 (label shipwright.dev/tenant=true, SSP-7.1) in the agent namespace
 (agent.provisioning.namespace, else the release namespace).
 
-Egress allowed: cluster DNS, the Shipwright admin / task-store / chat pods in
+Egress allowed: cluster DNS (kube-dns pods plus the node-local resolver CIDRs
+in selfServe.networkPolicy.dnsCidrs, e.g. GKE NodeLocal DNSCache), the Shipwright admin / task-store / chat pods in
 the release namespace, and the public internet — 0.0.0.0/0 minus the RFC1918
 ranges and link-local (169.254.0.0/16), which blocks other pods, node and
 cloud-metadata endpoints, and the in-cluster API server. Ingress: only from
@@ -50,6 +51,20 @@ spec:
           port: 53
         - protocol: TCP
           port: 53
+    {{- with .Values.selfServe.networkPolicy.dnsCidrs }}
+    # Node-local DNS resolver (e.g. GKE NodeLocal DNSCache at 169.254.20.10).
+    # Link-local, so the 169.254.0.0/16 exclusion below would otherwise drop it.
+    - to:
+        {{- range . }}
+        - ipBlock:
+            cidr: {{ . | quote }}
+        {{- end }}
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+    {{- end }}
     # Shipwright services: admin, task-store, chat.
     {{- range $selectors := list (include "shipwright.admin.selectorLabels" .) (include "shipwright.taskStore.selectorLabels" .) (include "shipwright.chat.selectorLabels" .) }}
     - to:
