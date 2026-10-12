@@ -111,3 +111,40 @@ tests:
       tls.certManager.issuer.email: admin@example.com
     asserts:
       - notFailedTemplate: {}
+
+  # ── agent.provisioning.claudePolicy guards (ACP-2.1) ────────────────────────
+  - it: fails when claudePolicy is enabled while agent.provisioning is disabled
+    set:
+      agent.provisioning.claudePolicy.enabled: true
+      agent.provisioning.claudePolicy.settings:
+        permissions:
+          deny: ["Bash(curl:*)"]
+    asserts:
+      - failedTemplate:
+          errorPattern: "agent.provisioning.claudePolicy"
+
+  - it: fails when claudePolicy is enabled with empty settings
+    set:
+      agent.provisioning.enabled: true
+      agent.provisioning.claudePolicy.enabled: true
+    asserts:
+      - failedTemplate:
+          errorPattern: "agent.provisioning.claudePolicy"
+
+  - it: passes when claudePolicy is enabled with provisioning enabled and non-empty settings
+    set:
+      agent.provisioning.enabled: true
+      agent.provisioning.claudePolicy.enabled: true
+      agent.provisioning.claudePolicy.settings:
+        permissions:
+          deny: ["Bash(curl:*)"]
+    asserts:
+      - notFailedTemplate: {}
+
+  - it: passes when claudePolicy is disabled (the default) even with settings present
+    set:
+      agent.provisioning.claudePolicy.settings:
+        permissions:
+          deny: ["Bash(curl:*)"]
+    asserts:
+      - notFailedTemplate: {}

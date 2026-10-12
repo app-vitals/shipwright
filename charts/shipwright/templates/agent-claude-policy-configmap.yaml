@@ -1,0 +1,23 @@
+{{- /*
+Managed Claude Code policy for provisioned agent pods (ACP-2.1). Renders only
+when agent.provisioning.claudePolicy.enabled. The admin provisioner mounts the
+single key managed-settings.json at /etc/claude-code in agent pods (name and
+hash are handed over via the admin Deployment env). Lives in the provisioning
+namespace when set, else the release namespace.
+
+shipwright.validate.claudePolicy is included unconditionally so the guards fire
+on every render of this file, even when the policy is disabled.
+*/}}
+{{- include "shipwright.validate.claudePolicy" . }}
+{{- if .Values.agent.provisioning.claudePolicy.enabled }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "shipwright.agent.claudePolicy.configMapName" . }}
+  namespace: {{ .Values.agent.provisioning.namespace | default .Release.Namespace | quote }}
+  labels:
+    {{- include "shipwright.admin.labels" . | nindent 4 }}
+data:
+  managed-settings.json: |-
+    {{- include "shipwright.agent.claudePolicy.json" . | nindent 4 }}
+{{- end }}
