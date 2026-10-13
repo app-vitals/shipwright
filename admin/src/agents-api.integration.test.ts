@@ -810,4 +810,65 @@ describeOrSkip("admin CRUD API (integration)", () => {
     );
     expect(res.status).toBe(404);
   });
+
+  it("GET /agents/:id/chat-tokens/daily/stats is scoped to the caller's own agent", async () => {
+    const otherId = await createAgent(prisma);
+    const chatTokens = new AgentChatTokenService(prisma);
+    const usage = (n: number) => ({
+      inputTokens: n,
+      outputTokens: n,
+      cacheReadTokens: 0,
+      cacheCreationTokens: 0,
+      costUsd: 0,
+    });
+    await chatTokens.upsertDailyByModel(
+      agentId,
+      "2026-01-10",
+      "model-a",
+      usage(10),
+    );
+    await chatTokens.upsertDailyByModel(
+      otherId,
+      "2026-01-10",
+      "model-b",
+      usage(500),
+    );
+    const { rawToken: tokenA } = await new AgentTokenService(prisma).create(
+      agentId,
+    );
+
+    const own = await app.request(
+      `/agents/${agentId}/chat-tokens/daily/stats`,
+      {
+        headers: { Authorization: `Bearer ${tokenA}` },
+      },
+    );
+    expect(own.status).toBe(200);
+    const body = await own.json();
+    expect(body.totals.input).toBe(10);
+    expect(body.byAgent.map((r: { key: string }) => r.key)).toEqual([agentId]);
+    expect(
+      body.byModel.map((r: { key1: string; key2: string }) => [r.key1, r.key2]),
+    ).toEqual([[agentId, "model-a"]]);
+    expect(body.daily).toHaveLength(1);
+    expect(body.daily[0].input).toBe(10);
+
+    const cross = await app.request(
+      `/agents/${otherId}/chat-tokens/daily/stats`,
+      { headers: { Authorization: `Bearer ${tokenA}` } },
+    );
+    expect(cross.status).toBe(403);
+
+    const anon = await app.request(
+      `/agents/${agentId}/chat-tokens/daily/stats`,
+    );
+    expect(anon.status).toBe(401);
+
+    // Fleet-wide admin route is unchanged: sees both agents.
+    const fleet = await app.request("/agents/chat-tokens/daily/stats", {
+      headers: { Cookie: `admin_session=${cookie}` },
+    });
+    expect(fleet.status).toBe(200);
+    expect((await fleet.json()).totals.input).toBe(510);
+  });
 });
