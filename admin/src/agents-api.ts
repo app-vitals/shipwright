@@ -1187,6 +1187,29 @@ const devTaskAdherenceRoute = createRoute({
   },
 });
 
+const selfDevTaskAdherenceRoute = createRoute({
+  method: "get",
+  path: "/agents/{id}/dev-task-adherence",
+  summary: "Get this agent's dev-task adherence report",
+  description:
+    "Self-serve variant of the fleet-wide dev-task adherence report, scoped to the agent in the path. Access is gated by the generic agent-route auth (an agent's own bearer token, an admin, or a member session) — no admin scope required. Same report shape and optional `from`/`to` params as GET /agents/all/cron-runs/dev-task-adherence.",
+  request: {
+    params: AgentIdParamSchema,
+    query: cronRunStatsQuerySchema,
+  },
+  responses: {
+    200: {
+      description: "Dev-task adherence report for this agent's runs only",
+      content: {
+        "application/json": { schema: z.record(z.string(), z.unknown()) },
+      },
+    },
+    401: { description: "Unauthorized", ...jsonError },
+    403: { description: "Forbidden", ...jsonError },
+    404: { description: "Adherence reporting not configured", ...jsonError },
+  },
+});
+
 const chatTokenDailyStatsQuerySchema = z
   .object({
     from: z.string().date().optional().openapi({ example: "2026-01-01" }),
@@ -2020,6 +2043,20 @@ export function createAdminApp(deps: AdminDeps): OpenAPIHono<AdminAuthEnv> {
     }
     const { from, to } = c.req.valid("query");
     const report = await devTaskAdherenceService.report(from, to);
+    return c.json(report, 200);
+  });
+
+  // GET /agents/{id}/dev-task-adherence — same report scoped to one agent.
+  // No isAdmin check: the generic agent-route auth middleware already rejects
+  // a bearer whose agentId doesn't match the path. Registered after the static
+  // /agents/all/... route above.
+  app.openapi(selfDevTaskAdherenceRoute, async (c) => {
+    if (!devTaskAdherenceService) {
+      return c.json({ error: "Adherence reporting not configured" }, 404);
+    }
+    const { id: agentId } = c.req.valid("param");
+    const { from, to } = c.req.valid("query");
+    const report = await devTaskAdherenceService.report(from, to, agentId);
     return c.json(report, 200);
   });
 

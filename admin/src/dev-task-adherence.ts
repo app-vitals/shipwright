@@ -292,8 +292,16 @@ export class DevTaskAdherenceService {
     private readonly steps: RequiredStep[] = REQUIRED_STEPS,
   ) {}
 
-  /** Report over non-skipped dev-task runs with startedAt in [from, to). */
-  async report(from?: string, to?: string): Promise<DevTaskAdherenceReport> {
+  /**
+   * Report over non-skipped dev-task runs with startedAt in [from, to).
+   * When `agentId` is given, only that agent's runs are included; omitted is
+   * fleet-wide.
+   */
+  async report(
+    from?: string,
+    to?: string,
+    agentId?: string,
+  ): Promise<DevTaskAdherenceReport> {
     const startedAt: { gte?: Date; lt?: Date } = {};
     if (from) startedAt.gte = new Date(from);
     if (to) startedAt.lt = new Date(to);
@@ -302,6 +310,7 @@ export class DevTaskAdherenceService {
       where: {
         skipped: false,
         phaseCron: { name: "shipwright-dev-task" },
+        ...(agentId ? { agentId } : {}),
         ...(from || to ? { startedAt } : {}),
       },
       select: {
