@@ -48,6 +48,10 @@ The task store can notify a downstream service of task writes via a generic `{ t
 
 A `Session` row is upserted automatically whenever a task write sets a non-blank `session` field — only `/shipwright:plan-session` does this; the `*-fix` patrol skills and externally-opened PRs never carry one. See `GET /sessions` / `GET /sessions/:slug` in the OpenAPI spec for the rollup shape and query params, and [`docs/agent-web-ui.md`](./agent-web-ui.md) for the admin UI's Sessions tab.
 
+### Task `pr` field
+
+`Task.pr` is an integer column. `POST /tasks`, `POST /tasks/bulk` and `PATCH /tasks/:id` normalize a supplied `pr` (`normalizePr` in `task-store/src/validate.ts`) to a positive integer: a positive integer, an integer string, or a `https://github.com/<owner>/<repo>/pull/<n>` URL are all accepted (`null` clears it). Anything else, or a value above the INT4 maximum, is a `400` naming the accepted forms rather than a Prisma `500`.
+
 ### Task status lifecycle
 
 ```
