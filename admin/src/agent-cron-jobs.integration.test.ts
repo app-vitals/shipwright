@@ -170,6 +170,15 @@ const GOLDEN_CODING_CRONS: GoldenCron[] = [
     enabled: false,
     parentCron: null,
   },
+  {
+    name: "prompt-audit-maintenance",
+    schedule: "0 7 * * 1",
+    prompt: "/shipwright:prompt-scan --with-doctor\n/shipwright:prompt-fix",
+    silent: true,
+    preCheck: "shipwright:check-prompt-audit.ts",
+    enabled: false,
+    parentCron: null,
+  },
 ];
 
 describeOrSkip("AgentCronJobService (integration)", () => {
