@@ -1146,6 +1146,26 @@ const cronRunTokenStatsRoute = createRoute({
   },
 });
 
+const agentCronRunTokenStatsRoute = createRoute({
+  method: "get",
+  path: "/agents/{id}/cron-runs/stats",
+  summary: "Get aggregated cron-run token stats for one agent",
+  description:
+    "Same shape as GET /agents/all/cron-runs/stats, scoped to the given agent's runs. An agent's own bearer token may read its own stats; other agents' tokens are rejected. Optional `from`/`to` ISO datetime query params bound the range.",
+  request: {
+    params: z.object({ id: z.string() }),
+    query: cronRunStatsQuerySchema,
+  },
+  responses: {
+    200: {
+      description: "Aggregated cron-run token stats for the agent",
+      content: { "application/json": { schema: CronRunTokenStatsSchema } },
+    },
+    401: { description: "Unauthorized", ...jsonError },
+    403: { description: "Forbidden", ...jsonError },
+  },
+});
+
 const cronRunOutcomesRoute = createRoute({
   method: "get",
   path: "/agents/all/cron-runs/outcomes",
@@ -2006,6 +2026,16 @@ export function createAdminApp(deps: AdminDeps): OpenAPIHono<AdminAuthEnv> {
     const { from, to } = c.req.valid("query");
     const outcomes = await agentCronRunStatsService.outcomes(from, to);
     return c.json(outcomes, 200);
+  });
+
+  // GET /agents/:id/cron-runs/stats — self-serve stats for one agent. Auth is the
+  // generic agentId-match middleware (api-auth.ts); registered after the static
+  // /agents/all/... routes so it cannot swallow them.
+  app.openapi(agentCronRunTokenStatsRoute, async (c) => {
+    const { id } = c.req.valid("param");
+    const { from, to } = c.req.valid("query");
+    const stats = await agentCronRunStatsService.query(from, to, id);
+    return c.json(stats, 200);
   });
 
   // GET /agents/all/cron-runs/dev-task-adherence — per-step dev-task adherence
