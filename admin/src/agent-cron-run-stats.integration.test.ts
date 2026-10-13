@@ -1102,6 +1102,50 @@ describeOrSkip("AgentCronRunStatsService (integration)", () => {
 
   // ─── backfilled legacy rows ──────────────────────────────────────────────────
 
+  it("query(from, to, agentId) scopes every dimension to that agent only", async () => {
+    const agentA = await createAgent(prisma, "Agent A");
+    const agentB = await createAgent(prisma, "Agent B");
+    const cronA = await createCron(cronJobService, agentA, "cron-a");
+    const cronB = await createCron(cronJobService, agentB, "cron-b");
+    const phaseA = await createPhaseCron(cronJobService, agentA, "dev-task");
+    const phaseB = await createPhaseCron(cronJobService, agentB, "review");
+
+    const runA = await runService.create(cronA, agentA, {
+      startedAt: new Date("2026-01-10T09:00:00Z"),
+      skipped: false,
+      phaseId: phaseA,
+    });
+    const runB = await runService.create(cronB, agentB, {
+      startedAt: new Date("2026-01-10T10:00:00Z"),
+      skipped: false,
+      phaseId: phaseB,
+    });
+    await seedTokens(prisma, runA.id, { input: 100, output: 50, model: "m-a" });
+    await seedTokens(prisma, runB.id, {
+      input: 300,
+      output: 150,
+      model: "m-b",
+    });
+
+    const stats = await statsService.query(undefined, undefined, agentA);
+
+    expect(stats.totals.input).toBe(100);
+    expect(stats.byAgent.map((a) => a.key)).toEqual([agentA]);
+    expect(stats.byCron.map((r) => r.key1)).toEqual([agentA]);
+    expect(stats.byModel.map((r) => [r.key1, r.key2])).toEqual([
+      [agentA, "m-a"],
+    ]);
+    expect(stats.byCronModel.map((r) => r.key2)).toEqual(["m-a"]);
+    expect(stats.byPhase.map((r) => r.key)).toEqual(["dev-task"]);
+    expect(stats.daily).toHaveLength(1);
+    expect(stats.daily[0].input).toBe(100);
+
+    // Omitted agentId stays fleet-wide.
+    const fleet = await statsService.query();
+    expect(fleet.byAgent).toHaveLength(2);
+    expect(fleet.totals.input).toBe(400);
+  });
+
   it("surfaces a backfilled legacy run (model=legacy-unattributed, cost=0) in all dimensions", async () => {
     // Simulates the state after the consolidation migration backfills a
     // pre-2026-07-01 run whose token counts lived in the now-dropped

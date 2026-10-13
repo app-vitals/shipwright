@@ -137,9 +137,17 @@ export class AgentChatTokenService {
    *
    * @param from  YYYY-MM-DD — if provided, only rows with date >= from
    * @param to    YYYY-MM-DD — if provided, only rows with date <= to
+   * @param agentId if provided, only rows for that agent; omitted is fleet-wide
    */
-  async queryStats(from?: string, to?: string): Promise<ChatTokenStats> {
-    const dateFilter = this.buildDateFilter(from, to);
+  async queryStats(
+    from?: string,
+    to?: string,
+    agentId?: string,
+  ): Promise<ChatTokenStats> {
+    const dateFilter = {
+      ...this.buildDateFilter(from, to),
+      ...(agentId ? { agentId } : {}),
+    };
 
     const [aggregateResult, byAgentRows, byModelRows, dailyRows] =
       await Promise.all([

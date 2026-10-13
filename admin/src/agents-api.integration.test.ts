@@ -33,6 +33,7 @@ import { AgentService } from "./agents.ts";
 import type { AdminDeps } from "./agents-api.ts";
 import { createAdminApp } from "./agents-api.ts";
 import { NoopChatServiceProvisioningClient } from "./chat-service-provisioning-client.ts";
+import { DevTaskAdherenceService } from "./dev-task-adherence.ts";
 import { createAdminPrismaClient } from "./prisma-client.ts";
 import { NoopTaskStoreProvisioningClient } from "./task-store-provisioning-client.ts";
 import { makeTokenCrypto } from "./token-crypto.ts";
@@ -809,5 +810,129 @@ describeOrSkip("admin CRUD API (integration)", () => {
       },
     );
     expect(res.status).toBe(404);
+  });
+
+  it("GET /agents/:id/chat-tokens/daily/stats is scoped to the caller's own agent", async () => {
+    const otherId = await createAgent(prisma);
+    const chatTokens = new AgentChatTokenService(prisma);
+    const usage = (n: number) => ({
+      inputTokens: n,
+      outputTokens: n,
+      cacheReadTokens: 0,
+      cacheCreationTokens: 0,
+      costUsd: 0,
+    });
+    await chatTokens.upsertDailyByModel(
+      agentId,
+      "2026-01-10",
+      "model-a",
+      usage(10),
+    );
+    await chatTokens.upsertDailyByModel(
+      otherId,
+      "2026-01-10",
+      "model-b",
+      usage(500),
+    );
+    const { rawToken: tokenA } = await new AgentTokenService(prisma).create(
+      agentId,
+    );
+    const own = await app.request(
+      `/agents/${agentId}/chat-tokens/daily/stats`,
+      {
+        headers: { Authorization: `Bearer ${tokenA}` },
+      },
+    );
+    expect(own.status).toBe(200);
+    const body = await own.json();
+    expect(body.totals.input).toBe(10);
+    expect(body.byAgent.map((r: { key: string }) => r.key)).toEqual([agentId]);
+    expect(
+      body.byModel.map((r: { key1: string; key2: string }) => [r.key1, r.key2]),
+    ).toEqual([[agentId, "model-a"]]);
+    expect(body.daily).toHaveLength(1);
+    expect(body.daily[0].input).toBe(10);
+
+    const cross = await app.request(
+      `/agents/${otherId}/chat-tokens/daily/stats`,
+      { headers: { Authorization: `Bearer ${tokenA}` } },
+    );
+    expect(cross.status).toBe(403);
+
+    const anon = await app.request(
+      `/agents/${agentId}/chat-tokens/daily/stats`,
+    );
+    expect(anon.status).toBe(401);
+
+    // Fleet-wide admin route is unchanged: sees both agents.
+    const fleet = await app.request("/agents/chat-tokens/daily/stats", {
+      headers: { Cookie: `admin_session=${cookie}` },
+    });
+    expect(fleet.status).toBe(200);
+    expect((await fleet.json()).totals.input).toBe(510);
+  });
+
+  it("GET /agents/:id/dev-task-adherence is scoped to the caller's own agent", async () => {
+    const otherId = await createAgent(prisma);
+    const seed = async (owner: string, itemId: string) => {
+      const job = await prisma.agentCronJob.create({
+        data: {
+          agentId: owner,
+          schedule: "0 9 * * *",
+          prompt: "p",
+          silent: true,
+          name: "shipwright-dev-task",
+        },
+      });
+      await prisma.agentCronRun.create({
+        data: {
+          cronId: job.id,
+          agentId: owner,
+          startedAt: new Date("2026-01-10T09:00:00Z"),
+          skipped: false,
+          phaseId: job.id,
+          itemId,
+        },
+      });
+    };
+    await seed(agentId, "A-1.1");
+    await seed(otherId, "B-1.1");
+
+    const adherenceApp = createAdminApp({
+      ...makeDeps(prisma),
+      devTaskAdherenceService: new DevTaskAdherenceService(prisma),
+    });
+    const { rawToken: tokenA } = await new AgentTokenService(prisma).create(
+      agentId,
+    );
+
+    const own = await adherenceApp.request(
+      `/agents/${agentId}/dev-task-adherence`,
+      { headers: { Authorization: `Bearer ${tokenA}` } },
+    );
+    expect(own.status).toBe(200);
+    const ownBody = await own.json();
+    expect(ownBody.runs.map((r: { itemId: string }) => r.itemId)).toEqual([
+      "A-1.1",
+    ]);
+
+    const cross = await adherenceApp.request(
+      `/agents/${otherId}/dev-task-adherence`,
+      { headers: { Authorization: `Bearer ${tokenA}` } },
+    );
+    expect(cross.status).toBe(403);
+
+    const anon = await adherenceApp.request(
+      `/agents/${agentId}/dev-task-adherence`,
+    );
+    expect(anon.status).toBe(401);
+
+    // Fleet-wide admin route is unchanged: sees both agents' runs.
+    const fleet = await adherenceApp.request(
+      "/agents/all/cron-runs/dev-task-adherence",
+      { headers: { Cookie: `admin_session=${cookie}` } },
+    );
+    expect(fleet.status).toBe(200);
+    expect((await fleet.json()).runs).toHaveLength(2);
   });
 });

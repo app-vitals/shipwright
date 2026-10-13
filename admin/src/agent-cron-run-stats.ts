@@ -325,15 +325,27 @@ export class AgentCronRunStatsService {
    *
    * @param from  ISO string — if provided, only runs with startedAt >= from
    * @param to    ISO string — if provided, only runs with startedAt <  to
+   * @param agentId if provided, only that agent's runs (every dimension);
+   *                omitted preserves the fleet-wide behavior
    */
-  async query(from?: string, to?: string): Promise<CronRunTokenStats> {
+  async query(
+    from?: string,
+    to?: string,
+    agentId?: string,
+  ): Promise<CronRunTokenStats> {
     const fromDate = from ? new Date(from) : null;
     const toDate = to ? new Date(to) : null;
 
     // Every query now aliases AgentCronRun as "r" (all six LEFT/INNER JOIN the
     // breakdown table), so all filters are qualified against that alias to keep
     // "startedAt" unambiguous.
-    const filterR = dateFilter(fromDate, toDate, "r");
+    // The agentId fragment is parameterized and appended to the shared filter,
+    // so it reaches every aggregation block.
+    const filterR = Prisma.sql`${dateFilter(fromDate, toDate, "r")} ${
+      agentId !== undefined
+        ? Prisma.sql`AND r."agentId" = ${agentId}`
+        : Prisma.empty
+    }`;
 
     const [
       totalsRows,
