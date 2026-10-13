@@ -228,7 +228,8 @@ function makeMockStatsService(): Pick<
   "query" | "outcomes"
 > {
   return {
-    query: async (_from?: string, _to?: string) => MOCK_STATS,
+    query: async (_from?: string, _to?: string, _agentId?: string) =>
+      MOCK_STATS,
     outcomes: async () => MOCK_OUTCOMES,
   };
 }
@@ -774,6 +775,62 @@ describe("admin API — GET /agents/all/cron-runs/stats", () => {
       headers: { Authorization: `Bearer ${VALID_BEARER_TOKEN}` },
     });
     expect(res.status).toBe(403);
+  });
+});
+
+describe("admin API — GET /agents/:id/cron-runs/stats", () => {
+  function depsWithAgentToken(calls: Array<string | undefined>): AdminDeps {
+    const base = makeMockDeps();
+    return {
+      ...base,
+      agentCronRunStatsService: {
+        ...base.agentCronRunStatsService,
+        query: async (_from?: string, _to?: string, agentId?: string) => {
+          calls.push(agentId);
+          return MOCK_STATS;
+        },
+      },
+      agentTokenService: {
+        ...base.agentTokenService,
+        validate: async () => ({ agentId: AGENT_ID }),
+      },
+    };
+  }
+
+  it("agent's own bearer token gets 200 and the query is scoped to that agent", async () => {
+    const calls: Array<string | undefined> = [];
+    const app = createAdminApp(depsWithAgentToken(calls));
+    const res = await app.request(`/agents/${AGENT_ID}/cron-runs/stats`, {
+      headers: { Authorization: `Bearer ${VALID_BEARER_TOKEN}` },
+    });
+    expect(res.status).toBe(200);
+    expect(calls).toEqual([AGENT_ID]);
+  });
+
+  it("another agent's bearer token returns 403 without querying", async () => {
+    const calls: Array<string | undefined> = [];
+    const app = createAdminApp(depsWithAgentToken(calls));
+    const res = await app.request("/agents/other-agent/cron-runs/stats", {
+      headers: { Authorization: `Bearer ${VALID_BEARER_TOKEN}` },
+    });
+    expect(res.status).toBe(403);
+    expect(calls).toEqual([]);
+  });
+
+  it("unauthenticated request returns 401", async () => {
+    const app = createAdminApp(makeMockDeps());
+    const res = await app.request(`/agents/${AGENT_ID}/cron-runs/stats`);
+    expect(res.status).toBe(401);
+  });
+
+  it("does not swallow the static /agents/all/cron-runs/stats admin route", async () => {
+    const calls: Array<string | undefined> = [];
+    const app = createAdminApp(depsWithAgentToken(calls));
+    const res = await app.request("/agents/all/cron-runs/stats", {
+      headers: { Authorization: `Bearer ${VALID_BEARER_TOKEN}` },
+    });
+    expect(res.status).toBe(403);
+    expect(calls).toEqual([]);
   });
 });
 
