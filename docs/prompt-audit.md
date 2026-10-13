@@ -60,3 +60,24 @@ Flags: `--summary`, `--dry-run`, `--model <id>` (repeatable), `--scope <path>`, 
 - **Version gates:** `/doctor prompt-audit` needs Claude Code ≥ 2.1.283; the scan degrades gracefully and says so.
 - **Tokenizer changes:** only same-model comparisons are valid across a model bump; both models are reported until the fleet has moved.
 - **Transcripts are machine-local:** usage attribution runs in-process right after each run, not from persisted transcripts.
+
+## Bootstrap verification
+
+The exit gate for the feature: `prompt-scan --dry-run` on this repo (commit `17c9c67`) against the ten bootstrap findings in the [design spec](./superpowers/specs/2026-10-07-prompt-audit-patrol-design.md). Counts drift as the repo changes; what matters is that each finding reproduces or its miss is explained.
+
+| # | Finding | Result |
+|---|---------|--------|
+| 1 | `c/orphaned-auto-section`, "Shipwright Learned Facts" in root `CLAUDE.md` | **Reproduced after a fix.** Missed at first: the section's heading was mentioned in `docs/` and a design spec, which counted as a writer. Docs are no longer writers. |
+| 2 | `c/retired-model-id`, `claude-sonnet-4-5` | `docs/agent.md` reproduced. `admin/prisma/schema.prisma` is not scanned: it is not a prompt file and never enters model context. The design spec itself now also matches. |
+| 3 | `a/claude-md-over-200-lines` | Reproduced for root `CLAUDE.md` (local-dev) and `agent/workspace/CLAUDE.md.template` (agent-runtime). |
+| 4 | `b/on-invoke-heavy` for `commands/patch.md` | Reproduced (9 on-invoke-heavy findings in total). |
+| 5 | `e/frontmatter-missing-name` for commands | **Reproduced after a fix.** The rule only looked at skills and agents. Commands are listed too, so it now covers them (22 findings). |
+| 6 | `e/description-multiline` | Reproduced: 21 findings (the spec said 18; more files have since gained block scalars). |
+| 7 | `e/duplicate-listing-entry` | **Not reproduced, by design.** The command stubs no longer share a description with their skill, so there is nothing to flag. The rule now also compares commands, with a regression test. |
+| 8 | `e/skill-over-500-lines` | Reproduced for `investigate-cron`, `test-fix`, `security-scan` and `error-fix`. |
+| 9 | `a/listing-budget-share` per model | Reproduced for `claude-sonnet-5-5` and `claude-sonnet-4-6`. |
+| 10 | At least one class-d row, `tracking` | Class d has no rule function. The judgment pass tracks it at `consecutiveRuns` 1, for example the emphasis-heavy "never `git add -A` blindly" rule in root `CLAUDE.md`'s "Before you commit". |
+
+A false positive was also fixed. The banner matcher fired on any prose containing "auto-maintained", including this page's finding-class table. It now requires the banner to open its line.
+
+`--dry-run` leaves `state/` and `prompt-audit-report.md` untouched; `git status` stayed clean apart from the git-ignored token cache.

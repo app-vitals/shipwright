@@ -23,6 +23,10 @@ import type { InventoryItem } from "./inventory.ts";
 import { statFor } from "./rules-cost.ts";
 
 const isListing = (i: InventoryItem) => contextsWhere(i, ["listing"]).length > 0;
+/** Plugin commands surface in the skill listing under their frontmatter name. */
+const isListed = (i: InventoryItem) => isListing(i) || i.kind === "command";
+const listingContexts = (i: InventoryItem) =>
+  isListing(i) ? contextsWhere(i, ["listing"]) : undefined;
 const isAlways = (i: InventoryItem) => contextsWhere(i, ["always"]).length > 0;
 const PROMPT_KINDS = new Set(["claude-md", "rule", "import", "skill", "command", "agent", "template"]);
 const PATH_REF = /`?((?:[\w.-]+\/)+[\w.-]+\.\w+)`?/g;
@@ -164,13 +168,13 @@ export const descriptionMultiline: Rule = (ctx) =>
 
 export const frontmatterMissingName: Rule = (ctx) =>
   ctx.items
-    .filter((i) => (i.kind === "skill" || i.kind === "agent") && !i.name)
+    .filter((i) => isListed(i) && !i.name)
     .map((item) =>
       makeFinding({
         class: "e",
         rule: "frontmatter-missing-name",
         item,
-        contexts: contextsWhere(item, ["listing"]),
+        contexts: listingContexts(item),
         evidence: "listing entry has no name in its frontmatter",
         metrics: { before: 1, projectedAfter: 0, units: "missing fields", estimated: false },
         action: "Add a name: field to the frontmatter.",
@@ -181,7 +185,7 @@ export const frontmatterMissingName: Rule = (ctx) =>
 /** Stub plus skill carrying the same description are both listed. */
 export const duplicateListingEntry: Rule = (ctx) => {
   const groups = new Map<string, InventoryItem[]>();
-  for (const i of ctx.items.filter((x) => isListing(x) && x.description)) {
+  for (const i of ctx.items.filter((x) => isListed(x) && x.description)) {
     const key = (i.description ?? "").trim().toLowerCase();
     groups.set(key, [...(groups.get(key) ?? []), i]);
   }
@@ -193,7 +197,7 @@ export const duplicateListingEntry: Rule = (ctx) => {
           class: "e",
           rule: "duplicate-listing-entry",
           item,
-          contexts: contextsWhere(item, ["listing"]),
+          contexts: listingContexts(item),
           evidence: `description duplicates ${g[0].path}`,
           metrics: { before: item.descriptionChars, projectedAfter: 0, units: "chars", estimated: false },
           action: "Give the stub a distinct short description or hide it from the listing.",

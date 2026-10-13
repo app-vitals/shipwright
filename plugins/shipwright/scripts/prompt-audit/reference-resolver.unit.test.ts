@@ -159,4 +159,19 @@ describe("findOrphanedAutoSections", () => {
       findOrphanedAutoSections(root, deps).some((o) => o.file === "AGENTS.md"),
     ).toBe(false);
   });
+
+  test("a docs-only mention of the heading is not a writer; prose mentioning auto-maintained is not a banner", () => {
+    const files: Record<string, string> = {
+      "CLAUDE.md": "## Learned Facts\n> _Auto-maintained by X_\n",
+      "docs/spec.md": "The Learned Facts section is described here.\n",
+      "docs/overview.md": "Covers orphaned auto-maintained sections.\n",
+    };
+    const d = {
+      listFiles: () => Object.keys(files),
+      readFile: (_r: string, p: string) => files[p],
+    };
+    expect(findOrphanedAutoSections("/r", d).map((o) => o.file)).toEqual([
+      "CLAUDE.md",
+    ]);
+  });
 });

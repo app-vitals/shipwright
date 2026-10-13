@@ -71,6 +71,9 @@ const BAD: Record<string, string> = {
   "plugins/p/skills/multi/SKILL.md": "---\nname: multi\ndescription: >\n  two\n  lines\n---\nbody\n",
   "plugins/p/skills/heavy/SKILL.md": fm({ name: "heavy", description: "Heavy" }),
   "plugins/p/skills/hot/SKILL.md": fm({ name: "hot", description: "Hot" }),
+  "plugins/p/commands/nameless.md": fm({ description: "Nameless command" }),
+  "plugins/p/commands/dupe.md": fm({ name: "dupe", description: "Stub words" }),
+  "plugins/p/skills/dupe/SKILL.md": fm({ name: "dupe-skill", description: "Stub words" }),
   "plugins/p/commands/longdesc.md": fm({ description: "d".repeat(1600) }),
   "plugins/p/commands/many.md": fm({}, lines(61, () => "- Run the thing")),
   "plugins/p/commands/shouty.md": fm({}, lines(10, () => "MUST do it")),
@@ -84,7 +87,7 @@ const CLEAN: Record<string, string> = {
   "CLAUDE.md": "# Root\nNEVER force push.\n",
   ".claude/rules/scoped.md": "---\npaths:\n  - src/**\n---\nScoped\n",
   "plugins/p/skills/ok/SKILL.md": fm({ name: "ok", description: "Fine" }),
-  "plugins/p/commands/ok.md": fm({ description: "Fine" }, "Run the thing.\n"),
+  "plugins/p/commands/ok.md": fm({ name: "ok-cmd", description: "Fine command" }, "Run the thing.\n"),
 };
 
 function ctxFor(
@@ -167,6 +170,17 @@ const CASES: Array<[string, Rule, string]> = [
   ["caps-emphasis-ratio", R.capsEmphasisRatio, "plugins/p/commands/shouty.md"],
   ["prohibition-cluster", R.prohibitionCluster, "plugins/p/commands/nope.md"],
 ];
+
+describe("listing rules cover commands", () => {
+  test("frontmatter-missing-name flags a nameless command", () => {
+    const hits = R.frontmatterMissingName(bad).map((f) => f.file);
+    expect(hits).toContain("plugins/p/commands/nameless.md");
+  });
+  test("duplicate-listing-entry flags a command duplicating a skill description", () => {
+    const hits = R.duplicateListingEntry(bad).map((f) => f.evidence);
+    expect(hits).toContain("description duplicates plugins/p/commands/dupe.md");
+  });
+});
 
 describe("rules: positive and negative fixture per rule", () => {
   for (const [name, rule, file] of CASES) {
