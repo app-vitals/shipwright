@@ -48,6 +48,7 @@ Every feature moves through the same stages. One `planning/{folder}/` directory 
 | `/review-staged` | Walk through staged PR reviews conversationally — APPROVEs first, smallest diff first, owner steers each with verbs |
 | `/research {task}` | Load relevant project docs and web research for a given task |
 | `/research-docs [module|--auto]` | Analyze codebase and generate or update project documentation. `--auto` runs unattended (no prompts) for cron/scheduled use |
+| `/prompt-scan [--summary|--dry-run|--with-doctor]` | Audit the plugin's prompts for token cost, staleness, structure and instruction-density problems. Report only — no prompt edits; see [docs/prompt-audit.md](../../docs/prompt-audit.md) |
 
 Pipeline analytics (cycle time, FTQ rate, CI gate, cost) live outside the command
 surface — the metrics service exposes them as read-only `/metrics/*` JSON endpoints
