@@ -148,7 +148,7 @@ export class RunTelemetryAccumulator {
             bucket.awaitingInvokeDelta = true;
           this.current = key;
         }
-      } else if (name === "Agent") {
+      } else if (name === "Agent" || name === "Task") {
         const subagent = toolUseInput(block).subagent_type;
         const type =
           typeof subagent === "string" && subagent.length > 0
