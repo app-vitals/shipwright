@@ -75,7 +75,11 @@ const SCRIPT_CMD_RE =
 const SLASH_CMD_RE = /\/shipwright:([a-z][\w-]*)((?:\s+--[\w-]+)*)/g;
 const SCRIPT_FILE_RE = /\.(?:ts|js|sh|mjs)$/;
 const WRITER_IGNORE = [/\.test\./, /^planning\//];
-const BANNER_RE = /auto-maintained/i;
+// Docs and specs describe a section; they never write it.
+const NON_WRITER = [...WRITER_IGNORE, /^docs\//];
+// A banner opens its line (optionally as a blockquote / italic); prose that
+// merely mentions "auto-maintained" is not one.
+const BANNER_RE = /^\s*(?:>\s*)?[_*]*auto-maintained/i;
 const SOURCE_EXT_RE =
   /\.(?:ts|tsx|js|jsx|mjs|ya?ml|json|sh|toml|template|example|env)$/;
 /** Env vars set by the platform or CI rather than by anything in this repo. */
@@ -371,7 +375,7 @@ export function findOrphanedAutoSections(
       const hasWriter = files.some(
         (other) =>
           other !== file &&
-          !WRITER_IGNORE.some((re) => re.test(other)) &&
+          !NON_WRITER.some((re) => re.test(other)) &&
           (contents.get(other) ?? "").includes(needle),
       );
       if (!hasWriter) out.push({ file, line: i + 1, heading, banner });
