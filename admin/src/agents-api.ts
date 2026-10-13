@@ -40,7 +40,6 @@ import type {
   AgentCronJobWithRunSummary,
 } from "./agent-cron-jobs.ts";
 import type { AgentCronRunStatsService } from "./agent-cron-run-stats.ts";
-import type { DevTaskAdherenceService } from "./dev-task-adherence.ts";
 import type { AgentCronRunService } from "./agent-cron-runs.ts";
 import type { DeleteAgentFullyDeps } from "./agent-deletion.ts";
 import { deleteAgentFully } from "./agent-deletion.ts";
@@ -62,6 +61,7 @@ import {
   type CallerScopeResolver,
   memberOnlyCallerScopeResolver,
 } from "./caller-scope.ts";
+import type { DevTaskAdherenceService } from "./dev-task-adherence.ts";
 import {
   ApiError,
   BadRequestError,
@@ -1236,6 +1236,26 @@ const chatTokenDailyStatsRoute = createRoute({
   },
 });
 
+const selfChatTokenDailyStatsRoute = createRoute({
+  method: "get",
+  path: "/agents/{id}/chat-tokens/daily/stats",
+  summary: "Get this agent's chat token daily stats",
+  description:
+    "Self-serve variant of the fleet-wide chat token daily stats, scoped to the agent in the path. Access is gated by the generic agent-route auth (an agent's own bearer token, an admin, or a member session) — no admin scope required. Same response shape and optional `from`/`to` params as GET /agents/chat-tokens/daily/stats.",
+  request: {
+    params: AgentIdParamSchema,
+    query: chatTokenDailyStatsQuerySchema,
+  },
+  responses: {
+    200: {
+      description: "Chat token daily stats for this agent only",
+      content: { "application/json": { schema: ChatTokenStatsSchema } },
+    },
+    401: { description: "Unauthorized", ...jsonError },
+    403: { description: "Forbidden", ...jsonError },
+  },
+});
+
 // ─── App factory ──────────────────────────────────────────────────────────────
 
 export function createAdminApp(deps: AdminDeps): OpenAPIHono<AdminAuthEnv> {
@@ -2071,6 +2091,17 @@ export function createAdminApp(deps: AdminDeps): OpenAPIHono<AdminAuthEnv> {
     }
     const { from, to } = c.req.valid("query");
     const stats = await agentChatTokenService.queryStats(from, to);
+    return c.json(stats, 200);
+  });
+
+  // GET /agents/{id}/chat-tokens/daily/stats — same stats scoped to one agent.
+  // No isAdmin check: the generic agent-route auth middleware already rejects
+  // a bearer whose agentId doesn't match the path. Registered after the static
+  // /agents/chat-tokens/... route above.
+  app.openapi(selfChatTokenDailyStatsRoute, async (c) => {
+    const { id: agentId } = c.req.valid("param");
+    const { from, to } = c.req.valid("query");
+    const stats = await agentChatTokenService.queryStats(from, to, agentId);
     return c.json(stats, 200);
   });
 
