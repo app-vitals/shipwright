@@ -777,6 +777,62 @@ describe("admin API — GET /agents/all/cron-runs/stats", () => {
   });
 });
 
+describe("admin API — GET /agents/:id/cron-runs/outcomes", () => {
+  function depsWithAgentToken(calls: Array<string | undefined>): AdminDeps {
+    const base = makeMockDeps();
+    return {
+      ...base,
+      agentCronRunStatsService: {
+        ...base.agentCronRunStatsService,
+        outcomes: async (_from?: string, _to?: string, agentId?: string) => {
+          calls.push(agentId);
+          return MOCK_OUTCOMES;
+        },
+      },
+      agentTokenService: {
+        ...base.agentTokenService,
+        validate: async () => ({ agentId: AGENT_ID }),
+      },
+    };
+  }
+
+  it("agent's own bearer token gets 200 and outcomes are scoped to that agent", async () => {
+    const calls: Array<string | undefined> = [];
+    const app = createAdminApp(depsWithAgentToken(calls));
+    const res = await app.request(`/agents/${AGENT_ID}/cron-runs/outcomes`, {
+      headers: { Authorization: `Bearer ${VALID_BEARER_TOKEN}` },
+    });
+    expect(res.status).toBe(200);
+    expect(calls).toEqual([AGENT_ID]);
+  });
+
+  it("another agent's bearer token returns 403 without querying", async () => {
+    const calls: Array<string | undefined> = [];
+    const app = createAdminApp(depsWithAgentToken(calls));
+    const res = await app.request("/agents/other-agent/cron-runs/outcomes", {
+      headers: { Authorization: `Bearer ${VALID_BEARER_TOKEN}` },
+    });
+    expect(res.status).toBe(403);
+    expect(calls).toEqual([]);
+  });
+
+  it("unauthenticated request returns 401", async () => {
+    const app = createAdminApp(makeMockDeps());
+    const res = await app.request(`/agents/${AGENT_ID}/cron-runs/outcomes`);
+    expect(res.status).toBe(401);
+  });
+
+  it("does not swallow the static /agents/all/cron-runs/outcomes admin route", async () => {
+    const calls: Array<string | undefined> = [];
+    const app = createAdminApp(depsWithAgentToken(calls));
+    const res = await app.request("/agents/all/cron-runs/outcomes", {
+      headers: { Authorization: `Bearer ${VALID_BEARER_TOKEN}` },
+    });
+    expect(res.status).toBe(403);
+    expect(calls).toEqual([]);
+  });
+});
+
 describe("admin API — GET /agents/all/cron-runs/outcomes", () => {
   let cookie: string;
 

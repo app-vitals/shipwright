@@ -444,13 +444,26 @@ export class AgentCronRunStatsService {
    * before/after comparison. Unlike query(), skipped runs are counted here
    * (in `skipped` and `skipReasons`) but excluded from the duration, turn,
    * tool-call, and context-token averages.
+   *
+   * @param agentId if provided, only that agent's runs (both aggregation
+   *                blocks); omitted preserves the fleet-wide behavior
    */
-  async outcomes(from?: string, to?: string): Promise<CronRunOutcomes> {
-    const filter = dateFilter(
+  async outcomes(
+    from?: string,
+    to?: string,
+    agentId?: string,
+  ): Promise<CronRunOutcomes> {
+    // Parameterized agentId fragment appended to the shared filter, so it
+    // reaches both queries below.
+    const filter = Prisma.sql`${dateFilter(
       from ? new Date(from) : null,
       to ? new Date(to) : null,
       "r",
-    );
+    )} ${
+      agentId !== undefined
+        ? Prisma.sql`AND r."agentId" = ${agentId}`
+        : Prisma.empty
+    }`;
     const [rows, reasonRows] = await Promise.all([
       this.prisma.$queryRaw<OutcomeRow[]>`
         SELECT
