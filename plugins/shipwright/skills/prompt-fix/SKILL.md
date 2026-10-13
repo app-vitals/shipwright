@@ -30,7 +30,7 @@ every task is `hitl: true`.**
 
 - `--dry-run` — print every task that would be queued, with its full body, and write
   nothing to the task store or the ledger
-- `--class <a-f>` — consider only findings of this class (`a`, `b`, `c`, `d`, `e` or `f`)
+- `--class <a|b|c|e|f>` — consider only findings of this class (`a`, `b`, `c`, `e` or `f`)
 - `--finding <fp>` — consider only the finding whose fingerprint matches (full or
   unambiguous prefix; if the prefix matches several, list them and stop)
 
@@ -90,7 +90,7 @@ surviving finding. The ledger is a snapshot, so re-read the live file:
 2. A finding whose evidence cannot be confirmed by a literal check is not filed
    autonomously; carry it forward with `replacementVerified: false` so the policy returns
    `hitl: true`.
-3. Checklist item 4 (id and branch collisions) is covered by Step 9.
+3. Checklist item 4 (id and branch collisions) is covered by Step 8.
 
 ---
 
@@ -113,20 +113,20 @@ cutover window is open: **PAU-2.3 is done and PAU-2.4 is not done**.
 At most **2 prompt-fix tasks open or merged this ISO week**, so each change is isolable in
 the post-merge series.
 
-1. Compute the current ISO week `{YYYY-Www}` and the repo (see Step 9).
+1. Compute the current ISO week `{YYYY-Www}` and the repo (see Step 8).
 2. Query each of `pending`, `in_progress`, `pr_open`, `approved`, `blocked`, `merged`,
    `deployed` and `done` with `&repo={url-encoded-repo}&limit=1000` and the pagination
-   guard from Step 9. Count tasks whose `id` starts with `prompt-` and ends with
+   guard from Step 8. Count tasks whose `id` starts with `prompt-` and ends with
    `-{YYYY-Www}`. `cancelled` tasks do not count.
 3. `remaining = 2 - count`. If `remaining <= 0`, print
    `Refusing to file: {count} prompt-fix tasks already open or merged in {YYYY-Www} (weekly cap 2).`
-   and stop. Otherwise Step 8 files at most `min(10, remaining)` tasks.
+   and stop. Otherwise Step 9 files at most `min(10, remaining)` tasks.
 
 ---
 
 ## Step 7: Dry-Run Preview (if --dry-run)
 
-If `--dry-run` was passed, run Steps 8 through 10 (ordering, cap, dedup queries and task
+If `--dry-run` was passed, run Steps 8 through 10 (dedup queries, ordering, cap and task
 building are all read-only), print the preview, and stop before Step 11:
 
 ```
@@ -151,18 +151,7 @@ Re-run without --dry-run to queue tasks.
 
 ---
 
-## Step 8: Order and Cap at 10 Tasks per Run
-
-1. Order the survivors: **class (c) first** (static-only, no eval needed), then by
-   projected saving (`metrics.before - metrics.projectedAfter`, largest first) within
-   and after class (c).
-2. Keep at most **10 tasks per run**, and no more than the weekly `remaining` from Step 6.
-3. Print the rest as `Deferred {fp} — over the per-run or weekly cap`; they stay
-   `proposed` for the next run.
-
----
-
-## Step 9: Dedup Against the Task Store
+## Step 8: Dedup Against the Task Store
 
 Detect the repo: `git remote get-url origin`, strip the `https://github.com/` or
 `git@github.com:` prefix and the `.git` suffix (for example `app-vitals/shipwright`).
@@ -184,7 +173,19 @@ then build the "already active" set.
 
 From the merged tasks keep those whose `id` starts with the `prompt-` prefix. A finding
 is a duplicate when an active task's id contains its `{class}-{fp8}` segment (any week).
-Print `Skipping {fp} — task already active ({id})` and leave the ledger entry alone.
+Print `Skipping {fp} — task already active ({id})` and leave the ledger entry alone. Dedup runs
+before the cap so an already-queued finding never consumes a cap slot.
+
+---
+
+## Step 9: Order and Cap at 10 Tasks per Run
+
+1. Order the findings that survived Step 8: **class (c) first** (static-only, no eval needed), then by
+   projected saving (`metrics.before - metrics.projectedAfter`, largest first) within
+   and after class (c).
+2. Keep at most **10 tasks per run**, and no more than the weekly `remaining` from Step 6.
+3. Print the rest as `Deferred {fp} — over the per-run or weekly cap`; they stay
+   `proposed` for the next run.
 
 ---
 
@@ -212,10 +213,10 @@ For each remaining finding:
 
 ```json
 {
-  "id": "prompt-{class}-{fp8}-shipwright-{YYYY-Www}",
+  "id": "prompt-{class}-{fp8}-{repo-slug}-{YYYY-Www}",
   "title": "Prompt audit: {rule} - {file}",
   "source": "prompt-fix",
-  "repo": "<repo from Step 9>",
+  "repo": "<repo from Step 8>",
   "branch": "chore/prompt-{fp8}-{slug}",
   "layer": "Docs",
   "status": "pending",
@@ -226,7 +227,7 @@ For each remaining finding:
 
 `{fp8}` is the first 8 hex chars of the fingerprint; `{slug}` is the rule name,
 lowercased, hyphenated, at most 5 words. The id suffix is the ISO week, 2-digit
-zero-padded (`2026-W42`), so an example id is `prompt-c-a1b2c3d4-shipwright-2026-W42`.
+zero-padded (`2026-W42`), so an example id for `app-vitals/shipwright` is `prompt-c-a1b2c3d4-shipwright-2026-W42`.
 
 ### Body template
 

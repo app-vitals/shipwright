@@ -47,7 +47,7 @@ describe("prompt-fix — SKILL.md", () => {
     expect(skill()).toMatch(/^---\nname: prompt-fix\n/);
   });
 
-  it.each(["--dry-run", "--class <a-f>", "--finding <fp>"])(
+  it.each(["--dry-run", "--class <a|b|c|e|f>", "--finding <fp>"])(
     "documents %s",
     (flag) => {
       expect(skill()).toContain(flag);
@@ -65,8 +65,8 @@ describe("prompt-fix — SKILL.md", () => {
       "## Step 5: Cutover Freeze Check",
       "## Step 6: Weekly Cap Check",
       "## Step 7: Dry-Run Preview",
-      "## Step 8: Order and Cap at 10 Tasks per Run",
-      "## Step 9: Dedup Against the Task Store",
+      "## Step 8: Dedup Against the Task Store",
+      "## Step 9: Order and Cap at 10 Tasks per Run",
       "## Step 10: Build Task JSON",
       "## Step 11: Write and Append",
       "## Step 12: Mark the Ledger",
@@ -110,6 +110,19 @@ describe("prompt-fix — SKILL.md", () => {
     expect(text).toContain("projected saving");
   });
 
+  it("rejects class d: only a, b, c, e and f are documented", () => {
+    const text = skill();
+    expect(text).toContain("(`a`, `b`, `c`, `e` or `f`)");
+    expect(text).not.toMatch(/`c`, `d`/);
+  });
+
+  it("dedups before applying the per-run and weekly cap", () => {
+    const text = skill();
+    expect(text.indexOf("## Step 8: Dedup")).toBeLessThan(
+      text.indexOf("## Step 9: Order and Cap"),
+    );
+  });
+
   it("dedups with limit=1000, the pagination guard and the prompt- prefix", () => {
     const text = skill();
     expect(text).toContain("status=pending&repo=");
@@ -124,7 +137,7 @@ describe("prompt-fix — SKILL.md", () => {
 
   it("states the task-id format string and task shape", () => {
     const text = skill();
-    expect(text).toContain("prompt-{class}-{fp8}-shipwright-{YYYY-Www}");
+    expect(text).toContain("prompt-{class}-{fp8}-{repo-slug}-{YYYY-Www}");
     expect(text).toContain("Prompt audit: {rule} - {file}");
     expect(text).toContain('"source": "prompt-fix"');
     expect(text).toContain("chore/prompt-{fp8}-{slug}");
