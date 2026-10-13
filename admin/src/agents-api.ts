@@ -1185,6 +1185,26 @@ const cronRunOutcomesRoute = createRoute({
   },
 });
 
+const agentCronRunOutcomesRoute = createRoute({
+  method: "get",
+  path: "/agents/{id}/cron-runs/outcomes",
+  summary: "Get cron-run outcomes per phase and context fingerprint for one agent",
+  description:
+    "Same shape as GET /agents/all/cron-runs/outcomes, scoped to the given agent's runs. An agent's own bearer token may read its own outcomes; other agents' tokens are rejected. Optional `from`/`to` ISO datetime query params bound the range on startedAt.",
+  request: {
+    params: z.object({ id: z.string() }),
+    query: cronRunStatsQuerySchema,
+  },
+  responses: {
+    200: {
+      description: "Outcome series per (phase, contextFingerprint) for the agent",
+      content: { "application/json": { schema: CronRunOutcomesSchema } },
+    },
+    401: { description: "Unauthorized", ...jsonError },
+    403: { description: "Forbidden", ...jsonError },
+  },
+});
+
 const devTaskAdherenceRoute = createRoute({
   method: "get",
   path: "/agents/all/cron-runs/dev-task-adherence",
@@ -2079,6 +2099,16 @@ export function createAdminApp(deps: AdminDeps): OpenAPIHono<AdminAuthEnv> {
     const { from, to } = c.req.valid("query");
     const stats = await agentCronRunStatsService.query(from, to, id);
     return c.json(stats, 200);
+  });
+
+  // GET /agents/:id/cron-runs/outcomes — self-serve outcomes for one agent. Auth is
+  // the generic agentId-match middleware (api-auth.ts); registered after the
+  // static /agents/all/... routes so it cannot swallow them.
+  app.openapi(agentCronRunOutcomesRoute, async (c) => {
+    const { id } = c.req.valid("param");
+    const { from, to } = c.req.valid("query");
+    const outcomes = await agentCronRunStatsService.outcomes(from, to, id);
+    return c.json(outcomes, 200);
   });
 
   // GET /agents/all/cron-runs/dev-task-adherence — per-step dev-task adherence

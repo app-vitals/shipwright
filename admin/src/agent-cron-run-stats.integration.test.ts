@@ -1498,6 +1498,53 @@ describeOrSkip("AgentCronRunStatsService (integration)", () => {
     });
   });
 
+  it("outcomes(from, to, agentId) scopes counts and skip-reason histograms to that agent only", async () => {
+    const agentA = await createAgent(prisma, "Agent A");
+    const agentB = await createAgent(prisma, "Agent B");
+    const cronA = await createCron(cronJobService, agentA, "cron-a");
+    const cronB = await createCron(cronJobService, agentB, "cron-b");
+    const phaseA = await createPhaseCron(cronJobService, agentA, "dev-task");
+    const phaseB = await createPhaseCron(cronJobService, agentB, "dev-task");
+
+    const mk = (cronId: string, agentId: string, phaseId: string, skipped: boolean) =>
+      prisma.agentCronRun.create({
+        data: {
+          cronId,
+          agentId,
+          phaseId,
+          startedAt: new Date("2026-01-10T09:00:00Z"),
+          completedAt: skipped ? null : new Date("2026-01-10T09:02:00Z"),
+          skipped,
+          skipReason: skipped ? "reason-a" : null,
+          outcome: skipped ? null : "completed",
+          contextFingerprint: "fp-a",
+        },
+      });
+    await mk(cronA, agentA, phaseA, false);
+    await mk(cronA, agentA, phaseA, true);
+    await mk(cronB, agentB, phaseB, false);
+    await mk(cronB, agentB, phaseB, false);
+    await mk(cronB, agentB, phaseB, true);
+    await mk(cronB, agentB, phaseB, true);
+
+    const { series } = await statsService.outcomes(undefined, undefined, agentA);
+    expect(series).toHaveLength(1);
+    expect(series[0]).toMatchObject({
+      runs: 2,
+      completed: 1,
+      skipped: 1,
+      skipReasons: { "reason-a": 1 },
+    });
+
+    // Omitted agentId stays fleet-wide.
+    const fleet = await statsService.outcomes();
+    expect(fleet.series).toHaveLength(1);
+    expect(fleet.series[0]).toMatchObject({
+      runs: 6,
+      skipReasons: { "reason-a": 3 },
+    });
+  });
+
   it("outcomes() returns an empty series when there are no runs", async () => {
     expect(await statsService.outcomes()).toEqual({ series: [] });
   });
