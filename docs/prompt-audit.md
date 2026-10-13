@@ -8,7 +8,7 @@ Prompt files grow by accretion. Every always-loaded line is paid for on every ru
 
 1. **Detection** — `prompt-scan` runs deterministic rules over a prompt inventory, adds two judgment passes the rules cannot make, and writes a report. It never edits a prompt.
 2. **Decision** — `.claude/shipwright/prompt-audit-decisions.md` is a human-edited registry of findings that were reviewed and deliberately accepted. The scan re-reads it live every run and suppresses matches.
-3. **Action** — a later `prompt-fix` skill turns proposed findings into task-store tasks with measurement plans, and a `prompt-eval` skill runs the eval tier. Both are specified in the design doc; only `prompt-scan` ships today.
+3. **Action** — `prompt-fix` turns proposed findings into propose-only task-store tasks with measurement plans, and a later `prompt-eval` skill runs the eval tier. `prompt-eval` is specified in the design doc but not shipped yet.
 
 Every finding is labelled **cost-only** (the proof is a same-model token delta; quality is unmeasured and the report says so) or **quality-claimed** (the change could alter what the model reads, so it always carries an eval). Size alone has no measured adherence effect, so every "shorten" finding is cost-only unless an eval says otherwise.
 
@@ -36,6 +36,21 @@ Flags: `--summary`, `--dry-run`, `--model <id>` (repeatable), `--scope <path>`, 
 | d | Dated-model patterns, from `/doctor prompt-audit` |
 | e | Structure: frontmatter, duplicate listing entries, oversize skills, instruction placement, sections that belong in a path rule |
 | f | Instruction density: instruction count, caps emphasis, prohibition clusters |
+
+## What `prompt-fix` does
+
+Flags: `--dry-run`, `--class <a-f>`, `--finding <fp>`. Steps: report exists, filter `proposed`, live registry re-check (decisions and `**Autonomy:**` entries), pre-filing verification ([`references/pre-filing-verification.md`](../plugins/shipwright/references/pre-filing-verification.md): `file:line` still matches), cutover freeze check, weekly cap check, `--dry-run` preview, cap of 10 tasks per run (class c first, then projected saving), dedup against `pending`/`in_progress` tasks on the `prompt-` id prefix (`limit=1000` with the pagination guard), `POST /tasks/bulk`, then mark the ledger `queued` with `taskId`. It mirrors `entropy-fix` and `consolidation-fix` but is stricter on `hitl`.
+
+Task shape: `id: prompt-{class}-{fp8}-shipwright-{YYYY-Www}`, `title: "Prompt audit: {rule} - {file}"`, `source: prompt-fix`, `branch: chore/prompt-{fp8}-{slug}`, `layer: Docs`. The body carries the evidence, the metric before and projected after, the measurement plan, an embedded blast-radius report (the executing agent re-runs `cli.ts blast` and stops and escalates if the output differs), the acceptance criteria, a PR must-prove list (content tests pass, same-model token delta, every removed line dispositioned, always-loaded set did not grow, eval or production series for behavioral edits, `docs:`/`chore:` title) and a "suppress instead" note.
+
+### Guardrails
+
+- **Propose-only at launch.** `hitl` is computed by the pure function in `scripts/prompt-audit/hitl-policy.ts`, never by model judgment. With no promoted rule every task is `hitl: true`, including class c.
+- **Promotion is human-controlled.** A rule can reach `hitl: false` only through an `**Autonomy:** <rule>, <evidence>` entry in the decisions registry citing at least 5 accepted proposals, and then only for a pure fact repair (class c, replacement verified by command) on a low-fanout file (not a `CLAUDE.md`, `.claude/**`, command, agent, `agent/workspace/*.template`, methodology contract, or any file a cron invokes) with no pinning content test, no description or frontmatter change, a diff of 20 lines or fewer and a single lever. Quality-claimed findings are always `hitl: true`.
+- **Cutover freeze.** Nothing is filed while PAU-2.3 is done and PAU-2.4 is not, so prompt edits are not confounded with the model change.
+- **Weekly cap.** At most 2 prompt-fix tasks open or merged per ISO week, so each change is isolable in the series.
+- **Visibility.** The `prompt-scan` summary lists open prompt-fix HITL tasks older than 14 days.
+- **Known gap.** `hitl: true` blocks agent pickup, not merge: branch protection requires 0 approvals and the merging account is a bypass actor, so a hand-opened PR can still merge unreviewed. A CODEOWNERS rule with required code-owner review would close it but conflicts with the bypass-actor design; this is an open question, not scheduled work.
 
 ## The ledger
 
