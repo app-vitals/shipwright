@@ -78,7 +78,12 @@ class `d`.
 - `consecutiveRuns` and both promotions are applied by the `prompt-scan` skill after the
   `mergeScan` semantics above; `mergeScan` and `LedgerEntry` do not implement them yet.
 - `queued`, `measured` and `regressed` are set by `prompt-fix`, `measure` and `watch`,
-  never by `prompt-scan`.
+  never by `prompt-scan`. `prompt-fix` sets `queued` and records `taskId` (the
+  `prompt-{class}-{fp8}-shipwright-{YYYY-Www}` task it filed) plus a `queued` history event,
+  only for `proposed` findings whose task the store accepted; stale, deferred, duplicate and
+  decision-suppressed findings stay `proposed`. `measure --record` sets `measured`. `watch`
+  sets `regressed` when the post-merge series regresses; a `regressed` finding is never
+  reverted automatically.
 
 ---
 

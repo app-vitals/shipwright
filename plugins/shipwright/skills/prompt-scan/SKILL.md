@@ -223,8 +223,18 @@ PROMPT SCAN COMPLETE
 {Else if --summary: "Summary only — prompt-audit-report.md not written; ledger still updated."}
 {Else: "Report written to: prompt-audit-report.md"}
 
+  Open prompt-fix HITL tasks older than 14 days: {N}
+    {task id — title (age in days)}   (one line each)
+
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 ```
+
+The last block is a read-only task-store query so the HITL queue cannot age invisibly:
+`GET /tasks?status=pending&repo={url-encoded-repo}&limit=1000` (and `in_progress`, with the
+pagination guard from `prompt-fix`), keeping tasks whose `source` is `prompt-fix`, whose
+`hitl` is `true` and whose `createdAt` is more than 14 days old. If the task store is
+unreachable or its variables are unset, print `Open prompt-fix HITL tasks: unavailable`
+and continue.
 
 ---
 
@@ -233,7 +243,8 @@ PROMPT SCAN COMPLETE
 - **No prompt edits.** The only files written are `state/prompt-audit-ledger.json` and
   `prompt-audit-report.md`, and neither is written under `--dry-run`.
 - **No git operations and no task-store writes.** `git` is used read-only by the CLI for
-  blame age. Filing `prompt-fix` tasks belongs to a later skill.
+  blame age, and the task store is only read (the Step 9 aged-HITL list). Filing
+  `prompt-fix` tasks belongs to the `prompt-fix` skill.
 - **Never let the CLI write.** Step 3 always passes `--dry-run`; otherwise it would write
   the ledger before suppression is applied.
 - **The decisions registry is authoritative and always re-checked live.** Never reuse a
