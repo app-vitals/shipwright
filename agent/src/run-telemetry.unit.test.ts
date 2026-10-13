@@ -27,11 +27,15 @@ function skillBlock(id: string, skill: string): ContentBlock {
   } as ContentBlock;
 }
 
-function agentBlock(id: string, subagentType: string): ContentBlock {
+function agentBlock(
+  id: string,
+  subagentType: string,
+  name: "Agent" | "Task" = "Agent",
+): ContentBlock {
   return {
     type: "tool_use",
     id,
-    name: "Agent",
+    name,
     input: { subagent_type: subagentType, prompt: "go" },
   } as ContentBlock;
 }
@@ -65,6 +69,21 @@ describe("RunTelemetryAccumulator — first-turn baseline", () => {
     acc.observeUsage("msg_1", MODEL, usage(1, 1, 100, 200));
 
     expect(acc.snapshot().firstTurn?.messageId).toBe("msg_1");
+  });
+
+  test("a Task-named dispatch buckets and attributes sub-agent turns like an Agent-named one", () => {
+    const run = (name: "Agent" | "Task") => {
+      const acc = new RunTelemetryAccumulator();
+      acc.observeContent([agentBlock("tu_agent", "Explore", name)]);
+      acc.observeUsage("sub_1", MODEL, usage(50, 5), "tu_agent");
+      acc.observeUsage("msg_1", MODEL, usage(1, 1, 100, 200));
+      return acc.snapshot();
+    };
+
+    const taskSnap = run("Task");
+    expect(taskSnap).toEqual(run("Agent"));
+    expect(taskSnap.skillUsage.map((r) => r.name)).toContain("Explore");
+    expect(taskSnap.firstTurn?.messageId).toBe("msg_1");
   });
 
   test("snapshot of an empty run has no firstTurn, zero counts, and no rows", () => {
