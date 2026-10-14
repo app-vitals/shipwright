@@ -738,3 +738,126 @@ describe("buildAgentDeploymentManifest — tenant pods", () => {
     ).toBeUndefined();
   });
 });
+
+// ─── Anthropic workload identity federation ─────────────────────────────────
+
+describe("buildAgentDeploymentManifest — anthropic federation", () => {
+  const anthropicFederation = {
+    serviceAccountName: "shipwright-agent",
+    ruleId: "fdrl_123",
+    organizationId: "org-uuid",
+    serviceAccountId: "svac_456",
+    audience: "https://api.anthropic.com",
+    expirationSeconds: 600,
+  };
+
+  it("runs the pod as the configured service account", () => {
+    const d = buildAgentDeploymentManifest({
+      ...deployOpts,
+      anthropicFederation,
+    });
+    expect(d.spec.template.spec.serviceAccountName).toBe("shipwright-agent");
+  });
+
+  it("adds a projected anthropic-token volume with the audience and expiration", () => {
+    const d = buildAgentDeploymentManifest({
+      ...deployOpts,
+      anthropicFederation: {
+        ...anthropicFederation,
+        audience: "https://example.test",
+        expirationSeconds: 3600,
+      },
+    });
+    const volumes = d.spec.template.spec.volumes ?? [];
+    expect(volumes).toHaveLength(2);
+    expect(volumes[1]).toEqual({
+      name: "anthropic-token",
+      projected: {
+        sources: [
+          {
+            serviceAccountToken: {
+              audience: "https://example.test",
+              expirationSeconds: 3600,
+              path: "token",
+            },
+          },
+        ],
+      },
+    });
+  });
+
+  it("mounts the token directory read-only at /var/run/secrets/anthropic.com", () => {
+    const d = buildAgentDeploymentManifest({
+      ...deployOpts,
+      anthropicFederation,
+    });
+    const mounts = d.spec.template.spec.containers[0]?.volumeMounts ?? [];
+    expect(mounts).toHaveLength(2);
+    expect(mounts[1]).toEqual({
+      name: "anthropic-token",
+      mountPath: "/var/run/secrets/anthropic.com",
+      readOnly: true,
+    });
+  });
+
+  it("injects the federation env vars (no workspace id when unset)", () => {
+    const d = buildAgentDeploymentManifest({
+      ...deployOpts,
+      anthropicFederation,
+    });
+    const env = d.spec.template.spec.containers[0]?.env ?? [];
+    expect(env.slice(-4)).toEqual([
+      {
+        name: "ANTHROPIC_IDENTITY_TOKEN_FILE",
+        value: "/var/run/secrets/anthropic.com/token",
+      },
+      { name: "ANTHROPIC_FEDERATION_RULE_ID", value: "fdrl_123" },
+      { name: "ANTHROPIC_ORGANIZATION_ID", value: "org-uuid" },
+      { name: "ANTHROPIC_SERVICE_ACCOUNT_ID", value: "svac_456" },
+    ]);
+    expect(env.some((e) => e.name === "ANTHROPIC_WORKSPACE_ID")).toBe(false);
+  });
+
+  it("injects ANTHROPIC_WORKSPACE_ID when a workspace id is configured", () => {
+    const d = buildAgentDeploymentManifest({
+      ...deployOpts,
+      anthropicFederation: { ...anthropicFederation, workspaceId: "wrkspc_1" },
+    });
+    const env = d.spec.template.spec.containers[0]?.env ?? [];
+    expect(env.at(-1)).toEqual({
+      name: "ANTHROPIC_WORKSPACE_ID",
+      value: "wrkspc_1",
+    });
+  });
+
+  it("composes with the claude policy volume and mount", () => {
+    const d = buildAgentDeploymentManifest({
+      ...deployOpts,
+      claudePolicy: { configMapName: "claude-policy" },
+      anthropicFederation,
+    });
+    expect(d.spec.template.spec.volumes?.map((v) => v.name)).toEqual([
+      "agent-home",
+      "claude-policy",
+      "anthropic-token",
+    ]);
+    expect(
+      d.spec.template.spec.containers[0]?.volumeMounts?.map((m) => m.name),
+    ).toEqual(["agent-home", "claude-policy", "anthropic-token"]);
+  });
+
+  it("golden: no federation config is byte-identical to the current manifest", () => {
+    const base = JSON.stringify(buildAgentDeploymentManifest(deployOpts));
+    expect(
+      JSON.stringify(
+        buildAgentDeploymentManifest({
+          ...deployOpts,
+          anthropicFederation: undefined,
+        }),
+      ),
+    ).toBe(base);
+    expect(base).not.toContain("serviceAccountName");
+    expect(base).not.toContain("anthropic");
+    expect(base).not.toContain("ANTHROPIC_");
+  });
+});

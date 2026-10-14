@@ -25,6 +25,10 @@
  */
 
 import {
+  ANTHROPIC_FEDERATION_ENV_NAMES,
+  ANTHROPIC_TOKEN_MOUNT_PATH,
+  ANTHROPIC_TOKEN_VOLUME,
+  type AgentAnthropicFederation,
   type AgentContainerResourceOverrides,
   type AgentVoiceEnv,
   buildAgentDeploymentManifest,
@@ -79,8 +83,8 @@ export interface ReconcileResult {
   failed: Array<{ agentId: string; error: string }>;
   /**
    * Agent IDs whose Deployments had drifted from the desired container spec
-   * (image, env, resources) or Claude policy wiring and have been patched
-   * back to it.
+   * (image, env, resources), Claude policy wiring or Anthropic federation
+   * wiring and have been patched back to it.
    */
   updated: string[];
 }
@@ -112,8 +116,10 @@ export interface AgentProvisioner {
    * Deployments that have no corresponding agent.
    *
    * `opts.policyOnly` restricts drift correction of existing Deployments to the
-   * Claude policy wiring (volume, mount, hash annotation); image, env and
-   * resource drift is left untouched. Missing Deployments are still recreated.
+   * Claude policy wiring (volume, mount, hash annotation) and the Anthropic
+   * federation wiring (ServiceAccount, token volume, mount, federation env
+   * entries); image, other env and resource drift is left untouched. Missing
+   * Deployments are still recreated.
    */
   reconcile(
     agents: Array<{ id: string; slug?: string; accountId?: string | null }>,
@@ -204,6 +210,14 @@ export interface KubernetesAgentProvisionerConfig {
    * leave the manifest unchanged.
    */
   claudePolicy?: { configMapName: string; hash?: string };
+  /**
+   * Anthropic Workload Identity Federation wiring for provisioned agent pods
+   * (see AgentDeploymentOpts.anthropicFederation). Sourced from
+   * SHIPWRIGHT_K8S_AGENT_SERVICE_ACCOUNT and
+   * SHIPWRIGHT_K8S_AGENT_ANTHROPIC_FEDERATION_* in main.ts. Omit to leave the
+   * manifest unchanged.
+   */
+  anthropicFederation?: AgentAnthropicFederation;
 }
 
 function envEntryEqual(a: KubernetesEnvVar, b: KubernetesEnvVar): boolean {
@@ -336,6 +350,128 @@ export function policyDrifted(
   return policyPatch(live, desired) !== undefined;
 }
 
+/** The federation-relevant slice of a Deployment; parts are undefined when absent. */
+function federationParts(dep: KubernetesDeployment): {
+  serviceAccountName?: string;
+  volume?: PolicyVolume;
+  mount?: PolicyMount;
+  env: Map<string, KubernetesEnvVar>;
+} {
+  const podSpec = dep.spec.template.spec;
+  const container = podSpec.containers[0];
+  const names = new Set<string>(ANTHROPIC_FEDERATION_ENV_NAMES);
+  return {
+    serviceAccountName:
+      typeof podSpec.serviceAccountName === "string"
+        ? podSpec.serviceAccountName
+        : undefined,
+    volume: podSpec.volumes?.find((v) => v.name === ANTHROPIC_TOKEN_VOLUME),
+    mount: container?.volumeMounts?.find(
+      (m) => m.mountPath === ANTHROPIC_TOKEN_MOUNT_PATH,
+    ),
+    env: new Map(
+      (container?.env ?? [])
+        .filter((e) => names.has(e.name))
+        .map((e) => [e.name, e]),
+    ),
+  };
+}
+
+interface TokenSource {
+  audience?: string;
+  expirationSeconds?: number;
+  path?: string;
+}
+
+/**
+ * True when two projected token volumes request the same token. Compares only
+ * the fields the builder sets, so server-defaulted fields (projected
+ * defaultMode) on the live volume are not drift.
+ */
+function tokenSourceEqual(a: PolicyVolume, b: PolicyVolume): boolean {
+  const src = (v: PolicyVolume): TokenSource | undefined =>
+    (v.projected as { sources?: Array<{ serviceAccountToken?: TokenSource }> })
+      ?.sources?.[0]?.serviceAccountToken;
+  const x = src(a);
+  const y = src(b);
+  return (
+    x?.audience === y?.audience &&
+    x?.expirationSeconds === y?.expirationSeconds &&
+    x?.path === y?.path
+  );
+}
+
+/**
+ * Strategic-merge fragments that bring the live federation wiring (pod
+ * ServiceAccount, projected token volume, container mount, federation env) to
+ * the desired state. A field is omitted when that part is already in sync.
+ *
+ * Removal uses explicit directives like policyPatch: `$patch: delete` on the
+ * volume (by name), mount (by mountPath) and each env entry (by name), and a
+ * null serviceAccountName. The deprecated `serviceAccount` alias is nulled too:
+ * the API server mirrors serviceAccountName into it and falls back to it when
+ * serviceAccountName is empty, so leaving it would resurrect the old name.
+ */
+export interface FederationPatch {
+  serviceAccountName?: string | null;
+  serviceAccount?: null;
+  volumes?: object[];
+  volumeMounts?: object[];
+  env?: object[];
+}
+
+/** The federation patch for a live Deployment, or undefined when already in sync. */
+export function federationPatch(
+  live: KubernetesDeployment,
+  desired: KubernetesDeployment,
+): FederationPatch | undefined {
+  const cur = federationParts(live);
+  const want = federationParts(desired);
+  const patch: FederationPatch = {};
+
+  if (want.serviceAccountName) {
+    if (cur.serviceAccountName !== want.serviceAccountName) {
+      patch.serviceAccountName = want.serviceAccountName;
+    }
+  } else if (cur.serviceAccountName) {
+    patch.serviceAccountName = null;
+    patch.serviceAccount = null;
+  }
+
+  if (want.volume) {
+    if (!cur.volume || !tokenSourceEqual(cur.volume, want.volume)) {
+      patch.volumes = [want.volume];
+    }
+  } else if (cur.volume) {
+    patch.volumes = [{ name: ANTHROPIC_TOKEN_VOLUME, $patch: "delete" }];
+  }
+
+  if (want.mount) {
+    if (
+      cur.mount?.name !== want.mount.name ||
+      cur.mount.readOnly !== want.mount.readOnly
+    ) {
+      patch.volumeMounts = [want.mount];
+    }
+  } else if (cur.mount) {
+    patch.volumeMounts = [{ mountPath: cur.mount.mountPath, $patch: "delete" }];
+  }
+
+  const env: object[] = [];
+  for (const name of ANTHROPIC_FEDERATION_ENV_NAMES) {
+    const wantEntry = want.env.get(name);
+    const curEntry = cur.env.get(name);
+    if (wantEntry) {
+      if (!curEntry || !envEntryEqual(curEntry, wantEntry)) env.push(wantEntry);
+    } else if (curEntry) {
+      env.push({ name, $patch: "delete" });
+    }
+  }
+  if (env.length > 0) patch.env = env;
+
+  return Object.keys(patch).length > 0 ? patch : undefined;
+}
+
 function isConflict(err: unknown): boolean {
   return err instanceof ConflictError;
 }
@@ -400,6 +536,7 @@ export class KubernetesAgentProvisioner implements AgentProvisioner {
       taskStoreUrl: this.config.taskStoreUrl,
       chatServiceUrl: this.config.chatServiceUrl,
       claudePolicy: this.config.claudePolicy,
+      anthropicFederation: this.config.anthropicFederation,
       accountId,
     });
   }
@@ -619,28 +756,62 @@ export class KubernetesAgentProvisioner implements AgentProvisioner {
             deployment.spec.template.metadata?.labels?.[TENANT_LABEL] !==
               desiredLabels[TENANT_LABEL];
           const policy = policyPatch(deployment, desiredDeployment);
+          const federation = federationPatch(deployment, desiredDeployment);
           const containerDrift =
             !policyOnly &&
             current !== undefined &&
             desired !== undefined &&
             containerDrifted(current, desired);
-          if (desired && (labelsDrifted || containerDrift || policy)) {
-            // Under policyOnly the container entry carries only the mount
-            // change (if any); image/env/resources are left to other actors.
+          if (
+            desired &&
+            (labelsDrifted || containerDrift || policy || federation)
+          ) {
+            // Under policyOnly the container entry carries only the policy and
+            // federation mount/env changes (if any); image, the rest of env,
+            // and resources are left to other actors.
+            const volumeMounts = [
+              ...(policy?.volumeMounts ?? []),
+              ...(federation?.volumeMounts ?? []),
+            ];
+            const desiredEnvNames = new Set(
+              (desired.env ?? []).map((e) => e.name),
+            );
+            const env = policyOnly
+              ? (federation?.env ?? [])
+              : [
+                  ...(desired.env ?? []),
+                  // Full env already upserts desired federation entries; only
+                  // the delete directives need appending.
+                  ...(federation?.env ?? []).filter(
+                    (e) => !desiredEnvNames.has((e as { name: string }).name),
+                  ),
+                ];
             const container = {
               name: desired.name,
               ...(policyOnly
                 ? {}
                 : {
                     image: desired.image,
-                    env: desired.env,
                     resources: desired.resources,
                   }),
-              ...(policy?.volumeMounts
-                ? { volumeMounts: policy.volumeMounts }
-                : {}),
+              ...(volumeMounts.length > 0 ? { volumeMounts } : {}),
+              ...(env.length > 0 || !policyOnly ? { env } : {}),
             };
-            const includeContainer = !policyOnly || policy?.volumeMounts;
+            const includeContainer =
+              !policyOnly || volumeMounts.length > 0 || env.length > 0;
+            const volumes = [
+              ...(policy?.volumes ?? []),
+              ...(federation?.volumes ?? []),
+            ];
+            const serviceAccount =
+              federation?.serviceAccountName !== undefined
+                ? {
+                    serviceAccountName: federation.serviceAccountName,
+                    ...(federation.serviceAccount === null
+                      ? { serviceAccount: null }
+                      : {}),
+                  }
+                : {};
             const podMetadata = {
               ...(labelsDrifted
                 ? { labels: { [TENANT_LABEL]: desiredLabels[TENANT_LABEL] } }
@@ -666,8 +837,9 @@ export class KubernetesAgentProvisioner implements AgentProvisioner {
                       ? { metadata: podMetadata }
                       : {}),
                     spec: {
+                      ...serviceAccount,
                       ...(includeContainer ? { containers: [container] } : {}),
-                      ...(policy?.volumes ? { volumes: policy.volumes } : {}),
+                      ...(volumes.length > 0 ? { volumes } : {}),
                     },
                   },
                 },

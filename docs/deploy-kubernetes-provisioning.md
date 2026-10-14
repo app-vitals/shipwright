@@ -158,6 +158,20 @@ How it behaves:
   settings, the file from this chart does not apply; use one mechanism or the
   other.
 
+Provisioned agent pods can also authenticate to Anthropic with Workload
+Identity Federation instead of a long-lived key: set
+`SHIPWRIGHT_K8S_AGENT_ANTHROPIC_FEDERATION_RULE_ID` together with
+`SHIPWRIGHT_K8S_AGENT_SERVICE_ACCOUNT`,
+`SHIPWRIGHT_K8S_AGENT_ANTHROPIC_FEDERATION_ORGANIZATION_ID` and
+`SHIPWRIGHT_K8S_AGENT_ANTHROPIC_FEDERATION_SERVICE_ACCOUNT_ID` on admin. Pods
+then run as that ServiceAccount with a projected token (audience
+`https://api.anthropic.com`, 600s by default) mounted read-only at
+`/var/run/secrets/anthropic.com/token`, plus the `ANTHROPIC_*` federation env.
+It is off by default (manifest unchanged); a partial config fails admin
+startup, and the startup policy-only reconcile adds or removes the wiring on
+existing agents. The chart does not set these yet. See
+[`configuration-agent.md`](./configuration-agent.md#agent-provisioning-admin-service).
+
 ### Chat service provisioning (opt-in)
 
 By default the admin service **does not** mint chat-service tokens — provisioned agents carry no chat-service credentials. Per-agent chat-service token provisioning at agent-creation time is enabled the same way the admin console's Chat tab is: via the top-level `chat.enabled` + `chat.adminToken.existingSecret` chart values described in [Chat service (opt-in)](./deploy-kubernetes-networking.md#chat-service-opt-in) — there is no separate `agent.provisioning.chatService.*` value block.

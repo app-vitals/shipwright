@@ -144,6 +144,24 @@ export const CLAUDE_POLICY_HASH_ANNOTATION =
 /** 0444 — policy is read-only to the agent user. */
 const CLAUDE_POLICY_FILE_MODE = 292;
 
+/** Volume name and mount dir for the projected Anthropic identity token. */
+export const ANTHROPIC_TOKEN_VOLUME = "anthropic-token";
+export const ANTHROPIC_TOKEN_MOUNT_PATH = "/var/run/secrets/anthropic.com";
+const ANTHROPIC_TOKEN_FILE = "token";
+
+/**
+ * Every env var the federation wiring may inject, in manifest order. The
+ * reconcile patch walks this list so a var that is no longer desired (feature
+ * off, or workspace id unset) is deleted from live Deployments.
+ */
+export const ANTHROPIC_FEDERATION_ENV_NAMES = [
+  "ANTHROPIC_IDENTITY_TOKEN_FILE",
+  "ANTHROPIC_FEDERATION_RULE_ID",
+  "ANTHROPIC_ORGANIZATION_ID",
+  "ANTHROPIC_SERVICE_ACCOUNT_ID",
+  "ANTHROPIC_WORKSPACE_ID",
+] as const;
+
 // ─── Name sanitization ──────────────────────────────────────────────────────
 
 /**
@@ -295,6 +313,57 @@ export interface AgentDeploymentOpts {
    * Omit entirely for an unchanged manifest.
    */
   claudePolicy?: { configMapName: string; hash?: string };
+  /**
+   * When set, the pod runs as `serviceAccountName` and carries a projected
+   * service-account token (volume `anthropic-token`, mounted read-only at
+   * /var/run/secrets/anthropic.com) plus the env the Anthropic client needs to
+   * exchange that token for a short-lived access token (workload identity
+   * federation). Omit for an unchanged manifest.
+   */
+  anthropicFederation?: AgentAnthropicFederation;
+}
+
+/**
+ * Anthropic Workload Identity Federation settings for provisioned agent pods.
+ * Parsed from the admin's SHIPWRIGHT_K8S_AGENT_* env in main.ts.
+ */
+export interface AgentAnthropicFederation {
+  /** Kubernetes ServiceAccount the pod runs as (the token's subject). */
+  serviceAccountName: string;
+  /** → ANTHROPIC_FEDERATION_RULE_ID */
+  ruleId: string;
+  /** → ANTHROPIC_ORGANIZATION_ID */
+  organizationId: string;
+  /** → ANTHROPIC_SERVICE_ACCOUNT_ID */
+  serviceAccountId: string;
+  /** → ANTHROPIC_WORKSPACE_ID (only injected when set). */
+  workspaceId?: string;
+  /** Audience of the projected token. */
+  audience: string;
+  /** Lifetime of the projected token; Kubernetes requires >= 600. */
+  expirationSeconds: number;
+}
+
+/**
+ * Build the federation env entries, in ANTHROPIC_FEDERATION_ENV_NAMES order.
+ * Returns an empty array when federation is disabled.
+ */
+export function anthropicFederationEnvEntries(
+  fed: AgentAnthropicFederation | undefined,
+): { name: string; value: string }[] {
+  if (!fed) return [];
+  return [
+    {
+      name: "ANTHROPIC_IDENTITY_TOKEN_FILE",
+      value: `${ANTHROPIC_TOKEN_MOUNT_PATH}/${ANTHROPIC_TOKEN_FILE}`,
+    },
+    { name: "ANTHROPIC_FEDERATION_RULE_ID", value: fed.ruleId },
+    { name: "ANTHROPIC_ORGANIZATION_ID", value: fed.organizationId },
+    { name: "ANTHROPIC_SERVICE_ACCOUNT_ID", value: fed.serviceAccountId },
+    ...(fed.workspaceId
+      ? [{ name: "ANTHROPIC_WORKSPACE_ID", value: fed.workspaceId }]
+      : []),
+  ];
 }
 
 /**
@@ -412,6 +481,7 @@ export function buildAgentDeploymentManifest(
   };
 
   const policy = opts.claudePolicy;
+  const federation = opts.anthropicFederation;
 
   return {
     apiVersion: "apps/v1",
@@ -437,6 +507,10 @@ export function buildAgentDeploymentManifest(
             : {}),
         },
         spec: {
+          // Federation: the projected token's subject is this ServiceAccount.
+          ...(federation
+            ? { serviceAccountName: federation.serviceAccountName }
+            : {}),
           securityContext: {
             fsGroup: AGENT_RUN_AS,
             fsGroupChangePolicy: "OnRootMismatch",
@@ -461,6 +535,24 @@ export function buildAgentDeploymentManifest(
                         { key: CLAUDE_POLICY_FILE, path: CLAUDE_POLICY_FILE },
                       ],
                       defaultMode: CLAUDE_POLICY_FILE_MODE,
+                    },
+                  },
+                ]
+              : []),
+            ...(federation
+              ? [
+                  {
+                    name: ANTHROPIC_TOKEN_VOLUME,
+                    projected: {
+                      sources: [
+                        {
+                          serviceAccountToken: {
+                            audience: federation.audience,
+                            expirationSeconds: federation.expirationSeconds,
+                            path: ANTHROPIC_TOKEN_FILE,
+                          },
+                        },
+                      ],
                     },
                   },
                 ]
@@ -495,6 +587,8 @@ export function buildAgentDeploymentManifest(
                 // Voice (STT/TTS) env — appended only for the keys that are set
                 // (none when voice is disabled, preserving the 6 base vars).
                 ...voiceEnvEntries(opts.voice),
+                // Workload identity federation env — none when disabled.
+                ...anthropicFederationEnvEntries(federation),
               ],
               volumeMounts: [
                 { name: volumeName, mountPath: AGENT_HOME_MOUNT_PATH },
@@ -504,6 +598,15 @@ export function buildAgentDeploymentManifest(
                       {
                         name: CLAUDE_POLICY_VOLUME,
                         mountPath: CLAUDE_POLICY_MOUNT_PATH,
+                        readOnly: true,
+                      },
+                    ]
+                  : []),
+                ...(federation
+                  ? [
+                      {
+                        name: ANTHROPIC_TOKEN_VOLUME,
+                        mountPath: ANTHROPIC_TOKEN_MOUNT_PATH,
                         readOnly: true,
                       },
                     ]

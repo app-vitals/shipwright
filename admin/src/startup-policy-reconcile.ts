@@ -8,7 +8,10 @@
  * `provisioner.reconcile(..., { policyOnly: true })`, which patches only the
  * policy wiring (volume, mount, hash annotation) — so only agents whose policy
  * actually changed roll. It runs whether or not a policy is configured, so
- * agents lose the mount after the policy is disabled.
+ * agents lose the mount after the policy is disabled. The same pass applies
+ * the Anthropic workload identity federation wiring (ServiceAccount, projected
+ * token volume, mount, federation env), so turning federation on or off and
+ * restarting admin corrects existing agents.
  *
  * Never throws: a Kubernetes or database failure is logged and admin keeps
  * serving. Called once from main.ts after Bun.serve.

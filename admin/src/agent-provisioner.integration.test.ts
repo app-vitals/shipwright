@@ -967,7 +967,7 @@ const POLICY_CASSETTE: Record<string, PolicyCassetteEntry> = JSON.parse(
 );
 
 /** Routes list/get/patch to cassette entries and records PATCH bodies. */
-function policyCassetteClient(): {
+function policyCassetteClient(getKey = "getDeployment_policy"): {
   client: KubernetesClient;
   patches: Array<{ contentType: string | null; body: unknown }>;
 } {
@@ -983,7 +983,7 @@ function policyCassetteClient(): {
         body: JSON.parse(String(init?.body)),
       });
     } else if (url.includes("/deployments/")) {
-      key = "getDeployment_policy";
+      key = getKey;
     } else {
       key = "listDeployments_policy";
     }
@@ -1066,5 +1066,146 @@ describe("KubernetesAgentProvisioner.reconcile() — claude policy (cassette)", 
         },
       },
     });
+  });
+});
+
+describe("KubernetesAgentProvisioner.reconcile() — anthropic federation (cassette)", () => {
+  // Never invoked: the Deployment exists, so reconcile only reads and patches.
+  const tokens = {} as unknown as AgentTokenService;
+  const FEDERATION = {
+    serviceAccountName: "shipwright-agent",
+    ruleId: "fdrl_1",
+    organizationId: "org-1",
+    serviceAccountId: "svac_1",
+    audience: "https://api.anthropic.com",
+    expirationSeconds: 600,
+  };
+
+  it("sends a strategic-merge patch that adds the federation wiring when enabled", async () => {
+    const { client, patches } = policyCassetteClient(
+      "getDeployment_federation_absent",
+    );
+    const provisioner = new KubernetesAgentProvisioner(client, tokens, {
+      ...CONFIG,
+      anthropicFederation: FEDERATION,
+    });
+
+    const result = await provisioner.reconcile([{ id: "agent-abc" }], {
+      policyOnly: true,
+    });
+
+    expect(result.updated).toEqual(["agent-abc"]);
+    expect(result.failed).toEqual([]);
+    expect(patches).toHaveLength(1);
+    expect(patches[0]?.contentType).toBe(
+      "application/strategic-merge-patch+json",
+    );
+    expect(patches[0]?.body).toEqual({
+      spec: {
+        template: {
+          spec: {
+            serviceAccountName: "shipwright-agent",
+            volumes: [
+              {
+                name: "anthropic-token",
+                projected: {
+                  sources: [
+                    {
+                      serviceAccountToken: {
+                        audience: "https://api.anthropic.com",
+                        expirationSeconds: 600,
+                        path: "token",
+                      },
+                    },
+                  ],
+                },
+              },
+            ],
+            containers: [
+              {
+                name: "shipwright-agent",
+                volumeMounts: [
+                  {
+                    name: "anthropic-token",
+                    mountPath: "/var/run/secrets/anthropic.com",
+                    readOnly: true,
+                  },
+                ],
+                env: [
+                  {
+                    name: "ANTHROPIC_IDENTITY_TOKEN_FILE",
+                    value: "/var/run/secrets/anthropic.com/token",
+                  },
+                  { name: "ANTHROPIC_FEDERATION_RULE_ID", value: "fdrl_1" },
+                  { name: "ANTHROPIC_ORGANIZATION_ID", value: "org-1" },
+                  { name: "ANTHROPIC_SERVICE_ACCOUNT_ID", value: "svac_1" },
+                ],
+              },
+            ],
+          },
+        },
+      },
+    });
+  });
+
+  it("sends a strategic-merge patch that removes the federation wiring when disabled", async () => {
+    const { client, patches } = policyCassetteClient(
+      "getDeployment_federation_present",
+    );
+    const provisioner = new KubernetesAgentProvisioner(client, tokens, CONFIG);
+
+    const result = await provisioner.reconcile([{ id: "agent-abc" }], {
+      policyOnly: true,
+    });
+
+    expect(result.updated).toEqual(["agent-abc"]);
+    expect(patches).toHaveLength(1);
+    expect(patches[0]?.body).toEqual({
+      spec: {
+        template: {
+          spec: {
+            serviceAccountName: null,
+            serviceAccount: null,
+            volumes: [{ name: "anthropic-token", $patch: "delete" }],
+            containers: [
+              {
+                name: "shipwright-agent",
+                volumeMounts: [
+                  {
+                    mountPath: "/var/run/secrets/anthropic.com",
+                    $patch: "delete",
+                  },
+                ],
+                env: [
+                  { name: "ANTHROPIC_IDENTITY_TOKEN_FILE", $patch: "delete" },
+                  { name: "ANTHROPIC_FEDERATION_RULE_ID", $patch: "delete" },
+                  { name: "ANTHROPIC_ORGANIZATION_ID", $patch: "delete" },
+                  { name: "ANTHROPIC_SERVICE_ACCOUNT_ID", $patch: "delete" },
+                  { name: "ANTHROPIC_WORKSPACE_ID", $patch: "delete" },
+                ],
+              },
+            ],
+          },
+        },
+      },
+    });
+  });
+
+  it("does not patch when the recorded federation wiring is in sync", async () => {
+    const { client, patches } = policyCassetteClient(
+      "getDeployment_federation_present",
+    );
+    const provisioner = new KubernetesAgentProvisioner(client, tokens, {
+      ...CONFIG,
+      anthropicFederation: { ...FEDERATION, workspaceId: "wrkspc_1" },
+    });
+
+    const result = await provisioner.reconcile([{ id: "agent-abc" }], {
+      policyOnly: true,
+    });
+
+    expect(result.updated).toEqual([]);
+    expect(result.failed).toEqual([]);
+    expect(patches).toEqual([]);
   });
 });

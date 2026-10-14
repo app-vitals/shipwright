@@ -9,11 +9,13 @@
 
 import { describe, expect, it } from "bun:test";
 import {
+  type AgentAnthropicFederation,
   buildAgentDeploymentManifest,
   sanitizeAgentName,
 } from "./agent-manifest.ts";
 import {
   containerDrifted,
+  federationPatch,
   KubernetesAgentProvisioner,
   type KubernetesAgentProvisionerConfig,
   NoopAgentProvisioner,
@@ -1025,7 +1027,10 @@ const POLICY_VOLUME_PATH = "claude-policy";
 
 function manifestWith(
   claudePolicy?: { configMapName: string; hash?: string },
-  overrides: { imageTag?: string } = {},
+  overrides: {
+    imageTag?: string;
+    anthropicFederation?: AgentAnthropicFederation;
+  } = {},
 ) {
   return buildAgentDeploymentManifest({
     agentId: POLICY_AGENT_ID,
@@ -1037,6 +1042,7 @@ function manifestWith(
     secretName: `${POLICY_RESOURCE}-token`,
     tokenSecretKey: "token",
     claudePolicy,
+    anthropicFederation: overrides.anthropicFederation,
   });
 }
 
@@ -1369,5 +1375,245 @@ describe("NoopAgentProvisioner.reconcile()", () => {
       orphans: [],
       failed: [],
     });
+  });
+});
+
+// ─── Anthropic workload identity federation drift + reconcile patch ─────────
+
+const FED_A: AgentAnthropicFederation = {
+  serviceAccountName: "shipwright-agent",
+  ruleId: "fdrl_a",
+  organizationId: "org-a",
+  serviceAccountId: "svac_a",
+  audience: "https://api.anthropic.com",
+  expirationSeconds: 600,
+};
+
+const FED_ENV_NAMES = [
+  "ANTHROPIC_IDENTITY_TOKEN_FILE",
+  "ANTHROPIC_FEDERATION_RULE_ID",
+  "ANTHROPIC_ORGANIZATION_ID",
+  "ANTHROPIC_SERVICE_ACCOUNT_ID",
+];
+
+function fedManifest(fed?: AgentAnthropicFederation) {
+  return manifestWith(undefined, { anthropicFederation: fed });
+}
+
+function fedVolume(dep: ReturnType<typeof manifestWith>) {
+  const vol = dep.spec.template.spec.volumes?.find(
+    (v) => v.name === "anthropic-token",
+  );
+  if (!vol) throw new Error("anthropic-token volume missing");
+  return vol;
+}
+
+describe("federationPatch()", () => {
+  it("adds the service account, volume, mount and env when enabled", () => {
+    const desired = fedManifest(FED_A);
+    expect(federationPatch(fedManifest(), desired)).toEqual({
+      serviceAccountName: "shipwright-agent",
+      volumes: [fedVolume(desired)],
+      volumeMounts: [
+        {
+          name: "anthropic-token",
+          mountPath: "/var/run/secrets/anthropic.com",
+          readOnly: true,
+        },
+      ],
+      env: [
+        {
+          name: "ANTHROPIC_IDENTITY_TOKEN_FILE",
+          value: "/var/run/secrets/anthropic.com/token",
+        },
+        { name: "ANTHROPIC_FEDERATION_RULE_ID", value: "fdrl_a" },
+        { name: "ANTHROPIC_ORGANIZATION_ID", value: "org-a" },
+        { name: "ANTHROPIC_SERVICE_ACCOUNT_ID", value: "svac_a" },
+      ],
+    });
+  });
+
+  it("is undefined when the live wiring is in sync", () => {
+    expect(
+      federationPatch(fedManifest(FED_A), fedManifest(FED_A)),
+    ).toBeUndefined();
+  });
+
+  it("is undefined when federation is disabled and absent", () => {
+    expect(federationPatch(fedManifest(), fedManifest())).toBeUndefined();
+  });
+
+  it("ignores server-defaulted fields on the live projected volume", () => {
+    const live = fedManifest(FED_A);
+    const vol = fedVolume(live);
+    if (vol) (vol.projected as Record<string, unknown>).defaultMode = 420;
+    expect(federationPatch(live, fedManifest(FED_A))).toBeUndefined();
+  });
+
+  it("updates only the changed parts", () => {
+    const desired = fedManifest({
+      ...FED_A,
+      ruleId: "fdrl_b",
+      expirationSeconds: 1200,
+      workspaceId: "wrkspc_1",
+    });
+    expect(federationPatch(fedManifest(FED_A), desired)).toEqual({
+      volumes: [fedVolume(desired)],
+      env: [
+        { name: "ANTHROPIC_FEDERATION_RULE_ID", value: "fdrl_b" },
+        { name: "ANTHROPIC_WORKSPACE_ID", value: "wrkspc_1" },
+      ],
+    });
+  });
+
+  it("updates the service account name when it changed", () => {
+    expect(
+      federationPatch(
+        fedManifest(FED_A),
+        fedManifest({ ...FED_A, serviceAccountName: "other-sa" }),
+      ),
+    ).toEqual({ serviceAccountName: "other-sa" });
+  });
+
+  it("deletes a workspace id that is no longer configured", () => {
+    expect(
+      federationPatch(
+        fedManifest({ ...FED_A, workspaceId: "wrkspc_1" }),
+        fedManifest(FED_A),
+      ),
+    ).toEqual({
+      env: [{ name: "ANTHROPIC_WORKSPACE_ID", $patch: "delete" }],
+    });
+  });
+
+  it("removes every part with delete directives when disabled", () => {
+    expect(
+      federationPatch(
+        fedManifest({ ...FED_A, workspaceId: "wrkspc_1" }),
+        fedManifest(),
+      ),
+    ).toEqual({
+      serviceAccountName: null,
+      serviceAccount: null,
+      volumes: [{ name: "anthropic-token", $patch: "delete" }],
+      volumeMounts: [
+        { mountPath: "/var/run/secrets/anthropic.com", $patch: "delete" },
+      ],
+      env: [...FED_ENV_NAMES, "ANTHROPIC_WORKSPACE_ID"].map((name) => ({
+        name,
+        $patch: "delete",
+      })),
+    });
+  });
+});
+
+describe("KubernetesAgentProvisioner.reconcile() — anthropic federation", () => {
+  function provisionerFor(
+    client: KubernetesClient,
+    anthropicFederation?: AgentAnthropicFederation,
+  ) {
+    return new KubernetesAgentProvisioner(
+      client,
+      stubTokens() as AgentTokenService,
+      { ...BASE_CONFIG, anthropicFederation },
+    );
+  }
+
+  for (const policyOnly of [false, true]) {
+    it(`adds the federation wiring when enabled (policyOnly=${policyOnly})`, async () => {
+      const rec = seeded(fedManifest());
+      const { client, patches } = patchSpy(rec);
+      const result = await provisionerFor(client, FED_A).reconcile(
+        [{ id: POLICY_AGENT_ID }],
+        { policyOnly },
+      );
+
+      expect(result.updated).toEqual([POLICY_AGENT_ID]);
+      expect(result.failed).toEqual([]);
+      expect(patches).toHaveLength(1);
+      const live = await rec.getDeployment(NAMESPACE, POLICY_RESOURCE);
+      expect(live).toEqual(fedManifest(FED_A));
+
+      // Converged: a second pass is a no-op.
+      const again = await provisionerFor(client, FED_A).reconcile(
+        [{ id: POLICY_AGENT_ID }],
+        { policyOnly },
+      );
+      expect(again.updated).toEqual([]);
+      expect(patches).toHaveLength(1);
+    });
+
+    it(`removes all federation wiring when disabled (policyOnly=${policyOnly})`, async () => {
+      const rec = seeded(fedManifest({ ...FED_A, workspaceId: "wrkspc_1" }));
+      const { client, patches } = patchSpy(rec);
+      const result = await provisionerFor(client, undefined).reconcile(
+        [{ id: POLICY_AGENT_ID }],
+        { policyOnly },
+      );
+
+      expect(result.updated).toEqual([POLICY_AGENT_ID]);
+      expect(patches).toHaveLength(1);
+      expect(patches[0]).toMatchObject({
+        spec: {
+          template: {
+            spec: {
+              serviceAccountName: null,
+              serviceAccount: null,
+              volumes: [{ name: "anthropic-token", $patch: "delete" }],
+              containers: [
+                {
+                  volumeMounts: [
+                    {
+                      mountPath: "/var/run/secrets/anthropic.com",
+                      $patch: "delete",
+                    },
+                  ],
+                },
+              ],
+            },
+          },
+        },
+      });
+      const live = await rec.getDeployment(NAMESPACE, POLICY_RESOURCE);
+      expect(live).toEqual(fedManifest());
+
+      const again = await provisionerFor(client, undefined).reconcile(
+        [{ id: POLICY_AGENT_ID }],
+        { policyOnly },
+      );
+      expect(again.updated).toEqual([]);
+    });
+
+    it(`does not patch an in-sync Deployment (policyOnly=${policyOnly})`, async () => {
+      const { client, patches } = patchSpy(seeded(fedManifest(FED_A)));
+      const result = await provisionerFor(client, FED_A).reconcile(
+        [{ id: POLICY_AGENT_ID }],
+        { policyOnly },
+      );
+      expect(result.updated).toEqual([]);
+      expect(patches).toEqual([]);
+    });
+  }
+
+  it("policyOnly sends only the federation env entries, not the full env", async () => {
+    const { client, patches } = patchSpy(seeded(fedManifest()));
+    await provisionerFor(client, FED_A).reconcile([{ id: POLICY_AGENT_ID }], {
+      policyOnly: true,
+    });
+    const container = (
+      patches[0] as {
+        spec: {
+          template: {
+            spec: { containers: Array<{ env?: Array<{ name: string }> }> };
+          };
+        };
+      }
+    ).spec.template.spec.containers[0];
+    expect(Object.keys(container ?? {}).sort()).toEqual([
+      "env",
+      "name",
+      "volumeMounts",
+    ]);
+    expect(container?.env?.map((e) => e.name)).toEqual(FED_ENV_NAMES);
   });
 });

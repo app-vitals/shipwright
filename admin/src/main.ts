@@ -41,6 +41,7 @@ import { AgentGitHubInstallationsService } from "./agent-github-installations.ts
 import { AgentMemberService } from "./agent-members.ts";
 import { AgentPhaseMethodologyService } from "./agent-phase-methodology.ts";
 import { AgentPluginService } from "./agent-plugins.ts";
+import type { AgentAnthropicFederation } from "./agent-manifest.ts";
 import type { AgentProvisioner } from "./agent-provisioner.ts";
 import {
   KubernetesAgentProvisioner,
@@ -226,6 +227,10 @@ export function buildProvisioner(
       }
     : undefined;
 
+  // Anthropic workload identity federation. Unset rule ID disables it; a
+  // partial config throws here so admin startup fails with a clear message.
+  const anthropicFederation = parseAnthropicFederation(env);
+
   const taskStoreUrl = env.SHIPWRIGHT_TASK_STORE_URL;
   const taskStoreAdminToken = env.SHIPWRIGHT_TASK_STORE_ADMIN_TOKEN;
   const taskStore =
@@ -259,6 +264,7 @@ export function buildProvisioner(
     ...(Object.keys(resources).length > 0 ? { resources } : {}),
     ...(Object.keys(voice).length > 0 ? { voice } : {}),
     ...(claudePolicy ? { claudePolicy } : {}),
+    ...(anthropicFederation ? { anthropicFederation } : {}),
     // When SHIPWRIGHT_AGENT_PVC_NAME_TEMPLATE is set (e.g. "acme-agent-{name}-home"),
     // substitute {name} with the pre-sanitized name resolved by pvcNameFor()
     // (slug sanitized via sanitizeAgentName, or falls back to resourceName).
@@ -277,6 +283,62 @@ export function buildProvisioner(
     // provision and inject it into the agent Secret + Deployment.
     ...(chatService ? { chatService, chatServiceUrl } : {}),
   });
+}
+
+/** Kubernetes rejects projected service-account tokens shorter than this. */
+const MIN_FEDERATION_TOKEN_EXPIRATION_SECONDS = 600;
+
+/**
+ * Parse the Anthropic Workload Identity Federation config for provisioned agent
+ * pods. An unset/empty SHIPWRIGHT_K8S_AGENT_ANTHROPIC_FEDERATION_RULE_ID
+ * disables the feature (returns undefined, other federation vars ignored).
+ * With the rule ID set, the agent ServiceAccount, organization ID and service
+ * account ID are required, and a partial config throws so startup fails
+ * loudly instead of provisioning pods that cannot authenticate.
+ */
+function parseAnthropicFederation(
+  env: NodeJS.ProcessEnv,
+): AgentAnthropicFederation | undefined {
+  const prefix = "SHIPWRIGHT_K8S_AGENT_ANTHROPIC_FEDERATION_";
+  const ruleId = env[`${prefix}RULE_ID`];
+  if (!ruleId) return undefined;
+
+  const required = {
+    serviceAccountName: "SHIPWRIGHT_K8S_AGENT_SERVICE_ACCOUNT",
+    organizationId: `${prefix}ORGANIZATION_ID`,
+    serviceAccountId: `${prefix}SERVICE_ACCOUNT_ID`,
+  } as const;
+  const missing = Object.values(required).filter((name) => !env[name]);
+  if (missing.length > 0) {
+    throw new Error(
+      `Anthropic workload identity federation is partially configured: ${prefix}RULE_ID is set but ${missing.join(", ")} ${missing.length === 1 ? "is" : "are"} missing. Set all of them, or unset ${prefix}RULE_ID to disable federation.`,
+    );
+  }
+
+  const expirationName = `${prefix}TOKEN_EXPIRATION_SECONDS`;
+  const expirationRaw = env[expirationName];
+  const expirationSeconds = expirationRaw
+    ? Number(expirationRaw)
+    : MIN_FEDERATION_TOKEN_EXPIRATION_SECONDS;
+  if (
+    !Number.isInteger(expirationSeconds) ||
+    expirationSeconds < MIN_FEDERATION_TOKEN_EXPIRATION_SECONDS
+  ) {
+    throw new Error(
+      `${expirationName} must be an integer >= ${MIN_FEDERATION_TOKEN_EXPIRATION_SECONDS} (Kubernetes minimum for projected tokens), got "${expirationRaw}".`,
+    );
+  }
+
+  const workspaceId = env[`${prefix}WORKSPACE_ID`];
+  return {
+    serviceAccountName: env[required.serviceAccountName] as string,
+    ruleId,
+    organizationId: env[required.organizationId] as string,
+    serviceAccountId: env[required.serviceAccountId] as string,
+    ...(workspaceId ? { workspaceId } : {}),
+    audience: env[`${prefix}AUDIENCE`] || "https://api.anthropic.com",
+    expirationSeconds,
+  };
 }
 
 // ─── Agent-deletion client selection ──────────────────────────────────────────
