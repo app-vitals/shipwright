@@ -165,6 +165,8 @@ Returns an array of updated daily rows (one per model in the breakdown).
 GET /agents/chat-tokens/daily/stats
 ```
 
+Self-serve variant: `GET /agents/{id}/chat-tokens/daily/stats` returns the same shape scoped to one agent, with no admin scope required (agent's own token, admin, or member session).
+
 Admin-only. Aggregated chat-token daily stats across all agents broken down by model. Query params: `from` and `to` (optional `YYYY-MM-DD` date strings).
 
 Returns `{ totals, byAgent, byModel, daily }` where each aggregate includes `inputTokens`, `outputTokens`, `cacheReadTokens`, `cacheCreationTokens`, and `costUsd`.

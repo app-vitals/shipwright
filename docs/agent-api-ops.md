@@ -32,6 +32,8 @@ Cron runs record each execution of a cron job, including token usage, cost, and 
 GET /agents/all/cron-runs/stats
 ```
 
+Self-serve variants (`GET /agents/{id}/cron-runs/stats` and `GET /agents/{id}/cron-runs/outcomes`) return the same shapes scoped to one agent; an agent's own bearer token may read its own, other agents' tokens are rejected.
+
 Admin-only, described in the spec. One nuance: `byPhase` excludes runs with no phase attribution (legacy five-job crons, runs dispatched without a phase cron) from that dimension only — those runs still count toward `totals` and every other breakdown (`byAgent`, `byCron`, `byModel`, `byCronModel`, `daily`). `bySkill` (per `(kind, name)` skill/subagent usage) excludes skipped runs; `baselines` (first-turn context baseline per `(contextFingerprint, baselineModel, phase)`, ordered by first appearance) includes skipped runs but excludes runs that reported no baseline. Both are empty arrays when nothing was reported.
 
 ### Cron run outcomes
@@ -54,6 +56,8 @@ Supports optional `from`/`to` ISO datetime query parameters to bound the date ra
 ```
 GET /agents/all/cron-runs/dev-task-adherence
 ```
+
+Self-serve variant: `GET /agents/{id}/dev-task-adherence` returns the same report scoped to that agent, with no admin scope required (agent's own token, admin, or member session).
 
 Admin-only. Returns the `dev-task` step-adherence report: per run, which required steps ran or were skipped (judged from skill-usage subagent dispatches), plus per-step adherence rates overall, per variant (`contextFingerprint`) and per `commandVariant` (`default` vs `alternate`). A dispatch proves a step started, not that it was done well. The response (`DevTaskAdherenceReport` in `admin/src/dev-task-adherence.ts`) contains:
 
