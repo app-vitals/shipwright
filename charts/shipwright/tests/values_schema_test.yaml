@@ -342,3 +342,43 @@ tests:
           goes: [1, 2]
     asserts:
       - notFailedTemplate: {}
+
+  - it: rejects an unknown key under agent.provisioning.anthropicFederation
+    set:
+      agent.provisioning.anthropicFederation.bogus: true
+    asserts:
+      - failedTemplate:
+          errorPattern: "anthropicFederation"
+
+  - it: rejects anthropicFederation.tokenExpirationSeconds below 600
+    set:
+      agent.provisioning.anthropicFederation.tokenExpirationSeconds: 599
+    asserts:
+      - failedTemplate:
+          errorPattern: "tokenExpirationSeconds"
+
+  - it: rejects anthropicFederation.tokenExpirationSeconds above 3600
+    set:
+      agent.provisioning.anthropicFederation.tokenExpirationSeconds: 3601
+    asserts:
+      - failedTemplate:
+          errorPattern: "tokenExpirationSeconds"
+
+  - it: rejects a non-integer anthropicFederation.tokenExpirationSeconds
+    set:
+      agent.provisioning.anthropicFederation.tokenExpirationSeconds: 900.5
+    asserts:
+      - failedTemplate:
+          errorPattern: "tokenExpirationSeconds"
+
+  - it: accepts anthropicFederation.tokenExpirationSeconds of 600
+    set:
+      agent.provisioning.anthropicFederation.tokenExpirationSeconds: 600
+    asserts:
+      - notFailedTemplate: {}
+
+  - it: accepts anthropicFederation.tokenExpirationSeconds of 3600
+    set:
+      agent.provisioning.anthropicFederation.tokenExpirationSeconds: 3600
+    asserts:
+      - notFailedTemplate: {}

@@ -530,6 +530,33 @@ agent:
       # the SHIPWRIGHT_K8S_AGENT_CLAUDE_POLICY_HASH env var, which restarts admin;
       # on startup admin reconciles policy drift and rolls only affected agents.
       settings: {}
+    # -- Anthropic Workload Identity Federation for provisioned agent pods. OFF
+    # by default: no SHIPWRIGHT_K8S_AGENT_ANTHROPIC_FEDERATION_* or
+    # SHIPWRIGHT_K8S_AGENT_SERVICE_ACCOUNT env is injected and agent pods are
+    # unchanged. When enabled, the admin provisioner runs agent pods as the agent
+    # ServiceAccount (agent.provisioning.serviceAccount) and mounts a projected
+    # service-account token read-only at /var/run/secrets/anthropic.com/token,
+    # plus the ANTHROPIC_* federation env, so the Anthropic client exchanges the
+    # token for short-lived access instead of using a long-lived key. Requires
+    # agent.provisioning.enabled=true, non-empty federationRuleId, organizationId
+    # and serviceAccountId, and an agent ServiceAccount (serviceAccount.create=true
+    # or a non-empty serviceAccount.name). See docs/deploy-kubernetes-provisioning.md.
+    anthropicFederation:
+      # -- Inject the federation env into the admin Deployment.
+      enabled: false
+      # -- Anthropic organization ID (ANTHROPIC_ORGANIZATION_ID in agent pods). Required when enabled.
+      organizationId: ""
+      # -- Optional Anthropic workspace ID (ANTHROPIC_WORKSPACE_ID). Empty → not set.
+      workspaceId: ""
+      # -- Anthropic service account ID (ANTHROPIC_SERVICE_ACCOUNT_ID). Required when enabled.
+      serviceAccountId: ""
+      # -- Anthropic federation rule ID (ANTHROPIC_FEDERATION_RULE_ID). Required when enabled.
+      federationRuleId: ""
+      # -- Audience of the projected service-account token.
+      audience: https://api.anthropic.com
+      # -- Lifetime of the projected token in seconds (the kubelet rotates it).
+      # Integer from 600 (the Kubernetes minimum) to 3600.
+      tokenExpirationSeconds: 600
     # -- Provisioned workspace PVCs: created per-agent when the provisioner spins
     # up a new agent pod. These settings are surfaced for the agent manifest
     # builder's future use. NOTE: buildProvisioner does not read these as env

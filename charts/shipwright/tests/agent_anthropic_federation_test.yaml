@@ -1,0 +1,212 @@
+suite: agent Anthropic workload identity federation admin env
+# agent.provisioning.anthropicFederation injects the agent ServiceAccount name
+# and the SHIPWRIGHT_K8S_AGENT_ANTHROPIC_FEDERATION_* env that the admin
+# provisioner (admin/src/main.ts parseAnthropicFederation) reads to wire a
+# projected service-account token into provisioned agent pods. Off by default.
+# shipwright.validate.anthropicFederation is included from admin-deployment.yaml
+# so its guards fire on every manifest render.
+templates:
+  - templates/admin-deployment.yaml
+tests:
+  - it: renders no federation env by default
+    asserts:
+      - notContains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: SHIPWRIGHT_K8S_AGENT_SERVICE_ACCOUNT
+          any: true
+      - notContains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: SHIPWRIGHT_K8S_AGENT_ANTHROPIC_FEDERATION_RULE_ID
+          any: true
+
+  - it: renders no federation env when provisioning is on but federation is disabled
+    set:
+      agent.provisioning.enabled: true
+      agent.provisioning.anthropicFederation.organizationId: org-1
+      agent.provisioning.anthropicFederation.serviceAccountId: svcacct-1
+      agent.provisioning.anthropicFederation.federationRuleId: rule-1
+    asserts:
+      - notContains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: SHIPWRIGHT_K8S_AGENT_SERVICE_ACCOUNT
+          any: true
+      - notContains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: SHIPWRIGHT_K8S_AGENT_ANTHROPIC_FEDERATION_RULE_ID
+          any: true
+      - notContains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: SHIPWRIGHT_K8S_AGENT_ANTHROPIC_FEDERATION_ORGANIZATION_ID
+          any: true
+
+  - it: carries the service account and every federation env var when enabled
+    release:
+      name: r
+    set:
+      agent.provisioning.enabled: true
+      agent.provisioning.anthropicFederation.enabled: true
+      agent.provisioning.anthropicFederation.organizationId: org-1
+      agent.provisioning.anthropicFederation.workspaceId: wrkspc-1
+      agent.provisioning.anthropicFederation.serviceAccountId: svcacct-1
+      agent.provisioning.anthropicFederation.federationRuleId: rule-1
+      agent.provisioning.anthropicFederation.audience: https://aud.example.com
+      agent.provisioning.anthropicFederation.tokenExpirationSeconds: 1800
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: SHIPWRIGHT_K8S_AGENT_SERVICE_ACCOUNT
+            value: r-shipwright-agent
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: SHIPWRIGHT_K8S_AGENT_ANTHROPIC_FEDERATION_RULE_ID
+            value: rule-1
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: SHIPWRIGHT_K8S_AGENT_ANTHROPIC_FEDERATION_ORGANIZATION_ID
+            value: org-1
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: SHIPWRIGHT_K8S_AGENT_ANTHROPIC_FEDERATION_SERVICE_ACCOUNT_ID
+            value: svcacct-1
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: SHIPWRIGHT_K8S_AGENT_ANTHROPIC_FEDERATION_WORKSPACE_ID
+            value: wrkspc-1
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: SHIPWRIGHT_K8S_AGENT_ANTHROPIC_FEDERATION_AUDIENCE
+            value: https://aud.example.com
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: SHIPWRIGHT_K8S_AGENT_ANTHROPIC_FEDERATION_TOKEN_EXPIRATION_SECONDS
+            value: "1800"
+
+  - it: uses the default audience and token lifetime and omits an empty workspace ID
+    release:
+      name: r
+    set:
+      agent.provisioning.enabled: true
+      agent.provisioning.anthropicFederation.enabled: true
+      agent.provisioning.anthropicFederation.organizationId: org-1
+      agent.provisioning.anthropicFederation.serviceAccountId: svcacct-1
+      agent.provisioning.anthropicFederation.federationRuleId: rule-1
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: SHIPWRIGHT_K8S_AGENT_ANTHROPIC_FEDERATION_AUDIENCE
+            value: https://api.anthropic.com
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: SHIPWRIGHT_K8S_AGENT_ANTHROPIC_FEDERATION_TOKEN_EXPIRATION_SECONDS
+            value: "600"
+      - notContains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: SHIPWRIGHT_K8S_AGENT_ANTHROPIC_FEDERATION_WORKSPACE_ID
+          any: true
+
+  - it: uses an explicit agent service account name
+    set:
+      agent.provisioning.enabled: true
+      agent.provisioning.serviceAccount.name: agents-sa
+      agent.provisioning.anthropicFederation.enabled: true
+      agent.provisioning.anthropicFederation.organizationId: org-1
+      agent.provisioning.anthropicFederation.serviceAccountId: svcacct-1
+      agent.provisioning.anthropicFederation.federationRuleId: rule-1
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: SHIPWRIGHT_K8S_AGENT_SERVICE_ACCOUNT
+            value: agents-sa
+
+  - it: accepts a pre-existing agent service account when create is false
+    set:
+      agent.provisioning.enabled: true
+      agent.provisioning.serviceAccount.create: false
+      agent.provisioning.serviceAccount.name: existing-sa
+      agent.provisioning.anthropicFederation.enabled: true
+      agent.provisioning.anthropicFederation.organizationId: org-1
+      agent.provisioning.anthropicFederation.serviceAccountId: svcacct-1
+      agent.provisioning.anthropicFederation.federationRuleId: rule-1
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: SHIPWRIGHT_K8S_AGENT_SERVICE_ACCOUNT
+            value: existing-sa
+
+  # ── shipwright.validate.anthropicFederation guards ─────────────────────────
+  - it: fails when federation is enabled while agent.provisioning is disabled
+    set:
+      agent.provisioning.anthropicFederation.enabled: true
+      agent.provisioning.anthropicFederation.organizationId: org-1
+      agent.provisioning.anthropicFederation.serviceAccountId: svcacct-1
+      agent.provisioning.anthropicFederation.federationRuleId: rule-1
+    asserts:
+      - failedTemplate:
+          errorPattern: "agent.provisioning.anthropicFederation.enabled=true requires agent.provisioning.enabled=true"
+
+  - it: fails even when the admin Deployment itself is disabled
+    set:
+      admin.enabled: false
+      agent.provisioning.anthropicFederation.enabled: true
+    asserts:
+      - failedTemplate:
+          errorPattern: "agent.provisioning.anthropicFederation"
+
+  - it: fails when federation is enabled with an empty federationRuleId
+    set:
+      agent.provisioning.enabled: true
+      agent.provisioning.anthropicFederation.enabled: true
+      agent.provisioning.anthropicFederation.organizationId: org-1
+      agent.provisioning.anthropicFederation.serviceAccountId: svcacct-1
+    asserts:
+      - failedTemplate:
+          errorPattern: "requires a non-empty agent.provisioning.anthropicFederation.federationRuleId"
+
+  - it: fails when federation is enabled with an empty organizationId
+    set:
+      agent.provisioning.enabled: true
+      agent.provisioning.anthropicFederation.enabled: true
+      agent.provisioning.anthropicFederation.serviceAccountId: svcacct-1
+      agent.provisioning.anthropicFederation.federationRuleId: rule-1
+    asserts:
+      - failedTemplate:
+          errorPattern: "requires a non-empty agent.provisioning.anthropicFederation.organizationId"
+
+  - it: fails when federation is enabled with an empty serviceAccountId
+    set:
+      agent.provisioning.enabled: true
+      agent.provisioning.anthropicFederation.enabled: true
+      agent.provisioning.anthropicFederation.organizationId: org-1
+      agent.provisioning.anthropicFederation.federationRuleId: rule-1
+    asserts:
+      - failedTemplate:
+          errorPattern: "requires a non-empty agent.provisioning.anthropicFederation.serviceAccountId"
+
+  - it: fails when federation is enabled with no agent service account
+    set:
+      agent.provisioning.enabled: true
+      agent.provisioning.serviceAccount.create: false
+      agent.provisioning.anthropicFederation.enabled: true
+      agent.provisioning.anthropicFederation.organizationId: org-1
+      agent.provisioning.anthropicFederation.serviceAccountId: svcacct-1
+      agent.provisioning.anthropicFederation.federationRuleId: rule-1
+    asserts:
+      - failedTemplate:
+          errorPattern: "requires an agent ServiceAccount"

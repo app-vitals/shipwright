@@ -10,6 +10,12 @@ independent of `appVersion`. CI enforces this with
 `ct lint --check-version-increment`. Each release here must mirror the
 `artifacthub.io/changes` annotation in `Chart.yaml`.
 
+## [1.26.0] - 2026-10-14
+
+### Added
+
+- `agent.provisioning.anthropicFederation` (`enabled`, `organizationId`, `workspaceId`, `serviceAccountId`, `federationRuleId`, `audience`, `tokenExpirationSeconds`): injects `SHIPWRIGHT_K8S_AGENT_SERVICE_ACCOUNT` and the `SHIPWRIGHT_K8S_AGENT_ANTHROPIC_FEDERATION_*` env into the admin Deployment so provisioned agent pods authenticate to Anthropic with Workload Identity Federation. Off by default; fails fast when enabled without provisioning, with an empty rule, organization or service-account ID, or with no agent ServiceAccount. `values.schema.json` bounds `tokenExpirationSeconds` to 600-3600.
+
 ## [1.25.17] - 2026-10-14
 
 ### Changed

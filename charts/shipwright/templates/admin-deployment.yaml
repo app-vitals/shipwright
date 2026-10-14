@@ -1,3 +1,8 @@
+{{- /*
+shipwright.validate.anthropicFederation is included unconditionally so the
+federation guards fire on every manifest render, even with admin disabled.
+*/}}
+{{- include "shipwright.validate.anthropicFederation" . }}
 {{- if .Values.admin.enabled }}
 apiVersion: apps/v1
 kind: Deployment
@@ -264,6 +269,29 @@ spec:
               value: {{ include "shipwright.agent.claudePolicy.configMapName" . | quote }}
             - name: SHIPWRIGHT_K8S_AGENT_CLAUDE_POLICY_HASH
               value: {{ include "shipwright.agent.claudePolicy.json" . | sha256sum | quote }}
+            {{- end }}
+            {{- with .Values.agent.provisioning.anthropicFederation }}
+            {{- if .enabled }}
+            # Anthropic workload identity federation: agent pods run as the agent
+            # ServiceAccount with a projected token exchanged for Anthropic access.
+            # RULE_ID gates the feature in admin/src/main.ts parseAnthropicFederation.
+            - name: SHIPWRIGHT_K8S_AGENT_SERVICE_ACCOUNT
+              value: {{ include "shipwright.agent.serviceAccountName" $ | quote }}
+            - name: SHIPWRIGHT_K8S_AGENT_ANTHROPIC_FEDERATION_RULE_ID
+              value: {{ .federationRuleId | quote }}
+            - name: SHIPWRIGHT_K8S_AGENT_ANTHROPIC_FEDERATION_ORGANIZATION_ID
+              value: {{ .organizationId | quote }}
+            - name: SHIPWRIGHT_K8S_AGENT_ANTHROPIC_FEDERATION_SERVICE_ACCOUNT_ID
+              value: {{ .serviceAccountId | quote }}
+            {{- with .workspaceId }}
+            - name: SHIPWRIGHT_K8S_AGENT_ANTHROPIC_FEDERATION_WORKSPACE_ID
+              value: {{ . | quote }}
+            {{- end }}
+            - name: SHIPWRIGHT_K8S_AGENT_ANTHROPIC_FEDERATION_AUDIENCE
+              value: {{ .audience | quote }}
+            - name: SHIPWRIGHT_K8S_AGENT_ANTHROPIC_FEDERATION_TOKEN_EXPIRATION_SECONDS
+              value: {{ .tokenExpirationSeconds | int64 | quote }}
+            {{- end }}
             {{- end }}
             {{- with .Values.agent.provisioning.pvcNameTemplate }}
             # PVC name template: when set, the provisioner substitutes {name} with
