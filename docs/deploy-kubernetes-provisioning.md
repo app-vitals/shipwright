@@ -141,8 +141,9 @@ How it behaves:
   Deployment, changing any `settings` value (or toggling `enabled`) restarts
   admin on `helm upgrade`. On startup admin runs a policy-only reconcile across
   every managed (non-self-hosted) agent, patching only the policy volume, mount
-  and `shipwright.dev/claude-policy-hash` pod annotation. Only agents whose
-  policy actually drifted roll; disabling the policy removes the mount from
+  and `shipwright.dev/claude-policy-hash` pod annotation, plus the Anthropic
+  federation wiring when federation is configured. Only agents whose policy or
+  federation wiring actually drifted roll; disabling the policy removes the mount from
   existing agents the same way.
 - **Agent pods only.** The policy is mounted only into provisioned agent pods.
   Admin, task-store, chat, metrics and mcp-server pods never receive it, and
