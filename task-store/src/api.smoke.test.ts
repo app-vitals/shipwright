@@ -1467,6 +1467,26 @@ describe("task-store API (smoke) — account scope (SSP-6.5)", () => {
     expect(calls.created.map((t) => t.accountId)).toEqual(["acct-a", "acct-a"]);
   });
 
+  it("POST /tasks/bulk rejects a task with missing or invalid status with 400", async () => {
+    const { service, calls } = recordingTaskService();
+    const { app, token } = scopedApp(service);
+    const headers = { ...auth(token), "content-type": "application/json" };
+    const base = { title: "t", repo: "org/repo" };
+    for (const [task, error] of [
+      [base, "status is required"],
+      [{ ...base, status: "bogus" }, "invalid status: bogus"],
+    ] as const) {
+      const res = await app.request("/tasks/bulk", {
+        method: "POST",
+        headers,
+        body: JSON.stringify([{ ...base, status: "pending" }, task]),
+      });
+      expect(res.status).toBe(400);
+      expect(await res.json()).toEqual({ error });
+    }
+    expect(calls.created).toEqual([]);
+  });
+
   it("admin POST /tasks stamps ?accountId= or falls back to 'default'", async () => {
     const { service, calls } = recordingTaskService();
     const { app, token } = scopedApp(service, false);
