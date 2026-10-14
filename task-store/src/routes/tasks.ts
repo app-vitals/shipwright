@@ -937,10 +937,16 @@ export function createTasksRoutes(
     if (!Array.isArray(body)) {
       throw new BadRequestError("body must be a JSON array of tasks");
     }
-    // Validate repo presence and format on each task, and stamp accountId.
+    // Validate status/repo presence and format on each task, and stamp accountId.
     const accountId = accountIdForCreate(c);
     for (const task of body as Record<string, unknown>[]) {
       stripRemovedFields(task);
+      if (typeof task.status !== "string" || !task.status) {
+        throw new BadRequestError("status is required");
+      }
+      if (!VALID_STATUSES.has(task.status)) {
+        throw new BadRequestError(`invalid status: ${task.status}`);
+      }
       if (!("repo" in task)) {
         throw new BadRequestError(
           "repo key is required (null is valid for unscoped tasks)",
