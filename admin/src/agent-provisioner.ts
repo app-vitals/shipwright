@@ -433,7 +433,9 @@ export function federationPatch(
     if (cur.serviceAccountName !== want.serviceAccountName) {
       patch.serviceAccountName = want.serviceAccountName;
     }
-  } else if (cur.serviceAccountName) {
+  } else if (cur.serviceAccountName && (cur.volume || cur.env.size > 0)) {
+    // Only unset a ServiceAccount that came with federation wiring; one set on
+    // the Deployment by another actor is left alone.
     patch.serviceAccountName = null;
     patch.serviceAccount = null;
   }

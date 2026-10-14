@@ -1443,6 +1443,12 @@ describe("federationPatch()", () => {
     expect(federationPatch(fedManifest(), fedManifest())).toBeUndefined();
   });
 
+  it("leaves a ServiceAccount without federation wiring alone when disabled", () => {
+    const live = fedManifest();
+    live.spec.template.spec.serviceAccountName = "hand-set-sa";
+    expect(federationPatch(live, fedManifest())).toBeUndefined();
+  });
+
   it("ignores server-defaulted fields on the live projected volume", () => {
     const live = fedManifest(FED_A);
     const vol = fedVolume(live);
