@@ -126,6 +126,7 @@ Agent tokens are repo-scoped — a write to a task or PR outside the token's con
 
 - **Duplicate `id`** — `POST /tasks/bulk` fails the *entire* batch with `409` when any task's `id` already exists (atomic, all-or-nothing); confirm none of the tasks in the batch already exist under their ID, or drop/rename the colliding one and retry. `POST /tasks` (singular) has no dedicated collision handling — an existing `id` surfaces as an unhandled error, not a clean `409`.
 - **Missing `repo` key** — `repo` must be present on every task (`null` is a valid value for unscoped tasks, but the key itself is required).
+- **Missing or invalid `status`** — `POST /tasks/bulk` also requires a valid `status` on every task (e.g. `"pending"`); a missing or unrecognized value fails the whole batch with `400`.
 
 ---
 
