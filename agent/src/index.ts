@@ -26,7 +26,7 @@ import {
 } from "./agent-slack-membership-ref.ts";
 import { agentTrialExpiryRef } from "./agent-trial-expiry-ref.ts";
 import { allowSelfReviewRef } from "./allow-self-review-ref.ts";
-import { filterAnthropicCredentials } from "./anthropic-federation-guard.ts";
+import { applyEnvToProcess } from "./anthropic-federation-guard.ts";
 import { createChatPoller } from "./chat-poller.ts";
 import {
   HttpChatTokenReporter,
@@ -188,7 +188,7 @@ startSessionPruner(sessions, "sessions.json");
 // buildSlackAppConfig() reads live process.env rather than the static
 // `config` snapshot taken above at module-load time — SLK-1.1: credentials
 // saved to the admin DB after boot only reach this process via syncConfig()'s
-// `Object.assign(process.env, bundle.env)`, so re-reading `config.slack.*`
+// `applyEnvToProcess(bundle.env)`, so re-reading `config.slack.*`
 // here would keep seeing the boot-time (absent) values forever.
 function buildSlackAppConfig() {
   return {
@@ -431,21 +431,13 @@ if (runtimeClient && agentId) {
   async function syncConfig() {
     if (!runtimeClient || !agentId) return;
     try {
-      const fetched = await runtimeClient.getAgentConfigBundle(agentId);
+      const bundle = await runtimeClient.getAgentConfigBundle(agentId);
       configNotFoundLogged = false;
-      // WIF-2.1: under federation the Anthropic credential keys must never
-      // reach process.env, even if a stale admin still serves them.
-      const bundle = {
-        ...fetched,
-        env: filterAnthropicCredentials(fetched.env),
-      };
 
-      // Apply env vars — log changed keys (mask values)
-      const changed: string[] = [];
-      for (const key of Object.keys(bundle.env)) {
-        if (bundle.env[key] !== process.env[key]) changed.push(key);
-      }
-      Object.assign(process.env, bundle.env);
+      // Apply env vars — log changed keys (mask values). WIF-2.1: under
+      // federation the Anthropic credential keys never reach process.env,
+      // even if a stale admin still serves them.
+      const changed = applyEnvToProcess(bundle.env);
       if (changed.length > 0) {
         console.log(`[config-sync] updated: ${changed.join(", ")}`);
       }

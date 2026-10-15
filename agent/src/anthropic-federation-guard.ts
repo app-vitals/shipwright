@@ -53,11 +53,20 @@ export function filterAnthropicCredentials(
   return filtered;
 }
 
-/** Apply a config-bundle env to process.env, honoring the federation guard. */
+/**
+ * Apply a config-bundle env to process.env, honoring the federation guard.
+ * Used by both the entrypoint and syncConfig(). Returns the keys whose value
+ * changed (names only, for logging).
+ */
 export function applyEnvToProcess(
   env: Record<string, string>,
   deps: GuardDeps = {},
-): void {
+): string[] {
   const processEnv = deps.processEnv ?? process.env;
-  Object.assign(processEnv, filterAnthropicCredentials(env, deps));
+  const filtered = filterAnthropicCredentials(env, deps);
+  const changed = Object.keys(filtered).filter(
+    (key) => filtered[key] !== processEnv[key],
+  );
+  Object.assign(processEnv, filtered);
+  return changed;
 }

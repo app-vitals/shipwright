@@ -109,4 +109,19 @@ describe("applyEnvToProcess", () => {
     expect(s.processEnv.FOO).toBe("2");
     expect(s.processEnv.ANTHROPIC_AUTH_TOKEN).toBeUndefined();
   });
+
+  it("config sync: reports changed keys, never a blocked credential key", () => {
+    const s = setup(true, { FOO: "same" });
+    const changed = applyEnvToProcess({ FOO: "same", BAR: "new", ...CREDS }, s);
+    expect(changed).toEqual(["BAR"]);
+  });
+
+  it("config sync: reports changed credential keys when not federated", () => {
+    const s = setup(false, { ANTHROPIC_API_KEY: "api-secret" });
+    const changed = applyEnvToProcess({ ...CREDS }, s);
+    expect(changed).toEqual([
+      "CLAUDE_CODE_OAUTH_TOKEN",
+      "ANTHROPIC_AUTH_TOKEN",
+    ]);
+  });
 });
