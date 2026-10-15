@@ -47,7 +47,10 @@ Setting `agent.provisioning.enabled=true` switches the admin service to the
     subject's namespace scopes which ServiceAccount is granted the
     permissions.
 - A separate **agent ServiceAccount** that provisioned agent pods run as
-  (distinct from the admin SA).
+  (distinct from the admin SA). It is rendered into the agent namespace
+  (`agent.provisioning.namespace`, else the release namespace), because
+  Kubernetes refuses to schedule a pod whose ServiceAccount is missing from the
+  pod's own namespace.
 - The provisioner env contract injected into the admin Deployment, matching
   `admin/src/main.ts` `buildProvisioner`.
 

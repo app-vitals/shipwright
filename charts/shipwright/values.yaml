@@ -472,6 +472,7 @@ agent:
     # -- Replica count for provisioned agent Deployments.
     replicas: 1
     # -- ServiceAccount provisioned agent pods run as (SEPARATE from the admin SA).
+    # Created in the agent namespace (agent.provisioning.namespace, else the release namespace).
     serviceAccount:
       # -- Whether to create the agent ServiceAccount (only when provisioning.enabled).
       create: true
