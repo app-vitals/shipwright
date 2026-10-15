@@ -72,6 +72,39 @@
           "error"
         ]
       },
+      "StripCredentialsResult": {
+        "type": "object",
+        "properties": {
+          "dryRun": {
+            "type": "boolean"
+          },
+          "agents": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "agentId": {
+                  "type": "string"
+                },
+                "keys": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                }
+              },
+              "required": [
+                "agentId",
+                "keys"
+              ]
+            }
+          }
+        },
+        "required": [
+          "dryRun",
+          "agents"
+        ]
+      },
       "ProvisionAgentResult": {
         "type": "object",
         "properties": {
@@ -2795,6 +2828,61 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ReconcileAgentsResult"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/agents/federation/strip-credentials": {
+      "post": {
+        "summary": "Strip Anthropic credentials from agents' saved env bundles",
+        "description": "Admin-only, one-off migration (WIF-2.2) for moving a deployment to Anthropic workload identity federation. Deletes CLAUDE_CODE_OAUTH_TOKEN, ANTHROPIC_API_KEY and ANTHROPIC_AUTH_TOKEN from every non-self-hosted agent's stored env bundle. `dryRun` defaults to true: nothing is deleted and the response lists what would be. Only agents holding at least one of the keys are listed, so a second applied call returns an empty list. Values are never returned or logged.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "true",
+                "false"
+              ],
+              "default": "true",
+              "description": "Defaults to true (report only). Pass false to delete the keys."
+            },
+            "required": false,
+            "description": "Defaults to true (report only). Pass false to delete the keys.",
+            "name": "dryRun",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Agents (and key names) removed, or that would be removed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StripCredentialsResult"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
                 }
               }
             }
