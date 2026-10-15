@@ -173,6 +173,8 @@ startup, and the startup policy-only reconcile adds or removes the wiring on
 existing agents. See
 [`configuration-agent.md`](./configuration-agent.md#agent-provisioning-admin-service).
 
+When moving an existing deployment to federation, clean the stored credentials with the one-off `POST /agents/federation/strip-credentials` migration (dry run by default); see [`agent-api.md`](./agent-api.md#environment-variables).
+
 The chart injects these for you via `agent.provisioning.anthropicFederation`:
 
 ```yaml
