@@ -313,5 +313,117 @@
       "kind": "Deployment",
       "metadata": { "name": "agent-abc", "namespace": "shipwright" }
     }
+  },
+  "getDeployment_federation_absent": {
+    "status": 200,
+    "body": {
+      "apiVersion": "apps/v1",
+      "kind": "Deployment",
+      "metadata": {
+        "name": "agent-abc",
+        "namespace": "shipwright",
+        "labels": { "app.kubernetes.io/name": "shipwright-agent" }
+      },
+      "spec": {
+        "replicas": 1,
+        "strategy": { "type": "Recreate" },
+        "selector": { "matchLabels": { "app": "agent-abc" } },
+        "template": {
+          "metadata": { "labels": { "app": "agent-abc" } },
+          "spec": {
+            "volumes": [
+              {
+                "name": "agent-home",
+                "persistentVolumeClaim": { "claimName": "agent-abc-home" }
+              }
+            ],
+            "containers": [
+              {
+                "name": "shipwright-agent",
+                "image": "ghcr.io/example/agent:stale",
+                "env": [
+                  { "name": "SHIPWRIGHT_AGENT_ID", "value": "agent-abc" }
+                ],
+                "volumeMounts": [
+                  { "name": "agent-home", "mountPath": "/home/agent" }
+                ]
+              }
+            ]
+          }
+        }
+      },
+      "status": { "replicas": 1, "readyReplicas": 1 }
+    }
+  },
+  "getDeployment_federation_present": {
+    "status": 200,
+    "body": {
+      "apiVersion": "apps/v1",
+      "kind": "Deployment",
+      "metadata": {
+        "name": "agent-abc",
+        "namespace": "shipwright",
+        "labels": { "app.kubernetes.io/name": "shipwright-agent" }
+      },
+      "spec": {
+        "replicas": 1,
+        "strategy": { "type": "Recreate" },
+        "selector": { "matchLabels": { "app": "agent-abc" } },
+        "template": {
+          "metadata": { "labels": { "app": "agent-abc" } },
+          "spec": {
+            "serviceAccountName": "shipwright-agent",
+            "serviceAccount": "shipwright-agent",
+            "volumes": [
+              {
+                "name": "agent-home",
+                "persistentVolumeClaim": { "claimName": "agent-abc-home" }
+              },
+              {
+                "name": "anthropic-token",
+                "projected": {
+                  "sources": [
+                    {
+                      "serviceAccountToken": {
+                        "audience": "https://api.anthropic.com",
+                        "expirationSeconds": 600,
+                        "path": "token"
+                      }
+                    }
+                  ],
+                  "defaultMode": 420
+                }
+              }
+            ],
+            "containers": [
+              {
+                "name": "shipwright-agent",
+                "image": "ghcr.io/example/agent:stale",
+                "env": [
+                  { "name": "SHIPWRIGHT_AGENT_ID", "value": "agent-abc" },
+                  {
+                    "name": "ANTHROPIC_IDENTITY_TOKEN_FILE",
+                    "value": "/var/run/secrets/anthropic.com/token"
+                  },
+                  { "name": "ANTHROPIC_FEDERATION_RULE_ID", "value": "fdrl_1" },
+                  { "name": "ANTHROPIC_ORGANIZATION_ID", "value": "org-1" },
+                  { "name": "ANTHROPIC_SERVICE_ACCOUNT_ID", "value": "svac_1" },
+                  { "name": "ANTHROPIC_WORKSPACE_ID", "value": "wrkspc_1" }
+                ],
+                "volumeMounts": [
+                  { "name": "agent-home", "mountPath": "/home/agent" },
+                  {
+                    "name": "anthropic-token",
+                    "mountPath": "/var/run/secrets/anthropic.com",
+                    "readOnly": true
+                  }
+                ]
+              }
+            ]
+          }
+        }
+      },
+      "status": { "replicas": 1, "readyReplicas": 1 }
+    }
   }
 }

@@ -386,6 +386,23 @@
                     "settings": { "type": "object" }
                   }
                 },
+                "anthropicFederation": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "enabled": { "type": "boolean" },
+                    "organizationId": { "type": "string" },
+                    "workspaceId": { "type": "string" },
+                    "serviceAccountId": { "type": "string" },
+                    "federationRuleId": { "type": "string" },
+                    "audience": { "type": "string" },
+                    "tokenExpirationSeconds": {
+                      "type": "integer",
+                      "minimum": 600,
+                      "maximum": 3600
+                    }
+                  }
+                },
                 "resources": {
                   "type": "object",
                   "additionalProperties": false,

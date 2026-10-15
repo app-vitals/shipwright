@@ -347,6 +347,121 @@ describe("buildProvisioner", () => {
     expect(config.pvcName).toBeDefined();
     expect(config.pvcName?.("my-agent")).toBe("acme-agent-my-agent-home");
   });
+
+  // ─── Anthropic workload identity federation ───────────────────────────────
+
+  const FEDERATION_ENV = {
+    SHIPWRIGHT_K8S_PROVISIONING: "enabled",
+    SHIPWRIGHT_K8S_AGENT_SERVICE_ACCOUNT: "shipwright-agent",
+    SHIPWRIGHT_K8S_AGENT_ANTHROPIC_FEDERATION_RULE_ID: "fdrl_1",
+    SHIPWRIGHT_K8S_AGENT_ANTHROPIC_FEDERATION_ORGANIZATION_ID: "org-1",
+    SHIPWRIGHT_K8S_AGENT_ANTHROPIC_FEDERATION_SERVICE_ACCOUNT_ID: "svac_1",
+  };
+
+  it("leaves federation disabled when the rule ID is unset", () => {
+    const { SHIPWRIGHT_K8S_AGENT_ANTHROPIC_FEDERATION_RULE_ID: _, ...rest } =
+      FEDERATION_ENV;
+    for (const env of [
+      rest,
+      { ...rest, SHIPWRIGHT_K8S_AGENT_ANTHROPIC_FEDERATION_RULE_ID: "" },
+    ]) {
+      const config = configOf(buildProvisioner(env, stubAgentTokenService()));
+      expect(config.anthropicFederation).toBeUndefined();
+      expect("anthropicFederation" in config).toBe(false);
+    }
+  });
+
+  it("parses the federation config with default audience and expiration", () => {
+    const provisioner = buildProvisioner(
+      FEDERATION_ENV,
+      stubAgentTokenService(),
+    );
+    expect(configOf(provisioner).anthropicFederation).toEqual({
+      serviceAccountName: "shipwright-agent",
+      ruleId: "fdrl_1",
+      organizationId: "org-1",
+      serviceAccountId: "svac_1",
+      audience: "https://api.anthropic.com",
+      expirationSeconds: 600,
+    });
+  });
+
+  it("parses the optional workspace, audience and expiration overrides", () => {
+    const provisioner = buildProvisioner(
+      {
+        ...FEDERATION_ENV,
+        SHIPWRIGHT_K8S_AGENT_ANTHROPIC_FEDERATION_WORKSPACE_ID: "wrkspc_1",
+        SHIPWRIGHT_K8S_AGENT_ANTHROPIC_FEDERATION_AUDIENCE:
+          "https://example.test",
+        SHIPWRIGHT_K8S_AGENT_ANTHROPIC_FEDERATION_TOKEN_EXPIRATION_SECONDS:
+          "3600",
+      },
+      stubAgentTokenService(),
+    );
+    expect(configOf(provisioner).anthropicFederation).toEqual({
+      serviceAccountName: "shipwright-agent",
+      ruleId: "fdrl_1",
+      organizationId: "org-1",
+      serviceAccountId: "svac_1",
+      workspaceId: "wrkspc_1",
+      audience: "https://example.test",
+      expirationSeconds: 3600,
+    });
+  });
+
+  for (const missing of [
+    "SHIPWRIGHT_K8S_AGENT_SERVICE_ACCOUNT",
+    "SHIPWRIGHT_K8S_AGENT_ANTHROPIC_FEDERATION_ORGANIZATION_ID",
+    "SHIPWRIGHT_K8S_AGENT_ANTHROPIC_FEDERATION_SERVICE_ACCOUNT_ID",
+  ] as const) {
+    it(`fails startup on a partial federation config (missing ${missing})`, () => {
+      const env = { ...FEDERATION_ENV, [missing]: "" };
+      expect(() => buildProvisioner(env, stubAgentTokenService())).toThrow(
+        missing,
+      );
+    });
+  }
+
+  it("names every missing variable in a single error", () => {
+    expect(() =>
+      buildProvisioner(
+        {
+          SHIPWRIGHT_K8S_PROVISIONING: "enabled",
+          SHIPWRIGHT_K8S_AGENT_ANTHROPIC_FEDERATION_RULE_ID: "fdrl_1",
+        },
+        stubAgentTokenService(),
+      ),
+    ).toThrow(
+      /SHIPWRIGHT_K8S_AGENT_SERVICE_ACCOUNT.*ORGANIZATION_ID.*SERVICE_ACCOUNT_ID/,
+    );
+  });
+
+  for (const bad of ["abc", "599", "0", "-600", "600.5"]) {
+    it(`rejects token expiration ${JSON.stringify(bad)}`, () => {
+      expect(() =>
+        buildProvisioner(
+          {
+            ...FEDERATION_ENV,
+            SHIPWRIGHT_K8S_AGENT_ANTHROPIC_FEDERATION_TOKEN_EXPIRATION_SECONDS:
+              bad,
+          },
+          stubAgentTokenService(),
+        ),
+      ).toThrow(
+        "SHIPWRIGHT_K8S_AGENT_ANTHROPIC_FEDERATION_TOKEN_EXPIRATION_SECONDS",
+      );
+    });
+  }
+
+  it("ignores federation env when Kubernetes provisioning is disabled", () => {
+    const { SHIPWRIGHT_K8S_PROVISIONING: _, ...rest } = FEDERATION_ENV;
+    expect(
+      buildProvisioner(
+        { ...rest, SHIPWRIGHT_K8S_AGENT_SERVICE_ACCOUNT: "" },
+        stubAgentTokenService(),
+      ),
+    ).toBeInstanceOf(NoopAgentProvisioner);
+  });
 });
 
 // ─── resolveSessionAlertIntervalMs ──────────────────────────────────────────

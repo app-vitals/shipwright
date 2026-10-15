@@ -74,6 +74,15 @@ Checks (each `fail`s independently — first failing check wins):
      with empty `settings` (an empty policy is almost certainly a mistake).
      Also included from templates/agent-claude-policy-configmap.yaml so the
      check fires on every manifest render, not only from NOTES.txt.
+  8. `agent.provisioning.anthropicFederation.enabled=true` with
+     agent.provisioning.enabled=false (nothing would consume it), with an
+     empty `federationRuleId`, `organizationId` or `serviceAccountId` (admin
+     would refuse to start on the partial config), or with no agent
+     ServiceAccount (serviceAccount.create=false and an empty
+     serviceAccount.name — shipwright.agent.serviceAccountName would
+     otherwise fall back to the namespace "default" ServiceAccount). Also
+     included from templates/admin-deployment.yaml so the check fires on
+     every manifest render, not only from NOTES.txt.
 */}}
 {{- define "shipwright.validate" -}}
 {{- $ingress := .Values.networking.ingress -}}
@@ -103,6 +112,7 @@ Checks (each `fail`s independently — first failing check wins):
 {{- fail "ingress-nginx.enabled=true and traefik.enabled=true are both set — both bundled ingress controller subcharts are enabled at once. Enable only one (or neither, to bring your own)." -}}
 {{- end -}}
 {{- include "shipwright.validate.claudePolicy" . -}}
+{{- include "shipwright.validate.anthropicFederation" . -}}
 {{- end -}}
 
 {{/*
@@ -117,6 +127,28 @@ these on every manifest render without re-running the ingress checks.
 {{- end -}}
 {{- if not .Values.agent.provisioning.claudePolicy.settings -}}
 {{- fail "agent.provisioning.claudePolicy.enabled=true requires non-empty agent.provisioning.claudePolicy.settings." -}}
+{{- end -}}
+{{- end -}}
+{{- end -}}
+
+{{/*
+shipwright.validate.anthropicFederation — the agent.provisioning.anthropicFederation
+guards (check 8 above), split out so templates/admin-deployment.yaml can run just
+these on every manifest render without re-running the ingress checks.
+*/}}
+{{- define "shipwright.validate.anthropicFederation" -}}
+{{- $fed := .Values.agent.provisioning.anthropicFederation -}}
+{{- if $fed.enabled -}}
+{{- if not .Values.agent.provisioning.enabled -}}
+{{- fail "agent.provisioning.anthropicFederation.enabled=true requires agent.provisioning.enabled=true — only provisioned agent pods use federation." -}}
+{{- end -}}
+{{- range $field := list "federationRuleId" "organizationId" "serviceAccountId" -}}
+{{- if not (get $fed $field) -}}
+{{- fail (printf "agent.provisioning.anthropicFederation.enabled=true requires a non-empty agent.provisioning.anthropicFederation.%s." $field) -}}
+{{- end -}}
+{{- end -}}
+{{- if and (not .Values.agent.provisioning.serviceAccount.create) (not .Values.agent.provisioning.serviceAccount.name) -}}
+{{- fail "agent.provisioning.anthropicFederation.enabled=true requires an agent ServiceAccount: set agent.provisioning.serviceAccount.create=true or a non-empty agent.provisioning.serviceAccount.name (federated tokens must not be issued to the namespace default ServiceAccount)." -}}
 {{- end -}}
 {{- end -}}
 {{- end -}}

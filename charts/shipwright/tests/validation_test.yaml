@@ -148,3 +148,24 @@ tests:
           deny: ["Bash(curl:*)"]
     asserts:
       - notFailedTemplate: {}
+
+  # ── agent.provisioning.anthropicFederation guards ──────────────────────────
+  - it: fails when anthropicFederation is enabled while agent.provisioning is disabled
+    set:
+      agent.provisioning.anthropicFederation.enabled: true
+      agent.provisioning.anthropicFederation.organizationId: org-1
+      agent.provisioning.anthropicFederation.serviceAccountId: svcacct-1
+      agent.provisioning.anthropicFederation.federationRuleId: rule-1
+    asserts:
+      - failedTemplate:
+          errorPattern: "agent.provisioning.anthropicFederation"
+
+  - it: passes when anthropicFederation is enabled with provisioning and all IDs set
+    set:
+      agent.provisioning.enabled: true
+      agent.provisioning.anthropicFederation.enabled: true
+      agent.provisioning.anthropicFederation.organizationId: org-1
+      agent.provisioning.anthropicFederation.serviceAccountId: svcacct-1
+      agent.provisioning.anthropicFederation.federationRuleId: rule-1
+    asserts:
+      - notFailedTemplate: {}

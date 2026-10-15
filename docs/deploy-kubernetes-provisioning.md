@@ -141,8 +141,9 @@ How it behaves:
   Deployment, changing any `settings` value (or toggling `enabled`) restarts
   admin on `helm upgrade`. On startup admin runs a policy-only reconcile across
   every managed (non-self-hosted) agent, patching only the policy volume, mount
-  and `shipwright.dev/claude-policy-hash` pod annotation. Only agents whose
-  policy actually drifted roll; disabling the policy removes the mount from
+  and `shipwright.dev/claude-policy-hash` pod annotation, plus the Anthropic
+  federation wiring when federation is configured. Only agents whose policy or
+  federation wiring actually drifted roll; disabling the policy removes the mount from
   existing agents the same way.
 - **Agent pods only.** The policy is mounted only into provisioned agent pods.
   Admin, task-store, chat, metrics and mcp-server pods never receive it, and
@@ -157,6 +158,47 @@ How it behaves:
   `managed-settings.json`. If your organization already pushes remote managed
   settings, the file from this chart does not apply; use one mechanism or the
   other.
+
+Provisioned agent pods can also authenticate to Anthropic with Workload
+Identity Federation instead of a long-lived key: set
+`SHIPWRIGHT_K8S_AGENT_ANTHROPIC_FEDERATION_RULE_ID` together with
+`SHIPWRIGHT_K8S_AGENT_SERVICE_ACCOUNT`,
+`SHIPWRIGHT_K8S_AGENT_ANTHROPIC_FEDERATION_ORGANIZATION_ID` and
+`SHIPWRIGHT_K8S_AGENT_ANTHROPIC_FEDERATION_SERVICE_ACCOUNT_ID` on admin. Pods
+then run as that ServiceAccount with a projected token (audience
+`https://api.anthropic.com`, 600s by default) mounted read-only at
+`/var/run/secrets/anthropic.com/token`, plus the `ANTHROPIC_*` federation env.
+It is off by default (manifest unchanged); a partial config fails admin
+startup, and the startup policy-only reconcile adds or removes the wiring on
+existing agents. See
+[`configuration-agent.md`](./configuration-agent.md#agent-provisioning-admin-service).
+
+The chart injects these for you via `agent.provisioning.anthropicFederation`:
+
+```yaml
+agent:
+  provisioning:
+    enabled: true
+    serviceAccount:
+      create: true                 # or create: false with an existing name
+    anthropicFederation:
+      enabled: true
+      federationRuleId: "<rule-id>"
+      organizationId: "<organization-id>"
+      serviceAccountId: "<service-account-id>"
+      workspaceId: ""              # optional
+      audience: https://api.anthropic.com
+      tokenExpirationSeconds: 600  # 600 to 3600
+```
+
+`SHIPWRIGHT_K8S_AGENT_SERVICE_ACCOUNT` is set to the agent ServiceAccount
+(`agent.provisioning.serviceAccount`), and the projected token's subject is
+that ServiceAccount, so the federation rule must trust it. With the default
+values nothing is injected. Rendering fails if `anthropicFederation.enabled` is
+set without `agent.provisioning.enabled`, with an empty `federationRuleId`,
+`organizationId` or `serviceAccountId`, or with no agent ServiceAccount
+(`serviceAccount.create=false` and an empty `serviceAccount.name`, which would
+otherwise fall back to the namespace `default` ServiceAccount).
 
 ### Chat service provisioning (opt-in)
 

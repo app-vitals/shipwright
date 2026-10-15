@@ -766,6 +766,8 @@ export class RecordedKubernetesClient implements KubernetesClient {
           spec?: {
             containers?: KubernetesContainer[];
             volumes?: Array<Record<string, unknown>>;
+            serviceAccountName?: string | null;
+            serviceAccount?: string | null;
           };
         };
       };
@@ -800,6 +802,15 @@ export class RecordedKubernetesClient implements KubernetesClient {
         "name",
       ) as NonNullable<typeof dep.spec.template.spec.volumes>;
     }
+    // Pod-level ServiceAccount scalars: a string sets, null deletes the key.
+    const patchPodSpec = p.spec?.template?.spec;
+    for (const field of ["serviceAccountName", "serviceAccount"] as const) {
+      if (patchPodSpec && field in patchPodSpec) {
+        const v = patchPodSpec[field];
+        if (v === null) delete dep.spec.template.spec[field];
+        else dep.spec.template.spec[field] = v;
+      }
+    }
     const patchContainer = p.spec?.template?.spec?.containers?.[0];
     const existing = dep.spec.template.spec.containers[0];
     if (patchContainer !== undefined && existing !== undefined) {
@@ -812,9 +823,13 @@ export class RecordedKubernetesClient implements KubernetesClient {
           "mountPath",
         ) as NonNullable<KubernetesContainer["volumeMounts"]>;
       }
-      if (patchContainer.env && existing.env) {
-        const byName = new Map(existing.env.map((e) => [e.name, e]));
-        for (const entry of patchContainer.env) byName.set(entry.name, entry);
+      if (patchContainer.env) {
+        // env merges by name; `$patch: delete` removes the entry.
+        const byName = new Map((existing.env ?? []).map((e) => [e.name, e]));
+        for (const entry of patchContainer.env) {
+          if (entry.$patch === "delete") byName.delete(entry.name);
+          else byName.set(entry.name, entry);
+        }
         merged.env = [...byName.values()];
       }
       if (patchContainer.resources !== undefined) {
