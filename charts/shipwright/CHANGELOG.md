@@ -10,6 +10,12 @@ independent of `appVersion`. CI enforces this with
 `ct lint --check-version-increment`. Each release here must mirror the
 `artifacthub.io/changes` annotation in `Chart.yaml`.
 
+## [1.26.3] - 2026-10-15
+
+### Fixed
+
+- create the provisioned agent ServiceAccount in the agent namespace (`agent.provisioning.namespace`, else the release namespace) so agent pods can be scheduled into a separate namespace with `anthropicFederation` enabled. The ServiceAccount name is unchanged.
+
 ## [1.26.2] - 2026-10-15
 
 ### Changed
