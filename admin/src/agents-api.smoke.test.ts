@@ -2382,6 +2382,147 @@ describe("admin API — POST /agents/reconcile", () => {
   });
 });
 
+// ─── Federation credential strip route smoke tests (WIF-2.2) ────────────────
+
+function makeStripDeps(): {
+  deps: AdminDeps;
+  store: Map<string, Map<string, string>>;
+} {
+  const store = new Map<string, Map<string, string>>([
+    [
+      "managed-a",
+      new Map([
+        ["ANTHROPIC_API_KEY", "sk-secret-a"],
+        ["CLAUDE_CODE_OAUTH_TOKEN", "oauth-secret-a"],
+        ["SLACK_BOT_TOKEN", "xoxb-keep"],
+      ]),
+    ],
+    ["managed-b", new Map([["SLACK_BOT_TOKEN", "xoxb-b"]])],
+    ["managed-c", new Map([["ANTHROPIC_AUTH_TOKEN", "auth-secret-c"]])],
+    ["self-hosted-1", new Map([["ANTHROPIC_API_KEY", "sk-self"]])],
+  ]);
+  const base = makeMockDeps();
+  const agent = (id: string, selfHosted: boolean) => ({
+    id,
+    name: id,
+    selfHosted,
+    typeName: "coding",
+  });
+  const deps: AdminDeps = {
+    ...base,
+    adminApiKeys: parseAdminApiKeys(`admin:${ADMIN_API_KEY}:*`),
+    agentService: {
+      ...base.agentService,
+      list: async () => [
+        agent("managed-a", false),
+        agent("managed-b", false),
+        agent("managed-c", false),
+        agent("self-hosted-1", true),
+      ],
+    },
+    agentEnvService: {
+      ...base.agentEnvService,
+      getByAgentId: async (id: string) => {
+        const m = store.get(id);
+        if (m === undefined || m.size === 0) return null;
+        return {
+          env: Object.fromEntries([...m.keys()].map((k) => [k, "***"])),
+          secretKeys: [...m.keys()],
+        };
+      },
+      deleteKey: async (id: string, key: string) => {
+        store.get(id)?.delete(key);
+      },
+    },
+  };
+  return { deps, store };
+}
+
+const stripAuth = { Authorization: `Bearer ${ADMIN_API_KEY}` };
+
+describe("admin API — POST /agents/federation/strip-credentials", () => {
+  it("without auth → 401", async () => {
+    const app = createAdminApp(makeStripDeps().deps);
+    const res = await app.request("/agents/federation/strip-credentials", {
+      method: "POST",
+    });
+    expect(res.status).toBe(401);
+  });
+
+  it("with per-agent bearer → 403 and nothing deleted", async () => {
+    const { deps, store } = makeStripDeps();
+    const app = createAdminApp({
+      ...deps,
+      agentTokenService: {
+        ...deps.agentTokenService,
+        validate: async () => ({ agentId: "managed-a" }),
+      },
+    });
+    const res = await app.request(
+      "/agents/federation/strip-credentials?dryRun=false",
+      {
+        method: "POST",
+        headers: { Authorization: `Bearer ${VALID_BEARER_TOKEN}` },
+      },
+    );
+    expect(res.status).toBe(403);
+    expect(store.get("managed-a")?.has("ANTHROPIC_API_KEY")).toBe(true);
+  });
+
+  it("defaults to a dry run that lists affected agents and changes nothing", async () => {
+    const { deps, store } = makeStripDeps();
+    const app = createAdminApp(deps);
+    const res = await app.request("/agents/federation/strip-credentials", {
+      method: "POST",
+      headers: stripAuth,
+    });
+    expect(res.status).toBe(200);
+    const text = await res.text();
+    expect(text).not.toContain("secret");
+    const body = JSON.parse(text);
+    expect(body.dryRun).toBe(true);
+    expect(body.agents).toEqual([
+      {
+        agentId: "managed-a",
+        keys: ["ANTHROPIC_API_KEY", "CLAUDE_CODE_OAUTH_TOKEN"],
+      },
+      { agentId: "managed-c", keys: ["ANTHROPIC_AUTH_TOKEN"] },
+    ]);
+    expect(store.get("managed-a")?.size).toBe(3);
+    expect(store.get("managed-c")?.size).toBe(1);
+  });
+
+  it("dryRun=false deletes the keys, spares others and self-hosted, and is idempotent", async () => {
+    const { deps, store } = makeStripDeps();
+    const app = createAdminApp(deps);
+    const res = await app.request(
+      "/agents/federation/strip-credentials?dryRun=false",
+      { method: "POST", headers: stripAuth },
+    );
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.dryRun).toBe(false);
+    expect(body.agents.map((a: { agentId: string }) => a.agentId)).toEqual([
+      "managed-a",
+      "managed-c",
+    ]);
+    expect([...(store.get("managed-a")?.keys() ?? [])]).toEqual([
+      "SLACK_BOT_TOKEN",
+    ]);
+    expect(store.get("managed-b")?.get("SLACK_BOT_TOKEN")).toBe("xoxb-b");
+    expect(store.get("managed-c")?.size).toBe(0);
+    expect(store.get("self-hosted-1")?.get("ANTHROPIC_API_KEY")).toBe(
+      "sk-self",
+    );
+
+    const second = await app.request(
+      "/agents/federation/strip-credentials?dryRun=false",
+      { method: "POST", headers: stripAuth },
+    );
+    expect(await second.json()).toEqual({ dryRun: false, agents: [] });
+  });
+});
+
 // ─── Bearer token auth smoke tests ───────────────────────────────────────────
 
 const VALID_BEARER_TOKEN = "valid-bearer-token-value";
