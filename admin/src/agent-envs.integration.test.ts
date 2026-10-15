@@ -8,6 +8,7 @@
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import type { PrismaClient } from "../prisma/client/client.ts";
 import { AgentEnvService } from "./agent-envs.ts";
+import { AnthropicCredentialsBlockedError } from "./anthropic-credential-guard.ts";
 import { UnprocessableEntityError } from "./errors.ts";
 import { createAdminPrismaClient } from "./prisma-client.ts";
 import { identityCrypto } from "./token-crypto.ts";
@@ -243,3 +244,80 @@ describeOrSkip("AgentEnvService (integration)", () => {
     expect(result?.secretKeys).not.toContain("A");
   });
 });
+
+describeOrSkip(
+  "AgentEnvService Anthropic federation guard (integration, WIF-2.1)",
+  () => {
+    let prisma: PrismaClient;
+    let federated: AgentEnvService;
+
+    const BLOCKED = [
+      "CLAUDE_CODE_OAUTH_TOKEN",
+      "ANTHROPIC_API_KEY",
+      "ANTHROPIC_AUTH_TOKEN",
+    ];
+
+    async function createAgentWith(selfHosted: boolean): Promise<string> {
+      const agent = await prisma.agent.create({
+        data: { name: "Guard Agent", selfHosted },
+      });
+      return agent.id;
+    }
+
+    beforeEach(async () => {
+      prisma = makePrisma();
+      await prisma.agentToken.deleteMany();
+      await prisma.agentCronJob.deleteMany();
+      await prisma.agentTool.deleteMany();
+      await prisma.agentEnv.deleteMany();
+      await prisma.agent.deleteMany();
+      federated = new AgentEnvService(prisma, identityCrypto, undefined, true);
+    });
+
+    afterEach(async () => {
+      await prisma.$disconnect();
+    });
+
+    for (const key of BLOCKED) {
+      it(`upsert() rejects ${key} (even empty) for a non-self-hosted agent and writes nothing`, async () => {
+        const agentId = await createAgentWith(false);
+        await federated.upsert(agentId, { KEEP: "me" });
+        await expect(
+          federated.upsert(agentId, { FOO: "bar", [key]: "" }),
+        ).rejects.toBeInstanceOf(AnthropicCredentialsBlockedError);
+        // Rejected before the delete+insert transaction: old bundle intact.
+        expect((await federated.getByAgentId(agentId))?.env).toEqual({
+          KEEP: "me",
+        });
+      });
+
+      it(`patch() rejects ${key} for a non-self-hosted agent`, async () => {
+        const agentId = await createAgentWith(false);
+        await expect(
+          federated.patch(agentId, { [key]: "secret" }),
+        ).rejects.toMatchObject({
+          code: "anthropic_credentials_blocked_federation",
+          statusCode: 400,
+        });
+        expect(await federated.getByAgentId(agentId)).toBeNull();
+      });
+    }
+
+    it("allows the keys for a self-hosted agent under federation", async () => {
+      const agentId = await createAgentWith(true);
+      await federated.patch(agentId, { ANTHROPIC_API_KEY: "sk-ant" });
+      expect((await federated.getByAgentId(agentId))?.env).toEqual({
+        ANTHROPIC_API_KEY: "sk-ant",
+      });
+    });
+
+    it("allows the keys when federation is disabled (default)", async () => {
+      const plain = new AgentEnvService(prisma, identityCrypto);
+      const agentId = await createAgentWith(false);
+      await plain.upsert(agentId, { CLAUDE_CODE_OAUTH_TOKEN: "tok" });
+      expect((await plain.getByAgentId(agentId))?.env).toEqual({
+        CLAUDE_CODE_OAUTH_TOKEN: "tok",
+      });
+    });
+  },
+);

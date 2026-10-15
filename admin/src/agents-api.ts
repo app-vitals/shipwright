@@ -55,6 +55,10 @@ import type { AgentTypeManifestResolver } from "./agent-type-manifest-loader.ts"
 import type { AgentWorkQueueService } from "./agent-work-queue.ts";
 import type { AgentService } from "./agents.ts";
 import { createAgent, describeRepoNameCollision } from "./agents.ts";
+import {
+  ANTHROPIC_CREDENTIALS_BLOCKED_CODE,
+  AnthropicCredentialsBlockedError,
+} from "./anthropic-credential-guard.ts";
 import type { AdminApiKey, AdminAuthEnv } from "./api-auth.ts";
 import { createAdminAuthMiddleware, parseAdminApiKeys } from "./api-auth.ts";
 import {
@@ -241,6 +245,8 @@ export interface AdminDeps {
   sentryClient?: ErrorCapturingClient;
   /** Resolved self-serve provisioning config (SSP-1.3). No consumers yet. */
   selfServe?: SelfServeConfig;
+  /** WIF-2.1: Anthropic federation is enabled; defaults to false. */
+  anthropicFederationEnabled?: boolean;
 }
 
 export type { AdminApiKey };
@@ -1344,7 +1350,12 @@ export function createAdminApp(deps: AdminDeps): OpenAPIHono<AdminAuthEnv> {
   app.onError((err, c) => {
     if (err instanceof ApiError && err.statusCode < 500) {
       return c.json(
-        { error: err.message },
+        {
+          error: err.message,
+          ...(err instanceof AnthropicCredentialsBlockedError && {
+            code: err.code,
+          }),
+        },
         err.statusCode as 400 | 401 | 403 | 404 | 409 | 422,
       );
     }
@@ -1627,6 +1638,7 @@ export function createAdminApp(deps: AdminDeps): OpenAPIHono<AdminAuthEnv> {
         agentCronJobService,
         provisioner,
         agentTypeRegistry,
+        anthropicFederationEnabled: deps.anthropicFederationEnabled,
       },
       {
         name: body.name,
@@ -1652,6 +1664,12 @@ export function createAdminApp(deps: AdminDeps): OpenAPIHono<AdminAuthEnv> {
         throw new ForbiddenError(
           ACCOUNT_CREATE_ERROR_MESSAGES[result.errorCode],
         );
+      }
+      if (result.errorCode === ANTHROPIC_CREDENTIALS_BLOCKED_CODE) {
+        throw new AnthropicCredentialsBlockedError([
+          ...(body.claudeCodeOauthToken ? ["CLAUDE_CODE_OAUTH_TOKEN"] : []),
+          ...(body.anthropicApiKey ? ["ANTHROPIC_API_KEY"] : []),
+        ]);
       }
       throw new BadRequestError(
         result.errorMessage ?? `create agent failed: ${result.errorCode}`,

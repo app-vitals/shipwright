@@ -39,6 +39,7 @@ interface MockAgent {
   restrictSlackToMembers: boolean;
   memberEmails: string[];
   accountStatus?: string | null;
+  selfHosted?: boolean;
   // APM-1.5: the 6 agent-policy fields passed through by GET /:id/config.
   autoPostReviews: boolean;
   allowSelfReview: boolean;
@@ -93,6 +94,7 @@ function makeMockAgentService(agents: Map<string, MockAgent>): {
     restrictSlackToMembers: boolean;
     memberEmails: string[];
     accountStatus?: string | null;
+    selfHosted?: boolean;
     autoPostReviews: boolean;
     allowSelfReview: boolean;
     minConfidence: number;
@@ -110,6 +112,7 @@ function makeMockAgentService(agents: Map<string, MockAgent>): {
       restrictSlackToMembers: boolean;
       memberEmails: string[];
       accountStatus?: string | null;
+      selfHosted?: boolean;
       autoPostReviews: boolean;
       allowSelfReview: boolean;
       minConfidence: number;
@@ -127,6 +130,7 @@ function makeMockAgentService(agents: Map<string, MockAgent>): {
             restrictSlackToMembers: agent.restrictSlackToMembers,
             memberEmails: agent.memberEmails,
             accountStatus: agent.accountStatus,
+            selfHosted: agent.selfHosted,
             autoPostReviews: agent.autoPostReviews,
             allowSelfReview: agent.allowSelfReview,
             minConfidence: agent.minConfidence,
@@ -222,6 +226,8 @@ function buildApp(opts?: {
   restrictSlackToMembers?: boolean;
   memberEmails?: string[];
   accountStatus?: string | null;
+  selfHosted?: boolean;
+  anthropicFederationEnabled?: boolean;
   phaseMethodology?: MockPhaseMethodology[];
   autoPostReviews?: boolean;
   allowSelfReview?: boolean;
@@ -272,6 +278,7 @@ function buildApp(opts?: {
       restrictSlackToMembers,
       memberEmails,
       accountStatus: opts?.accountStatus,
+      selfHosted: opts?.selfHosted,
       autoPostReviews,
       allowSelfReview,
       minConfidence,
@@ -295,6 +302,7 @@ function buildApp(opts?: {
     adminApiKeys: parseAdminApiKeys(`admin:${VALID_ADMIN_KEY}:*`),
     agentTokenService: { validate: async () => null },
     sessionSecret: SESSION_SECRET,
+    anthropicFederationEnabled: opts?.anthropicFederationEnabled,
   });
 }
 
@@ -1130,5 +1138,83 @@ describe("combined server — regression guard: runtime middleware must not bloc
     expect(res.status).toBe(200);
     const body = await res.json();
     expect(body.repos).toEqual([]);
+  });
+});
+
+describe("GET /:id/config — Anthropic federation credential strip (WIF-2.1)", () => {
+  const bundleWithCreds: AgentEnvBundle = {
+    agentId: KNOWN_AGENT_ID,
+    env: {
+      SLACK_BOT_TOKEN: "xoxb-secret",
+      CLAUDE_CODE_OAUTH_TOKEN: "sk-ant-oat-secret",
+      ANTHROPIC_API_KEY: "sk-ant-api-secret",
+      ANTHROPIC_AUTH_TOKEN: "auth-secret",
+      ANTHROPIC_MODEL: "claude-test",
+    },
+    allowedTools: [],
+  };
+
+  async function fetchConfig(opts: {
+    selfHosted?: boolean;
+    anthropicFederationEnabled?: boolean;
+  }) {
+    const app = buildApp({ bundleOrNull: bundleWithCreds, ...opts });
+    return app.request(`/${KNOWN_AGENT_ID}/config`, {
+      headers: { Authorization: `Bearer ${VALID_ADMIN_KEY}` },
+    });
+  }
+
+  test("federation enabled + non-self-hosted: the three keys are stripped, others kept", async () => {
+    const res = await fetchConfig({
+      selfHosted: false,
+      anthropicFederationEnabled: true,
+    });
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.env).toEqual({
+      SLACK_BOT_TOKEN: "xoxb-secret",
+      ANTHROPIC_MODEL: "claude-test",
+    });
+  });
+
+  test("federation enabled + non-self-hosted: logs agent id and key names, never values", async () => {
+    const logged: string[] = [];
+    const origWarn = console.warn;
+    console.warn = (...args: unknown[]) => {
+      logged.push(args.map(String).join(" "));
+    };
+    try {
+      await fetchConfig({
+        selfHosted: false,
+        anthropicFederationEnabled: true,
+      });
+    } finally {
+      console.warn = origWarn;
+    }
+    const line = logged.join("\n");
+    expect(line).toContain(KNOWN_AGENT_ID);
+    expect(line).toContain("CLAUDE_CODE_OAUTH_TOKEN");
+    expect(line).toContain("ANTHROPIC_API_KEY");
+    expect(line).toContain("ANTHROPIC_AUTH_TOKEN");
+    expect(line).not.toContain("sk-ant-oat-secret");
+    expect(line).not.toContain("sk-ant-api-secret");
+    expect(line).not.toContain("auth-secret");
+  });
+
+  test("federation enabled + self-hosted: bundle is untouched", async () => {
+    const res = await fetchConfig({
+      selfHosted: true,
+      anthropicFederationEnabled: true,
+    });
+    const body = await res.json();
+    expect(body.env.ANTHROPIC_API_KEY).toBe("sk-ant-api-secret");
+    expect(body.env.CLAUDE_CODE_OAUTH_TOKEN).toBe("sk-ant-oat-secret");
+  });
+
+  test("federation disabled (default): bundle is untouched", async () => {
+    const res = await fetchConfig({ selfHosted: false });
+    const body = await res.json();
+    expect(body.env.ANTHROPIC_API_KEY).toBe("sk-ant-api-secret");
+    expect(body.env.ANTHROPIC_AUTH_TOKEN).toBe("auth-secret");
   });
 });

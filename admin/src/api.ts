@@ -23,6 +23,7 @@ import { createRoute, OpenAPIHono, z } from "@hono/zod-openapi";
 import type { AgentCronJob } from "./agent-cron-jobs.ts";
 import type { AgentEnvBundle } from "./agent-envs.ts";
 import type { AgentTokenService } from "./agent-tokens.ts";
+import { anthropicCredentialKeysIn } from "./anthropic-credential-guard.ts";
 import { type AdminApiKey, createAdminAuthMiddleware } from "./api-auth.ts";
 import {
   AGENT_PHASES,
@@ -121,6 +122,8 @@ interface AgentServiceLike {
     trialExpiresAt?: Date | null;
     /** SSP-8.3: owning account status; optional for pre-existing test doubles. */
     accountStatus?: string | null;
+    /** WIF-2.1: optional so pre-existing test doubles keep compiling; absent is treated as not self-hosted. */
+    selfHosted?: boolean;
     /** APM-1.5: the 6 agent-policy fields, direct-passthrough into the response. */
     autoPostReviews: boolean;
     allowSelfReview: boolean;
@@ -153,6 +156,8 @@ export interface AgentRuntimeDeps {
   adminApiKeys?: Map<string, AdminApiKey>;
   /** Token service for per-agent bearer token validation. */
   agentTokenService: Pick<AgentTokenService, "validate">;
+  /** WIF-2.1: Anthropic federation is enabled; defaults to false. */
+  anthropicFederationEnabled?: boolean;
 }
 
 // ─── Route definitions ────────────────────────────────────────────────────────
@@ -260,6 +265,22 @@ export function createAgentRuntimeApp(deps: AgentRuntimeDeps): OpenAPIHono {
       agentPhaseMethodologyService.list(id),
     ]);
 
+    // WIF-2.1: with federation enabled, a non-self-hosted agent must never be
+    // handed Anthropic credentials, even ones already stored in its bundle
+    // (the agent re-reads this endpoint every 60s). Log names only.
+    let env = bundle?.env ?? {};
+    if (deps.anthropicFederationEnabled && !agent.selfHosted) {
+      const blocked = anthropicCredentialKeysIn(Object.keys(env));
+      if (blocked.length > 0) {
+        console.warn(
+          `[api] stripped Anthropic credentials from agent ${id} config under federation: ${blocked.join(", ")}`,
+        );
+        env = Object.fromEntries(
+          Object.entries(env).filter(([k]) => !blocked.includes(k)),
+        );
+      }
+    }
+
     // Every phase defaults to null; override rows (if any) fill in the rest.
     const phaseMethodology: Record<string, string | null> = Object.fromEntries(
       AGENT_PHASES.map((phase) => [phase, null]),
@@ -276,7 +297,7 @@ export function createAgentRuntimeApp(deps: AgentRuntimeDeps): OpenAPIHono {
     // requires phaseMethodology) expects. `c.json()` below still structurally
     // checks this literal against that schema-derived type.
     const response = {
-      env: bundle?.env ?? {},
+      env,
       allowedTools: bundle?.allowedTools ?? [],
       plugins: plugins.map((p) => {
         // The stored name is the canonical Claude plugin spec — exactly what

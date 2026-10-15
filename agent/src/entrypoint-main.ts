@@ -13,6 +13,7 @@
  */
 
 import { join } from "node:path";
+import { applyEnvToProcess } from "./anthropic-federation-guard.ts";
 import { parseCliArgs } from "./cli-args.ts";
 import { runEntrypoint } from "./entrypoint.ts";
 import { buildGitHubAuthDeps } from "./github-auth-deps.ts";
@@ -49,11 +50,8 @@ await runEntrypoint({
   apiKey,
   agentHome,
   configClient,
-  applyEnv: (env: Record<string, string>) => {
-    for (const [k, v] of Object.entries(env)) {
-      process.env[k] = v;
-    }
-  },
+  // WIF-2.1: skips the Anthropic credential keys when federation is active.
+  applyEnv: (env: Record<string, string>) => applyEnvToProcess(env),
   symlinkDotClaude: ensureDotClaudeSymlink,
   setupGitHubAuth: async () => {
     await setupGitHubAuth(buildGitHubAuthDeps(agentHome, SCRIPTS_BIN));

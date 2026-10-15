@@ -12,6 +12,7 @@ import {
   buildProvisioner,
   checkDbReady,
   DEFAULT_SESSION_ALERT_INTERVAL_MS,
+  isAnthropicFederationEnabled,
   resolvePublicRepo,
   resolveSessionAlertIntervalMs,
   resolveTrialExpiryWarningDays,
@@ -568,5 +569,37 @@ describe("checkDbReady", () => {
       },
     };
     await expect(checkDbReady(prisma)).resolves.toBe(false);
+  });
+});
+
+// ─── isAnthropicFederationEnabled (WIF-2.1) ─────────────────────────────────
+
+describe("isAnthropicFederationEnabled", () => {
+  const RULE = "SHIPWRIGHT_K8S_AGENT_ANTHROPIC_FEDERATION_RULE_ID";
+
+  it("false by default", () => {
+    expect(isAnthropicFederationEnabled({})).toBe(false);
+  });
+
+  it("true when provisioning is enabled and the rule ID is set", () => {
+    expect(
+      isAnthropicFederationEnabled({
+        SHIPWRIGHT_K8S_PROVISIONING: "enabled",
+        [RULE]: "rule-1",
+      }),
+    ).toBe(true);
+  });
+
+  it("false when the rule ID is set but provisioning is not enabled", () => {
+    expect(isAnthropicFederationEnabled({ [RULE]: "rule-1" })).toBe(false);
+  });
+
+  it("false when the rule ID is empty", () => {
+    expect(
+      isAnthropicFederationEnabled({
+        SHIPWRIGHT_K8S_PROVISIONING: "enabled",
+        [RULE]: "",
+      }),
+    ).toBe(false);
   });
 });

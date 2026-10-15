@@ -15,6 +15,7 @@ import type {
 } from "./admin-ui.ts";
 import { createAdminUIApp } from "./admin-ui.ts";
 import type { PrListItem } from "./admin-ui-pages.ts";
+import { AnthropicCredentialsBlockedError } from "./anthropic-credential-guard.ts";
 import type {
   GoogleAuthClient,
   GoogleTokenResponse,
@@ -12614,4 +12615,67 @@ describe("admin UI — self-serve agent management (SSP-4.3)", () => {
       expect(html.includes(`/admin/agents/${AGENT_ID}/members`)).toBe(shown);
     });
   }
+});
+
+describe("admin UI — Anthropic federation credential guards (WIF-2.1)", () => {
+  const FED_COOKIE_AGENT = "agent-test-123";
+
+  async function cookieHeader(): Promise<string> {
+    const token = await sign(
+      {
+        isAdmin: true,
+        userId: "user-123",
+        email: "admin@example.com",
+        name: "Admin User",
+        iat: Math.floor(Date.now() / 1000),
+        exp: Math.floor(Date.now() / 1000) + 3600,
+      },
+      "test-admin-session-secret-32-bytes!",
+      "HS256",
+    );
+    return `admin_session=${token}`;
+  }
+
+  it("env editor shows the blocked-credentials error instead of a 500", async () => {
+    const deps = makeMockDeps({
+      agentEnvService: {
+        getByAgentId: async () => null,
+        upsert: async () => {},
+        patch: async () => {
+          throw new AnthropicCredentialsBlockedError(["ANTHROPIC_API_KEY"]);
+        },
+        deleteKey: async () => {},
+        getConfigBundle: async () => null,
+      },
+    });
+    const app = createAdminUIApp(deps);
+    const form = new FormData();
+    form.append("key", "ANTHROPIC_API_KEY");
+    form.append("value", "sk-ant-secret");
+    const res = await app.request(`/admin/agents/${FED_COOKIE_AGENT}/envs`, {
+      method: "POST",
+      body: form,
+      headers: { Cookie: await cookieHeader() },
+    });
+    expect(res.status).toBe(302);
+    const location = res.headers.get("Location") ?? "";
+    expect(location).toContain(`/admin/agents/${FED_COOKIE_AGENT}?error=`);
+    expect(decodeURIComponent(location)).toContain(
+      "anthropic_credentials_blocked_federation",
+    );
+    expect(location).not.toContain("sk-ant-secret");
+  });
+
+  it("new-agent form omits the Claude credential fields under federation", async () => {
+    const app = createAdminUIApp({
+      ...makeMockDeps(),
+      anthropicFederationEnabled: true,
+    });
+    const res = await app.request("/admin/agents/new", {
+      headers: { Cookie: await cookieHeader() },
+    });
+    expect(res.status).toBe(200);
+    const html = await res.text();
+    expect(html).not.toContain('name="claudeCodeOauthToken"');
+  });
 });

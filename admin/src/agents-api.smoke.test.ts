@@ -10,11 +10,13 @@ import { beforeAll, describe, expect, it } from "bun:test";
 import { sign } from "hono/jwt";
 import type { Prisma } from "../prisma/client/client.ts";
 import type { PatchAgentCronRunInput } from "./agent-cron-runs.ts";
+import { AgentEnvService } from "./agent-envs.ts";
 import type { AgentProvisioner, ProvisionResult } from "./agent-provisioner.ts";
 import type { AgentTokenService } from "./agent-tokens.ts";
 import type { AgentTypeManifest } from "./agent-type-registry.ts";
 import type { AdminDeps } from "./agents-api.ts";
 import { createAdminApp, parseAdminApiKeys } from "./agents-api.ts";
+import { identityCrypto } from "./token-crypto.ts";
 
 // ─── Fake AgentTypeManifestResolver ────────────────────────────────────────
 //
@@ -5278,5 +5280,172 @@ describe("admin API — PATCH /agents/:id accountId (SSP-5.3)", () => {
     expect(res.status).toBe(403);
     expect(updated).toBe(false);
     expect(provisioner.reconciled).toEqual([]);
+  });
+});
+
+// ─── WIF-2.1: Anthropic credential guards under federation ───────────────────
+
+describe("admin API — Anthropic credential guards (WIF-2.1)", () => {
+  const CODE = "anthropic_credentials_blocked_federation";
+
+  /** Real AgentEnvService over a minimal in-memory Prisma fake. */
+  function envServiceFor(opts: { selfHosted: boolean; federation: boolean }) {
+    const writes: string[] = [];
+    const prisma = {
+      agent: {
+        findUnique: async () => ({ id: AGENT_ID, selfHosted: opts.selfHosted }),
+      },
+      agentEnv: {
+        deleteMany: async () => ({ count: 0 }),
+        create: async ({ data }: { data: { key: string } }) => {
+          writes.push(data.key);
+        },
+        upsert: async ({ create }: { create: { key: string } }) => {
+          writes.push(create.key);
+        },
+      },
+      $transaction: async (ops: Promise<unknown>[]) => Promise.all(ops),
+    };
+    const service = new AgentEnvService(
+      prisma as never,
+      identityCrypto,
+      undefined,
+      opts.federation,
+    );
+    return { service, writes };
+  }
+
+  function appFor(opts: { selfHosted: boolean; federation: boolean }) {
+    const { service, writes } = envServiceFor(opts);
+    const app = createAdminApp({
+      ...makeMockDeps(),
+      agentEnvService: service,
+      provisioner: new RecordingProvisioner(),
+      anthropicFederationEnabled: opts.federation,
+    });
+    return { app, writes };
+  }
+
+  const send = async (
+    app: ReturnType<typeof createAdminApp>,
+    method: string,
+    path: string,
+    body: unknown,
+  ) =>
+    app.request(path, {
+      method,
+      body: JSON.stringify(body),
+      headers: {
+        "Content-Type": "application/json",
+        Cookie: `admin_session=${await makeSessionCookie()}`,
+      },
+    });
+
+  for (const key of [
+    "CLAUDE_CODE_OAUTH_TOKEN",
+    "ANTHROPIC_API_KEY",
+    "ANTHROPIC_AUTH_TOKEN",
+  ]) {
+    it(`POST /agents/:id/envs rejects ${key} with 400 + stable code`, async () => {
+      const { app, writes } = appFor({ selfHosted: false, federation: true });
+      const res = await send(app, "POST", `/agents/${AGENT_ID}/envs`, {
+        FOO: "bar",
+        [key]: "",
+      });
+      expect(res.status).toBe(400);
+      const body = (await res.json()) as { error: string; code: string };
+      expect(body.code).toBe(CODE);
+      expect(body.error).toContain(key);
+      expect(writes).toEqual([]);
+    });
+
+    it(`PATCH /agents/:id/envs rejects ${key} with 400 + stable code`, async () => {
+      const { app, writes } = appFor({ selfHosted: false, federation: true });
+      const res = await send(app, "PATCH", `/agents/${AGENT_ID}/envs`, {
+        env: { [key]: "secret-value" },
+      });
+      expect(res.status).toBe(400);
+      const body = (await res.json()) as { error: string; code: string };
+      expect(body.code).toBe(CODE);
+      expect(JSON.stringify(body)).not.toContain("secret-value");
+      expect(writes).toEqual([]);
+    });
+  }
+
+  it("self-hosted agents may still set the keys under federation", async () => {
+    const { app, writes } = appFor({ selfHosted: true, federation: true });
+    const res = await send(app, "PATCH", `/agents/${AGENT_ID}/envs`, {
+      env: { ANTHROPIC_API_KEY: "sk-ant" },
+    });
+    expect(res.status).toBe(200);
+    expect(writes).toEqual(["ANTHROPIC_API_KEY"]);
+  });
+
+  it("federation disabled (default): the keys are accepted", async () => {
+    const { app, writes } = appFor({ selfHosted: false, federation: false });
+    const res = await send(app, "POST", `/agents/${AGENT_ID}/envs`, {
+      CLAUDE_CODE_OAUTH_TOKEN: "tok",
+    });
+    expect(res.status).toBe(201);
+    expect(writes).toEqual(["CLAUDE_CODE_OAUTH_TOKEN"]);
+  });
+
+  describe("POST /agents (createAgent)", () => {
+    const create = (
+      federation: boolean | undefined,
+      body: Record<string, unknown>,
+    ) => {
+      const provisioner = new RecordingProvisioner();
+      const app = createAdminApp({
+        ...makeMockDeps(),
+        provisioner,
+        anthropicFederationEnabled: federation,
+      });
+      return { provisioner, res: send(app, "POST", "/agents", body) };
+    };
+
+    it("rejects claudeCodeOauthToken for an in-cluster agent under federation (400)", async () => {
+      const { provisioner, res } = create(true, {
+        name: "Fed Agent",
+        typeName: "coding",
+        runtime: "in-cluster",
+        claudeCodeOauthToken: "sk-ant-oat-secret",
+      });
+      const r = await res;
+      expect(r.status).toBe(400);
+      const text = await r.text();
+      expect(text).toContain(CODE);
+      expect(text).not.toContain("sk-ant-oat-secret");
+      expect(provisioner.provisioned).toEqual([]);
+    });
+
+    it("rejects anthropicApiKey for an in-cluster agent under federation (400)", async () => {
+      const { res } = create(true, {
+        name: "Fed Agent",
+        typeName: "coding",
+        runtime: "in-cluster",
+        anthropicApiKey: "sk-ant-api-secret",
+      });
+      expect((await res).status).toBe(400);
+    });
+
+    it("allows credentials for a self-hosted agent under federation", async () => {
+      const { res } = create(true, {
+        name: "Local Agent",
+        typeName: "coding",
+        claudeCodeOauthToken: "tok",
+      });
+      expect((await res).status).toBe(200);
+    });
+
+    it("allows credentials when federation is disabled", async () => {
+      const { res } = create(undefined, {
+        name: "Plain Agent",
+        typeName: "coding",
+        runtime: "in-cluster",
+        claudeCodeOauthToken: "tok",
+      });
+      expect((await res).status).toBe(200);
+    });
   });
 });
