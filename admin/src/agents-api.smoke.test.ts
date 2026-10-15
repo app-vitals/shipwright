@@ -2469,6 +2469,28 @@ describe("admin API — POST /agents/federation/strip-credentials", () => {
     expect(store.get("managed-a")?.has("ANTHROPIC_API_KEY")).toBe(true);
   });
 
+  it("with the bearer of an agent whose id is literally 'federation' → 403 and nothing deleted", async () => {
+    // The route-scope check passes for this token, so the handler's own
+    // admin guard is what rejects it.
+    const { deps, store } = makeStripDeps();
+    const app = createAdminApp({
+      ...deps,
+      agentTokenService: {
+        ...deps.agentTokenService,
+        validate: async () => ({ agentId: "federation" }),
+      },
+    });
+    const res = await app.request(
+      "/agents/federation/strip-credentials?dryRun=false",
+      {
+        method: "POST",
+        headers: { Authorization: `Bearer ${VALID_BEARER_TOKEN}` },
+      },
+    );
+    expect(res.status).toBe(403);
+    expect(store.get("managed-a")?.has("ANTHROPIC_API_KEY")).toBe(true);
+  });
+
   it("defaults to a dry run that lists affected agents and changes nothing", async () => {
     const { deps, store } = makeStripDeps();
     const app = createAdminApp(deps);
