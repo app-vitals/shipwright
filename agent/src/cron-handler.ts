@@ -332,7 +332,7 @@ export async function handleCronRequest(
       ...(workspace ? { cwd: workspace } : {}),
       // env: process.env is required — Bun.spawn otherwise snapshots env at Bun
       // startup and misses runtime mutations from config-sync (index.ts does
-      // Object.assign(process.env, bundle.env) every 60s). Without this, a
+      // applyEnvToProcess(bundle.env) every 60s). Without this, a
       // preCheck reads boot-time credentials — e.g. a rotated
       // SHIPWRIGHT_TASK_STORE_TOKEN — and fails (401) until the pod restarts.
       // Mirrors setup.ts defaultExec, which documents the same gotcha.

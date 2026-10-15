@@ -1073,6 +1073,8 @@ export function renderNewLocalAgentPage(
   opts?: {
     error?: string;
     canProvision?: boolean;
+    /** WIF-2.1: hide the Claude credential fields (federation supplies auth). */
+    anthropicFederationEnabled?: boolean;
     /**
      * Set for self-serve account users (SSP-4.2): shows the account's
      * remaining agent quota and the prerequisites, and pins the type to
@@ -1083,6 +1085,37 @@ export function renderNewLocalAgentPage(
 ): string {
   const error = opts?.error;
   const selfServe = opts?.selfServe;
+  // WIF-2.1: with Anthropic federation enabled the server rejects these
+  // credentials for in-cluster agents, so don't offer the fields at all.
+  const claudeCredentialFields = opts?.anthropicFederationEnabled
+    ? ""
+    : `        <div class="form-group">
+          <label class="form-label" for="claudeCodeOauthToken">Claude Code OAuth Token (optional)</label>
+          <input
+            id="claudeCodeOauthToken"
+            name="claudeCodeOauthToken"
+            type="password"
+            class="form-input"
+            placeholder="sk-ant-oat01-..."
+          />
+          <p style="font-size:12px;color:#6b7280;margin-top:4px">
+            Stored as the agent's <span class="mono">CLAUDE_CODE_OAUTH_TOKEN</span>. Required for the agent
+            to run — set it here or from the agent detail page.
+          </p>
+        </div>
+        <div class="form-group">
+          <label class="form-label" for="anthropicApiKey">Anthropic API Key (optional)</label>
+          <input
+            id="anthropicApiKey"
+            name="anthropicApiKey"
+            type="password"
+            class="form-input"
+            placeholder="sk-ant-..."
+          />
+          <p style="font-size:12px;color:#6b7280;margin-top:4px">
+            Stored as the agent's <span class="mono">ANTHROPIC_API_KEY</span>.
+          </p>
+        </div>`;
   // Whether the admin service can actually create cluster resources. When it
   // can't (NoopAgentProvisioner — SHIPWRIGHT_K8S_PROVISIONING unset), offering
   // "in-cluster" would silently produce an agent row with no pod, so the option
@@ -1194,33 +1227,7 @@ export function renderNewLocalAgentPage(
             }
           </div>
         </fieldset>
-        <div class="form-group">
-          <label class="form-label" for="claudeCodeOauthToken">Claude Code OAuth Token (optional)</label>
-          <input
-            id="claudeCodeOauthToken"
-            name="claudeCodeOauthToken"
-            type="password"
-            class="form-input"
-            placeholder="sk-ant-oat01-..."
-          />
-          <p style="font-size:12px;color:#6b7280;margin-top:4px">
-            Stored as the agent's <span class="mono">CLAUDE_CODE_OAUTH_TOKEN</span>. Required for the agent
-            to run — set it here or from the agent detail page.
-          </p>
-        </div>
-        <div class="form-group">
-          <label class="form-label" for="anthropicApiKey">Anthropic API Key (optional)</label>
-          <input
-            id="anthropicApiKey"
-            name="anthropicApiKey"
-            type="password"
-            class="form-input"
-            placeholder="sk-ant-..."
-          />
-          <p style="font-size:12px;color:#6b7280;margin-top:4px">
-            Stored as the agent's <span class="mono">ANTHROPIC_API_KEY</span>.
-          </p>
-        </div>
+        ${claudeCredentialFields}
         <div class="form-group">
           <label class="form-label" for="repos">Repos (optional, one per line)</label>
           <textarea

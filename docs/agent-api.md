@@ -40,6 +40,17 @@ Routes marked **admin-only** in the OpenAPI spec require `isAdmin=true`. Per-age
 
 Env vars are stored encrypted (AES-256-GCM) and decrypted on read. `POST /agents/:id/envs` bulk-replaces every env var; `PATCH /agents/:id/envs` updates specific keys without touching others.
 
+When Anthropic workload identity federation is enabled (provisioning on and `SHIPWRIGHT_K8S_AGENT_ANTHROPIC_FEDERATION_RULE_ID` set), `CLAUDE_CODE_OAUTH_TOKEN`, `ANTHROPIC_API_KEY` and `ANTHROPIC_AUTH_TOKEN` are blocked for non-self-hosted agents, because each outranks federation in the Anthropic client even when empty. `POST`/`PATCH /agents/:id/envs`, the admin UI env editor, `POST /agents` (`claudeCodeOauthToken` / `anthropicApiKey`) and Slack/GitHub provisioning reject them with a `400` whose body carries `code: "anthropic_credentials_blocked_federation"`. `GET /agents/:id/config` strips the three keys from the bundle (logging the agent ID and key names, never values), and the agent itself skips them and deletes them from `process.env` when `ANTHROPIC_FEDERATION_RULE_ID` is in its pod env. Self-hosted agents and deployments without federation are unchanged.
+
+**Migrating existing agents (`POST /agents/federation/strip-credentials`).** The guards above keep the three keys from reaching agents, but bundles saved before federation was enabled still store them. This admin-only, one-off endpoint deletes `CLAUDE_CODE_OAUTH_TOKEN`, `ANTHROPIC_API_KEY` and `ANTHROPIC_AUTH_TOKEN` from every non-self-hosted agent's bundle and returns `{ dryRun, agents: [{ agentId, keys }] }` (key names only, never values; agents without any of the keys are omitted).
+
+1. Dry run: `POST /agents/federation/strip-credentials` (`dryRun` defaults to `true`) and review the list.
+2. Apply: `POST /agents/federation/strip-credentials?dryRun=false`. A second call returns an empty `agents` list.
+3. Restart the affected agents so running pods drop the keys from their environment.
+4. Verify with `GET /agents/:id/envs` that none of the three keys remain.
+
+Self-hosted agents and all other keys are untouched.
+
 ---
 
 ## Runtime config

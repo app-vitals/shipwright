@@ -55,6 +55,11 @@ import type { AgentTypeManifestResolver } from "./agent-type-manifest-loader.ts"
 import type { AgentWorkQueueService } from "./agent-work-queue.ts";
 import type { AgentService } from "./agents.ts";
 import { createAgent, describeRepoNameCollision } from "./agents.ts";
+import {
+  ANTHROPIC_CREDENTIALS_BLOCKED_CODE,
+  AnthropicCredentialsBlockedError,
+  anthropicCredentialKeysIn,
+} from "./anthropic-credential-guard.ts";
 import type { AdminApiKey, AdminAuthEnv } from "./api-auth.ts";
 import { createAdminAuthMiddleware, parseAdminApiKeys } from "./api-auth.ts";
 import {
@@ -241,6 +246,8 @@ export interface AdminDeps {
   sentryClient?: ErrorCapturingClient;
   /** Resolved self-serve provisioning config (SSP-1.3). No consumers yet. */
   selfServe?: SelfServeConfig;
+  /** WIF-2.1: Anthropic federation is enabled; defaults to false. */
+  anthropicFederationEnabled?: boolean;
 }
 
 export type { AdminApiKey };
@@ -265,6 +272,27 @@ const ReconcileAgentsResultSchema = z
     failed: z.array(z.object({ agentId: z.string(), error: z.string() })),
   })
   .openapi("ReconcileAgentsResult");
+
+const StripCredentialsQuerySchema = z
+  .object({
+    dryRun: z
+      .enum(["true", "false"])
+      .default("true")
+      .openapi({
+        description:
+          "Defaults to true (report only). Pass false to delete the keys.",
+      }),
+  })
+  .openapi("StripCredentialsQuery");
+
+const StripCredentialsResultSchema = z
+  .object({
+    dryRun: z.boolean(),
+    agents: z.array(
+      z.object({ agentId: z.string(), keys: z.array(z.string()) }),
+    ),
+  })
+  .openapi("StripCredentialsResult");
 
 const ProvisionAgentResultSchema = z
   .object({
@@ -383,6 +411,25 @@ const reconcileAgentsRoute = createRoute({
       description: "Reconciliation summary",
       content: { "application/json": { schema: ReconcileAgentsResultSchema } },
     },
+    403: { description: "Forbidden", ...jsonError },
+  },
+});
+
+const stripFederationCredentialsRoute = createRoute({
+  method: "post",
+  path: "/agents/federation/strip-credentials",
+  summary: "Strip Anthropic credentials from agents' saved env bundles",
+  description:
+    "Admin-only, one-off migration (WIF-2.2) for moving a deployment to Anthropic workload identity federation. Deletes CLAUDE_CODE_OAUTH_TOKEN, ANTHROPIC_API_KEY and ANTHROPIC_AUTH_TOKEN from every non-self-hosted agent's stored env bundle. `dryRun` defaults to true: nothing is deleted and the response lists what would be. Only agents holding at least one of the keys are listed, so a second applied call returns an empty list. Values are never returned or logged.",
+  request: { query: StripCredentialsQuerySchema },
+  responses: {
+    200: {
+      description: "Agents (and key names) removed, or that would be removed",
+      content: {
+        "application/json": { schema: StripCredentialsResultSchema },
+      },
+    },
+    401: { description: "Unauthorized", ...jsonError },
     403: { description: "Forbidden", ...jsonError },
   },
 });
@@ -1344,7 +1391,12 @@ export function createAdminApp(deps: AdminDeps): OpenAPIHono<AdminAuthEnv> {
   app.onError((err, c) => {
     if (err instanceof ApiError && err.statusCode < 500) {
       return c.json(
-        { error: err.message },
+        {
+          error: err.message,
+          ...(err instanceof AnthropicCredentialsBlockedError && {
+            code: err.code,
+          }),
+        },
         err.statusCode as 400 | 401 | 403 | 404 | 409 | 422,
       );
     }
@@ -1403,6 +1455,34 @@ export function createAdminApp(deps: AdminDeps): OpenAPIHono<AdminAuthEnv> {
       managedReconcileTargets(await agentService.list()),
     );
     return c.json(result, 200);
+  });
+
+  // POST /agents/federation/strip-credentials — WIF-2.2 migration (admin only).
+  // Static path "federation" must be registered before any /agents/:id/* routes
+  // so the literal is never matched as an agentId.
+  app.openapi(stripFederationCredentialsRoute, async (c) => {
+    if (c.get("isAdmin") !== true) {
+      throw new ForbiddenError(
+        "Only admin bearers and session users can strip federation credentials",
+      );
+    }
+    const dryRun = c.req.valid("query").dryRun !== "false";
+    const agents: Array<{ agentId: string; keys: string[] }> = [];
+    for (const agent of await agentService.list()) {
+      if (agent.selfHosted) continue;
+      const bundle = await agentEnvService.getByAgentId(agent.id);
+      if (bundle === null) continue;
+      const keys = anthropicCredentialKeysIn(Object.keys(bundle.env));
+      if (keys.length === 0) continue;
+      if (!dryRun) {
+        for (const key of keys) await agentEnvService.deleteKey(agent.id, key);
+        console.log(
+          `[agents-api] stripped Anthropic credentials from agent ${agent.id}: ${keys.join(", ")}`,
+        );
+      }
+      agents.push({ agentId: agent.id, keys });
+    }
+    return c.json({ dryRun, agents }, 200);
   });
 
   // POST /agents/:id/provision — provision a single agent's K8s workload (admin only).
@@ -1627,6 +1707,7 @@ export function createAdminApp(deps: AdminDeps): OpenAPIHono<AdminAuthEnv> {
         agentCronJobService,
         provisioner,
         agentTypeRegistry,
+        anthropicFederationEnabled: deps.anthropicFederationEnabled,
       },
       {
         name: body.name,
@@ -1652,6 +1733,12 @@ export function createAdminApp(deps: AdminDeps): OpenAPIHono<AdminAuthEnv> {
         throw new ForbiddenError(
           ACCOUNT_CREATE_ERROR_MESSAGES[result.errorCode],
         );
+      }
+      if (result.errorCode === ANTHROPIC_CREDENTIALS_BLOCKED_CODE) {
+        throw new AnthropicCredentialsBlockedError([
+          ...(body.claudeCodeOauthToken ? ["CLAUDE_CODE_OAUTH_TOKEN"] : []),
+          ...(body.anthropicApiKey ? ["ANTHROPIC_API_KEY"] : []),
+        ]);
       }
       throw new BadRequestError(
         result.errorMessage ?? `create agent failed: ${result.errorCode}`,

@@ -11744,3 +11744,21 @@ describe("renderAgentsPage zero-quota notice (SSP-3.2)", () => {
     );
   });
 });
+
+describe("renderNewLocalAgentPage — Anthropic federation (WIF-2.1)", () => {
+  const types = [{ name: "coding", displayName: "Coding Agent" }];
+
+  test("shows the Claude credential fields by default", () => {
+    const html = renderNewLocalAgentPage(USER_NAME, types);
+    expect(html).toContain('name="claudeCodeOauthToken"');
+    expect(html).toContain('name="anthropicApiKey"');
+  });
+
+  test("omits the Claude credential fields when federation is enabled", () => {
+    const html = renderNewLocalAgentPage(USER_NAME, types, {
+      anthropicFederationEnabled: true,
+    });
+    expect(html).not.toContain('name="claudeCodeOauthToken"');
+    expect(html).not.toContain('name="anthropicApiKey"');
+  });
+});

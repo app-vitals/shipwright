@@ -22,6 +22,7 @@ import {
   type AgentTypeManifestResolver,
   AgentTypeRegistry,
 } from "./agent-type-manifest-loader.ts";
+import { ANTHROPIC_CREDENTIALS_BLOCKED_CODE } from "./anthropic-credential-guard.ts";
 import type { PrismaTransactionClient } from "./prisma-tx.ts";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -173,6 +174,11 @@ interface AgentIdAndRepos {
    * unchanged.
    */
   trialExpiresAt?: Date | null;
+  /**
+   * WIF-2.1: read by the runtime config route to decide whether Anthropic
+   * credentials are stripped under federation. Optional for fixture compat.
+   */
+  selfHosted?: boolean;
   /**
    * SSP-8.3: status of the owning Account, or null when the agent has none.
    * Read by the runtime config route so the agent process can pause Slack.
@@ -489,6 +495,7 @@ export class AgentService {
         patchAuthorAllowlist: true,
         restrictSlackToMembers: true,
         trialExpiresAt: true,
+        selfHosted: true,
         account: { select: { status: true } },
         autoPostReviews: true,
         allowSelfReview: true,
@@ -661,7 +668,8 @@ type CreateAgentErrorCode =
   | "invalid_author_allowlist_format"
   | "provision_failed"
   | "quota_exceeded"
-  | "account_inactive";
+  | "account_inactive"
+  | typeof ANTHROPIC_CREDENTIALS_BLOCKED_CODE;
 
 type CreateAgentResult =
   | { ok: true; agent: AgentDetail; restrictSlackToMembers: boolean }
@@ -695,6 +703,8 @@ export interface CreateAgentDeps {
   agentCronJobService: Pick<AgentCronJobService, "reconcileSystemCrons">;
   provisioner: Pick<AgentProvisioner, "canProvision" | "provision">;
   agentTypeRegistry: Pick<AgentTypeManifestResolver, "tryGetManifest">;
+  /** WIF-2.1: Anthropic federation is enabled; defaults to false. */
+  anthropicFederationEnabled?: boolean;
 }
 
 /**
@@ -799,6 +809,20 @@ export async function createAgent(
   // leaving an agent row with no workload behind it.
   if (inCluster && !deps.provisioner.canProvision) {
     return { ok: false, errorCode: "provisioning_disabled" };
+  }
+
+  // WIF-2.1: federated (in-cluster) agents must never carry Anthropic
+  // credentials — reject before any row is created.
+  if (
+    deps.anthropicFederationEnabled &&
+    inCluster &&
+    (input.claudeCodeOauthToken || input.anthropicApiKey)
+  ) {
+    return {
+      ok: false,
+      errorCode: ANTHROPIC_CREDENTIALS_BLOCKED_CODE,
+      errorMessage: `${ANTHROPIC_CREDENTIALS_BLOCKED_CODE}: Claude credentials cannot be set on an agent that uses Anthropic workload identity federation`,
+    };
   }
 
   const restrictSlackToMembers = input.restrictSlackToMembersRaw === "true";

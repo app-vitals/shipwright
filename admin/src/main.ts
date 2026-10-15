@@ -285,6 +285,19 @@ export function buildProvisioner(
   });
 }
 
+/**
+ * Whether Anthropic workload identity federation is active for provisioned
+ * agent pods (WIF-2.1). Mirrors buildProvisioner's gating: only a deployment
+ * that provisions pods AND sets the rule ID federates agents. Gates the
+ * Anthropic credential write/read guards.
+ */
+export function isAnthropicFederationEnabled(env: NodeJS.ProcessEnv): boolean {
+  return (
+    env.SHIPWRIGHT_K8S_PROVISIONING === "enabled" &&
+    Boolean(env.SHIPWRIGHT_K8S_AGENT_ANTHROPIC_FEDERATION_RULE_ID)
+  );
+}
+
 /** Kubernetes rejects projected service-account tokens shorter than this. */
 const MIN_FEDERATION_TOKEN_EXPIRATION_SECONDS = 600;
 
@@ -527,7 +540,13 @@ async function startServer(): Promise<void> {
 
   // Construct all services with injected deps
   const agentService = new AgentService(prisma);
-  const agentEnvService = new AgentEnvService(prisma, crypto);
+  const anthropicFederationEnabled = isAnthropicFederationEnabled(process.env);
+  const agentEnvService = new AgentEnvService(
+    prisma,
+    crypto,
+    undefined,
+    anthropicFederationEnabled,
+  );
   const agentCronJobService = new AgentCronJobService(prisma);
   const agentCronRunService = new AgentCronRunService(prisma);
   const agentToolService = new AgentToolService(prisma);
@@ -668,6 +687,7 @@ async function startServer(): Promise<void> {
     sessionSecret,
     adminApiKeys,
     agentTokenService,
+    anthropicFederationEnabled,
   });
 
   root.route("/agents", runtimeApp);
@@ -702,6 +722,7 @@ async function startServer(): Promise<void> {
     adminApiKeys,
     sentryClient: process.env.SENTRY_DSN ? Sentry : undefined,
     selfServe,
+    anthropicFederationEnabled,
   });
   root.route("/", adminApiApp);
 
@@ -786,6 +807,7 @@ async function startServer(): Promise<void> {
     callerScopeResolver,
     agentService,
     provisioner,
+    anthropicFederationEnabled,
     taskStore: deletionTaskStore,
     chatService: deletionChatService,
     slack: slackClient,

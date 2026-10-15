@@ -108,6 +108,7 @@ import {
 import type { AgentWorkQueueService } from "./agent-work-queue.ts";
 import type { AgentService } from "./agents.ts";
 import { createAgent, describeRepoNameCollision } from "./agents.ts";
+import { AnthropicCredentialsBlockedError } from "./anthropic-credential-guard.ts";
 import { publicNoAuthMiddleware } from "./api-auth.ts";
 import {
   audioContentTypeForFilename,
@@ -385,6 +386,8 @@ export interface AdminUIDeps {
     runTransaction?: AgentService["runTransaction"];
   };
   provisioner: AgentProvisioner;
+  /** WIF-2.1: Anthropic federation is enabled; defaults to false. */
+  anthropicFederationEnabled?: boolean;
   /**
    * Resolves an agent's typeName to its parsed Agent Type manifest and lists
    * the registry's discoverable types (for the new-agent type picker).
@@ -1829,6 +1832,7 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
       renderNewLocalAgentPage(c.var.userEmail, types, {
         error,
         canProvision: provisioner.canProvision,
+        anthropicFederationEnabled: deps.anthropicFederationEnabled,
         ...(selfServeOpts ? { selfServe: selfServeOpts } : {}),
       }),
     );
@@ -1953,6 +1957,7 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
         agentCronJobService,
         provisioner,
         agentTypeRegistry,
+        anthropicFederationEnabled: deps.anthropicFederationEnabled,
       },
       {
         name,
@@ -2313,11 +2318,23 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
     }
     if (key && value !== undefined) {
       const isSecret = secretStr === "true";
-      await agentEnvService.patch(
-        agentId,
-        { [key]: value },
-        isSecret ? new Set([key]) : new Set(),
-      );
+      try {
+        await agentEnvService.patch(
+          agentId,
+          { [key]: value },
+          isSecret ? new Set([key]) : new Set(),
+        );
+      } catch (err) {
+        // WIF-2.1: surface the typed rejection (key names only, never the
+        // value) on the agent page instead of a 500.
+        if (err instanceof AnthropicCredentialsBlockedError) {
+          return c.redirect(
+            `/admin/agents/${agentId}?error=${encodeURIComponent(err.message)}`,
+            302,
+          );
+        }
+        throw err;
+      }
     }
     return c.redirect(`/admin/agents/${agentId}`, 302);
   });

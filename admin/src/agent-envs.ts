@@ -7,6 +7,10 @@
  */
 
 import type { PrismaClient } from "../prisma/client/client.ts";
+import {
+  AnthropicCredentialsBlockedError,
+  anthropicCredentialKeysIn,
+} from "./anthropic-credential-guard.ts";
 import { type Clock, SystemClock } from "./clock.ts";
 import { ApiError, UnprocessableEntityError } from "./errors.ts";
 import type { TokenCrypto } from "./token-crypto.ts";
@@ -42,7 +46,23 @@ export class AgentEnvService {
     private prisma: PrismaClient,
     private crypto: TokenCrypto,
     private clock: Clock = SystemClock(),
+    /** WIF-2.1: block Anthropic credential keys for non-self-hosted agents. */
+    private anthropicFederationEnabled = false,
   ) {}
+
+  /**
+   * Reject Anthropic credential keys for a federated (non-self-hosted) agent.
+   * Every write path (API, admin UI, createAgent, Slack/GitHub provisioning)
+   * goes through upsert/patch, so this is the single enforcement point.
+   */
+  private assertNoBlockedCredentials(
+    agent: { selfHosted: boolean },
+    env: Record<string, string>,
+  ): void {
+    if (!this.anthropicFederationEnabled || agent.selfHosted) return;
+    const blocked = anthropicCredentialKeysIn(Object.keys(env));
+    if (blocked.length > 0) throw new AnthropicCredentialsBlockedError(blocked);
+  }
 
   /**
    * Replace all env vars for the given agent (delete existing + insert new).
@@ -61,6 +81,7 @@ export class AgentEnvService {
     if (!agent) {
       throw new UnprocessableEntityError("agent not found");
     }
+    this.assertNoBlockedCredentials(agent, env);
 
     const now = this.clock.now();
     const rows = Object.entries(env).map(([key, value]) => ({
@@ -104,6 +125,7 @@ export class AgentEnvService {
     if (!agent) {
       throw new UnprocessableEntityError("agent not found");
     }
+    this.assertNoBlockedCredentials(agent, env);
 
     const now = this.clock.now();
     await this.prisma.$transaction(
