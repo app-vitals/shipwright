@@ -11,6 +11,7 @@ import type { AgentCronJob, PrismaClient } from "../prisma/client/client.ts";
 import {
   type AgentTypeManifestResolver,
   AgentTypeRegistry,
+  DEFAULT_AGENT_TYPE_NAME,
 } from "./agent-type-manifest-loader.ts";
 import type { AgentTypeManifest } from "./agent-type-registry.ts";
 import { type Clock, SystemClock } from "./clock.ts";
@@ -452,10 +453,13 @@ export class AgentCronJobService {
    * Reconcile system crons for the given agent.
    *
    * The cron list is resolved from the agent's type manifest — the agent's
-   * stored `typeName` is looked up via the injected AgentTypeRegistry, which
-   * returns the parsed `agent-types/{typeName}/manifest.yaml` (falling back to
-   * the "coding" manifest with a logged warning for an unknown type, so this
-   * boot-path call never 5xxes). This replaced the former hardcoded
+   * stored `typeName` is looked up via the injected AgentTypeRegistry's
+   * `tryGetManifest()` (the parsed `agent-types/{typeName}/manifest.yaml`),
+   * deliberately WITHOUT the "coding" fallback: a non-default type with no
+   * loadable manifest logs an error and reconciles nothing (no seeding of
+   * coding crons, no deletion of existing system crons), while a "coding"
+   * manifest that cannot load throws — the universal fallback failing is a
+   * startup bug. This replaced the former hardcoded
    * SYSTEM_CRONS array as the source of truth (ATS-3.2).
    *
    * Two passes so parent/child links resolve regardless of the manifest's
@@ -491,9 +495,9 @@ export class AgentCronJobService {
   async reconcileSystemCrons(
     agentId: string,
   ): Promise<{ created: number; updated: number; deleted: number }> {
-    // Resolve the agent's type manifest → its declared cron list. The registry
-    // falls back to "coding" (with a warning) for an unknown typeName, so this
-    // never throws on the boot path.
+    // Resolve the agent's type manifest → its declared cron list. No "coding"
+    // fallback: seeding enabled coding crons on a non-coding agent is worse
+    // than leaving its crons untouched.
     const agent = await this.prisma.agent.findUnique({
       where: { id: agentId },
       select: { typeName: true },
@@ -501,8 +505,19 @@ export class AgentCronJobService {
     if (!agent) {
       throw new NotFoundError(`agent ${agentId} not found`);
     }
-    const manifestCrons: readonly ManifestCron[] =
-      this.agentTypeRegistry.getManifest(agent.typeName).crons;
+    const manifest = this.agentTypeRegistry.tryGetManifest(agent.typeName);
+    if (!manifest) {
+      if (agent.typeName === DEFAULT_AGENT_TYPE_NAME) {
+        throw new Error(
+          `reconcileSystemCrons: the default "${DEFAULT_AGENT_TYPE_NAME}" manifest failed to load for agent ${agentId} — this is a startup-time bug`,
+        );
+      }
+      console.error(
+        `reconcileSystemCrons: no loadable manifest for typeName "${agent.typeName}" (agent ${agentId}) — leaving crons untouched`,
+      );
+      return { created: 0, updated: 0, deleted: 0 };
+    }
+    const manifestCrons: readonly ManifestCron[] = manifest.crons;
 
     // Fetch all existing system crons for this agent
     const existingSystemCrons = await this.prisma.agentCronJob.findMany({

@@ -332,11 +332,56 @@ describe("reconcileSystemCrons (unit, injected registry)", () => {
     expect(rows.get("loop-id")?.parentCronId).toBeNull();
   });
 
-  test("an unknown typeName resolves via the registry's coding fallback", async () => {
-    // The registry double models the real fallback: an unknown type returns
-    // the coding crons. reconcile must not throw on this boot path.
+  test("an unknown non-coding typeName logs an error and changes nothing", async () => {
     const registry = fakeRegistry({ coding: [loopCron] });
-    const { prisma, rows } = makeFakePrisma({ typeName: "renamed-type" });
+    const { prisma, rows } = makeFakePrisma({
+      typeName: "specialist",
+      existing: [
+        { id: "sys-1", name: "old-system", system: true },
+        { id: "user-1", name: "mine", system: false },
+      ],
+    });
+    const service = new AgentCronJobService(
+      prisma as unknown as PrismaClient,
+      undefined,
+      registry,
+    );
+    const errors: unknown[][] = [];
+    const original = console.error;
+    console.error = (...args: unknown[]) => {
+      errors.push(args);
+    };
+    let result: Awaited<ReturnType<typeof service.reconcileSystemCrons>>;
+    try {
+      result = await service.reconcileSystemCrons("agent-1");
+    } finally {
+      console.error = original;
+    }
+
+    expect(result).toEqual({ created: 0, updated: 0, deleted: 0 });
+    expect(Array.from(rows.keys()).sort()).toEqual(["sys-1", "user-1"]);
+    expect(errors).toHaveLength(1);
+    expect(String(errors[0]?.[0])).toContain("specialist");
+    expect(String(errors[0]?.[0])).toContain("agent-1");
+  });
+
+  test("a coding manifest that cannot load still throws", async () => {
+    const registry = fakeRegistry({});
+    const { prisma } = makeFakePrisma({ typeName: "coding" });
+    const service = new AgentCronJobService(
+      prisma as unknown as PrismaClient,
+      undefined,
+      registry,
+    );
+
+    await expect(service.reconcileSystemCrons("agent-1")).rejects.toThrow(
+      /coding/,
+    );
+  });
+
+  test("a valid non-coding manifest reconciles normally", async () => {
+    const registry = fakeRegistry({ specialist: [loopCron] });
+    const { prisma, rows } = makeFakePrisma({ typeName: "specialist" });
     const service = new AgentCronJobService(
       prisma as unknown as PrismaClient,
       undefined,
@@ -346,6 +391,7 @@ describe("reconcileSystemCrons (unit, injected registry)", () => {
     const result = await service.reconcileSystemCrons("agent-1");
 
     expect(result.created).toBe(1);
+    expect(registry.lookups).toEqual(["specialist"]);
     expect(Array.from(rows.values())[0]?.name).toBe("shipwright-loop");
   });
 });
