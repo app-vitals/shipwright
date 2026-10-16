@@ -679,17 +679,13 @@ describeOrSkip("AgentCronJobService (integration)", () => {
     expect(systemJobs.length).toBe(GOLDEN_CODING_CRONS.length);
   });
 
-  it("reconcileSystemCrons() for an unknown typeName falls back to the coding golden set (no throw on the boot path)", async () => {
+  it("reconcileSystemCrons() for an unknown non-coding typeName changes nothing (no coding fallback)", async () => {
     const agentId = await createAgent(prisma, "Renamed Agent", "renamed-type");
 
-    // Must not throw — the boot-path reconcile route must never 5xx for an
-    // agent whose type was renamed/removed.
-    await service.reconcileSystemCrons(agentId);
+    // Must not throw, and must not seed the coding crons on a non-coding agent.
+    const result = await service.reconcileSystemCrons(agentId);
 
-    const jobs = await service.list(agentId);
-    const systemJobs = jobs.filter((j) => j.system);
-    expect(systemJobs.length).toBe(GOLDEN_CODING_CRONS.length);
-    const names = systemJobs.map((j) => j.name).sort();
-    expect(names).toEqual(GOLDEN_CODING_CRONS.map((c) => c.name).sort());
+    expect(result).toEqual({ created: 0, updated: 0, deleted: 0 });
+    expect(await service.list(agentId)).toEqual([]);
   });
 });
