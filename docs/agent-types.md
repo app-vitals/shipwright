@@ -243,6 +243,16 @@ repos: []
 
 Default `org/repo`-formatted repos for agents of this type — like `members`, usually empty in the shared type manifest, with real repos assigned per-agent-instance after provisioning.
 
+## Specialist type
+
+`agent-types/specialist/manifest.yaml` is a generic, non-coding Agent Type for agents that are not delivery agents. It uses existing manifest fields only — no schema or loader changes — and appears in the new-agent type picker automatically via `listTypes()`.
+
+It differs from `coding` in what it does *not* grant: `crons: []` (no system crons — `learn-dream` is excluded because it needs the `shipwright` plugin), `plugins: []` (no `shipwright` plugin), `repos: []` and `GH_TOKEN` optional only (no GitHub or task-store scope), and a smaller additive tool set (`Bash`, `WebSearch`, `WebFetch`, `Agent` on top of the floor tools; no `Monitor`). The env contract is otherwise the same as `coding`.
+
+Specialties layer their own plugins, crons and env on top after creation, via the admin API.
+
+**Limitation:** `identity.templatesDir` is required by the schema but is not read at runtime, so specialist agents still receive the coding-flavored workspace template until type-aware templates land.
+
 ## Rules
 
 ### FLOOR_TOOLS are outside manifest authority

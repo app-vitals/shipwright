@@ -32,4 +32,14 @@ describe("AgentTypeRegistry", () => {
     expect(types.length).toBeGreaterThan(0);
     expect(types.some((t) => t.name === "coding")).toBe(true);
   });
+
+  it("lists and loads the real committed specialist manifest without falling back to coding", () => {
+    const registry = new AgentTypeRegistry();
+    expect(registry.listTypes().some((t) => t.name === "specialist")).toBe(
+      true,
+    );
+    const manifest = registry.getManifest("specialist");
+    expect(manifest.metadata.name).toBe("specialist");
+    expect(manifest.crons).toEqual([]);
+  });
 });
