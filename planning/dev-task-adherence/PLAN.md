@@ -73,3 +73,37 @@ All tasks are additive (a prompt line, a new table file, a new report, an option
 - Added DTA-1.2 -> DTA-2.1 dependency: the report consumes the table file.
 - DTA-2.3 and DTA-3.1 marked HITL: they are human-run trial and analysis steps with no code diff.
 - Marker-based measurement of Steps 6 and 7 deferred until first adherence numbers exist, to avoid adding output steps.
+
+## Addendum (2026-10-13): DTA-5.1 — fix Step 5 dispatch detection
+
+DTA-2.3 blocked on `adherence_report_cannot_score_trial`: the report's grouping-by-variant
+half was already fixed by DTA-1.4 (byCommandVariant, PR #4246, merged/deployed 2026-10-12).
+The remaining half — step detection seeing the Step 5 dispatch in only 3/201 task-bearing
+runs since 2026-10-08 — is a real bug, root-caused by reading the code (no re-investigation
+needed):
+
+**Root cause.** `RunTelemetryAccumulator.observeContent()` in `agent/src/run-telemetry.ts`
+(~line 151) only recognizes a subagent dispatch when the stream-json tool_use block's
+`name === "Agent"`, and only populates `subagentByToolUseId` for that same name (~line 157).
+The Claude CLI's stream can emit either `"Agent"` or `"Task"` for the identical dispatch
+tool — `agent/src/progress-milestones.ts` (earlier, PR #2906) already encodes this duality,
+mapping both names to the `"delegating"` phase in its `TOOL_PHASE_MAP`. `run-telemetry.ts`
+(later, PR #3982) never adopted that precedent, so whenever a real run's CLI build emits
+`"Task"` instead of `"Agent"`, the Step 5 dispatch is invisible to `invocationsOf()` /
+`customImplementer` in `admin/src/dev-task-adherence.ts`, and `step5Ran` evaluates false
+even though Step 5 genuinely ran.
+
+**Fix (DTA-5.1):** widen both checks in `run-telemetry.ts` to `name === "Agent" || name ===
+"Task"`. Single file, no architecture decision, no breaking change — additive widening of a
+string check. `admin/src/dev-task-adherence.ts` needs no change; it already consumes
+`SkillUsageRow[]` correctly once the rows are populated right.
+
+| ID | Task | Depends on | HITL |
+|---|---|---|---|
+| DTA-5.1 | Recognize both `Agent` and `Task` tool names in `run-telemetry.ts` dispatch detection | none | no |
+
+**Breaking Change Safety:** additive string-check widening. Safe to deploy standalone: yes.
+
+**Note for whoever retries DTA-2.3:** once DTA-5.1 merges and deploys, re-run the adherence
+report over a fresh window and confirm the dispatch-detection rate against real runs before
+resetting DTA-2.3 to pending — not done automatically here.
