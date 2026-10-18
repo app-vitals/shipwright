@@ -12,6 +12,8 @@
 > (worktree: `docs/test-readiness-refresh-20261009`, base `e78514a1e`), from
 > `docs/test-readiness/test-inventory.md` (refreshed 2026-10-08).
 >
+> **2026-10-18 delta (re-verified, not re-architected).** Inventory refreshed at `cc8f30e5c` (delta `07e79159e..cc8f30e5c`): the only changes are the `agent-types/specialist/manifest.yaml` static manifest (content layer, `manifest.content.test.ts`) and a `reconcileSystemCrons` behavior change in `admin/src/agent-cron-jobs.ts` (no coding-cron fallback for non-coding types; unit with injected registry plus real-Postgres integration). Both fit the existing layer matrix, local substitutes and speed budgets; no blueprint change.
+>
 > **2026-10-16 delta (re-verified, not re-architected).** Inventory refreshed at `07e79159e` (delta `addbdffcb..07e79159e`): new units are the WIF-2.1 Anthropic credential guards (`agent/src/anthropic-federation-guard.ts`, `admin/src/anthropic-credential-guard.ts`; both pure, unit layer) and a helm-unittest suite for the federation chart wiring. All fit existing layer conventions, speed budgets and CI shape; no blueprint change.
 >
 > **2026-10-14 delta (re-verified, not re-architected).** Inventory refreshed at `addbdffcb` (delta `d7af2240a..addbdffcb`): new units are `prompt-audit/hitl-policy.ts` (pure, unit), prompt-scan/prompt-fix command and skill content (content layer), the ACP-2.1 agent Claude policy ConfigMap (helm-unittest) and task-store PR-normalize validation (unit + in-process smoke). All fit the existing layer matrix, local substitutes and speed budgets; no framework, CI job, or deploy-model (`direct`) change.
