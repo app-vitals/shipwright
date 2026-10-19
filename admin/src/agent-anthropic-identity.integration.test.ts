@@ -84,9 +84,10 @@ describeOrSkip("AgentAnthropicIdentityService (integration)", () => {
       data: { name: "A", anthropicIdentityName: "dup" },
     });
     await expect(
-      prisma.agent.create({
-        data: { name: "B", anthropicIdentityName: "dup" },
-      }),
+      (async () =>
+        prisma.agent.create({
+          data: { name: "B", anthropicIdentityName: "dup" },
+        }))(),
     ).rejects.toThrow();
   });
 
