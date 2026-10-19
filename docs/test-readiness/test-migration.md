@@ -205,7 +205,7 @@ document's established convention.
      `agent-trial-expiry-ref.unit.test.ts`, new. **Reuse**, correct canonical unit layer,
      mirrors `agent-slack-membership-ref.unit.test.ts`'s established shape exactly (including
      the fail-open-until-synced assertion).
-   - **`agent/src/agent-policy-backfill.ts`** (APM-1.1, `#3738`) + CLI wrapper
+   - **`agent/src/agent-policy-backfill.ts`** (APM-1.1, `#3738`; removed in ARD-1.2) + CLI wrapper
      `agent/scripts/backfill-agent-policy.ts` — paired `agent-policy-backfill.unit.test.ts` +
      `.integration.test.ts`, both new; the CLI wrapper has no dedicated test, same accepted
      thin-wrapper pattern as `backfill-pr-origin.ts`'s CLI sibling. **Reuse**.
