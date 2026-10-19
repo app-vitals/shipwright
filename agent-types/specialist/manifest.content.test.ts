@@ -38,8 +38,10 @@ describe("agent-types/specialist/manifest.yaml — required top-level sections",
     expect(manifest.metadata.skills).toEqual([]);
   });
 
-  it("has an identity section with templatesDir agent/workspace/", () => {
-    expect(manifest.identity.templatesDir).toBe("agent/workspace/");
+  it("has an identity section with templatesDir agent-types/specialist/templates/", () => {
+    expect(manifest.identity.templatesDir).toBe(
+      "agent-types/specialist/templates/",
+    );
   });
 
   it("has empty crons (learn-dream needs the shipwright plugin)", () => {
