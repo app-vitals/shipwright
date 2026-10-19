@@ -12,8 +12,8 @@ import {
   existsSync,
   lstatSync,
   mkdirSync,
-  readFileSync,
   readdirSync,
+  readFileSync,
   rmSync,
   statSync,
   symlinkSync,
@@ -45,6 +45,18 @@ const DEFAULT_PLUGINS: readonly string[] = ["shipwright"];
 // templates are agent/workspace/, so it never needs a manifest lookup.
 const DEFAULT_AGENT_TYPE_NAME = "coding";
 
+// Every template ensureAgentHome seeds — a type's templatesDir must provide all
+// of them or it is not usable (readTemplate would throw at boot).
+const REQUIRED_TEMPLATES: readonly string[] = [
+  "CLAUDE.md.template",
+  "VOICE.md.template",
+  "SOUL.md.template",
+  "IDENTITY.md.template",
+  "mise.toml.template",
+  "requirements.txt.template",
+  "BOOTSTRAP.md.template",
+];
+
 /**
  * Resolves the workspace template directory for an agent type (ARD-6.1).
  *
@@ -52,7 +64,7 @@ const DEFAULT_AGENT_TYPE_NAME = "coding";
  * (relative paths resolve against the repo root, matching how the manifests
  * spell them). Returns the built-in agent/workspace/ for `coding`, an absent
  * type, and any type that does not resolve (no manifest, unparseable, or the
- * directory is missing) — logging a warning for the latter. Never throws:
+ * directory is missing or lacks a required template) — logging a warning for the latter. Never throws:
  * a template lookup must not fail boot.
  */
 export function resolveTemplatesDir(
@@ -80,6 +92,12 @@ export function resolveTemplatesDir(
     const dir = resolve(repoRoot, templatesDir);
     if (!statSync(dir).isDirectory()) {
       throw new Error(`${dir} is not a directory`);
+    }
+    const missing = REQUIRED_TEMPLATES.filter(
+      (name) => !existsSync(join(dir, name)),
+    );
+    if (missing.length > 0) {
+      throw new Error(`${dir} is missing templates: ${missing.join(", ")}`);
     }
     return dir;
   } catch (err) {

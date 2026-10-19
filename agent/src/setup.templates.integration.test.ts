@@ -119,6 +119,18 @@ describe("resolveTemplatesDir fallback", () => {
     expect(warnings).toHaveLength(1);
   });
 
+  it("falls back with a warning when templatesDir lacks a required template", () => {
+    const repo = fakeRepo("partial", "partial-templates/");
+    writeTemplates(join(repo, "partial-templates"), "PARTIAL");
+    rmSync(join(repo, "partial-templates", "SOUL.md.template"));
+    const warnings: string[] = [];
+    const dir = resolveTemplatesDir("partial", repo, (m) => warnings.push(m));
+    expect(dir).toBe(CODING_TEMPLATES);
+    expect(warnings).toHaveLength(1);
+    expect(warnings[0]).toContain("SOUL.md.template");
+    expect(() => ensureAgentHome(home, "partial", dir)).not.toThrow();
+  });
+
   it("falls back with a warning on an unparseable manifest", () => {
     const repo = fakeRepo("broken", "x");
     writeFileSync(
