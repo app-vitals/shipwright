@@ -39,6 +39,7 @@ annotations:
       description: "auto-bump to chart v1.26.16 triggered by release tag metrics-v1.147.0"
     - kind: changed
       description: "auto-bump to chart v1.26.16 triggered by release tag task-store-v1.194.0"
+    - kind: changed
       description: "update traefik subchart to v42.0.0"
 dependencies:
   # Bitnami PostgreSQL subchart, pinned to the chart release shipping Postgres 18.x
