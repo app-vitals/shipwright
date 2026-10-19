@@ -7,9 +7,9 @@ dependencies:
   version: 4.15.1
 - name: traefik
   repository: https://traefik.github.io/charts
-  version: 41.7.1
+  version: 42.0.0
 - name: cert-manager
   repository: https://charts.jetstack.io
   version: v1.21.2
-digest: sha256:94a6e33335de4516e70c47221388138ad841dd40ed058fcc701514005469fdad
-generated: "2026-10-12T02:31:00.228961259Z"
+digest: sha256:c588257262b3ebd52ced454ab83089730b1e78cc7cce3851563071e0f980aa3a
+generated: "2026-10-19T04:23:30.318296813Z"
