@@ -37,7 +37,7 @@ jobs:
           # helm-unittest v1.x's plugin.yaml uses the `platformHooks` schema
           # field, which Helm only understands from v3.18 onward. Keep this in
           # step with the --version pin below.
-          version: v4.3.0
+          version: v4.3.1
 
       - name: Install helm-unittest plugin
         # Helm v4 requires plugin-source provenance verification by default;
@@ -137,7 +137,7 @@ jobs:
       - name: Install Helm
         uses: azure/setup-helm@9bc31f4ebc9c6b171d7bfbaa5d006ae7abdb4310 # v5.0.1
         with:
-          version: v4.3.0
+          version: v4.3.1
 
       - name: Set up chart-testing
         uses: helm/chart-testing-action@720270857a28afd41e2426521a7801db09e9b510 # v2.9.0

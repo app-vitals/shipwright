@@ -14,6 +14,7 @@
     "./graceful-shutdown": "./graceful-shutdown.ts",
     "./http": "./http.ts",
     "./org-repo": "./org-repo.ts",
+    "./pg-sslmode": "./pg-sslmode.ts",
     "./pricing": "./pricing.ts",
     "./progress-phases": "./progress-phases.ts",
     "./request-context": "./request-context.ts",

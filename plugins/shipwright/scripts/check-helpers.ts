@@ -70,27 +70,6 @@ export interface Task {
   hitlNotifiedAt?: string;
 }
 
-// ─── Policy helpers ───────────────────────────────────────────────────────────
-
-export function parseAllowSelfReview(content: string): boolean {
-  const match = content.match(
-    /`?\*{0,2}\ballow_self_review\b\*{0,2}`?\s*[:|]\s*\*{0,2}(true|false)\b/i,
-  );
-  return match?.[1] === "true"; // default false if missing/unparseable
-}
-
-export function readAllowSelfReview(workspacePath: string): boolean {
-  try {
-    const content = readFileSync(
-      join(workspacePath, "state", "agent-policy.md"),
-      "utf-8",
-    );
-    return parseAllowSelfReview(content);
-  } catch {
-    return false;
-  }
-}
-
 // ─── Workspace path ───────────────────────────────────────────────────────────
 
 /**

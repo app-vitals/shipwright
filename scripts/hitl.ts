@@ -159,7 +159,6 @@ export type HitlConfig = {
   reposDir: string;
   worktreesDir: string;
   claudeMdTemplate: string;
-  agentPolicyTemplate: string;
   repos: string[];
   authors: string[];
   pollIntervalS: number;
@@ -199,13 +198,6 @@ export function buildHitlConfig(
       "agent",
       "workspace",
       "CLAUDE-HITL.md.template",
-    ),
-    agentPolicyTemplate: join(
-      repoRoot,
-      "agent",
-      "workspace",
-      "state",
-      "agent-policy.md.template",
     ),
     repos: parseHitlRepos(env.SHIPWRIGHT_HITL_REPOS),
     authors: parseHitlAuthors(env.SHIPWRIGHT_HITL_AUTHORS),
@@ -401,24 +393,21 @@ async function waitForHealth(url: string, label: string): Promise<void> {
 /**
  * Pure planning step for provisionWorkspace(): given the set of dirs the
  * workspace needs and an injectable existence check, report which dirs are
- * missing and whether CLAUDE.md and agent-policy.md still need to be seeded.
+ * missing and whether CLAUDE.md still needs to be seeded.
  * Kept side-effect free so it's unit-testable without touching the real
  * filesystem.
  */
 export function computeProvisionPlan(
   dirs: string[],
   claudeMdPath: string,
-  agentPolicyPath: string,
   exists: (path: string) => boolean,
 ): {
   missingDirs: string[];
   needsClaudeMd: boolean;
-  needsAgentPolicy: boolean;
 } {
   return {
     missingDirs: dirs.filter((dir) => !exists(dir)),
     needsClaudeMd: !exists(claudeMdPath),
-    needsAgentPolicy: !exists(agentPolicyPath),
   };
 }
 
@@ -482,9 +471,8 @@ export function buildProvisionSteps(
     join(cfg.workspace, ".claude"),
   ];
   const claudeMd = join(cfg.workspace, "CLAUDE.md");
-  const agentPolicy = join(cfg.workspace, "state", "agent-policy.md");
 
-  const plan = computeProvisionPlan(dirs, claudeMd, agentPolicy, exists);
+  const plan = computeProvisionPlan(dirs, claudeMd, exists);
   const steps: HitlStep[] = plan.missingDirs.map((dir) => ({
     kind: "mkdir",
     label: `mkdir ${dir}`,
@@ -497,14 +485,6 @@ export function buildProvisionSteps(
       label: "seeded CLAUDE.md",
       path: claudeMd,
       templatePath: cfg.claudeMdTemplate,
-    });
-  }
-  if (plan.needsAgentPolicy) {
-    steps.push({
-      kind: "seed-file",
-      label: "seeded agent-policy.md",
-      path: agentPolicy,
-      templatePath: cfg.agentPolicyTemplate,
     });
   }
 

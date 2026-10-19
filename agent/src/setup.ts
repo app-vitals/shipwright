@@ -414,7 +414,6 @@ export async function installPlugins(
  *
  * Safe to call on every startup:
  * - Identity/skill files are seeded once with wx semantics (user edits preserved)
- * - state/agent-policy.md is seeded once if absent
  *
  * Throws if required directories cannot be created.
  */
@@ -578,12 +577,6 @@ export function ensureAgentHome(home: string): void {
 
   // Create state/reviews/ directory for review artifacts (PR_REVIEW files)
   mkdirSync(join(stateDir, "reviews"), { recursive: true });
-
-  // Seed state/agent-policy.md — conservative defaults for agent autonomy
-  seedFile(
-    join(stateDir, "agent-policy.md"),
-    readTemplate("state/agent-policy.md.template"),
-  );
 
   // Bootstrap seeding for new workspaces
   const state = loadState(home);

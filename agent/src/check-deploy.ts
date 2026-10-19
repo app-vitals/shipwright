@@ -101,9 +101,9 @@ export interface CheckDeployDeps {
   getCurrentUser: () => Promise<string>;
   /**
    * Whether self-review is allowed (the `allow_self_review` policy field,
-   * DB -> state/agent-policy.md -> hardcoded, APM-1.4). A getter, invoked
+   * synced DB ref -> hardcoded default, APM-1.4). A getter, invoked
    * fresh on every getDeployCandidates() call — not evaluated once at
-   * buildProductionDeps() time — so a DB or state/agent-policy.md edit takes
+   * buildProductionDeps() time — so a DB-side edit takes
    * effect on the very next call without requiring an agent process restart
    * (PLR-1.1). Mirrors this file's own getScopedRepos live-read pattern.
    * Async because the DB tier is a live config-sync ref
@@ -186,7 +186,9 @@ function isActiveRun(run: WorkflowRun, now: string): boolean {
 
 function hasSelfApproveReview(reviews: GhReview[], userLogin: string): boolean {
   return reviews.some(
-    (r) => canonicalLogin(r.author.login) === canonicalLogin(userLogin) && isCleanApproveBody(r.body),
+    (r) =>
+      canonicalLogin(r.author.login) === canonicalLogin(userLogin) &&
+      isCleanApproveBody(r.body),
   );
 }
 
@@ -250,7 +252,8 @@ export async function getDeployCandidates(
       if (!approved) continue;
 
       // Hard authorship filter: only deploy PRs authored by the current user
-      if (canonicalLogin(pr.author.login) !== canonicalLogin(currentUser)) continue;
+      if (canonicalLogin(pr.author.login) !== canonicalLogin(currentUser))
+        continue;
 
       const ciRuns = await deps.fetchCiRuns(org, repoName, pr.headRefOid);
       if (!isCiGreen(ciRuns)) continue;

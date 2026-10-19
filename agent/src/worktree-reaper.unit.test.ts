@@ -3,7 +3,7 @@
  *
  * Unit tests for reconcileStaleWorktrees() — a pure-filesystem background
  * pass (WTR-1.2) that force-removes worktrees/ directories older than the
- * agent-policy.md-configured cleanup_after_days threshold.
+ * configured cleanup_after_days threshold.
  *
  * Uses fully injected fs/git-exec/clock doubles — no real filesystem or git
  * calls, no global.fetch/global.* overrides, time injected via FixedClock —
@@ -23,7 +23,8 @@ import {
 const FAKE_NOW = new Date("2026-07-28T00:00:00.000Z");
 
 interface MakeDepsOptions {
-  policyContent?: string;
+  cleanupMergedWorktrees?: boolean;
+  cleanupAfterDays?: number;
   dirs?: string[];
   scopedRepos?: string[];
   /** dirname -> mtime. Any dirname not present here throws (defensive — every test must configure the dirs it lists). */
@@ -38,7 +39,8 @@ function makeDeps(opts: MakeDepsOptions = {}): {
   removeCalls: RemoveWorktreeCall[];
 } {
   const {
-    policyContent = "- **cleanup_merged_worktrees**: true\n- **cleanup_after_days**: 14\n",
+    cleanupMergedWorktrees = true,
+    cleanupAfterDays = 14,
     dirs = [],
     scopedRepos = [],
     mtimes = {},
@@ -49,7 +51,8 @@ function makeDeps(opts: MakeDepsOptions = {}): {
   const removeCalls: RemoveWorktreeCall[] = [];
 
   const deps: WorktreeReaperDeps = {
-    readAgentPolicy: () => policyContent,
+    readCleanupMergedWorktrees: async () => cleanupMergedWorktrees,
+    readCleanupAfterDays: async () => cleanupAfterDays,
     listWorktreeDirs: () => dirs,
     getScopedRepos: () => scopedRepos,
     statMtime: (dirname: string) => {
@@ -107,7 +110,7 @@ describe("reconcileStaleWorktrees", () => {
     let listCalled = false;
     let statCalled = false;
     const { deps, removeCalls } = makeDeps({
-      policyContent: "- **cleanup_merged_worktrees**: false\n",
+      cleanupMergedWorktrees: false,
       dirs: ["example-repo-feat-foo"],
       scopedRepos: ["example-repo"],
       mtimes: { "example-repo-feat-foo": new Date("2020-01-01T00:00:00.000Z") },
@@ -191,7 +194,9 @@ describe("reconcileStaleWorktrees", () => {
 
     await reconcileStaleWorktrees(deps);
 
-    expect(removeCalls).toEqual([{ repo: "example-repo", dirname: "example-repo" }]);
+    expect(removeCalls).toEqual([
+      { repo: "example-repo", dirname: "example-repo" },
+    ]);
   });
 
   test("a dirname that merely starts with a repo name's characters but not at a '-' boundary does not match", async () => {
@@ -209,11 +214,10 @@ describe("reconcileStaleWorktrees", () => {
     expect(removeCalls).toEqual([]);
   });
 
-  test("uses the default cleanup_after_days (14) when unset in policy content", async () => {
+  test("uses the default cleanup_after_days (14) when the policy is at its default", async () => {
     // 15 days old — stale under the 14-day default.
     const staleUnderDefault = new Date("2026-07-13T00:00:00.000Z");
     const { deps, removeCalls } = makeDeps({
-      policyContent: "- **cleanup_merged_worktrees**: true\n",
       dirs: ["example-repo-feat-foo"],
       scopedRepos: ["example-repo"],
       mtimes: { "example-repo-feat-foo": staleUnderDefault },

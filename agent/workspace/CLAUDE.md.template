@@ -119,9 +119,10 @@ carries no target, so every tick responds `[silent]` and does nothing.
 
 ### Policy
 
-Agent behavior is controlled by `state/agent-policy.md`. This file sets review
-posting, merge permissions, and autonomy levels. The cron prompts reference it —
-edit this file to change agent behavior without reconfiguring crons.
+Agent behavior is controlled by the policy fields on the agent record (review
+posting, self-review, confidence and finding limits, worktree cleanup),
+delivered via `GET /agents/:id/config` and edited through the agents UI or
+`PATCH /agents/:id`.
 
 ### Reviews
 

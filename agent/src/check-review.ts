@@ -414,9 +414,9 @@ export interface CheckReviewDeps {
   getCurrentUser: () => Promise<string>;
   /**
    * Whether self-review is allowed (the `allow_self_review` policy field,
-   * DB -> state/agent-policy.md -> hardcoded, APM-1.4). A getter, invoked
+   * synced DB ref -> hardcoded default, APM-1.4). A getter, invoked
    * fresh on every getReviewCandidates() call — not evaluated once at
-   * buildProductionDeps() time — so a DB or state/agent-policy.md edit takes
+   * buildProductionDeps() time — so a DB-side edit takes
    * effect on the very next call without requiring an agent process restart
    * (PLR-1.1). Mirrors this file's own getScopedRepos live-read pattern.
    * Async because the DB tier is a live config-sync ref
@@ -532,7 +532,9 @@ export async function getReviewCandidates(
     // either — DBR-3.3 removed that pre-filter, so they now fall through to
     // the isAuthorAllowed gate below like any other author.
     const isRequestedReviewer =
-      pr.reviewRequests?.some((r) => canonicalLogin(r.login ?? "") === canonicalLogin(currentUser)) ?? false;
+      pr.reviewRequests?.some(
+        (r) => canonicalLogin(r.login ?? "") === canonicalLogin(currentUser),
+      ) ?? false;
 
     if (
       !(await deps.isSelfReviewAllowed()) &&
