@@ -31,6 +31,7 @@ annotations:
   artifacthub.io/changes: |
     - kind: changed
       description: "auto-bump to chart v1.26.8 triggered by release tag agent-v1.411.1"
+    - kind: changed
       description: "update traefik subchart to v42.0.0"
 dependencies:
   # Bitnami PostgreSQL subchart, pinned to the chart release shipping Postgres 18.x
