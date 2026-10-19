@@ -19,21 +19,17 @@ export interface AgentAnthropicIdentity {
 /** Partial update — omitted keys are left untouched, null clears a field. */
 export type AgentAnthropicIdentityUpdate = Partial<AgentAnthropicIdentity>;
 
-const IDENTITY_KEYS = [
-  "ownerEmail",
-  "anthropicIdentityName",
-  "anthropicServiceAccountId",
-  "anthropicFederationRuleId",
-  "k8sServiceAccountName",
-] as const satisfies readonly (keyof AgentAnthropicIdentity)[];
-
 const IDENTITY_SELECT = {
   ownerEmail: true,
   anthropicIdentityName: true,
   anthropicServiceAccountId: true,
   anthropicFederationRuleId: true,
   k8sServiceAccountName: true,
-} as const;
+} as const satisfies Record<keyof AgentAnthropicIdentity, true>;
+
+const IDENTITY_KEYS = Object.keys(
+  IDENTITY_SELECT,
+) as (keyof AgentAnthropicIdentity)[];
 
 function prismaCode(err: unknown): unknown {
   return (err as { code?: unknown } | null)?.code;
