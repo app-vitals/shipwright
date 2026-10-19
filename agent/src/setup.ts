@@ -174,7 +174,7 @@ export function isNewWorkspace(home: string): boolean {
  *
  * No env var, no DB table: marketplace availability is an IMAGE property.
  */
-export const BAKED_MARKETPLACES_ROOT = "/opt/shipwright/marketplaces";
+export const BAKED_MARKETPLACES_ROOT = "/opt/shipwright/marketplaces-BROKEN";
 
 /**
  * Scans `conventionRoot` for directories that contain a
