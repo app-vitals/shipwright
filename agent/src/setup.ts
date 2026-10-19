@@ -45,16 +45,13 @@ const DEFAULT_PLUGINS: readonly string[] = ["shipwright"];
 // templates are agent/workspace/, so it never needs a manifest lookup.
 const DEFAULT_AGENT_TYPE_NAME = "coding";
 
-// Every template ensureAgentHome seeds — a type's templatesDir must provide all
-// of them or it is not usable (readTemplate would throw at boot).
+// The persona templates a type's templatesDir must provide or it is not usable.
+// Everything else (VOICE, mise, requirements, BOOTSTRAP) falls back per file to
+// agent/workspace/, and SPECIALTY.md.template is optional (ARD-6.2).
 const REQUIRED_TEMPLATES: readonly string[] = [
   "CLAUDE.md.template",
-  "VOICE.md.template",
   "SOUL.md.template",
   "IDENTITY.md.template",
-  "mise.toml.template",
-  "requirements.txt.template",
-  "BOOTSTRAP.md.template",
 ];
 
 /**
@@ -123,6 +120,14 @@ function readTemplate(
   } catch {
     throw new Error(`Missing workspace template: ${path}`);
   }
+}
+
+/** Reads `name` from `dir`, falling back to agent/workspace/ when `dir` lacks it. */
+function readOptionalTemplate(name: string, dir: string): string {
+  return readTemplate(
+    name,
+    existsSync(join(dir, name)) ? dir : WORKSPACE_TEMPLATE_DIR,
+  );
 }
 
 // ---------------------------------------------------------------------------
@@ -596,6 +601,12 @@ function stripBootstrapInclude(claudeMdPath: string): void {
   writeFileSync(claudeMdPath, filtered.join("\n"), "utf8");
 }
 
+/** Writes `content` to `path` only when it differs from what is on disk. */
+function writeIfChanged(path: string, content: string): void {
+  if (existsSync(path) && readFileSync(path, "utf8") === content) return;
+  writeFileSync(path, content, "utf8");
+}
+
 export function ensureAgentHome(
   home: string,
   // ARD-6.1: the entrypoint exports the agent's type (from the config
@@ -637,10 +648,25 @@ export function ensureAgentHome(
     readTemplate("CLAUDE.md.template", templatesDir),
   );
 
+  // Layered files (ARD-6.2), rewritten on boot unlike the seeded-once files:
+  // RUNTIME.md is runtime-owned and identical for every agent; SPECIALTY.md
+  // comes from the specialty's template dir (empty when it provides none, so
+  // the CLAUDE.md include never dangles). Unused until a CLAUDE.md includes them.
+  writeIfChanged(
+    join(workspaceDir, "RUNTIME.md"),
+    readTemplate("RUNTIME.md.template"),
+  );
+  writeIfChanged(
+    join(workspaceDir, "SPECIALTY.md"),
+    existsSync(join(templatesDir, "SPECIALTY.md.template"))
+      ? readTemplate("SPECIALTY.md.template", templatesDir)
+      : "",
+  );
+
   // Seed VOICE.md once (wx semantics — user edits preserved)
   seedFile(
     join(workspaceDir, "VOICE.md"),
-    readTemplate("VOICE.md.template", templatesDir),
+    readOptionalTemplate("VOICE.md.template", templatesDir),
   );
 
   seedFile(
@@ -655,13 +681,13 @@ export function ensureAgentHome(
   // Seed workspace/mise.toml — user-editable tool declarations; seeded once (wx)
   seedFile(
     join(workspaceDir, "mise.toml"),
-    readTemplate("mise.toml.template", templatesDir),
+    readOptionalTemplate("mise.toml.template", templatesDir),
   );
 
   // Seed workspace/requirements.txt — Python package dependencies; seeded once (wx)
   seedFile(
     join(workspaceDir, "requirements.txt"),
-    readTemplate("requirements.txt.template", templatesDir),
+    readOptionalTemplate("requirements.txt.template", templatesDir),
   );
 
   // Create state/reviews/ directory for review artifacts (PR_REVIEW files)
@@ -673,7 +699,7 @@ export function ensureAgentHome(
   if (newWorkspace && !state.bootstrapSeededAt) {
     seedFile(
       join(workspaceDir, "BOOTSTRAP.md"),
-      readTemplate("BOOTSTRAP.md.template", templatesDir),
+      readOptionalTemplate("BOOTSTRAP.md.template", templatesDir),
     );
     state.bootstrapSeededAt = new Date().toISOString();
     saveState(home, state);
