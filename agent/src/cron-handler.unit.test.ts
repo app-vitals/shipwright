@@ -624,6 +624,26 @@ describe("handleCronRequest — preCheck", () => {
 
 // ─── SLACK_CHANNEL_ID extraEnv (STC-1.3) ───────────────────────────────────────
 
+describe("handleCronRequest — empty text after marker stripping", () => {
+  test("channel job with marker-only output → no postMessage (avoids Slack no_text)", async () => {
+    mockRunner.mockResolvedValueOnce({ result: "[react:eyes]" } as any);
+    await handleCronRequest(
+      { jobId: "empty-ch", prompt: "hello", channel: "C-TEST" },
+      deps,
+    );
+    expect(mockPostMessage).not.toHaveBeenCalled();
+  });
+
+  test("DM job with blank output → no postMessage (avoids Slack no_text)", async () => {
+    mockRunner.mockResolvedValueOnce({ result: "   \n" } as any);
+    await handleCronRequest(
+      { jobId: "empty-dm", prompt: "hello", user: "U-DAN" },
+      deps,
+    );
+    expect(mockPostMessage).not.toHaveBeenCalled();
+  });
+});
+
 describe("handleCronRequest — SLACK_CHANNEL_ID extraEnv (STC-1.3)", () => {
   test("channel job → runner receives { SLACK_CHANNEL_ID: <channel> } extraEnv, no SLACK_THREAD_TS", async () => {
     await handleCronRequest(
