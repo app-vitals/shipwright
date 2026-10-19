@@ -37,8 +37,6 @@ export const OkSchema = z
   })
   .openapi("Ok");
 
-export type OkResponse = z.infer<typeof OkSchema>;
-
 // ─── Task ─────────────────────────────────────────────────────────────────────
 
 export const TaskSchema = z

@@ -717,8 +717,6 @@ export const AGENT_PHASES = [
   "dev-task",
 ] as const;
 
-export type AgentPhaseName = (typeof AGENT_PHASES)[number];
-
 export const AgentPhaseMethodologySchema = z
   .object({
     id: z.string().openapi({ example: "clx1234567890" }),
@@ -1100,8 +1098,6 @@ export const CronRunTokenStatsSchema = z
   })
   .openapi("CronRunTokenStats");
 
-export type CronRunTokenStatsType = z.infer<typeof CronRunTokenStatsSchema>;
-
 /** One (phase, contextFingerprint) outcome series for GET /agents/all/cron-runs/outcomes. */
 const CronRunOutcomeSeriesSchema = z
   .object({
@@ -1130,8 +1126,6 @@ export const CronRunOutcomesSchema = z
   .object({ series: z.array(CronRunOutcomeSeriesSchema) })
   .openapi("CronRunOutcomes");
 
-export type CronRunOutcomesType = z.infer<typeof CronRunOutcomesSchema>;
-
 /**
  * Response shape for GET /agents/chat-tokens/daily/stats.
  * Matches the ChatTokenStats interface in admin-metrics-client.ts exactly.
@@ -1145,8 +1139,6 @@ export const ChatTokenStatsSchema = z
     daily: z.array(DailyTokenAggregateSchema),
   })
   .openapi("ChatTokenStats");
-
-export type ChatTokenStatsType = z.infer<typeof ChatTokenStatsSchema>;
 
 // ─── AgentConfig (runtime GET /agents/:id/config response) ───────────────────
 

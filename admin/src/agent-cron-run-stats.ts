@@ -39,7 +39,7 @@ import { Prisma } from "../prisma/client/client.ts";
 // These types are defined here to keep admin self-contained (rootDir constraint).
 // The shapes must stay in sync with the interfaces in admin-metrics-client.ts.
 
-export interface TokenAggregate {
+interface TokenAggregate {
   input: number;
   output: number;
   cacheRead: number;
@@ -48,11 +48,11 @@ export interface TokenAggregate {
   costUsd?: number;
 }
 
-export interface KeyedTokenAggregate extends TokenAggregate {
+interface KeyedTokenAggregate extends TokenAggregate {
   key: string;
 }
 
-export interface DoubleKeyedTokenAggregate extends TokenAggregate {
+interface DoubleKeyedTokenAggregate extends TokenAggregate {
   key1: string;
   key2: string;
   /**
@@ -64,7 +64,7 @@ export interface DoubleKeyedTokenAggregate extends TokenAggregate {
   phase?: string | null;
 }
 
-export interface DailyTokenAggregate extends TokenAggregate {
+interface DailyTokenAggregate extends TokenAggregate {
   period: string;
 }
 
@@ -81,7 +81,7 @@ export interface CronRunTokenStats {
 }
 
 /** Per-skill / per-subagent usage rollup across runs. */
-export interface SkillUsageAggregate {
+interface SkillUsageAggregate {
   kind: string;
   name: string;
   runs: number;
@@ -96,7 +96,7 @@ export interface SkillUsageAggregate {
 }
 
 /** First-turn context baseline rollup for runs sharing a fingerprint/model/phase. */
-export interface ContextBaselineAggregate {
+interface ContextBaselineAggregate {
   contextFingerprint: string | null;
   baselineModel: string | null;
   phase: string | null;
@@ -111,7 +111,7 @@ export interface ContextBaselineAggregate {
   lastSeen: string;
 }
 
-export interface CronRunOutcomeSeries {
+interface CronRunOutcomeSeries {
   /** Pipeline phase ("dev-task", "review", ...); null for runs without a phaseId. */
   phase: string | null;
   /** Context fingerprint stamped by the agent; null for runs that predate it. */

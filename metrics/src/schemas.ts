@@ -30,16 +30,12 @@ export const DateRangeQuerySchema = z.object({
     }),
 });
 
-export type DateRangeQuery = z.infer<typeof DateRangeQuerySchema>;
-
 export const TrendsQuerySchema = DateRangeQuerySchema.extend({
   groupBy: z.enum(["day", "week", "hour"]).optional().openapi({
     description: "Time-series grouping granularity",
     example: "day",
   }),
 });
-
-export type TrendsQuery = z.infer<typeof TrendsQuerySchema>;
 
 // ─── Response schemas ─────────────────────────────────────────────────────────
 
@@ -155,8 +151,6 @@ export const MergedPrsQuerySchema = DateRangeQuerySchema.extend({
   }),
 });
 
-export type MergedPrsQuery = z.infer<typeof MergedPrsQuerySchema>;
-
 const OriginBreakdownSchema = z
   .object({
     shipwright: z.number().int().openapi({ example: 4 }),
@@ -243,9 +237,6 @@ export const PrOutcomesResultSchema = z
   .openapi("PrOutcomesResult");
 
 // ─── Tokens schemas ───────────────────────────────────────────────────────────
-
-const TokensQuerySchema = DateRangeQuerySchema;
-export type TokensQuery = z.infer<typeof TokensQuerySchema>;
 
 const TokenTotalsSchema = z
   .object({
