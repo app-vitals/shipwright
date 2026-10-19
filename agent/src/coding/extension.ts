@@ -15,7 +15,6 @@ import type {
 } from "../agent-extension.ts";
 import { agentReposRef } from "../agent-repos-ref.ts";
 import { allowSelfReviewRef } from "../allow-self-review-ref.ts";
-import { ghGraphql, ghJson } from "../check-helpers.ts";
 import {
   buildProductionDeps as buildClaimInvariantReconcilerDeps,
   reconcileClaimInvariant,
@@ -23,6 +22,7 @@ import {
 import type { EarlySessionIdCallback, ProgressCallback } from "../claude.ts";
 import { cleanupMergedWorktreesRef } from "../cleanup-merged-worktrees-ref.ts";
 import { NoopCronRunReporter } from "../cron-run-reporter.ts";
+import { ghGraphql, ghJson } from "../gh-helpers.ts";
 import {
   type CronJobLike,
   classifyCronJobsForScheduling,
