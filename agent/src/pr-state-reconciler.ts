@@ -325,14 +325,13 @@ export interface PrStateReconcilerDeps {
    */
   delay: (ms: number) => Promise<void>;
   /**
-   * Whether the `cleanup_merged_worktrees` policy field (DB -> file ->
-   * hardcoded, APM-1.6) is enabled. A getter, invoked fresh inside
+   * Whether the `cleanup_merged_worktrees` policy field (synced DB ref ->
+   * hardcoded default, APM-1.6) is enabled. A getter, invoked fresh inside
    * `reconcileRecord()` on every call — not evaluated once at
-   * `buildProductionDeps()` time — so a DB-side or state/agent-policy.md
+   * `buildProductionDeps()` time — so a DB-side
    * edit takes effect on the very next reconcile tick without requiring an
    * agent process restart (PLR-1.1). Async since `readCleanupMergedWorktrees()`
-   * now checks a live DB-synced ref before falling back to a synchronous
-   * file read (APM-1.6) — mirrors this same file's
+   * reads a live DB-synced ref (APM-1.6) — mirrors this same file's
    * `cleanup_after_days`/`readCleanupAfterDays` live-read pattern (see
    * `removeWorktree`'s production implementation below) and
    * `check-deploy.ts`/`check-review.ts`'s `isSelfReviewAllowed` getter.

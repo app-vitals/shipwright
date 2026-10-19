@@ -99,73 +99,6 @@ export interface Task {
   hitlNotifiedAt?: string;
 }
 
-// ─── Policy helpers ───────────────────────────────────────────────────────────
-
-export function parseAllowSelfReview(content: string): boolean {
-  const match = content.match(
-    /`?\*{0,2}\ballow_self_review\b\*{0,2}`?\s*[:|]\s*\*{0,2}(true|false)\b/i,
-  );
-  return match?.[1] === "true"; // default false if missing/unparseable
-}
-
-/**
- * APM-1.1: parses the `auto_post_reviews` policy field, mirroring
- * `parseCleanupMergedWorktrees`'s default-true shape (rather than
- * `parseAllowSelfReview`'s default-false shape) — `true` is the documented
- * default in `state/agent-policy.md`, so any missing/unparseable value falls
- * back to `true`.
- */
-export function parseAutoPostReviews(content: string): boolean {
-  const match = content.match(
-    /`?\*{0,2}\bauto_post_reviews\b\*{0,2}`?\s*[:|]\s*\*{0,2}(true|false)\b/i,
-  );
-  return match?.[1] !== "false"; // default true if missing
-}
-
-/**
- * APM-1.1: parses the `min_confidence` policy field, mirroring
- * `parseCleanupAfterDays`'s numeric-capture shape with a 75 default (the
- * documented default in `state/agent-policy.md`).
- */
-export function parseMinConfidence(content: string): number {
-  const match = content.match(
-    /`?\*{0,2}\bmin_confidence\b\*{0,2}`?\s*[:|]\s*\*{0,2}(\d+)\b/i,
-  );
-  if (!match) return 75; // default 75 if missing
-  const parsed = Number.parseInt(match[1], 10);
-  return Number.isNaN(parsed) ? 75 : parsed;
-}
-
-/**
- * APM-1.1: parses the `max_findings` policy field, mirroring
- * `parseCleanupAfterDays`'s numeric-capture shape with a 5 default (the
- * documented default in `state/agent-policy.md`).
- */
-export function parseMaxFindings(content: string): number {
-  const match = content.match(
-    /`?\*{0,2}\bmax_findings\b\*{0,2}`?\s*[:|]\s*\*{0,2}(\d+)\b/i,
-  );
-  if (!match) return 5; // default 5 if missing
-  const parsed = Number.parseInt(match[1], 10);
-  return Number.isNaN(parsed) ? 5 : parsed;
-}
-
-export function parseCleanupMergedWorktrees(content: string): boolean {
-  const match = content.match(
-    /`?\*{0,2}\bcleanup_merged_worktrees\b\*{0,2}`?\s*[:|]\s*\*{0,2}(true|false)\b/i,
-  );
-  return match?.[1] !== "false"; // default true if missing
-}
-
-export function parseCleanupAfterDays(content: string): number {
-  const match = content.match(
-    /`?\*{0,2}\bcleanup_after_days\b\*{0,2}`?\s*[:|]\s*\*{0,2}(\d+)\b/i,
-  );
-  if (!match) return 14; // default 14 if missing
-  const parsed = Number.parseInt(match[1], 10);
-  return Number.isNaN(parsed) ? 14 : parsed;
-}
-
 // ─── Self-review body matching ────────────────────────────────────────────────
 
 /**
@@ -326,110 +259,55 @@ export function classifyReviewState(
 }
 
 /**
- * Read the `allow_self_review` policy field in DB -> file -> hardcoded read
- * order (APM-1.4), mirroring the markdown-prompt read order APM-1.2 shipped
- * for review.md/merge.md/deploy.md:
+ * Read the `allow_self_review` policy field: the DB value synced into
+ * `configRef` (defaults to the process-wide `allowSelfReviewRef`, synced from
+ * GET /agents/:id/config every ~60s by index.ts's syncConfig()), else the
+ * hardcoded default `false` while the ref has never synced (e.g. the config
+ * fetch is failing). The `state/agent-policy.md` file tier no longer exists.
  *
- * 1. DB — `configRef` (defaults to the process-wide `allowSelfReviewRef`,
- *    synced from GET /agents/:id/config every ~60s by index.ts's
- *    syncConfig()). Used only once `configRef.hasSynced()` is true — the
- *    underlying Agent row field defaults to `false` in the database, so a
- *    synced ref always carries a real DB value, never an "absent" sentinel.
- * 2. File — `state/agent-policy.md`, read synchronously as before.
- * 3. Hardcoded — `false`, on any read failure (missing file, missing
- *    workspace, etc).
- *
- * `configRef` is injectable so callers (and tests) can exercise all three
- * tiers without depending on the process-wide ref's global state.
+ * `_workspacePath` is unused and kept only so existing callers keep their
+ * call shape. `configRef` is injectable so tests don't depend on the
+ * process-wide ref's global state.
  */
 export async function readAllowSelfReview(
-  workspacePath: string,
+  _workspacePath: string,
   configRef: AllowSelfReviewRef = allowSelfReviewRef,
 ): Promise<boolean> {
-  if (configRef.hasSynced()) {
-    return configRef.get();
-  }
-  try {
-    const content = readFileSync(
-      join(workspacePath, "state", "agent-policy.md"),
-      "utf-8",
-    );
-    return parseAllowSelfReview(content);
-  } catch {
-    return false;
-  }
+  return configRef.hasSynced() ? configRef.get() : false;
 }
 
 /**
- * Read the `cleanup_merged_worktrees` policy field (WTR-1.1) in DB -> file ->
- * hardcoded read order (APM-1.6), mirroring `readAllowSelfReview()`'s read
- * order (APM-1.4) exactly:
- *
- * 1. DB — `configRef` (defaults to the process-wide
- *    `cleanupMergedWorktreesRef`, synced from GET /agents/:id/config every
- *    ~60s by index.ts's syncConfig()). Used only once `configRef.hasSynced()`
- *    is true — the underlying Agent row field defaults to `true` in the
- *    database, so a synced ref always carries a real DB value, never an
- *    "absent" sentinel.
- * 2. File — `state/agent-policy.md`, read synchronously as before.
- * 3. Hardcoded — `true`, on any read failure (missing file, missing
- *    workspace, etc).
- *
- * `configRef` is injectable so callers (and tests) can exercise all three
- * tiers without depending on the process-wide ref's global state.
+ * Read the `cleanup_merged_worktrees` policy field (WTR-1.1): the synced DB
+ * value from `configRef` (default: the process-wide
+ * `cleanupMergedWorktreesRef`), else the hardcoded default `true` while the
+ * ref has never synced. Same shape as `readAllowSelfReview()`.
  */
 export async function readCleanupMergedWorktrees(
-  workspacePath: string,
+  _workspacePath: string,
   configRef: CleanupMergedWorktreesRef = cleanupMergedWorktreesRef,
 ): Promise<boolean> {
-  if (configRef.hasSynced()) {
-    return configRef.get();
-  }
-  try {
-    const content = readFileSync(
-      join(workspacePath, "state", "agent-policy.md"),
-      "utf-8",
-    );
-    return parseCleanupMergedWorktrees(content);
-  } catch {
-    return true;
-  }
+  return configRef.hasSynced() ? configRef.get() : true;
 }
 
 /**
- * Read the `cleanup_after_days` policy field in DB -> file -> hardcoded read
- * order (APM-1.6), mirroring `readCleanupMergedWorktrees()`'s read order
- * exactly: DB tier via an injectable `configRef` (defaults to the
- * process-wide `cleanupAfterDaysRef`), then `state/agent-policy.md`, then a
- * hardcoded `14` on any read failure (missing file, missing workspace, etc)
- * — `parseCleanupAfterDays()` itself already defaults to 14 when the field
- * is present in the file but simply unset or unparseable.
+ * Read the `cleanup_after_days` policy field: the synced DB value from
+ * `configRef` (default: the process-wide `cleanupAfterDaysRef`), else the
+ * hardcoded default `14` while the ref has never synced.
  *
  * WTR-1.4: reused as the staleness threshold gating the force-removal of a
  * merged/closed PR's worktree (see `removeWorktree`'s production
- * implementation in pr-state-reconciler.ts) — the same field that already
- * governs "remove worktrees older than N days, even if the PR is still
- * open" now also governs "don't force-remove a worktree younger than N days
- * even if its PR just merged/closed", so a worktree still being actively
- * worked on by a concurrent dev-task/patch/deploy session isn't yanked out
- * from under it purely on remote GitHub state.
+ * implementation in pr-state-reconciler.ts) — the same field that governs
+ * "remove worktrees older than N days, even if the PR is still open" also
+ * governs "don't force-remove a worktree younger than N days even if its PR
+ * just merged/closed", so a worktree still being actively worked on by a
+ * concurrent dev-task/patch/deploy session isn't yanked out from under it
+ * purely on remote GitHub state.
  */
 export async function readCleanupAfterDays(
-  workspacePath: string,
+  _workspacePath: string,
   configRef: CleanupAfterDaysRef = cleanupAfterDaysRef,
 ): Promise<number> {
-  if (configRef.hasSynced()) {
-    return configRef.get();
-  }
-  try {
-    const content = readFileSync(
-      join(workspacePath, "state", "agent-policy.md"),
-      "utf-8",
-    );
-    return parseCleanupAfterDays(content);
-  } catch {
-    return 14;
-  }
+  return configRef.hasSynced() ? configRef.get() : 14;
 }
 
 // ─── Workspace path ───────────────────────────────────────────────────────────

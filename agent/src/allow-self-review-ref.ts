@@ -22,10 +22,8 @@ export interface AllowSelfReviewRef {
   get(): boolean;
   /**
    * True once set() has been called at least once. readAllowSelfReview()
-   * falls back to state/agent-policy.md while this is false, so a
-   * persistent config-sync failure (or the brief window before the first
-   * tick) doesn't silently override an operator's file-based policy with an
-   * unsynced default.
+   * returns its hardcoded default while this is false (config-sync has
+   * never succeeded, e.g. the fetch keeps failing).
    */
   hasSynced(): boolean;
   /** Replaces the current allowSelfReview value. */
@@ -55,11 +53,11 @@ export function createAllowSelfReviewRef(): AllowSelfReviewRef {
  * The process-wide allow-self-review ref. agent/src/index.ts's syncConfig()
  * writes into this on every successful config-sync tick;
  * check-helpers.ts's readAllowSelfReview() reads it as the DB tier before
- * falling back to state/agent-policy.md, so a DB-side change (via PATCH
+ * falling back to its hardcoded default, so a DB-side change (via PATCH
  * /agents/:id) takes effect on the very next config-sync tick without
  * requiring an agent restart. If the agent's config bundle never becomes
  * available, hasSynced() stays false for the process lifetime — readers
- * must fall through to the file tier in that case.
+ * readers must return their hardcoded default in that case.
  */
 export const allowSelfReviewRef: AllowSelfReviewRef =
   createAllowSelfReviewRef();
