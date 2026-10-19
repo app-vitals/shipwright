@@ -136,7 +136,7 @@ describe("merge.md — Step 2: Pre-flight Checks", () => {
     expect(section).toContain("reviewDecision");
     expect(section).toContain("APPROVED");
     expect(section).toContain("allow_self_review");
-    expect(section).toContain("agent-policy.md");
+    expect(section).not.toContain("agent-policy.md");
     expect(section).toContain('startsWith("APPROVE")');
     expect(section).toContain("Verdict: APPROVE".toLowerCase() === "verdict: approve" ? "verdict" : "verdict");
   });
@@ -183,7 +183,7 @@ describe("merge.md — Step 2: Pre-flight Checks", () => {
     expect(section).toContain("not all checks are green");
   });
 
-  describe("Step 2a policy read-path is DB-first with file/hardcoded fallback (APM-1.2)", () => {
+  describe("Step 2a policy read-path is DB-first with hardcoded fallback (APM-1.2, ARD-1.1)", () => {
     it("fetches GET /agents/:id/config using the established config-fetch curl+jq pattern before reading the file", () => {
       const section = extractStep2Section(content);
       expect(section).toContain("$SHIPWRIGHT_AGENT_API_KEY");
@@ -196,24 +196,19 @@ describe("merge.md — Step 2: Pre-flight Checks", () => {
       const section = extractStep2Section(content);
       expect(section).toContain("jq -r '.allowSelfReview | select(. != null)'");
       // jq's `//` treats false as absent, which would silently drop a
-      // deliberately-set `allowSelfReview: false` and fall through to the file tier.
+      // deliberately-set `allowSelfReview: false` and fall through to the hardcoded default.
       expect(section).not.toContain(".allowSelfReview // empty");
       expect(section).toContain("`select(. != null)`, **not** `// empty`");
     });
 
-    it("documents DB tier before the state/agent-policy.md file tier", () => {
+    it("does not read the removed state/agent-policy.md file tier", () => {
       const section = extractStep2Section(content);
-      const dbIdx = section.indexOf("/agents/$SHIPWRIGHT_AGENT_ID/config");
-      const fileIdx = section.indexOf("agent-policy.md");
-      expect(dbIdx).toBeGreaterThan(-1);
-      expect(fileIdx).toBeGreaterThan(-1);
-      expect(dbIdx).toBeLessThan(fileIdx);
+      expect(section).not.toContain("agent-policy.md");
     });
 
     it("still documents the hardcoded false default and its rationale", () => {
       const section = extractStep2Section(content);
-      expect(section).toContain("allow_self_review: false");
-      expect(section).toContain("internal code-level");
+      expect(section).toContain("`allow_self_review` default: false");
     });
 
     it("does not add auto_post_reviews/min_confidence/max_findings reads -- merge.md only needs allow_self_review", () => {

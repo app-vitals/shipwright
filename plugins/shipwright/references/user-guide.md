@@ -47,14 +47,14 @@ reference; this is the routing summary.
 |---|---|---|---|
 | **Plugin Config** | The Shipwright Claude Code plugin (`plugins/shipwright/`) — workspace discovery, task-store backend, `gh` CLI | Plain env vars, e.g. `SHIPWRIGHT_REPO_DIR`, `SHIPWRIGHT_WORKTREE_DIR`, `SHIPWRIGHT_TASK_STORE_URL`, `SHIPWRIGHT_TASK_STORE_TOKEN` | Set in the local shell for direct plugin use, or injected by the provisioner for managed agents |
 | **Agent Config** | The agent runtime (`agent/`) and admin service (`admin/`) — model selection, Slack tokens, GitHub auth, Sentry, etc. | Env vars only — no file-based fallback | Admin API (`POST`/`PATCH /agents/:id/envs`) or the admin UI's agent-detail Env Vars card; secrets are masked once set |
-| **Policy Config** | Per-agent behavior — review posting, merge permissions, autonomy | `state/agent-policy.md` — Markdown with a YAML front-matter block | Edit the file directly on the agent's workspace; takes effect without a restart or reconfiguring crons |
+| **Policy Config** | Per-agent behavior — review posting, merge permissions, autonomy | Agent DB fields, synced to the runtime via `GET /agents/:id/config` (hardcoded defaults apply until the first sync) | Admin API (`PATCH /agents/:id`) or the admin UI; takes effect on the next config sync (~60s) without a restart or reconfiguring crons |
 
 Rule of thumb: if it's a plugin script behavior (where repos/worktrees live, which task-store
 to talk to) → **Plugin Config**. If it's how the agent process itself runs (which model, which
 Slack app, which GitHub credentials) → **Agent Config**, set via the admin API/UI, not by
 hand-editing a pod. If it's a judgment call about *how autonomous* the agent should be
-(auto-post reviews? self-review allowed? how many findings per review?) → **Policy Config**,
-`state/agent-policy.md`.
+(auto-post reviews? self-review allowed? how many findings per review?) → **Policy Config**
+(agent DB fields).
 
 Policy Config fields worth knowing: `auto_post_reviews`, `allow_self_review`,
 `min_confidence`, `max_findings`, `cleanup_merged_worktrees`, `cleanup_after_days`.

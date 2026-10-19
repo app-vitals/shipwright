@@ -3424,14 +3424,15 @@ describe("buildProductionDeps — removeWorktree staleness gate (WTR-1.4)", () =
   });
 
   /**
-   * Sets up a fake workspace with `state/agent-policy.md` (configuring
-   * `cleanup_after_days`), a `repos/<shortRepo>` git repo, and a
+   * Sets up a fake workspace with a `repos/<shortRepo>` git repo (the
+   * process-wide `cleanup_after_days` ref is unsynced, so the staleness gate
+   * uses the hardcoded 14-day default), and a
    * `worktrees/<shortRepo>-<branchSlug>` directory registered as a real git
    * worktree of that repo — so `deps.removeWorktree()` exercises the actual
    * `git worktree remove --force` invocation end-to-end when the staleness
    * gate allows it through.
    */
-  function setupFakeWorkspace(opts: { cleanupAfterDays: number }): {
+  function setupFakeWorkspace(): {
     workspacePath: string;
     shortRepo: string;
     worktreeDirName: string;
@@ -3440,12 +3441,6 @@ describe("buildProductionDeps — removeWorktree staleness gate (WTR-1.4)", () =
     const workspacePath = mkdtempSync(
       join(tmpdir(), "removeworktree-staleness-test-"),
     );
-    mkdirSync(join(workspacePath, "state"), { recursive: true });
-    writeFileSync(
-      join(workspacePath, "state", "agent-policy.md"),
-      `**cleanup_after_days**: ${opts.cleanupAfterDays}`,
-    );
-
     const shortRepo = "example-repo";
     const repoPath = join(workspacePath, "repos", shortRepo);
     mkdirSync(repoPath, { recursive: true });
@@ -3479,7 +3474,7 @@ describe("buildProductionDeps — removeWorktree staleness gate (WTR-1.4)", () =
 
   test("fresh worktree (mtime within cleanup_after_days) is skipped, not removed", async () => {
     const { workspacePath, shortRepo, worktreeDirName, worktreePath } =
-      setupFakeWorkspace({ cleanupAfterDays: 14 });
+      setupFakeWorkspace();
     delete process.env.SHIPWRIGHT_WORKTREE_DIR;
     const now = new Date();
     utimesSync(worktreePath, now, now);
@@ -3500,7 +3495,7 @@ describe("buildProductionDeps — removeWorktree staleness gate (WTR-1.4)", () =
 
   test("stale worktree (mtime older than cleanup_after_days) is force-removed", async () => {
     const { workspacePath, shortRepo, worktreeDirName, worktreePath } =
-      setupFakeWorkspace({ cleanupAfterDays: 14 });
+      setupFakeWorkspace();
     delete process.env.SHIPWRIGHT_WORKTREE_DIR;
     const twentyDaysAgo = new Date(Date.now() - 20 * 24 * 60 * 60 * 1000);
     utimesSync(worktreePath, twentyDaysAgo, twentyDaysAgo);

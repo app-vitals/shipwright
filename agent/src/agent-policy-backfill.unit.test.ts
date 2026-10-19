@@ -24,6 +24,12 @@ import {
   type AgentPolicyFields,
   backfillAgentPolicy,
   parseAgentPolicyFields,
+  parseAllowSelfReview,
+  parseAutoPostReviews,
+  parseCleanupAfterDays,
+  parseCleanupMergedWorktrees,
+  parseMaxFindings,
+  parseMinConfidence,
 } from "./agent-policy-backfill.ts";
 
 // ─── Fixtures ─────────────────────────────────────────────────────────────────
@@ -264,5 +270,253 @@ describe("backfillAgentPolicy", () => {
       cleanupMergedWorktrees: true,
       cleanupAfterDays: 14,
     });
+  });
+});
+
+// ─── Policy parsers (relocated from check-helpers.unit.test.ts, ARD-1.1) ───
+
+describe("parseAllowSelfReview", () => {
+  test("returns true when the table cell says true", () => {
+    expect(parseAllowSelfReview("| `allow_self_review` | true |")).toBe(true);
+  });
+
+  test("returns false when the table cell says false", () => {
+    expect(parseAllowSelfReview("| `allow_self_review` | false |")).toBe(false);
+  });
+
+  test("returns false for bold-style false", () => {
+    expect(parseAllowSelfReview("**allow_self_review**: false")).toBe(false);
+  });
+
+  test("returns true for bold-style true", () => {
+    expect(parseAllowSelfReview("**allow_self_review**: true")).toBe(true);
+  });
+
+  test("returns true for plain YAML frontmatter style true", () => {
+    expect(
+      parseAllowSelfReview(
+        "---\nauto_post_reviews: true\nallow_self_review: true\nmin_confidence: 75\n---\n",
+      ),
+    ).toBe(true);
+  });
+
+  test("returns false for plain YAML frontmatter style false", () => {
+    expect(
+      parseAllowSelfReview(
+        "---\nauto_post_reviews: true\nallow_self_review: false\nmin_confidence: 75\n---\n",
+      ),
+    ).toBe(false);
+  });
+
+  test("defaults to false when the field is missing entirely", () => {
+    expect(parseAllowSelfReview("no policy here")).toBe(false);
+  });
+});
+
+describe("parseCleanupMergedWorktrees", () => {
+  test("returns true when the table cell says true", () => {
+    expect(
+      parseCleanupMergedWorktrees("| `cleanup_merged_worktrees` | true |"),
+    ).toBe(true);
+  });
+
+  test("returns false when the table cell says false", () => {
+    expect(
+      parseCleanupMergedWorktrees("| `cleanup_merged_worktrees` | false |"),
+    ).toBe(false);
+  });
+
+  test("returns false for bold-style false", () => {
+    expect(
+      parseCleanupMergedWorktrees("**cleanup_merged_worktrees**: false"),
+    ).toBe(false);
+  });
+
+  test("returns true for bold-style true", () => {
+    expect(
+      parseCleanupMergedWorktrees("**cleanup_merged_worktrees**: true"),
+    ).toBe(true);
+  });
+
+  test("returns false for plain YAML frontmatter style false", () => {
+    expect(
+      parseCleanupMergedWorktrees(
+        "---\ncleanup_merged_worktrees: false\ncleanup_after_days: 14\n---\n",
+      ),
+    ).toBe(false);
+  });
+
+  test("returns true for plain YAML frontmatter style true", () => {
+    expect(
+      parseCleanupMergedWorktrees(
+        "---\ncleanup_merged_worktrees: true\ncleanup_after_days: 14\n---\n",
+      ),
+    ).toBe(true);
+  });
+
+  test("defaults to true when the field is missing entirely", () => {
+    expect(parseCleanupMergedWorktrees("no policy here")).toBe(true);
+  });
+
+  test("defaults to true when content is empty", () => {
+    expect(parseCleanupMergedWorktrees("")).toBe(true);
+  });
+});
+
+describe("parseCleanupAfterDays", () => {
+  test("parses numeric value from table format", () => {
+    expect(parseCleanupAfterDays("| `cleanup_after_days` | 7 |")).toBe(7);
+  });
+
+  test("parses numeric value from bold-style format", () => {
+    expect(parseCleanupAfterDays("**cleanup_after_days**: 21")).toBe(21);
+  });
+
+  test("parses numeric value from plain YAML frontmatter style", () => {
+    expect(
+      parseCleanupAfterDays(
+        "---\ncleanup_merged_worktrees: true\ncleanup_after_days: 30\n---\n",
+      ),
+    ).toBe(30);
+  });
+
+  test("defaults to 14 when the field is missing", () => {
+    expect(parseCleanupAfterDays("no policy here")).toBe(14);
+  });
+
+  test("defaults to 14 when content is empty", () => {
+    expect(parseCleanupAfterDays("")).toBe(14);
+  });
+
+  test("handles leading/trailing whitespace around numeric value", () => {
+    expect(parseCleanupAfterDays("**cleanup_after_days**:   30   ")).toBe(30);
+  });
+
+  test("defaults to 14 when value is not a valid number", () => {
+    expect(parseCleanupAfterDays("**cleanup_after_days**: abc")).toBe(14);
+  });
+
+  test("defaults to 14 when parsed value is NaN", () => {
+    expect(parseCleanupAfterDays("**cleanup_after_days**: NaN")).toBe(14);
+  });
+
+  test("parses zero as a valid value", () => {
+    expect(parseCleanupAfterDays("**cleanup_after_days**: 0")).toBe(0);
+  });
+});
+
+describe("parseAutoPostReviews", () => {
+  test("returns true when the table cell says true", () => {
+    expect(parseAutoPostReviews("| `auto_post_reviews` | true |")).toBe(true);
+  });
+
+  test("returns false when the table cell says false", () => {
+    expect(parseAutoPostReviews("| `auto_post_reviews` | false |")).toBe(false);
+  });
+
+  test("returns false for bold-style false", () => {
+    expect(parseAutoPostReviews("**auto_post_reviews**: false")).toBe(false);
+  });
+
+  test("returns true for bold-style true", () => {
+    expect(parseAutoPostReviews("**auto_post_reviews**: true")).toBe(true);
+  });
+
+  test("returns false for plain YAML frontmatter style false", () => {
+    expect(
+      parseAutoPostReviews(
+        "---\nauto_post_reviews: false\nallow_self_review: false\n---\n",
+      ),
+    ).toBe(false);
+  });
+
+  test("returns true for plain YAML frontmatter style true", () => {
+    expect(
+      parseAutoPostReviews(
+        "---\nauto_post_reviews: true\nallow_self_review: false\n---\n",
+      ),
+    ).toBe(true);
+  });
+
+  test("defaults to true when the field is missing entirely", () => {
+    expect(parseAutoPostReviews("no policy here")).toBe(true);
+  });
+
+  test("defaults to true when content is empty", () => {
+    expect(parseAutoPostReviews("")).toBe(true);
+  });
+});
+
+describe("parseMinConfidence", () => {
+  test("parses numeric value from table format", () => {
+    expect(parseMinConfidence("| `min_confidence` | 60 |")).toBe(60);
+  });
+
+  test("parses numeric value from bold-style format", () => {
+    expect(parseMinConfidence("**min_confidence**: 90")).toBe(90);
+  });
+
+  test("parses numeric value from plain YAML frontmatter style", () => {
+    expect(
+      parseMinConfidence(
+        "---\nauto_post_reviews: true\nmin_confidence: 80\n---\n",
+      ),
+    ).toBe(80);
+  });
+
+  test("defaults to 75 when the field is missing", () => {
+    expect(parseMinConfidence("no policy here")).toBe(75);
+  });
+
+  test("defaults to 75 when content is empty", () => {
+    expect(parseMinConfidence("")).toBe(75);
+  });
+
+  test("handles leading/trailing whitespace around numeric value", () => {
+    expect(parseMinConfidence("**min_confidence**:   80   ")).toBe(80);
+  });
+
+  test("defaults to 75 when value is not a valid number", () => {
+    expect(parseMinConfidence("**min_confidence**: abc")).toBe(75);
+  });
+
+  test("parses zero as a valid value", () => {
+    expect(parseMinConfidence("**min_confidence**: 0")).toBe(0);
+  });
+});
+
+describe("parseMaxFindings", () => {
+  test("parses numeric value from table format", () => {
+    expect(parseMaxFindings("| `max_findings` | 3 |")).toBe(3);
+  });
+
+  test("parses numeric value from bold-style format", () => {
+    expect(parseMaxFindings("**max_findings**: 10")).toBe(10);
+  });
+
+  test("parses numeric value from plain YAML frontmatter style", () => {
+    expect(
+      parseMaxFindings("---\nmin_confidence: 75\nmax_findings: 8\n---\n"),
+    ).toBe(8);
+  });
+
+  test("defaults to 5 when the field is missing", () => {
+    expect(parseMaxFindings("no policy here")).toBe(5);
+  });
+
+  test("defaults to 5 when content is empty", () => {
+    expect(parseMaxFindings("")).toBe(5);
+  });
+
+  test("handles leading/trailing whitespace around numeric value", () => {
+    expect(parseMaxFindings("**max_findings**:   8   ")).toBe(8);
+  });
+
+  test("defaults to 5 when value is not a valid number", () => {
+    expect(parseMaxFindings("**max_findings**: abc")).toBe(5);
+  });
+
+  test("parses zero as a valid value", () => {
+    expect(parseMaxFindings("**max_findings**: 0")).toBe(0);
   });
 });
