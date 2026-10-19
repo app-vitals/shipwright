@@ -30,6 +30,15 @@ annotations:
   # entry in CHANGELOG.md (keep the two in sync on every bump).
   artifacthub.io/changes: |
     - kind: changed
+      description: "auto-bump to chart v1.26.16 triggered by release tag admin-v1.277.0"
+    - kind: changed
+      description: "auto-bump to chart v1.26.16 triggered by release tag agent-v1.412.0"
+    - kind: changed
+      description: "auto-bump to chart v1.26.16 triggered by release tag chat-v1.144.0"
+    - kind: changed
+      description: "auto-bump to chart v1.26.16 triggered by release tag metrics-v1.147.0"
+    - kind: changed
+      description: "auto-bump to chart v1.26.16 triggered by release tag task-store-v1.194.0"
       description: "update traefik subchart to v42.0.0"
 dependencies:
   # Bitnami PostgreSQL subchart, pinned to the chart release shipping Postgres 18.x

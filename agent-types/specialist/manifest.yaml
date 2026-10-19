@@ -8,9 +8,9 @@
 # Validated against admin/src/agent-type-registry.ts's AgentTypeManifestSchema
 # (see agent-types/specialist/manifest.content.test.ts).
 #
-# NOTE: identity.templatesDir is required by the schema but is not read at
-# runtime. Specialist agents still receive the coding-flavored workspace
-# template until type-aware templates land.
+# NOTE: identity.templatesDir is read by the agent runtime when seeding a new
+# workspace. It still points at the coding templates; point it at another
+# directory to give specialists their own persona files.
 apiVersion: shipwright.dev/v1alpha1
 kind: AgentType
 metadata:

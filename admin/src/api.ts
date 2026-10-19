@@ -66,6 +66,12 @@ export interface AgentConfigResponse {
    */
   accountStatus?: string | null;
   /**
+   * ARD-6.1: the agent's Agent Type name (e.g. "coding"). Additive and
+   * optional — fixtures/doubles built before this field keep compiling, and
+   * the agent runtime treats an absent value as "coding".
+   */
+  typeName?: string;
+  /**
    * PMC-1.1: phase -> subagentType (or null) map, covering all six pipeline
    * phases regardless of whether the agent has an explicit override row for
    * each — phases without a row default to null. The live handler always
@@ -122,6 +128,7 @@ interface AgentServiceLike {
     trialExpiresAt?: Date | null;
     /** SSP-8.3: owning account status; optional for pre-existing test doubles. */
     accountStatus?: string | null;
+    typeName?: string;
     /** WIF-2.1: optional so pre-existing test doubles keep compiling; absent is treated as not self-hosted. */
     selfHosted?: boolean;
     /** APM-1.5: the 6 agent-policy fields, direct-passthrough into the response. */
@@ -319,6 +326,7 @@ export function createAgentRuntimeApp(deps: AgentRuntimeDeps): OpenAPIHono {
         ? agent.trialExpiresAt.toISOString()
         : null,
       accountStatus: agent.accountStatus ?? null,
+      typeName: agent.typeName,
       phaseMethodology,
       // APM-1.5: direct passthrough — the DB column always has a value
       // (Prisma schema default), so no `??` fallback is needed.

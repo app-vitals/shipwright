@@ -733,6 +733,8 @@ describe("AgentService.getById", () => {
       restrictSlackToMembers: false,
       memberEmails: [],
       accountStatus: null,
+      // ARD-6.1: getById() now selects typeName for the runtime config response.
+      typeName: "coding",
       selfHosted: false,
       // APM-1.5: getById() now selects these 6 policy fields too.
       autoPostReviews: true,
@@ -768,6 +770,8 @@ describe("AgentService.getById", () => {
       restrictSlackToMembers: false,
       memberEmails: [],
       accountStatus: null,
+      // ARD-6.1: getById() now selects typeName for the runtime config response.
+      typeName: "coding",
       selfHosted: false,
       // APM-1.5: getById() now selects these 6 policy fields too.
       autoPostReviews: true,

@@ -14,6 +14,7 @@ independent of `appVersion`. CI enforces this with
 
 ### Changed
 
+- auto-bump to chart v1.26.16 triggered by release tag(s): `admin-v1.277.0`, `agent-v1.412.0`, `chat-v1.144.0`, `metrics-v1.147.0`, `task-store-v1.194.0`
 - update traefik subchart to v42.0.0
 
 ## [1.26.15] - 2026-10-19
