@@ -614,6 +614,15 @@ export async function handleCronRequest(
   }
 
   const formatted = formatter(cleaned);
+  // Slack rejects chat.postMessage with `no_text` on blank text (e.g. output
+  // that was only [react:]/[upload:] markers). Skip the text post but still
+  // dispatch markers that don't need a posted message.
+  const hasText = formatted.trim() !== "";
+  if (!hasText) {
+    console.warn(
+      `[agent:cron] job "${jobId}" produced empty text after marker stripping — skipping text post`,
+    );
+  }
 
   if (channel) {
     if (user) {
@@ -634,16 +643,17 @@ export async function handleCronRequest(
     // index.ts's outer catch doesn't create a duplicate "failed" row for a
     // tick that already completed successfully.
     try {
-      const postResult = await slack.chat.postMessage({
-        channel,
-        text: formatted,
-      });
-      console.log(`[agent:cron] job "${jobId}" posted to channel ${channel}`);
-      if (postResult.ts) {
+      const postResult = hasText
+        ? await slack.chat.postMessage({ channel, text: formatted })
+        : undefined;
+      if (postResult) {
+        console.log(`[agent:cron] job "${jobId}" posted to channel ${channel}`);
+      }
+      if (postResult?.ts) {
         onPost?.(channel, postResult.ts);
         if (onSession && sessionId)
           await onSession(channel, postResult.ts, sessionId);
-      } else {
+      } else if (postResult) {
         console.warn(
           `[agent:cron] job "${jobId}" postMessage returned no ts — react markers will be skipped`,
         );
@@ -651,7 +661,7 @@ export async function handleCronRequest(
       await dispatchMarkers(markers, {
         client: slack,
         channel,
-        postedTs: postResult.ts,
+        postedTs: postResult?.ts,
         synthesizeSpeechFn,
         voiceConfig,
         postedText: formatted,
@@ -685,16 +695,17 @@ export async function handleCronRequest(
         throw new Error(`[agent:cron] could not open DM for user ${user}`);
       }
 
-      const dmPostResult = await slack.chat.postMessage({
-        channel: dmChannel,
-        text: formatted,
-      });
-      console.log(`[agent:cron] job "${jobId}" posted DM to user ${user}`);
-      if (dmPostResult.ts) {
+      const dmPostResult = hasText
+        ? await slack.chat.postMessage({ channel: dmChannel, text: formatted })
+        : undefined;
+      if (dmPostResult) {
+        console.log(`[agent:cron] job "${jobId}" posted DM to user ${user}`);
+      }
+      if (dmPostResult?.ts) {
         onPost?.(dmChannel, dmPostResult.ts);
         if (onSession && sessionId)
           await onSession(dmChannel, dmPostResult.ts, sessionId);
-      } else {
+      } else if (dmPostResult) {
         console.warn(
           `[agent:cron] job "${jobId}" DM postMessage returned no ts — react markers will be skipped`,
         );
@@ -702,7 +713,7 @@ export async function handleCronRequest(
       await dispatchMarkers(markers, {
         client: slack,
         channel: dmChannel,
-        postedTs: dmPostResult.ts,
+        postedTs: dmPostResult?.ts,
         synthesizeSpeechFn,
         voiceConfig,
         postedText: formatted,
