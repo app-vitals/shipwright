@@ -199,6 +199,47 @@
       "code": 404
     }
   },
+  "createServiceAccount_success": {
+    "status": 201,
+    "body": {
+      "apiVersion": "v1",
+      "kind": "ServiceAccount",
+      "metadata": { "name": "agent-abc", "namespace": "shipwright" }
+    }
+  },
+  "getServiceAccount_success": {
+    "status": 200,
+    "body": {
+      "apiVersion": "v1",
+      "kind": "ServiceAccount",
+      "metadata": { "name": "agent-abc", "namespace": "shipwright" }
+    }
+  },
+  "deleteServiceAccount_success": { "status": 200, "body": {} },
+  "createServiceAccount_409": {
+    "status": 409,
+    "body": {
+      "message": "serviceaccounts \"agent-abc\" already exists",
+      "reason": "AlreadyExists",
+      "code": 409
+    }
+  },
+  "getServiceAccount_404": {
+    "status": 404,
+    "body": {
+      "message": "serviceaccounts \"missing\" not found",
+      "reason": "NotFound",
+      "code": 404
+    }
+  },
+  "deleteServiceAccount_404": {
+    "status": 404,
+    "body": {
+      "message": "serviceaccounts \"missing\" not found",
+      "reason": "NotFound",
+      "code": 404
+    }
+  },
   "listDeployments_success": {
     "status": 200,
     "body": {

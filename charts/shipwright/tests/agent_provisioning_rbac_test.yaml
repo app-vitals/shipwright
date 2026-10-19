@@ -12,7 +12,7 @@ suite: agent-provisioning RBAC + admin env contract (HD-4.2 / K8S-NS-1.1)
 tests:
   # ── (a) enabled → RBAC + agent SA ────────────────────────────────────────────
   # Cross-namespace mode (agent.provisioning.namespace set) → ClusterRole + ClusterRoleBinding
-  - it: renders a cluster-scoped ClusterRole with create/get/list/patch/update/delete on Deployments and create/get/delete on Secrets and PVCs (cross-namespace mode)
+  - it: renders a cluster-scoped ClusterRole with create/get/list/patch/update/delete on Deployments and create/get/delete on Secrets, PVCs and ServiceAccounts (cross-namespace mode)
     template: templates/agent-provisioning-rbac.yaml
     documentIndex: 0
     set:
@@ -53,6 +53,18 @@ tests:
       - equal:
           path: rules[2].verbs
           value: ["create", "get", "delete"]
+      - equal:
+          path: rules[3].apiGroups
+          value: [""]
+      - equal:
+          path: rules[3].resources
+          value: ["serviceaccounts"]
+      - equal:
+          path: rules[3].verbs
+          value: ["create", "get", "delete"]
+      - lengthEqual:
+          path: rules
+          count: 4
 
   - it: binds the ClusterRole to the admin ServiceAccount via a ClusterRoleBinding (cross-namespace mode)
     template: templates/agent-provisioning-rbac.yaml
@@ -115,6 +127,18 @@ tests:
       - equal:
           path: rules[2].resources
           value: ["persistentvolumeclaims"]
+      - equal:
+          path: rules[3].apiGroups
+          value: [""]
+      - equal:
+          path: rules[3].resources
+          value: ["serviceaccounts"]
+      - equal:
+          path: rules[3].verbs
+          value: ["create", "get", "delete"]
+      - lengthEqual:
+          path: rules
+          count: 4
 
   - it: binds the Role to the admin ServiceAccount via a RoleBinding (same-namespace mode)
     template: templates/agent-provisioning-rbac.yaml

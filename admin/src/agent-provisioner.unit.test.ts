@@ -279,6 +279,11 @@ describe("KubernetesAgentProvisioner.reconcile() — image-update detection", ()
       createPvc: (ns, spec) => recorded.createPvc(ns, spec),
       getPvc: (ns, name) => recorded.getPvc(ns, name),
       deletePvc: (ns, name) => recorded.deletePvc(ns, name),
+      createServiceAccount: (ns, spec) =>
+        recorded.createServiceAccount(ns, spec),
+      getServiceAccount: (ns, name) => recorded.getServiceAccount(ns, name),
+      deleteServiceAccount: (ns, name) =>
+        recorded.deleteServiceAccount(ns, name),
     };
 
     const provisioner = new KubernetesAgentProvisioner(
@@ -344,6 +349,11 @@ describe("KubernetesAgentProvisioner.reconcile() — image-update detection", ()
       createPvc: (ns, spec) => recorded.createPvc(ns, spec),
       getPvc: (ns, name) => recorded.getPvc(ns, name),
       deletePvc: (ns, name) => recorded.deletePvc(ns, name),
+      createServiceAccount: (ns, spec) =>
+        recorded.createServiceAccount(ns, spec),
+      getServiceAccount: (ns, name) => recorded.getServiceAccount(ns, name),
+      deleteServiceAccount: (ns, name) =>
+        recorded.deleteServiceAccount(ns, name),
     };
 
     const provisioner = new KubernetesAgentProvisioner(
@@ -741,6 +751,9 @@ function spyOnDeletePvc(recorded: RecordedKubernetesClient): {
       deletedPvcs.push({ namespace: ns, name });
       return recorded.deletePvc(ns, name);
     },
+    createServiceAccount: (ns, spec) => recorded.createServiceAccount(ns, spec),
+    getServiceAccount: (ns, name) => recorded.getServiceAccount(ns, name),
+    deleteServiceAccount: (ns, name) => recorded.deleteServiceAccount(ns, name),
   };
   return { client, deletedPvcs };
 }
@@ -1069,6 +1082,9 @@ function patchSpy(rec: RecordedKubernetesClient): {
     createPvc: (ns, s) => rec.createPvc(ns, s),
     getPvc: (ns, n) => rec.getPvc(ns, n),
     deletePvc: (ns, n) => rec.deletePvc(ns, n),
+    createServiceAccount: (ns, spec) => rec.createServiceAccount(ns, spec),
+    getServiceAccount: (ns, n) => rec.getServiceAccount(ns, n),
+    deleteServiceAccount: (ns, n) => rec.deleteServiceAccount(ns, n),
   };
   return { client, patches };
 }
