@@ -116,25 +116,11 @@ Optional. When unset, voice transcription and synthesis are disabled.
 
 ## Policy Config
 
-Agent behavior is controlled by `state/agent-policy.md`. Ask your agent to change review posting, merge permissions, and autonomy levels without reconfiguring crons or restarting the agent. Alternatively, for local development or self-hosted setups without a connected agent, edit the Markdown file directly — it uses a YAML front-matter block.
+Agent behavior is controlled by per-agent policy settings stored in the Shipwright database. Edit them in the agent's settings in the admin UI (or via the agent API); the agent picks up changes on its next config sync, with no cron change or restart.
 
 ### Fields
 
 <ConfigTable vars={policyFields} nameLabel="Field" />
-
-### Example
-
-```yaml
----
-auto_post_reviews: true
-review_external_prs: true
-allow_self_review: false
-min_confidence: 75
-max_findings: 5
-cleanup_merged_worktrees: true
-cleanup_after_days: 14
----
-```
 
 ## See also
 
