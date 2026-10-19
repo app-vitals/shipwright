@@ -63,24 +63,3 @@ describe("backfill-pr-origin.ts argument validation", () => {
     expect(r.err).toContain("no repos given");
   });
 });
-
-describe("backfill-agent-policy.ts argument validation", () => {
-  test("requires at least one pair", () => {
-    const r = run("backfill-agent-policy.ts", []);
-    expect(r.code).toBe(1);
-    expect(r.err).toContain("no --agent-id/--file pairs given");
-  });
-
-  test("rejects an --agent-id without a matching --file", () => {
-    const r = run("backfill-agent-policy.ts", [
-      "--agent-id",
-      "a1",
-      "--file",
-      "f1",
-      "--agent-id",
-      "a2",
-    ]);
-    expect(r.code).toBe(1);
-    expect(r.err).toContain("each --agent-id needs a matching --file");
-  });
-});
