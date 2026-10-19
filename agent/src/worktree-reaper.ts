@@ -31,11 +31,11 @@ import { readdirSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { promisify } from "node:util";
 import {
-  readCleanupAfterDays,
   readCleanupMergedWorktrees,
   resolveWorkspacePath,
   splitOrgRepo,
 } from "./check-helpers.ts";
+import { readCleanupAfterDays } from "./cleanup-after-days-ref.ts";
 import type { Clock } from "./clock.ts";
 import { SystemClock } from "./clock.ts";
 

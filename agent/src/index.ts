@@ -32,7 +32,6 @@ import {
   HttpChatTokenReporter,
   NoopChatTokenReporter,
 } from "./chat-token-reporter.ts";
-import { ghGraphql, ghJson } from "./check-helpers.ts";
 import {
   buildProductionDeps as buildClaimInvariantReconcilerDeps,
   reconcileClaimInvariant,
@@ -57,6 +56,7 @@ import {
   NoopCronRunReporter,
 } from "./cron-run-reporter.ts";
 import { markdownToSlack } from "./format.ts";
+import { ghGraphql, ghJson } from "./gh-helpers.ts";
 import { buildGitHubAuthDeps } from "./github-auth-deps.ts";
 import {
   githubAuthActiveRef,

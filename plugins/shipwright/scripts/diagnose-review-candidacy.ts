@@ -1,4 +1,5 @@
 #!/usr/bin/env bun
+
 // On-demand review-candidacy diagnostic script (RCO-1.4).
 //
 // Fetches fresh LIVE state (GitHub PR metadata, live reviews, task-store PR
@@ -37,16 +38,16 @@
 //   bun run plugins/shipwright/scripts/diagnose-review-candidacy.ts org/repo#123
 //   bun run plugins/shipwright/scripts/diagnose-review-candidacy.ts ok-wow/ok-wow-agency#66
 
-import { ghGraphql, ghJson } from "../../../agent/src/check-helpers.ts";
 import type { LinkedTaskInfo } from "../../../agent/src/check-helpers.ts";
 import type { PrReviewData } from "../../../agent/src/check-patch.ts";
 import {
+  buildProductionDeps,
   type PrInfo,
   type PrRecord,
   type ReviewCandidacyTrace,
-  buildProductionDeps,
   traceReviewCandidacyDecision,
 } from "../../../agent/src/check-review.ts";
+import { ghGraphql, ghJson } from "../../../agent/src/gh-helpers.ts";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
