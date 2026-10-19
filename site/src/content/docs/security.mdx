@@ -232,14 +232,14 @@ lifecycle management.
 
 ## Pull request review & merge
 
-Self-review is disabled by default: a freshly provisioned agent's policy (`state/agent-policy.md`,
-seeded from the shipped template) sets `allow_self_review: false`, so an agent is excluded from
+Self-review is disabled by default: a freshly provisioned agent's `allowSelfReview` policy setting
+defaults to off, so an agent is excluded from
 reviewing its own open PRs. Automated merging is disabled by default too — the `shipwright-deploy`
 cron ships off, so nothing merges without a human clicking merge in the GitHub UI.
 
 If Shipwright itself performs a merge — because you've enabled `shipwright-deploy`, or a human
 runs the merge command directly — it squash-merges the PR (`gh pr merge --squash`). Self-review
-(`allow_self_review`, also off by default) only lets that merge go through in repos where GitHub
+(`allowSelfReview`, also off by default) only lets that merge go through in repos where GitHub
 doesn't require a review at all; if branch protection does require one, self-review doesn't
 satisfy it, the merge is rejected, and Shipwright releases its claim on the task and marks the
 task/PR **blocked** so a human can add a real approval.

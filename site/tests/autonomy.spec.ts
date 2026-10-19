@@ -80,12 +80,12 @@ test("the dial-in-detail table lists the four agent-policy settings", async ({
   const section = page.locator("#dial");
   const text = (await section.textContent()) ?? "";
 
-  expect(text).toContain("auto_post_reviews: false");
+  expect(text).toContain("autoPostReviews");
   expect(text).toContain("REQUEST_CHANGES");
-  expect(text).toContain("allow_self_review: false");
-  expect(text).toContain("min_confidence");
-  expect(text).toContain("max_findings");
-  expect(text).toContain("state/agent-policy.md");
+  expect(text).toContain("allowSelfReview");
+  expect(text).toContain("minConfidence");
+  expect(text).toContain("maxFindings");
+  expect(text).not.toContain("agent-policy.md");
 });
 
 test("what-does-not-change section lists tests, infra, and the record", async ({
