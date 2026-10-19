@@ -277,6 +277,18 @@ jobs:
             --entrypoint bun shipwright-agent:ci \
             run agent/scripts/verify-browser-launch.ts
 
+      # Base-image contract guard (ARD-2.1): builds a derived image FROM the
+      # image above the way downstream repos do and asserts the
+      # convention-root marketplace registers via installPlugins() and the
+      # entrypoint path runs under `bun run`. Reuses the build above — adds only
+      # a tiny derived layer plus two short `docker run`s, no new secrets.
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version: "1.x"
+
+      - name: Base-image contract smoke test
+        run: SHIPWRIGHT_CONTRACT_BASE_IMAGE=shipwright-agent:ci bun test agent/src/base-image-contract.smoke.test.ts
+
       # Reports (does not gate) which process-tree-kill mode the real image
       # resolves to: cgroup v2 delegation if /sys/fs/cgroup is writable inside
       # the container, otherwise the procfs descendant-walk fallback. Both are
