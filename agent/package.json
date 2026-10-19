@@ -17,7 +17,7 @@
     "hono": "^4.13.1",
     "node-cron": "^4.6.0",
     "openapi-fetch": "^0.17.0",
-    "playwright": "1.64.0"
+    "playwright": "1.64.1"
   },
   "devDependencies": {
     "@prisma/adapter-pg": "^7.10.0",
