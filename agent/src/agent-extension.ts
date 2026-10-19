@@ -1,7 +1,7 @@
 /**
  * agent/src/agent-extension.ts
  *
- * The extension seam between the generic agent runtime (index.ts boot, config
+ * The extension seam between the generic agent runtime (boot.ts, config
  * sync, cron scheduling) and agent-type-specific behavior (today: the coding
  * agent's PR/task reconcilers and shipwright-loop orchestrator).
  *
@@ -109,4 +109,36 @@ export async function runPeriodicPasses(
       );
     }
   }
+}
+
+/** Builds an extension from the runtime context once the runtime has booted far enough to provide it. */
+export type AgentExtensionFactory = (
+  ctx: AgentExtensionContext,
+) => AgentExtension;
+
+/**
+ * Folds the extensions a consumer passed to startAgent into the single
+ * extension the runtime talks to. No extensions reproduces an agent with no
+ * agent-type behavior; one extension is returned as-is. With several, notify
+ * hooks (onConfigSync, onCronJobs) fan out to all, periodic passes concatenate
+ * in order, and the first extension defining classifyCronJobs / dispatchLoop
+ * owns it — those two decide a single outcome, so they cannot be merged.
+ */
+export function composeExtensions(
+  extensions: readonly AgentExtension[],
+): AgentExtension {
+  if (extensions.length === 1) return extensions[0];
+  const classifier = extensions.find((ext) => ext.classifyCronJobs);
+  const dispatcher = extensions.find((ext) => ext.dispatchLoop);
+  return {
+    onConfigSync: (bundle) => {
+      for (const ext of extensions) ext.onConfigSync?.(bundle);
+    },
+    periodicPasses: extensions.flatMap((ext) => ext.periodicPasses ?? []),
+    onCronJobs: (jobs) => {
+      for (const ext of extensions) ext.onCronJobs?.(jobs);
+    },
+    classifyCronJobs: classifier?.classifyCronJobs?.bind(classifier),
+    dispatchLoop: dispatcher?.dispatchLoop?.bind(dispatcher),
+  };
 }
