@@ -51,6 +51,17 @@ describe("createAdminPgPool", () => {
     }
   });
 
+  it("pins a legacy sslmode=require to verify-full for pg", async () => {
+    const pool = createAdminPgPool(`${DUMMY_URL}?sslmode=require`);
+    try {
+      expect(pool.options.connectionString).toBe(
+        `${DUMMY_URL}?sslmode=verify-full`,
+      );
+    } finally {
+      await pool.end();
+    }
+  });
+
   it("bounds the connect timeout instead of waiting forever", async () => {
     const pool = createAdminPgPool(DUMMY_URL);
     try {
