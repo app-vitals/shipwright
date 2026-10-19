@@ -1,7 +1,7 @@
 /**
  * Base-image contract guard (ARD-2.1).
  *
- * Downstream images (e.g. vitals-os) build FROM the shipwright-agent image and
+ * Downstream images build FROM the shipwright-agent image and
  * COPY a marketplace to the /opt/shipwright/marketplaces/ convention root. This
  * test builds such a derived image the same way and asserts the contract:
  *   - a marketplace at the convention root registers at boot via installPlugins()

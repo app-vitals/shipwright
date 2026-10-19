@@ -278,7 +278,7 @@ jobs:
             run agent/scripts/verify-browser-launch.ts
 
       # Base-image contract guard (ARD-2.1): builds a derived image FROM the
-      # image above the way downstream repos (vitals-os) do and asserts the
+      # image above the way downstream repos do and asserts the
       # convention-root marketplace registers via installPlugins() and the
       # entrypoint path runs under `bun run`. Reuses the build above — adds only
       # a tiny derived layer plus two short `docker run`s, no new secrets.
