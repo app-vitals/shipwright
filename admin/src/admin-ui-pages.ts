@@ -4013,7 +4013,7 @@ const TASK_STATE_GROUPS: { key: TaskState; label: string }[] = [
 // mirror above). A task only counts as waiting when it's open (not in
 // SESSION_CLOSED_STATUSES).
 
-export type WaitingKind = "hitl" | "blocked" | "pr_blocked";
+type WaitingKind = "hitl" | "blocked" | "pr_blocked";
 
 interface SessionWaitingTask {
   task: TaskItem;
@@ -4054,7 +4054,7 @@ function computeSessionWaitingTasks(
   return waiting;
 }
 
-export type SessionRollupState = "waiting" | "active" | "closed" | "empty";
+type SessionRollupState = "waiting" | "active" | "closed" | "empty";
 
 /** Session-level state: "empty" with zero tasks; "closed" when every task is
  * closed; "waiting" when at least one open task is waiting; else "active". */

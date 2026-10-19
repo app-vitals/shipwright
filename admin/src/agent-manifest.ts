@@ -348,7 +348,7 @@ export interface AgentAnthropicFederation {
  * Build the federation env entries, in ANTHROPIC_FEDERATION_ENV_NAMES order.
  * Returns an empty array when federation is disabled.
  */
-export function anthropicFederationEnvEntries(
+function anthropicFederationEnvEntries(
   fed: AgentAnthropicFederation | undefined,
 ): { name: string; value: string }[] {
   if (!fed) return [];
