@@ -38,10 +38,7 @@
  *
  * Out of scope: no dispatch loop (the operator drives `claude` themselves),
  * no local task-store/admin service startup, no task-store token minting,
- * no changes to the real agent's own K8s deployment. The config bundle has
- * no `policy` field, so state/agent-policy.md is always seeded from the
- * static default template (via ensureAgentHome), not a copy of the real
- * agent's live autonomy settings.
+ * no changes to the real agent's own K8s deployment.
  */
 
 import { existsSync } from "node:fs";
