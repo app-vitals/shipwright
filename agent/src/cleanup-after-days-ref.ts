@@ -60,3 +60,24 @@ export function createCleanupAfterDaysRef(): CleanupAfterDaysRef {
  */
 export const cleanupAfterDaysRef: CleanupAfterDaysRef =
   createCleanupAfterDaysRef();
+
+/**
+ * Read the `cleanup_after_days` policy field: the synced DB value from
+ * `configRef` (default: the process-wide `cleanupAfterDaysRef`), else the
+ * hardcoded default `14` while the ref has never synced.
+ *
+ * WTR-1.4: reused as the staleness threshold gating the force-removal of a
+ * merged/closed PR's worktree (see `removeWorktree`'s production
+ * implementation in pr-state-reconciler.ts) — the same field that governs
+ * "remove worktrees older than N days, even if the PR is still open" also
+ * governs "don't force-remove a worktree younger than N days even if its PR
+ * just merged/closed", so a worktree still being actively worked on by a
+ * concurrent dev-task/patch/deploy session isn't yanked out from under it
+ * purely on remote GitHub state.
+ */
+export async function readCleanupAfterDays(
+  _workspacePath: string,
+  configRef: CleanupAfterDaysRef = cleanupAfterDaysRef,
+): Promise<number> {
+  return configRef.hasSynced() ? configRef.get() : 14;
+}

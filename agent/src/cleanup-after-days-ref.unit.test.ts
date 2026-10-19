@@ -16,8 +16,11 @@
  * an independent instance, so coverage is unaffected.
  */
 
-import { describe, expect, it } from "bun:test";
-import { createCleanupAfterDaysRef } from "./cleanup-after-days-ref.ts";
+import { describe, expect, it, test } from "bun:test";
+import {
+  createCleanupAfterDaysRef,
+  readCleanupAfterDays,
+} from "./cleanup-after-days-ref.ts";
 
 describe("createCleanupAfterDaysRef", () => {
   it("initial get() before any set() returns 14 (matches the DB/file default)", () => {
@@ -68,5 +71,19 @@ describe("createCleanupAfterDaysRef", () => {
     expect(refB.get()).toBe(14);
     expect(refA.hasSynced()).toBe(true);
     expect(refB.hasSynced()).toBe(false);
+  });
+});
+
+describe("readCleanupAfterDays", () => {
+  test("never-synced ref (config fetch failing) returns the hardcoded default 14", async () => {
+    expect(
+      await readCleanupAfterDays("/nonexistent", createCleanupAfterDaysRef()),
+    ).toBe(14);
+  });
+
+  test("DB-hit: an injected ref that has synced is returned", async () => {
+    const configRef = createCleanupAfterDaysRef();
+    configRef.set(30);
+    expect(await readCleanupAfterDays("/nonexistent", configRef)).toBe(30);
   });
 });
