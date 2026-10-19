@@ -2384,7 +2384,7 @@ describe("review.md — Step 7 dispatches the phase-methodology-configured subag
   });
 });
 
-describe("review.md — Step 1 policy read-path is DB-first with file/hardcoded fallback (APM-1.2)", () => {
+describe("review.md — Step 1 policy read-path is DB-first with hardcoded fallback (APM-1.2, ARD-1.1)", () => {
   function extractStep1Section(md: string): string {
     const step1Idx = md.indexOf("## Step 1: Load Policy");
     const step3Idx = md.indexOf("## Step 3: Resolve Current User and Target");
@@ -2408,12 +2408,6 @@ describe("review.md — Step 1 policy read-path is DB-first with file/hardcoded 
     expect(section).toContain("maxFindings");
   });
 
-  it("documents the transition-period nature of the DB tier", () => {
-    const section = extractStep1Section(content);
-    expect(section).toContain("APM-1.2");
-    expect(section.toLowerCase()).toContain("transition");
-  });
-
   it("extracts each DB field with a null-only guard so a legitimate false survives tier 1", () => {
     const section = extractStep1Section(content);
     for (const field of [
@@ -2430,26 +2424,23 @@ describe("review.md — Step 1 policy read-path is DB-first with file/hardcoded 
     expect(section).toContain("`select(. != null)`, **not** `// empty`");
   });
 
-  it("still reads state/agent-policy.md as the file-fallback tier, and still documents the hardcoded-default table", () => {
+  it("no longer reads state/agent-policy.md, and still documents the hardcoded-default table", () => {
     const section = extractStep1Section(content);
-    expect(section).toContain("state/agent-policy.md");
+    expect(section).not.toContain("2. **File**");
     expect(section).toContain("| `auto_post_reviews` | true |");
     expect(section).toContain("| `allow_self_review` | false |");
     expect(section).toContain("| `min_confidence` | 75 |");
     expect(section).toContain("| `max_findings` | 5 |");
   });
 
-  it("documents the three tiers in DB -> file -> hardcoded order", () => {
+  it("documents the two tiers in DB -> hardcoded order", () => {
     const section = extractStep1Section(content);
     const dbIdx = section.indexOf("/agents/$SHIPWRIGHT_AGENT_ID/config");
-    const fileIdx = section.indexOf("2. **File**");
-    const hardcodedIdx = section.indexOf("| `auto_post_reviews` | true |");
+    const hardcodedIdx = section.indexOf("2. **Hardcoded defaults**");
 
     expect(dbIdx).toBeGreaterThan(-1);
-    expect(fileIdx).toBeGreaterThan(-1);
     expect(hardcodedIdx).toBeGreaterThan(-1);
-    expect(dbIdx).toBeLessThan(fileIdx);
-    expect(fileIdx).toBeLessThan(hardcodedIdx);
+    expect(dbIdx).toBeLessThan(hardcodedIdx);
   });
 
   it("still prints the one-line policy summary", () => {

@@ -534,14 +534,14 @@ if (runtimeClient && agentId) {
       agentAccountStatusRef.set(bundle.accountStatus ?? null);
 
       // Sync the agent's allow-self-review live ref (APM-1.4) — read by
-      // check-helpers.ts's readAllowSelfReview() as the DB tier before
-      // falling back to state/agent-policy.md.
+      // check-helpers.ts's readAllowSelfReview() as the DB tier, with a
+      // hardcoded default while unsynced.
       allowSelfReviewRef.set(bundle.allowSelfReview);
 
       // Sync the agent's cleanup-merged-worktrees and cleanup-after-days
       // live refs (APM-1.6) — read by check-helpers.ts's
       // readCleanupMergedWorktrees()/readCleanupAfterDays() as the DB tier
-      // before falling back to state/agent-policy.md.
+      // with hardcoded defaults while unsynced.
       cleanupMergedWorktreesRef.set(bundle.cleanupMergedWorktrees);
       cleanupAfterDaysRef.set(bundle.cleanupAfterDays);
     } catch (err) {
@@ -639,7 +639,7 @@ if (runtimeClient && agentId) {
 // WTR-1.4 adds a third, independent pass on this SAME tick: WTR-1.2's
 // reconcileStaleWorktrees, a pure-filesystem sweep (no GitHub/task-store
 // calls) that force-removes worktrees/<repo>-<branch> dirs older than
-// agent-policy.md's cleanup_after_days. Same lazy-deps + own-try/catch
+// the synced cleanup_after_days policy. Same lazy-deps + own-try/catch
 // shape as the two passes above, so a failure here never blocks the other
 // two — see worktree-reaper.ts. WTR-1.3's removeWorktree wiring for the
 // *merged/closed-PR* cleanup path needed no separate pass here: it already
