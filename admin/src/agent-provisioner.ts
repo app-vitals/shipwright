@@ -412,7 +412,7 @@ function tokenSourceEqual(a: PolicyVolume, b: PolicyVolume): boolean {
  * the API server mirrors serviceAccountName into it and falls back to it when
  * serviceAccountName is empty, so leaving it would resurrect the old name.
  */
-export interface FederationPatch {
+interface FederationPatch {
   serviceAccountName?: string | null;
   serviceAccount?: null;
   volumes?: object[];

@@ -65,7 +65,7 @@ export interface ModelBreakdownEntry {
  * full always-loaded context independent of cache warmth
  * (computed agent-side from the Claude CLI stream).
  */
-export interface ContextBaselineEntry {
+interface ContextBaselineEntry {
   model: string;
   contextTokens: number;
   inputTokens: number;
@@ -74,7 +74,7 @@ export interface ContextBaselineEntry {
 }
 
 /** Per-skill / per-subagent token attribution row reported by the agent. */
-export interface SkillUsageEntry {
+interface SkillUsageEntry {
   kind: string;
   name: string;
   invocations: number;

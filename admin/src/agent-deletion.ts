@@ -59,14 +59,14 @@ type DeleteAgentStep =
   | "slack-app";
 
 /** A step that threw, with its error message for the caller to log/surface. */
-export interface FailedStep {
+interface FailedStep {
   step: DeleteAgentStep;
   error: string;
 }
 
 // ─── Result ────────────────────────────────────────────────────────────────────
 
-export interface DeleteAgentResult {
+interface DeleteAgentResult {
   /**
    * True only when every automatable step succeeded AND the Agent row was
    * deleted. False when any step failed (the row is left in place for retry).

@@ -105,5 +105,3 @@ export function createSecretsClient(
 
   return { getSecret };
 }
-
-export type SecretsClient = ReturnType<typeof createSecretsClient>;
