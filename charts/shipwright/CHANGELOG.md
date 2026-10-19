@@ -10,11 +10,17 @@ independent of `appVersion`. CI enforces this with
 `ct lint --check-version-increment`. Each release here must mirror the
 `artifacthub.io/changes` annotation in `Chart.yaml`.
 
-## [1.26.13] - 2026-10-19
+## [1.26.14] - 2026-10-19
 
 ### Changed
 
 - update traefik subchart to v42.0.0
+
+## [1.26.13] - 2026-10-19
+
+### Changed
+
+- auto-bump to chart v1.26.13 triggered by release tag(s): `admin-v1.276.6`, `agent-v1.411.5`, `chat-v1.143.3`, `metrics-v1.146.4`, `task-store-v1.193.4`
 
 ## [1.26.12] - 2026-10-19
 
