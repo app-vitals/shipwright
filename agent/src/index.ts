@@ -19,23 +19,23 @@ import { initSentry } from "@shipwright/lib/sentry";
 import { WebClient } from "@slack/web-api";
 import nodeCron from "node-cron";
 import { agentAccountStatusRef } from "./agent-account-status-ref.ts";
+import {
+  type AgentExtensionContext,
+  planCronSchedule,
+  runPeriodicPasses,
+} from "./agent-extension.ts";
 import { agentReposRef } from "./agent-repos-ref.ts";
 import {
   agentSlackMembershipRef,
   resolveSlackMembership,
 } from "./agent-slack-membership-ref.ts";
 import { agentTrialExpiryRef } from "./agent-trial-expiry-ref.ts";
-import { allowSelfReviewRef } from "./allow-self-review-ref.ts";
 import { applyEnvToProcess } from "./anthropic-federation-guard.ts";
 import { createChatPoller } from "./chat-poller.ts";
 import {
   HttpChatTokenReporter,
   NoopChatTokenReporter,
 } from "./chat-token-reporter.ts";
-import {
-  buildProductionDeps as buildClaimInvariantReconcilerDeps,
-  reconcileClaimInvariant,
-} from "./claim-invariant-reconciler.ts";
 import {
   createRunClaude,
   type EarlySessionIdCallback,
@@ -44,8 +44,8 @@ import {
 } from "./claude.ts";
 import { bunExec, detectClaudeCodeVersion } from "./claude-version.ts";
 import { cleanupAfterDaysRef } from "./cleanup-after-days-ref.ts";
-import { cleanupMergedWorktreesRef } from "./cleanup-merged-worktrees-ref.ts";
 import { SystemClock } from "./clock.ts";
+import { createCodingExtension } from "./coding/extension.ts";
 import { createConfig } from "./config.ts";
 import { createContextStampReader } from "./context-stamp.ts";
 import { reportCronFailure } from "./cron-failure-reporter.ts";
@@ -56,7 +56,6 @@ import {
   NoopCronRunReporter,
 } from "./cron-run-reporter.ts";
 import { markdownToSlack } from "./format.ts";
-import { ghGraphql, ghJson } from "./gh-helpers.ts";
 import { buildGitHubAuthDeps } from "./github-auth-deps.ts";
 import {
   githubAuthActiveRef,
@@ -77,29 +76,7 @@ import {
 } from "./health.ts";
 import { HttpChatServiceClient } from "./http-chat-service-client.ts";
 import { buildLogPrefix } from "./log-prefix.ts";
-import type { CronJobLike } from "./loop-cron-classifier.ts";
-import { classifyCronJobsForScheduling } from "./loop-cron-classifier.ts";
-import { createJobsRef } from "./loop-jobs-ref.ts";
-import { createLoopOrchestratorGetter } from "./loop-orchestrator.ts";
-import {
-  patchAuthorAllowlistRef,
-  resolvePatchAuthorAllowlist,
-} from "./patch-author-allowlist-ref.ts";
 import { validatePiperVoice } from "./piper-voice.ts";
-import {
-  buildProductionDeps as buildPrCensusDeps,
-  runPrCensus,
-} from "./pr-census.ts";
-import {
-  buildProductionDeps as buildPrStateReconcilerDeps,
-  buildReviewStateProductionDeps as buildReviewStateReconcilerDeps,
-  reconcilePrState,
-  reconcileReviewState,
-} from "./pr-state-reconciler.ts";
-import {
-  resolveReviewAuthorAllowlist,
-  reviewAuthorAllowlistRef,
-} from "./review-author-allowlist-ref.ts";
 import {
   createFileSessionStore,
   startSessionPruner,
@@ -121,10 +98,6 @@ import {
 } from "./sync-config-clone.ts";
 import { resolveDisplayName, resolveUserEmail } from "./users.ts";
 import { synthesizeSpeech, transcribeAudio } from "./voice.ts";
-import {
-  HttpWorkQueueReporter,
-  NoopWorkQueueReporter,
-} from "./work-queue-reporter.ts";
 import {
   buildProductionDeps as buildWorktreeReaperDeps,
   reconcileStaleWorktrees,
@@ -232,17 +205,6 @@ const chatTokenReporter =
       })
     : new NoopChatTokenReporter();
 
-const workQueueReporter =
-  config.shipwright.apiUrl &&
-  config.shipwright.apiKey &&
-  config.shipwright.agentId
-    ? new HttpWorkQueueReporter({
-        apiUrl: config.shipwright.apiUrl,
-        agentId: config.shipwright.agentId,
-        apiKey: config.shipwright.apiKey,
-      })
-    : new NoopWorkQueueReporter();
-
 const githubInstallationsReporter =
   config.shipwright.apiUrl &&
   config.shipwright.apiKey &&
@@ -307,6 +269,20 @@ const cronDeps: CronHandlerDeps = {
   agentId: config.shipwright.agentId,
   contextStamp,
 };
+
+// ARD-3.1: the agent-type extension seam (agent-extension.ts). The coding
+// extension loads unconditionally for now — every agent today already runs
+// these passes, so unconditional loading preserves behavior. Built here (after
+// every dep it needs exists, before config sync / cron sync call its hooks).
+const extensionContext: AgentExtensionContext = {
+  config,
+  runner,
+  sessions,
+  cronRunReporter,
+  contextStamp,
+  sentryClient: process.env.SENTRY_DSN ? Sentry : undefined,
+};
+const extension = createCodingExtension(extensionContext);
 
 // SLK-1.1: shared Slack-start deps, built once so both the Step 4
 // (config-sync) and Step 7 (boot) call sites of startSlackIfPossible()
@@ -503,15 +479,10 @@ if (runtimeClient && agentId) {
         );
       }
 
-      // Sync the agent's review-author-allowlist live ref
-      reviewAuthorAllowlistRef.set(
-        resolveReviewAuthorAllowlist(bundle.reviewAuthorAllowlist),
-      );
-
-      // Sync the agent's patch-author-allowlist live ref
-      patchAuthorAllowlistRef.set(
-        resolvePatchAuthorAllowlist(bundle.patchAuthorAllowlist),
-      );
+      // Agent-type extension: the coding extension syncs the PR-policy refs
+      // (review/patch author allowlists, allow-self-review, cleanup-merged-
+      // worktrees) here.
+      extension.onConfigSync?.(bundle);
 
       // Sync the agent's Slack-membership-restriction live ref
       agentSlackMembershipRef.set(
@@ -533,16 +504,8 @@ if (runtimeClient && agentId) {
       // while the account is suspended or trial_expired.
       agentAccountStatusRef.set(bundle.accountStatus ?? null);
 
-      // Sync the agent's allow-self-review live ref (APM-1.4) — read by
-      // check-helpers.ts's readAllowSelfReview() as the DB tier, with a
-      // hardcoded default while unsynced.
-      allowSelfReviewRef.set(bundle.allowSelfReview);
-
-      // Sync the agent's cleanup-merged-worktrees and cleanup-after-days
-      // live refs (APM-1.6) — read by check-helpers.ts's
-      // readCleanupMergedWorktrees()/readCleanupAfterDays() as the DB tier
-      // with hardcoded defaults while unsynced.
-      cleanupMergedWorktreesRef.set(bundle.cleanupMergedWorktrees);
+      // Sync the agent's cleanup-after-days live ref (APM-1.6) — read by the
+      // runtime's worktree reaper.
       cleanupAfterDaysRef.set(bundle.cleanupAfterDays);
     } catch (err) {
       if (
@@ -621,135 +584,49 @@ if (runtimeClient && agentId) {
   }
 }
 
-// ─── Step 5b: PR state reconciler — self-heals stale state:"open" records ─────
-// Crash backstop for the *business state* (state/mergedAt), distinct from
-// StaleClaimReaper's *claim* fields — see pr-state-reconciler.ts for the full
-// rationale. Deliberately its own interval, independent of syncConfig/
-// syncCrons above and the loop-orchestrator's per-tick candidate collection:
-// this only needs to run every 30-60 min, not every minute, since it scans
-// the bounded state:"open" set and a record naturally drops out of future
-// scans once reconciled. Deps are built lazily on first tick so a
-// not-yet-ready workspace/GH auth at boot can't crash agent startup.
+// ─── Step 5b: Periodic passes — self-heal stale state ─────────────────────────
+// Deliberately its own interval, independent of syncConfig/syncCrons above and
+// the loop-orchestrator's per-tick candidate collection: these only need to run
+// every 30-60 min, not every minute. Each pass has its own deps (built lazily on
+// first tick so a not-yet-ready workspace/GH auth at boot can't crash agent
+// startup) and its own try/catch (see runPeriodicPasses) so one failing pass
+// never blocks the others.
 //
-// CHU-2.2 adds a second, independent reconciliation pass on this SAME tick
-// (not a second timer): reviewState drift from an out-of-band GitHub
-// reviewer. Its own try/catch means one pass failing never prevents the
-// other from running — see reconcileReviewState() in pr-state-reconciler.ts.
-//
-// WTR-1.4 adds a third, independent pass on this SAME tick: WTR-1.2's
-// reconcileStaleWorktrees, a pure-filesystem sweep (no GitHub/task-store
-// calls) that force-removes worktrees/<repo>-<branch> dirs older than
-// the synced cleanup_after_days policy. Same lazy-deps + own-try/catch
-// shape as the two passes above, so a failure here never blocks the other
-// two — see worktree-reaper.ts. WTR-1.3's removeWorktree wiring for the
-// *merged/closed-PR* cleanup path needed no separate pass here: it already
-// flows through the existing PR-state-reconciler pass above, since
-// buildPrStateReconcilerDeps (buildProductionDeps in pr-state-reconciler.ts)
-// constructs removeWorktree internally.
-//
-// TCS-4.1 adds a fourth, independent pass on this SAME tick: a claim-
-// invariant self-heal sweep (reconcileClaimInvariant) that scans
-// status:"pending" task-store tasks in scope for a non-null claimedBy (the
-// AGH-3.4 shape — a pending task should never carry a claim) and releases
-// each violation via POST /tasks/:id/release. Pure task-store HTTP, no
-// GitHub calls, so it lives in its own sibling module
-// (claim-invariant-reconciler.ts) rather than pr-state-reconciler.ts. Same
-// lazy-deps + own-try/catch shape as the three passes above — an independent
-// safety net alongside TCS-2.1's DB constraint on the same invariant, not a
-// replacement for it.
-//
-// POM-4.1 adds a fifth, independent pass on this SAME tick: runPrCensus, a
-// repo-wide merged-PR origin census sweep. Unlike the four passes above, this
-// one intentionally has NO GitHub-label dependency (that approach was
-// rejected) — it classifies each newly-merged PR (ci / dependency_bot /
-// shipwright / human / unknown) via a pure classifier and an incremental
-// `gh pr list --search "merged:>=<cursor>"` call per repo, POSTing the
-// classified batch to POM-1.1's `POST /prs/census`. Same lazy-deps + own-
-// try/catch shape as the four passes above — see pr-census.ts for the full
-// rationale, including why a null cursor (first run) issues zero gh calls
-// instead of a full historical backfill.
+// WTR-1.4's reconcileStaleWorktrees — a pure-filesystem sweep that force-removes
+// worktrees/<repo>-<branch> dirs older than cleanup_after_days — is a runtime
+// pass (ARD-3.1): it runs first, before the extension's periodic passes (the
+// coding extension's PR-state/review-state/claim-invariant/census passes). The
+// passes are independent, so the reaper moving ahead of them is the one
+// pass-order change in this refactor.
 if (runtimeClient && agentId) {
-  let reconcilerDeps: ReturnType<typeof buildPrStateReconcilerDeps> | undefined;
-  let reviewStateReconcilerDeps:
-    | ReturnType<typeof buildReviewStateReconcilerDeps>
-    | undefined;
   let worktreeReaperDeps:
     | ReturnType<typeof buildWorktreeReaperDeps>
     | undefined;
-  let claimInvariantReconcilerDeps:
-    | ReturnType<typeof buildClaimInvariantReconcilerDeps>
-    | undefined;
-  let prCensusDeps: ReturnType<typeof buildPrCensusDeps> | undefined;
 
-  async function runPrStateReconciler() {
-    try {
-      reconcilerDeps ??= buildPrStateReconcilerDeps({
-        ghJson,
-        getScopedRepos: agentReposRef.get,
-      });
-      await reconcilePrState(reconcilerDeps);
-    } catch (err) {
-      console.error(
-        "[pr-state-reconciler] tick failed (non-fatal):",
-        err instanceof Error ? err.message : String(err),
-      );
-    }
+  const runtimePasses = [
+    {
+      name: "worktree-reaper",
+      logPrefix: "[pr-state-reconciler:worktree-reaper]",
+      run: async () => {
+        worktreeReaperDeps ??= buildWorktreeReaperDeps({
+          getScopedRepos: agentReposRef.get,
+        });
+        await reconcileStaleWorktrees(worktreeReaperDeps);
+      },
+    },
+  ];
 
-    try {
-      reviewStateReconcilerDeps ??= buildReviewStateReconcilerDeps({
-        ghGraphql,
-        getScopedRepos: agentReposRef.get,
-      });
-      await reconcileReviewState(reviewStateReconcilerDeps);
-    } catch (err) {
-      console.error(
-        "[pr-state-reconciler:review] tick failed (non-fatal):",
-        err instanceof Error ? err.message : String(err),
-      );
-    }
-
-    try {
-      worktreeReaperDeps ??= buildWorktreeReaperDeps({
-        getScopedRepos: agentReposRef.get,
-      });
-      await reconcileStaleWorktrees(worktreeReaperDeps);
-    } catch (err) {
-      console.error(
-        "[pr-state-reconciler:worktree-reaper] tick failed (non-fatal):",
-        err instanceof Error ? err.message : String(err),
-      );
-    }
-
-    try {
-      claimInvariantReconcilerDeps ??= buildClaimInvariantReconcilerDeps({
-        getScopedRepos: agentReposRef.get,
-      });
-      await reconcileClaimInvariant(claimInvariantReconcilerDeps);
-    } catch (err) {
-      console.error(
-        "[claim-invariant-reconciler] tick failed (non-fatal):",
-        err instanceof Error ? err.message : String(err),
-      );
-    }
-
-    try {
-      prCensusDeps ??= buildPrCensusDeps({
-        ghJson,
-        getScopedRepos: agentReposRef.get,
-      });
-      await runPrCensus(prCensusDeps);
-    } catch (err) {
-      console.error(
-        "[pr-census] tick failed (non-fatal):",
-        err instanceof Error ? err.message : String(err),
-      );
-    }
+  async function runPeriodicTick() {
+    await runPeriodicPasses([
+      ...runtimePasses,
+      ...(extension.periodicPasses ?? []),
+    ]);
   }
 
   const reconcilerIntervalMs = Number(
     process.env.SHIPWRIGHT_PR_STATE_RECONCILER_INTERVAL_MS ?? 45 * 60_000,
   );
-  setInterval(() => void runPrStateReconciler(), reconcilerIntervalMs);
+  setInterval(() => void runPeriodicTick(), reconcilerIntervalMs);
   console.log(
     `[agent] PR state reconciler started (${reconcilerIntervalMs}ms interval)`,
   );
@@ -758,70 +635,6 @@ if (runtimeClient && agentId) {
 // ─── Step 6: Cron sync loop ───────────────────────────────────────────────────
 
 const cronTasks = new Map<string, ReturnType<typeof nodeCron.schedule>>();
-
-// Live view of the most recently fetched cron job list. The shipwright-loop
-// job is only ever nodeCron.schedule()'d once (see the `if (!cronTasks.has(id))`
-// guard below), so its dispatch callback must read this ref at fire-time
-// rather than close over a single syncCrons() tick's `jobs` array — otherwise
-// its phase-toggle view (resolveLoopPhaseToggles, read inside runLoopTick)
-// freezes at whatever dev-task/review/patch/deploy's enabled flags were at
-// first-schedule time. See loop-jobs-ref.ts for the full rationale.
-const loopJobsRef = createJobsRef<CronJobLike>();
-
-// The shipwright-loop orchestrator is a single stateful closure (it owns the
-// cross-tick busy flag), so it must be constructed once and reused across
-// ticks — not rebuilt per fire. Built lazily on the first loop dispatch so
-// agents without a shipwright-loop cron never pay its GitHub/workspace dep
-// wiring cost, and its construction errors surface at fire time (logged by the
-// cron callback's try/catch) rather than crashing agent startup.
-const getLoopOrchestrator = createLoopOrchestratorGetter({
-  // DTW-1.3/DTR-1.1/CRT-1.3: sessionKey is no longer hardcoded undefined for
-  // the loop path — the orchestrator supplies a stable `dev-task:{taskId}`
-  // key for dev-task dispatches, a per-dispatch nonce `{phase}:{itemId}:
-  // {uuid}` key for review/patch/deploy dispatches (CRT-1.3), and nothing for
-  // plan, plus an onEarlySessionId callback. The dev-task key is stable (not
-  // a per-dispatch nonce) so a later, separate dispatch of the same
-  // still-in_progress task can resume this same session; the
-  // review/patch/deploy keys only ever resume within one dispatch's own
-  // resume loop, never across dispatches — see loop-orchestrator.ts's
-  // sessionKey doc comment. The loop never passes extraEnv (only
-  // cron-handler's dispatch does), so the former 3rd `extraEnv` param here
-  // was dead for this call site.
-  runner: (
-    message: string,
-    onProgress?: ProgressCallback,
-    sessionKey?: string,
-    onEarlySessionId?: EarlySessionIdCallback,
-  ) =>
-    runner(
-      message,
-      sessionKey,
-      onProgress,
-      undefined,
-      undefined,
-      onEarlySessionId,
-    ),
-  cronRunReporter: cronRunReporter ?? new NoopCronRunReporter(),
-  workQueueReporter,
-  // DTW-1.3/DTR-1.1: lets the dev-task resume loop drop its stable session
-  // key, but only once the orchestrator's fresh getTaskState check confirms
-  // the task has reached a terminal dev-task-work status — not
-  // unconditionally on every dispatch exit, since the key must otherwise
-  // survive so a later, separate dispatch of the same still-in_progress task
-  // can resume it. `sessions.json` (shared with Slack thread sessions) still
-  // relies on this eventually firing so it doesn't accumulate a permanent
-  // entry per task that finishes dev-task work.
-  // CRT-1.3: review/patch/deploy dispatches share this same callback, but
-  // clear their per-dispatch nonce key unconditionally on every exit instead
-  // — there is no cross-dispatch state to preserve for those three phases,
-  // so no terminal-status check gates their clear.
-  clearSessionKey: (key: string) => sessions.clear(key),
-  contextStamp,
-  // LO-1.1: same optional-by-convention pattern as every other sentryClient
-  // call site in this file (undefined, i.e. fully inert, when SENTRY_DSN is
-  // unset) — see LoopOrchestratorDeps's sentryClient doc comment.
-  sentryClient: process.env.SENTRY_DSN ? Sentry : undefined,
-});
 
 if (runtimeClient && agentId) {
   async function syncCrons() {
@@ -837,17 +650,13 @@ if (runtimeClient && agentId) {
       return;
     }
 
-    // Keep the live jobs ref current every tick, regardless of whether any
-    // job actually gets (re)scheduled below — this is what the already-
-    // scheduled shipwright-loop callback reads at fire-time.
-    loopJobsRef.set(jobs);
-
-    // Classify this agent's own job list: which jobs get an independent
-    // schedule, and with which dispatch kind (loop vs. generic). See
-    // loop-cron-classifier.ts for the full decision — in particular, the
-    // five pipeline phase jobs are excluded here (loop-config-only) only
-    // when this agent's own shipwright-loop job is present and enabled.
-    const scheduled = classifyCronJobsForScheduling(jobs);
+    // Hand the extension the fresh job list (every tick, regardless of whether
+    // any job gets (re)scheduled below — the coding extension keeps its live
+    // loop jobs ref current this way), then classify this agent's own job
+    // list: which jobs get an independent schedule, and with which dispatch
+    // kind (loop vs. generic). See planCronSchedule in agent-extension.ts and
+    // the coding extension's loop-cron-classifier.ts for the full decision.
+    const scheduled = planCronSchedule(extension, jobs);
     const desired = new Map(scheduled.map((entry) => [entry.job.id, entry]));
 
     // Cancel removed/disabled jobs
@@ -867,8 +676,12 @@ if (runtimeClient && agentId) {
           console.log(`[cron] firing job ${id}`);
           try {
             if (dispatch === "loop") {
-              const orchestrator = await getLoopOrchestrator(id);
-              await orchestrator(loopJobsRef.get());
+              if (!extension.dispatchLoop) {
+                throw new Error(
+                  `cron job ${id} classified as loop but the agent extension has no dispatchLoop`,
+                );
+              }
+              await extension.dispatchLoop(id);
             } else {
               await handleCronRequest(
                 {
