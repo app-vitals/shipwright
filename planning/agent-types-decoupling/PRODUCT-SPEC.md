@@ -12,7 +12,7 @@ Separate the generic agent runtime (Slack, Claude invocation, cron dispatch, cha
 
 ## Problem Statement
 
-`agent/src/index.ts` is a hardcoded composition root. Per the audit, 18 of the 21 runtime-to-coding import edges are `index.ts` wiring coding periodic work and GitHub auth directly into runtime boot; `check-helpers.ts` (1.5k lines) mixes generic `gh` helpers, policy parsers and coding-only logic; and nothing enforces a boundary, so new coupling can accrue silently. The `specialist` agent type (SAT-1.1/1.2) now lets non-coding agents exist, but they still boot a runtime that assumes coding.
+`agent/src/index.ts` is a hardcoded composition root. Per the audit, 18 of the 21 runtime-to-coding import edges are `index.ts` wiring coding-specific passes directly into runtime boot (the GitHub auth edges are resolved by classifying GitHub auth and repo scope as runtime, see below); `check-helpers.ts` (1.5k lines) mixes generic `gh` helpers, policy parsers and coding-only logic; and nothing enforces a boundary, so new coupling can accrue silently. The `specialist` agent type (SAT-1.1/1.2) now lets non-coding agents exist, but they still boot a runtime that assumes coding.
 
 ## Users & Context
 
@@ -31,47 +31,101 @@ Marketing repo move or Saul cutover; external manifest loading; loop/candidate-p
 
 ---
 
+## Classification decisions (settled in planning, 2026-10-19)
+
+Refines `AUDIT.md`'s name-pattern classification:
+
+- **Runtime, for every agent type:** `agent-repos-ref`, `sync-config-clone`, the whole GitHub auth family (`github-app-auth`, `github-installations`, `github-installations-reporter`, `github-auth-deps`, `github-auth-startup`, `setup-github-auth`, `gh-token-files`, `gh-owner-resolver`), `worktree-reaper`, `cleanup-after-days-ref`. Rationale: GitHub auth and repo scope are wanted by all types (the marketing agent uses them), and repo scope is already in the generic config contract. Putting them in coding would force the GitHub code to depend on coding.
+- **Coding:** `check-*`, `loop-*`, `work-selector`, `work-queue-reporter`, `pr-state-reconciler`, `pr-census`, `pr-origin-backfill`, `patch-outcome-check`, `claim-invariant-reconciler`, and the PR-policy refs (`allow-self-review-ref`, `review-author-allowlist-ref`, `patch-author-allowlist-ref`, `cleanup-merged-worktrees-ref`).
+- **Principle:** the dependency arrow decides. Anything both coding and a runtime-level capability need lives in runtime.
+
+## Extension seam design (settled)
+
+`runtime/extension.ts` defines an `AgentExtension` interface; the runtime calls it at fixed points. Built from a context object (config, `runner`, `sessions`, `cronRunReporter`, `contextStamp`, Sentry client).
+
+| Hook | Coding implementation | Today |
+|---|---|---|
+| `onConfigSync(bundle)` | sets the four PR-policy refs | `index.ts` `syncConfig()` |
+| `periodicPasses` (named, async) | PR-state reconciler, review-state pass, claim-invariant reconciler, PR census | combined reconciler tick |
+| `onCronJobs(jobs)` | sets the loop's live jobs ref | `loopJobsRef.set(jobs)` |
+| `classifyCronJobs(jobs)` | marks `shipwright-loop` as dispatch kind "loop"; default is all-generic | `classifyCronJobsForScheduling` |
+| `dispatchLoop(id)` | lazily builds the orchestrator, runs a tick; constructs its own `WorkQueueReporter` | `getLoopOrchestrator` |
+
+Decisions:
+1. **`index.ts` stays at its path and is the composition root**, the one file allowed to import both runtime and coding, via a single `coding/extension.ts`. No shim, and the spawn path and `entrypoint-main.ts` are unchanged.
+2. **The coding extension loads unconditionally for now.** Every agent today (including `specialist`) already runs these passes; unconditional loading preserves behavior. Gating by agent type once the runtime knows its type (Feature 5) is a deliberate follow-up behavior change, not part of this refactor.
+3. **Pass order changes in one way:** the worktree reaper becomes a runtime pass and runs before the coding passes. The passes are independent with per-pass try/catch; note it in acceptance criteria.
+4. **Per-pass behavior is preserved:** lazy deps, own try/catch, non-fatal logging with the same prefixes, same interval env vars, `onCronJobs` called before classification each tick.
+
+---
+
 ## Features
+
+### Feature 0: Policy cleanup (remove the legacy `agent-policy.md` tier)
+
+**Priority**: High (lands first; shrinks `check-helpers.ts` before Feature 2)
+**Description**: The six agent-policy fields (`autoPostReviews`, `allowSelfReview`, `minConfidence`, `maxFindings`, `cleanupMergedWorktrees`, `cleanupAfterDays`) are DB settings, synced via `GET /agents/:id/config` and editable in the admin UI. The read order is still DB, then `state/agent-policy.md`, then hardcoded defaults, plus a one-off backfill. For an agent that reaches the admin API the file tier is dead code. All live agents have been confirmed to hold the intended DB values (Dan, 2026-10-19), so the legacy tier can go.
+
+**Requirements**:
+- Agent runtime: remove the six `parse*` functions and the file tier from `readAllowSelfReview`, `readCleanupMergedWorktrees`, `readCleanupAfterDays` (and the review-policy readers); reads become synced-ref-or-hardcoded-default. `worktree-reaper` reads the refs instead of the file.
+- Plugin: delete the file-only, caller-less `readAllowSelfReview`/`parseAllowSelfReview` in `plugins/shipwright/scripts/check-helpers.ts`; remove the "tier 2: file" step and prose from `commands/review.md`, `merge.md`, `deploy.md` and `references/user-guide.md`, updating their content tests. Hardcoded defaults stay as tier 2.
+- Delete `agent/src/agent-policy-backfill.ts`, `agent/scripts/backfill-agent-policy.ts` and their tests.
+- Stop seeding `state/agent-policy.md` (`setup.ts` and its template) and drop the references in `scripts/hitl.ts` and `scripts/agent-workspace-pull.ts`. Existing files on agent volumes are left untouched.
+- Update repo docs (`configuration*.md`, `agent.md`, `agent-key-files.md`, `test-readiness/*` mentions) and, as a separate human-reviewed docs task, the public site pages (`configuring-autonomy.mdx`, `security.mdx`, `reference.mdx`, `the-shipwright-loop.mdx`, `autonomy.astro`) and `site/tests/autonomy.spec.ts`.
+
+**Acceptance Criteria**:
+- [ ] No code path reads `state/agent-policy.md`; `grep -rn "agent-policy.md"` over `agent/`, `plugins/`, `scripts/` returns only historical changelog or migration notes
+- [ ] With the config fetch failing, each reader returns its documented hardcoded default (unit-tested per field)
+- [ ] Existing readers' DB-tier tests pass unchanged; file-tier tests are deleted with the tier
+- [ ] The plugin content tests pass with the updated prompt text
+- [ ] The agent image builds and boots without the template
+
+**Technical Considerations**: Behavior change only when the admin config fetch fails (falls to conservative hardcoded defaults instead of the file). Existing volume files are inert after this. Operators lose the backfill tool; mitigated by the confirmed state of all agents.
+
+**Source Map**: `agent/src/check-helpers.ts`, `agent/src/agent-policy-backfill.ts`, `agent/scripts/backfill-agent-policy.ts`, `agent/src/worktree-reaper.ts`, `agent/src/setup.ts`, `agent/workspace/state/agent-policy.md.template`, `scripts/hitl.ts`, `scripts/agent-workspace-pull.ts`, `plugins/shipwright/scripts/check-helpers.ts`, `plugins/shipwright/commands/{review,merge,deploy}.md`, `plugins/shipwright/references/user-guide.md`, docs and site pages listed above.
+
+**Testing Strategy**: Layer: unit (default-on-failure per field); existing content tests for prompts.
 
 ### Feature 1: Coding extension seam in `index.ts`
 
 **Priority**: High
-**Description**: Replace the hardcoded coding wiring in `index.ts` and `entrypoint-main.ts` with a registration interface the coding code plugs into. No files move in this feature.
+**Description**: Replace the hardcoded coding wiring in `index.ts` with the `AgentExtension` interface (see "Extension seam design"), implemented by a `coding` extension. No files move in this feature. GitHub auth is **not** part of the seam: it stays in runtime boot (`entrypoint-main.ts` and `index.ts`), per the classification decisions.
 
 **Requirements**:
-- Define a small extension interface covering what coding contributes at boot today: periodic passes (PR-state reconciler incl. review-state pass, worktree reaper, claim-invariant reconciler, PR census), the loop orchestrator getter and loop job classification/refs, the work-queue reporter, the allowlist/policy refs, and GitHub auth setup/installations reporting.
-- Runtime boot code calls registered extensions; it no longer imports coding modules directly (except through the one place that registers the `coding` extension).
-- Preserve each pass's current semantics: lazy deps built on first tick, own try/catch, non-fatal logging with the same log prefixes, same interval env vars.
-- Document the boot order (it is currently implicit in comments) and assert it in a test.
+- Implement the five hooks in the seam table; `index.ts` calls them at the documented points and no longer imports coding modules directly, except the single `coding/extension.ts` registration.
+- The coding extension owns: the four PR-policy refs and their `onConfigSync` setting, the PR-state/review-state/claim-invariant/census passes, the loop jobs ref, cron classification, the lazy loop orchestrator getter, and its own `WorkQueueReporter`.
+- `worktree-reaper` is wired as a runtime periodic pass (it moves in Feature 3; here it may stay in place but is called from runtime code, not through the extension).
+- Preserve per-pass semantics and log prefixes; document and test the boot order.
 
 **Acceptance Criteria**:
-- [ ] `index.ts` and `entrypoint-main.ts` contain no direct imports of `check-*`, `loop-*`, `pr-*`, `worktree-reaper`, `claim-invariant-*`, `work-*`, `github-*`, `setup-github-auth` or the allowlist refs, other than the single coding registration point
+- [ ] `index.ts` has no direct imports of `check-*`, `loop-*`, `pr-*`, `claim-invariant-*`, `work-*` or the PR-policy refs other than via the single coding registration
 - [ ] A test fails if the boot sequence order changes
-- [ ] All existing agent tests pass without modification to assertions
-- [ ] A coding agent boots identically (same log lines for each reconciler start and for loop wiring) — verified by the existing entrypoint/cron-handler smoke and integration tests
+- [ ] `onCronJobs` runs before `classifyCronJobs` every tick (tested)
+- [ ] A coding agent boots with the same log lines for reconciler start and loop wiring, verified by existing entrypoint/cron-handler smoke and integration tests, which pass without assertion changes
+- [ ] The worktree-reaper pass-order change is noted in the PR description
 
-**Technical Considerations**: Highest behavior risk in the program. Several passes share state or timing with the cron sync loop (`loopJobsRef` is set before the first cron sync); the design step must identify which ordering constraints exist before choosing the interface shape.
+**Technical Considerations**: Highest behavior risk in the program. `loopJobsRef` is set before the first cron sync; the loop orchestrator is a single stateful closure (cross-tick busy flag) and must stay constructed once, lazily.
 
-**Source Map**: `agent/src/index.ts`, `agent/src/entrypoint-main.ts`, `agent/src/loop-jobs-ref.ts`, `agent/src/loop-cron-classifier.ts`, `agent/src/github-auth-startup.ts`, `agent/src/github-auth-deps.ts`, `agent/src/setup-github-auth.ts`.
+**Source Map**: `agent/src/index.ts`, `agent/src/loop-jobs-ref.ts`, `agent/src/loop-cron-classifier.ts`, `agent/src/loop-orchestrator.ts`, `agent/src/work-queue-reporter.ts`, `agent/src/pr-state-reconciler.ts`, `agent/src/claim-invariant-reconciler.ts`, `agent/src/pr-census.ts`, the PR-policy refs.
 
-**Testing Strategy**: Layer: unit for the registration seam and boot-order assertion; existing integration/smoke tests act as the behavior-preservation guard.
+**Testing Strategy**: Layer: unit for the seam and boot-order assertion; existing integration/smoke tests are the behavior-preservation guard.
 
 ### Feature 2: Split `check-helpers.ts`
 
-**Priority**: High
-**Description**: Separate the generic and coding-only parts of `check-helpers.ts` so runtime modules stop importing a coding file.
+**Priority**: High (after Feature 0, which removes the six policy parsers and file tiers from this file)
+**Description**: Separate the generic and coding-only parts of the remaining `check-helpers.ts` so runtime modules stop importing a coding file.
 
 **Requirements**:
-- Generic `gh` helpers (`ghJson`, `ghRun`, `ghGraphql`, `getCurrentUser`) and the six policy parsers plus their `read*` wrappers (used by `agent-policy-backfill`) move to runtime-side modules.
-- Review-state classification, task-store/PR query clients, candidate-id helpers, skip/bundle queries and repo resolution stay with coding.
-- No behavior changes; `check-helpers.ts` may remain as a re-export shim during the transition if it keeps the diff reviewable.
+- Generic `gh` helpers (`ghJson`, `ghRun`, `ghGraphql`, `getCurrentUser`) and the cleanup-policy readers (`readCleanupMergedWorktrees` stays with the PR-policy refs in coding; `readCleanupAfterDays` goes to runtime with the reaper) move to runtime-side modules.
+- Review-state classification, task-store/PR query clients, candidate-id helpers, skip/bundle queries, repo resolution and the review-policy readers stay with coding.
+- No behavior changes; `check-helpers.ts` may remain a re-export shim during the transition if that keeps the diff reviewable.
 
 **Acceptance Criteria**:
-- [ ] `agent-policy-backfill.ts` and `index.ts` no longer import from `check-helpers.ts`
-- [ ] Moved functions are byte-for-byte the same logic; existing `check-helpers.unit.test.ts` cases pass unchanged (relocated alongside their functions)
+- [ ] `index.ts` and `worktree-reaper.ts` no longer import from `check-helpers.ts`
+- [ ] Moved functions keep identical logic; existing `check-helpers.unit.test.ts` cases pass unchanged (relocated with their functions)
 - [ ] External importers (`scripts/hitl.ts`, `plugins/shipwright/scripts/diagnose-review-candidacy.ts`) still typecheck
 
-**Source Map**: `agent/src/check-helpers.ts`, `agent/src/agent-policy-backfill.ts`, `agent/src/index.ts`, `scripts/hitl.ts`, `plugins/shipwright/scripts/diagnose-review-candidacy.ts`.
+**Source Map**: `agent/src/check-helpers.ts`, `agent/src/index.ts`, `agent/src/worktree-reaper.ts`, `scripts/hitl.ts`, `plugins/shipwright/scripts/diagnose-review-candidacy.ts`.
 
 **Testing Strategy**: Layer: unit (relocate existing tests with the functions).
 
@@ -81,8 +135,8 @@ Marketing repo move or Saul cutover; external manifest loading; loop/candidate-p
 **Description**: Move files into `agent/src/runtime/` and `agent/src/coding/` within the existing package, and enforce one-way dependency (coding → runtime).
 
 **Requirements**:
-- Runtime files and tests move to `agent/src/runtime/`; coding files and tests to `agent/src/coding/`, using the classification in `AUDIT.md` (judgment calls confirmed during planning).
-- Keep `agent/src/entrypoint-main.ts` at its current path (base-image contract); it may be a thin shim into the runtime directory.
+- Runtime files and tests move to `agent/src/runtime/`; coding files and tests to `agent/src/coding/`, using `AUDIT.md`'s classification as refined by "Classification decisions" above (GitHub auth, repo scope, `sync-config-clone` and `worktree-reaper` are runtime).
+- Keep `agent/src/entrypoint-main.ts` and `agent/src/index.ts` at their current paths (base-image contract and spawn path); `index.ts` is the composition root and the single file exempt from the boundary check.
 - Add an automated import-boundary check (lint rule or test) that fails when a runtime file imports a coding file, wired into CI.
 - Update `agent/Dockerfile` bundle check, `plugins/shipwright/tsconfig.json`, and importers outside `agent/` for the new paths.
 
@@ -144,12 +198,12 @@ Marketing repo move or Saul cutover; external manifest loading; loop/candidate-p
 
 ---
 
-## Suggested ordering (to be settled in planning)
+## Suggested ordering
 
-Feature 4 first (guard), then 1 and 2 (independent), then 3 (needs 1 and 2). Feature 5 in parallel with any of them, serialized against Feature 3 only if both touch `setup.ts` paths. Consider a HITL review checkpoint after Feature 1, since its design sets the interface the rest of the program builds on.
+Feature 0 first (and Feature 4's guard in parallel, since it only reads). Feature 1 in parallel with Feature 0. Feature 2 after Feature 0 (same file). Feature 3 after 1, 2 and 4. Feature 5 after Feature 3 (both touch `setup.ts` paths, so serialize to avoid merge conflicts). Planning decided design here, so no HITL checkpoint is needed for the seam.
 
 ## Open Questions
 
-- Extension interface shape (design step of planning).
-- Classification judgment calls: `agent-repos-ref`, `gh-*`, `github-*`, `sync-config-clone`, `work-queue-reporter`.
-- Is GitHub auth best owned by the coding extension or exposed as an optional integration any type can opt into? (Direction from CONTEXT.md: GitHub should be an option for agents generally; this refactor should not make that harder.)
+- Feature 5: deliver `typeName` via the config response (additive, regenerates OpenAPI types) or entrypoint env. Recommendation: config response (documented contract, simplest expected outcome).
+- Whether to gate the coding extension by agent type once the runtime knows its type (follow-up, deliberate behavior change).
+- Follow-up: the public-site copy for the policy cleanup needs a human read.
