@@ -1195,6 +1195,11 @@ export const AgentConfigResponseSchema = z
       .optional()
       .openapi({ example: "active" }),
     /**
+     * ARD-6.1: the agent's Agent Type name. Optional (additive) — the runtime
+     * falls back to "coding" templates when absent.
+     */
+    typeName: z.string().optional().openapi({ example: "coding" }),
+    /**
      * PMC-1.1: phase -> subagentType (or null) map, covering all six pipeline
      * phases (see AGENT_PHASES) regardless of whether the agent has an
      * explicit override row for each — phases without a row default to null.

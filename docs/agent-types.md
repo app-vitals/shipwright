@@ -63,7 +63,7 @@ A top-level `.superRefine()` check also applies: every `crons[].parentCron` must
 
 | Name | Type | Default | Description |
 |---|---|---|---|
-| `templatesDir` | `string` | — | Path to this type's workspace template directory (e.g. `agent/workspace/`). Min length 1. |
+| `templatesDir` | `string` | — | Path to this type's workspace template directory (e.g. `agent/workspace/`), relative to the repo root. Read by the agent runtime when seeding a new workspace (the type reaches it via `typeName` on `GET /agents/:id/config`, exported by the entrypoint as `SHIPWRIGHT_AGENT_TYPE`). `coding`, an absent type and any type that does not resolve fall back to `agent/workspace/` with a logged warning; existing workspace files are never rewritten. Min length 1. |
 
 ### `crons[]`
 
@@ -251,7 +251,7 @@ It differs from `coding` in what it does *not* grant: `crons: []` (no system cro
 
 Specialties layer their own plugins, crons and env on top after creation, via the admin API.
 
-**Limitation:** `identity.templatesDir` is required by the schema but is not read at runtime, so specialist agents still receive the coding-flavored workspace template until type-aware templates land.
+**Workspace templates:** the agent runtime reads `identity.templatesDir` when it first seeds a workspace. This manifest still points at `agent/workspace/`, so specialist agents currently receive the coding-flavored templates; point it at another directory to seed that directory's files instead.
 
 ## Rules
 

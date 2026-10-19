@@ -3043,6 +3043,8 @@ export interface components {
             trialExpiresAt?: string | null;
             /** @example active */
             accountStatus?: string | null;
+            /** @example coding */
+            typeName?: string;
             /**
              * @example {
              *       "prd": null,

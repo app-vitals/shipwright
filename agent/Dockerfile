@@ -190,6 +190,8 @@ COPY lib/ ./lib/
 # Copy the plugin source so the local marketplace is available at runtime
 COPY plugins/ ./plugins/
 COPY .claude-plugin/ ./.claude-plugin/
+# Agent Type manifests — setup.ts reads identity.templatesDir from them (ARD-6.1)
+COPY agent-types/ ./agent-types/
 # Copy the version-sync script so the version stamp below can run.
 COPY scripts/ ./scripts/
 
@@ -248,6 +250,7 @@ COPY --from=build --chown=1000:1000 /app/lib ./lib
 # Plugin source + marketplace manifest — needed for local `claude plugin marketplace add`
 COPY --from=build --chown=1000:1000 /app/plugins ./plugins
 COPY --from=build --chown=1000:1000 /app/.claude-plugin ./.claude-plugin
+COPY --from=build --chown=1000:1000 /app/agent-types ./agent-types
 
 # Make the credential helper and gh wrapper executable
 RUN chmod +x /app/agent/scripts/bin/git-credential-shipwright.sh \
