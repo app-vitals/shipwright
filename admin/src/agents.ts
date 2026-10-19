@@ -186,6 +186,12 @@ interface AgentIdAndRepos {
    */
   accountStatus?: string | null;
   /**
+   * ARD-6.1: the agent's Agent Type name, surfaced on the runtime config
+   * response so the agent process can pick its workspace template directory.
+   * Optional for the same fixture-compat reason as trialExpiresAt.
+   */
+  typeName?: string;
+  /**
    * APM-1.5: the 6 agent-policy fields, read by the runtime GET /:id/config
    * route for direct passthrough. Required (not optional) since the Prisma
    * select below always returns them (each column has a schema default).
@@ -496,6 +502,7 @@ export class AgentService {
         restrictSlackToMembers: true,
         trialExpiresAt: true,
         selfHosted: true,
+        typeName: true,
         account: { select: { status: true } },
         autoPostReviews: true,
         allowSelfReview: true,

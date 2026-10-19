@@ -20,7 +20,7 @@ import {
   unlinkSync,
   writeFileSync,
 } from "node:fs";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 import type { AgentPlugin } from "@shipwright/admin";
 
 // ---------------------------------------------------------------------------
@@ -41,12 +41,65 @@ const SHIPWRIGHT_MARKETPLACE = "shipwright";
 // Default plugin installed on all Shipwright agents.
 const DEFAULT_PLUGINS: readonly string[] = ["shipwright"];
 
+// The universal fallback type — mirrors admin's DEFAULT_AGENT_TYPE_NAME. Its
+// templates are agent/workspace/, so it never needs a manifest lookup.
+const DEFAULT_AGENT_TYPE_NAME = "coding";
+
 /**
- * Reads a template file from agent/workspace/<name>.
+ * Resolves the workspace template directory for an agent type (ARD-6.1).
+ *
+ * Reads `identity.templatesDir` from `<repoRoot>/agent-types/<typeName>/manifest.yaml`
+ * (relative paths resolve against the repo root, matching how the manifests
+ * spell them). Returns the built-in agent/workspace/ for `coding`, an absent
+ * type, and any type that does not resolve (no manifest, unparseable, or the
+ * directory is missing) — logging a warning for the latter. Never throws:
+ * a template lookup must not fail boot.
+ */
+export function resolveTemplatesDir(
+  typeName: string | undefined,
+  repoRoot: string = SHIPWRIGHT_REPO_ROOT,
+  warn: (message: string) => void = (m) => console.warn(m),
+): string {
+  if (!typeName || typeName === DEFAULT_AGENT_TYPE_NAME) {
+    return WORKSPACE_TEMPLATE_DIR;
+  }
+  try {
+    const manifestPath = join(
+      repoRoot,
+      "agent-types",
+      typeName,
+      "manifest.yaml",
+    );
+    const manifest = Bun.YAML.parse(readFileSync(manifestPath, "utf8")) as {
+      identity?: { templatesDir?: unknown };
+    };
+    const templatesDir = manifest?.identity?.templatesDir;
+    if (typeof templatesDir !== "string" || templatesDir === "") {
+      throw new Error("manifest has no identity.templatesDir");
+    }
+    const dir = resolve(repoRoot, templatesDir);
+    if (!statSync(dir).isDirectory()) {
+      throw new Error(`${dir} is not a directory`);
+    }
+    return dir;
+  } catch (err) {
+    warn(
+      `[setup] could not resolve workspace templates for agent type "${typeName}" ` +
+        `(${(err as Error).message}) — falling back to "${DEFAULT_AGENT_TYPE_NAME}" templates`,
+    );
+    return WORKSPACE_TEMPLATE_DIR;
+  }
+}
+
+/**
+ * Reads a template file from `dir` (agent/workspace/ by default).
  * Throws clearly if the file is missing so deployment failures are loud.
  */
-function readTemplate(name: string): string {
-  const path = join(WORKSPACE_TEMPLATE_DIR, name);
+function readTemplate(
+  name: string,
+  dir: string = WORKSPACE_TEMPLATE_DIR,
+): string {
+  const path = join(dir, name);
   try {
     return readFileSync(path, "utf8");
   } catch {
@@ -525,7 +578,13 @@ function stripBootstrapInclude(claudeMdPath: string): void {
   writeFileSync(claudeMdPath, filtered.join("\n"), "utf8");
 }
 
-export function ensureAgentHome(home: string): void {
+export function ensureAgentHome(
+  home: string,
+  // ARD-6.1: the entrypoint exports the agent's type (from the config
+  // response) as SHIPWRIGHT_AGENT_TYPE before spawning this process.
+  typeName: string | undefined = process.env.SHIPWRIGHT_AGENT_TYPE,
+  templatesDir: string = resolveTemplatesDir(typeName),
+): void {
   const workspaceDir = join(home, "workspace");
   const stateDir = join(workspaceDir, "state");
   const reposDir = join(workspaceDir, "repos");
@@ -555,24 +614,36 @@ export function ensureAgentHome(home: string): void {
   const newWorkspace = isNewWorkspace(home);
 
   // Seed identity files into workspace/ (Claude's cwd — where CLAUDE.md is auto-loaded)
-  seedFile(join(workspaceDir, "CLAUDE.md"), readTemplate("CLAUDE.md.template"));
+  seedFile(
+    join(workspaceDir, "CLAUDE.md"),
+    readTemplate("CLAUDE.md.template", templatesDir),
+  );
 
   // Seed VOICE.md once (wx semantics — user edits preserved)
-  seedFile(join(workspaceDir, "VOICE.md"), readTemplate("VOICE.md.template"));
+  seedFile(
+    join(workspaceDir, "VOICE.md"),
+    readTemplate("VOICE.md.template", templatesDir),
+  );
 
-  seedFile(join(workspaceDir, "SOUL.md"), readTemplate("SOUL.md.template"));
+  seedFile(
+    join(workspaceDir, "SOUL.md"),
+    readTemplate("SOUL.md.template", templatesDir),
+  );
   seedFile(
     join(workspaceDir, "IDENTITY.md"),
-    readTemplate("IDENTITY.md.template"),
+    readTemplate("IDENTITY.md.template", templatesDir),
   );
 
   // Seed workspace/mise.toml — user-editable tool declarations; seeded once (wx)
-  seedFile(join(workspaceDir, "mise.toml"), readTemplate("mise.toml.template"));
+  seedFile(
+    join(workspaceDir, "mise.toml"),
+    readTemplate("mise.toml.template", templatesDir),
+  );
 
   // Seed workspace/requirements.txt — Python package dependencies; seeded once (wx)
   seedFile(
     join(workspaceDir, "requirements.txt"),
-    readTemplate("requirements.txt.template"),
+    readTemplate("requirements.txt.template", templatesDir),
   );
 
   // Create state/reviews/ directory for review artifacts (PR_REVIEW files)
@@ -584,7 +655,7 @@ export function ensureAgentHome(home: string): void {
   if (newWorkspace && !state.bootstrapSeededAt) {
     seedFile(
       join(workspaceDir, "BOOTSTRAP.md"),
-      readTemplate("BOOTSTRAP.md.template"),
+      readTemplate("BOOTSTRAP.md.template", templatesDir),
     );
     state.bootstrapSeededAt = new Date().toISOString();
     saveState(home, state);

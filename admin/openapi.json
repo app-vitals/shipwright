@@ -2748,6 +2748,10 @@
             ],
             "example": "active"
           },
+          "typeName": {
+            "type": "string",
+            "example": "coding"
+          },
           "phaseMethodology": {
             "type": "object",
             "additionalProperties": {
