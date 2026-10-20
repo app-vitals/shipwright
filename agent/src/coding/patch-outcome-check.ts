@@ -19,6 +19,7 @@ import {
 } from "./check-helpers.ts";
 import {
   type CheckPatchDeps,
+  isBehindReady,
   isCiPatchTrigger,
   type PrReviewData,
 } from "./check-patch.ts";
@@ -29,6 +30,8 @@ export interface PatchStateSnapshot {
   /** Refs of findings `hasUnaddressedFindings` still counts (sorted). */
   findingRefs: string[];
   mergeDirty: boolean;
+  /** BEHIND and otherwise ready to merge (approved, CI green, no findings). */
+  behindReady?: boolean;
   /** Failing or cancelled CI at `headSha`, not settled by a `ci:` rejected ref. */
   ciFailing: boolean;
 }
@@ -39,7 +42,9 @@ type PatchOutcome =
   | { kind: "escalated"; reason: string; headSha: string };
 
 function isCandidate(s: PatchStateSnapshot): boolean {
-  return s.findingRefs.length > 0 || s.mergeDirty || s.ciFailing;
+  return (
+    s.findingRefs.length > 0 || s.mergeDirty || s.ciFailing || !!s.behindReady
+  );
 }
 
 /**
@@ -57,6 +62,7 @@ export function evaluatePatchOutcome(
   if (
     before.headSha !== after.headSha ||
     before.mergeDirty !== after.mergeDirty ||
+    !!before.behindReady !== !!after.behindReady ||
     before.ciFailing !== after.ciFailing ||
     before.findingRefs.join("\n") !== after.findingRefs.join("\n")
   ) {
@@ -68,6 +74,7 @@ export function evaluatePatchOutcome(
     ...after.findingRefs,
     ...(after.mergeDirty ? ["merge conflict"] : []),
     ...(after.ciFailing ? ["failing CI"] : []),
+    ...(after.behindReady ? ["branch behind base"] : []),
   ];
   return {
     kind: "escalated",
@@ -113,6 +120,10 @@ export function createPatchStateSnapshotter(
         headSha,
         findingRefs: unaddressedFindingRefs(reviewData, currentUser).sort(),
         mergeDirty: merge.isDirty,
+        behindReady: await isBehindReady(deps, merge, ci, reviewData, {
+          currentUser,
+          isAllowlistedAuthor: prAuthor !== undefined,
+        }),
         ciFailing: isCiPatchTrigger(ci, headSha, record?.findings),
       };
     } catch (err) {

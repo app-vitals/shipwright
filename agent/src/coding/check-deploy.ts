@@ -184,7 +184,10 @@ function isActiveRun(run: WorkflowRun, now: string): boolean {
   return false;
 }
 
-function hasSelfApproveReview(reviews: GhReview[], userLogin: string): boolean {
+export function hasSelfApproveReview(
+  reviews: GhReview[],
+  userLogin: string,
+): boolean {
   return reviews.some(
     (r) =>
       canonicalLogin(r.author.login) === canonicalLogin(userLogin) &&

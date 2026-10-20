@@ -34,7 +34,9 @@ import {
   isRejectedByPatchLedger,
   isSelfCleanApprove,
 } from "../../../plugins/shipwright/scripts/compute-unaddressed-findings.ts";
+import { isCiGreen } from "../../../plugins/shipwright/scripts/is-ci-green.ts";
 import { agentReposRef } from "../runtime/agent-repos-ref.ts";
+import { hasSelfApproveReview } from "./check-deploy.ts";
 import type { CommitInfo, LinkedTaskInfo } from "./check-helpers.ts";
 import {
   candidateId,
@@ -47,6 +49,7 @@ import {
   isPrRecordBlockedForDispatch,
   isTaskBlockedForDispatch,
   mapReposTolerant,
+  readAllowSelfReview,
   resolveAllRepos,
   resolveWorkspacePath,
   splitOrgRepo,
@@ -162,6 +165,13 @@ export interface CiCheckStatus {
    */
   hasCancelled?: boolean;
   /**
+   * True when every workflow's latest run on the head is green (shared
+   * isCiGreen semantics, so in-flight runs are NOT green). Optional: absent
+   * falls back to `!hasFailing && !hasCancelled`. Consumed only by the
+   * BEHIND-readiness gate (SBU-1.2).
+   */
+  isGreen?: boolean;
+  /**
    * The `id` of the qualifying cancelled run (needed for `gh run rerun
    * {run_id}` in patch.md's Step 6b.8), when `hasCancelled` is true. When
    * multiple workflows qualify, the highest `run_number` wins — arbitrary
@@ -180,6 +190,10 @@ export interface CiCheckStatus {
 
 export interface MergeStatusInfo {
   isDirty: boolean;
+  /** mergeStateStatus === "BEHIND" (SBU-1.2); false when unreadable, like isDirty. */
+  isBehind?: boolean;
+  /** GitHub's PR reviewDecision — feeds the BEHIND-readiness approval check. */
+  reviewDecision?: string | null;
 }
 
 /**
@@ -254,6 +268,11 @@ export interface CheckPatchDeps {
   ) => Promise<MergeStatusInfo>;
   listPrCommits: (prNumber: number, repo?: string) => Promise<CommitInfo[]>;
   getCurrentUser: () => Promise<string>;
+  /**
+   * Whether the agent may count its own clean-APPROVE review as approval of
+   * its own PR (same policy check-deploy.ts uses). Optional; absent = false.
+   */
+  isSelfReviewAllowed?: () => Promise<boolean>;
   /**
    * Task-store PR record lookup, used both to gate qualification (a record
    * with claimedBy set means another agent currently holds the claim on this
@@ -468,6 +487,32 @@ async function hasMergeOnlyStaleFindings(
   return isMergeOnlyUpdate(prNumber, anchorCommit, deps, repo);
 }
 
+// ─── BEHIND readiness (SBU-1.2) ───────────────────────────────────────────────
+
+/**
+ * Whether a BEHIND PR is a patch candidate on that alone: approved (same rule
+ * as check-deploy.ts — GitHub APPROVED, or for self-authored PRs when policy
+ * allows a clean self-APPROVE), CI green on the head, and no unaddressed
+ * findings. Gating on readiness keeps strict-mode repos from re-running CI on
+ * every open PR after each merge to main. Shared by getPatchCandidates and the
+ * PHS-3.1 outcome snapshot so candidacy cannot drift between them.
+ */
+export async function isBehindReady(
+  deps: Pick<CheckPatchDeps, "isSelfReviewAllowed">,
+  merge: MergeStatusInfo,
+  ci: CiCheckStatus,
+  reviewData: PrReviewData,
+  opts: { currentUser: string; isAllowlistedAuthor: boolean },
+): Promise<boolean> {
+  if (!merge.isBehind) return false;
+  if (!(ci.isGreen ?? (!ci.hasFailing && !ci.hasCancelled))) return false;
+  if (hasUnaddressedFindings(reviewData, opts.currentUser)) return false;
+  if (merge.reviewDecision === "APPROVED") return true;
+  if (opts.isAllowlistedAuthor) return false;
+  if (!(await deps.isSelfReviewAllowed?.())) return false;
+  return hasSelfApproveReview(reviewData.reviews.nodes, opts.currentUser);
+}
+
 // ─── Core logic ───────────────────────────────────────────────────────────────
 
 /**
@@ -547,9 +592,9 @@ export async function getPatchCandidates(
 
     let needsPatch = false;
 
-    // Only a real merge conflict (DIRTY) needs patch attention. A branch
-    // that's merely behind main is not patch-worthy — main is only merged
-    // into a branch to resolve a conflict.
+    // A real merge conflict (DIRTY) needs patch attention. A branch that's
+    // merely behind main is only patch-worthy once otherwise ready to merge
+    // (SBU-1.2) — evaluated after the other triggers below.
     const mergeStatus = await deps.fetchMergeStatus(org, repo, pr.number);
     if (mergeStatus.isDirty) {
       needsPatch = true;
@@ -601,6 +646,13 @@ export async function getPatchCandidates(
         // rerun-first branch is what actually resolves it, but candidacy
         // itself is decided here per the Candidate Selection Contract.
         if (isCiPatchTrigger(ciStatus, pr.headRefOid, record?.findings)) {
+          needsPatch = true;
+        } else if (
+          await isBehindReady(deps, mergeStatus, ciStatus, reviewData, {
+            currentUser,
+            isAllowlistedAuthor: pr.author !== undefined,
+          })
+        ) {
           needsPatch = true;
         }
       }
@@ -715,6 +767,7 @@ export async function buildProductionDeps(opts: {
 
   return {
     getScopedRepos: opts.getScopedRepos ?? agentReposRef.get,
+    isSelfReviewAllowed: () => readAllowSelfReview(workspacePath),
     listOwnOpenPrs: async (_repo: string) => {
       const user = await getUser();
       const repos = getScopedAllRepos();
@@ -863,6 +916,7 @@ export async function buildProductionDeps(opts: {
         }
         return {
           hasFailing,
+          isGreen: isCiGreen(data.workflow_runs),
           hasCancelled: cancelledRuns.length > 0,
           ...(cancelledRunId !== undefined ? { cancelledRunId } : {}),
           ...(ciFailureSignature ? { ciFailureSignature } : {}),
@@ -876,23 +930,28 @@ export async function buildProductionDeps(opts: {
     },
     fetchMergeStatus: async (org: string, repo: string, pr: number) => {
       try {
-        const data = await ghJson<{ mergeStateStatus: string }>([
+        const data = await ghJson<{
+          mergeStateStatus: string;
+          reviewDecision?: string | null;
+        }>([
           "pr",
           "view",
           String(pr),
           "--repo",
           `${org}/${repo}`,
           "--json",
-          "mergeStateStatus",
+          "mergeStateStatus,reviewDecision",
         ]);
         return {
           isDirty: data.mergeStateStatus === "DIRTY",
+          isBehind: data.mergeStateStatus === "BEHIND",
+          reviewDecision: data.reviewDecision,
         };
       } catch (err) {
         process.stderr.write(
           `check-patch: gh merge status query failed for PR ${pr}: ${String(err)}\n`,
         );
-        return { isDirty: false };
+        return { isDirty: false, isBehind: false };
       }
     },
     listPrCommits: async (prNumber: number, repo?: string) => {

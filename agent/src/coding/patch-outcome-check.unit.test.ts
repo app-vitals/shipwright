@@ -15,6 +15,32 @@ const base: PatchStateSnapshot = {
 };
 
 describe("evaluatePatchOutcome", () => {
+  const behind: PatchStateSnapshot = {
+    ...base,
+    findingRefs: [],
+    behindReady: true,
+  };
+
+  test("BEHIND-ready: a moved head counts as progress (changed)", () => {
+    expect(
+      evaluatePatchOutcome(behind, { ...behind, headSha: "newhead7654321" }),
+    ).toEqual({ kind: "changed" });
+  });
+
+  test("BEHIND-ready: update-branch that fails to move the head escalates", () => {
+    const out = evaluatePatchOutcome(behind, behind);
+    expect(out.kind).toBe("escalated");
+    if (out.kind === "escalated") {
+      expect(out.reason).toContain("branch behind base");
+    }
+  });
+
+  test("BEHIND-ready: head moved but PR no longer behind-ready is changed, then settles", () => {
+    const after = { ...behind, behindReady: false, headSha: "newhead7654321" };
+    expect(evaluatePatchOutcome(behind, after).kind).toBe("changed");
+    expect(evaluatePatchOutcome(after, after).kind).toBe("settled");
+  });
+
   test("settled: nothing left that makes the PR a candidate", () => {
     const after = { ...base, findingRefs: [] };
     // Same head, findings gone is a change; settled needs no before findings either.
@@ -109,6 +135,7 @@ describe("createPatchStateSnapshotter", () => {
       headSha: "sha1",
       findingRefs: ["sha1@2026-01-01T00:00:00Z"],
       mergeDirty: false,
+      behindReady: false,
       ciFailing: false,
     });
   });
