@@ -1930,6 +1930,102 @@ describe("admin API — POST /agents", () => {
     expect(res.status).toBe(200);
   });
 
+  // PAI-1.2: the owner is the authenticated caller, never a body field.
+  function makeOwnerCaptureDeps(keySpec = `admin:${ADMIN_API_KEY}:*`): {
+    deps: AdminDeps;
+    created: Array<Record<string, unknown>>;
+  } {
+    const created: Array<Record<string, unknown>> = [];
+    const base = makeMockDeps();
+    const deps: AdminDeps = {
+      ...base,
+      adminApiKeys: parseAdminApiKeys(keySpec),
+      agentService: {
+        ...base.agentService,
+        create: async (...args) => {
+          created.push(args[0] as unknown as Record<string, unknown>);
+          return base.agentService.create(
+            ...(args as Parameters<typeof base.agentService.create>),
+          );
+        },
+      },
+    };
+    return { deps, created };
+  }
+
+  it("session-cookie caller → created agent is owned by the caller's email (PAI-1.2)", async () => {
+    const { deps, created } = makeOwnerCaptureDeps();
+    const app = createAdminApp(deps);
+    const res = await app.request("/agents", {
+      method: "POST",
+      body: JSON.stringify({ name: "Owned Agent", typeName: "coding" }),
+      headers: {
+        "Content-Type": "application/json",
+        Cookie: `admin_session=${cookie}`,
+      },
+    });
+    expect(res.status).toBe(200);
+    expect(created).toHaveLength(1);
+    expect(created[0]?.ownerEmail).toBe("admin@example.com");
+  });
+
+  it("body-supplied ownerEmail is ignored; the caller's email is stored (PAI-1.2)", async () => {
+    const { deps, created } = makeOwnerCaptureDeps();
+    const app = createAdminApp(deps);
+    const res = await app.request("/agents", {
+      method: "POST",
+      body: JSON.stringify({
+        name: "Spoof Agent",
+        typeName: "coding",
+        ownerEmail: "attacker@evil.example",
+      }),
+      headers: {
+        "Content-Type": "application/json",
+        Cookie: `admin_session=${cookie}`,
+      },
+    });
+    expect(res.status).toBe(200);
+    expect(created).toHaveLength(1);
+    expect(created[0]?.ownerEmail).toBe("admin@example.com");
+  });
+
+  it("bearer key whose name is not an email → ownerEmail unset, body owner ignored (PAI-1.2)", async () => {
+    const { deps, created } = makeOwnerCaptureDeps();
+    const app = createAdminApp(deps);
+    const res = await app.request("/agents", {
+      method: "POST",
+      body: JSON.stringify({
+        name: "Key Agent",
+        typeName: "coding",
+        ownerEmail: "attacker@evil.example",
+      }),
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${ADMIN_API_KEY}`,
+      },
+    });
+    expect(res.status).toBe(200);
+    expect(created).toHaveLength(1);
+    expect("ownerEmail" in (created[0] ?? {})).toBe(false);
+  });
+
+  it("bearer key named like an email → that address (lower-cased) is the owner (PAI-1.2)", async () => {
+    const { deps, created } = makeOwnerCaptureDeps(
+      `Ops@Example.com:${ADMIN_API_KEY}:*`,
+    );
+    const app = createAdminApp(deps);
+    const res = await app.request("/agents", {
+      method: "POST",
+      body: JSON.stringify({ name: "Ops Agent", typeName: "coding" }),
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${ADMIN_API_KEY}`,
+      },
+    });
+    expect(res.status).toBe(200);
+    expect(created[0]?.ownerEmail).toBe("ops@example.com");
+  });
+
   it("same-basename repos under different owners → 400 naming both repos", async () => {
     const app = createAdminApp(makeMockDeps());
     const res = await app.request("/agents", {

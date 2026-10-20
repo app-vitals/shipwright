@@ -1971,6 +1971,8 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
         claudeCodeOauthToken,
         anthropicApiKey,
         ...(accountId !== null ? { accountId } : {}),
+        // PAI-1.2: owner is the authenticated session user, never form data.
+        ownerEmail: c.var.userEmail,
       },
     );
     if (!result.ok) {
