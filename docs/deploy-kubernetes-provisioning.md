@@ -37,8 +37,8 @@ Setting `agent.provisioning.enabled=true` switches the admin service to the
     **`Role`** + **`RoleBinding`** named `<admin>-agent-provisioner`, granting
     `create`, `get`, `list`, `patch`, `update`, and `delete` on `Deployments`
     (`apps`) and `create`, `get`, `delete` on `Secrets` and
-    `PersistentVolumeClaims` (core) — exactly the verbs the provisioner
-    exercises, scoped to the release namespace (least privilege).
+    `PersistentVolumeClaims` and `ServiceAccounts` (core) — exactly the verbs
+    the provisioner exercises, scoped to the release namespace (least privilege).
   - **Non-empty (cross-namespace provisioning):** a **`ClusterRole`** +
     **`ClusterRoleBinding`** with the same name and verb set, so the admin
     service can provision agents into a namespace other than its own release

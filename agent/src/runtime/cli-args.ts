@@ -8,6 +8,8 @@
  * Pure — no I/O, no process.env reads at module level.
  */
 
+import { parseFlags } from "@shipwright/lib/cli-flags";
+
 interface CliArgs {
   agentId: string | undefined;
   apiUrl: string | undefined;
@@ -24,26 +26,11 @@ export function parseCliArgs(
   argv: string[],
   env: Record<string, string | undefined>,
 ): CliArgs {
-  const flags: Record<string, string> = {};
-
-  for (let i = 0; i < argv.length - 1; i++) {
-    const flag = argv[i];
-    const value = argv[i + 1];
-    if (flag === "--agent-id") {
-      flags.agentId = value;
-      i++;
-    } else if (flag === "--api-url") {
-      flags.apiUrl = value;
-      i++;
-    } else if (flag === "--api-key") {
-      flags.apiKey = value;
-      i++;
-    }
-  }
+  const flags = parseFlags(argv, ["--agent-id", "--api-url", "--api-key"]);
 
   return {
-    agentId: flags.agentId ?? env.SHIPWRIGHT_AGENT_ID,
-    apiUrl: flags.apiUrl ?? env.SHIPWRIGHT_API_URL,
-    apiKey: flags.apiKey ?? env.SHIPWRIGHT_AGENT_API_KEY,
+    agentId: flags["--agent-id"] ?? env.SHIPWRIGHT_AGENT_ID,
+    apiUrl: flags["--api-url"] ?? env.SHIPWRIGHT_API_URL,
+    apiKey: flags["--api-key"] ?? env.SHIPWRIGHT_AGENT_API_KEY,
   };
 }

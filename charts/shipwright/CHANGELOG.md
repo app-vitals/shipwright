@@ -10,6 +10,30 @@ independent of `appVersion`. CI enforces this with
 `ct lint --check-version-increment`. Each release here must mirror the
 `artifacthub.io/changes` annotation in `Chart.yaml`.
 
+## [1.26.23] - 2026-10-20
+
+### Changed
+
+- auto-bump to chart v1.26.23 triggered by release tag(s): `admin-v1.279.0`
+
+## [1.26.22] - 2026-10-20
+
+### Added
+
+- agent-provisioning RBAC (Role and ClusterRole) now grants create, get and delete on serviceaccounts
+
+## [1.26.21] - 2026-10-20
+
+### Changed
+
+- auto-bump to chart v1.26.21 triggered by release tag(s): `agent-v1.414.0`
+
+## [1.26.20] - 2026-10-20
+
+### Changed
+
+- auto-bump to chart v1.26.20 triggered by release tag(s): `admin-v1.278.0`
+
 ## [1.26.19] - 2026-10-20
 
 ### Changed

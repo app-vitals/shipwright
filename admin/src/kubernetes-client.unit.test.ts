@@ -15,6 +15,8 @@ import {
   RecordedKubernetesClient,
   secretBody,
   secretUrl,
+  serviceAccountBody,
+  serviceAccountUrl,
 } from "./kubernetes-client.ts";
 
 // ─── URL building: Deployments ──────────────────────────────────────────────
@@ -264,6 +266,99 @@ describe("RecordedKubernetesClient — PVCs", () => {
     });
     const fetched = await rec.getPvc("shipwright", "agent-abc-home");
     expect(fetched.metadata.name).toBe("agent-abc-home");
+  });
+});
+
+// ─── ServiceAccounts: URL, body, and in-memory CRUD ─────────────────────────
+
+describe("serviceAccountUrl", () => {
+  const api = "https://kubernetes.default.svc";
+
+  it("builds a collection URL with no name", () => {
+    expect(serviceAccountUrl(api, "shipwright")).toBe(
+      "https://kubernetes.default.svc/api/v1/namespaces/shipwright/serviceaccounts",
+    );
+  });
+
+  it("builds a resource URL with a name", () => {
+    expect(serviceAccountUrl(api, "shipwright", "agent-abc")).toBe(
+      "https://kubernetes.default.svc/api/v1/namespaces/shipwright/serviceaccounts/agent-abc",
+    );
+  });
+
+  it("strips a trailing slash from the api server", () => {
+    expect(serviceAccountUrl("https://k8s.local/", "ns", "name")).toBe(
+      "https://k8s.local/api/v1/namespaces/ns/serviceaccounts/name",
+    );
+  });
+});
+
+describe("serviceAccountBody", () => {
+  it("shapes a v1 ServiceAccount", () => {
+    expect(serviceAccountBody("shipwright", { name: "agent-abc" })).toEqual({
+      apiVersion: "v1",
+      kind: "ServiceAccount",
+      metadata: { name: "agent-abc", namespace: "shipwright" },
+    });
+  });
+});
+
+describe("RecordedKubernetesClient — ServiceAccounts", () => {
+  const empty = () =>
+    new RecordedKubernetesClient({ deployments: {}, secrets: {} });
+
+  it("createServiceAccount records and returns the ServiceAccount", async () => {
+    const rec = empty();
+    const created = await rec.createServiceAccount("ns", { name: "sa" });
+    expect(created.kind).toBe("ServiceAccount");
+    expect(created.metadata.name).toBe("sa");
+    const fetched = await rec.getServiceAccount("ns", "sa");
+    expect(fetched.metadata.name).toBe("sa");
+  });
+
+  it("createServiceAccount throws ConflictError on duplicate", async () => {
+    const rec = empty();
+    await rec.createServiceAccount("ns", { name: "dup" });
+    await expect(
+      rec.createServiceAccount("ns", { name: "dup" }),
+    ).rejects.toBeInstanceOf(ConflictError);
+  });
+
+  it("getServiceAccount throws NotFoundError when missing", async () => {
+    await expect(
+      empty().getServiceAccount("ns", "missing"),
+    ).rejects.toBeInstanceOf(NotFoundError);
+  });
+
+  it("deleteServiceAccount removes the ServiceAccount", async () => {
+    const rec = empty();
+    await rec.createServiceAccount("ns", { name: "sa" });
+    await rec.deleteServiceAccount("ns", "sa");
+    await expect(rec.getServiceAccount("ns", "sa")).rejects.toBeInstanceOf(
+      NotFoundError,
+    );
+  });
+
+  it("deleteServiceAccount throws NotFoundError when missing", async () => {
+    await expect(
+      empty().deleteServiceAccount("ns", "missing"),
+    ).rejects.toBeInstanceOf(NotFoundError);
+  });
+
+  it("getServiceAccount returns a pre-seeded ServiceAccount", async () => {
+    const rec = new RecordedKubernetesClient({
+      deployments: {},
+      secrets: {},
+      serviceAccounts: {
+        "shipwright/agent-abc": {
+          apiVersion: "v1",
+          kind: "ServiceAccount",
+          metadata: { name: "agent-abc", namespace: "shipwright" },
+        },
+      },
+    });
+    const fetched = await rec.getServiceAccount("shipwright", "agent-abc");
+    expect(fetched.metadata.name).toBe("agent-abc");
   });
 });
 

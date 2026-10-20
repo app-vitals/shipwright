@@ -466,6 +466,66 @@ describe("HttpKubernetesClient — PVCs", () => {
   });
 });
 
+// ─── ServiceAccounts: success + error paths ─────────────────────────────────
+
+describe("HttpKubernetesClient — ServiceAccounts", () => {
+  const saPath =
+    "https://kubernetes.default.svc/api/v1/namespaces/shipwright/serviceaccounts";
+
+  it("createServiceAccount POSTs to the serviceaccounts collection", async () => {
+    const { client, lastRequest } = makeClient("createServiceAccount_success");
+    const result = await client.createServiceAccount("shipwright", {
+      name: "agent-abc",
+    });
+
+    const req = lastRequest();
+    expect(req.method).toBe("POST");
+    expect(req.url).toBe(saPath);
+    expect(req.auth).toBe("Bearer test-sa-token");
+    expect(result.metadata.name).toBe("agent-abc");
+  });
+
+  it("getServiceAccount GETs the named resource", async () => {
+    const { client, lastRequest } = makeClient("getServiceAccount_success");
+    const result = await client.getServiceAccount("shipwright", "agent-abc");
+
+    const req = lastRequest();
+    expect(req.method).toBe("GET");
+    expect(req.url).toBe(`${saPath}/agent-abc`);
+    expect(result.metadata.name).toBe("agent-abc");
+  });
+
+  it("deleteServiceAccount DELETEs the named resource", async () => {
+    const { client, lastRequest } = makeClient("deleteServiceAccount_success");
+    await client.deleteServiceAccount("shipwright", "agent-abc");
+
+    const req = lastRequest();
+    expect(req.method).toBe("DELETE");
+    expect(req.url).toBe(`${saPath}/agent-abc`);
+  });
+
+  it("createServiceAccount maps 409 to ConflictError", async () => {
+    const { client } = makeClient("createServiceAccount_409");
+    await expect(
+      client.createServiceAccount("shipwright", { name: "agent-abc" }),
+    ).rejects.toBeInstanceOf(ConflictError);
+  });
+
+  it("getServiceAccount maps 404 to NotFoundError", async () => {
+    const { client } = makeClient("getServiceAccount_404");
+    await expect(
+      client.getServiceAccount("shipwright", "missing"),
+    ).rejects.toBeInstanceOf(NotFoundError);
+  });
+
+  it("deleteServiceAccount maps 404 to NotFoundError", async () => {
+    const { client } = makeClient("deleteServiceAccount_404");
+    await expect(
+      client.deleteServiceAccount("shipwright", "missing"),
+    ).rejects.toBeInstanceOf(NotFoundError);
+  });
+});
+
 // ─── Deployments: listDeployments + deploymentExists ──────────────────────────
 
 describe("HttpKubernetesClient — listDeployments", () => {
