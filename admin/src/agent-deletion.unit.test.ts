@@ -124,16 +124,19 @@ function makeDeps(opts: {
           }
         : {}),
     },
-    taskStore: {
-      listTokensForAgent: async (agentId) => {
-        log.tsListed.push(agentId);
-        return opts.tsTokens ?? [];
+    serviceIntegrations: [
+      {
+        name: "task-store",
+        listTokensForAgent: async (agentId) => {
+          log.tsListed.push(agentId);
+          return opts.tsTokens ?? [];
+        },
+        revokeToken: async (id) => {
+          log.tsRevoked.push(id);
+          if (opts.fail?.tsRevoke) throw opts.fail.tsRevoke;
+        },
       },
-      revokeToken: async (id) => {
-        log.tsRevoked.push(id);
-        if (opts.fail?.tsRevoke) throw opts.fail.tsRevoke;
-      },
-    },
+    ],
     chatService: {
       listTokensForAgent: async (agentId) => {
         log.csListed.push(agentId);

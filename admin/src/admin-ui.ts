@@ -410,7 +410,7 @@ export interface AdminUIDeps {
    * DeleteAgentFullyDeps's shapes exactly, mirroring agents-api.ts's AdminDeps
    * so both delete entry points share the same production wiring in main.ts.
    */
-  taskStore: DeleteAgentFullyDeps["taskStore"];
+  serviceIntegrations: DeleteAgentFullyDeps["serviceIntegrations"];
   chatService: DeleteAgentFullyDeps["chatService"];
   slack: DeleteAgentFullyDeps["slack"];
   decrypt: DeleteAgentFullyDeps["decrypt"];
@@ -1016,7 +1016,7 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
     accountServices,
     agentTypeRegistry = new AgentTypeRegistry(),
     callerScopeResolver = memberOnlyCallerScopeResolver(agentMemberService),
-    taskStore,
+    serviceIntegrations,
     chatService,
     slack,
     decrypt,
@@ -5161,7 +5161,7 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
       const result = await deleteAgentFully(agentId, {
         prisma,
         provisioner,
-        taskStore,
+        serviceIntegrations,
         chatService,
         slack,
         decrypt,

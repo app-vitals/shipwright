@@ -31,11 +31,7 @@ import {
   NoopChatServiceProvisioningClient,
 } from "./chat-service-provisioning-client.ts";
 import { HttpKubernetesClient } from "./kubernetes-client.ts";
-import type { TaskStoreProvisioningClient } from "./task-store-provisioning-client.ts";
-import {
-  HttpTaskStoreProvisioningClient,
-  NoopTaskStoreProvisioningClient,
-} from "./task-store-provisioning-client.ts";
+import type { ServiceIntegration } from "./service-integration.ts";
 
 // ─── Migration preflight ──────────────────────────────────────────────────────
 
@@ -103,14 +99,18 @@ export async function runMigrations(): Promise<void> {
  * standalone behind the flag's default.
  *
  * Exported so its many env-driven branches (K8s provisioning flag, voice env
- * passthrough, task-store/chat-service client construction, PVC name template)
+ * passthrough, chat-service client construction, PVC name template)
  * can be unit-tested directly with an injected/stub AgentTokenService, without
  * needing a real Prisma connection or K8s cluster.
+ *
+ * `serviceIntegrations` are the extension-registered integrations (see
+ * service-integration.ts); the platform names none of them.
  */
 export function buildProvisioner(
   env: NodeJS.ProcessEnv,
   agentTokenService: AgentTokenService,
   prisma?: PrismaClient,
+  serviceIntegrations: readonly ServiceIntegration[] = [],
 ): AgentProvisioner {
   if (env.SHIPWRIGHT_K8S_PROVISIONING !== "enabled") {
     return new NoopAgentProvisioner();
@@ -184,13 +184,6 @@ export function buildProvisioner(
     perAgentIdentity = buildPerAgentIdentity(env, parsedFederation, prisma);
   }
 
-  const taskStoreUrl = env.SHIPWRIGHT_TASK_STORE_URL;
-  const taskStoreAdminToken = env.SHIPWRIGHT_TASK_STORE_ADMIN_TOKEN;
-  const taskStore =
-    taskStoreUrl && taskStoreAdminToken
-      ? new HttpTaskStoreProvisioningClient(taskStoreUrl, taskStoreAdminToken)
-      : undefined;
-
   const chatServiceUrl = env.SHIPWRIGHT_CHAT_SERVICE_URL;
   const chatServiceAdminToken = env.SHIPWRIGHT_CHAT_SERVICE_ADMIN_TOKEN;
   const chatService =
@@ -228,10 +221,10 @@ export function buildProvisioner(
           pvcName: (name: string) => pvcNameTemplate.replace("{name}", name),
         }
       : {}),
-    // Task-store token minting: when both SHIPWRIGHT_TASK_STORE_URL and
-    // SHIPWRIGHT_TASK_STORE_ADMIN_TOKEN are set, mint a per-agent token on
-    // provision and inject it into the agent Secret + Deployment.
-    ...(taskStore ? { taskStore, taskStoreUrl } : {}),
+    // Extension-registered service integrations (e.g. task-store): each one
+    // with a URL mints a per-agent token on provision (before chat) and injects
+    // it into the agent Secret + Deployment.
+    ...(serviceIntegrations.length > 0 ? { serviceIntegrations } : {}),
     // Chat-service token minting: when both SHIPWRIGHT_CHAT_SERVICE_URL and
     // SHIPWRIGHT_CHAT_SERVICE_ADMIN_TOKEN are set, mint a per-agent token on
     // provision and inject it into the agent Secret + Deployment.
@@ -445,36 +438,29 @@ export function parseAnthropicFederation(
 // ─── Agent-deletion client selection ──────────────────────────────────────────
 
 /**
- * Select the task-store and chat-service clients used by DELETE /agents/:id's
+ * Select the chat-service client used by DELETE /agents/:id's
  * `deleteAgentFully()` orchestration (agent-deletion.ts).
  *
  * Independent of `buildProvisioner`/`SHIPWRIGHT_K8S_PROVISIONING`: unlike the
  * token-minting clients constructed inside that function's closure (only
  * built when K8s provisioning is enabled), agent deletion must be able to
- * revoke task-store/chat-service tokens regardless of whether K8s
+ * revoke chat-service tokens regardless of whether K8s
  * provisioning is on — e.g. a local dev setup with provisioning disabled but
- * a real task-store/chat-service still running.
+ * a real chat-service still running. Extension-registered integrations
+ * (task-store) come from AdminExtension.serviceIntegrations instead.
  *
  * Gated on the same env-var pairs as `buildProvisioner` (URL + admin token
  * both set) so the "unconfigured" case is unambiguous. When unconfigured,
- * returns the No-op client rather than `undefined` — constructing either
+ * returns the No-op client rather than `undefined` — constructing the
  * client is cheap (no I/O happens until a call is made), so this avoids
- * making `taskStore`/`chatService` optional in `AdminDeps`/`DeleteAgentFullyDeps`
+ * making `chatService` optional in `AdminDeps`/`DeleteAgentFullyDeps`
  * for the common case (K8s provisioning disabled, e.g. local dev): a
  * deleteAgentFully() call with nothing to revoke (listTokensForAgent → [])
  * completes cleanly instead of surfacing a new error path.
  */
 export function buildDeletionClients(env: NodeJS.ProcessEnv): {
-  taskStore: TaskStoreProvisioningClient;
   chatService: ChatServiceProvisioningClient;
 } {
-  const taskStoreUrl = env.SHIPWRIGHT_TASK_STORE_URL;
-  const taskStoreAdminToken = env.SHIPWRIGHT_TASK_STORE_ADMIN_TOKEN;
-  const taskStore =
-    taskStoreUrl && taskStoreAdminToken
-      ? new HttpTaskStoreProvisioningClient(taskStoreUrl, taskStoreAdminToken)
-      : new NoopTaskStoreProvisioningClient();
-
   const chatServiceUrl = env.SHIPWRIGHT_CHAT_SERVICE_URL;
   const chatServiceAdminToken = env.SHIPWRIGHT_CHAT_SERVICE_ADMIN_TOKEN;
   const chatService =
@@ -485,7 +471,7 @@ export function buildDeletionClients(env: NodeJS.ProcessEnv): {
         )
       : new NoopChatServiceProvisioningClient();
 
-  return { taskStore, chatService };
+  return { chatService };
 }
 
 // ─── Readiness check ──────────────────────────────────────────────────────────

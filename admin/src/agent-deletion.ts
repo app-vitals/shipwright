@@ -41,15 +41,15 @@
  */
 
 import {
+  buildManualStepsChecklist,
   type LeftoverIdentity,
   type ManualStep,
-  buildManualStepsChecklist,
 } from "./agent-deletion-checklist.ts";
 import type { AgentProvisioner } from "./agent-provisioner.ts";
 import type { ChatServiceProvisioningClient } from "./chat-service-provisioning-client.ts";
 import { NotFoundError } from "./errors.ts";
+import type { DeletionServiceIntegration } from "./service-integration.ts";
 import type { SlackProvisioningClient } from "./slack-provisioning-client.ts";
-import type { TaskStoreProvisioningClient } from "./task-store-provisioning-client.ts";
 
 // ─── Step identifiers ─────────────────────────────────────────────────────────
 
@@ -61,7 +61,7 @@ import type { TaskStoreProvisioningClient } from "./task-store-provisioning-clie
 type DeleteAgentStep =
   | "k8s"
   | "anthropic-identity"
-  | "task-store-tokens"
+  | `${string}-tokens`
   | "chat-service-tokens-and-threads"
   | "slack-app";
 
@@ -131,10 +131,12 @@ export interface DeleteAgentFullyDeps {
     AgentProvisioner,
     "deprovision" | "removeAnthropicIdentity"
   >;
-  taskStore: Pick<
-    TaskStoreProvisioningClient,
-    "listTokensForAgent" | "revokeToken"
-  >;
+  /**
+   * Optional service integrations (e.g. task-store, registered by the coding
+   * extension), each cleaned up as its own `${name}-tokens` step, in list
+   * order, before the built-in chat-service step.
+   */
+  serviceIntegrations: DeletionServiceIntegration[];
   chatService: Pick<
     ChatServiceProvisioningClient,
     "listTokensForAgent" | "revokeToken" | "deleteThreadsForAgent"
@@ -243,10 +245,12 @@ export async function deleteAgentFully(
     });
   }
 
-  // ── Step 3: revoke task-store token(s) ──────────────────────────────────────
-  await runStep("task-store-tokens", async () => {
-    await revokeAllTokens(deps.taskStore, agentId);
-  });
+  // ── Step 3: revoke each service integration's token(s) (e.g. task-store) ───
+  for (const integration of deps.serviceIntegrations) {
+    await runStep(`${integration.name}-tokens`, async () => {
+      await revokeAllTokens(integration, agentId);
+    });
+  }
 
   // ── Step 4: revoke chat-service token(s) + delete chat threads ──────────────
   await runStep("chat-service-tokens-and-threads", async () => {
@@ -307,7 +311,7 @@ export async function deleteAgentFully(
  */
 async function revokeAllTokens(
   client: Pick<
-    TaskStoreProvisioningClient,
+    DeletionServiceIntegration,
     "listTokensForAgent" | "revokeToken"
   >,
   agentId: string,

@@ -1,5 +1,5 @@
 /**
- * admin/src/task-store-provisioning-client.ts
+ * admin/src/coding-task-store-provisioning-client.ts
  *
  * Thin interface + implementations for minting/revoking per-agent task-store
  * tokens during agent provisioning.
@@ -122,8 +122,7 @@ export class HttpTaskStoreProvisioningClient
         `task-store GET /tokens failed: ${res.status} ${res.statusText}`,
       );
     }
-    const tokens =
-      (await res.json()) as components["schemas"]["TaskToken"][];
+    const tokens = (await res.json()) as components["schemas"]["TaskToken"][];
     return tokens
       .filter((token) => token.agentId === agentId)
       .map((token) => ({ id: token.id }));

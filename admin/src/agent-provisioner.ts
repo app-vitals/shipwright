@@ -80,7 +80,10 @@ import type {
   PvcSpec,
   SecretSpec,
 } from "./kubernetes-client.ts";
-import type { TaskStoreProvisioningClient } from "./task-store-provisioning-client.ts";
+import {
+  provisionableIntegrations,
+  type ServiceIntegration,
+} from "./service-integration.ts";
 
 // ─── Interface ──────────────────────────────────────────────────────────────
 
@@ -253,21 +256,15 @@ export interface KubernetesAgentProvisionerConfig {
    */
   voice?: AgentVoiceEnv;
   /**
-   * When set, the provisioner will mint a per-agent task-store token on
-   * provision() and store it in the agent Secret under "task-store-token".
-   * The Deployment manifest will include SHIPWRIGHT_TASK_STORE_TOKEN (from the
-   * Secret) and SHIPWRIGHT_TASK_STORE_URL (from taskStoreUrl). On rollback,
-   * the minted token is revoked via revokeToken().
-   *
-   * Omit to skip task-store wiring (for agents that don't need it or when
-   * SHIPWRIGHT_TASK_STORE_URL / SHIPWRIGHT_TASK_STORE_ADMIN_TOKEN are not set).
+   * Optional service integrations (see service-integration.ts), supplied by the
+   * composition root (e.g. task-store, registered by the coding extension).
+   * For each integration with a `url`, provision() mints a per-agent token
+   * (in list order, before the built-in chat-service token), stores it in the
+   * agent Secret under the integration's `secretKey`, and the Deployment
+   * manifest injects its token/URL env. On rollback each minted token is
+   * revoked via revokeToken(). Integrations without a `url` are skipped.
    */
-  taskStore?: TaskStoreProvisioningClient;
-  /**
-   * In-cluster base URL of the task-store service. Injected into the agent
-   * Deployment as SHIPWRIGHT_TASK_STORE_URL. Required when taskStore is set.
-   */
-  taskStoreUrl?: string;
+  serviceIntegrations?: readonly ServiceIntegration[];
   /**
    * When set, the provisioner will mint a per-agent chat-service token on
    * provision() and store it in the agent Secret under "chat-service-token".
@@ -858,7 +855,9 @@ export class KubernetesAgentProvisioner implements AgentProvisioner {
       replicas: this.config.replicas,
       resources: this.config.resources,
       voice: this.config.voice,
-      taskStoreUrl: this.config.taskStoreUrl,
+      serviceIntegrations: provisionableIntegrations(
+        this.config.serviceIntegrations,
+      ),
       chatServiceUrl: this.config.chatServiceUrl,
       claudePolicy: this.config.claudePolicy,
       anthropicFederation: federation,
@@ -1095,22 +1094,28 @@ export class KubernetesAgentProvisioner implements AgentProvisioner {
       if (!isNotFound(err)) throw err;
     }
 
-    // Track the task-store and chat-service tokens minted in THIS call so we
+    // Track the integration and chat-service tokens minted in THIS call so we
     // can revoke them on rollback. Only set when the respective config is provided
     // and we actually minted.
-    let tsTokenId: string | undefined;
+    const integrations = provisionableIntegrations(
+      this.config.serviceIntegrations,
+    );
+    const integrationTokens: {
+      integration: ServiceIntegration;
+      id: string;
+      rawToken: string;
+    }[] = [];
     let csTokenId: string | undefined;
 
     if (!secretAlreadyExists) {
-      // Optionally mint a task-store token to co-locate in the same Secret write.
-      let tsRawToken: string | undefined;
-      if (this.config.taskStore) {
-        const { id, rawToken } = await this.config.taskStore.mintToken(
+      // Optionally mint a token per service integration (list order, before
+      // chat) to co-locate in the same Secret write.
+      for (const integration of integrations) {
+        const { id, rawToken } = await integration.mintToken(
           `agent:${agentId}`,
           agentId,
         );
-        tsTokenId = id;
-        tsRawToken = rawToken;
+        integrationTokens.push({ integration, id, rawToken });
       }
 
       // Optionally mint a chat-service token to co-locate in the same Secret write.
@@ -1133,7 +1138,15 @@ export class KubernetesAgentProvisioner implements AgentProvisioner {
       try {
         await this.k8s.createSecret(
           this.config.namespace,
-          this.secretSpec(secretName, rawToken, tsRawToken, csRawToken),
+          this.secretSpec(
+            secretName,
+            rawToken,
+            integrationTokens.map((t) => ({
+              secretKey: t.integration.secretKey,
+              rawToken: t.rawToken,
+            })),
+            csRawToken,
+          ),
         );
         secretCreated = true;
       } catch (err) {
@@ -1144,7 +1157,7 @@ export class KubernetesAgentProvisioner implements AgentProvisioner {
     // 4. Deployment. If creation fails AFTER we created the Secret in THIS call,
     //    roll the Secret back (best-effort) so a retry starts clean and never
     //    leaks a half-provisioned state. The PVC is NOT rolled back (data safety).
-    //    Also revoke any task-store and chat-service tokens minted in THIS call.
+    //    Also revoke any integration and chat-service tokens minted in THIS call.
     try {
       await this.k8s.createDeploymentManifest(
         this.config.namespace,
@@ -1163,14 +1176,14 @@ export class KubernetesAgentProvisioner implements AgentProvisioner {
         // never leak it. Only ever delete a Secret THIS call created.
         if (secretCreated) {
           await this.deleteSecretBestEffort(secretName);
-          await this.revokeTaskStoreTokenBestEffort(tsTokenId);
+          await this.revokeIntegrationTokensBestEffort(integrationTokens);
           await this.revokeChatServiceTokenBestEffort(csTokenId);
         }
         return result;
       }
       if (secretCreated) {
         await this.deleteSecretBestEffort(secretName);
-        await this.revokeTaskStoreTokenBestEffort(tsTokenId);
+        await this.revokeIntegrationTokensBestEffort(integrationTokens);
         await this.revokeChatServiceTokenBestEffort(csTokenId);
       }
       throw err;
@@ -1504,7 +1517,7 @@ export class KubernetesAgentProvisioner implements AgentProvisioner {
   private secretSpec(
     secretName: string,
     rawToken: string,
-    taskStoreToken?: string,
+    integrationSecrets: { secretKey: string; rawToken: string }[],
     chatServiceToken?: string,
   ): SecretSpec {
     // The pure builder is the single source of truth for the Secret body (name,
@@ -1521,10 +1534,13 @@ export class KubernetesAgentProvisioner implements AgentProvisioner {
     for (const [key, value] of Object.entries(manifest.data)) {
       stringData[key] = Buffer.from(value, "base64").toString("utf-8");
     }
-    // When a task-store token was minted for this agent, include it in the same
-    // Secret so a single Secret holds all per-agent credentials.
-    if (taskStoreToken !== undefined) {
-      stringData["task-store-token"] = taskStoreToken;
+    // Tokens minted for this agent's service integrations go in the same
+    // Secret (list order) so a single Secret holds all per-agent credentials.
+    for (const {
+      secretKey,
+      rawToken: integrationToken,
+    } of integrationSecrets) {
+      stringData[secretKey] = integrationToken;
     }
     // When a chat-service token was minted for this agent, include it alongside
     // the other per-agent credentials in the same Secret.
@@ -1534,17 +1550,19 @@ export class KubernetesAgentProvisioner implements AgentProvisioner {
     return { name: manifest.metadata.name, stringData };
   }
 
-  private async revokeTaskStoreTokenBestEffort(
-    tsTokenId: string | undefined,
+  private async revokeIntegrationTokensBestEffort(
+    tokens: { integration: ServiceIntegration; id: string }[],
   ): Promise<void> {
-    if (!tsTokenId || !this.config.taskStore) return;
-    try {
-      await this.config.taskStore.revokeToken(tsTokenId);
-    } catch {
-      // Best-effort — log but don't propagate so the original error surfaces.
-      console.warn(
-        `[provisioner] failed to revoke task-store token ${tsTokenId} during rollback`,
-      );
+    for (const { integration, id } of tokens) {
+      if (!id) continue;
+      try {
+        await integration.revokeToken(id);
+      } catch {
+        // Best-effort — log but don't propagate so the original error surfaces.
+        console.warn(
+          `[provisioner] failed to revoke ${integration.name} token ${id} during rollback`,
+        );
+      }
     }
   }
 

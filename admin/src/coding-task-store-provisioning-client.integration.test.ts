@@ -1,5 +1,5 @@
 /**
- * admin/src/task-store-provisioning-client.integration.test.ts
+ * admin/src/coding-task-store-provisioning-client.integration.test.ts
  * Integration tests for HttpTaskStoreProvisioningClient against recorded
  * task-store token API fixtures.
  *
@@ -14,7 +14,7 @@ import { readFileSync } from "node:fs";
 import {
   HttpTaskStoreProvisioningClient,
   NoopTaskStoreProvisioningClient,
-} from "./task-store-provisioning-client.ts";
+} from "./coding-task-store-provisioning-client.ts";
 
 // ─── Cassette ───────────────────────────────────────────────────────────────
 

@@ -9,8 +9,8 @@
 import { beforeAll, describe, expect, it } from "bun:test";
 import { readFileSync } from "node:fs";
 import { sign } from "hono/jwt";
-import { createAdminUIApp } from "./admin-ui.ts";
 import type { AdminUIDeps, AdminUISlackClient } from "./admin-ui.ts";
+import { createAdminUIApp } from "./admin-ui.ts";
 import type { AppManifest } from "./slack-provisioning-client.ts";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -323,10 +323,13 @@ function makeMockDeps(
         failed: [],
       }),
     },
-    taskStore: {
-      listTokensForAgent: async () => [],
-      revokeToken: async () => {},
-    },
+    serviceIntegrations: [
+      {
+        name: "task-store",
+        listTokensForAgent: async () => [],
+        revokeToken: async () => {},
+      },
+    ],
     chatService: {
       listTokensForAgent: async () => [],
       revokeToken: async () => {},

@@ -478,10 +478,13 @@ function makeMockDeps(
         failed: [],
       }),
     },
-    taskStore: {
-      listTokensForAgent: async () => [],
-      revokeToken: async () => {},
-    },
+    serviceIntegrations: [
+      {
+        name: "task-store",
+        listTokensForAgent: async () => [],
+        revokeToken: async () => {},
+      },
+    ],
     chatService: {
       listTokensForAgent: async () => [],
       revokeToken: async () => {},
@@ -4937,12 +4940,15 @@ describe("admin UI — agent delete route", () => {
           failed: [],
         }),
       },
-      taskStore: {
-        listTokensForAgent: async () => [{ id: "ts-1" }],
-        revokeToken: async (id: string) => {
-          taskStoreRevoked.push(id);
+      serviceIntegrations: [
+        {
+          name: "task-store",
+          listTokensForAgent: async () => [{ id: "ts-1" }],
+          revokeToken: async (id: string) => {
+            taskStoreRevoked.push(id);
+          },
         },
-      },
+      ],
       chatService: {
         listTokensForAgent: async () => [{ id: "chat-1" }],
         revokeToken: async (id: string) => {

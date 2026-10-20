@@ -10,8 +10,8 @@ import { describe, expect, it } from "bun:test";
 import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { createAdminUIApp } from "./admin-ui.ts";
 import type { AdminUIDeps } from "./admin-ui.ts";
+import { createAdminUIApp } from "./admin-ui.ts";
 import { PWA_ICONS } from "./pwa.ts";
 
 const SESSION_SECRET = "test-admin-session-secret-32-bytes!";
@@ -168,10 +168,13 @@ function makeMinimalDeps(overrides?: Partial<AdminUIDeps>): AdminUIDeps {
         failed: [],
       }),
     },
-    taskStore: {
-      listTokensForAgent: async () => [],
-      revokeToken: async () => {},
-    },
+    serviceIntegrations: [
+      {
+        name: "task-store",
+        listTokensForAgent: async () => [],
+        revokeToken: async () => {},
+      },
+    ],
     chatService: {
       listTokensForAgent: async () => [],
       revokeToken: async () => {},

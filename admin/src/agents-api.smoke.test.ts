@@ -778,10 +778,13 @@ function makeMockDeps(): AdminDeps {
       }),
     },
     provisioner: new RecordingProvisioner(),
-    taskStore: {
-      listTokensForAgent: async () => [],
-      revokeToken: async () => {},
-    },
+    serviceIntegrations: [
+      {
+        name: "task-store",
+        listTokensForAgent: async () => [],
+        revokeToken: async () => {},
+      },
+    ],
     chatService: {
       listTokensForAgent: async () => [],
       revokeToken: async () => {},
@@ -2297,12 +2300,15 @@ describe("admin API — delete agent", () => {
     const base = makeMockDeps();
     const deps: AdminDeps = {
       ...base,
-      taskStore: {
-        listTokensForAgent: async () => [{ id: "ts-1" }],
-        revokeToken: async () => {
-          throw new Error("task-store unreachable");
+      serviceIntegrations: [
+        {
+          name: "task-store",
+          listTokensForAgent: async () => [{ id: "ts-1" }],
+          revokeToken: async () => {
+            throw new Error("task-store unreachable");
+          },
         },
-      },
+      ],
     };
     const app = createAdminApp(deps);
     const res = await app.request(`/agents/${AGENT_ID}`, {

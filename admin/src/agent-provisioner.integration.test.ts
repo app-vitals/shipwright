@@ -41,8 +41,11 @@ import {
   type SecretSpec,
 } from "./kubernetes-client.ts";
 import { createAdminPrismaClient } from "./prisma-client.ts";
+import type {
+  DeletionServiceIntegration,
+  ServiceIntegration,
+} from "./service-integration.ts";
 import type { SlackProvisioningClient } from "./slack-provisioning-client.ts";
-import type { TaskStoreProvisioningClient } from "./task-store-provisioning-client.ts";
 
 const TEST_DB = process.env.DATABASE_URL_ADMIN_TEST;
 const describeOrSkip = TEST_DB ? describe : describe.skip;
@@ -156,7 +159,8 @@ describeOrSkip("KubernetesAgentProvisioner (integration)", () => {
       deleteSecret: (ns, n) => recorded.deleteSecret(ns, n),
       deleteDeployment: (ns, n) => recorded.deleteDeployment(ns, n),
       deletePvc: (ns, n) => recorded.deletePvc(ns, n),
-      createServiceAccount: (ns, spec) => recorded.createServiceAccount(ns, spec),
+      createServiceAccount: (ns, spec) =>
+        recorded.createServiceAccount(ns, spec),
       getServiceAccount: (ns, n) => recorded.getServiceAccount(ns, n),
       deleteServiceAccount: (ns, n) => recorded.deleteServiceAccount(ns, n),
       deploymentExists: (ns, n) => recorded.deploymentExists(ns, n),
@@ -223,7 +227,8 @@ describeOrSkip("KubernetesAgentProvisioner (integration)", () => {
       deleteSecret: (ns, n) => recorded.deleteSecret(ns, n),
       deleteDeployment: (ns, n) => recorded.deleteDeployment(ns, n),
       deletePvc: (ns, n) => recorded.deletePvc(ns, n),
-      createServiceAccount: (ns, spec) => recorded.createServiceAccount(ns, spec),
+      createServiceAccount: (ns, spec) =>
+        recorded.createServiceAccount(ns, spec),
       getServiceAccount: (ns, n) => recorded.getServiceAccount(ns, n),
       deleteServiceAccount: (ns, n) => recorded.deleteServiceAccount(ns, n),
       deploymentExists: (ns, n) => recorded.deploymentExists(ns, n),
@@ -555,7 +560,12 @@ describeOrSkip("KubernetesAgentProvisioner (integration)", () => {
 
     const EXPECTED_RAW_TOKEN = "ts-raw-token-abc123";
 
-    const fakeTaskStore: TaskStoreProvisioningClient = {
+    const fakeTaskStore: ServiceIntegration = {
+      name: "task-store",
+      tokenEnv: "SHIPWRIGHT_TASK_STORE_TOKEN",
+      urlEnv: "SHIPWRIGHT_TASK_STORE_URL",
+      secretKey: "task-store-token",
+      url: "http://task-store.svc:3002",
       async mintToken(_label: string) {
         return { id: "ts-id-1", rawToken: EXPECTED_RAW_TOKEN };
       },
@@ -569,7 +579,7 @@ describeOrSkip("KubernetesAgentProvisioner (integration)", () => {
 
     const provisioner = new KubernetesAgentProvisioner(k8s, tokens, {
       ...CONFIG,
-      taskStore: fakeTaskStore,
+      serviceIntegrations: [fakeTaskStore],
     });
 
     await provisioner.provision(agentId);
@@ -666,7 +676,8 @@ describeOrSkip(
         deleteSecret: (ns, n) => recorded.deleteSecret(ns, n),
         deleteDeployment: (ns, n) => recorded.deleteDeployment(ns, n),
         deletePvc: (ns, n) => recorded.deletePvc(ns, n),
-        createServiceAccount: (ns, spec) => recorded.createServiceAccount(ns, spec),
+        createServiceAccount: (ns, spec) =>
+          recorded.createServiceAccount(ns, spec),
         getServiceAccount: (ns, n) => recorded.getServiceAccount(ns, n),
         deleteServiceAccount: (ns, n) => recorded.deleteServiceAccount(ns, n),
         deploymentExists: (ns, n) => recorded.deploymentExists(ns, n),
@@ -675,12 +686,17 @@ describeOrSkip(
       };
     }
 
-    /** Fake TaskStoreProvisioningClient that records into the shared order array. */
+    /** Fake task-store ServiceIntegration that records into the shared order array. */
     function orderedTaskStore(
       order: string[],
       opts: { revokeError?: Error } = {},
-    ): TaskStoreProvisioningClient {
+    ): ServiceIntegration {
       return {
+        name: "task-store",
+        tokenEnv: "SHIPWRIGHT_TASK_STORE_TOKEN",
+        urlEnv: "SHIPWRIGHT_TASK_STORE_URL",
+        secretKey: "task-store-token",
+        url: "http://task-store.svc:3002",
         async mintToken(_label: string, _agentId?: string) {
           order.push("task-store:mintToken");
           return { id: "ts-journey-id", rawToken: "ts-journey-raw" };
@@ -738,10 +754,7 @@ describeOrSkip(
       order: string[],
       provisioner: Pick<AgentProvisioner, "deprovision">,
       overrides: {
-        taskStore?: Pick<
-          TaskStoreProvisioningClient,
-          "listTokensForAgent" | "revokeToken"
-        >;
+        taskStore?: DeletionServiceIntegration;
         chatService?: Pick<
           ChatServiceProvisioningClient,
           "listTokensForAgent" | "revokeToken" | "deleteThreadsForAgent"
@@ -778,7 +791,7 @@ describeOrSkip(
             await provisioner.deprovision(agentId, opts);
           },
         },
-        taskStore: overrides.taskStore ?? orderedTaskStore(order),
+        serviceIntegrations: [overrides.taskStore ?? orderedTaskStore(order)],
         chatService: overrides.chatService ?? orderedChatService(order),
         slack: overrides.slack ?? orderedSlack(order),
         // Identity decrypt — SLACK_APP_ID is stored plaintext in this test.
@@ -786,141 +799,147 @@ describeOrSkip(
       };
     }
 
-    it("composes provision() → deleteAgentFully() across all 5 external clients " +
-      "in documented order (token→Secret→Deployment, then DB row deleted LAST)", async () => {
-      const order: string[] = [];
-      const agentId = await createAgentWithSlackEnv();
-      const recorded = emptyClient();
-      const k8s = orderedK8s(order, recorded);
+    it(
+      "composes provision() → deleteAgentFully() across all 5 external clients " +
+        "in documented order (token→Secret→Deployment, then DB row deleted LAST)",
+      async () => {
+        const order: string[] = [];
+        const agentId = await createAgentWithSlackEnv();
+        const recorded = emptyClient();
+        const k8s = orderedK8s(order, recorded);
 
-      // Wrap AgentTokenService.create so the real DB-backed token mint is
-      // captured in the shared order array too (positioned before k8s:secret).
-      const orderedTokens = {
-        create: async (id: string, label?: string) => {
-          const result = await tokens.create(id, label);
-          order.push("db:token");
-          return result;
-        },
-      } as AgentTokenService;
+        // Wrap AgentTokenService.create so the real DB-backed token mint is
+        // captured in the shared order array too (positioned before k8s:secret).
+        const orderedTokens = {
+          create: async (id: string, label?: string) => {
+            const result = await tokens.create(id, label);
+            order.push("db:token");
+            return result;
+          },
+        } as AgentTokenService;
 
-      const provisioner = new KubernetesAgentProvisioner(k8s, orderedTokens, {
-        ...CONFIG,
-        taskStore: orderedTaskStore(order),
-        chatService: orderedChatService(order),
-      });
+        const provisioner = new KubernetesAgentProvisioner(k8s, orderedTokens, {
+          ...CONFIG,
+          serviceIntegrations: [orderedTaskStore(order)],
+          chatService: orderedChatService(order),
+        });
 
-      // ── Provision ────────────────────────────────────────────────────────
-      const provisionResult = await provisioner.provision(agentId);
-      expect(provisionResult.rawToken).toBeDefined();
+        // ── Provision ────────────────────────────────────────────────────────
+        const provisionResult = await provisioner.provision(agentId);
+        expect(provisionResult.rawToken).toBeDefined();
 
-      // Documented order: token minting (task-store, chat, then the agent's
-      // own DB-backed token) happens BEFORE the Secret, which happens BEFORE
-      // the Deployment.
-      expect(order).toEqual([
-        "task-store:mintToken",
-        "chat:mintToken",
-        "db:token",
-        "k8s:secret",
-        "k8s:deployment",
-      ]);
-      const tokenIdx = order.indexOf("db:token");
-      const secretIdx = order.indexOf("k8s:secret");
-      const deploymentIdx = order.indexOf("k8s:deployment");
-      expect(tokenIdx).toBeLessThan(secretIdx);
-      expect(secretIdx).toBeLessThan(deploymentIdx);
+        // Documented order: token minting (task-store, chat, then the agent's
+        // own DB-backed token) happens BEFORE the Secret, which happens BEFORE
+        // the Deployment.
+        expect(order).toEqual([
+          "task-store:mintToken",
+          "chat:mintToken",
+          "db:token",
+          "k8s:secret",
+          "k8s:deployment",
+        ]);
+        const tokenIdx = order.indexOf("db:token");
+        const secretIdx = order.indexOf("k8s:secret");
+        const deploymentIdx = order.indexOf("k8s:deployment");
+        expect(tokenIdx).toBeLessThan(secretIdx);
+        expect(secretIdx).toBeLessThan(deploymentIdx);
 
-      // ── Delete ───────────────────────────────────────────────────────────
-      const deleteDeps = makeDeleteDeps(order, provisioner);
-      const deleteResult = await deleteAgentFully(agentId, deleteDeps, {
-        xoxpToken: "xoxp-journey-token",
-      });
+        // ── Delete ───────────────────────────────────────────────────────────
+        const deleteDeps = makeDeleteDeps(order, provisioner);
+        const deleteResult = await deleteAgentFully(agentId, deleteDeps, {
+          xoxpToken: "xoxp-journey-token",
+        });
 
-      expect(deleteResult.agentDeleted).toBe(true);
-      expect(deleteResult.failed).toEqual([]);
+        expect(deleteResult.agentDeleted).toBe(true);
+        expect(deleteResult.failed).toEqual([]);
 
-      // The DB row delete is the LAST entry in the shared order array — proving
-      // "DB row deleted LAST" across the whole composed journey, not just
-      // within deleteAgentFully() in isolation.
-      expect(order[order.length - 1]).toBe("db:agent-delete");
-      expect(order).toContain("k8s:deprovision");
-      expect(order).toContain("task-store:revoke");
-      expect(order).toContain("chat:revoke");
-      expect(order).toContain("chat:deleteThreads");
-      expect(order).toContain("slack:deleteApp");
+        // The DB row delete is the LAST entry in the shared order array — proving
+        // "DB row deleted LAST" across the whole composed journey, not just
+        // within deleteAgentFully() in isolation.
+        expect(order[order.length - 1]).toBe("db:agent-delete");
+        expect(order).toContain("k8s:deprovision");
+        expect(order).toContain("task-store:revoke");
+        expect(order).toContain("chat:revoke");
+        expect(order).toContain("chat:deleteThreads");
+        expect(order).toContain("slack:deleteApp");
 
-      // The Agent row is actually gone from Postgres.
-      const remaining = await prisma.agent.findUnique({
-        where: { id: agentId },
-      });
-      expect(remaining).toBeNull();
-    });
+        // The Agent row is actually gone from Postgres.
+        const remaining = await prisma.agent.findUnique({
+          where: { id: agentId },
+        });
+        expect(remaining).toBeNull();
+      },
+    );
 
-    it("retries deleteAgentFully() after a partial failure: row is preserved on " +
-      "failure, then deleted on a healthy re-run", async () => {
-      const order: string[] = [];
-      const agentId = await createAgentWithSlackEnv("Retry Journey Agent");
-      const recorded = emptyClient();
-      const k8s = orderedK8s(order, recorded);
-      const provisioner = new KubernetesAgentProvisioner(k8s, tokens, {
-        ...CONFIG,
-        taskStore: orderedTaskStore(order),
-        chatService: orderedChatService(order),
-      });
+    it(
+      "retries deleteAgentFully() after a partial failure: row is preserved on " +
+        "failure, then deleted on a healthy re-run",
+      async () => {
+        const order: string[] = [];
+        const agentId = await createAgentWithSlackEnv("Retry Journey Agent");
+        const recorded = emptyClient();
+        const k8s = orderedK8s(order, recorded);
+        const provisioner = new KubernetesAgentProvisioner(k8s, tokens, {
+          ...CONFIG,
+          serviceIntegrations: [orderedTaskStore(order)],
+          chatService: orderedChatService(order),
+        });
 
-      await provisioner.provision(agentId);
+        await provisioner.provision(agentId);
 
-      // First delete call: chat-service revoke fails. The step is recorded as
-      // failed but every other step (k8s deprovision, task-store revoke, and
-      // the Slack app delete) still runs — only the DB row delete is gated.
-      const failingChatService = orderedChatService(order, {
-        revokeError: new Error("chat-service unavailable"),
-      });
-      const firstDeleteDeps = makeDeleteDeps(order, provisioner, {
-        chatService: failingChatService,
-      });
+        // First delete call: chat-service revoke fails. The step is recorded as
+        // failed but every other step (k8s deprovision, task-store revoke, and
+        // the Slack app delete) still runs — only the DB row delete is gated.
+        const failingChatService = orderedChatService(order, {
+          revokeError: new Error("chat-service unavailable"),
+        });
+        const firstDeleteDeps = makeDeleteDeps(order, provisioner, {
+          chatService: failingChatService,
+        });
 
-      const firstResult = await deleteAgentFully(agentId, firstDeleteDeps, {
-        xoxpToken: "xoxp-journey-token",
-      });
+        const firstResult = await deleteAgentFully(agentId, firstDeleteDeps, {
+          xoxpToken: "xoxp-journey-token",
+        });
 
-      expect(firstResult.agentDeleted).toBe(false);
-      expect(firstResult.failed).toEqual([
-        {
-          step: "chat-service-tokens-and-threads",
-          error: "chat-service unavailable",
-        },
-      ]);
-      expect(firstResult.completed).toContain("k8s");
-      expect(firstResult.completed).toContain("task-store-tokens");
-      expect(firstResult.completed).toContain("slack-app");
-      expect(order).not.toContain("db:agent-delete");
+        expect(firstResult.agentDeleted).toBe(false);
+        expect(firstResult.failed).toEqual([
+          {
+            step: "chat-service-tokens-and-threads",
+            error: "chat-service unavailable",
+          },
+        ]);
+        expect(firstResult.completed).toContain("k8s");
+        expect(firstResult.completed).toContain("task-store-tokens");
+        expect(firstResult.completed).toContain("slack-app");
+        expect(order).not.toContain("db:agent-delete");
 
-      // Agent row still present in Postgres after the partial failure.
-      const stillThere = await prisma.agent.findUnique({
-        where: { id: agentId },
-      });
-      expect(stillThere).not.toBeNull();
+        // Agent row still present in Postgres after the partial failure.
+        const stillThere = await prisma.agent.findUnique({
+          where: { id: agentId },
+        });
+        expect(stillThere).not.toBeNull();
 
-      // Second call: healthy chat-service this time. Underlying steps are all
-      // individually idempotent (k8s deprovision swallows 404, revoke on an
-      // already-revoked token is a no-op, thread delete tolerates 404), so the
-      // retry completes cleanly and the row is deleted last.
-      const healthyChatService = orderedChatService(order);
-      const secondDeleteDeps = makeDeleteDeps(order, provisioner, {
-        chatService: healthyChatService,
-      });
+        // Second call: healthy chat-service this time. Underlying steps are all
+        // individually idempotent (k8s deprovision swallows 404, revoke on an
+        // already-revoked token is a no-op, thread delete tolerates 404), so the
+        // retry completes cleanly and the row is deleted last.
+        const healthyChatService = orderedChatService(order);
+        const secondDeleteDeps = makeDeleteDeps(order, provisioner, {
+          chatService: healthyChatService,
+        });
 
-      const secondResult = await deleteAgentFully(agentId, secondDeleteDeps, {
-        xoxpToken: "xoxp-journey-token",
-      });
+        const secondResult = await deleteAgentFully(agentId, secondDeleteDeps, {
+          xoxpToken: "xoxp-journey-token",
+        });
 
-      expect(secondResult.agentDeleted).toBe(true);
-      expect(secondResult.failed).toEqual([]);
-      expect(order[order.length - 1]).toBe("db:agent-delete");
+        expect(secondResult.agentDeleted).toBe(true);
+        expect(secondResult.failed).toEqual([]);
+        expect(order[order.length - 1]).toBe("db:agent-delete");
 
-      const gone = await prisma.agent.findUnique({ where: { id: agentId } });
-      expect(gone).toBeNull();
-    });
+        const gone = await prisma.agent.findUnique({ where: { id: agentId } });
+        expect(gone).toBeNull();
+      },
+    );
   },
 );
 

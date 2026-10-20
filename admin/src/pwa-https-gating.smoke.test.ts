@@ -8,11 +8,11 @@
  */
 
 import { describe, expect, it } from "bun:test";
-import { mkdtempSync, mkdirSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { createAdminUIApp } from "./admin-ui.ts";
 import type { AdminUIDeps } from "./admin-ui.ts";
+import { createAdminUIApp } from "./admin-ui.ts";
 import { PWA_ICONS } from "./pwa.ts";
 
 const PNG_1X1 = Buffer.from(
@@ -167,10 +167,13 @@ function makeMinimalDeps(overrides: Partial<AdminUIDeps>): AdminUIDeps {
         failed: [],
       }),
     },
-    taskStore: {
-      listTokensForAgent: async () => [],
-      revokeToken: async () => {},
-    },
+    serviceIntegrations: [
+      {
+        name: "task-store",
+        listTokensForAgent: async () => [],
+        revokeToken: async () => {},
+      },
+    ],
     chatService: {
       listTokensForAgent: async () => [],
       revokeToken: async () => {},

@@ -155,12 +155,15 @@ function makeSucceedingDeps(prisma: PrismaClient): DeleteAgentFullyDeps {
         // no-op: real k8s deprovision is out of scope for this DB-cascade test
       },
     },
-    taskStore: {
-      listTokensForAgent: async () => [],
-      revokeToken: async () => {
-        // no-op
+    serviceIntegrations: [
+      {
+        name: "task-store",
+        listTokensForAgent: async () => [],
+        revokeToken: async () => {
+          // no-op
+        },
       },
-    },
+    ],
     chatService: {
       listTokensForAgent: async () => [],
       revokeToken: async () => {

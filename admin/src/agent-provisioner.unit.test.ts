@@ -29,7 +29,7 @@ import {
   type KubernetesClient,
   RecordedKubernetesClient,
 } from "./kubernetes-client.ts";
-import type { TaskStoreProvisioningClient } from "./task-store-provisioning-client.ts";
+import type { ServiceIntegration } from "./service-integration.ts";
 
 const NAMESPACE = "shipwright";
 
@@ -575,11 +575,11 @@ describe("KubernetesAgentProvisioner.reconcile() — template respected", () => 
 // ─── Task-store token minting ─────────────────────────────────────────────────
 
 /**
- * Build a spy TaskStoreProvisioningClient. Records all mintToken and
+ * Build a spy task-store ServiceIntegration. Records all mintToken and
  * revokeToken calls for assertion in tests.
  */
 function stubTaskStore(opts?: { throwOnMint?: boolean }): {
-  client: TaskStoreProvisioningClient;
+  client: ServiceIntegration;
   minted: Array<{ label: string; agentId: string | undefined; id: string }>;
   revoked: string[];
 } {
@@ -591,7 +591,12 @@ function stubTaskStore(opts?: { throwOnMint?: boolean }): {
   const revoked: string[] = [];
   let seq = 0;
 
-  const client: TaskStoreProvisioningClient = {
+  const client: ServiceIntegration = {
+    name: "task-store",
+    tokenEnv: "SHIPWRIGHT_TASK_STORE_TOKEN",
+    urlEnv: "SHIPWRIGHT_TASK_STORE_URL",
+    secretKey: "task-store-token",
+    url: "http://task-store.svc:3002",
     async mintToken(label: string, agentId?: string) {
       if (opts?.throwOnMint) throw new Error("mint failed");
       seq++;
@@ -613,11 +618,11 @@ function stubTaskStore(opts?: { throwOnMint?: boolean }): {
 describe("KubernetesAgentProvisioner — task-store token minting", () => {
   const AGENT_ID = "test-agent-001";
 
-  it("provision() mints a task-store token when taskStore client is configured", async () => {
+  it("provision() mints a task-store token when a task-store integration is configured", async () => {
     const { client, minted } = stubTaskStore();
     const config: KubernetesAgentProvisionerConfig = {
       ...BASE_CONFIG,
-      taskStore: client,
+      serviceIntegrations: [client],
     };
     const k8s = emptyClient();
     const provisioner = new KubernetesAgentProvisioner(
@@ -633,8 +638,8 @@ describe("KubernetesAgentProvisioner — task-store token minting", () => {
     expect(minted[0].agentId).toBe(AGENT_ID);
   });
 
-  it("provision() does NOT mint a task-store token when taskStore is not configured", async () => {
-    // BASE_CONFIG has no taskStore
+  it("provision() does NOT mint a task-store token when no integration is configured", async () => {
+    // BASE_CONFIG has no serviceIntegrations
     const { client, minted } = stubTaskStore();
     const k8s = emptyClient();
     const provisioner = new KubernetesAgentProvisioner(
@@ -655,7 +660,7 @@ describe("KubernetesAgentProvisioner — task-store token minting", () => {
     const { client, minted, revoked } = stubTaskStore();
     const config: KubernetesAgentProvisionerConfig = {
       ...BASE_CONFIG,
-      taskStore: client,
+      serviceIntegrations: [client],
     };
 
     const recorded = emptyClient();
@@ -693,7 +698,7 @@ describe("KubernetesAgentProvisioner — task-store token minting", () => {
     const { client, minted, revoked } = stubTaskStore();
     const config: KubernetesAgentProvisionerConfig = {
       ...BASE_CONFIG,
-      taskStore: client,
+      serviceIntegrations: [client],
     };
 
     // Pre-seed the Deployment so the createDeploymentManifest call hits a 409.
@@ -720,6 +725,94 @@ describe("KubernetesAgentProvisioner — task-store token minting", () => {
     // But because it was a conflict (deployment already existed), we rolled back
     // the Secret — the task-store token should also be revoked.
     expect(revoked).toEqual([minted[0].id]);
+  });
+});
+
+describe("KubernetesAgentProvisioner — multiple service integrations", () => {
+  const AGENT_ID = "multi-agent";
+
+  function svc(name: string, log: string[], url?: string): ServiceIntegration {
+    return {
+      name,
+      url,
+      tokenEnv: `${name}_TOKEN`,
+      urlEnv: `${name}_URL`,
+      secretKey: `${name}-key`,
+      mintToken: async () => {
+        log.push(`mint:${name}`);
+        return { id: `${name}-id`, rawToken: `${name}-raw` };
+      },
+      revokeToken: async (id) => {
+        log.push(`revoke:${id}`);
+      },
+      listTokensForAgent: async () => [],
+    };
+  }
+
+  it("mints in list order before chat, skips url-less integrations, and stores each token under its secretKey", async () => {
+    const log: string[] = [];
+    const k8s = emptyClient();
+    const provisioner = new KubernetesAgentProvisioner(
+      k8s,
+      stubTokens() as AgentTokenService,
+      {
+        ...BASE_CONFIG,
+        serviceIntegrations: [
+          svc("a", log, "http://a"),
+          svc("skipped", log),
+          svc("b", log, "http://b"),
+        ],
+        chatService: {
+          mintToken: async () => {
+            log.push("mint:chat");
+            return { id: "chat-id", rawToken: "chat-raw" };
+          },
+          revokeToken: async () => {},
+          listTokensForAgent: async () => [],
+          deleteThreadsForAgent: async () => ({ deleted: 0 }),
+        },
+        chatServiceUrl: "http://chat",
+      },
+    );
+    await provisioner.provision(AGENT_ID);
+    expect(log).toEqual(["mint:a", "mint:b", "mint:chat"]);
+    const secret = await k8s.getSecret(
+      NAMESPACE,
+      `${sanitizeAgentName(AGENT_ID)}-token`,
+    );
+    expect(Object.keys(secret.data)).toEqual([
+      "token",
+      "a-key",
+      "b-key",
+      "chat-service-token",
+    ]);
+  });
+
+  it("rolls back every minted integration token when Deployment creation fails", async () => {
+    const log: string[] = [];
+    const recorded = emptyClient();
+    const failing = Object.assign(
+      Object.create(Object.getPrototypeOf(recorded)),
+      recorded,
+      {
+        createDeploymentManifest: async () => {
+          throw new Error("boom");
+        },
+      },
+    );
+    const provisioner = new KubernetesAgentProvisioner(
+      failing,
+      stubTokens() as AgentTokenService,
+      {
+        ...BASE_CONFIG,
+        serviceIntegrations: [
+          svc("a", log, "http://a"),
+          svc("b", log, "http://b"),
+        ],
+      },
+    );
+    await expect(provisioner.provision(AGENT_ID)).rejects.toThrow("boom");
+    expect(log).toEqual(["mint:a", "mint:b", "revoke:a-id", "revoke:b-id"]);
   });
 });
 

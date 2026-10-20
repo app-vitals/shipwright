@@ -564,11 +564,19 @@ describe("sanitizeAgentName", () => {
 
 // ─── task-store env injection ───────────────────────────────────────────────
 
-describe("buildAgentDeploymentManifest — task-store env", () => {
-  it("injects SHIPWRIGHT_TASK_STORE_TOKEN and SHIPWRIGHT_TASK_STORE_URL when taskStoreUrl is set", () => {
+/** The spec the coding extension registers for task-store (a plain env spec). */
+const TASK_STORE_SPEC = {
+  tokenEnv: "SHIPWRIGHT_TASK_STORE_TOKEN",
+  urlEnv: "SHIPWRIGHT_TASK_STORE_URL",
+  secretKey: "task-store-token",
+  url: "http://task-store.svc:4000",
+};
+
+describe("buildAgentDeploymentManifest — service integration env (task-store)", () => {
+  it("injects SHIPWRIGHT_TASK_STORE_TOKEN and SHIPWRIGHT_TASK_STORE_URL when the integration has a url", () => {
     const d = buildAgentDeploymentManifest({
       ...deployOpts,
-      taskStoreUrl: "http://task-store.svc:4000",
+      serviceIntegrations: [TASK_STORE_SPEC],
     });
     const env = d.spec.template.spec.containers[0].env ?? [];
     const byName = new Map(env.map((e) => [e.name, e]));
@@ -586,7 +594,7 @@ describe("buildAgentDeploymentManifest — task-store env", () => {
     expect(urlEnv?.value).toBe("http://task-store.svc:4000");
   });
 
-  it("does not inject task-store env vars when taskStoreUrl is absent", () => {
+  it("does not inject task-store env vars when no integrations are configured", () => {
     const d = buildAgentDeploymentManifest(deployOpts);
     const env = d.spec.template.spec.containers[0].env ?? [];
     const names = env.map((e) => e.name);
@@ -594,11 +602,10 @@ describe("buildAgentDeploymentManifest — task-store env", () => {
     expect(names).not.toContain("SHIPWRIGHT_TASK_STORE_URL");
   });
 
-  it("honours a custom taskStoreTokenSecretKey when provided", () => {
+  it("honours a custom integration secretKey when provided", () => {
     const d = buildAgentDeploymentManifest({
       ...deployOpts,
-      taskStoreUrl: "http://task-store.svc:4000",
-      taskStoreTokenSecretKey: "my-ts-token",
+      serviceIntegrations: [{ ...TASK_STORE_SPEC, secretKey: "my-ts-token" }],
     });
     const env = d.spec.template.spec.containers[0].env ?? [];
     const tokenEnv = env.find((e) => e.name === "SHIPWRIGHT_TASK_STORE_TOKEN");
@@ -608,7 +615,7 @@ describe("buildAgentDeploymentManifest — task-store env", () => {
   it("places task-store env vars AFTER AGENT_HOME and BEFORE voice env vars", () => {
     const d = buildAgentDeploymentManifest({
       ...deployOpts,
-      taskStoreUrl: "http://task-store.svc:4000",
+      serviceIntegrations: [TASK_STORE_SPEC],
       voice: { whisperServiceUrl: "http://w:9000" },
     });
     const names = (d.spec.template.spec.containers[0].env ?? []).map(
