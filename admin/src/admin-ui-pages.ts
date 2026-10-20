@@ -1547,6 +1547,11 @@ export function renderAgentDetailPage(
      * for any phase absent here. Defaults to [] (all phases show "default").
      */
     phaseMethodology?: PhaseMethodologyItem[];
+    /**
+     * Pre-rendered extension card HTML (AEP-2.1), appended after the
+     * platform cards in order. Absent or empty adds nothing to the page.
+     */
+    extensionCardsHtml?: readonly string[];
   },
 ): string {
   // Reference time for relative timestamps — injected by tests for determinism,
@@ -2537,7 +2542,7 @@ export function renderAgentDetailPage(
     ${warningHtml}
     ${newTokenHtml}
     ${verificationActivityHtml}
-    ${githubInstallationsHtml}
+    ${githubInstallationsHtml}${(opts?.extensionCardsHtml ?? []).join("\n")}
 
     ${statStripHtml}
 
