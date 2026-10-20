@@ -1,0 +1,12 @@
+{
+  "$comment": "Admin's own copy of the brand design tokens it uses (subset of brand/tokens.json). Admin must not import outside admin/, so this is duplicated; brand/admin-theme-tokens.unit.test.ts fails if it drifts from brand/tokens.json.",
+  "color": {
+    "bg": { "base": "#080E1E" },
+    "brand": { "default": "#34C77B" },
+    "text": {
+      "heading": "#FFFFFF",
+      "body": "rgba(255,255,255,0.80)",
+      "editorial": "rgba(255,255,255,0.50)"
+    }
+  }
+}

@@ -20,7 +20,7 @@ import { join } from "node:path";
 // Locked design-token source — importing (not hardcoding) theme_color /
 // background_color means token drift fails CI via the normal typecheck/test
 // path rather than silently diverging from the rest of the brand system.
-import tokens from "../../brand/tokens.json";
+import tokens from "./theme-tokens.json";
 
 // ─── Paths ──────────────────────────────────────────────────────────────────
 

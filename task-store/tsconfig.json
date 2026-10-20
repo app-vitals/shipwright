@@ -8,6 +8,7 @@
   "exclude": [
     "node_modules",
     "dist",
-    "src/admin-fetchers-account-scope.integration.test.ts"
+    "src/admin-fetchers-account-scope.integration.test.ts",
+    "src/blocked-by-type-parity.check.ts"
   ]
 }
