@@ -13,24 +13,38 @@
  * Provisioning order is token → Secret → Deployment: the Deployment references
  * the Secret by name (`secretKeyRef`), so the Secret must exist first.
  *
+ * In perAgent identity mode (config.perAgentIdentity) each agent also gets its
+ * own Anthropic identity, created between the PVC and the Secret: Kubernetes
+ * ServiceAccount (named like the Deployment) → Anthropic service account
+ * (added to the workspace) → federation rule trusting exactly that
+ * ServiceAccount's token subject. Each ID is saved on the Agent row as soon as
+ * it exists; a retry reuses saved IDs, and find-by-name is only used when a
+ * create conflicts because an earlier ID write was lost.
+ *
  * Both operations are SAFE TO RETRY:
  *   - provision() treats an already-existing Secret/Deployment (ConflictError /
  *     409) as already-provisioned rather than failing, and if Deployment
  *     creation fails after the Secret was created it best-effort deletes the
- *     Secret so a retry starts from a clean slate.
+ *     Secret so a retry starts from a clean slate. In perAgent mode any later
+ *     failure also undoes, in reverse, the identity pieces THIS call created
+ *     (rule, Anthropic service account, ServiceAccount) and clears their IDs.
  *   - deprovision() deletes the Deployment, then the Secret, then the PVC
  *     (unlike provision()'s rollback path, a deliberate full deprovision DOES
  *     remove the PVC) and swallows NotFoundError (404) so tearing down an
  *     absent / half-absent agent is a no-op rather than an error.
  */
 
+import type {
+  AgentAnthropicIdentity,
+  AgentAnthropicIdentityService,
+} from "./agent-anthropic-identity.ts";
 import {
-  ANTHROPIC_FEDERATION_ENV_NAMES,
-  ANTHROPIC_TOKEN_MOUNT_PATH,
-  ANTHROPIC_TOKEN_VOLUME,
   type AgentAnthropicFederation,
   type AgentContainerResourceOverrides,
   type AgentVoiceEnv,
+  ANTHROPIC_FEDERATION_ENV_NAMES,
+  ANTHROPIC_TOKEN_MOUNT_PATH,
+  ANTHROPIC_TOKEN_VOLUME,
   buildAgentDeploymentManifest,
   buildAgentSecretManifest,
   CLAUDE_POLICY_HASH_ANNOTATION,
@@ -40,8 +54,17 @@ import {
   TENANT_LABEL,
 } from "./agent-manifest.ts";
 import type { AgentTokenService } from "./agent-tokens.ts";
+import {
+  AnthropicConflictError,
+  type AnthropicIdentityClient,
+} from "./anthropic-identity-client.ts";
+import type { AnthropicIdentityNameAllocator } from "./anthropic-identity-name.ts";
 import type { ChatServiceProvisioningClient } from "./chat-service-provisioning-client.ts";
-import { ConflictError, NotFoundError } from "./errors.ts";
+import {
+  ConflictError,
+  NotFoundError,
+  UnprocessableEntityError,
+} from "./errors.ts";
 import type {
   KubernetesClient,
   KubernetesContainer,
@@ -218,6 +241,142 @@ export interface KubernetesAgentProvisionerConfig {
    * manifest unchanged.
    */
   anthropicFederation?: AgentAnthropicFederation;
+  /**
+   * perAgent identity mode: give every agent its own Kubernetes ServiceAccount,
+   * Anthropic service account and federation rule at provision time, and build
+   * its Deployment from those IDs. Wired in main.ts's buildProvisioner when
+   * SHIPWRIGHT_K8S_AGENT_ANTHROPIC_FEDERATION_IDENTITY_MODE=perAgent; mutually
+   * exclusive with `anthropicFederation` (shared mode).
+   */
+  perAgentIdentity?: PerAgentIdentityConfig;
+}
+
+// ─── perAgent identity ──────────────────────────────────────────────────────
+
+/** Read/save of an agent's owner and identity IDs (AgentAnthropicIdentityService). */
+export type AgentIdentityStore = Pick<
+  AgentAnthropicIdentityService,
+  "get" | "set"
+>;
+
+/** Idempotent identity-name allocation (AnthropicIdentityNameAllocator). */
+export type AgentIdentityNameSource = Pick<
+  AnthropicIdentityNameAllocator,
+  "allocate"
+>;
+
+export interface PerAgentIdentityConfig {
+  /** Anthropic Admin API client (the admin pod's own federated sign-in). */
+  client: AnthropicIdentityClient;
+  identities: AgentIdentityStore;
+  names: AgentIdentityNameSource;
+  /** → ANTHROPIC_ORGANIZATION_ID */
+  organizationId: string;
+  /**
+   * Workspace each service account is added to and each rule is scoped to
+   * (→ ANTHROPIC_WORKSPACE_ID). Unset: no workspace step, and the rule and pod
+   * carry no workspace.
+   */
+  workspaceId?: string;
+  /** This cluster's Anthropic federation issuer (the rules' issuer). */
+  issuerId: string;
+  /** Audience of the agent pods' projected token (also matched by the rule). */
+  audience: string;
+  /** Lifetime of the agent pods' projected token. */
+  expirationSeconds: number;
+}
+
+/** OAuth scope of every per-agent federation rule. */
+export const PER_AGENT_RULE_SCOPE = "workspace:inference";
+/** Lifetime of the Anthropic access tokens a per-agent rule mints. */
+export const PER_AGENT_RULE_TOKEN_LIFETIME_SECONDS = 600;
+
+/** The token subject Kubernetes stamps on a pod's projected ServiceAccount token. */
+export function serviceAccountSubject(
+  namespace: string,
+  serviceAccountName: string,
+): string {
+  return `system:serviceaccount:${namespace}:${serviceAccountName}`;
+}
+
+/** True when the agent has an owner and every per-agent identity ID saved. */
+export function hasPerAgentIdentity(
+  identity: AgentAnthropicIdentity | null,
+): boolean {
+  return Boolean(
+    identity?.ownerEmail &&
+      identity.k8sServiceAccountName &&
+      identity.anthropicServiceAccountId &&
+      identity.anthropicFederationRuleId,
+  );
+}
+
+/**
+ * The Deployment federation wiring for an agent's OWN identity.
+ * @throws NotFoundError when the agent row is missing
+ * @throws UnprocessableEntityError when the agent has no owner, or an ID is
+ *   not provisioned yet
+ */
+export function perAgentFederation(
+  config: Pick<
+    PerAgentIdentityConfig,
+    "organizationId" | "workspaceId" | "audience" | "expirationSeconds"
+  >,
+  agentId: string,
+  identity: AgentAnthropicIdentity | null,
+): AgentAnthropicFederation {
+  const ids = requireOwner(agentId, identity);
+  const {
+    k8sServiceAccountName,
+    anthropicServiceAccountId,
+    anthropicFederationRuleId,
+  } = ids;
+  if (
+    !k8sServiceAccountName ||
+    !anthropicServiceAccountId ||
+    !anthropicFederationRuleId
+  ) {
+    const missing = (
+      [
+        "k8sServiceAccountName",
+        "anthropicServiceAccountId",
+        "anthropicFederationRuleId",
+      ] as const
+    ).filter((key) => !ids[key]);
+    throw new UnprocessableEntityError(
+      `Agent ${agentId} has no per-agent Anthropic identity yet (missing ${missing.join(", ")}); provision it first`,
+    );
+  }
+  return {
+    serviceAccountName: k8sServiceAccountName,
+    ruleId: anthropicFederationRuleId,
+    organizationId: config.organizationId,
+    serviceAccountId: anthropicServiceAccountId,
+    ...(config.workspaceId ? { workspaceId: config.workspaceId } : {}),
+    audience: config.audience,
+    expirationSeconds: config.expirationSeconds,
+  };
+}
+
+function requireOwner(
+  agentId: string,
+  identity: AgentAnthropicIdentity | null,
+): AgentAnthropicIdentity & { ownerEmail: string } {
+  if (!identity) throw new NotFoundError(`Agent ${agentId} not found`);
+  const { ownerEmail } = identity;
+  if (!ownerEmail) {
+    throw new UnprocessableEntityError(
+      `Agent ${agentId} has no owner; perAgent identity mode needs an owner email to name the agent's Anthropic identity`,
+    );
+  }
+  return { ...identity, ownerEmail };
+}
+
+/** Identity pieces created by THIS provision() call — the rollback set. */
+interface CreatedIdentity {
+  k8sServiceAccount?: string;
+  serviceAccountId?: string;
+  ruleId?: string;
 }
 
 function envEntryEqual(a: KubernetesEnvVar, b: KubernetesEnvVar): boolean {
@@ -482,6 +641,43 @@ function isNotFound(err: unknown): boolean {
   return err instanceof NotFoundError;
 }
 
+/**
+ * Create an Anthropic resource and return its ID (reporting it via
+ * `onCreated`). A name conflict means an earlier call created it but its ID
+ * write was lost: recover the live resource by name. If nothing by that name
+ * is live, the conflict is rethrown.
+ */
+async function createOrRecover(
+  create: () => Promise<{ id: string }>,
+  findByName: () => Promise<{ id: string } | null>,
+  onCreated: (id: string) => void,
+): Promise<string> {
+  try {
+    const { id } = await create();
+    onCreated(id);
+    return id;
+  } catch (err) {
+    if (!(err instanceof AnthropicConflictError)) throw err;
+    const found = await findByName();
+    if (!found) throw err;
+    return found.id;
+  }
+}
+
+/** Run a rollback step; log (never throw) on failure so the original error surfaces. */
+async function bestEffort(
+  what: string,
+  step: () => Promise<unknown>,
+): Promise<void> {
+  try {
+    await step();
+  } catch (err) {
+    console.warn(
+      `[provisioner] rollback: failed to ${what}: ${err instanceof Error ? err.message : String(err)}`,
+    );
+  }
+}
+
 // ─── Kubernetes implementation ──────────────────────────────────────────────
 
 export class KubernetesAgentProvisioner implements AgentProvisioner {
@@ -514,13 +710,36 @@ export class KubernetesAgentProvisioner implements AgentProvisioner {
   }
 
   /**
+   * The federation wiring reconcile drift-corrects an existing Deployment to.
+   * `manage: false` means leave the live federation wiring as it is: in
+   * perAgent mode an agent without its own identity yet (created before the
+   * mode was switched on) keeps whatever it runs with until it is migrated.
+   */
+  private async reconcileFederationFor(
+    agentId: string,
+  ): Promise<{ federation?: AgentAnthropicFederation; manage: boolean }> {
+    const perAgent = this.config.perAgentIdentity;
+    if (!perAgent) {
+      return { federation: this.config.anthropicFederation, manage: true };
+    }
+    const identity = await perAgent.identities.get(agentId);
+    if (!hasPerAgentIdentity(identity)) return { manage: false };
+    return {
+      federation: perAgentFederation(perAgent, agentId, identity),
+      manage: true,
+    };
+  }
+
+  /**
    * The desired Deployment manifest for an agent — the single source of truth
    * used both to create (provision) and to drift-correct (reconcile).
+   * `federation` is the agent's resolved wiring (see federationFor).
    */
   private deploymentManifestFor(
     agentId: string,
-    slug?: string,
-    accountId?: string | null,
+    slug: string | undefined,
+    accountId: string | null | undefined,
+    federation: AgentAnthropicFederation | undefined,
   ) {
     const resourceName = this.resourceName(agentId);
     return buildAgentDeploymentManifest({
@@ -538,7 +757,7 @@ export class KubernetesAgentProvisioner implements AgentProvisioner {
       taskStoreUrl: this.config.taskStoreUrl,
       chatServiceUrl: this.config.chatServiceUrl,
       claudePolicy: this.config.claudePolicy,
-      anthropicFederation: this.config.anthropicFederation,
+      anthropicFederation: federation,
       accountId,
     });
   }
@@ -556,6 +775,13 @@ export class KubernetesAgentProvisioner implements AgentProvisioner {
       deploymentName: resourceName,
     };
 
+    // perAgent mode needs an owner to name the identity: check it BEFORE
+    // creating anything, so an ownerless agent fails cleanly.
+    const perAgent = this.config.perAgentIdentity;
+    const identity = perAgent
+      ? requireOwner(agentId, await perAgent.identities.get(agentId))
+      : undefined;
+
     // 1. PVC — must exist before the Deployment that mounts it. A 409 means the
     //    PVC already exists from a prior provision; treat as idempotent success.
     //    On any subsequent failure, do NOT delete the PVC (data safety policy).
@@ -564,6 +790,192 @@ export class KubernetesAgentProvisioner implements AgentProvisioner {
     } catch (err) {
       if (!isConflict(err)) throw err;
     }
+
+    if (!perAgent || !identity) {
+      return this.provisionSecretAndDeployment(
+        agentId,
+        opts,
+        result,
+        this.config.anthropicFederation,
+      );
+    }
+
+    // perAgent: the identity steps, then Secret + Deployment with the agent's
+    // own IDs. Any failure undoes (best-effort, in reverse) the identity pieces
+    // THIS call created; the Secret step rolls itself back first.
+    const created: CreatedIdentity = {};
+    try {
+      const federation = perAgentFederation(
+        perAgent,
+        agentId,
+        await this.provisionIdentity(
+          perAgent,
+          agentId,
+          resourceName,
+          identity,
+          created,
+        ),
+      );
+      return await this.provisionSecretAndDeployment(
+        agentId,
+        opts,
+        result,
+        federation,
+      );
+    } catch (err) {
+      await this.rollbackIdentity(perAgent, agentId, created);
+      throw err;
+    }
+  }
+
+  /**
+   * Steps 1a–1d of perAgent provisioning. Each ID already saved on the agent is
+   * reused; each new one is saved right after its create call. Returns the
+   * agent's identity with every ID set. Records what it creates in `created`.
+   */
+  private async provisionIdentity(
+    perAgent: PerAgentIdentityConfig,
+    agentId: string,
+    resourceName: string,
+    initial: AgentAnthropicIdentity & { ownerEmail: string },
+    created: CreatedIdentity,
+  ): Promise<AgentAnthropicIdentity> {
+    const { client, identities, workspaceId } = perAgent;
+    let identity: AgentAnthropicIdentity = initial;
+
+    // 1a. Kubernetes ServiceAccount, named like the Deployment. 409 = it already
+    //     exists (an earlier call created it), so it is not ours to roll back.
+    try {
+      await this.k8s.createServiceAccount(this.config.namespace, {
+        name: resourceName,
+      });
+      created.k8sServiceAccount = resourceName;
+    } catch (err) {
+      if (!isConflict(err)) throw err;
+    }
+    if (identity.k8sServiceAccountName !== resourceName) {
+      identity = await identities.set(agentId, {
+        k8sServiceAccountName: resourceName,
+      });
+    }
+
+    // The Anthropic service account and rule share the agent's identity name.
+    const name = await perAgent.names.allocate(agentId, initial.ownerEmail);
+    const description = `Shipwright agent ${agentId}`;
+
+    // 1b. Anthropic service account.
+    let serviceAccountId = identity.anthropicServiceAccountId;
+    if (!serviceAccountId) {
+      serviceAccountId = await createOrRecover(
+        () => client.createServiceAccount({ name, description }),
+        () => client.findServiceAccountByName(name),
+        (id) => {
+          created.serviceAccountId = id;
+        },
+      );
+      identity = await identities.set(agentId, {
+        anthropicServiceAccountId: serviceAccountId,
+      });
+    }
+
+    // 1c. Workspace membership. 409 = already a member (an earlier call).
+    if (workspaceId) {
+      try {
+        await client.addServiceAccountToWorkspace({
+          serviceAccountId,
+          workspaceId,
+        });
+      } catch (err) {
+        if (!(err instanceof AnthropicConflictError)) throw err;
+      }
+    }
+
+    // 1d. Federation rule: trusts exactly this pod's ServiceAccount token
+    //     (no trailing `*`, so subject_prefix is an exact match).
+    if (!identity.anthropicFederationRuleId) {
+      const ruleId = await createOrRecover(
+        () =>
+          client.createFederationRule({
+            name,
+            description,
+            issuerId: perAgent.issuerId,
+            serviceAccountId,
+            ...(workspaceId ? { workspaceId } : {}),
+            oauthScope: PER_AGENT_RULE_SCOPE,
+            match: {
+              subjectPrefix: serviceAccountSubject(
+                this.config.namespace,
+                resourceName,
+              ),
+              audience: perAgent.audience,
+            },
+            tokenLifetimeSeconds: PER_AGENT_RULE_TOKEN_LIFETIME_SECONDS,
+          }),
+        () => client.findFederationRuleByName(name),
+        (id) => {
+          created.ruleId = id;
+        },
+      );
+      identity = await identities.set(agentId, {
+        anthropicFederationRuleId: ruleId,
+      });
+    }
+
+    return identity;
+  }
+
+  /**
+   * Best-effort undo of the identity pieces one provision() call created, in
+   * reverse creation order, then clear their saved IDs. Never throws: the
+   * caller's original error is what surfaces. A piece whose undo fails is left
+   * live under the agent's identity name, so a retry recovers it by name.
+   */
+  private async rollbackIdentity(
+    perAgent: PerAgentIdentityConfig,
+    agentId: string,
+    created: CreatedIdentity,
+  ): Promise<void> {
+    const { client, identities } = perAgent;
+    const clear: Partial<AgentAnthropicIdentity> = {};
+    if (created.ruleId) {
+      await bestEffort(`archive federation rule ${created.ruleId}`, () =>
+        client.archiveFederationRule(created.ruleId as string),
+      );
+      clear.anthropicFederationRuleId = null;
+    }
+    if (created.serviceAccountId) {
+      await bestEffort(
+        `archive Anthropic service account ${created.serviceAccountId}`,
+        () => client.archiveServiceAccount(created.serviceAccountId as string),
+      );
+      clear.anthropicServiceAccountId = null;
+    }
+    if (created.k8sServiceAccount) {
+      await bestEffort(
+        `delete ServiceAccount ${created.k8sServiceAccount}`,
+        () =>
+          this.k8s.deleteServiceAccount(
+            this.config.namespace,
+            created.k8sServiceAccount as string,
+          ),
+      );
+      clear.k8sServiceAccountName = null;
+    }
+    if (Object.keys(clear).length > 0) {
+      await bestEffort(`clear identity IDs of agent ${agentId}`, () =>
+        identities.set(agentId, clear),
+      );
+    }
+  }
+
+  /** Steps 2–4: token(s) → Secret → Deployment (the original provision flow). */
+  private async provisionSecretAndDeployment(
+    agentId: string,
+    opts: { slug?: string; accountId?: string | null } | undefined,
+    result: ProvisionResult,
+    federation: AgentAnthropicFederation | undefined,
+  ): Promise<ProvisionResult> {
+    const { secretName } = result;
 
     // 2. Token — mint only when the Secret does NOT already exist. If the Secret
     //    is already present (a prior provision completed or partially ran), we
@@ -632,7 +1044,12 @@ export class KubernetesAgentProvisioner implements AgentProvisioner {
     try {
       await this.k8s.createDeploymentManifest(
         this.config.namespace,
-        this.deploymentManifestFor(agentId, opts?.slug, opts?.accountId),
+        this.deploymentManifestFor(
+          agentId,
+          opts?.slug,
+          opts?.accountId,
+          federation,
+        ),
       );
     } catch (err) {
       if (isConflict(err)) {
@@ -745,10 +1162,13 @@ export class KubernetesAgentProvisioner implements AgentProvisioner {
             resourceName,
           );
           const current = deployment.spec.template.spec.containers[0];
+          const { federation: desiredFederation, manage: manageFederation } =
+            await this.reconcileFederationFor(agent.id);
           const desiredDeployment = this.deploymentManifestFor(
             agent.id,
             agent.slug,
             agent.accountId,
+            desiredFederation,
           );
           const desired = desiredDeployment.spec.template.spec.containers[0];
           const desiredLabels = desiredDeployment.spec.template.metadata.labels;
@@ -758,7 +1178,11 @@ export class KubernetesAgentProvisioner implements AgentProvisioner {
             deployment.spec.template.metadata?.labels?.[TENANT_LABEL] !==
               desiredLabels[TENANT_LABEL];
           const policy = policyPatch(deployment, desiredDeployment);
-          const federation = federationPatch(deployment, desiredDeployment);
+          // Unmanaged federation (see reconcileFederationFor): no patch, so
+          // the live ServiceAccount, token volume and env are left alone.
+          const federation = manageFederation
+            ? federationPatch(deployment, desiredDeployment)
+            : undefined;
           const containerDrift =
             !policyOnly &&
             current !== undefined &&

@@ -41,12 +41,20 @@ import { AgentGitHubInstallationsService } from "./agent-github-installations.ts
 import { AgentMemberService } from "./agent-members.ts";
 import { AgentPhaseMethodologyService } from "./agent-phase-methodology.ts";
 import { AgentPluginService } from "./agent-plugins.ts";
+import type { PrismaClient } from "../prisma/client/client.ts";
+import { AgentAnthropicIdentityService } from "./agent-anthropic-identity.ts";
 import type { AgentAnthropicFederation } from "./agent-manifest.ts";
-import type { AgentProvisioner } from "./agent-provisioner.ts";
+import type {
+  AgentProvisioner,
+  PerAgentIdentityConfig,
+} from "./agent-provisioner.ts";
 import {
   KubernetesAgentProvisioner,
   NoopAgentProvisioner,
 } from "./agent-provisioner.ts";
+import { FederatedTokenProvider } from "./anthropic-federated-token-provider.ts";
+import { HttpAnthropicIdentityClient } from "./anthropic-identity-client.ts";
+import { AnthropicIdentityNameAllocator } from "./anthropic-identity-name.ts";
 import { AgentTokenService } from "./agent-tokens.ts";
 import { AgentToolService } from "./agent-tools.ts";
 import { AgentTypeRegistry } from "./agent-type-manifest-loader.ts";
@@ -168,6 +176,7 @@ export async function runMigrations(): Promise<void> {
 export function buildProvisioner(
   env: NodeJS.ProcessEnv,
   agentTokenService: AgentTokenService,
+  prisma?: PrismaClient,
 ): AgentProvisioner {
   if (env.SHIPWRIGHT_K8S_PROVISIONING !== "enabled") {
     return new NoopAgentProvisioner();
@@ -229,13 +238,16 @@ export function buildProvisioner(
 
   // Anthropic workload identity federation. In shared mode an unset rule ID
   // disables it; a partial config throws here so admin startup fails with a
-  // clear message. Only shared mode wires the provisioner; perAgent wiring
-  // arrives in PAI-2.2.
+  // clear message. Shared mode passes the one shared identity; perAgent mode
+  // passes what the provisioner needs to create each agent's own identity.
   const parsedFederation = parseAnthropicFederation(env);
   let anthropicFederation: AgentAnthropicFederation | undefined;
+  let perAgentIdentity: PerAgentIdentityConfig | undefined;
   if (parsedFederation?.mode === "shared") {
     const { mode: _mode, ...shared } = parsedFederation;
     anthropicFederation = shared;
+  } else if (parsedFederation?.mode === "perAgent") {
+    perAgentIdentity = buildPerAgentIdentity(env, parsedFederation, prisma);
   }
 
   const taskStoreUrl = env.SHIPWRIGHT_TASK_STORE_URL;
@@ -272,6 +284,7 @@ export function buildProvisioner(
     ...(Object.keys(voice).length > 0 ? { voice } : {}),
     ...(claudePolicy ? { claudePolicy } : {}),
     ...(anthropicFederation ? { anthropicFederation } : {}),
+    ...(perAgentIdentity ? { perAgentIdentity } : {}),
     // When SHIPWRIGHT_AGENT_PVC_NAME_TEMPLATE is set (e.g. "acme-agent-{name}-home"),
     // substitute {name} with the pre-sanitized name resolved by pvcNameFor()
     // (slug sanitized via sanitizeAgentName, or falls back to resourceName).
@@ -290,6 +303,61 @@ export function buildProvisioner(
     // provision and inject it into the agent Secret + Deployment.
     ...(chatService ? { chatService, chatServiceUrl } : {}),
   });
+}
+
+/**
+ * The perAgent provisioner deps. The admin pod signs in to the Anthropic Admin
+ * API by federation with its own projected token and bootstrap rule (the
+ * chart renders ANTHROPIC_IDENTITY_TOKEN_FILE / _FEDERATION_RULE_ID /
+ * _ORGANIZATION_ID, plus _SERVICE_ACCOUNT_ID / _WORKSPACE_ID, in perAgent
+ * mode); identity IDs and names are kept on the Agent row.
+ * @throws when the admin sign-in env or the database client is missing
+ */
+function buildPerAgentIdentity(
+  env: NodeJS.ProcessEnv,
+  federation: PerAgentAnthropicFederation,
+  prisma: PrismaClient | undefined,
+): PerAgentIdentityConfig {
+  const required = [
+    "ANTHROPIC_IDENTITY_TOKEN_FILE",
+    "ANTHROPIC_FEDERATION_RULE_ID",
+    "ANTHROPIC_ORGANIZATION_ID",
+  ] as const;
+  const missing = required.filter((name) => !env[name]);
+  if (missing.length > 0) {
+    throw new Error(
+      `${FEDERATION_ENV_PREFIX}IDENTITY_MODE is perAgent but the admin's own Anthropic sign-in is not configured: ${missing.join(", ")} ${missing.length === 1 ? "is" : "are"} missing.`,
+    );
+  }
+  if (!prisma) {
+    throw new Error(
+      "perAgent identity mode needs a database client to save agent identities.",
+    );
+  }
+  const tokenProvider = new FederatedTokenProvider({
+    fetchFn: fetch,
+    tokenFilePath: env.ANTHROPIC_IDENTITY_TOKEN_FILE as string,
+    federationRuleId: env.ANTHROPIC_FEDERATION_RULE_ID as string,
+    organizationId: env.ANTHROPIC_ORGANIZATION_ID as string,
+    ...(env.ANTHROPIC_SERVICE_ACCOUNT_ID
+      ? { serviceAccountId: env.ANTHROPIC_SERVICE_ACCOUNT_ID }
+      : {}),
+    ...(env.ANTHROPIC_WORKSPACE_ID
+      ? { workspaceId: env.ANTHROPIC_WORKSPACE_ID }
+      : {}),
+  });
+  return {
+    client: new HttpAnthropicIdentityClient({ fetchFn: fetch, tokenProvider }),
+    identities: new AgentAnthropicIdentityService(prisma),
+    names: new AnthropicIdentityNameAllocator(prisma, {
+      suffix: federation.nameSuffix,
+    }),
+    organizationId: federation.organizationId,
+    ...(federation.workspaceId ? { workspaceId: federation.workspaceId } : {}),
+    issuerId: federation.issuerId,
+    audience: federation.audience,
+    expirationSeconds: federation.expirationSeconds,
+  };
 }
 
 const FEDERATION_ENV_PREFIX = "SHIPWRIGHT_K8S_AGENT_ANTHROPIC_FEDERATION_";
@@ -659,7 +727,7 @@ async function startServer(): Promise<void> {
   );
 
   // Real K8s provisioner when SHIPWRIGHT_K8S_PROVISIONING=enabled, else Noop.
-  const provisioner = buildProvisioner(process.env, agentTokenService);
+  const provisioner = buildProvisioner(process.env, agentTokenService, prisma);
 
   // Read config values at call time (no module-level env reads)
   const sessionSecret = process.env.SHIPWRIGHT_SESSION_SECRET ?? "";
