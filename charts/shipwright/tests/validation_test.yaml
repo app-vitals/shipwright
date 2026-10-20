@@ -169,3 +169,77 @@ tests:
       agent.provisioning.anthropicFederation.federationRuleId: rule-1
     asserts:
       - notFailedTemplate: {}
+
+  # ── anthropicFederation perAgent identity mode (PAI-2.1) ────────────────────
+  - it: passes in perAgent mode without federationRuleId, serviceAccountId or an agent ServiceAccount
+    set:
+      agent.provisioning.enabled: true
+      agent.provisioning.serviceAccount.create: false
+      agent.provisioning.anthropicFederation.enabled: true
+      agent.provisioning.anthropicFederation.identityMode: perAgent
+      agent.provisioning.anthropicFederation.organizationId: org-1
+      agent.provisioning.anthropicFederation.issuerId: issuer-1
+      agent.provisioning.anthropicFederation.adminFederation.ruleId: fdrl-admin
+      agent.provisioning.anthropicFederation.adminFederation.serviceAccountId: svac-admin
+    asserts:
+      - notFailedTemplate: {}
+
+  - it: fails in perAgent mode while agent.provisioning is disabled
+    set:
+      agent.provisioning.anthropicFederation.enabled: true
+      agent.provisioning.anthropicFederation.identityMode: perAgent
+      agent.provisioning.anthropicFederation.organizationId: org-1
+      agent.provisioning.anthropicFederation.issuerId: issuer-1
+      agent.provisioning.anthropicFederation.adminFederation.ruleId: fdrl-admin
+      agent.provisioning.anthropicFederation.adminFederation.serviceAccountId: svac-admin
+    asserts:
+      - failedTemplate:
+          errorPattern: "requires agent.provisioning.enabled=true"
+
+  - it: fails in perAgent mode without organizationId
+    set:
+      agent.provisioning.enabled: true
+      agent.provisioning.anthropicFederation.enabled: true
+      agent.provisioning.anthropicFederation.identityMode: perAgent
+      agent.provisioning.anthropicFederation.issuerId: issuer-1
+      agent.provisioning.anthropicFederation.adminFederation.ruleId: fdrl-admin
+      agent.provisioning.anthropicFederation.adminFederation.serviceAccountId: svac-admin
+    asserts:
+      - failedTemplate:
+          errorPattern: "anthropicFederation.organizationId"
+
+  - it: fails in perAgent mode without issuerId
+    set:
+      agent.provisioning.enabled: true
+      agent.provisioning.anthropicFederation.enabled: true
+      agent.provisioning.anthropicFederation.identityMode: perAgent
+      agent.provisioning.anthropicFederation.organizationId: org-1
+      agent.provisioning.anthropicFederation.adminFederation.ruleId: fdrl-admin
+      agent.provisioning.anthropicFederation.adminFederation.serviceAccountId: svac-admin
+    asserts:
+      - failedTemplate:
+          errorPattern: "anthropicFederation.issuerId"
+
+  - it: fails in perAgent mode without adminFederation.ruleId
+    set:
+      agent.provisioning.enabled: true
+      agent.provisioning.anthropicFederation.enabled: true
+      agent.provisioning.anthropicFederation.identityMode: perAgent
+      agent.provisioning.anthropicFederation.organizationId: org-1
+      agent.provisioning.anthropicFederation.issuerId: issuer-1
+      agent.provisioning.anthropicFederation.adminFederation.serviceAccountId: svac-admin
+    asserts:
+      - failedTemplate:
+          errorPattern: "anthropicFederation.adminFederation.ruleId"
+
+  - it: fails in perAgent mode without adminFederation.serviceAccountId
+    set:
+      agent.provisioning.enabled: true
+      agent.provisioning.anthropicFederation.enabled: true
+      agent.provisioning.anthropicFederation.identityMode: perAgent
+      agent.provisioning.anthropicFederation.organizationId: org-1
+      agent.provisioning.anthropicFederation.issuerId: issuer-1
+      agent.provisioning.anthropicFederation.adminFederation.ruleId: fdrl-admin
+    asserts:
+      - failedTemplate:
+          errorPattern: "anthropicFederation.adminFederation.serviceAccountId"

@@ -10,6 +10,12 @@ independent of `appVersion`. CI enforces this with
 `ct lint --check-version-increment`. Each release here must mirror the
 `artifacthub.io/changes` annotation in `Chart.yaml`.
 
+## [1.26.28] - 2026-10-20
+
+### Added
+
+- agent.provisioning.anthropicFederation.identityMode (shared or perAgent) with issuerId, nameSuffix and adminFederation; perAgent mode gives the admin pod its own projected token and ANTHROPIC_* env
+
 ## [1.26.27] - 2026-10-20
 
 ### Changed

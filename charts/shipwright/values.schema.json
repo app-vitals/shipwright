@@ -395,6 +395,23 @@
                     "workspaceId": { "type": "string" },
                     "serviceAccountId": { "type": "string" },
                     "federationRuleId": { "type": "string" },
+                    "identityMode": {
+                      "type": "string",
+                      "enum": ["shared", "perAgent"]
+                    },
+                    "issuerId": { "type": "string" },
+                    "nameSuffix": {
+                      "type": "string",
+                      "pattern": "^[a-z0-9-]*$"
+                    },
+                    "adminFederation": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "properties": {
+                        "ruleId": { "type": "string" },
+                        "serviceAccountId": { "type": "string" }
+                      }
+                    },
                     "audience": { "type": "string" },
                     "tokenExpirationSeconds": {
                       "type": "integer",
