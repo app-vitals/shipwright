@@ -542,6 +542,14 @@ agent:
     # agent.provisioning.enabled=true, non-empty federationRuleId, organizationId
     # and serviceAccountId, and an agent ServiceAccount (serviceAccount.create=true
     # or a non-empty serviceAccount.name). See docs/deploy-kubernetes-provisioning.md.
+    #
+    # identityMode selects how agents authenticate. "shared" (default) is the
+    # behavior above: every agent pod shares one ServiceAccount and one Anthropic
+    # service account/rule. "perAgent" (opt-in) gives each agent its own identity;
+    # it requires organizationId, issuerId and adminFederation (the admin pod's own
+    # projected token + ANTHROPIC_* env, used to sign in to the Anthropic Admin API
+    # via an org:admin bootstrap rule) and does NOT use federationRuleId,
+    # serviceAccountId or the shared agent ServiceAccount.
     anthropicFederation:
       # -- Inject the federation env into the admin Deployment.
       enabled: false
@@ -558,6 +566,23 @@ agent:
       # -- Lifetime of the projected token in seconds (the kubelet rotates it).
       # Integer from 600 (the Kubernetes minimum) to 3600.
       tokenExpirationSeconds: 600
+      # -- Identity mode: "shared" (one identity for all agents, default) or
+      # "perAgent" (each agent gets its own ServiceAccount and Anthropic identity).
+      identityMode: shared
+      # -- perAgent only: Anthropic issuer ID of this cluster's OIDC issuer (the
+      # issuer of the per-agent federation rules). Required in perAgent mode.
+      issuerId: ""
+      # -- perAgent only: suffix appended to per-agent resource names so clusters
+      # sharing one organization do not collide. Lowercase letters, digits and
+      # dashes. Empty → no suffix.
+      nameSuffix: ""
+      # -- perAgent only: the admin pod's own federation, used to sign in to the
+      # Anthropic Admin API. Both fields are required in perAgent mode.
+      adminFederation:
+        # -- org:admin bootstrap federation rule ID (ANTHROPIC_FEDERATION_RULE_ID in the admin pod).
+        ruleId: ""
+        # -- Anthropic service account ID the bootstrap rule is bound to (ANTHROPIC_SERVICE_ACCOUNT_ID in the admin pod).
+        serviceAccountId: ""
     # -- Provisioned workspace PVCs: created per-agent when the provisioner spins
     # up a new agent pod. These settings are surfaced for the agent manifest
     # builder's future use. NOTE: buildProvisioner does not read these as env

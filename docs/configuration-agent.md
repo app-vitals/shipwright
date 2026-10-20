@@ -187,6 +187,9 @@ Controls how the admin service provisions the Kubernetes workload backing each a
 | `SHIPWRIGHT_K8S_AGENT_ANTHROPIC_FEDERATION_WORKSPACE_ID` | `string` | _(unset)_ | Optional Anthropic workspace ID, injected as `ANTHROPIC_WORKSPACE_ID` only when set. |
 | `SHIPWRIGHT_K8S_AGENT_ANTHROPIC_FEDERATION_AUDIENCE` | `string` | `https://api.anthropic.com` | Audience of the projected service-account token. |
 | `SHIPWRIGHT_K8S_AGENT_ANTHROPIC_FEDERATION_TOKEN_EXPIRATION_SECONDS` | `integer` | `600` | Lifetime of the projected token (kubelet rotates it). Must be an integer >= 600 (the Kubernetes minimum); anything else fails admin startup. |
+| `SHIPWRIGHT_K8S_AGENT_ANTHROPIC_FEDERATION_IDENTITY_MODE` | `string` | `shared` | `shared` (one identity for all agents, gated on `RULE_ID`) or `perAgent` (each agent gets its own identity; needs `ORGANIZATION_ID` and `ISSUER_ID`, does not use `RULE_ID`, `SERVICE_ACCOUNT_ID` or `SHIPWRIGHT_K8S_AGENT_SERVICE_ACCOUNT`). Any other value fails admin startup. Federation counts as enabled in perAgent mode without a shared rule ID. |
+| `SHIPWRIGHT_K8S_AGENT_ANTHROPIC_FEDERATION_ISSUER_ID` | `string` | _(unset)_ | perAgent only: Anthropic issuer ID of this cluster's OIDC issuer. Required in perAgent mode. |
+| `SHIPWRIGHT_K8S_AGENT_ANTHROPIC_FEDERATION_NAME_SUFFIX` | `string` | _(unset)_ | perAgent only: suffix for per-agent resource names so clusters sharing an organization do not collide. Must match `^[a-z0-9-]*$`. |
 | `SHIPWRIGHT_K8S_AGENT_EPHEMERAL_STORAGE` | `string` | `4Gi` | ephemeral-storage for the provisioned agent container, applied to BOTH request and limit (kept equal — Autopilot-style billing charges the request either way). Only read when provisioning is enabled. |
 
 ### Workspace and tooling

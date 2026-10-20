@@ -382,3 +382,36 @@ tests:
       agent.provisioning.anthropicFederation.tokenExpirationSeconds: 3600
     asserts:
       - notFailedTemplate: {}
+
+  - it: accepts anthropicFederation.identityMode perAgent
+    set:
+      agent.provisioning.anthropicFederation.identityMode: perAgent
+    asserts:
+      - notFailedTemplate: {}
+
+  - it: rejects an unknown anthropicFederation.identityMode
+    set:
+      agent.provisioning.anthropicFederation.identityMode: both
+    asserts:
+      - failedTemplate:
+          errorPattern: "identityMode"
+
+  - it: rejects an anthropicFederation.nameSuffix outside [a-z0-9-]
+    set:
+      agent.provisioning.anthropicFederation.nameSuffix: Dev_1
+    asserts:
+      - failedTemplate:
+          errorPattern: "nameSuffix"
+
+  - it: accepts a lowercase-alphanumeric-dash anthropicFederation.nameSuffix
+    set:
+      agent.provisioning.anthropicFederation.nameSuffix: dev-1
+    asserts:
+      - notFailedTemplate: {}
+
+  - it: rejects an unknown key under anthropicFederation.adminFederation
+    set:
+      agent.provisioning.anthropicFederation.adminFederation.bogus: x
+    asserts:
+      - failedTemplate:
+          errorPattern: "adminFederation"

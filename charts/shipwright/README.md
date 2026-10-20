@@ -155,6 +155,11 @@ environment, set `postgresql.auth.existingSecret` to a pre-created Secret (or se
 | `agent.provisioning.anthropicFederation.workspaceId` | `""` | Optional Anthropic workspace ID (env omitted when empty). |
 | `agent.provisioning.anthropicFederation.audience` | `https://api.anthropic.com` | Audience of the projected service-account token. |
 | `agent.provisioning.anthropicFederation.tokenExpirationSeconds` | `600` | Projected token lifetime in seconds, 600 to 3600. |
+| `agent.provisioning.anthropicFederation.identityMode` | `shared` | `shared` (one identity for all agents) or `perAgent` (each agent gets its own). perAgent requires `provisioning.enabled`, `organizationId`, `issuerId` and `adminFederation.*`; it does not need `federationRuleId`, `serviceAccountId` or an agent ServiceAccount, and mounts a projected token plus `ANTHROPIC_*` env into the admin pod. |
+| `agent.provisioning.anthropicFederation.issuerId` | `""` | perAgent only: Anthropic issuer ID of this cluster's OIDC issuer. Required in perAgent mode. |
+| `agent.provisioning.anthropicFederation.nameSuffix` | `""` | perAgent only: suffix for per-agent resource names (`^[a-z0-9-]*$`). |
+| `agent.provisioning.anthropicFederation.adminFederation.ruleId` | `""` | perAgent only: org:admin bootstrap federation rule ID for the admin pod. Required in perAgent mode. |
+| `agent.provisioning.anthropicFederation.adminFederation.serviceAccountId` | `""` | perAgent only: Anthropic service account ID the bootstrap rule is bound to. Required in perAgent mode. |
 | `agent.voice.enabled` | `false` | Master switch for agent voice (STT/TTS). Off = no Whisper pod/Service/Secret and no voice env (provisioned agents keep the 3 base vars). |
 | `agent.voice.provider` | `whisper` | STT provider: `whisper` (self-hosted ASR pod) \| `groq` (Groq cloud STT). TTS is Piper (self-hosted, in-image) unless `agent.voice.elevenlabs.apiKey` is set, in which case ElevenLabs is used instead for both providers. |
 | `agent.voice.whisper.image` | `onerahmet/openai-whisper-asr-webservice:v1.10.0` | Whisper ASR image (exposes `POST /asr`). Already pinned to a tested tag — do not float to `:latest`. |

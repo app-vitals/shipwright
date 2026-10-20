@@ -142,6 +142,21 @@ these on every manifest render without re-running the ingress checks.
 {{- if not .Values.agent.provisioning.enabled -}}
 {{- fail "agent.provisioning.anthropicFederation.enabled=true requires agent.provisioning.enabled=true — only provisioned agent pods use federation." -}}
 {{- end -}}
+{{- if eq ($fed.identityMode | default "shared") "perAgent" -}}
+{{- /* perAgent: each agent gets its own SA/identity, so the shared rule, service
+account and agent ServiceAccount are not required — only the org, issuer and the
+admin's own bootstrap federation. */ -}}
+{{- range $field := list "organizationId" "issuerId" -}}
+{{- if not (get $fed $field) -}}
+{{- fail (printf "agent.provisioning.anthropicFederation.identityMode=perAgent requires a non-empty agent.provisioning.anthropicFederation.%s." $field) -}}
+{{- end -}}
+{{- end -}}
+{{- range $field := list "ruleId" "serviceAccountId" -}}
+{{- if not (get ($fed.adminFederation | default dict) $field) -}}
+{{- fail (printf "agent.provisioning.anthropicFederation.identityMode=perAgent requires a non-empty agent.provisioning.anthropicFederation.adminFederation.%s." $field) -}}
+{{- end -}}
+{{- end -}}
+{{- else -}}
 {{- range $field := list "federationRuleId" "organizationId" "serviceAccountId" -}}
 {{- if not (get $fed $field) -}}
 {{- fail (printf "agent.provisioning.anthropicFederation.enabled=true requires a non-empty agent.provisioning.anthropicFederation.%s." $field) -}}
@@ -149,6 +164,7 @@ these on every manifest render without re-running the ingress checks.
 {{- end -}}
 {{- if and (not .Values.agent.provisioning.serviceAccount.create) (not .Values.agent.provisioning.serviceAccount.name) -}}
 {{- fail "agent.provisioning.anthropicFederation.enabled=true requires an agent ServiceAccount: set agent.provisioning.serviceAccount.create=true or a non-empty agent.provisioning.serviceAccount.name (federated tokens must not be issued to the namespace default ServiceAccount)." -}}
+{{- end -}}
 {{- end -}}
 {{- end -}}
 {{- end -}}

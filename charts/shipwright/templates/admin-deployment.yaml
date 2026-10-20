@@ -271,7 +271,43 @@ spec:
               value: {{ include "shipwright.agent.claudePolicy.json" . | sha256sum | quote }}
             {{- end }}
             {{- with .Values.agent.provisioning.anthropicFederation }}
-            {{- if .enabled }}
+            {{- if and .enabled (eq (.identityMode | default "shared") "perAgent") }}
+            # Anthropic perAgent identity mode: the provisioner reads the mode,
+            # issuer and name suffix (admin/src/main.ts parseAnthropicFederation);
+            # the shared rule/service-account env is intentionally not rendered.
+            - name: SHIPWRIGHT_K8S_AGENT_ANTHROPIC_FEDERATION_IDENTITY_MODE
+              value: perAgent
+            - name: SHIPWRIGHT_K8S_AGENT_ANTHROPIC_FEDERATION_ISSUER_ID
+              value: {{ .issuerId | quote }}
+            - name: SHIPWRIGHT_K8S_AGENT_ANTHROPIC_FEDERATION_ORGANIZATION_ID
+              value: {{ .organizationId | quote }}
+            {{- with .nameSuffix }}
+            - name: SHIPWRIGHT_K8S_AGENT_ANTHROPIC_FEDERATION_NAME_SUFFIX
+              value: {{ . | quote }}
+            {{- end }}
+            {{- with .workspaceId }}
+            - name: SHIPWRIGHT_K8S_AGENT_ANTHROPIC_FEDERATION_WORKSPACE_ID
+              value: {{ . | quote }}
+            {{- end }}
+            - name: SHIPWRIGHT_K8S_AGENT_ANTHROPIC_FEDERATION_AUDIENCE
+              value: {{ .audience | quote }}
+            - name: SHIPWRIGHT_K8S_AGENT_ANTHROPIC_FEDERATION_TOKEN_EXPIRATION_SECONDS
+              value: {{ .tokenExpirationSeconds | int64 | quote }}
+            # The admin pod's own federation: the projected token mounted below is
+            # exchanged (via the org:admin bootstrap rule) for Admin API access.
+            - name: ANTHROPIC_IDENTITY_TOKEN_FILE
+              value: /var/run/secrets/anthropic.com/token
+            - name: ANTHROPIC_FEDERATION_RULE_ID
+              value: {{ .adminFederation.ruleId | quote }}
+            - name: ANTHROPIC_ORGANIZATION_ID
+              value: {{ .organizationId | quote }}
+            - name: ANTHROPIC_SERVICE_ACCOUNT_ID
+              value: {{ .adminFederation.serviceAccountId | quote }}
+            {{- with .workspaceId }}
+            - name: ANTHROPIC_WORKSPACE_ID
+              value: {{ . | quote }}
+            {{- end }}
+            {{- else if .enabled }}
             # Anthropic workload identity federation: agent pods run as the agent
             # ServiceAccount with a projected token exchanged for Anthropic access.
             # RULE_ID gates the feature in admin/src/main.ts parseAnthropicFederation.
@@ -410,7 +446,29 @@ spec:
           resources:
             {{- toYaml . | nindent 12 }}
           {{- end }}
+          {{- with .Values.agent.provisioning.anthropicFederation }}
+          {{- if and .enabled (eq (.identityMode | default "shared") "perAgent") }}
+          volumeMounts:
+            - name: anthropic-token
+              mountPath: /var/run/secrets/anthropic.com
+              readOnly: true
+          {{- end }}
+          {{- end }}
         {{- if and .Values.cloudSqlProxy.enabled (not .Values.cloudSqlProxy.nativeSidecar) }}
         {{- include "shipwright.cloudSqlProxy.container" (dict "context" $ "nativeSidecar" false) | nindent 8 }}
         {{- end }}
+      {{- with .Values.agent.provisioning.anthropicFederation }}
+      {{- if and .enabled (eq (.identityMode | default "shared") "perAgent") }}
+      volumes:
+        # Projected ServiceAccount token for the admin pod's own Anthropic
+        # federation (perAgent mode only).
+        - name: anthropic-token
+          projected:
+            sources:
+              - serviceAccountToken:
+                  audience: {{ .audience | quote }}
+                  expirationSeconds: {{ .tokenExpirationSeconds | int64 }}
+                  path: token
+      {{- end }}
+      {{- end }}
 {{- end }}

@@ -210,3 +210,179 @@ tests:
     asserts:
       - failedTemplate:
           errorPattern: "requires an agent ServiceAccount"
+
+  # ── perAgent identity mode (PAI-2.1) ──────────────────────────────────────
+  # perAgent gives the admin pod its own projected token + ANTHROPIC_* env so it
+  # can sign in to the Admin API; shared mode renders none of it.
+  - it: renders no admin token volume or ANTHROPIC_* env in shared mode
+    release:
+      name: r
+    set:
+      agent.provisioning.enabled: true
+      agent.provisioning.anthropicFederation.enabled: true
+      agent.provisioning.anthropicFederation.organizationId: org-1
+      agent.provisioning.anthropicFederation.serviceAccountId: svcacct-1
+      agent.provisioning.anthropicFederation.federationRuleId: rule-1
+    asserts:
+      - notExists:
+          path: spec.template.spec.volumes
+      - notExists:
+          path: spec.template.spec.containers[0].volumeMounts
+      - notContains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: SHIPWRIGHT_K8S_AGENT_ANTHROPIC_FEDERATION_IDENTITY_MODE
+          any: true
+      - notContains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: ANTHROPIC_FEDERATION_RULE_ID
+          any: true
+      - notContains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: ANTHROPIC_IDENTITY_TOKEN_FILE
+          any: true
+
+  - it: renders the perAgent provisioner env and admin ANTHROPIC_* env
+    release:
+      name: r
+    set:
+      agent.provisioning.enabled: true
+      agent.provisioning.anthropicFederation.enabled: true
+      agent.provisioning.anthropicFederation.identityMode: perAgent
+      agent.provisioning.anthropicFederation.organizationId: org-1
+      agent.provisioning.anthropicFederation.workspaceId: wrkspc-1
+      agent.provisioning.anthropicFederation.issuerId: issuer-1
+      agent.provisioning.anthropicFederation.nameSuffix: dev-1
+      agent.provisioning.anthropicFederation.audience: https://aud.example.com
+      agent.provisioning.anthropicFederation.tokenExpirationSeconds: 1800
+      agent.provisioning.anthropicFederation.adminFederation.ruleId: fdrl-admin
+      agent.provisioning.anthropicFederation.adminFederation.serviceAccountId: svac-admin
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: SHIPWRIGHT_K8S_AGENT_ANTHROPIC_FEDERATION_IDENTITY_MODE
+            value: perAgent
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: SHIPWRIGHT_K8S_AGENT_ANTHROPIC_FEDERATION_ISSUER_ID
+            value: issuer-1
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: SHIPWRIGHT_K8S_AGENT_ANTHROPIC_FEDERATION_NAME_SUFFIX
+            value: dev-1
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: SHIPWRIGHT_K8S_AGENT_ANTHROPIC_FEDERATION_ORGANIZATION_ID
+            value: org-1
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: SHIPWRIGHT_K8S_AGENT_ANTHROPIC_FEDERATION_WORKSPACE_ID
+            value: wrkspc-1
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: SHIPWRIGHT_K8S_AGENT_ANTHROPIC_FEDERATION_AUDIENCE
+            value: https://aud.example.com
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: SHIPWRIGHT_K8S_AGENT_ANTHROPIC_FEDERATION_TOKEN_EXPIRATION_SECONDS
+            value: "1800"
+      # Shared-mode-only env is not rendered in perAgent mode.
+      - notContains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: SHIPWRIGHT_K8S_AGENT_ANTHROPIC_FEDERATION_RULE_ID
+          any: true
+      - notContains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: SHIPWRIGHT_K8S_AGENT_SERVICE_ACCOUNT
+          any: true
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: ANTHROPIC_IDENTITY_TOKEN_FILE
+            value: /var/run/secrets/anthropic.com/token
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: ANTHROPIC_FEDERATION_RULE_ID
+            value: fdrl-admin
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: ANTHROPIC_ORGANIZATION_ID
+            value: org-1
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: ANTHROPIC_SERVICE_ACCOUNT_ID
+            value: svac-admin
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: ANTHROPIC_WORKSPACE_ID
+            value: wrkspc-1
+
+  - it: mounts a projected admin token read-only in perAgent mode
+    set:
+      agent.provisioning.enabled: true
+      agent.provisioning.anthropicFederation.enabled: true
+      agent.provisioning.anthropicFederation.identityMode: perAgent
+      agent.provisioning.anthropicFederation.organizationId: org-1
+      agent.provisioning.anthropicFederation.issuerId: issuer-1
+      agent.provisioning.anthropicFederation.audience: https://aud.example.com
+      agent.provisioning.anthropicFederation.tokenExpirationSeconds: 1800
+      agent.provisioning.anthropicFederation.adminFederation.ruleId: fdrl-admin
+      agent.provisioning.anthropicFederation.adminFederation.serviceAccountId: svac-admin
+    asserts:
+      - equal:
+          path: spec.template.spec.volumes
+          value:
+            - name: anthropic-token
+              projected:
+                sources:
+                  - serviceAccountToken:
+                      audience: https://aud.example.com
+                      expirationSeconds: 1800
+                      path: token
+      - equal:
+          path: spec.template.spec.containers[0].volumeMounts
+          value:
+            - name: anthropic-token
+              mountPath: /var/run/secrets/anthropic.com
+              readOnly: true
+
+  - it: omits optional perAgent env (suffix, workspace) when unset
+    set:
+      agent.provisioning.enabled: true
+      agent.provisioning.anthropicFederation.enabled: true
+      agent.provisioning.anthropicFederation.identityMode: perAgent
+      agent.provisioning.anthropicFederation.organizationId: org-1
+      agent.provisioning.anthropicFederation.issuerId: issuer-1
+      agent.provisioning.anthropicFederation.adminFederation.ruleId: fdrl-admin
+      agent.provisioning.anthropicFederation.adminFederation.serviceAccountId: svac-admin
+    asserts:
+      - notContains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: SHIPWRIGHT_K8S_AGENT_ANTHROPIC_FEDERATION_NAME_SUFFIX
+          any: true
+      - notContains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: ANTHROPIC_WORKSPACE_ID
+          any: true
+      - notContains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: SHIPWRIGHT_K8S_AGENT_ANTHROPIC_FEDERATION_WORKSPACE_ID
+          any: true
