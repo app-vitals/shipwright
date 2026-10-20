@@ -227,15 +227,16 @@ export function buildProvisioner(
       }
     : undefined;
 
-  // Anthropic workload identity federation. Unset rule ID disables it; a
-  // partial config throws here so admin startup fails with a clear message.
-  // Only shared mode wires the provisioner (and drops the mode tag so the
-  // provisioner keeps its shared shape); perAgent wiring arrives in PAI-2.2.
+  // Anthropic workload identity federation. In shared mode an unset rule ID
+  // disables it; a partial config throws here so admin startup fails with a
+  // clear message. Only shared mode wires the provisioner; perAgent wiring
+  // arrives in PAI-2.2.
   const parsedFederation = parseAnthropicFederation(env);
-  const anthropicFederation: AgentAnthropicFederation | undefined =
-    parsedFederation?.mode === "shared"
-      ? (({ mode: _mode, ...shared }) => shared)(parsedFederation)
-      : undefined;
+  let anthropicFederation: AgentAnthropicFederation | undefined;
+  if (parsedFederation?.mode === "shared") {
+    const { mode: _mode, ...shared } = parsedFederation;
+    anthropicFederation = shared;
+  }
 
   const taskStoreUrl = env.SHIPWRIGHT_TASK_STORE_URL;
   const taskStoreAdminToken = env.SHIPWRIGHT_TASK_STORE_ADMIN_TOKEN;
@@ -366,7 +367,6 @@ export function parseAnthropicFederation(
   env: NodeJS.ProcessEnv,
 ): ParsedAnthropicFederation | undefined {
   const prefix = FEDERATION_ENV_PREFIX;
-  const modeName = `${prefix}IDENTITY_MODE`;
   const mode = resolveFederationIdentityMode(env);
 
   const ruleId = env[`${prefix}RULE_ID`];
@@ -389,7 +389,7 @@ export function parseAnthropicFederation(
     throw new Error(
       mode === "shared"
         ? `Anthropic workload identity federation is partially configured: ${prefix}RULE_ID is set but ${missing.join(", ")} ${verb} missing. Set all of them, or unset ${prefix}RULE_ID to disable federation.`
-        : `Anthropic workload identity federation is partially configured: ${modeName} is perAgent but ${missing.join(", ")} ${verb} missing.`,
+        : `Anthropic workload identity federation is partially configured: ${prefix}IDENTITY_MODE is perAgent but ${missing.join(", ")} ${verb} missing.`,
     );
   }
 
