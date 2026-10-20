@@ -328,6 +328,9 @@ function makeMockDeps(overrides?: Partial<AdminUIDeps>): AdminUIDeps {
       deprovision: async () => {},
       reconcile: async () => ({
         recreated: [],
+        migrated: [],
+        noOwner: [],
+        dryRun: false,
         updated: [],
         orphans: [],
         failed: [],

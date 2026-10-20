@@ -6,8 +6,19 @@ interface Result {
   orphans: string[];
   failed: Array<{ agentId: string; error: string }>;
   updated: string[];
+  migrated: string[];
+  noOwner: string[];
+  dryRun: boolean;
 }
-const EMPTY: Result = { recreated: [], orphans: [], failed: [], updated: [] };
+const EMPTY: Result = {
+  recreated: [],
+  migrated: [],
+  noOwner: [],
+  dryRun: false,
+  orphans: [],
+  failed: [],
+  updated: [],
+};
 
 function makeProvisioner(
   impl: (agents: unknown[]) => Promise<Result> = async () => EMPTY,
@@ -29,6 +40,32 @@ describe("reconcileAgentAfterAccountChange", () => {
     const p = makeProvisioner();
     expect(await reconcileAgentAfterAccountChange(p, agent)).toBeUndefined();
     expect(p.calls).toEqual([[{ id: "a1", slug: "Bot", accountId: "acct" }]]);
+  });
+
+  it("carries the agent's owner and identity fields into the reconcile target", async () => {
+    const p = makeProvisioner();
+    await reconcileAgentAfterAccountChange(p, {
+      ...agent,
+      ownerEmail: "jane.doe@example.com",
+      anthropicIdentityName: "jane-doe-a1",
+      anthropicServiceAccountId: "svac_1",
+      anthropicFederationRuleId: "fdrl_1",
+      k8sServiceAccountName: "a1",
+    });
+    expect(p.calls).toEqual([
+      [
+        {
+          id: "a1",
+          slug: "Bot",
+          accountId: "acct",
+          ownerEmail: "jane.doe@example.com",
+          anthropicIdentityName: "jane-doe-a1",
+          anthropicServiceAccountId: "svac_1",
+          anthropicFederationRuleId: "fdrl_1",
+          k8sServiceAccountName: "a1",
+        },
+      ],
+    ]);
   });
 
   it("passes null for a cleared account", async () => {

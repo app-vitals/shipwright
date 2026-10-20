@@ -24,6 +24,9 @@ type ReconcileCall = {
 
 const EMPTY_RESULT: ReconcileResult = {
   recreated: [],
+  migrated: [],
+  noOwner: [],
+  dryRun: false,
   orphans: [],
   failed: [],
   updated: [],
@@ -96,6 +99,37 @@ describe("managedReconcileTargets", () => {
     ).toEqual([
       { id: "a1", slug: "alpha", accountId: "acct-1" },
       { id: "a3", slug: "gamma", accountId: null },
+    ]);
+  });
+});
+
+describe("managedReconcileTargets identity fields", () => {
+  it("carries the owner and per-agent identity fields of each agent", () => {
+    expect(
+      managedReconcileTargets([
+        agent({
+          id: "a1",
+          name: "alpha",
+          ownerEmail: "jane.doe@example.com",
+          anthropicIdentityName: "jane-doe-a1",
+          anthropicServiceAccountId: "svac_1",
+          anthropicFederationRuleId: "fdrl_1",
+          k8sServiceAccountName: "a1",
+        }),
+        agent({ id: "a2", name: "beta", ownerEmail: null }),
+      ]),
+    ).toEqual([
+      {
+        id: "a1",
+        slug: "alpha",
+        accountId: null,
+        ownerEmail: "jane.doe@example.com",
+        anthropicIdentityName: "jane-doe-a1",
+        anthropicServiceAccountId: "svac_1",
+        anthropicFederationRuleId: "fdrl_1",
+        k8sServiceAccountName: "a1",
+      },
+      { id: "a2", slug: "beta", accountId: null, ownerEmail: null },
     ]);
   });
 });
@@ -191,6 +225,7 @@ describe("runStartupPolicyReconcile", () => {
     expect(text).toContain("updated=2");
     expect(text).toContain("recreated=1");
     expect(text).toContain("orphans=1");
+    expect(text).toContain("noOwner=0");
   });
 
   it("logs per-agent failures from the reconcile result as errors", async () => {

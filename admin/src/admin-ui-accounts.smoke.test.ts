@@ -164,7 +164,15 @@ function setup(opts: { enabled?: boolean } = {}) {
     provisioner: {
       async reconcile(agents) {
         reconciled.push(...agents);
-        return { recreated: [], orphans: [], failed: [], updated: [] };
+        return {
+          recreated: [],
+          migrated: [],
+          noOwner: [],
+          dryRun: false,
+          orphans: [],
+          failed: [],
+          updated: [],
+        };
       },
     },
   };

@@ -6,6 +6,7 @@
  * has to be re-applied, by reconciling the single agent's workload.
  */
 
+import type { AgentAnthropicIdentity } from "./agent-anthropic-identity.ts";
 import type { AgentProvisioner } from "./agent-provisioner.ts";
 
 /**
@@ -16,7 +17,7 @@ import type { AgentProvisioner } from "./agent-provisioner.ts";
  */
 export async function reconcileAgentAfterAccountChange(
   provisioner: Pick<AgentProvisioner, "reconcile">,
-  agent: {
+  agent: Partial<AgentAnthropicIdentity> & {
     id: string;
     name: string;
     selfHosted: boolean;
@@ -26,7 +27,16 @@ export async function reconcileAgentAfterAccountChange(
   if (agent.selfHosted) return undefined;
   try {
     const result = await provisioner.reconcile([
-      { id: agent.id, slug: agent.name, accountId: agent.accountId ?? null },
+      {
+        id: agent.id,
+        slug: agent.name,
+        accountId: agent.accountId ?? null,
+        ownerEmail: agent.ownerEmail,
+        anthropicIdentityName: agent.anthropicIdentityName,
+        anthropicServiceAccountId: agent.anthropicServiceAccountId,
+        anthropicFederationRuleId: agent.anthropicFederationRuleId,
+        k8sServiceAccountName: agent.k8sServiceAccountName,
+      },
     ]);
     const failure = result.failed.find((f) => f.agentId === agent.id);
     return failure

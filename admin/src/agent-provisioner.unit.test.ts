@@ -1389,10 +1389,32 @@ describe("NoopAgentProvisioner.reconcile()", () => {
     });
     expect(result).toEqual({
       recreated: [],
+      migrated: [],
+      noOwner: [],
+      dryRun: false,
       updated: [],
       orphans: [],
       failed: [],
     });
+  });
+
+  it("accepts a target carrying owner and identity fields, and reports a dry run", async () => {
+    const result = await new NoopAgentProvisioner().reconcile(
+      [
+        {
+          id: "a",
+          ownerEmail: "jane.doe@example.com",
+          anthropicIdentityName: null,
+          anthropicServiceAccountId: null,
+          anthropicFederationRuleId: null,
+          k8sServiceAccountName: null,
+        },
+      ],
+      { dryRun: true },
+    );
+    expect(result.dryRun).toBe(true);
+    expect(result.migrated).toEqual([]);
+    expect(result.noOwner).toEqual([]);
   });
 });
 

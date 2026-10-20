@@ -274,8 +274,26 @@ const ReconcileAgentsResultSchema = z
     updated: z.array(z.string()),
     orphans: z.array(z.string()),
     failed: z.array(z.object({ agentId: z.string(), error: z.string() })),
+    migrated: z.array(z.string()).openapi({
+      description:
+        "perAgent identity mode: agents moved (or, in a dry run, that would be moved) onto their own newly created identity",
+    }),
+    noOwner: z.array(z.string()).openapi({
+      description:
+        "perAgent identity mode: agents skipped because they have no owner; left unmodified",
+    }),
+    dryRun: z.boolean(),
   })
   .openapi("ReconcileAgentsResult");
+
+const ReconcileAgentsQuerySchema = z
+  .object({
+    dryRun: z.enum(["true", "false"]).default("false").openapi({
+      description:
+        "Defaults to false (reconcile for real). Pass true to report what would be recreated, updated and moved to per-agent identity without changing anything.",
+    }),
+  })
+  .openapi("ReconcileAgentsQuery");
 
 const StripCredentialsQuerySchema = z
   .object({
@@ -406,7 +424,8 @@ const reconcileAgentsRoute = createRoute({
   path: "/agents/reconcile",
   summary: "Reconcile all agents' K8s state",
   description:
-    "Admin-only. Reconciles Kubernetes Deployment state against all managed (non-self-hosted) agents in the DB, returning counts of recreated/updated deployments plus any orphaned deployments or per-agent failures.",
+    "Admin-only. Reconciles Kubernetes Deployment state against all managed (non-self-hosted) agents in the DB, returning the recreated/updated deployments plus any orphaned deployments or per-agent failures. In perAgent Anthropic identity mode it also creates the missing identity of each existing agent that has an owner and moves its Deployment off the shared ServiceAccount (`migrated`); agents with no owner are listed in `noOwner` and left alone. Pass `dryRun=true` to only report: nothing is created, saved or patched.",
+  request: { query: ReconcileAgentsQuerySchema },
   responses: {
     200: {
       description: "Reconciliation summary",
@@ -1454,8 +1473,10 @@ export function createAdminApp(deps: AdminDeps): OpenAPIHono<AdminAuthEnv> {
         "Only admin bearers and session users can reconcile agents",
       );
     }
+    const dryRun = c.req.valid("query").dryRun === "true";
     const result = await provisioner.reconcile(
       managedReconcileTargets(await agentService.list()),
+      { dryRun },
     );
     return c.json(result, 200);
   });
@@ -1652,7 +1673,18 @@ export function createAdminApp(deps: AdminDeps): OpenAPIHono<AdminAuthEnv> {
     if (c.get("isAdmin") !== true && email === undefined) {
       throw new ForbiddenError("Admin access required to list agents");
     }
-    const agents = await agentService.list();
+    // list() also selects the owner and identity IDs for reconcile targets;
+    // they are not part of this response.
+    const agents = (await agentService.list()).map(
+      ({
+        ownerEmail: _o,
+        anthropicIdentityName: _n,
+        anthropicServiceAccountId: _s,
+        anthropicFederationRuleId: _r,
+        k8sServiceAccountName: _k,
+        ...summary
+      }) => summary,
+    );
     if (c.get("isAdmin") === true || email === undefined) {
       return c.json(agents, 200);
     }

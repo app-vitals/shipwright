@@ -44,7 +44,15 @@ class NoopProvisioner implements AgentProvisioner {
   }
   async deprovision(): Promise<void> {}
   async reconcile() {
-    return { recreated: [], updated: [], orphans: [], failed: [] };
+    return {
+      recreated: [],
+      migrated: [],
+      noOwner: [],
+      dryRun: false,
+      updated: [],
+      orphans: [],
+      failed: [],
+    };
   }
 }
 

@@ -526,9 +526,9 @@ describe("KubernetesAgentProvisioner.reconcile() — perAgent identity", () => {
     });
   }
 
-  it("leaves federation untouched on an existing agent that has no per-agent identity yet", async () => {
+  it("leaves federation untouched on an existing ownerless agent (nothing to name its identity after)", async () => {
     const h = harness();
-    h.store.addAgent(AGENT_ID, { ownerEmail: OWNER });
+    h.store.addAgent(AGENT_ID);
     await h.recorded.createDeploymentManifest(
       NAMESPACE,
       liveDeployment(SHARED_FED),
@@ -588,12 +588,15 @@ describe("KubernetesAgentProvisioner.reconcile() — perAgent identity", () => {
     await expectFullyProvisioned(h);
   });
 
-  it("reports a missing Deployment for an ownerless agent as failed with the clear error", async () => {
+  it("reports a missing Deployment for an ownerless agent as noOwner, not failed, and creates nothing", async () => {
     const h = harness();
     h.store.addAgent(AGENT_ID);
     const result = await h.provisioner.reconcile([{ id: AGENT_ID }]);
-    expect(result.failed).toHaveLength(1);
-    expect(result.failed[0]?.error).toMatch(/no owner/i);
+    expect(result.failed).toEqual([]);
+    expect(result.recreated).toEqual([]);
+    expect(result.noOwner).toEqual([AGENT_ID]);
+    expect(h.anthropic.calls).toEqual([]);
+    expect(h.events.filter((e) => /create|patch/.test(e))).toEqual([]);
   });
 });
 
@@ -620,5 +623,327 @@ describe("KubernetesAgentProvisioner.provision() — shared mode does not touch 
       "k8s.createSecret",
       "k8s.createDeploymentManifest",
     ]);
+  });
+});
+
+// ─── reconcile: move existing agents to per-agent identity (PAI-2.3) ──────────
+
+describe("KubernetesAgentProvisioner.reconcile() — move existing agents", () => {
+  const SHARED_SA = "shipwright-agent";
+  // A different token source than the per-agent one (audience, lifetime), so
+  // the move has to patch the projected token volume as well.
+  const SHARED_FED = {
+    serviceAccountName: SHARED_SA,
+    ruleId: "fdrl_shared",
+    organizationId: "org-1",
+    serviceAccountId: "svac_shared",
+    audience: "https://shared.example.com",
+    expirationSeconds: 3600,
+  };
+
+  function sharedDeployment(agentId = AGENT_ID) {
+    const dep = buildAgentDeploymentManifest({
+      agentId,
+      namespace: NAMESPACE,
+      image: BASE_CONFIG.image,
+      imageTag: BASE_CONFIG.imageTag,
+      apiUrl: BASE_CONFIG.apiUrl,
+      pvcName: `${sanitizeAgentName(agentId)}-home`,
+      secretName: `${sanitizeAgentName(agentId)}-token`,
+      tokenSecretKey: "token",
+      anthropicFederation: SHARED_FED,
+    });
+    // The API server mirrors serviceAccountName into the deprecated alias.
+    dep.spec.template.spec.serviceAccount = SHARED_SA;
+    return dep;
+  }
+
+  /** A reconcile target as agentService.list() would build it from the row. */
+  async function target(h: Harness, agentId = AGENT_ID) {
+    return { id: agentId, ...(await h.store.get(agentId)) };
+  }
+
+  async function seeded(opts: { owner?: string } = {}): Promise<Harness> {
+    const h = harness();
+    h.store.addAgent(AGENT_ID, { ownerEmail: opts.owner ?? OWNER });
+    await h.recorded.createDeploymentManifest(NAMESPACE, sharedDeployment());
+    return h;
+  }
+
+  it("creates the missing identity and moves the Deployment off the shared ServiceAccount", async () => {
+    const h = await seeded();
+
+    const result = await h.provisioner.reconcile([await target(h)]);
+
+    expect(result.failed).toEqual([]);
+    expect(result.migrated).toEqual([AGENT_ID]);
+    expect(result.updated).toEqual([AGENT_ID]);
+    expect(result.noOwner).toEqual([]);
+    expect(result.dryRun).toBe(false);
+    const [sa] = h.anthropic.liveServiceAccounts();
+    const [rule] = h.anthropic.liveRules();
+    expect(h.anthropic.liveServiceAccounts()).toHaveLength(1);
+    expect(h.anthropic.liveRules()).toHaveLength(1);
+    expect(rule?.input.match.subjectPrefix).toBe(SUBJECT);
+    expect(await h.store.get(AGENT_ID)).toEqual({
+      ownerEmail: OWNER,
+      anthropicIdentityName: IDENTITY_NAME,
+      anthropicServiceAccountId: sa?.id ?? "missing",
+      anthropicFederationRuleId: rule?.id ?? "missing",
+      k8sServiceAccountName: RESOURCE,
+    });
+    expect(
+      await exists(h.recorded.getServiceAccount(NAMESPACE, RESOURCE)),
+    ).toBe(true);
+  });
+
+  it("patches serviceAccountName, the token volume and the federation env", async () => {
+    const h = await seeded();
+    await h.provisioner.reconcile([await target(h)]);
+
+    const [sa] = h.anthropic.liveServiceAccounts();
+    const [rule] = h.anthropic.liveRules();
+    const dep = await h.recorded.getDeployment(NAMESPACE, RESOURCE);
+    expect(dep.spec.template.spec.serviceAccountName).toBe(RESOURCE);
+    const volume = dep.spec.template.spec.volumes?.find(
+      (v) => v.name === "anthropic-token",
+    );
+    expect(JSON.stringify(volume)).toContain("https://api.anthropic.com");
+    expect(JSON.stringify(volume)).not.toContain("shared.example.com");
+    expect(envOf(dep)).toMatchObject({
+      ANTHROPIC_FEDERATION_RULE_ID: rule?.id,
+      ANTHROPIC_SERVICE_ACCOUNT_ID: sa?.id,
+      ANTHROPIC_WORKSPACE_ID: "wrkspc_1",
+    });
+    // Converged: the live Deployment now equals the agent's desired manifest.
+    expect(dep.spec.template.spec.containers[0]?.image).toBe(
+      `${BASE_CONFIG.image}:${BASE_CONFIG.imageTag}`,
+    );
+  });
+
+  it("sets serviceAccountName without nulling the deprecated serviceAccount alias (the name wins; the API server re-mirrors it)", async () => {
+    const h = await seeded();
+    const patches: Array<{ spec: { template: { spec: object } } }> = [];
+    const original = h.recorded.patchDeployment.bind(h.recorded);
+    h.recorded.patchDeployment = async (ns, name, patch) => {
+      patches.push(patch as (typeof patches)[number]);
+      return original(ns, name, patch);
+    };
+
+    await h.provisioner.reconcile([await target(h)]);
+
+    expect(patches).toHaveLength(1);
+    const podSpec = patches[0]?.spec.template.spec;
+    expect(podSpec).toMatchObject({ serviceAccountName: RESOURCE });
+    // Nulling the alias is only for UNSETTING the account: with a non-empty
+    // serviceAccountName the alias cannot resurrect the old shared name.
+    expect(podSpec).not.toHaveProperty("serviceAccount");
+  });
+
+  it("still nulls the alias together with serviceAccountName when federation is unset", async () => {
+    const h = await seeded();
+    // Shared-mode provisioner with federation off, same cluster state.
+    const off = new KubernetesAgentProvisioner(
+      h.k8s,
+      stubTokens(),
+      BASE_CONFIG,
+    );
+    const result = await off.reconcile([{ id: AGENT_ID }]);
+    expect(result.updated).toEqual([AGENT_ID]);
+    const dep = await h.recorded.getDeployment(NAMESPACE, RESOURCE);
+    expect(dep.spec.template.spec.serviceAccountName).toBeUndefined();
+    expect(dep.spec.template.spec.serviceAccount).toBeUndefined();
+  });
+
+  it("reads the identity from the store when the target carries no identity fields", async () => {
+    const h = await seeded();
+    const result = await h.provisioner.reconcile([{ id: AGENT_ID }]);
+    expect(result.migrated).toEqual([AGENT_ID]);
+  });
+
+  it("is idempotent: a second reconcile creates no identity and patches nothing", async () => {
+    const h = await seeded();
+    await h.provisioner.reconcile([await target(h)]);
+    h.events.length = 0;
+    h.anthropic.calls.length = 0;
+
+    const again = await h.provisioner.reconcile([await target(h)]);
+
+    expect(again.migrated).toEqual([]);
+    expect(again.updated).toEqual([]);
+    expect(again.failed).toEqual([]);
+    expect(h.anthropic.calls).toEqual([]);
+    expect(h.events.filter((e) => /create|patch|store\./.test(e))).toEqual([]);
+    expect(h.anthropic.liveServiceAccounts()).toHaveLength(1);
+    expect(h.anthropic.liveRules()).toHaveLength(1);
+  });
+
+  it("leaves an ownerless agent alone and lists it in noOwner", async () => {
+    const h = harness();
+    h.store.addAgent(AGENT_ID);
+    await h.recorded.createDeploymentManifest(NAMESPACE, sharedDeployment());
+    const before = JSON.stringify(
+      await h.recorded.getDeployment(NAMESPACE, RESOURCE),
+    );
+
+    const result = await h.provisioner.reconcile([await target(h)]);
+
+    expect(result.noOwner).toEqual([AGENT_ID]);
+    expect(result.migrated).toEqual([]);
+    expect(result.updated).toEqual([]);
+    expect(result.failed).toEqual([]);
+    expect(
+      JSON.stringify(await h.recorded.getDeployment(NAMESPACE, RESOURCE)),
+    ).toBe(before);
+    expect(h.anthropic.calls).toEqual([]);
+    expect(
+      h.events.filter((e) => /createServiceAccount|store\./.test(e)),
+    ).toEqual([]);
+  });
+
+  it("moves the agents that have an owner and reports the one that has none, in one pass", async () => {
+    const h = await seeded();
+    const OTHER = "cmqother000000000000000000";
+    h.store.addAgent(OTHER);
+    await h.recorded.createDeploymentManifest(
+      NAMESPACE,
+      sharedDeployment(OTHER),
+    );
+
+    const result = await h.provisioner.reconcile([
+      await target(h),
+      await target(h, OTHER),
+    ]);
+
+    expect(result.migrated).toEqual([AGENT_ID]);
+    expect(result.noOwner).toEqual([OTHER]);
+    const other = await h.recorded.getDeployment(
+      NAMESPACE,
+      sanitizeAgentName(OTHER),
+    );
+    expect(other.spec.template.spec.serviceAccountName).toBe(SHARED_SA);
+  });
+
+  it("dry run reports what would move and changes nothing in Kubernetes, Anthropic or the database", async () => {
+    const h = await seeded();
+    const OTHER = "cmqother000000000000000000";
+    h.store.addAgent(OTHER);
+    await h.recorded.createDeploymentManifest(
+      NAMESPACE,
+      sharedDeployment(OTHER),
+    );
+    const rowsBefore = JSON.stringify([...h.store.rows]);
+    const depBefore = JSON.stringify(
+      await h.recorded.getDeployment(NAMESPACE, RESOURCE),
+    );
+    h.events.length = 0;
+
+    const result = await h.provisioner.reconcile(
+      [await target(h), await target(h, OTHER)],
+      { dryRun: true },
+    );
+
+    expect(result.dryRun).toBe(true);
+    expect(result.migrated).toEqual([AGENT_ID]);
+    expect(result.noOwner).toEqual([OTHER]);
+    expect(result.failed).toEqual([]);
+    expect(h.anthropic.calls).toEqual([]);
+    expect(h.anthropic.liveServiceAccounts()).toHaveLength(0);
+    expect(JSON.stringify([...h.store.rows])).toBe(rowsBefore);
+    expect(
+      JSON.stringify(await h.recorded.getDeployment(NAMESPACE, RESOURCE)),
+    ).toBe(depBefore);
+    expect(
+      h.events.filter((e) => /create|patch|delete|store\./.test(e)),
+    ).toEqual([]);
+  });
+
+  it("dry run does not provision a missing Deployment but reports it as recreated", async () => {
+    const h = harness();
+    h.store.addAgent(AGENT_ID, { ownerEmail: OWNER });
+    const result = await h.provisioner.reconcile([await target(h)], {
+      dryRun: true,
+    });
+    expect(result.recreated).toEqual([AGENT_ID]);
+    expect(result.dryRun).toBe(true);
+    expect(h.events.filter((e) => /create|store\./.test(e))).toEqual([]);
+    expect(h.anthropic.calls).toEqual([]);
+  });
+
+  it("does not move agents under a policy-only pass (startup), but still reports ownerless ones", async () => {
+    const h = await seeded();
+    const OTHER = "cmqother000000000000000000";
+    h.store.addAgent(OTHER);
+    await h.recorded.createDeploymentManifest(
+      NAMESPACE,
+      sharedDeployment(OTHER),
+    );
+
+    const result = await h.provisioner.reconcile(
+      [await target(h), await target(h, OTHER)],
+      { policyOnly: true },
+    );
+
+    expect(result.migrated).toEqual([]);
+    expect(result.noOwner).toEqual([OTHER]);
+    expect(h.anthropic.calls).toEqual([]);
+    const dep = await h.recorded.getDeployment(NAMESPACE, RESOURCE);
+    expect(dep.spec.template.spec.serviceAccountName).toBe(SHARED_SA);
+  });
+
+  it("rolls back the identity pieces it created and reports failed when identity creation fails", async () => {
+    const h = await seeded();
+    h.anthropic.failNext("createFederationRule");
+
+    const result = await h.provisioner.reconcile([await target(h)]);
+
+    expect(result.migrated).toEqual([]);
+    expect(result.failed).toHaveLength(1);
+    expect(result.failed[0]?.agentId).toBe(AGENT_ID);
+    expect(h.anthropic.liveServiceAccounts()).toHaveLength(0);
+    const dep = await h.recorded.getDeployment(NAMESPACE, RESOURCE);
+    expect(dep.spec.template.spec.serviceAccountName).toBe(SHARED_SA);
+
+    // A later pass recovers.
+    const retry = await h.provisioner.reconcile([await target(h)]);
+    expect(retry.migrated).toEqual([AGENT_ID]);
+  });
+
+  it("keeps the new identity when only the Deployment patch fails, and a retry completes the move", async () => {
+    const h = await seeded();
+    h.k8s.failNext("patchDeployment");
+
+    const first = await h.provisioner.reconcile([await target(h)]);
+    expect(first.failed).toHaveLength(1);
+    expect(h.anthropic.liveRules()).toHaveLength(1);
+
+    const retry = await h.provisioner.reconcile([await target(h)]);
+    expect(retry.failed).toEqual([]);
+    expect(retry.updated).toEqual([AGENT_ID]);
+    expect(h.anthropic.callsTo("createServiceAccount")).toHaveLength(1);
+    const dep = await h.recorded.getDeployment(NAMESPACE, RESOURCE);
+    expect(dep.spec.template.spec.serviceAccountName).toBe(RESOURCE);
+  });
+});
+
+describe("KubernetesAgentProvisioner.reconcile() — shared mode reports nothing to move", () => {
+  it("returns empty migrated/noOwner and dryRun false", async () => {
+    const recorded = new RecordedKubernetesClient({
+      deployments: {},
+      secrets: {},
+      pvcs: {},
+    });
+    const provisioner = new KubernetesAgentProvisioner(
+      faultyKubernetesClient(recorded),
+      stubTokens(),
+      BASE_CONFIG,
+    );
+    const result = await provisioner.reconcile([
+      { id: AGENT_ID, ownerEmail: null },
+    ]);
+    expect(result.noOwner).toEqual([]);
+    expect(result.migrated).toEqual([]);
+    expect(result.dryRun).toBe(false);
+    expect(result.recreated).toEqual([AGENT_ID]);
   });
 });

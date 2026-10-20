@@ -294,6 +294,9 @@ describeOrSkip("KubernetesAgentProvisioner (integration)", () => {
     const result = await provisioner.reconcile([]);
     expect(result).toEqual({
       recreated: [],
+      migrated: [],
+      noOwner: [],
+      dryRun: false,
       updated: [],
       orphans: [],
       failed: [],
@@ -947,6 +950,9 @@ describe("NoopAgentProvisioner", () => {
     ]);
     expect(result).toEqual({
       recreated: [],
+      migrated: [],
+      noOwner: [],
+      dryRun: false,
       updated: [],
       orphans: [],
       failed: [],

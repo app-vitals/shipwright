@@ -639,6 +639,8 @@ Agent tokens (as opposed to admin tokens) can now have a scoped list of reposito
 
 - **`reconcile(agents, opts?: { policyOnly?: boolean })`**: the optional second parameter is **backward compatible**. `updated` now also covers drift in the Claude managed-policy wiring (the `claude-policy` volume, its `/etc/claude-code` mount, and the `shipwright.dev/claude-policy-hash` pod annotation) — including removing them when the policy is disabled. With `policyOnly: true`, existing Deployments are patched for policy drift and Anthropic federation wiring drift only; image, env, resource and tenant-label drift is ignored. `NoopAgentProvisioner` ignores the option.
 
+- **`reconcile(agents, opts?: { policyOnly?: boolean; dryRun?: boolean })`** (perAgent identity): targets are `ReconcileTarget` objects, which may also carry `ownerEmail`, `anthropicIdentityName`, `anthropicServiceAccountId`, `anthropicFederationRuleId` and `k8sServiceAccountName` (a bare `{ id }` still works: the identity is then read from the store). `ReconcileResult` gains `migrated: string[]` (agents moved onto their own identity), `noOwner: string[]` (agents skipped for lack of an owner) and `dryRun: boolean`. Implementers of `AgentProvisioner` must return the new fields. `POST /agents/reconcile` accepts `dryRun=true` (default false).
+
 ---
 
 ## `Task.requiresHumanApproval` field removed _(RHA-1)_

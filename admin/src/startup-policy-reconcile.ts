@@ -13,11 +13,16 @@
  * token volume, mount, federation env), so turning federation on or off and
  * restarting admin corrects existing agents.
  *
+ * The startup pass never moves agents onto their own per-agent identity: that
+ * creates Anthropic and Kubernetes resources, which should not happen as a side
+ * effect of a boot. Operators run POST /agents/reconcile (with dryRun=true
+ * first); this pass only reports how many agents have no owner (noOwner).
+ *
  * Never throws: a Kubernetes or database failure is logged and admin keeps
  * serving. Called once from main.ts after Bun.serve.
  */
 
-import type { AgentProvisioner } from "./agent-provisioner.ts";
+import type { AgentProvisioner, ReconcileTarget } from "./agent-provisioner.ts";
 import type { AgentService, AgentSummary } from "./agents.ts";
 
 interface StartupPolicyReconcileDeps {
@@ -33,10 +38,19 @@ interface StartupPolicyReconcileDeps {
  */
 export function managedReconcileTargets(
   agents: AgentSummary[],
-): Parameters<AgentProvisioner["reconcile"]>[0] {
+): ReconcileTarget[] {
   return agents
     .filter((a) => !a.selfHosted)
-    .map((a) => ({ id: a.id, slug: a.name, accountId: a.accountId }));
+    .map((a) => ({
+      id: a.id,
+      slug: a.name,
+      accountId: a.accountId,
+      ownerEmail: a.ownerEmail,
+      anthropicIdentityName: a.anthropicIdentityName,
+      anthropicServiceAccountId: a.anthropicServiceAccountId,
+      anthropicFederationRuleId: a.anthropicFederationRuleId,
+      k8sServiceAccountName: a.k8sServiceAccountName,
+    }));
 }
 
 export async function runStartupPolicyReconcile({
@@ -50,7 +64,7 @@ export async function runStartupPolicyReconcile({
     const targets = managedReconcileTargets(await agentService.list());
     const result = await provisioner.reconcile(targets, { policyOnly: true });
     logger.log(
-      `[startup-policy-reconcile] agents=${targets.length} updated=${result.updated.length} recreated=${result.recreated.length} orphans=${result.orphans.length} failed=${result.failed.length}`,
+      `[startup-policy-reconcile] agents=${targets.length} updated=${result.updated.length} recreated=${result.recreated.length} orphans=${result.orphans.length} failed=${result.failed.length} noOwner=${result.noOwner.length}`,
     );
     for (const { agentId, error } of result.failed) {
       logger.error(
