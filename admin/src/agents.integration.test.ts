@@ -92,6 +92,9 @@ function makeProvisioner(
     deprovision: async () => {},
     reconcile: async () => ({
       recreated: [],
+      migrated: [],
+      noOwner: [],
+      dryRun: false,
       updated: [],
       orphans: [],
       failed: [],
@@ -323,7 +326,9 @@ describeOrSkip("createAgent() — integration (real Postgres)", () => {
 
     expect(result.ok).toBe(true);
     if (!result.ok) throw new Error("expected success");
-    expect(await prisma.agent.findUnique({ where: { id: result.agent.id } })).not.toBeNull();
+    expect(
+      await prisma.agent.findUnique({ where: { id: result.agent.id } }),
+    ).not.toBeNull();
   });
   describe("account quota (SSP-4.1)", () => {
     async function makeAccount(
@@ -352,7 +357,11 @@ describeOrSkip("createAgent() — integration (real Postgres)", () => {
 
       const second = await createAgent(
         d,
-        baseInput({ name: "second", runtime: "in-cluster", accountId: account.id }),
+        baseInput({
+          name: "second",
+          runtime: "in-cluster",
+          accountId: account.id,
+        }),
       );
       expect(second.ok).toBe(true);
       expect(provisioned).toHaveLength(1);
@@ -368,9 +377,15 @@ describeOrSkip("createAgent() — integration (real Postgres)", () => {
       );
       expect(third).toEqual({ ok: false, errorCode: "quota_exceeded" });
       expect(provisioned).toHaveLength(1);
-      expect(await prisma.agent.count({ where: { accountId: account.id } })).toBe(2);
-      expect(await prisma.agent.findFirst({ where: { name: "third" } })).toBeNull();
-      expect(await prisma.agentEnv.findMany({ where: { agent: { name: "third" } } })).toEqual([]);
+      expect(
+        await prisma.agent.count({ where: { accountId: account.id } }),
+      ).toBe(2);
+      expect(
+        await prisma.agent.findFirst({ where: { name: "third" } }),
+      ).toBeNull();
+      expect(
+        await prisma.agentEnv.findMany({ where: { agent: { name: "third" } } }),
+      ).toEqual([]);
     });
 
     it("concurrent creates with one slot left produce exactly one agent", async () => {
@@ -386,7 +401,9 @@ describeOrSkip("createAgent() — integration (real Postgres)", () => {
       expect(
         results.filter((r) => !r.ok && r.errorCode === "quota_exceeded"),
       ).toHaveLength(3);
-      expect(await prisma.agent.count({ where: { accountId: account.id } })).toBe(1);
+      expect(
+        await prisma.agent.count({ where: { accountId: account.id } }),
+      ).toBe(1);
     });
 
     it.each(["suspended", "trial_expired"])(
@@ -403,7 +420,10 @@ describeOrSkip("createAgent() — integration (real Postgres)", () => {
     );
 
     it("fails with account_inactive for an unknown account id", async () => {
-      const result = await createAgent(deps(), baseInput({ accountId: "nope" }));
+      const result = await createAgent(
+        deps(),
+        baseInput({ accountId: "nope" }),
+      );
       expect(result).toEqual({ ok: false, errorCode: "account_inactive" });
     });
 
@@ -423,9 +443,14 @@ describeOrSkip("createAgent() — integration (real Postgres)", () => {
         baseInput({ runtime: "in-cluster", accountId: account.id }),
       );
       expect(failed).toEqual({ ok: false, errorCode: "provision_failed" });
-      expect(await prisma.agent.count({ where: { accountId: account.id } })).toBe(0);
+      expect(
+        await prisma.agent.count({ where: { accountId: account.id } }),
+      ).toBe(0);
 
-      const retry = await createAgent(deps(), baseInput({ accountId: account.id }));
+      const retry = await createAgent(
+        deps(),
+        baseInput({ accountId: account.id }),
+      );
       expect(retry.ok).toBe(true);
     });
 
@@ -460,7 +485,9 @@ describeOrSkip("createAgent() — integration (real Postgres)", () => {
         decrypt: (v) => v,
       });
       expect(deleted.agentDeleted).toBe(true);
-      expect(await prisma.agent.count({ where: { accountId: account.id } })).toBe(0);
+      expect(
+        await prisma.agent.count({ where: { accountId: account.id } }),
+      ).toBe(0);
 
       const again = await createAgent(
         deps(),
@@ -473,9 +500,10 @@ describeOrSkip("createAgent() — integration (real Postgres)", () => {
       const result = await createAgent(deps(), baseInput());
       expect(result.ok).toBe(true);
       if (!result.ok) throw new Error("expected success");
-      const row = await prisma.agent.findUnique({ where: { id: result.agent.id } });
+      const row = await prisma.agent.findUnique({
+        where: { id: result.agent.id },
+      });
       expect(row?.accountId).toBeNull();
     });
   });
-
 });

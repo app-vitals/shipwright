@@ -609,6 +609,9 @@ function makeMockDeps(): AdminDeps {
       deprovision: async () => {},
       reconcile: async () => ({
         recreated: [],
+        migrated: [],
+        noOwner: [],
+        dryRun: false,
         updated: [],
         orphans: [],
         failed: [],

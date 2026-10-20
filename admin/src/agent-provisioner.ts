@@ -107,9 +107,37 @@ export interface ReconcileResult {
   /**
    * Agent IDs whose Deployments had drifted from the desired container spec
    * (image, env, resources), Claude policy wiring or Anthropic federation
-   * wiring and have been patched back to it.
+   * wiring and have been patched back to it. In a dry run: the ones that
+   * would be.
    */
   updated: string[];
+  /**
+   * perAgent mode: agent IDs moved off the shared ServiceAccount onto their own
+   * newly created identity (also listed in `updated`, as their Deployment was
+   * patched). In a dry run: the ones that would be. Always empty in shared mode
+   * and under `policyOnly`.
+   */
+  migrated: string[];
+  /**
+   * perAgent mode: agent IDs skipped because they have no owner to name their
+   * identity after. Their federation wiring is left as it is, and a missing
+   * Deployment is not created. Not counted in `failed`.
+   */
+  noOwner: string[];
+  /** True when the pass only reported: nothing was created, patched or saved. */
+  dryRun: boolean;
+}
+
+/**
+ * An agent as reconcile sees it. The identity fields (the Agent row's owner and
+ * per-agent identity IDs) are optional: a target that carries them (`ownerEmail`
+ * defined, null when unset) is used as read; a bare `{ id }` target makes
+ * reconcile read them from the identity store itself.
+ */
+export interface ReconcileTarget extends Partial<AgentAnthropicIdentity> {
+  id: string;
+  slug?: string;
+  accountId?: string | null;
 }
 
 export interface AgentProvisioner {
@@ -143,10 +171,22 @@ export interface AgentProvisioner {
    * federation wiring (ServiceAccount, token volume, mount, federation env
    * entries); image, other env and resource drift is left untouched. Missing
    * Deployments are still recreated.
+   *
+   * In perAgent identity mode a full pass (not `policyOnly`) also moves each
+   * existing agent that has an owner but no identity of its own onto a new one:
+   * it creates the identity and patches the Deployment off the shared
+   * ServiceAccount. The startup pass is `policyOnly` and so never creates
+   * Anthropic resources on a boot; an operator runs the full pass (first with
+   * `dryRun`) through POST /agents/reconcile. Agents without an owner are
+   * reported in `noOwner` and left alone.
+   *
+   * `opts.dryRun` makes the pass report only: nothing is created in Anthropic or
+   * Kubernetes, nothing is saved and no Deployment is patched; the result lists
+   * what would be recreated, updated and migrated.
    */
   reconcile(
-    agents: Array<{ id: string; slug?: string; accountId?: string | null }>,
-    opts?: { policyOnly?: boolean },
+    agents: ReconcileTarget[],
+    opts?: { policyOnly?: boolean; dryRun?: boolean },
   ): Promise<ReconcileResult>;
 }
 
@@ -710,24 +750,54 @@ export class KubernetesAgentProvisioner implements AgentProvisioner {
   }
 
   /**
+   * The agent's owner and identity IDs for reconcile: the target's own fields
+   * when it carries them, else the identity store's row (null: no such agent).
+   */
+  private async identityOf(
+    agent: ReconcileTarget,
+  ): Promise<AgentAnthropicIdentity | null> {
+    if (agent.ownerEmail !== undefined) {
+      return {
+        ownerEmail: agent.ownerEmail,
+        anthropicIdentityName: agent.anthropicIdentityName ?? null,
+        anthropicServiceAccountId: agent.anthropicServiceAccountId ?? null,
+        anthropicFederationRuleId: agent.anthropicFederationRuleId ?? null,
+        k8sServiceAccountName: agent.k8sServiceAccountName ?? null,
+      };
+    }
+    const perAgent = this.config.perAgentIdentity;
+    return perAgent ? perAgent.identities.get(agent.id) : null;
+  }
+
+  /**
    * The federation wiring reconcile drift-corrects an existing Deployment to.
    * `manage: false` means leave the live federation wiring as it is: in
-   * perAgent mode an agent without its own identity yet (created before the
-   * mode was switched on) keeps whatever it runs with until it is migrated.
+   * perAgent mode an agent without its own identity keeps whatever it runs with
+   * until it is migrated (`move` set: it has an owner, so a full pass can
+   * create the identity) or for good (`noOwner` set: it has none).
    */
-  private async reconcileFederationFor(
-    agentId: string,
-  ): Promise<{ federation?: AgentAnthropicFederation; manage: boolean }> {
+  private async reconcileFederationFor(agent: ReconcileTarget): Promise<{
+    federation?: AgentAnthropicFederation;
+    manage: boolean;
+    move?: AgentAnthropicIdentity & { ownerEmail: string };
+    noOwner?: boolean;
+  }> {
     const perAgent = this.config.perAgentIdentity;
     if (!perAgent) {
       return { federation: this.config.anthropicFederation, manage: true };
     }
-    const identity = await perAgent.identities.get(agentId);
-    if (!hasPerAgentIdentity(identity)) return { manage: false };
-    return {
-      federation: perAgentFederation(perAgent, agentId, identity),
-      manage: true,
-    };
+    const identity = await this.identityOf(agent);
+    if (!identity) return { manage: false };
+    if (hasPerAgentIdentity(identity)) {
+      return {
+        federation: perAgentFederation(perAgent, agent.id, identity),
+        manage: true,
+      };
+    }
+    const { ownerEmail } = identity;
+    return ownerEmail
+      ? { manage: false, move: { ...identity, ownerEmail } }
+      : { manage: false, noOwner: true };
   }
 
   /**
@@ -1093,10 +1163,11 @@ export class KubernetesAgentProvisioner implements AgentProvisioner {
   }
 
   async reconcile(
-    agents: Array<{ id: string; slug?: string; accountId?: string | null }>,
-    opts?: { policyOnly?: boolean },
+    agents: ReconcileTarget[],
+    opts?: { policyOnly?: boolean; dryRun?: boolean },
   ): Promise<ReconcileResult> {
     const policyOnly = opts?.policyOnly === true;
+    const dryRun = opts?.dryRun === true;
     const labelSelector =
       "app.kubernetes.io/name=shipwright-agent,app.kubernetes.io/managed-by=shipwright-admin";
 
@@ -1109,16 +1180,15 @@ export class KubernetesAgentProvisioner implements AgentProvisioner {
 
     // Build a map from sanitized resource name → original agent entry, and track
     // the full set of expected k8s names.
-    const expectedNames = new Map<
-      string,
-      { id: string; slug?: string; accountId?: string | null }
-    >(); // resourceName → agent
+    const expectedNames = new Map<string, ReconcileTarget>(); // resourceName → agent
     for (const agent of agents) {
       expectedNames.set(this.resourceName(agent.id), agent);
     }
 
     const recreated: string[] = [];
     const updated: string[] = [];
+    const migrated: string[] = [];
+    const noOwner: string[] = [];
     const orphans: string[] = [];
     const failed: Array<{ agentId: string; error: string }> = [];
 
@@ -1139,10 +1209,22 @@ export class KubernetesAgentProvisioner implements AgentProvisioner {
           );
         }
         try {
-          await this.provision(agent.id, {
-            slug: agent.slug,
-            accountId: agent.accountId,
-          });
+          // perAgent mode: provision() needs an owner, so an ownerless agent is
+          // reported rather than counted as a failure. A missing agent row
+          // (null identity) still fails in provision() with NotFound.
+          if (this.config.perAgentIdentity) {
+            const identity = await this.identityOf(agent);
+            if (identity && !identity.ownerEmail) {
+              noOwner.push(agent.id);
+              continue;
+            }
+          }
+          if (!dryRun) {
+            await this.provision(agent.id, {
+              slug: agent.slug,
+              accountId: agent.accountId,
+            });
+          }
           recreated.push(agent.id);
         } catch (err) {
           failed.push({
@@ -1163,8 +1245,44 @@ export class KubernetesAgentProvisioner implements AgentProvisioner {
             resourceName,
           );
           const current = deployment.spec.template.spec.containers[0];
-          const { federation: desiredFederation, manage: manageFederation } =
-            await this.reconcileFederationFor(agent.id);
+          const reconciled = await this.reconcileFederationFor(agent);
+          if (reconciled.noOwner) noOwner.push(agent.id);
+          // Move an owned agent off the shared ServiceAccount: create its
+          // identity (rolling back what this call created if that fails), then
+          // fall through to the normal drift correction, which now sees the
+          // agent's own federation wiring and patches the ServiceAccount, token
+          // volume and federation env to it. policyOnly passes (admin startup)
+          // never create identities; a dry run only reports the move.
+          let { federation: desiredFederation, manage: manageFederation } =
+            reconciled;
+          if (reconciled.move && !policyOnly) {
+            if (dryRun) {
+              migrated.push(agent.id);
+              updated.push(agent.id);
+              continue;
+            }
+            const perAgent = this.config
+              .perAgentIdentity as PerAgentIdentityConfig;
+            const created: CreatedIdentity = {};
+            try {
+              desiredFederation = perAgentFederation(
+                perAgent,
+                agent.id,
+                await this.provisionIdentity(
+                  perAgent,
+                  agent.id,
+                  resourceName,
+                  reconciled.move,
+                  created,
+                ),
+              );
+              manageFederation = true;
+            } catch (err) {
+              await this.rollbackIdentity(perAgent, agent.id, created);
+              throw err;
+            }
+            migrated.push(agent.id);
+          }
           const desiredDeployment = this.deploymentManifestFor(
             agent.id,
             agent.slug,
@@ -1247,31 +1365,36 @@ export class KubernetesAgentProvisioner implements AgentProvisioner {
                 ? { annotations: policy.annotations }
                 : {}),
             };
-            await this.k8s.patchDeployment(
-              this.config.namespace,
-              resourceName,
-              {
-                ...(labelsDrifted
-                  ? {
-                      metadata: {
-                        labels: { [TENANT_LABEL]: desiredLabels[TENANT_LABEL] },
+            if (!dryRun)
+              await this.k8s.patchDeployment(
+                this.config.namespace,
+                resourceName,
+                {
+                  ...(labelsDrifted
+                    ? {
+                        metadata: {
+                          labels: {
+                            [TENANT_LABEL]: desiredLabels[TENANT_LABEL],
+                          },
+                        },
+                      }
+                    : {}),
+                  spec: {
+                    template: {
+                      ...(Object.keys(podMetadata).length > 0
+                        ? { metadata: podMetadata }
+                        : {}),
+                      spec: {
+                        ...serviceAccount,
+                        ...(includeContainer
+                          ? { containers: [container] }
+                          : {}),
+                        ...(volumes.length > 0 ? { volumes } : {}),
                       },
-                    }
-                  : {}),
-                spec: {
-                  template: {
-                    ...(Object.keys(podMetadata).length > 0
-                      ? { metadata: podMetadata }
-                      : {}),
-                    spec: {
-                      ...serviceAccount,
-                      ...(includeContainer ? { containers: [container] } : {}),
-                      ...(volumes.length > 0 ? { volumes } : {}),
                     },
                   },
                 },
-              },
-            );
+              );
             updated.push(agent.id);
           }
         } catch (err) {
@@ -1290,7 +1413,7 @@ export class KubernetesAgentProvisioner implements AgentProvisioner {
       }
     }
 
-    return { recreated, updated, orphans, failed };
+    return { recreated, updated, migrated, noOwner, orphans, failed, dryRun };
   }
 
   // ─── Spec derivation (via the pure manifest builders) ─────────────────────
@@ -1418,9 +1541,17 @@ export class NoopAgentProvisioner implements AgentProvisioner {
   }
 
   async reconcile(
-    _agents: Array<{ id: string; slug?: string; accountId?: string | null }>,
-    _opts?: { policyOnly?: boolean },
+    _agents: ReconcileTarget[],
+    opts?: { policyOnly?: boolean; dryRun?: boolean },
   ): Promise<ReconcileResult> {
-    return { recreated: [], updated: [], orphans: [], failed: [] };
+    return {
+      recreated: [],
+      updated: [],
+      migrated: [],
+      noOwner: [],
+      orphans: [],
+      failed: [],
+      dryRun: opts?.dryRun === true,
+    };
   }
 }

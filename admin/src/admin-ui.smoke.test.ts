@@ -470,6 +470,9 @@ function makeMockDeps(
       deprovision: async () => {},
       reconcile: async () => ({
         recreated: [],
+        migrated: [],
+        noOwner: [],
+        dryRun: false,
         updated: [],
         orphans: [],
         failed: [],
@@ -4926,6 +4929,9 @@ describe("admin UI — agent delete route", () => {
         },
         reconcile: async () => ({
           recreated: [],
+          migrated: [],
+          noOwner: [],
+          dryRun: false,
           updated: [],
           orphans: [],
           failed: [],
@@ -5035,6 +5041,9 @@ describe("admin UI — agent delete route", () => {
         },
         reconcile: async () => ({
           recreated: [],
+          migrated: [],
+          noOwner: [],
+          dryRun: false,
           updated: [],
           orphans: [],
           failed: [],
@@ -5121,6 +5130,9 @@ describe("admin UI — agent delete route", () => {
         deprovision: async () => {},
         reconcile: async () => ({
           recreated: [],
+          migrated: [],
+          noOwner: [],
+          dryRun: false,
           updated: [],
           orphans: [],
           failed: [],

@@ -390,6 +390,9 @@ function makeBaseDeps(overrides?: Partial<AdminUIDeps>): AdminUIDeps {
       deprovision: async () => {},
       reconcile: async () => ({
         recreated: [],
+        migrated: [],
+        noOwner: [],
+        dryRun: false,
         orphans: [],
         failed: [],
         updated: [],

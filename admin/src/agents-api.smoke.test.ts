@@ -11,7 +11,12 @@ import { sign } from "hono/jwt";
 import type { Prisma } from "../prisma/client/client.ts";
 import type { PatchAgentCronRunInput } from "./agent-cron-runs.ts";
 import { AgentEnvService } from "./agent-envs.ts";
-import type { AgentProvisioner, ProvisionResult } from "./agent-provisioner.ts";
+import type {
+  AgentProvisioner,
+  ProvisionResult,
+  ReconcileResult,
+  ReconcileTarget,
+} from "./agent-provisioner.ts";
 import type { AgentTokenService } from "./agent-tokens.ts";
 import type { AgentTypeManifest } from "./agent-type-registry.ts";
 import type { AdminDeps } from "./agents-api.ts";
@@ -86,18 +91,14 @@ class RecordingProvisioner implements AgentProvisioner {
 
   readonly provisioned: string[] = [];
   readonly deprovisioned: string[] = [];
-  readonly reconciled: Array<{
-    id: string;
-    slug?: string;
-    accountId?: string | null;
-  }> = [];
-  reconcileResult: {
-    recreated: string[];
-    updated: string[];
-    orphans: string[];
-    failed: Array<{ agentId: string; error: string }>;
-  } = {
+  readonly reconciled: ReconcileTarget[] = [];
+  readonly reconcileOpts: Array<{ policyOnly?: boolean; dryRun?: boolean }> =
+    [];
+  reconcileResult: ReconcileResult = {
     recreated: [],
+    migrated: [],
+    noOwner: [],
+    dryRun: false,
     updated: [],
     orphans: [],
     failed: [],
@@ -123,14 +124,11 @@ class RecordingProvisioner implements AgentProvisioner {
   }
 
   async reconcile(
-    agents: Array<{ id: string; slug?: string; accountId?: string | null }>,
-  ): Promise<{
-    recreated: string[];
-    updated: string[];
-    orphans: string[];
-    failed: Array<{ agentId: string; error: string }>;
-  }> {
+    agents: ReconcileTarget[],
+    opts?: { policyOnly?: boolean; dryRun?: boolean },
+  ): Promise<ReconcileResult> {
     this.reconciled.push(...agents);
+    this.reconcileOpts.push(opts ?? {});
     return this.reconcileResult;
   }
 }
@@ -2209,7 +2207,15 @@ describe("admin API — delete agent", () => {
         throw new Error("k8s API timeout");
       },
       async reconcile() {
-        return { recreated: [], updated: [], orphans: [], failed: [] };
+        return {
+          recreated: [],
+          migrated: [],
+          noOwner: [],
+          dryRun: false,
+          updated: [],
+          orphans: [],
+          failed: [],
+        };
       },
     };
     const base = makeMockDeps();
@@ -2442,6 +2448,9 @@ describe("admin API — POST /agents/reconcile", () => {
       recreated: ["agent-abc"],
       updated: ["agent-stale"],
       orphans: ["agent-orphan"],
+      migrated: ["agent-moved"],
+      noOwner: ["agent-noowner"],
+      dryRun: false,
       failed: [],
     };
     const deps: AdminDeps = { ...makeMockDeps(), provisioner };
@@ -2475,6 +2484,108 @@ describe("admin API — POST /agents/reconcile", () => {
     const body = await res.json();
     expect(body).toHaveProperty("recreated");
     expect(body).toHaveProperty("orphans");
+  });
+
+  function reconcileDeps(provisioner: RecordingProvisioner): AdminDeps {
+    const base = makeMockDeps();
+    return {
+      ...base,
+      provisioner,
+      agentService: {
+        ...base.agentService,
+        list: async () => [
+          {
+            id: AGENT_ID,
+            name: "Regular Agent",
+            selfHosted: false,
+            typeName: "coding",
+            ownerEmail: "jane.doe@example.com",
+            anthropicIdentityName: null,
+            anthropicServiceAccountId: null,
+            anthropicFederationRuleId: null,
+            k8sServiceAccountName: null,
+          },
+        ],
+      },
+    };
+  }
+
+  it("POST /agents/reconcile is not a dry run by default and passes the agents' identity fields", async () => {
+    const cookie = await makeSessionCookie();
+    const provisioner = new RecordingProvisioner();
+    const app = createAdminApp(reconcileDeps(provisioner));
+    const res = await app.request("/agents/reconcile", {
+      method: "POST",
+      headers: { Cookie: `admin_session=${cookie}` },
+    });
+    expect(res.status).toBe(200);
+    expect(provisioner.reconcileOpts).toEqual([{ dryRun: false }]);
+    expect(provisioner.reconciled).toEqual([
+      {
+        id: AGENT_ID,
+        slug: "Regular Agent",
+        ownerEmail: "jane.doe@example.com",
+        anthropicIdentityName: null,
+        anthropicServiceAccountId: null,
+        anthropicFederationRuleId: null,
+        k8sServiceAccountName: null,
+      },
+    ]);
+  });
+
+  it("POST /agents/reconcile?dryRun=true passes dryRun to the provisioner and returns the report", async () => {
+    const cookie = await makeSessionCookie();
+    const provisioner = new RecordingProvisioner();
+    provisioner.reconcileResult = {
+      recreated: [],
+      updated: [AGENT_ID],
+      orphans: [],
+      failed: [],
+      migrated: [AGENT_ID],
+      noOwner: ["agent-noowner"],
+      dryRun: true,
+    };
+    const app = createAdminApp(reconcileDeps(provisioner));
+    const res = await app.request("/agents/reconcile?dryRun=true", {
+      method: "POST",
+      headers: { Cookie: `admin_session=${cookie}` },
+    });
+    expect(res.status).toBe(200);
+    expect(provisioner.reconcileOpts).toEqual([{ dryRun: true }]);
+    const body = await res.json();
+    expect(body).toMatchObject({
+      migrated: [AGENT_ID],
+      noOwner: ["agent-noowner"],
+      dryRun: true,
+    });
+  });
+
+  it("POST /agents/reconcile rejects a non-boolean dryRun", async () => {
+    const cookie = await makeSessionCookie();
+    const provisioner = new RecordingProvisioner();
+    const app = createAdminApp(reconcileDeps(provisioner));
+    const res = await app.request("/agents/reconcile?dryRun=maybe", {
+      method: "POST",
+      headers: { Cookie: `admin_session=${cookie}` },
+    });
+    expect(res.status).toBe(400);
+    expect(provisioner.reconcileOpts).toEqual([]);
+  });
+
+  it("GET /agents does not expose owner or identity fields", async () => {
+    const cookie = await makeSessionCookie();
+    const app = createAdminApp(reconcileDeps(new RecordingProvisioner()));
+    const res = await app.request("/agents", {
+      headers: { Cookie: `admin_session=${cookie}` },
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as Array<Record<string, unknown>>;
+    expect(body[0]).toEqual({
+      id: AGENT_ID,
+      name: "Regular Agent",
+      selfHosted: false,
+      typeName: "coding",
+    });
   });
 });
 
@@ -2971,6 +3082,9 @@ describe("admin API — selfHosted field", () => {
     const provisioner = new RecordingProvisioner();
     provisioner.reconcileResult = {
       recreated: [],
+      migrated: [],
+      noOwner: [],
+      dryRun: false,
       updated: [],
       orphans: [],
       failed: [],

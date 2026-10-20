@@ -250,12 +250,24 @@ completed are undone on a best-effort basis, in reverse order: the Secret
 is never rolled back. An agent with no owner email fails with a clear error
 before anything is created.
 
-Existing agents are not migrated yet. Their Deployments keep the federation
-wiring they already have: reconcile leaves it alone until the agent has its
-own identity, and then corrects it to that identity. So only switch an
-installation that already has agents to perAgent mode once existing agents
-can be migrated; on a fresh installation, new agents get their identity as
-they are created. Deleting an agent does not remove its Anthropic identity yet.
+Existing agents are moved by reconcile. A full reconcile
+(`POST /agents/reconcile`) gives each existing agent that has an owner but no
+identity of its own the same identity steps as above, then patches its
+Deployment off the shared ServiceAccount: `serviceAccountName`, the projected
+token volume and the federation env (`ANTHROPIC_FEDERATION_RULE_ID`,
+`ANTHROPIC_SERVICE_ACCOUNT_ID`, ...). The moved agents are listed in
+`migrated`. An agent that already moved is not created or patched again, so
+re-running is safe, and a failed move keeps the IDs it saved and is retried on
+the next run. Agents with no owner are listed in `noOwner`, left as they are,
+and are not counted as failures; set an owner and reconcile again.
+
+Run `POST /agents/reconcile?dryRun=true` first to see what would change:
+nothing is created in Anthropic or Kubernetes, nothing is saved and no
+Deployment is patched, and the response lists the agents that would be
+recreated, updated and moved (`dryRun: true`). The startup reconcile is
+policy-only: it never creates identities on a boot, it only corrects the wiring
+of agents that already have one. Deleting an agent does not remove its
+Anthropic identity yet.
 
 ### Chat service provisioning (opt-in)
 

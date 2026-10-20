@@ -12,6 +12,7 @@ import { isGithubLogin } from "@shipwright/lib/github-login";
 import { isOrgRepo } from "@shipwright/lib/org-repo";
 import { SECRET_ENV_VARS } from "@shipwright/lib/secret-env-vars";
 import type { PrismaClient } from "../prisma/client/client.ts";
+import type { AgentAnthropicIdentity } from "./agent-anthropic-identity.ts";
 import type { AgentCronJobService } from "./agent-cron-jobs.ts";
 import type { AgentEnvService } from "./agent-envs.ts";
 import { AgentMemberService } from "./agent-members.ts";
@@ -69,7 +70,12 @@ export interface AgentRecord {
   repos?: string[];
 }
 
-export interface AgentSummary {
+/**
+ * The owner and per-agent Anthropic identity IDs (inherited, all optional) are
+ * selected by list()/getSummary() so reconcile targets carry them; GET /agents
+ * strips them from its response.
+ */
+export interface AgentSummary extends Partial<AgentAnthropicIdentity> {
   id: string;
   name: string;
   selfHosted: boolean;
@@ -78,7 +84,7 @@ export interface AgentSummary {
   accountId?: string | null;
 }
 
-export interface AgentDetail {
+export interface AgentDetail extends Partial<AgentAnthropicIdentity> {
   id: string;
   name: string;
   slackId: string | null;
@@ -244,6 +250,11 @@ const SUMMARY_SELECT = {
   selfHosted: true,
   typeName: true,
   accountId: true,
+  ownerEmail: true,
+  anthropicIdentityName: true,
+  anthropicServiceAccountId: true,
+  anthropicFederationRuleId: true,
+  k8sServiceAccountName: true,
 } as const;
 
 const DETAIL_SELECT = {
@@ -267,6 +278,13 @@ const DETAIL_SELECT = {
   maxFindings: true,
   cleanupMergedWorktrees: true,
   cleanupAfterDays: true,
+  // Not part of the API response (serializeAgent picks fields explicitly): the
+  // post-PATCH reconcile of the agent's workload needs them.
+  ownerEmail: true,
+  anthropicIdentityName: true,
+  anthropicServiceAccountId: true,
+  anthropicFederationRuleId: true,
+  k8sServiceAccountName: true,
 } as const;
 
 // ─── Service ──────────────────────────────────────────────────────────────────
