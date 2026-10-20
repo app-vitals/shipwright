@@ -230,21 +230,19 @@ pod's own sign-in env (`ANTHROPIC_IDENTITY_TOKEN_FILE`,
 agent:
   provisioning:
     enabled: true
-  anthropicFederation:
-    enabled: true
-    identityMode: perAgent
-    organizationId: "<organization-id>"
-    issuerId: "<issuer-id>"          # this cluster's OIDC issuer in Anthropic
-    nameSuffix: ""                   # e.g. "staging"; ^[a-z0-9-]*$
-    workspaceId: ""                  # optional
-    adminFederation:
-      ruleId: "<bootstrap-rule-id>"
-      serviceAccountId: "<bootstrap-service-account-id>"
-    audience: https://api.anthropic.com
-    tokenExpirationSeconds: 600
+    anthropicFederation:
+      enabled: true
+      identityMode: perAgent
+      organizationId: "<organization-id>"
+      issuerId: "<issuer-id>"          # this cluster's OIDC issuer in Anthropic
+      nameSuffix: ""                   # e.g. "staging"; ^[a-z0-9-]*$
+      workspaceId: ""                  # optional
+      adminFederation:
+        ruleId: "<bootstrap-rule-id>"
+        serviceAccountId: "<bootstrap-service-account-id>"
+      audience: https://api.anthropic.com
+      tokenExpirationSeconds: 600
 ```
-
-`anthropicFederation` is a child of `agent`, next to `provisioning`.
 
 ##### Bootstrap rule
 

@@ -53,7 +53,7 @@ curl -s "https://api.anthropic.com/v1/organizations/service_accounts?limit=100" 
   -H "anthropic-version: 2023-06-01" > service-accounts.json
 ```
 
-This list is paged too. Pass `page=<next_page>` until `has_more` is false. Each
+This list is paged too. Pass `page=<next_page>` until `next_page` is null. Each
 entry has `id` (`svac_…`), `name` and `archived_at`. Keep archived accounts in
 the join. A deleted agent's account is archived, not removed, so its past usage
 still maps to a name.
