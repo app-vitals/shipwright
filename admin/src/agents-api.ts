@@ -30,8 +30,8 @@ import type { PrismaClient } from "../prisma/client/client.ts";
 import {
   ACCOUNT_CREATE_ERROR_MESSAGES,
   accountIdFromScope,
+  getSelfServeAgentType,
   isAccountCreateErrorCode,
-  SELF_SERVE_AGENT_TYPE,
 } from "./account-agent-create.ts";
 import { reconcileAgentAfterAccountChange } from "./agent-account-assignment.ts";
 import type { AgentChatTokenService } from "./agent-chat-tokens.ts";
@@ -279,13 +279,10 @@ const ReconcileAgentsResultSchema = z
 
 const StripCredentialsQuerySchema = z
   .object({
-    dryRun: z
-      .enum(["true", "false"])
-      .default("true")
-      .openapi({
-        description:
-          "Defaults to true (report only). Pass false to delete the keys.",
-      }),
+    dryRun: z.enum(["true", "false"]).default("true").openapi({
+      description:
+        "Defaults to true (report only). Pass false to delete the keys.",
+    }),
   })
   .openapi("StripCredentialsQuery");
 
@@ -1239,7 +1236,8 @@ const cronRunOutcomesRoute = createRoute({
 const agentCronRunOutcomesRoute = createRoute({
   method: "get",
   path: "/agents/{id}/cron-runs/outcomes",
-  summary: "Get cron-run outcomes per phase and context fingerprint for one agent",
+  summary:
+    "Get cron-run outcomes per phase and context fingerprint for one agent",
   description:
     "Same shape as GET /agents/all/cron-runs/outcomes, scoped to the given agent's runs. An agent's own bearer token may read its own outcomes; other agents' tokens are rejected. Optional `from`/`to` ISO datetime query params bound the range on startedAt.",
   request: {
@@ -1248,7 +1246,8 @@ const agentCronRunOutcomesRoute = createRoute({
   },
   responses: {
     200: {
-      description: "Outcome series per (phase, contextFingerprint) for the agent",
+      description:
+        "Outcome series per (phase, contextFingerprint) for the agent",
       content: { "application/json": { schema: CronRunOutcomesSchema } },
     },
     401: { description: "Unauthorized", ...jsonError },
@@ -1716,7 +1715,7 @@ export function createAdminApp(deps: AdminDeps): OpenAPIHono<AdminAuthEnv> {
       {
         name: body.name,
         typeName:
-          accountId !== undefined ? SELF_SERVE_AGENT_TYPE : body.typeName,
+          accountId !== undefined ? getSelfServeAgentType() : body.typeName,
         ...(accountId !== undefined ? { accountId } : {}),
         // PAI-1.2: owner comes from the authenticated caller only; the body
         // schema has no owner field, so a client-supplied one is stripped.

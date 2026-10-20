@@ -257,3 +257,30 @@ describe("discoverBakedMarketplaces", () => {
     expect(result).toEqual([]);
   });
 });
+
+describe("resolveTemplatesDir option resolution (AEP-1.2)", () => {
+  it("resolves an absent type to the built-in templates with no env set", async () => {
+    const { resolveTemplatesDir } = await import("./setup.ts");
+    const dir = resolveTemplatesDir(undefined, "/nonexistent", () => {}, {});
+    expect(dir).toMatch(/workspace$/);
+  });
+
+  it("looks up SHIPWRIGHT_DEFAULT_AGENT_TYPE under SHIPWRIGHT_AGENT_TYPES_DIR for an absent type", async () => {
+    const { resolveTemplatesDir } = await import("./setup.ts");
+    const warnings: string[] = [];
+    const dir = resolveTemplatesDir(
+      undefined,
+      "/nonexistent",
+      (m) => warnings.push(m),
+      {
+        SHIPWRIGHT_DEFAULT_AGENT_TYPE: "base",
+        SHIPWRIGHT_AGENT_TYPES_DIR: "/fixture/types",
+      },
+    );
+    // Missing fixture manifest → warns naming the type, falls back built-in.
+    expect(warnings).toHaveLength(1);
+    expect(warnings[0]).toContain('"base"');
+    expect(warnings[0]).toContain("/fixture/types/base/manifest.yaml");
+    expect(dir).toMatch(/workspace$/);
+  });
+});

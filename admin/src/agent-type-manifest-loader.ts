@@ -25,7 +25,7 @@
  * without touching the filesystem (see agent-cron-jobs.unit.test.ts).
  */
 
-import { readFileSync, readdirSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import {
   type AgentTypeManifest,
@@ -59,17 +59,41 @@ export interface AgentTypeOption {
  * agent-types/ directory lives at the repo root alongside admin/.
  */
 const REPO_ROOT = join(import.meta.dir, "..", "..");
-const AGENT_TYPES_DIR = join(REPO_ROOT, "agent-types");
+const BUILT_IN_AGENT_TYPES_DIR = join(REPO_ROOT, "agent-types");
 
-/** Default reader: loads agent-types/{typeName}/manifest.yaml from disk. */
-export function defaultManifestReader(typeName: string): string {
-  const path = join(REPO_ROOT, "agent-types", typeName, "manifest.yaml");
-  return readFileSync(path, "utf-8");
+/**
+ * The agent-types directory: SHIPWRIGHT_AGENT_TYPES_DIR when set, else the
+ * repo-root agent-types/ (today's location).
+ */
+export function resolveAgentTypesDir(
+  env: Record<string, string | undefined> = process.env,
+): string {
+  return env.SHIPWRIGHT_AGENT_TYPES_DIR || BUILT_IN_AGENT_TYPES_DIR;
 }
 
-/** Default lister: the directory names under agent-types/ on disk. */
-export function defaultTypeDirLister(): string[] {
-  return readdirSync(AGENT_TYPES_DIR, { withFileTypes: true })
+/**
+ * The universal fallback type: SHIPWRIGHT_DEFAULT_AGENT_TYPE when set, else
+ * "coding".
+ */
+export function resolveDefaultAgentTypeName(
+  env: Record<string, string | undefined> = process.env,
+): string {
+  return env.SHIPWRIGHT_DEFAULT_AGENT_TYPE || DEFAULT_AGENT_TYPE_NAME;
+}
+
+/** Default reader: loads {typesDir}/{typeName}/manifest.yaml from disk. */
+export function defaultManifestReader(
+  typeName: string,
+  typesDir: string = resolveAgentTypesDir(),
+): string {
+  return readFileSync(join(typesDir, typeName, "manifest.yaml"), "utf-8");
+}
+
+/** Default lister: the directory names under the agent-types dir on disk. */
+export function defaultTypeDirLister(
+  typesDir: string = resolveAgentTypesDir(),
+): string[] {
+  return readdirSync(typesDir, { withFileTypes: true })
     .filter((entry) => entry.isDirectory())
     .map((entry) => entry.name);
 }
@@ -109,14 +133,29 @@ export class AgentTypeRegistry implements AgentTypeManifestResolver {
   private readonly read: ManifestReader;
   private readonly warn: WarnFn;
   private readonly list: TypeDirLister;
+  private readonly defaultTypeName: string;
   private readonly cache = new Map<string, AgentTypeManifest>();
 
+  /**
+   * `typesDir` and `defaultTypeName` default to SHIPWRIGHT_AGENT_TYPES_DIR /
+   * SHIPWRIGHT_DEFAULT_AGENT_TYPE, then to today's repo-root agent-types/
+   * and "coding". An injected `read`/`list` takes precedence over `typesDir`.
+   */
   constructor(
-    opts: { read?: ManifestReader; warn?: WarnFn; list?: TypeDirLister } = {},
+    opts: {
+      read?: ManifestReader;
+      warn?: WarnFn;
+      list?: TypeDirLister;
+      typesDir?: string;
+      defaultTypeName?: string;
+    } = {},
   ) {
-    this.read = opts.read ?? defaultManifestReader;
+    const typesDir = opts.typesDir ?? resolveAgentTypesDir();
+    this.read = opts.read ?? ((name) => defaultManifestReader(name, typesDir));
     this.warn = opts.warn ?? ((m) => console.warn(m));
-    this.list = opts.list ?? defaultTypeDirLister;
+    this.list = opts.list ?? (() => defaultTypeDirLister(typesDir));
+    this.defaultTypeName =
+      opts.defaultTypeName ?? resolveDefaultAgentTypeName();
   }
 
   getManifest(typeName: string): AgentTypeManifest {
@@ -128,15 +167,15 @@ export class AgentTypeRegistry implements AgentTypeManifestResolver {
     // hard startup bug and must surface, not silently become a no-op.
     this.warn(
       `AgentTypeRegistry: unknown agent typeName "${typeName}" — ` +
-        `falling back to "${DEFAULT_AGENT_TYPE_NAME}" manifest`,
+        `falling back to "${this.defaultTypeName}" manifest`,
     );
-    if (typeName === DEFAULT_AGENT_TYPE_NAME) {
+    if (typeName === this.defaultTypeName) {
       // Guard against infinite intent: the default itself failed to load.
       throw new Error(
-        `AgentTypeRegistry: the default "${DEFAULT_AGENT_TYPE_NAME}" manifest failed to load — this is a startup-time bug`,
+        `AgentTypeRegistry: the default "${this.defaultTypeName}" manifest failed to load — this is a startup-time bug`,
       );
     }
-    return this.loadOrThrow(DEFAULT_AGENT_TYPE_NAME);
+    return this.loadOrThrow(this.defaultTypeName);
   }
 
   /**

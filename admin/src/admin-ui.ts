@@ -32,7 +32,7 @@ import { deleteCookie, getCookie, setCookie } from "hono/cookie";
 import { sign, verify } from "hono/jwt";
 import {
   accountIdFromScope,
-  SELF_SERVE_AGENT_TYPE,
+  getSelfServeAgentType,
 } from "./account-agent-create.ts";
 import type { AccountCreatedNotifier } from "./account-created-notifier.ts";
 import { fireAccountCreatedNotification } from "./account-created-notifier.ts";
@@ -1909,7 +1909,7 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
     const connectSlack = connectSlackRaw === "true";
     // SSP-4.2: account users always create "coding" agents in their own
     // account — any submitted type/accountId is ignored.
-    if (accountId !== null) typeName = SELF_SERVE_AGENT_TYPE;
+    if (accountId !== null) typeName = getSelfServeAgentType();
     // Absent/unrecognized runtime means self-hosted — the historical behavior
     // of this form. createAgent() below re-derives this same value itself
     // (it owns the runtime/provisioning validation); it's recomputed here

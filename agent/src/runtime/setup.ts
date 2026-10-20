@@ -65,17 +65,21 @@ const REQUIRED_TEMPLATES: readonly string[] = [
  * a template lookup must not fail boot.
  */
 export function resolveTemplatesDir(
-  typeName: string | undefined,
+  requestedType: string | undefined,
   repoRoot: string = SHIPWRIGHT_REPO_ROOT,
   warn: (message: string) => void = (m) => console.warn(m),
+  env: Record<string, string | undefined> = process.env,
 ): string {
-  if (!typeName || typeName === DEFAULT_AGENT_TYPE_NAME) {
+  const typeName =
+    requestedType ||
+    env.SHIPWRIGHT_DEFAULT_AGENT_TYPE ||
+    DEFAULT_AGENT_TYPE_NAME;
+  if (typeName === DEFAULT_AGENT_TYPE_NAME) {
     return WORKSPACE_TEMPLATE_DIR;
   }
   try {
     const manifestPath = join(
-      repoRoot,
-      "agent-types",
+      env.SHIPWRIGHT_AGENT_TYPES_DIR || join(repoRoot, "agent-types"),
       typeName,
       "manifest.yaml",
     );
