@@ -182,7 +182,7 @@ export async function deleteAgentFully(
   opts: DeleteAgentFullyOpts = {},
 ): Promise<DeleteAgentResult> {
   // ── Step 1: read the Agent row + its AgentEnv rows ──────────────────────────
-  const identitySelect = {
+  const agentSelect = {
     id: true,
     name: true,
     anthropicFederationRuleId: true,
@@ -191,7 +191,7 @@ export async function deleteAgentFully(
   } as const;
   const agent = await deps.prisma.agent.findUnique({
     where: { id: agentId },
-    select: identitySelect,
+    select: agentSelect,
   });
   if (!agent) {
     throw new NotFoundError(`agent ${agentId} not found`);
@@ -282,7 +282,7 @@ export async function deleteAgentFully(
     leftoverIdentity =
       (await deps.prisma.agent.findUnique({
         where: { id: agentId },
-        select: identitySelect,
+        select: agentSelect,
       })) ?? agent;
   }
   const manualStepsRequired = [
