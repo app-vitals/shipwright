@@ -107,4 +107,4 @@ It differs from `coding` in what it does *not* grant: `crons: []` (no system cro
 
 Specialties layer their own plugins, crons and env on top after creation, via the admin API.
 
-**Workspace templates:** the agent runtime reads `identity.templatesDir` when it first seeds a workspace. This manifest still points at `agent/workspace/`, so specialist agents currently receive the coding-flavored templates; point it at another directory to seed that directory's files instead.
+**Workspace templates:** `identity.templatesDir` points at `agent-types/specialist/templates/`, which provides the persona templates (`CLAUDE.md`, `SOUL.md`, `IDENTITY.md`, all `*.template`) with no coding-only sections, plus an optional `SPECIALTY.md.template`. Files the directory omits (`VOICE.md`, `mise.toml`, `requirements.txt`, `BOOTSTRAP.md`) fall back per file to `agent/workspace/`; the three persona templates are required or the type falls back to `agent/workspace/` entirely.
