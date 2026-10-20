@@ -6,17 +6,17 @@
  */
 
 import { describe, expect, it } from "bun:test";
-import tokens from "../../brand/tokens.json";
 import {
-  PWA_ICONS,
   buildManifest,
   buildOfflinePageHtml,
   buildServiceWorkerBody,
   getPrecacheList,
+  PWA_ICONS,
   renderPwaHeadTags,
   sanitizeStartUrl,
   shouldCachePwaRequest,
 } from "./pwa.ts";
+import tokens from "./theme-tokens.json";
 
 describe("getPrecacheList", () => {
   it("is exactly the offline page plus the six icons — nothing else", () => {

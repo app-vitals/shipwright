@@ -1,5 +1,5 @@
 /**
- * admin/src/blocked-by-type-parity.check.ts
+ * task-store/src/blocked-by-type-parity.check.ts
  *
  * Compile-time-only parity check between admin's hand-mirrored `BlockedByEntry`
  * (admin-ui-pages.ts — kept deliberately decoupled from @shipwright/task-store,
@@ -9,11 +9,10 @@
  * This file has NO runtime behavior and is never imported by application code —
  * it exists purely so `tsc --noEmit` fails the build when task-store's union
  * gains (or loses) a variant that admin's mirror hasn't been updated to match.
- * It is type-checked via the dedicated `tsconfig.type-parity.json` project
- * (see admin/package.json's `typecheck` script), which is the only place in
- * this package allowed to reach outside admin/'s own `rootDir` — purely for
- * this type-level comparison, with zero runtime import and zero package.json
- * dependency on @shipwright/task-store.
+ * It lives on the task-store side so admin never reaches outside admin/: it is
+ * type-checked via `tsconfig.cross-package.json` (see task-store/package.json's
+ * `typecheck` script), purely for this type-level comparison, with zero runtime
+ * import and zero package.json dependency between the two packages.
  *
  * Intentionally NOT a strict two-way "every field on every variant matches"
  * check: task-store's `{ type: "hitl" }` variant has no `notified` field,
@@ -28,8 +27,8 @@
  * check below fails to compile.
  */
 
-import type { BlockedByEntry as RealBlockedByEntry } from "../../task-store/src/blocked-by.ts";
-import type { BlockedByEntry as AdminBlockedByEntry } from "./admin-ui-pages.ts";
+import type { BlockedByEntry as AdminBlockedByEntry } from "../../admin/src/admin-ui-pages.ts";
+import type { BlockedByEntry as RealBlockedByEntry } from "./blocked-by.ts";
 
 // Every `type` discriminant present in task-store's real union.
 type RealType = RealBlockedByEntry["type"];
@@ -58,16 +57,17 @@ void _assertEveryRealTypeHasAdminCounterpart;
  * extra optional `notified` field on "hitl", but never *less* permissive —
  * it must still accept every real value task-store can actually produce).
  */
-type AssertVariantAssignable<T extends RealType> = Extract<
-  RealBlockedByEntry,
-  { type: T }
-> extends Extract<AdminBlockedByEntry, { type: T }>
-  ? true
-  : [
-      "admin BlockedByEntry variant for type",
-      T,
-      "is not assignable from task-store's real shape",
-    ];
+type AssertVariantAssignable<T extends RealType> =
+  Extract<RealBlockedByEntry, { type: T }> extends Extract<
+    AdminBlockedByEntry,
+    { type: T }
+  >
+    ? true
+    : [
+        "admin BlockedByEntry variant for type",
+        T,
+        "is not assignable from task-store's real shape",
+      ];
 
 type _AssertHitlAssignable = AssertVariantAssignable<"hitl">;
 const _assertHitlAssignable: _AssertHitlAssignable = true;
