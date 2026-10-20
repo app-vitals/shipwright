@@ -1255,14 +1255,13 @@ export class KubernetesAgentProvisioner implements AgentProvisioner {
           // never create identities; a dry run only reports the move.
           let { federation: desiredFederation, manage: manageFederation } =
             reconciled;
-          if (reconciled.move && !policyOnly) {
+          const perAgent = this.config.perAgentIdentity;
+          if (reconciled.move && perAgent && !policyOnly) {
             if (dryRun) {
               migrated.push(agent.id);
               updated.push(agent.id);
               continue;
             }
-            const perAgent = this.config
-              .perAgentIdentity as PerAgentIdentityConfig;
             const created: CreatedIdentity = {};
             try {
               desiredFederation = perAgentFederation(

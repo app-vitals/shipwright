@@ -297,10 +297,13 @@ const ReconcileAgentsQuerySchema = z
 
 const StripCredentialsQuerySchema = z
   .object({
-    dryRun: z.enum(["true", "false"]).default("true").openapi({
-      description:
-        "Defaults to true (report only). Pass false to delete the keys.",
-    }),
+    dryRun: z
+      .enum(["true", "false"])
+      .default("true")
+      .openapi({
+        description:
+          "Defaults to true (report only). Pass false to delete the keys.",
+      }),
   })
   .openapi("StripCredentialsQuery");
 
@@ -1255,8 +1258,7 @@ const cronRunOutcomesRoute = createRoute({
 const agentCronRunOutcomesRoute = createRoute({
   method: "get",
   path: "/agents/{id}/cron-runs/outcomes",
-  summary:
-    "Get cron-run outcomes per phase and context fingerprint for one agent",
+  summary: "Get cron-run outcomes per phase and context fingerprint for one agent",
   description:
     "Same shape as GET /agents/all/cron-runs/outcomes, scoped to the given agent's runs. An agent's own bearer token may read its own outcomes; other agents' tokens are rejected. Optional `from`/`to` ISO datetime query params bound the range on startedAt.",
   request: {
@@ -1265,8 +1267,7 @@ const agentCronRunOutcomesRoute = createRoute({
   },
   responses: {
     200: {
-      description:
-        "Outcome series per (phase, contextFingerprint) for the agent",
+      description: "Outcome series per (phase, contextFingerprint) for the agent",
       content: { "application/json": { schema: CronRunOutcomesSchema } },
     },
     401: { description: "Unauthorized", ...jsonError },
