@@ -1,5 +1,5 @@
 import { join } from "node:path";
-import { DEFAULT_CLAUDE_TIMEOUT_MS } from "@shipwright/lib/claim-ttl";
+import { DEFAULT_CLAUDE_TIMEOUT_MS } from "@shipwright/lib/claude-timeout";
 import { DEFAULT_ANTHROPIC_MODEL } from "@shipwright/lib/default-agent-env";
 
 /**
@@ -8,7 +8,7 @@ import { DEFAULT_ANTHROPIC_MODEL } from "@shipwright/lib/default-agent-env";
  * the primary timeout in practice; calibrated from a 900-session log analysis
  * (p99 inter-line gap 713s, largest legitimate single gap 1303s from an
  * `Agent()` subagent delegation). `DEFAULT_CLAUDE_TIMEOUT_MS` (1hr, in
- * `@shipwright/lib/claim-ttl`) is the hard ceiling backstop, not primary.
+ * `@shipwright/lib/claude-timeout`) is the hard ceiling backstop, not primary.
  */
 const DEFAULT_CLAUDE_IDLE_TIMEOUT_MS = 1_500_000;
 
