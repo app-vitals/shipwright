@@ -43,6 +43,8 @@ interface CreateAgentInput {
   restrictSlackToMembers?: boolean;
   /** Owning Account (SSP-4.1). Omitted means the agent has no account (legacy behavior). */
   accountId?: string;
+  /** Owner's email (PAI-1.2). Already normalized by createAgent(); omitted means no owner. */
+  ownerEmail?: string;
 }
 
 export interface AgentRecord {
@@ -310,6 +312,9 @@ export class AgentService {
           : {}),
         ...(input.accountId !== undefined
           ? { accountId: input.accountId }
+          : {}),
+        ...(input.ownerEmail !== undefined
+          ? { ownerEmail: input.ownerEmail }
           : {}),
       },
     });
@@ -657,6 +662,33 @@ export interface CreateAgentFormInput {
    * race-safely inside the creation transaction.
    */
   accountId?: string;
+  /**
+   * Agent owner (PAI-1.2). Service-level input only — callers must resolve it
+   * from the authenticated principal, never from a request body. createAgent()
+   * trims and lower-cases it; blank is treated as absent.
+   */
+  ownerEmail?: string;
+}
+
+// Deliberately simple: one @, no whitespace, a dotted domain. Enough to keep
+// a non-email admin key name out of the ownerEmail column.
+const OWNER_EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+/**
+ * Resolve the agent owner for the JSON API (PAI-1.2): the session user's
+ * email when present; otherwise the bearer caller's name, but only if it is
+ * itself a valid email address (an admin API key named like one). Anything
+ * else — a plain key name or an agent id — yields undefined so a non-email
+ * never lands in the email column. Always lower-cased.
+ */
+export function resolveOwnerEmail(
+  callerEmail: string | undefined,
+  caller: { name: string } | undefined,
+): string | undefined {
+  const fromSession = callerEmail?.trim().toLowerCase();
+  if (fromSession) return fromSession;
+  const name = caller?.name.trim().toLowerCase();
+  return name && OWNER_EMAIL_RE.test(name) ? name : undefined;
 }
 
 /**
@@ -833,6 +865,7 @@ export async function createAgent(
   }
 
   const restrictSlackToMembers = input.restrictSlackToMembersRaw === "true";
+  const ownerEmail = input.ownerEmail?.trim().toLowerCase() || undefined;
 
   const txResult = await deps.agentService.runTransaction<CreateAgentTxOutcome>(
     async (tx) => {
@@ -853,6 +886,7 @@ export async function createAgent(
           ...(input.accountId !== undefined
             ? { accountId: input.accountId }
             : {}),
+          ...(ownerEmail !== undefined ? { ownerEmail } : {}),
         },
         tx,
       );

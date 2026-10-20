@@ -54,7 +54,11 @@ import type { AgentToolService } from "./agent-tools.ts";
 import type { AgentTypeManifestResolver } from "./agent-type-manifest-loader.ts";
 import type { AgentWorkQueueService } from "./agent-work-queue.ts";
 import type { AgentService } from "./agents.ts";
-import { createAgent, describeRepoNameCollision } from "./agents.ts";
+import {
+  createAgent,
+  describeRepoNameCollision,
+  resolveOwnerEmail,
+} from "./agents.ts";
 import {
   ANTHROPIC_CREDENTIALS_BLOCKED_CODE,
   AnthropicCredentialsBlockedError,
@@ -1714,6 +1718,9 @@ export function createAdminApp(deps: AdminDeps): OpenAPIHono<AdminAuthEnv> {
         typeName:
           accountId !== undefined ? SELF_SERVE_AGENT_TYPE : body.typeName,
         ...(accountId !== undefined ? { accountId } : {}),
+        // PAI-1.2: owner comes from the authenticated caller only; the body
+        // schema has no owner field, so a client-supplied one is stripped.
+        ownerEmail: resolveOwnerEmail(c.get("callerEmail"), c.get("caller")),
         runtime: body.runtime,
         reposRaw: body.reposRaw,
         authorAllowlistRaw: body.authorAllowlistRaw,

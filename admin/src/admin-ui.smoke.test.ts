@@ -9473,6 +9473,40 @@ describe("admin UI — create agent with author allowlist", () => {
     expect(capturedAllowlist).toEqual(["octocat", "another-user"]);
   });
 
+  it("POST /admin/agents records the session user's lower-cased email as owner and ignores a form-supplied owner (PAI-1.2)", async () => {
+    const deps = makeMockDeps();
+    const created: Array<Record<string, unknown>> = [];
+    const plain = deps.agentService;
+    deps.agentService = {
+      ...plain,
+      create: async (...args: Parameters<typeof plain.create>) => {
+        created.push(args[0] as unknown as Record<string, unknown>);
+        return plain.create(...args);
+      },
+    };
+    const ownerCookie = await makeSessionCookie(
+      SESSION_SECRET,
+      "google-sub-owner",
+      "Owner.Person@Example.com",
+    );
+    const app = createAdminUIApp(deps);
+    const res = await app.request("/admin/agents", {
+      method: "POST",
+      body: new URLSearchParams({
+        name: "Test Agent",
+        type: "coding",
+        ownerEmail: "attacker@evil.example",
+      }).toString(),
+      headers: {
+        "Content-Type": "application/x-www-form-urlencoded",
+        Cookie: `admin_session=${ownerCookie}`,
+      },
+    });
+    expect(res.status).toBe(302);
+    expect(created).toHaveLength(1);
+    expect(created[0]?.ownerEmail).toBe("owner.person@example.com");
+  });
+
   // Regression guard for the createAgent() deps wiring: production injects a
   // real `new AgentService(prisma)`, whose create/delete/updateFields are
   // ordinary class methods and therefore live on AgentService.prototype — NOT

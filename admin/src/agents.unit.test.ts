@@ -15,7 +15,7 @@ import type {
   CreateAgentFormInput,
   UpdateAgentFieldsInput,
 } from "./agents.ts";
-import { AgentService, createAgent } from "./agents.ts";
+import { AgentService, createAgent, resolveOwnerEmail } from "./agents.ts";
 import type { PrismaTransactionClient } from "./prisma-tx.ts";
 
 // ─── In-memory prisma.agent test double ────────────────────────────────────
@@ -1343,6 +1343,41 @@ describe("createAgent()", () => {
     expect(seen && "accountId" in seen).toBe(false);
   });
 
+  it("passes a trimmed, lower-cased ownerEmail to agentService.create (PAI-1.2)", async () => {
+    const { deps } = makeCreateAgentHarness();
+    let seen: Record<string, unknown> | undefined;
+    const origCreate = deps.agentService.create;
+    deps.agentService.create = async (input, tx) => {
+      seen = input as unknown as Record<string, unknown>;
+      return origCreate(input, tx);
+    };
+
+    const result = await createAgent(
+      deps,
+      baseCreateAgentInput({ ownerEmail: " Alice@Example.COM " }),
+    );
+
+    expect(result.ok).toBe(true);
+    expect(seen?.ownerEmail).toBe("alice@example.com");
+  });
+
+  it.each([undefined, "", "   "])(
+    "omits ownerEmail when the input is %p (PAI-1.2)",
+    async (ownerEmail) => {
+      const { deps } = makeCreateAgentHarness();
+      let seen: Record<string, unknown> | undefined;
+      const origCreate = deps.agentService.create;
+      deps.agentService.create = async (input, tx) => {
+        seen = input as unknown as Record<string, unknown>;
+        return origCreate(input, tx);
+      };
+
+      await createAgent(deps, baseCreateAgentInput({ ownerEmail }));
+
+      expect(seen && "ownerEmail" in seen).toBe(false);
+    },
+  );
+
   it.each(["quota_exceeded", "account_inactive"] as const)(
     "surfaces %s from the quota check without creating anything",
     async (code) => {
@@ -1669,5 +1704,32 @@ describe("createAgent()", () => {
     if (!result.ok) throw new Error("expected success");
     expect(agents.size).toBe(1);
     expect(agents.has(result.agent.id)).toBe(true);
+  });
+});
+
+describe("resolveOwnerEmail() (PAI-1.2)", () => {
+  it("prefers the session callerEmail", () => {
+    expect(
+      resolveOwnerEmail("Alice@Example.com", {
+        name: "ops@example.com",
+      }),
+    ).toBe("alice@example.com");
+  });
+
+  it("uses a bearer admin key name that is an email address, lower-cased", () => {
+    expect(resolveOwnerEmail(undefined, { name: "Ops@Example.com" })).toBe(
+      "ops@example.com",
+    );
+  });
+
+  it.each(["admin", "ci-bot", "not an@email", "a@b", "agent-123"])(
+    "returns undefined for a non-email bearer name %p",
+    (name) => {
+      expect(resolveOwnerEmail(undefined, { name })).toBeUndefined();
+    },
+  );
+
+  it("returns undefined when there is no caller at all", () => {
+    expect(resolveOwnerEmail(undefined, undefined)).toBeUndefined();
   });
 });
