@@ -27,6 +27,14 @@ import {
 
 const DOC_PATH = join(import.meta.dir, "agent-types.md");
 const content = readFileSync(DOC_PATH, "utf-8");
+const examplesContent = readFileSync(
+  join(import.meta.dir, "agent-types-examples.md"),
+  "utf-8",
+);
+const sourcesContent = readFileSync(
+  join(import.meta.dir, "agent-types-sources.md"),
+  "utf-8",
+);
 
 // ─── Schema field-key walker ────────────────────────────────────────────────
 
@@ -182,10 +190,9 @@ describe("docs/agent-types.md — blank template validity", () => {
 
 // ─── Worked examples per configurable surface ──────────────────────────────
 
-describe("docs/agent-types.md — worked examples per configurable surface", () => {
-  const workedExamplesStart = content.indexOf("## Worked examples");
-  const rulesStart = content.indexOf("## Rules");
-  const workedExamplesSection = content.slice(workedExamplesStart, rulesStart);
+describe("docs/agent-types-examples.md — worked examples per configurable surface", () => {
+  const workedExamplesStart = examplesContent.indexOf("## Worked examples");
+  const workedExamplesSection = examplesContent.slice(workedExamplesStart);
 
   const surfaces = ["crons", "env", "plugins", "members", "tools", "repos"];
   for (const surface of surfaces) {
@@ -231,10 +238,12 @@ describe("docs/agent-types.md — Rules section", () => {
 
 // ─── GitHub source references (ATS-5.2, paper spec) ────────────────────────
 
-describe("docs/agent-types.md — GitHub source references section", () => {
+describe("docs/agent-types-sources.md — GitHub source references section", () => {
   const sectionHeading = "## GitHub source references";
-  const sectionStart = content.indexOf(sectionHeading);
-  const generatedSchemaStart = content.indexOf("## Generated JSON Schema");
+  const sectionStart = sourcesContent.indexOf(sectionHeading);
+  const generatedSchemaStart = sourcesContent.indexOf(
+    "## Generated JSON Schema",
+  );
 
   it(`contains a "${sectionHeading}" heading`, () => {
     expect(sectionStart).toBeGreaterThan(-1);
@@ -244,7 +253,7 @@ describe("docs/agent-types.md — GitHub source references section", () => {
     expect(generatedSchemaStart).toBeGreaterThan(sectionStart);
   });
 
-  const section = content.slice(sectionStart, generatedSchemaStart);
+  const section = sourcesContent.slice(sectionStart, generatedSchemaStart);
 
   it('carries the "Specified, not implemented" marker', () => {
     expect(section).toContain("Specified, not implemented");
