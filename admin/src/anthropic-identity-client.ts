@@ -34,6 +34,7 @@ import { z } from "zod";
 import {
   type AnthropicAccessTokenProvider,
   DEFAULT_ANTHROPIC_BASE_URL,
+  OAUTH_API_BETA,
 } from "./anthropic-federated-token-provider.ts";
 
 // ─── Public types ─────────────────────────────────────────────────────────────
@@ -165,13 +166,8 @@ export class AnthropicResponseValidationError extends Error {
 
 // ─── Response schemas (trust boundary) ────────────────────────────────────────
 
-const ServiceAccountSchema = z.object({
-  id: z.string().min(1),
-  name: z.string(),
-  archived_at: z.string().nullable(),
-});
-
-const FederationRuleSchema = z.object({
+/** Service accounts and federation rules share this shape. */
+const NamedResourceSchema = z.object({
   id: z.string().min(1),
   name: z.string(),
   archived_at: z.string().nullable(),
@@ -191,17 +187,9 @@ const ErrorBodySchema = z.object({
   error: z.object({ type: z.string() }),
 });
 
-const toServiceAccount = (
-  sa: z.infer<typeof ServiceAccountSchema>,
-): AnthropicServiceAccount => ({
-  id: sa.id,
-  name: sa.name,
-  archivedAt: sa.archived_at,
-});
-
-const toRule = (
-  r: z.infer<typeof FederationRuleSchema>,
-): AnthropicFederationRule => ({
+const toNamedResource = (
+  r: z.infer<typeof NamedResourceSchema>,
+): AnthropicServiceAccount & AnthropicFederationRule => ({
   id: r.id,
   name: r.name,
   archivedAt: r.archived_at,
@@ -209,7 +197,6 @@ const toRule = (
 
 // ─── Implementation ───────────────────────────────────────────────────────────
 
-const OAUTH_API_BETA = "oauth-2025-04-20";
 const PAGE_SIZE = 100;
 const DEFAULT_TIMEOUT_MS = 30_000;
 
@@ -240,18 +227,16 @@ export class HttpAnthropicIdentityClient implements AnthropicIdentityClient {
   ): Promise<AnthropicServiceAccount> {
     const sa = await this.request(
       "createServiceAccount",
-      ServiceAccountSchema,
+      NamedResourceSchema,
       (sdk) =>
         sdk.organization.serviceAccounts.create({
           name: input.name,
-          ...(input.description !== undefined
-            ? { description: input.description }
-            : {}),
+          description: input.description,
           // A workload may only create developer-role service accounts.
           organization_role: "developer",
         }),
     );
-    return toServiceAccount(sa);
+    return toNamedResource(sa);
   }
 
   async addServiceAccountToWorkspace(
@@ -281,39 +266,28 @@ export class HttpAnthropicIdentityClient implements AnthropicIdentityClient {
   ): Promise<AnthropicFederationRule> {
     const rule = await this.request(
       "createFederationRule",
-      FederationRuleSchema,
+      NamedResourceSchema,
       (sdk) =>
         sdk.organization.federation.rules.create({
+          // Undefined optionals are dropped by JSON serialization.
           name: input.name,
-          ...(input.description !== undefined
-            ? { description: input.description }
-            : {}),
+          description: input.description,
           issuer_id: input.issuerId,
           match: {
-            ...(input.match.subjectPrefix !== undefined
-              ? { subject_prefix: input.match.subjectPrefix }
-              : {}),
-            ...(input.match.audience !== undefined
-              ? { audience: input.match.audience }
-              : {}),
-            ...(input.match.condition !== undefined
-              ? { condition: input.match.condition }
-              : {}),
+            subject_prefix: input.match.subjectPrefix,
+            audience: input.match.audience,
+            condition: input.match.condition,
           },
           oauth_scope: input.oauthScope ?? "workspace:developer",
           target: {
             type: "service_account",
             service_account_id: input.serviceAccountId,
           },
-          ...(input.workspaceId !== undefined
-            ? { workspace_id: input.workspaceId }
-            : {}),
-          ...(input.tokenLifetimeSeconds !== undefined
-            ? { token_lifetime_seconds: input.tokenLifetimeSeconds }
-            : {}),
+          workspace_id: input.workspaceId,
+          token_lifetime_seconds: input.tokenLifetimeSeconds,
         }),
     );
-    return toRule(rule);
+    return toNamedResource(rule);
   }
 
   async archiveFederationRule(
@@ -321,10 +295,10 @@ export class HttpAnthropicIdentityClient implements AnthropicIdentityClient {
   ): Promise<AnthropicFederationRule> {
     const rule = await this.request(
       "archiveFederationRule",
-      FederationRuleSchema,
+      NamedResourceSchema,
       (sdk) => sdk.organization.federation.rules.archive(ruleId),
     );
-    return toRule(rule);
+    return toNamedResource(rule);
   }
 
   async archiveServiceAccount(
@@ -332,10 +306,10 @@ export class HttpAnthropicIdentityClient implements AnthropicIdentityClient {
   ): Promise<AnthropicServiceAccount> {
     const sa = await this.request(
       "archiveServiceAccount",
-      ServiceAccountSchema,
+      NamedResourceSchema,
       (sdk) => sdk.organization.serviceAccounts.archive(serviceAccountId),
     );
-    return toServiceAccount(sa);
+    return toNamedResource(sa);
   }
 
   async findServiceAccountByName(
@@ -343,12 +317,12 @@ export class HttpAnthropicIdentityClient implements AnthropicIdentityClient {
   ): Promise<AnthropicServiceAccount | null> {
     const found = await this.findByName(
       "findServiceAccountByName",
-      ServiceAccountSchema,
+      NamedResourceSchema,
       name,
       (sdk, page) =>
         sdk.organization.serviceAccounts.list({ limit: PAGE_SIZE, page }),
     );
-    return found ? toServiceAccount(found) : null;
+    return found ? toNamedResource(found) : null;
   }
 
   async findFederationRuleByName(
@@ -356,12 +330,12 @@ export class HttpAnthropicIdentityClient implements AnthropicIdentityClient {
   ): Promise<AnthropicFederationRule | null> {
     const found = await this.findByName(
       "findFederationRuleByName",
-      FederationRuleSchema,
+      NamedResourceSchema,
       name,
       (sdk, page) =>
         sdk.organization.federation.rules.list({ limit: PAGE_SIZE, page }),
     );
-    return found ? toRule(found) : null;
+    return found ? toNamedResource(found) : null;
   }
 
   // ── Internals ───────────────────────────────────────────────────────────────

@@ -26,7 +26,7 @@ import { type Clock, SystemClock } from "./clock.ts";
 export const DEFAULT_ANTHROPIC_BASE_URL = "https://api.anthropic.com";
 const TOKEN_PATH = "/v1/oauth/token";
 const GRANT_TYPE_JWT_BEARER = "urn:ietf:params:oauth:grant-type:jwt-bearer";
-const OAUTH_API_BETA = "oauth-2025-04-20";
+export const OAUTH_API_BETA = "oauth-2025-04-20";
 const FEDERATION_BETA = "oidc-federation-2026-04-01";
 /** Token endpoint rejects assertions over 16 KiB. */
 const MAX_ASSERTION_BYTES = 16 * 1024;
