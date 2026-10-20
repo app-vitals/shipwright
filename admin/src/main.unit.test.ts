@@ -1,4 +1,6 @@
 import { afterEach, describe, expect, it } from "bun:test";
+import type { PrismaClient } from "../prisma/client/client.ts";
+import { AgentAnthropicIdentityService } from "./agent-anthropic-identity.ts";
 import type {
   AgentProvisioner,
   KubernetesAgentProvisionerConfig,
@@ -8,6 +10,8 @@ import {
   NoopAgentProvisioner,
 } from "./agent-provisioner.ts";
 import type { AgentTokenService } from "./agent-tokens.ts";
+import { HttpAnthropicIdentityClient } from "./anthropic-identity-client.ts";
+import { AnthropicIdentityNameAllocator } from "./anthropic-identity-name.ts";
 import {
   buildProvisioner,
   checkDbReady,
@@ -735,10 +739,76 @@ describe("parseAnthropicFederation identity modes", () => {
     expect(config.anthropicFederation?.ruleId).toBe("fdrl_1");
   });
 
-  it("buildProvisioner passes no federation config in perAgent mode", () => {
+  // The admin pod's own sign-in (chart-rendered in perAgent mode).
+  const ADMIN_SIGN_IN_ENV = {
+    ANTHROPIC_IDENTITY_TOKEN_FILE: "/var/run/secrets/anthropic.com/token",
+    ANTHROPIC_FEDERATION_RULE_ID: "fdrl_admin",
+    ANTHROPIC_ORGANIZATION_ID: "org-1",
+    ANTHROPIC_SERVICE_ACCOUNT_ID: "svac_admin",
+  };
+
+  /** Prisma stub — the identity services only keep the reference at build time. */
+  function stubPrisma(): PrismaClient {
+    return {} as unknown as PrismaClient;
+  }
+
+  it("buildProvisioner wires the per-agent identity deps in perAgent mode", () => {
     const config = configOf(
-      buildProvisioner(PER_AGENT_ENV, stubAgentTokenService()),
+      buildProvisioner(
+        {
+          ...PER_AGENT_ENV,
+          ...ADMIN_SIGN_IN_ENV,
+          [`${P}WORKSPACE_ID`]: "wrkspc_1",
+          [`${P}AUDIENCE`]: "https://example.test",
+          [`${P}TOKEN_EXPIRATION_SECONDS`]: "900",
+        },
+        stubAgentTokenService(),
+        stubPrisma(),
+      ),
     );
     expect("anthropicFederation" in config).toBe(false);
+    const perAgent = config.perAgentIdentity;
+    expect(perAgent).toMatchObject({
+      organizationId: "org-1",
+      workspaceId: "wrkspc_1",
+      issuerId: "issuer-1",
+      audience: "https://example.test",
+      expirationSeconds: 900,
+    });
+    expect(perAgent?.client).toBeInstanceOf(HttpAnthropicIdentityClient);
+    expect(perAgent?.identities).toBeInstanceOf(AgentAnthropicIdentityService);
+    expect(perAgent?.names).toBeInstanceOf(AnthropicIdentityNameAllocator);
+  });
+
+  it("buildProvisioner leaves per-agent identity unset in shared mode", () => {
+    const config = configOf(
+      buildProvisioner(SHARED_ENV, stubAgentTokenService(), stubPrisma()),
+    );
+    expect("perAgentIdentity" in config).toBe(false);
+  });
+
+  for (const missing of [
+    "ANTHROPIC_IDENTITY_TOKEN_FILE",
+    "ANTHROPIC_FEDERATION_RULE_ID",
+    "ANTHROPIC_ORGANIZATION_ID",
+  ] as const) {
+    it(`buildProvisioner fails startup in perAgent mode without the admin's ${missing}`, () => {
+      expect(() =>
+        buildProvisioner(
+          { ...PER_AGENT_ENV, ...ADMIN_SIGN_IN_ENV, [missing]: "" },
+          stubAgentTokenService(),
+          stubPrisma(),
+        ),
+      ).toThrow(missing);
+    });
+  }
+
+  it("buildProvisioner fails in perAgent mode without a database client", () => {
+    expect(() =>
+      buildProvisioner(
+        { ...PER_AGENT_ENV, ...ADMIN_SIGN_IN_ENV },
+        stubAgentTokenService(),
+      ),
+    ).toThrow(/perAgent/);
   });
 });

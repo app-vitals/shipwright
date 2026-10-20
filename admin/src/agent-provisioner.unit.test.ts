@@ -16,9 +16,11 @@ import {
 import {
   containerDrifted,
   federationPatch,
+  hasPerAgentIdentity,
   KubernetesAgentProvisioner,
   type KubernetesAgentProvisionerConfig,
   NoopAgentProvisioner,
+  perAgentFederation,
   policyDrifted,
 } from "./agent-provisioner.ts";
 import type { AgentTokenService } from "./agent-tokens.ts";
@@ -1637,5 +1639,99 @@ describe("KubernetesAgentProvisioner.reconcile() — anthropic federation", () =
       "volumeMounts",
     ]);
     expect(container?.env?.map((e) => e.name)).toEqual(FED_ENV_NAMES);
+  });
+});
+
+// ─── perAgent identity: the Deployment's federation values ──────────────────
+
+describe("perAgentFederation()", () => {
+  const CFG = {
+    organizationId: "org-1",
+    workspaceId: "wrkspc_1",
+    audience: "https://api.anthropic.com",
+    expirationSeconds: 900,
+  };
+  const OWNED = {
+    ownerEmail: "jane.doe@example.com",
+    anthropicIdentityName: "jane-doe-a1",
+    anthropicServiceAccountId: "svac_own",
+    anthropicFederationRuleId: "fdrl_own",
+    k8sServiceAccountName: "agent-sa",
+  };
+
+  it("maps the agent's own SA name, rule ID and service account ID", () => {
+    expect(perAgentFederation(CFG, "agent-1", OWNED)).toEqual({
+      serviceAccountName: "agent-sa",
+      ruleId: "fdrl_own",
+      organizationId: "org-1",
+      serviceAccountId: "svac_own",
+      workspaceId: "wrkspc_1",
+      audience: "https://api.anthropic.com",
+      expirationSeconds: 900,
+    });
+  });
+
+  it("omits the workspace when none is configured", () => {
+    const { workspaceId: _, ...noWs } = CFG;
+    const fed = perAgentFederation(noWs, "agent-1", OWNED);
+    expect("workspaceId" in fed).toBe(false);
+  });
+
+  it("produces per-agent env and ServiceAccount in the Deployment manifest", () => {
+    const dep = buildAgentDeploymentManifest({
+      agentId: "agent-1",
+      namespace: NAMESPACE,
+      image: "img",
+      imageTag: "t",
+      apiUrl: "http://api",
+      pvcName: "pvc",
+      secretName: "sec",
+      tokenSecretKey: "token",
+      anthropicFederation: perAgentFederation(CFG, "agent-1", OWNED),
+    });
+    expect(dep.spec.template.spec.serviceAccountName).toBe("agent-sa");
+    const env = Object.fromEntries(
+      (dep.spec.template.spec.containers[0]?.env ?? []).map((e) => [
+        e.name,
+        e.value,
+      ]),
+    );
+    expect(env.ANTHROPIC_FEDERATION_RULE_ID).toBe("fdrl_own");
+    expect(env.ANTHROPIC_SERVICE_ACCOUNT_ID).toBe("svac_own");
+    expect(env.ANTHROPIC_ORGANIZATION_ID).toBe("org-1");
+    expect(env.ANTHROPIC_WORKSPACE_ID).toBe("wrkspc_1");
+  });
+
+  it("fails with a clear error for an agent with no owner", () => {
+    expect(() =>
+      perAgentFederation(CFG, "agent-1", { ...OWNED, ownerEmail: null }),
+    ).toThrow(/agent-1 has no owner/);
+  });
+
+  it("fails with NotFound for a missing agent", () => {
+    expect(() => perAgentFederation(CFG, "agent-1", null)).toThrow(
+      /agent-1 not found/,
+    );
+  });
+
+  for (const field of [
+    "k8sServiceAccountName",
+    "anthropicServiceAccountId",
+    "anthropicFederationRuleId",
+  ] as const) {
+    it(`fails naming ${field} when it is not provisioned yet`, () => {
+      expect(() =>
+        perAgentFederation(CFG, "agent-1", { ...OWNED, [field]: null }),
+      ).toThrow(field);
+    });
+  }
+
+  it("hasPerAgentIdentity is true only with an owner and every ID", () => {
+    expect(hasPerAgentIdentity(OWNED)).toBe(true);
+    expect(hasPerAgentIdentity(null)).toBe(false);
+    expect(hasPerAgentIdentity({ ...OWNED, ownerEmail: null })).toBe(false);
+    expect(
+      hasPerAgentIdentity({ ...OWNED, anthropicFederationRuleId: null }),
+    ).toBe(false);
   });
 });

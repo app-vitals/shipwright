@@ -22,7 +22,9 @@ Setting `agent.provisioning.enabled=true` switches the admin service to the
 - Creating an agent creates a per-agent **PersistentVolumeClaim** (for persistent
   agent home storage), mints a scoped per-agent token, creates a per-agent
   **Secret** (carrying the token), and a per-agent **Deployment** (referencing
-  both), in that order. All operations are idempotent and safe to retry. **Exception:** if the agent is marked `selfHosted: true`, provisioning is skipped — the agent is expected to manage its own workload.
+  both), in that order. In `perAgent` Anthropic identity mode the agent's own
+  ServiceAccount and Anthropic identity are created between the PVC and the
+  Secret (see [perAgent identity mode](#peragent-identity-mode-opt-in)). All operations are idempotent and safe to retry. **Exception:** if the agent is marked `selfHosted: true`, provisioning is skipped — the agent is expected to manage its own workload.
 - `DELETE /agents/:id` runs the full `deleteAgentFully()` orchestration:
   deprovisions the agent's Kubernetes workload (Deployment, Secret, and PVC),
   revokes the agent's task-store and chat-service tokens, deletes its chat
@@ -208,9 +210,7 @@ otherwise fall back to the namespace `default` ServiceAccount).
 #### perAgent identity mode (opt-in)
 
 Set `anthropicFederation.identityMode: perAgent` to give each agent its own
-identity instead of the shared one (the per-agent ServiceAccounts, Anthropic
-service accounts and rules are created by later work; this release adds the
-config). perAgent mode requires `agent.provisioning.enabled`,
+identity instead of the shared one. perAgent mode requires `agent.provisioning.enabled`,
 `organizationId`, `issuerId` (this cluster's Anthropic issuer ID) and
 `adminFederation.ruleId` / `adminFederation.serviceAccountId` (the org:admin
 bootstrap rule and service account the admin pod uses to sign in to the Admin
@@ -220,11 +220,42 @@ this mode the admin pod gets its own projected token at
 `/var/run/secrets/anthropic.com/token` plus `ANTHROPIC_IDENTITY_TOKEN_FILE`,
 `ANTHROPIC_FEDERATION_RULE_ID`, `ANTHROPIC_ORGANIZATION_ID`,
 `ANTHROPIC_SERVICE_ACCOUNT_ID` (and `ANTHROPIC_WORKSPACE_ID` when set). The
-default `shared` mode renders none of this.
+default `shared` mode renders none of this. Admin startup fails if the admin
+pod's own sign-in env (`ANTHROPIC_IDENTITY_TOKEN_FILE`,
+`ANTHROPIC_FEDERATION_RULE_ID`, `ANTHROPIC_ORGANIZATION_ID`) is missing.
 
-Do not enable perAgent mode yet: it already turns on the Anthropic credential
-guards, but until per-agent provisioning ships, agent pods get no federation
-wiring and so have no way to authenticate.
+Provisioning a new agent in perAgent mode runs, in order:
+
+1. the PVC;
+2. a Kubernetes ServiceAccount with the same name as the agent's Deployment;
+3. an Anthropic service account named after the agent's owner (see the
+   identity name allocator: `jane.doe@example.com` becomes `jane-doe-a1`, plus
+   `nameSuffix`), added to `workspaceId` when one is set;
+4. a federation rule with the same name, on this cluster's `issuerId`, that
+   matches exactly the subject `system:serviceaccount:<agent namespace>:<sa>`
+   and the agent token audience, with scope `workspace:inference` and a 600s
+   token lifetime;
+5. the Secret, then the Deployment, which runs as that ServiceAccount and gets
+   that agent's own `ANTHROPIC_FEDERATION_RULE_ID` and
+   `ANTHROPIC_SERVICE_ACCOUNT_ID`.
+
+Each ID (`k8sServiceAccountName`, `anthropicServiceAccountId`,
+`anthropicFederationRuleId`) is saved on the agent row right after it is
+created. A retry reuses saved IDs, so it creates no duplicates. When a create
+conflicts because an earlier ID write was lost, the existing service account or
+rule is found by name and saved. If a later step fails, the steps this attempt
+completed are undone on a best-effort basis, in reverse order: the Secret
+(with its tokens), the rule (archived), the Anthropic service account
+(archived) and the ServiceAccount (deleted), and their IDs are cleared. The PVC
+is never rolled back. An agent with no owner email fails with a clear error
+before anything is created.
+
+Existing agents are not migrated yet. Their Deployments keep the federation
+wiring they already have: reconcile leaves it alone until the agent has its
+own identity, and then corrects it to that identity. So only switch an
+installation that already has agents to perAgent mode once existing agents
+can be migrated; on a fresh installation, new agents get their identity as
+they are created. Deleting an agent does not remove its Anthropic identity yet.
 
 ### Chat service provisioning (opt-in)
 
