@@ -104,7 +104,7 @@ model Task {
   // ─── Skip tracking (auto-block after repeated no-op dispatches) ───
   // skipCount increments each time the loop orchestrator dispatches this task
   // and finds nothing to do (a [silent] outcome). Crossing the threshold (3,
-  // mirroring SPIN_DETECTION_THRESHOLD in agent/src/loop-orchestrator.ts)
+  // mirroring SPIN_DETECTION_THRESHOLD in agent/src/coding/loop-orchestrator.ts)
   // auto-sets hitl+blockedReason so the task stops being re-selected forever.
   skipCount     Int     @default(0)
   lastSkippedAt String?
@@ -311,7 +311,7 @@ model PullRequest {
   // ─── Skip tracking (auto-block after repeated no-op dispatches) ───
   // Mirrors Task.skipCount/lastSkippedAt — see comment there for the
   // threshold rationale (3, matching SPIN_DETECTION_THRESHOLD in
-  // agent/src/loop-orchestrator.ts).
+  // agent/src/coding/loop-orchestrator.ts).
   skipCount     Int     @default(0)
   lastSkippedAt String?
 

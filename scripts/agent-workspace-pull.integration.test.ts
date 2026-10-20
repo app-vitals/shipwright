@@ -14,10 +14,10 @@
  */
 
 import { describe, expect, test } from "bun:test";
-import { HttpShipwrightRuntimeClient } from "../agent/src/shipwright-runtime-client.ts";
+import { HttpShipwrightRuntimeClient } from "../agent/src/runtime/shipwright-runtime-client.ts";
 import {
-  type PullAgentWorkspaceDeps,
   fetchAgentList,
+  type PullAgentWorkspaceDeps,
   pullAgentWorkspace,
 } from "./agent-workspace-pull.ts";
 

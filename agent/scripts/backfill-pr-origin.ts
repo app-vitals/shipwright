@@ -8,7 +8,7 @@
  * via the plain (non `--search`) `gh pr list`, classifies each PR via
  * pr-census.ts's `classifyPrOrigin()`, and POSTs the result to the existing
  * `POST /prs/census` task-store endpoint in <=200-entry chunks. See
- * agent/src/pr-origin-backfill.ts's module doc comment for the full
+ * agent/src/coding/pr-origin-backfill.ts's module doc comment for the full
  * rationale (why plain `gh pr list` instead of `--search`, idempotency,
  * per-repo error isolation).
  *
@@ -38,13 +38,16 @@
  *   --help             Print this usage and exit 0.
  *
  * Idempotent: safe to re-run (e.g. after a partial failure) — see the
- * module doc comment in agent/src/pr-origin-backfill.ts.
+ * module doc comment in agent/src/coding/pr-origin-backfill.ts.
  */
 
 import { parseFlags } from "../../lib/cli-flags.ts";
-import { ghJson } from "../src/check-helpers.ts";
-import type { CensusEntry, CensusTaskRecord } from "../src/pr-census.ts";
-import { type BackfillDeps, runBackfill } from "../src/pr-origin-backfill.ts";
+import { ghJson } from "../src/coding/check-helpers.ts";
+import type { CensusEntry, CensusTaskRecord } from "../src/coding/pr-census.ts";
+import {
+  type BackfillDeps,
+  runBackfill,
+} from "../src/coding/pr-origin-backfill.ts";
 
 const DEFAULT_DAYS = 90;
 const DEFAULT_TASK_PAGE_LIMIT = 50;

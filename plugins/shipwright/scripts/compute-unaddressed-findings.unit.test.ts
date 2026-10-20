@@ -1,12 +1,12 @@
 // Unit tests for compute-unaddressed-findings.ts — pure logic, no I/O.
 //
-// Ported from agent/src/check-patch.unit.test.ts's getPatchCandidates()-level
+// Ported from agent/src/coding/check-patch.unit.test.ts's getPatchCandidates()-level
 // scenario matrix (PVD-1.1) — these scenarios exercised hasUnaddressedFindings
 // and its helpers only indirectly, through the full candidate collection
 // pipeline. Now that hasUnaddressedFindings is extracted and exported, these
 // scenarios are ported to call it directly with a PrReviewData + currentUser
 // input, asserting the boolean result — same scenarios, new location, not
-// duplicated in agent/src/check-patch.unit.test.ts (see that file's
+// duplicated in agent/src/coding/check-patch.unit.test.ts (see that file's
 // remaining getPatchCandidates() tests for wiring-level smoke coverage
 // instead).
 //
@@ -62,12 +62,8 @@
 
 import { describe, expect, test } from "bun:test";
 import {
-  type IssueCommentNode,
-  type PrFinding,
-  type PrReviewData,
-  type ReviewNode,
-  type ReviewThread,
   hasUnaddressedFindings,
+  type IssueCommentNode,
   isAddressedByAuthorReply,
   isRejectedByPatchLedger,
   isResolvedByLedger,
@@ -75,7 +71,11 @@ import {
   isSupersededBySameHeadApproval,
   isSupersededBySelfReview,
   isThreadAddressedByAuthorReply,
+  type PrFinding,
+  type PrReviewData,
   parseCliInput,
+  type ReviewNode,
+  type ReviewThread,
   reviewRef,
   threadRef,
 } from "./compute-unaddressed-findings.ts";
@@ -1294,9 +1294,9 @@ describe("isSupersededBySameHeadApproval / hasUnaddressedFindings (PSL-1.1)", ()
       "2026-05-26T11:00:00Z",
       "current-head-sha",
     );
-    expect(isSupersededBySameHeadApproval(commented, [commented, approval])).toBe(
-      true,
-    );
+    expect(
+      isSupersededBySameHeadApproval(commented, [commented, approval]),
+    ).toBe(true);
     expect(
       hasUnaddressedFindings(
         makeData({ reviews: { nodes: [commented, approval] } }),
@@ -1312,9 +1312,9 @@ describe("isSupersededBySameHeadApproval / hasUnaddressedFindings (PSL-1.1)", ()
       "2026-05-26T11:00:00Z",
       "newer-head-sha",
     );
-    expect(isSupersededBySameHeadApproval(commented, [commented, approval])).toBe(
-      false,
-    );
+    expect(
+      isSupersededBySameHeadApproval(commented, [commented, approval]),
+    ).toBe(false);
     expect(
       hasUnaddressedFindings(
         makeData({ reviews: { nodes: [commented, approval] } }),
@@ -1330,9 +1330,9 @@ describe("isSupersededBySameHeadApproval / hasUnaddressedFindings (PSL-1.1)", ()
       "2026-05-26T11:00:00Z",
       "current-head-sha",
     );
-    expect(isSupersededBySameHeadApproval(commented, [commented, approval])).toBe(
-      false,
-    );
+    expect(
+      isSupersededBySameHeadApproval(commented, [commented, approval]),
+    ).toBe(false);
     expect(
       hasUnaddressedFindings(
         makeData({ reviews: { nodes: [commented, approval] } }),
@@ -1348,9 +1348,9 @@ describe("isSupersededBySameHeadApproval / hasUnaddressedFindings (PSL-1.1)", ()
       "2026-05-26T09:00:00Z",
       "current-head-sha",
     );
-    expect(isSupersededBySameHeadApproval(commented, [approval, commented])).toBe(
-      false,
-    );
+    expect(
+      isSupersededBySameHeadApproval(commented, [approval, commented]),
+    ).toBe(false);
   });
 
   test("unresolved inline threads still count even after a same-head approval", () => {
@@ -1787,7 +1787,10 @@ describe("PHS-1.1 characterization", () => {
       })),
     },
   });
-  const ledger = (r: ReviewNode, overrides: Partial<PrFinding> = {}): PrFinding => ({
+  const ledger = (
+    r: ReviewNode,
+    overrides: Partial<PrFinding> = {},
+  ): PrFinding => ({
     id: "f",
     prRecordId: "p",
     ref: reviewRef(r),
@@ -1872,11 +1875,17 @@ describe("PHS-1.1 characterization", () => {
     });
     const base = { reviews: { nodes: [a, b] } };
     expect(
-      hasUnaddressedFindings(makeData({ ...base, findings: [ledger(a)] }), "the-agent"),
+      hasUnaddressedFindings(
+        makeData({ ...base, findings: [ledger(a)] }),
+        "the-agent",
+      ),
     ).toBe(true);
     expect(
       hasUnaddressedFindings(
-        makeData({ ...base, findings: [ledger(a), ledger(b, { disposition: "superseded" })] }),
+        makeData({
+          ...base,
+          findings: [ledger(a), ledger(b, { disposition: "superseded" })],
+        }),
         "the-agent",
       ),
     ).toBe(false);
@@ -2028,7 +2037,10 @@ describe("PHS-1.2 patch-source rejected ledger entries", () => {
     },
     ...overrides,
   });
-  const entry = (ref: string, overrides: Partial<PrFinding> = {}): PrFinding => ({
+  const entry = (
+    ref: string,
+    overrides: Partial<PrFinding> = {},
+  ): PrFinding => ({
     id: "f",
     prRecordId: "p",
     ref,
@@ -2142,15 +2154,21 @@ describe("PHS-1.2 patch-source rejected ledger entries", () => {
         findings: [entry(reviewRef(r), { source: "patch", disposition })],
       });
       expect(hasUnaddressedFindings(patchOnly, "the-agent")).toBe(true);
-      expect(isResolvedByLedger(reviewRef(r), patchOnly.findings ?? [])).toBe(false);
+      expect(isResolvedByLedger(reviewRef(r), patchOnly.findings ?? [])).toBe(
+        false,
+      );
     }
   });
 
   test("isRejectedByPatchLedger requires source:patch AND disposition:rejected", () => {
     const ref = "r";
     expect(isRejectedByPatchLedger(ref, [entry(ref)])).toBe(true);
-    expect(isRejectedByPatchLedger(ref, [entry(ref, { source: "review" })])).toBe(false);
-    expect(isRejectedByPatchLedger(ref, [entry(ref, { disposition: "resolved" })])).toBe(false);
+    expect(
+      isRejectedByPatchLedger(ref, [entry(ref, { source: "review" })]),
+    ).toBe(false);
+    expect(
+      isRejectedByPatchLedger(ref, [entry(ref, { disposition: "resolved" })]),
+    ).toBe(false);
     expect(isRejectedByPatchLedger(null, [entry(ref)])).toBe(false);
   });
 });

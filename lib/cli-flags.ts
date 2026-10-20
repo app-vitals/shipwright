@@ -1,7 +1,7 @@
 /**
  * lib/cli-flags.ts
  * Generalized CLI flag parser: supports both `--flag value` and
- * `--flag=value` syntax. Generalizes `agent/src/cli-args.ts`'s narrow,
+ * `--flag=value` syntax. Generalizes `agent/src/runtime/cli-args.ts`'s narrow,
  * hand-rolled `parseCliArgs` (which only supports `--flag value` for exactly
  * three flags) so any script can declare the flags it cares about.
  *

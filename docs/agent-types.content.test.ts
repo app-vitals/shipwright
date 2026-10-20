@@ -276,7 +276,7 @@ describe("docs/agent-types.md — GitHub source references section", () => {
 
   it("documents private-repo auth via the agent-env mechanism and GitHub App auth", () => {
     expect(section).toMatch(/agent-env|AgentEnv/);
-    expect(section).toContain("agent/src/github-app-auth.ts");
+    expect(section).toContain("agent/src/runtime/github-app-auth.ts");
     expect(section).toContain("@octokit/auth-app");
   });
 

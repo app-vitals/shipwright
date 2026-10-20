@@ -3,7 +3,7 @@
  * Pure planning helper for "which repos still need `gh repo clone`" —
  * shared by scripts/hitl.ts (local dev-loop bootstrap),
  * scripts/agent-workspace-pull.ts (mirrors a real agent's repos locally),
- * and agent/src/sync-config-clone.ts (the deployed agent's config-sync
+ * and agent/src/runtime/sync-config-clone.ts (the deployed agent's config-sync
  * auto-clone step).
  *
  * Extracted out of hitl.ts (AWP-1.1) so neither script reaches into the

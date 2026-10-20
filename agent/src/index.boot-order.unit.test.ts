@@ -4,7 +4,9 @@ import { join } from "node:path";
 // boot.ts holds the boot sequence and index.ts is the thin entry that runs it
 // (importing either would boot an agent), so both are asserted structurally
 // against their source text.
-const source = await Bun.file(join(import.meta.dir, "boot.ts")).text();
+const source = await Bun.file(
+  join(import.meta.dir, "runtime", "boot.ts"),
+).text();
 const entrySource = await Bun.file(join(import.meta.dir, "index.ts")).text();
 
 function position(marker: string): number {

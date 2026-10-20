@@ -12,7 +12,7 @@
 >
 > **2026-10-18 top-up (`07e79159e..cc8f30e5c`).** `agent-types/specialist/manifest.content.test.ts` -> **reuse** (content layer, parses the new manifest via `parseAgentTypeManifest`). `admin/src/agent-cron-jobs.unit.test.ts` -> **reuse** (already updated in the same commit: non-coding unknown type logs and changes nothing; coding load failure throws); `agent-cron-jobs.integration.test.ts` -> **reuse**. Verified locally after `bun install --frozen-lockfile`: both unit/content files run 30 pass / 0 fail. No new net-new or rebuild items.
 >
-> **2026-10-16 top-up (`addbdffcb..07e79159e`).** `agent/src/anthropic-federation-guard.ts` -> **reuse** (sibling `anthropic-federation-guard.unit.test.ts`, 12 pass locally). `charts/shipwright/tests/agent_anthropic_federation_test.yaml` -> **reuse** (helm-unittest). `admin/src/anthropic-credential-guard.ts` -> **net-new** unit test (no own sibling; only indirect coverage via `agent-envs.integration.test.ts` and `admin-ui.smoke.test.ts`); queued as T-088 in the plan. Modified admin/agent tests (`agent-manifest`, `agent-provisioner`, `main`, `agents-api.smoke`, `api.smoke`) already extended in the same commits. Note: `admin/src/main.unit.test.ts` could not load in this worktree (`@sentry/bun` not installed - no `bun install` in the refresh worktree, an environment gap rather than a regression).
+> **2026-10-16 top-up (`addbdffcb..07e79159e`).** `agent/src/runtime/anthropic-federation-guard.ts` -> **reuse** (sibling `anthropic-federation-guard.unit.test.ts`, 12 pass locally). `charts/shipwright/tests/agent_anthropic_federation_test.yaml` -> **reuse** (helm-unittest). `admin/src/anthropic-credential-guard.ts` -> **net-new** unit test (no own sibling; only indirect coverage via `agent-envs.integration.test.ts` and `admin-ui.smoke.test.ts`); queued as T-088 in the plan. Modified admin/agent tests (`agent-manifest`, `agent-provisioner`, `main`, `agents-api.smoke`, `api.smoke`) already extended in the same commits. Note: `admin/src/main.unit.test.ts` could not load in this worktree (`@sentry/bun` not installed - no `bun install` in the refresh worktree, an environment gap rather than a regression).
 
 > **2026-10-14 top-up (`d7af2240a..addbdffcb`).** Inventory re-run at `addbdffcb`. New test files, all **Reuse** at their canonical layer: `prompt-audit/hitl-policy.unit.test.ts` (unit, pure policy), `skills/prompt-scan/SKILL.content.test.ts` and `skills/prompt-fix/SKILL.content.test.ts` (content), `task-store/src/validate.unit.test.ts` (unit), `task-store/src/tasks.pr-normalize.smoke.test.ts` (in-process smoke), `agent/scripts/cli-scripts.unit.test.ts` (unit, spawns CLI scripts that exit before any network/DB use), and helm-unittest `agent_claude_policy_test.yaml`. Verified locally after `bun install --frozen-lockfile`: the six new/changed bun test files plus `lib/cli-flags.unit.test.ts` run **145 pass, 0 fail**. Integration tests (real Postgres) not run in this sandbox. No Rebuild/Delete/Net-new changes; modified tests (`dev-task-adherence.*`, `agent-cron-run-stats.*`, `run-telemetry.unit`, `lib/{pricing,default-agent-env}.unit`) keep their prior buckets. No bucket totals change beyond +6 Reuse files.
 
@@ -62,12 +62,12 @@ validation smoke tests). Verified via `git diff --name-status b14ea6eb3 HEAD` an
 new tests locally (after `bun install --frozen-lockfile`), not assumed:
 
 1. **Six new source units, each landed with paired tests, all Reuse at the canonical layer:**
-   `agent/src/github-installations.ts` (unit + integration w/ recorded fixture), `gh-token-files.ts`
+   `agent/src/runtime/github-installations.ts` (unit + integration w/ recorded fixture), `gh-token-files.ts`
    (unit + integration, tmpdir), `gh-owner-resolver.ts` (unit; CLI `agent/scripts/resolve-gh-owner.ts`
    exercised through `owner-routing.integration.test.ts`), `github-installations-reporter.ts` (unit +
    integration), `admin/src/agent-github-installations.ts` (integration, real Postgres),
    `plugins/shipwright/scripts/login-identity.ts` (unit + `login-canonicalization.unit.test.ts`).
-   Also `agent/src/github-installations-manager.integration.test.ts`. Zero `mock.module(` hits in the new
+   Also `agent/src/runtime/github-installations-manager.integration.test.ts`. Zero `mock.module(` hits in the new
    agent/plugin source+tests (grep).
 2. **New smoke tests, Reuse:** `metrics/src/api.validation.smoke.test.ts`,
    `task-store/src/validation.smoke.test.ts` (in-process `app.request()`, wire contract only).
@@ -89,10 +89,10 @@ worktree's base). Most of the window is chart/version bumps and docs. Verified v
 `git diff --name-status ea1412b66 HEAD` (not assumed):
 
 1. **One new source file with a paired test, Reuse at the canonical layer:**
-   `agent/src/claude-version.ts` (`parseClaudeVersion`, `detectClaudeCodeVersion`) has
+   `agent/src/runtime/claude-version.ts` (`parseClaudeVersion`, `detectClaudeCodeVersion`) has
    `claude-version.unit.test.ts` landed in the same commit. The exec is injected (`VersionExec`),
    zero `mock.module(` hits (checked by grep), no real process spawned. The `/health` surface it
-   feeds is covered by the extended `agent/src/health.smoke.test.ts` (Reuse; wire contract only).
+   feeds is covered by the extended `agent/src/runtime/health.smoke.test.ts` (Reuse; wire contract only).
 2. **In-place test extensions, all Reuse:** `health.smoke.test.ts` (version field),
    `readme.content.test.ts`, `scripts/check-competitive-freshness.unit.test.ts`, and the site
    Playwright specs `site/tests/{compare,vs-devin,vs-factory,vs-openhands}.spec.ts` (copy edits to
@@ -120,14 +120,14 @@ install in `agent/Dockerfile`.
    the same window — via `git diff --name-status d656f0d0a..HEAD`, then re-confirmed against
    the live CI run's own file count (see Speed measurement).** Six new source files, six new
    `*.unit.test.ts` files, all **Reuse** at the correct canonical layer:
-   - `agent/src/sync-config-clone.ts` (RSF-4.1, `#3849`) — `sync-config-clone.unit.test.ts`
+   - `agent/src/runtime/sync-config-clone.ts` (RSF-4.1, `#3849`) — `sync-config-clone.unit.test.ts`
      (13 tests). The module takes `getScopedRepos`/`exists`/`cloneRepo`/cleanup as injected deps
      and its one `global.*` match is a header comment, so no real `gh`/network/filesystem. The
      planner it consumes moved `scripts/lib/clone-plan.ts` → `lib/clone-plan.ts` together with
      its test (renames, `R065`/`R097`) — not new coverage, no gap.
    - `plugins/shipwright/scripts/filter-bot-comments.ts` (PBD-1.1) — unit test, 9 tests.
    - `plugins/shipwright/scripts/check-patrol-scope.ts` — unit test, 5 tests.
-   - `agent/src/allow-self-review-ref.ts`, `cleanup-after-days-ref.ts`,
+   - `agent/src/coding/allow-self-review-ref.ts`, `cleanup-after-days-ref.ts`,
      `cleanup-merged-worktrees-ref.ts` (APM-1.x) — one unit test each (7/6/6 tests). Each
      exports a `createXRef()` factory plus a module-level singleton; every test builds a fresh
      ref via the factory rather than mutating the singleton, so no cross-file leak (checked by
@@ -156,11 +156,11 @@ install in `agent/Dockerfile`.
    baseline too — so not a regression of this window, and missed by every prior sweep) and
    **does not leak**: `beforeEach` saves `globalThis.fetch`, `afterEach` restores it. But it
    still contradicts root CLAUDE.md's hard rule ("no `global.fetch`/`global.*` overrides") that
-   the repo's other HTTP clients (`metrics/src/lib/*-client.ts`, `agent/src/check-helpers.ts`) satisfy via an injected fetch (`fetchFn` in `agent/src/check-helpers.ts:663`)
+   the repo's other HTTP clients (`metrics/src/lib/*-client.ts`, `agent/src/coding/check-helpers.ts`) satisfy via an injected fetch (`fetchFn` in `agent/src/coding/check-helpers.ts:663`)
    (`createTaskStoreClient()` at `plugins/shipwright/scripts/check-helpers.ts:351` takes no such
    seam and calls bare `fetch(...)`). Bucketed **Promote / deepen** below. The other
    `globalThis.fetch` mentions (`metrics/src/lib/*-client.integration.test.ts` test titles,
-   `agent/src/check-helpers.unit.test.ts` header comment) are prose, not assignments. The
+   `agent/src/coding/check-helpers.unit.test.ts` header comment) are prose, not assignments. The
    `mock.module(` count is unchanged at **59** (all comment-only), `DATABASE_URL` in
    `*.unit.test.ts` unchanged at **7**.
 5. **Ground-truth file recount** (`find . -name "*.<suffix>.test.ts"`): 201 unit + 91
@@ -201,7 +201,7 @@ document's established convention.
      `trial-expiry-warning-sweeper.unit.test.ts` + `.integration.test.ts`, both new, covering
      the exported `isDueForWarning`/`isPastWarningGrace`/`buildTrialExpiryWarningMessage`
      helpers at unit and the full sweep orchestration at integration. **Reuse**.
-   - **`agent/src/agent-trial-expiry-ref.ts`** (ATE-3.1) — paired
+   - **`agent/src/runtime/agent-trial-expiry-ref.ts`** (ATE-3.1) — paired
      `agent-trial-expiry-ref.unit.test.ts`, new. **Reuse**, correct canonical unit layer,
      mirrors `agent-slack-membership-ref.unit.test.ts`'s established shape exactly (including
      the fail-open-until-synced assertion).
@@ -209,7 +209,7 @@ document's established convention.
      `agent/scripts/backfill-agent-policy.ts` — paired `agent-policy-backfill.unit.test.ts` +
      `.integration.test.ts`, both new; the CLI wrapper has no dedicated test, same accepted
      thin-wrapper pattern as `backfill-pr-origin.ts`'s CLI sibling. **Reuse**.
-   - **`agent/src/process-tree-kill.ts`** (LVBS-adjacent, process-leak fix) — paired
+   - **`agent/src/runtime/process-tree-kill.ts`** (LVBS-adjacent, process-leak fix) — paired
      `process-tree-kill.unit.test.ts` + `.integration.test.ts`, both new, exercising real
      spawned process trees (confirmed directly in this cycle's CI log: `"killTree (real
      processes, procfs fallback) > a plain proc.kill() leaves the descendant alive — the
@@ -229,8 +229,8 @@ document's established convention.
      service/route split (integration-equivalent-but-unit-tested for the service, per this
      repo's established injected-Prisma-double pattern; smoke for the route's wire contract).
 2. **One test file added this cycle with no dedicated Phase 1 inventory row of its own:**
-   **`agent/src/slack-trial-expiry.unit.test.ts`** — tests `isTrialExpired()`, a function
-   added to the *existing* `agent/src/slack.ts` (already its own inventory row, unchanged),
+   **`agent/src/runtime/slack-trial-expiry.unit.test.ts`** — tests `isTrialExpired()`, a function
+   added to the *existing* `agent/src/runtime/slack.ts` (already its own inventory row, unchanged),
    in a dedicated new test file rather than extending `slack.unit.test.ts` in place. Confirmed
    via `git show --stat` on the originating commit: `slack.ts` itself gained the function,
    `slack.unit.test.ts` was not touched, `slack-trial-expiry.unit.test.ts` was added instead.
@@ -293,7 +293,7 @@ version syncs, 3 pure dependency-lockfile bumps with no first-party test surface
 #3540 — all Renovate-authored, CI-green, no source-file diff beyond `bun.lock`/`package.json`),
 1 transitive-dependency security pin (`fix(security): bump devalue to 5.9.2+` #3553,
 `site/package.json` override only, no first-party code), 1 doc-only reference update
-(`docs: document agent/src/pr-origin-backfill.ts in agent-key-files reference` #3552), 1
+(`docs: document agent/src/coding/pr-origin-backfill.ts in agent-key-files reference` #3552), 1
 planning-only doc (`docs(planning): add agent-tool-background-dispatch-fix plan` #3559, no
 testable surface), and the prior cycle's own docs-refresh merge commit itself (`aafa5152f` /
 #3548) — per this document's own established exclusion convention.
@@ -427,10 +427,10 @@ source file identified in this cycle's Phase 1 inventory refresh was checked dir
 checked to confirm its test file was extended in the same commit as the production change
 — not inferred from the diff stat alone:
 
-1. **`agent/src/pr-origin-backfill.ts` + CLI wrapper `agent/scripts/backfill-pr-origin.ts`
+1. **`agent/src/coding/pr-origin-backfill.ts` + CLI wrapper `agent/scripts/backfill-pr-origin.ts`
    (new, POB-1.1)** — a one-off, manually-invoked 90-day-window backfill for
    `PullRequest.origin` on merged PRs predating the POM-1.1/1.2 origin-tracking cutover.
-   Paired **`agent/src/pr-origin-backfill.unit.test.ts`** (new, 347 lines) verified
+   Paired **`agent/src/coding/pr-origin-backfill.unit.test.ts`** (new, 347 lines) verified
    directly: covers `buildBackfillEntries()`'s cutoff-boundary filtering (exactly-at /
    just-before / just-after cutoff, null-`mergedAt` exclusion), ascending sort by
    `mergedAt`, and — the load-bearing assertion — that classification is delegated to
@@ -452,8 +452,8 @@ checked to confirm its test file was extended in the same commit as the producti
    wrapper `backfill-pr-origin.ts` has no dedicated test of its own — accepted thin-wrapper
    pattern, same treatment as `cutover-validate.ts`'s sibling scripts, folds into the same
    row.
-2. **`agent/src/sessions.ts`'s periodic prune wiring (DTW-1.3 companion, `#3526`)** — new
-   **`agent/src/sessions.unit.test.ts`** (new, 94 lines) is the second of this cycle's two
+2. **`agent/src/runtime/sessions.ts`'s periodic prune wiring (DTW-1.3 companion, `#3526`)** — new
+   **`agent/src/runtime/sessions.unit.test.ts`** (new, 94 lines) is the second of this cycle's two
    new test files. Its own header comment states the regression context directly: before
    this wiring, `prune()` had zero production call sites, so entries only ever expired
    lazily on `get()` — which never happens for a per-dispatch `dev-task:{id}:{nonce}` key
@@ -476,7 +476,7 @@ checked to confirm its test file was extended in the same commit as the producti
      `#3533`) — last touched by `f43be09b7` ("wire sessions list Follow button to
      SessionFollowService"), confirmed via `git log`. **Reuse**, in-place extension at the
      already-correct smoke layer for the wired route.
-   - `agent/src/check-helpers.unit.test.ts` (dev-task-only resume wiring, DTW-1.3,
+   - `agent/src/coding/check-helpers.unit.test.ts` (dev-task-only resume wiring, DTW-1.3,
      `#3526`) — last touched by `e1c7e7596`, confirmed via `git log`. **Reuse**, in-place
      extension.
    - `plugins/shipwright/commands/dev-task.content.test.ts` (worktree-path fallback fix,
@@ -531,7 +531,7 @@ for a paired, correctly-suffixed test file — not inferred from the diff stat a
    test file rather than a same-named file). Not flagged as Promote/deepen since
    correctness/depth is not in question — noted for Phase 4 to optionally suggest an
    extraction for consistency, not required.
-3. **`agent/src/check-plan.ts`, `github-auth-startup.ts`+`github-auth-deps.ts`,
+3. **`agent/src/coding/check-plan.ts`, `github-auth-startup.ts`+`github-auth-deps.ts`,
    `patch-author-allowlist-ref.ts`, `slack-startup.ts`, `pr-census.ts`** — each has a
    paired `.unit.test.ts`, verified directly. **Reuse** across all five, correct
    canonical layer (unit for the pure/mutable-box files, matching each file's sibling
@@ -609,16 +609,16 @@ stat alone:
    the companion DB `CHECK` constraint by asserting a direct raw-SQL row insert that
    violates the invariant is rejected. **Reuse** across all — correct canonical layers,
    landed in the same PRs as the production code, no gap.
-4. **New file: `agent/src/claim-invariant-reconciler.ts`.** New
-   `agent/src/claim-invariant-reconciler.unit.test.ts`. **Reuse** — correct canonical
+4. **New file: `agent/src/coding/claim-invariant-reconciler.ts`.** New
+   `agent/src/coding/claim-invariant-reconciler.unit.test.ts`. **Reuse** — correct canonical
    integration-equivalent-but-unit-tested layer, matching the sibling
    `pr-state-reconciler.ts` row's existing precedent (a service-boundary self-heal loop
    whose core decision logic is unit-tested against injected fakes, not a live DB).
 5. **SSB-1.1/SAV-1.1 (#3006/#2997/#2949/#2930/#2936/#3003/#3017/#2996) — Slack Bolt 5.x
    + `slack-progress.ts`/`slack-thread-status-tracker.ts`.** New
-   `agent/src/slack-progress.unit.test.ts` (extended twice more within this window as
+   `agent/src/runtime/slack-progress.unit.test.ts` (extended twice more within this window as
    the SlackProgress→`agents.sessions.setStatus` migration landed in stages), new
-   `agent/src/slack-thread-status-tracker.unit.test.ts`. `agent/src/slack.unit.test.ts`
+   `agent/src/runtime/slack-thread-status-tracker.unit.test.ts`. `agent/src/runtime/slack.unit.test.ts`
    and `.integration.test.ts` extended for the Bolt 5.x call-shape update and the
    synchronous-throw catch. **Reuse** across all — canonical layers correct, no
    redundant-assertion overlap found between `slack-progress.unit.test.ts` and
@@ -653,7 +653,7 @@ stat alone:
 10. Re-ran the isolation-contract grep sweep (`mock.module(`, `global.fetch =`,
     `global.console =`, `DATABASE_URL` inside `*.unit.test.ts`) across every new test
     file from this cycle plus the existing suite — one grep hit
-    (`agent/src/slack-progress.unit.test.ts:13`) inspected directly and confirmed a
+    (`agent/src/runtime/slack-progress.unit.test.ts:13`) inspected directly and confirmed a
     **false positive**: a comment ("no mock.module()...") documenting compliance, not a
     violation. **0 real violations**, same result as every prior cycle.
 11. Pulled a fresh live Tier 1 speed + Step 4c coverage measurement from CI (`gh run
@@ -670,7 +670,7 @@ state — 13 non-routine commits since `5b586beb` (28 total, minus chart-version
 plugin-version-sync/doc-only churn):
 
 1. **`a748c46f` (#2906) — generic progress phases (CFB-2.1).** New
-   `lib/progress-phases.unit.test.ts` and `agent/src/progress-milestones.unit.test.ts`
+   `lib/progress-phases.unit.test.ts` and `agent/src/runtime/progress-milestones.unit.test.ts`
    (both new files) cover the closed 11-phase enum and the pure `phaseForBlock()` mapper
    respectively, including a dedicated assertion that `block.input` is never read by the
    mapper (the file's load-bearing anti-leak invariant). `claude.unit.test.ts` extended
@@ -906,8 +906,8 @@ This pass diffed the current file tree against the 2026-08-22 pass's findings (b
 doc committed at `ea846283`... actually merged as `be5bfa59`) and re-verified the delta
 directly against current repo state — exactly 2 substantive commits since `ea846283`:
 
-1. **`3df0539e` (PR #2788) — SMR enforcement gate in `agent/src/slack.ts`.** Read
-   `agent/src/slack.unit.test.ts` directly: 13 new assertions cover
+1. **`3df0539e` (PR #2788) — SMR enforcement gate in `agent/src/runtime/slack.ts`.** Read
+   `agent/src/runtime/slack.unit.test.ts` directly: 13 new assertions cover
    `isAllowedSlackSender()` (fail-open when unsynced, fail-open when `restrict:false`,
    case-insensitive email match, reject on no match) and `shouldRejectSlackSender()`
    (resolves sender email then delegates), plus per-handler wiring assertions across all
@@ -962,7 +962,7 @@ state:
    '*.spec.ts' '*.e2e.ts'` — **five** new files: `admin/src/okta-auth-client.integration.test.ts`
    (263 lines), `admin/src/github-app-provisioning-client.unit.test.ts` (89 lines),
    `admin/src/github-app-provisioning-client.integration.test.ts` (149 lines),
-   `agent/src/agent-slack-membership-ref.unit.test.ts` (197 lines),
+   `agent/src/runtime/agent-slack-membership-ref.unit.test.ts` (197 lines),
    `task-store/src/pr-transition-diff.unit.test.ts` (161 lines). Read each directly:
    - **`okta-auth-client.integration.test.ts`** — 10 cases across `getAuthorizationUrl`,
      `exchangeCode`, `getUserInfo`, and default construction; injected-`fetchFn` cassette
@@ -1060,7 +1060,7 @@ repo state:
    layer per `test-inventory.md`'s row for the new `PrFinding` model — no layer mismatch.
 2. Cross-referenced Phase 1's delta list (16 commits / 53 files since `ca3c8c3f`) against
    existing test files for the four in-place fixes: `admin/src/agent-manifest.unit.test.ts`
-   (extended, ephemeral-storage constant), `agent/src/setup.integration.test.ts`
+   (extended, ephemeral-storage constant), `agent/src/runtime/setup.integration.test.ts`
    (extended, +38 lines, cache-pinning assertions), `task-store/src/state-filter.smoke.test.ts`
    (new file, but a smoke-layer route-contract test, not counted as a "new inventory
    coverage" item since it's incremental coverage on the already-migrated
@@ -1341,8 +1341,8 @@ assumed safe from a green CI alone — see Method note step 4.
 "370 files" scan report — see Speed measurement below):** 187 unit + 83 integration + 54
 smoke + 46 content = **370 `bun test`-scanned files**, + 26 `site/tests/*.spec.ts` + 7
 Playwright `*.e2e.ts` (6 `admin/e2e/`, 1 `metrics/e2e/`) = **403 test files total** — up
-from the prior pass's 401 (+2 net): `agent/src/pr-origin-backfill.unit.test.ts` (new,
-backing the new POB-1.1 inventory row) and `agent/src/sessions.unit.test.ts` (new, backing
+from the prior pass's 401 (+2 net): `agent/src/coding/pr-origin-backfill.unit.test.ts` (new,
+backing the new POB-1.1 inventory row) and `agent/src/runtime/sessions.unit.test.ts` (new, backing
 the DTW-1.3 companion prune-wiring fix) — both verified directly via `git log
 --diff-filter=A` against the `eff5b503..08cab0b33` range, matching exactly (no other new
 test files this cycle, consistent with the small 6-non-routine-commit delta).
@@ -1351,7 +1351,7 @@ test files this cycle, consistent with the small 6-non-routine-commit delta).
 step 3 above and Tests — bucketed below. Rebuild remains empty.
 
 **Headline finding:** the one genuinely new inventory item this cycle
-(`agent/src/pr-origin-backfill.ts`) landed with adequate, correctly-layered test coverage
+(`agent/src/coding/pr-origin-backfill.ts`) landed with adequate, correctly-layered test coverage
 in the same PR as the production code, continuing the pattern observed in every prior
 pass. The three touched-in-place rows (dashboard KPI swap, Sessions Follow button,
 dev-task resume-loop wiring) were each verified to have their paired test file extended
@@ -1390,8 +1390,8 @@ minus 1 deleted (`triage-dependency-bot-pr/SKILL.content.test.ts`, retired along
 skill, DBR-3.4) — plus a handful of first-time layer additions to already-inventoried
 rows not separately itemized here (see the per-cluster rows above for detail). The prior
 pass's 349 total itself included two novel dependency-runtime regression-test files with
-no corresponding source-code row (`agent/src/slack-bolt-client.integration.test.ts`,
-`agent/src/slack-socket-mode-ping.integration.test.ts`) — unchanged this cycle, still
+no corresponding source-code row (`agent/src/runtime/slack-bolt-client.integration.test.ts`,
+`agent/src/runtime/slack-socket-mode-ping.integration.test.ts`) — unchanged this cycle, still
 correctly bucketed Reuse.
 
 **Promote/deepen and Rebuild remain empty for a seventh consecutive cycle** — no open
@@ -1418,12 +1418,12 @@ integration + 47 smoke + 43 content = 318 `bun test`-scanned files, + 24
 via `git diff --diff-filter=A ac0ec6a8..HEAD`: the 19 files backing new inventory rows
 from the six feature clusters in that cycle's Method note, plus 4 first-time unit-test
 files for already-inventoried source rows that previously had only integration/smoke
-coverage — `agent/src/cron-handler.unit.test.ts`, `chat/src/message-service.unit.test.ts`,
+coverage — `agent/src/runtime/cron-handler.unit.test.ts`, `chat/src/message-service.unit.test.ts`,
 `metrics/src/providers/task-store-provider.unit.test.ts`,
 `admin/src/http-chat-client.unit.test.ts` — plus 2 genuinely novel dependency-runtime
 regression-test files with no corresponding source-code row:
-`agent/src/slack-bolt-client.integration.test.ts` and
-`agent/src/slack-socket-mode-ping.integration.test.ts`, both added as direct regression
+`agent/src/runtime/slack-bolt-client.integration.test.ts` and
+`agent/src/runtime/slack-socket-mode-ping.integration.test.ts`, both added as direct regression
 coverage for two real, already-shipped-and-fixed incidents in the installed
 `@slack/bolt`/`@slack/socket-mode` npm packages themselves (a Bolt-internal nested
 `@slack/web-api` resolution gap, #2997/#3003, and Bun's `undici` polyfill lacking the
@@ -1461,7 +1461,7 @@ signals from root `CLAUDE.md`'s Test isolation section and `references/principle
 
 **Prior cycle's (2026-09-30) 6 new `mock.module(` hits, individually confirmed comment-only:**
 `admin/src/trial-expiry-sweeper.unit.test.ts`, `trial-expiry-warning-sweeper.integration.test.ts`,
-`agent/src/process-tree-kill.unit.test.ts`, `process-tree-kill.integration.test.ts`,
+`agent/src/runtime/process-tree-kill.unit.test.ts`, `process-tree-kill.integration.test.ts`,
 `task-store/src/verification-check-service.unit.test.ts`, and
 `routes/verification-checks.smoke.test.ts` — each states its own no-`mock.module()`/
 no-global-overrides isolation approach in a header comment rather than actually calling
@@ -1609,7 +1609,7 @@ delta list, not re-read in full where unchanged.
 |---|---|---|---|---|
 | `lib/` | 14 files (re-verified via `find lib -maxdepth 1 -name "*.test.ts"`, up from 13: +1 — `clone-plan.unit.test.ts`, moved from `scripts/lib/` with `clone-plan.ts` itself, `#3849`) | unit | Cross-service pure helpers | **This cycle (2026-10-02):** `clone-plan.ts` relocated here so `agent/` production code can import it (agent/Dockerfile copies `lib/` but not `scripts/`). **Prior cycle (2026-09-30):** unchanged — no files in Phase 1's delta touch `lib/`. **Prior cycle (2026-09-23):** unchanged. **Prior cycle (2026-09-18):** new `cli-flags.ts` (`parseFlags`, CFH-1.2) and `graceful-shutdown.ts` (SIGTERM/SIGINT coordinator) each covered by a paired `.unit.test.ts` — **Reuse**, correct canonical unit layer, see that cycle's Method note step 6. **Prior cycle (2026-09-02):** new `chat-notify.ts` (shared pure chat-reply-notification payload-shaping helper, CFB-4.3) covered by new **`chat-notify.unit.test.ts`** — **Reuse**, new file backing new production code, correct canonical unit layer. **Prior cycle (2026-08-30):** new `progress-phases.ts` (closed 11-phase `ProgressPhase` enum, CFB-2.1) covered by new **`progress-phases.unit.test.ts`** — **Reuse**, new file backing new production code, correct canonical unit layer. |
 | `metrics/src/*` | 10 files at top-level (re-verified via `find metrics/src -maxdepth 1 -name "*.test.ts"`, unchanged file count) plus `lib/`/`providers/`/`dashboard/` subdirectories | unit/integration/smoke | Formatters, provider selection, HTTP clients, `/metrics/*` routes, request coalescing, dashboard feature-grouping, merged-PRs-by-repo panel/endpoint, Shipwright-PRs-Merged KPI, commits-per-PR column (CPP-1.3/1.4) | **This cycle (2026-09-30):** `api.merged-prs.smoke.test.ts`, `api.public.smoke.test.ts`, `task-store-provider.unit.test.ts` extended in place for the new commits-per-PR field on `/metrics/merged-prs` (CPP-1.3, `#3688`); `dashboard-page.unit.test.ts` extended for the new dashboard column (CPP-1.4, `#3709`) — all `git log`-confirmed same-commit extensions, **Reuse**, no new file, no bucket change. **Prior cycle (2026-09-23):** unchanged — no files in that cycle's Phase 1 delta touched `metrics/`. **Prior cycle (2026-09-21):** `task-store-provider.integration.test.ts` gained a targeted fixture (two matching PRs + a near-miss for each predicate conjunct, MPC-1.1/`#3534`) after an initial review finding that the only existing assertion for the new `shipwright_prs_merged` aggregation passed regardless of predicate correctness (an existence-only false-confidence signal, closed in the same PR) — **Reuse**, in-place strengthening confirmed via `git log`, no bucket change. **Prior cycle (2026-09-18):** new `api.merged-prs.smoke.test.ts` covers the new merged-PRs-by-repo endpoint (`f2b8768a`) backing the new dashboard panel (`0feb6428`) — **Reuse**, correct canonical smoke layer for a route wire-contract test. **Prior cycle (2026-09-02):** `metrics/src/providers/task-store-provider.ts` gains its first unit-layer coverage via new **`task-store-provider.unit.test.ts`** (218 lines), landed alongside PTL-2.2's fix deriving dashboard feature-grouping from tasks directly rather than the deprecated `pr.taskId` — **Reuse**, a genuine layer addition (the existing `.integration.test.ts` also extended in place), not a duplicate; the split proves the pure grouping-derivation logic in isolation vs. the integration file's real task-store-backed behavior. |
-| `agent/src/*` | **75 files** (2026-10-02: +4 — `sync-config-clone`, `allow-self-review-ref`, `cleanup-after-days-ref`, `cleanup-merged-worktrees-ref` unit tests, all Reuse. Prior cycle (2026-09-30): **71 files**, re-verified via `find agent/src -maxdepth 1 -name "*.test.ts"`, up from 65: +6 — `agent-trial-expiry-ref.unit.test.ts`, `agent-policy-backfill.unit.test.ts`+`.integration.test.ts`, `process-tree-kill.unit.test.ts`+`.integration.test.ts`, `slack-trial-expiry.unit.test.ts`; the +4 above were re-verified this cycle via the same `find`) | unit/integration/smoke | Work selection, check-\* precondition scripts, Slack Bolt handlers, `claude.ts` spawner, chat/task-store/GitHub clients, chat-poller loop, headless-browser launcher, PR-origin historical backfill, session-store prune wiring, agent trial-expiry ref, agent-policy backfill, process-tree termination | **This cycle (2026-09-30):** see Method note steps 1-2 for all 6 new files — all **Reuse**, correct canonical layer, paired test verified directly and confirmed green in this cycle's own CI run for each. `agent/src/check-helpers.ts` gained 3 new pure parsers (`parseAutoPostReviews`/`parseMinConfidence`/`parseMaxFindings`, APM-1.1) and `getPr()`/`heartbeatPr()` on its task-store HTTP client (CRT-1.2) — both in-place extensions to the existing `check-helpers.unit.test.ts`, confirmed via `git log`, no new row. `agent/src/slack.ts` gained the `isTrialExpired()` gate (ATE-3.1), tested in the new `slack-trial-expiry.unit.test.ts` sibling file rather than in-place — see Method note step 2. **Prior cycle (2026-09-23):** unchanged — no files in that cycle's Phase 1 delta touched `agent/src/`. **Prior cycle (2026-09-21):** see that cycle's Method note steps 1 (`pr-origin-backfill.ts`) and 2 (`sessions.ts` prune wiring) for the two new files — both **Reuse**, correct canonical unit layer, paired test verified directly for each; `check-helpers.unit.test.ts` extended in place for the DTW-1.3 resume-loop wiring (`#3526`), confirmed via `git log` — **Reuse**. **Prior cycle (2026-09-18):** see that cycle's Method note step 3 for the five new files (`check-plan.ts`, `github-auth-startup.ts`/`github-auth-deps.ts`, `patch-author-allowlist-ref.ts`, `slack-startup.ts`, `pr-census.ts`) — all **Reuse**, correct canonical layer, paired test verified directly for each. `review-author-allowlist-ref.ts` (renamed from `agent-author-allowlist-ref.ts`, DBR-1.x/2.x) — existing row extended/renamed in place, no new row. **Prior cycle (2026-09-02):** new `agent/src/claim-invariant-reconciler.ts` (task `status`/`claimedBy` self-heal pass, defense-in-depth alongside a new DB CHECK constraint) covered by new **`claim-invariant-reconciler.unit.test.ts`** — **Reuse**, canonical integration-equivalent-but-unit-tested layer matching the sibling `pr-state-reconciler.ts` precedent. New `agent/src/slack-progress.ts`/`slack-thread-status-tracker.ts` (SAV-1.1, Slack Bolt 5.x upgrade + migration to `agents.sessions.setStatus`) covered by new **`slack-progress.unit.test.ts`** and **`slack-thread-status-tracker.unit.test.ts`** — **Reuse**. Two novel dependency-runtime regression files, **`slack-bolt-client.integration.test.ts`** and **`slack-socket-mode-ping.integration.test.ts`**, added as direct regression coverage for two real production incidents in the installed `@slack/bolt`/`@slack/socket-mode` npm packages under Bun's runtime — **Reuse**, correctly scoped integration-layer dependency-contract tests with no first-party source row of their own by design. `agent/src/cron-handler.ts` gains an injectable spawner for its `preCheck` invocation, covered by new **`cron-handler.unit.test.ts`** — **Reuse**. **Prior cycle (2026-08-30):** new `progress-milestones.ts` (`phaseForBlock()`, CFB-2.1) covered by new **`progress-milestones.unit.test.ts`**, including an explicit assertion that `block.input` is never read — **Reuse**. `claude.unit.test.ts` extended (+222/-lines) for the widened `ProgressCallback`. `pr-state-reconciler.unit.test.ts` extended (+176/-lines) for the batch+rotating-cursor scan (#2893); `check-deploy.unit.test.ts` extended (+56/-lines) for case-insensitive workflow-name matching (#2896); `chat-poller.unit.test.ts` extended (+220/-lines) for the heartbeat-driven reply timeout (#2899/#2902) — all in-place extensions. **Prior cycle (2026-08-28):** `check-review.ts` gains `EXCLUDED_BOT_AUTHORS` (Renovate exclusion), `check-helpers.ts`/`check-deploy.ts`/`pr-state-reconciler.ts` gain live getter-function policy-flag reads (PLR-1.1), `loop-orchestrator.ts` gains phase-scoped redispatch cooldown keys (PRC-1.1) — all in-place extensions. **Prior cycle (2026-08-23):** `slack.ts` extended with the SMR enforcement gate, 13 new assertions in `slack.unit.test.ts` — **Reuse**. `agent-slack-membership-ref.unit.test.ts` moved back to **Reuse** — its singleton-leak Promote/deepen finding resolved (PR #2790, T-084). **Earlier cycles (2026-08-22 through 2026-08-16):** see the preserved method notes above for the full per-commit history of this cluster. |
+| `agent/src/*` | **75 files** (2026-10-02: +4 — `sync-config-clone`, `allow-self-review-ref`, `cleanup-after-days-ref`, `cleanup-merged-worktrees-ref` unit tests, all Reuse. Prior cycle (2026-09-30): **71 files**, re-verified via `find agent/src -maxdepth 1 -name "*.test.ts"`, up from 65: +6 — `agent-trial-expiry-ref.unit.test.ts`, `agent-policy-backfill.unit.test.ts`+`.integration.test.ts`, `process-tree-kill.unit.test.ts`+`.integration.test.ts`, `slack-trial-expiry.unit.test.ts`; the +4 above were re-verified this cycle via the same `find`) | unit/integration/smoke | Work selection, check-\* precondition scripts, Slack Bolt handlers, `claude.ts` spawner, chat/task-store/GitHub clients, chat-poller loop, headless-browser launcher, PR-origin historical backfill, session-store prune wiring, agent trial-expiry ref, agent-policy backfill, process-tree termination | **This cycle (2026-09-30):** see Method note steps 1-2 for all 6 new files — all **Reuse**, correct canonical layer, paired test verified directly and confirmed green in this cycle's own CI run for each. `agent/src/coding/check-helpers.ts` gained 3 new pure parsers (`parseAutoPostReviews`/`parseMinConfidence`/`parseMaxFindings`, APM-1.1) and `getPr()`/`heartbeatPr()` on its task-store HTTP client (CRT-1.2) — both in-place extensions to the existing `check-helpers.unit.test.ts`, confirmed via `git log`, no new row. `agent/src/runtime/slack.ts` gained the `isTrialExpired()` gate (ATE-3.1), tested in the new `slack-trial-expiry.unit.test.ts` sibling file rather than in-place — see Method note step 2. **Prior cycle (2026-09-23):** unchanged — no files in that cycle's Phase 1 delta touched `agent/src/`. **Prior cycle (2026-09-21):** see that cycle's Method note steps 1 (`pr-origin-backfill.ts`) and 2 (`sessions.ts` prune wiring) for the two new files — both **Reuse**, correct canonical unit layer, paired test verified directly for each; `check-helpers.unit.test.ts` extended in place for the DTW-1.3 resume-loop wiring (`#3526`), confirmed via `git log` — **Reuse**. **Prior cycle (2026-09-18):** see that cycle's Method note step 3 for the five new files (`check-plan.ts`, `github-auth-startup.ts`/`github-auth-deps.ts`, `patch-author-allowlist-ref.ts`, `slack-startup.ts`, `pr-census.ts`) — all **Reuse**, correct canonical layer, paired test verified directly for each. `review-author-allowlist-ref.ts` (renamed from `agent-author-allowlist-ref.ts`, DBR-1.x/2.x) — existing row extended/renamed in place, no new row. **Prior cycle (2026-09-02):** new `agent/src/coding/claim-invariant-reconciler.ts` (task `status`/`claimedBy` self-heal pass, defense-in-depth alongside a new DB CHECK constraint) covered by new **`claim-invariant-reconciler.unit.test.ts`** — **Reuse**, canonical integration-equivalent-but-unit-tested layer matching the sibling `pr-state-reconciler.ts` precedent. New `agent/src/runtime/slack-progress.ts`/`slack-thread-status-tracker.ts` (SAV-1.1, Slack Bolt 5.x upgrade + migration to `agents.sessions.setStatus`) covered by new **`slack-progress.unit.test.ts`** and **`slack-thread-status-tracker.unit.test.ts`** — **Reuse**. Two novel dependency-runtime regression files, **`slack-bolt-client.integration.test.ts`** and **`slack-socket-mode-ping.integration.test.ts`**, added as direct regression coverage for two real production incidents in the installed `@slack/bolt`/`@slack/socket-mode` npm packages under Bun's runtime — **Reuse**, correctly scoped integration-layer dependency-contract tests with no first-party source row of their own by design. `agent/src/runtime/cron-handler.ts` gains an injectable spawner for its `preCheck` invocation, covered by new **`cron-handler.unit.test.ts`** — **Reuse**. **Prior cycle (2026-08-30):** new `progress-milestones.ts` (`phaseForBlock()`, CFB-2.1) covered by new **`progress-milestones.unit.test.ts`**, including an explicit assertion that `block.input` is never read — **Reuse**. `claude.unit.test.ts` extended (+222/-lines) for the widened `ProgressCallback`. `pr-state-reconciler.unit.test.ts` extended (+176/-lines) for the batch+rotating-cursor scan (#2893); `check-deploy.unit.test.ts` extended (+56/-lines) for case-insensitive workflow-name matching (#2896); `chat-poller.unit.test.ts` extended (+220/-lines) for the heartbeat-driven reply timeout (#2899/#2902) — all in-place extensions. **Prior cycle (2026-08-28):** `check-review.ts` gains `EXCLUDED_BOT_AUTHORS` (Renovate exclusion), `check-helpers.ts`/`check-deploy.ts`/`pr-state-reconciler.ts` gain live getter-function policy-flag reads (PLR-1.1), `loop-orchestrator.ts` gains phase-scoped redispatch cooldown keys (PRC-1.1) — all in-place extensions. **Prior cycle (2026-08-23):** `slack.ts` extended with the SMR enforcement gate, 13 new assertions in `slack.unit.test.ts` — **Reuse**. `agent-slack-membership-ref.unit.test.ts` moved back to **Reuse** — its singleton-leak Promote/deepen finding resolved (PR #2790, T-084). **Earlier cycles (2026-08-22 through 2026-08-16):** see the preserved method notes above for the full per-commit history of this cluster. |
 | `admin/src/*` | **92 files** (re-verified via `find admin/src -maxdepth 1 -name "*.test.ts"`, up from 85: +7 — `agent-phase-methodology.integration.test.ts`, `trial-expiry-sweeper.unit.test.ts`+`.integration.test.ts`, `trial-expiry-warning-sweeper.unit.test.ts`+`.integration.test.ts`, `agents.integration.test.ts`, `api.integration.test.ts`) | unit/integration/smoke | Agent/Env/Cron/Tool/Token CRUD, K8s client, provisioning clients, auth clients, admin UI, chat-token daily rollup, work-queue snapshots (+cross-agent merge), Sessions (follow/alert-sweep/admin-actions), Prisma 7 client extraction, Agent Type manifest registry, per-phase subagent-methodology overrides, trial-expiry lockdown/warning sweeps | **This cycle (2026-09-30):** see Method note steps 1 and 3 for the 5 new files backing new Phase 1 rows (`agent-phase-methodology.ts`, both trial-expiry sweepers) plus the 2 new real-Postgres integration files (`agents.integration.test.ts` for APA-1.1's atomic-transaction proof, `api.integration.test.ts` for PMC-1.1's real-DB config round-trip) that strengthen already-migrated `agents.ts`/`api.ts` rows rather than backing a new row — all **Reuse**. `admin/src/prisma-tx.ts` (new, type-only) correctly has no test file (see Method note step 1). **Prior cycle (2026-09-23):** `admin/src/agent-type-registry.ts`/`agent-type-manifest-loader.ts` confirmed already covered by pre-existing `agent-type-registry.unit.test.ts`, `agent-type-registry.schema.unit.test.ts`, `agent-type-manifest-loader.unit.test.ts`, `agent-type-manifest-loader.integration.test.ts` (originating PRs #2191/#2207, 2026-07-24) — **Reuse**, Phase 1 gave this its own inventory row this cycle but it was always covered, see Method note step 1. No new/extended files. **Prior cycle (2026-09-21):** `admin-ui-sessions-list.smoke.test.ts` extended in place for the Sessions list Follow button wiring (FLW-1.1, `#3533`) — confirmed via `git log`, **Reuse**, correct canonical smoke layer for the wired route, no new row. **Prior cycle (2026-09-18):** see that cycle's Method note steps 1 (Sessions), 4 (`agent-work-queue-merge.ts`), 5 (`prisma-client.ts`) — all **Reuse**, paired test verified directly for each new file. **Prior cycle (2026-09-02):** new `admin/src/slack-provisioning-service.ts`/`github-provisioning-service.ts` (UAP-1.1/1.2) covered by new **`slack-provisioning-service.unit.test.ts`+`.integration.test.ts`**, **`github-provisioning-service.unit.test.ts`+`.integration.test.ts`** — **Reuse**. New `admin/src/pwa.ts`/`push-*.ts` (CFB-4.2, PWA shell + Web Push) covered by 9 new test files — **Reuse** across all. `admin/src/http-chat-client.ts` gains its first unit-layer coverage via new **`http-chat-client.unit.test.ts`** — **Reuse**. **Earlier cycles (2026-08-30 through 2026-08-16):** see the preserved method notes above for the full per-commit history of this cluster (PWA/push, provisioning clients, admin-UI layout extraction, mobile-responsive e2e migration, Okta/GitHub-App clients, agent-manifest resource limits, blocked-task badge fixes). |
 | `task-store/src/*` | **49 files** (re-verified via `find task-store/src -maxdepth 1 -name "*.test.ts"`, up from 48: +2 top-level file — `verification-check-service.unit.test.ts` at top level, `routes/verification-checks.smoke.test.ts` under `routes/` and counted separately from the maxdepth-1 figure) | unit/integration/smoke | Task/PR/Token/Session services, dependency-resolution rules, routes, PR-origin derivation (colocated tests), outbound webhook dispatcher, Prisma 7 client extraction, structured per-check verification-outcome service + route (LVB-5.1) | **This cycle (2026-09-30):** see Method note step 1 for `verification-check-service.ts` + `routes/verification-checks.ts` — both **Reuse**, correct canonical service/route split, confirmed present and green in this cycle's own CI run. **Prior cycle (2026-09-23):** unchanged — no files in that cycle's Phase 1 delta touched `task-store/src/`. **Prior cycle (2026-09-18):** see that cycle's Method note steps 1 (Sessions), 2 (`pr-origin-derivation.ts`), 4 (webhook dispatcher/timeout-buffer-check), 5 (`prisma-client.ts`) — all **Reuse**. **Prior cycle (2026-09-02):** new `task-store/src/task-transition-diff.ts` (`computeTaskTransitionDiff`, TCS-1.1) covered by new **`task-transition-diff.unit.test.ts`** — **Reuse**. `task-service.ts`'s claim/release/complete paths now write `TaskEvent` rows inside the same interactive `$transaction`, and `stale-claim-reaper.ts` now also emits one when it reaps a stale claim (TCS-1.3) — both covered by substantially extended `task-service.unit.test.ts` and `stale-claim-reaper.unit.test.ts`/`.integration.test.ts` — **Reuse**. New DB `CHECK` constraint covered by new **`task-claim-status-invariant.integration.test.ts`** — **Reuse**. **Earlier cycles (2026-08-28 through 2026-08-16):** see the preserved method notes above for the full per-commit history of this cluster (readiness-check DB round-trip, `PrFinding` model, `pr-transition-diff.ts`, `?hitl` filter, claim concurrency regression test). |
 | `chat/src/*` | 15 files (re-verified via `find chat/src -maxdepth 1 -name "*.test.ts"`, unchanged file count) | unit/integration/smoke | Message/thread/token services, routes, OpenAPI schemas, spec generator, outbound reply-notification webhook, stall reaper, Prisma 7 client extraction, optional reply attachments | **This cycle (2026-09-30):** `message-service.integration.test.ts` and `messages.smoke.test.ts` extended in place for optional-attachment support on chat-service replies (`#3612`) and a follow-up fix preventing dropped attachment bytes on assistant-authored replies (`#3619`) — `git log`-confirmed same-commit extensions, **Reuse**, no new file. **Prior cycle (2026-09-23):** unchanged — no files in that cycle's Phase 1 delta touched `chat/src/`. **Prior cycle (2026-09-18):** new `prisma-client.ts` (Prisma 7 migration) covered by paired `.unit.test.ts` + `.integration.test.ts` — **Reuse**. **Prior cycle (2026-09-02):** new `chat/src/reply-notifier.ts` covered by new **`reply-notifier.unit.test.ts`**; new `chat/src/stall-reaper.ts` covered by new **`stall-reaper.unit.test.ts`** — both **Reuse**. `chat/src/message-service.ts` gains its first unit-layer coverage via new **`message-service.unit.test.ts`** — **Reuse**. **Prior cycle (2026-08-30):** new **`messages.smoke.test.ts`** (111 lines) covers the heartbeat-driven reply-timeout wire contract at the smoke layer — **Reuse**. |
@@ -1627,7 +1627,7 @@ delta list, not re-read in full where unchanged.
 
 | Test | Gap | Why Promote, not Rebuild | Effort |
 |---|---|---|---|
-| `plugins/shipwright/scripts/check-helpers.unit.test.ts` — the `createTaskStoreClient` describe block (4 tests at ~lines 600-650) | Overrides `globalThis.fetch` directly (save in `beforeEach`, restore in `afterEach`) because `createTaskStoreClient()` (`check-helpers.ts:351`) has no injected-fetch seam. Violates root CLAUDE.md's "no `global.fetch`/`global.*` overrides" hard rule. | Right layer (unit), right framework, adequate assertions (envelope-unwrapping cases), fast, and the override is restored per test — so it is not leaking today. The fix is mechanical: add an optional `opts?: { fetchFn?: FetchFn }` parameter (default global `fetch`) to `createTaskStoreClient()` and pass a fake from the 4 tests, mirroring the exact signature `agent/src/check-helpers.ts:663` already uses for its own `createTaskStoreClient`. (Note: the plugin copy has no non-test caller in the repo — `scripts/hitl.ts` and the agent import the `agent/src/check-helpers.ts` twin — so deleting the unused export plus its 4-test suite is an equally valid fix if the implementer confirms it's dead; default is to add the seam.) No assertion changes. | small |
+| `plugins/shipwright/scripts/check-helpers.unit.test.ts` — the `createTaskStoreClient` describe block (4 tests at ~lines 600-650) | Overrides `globalThis.fetch` directly (save in `beforeEach`, restore in `afterEach`) because `createTaskStoreClient()` (`check-helpers.ts:351`) has no injected-fetch seam. Violates root CLAUDE.md's "no `global.fetch`/`global.*` overrides" hard rule. | Right layer (unit), right framework, adequate assertions (envelope-unwrapping cases), fast, and the override is restored per test — so it is not leaking today. The fix is mechanical: add an optional `opts?: { fetchFn?: FetchFn }` parameter (default global `fetch`) to `createTaskStoreClient()` and pass a fake from the 4 tests, mirroring the exact signature `agent/src/coding/check-helpers.ts:663` already uses for its own `createTaskStoreClient`. (Note: the plugin copy has no non-test caller in the repo — `scripts/hitl.ts` and the agent import the `agent/src/coding/check-helpers.ts` twin — so deleting the unused export plus its 4-test suite is an equally valid fix if the implementer confirms it's dead; default is to add the seam.) No assertion changes. | small |
 
 Also widen the isolation sweep's pattern to `global(This)?\.` so this class is caught
 automatically (see Next step, item 4). Not a risk-callout case (nothing is deleted or rebuilt).
@@ -1705,7 +1705,7 @@ count held at 24, see Method note step 5):
   `verification-check-service.ts` all take an injected `Clock`, `FixedClock` in their tests).
 - **Recorded-fixture doubles** — `RecordedKubernetesClient`,
   `metrics/src/providers/task-store-recorded.ts`,
-  `metrics/src/fixtures/task-store-fixtures.ts`, `agent/src/shipwright-config-client.ts` —
+  `metrics/src/fixtures/task-store-fixtures.ts`, `agent/src/runtime/shipwright-config-client.ts` —
   unchanged this cycle; pattern is stable and extending cleanly to new clients.
 - **Real-process-spawn test harness** (new this cycle, backing `process-tree-kill.ts`) — no
   fixture/mock needed; the tests spawn real short-lived child/grandchild processes and poll
@@ -2023,7 +2023,7 @@ Phase 2 blueprint into the executable roadmap.
 
 **Candidate Phase 4 inputs from this document (2026-10-02 cycle):**
 
-1. **One small Promote/deepen item to queue:** add an optional `opts?: { fetchFn?: FetchFn }` seam (mirroring `agent/src/check-helpers.ts:663`) to
+1. **One small Promote/deepen item to queue:** add an optional `opts?: { fetchFn?: FetchFn }` seam (mirroring `agent/src/coding/check-helpers.ts:663`) to
    `createTaskStoreClient()` (`plugins/shipwright/scripts/check-helpers.ts:351`) and convert the
    4 `globalThis.fetch`-overriding tests in `check-helpers.unit.test.ts` (~lines 600-650) to inject
    a fake. Mechanical, no assertion changes; removes the repo's only direct global-fetch
@@ -2112,7 +2112,7 @@ Phase 2 blueprint into the executable roadmap.
    **Resolved 2026-09-23 via T-085/#3549 — see this cycle's Method note and Promote/deepen
    above.**
 2. **No open items carried in from the 2026-09-18 pass — it closed clean.**
-3. **`agent/src/pr-origin-backfill.ts` (POB-1.1) needed no Phase 4 action** — landed with
+3. **`agent/src/coding/pr-origin-backfill.ts` (POB-1.1) needed no Phase 4 action** — landed with
    adequate test coverage in the same PR, bucketed Reuse as-is.
 4. **Isolation-contract audit's pattern set still needs to widen to catch
    singleton-mutation leaks as an automated sweep** — carried forward unchanged, same
@@ -2205,7 +2205,7 @@ Phase 2 blueprint into the executable roadmap.
      T-080/#2659: `scripts/hitl.ts` split into pure planners + thin executor, covered by
      new `hitl.bootstrap.unit.test.ts` (unit) + `hitl.integration.test.ts` (integration),
      per a newly-recorded `test-readiness-decisions.md` entry.
-   - The `agent/src/check-review.unit.test.ts` combinatorial-coverage Promote/deepen item
+   - The `agent/src/coding/check-review.unit.test.ts` combinatorial-coverage Promote/deepen item
      (open since 2026-08-14) resolved via T-082/#2641: 3 new multi-condition test cases
      stacking 3+ of the prior cycle's fixed exclusion checks in single fixtures.
    No Phase 4 action needed for either.

@@ -1,5 +1,5 @@
 /**
- * agent/src/clock.ts
+ * agent/src/runtime/clock.ts
  * Clock interface and production implementation for injectable time.
  *
  * Any code that needs the current time should accept a `Clock` via dependency

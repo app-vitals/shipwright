@@ -13,12 +13,12 @@
  *     --entrypoint bun shipwright-agent:ci \
  *     run agent/scripts/verify-browser-launch.ts
  *
- * Launches via launchBrowser() (agent/src/browser.ts), navigates a trivial
+ * Launches via launchBrowser() (agent/src/runtime/browser.ts), navigates a trivial
  * data: URL, and confirms the page content is readable. Exits 0 on success,
  * 1 with a clear stderr message on any failure.
  */
 
-import { launchBrowser } from "../src/browser.ts";
+import { launchBrowser } from "../src/runtime/browser.ts";
 
 try {
   const browser = await launchBrowser();

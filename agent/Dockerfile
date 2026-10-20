@@ -42,7 +42,7 @@ FROM oven/bun:1-slim AS base
 #     (Piper TTS for voice-out is bundled in the runtime stage below; ffmpeg /
 #     python-edge-tts stay omitted — Piper emits WAV natively.)
 #   - Chromium/chromium-headless-shell OS deps for Playwright (PW-1.1/PW-1.2 —
-#     agent/src/browser.ts, follow-up task) — installed here as root so the
+#     agent/src/runtime/browser.ts, follow-up task) — installed here as root so the
 #     runtime stage's `playwright install chromium-headless-shell` (run as USER
 #     1000, no --with-deps) has everything the binary needs to actually launch.
 #     This exact package list is Playwright 1.61.1's real dependency set —
@@ -144,7 +144,7 @@ RUN ln -s /usr/local/lib/node_modules/npm/bin/npm-cli.js /usr/local/bin/npm \
 # Anthropic's container guidance for reproducible builds: pin the version above
 # and disable the in-container auto-updater. Self-update can't work here anyway
 # (root-owned npm global dir, uid 1000 runtime, ephemeral pods). Set in the base
-# stage so it carries into runtime; agent/src/claude.ts builds the child env
+# stage so it carries into runtime; agent/src/runtime/claude.ts builds the child env
 # from process.env, so spawned claude processes inherit it.
 ENV DISABLE_AUTOUPDATER=1
 
@@ -256,7 +256,7 @@ COPY --from=build --chown=1000:1000 /app/agent-types ./agent-types
 RUN chmod +x /app/agent/scripts/bin/git-credential-shipwright.sh \
     && chmod +x /app/agent/scripts/bin/gh
 
-# ─── Playwright chromium-headless-shell (agent/src/browser.ts, PW-1.2) ────────
+# ─── Playwright chromium-headless-shell (agent/src/runtime/browser.ts, PW-1.2) ────────
 # Installed as the already-active USER 1000, under /home/bun — mirrors mise's
 # non-root-first pattern above rather than Piper's root-then-chown below, so no
 # chown step is needed and nothing lands root-owned. PLAYWRIGHT_BROWSERS_PATH is
@@ -275,7 +275,7 @@ RUN ./agent/node_modules/.bin/playwright install chromium-headless-shell
 # ─── Piper offline TTS (voice-out) ────────────────────────────────────────────
 # Bundle the Piper binary + the default voice so the agent can synthesize voice
 # replies with no external TTS key. When voice is enabled (agent.voice.enabled) and
-# no ElevenLabs key is set, synthesizeSpeech() (agent/src/voice.ts) falls back to
+# no ElevenLabs key is set, synthesizeSpeech() (agent/src/runtime/voice.ts) falls back to
 # spawning a bare `piper` on PATH. piper-voice.ts hardcodes the model dir to
 # /app/agent/voices/ and the default voice en_US-hfc_female-medium, so the model
 # MUST live at that exact path. The release tarball is self-contained — its shared

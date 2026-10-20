@@ -1,5 +1,5 @@
 /**
- * agent/src/crypto.ts
+ * agent/src/runtime/crypto.ts
  * AES-256-GCM encryption for at-rest value storage.
  *
  * Encrypted format: `iv:ciphertext:authTag` — all hex-encoded, colon-separated.

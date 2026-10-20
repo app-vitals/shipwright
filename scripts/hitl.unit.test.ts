@@ -11,11 +11,8 @@ import { describe, expect, test } from "bun:test";
 import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { PatchStateSnapshot } from "../agent/src/patch-outcome-check.ts";
-import type { LogFileTeeTarget } from "./hitl-log-file-tee-target.ts";
+import type { PatchStateSnapshot } from "../agent/src/coding/patch-outcome-check.ts";
 import {
-  HITL_ALLOWED_TOOLS,
-  type Task,
   buildClaudeSpawnEnv,
   buildHitlConfig,
   buildTaskCommand,
@@ -24,6 +21,7 @@ import {
   createAppendLineSink,
   createTeeWriter,
   ensureHitlAgent,
+  HITL_ALLOWED_TOOLS,
   installLogFileTee,
   parseAdminSessionCookie,
   parseCreatedAgentId,
@@ -31,7 +29,9 @@ import {
   parseHitlRepos,
   parseTasksResponse,
   runWithPatchOutcomeCheck,
+  type Task,
 } from "./hitl.ts";
+import type { LogFileTeeTarget } from "./hitl-log-file-tee-target.ts";
 
 /**
  * Injected fetch double for ensureHitlAgent()'s admin-API calls. Each entry

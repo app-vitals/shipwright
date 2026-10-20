@@ -321,7 +321,7 @@ describe("bootstrap sequencing (composed)", () => {
 // createAppendLineSink — the fs half of installLogFileTee's real-I/O glue
 // (mkdirSync + createWriteStream + ISO-timestamped append), split out
 // specifically so it can be exercised in-process against a real tmpdir, the
-// same way agent/src/setup.integration.test.ts exercises real mkdirSync/
+// same way agent/src/runtime/setup.integration.test.ts exercises real mkdirSync/
 // writeFileSync calls: real dependency behavior at the fs boundary, no
 // global patching involved, so nothing to leak into sibling suites.
 // ---------------------------------------------------------------------------

@@ -239,7 +239,7 @@ export class AgentCronRunService {
     // accounting now flows through AgentCronRunModelBreakdown (see modelBreakdown
     // below). We simply ignore them here.
     // TODO(CTT-cleanup): remove top-level token field acceptance once all agent
-    // builds send modelBreakdown only (see agent/src/cron-handler.ts's
+    // builds send modelBreakdown only (see agent/src/runtime/cron-handler.ts's
     // buildTokenPayload()).
     const runData = {
       ...(input.completedAt !== undefined && {

@@ -7,7 +7,7 @@
  * lives in startAgent().
  */
 
-import { startAgent } from "./boot.ts";
 import { createCodingExtension } from "./coding/extension.ts";
+import { startAgent } from "./runtime/boot.ts";
 
 await startAgent([createCodingExtension]);

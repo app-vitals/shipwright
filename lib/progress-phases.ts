@@ -1,8 +1,8 @@
 /**
  * lib/progress-phases.ts
  * The closed set of generic progress phases derived from a Claude Code
- * `stream-json` session (see `agent/src/progress-milestones.ts`), plus their
- * human-readable labels. Consumed by `agent/src/claude.ts`'s `ProgressCallback`
+ * `stream-json` session (see `agent/src/runtime/progress-milestones.ts`), plus their
+ * human-readable labels. Consumed by `agent/src/runtime/claude.ts`'s `ProgressCallback`
  * and, eventually, by UI surfaces that want to show "what is the agent doing
  * right now" without exposing raw tool inputs (which may contain secrets or
  * file paths).

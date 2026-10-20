@@ -48,10 +48,10 @@ import type { AgentConfigResponse, AgentPlugin } from "@shipwright/admin";
 import {
   ensureAgentHome,
   installPlugins as realInstallPlugins,
-} from "../agent/src/setup.ts";
-import { HttpShipwrightRuntimeClient } from "../agent/src/shipwright-runtime-client.ts";
-import { SECRET_ENV_VARS } from "../lib/secret-env-vars.ts";
+} from "../agent/src/runtime/setup.ts";
+import { HttpShipwrightRuntimeClient } from "../agent/src/runtime/shipwright-runtime-client.ts";
 import { computeMissingClones } from "../lib/clone-plan.ts";
+import { SECRET_ENV_VARS } from "../lib/secret-env-vars.ts";
 
 // ---------------------------------------------------------------------------
 // Agent summary (GET /agents list-summary shape — no `repos` field, mirrors
@@ -237,7 +237,7 @@ export async function pullAgentWorkspace(
 
   const workspaceRoot = buildWorkspaceRoot(pullRoot, agent.name);
   // Clone into <workspaceRoot>/workspace/repos to match ensureAgentHome()'s
-  // scaffolding (agent/src/setup.ts) and the documented
+  // scaffolding (agent/src/runtime/setup.ts) and the documented
   // <AGENT_HOME>/workspace/repos convention (docs/configuration.md) — so the
   // clones and the scaffolded state/identity files live in one coherent
   // mirrored tree, not disconnected siblings.

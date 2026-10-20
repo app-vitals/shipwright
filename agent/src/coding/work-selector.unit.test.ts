@@ -1,0 +1,306 @@
+/**
+ * agent/src/coding/work-selector.unit.test.ts
+ *
+ * Unit tests for the selectNextWorkItem() pure helper.
+ * No I/O — pure logic only.
+ */
+
+import { describe, expect, it } from "bun:test";
+import {
+  rankWorkItems,
+  selectNextWorkItem,
+  type WorkPrCandidate,
+  type WorkTaskCandidate,
+} from "./work-selector.ts";
+
+// ─── Helpers ─────────────────────────────────────────────────────────────────
+
+function makeTask(
+  overrides: Partial<WorkTaskCandidate> = {},
+): WorkTaskCandidate {
+  return {
+    id: "task-1",
+    createdAt: "2026-01-01T00:00:00.000Z",
+    ...overrides,
+  };
+}
+
+function makePr(overrides: Partial<WorkPrCandidate> = {}): WorkPrCandidate {
+  return {
+    id: "pr-1",
+    age: "2026-01-01T00:00:00.000Z",
+    commitSha: "sha-1",
+    ...overrides,
+  };
+}
+
+// ─── Tests ────────────────────────────────────────────────────────────────────
+
+describe("selectNextWorkItem", () => {
+  it("returns null when both lists are empty", () => {
+    expect(selectNextWorkItem([], [])).toBeNull();
+  });
+
+  it("returns the oldest task when only tasks are ready", () => {
+    const older = makeTask({
+      id: "t-older",
+      createdAt: "2026-01-01T00:00:00.000Z",
+    });
+    const newer = makeTask({
+      id: "t-newer",
+      createdAt: "2026-01-02T00:00:00.000Z",
+    });
+    const result = selectNextWorkItem([newer, older], []);
+    expect(result).toEqual({ type: "task", task: older });
+  });
+
+  it("returns the oldest PR when only PRs are ready", () => {
+    const older = makePr({ id: "pr-older", age: "2026-01-01T00:00:00.000Z" });
+    const newer = makePr({ id: "pr-newer", age: "2026-01-02T00:00:00.000Z" });
+    const result = selectNextWorkItem([], [newer, older]);
+    expect(result).toEqual({ type: "pr", pr: older });
+  });
+
+  it("picks the oldest item across both entity types — strict FIFO, no phase bias", () => {
+    const task = makeTask({ id: "t1", createdAt: "2026-01-02T00:00:00.000Z" });
+    const olderPr = makePr({ id: "pr1", age: "2026-01-01T00:00:00.000Z" });
+    const result = selectNextWorkItem([task], [olderPr]);
+    expect(result).toEqual({ type: "pr", pr: olderPr });
+  });
+
+  it("picks the older task over a newer PR", () => {
+    const olderTask = makeTask({
+      id: "t1",
+      createdAt: "2026-01-01T00:00:00.000Z",
+    });
+    const newerPr = makePr({ id: "pr1", age: "2026-01-02T00:00:00.000Z" });
+    const result = selectNextWorkItem([olderTask], [newerPr]);
+    expect(result).toEqual({ type: "task", task: olderTask });
+  });
+
+  it("selects a PR candidate purely on age, with no local claim re-validation", () => {
+    // Regression guard: getReviewCandidates/getPatchCandidates/getDeployCandidates
+    // (LPF-2.2) now only ever return unclaimed PRs (server-side ?ready=true
+    // filtering), so a WorkPrCandidate no longer carries a claimedBy field at
+    // all. The selector must not re-derive or check claim status locally — a
+    // PR candidate is selectable purely on age, the same trust level task
+    // candidates already get.
+    const older = makePr({ id: "pr-older", age: "2026-01-01T00:00:00.000Z" });
+    const newer = makePr({ id: "pr-newer", age: "2026-01-02T00:00:00.000Z" });
+    const result = selectNextWorkItem([], [newer, older]);
+    expect(result).toEqual({ type: "pr", pr: older });
+  });
+
+  it("selects strictly by age across a larger mixed fixture set", () => {
+    const t1 = makeTask({ id: "t1", createdAt: "2026-03-01T00:00:00.000Z" });
+    const t2 = makeTask({ id: "t2", createdAt: "2026-01-15T00:00:00.000Z" });
+    const pr1 = makePr({ id: "pr1", age: "2026-02-01T00:00:00.000Z" });
+    const pr2 = makePr({ id: "pr2", age: "2026-01-10T00:00:00.000Z" });
+    const result = selectNextWorkItem([t1, t2], [pr1, pr2]);
+    // pr2 (2026-01-10) is the oldest overall now that claim-filtering is
+    // removed — previously this fixture set claimedBy'd pr2 to force t2 to
+    // win; that's no longer a thing the selector does.
+    expect(result).toEqual({ type: "pr", pr: pr2 });
+  });
+
+  it("carries the phase field through unchanged to the winning PR", () => {
+    const pr = makePr({
+      id: "pr1",
+      age: "2026-01-01T00:00:00.000Z",
+      phase: "review",
+    });
+    const result = selectNextWorkItem([], [pr]);
+    expect(result).toEqual({
+      type: "pr",
+      pr: expect.objectContaining({ phase: "review" }),
+    });
+  });
+
+  it("ranks by age regardless of phase — older review-phase beats newer deploy-phase", () => {
+    const olderReview = makePr({
+      id: "pr-older",
+      age: "2026-01-01T00:00:00.000Z",
+      phase: "review",
+    });
+    const newerDeploy = makePr({
+      id: "pr-newer",
+      age: "2026-01-02T00:00:00.000Z",
+      phase: "deploy",
+    });
+    const result = selectNextWorkItem([], [newerDeploy, olderReview]);
+    expect(result).toEqual({ type: "pr", pr: olderReview });
+    expect(result?.type === "pr" && result.pr.phase).toBe("review");
+  });
+
+  it("handles PR without phase set (undefined) in ranking correctly", () => {
+    const older = makePr({ id: "pr-older", age: "2026-01-01T00:00:00.000Z" });
+    const newer = makePr({
+      id: "pr-newer",
+      age: "2026-01-02T00:00:00.000Z",
+      phase: "patch",
+    });
+    const result = selectNextWorkItem([], [newer, older]);
+    expect(result).toEqual({ type: "pr", pr: older });
+    expect(result?.type === "pr" && result.pr.phase).toBeUndefined();
+  });
+
+  it("regression: an older dev-task candidate beats a newer PR candidate now that both share one age clock (createdAt) — LPF-3.2 cross-phase fairness fix", () => {
+    // Prior to LPF-3.2, check-review.ts/check-patch.ts sourced `age` from
+    // readyForReviewAt/readyForPatchAt — a necessarily-recent phase-readiness
+    // stamp, not the work item's true origination age. That let a review/
+    // patch candidate's freshly-minted readyForXAt timestamp always look
+    // "younger" than an old backlog dev-task, starving the dev-task
+    // indefinitely even though it was filed first. Post-fix, review/patch
+    // candidates source `age` from linkedTask.createdAt ?? pr.createdAt — the
+    // same clock dev-task's `task.createdAt` already uses — so true
+    // origination age governs selection regardless of which phase most
+    // recently touched the item.
+    const oldDevTask = makeTask({
+      id: "old-backlog-task",
+      createdAt: "2026-01-01T00:00:00.000Z",
+    });
+    const newerPr = makePr({
+      id: "pr-newer",
+      age: "2026-01-10T00:00:00.000Z",
+      phase: "review",
+    });
+    const result = selectNextWorkItem([oldDevTask], [newerPr]);
+    expect(result).toEqual({ type: "task", task: oldDevTask });
+  });
+});
+
+describe("rankWorkItems", () => {
+  it("returns [] when both tasks and prs are empty", () => {
+    expect(rankWorkItems([], [])).toEqual([]);
+  });
+
+  it("returns the full oldest-first ordering across a mixed task/PR input, matching what repeated selectNextWorkItem calls would produce", () => {
+    const t1 = makeTask({ id: "t1", createdAt: "2026-03-01T00:00:00.000Z" });
+    const t2 = makeTask({ id: "t2", createdAt: "2026-01-15T00:00:00.000Z" });
+    const pr1 = makePr({
+      id: "pr1",
+      age: "2026-02-01T00:00:00.000Z",
+      phase: "review",
+    });
+    const pr2 = makePr({
+      id: "pr2",
+      age: "2026-01-10T00:00:00.000Z",
+      phase: "patch",
+    });
+
+    const ranked = rankWorkItems([t1, t2], [pr1, pr2]);
+
+    expect(ranked.map((r) => r.id)).toEqual(["pr2", "t2", "pr1", "t1"]);
+
+    // Cross-check against repeated selectNextWorkItem() calls with items
+    // removed one at a time — the two must agree on ordering.
+    let remainingTasks = [t1, t2];
+    let remainingPrs = [pr1, pr2];
+    const viaRepeatedSelect: string[] = [];
+    for (let i = 0; i < 4; i++) {
+      const winner = selectNextWorkItem(remainingTasks, remainingPrs);
+      if (!winner) break;
+      if (winner.type === "task") {
+        viaRepeatedSelect.push(winner.task.id);
+        remainingTasks = remainingTasks.filter((t) => t.id !== winner.task.id);
+      } else {
+        viaRepeatedSelect.push(winner.pr.id);
+        remainingPrs = remainingPrs.filter((p) => p.id !== winner.pr.id);
+      }
+    }
+    expect(ranked.map((r) => r.id)).toEqual(viaRepeatedSelect);
+  });
+
+  it("carries phase/title through correctly for both task and PR items — tasks are synthetically tagged phase: 'dev-task'", () => {
+    const task = makeTask({
+      id: "t1",
+      createdAt: "2026-01-01T00:00:00.000Z",
+      title: "Task title",
+    });
+    const pr = makePr({
+      id: "pr1",
+      age: "2026-01-02T00:00:00.000Z",
+      phase: "deploy",
+      title: "PR title",
+    });
+
+    const ranked = rankWorkItems([task], [pr]);
+
+    expect(ranked).toEqual([
+      {
+        type: "task",
+        id: "t1",
+        title: "Task title",
+        phase: "dev-task",
+        age: "2026-01-01T00:00:00.000Z",
+      },
+      {
+        type: "pr",
+        id: "pr1",
+        title: "PR title",
+        phase: "deploy",
+        age: "2026-01-02T00:00:00.000Z",
+      },
+    ]);
+  });
+
+  it("carries an explicitly-tagged task phase through instead of the dev-task default (PDR-4.1)", () => {
+    const planTask = makeTask({
+      id: "PDR-1",
+      createdAt: "2026-01-01T00:00:00.000Z",
+      title: "Plan it",
+      phase: "plan",
+      repo: "acme/example-repo",
+      session: "autonomous-dispatch",
+    });
+
+    expect(rankWorkItems([planTask], [])).toEqual([
+      {
+        type: "task",
+        id: "PDR-1",
+        title: "Plan it",
+        phase: "plan",
+        age: "2026-01-01T00:00:00.000Z",
+      },
+    ]);
+  });
+
+  it("still defaults an untagged task candidate to phase 'dev-task' (PDR-4.1 backward compat)", () => {
+    const ranked = rankWorkItems([makeTask({ id: "t1" })], []);
+    expect(ranked[0]?.phase).toBe("dev-task");
+  });
+
+  it("ranks plan and dev-task candidates together by age with no phase bias (PDR-4.1)", () => {
+    const planTask = makeTask({
+      id: "PDR-1",
+      createdAt: "2026-02-01T00:00:00.000Z",
+      phase: "plan",
+    });
+    const devTask = makeTask({
+      id: "SWC-1",
+      createdAt: "2026-01-01T00:00:00.000Z",
+    });
+
+    const ranked = rankWorkItems([planTask, devTask], []);
+    expect(ranked.map((r) => [r.id, r.phase])).toEqual([
+      ["SWC-1", "dev-task"],
+      ["PDR-1", "plan"],
+    ]);
+  });
+
+  it("tie-break on equal age is deterministic: tasks are collected before PRs, and each group preserves input order (stable sort) — documented in rankWorkItems' implementation comment", () => {
+    const sameAge = "2026-01-01T00:00:00.000Z";
+    const t1 = makeTask({ id: "t1", createdAt: sameAge });
+    const t2 = makeTask({ id: "t2", createdAt: sameAge });
+    const pr1 = makePr({ id: "pr1", age: sameAge });
+    const pr2 = makePr({ id: "pr2", age: sameAge });
+
+    const ranked = rankWorkItems([t1, t2], [pr1, pr2]);
+
+    // All four share the same age. Deterministic tie-break: tasks are
+    // appended to the flat candidate list before PRs, and the sort is
+    // stable, so ties preserve that build order — tasks-before-PRs, then
+    // input order within each group.
+    expect(ranked.map((r) => r.id)).toEqual(["t1", "t2", "pr1", "pr2"]);
+  });
+});

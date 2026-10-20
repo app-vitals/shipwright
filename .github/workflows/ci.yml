@@ -287,12 +287,12 @@ jobs:
           bun-version: "1.x"
 
       - name: Base-image contract smoke test
-        run: SHIPWRIGHT_CONTRACT_BASE_IMAGE=shipwright-agent:ci bun test agent/src/base-image-contract.smoke.test.ts
+        run: SHIPWRIGHT_CONTRACT_BASE_IMAGE=shipwright-agent:ci bun test agent/src/runtime/base-image-contract.smoke.test.ts
 
       # Reports (does not gate) which process-tree-kill mode the real image
       # resolves to: cgroup v2 delegation if /sys/fs/cgroup is writable inside
       # the container, otherwise the procfs descendant-walk fallback. Both are
-      # supported — see agent/src/process-tree-kill.ts — so this step always
+      # supported — see agent/src/runtime/process-tree-kill.ts — so this step always
       # exits 0; it exists so the answer is visible per-build in CI logs
       # instead of being a stale assumption in a comment. Same restrictions as
       # the browser check above, for the same reason.

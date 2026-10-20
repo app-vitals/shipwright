@@ -13,7 +13,7 @@ useDefault = true
 description = "Known-safe test fixtures and template placeholders"
 paths = [
     '''admin/src/admin-ui\.smoke\.test\.ts''',
-    '''agent/src/cutover-validate\.integration\.test\.ts''',
+    '''agent/src/runtime/cutover-validate\.integration\.test\.ts''',
     # RFC 8291 spec test vectors + synthetic P-256 VAPID keypairs generated
     # solely for unit tests (CFB-4.2) — not real credentials.
     '''admin/src/push-crypto\.unit\.test\.ts''',

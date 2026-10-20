@@ -427,7 +427,7 @@ export class SlackProvisioningService {
       // Secret by provisioner.provision() (agent-provisioner.ts) — that Secret is
       // the sole source of truth (via secretKeyRef in the Deployment manifest).
       // Self-hosted agents never run the containerized entrypoint that reads
-      // SHIPWRIGHT_AGENT_API_KEY (agent/src/entrypoint.ts), and use the
+      // SHIPWRIGHT_AGENT_API_KEY (agent/src/runtime/entrypoint.ts), and use the
       // GitHub-backed task-store CLI config instead of a bearer token, so they
       // don't need either key in AgentEnv. Minting them here previously orphaned
       // a second, different, unused live credential per key on every provision.

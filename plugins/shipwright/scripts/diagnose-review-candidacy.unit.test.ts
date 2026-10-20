@@ -7,9 +7,15 @@
 // test isolation convention (no mock.module(), no global.fetch overrides).
 
 import { describe, expect, test } from "bun:test";
-import type { ghJson, LinkedTaskInfo } from "../../../agent/src/check-helpers.ts";
-import type { PrReviewData } from "../../../agent/src/check-patch.ts";
-import type { PrInfo, PrRecord } from "../../../agent/src/check-review.ts";
+import type {
+  ghJson,
+  LinkedTaskInfo,
+} from "../../../agent/src/coding/check-helpers.ts";
+import type { PrReviewData } from "../../../agent/src/coding/check-patch.ts";
+import type {
+  PrInfo,
+  PrRecord,
+} from "../../../agent/src/coding/check-review.ts";
 import {
   type DiagnoseDeps,
   diagnoseReviewCandidacy,

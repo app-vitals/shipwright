@@ -72,7 +72,7 @@ opposed to what state it's in:
 | `dev` | An ordinary work item. The default, and what every row created before the enum existed was backfilled to. | `/shipwright:dev-task {id}` |
 | `prd` | A product spec awaiting an autonomous planning pass. Never part of the `?ready=true` set — a PRD task has no dependency graph to resolve and must not be picked up as dev work. | `/shipwright:plan-session {repo} {session} --autonomous {id}` |
 
-Filter on it with `?kind=dev` / `?kind=prd`; `agent/src/check-plan.ts` collects the plan phase's
+Filter on it with `?kind=dev` / `?kind=prd`; `agent/src/coding/check-plan.ts` collects the plan phase's
 candidates with `?kind=prd&status=pending`. A PRD task is deliberately excluded from `?ready=true` —
 it has no dependency graph to resolve and must not be picked up as dev work.
 

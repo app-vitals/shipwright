@@ -793,12 +793,12 @@ export const AgentEnvPatchBodySchema = z
 
 /**
  * A single ranked work item, mirroring the RankedWorkItem interface in
- * agent/src/work-selector.ts (type/phase are string enums there — validated
+ * agent/src/coding/work-selector.ts (type/phase are string enums there — validated
  * here for real, since this is a request body needing genuine validation,
  * not just an opaque Json passthrough).
  *
  * `phase` MUST stay in lockstep with RankedWorkItem["phase"] in
- * agent/src/work-selector.ts — the loop orchestrator POSTs a snapshot every
+ * agent/src/coding/work-selector.ts — the loop orchestrator POSTs a snapshot every
  * tick, so a phase the agent can emit but this enum doesn't list 400s the
  * whole snapshot (PDR-4.1 added "plan").
  */

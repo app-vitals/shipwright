@@ -1,5 +1,5 @@
 /**
- * agent/src/errors.ts
+ * agent/src/runtime/errors.ts
  * Typed HTTP error classes for use across agent service handlers.
  * Handlers throw these; error middleware maps them to HTTP responses.
  */

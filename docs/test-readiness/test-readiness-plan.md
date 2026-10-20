@@ -170,7 +170,7 @@ The one Promote item is a pre-existing (since 2026-06-24, `#684`) `globalThis.fe
 override that the prior isolation sweeps missed because their pattern only matched the
 `global.` spelling. It is save/restore-scoped, so it has never leaked into a sibling suite —
 the work is purely bringing the file in line with the repo's no-global-override rule via the
-injected-fetch seam `agent/src/check-helpers.ts:663` already uses.
+injected-fetch seam `agent/src/coding/check-helpers.ts:663` already uses.
 
 The one carried-forward Net-new item is `admin/src/clock.ts` — no dedicated test file,
 consistent with every sibling `Clock` implementation across the repo (near-zero logic, proven
@@ -188,7 +188,7 @@ consistent with every prior cycle, **no task is minted for it**.
 - **Local-substitute map** — every dependency named in the inventory has a working local
   substitute (recorded-fixture doubles for internal/third-party HTTP, real Postgres via CI
   service container for the three Prisma-backed services, a real locally-launched Chromium
-  binary for `agent/src/browser.ts`, real spawned OS processes for `process-tree-kill.ts`). No
+  binary for `agent/src/runtime/browser.ts`, real spawned OS processes for `process-tree-kill.ts`). No
   blockers.
 - **Coverage targets** — single 90/89 line/function CI floor (`scripts/check-coverage.ts`),
   fully enforced (stage-3 branch-protection promotion confirmed `done` — see Coverage Gate
@@ -217,7 +217,7 @@ consistent with every prior cycle, **no task is minted for it**.
   `plugins/shipwright/scripts/check-helpers.unit.test.ts`'s `createTaskStoreClient` suite
   overrides `globalThis.fetch` in 4 tests because `createTaskStoreClient()`
   (`plugins/shipwright/scripts/check-helpers.ts:351`) has no injected-fetch seam — the
-  agent-side twin (`agent/src/check-helpers.ts:663`, `opts?: { fetchFn?: FetchFn }`) already
+  agent-side twin (`agent/src/coding/check-helpers.ts:663`, `opts?: { fetchFn?: FetchFn }`) already
   has one. Pre-existing since 2026-06-24 (`#684`), restored per-test so it has never leaked,
   and missed by every prior isolation sweep because the pattern only matched `global.`, not
   `globalThis.`. The gap is to the repo's hard rule ("no `global.fetch`/`global.*` overrides"),
@@ -315,7 +315,7 @@ Flat, ordered, agent-executable. Format: `T-NNN | M# | files | layer | bucket | 
 
 | ID | Milestone | Files to touch | Layer | Bucket origin | Expected outcome | Verification command | Depends on |
 |---|---|---|---|---|---|---|---|
-| T-086 | 2 | `plugins/shipwright/scripts/check-helpers.ts`, `plugins/shipwright/scripts/check-helpers.unit.test.ts` | unit | promote | Add an optional `opts?: { fetchFn?: FetchFn }` parameter (default: global `fetch`) to `createTaskStoreClient()` — mirroring `agent/src/check-helpers.ts:663` — and convert the 4 `createTaskStoreClient` tests that assign `globalThis.fetch` (~lines 600-650) to pass a fake `fetchFn` instead; delete the `savedFetch` save/restore. No assertion changes; the plugin copy has no non-test caller in the repo (`scripts/hitl.ts` and the agent import the `agent/src/check-helpers.ts` twin), so nothing else changes. Closes a feature/convention gap (the repo's "no `global.fetch`/`global.*` overrides" hard rule), not a line-coverage-only row. | `bun test plugins/shipwright/scripts/check-helpers.unit.test.ts && ! grep -nE "global(This)?\.fetch\s*=" plugins/shipwright/scripts/check-helpers.unit.test.ts` | — |
+| T-086 | 2 | `plugins/shipwright/scripts/check-helpers.ts`, `plugins/shipwright/scripts/check-helpers.unit.test.ts` | unit | promote | Add an optional `opts?: { fetchFn?: FetchFn }` parameter (default: global `fetch`) to `createTaskStoreClient()` — mirroring `agent/src/coding/check-helpers.ts:663` — and convert the 4 `createTaskStoreClient` tests that assign `globalThis.fetch` (~lines 600-650) to pass a fake `fetchFn` instead; delete the `savedFetch` save/restore. No assertion changes; the plugin copy has no non-test caller in the repo (`scripts/hitl.ts` and the agent import the `agent/src/coding/check-helpers.ts` twin), so nothing else changes. Closes a feature/convention gap (the repo's "no `global.fetch`/`global.*` overrides" hard rule), not a line-coverage-only row. | `bun test plugins/shipwright/scripts/check-helpers.unit.test.ts && ! grep -nE "global(This)?\.fetch\s*=" plugins/shipwright/scripts/check-helpers.unit.test.ts` | — |
 | T-087 | 2 | `admin/src/account-agent-create.ts`, `admin/src/account-agent-create.unit.test.ts` | unit | net-new | Add a direct unit test for the pure helpers: `accountIdFromScope` (scoped -> accountId, any non-scoped kind -> null), `isAccountCreateErrorCode` (true for `quota_exceeded` / `account_inactive`, false for other plain strings such as `unknown_code`; do **not** assert on inherited keys such as `toString` — the helper uses the `in` operator, which walks the prototype chain and returns true for them, a latent bug out of scope here), and that `SELF_SERVE_AGENT_TYPE` is `"coding"`. No source changes. | `bun test admin/src/account-agent-create.unit.test.ts` | none |
 | T-088 | 2 | `admin/src/anthropic-credential-guard.ts`, `admin/src/anthropic-credential-guard.unit.test.ts` | unit | net-new | Add a direct unit test for the pure guard: `isAnthropicCredentialKey` (true for `CLAUDE_CODE_OAUTH_TOKEN` / `ANTHROPIC_API_KEY` / `ANTHROPIC_AUTH_TOKEN`, false for other keys), `anthropicCredentialKeysIn` (filters an iterable, preserves order, empty in -> empty out), and `AnthropicCredentialsBlockedError` (extends `BadRequestError`, `code` is `anthropic_credentials_blocked_federation`, message lists the keys). No source changes. | `bun test admin/src/anthropic-credential-guard.unit.test.ts` | none |
 
@@ -373,7 +373,7 @@ for the next cycle that mints a task becomes **T-089** once `T-087` is filed.
   the `Recorded*Client` pattern) remains a Phase 2 design-level backlog item, not a
   migration-bucket verdict on any existing file. No task emitted this cycle since Phase 3
   found no test currently missing coverage because of it.
-- **`agent/src/piper-voice.ts` reclassification watch item** (unit today, integration once
+- **`agent/src/runtime/piper-voice.ts` reclassification watch item** (unit today, integration once
   Piper synthesis lands) — still not landed as of this cycle; flagged so a future Phase 3
   doesn't silently miss the transition.
 - **`admin/src/session-scope.ts`'s visibility predicate remains not yet wired into most

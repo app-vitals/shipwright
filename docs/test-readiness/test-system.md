@@ -14,7 +14,7 @@
 >
 > **2026-10-18 delta (re-verified, not re-architected).** Inventory refreshed at `cc8f30e5c` (delta `07e79159e..cc8f30e5c`): the only changes are the `agent-types/specialist/manifest.yaml` static manifest (content layer, `manifest.content.test.ts`) and a `reconcileSystemCrons` behavior change in `admin/src/agent-cron-jobs.ts` (no coding-cron fallback for non-coding types; unit with injected registry plus real-Postgres integration). Both fit the existing layer matrix, local substitutes and speed budgets; no blueprint change.
 >
-> **2026-10-16 delta (re-verified, not re-architected).** Inventory refreshed at `07e79159e` (delta `addbdffcb..07e79159e`): new units are the WIF-2.1 Anthropic credential guards (`agent/src/anthropic-federation-guard.ts`, `admin/src/anthropic-credential-guard.ts`; both pure, unit layer) and a helm-unittest suite for the federation chart wiring. All fit existing layer conventions, speed budgets and CI shape; no blueprint change.
+> **2026-10-16 delta (re-verified, not re-architected).** Inventory refreshed at `07e79159e` (delta `addbdffcb..07e79159e`): new units are the WIF-2.1 Anthropic credential guards (`agent/src/runtime/anthropic-federation-guard.ts`, `admin/src/anthropic-credential-guard.ts`; both pure, unit layer) and a helm-unittest suite for the federation chart wiring. All fit existing layer conventions, speed budgets and CI shape; no blueprint change.
 >
 > **2026-10-14 delta (re-verified, not re-architected).** Inventory refreshed at `addbdffcb` (delta `d7af2240a..addbdffcb`): new units are `prompt-audit/hitl-policy.ts` (pure, unit), prompt-scan/prompt-fix command and skill content (content layer), the ACP-2.1 agent Claude policy ConfigMap (helm-unittest) and task-store PR-normalize validation (unit + in-process smoke). All fit the existing layer matrix, local substitutes and speed budgets; no framework, CI job, or deploy-model (`direct`) change.
 
@@ -38,7 +38,7 @@
 > inventory does not yet catalogue the account and prompt-audit families (see the Phase 3 top-up).
 > Everything below is otherwise unchanged. The prior cycle's note follows for context.
 >
-> **2026-10-07 delta (multi-GitHub-App installations).** The new units (`agent/src/github-installations.ts`,
+> **2026-10-07 delta (multi-GitHub-App installations).** The new units (`agent/src/runtime/github-installations.ts`,
 > `gh-token-files.ts`, `gh-owner-resolver.ts`, `github-installations-reporter.ts`,
 > `admin/src/agent-github-installations.ts`, `plugins/shipwright/scripts/login-identity.ts`) fit
 > existing blueprint patterns with no new framework, dependency, CI job, or deploy-model change
@@ -52,9 +52,9 @@
 >
 > **Re-verified, not re-architected, this cycle.** The prior blueprint (2026-10-02, base
 > `ea1412b66`) already absorbed the sync-config-clone / config-ref / patrol-scope deltas. 15
-> commits have landed since; the only test-relevant additions are `agent/src/claude-version.ts`
+> commits have landed since; the only test-relevant additions are `agent/src/runtime/claude-version.ts`
 > (`detectClaudeCodeVersion` with an injected exec seam and bounded timeout, surfaced via
-> `agent/src/health.ts` — same injected-exec boundary pattern already modeled, unit layer plus
+> `agent/src/runtime/health.ts` — same injected-exec boundary pattern already modeled, unit layer plus
 > the existing `/health` smoke contract), `scripts/check-competitive-freshness.ts` (injected-deps
 > pure core, unit), and marketing-site comparison-page edits with matching Playwright specs. No
 > new framework, external dependency, CI job, or deploy-model change (`direct`). Nothing below
@@ -62,7 +62,7 @@
 >
 > **Re-verified, not re-architected, this cycle.** 96 commits landed on `main` since the
 > inventory's baseline (`d656f0d0a`; 42 of them since the 2026-09-30 refresh merged). The only
-> test-relevant deltas are: an agent-side auto-clone step (`agent/src/sync-config-clone.ts`,
+> test-relevant deltas are: an agent-side auto-clone step (`agent/src/runtime/sync-config-clone.ts`,
 > with `computeMissingClones` relocated from `scripts/lib/` to `lib/clone-plan.ts`), three small
 > agent config-ref singletons (`allow-self-review-ref.ts`, `cleanup-after-days-ref.ts`,
 > `cleanup-merged-worktrees-ref.ts` — same shape as the already-modeled `agent-trial-expiry-ref.ts`),
@@ -131,14 +131,14 @@ system may require a hosted external service.
 | Slack (`apps.manifest.create` provisioning, Bolt event handlers, chat-reply Web API calls) | Recorded fixture doubles for Slack Web API; a mocked Bolt `App` instance for event-handler tests (already the canonical layer — smoke — per the inventory). | `lib/test-fixtures/slack/*.json` |
 | Google OAuth2 (`admin/src/google-auth-client.ts`) | Recorded fixture doubles for authorize/token/userinfo. | `admin/src/google-auth-client.fixtures.ts` |
 | Okta OIDC (`admin/src/okta-auth-client.ts`) | Recorded fixture doubles for authorize/token-exchange/userinfo. | `admin/src/okta-auth-client.fixtures.ts` |
-| Voice: Groq Whisper / ElevenLabs (`agent/src/voice.ts`) | Recorded fixture doubles for STT/TTS responses. | `agent/src/voice.fixtures.ts` |
+| Voice: Groq Whisper / ElevenLabs (`agent/src/runtime/voice.ts`) | Recorded fixture doubles for STT/TTS responses. | `agent/src/runtime/voice.fixtures.ts` |
 | Web Push protocol (`admin/src/push-sender.ts`) | Recorded fixture double for the VAPID-signed Web Push wire protocol. | `admin/src/push-sender.fixtures.ts` |
 | Internal HTTP services (`metrics` → task-store/accounts/admin-metrics clients; `agent` → admin/task-store/chat clients; `mcp-server` → task-store; `admin` → chat/Slack/GitHub provisioning clients) | Recorded fixture doubles by default, against each client's typed interface. In-process Hono app-factory boot (two services in the same test process) only for the rare test where a real multi-service round-trip is worth the setup cost. | `<service>/src/*-client.fixtures.ts` |
-| Headless Chromium (`agent/src/browser.ts`, Playwright E2E, `scripts/build-pwa-icons.ts`) | Not a hosted external service — a bundled, build-time binary the agent fully controls (per the inventory's own Ambiguous-item classification). Runs directly, sandboxed; no substitute needed. | n/a |
+| Headless Chromium (`agent/src/runtime/browser.ts`, Playwright E2E, `scripts/build-pwa-icons.ts`) | Not a hosted external service — a bundled, build-time binary the agent fully controls (per the inventory's own Ambiguous-item classification). Runs directly, sandboxed; no substitute needed. | n/a |
 | Sentry SDK wiring (`lib/sentry.ts`) | No live network calls in tests. Stub the SDK's transport at the `init()`-wiring test; the scrub-rule logic itself is pure and needs no substitute at all. | `lib/sentry.fixtures.ts` |
 | `gh` / `git` / `helm` / `kubectl` shellouts across dev scripts (`scripts/hitl.ts`, `minikube.ts`, `agent-workspace-pull.ts`, `check-downstream-compat.sh`) | Injected-exec double (interface + fake) — the established pattern in this codebase's own design. | `lib/exec-double.ts` (one shared interface, reused across scripts and agent code; see the placement note below) |
-| `gh repo clone` on config sync (`agent/src/sync-config-clone.ts`, new) | Already designed for it: `SyncConfigCloneDeps` injects `getScopedRepos`, `exists`, `cloneRepo`, and the failed-clone cleanup, and the planner (`lib/clone-plan.ts`'s `computeMissingClones`) is pure. Unit-test the per-repo failure isolation, in-flight-set overlap guard, and cleanup-then-retry through the injected deps; no real `gh` or network is ever needed. | n/a (injected fakes, no fixture file) |
-| Real OS process tree (`agent/src/process-tree-kill.ts`'s cgroup v2 `cgroup.kill` path + procfs `/proc/<pid>/task/*/children` fallback) | Not a hosted external service — exercised directly against the real local filesystem/process table (spawn a short-lived helper process tree, assert every descendant is actually gone), since faking `/proc` or `/sys/fs/cgroup` would test the fake, not the real kill path. Both the cgroup and procfs-fallback branches need coverage; CI's own runner rarely delegates cgroups, so the cgroup-path assertions should tolerate a "probe reports unusable, skip" outcome rather than hard-failing outside a delegated container (see `agent/scripts/verify-cgroup-delegation.ts`, which reports — never gates on — the resolved mode in the built image). | n/a (real process spawn, no fixture) |
+| `gh repo clone` on config sync (`agent/src/runtime/sync-config-clone.ts`, new) | Already designed for it: `SyncConfigCloneDeps` injects `getScopedRepos`, `exists`, `cloneRepo`, and the failed-clone cleanup, and the planner (`lib/clone-plan.ts`'s `computeMissingClones`) is pure. Unit-test the per-repo failure isolation, in-flight-set overlap guard, and cleanup-then-retry through the injected deps; no real `gh` or network is ever needed. | n/a (injected fakes, no fixture file) |
+| Real OS process tree (`agent/src/runtime/process-tree-kill.ts`'s cgroup v2 `cgroup.kill` path + procfs `/proc/<pid>/task/*/children` fallback) | Not a hosted external service — exercised directly against the real local filesystem/process table (spawn a short-lived helper process tree, assert every descendant is actually gone), since faking `/proc` or `/sys/fs/cgroup` would test the fake, not the real kill path. Both the cgroup and procfs-fallback branches need coverage; CI's own runner rarely delegates cgroups, so the cgroup-path assertions should tolerate a "probe reports unusable, skip" outcome rather than hard-failing outside a delegated container (see `agent/scripts/verify-cgroup-delegation.ts`, which reports — never gates on — the resolved mode in the built image). | n/a (real process spawn, no fixture) |
 
 **Blockers (no clean local substitute):** none. Every external dependency named in the
 inventory has a viable local substitute in the table above.
@@ -400,7 +400,7 @@ a guideline.
   `prisma migrate deploy` for the relevant schema, and returns a scoped `PrismaClient` —
   reusable across admin/task-store/chat integration suites.
 - **Time freezer** — a `FakeClock` test double per workspace's existing injectable `Clock`
-  interface (`agent/src/clock.ts`, `admin/src/clock.ts`, `mcp-server/src/clock.ts`,
+  interface (`agent/src/runtime/clock.ts`, `admin/src/clock.ts`, `mcp-server/src/clock.ts`,
   `task-store`'s equivalent) for deterministic time-dependent tests (claim-TTL logic,
   stale-claim reaping, session retention).
 - **Recorded-fixture loader** — one shared recorded-fixture-double-loading utility (`loadFixture(name)`) for
@@ -418,7 +418,7 @@ a guideline.
   `admin/e2e/*.e2e.ts` so every admin E2E spec doesn't re-implement login.
 - **Content-layer assertion helper** — a shared markdown-frontmatter/section-presence assertion
   utility for `*.content.test.ts`, given ~85+ command/skill/agent markdown files to check.
-- **Process-tree spawn/assert harness** (new this cycle, backing `agent/src/process-tree-kill.ts`) —
+- **Process-tree spawn/assert harness** (new this cycle, backing `agent/src/runtime/process-tree-kill.ts`) —
   a reusable "spawn a small tree of real child/grandchild processes, then assert none are still
   alive after `killTree()`" helper (poll `process.kill(pid, 0)` for ESRCH rather than a fixed
   sleep), plus a `resetCgroupSupportCache()`-aware setup/teardown pair so cgroup-path tests don't
@@ -468,7 +468,7 @@ Per the flat, repo-agnostic `repo-config` recommendation (this repo is on, or mo
 - **Recorded-fixture recording credentials** (used only when re-recording fixtures, never in
   normal CI runs — see the deferred recorded-fixture maintenance loop below): one per external
   integration named in the Local execution architecture table — e.g. Groq/ElevenLabs API
-  credentials (`agent/src/voice.ts` recordings), a scoped GitHub PAT/App credential, a Slack
+  credentials (`agent/src/runtime/voice.ts` recordings), a scoped GitHub PAT/App credential, a Slack
   bot token, and Google/Okta OAuth test client secrets. Scope these to a dedicated
   `recorded-fixture-refresh` GitHub Environment, not shared with the CI integration-test run.
 - **Test Postgres credentials** — already plain workflow env vars in `ci.yml`

@@ -4,7 +4,7 @@
  * Skill usage for the prompt audit, from two sources. Both yield `SkillStat`
  * rows shaped like the admin `bySkill` dimension:
  *   - local `~/.claude/projects` transcripts, attributed with the same rules
- *     as agent/src/run-telemetry.ts (duplicated by design: the plugin is
+ *     as agent/src/runtime/run-telemetry.ts (duplicated by design: the plugin is
  *     self-contained and cannot import from agent/). Last-wins: a `Skill`
  *     tool_use switches the bucket, turns carrying `parent_tool_use_id` go to
  *     `agent:<subagent_type>`, turns before any invoke go to `root`.

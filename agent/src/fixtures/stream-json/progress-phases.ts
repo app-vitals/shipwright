@@ -1,6 +1,6 @@
 /**
  * Hand-authored synthetic `claude -p --output-format stream-json --verbose`
- * transcript exercising `agent/src/progress-milestones.ts`'s block → phase
+ * transcript exercising `agent/src/runtime/progress-milestones.ts`'s block → phase
  * mapping end-to-end through `_consumeStream`'s `handleLine` closure.
  *
  * Shape of the session:

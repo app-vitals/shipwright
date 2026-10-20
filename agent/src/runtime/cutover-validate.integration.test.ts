@@ -1,0 +1,242 @@
+/**
+ * agent/src/runtime/cutover-validate.integration.test.ts
+ * Integration tests for cutover-validate using in-memory doubles.
+ * No database or network required — runs unconditionally.
+ */
+
+import { describe, expect, it } from "bun:test";
+import type { AgentConfigResponse, AgentCronJob } from "@shipwright/admin";
+import {
+  type ShipwrightConfigClient,
+  validateCutover,
+} from "./cutover-validate.ts";
+
+// ─── Fixtures ─────────────────────────────────────────────────────────────────
+
+const AGENT_ID = "agent-cutover-test";
+
+function makeCron(id: string): AgentCronJob {
+  return {
+    id,
+    agentId: AGENT_ID,
+    schedule: "0 9 * * *",
+    prompt: "/shipwright:dev-task",
+    channel: "C123456",
+    user: null,
+    silent: false,
+    enabled: true,
+    preCheck: null,
+    name: "dev-task",
+    createdAt: new Date("2026-01-01"),
+    updatedAt: new Date("2026-01-01"),
+    system: false,
+    parentCronId: null,
+    lockdownDisabledAt: null,
+  };
+}
+
+function makeConfig(env: Record<string, string>): AgentConfigResponse {
+  return {
+    env,
+    allowedTools: [],
+    plugins: [],
+    repos: [],
+    reviewAuthorAllowlist: [],
+    patchAuthorAllowlist: [],
+    restrictSlackToMembers: false,
+    memberEmails: [],
+    autoPostReviews: true,
+    allowSelfReview: false,
+    minConfidence: 75,
+    maxFindings: 5,
+    cleanupMergedWorktrees: true,
+    cleanupAfterDays: 14,
+  };
+}
+
+// ─── Recorded double ──────────────────────────────────────────────────────────
+
+class RecordedShipwrightConfigClient implements ShipwrightConfigClient {
+  constructor(
+    private readonly config: AgentConfigResponse,
+    private readonly crons: AgentCronJob[],
+  ) {}
+
+  async getConfig(_agentId: string): Promise<AgentConfigResponse> {
+    return this.config;
+  }
+
+  async getCrons(_agentId: string): Promise<AgentCronJob[]> {
+    return this.crons;
+  }
+}
+
+// ─── Helpers ──────────────────────────────────────────────────────────────────
+
+function makeAppAuthEnv(): Record<string, string> {
+  return {
+    SLACK_BOT_TOKEN: "xoxb-test-token",
+    GH_APP_ID: "12345",
+    GH_APP_PRIVATE_KEY:
+      "-----BEGIN RSA PRIVATE KEY-----\nfake\n-----END RSA PRIVATE KEY-----",
+    GH_APP_INSTALLATION_ID: "67890",
+  };
+}
+
+function makePatEnv(): Record<string, string> {
+  return {
+    SLACK_BOT_TOKEN: "xoxb-test-token",
+    GH_TOKEN: "ghp_faketoken123",
+  };
+}
+
+// ─── Tests ────────────────────────────────────────────────────────────────────
+
+describe("validateCutover", () => {
+  it("returns all passing when SLACK_BOT_TOKEN + GitHub App creds + crons present", async () => {
+    const client = new RecordedShipwrightConfigClient(
+      makeConfig(makeAppAuthEnv()),
+      [makeCron("cron-1")],
+    );
+    const results = await validateCutover(client, AGENT_ID);
+    expect(results.every((r) => r.passed)).toBe(true);
+  });
+
+  it("returns all passing when SLACK_BOT_TOKEN + GH_TOKEN (PAT) + crons present", async () => {
+    const client = new RecordedShipwrightConfigClient(
+      makeConfig(makePatEnv()),
+      [makeCron("cron-1")],
+    );
+    const results = await validateCutover(client, AGENT_ID);
+    expect(results.every((r) => r.passed)).toBe(true);
+  });
+
+  it("does NOT fail when SLACK_BOT_TOKEN is missing — a chat-only agent is a supported configuration", async () => {
+    const { SLACK_BOT_TOKEN: _s, ...env } = makeAppAuthEnv();
+    const client = new RecordedShipwrightConfigClient(makeConfig(env), [
+      makeCron("cron-1"),
+    ]);
+    const results = await validateCutover(client, AGENT_ID);
+    const slackCheck = results.find((r) => r.name === "SLACK_BOT_TOKEN");
+    expect(slackCheck).toBeDefined();
+    expect(slackCheck?.passed).toBe(true);
+    expect(slackCheck?.message).toContain("chat-only");
+    // The whole run still passes — nothing else depended on Slack.
+    expect(results.every((r) => r.passed)).toBe(true);
+  });
+
+  it("reports SLACK_BOT_TOKEN as present when it is set", async () => {
+    const client = new RecordedShipwrightConfigClient(
+      makeConfig(makeAppAuthEnv()),
+      [makeCron("cron-1")],
+    );
+    const results = await validateCutover(client, AGENT_ID);
+    const slackCheck = results.find((r) => r.name === "SLACK_BOT_TOKEN");
+    expect(slackCheck?.passed).toBe(true);
+    expect(slackCheck?.message).toBe("SLACK_BOT_TOKEN is present");
+  });
+
+  it("names no failing check when only SLACK_BOT_TOKEN is missing", async () => {
+    const { SLACK_BOT_TOKEN: _s, ...env } = makeAppAuthEnv();
+    const client = new RecordedShipwrightConfigClient(makeConfig(env), [
+      makeCron("cron-1"),
+    ]);
+    const results = await validateCutover(client, AGENT_ID);
+    expect(results.filter((r) => !r.passed)).toEqual([]);
+  });
+
+  it("fails when GitHub auth credentials are missing", async () => {
+    const client = new RecordedShipwrightConfigClient(
+      makeConfig({ SLACK_BOT_TOKEN: "xoxb-token" }),
+      [makeCron("cron-1")],
+    );
+    const results = await validateCutover(client, AGENT_ID);
+    const githubCheck = results.find((r) => r.name === "github_auth");
+    expect(githubCheck).toBeDefined();
+    expect(githubCheck?.passed).toBe(false);
+  });
+
+  it("fails when no crons are present", async () => {
+    const client = new RecordedShipwrightConfigClient(
+      makeConfig(makeAppAuthEnv()),
+      [],
+    );
+    const results = await validateCutover(client, AGENT_ID);
+    const cronCheck = results.find((r) => r.name === "crons");
+    expect(cronCheck).toBeDefined();
+    expect(cronCheck?.passed).toBe(false);
+  });
+
+  it("reports all failing checks when multiple checks fail", async () => {
+    const client = new RecordedShipwrightConfigClient(makeConfig({}), []);
+    const results = await validateCutover(client, AGENT_ID);
+    const failed = results.filter((r) => !r.passed);
+    expect(failed.length).toBeGreaterThanOrEqual(2);
+    const names = failed.map((r) => r.name);
+    expect(names).toContain("github_auth");
+    expect(names).toContain("crons");
+    // Slack is informational — an empty env does not fail it.
+    expect(names).not.toContain("SLACK_BOT_TOKEN");
+  });
+
+  it("passes with App id + key and no GH_APP_INSTALLATION_ID (the installation id is an optional pin)", async () => {
+    const env: Record<string, string> = {
+      SLACK_BOT_TOKEN: "xoxb-test-token",
+      GH_APP_ID: "12345",
+      GH_APP_PRIVATE_KEY: "some-key",
+      // GH_APP_INSTALLATION_ID intentionally omitted — discovered at runtime
+    };
+    const client = new RecordedShipwrightConfigClient(makeConfig(env), [
+      makeCron("cron-1"),
+    ]);
+    const results = await validateCutover(client, AGENT_ID);
+    const githubCheck = results.find((r) => r.name === "github_auth");
+    expect(githubCheck).toBeDefined();
+    expect(githubCheck?.passed).toBe(true);
+  });
+
+  it("fails when GH_APP_PRIVATE_KEY is missing (partial App creds)", async () => {
+    const env: Record<string, string> = {
+      SLACK_BOT_TOKEN: "xoxb-test-token",
+      GH_APP_ID: "12345",
+      GH_APP_INSTALLATION_ID: "67890",
+    };
+    const client = new RecordedShipwrightConfigClient(makeConfig(env), [
+      makeCron("cron-1"),
+    ]);
+    const results = await validateCutover(client, AGENT_ID);
+    const githubCheck = results.find((r) => r.name === "github_auth");
+    expect(githubCheck?.passed).toBe(false);
+    expect(githubCheck?.message).toContain("GH_APP_ID + GH_APP_PRIVATE_KEY");
+    expect(githubCheck?.message).not.toContain("+ GH_APP_INSTALLATION_ID");
+  });
+
+  it("fails when only disabled crons are present", async () => {
+    const disabledCron: AgentCronJob = {
+      ...makeCron("cron-disabled"),
+      enabled: false,
+    };
+    const client = new RecordedShipwrightConfigClient(
+      makeConfig(makeAppAuthEnv()),
+      [disabledCron],
+    );
+    const results = await validateCutover(client, AGENT_ID);
+    const cronCheck = results.find((r) => r.name === "crons");
+    expect(cronCheck).toBeDefined();
+    expect(cronCheck?.passed).toBe(false);
+  });
+
+  it("accepts GitHub App creds with only the three required fields", async () => {
+    const env: Record<string, string> = {
+      SLACK_BOT_TOKEN: "xoxb-test-token",
+      GH_APP_ID: "99999",
+      GH_APP_PRIVATE_KEY: "some-key",
+      GH_APP_INSTALLATION_ID: "11111",
+    };
+    const client = new RecordedShipwrightConfigClient(makeConfig(env), [
+      makeCron("cron-1"),
+    ]);
+    const results = await validateCutover(client, AGENT_ID);
+    expect(results.every((r) => r.passed)).toBe(true);
+  });
+});

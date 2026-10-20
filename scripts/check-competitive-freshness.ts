@@ -22,7 +22,7 @@
  *
  * Exit 0 + summary → at least one page/row is stale (or unparseable/missing).
  *   The summary IS the entire prompt a dispatching cron hands to Claude next
- *   (see agent/src/cron-handler.ts's preCheck contract), so it names every
+ *   (see agent/src/runtime/cron-handler.ts's preCheck contract), so it names every
  *   qualifying page/row with its days-since-verified and explicitly points at
  *   scripts/competitive-refresh-runbook.md (CF-2.1) to act on it.
  * Exit 1 + no output → nothing to do.
@@ -98,9 +98,7 @@ function evaluateDate(
     return { qualifies: true, daysSince: null, reason: "unparseable" };
   }
 
-  const daysSince = Math.floor(
-    (now.getTime() - parsed.getTime()) / MS_PER_DAY,
-  );
+  const daysSince = Math.floor((now.getTime() - parsed.getTime()) / MS_PER_DAY);
   if (daysSince > thresholdDays) {
     return { qualifies: true, daysSince, reason: "stale" };
   }
@@ -145,7 +143,9 @@ function evaluateCompareRows(
     const toolName = toolMatch[1];
     const blockStart = (toolMatch.index ?? 0) + toolMatch[0].length;
     const blockEnd =
-      i + 1 < toolMatches.length ? (toolMatches[i + 1].index ?? content.length) : content.length;
+      i + 1 < toolMatches.length
+        ? (toolMatches[i + 1].index ?? content.length)
+        : content.length;
     const block = content.slice(blockStart, blockEnd);
 
     const dateMatch = block.match(VERIFIED_DATE_FIELD_RE);
@@ -187,7 +187,11 @@ export async function run(deps: Deps): Promise<RunResult> {
   if (deps.compareSource === null) {
     // Unreadable/missing compare.astro is unknown state — flag it rather
     // than silently skipping the whole file's worth of rows.
-    findings.push({ label: "compare.astro", daysSince: null, reason: "missing" });
+    findings.push({
+      label: "compare.astro",
+      daysSince: null,
+      reason: "missing",
+    });
   } else {
     try {
       const marker = evaluateConstDatePage(
@@ -197,12 +201,18 @@ export async function run(deps: Deps): Promise<RunResult> {
         thresholdDays,
       );
       if (marker) findings.push(marker);
-      findings.push(...evaluateCompareRows(deps.compareSource, now, thresholdDays));
+      findings.push(
+        ...evaluateCompareRows(deps.compareSource, now, thresholdDays),
+      );
     } catch (err) {
       process.stderr.write(
         `check-competitive-freshness: evaluation failed for compare.astro: ${String(err)}\n`,
       );
-      findings.push({ label: "compare.astro", daysSince: null, reason: "unparseable" });
+      findings.push({
+        label: "compare.astro",
+        daysSince: null,
+        reason: "unparseable",
+      });
     }
   }
 
@@ -239,7 +249,13 @@ function buildProductionDeps(): Deps {
   const scriptDir = import.meta.dirname ?? process.cwd();
   const repoDir = join(scriptDir, "..");
   const vsDir = join(repoDir, "site", "src", "pages", "vs");
-  const compareFilePath = join(repoDir, "site", "src", "pages", "compare.astro");
+  const compareFilePath = join(
+    repoDir,
+    "site",
+    "src",
+    "pages",
+    "compare.astro",
+  );
 
   const constDatePages: Record<string, string> = {};
   const readConstDatePage = (label: string, path: string): void => {
