@@ -222,6 +222,10 @@ this mode the admin pod gets its own projected token at
 `ANTHROPIC_SERVICE_ACCOUNT_ID` (and `ANTHROPIC_WORKSPACE_ID` when set). The
 default `shared` mode renders none of this.
 
+Do not enable perAgent mode yet: it already turns on the Anthropic credential
+guards, but until per-agent provisioning ships, agent pods get no federation
+wiring and so have no way to authenticate.
+
 ### Chat service provisioning (opt-in)
 
 By default the admin service **does not** mint chat-service tokens — provisioned agents carry no chat-service credentials. Per-agent chat-service token provisioning at agent-creation time is enabled the same way the admin console's Chat tab is: via the top-level `chat.enabled` + `chat.adminToken.existingSecret` chart values described in [Chat service (opt-in)](./deploy-kubernetes-networking.md#chat-service-opt-in) — there is no separate `agent.provisioning.chatService.*` value block.
