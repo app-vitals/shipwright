@@ -44,6 +44,7 @@ import type { AgentTokenService } from "./agent-tokens.ts";
 import type { AgentService } from "./agents.ts";
 import type { AdminDeps, parseAdminApiKeys } from "./agents-api.ts";
 import type { createCallerScopeResolver } from "./caller-scope.ts";
+import type { PushService } from "./push-service.ts";
 import type { ServiceIntegration } from "./service-integration.ts";
 
 /** The platform services an extension may build on. */
@@ -64,6 +65,10 @@ export interface AdminExtensionContext {
   prisma: PrismaClient;
   sessionSecret: string;
   adminApiKeys: ReturnType<typeof parseAdminApiKeys>;
+  /** SHIPWRIGHT_ADMIN_ALLOWED_EMAILS, parsed: operators who see everything. */
+  adminAllowedEmails: string[];
+  /** Web Push, present only when VAPID is fully configured. */
+  push?: { service: PushService; maxDetail: string };
   services: AdminPlatformServices;
 }
 

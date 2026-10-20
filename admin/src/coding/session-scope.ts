@@ -1,5 +1,5 @@
 /**
- * admin/src/session-scope.ts
+ * admin/src/coding/session-scope.ts
  *
  * Pure, no-I/O helpers deciding which sessions a caller is allowed to see:
  *
@@ -22,7 +22,7 @@
  * createAdminAuthMiddleware) and can call
  * `agentMemberService.listByEmail(email)` themselves before invoking this
  * pure function. This mirrors the established pattern in
- * admin/src/agent-work-queue-merge.ts, which similarly takes
+ * admin/src/coding/agent-work-queue-merge.ts, which similarly takes
  * already-resolved data rather than performing its own I/O.
  *
  * Also deliberately does not import Session (task-store/src/session-rollup.ts)

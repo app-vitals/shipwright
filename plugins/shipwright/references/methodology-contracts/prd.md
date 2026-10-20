@@ -115,7 +115,7 @@ structure and quality bar. It says nothing about:
    contrast, plan-session IS both human-invocable and loop-dispatched under `--autonomous`;
    prd has no such dual mode.
 
-**Forward compatibility note:** As of this task, `admin/src/agent-phase-methodology.ts`
+**Forward compatibility note:** As of this task, `admin/src/coding/agent-phase-methodology.ts`
 supports `"prd"` as one of six valid phase values, but no dispatcher in `agent/` or `plugins/`
 currently wires prd's config yet for subagent selection. This contract is written for forward
 compatibility — describing the shape a swapped-in subagent would need to satisfy once the

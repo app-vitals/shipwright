@@ -1,5 +1,5 @@
 /**
- * admin/src/session-follow-service.ts
+ * admin/src/coding/session-follow-service.ts
  * SessionFollowService — CRUD over SessionFollow + UserNotificationPrefs
  * (SessionAlertState is written by the future reminder job, not this
  * service; the model exists now so that job has a place to land state
@@ -12,8 +12,8 @@
  * tests can inject a plain object double instead of a real client.
  */
 
-import { type Clock, SystemClock } from "./clock.ts";
-import { BadRequestError } from "./errors.ts";
+import { type Clock, SystemClock } from "../clock.ts";
+import { BadRequestError } from "../errors.ts";
 
 // The narrow slice of PrismaClient this service touches. Injected so unit
 // tests (and any future callers) can use a plain object double instead of a

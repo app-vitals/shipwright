@@ -1,5 +1,5 @@
 /**
- * admin/src/admin-ui-sessions-list.smoke.test.ts
+ * admin/src/coding/admin-ui-sessions-list.smoke.test.ts
  * Smoke tests for GET /admin/sessions (SESH-4.2).
  *
  * Uses app.request() against a minimal Hono<AdminUIEnv> instance with
@@ -13,7 +13,7 @@
 import { describe, expect, it } from "bun:test";
 import type { MiddlewareHandler } from "hono";
 import { Hono } from "hono";
-import type { AdminUIEnv } from "./admin-ui.ts";
+import type { AdminUIEnv } from "../admin-ui.ts";
 import {
   registerSessionsListRoutes,
   type Session,

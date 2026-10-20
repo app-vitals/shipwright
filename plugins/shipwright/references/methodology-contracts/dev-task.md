@@ -16,7 +16,7 @@ and does no phase-specific adaptation.
 
 > **Subagent selection is wired up (DTM-1.2).** A per-agent, per-phase `AgentPhaseMethodology`
 > record (`{phase, subagentType | null}`, with `dev-task` as a valid phase key) exists as a
-> Prisma model plus CRUD service in `admin/src/agent-phase-methodology.ts`.
+> Prisma model plus CRUD service in `admin/src/coding/agent-phase-methodology.ts`.
 > `commands/dev-task.md`'s Step 5a.5 reads `phaseMethodology["dev-task"]` off
 > `GET /agents/{id}/config` once per run and resolves `DEV_TASK_SUBAGENT_TYPE` — falling back
 > to the built-in `general-purpose` when no override is configured, or on any lookup failure

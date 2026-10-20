@@ -52,10 +52,8 @@ import {
   DEFAULT_TRIAL_EXPIRY_WARNING_SWEEP_INTERVAL_MS,
   isAnthropicFederationEnabled,
   resolvePublicRepo,
-  resolveSessionAlertIntervalMs,
   resolveTrialExpiryWarningDays,
   runMigrations,
-  SESSION_ALERT_FETCH_TIMEOUT_MS,
 } from "./admin-boot-config.ts";
 import {
   type AdminExtension,
@@ -73,12 +71,10 @@ import { AgentCronRunService } from "./agent-cron-runs.ts";
 import { AgentEnvService } from "./agent-envs.ts";
 import { AgentGitHubInstallationsService } from "./agent-github-installations.ts";
 import { AgentMemberService } from "./agent-members.ts";
-import { AgentPhaseMethodologyService } from "./agent-phase-methodology.ts";
 import { AgentPluginService } from "./agent-plugins.ts";
 import { AgentTokenService } from "./agent-tokens.ts";
 import { AgentToolService } from "./agent-tools.ts";
 import { AgentTypeRegistry } from "./agent-type-manifest-loader.ts";
-import { AgentWorkQueueService } from "./agent-work-queue.ts";
 import { AgentService } from "./agents.ts";
 import { createAdminApp, parseAdminApiKeys } from "./agents-api.ts";
 import { createAgentRuntimeApp } from "./api.ts";
@@ -86,8 +82,10 @@ import {
   callerScopeDepsFromServices,
   createCallerScopeResolver,
 } from "./caller-scope.ts";
+import { AgentPhaseMethodologyService } from "./coding/agent-phase-methodology.ts";
+import { AgentWorkQueueService } from "./coding/agent-work-queue.ts";
+import { DevTaskAdherenceService } from "./coding/dev-task-adherence.ts";
 import { isDevAuthAllowed } from "./dev-auth-guard.ts";
-import { DevTaskAdherenceService } from "./dev-task-adherence.ts";
 import { HttpGithubAppProvisioningClient } from "./github-app-provisioning-client.ts";
 import { HttpGoogleAuthClient } from "./google-auth-client.ts";
 import { HttpChatClient } from "./http-chat-client.ts";
@@ -96,13 +94,8 @@ import { createAdminPrismaClient } from "./prisma-client.ts";
 import { isPushEnabled } from "./push-sender.ts";
 import { PushService } from "./push-service.ts";
 import { parseSelfServeConfig } from "./self-serve-config.ts";
-import {
-  SessionAlertSweeper,
-  type SessionForAlert,
-} from "./session-alert-sweeper.ts";
 import { HttpSlackProvisioningClient } from "./slack-provisioning-client.ts";
 import { runStartupPolicyReconcile } from "./startup-policy-reconcile.ts";
-import { createTaskStoreFetchers } from "./task-store-fetchers.ts";
 import { makeTokenCrypto } from "./token-crypto.ts";
 import {
   resolveTrialExpirySweepIntervalMs,
@@ -259,6 +252,22 @@ export async function startAdmin(
     process.env,
   );
 
+  // Web Push (CFB-4.2). Enabled ONLY when public + private + subject are all
+  // set — a partial config must not half-enable the feature. When disabled,
+  // pushService is undefined, the push routes 503, and the toggle renders "".
+  const vapidConfig = {
+    publicKey: process.env.SHIPWRIGHT_ADMIN_VAPID_PUBLIC_KEY ?? "",
+    privateKey: process.env.SHIPWRIGHT_ADMIN_VAPID_PRIVATE_KEY ?? "",
+    subject: process.env.SHIPWRIGHT_ADMIN_VAPID_SUBJECT ?? "",
+  };
+  const pushWebhookToken = process.env.SHIPWRIGHT_ADMIN_PUSH_WEBHOOK_TOKEN;
+  // Operator ceiling for how much detail a notification may reveal on a locked
+  // screen. Defaults to "title" per the content policy.
+  const pushMaxDetail = process.env.SHIPWRIGHT_ADMIN_PUSH_MAX_DETAIL ?? "title";
+  const pushService = isPushEnabled(vapidConfig)
+    ? new PushService(prisma as never, vapidConfig, fetch, pushMaxDetail)
+    : undefined;
+
   // AEP-2.1: resolve the extensions once, after every platform service they
   // may build on exists and before any route is mounted. With no extensions
   // (or hookless ones) every contribution below is empty and the admin is the
@@ -268,6 +277,10 @@ export async function startAdmin(
     prisma,
     sessionSecret,
     adminApiKeys,
+    adminAllowedEmails,
+    ...(pushService
+      ? { push: { service: pushService, maxDetail: pushMaxDetail } }
+      : {}),
     services: {
       agentService,
       agentEnvService,
@@ -397,19 +410,6 @@ export async function startAdmin(
   mountRouteContributions(root, resolvedExtensions.apiRoutes);
 
   // 4. Admin UI — /admin/* — session JWT
-  const taskStoreUrl = process.env.SHIPWRIGHT_TASK_STORE_URL;
-  const taskStoreAdminToken = process.env.SHIPWRIGHT_TASK_STORE_ADMIN_TOKEN;
-  // Single admin token; each fetcher takes an optional trailing accountId
-  // forwarded as ?accountId= so account users' views are filtered by the
-  // task-store itself (SSP-6.8, admin/src/task-store-fetchers.ts).
-  const taskStoreFetchers =
-    taskStoreUrl && taskStoreAdminToken
-      ? createTaskStoreFetchers({
-          url: taskStoreUrl,
-          adminToken: taskStoreAdminToken,
-        })
-      : {};
-
   // Validate SHIPWRIGHT_ADMIN_TZ at startup — toLocaleDateString/toLocaleString
   // will throw RangeError at render time if the timezone is invalid, causing a 500
   // on every admin page. Catch it early with a clean error and exit.
@@ -432,22 +432,6 @@ export async function startAdmin(
     chatServiceUrl && chatServiceAdminToken
       ? new HttpChatClient(chatServiceUrl, chatServiceAdminToken)
       : undefined;
-
-  // Web Push (CFB-4.2). Enabled ONLY when public + private + subject are all
-  // set — a partial config must not half-enable the feature. When disabled,
-  // pushService is undefined, the push routes 503, and the toggle renders "".
-  const vapidConfig = {
-    publicKey: process.env.SHIPWRIGHT_ADMIN_VAPID_PUBLIC_KEY ?? "",
-    privateKey: process.env.SHIPWRIGHT_ADMIN_VAPID_PRIVATE_KEY ?? "",
-    subject: process.env.SHIPWRIGHT_ADMIN_VAPID_SUBJECT ?? "",
-  };
-  const pushWebhookToken = process.env.SHIPWRIGHT_ADMIN_PUSH_WEBHOOK_TOKEN;
-  // Operator ceiling for how much detail a notification may reveal on a locked
-  // screen. Defaults to "title" per the content policy.
-  const pushMaxDetail = process.env.SHIPWRIGHT_ADMIN_PUSH_MAX_DETAIL ?? "title";
-  const pushService = isPushEnabled(vapidConfig)
-    ? new PushService(prisma as never, vapidConfig, fetch, pushMaxDetail)
-    : undefined;
 
   const adminUIApp = createAdminUIApp({
     prisma: prisma as never,
@@ -512,7 +496,6 @@ export async function startAdmin(
           ...(pushWebhookToken ? { pushWebhookToken } : {}),
         }
       : {}),
-    ...taskStoreFetchers,
     ...(resolvedExtensions.agentDetailCards.length > 0
       ? { agentDetailCards: resolvedExtensions.agentDetailCards }
       : {}),
@@ -522,62 +505,6 @@ export async function startAdmin(
 
   // 4b. Extension admin UI routes — after the platform UI.
   mountRouteContributions(root, resolvedExtensions.adminUiRoutes);
-
-  // Session alert sweeper (SESH-7.4) — the admin service's only background
-  // loop. Registered HERE, never inside createAdminUIApp(), which must stay
-  // side-effect-free (same rule as chat/src/stall-reaper.ts's registration).
-  // Gated on BOTH push being enabled and the task-store client being
-  // configured: without either, every tick would be a guaranteed no-op (or a
-  // guaranteed error log), so we simply don't start it.
-  if (pushService && taskStoreUrl && taskStoreAdminToken) {
-    const sessionAlertSweeper = new SessionAlertSweeper({
-      prisma: prisma as never,
-      pushService,
-      agentMemberService,
-      agentService,
-      // SSP-6.8: account users are alerted only for their own account's
-      // sessions (fetchSessions below lists every account's).
-      callerScopeResolver,
-      fetchSessions: async (state) => {
-        const res = await fetch(
-          `${taskStoreUrl}/sessions?state=${state}&limit=500`,
-          {
-            headers: { Authorization: `Bearer ${taskStoreAdminToken}` },
-            // Bound the call so a hung task-store can't hold a sweep open past
-            // the tick interval — tick()'s in-flight guard would then skip
-            // every subsequent tick for as long as the socket stayed open.
-            signal: AbortSignal.timeout(SESSION_ALERT_FETCH_TIMEOUT_MS),
-          },
-        );
-        if (!res.ok) {
-          throw new Error(
-            `task-store GET /sessions?state=${state} → ${res.status}`,
-          );
-        }
-        const body = (await res.json()) as { sessions?: SessionForAlert[] };
-        return body.sessions ?? [];
-      },
-      // Same operator ceiling PushService got — without this the sweeper would
-      // cap session pushes at DEFAULT_MAX_DETAIL ("title"), silently ignoring
-      // a SHIPWRIGHT_ADMIN_PUSH_MAX_DETAIL=preview configuration.
-      detailLevel: pushMaxDetail,
-      // Same allowlist createAdminUIApp gates on — an operator listed here
-      // sees (and is alerted for) every session, membership or not.
-      adminAllowedEmails,
-      ...(adminTz ? { timezone: adminTz } : {}),
-    });
-    const sessionAlertIntervalMs = resolveSessionAlertIntervalMs(process.env);
-    setInterval(() => {
-      sessionAlertSweeper
-        .tick()
-        .catch((err) =>
-          console.error("[session-alert-sweeper] tick error:", err),
-        );
-    }, sessionAlertIntervalMs);
-    console.log(
-      `[admin] session alert sweeper started (interval: ${sessionAlertIntervalMs}ms)`,
-    );
-  }
 
   // Trial-expiry warning sweeper (ATE-2.1) — warns an agent's own Slack alert
   // channel once, shortly BEFORE its trial lapses. Registered HERE, never

@@ -22,8 +22,8 @@ import type {
 } from "./admin-ui.ts";
 import { createAdminUIApp } from "./admin-ui.ts";
 import type { PrListItem, TaskItem } from "./admin-ui-pages.ts";
-import type { Session } from "./admin-ui-sessions-list.ts";
 import type { CallerScopeResolver } from "./caller-scope.ts";
+import type { Session } from "./coding/admin-ui-sessions-list.ts";
 import type { GoogleAuthClient } from "./google-auth-client.ts";
 
 // ─── Constants ────────────────────────────────────────────────────────────────

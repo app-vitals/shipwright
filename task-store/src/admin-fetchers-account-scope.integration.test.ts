@@ -2,7 +2,7 @@
  * task-store/src/admin-fetchers-account-scope.integration.test.ts
  *
  * SSP-6.8 — end-to-end isolation for the admin UI's task-store fetchers
- * (admin/src/task-store-fetchers.ts): the real fetchers, holding the single
+ * (admin/src/coding/task-store-fetchers.ts): the real fetchers, holding the single
  * admin token, driven against the real task-store app and a real Postgres DB
  * for one two-account scenario. The fetchers' injected `fetch` routes each
  * request into `app.request()` in-process (no socket, no global override).
@@ -19,9 +19,9 @@
 
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { DEFAULT_ACCOUNT_ID } from "@shipwright/lib/default-account";
-import { createTaskStoreFetchers } from "../../admin/src/task-store-fetchers.ts";
+import { createTaskStoreFetchers } from "../../admin/src/coding/task-store-fetchers.ts";
 import { createTaskStoreApp } from "./app.ts";
-import { type PrismaClient, createPrismaClient } from "./prisma-client.ts";
+import { createPrismaClient, type PrismaClient } from "./prisma-client.ts";
 import { PullRequestService } from "./pull-request-service.ts";
 import { SessionService } from "./session-service.ts";
 import { TaskService } from "./task-service.ts";

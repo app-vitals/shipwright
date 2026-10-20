@@ -1,17 +1,17 @@
 /**
- * admin/src/dev-task-adherence.integration.test.ts
+ * admin/src/coding/dev-task-adherence.integration.test.ts
  * Integration test for DevTaskAdherenceService against the admin data layer.
  *
  * Requires DATABASE_URL_ADMIN_TEST to be set; skips otherwise.
  */
 
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
-import type { PrismaClient } from "../prisma/client/client.ts";
-import { AgentCronJobService } from "./agent-cron-jobs.ts";
-import { AgentCronRunService } from "./agent-cron-runs.ts";
-import { FixedClock } from "./clock.ts";
+import type { PrismaClient } from "../../prisma/client/client.ts";
+import { AgentCronJobService } from "../agent-cron-jobs.ts";
+import { AgentCronRunService } from "../agent-cron-runs.ts";
+import { FixedClock } from "../clock.ts";
+import { createAdminPrismaClient } from "../prisma-client.ts";
 import { DevTaskAdherenceService } from "./dev-task-adherence.ts";
-import { createAdminPrismaClient } from "./prisma-client.ts";
 
 const TEST_DB = process.env.DATABASE_URL_ADMIN_TEST;
 const describeOrSkip = TEST_DB ? describe : describe.skip;
@@ -150,9 +150,9 @@ describeOrSkip("DevTaskAdherenceService (integration)", () => {
     expect(good?.adherent).toBe(true);
     expect(report.overall.runs).toBe(2);
     expect(report.overall.adherentRuns).toBe(1);
-    expect(
-      report.overall.steps.find((s) => s.stepNumber === "5")?.rate,
-    ).toBe(0.5);
+    expect(report.overall.steps.find((s) => s.stepNumber === "5")?.rate).toBe(
+      0.5,
+    );
     expect(report.disclaimer).toContain("started, not that it was done well");
   });
 });

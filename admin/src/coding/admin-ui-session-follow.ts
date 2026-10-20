@@ -1,5 +1,5 @@
 /**
- * admin/src/admin-ui-session-follow.ts
+ * admin/src/coding/admin-ui-session-follow.ts
  * POST /admin/sessions/:slug/follow and /unfollow (SESH-6.2).
  *
  * Mirrors admin-ui-sessions.ts's shape (a self-contained, injectable
@@ -15,13 +15,13 @@
  */
 
 import type { Hono, MiddlewareHandler } from "hono";
-import type { AdminUIEnv } from "./admin-ui.ts";
-import type { AgentMemberService } from "./agent-members.ts";
-import type { AgentService } from "./agents.ts";
+import type { AdminUIEnv } from "../admin-ui.ts";
+import type { AgentMemberService } from "../agent-members.ts";
+import type { AgentService } from "../agents.ts";
 import {
   type CallerScopeResolver,
   memberOnlyCallerScopeResolver,
-} from "./caller-scope.ts";
+} from "../caller-scope.ts";
 import type { SessionFollowService } from "./session-follow-service.ts";
 import {
   accountIdFromCallerScope,

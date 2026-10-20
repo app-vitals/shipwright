@@ -46,13 +46,11 @@ import { deleteAgentFully } from "./agent-deletion.ts";
 import type { AgentEnvService } from "./agent-envs.ts";
 import type { AgentGitHubInstallationsService } from "./agent-github-installations.ts";
 import type { AgentMemberService } from "./agent-members.ts";
-import type { AgentPhaseMethodologyService } from "./agent-phase-methodology.ts";
 import type { AgentPluginService } from "./agent-plugins.ts";
 import type { AgentProvisioner } from "./agent-provisioner.ts";
 import type { AgentTokenService } from "./agent-tokens.ts";
 import type { AgentToolService } from "./agent-tools.ts";
 import type { AgentTypeManifestResolver } from "./agent-type-manifest-loader.ts";
-import type { AgentWorkQueueService } from "./agent-work-queue.ts";
 import type { AgentService } from "./agents.ts";
 import {
   createAgent,
@@ -70,7 +68,9 @@ import {
   type CallerScopeResolver,
   memberOnlyCallerScopeResolver,
 } from "./caller-scope.ts";
-import type { DevTaskAdherenceService } from "./dev-task-adherence.ts";
+import type { AgentPhaseMethodologyService } from "./coding/agent-phase-methodology.ts";
+import type { AgentWorkQueueService } from "./coding/agent-work-queue.ts";
+import type { DevTaskAdherenceService } from "./coding/dev-task-adherence.ts";
 import {
   ApiError,
   BadRequestError,

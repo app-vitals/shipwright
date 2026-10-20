@@ -1,5 +1,5 @@
 /**
- * admin/src/session-alert-sweeper.ts
+ * admin/src/coding/session-alert-sweeper.ts
  *
  * SessionAlertSweeper — the admin service's first background loop (SESH-7.4).
  * Every tick it:
@@ -51,10 +51,10 @@
  * `autoFollowSessions` off.
  */
 
-import type { CallerScopeResolver } from "./caller-scope.ts";
-import { type Clock, SystemClock } from "./clock.ts";
-import { type PushDetailLevel, resolveDetailLevel } from "./push-content.ts";
-import type { PushService } from "./push-service.ts";
+import type { CallerScopeResolver } from "../caller-scope.ts";
+import { type Clock, SystemClock } from "../clock.ts";
+import { type PushDetailLevel, resolveDetailLevel } from "../push-content.ts";
+import type { PushService } from "../push-service.ts";
 import type {
   SessionFollowRow,
   UserNotificationPrefsRow,

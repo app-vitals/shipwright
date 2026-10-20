@@ -18,7 +18,7 @@
 
 > **2026-10-14 top-up (`d7af2240a..addbdffcb`).** Inventory re-run at `addbdffcb`. New test files, all **Reuse** at their canonical layer: `prompt-audit/hitl-policy.unit.test.ts` (unit, pure policy), `skills/prompt-scan/SKILL.content.test.ts` and `skills/prompt-fix/SKILL.content.test.ts` (content), `task-store/src/validate.unit.test.ts` (unit), `task-store/src/tasks.pr-normalize.smoke.test.ts` (in-process smoke), `agent/scripts/cli-scripts.unit.test.ts` (unit, spawns CLI scripts that exit before any network/DB use), and helm-unittest `agent_claude_policy_test.yaml`. Verified locally after `bun install --frozen-lockfile`: the six new/changed bun test files plus `lib/cli-flags.unit.test.ts` run **145 pass, 0 fail**. Integration tests (real Postgres) not run in this sandbox. No Rebuild/Delete/Net-new changes; modified tests (`dev-task-adherence.*`, `agent-cron-run-stats.*`, `run-telemetry.unit`, `lib/{pricing,default-agent-env}.unit`) keep their prior buckets. No bucket totals change beyond +6 Reuse files.
 
-> **2026-10-12 top-up (`54018b659..d7af2240a`).** Inventory re-run at `d7af2240a`. New files: `admin/src/dev-task-adherence.ts` (Reuse - sibling `.unit.test.ts` + `.integration.test.ts`), `prompt-audit/adherence.ts` (Reuse - `adherence.unit.test.ts`), `references/required-steps/dev-task.json` (Reuse - `dev-task.unit.test.ts`), and `commands/dev-task-lean.md` (Reuse - `dev-task-lean.content.test.ts`). 49 tests across the 4 new test files pass locally. No Rebuild / Promote / Net-new items added; bucket counts and existing bucket assignments unchanged.
+> **2026-10-12 top-up (`54018b659..d7af2240a`).** Inventory re-run at `d7af2240a`. New files: `admin/src/coding/dev-task-adherence.ts` (Reuse - sibling `.unit.test.ts` + `.integration.test.ts`), `prompt-audit/adherence.ts` (Reuse - `adherence.unit.test.ts`), `references/required-steps/dev-task.json` (Reuse - `dev-task.unit.test.ts`), and `commands/dev-task-lean.md` (Reuse - `dev-task-lean.content.test.ts`). 49 tests across the 4 new test files pass locally. No Rebuild / Promote / Net-new items added; bucket counts and existing bucket assignments unchanged.
 
 ## Method note (second pass, 2026-10-09)
 
@@ -188,7 +188,7 @@ document's established convention.
    spot-verified against this cycle's own live, green CI run (`36667078253` at commit
    `d656f0d0a` — see Speed measurement below) to confirm the paired test actually executes and
    passes, not just exists on disk:
-   - **`admin/src/agent-phase-methodology.ts`** (PMC-1.1, `#3725`) — paired
+   - **`admin/src/coding/agent-phase-methodology.ts`** (PMC-1.1, `#3725`) — paired
      `agent-phase-methodology.integration.test.ts`. Confirmed present and green in this
      cycle's CI log (`"GET /:id/config reflects a real PUT /agents/:id/phase-methodology/:phase
      write"`). **Reuse**, correct canonical integration layer (Prisma-backed CRUD service).
@@ -474,7 +474,7 @@ checked to confirm its test file was extended in the same commit as the producti
      passed regardless of predicate correctness (existence-only signal). Last touched by
      `3cb173830` ("replace Estimation Accuracy KPI with Shipwright PRs Merged count"),
      confirmed via `git log`. **Reuse**, in-place strengthening, no bucket change.
-   - `admin/src/admin-ui-sessions-list.smoke.test.ts` (Sessions list Follow button, FLW-1.1,
+   - `admin/src/coding/admin-ui-sessions-list.smoke.test.ts` (Sessions list Follow button, FLW-1.1,
      `#3533`) — last touched by `f43be09b7` ("wire sessions list Follow button to
      SessionFollowService"), confirmed via `git log`. **Reuse**, in-place extension at the
      already-correct smoke layer for the wired route.
@@ -512,7 +512,7 @@ for a paired, correctly-suffixed test file — not inferred from the diff stat a
 1. **Sessions (new feature, ~19 PRs)** — `task-store/src/session-service.ts` →
    `session-service.unit.test.ts` + `.integration.test.ts`; `session-rollup.ts` →
    `session-rollup.unit.test.ts`; `session-retention-reaper.ts` →
-   `session-retention-reaper.integration.test.ts`; `admin/src/session-alert-sweeper.ts` →
+   `session-retention-reaper.integration.test.ts`; `admin/src/coding/session-alert-sweeper.ts` →
    `session-alert-sweeper.unit.test.ts`; `session-follow-service.ts` →
    `.unit.test.ts` + `.integration.test.ts`; `session-scope.ts` → `.unit.test.ts`. All
    **Reuse** — every file has a paired test at its canonical layer, verified directly.
@@ -540,7 +540,7 @@ for a paired, correctly-suffixed test file — not inferred from the diff stat a
    precedent — `check-plan.ts` mirrors `check-deploy.ts`'s existing test shape,
    `patch-author-allowlist-ref.ts` mirrors `review-author-allowlist-ref.ts`'s).
 4. **`task-store/src/webhook-dispatcher.ts` + `webhook-timeout-buffer-check.ts`,
-   `admin/src/agent-work-queue-merge.ts`** — each has a paired `.unit.test.ts`. **Reuse**,
+   `admin/src/coding/agent-work-queue-merge.ts`** — each has a paired `.unit.test.ts`. **Reuse**,
    correct canonical unit layer per Phase 2's local-execution-architecture treatment
    (injected `fetchImpl` for the dispatcher, confirmed via direct read of
    `webhook-dispatcher.unit.test.ts`'s fake — no `global.fetch` override).
@@ -1507,7 +1507,7 @@ documentation or consistent with the established injected-fake pattern, confirme
 direct recount against the then-current 401-file suite, not assumed carried-forward. The
 shared-singleton mutation leak flagged 2026-08-22 and resolved 2026-08-23 remains closed
 — no new singleton-ref files (a mutable box with module-level state, like
-`agent-slack-membership-ref.ts`) were added that cycle: `admin/src/session-scope.ts` and
+`agent-slack-membership-ref.ts`) were added that cycle: `admin/src/coding/session-scope.ts` and
 the new `*-ref.ts` files (`patch-author-allowlist-ref.ts`) were checked and are either
 pure stateless predicates or per-call-constructed, not module-level singletons requiring
 an `afterEach` reset.

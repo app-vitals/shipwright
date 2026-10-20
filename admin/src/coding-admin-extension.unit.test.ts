@@ -30,6 +30,48 @@ describe("codingAdminExtension", () => {
     );
   });
 
+  it("contributes the task-store fetchers as UI deps only when the task-store is configured", () => {
+    const bare = resolveAdminExtensions([codingAdminExtension], ctx);
+    expect(bare.uiDeps).toEqual({});
+    const configured = resolveAdminExtensions([codingAdminExtension], {
+      env: {
+        SHIPWRIGHT_TASK_STORE_URL: "http://task-store.svc:3002",
+        SHIPWRIGHT_TASK_STORE_ADMIN_TOKEN: "admin",
+      },
+    } as unknown as AdminExtensionContext);
+    expect(typeof configured.uiDeps.fetchTaskStoreSessions).toBe("function");
+    expect(typeof configured.uiDeps.fetchTaskStoreTasks).toBe("function");
+  });
+
+  it("starts the session alert sweeper only with push AND the task-store configured", () => {
+    const env = {
+      SHIPWRIGHT_TASK_STORE_URL: "http://task-store.svc:3002",
+      SHIPWRIGHT_TASK_STORE_ADMIN_TOKEN: "admin",
+    };
+    const services = {
+      agentMemberService: {},
+      agentService: {},
+      callerScopeResolver: {},
+    };
+    const push = { service: {}, maxDetail: "title" };
+    const passes = (extra: Record<string, unknown>) =>
+      resolveAdminExtensions([codingAdminExtension], {
+        prisma: {},
+        adminAllowedEmails: [],
+        services,
+        ...extra,
+      } as unknown as AdminExtensionContext).backgroundPasses;
+
+    expect(passes({ env })).toEqual([]);
+    expect(passes({ env: {}, push })).toEqual([]);
+    const [pass] = passes({ env, push });
+    expect(pass).toMatchObject({
+      name: "session alert sweeper",
+      logPrefix: "[session-alert-sweeper]",
+    });
+    expect(passes({ env, push })).toHaveLength(1);
+  });
+
   it("registers the task-store service integration", () => {
     const env = {
       SHIPWRIGHT_TASK_STORE_URL: "http://task-store.svc:3002",

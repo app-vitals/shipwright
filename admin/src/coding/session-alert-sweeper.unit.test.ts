@@ -1,5 +1,5 @@
 /**
- * admin/src/session-alert-sweeper.unit.test.ts
+ * admin/src/coding/session-alert-sweeper.unit.test.ts
  * Unit tests for SessionAlertSweeper orchestration (SESH-7.4).
  *
  * Everything the sweeper touches is injected: an in-memory Prisma double, a
@@ -10,21 +10,21 @@
  */
 
 import { describe, expect, it } from "bun:test";
-import type { CallerScopeResolver } from "./caller-scope.ts";
-import { FixedClock } from "./clock.ts";
+import type { CallerScopeResolver } from "../caller-scope.ts";
+import { FixedClock } from "../clock.ts";
 import type {
   PushDetailLevel,
   SessionNotificationKind,
-} from "./push-content.ts";
+} from "../push-content.ts";
 import {
-  type SessionAlertPrismaLike,
-  type SessionAlertStateRow,
-  SessionAlertSweeper,
-  type SessionForAlert,
   autoFollowBoundary,
   localDateKey,
   localHour,
   resolveWaitingAlertKind,
+  type SessionAlertPrismaLike,
+  type SessionAlertStateRow,
+  SessionAlertSweeper,
+  type SessionForAlert,
   startedWaitingBefore,
 } from "./session-alert-sweeper.ts";
 import type {

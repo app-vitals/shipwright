@@ -1,5 +1,5 @@
 /**
- * admin/src/admin-ui-session-follow.smoke.test.ts
+ * admin/src/coding/admin-ui-session-follow.smoke.test.ts
  * Smoke tests for POST /admin/sessions/:slug/{follow,unfollow} (SESH-6.2).
  *
  * Uses app.request() against a minimal Hono<AdminUIEnv> instance with
@@ -14,15 +14,15 @@
  */
 
 import { describe, expect, it, spyOn } from "bun:test";
-import { Hono } from "hono";
 import type { MiddlewareHandler } from "hono";
+import { Hono } from "hono";
+import type { AdminUIEnv } from "../admin-ui.ts";
+import type { AgentMemberService } from "../agent-members.ts";
+import type { AgentService } from "../agents.ts";
 import {
-  type SessionFollowRoutesDeps,
   registerSessionFollowRoutes,
+  type SessionFollowRoutesDeps,
 } from "./admin-ui-session-follow.ts";
-import type { AdminUIEnv } from "./admin-ui.ts";
-import type { AgentMemberService } from "./agent-members.ts";
-import type { AgentService } from "./agents.ts";
 import type {
   SessionFollowRow,
   SessionFollowService,

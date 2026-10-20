@@ -1,5 +1,5 @@
 /**
- * admin/src/dev-task-adherence.ts
+ * admin/src/coding/dev-task-adherence.ts
  * Dev-task adherence report (DTA-1.2). For each non-skipped dev-task run,
  * compares the run's AgentCronRunSkillUsage rows (subagents appear as
  * kind="agent", name=<subagent_type>) against the required-steps table
@@ -25,10 +25,10 @@
  * reported as "unmeasured" and excluded from adherence rates.
  */
 
-import type { PrismaClient } from "../prisma/client/client.ts";
-import requiredStepsFile from "../../plugins/shipwright/references/required-steps/dev-task.json" with {
+import requiredStepsFile from "../../../plugins/shipwright/references/required-steps/dev-task.json" with {
   type: "json",
 };
+import type { PrismaClient } from "../../prisma/client/client.ts";
 
 export interface RequiredStep {
   stepNumber: string;

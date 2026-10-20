@@ -2,7 +2,7 @@
 
 Session-follow lets a user follow a task-store [Session](./task-store.md) and receive a Web Push notification about it — the session-lifecycle sibling of the chat "your agent replied" push flow documented in [`docs/agent-web-ui.md`](./agent-web-ui.md)'s "PWA shell" section (service worker, VAPID env vars, and the `PushSubscription` model). It reuses that same `PushSubscription`/VAPID infrastructure, but adds its own business-domain state: follow/mute per user per session, per-user notification prefs, and a per-user/per-session alert cooldown.
 
-Implemented across `admin/src/session-follow-service.ts` (CRUD), `admin/src/push-content.ts` (session notification content policy), `admin/src/push-service.ts`'s `notifySession()` (delivery), `admin/src/session-alert-sweeper.ts` (the background job that calls `notifySession()`, stamps `SessionAlertState.lastAlertedAt`, and prunes followers who lose visibility), `admin/src/admin-ui-sessions.ts` (the settings page), `admin/src/admin-ui-push-test.ts` (the "Send test notification" route mounted alongside it), `admin/src/admin-ui-session-follow.ts` (follow/unfollow routes), and `admin/src/session-scope.ts` (the visibility model). Per-file detail: [agent-key-files.md](./agent-key-files.md). Prisma models: [agent.md's Data model table](./agent.md#data-model).
+Implemented across `admin/src/coding/session-follow-service.ts` (CRUD), `admin/src/push-content.ts` (session notification content policy), `admin/src/push-service.ts`'s `notifySession()` (delivery), `admin/src/coding/session-alert-sweeper.ts` (the background job that calls `notifySession()`, stamps `SessionAlertState.lastAlertedAt`, and prunes followers who lose visibility), `admin/src/coding/admin-ui-sessions.ts` (the settings page), `admin/src/admin-ui-push-test.ts` (the "Send test notification" route mounted alongside it), `admin/src/coding/admin-ui-session-follow.ts` (follow/unfollow routes), and `admin/src/coding/session-scope.ts` (the visibility model). Per-file detail: [agent-key-files.md](./agent-key-files.md). Prisma models: [agent.md's Data model table](./agent.md#data-model).
 
 ---
 
@@ -18,7 +18,7 @@ Three models, all in `admin/prisma/schema.prisma`, none tied to an `Agent` (no c
 
 `SessionAlertState.lastAlertedAt` is written by `session-alert-sweeper.ts`'s `stampAlertState()` (an upsert, keyed per user/session) after every immediate/reminder push `sweepWaitingSession()` sends — the cooldown state the model was built to hold. A completed push instead goes through `sweepClosedSession()`, which deletes the `SessionAlertState` row (along with the `SessionFollow` row) as terminal cleanup rather than stamping it. `SessionFollowService.unfollow()` additionally deletes the caller's `SessionAlertState` row for the slug as cleanup, so a stale cooldown timestamp doesn't linger past unfollowing.
 
-`SessionFollowService` (`admin/src/session-follow-service.ts`) is the sole entry point — routes never touch these three Prisma models directly:
+`SessionFollowService` (`admin/src/coding/session-follow-service.ts`) is the sole entry point — routes never touch these three Prisma models directly:
 
 - `follow(userEmail, sessionSlug)` — idempotent upsert. Re-following an already-followed (possibly muted) session un-mutes it rather than erroring.
 - `unfollow(userEmail, sessionSlug)` — idempotent delete of both the `SessionFollow` row and the matching `SessionAlertState` row.
@@ -51,7 +51,7 @@ effective level = min(operator ceiling, per-subscription opt-in, per-call ceilin
 
 ## `/admin/settings/notifications` page
 
-`admin/src/admin-ui-sessions.ts` registers three routes, mounted by `admin-ui.ts`. All three are **admin-only** — a non-admin caller gets `403 Forbidden` (unlike the follow/unfollow routes below, which apply the session-visibility check instead of an admin gate):
+`admin/src/coding/admin-ui-sessions.ts` registers three routes, mounted by `admin-ui.ts`. All three are **admin-only** — a non-admin caller gets `403 Forbidden` (unlike the follow/unfollow routes below, which apply the session-visibility check instead of an admin gate):
 
 | Method | Path | Description |
 |---|---|---|
@@ -63,7 +63,7 @@ The followed-sessions list filters out muted rows (`follows.filter(f => !f.muted
 
 ## Follow / unfollow a session
 
-`admin/src/admin-ui-session-follow.ts` registers two routes, mounted next to the settings routes:
+`admin/src/coding/admin-ui-session-follow.ts` registers two routes, mounted next to the settings routes:
 
 | Method | Path | Description |
 |---|---|---|
@@ -72,7 +72,7 @@ The followed-sessions list filters out muted rows (`follows.filter(f => !f.muted
 
 ## Session visibility model (`session-scope.ts`)
 
-`admin/src/session-scope.ts` is a pure, no-I/O module deciding which sessions a caller may see:
+`admin/src/coding/session-scope.ts` is a pure, no-I/O module deciding which sessions a caller may see:
 
 ```ts
 visibleAgentIdsFor(isAdmin, memberships): "all" | string[]

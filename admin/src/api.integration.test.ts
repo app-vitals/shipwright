@@ -15,12 +15,12 @@ import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import type { PrismaClient } from "../prisma/client/client.ts";
 import { AgentCronJobService } from "./agent-cron-jobs.ts";
 import { AgentEnvService } from "./agent-envs.ts";
-import { AgentPhaseMethodologyService } from "./agent-phase-methodology.ts";
 import { AgentPluginService } from "./agent-plugins.ts";
 import { AgentTokenService } from "./agent-tokens.ts";
 import { AgentService } from "./agents.ts";
 import { createAdminApp, parseAdminApiKeys } from "./agents-api.ts";
 import { createAgentRuntimeApp } from "./api.ts";
+import { AgentPhaseMethodologyService } from "./coding/agent-phase-methodology.ts";
 import { createAdminPrismaClient } from "./prisma-client.ts";
 import { makeTokenCrypto } from "./token-crypto.ts";
 

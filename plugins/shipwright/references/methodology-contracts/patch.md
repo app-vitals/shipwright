@@ -16,7 +16,7 @@ does no phase-specific adaptation.
 
 > **Subagent selection is wired up (PTM-1.2).** A per-agent, per-phase `AgentPhaseMethodology`
 > record (`{phase, subagentType | null}`, with `patch` as a valid phase key) exists as a Prisma
-> model plus CRUD service in `admin/src/agent-phase-methodology.ts`. `commands/patch.md`'s Step
+> model plus CRUD service in `admin/src/coding/agent-phase-methodology.ts`. `commands/patch.md`'s Step
 > 2.2 reads `phaseMethodology.patch` off `GET /agents/{id}/config` once per run and resolves
 > `PATCH_SUBAGENT_TYPE` — falling back to the built-in `general-purpose` when no override is
 > configured, or on any lookup failure (fail-closed, never fail-open). All three of

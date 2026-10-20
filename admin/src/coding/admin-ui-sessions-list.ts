@@ -1,5 +1,5 @@
 /**
- * admin/src/admin-ui-sessions-list.ts
+ * admin/src/coding/admin-ui-sessions-list.ts
  * GET /admin/sessions — the Sessions list page (SESH-4.2).
  *
  * Renders three sections (Waiting on you / Active / Closed) plus an
@@ -20,19 +20,19 @@
 
 import { DEFAULT_ACCOUNT_ID } from "@shipwright/lib/default-account";
 import type { Hono, MiddlewareHandler } from "hono";
-import type { AdminUIEnv } from "./admin-ui.ts";
-import { renderAdminPage } from "./admin-ui-layout.ts";
+import type { AdminUIEnv } from "../admin-ui.ts";
+import { renderAdminPage } from "../admin-ui-layout.ts";
 import {
   renderRepoOrgFilterFields,
   resolveAgentNameFilterAndPaginate,
-} from "./admin-ui-pages.ts";
-import { escapeHtml, renderAdminToolbar } from "./admin-ui-styles.ts";
-import type { AgentMemberService } from "./agent-members.ts";
-import type { AgentService } from "./agents.ts";
+} from "../admin-ui-pages.ts";
+import { escapeHtml, renderAdminToolbar } from "../admin-ui-styles.ts";
+import type { AgentMemberService } from "../agent-members.ts";
+import type { AgentService } from "../agents.ts";
 import {
   type CallerScopeResolver,
   memberOnlyCallerScopeResolver,
-} from "./caller-scope.ts";
+} from "../caller-scope.ts";
 import type { SessionFollowService } from "./session-follow-service.ts";
 import {
   accountIdFromCallerScope,
