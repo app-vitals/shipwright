@@ -9,7 +9,7 @@ type: application
 # Chart version (SemVer). Bump on every chart change, independent of appVersion.
 # See CHANGELOG.md and the README "Versioning" section — CI enforces this bump
 # via `ct lint --check-version-increment`.
-version: 1.26.17
+version: 1.26.18
 # Version of the Shipwright application this chart deploys by default.
 appVersion: "0.1.0"
 home: https://shipwrightharness.com
@@ -30,7 +30,7 @@ annotations:
   # entry in CHANGELOG.md (keep the two in sync on every bump).
   artifacthub.io/changes: |
     - kind: changed
-      description: "auto-bump to chart v1.26.17 triggered by release tag agent-v1.412.1"
+      description: "update traefik subchart to v42.0.0"
 dependencies:
   # Bitnami PostgreSQL subchart, pinned to the chart release shipping Postgres 18.x
   # (appVersion 18.6.0). Every current chart release defaults image.tag to `latest`
@@ -51,7 +51,7 @@ dependencies:
     repository: https://kubernetes.github.io/ingress-nginx
     condition: ingress-nginx.enabled
   - name: traefik
-    version: "41.7.1"
+    version: "42.0.0"
     repository: https://traefik.github.io/charts
     condition: traefik.enabled
   # Optional bundled cert-manager subchart (CNH-6.1), default off. Bring your
