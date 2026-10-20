@@ -12,45 +12,48 @@ import type {
   AgentExtension,
   AgentExtensionContext,
   PeriodicPass,
-} from "../agent-extension.ts";
-import { agentReposRef } from "../agent-repos-ref.ts";
-import { allowSelfReviewRef } from "../allow-self-review-ref.ts";
+} from "../runtime/agent-extension.ts";
+import { agentReposRef } from "../runtime/agent-repos-ref.ts";
+import type {
+  EarlySessionIdCallback,
+  ProgressCallback,
+} from "../runtime/claude.ts";
+import { cleanupMergedWorktreesRef } from "../runtime/cleanup-merged-worktrees-ref.ts";
+import { NoopCronRunReporter } from "../runtime/cron-run-reporter.ts";
+import { ghGraphql, ghJson } from "../runtime/gh-helpers.ts";
+import { allowSelfReviewRef } from "./allow-self-review-ref.ts";
 import {
   buildProductionDeps as buildClaimInvariantReconcilerDeps,
   reconcileClaimInvariant,
-} from "../claim-invariant-reconciler.ts";
-import type { EarlySessionIdCallback, ProgressCallback } from "../claude.ts";
-import { cleanupMergedWorktreesRef } from "../cleanup-merged-worktrees-ref.ts";
-import { NoopCronRunReporter } from "../cron-run-reporter.ts";
-import { ghGraphql, ghJson } from "../gh-helpers.ts";
+} from "./claim-invariant-reconciler.ts";
 import {
   type CronJobLike,
   classifyCronJobsForScheduling,
-} from "../loop-cron-classifier.ts";
-import { createJobsRef } from "../loop-jobs-ref.ts";
-import { createLoopOrchestratorGetter } from "../loop-orchestrator.ts";
+} from "./loop-cron-classifier.ts";
+import { createJobsRef } from "./loop-jobs-ref.ts";
+import { createLoopOrchestratorGetter } from "./loop-orchestrator.ts";
 import {
   patchAuthorAllowlistRef,
   resolvePatchAuthorAllowlist,
-} from "../patch-author-allowlist-ref.ts";
+} from "./patch-author-allowlist-ref.ts";
 import {
   buildProductionDeps as buildPrCensusDeps,
   runPrCensus,
-} from "../pr-census.ts";
+} from "./pr-census.ts";
 import {
   buildProductionDeps as buildPrStateReconcilerDeps,
   buildReviewStateProductionDeps as buildReviewStateReconcilerDeps,
   reconcilePrState,
   reconcileReviewState,
-} from "../pr-state-reconciler.ts";
+} from "./pr-state-reconciler.ts";
 import {
   resolveReviewAuthorAllowlist,
   reviewAuthorAllowlistRef,
-} from "../review-author-allowlist-ref.ts";
+} from "./review-author-allowlist-ref.ts";
 import {
   HttpWorkQueueReporter,
   NoopWorkQueueReporter,
-} from "../work-queue-reporter.ts";
+} from "./work-queue-reporter.ts";
 
 export function createCodingExtension(
   ctx: AgentExtensionContext,

@@ -81,7 +81,7 @@ export function computeVerdict(
 
 // ─── Verdict label matching ───────────────────────────────────────────────────
 //
-// Mirrors agent/src/check-helpers.ts's VERDICT_APPROVE_LABEL convention
+// Mirrors agent/src/coding/check-helpers.ts's VERDICT_APPROVE_LABEL convention
 // (`/verdict\**\s*:\s*\**approve\b/i`) — case-insensitive, optional markdown
 // bold markers around "verdict", the colon, and/or the verdict word, not
 // anchored to end-of-line since review bodies trail reasoning after the

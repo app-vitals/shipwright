@@ -1,0 +1,1246 @@
+/**
+ * agent/src/coding/check-helpers.ts
+ *
+ * Shared helpers ported from plugins/shipwright/scripts/check-helpers.ts —
+ * a native, directly-importable copy for the agent runtime. The plugin
+ * scripts remain the source of truth for agents that still run the
+ * check-*.ts scripts as separate processes; this module exists so
+ * in-process precheck ports (WL-2.2) can import the same logic without a
+ * subprocess hop.
+ *
+ * Behavior is unchanged from the plugin source except createTaskStoreClient,
+ * which gains an optional injectable fetch function so callers can supply a
+ * fake fetch in tests instead of overriding globalThis.fetch (agent/src test
+ * isolation rule: no global.fetch/global.* overrides). When no fetchFn is
+ * passed, it falls back to global fetch — identical behavior to the plugin
+ * version.
+ *
+ * Covers:
+ * - Workspace path resolution (WORKSPACE_PATH env var or cwd heuristic)
+ * - Org/repo resolution from repos/ dir
+ * - gh CLI execution helper
+ */
+
+import { existsSync, readdirSync, readFileSync } from "node:fs";
+import { join } from "node:path";
+import {
+  type AllowSelfReviewRef,
+  allowSelfReviewRef,
+} from "./allow-self-review-ref.ts";
+import type { PrReviewData } from "./check-patch.ts";
+
+// ─── Task types ───────────────────────────────────────────────────────────────
+
+export type TaskStatus =
+  | "pending"
+  | "in_progress"
+  | "pr_open"
+  | "approved"
+  | "merged"
+  | "done"
+  | "deploying"
+  | "deployed"
+  | "blocked"
+  | "cancelled";
+
+export interface Task {
+  id: string;
+  title: string;
+  status: TaskStatus;
+  source?: string;
+  session?: string;
+  repo?: string;
+  description?: string;
+  acceptanceCriteria?: string[];
+  layer?: string;
+  branch?: string;
+  dependencies?: string[];
+  pr?: number;
+  hours?: number;
+  createdAt?: string;
+  startedAt?: string;
+  prCreatedAt?: string;
+  mergedAt?: string;
+  blockedAt?: string;
+  blockedReason?: string;
+  note?: string;
+  type?: string;
+  priority?: string;
+  size?: string;
+  file?: string;
+  cancelledAt?: string;
+  completedAt?: string;
+  deployingAt?: string;
+  deployedAt?: string;
+  ciFixAttempts?: number;
+  mergeCommit?: string;
+  prNumber?: number;
+  prOpenedAt?: string;
+  prUrl?: string;
+  assignee?: string;
+  /**
+   * The agent id currently holding the claim — pinned server-side by
+   * POST /tasks/{id}/claim to the calling agent's id, cleared by /release and
+   * by the StaleClaimReaper. Null/absent means unclaimed.
+   */
+  claimedBy?: string | null;
+  issue?: string;
+  model?: "haiku" | "sonnet" | "opus";
+  complexity?: number;
+  hitl?: boolean;
+  hitlNotifiedAt?: string;
+}
+
+// ─── Self-review body matching ────────────────────────────────────────────────
+
+/**
+ * Matches a "Verdict: APPROVE" label anywhere in a review body (case-
+ * insensitive, optional markdown bold markers around either word). Not
+ * anchored to end-of-line — narrative self-reviews trail reasoning after the
+ * verdict on the same line. The trailing `\b` requires "approve" to end as a
+ * whole word, so "Verdict: CHANGES_REQUESTED" or "Verdict: DISAPPROVE" never
+ * matches.
+ */
+export const VERDICT_APPROVE_LABEL = /verdict\**\s*:\s*\**approve\b/i;
+
+/**
+ * The canonical TS-side pattern that `plugins/shipwright/commands/review.md`'s
+ * Step 14 Live-Review Pre-Check (RVD-1.2) mirrors as a bash/jq regex, since
+ * review.md is bash/gh/curl-driven and can't import TS. Unlike
+ * `VERDICT_APPROVE_LABEL` (APPROVE only, used for self-review clean-approve
+ * detection), this also matches COMMENT — because review.md's own Step 10
+ * always posts a `Verdict: APPROVE` or `Verdict: COMMENT` line, and BOTH
+ * represent "already reviewed, terminal" as far as the live-review pre-check
+ * is concerned (mirrors the intent of `classifyReviewState()`'s "posted" vs
+ * "approved" split, but collapsed into a single boolean here since Step 14
+ * only needs to know whether ANY terminal review exists at the current head
+ * commit). Not currently consumed anywhere in TS — it exists purely as the
+ * source of truth for the bash regex embedded in review.md, verified in sync
+ * via a content test in plugins/shipwright/commands/review.unit.test.ts.
+ */
+export const VERDICT_TERMINAL_LABEL =
+  /verdict\**\s*:\s*\**(approve|comment)\b/i;
+
+/**
+ * Single source of truth for what `review.md`'s Step 14 Live-Review
+ * Pre-Check (RVD-1.2) mirrors as a bash/jq predicate: a review counts as
+ * "already reviewed, terminal at this commit" when EITHER
+ * `VERDICT_TERMINAL_LABEL` matches its body OR its live GitHub `state` is
+ * `"APPROVED"` — a plain GitHub UI approval (empty/`LGTM` body, no
+ * `Verdict:` line) must count as terminal too, matching
+ * `classifyReviewState()`'s treatment of `state === "APPROVED"`. The bash
+ * mirror in review.md's jq program (`.state == "APPROVED"` ORed into the
+ * `select(...)` predicate alongside the `test(...)` regex) MUST stay in sync
+ * with this function's definition — verified via a content test in
+ * `plugins/shipwright/commands/review.content.test.ts`.
+ */
+export function isTerminalReviewLabel(review: {
+  state: string;
+  body: string;
+}): boolean {
+  return (
+    review.state === "APPROVED" || VERDICT_TERMINAL_LABEL.test(review.body)
+  );
+}
+
+/**
+ * True when a review body is a clean APPROVE verdict, matched either by:
+ * - a leading `APPROVE` (after stripping leading markdown bold markers), or
+ * - a "Verdict: APPROVE" label anywhere in the body (the narrative
+ *   self-review convention, which ends a summary with the verdict rather
+ *   than leading with it).
+ *
+ * Shared by check-deploy.ts's hasSelfApproveReview and check-patch.ts's
+ * isSelfCleanApprove so the two self-review consumers can't diverge again.
+ */
+export function isCleanApproveBody(body: string): boolean {
+  return (
+    body.trimStart().replace(/^\*+/, "").startsWith("APPROVE") ||
+    VERDICT_APPROVE_LABEL.test(body)
+  );
+}
+
+// ─── Live review-state classification ─────────────────────────────────────────
+//
+// Promoted from pr-state-reconciler.ts (RVD-1.1) — pure move, same bodies —
+// so check-review.ts's candidate selection can also dedup against live
+// GitHub review data (identity-agnostic, any author's terminal review
+// counts), not just pr-state-reconciler.ts's async background reconcile
+// pass. pr-state-reconciler.ts now imports these from here instead of
+// defining them locally.
+
+/** Filter a PR's reviews down to only those submitted at the current head commit. */
+export function reviewsAtHeadCommit(
+  data: PrReviewData,
+): PrReviewData["reviews"]["nodes"] {
+  const { headRefOid, reviews } = data;
+  return reviews.nodes.filter((r) => r.commit.oid === headRefOid);
+}
+
+/**
+ * CHU-2.4: does ANY review at all exist at the PR's current head commit?
+ * Extracted out of `classifyReviewState`'s existing `reviewsAtHead.length ===
+ * 0` check so the posted-scan pass can distinguish this specific null case
+ * ("nothing at head at all" — a posted verdict has gone stale because a new
+ * commit landed with no review yet targeting it) from the OTHER null case
+ * `classifyReviewState` returns (a genuine unresolved finding at head, which
+ * must leave a posted record untouched). `classifyReviewState`'s own
+ * existing behavior/signature is unchanged — it still returns null for both
+ * cases, exactly as before.
+ */
+export function hasAnyReviewAtHead(data: PrReviewData): boolean {
+  return reviewsAtHeadCommit(data).length > 0;
+}
+
+/**
+ * Classify a PR's review state from live GitHub review data. Mirrors the
+ * SHAPE of check-patch.ts's private `hasUnaddressedFindings` filtering
+ * (reviews-at-head, unresolved-threads-or-non-empty-body) but keyed on
+ * `isCleanApproveBody` for the approve/non-finding split instead of
+ * self-authorship — this reconciler exists specifically to catch an
+ * OUT-OF-BAND reviewer, so ANY author's clean-approve-shaped COMMENTED
+ * review counts, not just self-authored ones.
+ *
+ * Genuine findings are checked FIRST, independent of whether an approve also
+ * exists at head — an approve from one reviewer must never mask an unresolved
+ * thread or non-empty finding body left by a different reviewer's
+ * COMMENTED/CHANGES_REQUESTED review at the same head commit (mirrors
+ * `hasUnaddressedFindings`'s filtering order in check-patch.ts).
+ *
+ * Returns:
+ *   - "approved" — a real APPROVED review, or a clean-approve-shaped
+ *     COMMENTED review, at the current head commit, AND no genuine
+ *     unaddressed finding from any other review at the same head commit.
+ *   - "posted" — a terminal (no unresolved threads, no qualifying non-empty
+ *     finding body) non-approve review at the current head commit.
+ *   - null — no review at all at the current head commit, OR a genuine
+ *     unaddressed finding at the current head commit. Both cases must leave
+ *     the record completely untouched.
+ */
+export function classifyReviewState(
+  data: PrReviewData,
+): "approved" | "posted" | null {
+  const { reviewThreads } = data;
+  const reviewsAtHead = reviewsAtHeadCommit(data);
+  if (reviewsAtHead.length === 0) return null; // nothing at head — untouched
+
+  const qualifyingReviews = reviewsAtHead.filter(
+    (r) =>
+      (r.state === "COMMENTED" || r.state === "CHANGES_REQUESTED") &&
+      !isCleanApproveBody(r.body),
+  );
+
+  if (qualifyingReviews.length > 0) {
+    const unresolvedThreads = reviewThreads.nodes.filter((t) => !t.isResolved);
+    if (unresolvedThreads.length > 0) return null; // genuine finding — untouched
+
+    const hasFindingBody = qualifyingReviews.some(
+      (r) => r.body.trim().length > 0,
+    );
+    if (hasFindingBody) return null; // genuine finding — untouched
+  }
+
+  const hasApprove = reviewsAtHead.some(
+    (r) =>
+      r.state === "APPROVED" ||
+      (r.state === "COMMENTED" && isCleanApproveBody(r.body)),
+  );
+  if (hasApprove) return "approved";
+
+  return "posted"; // terminal, non-approve, no finding
+}
+
+/**
+ * Read the `allow_self_review` policy field: the DB value synced into
+ * `configRef` (defaults to the process-wide `allowSelfReviewRef`, synced from
+ * GET /agents/:id/config every ~60s by index.ts's syncConfig()), else the
+ * hardcoded default `false` while the ref has never synced (e.g. the config
+ * fetch is failing). The `state/agent-policy.md` file tier no longer exists.
+ *
+ * `_workspacePath` is unused and kept only so existing callers keep their
+ * call shape. `configRef` is injectable so tests don't depend on the
+ * process-wide ref's global state.
+ */
+export async function readAllowSelfReview(
+  _workspacePath: string,
+  configRef: AllowSelfReviewRef = allowSelfReviewRef,
+): Promise<boolean> {
+  return configRef.hasSynced() ? configRef.get() : false;
+}
+
+// ─── Repos resolution ────────────────────────────────────────────────────────
+
+export function resolveAllRepos(workspacePath: string): string[] {
+  return resolveRepos(workspacePath);
+}
+
+/**
+ * Parse a git remote URL into "org/repo" format.
+ * Handles both HTTPS (https://github.com/org/repo.git) and
+ * SSH (git@github.com:org/repo.git) forms.
+ * Returns null if the URL cannot be parsed.
+ */
+function parseRemoteUrl(url: string): string | null {
+  // SSH: git@github.com:org/repo.git
+  const sshMatch = url.match(/^git@[^:]+:([^/]+\/[^/]+?)(?:\.git)?$/);
+  if (sshMatch) return sshMatch[1];
+
+  // HTTPS: https://github.com/org/repo.git or https://github.com/org/repo
+  const httpsMatch = url.match(/^https?:\/\/[^/]+\/([^/]+\/[^/]+?)(?:\.git)?$/);
+  if (httpsMatch) return httpsMatch[1];
+
+  return null;
+}
+
+/**
+ * Scan a directory for git clones and return ["org/repo", ...] strings
+ * by reading each clone's .git/config for the remote origin URL.
+ */
+function scanReposDir(dir: string): string[] {
+  const repos: string[] = [];
+  let entries: string[];
+  try {
+    entries = readdirSync(dir);
+  } catch {
+    return repos;
+  }
+
+  for (const entry of entries) {
+    const gitConfigPath = join(dir, entry, ".git", "config");
+    if (!existsSync(gitConfigPath)) continue;
+    try {
+      const content = readFileSync(gitConfigPath, "utf-8");
+      // Look for the [remote "origin"] url line
+      const urlMatch = content.match(
+        /\[remote\s+"origin"\][^[]*url\s*=\s*(.+)/,
+      );
+      if (!urlMatch) continue;
+      const remoteUrl = urlMatch[1].trim();
+      const orgRepo = parseRemoteUrl(remoteUrl);
+      if (orgRepo) repos.push(orgRepo);
+    } catch {
+      // Skip unreadable configs
+    }
+  }
+
+  return repos;
+}
+
+/**
+ * Resolve the list of "owner/repo" strings for this workspace.
+ *
+ * Priority:
+ * 1. workspace/repos/ — scans for git clones, reads remote origin URLs
+ * 2. SHIPWRIGHT_REPOS_DIR env var — same scan on an external directory
+ * 3. Returns [] if nothing found
+ */
+export function resolveRepos(workspacePath: string): string[] {
+  // 1. Try workspace/repos/ directory
+  const reposDir = join(workspacePath, "repos");
+  if (existsSync(reposDir)) {
+    const repos = scanReposDir(reposDir);
+    if (repos.length > 0) return repos;
+  }
+
+  // 2. Fall back to SHIPWRIGHT_REPOS_DIR env var
+  const envReposDir = (process.env.SHIPWRIGHT_REPOS_DIR ?? "").trim();
+  if (envReposDir && existsSync(envReposDir)) {
+    const repos = scanReposDir(envReposDir);
+    if (repos.length > 0) return repos;
+  }
+
+  return [];
+}
+
+// ─── Merge-only detection ────────────────────────────────────────────────────
+
+export interface CommitInfo {
+  sha: string;
+  parents: Array<{ sha: string }>;
+}
+
+/**
+ * Returns true if all commits after `lastReviewedCommit` are merge commits
+ * (parents.length >= 2). Returns false on error, missing anchor, or if there
+ * are no commits after the anchor.
+ *
+ * Shared by check-review (skip re-review after merge-from-main) and check-patch
+ * (still trigger patch when only merge commits landed since a stale review).
+ */
+export async function isMergeOnlyUpdate(
+  prNumber: number,
+  lastReviewedCommit: string,
+  deps: {
+    listPrCommits: (prNumber: number, repo?: string) => Promise<CommitInfo[]>;
+  },
+  repo?: string,
+): Promise<boolean> {
+  try {
+    const commits = await deps.listPrCommits(prNumber, repo);
+    const anchorIndex = commits.findIndex((c) => c.sha === lastReviewedCommit);
+    if (anchorIndex === -1) return false;
+    const subsequent = commits.slice(anchorIndex + 1);
+    if (subsequent.length === 0) return false;
+    return subsequent.every((c) => c.parents.length >= 2);
+  } catch {
+    return false;
+  }
+}
+
+// ─── Task store HTTP client ───────────────────────────────────────────────────
+
+type FetchFn = (
+  url: RequestInfo | URL,
+  init?: RequestInit,
+) => Promise<Response>;
+
+/**
+ * Max chars of a non-ok response body scanned when redacting. Deliberately
+ * larger than the emitted snippet so a secret straddling the emit cut is still
+ * matched and masked in full, rather than half of it slipping through.
+ */
+const BODY_SCAN_LIMIT = 2000;
+
+/** Max chars of the redacted body snippet folded into a thrown error message. */
+const BODY_SNIPPET_LIMIT = 500;
+
+/**
+ * Secret-shaped patterns masked out of another service's error body before any
+ * of it is attached to a thrown Error.
+ *
+ * `docs/observability.md` documents that request/response bodies are never
+ * attached to a Sentry event, and `lib/sentry.ts`'s scrub hook only redacts
+ * *this* process's own live `SECRET_ENV_VARS` values by exact string match —
+ * neither does anything for credential material embedded in a *different*
+ * service's response body (e.g. a Prisma `P1013` error echoing task-store's
+ * own `DATABASE_URL`). Task-store's `onError` returns `{ error: err.message }`
+ * verbatim for any unhandled 500, so that body reaches the agent, and the
+ * agent's own failure path (`loop-orchestrator.ts` / `cron-failure-reporter.ts`)
+ * hands the resulting Error to `captureException`. These patterns close that
+ * gap at the point of capture: the snippet keeps its diagnostic value (status
+ * text, error class, Prisma error code, host/table names) without carrying
+ * credentials.
+ */
+const BODY_SECRET_PATTERNS: readonly {
+  readonly re: RegExp;
+  readonly replacement: string;
+}[] = [
+  // URI userinfo credentials — postgresql://user:pw@host, redis://…, https://…
+  {
+    re: /([a-z][a-z0-9+.-]*:\/\/)[^\s/@]*:[^\s/@]*@/gi,
+    replacement: "$1[Filtered]@",
+  },
+  // Well-known token prefixes (GitHub, Anthropic, Slack).
+  {
+    re: /\b(?:gh[pousr]_|github_pat_|sk-|xox[abprs]-)[A-Za-z0-9_-]{8,}/g,
+    replacement: "[Filtered]",
+  },
+  // Authorization scheme values — "Bearer abc123", "Basic dXNlcjpwdw==".
+  {
+    re: /\b(bearer|basic|token)\s+[A-Za-z0-9._~+/=-]{8,}/gi,
+    replacement: "$1 [Filtered]",
+  },
+  // Secret-shaped key/value pairs in JSON bodies, query strings, and env dumps.
+  {
+    re: /(["']?[A-Za-z0-9_.-]*(?:password|passwd|secret|token|api[_-]?key|apikey|credential|private[_-]?key|authorization)[A-Za-z0-9_.-]*["']?\s*[:=]\s*)(?:"[^"]*"|'[^']*'|[^\s,;&)}\]]+)/gi,
+    replacement: '$1"[Filtered]"',
+  },
+];
+
+/**
+ * Scrubs secret-shaped material out of a foreign service's response body and
+ * truncates it to a bounded snippet safe to fold into a thrown Error message
+ * (and therefore into a Sentry Issue). Redaction runs over a wider window than
+ * the emitted snippet so truncation can't expose the leading half of a secret.
+ *
+ * Exported for direct unit testing; callers should prefer `query()`.
+ */
+export function redactBodySnippet(body: string): string {
+  let redacted = body.slice(0, BODY_SCAN_LIMIT);
+  for (const { re, replacement } of BODY_SECRET_PATTERNS) {
+    redacted = redacted.replace(re, replacement);
+  }
+  return redacted.slice(0, BODY_SNIPPET_LIMIT);
+}
+
+/**
+ * Reads SHIPWRIGHT_TASK_STORE_URL and SHIPWRIGHT_TASK_STORE_TOKEN from the
+ * environment, validates they are present, and returns a minimal fetch client
+ * for the task-store HTTP API.
+ *
+ * Exits with code 1 if either variable is missing so callers (precheck scripts)
+ * get a clean error rather than a confusing undefined/TypeError at call-time.
+ *
+ * Accepts an optional `fetchFn` for dependency injection in tests; defaults to
+ * global fetch when not provided (identical behavior to the plugin version).
+ */
+export function createTaskStoreClient(opts?: { fetchFn?: FetchFn }): {
+  query(params: URLSearchParams): Promise<Task[]>;
+  /**
+   * DTW-1.3 — fetches one task by id (GET /tasks/{id}) so a caller can read
+   * its LIVE status mid-dispatch. Resolves null on a 404 (the task is
+   * genuinely gone), throws on any other non-ok status.
+   */
+  getTask(id: string): Promise<Task | null>;
+  /**
+   * DTW-1.3 — renews a claimed task's `heartbeatAt` (POST /tasks/{id}/heartbeat)
+   * so the task-store's StaleClaimReaper doesn't release the claim out from
+   * under a long-running, multi-attempt dispatch. Throws on any non-ok status
+   * (including 404/403) rather than swallowing: the loop's resume gate treats a
+   * failed renewal as "don't start another attempt against a claim I can't
+   * prove is still fresh", so the failure must be visible to the caller.
+   */
+  heartbeatTask(id: string): Promise<void>;
+  /**
+   * CRT-1.2 — fetches one PR by id (GET /prs/{id}) so a caller can read
+   * its LIVE state mid-dispatch. Resolves null on a 404 (the PR is
+   * genuinely gone), throws on any other non-ok status.
+   */
+  getPr(id: string): Promise<unknown | null>;
+  /**
+   * CRT-1.2 — renews a claimed PR's `heartbeatAt` (POST /prs/{id}/heartbeat)
+   * so the task-store's claim TTL doesn't release the claim out from
+   * under a long-running dispatch. Throws on any non-ok status
+   * (including 404/403) rather than swallowing: the loop's resume gate treats a
+   * failed renewal as "don't start another attempt against a claim I can't
+   * prove is still fresh", so the failure must be visible to the caller.
+   */
+  heartbeatPr(id: string): Promise<void>;
+  /**
+   * PRL-1.3 — releases a claimed PR record (POST /prs/{id}/release). Throws on
+   * any non-ok status; the orchestrator swallows and logs it.
+   */
+  releasePr(id: string): Promise<void>;
+  update(id: string, fields: Record<string, unknown>): Promise<Task>;
+  claim(id: string): Promise<boolean>;
+  claimPr(params: {
+    repo: string;
+    prNumber: number;
+    commitSha: string;
+    phase: "review" | "patch" | "deploy";
+    /** POM-1.2: forwarded to POST /prs/claim so origin can be derived server-side. */
+    authorLogin?: string | null;
+    /**
+     * Named `headRefName` (mirroring WorkPrCandidate/GitHub's own field name)
+     * even though the outbound task-store request body field is `headRef` —
+     * the rename happens inside this method's implementation below.
+     */
+    headRefName?: string;
+    title?: string;
+    /**
+     * POF-1.2: forwarded to POST /prs/claim alongside authorLogin/headRef/
+     * title so origin can be derived server-side using the is_bot/label
+     * precedence task-store's POF-1.1 deriveOrigin() applies (see
+     * task-store/src/openapi-schemas.ts's ClaimPrBodySchema). Flows through
+     * the implementation's `...rest` spread automatically — no rename needed.
+     */
+    authorIsBot?: boolean;
+    hasAutomatedLabel?: boolean;
+    hasShipwrightLabel?: boolean;
+  }): Promise<{ id: string; commitSha: string } | null>;
+  recordSkip(
+    itemType: "task" | "pr",
+    id: string,
+    reason?: string,
+  ): Promise<void>;
+  resetSkip(itemType: "task" | "pr", id: string): Promise<void>;
+  /**
+   * PHS-3.1 — flags a PR record blocked (PATCH /prs/{id}) with a specific
+   * reason: the PR-level escalation patch.md Step 5a.7 uses when no task is
+   * linked. Throws on a non-ok status; `repo` is required in the body.
+   */
+  blockPr(
+    id: string,
+    repo: string,
+    reason: string,
+    blockedHeadSha?: string,
+  ): Promise<void>;
+} {
+  const taskStoreUrl = (process.env.SHIPWRIGHT_TASK_STORE_URL ?? "").trim();
+  const taskStoreToken = (process.env.SHIPWRIGHT_TASK_STORE_TOKEN ?? "").trim();
+  if (!taskStoreUrl) {
+    process.stderr.write("error: SHIPWRIGHT_TASK_STORE_URL is required\n");
+    process.exit(1);
+  }
+  if (!taskStoreToken) {
+    process.stderr.write("error: SHIPWRIGHT_TASK_STORE_TOKEN is required\n");
+    process.exit(1);
+  }
+  const baseUrl = taskStoreUrl.replace(/\/$/, "");
+  const headers = {
+    Authorization: `Bearer ${taskStoreToken}`,
+    "Content-Type": "application/json",
+  };
+  const doFetch: FetchFn = opts?.fetchFn ?? fetch;
+
+  // Fire-and-forget POST, unlike claim/claimPr/update: a task-store error
+  // here must not abort or delay the caller (SKT-2.1's recordSkip/resetSkip),
+  // so both a network failure and a non-ok response are swallowed and logged
+  // rather than thrown — matching HttpCronRunReporter's patchRun pattern.
+  async function postFireAndForget(
+    url: string,
+    body: Record<string, unknown> = {},
+  ): Promise<void> {
+    try {
+      const res = await doFetch(url, {
+        method: "POST",
+        headers,
+        body: JSON.stringify(body),
+      });
+      if (!res.ok) {
+        console.warn(
+          `[task-store] POST ${url} returned ${res.status} — swallowing`,
+        );
+      }
+    } catch (err) {
+      console.warn(
+        `[task-store] POST ${url} failed: ${String(err)} — swallowing`,
+      );
+    }
+  }
+
+  return {
+    async query(params: URLSearchParams): Promise<Task[]> {
+      const res = await doFetch(`${baseUrl}/tasks?${params}`, { headers });
+      if (!res.ok) {
+        // Attach a redacted, truncated response body snippet so a 500 (e.g.
+        // task-store DB unreachable) is diagnosable from the thrown error
+        // alone, without cross-referencing task-store's own logs/Sentry events
+        // by timestamp. The snippet passes through redactBodySnippet first —
+        // this Error's message reaches Sentry via captureException, and
+        // lib/sentry.ts's scrub hook cannot redact another service's secrets.
+        let bodySnippet = "";
+        try {
+          bodySnippet = redactBodySnippet(await res.text());
+        } catch {
+          // Body unreadable (already consumed, network cut mid-read, etc.) —
+          // fall back to the status-only message below.
+        }
+        throw new Error(
+          `task-store GET /tasks?${params} → ${res.status}${bodySnippet ? ` — ${bodySnippet}` : ""}`,
+        );
+      }
+      const data = (await res.json()) as unknown;
+      // Temporary: accept legacy bare Task[] from older task-store instances
+      if (Array.isArray(data)) return data as Task[];
+      if (
+        data !== null &&
+        typeof data === "object" &&
+        Array.isArray((data as Record<string, unknown>).tasks)
+      )
+        return (data as Record<string, unknown>).tasks as Task[];
+      throw new Error(
+        `Unexpected task-store response format: ${JSON.stringify(data)}`,
+      );
+    },
+    async getTask(id: string): Promise<Task | null> {
+      const res = await doFetch(`${baseUrl}/tasks/${id}`, { headers });
+      // A 404 means the task genuinely no longer exists — the caller treats
+      // that as "not in_progress anymore", not as an error worth throwing.
+      if (res.status === 404) return null;
+      if (!res.ok)
+        throw new Error(`task-store GET /tasks/${id} → ${res.status}`);
+      return res.json() as Promise<Task>;
+    },
+    async heartbeatTask(id: string): Promise<void> {
+      const res = await doFetch(`${baseUrl}/tasks/${id}/heartbeat`, {
+        method: "POST",
+        headers,
+        // headers always declares Content-Type: application/json — send a
+        // valid empty object so the server's JSON body parser doesn't choke
+        // on a truly empty body (mirrors claim() above).
+        body: "{}",
+      });
+      if (!res.ok)
+        throw new Error(
+          `task-store POST /tasks/${id}/heartbeat → ${res.status}`,
+        );
+    },
+    async getPr(id: string): Promise<unknown | null> {
+      const res = await doFetch(`${baseUrl}/prs/${id}`, { headers });
+      // A 404 means the PR genuinely no longer exists — the caller treats
+      // that as "not in_progress anymore", not as an error worth throwing.
+      if (res.status === 404) return null;
+      if (!res.ok) throw new Error(`task-store GET /prs/${id} → ${res.status}`);
+      return res.json() as Promise<unknown>;
+    },
+    async heartbeatPr(id: string): Promise<void> {
+      const res = await doFetch(`${baseUrl}/prs/${id}/heartbeat`, {
+        method: "POST",
+        headers,
+        // headers always declares Content-Type: application/json — send a
+        // valid empty object so the server's JSON body parser doesn't choke
+        // on a truly empty body (mirrors heartbeatTask above).
+        body: "{}",
+      });
+      if (!res.ok)
+        throw new Error(`task-store POST /prs/${id}/heartbeat → ${res.status}`);
+    },
+    async releasePr(id: string): Promise<void> {
+      const res = await doFetch(`${baseUrl}/prs/${id}/release`, {
+        method: "POST",
+        headers,
+        body: "{}",
+      });
+      if (!res.ok)
+        throw new Error(`task-store POST /prs/${id}/release → ${res.status}`);
+    },
+    async update(id: string, fields: Record<string, unknown>): Promise<Task> {
+      const res = await doFetch(`${baseUrl}/tasks/${id}`, {
+        method: "PATCH",
+        headers,
+        body: JSON.stringify(fields),
+      });
+      if (!res.ok)
+        throw new Error(`task-store PATCH /tasks/${id} → ${res.status}`);
+      return res.json() as Promise<Task>;
+    },
+    async claim(id: string): Promise<boolean> {
+      const res = await doFetch(`${baseUrl}/tasks/${id}/claim`, {
+        method: "POST",
+        headers,
+        // headers always declares Content-Type: application/json — send a
+        // valid empty object so the server's JSON body parser doesn't choke
+        // on a truly empty body (agent tokens ignore the body regardless).
+        body: "{}",
+      });
+      if (res.ok) return true;
+      if (res.status === 409) return false;
+      throw new Error(`task-store POST /tasks/${id}/claim → ${res.status}`);
+    },
+    async claimPr(params: {
+      repo: string;
+      prNumber: number;
+      commitSha: string;
+      phase: "review" | "patch" | "deploy";
+      authorLogin?: string | null;
+      headRefName?: string;
+      title?: string;
+      authorIsBot?: boolean;
+      hasAutomatedLabel?: boolean;
+      hasShipwrightLabel?: boolean;
+    }): Promise<{ id: string; commitSha: string } | null> {
+      // The task-store's /prs/claim body field is `headRef` (its shorter
+      // internal column name), not `headRefName` (WorkPrCandidate/GitHub's
+      // field name) — rename at this HTTP boundary rather than sending a
+      // `headRefName` field the route doesn't recognize.
+      const { headRefName, ...rest } = params;
+      const body = { ...rest, headRef: headRefName };
+      const res = await doFetch(`${baseUrl}/prs/claim`, {
+        method: "POST",
+        headers,
+        body: JSON.stringify(body),
+      });
+      // 409 = another agent replica already claimed this PR at this commit.
+      // The caller skips dispatch; not an error.
+      if (res.status === 409) return null;
+      if (!res.ok)
+        throw new Error(`task-store POST /prs/claim → ${res.status}`);
+      const data = (await res.json()) as {
+        id: string;
+        commitSha?: string | null;
+      };
+      // commitSha is declared nullable in the schema, but we just claimed with
+      // a specific commitSha, so fall back to the request value to keep the
+      // return type non-nullable.
+      return { id: data.id, commitSha: data.commitSha ?? params.commitSha };
+    },
+    async recordSkip(
+      itemType: "task" | "pr",
+      id: string,
+      reason?: string,
+    ): Promise<void> {
+      const url =
+        itemType === "task"
+          ? `${baseUrl}/tasks/${id}/skip`
+          : `${baseUrl}/prs/${id}/skip`;
+      // reason is forwarded regardless of itemType — the task-store's PR
+      // skip route (unlike /tasks/:id/skip, SRB-1.1) declares no body
+      // schema, so an extra `reason` field is simply ignored there, not
+      // rejected.
+      await postFireAndForget(url, reason === undefined ? {} : { reason });
+    },
+    async blockPr(
+      id: string,
+      repo: string,
+      reason: string,
+      blockedHeadSha?: string,
+    ): Promise<void> {
+      const res = await doFetch(`${baseUrl}/prs/${id}`, {
+        method: "PATCH",
+        headers,
+        body: JSON.stringify({
+          repo,
+          blocked: true,
+          blockedReason: reason,
+          ...(blockedHeadSha ? { blockedHeadSha } : {}),
+        }),
+      });
+      if (!res.ok)
+        throw new Error(`task-store PATCH /prs/${id} → ${res.status}`);
+    },
+    async resetSkip(itemType: "task" | "pr", id: string): Promise<void> {
+      const url =
+        itemType === "task"
+          ? `${baseUrl}/tasks/${id}/skip/reset`
+          : `${baseUrl}/prs/${id}/skip/reset`;
+      await postFireAndForget(url);
+    },
+  };
+}
+
+// ─── PR candidate helpers ─────────────────────────────────────────────────────
+//
+// Shared by the WL-2.2 candidate providers (check-review.ts, check-patch.ts,
+// check-deploy.ts) so the id/org-repo/task-store-record logic can't diverge
+// across the three phase-specific ports.
+
+/** Stable, human-readable candidate id: "org/repo#prNumber". */
+export function candidateId(repo: string, prNumber: number): string {
+  return `${repo}#${prNumber}`;
+}
+
+/**
+ * Inverse of candidateId(): split "org/repo#42" into { repo, prNumber }.
+ * Uses the last "#" so a repo name is never mis-split. Returns null when the
+ * id is malformed — no "#", an empty repo part, or a non-integer number part.
+ */
+export function parseCandidateId(
+  id: string,
+): { repo: string; prNumber: number } | null {
+  const hashIdx = id.lastIndexOf("#");
+  if (hashIdx <= 0) return null;
+  const repo = id.slice(0, hashIdx);
+  const numberPart = id.slice(hashIdx + 1);
+  if (!/^\d+$/.test(numberPart)) return null;
+  return { repo, prNumber: Number.parseInt(numberPart, 10) };
+}
+
+/**
+ * Build a `(repo, prNumber) => record | null` query function against the
+ * task-store `/prs` endpoint. Returns null on missing config, a non-ok
+ * response, or any fetch error — a missing task-store PR record must not
+ * throw, since an unclaimed PR simply has no record yet.
+ *
+ * Accepts an optional `fetchFn` for dependency injection in tests, matching
+ * createTaskStoreClient's pattern.
+ *
+ * Accepts an optional `ready: true` to request only unclaimed PR records via
+ * LPF-2.1's `?ready=true` filter (mirrors `/tasks?ready=true`). When set,
+ * a `null` result becomes ambiguous between "no record exists yet" and
+ * "a record exists but is currently claimed" — callers that need to
+ * distinguish those two cases (e.g. check-review.ts) must NOT pass `ready`
+ * and should check `record.claimedBy` themselves instead.
+ */
+export function createPrRecordQuery<T>(opts?: {
+  fetchFn?: FetchFn;
+  ready?: boolean;
+}): (repo: string, prNumber: number) => Promise<T | null> {
+  const taskStoreUrl = (process.env.SHIPWRIGHT_TASK_STORE_URL ?? "").trim();
+  const taskStoreToken = (process.env.SHIPWRIGHT_TASK_STORE_TOKEN ?? "").trim();
+  const doFetch: FetchFn = opts?.fetchFn ?? fetch;
+
+  return async (repo: string, prNumber: number): Promise<T | null> => {
+    if (!taskStoreUrl || !taskStoreToken) return null;
+    try {
+      const baseUrl = taskStoreUrl.replace(/\/$/, "");
+      const params = new URLSearchParams({ repo, prNumber: String(prNumber) });
+      if (opts?.ready) params.set("ready", "true");
+      const res = await doFetch(`${baseUrl}/prs?${params}`, {
+        headers: {
+          Authorization: `Bearer ${taskStoreToken}`,
+          "Content-Type": "application/json",
+        },
+      });
+      if (!res.ok) return null;
+      const data = (await res.json()) as unknown;
+      let records: T[] = [];
+      if (Array.isArray(data)) {
+        records = data as T[];
+      } else if (
+        data !== null &&
+        typeof data === "object" &&
+        Array.isArray((data as Record<string, unknown>).prs)
+      ) {
+        records = (data as Record<string, unknown>).prs as T[];
+      }
+      return records[0] ?? null;
+    } catch {
+      return null;
+    }
+  };
+}
+
+/**
+ * Status + createdAt for the task linked to a PR, as returned by
+ * createTaskStatusQuery. `createdAt` is included alongside `status` so
+ * callers can source a cross-phase age comparison from the SAME
+ * task-store-assigned timestamp dev-task's backlog candidates already use
+ * (task.createdAt), instead of a phase-recent timestamp. Unlike addedAt,
+ * createdAt is always set by the task-store on every record, so it may only
+ * be undefined here if the matched task record's shape is unexpected.
+ */
+export interface LinkedTaskInfo {
+  status: TaskStatus;
+  createdAt?: string;
+  /**
+   * hitl:true on the linked task — used by check-patch.ts and check-review.ts
+   * to exclude an already-escalated PR at the candidate-collection source
+   * (CBD-2.2), before the PR ever reaches the loop orchestrator.
+   */
+  hitl?: boolean;
+}
+
+/**
+ * True when the linked task's status demands a human look before dispatch:
+ * `hitl === true` (already escalated) OR `status === "blocked"`. Checked
+ * independently — a task can be hitl:true while still status:"pr_open", so
+ * neither condition alone is sufficient.
+ *
+ * Shared by the WL-2.2 candidate providers (check-review.ts, check-patch.ts,
+ * check-deploy.ts) so all three exclude a blocked/escalated task's PR at
+ * candidate-collection time instead of each hand-rolling this check —
+ * check-deploy.ts previously checked `status === "blocked"` while
+ * check-patch.ts/check-review.ts didn't, and this function exists to close
+ * that drift (PRB-2.1).
+ */
+export function isTaskBlockedForDispatch(
+  task: Pick<LinkedTaskInfo, "status" | "hitl"> | null | undefined,
+): boolean {
+  return task?.hitl === true || task?.status === "blocked";
+}
+
+/**
+ * True when a task-store PR record has already been escalated to a human
+ * (`blocked === true`). Accepts a minimal `{ blocked }` shape so each
+ * collector's own PrRecord interface satisfies this structurally without
+ * depending on a shared PrRecord type.
+ *
+ * Companion to isTaskBlockedForDispatch — see its doc comment for the
+ * drift this pair of helpers is meant to prevent (PRB-2.1).
+ */
+export function isPrRecordBlockedForDispatch(
+  pr: { blocked?: boolean | null } | null | undefined,
+): boolean {
+  return pr?.blocked === true;
+}
+
+/**
+ * Reason prefix of the patch no-progress escalation block (built in
+ * patch-outcome-check.ts). clearStaleSkipBlock recognizes it, alongside the
+ * skip-streak reason, as a block that self-clears on a new head.
+ */
+export const PATCH_NO_PROGRESS_REASON_PREFIX =
+  "patch dispatch made no progress";
+
+/** Minimal PR-record shape consulted by clearStaleSkipBlock (PSL-3.2). */
+interface SkipBlockRecord {
+  id?: string;
+  blocked?: boolean | null;
+  blockedReason?: string | null;
+  blockedHeadSha?: string | null;
+  blockedReviewId?: string | null;
+  findings?: { id: string; source: string; createdAt: string }[];
+}
+
+/**
+ * Build a `(prRecordId) => Promise<void>` that POSTs /prs/:id/skip/reset.
+ * Unlike createTaskStoreClient's fire-and-forget resetSkip, this THROWS on
+ * missing config, a non-ok response, or a network error, so
+ * clearStaleSkipBlock can leave the PR blocked when the reset didn't land
+ * (PSL-3.2 — a failed clear must stay conservative).
+ */
+export function createPrSkipResetter(opts?: {
+  fetchFn?: FetchFn;
+}): (prRecordId: string) => Promise<void> {
+  const taskStoreUrl = (process.env.SHIPWRIGHT_TASK_STORE_URL ?? "").trim();
+  const taskStoreToken = (process.env.SHIPWRIGHT_TASK_STORE_TOKEN ?? "").trim();
+  const doFetch: FetchFn = opts?.fetchFn ?? fetch;
+
+  return async (prRecordId: string): Promise<void> => {
+    if (!taskStoreUrl || !taskStoreToken) {
+      throw new Error(
+        "SHIPWRIGHT_TASK_STORE_URL/SHIPWRIGHT_TASK_STORE_TOKEN not configured",
+      );
+    }
+    const res = await doFetch(
+      `${taskStoreUrl.replace(/\/$/, "")}/prs/${prRecordId}/skip/reset`,
+      {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${taskStoreToken}`,
+          "Content-Type": "application/json",
+        },
+        body: "{}",
+      },
+    );
+    if (!res.ok) {
+      throw new Error(
+        `task-store POST /prs/${prRecordId}/skip/reset → ${res.status}`,
+      );
+    }
+  };
+}
+
+/**
+ * Auto-clear a skip-count block whose underlying state has moved on (PSL-3.2).
+ *
+ * Only a block set by recordSkip() (blockedReason contains "consecutive
+ * skips") or by the patch no-progress escalation (blockedReason starts with
+ * PATCH_NO_PROGRESS_REASON_PREFIX) WITH a recorded blockedHeadSha (PSL-3.1)
+ * is eligible. If the live
+ * head SHA differs from blockedHeadSha, or the latest review-source finding
+ * id differs from blockedReviewId, calls resetSkip and returns true so the
+ * caller treats the PR as unblocked. A re-dispatch that skips again restarts
+ * the 3-strike count and re-blocks (with fresh blockedHeadSha/blockedReviewId).
+ *
+ * Conservative — returns false (stay blocked) for legacy blocks (no
+ * blockedHeadSha), other block mechanisms (e.g. CI-failure streak), unchanged
+ * state, a missing record id/resetSkip, and any resetSkip error.
+ */
+export async function clearStaleSkipBlock(
+  record: SkipBlockRecord | null | undefined,
+  liveHeadSha: string | null | undefined,
+  resetSkip: ((prRecordId: string) => Promise<void>) | undefined,
+): Promise<boolean> {
+  if (!record || !resetSkip || !record.id) return false;
+  if (!isPrRecordBlockedForDispatch(record)) return false;
+  if (
+    !record.blockedReason?.includes("consecutive skips") &&
+    !record.blockedReason?.startsWith(PATCH_NO_PROGRESS_REASON_PREFIX)
+  )
+    return false;
+  if (!record.blockedHeadSha) return false;
+
+  const headChanged = !!liveHeadSha && liveHeadSha !== record.blockedHeadSha;
+  let reviewChanged = false;
+  // The patch no-progress block is written via blockPr, which never stamps
+  // blockedReviewId (PATCH /prs/:id doesn't accept it) — comparing review ids
+  // would clear it immediately at the same head. Decide on head alone.
+  const isNoProgressBlock = !!record.blockedReason?.startsWith(
+    PATCH_NO_PROGRESS_REASON_PREFIX,
+  );
+  if (record.findings && !isNoProgressBlock) {
+    let latest: { id: string; createdAt: string } | undefined;
+    for (const f of record.findings) {
+      if (f.source !== "review") continue;
+      if (!latest || f.createdAt > latest.createdAt) latest = f;
+    }
+    reviewChanged = (latest?.id ?? null) !== (record.blockedReviewId ?? null);
+  }
+  if (!headChanged && !reviewChanged) return false;
+
+  try {
+    await resetSkip(record.id);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Merge every task matched by a `?repo=&pr=` lookup into a single
+ * LinkedTaskInfo, OR-ing the blocked/hitl signal across ALL of them (PTL-1.1).
+ *
+ * A PR can be linked to more than one task (a bundle — ~7% of PR-linked
+ * task-store groups have 2+ tasks sharing one PR). Taking only the first
+ * match silently misses a blocked/hitl bundle-mate depending on API return
+ * order, so `hitl`/`status: "blocked"` must be computed across every matched
+ * task, not just tasks[0]. `status` and `createdAt` are otherwise sourced
+ * from the first task (unchanged single-task behavior — those two fields are
+ * used for display/ordering, not gating, so no aggregation is needed for
+ * them beyond the blocked override below).
+ */
+function mergeLinkedTasks(tasks: Task[]): LinkedTaskInfo | null {
+  const [first, ...rest] = tasks;
+  if (!first) return null;
+  const anyBlockedStatus = tasks.some((t) => t.status === "blocked");
+  const anyHitl = first.hitl === true || rest.some((t) => t.hitl === true);
+  return {
+    status:
+      anyBlockedStatus && first.status !== "blocked" ? "blocked" : first.status,
+    createdAt: first.createdAt,
+    // Preserve first.hitl's original value (including undefined) unless a
+    // bundle-mate is hitl:true, in which case the merged result must report
+    // hitl:true regardless of what the first task's own hitl field was.
+    hitl: anyHitl ? true : first.hitl,
+  };
+}
+
+/**
+ * Build a `(repo, prNumber) => LinkedTaskInfo | null` query function against
+ * the task-store `/tasks` endpoint's `?repo=&pr=` filters. Returns null ONLY
+ * on a confirmed empty result (no linked task) — a PR simply has no task yet.
+ * Throws on missing config, a non-ok response, or a malformed/unreachable
+ * response, so a caller who needs a go/no-go decision (unlike
+ * createPrRecordQuery's non-gating age field) can distinguish "no task" from
+ * "couldn't tell" and fail closed on the latter.
+ *
+ * Aggregates over EVERY task returned by the lookup, not just tasks[0]
+ * (PTL-1.1) — see mergeLinkedTasks's doc comment for why. Single- and
+ * zero-match behavior is unchanged.
+ *
+ * Accepts an optional `fetchFn` for dependency injection in tests, matching
+ * createPrRecordQuery's pattern.
+ */
+export function createTaskStatusQuery(opts?: {
+  fetchFn?: FetchFn;
+}): (repo: string, prNumber: number) => Promise<LinkedTaskInfo | null> {
+  const taskStoreUrl = (process.env.SHIPWRIGHT_TASK_STORE_URL ?? "").trim();
+  const taskStoreToken = (process.env.SHIPWRIGHT_TASK_STORE_TOKEN ?? "").trim();
+  const doFetch: FetchFn = opts?.fetchFn ?? fetch;
+
+  return async (
+    repo: string,
+    prNumber: number,
+  ): Promise<LinkedTaskInfo | null> => {
+    if (!taskStoreUrl || !taskStoreToken) {
+      throw new Error(
+        "SHIPWRIGHT_TASK_STORE_URL/SHIPWRIGHT_TASK_STORE_TOKEN not configured",
+      );
+    }
+    const baseUrl = taskStoreUrl.replace(/\/$/, "");
+    const params = new URLSearchParams({ repo, pr: String(prNumber) });
+    const res = await doFetch(`${baseUrl}/tasks?${params}`, {
+      headers: {
+        Authorization: `Bearer ${taskStoreToken}`,
+        "Content-Type": "application/json",
+      },
+    });
+    if (!res.ok) {
+      throw new Error(`task-store GET /tasks?${params} → ${res.status}`);
+    }
+    const data = (await res.json()) as unknown;
+    let tasks: Task[];
+    if (Array.isArray(data)) {
+      tasks = data as Task[];
+    } else if (
+      data !== null &&
+      typeof data === "object" &&
+      Array.isArray((data as Record<string, unknown>).tasks)
+    ) {
+      tasks = (data as Record<string, unknown>).tasks as Task[];
+    } else {
+      throw new Error(
+        `Unexpected task-store response format: ${JSON.stringify(data)}`,
+      );
+    }
+    return mergeLinkedTasks(tasks);
+  };
+}
+
+/** Task statuses that mark a bundle-mate as still "in flight" (not yet at pr_open or beyond). */
+const INCOMPLETE_BUNDLE_STATUSES: ReadonlySet<TaskStatus> = new Set([
+  "pending",
+  "in_progress",
+  "blocked",
+]);
+
+/**
+ * Build a `(branch: string) => Promise<boolean>` query function against the
+ * task-store `/tasks` endpoint's `?branch=` filter, mirroring deploy.md's Step
+ * 2b bundle-completeness bash logic exactly: a branch is "complete" iff none
+ * of its tasks are `pending`, `in_progress`, or `blocked` (a branch with zero
+ * tasks counts as complete — there are no bundle-mates to wait on).
+ *
+ * Throws on missing config, a non-ok response, or a malformed/unreachable
+ * response — matching createTaskStatusQuery's fail-closed-by-throwing style,
+ * NOT createPrRecordQuery's fail-open-by-catching style. The existing call
+ * site (check-deploy.ts's getDeployCandidates) already wraps this call in
+ * `.catch(() => true)` to fail open at that layer, so this function itself
+ * must not swallow errors.
+ *
+ * Accepts an optional `fetchFn` for dependency injection in tests, matching
+ * createTaskStatusQuery's pattern.
+ */
+export function createBundleCompleteQuery(opts?: {
+  fetchFn?: FetchFn;
+}): (branch: string) => Promise<boolean> {
+  const taskStoreUrl = (process.env.SHIPWRIGHT_TASK_STORE_URL ?? "").trim();
+  const taskStoreToken = (process.env.SHIPWRIGHT_TASK_STORE_TOKEN ?? "").trim();
+  const doFetch: FetchFn = opts?.fetchFn ?? fetch;
+
+  return async (branch: string): Promise<boolean> => {
+    if (!taskStoreUrl || !taskStoreToken) {
+      throw new Error(
+        "SHIPWRIGHT_TASK_STORE_URL/SHIPWRIGHT_TASK_STORE_TOKEN not configured",
+      );
+    }
+    const baseUrl = taskStoreUrl.replace(/\/$/, "");
+    const params = new URLSearchParams({ branch });
+    const res = await doFetch(`${baseUrl}/tasks?${params}`, {
+      headers: {
+        Authorization: `Bearer ${taskStoreToken}`,
+        "Content-Type": "application/json",
+      },
+    });
+    if (!res.ok) {
+      throw new Error(`task-store GET /tasks?${params} → ${res.status}`);
+    }
+    const data = (await res.json()) as unknown;
+    let tasks: Task[];
+    if (Array.isArray(data)) {
+      tasks = data as Task[];
+    } else if (
+      data !== null &&
+      typeof data === "object" &&
+      Array.isArray((data as Record<string, unknown>).tasks)
+    ) {
+      tasks = (data as Record<string, unknown>).tasks as Task[];
+    } else {
+      throw new Error(
+        `Unexpected task-store response format: ${JSON.stringify(data)}`,
+      );
+    }
+    return !tasks.some((task) => INCOMPLETE_BUNDLE_STATUSES.has(task.status));
+  };
+}
+
+// ─── Repo-tolerant candidate collection ───────────────────────────────────────
+
+/**
+ * Call `fn(repo)` for every repo in `repos`, flattening and returning all
+ * successful results. A repo whose `fn()` call throws is skipped — logged via
+ * console.warn (not console.error, since this is a handled/swallowed
+ * condition: the loop continues with reduced repo coverage rather than
+ * failing outright) — and iteration continues with the remaining repos.
+ *
+ * Shared by check-review.ts's listOpenPrs, check-patch.ts's listOwnOpenPrs,
+ * and check-deploy.ts's listOpenPrs collection so a single inaccessible repo
+ * in the agent's configured repos list can't abort candidate collection for
+ * every phase and every other repo that tick (see runLoopTick's unguarded
+ * await chain over getReviewCandidates / getPatchCandidates /
+ * getDeployCandidates).
+ */
+export async function mapReposTolerant<T>(
+  repos: string[],
+  label: string,
+  fn: (repo: string) => Promise<T[]>,
+): Promise<T[]> {
+  const results: T[] = [];
+  for (const repo of repos) {
+    try {
+      results.push(...(await fn(repo)));
+    } catch (err) {
+      console.warn(
+        `[${label}] skipping repo ${repo} — request failed: ${err instanceof Error ? err.message : String(err)}`,
+      );
+    }
+  }
+  return results;
+}
+
+// ─── Re-exports (moved to runtime-side modules in ARD-4.1) ───────────────────
+
+export { readCleanupAfterDays } from "../runtime/cleanup-after-days-ref.ts";
+export { readCleanupMergedWorktrees } from "../runtime/cleanup-merged-worktrees-ref.ts";
+export {
+  getCurrentUser,
+  ghGraphql,
+  ghJson,
+  ghRun,
+} from "../runtime/gh-helpers.ts";
+export {
+  resolveWorkspacePath,
+  splitOrgRepo,
+} from "../runtime/workspace-paths.ts";

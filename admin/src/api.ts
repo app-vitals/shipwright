@@ -54,7 +54,7 @@ export interface AgentConfigResponse {
    * configured. Optional (rather than a required nullable field) so existing
    * fixtures/doubles built against this interface before ATE-3.1 keep
    * compiling unchanged. Read by agent/src/index.ts's syncConfig() to sync
-   * agent-trial-expiry-ref.ts's live ref, which agent/src/slack.ts's
+   * agent-trial-expiry-ref.ts's live ref, which agent/src/runtime/slack.ts's
    * isTrialExpired() gate reads to block Slack access post-expiry.
    */
   trialExpiresAt?: string | null;

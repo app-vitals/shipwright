@@ -5,7 +5,7 @@
  * PullRequestService against a real Postgres DB — covers
  * recordSkip()/resetSkip() atomic increment behavior and the auto-block
  * (hitl + blockedReason) that fires once skipCount crosses the threshold (3,
- * mirroring SPIN_DETECTION_THRESHOLD in agent/src/loop-orchestrator.ts).
+ * mirroring SPIN_DETECTION_THRESHOLD in agent/src/coding/loop-orchestrator.ts).
  *
  * TaskService.recordSkip() is additionally reason-aware (SRB-1.1): every
  * test in this file that doesn't explicitly pass a `reason` relies on
@@ -19,9 +19,9 @@
  */
 
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
-import { type PrismaClient, createPrismaClient } from "./prisma-client.ts";
 import { FixedClock } from "./clock.ts";
 import { NotFoundError } from "./errors.ts";
+import { createPrismaClient, type PrismaClient } from "./prisma-client.ts";
 import { PullRequestService } from "./pull-request-service.ts";
 import { TaskService } from "./task-service.ts";
 

@@ -18,7 +18,7 @@
  *      being cheap as the fleet grows toward ~250 agents.
  *
  * Deliberately generic over the caller's item shape rather than importing
- * RankedWorkItem (agent/src/work-selector.ts) or AgentWorkQueueSnapshot
+ * RankedWorkItem (agent/src/coding/work-selector.ts) or AgentWorkQueueSnapshot
  * (admin/src/agent-work-queue.ts) directly — those types are owned
  * elsewhere and are not modified by this module (see AAV-1.3's AC3).
  * RankedWorkItem in particular has no `repo` field today, so the

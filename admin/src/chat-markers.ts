@@ -11,7 +11,7 @@
  *   [react:emoji1,emoji2]           — stripped (Slack-only)
  *   [plan:url]                      — URL extracted for link badge
  *
- * Note: This is a separate implementation from agent/src/markers.ts because
+ * Note: This is a separate implementation from agent/src/runtime/markers.ts because
  * admin and agent are separate workspace packages with no cross-imports.
  */
 

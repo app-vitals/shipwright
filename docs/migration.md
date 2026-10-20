@@ -349,7 +349,7 @@ is now the sole field — same shape, same validation (GitHub login strings).
   schemas returned by `GET|PATCH /agents/:id` and `GET /agents/:id/config`.
 - `agent/src/index.ts`'s config-sync no longer falls back to `bundle.authorAllowlist`; it
   reads `bundle.reviewAuthorAllowlist` only. `resolveReviewAuthorAllowlist()` in
-  `agent/src/review-author-allowlist-ref.ts` dropped its `authorAllowlist` fallback
+  `agent/src/coding/review-author-allowlist-ref.ts` dropped its `authorAllowlist` fallback
   parameter accordingly.
 - `scripts/hitl.ts` now PATCHes `reviewAuthorAllowlist` (previously `authorAllowlist`) to
   keep the local dev `hitl` agent record's review-trigger allowlist in sync.
@@ -388,7 +388,7 @@ PR covering several tasks (the bundle case, ~7% of PR-linked task groups).
 - `GET /prs?blocked=true` still returns PRs whose linked task is blocked, but the link is
   now resolved live by `(Task.repo, Task.pr)` — so bundles work: any one blocked task
   blocks the PR.
-- `agent/src/pr-state-reconciler.ts` no longer opportunistically backfills the field after
+- `agent/src/coding/pr-state-reconciler.ts` no longer opportunistically backfills the field after
   confirming a merge.
 
 **Migration**:
@@ -450,7 +450,7 @@ organization prefixes extracted from the `repos` it already returns.
 explicit-target-only executor: `dev-task` requires a task id, and `review`/`patch`/`deploy`
 require an `org/repo#number` PR. Candidate selection — deciding *what* to work on — now
 happens exclusively upstream, in the `shipwright-loop` cron's in-process candidate
-providers (`agent/src/check-dev-task.ts`, `check-review.ts`, `check-patch.ts`,
+providers (`agent/src/coding/check-dev-task.ts`, `check-review.ts`, `check-patch.ts`,
 `check-deploy.ts`), which merge candidates and dispatch the winning item's command with its
 id/PR embedded directly in the prompt. No self-search fallback remains inside any of the
 four commands.
@@ -580,7 +580,7 @@ When `blockedBy` is empty, the task is ready to execute (assuming it has `status
 
 **What to update:**
 - Any code that calls `GET /tasks` and expects an array must unwrap `.tasks` from the response.
-- `check-helpers.ts` in the plugin is updated in this PR. Agent in-process code can import shared helpers directly from `agent/src/check-helpers.ts` (a ported native copy); custom plugin scripts still depend on the plugin version.
+- `check-helpers.ts` in the plugin is updated in this PR. Agent in-process code can import shared helpers directly from `agent/src/coding/check-helpers.ts` (a ported native copy); custom plugin scripts still depend on the plugin version.
 - Code that checks task readiness should use the `blockedBy` array instead of duplicating dependency logic.
 - `GET /tasks?ready=true` is unchanged — it still returns `Task[]` (filtered to ready tasks only, with `blockedBy` also present).
 

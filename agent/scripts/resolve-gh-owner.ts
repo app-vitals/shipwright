@@ -1,6 +1,6 @@
 /**
  * agent/scripts/resolve-gh-owner.ts
- * Thin CLI over agent/src/gh-owner-resolver.ts — prints the GitHub owner a
+ * Thin CLI over agent/src/runtime/gh-owner-resolver.ts — prints the GitHub owner a
  * `gh` invocation targets.
  *
  * Usage:
@@ -11,7 +11,7 @@
 
 import { execFileSync } from "node:child_process";
 import { parseFlags } from "../../lib/cli-flags.ts";
-import { resolveGhOwner } from "../src/gh-owner-resolver.ts";
+import { resolveGhOwner } from "../src/runtime/gh-owner-resolver.ts";
 
 const argv = process.argv.slice(2);
 const sep = argv.indexOf("--");

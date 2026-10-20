@@ -108,7 +108,7 @@ function prKey(accountId: string, repo: string, prNumber: number): string {
  * (the only ones that keep hitl:true) never have a linked PR, so that branch
  * was dead code.
  *
- * Mirrors the combined signal agent/src/check-helpers.ts already uses for
+ * Mirrors the combined signal agent/src/coding/check-helpers.ts already uses for
  * dispatch gating — `isTaskBlockedForDispatch(linkedTask) ||
  * isPrRecordBlockedForDispatch(pr)` — reimplemented natively here rather than
  * imported, since task-store must not depend on the agent package.
@@ -124,7 +124,7 @@ function isPrBlocked(
  * Skip-count auto-block threshold: once a PR's skipCount reaches this value,
  * recordSkip() also sets blocked:true + blockedReason so the loop
  * orchestrator stops re-selecting it. Mirrors SPIN_DETECTION_THRESHOLD in
- * agent/src/loop-orchestrator.ts:179 — duplicated here (not imported) since
+ * agent/src/coding/loop-orchestrator.ts:179 — duplicated here (not imported) since
  * agent/ and task-store/ are separate deployables.
  */
 const SKIP_BLOCK_THRESHOLD = 3;
@@ -136,13 +136,13 @@ const SKIP_BLOCK_THRESHOLD = 3;
  * blockedReason in the same request so the loop orchestrator stops
  * re-dispatching CI-fix cycles that keep hitting the same failure. Mirrors
  * SKIP_BLOCK_THRESHOLD above / SPIN_DETECTION_THRESHOLD in
- * agent/src/loop-orchestrator.ts:179.
+ * agent/src/coding/loop-orchestrator.ts:179.
  */
 const CI_FAILURE_BLOCK_THRESHOLD = 3;
 
 /**
  * Prefix of the blockedReason the agent's patch no-progress escalation sets
- * (see PATCH_NO_PROGRESS_REASON_PREFIX in agent/src/check-helpers.ts).
+ * (see PATCH_NO_PROGRESS_REASON_PREFIX in agent/src/coding/check-helpers.ts).
  * resetSkip() clears a block carrying this prefix so a PR whose head moved
  * re-enters candidacy. Mirrors that constant — duplicated here (not
  * imported) since agent/ and task-store/ are separate deployables.
@@ -188,7 +188,7 @@ export interface PullRequestListFilters {
   ready?: boolean;
   /**
    * When true, only return PRs considered "blocked" — mirroring the combined
-   * dispatch-gating signal agent/src/check-helpers.ts uses (
+   * dispatch-gating signal agent/src/coding/check-helpers.ts uses (
    * isTaskBlockedForDispatch(linkedTask) || isPrRecordBlockedForDispatch(pr)),
    * reimplemented natively here since task-store must not import from the
    * agent package. A PR is blocked when pr.blocked===true OR any task

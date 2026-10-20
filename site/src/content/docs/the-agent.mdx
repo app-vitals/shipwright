@@ -118,7 +118,7 @@ claude mcp add --transport http <name> <url>
 
 This writes the registration into `~/.claude.json`. On a Shipwright agent, `~/.claude.json`
 is not a real file — it's a symlink to `$AGENT_HOME/claude.json`, created by
-`ensureDotClaudeSymlink()` in `agent/src/setup.ts` at every agent startup. The same function
+`ensureDotClaudeSymlink()` in `agent/src/runtime/setup.ts` at every agent startup. The same function
 also symlinks `~/.claude` → `$AGENT_HOME/dot-claude`. Both live on the agent's persistent
 volume (PVC), which survives pod restarts; the container's ephemeral filesystem does not.
 

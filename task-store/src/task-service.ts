@@ -55,7 +55,7 @@ export { CLOSED_STATUSES, OPEN_STATUSES };
  * Skip-count auto-block threshold: once a task's skipCount reaches this
  * value, recordSkip() also sets status:'blocked' + hitl:true + blockedReason
  * so the loop orchestrator stops re-selecting it. Mirrors
- * SPIN_DETECTION_THRESHOLD in agent/src/loop-orchestrator.ts:179 —
+ * SPIN_DETECTION_THRESHOLD in agent/src/coding/loop-orchestrator.ts:179 —
  * duplicated here (not imported) since agent/ and task-store/ are separate
  * deployables.
  */

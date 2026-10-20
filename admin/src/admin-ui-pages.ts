@@ -5844,7 +5844,7 @@ function deriveWorkItemRepo(item: WorkQueueItem): string {
  * annotateEligibility(), keyed on each agent's repos[] and gated on
  * loopEnabled). Result is sorted
  * oldest-first by age, mirroring rankWorkItems()'s ordering convention
- * (agent/src/work-selector.ts) so the merged Upcoming table reads the same
+ * (agent/src/coding/work-selector.ts) so the merged Upcoming table reads the same
  * way a single agent's own queue does.
  */
 export function buildMergedWorkQueueRows(

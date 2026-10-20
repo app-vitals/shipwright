@@ -133,7 +133,7 @@ or several sequential Bash calls within the same turn. This keeps the wait
 inside a single `claude -p` invocation and its context intact.
 
 `ScheduleWakeup` resumes the *same* session — it calls `claude -p -r <sessionId>`
-under the hood (see `agent/src/claude.ts`'s `_buildArgs`, which appends `-r
+under the hood (see `agent/src/runtime/claude.ts`'s `_buildArgs`, which appends `-r
 <resumeSessionId>` whenever a stored session id exists for the session key). But
 "same session" doesn't mean "free": that resume is a brand-new OS process/CLI
 invocation, and its reload cost depends entirely on prompt-cache freshness. If
@@ -143,7 +143,7 @@ time the wakeup fires, the CLI has to replay the entire prior transcript at full
 price to reconstruct context — for a long-running session, that can be
 expensive and slow.
 
-If a resumed session fails, `agent/src/claude.ts`'s `_runClaude` retries the *same*
+If a resumed session fails, `agent/src/runtime/claude.ts`'s `_runClaude` retries the *same*
 session exactly once (same `-r <sessionId>` args). If the retry succeeds, the result
 is returned with `recoveredFromError: true` — no context loss. If the retry also fails,
 the original error is rethrown and the stored session mapping is left intact (never
@@ -160,7 +160,7 @@ recommended pattern is:
 2. Persist the job id to a state file (e.g. under `state/`).
 3. End the turn with a short status line reporting what was submitted.
 4. Set up a recurring cron with a `preCheck` script (see `plugins/shipwright/references/user-guide.md`'s
-   cron `preCheck` section and `agent/src/cron-handler.ts` for implementation details).
+   cron `preCheck` section and `agent/src/runtime/cron-handler.ts` for implementation details).
    The `preCheck` polls for job completion; when it detects completion, its stdout
    becomes the prompt for the next Claude invocation, allowing your work to resume
    where it left off.

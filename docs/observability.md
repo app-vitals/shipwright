@@ -29,7 +29,7 @@ When `SENTRY_DSN` is set, a service reports to Sentry. Below is a summary of wha
 
 ### Foreign response-body snippets
 
-The one exception to "response bodies are never attached" is the agent's task-store client (`createTaskStoreClient().query()` in `agent/src/check-helpers.ts`). When a `GET /tasks` call returns a non-ok status, the response body is attached to the thrown `Error`'s message so a task-store 500 (e.g. its database being unreachable) is diagnosable from the Sentry Issue alone, instead of requiring a timestamp-correlated cross-reference against task-store's own events.
+The one exception to "response bodies are never attached" is the agent's task-store client (`createTaskStoreClient().query()` in `agent/src/coding/check-helpers.ts`). When a `GET /tasks` call returns a non-ok status, the response body is attached to the thrown `Error`'s message so a task-store 500 (e.g. its database being unreachable) is diagnosable from the Sentry Issue alone, instead of requiring a timestamp-correlated cross-reference against task-store's own events.
 
 Because the body comes from a *different* service, neither scrub hook above protects it: `stripSensitiveHeaders` only touches `event.request.headers`, and `redactSecrets` only masks *this* process's own live `SECRET_ENV_VARS` values by exact string match. Task-store's `onError` returns `{ error: err.message }` verbatim for any unhandled 500, so a dependency error that echoes its own credentials (a Prisma `P1013` connection-string validation error, for example) would otherwise reach Sentry unredacted.
 
@@ -44,7 +44,7 @@ Redaction runs over a 2000-char window and the result is then truncated to 500 c
 
 ### Claude session error classification
 
-Every agent call site reporting a `claude` CLI runner error — `agent/src/cron-failure-reporter.ts`, `agent/src/health.ts`, `agent/src/loop-orchestrator.ts`, and `agent/src/slack.ts` — goes through `reportClaudeError(sentryClient, err)` (`agent/src/claude.ts`) instead of calling `sentryClient.captureException(err)` directly.
+Every agent call site reporting a `claude` CLI runner error — `agent/src/runtime/cron-failure-reporter.ts`, `agent/src/runtime/health.ts`, `agent/src/coding/loop-orchestrator.ts`, and `agent/src/runtime/slack.ts` — goes through `reportClaudeError(sentryClient, err)` (`agent/src/runtime/claude.ts`) instead of calling `sentryClient.captureException(err)` directly.
 
 `reportClaudeError` classifies the error before reporting it:
 

@@ -17,8 +17,11 @@
  *     bun agent/scripts/cutover-validate.ts
  */
 
-import { type CheckResult, validateCutover } from "../src/cutover-validate.ts";
-import { HttpShipwrightRuntimeClient } from "../src/shipwright-runtime-client.ts";
+import {
+  type CheckResult,
+  validateCutover,
+} from "../src/runtime/cutover-validate.ts";
+import { HttpShipwrightRuntimeClient } from "../src/runtime/shipwright-runtime-client.ts";
 
 const USAGE = `Usage: SHIPWRIGHT_API_URL=<url> SHIPWRIGHT_AGENT_API_KEY=<key> AGENT_ID=<id> bun cutover-validate.ts
 

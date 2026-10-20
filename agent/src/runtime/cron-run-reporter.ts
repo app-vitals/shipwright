@@ -1,0 +1,398 @@
+/**
+ * CronRunReporter — reports cron run outcomes to the admin API.
+ *
+ * Two-step interface:
+ *   1. createRun()  — POST at run start, returns runId (or null on error)
+ *   2. completeRun() / skipRun() — PATCH at run completion
+ *
+ * HttpCronRunReporter: production implementation, fire-and-forget.
+ * NoopCronRunReporter: testing / default when not configured.
+ */
+
+export interface ModelBreakdownEntry {
+  model: string;
+  inputTokens: number;
+  outputTokens: number;
+  cacheReadTokens: number;
+  cacheCreationTokens: number;
+  costUsd: number;
+}
+
+/**
+ * The first assistant turn's usage — the measured always-loaded context for
+ * this run (system prompt + tool schemas + CLAUDE.md/rules + skill listing +
+ * cron prompt), independent of cache warmth. See agent/src/runtime/run-telemetry.ts.
+ */
+export interface ContextBaselineEntry {
+  model: string;
+  contextTokens: number;
+  inputTokens: number;
+  cacheCreationTokens: number;
+  cacheReadTokens: number;
+}
+
+/** Per-skill / per-subagent token attribution row. See agent/src/runtime/run-telemetry.ts. */
+export interface SkillUsageEntry {
+  kind: "skill" | "agent" | "root";
+  name: string;
+  invocations: number;
+  turns: number;
+  inputTokens: number;
+  outputTokens: number;
+  cacheReadTokens: number;
+  cacheCreationTokens: number;
+  invokeContextDelta: number | null;
+}
+
+/** Optional error/token fields shared by completeRun() and skipRun()'s opts. */
+export interface RunReportOpts {
+  error?: string;
+  inputTokens?: number;
+  outputTokens?: number;
+  cacheReadTokens?: number;
+  cacheCreationTokens?: number;
+  modelBreakdown?: ModelBreakdownEntry[];
+  sessionId?: string;
+  contextBaseline?: ContextBaselineEntry;
+  turns?: number;
+  toolCalls?: number;
+  skillUsage?: SkillUsageEntry[];
+  /** sha256[:12] of the workspace's always-loaded markdown + plugin version. */
+  contextFingerprint?: string;
+  pluginVersion?: string;
+  claudeCodeVersion?: string;
+}
+
+export interface CronRunReporter {
+  /**
+   * Called at run start — returns the runId to use for completion (null for
+   * no-op).
+   *
+   * `phaseId` tags the run with the dispatched phase's child AgentCronJob id
+   * (dev-task / review / patch / deploy). Under the single-cron loop model
+   * every invocation shares one cronId, so phaseId is the only way to
+   * attribute a run to a specific command in the admin UI and metrics
+   * dashboard. Optional and additive — callers that don't pass it (e.g. the
+   * generic cron handler) keep working unchanged.
+   *
+   * `itemType`/`itemId` tag the run with the work item ("task" | "pr") the
+   * dispatched command was invoked against (e.g. itemType "task", itemId
+   * "WLS-2.2", or itemType "pr", itemId "acme/x#123"). Optional and additive,
+   * same as `phaseId` — a tick with no dispatch (skipped tick, empty queue)
+   * passes neither.
+   */
+  createRun(
+    cronId: string,
+    startedAt: Date,
+    phaseId?: string,
+    itemType?: string,
+    itemId?: string,
+    commandVariant?: string,
+  ): Promise<string | null>;
+  /** Called when run completes (success or error). Includes token data for non-error. */
+  completeRun(
+    cronId: string,
+    runId: string | null,
+    completedAt: Date,
+    outcome: "completed" | "failed",
+    opts?: RunReportOpts,
+    phaseId?: string,
+    itemType?: string,
+    itemId?: string,
+  ): Promise<void>;
+  /**
+   * Called when a dispatch is recorded as skipped. Most skip paths (409
+   * conflict, pre-claim throw, redispatch cooldown) never run a command, so
+   * opts is usually just `{ error? }`. The `[silent]`-marker path is the
+   * exception: runner(message) already ran and may have spent real tokens
+   * before reporting nothing-to-do, so opts also accepts the same token
+   * fields as completeRun() — passed via buildTokenPayload(runResult.usage,
+   * runResult.modelUsage) at that call site — so that spend isn't dropped.
+   */
+  skipRun(
+    cronId: string,
+    runId: string | null,
+    completedAt: Date,
+    skipReason: string,
+    opts?: RunReportOpts,
+    phaseId?: string,
+    itemType?: string,
+    itemId?: string,
+  ): Promise<void>;
+  /**
+   * Fire-and-forget mid-run progress push. PATCHes modelBreakdown and
+   * lastHeartbeatAt — no completedAt/outcome, so it never signals run
+   * completion. Safe to call repeatedly; the admin PATCH handler upserts
+   * modelBreakdown per [cronRunId, model] and overwrites lastHeartbeatAt.
+   *
+   * `lastHeartbeatAt` must be sourced from the caller's injected Clock
+   * (`clock.now()`), never `new Date()`/`Date.now()` directly, so it stays
+   * deterministic under a FixedClock in tests (CRH-1.1).
+   */
+  recordProgress(
+    cronId: string,
+    runId: string | null,
+    modelBreakdown: ModelBreakdownEntry[],
+    lastHeartbeatAt: Date,
+  ): Promise<void>;
+  /**
+   * Fire-and-forget mid-run session-id push. PATCHes only sessionId — no
+   * completedAt/outcome, so it never signals run completion. Called as soon as
+   * an early session id is known (before the run finishes), so the cron-run
+   * log has it for manual inspection/resume even if the run never reaches a
+   * terminal state.
+   */
+  recordSessionId(
+    cronId: string,
+    runId: string | null,
+    sessionId: string,
+  ): Promise<void>;
+}
+
+interface HttpCronRunReporterOptions {
+  apiUrl: string;
+  agentId: string;
+  apiKey: string;
+}
+
+/** Applies RunReportOpts' fields onto a PATCH body, skipping unset ones. */
+function applyRunReportOpts(
+  body: Record<string, unknown>,
+  opts?: RunReportOpts,
+): void {
+  if (opts?.error !== undefined) body.error = opts.error;
+  if (opts?.inputTokens !== undefined) body.inputTokens = opts.inputTokens;
+  if (opts?.outputTokens !== undefined) body.outputTokens = opts.outputTokens;
+  if (opts?.cacheReadTokens !== undefined)
+    body.cacheReadTokens = opts.cacheReadTokens;
+  if (opts?.cacheCreationTokens !== undefined)
+    body.cacheCreationTokens = opts.cacheCreationTokens;
+  if (opts?.modelBreakdown !== undefined)
+    body.modelBreakdown = opts.modelBreakdown;
+  if (opts?.sessionId !== undefined) body.sessionId = opts.sessionId;
+  if (opts?.contextBaseline !== undefined)
+    body.contextBaseline = opts.contextBaseline;
+  if (opts?.turns !== undefined) body.turns = opts.turns;
+  if (opts?.toolCalls !== undefined) body.toolCalls = opts.toolCalls;
+  if (opts?.skillUsage !== undefined) body.skillUsage = opts.skillUsage;
+  if (opts?.contextFingerprint !== undefined)
+    body.contextFingerprint = opts.contextFingerprint;
+  if (opts?.pluginVersion !== undefined)
+    body.pluginVersion = opts.pluginVersion;
+  if (opts?.claudeCodeVersion !== undefined)
+    body.claudeCodeVersion = opts.claudeCodeVersion;
+}
+
+export class HttpCronRunReporter implements CronRunReporter {
+  constructor(private opts: HttpCronRunReporterOptions) {}
+
+  private async patchRun(
+    url: string,
+    body: Record<string, unknown>,
+  ): Promise<void> {
+    const { apiKey } = this.opts;
+    try {
+      const res = await fetch(url, {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${apiKey}`,
+        },
+        body: JSON.stringify(body),
+      });
+      if (!res.ok) {
+        console.warn(
+          `[cron-run-reporter] PATCH ${url} returned ${res.status} — swallowing`,
+        );
+      }
+    } catch (err) {
+      console.warn(
+        `[cron-run-reporter] PATCH ${url} failed: ${String(err)} — swallowing`,
+      );
+    }
+  }
+
+  async createRun(
+    cronId: string,
+    startedAt: Date,
+    phaseId?: string,
+    itemType?: string,
+    itemId?: string,
+    commandVariant?: string,
+  ): Promise<string | null> {
+    const { apiUrl, agentId, apiKey } = this.opts;
+    const url = `${apiUrl}/agents/${agentId}/crons/${cronId}/runs`;
+
+    const startBody: Record<string, unknown> = {
+      startedAt: startedAt.toISOString(),
+    };
+    if (phaseId !== undefined) startBody.phaseId = phaseId;
+    if (itemType !== undefined) startBody.itemType = itemType;
+    if (itemId !== undefined) startBody.itemId = itemId;
+    if (commandVariant !== undefined) startBody.commandVariant = commandVariant;
+
+    try {
+      const res = await fetch(url, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${apiKey}`,
+        },
+        body: JSON.stringify(startBody),
+      });
+      if (!res.ok) {
+        console.warn(
+          `[cron-run-reporter] POST ${url} returned ${res.status} — swallowing`,
+        );
+        return null;
+      }
+      const data = (await res.json()) as { run: { id: string } };
+      return data.run.id;
+    } catch (err) {
+      console.warn(
+        `[cron-run-reporter] failed to create run for cron ${cronId}: ${String(err)} — swallowing`,
+      );
+      return null;
+    }
+  }
+
+  async completeRun(
+    cronId: string,
+    runId: string | null,
+    completedAt: Date,
+    outcome: "completed" | "failed",
+    opts?: RunReportOpts,
+    phaseId?: string,
+    itemType?: string,
+    itemId?: string,
+  ): Promise<void> {
+    if (runId === null) return;
+
+    const { apiUrl, agentId } = this.opts;
+    const url = `${apiUrl}/agents/${agentId}/crons/${cronId}/runs/${runId}`;
+
+    const body: Record<string, unknown> = {
+      completedAt: completedAt.toISOString(),
+      outcome,
+    };
+    applyRunReportOpts(body, opts);
+    if (phaseId !== undefined) body.phaseId = phaseId;
+    if (itemType !== undefined) body.itemType = itemType;
+    if (itemId !== undefined) body.itemId = itemId;
+
+    await this.patchRun(url, body);
+  }
+
+  async skipRun(
+    cronId: string,
+    runId: string | null,
+    completedAt: Date,
+    skipReason: string,
+    opts?: RunReportOpts,
+    phaseId?: string,
+    itemType?: string,
+    itemId?: string,
+  ): Promise<void> {
+    if (runId === null) return;
+
+    const { apiUrl, agentId } = this.opts;
+    const url = `${apiUrl}/agents/${agentId}/crons/${cronId}/runs/${runId}`;
+
+    const body: Record<string, unknown> = {
+      completedAt: completedAt.toISOString(),
+      skipped: true,
+      skipReason,
+    };
+    applyRunReportOpts(body, opts);
+    if (phaseId !== undefined) body.phaseId = phaseId;
+    if (itemType !== undefined) body.itemType = itemType;
+    if (itemId !== undefined) body.itemId = itemId;
+
+    await this.patchRun(url, body);
+  }
+
+  async recordProgress(
+    cronId: string,
+    runId: string | null,
+    modelBreakdown: ModelBreakdownEntry[],
+    lastHeartbeatAt: Date,
+  ): Promise<void> {
+    if (runId === null) return;
+
+    const { apiUrl, agentId } = this.opts;
+    const url = `${apiUrl}/agents/${agentId}/crons/${cronId}/runs/${runId}`;
+
+    await this.patchRun(url, {
+      modelBreakdown,
+      lastHeartbeatAt: lastHeartbeatAt.toISOString(),
+    });
+  }
+
+  async recordSessionId(
+    cronId: string,
+    runId: string | null,
+    sessionId: string,
+  ): Promise<void> {
+    if (runId === null) return;
+
+    const { apiUrl, agentId } = this.opts;
+    const url = `${apiUrl}/agents/${agentId}/crons/${cronId}/runs/${runId}`;
+
+    await this.patchRun(url, { sessionId });
+  }
+}
+
+export class NoopCronRunReporter implements CronRunReporter {
+  async createRun(
+    _cronId: string,
+    _startedAt: Date,
+    _phaseId?: string,
+    _itemType?: string,
+    _itemId?: string,
+  ): Promise<string | null> {
+    return null;
+  }
+
+  async completeRun(
+    _cronId: string,
+    _runId: string | null,
+    _completedAt: Date,
+    _outcome: "completed" | "failed",
+    _opts?: RunReportOpts,
+    _phaseId?: string,
+    _itemType?: string,
+    _itemId?: string,
+  ): Promise<void> {
+    // intentional no-op
+  }
+
+  async skipRun(
+    _cronId: string,
+    _runId: string | null,
+    _completedAt: Date,
+    _skipReason: string,
+    _opts?: RunReportOpts,
+    _phaseId?: string,
+    _itemType?: string,
+    _itemId?: string,
+  ): Promise<void> {
+    // intentional no-op
+  }
+
+  async recordProgress(
+    _cronId: string,
+    _runId: string | null,
+    _modelBreakdown: ModelBreakdownEntry[],
+    _lastHeartbeatAt: Date,
+  ): Promise<void> {
+    // intentional no-op
+  }
+
+  async recordSessionId(
+    _cronId: string,
+    _runId: string | null,
+    _sessionId: string,
+  ): Promise<void> {
+    // intentional no-op
+  }
+}

@@ -1,7 +1,7 @@
 #!/usr/bin/env bun
 // Mechanical unaddressed-findings computation gate (PVD-1.1).
 //
-// Extracts agent/src/check-patch.ts's private `hasUnaddressedFindings` (and its
+// Extracts agent/src/coding/check-patch.ts's private `hasUnaddressedFindings` (and its
 // three helper functions) into a pure, exported function plus a CLI
 // entrypoint, mirroring compute-review-verdict.ts's structure (DRO-1.1) —
 // this is one layer upstream of that gate: `hasUnaddressedFindings` computes
@@ -37,7 +37,7 @@
 // confirmed isResolvedByLedger covers every case they caught. isSelfCleanApprove
 // and isSupersededBySelfReview remain exported: review.md's Step 5.5 still calls
 // them directly to decide what to durably write to the ledger in the first
-// place (PFL-2.1), and agent/src/check-patch.ts's hasMergeOnlyStaleFindings
+// place (PFL-2.1), and agent/src/coding/check-patch.ts's hasMergeOnlyStaleFindings
 // still uses isSelfCleanApprove for its own, unrelated staleness check.
 // isResolvedByPriorFindingsStatus had no other caller and is fully removed.)
 //
@@ -85,10 +85,10 @@
 //     inline threads: a human reply in a thread leaves no ledger entry.
 //     Tests: the URT-1.1 thread cases and "thread-level exclusion is per thread".
 //
-// Duplicated copies reviewed and kept: agent/src/check-patch.ts's
+// Duplicated copies reviewed and kept: agent/src/coding/check-patch.ts's
 // hasMergeOnlyStaleFindings (a different question — stale-commit findings — that
 // shares only isSelfCleanApprove/isAddressedByAuthorReply, imported from here, not
-// copied), agent/src/check-helpers.ts's classifyReviewState/isCleanApproveBody
+// copied), agent/src/coding/check-helpers.ts's classifyReviewState/isCleanApproveBody
 // (identity-agnostic reconciler, not a candidacy gate), and check-review.ts (no
 // copy of these predicates). patch.md/review.md prose describing removed logic:
 // none, since nothing was removed.
@@ -105,7 +105,7 @@ import { canonicalLogin } from "./login-identity.ts";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 //
-// Mirrors agent/src/check-patch.ts's ReviewNode/ReviewThread/IssueCommentNode/
+// Mirrors agent/src/coding/check-patch.ts's ReviewNode/ReviewThread/IssueCommentNode/
 // PrReviewData type definitions exactly (duplicated here, not imported —
 // plugins/shipwright is a separate, repo-agnostic package from agent/src, see
 // plugins/shipwright/CLAUDE.md; the same rationale compute-review-verdict.ts's
@@ -147,7 +147,7 @@ export interface ReviewThread {
       author: { login: string; __typename?: string };
       body: string;
       /**
-       * Optional (mirrors agent/src/check-patch.ts's RVG-2.1 precedent):
+       * Optional (mirrors agent/src/coding/check-patch.ts's RVG-2.1 precedent):
        * only callers that fetch multiple thread comments with `createdAt`
        * (review.md's Step 5.5, widened for URT-1.1) can populate this.
        * Callers whose GraphQL query doesn't request it — or that only fetch
@@ -249,7 +249,7 @@ export interface PrReviewData {
 
 // ─── Self-review body matching ────────────────────────────────────────────────
 //
-// Duplicated from agent/src/check-helpers.ts's `isCleanApproveBody` (rather
+// Duplicated from agent/src/coding/check-helpers.ts's `isCleanApproveBody` (rather
 // than imported) because plugins/shipwright is a separate, repo-agnostic
 // package from agent/src — see plugins/shipwright/CLAUDE.md. Mirrors
 // compute-review-verdict.ts's identical duplication of the sibling
@@ -290,7 +290,7 @@ function isCleanApproveBody(body: string): boolean {
  * caught there. Still exported and still called directly by review.md's Step
  * 5.5 (PFL-2.1) to decide which prior self-reviews to durably record as
  * `resolved` in the findings ledger in the first place, and by
- * agent/src/check-patch.ts's `hasMergeOnlyStaleFindings` for its own,
+ * agent/src/coding/check-patch.ts's `hasMergeOnlyStaleFindings` for its own,
  * unrelated stale-review check.
  */
 export function isSelfCleanApprove(

@@ -28,15 +28,15 @@
 import { describe, expect, test } from "bun:test";
 import type { FileStats } from "./check-coverage";
 import {
+  aggregateStats,
   CoveragePyParser,
+  computeAggregateLinePct,
+  computeFailures,
+  filterRelevantFiles,
   GoCoverParser,
   IstanbulParser,
   JacocoParser,
   LcovParser,
-  aggregateStats,
-  computeAggregateLinePct,
-  computeFailures,
-  filterRelevantFiles,
   percentOf,
   runCli,
 } from "./check-coverage";
@@ -342,7 +342,7 @@ describe("filterRelevantFiles", () => {
       fnf: 3,
       fnh: 3,
     },
-    { path: "agent/src/check-patch.ts", lf: 40, lh: 20, fnf: 4, fnh: 2 },
+    { path: "agent/src/coding/check-patch.ts", lf: 40, lh: 20, fnf: 4, fnh: 2 },
   ];
 
   test("excludes files matching an exclude prefix", () => {
@@ -350,7 +350,7 @@ describe("filterRelevantFiles", () => {
     expect(result.map((f) => f.path)).toEqual([
       "node_modules/foo/index.js",
       "admin/prisma/client/index.ts",
-      "agent/src/check-patch.ts",
+      "agent/src/coding/check-patch.ts",
     ]);
   });
 
@@ -359,7 +359,7 @@ describe("filterRelevantFiles", () => {
     expect(result.map((f) => f.path)).toEqual([
       "node_modules/foo/index.js",
       "admin/src/main.ts",
-      "agent/src/check-patch.ts",
+      "agent/src/coding/check-patch.ts",
     ]);
   });
 
@@ -371,7 +371,7 @@ describe("filterRelevantFiles", () => {
     );
     expect(result.map((f) => f.path)).toEqual([
       "admin/src/main.ts",
-      "agent/src/check-patch.ts",
+      "agent/src/coding/check-patch.ts",
     ]);
   });
 
@@ -1090,12 +1090,12 @@ describe("runCli", () => {
           (m) => m.includes(tool) && m.includes("no report-path dispatch"),
         ),
       ).toBe(true);
-      expect(
-        logMessages.some((m) => m.includes("No source files")),
-      ).toBe(false);
-      expect(
-        logMessages.some((m) => m.includes("Coverage gate passed")),
-      ).toBe(false);
+      expect(logMessages.some((m) => m.includes("No source files"))).toBe(
+        false,
+      );
+      expect(logMessages.some((m) => m.includes("Coverage gate passed"))).toBe(
+        false,
+      );
     },
   );
 });

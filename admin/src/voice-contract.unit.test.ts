@@ -14,12 +14,12 @@
  * with the audio attached as the multipart field `audio_file`, returning the
  * transcription as a PLAIN-TEXT body (with output=txt) — NOT the OpenAI
  * `POST /v1/audio/transcriptions` JSON contract, and NOT a custom `/transcribe`
- * JSON endpoint. The agent's `makeWhisperSvcClient` (agent/src/voice.ts) targets
+ * JSON endpoint. The agent's `makeWhisperSvcClient` (agent/src/runtime/voice.ts) targets
  * exactly that endpoint; the contract is exercised end-to-end in
- * agent/src/voice.unit.test.ts and agent/src/voice.integration.test.ts.
+ * agent/src/runtime/voice.unit.test.ts and agent/src/runtime/voice.integration.test.ts.
  *
  * The admin's only responsibility is to hand the agent the Whisper Service URL
- * under the agreed env var name `WHISPER_SERVICE_URL` (read in agent/src/config.ts).
+ * under the agreed env var name `WHISPER_SERVICE_URL` (read in agent/src/runtime/config.ts).
  * This file pins that name — and the ElevenLabs/Groq names — against the manifest
  * builder so a rename on either side fails loudly here. No agent code is imported
  * (admin must not couple to the agent package); the assertion is against the wire

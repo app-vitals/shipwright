@@ -31,13 +31,13 @@ e.g. non-agent-image local dev where `bun install` did not pull browsers. It doe
 
 ## The local-verification path
 
-`launchBrowser()` lives in [`agent/src/browser.ts`](../../../agent/src/browser.ts) (added in
+`launchBrowser()` lives in [`agent/src/runtime/browser.ts`](../../../agent/src/runtime/browser.ts) (added in
 PW-1.2). It returns a Playwright `Browser` already configured for this repo's restricted
 container `securityContext` — headless, `chromiumSandbox: false`, and
 `--no-sandbox --disable-setuid-sandbox`. You do not need to configure any of that yourself.
 
 ```ts
-import { launchBrowser } from "./agent/src/browser.ts";
+import { launchBrowser } from "./agent/src/runtime/browser.ts";
 
 const browser = await launchBrowser();
 try {

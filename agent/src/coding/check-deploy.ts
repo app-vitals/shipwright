@@ -1,0 +1,452 @@
+/**
+ * agent/src/coding/check-deploy.ts
+ *
+ * Native, directly-importable equivalent of
+ * plugins/shipwright/scripts/check-deploy.ts — candidate provider for the
+ * deploy phase.
+ *
+ * Unlike the plugin script (a boolean gate that exits 0/1 for a cron
+ * precheck), this function collects and returns the FULL SET of open PRs
+ * that are approved (or self-approved per policy) with green CI as
+ * WorkPrCandidate[], tagged phase: "deploy". It does not early-return after
+ * the first match — the selector needs the whole candidate set to pick the
+ * globally-oldest ready item.
+ *
+ * Mirrors check-deploy.ts's approval + CI-green + busy-repo-skip + bundle-
+ * completeness logic. Does NOT include the crash-recovery reconciliation
+ * side effects (reconcileStalePrOpenTasks / cleanupStaleIssues) as part of
+ * candidate collection — those remain the plugin script's / orchestrator's
+ * concern; callers that want them can still invoke them via injected deps
+ * before calling this function if needed.
+ */
+
+// CIG-1.2: CI-green classification is delegated to the shared classifier
+// (CIG-1.1) instead of a local latestRunPerName/isCiGreen pair, so
+// check-deploy.ts, check-patch.ts's cancelled-retry logic, and the
+// plugins/shipwright/commands/*.md call sites all agree on the same
+// dedup-by-workflow_id + success/skipped/neutral-is-green semantics.
+// Mirrors check-patch.ts's own import of
+// plugins/shipwright/scripts/compute-unaddressed-findings.ts.
+import { isCiGreen } from "../../../plugins/shipwright/scripts/is-ci-green.ts";
+import { canonicalLogin } from "../../../plugins/shipwright/scripts/login-identity.ts";
+import { agentReposRef } from "../runtime/agent-repos-ref.ts";
+import type { LinkedTaskInfo } from "./check-helpers.ts";
+import {
+  candidateId,
+  createBundleCompleteQuery,
+  createPrRecordQuery,
+  createTaskStatusQuery,
+  getCurrentUser,
+  isCleanApproveBody,
+  isPrRecordBlockedForDispatch,
+  isTaskBlockedForDispatch,
+  mapReposTolerant,
+  readAllowSelfReview,
+  resolveAllRepos,
+  resolveWorkspacePath,
+  splitOrgRepo,
+} from "./check-helpers.ts";
+import type { WorkPrCandidate } from "./work-selector.ts";
+
+// ─── Types ────────────────────────────────────────────────────────────────────
+
+export interface GhPr {
+  number: number;
+  title?: string;
+  headRefOid: string;
+  headRefName: string;
+  author: { login: string };
+  reviewDecision: string | null;
+  createdAt?: string;
+  mergeStateStatus: string | null;
+}
+
+export interface GhReview {
+  author: { login: string };
+  body: string;
+  state: string;
+}
+
+export interface WorkflowRun {
+  name: string;
+  status: string;
+  createdAt?: string;
+}
+
+// A single entry from `gh api repos/{org}/{repo}/actions/runs?head_sha=...`
+// (Actions:Read scope — works on every repo/token combo, unlike the GitHub
+// Checks-permission-gated `statusCheckRollup` field, which fine-grained PATs
+// cannot be granted on private repos). No name filter is applied when
+// fetching — a workflow can be named anything (e.g. "pr-title-lint", not
+// just "ci"), so every run for the head SHA is evaluated.
+export interface CiRun {
+  name: string;
+  status: string;
+  conclusion: string | null;
+  createdAt?: string;
+  // CIG-1.2: carried through from the Actions API so this run can be
+  // deduped by CIG-1.1's shared isCiGreen() classifier — which dedups by
+  // workflow_id + run_number rather than by name + createdAt.
+  workflow_id: number;
+  run_number: number;
+}
+
+export interface PrRecord {
+  readyForDeployAt?: string | null;
+  claimedBy?: string | null;
+  blocked?: boolean | null;
+}
+
+export interface CheckDeployDeps {
+  getCurrentUser: () => Promise<string>;
+  /**
+   * Whether self-review is allowed (the `allow_self_review` policy field,
+   * synced DB ref -> hardcoded default, APM-1.4). A getter, invoked
+   * fresh on every getDeployCandidates() call — not evaluated once at
+   * buildProductionDeps() time — so a DB-side edit takes
+   * effect on the very next call without requiring an agent process restart
+   * (PLR-1.1). Mirrors this file's own getScopedRepos live-read pattern.
+   * Async because the DB tier is a live config-sync ref
+   * (~60s staleness) rather than a synchronous file read.
+   * buildProductionDeps() wires this as `() =>
+   * readAllowSelfReview(workspacePath)` (check-helpers.ts).
+   */
+  isSelfReviewAllowed: () => Promise<boolean>;
+  /**
+   * Local clone list, resolved fresh on every getDeployCandidates() call so a
+   * repo cloned after buildProductionDeps() is picked up without a restart.
+   */
+  getRepos: () => string[];
+  listOpenPrs: (repo: string) => Promise<GhPr[]>;
+  fetchPrReviews: (
+    org: string,
+    repo: string,
+    pr: number,
+  ) => Promise<GhReview[]>;
+  fetchActiveDeployRuns: (org: string, repo: string) => Promise<WorkflowRun[]>;
+  // Fetches ALL workflow runs for the PR's head SHA (Actions:Read scope, no
+  // GitHub Checks permission needed — works on public and private repos with
+  // a fine-grained PAT, unlike the abandoned statusCheckRollup approach).
+  // Deliberately unfiltered by workflow name — the shared isCiGreen()
+  // classifier (CIG-1.1) dedups by workflow_id and requires every
+  // workflow's latest run to be green.
+  fetchCiRuns: (org: string, repo: string, headSha: string) => Promise<CiRun[]>;
+  // Returns the current time as an ISO string. Injected for testability.
+  clock?: () => string;
+  // Bundle completeness gate: returns false if any bundle-mate task on the branch
+  // is still pending/in_progress/blocked. PR is skipped when it returns false.
+  isBundleComplete?: (branch: string) => Promise<boolean>;
+  // Task-store PR record lookup, used both to gate qualification (a record
+  // with claimedBy set means another agent currently holds the claim on this
+  // PR — see the explicit claimedBy check below, mirroring check-review.ts)
+  // and to source the age field, though `age` below is actually sourced from
+  // queryTaskStatus's linkedTask.createdAt instead — readyForDeployAt is not
+  // used for age ordering. Queried WITHOUT `ready=true` so a `null` result
+  // unambiguously means "no record exists yet" (e.g. review skipped claim()
+  // for a self-authored PR under allow_self_review: false) rather than
+  // conflating it with "claimed" — the task-store's `ready=true` filter maps
+  // to `claimedBy IS NULL` server-side, which would collapse both cases into
+  // the same empty result.
+  queryPrRecord?: (repo: string, prNumber: number) => Promise<PrRecord | null>;
+  // Task status lookup for the linked task (if any). Returns the task's
+  // status, or null if no linked task is found (fail-open — a PR with no
+  // task yet is not disqualified). Throws on lookup failure (network error,
+  // non-2xx, malformed response) — deploy candidacy fails CLOSED on that
+  // signal, since "unknown" must not be treated as "confirmed ready". This
+  // deliberately does NOT mirror queryPrRecord's fail-open posture, which
+  // only affects a non-gating ordering field.
+  queryTaskStatus?: (
+    repo: string,
+    prNumber: number,
+  ) => Promise<LinkedTaskInfo | null>;
+  /**
+   * Returns the agent's currently configured repo scope (org/repo strings).
+   * Called at the top of every getDeployCandidates() invocation — not once at
+   * deps-build time — so a repo present in `repos` (the local clone list) but
+   * absent from this call's result is excluded from candidates, and a later
+   * scope change is picked up on the very next call.
+   */
+  getScopedRepos: () => string[];
+}
+
+// ─── Helpers ──────────────────────────────────────────────────────────────────
+
+// Queued runs older than 1 hour are treated as stuck/ghost runs and ignored.
+const STALE_QUEUED_RUN_MS = 60 * 60 * 1000;
+
+function isActiveRun(run: WorkflowRun, now: string): boolean {
+  if (run.status === "in_progress") return true;
+  if (run.status === "queued") {
+    if (!run.createdAt) return true; // no timestamp → conservative, treat as active
+    const ageMs = new Date(now).getTime() - new Date(run.createdAt).getTime();
+    return ageMs < STALE_QUEUED_RUN_MS;
+  }
+  return false;
+}
+
+function hasSelfApproveReview(reviews: GhReview[], userLogin: string): boolean {
+  return reviews.some(
+    (r) =>
+      canonicalLogin(r.author.login) === canonicalLogin(userLogin) &&
+      isCleanApproveBody(r.body),
+  );
+}
+
+// ─── Core logic ───────────────────────────────────────────────────────────────
+
+/**
+ * Collect all open PRs ready to deploy (approved or self-approved with green
+ * CI, in a non-busy repo, with a complete bundle) as WorkPrCandidate[] tagged
+ * phase: "deploy".
+ */
+export async function getDeployCandidates(
+  deps: CheckDeployDeps,
+): Promise<WorkPrCandidate[]> {
+  // Deploying guard: a repo with an active Deploy workflow run is skipped, but
+  // that must not block PRs in other, independent repos. Queued runs older
+  // than 1 hour are treated as stuck/ghost and ignored.
+  const now = deps.clock ? deps.clock() : new Date().toISOString();
+  const scopedRepos = new Set(deps.getScopedRepos());
+  const repos = deps.getRepos().filter((repo) => scopedRepos.has(repo));
+
+  const busyRepos = new Set(
+    await mapReposTolerant(repos, "check-deploy", async (repo) => {
+      const [org, repoName] = splitOrgRepo(repo);
+      const activeRuns = await deps.fetchActiveDeployRuns(org, repoName);
+      return activeRuns.some((r) => isActiveRun(r, now)) ? [repo] : [];
+    }),
+  );
+
+  const currentUser = await deps.getCurrentUser();
+  const candidates: WorkPrCandidate[] = [];
+
+  const openRepos = repos.filter((repo) => !busyRepos.has(repo));
+  const openPrs = await mapReposTolerant<GhPr & { repo: string }>(
+    openRepos,
+    "check-deploy",
+    async (repo) => {
+      const prs = await deps.listOpenPrs(repo);
+      return prs.map((pr) => ({ ...pr, repo }));
+    },
+  );
+
+  for (const pr of openPrs) {
+    const repo = pr.repo;
+    const [org, repoName] = splitOrgRepo(repo);
+
+    try {
+      let approved = false;
+
+      if (pr.reviewDecision === "APPROVED") {
+        approved = true;
+      } else if (
+        (await deps.isSelfReviewAllowed()) &&
+        canonicalLogin(pr.author.login) === canonicalLogin(currentUser)
+      ) {
+        const reviews = await deps.fetchPrReviews(org, repoName, pr.number);
+        if (hasSelfApproveReview(reviews, currentUser)) {
+          approved = true;
+        }
+      }
+
+      if (!approved) continue;
+
+      // Hard authorship filter: only deploy PRs authored by the current user
+      if (canonicalLogin(pr.author.login) !== canonicalLogin(currentUser))
+        continue;
+
+      const ciRuns = await deps.fetchCiRuns(org, repoName, pr.headRefOid);
+      if (!isCiGreen(ciRuns)) continue;
+
+      // Skip DIRTY (merge-conflicted, unmergeable) PRs
+      if (pr.mergeStateStatus === "DIRTY") continue;
+
+      // Skip PRs whose linked task is blocked or hitl:true (CBD-2.2 — a
+      // human has already been escalated to and needs to act; a task can be
+      // hitl:true while still status:"pr_open", e.g. CI later goes green on
+      // an already-escalated commit, so hitl and status are checked
+      // independently, not just status), routed through the shared
+      // isTaskBlockedForDispatch helper (PRB-2.1) instead of hand-rolled
+      // checks. A confirmed empty result (no linked task) is not
+      // disqualifying, but a lookup FAILURE fails CLOSED — deploy is
+      // consequential enough that "unknown" must not be treated as
+      // "confirmed ready".
+      let linkedTask: LinkedTaskInfo | null = null;
+      if (deps.queryTaskStatus) {
+        try {
+          linkedTask = await deps.queryTaskStatus(repo, pr.number);
+        } catch (err) {
+          process.stderr.write(
+            `check-deploy: task-status lookup failed for PR ${pr.number}: ${err instanceof Error ? err.message : String(err)}\n`,
+          );
+          continue;
+        }
+        if (isTaskBlockedForDispatch(linkedTask)) continue;
+      }
+
+      if (deps.isBundleComplete) {
+        const bundleComplete = await deps
+          .isBundleComplete(pr.headRefName)
+          .catch(() => true);
+        if (!bundleComplete) continue;
+      }
+
+      let record: PrRecord | null = null;
+      if (deps.queryPrRecord) {
+        try {
+          record = await deps.queryPrRecord(repo, pr.number);
+        } catch {
+          // Query failed → fall back to PR createdAt below (fail open — a
+          // transient task-store error must not silently exclude an
+          // otherwise-qualifying PR from deploy candidacy).
+        }
+        // A record with claimedBy set means another agent currently holds
+        // the claim on this PR — skip. A null record (no record was ever
+        // created, e.g. review skipped claim() for a self-authored PR
+        // under allow_self_review: false, or the query failed above) must
+        // NOT be treated as claimed — only an explicit claimedBy gates
+        // candidacy, mirroring check-review.ts.
+        if (record?.claimedBy != null) continue;
+
+        // A PR-record blocked:true gate (PRB-2.4) — lets a PR with no linked
+        // task at all still be excluded via its own PR-record blocked flag,
+        // alongside the linked-task hitl/blocked check above (PRB-3.1:
+        // patch.md Step 5a.7's second-round-disagreement escalation writes
+        // blocked:true directly on the PR record when there's no linked task
+        // to flag).
+        if (isPrRecordBlockedForDispatch(record)) continue;
+      }
+
+      candidates.push({
+        id: candidateId(repo, pr.number),
+        age: linkedTask?.createdAt ?? pr.createdAt ?? "",
+        phase: "deploy",
+        title: pr.title,
+        authorLogin: pr.author.login,
+        headRefName: pr.headRefName,
+        commitSha: pr.headRefOid,
+      });
+    } catch (err) {
+      process.stderr.write(
+        `check-deploy: gh query failed for PR ${pr.number}: ${String(err)}\n`,
+      );
+    }
+  }
+
+  return candidates;
+}
+
+// ─── Production deps ──────────────────────────────────────────────────────────
+
+interface GhPrListJson {
+  number: number;
+  title?: string;
+  headRefOid: string;
+  headRefName: string;
+  author: { login: string };
+  reviewDecision: string | null;
+  createdAt?: string;
+  mergeStateStatus: string | null;
+}
+
+interface GhPrReviewsJson {
+  reviews: Array<{
+    author: { login: string };
+    body: string;
+    state: string;
+  }>;
+}
+
+interface GhWorkflowRunsJson {
+  workflow_runs: Array<{
+    name: string;
+    status: string;
+    conclusion: string | null;
+    created_at: string;
+    workflow_id: number;
+    run_number: number;
+  }>;
+}
+
+export async function buildProductionDeps(opts: {
+  ghJson: <T>(args: string[]) => Promise<T>;
+  fetchFn?: typeof fetch;
+  getScopedRepos?: () => string[];
+}): Promise<CheckDeployDeps> {
+  const workspacePath = resolveWorkspacePath();
+  const clock = () => new Date().toISOString();
+  const { ghJson } = opts;
+
+  return {
+    getCurrentUser,
+    isSelfReviewAllowed: () => readAllowSelfReview(workspacePath),
+    getRepos: () => resolveAllRepos(workspacePath),
+    getScopedRepos: opts.getScopedRepos ?? agentReposRef.get,
+    clock,
+    fetchActiveDeployRuns: async (org: string, repo: string) => {
+      const inProgress = await ghJson<GhWorkflowRunsJson>([
+        "api",
+        `repos/${org}/${repo}/actions/runs?status=in_progress&per_page=10`,
+      ]);
+      const queued = await ghJson<GhWorkflowRunsJson>([
+        "api",
+        `repos/${org}/${repo}/actions/runs?status=queued&per_page=10`,
+      ]);
+      return [...inProgress.workflow_runs, ...queued.workflow_runs]
+        .filter((r) => r.name.toLowerCase() === "deploy")
+        .map((r) => ({
+          name: r.name,
+          status: r.status,
+          createdAt: r.created_at,
+        }));
+    },
+    listOpenPrs: async (repo: string) => {
+      return await ghJson<GhPrListJson[]>([
+        "pr",
+        "list",
+        "--state",
+        "open",
+        "--repo",
+        repo,
+        "--json",
+        "number,title,headRefOid,headRefName,author,reviewDecision,createdAt,mergeStateStatus",
+      ]);
+    },
+    fetchCiRuns: async (org: string, repo: string, headSha: string) => {
+      try {
+        const data = await ghJson<GhWorkflowRunsJson>([
+          "api",
+          `repos/${org}/${repo}/actions/runs?head_sha=${headSha}`,
+        ]);
+        return data.workflow_runs.map((r) => ({
+          name: r.name,
+          status: r.status,
+          conclusion: r.conclusion,
+          createdAt: r.created_at,
+          workflow_id: r.workflow_id,
+          run_number: r.run_number,
+        }));
+      } catch (err) {
+        process.stderr.write(
+          `check-deploy: actions/runs query failed for ${org}/${repo} sha ${headSha}: ${String(err)}\n`,
+        );
+        return [];
+      }
+    },
+    fetchPrReviews: async (org: string, repo: string, pr: number) => {
+      const data = await ghJson<GhPrReviewsJson>([
+        "pr",
+        "view",
+        String(pr),
+        "--repo",
+        `${org}/${repo}`,
+        "--json",
+        "reviews",
+      ]);
+      return data.reviews;
+    },
+    isBundleComplete: createBundleCompleteQuery({ fetchFn: opts.fetchFn }),
+    queryPrRecord: createPrRecordQuery<PrRecord>({ fetchFn: opts.fetchFn }),
+    queryTaskStatus: createTaskStatusQuery({ fetchFn: opts.fetchFn }),
+  };
+}

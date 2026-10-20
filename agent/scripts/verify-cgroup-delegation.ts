@@ -14,7 +14,7 @@
  *
  * Unlike verify-browser-launch.ts, this is NOT a pass/fail gate: a container
  * without cgroup delegation is an expected, fully-handled configuration —
- * agent/src/process-tree-kill.ts falls back to a procfs descendant walk. The
+ * agent/src/runtime/process-tree-kill.ts falls back to a procfs descendant walk. The
  * script exits 0 either way and only exits non-zero if the probe itself
  * crashes unexpectedly. Its value is the durable, per-build log line showing
  * which mode production is really running in.
@@ -27,7 +27,7 @@ import {
   CGROUP_MOUNT_ROOT,
   probeCgroupDelegation,
   resolveCgroupBase,
-} from "../src/process-tree-kill.ts";
+} from "../src/runtime/process-tree-kill.ts";
 
 try {
   const base = resolveCgroupBase();

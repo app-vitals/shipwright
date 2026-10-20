@@ -32,8 +32,8 @@ import {
   createWriteStream,
   existsSync,
   mkdirSync,
-  readFileSync,
   readdirSync,
+  readFileSync,
   writeFileSync,
 } from "node:fs";
 import { homedir } from "node:os";
@@ -47,36 +47,36 @@ import {
   ghJson,
   parseCandidateId,
   resolveAllRepos,
-} from "../agent/src/check-helpers.ts";
+} from "../agent/src/coding/check-helpers.ts";
 import {
-  type CheckPatchDeps,
   buildProductionDeps as buildPatchDeps,
+  type CheckPatchDeps,
   getPatchCandidates,
-} from "../agent/src/check-patch.ts";
+} from "../agent/src/coding/check-patch.ts";
 import {
-  type CheckReviewDeps,
   buildProductionDeps as buildReviewDeps,
+  type CheckReviewDeps,
   getReviewCandidates,
-} from "../agent/src/check-review.ts";
-import { FLOOR_TOOLS } from "../agent/src/claude.ts";
+} from "../agent/src/coding/check-review.ts";
 import {
-  type PatchStateSnapshot,
   createPatchStateSnapshotter,
   evaluatePatchOutcome,
-} from "../agent/src/patch-outcome-check.ts";
-import { installPlugins } from "../agent/src/setup.ts";
+  type PatchStateSnapshot,
+} from "../agent/src/coding/patch-outcome-check.ts";
 import {
+  selectNextWorkItem,
   type WorkPrCandidate,
   type WorkTaskCandidate,
-  selectNextWorkItem,
-} from "../agent/src/work-selector.ts";
+} from "../agent/src/coding/work-selector.ts";
+import { FLOOR_TOOLS } from "../agent/src/runtime/claude.ts";
+import { installPlugins } from "../agent/src/runtime/setup.ts";
+import { computeMissingClones } from "../lib/clone-plan.ts";
 import {
   type ConsoleMethod,
   type LogFileTeeTarget,
-  type WriteFn,
   realLogFileTeeTarget,
+  type WriteFn,
 } from "./hitl-log-file-tee-target.ts";
-import { computeMissingClones } from "../lib/clone-plan.ts";
 
 // ---------------------------------------------------------------------------
 // Allowed tools — FLOOR_TOOLS + web access, minus Bash/Agent (both can
@@ -387,7 +387,7 @@ async function waitForHealth(url: string, label: string): Promise<void> {
 }
 
 // ---------------------------------------------------------------------------
-// Workspace provisioning — mirrors agent/src/setup.ts ensureAgentHome()
+// Workspace provisioning — mirrors agent/src/runtime/setup.ts ensureAgentHome()
 // ---------------------------------------------------------------------------
 
 /**

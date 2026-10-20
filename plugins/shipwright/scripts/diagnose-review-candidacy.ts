@@ -12,7 +12,7 @@
 // a single command anyone (including an agent debugging its own PR) can run.
 //
 // Deliberately imports traceReviewCandidacyDecision directly from
-// agent/src/check-review.ts rather than re-deriving the exclusion logic —
+// agent/src/coding/check-review.ts rather than re-deriving the exclusion logic —
 // see that file's doc comment ("Deliberately exported ... so RCO-1.4's
 // diagnostic script can call the same classification logic directly instead
 // of re-deriving it"). This is a narrow, intentional exception to the usual
@@ -38,16 +38,16 @@
 //   bun run plugins/shipwright/scripts/diagnose-review-candidacy.ts org/repo#123
 //   bun run plugins/shipwright/scripts/diagnose-review-candidacy.ts ok-wow/ok-wow-agency#66
 
-import type { LinkedTaskInfo } from "../../../agent/src/check-helpers.ts";
-import type { PrReviewData } from "../../../agent/src/check-patch.ts";
+import type { LinkedTaskInfo } from "../../../agent/src/coding/check-helpers.ts";
+import type { PrReviewData } from "../../../agent/src/coding/check-patch.ts";
 import {
   buildProductionDeps,
   type PrInfo,
   type PrRecord,
   type ReviewCandidacyTrace,
   traceReviewCandidacyDecision,
-} from "../../../agent/src/check-review.ts";
-import { ghGraphql, ghJson } from "../../../agent/src/gh-helpers.ts";
+} from "../../../agent/src/coding/check-review.ts";
+import { ghGraphql, ghJson } from "../../../agent/src/runtime/gh-helpers.ts";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 

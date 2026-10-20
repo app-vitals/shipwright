@@ -123,7 +123,7 @@ The dashboard renders commit data in two panels:
 
 ### Origin classification rules
 
-`PullRequest.origin` is derived by precedence (first match wins). `deriveOrigin()` (task-store, `/prs/claim`) is the source of truth for the table below; `classifyPrOrigin()` (agent, `agent/src/pr-census.ts`, the POM-4.1 census sweep) mirrors the same eight steps (POF-1.2), with the census sweep supplying `is_bot` and label data from `gh pr list --json`:
+`PullRequest.origin` is derived by precedence (first match wins). `deriveOrigin()` (task-store, `/prs/claim`) is the source of truth for the table below; `classifyPrOrigin()` (agent, `agent/src/coding/pr-census.ts`, the POM-4.1 census sweep) mirrors the same eight steps (POF-1.2), with the census sweep supplying `is_bot` and label data from `gh pr list --json`:
 
 | Order | Condition | Origin |
 |---|---|---|

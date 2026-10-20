@@ -280,7 +280,7 @@ export interface AgentDeploymentOpts {
    *   - elevenLabsApiKey  → ELEVENLABS_API_KEY  (TTS, either provider)
    *   - voiceId           → ELEVENLABS_VOICE_ID (optional TTS voice override)
    * Only the keys that are set are injected — this mirrors the agent's own
-   * env contract (agent/src/config.ts).
+   * env contract (agent/src/runtime/config.ts).
    */
   voice?: AgentVoiceEnv;
   /**
@@ -617,7 +617,7 @@ export function buildAgentDeploymentManifest(
               // minute on a cold/contended node; without this, liveness would
               // restart the container (~75s in) before startup ever finished.
               // 18 × 10s = 180s grace, aligned with the entrypoint startup
-              // watchdog (DEFAULT_STARTUP_TIMEOUT_MS in agent/src/entrypoint.ts).
+              // watchdog (DEFAULT_STARTUP_TIMEOUT_MS in agent/src/runtime/entrypoint.ts).
               startupProbe: {
                 httpGet: { path: "/health", port: AGENT_HEALTH_PORT },
                 periodSeconds: 10,

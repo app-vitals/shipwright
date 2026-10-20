@@ -444,7 +444,7 @@ describe("createPrsRoutes — OpenAPIHono migration (TSM-1.3)", () => {
   });
 
   // ─── PATCH_ALLOWED_FIELDS: reviewedAt (RWA-1.2) ──────────────────────────────
-  // reviewedAt is the watermark agent/src/check-review.ts's hasFreshNonAgentComment
+  // reviewedAt is the watermark agent/src/coding/check-review.ts's hasFreshNonAgentComment
   // uses to decide whether new PR activity is "fresh". The three terminal-skip
   // write-back paths in review.md need to advance it directly via PATCH (rather
   // than only via POST /:id/complete), or a PR skipped via those paths keeps a

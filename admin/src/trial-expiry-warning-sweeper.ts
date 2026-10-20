@@ -244,7 +244,7 @@ export function buildTrialExpiryWarningMessage(
 /**
  * The slice of @slack/web-api's WebClient this module actually calls. Narrow
  * on purpose so tests can inject a typed double covering the real send path
- * (same approach as agent/src/startup-dm.ts's injected WebClient).
+ * (same approach as agent/src/runtime/startup-dm.ts's injected WebClient).
  */
 export type SlackPostMessageClient = Pick<WebClient, "chat">;
 
@@ -254,7 +254,7 @@ type SlackClientFactory = (botToken: string) => SlackPostMessageClient;
 /**
  * The production factory: a fresh @slack/web-api WebClient per call, built
  * from *the target agent's own* bot token — mirrors (not reuses, since it's
- * cross-service) the alert-posting pattern in agent/src/cron-handler.ts.
+ * cross-service) the alert-posting pattern in agent/src/runtime/cron-handler.ts.
  * There is no long-lived client to share/cache: every tenant agent has a
  * distinct token, and posting is infrequent (at most once per agent, ever,
  * thanks to the dedup gate).
@@ -283,7 +283,10 @@ export async function sendTrialExpiryWarning(
     });
     return true;
   } catch (err) {
-    console.error("[trial-expiry-warning-sweeper] Slack chat.postMessage failed:", err);
+    console.error(
+      "[trial-expiry-warning-sweeper] Slack chat.postMessage failed:",
+      err,
+    );
     return false;
   }
 }
@@ -347,7 +350,10 @@ export class TrialExpiryWarningSweeper {
         where: { trialExpiresAt: { not: null }, trialExpiryWarnedAt: null },
       });
     } catch (err) {
-      console.error("[trial-expiry-warning-sweeper] candidate fetch failed:", err);
+      console.error(
+        "[trial-expiry-warning-sweeper] candidate fetch failed:",
+        err,
+      );
       return result;
     }
 
@@ -356,7 +362,10 @@ export class TrialExpiryWarningSweeper {
       try {
         await this.sweepAgent(agent, now, result);
       } catch (err) {
-        console.error(`[trial-expiry-warning-sweeper] agent ${agent.id} failed:`, err);
+        console.error(
+          `[trial-expiry-warning-sweeper] agent ${agent.id} failed:`,
+          err,
+        );
       }
     }
 

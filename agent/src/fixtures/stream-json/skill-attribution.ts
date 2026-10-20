@@ -1,6 +1,6 @@
 /**
  * Hand-authored synthetic `claude -p --output-format stream-json --verbose`
- * transcript exercising `agent/src/run-telemetry.ts` end-to-end through
+ * transcript exercising `agent/src/runtime/run-telemetry.ts` end-to-end through
  * `_consumeStream`: first-turn baseline capture, turn/tool-call counting, and
  * per-skill attribution with a sub-agent turn in the middle.
  *
@@ -23,7 +23,7 @@
  *  - one terminal `result`/success line
  */
 
-import type { RunTelemetry } from "../../run-telemetry.ts";
+import type { RunTelemetry } from "../../runtime/run-telemetry.ts";
 
 const SONNET = "claude-sonnet-4-6";
 const SESSION_ID = "sess-skill-attribution";

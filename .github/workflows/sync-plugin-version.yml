@@ -9,7 +9,7 @@ name: Sync Plugin Version
 # Why this needs to exist at all: the shipwright Claude Code plugin is
 # installed two ways —
 #   1. Baked into our own agent Docker image (a local-path marketplace source,
-#      see agent/src/setup.ts's installPlugins()). `claude plugin update`
+#      see agent/src/runtime/setup.ts's installPlugins()). `claude plugin update`
 #      compares the plugin's declared version string against what's cached
 #      from a prior container generation, and skips re-syncing file content
 #      when that string is unchanged — so a frozen version silently prevents

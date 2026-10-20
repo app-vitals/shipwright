@@ -328,7 +328,7 @@ spec:
             # ── Agent-voice env contract (CV-1.1) ─────────────────────────────
             # Injected ONLY when agent.voice.enabled. admin/src/main.ts
             # buildProvisioner reads these and flows them into every provisioned
-            # agent pod (agent/src/config.ts reads the same names). When voice is
+            # agent pod (agent/src/runtime/config.ts reads the same names). When voice is
             # disabled none of these render and provisioned pods keep the 3 base
             # vars only.
             {{- if eq .Values.agent.voice.provider "whisper" }}

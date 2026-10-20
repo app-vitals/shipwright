@@ -13,7 +13,7 @@
  * Deliberately does NOT deprovision the agent — no deleteAgentFully() call,
  * no touching the K8s workload, tokens, or chat history. A trial that ends
  * should not destroy the workspace, since the customer may convert to paid
- * later. This sweeper only flips AgentCronJob.enabled; agent/src/slack.ts's
+ * later. This sweeper only flips AgentCronJob.enabled; agent/src/runtime/slack.ts's
  * isTrialExpired() gate is the other half of the lockdown, blocking inbound
  * Slack messages.
  *
