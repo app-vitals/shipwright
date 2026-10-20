@@ -10,11 +10,17 @@ independent of `appVersion`. CI enforces this with
 `ct lint --check-version-increment`. Each release here must mirror the
 `artifacthub.io/changes` annotation in `Chart.yaml`.
 
-## [1.26.27] - 2026-10-20
+## [1.26.28] - 2026-10-20
 
 ### Added
 
 - agent.provisioning.anthropicFederation.identityMode (shared or perAgent) with issuerId, nameSuffix and adminFederation; perAgent mode gives the admin pod its own projected token and ANTHROPIC_* env
+
+## [1.26.27] - 2026-10-20
+
+### Changed
+
+- auto-bump to chart v1.26.27 triggered by release tag(s): `admin-v1.281.0`, `agent-v1.416.0`, `chat-v1.146.0`, `metrics-v1.149.0`, `task-store-v1.196.0`
 
 ## [1.26.26] - 2026-10-20
 
