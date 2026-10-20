@@ -52,8 +52,6 @@ export type MetricQuery =
   | { kind: "tokensByAgentByCronModel"; range: QueryDateRange }
   | { kind: "costEfficiency"; range: QueryDateRange };
 
-export type MetricQueryKind = MetricQuery["kind"];
-
 /**
  * Read seam: every backend serves every query kind.
  *

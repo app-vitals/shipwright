@@ -136,6 +136,23 @@ function makeDeps(
 // ─── Tests ────────────────────────────────────────────────────────────────────
 
 describe("runEntrypoint — happy path", () => {
+  it("exports the agent type to the server process when the config carries one (ARD-6.1)", async () => {
+    const configClient = new RecordedShipwrightConfigClient({
+      ...SAMPLE_CONFIG,
+      typeName: "specialist",
+    });
+    const { deps, appliedEnv } = makeDeps(configClient);
+    await runEntrypoint(deps);
+    expect(appliedEnv.SHIPWRIGHT_AGENT_TYPE).toBe("specialist");
+  });
+
+  it("does not set SHIPWRIGHT_AGENT_TYPE when the config has no typeName (ARD-6.1)", async () => {
+    const configClient = new RecordedShipwrightConfigClient(SAMPLE_CONFIG);
+    const { deps, appliedEnv } = makeDeps(configClient);
+    await runEntrypoint(deps);
+    expect(appliedEnv.SHIPWRIGHT_AGENT_TYPE).toBeUndefined();
+  });
+
   it("fetches config and applies env vars from the bundle", async () => {
     const configClient = new RecordedShipwrightConfigClient(SAMPLE_CONFIG);
     const { deps, appliedEnv } = makeDeps(configClient);

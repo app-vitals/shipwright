@@ -3,16 +3,16 @@
  *
  * Stale-worktree age sweep (WTR-1.2) — a pure-filesystem background pass
  * that force-removes `worktrees/<repo>-<branch>` directories that have gone
- * stale (older than the agent-policy.md-configured cleanup_after_days),
+ * stale (older than the configured cleanup_after_days),
  * mirroring the workspace CLAUDE.md instruction that worktrees older than 14
  * days are removed automatically.
  *
  * Unlike pr-state-reconciler.ts, this module makes NO GitHub or task-store
- * calls — it only reads agent-policy.md, lists the worktrees/ directory,
+ * calls — it only reads the synced policy refs, lists the worktrees/ directory,
  * checks mtimes against an injected clock, and runs `git worktree remove
- * --force` for stale matches. It reuses WTR-1.1's parseCleanupMergedWorktrees
- * / parseCleanupAfterDays (check-helpers.ts) rather than reimplementing
- * policy parsing.
+ * --force` for stale matches. It reuses WTR-1.1's readCleanupMergedWorktrees
+ * / readCleanupAfterDays (check-helpers.ts) rather than reimplementing
+ * policy reads.
  *
  * Shape mirrors pr-state-reconciler.ts: an injected-deps interface, a pure
  * `reconcileStaleWorktrees(deps)` core function, per-directory try/catch
@@ -27,15 +27,15 @@
  */
 
 import { execFile } from "node:child_process";
-import { readFileSync, readdirSync, statSync } from "node:fs";
+import { readdirSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { promisify } from "node:util";
 import {
-  parseCleanupAfterDays,
-  parseCleanupMergedWorktrees,
+  readCleanupMergedWorktrees,
   resolveWorkspacePath,
   splitOrgRepo,
 } from "./check-helpers.ts";
+import { readCleanupAfterDays } from "./cleanup-after-days-ref.ts";
 import type { Clock } from "./clock.ts";
 import { SystemClock } from "./clock.ts";
 
@@ -50,8 +50,10 @@ export interface RemoveWorktreeCall {
 }
 
 export interface WorktreeReaperDeps {
-  /** Reads agent-policy.md content. */
-  readAgentPolicy: () => string;
+  /** Reads the `cleanup_merged_worktrees` policy field. */
+  readCleanupMergedWorktrees: () => Promise<boolean>;
+  /** Reads the `cleanup_after_days` policy field. */
+  readCleanupAfterDays: () => Promise<number>;
   /** Lists dirnames directly under worktrees/ (not full paths). */
   listWorktreeDirs: () => string[];
   /**
@@ -152,7 +154,7 @@ function isStale(mtime: Date, now: Date, cleanupAfterDays: number): boolean {
  * Scan worktrees/ for directories that have gone stale (older than the
  * policy's cleanup_after_days) and force-remove each one via the injected
  * removeWorktree dep. No-ops entirely (zero fs/git calls beyond reading the
- * policy) when cleanup_merged_worktrees parses to false.
+ * policy) when cleanup_merged_worktrees is false.
  *
  * A dirname whose prefix matches no scoped repo is skipped defensively
  * (logged, not fatal). A single directory's removeWorktree failure is
@@ -163,10 +165,9 @@ function isStale(mtime: Date, now: Date, cleanupAfterDays: number): boolean {
 export async function reconcileStaleWorktrees(
   deps: WorktreeReaperDeps,
 ): Promise<void> {
-  const policyContent = deps.readAgentPolicy();
-  if (!parseCleanupMergedWorktrees(policyContent)) return; // disabled — no fs/git calls at all
+  if (!(await deps.readCleanupMergedWorktrees())) return; // disabled — no fs/git calls at all
 
-  const cleanupAfterDays = parseCleanupAfterDays(policyContent);
+  const cleanupAfterDays = await deps.readCleanupAfterDays();
   const now = deps.clock.now();
 
   const dirs = deps.listWorktreeDirs();
@@ -204,7 +205,7 @@ export async function reconcileStaleWorktrees(
 // ─── Production deps ──────────────────────────────────────────────────────────
 
 /**
- * Production deps for `reconcileStaleWorktrees()`. Reads agent-policy.md and
+ * Production deps for `reconcileStaleWorktrees()`. Reads the policy refs and
  * worktrees/ from the resolved workspace path, and shells out to `git
  * worktree remove --force` for the actual removal.
  */
@@ -215,16 +216,8 @@ export function buildProductionDeps(opts?: {
   const workspacePath = resolveWorkspacePath();
 
   return {
-    readAgentPolicy: () => {
-      try {
-        return readFileSync(
-          join(workspacePath, "state", "agent-policy.md"),
-          "utf-8",
-        );
-      } catch {
-        return ""; // missing policy file — parseCleanupMergedWorktrees defaults to true, parseCleanupAfterDays to 14
-      }
-    },
+    readCleanupMergedWorktrees: () => readCleanupMergedWorktrees(workspacePath),
+    readCleanupAfterDays: () => readCleanupAfterDays(workspacePath),
     listWorktreeDirs: () => {
       try {
         return readdirSync(join(workspacePath, "worktrees"), {

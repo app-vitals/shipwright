@@ -20,7 +20,10 @@ function repoPath(...parts: string[]): string {
 }
 
 function readTemplate(): string {
-  return readFileSync(repoPath("agent/workspace/BOOTSTRAP.md.template"), "utf8");
+  return readFileSync(
+    repoPath("agent/workspace/BOOTSTRAP.md.template"),
+    "utf8",
+  );
 }
 
 describe("BOOTSTRAP.md.template — shipwright-loop model", () => {

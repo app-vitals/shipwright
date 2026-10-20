@@ -34,7 +34,7 @@ export type { AgentChatTokenUsageDailyByModel };
 // These types are defined here to keep admin self-contained (rootDir constraint).
 // The shapes must stay in sync with ChatTokenStats in admin-metrics-client.ts.
 
-export interface TokenAggregate {
+interface TokenAggregate {
   input: number;
   output: number;
   cacheRead: number;
@@ -43,20 +43,20 @@ export interface TokenAggregate {
   costUsd?: number;
 }
 
-export interface KeyedTokenAggregate extends TokenAggregate {
+interface KeyedTokenAggregate extends TokenAggregate {
   key: string;
 }
 
-export interface DoubleKeyedTokenAggregate extends TokenAggregate {
+interface DoubleKeyedTokenAggregate extends TokenAggregate {
   key1: string;
   key2: string;
 }
 
-export interface DailyTokenAggregate extends TokenAggregate {
+interface DailyTokenAggregate extends TokenAggregate {
   period: string;
 }
 
-export interface ChatTokenStats {
+interface ChatTokenStats {
   totals: TokenAggregate;
   byAgent: KeyedTokenAggregate[];
   byModel: DoubleKeyedTokenAggregate[];

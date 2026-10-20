@@ -10,7 +10,7 @@ Make it possible to run **more than one agent type** on Shipwright. The coding a
 
 ## Direction (Decided)
 
-1. **Stay in the Shipwright monorepo for the extraction.** Fix code boundaries first; a repo split adds versioning and CI coordination before interfaces are stable. A clean package is cheap to move later.
+1. **Fix code boundaries first, inside the monorepo.** *Superseded for the end state, see "Update 2026-10-19" below: the runtime, admin and provisioning will be extracted into their own repo. The in-repo split (ARD tasks) is the prerequisite.*
 2. **One agent = one type.** No multi-specialty composition. The coding agent is already a full agent's worth of scope; a real marketing agent will be too. (An earlier proposal to add multi-type composition to the manifest was dropped.)
 3. **Eventually one repo per agent type**, deployed like Shipwright agents. The growth DB / marketing OS is the model for how a type evolves. `coding` stays in this repo as the reference implementation.
 4. **Do not publish the manifest schema yet.** We are committing to the direction (hence moving the marketing agent out of vitals-os) but not to any interface, and no third party is ready to build a type. Keep `shipwright.dev/v1alpha1` internal and free to change. OSS plus managed hosting, with users defining their own types, is the vision, not something to force yet.
@@ -83,3 +83,11 @@ Direction when needed: a **work-item base** (claim/heartbeat/release/block/ready
 - Is the GitHub auth stack best treated as an opt-in extension of the coding type, or a separate optional integration usable by any type? (Dan: GitHub should be an option for agents generally.)
 - How should `coding` reach the extension seam given `index.ts` boot ordering (see `AUDIT.md`)?
 - Admin was not audited. It has coding-shaped parts (`agent-work-queue`, `agent-phase-methodology`, patch-author allowlist) that matter for later phases.
+
+## Update 2026-10-19 (planning session decisions)
+
+- **Vocabulary**: "specialty" is the unified concept (replacing "agent type" in conversation and docs). Schema and `typeName` keep their names until before the schema is published.
+- **Platform extraction**: the agent runtime, admin and provisioning move to a separate repo together (they share a tight, versioned contract: config bundle, cron reconcile, plugin and env APIs, registry, provisioning flows). Shipwright (coding) and the specialists repo both depend on it. Admin needs the same runtime/coding audit before this is planned.
+- **Layered workspace files**: `RUNTIME.md` (runtime-owned), `SPECIALTY.md` (specialty-owned, overwritten on boot), `SOUL.md` and `IDENTITY.md` (the agent's own, seeded once), thin `CLAUDE.md` including them. Specialty tooling should overwrite `SPECIALTY.md`, not `SOUL.md`.
+- **specialists repo**: accepted as built for now (one repo, multi-specialty, memory service as an experiment). Its image re-pin depends on the directory move (ARD-5.1) so the two never land together.
+- **Plan changes**: ARD-3.2 (thin `startAgent` entry) and ARD-6.2 (layered files) added; ARD-6.1 reordered; see `PLAN.md` for the dependency map and the Phase 2 list.

@@ -22,10 +22,8 @@ export interface CleanupAfterDaysRef {
   get(): number;
   /**
    * True once set() has been called at least once. readCleanupAfterDays()
-   * falls back to state/agent-policy.md while this is false, so a
-   * persistent config-sync failure (or the brief window before the first
-   * tick) doesn't silently override an operator's file-based policy with an
-   * unsynced default.
+   * returns its hardcoded default while this is false (config-sync has
+   * never succeeded, e.g. the fetch keeps failing).
    */
   hasSynced(): boolean;
   /** Replaces the current cleanupAfterDays value. */
@@ -54,12 +52,32 @@ export function createCleanupAfterDaysRef(): CleanupAfterDaysRef {
 /**
  * The process-wide cleanup-after-days ref. agent/src/index.ts's syncConfig()
  * writes into this on every successful config-sync tick; check-helpers.ts's
- * readCleanupAfterDays() reads it as the DB tier before falling back to
- * state/agent-policy.md, so a DB-side change (via PATCH /agents/:id) takes
+ * readCleanupAfterDays() reads it with a hardcoded default when unsynced, so a DB-side change (via PATCH /agents/:id) takes
  * effect on the very next config-sync tick without requiring an agent
  * restart. If the agent's config bundle never becomes available,
- * hasSynced() stays false for the process lifetime — readers must fall
- * through to the file tier in that case.
+ * hasSynced() stays false for the process lifetime — readers must
+ * return their hardcoded default in that case.
  */
 export const cleanupAfterDaysRef: CleanupAfterDaysRef =
   createCleanupAfterDaysRef();
+
+/**
+ * Read the `cleanup_after_days` policy field: the synced DB value from
+ * `configRef` (default: the process-wide `cleanupAfterDaysRef`), else the
+ * hardcoded default `14` while the ref has never synced.
+ *
+ * WTR-1.4: reused as the staleness threshold gating the force-removal of a
+ * merged/closed PR's worktree (see `removeWorktree`'s production
+ * implementation in pr-state-reconciler.ts) — the same field that governs
+ * "remove worktrees older than N days, even if the PR is still open" also
+ * governs "don't force-remove a worktree younger than N days even if its PR
+ * just merged/closed", so a worktree still being actively worked on by a
+ * concurrent dev-task/patch/deploy session isn't yanked out from under it
+ * purely on remote GitHub state.
+ */
+export async function readCleanupAfterDays(
+  _workspacePath: string,
+  configRef: CleanupAfterDaysRef = cleanupAfterDaysRef,
+): Promise<number> {
+  return configRef.hasSynced() ? configRef.get() : 14;
+}

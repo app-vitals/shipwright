@@ -348,9 +348,9 @@ describe("ensureAgentHome", () => {
 
   it("does not seed state/todos.json or state/reviews.json (superseded by the task-store HTTP API)", () => {
     ensureAgentHome(testHome);
-    expect(
-      existsSync(join(testHome, "workspace", "state", "todos.json")),
-    ).toBe(false);
+    expect(existsSync(join(testHome, "workspace", "state", "todos.json"))).toBe(
+      false,
+    );
     expect(
       existsSync(join(testHome, "workspace", "state", "reviews.json")),
     ).toBe(false);
@@ -363,14 +363,11 @@ describe("ensureAgentHome", () => {
     expect(statSync(reviewsDir).isDirectory()).toBe(true);
   });
 
-  it("seeds state/agent-policy.md with conservative defaults", () => {
+  it("does not seed state/agent-policy.md", () => {
     ensureAgentHome(testHome);
-    const policyPath = join(testHome, "workspace", "state", "agent-policy.md");
-    expect(existsSync(policyPath)).toBe(true);
-    const content = readFileSync(policyPath, "utf8");
-    expect(content).toContain("auto_post_reviews");
-    expect(content).toContain("allow_self_review");
-    expect(content).toContain("false");
+    expect(
+      existsSync(join(testHome, "workspace", "state", "agent-policy.md")),
+    ).toBe(false);
   });
 
   it("seeds BOOTSTRAP.md into workspace/ and sets bootstrapSeededAt for new workspaces", () => {

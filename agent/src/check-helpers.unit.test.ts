@@ -1,7 +1,7 @@
 /**
  * agent/src/check-helpers.unit.test.ts
  *
- * Unit tests for resolveRepos(), getCurrentUser(), and createTaskStoreClient()
+ * Unit tests for resolveRepos() and createTaskStoreClient()
  * in check-helpers.ts. Ported from
  * plugins/shipwright/scripts/check-helpers.unit.test.ts — adapted so
  * createTaskStoreClient() tests inject a fake fetch function instead of
@@ -10,14 +10,7 @@
  */
 
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import {
-  chmodSync,
-  mkdirSync,
-  mkdtempSync,
-  readFileSync,
-  rmSync,
-  writeFileSync,
-} from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createAllowSelfReviewRef } from "./allow-self-review-ref.ts";
@@ -28,8 +21,6 @@ import {
   createPrRecordQuery,
   createTaskStatusQuery,
   createTaskStoreClient,
-  getCurrentUser,
-  ghGraphql,
   hasAnyReviewAtHead,
   isCleanApproveBody,
   isPrRecordBlockedForDispatch,
@@ -43,7 +34,6 @@ import {
   VERDICT_TERMINAL_LABEL,
 } from "./check-helpers.ts";
 import type { PrReviewData, ReviewNode, ReviewThread } from "./check-patch.ts";
-import { createCleanupAfterDaysRef } from "./cleanup-after-days-ref.ts";
 import { createCleanupMergedWorktreesRef } from "./cleanup-merged-worktrees-ref.ts";
 
 // ---------------------------------------------------------------------------
@@ -333,522 +323,64 @@ describe("resolveWorkspacePath", () => {
 });
 
 // ---------------------------------------------------------------------------
-// parseAllowSelfReview / readAllowSelfReview
+// readAllowSelfReview / readCleanupMergedWorktrees / readCleanupAfterDays
+//
+// ARD-1.1: the state/agent-policy.md file tier is gone — each reader is the
+// synced ref value, else a hardcoded default while the ref has never synced
+// (e.g. the config fetch keeps failing).
 // ---------------------------------------------------------------------------
-
-describe("parseAllowSelfReview", () => {
-  test("returns true when the table cell says true", () => {
-    expect(
-      checkHelpers.parseAllowSelfReview("| `allow_self_review` | true |"),
-    ).toBe(true);
-  });
-
-  test("returns false when the table cell says false", () => {
-    expect(
-      checkHelpers.parseAllowSelfReview("| `allow_self_review` | false |"),
-    ).toBe(false);
-  });
-
-  test("returns false for bold-style false", () => {
-    expect(
-      checkHelpers.parseAllowSelfReview("**allow_self_review**: false"),
-    ).toBe(false);
-  });
-
-  test("returns true for bold-style true", () => {
-    expect(
-      checkHelpers.parseAllowSelfReview("**allow_self_review**: true"),
-    ).toBe(true);
-  });
-
-  test("returns true for plain YAML frontmatter style true", () => {
-    expect(
-      checkHelpers.parseAllowSelfReview(
-        "---\nauto_post_reviews: true\nallow_self_review: true\nmin_confidence: 75\n---\n",
-      ),
-    ).toBe(true);
-  });
-
-  test("returns false for plain YAML frontmatter style false", () => {
-    expect(
-      checkHelpers.parseAllowSelfReview(
-        "---\nauto_post_reviews: true\nallow_self_review: false\nmin_confidence: 75\n---\n",
-      ),
-    ).toBe(false);
-  });
-
-  test("defaults to false when the field is missing entirely", () => {
-    expect(checkHelpers.parseAllowSelfReview("no policy here")).toBe(false);
-  });
-});
 
 describe("readAllowSelfReview", () => {
-  let tmpDir: string;
-
-  beforeEach(() => {
-    tmpDir = mkdtempSync(join(tmpdir(), "read-allow-self-review-test-"));
+  test("never-synced ref (config fetch failing) returns the hardcoded default false", async () => {
+    expect(
+      await checkHelpers.readAllowSelfReview(
+        "/nonexistent",
+        createAllowSelfReviewRef(),
+      ),
+    ).toBe(false);
   });
 
-  afterEach(() => {
-    rmSync(tmpDir, { recursive: true, force: true });
-  });
-
-  test("reads and parses state/agent-policy.md when present (file fallback, no injected ref)", async () => {
-    mkdirSync(join(tmpDir, "state"), { recursive: true });
-    writeFileSync(
-      join(tmpDir, "state", "agent-policy.md"),
-      "| `allow_self_review` | false |",
-    );
-    expect(await checkHelpers.readAllowSelfReview(tmpDir)).toBe(false);
-  });
-
-  test("defaults to false when the policy file does not exist (hardcoded fallback)", async () => {
-    expect(await checkHelpers.readAllowSelfReview(tmpDir)).toBe(false);
-  });
-
-  // APM-1.4: DB -> file -> hardcoded read order, same tiering as APM-1.2.
-  // The ref defaults to unsynced (hasSynced() === false), which is why the
-  // two tests above — which pass no explicit ref — already exercise the
-  // file and hardcoded tiers via the process-wide default ref.
-
-  test("DB-hit: an injected ref that has synced true wins over a conflicting file value", async () => {
-    mkdirSync(join(tmpDir, "state"), { recursive: true });
-    writeFileSync(
-      join(tmpDir, "state", "agent-policy.md"),
-      "| `allow_self_review` | false |",
-    );
+  test("DB-hit: an injected ref that has synced true is returned", async () => {
     const configRef = createAllowSelfReviewRef();
     configRef.set(true);
-    expect(await checkHelpers.readAllowSelfReview(tmpDir, configRef)).toBe(
-      true,
-    );
+    expect(
+      await checkHelpers.readAllowSelfReview("/nonexistent", configRef),
+    ).toBe(true);
   });
 
-  test("DB-hit: an injected ref that has synced false wins over a conflicting file value", async () => {
-    mkdirSync(join(tmpDir, "state"), { recursive: true });
-    writeFileSync(
-      join(tmpDir, "state", "agent-policy.md"),
-      "| `allow_self_review` | true |",
-    );
+  test("DB-hit: an injected ref that has synced false is returned", async () => {
     const configRef = createAllowSelfReviewRef();
     configRef.set(false);
-    expect(await checkHelpers.readAllowSelfReview(tmpDir, configRef)).toBe(
-      false,
-    );
-  });
-
-  test("DB-miss-fallback-to-file: an injected ref that never synced falls through to the file", async () => {
-    mkdirSync(join(tmpDir, "state"), { recursive: true });
-    writeFileSync(
-      join(tmpDir, "state", "agent-policy.md"),
-      "| `allow_self_review` | true |",
-    );
-    const configRef = createAllowSelfReviewRef();
-    expect(await checkHelpers.readAllowSelfReview(tmpDir, configRef)).toBe(
-      true,
-    );
-  });
-
-  test("file-missing-fallback-to-hardcoded: an injected ref that never synced and no policy file falls through to false", async () => {
-    const configRef = createAllowSelfReviewRef();
-    expect(await checkHelpers.readAllowSelfReview(tmpDir, configRef)).toBe(
-      false,
-    );
-  });
-});
-
-// ---------------------------------------------------------------------------
-// parseCleanupMergedWorktrees
-// ---------------------------------------------------------------------------
-
-describe("parseCleanupMergedWorktrees", () => {
-  test("returns true when the table cell says true", () => {
     expect(
-      checkHelpers.parseCleanupMergedWorktrees(
-        "| `cleanup_merged_worktrees` | true |",
-      ),
-    ).toBe(true);
-  });
-
-  test("returns false when the table cell says false", () => {
-    expect(
-      checkHelpers.parseCleanupMergedWorktrees(
-        "| `cleanup_merged_worktrees` | false |",
-      ),
+      await checkHelpers.readAllowSelfReview("/nonexistent", configRef),
     ).toBe(false);
-  });
-
-  test("returns false for bold-style false", () => {
-    expect(
-      checkHelpers.parseCleanupMergedWorktrees(
-        "**cleanup_merged_worktrees**: false",
-      ),
-    ).toBe(false);
-  });
-
-  test("returns true for bold-style true", () => {
-    expect(
-      checkHelpers.parseCleanupMergedWorktrees(
-        "**cleanup_merged_worktrees**: true",
-      ),
-    ).toBe(true);
-  });
-
-  test("returns false for plain YAML frontmatter style false", () => {
-    expect(
-      checkHelpers.parseCleanupMergedWorktrees(
-        "---\ncleanup_merged_worktrees: false\ncleanup_after_days: 14\n---\n",
-      ),
-    ).toBe(false);
-  });
-
-  test("returns true for plain YAML frontmatter style true", () => {
-    expect(
-      checkHelpers.parseCleanupMergedWorktrees(
-        "---\ncleanup_merged_worktrees: true\ncleanup_after_days: 14\n---\n",
-      ),
-    ).toBe(true);
-  });
-
-  test("defaults to true when the field is missing entirely", () => {
-    expect(checkHelpers.parseCleanupMergedWorktrees("no policy here")).toBe(
-      true,
-    );
-  });
-
-  test("defaults to true when content is empty", () => {
-    expect(checkHelpers.parseCleanupMergedWorktrees("")).toBe(true);
   });
 });
 
 describe("readCleanupMergedWorktrees", () => {
-  let tmpDir: string;
-
-  beforeEach(() => {
-    tmpDir = mkdtempSync(join(tmpdir(), "read-cleanup-merged-worktrees-test-"));
+  test("never-synced ref (config fetch failing) returns the hardcoded default true", async () => {
+    expect(
+      await checkHelpers.readCleanupMergedWorktrees(
+        "/nonexistent",
+        createCleanupMergedWorktreesRef(),
+      ),
+    ).toBe(true);
   });
 
-  afterEach(() => {
-    rmSync(tmpDir, { recursive: true, force: true });
-  });
-
-  test("reads and parses state/agent-policy.md when present (file fallback, no injected ref)", async () => {
-    mkdirSync(join(tmpDir, "state"), { recursive: true });
-    writeFileSync(
-      join(tmpDir, "state", "agent-policy.md"),
-      "| `cleanup_merged_worktrees` | false |",
-    );
-    expect(await checkHelpers.readCleanupMergedWorktrees(tmpDir)).toBe(false);
-  });
-
-  test("defaults to true when the policy file does not exist (hardcoded fallback)", async () => {
-    expect(await checkHelpers.readCleanupMergedWorktrees(tmpDir)).toBe(true);
-  });
-
-  // APM-1.6: DB -> file -> hardcoded read order, same tiering as APM-1.4.
-  // The ref defaults to unsynced (hasSynced() === false), which is why the
-  // two tests above — which pass no explicit ref — already exercise the
-  // file and hardcoded tiers via the process-wide default ref.
-
-  test("DB-hit: an injected ref that has synced false wins over a conflicting file value", async () => {
-    mkdirSync(join(tmpDir, "state"), { recursive: true });
-    writeFileSync(
-      join(tmpDir, "state", "agent-policy.md"),
-      "| `cleanup_merged_worktrees` | true |",
-    );
+  test("DB-hit: an injected ref that has synced false is returned", async () => {
     const configRef = createCleanupMergedWorktreesRef();
     configRef.set(false);
     expect(
-      await checkHelpers.readCleanupMergedWorktrees(tmpDir, configRef),
+      await checkHelpers.readCleanupMergedWorktrees("/nonexistent", configRef),
     ).toBe(false);
   });
 
-  test("DB-hit: an injected ref that has synced true wins over a conflicting file value", async () => {
-    mkdirSync(join(tmpDir, "state"), { recursive: true });
-    writeFileSync(
-      join(tmpDir, "state", "agent-policy.md"),
-      "| `cleanup_merged_worktrees` | false |",
-    );
+  test("DB-hit: an injected ref that has synced true is returned", async () => {
     const configRef = createCleanupMergedWorktreesRef();
     configRef.set(true);
     expect(
-      await checkHelpers.readCleanupMergedWorktrees(tmpDir, configRef),
+      await checkHelpers.readCleanupMergedWorktrees("/nonexistent", configRef),
     ).toBe(true);
-  });
-
-  test("DB-miss-fallback-to-file: an injected ref that never synced falls through to the file", async () => {
-    mkdirSync(join(tmpDir, "state"), { recursive: true });
-    writeFileSync(
-      join(tmpDir, "state", "agent-policy.md"),
-      "| `cleanup_merged_worktrees` | false |",
-    );
-    const configRef = createCleanupMergedWorktreesRef();
-    expect(
-      await checkHelpers.readCleanupMergedWorktrees(tmpDir, configRef),
-    ).toBe(false);
-  });
-
-  test("file-missing-fallback-to-hardcoded: an injected ref that never synced and no policy file falls through to true", async () => {
-    const configRef = createCleanupMergedWorktreesRef();
-    expect(
-      await checkHelpers.readCleanupMergedWorktrees(tmpDir, configRef),
-    ).toBe(true);
-  });
-});
-
-// ---------------------------------------------------------------------------
-// parseCleanupAfterDays
-// ---------------------------------------------------------------------------
-
-describe("parseCleanupAfterDays", () => {
-  test("parses numeric value from table format", () => {
-    expect(
-      checkHelpers.parseCleanupAfterDays("| `cleanup_after_days` | 7 |"),
-    ).toBe(7);
-  });
-
-  test("parses numeric value from bold-style format", () => {
-    expect(
-      checkHelpers.parseCleanupAfterDays("**cleanup_after_days**: 21"),
-    ).toBe(21);
-  });
-
-  test("parses numeric value from plain YAML frontmatter style", () => {
-    expect(
-      checkHelpers.parseCleanupAfterDays(
-        "---\ncleanup_merged_worktrees: true\ncleanup_after_days: 30\n---\n",
-      ),
-    ).toBe(30);
-  });
-
-  test("defaults to 14 when the field is missing", () => {
-    expect(checkHelpers.parseCleanupAfterDays("no policy here")).toBe(14);
-  });
-
-  test("defaults to 14 when content is empty", () => {
-    expect(checkHelpers.parseCleanupAfterDays("")).toBe(14);
-  });
-
-  test("handles leading/trailing whitespace around numeric value", () => {
-    expect(
-      checkHelpers.parseCleanupAfterDays("**cleanup_after_days**:   30   "),
-    ).toBe(30);
-  });
-
-  test("defaults to 14 when value is not a valid number", () => {
-    expect(
-      checkHelpers.parseCleanupAfterDays("**cleanup_after_days**: abc"),
-    ).toBe(14);
-  });
-
-  test("defaults to 14 when parsed value is NaN", () => {
-    expect(
-      checkHelpers.parseCleanupAfterDays("**cleanup_after_days**: NaN"),
-    ).toBe(14);
-  });
-
-  test("parses zero as a valid value", () => {
-    expect(
-      checkHelpers.parseCleanupAfterDays("**cleanup_after_days**: 0"),
-    ).toBe(0);
-  });
-});
-
-describe("readCleanupAfterDays", () => {
-  let tmpDir: string;
-
-  beforeEach(() => {
-    tmpDir = mkdtempSync(join(tmpdir(), "read-cleanup-after-days-test-"));
-  });
-
-  afterEach(() => {
-    rmSync(tmpDir, { recursive: true, force: true });
-  });
-
-  test("reads and parses state/agent-policy.md when present (file fallback, no injected ref)", async () => {
-    mkdirSync(join(tmpDir, "state"), { recursive: true });
-    writeFileSync(
-      join(tmpDir, "state", "agent-policy.md"),
-      "| `cleanup_after_days` | 7 |",
-    );
-    expect(await checkHelpers.readCleanupAfterDays(tmpDir)).toBe(7);
-  });
-
-  test("defaults to 14 when the policy file does not exist (hardcoded fallback)", async () => {
-    expect(await checkHelpers.readCleanupAfterDays(tmpDir)).toBe(14);
-  });
-
-  // APM-1.6: DB -> file -> hardcoded read order, same tiering as APM-1.4.
-  // The ref defaults to unsynced (hasSynced() === false), which is why the
-  // two tests above — which pass no explicit ref — already exercise the
-  // file and hardcoded tiers via the process-wide default ref.
-
-  test("DB-hit: an injected ref that has synced wins over a conflicting file value", async () => {
-    mkdirSync(join(tmpDir, "state"), { recursive: true });
-    writeFileSync(
-      join(tmpDir, "state", "agent-policy.md"),
-      "| `cleanup_after_days` | 7 |",
-    );
-    const configRef = createCleanupAfterDaysRef();
-    configRef.set(30);
-    expect(await checkHelpers.readCleanupAfterDays(tmpDir, configRef)).toBe(30);
-  });
-
-  test("DB-miss-fallback-to-file: an injected ref that never synced falls through to the file", async () => {
-    mkdirSync(join(tmpDir, "state"), { recursive: true });
-    writeFileSync(
-      join(tmpDir, "state", "agent-policy.md"),
-      "| `cleanup_after_days` | 7 |",
-    );
-    const configRef = createCleanupAfterDaysRef();
-    expect(await checkHelpers.readCleanupAfterDays(tmpDir, configRef)).toBe(7);
-  });
-
-  test("file-missing-fallback-to-hardcoded: an injected ref that never synced and no policy file falls through to 14", async () => {
-    const configRef = createCleanupAfterDaysRef();
-    expect(await checkHelpers.readCleanupAfterDays(tmpDir, configRef)).toBe(14);
-  });
-});
-
-// ---------------------------------------------------------------------------
-// parseAutoPostReviews
-// ---------------------------------------------------------------------------
-
-describe("parseAutoPostReviews", () => {
-  test("returns true when the table cell says true", () => {
-    expect(
-      checkHelpers.parseAutoPostReviews("| `auto_post_reviews` | true |"),
-    ).toBe(true);
-  });
-
-  test("returns false when the table cell says false", () => {
-    expect(
-      checkHelpers.parseAutoPostReviews("| `auto_post_reviews` | false |"),
-    ).toBe(false);
-  });
-
-  test("returns false for bold-style false", () => {
-    expect(
-      checkHelpers.parseAutoPostReviews("**auto_post_reviews**: false"),
-    ).toBe(false);
-  });
-
-  test("returns true for bold-style true", () => {
-    expect(
-      checkHelpers.parseAutoPostReviews("**auto_post_reviews**: true"),
-    ).toBe(true);
-  });
-
-  test("returns false for plain YAML frontmatter style false", () => {
-    expect(
-      checkHelpers.parseAutoPostReviews(
-        "---\nauto_post_reviews: false\nallow_self_review: false\n---\n",
-      ),
-    ).toBe(false);
-  });
-
-  test("returns true for plain YAML frontmatter style true", () => {
-    expect(
-      checkHelpers.parseAutoPostReviews(
-        "---\nauto_post_reviews: true\nallow_self_review: false\n---\n",
-      ),
-    ).toBe(true);
-  });
-
-  test("defaults to true when the field is missing entirely", () => {
-    expect(checkHelpers.parseAutoPostReviews("no policy here")).toBe(true);
-  });
-
-  test("defaults to true when content is empty", () => {
-    expect(checkHelpers.parseAutoPostReviews("")).toBe(true);
-  });
-});
-
-// ---------------------------------------------------------------------------
-// parseMinConfidence
-// ---------------------------------------------------------------------------
-
-describe("parseMinConfidence", () => {
-  test("parses numeric value from table format", () => {
-    expect(checkHelpers.parseMinConfidence("| `min_confidence` | 60 |")).toBe(
-      60,
-    );
-  });
-
-  test("parses numeric value from bold-style format", () => {
-    expect(checkHelpers.parseMinConfidence("**min_confidence**: 90")).toBe(90);
-  });
-
-  test("parses numeric value from plain YAML frontmatter style", () => {
-    expect(
-      checkHelpers.parseMinConfidence(
-        "---\nauto_post_reviews: true\nmin_confidence: 80\n---\n",
-      ),
-    ).toBe(80);
-  });
-
-  test("defaults to 75 when the field is missing", () => {
-    expect(checkHelpers.parseMinConfidence("no policy here")).toBe(75);
-  });
-
-  test("defaults to 75 when content is empty", () => {
-    expect(checkHelpers.parseMinConfidence("")).toBe(75);
-  });
-
-  test("handles leading/trailing whitespace around numeric value", () => {
-    expect(checkHelpers.parseMinConfidence("**min_confidence**:   80   ")).toBe(
-      80,
-    );
-  });
-
-  test("defaults to 75 when value is not a valid number", () => {
-    expect(checkHelpers.parseMinConfidence("**min_confidence**: abc")).toBe(75);
-  });
-
-  test("parses zero as a valid value", () => {
-    expect(checkHelpers.parseMinConfidence("**min_confidence**: 0")).toBe(0);
-  });
-});
-
-// ---------------------------------------------------------------------------
-// parseMaxFindings
-// ---------------------------------------------------------------------------
-
-describe("parseMaxFindings", () => {
-  test("parses numeric value from table format", () => {
-    expect(checkHelpers.parseMaxFindings("| `max_findings` | 3 |")).toBe(3);
-  });
-
-  test("parses numeric value from bold-style format", () => {
-    expect(checkHelpers.parseMaxFindings("**max_findings**: 10")).toBe(10);
-  });
-
-  test("parses numeric value from plain YAML frontmatter style", () => {
-    expect(
-      checkHelpers.parseMaxFindings(
-        "---\nmin_confidence: 75\nmax_findings: 8\n---\n",
-      ),
-    ).toBe(8);
-  });
-
-  test("defaults to 5 when the field is missing", () => {
-    expect(checkHelpers.parseMaxFindings("no policy here")).toBe(5);
-  });
-
-  test("defaults to 5 when content is empty", () => {
-    expect(checkHelpers.parseMaxFindings("")).toBe(5);
-  });
-
-  test("handles leading/trailing whitespace around numeric value", () => {
-    expect(checkHelpers.parseMaxFindings("**max_findings**:   8   ")).toBe(8);
-  });
-
-  test("defaults to 5 when value is not a valid number", () => {
-    expect(checkHelpers.parseMaxFindings("**max_findings**: abc")).toBe(5);
-  });
-
-  test("parses zero as a valid value", () => {
-    expect(checkHelpers.parseMaxFindings("**max_findings**: 0")).toBe(0);
   });
 });
 
@@ -916,145 +448,6 @@ describe("isMergeOnlyUpdate", () => {
     };
     await checkHelpers.isMergeOnlyUpdate(1, "a", deps, "acme/example-repo");
     expect(receivedRepo).toBe("acme/example-repo");
-  });
-});
-
-// ---------------------------------------------------------------------------
-// getCurrentUser
-// ---------------------------------------------------------------------------
-
-/**
- * Write a fake `gh` binary into dir that returns the given GraphQL viewer
- * response JSON. Returns the path to the fake binary.
- *
- * The fake binary is added to PATH by the test beforeEach/afterEach helpers.
- */
-function writeFakeGhBinary(dir: string, viewerLogin: string): string {
-  const binPath = join(dir, "gh");
-  const response = JSON.stringify({ data: { viewer: { login: viewerLogin } } });
-  // A minimal shell script that ignores all args and prints the baked response.
-  writeFileSync(binPath, `#!/bin/sh\nprintf '%s\\n' '${response}'\n`);
-  chmodSync(binPath, 0o755);
-  return binPath;
-}
-
-/** Write a fake `gh` binary that always fails with a given exit code. */
-function writeFailingGhBinary(
-  dir: string,
-  exitCode: number,
-  stderr: string,
-): string {
-  const binPath = join(dir, "gh");
-  writeFileSync(
-    binPath,
-    `#!/bin/sh\nprintf '%s\\n' '${stderr}' >&2\nexit ${exitCode}\n`,
-  );
-  chmodSync(binPath, 0o755);
-  return binPath;
-}
-
-describe("getCurrentUser", () => {
-  let tmpDir: string;
-  let savedPath: string | undefined;
-
-  beforeEach(() => {
-    tmpDir = mkdtempSync(join(tmpdir(), "get-current-user-test-"));
-    savedPath = process.env.PATH;
-  });
-
-  afterEach(() => {
-    if (savedPath !== undefined) {
-      process.env.PATH = savedPath;
-    }
-    rmSync(tmpDir, { recursive: true, force: true });
-  });
-
-  test("returns login as-is for a regular PAT user", async () => {
-    writeFakeGhBinary(tmpDir, "dmcaulay");
-    process.env.PATH = `${tmpDir}:${savedPath}`;
-    const result = await getCurrentUser();
-    expect(result).toBe("dmcaulay");
-  });
-
-  test("normalises [bot] suffix to app/ prefix for GitHub App identity", async () => {
-    writeFakeGhBinary(tmpDir, "my-app[bot]");
-    process.env.PATH = `${tmpDir}:${savedPath}`;
-    const result = await getCurrentUser();
-    expect(result).toBe("app/my-app");
-  });
-
-  test("handles hyphenated app name in [bot] normalisation", async () => {
-    writeFakeGhBinary(tmpDir, "example-repo-agent[bot]");
-    process.env.PATH = `${tmpDir}:${savedPath}`;
-    const result = await getCurrentUser();
-    expect(result).toBe("app/example-repo-agent");
-  });
-
-  test("throws when gh exits non-zero", async () => {
-    writeFailingGhBinary(tmpDir, 1, "not authenticated");
-    process.env.PATH = `${tmpDir}:${savedPath}`;
-    await expect(getCurrentUser()).rejects.toThrow("gh api graphql failed");
-  });
-});
-
-describe("ghGraphql retry", () => {
-  let tmpDir: string;
-  let savedPath: string | undefined;
-
-  beforeEach(() => {
-    tmpDir = mkdtempSync(join(tmpdir(), "gh-graphql-retry-test-"));
-    savedPath = process.env.PATH;
-    process.env.PATH = `${tmpDir}:${savedPath}`;
-  });
-
-  afterEach(() => {
-    if (savedPath !== undefined) {
-      process.env.PATH = savedPath;
-    }
-    rmSync(tmpDir, { recursive: true, force: true });
-  });
-
-  /** Fake gh that fails `failures` times with `stderr`, then succeeds. Counts calls. */
-  function writeFlakyGh(failures: number, stderr: string): string {
-    const counter = join(tmpDir, "count");
-    writeFileSync(counter, "0");
-    writeFileSync(
-      join(tmpDir, "gh"),
-      `#!/bin/sh
-n=$(cat "${counter}"); n=$((n+1)); echo $n > "${counter}"
-if [ $n -le ${failures} ]; then printf '%s\\n' '${stderr}' >&2; exit 1; fi
-printf '%s\\n' '{"ok":true}'
-`,
-    );
-    chmodSync(join(tmpDir, "gh"), 0o755);
-    return counter;
-  }
-
-  const calls = (counter: string) => Number(readFileSync(counter, "utf8"));
-
-  test("retries a transient 504 and succeeds", async () => {
-    const counter = writeFlakyGh(2, "gh: HTTP 504");
-    const result = await ghGraphql<{ ok: boolean }>("query {}", {
-      baseDelayMs: 1,
-    });
-    expect(result).toEqual({ ok: true });
-    expect(calls(counter)).toBe(3);
-  });
-
-  test("throws the standard error after exhausting retries", async () => {
-    const counter = writeFlakyGh(99, "gh: HTTP 504");
-    await expect(ghGraphql("query {}", { baseDelayMs: 1 })).rejects.toThrow(
-      "gh api graphql failed (exit 1): gh: HTTP 504",
-    );
-    expect(calls(counter)).toBe(3);
-  });
-
-  test("does not retry a non-transient failure", async () => {
-    const counter = writeFlakyGh(99, "gh: HTTP 401 bad credentials");
-    await expect(ghGraphql("query {}", { baseDelayMs: 1 })).rejects.toThrow(
-      "gh api graphql failed",
-    );
-    expect(calls(counter)).toBe(1);
   });
 });
 

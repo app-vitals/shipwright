@@ -1092,7 +1092,7 @@ describe("deploy.md — self-review approval fallback (RHA-1.1)", () => {
   });
 });
 
-describe("deploy.md — Step 3a policy read-path is DB-first with file/hardcoded fallback (APM-1.2)", () => {
+describe("deploy.md — Step 3a policy read-path is DB-first with hardcoded fallback (APM-1.2, ARD-1.1)", () => {
   it("fetches GET /agents/:id/config using the established config-fetch curl+jq pattern before reading the file", () => {
     const section = extractStep3aSection(content);
     expect(section).toContain("$SHIPWRIGHT_AGENT_API_KEY");
@@ -1105,24 +1105,19 @@ describe("deploy.md — Step 3a policy read-path is DB-first with file/hardcoded
     const section = extractStep3aSection(content);
     expect(section).toContain("jq -r '.allowSelfReview | select(. != null)'");
     // jq's `//` treats false as absent, which would silently drop a
-    // deliberately-set `allowSelfReview: false` and fall through to the file tier.
+    // deliberately-set `allowSelfReview: false` and fall through to the hardcoded default.
     expect(section).not.toContain(".allowSelfReview // empty");
     expect(section).toContain("`select(. != null)`, **not** `// empty`");
   });
 
-  it("documents DB tier before the state/agent-policy.md file tier", () => {
+  it("does not read the removed state/agent-policy.md file tier", () => {
     const section = extractStep3aSection(content);
-    const dbIdx = section.indexOf("/agents/$SHIPWRIGHT_AGENT_ID/config");
-    const fileIdx = section.indexOf("agent-policy.md");
-    expect(dbIdx).toBeGreaterThan(-1);
-    expect(fileIdx).toBeGreaterThan(-1);
-    expect(dbIdx).toBeLessThan(fileIdx);
+    expect(section).not.toContain("agent-policy.md");
   });
 
   it("still documents the hardcoded false default and its rationale", () => {
     const section = extractStep3aSection(content);
-    expect(section).toContain("allow_self_review: false");
-    expect(section).toContain("internal code-level");
+    expect(section).toContain("`allow_self_review` default: false");
   });
 
   it("does not add auto_post_reviews/min_confidence/max_findings reads -- deploy.md only needs allow_self_review", () => {

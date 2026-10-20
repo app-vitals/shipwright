@@ -6,8 +6,8 @@
 //
 // All copy below is pre-written and pre-approved (Dan, 2026-09-09). Every
 // factual claim traces to src/content/docs/configuring-autonomy.mdx — the
-// cron tables, the state/agent-policy.md fields (auto_post_reviews,
-// allow_self_review, min_confidence, max_findings), review.md's hardcoded
+// cron tables, the agent policy settings (autoPostReviews,
+// allowSelfReview, minConfidence, maxFindings), review.md's hardcoded
 // "never REQUEST_CHANGES" rule, and the "Hands-off" / "Bring your own PR"
 // workflow patterns are all sourced from that doc. Do not rewrite this copy
 // or invent capabilities.
@@ -34,14 +34,14 @@ const dialColumns = [
 ];
 
 // Setting cells reference the exact field names from
-// state/agent-policy.md as documented in configuring-autonomy.mdx.
+// the admin UI as documented in configuring-autonomy.mdx.
 const code = (text: string) =>
   `<code class="sw-mono" style="color:var(--sw-color-support-cyan);">${text}</code>`;
 
 const dialRows = [
   {
     want: "Read every review before it reaches GitHub",
-    setting: `${code("auto_post_reviews: false")} - findings stage locally until you approve them`,
+    setting: `${code("autoPostReviews")} off - findings stage locally until you approve them`,
   },
   {
     want: "An agent can never block a human PR",
@@ -49,11 +49,11 @@ const dialRows = [
   },
   {
     want: "Agent PRs always need a human reviewer",
-    setting: `${code("allow_self_review: false")}, the default`,
+    setting: `${code("allowSelfReview")} off, the default`,
   },
   {
     want: "Less review noise",
-    setting: `${code("min_confidence")}, ${code("max_findings")}`,
+    setting: `${code("minConfidence")}, ${code("maxFindings")}`,
   },
 ].map((row) => ({
   cells: [
@@ -149,9 +149,8 @@ const dialRows = [
   <section id="dial" class="relative z-10 pb-16" style="border-top: 1px solid var(--sw-color-border-subtle); padding-top: 3rem;">
     <h2>The dial, in detail</h2>
     <p class="mt-3 max-w-2xl">
-      Each of these is a real setting in <code class="sw-mono">state/agent-policy.md</code>,
-      changed by asking your agent. No restart, no redeploy, picked up on the
-      next config sync.
+      Each of these is a real per-agent policy setting, edited in the admin UI.
+      No restart, no redeploy, picked up on the next config sync.
     </p>
     <ComparisonTable columns={dialColumns} rows={dialRows} />
   </section>

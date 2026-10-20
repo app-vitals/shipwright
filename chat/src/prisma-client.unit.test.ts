@@ -26,6 +26,16 @@ describe("createChatPool", () => {
     await pool.end();
   });
 
+  it("pins a legacy sslmode=require to verify-full for pg", async () => {
+    const pool = createChatPool(`${UNUSED_URL}?sslmode=require`);
+
+    expect(pool.options.connectionString).toBe(
+      `${UNUSED_URL}?sslmode=verify-full`,
+    );
+
+    await pool.end();
+  });
+
   it("routes an idle-client error to the logger instead of throwing", async () => {
     const logged: unknown[] = [];
     const pool = createChatPool(UNUSED_URL, (err) => logged.push(err));
