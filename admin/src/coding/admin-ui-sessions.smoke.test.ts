@@ -1,5 +1,5 @@
 /**
- * admin/src/admin-ui-sessions.smoke.test.ts
+ * admin/src/coding/admin-ui-sessions.smoke.test.ts
  * Smoke tests for GET/POST /admin/settings/notifications (SESH-6.3).
  *
  * Uses app.request() against a minimal Hono<AdminUIEnv> instance with
@@ -12,17 +12,17 @@
  */
 
 import { describe, expect, it } from "bun:test";
-import { Hono } from "hono";
 import type { MiddlewareHandler } from "hono";
-import { PUSH_TEST_PATH } from "./admin-ui-push-test.ts";
+import { Hono } from "hono";
+import type { AdminUIEnv } from "../admin-ui.ts";
+import { PUSH_TEST_PATH } from "../admin-ui-push-test.ts";
+import { BadRequestError } from "../errors.ts";
 import {
   NOTIFICATION_SETTINGS_PATH,
+  registerSessionSettingsRoutes,
   type SessionSettingsDeps,
   type SessionSettingsFollowService,
-  registerSessionSettingsRoutes,
 } from "./admin-ui-sessions.ts";
-import type { AdminUIEnv } from "./admin-ui.ts";
-import { BadRequestError } from "./errors.ts";
 import type {
   SessionFollowRow,
   UserNotificationPrefsRow,
@@ -171,7 +171,9 @@ describe("GET /admin/settings/notifications — push toggle gating", () => {
     const text = await (await app.request(NOTIFICATION_SETTINGS_PATH)).text();
     expect(text).toContain("push-test-btn");
     expect(text).toContain(PUSH_TEST_PATH);
-    expect(text).toContain("Following a session does not subscribe this device");
+    expect(text).toContain(
+      "Following a session does not subscribe this device",
+    );
   });
 
   it("omits the Send test notification control when push is disabled", async () => {

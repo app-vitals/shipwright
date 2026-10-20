@@ -1,5 +1,5 @@
 /**
- * admin/src/session-follow-service.unit.test.ts
+ * admin/src/coding/session-follow-service.unit.test.ts
  * Unit tests for the pure decision logic in SessionFollowService.updatePrefs —
  * specifically when `autoFollowSince` is stamped. The full CRUD surface is
  * covered against a real DB in session-follow-service.integration.test.ts;
@@ -9,7 +9,7 @@
  */
 
 import { describe, expect, it } from "bun:test";
-import { FixedClock } from "./clock.ts";
+import { FixedClock } from "../clock.ts";
 import {
   type SessionFollowPrismaLike,
   SessionFollowService,

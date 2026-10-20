@@ -1,5 +1,5 @@
 /**
- * admin/src/admin-ui-sessions.ts
+ * admin/src/coding/admin-ui-sessions.ts
  * GET/POST /admin/settings/notifications — per-user session-notification
  * preferences: the Web Push enable toggle (reuses push-toggle.ts), the
  * autoFollowSessions toggle, the reminderHourLocal input (rendered in
@@ -16,16 +16,16 @@
  */
 
 import type { Hono, MiddlewareHandler } from "hono";
-import { renderAdminPage } from "./admin-ui-layout.ts";
-import { escapeHtml, renderAdminToolbar } from "./admin-ui-styles.ts";
-import type { AdminUIEnv } from "./admin-ui.ts";
-import { BadRequestError } from "./errors.ts";
+import type { AdminUIEnv } from "../admin-ui.ts";
+import { renderAdminPage } from "../admin-ui-layout.ts";
 import {
   type PushTestRouteDeps,
   registerPushTestRoute,
   renderPushTestControl,
-} from "./admin-ui-push-test.ts";
-import { renderPushToggle } from "./push-toggle.ts";
+} from "../admin-ui-push-test.ts";
+import { escapeHtml, renderAdminToolbar } from "../admin-ui-styles.ts";
+import { BadRequestError } from "../errors.ts";
+import { renderPushToggle } from "../push-toggle.ts";
 import type {
   SessionFollowRow,
   SessionFollowService,

@@ -1,5 +1,5 @@
 /**
- * admin/src/task-store-fetchers.unit.test.ts
+ * admin/src/coding/task-store-fetchers.unit.test.ts
  *
  * SSP-6.8 — the admin UI's task-store fetchers use the single admin token and
  * narrow to one account by forwarding `?accountId=` (admin tokens honor it;

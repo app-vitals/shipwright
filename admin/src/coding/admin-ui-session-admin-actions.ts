@@ -1,5 +1,5 @@
 /**
- * admin/src/admin-ui-session-admin-actions.ts
+ * admin/src/coding/admin-ui-session-admin-actions.ts
  * POST /admin/sessions/:slug/{archive,unarchive,rename} (SESH-5.2).
  *
  * Mirrors admin-ui-session-follow.ts's shape (a self-contained, injectable
@@ -21,11 +21,11 @@
  */
 
 import type { Context, Hono, MiddlewareHandler } from "hono";
-import type { AdminUIEnv } from "./admin-ui.ts";
+import type { AdminUIEnv } from "../admin-ui.ts";
 import {
   type CallerScopeResolver,
   taskStoreViewScope,
-} from "./caller-scope.ts";
+} from "../caller-scope.ts";
 
 export interface SessionAdminActionsDeps {
   requireAuth: MiddlewareHandler<AdminUIEnv>;

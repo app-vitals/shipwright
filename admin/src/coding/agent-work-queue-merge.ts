@@ -1,5 +1,5 @@
 /**
- * admin/src/agent-work-queue-merge.ts
+ * admin/src/coding/agent-work-queue-merge.ts
  *
  * Pure, no-I/O helpers supporting the merged all-agent work-queue view:
  *
@@ -19,7 +19,7 @@
  *
  * Deliberately generic over the caller's item shape rather than importing
  * RankedWorkItem (agent/src/coding/work-selector.ts) or AgentWorkQueueSnapshot
- * (admin/src/agent-work-queue.ts) directly — those types are owned
+ * (admin/src/coding/agent-work-queue.ts) directly — those types are owned
  * elsewhere and are not modified by this module (see AAV-1.3's AC3).
  * RankedWorkItem in particular has no `repo` field today, so the
  * eligibility step is expressed as its own generic constrained to
@@ -30,7 +30,7 @@
 
 /**
  * One agent's work-queue snapshot, as seen by the merge step. Mirrors the
- * shape of AgentWorkQueueSnapshot (admin/src/agent-work-queue.ts) closely
+ * shape of AgentWorkQueueSnapshot (admin/src/coding/agent-work-queue.ts) closely
  * enough to build from it, but is declared independently here so this
  * module never needs to import the Prisma-generated type (whose `items`
  * field is untyped JSON at the DB layer).

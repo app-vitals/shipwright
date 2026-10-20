@@ -1,5 +1,5 @@
 /**
- * admin/src/agent-work-queue-merge.unit.test.ts
+ * admin/src/coding/agent-work-queue-merge.unit.test.ts
  *
  * Unit tests for the pure merge/dedupe and eligibility-index helpers in
  * agent-work-queue-merge.ts. No I/O — pure logic only.

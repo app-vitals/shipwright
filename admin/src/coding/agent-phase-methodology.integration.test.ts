@@ -7,9 +7,9 @@
  */
 
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
-import type { PrismaClient } from "../prisma/client/client.ts";
+import type { PrismaClient } from "../../prisma/client/client.ts";
+import { createAdminPrismaClient } from "../prisma-client.ts";
 import { AgentPhaseMethodologyService } from "./agent-phase-methodology.ts";
-import { createAdminPrismaClient } from "./prisma-client.ts";
 
 const TEST_DB = process.env.DATABASE_URL_ADMIN_TEST;
 

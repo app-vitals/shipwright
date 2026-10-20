@@ -81,17 +81,6 @@ import {
   type VerificationCheckItem,
   type WorkQueueItem,
 } from "./admin-ui-pages.ts";
-import {
-  registerSessionAdminActionsRoutes,
-  SESSION_ADMIN_ACTION_MESSAGES,
-} from "./admin-ui-session-admin-actions.ts";
-import { registerSessionFollowRoutes } from "./admin-ui-session-follow.ts";
-import { registerSessionSettingsRoutes } from "./admin-ui-sessions.ts";
-import {
-  registerSessionsListRoutes,
-  resolveVisibilityScope,
-  type Session,
-} from "./admin-ui-sessions-list.ts";
 import type { AgentCronJobService } from "./agent-cron-jobs.ts";
 import type { AgentCronRunService } from "./agent-cron-runs.ts";
 import type { DeleteAgentFullyDeps } from "./agent-deletion.ts";
@@ -100,7 +89,6 @@ import type { ManualStep } from "./agent-deletion-checklist.ts";
 import type { AgentEnvService } from "./agent-envs.ts";
 import type { AgentGitHubInstallationsService } from "./agent-github-installations.ts";
 import type { AgentMemberService } from "./agent-members.ts";
-import type { AgentPhaseMethodologyService } from "./agent-phase-methodology.ts";
 import type { AgentPluginService } from "./agent-plugins.ts";
 import type { AgentProvisioner } from "./agent-provisioner.ts";
 import type { AgentTokenService } from "./agent-tokens.ts";
@@ -109,7 +97,6 @@ import {
   type AgentTypeManifestResolver,
   AgentTypeRegistry,
 } from "./agent-type-manifest-loader.ts";
-import type { AgentWorkQueueService } from "./agent-work-queue.ts";
 import type { AgentService } from "./agents.ts";
 import { createAgent, describeRepoNameCollision } from "./agents.ts";
 import { AnthropicCredentialsBlockedError } from "./anthropic-credential-guard.ts";
@@ -125,6 +112,28 @@ import {
   type TaskStoreViewScope,
   taskStoreViewScope,
 } from "./caller-scope.ts";
+import {
+  registerSessionAdminActionsRoutes,
+  SESSION_ADMIN_ACTION_MESSAGES,
+} from "./coding/admin-ui-session-admin-actions.ts";
+import { registerSessionFollowRoutes } from "./coding/admin-ui-session-follow.ts";
+import { registerSessionSettingsRoutes } from "./coding/admin-ui-sessions.ts";
+import {
+  registerSessionsListRoutes,
+  resolveVisibilityScope,
+  type Session,
+} from "./coding/admin-ui-sessions-list.ts";
+import type { AgentPhaseMethodologyService } from "./coding/agent-phase-methodology.ts";
+import type { AgentWorkQueueService } from "./coding/agent-work-queue.ts";
+import {
+  type SessionFollowPrismaLike,
+  SessionFollowService,
+} from "./coding/session-follow-service.ts";
+import {
+  deriveSessionVisibilityFromTasks,
+  isSessionVisible,
+  type SessionForVisibility,
+} from "./coding/session-scope.ts";
 import { ForbiddenError, UnprocessableEntityError } from "./errors.ts";
 import {
   GITHUB_PROVISION_STATE_COOKIE,
@@ -156,15 +165,6 @@ import {
   DEFAULT_SELF_SERVE_CONTACT_EMAIL,
   type SelfServeConfig,
 } from "./self-serve-config.ts";
-import {
-  type SessionFollowPrismaLike,
-  SessionFollowService,
-} from "./session-follow-service.ts";
-import {
-  deriveSessionVisibilityFromTasks,
-  isSessionVisible,
-  type SessionForVisibility,
-} from "./session-scope.ts";
 import type { AppManifest } from "./slack-provisioning-client.ts";
 import {
   AGENT_BOT_SCOPES,

@@ -18,8 +18,8 @@
 import type {
   AgentPhaseMethodology,
   PrismaClient,
-} from "../prisma/client/client.ts";
-import type { PrismaTransactionClient } from "./prisma-tx.ts";
+} from "../../prisma/client/client.ts";
+import type { PrismaTransactionClient } from "../prisma-tx.ts";
 
 export type { AgentPhaseMethodology };
 

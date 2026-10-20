@@ -378,7 +378,7 @@ for the next cycle that mints a task becomes **T-089** once `T-087` is filed.
 - **`agent/src/runtime/piper-voice.ts` reclassification watch item** (unit today, integration once
   Piper synthesis lands) — still not landed as of this cycle; flagged so a future Phase 3
   doesn't silently miss the transition.
-- **`admin/src/session-scope.ts`'s visibility predicate remains not yet wired into most
+- **`admin/src/coding/session-scope.ts`'s visibility predicate remains not yet wired into most
   Session routes.** Documented, intentional interim state per
   `docs/session-notifications.md` — the predicate itself is fully unit-tested, so this is an
   application-logic sequencing gap, not a test-coverage gap. No task minted (this pipeline

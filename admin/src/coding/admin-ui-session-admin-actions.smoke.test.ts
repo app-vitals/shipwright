@@ -1,5 +1,5 @@
 /**
- * admin/src/admin-ui-session-admin-actions.smoke.test.ts
+ * admin/src/coding/admin-ui-session-admin-actions.smoke.test.ts
  * Smoke tests for POST /admin/sessions/:slug/{archive,unarchive,rename}
  * (SESH-5.2).
  *
@@ -11,13 +11,13 @@
  */
 
 import { describe, expect, it, spyOn } from "bun:test";
-import { Hono } from "hono";
 import type { MiddlewareHandler } from "hono";
+import { Hono } from "hono";
+import type { AdminUIEnv } from "../admin-ui.ts";
 import {
-  type SessionAdminActionsDeps,
   registerSessionAdminActionsRoutes,
+  type SessionAdminActionsDeps,
 } from "./admin-ui-session-admin-actions.ts";
-import type { AdminUIEnv } from "./admin-ui.ts";
 
 // ─── Test doubles ─────────────────────────────────────────────────────────────
 

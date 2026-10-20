@@ -1,14 +1,14 @@
 /**
- * admin/src/session-follow-service.integration.test.ts
+ * admin/src/coding/session-follow-service.integration.test.ts
  * Integration tests for SessionFollowService against a real PostgreSQL DB.
  *
  * Requires DATABASE_URL_ADMIN_TEST to be set; skips otherwise.
  */
 
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
-import type { PrismaClient } from "../prisma/client/client.ts";
-import { BadRequestError } from "./errors.ts";
-import { createAdminPrismaClient } from "./prisma-client.ts";
+import type { PrismaClient } from "../../prisma/client/client.ts";
+import { BadRequestError } from "../errors.ts";
+import { createAdminPrismaClient } from "../prisma-client.ts";
 import { SessionFollowService } from "./session-follow-service.ts";
 
 const TEST_DB = process.env.DATABASE_URL_ADMIN_TEST;

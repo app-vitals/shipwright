@@ -1,5 +1,5 @@
 /**
- * admin/src/session-scope.unit.test.ts
+ * admin/src/coding/session-scope.unit.test.ts
  *
  * Unit tests for the pure session-visibility helpers in session-scope.ts.
  * No I/O — pure logic only, over fixture Session/scope objects.

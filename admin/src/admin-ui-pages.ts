@@ -17,13 +17,13 @@ import {
 } from "./admin-ui-styles.ts";
 import type { ManualStep } from "./agent-deletion-checklist.ts";
 import type { AgentTypeOption } from "./agent-type-manifest-loader.ts";
+import { isAudioFilename } from "./attachment-validation.ts";
+import { parseChatMarkers } from "./chat-markers.ts";
 import {
   annotateEligibility,
   buildEligibilityIndex,
   mergeWorkQueueSnapshots,
-} from "./agent-work-queue-merge.ts";
-import { isAudioFilename } from "./attachment-validation.ts";
-import { parseChatMarkers } from "./chat-markers.ts";
+} from "./coding/agent-work-queue-merge.ts";
 import type {
   ChatMessage,
   ChatThread,

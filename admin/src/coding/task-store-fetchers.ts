@@ -1,5 +1,5 @@
 /**
- * admin/src/task-store-fetchers.ts
+ * admin/src/coding/task-store-fetchers.ts
  *
  * The admin UI's task-store HTTP fetchers (extracted from main.ts, SSP-6.8).
  * Every call uses the single task-store admin token. An optional trailing

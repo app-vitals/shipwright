@@ -39,7 +39,6 @@ describe("admin-boot.ts boot sequence", () => {
       "mountRouteContributions(root, resolvedExtensions.apiRoutes)",
       'root.route("/", adminUIApp)',
       "mountRouteContributions(root, resolvedExtensions.adminUiRoutes)",
-      "new SessionAlertSweeper(",
       "new TrialExpiryWarningSweeper(",
       "new TrialExpirySweeper(",
       "new AccountTrialWarningSweeper(",

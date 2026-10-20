@@ -1,14 +1,14 @@
 /**
- * admin/src/agent-work-queue.integration.test.ts
+ * admin/src/coding/agent-work-queue.integration.test.ts
  * Integration tests for AgentWorkQueueService — push/get.
  *
  * Requires DATABASE_URL_ADMIN_TEST to be set; skips otherwise.
  */
 
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
-import type { PrismaClient } from "../prisma/client/client.ts";
+import type { PrismaClient } from "../../prisma/client/client.ts";
+import { createAdminPrismaClient } from "../prisma-client.ts";
 import { AgentWorkQueueService } from "./agent-work-queue.ts";
-import { createAdminPrismaClient } from "./prisma-client.ts";
 
 const TEST_DB = process.env.DATABASE_URL_ADMIN_TEST;
 

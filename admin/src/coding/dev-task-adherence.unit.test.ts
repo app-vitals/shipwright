@@ -127,7 +127,12 @@ describe("dev-task adherence", () => {
       // Silent tick: no work item, no usage — must not drag rates down.
       buildRunAdherence(
         REQUIRED_STEPS,
-        { id: "s1", itemId: null, contextFingerprint: null, commandVariant: "alternate" },
+        {
+          id: "s1",
+          itemId: null,
+          contextFingerprint: null,
+          commandVariant: "alternate",
+        },
         [],
       ),
     ];
