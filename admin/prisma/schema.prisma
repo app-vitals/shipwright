@@ -50,6 +50,13 @@ model Agent {
   // the PATCH route) but is included in GET/PATCH responses.
   trialExpiresAt         DateTime?
   trialExpiryWarnedAt    DateTime?
+  // PAI-1.1: owner and Anthropic identity. All nullable/additive — existing
+  // agents keep NULL. anthropicIdentityName is unique across agents.
+  ownerEmail                String?
+  anthropicIdentityName     String?  @unique
+  anthropicServiceAccountId String?
+  anthropicFederationRuleId String?
+  k8sServiceAccountName     String?
   // APM-1.1: the 6 agent policy fields (auto_post_reviews, allow_self_review,
   // min_confidence, max_findings, cleanup_merged_worktrees,
   // cleanup_after_days). Originally mirrored from the legacy

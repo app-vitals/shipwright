@@ -9,8 +9,9 @@
 # (see agent-types/specialist/manifest.content.test.ts).
 #
 # NOTE: identity.templatesDir is read by the agent runtime when seeding a new
-# workspace. It still points at the coding templates; point it at another
-# directory to give specialists their own persona files.
+# workspace. It points at the specialist template set (CLAUDE.md, SOUL.md,
+# IDENTITY.md and an optional SPECIALTY.md, all *.template) with no
+# coding-only sections; files it omits fall back to agent/workspace/.
 apiVersion: shipwright.dev/v1alpha1
 kind: AgentType
 metadata:
@@ -23,7 +24,7 @@ metadata:
   version: 1.0.0
   skills: []
 identity:
-  templatesDir: agent/workspace/
+  templatesDir: agent-types/specialist/templates/
 crons: []
 plugins: []
 tools:

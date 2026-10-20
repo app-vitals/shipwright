@@ -1,0 +1,186 @@
+## How You Work
+
+You are an agent deployed on the Shipwright Harness. You
+communicate via Slack — DMs and @mentions arrive as prompts, and your responses
+are posted back to the same thread. Cron jobs also fire prompts on a schedule
+and post results to a configured Slack channel.
+
+### Message Format
+
+Incoming messages are prefixed with `[Name]: ` where `Name` is the Slack display
+name of the sender. Use this to know who you're talking to.
+
+### Clarifying Questions
+
+Do not call the `AskUserQuestion` tool in this Slack-mediated session — there's no card UI
+to render it into and the call errors. If you need to ask a clarifying question, just ask it
+as plain text in your reply.
+
+### Response Markers
+
+Embed markers anywhere in your response to trigger side effects. Markers are
+stripped from the visible message before posting.
+
+**Cron jobs and Slack messages:**
+
+| Marker | Effect |
+|--------|--------|
+| `[silent]` | Skip posting entirely. Use when there's nothing to report. **Must be at the end of your response** to take effect. **Ignored in DMs** — DMs always get a reply. |
+
+**Slack messages only:**
+
+| Marker | Effect |
+|--------|--------|
+| `[upload:/path/to/file]` | Attach a file to the message. Path must be absolute. |
+| `[react:emoji1,emoji2,...]` | Add emoji reactions to your own posted reply. Use plain names (e.g. `eyes`, `white_check_mark`), no colons. Comma-separated for multiple. |
+| `[speak:text]` | Synthesize speech and upload as audio. |
+
+### Run Context
+
+Every invocation receives two injected Slack env vars (set by the agent runtime):
+
+| Var | Availability | Purpose |
+|---|---|---|
+| `SLACK_CHANNEL_ID` | Slack-triggered runs + cron runs | Slack channel ID to post into. Cron runs get this set to the configured alert/report channel. |
+| `SLACK_THREAD_TS` | Slack-triggered runs only | Slack thread timestamp for replying into a thread. Cron runs never receive this since they have no originating Slack thread. |
+
+Use the `slack-say` skill to post a one-line progress message mid-run without ending your turn:
+
+```bash
+bun run ${CLAUDE_PLUGIN_ROOT}/scripts/slack-say.ts [--channel C] [--thread T] "progress text"
+```
+
+When neither `--channel` nor `--thread` flags are passed, `slack-say` reads `SLACK_CHANNEL_ID` and `SLACK_THREAD_TS` from the environment. If no channel resolves, the text prints to stdout instead.
+
+@VOICE.md
+
+## Workspace
+
+### Repos
+
+`repos/<repo>` is always on `main`. Use for reading, research, and reference only.
+Never edit files in `repos/` directly.
+
+**Before any work on a repo** (planning, review, dev-task, patch, etc.) — pull first:
+```bash
+git -C repos/<repo> pull
+```
+This keeps the local ref current and prevents stale diffs.
+
+### Worktrees
+
+All active work — features, bug fixes, reviewing a specific branch — happens in
+`worktrees/<repo>-<branch>`. No exceptions.
+
+**New branch:**
+```bash
+git -C repos/<repo> pull
+git -C repos/<repo> worktree add worktrees/<repo>-<branch> origin/main -b <branch>
+```
+
+**Existing branch (e.g. for review):**
+```bash
+git -C repos/<repo> fetch origin
+git -C repos/<repo> worktree add worktrees/<repo>-<branch> origin/<branch>
+```
+
+Naming: `<repo>-<branch>` — no timestamps, no nesting. Worktrees older than 14 days
+are removed automatically.
+
+### Dev Tools (mise)
+
+Runtime tools (Python, Ruby, Go, etc.) are managed via [mise](https://mise.jdx.dev).
+Declare tools in `workspace/mise.toml` — the agent installs them automatically on
+startup and they'll be available in any bash session.
+
+```toml
+# workspace/mise.toml
+[tools]
+python = "3.12"
+```
+
+If mise reports an untrusted config, run `mise trust workspace/mise.toml` — no need
+to ask, this is safe and expected.
+
+### Cron Jobs
+
+Cron jobs are managed via the accounts API and scheduled locally on startup.
+The agent syncs its cron schedule every 60 seconds — changes are picked up
+automatically without restarts. Do NOT use CronCreate — those are session-only
+and disappear when the session ends.
+
+### Agent Configuration
+
+Agent env vars and allowed tools are stored in the accounts service and
+refreshed every 60 seconds — no restart needed for config changes to take effect.
+
+### Waiting and Polling
+
+Every invocation of you is `claude -p` — a single non-interactive CLI call, not a
+persistent process. There is no long-lived session sitting idle waiting for
+something to finish.
+
+The Bash tool has a practical per-call ceiling of ~10 minutes (its `timeout`
+parameter is capped at 600000ms). If a task needs longer than that, don't reach
+for `ScheduleWakeup` by default — chain the wait into a few large in-Bash
+blocking loops instead, e.g.:
+
+```bash
+until <condition-check-command>; do sleep 30; done
+```
+
+or several sequential Bash calls within the same turn. This keeps the wait
+inside a single `claude -p` invocation and its context intact.
+
+`ScheduleWakeup` resumes the *same* session — it calls `claude -p -r <sessionId>`
+under the hood (see `agent/src/claude.ts`'s `_buildArgs`, which appends `-r
+<resumeSessionId>` whenever a stored session id exists for the session key). But
+"same session" doesn't mean "free": that resume is a brand-new OS process/CLI
+invocation, and its reload cost depends entirely on prompt-cache freshness. If
+the wakeup fires while the prompt cache is still warm (~5 min default TTL, up to
+1h with extended caching), the resume is cheap. If the cache has expired by the
+time the wakeup fires, the CLI has to replay the entire prior transcript at full
+price to reconstruct context — for a long-running session, that can be
+expensive and slow.
+
+If a resumed session fails, `agent/src/claude.ts`'s `_runClaude` retries the *same*
+session exactly once (same `-r <sessionId>` args). If the retry succeeds, the result
+is returned with `recoveredFromError: true` — no context loss. If the retry also fails,
+the original error is rethrown and the stored session mapping is left intact (never
+cleared or replaced with a context-free session start). `ClaudeTimeoutError` and
+`ClaudeAbortedError` are not retried — they propagate immediately to avoid spawning
+duplicate processes on hung or user-cancelled sessions.
+
+For waits that genuinely exceed the ~10-minute Bash ceiling (e.g. a long-running
+build job, a deployment pipeline, an external service's async processing), the
+recommended pattern is:
+
+1. Submit the job and capture its id (e.g. a GitHub Actions run ID, a CI job URL,
+   a cloud service's request/build ID).
+2. Persist the job id to a state file (e.g. under `state/`).
+3. End the turn with a short status line reporting what was submitted.
+4. Set up a recurring cron with a `preCheck` script (see `plugins/shipwright/references/user-guide.md`'s
+   cron `preCheck` section and `agent/src/cron-handler.ts` for implementation details).
+   The `preCheck` polls for job completion; when it detects completion, its stdout
+   becomes the prompt for the next Claude invocation, allowing your work to resume
+   where it left off.
+
+This pattern avoids the cache-freshness and retry-on-error tradeoffs of `ScheduleWakeup`
+and keeps your work session and context across the long external wait. For waits that
+stay within the ~10-minute ceiling, keep using the blocking in-Bash loop guidance above.
+
+The `Agent` tool defaults to `run_in_background: true` — your turn receives an
+automated "you'll be notified when the subagent completes" message, assuming a live
+session remains to receive that notification. However, in a cron-dispatched (non-interactive)
+`claude -p` invocation, once your turn ends the process exits — there is no live session
+waiting for that async completion signal. This is the same failure mode as `ScheduleWakeup`
+above: the mechanism is designed for a persistent session, not a one-shot subprocess.
+For any cron-dispatched work where your turn needs the subagent's result before it ends,
+pass `run_in_background: false` on the `Agent` tool call. Multiple foreground `Agent`
+calls issued in the same assistant message still run concurrently — the only difference
+from background mode is that the turn blocks until all of them complete, preventing
+early process exit.
+
+There is currently no known legitimate use case for `ScheduleWakeup` in this
+repo's own skills or commands — `plugins/shipwright/` has zero references to
+it.

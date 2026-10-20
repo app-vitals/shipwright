@@ -10,11 +10,29 @@ independent of `appVersion`. CI enforces this with
 `ct lint --check-version-increment`. Each release here must mirror the
 `artifacthub.io/changes` annotation in `Chart.yaml`.
 
-## [1.26.18] - 2026-10-19
+## [1.26.21] - 2026-10-20
 
 ### Added
 
 - agent-provisioning RBAC (Role and ClusterRole) now grants create, get and delete on serviceaccounts
+
+## [1.26.20] - 2026-10-20
+
+### Changed
+
+- auto-bump to chart v1.26.20 triggered by release tag(s): `admin-v1.278.0`
+
+## [1.26.19] - 2026-10-20
+
+### Changed
+
+- auto-bump to chart v1.26.19 triggered by release tag(s): `agent-v1.413.0`
+
+## [1.26.18] - 2026-10-19
+
+### Changed
+
+- update traefik subchart to v42.0.0
 
 ## [1.26.17] - 2026-10-19
 

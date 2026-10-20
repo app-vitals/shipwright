@@ -41,6 +41,15 @@ describe("parseCliArgs — explicit flags", () => {
     expect(result.apiKey).toBe("key-xyz");
   });
 
+  it("supports --flag=value syntax via the shared parser", () => {
+    const result = parseCliArgs(
+      ["--agent-id=eq-agent", "--api-url=https://eq.test"],
+      {},
+    );
+    expect(result.agentId).toBe("eq-agent");
+    expect(result.apiUrl).toBe("https://eq.test");
+  });
+
   it("ignores unknown flags", () => {
     const result = parseCliArgs(["--unknown", "value", "--agent-id", "x"], {});
     expect(result.agentId).toBe("x");
