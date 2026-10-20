@@ -229,7 +229,13 @@ export function buildProvisioner(
 
   // Anthropic workload identity federation. Unset rule ID disables it; a
   // partial config throws here so admin startup fails with a clear message.
-  const anthropicFederation = parseAnthropicFederation(env);
+  // Only shared mode wires the provisioner (and drops the mode tag so the
+  // provisioner keeps its shared shape); perAgent wiring arrives in PAI-2.2.
+  const parsedFederation = parseAnthropicFederation(env);
+  const anthropicFederation: AgentAnthropicFederation | undefined =
+    parsedFederation?.mode === "shared"
+      ? (({ mode: _mode, ...shared }) => shared)(parsedFederation)
+      : undefined;
 
   const taskStoreUrl = env.SHIPWRIGHT_TASK_STORE_URL;
   const taskStoreAdminToken = env.SHIPWRIGHT_TASK_STORE_ADMIN_TOKEN;
@@ -285,46 +291,105 @@ export function buildProvisioner(
   });
 }
 
+const FEDERATION_ENV_PREFIX = "SHIPWRIGHT_K8S_AGENT_ANTHROPIC_FEDERATION_";
+
+/** Resolve the identity mode (default "shared"); unknown values throw. */
+function resolveFederationIdentityMode(
+  env: NodeJS.ProcessEnv,
+): "shared" | "perAgent" {
+  const modeName = `${FEDERATION_ENV_PREFIX}IDENTITY_MODE`;
+  const mode = env[modeName] || "shared";
+  if (mode !== "shared" && mode !== "perAgent") {
+    throw new Error(
+      `${modeName} must be "shared" or "perAgent", got "${mode}".`,
+    );
+  }
+  return mode;
+}
+
 /**
  * Whether Anthropic workload identity federation is active for provisioned
- * agent pods (WIF-2.1). Mirrors buildProvisioner's gating: only a deployment
- * that provisions pods AND sets the rule ID federates agents. Gates the
- * Anthropic credential write/read guards.
+ * agent pods (WIF-2.1, PAI-2.1). Derived from the identity mode, mirroring
+ * parseAnthropicFederation's gating without its completeness checks (those
+ * throw at buildProvisioner time): a deployment that provisions pods AND is in
+ * perAgent mode, or in shared mode with the rule ID set, federates agents.
+ * Gates the Anthropic credential write/read guards.
  */
 export function isAnthropicFederationEnabled(env: NodeJS.ProcessEnv): boolean {
+  if (env.SHIPWRIGHT_K8S_PROVISIONING !== "enabled") return false;
   return (
-    env.SHIPWRIGHT_K8S_PROVISIONING === "enabled" &&
-    Boolean(env.SHIPWRIGHT_K8S_AGENT_ANTHROPIC_FEDERATION_RULE_ID)
+    resolveFederationIdentityMode(env) === "perAgent" ||
+    Boolean(env[`${FEDERATION_ENV_PREFIX}RULE_ID`])
   );
 }
 
 /** Kubernetes rejects projected service-account tokens shorter than this. */
 const MIN_FEDERATION_TOKEN_EXPIRATION_SECONDS = 600;
 
+/** Charset for the per-agent name suffix (Kubernetes / Anthropic-safe). */
+const FEDERATION_NAME_SUFFIX_PATTERN = /^[a-z0-9-]*$/;
+
+/** perAgent identity mode: every agent gets its own SA and federation rule. */
+export interface PerAgentAnthropicFederation {
+  mode: "perAgent";
+  organizationId: string;
+  workspaceId?: string;
+  /** Anthropic issuer ID of this cluster (the per-agent rules' issuer). */
+  issuerId: string;
+  /** Appended to per-agent resource names so clusters sharing an org don't collide. */
+  nameSuffix?: string;
+  audience: string;
+  expirationSeconds: number;
+}
+
+/** Discriminated by `mode`; `undefined` (from the parser) means disabled. */
+export type ParsedAnthropicFederation =
+  | ({ mode: "shared" } & AgentAnthropicFederation)
+  | PerAgentAnthropicFederation;
+
 /**
  * Parse the Anthropic Workload Identity Federation config for provisioned agent
- * pods. An unset/empty SHIPWRIGHT_K8S_AGENT_ANTHROPIC_FEDERATION_RULE_ID
- * disables the feature (returns undefined, other federation vars ignored).
- * With the rule ID set, the agent ServiceAccount, organization ID and service
- * account ID are required, and a partial config throws so startup fails
- * loudly instead of provisioning pods that cannot authenticate.
+ * pods. SHIPWRIGHT_K8S_AGENT_ANTHROPIC_FEDERATION_IDENTITY_MODE selects the
+ * mode (default "shared"; unknown values throw).
+ *
+ * shared: an unset/empty RULE_ID disables the feature (returns undefined, other
+ * federation vars ignored). With the rule ID set, the agent ServiceAccount,
+ * organization ID and service account ID are required.
+ *
+ * perAgent: requires ORGANIZATION_ID and ISSUER_ID; the shared rule/service
+ * account are not used (per-agent identities are created at provision time).
+ *
+ * A partial config throws so startup fails loudly instead of provisioning pods
+ * that cannot authenticate.
  */
-function parseAnthropicFederation(
+export function parseAnthropicFederation(
   env: NodeJS.ProcessEnv,
-): AgentAnthropicFederation | undefined {
-  const prefix = "SHIPWRIGHT_K8S_AGENT_ANTHROPIC_FEDERATION_";
-  const ruleId = env[`${prefix}RULE_ID`];
-  if (!ruleId) return undefined;
+): ParsedAnthropicFederation | undefined {
+  const prefix = FEDERATION_ENV_PREFIX;
+  const modeName = `${prefix}IDENTITY_MODE`;
+  const mode = resolveFederationIdentityMode(env);
 
-  const required = {
-    serviceAccountName: "SHIPWRIGHT_K8S_AGENT_SERVICE_ACCOUNT",
-    organizationId: `${prefix}ORGANIZATION_ID`,
-    serviceAccountId: `${prefix}SERVICE_ACCOUNT_ID`,
-  } as const;
+  const ruleId = env[`${prefix}RULE_ID`];
+  if (mode === "shared" && !ruleId) return undefined;
+
+  const required =
+    mode === "shared"
+      ? ({
+          serviceAccountName: "SHIPWRIGHT_K8S_AGENT_SERVICE_ACCOUNT",
+          organizationId: `${prefix}ORGANIZATION_ID`,
+          serviceAccountId: `${prefix}SERVICE_ACCOUNT_ID`,
+        } as const)
+      : ({
+          organizationId: `${prefix}ORGANIZATION_ID`,
+          issuerId: `${prefix}ISSUER_ID`,
+        } as const);
   const missing = Object.values(required).filter((name) => !env[name]);
   if (missing.length > 0) {
+    const verb = missing.length === 1 ? "is" : "are";
     throw new Error(
-      `Anthropic workload identity federation is partially configured: ${prefix}RULE_ID is set but ${missing.join(", ")} ${missing.length === 1 ? "is" : "are"} missing. Set all of them, or unset ${prefix}RULE_ID to disable federation.`,
+      mode === "shared"
+        ? `Anthropic workload identity federation is partially configured: ${prefix}RULE_ID is set but ${missing.join(", ")} ${verb} missing. Set all of them, or unset ${prefix}RULE_ID to disable federation.`
+        : `Anthropic workload identity federation is partially configured: ${modeName} is perAgent but ${missing.join(", ")} ${verb} missing.`,
     );
   }
 
@@ -343,13 +408,34 @@ function parseAnthropicFederation(
   }
 
   const workspaceId = env[`${prefix}WORKSPACE_ID`];
+  const audience = env[`${prefix}AUDIENCE`] || "https://api.anthropic.com";
+
+  if (mode === "perAgent") {
+    const nameSuffix = env[`${prefix}NAME_SUFFIX`];
+    if (nameSuffix && !FEDERATION_NAME_SUFFIX_PATTERN.test(nameSuffix)) {
+      throw new Error(
+        `${prefix}NAME_SUFFIX must match ${FEDERATION_NAME_SUFFIX_PATTERN}, got "${nameSuffix}".`,
+      );
+    }
+    return {
+      mode,
+      organizationId: env[`${prefix}ORGANIZATION_ID`] as string,
+      ...(workspaceId ? { workspaceId } : {}),
+      issuerId: env[`${prefix}ISSUER_ID`] as string,
+      ...(nameSuffix ? { nameSuffix } : {}),
+      audience,
+      expirationSeconds,
+    };
+  }
+
   return {
-    serviceAccountName: env[required.serviceAccountName] as string,
-    ruleId,
-    organizationId: env[required.organizationId] as string,
-    serviceAccountId: env[required.serviceAccountId] as string,
+    mode,
+    serviceAccountName: env.SHIPWRIGHT_K8S_AGENT_SERVICE_ACCOUNT as string,
+    ruleId: ruleId as string,
+    organizationId: env[`${prefix}ORGANIZATION_ID`] as string,
+    serviceAccountId: env[`${prefix}SERVICE_ACCOUNT_ID`] as string,
     ...(workspaceId ? { workspaceId } : {}),
-    audience: env[`${prefix}AUDIENCE`] || "https://api.anthropic.com",
+    audience,
     expirationSeconds,
   };
 }

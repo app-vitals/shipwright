@@ -13,6 +13,7 @@ import {
   checkDbReady,
   DEFAULT_SESSION_ALERT_INTERVAL_MS,
   isAnthropicFederationEnabled,
+  parseAnthropicFederation,
   resolvePublicRepo,
   resolveSessionAlertIntervalMs,
   resolveTrialExpiryWarningDays,
@@ -601,5 +602,143 @@ describe("isAnthropicFederationEnabled", () => {
         [RULE]: "",
       }),
     ).toBe(false);
+  });
+});
+
+// ─── perAgent identity mode (PAI-2.1) ───────────────────────────────────────
+
+describe("parseAnthropicFederation identity modes", () => {
+  const P = "SHIPWRIGHT_K8S_AGENT_ANTHROPIC_FEDERATION_";
+  const SHARED_ENV = {
+    SHIPWRIGHT_K8S_PROVISIONING: "enabled",
+    SHIPWRIGHT_K8S_AGENT_SERVICE_ACCOUNT: "shipwright-agent",
+    [`${P}RULE_ID`]: "fdrl_1",
+    [`${P}ORGANIZATION_ID`]: "org-1",
+    [`${P}SERVICE_ACCOUNT_ID`]: "svac_1",
+  };
+  const PER_AGENT_ENV = {
+    SHIPWRIGHT_K8S_PROVISIONING: "enabled",
+    [`${P}IDENTITY_MODE`]: "perAgent",
+    [`${P}ORGANIZATION_ID`]: "org-1",
+    [`${P}ISSUER_ID`]: "issuer-1",
+  };
+
+  it("returns undefined when nothing is configured", () => {
+    expect(parseAnthropicFederation({})).toBeUndefined();
+  });
+
+  it("returns the shared shape tagged mode=shared for the shared config", () => {
+    expect(parseAnthropicFederation(SHARED_ENV)).toEqual({
+      mode: "shared",
+      serviceAccountName: "shipwright-agent",
+      ruleId: "fdrl_1",
+      organizationId: "org-1",
+      serviceAccountId: "svac_1",
+      audience: "https://api.anthropic.com",
+      expirationSeconds: 600,
+    });
+  });
+
+  it("treats an explicit IDENTITY_MODE=shared like the default", () => {
+    expect(
+      parseAnthropicFederation({
+        ...SHARED_ENV,
+        [`${P}IDENTITY_MODE`]: "shared",
+      })?.mode,
+    ).toBe("shared");
+    expect(
+      parseAnthropicFederation({ [`${P}IDENTITY_MODE`]: "shared" }),
+    ).toBeUndefined();
+  });
+
+  it("parses the perAgent config without any shared rule ID", () => {
+    expect(parseAnthropicFederation(PER_AGENT_ENV)).toEqual({
+      mode: "perAgent",
+      organizationId: "org-1",
+      issuerId: "issuer-1",
+      audience: "https://api.anthropic.com",
+      expirationSeconds: 600,
+    });
+  });
+
+  it("parses the perAgent optional workspace, suffix, audience and expiration", () => {
+    expect(
+      parseAnthropicFederation({
+        ...PER_AGENT_ENV,
+        [`${P}WORKSPACE_ID`]: "wrkspc_1",
+        [`${P}NAME_SUFFIX`]: "-dev-1",
+        [`${P}AUDIENCE`]: "https://example.test",
+        [`${P}TOKEN_EXPIRATION_SECONDS`]: "3600",
+      }),
+    ).toEqual({
+      mode: "perAgent",
+      organizationId: "org-1",
+      workspaceId: "wrkspc_1",
+      issuerId: "issuer-1",
+      nameSuffix: "-dev-1",
+      audience: "https://example.test",
+      expirationSeconds: 3600,
+    });
+  });
+
+  for (const missing of ["ORGANIZATION_ID", "ISSUER_ID"]) {
+    it(`throws when perAgent mode is missing ${missing}`, () => {
+      expect(() =>
+        parseAnthropicFederation({ ...PER_AGENT_ENV, [`${P}${missing}`]: "" }),
+      ).toThrow(new RegExp(`partially configured.*${P}${missing}`));
+    });
+  }
+
+  it("throws on an unknown IDENTITY_MODE", () => {
+    expect(() =>
+      parseAnthropicFederation({
+        ...PER_AGENT_ENV,
+        [`${P}IDENTITY_MODE`]: "both",
+      }),
+    ).toThrow(/IDENTITY_MODE.*"both"/);
+  });
+
+  it("throws on a NAME_SUFFIX outside [a-z0-9-]", () => {
+    for (const bad of ["Dev", "a_b", "x.y", "a b"]) {
+      expect(() =>
+        parseAnthropicFederation({
+          ...PER_AGENT_ENV,
+          [`${P}NAME_SUFFIX`]: bad,
+        }),
+      ).toThrow(/NAME_SUFFIX/);
+    }
+  });
+
+  it("applies the token-expiration floor in perAgent mode too", () => {
+    expect(() =>
+      parseAnthropicFederation({
+        ...PER_AGENT_ENV,
+        [`${P}TOKEN_EXPIRATION_SECONDS`]: "599",
+      }),
+    ).toThrow(/TOKEN_EXPIRATION_SECONDS/);
+  });
+
+  it("derives the enabled flag from the mode: true for perAgent without a rule ID", () => {
+    expect(isAnthropicFederationEnabled(PER_AGENT_ENV)).toBe(true);
+  });
+
+  it("is disabled for perAgent mode when provisioning is not enabled", () => {
+    const { SHIPWRIGHT_K8S_PROVISIONING: _, ...rest } = PER_AGENT_ENV;
+    expect(isAnthropicFederationEnabled(rest)).toBe(false);
+  });
+
+  it("buildProvisioner passes the shared shape (no mode) in shared mode", () => {
+    const config = configOf(
+      buildProvisioner(SHARED_ENV, stubAgentTokenService()),
+    );
+    expect(config.anthropicFederation).not.toHaveProperty("mode");
+    expect(config.anthropicFederation?.ruleId).toBe("fdrl_1");
+  });
+
+  it("buildProvisioner passes no federation config in perAgent mode", () => {
+    const config = configOf(
+      buildProvisioner(PER_AGENT_ENV, stubAgentTokenService()),
+    );
+    expect("anthropicFederation" in config).toBe(false);
   });
 });
