@@ -3,7 +3,8 @@
  *
  * A thin first-party Kubernetes API client. Authenticates to the in-cluster API
  * server using the mounted ServiceAccount Bearer token, and supports
- * namespace-scoped create/get/delete of Deployments and Secrets.
+ * namespace-scoped create/get/delete of Deployments, Secrets, PVCs and
+ * ServiceAccounts.
  *
  * No `@kubernetes/client-node` dependency — native fetch only. The HTTP client
  * takes an injected `fetchFn` (defaulting to the global `fetch`) so tests can
@@ -150,6 +151,10 @@ export interface KubernetesSecret {
   [key: string]: unknown;
 }
 
+export interface ServiceAccountSpec {
+  name: string;
+}
+
 export interface PvcSpec {
   name: string;
   namespace: string;
@@ -170,6 +175,18 @@ export interface KubernetesPvc {
     accessModes: string[];
     resources: { requests: { storage: string } };
     storageClassName?: string;
+    [key: string]: unknown;
+  };
+  [key: string]: unknown;
+}
+
+export interface KubernetesServiceAccount {
+  apiVersion: string;
+  kind: string;
+  metadata: {
+    name: string;
+    namespace: string;
+    ownerReferences?: Array<Record<string, unknown>>;
     [key: string]: unknown;
   };
   [key: string]: unknown;
@@ -209,6 +226,15 @@ export interface KubernetesClient {
   createPvc(namespace: string, spec: PvcSpec): Promise<KubernetesPvc>;
   getPvc(namespace: string, name: string): Promise<KubernetesPvc>;
   deletePvc(namespace: string, name: string): Promise<void>;
+  createServiceAccount(
+    namespace: string,
+    spec: ServiceAccountSpec,
+  ): Promise<KubernetesServiceAccount>;
+  getServiceAccount(
+    namespace: string,
+    name: string,
+  ): Promise<KubernetesServiceAccount>;
+  deleteServiceAccount(namespace: string, name: string): Promise<void>;
   /**
    * Apply a strategic merge patch to a named Deployment. The patch object is
    * JSON-serialized and sent with Content-Type application/strategic-merge-patch+json.
@@ -254,6 +280,16 @@ export function pvcUrl(
   name?: string,
 ): string {
   const base = `${trimTrailingSlash(apiServer)}/api/v1/namespaces/${namespace}/persistentvolumeclaims`;
+  return name ? `${base}/${name}` : base;
+}
+
+/** `/api/v1/namespaces/{ns}/serviceaccounts[/{name}]` */
+export function serviceAccountUrl(
+  apiServer: string,
+  namespace: string,
+  name?: string,
+): string {
+  const base = `${trimTrailingSlash(apiServer)}/api/v1/namespaces/${namespace}/serviceaccounts`;
   return name ? `${base}/${name}` : base;
 }
 
@@ -331,6 +367,17 @@ export function pvcBody(namespace: string, spec: PvcSpec): KubernetesPvc {
     body.spec.storageClassName = spec.storageClassName;
   }
   return body;
+}
+
+export function serviceAccountBody(
+  namespace: string,
+  spec: ServiceAccountSpec,
+): KubernetesServiceAccount {
+  return {
+    apiVersion: "v1",
+    kind: "ServiceAccount",
+    metadata: { name: spec.name, namespace },
+  };
 }
 
 const SA_DIR = "/var/run/secrets/kubernetes.io/serviceaccount";
@@ -621,6 +668,37 @@ export class HttpKubernetesClient implements KubernetesClient {
       headers: this.authHeaders(),
     });
   }
+
+  async createServiceAccount(
+    namespace: string,
+    spec: ServiceAccountSpec,
+  ): Promise<KubernetesServiceAccount> {
+    return this.request<KubernetesServiceAccount>(
+      serviceAccountUrl(this.apiServer, namespace),
+      {
+        method: "POST",
+        headers: this.authHeaders({ "Content-Type": "application/json" }),
+        body: JSON.stringify(serviceAccountBody(namespace, spec)),
+      },
+    );
+  }
+
+  async getServiceAccount(
+    namespace: string,
+    name: string,
+  ): Promise<KubernetesServiceAccount> {
+    return this.request<KubernetesServiceAccount>(
+      serviceAccountUrl(this.apiServer, namespace, name),
+      { method: "GET", headers: this.authHeaders() },
+    );
+  }
+
+  async deleteServiceAccount(namespace: string, name: string): Promise<void> {
+    await this.request<unknown>(
+      serviceAccountUrl(this.apiServer, namespace, name),
+      { method: "DELETE", headers: this.authHeaders() },
+    );
+  }
 }
 
 // ─── RecordedKubernetesClient (in-memory double) ──────────────────────────────
@@ -632,6 +710,8 @@ interface KubernetesCassette {
   secrets: Record<string, KubernetesSecret>;
   /** Pre-seeded PVCs keyed by `${namespace}/${name}`. */
   pvcs?: Record<string, KubernetesPvc>;
+  /** Pre-seeded ServiceAccounts keyed by `${namespace}/${name}`. */
+  serviceAccounts?: Record<string, KubernetesServiceAccount>;
 }
 
 /**
@@ -667,11 +747,15 @@ export class RecordedKubernetesClient implements KubernetesClient {
   private readonly deployments: Map<string, KubernetesDeployment>;
   private readonly secrets: Map<string, KubernetesSecret>;
   private readonly pvcs: Map<string, KubernetesPvc>;
+  private readonly serviceAccounts: Map<string, KubernetesServiceAccount>;
 
   constructor(cassette: KubernetesCassette) {
     this.deployments = new Map(Object.entries(cassette.deployments));
     this.secrets = new Map(Object.entries(cassette.secrets));
     this.pvcs = new Map(Object.entries(cassette.pvcs ?? {}));
+    this.serviceAccounts = new Map(
+      Object.entries(cassette.serviceAccounts ?? {}),
+    );
   }
 
   private static key(namespace: string, name: string): string {
@@ -905,5 +989,39 @@ export class RecordedKubernetesClient implements KubernetesClient {
       throw new NotFoundError(`persistentvolumeclaims "${name}" not found`);
     }
     this.pvcs.delete(key);
+  }
+
+  async createServiceAccount(
+    namespace: string,
+    spec: ServiceAccountSpec,
+  ): Promise<KubernetesServiceAccount> {
+    const key = RecordedKubernetesClient.key(namespace, spec.name);
+    if (this.serviceAccounts.has(key)) {
+      throw new ConflictError(`serviceaccounts "${spec.name}" already exists`);
+    }
+    const sa = serviceAccountBody(namespace, spec);
+    this.serviceAccounts.set(key, sa);
+    return sa;
+  }
+
+  async getServiceAccount(
+    namespace: string,
+    name: string,
+  ): Promise<KubernetesServiceAccount> {
+    const sa = this.serviceAccounts.get(
+      RecordedKubernetesClient.key(namespace, name),
+    );
+    if (!sa) {
+      throw new NotFoundError(`serviceaccounts "${name}" not found`);
+    }
+    return sa;
+  }
+
+  async deleteServiceAccount(namespace: string, name: string): Promise<void> {
+    const key = RecordedKubernetesClient.key(namespace, name);
+    if (!this.serviceAccounts.has(key)) {
+      throw new NotFoundError(`serviceaccounts "${name}" not found`);
+    }
+    this.serviceAccounts.delete(key);
   }
 }
