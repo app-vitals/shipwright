@@ -9,9 +9,10 @@ Check one given PR for three conditions: unaddressed review/PR comments, merge c
 with base, and failing CI. Apply the appropriate fix. Goes silent when nothing needs
 addressing, or when no target PR is given.
 
-> **Note:** Branches merely BEHIND main (no conflict) are not patch-worthy. Main is only
-> merged into a branch to resolve an actual conflict — see Step 2.5 and Step 4 for the
-> conflict-only (DIRTY) path.
+> **Note:** A BEHIND PR (no conflict) is handled by `gh pr update-branch` alone in
+> Step 2.5 — GitHub only reports BEHIND when the base branch requires branches to be up to
+> date. BEHIND never joins List C; only a real conflict (DIRTY) does — see Step 2.5 and
+> Step 4 for the DIRTY path.
 
 **This command runs autonomously. Do not pause for user input.**
 
@@ -305,7 +306,30 @@ built-in-fresh-retry → BLOCKED), applied here to a free-text STATUS report ins
 
 ## Step 2.5: Handle DIRTY PRs (Auto-Rebase Attempt)
 
-Using the `mergeStateStatus` field already fetched for the target PR resolved in Step 2, check whether it is DIRTY.
+Using the `mergeStateStatus` field already fetched for the target PR resolved in Step 2, check whether it is BEHIND or DIRTY.
+
+### BEHIND (no conflict)
+
+Key off `mergeStateStatus == "BEHIND"` itself. Do not read branch protection (agent tokens
+403 on it) and do not use compare/`behind_by`. This applies to self-authored and
+allowlisted-author PRs alike. Merge the base branch in — **not** `--rebase`:
+```bash
+gh pr update-branch {number} --repo {org}/{repo}
+```
+
+**If update-branch succeeds (exit 0)**: The branch now contains the base. Re-resolve
+`headRefOid` (`gh pr view {number} --repo {org}/{repo} --json headRefOid -q '.headRefOid'`)
+before Step 3c's CI check, since the update pushed a new commit and the SHA fetched in
+Step 2 is stale. Print:
+```
+↻ PR #{number} was BEHIND — branch updated from base, continuing normal flow
+```
+
+**If update-branch fails (non-zero exit)**: Log it and continue without escalating — do not
+block, do not add the PR to any list. A real conflict surfaces as `DIRTY` and follows the
+existing List C path.
+
+### DIRTY
 
 If the target PR is DIRTY, attempt an automatic rebase via GitHub:
 ```bash
@@ -609,8 +633,9 @@ gh pr view {pr} --repo {org}/{repo} --json mergeStateStatus
 ```
 
 - If `mergeStateStatus` is `"DIRTY"` → add to **List C**
-- Any other state (including `"BEHIND"`) → not patch-worthy on its own; being behind
-  main without a conflict does not require action
+- `"BEHIND"` → already handled by `gh pr update-branch` in Step 2.5; never add to
+  **List C**
+- Any other state → no merge-state action
 
 Store the fetched `mergeStateStatus` — do not re-fetch in Step 3c.
 
