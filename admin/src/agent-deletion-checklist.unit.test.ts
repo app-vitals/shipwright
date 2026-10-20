@@ -146,3 +146,56 @@ describe("buildManualStepsChecklist — general behavior", () => {
     expect(steps).toHaveLength(2);
   });
 });
+
+describe("buildManualStepsChecklist — leftover Anthropic identity", () => {
+  const ALL = {
+    anthropicFederationRuleId: "fdrl_1",
+    anthropicServiceAccountId: "svac_1",
+    k8sServiceAccountName: "agent-sa",
+  };
+
+  it("lists rule, Anthropic service account, then Kubernetes ServiceAccount in removal order", () => {
+    const steps = buildManualStepsChecklist([], ALL);
+    expect(steps.map((s) => s.key)).toEqual([
+      "anthropicFederationRuleId",
+      "anthropicServiceAccountId",
+      "k8sServiceAccountName",
+    ]);
+    expect(steps[0]?.message).toContain("fdrl_1");
+    expect(steps[1]?.message).toContain("svac_1");
+    expect(steps[1]?.message).toContain("rule");
+    expect(steps[2]?.message).toContain("agent-sa");
+  });
+
+  it("lists only the pieces still present", () => {
+    const steps = buildManualStepsChecklist([], {
+      anthropicFederationRuleId: null,
+      anthropicServiceAccountId: "svac_1",
+      k8sServiceAccountName: "agent-sa",
+    });
+    expect(steps.map((s) => s.key)).toEqual([
+      "anthropicServiceAccountId",
+      "k8sServiceAccountName",
+    ]);
+  });
+
+  it("adds nothing when every piece is gone or the argument is omitted", () => {
+    expect(
+      buildManualStepsChecklist([], {
+        anthropicFederationRuleId: null,
+        anthropicServiceAccountId: null,
+        k8sServiceAccountName: null,
+      }),
+    ).toEqual([]);
+    expect(buildManualStepsChecklist([])).toEqual([]);
+  });
+
+  it("appends identity entries after the secret entries", () => {
+    const steps = buildManualStepsChecklist(
+      [{ key: "GH_TOKEN", secret: true }],
+      ALL,
+    );
+    expect(steps[0]?.key).toBe("GH_TOKEN");
+    expect(steps).toHaveLength(4);
+  });
+});

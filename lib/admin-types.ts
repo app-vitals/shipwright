@@ -166,7 +166,7 @@ export interface paths {
         post?: never;
         /**
          * Delete an agent
-         * @description Admin-only. Runs the full deleteAgentFully() teardown: deprovisions the K8s workload, revokes task-store and chat-service tokens, deletes chat threads, and — if an `xoxpToken` is supplied — deletes the Slack app. The Agent row (and its cascade-deleted child records) is deleted last, only if every automatable step succeeded; `agentDeleted: false` means the row was preserved and the call is safe to retry.
+         * @description Admin-only. Runs the full deleteAgentFully() teardown: deprovisions the K8s workload, removes the agent's per-agent Anthropic identity when it has one (federation rule, then Anthropic service account, then Kubernetes ServiceAccount), revokes task-store and chat-service tokens, deletes chat threads, and — if an `xoxpToken` is supplied — deletes the Slack app. The Agent row (and its cascade-deleted child records) is deleted last, only if every automatable step succeeded; `agentDeleted: false` means the row was preserved and the call is safe to retry.
          */
         delete: {
             parameters: {

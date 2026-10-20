@@ -27,9 +27,11 @@ Setting `agent.provisioning.enabled=true` switches the admin service to the
   Secret (see [perAgent identity mode](#peragent-identity-mode-opt-in)). All operations are idempotent and safe to retry. **Exception:** if the agent is marked `selfHosted: true`, provisioning is skipped — the agent is expected to manage its own workload.
 - `DELETE /agents/:id` runs the full `deleteAgentFully()` orchestration:
   deprovisions the agent's Kubernetes workload (Deployment, Secret, and PVC),
-  revokes the agent's task-store and chat-service tokens, deletes its chat
-  threads, and deletes the agent database row (last step, only if all other
-  steps succeeded). Every step is idempotent and safe to retry. Deleted agents
+  removes the agent's per-agent Anthropic identity when it has one (federation
+  rule, then Anthropic service account, then Kubernetes ServiceAccount; agents
+  without one skip this step), revokes the agent's task-store and chat-service
+  tokens, deletes its chat threads, and deletes the agent database row (last
+  step, only if all other steps succeeded). Every step is idempotent and safe to retry. Deleted agents
   do not leak persistent storage.
 
 ### What the chart renders when provisioning is enabled
@@ -255,7 +257,9 @@ wiring they already have: reconcile leaves it alone until the agent has its
 own identity, and then corrects it to that identity. So only switch an
 installation that already has agents to perAgent mode once existing agents
 can be migrated; on a fresh installation, new agents get their identity as
-they are created. Deleting an agent does not remove its Anthropic identity yet.
+they are created. Deleting an agent removes its Anthropic identity as part of
+`DELETE /agents/:id` (see above). If that removal fails, the agent row is kept
+and the checklist names the identity pieces still live.
 
 ### Chat service provisioning (opt-in)
 
