@@ -24,6 +24,11 @@
  * Steps, in order:
  *   1. Read the Agent row + its AgentEnv rows.
  *   2. K8s deprovision (Deployment + Secret + PVC).
+ *      Then, only for an agent with a per-agent Anthropic identity, remove it:
+ *      archive the federation rule, then the Anthropic service account, then
+ *      delete the K8s ServiceAccount (Anthropic refuses to archive a service
+ *      account while a live rule references it). A failure keeps the row and
+ *      adds the leftover pieces to the manual-steps checklist.
  *   3. Revoke task-store token(s).
  *   4. Revoke chat-service token(s) + delete chat threads.
  *   5. (Optional) Delete the Slack app, gated on a supplied user token.
@@ -36,6 +41,7 @@
  */
 
 import {
+  type LeftoverIdentity,
   type ManualStep,
   buildManualStepsChecklist,
 } from "./agent-deletion-checklist.ts";
@@ -54,6 +60,7 @@ import type { TaskStoreProvisioningClient } from "./task-store-provisioning-clie
  */
 type DeleteAgentStep =
   | "k8s"
+  | "anthropic-identity"
   | "task-store-tokens"
   | "chat-service-tokens-and-threads"
   | "slack-app";
@@ -100,8 +107,14 @@ interface DeleteAgentPrisma {
   agent: {
     findUnique(args: {
       where: { id: string };
-      select: { id: true; name: true };
-    }): Promise<{ id: string; name: string } | null>;
+      select: {
+        id: true;
+        name: true;
+        anthropicFederationRuleId: true;
+        anthropicServiceAccountId: true;
+        k8sServiceAccountName: true;
+      };
+    }): Promise<({ id: string; name: string } & LeftoverIdentity) | null>;
     delete(args: { where: { id: string } }): Promise<unknown>;
   };
   agentEnv: {
@@ -114,8 +127,14 @@ interface DeleteAgentPrisma {
 
 export interface DeleteAgentFullyDeps {
   prisma: DeleteAgentPrisma;
-  provisioner: Pick<AgentProvisioner, "deprovision">;
-  taskStore: Pick<TaskStoreProvisioningClient, "listTokensForAgent" | "revokeToken">;
+  provisioner: Pick<
+    AgentProvisioner,
+    "deprovision" | "removeAnthropicIdentity"
+  >;
+  taskStore: Pick<
+    TaskStoreProvisioningClient,
+    "listTokensForAgent" | "revokeToken"
+  >;
   chatService: Pick<
     ChatServiceProvisioningClient,
     "listTokensForAgent" | "revokeToken" | "deleteThreadsForAgent"
@@ -163,9 +182,16 @@ export async function deleteAgentFully(
   opts: DeleteAgentFullyOpts = {},
 ): Promise<DeleteAgentResult> {
   // ── Step 1: read the Agent row + its AgentEnv rows ──────────────────────────
+  const identitySelect = {
+    id: true,
+    name: true,
+    anthropicFederationRuleId: true,
+    anthropicServiceAccountId: true,
+    k8sServiceAccountName: true,
+  } as const;
   const agent = await deps.prisma.agent.findUnique({
     where: { id: agentId },
-    select: { id: true, name: true },
+    select: identitySelect,
   });
   if (!agent) {
     throw new NotFoundError(`agent ${agentId} not found`);
@@ -194,6 +220,28 @@ export async function deleteAgentFully(
   await runStep("k8s", async () => {
     await deps.provisioner.deprovision(agentId, { slug: agent.name });
   });
+
+  // ── Step 2b: remove the per-agent Anthropic identity ────────────────────────
+  // Runs after k8s so the pods are gone before their identity is pulled. Only
+  // present when the agent has a saved identity piece: agents without one (and
+  // shared/no-federation mode) get no step and behave exactly as before. The
+  // provisioner removes rule → Anthropic service account → K8s ServiceAccount
+  // and throws at the first failure.
+  const hasIdentity = Boolean(
+    agent.anthropicFederationRuleId ||
+      agent.anthropicServiceAccountId ||
+      agent.k8sServiceAccountName,
+  );
+  if (hasIdentity) {
+    await runStep("anthropic-identity", async () => {
+      if (!deps.provisioner.removeAnthropicIdentity) {
+        throw new Error(
+          "the provisioner cannot remove a per-agent Anthropic identity",
+        );
+      }
+      await deps.provisioner.removeAnthropicIdentity(agentId);
+    });
+  }
 
   // ── Step 3: revoke task-store token(s) ──────────────────────────────────────
   await runStep("task-store-tokens", async () => {
@@ -227,8 +275,18 @@ export async function deleteAgentFully(
   }
 
   // ── Step 6: build the secret checklist (always included) ────────────────────
+  // When the identity step failed, re-read the IDs so the checklist lists only
+  // what is actually still live (the provisioner clears each ID as it goes).
+  let leftoverIdentity: LeftoverIdentity | undefined;
+  if (failed.some((f) => f.step === "anthropic-identity")) {
+    leftoverIdentity =
+      (await deps.prisma.agent.findUnique({
+        where: { id: agentId },
+        select: identitySelect,
+      })) ?? agent;
+  }
   const manualStepsRequired = [
-    ...buildManualStepsChecklist(envRows),
+    ...buildManualStepsChecklist(envRows, leftoverIdentity),
     ...manualSlackSteps,
   ];
 

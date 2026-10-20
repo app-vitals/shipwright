@@ -26,6 +26,16 @@ export interface ManualStep {
 }
 
 /**
+ * Per-agent Anthropic identity pieces still present after a failed removal.
+ * A null/absent piece is already gone and gets no entry.
+ */
+export interface LeftoverIdentity {
+  anthropicFederationRuleId?: string | null;
+  anthropicServiceAccountId?: string | null;
+  k8sServiceAccountName?: string | null;
+}
+
+/**
  * Keys handled by the Slack app deletion step (ADC-2.1 / ADC-3.1) — excluded
  * entirely from this checklist so operators aren't told to do the same
  * cleanup twice.
@@ -65,9 +75,14 @@ const NAMED_KEY_INSTRUCTIONS: Record<string, string> = {
  *
  * Order-preserving and non-deduplicating: one `ManualStep` per matching input
  * row, in input order (duplicate keys produce duplicate entries).
+ *
+ * `leftoverIdentity` (optional) appends one entry per per-agent Anthropic
+ * identity piece still present after a failed removal, in removal order:
+ * federation rule, Anthropic service account, Kubernetes ServiceAccount.
  */
 export function buildManualStepsChecklist(
   envRows: { key: string; secret: boolean }[],
+  leftoverIdentity?: LeftoverIdentity,
 ): ManualStep[] {
   const steps: ManualStep[] = [];
 
@@ -84,6 +99,28 @@ export function buildManualStepsChecklist(
     steps.push({
       key: row.key,
       message: `Custom secret '${row.key}' was added manually and has no automated revocation — verify whether it needs to be revoked at the source.`,
+    });
+  }
+
+  // Identity pieces the automated removal left behind, in removal order. The
+  // rule goes first: Anthropic refuses to archive a service account while a
+  // live rule references it.
+  if (leftoverIdentity?.anthropicFederationRuleId) {
+    steps.push({
+      key: "anthropicFederationRuleId",
+      message: `Anthropic federation rule ${leftoverIdentity.anthropicFederationRuleId} was not archived automatically — archive it in the Anthropic console first (a service account cannot be archived while a live rule references it).`,
+    });
+  }
+  if (leftoverIdentity?.anthropicServiceAccountId) {
+    steps.push({
+      key: "anthropicServiceAccountId",
+      message: `Anthropic service account ${leftoverIdentity.anthropicServiceAccountId} was not archived automatically — archive it in the Anthropic console once its federation rule is archived.`,
+    });
+  }
+  if (leftoverIdentity?.k8sServiceAccountName) {
+    steps.push({
+      key: "k8sServiceAccountName",
+      message: `Kubernetes ServiceAccount ${leftoverIdentity.k8sServiceAccountName} was not deleted automatically — delete it from the agent namespace with kubectl.`,
     });
   }
 
