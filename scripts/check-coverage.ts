@@ -29,6 +29,9 @@ const EXCLUDE_PREFIXES = [
   // etc.); exercised in practice, not under unit/integration test.
   "admin/src/server.ts",
   "admin/src/main.ts",
+  // startAdmin()'s boot wiring, split out of main.ts (AEP-2.1); its order is
+  // pinned structurally by admin-boot.boot-order.unit.test.ts.
+  "admin/src/admin-boot.ts",
   "agent/src/entrypoint-main.ts",
   "task-store/src/main.ts",
   "chat/src/main.ts",

@@ -41,6 +41,10 @@ import type { AccountLifecycle } from "./account-lifecycle.ts";
 import type { AccountMemberService } from "./account-members.ts";
 import type { AccountOnboardingService } from "./account-onboarding.ts";
 import type { AccountService } from "./accounts.ts";
+import {
+  type AgentDetailCardSlot,
+  renderAgentDetailCards,
+} from "./admin-extension.ts";
 import { registerAccountRoutes } from "./admin-ui-account.ts";
 import { runWithAccountNav } from "./admin-ui-account-nav.ts";
 import { renderZeroQuotaNotice } from "./admin-ui-account-pages.ts";
@@ -328,6 +332,11 @@ export interface AdminUIDeps {
     "listForAgent" | "listAcrossAgents"
   >;
   agentWorkQueueService: Pick<AgentWorkQueueService, "get" | "getMany">;
+  /**
+   * Optional extension card slots (AEP-2.1, admin-extension.ts) rendered on
+   * the agent detail page after the platform cards; absent renders none.
+   */
+  agentDetailCards?: readonly AgentDetailCardSlot[];
   /** Optional: when absent the agent detail page omits the installations card. */
   agentGitHubInstallationsService?: Pick<
     AgentGitHubInstallationsService,
@@ -2214,6 +2223,15 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
       (await agentGitHubInstallationsService?.get(agentId).catch(() => null)) ??
       null;
 
+    // Extension card slots (AEP-2.1); a failing slot is omitted.
+    const extensionCardsHtml = deps.agentDetailCards
+      ? await renderAgentDetailCards(deps.agentDetailCards, {
+          agentId,
+          userEmail: c.var.userEmail,
+          isAdmin: c.var.isAdmin,
+        })
+      : [];
+
     return html(
       renderAgentDetailPage(
         agentDetail,
@@ -2238,6 +2256,7 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
           warning,
           timezone,
           verificationActivity,
+          extensionCardsHtml,
           phaseMethodology: phaseMethodology.map((pm) => ({
             phase: pm.phase,
             subagentType: pm.subagentType,

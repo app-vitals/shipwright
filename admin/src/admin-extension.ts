@@ -1,0 +1,273 @@
+/**
+ * admin/src/admin-extension.ts
+ *
+ * The extension seam between the generic admin platform (admin-boot.ts:
+ * agents, envs, crons, tokens, plugins, accounts, provisioning, the admin UI
+ * shell and its sweepers) and agent-type-specific admin behavior (Shipwright:
+ * the coding extension). Mirrors the agent's seam in
+ * agent/src/runtime/agent-extension.ts.
+ *
+ * startAdmin(extensions) resolves every extension once, right after the
+ * platform services exist and before any route is mounted, calling each hook
+ * across all extensions in ADMIN_EXTENSION_HOOK_ORDER:
+ *
+ *   services(ctx)          — extra service deps spread into createAdminApp /
+ *                            createAdminUIApp (later extensions win)
+ *   apiRoutes(ctx)         — API sub-apps, mounted after the platform APIs and
+ *                            before the admin UI (so the UI never shadows them)
+ *   adminUiRoutes(ctx)     — admin UI sub-apps, mounted after the platform UI
+ *   agentDetailCards(ctx)  — extra cards on the agent detail page
+ *   backgroundPasses(ctx)  — interval loops, started after the platform sweepers
+ *
+ * openApi() is static (no context): scripts/generate-admin-spec.ts calls it to
+ * fold extension routes/schemas into admin/openapi.json without booting.
+ *
+ * Every hook is optional; no extension (or a hookless one) reproduces the bare
+ * platform exactly. This file must not import any coding module — main.ts
+ * (the composition root) is the only file that wires a concrete extension in.
+ */
+
+import type { Hono } from "hono";
+import type { PrismaClient } from "../prisma/client/client.ts";
+import type { AccountService } from "./accounts.ts";
+import type { AdminUIDeps } from "./admin-ui.ts";
+import type { AgentCronJobService } from "./agent-cron-jobs.ts";
+import type { AgentEnvService } from "./agent-envs.ts";
+import type { AgentMemberService } from "./agent-members.ts";
+import type { AgentProvisioner } from "./agent-provisioner.ts";
+import type { AgentTokenService } from "./agent-tokens.ts";
+import type { AgentService } from "./agents.ts";
+import type { AdminDeps, parseAdminApiKeys } from "./agents-api.ts";
+import type { createCallerScopeResolver } from "./caller-scope.ts";
+
+/** The platform services an extension may build on. */
+export interface AdminPlatformServices {
+  agentService: AgentService;
+  agentEnvService: AgentEnvService;
+  agentCronJobService: AgentCronJobService;
+  agentTokenService: AgentTokenService;
+  agentMemberService: AgentMemberService;
+  accountService: AccountService;
+  callerScopeResolver: ReturnType<typeof createCallerScopeResolver>;
+  provisioner: AgentProvisioner;
+}
+
+/** Everything an extension's hooks may need from the platform. */
+export interface AdminExtensionContext {
+  env: NodeJS.ProcessEnv;
+  prisma: PrismaClient;
+  sessionSecret: string;
+  adminApiKeys: ReturnType<typeof parseAdminApiKeys>;
+  services: AdminPlatformServices;
+}
+
+// Extension sub-apps carry their own Env/Schema generics; Hono's route() is
+// generic over them, so the contribution type must accept any.
+// biome-ignore lint/suspicious/noExplicitAny: see above
+type AnyHono = Hono<any, any, any>;
+
+/** A sub-app mounted on the root at `path` via root.route(path, app). */
+export interface AdminRouteContribution {
+  path: string;
+  app: AnyHono;
+}
+
+/** Extra deps merged over the platform's createAdminApp / createAdminUIApp deps. */
+export interface AdminExtensionServices {
+  api?: Partial<AdminDeps>;
+  ui?: Partial<AdminUIDeps>;
+}
+
+export interface AgentDetailCardContext {
+  agentId: string;
+  userEmail: string;
+  isAdmin: boolean;
+}
+
+/**
+ * One extra card on GET /admin/agents/:id. render() returns trusted HTML — the
+ * extension escapes its own content. A throwing render omits just that card.
+ */
+export interface AgentDetailCardSlot {
+  name: string;
+  render(ctx: AgentDetailCardContext): Promise<string>;
+}
+
+/** An interval loop registered in startAdmin, never inside an app factory. */
+export interface AdminBackgroundPass {
+  name: string;
+  /** Prefix for the non-fatal failure log: `${logPrefix} tick error:`. */
+  logPrefix: string;
+  intervalMs: number;
+  tick(): Promise<unknown>;
+}
+
+/** OpenAPI fragments folded into the admin document (paths use `{param}`). */
+export interface AdminOpenApiContribution {
+  paths?: Record<string, Record<string, unknown>>;
+  schemas?: Record<string, unknown>;
+}
+
+export interface AdminExtension {
+  name?: string;
+  services?(ctx: AdminExtensionContext): AdminExtensionServices;
+  apiRoutes?(ctx: AdminExtensionContext): AdminRouteContribution[];
+  adminUiRoutes?(ctx: AdminExtensionContext): AdminRouteContribution[];
+  agentDetailCards?(ctx: AdminExtensionContext): AgentDetailCardSlot[];
+  backgroundPasses?(ctx: AdminExtensionContext): AdminBackgroundPass[];
+  openApi?(): AdminOpenApiContribution;
+}
+
+/** The order resolveAdminExtensions calls the context hooks in. */
+export const ADMIN_EXTENSION_HOOK_ORDER = [
+  "services",
+  "apiRoutes",
+  "adminUiRoutes",
+  "agentDetailCards",
+  "backgroundPasses",
+] as const;
+
+export interface ResolvedAdminExtensions {
+  apiDeps: Partial<AdminDeps>;
+  uiDeps: Partial<AdminUIDeps>;
+  apiRoutes: AdminRouteContribution[];
+  adminUiRoutes: AdminRouteContribution[];
+  agentDetailCards: AgentDetailCardSlot[];
+  backgroundPasses: AdminBackgroundPass[];
+}
+
+/**
+ * Calls every context hook once, hook by hook (ADMIN_EXTENSION_HOOK_ORDER),
+ * each across all extensions in order. Lists concatenate; service deps merge
+ * with later extensions winning.
+ */
+export function resolveAdminExtensions(
+  extensions: readonly AdminExtension[],
+  ctx: AdminExtensionContext,
+): ResolvedAdminExtensions {
+  const services = extensions.map((ext) => ext.services?.(ctx) ?? {});
+  const collect = <T>(hook: (ext: AdminExtension) => T[] | undefined): T[] =>
+    extensions.flatMap((ext) => hook(ext) ?? []);
+  const apiRoutes = collect((ext) => ext.apiRoutes?.(ctx));
+  const adminUiRoutes = collect((ext) => ext.adminUiRoutes?.(ctx));
+  const agentDetailCards = collect((ext) => ext.agentDetailCards?.(ctx));
+  const backgroundPasses = collect((ext) => ext.backgroundPasses?.(ctx));
+  return {
+    apiDeps: Object.assign({}, ...services.map((s) => s.api ?? {})),
+    uiDeps: Object.assign({}, ...services.map((s) => s.ui ?? {})),
+    apiRoutes,
+    adminUiRoutes,
+    agentDetailCards,
+    backgroundPasses,
+  };
+}
+
+/** Merges every extension's static OpenAPI contribution, in order. */
+export function collectOpenApiContributions(
+  extensions: readonly AdminExtension[],
+): Required<AdminOpenApiContribution> {
+  const paths: Record<string, Record<string, unknown>> = {};
+  const schemas: Record<string, unknown> = {};
+  for (const ext of extensions) {
+    const contribution = ext.openApi?.() ?? {};
+    for (const [path, methods] of Object.entries(contribution.paths ?? {})) {
+      paths[path] = { ...paths[path], ...methods };
+    }
+    Object.assign(schemas, contribution.schemas);
+  }
+  return { paths, schemas };
+}
+
+interface OpenApiDocLike {
+  paths?: Record<string, Record<string, unknown>>;
+  components?: { schemas?: Record<string, unknown> };
+}
+
+/**
+ * Folds a contribution into an OpenAPI document. An empty contribution returns
+ * the input itself, so the generated spec stays byte-identical. Paths merge at
+ * the method level (like the runtime/admin merge in generate-admin-spec.ts).
+ */
+export function applyOpenApiContributions<T extends OpenApiDocLike>(
+  doc: T,
+  contribution: AdminOpenApiContribution,
+): T {
+  const extraPaths = Object.entries(contribution.paths ?? {});
+  const extraSchemas = contribution.schemas ?? {};
+  if (extraPaths.length === 0 && Object.keys(extraSchemas).length === 0) {
+    return doc;
+  }
+  const paths = { ...(doc.paths ?? {}) };
+  for (const [path, methods] of extraPaths) {
+    paths[path] = { ...paths[path], ...methods };
+  }
+  return {
+    ...doc,
+    paths,
+    components: {
+      ...(doc.components ?? {}),
+      schemas: { ...(doc.components?.schemas ?? {}), ...extraSchemas },
+    },
+  };
+}
+
+/** Mounts each contribution on root, in order. */
+export function mountRouteContributions(
+  root: AnyHono,
+  routes: readonly AdminRouteContribution[],
+): void {
+  for (const { path, app } of routes) {
+    root.route(path, app);
+  }
+}
+
+export interface BackgroundPassRuntime {
+  schedule(fn: () => void, intervalMs: number): unknown;
+  log(message: string): void;
+  error(...args: unknown[]): void;
+}
+
+const defaultRuntime: BackgroundPassRuntime = {
+  schedule: (fn, intervalMs) => setInterval(fn, intervalMs),
+  log: (message) => console.log(message),
+  error: (...args) => console.error(...args),
+};
+
+/**
+ * Starts each pass on its own interval, same shape as the platform sweepers:
+ * a failing tick is logged with the pass's prefix and never throws.
+ */
+export function startBackgroundPasses(
+  passes: readonly AdminBackgroundPass[],
+  runtime: BackgroundPassRuntime = defaultRuntime,
+): void {
+  for (const pass of passes) {
+    runtime.schedule(() => {
+      pass
+        .tick()
+        .catch((err) => runtime.error(`${pass.logPrefix} tick error:`, err));
+    }, pass.intervalMs);
+    runtime.log(
+      `[admin] ${pass.name} started (interval: ${pass.intervalMs}ms)`,
+    );
+  }
+}
+
+/** Renders card slots in order; a throwing slot is logged and omitted. */
+export async function renderAgentDetailCards(
+  slots: readonly AgentDetailCardSlot[],
+  ctx: AgentDetailCardContext,
+): Promise<string[]> {
+  const rendered = await Promise.all(
+    slots.map((slot) =>
+      slot.render(ctx).catch((err) => {
+        console.error(
+          `[admin] agent detail card "${slot.name}" failed to render:`,
+          err,
+        );
+        return undefined;
+      }),
+    ),
+  );
+  return rendered.filter((html): html is string => html !== undefined);
+}

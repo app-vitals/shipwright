@@ -11762,3 +11762,27 @@ describe("renderNewLocalAgentPage — Anthropic federation (WIF-2.1)", () => {
     expect(html).not.toContain('name="anthropicApiKey"');
   });
 });
+
+// ─── renderAgentDetailPage — extension card slots (AEP-2.1) ──────────────────
+
+describe("renderAgentDetailPage — extension card slots", () => {
+  const render = (extensionCardsHtml?: string[]) =>
+    renderAgentDetailPage(AGENT, {}, [], [], [], [], [], USER_NAME, true, {
+      timezone: "UTC",
+      now: new Date("2025-01-15T00:00:00Z"),
+      ...(extensionCardsHtml ? { extensionCardsHtml } : {}),
+    });
+
+  test("no or empty extension cards renders the page byte-identically", () => {
+    expect(render([])).toBe(render());
+  });
+
+  test("extension cards render in order", () => {
+    const html = render([
+      '<div class="card">ext-one</div>',
+      '<div class="card">ext-two</div>',
+    ]);
+    expect(html).toContain("ext-one");
+    expect(html.indexOf("ext-one")).toBeLessThan(html.indexOf("ext-two"));
+  });
+});

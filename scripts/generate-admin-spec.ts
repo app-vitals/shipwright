@@ -8,7 +8,9 @@
  *   2. Rewrites the runtime app's Hono-style path params (`:id`) to OpenAPI
  *      style (`{id}`) and prefixes them with `/agents`.
  *   3. Merges both specs' paths and component schemas into a single document.
- *   4. Writes the result to admin/openapi.json.
+ *   4. Folds in the static OpenAPI contributions of the admin extensions
+ *      main.ts composes (AEP-2.1; none today, so the output is unchanged).
+ *   5. Writes the result to admin/openapi.json.
  *
  * Usage:
  *   bun run generate:admin-spec
@@ -16,9 +18,14 @@
 
 import { writeFileSync } from "node:fs";
 import { resolve } from "node:path";
+import {
+  applyOpenApiContributions,
+  collectOpenApiContributions,
+} from "../admin/src/admin-extension.ts";
 import { NoopAgentProvisioner } from "../admin/src/agent-provisioner.ts";
 import { createAdminApp, parseAdminApiKeys } from "../admin/src/agents-api.ts";
 import { createAgentRuntimeApp } from "../admin/src/api.ts";
+import { adminExtensions } from "../admin/src/main.ts";
 
 // ─── Stub deps — only route definitions matter for spec generation ────────────
 
@@ -149,7 +156,7 @@ for (const [path, def] of Object.entries(runtimeSpec.paths ?? {})) {
   }
 }
 
-const mergedSpec = {
+const platformSpec = {
   ...adminSpec,
   paths: mergedPaths,
   components: {
@@ -160,6 +167,11 @@ const mergedSpec = {
     },
   },
 };
+
+const mergedSpec = applyOpenApiContributions(
+  platformSpec,
+  collectOpenApiContributions(adminExtensions),
+);
 
 // ─── Write output ─────────────────────────────────────────────────────────────
 
