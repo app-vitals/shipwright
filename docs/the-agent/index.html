@@ -228,7 +228,7 @@ for the full environment variable reference.</p>
 <span class="line"><span style="color:var(--astro-code-token-function)">claude</span><span style="color:var(--astro-code-token-string)"> mcp</span><span style="color:var(--astro-code-token-string)"> add</span><span style="color:var(--astro-code-token-string)"> --transport</span><span style="color:var(--astro-code-token-string)"> http</span><span style="color:var(--astro-code-token-keyword)"> &lt;</span><span style="color:var(--astro-code-token-string)">nam</span><span style="color:var(--astro-code-foreground)">e</span><span style="color:var(--astro-code-token-keyword)">&gt;</span><span style="color:var(--astro-code-token-keyword)"> &lt;</span><span style="color:var(--astro-code-token-string)">ur</span><span style="color:var(--astro-code-foreground)">l</span><span style="color:var(--astro-code-token-keyword)">&gt;</span></span></code></pre>
 <p>This writes the registration into <code>~/.claude.json</code>. On a Shipwright agent, <code>~/.claude.json</code>
 is not a real file — it’s a symlink to <code>$AGENT_HOME/claude.json</code>, created by
-<code>ensureDotClaudeSymlink()</code> in <code>agent/src/setup.ts</code> at every agent startup. The same function
+<code>ensureDotClaudeSymlink()</code> in <code>agent/src/runtime/setup.ts</code> at every agent startup. The same function
 also symlinks <code>~/.claude</code> → <code>$AGENT_HOME/dot-claude</code>. Both live on the agent’s persistent
 volume (PVC), which survives pod restarts; the container’s ephemeral filesystem does not.</p>
 <p>This matters because <code>~/.claude.json</code> is where MCP server registrations live — <strong>outside</strong>
