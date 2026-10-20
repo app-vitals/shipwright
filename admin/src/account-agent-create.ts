@@ -10,8 +10,15 @@
 
 import type { CallerScope } from "./caller-scope.ts";
 
-/** The only agent type account users may create. */
-export const SELF_SERVE_AGENT_TYPE = "coding";
+/**
+ * The only agent type account users may create: SHIPWRIGHT_SELF_SERVE_AGENT_TYPE
+ * when set, else "coding".
+ */
+export function getSelfServeAgentType(
+  env: Record<string, string | undefined> = process.env,
+): string {
+  return env.SHIPWRIGHT_SELF_SERVE_AGENT_TYPE || "coding";
+}
 
 /** Account the caller may create agents in, or null when they have none. */
 export function accountIdFromScope(scope: CallerScope): string | null {

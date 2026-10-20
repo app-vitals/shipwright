@@ -11,6 +11,8 @@ import { describe, expect, it } from "bun:test";
 import {
   AgentTypeRegistry,
   DEFAULT_AGENT_TYPE_NAME,
+  resolveAgentTypesDir,
+  resolveDefaultAgentTypeName,
 } from "./agent-type-manifest-loader.ts";
 
 /** A minimal valid AgentType manifest YAML for a given type name. */
@@ -230,5 +232,33 @@ voice: true
     });
 
     expect(registry.listTypes()).toEqual([]);
+  });
+});
+
+describe("agent-types option resolution", () => {
+  it("defaults to coding and the repo-root agent-types/ with no env set", () => {
+    expect(resolveDefaultAgentTypeName({})).toBe("coding");
+    expect(resolveAgentTypesDir({})).toMatch(/agent-types$/);
+  });
+
+  it("honours SHIPWRIGHT_DEFAULT_AGENT_TYPE and SHIPWRIGHT_AGENT_TYPES_DIR", () => {
+    expect(
+      resolveDefaultAgentTypeName({ SHIPWRIGHT_DEFAULT_AGENT_TYPE: "base" }),
+    ).toBe("base");
+    expect(
+      resolveAgentTypesDir({ SHIPWRIGHT_AGENT_TYPES_DIR: "/tmp/types" }),
+    ).toBe("/tmp/types");
+  });
+
+  it("falls back to the configured defaultTypeName for an unknown type", () => {
+    const registry = new AgentTypeRegistry({
+      read: (name) => {
+        if (name === "base") return manifestYaml("base");
+        throw new Error("ENOENT");
+      },
+      warn: () => {},
+      defaultTypeName: "base",
+    });
+    expect(registry.getManifest("missing").metadata.name).toBe("base");
   });
 });
