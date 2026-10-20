@@ -209,6 +209,7 @@ To load additional context into a session, add `@docs/filename.md` entries here 
 - **docs/deploy-kubernetes-networking.md** — Kubernetes networking model: `networking.type` modes, exposing the task-store externally, and the opt-in chat and MCP server services — split out of docs/deploy-kubernetes.md to stay under the docs line-count threshold
 - **docs/deploy-kubernetes-providers.md** — per-provider Kubernetes deployment walkthroughs: Minikube (local), GKE (Gateway API + cert-manager), EKS (ALB), Traefik, and cloud-native (any cluster)
 - **docs/deploy-kubernetes-provisioning.md** — Kubernetes agent runtime provisioning model: RBAC, ServiceAccounts, the provisioner env contract, provisioning values, chat-service token provisioning, and the task-store claim TTL constraint — split out of docs/deploy-kubernetes.md to stay under the docs line-count threshold
+- **docs/anthropic-usage-by-agent.md** — IT runbook: split the Anthropic usage report by per-agent service account and map each `svac_…` ID to its agent name and owner
 - **docs/deploy-kubernetes-addons.md** — optional Kubernetes deploy add-ons: agent voice (STT/TTS), Web Push notifications, bringing your own PostgreSQL, and bundled ingress-controllers/cert-manager
 - **docs/helm-repo.md** — installing the published `shipwright` Helm chart, how chart publishing and version bumps are automated
 - **docs/quickstart.md** — local onboarding: metrics-only quickstart and the full dev stack (`task stack`)

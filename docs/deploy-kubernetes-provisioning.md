@@ -226,13 +226,51 @@ default `shared` mode renders none of this. Admin startup fails if the admin
 pod's own sign-in env (`ANTHROPIC_IDENTITY_TOKEN_FILE`,
 `ANTHROPIC_FEDERATION_RULE_ID`, `ANTHROPIC_ORGANIZATION_ID`) is missing.
 
+```yaml
+agent:
+  provisioning:
+    enabled: true
+    anthropicFederation:
+      enabled: true
+      identityMode: perAgent
+      organizationId: "<organization-id>"
+      issuerId: "<issuer-id>"          # this cluster's OIDC issuer in Anthropic
+      nameSuffix: ""                   # e.g. "staging"; ^[a-z0-9-]*$
+      workspaceId: ""                  # optional
+      adminFederation:
+        ruleId: "<bootstrap-rule-id>"
+        serviceAccountId: "<bootstrap-service-account-id>"
+      audience: https://api.anthropic.com
+      tokenExpirationSeconds: 600
+```
+
+##### Bootstrap rule
+
+Before enabling perAgent, an org admin does this one-time setup in Anthropic:
+
+1. Register this cluster's OIDC issuer. Its ID is `issuerId`.
+2. Create one Anthropic service account for the admin service. Its ID is
+   `adminFederation.serviceAccountId`.
+3. Create a federation rule bound to that service account, with the `org:admin`
+   scope, on that issuer. Its ID is `adminFederation.ruleId`. Its subject must
+   match exactly `system:serviceaccount:<release namespace>:<admin
+   ServiceAccount>`, where the admin ServiceAccount is
+   `admin.serviceAccount.name`, or the admin fullname when
+   `admin.serviceAccount.create` is true. Its audience is
+   `anthropicFederation.audience`.
+
+The admin pod gets a projected token with that audience and uses it to sign in
+to the Anthropic Admin API. That sign-in is what creates and archives the
+per-agent service accounts and federation rules. The per-agent rules have the
+`workspace:inference` scope only; the `org:admin` rule is used only by the admin
+pod. Treat the bootstrap rule as privileged and keep its subject exact.
+
 Provisioning a new agent in perAgent mode runs, in order:
 
 1. the PVC;
 2. a Kubernetes ServiceAccount with the same name as the agent's Deployment;
-3. an Anthropic service account named after the agent's owner (see the
-   identity name allocator: `jane.doe@example.com` becomes `jane-doe-a1`, plus
-   `nameSuffix`), added to `workspaceId` when one is set;
+3. an Anthropic service account named after the agent's owner (see
+   [Naming](#naming)), added to `workspaceId` when one is set;
 4. a federation rule with the same name, on this cluster's `issuerId`, that
    matches exactly the subject `system:serviceaccount:<agent namespace>:<sa>`
    and the agent token audience, with scope `workspace:inference` and a 600s
@@ -252,6 +290,29 @@ completed are undone on a best-effort basis, in reverse order: the Secret
 is never rolled back. An agent with no owner email fails with a clear error
 before anything is created.
 
+##### Naming
+
+The Anthropic service account and its federation rule share one name, saved as
+the agent's `anthropicIdentityName`. The name is built in this order:
+
+- the owner email's local part (before the last `@`), without any `+tag`,
+  lowercased, with each run of characters outside `[a-z0-9]` replaced by one
+  `-`, and leading and trailing `-` trimmed;
+- then `-a{n}`, where `n` is the next free number for that owner (the first
+  agent is `a1`, the second `a2`, and so on);
+- then `-<nameSuffix>` when `nameSuffix` is set.
+
+For example, `jane.doe+bot@example.com` becomes `jane-doe-a1`, or
+`jane-doe-a1-staging` with `nameSuffix: staging`. Names match `^[a-z0-9-]+$`,
+are at most 255 characters (the base is truncated to fit) and are unique.
+
+Set `nameSuffix` when several clusters share one Anthropic organization, so
+their names do not collide. The domain is dropped, so a name identifies the
+owner only loosely. For the exact owner, read the agent record (see the
+[IT runbook](./anthropic-usage-by-agent.md)).
+
+##### Migrating existing agents
+
 Existing agents are moved by reconcile. A full reconcile
 (`POST /agents/reconcile`) gives each existing agent that has an owner but no
 identity of its own the same identity steps as above, then patches its
@@ -270,9 +331,24 @@ recreated, updated and moved (`dryRun: true`). The startup reconcile is
 policy-only: it never creates identities on a boot, it only corrects the wiring
 of agents that already have one.
 
+To move a cluster from `shared` to `perAgent`:
+
+1. Do the [bootstrap setup](#bootstrap-rule).
+2. Run `helm upgrade` with `identityMode: perAgent` and the values above.
+3. Make sure every agent has an owner (`ownerEmail`; `GET /agents/:id` shows
+   it). Agents without one are listed in `noOwner`.
+4. Run `POST /agents/reconcile?dryRun=true` and review the result.
+5. Run `POST /agents/reconcile`. Check `migrated` and `noOwner`. Set owners and
+   run reconcile again until `noOwner` is empty.
+6. Once every agent has moved, no agent uses the shared federation rule or the
+   shared service account. Archive them in Anthropic.
+
 Deleting an agent removes its Anthropic identity as part of
 `DELETE /agents/:id` (see above). If that removal fails, the agent row is kept
 and the checklist names the identity pieces still live.
+
+To attribute Anthropic usage to agents and owners, see
+[Anthropic usage by agent](./anthropic-usage-by-agent.md).
 
 ### Chat service provisioning (opt-in)
 

@@ -1,0 +1,110 @@
+# Anthropic usage by agent (IT runbook)
+
+> In perAgent identity mode each agent calls Anthropic as its own service
+> account (`svac_…`), so the organization's usage report can be split per agent
+> and then per owner. See [perAgent identity mode](./deploy-kubernetes-provisioning.md#peragent-identity-mode-opt-in).
+
+## Before you start
+
+- An Anthropic Admin API key (`sk-ant-admin…`) with access to the organization.
+  Export it as `ANTHROPIC_ADMIN_KEY`.
+- `jq`.
+- For exact owners and agent names: a Shipwright admin key with scope `*`, from
+  `SHIPWRIGHT_ADMIN_API_KEYS`. Export the value as `SHIPWRIGHT_ADMIN_API_KEY`,
+  and the admin API base URL as `SHIPWRIGHT_API_URL`.
+
+Usage made in `shared` mode, or before an agent was migrated, is all recorded
+on the shared service account. It maps to the shared account's name, not to an
+owner.
+
+## 1. Pull the usage report grouped by service account
+
+```bash
+# Monthly usage report, one row per service account and day
+curl -s "https://api.anthropic.com/v1/organizations/usage_report/messages?starting_at=2026-10-01T00:00:00Z&ending_at=2026-11-01T00:00:00Z&bucket_width=1d&group_by[]=service_account_id" \
+  -H "x-api-key: $ANTHROPIC_ADMIN_KEY" \
+  -H "anthropic-version: 2023-06-01" > usage.json
+```
+
+The response is paged. If `has_more` is true, fetch the next page with
+`page=<next_page>` added to the query, and merge the `data` arrays. Each bucket
+has a `results[]` list. Each row carries `service_account_id` and token counts:
+`uncached_input_tokens`, `cache_read_input_tokens`, `output_tokens`, and the
+cache creation fields. Add `group_by[]=model` to the query for a split per
+model.
+
+Total the tokens per service account across all buckets:
+
+```bash
+# Sum token counts per service_account_id across every bucket
+jq '[.data[].results[]] | group_by(.service_account_id) | map({service_account_id: .[0].service_account_id, input: (map(.uncached_input_tokens) | add), cache_read: (map(.cache_read_input_tokens) | add), output: (map(.output_tokens) | add)})' usage.json > usage-by-svac.json
+```
+
+Keep the URL in double quotes. In zsh, unquoted `[]` is treated as a glob.
+
+## 2. Map each svac_ ID to its name
+
+List the service accounts:
+
+```bash
+# List every service account in the organization, archived ones included
+curl -s "https://api.anthropic.com/v1/organizations/service_accounts?limit=100" \
+  -H "x-api-key: $ANTHROPIC_ADMIN_KEY" \
+  -H "anthropic-version: 2023-06-01" > service-accounts.json
+```
+
+This list is paged too. Pass `page=<next_page>` until `next_page` is null. Each
+entry has `id` (`svac_…`), `name` and `archived_at`. Keep archived accounts in
+the join. A deleted agent's account is archived, not removed, so its past usage
+still maps to a name.
+
+Join the two files:
+
+```bash
+# Attach the account name and archived_at to each usage row
+jq -n --slurpfile u usage-by-svac.json --slurpfile s service-accounts.json '($s[0].data | map({(.id): .}) | add) as $by | $u[0] | map(. + {name: ($by[.service_account_id].name // "unknown"), archived_at: $by[.service_account_id].archived_at})'
+```
+
+A row named `unknown` has a `service_account_id` that is not in the list. A row
+with a null `service_account_id` is API-key traffic, not federation (see
+Troubleshooting).
+
+## 3. Map each name to its owner
+
+The agent's name is built from the owner's email (see
+[Naming](./deploy-kubernetes-provisioning.md#naming)). For example,
+`jane-doe-a2-staging` is the second agent of the owner `jane.doe` on the
+`staging` cluster. That is enough for a quick read.
+
+For the exact owner and agent, look it up in Shipwright. `GET /agents` returns
+a bare array of `{id, name, selfHosted, typeName}`. `GET /agents/:id` adds
+`ownerEmail`, `anthropicIdentityName`, `anthropicServiceAccountId` and
+`anthropicFederationRuleId`. The list route omits these fields, so read each
+agent:
+
+```bash
+# Export one line per agent with its owner and Anthropic identity
+curl -s -H "Authorization: Bearer $SHIPWRIGHT_ADMIN_API_KEY" "$SHIPWRIGHT_API_URL/agents" | jq -r '.[].id' | while read -r id; do
+  curl -s -H "Authorization: Bearer $SHIPWRIGHT_ADMIN_API_KEY" "$SHIPWRIGHT_API_URL/agents/$id" \
+    | jq -c '{id, name, ownerEmail, anthropicIdentityName, anthropicServiceAccountId}'
+done > agents.jsonl
+```
+
+Then join `agents.jsonl` to the output of step 2 on `anthropicServiceAccountId`
+(or on `anthropicIdentityName`).
+
+A deleted agent's row is gone, so its `svac_…` does not appear in `agents.jsonl`.
+Fall back to the name from step 2 for those rows.
+
+A service account that matches no agent, and whose name does not fit the
+`<owner>-a<n>` pattern, is probably the shared account or the admin bootstrap
+account. Compare its ID with `adminFederation.serviceAccountId` and with the
+shared `serviceAccountId` in the chart values.
+
+## Troubleshooting
+
+- Usage under a null or missing `service_account_id` is API-key traffic, not
+  federation. It is not attributable to an agent.
+- An agent whose usage still lands on the shared service account has not been
+  migrated yet. Run reconcile (see
+  [Migrating existing agents](./deploy-kubernetes-provisioning.md#migrating-existing-agents)).
