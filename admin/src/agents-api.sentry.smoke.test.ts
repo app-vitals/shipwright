@@ -238,10 +238,13 @@ function makeBaseDeps(
       agentEnv: { findMany: async () => [] },
     } as unknown as AdminDeps["prisma"],
     provisioner: new NoopProvisioner(),
-    taskStore: {
-      listTokensForAgent: async () => [],
-      revokeToken: async () => {},
-    },
+    serviceIntegrations: [
+      {
+        name: "task-store",
+        listTokensForAgent: async () => [],
+        revokeToken: async () => {},
+      },
+    ],
     chatService: {
       listTokensForAgent: async () => [],
       revokeToken: async () => {},

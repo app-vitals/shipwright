@@ -35,7 +35,6 @@ import { createAdminApp } from "./agents-api.ts";
 import { NoopChatServiceProvisioningClient } from "./chat-service-provisioning-client.ts";
 import { DevTaskAdherenceService } from "./dev-task-adherence.ts";
 import { createAdminPrismaClient } from "./prisma-client.ts";
-import { NoopTaskStoreProvisioningClient } from "./task-store-provisioning-client.ts";
 import { makeTokenCrypto } from "./token-crypto.ts";
 
 const TEST_DB = process.env.DATABASE_URL_ADMIN_TEST;
@@ -163,7 +162,13 @@ function makeDeps(
     ),
     prisma,
     provisioner,
-    taskStore: new NoopTaskStoreProvisioningClient(),
+    serviceIntegrations: [
+      {
+        name: "task-store",
+        listTokensForAgent: async () => [],
+        revokeToken: async () => {},
+      },
+    ],
     chatService: new NoopChatServiceProvisioningClient(),
     slack: {
       deleteApp: async () => {},

@@ -151,10 +151,13 @@ function buildComposedApp() {
       deprovision: notImplemented,
       reconcile: notImplemented,
     },
-    taskStore: {
-      listTokensForAgent: notImplemented,
-      revokeToken: notImplemented,
-    },
+    serviceIntegrations: [
+      {
+        name: "task-store",
+        listTokensForAgent: notImplemented,
+        revokeToken: notImplemented,
+      },
+    ],
     chatService: {
       listTokensForAgent: notImplemented,
       revokeToken: notImplemented,
@@ -230,10 +233,13 @@ function buildComposedApp() {
       deprovision: notImplemented,
       reconcile: notImplemented,
     },
-    taskStore: {
-      listTokensForAgent: notImplemented,
-      revokeToken: notImplemented,
-    },
+    serviceIntegrations: [
+      {
+        name: "task-store",
+        listTokensForAgent: notImplemented,
+        revokeToken: notImplemented,
+      },
+    ],
     chatService: {
       listTokensForAgent: notImplemented,
       revokeToken: notImplemented,

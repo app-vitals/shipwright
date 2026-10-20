@@ -196,10 +196,13 @@ describeOrSkip(
             throw new Error("not implemented");
           },
         } as never,
-        taskStore: {
-          listTokensForAgent: async () => [],
-          revokeToken: async () => {},
-        },
+        serviceIntegrations: [
+          {
+            name: "task-store",
+            listTokensForAgent: async () => [],
+            revokeToken: async () => {},
+          },
+        ],
         chatService: {
           listTokensForAgent: async () => [],
           revokeToken: async () => {},

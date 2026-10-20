@@ -30,7 +30,7 @@ describe("admin-boot.ts boot sequence", () => {
       "createAdminPrismaClient(",
       "makeTokenCrypto()",
       "new AgentService(prisma)",
-      "buildProvisioner(process.env, agentTokenService, prisma)",
+      "const provisioner = buildProvisioner(",
       "const resolvedExtensions = resolveAdminExtensions(",
       'root.get("/health"',
       'root.route("/agents", runtimeApp)',

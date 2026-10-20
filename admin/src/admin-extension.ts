@@ -11,6 +11,11 @@
  * platform services exist and before any route is mounted, calling each hook
  * across all extensions in ADMIN_EXTENSION_HOOK_ORDER:
  *
+ *   serviceIntegrations(env) — optional per-agent service integrations
+ *                            (service-integration.ts). Unlike the hooks below
+ *                            it takes only env and is resolved BEFORE the
+ *                            provisioner is built, since the provisioner and
+ *                            agent deletion consume it
  *   services(ctx)          — extra service deps spread into createAdminApp /
  *                            createAdminUIApp (later extensions win)
  *   apiRoutes(ctx)         — API sub-apps, mounted after the platform APIs and
@@ -39,6 +44,7 @@ import type { AgentTokenService } from "./agent-tokens.ts";
 import type { AgentService } from "./agents.ts";
 import type { AdminDeps, parseAdminApiKeys } from "./agents-api.ts";
 import type { createCallerScopeResolver } from "./caller-scope.ts";
+import type { ServiceIntegration } from "./service-integration.ts";
 
 /** The platform services an extension may build on. */
 export interface AdminPlatformServices {
@@ -110,6 +116,8 @@ export interface AdminOpenApiContribution {
 
 export interface AdminExtension {
   name?: string;
+  /** See the header: env-only, resolved before the provisioner is built. */
+  serviceIntegrations?(env: NodeJS.ProcessEnv): ServiceIntegration[];
   services?(ctx: AdminExtensionContext): AdminExtensionServices;
   apiRoutes?(ctx: AdminExtensionContext): AdminRouteContribution[];
   adminUiRoutes?(ctx: AdminExtensionContext): AdminRouteContribution[];
@@ -209,6 +217,17 @@ export function applyOpenApiContributions<T extends OpenApiDocLike>(
       schemas: { ...(doc.components?.schemas ?? {}), ...extraSchemas },
     },
   };
+}
+
+/**
+ * Collects every extension's service integrations, in extension order. Resolved
+ * before the provisioner exists, so it sees only the environment.
+ */
+export function collectServiceIntegrations(
+  extensions: readonly AdminExtension[],
+  env: NodeJS.ProcessEnv,
+): ServiceIntegration[] {
+  return extensions.flatMap((ext) => ext.serviceIntegrations?.(env) ?? []);
 }
 
 /** Mounts each contribution on root, in order. */

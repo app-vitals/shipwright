@@ -7,6 +7,7 @@ import {
   type AdminExtensionContext,
   applyOpenApiContributions,
   collectOpenApiContributions,
+  collectServiceIntegrations,
   mountRouteContributions,
   renderAgentDetailCards,
   resolveAdminExtensions,
@@ -140,6 +141,42 @@ describe("resolveAdminExtensions", () => {
     );
     expect(resolved.apiDeps.devTaskAdherenceService).toBe(second);
     expect(resolved.uiDeps).toEqual({ timezone: "UTC" });
+  });
+});
+
+describe("collectServiceIntegrations", () => {
+  const svc = (name: string) => ({
+    name,
+    tokenEnv: `${name}_T`,
+    urlEnv: `${name}_U`,
+    secretKey: name,
+    mintToken: async () => ({ id: "", rawToken: "" }),
+    revokeToken: async () => {},
+    listTokensForAgent: async () => [],
+  });
+
+  it("is empty with no extensions or hookless ones", () => {
+    expect(collectServiceIntegrations([], {})).toEqual([]);
+    expect(collectServiceIntegrations([{}, { name: "x" }], {})).toEqual([]);
+  });
+
+  it("concatenates in extension order and hands env to each hook", () => {
+    const seen: NodeJS.ProcessEnv[] = [];
+    const env = { A: "1" };
+    const out = collectServiceIntegrations(
+      [
+        {
+          serviceIntegrations: (e) => {
+            seen.push(e);
+            return [svc("a"), svc("b")];
+          },
+        },
+        { serviceIntegrations: () => [svc("c")] },
+      ],
+      env,
+    );
+    expect(out.map((i) => i.name)).toEqual(["a", "b", "c"]);
+    expect(seen).toEqual([env]);
   });
 });
 

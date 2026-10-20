@@ -7,8 +7,8 @@
 
 import { describe, expect, it } from "bun:test";
 import { verify } from "hono/jwt";
-import { createAdminUIApp } from "./admin-ui.ts";
 import type { AdminUIDeps } from "./admin-ui.ts";
+import { createAdminUIApp } from "./admin-ui.ts";
 import type { GoogleAuthClient } from "./google-auth-client.ts";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -245,10 +245,13 @@ function makeMockDeps(overrides?: Partial<AdminUIDeps>): AdminUIDeps {
         failed: [],
       }),
     },
-    taskStore: {
-      listTokensForAgent: async () => [],
-      revokeToken: async () => {},
-    },
+    serviceIntegrations: [
+      {
+        name: "task-store",
+        listTokensForAgent: async () => [],
+        revokeToken: async () => {},
+      },
+    ],
     chatService: {
       listTokensForAgent: async () => [],
       revokeToken: async () => {},

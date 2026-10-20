@@ -19,8 +19,8 @@
 
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import type { PrismaClient } from "../prisma/client/client.ts";
-import { deleteAgentFully } from "./agent-deletion.ts";
 import { AgentCronJobService } from "./agent-cron-jobs.ts";
+import { deleteAgentFully } from "./agent-deletion.ts";
 import { AgentEnvService } from "./agent-envs.ts";
 import { AgentMemberService } from "./agent-members.ts";
 import { AgentPluginService } from "./agent-plugins.ts";
@@ -28,8 +28,8 @@ import type { AgentProvisioner, ProvisionResult } from "./agent-provisioner.ts";
 import { AgentToolService } from "./agent-tools.ts";
 import type { AgentTypeManifestResolver } from "./agent-type-manifest-loader.ts";
 import type { AgentTypeManifest } from "./agent-type-registry.ts";
-import { AgentService, createAgent } from "./agents.ts";
 import type { CreateAgentDeps } from "./agents.ts";
+import { AgentService, createAgent } from "./agents.ts";
 import { createAdminPrismaClient } from "./prisma-client.ts";
 import { makeTokenCrypto } from "./token-crypto.ts";
 
@@ -472,10 +472,13 @@ describeOrSkip("createAgent() — integration (real Postgres)", () => {
       const deleted = await deleteAgentFully(first.agent.id, {
         prisma,
         provisioner: { deprovision: async () => {} },
-        taskStore: {
-          listTokensForAgent: async () => [],
-          revokeToken: async () => {},
-        },
+        serviceIntegrations: [
+          {
+            name: "task-store",
+            listTokensForAgent: async () => [],
+            revokeToken: async () => {},
+          },
+        ],
         chatService: {
           listTokensForAgent: async () => [],
           revokeToken: async () => {},

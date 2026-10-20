@@ -229,12 +229,13 @@ export interface AdminDeps {
    * Cleanup deps for the full delete-agent orchestration (DELETE /agents/:id
    * → deleteAgentFully()). Matches DeleteAgentFullyDeps's shapes exactly so
    * this app can pass them straight through. Production wiring in main.ts
-   * defaults taskStore/chatService to no-op clients when their respective
+   * defaults chatService to a no-op client and passes the extension-registered
+   * serviceIntegrations (task-store: a no-op client) when their respective when their respective
    * URL/token env vars are unset (independent of SHIPWRIGHT_K8S_PROVISIONING),
    * so this stays required rather than optional — there is always a valid
    * (possibly no-op) value to inject.
    */
-  taskStore: DeleteAgentFullyDeps["taskStore"];
+  serviceIntegrations: DeleteAgentFullyDeps["serviceIntegrations"];
   chatService: DeleteAgentFullyDeps["chatService"];
   slack: DeleteAgentFullyDeps["slack"];
   decrypt: DeleteAgentFullyDeps["decrypt"];
@@ -1407,7 +1408,7 @@ export function createAdminApp(deps: AdminDeps): OpenAPIHono<AdminAuthEnv> {
     agentGitHubInstallationsService,
     prisma,
     provisioner,
-    taskStore,
+    serviceIntegrations,
     chatService,
     slack,
     decrypt,
@@ -1681,7 +1682,14 @@ export function createAdminApp(deps: AdminDeps): OpenAPIHono<AdminAuthEnv> {
     // unexpected error, which should propagate like any other ApiError.
     const result = await deleteAgentFully(
       agentId,
-      { prisma, provisioner, taskStore, chatService, slack, decrypt },
+      {
+        prisma,
+        provisioner,
+        serviceIntegrations,
+        chatService,
+        slack,
+        decrypt,
+      },
       { xoxpToken: body?.xoxpToken },
     );
 

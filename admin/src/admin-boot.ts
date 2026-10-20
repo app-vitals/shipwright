@@ -60,6 +60,7 @@ import {
 import {
   type AdminExtension,
   type AdminExtensionContext,
+  collectServiceIntegrations,
   mountRouteContributions,
   resolveAdminExtensions,
   startBackgroundPasses,
@@ -184,8 +185,21 @@ export async function startAdmin(
     prisma,
   );
 
+  // Extension-registered service integrations (task-store, via the coding
+  // extension): env-only, so resolved before the provisioner that mints their
+  // tokens and the agent deletion that revokes them.
+  const serviceIntegrations = collectServiceIntegrations(
+    extensions,
+    process.env,
+  );
+
   // Real K8s provisioner when SHIPWRIGHT_K8S_PROVISIONING=enabled, else Noop.
-  const provisioner = buildProvisioner(process.env, agentTokenService, prisma);
+  const provisioner = buildProvisioner(
+    process.env,
+    agentTokenService,
+    prisma,
+    serviceIntegrations,
+  );
 
   // Read config values at call time (no module-level env reads)
   const sessionSecret = process.env.SHIPWRIGHT_SESSION_SECRET ?? "";
@@ -237,12 +251,13 @@ export async function startAdmin(
   const slackClient = new HttpSlackProvisioningClient();
   const githubAppClient = new HttpGithubAppProvisioningClient();
 
-  // Task-store + chat-service clients for deleteAgentFully() cleanup, shared
-  // by both delete entry points (DELETE /agents/:id and the admin-ui danger
-  // zone) — independent of SHIPWRIGHT_K8S_PROVISIONING (see buildDeletionClients
-  // doc comment).
-  const { taskStore: deletionTaskStore, chatService: deletionChatService } =
-    buildDeletionClients(process.env);
+  // Chat-service client for deleteAgentFully() cleanup, shared by both delete
+  // entry points (DELETE /agents/:id and the admin-ui danger zone) —
+  // independent of SHIPWRIGHT_K8S_PROVISIONING (see buildDeletionClients doc
+  // comment). Extension service integrations are cleaned up before it.
+  const { chatService: deletionChatService } = buildDeletionClients(
+    process.env,
+  );
 
   // AEP-2.1: resolve the extensions once, after every platform service they
   // may build on exists and before any route is mounted. With no extensions
@@ -351,7 +366,7 @@ export async function startAdmin(
     agentGitHubInstallationsService,
     prisma,
     provisioner,
-    taskStore: deletionTaskStore,
+    serviceIntegrations,
     chatService: deletionChatService,
     slack: slackClient,
     decrypt: crypto.decrypt,
@@ -450,7 +465,7 @@ export async function startAdmin(
     agentService,
     provisioner,
     anthropicFederationEnabled,
-    taskStore: deletionTaskStore,
+    serviceIntegrations,
     chatService: deletionChatService,
     slack: slackClient,
     decrypt: crypto.decrypt,

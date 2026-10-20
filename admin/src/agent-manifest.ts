@@ -18,6 +18,7 @@ import type {
   KubernetesPvc,
   KubernetesSecret,
 } from "./kubernetes-client.ts";
+import type { ServiceEnvSpec } from "./service-integration.ts";
 
 // ─── Constants ──────────────────────────────────────────────────────────────
 
@@ -284,20 +285,16 @@ export interface AgentDeploymentOpts {
    */
   voice?: AgentVoiceEnv;
   /**
-   * When set, inject SHIPWRIGHT_TASK_STORE_TOKEN (via secretKeyRef from the
-   * agent Secret) and SHIPWRIGHT_TASK_STORE_URL (as a plain value) into the
-   * agent Deployment. Placed after the base vars and before voice env vars.
+   * Optional service integrations (see service-integration.ts), in order. Each
+   * entry with a `url` injects its `tokenEnv` (secretKeyRef from the agent
+   * Secret, key `secretKey`) then its `urlEnv` (plain value). Placed after the
+   * base vars and before the built-in chat-service env vars.
    */
-  taskStoreUrl?: string;
-  /**
-   * Key within the agent Secret under which the task-store token is stored.
-   * Defaults to "task-store-token".
-   */
-  taskStoreTokenSecretKey?: string;
+  serviceIntegrations?: ServiceEnvSpec[];
   /**
    * When set, inject SHIPWRIGHT_CHAT_SERVICE_TOKEN (via secretKeyRef from the
    * agent Secret) and SHIPWRIGHT_CHAT_SERVICE_URL (as a plain value) into the
-   * agent Deployment. Placed after task-store env vars and before voice env vars.
+   * agent Deployment. Placed after the service-integration env vars and before voice env vars.
    */
   chatServiceUrl?: string;
   /**
@@ -411,26 +408,26 @@ function voiceEnvEntries(
 }
 
 /**
- * Build task-store env entries when taskStoreUrl is configured. Returns two
- * entries: SHIPWRIGHT_TASK_STORE_TOKEN (secretKeyRef from the agent Secret)
- * and SHIPWRIGHT_TASK_STORE_URL (plain value). Returns an empty array when
- * taskStoreUrl is absent (task-store wiring disabled).
+ * Build env entries for the optional service integrations, in list order. Each
+ * configured integration (url set) yields two entries: its token env
+ * (secretKeyRef from the agent Secret) then its URL env (plain value).
+ * Unconfigured integrations yield nothing.
  */
-function taskStoreEnvEntries(opts: AgentDeploymentOpts): KubernetesEnvVar[] {
-  if (!opts.taskStoreUrl) return [];
-  const tsKey = opts.taskStoreTokenSecretKey ?? "task-store-token";
-  return [
-    {
-      name: "SHIPWRIGHT_TASK_STORE_TOKEN",
-      valueFrom: {
-        secretKeyRef: { name: opts.secretName, key: tsKey },
+function serviceIntegrationEnvEntries(
+  opts: AgentDeploymentOpts,
+): KubernetesEnvVar[] {
+  return (opts.serviceIntegrations ?? []).flatMap((svc) => {
+    if (!svc.url) return [];
+    return [
+      {
+        name: svc.tokenEnv,
+        valueFrom: {
+          secretKeyRef: { name: opts.secretName, key: svc.secretKey },
+        },
       },
-    },
-    {
-      name: "SHIPWRIGHT_TASK_STORE_URL",
-      value: opts.taskStoreUrl,
-    },
-  ];
+      { name: svc.urlEnv, value: svc.url },
+    ];
+  });
 }
 
 /**
@@ -578,10 +575,11 @@ export function buildAgentDeploymentManifest(
                 // Route repo clones and worktrees to the PVC (see constants).
                 { name: "SHIPWRIGHT_REPO_DIR", value: AGENT_REPO_DIR },
                 { name: "SHIPWRIGHT_WORKTREE_DIR", value: AGENT_WORKTREE_DIR },
-                // Task-store env — injected after the base vars when task-store
-                // is configured; omitted entirely when taskStoreUrl is absent.
-                ...taskStoreEnvEntries(opts),
-                // Chat-service env — injected after task-store vars when chat
+                // Service-integration env (e.g. task-store, registered by the
+                // coding extension) — injected after the base vars for each
+                // configured integration; omitted entirely when none are.
+                ...serviceIntegrationEnvEntries(opts),
+                // Chat-service env — injected after integration vars when chat
                 // service is configured; omitted entirely when chatServiceUrl is absent.
                 ...chatServiceEnvEntries(opts),
                 // Voice (STT/TTS) env — appended only for the keys that are set

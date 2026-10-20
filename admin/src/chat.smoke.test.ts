@@ -398,10 +398,13 @@ function makeBaseDeps(overrides?: Partial<AdminUIDeps>): AdminUIDeps {
         updated: [],
       }),
     },
-    taskStore: {
-      listTokensForAgent: async () => [],
-      revokeToken: async () => {},
-    },
+    serviceIntegrations: [
+      {
+        name: "task-store",
+        listTokensForAgent: async () => [],
+        revokeToken: async () => {},
+      },
+    ],
     chatService: {
       listTokensForAgent: async () => [],
       revokeToken: async () => {},
