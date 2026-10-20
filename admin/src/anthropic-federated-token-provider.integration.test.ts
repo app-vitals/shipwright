@@ -2,7 +2,7 @@
  * admin/src/anthropic-federated-token-provider.integration.test.ts
  * FederatedTokenProvider against the FakeAnthropicTokenExchange test double
  * (POST /v1/oauth/token is not in the Anthropic OpenAPI spec, so there is no
- * spec-validated cassette for it — see anthropic-identity-client.fixtures.ts).
+ * spec-validated recorded fixture for it — see anthropic-identity-client.fixtures.ts).
  * The projected token is a real temp file; time is an injected Clock.
  */
 

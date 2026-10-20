@@ -2,7 +2,7 @@
 /**
  * scripts/refresh-anthropic-openapi-spec.ts
  * Refresh the vendored Anthropic OpenAPI spec used to validate the Anthropic
- * identity client's test cassettes.
+ * identity client's recorded fixture doubles.
  *
  * Downloads scripts/mock-spec.json.gz from anthropics/anthropic-sdk-typescript
  * at the git tag matching the exact @anthropic-ai/sdk version in

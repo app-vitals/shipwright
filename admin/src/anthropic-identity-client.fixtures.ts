@@ -3,13 +3,13 @@
  * Test support for the Anthropic identity client (never imported by production
  * code):
  *
- *   - the recorded cassette loader and a replaying `fetch` double that asserts
+ *   - the recorded fixture loader and a replaying `fetch` double that asserts
  *     every outgoing request matches the next recorded interaction, and
  *   - `FakeAnthropicTokenExchange`, a test double for POST /v1/oauth/token.
  *
  * KNOWN GAP: POST /v1/oauth/token is not part of the Anthropic OpenAPI spec
  * (anthropics/anthropic-sdk-typescript scripts/mock-spec.json.gz), so the token
- * exchange cannot be cassette-validated against it. The fake below mirrors the
+ * exchange cannot be validated as a recorded fixture against it. The fake below mirrors the
  * wire format the Anthropic SDK itself sends (RFC 7523 jwt-bearer grant) and is
  * the only coverage for that call. It is documented in
  * docs/test-readiness/test-system.md.
@@ -17,36 +17,38 @@
 
 import { readFileSync } from "node:fs";
 
-// ─── Cassette ───────────────────────────────────────────────────────────────
+// ─── Recorded fixtures ───────────────────────────────────────────────────────
 
-export interface CassetteRequest {
+export interface RecordedRequest {
   method: string;
   path: string;
   query?: Record<string, string>;
   body?: unknown;
 }
 
-export interface CassetteResponse {
+export interface RecordedResponse {
   status: number;
   body: unknown;
 }
 
-export interface CassetteInteraction {
-  request: CassetteRequest;
-  response: CassetteResponse;
+export interface RecordedInteraction {
+  request: RecordedRequest;
+  response: RecordedResponse;
 }
 
-export interface AnthropicCassette {
-  scenarios: Record<string, CassetteInteraction[]>;
+export interface AnthropicRecordedFixtures {
+  scenarios: Record<string, RecordedInteraction[]>;
 }
 
-export const CASSETTE_PATH = new URL(
-  "./fixtures/anthropic-identity-cassette.json",
+export const RECORDED_FIXTURES_PATH = new URL(
+  "./fixtures/anthropic-identity-recorded-fixtures.json",
   import.meta.url,
 ).pathname;
 
-export function loadCassette(): AnthropicCassette {
-  return JSON.parse(readFileSync(CASSETTE_PATH, "utf-8")) as AnthropicCassette;
+export function loadRecordedFixtures(): AnthropicRecordedFixtures {
+  return JSON.parse(
+    readFileSync(RECORDED_FIXTURES_PATH, "utf-8"),
+  ) as AnthropicRecordedFixtures;
 }
 
 export interface SeenRequest {
@@ -65,7 +67,7 @@ export function asFetch(
 
 export const TOKEN_EXCHANGE_PATH = "/v1/oauth/token";
 
-export interface CassetteFetch {
+export interface RecordedFixtureFetch {
   fetchFn: typeof fetch;
   /** Every request seen by the double, including token exchanges. */
   seen: SeenRequest[];
@@ -85,18 +87,18 @@ async function readBody(input: RequestInfo | URL, init?: RequestInit) {
 }
 
 /**
- * Build an injected `fetch` that replays the interactions of one cassette
+ * Build an injected `fetch` that replays the interactions of one recorded fixture
  * scenario in order, throwing if a request deviates from the recording (method,
  * path, query or JSON body). Requests to the token endpoint are routed to
- * `tokenExchange` instead of the cassette.
+ * `tokenExchange` instead of the recorded fixtures.
  */
-export function cassetteFetch(
+export function recordedFixtureFetch(
   scenario: string,
   opts: { tokenExchange?: FakeAnthropicTokenExchange } = {},
-): CassetteFetch {
-  const interactions = loadCassette().scenarios[scenario];
+): RecordedFixtureFetch {
+  const interactions = loadRecordedFixtures().scenarios[scenario];
   if (!interactions)
-    throw new Error(`cassette scenario not found: ${scenario}`);
+    throw new Error(`recorded fixture scenario not found: ${scenario}`);
   const seen: SeenRequest[] = [];
   let cursor = 0;
 
@@ -124,24 +126,24 @@ export function cassetteFetch(
     const next = interactions[cursor++];
     if (!next) {
       throw new Error(
-        `cassette ${scenario}: unexpected extra request ${method} ${url.pathname}`,
+        `recorded fixture ${scenario}: unexpected extra request ${method} ${url.pathname}`,
       );
     }
     const expected = next.request;
     if (method !== expected.method || url.pathname !== expected.path) {
       throw new Error(
-        `cassette ${scenario}: expected ${expected.method} ${expected.path}, got ${method} ${url.pathname}`,
+        `recorded fixture ${scenario}: expected ${expected.method} ${expected.path}, got ${method} ${url.pathname}`,
       );
     }
     const query = Object.fromEntries(url.searchParams.entries());
     if (!Bun.deepEquals(query, expected.query ?? {})) {
       throw new Error(
-        `cassette ${scenario}: query mismatch, expected ${JSON.stringify(expected.query ?? {})}, got ${JSON.stringify(query)}`,
+        `recorded fixture ${scenario}: query mismatch, expected ${JSON.stringify(expected.query ?? {})}, got ${JSON.stringify(query)}`,
       );
     }
     if (!Bun.deepEquals(body, expected.body)) {
       throw new Error(
-        `cassette ${scenario}: body mismatch for ${method} ${url.pathname}`,
+        `recorded fixture ${scenario}: body mismatch for ${method} ${url.pathname}`,
       );
     }
     return new Response(JSON.stringify(next.response.body), {

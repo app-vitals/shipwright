@@ -1,5 +1,5 @@
 {
-  "_comment": "Recorded-style cassette for HttpAnthropicIdentityClient. Hand-authored with synthetic IDs and validated against the pinned Anthropic OpenAPI spec by anthropic-identity-cassette-spec.integration.test.ts. POST /v1/oauth/token is NOT in the spec and is deliberately absent here (see anthropic-identity-client.fixtures.ts).",
+  "_comment": "Recorded fixture doubles for HttpAnthropicIdentityClient. Hand-authored with synthetic IDs and validated against the pinned Anthropic OpenAPI spec by anthropic-identity-fixture-spec.integration.test.ts. POST /v1/oauth/token is NOT in the spec and is deliberately absent here (see anthropic-identity-client.fixtures.ts).",
   "scenarios": {
     "createServiceAccount_success": [
       {

@@ -20,7 +20,7 @@
  *
  * Auth: the admin pod signs in by federation (FederatedTokenProvider); the
  * exchanged access token is sent as a bearer token. The SDK is built with the
- * injected `fetchFn`, so tests replay recorded cassettes with no global
+ * injected `fetchFn`, so tests replay recorded fixtures with no global
  * override.
  *
  * Trust boundary: every response body is parsed with zod before any field is
@@ -201,7 +201,7 @@ const PAGE_SIZE = 100;
 const DEFAULT_TIMEOUT_MS = 30_000;
 
 export interface HttpAnthropicIdentityClientOptions {
-  /** Injected fetch; used for every API call (tests replay cassettes). */
+  /** Injected fetch; used for every API call (tests replay recorded fixtures). */
   fetchFn: typeof fetch;
   tokenProvider: AnthropicAccessTokenProvider;
   baseUrl?: string;

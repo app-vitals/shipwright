@@ -1,6 +1,6 @@
 /**
  * admin/src/anthropic-openapi-contract.fixtures.ts
- * Offline contract checking of recorded Anthropic cassettes against the
+ * Offline contract checking of recorded Anthropic fixture doubles against the
  * Anthropic OpenAPI 3.1 spec copied into the repo (test support only).
  *
  * The spec is anthropics/anthropic-sdk-typescript scripts/mock-spec.json.gz at
@@ -13,7 +13,7 @@ import { readFileSync } from "node:fs";
 import { gunzipSync } from "node:zlib";
 import Ajv2020 from "ajv/dist/2020.js";
 import addFormats from "ajv-formats";
-import type { AnthropicCassette } from "./anthropic-identity-client.fixtures.ts";
+import type { AnthropicRecordedFixtures } from "./anthropic-identity-client.fixtures.ts";
 
 const SPEC_DIR = new URL("./fixtures/anthropic-openapi/", import.meta.url)
   .pathname;
@@ -41,8 +41,8 @@ export interface MatchedOperation {
 interface Interaction {
   scenario: string;
   index: number;
-  request: AnthropicCassette["scenarios"][string][number]["request"];
-  response: AnthropicCassette["scenarios"][string][number]["response"];
+  request: AnthropicRecordedFixtures["scenarios"][string][number]["request"];
+  response: AnthropicRecordedFixtures["scenarios"][string][number]["response"];
 }
 
 const SPEC_URI = "https://spec.invalid/anthropic-openapi";
@@ -86,8 +86,8 @@ export interface ContractResult {
  * the operation's schemas, and the response body must satisfy the schema of the
  * documented response for its status code.
  */
-export function validateCassetteAgainstSpec(
-  cassette: AnthropicCassette,
+export function validateRecordedFixturesAgainstSpec(
+  fixtures: AnthropicRecordedFixtures,
   spec: OpenApiSpec = loadSpec(),
 ): ContractResult {
   const ajv = new Ajv2020({ strict: false, allErrors: true });
@@ -112,7 +112,7 @@ export function validateCassetteAgainstSpec(
   };
 
   const interactions: Interaction[] = Object.entries(
-    cassette.scenarios,
+    fixtures.scenarios,
   ).flatMap(([scenario, list]) =>
     list.map((i, index) => ({ scenario, index, ...i })),
   );

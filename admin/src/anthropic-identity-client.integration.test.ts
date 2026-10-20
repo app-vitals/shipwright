@@ -1,11 +1,11 @@
 /**
  * admin/src/anthropic-identity-client.integration.test.ts
- * HttpAnthropicIdentityClient against recorded cassettes
- * (fixtures/anthropic-identity-cassette.json) replayed through an INJECTED
+ * HttpAnthropicIdentityClient against recorded fixture doubles
+ * (fixtures/anthropic-identity-recorded-fixtures.json) replayed through an INJECTED
  * fetch — no live API, no global.fetch override, no mock.module().
  *
- * The cassettes are validated against the pinned Anthropic OpenAPI spec by
- * anthropic-identity-cassette-spec.integration.test.ts. The projected-token
+ * The recorded fixtures are validated against the pinned Anthropic OpenAPI spec by
+ * anthropic-identity-fixture-spec.integration.test.ts. The projected-token
  * exchange (POST /v1/oauth/token, not in the spec) is the
  * FakeAnthropicTokenExchange test double.
  */
@@ -17,8 +17,8 @@ import { join } from "node:path";
 import { FederatedTokenProvider } from "./anthropic-federated-token-provider.ts";
 import {
   asFetch,
-  cassetteFetch,
   FakeAnthropicTokenExchange,
+  recordedFixtureFetch,
   TOKEN_EXCHANGE_PATH,
 } from "./anthropic-identity-client.fixtures.ts";
 import {
@@ -56,8 +56,8 @@ function withFetch(fetchFn: typeof fetch) {
 
 function setup(scenario: string) {
   const exchange = new FakeAnthropicTokenExchange();
-  const cassette = cassetteFetch(scenario, { tokenExchange: exchange });
-  return { client: withFetch(cassette.fetchFn), cassette, exchange };
+  const replay = recordedFixtureFetch(scenario, { tokenExchange: exchange });
+  return { client: withFetch(replay.fetchFn), replay, exchange };
 }
 
 /** Route token-exchange calls to the fake, everything else to `apiFetch`. */
@@ -100,38 +100,38 @@ const SA_INPUT = { name: "agent-alpha", description: "Shipwright agent alpha" };
 
 describe("createServiceAccount", () => {
   it("POSTs the service account with a federated bearer token and parses the response", async () => {
-    const { client, cassette } = setup("createServiceAccount_success");
+    const { client, replay } = setup("createServiceAccount_success");
     const sa = await client.createServiceAccount(SA_INPUT);
     expect(sa).toEqual({
       id: "svac_01Alpha",
       name: "agent-alpha",
       archivedAt: null,
     });
-    const req = cassette.apiRequests()[0];
+    const req = replay.apiRequests()[0];
     expect(req.url.origin).toBe("https://api.anthropic.com");
     expect(req.headers.get("authorization")).toBe("Bearer fake-access-token-1");
     expect(req.headers.get("anthropic-beta")).toContain("oauth-2025-04-20");
   });
 
   it("surfaces a 409 duplicate name as a typed conflict error (no retry)", async () => {
-    const { client, cassette } = setup("createServiceAccount_duplicate_409");
+    const { client, replay } = setup("createServiceAccount_duplicate_409");
     const err = await client.createServiceAccount(SA_INPUT).catch((e) => e);
     expect(err).toBeInstanceOf(AnthropicConflictError);
     expect(err).toBeInstanceOf(AnthropicApiError);
     expect(err.status).toBe(409);
     expect(err.operation).toBe("createServiceAccount");
-    expect(cassette.apiRequests()).toHaveLength(1);
+    expect(replay.apiRequests()).toHaveLength(1);
     expectNoSecrets(err);
   });
 
   it("re-exchanges the token once after a 401 and retries", async () => {
-    const { client, exchange, cassette } = setup(
+    const { client, exchange, replay } = setup(
       "createServiceAccount_unauthorized_then_success",
     );
     const sa = await client.createServiceAccount(SA_INPUT);
     expect(sa.id).toBe("svac_01Alpha");
     expect(exchange.calls).toBe(2);
-    const [first, second] = cassette.apiRequests();
+    const [first, second] = replay.apiRequests();
     expect(first.headers.get("authorization")).toBe(
       "Bearer fake-access-token-1",
     );
@@ -141,14 +141,14 @@ describe("createServiceAccount", () => {
   });
 
   it("throws a typed auth error after a second 401, without leaking tokens", async () => {
-    const { client, exchange, cassette } = setup(
+    const { client, exchange, replay } = setup(
       "createServiceAccount_unauthorized_401",
     );
     const err = await client.createServiceAccount(SA_INPUT).catch((e) => e);
     expect(err).toBeInstanceOf(AnthropicAuthError);
     expect(err.status).toBe(401);
     expect(exchange.calls).toBe(2);
-    expect(cassette.apiRequests()).toHaveLength(2);
+    expect(replay.apiRequests()).toHaveLength(2);
     expectNoSecrets(err);
   });
 
@@ -253,23 +253,23 @@ describe("archiveServiceAccount", () => {
 
 describe("findServiceAccountByName", () => {
   it("follows next_page across pages until the name is found", async () => {
-    const { client, cassette } = setup(
+    const { client, replay } = setup(
       "findServiceAccountByName_found_on_second_page",
     );
     const sa = await client.findServiceAccountByName("agent-alpha");
     expect(sa?.id).toBe("svac_01Alpha");
-    const reqs = cassette.apiRequests();
+    const reqs = replay.apiRequests();
     expect(reqs).toHaveLength(2);
     expect(reqs[0].url.searchParams.get("page")).toBeNull();
     expect(reqs[1].url.searchParams.get("page")).toBe("cursor-page-2");
   });
 
   it("pages through every result before concluding the name is absent", async () => {
-    const { client, cassette } = setup(
+    const { client, replay } = setup(
       "findServiceAccountByName_not_found_exhausted",
     );
     expect(await client.findServiceAccountByName("agent-alpha")).toBeNull();
-    expect(cassette.apiRequests()).toHaveLength(3);
+    expect(replay.apiRequests()).toHaveLength(3);
   });
 
   it("returns null for an empty list", async () => {
@@ -327,12 +327,12 @@ describe("findServiceAccountByName", () => {
 
 describe("findFederationRuleByName", () => {
   it("pages to the third page to find the rule", async () => {
-    const { client, cassette } = setup(
+    const { client, replay } = setup(
       "findFederationRuleByName_found_on_third_page",
     );
     const rule = await client.findFederationRuleByName("agent-alpha");
     expect(rule?.id).toBe("fdrl_01Alpha");
-    expect(cassette.apiRequests()).toHaveLength(3);
+    expect(replay.apiRequests()).toHaveLength(3);
   });
 
   it("returns null when no page contains the name", async () => {
