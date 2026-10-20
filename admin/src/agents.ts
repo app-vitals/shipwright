@@ -278,8 +278,10 @@ const DETAIL_SELECT = {
   maxFindings: true,
   cleanupMergedWorktrees: true,
   cleanupAfterDays: true,
-  // Not part of the API response (serializeAgent picks fields explicitly): the
-  // post-PATCH reconcile of the agent's workload needs them.
+  // ownerEmail and the three Anthropic identity fields are returned by GET
+  // /agents/:id (serializeAgent picks them explicitly). k8sServiceAccountName
+  // stays out of the API response; the post-PATCH reconcile of the agent's
+  // workload needs it.
   ownerEmail: true,
   anthropicIdentityName: true,
   anthropicServiceAccountId: true,
