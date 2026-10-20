@@ -370,6 +370,27 @@ const GetAgentResultSchema = z
     maxFindings: z.number().int().openapi({ example: 5 }),
     cleanupMergedWorktrees: z.boolean().openapi({ example: true }),
     cleanupAfterDays: z.number().int().openapi({ example: 14 }),
+    /**
+     * PAI-2.5: owner and Anthropic identity, so Platform and IT can trace an
+     * agent to its Anthropic identity. Null when unset. k8sServiceAccountName
+     * is deliberately not part of this response.
+     */
+    ownerEmail: z
+      .string()
+      .nullable()
+      .openapi({ example: "jane.doe@example.com" }),
+    anthropicIdentityName: z
+      .string()
+      .nullable()
+      .openapi({ example: "shipwright-my-agent" }),
+    anthropicServiceAccountId: z
+      .string()
+      .nullable()
+      .openapi({ example: "svac_01ABC" }),
+    anthropicFederationRuleId: z
+      .string()
+      .nullable()
+      .openapi({ example: "fdrl_01XYZ" }),
   })
   .openapi("GetAgentResult");
 
@@ -2594,6 +2615,10 @@ function serializeAgent(
     maxFindings?: number;
     cleanupMergedWorktrees?: boolean;
     cleanupAfterDays?: number;
+    ownerEmail?: string | null;
+    anthropicIdentityName?: string | null;
+    anthropicServiceAccountId?: string | null;
+    anthropicFederationRuleId?: string | null;
   },
   warning?: string,
 ): z.infer<typeof GetAgentResultSchema> {
@@ -2623,6 +2648,10 @@ function serializeAgent(
     maxFindings: agent.maxFindings ?? 5,
     cleanupMergedWorktrees: agent.cleanupMergedWorktrees ?? true,
     cleanupAfterDays: agent.cleanupAfterDays ?? 14,
+    ownerEmail: agent.ownerEmail ?? null,
+    anthropicIdentityName: agent.anthropicIdentityName ?? null,
+    anthropicServiceAccountId: agent.anthropicServiceAccountId ?? null,
+    anthropicFederationRuleId: agent.anthropicFederationRuleId ?? null,
     ...(warning !== undefined ? { warning } : {}),
   };
 }

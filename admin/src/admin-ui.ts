@@ -2144,6 +2144,10 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
       maxFindings: agent.maxFindings ?? 5,
       cleanupMergedWorktrees: agent.cleanupMergedWorktrees ?? true,
       cleanupAfterDays: agent.cleanupAfterDays ?? 14,
+      ownerEmail: agent.ownerEmail ?? null,
+      anthropicIdentityName: agent.anthropicIdentityName ?? null,
+      anthropicServiceAccountId: agent.anthropicServiceAccountId ?? null,
+      anthropicFederationRuleId: agent.anthropicFederationRuleId ?? null,
     };
 
     if (!(await assertAgentAccess(agentId, c.var.userEmail, c.var.isAdmin))) {
@@ -2928,6 +2932,10 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
       maxFindings: agent.maxFindings ?? 5,
       cleanupMergedWorktrees: agent.cleanupMergedWorktrees ?? true,
       cleanupAfterDays: agent.cleanupAfterDays ?? 14,
+      ownerEmail: agent.ownerEmail ?? null,
+      anthropicIdentityName: agent.anthropicIdentityName ?? null,
+      anthropicServiceAccountId: agent.anthropicServiceAccountId ?? null,
+      anthropicFederationRuleId: agent.anthropicFederationRuleId ?? null,
     };
     try {
       const { rawToken } = await agentTokenService.create(agentId, label);

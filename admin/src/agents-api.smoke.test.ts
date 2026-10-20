@@ -3315,6 +3315,114 @@ describe("admin API — agent policy fields", () => {
   });
 });
 
+// ─── owner and Anthropic identity fields (PAI-2.5) ────────────────────────────
+
+describe("admin API — owner and Anthropic identity fields (PAI-2.5)", () => {
+  let cookie: string;
+
+  beforeAll(async () => {
+    cookie = await makeSessionCookie();
+  });
+
+  function identityDeps(): AdminDeps {
+    const base = makeMockDeps();
+    return {
+      ...base,
+      agentService: {
+        ...base.agentService,
+        getDetail: async (id: string) =>
+          id === AGENT_ID
+            ? {
+                id: AGENT_ID,
+                name: "Existing Agent",
+                slackId: null,
+                selfHosted: false,
+                repos: [],
+                reviewAuthorAllowlist: [],
+                patchAuthorAllowlist: [],
+                restrictSlackToMembers: false,
+                typeName: "coding",
+                createdAt: new Date("2024-01-01"),
+                updatedAt: new Date("2024-01-01"),
+                missingRequiredEnv: [],
+                ownerEmail: "jane.doe@example.com",
+                anthropicIdentityName: "shipwright-existing-agent",
+                anthropicServiceAccountId: "svac_01ABC",
+                anthropicFederationRuleId: "fdrl_01XYZ",
+                k8sServiceAccountName: "agent-existing-agent",
+              }
+            : null,
+      },
+    };
+  }
+
+  it("GET /agents/:id returns ownerEmail, anthropicIdentityName, anthropicServiceAccountId and anthropicFederationRuleId when set", async () => {
+    const app = createAdminApp(identityDeps());
+    const res = await app.request(`/agents/${AGENT_ID}`, {
+      headers: { Cookie: `admin_session=${cookie}` },
+    });
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.ownerEmail).toBe("jane.doe@example.com");
+    expect(body.anthropicIdentityName).toBe("shipwright-existing-agent");
+    expect(body.anthropicServiceAccountId).toBe("svac_01ABC");
+    expect(body.anthropicFederationRuleId).toBe("fdrl_01XYZ");
+  });
+
+  it("GET /agents/:id returns all four identity fields as null when unset", async () => {
+    const app = createAdminApp(makeMockDeps());
+    const res = await app.request(`/agents/${AGENT_ID}`, {
+      headers: { Cookie: `admin_session=${cookie}` },
+    });
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.ownerEmail).toBeNull();
+    expect(body.anthropicIdentityName).toBeNull();
+    expect(body.anthropicServiceAccountId).toBeNull();
+    expect(body.anthropicFederationRuleId).toBeNull();
+  });
+
+  it("GET /agents/:id never exposes k8sServiceAccountName", async () => {
+    const app = createAdminApp(identityDeps());
+    const res = await app.request(`/agents/${AGENT_ID}`, {
+      headers: { Cookie: `admin_session=${cookie}` },
+    });
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect("k8sServiceAccountName" in body).toBe(false);
+  });
+
+  it("GET /agents list route still omits the identity fields", async () => {
+    const base = identityDeps();
+    const app = createAdminApp({
+      ...base,
+      agentService: {
+        ...base.agentService,
+        list: async () => [
+          {
+            id: AGENT_ID,
+            name: "Existing Agent",
+            selfHosted: false,
+            typeName: "coding",
+            ownerEmail: "jane.doe@example.com",
+            anthropicIdentityName: "shipwright-existing-agent",
+            anthropicServiceAccountId: "svac_01ABC",
+            anthropicFederationRuleId: "fdrl_01XYZ",
+            k8sServiceAccountName: "agent-existing-agent",
+          },
+        ],
+      },
+    });
+    const res = await app.request("/agents", {
+      headers: { Cookie: `admin_session=${cookie}` },
+    });
+    expect(res.status).toBe(200);
+    const [row] = await res.json();
+    expect("ownerEmail" in row).toBe(false);
+    expect("anthropicServiceAccountId" in row).toBe(false);
+  });
+});
+
 // ─── typeName field smoke tests ───────────────────────────────────────────────
 
 describe("admin API — typeName field", () => {

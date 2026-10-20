@@ -51,13 +51,33 @@
                 "error"
               ]
             }
+          },
+          "migrated": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "perAgent identity mode: agents moved (or, in a dry run, that would be moved) onto their own newly created identity"
+          },
+          "noOwner": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "perAgent identity mode: agents skipped because they have no owner; left unmodified"
+          },
+          "dryRun": {
+            "type": "boolean"
           }
         },
         "required": [
           "recreated",
           "updated",
           "orphans",
-          "failed"
+          "failed",
+          "migrated",
+          "noOwner",
+          "dryRun"
         ]
       },
       "Error": {
@@ -244,6 +264,34 @@
           "cleanupAfterDays": {
             "type": "integer",
             "example": 14
+          },
+          "ownerEmail": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "example": "jane.doe@example.com"
+          },
+          "anthropicIdentityName": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "example": "shipwright-my-agent"
+          },
+          "anthropicServiceAccountId": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "example": "svac_01ABC"
+          },
+          "anthropicFederationRuleId": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "example": "fdrl_01XYZ"
           }
         },
         "required": [
@@ -264,7 +312,11 @@
           "minConfidence",
           "maxFindings",
           "cleanupMergedWorktrees",
-          "cleanupAfterDays"
+          "cleanupAfterDays",
+          "ownerEmail",
+          "anthropicIdentityName",
+          "anthropicServiceAccountId",
+          "anthropicFederationRuleId"
         ]
       },
       "PatchAgentBody": {
@@ -2824,7 +2876,24 @@
     "/agents/reconcile": {
       "post": {
         "summary": "Reconcile all agents' K8s state",
-        "description": "Admin-only. Reconciles Kubernetes Deployment state against all managed (non-self-hosted) agents in the DB, returning counts of recreated/updated deployments plus any orphaned deployments or per-agent failures.",
+        "description": "Admin-only. Reconciles Kubernetes Deployment state against all managed (non-self-hosted) agents in the DB, returning the recreated/updated deployments plus any orphaned deployments or per-agent failures. In perAgent Anthropic identity mode it also creates the missing identity of each existing agent that has an owner and moves its Deployment off the shared ServiceAccount (`migrated`); agents with no owner are listed in `noOwner` and left alone. Pass `dryRun=true` to only report: nothing is created, saved or patched.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "true",
+                "false"
+              ],
+              "default": "false",
+              "description": "Defaults to false (reconcile for real). Pass true to report what would be recreated, updated and moved to per-agent identity without changing anything."
+            },
+            "required": false,
+            "description": "Defaults to false (reconcile for real). Pass true to report what would be recreated, updated and moved to per-agent identity without changing anything.",
+            "name": "dryRun",
+            "in": "query"
+          }
+        ],
         "responses": {
           "200": {
             "description": "Reconciliation summary",

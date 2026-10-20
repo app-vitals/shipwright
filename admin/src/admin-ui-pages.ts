@@ -572,6 +572,15 @@ export interface AgentDetail {
   maxFindings: number;
   cleanupMergedWorktrees: boolean;
   cleanupAfterDays: number;
+  /**
+   * PAI-2.5: owner and Anthropic identity, shown in the "Owner & Anthropic
+   * identity" card. Optional so literal builds that predate the fields stay
+   * valid; null or absent renders an em dash placeholder.
+   */
+  ownerEmail?: string | null;
+  anthropicIdentityName?: string | null;
+  anthropicServiceAccountId?: string | null;
+  anthropicFederationRuleId?: string | null;
 }
 
 export interface CronJobItem {
@@ -2318,6 +2327,25 @@ export function renderAgentDetailPage(
       </div>
     </div>`;
 
+  // PAI-2.5: read-only trace from this agent to its Anthropic identity. Values
+  // are user data (owner email) or provider IDs, so every one is escaped.
+  const identityPlaceholder = '<span style="color:#9ca3af">—</span>';
+  const identityRow = (
+    label: string,
+    value: string | null | undefined,
+    mono: boolean,
+  ): string =>
+    `<tr><td style="color:#6b7280;width:200px">${label}</td><td${mono ? ' class="mono"' : ""}>${value ? escapeHtml(value) : identityPlaceholder}</td></tr>`;
+  const identitySection = `<div class="card">
+      <div class="card-title">Owner &amp; Anthropic identity</div>
+      <table class="detail-table"><tbody>
+        ${identityRow("Owner email", agent.ownerEmail, false)}
+        ${identityRow("Anthropic identity name", agent.anthropicIdentityName, true)}
+        ${identityRow("Service account ID", agent.anthropicServiceAccountId, true)}
+        ${identityRow("Federation rule ID", agent.anthropicFederationRuleId, true)}
+      </tbody></table>
+    </div>`;
+
   const agentPolicySection = `<div class="card">
       <div class="card-title">Agent Policy</div>
       <form method="POST" action="/admin/agents/${escapeHtml(agent.id)}/settings">
@@ -2462,7 +2490,7 @@ export function renderAgentDetailPage(
   const accessGroup = renderGroup(
     "Access",
     accessStat,
-    `${canManage ? membersSection : ""}${authorAllowlistReviewSection}${authorAllowlistPatchSection}${slackAccessSection}${tokensSection}`,
+    `${identitySection}${canManage ? membersSection : ""}${authorAllowlistReviewSection}${authorAllowlistPatchSection}${slackAccessSection}${tokensSection}`,
   );
   const pluginsToolsGroup = renderGroup(
     "Plugins &amp; Tools",

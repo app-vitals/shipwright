@@ -3525,6 +3525,107 @@ describe("admin UI — phase methodology panel", () => {
 
 // ─── Agent Policy panel (APM-1.3) ─────────────────────────────────────────────
 
+describe("admin UI — owner and Anthropic identity section (PAI-2.5)", () => {
+  let cookie: string;
+
+  beforeAll(async () => {
+    cookie = await makeSessionCookie();
+  });
+
+  function identityDeps(overrides: {
+    ownerEmail?: string | null;
+    anthropicIdentityName?: string | null;
+    anthropicServiceAccountId?: string | null;
+    anthropicFederationRuleId?: string | null;
+  }) {
+    const base = makeMockDeps();
+    return makeMockDeps({
+      agentService: {
+        ...base.agentService,
+        getDetail: async () => ({
+          id: AGENT_ID,
+          name: "Test Agent",
+          slackId: "U123456",
+          selfHosted: false,
+          typeName: "coding",
+          createdAt: new Date("2024-01-01"),
+          updatedAt: new Date("2024-01-01"),
+          repos: [],
+          reviewAuthorAllowlist: [],
+          patchAuthorAllowlist: [],
+          restrictSlackToMembers: false,
+          missingRequiredEnv: [],
+          ownerEmail: null,
+          anthropicIdentityName: null,
+          anthropicServiceAccountId: null,
+          anthropicFederationRuleId: null,
+          ...overrides,
+        }),
+      },
+    });
+  }
+
+  it("GET /admin/agents/:id renders the owner and Anthropic identity values", async () => {
+    const app = createAdminUIApp(
+      identityDeps({
+        ownerEmail: "jane.doe@example.com",
+        anthropicIdentityName: "shipwright-test-agent",
+        anthropicServiceAccountId: "svac_01ABC",
+        anthropicFederationRuleId: "fdrl_01XYZ",
+      }),
+    );
+    const res = await app.request(`/admin/agents/${AGENT_ID}`, {
+      headers: { Cookie: `admin_session=${cookie}` },
+    });
+    expect(res.status).toBe(200);
+    const html = await res.text();
+    expect(html).toContain(
+      '<div class="card-title">Owner &amp; Anthropic identity</div>',
+    );
+    expect(html).toContain("Owner email");
+    expect(html).toContain("jane.doe@example.com");
+    expect(html).toContain("Anthropic identity name");
+    expect(html).toContain("shipwright-test-agent");
+    expect(html).toContain("Service account ID");
+    expect(html).toContain("svac_01ABC");
+    expect(html).toContain("Federation rule ID");
+    expect(html).toContain("fdrl_01XYZ");
+  });
+
+  it("GET /admin/agents/:id HTML-escapes identity values", async () => {
+    const app = createAdminUIApp(
+      identityDeps({
+        ownerEmail: "<b>owner</b>@example.com",
+        anthropicIdentityName: "<img src=x onerror=alert(1)>",
+      }),
+    );
+    const res = await app.request(`/admin/agents/${AGENT_ID}`, {
+      headers: { Cookie: `admin_session=${cookie}` },
+    });
+    expect(res.status).toBe(200);
+    const html = await res.text();
+    expect(html).not.toContain("<img src=x onerror=alert(1)>");
+    expect(html).toContain("&lt;img src=x onerror=alert(1)&gt;");
+    expect(html).not.toContain("<b>owner</b>@example.com");
+    expect(html).toContain("&lt;b&gt;owner&lt;/b&gt;@example.com");
+  });
+
+  it("GET /admin/agents/:id renders an em dash placeholder for each unset identity field", async () => {
+    const app = createAdminUIApp(identityDeps({}));
+    const res = await app.request(`/admin/agents/${AGENT_ID}`, {
+      headers: { Cookie: `admin_session=${cookie}` },
+    });
+    expect(res.status).toBe(200);
+    const html = await res.text();
+    const start = html.indexOf(
+      '<div class="card-title">Owner &amp; Anthropic identity</div>',
+    );
+    expect(start).toBeGreaterThan(-1);
+    const sectionHtml = html.slice(start, html.indexOf("</table>", start));
+    expect(sectionHtml.match(/—/g)?.length).toBe(4);
+  });
+});
+
 describe("admin UI — agent policy fields", () => {
   let cookie: string;
 
