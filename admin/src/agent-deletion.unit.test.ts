@@ -22,21 +22,41 @@ interface EnvRow {
   secret: boolean;
 }
 
+interface AgentRow {
+  id: string;
+  name: string;
+  anthropicFederationRuleId?: string | null;
+  anthropicServiceAccountId?: string | null;
+  k8sServiceAccountName?: string | null;
+}
+
 /** Minimal in-memory Prisma double tracking whether the Agent row exists. */
 class FakePrisma {
   deleted = false;
   constructor(
-    private readonly row: { id: string; name: string } | null,
+    private readonly row: AgentRow | null,
     private readonly envRows: EnvRow[] = [],
   ) {}
 
   agent = {
     findUnique: async (_args: {
       where: { id: string };
-      select: { id: true; name: true };
-    }): Promise<{ id: string; name: string } | null> => {
+      select: {
+        id: true;
+        name: true;
+        anthropicFederationRuleId: true;
+        anthropicServiceAccountId: true;
+        k8sServiceAccountName: true;
+      };
+    }) => {
       if (this.deleted || !this.row) return null;
-      return { id: this.row.id, name: this.row.name };
+      return {
+        id: this.row.id,
+        name: this.row.name,
+        anthropicFederationRuleId: this.row.anthropicFederationRuleId ?? null,
+        anthropicServiceAccountId: this.row.anthropicServiceAccountId ?? null,
+        k8sServiceAccountName: this.row.k8sServiceAccountName ?? null,
+      };
     },
     delete: async (_args: { where: { id: string } }): Promise<unknown> => {
       this.deleted = true;
@@ -60,6 +80,7 @@ interface CallLog {
   csRevoked: string[];
   threadsDeleted: string[];
   slackDeleted: Array<{ token: string; appId: string }>;
+  identityRemoved: string[];
 }
 
 function makeDeps(opts: {
@@ -74,6 +95,8 @@ function makeDeps(opts: {
     threads: Error;
     slack: Error;
   }>;
+  /** Give the provisioner a removeAnthropicIdentity (absent by default). */
+  withIdentityRemoval?: boolean;
 }): { deps: DeleteAgentFullyDeps; log: CallLog } {
   const log: CallLog = {
     deprovision: [],
@@ -83,6 +106,7 @@ function makeDeps(opts: {
     csRevoked: [],
     threadsDeleted: [],
     slackDeleted: [],
+    identityRemoved: [],
   };
 
   const deps: DeleteAgentFullyDeps = {
@@ -92,6 +116,13 @@ function makeDeps(opts: {
         log.deprovision.push(agentId);
         if (opts.fail?.deprovision) throw opts.fail.deprovision;
       },
+      ...(opts.withIdentityRemoval
+        ? {
+            removeAnthropicIdentity: async (agentId: string) => {
+              log.identityRemoved.push(agentId);
+            },
+          }
+        : {}),
     },
     taskStore: {
       listTokensForAgent: async (agentId) => {
@@ -324,5 +355,55 @@ describe("deleteAgentFully — unknown agent", () => {
     await expect(deleteAgentFully("nope", deps)).rejects.toBeInstanceOf(
       NotFoundError,
     );
+  });
+});
+
+// ─── Per-agent Anthropic identity ────────────────────────────────────────────
+
+describe("deleteAgentFully — anthropic identity step", () => {
+  it("runs no anthropic-identity step for an agent without identity IDs", async () => {
+    const prisma = new FakePrisma(AGENT);
+    const { deps, log } = makeDeps({ prisma, withIdentityRemoval: true });
+
+    const result = await deleteAgentFully(AGENT.id, deps);
+
+    expect(result.agentDeleted).toBe(true);
+    expect(result.completed).not.toContain("anthropic-identity");
+    expect(log.identityRemoved).toEqual([]);
+  });
+
+  it("runs the step right after k8s when the agent has an identity", async () => {
+    const prisma = new FakePrisma({
+      ...AGENT,
+      anthropicServiceAccountId: "svac_1",
+    });
+    const { deps, log } = makeDeps({ prisma, withIdentityRemoval: true });
+
+    const result = await deleteAgentFully(AGENT.id, deps);
+
+    expect(log.identityRemoved).toEqual([AGENT.id]);
+    expect(result.completed.slice(0, 2)).toEqual(["k8s", "anthropic-identity"]);
+    expect(result.agentDeleted).toBe(true);
+  });
+
+  it("fails the step and lists the identity pieces when the provisioner cannot remove them", async () => {
+    const prisma = new FakePrisma({
+      ...AGENT,
+      anthropicFederationRuleId: "fdrl_1",
+      anthropicServiceAccountId: "svac_1",
+      k8sServiceAccountName: "dude-bot-sa",
+    });
+    const { deps } = makeDeps({ prisma });
+
+    const result = await deleteAgentFully(AGENT.id, deps);
+
+    expect(result.agentDeleted).toBe(false);
+    expect(prisma.deleted).toBe(false);
+    expect(result.failed.map((f) => f.step)).toEqual(["anthropic-identity"]);
+    expect(result.manualStepsRequired.map((s) => s.key)).toEqual([
+      "anthropicFederationRuleId",
+      "anthropicServiceAccountId",
+      "k8sServiceAccountName",
+    ]);
   });
 });

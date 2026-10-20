@@ -32,6 +32,12 @@
  *     (unlike provision()'s rollback path, a deliberate full deprovision DOES
  *     remove the PVC) and swallows NotFoundError (404) so tearing down an
  *     absent / half-absent agent is a no-op rather than an error.
+ *   - removeAnthropicIdentity() (perAgent mode, called by agent deletion after
+ *     deprovision()) archives the federation rule, then the Anthropic service
+ *     account, then deletes the ServiceAccount — strictly in that order,
+ *     throwing at the first failure (Anthropic refuses to archive a service
+ *     account a live rule references) and clearing each saved ID as its piece
+ *     goes, so a retry only redoes what is left.
  */
 
 import type {
@@ -55,6 +61,7 @@ import {
 } from "./agent-manifest.ts";
 import type { AgentTokenService } from "./agent-tokens.ts";
 import {
+  AnthropicApiError,
   AnthropicConflictError,
   type AnthropicIdentityClient,
 } from "./anthropic-identity-client.ts";
@@ -161,6 +168,17 @@ export interface AgentProvisioner {
    * used to resolve the PVC name when a `pvcName` template is configured.
    */
   deprovision(agentId: string, opts?: { slug?: string }): Promise<void>;
+  /**
+   * Remove the agent's per-agent Anthropic identity: archive the federation
+   * rule, then the Anthropic service account, then delete the Kubernetes
+   * ServiceAccount, clearing each saved ID as soon as its piece is gone.
+   * Strictly in that order and stopping at the first failure (it throws):
+   * Anthropic refuses to archive a service account while a live rule
+   * references it. Already-absent pieces count as removed, so a retry only
+   * redoes what is left. Optional: provisioners without per-agent identities
+   * (the no-op one, test doubles) need not implement it.
+   */
+  removeAnthropicIdentity?(agentId: string): Promise<void>;
   /**
    * Reconcile K8s Deployment state against a list of known agent IDs.
    * Re-provisions agents whose Deployments are missing; surfaces orphaned
@@ -681,6 +699,11 @@ function isNotFound(err: unknown): boolean {
   return err instanceof NotFoundError;
 }
 
+/** An Anthropic archive that 404s means the resource is already gone. */
+function isAnthropicNotFound(err: unknown): boolean {
+  return err instanceof AnthropicApiError && err.status === 404;
+}
+
 /**
  * Create an Anthropic resource and return its ID (reporting it via
  * `onCreated`). A name conflict means an earlier call created it but its ID
@@ -701,6 +724,16 @@ async function createOrRecover(
     const found = await findByName();
     if (!found) throw err;
     return found.id;
+  }
+}
+
+async function tolerateAnthropicNotFound(
+  step: () => Promise<unknown>,
+): Promise<void> {
+  try {
+    await step();
+  } catch (err) {
+    if (!isAnthropicNotFound(err)) throw err;
   }
 }
 
@@ -1144,6 +1177,49 @@ export class KubernetesAgentProvisioner implements AgentProvisioner {
     }
 
     return result;
+  }
+
+  async removeAnthropicIdentity(agentId: string): Promise<void> {
+    const perAgent = this.config.perAgentIdentity;
+    if (!perAgent) {
+      throw new Error(
+        "per-agent Anthropic identity is not configured on this provisioner, so the agent's identity cannot be removed automatically",
+      );
+    }
+    const { client, identities } = perAgent;
+    const identity = await identities.get(agentId);
+    if (!identity) return;
+
+    // Strict order, no best-effort: a failure throws so the caller keeps the
+    // Agent row. Each ID is cleared right after its piece is gone, so a retry
+    // only redoes what is left.
+    if (identity.anthropicFederationRuleId) {
+      await tolerateAnthropicNotFound(() =>
+        client.archiveFederationRule(
+          identity.anthropicFederationRuleId as string,
+        ),
+      );
+      await identities.set(agentId, { anthropicFederationRuleId: null });
+    }
+    if (identity.anthropicServiceAccountId) {
+      await tolerateAnthropicNotFound(() =>
+        client.archiveServiceAccount(
+          identity.anthropicServiceAccountId as string,
+        ),
+      );
+      await identities.set(agentId, { anthropicServiceAccountId: null });
+    }
+    if (identity.k8sServiceAccountName) {
+      try {
+        await this.k8s.deleteServiceAccount(
+          this.config.namespace,
+          identity.k8sServiceAccountName,
+        );
+      } catch (err) {
+        if (!isNotFound(err)) throw err;
+      }
+      await identities.set(agentId, { k8sServiceAccountName: null });
+    }
   }
 
   async deprovision(agentId: string, opts?: { slug?: string }): Promise<void> {
