@@ -126,3 +126,16 @@ describe("patch.md — scope", () => {
     expect(content.toLowerCase()).toContain("caller-owned");
   });
 });
+
+describe("patch.md — BEHIND handling in the mergeability state (SBU-1.1)", () => {
+  it("no longer claims BEHIND is not patch-worthy", () => {
+    expect(content).not.toContain("not\n    patch-worthy");
+    expect(content).not.toMatch(/not\s+patch-worthy/);
+  });
+
+  it("states BEHIND is handled by update-branch and never joins List C", () => {
+    expect(content).toContain('`"BEHIND"`');
+    expect(content).toContain("gh pr update-branch");
+    expect(content).toMatch(/never joins List C/);
+  });
+});

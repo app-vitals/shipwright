@@ -68,8 +68,8 @@ input shape per dispatch.
 
 - **mergeability state** — present only when this PR qualifies for **List C**:
   - **`mergeStateStatus`** — e.g. `"DIRTY"`. The caller has already confirmed this is the only
-    state that routes a PR into List C — merely being `"BEHIND"` with no conflict is not
-    patch-worthy on its own.
+    state that routes a PR into List C — `"BEHIND"` with no conflict is handled by
+    `gh pr update-branch` in the caller's Step 2.5 and never joins List C.
 
 - **CI status** — present only when this PR qualifies for **List D**:
   - Failing/timed-out/cancelled workflow run details — the failing job names, the failed step

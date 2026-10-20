@@ -3092,3 +3092,72 @@ describe("patch.md — pre-push verification gate in fix-subagent briefs (VRW-1.
     expect(content).not.toContain("run-with-budget");
   });
 });
+
+describe("patch.md — BEHIND PRs handled via update-branch (SBU-1.1)", () => {
+  function getStep2_5Section() {
+    const start = content.indexOf("## Step 2.5:");
+    const end = content.indexOf("## Step 3: Classify PRs into Three Lists");
+    expect(start).toBeGreaterThan(-1);
+    expect(end).toBeGreaterThan(start);
+    return content.slice(start, end);
+  }
+
+  function getBehindSection() {
+    const section = getStep2_5Section();
+    const start = section.indexOf("### BEHIND");
+    const end = section.indexOf("### DIRTY");
+    expect(start).toBeGreaterThan(-1);
+    expect(end).toBeGreaterThan(start);
+    return section.slice(start, end);
+  }
+
+  it("Step 2.5 runs `gh pr update-branch` without --rebase for BEHIND", () => {
+    const behind = getBehindSection();
+    expect(behind).toContain('mergeStateStatus == "BEHIND"');
+    expect(behind).toContain("gh pr update-branch {number} --repo {org}/{repo}");
+    expect(behind).not.toContain("--rebase {number}");
+    expect(behind).not.toMatch(/update-branch\s+--rebase/);
+  });
+
+  it("does not read branch protection or compare/behind_by", () => {
+    const behind = getBehindSection();
+    expect(behind).toContain("branch protection");
+    expect(behind).toContain("behind_by");
+    expect(behind).not.toMatch(/gh api[^\n]*(protection|compare)/);
+  });
+
+  it("re-resolves headRefOid on success before Step 3c's CI check", () => {
+    const behind = getBehindSection();
+    expect(behind).toContain("Re-resolve");
+    expect(behind).toContain("headRefOid");
+    expect(behind).toContain("Step 3c");
+  });
+
+  it("logs and continues without escalating on failure", () => {
+    const behind = getBehindSection();
+    expect(behind).toMatch(/Log it and continue without escalating/);
+    expect(behind).toContain("DIRTY");
+  });
+
+  it("leaves the DIRTY path on --rebase", () => {
+    const section = getStep2_5Section();
+    expect(section.slice(section.indexOf("### DIRTY"))).toContain(
+      "gh pr update-branch --rebase {number} --repo {org}/{repo}",
+    );
+  });
+
+  it("header note and Step 3b no longer claim BEHIND is not patch-worthy", () => {
+    expect(content).not.toContain("not patch-worthy");
+    expect(content).not.toContain("are not patch-worthy");
+  });
+
+  it("Step 3b states BEHIND never joins List C", () => {
+    const start = content.indexOf("### Step 3b:");
+    const end = content.indexOf("### Step 3c:");
+    const section = content.slice(start, end);
+    expect(section).toContain('`"BEHIND"`');
+    expect(section).toContain("never add to");
+    expect(section).toContain("**List C**");
+    expect(section).not.toMatch(/mergeStateStatus.*"BEHIND".*→ add to \*\*List C/);
+  });
+});
