@@ -109,6 +109,8 @@ interface MakeDepsOptions {
    * only default behavior unchanged.
    */
   allowlistedPrs?: OwnPr[];
+  isSelfReviewAllowed?: () => Promise<boolean>;
+  queryPrRecord?: CheckPatchDeps["queryPrRecord"];
 }
 
 function makeDeps({
@@ -122,6 +124,8 @@ function makeDeps({
   queryTaskStatus = async () => null,
   isBundleComplete,
   allowlistedPrs = [],
+  isSelfReviewAllowed,
+  queryPrRecord,
 }: MakeDepsOptions): CheckPatchDeps {
   return {
     listOwnOpenPrs: async (_repo: string) => ownPrs,
@@ -154,6 +158,8 @@ function makeDeps({
     listPrCommits,
     getCurrentUser,
     queryTaskStatus,
+    ...(isSelfReviewAllowed ? { isSelfReviewAllowed } : {}),
+    ...(queryPrRecord ? { queryPrRecord } : {}),
     ...(isBundleComplete ? { isBundleComplete } : {}),
   };
 }
@@ -464,6 +470,220 @@ describe("getPatchCandidates", () => {
       }),
     );
     expect(result).toHaveLength(1);
+  });
+
+  // ─── BEHIND readiness (SBU-1.2) ───────────────────────────────────────────
+
+  describe("BEHIND PRs", () => {
+    const behindApproved: MergeStatusInfo = {
+      isDirty: false,
+      isBehind: true,
+      reviewDecision: "APPROVED",
+    };
+    const green: CiCheckStatus = { hasFailing: false, isGreen: true };
+
+    test("is a candidate when BEHIND, approved, CI green, no findings (self-authored)", async () => {
+      const result = await getPatchCandidates(
+        makeDeps({
+          ownPrs: [makeOwnPr({ number: 10 })],
+          reviewDataByPr: {},
+          ciStatusByPr: { 10: green },
+          mergeStatusByPr: { 10: behindApproved },
+        }),
+      );
+      expect(result).toHaveLength(1);
+    });
+
+    test("is a candidate when BEHIND, approved, CI green (allowlisted author)", async () => {
+      const result = await getPatchCandidates(
+        makeDeps({
+          ownPrs: [],
+          getScopedRepos: () => ["acme/example-repo"],
+          allowlistedPrs: [makeOwnPr({ number: 11, author: "dependabot" })],
+          reviewDataByPr: {},
+          ciStatusByPr: { 11: green },
+          mergeStatusByPr: { 11: behindApproved },
+        }),
+      );
+      expect(result).toHaveLength(1);
+      expect(result[0].authorLogin).toBe("dependabot");
+    });
+
+    test("self-authored PR counts a clean self-APPROVE when policy allows", async () => {
+      const selfApprove = makePrReviewData({
+        reviews: {
+          nodes: [
+            {
+              author: { login: "the-agent" },
+              state: "COMMENTED",
+              submittedAt: "2026-05-26T10:00:00Z",
+              commit: { oid: "current-head-sha" },
+              body: "APPROVE — looks good",
+            },
+          ],
+        },
+      });
+      const run = (allowed: boolean) =>
+        getPatchCandidates(
+          makeDeps({
+            ownPrs: [makeOwnPr({ number: 10 })],
+            reviewDataByPr: { 10: selfApprove },
+            ciStatusByPr: { 10: green },
+            mergeStatusByPr: { 10: { isDirty: false, isBehind: true } },
+            isSelfReviewAllowed: async () => allowed,
+            // The agent's clean self-APPROVE is posted COMMENTED and is
+            // ledger-resolved by review.md (PFL-2.1), so it is not a finding.
+            queryPrRecord: async () => ({
+              findings: [
+                {
+                  id: "f1",
+                  prRecordId: "pr1",
+                  ref: "current-head-sha@2026-05-26T10:00:00Z",
+                  source: "review",
+                  disposition: "resolved",
+                  evidence: "self approve",
+                  at: "2026-05-26T10:00:00Z",
+                  createdAt: "2026-05-26T10:00:00Z",
+                },
+              ],
+            }),
+          }),
+        );
+      expect(await run(true)).toHaveLength(1);
+      expect(await run(false)).toEqual([]);
+    });
+
+    test("allowlisted PR never qualifies via self-approve", async () => {
+      const result = await getPatchCandidates(
+        makeDeps({
+          ownPrs: [],
+          getScopedRepos: () => ["acme/example-repo"],
+          allowlistedPrs: [makeOwnPr({ number: 11, author: "dependabot" })],
+          reviewDataByPr: {
+            11: makePrReviewData({
+              reviews: {
+                nodes: [
+                  {
+                    author: { login: "the-agent" },
+                    state: "COMMENTED",
+                    submittedAt: "2026-05-26T10:00:00Z",
+                    commit: { oid: "current-head-sha" },
+                    body: "APPROVE",
+                  },
+                ],
+              },
+            }),
+          },
+          ciStatusByPr: { 11: green },
+          mergeStatusByPr: { 11: { isDirty: false, isBehind: true } },
+          isSelfReviewAllowed: async () => true,
+          queryPrRecord: async () => ({
+            findings: [
+              {
+                id: "f1",
+                prRecordId: "pr1",
+                ref: "current-head-sha@2026-05-26T10:00:00Z",
+                source: "review",
+                disposition: "resolved",
+                evidence: "self approve",
+                at: "2026-05-26T10:00:00Z",
+                createdAt: "2026-05-26T10:00:00Z",
+              },
+            ],
+          }),
+        }),
+      );
+      expect(result).toEqual([]);
+    });
+
+    test("is not a candidate via BEHIND when not approved", async () => {
+      const result = await getPatchCandidates(
+        makeDeps({
+          ownPrs: [makeOwnPr({ number: 10 })],
+          reviewDataByPr: {},
+          ciStatusByPr: { 10: green },
+          mergeStatusByPr: {
+            10: { isDirty: false, isBehind: true, reviewDecision: null },
+          },
+        }),
+      );
+      expect(result).toEqual([]);
+    });
+
+    test("is not a candidate via BEHIND when CI is in flight (not green)", async () => {
+      const result = await getPatchCandidates(
+        makeDeps({
+          ownPrs: [makeOwnPr({ number: 10 })],
+          reviewDataByPr: {},
+          ciStatusByPr: { 10: { hasFailing: false, isGreen: false } },
+          mergeStatusByPr: { 10: behindApproved },
+        }),
+      );
+      expect(result).toEqual([]);
+    });
+
+    test("CI red is a candidate for its own reason, not BEHIND readiness", async () => {
+      const result = await getPatchCandidates(
+        makeDeps({
+          ownPrs: [makeOwnPr({ number: 10 })],
+          reviewDataByPr: {},
+          ciStatusByPr: { 10: { hasFailing: true } },
+          mergeStatusByPr: { 10: { isDirty: false, isBehind: true } },
+        }),
+      );
+      expect(result).toHaveLength(1);
+    });
+
+    test("unaddressed findings keep a BEHIND PR a candidate for the findings", async () => {
+      const finding = makePrReviewData({
+        reviews: {
+          nodes: [
+            {
+              author: { login: "reviewer1" },
+              state: "CHANGES_REQUESTED",
+              submittedAt: "2026-05-26T10:00:00Z",
+              commit: { oid: "current-head-sha" },
+              body: "Please fix X",
+            },
+          ],
+        },
+      });
+      const result = await getPatchCandidates(
+        makeDeps({
+          ownPrs: [makeOwnPr({ number: 10 })],
+          reviewDataByPr: { 10: finding },
+          ciStatusByPr: { 10: green },
+          mergeStatusByPr: { 10: behindApproved },
+        }),
+      );
+      expect(result).toHaveLength(1);
+    });
+
+    test("CLEAN (not behind) approved green PR is not a candidate", async () => {
+      const result = await getPatchCandidates(
+        makeDeps({
+          ownPrs: [makeOwnPr({ number: 10 })],
+          reviewDataByPr: {},
+          ciStatusByPr: { 10: green },
+          mergeStatusByPr: {
+            10: { isDirty: false, isBehind: false, reviewDecision: "APPROVED" },
+          },
+        }),
+      );
+      expect(result).toEqual([]);
+    });
+
+    test("status query failure (isBehind false) is not a candidate", async () => {
+      const result = await getPatchCandidates(
+        makeDeps({
+          ownPrs: [makeOwnPr({ number: 10 })],
+          reviewDataByPr: {},
+          ciStatusByPr: { 10: green },
+          mergeStatusByPr: { 10: { isDirty: false, isBehind: false } },
+        }),
+      );
+      expect(result).toEqual([]);
+    });
   });
 
   // ─── Merge-only stale findings ────────────────────────────────────────────
@@ -2276,27 +2496,34 @@ describe("buildProductionDeps", () => {
   test("fetchMergeStatus reports isDirty true only when mergeStateStatus is DIRTY", async () => {
     const deps = await buildProductionDeps({
       ghJson: async <T>(args: string[]) => {
-        expect(args).toContain("mergeStateStatus");
+        expect(args).toContain("mergeStateStatus,reviewDecision");
         return { mergeStateStatus: "DIRTY" } as unknown as T;
       },
       ghGraphql: async <T>() => ({}) as unknown as T,
       getCurrentUser: async () => "the-agent",
     });
 
-    expect(await deps.fetchMergeStatus("acme", "widgets", 42)).toEqual({
+    expect(await deps.fetchMergeStatus("acme", "widgets", 42)).toMatchObject({
       isDirty: true,
+      isBehind: false,
     });
   });
 
-  test("fetchMergeStatus reports isDirty false for a non-DIRTY mergeStateStatus", async () => {
+  test("fetchMergeStatus reports isDirty false and isBehind true for a BEHIND mergeStateStatus", async () => {
     const deps = await buildProductionDeps({
-      ghJson: async <T>() => ({ mergeStateStatus: "BEHIND" }) as unknown as T,
+      ghJson: async <T>() =>
+        ({
+          mergeStateStatus: "BEHIND",
+          reviewDecision: "APPROVED",
+        }) as unknown as T,
       ghGraphql: async <T>() => ({}) as unknown as T,
       getCurrentUser: async () => "the-agent",
     });
 
     expect(await deps.fetchMergeStatus("acme", "widgets", 42)).toEqual({
       isDirty: false,
+      isBehind: true,
+      reviewDecision: "APPROVED",
     });
   });
 
@@ -2319,7 +2546,7 @@ describe("buildProductionDeps", () => {
 
       const status = await deps.fetchMergeStatus("acme", "widgets", 99);
 
-      expect(status).toEqual({ isDirty: false });
+      expect(status).toEqual({ isDirty: false, isBehind: false });
       expect(written.join("")).toContain(
         "check-patch: gh merge status query failed for PR 99",
       );
