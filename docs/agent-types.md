@@ -2,7 +2,7 @@
 
 > The public-facing spec for authoring **Agent Type manifests** — the `shipwright.dev/v1alpha1` / `AgentType` YAML documents that declare an agent type's identity, crons, plugins, tools, env contract, membership, repos, and chat/voice toggles.
 
-This guide is written against the settled schema (`admin/src/agent-type-registry.ts`'s `AgentTypeManifestSchema`, ATS-1.1) and the worked coding-agent example (`agent-types/coding/manifest.yaml`, ATS-2.1). If this doc and the schema ever disagree, the schema wins — regenerate `docs/schemas/agent-type.schema.json` (see [Generated JSON Schema](#generated-json-schema) below) and update this doc to match.
+This guide is written against the settled schema (`admin/src/agent-type-registry.ts`'s `AgentTypeManifestSchema`, ATS-1.1) and the worked coding-agent example (`agent-types/coding/manifest.yaml`, ATS-2.1). If this doc and the schema ever disagree, the schema wins — regenerate `docs/schemas/agent-type.schema.json` (see [Generated JSON Schema](agent-types-sources.md#generated-json-schema)) and update this doc to match.
 
 ## Concept
 
@@ -145,113 +145,9 @@ voice: false
 ```
 
 To add `resources`, append a top-level `resources:` key with `requests:`/`limits:` sub-objects as shown in the [Resources](#resources-optional) reference above — omit it entirely (as this template does) to use the runtime default.
+## Worked examples and Specialist type
 
-## Worked examples
-
-Each surface below is pulled directly from the live coding-agent manifest, [`agent-types/coding/manifest.yaml`](../agent-types/coding/manifest.yaml) — the reference type shipped with Shipwright itself. Use it as a second, fuller reference alongside the blank template.
-
-### Crons
-
-A pipeline-phase cron dispatched by a parent orchestrator cron, plus a standalone maintenance cron:
-
-```yaml
-crons:
-  - name: shipwright-dev-task
-    schedule: "* * * * *"
-    prompt: /shipwright:dev-task
-    silent: true
-    enabled: true
-    parentCron: shipwright-loop
-  - name: shipwright-docs-freshness
-    schedule: "0 7 * * *"
-    prompt: /shipwright:research-docs --auto
-    preCheck: shipwright:check-docs-freshness.ts
-    silent: true
-    enabled: false
-```
-
-`shipwright-dev-task` is a phase dispatched by `shipwright-loop` (its `parentCron`), so it doesn't need its own `preCheck` — the orchestrator handles candidate selection. `shipwright-docs-freshness` is a standalone scheduled scan with a `preCheck` gate and ships `enabled: false` (see [crons ship disabled](#new-crons-in-published-types-ship-enabled-false)).
-
-### Env contract
-
-One required secret, one optional secret, one optional non-secret:
-
-```yaml
-env:
-  required:
-    - key: CLAUDE_CODE_OAUTH_TOKEN
-      description: >-
-        Claude Code OAuth token used to authenticate the agent's Claude
-        sessions (alternative to ANTHROPIC_API_KEY).
-      secret: true
-  optional:
-    - key: GH_TOKEN
-      description: >-
-        GitHub Personal Access Token, used as a fallback for GitHub API
-        access when GitHub App credentials are not configured.
-      secret: true
-    - key: PIPER_VOICE
-      description: >-
-        Piper voice name to use for local (offline) speech synthesis when
-        no cloud voice provider is configured.
-      secret: false
-```
-
-Note there is no `value:` anywhere — see [manifests never contain secret values](#manifests-never-contain-secret-values).
-
-### Plugins
-
-```yaml
-plugins:
-  - shipwright
-```
-
-A list of Claude Code plugin package names to install for agents of this type. The coding type installs exactly the `shipwright` plugin itself.
-
-### Members
-
-```yaml
-members: []
-```
-
-Default member list for agents provisioned from this type — usually empty (`[]`) in the manifest itself, with actual members added per-agent-instance after provisioning via the admin API (`AgentMember` rows), not baked into the shared type manifest.
-
-### Tools
-
-```yaml
-tools:
-  - Read
-  - Write
-  - Edit
-  - Glob
-  - Grep
-  - Bash
-  - WebSearch
-  - WebFetch
-  - Skill
-  - Agent
-  - Monitor
-```
-
-This list is **additive on top of the floor set** — see [FLOOR_TOOLS are outside manifest authority](#floor_tools-are-outside-manifest-authority). Listing `Read`/`Write`/`Edit`/`Glob`/`Grep`/`Skill` here is harmless (they're already floor-granted) but redundant; the fields that actually matter to declare are the high-privilege ones — `Bash`, `WebSearch`, `WebFetch`, `Agent`, `Monitor` — since those are never floor-granted.
-
-### Repos
-
-```yaml
-repos: []
-```
-
-Default `org/repo`-formatted repos for agents of this type — like `members`, usually empty in the shared type manifest, with real repos assigned per-agent-instance after provisioning.
-
-## Specialist type
-
-`agent-types/specialist/manifest.yaml` is a generic, non-coding Agent Type for agents that are not delivery agents. It uses existing manifest fields only — no schema or loader changes — and appears in the new-agent type picker automatically via `listTypes()`.
-
-It differs from `coding` in what it does *not* grant: `crons: []` (no system crons — `learn-dream` is excluded because it needs the `shipwright` plugin), `plugins: []` (no `shipwright` plugin), `repos: []` and `GH_TOKEN` optional only (no GitHub or task-store scope), and a smaller additive tool set (`Bash`, `WebSearch`, `WebFetch`, `Agent` on top of the floor tools; no `Monitor`). The env contract is otherwise the same as `coding`.
-
-Specialties layer their own plugins, crons and env on top after creation, via the admin API.
-
-**Workspace templates:** the agent runtime reads `identity.templatesDir` when it first seeds a workspace. This manifest still points at `agent/workspace/`, so specialist agents currently receive the coding-flavored templates; point it at another directory to seed that directory's files instead.
+Annotated manifest excerpts (crons, env contract, plugins, members, tools, repos) and the shipped `specialist` type live in [agent-types-examples.md](agent-types-examples.md).
 
 ## Rules
 
@@ -279,61 +175,8 @@ The schema, YAML parser (`parseAgentTypeManifest`), and JSON Schema generator (`
 - **`tryGetManifest(typeName)`** — also used by cron reconciliation (`AgentCronJobService.reconcileSystemCrons()` in `admin/src/agent-cron-jobs.ts`): a non-`coding` type with no loadable manifest logs an error and reconciles nothing (no coding crons seeded, existing crons untouched); an unloadable `coding` manifest throws. Used by the agent-creation form `POST /admin/agents` (`admin/src/admin-ui.ts`) to validate a requested `type`. Returns `undefined` for an unknown type (no fallback, no warning) so the route can reject the submission instead of silently seeding a `coding` agent under a different label.
 - **`listTypes()`** — discovers every directory under `agent-types/` and resolves each to `{name, displayName}` for the new-agent type picker (called from the `GET /admin/agents/new` handler in `admin/src/admin-ui.ts`, which passes the resolved types into `renderNewLocalAgentPage()` in `admin/src/admin-ui-pages.ts`). A directory whose manifest fails to load or parse is skipped rather than 500ing the whole page.
 
-There is currently **no built-in-vs-custom distinction or shadow-rejection check** — every `typeName` is resolved the same way, by directory lookup under `agent-types/` on disk. The registry does not yet support loading a manifest from anywhere other than the local `agent-types/` directory (e.g. a GitHub source reference — see below), so the question of a custom manifest colliding with a shipped type's name does not yet arise in practice. Revisit this section once GitHub source references (below) land and introduce a second manifest source.
+There is currently **no built-in-vs-custom distinction or shadow-rejection check** — every `typeName` is resolved the same way, by directory lookup under `agent-types/` on disk. The registry does not yet support loading a manifest from anywhere other than the local `agent-types/` directory (e.g. a [GitHub source reference](agent-types-sources.md#github-source-references)), so the question of a custom manifest colliding with a shipped type's name does not yet arise in practice. Revisit this section once GitHub source references land and introduce a second manifest source.
 
-## GitHub source references
+## GitHub source references and Generated JSON Schema
 
-> **Specified, not implemented.** This section documents the intended design for plugging a custom Agent Type manifest in from a user's GitHub repo. No fetch logic, loader, or schema field described here exists yet — nothing in this section should be read as already-shipped behavior. It exists so the eventual implementation has an agreed contract to build against, and so reviewers have something concrete to hold that implementation to.
-
-### Reference grammar and pinning
-
-A GitHub source reference has the form:
-
-```
-github:owner/repo[/path]@ref
-```
-
-- `owner/repo` — the GitHub repository hosting the Agent Type manifest.
-- `/path` — optional; a subdirectory within the repo where the manifest lives, for repos that host more than one Agent Type or that keep the manifest alongside unrelated code. Omitted, the manifest is expected at the repo root.
-- `@ref` — **required, no exceptions.** `ref` must resolve to a tag or a commit SHA — **never a branch name**. A branch is a moving pointer; an Agent Type manifest controls what crons an agent runs and what tools it's granted, so a moving reference would let upstream repo activity silently change a running agent's crons/tools without any action on the agent owner's part. That is not acceptable, hence the grammar has no unpinned form and no branch tracking mode — branches are explicitly out of scope for `ref`. A future loader must reject a reference whose `ref` segment is missing or is not a tag or commit SHA.
-
-### `owner/repo` validation
-
-The `owner/repo` portion of the reference is validated with the same rule already used elsewhere in this codebase for org/repo strings: [`lib/org-repo.ts`](../lib/org-repo.ts)'s `isOrgRepo` — split on `/`, require exactly two non-empty parts. A future loader is expected to reuse `isOrgRepo` directly rather than reimplement the check.
-
-### Conventional layout
-
-At the referenced path (repo root, or `/path` when given), the loader expects a conventional layout:
-
-- `manifest.yaml` — **required.** The `AgentType` manifest itself, in the same `shipwright.dev/v1alpha1` format documented above in this guide.
-- an identity templates directory — **optional.** Workspace template files matching what `identity.templatesDir` in the manifest points at (see [Identity](#identity)). When absent, the referenced type is expected to fall back to a built-in default templates directory rather than fail to load.
-
-No other files at the referenced path carry meaning to the loader; a repo is free to host other content alongside these.
-
-### Private-repo auth
-
-A source reference may point at a private repository. Fetching it is expected to reuse the **existing agent-env mechanism** — the same encrypted `AgentEnv` key/value store already used for every other per-agent credential (see [Env contract](#env-contract) above) — to supply a GitHub token, rather than inventing a new credential-storage path for this one feature.
-
-The likely fetch mechanism is the GitHub App auth already implemented in [`agent/src/runtime/github-app-auth.ts`](../agent/src/runtime/github-app-auth.ts) (`createAppAuth` from `@octokit/auth-app`, installation-token caching with proactive refresh) — the same mechanism the agent runtime already uses to authenticate its own GitHub API calls. A future implementation should prefer that path over asking users to mint and store a separate personal access token, falling back to a PAT (mirroring the existing `GH_TOKEN` optional-env pattern in the worked env example above) only where a GitHub App installation isn't available for the target repo.
-
-This guide reserves a single **optional**, reserved-but-unused top-level manifest field name, `source`, as the intended future hook for "this Agent Type's canonical manifest was fetched from this GitHub reference" — a string carrying the `github:owner/repo[/path]@ref` value. `source` is **not** present in `AgentTypeManifestSchema` today; it is named here only so a future schema change has an agreed field name to add, not to declare it live.
-
-### Security requirements
-
-A GitHub source reference is an **external-code-injection surface**: the referenced repo's `manifest.yaml` becomes an agent's live cron/tool/env configuration, and any markdown or prompt content it pulls in (workspace templates, skill/command bodies) becomes text an agent will treat as instructions. Both are attacker-controlled the moment a source reference points at a repo the agent owner doesn't fully trust or doesn't control the write access to. Before any implementation of this feature ships, it must include:
-
-- **Ref pinning is mandatory, not advisory.** The grammar above already forbids branch tracking; the loader must enforce it (reject on load, not just recommend in docs) so a manifest's source can never silently drift to new upstream content.
-- **Content review before first use.** A source reference must not be auto-fetched and auto-applied the first time it's configured without a human reviewing the manifest (and any templates it pulls in) at the pinned ref — analogous to reviewing a dependency before adding it, not just trusting a URL.
-- **Allowlisting.** The set of `owner/repo` values a deployment is willing to fetch custom Agent Type manifests from must be explicitly allowlisted by an operator, not open to any public GitHub repo by default. An unlisted `owner/repo` must fail closed.
-
-These three requirements are **required work for the future implementation pass** — none of them exist today because none of the fetch/load code exists today.
-
-## Generated JSON Schema
-
-The full JSON Schema for `AgentTypeManifestSchema` is generated from the Zod source of truth and committed at [`docs/schemas/agent-type.schema.json`](./schemas/agent-type.schema.json). Regenerate it after any schema change:
-
-```bash
-bun run scripts/generate-agent-type-schema.ts
-```
-
-A drift guard (`admin/src/agent-type-registry.schema.unit.test.ts`) fails CI if the committed artifact falls out of sync with the live schema.
+The specified-not-implemented GitHub source reference design and the generated JSON Schema (including the regeneration command) live in [agent-types-sources.md](agent-types-sources.md).

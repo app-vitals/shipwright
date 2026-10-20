@@ -1,0 +1,110 @@
+# Agent Type worked examples
+
+> Companion to the [Agent Type authoring guide](agent-types.md): annotated manifest excerpts and the shipped `specialist` type.
+
+## Worked examples
+
+Each surface below is pulled directly from the live coding-agent manifest, [`agent-types/coding/manifest.yaml`](../agent-types/coding/manifest.yaml) — the reference type shipped with Shipwright itself. Use it as a second, fuller reference alongside the [blank template](agent-types.md#blank-template).
+
+### Crons
+
+A pipeline-phase cron dispatched by a parent orchestrator cron, plus a standalone maintenance cron:
+
+```yaml
+crons:
+  - name: shipwright-dev-task
+    schedule: "* * * * *"
+    prompt: /shipwright:dev-task
+    silent: true
+    enabled: true
+    parentCron: shipwright-loop
+  - name: shipwright-docs-freshness
+    schedule: "0 7 * * *"
+    prompt: /shipwright:research-docs --auto
+    preCheck: shipwright:check-docs-freshness.ts
+    silent: true
+    enabled: false
+```
+
+`shipwright-dev-task` is a phase dispatched by `shipwright-loop` (its `parentCron`), so it doesn't need its own `preCheck` — the orchestrator handles candidate selection. `shipwright-docs-freshness` is a standalone scheduled scan with a `preCheck` gate and ships `enabled: false` (see [crons ship disabled](agent-types.md#new-crons-in-published-types-ship-enabled-false)).
+
+### Env contract
+
+One required secret, one optional secret, one optional non-secret:
+
+```yaml
+env:
+  required:
+    - key: CLAUDE_CODE_OAUTH_TOKEN
+      description: >-
+        Claude Code OAuth token used to authenticate the agent's Claude
+        sessions (alternative to ANTHROPIC_API_KEY).
+      secret: true
+  optional:
+    - key: GH_TOKEN
+      description: >-
+        GitHub Personal Access Token, used as a fallback for GitHub API
+        access when GitHub App credentials are not configured.
+      secret: true
+    - key: PIPER_VOICE
+      description: >-
+        Piper voice name to use for local (offline) speech synthesis when
+        no cloud voice provider is configured.
+      secret: false
+```
+
+Note there is no `value:` anywhere — see [manifests never contain secret values](agent-types.md#manifests-never-contain-secret-values).
+
+### Plugins
+
+```yaml
+plugins:
+  - shipwright
+```
+
+A list of Claude Code plugin package names to install for agents of this type. The coding type installs exactly the `shipwright` plugin itself.
+
+### Members
+
+```yaml
+members: []
+```
+
+Default member list for agents provisioned from this type — usually empty (`[]`) in the manifest itself, with actual members added per-agent-instance after provisioning via the admin API (`AgentMember` rows), not baked into the shared type manifest.
+
+### Tools
+
+```yaml
+tools:
+  - Read
+  - Write
+  - Edit
+  - Glob
+  - Grep
+  - Bash
+  - WebSearch
+  - WebFetch
+  - Skill
+  - Agent
+  - Monitor
+```
+
+This list is **additive on top of the floor set** — see [FLOOR_TOOLS are outside manifest authority](agent-types.md#floor_tools-are-outside-manifest-authority). Listing `Read`/`Write`/`Edit`/`Glob`/`Grep`/`Skill` here is harmless (they're already floor-granted) but redundant; the fields that actually matter to declare are the high-privilege ones — `Bash`, `WebSearch`, `WebFetch`, `Agent`, `Monitor` — since those are never floor-granted.
+
+### Repos
+
+```yaml
+repos: []
+```
+
+Default `org/repo`-formatted repos for agents of this type — like `members`, usually empty in the shared type manifest, with real repos assigned per-agent-instance after provisioning.
+
+## Specialist type
+
+`agent-types/specialist/manifest.yaml` is a generic, non-coding Agent Type for agents that are not delivery agents. It uses existing manifest fields only — no schema or loader changes — and appears in the new-agent type picker automatically via `listTypes()`.
+
+It differs from `coding` in what it does *not* grant: `crons: []` (no system crons — `learn-dream` is excluded because it needs the `shipwright` plugin), `plugins: []` (no `shipwright` plugin), `repos: []` and `GH_TOKEN` optional only (no GitHub or task-store scope), and a smaller additive tool set (`Bash`, `WebSearch`, `WebFetch`, `Agent` on top of the floor tools; no `Monitor`). The env contract is otherwise the same as `coding`.
+
+Specialties layer their own plugins, crons and env on top after creation, via the admin API.
+
+**Workspace templates:** the agent runtime reads `identity.templatesDir` when it first seeds a workspace. This manifest still points at `agent/workspace/`, so specialist agents currently receive the coding-flavored templates; point it at another directory to seed that directory's files instead.
