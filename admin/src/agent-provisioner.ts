@@ -733,7 +733,8 @@ export class KubernetesAgentProvisioner implements AgentProvisioner {
   /**
    * The desired Deployment manifest for an agent — the single source of truth
    * used both to create (provision) and to drift-correct (reconcile).
-   * `federation` is the agent's resolved wiring (see federationFor).
+   * `federation` is the agent's resolved wiring: the shared identity, its own
+   * per-agent identity (provision / reconcileFederationFor), or none.
    */
   private deploymentManifestFor(
     agentId: string,
