@@ -4303,35 +4303,23 @@ export interface DependencyNode {
 }
 
 /**
- * Selects the session's tasks that participate in a dependency edge —
- * either they declare a dependency, or another task in the session declares
- * them as one — and returns them as a flat, deterministically-ordered array
- * for the graph card (see `renderDependencyGraph`/`computeDependencyLayout`).
- * Tasks with no relationship are noise here and stay visible in the plain
- * task table above. Dependency ids outside the session (unknown to this task
- * list) aren't session tasks and have no status to classify by, so they
- * never get their own node — they still show up in a participating task's
- * `dependsOn` list, just unlinked.
+ * Maps every session task to a graph node and returns them as a flat,
+ * deterministically-ordered array for the graph card (see
+ * `renderDependencyGraph`/`computeDependencyLayout`). Tasks with no
+ * dependency relationship are included too — they render as depth-0 roots in
+ * column 0 so the graph shows as many nodes as the session has tasks.
+ * Dependency ids outside the session (unknown to this task list) aren't
+ * session tasks and have no status to classify by, so they never get their
+ * own node — they still show up in a task's `dependsOn` list, just unlinked.
  */
 export function computeDependencyNodes(tasks: TaskItem[]): DependencyNode[] {
-  const referencedIds = new Set<string>();
-  for (const t of tasks) {
-    for (const dep of t.dependencies ?? []) referencedIds.add(dep);
-  }
-
-  const nodes: DependencyNode[] = [];
-  for (const t of tasks) {
-    if ((t.dependencies?.length ?? 0) === 0 && !referencedIds.has(t.id)) {
-      continue;
-    }
-    nodes.push({
-      id: t.id,
-      title: t.title,
-      status: t.status,
-      branch: t.branch ?? null,
-      dependsOn: t.dependencies ?? [],
-    });
-  }
+  const nodes: DependencyNode[] = tasks.map((t) => ({
+    id: t.id,
+    title: t.title,
+    status: t.status,
+    branch: t.branch ?? null,
+    dependsOn: t.dependencies ?? [],
+  }));
   nodes.sort((a, b) => a.id.localeCompare(b.id));
   return nodes;
 }
@@ -4365,8 +4353,8 @@ interface DependencyLayout {
  * the input node set aren't session participants and are ignored) and a row
  * within that column, then converts to fixed-size-card pixel coordinates
  * using the constants above. Callers are expected to have already filtered
- * `nodes` down to participating tasks (see `computeDependencyNodes`) — this
- * function does no filtering of its own.
+ * `nodes` via `computeDependencyNodes` — this function does no filtering of
+ * its own.
  *
  * Cycle-safe: depth computation uses a Set tracking node ids on the current
  * DFS recursion stack. Re-entering a node already on the stack (i.e. a
