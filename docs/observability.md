@@ -53,6 +53,17 @@ Every agent call site reporting a `claude` CLI runner error — `agent/src/runti
 
 Any new call site that can receive a thrown `ClaudeTimeoutError` should report through `reportClaudeError` rather than calling `captureException` directly, to keep this classification consistent.
 
+## Pool observability
+
+The task-store instruments its `pg` pool to diagnose pool starvation (Sentry VITALS-OS-5T). It is observability only — pool size and queries are unchanged.
+
+- **Route context** — a middleware records each request's method and matched route pattern, so pool events can be attributed to a route.
+- **Connection holds** — a connection held longer than `SHIPWRIGHT_TASK_STORE_POOL_HOLD_THRESHOLD_MS` (default 2000) logs `pg connection held past threshold` with the route, duration, and pool stats.
+- **Pool monitor** — every `SHIPWRIGHT_TASK_STORE_POOL_MONITOR_INTERVAL_MS` (default 30000) the pool is checked and `pg pool has waiting clients` is logged when `waiting > 0`. It is stopped on graceful shutdown.
+- **Sentry** — when an unhandled error is a pool timeout (Prisma `P2028`, `Unable to start a transaction`, or a pg connection timeout), the captured event carries a `pg_pool` context (total/idle/waiting/max and route) and `route` / `server_name` tags. Other errors are captured unchanged.
+
+Both thresholds are documented in [`docs/configuration-agent.md`](./configuration-agent.md#metrics--admin--chat--task-store-services). The helpers live in [`lib/pool-observability.ts`](../lib/pool-observability.ts).
+
 ## Disabling Sentry
 
 Unset `SENTRY_DSN` (or never set it) for the service in question. This is the default — no other configuration is required to keep a service fully offline from Sentry's perspective. Alternatively, `Sentry` is automatically disabled during test runs (when `NODE_ENV` is `"test"`, set either by the root `bunfig.toml` `[test]` preload script `scripts/test-env-preload.ts` for root-cwd `bun test` runs, or by the subpackage's own `NODE_ENV=test` script prefix for subpackage-cwd runs) even if `SENTRY_DSN` is present in the environment, preventing test assertions from polluting production Sentry with unintended error events.
