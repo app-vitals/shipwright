@@ -10108,7 +10108,7 @@ describe("renderSessionDetailPage dependency graph", () => {
     expect(section).toContain('data-from="TASK-ROOT" data-to="TASK-DEP"');
   });
 
-  test("tasks with no dependency relationship at all are excluded from the graph", () => {
+  test("tasks with no dependency relationship at all render as isolated nodes in the graph", () => {
     const unrelated: TaskItem = {
       id: "TASK-LONER",
       title: "No relationships",
@@ -10139,7 +10139,8 @@ describe("renderSessionDetailPage dependency graph", () => {
     const section = graphSection(html);
     expect(section).toContain("TASK-DEP");
     expect(section).toContain("TASK-ROOT");
-    expect(section).not.toContain("TASK-LONER");
+    expect(section).toContain('data-task-id="TASK-LONER"');
+    expect(section.match(/data-task-id=/g)?.length).toBe(3);
   });
 
   test("same-branch tasks get a matching branch color", () => {
@@ -10172,7 +10173,7 @@ describe("renderSessionDetailPage dependency graph", () => {
     expect(colors[0]).toBe(colors[1]);
   });
 
-  test("session with zero dependency edges omits the dependency graph card entirely", () => {
+  test("single-task session renders the dependency graph card with that node", () => {
     const solo: TaskItem = {
       id: "TASK-SOLO",
       title: "Independent",
@@ -10181,6 +10182,11 @@ describe("renderSessionDetailPage dependency graph", () => {
       blockedBy: [],
     };
     const html = renderSessionDetailPage(SESSION_ID, [solo], USER_NAME);
+    expect(graphSection(html)).toContain('data-task-id="TASK-SOLO"');
+  });
+
+  test("zero-task session omits the dependency graph card", () => {
+    const html = renderSessionDetailPage(SESSION_ID, [], USER_NAME);
     expect(html).not.toContain("Dependency graph");
   });
 
@@ -10353,6 +10359,42 @@ describe("renderSessionDetailPage dependency graph", () => {
       40 * 2 + numColumns * 220 + (numColumns - 1) * 100,
     );
     expect(layout.width).toBeGreaterThan(375);
+  });
+});
+
+describe("computeDependencyNodes", () => {
+  test("returns every task, including edge-less ones, sorted by id; out-of-session deps get no node", () => {
+    const mk = (id: string, deps?: string[]): TaskItem => ({
+      id,
+      title: id,
+      status: "pending",
+      session: "s",
+      dependencies: deps,
+      blockedBy: [],
+    });
+    const nodes = computeDependencyNodes([
+      mk("C-3"),
+      mk("B-2", ["A-1", "OUTSIDE-9"]),
+      mk("A-1"),
+    ]);
+    expect(nodes.map((n) => n.id)).toEqual(["A-1", "B-2", "C-3"]);
+    expect(nodes[1].dependsOn).toEqual(["A-1", "OUTSIDE-9"]);
+  });
+
+  test("an isolated node lays out at depth 0 in column 0", () => {
+    const mk = (id: string, deps?: string[]): TaskItem => ({
+      id,
+      title: id,
+      status: "pending",
+      session: "s",
+      dependencies: deps,
+      blockedBy: [],
+    });
+    const layout = computeDependencyLayout(
+      computeDependencyNodes([mk("A-1"), mk("B-2", ["A-1"]), mk("Z-9")]),
+    );
+    expect(layout.positions.get("Z-9")?.depth).toBe(0);
+    expect(layout.positions.get("Z-9")?.x).toBe(layout.positions.get("A-1")?.x);
   });
 });
 
