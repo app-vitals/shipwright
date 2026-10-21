@@ -8,8 +8,8 @@
  */
 
 import { Hono } from "hono";
-import { type AdminUIDeps, createAdminUIApp } from "../admin-ui.ts";
 import { MOCK_CRON, makeMockDeps } from "../admin-ui.fixtures.ts";
+import { type AdminUIDeps, createAdminUIApp } from "../admin-ui.ts";
 import {
   type CodingAgentDetailCardDeps,
   codingAgentDetailCards,

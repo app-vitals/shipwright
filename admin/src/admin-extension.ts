@@ -33,6 +33,7 @@
  * (the composition root) is the only file that wires a concrete extension in.
  */
 
+import type { ErrorCapturingClient } from "@shipwright/lib/sentry";
 import type { Hono } from "hono";
 import type { PrismaClient } from "../prisma/client/client.ts";
 import type { AccountService } from "./accounts.ts";
@@ -78,6 +79,8 @@ export interface AdminExtensionContext {
   timezone?: string;
   /** Web Push, present only when VAPID is fully configured. */
   push?: { service: PushService; maxDetail: string; vapidPublicKey: string };
+  /** Sentry, present only when SENTRY_DSN is set (as the admin API gets it). */
+  sentryClient?: ErrorCapturingClient;
   services: AdminPlatformServices;
 }
 
@@ -139,6 +142,16 @@ export interface AdminBackgroundPass {
 export interface AdminOpenApiContribution {
   paths?: Record<string, Record<string, unknown>>;
   schemas?: Record<string, unknown>;
+  /**
+   * Where new paths/schemas land in the document: contributed key → the key
+   * it is inserted directly after (a platform key, or a contributed key placed
+   * earlier). New keys without a placement are appended. Lets an extension's
+   * routes keep a stable position in the generated document.
+   */
+  placeAfter?: {
+    paths?: Record<string, string>;
+    schemas?: Record<string, string>;
+  };
 }
 
 export interface AdminExtension {
@@ -197,20 +210,72 @@ export function resolveAdminExtensions(
   };
 }
 
-/** Merges every extension's static OpenAPI contribution, in order. */
+/**
+ * Merges every extension's static OpenAPI contribution, in order. Placements
+ * are included only when some extension declared one.
+ */
 export function collectOpenApiContributions(
   extensions: readonly AdminExtension[],
-): Required<AdminOpenApiContribution> {
+): Required<Pick<AdminOpenApiContribution, "paths" | "schemas">> &
+  Pick<AdminOpenApiContribution, "placeAfter"> {
   const paths: Record<string, Record<string, unknown>> = {};
   const schemas: Record<string, unknown> = {};
+  const pathsAfter: Record<string, string> = {};
+  const schemasAfter: Record<string, string> = {};
   for (const ext of extensions) {
     const contribution = ext.openApi?.() ?? {};
     for (const [path, methods] of Object.entries(contribution.paths ?? {})) {
       paths[path] = { ...paths[path], ...methods };
     }
     Object.assign(schemas, contribution.schemas);
+    Object.assign(pathsAfter, contribution.placeAfter?.paths);
+    Object.assign(schemasAfter, contribution.placeAfter?.schemas);
   }
-  return { paths, schemas };
+  const placed =
+    Object.keys(pathsAfter).length > 0 || Object.keys(schemasAfter).length > 0;
+  return {
+    paths,
+    schemas,
+    ...(placed
+      ? { placeAfter: { paths: pathsAfter, schemas: schemasAfter } }
+      : {}),
+  };
+}
+
+/**
+ * Merges `extra` into `base` keeping base's key order: an existing key keeps
+ * its position (its value merged via `mergeValue`), a new key is inserted
+ * right after its `after` anchor or, unplaced, appended. An anchor that is not
+ * in the document is a programming error and throws.
+ */
+function mergeOrdered<V>(
+  base: Record<string, V>,
+  extra: Record<string, V>,
+  after: Record<string, string> | undefined,
+  mergeValue: (existing: V, added: V) => V,
+): Record<string, V> {
+  const keys = Object.keys(base);
+  const values: Record<string, V> = { ...base };
+  for (const [key, value] of Object.entries(extra)) {
+    if (Object.hasOwn(values, key)) {
+      values[key] = mergeValue(values[key] as V, value);
+      continue;
+    }
+    const anchor = after?.[key];
+    if (anchor === undefined) {
+      keys.push(key);
+    } else {
+      const at = keys.indexOf(anchor);
+      if (at === -1) {
+        throw new Error(
+          `OpenAPI contribution places "${key}" after unknown "${anchor}"`,
+        );
+      }
+      keys.splice(at + 1, 0, key);
+    }
+    values[key] = value;
+  }
+  return Object.fromEntries(keys.map((key) => [key, values[key] as V]));
 }
 
 interface OpenApiDocLike {
@@ -221,7 +286,8 @@ interface OpenApiDocLike {
 /**
  * Folds a contribution into an OpenAPI document. An empty contribution returns
  * the input itself, so the generated spec stays byte-identical. Paths merge at
- * the method level (like the runtime/admin merge in generate-admin-spec.ts).
+ * the method level (like the runtime/admin merge in generate-admin-spec.ts);
+ * new paths and schemas land at their `placeAfter` anchors, else at the end.
  */
 export function applyOpenApiContributions<T extends OpenApiDocLike>(
   doc: T,
@@ -232,17 +298,22 @@ export function applyOpenApiContributions<T extends OpenApiDocLike>(
   if (extraPaths.length === 0 && Object.keys(extraSchemas).length === 0) {
     return doc;
   }
-  const paths = { ...(doc.paths ?? {}) };
-  for (const [path, methods] of extraPaths) {
-    paths[path] = { ...paths[path], ...methods };
-  }
+  const paths = mergeOrdered(
+    doc.paths ?? {},
+    Object.fromEntries(extraPaths),
+    contribution.placeAfter?.paths,
+    (existing, added) => ({ ...existing, ...added }),
+  );
+  const schemas = mergeOrdered(
+    doc.components?.schemas ?? {},
+    extraSchemas,
+    contribution.placeAfter?.schemas,
+    (_existing, added) => added,
+  );
   return {
     ...doc,
     paths,
-    components: {
-      ...(doc.components ?? {}),
-      schemas: { ...(doc.components?.schemas ?? {}), ...extraSchemas },
-    },
+    components: { ...(doc.components ?? {}), schemas },
   };
 }
 

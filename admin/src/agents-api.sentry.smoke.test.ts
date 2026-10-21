@@ -189,10 +189,6 @@ function makeBaseDeps(
       remove: async () => {},
       removeByName: async () => {},
     },
-    agentPhaseMethodologyService: {
-      list: async () => [],
-      upsert: async () => ({}) as never,
-    },
     agentMemberService: {
       exists: async () => false,
       listByEmail: async () => [],
@@ -220,12 +216,6 @@ function makeBaseDeps(
         byModel: [],
         daily: [],
       }),
-    },
-    agentWorkQueueService: {
-      push: async () => {
-        throw new Error("not implemented");
-      },
-      get: async () => null,
     },
     agentGitHubInstallationsService: {
       push: async () => {

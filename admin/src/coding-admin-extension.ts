@@ -27,6 +27,11 @@ import {
 import { AgentPhaseMethodologyService } from "./coding/agent-phase-methodology.ts";
 import { AgentWorkQueueService } from "./coding/agent-work-queue.ts";
 import {
+  codingAdminOpenApi,
+  createCodingAdminApiApp,
+} from "./coding/agents-api-coding.ts";
+import { DevTaskAdherenceService } from "./coding/dev-task-adherence.ts";
+import {
   SessionAlertSweeper,
   type SessionForAlert,
 } from "./coding/session-alert-sweeper.ts";
@@ -145,6 +150,25 @@ export const codingAdminExtension: AdminExtension = {
   services: () => ({
     ui: { agentDetailErrorMessages: CODING_AGENT_DETAIL_ERROR_MESSAGES },
   }),
+  apiRoutes: (ctx) => [
+    {
+      path: "/",
+      app: createCodingAdminApiApp({
+        agentService: ctx.services.agentService,
+        agentPhaseMethodologyService: new AgentPhaseMethodologyService(
+          ctx.prisma,
+        ),
+        agentWorkQueueService: new AgentWorkQueueService(ctx.prisma),
+        devTaskAdherenceService: new DevTaskAdherenceService(ctx.prisma),
+        agentTokenService: ctx.services.agentTokenService,
+        agentMemberService: ctx.services.agentMemberService,
+        callerScopeResolver: ctx.services.callerScopeResolver,
+        sessionSecret: ctx.sessionSecret,
+        adminApiKeys: ctx.adminApiKeys,
+        ...(ctx.sentryClient ? { sentryClient: ctx.sentryClient } : {}),
+      }),
+    },
+  ],
   adminUiRoutes: (ctx) => [
     {
       path: "/",
@@ -192,6 +216,7 @@ export const codingAdminExtension: AdminExtension = {
       ...(fetchTaskStorePrs ? { fetchTaskStorePrs } : {}),
     });
   },
+  openApi: codingAdminOpenApi,
   backgroundPasses: (ctx) => {
     const pass = sessionAlertPass(ctx);
     return pass ? [pass] : [];

@@ -9,11 +9,11 @@
 
 import { beforeAll, describe, expect, it } from "bun:test";
 import { AGENT_ID, makeSessionCookie } from "../admin-ui.fixtures.ts";
-import type { PrListItem } from "./admin-ui-work-item-pages.ts";
 import {
   createCodingTestApp,
   makeCodingMockDeps,
 } from "./admin-ui-coding.fixtures.ts";
+import type { PrListItem } from "./admin-ui-work-item-pages.ts";
 
 // ─── Tasks page ───────────────────────────────────────────────────────────────
 

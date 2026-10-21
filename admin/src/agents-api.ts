@@ -68,9 +68,6 @@ import {
   type CallerScopeResolver,
   memberOnlyCallerScopeResolver,
 } from "./caller-scope.ts";
-import type { AgentPhaseMethodologyService } from "./coding/agent-phase-methodology.ts";
-import type { AgentWorkQueueService } from "./coding/agent-work-queue.ts";
-import type { DevTaskAdherenceService } from "./coding/dev-task-adherence.ts";
 import {
   ApiError,
   BadRequestError,
@@ -86,12 +83,10 @@ import {
   AgentEnvResponseSchema,
   AgentGitHubInstallationsSnapshotSchema,
   AgentIdParamSchema,
-  AgentPhaseMethodologySchema,
   AgentPluginSchema,
   AgentSummarySchema,
   AgentTokenSchema,
   AgentToolSchema,
-  AgentWorkQueueSnapshotSchema,
   ChatTokenStatsSchema,
   CreateAgentBodySchema,
   CreateAgentCronJobBodySchema,
@@ -118,10 +113,7 @@ import {
   PatchAgentCronRunBodySchema,
   PatchAgentPluginBodySchema,
   PatchAgentToolBodySchema,
-  PhaseParamSchema,
   PluginNameQuerySchema,
-  PushWorkQueueSnapshotBodySchema,
-  PutAgentPhaseMethodologyBodySchema,
   PutGitHubInstallationsBodySchema,
   TokenIdParamSchema,
   ToolIdParamSchema,
@@ -169,8 +161,6 @@ export interface AdminDeps {
     AgentCronRunStatsService,
     "query" | "outcomes"
   >;
-  /** DTA-1.2 — optional so existing deps/mocks need no change; route 404s when absent. */
-  devTaskAdherenceService?: Pick<DevTaskAdherenceService, "report">;
   agentToolService: Pick<
     AgentToolService,
     "list" | "add" | "remove" | "toggle"
@@ -182,10 +172,6 @@ export interface AdminDeps {
   agentPluginService: Pick<
     AgentPluginService,
     "list" | "add" | "remove" | "removeByName"
-  >;
-  agentPhaseMethodologyService: Pick<
-    AgentPhaseMethodologyService,
-    "list" | "upsert"
   >;
   agentMemberService: Pick<
     AgentMemberService,
@@ -206,7 +192,6 @@ export interface AdminDeps {
     AgentChatTokenService,
     "upsertDailyByModel" | "queryStats"
   >;
-  agentWorkQueueService: Pick<AgentWorkQueueService, "push" | "get">;
   agentGitHubInstallationsService: Pick<
     AgentGitHubInstallationsService,
     "push" | "get"
@@ -419,14 +404,6 @@ const PluginsWrapperSchema = z
   .object({ plugins: z.array(AgentPluginSchema) })
   .openapi("PluginsWrapper");
 
-const PhaseMethodologyWrapperSchema = z
-  .object({ phaseMethodology: AgentPhaseMethodologySchema })
-  .openapi("PhaseMethodologyWrapper");
-
-const PhaseMethodologyListWrapperSchema = z
-  .object({ phaseMethodology: z.array(AgentPhaseMethodologySchema) })
-  .openapi("PhaseMethodologyListWrapper");
-
 const jsonError = {
   content: { "application/json": { schema: ErrorSchema } },
 };
@@ -434,10 +411,6 @@ const jsonError = {
 const GitHubInstallationsSnapshotWrapperSchema = z
   .object({ snapshot: AgentGitHubInstallationsSnapshotSchema })
   .openapi("GitHubInstallationsSnapshotWrapper");
-
-const WorkQueueSnapshotWrapperSchema = z
-  .object({ snapshot: AgentWorkQueueSnapshotSchema })
-  .openapi("WorkQueueSnapshotWrapper");
 
 // ─── Route definitions ──────────────────────────────────────────────────────────
 
@@ -1030,50 +1003,6 @@ const deletePluginRoute = createRoute({
   },
 });
 
-const listPhaseMethodologyRoute = createRoute({
-  method: "get",
-  path: "/agents/{id}/phase-methodology",
-  summary: "List phase-methodology overrides",
-  description:
-    "Returns every phase-methodology override configured for the agent — which subagent type handles each pipeline phase (prd, plan-session, review, patch, deploy, dev-task). A phase with no explicit override is simply absent from this list; see GET /agents/:id/config's `phaseMethodology` map for the full six-phase view with defaults filled in.",
-  request: { params: AgentIdParamSchema },
-  responses: {
-    200: {
-      description: "List of phase-methodology overrides",
-      content: {
-        "application/json": { schema: PhaseMethodologyListWrapperSchema },
-      },
-    },
-    404: { description: "Agent not found", ...jsonError },
-  },
-});
-
-const putPhaseMethodologyRoute = createRoute({
-  method: "put",
-  path: "/agents/{id}/phase-methodology/{phase}",
-  summary: "Set a phase's subagent-type override",
-  description:
-    "Upserts the `subagentType` override for one pipeline phase. Passing `subagentType: null` clears the override (the phase falls back to its default methodology). `phase` must be one of prd, plan-session, review, patch, deploy, dev-task.",
-  request: {
-    params: PhaseParamSchema,
-    body: {
-      content: {
-        "application/json": { schema: PutAgentPhaseMethodologyBodySchema },
-      },
-    },
-  },
-  responses: {
-    200: {
-      description: "Phase-methodology override upserted",
-      content: {
-        "application/json": { schema: PhaseMethodologyWrapperSchema },
-      },
-    },
-    400: { description: "Bad request — invalid phase", ...jsonError },
-    404: { description: "Agent not found", ...jsonError },
-  },
-});
-
 const upsertChatTokenDailyRoute = createRoute({
   method: "post",
   path: "/agents/{id}/chat-tokens/daily",
@@ -1097,50 +1026,6 @@ const upsertChatTokenDailyRoute = createRoute({
     },
     400: { description: "Bad request", ...jsonError },
     404: { description: "Agent not found", ...jsonError },
-  },
-});
-
-const pushWorkQueueSnapshotRoute = createRoute({
-  method: "post",
-  path: "/agents/{id}/work-queue",
-  summary: "Push a work-queue snapshot",
-  description:
-    "Upserts the agent's single ranked work-queue snapshot (tasks/PRs across pipeline phases), overwriting any prior snapshot — there is no history.",
-  request: {
-    params: AgentIdParamSchema,
-    body: {
-      content: {
-        "application/json": { schema: PushWorkQueueSnapshotBodySchema },
-      },
-    },
-  },
-  responses: {
-    200: {
-      description:
-        "Snapshot upserted (overwrites any prior snapshot for this agent)",
-      content: {
-        "application/json": { schema: WorkQueueSnapshotWrapperSchema },
-      },
-    },
-    400: { description: "Bad request", ...jsonError },
-  },
-});
-
-const getWorkQueueSnapshotRoute = createRoute({
-  method: "get",
-  path: "/agents/{id}/work-queue",
-  summary: "Get the latest work-queue snapshot",
-  description:
-    "Returns the most recently pushed work-queue snapshot, or 404 if the agent has never pushed one.",
-  request: { params: AgentIdParamSchema },
-  responses: {
-    200: {
-      description: "Latest work-queue snapshot",
-      content: {
-        "application/json": { schema: WorkQueueSnapshotWrapperSchema },
-      },
-    },
-    404: { description: "No snapshot pushed yet", ...jsonError },
   },
 });
 
@@ -1201,7 +1086,8 @@ const getGitHubInstallationsRoute = createRoute({
   },
 });
 
-const cronRunStatsQuerySchema = z
+/** `from`/`to` ISO datetime bounds shared by the cron-run report routes. */
+export const cronRunStatsQuerySchema = z
   .object({
     from: z
       .string()
@@ -1296,51 +1182,6 @@ const agentCronRunOutcomesRoute = createRoute({
   },
 });
 
-const devTaskAdherenceRoute = createRoute({
-  method: "get",
-  path: "/agents/all/cron-runs/dev-task-adherence",
-  summary: "Get dev-task adherence report",
-  description:
-    "Admin-only. Per dev-task run, compares skill-usage subagent dispatches against the required-steps table and reports per-step ran/skipped, with per-step adherence rates overall, per variant (contextFingerprint) and per commandVariant (default vs alternate). Rates cover task-bearing runs only (dispatched against a work item); `counts` separates them from silent no-ready-task ticks. A dispatch proves a step started, not that it was done well. Optional `from`/`to` ISO datetime params bound startedAt.",
-  request: {
-    query: cronRunStatsQuerySchema,
-  },
-  responses: {
-    200: {
-      description: "Dev-task adherence report",
-      content: {
-        "application/json": { schema: z.record(z.string(), z.unknown()) },
-      },
-    },
-    401: { description: "Unauthorized", ...jsonError },
-    403: { description: "Forbidden — requires admin scope", ...jsonError },
-    404: { description: "Adherence reporting not configured", ...jsonError },
-  },
-});
-
-const selfDevTaskAdherenceRoute = createRoute({
-  method: "get",
-  path: "/agents/{id}/dev-task-adherence",
-  summary: "Get this agent's dev-task adherence report",
-  description:
-    "Self-serve variant of the fleet-wide dev-task adherence report, scoped to the agent in the path. Access is gated by the generic agent-route auth (an agent's own bearer token, an admin, or a member session) — no admin scope required. Same report shape and optional `from`/`to` params as GET /agents/all/cron-runs/dev-task-adherence.",
-  request: {
-    params: AgentIdParamSchema,
-    query: cronRunStatsQuerySchema,
-  },
-  responses: {
-    200: {
-      description: "Dev-task adherence report for this agent's runs only",
-      content: {
-        "application/json": { schema: z.record(z.string(), z.unknown()) },
-      },
-    },
-    401: { description: "Unauthorized", ...jsonError },
-    403: { description: "Forbidden", ...jsonError },
-    404: { description: "Adherence reporting not configured", ...jsonError },
-  },
-});
-
 const chatTokenDailyStatsQuerySchema = z
   .object({
     from: z.string().date().optional().openapi({ example: "2026-01-01" }),
@@ -1389,37 +1230,15 @@ const selfChatTokenDailyStatsRoute = createRoute({
 
 // ─── App factory ──────────────────────────────────────────────────────────────
 
-export function createAdminApp(deps: AdminDeps): OpenAPIHono<AdminAuthEnv> {
-  const {
-    agentService,
-    agentEnvService,
-    agentCronJobService,
-    agentCronRunService,
-    agentCronRunStatsService,
-    devTaskAdherenceService,
-    agentToolService,
-    agentTokenService,
-    agentPluginService,
-    agentPhaseMethodologyService,
-    agentMemberService,
-    agentTypeRegistry,
-    agentChatTokenService,
-    agentWorkQueueService,
-    agentGitHubInstallationsService,
-    prisma,
-    provisioner,
-    serviceIntegrations,
-    chatService,
-    slack,
-    decrypt,
-    sessionSecret,
-    adminApiKeys,
-    sentryClient,
-  } = deps;
-  const callerScopeResolver =
-    deps.callerScopeResolver ??
-    memberOnlyCallerScopeResolver(agentMemberService);
-
+/**
+ * The admin API's OpenAPIHono app: a 400 for request-validation failures
+ * (defaultHook) and the shared error mapping (onError). Exported so extension
+ * API apps (AEP-3.2) answer validation failures and errors exactly like the
+ * platform API.
+ */
+export function createAdminApiHono(
+  sentryClient?: ErrorCapturingClient,
+): OpenAPIHono<AdminAuthEnv> {
   const app = new OpenAPIHono<AdminAuthEnv>({
     // Fires when Zod request validation fails — surface a 400 with the issues.
     defaultHook: (result, c) => {
@@ -1461,6 +1280,39 @@ export function createAdminApp(deps: AdminDeps): OpenAPIHono<AdminAuthEnv> {
     );
     return c.json({ error: "Internal server error" }, 500);
   });
+
+  return app;
+}
+
+export function createAdminApp(deps: AdminDeps): OpenAPIHono<AdminAuthEnv> {
+  const {
+    agentService,
+    agentEnvService,
+    agentCronJobService,
+    agentCronRunService,
+    agentCronRunStatsService,
+    agentToolService,
+    agentTokenService,
+    agentPluginService,
+    agentMemberService,
+    agentTypeRegistry,
+    agentChatTokenService,
+    agentGitHubInstallationsService,
+    prisma,
+    provisioner,
+    serviceIntegrations,
+    chatService,
+    slack,
+    decrypt,
+    sessionSecret,
+    adminApiKeys,
+    sentryClient,
+  } = deps;
+  const callerScopeResolver =
+    deps.callerScopeResolver ??
+    memberOnlyCallerScopeResolver(agentMemberService);
+
+  const app = createAdminApiHono(sentryClient);
 
   const authMiddleware = createAdminAuthMiddleware({
     sessionSecret,
@@ -2187,36 +2039,6 @@ export function createAdminApp(deps: AdminDeps): OpenAPIHono<AdminAuthEnv> {
     return c.body(null, 204);
   });
 
-  // ─── Phase Methodology ───────────────────────────────────────────────────────
-
-  // GET /agents/:id/phase-methodology — list phase-methodology overrides
-  app.openapi(listPhaseMethodologyRoute, async (c) => {
-    const { id: agentId } = c.req.valid("param");
-    if (!(await agentService.exists(agentId))) {
-      throw new NotFoundError(`agent ${agentId} not found`);
-    }
-    const rows = await agentPhaseMethodologyService.list(agentId);
-    return c.json(
-      { phaseMethodology: rows.map(serializePhaseMethodology) },
-      200,
-    );
-  });
-
-  // PUT /agents/:id/phase-methodology/:phase — upsert a phase's override
-  app.openapi(putPhaseMethodologyRoute, async (c) => {
-    const { id: agentId, phase } = c.req.valid("param");
-    if (!(await agentService.exists(agentId))) {
-      throw new NotFoundError(`agent ${agentId} not found`);
-    }
-    const body = c.req.valid("json");
-    const row = await agentPhaseMethodologyService.upsert(
-      agentId,
-      phase,
-      body.subagentType,
-    );
-    return c.json({ phaseMethodology: serializePhaseMethodology(row) }, 200);
-  });
-
   // ─── Cron-run token stats ──────────────────────────────────────────────────
 
   // GET /agents/all/cron-runs/stats — aggregated token stats across all agents
@@ -2263,35 +2085,6 @@ export function createAdminApp(deps: AdminDeps): OpenAPIHono<AdminAuthEnv> {
     const { from, to } = c.req.valid("query");
     const outcomes = await agentCronRunStatsService.outcomes(from, to, id);
     return c.json(outcomes, 200);
-  });
-
-  // GET /agents/all/cron-runs/dev-task-adherence — per-step dev-task adherence
-  app.openapi(devTaskAdherenceRoute, async (c) => {
-    if (c.get("isAdmin") !== true) {
-      throw new ForbiddenError(
-        "Only admin bearers and session users can access cross-agent stats",
-      );
-    }
-    if (!devTaskAdherenceService) {
-      return c.json({ error: "Adherence reporting not configured" }, 404);
-    }
-    const { from, to } = c.req.valid("query");
-    const report = await devTaskAdherenceService.report(from, to);
-    return c.json(report, 200);
-  });
-
-  // GET /agents/{id}/dev-task-adherence — same report scoped to one agent.
-  // No isAdmin check: the generic agent-route auth middleware already rejects
-  // a bearer whose agentId doesn't match the path. Registered after the static
-  // /agents/all/... route above.
-  app.openapi(selfDevTaskAdherenceRoute, async (c) => {
-    if (!devTaskAdherenceService) {
-      return c.json({ error: "Adherence reporting not configured" }, 404);
-    }
-    const { id: agentId } = c.req.valid("param");
-    const { from, to } = c.req.valid("query");
-    const report = await devTaskAdherenceService.report(from, to, agentId);
-    return c.json(report, 200);
   });
 
   // GET /agents/chat-tokens/daily/stats — aggregated daily chat token stats
@@ -2342,30 +2135,6 @@ export function createAdminApp(deps: AdminDeps): OpenAPIHono<AdminAuthEnv> {
       ),
     );
     return c.json(rows.map(serializeChatTokenDaily), 200);
-  });
-
-  // ─── Work queue snapshot ───────────────────────────────────────────────────
-
-  // POST /agents/:id/work-queue — push a snapshot (upserts the single row for
-  // this agent, overwriting any prior snapshot)
-  app.openapi(pushWorkQueueSnapshotRoute, async (c) => {
-    const { id: agentId } = c.req.valid("param");
-    const body = c.req.valid("json");
-    const snapshot = await agentWorkQueueService.push(agentId, {
-      computedAt: new Date(body.computedAt),
-      items: body.items,
-    });
-    return c.json({ snapshot: serializeWorkQueueSnapshot(snapshot) }, 200);
-  });
-
-  // GET /agents/:id/work-queue — read the latest snapshot, 404 if none yet
-  app.openapi(getWorkQueueSnapshotRoute, async (c) => {
-    const { id: agentId } = c.req.valid("param");
-    const snapshot = await agentWorkQueueService.get(agentId);
-    if (!snapshot) {
-      throw new NotFoundError(`no work-queue snapshot for agent ${agentId}`);
-    }
-    return c.json({ snapshot: serializeWorkQueueSnapshot(snapshot) }, 200);
   });
 
   // ─── GitHub installations snapshot ─────────────────────────────────────────
@@ -2590,16 +2359,6 @@ function serializePlugin(plugin: {
   } as z.infer<typeof AgentPluginSchema>;
 }
 
-function serializePhaseMethodology(row: {
-  updatedAt: Date;
-  [k: string]: unknown;
-}): z.infer<typeof AgentPhaseMethodologySchema> {
-  return {
-    ...row,
-    updatedAt: row.updatedAt.toISOString(),
-  } as z.infer<typeof AgentPhaseMethodologySchema>;
-}
-
 function serializeAgent(
   agent: {
     id: string;
@@ -2697,24 +2456,6 @@ function serializeGitHubInstallationsSnapshot(snapshot: {
     installations: snapshot.installations as z.infer<
       typeof AgentGitHubInstallationsSnapshotSchema
     >["installations"],
-    createdAt: snapshot.createdAt.toISOString(),
-  };
-}
-
-function serializeWorkQueueSnapshot(snapshot: {
-  id: string;
-  agentId: string;
-  computedAt: Date;
-  items: unknown;
-  createdAt: Date;
-}): z.infer<typeof AgentWorkQueueSnapshotSchema> {
-  return {
-    id: snapshot.id,
-    agentId: snapshot.agentId,
-    computedAt: snapshot.computedAt.toISOString(),
-    items: snapshot.items as z.infer<
-      typeof AgentWorkQueueSnapshotSchema
-    >["items"],
     createdAt: snapshot.createdAt.toISOString(),
   };
 }

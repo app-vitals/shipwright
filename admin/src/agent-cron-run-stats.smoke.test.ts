@@ -410,16 +410,6 @@ function makeMockDeps(): AdminDeps {
       remove: async () => {},
       removeByName: async () => {},
     },
-    agentPhaseMethodologyService: {
-      list: async () => [],
-      upsert: async () => ({
-        id: "phase-methodology-id",
-        agentId: AGENT_ID,
-        phase: "review",
-        subagentType: null,
-        updatedAt: new Date(),
-      }),
-    },
     agentMemberService: {
       exists: async () => false,
       listByEmail: async () => [],
@@ -468,12 +458,6 @@ function makeMockDeps(): AdminDeps {
         byModel: [],
         daily: [],
       }),
-    },
-    agentWorkQueueService: {
-      push: async () => {
-        throw new Error("not implemented");
-      },
-      get: async () => null,
     },
     agentGitHubInstallationsService: {
       push: async () => {

@@ -8,18 +8,24 @@
  * wiring /doc in the factory is a planned follow-up).
  *
  * Also guards the committed generated artifact `admin/openapi.json` against
- * drift: its path+method set must match the live spec, so a route removed from
- * (or added to) the Hono registrations can't be left behind in the checked-in
- * spec (and therefore in the `lib/admin-types.ts` generated from it).
+ * drift: its path+method set must match the live spec plus the composed admin
+ * extensions' contributions, so a route removed from (or added to) the Hono
+ * registrations can't be left behind in the checked-in spec (and therefore in
+ * the `lib/admin-types.ts` generated from it).
  */
 
 import { describe, expect, it } from "bun:test";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { OpenAPIHono } from "@hono/zod-openapi";
+import {
+  applyOpenApiContributions,
+  collectOpenApiContributions,
+} from "./admin-extension.ts";
 import { NoopAgentProvisioner } from "./agent-provisioner.ts";
 import { createAdminApp, parseAdminApiKeys } from "./agents-api.ts";
 import { createAgentRuntimeApp } from "./api.ts";
+import { adminExtensions } from "./main.ts";
 
 const SESSION_SECRET = "spec-test-session-secret-32bytes!";
 const ADMIN_API_KEY = "spec-test-admin-key";
@@ -334,16 +340,6 @@ function buildSpecApp() {
       remove: async () => {},
       removeByName: async () => {},
     },
-    agentPhaseMethodologyService: {
-      list: async () => [],
-      upsert: async () => ({
-        id: "pm1",
-        agentId: "a1",
-        phase: "review",
-        subagentType: null,
-        updatedAt: new Date(),
-      }),
-    },
     agentMemberService: {
       exists: async () => false,
       listByEmail: async () => [],
@@ -385,12 +381,6 @@ function buildSpecApp() {
         byModel: [],
         daily: [],
       }),
-    },
-    agentWorkQueueService: {
-      push: async () => {
-        throw new Error("not implemented");
-      },
-      get: async () => null,
     },
     agentGitHubInstallationsService: {
       push: async () => {
@@ -521,7 +511,15 @@ describe("GET /doc — OpenAPI spec endpoint", () => {
   it("committed admin/openapi.json matches the live spec's routes", async () => {
     const app = buildSpecApp();
     const res = await app.request("/doc");
-    const live = await res.json();
+    // The committed artifact is Shipwright's composed spec: the platform's
+    // live routes plus the admin extensions' contributions (AEP-3.2), folded
+    // in exactly as generate-admin-spec.ts does.
+    const live = applyOpenApiContributions(
+      (await res.json()) as {
+        paths: Record<string, Record<string, unknown>>;
+      },
+      collectOpenApiContributions(adminExtensions),
+    );
     const committed = JSON.parse(
       readFileSync(resolve(import.meta.dir, "../openapi.json"), "utf8"),
     ) as { paths: Record<string, Record<string, unknown>> };

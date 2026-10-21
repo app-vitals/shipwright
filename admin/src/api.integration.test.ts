@@ -141,7 +141,6 @@ describeOrSkip(
         },
         agentTokenService,
         agentPluginService,
-        agentPhaseMethodologyService,
         agentMemberService: {
           exists: async () => false,
           listByEmail: async () => [],
@@ -173,12 +172,6 @@ describeOrSkip(
             byModel: [],
             daily: [],
           }),
-        },
-        agentWorkQueueService: {
-          push: async () => {
-            throw new Error("not implemented");
-          },
-          get: async () => null,
         },
         agentGitHubInstallationsService: {
           push: async () => {

@@ -125,10 +125,6 @@ function buildComposedApp() {
       remove: notImplemented,
       removeByName: notImplemented,
     },
-    agentPhaseMethodologyService: {
-      list: notImplemented,
-      upsert: notImplemented,
-    },
     agentMemberService: {
       add: notImplemented,
       listByAgentId: notImplemented,
@@ -139,7 +135,6 @@ function buildComposedApp() {
       upsertDailyByModel: notImplemented,
       queryStats: notImplemented,
     },
-    agentWorkQueueService: { push: notImplemented, get: notImplemented },
     agentGitHubInstallationsService: {
       push: notImplemented,
       get: notImplemented,

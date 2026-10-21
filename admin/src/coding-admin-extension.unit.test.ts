@@ -39,11 +39,23 @@ describe("codingAdminExtension", () => {
     ]);
   });
 
-  it("registers no API routes or OpenAPI contributions yet", () => {
+  it("mounts its own API routes and contributes them to the admin OpenAPI document", () => {
     const resolved = resolveAdminExtensions([codingAdminExtension], ctx);
-    expect(resolved.apiRoutes).toEqual([]);
-    expect(collectOpenApiContributions([codingAdminExtension])).toEqual(
-      collectOpenApiContributions([]),
+    expect(resolved.apiRoutes.map((route) => route.path)).toEqual(["/"]);
+    const { paths, placeAfter } = collectOpenApiContributions([
+      codingAdminExtension,
+    ]);
+    expect(Object.keys(paths).sort()).toEqual([
+      "/agents/all/cron-runs/dev-task-adherence",
+      "/agents/{id}/dev-task-adherence",
+      "/agents/{id}/phase-methodology",
+      "/agents/{id}/phase-methodology/{phase}",
+      "/agents/{id}/work-queue",
+    ]);
+    // Every contributed path has a placement, so the composed document keeps
+    // the pre-split path order.
+    expect(Object.keys(placeAfter?.paths ?? {}).sort()).toEqual(
+      Object.keys(paths).sort(),
     );
   });
 

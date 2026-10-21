@@ -702,11 +702,14 @@ export const PatchAgentPluginBodySchema = z
   })
   .openapi("PatchAgentPluginBody");
 
-// ─── AgentPhaseMethodology ──────────────────────────────────────────────────────
+// ─── Pipeline phases ────────────────────────────────────────────────────────────
 //
-// The six pipeline phases a methodology override can target. Must stay in
-// lockstep with the phases the shipwright-loop cron can dispatch (PDR-4.1
-// added "plan-session"/"prd" to the wider pipeline) — see PMC-1.1.
+// The six pipeline phases a methodology override can target — the keys of the
+// runtime config's `phaseMethodology` map (AgentConfigResponse below; the
+// override CRUD schemas live with the coding extension's API,
+// coding/openapi-schemas-coding.ts). Must stay in lockstep with the phases the
+// shipwright-loop cron can dispatch (PDR-4.1 added "plan-session"/"prd" to the
+// wider pipeline) — see PMC-1.1.
 
 export const AGENT_PHASES = [
   "prd",
@@ -716,39 +719,6 @@ export const AGENT_PHASES = [
   "deploy",
   "dev-task",
 ] as const;
-
-export const AgentPhaseMethodologySchema = z
-  .object({
-    id: z.string().openapi({ example: "clx1234567890" }),
-    agentId: z.string().openapi({ example: "clx1234567890" }),
-    phase: z.enum(AGENT_PHASES).openapi({ example: "review" }),
-    subagentType: z
-      .string()
-      .nullable()
-      .openapi({ example: "shipwright:code-reviewer" }),
-    updatedAt: z
-      .string()
-      .datetime()
-      .openapi({ example: "2026-01-01T00:00:00.000Z" }),
-  })
-  .openapi("AgentPhaseMethodology");
-
-export type AgentPhaseMethodology = z.infer<typeof AgentPhaseMethodologySchema>;
-
-export const PutAgentPhaseMethodologyBodySchema = z
-  .object({
-    subagentType: z
-      .string()
-      .min(1)
-      .nullable()
-      .openapi({ example: "shipwright:code-reviewer" }),
-  })
-  .openapi("PutAgentPhaseMethodologyBody");
-
-export const PhaseParamSchema = z.object({
-  id: z.string().openapi({ example: "clx1234567890" }),
-  phase: z.enum(AGENT_PHASES).openapi({ example: "review" }),
-});
 
 // ─── AgentEnv ─────────────────────────────────────────────────────────────────
 
@@ -788,73 +758,6 @@ export const AgentEnvPatchBodySchema = z
       .openapi({ example: ["MY_SECRET"] }),
   })
   .openapi("AgentEnvPatchBody");
-
-// ─── AgentWorkQueueSnapshot ───────────────────────────────────────────────────
-
-/**
- * A single ranked work item, mirroring the RankedWorkItem interface in
- * agent/src/coding/work-selector.ts (type/phase are string enums there — validated
- * here for real, since this is a request body needing genuine validation,
- * not just an opaque Json passthrough).
- *
- * `phase` MUST stay in lockstep with RankedWorkItem["phase"] in
- * agent/src/coding/work-selector.ts — the loop orchestrator POSTs a snapshot every
- * tick, so a phase the agent can emit but this enum doesn't list 400s the
- * whole snapshot (PDR-4.1 added "plan").
- */
-const RankedWorkItemSchema = z
-  .object({
-    type: z.enum(["task", "pr"]).openapi({ example: "task" }),
-    id: z.string().openapi({ example: "WLS-2.2" }),
-    title: z
-      .string()
-      .optional()
-      .openapi({ example: "Add work queue snapshot endpoints" }),
-    phase: z
-      .enum(["dev-task", "plan", "review", "patch", "deploy"])
-      .openapi({ example: "dev-task" }),
-    age: z.string().openapi({
-      example: "2026-01-01T00:00:00.000Z",
-      description: "ISO timestamp",
-    }),
-  })
-  .openapi("RankedWorkItem");
-
-export type RankedWorkItem = z.infer<typeof RankedWorkItemSchema>;
-
-/**
- * POST /agents/:id/work-queue body — the envelope an agent pushes each time
- * it recomputes its ranked work queue. Upserts the single row for that
- * agentId, overwriting any prior snapshot.
- */
-export const PushWorkQueueSnapshotBodySchema = z
-  .object({
-    computedAt: z
-      .string()
-      .datetime()
-      .openapi({ example: "2026-01-01T00:00:00.000Z" }),
-    items: z.array(RankedWorkItemSchema),
-  })
-  .openapi("PushWorkQueueSnapshotBody");
-
-/**
- * GET /agents/:id/work-queue response — the latest pushed snapshot.
- */
-export const AgentWorkQueueSnapshotSchema = z
-  .object({
-    id: z.string().openapi({ example: "clx1234567890" }),
-    agentId: z.string().openapi({ example: "clx1234567890" }),
-    computedAt: z
-      .string()
-      .datetime()
-      .openapi({ example: "2026-01-01T00:00:00.000Z" }),
-    items: z.array(RankedWorkItemSchema),
-    createdAt: z
-      .string()
-      .datetime()
-      .openapi({ example: "2026-01-01T00:00:00.000Z" }),
-  })
-  .openapi("AgentWorkQueueSnapshot");
 
 // ─── AgentGitHubInstallationsSnapshot ─────────────────────────────────────────
 

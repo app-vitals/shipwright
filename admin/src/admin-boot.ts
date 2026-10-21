@@ -82,8 +82,6 @@ import {
   createCallerScopeResolver,
 } from "./caller-scope.ts";
 import { AgentPhaseMethodologyService } from "./coding/agent-phase-methodology.ts";
-import { AgentWorkQueueService } from "./coding/agent-work-queue.ts";
-import { DevTaskAdherenceService } from "./coding/dev-task-adherence.ts";
 import { isDevAuthAllowed } from "./dev-auth-guard.ts";
 import { HttpGithubAppProvisioningClient } from "./github-app-provisioning-client.ts";
 import { HttpGoogleAuthClient } from "./google-auth-client.ts";
@@ -171,8 +169,6 @@ export async function startAdmin(
   );
   const agentChatTokenService = new AgentChatTokenService(prisma);
   const agentCronRunStatsService = new AgentCronRunStatsService(prisma);
-  const devTaskAdherenceService = new DevTaskAdherenceService(prisma);
-  const agentWorkQueueService = new AgentWorkQueueService(prisma);
   const agentGitHubInstallationsService = new AgentGitHubInstallationsService(
     prisma,
   );
@@ -274,6 +270,7 @@ export async function startAdmin(
     adminApiKeys,
     adminAllowedEmails,
     appBaseUrl,
+    ...(process.env.SENTRY_DSN ? { sentryClient: Sentry } : {}),
     ...(process.env.SHIPWRIGHT_ADMIN_TZ
       ? { timezone: process.env.SHIPWRIGHT_ADMIN_TZ }
       : {}),
@@ -373,16 +370,13 @@ export async function startAdmin(
     agentCronJobService,
     agentCronRunService,
     agentCronRunStatsService,
-    devTaskAdherenceService,
     agentToolService,
     agentTokenService,
     agentPluginService,
-    agentPhaseMethodologyService,
     agentMemberService,
     callerScopeResolver,
     agentTypeRegistry: new AgentTypeRegistry(),
     agentChatTokenService,
-    agentWorkQueueService,
     agentGitHubInstallationsService,
     prisma,
     provisioner,

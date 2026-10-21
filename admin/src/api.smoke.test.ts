@@ -981,16 +981,6 @@ function buildCombinedApp() {
       remove: async () => {},
       removeByName: async () => {},
     },
-    agentPhaseMethodologyService: {
-      list: async () => [],
-      upsert: async () => ({
-        id: "pm1",
-        agentId: COMBINED_AGENT_ID,
-        phase: "review",
-        subagentType: null,
-        updatedAt: new Date(),
-      }),
-    },
     agentMemberService: {
       exists: async () => false,
       listByEmail: async () => [],
@@ -1032,12 +1022,6 @@ function buildCombinedApp() {
         byModel: [],
         daily: [],
       }),
-    },
-    agentWorkQueueService: {
-      push: async () => {
-        throw new Error("not implemented");
-      },
-      get: async () => null,
     },
     agentGitHubInstallationsService: {
       push: async () => {
