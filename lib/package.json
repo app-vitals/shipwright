@@ -16,6 +16,7 @@
     "./http": "./http.ts",
     "./org-repo": "./org-repo.ts",
     "./pg-sslmode": "./pg-sslmode.ts",
+    "./pool-observability": "./pool-observability.ts",
     "./pricing": "./pricing.ts",
     "./progress-phases": "./progress-phases.ts",
     "./request-context": "./request-context.ts",
