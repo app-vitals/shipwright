@@ -1,10 +1,24 @@
 /**
  * admin/src/coding/admin-ui-agent-cards.ts
- * The coding extension's agent detail page cards (GitHub installations,
- * phase methodology). Moved out of admin-ui-pages.ts (AEP-3.2).
+ * The coding extension's agent detail page cards (Recent Verification
+ * Activity, GitHub installations, phase methodology) and the card slots that
+ * contribute them through AdminExtension.agentDetailCards. Moved out of
+ * admin-ui-pages.ts / admin-ui.ts's agent detail route (AEP-3.2).
  */
 
+import { DEFAULT_ACCOUNT_ID } from "@shipwright/lib/default-account";
+import type { AgentDetailCardSlot } from "../admin-extension.ts";
 import { escapeHtml } from "../admin-ui-styles.ts";
+import type { AgentCronRunService } from "../agent-cron-runs.ts";
+import type { AgentGitHubInstallationsService } from "../agent-github-installations.ts";
+import { AGENT_PHASES } from "../openapi-schemas.ts";
+import {
+  renderVerificationActivityCard,
+  type VerificationCheckItem,
+} from "./admin-ui-verification-cards.ts";
+import type { PrListItem } from "./admin-ui-work-item-pages.ts";
+import type { AgentPhaseMethodologyService } from "./agent-phase-methodology.ts";
+import { buildVerificationActivityRollup } from "./verification-checks.ts";
 
 export interface GitHubInstallationsCardData {
   reportedAt: Date | string;
@@ -88,10 +102,155 @@ export function renderGitHubInstallationsCard(
 /**
  * View-model row for the Phase Methodology panel — one per configured
  * override (unconfigured phases are simply absent from the list the caller
- * passes in; renderAgentDetailPage merges against the fixed AGENT_PHASES set
- * to show "default" for phases with no row here).
+ * passes in; renderPhaseMethodologyCard merges against the fixed AGENT_PHASES
+ * set to show "default" for phases with no row here).
  */
 export interface PhaseMethodologyItem {
   phase: string;
   subagentType: string | null;
+}
+
+/**
+ * The Phase Methodology card (PMC-1.2): one row per fixed AGENT_PHASES entry,
+ * each with a Save form posting to the coding UI's phase-methodology route.
+ * Only overridden phases need to be present in `phaseMethodology`; any phase
+ * absent there renders "default".
+ */
+export function renderPhaseMethodologyCard(
+  agentId: string,
+  phaseMethodology: readonly PhaseMethodologyItem[],
+): string {
+  const phaseMethodologyByPhase = new Map(
+    phaseMethodology.map((pm) => [pm.phase, pm.subagentType]),
+  );
+  const phaseMethodologyRows = AGENT_PHASES.map((phase) => {
+    const subagentType = phaseMethodologyByPhase.get(phase) ?? null;
+    return `<tr>
+      <td class="mono">${escapeHtml(phase)}</td>
+      <td>${subagentType ? escapeHtml(subagentType) : '<span style="color:#9ca3af">default</span>'}</td>
+      <td style="white-space:nowrap">
+        <form method="POST" action="/admin/agents/${escapeHtml(agentId)}/phase-methodology/${escapeHtml(phase)}" style="display:flex;gap:4px">
+          <input name="subagentType" type="text" class="form-input" style="font-size:11px;padding:3px 6px" placeholder="default" value="${subagentType ? escapeHtml(subagentType) : ""}" />
+          <button type="submit" class="btn btn-secondary" style="font-size:11px;padding:3px 8px">Save</button>
+        </form>
+      </td>
+    </tr>`;
+  }).join("\n");
+
+  return `<div class="card">
+      <div class="card-title">Phase Methodology</div>
+      <p style="font-size:12px;color:#6b7280;margin-bottom:12px">
+        Override which subagent type handles each pipeline phase. Clear the field and Save to fall back to the default.
+      </p>
+      <div class="data-table-wrapper">
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th>Phase</th>
+              <th>Subagent Type</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody>
+            ${phaseMethodologyRows}
+          </tbody>
+        </table>
+      </div>
+    </div>`;
+}
+
+/** Deps for the coding extension's agent detail card slots. */
+export interface CodingAgentDetailCardDeps {
+  agentCronRunService: Pick<AgentCronRunService, "listForAgent">;
+  agentPhaseMethodologyService: Pick<AgentPhaseMethodologyService, "list">;
+  /** Absent → the GitHub installations card renders nothing. */
+  agentGitHubInstallationsService?: Pick<
+    AgentGitHubInstallationsService,
+    "get"
+  >;
+  /** Absent → the verification activity card renders nothing. */
+  fetchVerificationChecks?: (
+    params: URLSearchParams,
+    accountId?: string,
+  ) => Promise<{ checks: VerificationCheckItem[]; total?: number }>;
+  fetchTaskStorePrs?: (
+    params: URLSearchParams,
+    accountId?: string,
+  ) => Promise<{ prs: PrListItem[] }>;
+}
+
+/**
+ * The coding extension's cards on the agent detail page, in page order:
+ * Recent Verification Activity and GitHub Installations in the header, Phase
+ * Methodology in the Configuration group. Each slot always renders (possibly
+ * an empty string) so the header keeps its fixed layout.
+ */
+export function codingAgentDetailCards(
+  deps: CodingAgentDetailCardDeps,
+): AgentDetailCardSlot[] {
+  return [
+    {
+      name: "verification-activity",
+      // Lightweight rollup of recent verification-check activity (LVB-5.3 AC2)
+      // across this agent's recently-dispatched tasks/PRs — see
+      // buildVerificationActivityRollup()'s doc comment for why this reuses
+      // cron-run dispatch targets rather than a dedicated task-store query.
+      // SSP-6.8: a non-admin's rollup reads only the agent's own account, so
+      // a repo#number shared with another account can't surface its checks.
+      render: async (ctx) => {
+        const recentRuns = await deps.agentCronRunService.listForAgent(
+          ctx.agentId,
+          { limit: 20 },
+        );
+        const accountId = ctx.isAdmin
+          ? undefined
+          : (ctx.accountId ?? DEFAULT_ACCOUNT_ID);
+        const { fetchVerificationChecks, fetchTaskStorePrs } = deps;
+        const verificationActivity = await buildVerificationActivityRollup(
+          recentRuns.items,
+          fetchVerificationChecks &&
+            ((params) => fetchVerificationChecks(params, accountId)),
+          fetchTaskStorePrs &&
+            ((params) => fetchTaskStorePrs(params, accountId)),
+        );
+        return renderVerificationActivityCard(verificationActivity);
+      },
+    },
+    {
+      name: "github-installations",
+      // Stored snapshot only — admin never calls GitHub or the agent here.
+      // A read failure just omits the card.
+      render: async (ctx) => {
+        const githubInstallations =
+          (await deps.agentGitHubInstallationsService
+            ?.get(ctx.agentId)
+            .catch(() => null)) ?? null;
+        return renderGitHubInstallationsCard(
+          githubInstallations && {
+            reportedAt: githubInstallations.reportedAt,
+            installations:
+              githubInstallations.installations as GitHubInstallationsCardData["installations"],
+          },
+          new Date(),
+          ctx.timezone ?? "UTC",
+        );
+      },
+    },
+    {
+      name: "phase-methodology",
+      placement: "configuration",
+      render: async (ctx) => {
+        const phaseMethodology = await deps.agentPhaseMethodologyService.list(
+          ctx.agentId,
+        );
+        return renderPhaseMethodologyCard(
+          ctx.agentId,
+          phaseMethodology.map((pm) => ({
+            phase: pm.phase,
+            subagentType: pm.subagentType,
+          })),
+        );
+      },
+    },
+  ];
 }

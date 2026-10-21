@@ -31,7 +31,6 @@ import {
   type TokenItem,
   type ToolItem,
 } from "./admin-ui-pages.ts";
-import type { VerificationActivitySummary } from "./coding/admin-ui-verification-cards.ts";
 import { baseStyles, renderAdminToolbar } from "./admin-ui-styles.ts";
 import type { ChatMessage, ChatThread } from "./http-chat-client.ts";
 
@@ -737,158 +736,6 @@ describe("renderAgentDetailPage — overview", () => {
   test("renders no warning banner when opts.warning is absent", () => {
     const html = render();
     expect(html).not.toContain("this agent has no members");
-  });
-});
-
-describe("renderAgentDetailPage — Recent Verification Activity rollup", () => {
-  function render(verificationActivity?: VerificationActivitySummary): string {
-    return renderAgentDetailPage(
-      AGENT,
-      {},
-      [],
-      [],
-      [],
-      [],
-      [],
-      USER_NAME,
-      true,
-      { timezone: "UTC", verificationActivity },
-    );
-  }
-
-  test("no rollup card when verificationActivity is absent", () => {
-    const html = render(undefined);
-    expect(html).not.toContain("Recent Verification Activity");
-  });
-
-  test("renders rollup card with heading when verificationActivity is present", () => {
-    const html = render({
-      totalChecks: 12,
-      itemCount: 3,
-      counts: { ran_passed: 9, ran_failed: 2, skipped: 1 },
-    });
-    expect(html).toContain("Recent Verification Activity");
-  });
-
-  test("renders counts by status", () => {
-    const html = render({
-      totalChecks: 12,
-      itemCount: 3,
-      counts: { ran_passed: 9, ran_failed: 2, skipped: 1 },
-    });
-    expect(html).toContain("9");
-    expect(html).toContain("passed");
-    expect(html).toContain("2");
-    expect(html).toContain("failed");
-    expect(html).toContain("1");
-    expect(html).toContain("skipped");
-  });
-
-  test("renders empty-state message when totalChecks is 0", () => {
-    const html = render({ totalChecks: 0, itemCount: 0, counts: {} });
-    expect(html).toContain("Recent Verification Activity");
-    expect(html).toContain("No recent verification checks recorded");
-  });
-
-  test("renders per-checkName rows with their own status badges", () => {
-    const html = render({
-      totalChecks: 12,
-      itemCount: 3,
-      counts: { ran_passed: 9, ran_failed: 2, skipped: 1 },
-      byCheckName: {
-        unit: { ran_passed: 9 },
-        lint: { ran_passed: 2, ran_failed: 1 },
-      },
-    });
-    // Check-name labels present.
-    expect(html).toContain("unit");
-    expect(html).toContain("lint");
-    // The "passed" label appears once for the aggregate line, once for the
-    // "unit" row, and once for the "lint" row (3 total); "failed" appears
-    // once for the aggregate line and once for the "lint" row (2 total).
-    expect(html.split("passed").length - 1).toBe(3);
-    expect(html.split("failed").length - 1).toBe(2);
-  });
-
-  test("renders per-repo status breakdown when byRepo spans multiple repos", () => {
-    const html = render({
-      totalChecks: 6,
-      itemCount: 2,
-      counts: { ran_passed: 4, skipped: 2 },
-      byRepo: {
-        "acme/widgets": { ran_passed: 3, skipped: 1 },
-        "acme/gadgets": { ran_passed: 1, skipped: 1 },
-      },
-    });
-    expect(html).toContain("acme/widgets");
-    expect(html).toContain("acme/gadgets");
-  });
-
-  test("omits per-repo breakdown when byRepo spans only one repo", () => {
-    const html = render({
-      totalChecks: 4,
-      itemCount: 1,
-      counts: { ran_passed: 4 },
-      byRepo: { "acme/widgets": { ran_passed: 4 } },
-    });
-    expect(html).not.toContain("acme/widgets");
-  });
-
-  test("omits per-repo breakdown when byRepo is absent", () => {
-    const html = render({
-      totalChecks: 4,
-      itemCount: 1,
-      counts: { ran_passed: 4 },
-    });
-    // No repo breakdown section should render at all without exploding.
-    expect(html).toContain("Recent Verification Activity");
-  });
-
-  test("renders Environmental issues section with human-readable reasonCategory labels", () => {
-    const html = render({
-      totalChecks: 5,
-      itemCount: 2,
-      counts: { skipped: 3, timed_out: 2 },
-      environmentalByRepo: {
-        "acme/widgets": { missing_tool: 2, missing_secret: 1 },
-        "acme/gadgets": { check_timeout: 2 },
-      },
-    });
-    expect(html).toContain("Environmental issues");
-    expect(html).toContain("missing tool");
-    expect(html).toContain("missing secret");
-    expect(html).toContain("check timed out");
-    expect(html).not.toContain("No environmental issues in recent runs");
-  });
-
-  test("renders an explicit all-clear message when environmentalByRepo is empty", () => {
-    const html = render({
-      totalChecks: 4,
-      itemCount: 1,
-      counts: { ran_passed: 4 },
-      environmentalByRepo: {},
-    });
-    expect(html).toContain("Environmental issues");
-    expect(html).toContain("No environmental issues in recent runs");
-  });
-
-  test("renders an explicit all-clear message when environmentalByRepo entries are all-zero", () => {
-    const html = render({
-      totalChecks: 4,
-      itemCount: 1,
-      counts: { ran_passed: 4 },
-      environmentalByRepo: { "acme/widgets": { missing_tool: 0 } },
-    });
-    expect(html).toContain("No environmental issues in recent runs");
-  });
-
-  test("renders an explicit all-clear message when environmentalByRepo is absent", () => {
-    const html = render({
-      totalChecks: 4,
-      itemCount: 1,
-      counts: { ran_passed: 4 },
-    });
-    expect(html).toContain("No environmental issues in recent runs");
   });
 });
 
@@ -4332,5 +4179,92 @@ describe("renderAgentDetailPage — extension card slots", () => {
     ]);
     expect(html).toContain("ext-one");
     expect(html.indexOf("ext-one")).toBeLessThan(html.indexOf("ext-two"));
+  });
+});
+
+// ─── renderAgentDetailPage — platform-only page + configuration slots (AEP-3.2)
+
+describe("renderAgentDetailPage — platform-only page (no extension cards)", () => {
+  const html = renderAgentDetailPage(
+    AGENT,
+    {},
+    [],
+    [],
+    [],
+    [],
+    [],
+    USER_NAME,
+    true,
+    { timezone: "UTC", now: new Date("2025-01-15T00:00:00Z") },
+  );
+
+  test("renders without the coding extension's cards", () => {
+    expect(html).not.toContain("Phase Methodology");
+    expect(html).not.toContain("GitHub Installations");
+    expect(html).not.toContain("Recent Verification Activity");
+  });
+
+  test("still renders every platform group", () => {
+    for (const group of [
+      "Automation",
+      "Configuration",
+      "Access",
+      "Plugins &amp; Tools",
+    ]) {
+      expect(html).toContain(`<span class="group-title">${group}</span>`);
+    }
+  });
+});
+
+describe("renderAgentDetailPage — configuration card slots", () => {
+  const render = (configurationCardsHtml?: string[]) =>
+    renderAgentDetailPage(AGENT, {}, [], [], [], [], [], USER_NAME, true, {
+      timezone: "UTC",
+      now: new Date("2025-01-15T00:00:00Z"),
+      ...(configurationCardsHtml ? { configurationCardsHtml } : {}),
+    });
+
+  test("no or empty configuration cards renders the page byte-identically", () => {
+    expect(render([])).toBe(render());
+  });
+
+  test("configuration cards render in order between Repos and Agent Policy", () => {
+    const html = render([
+      '<div class="card">cfg-one</div>',
+      '<div class="card">cfg-two</div>',
+    ]);
+    const repos = html.indexOf('<div class="card-title">Repos</div>');
+    const one = html.indexOf("cfg-one");
+    const two = html.indexOf("cfg-two");
+    const policy = html.indexOf('<div class="card-title">Agent Policy</div>');
+    expect(repos).toBeGreaterThan(-1);
+    expect(repos).toBeLessThan(one);
+    expect(one).toBeLessThan(two);
+    expect(two).toBeLessThan(policy);
+  });
+
+  test("header cards render above the stat strip, configuration cards inside the Configuration group", () => {
+    const html = renderAgentDetailPage(
+      AGENT,
+      {},
+      [],
+      [],
+      [],
+      [],
+      [],
+      USER_NAME,
+      true,
+      {
+        timezone: "UTC",
+        extensionCardsHtml: ['<div class="card">hdr</div>'],
+        configurationCardsHtml: ['<div class="card">cfg</div>'],
+      },
+    );
+    const statStrip = html.indexOf('<div class="stat-strip">');
+    const configuration = html.indexOf(
+      '<span class="group-title">Configuration</span>',
+    );
+    expect(html.indexOf("hdr")).toBeLessThan(statStrip);
+    expect(html.indexOf("cfg")).toBeGreaterThan(configuration);
   });
 });

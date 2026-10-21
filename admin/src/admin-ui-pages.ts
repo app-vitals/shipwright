@@ -21,22 +21,12 @@ import type { ManualStep } from "./agent-deletion-checklist.ts";
 import type { AgentTypeOption } from "./agent-type-manifest-loader.ts";
 import { isAudioFilename } from "./attachment-validation.ts";
 import { parseChatMarkers } from "./chat-markers.ts";
-import {
-  type GitHubInstallationsCardData,
-  type PhaseMethodologyItem,
-  renderGitHubInstallationsCard,
-} from "./coding/admin-ui-agent-cards.ts";
-import {
-  renderVerificationActivityCard,
-  type VerificationActivitySummary,
-} from "./coding/admin-ui-verification-cards.ts";
 import type {
   ChatMessage,
   ChatThread,
   MessageTokens,
   ThreadStats,
 } from "./http-chat-client.ts";
-import { AGENT_PHASES } from "./openapi-schemas.ts";
 import { renderPushToggle } from "./push-toggle.ts";
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -941,27 +931,17 @@ export function renderAgentDetailPage(
     now?: Date;
     timezone?: string;
     /**
-     * Pre-aggregated rollup of recent verification-check activity across this
-     * agent's recently-dispatched tasks/PRs (LVB-5.3 AC2). Computed by the
-     * caller from AgentCronRunService.listForAgent's itemType/itemId dispatch
-     * targets — see admin-ui.ts's buildVerificationActivityRollup(). Absent
-     * (or zero total) renders no card.
-     */
-    verificationActivity?: VerificationActivitySummary;
-    /** Latest GitHub installations snapshot (MGI-4.3); absent renders no card. */
-    githubInstallations?: GitHubInstallationsCardData | null;
-    /**
-     * Configured phase-methodology overrides for this agent (PMC-1.2).
-     * Only overridden phases need to be present — renderAgentDetailPage
-     * merges this against the fixed AGENT_PHASES set and renders "default"
-     * for any phase absent here. Defaults to [] (all phases show "default").
-     */
-    phaseMethodology?: PhaseMethodologyItem[];
-    /**
-     * Pre-rendered extension card HTML (AEP-2.1), appended after the
-     * platform cards in order. Absent or empty adds nothing to the page.
+     * Pre-rendered extension card HTML for the "header" placement (AEP-2.1,
+     * admin-extension.ts), rendered in order above the stat strip. Absent or
+     * empty adds no card.
      */
     extensionCardsHtml?: readonly string[];
+    /**
+     * Pre-rendered extension card HTML for the "configuration" placement
+     * (AEP-3.2), rendered in order inside the Configuration group between
+     * Repos and Agent Policy. Absent or empty adds no card.
+     */
+    configurationCardsHtml?: readonly string[];
   },
 ): string {
   // Reference time for relative timestamps — injected by tests for determinism,
@@ -1273,23 +1253,6 @@ export function renderAgentDetailPage(
           )
           .join("\n");
 
-  const phaseMethodologyByPhase = new Map(
-    (opts?.phaseMethodology ?? []).map((pm) => [pm.phase, pm.subagentType]),
-  );
-  const phaseMethodologyRows = AGENT_PHASES.map((phase) => {
-    const subagentType = phaseMethodologyByPhase.get(phase) ?? null;
-    return `<tr>
-      <td class="mono">${escapeHtml(phase)}</td>
-      <td>${subagentType ? escapeHtml(subagentType) : '<span style="color:#9ca3af">default</span>'}</td>
-      <td style="white-space:nowrap">
-        <form method="POST" action="/admin/agents/${escapeHtml(agent.id)}/phase-methodology/${escapeHtml(phase)}" style="display:flex;gap:4px">
-          <input name="subagentType" type="text" class="form-input" style="font-size:11px;padding:3px 6px" placeholder="default" value="${subagentType ? escapeHtml(subagentType) : ""}" />
-          <button type="submit" class="btn btn-secondary" style="font-size:11px;padding:3px 8px">Save</button>
-        </form>
-      </td>
-    </tr>`;
-  }).join("\n");
-
   const memberRows =
     members.length === 0
       ? `<tr><td colspan="3" class="empty-state">No members yet.</td></tr>`
@@ -1353,16 +1316,6 @@ export function renderAgentDetailPage(
         <code class="mono" style="display:block;margin-top:8px;font-size:13px;word-break:break-all">${escapeHtml(opts.newToken)}</code>
       </div>`
     : "";
-
-  const verificationActivityHtml = renderVerificationActivityCard(
-    opts?.verificationActivity,
-  );
-
-  const githubInstallationsHtml = renderGitHubInstallationsCard(
-    opts?.githubInstallations,
-    opts?.now ?? new Date(),
-    opts?.timezone ?? "UTC",
-  );
 
   const envVarsSection = !agent.selfHosted
     ? `<div class="card" id="env-vars">
@@ -1712,27 +1665,6 @@ export function renderAgentDetailPage(
       </div>
     </div>`;
 
-  const phaseMethodologySection = `<div class="card">
-      <div class="card-title">Phase Methodology</div>
-      <p style="font-size:12px;color:#6b7280;margin-bottom:12px">
-        Override which subagent type handles each pipeline phase. Clear the field and Save to fall back to the default.
-      </p>
-      <div class="data-table-wrapper">
-        <table class="data-table">
-          <thead>
-            <tr>
-              <th>Phase</th>
-              <th>Subagent Type</th>
-              <th></th>
-            </tr>
-          </thead>
-          <tbody>
-            ${phaseMethodologyRows}
-          </tbody>
-        </table>
-      </div>
-    </div>`;
-
   // PAI-2.5: read-only trace from this agent to its Anthropic identity. Values
   // are user data (owner email) or provider IDs, so every one is escaped.
   const identityPlaceholder = '<span style="color:#9ca3af">—</span>';
@@ -1845,11 +1777,12 @@ export function renderAgentDetailPage(
   // The cards below are grouped into 4 collapsed-by-default
   // <details class="group"> sections. Grouping is purely presentational —
   // every card's internal markup/ids/form actions are unchanged, they're
-  // just composed into a new order. Phase Methodology and Agent Policy
-  // (added after this task was originally scoped) land in Configuration
-  // alongside Env Vars/Repos since both are agent-level configuration —
-  // this keeps every card inside exactly one of the 4 groups, with no
-  // stray bare cards besides Danger Zone.
+  // just composed into a new order. Agent Policy (added after this task was
+  // originally scoped) lands in Configuration alongside Env Vars/Repos since
+  // it is agent-level configuration, as do extension cards placed there
+  // (the coding extension's Phase Methodology card) — this keeps every card
+  // inside exactly one of the 4 groups, with no stray bare cards besides
+  // Danger Zone.
   const automationStat = `${systemCrons.length} system · ${customCrons.length} custom`;
   const configurationStat = `${Object.keys(envVars).length} env vars · ${agent.repos.length} repos`;
   const activeTokenCount = tokens.filter((t) => !t.revokedAt).length;
@@ -1891,7 +1824,7 @@ export function renderAgentDetailPage(
   const configurationGroup = renderGroup(
     "Configuration",
     configurationStat,
-    `${envVarsSection}${reposSection}${phaseMethodologySection}${agentPolicySection}`,
+    `${envVarsSection}${reposSection}${(opts?.configurationCardsHtml ?? []).join("")}${agentPolicySection}`,
   );
   const accessGroup = renderGroup(
     "Access",
@@ -1970,8 +1903,7 @@ export function renderAgentDetailPage(
     ${successHtml}
     ${warningHtml}
     ${newTokenHtml}
-    ${verificationActivityHtml}
-    ${githubInstallationsHtml}${(opts?.extensionCardsHtml ?? []).join("\n")}
+    ${(opts?.extensionCardsHtml ?? []).join("\n    ")}
 
     ${statStripHtml}
 

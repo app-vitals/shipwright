@@ -14,17 +14,35 @@ import {
   NoopTaskStoreProvisioningClient,
 } from "./coding-task-store-provisioning-client.ts";
 
-const ctx = { env: {} } as unknown as AdminExtensionContext;
+const ctx = {
+  env: {},
+  prisma: {},
+  services: {},
+} as unknown as AdminExtensionContext;
 
 describe("codingAdminExtension", () => {
   it("is named coding", () => {
     expect(codingAdminExtension.name).toBe("coding");
   });
 
-  it("registers no routes/cards/passes yet: the context hooks resolve as the bare platform", () => {
-    expect(resolveAdminExtensions([codingAdminExtension], ctx)).toEqual(
-      resolveAdminExtensions([], ctx),
+  it("contributes its agent detail cards in page order: two header cards, then Phase Methodology in the Configuration group", () => {
+    const { agentDetailCards } = resolveAdminExtensions(
+      [codingAdminExtension],
+      ctx,
     );
+    expect(
+      agentDetailCards.map((card) => [card.name, card.placement ?? "header"]),
+    ).toEqual([
+      ["verification-activity", "header"],
+      ["github-installations", "header"],
+      ["phase-methodology", "configuration"],
+    ]);
+  });
+
+  it("registers no routes or OpenAPI contributions yet", () => {
+    const resolved = resolveAdminExtensions([codingAdminExtension], ctx);
+    expect(resolved.apiRoutes).toEqual([]);
+    expect(resolved.adminUiRoutes).toEqual([]);
     expect(collectOpenApiContributions([codingAdminExtension])).toEqual(
       collectOpenApiContributions([]),
     );
@@ -34,6 +52,7 @@ describe("codingAdminExtension", () => {
     const bare = resolveAdminExtensions([codingAdminExtension], ctx);
     expect(bare.uiDeps).toEqual({});
     const configured = resolveAdminExtensions([codingAdminExtension], {
+      ...ctx,
       env: {
         SHIPWRIGHT_TASK_STORE_URL: "http://task-store.svc:3002",
         SHIPWRIGHT_TASK_STORE_ADMIN_TOKEN: "admin",

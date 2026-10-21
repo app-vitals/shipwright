@@ -1,5 +1,5 @@
 /**
- * admin/src/admin-ui-account-scope.smoke.test.ts
+ * admin/src/coding/admin-ui-account-scope.smoke.test.ts
  *
  * SSP-6.8 — the admin UI's Tasks, PRs and Sessions views for account users.
  * Injected task-store fetchers emulate the task-store's admin-token
@@ -19,15 +19,13 @@ import type {
   AdminUIDeps,
   AdminUIGithubAppClient,
   AdminUISlackClient,
-} from "./admin-ui.ts";
-import { createAdminUIApp } from "./admin-ui.ts";
-import type {
-  PrListItem,
-  TaskItem,
-} from "./coding/admin-ui-work-item-pages.ts";
-import type { CallerScopeResolver } from "./caller-scope.ts";
-import type { Session } from "./coding/admin-ui-sessions-list.ts";
-import type { GoogleAuthClient } from "./google-auth-client.ts";
+} from "../admin-ui.ts";
+import { createAdminUIApp } from "../admin-ui.ts";
+import type { CallerScopeResolver } from "../caller-scope.ts";
+import type { GoogleAuthClient } from "../google-auth-client.ts";
+import { createCodingTestApp } from "./admin-ui-coding.fixtures.ts";
+import type { Session } from "./admin-ui-sessions-list.ts";
+import type { PrListItem, TaskItem } from "./admin-ui-work-item-pages.ts";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -834,7 +832,7 @@ describe("SSP-6.8 — agent detail verification rollup scoped by account", () =>
       },
     });
     const res = await get(
-      createAdminUIApp(deps),
+      createCodingTestApp(deps),
       "/admin/agents/agt-a",
       A_USER,
     );

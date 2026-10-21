@@ -18,6 +18,8 @@ import type {
   AdminExtension,
   AdminExtensionContext,
 } from "./admin-extension.ts";
+import { codingAgentDetailCards } from "./coding/admin-ui-agent-cards.ts";
+import { AgentPhaseMethodologyService } from "./coding/agent-phase-methodology.ts";
 import {
   SessionAlertSweeper,
   type SessionForAlert,
@@ -115,18 +117,39 @@ function sessionAlertPass(
   };
 }
 
+/**
+ * The admin UI's task-store fetchers, built from SHIPWRIGHT_TASK_STORE_URL and
+ * SHIPWRIGHT_TASK_STORE_ADMIN_TOKEN. Single admin token; each fetcher takes an
+ * optional trailing accountId forwarded as ?accountId= so account users' views
+ * are filtered by the task-store itself (SSP-6.8). Unconfigured → {} and the
+ * task-store views render degraded.
+ */
+function taskStoreFetchers(
+  env: NodeJS.ProcessEnv,
+): Partial<ReturnType<typeof createTaskStoreFetchers>> {
+  const url = env.SHIPWRIGHT_TASK_STORE_URL;
+  const adminToken = env.SHIPWRIGHT_TASK_STORE_ADMIN_TOKEN;
+  return url && adminToken ? createTaskStoreFetchers({ url, adminToken }) : {};
+}
+
 export const codingAdminExtension: AdminExtension = {
   name: "coding",
   serviceIntegrations: (env) => [taskStoreServiceIntegration(env)],
-  services: (ctx) => {
-    const url = ctx.env.SHIPWRIGHT_TASK_STORE_URL;
-    const adminToken = ctx.env.SHIPWRIGHT_TASK_STORE_ADMIN_TOKEN;
-    // Single admin token; each fetcher takes an optional trailing accountId
-    // forwarded as ?accountId= so account users' views are filtered by the
-    // task-store itself (SSP-6.8). Unconfigured → the UI renders degraded.
-    return {
-      ui: url && adminToken ? createTaskStoreFetchers({ url, adminToken }) : {},
-    };
+  services: (ctx) => ({ ui: taskStoreFetchers(ctx.env) }),
+  agentDetailCards: (ctx) => {
+    const { fetchVerificationChecks, fetchTaskStorePrs } = taskStoreFetchers(
+      ctx.env,
+    );
+    return codingAgentDetailCards({
+      agentCronRunService: ctx.services.agentCronRunService,
+      agentGitHubInstallationsService:
+        ctx.services.agentGitHubInstallationsService,
+      agentPhaseMethodologyService: new AgentPhaseMethodologyService(
+        ctx.prisma,
+      ),
+      ...(fetchVerificationChecks ? { fetchVerificationChecks } : {}),
+      ...(fetchTaskStorePrs ? { fetchTaskStorePrs } : {}),
+    });
   },
   backgroundPasses: (ctx) => {
     const pass = sessionAlertPass(ctx);

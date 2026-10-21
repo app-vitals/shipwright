@@ -21,7 +21,8 @@
  *   apiRoutes(ctx)         — API sub-apps, mounted after the platform APIs and
  *                            before the admin UI (so the UI never shadows them)
  *   adminUiRoutes(ctx)     — admin UI sub-apps, mounted after the platform UI
- *   agentDetailCards(ctx)  — extra cards on the agent detail page
+ *   agentDetailCards(ctx)  — extra cards on the agent detail page, each placed
+ *                            in the header or the Configuration group
  *   backgroundPasses(ctx)  — interval loops, started after the platform sweepers
  *
  * openApi() is static (no context): scripts/generate-admin-spec.ts calls it to
@@ -37,7 +38,9 @@ import type { PrismaClient } from "../prisma/client/client.ts";
 import type { AccountService } from "./accounts.ts";
 import type { AdminUIDeps } from "./admin-ui.ts";
 import type { AgentCronJobService } from "./agent-cron-jobs.ts";
+import type { AgentCronRunService } from "./agent-cron-runs.ts";
 import type { AgentEnvService } from "./agent-envs.ts";
+import type { AgentGitHubInstallationsService } from "./agent-github-installations.ts";
 import type { AgentMemberService } from "./agent-members.ts";
 import type { AgentProvisioner } from "./agent-provisioner.ts";
 import type { AgentTokenService } from "./agent-tokens.ts";
@@ -52,6 +55,8 @@ export interface AdminPlatformServices {
   agentService: AgentService;
   agentEnvService: AgentEnvService;
   agentCronJobService: AgentCronJobService;
+  agentCronRunService: AgentCronRunService;
+  agentGitHubInstallationsService: AgentGitHubInstallationsService;
   agentTokenService: AgentTokenService;
   agentMemberService: AgentMemberService;
   accountService: AccountService;
@@ -93,7 +98,18 @@ export interface AgentDetailCardContext {
   agentId: string;
   userEmail: string;
   isAdmin: boolean;
+  /** The agent's owning account; null for unassigned agents. */
+  accountId?: string | null;
+  /** The admin UI's display timezone (IANA name). */
+  timezone?: string;
 }
+
+/**
+ * Where a card lands on the agent detail page:
+ *   header        — above the stat strip, after the page's alerts (default)
+ *   configuration — inside the Configuration group, after Repos
+ */
+export type AgentDetailCardPlacement = "header" | "configuration";
 
 /**
  * One extra card on GET /admin/agents/:id. render() returns trusted HTML — the
@@ -101,6 +117,8 @@ export interface AgentDetailCardContext {
  */
 export interface AgentDetailCardSlot {
   name: string;
+  /** Defaults to "header". */
+  placement?: AgentDetailCardPlacement;
   render(ctx: AgentDetailCardContext): Promise<string>;
 }
 
@@ -294,4 +312,30 @@ export async function renderAgentDetailCards(
     ),
   );
   return rendered.filter((html): html is string => html !== undefined);
+}
+
+/**
+ * Renders the slots (renderAgentDetailCards semantics: in order, a throwing
+ * slot omitted) and groups the HTML by placement. Slots whose placement is not
+ * in `placements` are not rendered: each holds its place as an empty string,
+ * so the page lays out exactly as a full render whose cards came back empty.
+ */
+export async function renderAgentDetailCardSlots(
+  slots: readonly AgentDetailCardSlot[],
+  ctx: AgentDetailCardContext,
+  placements: readonly AgentDetailCardPlacement[] = ["header", "configuration"],
+): Promise<Record<AgentDetailCardPlacement, string[]>> {
+  const at = async (placement: AgentDetailCardPlacement) => {
+    const placed = slots.filter(
+      (slot) => (slot.placement ?? "header") === placement,
+    );
+    return placements.includes(placement)
+      ? renderAgentDetailCards(placed, ctx)
+      : placed.map(() => "");
+  };
+  const [header, configuration] = await Promise.all([
+    at("header"),
+    at("configuration"),
+  ]);
+  return { header, configuration };
 }
