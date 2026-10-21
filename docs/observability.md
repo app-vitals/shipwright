@@ -53,6 +53,17 @@ Every agent call site reporting a `claude` CLI runner error — `agent/src/runti
 
 Any new call site that can receive a thrown `ClaudeTimeoutError` should report through `reportClaudeError` rather than calling `captureException` directly, to keep this classification consistent.
 
+### Task-store pool observability
+
+The task-store instruments its `pg` pool to diagnose pool starvation (Sentry VITALS-OS-5T). It is observability only — pool size and queries are unchanged.
+
+- **Route context** — a middleware records each request's method and matched route pattern, so pool events can be attributed to a route.
+- **Connection holds** — a connection held longer than `SHIPWRIGHT_TASK_STORE_POOL_HOLD_THRESHOLD_MS` (default 2000) logs `pg connection held past threshold` with the route, duration, and pool stats.
+- **Pool monitor** — every `SHIPWRIGHT_TASK_STORE_POOL_MONITOR_INTERVAL_MS` (default 30000) the pool is checked and `pg pool has waiting clients` is logged when `waiting > 0`. It is stopped on graceful shutdown.
+- **Sentry** — when an unhandled error is a pool timeout (Prisma `P2028`, `Unable to start a transaction`, or a pg connection timeout), the captured event carries a `pg_pool` context (total/idle/waiting/max and route) and `route` / `server_name` tags. Other errors are captured unchanged.
+
+Both thresholds are documented in [`docs/configuration-agent.md`](./configuration-agent.md#metrics--admin--chat--task-store-services). The helpers live in [`lib/pool-observability.ts`](../lib/pool-observability.ts).
+
 ### Pool starvation diagnostics (admin)
 
 The admin service instruments its own `pg.Pool` (separate from task-store's) using [`lib/pool-observability.ts`](../lib/pool-observability.ts). This is observability only: pool size and queries are unchanged.

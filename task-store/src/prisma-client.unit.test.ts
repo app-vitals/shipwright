@@ -19,6 +19,7 @@ import { describe, expect, test } from "bun:test";
 import {
   CONNECT_TIMEOUT_MS,
   createTaskStorePool,
+  readPoolObservabilityConfig,
   toPoolConfig,
 } from "./prisma-client.ts";
 
@@ -137,5 +138,34 @@ describe("createTaskStorePool", () => {
     expect(pool.options.connectionTimeoutMillis).toBe(CONNECT_TIMEOUT_MS);
 
     await pool.end();
+  });
+});
+
+describe("readPoolObservabilityConfig", () => {
+  test("returns undefined overrides when unset", () => {
+    expect(readPoolObservabilityConfig({})).toEqual({
+      holdThresholdMs: undefined,
+      monitorIntervalMs: undefined,
+    });
+  });
+
+  test("parses positive numeric overrides", () => {
+    expect(
+      readPoolObservabilityConfig({
+        SHIPWRIGHT_TASK_STORE_POOL_HOLD_THRESHOLD_MS: "500",
+        SHIPWRIGHT_TASK_STORE_POOL_MONITOR_INTERVAL_MS: "10000",
+      }),
+    ).toEqual({ holdThresholdMs: 500, monitorIntervalMs: 10000 });
+  });
+
+  test("ignores empty, non-numeric, zero, and negative values", () => {
+    for (const bad of ["", "abc", "0", "-5"]) {
+      expect(
+        readPoolObservabilityConfig({
+          SHIPWRIGHT_TASK_STORE_POOL_HOLD_THRESHOLD_MS: bad,
+          SHIPWRIGHT_TASK_STORE_POOL_MONITOR_INTERVAL_MS: bad,
+        }),
+      ).toEqual({ holdThresholdMs: undefined, monitorIntervalMs: undefined });
+    }
   });
 });

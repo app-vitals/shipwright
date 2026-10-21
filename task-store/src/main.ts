@@ -18,7 +18,10 @@ import { initSentry } from "@shipwright/lib/sentry";
 import { createTaskStoreApp } from "./app.ts";
 import { createScopeResolver } from "./auth.ts";
 import { checkClaimTtlBuffer } from "./claim-ttl-buffer-check.ts";
-import { createPrismaClient } from "./prisma-client.ts";
+import {
+  createPrismaClientWithPool,
+  enablePoolObservability,
+} from "./prisma-client.ts";
 import { PullRequestService } from "./pull-request-service.ts";
 import { SessionRetentionReaper } from "./session-retention-reaper.ts";
 import { SessionService } from "./session-service.ts";
@@ -150,7 +153,10 @@ async function startServer(): Promise<void> {
       "DATABASE_URL_SHIPWRIGHT_TASK_STORE is not set — the Prisma 7 driver adapter needs an explicit connection string",
     );
   }
-  const prisma = createPrismaClient(databaseUrl);
+  const { prisma, pool } = createPrismaClientWithPool(databaseUrl);
+  // Observability only (Sentry VITALS-OS-5T): logs long connection holds and
+  // waiting clients; stopped on graceful shutdown below.
+  const stopPoolObservability = enablePoolObservability(pool);
 
   // Build the outbound event dispatcher when a webhook URL is configured.
   // createWebhookDispatcher itself returns a no-op when the URL is unset, so
@@ -247,6 +253,7 @@ async function startServer(): Promise<void> {
     verificationCheckService,
     scopeResolver,
     sentryClient: process.env.SENTRY_DSN ? Sentry : undefined,
+    pool,
     // Once a shutdown signal has been received, fail readiness immediately
     // (no DB round-trip) so Kubernetes pulls this pod from Service endpoints
     // as early as possible — see lib/graceful-shutdown.ts.
@@ -308,7 +315,7 @@ async function startServer(): Promise<void> {
 
   const shutdown = registerGracefulShutdown({
     server,
-    cleanup: [() => prisma.$disconnect()],
+    cleanup: [async () => stopPoolObservability(), () => prisma.$disconnect()],
     serviceName: "task-store",
   });
   isShuttingDown = shutdown.isShuttingDown;
