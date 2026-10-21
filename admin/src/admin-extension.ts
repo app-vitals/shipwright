@@ -48,6 +48,7 @@ import type { AgentProvisioner } from "./agent-provisioner.ts";
 import type { AgentTokenService } from "./agent-tokens.ts";
 import type { AgentService } from "./agents.ts";
 import type { AdminDeps, parseAdminApiKeys } from "./agents-api.ts";
+import type { AgentPhaseMethodologyServiceLike } from "./api.ts";
 import type { createCallerScopeResolver } from "./caller-scope.ts";
 import type { PushService } from "./push-service.ts";
 import type { ServiceIntegration } from "./service-integration.ts";
@@ -102,6 +103,12 @@ export interface AdminRouteContribution {
 export interface AdminExtensionServices {
   api?: Partial<AdminDeps>;
   ui?: Partial<AdminUIDeps>;
+  /**
+   * Supplies the runtime API's phase-methodology service (GET
+   * /agents/:id/config's `phaseMethodology`). Absent from every extension →
+   * the runtime app omits the field.
+   */
+  agentPhaseMethodologyService?: AgentPhaseMethodologyServiceLike;
 }
 
 export interface AgentDetailCardContext {
@@ -181,6 +188,7 @@ export const ADMIN_EXTENSION_HOOK_ORDER = [
 export interface ResolvedAdminExtensions {
   apiDeps: Partial<AdminDeps>;
   uiDeps: Partial<AdminUIDeps>;
+  agentPhaseMethodologyService?: AgentPhaseMethodologyServiceLike;
   apiRoutes: AdminRouteContribution[];
   adminUiRoutes: AdminRouteContribution[];
   agentDetailCards: AgentDetailCardSlot[];
@@ -203,7 +211,12 @@ export function resolveAdminExtensions(
   const adminUiRoutes = collect((ext) => ext.adminUiRoutes?.(ctx));
   const agentDetailCards = collect((ext) => ext.agentDetailCards?.(ctx));
   const backgroundPasses = collect((ext) => ext.backgroundPasses?.(ctx));
+  const agentPhaseMethodologyService = services
+    .map((s) => s.agentPhaseMethodologyService)
+    .filter((svc) => svc !== undefined)
+    .at(-1);
   return {
+    ...(agentPhaseMethodologyService ? { agentPhaseMethodologyService } : {}),
     apiDeps: Object.assign({}, ...services.map((s) => s.api ?? {})),
     uiDeps: Object.assign({}, ...services.map((s) => s.ui ?? {})),
     apiRoutes,

@@ -61,6 +61,8 @@ describe("admin-boot.ts boot sequence", () => {
 
   it("keeps the platform boot free of any coding extension import", () => {
     expect(source).not.toContain("coding-admin-extension");
+    expect(source).not.toContain("./coding/");
+    expect(source).not.toContain("AgentPhaseMethodologyService");
   });
 
   it("exports startAdmin(extensions) from admin-boot.ts", () => {
@@ -71,7 +73,7 @@ describe("admin-boot.ts boot sequence", () => {
 describe("main.ts composition root", () => {
   it("composes the platform with the coding extension and nothing else", () => {
     expect(entrySource).toContain('from "./admin-boot.ts"');
-    expect(entrySource).toContain('from "./coding-admin-extension.ts"');
+    expect(entrySource).toContain('from "./coding/coding-admin-extension.ts"');
     expect(entrySource).toContain("startAdmin(adminExtensions)");
     expect(entrySource).toContain(
       "export const adminExtensions: readonly AdminExtension[] = [\n  codingAdminExtension,\n];",

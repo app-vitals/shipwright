@@ -1,5 +1,5 @@
 /**
- * admin/src/coding-admin-extension.ts
+ * admin/src/coding/coding-admin-extension.ts
  *
  * Shipwright's coding AdminExtension: the home for the coding agent's admin
  * surfaces. Everything coding-shaped in the admin is contributed from here:
@@ -28,35 +28,35 @@ import {
   resolvePublicRepo,
   resolveSessionAlertIntervalMs,
   SESSION_ALERT_FETCH_TIMEOUT_MS,
-} from "./admin-boot-config.ts";
+} from "../admin-boot-config.ts";
 import type {
   AdminBackgroundPass,
   AdminExtension,
   AdminExtensionContext,
-} from "./admin-extension.ts";
-import { codingAgentDetailCards } from "./coding/admin-ui-agent-cards.ts";
-import {
-  CODING_AGENT_DETAIL_ERROR_MESSAGES,
-  createCodingAdminUIApp,
-} from "./coding/admin-ui-coding.ts";
-import { AgentPhaseMethodologyService } from "./coding/agent-phase-methodology.ts";
-import { AgentWorkQueueService } from "./coding/agent-work-queue.ts";
-import {
-  codingAdminOpenApi,
-  createCodingAdminApiApp,
-} from "./coding/agents-api-coding.ts";
-import { DevTaskAdherenceService } from "./coding/dev-task-adherence.ts";
-import {
-  SessionAlertSweeper,
-  type SessionForAlert,
-} from "./coding/session-alert-sweeper.ts";
-import { ShipwrightLoopJobService } from "./coding/shipwright-loop-jobs.ts";
-import { createTaskStoreFetchers } from "./coding/task-store-fetchers.ts";
+} from "../admin-extension.ts";
 import {
   HttpTaskStoreProvisioningClient,
   NoopTaskStoreProvisioningClient,
-} from "./coding-task-store-provisioning-client.ts";
-import type { ServiceIntegration } from "./service-integration.ts";
+} from "../coding-task-store-provisioning-client.ts";
+import type { ServiceIntegration } from "../service-integration.ts";
+import { codingAgentDetailCards } from "./admin-ui-agent-cards.ts";
+import {
+  CODING_AGENT_DETAIL_ERROR_MESSAGES,
+  createCodingAdminUIApp,
+} from "./admin-ui-coding.ts";
+import { AgentPhaseMethodologyService } from "./agent-phase-methodology.ts";
+import { AgentWorkQueueService } from "./agent-work-queue.ts";
+import {
+  codingAdminOpenApi,
+  createCodingAdminApiApp,
+} from "./agents-api-coding.ts";
+import { DevTaskAdherenceService } from "./dev-task-adherence.ts";
+import {
+  SessionAlertSweeper,
+  type SessionForAlert,
+} from "./session-alert-sweeper.ts";
+import { ShipwrightLoopJobService } from "./shipwright-loop-jobs.ts";
+import { createTaskStoreFetchers } from "./task-store-fetchers.ts";
 
 /**
  * The task-store integration, built from SHIPWRIGHT_TASK_STORE_URL and
@@ -159,20 +159,35 @@ export function taskStoreFetchers(
   return url && adminToken ? createTaskStoreFetchers({ url, adminToken }) : {};
 }
 
+// One AgentPhaseMethodologyService per Prisma client, shared by every hook.
+const phaseMethodologyServices = new WeakMap<
+  object,
+  AgentPhaseMethodologyService
+>();
+function phaseMethodologyService(
+  ctx: AdminExtensionContext,
+): AgentPhaseMethodologyService {
+  let service = phaseMethodologyServices.get(ctx.prisma);
+  if (!service) {
+    service = new AgentPhaseMethodologyService(ctx.prisma);
+    phaseMethodologyServices.set(ctx.prisma, service);
+  }
+  return service;
+}
+
 export const codingAdminExtension: AdminExtension = {
   name: "coding",
   serviceIntegrations: (env) => [taskStoreServiceIntegration(env)],
-  services: () => ({
+  services: (ctx) => ({
     ui: { agentDetailErrorMessages: CODING_AGENT_DETAIL_ERROR_MESSAGES },
+    agentPhaseMethodologyService: phaseMethodologyService(ctx),
   }),
   apiRoutes: (ctx) => [
     {
       path: "/",
       app: createCodingAdminApiApp({
         agentService: ctx.services.agentService,
-        agentPhaseMethodologyService: new AgentPhaseMethodologyService(
-          ctx.prisma,
-        ),
+        agentPhaseMethodologyService: phaseMethodologyService(ctx),
         agentWorkQueueService: new AgentWorkQueueService(ctx.prisma),
         devTaskAdherenceService: new DevTaskAdherenceService(ctx.prisma),
         agentTokenService: ctx.services.agentTokenService,
@@ -199,9 +214,7 @@ export const codingAdminExtension: AdminExtension = {
         shipwrightLoopJobService: new ShipwrightLoopJobService(ctx.prisma),
         agentCronRunService: ctx.services.agentCronRunService,
         agentWorkQueueService: new AgentWorkQueueService(ctx.prisma),
-        agentPhaseMethodologyService: new AgentPhaseMethodologyService(
-          ctx.prisma,
-        ),
+        agentPhaseMethodologyService: phaseMethodologyService(ctx),
         agentMemberService: ctx.services.agentMemberService,
         callerScopeResolver: ctx.services.callerScopeResolver,
         // Repo slug for the public read-only task board (GET /public/tasks).
@@ -225,9 +238,7 @@ export const codingAdminExtension: AdminExtension = {
       agentCronRunService: ctx.services.agentCronRunService,
       agentGitHubInstallationsService:
         ctx.services.agentGitHubInstallationsService,
-      agentPhaseMethodologyService: new AgentPhaseMethodologyService(
-        ctx.prisma,
-      ),
+      agentPhaseMethodologyService: phaseMethodologyService(ctx),
       ...(fetchVerificationChecks ? { fetchVerificationChecks } : {}),
       ...(fetchTaskStorePrs ? { fetchTaskStorePrs } : {}),
     });

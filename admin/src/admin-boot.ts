@@ -32,11 +32,11 @@
 import { join } from "node:path";
 import * as Sentry from "@sentry/bun";
 import { sentry } from "@sentry/hono/bun";
+import { registerGracefulShutdown } from "@shipwright/lib/graceful-shutdown";
 import {
   type PoolLike,
   routeContextMiddleware,
 } from "@shipwright/lib/pool-observability";
-import { registerGracefulShutdown } from "@shipwright/lib/graceful-shutdown";
 import { buildSentryInitOptions, initSentry } from "@shipwright/lib/sentry";
 import { Hono } from "hono";
 import { createAccountCreatedNotifier } from "./account-created-notifier.ts";
@@ -85,7 +85,6 @@ import {
   callerScopeDepsFromServices,
   createCallerScopeResolver,
 } from "./caller-scope.ts";
-import { AgentPhaseMethodologyService } from "./coding/agent-phase-methodology.ts";
 import { isDevAuthAllowed } from "./dev-auth-guard.ts";
 import { HttpGithubAppProvisioningClient } from "./github-app-provisioning-client.ts";
 import { HttpGoogleAuthClient } from "./google-auth-client.ts";
@@ -169,7 +168,6 @@ export async function startAdmin(
   const agentToolService = new AgentToolService(prisma);
   const agentTokenService = new AgentTokenService(prisma);
   const agentPluginService = new AgentPluginService(prisma);
-  const agentPhaseMethodologyService = new AgentPhaseMethodologyService(prisma);
   const agentMemberService = new AgentMemberService(prisma);
   // Account-aware caller scope (SSP-2.1). Account membership contributes
   // agents only when the self-serve flag is on; off → AgentMember-only.
@@ -371,7 +369,12 @@ export async function startAdmin(
     agentCronJobService,
     agentService,
     agentPluginService,
-    agentPhaseMethodologyService,
+    ...(resolvedExtensions.agentPhaseMethodologyService
+      ? {
+          agentPhaseMethodologyService:
+            resolvedExtensions.agentPhaseMethodologyService,
+        }
+      : {}),
     sessionSecret,
     adminApiKeys,
     agentTokenService,

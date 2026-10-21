@@ -12,7 +12,7 @@
 
 import { startAdmin } from "./admin-boot.ts";
 import type { AdminExtension } from "./admin-extension.ts";
-import { codingAdminExtension } from "./coding-admin-extension.ts";
+import { codingAdminExtension } from "./coding/coding-admin-extension.ts";
 
 // Re-exported so existing importers of main.ts keep working unchanged.
 export {
