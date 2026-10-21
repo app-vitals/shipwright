@@ -14,7 +14,7 @@ import type {
   AdminUISlackClient,
 } from "./admin-ui.ts";
 import { createAdminUIApp } from "./admin-ui.ts";
-import type { PrListItem } from "./admin-ui-pages.ts";
+import type { PrListItem } from "./coding/admin-ui-work-item-pages.ts";
 import { AnthropicCredentialsBlockedError } from "./anthropic-credential-guard.ts";
 import type {
   GoogleAuthClient,

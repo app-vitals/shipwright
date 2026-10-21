@@ -52,10 +52,6 @@ import { registerAdminAccountsRoutes } from "./admin-ui-accounts.ts";
 import {
   type AgentDetail,
   type AgentOption,
-  buildMergedWorkQueueRows,
-  type GitHubInstallationsCardData,
-  type PrListItem,
-  type PullRequestItem,
   renderAgentDetailPage,
   renderAgentsPage,
   renderChatMessageBubble,
@@ -65,21 +61,9 @@ import {
   renderGithubAppInstallPage,
   renderGithubAppManifestRedirectPage,
   renderLoginPage,
-  renderMergedQueueActivityPage,
   renderNewLocalAgentPage,
-  renderPrDetailPage,
   renderProvisionCompletePage,
   renderProvisionXappTokenPage,
-  renderPrsPage,
-  renderQueueActivityPage,
-  renderSessionDetailPage,
-  renderTaskDetailPage,
-  renderTasksPage,
-  resolveAgentNameFilterAndPaginate,
-  type TaskItem,
-  type VerificationActivitySummary,
-  type VerificationCheckItem,
-  type WorkQueueItem,
 } from "./admin-ui-pages.ts";
 import type { AgentCronJobService } from "./agent-cron-jobs.ts";
 import type { AgentCronRunService } from "./agent-cron-runs.ts";
@@ -112,6 +96,28 @@ import {
   type TaskStoreViewScope,
   taskStoreViewScope,
 } from "./caller-scope.ts";
+import type { GitHubInstallationsCardData } from "./coding/admin-ui-agent-cards.ts";
+import {
+  buildMergedWorkQueueRows,
+  renderMergedQueueActivityPage,
+  renderQueueActivityPage,
+  type WorkQueueItem,
+} from "./coding/admin-ui-queue-pages.ts";
+import type {
+  VerificationActivitySummary,
+  VerificationCheckItem,
+} from "./coding/admin-ui-verification-cards.ts";
+import {
+  type PrListItem,
+  type PullRequestItem,
+  renderPrDetailPage,
+  renderPrsPage,
+  renderSessionDetailPage,
+  renderTaskDetailPage,
+  renderTasksPage,
+  resolveAgentNameFilterAndPaginate,
+  type TaskItem,
+} from "./coding/admin-ui-work-item-pages.ts";
 import {
   registerSessionAdminActionsRoutes,
   SESSION_ADMIN_ACTION_MESSAGES,
