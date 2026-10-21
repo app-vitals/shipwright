@@ -1,5 +1,5 @@
 /**
- * admin/src/admin-ui-account-scope.smoke.test.ts
+ * admin/src/coding/admin-ui-account-scope.smoke.test.ts
  *
  * SSP-6.8 — the admin UI's Tasks, PRs and Sessions views for account users.
  * Injected task-store fetchers emulate the task-store's admin-token
@@ -16,15 +16,17 @@
 import { describe, expect, it } from "bun:test";
 import { sign } from "hono/jwt";
 import type {
-  AdminUIDeps,
   AdminUIGithubAppClient,
   AdminUISlackClient,
-} from "./admin-ui.ts";
-import { createAdminUIApp } from "./admin-ui.ts";
-import type { PrListItem, TaskItem } from "./admin-ui-pages.ts";
-import type { CallerScopeResolver } from "./caller-scope.ts";
-import type { Session } from "./coding/admin-ui-sessions-list.ts";
-import type { GoogleAuthClient } from "./google-auth-client.ts";
+} from "../admin-ui.ts";
+import type { CallerScopeResolver } from "../caller-scope.ts";
+import type { GoogleAuthClient } from "../google-auth-client.ts";
+import {
+  type CodingMockDeps,
+  createCodingTestApp,
+} from "./admin-ui-coding.fixtures.ts";
+import type { Session } from "./admin-ui-sessions-list.ts";
+import type { PrListItem, TaskItem } from "./admin-ui-work-item-pages.ts";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -78,7 +80,7 @@ function makeGoogleClient(): GoogleAuthClient {
 
 // ─── Mock deps factory ────────────────────────────────────────────────────────
 
-function makeMockDeps(overrides?: Partial<AdminUIDeps>): AdminUIDeps {
+function makeMockDeps(overrides?: Partial<CodingMockDeps>): CodingMockDeps {
   const BASE_SLACK_CLIENT: AdminUISlackClient = {
     createAppManifest: async () => ({
       appId: "A123456",
@@ -102,7 +104,7 @@ function makeMockDeps(overrides?: Partial<AdminUIDeps>): AdminUIDeps {
     }),
   };
 
-  const defaults: AdminUIDeps = {
+  const defaults: CodingMockDeps = {
     prisma: {
       agent: {
         findMany: async () => [],
@@ -169,10 +171,10 @@ function makeMockDeps(overrides?: Partial<AdminUIDeps>): AdminUIDeps {
       get: async () => null,
       getMany: async () => [],
     },
+    shipwrightLoopJobService: { listShipwrightLoopJobs: async () => [] },
     agentCronJobService: {
       list: async () => [],
       listWithRunSummary: async () => [],
-      listShipwrightLoopJobs: async () => [],
       get: async () => {
         throw new Error("not found");
       },
@@ -452,7 +454,7 @@ const inAccount = <T extends { accountId: string }>(
 /** Records every accountId the routes forwarded, per fetcher. */
 type Calls = Record<string, (string | undefined)[]>;
 
-function twoAccountFetchers(calls: Calls): Partial<AdminUIDeps> {
+function twoAccountFetchers(calls: Calls): Partial<CodingMockDeps> {
   const note = (name: string, accountId: string | undefined) => {
     calls[name] ??= [];
     calls[name].push(accountId);
@@ -540,11 +542,11 @@ function makeApp(calls: Calls = {}) {
     findMany: async () => [],
     deleteMany: async () => ({ count: 0 }),
   };
-  return { app: createAdminUIApp(deps), followed };
+  return { app: createCodingTestApp(deps), followed };
 }
 
 async function get(
-  app: ReturnType<typeof createAdminUIApp>,
+  app: ReturnType<typeof createCodingTestApp>,
   path: string,
   email: string,
 ): Promise<Response> {
@@ -553,7 +555,7 @@ async function get(
 }
 
 async function post(
-  app: ReturnType<typeof createAdminUIApp>,
+  app: ReturnType<typeof createCodingTestApp>,
   path: string,
   email: string,
   form?: Record<string, string>,
@@ -822,7 +824,7 @@ describe("SSP-6.8 — agent detail verification rollup scoped by account", () =>
           items: [
             { itemType: "pr", itemId: "org/shared#101" },
           ] as unknown as Awaited<
-            ReturnType<AdminUIDeps["agentCronRunService"]["listForAgent"]>
+            ReturnType<CodingMockDeps["agentCronRunService"]["listForAgent"]>
           >["items"],
           total: 1,
           limit: 20,
@@ -831,7 +833,7 @@ describe("SSP-6.8 — agent detail verification rollup scoped by account", () =>
       },
     });
     const res = await get(
-      createAdminUIApp(deps),
+      createCodingTestApp(deps),
       "/admin/agents/agt-a",
       A_USER,
     );

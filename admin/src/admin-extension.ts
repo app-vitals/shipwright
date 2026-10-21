@@ -21,7 +21,8 @@
  *   apiRoutes(ctx)         — API sub-apps, mounted after the platform APIs and
  *                            before the admin UI (so the UI never shadows them)
  *   adminUiRoutes(ctx)     — admin UI sub-apps, mounted after the platform UI
- *   agentDetailCards(ctx)  — extra cards on the agent detail page
+ *   agentDetailCards(ctx)  — extra cards on the agent detail page, each placed
+ *                            in the header or the Configuration group
  *   backgroundPasses(ctx)  — interval loops, started after the platform sweepers
  *
  * openApi() is static (no context): scripts/generate-admin-spec.ts calls it to
@@ -32,12 +33,16 @@
  * (the composition root) is the only file that wires a concrete extension in.
  */
 
+import type { PoolLike } from "@shipwright/lib/pool-observability";
+import type { ErrorCapturingClient } from "@shipwright/lib/sentry";
 import type { Hono } from "hono";
 import type { PrismaClient } from "../prisma/client/client.ts";
 import type { AccountService } from "./accounts.ts";
 import type { AdminUIDeps } from "./admin-ui.ts";
 import type { AgentCronJobService } from "./agent-cron-jobs.ts";
+import type { AgentCronRunService } from "./agent-cron-runs.ts";
 import type { AgentEnvService } from "./agent-envs.ts";
+import type { AgentGitHubInstallationsService } from "./agent-github-installations.ts";
 import type { AgentMemberService } from "./agent-members.ts";
 import type { AgentProvisioner } from "./agent-provisioner.ts";
 import type { AgentTokenService } from "./agent-tokens.ts";
@@ -52,6 +57,8 @@ export interface AdminPlatformServices {
   agentService: AgentService;
   agentEnvService: AgentEnvService;
   agentCronJobService: AgentCronJobService;
+  agentCronRunService: AgentCronRunService;
+  agentGitHubInstallationsService: AgentGitHubInstallationsService;
   agentTokenService: AgentTokenService;
   agentMemberService: AgentMemberService;
   accountService: AccountService;
@@ -67,8 +74,16 @@ export interface AdminExtensionContext {
   adminApiKeys: ReturnType<typeof parseAdminApiKeys>;
   /** SHIPWRIGHT_ADMIN_ALLOWED_EMAILS, parsed: operators who see everything. */
   adminAllowedEmails: string[];
+  /** The admin UI's public base URL (SHIPWRIGHT_ADMIN_APP_BASE_URL). */
+  appBaseUrl: string;
+  /** SHIPWRIGHT_ADMIN_TZ, when set: the admin UI's display timezone. */
+  timezone?: string;
   /** Web Push, present only when VAPID is fully configured. */
-  push?: { service: PushService; maxDetail: string };
+  push?: { service: PushService; maxDetail: string; vapidPublicKey: string };
+  /** Sentry, present only when SENTRY_DSN is set (as the admin API gets it). */
+  sentryClient?: ErrorCapturingClient;
+  /** Admin's pg pool (PLO-1.3), for pool-timeout capture context. */
+  pool?: PoolLike;
   services: AdminPlatformServices;
 }
 
@@ -93,7 +108,18 @@ export interface AgentDetailCardContext {
   agentId: string;
   userEmail: string;
   isAdmin: boolean;
+  /** The agent's owning account; null for unassigned agents. */
+  accountId?: string | null;
+  /** The admin UI's display timezone (IANA name). */
+  timezone?: string;
 }
+
+/**
+ * Where a card lands on the agent detail page:
+ *   header        — above the stat strip, after the page's alerts (default)
+ *   configuration — inside the Configuration group, after Repos
+ */
+export type AgentDetailCardPlacement = "header" | "configuration";
 
 /**
  * One extra card on GET /admin/agents/:id. render() returns trusted HTML — the
@@ -101,6 +127,8 @@ export interface AgentDetailCardContext {
  */
 export interface AgentDetailCardSlot {
   name: string;
+  /** Defaults to "header". */
+  placement?: AgentDetailCardPlacement;
   render(ctx: AgentDetailCardContext): Promise<string>;
 }
 
@@ -117,6 +145,16 @@ export interface AdminBackgroundPass {
 export interface AdminOpenApiContribution {
   paths?: Record<string, Record<string, unknown>>;
   schemas?: Record<string, unknown>;
+  /**
+   * Where new paths/schemas land in the document: contributed key → the key
+   * it is inserted directly after (a platform key, or a contributed key placed
+   * earlier). New keys without a placement are appended. Lets an extension's
+   * routes keep a stable position in the generated document.
+   */
+  placeAfter?: {
+    paths?: Record<string, string>;
+    schemas?: Record<string, string>;
+  };
 }
 
 export interface AdminExtension {
@@ -175,20 +213,72 @@ export function resolveAdminExtensions(
   };
 }
 
-/** Merges every extension's static OpenAPI contribution, in order. */
+/**
+ * Merges every extension's static OpenAPI contribution, in order. Placements
+ * are included only when some extension declared one.
+ */
 export function collectOpenApiContributions(
   extensions: readonly AdminExtension[],
-): Required<AdminOpenApiContribution> {
+): Required<Pick<AdminOpenApiContribution, "paths" | "schemas">> &
+  Pick<AdminOpenApiContribution, "placeAfter"> {
   const paths: Record<string, Record<string, unknown>> = {};
   const schemas: Record<string, unknown> = {};
+  const pathsAfter: Record<string, string> = {};
+  const schemasAfter: Record<string, string> = {};
   for (const ext of extensions) {
     const contribution = ext.openApi?.() ?? {};
     for (const [path, methods] of Object.entries(contribution.paths ?? {})) {
       paths[path] = { ...paths[path], ...methods };
     }
     Object.assign(schemas, contribution.schemas);
+    Object.assign(pathsAfter, contribution.placeAfter?.paths);
+    Object.assign(schemasAfter, contribution.placeAfter?.schemas);
   }
-  return { paths, schemas };
+  const placed =
+    Object.keys(pathsAfter).length > 0 || Object.keys(schemasAfter).length > 0;
+  return {
+    paths,
+    schemas,
+    ...(placed
+      ? { placeAfter: { paths: pathsAfter, schemas: schemasAfter } }
+      : {}),
+  };
+}
+
+/**
+ * Merges `extra` into `base` keeping base's key order: an existing key keeps
+ * its position (its value merged via `mergeValue`), a new key is inserted
+ * right after its `after` anchor or, unplaced, appended. An anchor that is not
+ * in the document is a programming error and throws.
+ */
+function mergeOrdered<V>(
+  base: Record<string, V>,
+  extra: Record<string, V>,
+  after: Record<string, string> | undefined,
+  mergeValue: (existing: V, added: V) => V,
+): Record<string, V> {
+  const keys = Object.keys(base);
+  const values: Record<string, V> = { ...base };
+  for (const [key, value] of Object.entries(extra)) {
+    if (Object.hasOwn(values, key)) {
+      values[key] = mergeValue(values[key] as V, value);
+      continue;
+    }
+    const anchor = after?.[key];
+    if (anchor === undefined) {
+      keys.push(key);
+    } else {
+      const at = keys.indexOf(anchor);
+      if (at === -1) {
+        throw new Error(
+          `OpenAPI contribution places "${key}" after unknown "${anchor}"`,
+        );
+      }
+      keys.splice(at + 1, 0, key);
+    }
+    values[key] = value;
+  }
+  return Object.fromEntries(keys.map((key) => [key, values[key] as V]));
 }
 
 interface OpenApiDocLike {
@@ -199,7 +289,8 @@ interface OpenApiDocLike {
 /**
  * Folds a contribution into an OpenAPI document. An empty contribution returns
  * the input itself, so the generated spec stays byte-identical. Paths merge at
- * the method level (like the runtime/admin merge in generate-admin-spec.ts).
+ * the method level (like the runtime/admin merge in generate-admin-spec.ts);
+ * new paths and schemas land at their `placeAfter` anchors, else at the end.
  */
 export function applyOpenApiContributions<T extends OpenApiDocLike>(
   doc: T,
@@ -210,17 +301,22 @@ export function applyOpenApiContributions<T extends OpenApiDocLike>(
   if (extraPaths.length === 0 && Object.keys(extraSchemas).length === 0) {
     return doc;
   }
-  const paths = { ...(doc.paths ?? {}) };
-  for (const [path, methods] of extraPaths) {
-    paths[path] = { ...paths[path], ...methods };
-  }
+  const paths = mergeOrdered(
+    doc.paths ?? {},
+    Object.fromEntries(extraPaths),
+    contribution.placeAfter?.paths,
+    (existing, added) => ({ ...existing, ...added }),
+  );
+  const schemas = mergeOrdered(
+    doc.components?.schemas ?? {},
+    extraSchemas,
+    contribution.placeAfter?.schemas,
+    (_existing, added) => added,
+  );
   return {
     ...doc,
     paths,
-    components: {
-      ...(doc.components ?? {}),
-      schemas: { ...(doc.components?.schemas ?? {}), ...extraSchemas },
-    },
+    components: { ...(doc.components ?? {}), schemas },
   };
 }
 
@@ -294,4 +390,30 @@ export async function renderAgentDetailCards(
     ),
   );
   return rendered.filter((html): html is string => html !== undefined);
+}
+
+/**
+ * Renders the slots (renderAgentDetailCards semantics: in order, a throwing
+ * slot omitted) and groups the HTML by placement. Slots whose placement is not
+ * in `placements` are not rendered: each holds its place as an empty string,
+ * so the page lays out exactly as a full render whose cards came back empty.
+ */
+export async function renderAgentDetailCardSlots(
+  slots: readonly AgentDetailCardSlot[],
+  ctx: AgentDetailCardContext,
+  placements: readonly AgentDetailCardPlacement[] = ["header", "configuration"],
+): Promise<Record<AgentDetailCardPlacement, string[]>> {
+  const at = async (placement: AgentDetailCardPlacement) => {
+    const placed = slots.filter(
+      (slot) => (slot.placement ?? "header") === placement,
+    );
+    return placements.includes(placement)
+      ? renderAgentDetailCards(placed, ctx)
+      : placed.map(() => "");
+  };
+  const [header, configuration] = await Promise.all([
+    at("header"),
+    at("configuration"),
+  ]);
+  return { header, configuration };
 }

@@ -2,7 +2,8 @@
  * task-store/src/blocked-by-type-parity.check.ts
  *
  * Compile-time-only parity check between admin's hand-mirrored `BlockedByEntry`
- * (admin-ui-pages.ts — kept deliberately decoupled from @shipwright/task-store,
+ * (admin/src/coding/admin-ui-work-item-pages.ts — kept deliberately decoupled
+ * from @shipwright/task-store,
  * see the "avoids cross-package coupling" comments in that file) and the real
  * `BlockedByEntry` union in task-store/src/blocked-by.ts.
  *
@@ -27,7 +28,7 @@
  * check below fails to compile.
  */
 
-import type { BlockedByEntry as AdminBlockedByEntry } from "../../admin/src/admin-ui-pages.ts";
+import type { BlockedByEntry as AdminBlockedByEntry } from "../../admin/src/coding/admin-ui-work-item-pages.ts";
 import type { BlockedByEntry as RealBlockedByEntry } from "./blocked-by.ts";
 
 // Every `type` discriminant present in task-store's real union.

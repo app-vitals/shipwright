@@ -33,8 +33,6 @@ import { AgentService } from "./agents.ts";
 import type { AdminDeps } from "./agents-api.ts";
 import { createAdminApp } from "./agents-api.ts";
 import { NoopChatServiceProvisioningClient } from "./chat-service-provisioning-client.ts";
-import { AgentPhaseMethodologyService } from "./coding/agent-phase-methodology.ts";
-import { AgentWorkQueueService } from "./coding/agent-work-queue.ts";
 import { createAdminPrismaClient } from "./prisma-client.ts";
 import { makeTokenCrypto } from "./token-crypto.ts";
 
@@ -123,11 +121,9 @@ function makeDeps(prisma: PrismaClient): AdminDeps {
     agentToolService: new AgentToolService(prisma),
     agentTokenService: new AgentTokenService(prisma),
     agentPluginService: new AgentPluginService(prisma),
-    agentPhaseMethodologyService: new AgentPhaseMethodologyService(prisma),
     agentMemberService: new AgentMemberService(prisma),
     agentTypeRegistry: fakeAgentTypeRegistry(),
     agentChatTokenService: new AgentChatTokenService(prisma),
-    agentWorkQueueService: new AgentWorkQueueService(prisma),
     agentGitHubInstallationsService: new AgentGitHubInstallationsService(
       prisma,
     ),

@@ -23,7 +23,6 @@
  */
 
 import { join } from "node:path";
-import { DEFAULT_ACCOUNT_ID } from "@shipwright/lib/default-account";
 import { isGithubLogin } from "@shipwright/lib/github-login";
 import { isOrgRepo } from "@shipwright/lib/org-repo";
 import { SECRET_ENV_VARS } from "@shipwright/lib/secret-env-vars";
@@ -43,7 +42,7 @@ import type { AccountOnboardingService } from "./account-onboarding.ts";
 import type { AccountService } from "./accounts.ts";
 import {
   type AgentDetailCardSlot,
-  renderAgentDetailCards,
+  renderAgentDetailCardSlots,
 } from "./admin-extension.ts";
 import { registerAccountRoutes } from "./admin-ui-account.ts";
 import { runWithAccountNav } from "./admin-ui-account-nav.ts";
@@ -52,10 +51,6 @@ import { registerAdminAccountsRoutes } from "./admin-ui-accounts.ts";
 import {
   type AgentDetail,
   type AgentOption,
-  buildMergedWorkQueueRows,
-  type GitHubInstallationsCardData,
-  type PrListItem,
-  type PullRequestItem,
   renderAgentDetailPage,
   renderAgentsPage,
   renderChatMessageBubble,
@@ -65,29 +60,15 @@ import {
   renderGithubAppInstallPage,
   renderGithubAppManifestRedirectPage,
   renderLoginPage,
-  renderMergedQueueActivityPage,
   renderNewLocalAgentPage,
-  renderPrDetailPage,
   renderProvisionCompletePage,
   renderProvisionXappTokenPage,
-  renderPrsPage,
-  renderQueueActivityPage,
-  renderSessionDetailPage,
-  renderTaskDetailPage,
-  renderTasksPage,
-  resolveAgentNameFilterAndPaginate,
-  type TaskItem,
-  type VerificationActivitySummary,
-  type VerificationCheckItem,
-  type WorkQueueItem,
 } from "./admin-ui-pages.ts";
 import type { AgentCronJobService } from "./agent-cron-jobs.ts";
-import type { AgentCronRunService } from "./agent-cron-runs.ts";
 import type { DeleteAgentFullyDeps } from "./agent-deletion.ts";
 import { deleteAgentFully } from "./agent-deletion.ts";
 import type { ManualStep } from "./agent-deletion-checklist.ts";
 import type { AgentEnvService } from "./agent-envs.ts";
-import type { AgentGitHubInstallationsService } from "./agent-github-installations.ts";
 import type { AgentMemberService } from "./agent-members.ts";
 import type { AgentPluginService } from "./agent-plugins.ts";
 import type { AgentProvisioner } from "./agent-provisioner.ts";
@@ -100,7 +81,6 @@ import {
 import type { AgentService } from "./agents.ts";
 import { createAgent, describeRepoNameCollision } from "./agents.ts";
 import { AnthropicCredentialsBlockedError } from "./anthropic-credential-guard.ts";
-import { publicNoAuthMiddleware } from "./api-auth.ts";
 import {
   audioContentTypeForFilename,
   validateAttachment,
@@ -109,31 +89,7 @@ import {
   type CallerScopeResolver,
   memberOnlyCallerScopeResolver,
   scopeIncludesAgent,
-  type TaskStoreViewScope,
-  taskStoreViewScope,
 } from "./caller-scope.ts";
-import {
-  registerSessionAdminActionsRoutes,
-  SESSION_ADMIN_ACTION_MESSAGES,
-} from "./coding/admin-ui-session-admin-actions.ts";
-import { registerSessionFollowRoutes } from "./coding/admin-ui-session-follow.ts";
-import { registerSessionSettingsRoutes } from "./coding/admin-ui-sessions.ts";
-import {
-  registerSessionsListRoutes,
-  resolveVisibilityScope,
-  type Session,
-} from "./coding/admin-ui-sessions-list.ts";
-import type { AgentPhaseMethodologyService } from "./coding/agent-phase-methodology.ts";
-import type { AgentWorkQueueService } from "./coding/agent-work-queue.ts";
-import {
-  type SessionFollowPrismaLike,
-  SessionFollowService,
-} from "./coding/session-follow-service.ts";
-import {
-  deriveSessionVisibilityFromTasks,
-  isSessionVisible,
-  type SessionForVisibility,
-} from "./coding/session-scope.ts";
 import { ForbiddenError, UnprocessableEntityError } from "./errors.ts";
 import {
   GITHUB_PROVISION_STATE_COOKIE,
@@ -148,7 +104,6 @@ import {
   toPolledMessage,
 } from "./http-chat-client.ts";
 import type { OktaAuthClient } from "./okta-auth-client.ts";
-import { AGENT_PHASES } from "./openapi-schemas.ts";
 import type { PrismaTransactionClient } from "./prisma-tx.ts";
 import type { PushService } from "./push-service.ts";
 import {
@@ -319,7 +274,6 @@ export interface AdminUIDeps {
     AgentCronJobService,
     | "list"
     | "listWithRunSummary"
-    | "listShipwrightLoopJobs"
     | "create"
     | "update"
     | "setEnabled"
@@ -327,21 +281,12 @@ export interface AdminUIDeps {
     | "get"
     | "reconcileSystemCrons"
   >;
-  agentCronRunService: Pick<
-    AgentCronRunService,
-    "listForAgent" | "listAcrossAgents"
-  >;
-  agentWorkQueueService: Pick<AgentWorkQueueService, "get" | "getMany">;
   /**
    * Optional extension card slots (AEP-2.1, admin-extension.ts) rendered on
-   * the agent detail page after the platform cards; absent renders none.
+   * the agent detail page at each slot's placement (header or Configuration
+   * group); absent renders none.
    */
   agentDetailCards?: readonly AgentDetailCardSlot[];
-  /** Optional: when absent the agent detail page omits the installations card. */
-  agentGitHubInstallationsService?: Pick<
-    AgentGitHubInstallationsService,
-    "get"
-  >;
   agentToolService: Pick<
     AgentToolService,
     "list" | "add" | "toggle" | "remove"
@@ -351,10 +296,6 @@ export interface AdminUIDeps {
     "listForAgent" | "create" | "revoke"
   >;
   agentPluginService: Pick<AgentPluginService, "list" | "add">;
-  agentPhaseMethodologyService: Pick<
-    AgentPhaseMethodologyService,
-    "list" | "upsert"
-  >;
   agentMemberService: Pick<
     AgentMemberService,
     "listByEmail" | "exists" | "add" | "remove" | "listByAgentId"
@@ -471,136 +412,15 @@ export interface AdminUIDeps {
     lifecycle: Pick<AccountLifecycle, "update">;
   };
   /**
-   * Fetch tasks from the task-store service. If absent, the tasks page renders
-   * in degraded mode (empty table + yellow notice) rather than returning 500.
-   */
-  fetchTaskStoreTasks?: (
-    params: URLSearchParams,
-    accountId?: string,
-  ) => Promise<{
-    tasks: TaskItem[];
-    total: number;
-    limit: number;
-    offset: number;
-  }>;
-  /**
-   * Fetch a single task by ID from the task-store service. If absent, the
-   * detail route redirects back to the list.
-   */
-  fetchTaskStoreTask?: (
-    id: string,
-    accountId?: string,
-  ) => Promise<TaskItem | null>;
-  /**
-   * Release a task (unclaim → pending) via the task-store service.
-   */
-  releaseTask?: (id: string, accountId?: string) => Promise<void>;
-  /**
-   * Fetch distinct session and repo values from the task-store service.
-   * Used to populate datalist autocomplete suggestions in the tasks filter form.
-   * If absent, no datalists are rendered (inputs remain plain text).
-   */
-  fetchDistinctTaskValues?: (accountId?: string) => Promise<{
-    sessions: string[];
-    repos: string[];
-    orgs: string[];
-  }>;
-  /**
    * IANA timezone name for date/time display in the admin UI.
    * Defaults to "America/Los_Angeles" when absent.
    */
   timezone?: string;
   /**
-   * Fetch a paginated list of pull requests from the task-store service.
-   * If absent, the PRs page renders in degraded mode (empty table + warning banner).
+   * Extra `?error=` codes (code → message) an extension's routes redirect to
+   * the agent detail page with — merged over the platform's own codes.
    */
-  fetchTaskStorePrs?: (
-    params: URLSearchParams,
-    accountId?: string,
-  ) => Promise<{
-    prs: PrListItem[];
-    total: number;
-    limit: number;
-    offset: number;
-  }>;
-  /**
-   * Fetch a single pull request by its ID from the task-store service.
-   * If absent or returns null, the PR detail route redirects to /admin/prs.
-   */
-  fetchTaskStorePrById?: (
-    id: string,
-    accountId?: string,
-  ) => Promise<PrListItem | null>;
-  /**
-   * Fetch recorded verification-check outcomes (LVB-5.1) for a task or PR
-   * from the task-store service, via exactly one of `?taskId=` or `?prId=`.
-   * If absent, the task/PR detail pages render without a Verification Checks
-   * card and the agent detail page renders without its Recent Verification
-   * Activity rollup — the same graceful-degradation convention as every
-   * other optional task-store fetcher in this file.
-   */
-  fetchVerificationChecks?: (
-    params: URLSearchParams,
-    accountId?: string,
-  ) => Promise<{
-    checks: VerificationCheckItem[];
-    total: number;
-    limit: number;
-    offset: number;
-  }>;
-  /**
-   * Fetch a paginated list of sessions from the task-store service (SESH-4.2).
-   * If absent, the sessions list page renders in degraded mode (empty
-   * sections + a warning banner).
-   */
-  fetchTaskStoreSessions?: (
-    params: URLSearchParams,
-    accountId?: string,
-  ) => Promise<{
-    sessions: Session[];
-    total: number;
-    limit: number;
-    offset: number;
-  }>;
-  /**
-   * Fetch a single session (its agentIds/repos, for visibility checks) from
-   * the task-store service by slug. If absent, a non-admin member always
-   * gets 404 on POST /admin/sessions/:slug/follow — fail-closed, since
-   * visibility can't be verified without it. Not consulted on the admin or
-   * unfollow paths.
-   */
-  fetchTaskStoreSession?: (
-    slug: string,
-    accountId?: string,
-  ) => Promise<SessionForVisibility | null>;
-  /**
-   * Apply a rename/archive patch to a session via the task-store's
-   * `PATCH /sessions/:slug` (SESH-3.1, admin-token only). Backs the session
-   * detail page's admin-only Archive/Unarchive/Rename actions (SESH-5.2). If
-   * absent, those POST routes redirect back with an `?error=` flash instead
-   * of throwing — not every admin deployment has task-store configured.
-   */
-  patchTaskStoreSession?: (
-    slug: string,
-    patch: { title?: string | null; archived?: boolean },
-    accountId?: string,
-  ) => Promise<unknown>;
-  /**
-   * Resolve whether the current user follows a session, for the session
-   * detail page's Follow/Unfollow button (SESH-5.3). Defaults to querying
-   * the real sessionFollowService when absent — injectable for tests.
-   */
-  fetchIsFollowingSession?: (
-    userEmail: string,
-    slug: string,
-  ) => Promise<boolean>;
-  /**
-   * Public repo slug (SHIPWRIGHT_ADMIN_PUBLIC_REPO) for the read-only task board.
-   * When set, GET /public/tasks renders the task list filtered to this repo
-   * without requiring authentication. When absent, /public/tasks renders in
-   * degraded mode (empty table + warning notice).
-   */
-  publicRepo?: string;
+  agentDetailErrorMessages?: Record<string, string>;
   /**
    * Chat service client for the /admin/chat routes.
    * When absent, all chat routes render in degraded mode (notice, no table/messages).
@@ -689,7 +509,7 @@ async function getSessionUser(
 
 // ─── Auth middleware ──────────────────────────────────────────────────────────
 
-function createUIAuthMiddleware(
+export function createUIAuthMiddleware(
   sessionSecret: string,
 ): MiddlewareHandler<AdminUIEnv> {
   return async (c, next) => {
@@ -713,7 +533,7 @@ function createUIAuthMiddleware(
 // (//evil.com), absolute (https://evil.com), javascript:, and any other-path
 // values — those fall back to the given default so a "← X" anchor can never be
 // used as an open-redirect/phishing hop off the admin domain.
-function resolveBackHref(
+export function resolveBackHref(
   fromParam: string | undefined,
   pattern: RegExp,
   fallback: string,
@@ -722,36 +542,6 @@ function resolveBackHref(
     return fromParam;
   }
   return fallback;
-}
-
-// Allowlist for the Task Detail "← Tasks" back link: a same-path /admin/tasks
-// URL, optionally followed by a query string.
-const TASK_LIST_BACK_HREF_PATTERN = /^\/admin\/tasks(\?[^\s]*)?$/;
-
-// TBC-2.1: the default (board) view of /admin/tasks queries task-store with
-// this raised cap instead of the standard 50, since it now excludes the
-// fully-closed statuses (Claimed/Done are no longer rendered board columns)
-// and needs a wider window over the remaining active statuses to avoid
-// under-filling Queued/In Progress/Blocked-HITL. ?view=table keeps the
-// standard limit of 50, unaffected by this constant.
-const BOARD_TASK_LIMIT = 200;
-
-function resolveTaskDetailBackHref(fromParam: string | undefined): string {
-  return resolveBackHref(
-    fromParam,
-    TASK_LIST_BACK_HREF_PATTERN,
-    "/admin/tasks",
-  );
-}
-
-// Allowlist for the Session Detail "← Tasks" back link: either the tasks list
-// (/admin/tasks) or a single task detail page (/admin/tasks/:id), each
-// optionally followed by a query string — Session Detail is reachable from
-// both the tasks list and a task's Session field.
-const SESSION_BACK_HREF_PATTERN = /^\/admin\/tasks(\/[^/?\s]+)?(\?[^\s]*)?$/;
-
-function resolveSessionDetailBackHref(fromParam: string | undefined): string {
-  return resolveBackHref(fromParam, SESSION_BACK_HREF_PATTERN, "/admin/tasks");
 }
 
 /**
@@ -778,217 +568,94 @@ async function redirectWithMembersWarning(
   return c.redirect(`/admin/agents/${agentId}`, 302);
 }
 
+// ─── HTML helper ──────────────────────────────────────────────────────────────
+
+/** Renders an admin page body as an HTML Response (see createHtmlResponder). */
+export type AdminHtmlResponder = (
+  content: string,
+  opts?: { includePwaTags?: boolean; status?: number },
+) => Response;
+
 /**
- * Resolves each task's linked PR via a live GET /prs?repo=&prNumber= lookup,
- * one request per distinct (repo, pr) pair among the given tasks, run in
- * parallel to avoid an N+1 sequential-await chain. Shared by GET /admin/tasks
- * (AXR-1.2) and GET /admin/sessions/:id (SESH-5.1), which both need the same
- * task-id → PR map. Falls back to no PR data per row if the fetcher is
- * absent, a task has no repo/pr, or a lookup throws — a failed join never
- * breaks the page, it just means the caller sees no PR data for that row.
+ * The admin UI's HTML response helper, shared by the platform UI and extension
+ * UIs (AEP-3.2) so every admin page gets the same head tags and headers.
  */
-async function joinPrsByTaskId(
-  tasks: TaskItem[],
-  fetchTaskStorePrs:
-    | ((params: URLSearchParams) => Promise<{ prs: PrListItem[] }>)
-    | undefined,
-): Promise<Record<string, PrListItem>> {
-  const prsByTaskId: Record<string, PrListItem> = {};
-  if (!fetchTaskStorePrs || tasks.length === 0) return prsByTaskId;
+export function createHtmlResponder(appBaseUrl: string): AdminHtmlResponder {
+  // Precomputed once per app instance (not per-request): the manifest link +
+  // SW-registration script, gated on appBaseUrl being https (see
+  // admin/src/pwa.ts's renderPwaHeadTags — "" when the gate fails, e.g. a
+  // home-lab operator on plain HTTP).
+  const pwaHeadTags = renderPwaHeadTags(appBaseUrl);
 
-  const distinctPairs = new Map<string, { repo: string; pr: number }>();
-  for (const t of tasks) {
-    if (t.repo && t.pr) {
-      distinctPairs.set(`${t.repo}#${t.pr}`, { repo: t.repo, pr: t.pr });
-    }
+  /**
+   * Splices the PWA head tags in just before </head> so every rendered
+   * admin page gets the manifest link + SW registration site-wide, without
+   * threading appBaseUrl through every render*Page function. A no-op when
+   * pwaHeadTags is "" (non-https appBaseUrl).
+   */
+  function injectPwaHeadTags(content: string): string {
+    if (!pwaHeadTags) return content;
+    return content.replace("</head>", `  ${pwaHeadTags}\n</head>`);
   }
-  if (distinctPairs.size === 0) return prsByTaskId;
 
-  const pairResults = await Promise.all(
-    [...distinctPairs.entries()].map(
-      async ([key, { repo: r, pr: p }]): Promise<
-        [string, PrListItem | undefined]
-      > => {
-        try {
-          const result = await fetchTaskStorePrs(
-            new URLSearchParams({ repo: r, prNumber: String(p) }),
-          );
-          return [key, result.prs[0]];
-        } catch {
-          return [key, undefined];
-        }
+  /**
+   * `includePwaTags` defaults to true for every /admin/* page. The opt-out is
+   * for an extension's unauthenticated pages outside /admin/ — the manifest's
+   * scope is /admin/, and such a page must never reference /admin/ URLs.
+   */
+  return (content, opts) => {
+    const body =
+      opts?.includePwaTags === false ? content : injectPwaHeadTags(content);
+    return new Response(body, {
+      status: opts?.status ?? 200,
+      headers: {
+        "Content-Type": "text/html; charset=utf-8",
+        // CSP is out of scope (would need unsafe-inline today and buys
+        // nothing here) — these three are the low-risk, high-value headers
+        // for a server-rendered admin console.
+        "X-Content-Type-Options": "nosniff",
+        "Referrer-Policy": "same-origin",
+        "X-Frame-Options": "DENY",
       },
-    ),
-  );
-  const prsByPairKey = new Map(pairResults);
-  for (const t of tasks) {
-    if (t.repo && t.pr) {
-      const pr = prsByPairKey.get(`${t.repo}#${t.pr}`);
-      if (pr) prsByTaskId[t.id] = pr;
-    }
-  }
-  return prsByTaskId;
-}
-
-/**
- * Max verification-check rows fetched per task/PR for the detail cards and the
- * agent rollup. The task-store's GET /verification-checks returns rows `at`
- * ascending (oldest first) with a default `limit` of 50 (see
- * task-store/src/verification-check-service.ts's list()), so an unqualified
- * request yields the OLDEST 50 rows — exactly the wrong end of the history for
- * a "most recent run per checkName" view once a task/PR records more than one
- * page of checks.
- */
-const VERIFICATION_CHECKS_PAGE_LIMIT = 200;
-
-/** Shape of the optional task-store verification-check fetcher (see AdminUIDeps). */
-type FetchVerificationChecks = (
-  params: URLSearchParams,
-) => Promise<{ checks: VerificationCheckItem[]; total?: number }>;
-
-/**
- * Fetches the most RECENT window of a task's/PR's verification-check history,
- * so mostRecentVerificationChecksByCheckName()/buildVerificationActivityRollup()
- * reduce over rows that actually contain each checkName's latest run.
- *
- * GET /verification-checks exposes no `order=desc` option — only `limit`/
- * `offset` over an ascending scan — so "the newest page" is expressed as "the
- * LAST page": request `limit` rows, and if the response's `total` says the
- * history is longer than what came back, re-request at
- * `offset = total - limit`. That second round-trip only happens for a task/PR
- * with more than VERIFICATION_CHECKS_PAGE_LIMIT recorded checks; every other
- * call stays a single request. (If rows are appended between the two calls the
- * window shifts by at most that many rows — harmless for a "latest per
- * checkName" reduction over a 200-row window.)
- */
-async function fetchRecentVerificationChecks(
-  fetchVerificationChecks: FetchVerificationChecks,
-  parent: { taskId: string } | { prId: string },
-): Promise<VerificationCheckItem[]> {
-  const buildParams = () =>
-    new URLSearchParams({
-      ...parent,
-      limit: String(VERIFICATION_CHECKS_PAGE_LIMIT),
     });
-
-  const first = await fetchVerificationChecks(buildParams());
-  const total = typeof first.total === "number" ? first.total : 0;
-  if (total <= first.checks.length) return first.checks;
-
-  const tailParams = buildParams();
-  tailParams.set("offset", String(total - VERIFICATION_CHECKS_PAGE_LIMIT));
-  const tail = await fetchVerificationChecks(tailParams);
-  return tail.checks;
+  };
 }
+
+// ─── Agent access ─────────────────────────────────────────────────────────────
 
 /**
- * Builds the "Recent Verification Activity" rollup for the agent detail page
- * (LVB-5.3 AC2) from the agent's most recent cron-run dispatch targets.
- * There is no task-store query to list "all tasks/PRs claimed by agent X"
- * directly (GET /tasks only supports ?assignee=, GET /prs has no agent
- * filter), so this reuses the same itemType/itemId dispatch-target data the
- * existing Queue Activity page already renders (see workItemLink() in
- * admin-ui-pages.ts) — up to `maxItems` distinct recent {itemType, itemId}
- * pairs are extracted, a "pr" reference is resolved to its task-store record
- * id via fetchTaskStorePrs (mirroring joinPrsByTaskId's repo+prNumber
- * lookup; a "task" reference needs no resolution, Task.id IS the human
- * string task-store expects), then each item's verification checks are
- * fetched and aggregated in parallel. A failed lookup for one item is
- * swallowed so it never breaks the whole rollup — returns undefined (no
- * card) only when the fetcher is absent; when no items qualify or nothing
- * came back it returns a zero-check summary so the card renders an empty
- * state instead of silently disappearing.
+ * Agent access checks shared by the platform UI and extension UIs (AEP-3.2).
+ * resolveAccessibleAgents: admins see the full fleet, non-admins only the
+ * agents in their caller scope (no ordering beyond what listAll()/listByIds()
+ * return). assertAgentAccess: admins always, others when the agent is in scope.
  */
-function emptyVerificationActivity(): VerificationActivitySummary {
-  return { totalChecks: 0, itemCount: 0, counts: {} };
-}
-
-async function buildVerificationActivityRollup(
-  runs: { itemType?: string | null; itemId?: string | null }[],
-  fetchVerificationChecks: FetchVerificationChecks | undefined,
-  fetchTaskStorePrs:
-    | ((params: URLSearchParams) => Promise<{ prs: PrListItem[] }>)
-    | undefined,
-  maxItems = 10,
-): Promise<VerificationActivitySummary | undefined> {
-  if (!fetchVerificationChecks) return undefined;
-
-  const seen = new Set<string>();
-  const distinctItems: { itemType: "task" | "pr"; itemId: string }[] = [];
-  for (const run of runs) {
-    if (!run.itemType || !run.itemId) continue;
-    if (run.itemType !== "task" && run.itemType !== "pr") continue;
-    const key = `${run.itemType}:${run.itemId}`;
-    if (seen.has(key)) continue;
-    seen.add(key);
-    distinctItems.push({ itemType: run.itemType, itemId: run.itemId });
-    if (distinctItems.length >= maxItems) break;
-  }
-  if (distinctItems.length === 0) return emptyVerificationActivity();
-
-  const checksPerItem = await Promise.all(
-    distinctItems.map(async (item): Promise<VerificationCheckItem[]> => {
-      try {
-        if (item.itemType === "task") {
-          return await fetchRecentVerificationChecks(fetchVerificationChecks, {
-            taskId: item.itemId,
-          });
-        }
-        // itemType === "pr" — resolve the "repo#prNumber" dispatch-target
-        // reference to its task-store PR record id first.
-        const match = item.itemId.match(/^(.+)#(\d+)$/);
-        if (!match || !fetchTaskStorePrs) return [];
-        const [, repo, prNumber] = match;
-        const prResult = await fetchTaskStorePrs(
-          new URLSearchParams({ repo, prNumber }),
-        );
-        const pr = prResult.prs[0];
-        if (!pr) return [];
-        return await fetchRecentVerificationChecks(fetchVerificationChecks, {
-          prId: pr.id,
-        });
-      } catch {
-        return [];
-      }
-    }),
-  );
-
-  const counts: Record<string, number> = {};
-  const byCheckName: Record<string, Record<string, number>> = {};
-  const byRepo: Record<string, Record<string, number>> = {};
-  const environmentalByRepo: Record<string, Record<string, number>> = {};
-  let totalChecks = 0;
-  for (const checks of checksPerItem) {
-    for (const check of checks) {
-      counts[check.status] = (counts[check.status] ?? 0) + 1;
-      const statusCounts = byCheckName[check.checkName] ?? {};
-      statusCounts[check.status] = (statusCounts[check.status] ?? 0) + 1;
-      byCheckName[check.checkName] = statusCounts;
-
-      const repoStatusCounts = byRepo[check.repo] ?? {};
-      repoStatusCounts[check.status] =
-        (repoStatusCounts[check.status] ?? 0) + 1;
-      byRepo[check.repo] = repoStatusCounts;
-
-      if (check.reasonCategory) {
-        const repoReasonCounts = environmentalByRepo[check.repo] ?? {};
-        repoReasonCounts[check.reasonCategory] =
-          (repoReasonCounts[check.reasonCategory] ?? 0) + 1;
-        environmentalByRepo[check.repo] = repoReasonCounts;
-      }
-
-      totalChecks++;
-    }
-  }
-  if (totalChecks === 0) return emptyVerificationActivity();
-
+export function createAgentAccessChecks(deps: {
+  agentService: Pick<AgentService, "listAll" | "listByIds">;
+  callerScopeResolver: CallerScopeResolver;
+}) {
+  const { agentService, callerScopeResolver } = deps;
   return {
-    totalChecks,
-    itemCount: distinctItems.length,
-    counts,
-    byCheckName,
-    byRepo,
-    environmentalByRepo,
+    async resolveAccessibleAgents(
+      userEmail: string,
+      isAdmin: boolean,
+    ): Promise<Awaited<ReturnType<AgentService["listAll"]>>> {
+      if (isAdmin) {
+        return agentService.listAll();
+      }
+      const scope = await callerScopeResolver(userEmail, false);
+      return agentService.listByIds(scope.kind === "all" ? [] : scope.agentIds);
+    },
+    async assertAgentAccess(
+      agentId: string,
+      userEmail: string,
+      isAdmin: boolean,
+    ): Promise<boolean> {
+      if (isAdmin) return true;
+      return scopeIncludesAgent(
+        await callerScopeResolver(userEmail, false),
+        agentId,
+      );
+    },
   };
 }
 
@@ -999,13 +666,9 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
     prisma,
     agentEnvService,
     agentCronJobService,
-    agentCronRunService,
-    agentWorkQueueService,
-    agentGitHubInstallationsService,
     agentToolService,
     agentTokenService,
     agentPluginService,
-    agentPhaseMethodologyService,
     agentMemberService,
     agentService,
     provisioner,
@@ -1033,19 +696,7 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
     githubAppClient,
     appBaseUrl,
     devAuthEnabled = false,
-    fetchTaskStoreTasks,
-    fetchTaskStoreTask,
-    releaseTask,
-    fetchDistinctTaskValues,
     timezone = "America/Los_Angeles",
-    fetchTaskStorePrs,
-    fetchTaskStorePrById,
-    fetchVerificationChecks,
-    fetchTaskStoreSessions,
-    fetchTaskStoreSession,
-    patchTaskStoreSession,
-    fetchIsFollowingSession,
-    publicRepo,
     chatClient,
     pwaAssetsDir = PWA_ASSETS_DIR,
     appVersion = "0.0.0",
@@ -1085,31 +736,6 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
     });
   }
 
-  // SES-6.1's service — CRUD over SessionFollow + UserNotificationPrefs.
-  // Constructed here (not injected via AdminUIDeps) since it needs only the
-  // same `prisma` dep every other in-process service already gets. `prisma`
-  // is typed as the narrow, pre-existing PrismaLike (agent/agentEnv/etc. only)
-  // shared by many other test doubles — rather than widen that interface
-  // (and every existing double that constructs one) with two more models
-  // only this service touches, the real PrismaClient passed in by main.ts
-  // already structurally satisfies SessionFollowPrismaLike, so the cast here
-  // is safe and keeps the blast radius to this one call site.
-  const sessionFollowService = new SessionFollowService(
-    prisma as unknown as SessionFollowPrismaLike,
-  );
-
-  // SESH-5.3: resolves whether the current user already follows a session,
-  // for the detail page's Follow/Unfollow button. Defaults to a real
-  // sessionFollowService.listByUser() lookup — DB-backed via the service
-  // already constructed above, not an HTTP fetch, so no main.ts wiring is
-  // needed. Tests inject a plain double via AdminUIDeps.fetchIsFollowingSession.
-  const resolveIsFollowingSession =
-    fetchIsFollowingSession ??
-    (async (userEmail: string, slug: string) => {
-      const follows = await sessionFollowService.listByUser(userEmail);
-      return follows.some((f) => f.sessionSlug === slug);
-    });
-
   // Extracted Slack app-manifest-creation/OAuth/app-token orchestration
   // (UAP-1.1) — shared by the legacy /admin/provision/* wizard's Slack
   // branch and the new per-agent /admin/agents/:id/connect-slack routes so
@@ -1139,50 +765,7 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
     secretEnvVars: new Set(SECRET_ENV_VARS),
   });
 
-  // ─── HTML helper ──────────────────────────────────────────────────────────
-
-  // Precomputed once per app instance (not per-request): the manifest link +
-  // SW-registration script, gated on appBaseUrl being https (see
-  // admin/src/pwa.ts's renderPwaHeadTags — "" when the gate fails, e.g. a
-  // home-lab operator on plain HTTP).
-  const pwaHeadTags = renderPwaHeadTags(appBaseUrl);
-
-  /**
-   * Splices the PWA head tags in just before </head> so every rendered
-   * admin page gets the manifest link + SW registration site-wide, without
-   * threading appBaseUrl through admin-ui-pages.ts's 24 render*Page
-   * functions. A no-op when pwaHeadTags is "" (non-https appBaseUrl).
-   */
-  function injectPwaHeadTags(content: string): string {
-    if (!pwaHeadTags) return content;
-    return content.replace("</head>", `  ${pwaHeadTags}\n</head>`);
-  }
-
-  /**
-   * `includePwaTags` defaults to true for every /admin/* page. The one
-   * opt-out is GET /public/tasks — its manifest scope is /admin/, and that
-   * unauthenticated read-only board must never reference /admin/ URLs at
-   * all (see the "does not leak /admin/ links" contract below).
-   */
-  function html(
-    content: string,
-    opts?: { includePwaTags?: boolean; status?: number },
-  ): Response {
-    const body =
-      opts?.includePwaTags === false ? content : injectPwaHeadTags(content);
-    return new Response(body, {
-      status: opts?.status ?? 200,
-      headers: {
-        "Content-Type": "text/html; charset=utf-8",
-        // CSP is out of scope (would need unsafe-inline today and buys
-        // nothing here) — these three are the low-risk, high-value headers
-        // for a server-rendered admin console.
-        "X-Content-Type-Options": "nosniff",
-        "Referrer-Policy": "same-origin",
-        "X-Frame-Options": "DENY",
-      },
-    });
-  }
+  const html = createHtmlResponder(appBaseUrl);
 
   // ─── Login / OAuth / Logout ───────────────────────────────────────────────
 
@@ -1599,20 +1182,10 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
 
   // ─── Agents list ──────────────────────────────────────────────────────────
 
-  // Access-scoping shared by the agents list and the /admin/queue-activity
-  // default-agent redirect: admins see the full fleet, non-admins see only
-  // the agents they have an AgentMember row for. No ordering/ranking beyond
-  // whatever agentService.listAll()/listByIds() already returns.
-  async function resolveAccessibleAgents(
-    userEmail: string,
-    isAdmin: boolean,
-  ): Promise<Awaited<ReturnType<typeof agentService.listAll>>> {
-    if (isAdmin) {
-      return agentService.listAll();
-    }
-    const scope = await callerScopeResolver(userEmail, false);
-    return agentService.listByIds(scope.kind === "all" ? [] : scope.agentIds);
-  }
+  // Access-scoping for the agents list (and extension views via the same
+  // createAgentAccessChecks helper).
+  const { resolveAccessibleAgents, assertAgentAccess } =
+    createAgentAccessChecks({ agentService, callerScopeResolver });
 
   app.get("/admin/agents", requireAuth, async (c) => {
     const agents = await resolveAccessibleAgents(
@@ -1667,98 +1240,7 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
     );
   });
 
-  // ─── Merged fleet-wide queue-activity view (AAV-2.1) ─────────────────────
-  // Resolves the caller's accessible agents with the same scoping as
-  // /admin/agents above, then renders the merged cross-agent Queue &
-  // Activity view directly — superseding the former AXR-3.3 behavior of
-  // redirecting to the first accessible agent's own queue-activity page.
-  // Zero accessible agents still falls back to the agents list rather than
-  // rendering an empty merged view with no agent to switch to.
-
-  app.get("/admin/queue-activity", requireAuth, async (c) => {
-    const agents = await resolveAccessibleAgents(
-      c.var.userEmail,
-      c.var.isAdmin,
-    );
-    if (agents.length === 0) {
-      return c.redirect("/admin/agents", 302);
-    }
-
-    const agentIds = agents.map((a) => a.id);
-
-    const pageRaw = c.req.query("page");
-    const page = pageRaw ? Math.max(1, Number.parseInt(pageRaw, 10) || 1) : 1;
-    const limit = 20;
-    const offset = (page - 1) * limit;
-
-    const queuePageRaw = c.req.query("queuePage");
-    const queuePage = queuePageRaw
-      ? Math.max(1, Number.parseInt(queuePageRaw, 10) || 1)
-      : 1;
-    const queueLimit = 20;
-    const queueOffset = (queuePage - 1) * queueLimit;
-
-    const [snapshots, runResult, loopJobs] = await Promise.all([
-      agentWorkQueueService.getMany(agentIds),
-      agentCronRunService.listAcrossAgents(agentIds, { limit, offset }),
-      agentCronJobService.listShipwrightLoopJobs(agentIds),
-    ]);
-
-    const agentNames: Record<string, string> = {};
-    for (const a of agents) agentNames[a.id] = a.name;
-
-    // A missing shipwright-loop row defaults to not-loop-enabled; a present
-    // row is loop-enabled only when its own enabled flag is true.
-    const loopEnabledByAgentId = new Map<string, boolean>();
-    for (const job of loopJobs) {
-      loopEnabledByAgentId.set(job.agentId, job.enabled === true);
-    }
-
-    const mergedRows = buildMergedWorkQueueRows(
-      snapshots.map((s) => ({
-        agentId: s.agentId,
-        items: s.items as unknown as WorkQueueItem[],
-      })),
-      agents.map((a) => ({
-        id: a.id,
-        repos: a.repos ?? [],
-        loopEnabled: loopEnabledByAgentId.get(a.id) ?? false,
-      })),
-    );
-    const queueTotal = mergedRows.length;
-    const pagedRows = mergedRows.slice(queueOffset, queueOffset + queueLimit);
-
-    return html(
-      renderMergedQueueActivityPage({
-        agents: agents.map((a) => ({ id: a.id, name: a.name })),
-        agentNames,
-        workQueueRows: pagedRows,
-        workQueuePagination: {
-          total: queueTotal,
-          limit: queueLimit,
-          page: queuePage,
-        },
-        runs: runResult.items,
-        runsPagination: { total: runResult.total, limit, page },
-        userName: c.var.userEmail,
-        timezone,
-      }),
-    );
-  });
-
   // ─── Agent detail ─────────────────────────────────────────────────────────
-
-  async function assertAgentAccess(
-    agentId: string,
-    userEmail: string,
-    isAdmin: boolean,
-  ): Promise<boolean> {
-    if (isAdmin) return true;
-    return scopeIncludesAgent(
-      await callerScopeResolver(userEmail, false),
-      agentId,
-    );
-  }
 
   /**
    * SSP-4.3: with self-serve on, anyone who passes assertAgentAccess for an
@@ -1795,7 +1277,7 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
       "Failed to provision the agent's cluster resources — the agent was not created.",
     quota_exceeded: "This account has reached its agent limit.",
     account_inactive: "This account is not active.",
-    invalid_phase: "Invalid pipeline phase.",
+    ...deps.agentDetailErrorMessages,
   };
 
   // ─── New agent form (MUST be before /:id to avoid "new" being captured as param)
@@ -2182,59 +1664,32 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
           // verbatim rather than mapped to a fixed key.
           (warningParam ?? undefined);
 
-    const [
-      envResult,
-      crons,
-      tools,
-      tokens,
-      plugins,
-      phaseMethodology,
-      members,
-      recentRuns,
-    ] = await Promise.all([
-      agentEnvService
-        .getByAgentId(agentId)
-        .then((e) => e ?? { env: {}, secretKeys: [] }),
-      agentCronJobService.listWithRunSummary(agentId),
-      agentToolService.list(agentId),
-      agentTokenService.listForAgent(agentId),
-      agentPluginService.list(agentId),
-      agentPhaseMethodologyService.list(agentId),
-      canManageAgents(c.var.isAdmin)
-        ? agentMemberService.listByAgentId(agentId)
-        : Promise.resolve([]),
-      agentCronRunService.listForAgent(agentId, { limit: 20 }),
-    ]);
+    const [envResult, crons, tools, tokens, plugins, members] =
+      await Promise.all([
+        agentEnvService
+          .getByAgentId(agentId)
+          .then((e) => e ?? { env: {}, secretKeys: [] }),
+        agentCronJobService.listWithRunSummary(agentId),
+        agentToolService.list(agentId),
+        agentTokenService.listForAgent(agentId),
+        agentPluginService.list(agentId),
+        canManageAgents(c.var.isAdmin)
+          ? agentMemberService.listByAgentId(agentId)
+          : Promise.resolve([]),
+      ]);
 
-    // Lightweight rollup of recent verification-check activity (LVB-5.3 AC2)
-    // across this agent's recently-dispatched tasks/PRs — see
-    // buildVerificationActivityRollup()'s doc comment for why this reuses
-    // cron-run dispatch targets rather than a dedicated task-store query.
-    // SSP-6.8: a non-admin's rollup reads only the agent's own account, so
-    // a repo#number shared with another account can't surface its checks.
-    const rollupTs = scopedTaskStore(
-      c.var.isAdmin ? undefined : (agent.accountId ?? DEFAULT_ACCOUNT_ID),
+    // Extension card slots (AEP-2.1/AEP-3.2), grouped by placement; a failing
+    // slot is omitted.
+    const cards = await renderAgentDetailCardSlots(
+      deps.agentDetailCards ?? [],
+      {
+        agentId,
+        userEmail: c.var.userEmail,
+        isAdmin: c.var.isAdmin,
+        accountId: agent.accountId ?? null,
+        timezone,
+      },
     );
-    const verificationActivity = await buildVerificationActivityRollup(
-      recentRuns.items,
-      rollupTs.fetchChecks,
-      rollupTs.fetchPrs,
-    );
-
-    // Stored snapshot only — admin never calls GitHub or the agent here.
-    // A read failure just omits the card.
-    const githubInstallations =
-      (await agentGitHubInstallationsService?.get(agentId).catch(() => null)) ??
-      null;
-
-    // Extension card slots (AEP-2.1); a failing slot is omitted.
-    const extensionCardsHtml = deps.agentDetailCards
-      ? await renderAgentDetailCards(deps.agentDetailCards, {
-          agentId,
-          userEmail: c.var.userEmail,
-          isAdmin: c.var.isAdmin,
-        })
-      : [];
 
     return html(
       renderAgentDetailPage(
@@ -2249,77 +1704,15 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
         c.var.isAdmin,
         {
           canManage: canManageAgents(c.var.isAdmin),
-          githubInstallations: githubInstallations && {
-            reportedAt: githubInstallations.reportedAt,
-            installations:
-              githubInstallations.installations as GitHubInstallationsCardData["installations"],
-          },
           error,
           newToken,
           successMsg,
           warning,
           timezone,
-          verificationActivity,
-          extensionCardsHtml,
-          phaseMethodology: phaseMethodology.map((pm) => ({
-            phase: pm.phase,
-            subagentType: pm.subagentType,
-          })),
+          extensionCardsHtml: cards.header,
+          configurationCardsHtml: cards.configuration,
         },
       ),
-    );
-  });
-
-  app.get("/admin/agents/:id/queue-activity", requireAuth, async (c) => {
-    const agentId = c.req.param("id");
-    const agent = await agentService.getDetail(agentId);
-    if (!agent) {
-      return new Response("Agent not found", { status: 404 });
-    }
-    if (!(await assertAgentAccess(agentId, c.var.userEmail, c.var.isAdmin))) {
-      return new Response("Forbidden", { status: 403 });
-    }
-
-    const cronId = c.req.query("cronId") || undefined;
-    const outcome = c.req.query("outcome") || undefined;
-    const pageRaw = c.req.query("page");
-    const page = pageRaw ? Math.max(1, Number.parseInt(pageRaw, 10) || 1) : 1;
-    const limit = 20;
-    const offset = (page - 1) * limit;
-
-    const [snapshot, crons, runResult, accessibleAgents] = await Promise.all([
-      agentWorkQueueService.get(agentId),
-      agentCronJobService.list(agentId),
-      agentCronRunService.listForAgent(agentId, {
-        cronId,
-        outcome,
-        limit,
-        offset,
-      }),
-      resolveAccessibleAgents(c.var.userEmail, c.var.isAdmin),
-    ]);
-
-    return html(
-      renderQueueActivityPage({
-        agent: { id: agent.id, name: agent.name },
-        agents: accessibleAgents.map((a) => ({ id: a.id, name: a.name })),
-        snapshot: snapshot
-          ? {
-              computedAt: snapshot.computedAt,
-              items: snapshot.items as unknown as WorkQueueItem[],
-            }
-          : null,
-        crons: crons.map((cr) => ({
-          id: cr.id,
-          name: cr.name,
-          schedule: cr.schedule,
-        })),
-        runs: runResult.items,
-        filters: { cronId, outcome },
-        pagination: { total: runResult.total, limit, page },
-        userName: c.var.userEmail,
-        timezone,
-      }),
     );
   });
 
@@ -2883,37 +2276,6 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
     return c.redirect(`/admin/agents/${agentId}`, 302);
   });
 
-  // ─── Phase methodology mutations ─────────────────────────────────────────
-
-  app.post(
-    "/admin/agents/:id/phase-methodology/:phase",
-    requireAuth,
-    async (c) => {
-      const agentId = c.req.param("id");
-      const phase = c.req.param("phase");
-      if (!(await assertAgentAccess(agentId, c.var.userEmail, c.var.isAdmin))) {
-        return new Response("Forbidden", { status: 403 });
-      }
-      if (!(AGENT_PHASES as readonly string[]).includes(phase)) {
-        return c.redirect(`/admin/agents/${agentId}?error=invalid_phase`, 302);
-      }
-      let subagentType: string | null = null;
-      try {
-        const formData = await c.req.formData();
-        const raw = formData.get("subagentType")?.toString().trim() ?? "";
-        subagentType = raw === "" ? null : raw;
-      } catch {
-        return c.redirect(`/admin/agents/${agentId}`, 302);
-      }
-      try {
-        await agentPhaseMethodologyService.upsert(agentId, phase, subagentType);
-      } catch {
-        // ignore errors — redirect back regardless
-      }
-      return c.redirect(`/admin/agents/${agentId}`, 302);
-    },
-  );
-
   // ─── Token mutations ──────────────────────────────────────────────────────
 
   app.post("/admin/agents/:id/tokens", requireAuth, async (c) => {
@@ -2960,27 +2322,32 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
       const { rawToken } = await agentTokenService.create(agentId, label);
       // Render the page directly (200) rather than redirecting with the token in the URL.
       // A redirect would expose the raw token in server access logs and browser history.
-      const [
-        envResult,
-        crons,
-        tools,
-        tokens,
-        plugins,
-        phaseMethodology,
-        members,
-      ] = await Promise.all([
-        agentEnvService
-          .getByAgentId(agentId)
-          .then((e) => e ?? { env: {}, secretKeys: [] }),
-        agentCronJobService.listWithRunSummary(agentId),
-        agentToolService.list(agentId),
-        agentTokenService.listForAgent(agentId),
-        agentPluginService.list(agentId),
-        agentPhaseMethodologyService.list(agentId),
-        canManageAgents(c.var.isAdmin)
-          ? agentMemberService.listByAgentId(agentId)
-          : Promise.resolve([]),
-      ]);
+      const [envResult, crons, tools, tokens, plugins, members] =
+        await Promise.all([
+          agentEnvService
+            .getByAgentId(agentId)
+            .then((e) => e ?? { env: {}, secretKeys: [] }),
+          agentCronJobService.listWithRunSummary(agentId),
+          agentToolService.list(agentId),
+          agentTokenService.listForAgent(agentId),
+          agentPluginService.list(agentId),
+          canManageAgents(c.var.isAdmin)
+            ? agentMemberService.listByAgentId(agentId)
+            : Promise.resolve([]),
+        ]);
+      // The token page renders only the Configuration-group extension cards;
+      // header cards keep their place empty, as before the slot split.
+      const cards = await renderAgentDetailCardSlots(
+        deps.agentDetailCards ?? [],
+        {
+          agentId,
+          userEmail: c.var.userEmail,
+          isAdmin: c.var.isAdmin,
+          accountId: agent.accountId ?? null,
+          timezone,
+        },
+        ["configuration"],
+      );
       return html(
         renderAgentDetailPage(
           agentDetail,
@@ -2996,10 +2363,8 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
             canManage: canManageAgents(c.var.isAdmin),
             newToken: rawToken,
             timezone,
-            phaseMethodology: phaseMethodology.map((pm) => ({
-              phase: pm.phase,
-              subagentType: pm.subagentType,
-            })),
+            extensionCardsHtml: cards.header,
+            configurationCardsHtml: cards.configuration,
           },
         ),
       );
@@ -3615,515 +2980,6 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
     return c.redirect(`/admin/agents/${agentId}`, 302);
   });
 
-  // ─── Task-store view scoping (SSP-6.8) ─────────────────────────────────────
-
-  /**
-   * Who may read the Tasks/PRs/Sessions views, and over which account:
-   * platform admins see every account (no filter), an account user (flag
-   * on) exactly their own, anyone else nothing (Tasks/PRs stay admin-only).
-   */
-  async function resolveTaskStoreView(
-    isAdmin: boolean,
-    userEmail: string,
-  ): Promise<TaskStoreViewScope> {
-    if (isAdmin) return { kind: "all" };
-    return taskStoreViewScope(await callerScopeResolver(userEmail, false));
-  }
-
-  /**
-   * The task-store fetchers bound to one account (`?accountId=`, sent with
-   * the admin token) — or unbound (every account) when `accountId` is
-   * undefined. Each route reads through these, so every task-store call it
-   * makes, including PR/task joins and suggestion lookups, stays in scope.
-   */
-  function scopedTaskStore(accountId: string | undefined) {
-    return {
-      fetchTasks:
-        fetchTaskStoreTasks &&
-        ((params: URLSearchParams) => fetchTaskStoreTasks(params, accountId)),
-      fetchTask:
-        fetchTaskStoreTask &&
-        ((id: string) => fetchTaskStoreTask(id, accountId)),
-      release: releaseTask && ((id: string) => releaseTask(id, accountId)),
-      fetchDistinct:
-        fetchDistinctTaskValues && (() => fetchDistinctTaskValues(accountId)),
-      fetchPrs:
-        fetchTaskStorePrs &&
-        ((params: URLSearchParams) => fetchTaskStorePrs(params, accountId)),
-      fetchPrById:
-        fetchTaskStorePrById &&
-        ((id: string) => fetchTaskStorePrById(id, accountId)),
-      fetchChecks:
-        fetchVerificationChecks &&
-        ((params: URLSearchParams) =>
-          fetchVerificationChecks(params, accountId)),
-    };
-  }
-
-  /** Agent-name suggestions: an account user only sees their own agents. */
-  async function agentSuggestions(view: TaskStoreViewScope): Promise<string[]> {
-    const agents =
-      view.kind === "account"
-        ? await agentService.listByIds(view.agentIds)
-        : await agentService.listOptions();
-    return agents.map((a) => a.name);
-  }
-
-  const NOT_FOUND = () => new Response("Not Found", { status: 404 });
-
-  // ─── Tasks page ───────────────────────────────────────────────────────────
-
-  app.get("/admin/tasks", requireAuth, async (c) => {
-    const scopeView = await resolveTaskStoreView(
-      c.var.isAdmin,
-      c.var.userEmail,
-    );
-    if (scopeView.kind === "none")
-      return new Response("Forbidden", { status: 403 });
-    const ts = scopedTaskStore(
-      scopeView.kind === "account" ? scopeView.accountId : undefined,
-    );
-    // AXR-1.3: the board is the default layout; ?view=table opts back into
-    // the pre-redesign dense table (any other/absent value falls back to
-    // the board, matching AC1's "defaults to board" requirement).
-    const view: "board" | "table" =
-      c.req.query("view") === "table" ? "table" : "board";
-    const status = c.req.query("status") ?? undefined;
-    const stateRaw = c.req.query("state");
-    const state: "ready" | "in_progress" | "blocked" | "closed" | undefined =
-      status
-        ? undefined
-        : stateRaw === "ready" ||
-            stateRaw === "in_progress" ||
-            stateRaw === "blocked" ||
-            stateRaw === "closed"
-          ? stateRaw
-          : undefined;
-    const session = c.req.query("session") ?? undefined;
-    // c.req.query("repo") only returns the first value when the query string
-    // repeats the key (?repo=a&repo=b) — use queries() to get all values, so
-    // both a bookmarked single-value URL and a multiselect submission with
-    // several selections round-trip correctly.
-    const repo = c.req.queries("repo");
-    const org = c.req.queries("org");
-    const source = c.req.query("source") ?? undefined;
-    const agent = c.req.query("agent") ?? undefined;
-    const hitlRaw = c.req.query("hitl");
-    const hitl: "true" | "false" | undefined =
-      hitlRaw === "true" || hitlRaw === "false" ? hitlRaw : undefined;
-    const error = c.req.query("error") ?? undefined;
-    const pageRaw = c.req.query("page");
-    const page = pageRaw ? Math.max(1, Number.parseInt(pageRaw, 10) || 1) : 1;
-    // TBC-2.1: the default board view scopes its outbound query to the
-    // active (non-closed) statuses and raises the cap from 50 to 200, since
-    // Claimed/Done tasks (which churn fastest) no longer share the same
-    // top-N-by-recency window as Queued/In Progress/Blocked-HITL. ?view=table
-    // is untouched — same limit, same state/status behavior as before.
-    const limit = view === "board" ? BOARD_TASK_LIMIT : 50;
-    const offset = (page - 1) * limit;
-
-    let tasks: TaskItem[] = [];
-    let total = 0;
-    let degraded = false;
-    let agentFilterActive = false;
-    let distinctValues: {
-      sessions: string[];
-      repos: string[];
-      orgs: string[];
-    } | null = null;
-
-    const fetchTasks = ts.fetchTasks;
-    const fetchDistinct = ts.fetchDistinct;
-    if (!fetchTasks) {
-      degraded = true;
-    } else {
-      try {
-        const [result, distinct] = await Promise.all([
-          resolveAgentNameFilterAndPaginate<TaskItem>({
-            agentName: agent,
-            searchByName: (name) => agentService.searchByName(name),
-            limit,
-            offset,
-            matches: (t, ids) =>
-              (!!t.assignee && ids.has(t.assignee)) ||
-              (!!t.claimedBy && ids.has(t.claimedBy)),
-            fetchPage: async (fetchLimit, fetchOffset) => {
-              const params = new URLSearchParams();
-              if (status) {
-                params.set("status", status);
-              } else if (state) {
-                params.set("state", state);
-              } else if (view === "board") {
-                // TBC-2.1: with no explicit status/state filter, the
-                // default board query excludes the fully-closed statuses
-                // (merged/done/deploying/deployed/cancelled) so Done tasks
-                // never crowd out the shared recency window. This can't
-                // exclude "claimed" specifically at the query level —
-                // claimed and queued share the same "pending" status,
-                // distinguished only by claimedBy — so Claimed is dropped
-                // purely by no longer being a rendered TASK_BOARD_COLUMNS
-                // entry.
-                params.set("state", "open");
-              }
-              if (session) params.set("session", session);
-              for (const r of repo ?? []) params.append("repo", r);
-              for (const o of org ?? []) params.append("org", o);
-              if (source) params.set("source", source);
-              if (hitl) params.set("hitl", hitl);
-              params.set("limit", String(fetchLimit));
-              params.set("offset", String(fetchOffset));
-              params.set("sort", "desc");
-              const fetched = await fetchTasks(params);
-              return { items: fetched.tasks, total: fetched.total };
-            },
-          }),
-          fetchDistinct
-            ? fetchDistinct().catch(() => null)
-            : Promise.resolve(null),
-        ]);
-        tasks = result.items;
-        total = result.total;
-        agentFilterActive = result.filterActive;
-        distinctValues = distinct;
-      } catch {
-        degraded = true;
-      }
-    }
-
-    const agentIds = [
-      ...new Set(
-        tasks
-          .flatMap((t) => [t.assignee, t.claimedBy])
-          .filter((id): id is string => !!id),
-      ),
-    ];
-    const agentNames: Record<string, string> = {};
-    if (agentIds.length > 0) {
-      const agents = await agentService.listByIds(agentIds);
-      for (const a of agents) agentNames[a.id] = a.name;
-    }
-
-    // Resolve each task's linked PR (AXR-1.2) — same pattern as GET
-    // /admin/prs's linkedTasksByPr join, and the single-task version at GET
-    // /admin/tasks/:id, just batched.
-    const prsByTaskId = await joinPrsByTaskId(tasks, ts.fetchPrs);
-
-    // Build suggestions for autocomplete datalists only when task-store integration is active.
-    // Skip the DB query entirely when fetchDistinctTaskValues is not configured.
-    const suggestions =
-      fetchDistinct && distinctValues
-        ? {
-            sessions: distinctValues.sessions,
-            repos: distinctValues.repos,
-            orgs: distinctValues.orgs,
-            agents: await agentSuggestions(scopeView),
-          }
-        : undefined;
-
-    return html(
-      renderTasksPage(
-        tasks,
-        { status, state, session, repo, org, source, agent, hitl },
-        degraded,
-        c.var.userEmail,
-        agentNames,
-        { total, limit, page },
-        {
-          ...(error ? { error } : {}),
-          agentFilterActive,
-        },
-        suggestions,
-        false,
-        timezone,
-        prsByTaskId,
-        view,
-        new Date(),
-      ),
-    );
-  });
-
-  app.get("/admin/tasks/:id", requireAuth, async (c) => {
-    const view = await resolveTaskStoreView(c.var.isAdmin, c.var.userEmail);
-    if (view.kind === "none") return new Response("Forbidden", { status: 403 });
-    const ts = scopedTaskStore(
-      view.kind === "account" ? view.accountId : undefined,
-    );
-    const taskId = c.req.param("id");
-    const backHref = resolveTaskDetailBackHref(c.req.query("from"));
-    if (!ts.fetchTask)
-      return c.redirect("/admin/tasks?error=task_store_unavailable", 302);
-    let task: TaskItem | null = null;
-    try {
-      task = await ts.fetchTask(taskId);
-    } catch {
-      return c.redirect("/admin/tasks?error=task_fetch_failed", 302);
-    }
-    // SSP-6.8: for an account user a missing task and another account's task
-    // are the same 404, so ids from other accounts can't be probed.
-    if (!task && view.kind === "account") return NOT_FOUND();
-    if (!task) return c.redirect("/admin/tasks?error=task_not_found", 302);
-
-    // Resolve agent IDs → names from the local admin DB
-    const agentIds = [task.assignee, task.claimedBy, task.agentHint].filter(
-      (id): id is string => !!id,
-    );
-    const agentNames: Record<string, string> = {};
-    if (agentIds.length > 0) {
-      const agents = await agentService.listByIds(agentIds);
-      for (const a of agents) agentNames[a.id] = a.name;
-    }
-
-    // Fetch linked pull request via a live repo+prNumber lookup — failure,
-    // absence of the fetcher, or the task missing repo/pr renders the page
-    // without a PR section.
-    let pullRequest: PullRequestItem | undefined;
-    if (ts.fetchPrs && task.repo && task.pr) {
-      try {
-        const result = await ts.fetchPrs(
-          new URLSearchParams({ repo: task.repo, prNumber: String(task.pr) }),
-        );
-        pullRequest = result.prs[0];
-      } catch {
-        // swallow — page renders without PR section
-      }
-    }
-
-    // Fetch recorded verification-check outcomes (LVB-5.1) for this task —
-    // absence of the fetcher or a failed lookup renders the page without a
-    // Verification Checks section, never a 500.
-    let verificationChecks: VerificationCheckItem[] = [];
-    if (ts.fetchChecks) {
-      try {
-        verificationChecks = await fetchRecentVerificationChecks(
-          ts.fetchChecks,
-          { taskId },
-        );
-      } catch {
-        // swallow — page renders without Verification Checks section
-      }
-    }
-
-    return html(
-      renderTaskDetailPage(
-        task,
-        c.var.userEmail,
-        agentNames,
-        timezone,
-        pullRequest,
-        backHref,
-        verificationChecks,
-      ),
-    );
-  });
-
-  app.post("/admin/tasks/:id/release", requireAuth, async (c) => {
-    const view = await resolveTaskStoreView(c.var.isAdmin, c.var.userEmail);
-    if (view.kind === "none") return new Response("Forbidden", { status: 403 });
-    const ts = scopedTaskStore(
-      view.kind === "account" ? view.accountId : undefined,
-    );
-    const taskId = c.req.param("id");
-    if (!ts.release)
-      return c.redirect("/admin/tasks?error=task_store_unavailable", 302);
-    // SSP-6.8: an account user may only release a task in their own account.
-    // The task-store enforces this too (?accountId= on the release call);
-    // checking first turns another account's id into a clean 404.
-    if (view.kind === "account") {
-      let owned: TaskItem | null = null;
-      try {
-        owned = ts.fetchTask ? await ts.fetchTask(taskId) : null;
-      } catch {
-        return c.redirect("/admin/tasks?error=release_failed", 302);
-      }
-      if (!owned) return NOT_FOUND();
-    }
-    try {
-      await ts.release(taskId);
-    } catch {
-      return c.redirect("/admin/tasks?error=release_failed", 302);
-    }
-    // TBF-1.1: the table row's Release button carries the list view it was
-    // clicked from (e.g. ?view=table&...) as `from`, so the Task Detail page
-    // we land on can hand it straight back to its own "← Tasks" link via
-    // resolveTaskDetailBackHref — otherwise that link falls back to bare
-    // /admin/tasks, which is the board (AXR-1.3), bouncing the user off the
-    // table view they released the task from. Reuse the same allowlist
-    // pattern so an unlisted `from` value can't become an open redirect.
-    const fromParam = c.req.query("from");
-    const validFrom =
-      fromParam && TASK_LIST_BACK_HREF_PATTERN.test(fromParam)
-        ? fromParam
-        : undefined;
-    if (!fetchTaskStoreTask) return c.redirect("/admin/tasks", 302);
-    return c.redirect(
-      validFrom
-        ? `/admin/tasks/${taskId}?from=${encodeURIComponent(validFrom)}`
-        : `/admin/tasks/${taskId}`,
-      302,
-    );
-  });
-
-  // ─── Sessions list (SESH-4.2) ──────────────────────────────────────────────
-
-  registerSessionsListRoutes(app, {
-    requireAuth,
-    agentMemberService,
-    callerScopeResolver,
-    agentService,
-    sessionFollowService,
-    fetchTaskStoreSessions,
-    fetchDistinctTaskValues,
-    timezone,
-    html,
-  });
-
-  // ─── Session detail ───────────────────────────────────────────────────────
-
-  app.get("/admin/sessions/:id", requireAuth, async (c) => {
-    const sessionId = c.req.param("id");
-    const backHref = resolveSessionDetailBackHref(c.req.query("from"));
-
-    // SSP-6.8: an account user is pinned to their own account (a supplied
-    // ?accountId= is ignored); a platform admin may address another
-    // account's same-slug session via ?accountId= (the list links carry it).
-    const view = await resolveTaskStoreView(c.var.isAdmin, c.var.userEmail);
-    const accountId =
-      view.kind === "account"
-        ? view.accountId
-        : view.kind === "all"
-          ? c.req.query("accountId") || undefined
-          : undefined;
-    const ts = scopedTaskStore(accountId);
-    const fetchTasks = ts.fetchTasks;
-
-    let tasks: TaskItem[] = [];
-    let degraded = false;
-
-    if (!fetchTasks) {
-      degraded = true;
-    } else {
-      const params = new URLSearchParams();
-      params.set("session", sessionId);
-      // Fetch ALL tasks for the session, not one page — sessions are typically
-      // a handful of tasks, well under this ceiling.
-      params.set("limit", "500");
-      params.set("offset", "0");
-      params.set("sort", "desc");
-      try {
-        const result = await fetchTasks(params);
-        tasks = result.tasks;
-      } catch {
-        degraded = true;
-      }
-    }
-
-    // SESH-5.1: resolve each waiting-candidate task's linked PR so
-    // renderSessionDetailPage can classify "pr_blocked" rows — a failed join
-    // never breaks the page, it just means no task classifies that way.
-    const prsByTaskId = await joinPrsByTaskId(tasks, ts.fetchPrs);
-
-    // SESH-4.2: replaces the old flat `if (!isAdmin) 403` gate with a
-    // session-scope.ts-based visibility check — an admin always sees the
-    // page; a member sees it only when one of the session's own tasks is
-    // assigned/claimed by one of their agents, or is in one of those
-    // agents' repos. Derived from the tasks already fetched above (no
-    // second fetch), using deriveSessionVisibilityFromTasks() so the
-    // agentIds precedence (`claimedBy ?? assignee`) matches the task-store
-    // rollup the list page's check consumes. A session outside the caller's
-    // scope 404s rather than 403s, so its existence isn't leaked to callers
-    // who can't see it.
-    //
-    // Skipped entirely in degraded mode: `tasks` is empty because the task
-    // store is unreachable, so the derived scope would be empty and every
-    // member would be 404'd on sessions they legitimately own. Like every
-    // other degraded-mode route here, render 200 with the "unavailable"
-    // banner instead — the degraded page carries no session data beyond the
-    // slug the caller already supplied, so nothing is leaked.
-    if (!degraded) {
-      const scope = await resolveVisibilityScope(
-        c.var.isAdmin,
-        c.var.userEmail,
-        callerScopeResolver,
-        agentService,
-      );
-      if (scope.agentIds !== "all") {
-        const derived: SessionForVisibility =
-          deriveSessionVisibilityFromTasks(tasks);
-        if (!isSessionVisible(derived, scope)) {
-          return new Response("Not Found", { status: 404 });
-        }
-      }
-    }
-
-    // SESH-5.2: the ?success=/?error= flash-message convention used
-    // elsewhere in this file (e.g. the agent detail page's
-    // ?success=manifest_synced handling) — set by
-    // registerSessionAdminActionsRoutes()'s archive/unarchive/rename
-    // redirects below.
-    const successParam = c.req.query("success");
-    const errorParam = c.req.query("error");
-    const notice = successParam
-      ? {
-          kind: "success" as const,
-          message: SESSION_ADMIN_ACTION_MESSAGES[successParam] ?? successParam,
-        }
-      : errorParam
-        ? {
-            kind: "error" as const,
-            message: SESSION_ADMIN_ACTION_MESSAGES[errorParam] ?? errorParam,
-          }
-        : undefined;
-
-    // SESH-5.3: best-effort follow-state lookup for the button's initial
-    // render. Independent of the task-store `degraded` flag (it's a
-    // DB-backed lookup, not a task-store fetch) — fail open to "not
-    // following" on error since this is just button display state, not a
-    // security check (the follow route itself enforces visibility).
-    let isFollowing = false;
-    try {
-      isFollowing = await resolveIsFollowingSession(c.var.userEmail, sessionId);
-    } catch {
-      isFollowing = false;
-    }
-
-    return html(
-      renderSessionDetailPage(
-        sessionId,
-        tasks,
-        c.var.userEmail,
-        degraded,
-        backHref,
-        prsByTaskId,
-        // SSP-6.8: account users may rename/archive their own sessions.
-        c.var.isAdmin || view.kind === "account",
-        notice,
-        isFollowing,
-        view.kind === "all" && accountId
-          ? `?accountId=${encodeURIComponent(accountId)}`
-          : "",
-      ),
-    );
-  });
-
-  // ─── Session follow (SESH-6.2) ─────────────────────────────────────────────
-
-  registerSessionFollowRoutes(app, {
-    requireAuth,
-    sessionFollowService,
-    agentMemberService,
-    callerScopeResolver,
-    agentService,
-    fetchTaskStoreSession,
-  });
-
-  // ─── Session admin actions: archive/unarchive/rename (SESH-5.2) ───────────
-
-  registerSessionAdminActionsRoutes(app, {
-    requireAuth,
-    patchTaskStoreSession,
-    callerScopeResolver,
-  });
-
   // ─── Account page (SSP-3.2) ───────────────────────────────────────────────
 
   if (accountServices) {
@@ -4142,266 +2998,6 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
       html,
     });
   }
-
-  // ─── Notification settings (SESH-6.3) ─────────────────────────────────────
-
-  registerSessionSettingsRoutes(app, {
-    requireAuth,
-    sessionFollowService,
-    pushEnabled,
-    vapidPublicKey,
-    pushService,
-    timezone,
-    html,
-  });
-
-  // ─── PRs ─────────────────────────────────────────────────────────────────
-
-  app.get("/admin/prs", requireAuth, async (c) => {
-    const view = await resolveTaskStoreView(c.var.isAdmin, c.var.userEmail);
-    if (view.kind === "none") return new Response("Forbidden", { status: 403 });
-    const ts = scopedTaskStore(
-      view.kind === "account" ? view.accountId : undefined,
-    );
-
-    const stateParam = c.req.query("state") ?? undefined;
-    const reviewState = c.req.query("reviewState") ?? undefined;
-    // c.req.query("repo") only returns the first value when the query string
-    // repeats the key (?repo=a&repo=b) — use queries() to get all values, so
-    // both a bookmarked single-value URL and a multiselect submission with
-    // several selections round-trip correctly.
-    const repo = c.req.queries("repo");
-    const org = c.req.queries("org");
-    const taskId = c.req.query("taskId") ?? undefined;
-    const blockedParam = c.req.query("blocked") ?? undefined;
-    const pageRaw = c.req.query("page");
-    const page = pageRaw ? Math.max(1, Number.parseInt(pageRaw, 10) || 1) : 1;
-    const limit = 50;
-    const offset = (page - 1) * limit;
-
-    let prs: PrListItem[] = [];
-    let total = 0;
-    let degraded = false;
-
-    const fetchPrs = ts.fetchPrs;
-    const fetchTask = ts.fetchTask;
-    if (!fetchPrs) {
-      degraded = true;
-    } else {
-      // The taskId filter is resolved live against the task-store rather than
-      // forwarded as a stored `taskId=` query param (PTL-2.1) — look up the
-      // task's repo+pr and filter /prs by those instead. If the task isn't
-      // found, or has no linked pr, render an empty list rather than an
-      // unfiltered one.
-      let taskFilterRepo: string | undefined;
-      let taskFilterPr: number | undefined;
-      let taskFilterUnresolved = false;
-      if (taskId) {
-        if (!fetchTask) {
-          taskFilterUnresolved = true;
-        } else {
-          try {
-            const task = await fetchTask(taskId);
-            if (task?.repo && task.pr) {
-              taskFilterRepo = task.repo;
-              taskFilterPr = task.pr;
-            } else {
-              taskFilterUnresolved = true;
-            }
-          } catch {
-            taskFilterUnresolved = true;
-          }
-        }
-      }
-
-      // A user-supplied repo/org filter lives in the same <form> as the
-      // taskId filter, so both can be submitted together. If the task's
-      // resolved repo doesn't satisfy the user's own repo filter, the
-      // combination is unsatisfiable — render an empty list rather than
-      // silently overwriting (and losing) the user's repo selection.
-      if (
-        taskFilterRepo &&
-        repo &&
-        repo.length > 0 &&
-        !repo.includes(taskFilterRepo)
-      ) {
-        taskFilterUnresolved = true;
-      }
-
-      if (taskFilterUnresolved) {
-        // Task not found / no linked pr / lookup failed / conflicts with the
-        // user's own repo filter — render empty list.
-        prs = [];
-        total = 0;
-      } else {
-        const params = new URLSearchParams();
-        if (stateParam) params.set("state", stateParam);
-        if (reviewState) params.set("reviewState", reviewState);
-        for (const r of repo ?? []) params.append("repo", r);
-        for (const o of org ?? []) params.append("org", o);
-        if (taskFilterRepo && taskFilterPr) {
-          params.set("repo", taskFilterRepo);
-          params.set("prNumber", String(taskFilterPr));
-        }
-        if (blockedParam === "true") params.set("blocked", "true");
-        params.set("limit", String(limit));
-        params.set("offset", String(offset));
-        params.set("sort", "desc");
-        try {
-          const result = await fetchPrs(params);
-          prs = result.prs;
-          total = result.total;
-        } catch {
-          degraded = true;
-        }
-      }
-    }
-
-    const agentIds = [
-      ...new Set(
-        prs
-          .flatMap((pr) => [pr.agentId, pr.claimedBy])
-          .filter((id): id is string => !!id),
-      ),
-    ];
-    const agentNames: Record<string, string> = {};
-    if (agentIds.length > 0) {
-      const agents = await agentService.listByIds(agentIds);
-      for (const a of agents) agentNames[a.id] = a.name;
-    }
-
-    // Resolve linked task(s) per PR via a live GET /tasks?repo=&pr= lookup,
-    // one request per distinct (repo, prNumber) pair, run in parallel to
-    // avoid an N+1 sequential-await chain (PTL-2.1). Falls back to an empty
-    // task list per row if the fetcher is absent or a lookup throws.
-    const linkedTasksByPr: Record<string, TaskItem[]> = {};
-    const fetchTasks = ts.fetchTasks;
-    if (fetchTasks && prs.length > 0) {
-      const distinctPairs = new Map<string, { repo: string; pr: number }>();
-      for (const pr of prs) {
-        distinctPairs.set(`${pr.repo}#${pr.prNumber}`, {
-          repo: pr.repo,
-          pr: pr.prNumber,
-        });
-      }
-      const pairResults = await Promise.all(
-        [...distinctPairs.entries()].map(
-          async ([key, { repo: r, pr: p }]): Promise<[string, TaskItem[]]> => {
-            try {
-              const result = await fetchTasks(
-                new URLSearchParams({ repo: r, pr: String(p) }),
-              );
-              return [key, result.tasks];
-            } catch {
-              return [key, []];
-            }
-          },
-        ),
-      );
-      const tasksByPairKey = new Map(pairResults);
-      for (const pr of prs) {
-        linkedTasksByPr[pr.id] =
-          tasksByPairKey.get(`${pr.repo}#${pr.prNumber}`) ?? [];
-      }
-    }
-
-    const suggestions = ts.fetchDistinct
-      ? await ts
-          .fetchDistinct()
-          .then((v) => ({ repos: v.repos, orgs: v.orgs }))
-          .catch(() => ({}))
-      : {};
-
-    return html(
-      renderPrsPage(
-        prs,
-        {
-          state: stateParam,
-          reviewState,
-          repo,
-          org,
-          taskId,
-          blocked: blockedParam,
-        },
-        degraded,
-        c.var.userEmail,
-        agentNames,
-        { total, limit, page },
-        timezone,
-        suggestions,
-        linkedTasksByPr,
-      ),
-    );
-  });
-
-  app.get("/admin/prs/:id", requireAuth, async (c) => {
-    const view = await resolveTaskStoreView(c.var.isAdmin, c.var.userEmail);
-    if (view.kind === "none") return new Response("Forbidden", { status: 403 });
-    const ts = scopedTaskStore(
-      view.kind === "account" ? view.accountId : undefined,
-    );
-    if (!ts.fetchPrById) return c.redirect("/admin/prs", 302);
-    const prId = c.req.param("id");
-    let pr: PrListItem | null = null;
-    try {
-      pr = await ts.fetchPrById(prId);
-    } catch {
-      return c.redirect("/admin/prs", 302);
-    }
-    // SSP-6.8: another account's PR id is indistinguishable from a missing one.
-    if (!pr && view.kind === "account") return NOT_FOUND();
-    if (!pr) return c.redirect("/admin/prs", 302);
-
-    const agentIds = [pr.agentId, pr.claimedBy].filter(
-      (id): id is string => !!id,
-    );
-    const agentNames: Record<string, string> = {};
-    if (agentIds.length > 0) {
-      const agents = await agentService.listByIds(agentIds);
-      for (const a of agents) agentNames[a.id] = a.name;
-    }
-
-    // Resolve the linked task(s) via a live GET /tasks?repo=&pr= lookup,
-    // mirroring the list page's per-row lookup (PTL-2.1). Falls back to an
-    // empty task list if the fetcher is absent or the lookup throws.
-    let linkedTasks: TaskItem[] = [];
-    if (ts.fetchTasks) {
-      try {
-        const result = await ts.fetchTasks(
-          new URLSearchParams({ repo: pr.repo, pr: String(pr.prNumber) }),
-        );
-        linkedTasks = result.tasks;
-      } catch {
-        linkedTasks = [];
-      }
-    }
-
-    // Fetch recorded verification-check outcomes (LVB-5.1) for this PR —
-    // absence of the fetcher or a failed lookup renders the page without a
-    // Verification Checks section, never a 500.
-    let verificationChecks: VerificationCheckItem[] = [];
-    if (ts.fetchChecks) {
-      try {
-        verificationChecks = await fetchRecentVerificationChecks(
-          ts.fetchChecks,
-          { prId },
-        );
-      } catch {
-        // swallow — page renders without Verification Checks section
-      }
-    }
-
-    return html(
-      renderPrDetailPage(
-        pr,
-        c.var.userEmail,
-        agentNames,
-        timezone,
-        linkedTasks,
-        verificationChecks,
-      ),
-    );
-  });
 
   // ─── Chat routes ─────────────────────────────────────────────────────────
 
@@ -5203,57 +3799,6 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
           : "delete_failed";
       return c.redirect(`/admin/agents/${agentId}?error=${msg}`, 302);
     }
-  });
-
-  // ─── Public read-only task board ──────────────────────────────────────────
-  //
-  // Unauthenticated GET /public/tasks — no session cookie required.
-  // Scoped to publicRepo (SHIPWRIGHT_ADMIN_PUBLIC_REPO). When publicRepo is
-  // absent the page renders in degraded mode (empty table + warning notice).
-  // No create/edit/status-change controls are rendered (readOnly=true).
-  // Mutation methods (POST/PUT/DELETE) fall through to Hono's 404 default.
-
-  app.get("/public/tasks", publicNoAuthMiddleware, async (c) => {
-    const source = c.req.query("source") ?? undefined;
-    let tasks: TaskItem[] = [];
-    let total = 0;
-    let degraded = false;
-
-    if (!fetchTaskStoreTasks || !publicRepo) {
-      degraded = true;
-    } else {
-      const params = new URLSearchParams();
-      params.set("repo", publicRepo);
-      if (source) params.set("source", source);
-      params.set("limit", "50");
-      params.set("offset", "0");
-      params.set("sort", "desc");
-      try {
-        const result = await fetchTaskStoreTasks(params);
-        tasks = result.tasks;
-        total = result.total;
-      } catch {
-        degraded = true;
-      }
-    }
-
-    return html(
-      renderTasksPage(
-        tasks,
-        { repo: publicRepo, source },
-        degraded,
-        "",
-        {},
-        { total, limit: 50, page: 1 },
-        undefined,
-        undefined,
-        true, // readOnly
-        timezone,
-      ),
-      // The PWA manifest's scope is /admin/ — this unauthenticated public
-      // board must never reference /admin/ URLs at all.
-      { includePwaTags: false },
-    );
   });
 
   return app;

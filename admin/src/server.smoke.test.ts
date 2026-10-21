@@ -125,10 +125,6 @@ function buildComposedApp() {
       remove: notImplemented,
       removeByName: notImplemented,
     },
-    agentPhaseMethodologyService: {
-      list: notImplemented,
-      upsert: notImplemented,
-    },
     agentMemberService: {
       add: notImplemented,
       listByAgentId: notImplemented,
@@ -139,7 +135,6 @@ function buildComposedApp() {
       upsertDailyByModel: notImplemented,
       queryStats: notImplemented,
     },
-    agentWorkQueueService: { push: notImplemented, get: notImplemented },
     agentGitHubInstallationsService: {
       push: notImplemented,
       get: notImplemented,
@@ -181,7 +176,6 @@ function buildComposedApp() {
     agentCronJobService: {
       list: notImplemented,
       listWithRunSummary: notImplemented,
-      listShipwrightLoopJobs: notImplemented,
       create: notImplemented,
       update: notImplemented,
       setEnabled: notImplemented,
@@ -189,11 +183,6 @@ function buildComposedApp() {
       get: notImplemented,
       reconcileSystemCrons: notImplemented,
     },
-    agentCronRunService: {
-      listForAgent: notImplemented,
-      listAcrossAgents: notImplemented,
-    },
-    agentWorkQueueService: { get: notImplemented, getMany: notImplemented },
     agentToolService: {
       list: notImplemented,
       add: notImplemented,
@@ -206,10 +195,6 @@ function buildComposedApp() {
       revoke: notImplemented,
     },
     agentPluginService: { list: notImplemented, add: notImplemented },
-    agentPhaseMethodologyService: {
-      list: notImplemented,
-      upsert: notImplemented,
-    },
     agentMemberService: {
       listByEmail: notImplemented,
       exists: notImplemented,

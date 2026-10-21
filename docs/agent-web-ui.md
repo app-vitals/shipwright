@@ -74,7 +74,7 @@ See [`docs/session-notifications.md`](./session-notifications.md) for the follow
 - `SHIPWRIGHT_ADMIN_SESSION_ALERT_INTERVAL_MS` (optional, default `60000`) — tick cadence in ms. Blank, non-numeric, zero, or negative values fall back to the default.
 - See [`configuration-agent.md`](./configuration-agent.md#metrics--admin--chat--task-store-services) for the full env var reference.
 
-## Public read-only task board (`admin-ui.ts`) — unauthenticated
+## Public read-only task board (`coding/admin-ui-coding.ts`) — unauthenticated
 
 Mounted at `/public/tasks`. **No authentication required** — renders a read-only task list scoped to a configurable repository. When `SHIPWRIGHT_ADMIN_PUBLIC_REPO` is set, fetches tasks for that repo from the task-store and displays them in a static HTML page with no mutation controls (create/edit/status-change disabled). When the config is absent or task-store access fails, the page renders in degraded mode (empty table + warning notice). The endpoint is always registered and always accessible; it gracefully degrades when prerequisites are missing.
 

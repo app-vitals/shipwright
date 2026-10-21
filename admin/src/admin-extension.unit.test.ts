@@ -5,10 +5,12 @@ import {
   type AdminBackgroundPass,
   type AdminExtension,
   type AdminExtensionContext,
+  type AgentDetailCardSlot,
   applyOpenApiContributions,
   collectOpenApiContributions,
   collectServiceIntegrations,
   mountRouteContributions,
+  renderAgentDetailCardSlots,
   renderAgentDetailCards,
   resolveAdminExtensions,
   startBackgroundPasses,
@@ -129,17 +131,17 @@ describe("resolveAdminExtensions", () => {
     const second = { getMany: async () => new Map() } as never;
     const resolved = resolveAdminExtensions(
       [
-        { services: () => ({ api: { devTaskAdherenceService: first } }) },
+        { services: () => ({ api: { sentryClient: first } }) },
         {
           services: () => ({
-            api: { devTaskAdherenceService: second },
+            api: { sentryClient: second },
             ui: { timezone: "UTC" },
           }),
         },
       ],
       ctx,
     );
-    expect(resolved.apiDeps.devTaskAdherenceService).toBe(second);
+    expect(resolved.apiDeps.sentryClient).toBe(second);
     expect(resolved.uiDeps).toEqual({ timezone: "UTC" });
   });
 });
@@ -231,6 +233,73 @@ describe("collectOpenApiContributions / applyOpenApiContributions", () => {
     });
     // The input document is not mutated.
     expect(doc.paths["/agents"]).toEqual({ get: { summary: "list" } });
+  });
+});
+
+describe("applyOpenApiContributions — placeAfter", () => {
+  const doc = {
+    openapi: "3.1.0",
+    paths: {
+      "/a": { get: { summary: "a" } },
+      "/b": { get: { summary: "b" } },
+      "/c": { get: { summary: "c" } },
+    } as Record<string, Record<string, unknown>>,
+    components: { schemas: { A: {}, B: {}, C: {} } } as {
+      schemas?: Record<string, unknown>;
+    },
+  };
+
+  it("inserts placed paths and schemas after their anchors, chaining through earlier insertions", () => {
+    const contribution = collectOpenApiContributions([
+      {
+        openApi: () => ({
+          paths: {
+            "/a/x": { get: {} },
+            "/a/x/y": { put: {} },
+            "/z": { get: {} },
+          },
+          schemas: { AX: {}, AY: {} },
+          placeAfter: {
+            paths: { "/a/x": "/a", "/a/x/y": "/a/x" },
+            schemas: { AX: "A", AY: "AX" },
+          },
+        }),
+      },
+    ]);
+    const out = applyOpenApiContributions(doc, contribution);
+    expect(Object.keys(out.paths)).toEqual([
+      "/a",
+      "/a/x",
+      "/a/x/y",
+      "/b",
+      "/c",
+      "/z",
+    ]);
+    expect(Object.keys(out.components.schemas ?? {})).toEqual([
+      "A",
+      "AX",
+      "AY",
+      "B",
+      "C",
+    ]);
+  });
+
+  it("an existing key keeps its position whatever its placement says", () => {
+    const out = applyOpenApiContributions(doc, {
+      paths: { "/c": { post: {} } },
+      placeAfter: { paths: { "/c": "/a" } },
+    });
+    expect(Object.keys(out.paths)).toEqual(["/a", "/b", "/c"]);
+    expect(out.paths["/c"]).toEqual({ get: { summary: "c" }, post: {} });
+  });
+
+  it("throws on a placement anchored to a key the document lacks", () => {
+    expect(() =>
+      applyOpenApiContributions(doc, {
+        paths: { "/x": { get: {} } },
+        placeAfter: { paths: { "/x": "/missing" } },
+      }),
+    ).toThrow('places "/x" after unknown "/missing"');
   });
 });
 
@@ -377,5 +446,87 @@ describe("renderAgentDetailCards", () => {
     } finally {
       errors.mockRestore();
     }
+  });
+});
+
+describe("renderAgentDetailCardSlots", () => {
+  const cardCtx = { agentId: "agent-1", userEmail: "a@b.c", isAdmin: true };
+  const slot = (
+    name: string,
+    placement?: "header" | "configuration",
+  ): AgentDetailCardSlot => ({
+    name,
+    ...(placement ? { placement } : {}),
+    render: async () => `<div>${name}</div>`,
+  });
+
+  it("no slots renders nothing in either placement", async () => {
+    expect(await renderAgentDetailCardSlots([], cardCtx)).toEqual({
+      header: [],
+      configuration: [],
+    });
+  });
+
+  it("groups slots by placement, defaulting to header, keeping order", async () => {
+    const html = await renderAgentDetailCardSlots(
+      [
+        slot("a"),
+        slot("cfg-1", "configuration"),
+        slot("b", "header"),
+        slot("cfg-2", "configuration"),
+      ],
+      cardCtx,
+    );
+    expect(html).toEqual({
+      header: ["<div>a</div>", "<div>b</div>"],
+      configuration: ["<div>cfg-1</div>", "<div>cfg-2</div>"],
+    });
+  });
+
+  it("a failing slot is omitted from its placement only", async () => {
+    const errors = spyOn(console, "error").mockImplementation(() => {});
+    try {
+      const html = await renderAgentDetailCardSlots(
+        [
+          slot("a"),
+          {
+            name: "bad",
+            placement: "configuration",
+            render: async () => {
+              throw new Error("down");
+            },
+          },
+        ],
+        cardCtx,
+      );
+      expect(html).toEqual({ header: ["<div>a</div>"], configuration: [] });
+    } finally {
+      errors.mockRestore();
+    }
+  });
+
+  it("slots outside the requested placements hold their place empty, unrendered", async () => {
+    let rendered = 0;
+    const counted = (
+      name: string,
+      placement?: "header" | "configuration",
+    ): AgentDetailCardSlot => ({
+      name,
+      ...(placement ? { placement } : {}),
+      render: async () => {
+        rendered++;
+        return `<div>${name}</div>`;
+      },
+    });
+    const html = await renderAgentDetailCardSlots(
+      [counted("a"), counted("b"), counted("cfg", "configuration")],
+      cardCtx,
+      ["configuration"],
+    );
+    expect(html).toEqual({
+      header: ["", ""],
+      configuration: ["<div>cfg</div>"],
+    });
+    expect(rendered).toBe(1);
   });
 });

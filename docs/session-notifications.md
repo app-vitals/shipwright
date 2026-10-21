@@ -51,7 +51,7 @@ effective level = min(operator ceiling, per-subscription opt-in, per-call ceilin
 
 ## `/admin/settings/notifications` page
 
-`admin/src/coding/admin-ui-sessions.ts` registers three routes, mounted by `admin-ui.ts`. All three are **admin-only** — a non-admin caller gets `403 Forbidden` (unlike the follow/unfollow routes below, which apply the session-visibility check instead of an admin gate):
+`admin/src/coding/admin-ui-sessions.ts` registers three routes, mounted by the coding extension's admin UI (`coding/admin-ui-coding.ts`). All three are **admin-only** — a non-admin caller gets `403 Forbidden` (unlike the follow/unfollow routes below, which apply the session-visibility check instead of an admin gate):
 
 | Method | Path | Description |
 |---|---|---|

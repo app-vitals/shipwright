@@ -7,6 +7,7 @@ import {
 } from "./admin-extension.ts";
 import {
   codingAdminExtension,
+  taskStoreFetchers,
   taskStoreServiceIntegration,
 } from "./coding-admin-extension.ts";
 import {
@@ -14,33 +15,78 @@ import {
   NoopTaskStoreProvisioningClient,
 } from "./coding-task-store-provisioning-client.ts";
 
-const ctx = { env: {} } as unknown as AdminExtensionContext;
+const ctx = {
+  env: {},
+  prisma: {},
+  services: {},
+} as unknown as AdminExtensionContext;
 
 describe("codingAdminExtension", () => {
   it("is named coding", () => {
     expect(codingAdminExtension.name).toBe("coding");
   });
 
-  it("registers no routes/cards/passes yet: the context hooks resolve as the bare platform", () => {
-    expect(resolveAdminExtensions([codingAdminExtension], ctx)).toEqual(
-      resolveAdminExtensions([], ctx),
+  it("contributes its agent detail cards in page order: two header cards, then Phase Methodology in the Configuration group", () => {
+    const { agentDetailCards } = resolveAdminExtensions(
+      [codingAdminExtension],
+      ctx,
     );
-    expect(collectOpenApiContributions([codingAdminExtension])).toEqual(
-      collectOpenApiContributions([]),
+    expect(
+      agentDetailCards.map((card) => [card.name, card.placement ?? "header"]),
+    ).toEqual([
+      ["verification-activity", "header"],
+      ["github-installations", "header"],
+      ["phase-methodology", "configuration"],
+    ]);
+  });
+
+  it("mounts its own API routes and contributes them to the admin OpenAPI document", () => {
+    const resolved = resolveAdminExtensions([codingAdminExtension], ctx);
+    expect(resolved.apiRoutes.map((route) => route.path)).toEqual(["/"]);
+    const { paths, placeAfter } = collectOpenApiContributions([
+      codingAdminExtension,
+    ]);
+    expect(Object.keys(paths).sort()).toEqual([
+      "/agents/all/cron-runs/dev-task-adherence",
+      "/agents/{id}/dev-task-adherence",
+      "/agents/{id}/phase-methodology",
+      "/agents/{id}/phase-methodology/{phase}",
+      "/agents/{id}/work-queue",
+    ]);
+    // Every contributed path has a placement, so the composed document keeps
+    // the pre-split path order.
+    expect(Object.keys(placeAfter?.paths ?? {}).sort()).toEqual(
+      Object.keys(paths).sort(),
     );
   });
 
-  it("contributes the task-store fetchers as UI deps only when the task-store is configured", () => {
-    const bare = resolveAdminExtensions([codingAdminExtension], ctx);
-    expect(bare.uiDeps).toEqual({});
-    const configured = resolveAdminExtensions([codingAdminExtension], {
+  it("mounts its own admin UI routes and contributes its agent detail error messages", () => {
+    const resolved = resolveAdminExtensions([codingAdminExtension], {
+      ...ctx,
       env: {
         SHIPWRIGHT_TASK_STORE_URL: "http://task-store.svc:3002",
         SHIPWRIGHT_TASK_STORE_ADMIN_TOKEN: "admin",
       },
     } as unknown as AdminExtensionContext);
-    expect(typeof configured.uiDeps.fetchTaskStoreSessions).toBe("function");
-    expect(typeof configured.uiDeps.fetchTaskStoreTasks).toBe("function");
+    expect(resolved.adminUiRoutes.map((route) => route.path)).toEqual(["/"]);
+    expect(resolved.uiDeps).toEqual({
+      agentDetailErrorMessages: { invalid_phase: "Invalid pipeline phase." },
+    });
+  });
+
+  it("builds the task-store fetchers for its UI routes and cards only when the task-store is configured", () => {
+    expect(taskStoreFetchers({})).toEqual({});
+    expect(
+      taskStoreFetchers({
+        SHIPWRIGHT_TASK_STORE_URL: "http://task-store.svc:3002",
+      }),
+    ).toEqual({});
+    const configured = taskStoreFetchers({
+      SHIPWRIGHT_TASK_STORE_URL: "http://task-store.svc:3002",
+      SHIPWRIGHT_TASK_STORE_ADMIN_TOKEN: "admin",
+    });
+    expect(typeof configured.fetchTaskStoreSessions).toBe("function");
+    expect(typeof configured.fetchTaskStoreTasks).toBe("function");
   });
 
   it("starts the session alert sweeper only with push AND the task-store configured", () => {

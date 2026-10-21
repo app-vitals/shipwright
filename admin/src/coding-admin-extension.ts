@@ -2,14 +2,30 @@
  * admin/src/coding-admin-extension.ts
  *
  * Shipwright's coding AdminExtension: the home for the coding agent's admin
- * surfaces (task-store views, dev-task adherence, work queue, sessions). Today
- * it registers the task-store service integration (per-agent task-store tokens
- * minted on provision and revoked on delete), the admin UI's task-store
- * fetchers, and the session alert sweeper. The routes and pages still mounted
- * by the platform UI/API files move here with the mixed-file split.
+ * surfaces. Everything coding-shaped in the admin is contributed from here:
+ *
+ *   serviceIntegrations — the task-store integration (per-agent task-store
+ *                         tokens minted on provision, revoked on delete)
+ *   services            — the agent detail page's coding `?error=` messages
+ *   apiRoutes           — work-queue snapshots, phase-methodology overrides and
+ *                         dev-task adherence (coding/agents-api-coding.ts)
+ *   adminUiRoutes       — Queue & Activity, tasks, sessions (+ follow, actions,
+ *                         notification settings), PRs, the phase-methodology
+ *                         form and the public task board
+ *                         (coding/admin-ui-coding.ts)
+ *   agentDetailCards    — Recent Verification Activity, GitHub Installations
+ *                         and Phase Methodology (coding/admin-ui-agent-cards.ts)
+ *   openApi             — the coding API routes' fragment of admin/openapi.json,
+ *                         placed where they sat before the split
+ *   backgroundPasses    — the session alert sweeper
+ *
+ * The task-store reads use SHIPWRIGHT_TASK_STORE_URL +
+ * SHIPWRIGHT_TASK_STORE_ADMIN_TOKEN; with either unset those views render
+ * degraded. With this extension absent the admin is the bare platform.
  */
 
 import {
+  resolvePublicRepo,
   resolveSessionAlertIntervalMs,
   SESSION_ALERT_FETCH_TIMEOUT_MS,
 } from "./admin-boot-config.ts";
@@ -18,10 +34,23 @@ import type {
   AdminExtension,
   AdminExtensionContext,
 } from "./admin-extension.ts";
+import { codingAgentDetailCards } from "./coding/admin-ui-agent-cards.ts";
+import {
+  CODING_AGENT_DETAIL_ERROR_MESSAGES,
+  createCodingAdminUIApp,
+} from "./coding/admin-ui-coding.ts";
+import { AgentPhaseMethodologyService } from "./coding/agent-phase-methodology.ts";
+import { AgentWorkQueueService } from "./coding/agent-work-queue.ts";
+import {
+  codingAdminOpenApi,
+  createCodingAdminApiApp,
+} from "./coding/agents-api-coding.ts";
+import { DevTaskAdherenceService } from "./coding/dev-task-adherence.ts";
 import {
   SessionAlertSweeper,
   type SessionForAlert,
 } from "./coding/session-alert-sweeper.ts";
+import { ShipwrightLoopJobService } from "./coding/shipwright-loop-jobs.ts";
 import { createTaskStoreFetchers } from "./coding/task-store-fetchers.ts";
 import {
   HttpTaskStoreProvisioningClient,
@@ -115,19 +144,95 @@ function sessionAlertPass(
   };
 }
 
+/**
+ * The admin UI's task-store fetchers, built from SHIPWRIGHT_TASK_STORE_URL and
+ * SHIPWRIGHT_TASK_STORE_ADMIN_TOKEN. Single admin token; each fetcher takes an
+ * optional trailing accountId forwarded as ?accountId= so account users' views
+ * are filtered by the task-store itself (SSP-6.8). Unconfigured → {} and the
+ * task-store views render degraded.
+ */
+export function taskStoreFetchers(
+  env: NodeJS.ProcessEnv,
+): Partial<ReturnType<typeof createTaskStoreFetchers>> {
+  const url = env.SHIPWRIGHT_TASK_STORE_URL;
+  const adminToken = env.SHIPWRIGHT_TASK_STORE_ADMIN_TOKEN;
+  return url && adminToken ? createTaskStoreFetchers({ url, adminToken }) : {};
+}
+
 export const codingAdminExtension: AdminExtension = {
   name: "coding",
   serviceIntegrations: (env) => [taskStoreServiceIntegration(env)],
-  services: (ctx) => {
-    const url = ctx.env.SHIPWRIGHT_TASK_STORE_URL;
-    const adminToken = ctx.env.SHIPWRIGHT_TASK_STORE_ADMIN_TOKEN;
-    // Single admin token; each fetcher takes an optional trailing accountId
-    // forwarded as ?accountId= so account users' views are filtered by the
-    // task-store itself (SSP-6.8). Unconfigured → the UI renders degraded.
-    return {
-      ui: url && adminToken ? createTaskStoreFetchers({ url, adminToken }) : {},
-    };
+  services: () => ({
+    ui: { agentDetailErrorMessages: CODING_AGENT_DETAIL_ERROR_MESSAGES },
+  }),
+  apiRoutes: (ctx) => [
+    {
+      path: "/",
+      app: createCodingAdminApiApp({
+        agentService: ctx.services.agentService,
+        agentPhaseMethodologyService: new AgentPhaseMethodologyService(
+          ctx.prisma,
+        ),
+        agentWorkQueueService: new AgentWorkQueueService(ctx.prisma),
+        devTaskAdherenceService: new DevTaskAdherenceService(ctx.prisma),
+        agentTokenService: ctx.services.agentTokenService,
+        agentMemberService: ctx.services.agentMemberService,
+        callerScopeResolver: ctx.services.callerScopeResolver,
+        sessionSecret: ctx.sessionSecret,
+        adminApiKeys: ctx.adminApiKeys,
+        ...(ctx.sentryClient ? { sentryClient: ctx.sentryClient } : {}),
+        ...(ctx.pool ? { pool: ctx.pool } : {}),
+      }),
+    },
+  ],
+  adminUiRoutes: (ctx) => [
+    {
+      path: "/",
+      app: createCodingAdminUIApp({
+        ...taskStoreFetchers(ctx.env),
+        prisma: ctx.prisma,
+        sessionSecret: ctx.sessionSecret,
+        appBaseUrl: ctx.appBaseUrl,
+        ...(ctx.timezone ? { timezone: ctx.timezone } : {}),
+        agentService: ctx.services.agentService,
+        agentCronJobService: ctx.services.agentCronJobService,
+        shipwrightLoopJobService: new ShipwrightLoopJobService(ctx.prisma),
+        agentCronRunService: ctx.services.agentCronRunService,
+        agentWorkQueueService: new AgentWorkQueueService(ctx.prisma),
+        agentPhaseMethodologyService: new AgentPhaseMethodologyService(
+          ctx.prisma,
+        ),
+        agentMemberService: ctx.services.agentMemberService,
+        callerScopeResolver: ctx.services.callerScopeResolver,
+        // Repo slug for the public read-only task board (GET /public/tasks).
+        // When set, the board renders unauthenticated, scoped to this repo;
+        // when absent the route stays in degraded mode (no tasks).
+        publicRepo: resolvePublicRepo(ctx.env),
+        ...(ctx.push
+          ? {
+              pushService: ctx.push.service,
+              vapidPublicKey: ctx.push.vapidPublicKey,
+            }
+          : {}),
+      }),
+    },
+  ],
+  agentDetailCards: (ctx) => {
+    const { fetchVerificationChecks, fetchTaskStorePrs } = taskStoreFetchers(
+      ctx.env,
+    );
+    return codingAgentDetailCards({
+      agentCronRunService: ctx.services.agentCronRunService,
+      agentGitHubInstallationsService:
+        ctx.services.agentGitHubInstallationsService,
+      agentPhaseMethodologyService: new AgentPhaseMethodologyService(
+        ctx.prisma,
+      ),
+      ...(fetchVerificationChecks ? { fetchVerificationChecks } : {}),
+      ...(fetchTaskStorePrs ? { fetchTaskStorePrs } : {}),
+    });
   },
+  openApi: codingAdminOpenApi,
   backgroundPasses: (ctx) => {
     const pass = sessionAlertPass(ctx);
     return pass ? [pass] : [];

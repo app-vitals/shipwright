@@ -9,7 +9,8 @@
  *      style (`{id}`) and prefixes them with `/agents`.
  *   3. Merges both specs' paths and component schemas into a single document.
  *   4. Folds in the static OpenAPI contributions of the admin extensions
- *      main.ts composes (AEP-2.1; none today, so the output is unchanged).
+ *      main.ts composes (AEP-2.1): the coding extension's routes, each placed
+ *      at its historical position (AEP-3.2), so the output is unchanged.
  *   5. Writes the result to admin/openapi.json.
  *
  * Usage:

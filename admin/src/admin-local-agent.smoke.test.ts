@@ -147,23 +147,9 @@ function makeMockDeps(overrides?: Partial<AdminUIDeps>): AdminUIDeps {
       deleteKey: async () => {},
       getConfigBundle: async () => null,
     },
-    agentCronRunService: {
-      listForAgent: async () => ({ items: [], total: 0, limit: 20, offset: 0 }),
-      listAcrossAgents: async () => ({
-        items: [],
-        total: 0,
-        limit: 20,
-        offset: 0,
-      }),
-    },
-    agentWorkQueueService: {
-      get: async () => null,
-      getMany: async () => [],
-    },
     agentCronJobService: {
       list: async () => [],
       listWithRunSummary: async () => [],
-      listShipwrightLoopJobs: async () => [],
       get: async () => {
         throw new Error("not found");
       },
@@ -224,20 +210,6 @@ function makeMockDeps(overrides?: Partial<AdminUIDeps>): AdminUIDeps {
         version: null,
         enabled: true,
         createdAt: new Date(),
-        updatedAt: new Date(),
-      }),
-    },
-    agentPhaseMethodologyService: {
-      list: async () => [],
-      upsert: async (
-        agentId: string,
-        phase: string,
-        subagentType: string | null,
-      ) => ({
-        id: "pm1",
-        agentId,
-        phase,
-        subagentType,
         updatedAt: new Date(),
       }),
     },

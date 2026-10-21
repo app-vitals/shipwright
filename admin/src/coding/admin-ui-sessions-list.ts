@@ -22,10 +22,6 @@ import { DEFAULT_ACCOUNT_ID } from "@shipwright/lib/default-account";
 import type { Hono, MiddlewareHandler } from "hono";
 import type { AdminUIEnv } from "../admin-ui.ts";
 import { renderAdminPage } from "../admin-ui-layout.ts";
-import {
-  renderRepoOrgFilterFields,
-  resolveAgentNameFilterAndPaginate,
-} from "../admin-ui-pages.ts";
 import { escapeHtml, renderAdminToolbar } from "../admin-ui-styles.ts";
 import type { AgentMemberService } from "../agent-members.ts";
 import type { AgentService } from "../agents.ts";
@@ -33,6 +29,10 @@ import {
   type CallerScopeResolver,
   memberOnlyCallerScopeResolver,
 } from "../caller-scope.ts";
+import {
+  renderRepoOrgFilterFields,
+  resolveAgentNameFilterAndPaginate,
+} from "./admin-ui-work-item-pages.ts";
 import type { SessionFollowService } from "./session-follow-service.ts";
 import {
   accountIdFromCallerScope,

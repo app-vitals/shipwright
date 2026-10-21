@@ -55,7 +55,6 @@ import {
   DEFAULT_PORT,
   DEFAULT_TRIAL_EXPIRY_WARNING_SWEEP_INTERVAL_MS,
   isAnthropicFederationEnabled,
-  resolvePublicRepo,
   resolveTrialExpiryWarningDays,
   runMigrations,
 } from "./admin-boot-config.ts";
@@ -87,8 +86,6 @@ import {
   createCallerScopeResolver,
 } from "./caller-scope.ts";
 import { AgentPhaseMethodologyService } from "./coding/agent-phase-methodology.ts";
-import { AgentWorkQueueService } from "./coding/agent-work-queue.ts";
-import { DevTaskAdherenceService } from "./coding/dev-task-adherence.ts";
 import { isDevAuthAllowed } from "./dev-auth-guard.ts";
 import { HttpGithubAppProvisioningClient } from "./github-app-provisioning-client.ts";
 import { HttpGoogleAuthClient } from "./google-auth-client.ts";
@@ -186,8 +183,6 @@ export async function startAdmin(
   );
   const agentChatTokenService = new AgentChatTokenService(prisma);
   const agentCronRunStatsService = new AgentCronRunStatsService(prisma);
-  const devTaskAdherenceService = new DevTaskAdherenceService(prisma);
-  const agentWorkQueueService = new AgentWorkQueueService(prisma);
   const agentGitHubInstallationsService = new AgentGitHubInstallationsService(
     prisma,
   );
@@ -232,10 +227,6 @@ export async function startAdmin(
     .then((v) => v.trim())
     .catch(() => "0.0.0");
   const adminApiKeys = parseAdminApiKeys(process.env.SHIPWRIGHT_ADMIN_API_KEYS);
-  // Repo slug for the public read-only task board (GET /public/tasks). When set,
-  // the board renders unauthenticated, scoped to this repo; when absent the route
-  // stays in degraded mode (no tasks).
-  const publicRepo = resolvePublicRepo(process.env);
   // Self-serve provisioning config (SSP-1.3) — read once at startup and
   // injected as deps; no consumers yet.
   const selfServe = parseSelfServeConfig(process.env);
@@ -292,13 +283,27 @@ export async function startAdmin(
     sessionSecret,
     adminApiKeys,
     adminAllowedEmails,
+    appBaseUrl,
+    ...(process.env.SENTRY_DSN ? { sentryClient: Sentry } : {}),
+    ...(adminPool ? { pool: adminPool } : {}),
+    ...(process.env.SHIPWRIGHT_ADMIN_TZ
+      ? { timezone: process.env.SHIPWRIGHT_ADMIN_TZ }
+      : {}),
     ...(pushService
-      ? { push: { service: pushService, maxDetail: pushMaxDetail } }
+      ? {
+          push: {
+            service: pushService,
+            maxDetail: pushMaxDetail,
+            vapidPublicKey: vapidConfig.publicKey,
+          },
+        }
       : {}),
     services: {
       agentService,
       agentEnvService,
       agentCronJobService,
+      agentCronRunService,
+      agentGitHubInstallationsService,
       agentTokenService,
       agentMemberService,
       accountService,
@@ -384,16 +389,13 @@ export async function startAdmin(
     agentCronJobService,
     agentCronRunService,
     agentCronRunStatsService,
-    devTaskAdherenceService,
     agentToolService,
     agentTokenService,
     agentPluginService,
-    agentPhaseMethodologyService,
     agentMemberService,
     callerScopeResolver,
     agentTypeRegistry: new AgentTypeRegistry(),
     agentChatTokenService,
-    agentWorkQueueService,
     agentGitHubInstallationsService,
     prisma,
     provisioner,
@@ -456,13 +458,9 @@ export async function startAdmin(
     prisma: prisma as never,
     agentEnvService,
     agentCronJobService,
-    agentCronRunService,
-    agentWorkQueueService,
-    agentGitHubInstallationsService,
     agentToolService,
     agentTokenService,
     agentPluginService,
-    agentPhaseMethodologyService,
     agentMemberService,
     callerScopeResolver,
     agentService,
@@ -485,7 +483,6 @@ export async function startAdmin(
     githubAppClient,
     appBaseUrl,
     appVersion,
-    publicRepo,
     devAuthEnabled: isDevAuthAllowed(process.env),
     selfServe,
     accountService,

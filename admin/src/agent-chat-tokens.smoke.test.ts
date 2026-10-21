@@ -213,12 +213,6 @@ function makeMockDeps(opts?: {
       remove: async () => {},
       removeByName: async () => {},
     },
-    agentPhaseMethodologyService: {
-      list: async () => [],
-      upsert: async () => {
-        throw new Error("not implemented");
-      },
-    },
     agentMemberService: {
       exists: async () => false,
       listByEmail: async () => [],
@@ -241,12 +235,6 @@ function makeMockDeps(opts?: {
           }
         : async () => MOCK_DAILY_ROW,
       queryStats: async () => MOCK_STATS_RESULT,
-    },
-    agentWorkQueueService: {
-      push: async () => {
-        throw new Error("not implemented");
-      },
-      get: async () => null,
     },
     agentGitHubInstallationsService: {
       push: async () => {
