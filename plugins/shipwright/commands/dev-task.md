@@ -1173,8 +1173,9 @@ gh pr view {pr-number} --repo {org}/{repo} --json mergeStateStatus
 with "merge conflict with origin/main" as the failure context. The fix subagent will run
 `git merge origin/main`, resolve the conflicts, commit, and push.
 
-**Otherwise** (including `"BEHIND"` — behind but no conflict): no merge needed. CI is
-already running against the code pushed in Step 9. Proceed directly to 9b.2.
+**Otherwise** (including `"BEHIND"` — behind but no conflict): dev-task takes no action.
+`patch` handles BEHIND PRs once they are ready to merge (see `docs/behind-branches.md`).
+CI is already running against the code pushed in Step 9. Proceed directly to 9b.2.
 
 ### 9b.2. Wait for Checks
 
