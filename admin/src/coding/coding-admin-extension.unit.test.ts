@@ -4,16 +4,16 @@ import {
   collectOpenApiContributions,
   collectServiceIntegrations,
   resolveAdminExtensions,
-} from "./admin-extension.ts";
+} from "../admin-extension.ts";
+import {
+  HttpTaskStoreProvisioningClient,
+  NoopTaskStoreProvisioningClient,
+} from "../coding-task-store-provisioning-client.ts";
 import {
   codingAdminExtension,
   taskStoreFetchers,
   taskStoreServiceIntegration,
 } from "./coding-admin-extension.ts";
-import {
-  HttpTaskStoreProvisioningClient,
-  NoopTaskStoreProvisioningClient,
-} from "./coding-task-store-provisioning-client.ts";
 
 const ctx = {
   env: {},
@@ -22,6 +22,21 @@ const ctx = {
 } as unknown as AdminExtensionContext;
 
 describe("codingAdminExtension", () => {
+  it("supplies one shared phase-methodology service for the runtime API and every surface", () => {
+    const resolved = resolveAdminExtensions([codingAdminExtension], ctx);
+    expect(resolved.agentPhaseMethodologyService).toBeDefined();
+    expect(
+      resolveAdminExtensions([codingAdminExtension], ctx)
+        .agentPhaseMethodologyService,
+    ).toBe(resolved.agentPhaseMethodologyService);
+  });
+
+  it("supplies no phase-methodology service without the extension", () => {
+    expect(
+      resolveAdminExtensions([], ctx).agentPhaseMethodologyService,
+    ).toBeUndefined();
+  });
+
   it("is named coding", () => {
     expect(codingAdminExtension.name).toBe("coding");
   });

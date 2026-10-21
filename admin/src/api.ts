@@ -145,7 +145,7 @@ interface AgentPluginServiceLike {
   listEnabled(agentId: string): Promise<Array<{ name: string }>>;
 }
 
-interface AgentPhaseMethodologyServiceLike {
+export interface AgentPhaseMethodologyServiceLike {
   list(
     agentId: string,
   ): Promise<Array<{ phase: string; subagentType: string | null }>>;
@@ -156,7 +156,11 @@ export interface AgentRuntimeDeps {
   agentCronJobService: AgentCronJobServiceLike;
   agentService: AgentServiceLike;
   agentPluginService: AgentPluginServiceLike;
-  agentPhaseMethodologyService: AgentPhaseMethodologyServiceLike;
+  /**
+   * Optional: supplied by an AdminExtension (the coding extension). Absent →
+   * GET /agents/:id/config omits `phaseMethodology`.
+   */
+  agentPhaseMethodologyService?: AgentPhaseMethodologyServiceLike;
   /** Session secret for cookie auth (SHIPWRIGHT_SESSION_SECRET). */
   sessionSecret: string;
   /** Parsed SHIPWRIGHT_ADMIN_API_KEYS — optional; absent means env key auth is disabled. */
@@ -269,7 +273,7 @@ export function createAgentRuntimeApp(deps: AgentRuntimeDeps): OpenAPIHono {
     const [bundle, plugins, phaseMethodologyRows] = await Promise.all([
       agentEnvService.getConfigBundle(id),
       agentPluginService.listEnabled(id),
-      agentPhaseMethodologyService.list(id),
+      agentPhaseMethodologyService?.list(id),
     ]);
 
     // WIF-2.1: with federation enabled, a non-self-hosted agent must never be
@@ -292,7 +296,7 @@ export function createAgentRuntimeApp(deps: AgentRuntimeDeps): OpenAPIHono {
     const phaseMethodology: Record<string, string | null> = Object.fromEntries(
       AGENT_PHASES.map((phase) => [phase, null]),
     );
-    for (const row of phaseMethodologyRows) {
+    for (const row of phaseMethodologyRows ?? []) {
       phaseMethodology[row.phase] = row.subagentType;
     }
 
@@ -327,7 +331,9 @@ export function createAgentRuntimeApp(deps: AgentRuntimeDeps): OpenAPIHono {
         : null,
       accountStatus: agent.accountStatus ?? null,
       typeName: agent.typeName,
-      phaseMethodology,
+      // Omitted entirely when no phase-methodology service was supplied
+      // (platform-only admin, no coding extension).
+      ...(agentPhaseMethodologyService ? { phaseMethodology } : {}),
       // APM-1.5: direct passthrough — the DB column always has a value
       // (Prisma schema default), so no `??` fallback is needed.
       autoPostReviews: agent.autoPostReviews,
@@ -338,7 +344,14 @@ export function createAgentRuntimeApp(deps: AgentRuntimeDeps): OpenAPIHono {
       cleanupAfterDays: agent.cleanupAfterDays,
     };
 
-    return c.json(response, 200);
+    // The route's Zod schema requires phaseMethodology; a platform-only admin
+    // omits it, so the response is asserted to the schema-derived shape.
+    return c.json(
+      response as typeof response & {
+        phaseMethodology: Record<string, string | null>;
+      },
+      200,
+    );
   });
 
   // ─── GET /:id/crons ──────────────────────────────────────────────────────

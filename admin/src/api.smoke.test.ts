@@ -229,6 +229,7 @@ function buildApp(opts?: {
   selfHosted?: boolean;
   anthropicFederationEnabled?: boolean;
   phaseMethodology?: MockPhaseMethodology[];
+  omitPhaseMethodologyService?: boolean;
   autoPostReviews?: boolean;
   allowSelfReview?: boolean;
   minConfidence?: number;
@@ -297,8 +298,12 @@ function buildApp(opts?: {
     agentCronJobService: makeMockAgentCronJobService(cronMap),
     agentService: makeMockAgentService(agents),
     agentPluginService: makeMockAgentPluginService(pluginMap),
-    agentPhaseMethodologyService:
-      makeMockAgentPhaseMethodologyService(phaseMethodologyMap),
+    ...(opts?.omitPhaseMethodologyService
+      ? {}
+      : {
+          agentPhaseMethodologyService:
+            makeMockAgentPhaseMethodologyService(phaseMethodologyMap),
+        }),
     adminApiKeys: parseAdminApiKeys(`admin:${VALID_ADMIN_KEY}:*`),
     agentTokenService: { validate: async () => null },
     sessionSecret: SESSION_SECRET,
@@ -307,6 +312,19 @@ function buildApp(opts?: {
 }
 
 // ─── Tests ────────────────────────────────────────────────────────────────────
+
+describe("GET /:id/config with no phase-methodology service (platform only)", () => {
+  test("200 and omits phaseMethodology", async () => {
+    const app = buildApp({ omitPhaseMethodologyService: true });
+    const res = await app.request(`/${KNOWN_AGENT_ID}/config`, {
+      headers: { Authorization: `Bearer ${VALID_ADMIN_KEY}` },
+    });
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect("phaseMethodology" in body).toBe(false);
+    expect(body.repos).toEqual(["org/repo1", "org/repo2"]);
+  });
+});
 
 describe("GET /:id/config (mounted as GET /agents/:id/config from root)", () => {
   test("200 with full bundle when agent exists with env vars, tools, plugins", async () => {
