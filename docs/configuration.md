@@ -63,6 +63,8 @@ Each of `admin`, `metrics`, `task-store`, and `agent` reads its own `SENTRY_DSN`
 
 `SENTRY_DSN` / `SENTRY_ENVIRONMENT` are documented per-service rather than repeated here: see the `SENTRY_DSN` row under [Agent Config → Server](./configuration-agent.md#server) for the agent — including the pod-startup timing constraint, since `initSentry` runs once at module load, before the config sync loop — and the `SENTRY_DSN` row under [Agent Config → Metrics & Admin & Chat & Task-Store services](./configuration-agent.md#metrics--admin--chat--task-store-services) for `task-store`, `metrics`, and `admin`.
 
+Admin additionally exposes pg pool diagnostics overrides, `SHIPWRIGHT_ADMIN_POOL_HOLD_THRESHOLD_MS` (default `2000`) and `SHIPWRIGHT_ADMIN_POOL_MONITOR_INTERVAL_MS` (default `30000`); see the rows under [Agent Config → Metrics & Admin & Chat & Task-Store services](./configuration-agent.md#metrics--admin--chat--task-store-services) and [Pool starvation diagnostics](./observability.md#pool-starvation-diagnostics-admin).
+
 This is the write side (services reporting into Sentry). For the read side — the `SENTRY_ORG` / `SENTRY_AUTH_TOKEN` credentials (documented above under [Plugin Config](#plugin-config)) and how the `error-scan`, `error-fix`, and `error-resolve` skills query the Sentry Issues API — see [Read side](./observability.md#read-side) in `docs/observability.md`.
 
 ---
