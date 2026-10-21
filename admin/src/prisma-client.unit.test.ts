@@ -21,6 +21,8 @@ import {
   createAdminPgPool,
   createAdminPrismaClient,
   DB_CONNECT_TIMEOUT_MS,
+  observeAdminPool,
+  resolveAdminPoolObservabilityConfig,
 } from "./prisma-client.ts";
 
 /** A syntactically valid URL. `pg.Pool` does not connect on construction. */
@@ -101,5 +103,76 @@ describe("createAdminPrismaClient — missing connection string", () => {
 
     expect(message).toContain("DATABASE_URL_SHIPWRIGHT_ADMIN");
     expect(message).toContain("postgresql://");
+  });
+});
+
+describe("resolveAdminPoolObservabilityConfig", () => {
+  it("returns undefined overrides when env vars are unset", () => {
+    expect(resolveAdminPoolObservabilityConfig({})).toEqual({
+      holdThresholdMs: undefined,
+      monitorIntervalMs: undefined,
+    });
+  });
+
+  it("parses positive integer overrides", () => {
+    expect(
+      resolveAdminPoolObservabilityConfig({
+        SHIPWRIGHT_ADMIN_POOL_HOLD_THRESHOLD_MS: "500",
+        SHIPWRIGHT_ADMIN_POOL_MONITOR_INTERVAL_MS: "1000",
+      }),
+    ).toEqual({ holdThresholdMs: 500, monitorIntervalMs: 1000 });
+  });
+
+  it("falls back to defaults for blank, non-numeric, zero, or negative values", () => {
+    for (const bad of ["", "  ", "abc", "0", "-5", "1.5", "NaN"]) {
+      expect(
+        resolveAdminPoolObservabilityConfig({
+          SHIPWRIGHT_ADMIN_POOL_HOLD_THRESHOLD_MS: bad,
+          SHIPWRIGHT_ADMIN_POOL_MONITOR_INTERVAL_MS: bad,
+        }),
+      ).toEqual({ holdThresholdMs: undefined, monitorIntervalMs: undefined });
+    }
+  });
+});
+
+describe("observeAdminPool", () => {
+  it("logs holds over the env threshold and stops the monitor on stop()", async () => {
+    let now = 0;
+    const logs: Array<[string, unknown]> = [];
+    const cleared: unknown[] = [];
+    const intervals: number[] = [];
+    const released: unknown[] = [];
+    const pool = {
+      totalCount: 1,
+      idleCount: 0,
+      waitingCount: 0,
+      options: { max: 10 },
+      connect: async () => ({ release: (e?: unknown) => released.push(e) }),
+    };
+    const stop = observeAdminPool(
+      pool,
+      {
+        SHIPWRIGHT_ADMIN_POOL_HOLD_THRESHOLD_MS: "100",
+        SHIPWRIGHT_ADMIN_POOL_MONITOR_INTERVAL_MS: "250",
+      },
+      {
+        log: (m, d) => logs.push([m, d]),
+        clock: { now: () => new Date(now) },
+        setInterval: (_fn, ms) => {
+          intervals.push(ms);
+          return "h";
+        },
+        clearInterval: (h) => cleared.push(h),
+      },
+    );
+    expect(intervals).toEqual([250]);
+    const client = await pool.connect();
+    now = 150;
+    client.release();
+    expect(logs.length).toBe(1);
+    expect(logs[0]?.[0]).toBe("pg connection held past threshold");
+    expect(logs[0]?.[1]).toMatchObject({ heldMs: 150 });
+    stop();
+    expect(cleared).toEqual(["h"]);
   });
 });

@@ -13,6 +13,13 @@
 
 import { PrismaPg } from "@prisma/adapter-pg";
 import { pinPgSslMode } from "@shipwright/lib/pg-sslmode";
+import {
+  type CheckoutPool,
+  type Clock,
+  type PoolLog,
+  startPoolMonitor,
+  trackConnectionHold,
+} from "@shipwright/lib/pool-observability";
 import pg from "pg";
 import { PrismaClient } from "../prisma/client/client.ts";
 
@@ -74,6 +81,82 @@ export function createAdminPgPool(databaseUrl: string): pg.Pool {
   return pool;
 }
 
+/** Positive-integer env parse; anything else (unset, blank, junk, <=0) means "use the default". */
+function parsePositiveInt(raw: string | undefined): number | undefined {
+  if (raw === undefined || !/^\s*\d+\s*$/.test(raw)) return undefined;
+  const n = Number(raw);
+  return n > 0 ? n : undefined;
+}
+
+export interface AdminPoolObservabilityConfig {
+  holdThresholdMs: number | undefined;
+  monitorIntervalMs: number | undefined;
+}
+
+/**
+ * Resolve the pool-observability env overrides
+ * (SHIPWRIGHT_ADMIN_POOL_HOLD_THRESHOLD_MS / SHIPWRIGHT_ADMIN_POOL_MONITOR_INTERVAL_MS).
+ * Invalid values yield `undefined` so lib/pool-observability.ts defaults apply.
+ */
+export function resolveAdminPoolObservabilityConfig(
+  env: Record<string, string | undefined>,
+): AdminPoolObservabilityConfig {
+  return {
+    holdThresholdMs: parsePositiveInt(
+      env.SHIPWRIGHT_ADMIN_POOL_HOLD_THRESHOLD_MS,
+    ),
+    monitorIntervalMs: parsePositiveInt(
+      env.SHIPWRIGHT_ADMIN_POOL_MONITOR_INTERVAL_MS,
+    ),
+  };
+}
+
+/** Injection seams for tests. */
+export interface ObserveAdminPoolDeps {
+  log?: PoolLog;
+  clock?: Clock;
+  setInterval?: (fn: () => void, ms: number) => unknown;
+  clearInterval?: (handle: unknown) => void;
+}
+
+/**
+ * Wire hold tracking and the waiting-clients monitor onto the admin pool.
+ * Observability only — no pool size or query behavior changes. Returns a
+ * single stop fn (stops the monitor, restores `pool.connect`) for shutdown.
+ */
+export function observeAdminPool(
+  pool: CheckoutPool,
+  env: Record<string, string | undefined> = process.env,
+  deps: ObserveAdminPoolDeps = {},
+): () => void {
+  const { holdThresholdMs, monitorIntervalMs } =
+    resolveAdminPoolObservabilityConfig(env);
+  const log: PoolLog = deps.log ?? ((m, d) => console.warn(`[admin] ${m}`, d));
+  const stopHold = trackConnectionHold(pool, {
+    thresholdMs: holdThresholdMs,
+    log,
+    clock: deps.clock,
+  });
+  const stopMonitor = startPoolMonitor(pool, {
+    intervalMs: monitorIntervalMs,
+    log,
+    setInterval: deps.setInterval,
+    clearInterval: deps.clearInterval,
+  });
+  return () => {
+    stopMonitor();
+    stopHold();
+  };
+}
+
+export interface CreateAdminPrismaClientOptions {
+  /**
+   * When set, the pool is instrumented via `observeAdminPool` and this
+   * callback receives the pool plus the stop fn (call on shutdown).
+   */
+  onPoolObserved?: (observed: { pool: pg.Pool; stop: () => void }) => void;
+}
+
 /**
  * Build an adapter-backed PrismaClient for the given Postgres connection string.
  *
@@ -91,8 +174,14 @@ export function createAdminPgPool(databaseUrl: string): pg.Pool {
  * `docs/migration.md` ("Breaking: admin's `DATABASE_URL_SHIPWRIGHT_ADMIN` is
  * now parsed by `pg`, not Prisma").
  */
-export function createAdminPrismaClient(databaseUrl: string): PrismaClient {
+export function createAdminPrismaClient(
+  databaseUrl: string,
+  opts: CreateAdminPrismaClientOptions = {},
+): PrismaClient {
   const pool = createAdminPgPool(databaseUrl);
+  if (opts.onPoolObserved) {
+    opts.onPoolObserved({ pool, stop: observeAdminPool(pool) });
+  }
   const adapter = new PrismaPg(pool, { disposeExternalPool: true });
   return new PrismaClient({ adapter });
 }

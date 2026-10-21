@@ -181,6 +181,7 @@ export const codingAdminExtension: AdminExtension = {
         sessionSecret: ctx.sessionSecret,
         adminApiKeys: ctx.adminApiKeys,
         ...(ctx.sentryClient ? { sentryClient: ctx.sentryClient } : {}),
+        ...(ctx.pool ? { pool: ctx.pool } : {}),
       }),
     },
   ],

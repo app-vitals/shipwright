@@ -33,6 +33,7 @@
  * (the composition root) is the only file that wires a concrete extension in.
  */
 
+import type { PoolLike } from "@shipwright/lib/pool-observability";
 import type { ErrorCapturingClient } from "@shipwright/lib/sentry";
 import type { Hono } from "hono";
 import type { PrismaClient } from "../prisma/client/client.ts";
@@ -81,6 +82,8 @@ export interface AdminExtensionContext {
   push?: { service: PushService; maxDetail: string; vapidPublicKey: string };
   /** Sentry, present only when SENTRY_DSN is set (as the admin API gets it). */
   sentryClient?: ErrorCapturingClient;
+  /** Admin's pg pool (PLO-1.3), for pool-timeout capture context. */
+  pool?: PoolLike;
   services: AdminPlatformServices;
 }
 

@@ -27,6 +27,57 @@ import type { AdminDeps } from "./agents-api.ts";
 import { createAdminApp } from "./agents-api.ts";
 import { BadGatewayError, NotFoundError } from "./errors.ts";
 
+/** Sentry double that records scope tags/contexts set inside withScope. */
+function fakeScopedSentryClient() {
+  const events: Array<{
+    error: unknown;
+    tags: Record<string, string>;
+    contexts: Record<string, unknown>;
+  }> = [];
+  let current: (typeof events)[number] | undefined;
+  const client: ErrorCapturingClient = {
+    captureException: (error) => {
+      events.push({
+        error,
+        tags: { ...(current?.tags ?? {}) },
+        contexts: { ...(current?.contexts ?? {}) },
+      });
+    },
+    withScope: async (cb) => {
+      current = { error: undefined, tags: {}, contexts: {} };
+      const scope = {
+        setTag: (k: string, v: string) => {
+          (current as NonNullable<typeof current>).tags[k] = v;
+        },
+        setContext: (k: string, v: unknown) => {
+          (current as NonNullable<typeof current>).contexts[k] = v;
+        },
+      };
+      try {
+        return await cb(scope);
+      } finally {
+        current = undefined;
+      }
+    },
+  };
+  return { client, events };
+}
+
+function p2028Service(): AdminDeps["agentEnvService"] {
+  return new Proxy(
+    {},
+    {
+      get() {
+        return async () => {
+          throw Object.assign(new Error("Unable to start a transaction"), {
+            code: "P2028",
+          });
+        };
+      },
+    },
+  ) as AgentEnvService;
+}
+
 const AGENT_ID = "agent-test-123";
 const VALID_BEARER_TOKEN = "valid-bearer-token-value";
 const SESSION_SECRET = "test-admin-session-secret-32-bytes!";
@@ -308,6 +359,71 @@ describe("onError — Sentry capture wiring", () => {
     });
 
     expect(res.status).toBe(500);
+  });
+});
+
+describe("onError — pool timeout context (PLO-1.3)", () => {
+  const pool = {
+    totalCount: 10,
+    idleCount: 0,
+    waitingCount: 4,
+    options: { max: 10 },
+  };
+
+  it("attaches pool stats context and route/server_name tags for a P2028 error", async () => {
+    const { client, events } = fakeScopedSentryClient();
+    const app = createAdminApp({
+      ...makeBaseDeps(p2028Service()),
+      sentryClient: client,
+      pool,
+    });
+
+    const res = await app.request(`/agents/${AGENT_ID}/envs`, {
+      headers: { Authorization: `Bearer ${VALID_BEARER_TOKEN}` },
+    });
+
+    expect(res.status).toBe(500);
+    expect(events.length).toBe(1);
+    expect(events[0]?.tags.server_name).toBe("admin");
+    expect(events[0]?.tags.route).toBe("GET /agents/:id/envs");
+    expect(events[0]?.contexts.pg_pool).toMatchObject({
+      total: 10,
+      idle: 0,
+      waiting: 4,
+      max: 10,
+      route: "GET /agents/:id/envs",
+    });
+  });
+
+  it("leaves non-pool errors unchanged (no scope, no pool context)", async () => {
+    const { client, events } = fakeScopedSentryClient();
+    const app = createAdminApp({
+      ...makeBaseDeps(throwingAgentEnvService()),
+      sentryClient: client,
+      pool,
+    });
+
+    const res = await app.request(`/agents/${AGENT_ID}/envs`, {
+      headers: { Authorization: `Bearer ${VALID_BEARER_TOKEN}` },
+    });
+
+    expect(res.status).toBe(500);
+    expect(events.length).toBe(1);
+    expect(events[0]?.tags).toEqual({});
+    expect(events[0]?.contexts).toEqual({});
+  });
+
+  it("still captures a pool timeout when no pool or withScope is available", async () => {
+    const sentryClient = fakeErrorCapturingClient();
+    const app = createAdminApp({
+      ...makeBaseDeps(p2028Service()),
+      sentryClient,
+    });
+    const res = await app.request(`/agents/${AGENT_ID}/envs`, {
+      headers: { Authorization: `Bearer ${VALID_BEARER_TOKEN}` },
+    });
+    expect(res.status).toBe(500);
+    expect(sentryClient.capturedErrors.length).toBe(1);
   });
 });
 

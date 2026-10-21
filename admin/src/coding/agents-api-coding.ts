@@ -25,6 +25,7 @@
  */
 
 import { createRoute, type OpenAPIHono, z } from "@hono/zod-openapi";
+import type { PoolLike } from "@shipwright/lib/pool-observability";
 import type { ErrorCapturingClient } from "@shipwright/lib/sentry";
 import type { MiddlewareHandler } from "hono";
 import type { AdminOpenApiContribution } from "../admin-extension.ts";
@@ -75,6 +76,8 @@ export interface CodingAdminApiDeps {
   adminApiKeys?: Map<string, AdminApiKey>;
   /** Optional Sentry client for unhandled errors (see AdminDeps.sentryClient). */
   sentryClient?: ErrorCapturingClient;
+  /** Admin's pg pool (see AdminDeps.pool) for pool-timeout capture context. */
+  pool?: PoolLike;
 }
 
 // ─── Response schema helpers ────────────────────────────────────────────────────
@@ -245,12 +248,13 @@ export function createCodingAdminApiApp(
     sessionSecret,
     adminApiKeys,
     sentryClient,
+    pool,
   } = deps;
   const callerScopeResolver =
     deps.callerScopeResolver ??
     memberOnlyCallerScopeResolver(agentMemberService);
 
-  const app = createAdminApiHono(sentryClient);
+  const app = createAdminApiHono(sentryClient, pool);
 
   const authMiddleware = createAdminAuthMiddleware({
     sessionSecret,

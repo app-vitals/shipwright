@@ -53,7 +53,7 @@ Every agent call site reporting a `claude` CLI runner error — `agent/src/runti
 
 Any new call site that can receive a thrown `ClaudeTimeoutError` should report through `reportClaudeError` rather than calling `captureException` directly, to keep this classification consistent.
 
-## Pool observability
+### Task-store pool observability
 
 The task-store instruments its `pg` pool to diagnose pool starvation (Sentry VITALS-OS-5T). It is observability only — pool size and queries are unchanged.
 
@@ -63,6 +63,15 @@ The task-store instruments its `pg` pool to diagnose pool starvation (Sentry VIT
 - **Sentry** — when an unhandled error is a pool timeout (Prisma `P2028`, `Unable to start a transaction`, or a pg connection timeout), the captured event carries a `pg_pool` context (total/idle/waiting/max and route) and `route` / `server_name` tags. Other errors are captured unchanged.
 
 Both thresholds are documented in [`docs/configuration-agent.md`](./configuration-agent.md#metrics--admin--chat--task-store-services). The helpers live in [`lib/pool-observability.ts`](../lib/pool-observability.ts).
+
+### Pool starvation diagnostics (admin)
+
+The admin service instruments its own `pg.Pool` (separate from task-store's) using [`lib/pool-observability.ts`](../lib/pool-observability.ts). This is observability only: pool size and queries are unchanged.
+
+- **Route context** — a middleware records the HTTP method and matched route pattern for each request.
+- **Hold tracking** — `pool.connect()` is wrapped so a connection held longer than `SHIPWRIGHT_ADMIN_POOL_HOLD_THRESHOLD_MS` (default 2000) logs `pg connection held past threshold` with the route, `heldMs`, and pool stats.
+- **Monitor** — every `SHIPWRIGHT_ADMIN_POOL_MONITOR_INTERVAL_MS` (default 30000) it logs `pg pool has waiting clients` while any client is queued. It is stopped during graceful shutdown.
+- **Sentry** — when an unhandled error captured by the admin API is a pool timeout (Prisma `P2028`, "Unable to start a transaction", or a pg connection timeout), the event carries a `pg_pool` context (`total`, `idle`, `waiting`, `max`, `route`) and `route` / `server_name` tags. Other errors are captured unchanged.
 
 ## Disabling Sentry
 
