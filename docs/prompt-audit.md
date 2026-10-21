@@ -83,7 +83,7 @@ The exit gate for the feature: `prompt-scan --dry-run` on this repo (commit `17c
 | # | Finding | Result |
 |---|---------|--------|
 | 1 | `c/orphaned-auto-section`, "Shipwright Learned Facts" in root `CLAUDE.md` | **Reproduced after a fix.** Missed at first: the section's heading was mentioned in `docs/` and a design spec, which counted as a writer. Docs are no longer writers. |
-| 2 | `c/retired-model-id`, `claude-sonnet-4-5` | `docs/agent.md` reproduced. `admin/prisma/schema.prisma` is not scanned: it is not a prompt file and never enters model context. The design spec itself now also matches. |
+| 2 | `c/retired-model-id`, `claude-sonnet-4-5` | `docs/agent.md` reproduced. `admin/prisma/schema/` is not scanned: it is not a prompt file and never enters model context. The design spec itself now also matches. |
 | 3 | `a/claude-md-over-200-lines` | Reproduced for root `CLAUDE.md` (local-dev) and `agent/workspace/CLAUDE.md.template` (agent-runtime). |
 | 4 | `b/on-invoke-heavy` for `commands/patch.md` | Reproduced (9 on-invoke-heavy findings in total). |
 | 5 | `e/frontmatter-missing-name` for commands | **Reproduced after a fix.** The rule only looked at skills and agents. Commands are listed too, so it now covers them (22 findings). |
