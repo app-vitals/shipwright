@@ -58,3 +58,26 @@ HITL scan: no Type A tasks (no `.claude/**`, secrets or console steps).
 - AEP-4.2 (lib delivery) was folded into AEP-4.1 because the only in-repo work is recording and checking the module tags; the copy/publish choice is made at extraction time.
 - `platform/` consolidation and the specialty rename are left out of this batch and added once the gate is green.
 - AEP-1.3 uses a new lib module with an atomic importer update instead of a re-export shim.
+
+## Addendum (2026-10-21): AEP-3.2 follow-ups that unblock AEP-3.3
+
+After AEP-3.2 merged, the admin boundary scan found two files outside `admin/src/coding/` importing from it, so AEP-3.3's test (no exemption but `main.ts`) cannot pass on main:
+
+- `admin/src/admin-boot.ts` builds `AgentPhaseMethodologyService` (coding) and passes it to `createAgentRuntimeApp`, whose `GET /agents/:id/config` returns `phaseMethodology`. The platform runtime API genuinely consumes it, so it cannot simply be deleted.
+- `admin/src/coding-admin-extension.ts` sits at the top level but imports nine `coding/` modules.
+
+| ID | Title | Layer | Hours | Complexity / Model | Branch | Depends on |
+|----|-------|-------|-------|--------------------|--------|------------|
+| AEP-3.5 | refactor: move the coding admin extension into coding/ and inject phase methodology through it | Shared | 5 | 4 / opus | `refactor/aep-3-5-coding-extension-into-coding` | 3.2 |
+| AEP-3.6 | fix: gate queue-activity links when the coding extension is absent | Frontend | 2 | 2 / haiku | `fix/aep-3-6-gate-queue-activity-links` | 3.5 |
+
+AEP-3.3 now depends on AEP-3.5. AEP-3.6 is non-blocking for AEP-3.3. Both are safe to deploy standalone; no HITL.
+
+Design: the platform runtime app treats `agentPhaseMethodologyService` as optional (port `AgentPhaseMethodologyServiceLike` already exists in `api.ts`); with none it omits `phaseMethodology`. The coding extension supplies the real service through an `AdminExtension` hook, so `/agents/:id/config` is byte-identical with the extension registered.
+
+### Decision Log (addendum)
+
+- Phase methodology stays coding: phases like `review` and `plan-session` are coding vocabulary, and AEP-3.4 is already moving coding models out. Platform consumes it via an optional port.
+- Rejected exempting `admin-boot.ts` from the boundary test: it would hide the leak and break AEP-3.3's "composition root only" criterion.
+- Both fixes in one PR (AEP-3.5): the extension move and the injection touch the same wiring and neither is meaningful alone.
+- AEP-3.6 split out: it changes UI behavior and must not ride along with a pure refactor.
