@@ -287,6 +287,12 @@ export interface AdminUIDeps {
    * group); absent renders none.
    */
   agentDetailCards?: readonly AgentDetailCardSlot[];
+  /**
+   * True when an extension mounts /admin/agents/:id/queue-activity (the coding
+   * extension, AEP-3.6); the agents list and agent detail render their Queue &
+   * Activity / Logs links only then. Absent renders none.
+   */
+  queueActivityLinks?: boolean;
   agentToolService: Pick<
     AgentToolService,
     "list" | "add" | "toggle" | "remove"
@@ -1231,6 +1237,7 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
     return html(
       renderAgentsPage(agents, c.var.userEmail, c.var.isAdmin, timezone, {
         accountNames,
+        queueActivityLinks: deps.queueActivityLinks,
         successMsg,
         manualSteps,
         zeroQuotaNotice: zeroQuotaContactEmail
@@ -1711,6 +1718,7 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
           timezone,
           extensionCardsHtml: cards.header,
           configurationCardsHtml: cards.configuration,
+          queueActivityLinks: deps.queueActivityLinks,
         },
       ),
     );
@@ -2365,6 +2373,7 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
             timezone,
             extensionCardsHtml: cards.header,
             configurationCardsHtml: cards.configuration,
+            queueActivityLinks: deps.queueActivityLinks,
           },
         ),
       );

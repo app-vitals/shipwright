@@ -103,6 +103,7 @@ export function createCodingTestApp(deps: CodingMockDeps) {
       ...deps,
       agentDetailCards: codingAgentDetailCards(deps),
       agentDetailErrorMessages: CODING_AGENT_DETAIL_ERROR_MESSAGES,
+      queueActivityLinks: true,
     }),
   );
   root.route("/", createCodingAdminUIApp(deps));

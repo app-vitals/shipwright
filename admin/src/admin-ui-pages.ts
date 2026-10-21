@@ -373,6 +373,11 @@ export function renderAgentsPage(
      * Account column is rendered. Ignored for non-admins.
      */
     accountNames?: Map<string, string>;
+    /**
+     * Render the Queue & Activity button (AEP-3.6). Only the coding extension
+     * mounts /admin/agents/:id/queue-activity; absent/false omits the link.
+     */
+    queueActivityLinks?: boolean;
   },
 ): string {
   const showAccount = isAdmin && opts?.accountNames !== undefined;
@@ -408,8 +413,12 @@ export function renderAgentsPage(
     ${accountCell(a)}
     <td>${escapeHtml(new Date(a.createdAt).toLocaleDateString("en-US", { timeZone: timezone }))}</td>
     <td>
-      <a href="/admin/agents/${escapeHtml(a.id)}" class="btn btn-secondary" style="font-size:12px;padding:4px 10px">Manage</a>
-      <a href="/admin/agents/${escapeHtml(a.id)}/queue-activity" class="btn btn-secondary" style="font-size:12px;padding:4px 10px;margin-left:4px">Queue &amp; Activity</a>
+      <a href="/admin/agents/${escapeHtml(a.id)}" class="btn btn-secondary" style="font-size:12px;padding:4px 10px">Manage</a>${
+        opts?.queueActivityLinks
+          ? `
+      <a href="/admin/agents/${escapeHtml(a.id)}/queue-activity" class="btn btn-secondary" style="font-size:12px;padding:4px 10px;margin-left:4px">Queue &amp; Activity</a>`
+          : ""
+      }
     </td>
   </tr>`,
           )
@@ -942,6 +951,11 @@ export function renderAgentDetailPage(
      * Repos and Agent Policy. Absent or empty adds no card.
      */
     configurationCardsHtml?: readonly string[];
+    /**
+     * Render each cron's Logs link (AEP-3.6). Only the coding extension mounts
+     * /admin/agents/:id/queue-activity; absent/false omits the link.
+     */
+    queueActivityLinks?: boolean;
   },
 ): string {
   // Reference time for relative timestamps — injected by tests for determinism,
@@ -1073,8 +1087,11 @@ export function renderAgentDetailPage(
   function renderCronActions(c: CronJobItem): string {
     const toggleLabel = c.enabled ? "Disable" : "Enable";
     const toggleTarget = c.enabled ? "false" : "true";
-    return `
-      <a href="/admin/agents/${escapeHtml(agent.id)}/queue-activity?cronId=${escapeHtml(c.id)}" class="btn btn-secondary" style="font-size:11px;padding:3px 8px;margin-right:4px;text-decoration:none">Logs</a>
+    const logsLink = opts?.queueActivityLinks
+      ? `
+      <a href="/admin/agents/${escapeHtml(agent.id)}/queue-activity?cronId=${escapeHtml(c.id)}" class="btn btn-secondary" style="font-size:11px;padding:3px 8px;margin-right:4px;text-decoration:none">Logs</a>`
+      : "";
+    return `${logsLink}
       <form method="POST" action="/admin/agents/${escapeHtml(agent.id)}/crons/${escapeHtml(c.id)}/toggle" style="display:inline">
         <input type="hidden" name="enabled" value="${toggleTarget}" />
         <button type="submit" class="btn btn-secondary" style="font-size:11px;padding:3px 8px">${toggleLabel}</button>
