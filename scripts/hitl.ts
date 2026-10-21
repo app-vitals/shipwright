@@ -517,30 +517,29 @@ export function buildCloneSteps(
  * task-store DB, and admin migrates last.
  */
 export function buildMigrationSteps(cfg: HitlConfig): HitlStep[] {
-  const prismaArgs = (cmd: "generate" | "deploy"): string[] =>
+  // admin's schema is a Prisma multi-file schema folder (prisma/schema/);
+  // task-store still uses a single prisma/schema.prisma file.
+  const prismaArgs = (
+    cmd: "generate" | "deploy",
+    schema: string,
+  ): string[] =>
     cmd === "generate"
-      ? ["bunx", "prisma", "generate", "--schema=prisma/schema.prisma"]
-      : [
-          "bunx",
-          "prisma",
-          "migrate",
-          "deploy",
-          "--schema=prisma/schema.prisma",
-        ];
+      ? ["bunx", "prisma", "generate", `--schema=${schema}`]
+      : ["bunx", "prisma", "migrate", "deploy", `--schema=${schema}`];
 
   return [
     {
       kind: "exec",
       label: "task-store prisma generate failed",
       startLabel: "running task-store prisma generate...",
-      argv: prismaArgs("generate"),
+      argv: prismaArgs("generate", "prisma/schema.prisma"),
       cwd: join(cfg.repoRoot, "task-store"),
     },
     {
       kind: "exec",
       label: "task-store migrate failed",
       startLabel: "running task-store prisma migrate...",
-      argv: prismaArgs("deploy"),
+      argv: prismaArgs("deploy", "prisma/schema.prisma"),
       cwd: join(cfg.repoRoot, "task-store"),
       env: { DATABASE_URL_SHIPWRIGHT_TASK_STORE: cfg.taskStoreDatabaseUrl },
     },
@@ -549,14 +548,14 @@ export function buildMigrationSteps(cfg: HitlConfig): HitlStep[] {
       kind: "exec",
       label: "admin prisma generate failed",
       startLabel: "running admin prisma generate...",
-      argv: prismaArgs("generate"),
+      argv: prismaArgs("generate", "prisma/schema"),
       cwd: join(cfg.repoRoot, "admin"),
     },
     {
       kind: "exec",
       label: "admin migrate failed",
       startLabel: "running admin prisma migrate...",
-      argv: prismaArgs("deploy"),
+      argv: prismaArgs("deploy", "prisma/schema"),
       cwd: join(cfg.repoRoot, "admin"),
       env: { DATABASE_URL_SHIPWRIGHT_ADMIN: cfg.adminDatabaseUrl },
     },

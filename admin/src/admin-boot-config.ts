@@ -57,7 +57,7 @@ export async function runMigrations(): Promise<void> {
   console.log("[admin] running prisma migrate deploy...");
 
   const proc = Bun.spawn(
-    ["bunx", "prisma", "migrate", "deploy", "--schema=prisma/schema.prisma"],
+    ["bunx", "prisma", "migrate", "deploy", "--schema=prisma/schema"],
     {
       cwd: join(import.meta.dir, ".."),
       env: { ...process.env, DATABASE_URL_SHIPWRIGHT_ADMIN: databaseUrl },

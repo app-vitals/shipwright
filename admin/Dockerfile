@@ -70,7 +70,7 @@ COPY --from=deps /app/lib/node_modules ./lib/node_modules
 COPY . .
 
 # Generate Prisma client
-RUN cd admin && bunx prisma generate --schema=prisma/schema.prisma
+RUN cd admin && bunx prisma generate --schema=prisma/schema
 
 EXPOSE 3000
 

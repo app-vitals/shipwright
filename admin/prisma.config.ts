@@ -3,7 +3,7 @@
  *
  * Prisma 7 CLI configuration for the admin service.
  *
- * Prisma 7 removed `url` from the `datasource` block in schema.prisma, so the
+ * Prisma 7 removed `url` from the `datasource` block in the schema (prisma/schema/), so the
  * connection string used by CLI commands (`prisma migrate deploy|dev`,
  * `prisma db ...`) is declared here instead. The *runtime* client does not read
  * this file at all — it connects through a `PrismaPg` driver adapter built in
@@ -17,14 +17,14 @@
  * commands that actually need a URL, which report it themselves.
  *
  * Paths are relative to this file (admin/), matching the existing
- * `--schema=prisma/schema.prisma` invocations in package.json, Taskfile.yml,
+ * `--schema=prisma/schema` invocations in package.json, Taskfile.yml,
  * admin/Dockerfile, scripts/hitl.ts, and scripts/dev-tmux.ts.
  */
 
 import { defineConfig } from "prisma/config";
 
 export default defineConfig({
-  schema: "prisma/schema.prisma",
+  schema: "prisma/schema",
   migrations: {
     path: "prisma/migrations",
   },

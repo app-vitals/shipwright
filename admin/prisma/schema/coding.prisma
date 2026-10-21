@@ -1,0 +1,85 @@
+// Shipwright — Admin Service Schema: coding-owned models (AEP-3.4)
+//
+// Part of the admin Prisma multi-file schema (prisma/schema/). These models
+// belong to the coding feature surface and are isolated here so the coding
+// code can later be extracted. They share the single `db` datasource and
+// generator declared in schema.prisma, so the generated client and the
+// migrations are unchanged by this split.
+//
+// Coding-owned columns that live on the shared Agent model (schema.prisma)
+// and are grouped/commented there: reviewAuthorAllowlist, patchAuthorAllowlist,
+// autoPostReviews, allowSelfReview, minConfidence, maxFindings.
+
+// ─── Agent Work Queue Snapshot ────────────────────────────────────────────────
+// One row per agent, holding the agent's most recently pushed work-queue
+// snapshot (its ranked view of pending tasks/PRs across pipeline phases).
+// POST /agents/:id/work-queue upserts this single row, overwriting any prior
+// snapshot — there is no history, only the latest state.
+
+model AgentWorkQueueSnapshot {
+  id         String   @id @default(cuid())
+  agentId    String   @unique
+  agent      Agent    @relation(fields: [agentId], references: [id], onDelete: Cascade)
+  computedAt DateTime
+  items      Json     // RankedWorkItem[]
+  createdAt  DateTime @default(now())
+}
+
+// ─── Agent Phase Methodology ──────────────────────────────────────────────────
+// Per-phase subagent-type override. Each row records which subagent type
+// (e.g. a custom Agent Type name) should handle one pipeline phase — prd,
+// plan-session, review, patch, deploy, or dev-task — for a given agent,
+// overriding that phase's default methodology. `subagentType` is nullable:
+// a row with a null value (or the absence of a row) means "use the default".
+// The `phase` value is constrained to the six-value enum at the service/route
+// layer (Zod), not here — Postgres/Prisma has no native enum-column
+// requirement in this schema style (mirrors AgentTool.pattern / AgentCronJob
+// validation living at the service layer). The unique constraint on
+// [agentId, phase] makes upsert-based writes idempotent (one override row per
+// phase per agent), mirroring AgentTool's [agentId, pattern] and AgentPlugin's
+// [agentId, name].
+
+model AgentPhaseMethodology {
+  id           String   @id @default(cuid())
+  agentId      String
+  agent        Agent    @relation(fields: [agentId], references: [id], onDelete: Cascade)
+  phase        String
+  subagentType String?
+  updatedAt    DateTime @updatedAt
+
+  @@unique([agentId, phase])
+}
+
+// ─── Session Follow ───────────────────────────────────────────────────────────
+// Records that a user is "following" a planning session (identified by its
+// slug) so they can receive reminders/notifications about it. `muted` lets a
+// user stay following (kept in listByUser) while suppressing alerts, distinct
+// from unfollowing (row deleted entirely). The unique constraint on
+// [userEmail, sessionSlug] makes follow() idempotent via upsert.
+model SessionFollow {
+  id          String   @id @default(cuid())
+  userEmail   String
+  sessionSlug String
+  muted       Boolean  @default(false)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@unique([userEmail, sessionSlug])
+  @@index([sessionSlug])
+}
+
+// ─── Session Alert State ─────────────────────────────────────────────────────
+// Tracks the last time a user was alerted about a given session, so a
+// reminder job can avoid re-alerting the same user/session pair within a
+// cooldown window. The unique constraint on [userEmail, sessionSlug] allows
+// upsert semantics (one state row per user per session).
+model SessionAlertState {
+  id            String    @id @default(cuid())
+  userEmail     String
+  sessionSlug   String
+  lastAlertedAt DateTime?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  @@unique([userEmail, sessionSlug])
+}

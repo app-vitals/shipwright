@@ -41,7 +41,7 @@ The admin service uses its own PostgreSQL database. Run migrations before starti
 
 ```bash
 export DATABASE_URL_SHIPWRIGHT_ADMIN=postgres://...
-cd admin && bunx prisma migrate deploy --schema=prisma/schema.prisma
+cd admin && bunx prisma migrate deploy --schema=prisma/schema
 ```
 
 ## Building the Docker Image

@@ -13,7 +13,7 @@ export interface CleanupAfterDaysRef {
   /**
    * Returns the most recently synced `cleanupAfterDays` value, or `14` if
    * set() was never called. The underlying Agent row field defaults to `14`
-   * in the database (admin/prisma/schema.prisma), so once synced this
+   * in the database (admin/prisma/schema/), so once synced this
    * always reflects a real DB value — callers that need to distinguish
    * "never synced" (config-bundle fetch has never succeeded) from "synced
    * to a DB value of 14" must check hasSynced() rather than inferring it

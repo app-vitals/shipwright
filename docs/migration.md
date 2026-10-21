@@ -341,7 +341,7 @@ dual-wrote/dual-read both; DBR-2.2 migrated the admin UI to write only
 is now the sole field — same shape, same validation (GitHub login strings).
 
 **What changed**:
-- The column is dropped from `admin/prisma/schema.prisma` by migration
+- The column is dropped from `admin/prisma/schema/` by migration
   `20260903150000_drop_agent_author_allowlist`.
 - `POST /agents` and `PATCH /agents/:id` no longer accept an `authorAllowlist` body field —
   use `reviewAuthorAllowlist`.

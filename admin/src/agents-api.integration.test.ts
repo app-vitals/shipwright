@@ -446,7 +446,7 @@ describeOrSkip("admin CRUD API (integration)", () => {
     // thrown exception from execSync, and a broken default would surface as
     // a failed read-back.
     const { execSync } = await import("node:child_process");
-    execSync("bunx prisma migrate deploy --schema=prisma/schema.prisma", {
+    execSync("bunx prisma migrate deploy --schema=prisma/schema", {
       cwd: new URL("..", import.meta.url).pathname,
       env: { ...process.env, DATABASE_URL_SHIPWRIGHT_ADMIN: TEST_DB },
       stdio: "pipe",

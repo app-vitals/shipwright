@@ -35,7 +35,7 @@
  *
  * Dedup design note — SessionAlertState carries exactly one nullable
  * `lastAlertedAt` column and deliberately has no "kind" column (see
- * admin/prisma/schema.prisma). So the alert kind is *derived* rather than
+ * admin/prisma/schema/). So the alert kind is *derived* rather than
  * stored: a null/absent `lastAlertedAt` means "never alerted" → immediate;
  * otherwise a reminder is due only once the local calendar day has advanced
  * past the day of `lastAlertedAt` AND the local hour has reached the user's
@@ -69,7 +69,7 @@ import {
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 
-/** A SessionAlertState row (admin/prisma/schema.prisma). */
+/** A SessionAlertState row (admin/prisma/schema/). */
 export interface SessionAlertStateRow {
   id: string;
   userEmail: string;
