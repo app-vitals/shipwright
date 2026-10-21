@@ -2,11 +2,26 @@
  * admin/src/coding-admin-extension.ts
  *
  * Shipwright's coding AdminExtension: the home for the coding agent's admin
- * surfaces (task-store views, dev-task adherence, work queue, sessions). Today
- * it registers the task-store service integration (per-agent task-store tokens
- * minted on provision and revoked on delete), the admin UI's task-store
- * fetchers, and the session alert sweeper. The routes and pages still mounted
- * by the platform UI/API files move here with the mixed-file split.
+ * surfaces. Everything coding-shaped in the admin is contributed from here:
+ *
+ *   serviceIntegrations — the task-store integration (per-agent task-store
+ *                         tokens minted on provision, revoked on delete)
+ *   services            — the agent detail page's coding `?error=` messages
+ *   apiRoutes           — work-queue snapshots, phase-methodology overrides and
+ *                         dev-task adherence (coding/agents-api-coding.ts)
+ *   adminUiRoutes       — Queue & Activity, tasks, sessions (+ follow, actions,
+ *                         notification settings), PRs, the phase-methodology
+ *                         form and the public task board
+ *                         (coding/admin-ui-coding.ts)
+ *   agentDetailCards    — Recent Verification Activity, GitHub Installations
+ *                         and Phase Methodology (coding/admin-ui-agent-cards.ts)
+ *   openApi             — the coding API routes' fragment of admin/openapi.json,
+ *                         placed where they sat before the split
+ *   backgroundPasses    — the session alert sweeper
+ *
+ * The task-store reads use SHIPWRIGHT_TASK_STORE_URL +
+ * SHIPWRIGHT_TASK_STORE_ADMIN_TOKEN; with either unset those views render
+ * degraded. With this extension absent the admin is the bare platform.
  */
 
 import {
@@ -136,7 +151,7 @@ function sessionAlertPass(
  * are filtered by the task-store itself (SSP-6.8). Unconfigured → {} and the
  * task-store views render degraded.
  */
-function taskStoreFetchers(
+export function taskStoreFetchers(
   env: NodeJS.ProcessEnv,
 ): Partial<ReturnType<typeof createTaskStoreFetchers>> {
   const url = env.SHIPWRIGHT_TASK_STORE_URL;

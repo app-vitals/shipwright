@@ -259,7 +259,6 @@ function buildMockDeps(chatClient: ChatClient | undefined): AdminUIDeps {
       listWithRunSummary: async () => [
         { ...MOCK_CRON, lastRun: null, runCountToday: 0 },
       ],
-      listShipwrightLoopJobs: async () => [],
       get: async () => MOCK_CRON,
       create: async () => MOCK_CRON,
       update: async () => MOCK_CRON,
@@ -271,38 +270,11 @@ function buildMockDeps(chatClient: ChatClient | undefined): AdminUIDeps {
         deleted: 0,
       }),
     },
-    // LVB-5.3: the agent detail route now reads recent cron-run dispatch
-    // targets (itemType/itemId) to build its Recent Verification Activity
-    // rollup. No cron runs are needed for the existing e2e assertions, so an
-    // empty result is sufficient here.
-    agentCronRunService: {
-      listForAgent: async () => ({ items: [], total: 0, limit: 20, offset: 0 }),
-      listAcrossAgents: async () => ({
-        items: [],
-        total: 0,
-        limit: 20,
-        offset: 0,
-      }),
-    },
     agentToolService: {
       list: async () => [MOCK_TOOL],
       add: async () => MOCK_TOOL,
       toggle: async () => MOCK_TOOL,
       remove: async () => {},
-    },
-    agentPhaseMethodologyService: {
-      list: async () => [],
-      upsert: async (
-        agentId: string,
-        phase: string,
-        subagentType: string | null,
-      ) => ({
-        id: "pm-e2e-1",
-        agentId,
-        phase,
-        subagentType,
-        updatedAt: new Date("2024-01-01"),
-      }),
     },
     agentTokenService: {
       listForAgent: async () => [MOCK_TOKEN],

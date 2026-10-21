@@ -1,28 +1,31 @@
 /**
- * agent/src/api.integration.test.ts
+ * admin/src/coding/phase-methodology-runtime-config.integration.test.ts
  * Integration tests for the runtime API (GET /:id/config) against a real
- * PostgreSQL DB, using real services (not mocks) end-to-end.
+ * PostgreSQL DB, using real services (not mocks) end-to-end. Relocated from
+ * admin/src/api.integration.test.ts (AEP-3.2): the phase-methodology write
+ * route now lives in the coding admin API (agents-api-coding.ts).
  *
  * Requires DATABASE_URL_ADMIN_TEST to be set; skips otherwise.
  *
  * Complements api.smoke.test.ts (mocked services) — this file exercises the
  * real Prisma-backed AgentPhaseMethodologyService wired through the actual
- * admin CRUD routes (PUT /agents/:id/phase-methodology/:phase) and verifies
+ * coding admin route (PUT /agents/:id/phase-methodology/:phase) and verifies
  * the runtime GET /:id/config route reflects those writes (PMC-1.1).
  */
 
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
-import type { PrismaClient } from "../prisma/client/client.ts";
-import { AgentCronJobService } from "./agent-cron-jobs.ts";
-import { AgentEnvService } from "./agent-envs.ts";
-import { AgentPluginService } from "./agent-plugins.ts";
-import { AgentTokenService } from "./agent-tokens.ts";
-import { AgentService } from "./agents.ts";
-import { createAdminApp, parseAdminApiKeys } from "./agents-api.ts";
-import { createAgentRuntimeApp } from "./api.ts";
-import { AgentPhaseMethodologyService } from "./coding/agent-phase-methodology.ts";
-import { createAdminPrismaClient } from "./prisma-client.ts";
-import { makeTokenCrypto } from "./token-crypto.ts";
+import type { PrismaClient } from "../../prisma/client/client.ts";
+import { AgentCronJobService } from "../agent-cron-jobs.ts";
+import { AgentEnvService } from "../agent-envs.ts";
+import { AgentPluginService } from "../agent-plugins.ts";
+import { AgentTokenService } from "../agent-tokens.ts";
+import { AgentService } from "../agents.ts";
+import { parseAdminApiKeys } from "../agents-api.ts";
+import { createAgentRuntimeApp } from "../api.ts";
+import { createAdminPrismaClient } from "../prisma-client.ts";
+import { makeTokenCrypto } from "../token-crypto.ts";
+import { AgentPhaseMethodologyService } from "./agent-phase-methodology.ts";
+import { createCodingAdminApiApp } from "./agents-api-coding.ts";
 
 const TEST_DB = process.env.DATABASE_URL_ADMIN_TEST;
 const describeOrSkip = TEST_DB ? describe : describe.skip;
@@ -50,7 +53,7 @@ describeOrSkip(
     let prisma: PrismaClient;
     let agentId: string;
     let runtimeApp: ReturnType<typeof createAgentRuntimeApp>;
-    let adminApp: ReturnType<typeof createAdminApp>;
+    let adminApp: ReturnType<typeof createCodingAdminApiApp>;
 
     beforeEach(async () => {
       prisma = makePrisma();
@@ -95,114 +98,20 @@ describeOrSkip(
         agentTokenService,
       });
 
-      // Minimal real admin app wired with the same real
+      // Minimal real coding admin API wired with the same real
       // agentPhaseMethodologyService, so PUT writes are visible to the
       // runtime app's GET /:id/config read against the same DB.
-      adminApp = createAdminApp({
+      adminApp = createCodingAdminApiApp({
         agentService,
-        agentEnvService,
-        agentCronJobService,
-        agentCronRunService: {
-          create: async () => {
-            throw new Error("not implemented");
-          },
-          list: async () => ({ items: [], total: 0, limit: 20, offset: 0 }),
-          patch: async () => {
-            throw new Error("not implemented");
-          },
-        },
-        agentCronRunStatsService: {
-          outcomes: async () => ({ series: [] }),
-          query: async () => ({
-            totals: {
-              input: 0,
-              output: 0,
-              cacheRead: 0,
-              cacheCreation: 0,
-              total: 0,
-            },
-            byAgent: [],
-            byCron: [],
-            byModel: [],
-            daily: [],
-            byCronModel: [],
-            byPhase: [],
-          }),
-        },
-        agentToolService: {
-          list: async () => [],
-          add: async () => {
-            throw new Error("not implemented");
-          },
-          remove: async () => {},
-          toggle: async () => {
-            throw new Error("not implemented");
-          },
-        },
-        agentTokenService,
-        agentPluginService,
-        agentMemberService: {
-          exists: async () => false,
-          listByEmail: async () => [],
-          add: async () => {
-            throw new Error("not implemented");
-          },
-          listByAgentId: async () => [],
-        },
-        agentTypeRegistry: {
-          getManifest: () => {
-            throw new Error("not implemented");
-          },
-          tryGetManifest: () => undefined,
-          listTypes: () => [],
-        },
-        agentChatTokenService: {
-          upsertDailyByModel: async () => {
-            throw new Error("not implemented");
-          },
-          queryStats: async () => ({
-            totals: {
-              input: 0,
-              output: 0,
-              cacheRead: 0,
-              cacheCreation: 0,
-              total: 0,
-            },
-            byAgent: [],
-            byModel: [],
-            daily: [],
-          }),
-        },
-        agentGitHubInstallationsService: {
+        agentPhaseMethodologyService,
+        agentWorkQueueService: {
           push: async () => {
             throw new Error("not implemented");
           },
           get: async () => null,
         },
-        prisma,
-        provisioner: {
-          provision: async () => {
-            throw new Error("not implemented");
-          },
-          deprovision: async () => {},
-          reconcileAll: async () => {
-            throw new Error("not implemented");
-          },
-        } as never,
-        serviceIntegrations: [
-          {
-            name: "task-store",
-            listTokensForAgent: async () => [],
-            revokeToken: async () => {},
-          },
-        ],
-        chatService: {
-          listTokensForAgent: async () => [],
-          revokeToken: async () => {},
-          deleteThreadsForAgent: async () => ({ deleted: 0 }),
-        },
-        slack: { deleteApp: async () => {} },
-        decrypt: (value: string) => crypto.decrypt(value),
+        agentTokenService,
+        agentMemberService: { listByEmail: async () => [] },
         sessionSecret: SESSION_SECRET,
         adminApiKeys,
       });

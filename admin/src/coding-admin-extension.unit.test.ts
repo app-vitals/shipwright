@@ -7,6 +7,7 @@ import {
 } from "./admin-extension.ts";
 import {
   codingAdminExtension,
+  taskStoreFetchers,
   taskStoreServiceIntegration,
 } from "./coding-admin-extension.ts";
 import {
@@ -71,6 +72,21 @@ describe("codingAdminExtension", () => {
     expect(resolved.uiDeps).toEqual({
       agentDetailErrorMessages: { invalid_phase: "Invalid pipeline phase." },
     });
+  });
+
+  it("builds the task-store fetchers for its UI routes and cards only when the task-store is configured", () => {
+    expect(taskStoreFetchers({})).toEqual({});
+    expect(
+      taskStoreFetchers({
+        SHIPWRIGHT_TASK_STORE_URL: "http://task-store.svc:3002",
+      }),
+    ).toEqual({});
+    const configured = taskStoreFetchers({
+      SHIPWRIGHT_TASK_STORE_URL: "http://task-store.svc:3002",
+      SHIPWRIGHT_TASK_STORE_ADMIN_TOKEN: "admin",
+    });
+    expect(typeof configured.fetchTaskStoreSessions).toBe("function");
+    expect(typeof configured.fetchTaskStoreTasks).toBe("function");
   });
 
   it("starts the session alert sweeper only with push AND the task-store configured", () => {
