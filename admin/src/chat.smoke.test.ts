@@ -306,7 +306,6 @@ function makeBaseDeps(overrides?: Partial<AdminUIDeps>): AdminUIDeps {
       listWithRunSummary: async () => [
         { ...MOCK_CRON, lastRun: null, runCountToday: 0 },
       ],
-      listShipwrightLoopJobs: async () => [],
       get: async () => MOCK_CRON,
       create: async () => MOCK_CRON,
       setEnabled: async () => MOCK_CRON,
@@ -317,19 +316,6 @@ function makeBaseDeps(overrides?: Partial<AdminUIDeps>): AdminUIDeps {
         updated: 0,
         deleted: 0,
       }),
-    },
-    agentCronRunService: {
-      listForAgent: async () => ({ items: [], total: 0, limit: 20, offset: 0 }),
-      listAcrossAgents: async () => ({
-        items: [],
-        total: 0,
-        limit: 20,
-        offset: 0,
-      }),
-    },
-    agentWorkQueueService: {
-      get: async () => null,
-      getMany: async () => [],
     },
     agentToolService: {
       list: async () => [MOCK_TOOL],
@@ -345,12 +331,6 @@ function makeBaseDeps(overrides?: Partial<AdminUIDeps>): AdminUIDeps {
     agentPluginService: {
       list: async () => [],
       add: async () => {
-        throw new Error("not implemented");
-      },
-    },
-    agentPhaseMethodologyService: {
-      list: async () => [],
-      upsert: async () => {
         throw new Error("not implemented");
       },
     },

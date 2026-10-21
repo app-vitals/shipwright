@@ -51,7 +51,6 @@ import {
   DEFAULT_PORT,
   DEFAULT_TRIAL_EXPIRY_WARNING_SWEEP_INTERVAL_MS,
   isAnthropicFederationEnabled,
-  resolvePublicRepo,
   resolveTrialExpiryWarningDays,
   runMigrations,
 } from "./admin-boot-config.ts";
@@ -218,10 +217,6 @@ export async function startAdmin(
     .then((v) => v.trim())
     .catch(() => "0.0.0");
   const adminApiKeys = parseAdminApiKeys(process.env.SHIPWRIGHT_ADMIN_API_KEYS);
-  // Repo slug for the public read-only task board (GET /public/tasks). When set,
-  // the board renders unauthenticated, scoped to this repo; when absent the route
-  // stays in degraded mode (no tasks).
-  const publicRepo = resolvePublicRepo(process.env);
   // Self-serve provisioning config (SSP-1.3) — read once at startup and
   // injected as deps; no consumers yet.
   const selfServe = parseSelfServeConfig(process.env);
@@ -278,8 +273,18 @@ export async function startAdmin(
     sessionSecret,
     adminApiKeys,
     adminAllowedEmails,
+    appBaseUrl,
+    ...(process.env.SHIPWRIGHT_ADMIN_TZ
+      ? { timezone: process.env.SHIPWRIGHT_ADMIN_TZ }
+      : {}),
     ...(pushService
-      ? { push: { service: pushService, maxDetail: pushMaxDetail } }
+      ? {
+          push: {
+            service: pushService,
+            maxDetail: pushMaxDetail,
+            vapidPublicKey: vapidConfig.publicKey,
+          },
+        }
       : {}),
     services: {
       agentService,
@@ -439,12 +444,9 @@ export async function startAdmin(
     prisma: prisma as never,
     agentEnvService,
     agentCronJobService,
-    agentCronRunService,
-    agentWorkQueueService,
     agentToolService,
     agentTokenService,
     agentPluginService,
-    agentPhaseMethodologyService,
     agentMemberService,
     callerScopeResolver,
     agentService,
@@ -467,7 +469,6 @@ export async function startAdmin(
     githubAppClient,
     appBaseUrl,
     appVersion,
-    publicRepo,
     devAuthEnabled: isDevAuthAllowed(process.env),
     selfServe,
     accountService,

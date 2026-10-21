@@ -10,6 +10,7 @@
  */
 
 import {
+  resolvePublicRepo,
   resolveSessionAlertIntervalMs,
   SESSION_ALERT_FETCH_TIMEOUT_MS,
 } from "./admin-boot-config.ts";
@@ -19,11 +20,17 @@ import type {
   AdminExtensionContext,
 } from "./admin-extension.ts";
 import { codingAgentDetailCards } from "./coding/admin-ui-agent-cards.ts";
+import {
+  CODING_AGENT_DETAIL_ERROR_MESSAGES,
+  createCodingAdminUIApp,
+} from "./coding/admin-ui-coding.ts";
 import { AgentPhaseMethodologyService } from "./coding/agent-phase-methodology.ts";
+import { AgentWorkQueueService } from "./coding/agent-work-queue.ts";
 import {
   SessionAlertSweeper,
   type SessionForAlert,
 } from "./coding/session-alert-sweeper.ts";
+import { ShipwrightLoopJobService } from "./coding/shipwright-loop-jobs.ts";
 import { createTaskStoreFetchers } from "./coding/task-store-fetchers.ts";
 import {
   HttpTaskStoreProvisioningClient,
@@ -135,7 +142,41 @@ function taskStoreFetchers(
 export const codingAdminExtension: AdminExtension = {
   name: "coding",
   serviceIntegrations: (env) => [taskStoreServiceIntegration(env)],
-  services: (ctx) => ({ ui: taskStoreFetchers(ctx.env) }),
+  services: () => ({
+    ui: { agentDetailErrorMessages: CODING_AGENT_DETAIL_ERROR_MESSAGES },
+  }),
+  adminUiRoutes: (ctx) => [
+    {
+      path: "/",
+      app: createCodingAdminUIApp({
+        ...taskStoreFetchers(ctx.env),
+        prisma: ctx.prisma,
+        sessionSecret: ctx.sessionSecret,
+        appBaseUrl: ctx.appBaseUrl,
+        ...(ctx.timezone ? { timezone: ctx.timezone } : {}),
+        agentService: ctx.services.agentService,
+        agentCronJobService: ctx.services.agentCronJobService,
+        shipwrightLoopJobService: new ShipwrightLoopJobService(ctx.prisma),
+        agentCronRunService: ctx.services.agentCronRunService,
+        agentWorkQueueService: new AgentWorkQueueService(ctx.prisma),
+        agentPhaseMethodologyService: new AgentPhaseMethodologyService(
+          ctx.prisma,
+        ),
+        agentMemberService: ctx.services.agentMemberService,
+        callerScopeResolver: ctx.services.callerScopeResolver,
+        // Repo slug for the public read-only task board (GET /public/tasks).
+        // When set, the board renders unauthenticated, scoped to this repo;
+        // when absent the route stays in degraded mode (no tasks).
+        publicRepo: resolvePublicRepo(ctx.env),
+        ...(ctx.push
+          ? {
+              pushService: ctx.push.service,
+              vapidPublicKey: ctx.push.vapidPublicKey,
+            }
+          : {}),
+      }),
+    },
+  ],
   agentDetailCards: (ctx) => {
     const { fetchVerificationChecks, fetchTaskStorePrs } = taskStoreFetchers(
       ctx.env,

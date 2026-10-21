@@ -165,23 +165,9 @@ function makeMockDeps(
       deleteKey: async () => {},
       getConfigBundle: async () => null,
     },
-    agentCronRunService: {
-      listForAgent: async () => ({ items: [], total: 0, limit: 20, offset: 0 }),
-      listAcrossAgents: async () => ({
-        items: [],
-        total: 0,
-        limit: 20,
-        offset: 0,
-      }),
-    },
-    agentWorkQueueService: {
-      get: async () => null,
-      getMany: async () => [],
-    },
     agentCronJobService: {
       list: async () => [],
       listWithRunSummary: async () => [],
-      listShipwrightLoopJobs: async () => [],
       get: async () => {
         throw new Error("not implemented");
       },
@@ -221,12 +207,6 @@ function makeMockDeps(
     agentPluginService: {
       list: async () => [],
       add: async () => {
-        throw new Error("not implemented");
-      },
-    },
-    agentPhaseMethodologyService: {
-      list: async () => [],
-      upsert: async () => {
         throw new Error("not implemented");
       },
     },

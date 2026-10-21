@@ -281,17 +281,6 @@ export function makeMockDeps(
       listWithRunSummary: async () => [
         { ...MOCK_CRON, lastRun: null, runCountToday: 0 },
       ],
-      // Default: every requested agent has an enabled shipwright-loop cron,
-      // matching this suite's other agentCronJobService defaults (MOCK_CRON
-      // is enabled: true) and preserving pre-QAE-1.2 eligibility behavior
-      // for tests that don't specifically exercise loop-enabled gating.
-      listShipwrightLoopJobs: async (agentIds: string[]) =>
-        agentIds.map((agentId) => ({
-          ...MOCK_CRON,
-          agentId,
-          name: "shipwright-loop",
-          enabled: true,
-        })),
       get: async () => MOCK_CRON,
       create: async () => MOCK_CRON,
       setEnabled: async () => MOCK_CRON,
@@ -302,19 +291,6 @@ export function makeMockDeps(
         updated: 0,
         deleted: 0,
       }),
-    },
-    agentCronRunService: {
-      listForAgent: async () => ({ items: [], total: 0, limit: 20, offset: 0 }),
-      listAcrossAgents: async () => ({
-        items: [],
-        total: 0,
-        limit: 20,
-        offset: 0,
-      }),
-    },
-    agentWorkQueueService: {
-      get: async () => null,
-      getMany: async () => [],
     },
     agentToolService: {
       list: async () => [MOCK_TOOL],
@@ -336,20 +312,6 @@ export function makeMockDeps(
         version: null,
         enabled: true,
         createdAt: new Date("2024-01-01"),
-        updatedAt: new Date("2024-01-01"),
-      }),
-    },
-    agentPhaseMethodologyService: {
-      list: async () => [],
-      upsert: async (
-        agentId: string,
-        phase: string,
-        subagentType: string | null,
-      ) => ({
-        id: "pm1",
-        agentId,
-        phase,
-        subagentType,
         updatedAt: new Date("2024-01-01"),
       }),
     },

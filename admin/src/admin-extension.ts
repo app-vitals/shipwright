@@ -72,8 +72,12 @@ export interface AdminExtensionContext {
   adminApiKeys: ReturnType<typeof parseAdminApiKeys>;
   /** SHIPWRIGHT_ADMIN_ALLOWED_EMAILS, parsed: operators who see everything. */
   adminAllowedEmails: string[];
+  /** The admin UI's public base URL (SHIPWRIGHT_ADMIN_APP_BASE_URL). */
+  appBaseUrl: string;
+  /** SHIPWRIGHT_ADMIN_TZ, when set: the admin UI's display timezone. */
+  timezone?: string;
   /** Web Push, present only when VAPID is fully configured. */
-  push?: { service: PushService; maxDetail: string };
+  push?: { service: PushService; maxDetail: string; vapidPublicKey: string };
   services: AdminPlatformServices;
 }
 

@@ -90,7 +90,7 @@ export interface AgentDetail {
   missingRequiredEnv: string[];
   /**
    * APM-1.3: the six real agent-policy fields (APM-1.1 DB columns), surfaced
-   * alongside Phase Methodology in the "Agent Policy" card. Callers resolve
+   * in the "Agent Policy" card. Callers resolve
    * Prisma-column defaults (`?? true`/`?? false`/`?? 75`/`?? 5`/`?? 14`)
    * before building this literal — see admin-ui.ts's two `agentDetail:
    * AgentDetail = {...}` build sites.

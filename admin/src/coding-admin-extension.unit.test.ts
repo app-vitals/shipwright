@@ -39,27 +39,26 @@ describe("codingAdminExtension", () => {
     ]);
   });
 
-  it("registers no routes or OpenAPI contributions yet", () => {
+  it("registers no API routes or OpenAPI contributions yet", () => {
     const resolved = resolveAdminExtensions([codingAdminExtension], ctx);
     expect(resolved.apiRoutes).toEqual([]);
-    expect(resolved.adminUiRoutes).toEqual([]);
     expect(collectOpenApiContributions([codingAdminExtension])).toEqual(
       collectOpenApiContributions([]),
     );
   });
 
-  it("contributes the task-store fetchers as UI deps only when the task-store is configured", () => {
-    const bare = resolveAdminExtensions([codingAdminExtension], ctx);
-    expect(bare.uiDeps).toEqual({});
-    const configured = resolveAdminExtensions([codingAdminExtension], {
+  it("mounts its own admin UI routes and contributes its agent detail error messages", () => {
+    const resolved = resolveAdminExtensions([codingAdminExtension], {
       ...ctx,
       env: {
         SHIPWRIGHT_TASK_STORE_URL: "http://task-store.svc:3002",
         SHIPWRIGHT_TASK_STORE_ADMIN_TOKEN: "admin",
       },
     } as unknown as AdminExtensionContext);
-    expect(typeof configured.uiDeps.fetchTaskStoreSessions).toBe("function");
-    expect(typeof configured.uiDeps.fetchTaskStoreTasks).toBe("function");
+    expect(resolved.adminUiRoutes.map((route) => route.path)).toEqual(["/"]);
+    expect(resolved.uiDeps).toEqual({
+      agentDetailErrorMessages: { invalid_phase: "Invalid pipeline phase." },
+    });
   });
 
   it("starts the session alert sweeper only with push AND the task-store configured", () => {

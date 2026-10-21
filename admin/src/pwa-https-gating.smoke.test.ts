@@ -67,7 +67,6 @@ function makeMinimalDeps(overrides: Partial<AdminUIDeps>): AdminUIDeps {
     agentCronJobService: {
       list: async () => [],
       listWithRunSummary: async () => [],
-      listShipwrightLoopJobs: async () => [],
       get: async () => {
         throw new Error("not implemented");
       },
@@ -87,16 +86,6 @@ function makeMinimalDeps(overrides: Partial<AdminUIDeps>): AdminUIDeps {
         deleted: 0,
       }),
     },
-    agentCronRunService: {
-      listForAgent: async () => ({ items: [], total: 0, limit: 20, offset: 0 }),
-      listAcrossAgents: async () => ({
-        items: [],
-        total: 0,
-        limit: 20,
-        offset: 0,
-      }),
-    },
-    agentWorkQueueService: { get: async () => null, getMany: async () => [] },
     agentToolService: {
       list: async () => [],
       add: async () => {
@@ -119,12 +108,6 @@ function makeMinimalDeps(overrides: Partial<AdminUIDeps>): AdminUIDeps {
     agentPluginService: {
       list: async () => [],
       add: async () => {
-        throw new Error("not implemented");
-      },
-    },
-    agentPhaseMethodologyService: {
-      list: async () => [],
-      upsert: async () => {
         throw new Error("not implemented");
       },
     },
