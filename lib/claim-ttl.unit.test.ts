@@ -16,4 +16,11 @@ describe("claim-ttl constants", () => {
       DEFAULT_CLAUDE_TIMEOUT_MS + CLAIM_TTL_BUFFER_MS,
     );
   });
+
+  // Relocated from claude-timeout.unit.test.ts (AEP-4.1): claim-ttl is the
+  // task-store side, so the cross-module invariant belongs here and the
+  // platform-set lib test no longer imports it.
+  test("DEFAULT_CLAIM_TTL_MS exceeds DEFAULT_CLAUDE_TIMEOUT_MS", () => {
+    expect(DEFAULT_CLAIM_TTL_MS).toBeGreaterThan(DEFAULT_CLAUDE_TIMEOUT_MS);
+  });
 });

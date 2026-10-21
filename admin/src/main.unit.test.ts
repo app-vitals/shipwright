@@ -1,6 +1,16 @@
 import { afterEach, describe, expect, it } from "bun:test";
 import type { PrismaClient } from "../prisma/client/client.ts";
-import { collectServiceIntegrations } from "./admin-extension.ts";
+import {
+  buildProvisioner,
+  checkDbReady,
+  DEFAULT_SESSION_ALERT_INTERVAL_MS,
+  isAnthropicFederationEnabled,
+  parseAnthropicFederation,
+  resolvePublicRepo,
+  resolveSessionAlertIntervalMs,
+  resolveTrialExpiryWarningDays,
+  runMigrations,
+} from "./admin-boot-config.ts";
 import { AgentAnthropicIdentityService } from "./agent-anthropic-identity.ts";
 import type {
   AgentProvisioner,
@@ -13,18 +23,6 @@ import {
 import type { AgentTokenService } from "./agent-tokens.ts";
 import { HttpAnthropicIdentityClient } from "./anthropic-identity-client.ts";
 import { AnthropicIdentityNameAllocator } from "./anthropic-identity-name.ts";
-import {
-  adminExtensions,
-  buildProvisioner,
-  checkDbReady,
-  DEFAULT_SESSION_ALERT_INTERVAL_MS,
-  isAnthropicFederationEnabled,
-  parseAnthropicFederation,
-  resolvePublicRepo,
-  resolveSessionAlertIntervalMs,
-  resolveTrialExpiryWarningDays,
-  runMigrations,
-} from "./main.ts";
 
 /** Stub token service — buildProvisioner only threads it through, never calls it. */
 function stubAgentTokenService(): AgentTokenService {
@@ -214,38 +212,6 @@ describe("buildProvisioner", () => {
       stubAgentTokenService(),
     );
     expect(configOf(provisioner).voice).toBeUndefined();
-  });
-
-  it("wires the coding extension's task-store integration only when both URL and admin token are set", () => {
-    const withEnv = {
-      SHIPWRIGHT_K8S_PROVISIONING: "enabled",
-      SHIPWRIGHT_TASK_STORE_URL: "http://task-store.svc:3002",
-      SHIPWRIGHT_TASK_STORE_ADMIN_TOKEN: "ts-admin-token",
-    };
-    const withTaskStore = buildProvisioner(
-      withEnv,
-      stubAgentTokenService(),
-      undefined,
-      collectServiceIntegrations(adminExtensions, withEnv),
-    );
-    const integrations = configOf(withTaskStore).serviceIntegrations ?? [];
-    expect(integrations.map((i) => i.name)).toEqual(["task-store"]);
-    expect(integrations[0]?.url).toBe("http://task-store.svc:3002");
-
-    // Admin token missing: the integration is still registered (so deletion
-    // keeps its step) but carries no URL, so provisioning skips it.
-    const withoutEnv = {
-      SHIPWRIGHT_K8S_PROVISIONING: "enabled",
-      SHIPWRIGHT_TASK_STORE_URL: "http://task-store.svc:3002",
-    };
-    const withoutTaskStore = buildProvisioner(
-      withoutEnv,
-      stubAgentTokenService(),
-      undefined,
-      collectServiceIntegrations(adminExtensions, withoutEnv),
-    );
-    const skipped = configOf(withoutTaskStore).serviceIntegrations ?? [];
-    expect(skipped.map((i) => i.url)).toEqual([undefined]);
   });
 
   it("registers no integration for a bare platform (no extensions)", () => {

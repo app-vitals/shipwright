@@ -10,7 +10,7 @@
 
 import { describe, expect, it } from "bun:test";
 import { Hono } from "hono";
-import { checkDbReady } from "./main.ts";
+import { checkDbReady } from "./admin-boot-config.ts";
 
 function buildHealthApp(
   prisma: {

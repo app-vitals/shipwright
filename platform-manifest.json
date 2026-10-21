@@ -1,0 +1,119 @@
+{
+  "version": 1,
+  "description": "Copy-paste-readiness manifest (AEP-4.1): the files that would move to the extracted agent-runtime/admin repo. Gate: scripts/platform-gate.ts, run by platform-manifest.unit.test.ts. See docs/platform-manifest.md.",
+  "include": [
+    "agent/src/runtime/**",
+    "agent/src/fixtures/**",
+    "agent/src/entrypoint-main.ts",
+    "agent/Dockerfile",
+    "agent/workspace/**",
+    "admin/**",
+    "agent-types/specialist/**",
+    "docs/schemas/agent-type.schema.json"
+  ],
+  "exclude": [
+    "admin/src/coding/**",
+    "admin/prisma/client/**",
+    "agent/workspace/CLAUDE-HITL.md.template",
+    "agent/workspace/CLAUDE.md.template"
+  ],
+  "generated": ["admin/prisma/client/**"],
+  "compositionRoots": [
+    {
+      "path": "admin/src/main.ts",
+      "reason": "Shipwright's admin composition root: wires admin/src/coding into the platform boot (startAdmin). Stays per consumer."
+    },
+    {
+      "path": "admin/src/admin-spec.smoke.test.ts",
+      "reason": "Imports adminExtensions from main.ts to check the committed admin/openapi.json against the composed (platform + coding) spec. Tests Shipwright's composition, so it stays per consumer."
+    }
+  ],
+  "lib": [
+    {
+      "module": "admin-types",
+      "tag": "platform-only",
+      "sharedWith": []
+    },
+    {
+      "module": "claude-timeout",
+      "tag": "shared",
+      "sharedWith": ["lib"]
+    },
+    {
+      "module": "cli-flags",
+      "tag": "shared",
+      "sharedWith": ["coding"]
+    },
+    {
+      "module": "clone-plan",
+      "tag": "shared",
+      "sharedWith": ["coding"]
+    },
+    {
+      "module": "default-agent-env",
+      "tag": "platform-only",
+      "sharedWith": []
+    },
+    {
+      "module": "github-login",
+      "tag": "platform-only",
+      "sharedWith": []
+    },
+    {
+      "module": "graceful-shutdown",
+      "tag": "shared",
+      "sharedWith": ["task-store", "chat"]
+    },
+    {
+      "module": "org-repo",
+      "tag": "shared",
+      "sharedWith": ["task-store"]
+    },
+    {
+      "module": "pg-sslmode",
+      "tag": "shared",
+      "sharedWith": ["task-store", "chat"]
+    },
+    {
+      "module": "pool-observability",
+      "tag": "shared",
+      "sharedWith": ["task-store", "coding"]
+    },
+    {
+      "module": "pricing",
+      "tag": "shared",
+      "sharedWith": ["coding", "metrics"]
+    },
+    {
+      "module": "progress-phases",
+      "tag": "shared",
+      "sharedWith": ["chat"]
+    },
+    {
+      "module": "request-context",
+      "tag": "shared",
+      "sharedWith": ["task-store", "metrics"]
+    },
+    {
+      "module": "secret-env-vars",
+      "tag": "shared",
+      "sharedWith": ["coding"]
+    },
+    {
+      "module": "sentry",
+      "tag": "shared",
+      "sharedWith": ["coding", "task-store", "metrics"]
+    },
+    {
+      "module": "task-store-types",
+      "tag": "shared",
+      "sharedWith": ["metrics"]
+    },
+    {
+      "module": "web/toolbar",
+      "tag": "shared",
+      "sharedWith": ["metrics"]
+    }
+  ],
+  "exemptions": []
+}
