@@ -593,8 +593,8 @@ export async function getPatchCandidates(
     let needsPatch = false;
 
     // A real merge conflict (DIRTY) needs patch attention. A branch that's
-    // merely behind main is only patch-worthy once otherwise ready to merge
-    // (SBU-1.2) — evaluated after the other triggers below.
+    // BEHIND main is patch-worthy only once otherwise ready to merge (SBU-1.2,
+    // see isBehindReady) — evaluated after the other triggers below.
     const mergeStatus = await deps.fetchMergeStatus(org, repo, pr.number);
     if (mergeStatus.isDirty) {
       needsPatch = true;

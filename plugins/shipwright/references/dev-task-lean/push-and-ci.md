@@ -14,8 +14,8 @@ PR creation fails after 2 retries → close orphaned PRs on the branch, delete t
 print a cleanup summary, PATCH `{"status":"blocked","blockedReason":"pr_creation_failed"}`.
 
 ## CI gate
-1. `gh pr view N --json mergeStateStatus`. `DIRTY` → fix loop (merge `origin/main`, resolve, push). `BEHIND` is fine; merge
-   main only to resolve a real conflict.
+1. `gh pr view N --json mergeStateStatus`. `DIRTY` → fix loop (merge `origin/main`, resolve, push). On `BEHIND` dev-task takes no
+   action (`patch` handles it); merge main only to resolve a real conflict.
 2. Poll with the Actions API (agent PATs lack Checks API, so `gh pr checks` fails):
    `gh api "repos/$REPO/actions/runs?head_sha=$HEAD_SHA&per_page=20"`. Chained in-Bash sleep loop, 30 s × 20 polls — never a
    scheduled wakeup (same heartbeat/reaper reason as `pre-ship-checks.md`, AGH-1.1). Judge the highest `run_number` per

@@ -121,6 +121,7 @@ shipwright/
 ## See also
 
 - **[extending.md](./extending.md)** — extending Shipwright with a companion plugin and custom crons, without forking the plugin.
+- **[behind-branches.md](./behind-branches.md)** — how `BEHIND` PRs are detected and updated by `patch`, and the strict-mode semantics behind it.
 - **[testing.md](./testing.md)** — the five-layer test architecture and isolation contract.
 - **[metrics.md](./metrics.md)** — metrics service API and dashboard.
 - **[self-serve.md](./self-serve.md)** — self-serve accounts, quota and tenant isolation for Shipwright Managed.
