@@ -4268,3 +4268,52 @@ describe("renderAgentDetailPage — configuration card slots", () => {
     expect(html.indexOf("cfg")).toBeGreaterThan(configuration);
   });
 });
+
+describe("queue-activity links (AEP-3.6)", () => {
+  const listHtml = (queueActivityLinks?: boolean) =>
+    renderAgentsPage([AGENT_LIST_ITEM], USER_NAME, true, "UTC", {
+      queueActivityLinks,
+    });
+  const detailHtml = (queueActivityLinks?: boolean) =>
+    renderAgentDetailPage(
+      AGENT,
+      {},
+      [CUSTOM_CRON],
+      [],
+      [],
+      [],
+      [],
+      USER_NAME,
+      true,
+      { timezone: "UTC", queueActivityLinks },
+    );
+
+  test("agents list omits the Queue & Activity button without the coding extension", () => {
+    const html = listHtml();
+    expect(html).not.toContain(`/agents/${AGENT_LIST_ITEM.id}/queue-activity`);
+    expect(html).toContain(">Manage</a>");
+  });
+
+  test("agents list renders the Queue & Activity button with the coding extension", () => {
+    const html = listHtml(true);
+    expect(html).toContain(
+      `/admin/agents/${AGENT_LIST_ITEM.id}/queue-activity`,
+    );
+    expect(html).toContain('margin-left:4px">Queue &amp; Activity</a>');
+  });
+
+  test("agent detail omits the cron Logs link without the coding extension", () => {
+    const html = detailHtml();
+    expect(html).not.toContain(`/agents/${AGENT.id}/queue-activity`);
+    expect(html).not.toContain(">Logs</a>");
+    expect(html).toContain(`/crons/${CUSTOM_CRON.id}/toggle`);
+  });
+
+  test("agent detail renders the cron Logs link with the coding extension", () => {
+    const html = detailHtml(true);
+    expect(html).toContain(
+      `/agents/${AGENT.id}/queue-activity?cronId=${CUSTOM_CRON.id}`,
+    );
+    expect(html).toContain(">Logs</a>");
+  });
+});

@@ -662,7 +662,7 @@ describe("admin UI — authenticated pages", () => {
   });
 
   it("authenticated GET /admin/agents includes a Queue & Activity link with the correct href for a rendered agent row", async () => {
-    const app = createAdminUIApp(makeMockDeps());
+    const app = createAdminUIApp(makeMockDeps({ queueActivityLinks: true }));
     const res = await app.request("/admin/agents", {
       headers: { Cookie: `admin_session=${cookie}` },
     });

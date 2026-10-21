@@ -86,6 +86,7 @@ describe("codingAdminExtension", () => {
     expect(resolved.adminUiRoutes.map((route) => route.path)).toEqual(["/"]);
     expect(resolved.uiDeps).toEqual({
       agentDetailErrorMessages: { invalid_phase: "Invalid pipeline phase." },
+      queueActivityLinks: true,
     });
   });
 

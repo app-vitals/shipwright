@@ -179,7 +179,10 @@ export const codingAdminExtension: AdminExtension = {
   name: "coding",
   serviceIntegrations: (env) => [taskStoreServiceIntegration(env)],
   services: (ctx) => ({
-    ui: { agentDetailErrorMessages: CODING_AGENT_DETAIL_ERROR_MESSAGES },
+    ui: {
+      agentDetailErrorMessages: CODING_AGENT_DETAIL_ERROR_MESSAGES,
+      queueActivityLinks: true,
+    },
     agentPhaseMethodologyService: phaseMethodologyService(ctx),
   }),
   apiRoutes: (ctx) => [
