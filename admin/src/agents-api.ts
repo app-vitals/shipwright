@@ -24,6 +24,12 @@
 
 import { createRoute, OpenAPIHono, z } from "@hono/zod-openapi";
 import { callerLabel } from "@shipwright/lib/request-context";
+import {
+  isPoolTimeoutError,
+  type PoolLike,
+  poolErrorContext,
+  routeContextMiddleware,
+} from "@shipwright/lib/pool-observability";
 import type { ErrorCapturingClient } from "@shipwright/lib/sentry";
 import { HTTPException } from "hono/http-exception";
 import type { PrismaClient } from "../prisma/client/client.ts";
@@ -249,6 +255,11 @@ export interface AdminDeps {
    * `@sentry/bun` only when SENTRY_DSN is set.
    */
   sentryClient?: ErrorCapturingClient;
+  /**
+   * Admin's pg pool (PLO-1.3). When present, a pool-timeout error captured in
+   * onError carries pool stats context plus route/server_name tags.
+   */
+  pool?: PoolLike;
   /** Resolved self-serve provisioning config (SSP-1.3). No consumers yet. */
   selfServe?: SelfServeConfig;
   /** WIF-2.1: Anthropic federation is enabled; defaults to false. */
@@ -1415,6 +1426,7 @@ export function createAdminApp(deps: AdminDeps): OpenAPIHono<AdminAuthEnv> {
     sessionSecret,
     adminApiKeys,
     sentryClient,
+    pool,
   } = deps;
   const callerScopeResolver =
     deps.callerScopeResolver ??
@@ -1432,6 +1444,26 @@ export function createAdminApp(deps: AdminDeps): OpenAPIHono<AdminAuthEnv> {
     },
   });
 
+  // Record method + matched route so pool diagnostics can name the route.
+  app.use("*", routeContextMiddleware());
+
+  // Capture an unhandled error. Pool-timeout errors additionally carry pool
+  // stats + route/server_name (PLO-1.3); every other error is captured as-is.
+  const captureUnhandled = (err: unknown) => {
+    if (!sentryClient) return;
+    if (pool && sentryClient.withScope && isPoolTimeoutError(err)) {
+      const ctx = poolErrorContext(pool);
+      void sentryClient.withScope(async (scope) => {
+        scope.setContext?.("pg_pool", ctx);
+        scope.setTag("server_name", "admin");
+        if (typeof ctx.route === "string") scope.setTag("route", ctx.route);
+        sentryClient.captureException(err);
+      });
+      return;
+    }
+    sentryClient.captureException(err);
+  };
+
   app.onError((err, c) => {
     if (err instanceof ApiError && err.statusCode < 500) {
       return c.json(
@@ -1445,7 +1477,7 @@ export function createAdminApp(deps: AdminDeps): OpenAPIHono<AdminAuthEnv> {
       );
     }
     if (err instanceof ApiError) {
-      sentryClient?.captureException(err);
+      captureUnhandled(err);
       return c.json({ error: err.message }, err.statusCode as 500 | 502);
     }
     // zod-openapi 1.x throws an HTTPException for request-shape problems —
@@ -1454,7 +1486,7 @@ export function createAdminApp(deps: AdminDeps): OpenAPIHono<AdminAuthEnv> {
     if (err instanceof HTTPException && err.status < 500) {
       return c.json({ error: err.message }, err.status as 400 | 415);
     }
-    sentryClient?.captureException(err);
+    captureUnhandled(err);
     console.error(
       `[agents-api] unhandled error (caller: ${callerLabel(c.get("caller"))}):`,
       err,

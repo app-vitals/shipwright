@@ -33,6 +33,11 @@ interface SentryClient {
  */
 export interface ScopeTagSetter {
   setTag: (key: string, value: string) => unknown;
+  /** Present on the real Sentry scope; optional so minimal fakes still satisfy the type. */
+  setContext?: (
+    key: string,
+    context: Record<string, unknown> | null,
+  ) => unknown;
 }
 
 /**

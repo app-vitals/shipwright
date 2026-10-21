@@ -32,6 +32,10 @@
 import { join } from "node:path";
 import * as Sentry from "@sentry/bun";
 import { sentry } from "@sentry/hono/bun";
+import {
+  type PoolLike,
+  routeContextMiddleware,
+} from "@shipwright/lib/pool-observability";
 import { registerGracefulShutdown } from "@shipwright/lib/graceful-shutdown";
 import { buildSentryInitOptions, initSentry } from "@shipwright/lib/sentry";
 import { Hono } from "hono";
@@ -137,8 +141,18 @@ export async function startAdmin(
   // database); the top-level catch turns that into a named
   // "[admin] fatal startup error" and exit 1, matching how Prisma 6 refused to
   // construct a client without the env var.
+  // Pool observability (PLO-1.3): hold tracking + waiting-clients monitor on
+  // the admin pool; stopped on shutdown below.
+  let adminPool: PoolLike | undefined;
+  let stopPoolObservability: () => void = () => {};
   const prisma = createAdminPrismaClient(
     process.env.DATABASE_URL_SHIPWRIGHT_ADMIN ?? "",
+    {
+      onPoolObserved: ({ pool, stop }) => {
+        adminPool = pool;
+        stopPoolObservability = stop;
+      },
+    },
   );
 
   // Construct TokenCrypto — reads SHIPWRIGHT_ENCRYPTION_KEY at call time
@@ -305,6 +319,10 @@ export async function startAdmin(
 
   const root = new Hono();
 
+  // Records method + route per request so held connections are attributable
+  // (covers every sub-app, including admin UI and extension routes).
+  root.use("*", routeContextMiddleware());
+
   // Only mounted when SENTRY_DSN is set — a complete no-op otherwise, matching
   // the app's behavior with Sentry absent. `@sentry/hono`'s `sentry()`
   // middleware performs its own `Sentry.init` call internally, so this stays
@@ -386,6 +404,7 @@ export async function startAdmin(
     sessionSecret,
     adminApiKeys,
     sentryClient: process.env.SENTRY_DSN ? Sentry : undefined,
+    pool: adminPool,
     selfServe,
     anthropicFederationEnabled,
     ...resolvedExtensions.apiDeps,
@@ -604,7 +623,7 @@ export async function startAdmin(
 
   const shutdown = registerGracefulShutdown({
     server,
-    cleanup: [() => prisma.$disconnect()],
+    cleanup: [async () => stopPoolObservability(), () => prisma.$disconnect()],
     serviceName: "admin",
   });
   isShuttingDown = shutdown.isShuttingDown;
