@@ -18,7 +18,15 @@
  * Thrown ApiError subclasses are mapped to HTTP responses by the onError hook.
  */
 
+import { hostname } from "node:os";
 import { sentry } from "@sentry/hono/bun";
+import {
+  currentRouteContext,
+  isPoolTimeoutError,
+  type PoolLike,
+  poolErrorContext,
+  routeContextMiddleware,
+} from "@shipwright/lib/pool-observability";
 import { callerLabel } from "@shipwright/lib/request-context";
 import {
   buildSentryInitOptions,
@@ -137,6 +145,34 @@ export interface TaskStoreDeps {
    * inject it are unaffected.
    */
   checkDbReady?: () => Promise<boolean>;
+  /**
+   * Optional pg pool. When present, pool-timeout errors captured in onError
+   * carry pool stats (`pg_pool` context) plus `route` / `server_name` tags.
+   */
+  pool?: PoolLike;
+}
+
+/**
+ * Reports an unhandled error to Sentry. Pool-timeout errors additionally carry
+ * pool stats and route/server_name tags; all other errors are captured as-is.
+ */
+function captureUnhandled(deps: TaskStoreDeps, err: unknown): void {
+  const client = deps.sentryClient;
+  if (!client) return;
+  if (!deps.pool || !client.withScope || !isPoolTimeoutError(err)) {
+    client.captureException(err);
+    return;
+  }
+  const pool = deps.pool;
+  const route = currentRouteContext();
+  // The callback runs synchronously up to its first await, so the capture
+  // happens before onError returns.
+  void client.withScope(async (scope) => {
+    scope.setContext?.("pg_pool", poolErrorContext(pool));
+    if (route) scope.setTag("route", `${route.method} ${route.route}`);
+    scope.setTag("server_name", hostname());
+    client.captureException(err);
+  });
 }
 
 export function createTaskStoreApp(
@@ -156,6 +192,10 @@ export function createTaskStoreApp(
     app.use("*", sentry(app, sentryInitOptions));
   }
 
+  // Records method + matched route per request (AsyncLocalStorage) so pool
+  // holds and pool-timeout errors can be attributed to a route.
+  app.use("*", routeContextMiddleware());
+
   // Map typed errors to responses; everything else is a 500.
   app.onError((err, c) => {
     if (err instanceof ApiError) {
@@ -171,7 +211,7 @@ export function createTaskStoreApp(
     if (err instanceof HTTPException && err.status < 500) {
       return c.json({ error: err.message }, err.status as 400);
     }
-    deps.sentryClient?.captureException(err);
+    captureUnhandled(deps, err);
     console.error(
       `[task-store] unhandled error (caller: ${callerLabel(c.get("caller"))}):`,
       err,

@@ -16,6 +16,10 @@
 
 import { PrismaPg } from "@prisma/adapter-pg";
 import { pinPgSslMode } from "@shipwright/lib/pg-sslmode";
+import {
+  startPoolMonitor,
+  trackConnectionHold,
+} from "@shipwright/lib/pool-observability";
 import pg from "pg";
 import { PrismaClient } from "../prisma/client/client.ts";
 
@@ -124,6 +128,62 @@ export function createTaskStorePool(
   return pool;
 }
 
+export interface PoolObservabilityConfig {
+  /** Undefined → lib/pool-observability's default hold threshold. */
+  holdThresholdMs?: number;
+  /** Undefined → lib/pool-observability's default monitor interval. */
+  monitorIntervalMs?: number;
+}
+
+/** Positive finite number, or undefined for unset / non-numeric / non-positive values. */
+function parsePositiveMs(raw: string | undefined): number | undefined {
+  if (raw === undefined || raw.trim() === "") return undefined;
+  const n = Number(raw);
+  return Number.isFinite(n) && n > 0 ? n : undefined;
+}
+
+/**
+ * Reads the pool-observability overrides from the environment
+ * (`SHIPWRIGHT_TASK_STORE_POOL_HOLD_THRESHOLD_MS`,
+ * `SHIPWRIGHT_TASK_STORE_POOL_MONITOR_INTERVAL_MS`). Invalid values are ignored
+ * so a typo falls back to the defaults rather than disabling observability.
+ *
+ * Exported for unit testing.
+ */
+export function readPoolObservabilityConfig(
+  env: Record<string, string | undefined> = process.env,
+): PoolObservabilityConfig {
+  return {
+    holdThresholdMs: parsePositiveMs(
+      env.SHIPWRIGHT_TASK_STORE_POOL_HOLD_THRESHOLD_MS,
+    ),
+    monitorIntervalMs: parsePositiveMs(
+      env.SHIPWRIGHT_TASK_STORE_POOL_MONITOR_INTERVAL_MS,
+    ),
+  };
+}
+
+/**
+ * Turns on connection-hold tracking and the waiting-clients monitor for
+ * `pool`. Observability only — pool size and query behavior are untouched.
+ * Returns a function that stops the monitor and restores `pool.connect`.
+ */
+export function enablePoolObservability(
+  pool: pg.Pool,
+  config: PoolObservabilityConfig = readPoolObservabilityConfig(),
+): () => void {
+  const untrack = trackConnectionHold(pool, {
+    thresholdMs: config.holdThresholdMs,
+  });
+  const stopMonitor = startPoolMonitor(pool, {
+    intervalMs: config.monitorIntervalMs,
+  });
+  return () => {
+    stopMonitor();
+    untrack();
+  };
+}
+
 /**
  * Builds an adapter-backed PrismaClient for the given Postgres URL.
  *
@@ -132,11 +192,18 @@ export function createTaskStorePool(
  * integration suite builds and disconnects a client per test and the service
  * ends its client on graceful shutdown, both of which assume `$disconnect()`
  * actually releases the sockets — as it did in v6.
+ *
+ * Also returns the underlying `pool` so main.ts can attach pool observability.
  */
-export function createPrismaClient(databaseUrl: string): PrismaClient {
-  const adapter = new PrismaPg(createTaskStorePool(databaseUrl), {
-    disposeExternalPool: true,
-  });
+export function createPrismaClientWithPool(databaseUrl: string): {
+  prisma: PrismaClient;
+  pool: pg.Pool;
+} {
+  const pool = createTaskStorePool(databaseUrl);
+  const adapter = new PrismaPg(pool, { disposeExternalPool: true });
+  return { prisma: new PrismaClient({ adapter }), pool };
+}
 
-  return new PrismaClient({ adapter });
+export function createPrismaClient(databaseUrl: string): PrismaClient {
+  return createPrismaClientWithPool(databaseUrl).prisma;
 }
