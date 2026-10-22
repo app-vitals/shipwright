@@ -59,13 +59,13 @@ GET /agents/all/cron-runs/dev-task-adherence
 
 Self-serve variant: `GET /agents/{id}/dev-task-adherence` returns the same report scoped to that agent, with no admin scope required (agent's own token, admin, or member session).
 
-Admin-only. Returns the `dev-task` step-adherence report: per run, which required steps ran or were skipped (judged from skill-usage subagent dispatches), plus per-step adherence rates overall, per variant (`contextFingerprint`) and per `commandVariant` (`default` vs `alternate`). A dispatch proves a step started, not that it was done well. The response (`DevTaskAdherenceReport` in `admin/src/coding/dev-task-adherence.ts`) contains:
+Admin-only. Returns the `dev-task` step-adherence report: per run, which required steps ran or were skipped. Steps can be measured via either **agent dispatch** (all dispatch-compatible steps) or **task-store data** (steps 2, 8, 9, 9b when task-store is configured and the run's task record is found; DTA-6.2). A dispatch proves a step started; task-store data proves it without a dispatch. Steps with no proof of either kind (steps 6, 7, 10) are reported as `unmeasured` and excluded from adherence rates. The response (`DevTaskAdherenceReport` in `admin/src/coding/dev-task-adherence.ts`) contains:
 
-- **`disclaimer`:** caveat on what a dispatch does and does not prove
+- **`disclaimer`:** caveat on what measurements prove and which steps can be measured
 - **`counts`:** `totalRuns` (non-skipped dev-task runs), `taskBearingRuns` (dispatched against a work item, i.e. `itemId` set) and `silentTicks` (no work item). All series below, and their rates, cover task-bearing runs only
 - **`runs[]`:** per-run results — `runId`, `itemId`, `contextFingerprint`, `commandVariant`, `taskBearing`, `steps[]` (`stepNumber`, `status`: `ran` / `skipped` / `unmeasured`), `adherent`, `missingSteps`
-- **`overall`**, **`byVariant[]`** and **`byCommandVariant[]`:** series with `variant` (null for runs without a fingerprint; `byCommandVariant` rows carry `commandVariant` instead, null for unattributed runs), `runs`, `adherentRuns` (runs where every mandatory, dispatch-measurable step ran), `adherenceRate` (`adherentRuns / runs`; null with no runs), and `steps[]`
-- **`steps[]` rows:** `stepNumber`, `title`, `mandatory`, `measured`, `ran`, `skipped`, and `rate` (ran / (ran + skipped); null when the step is unmeasured or has no runs)
+- **`overall`**, **`byVariant[]`** and **`byCommandVariant[]`:** series with `variant` (null for runs without a fingerprint; `byCommandVariant` rows carry `commandVariant` instead, null for unattributed runs), `runs`, `adherentRuns` (runs where every mandatory, measurable step — by dispatch or task-store proof — ran), `adherenceRate` (`adherentRuns / runs`; null with no runs), and `steps[]`
+- **`steps[]` rows:** `stepNumber`, `title`, `mandatory`, `measured` (whether the step has proof via dispatch or task-store data), `ran`, `skipped`, and `rate` (ran / (ran + skipped); null when the step is unmeasured or has no runs)
 
 Supports optional `from`/`to` ISO datetime query parameters to bound the date range on `startedAt`. Returns `404` when adherence reporting is not configured.
 

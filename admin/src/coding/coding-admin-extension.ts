@@ -192,7 +192,11 @@ export const codingAdminExtension: AdminExtension = {
         agentService: ctx.services.agentService,
         agentPhaseMethodologyService: phaseMethodologyService(ctx),
         agentWorkQueueService: new AgentWorkQueueService(ctx.prisma),
-        devTaskAdherenceService: new DevTaskAdherenceService(ctx.prisma),
+        devTaskAdherenceService: new DevTaskAdherenceService(
+          ctx.prisma,
+          undefined,
+          taskStoreFetchers(ctx.env),
+        ),
         agentTokenService: ctx.services.agentTokenService,
         agentMemberService: ctx.services.agentMemberService,
         callerScopeResolver: ctx.services.callerScopeResolver,

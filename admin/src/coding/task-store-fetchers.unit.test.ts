@@ -144,6 +144,7 @@ describe("createTaskStoreFetchers — accountId forwarding (SSP-6.8)", () => {
 describe("createTaskStoreFetchers — adherence lookups (DTA-6.1)", () => {
   it("getTask GETs /tasks/:id and returns the body", async () => {
     const task = {
+      repo: "app-vitals/shipwright",
       startedAt: "t0",
       pr: 7,
       prCreatedAt: "t1",
