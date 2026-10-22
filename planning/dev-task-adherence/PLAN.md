@@ -185,3 +185,65 @@ existing `[skip-reason:...]`/`[silent]` convention).
 **Next:** break this into scoped follow-up tasks (join-based steps first, since they're
 lower-risk and higher-value; marker-based steps second) via a fresh planning pass on this
 same session.
+
+## Addendum (2026-10-22): DTA-6.x — report-side joins for steps 2, 8, 9, 9b
+
+Follow-up planning pass on the gap above. Two refinements during design:
+
+- **Step 4 dropped from the plan.** A worktree is local/ephemeral — there's no persisted
+  signal for "the worktree was created," only a live `git`/`gh` query per run, which is
+  heavier than a join and only meaningful close to real-time (a branch can be deleted/merged
+  later). Since the pipeline is sequential, a PR existing (step 9) already transitively
+  proves step 4 happened. No dedicated step 4 check.
+- **No new task-store client needed.** `admin/src/coding/task-store-fetchers.ts`'s
+  `createTaskStoreFetchers` is already the admin service's reusable, dependency-free
+  task-store HTTP client (single admin token, injectable fetch). Extend it instead of adding
+  a new one.
+
+**Design**
+
+- `admin/src/coding/task-store-fetchers.ts`: add three lookups, called once per task-bearing
+  run's `itemId`:
+  - `getTask(itemId)` → `{startedAt, pr, prCreatedAt, mergedAt, deployedAt}` — step 2
+    (`startedAt` set) and step 9 (`pr`/`prCreatedAt` set).
+  - `getPrByNumber(repo, pr)` → PR record's CI/outcome fields — step 9b.
+  - `getVerificationChecks(itemId)` → `GET /verification-checks?taskId=` — step 8.
+- `admin/src/dev-task-adherence.ts`: `evaluateRun()` takes an optional enrichment object
+  (task fields + verification checks + PR fields) alongside the existing `SkillUsageRow[]`;
+  adds step cases for `2`, `8`, `9`, `9b` the same way `5`/`6.5`/`8.5` work today.
+  `DevTaskAdherenceService.report()` fetches enrichment per task-bearing run.
+- **N+1 accepted for now.** `GET /verification-checks` has no bulk mode (confirmed in its
+  schema — `taskId` XOR `prId` XOR `repo`+`checkName`, single-parent only). Realistic report
+  windows are ~100-200 runs — bounded, not unbounded, and this is an on-demand admin report,
+  not a hot path. A bulk endpoint is a future optimization if report latency becomes a
+  problem, not scoped here.
+- Batch 2 (new markers for steps 6, 7, 10) stays deferred to its own follow-up tasks, same
+  `[skip-reason:...]`-style convention — not part of this addendum.
+
+**Task breakdown**
+
+| ID | Task | Depends on | Layer | Hours | Complexity | Model | HITL |
+|---|---|---|---|---|---|---|---|
+| DTA-6.1 | feat: add task/PR/verification-check lookups to task-store-fetchers | — | Shared | 2 | 2 | haiku | |
+| DTA-6.2 | feat: wire steps 2, 8, 9, 9b into dev-task-adherence report | DTA-6.1 | Background | 4 | 3 | sonnet | |
+
+**Dependency Map**
+
+```
+[START]
+  └─ DTA-6.1: add task/PR/verification-check lookups (no deps)
+        └─ DTA-6.2: wire steps 2, 8, 9, 9b into report (needs 6.1)
+```
+
+```
+Task     | Depends on | Blocks | HITL
+DTA-6.1  | —          | 6.2    |
+DTA-6.2  | 6.1        | —      |
+```
+
+**Breaking Change Safety**
+
+Both additive (new fetcher methods, new optional enrichment param with existing behavior
+unchanged when absent). Safe to deploy standalone: yes for both.
+
+**HITL scan:** no tasks require human steps — pure code, no infra/secrets/`.claude/**` paths.
