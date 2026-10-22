@@ -90,12 +90,12 @@ tool — `agent/src/progress-milestones.ts` (earlier, PR #2906) already encodes 
 mapping both names to the `"delegating"` phase in its `TOOL_PHASE_MAP`. `run-telemetry.ts`
 (later, PR #3982) never adopted that precedent, so whenever a real run's CLI build emits
 `"Task"` instead of `"Agent"`, the Step 5 dispatch is invisible to `invocationsOf()` /
-`customImplementer` in `admin/src/dev-task-adherence.ts`, and `step5Ran` evaluates false
+`customImplementer` in `admin/src/coding/dev-task-adherence.ts`, and `step5Ran` evaluates false
 even though Step 5 genuinely ran.
 
 **Fix (DTA-5.1):** widen both checks in `run-telemetry.ts` to `name === "Agent" || name ===
 "Task"`. Single file, no architecture decision, no breaking change — additive widening of a
-string check. `admin/src/dev-task-adherence.ts` needs no change; it already consumes
+string check. `admin/src/coding/dev-task-adherence.ts` needs no change; it already consumes
 `SkillUsageRow[]` correctly once the rows are populated right.
 
 | ID | Task | Depends on | HITL |
@@ -112,7 +112,7 @@ resetting DTA-2.3 to pending — not done automatically here.
 
 DTA-2.3 was reset to pending on 2026-10-20 after confirming DTA-5.1 and DTA-1.4 had both
 deployed. Before starting the trial, we cross-checked the live report against real
-transcripts (via another agent, doc) to settle whether the "mostly skipped" numbers were
+transcripts (via another agent, the one named `doc`) to settle whether the "mostly skipped" numbers were
 still a detection bug.
 
 **Finding: the matcher is correct.** Every dispatch observed in real transcripts used tool
@@ -149,13 +149,15 @@ caveat, not a regression signal.
 ## Addendum (2026-10-21): required-steps table covers only 3 of 9 steps; most of the rest is already capturable without new agent instrumentation
 
 While verifying the report, we compared `references/required-steps/dev-task.json` (DTA-2.1)
-against what `admin/src/dev-task-adherence.ts`'s `evaluateRun()` actually implements.
+against what `admin/src/coding/dev-task-adherence.ts`'s `evaluateRun()` actually implements.
 `isDispatchStep()` only treats a step as measurable when `proofOfRunning` starts with
 "agent dispatch", and the switch statement only has cases for steps `5`, `6.5`, `8.5`. The
 table declares 7 of 9 steps `measurable: true` (everything except 6 and 7), but only 3 of
 those 7 are wired up — steps `8`, `9`, `9b`, and `10` silently fall through to
 "unmeasured", identically to the genuinely-unmeasured 6/7, even though the table claims
 otherwise.
+
+Steps 2 and 4 are not rows in `references/required-steps/dev-task.json` (the table has 9 entries: 5, 6, 6.5, 7, 8, 8.5, 9, 9b, 10); the proof types for them below are proposed additions, not existing table values.
 
 Steps 0/1/3 (toolchain detection, fetch/validate, prompt construction) have no independent
 proof of running — any task-bearing run already proves they happened, so they don't need a
@@ -165,8 +167,8 @@ Breaking down what's actually needed for the remaining gap:
 
 | Step | Proof type (per table) | Status | What's needed |
 |---|---|---|---|
-| 2 (Mark In-Progress) | task claim | not wired | Join report against the task's own `claimedAt`/`startedAt` — already in the task store, no new instrumentation. |
-| 4 (Set Up Worktree) | branch/PR reality | not wired | Join against git/GitHub state (branch, PR existence) — already checked live by dev-task itself, just not persisted for the report to read. |
+| 2 (Mark In-Progress) | _proposed addition — not in the table_ | not wired | Join report against the task's own `claimedAt`/`startedAt` — already in the task store, no new instrumentation. |
+| 4 (Set Up Worktree) | _proposed addition — not in the table_ | not wired | Join against git/GitHub state (branch, PR existence) — already checked live by dev-task itself, just not persisted for the report to read. |
 | 6 (Simplify) | marker needed | unmeasured (by design) | New marker. |
 | 6.5 (Spec Compliance Check) | agent dispatch | wired | — |
 | 7 (Requirements Verification) | marker needed | unmeasured (by design) | New marker. |
@@ -174,11 +176,10 @@ Breaking down what's actually needed for the remaining gap:
 | 8.5 (Auto-Refresh Docs) | agent dispatch | wired | — |
 | 9 (Push & PR) | PR visible in outcomes | not wired | Join against the task's own `pr`/`prCreatedAt` field or the PR record. |
 | 9b (CI Gate) | CI/handoff visible in outcomes | not wired | Join against the PR record's CI/outcome fields (`ciFixAttempts`, `mergeCommit`, etc.), already tracked. |
-| 10 (Update Queue & Handoff) | handoff visible in outcomes | not wired | New marker — no existing persisted signal for "the handoff print happened." |
+| 10 (Update Queue & Handoff) | handoff visible in outcomes | not wired | The table's `measurable: true` claim for step 10 is wrong: nothing persisted records that the handoff print happened. Flip it to unmeasured in the table and add a marker (same class as 6/7). |
 
-So the gap is smaller than it first looked: 5 of the 7 untracked steps (2, 4, 8, 9, 9b) need
-only a report-side join against data already being recorded elsewhere in the task store/PR
-records — no agent-side changes. Only 6, 7, and 10 need a new marker (same mechanism as the
+So the gap is smaller than it first looked. Of the table's untracked steps (8, 9, 9b, 10, plus 6 and 7 by design), 8, 9 and 9b need only a report-side join against data already
+recorded in the task store/PR records, as do the two proposed additions (2, 4) — no agent-side changes. Only 6, 7, and 10 need a new marker (same mechanism as the
 existing `[skip-reason:...]`/`[silent]` convention).
 
 **Next:** break this into scoped follow-up tasks (join-based steps first, since they're
