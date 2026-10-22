@@ -140,7 +140,7 @@ interface DevTaskAdherenceReport {
 }
 
 export const ADHERENCE_DISCLAIMER =
-  "A dispatch proves a step started, not that it was done well. Steps without a dispatch signal are unmeasured and excluded from rates.";
+  "A dispatch proves a step started, not that it was done well. Steps proven by neither a dispatch nor task-store data are unmeasured and excluded from rates.";
 
 export const REQUIRED_STEPS: RequiredStep[] = requiredStepsFile.steps;
 
