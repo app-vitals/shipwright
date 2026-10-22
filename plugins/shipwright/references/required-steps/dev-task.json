@@ -1,13 +1,6 @@
 {
   "steps": [
     {
-      "stepNumber": "2",
-      "title": "Mark In-Progress",
-      "mandatory": true,
-      "proofOfRunning": "task startedAt set (claim recorded)",
-      "measurable": true
-    },
-    {
       "stepNumber": "5",
       "title": "Dispatch Implementation Subagent",
       "mandatory": true,
