@@ -39,6 +39,7 @@ function query(params: URLSearchParams): string {
 
 /** Lifecycle timestamps of a task (GET /tasks/:id), for adherence checks. */
 export interface TaskLifecycle {
+  repo: string | null;
   startedAt: string | null;
   pr: number | null;
   prCreatedAt: string | null;

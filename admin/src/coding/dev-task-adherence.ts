@@ -20,9 +20,15 @@
  * as Step 5 ran — covered by a unit fixture. A single dispatch does not also
  * satisfy 6.5 (see evaluateRun).
  *
+ * Task-store join (DTA-6.2): steps 2, 8, 9 and 9b are proven by task-store
+ * data rather than a dispatch — task.startedAt (2), verification-check rows
+ * (8), task.pr/prCreatedAt (9) and the PR record's CI outcome (9b). They are
+ * measured only when the caller supplies a RunEnrichment for the run;
+ * otherwise (no fetchers, task 404, fetch failure) they stay "unmeasured".
+ *
  * IMPORTANT: a dispatch proves a step *started*, not that it was done well.
- * Steps whose proof is not an agent dispatch (6, 7, 8, 9, 9b, 10) are
- * reported as "unmeasured" and excluded from adherence rates.
+ * Steps with neither a dispatch nor task-store proof (6, 7, 10) are reported
+ * as "unmeasured" and excluded from adherence rates.
  */
 
 import requiredStepsFile from "../../../plugins/shipwright/references/required-steps/dev-task.json" with {
@@ -42,6 +48,31 @@ export interface SkillUsageRow {
   kind: string;
   name: string;
   invocations: number;
+}
+
+/** Task-store data joined onto a run (DTA-6.2). */
+export interface RunEnrichment {
+  task: {
+    repo?: string | null;
+    startedAt: string | null;
+    pr: number | null;
+    prCreatedAt: string | null;
+  };
+  checks: { status: string }[];
+  /** PR record outcome; null when the task has no PR / it wasn't found. */
+  pr: { commitsCiFix: number | null } | null;
+}
+
+/** Subset of the task-store fetchers the report uses; all optional. */
+export interface AdherenceFetchers {
+  getTask?: (
+    itemId: string,
+  ) => Promise<(RunEnrichment["task"] & { repo?: string | null }) | null>;
+  getPrByNumber?: (
+    repo: string,
+    pr: number,
+  ) => Promise<{ commitsCiFix: number | null } | null>;
+  getVerificationChecks?: (itemId: string) => Promise<{ status: string }[]>;
 }
 
 type StepStatus = "ran" | "skipped" | "unmeasured";
@@ -127,6 +158,36 @@ function isDispatchStep(step: RequiredStep): boolean {
   return step.measurable && step.proofOfRunning.startsWith("agent dispatch");
 }
 
+// Steps proven by task-store data instead of an agent dispatch.
+const ENRICHMENT_STEPS = new Set(["2", "8", "9", "9b"]);
+
+function isMeasuredStep(step: RequiredStep): boolean {
+  return (
+    isDispatchStep(step) ||
+    (step.measurable && ENRICHMENT_STEPS.has(step.stepNumber))
+  );
+}
+
+function evaluateEnrichedStep(
+  stepNumber: string,
+  e: RunEnrichment,
+): boolean | null {
+  switch (stepNumber) {
+    case "2":
+      return e.task.startedAt != null;
+    case "8":
+      return e.checks.some(
+        (c) => c.status === "ran_passed" || c.status === "ran_failed",
+      );
+    case "9":
+      return e.task.pr != null || e.task.prCreatedAt != null;
+    case "9b":
+      return e.pr?.commitsCiFix != null;
+    default:
+      return null;
+  }
+}
+
 function invocationsOf(rows: SkillUsageRow[], name: string): number {
   return rows
     .filter((r) => r.kind === "agent" && r.name === name)
@@ -142,6 +203,7 @@ function invocationsOf(rows: SkillUsageRow[], name: string): number {
 function evaluateRun(
   steps: RequiredStep[],
   usage: SkillUsageRow[],
+  enrichment?: RunEnrichment,
 ): RunStepResult[] {
   const gp = invocationsOf(usage, GENERAL_PURPOSE);
   const customImplementer = usage.some(
@@ -156,6 +218,16 @@ function evaluateRun(
 
   return steps.map((step) => {
     if (!isDispatchStep(step)) {
+      const enriched =
+        enrichment && step.measurable
+          ? evaluateEnrichedStep(step.stepNumber, enrichment)
+          : null;
+      if (enriched !== null) {
+        return {
+          stepNumber: step.stepNumber,
+          status: enriched ? ("ran" as const) : ("skipped" as const),
+        };
+      }
       return { stepNumber: step.stepNumber, status: "unmeasured" as const };
     }
     let ran: boolean;
@@ -189,8 +261,9 @@ export function buildRunAdherence(
     commandVariant?: string | null;
   },
   usage: SkillUsageRow[],
+  enrichment?: RunEnrichment,
 ): RunAdherence {
-  const results = evaluateRun(steps, usage);
+  const results = evaluateRun(steps, usage, enrichment);
   const missingSteps = results
     .filter(
       (r) =>
@@ -234,7 +307,7 @@ function summarize(
         stepNumber: step.stepNumber,
         title: step.title,
         mandatory: step.mandatory,
-        measured: isDispatchStep(step),
+        measured: isMeasuredStep(step),
         ran,
         skipped,
         rate: total === 0 ? null : ran / total,
@@ -290,7 +363,33 @@ export class DevTaskAdherenceService {
   constructor(
     private readonly prisma: PrismaClient,
     private readonly steps: RequiredStep[] = REQUIRED_STEPS,
+    private readonly fetchers: AdherenceFetchers = {},
   ) {}
+
+  /**
+   * Task-store enrichment for one task-bearing run. Any failure (or a 404
+   * task) degrades to undefined so the report never fails on the join.
+   */
+  private async enrich(
+    itemId: string | null,
+  ): Promise<RunEnrichment | undefined> {
+    const { getTask, getVerificationChecks, getPrByNumber } = this.fetchers;
+    if (!itemId || !getTask) return undefined;
+    try {
+      const task = await getTask(itemId);
+      if (!task) return undefined;
+      const checks = getVerificationChecks
+        ? await getVerificationChecks(itemId)
+        : [];
+      const pr =
+        getPrByNumber && task.repo && task.pr != null
+          ? await getPrByNumber(task.repo, task.pr)
+          : null;
+      return { task, checks, pr };
+    } catch {
+      return undefined;
+    }
+  }
 
   /**
    * Report over non-skipped dev-task runs with startedAt in [from, to).
@@ -323,8 +422,15 @@ export class DevTaskAdherenceService {
       orderBy: { startedAt: "asc" },
     });
 
-    const runs = rows.map((row) =>
-      buildRunAdherence(this.steps, row, row.skillUsage),
+    const runs = await Promise.all(
+      rows.map(async (row) =>
+        buildRunAdherence(
+          this.steps,
+          row,
+          row.skillUsage,
+          await this.enrich(row.itemId),
+        ),
+      ),
     );
     return buildReport(this.steps, runs);
   }
