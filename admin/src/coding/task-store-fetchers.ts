@@ -37,6 +37,26 @@ function query(params: URLSearchParams): string {
   return params.size > 0 ? `?${params}` : "";
 }
 
+/** Lifecycle timestamps of a task (GET /tasks/:id), for adherence checks. */
+export interface TaskLifecycle {
+  startedAt: string | null;
+  pr: number | null;
+  prCreatedAt: string | null;
+  mergedAt: string | null;
+  deployedAt: string | null;
+}
+
+/** The CI/outcome fields of a PR record (GET /prs?repo=&prNumber=). */
+export interface PrOutcome {
+  state: string;
+  mergedAt: string | null;
+  prCreatedAt: string | null;
+  commitCount: number | null;
+  commitsCiFix: number | null;
+  patchCycles: number;
+  reviewCycles: number;
+}
+
 export function createTaskStoreFetchers(config: TaskStoreFetchersConfig) {
   const doFetch = config.fetch ?? ((input, init) => fetch(input, init));
   const auth = { Authorization: `Bearer ${config.adminToken}` };
@@ -109,6 +129,45 @@ export function createTaskStoreFetchers(config: TaskStoreFetchersConfig) {
         accountId,
         "/verification-checks",
       ),
+
+    /** Lifecycle fields of a task by id; null when it doesn't exist. */
+    getTask: (itemId: string, accountId?: string) =>
+      getJsonOrNull<TaskLifecycle>(
+        `/tasks/${encodeURIComponent(itemId)}`,
+        accountId,
+      ),
+
+    /**
+     * A PR record by repo + PR number via the existing /prs list lookup;
+     * null when no such PR exists (an empty list, mirroring getJsonOrNull).
+     */
+    getPrByNumber: async (
+      repo: string,
+      pr: number,
+      accountId?: string,
+    ): Promise<PrOutcome | null> => {
+      const { prs } = await getJson<{ prs: PrOutcome[] }>(
+        "/prs",
+        new URLSearchParams({ repo, prNumber: String(pr) }),
+        accountId,
+        "/prs",
+      );
+      return prs[0] ?? null;
+    },
+
+    /** Verification-check rows recorded against a task, oldest first. */
+    getVerificationChecks: async <T = unknown>(
+      itemId: string,
+      accountId?: string,
+    ): Promise<T[]> => {
+      const { checks } = await getJson<{ checks: T[] }>(
+        "/verification-checks",
+        new URLSearchParams({ taskId: itemId }),
+        accountId,
+        "/verification-checks",
+      );
+      return checks;
+    },
 
     fetchTaskStoreSessions: <T>(params: URLSearchParams, accountId?: string) =>
       getJson<T>("/sessions", params, accountId, "/sessions"),

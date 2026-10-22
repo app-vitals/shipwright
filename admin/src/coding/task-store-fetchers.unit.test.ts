@@ -140,3 +140,56 @@ describe("createTaskStoreFetchers — accountId forwarding (SSP-6.8)", () => {
     await expect(fetchers.releaseTask("T-1")).rejects.toThrow("500");
   });
 });
+
+describe("createTaskStoreFetchers — adherence lookups (DTA-6.1)", () => {
+  it("getTask GETs /tasks/:id and returns the body", async () => {
+    const task = {
+      startedAt: "t0",
+      pr: 7,
+      prCreatedAt: "t1",
+      mergedAt: null,
+      deployedAt: null,
+    };
+    const { calls, fetchers } = make(() => new Response(JSON.stringify(task)));
+    expect(await fetchers.getTask("DTA-6.1", "acct-a")).toEqual(task);
+    expect(calls[0]?.url.pathname).toBe("/tasks/DTA-6.1");
+    expect(calls[0]?.url.searchParams.get("accountId")).toBe("acct-a");
+  });
+
+  it("getPrByNumber queries /prs by repo + prNumber and returns the first row", async () => {
+    const pr = { state: "open", commitsCiFix: 2 };
+    const { calls, fetchers } = make(
+      () => new Response(JSON.stringify({ prs: [pr], total: 1 })),
+    );
+    expect(await fetchers.getPrByNumber("org/r", 42)).toEqual(pr as never);
+    expect(calls[0]?.url.pathname).toBe("/prs");
+    expect(calls[0]?.url.searchParams.get("repo")).toBe("org/r");
+    expect(calls[0]?.url.searchParams.get("prNumber")).toBe("42");
+  });
+
+  it("getVerificationChecks GETs /verification-checks?taskId= and unwraps checks", async () => {
+    const checks = [{ checkName: "lint", status: "ran_passed" }];
+    const { calls, fetchers } = make(
+      () => new Response(JSON.stringify({ checks, total: 1 })),
+    );
+    expect(await fetchers.getVerificationChecks("DTA-6.1")).toEqual(checks);
+    expect(calls[0]?.url.pathname).toBe("/verification-checks");
+    expect(calls[0]?.url.searchParams.get("taskId")).toBe("DTA-6.1");
+  });
+
+  it("maps a missing task / PR to null", async () => {
+    const missingTask = make(() => new Response("{}", { status: 404 }));
+    expect(await missingTask.fetchers.getTask("T-x")).toBeNull();
+    const noPr = make(
+      () => new Response(JSON.stringify({ prs: [], total: 0 })),
+    );
+    expect(await noPr.fetchers.getPrByNumber("org/r", 1)).toBeNull();
+  });
+
+  it("throws on non-404 failures", async () => {
+    const { fetchers } = make(() => new Response("{}", { status: 500 }));
+    await expect(fetchers.getTask("T-1")).rejects.toThrow("500");
+    await expect(fetchers.getPrByNumber("org/r", 1)).rejects.toThrow("500");
+    await expect(fetchers.getVerificationChecks("T-1")).rejects.toThrow("500");
+  });
+});
