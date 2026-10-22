@@ -13,7 +13,7 @@ export interface AllowSelfReviewRef {
   /**
    * Returns the most recently synced `allowSelfReview` value, or `false` if
    * set() was never called. The underlying Agent row field defaults to
-   * `false` in the database (admin/prisma/schema.prisma), so once synced
+   * `false` in the database (admin/prisma/schema/), so once synced
    * this always reflects a real DB value — callers that need to distinguish
    * "never synced" (config-bundle fetch has never succeeded) from "synced to
    * a DB value of false" must check hasSynced() rather than inferring it

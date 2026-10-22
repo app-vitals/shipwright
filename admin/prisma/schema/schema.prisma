@@ -1,6 +1,7 @@
 // Shipwright — Admin Service Schema
 // Owns: Agent, AgentEnv, AgentCronJob, AgentTool, AgentToken, AgentPlugin,
-// AgentPhaseMethodology.
+// plus the coding-owned models in coding.prisma (AgentWorkQueueSnapshot,
+// AgentPhaseMethodology, SessionFollow, SessionAlertState).
 // Agent is a first-class model (standalone, not embedded in a User model).
 //
 // WARNING: This schema uses DATABASE_URL_SHIPWRIGHT_ADMIN — a dedicated database
@@ -8,12 +9,12 @@
 
 // Prisma 7: the `prisma-client` generator (ESM, driver-adapter based) replaces
 // `prisma-client-js`, and the datasource block no longer accepts `url` — the
-// connection string for CLI/Migrate lives in ../prisma.config.ts, and the
+// connection string for CLI/Migrate lives in ../../prisma.config.ts, and the
 // runtime client connects through a PrismaPg driver adapter (see
 // admin/src/prisma-client.ts).
 generator client {
   provider = "prisma-client"
-  output   = "./client"
+  output   = "../client"
 }
 
 datasource db {
@@ -36,6 +37,8 @@ model Agent {
   // backfilled it; DBR-2.2/2.3 migrated the admin UI and the agent's
   // runtime read path onto this field exclusively; DBR-2.4 dropped the old
   // authorAllowlist column now that nothing reads or writes it.
+  // CODING-OWNED (AEP-3.4): reviewAuthorAllowlist and patchAuthorAllowlist are
+  // read by the coding review/patch flows. Kept on Agent (no column move).
   reviewAuthorAllowlist  String[] @default([])
   patchAuthorAllowlist   String[] @default([])
   restrictSlackToMembers Boolean  @default(false)
@@ -62,6 +65,9 @@ model Agent {
   // cleanup_after_days). Originally mirrored from the legacy
   // state/agent-policy.md; the DB is now the only source and each column
   // carries its documented default.
+  // CODING-OWNED (AEP-3.4): autoPostReviews, allowSelfReview, minConfidence,
+  // maxFindings configure the coding review flow; cleanupMergedWorktrees and
+  // cleanupAfterDays below are runtime-owned.
   autoPostReviews        Boolean  @default(true)
   allowSelfReview        Boolean  @default(false)
   minConfidence          Int      @default(75)
@@ -186,31 +192,6 @@ model AgentPlugin {
   updatedAt DateTime @updatedAt
 
   @@unique([agentId, name])
-}
-
-// ─── Agent Phase Methodology ──────────────────────────────────────────────────
-// Per-phase subagent-type override. Each row records which subagent type
-// (e.g. a custom Agent Type name) should handle one pipeline phase — prd,
-// plan-session, review, patch, deploy, or dev-task — for a given agent,
-// overriding that phase's default methodology. `subagentType` is nullable:
-// a row with a null value (or the absence of a row) means "use the default".
-// The `phase` value is constrained to the six-value enum at the service/route
-// layer (Zod), not here — Postgres/Prisma has no native enum-column
-// requirement in this schema style (mirrors AgentTool.pattern / AgentCronJob
-// validation living at the service layer). The unique constraint on
-// [agentId, phase] makes upsert-based writes idempotent (one override row per
-// phase per agent), mirroring AgentTool's [agentId, pattern] and AgentPlugin's
-// [agentId, name].
-
-model AgentPhaseMethodology {
-  id           String   @id @default(cuid())
-  agentId      String
-  agent        Agent    @relation(fields: [agentId], references: [id], onDelete: Cascade)
-  phase        String
-  subagentType String?
-  updatedAt    DateTime @updatedAt
-
-  @@unique([agentId, phase])
 }
 
 // ─── Agent Members ────────────────────────────────────────────────────────────
@@ -417,21 +398,6 @@ model AgentChatTokenUsageDailyByModel {
   @@unique([agentId, date, model])
 }
 
-// ─── Agent Work Queue Snapshot ────────────────────────────────────────────────
-// One row per agent, holding the agent's most recently pushed work-queue
-// snapshot (its ranked view of pending tasks/PRs across pipeline phases).
-// POST /agents/:id/work-queue upserts this single row, overwriting any prior
-// snapshot — there is no history, only the latest state.
-
-model AgentWorkQueueSnapshot {
-  id         String   @id @default(cuid())
-  agentId    String   @unique
-  agent      Agent    @relation(fields: [agentId], references: [id], onDelete: Cascade)
-  computedAt DateTime
-  items      Json     // RankedWorkItem[]
-  createdAt  DateTime @default(now())
-}
-
 // ─── Agent GitHub Installations Snapshot ────────────────────────────────────
 // One row per agent holding the agent's most recently reported GitHub App
 // installations (owner, installation id, state, sanitized lastError). PUT
@@ -488,24 +454,6 @@ model ChatThreadWatch {
   @@index([threadId])
 }
 
-// ─── Session Follow ───────────────────────────────────────────────────────────
-// Records that a user is "following" a planning session (identified by its
-// slug) so they can receive reminders/notifications about it. `muted` lets a
-// user stay following (kept in listByUser) while suppressing alerts, distinct
-// from unfollowing (row deleted entirely). The unique constraint on
-// [userEmail, sessionSlug] makes follow() idempotent via upsert.
-model SessionFollow {
-  id          String   @id @default(cuid())
-  userEmail   String
-  sessionSlug String
-  muted       Boolean  @default(false)
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
-
-  @@unique([userEmail, sessionSlug])
-  @@index([sessionSlug])
-}
-
 // ─── User Notification Prefs ─────────────────────────────────────────────────
 // One row per user, holding their notification preferences. `userEmail` is
 // the primary key (one row per user, not per session). `autoFollowSessions`
@@ -530,21 +478,5 @@ model UserNotificationPrefs {
   autoFollowSince    DateTime?
   createdAt          DateTime  @default(now())
   updatedAt          DateTime  @updatedAt
-}
-
-// ─── Session Alert State ─────────────────────────────────────────────────────
-// Tracks the last time a user was alerted about a given session, so a
-// reminder job can avoid re-alerting the same user/session pair within a
-// cooldown window. The unique constraint on [userEmail, sessionSlug] allows
-// upsert semantics (one state row per user per session).
-model SessionAlertState {
-  id            String    @id @default(cuid())
-  userEmail     String
-  sessionSlug   String
-  lastAlertedAt DateTime?
-  createdAt     DateTime  @default(now())
-  updatedAt     DateTime  @updatedAt
-
-  @@unique([userEmail, sessionSlug])
 }
 

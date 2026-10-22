@@ -13,7 +13,7 @@ export interface CleanupMergedWorktreesRef {
   /**
    * Returns the most recently synced `cleanupMergedWorktrees` value, or
    * `true` if set() was never called. The underlying Agent row field
-   * defaults to `true` in the database (admin/prisma/schema.prisma), so once
+   * defaults to `true` in the database (admin/prisma/schema/), so once
    * synced this always reflects a real DB value — callers that need to
    * distinguish "never synced" (config-bundle fetch has never succeeded)
    * from "synced to a DB value of true" must check hasSynced() rather than

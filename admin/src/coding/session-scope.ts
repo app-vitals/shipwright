@@ -78,7 +78,7 @@ type AgentIdScope = "all" | string[];
  * The full visibility scope consumed by isSessionVisible(): the caller's
  * accessible agent ids (or "all") plus the repos they can see. `repos` is
  * resolved by the caller from the accessible agents' own `repos[]` fields
- * (admin/prisma/schema.prisma's Agent model) — this module has no access to
+ * (admin/prisma/schema/ Agent model) — this module has no access to
  * Agent data and does not compute it. Shared by the session list page,
  * detail page, follow routes, and the sweeper so they all apply the same
  * visibility rule.

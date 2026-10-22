@@ -1,17 +1,24 @@
 import { describe, expect, test } from "bun:test";
-import { readFileSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 
 // Reads the schema file and asserts it uses the postgresql provider and the namespaced env var.
 // This test is intentionally narrow — it guards against accidental provider regression.
 
-const schemaPath = join(import.meta.dir, "../prisma/schema.prisma");
-const schema = readFileSync(schemaPath, "utf-8");
+// The admin schema is a Prisma multi-file schema folder (prisma/schema/):
+// schema.prisma holds the generator/datasource + shared models, coding.prisma
+// the coding-owned models. Assertions run against the concatenation.
+const schemaDir = join(import.meta.dir, "../prisma/schema");
+const schema = readdirSync(schemaDir)
+  .filter((f) => f.endsWith(".prisma"))
+  .sort()
+  .map((f) => readFileSync(join(schemaDir, f), "utf-8"))
+  .join("\n");
 
 const configPath = join(import.meta.dir, "../prisma.config.ts");
 const config = readFileSync(configPath, "utf-8");
 
-describe("admin/prisma/schema.prisma", () => {
+describe("admin/prisma/schema/", () => {
   test('datasource provider is "postgresql"', () => {
     expect(schema).toContain('provider = "postgresql"');
   });

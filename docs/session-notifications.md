@@ -8,7 +8,7 @@ Implemented across `admin/src/coding/session-follow-service.ts` (CRUD), `admin/s
 
 ## Data model
 
-Three models, all in `admin/prisma/schema.prisma`, none tied to an `Agent` (no cascade on agent deletion):
+Three models, all in `admin/prisma/schema/`, none tied to an `Agent` (no cascade on agent deletion):
 
 | Model | Purpose | Key fields |
 |---|---|---|
