@@ -34,7 +34,7 @@ describe("SECRET_ENV_VARS", () => {
     ];
 
     for (const entry of expectedEntries) {
-      expect(SECRET_ENV_VARS).toContain(entry);
+      expect(SECRET_ENV_VARS as readonly string[]).toContain(entry);
     }
   });
 

@@ -8,7 +8,7 @@ describe("PROGRESS_PHASES", () => {
   });
 
   test("contains exactly the documented phase names", () => {
-    expect([...PROGRESS_PHASES].sort()).toEqual(
+    expect([...(PROGRESS_PHASES as readonly string[])].sort()).toEqual(
       [
         "starting",
         "thinking",
