@@ -53,7 +53,9 @@ One monorepo holds the agent runtime (`agent/src/runtime`), the admin (`admin/`)
 | AGR-1.4 | refactor: give admin a package identity, migrate consumers and split the generated admin types | shipwright | 5 / opus | AGR-1.2, AGR-1.3 |
 | AGR-1.5 | feat: add the re-runnable platform extraction script | shipwright | 5 / opus | AGR-1.1, AGR-1.4 |
 | AGR-1.6 | feat: add the standalone-repo template for app-vitals/agent | shipwright | 4 / sonnet | AGR-1.5 |
-| AGR-1.7 | test: add the extraction rehearsal | shipwright | 4 / sonnet | AGR-1.6 |
+| AGR-1.7 | test: add the extraction rehearsal | shipwright | 4 / sonnet | AGR-1.6, AGR-1.8, AGR-1.9 |
+| AGR-1.8 | refactor: make platform tests and template lookups independent of the source layout | shipwright | 3 / sonnet | AGR-1.6 |
+| AGR-1.9 | refactor: make the platform self-contained without the coding specialty | shipwright | 4 / sonnet | AGR-1.8 |
 | AGR-2.1 | feat: add the pre-publication audit for the extracted repo | shipwright | 4 / sonnet | AGR-1.7 |
 | AGR-2.2 | chore: provision the app-vitals/agent repo, npm org and secrets ⚠ HITL | shipwright | 2 / haiku | — |
 | AGR-2.3 | chore: run the final extraction and push history to app-vitals/agent ⚠ HITL | shipwright | 3 / sonnet | AGR-2.1, AGR-2.2 |
@@ -76,7 +78,7 @@ Task bodies, acceptance criteria and branches are in the task store (`?session=a
 
 ```
 1.1 ──────────────┐
-1.2 ─ 1.3 ─ 1.4 ──┴─ 1.5 ─ 1.6 ─ 1.7 ─ 2.1 ──┐
+1.2 ─ 1.3 ─ 1.4 ──┴─ 1.5 ─ 1.6 ─ 1.8 ─ 1.9 ─ 1.7 ─ 2.1 ──┐
 2.2 (HITL) ──────────────────────────────────┴─ 2.3 (HITL) ─┬─ 2.4
                                                               └─ 3.1 ─┬─ 3.2 ─┐
                                                                        └─ 3.3 ─┴─ 4.1 ─ 4.2 ─ 4.3a ─┐
@@ -86,3 +88,12 @@ Task bodies, acceptance criteria and branches are in the task store (`?session=a
 ## Breaking-change safety
 
 Add, migrate, remove throughout. Phase 1 is behavior-preserving and safe standalone. AGR-2.3 and 3.x only add. AGR-4.1/4.2 are atomic consumer swaps (all consumers updated in one PR). The image flip uses the 4.3a/5.1/4.3b sequence. The `typeName` rename is add (6.1), backfill with a live-data check (6.2), remove (6.3).
+
+## Revision 2026-10-23: rehearsal findings
+
+The AGR-1.7 rehearsal failed 121 tests in the extracted tree: ~45 from hardcoded `agent/workspace` paths, ~75 from the platform depending on coding-owned assets (`specialties/coding/`, `CLAUDE.md.template`) that the manifest excludes. Added AGR-1.8 (layout-independent paths) and AGR-1.9 (self-contained platform) ahead of AGR-1.7.
+
+## Decision Log
+
+- AGR-1.9 approach: fixture specialty + generic template under `runtime/fixtures/`, platform tests use `SHIPWRIGHT_SPECIALTIES_DIR`/`SHIPWRIGHT_DEFAULT_AGENT_TYPE`; coding-behavior tests stay in Shipwright and are excluded from extraction. Rejected: shipping a generic default specialty in the platform (expands public surface pre-publication). Approved by Dan.
+- AGR-1.8 and AGR-1.9 are serialized (overlapping test files). Approved by Dan.
