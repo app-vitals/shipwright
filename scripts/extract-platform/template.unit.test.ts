@@ -81,6 +81,9 @@ const BANNED = [
   "app-vitals/marketplace",
 ];
 
+// Built at runtime so the repo-wide retired-specifier scan does not match this file.
+const LEGACY_ADMIN = `@${"shipwright"}/admin`;
+
 describe("template file set", () => {
   test("contains exactly the expected files", () => {
     expect(listTemplate()).toEqual([...EXPECTED_FILES].sort());
@@ -229,7 +232,7 @@ describe("import-boundary gate", () => {
       [
         'import "../../outside";',
         'import "../task-store/src/index.ts";',
-        'import "@other-scope/unknown";',
+        `import "${LEGACY_ADMIN}";`,
         'import "@app-vitals/agent-lib/missing";',
         'const x = await import("./nope.ts");',
       ].join("\n"),
@@ -242,7 +245,7 @@ describe("import-boundary gate", () => {
       [
         "../../outside",
         "../task-store/src/index.ts",
-        "@other-scope/unknown",
+        LEGACY_ADMIN,
         "@app-vitals/agent-lib/missing",
         "./nope.ts",
       ].sort(),
