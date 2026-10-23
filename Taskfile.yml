@@ -263,7 +263,7 @@ tasks:
       - bun run scripts/minikube.ts --profile cloud-native-traefik
 
   audit-extraction:
-    desc: "Pre-publication audit of an extracted tree and its full git history (usage: task audit-extraction -- <tree> [--json] [--report <path>] [--history-banned])"
+    desc: "Pre-publication audit of an extracted tree and its full git history (usage: task audit-extraction -- <tree> [--json] [--report <path>] [--no-history-banned] [--no-gitleaks] [--working-tree-only])"
     cmds:
       - bun scripts/audit-extraction.ts {{.CLI_ARGS}}
 

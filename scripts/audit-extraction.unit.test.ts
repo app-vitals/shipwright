@@ -133,6 +133,40 @@ describe("secret detection and redaction", () => {
     );
   });
 
+  test("generic assignment matches prefixed keyword names", () => {
+    const v = "Zq8vLm3Np7Xr2Tk9Wb4Hc6Jd";
+    for (const line of [
+      `DB_PASSWORD="${v}"`,
+      `OPENAI_API_KEY: "${v}"`,
+      `CLIENT_SECRET='${v}'`,
+      `STRIPE_SECRET_KEY="${v}"`,
+    ])
+      expect(findSecrets(line).map((h) => h.rule)).toEqual([
+        "secret/generic-api-key",
+      ]);
+    // Test-fixture values are placeholders.
+    expect(
+      findSecrets(`webhook_secret: "test-webhook-secret-never-real"`),
+    ).toEqual([]);
+    // A letter/digit before the keyword is a different word.
+    expect(findSecrets(`nopassword="${v}"`)).toEqual([]);
+  });
+
+  test("generic assignment matches unquoted values, not identifiers", () => {
+    const v = "Zq8vLm3Np7Xr2Tk9Wb4Hc6Jd";
+    expect(findSecrets(`password: ${v}`)[0]?.rule).toBe(
+      "secret/generic-api-key",
+    );
+    expect(findSecrets(`DB_PASSWORD=${v}`)[0]?.rule).toBe(
+      "secret/generic-api-key",
+    );
+    expect(makeExcerpt(`password: ${v}`)).not.toContain(v);
+    // Code, not a credential: no digit, or continues as an expression.
+    expect(findSecrets("apiKey: resolvedAnthropicApiKeyFromEnv,")).toEqual([]);
+    expect(findSecrets("apiKey = configFromEnvironment2Value.key")).toEqual([]);
+    expect(findSecrets("secret: buildSecretFromParts123Now(a)")).toEqual([]);
+  });
+
   test("redaction never leaves the full value", () => {
     const tok = ghToken();
     const out = makeExcerpt(`GH_TOKEN=${tok} # note`);
@@ -283,15 +317,24 @@ describe("parseArgs", () => {
         "--json",
         "--report",
         "r.json",
-        "--history-banned",
+        "--no-history-banned",
         "--no-gitleaks",
+        "--working-tree-only",
       ]),
     ).toMatchObject({
       tree: "/t",
       json: true,
       report: "r.json",
-      historyBanned: true,
+      historyBanned: false,
       useGitleaks: false,
+      workingTreeOnly: true,
+    });
+  });
+  test("defaults are fail-closed: history banned strings, gitleaks, git history", () => {
+    expect(parseArgs(["/t"])).toMatchObject({
+      historyBanned: true,
+      useGitleaks: true,
+      workingTreeOnly: false,
     });
   });
   test("rejects bad input", () => {

@@ -12,7 +12,8 @@
  *                       working tree and `git log --all -p` (added lines only)
  *   2. banned-strings   internal hostnames, cloud project/cluster identifiers,
  *                       private-repo references, internal product names; the
- *                       working tree always, history with --history-banned
+ *                       working tree and history (--no-history-banned skips
+ *                       history)
  *   3. license          LICENSE (MIT) at the tree root, consistent package.json
  *                       `license` fields
  *   4. artifacts        node_modules, dist/build output, *.tsbuildinfo, coverage,
@@ -22,9 +23,12 @@
  * Every finding is { rule, file, commit ("working-tree" or a sha), line?,
  * excerpt }. Secret values are never printed in full: excerpts are redacted.
  *
+ * Fail-closed: a tree without .git, or a missing/failed gitleaks, is itself a
+ * finding unless explicitly opted out with --working-tree-only / --no-gitleaks.
+ *
  * Usage:
  *   bun scripts/audit-extraction.ts <tree> [--json] [--report <path>]
- *     [--history-banned] [--no-gitleaks]
+ *     [--no-history-banned] [--no-gitleaks] [--working-tree-only]
  *
  * Exit codes: 0 clean, 1 findings, 2 usage error.
  */
@@ -85,7 +89,8 @@ export interface SecretRule {
   pattern: RegExp;
 }
 
-const PLACEHOLDER = /example|placeholder|changeme|dummy|your[_-]|xxxx|\*{4}/i;
+const PLACEHOLDER =
+  /example|placeholder|changeme|dummy|test|fake|mock|your[_-]|xxxx|\*{4}/i;
 
 /** Shannon entropy in bits per character. */
 export function entropy(s: string): number {
@@ -121,10 +126,13 @@ export const SECRET_RULES: readonly SecretRule[] = [
   },
   { id: "secret/anthropic-key", pattern: /\bsk-ant-[A-Za-z0-9_-]{20,}/g },
   {
-    // key/secret/token/password assigned a long quoted, high-entropy literal
+    // key/secret/token/password assigned a long high-entropy literal. The
+    // keyword may carry a prefix (DB_PASSWORD, OPENAI_API_KEY): only a letter
+    // or digit before it is rejected. Group 1 = quoted value, group 2 = an
+    // unquoted value (must not continue as an identifier/expression).
     id: "secret/generic-api-key",
     pattern:
-      /\b(?:api[_-]?key|secret(?:[_-]?key)?|access[_-]?token|auth[_-]?token|password)["']?\s*[:=]\s*["']([A-Za-z0-9/+_=-]{24,})["']/gi,
+      /(?<![A-Za-z0-9])(?:api[_-]?key|secret(?:[_-]?key)?|access[_-]?token|auth[_-]?token|password)["']?\s*[:=]\s*(?:["']([A-Za-z0-9/+_=-]{24,})["']|([A-Za-z0-9/+_=-]{24,})(?![A-Za-z0-9/+_=.(-]))/gi,
   },
 ];
 
@@ -143,9 +151,12 @@ export function findSecrets(text: string): SecretHit[] {
   const hits: SecretHit[] = [];
   for (const rule of SECRET_RULES) {
     for (const m of text.matchAll(new RegExp(rule.pattern))) {
-      const value = m[1] ?? m[0];
+      const value = m[1] ?? m[2] ?? m[0];
       if (rule.id === "secret/generic-api-key") {
         if (PLACEHOLDER.test(value) || entropy(value) < 3.5) continue;
+        // An unquoted value is usually an identifier; require a digit and a letter.
+        if (m[2] !== undefined && !(/\d/.test(value) && /[A-Za-z]/.test(value)))
+          continue;
       }
       hits.push({ rule: rule.id, value: m[0] });
     }
@@ -595,9 +606,18 @@ export function runGitleaks(tree: string): Finding[] {
         },
       ];
     }
-    return existsSync(report)
-      ? parseGitleaksReport(readFileSync(report, "utf8"))
-      : [];
+    if (!existsSync(report)) {
+      // Exit 0/1 without a report means gitleaks did not actually scan.
+      return [
+        {
+          rule: "gitleaks/error",
+          file: "",
+          commit: WORKING_TREE,
+          excerpt: `gitleaks exited ${p.exitCode} without writing a report: ${p.stderr.toString().trim().slice(0, 200)}`,
+        },
+      ];
+    }
+    return parseGitleaksReport(readFileSync(report, "utf8"));
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
@@ -695,6 +715,8 @@ export interface AuditOptions {
   tree: string;
   historyBanned: boolean;
   useGitleaks: boolean;
+  /** Explicit opt-out: a tree without .git is not a finding. */
+  workingTreeOnly?: boolean;
 }
 
 export interface AuditResult {
@@ -738,18 +760,32 @@ export async function auditTree(opts: AuditOptions): Promise<AuditResult> {
     if (opts.useGitleaks) {
       if (gitleaksAvailable()) findings.push(...runGitleaks(tree));
       else
-        notices.push(
-          "gitleaks not found on PATH - skipped (built-in history scanner still ran; install gitleaks for full coverage)",
-        );
+        findings.push({
+          rule: "coverage/gitleaks-missing",
+          file: "",
+          commit: WORKING_TREE,
+          excerpt:
+            "gitleaks not found on PATH - install it, or pass --no-gitleaks to rely on the built-in scanner only",
+        });
+    } else {
+      notices.push("gitleaks skipped (--no-gitleaks)");
     }
     const checks = [secretLineChecker];
     if (opts.historyBanned) checks.push(bannedLineChecker);
     findings.push(...(await scanHistoryPatches(tree, checks)));
     findings.push(...(await scanHistoryArtifacts(tree)));
-  } else {
+  } else if (opts.workingTreeOnly) {
     notices.push(
-      "no .git directory - git history was NOT audited (working tree only)",
+      "no .git directory - git history was NOT audited (--working-tree-only)",
     );
+  } else {
+    findings.push({
+      rule: "coverage/no-git-history",
+      file: ".git",
+      commit: WORKING_TREE,
+      excerpt:
+        "no .git directory - git history cannot be audited; pass --working-tree-only to accept a working-tree-only audit",
+    });
   }
   return { findings: dedupe(findings), notices };
 }
@@ -805,16 +841,18 @@ export interface CliOptions extends AuditOptions {
 export function parseArgs(argv: string[]): CliOptions {
   const opts: CliOptions = {
     tree: "",
-    historyBanned: false,
+    historyBanned: true,
     useGitleaks: true,
+    workingTreeOnly: false,
     json: false,
     report: null,
   };
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i] ?? "";
     if (arg === "--json") opts.json = true;
-    else if (arg === "--history-banned") opts.historyBanned = true;
+    else if (arg === "--no-history-banned") opts.historyBanned = false;
     else if (arg === "--no-gitleaks") opts.useGitleaks = false;
+    else if (arg === "--working-tree-only") opts.workingTreeOnly = true;
     else if (arg === "--report") {
       const v = argv[++i];
       if (v === undefined) throw new Error("--report needs a value");
@@ -835,7 +873,7 @@ if (import.meta.main) {
   } catch (err) {
     console.error((err as Error).message);
     console.error(
-      "usage: bun scripts/audit-extraction.ts <tree> [--json] [--report <path>] [--history-banned] [--no-gitleaks]",
+      "usage: bun scripts/audit-extraction.ts <tree> [--json] [--report <path>] [--no-history-banned] [--no-gitleaks] [--working-tree-only]",
     );
     process.exit(2);
   }

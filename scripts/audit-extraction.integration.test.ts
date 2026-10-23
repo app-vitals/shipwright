@@ -7,10 +7,12 @@ import {
   test,
 } from "bun:test";
 import {
+  chmodSync,
   mkdirSync,
   mkdtempSync,
   readFileSync,
   rmSync,
+  symlinkSync,
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
@@ -74,6 +76,21 @@ function run(tree: string, ...args: string[]) {
     out: p.stdout.toString(),
     err: p.stderr.toString(),
   };
+}
+
+/** Runs the CLI WITH gitleaks enabled, on a PATH holding only git and `extraBin`. */
+function runWithPath(tree: string, extraBin: (bin: string) => void) {
+  const bin = mkdtempSync(join(scratch, "bin-"));
+  const gitPath = Bun.which("git");
+  if (!gitPath) throw new Error("git not on PATH");
+  symlinkSync(gitPath, join(bin, "git"));
+  extraBin(bin);
+  const p = Bun.spawnSync([process.execPath, DRIVER, tree], {
+    env: { ...process.env, PATH: bin },
+    stdout: "pipe",
+    stderr: "pipe",
+  });
+  return { code: p.exitCode, out: p.stdout.toString() };
 }
 
 let scratch: string;
@@ -161,15 +178,15 @@ describe("audit-extraction CLI", () => {
     });
   });
 
-  test("banned strings in history are only reported with --history-banned", () => {
+  test("banned strings in history are reported by default; --no-history-banned skips them", () => {
     const tree = join(scratch, "history-banned");
     newRepo(tree);
     put(tree, "notes.md", `deploy to ${["vitals", "os"].join("-")}\n`);
     commitAll(tree, "note");
     rmSync(join(tree, "notes.md"));
     commitAll(tree, "drop note");
-    expect(run(tree).code).toBe(0);
-    const r = run(tree, "--history-banned");
+    expect(run(tree, "--no-history-banned").code).toBe(0);
+    const r = run(tree);
     expect(r.code).toBe(1);
     expect(r.out).toContain("banned/internal-product");
   });
@@ -184,9 +201,10 @@ describe("audit-extraction CLI", () => {
     );
     put(tree, "docs/a.md", "ping db.prod.internal\n");
     put(tree, "dist/out.js", "x\n");
-    const r = run(tree);
+    const r = run(tree, "--working-tree-only");
     expect(r.code).toBe(1);
-    expect(r.out).toContain("no .git directory");
+    expect(r.out).toContain("NOTICE: no .git directory");
+    expect(r.out).not.toContain("coverage/no-git-history");
     for (const rule of [
       "banned/internal-hostname",
       "license/missing",
@@ -195,6 +213,55 @@ describe("audit-extraction CLI", () => {
     ])
       expect(r.out).toContain(rule);
     expect(r.out).toContain("working-tree");
+  });
+
+  test("a tree without .git fails unless --working-tree-only", () => {
+    const tree = join(scratch, "no-git");
+    mkdirSync(tree);
+    put(tree, "LICENSE", MIT);
+    put(tree, "package.json", PKG);
+    const r = run(tree);
+    expect(r.code).toBe(1);
+    expect(r.out).toContain("coverage/no-git-history");
+    const opted = run(tree, "--working-tree-only");
+    expect(opted.code).toBe(0);
+    expect(opted.out).toContain("--working-tree-only");
+  });
+
+  test("a missing gitleaks fails unless --no-gitleaks", () => {
+    const tree = join(scratch, "no-gitleaks");
+    newRepo(tree);
+    const r = runWithPath(tree, () => {});
+    expect(r.code).toBe(1);
+    expect(r.out).toContain("coverage/gitleaks-missing");
+    expect(run(tree).code).toBe(0);
+  });
+
+  test("gitleaks exiting 1 without a report is an error finding", () => {
+    const tree = join(scratch, "gitleaks-no-report");
+    newRepo(tree);
+    const r = runWithPath(tree, (bin) => {
+      writeFileSync(join(bin, "gitleaks"), "#!/bin/sh\nexit 1\n");
+      chmodSync(join(bin, "gitleaks"), 0o755);
+    });
+    expect(r.code).toBe(1);
+    expect(r.out).toContain("gitleaks/error");
+    expect(r.out).toContain("without writing a report");
+  });
+
+  test("a prefixed credential name (DB_PASSWORD) in history is found", () => {
+    const tree = join(scratch, "db-password");
+    newRepo(tree);
+    const value = ["Zq8vLm3Np7", "Xr2Tk9Wb4Hc6Jd"].join("");
+    put(tree, "config/app.env", `DB_PASSWORD="${value}"\n`);
+    const bad = commitAll(tree, "oops");
+    rmSync(join(tree, "config"), { recursive: true });
+    commitAll(tree, "remove it");
+    const r = run(tree);
+    expect(r.code).toBe(1);
+    expect(r.out).toContain("secret/generic-api-key");
+    expect(r.out).toContain(bad.slice(0, 12));
+    expect(r.out).not.toContain(value);
   });
 
   test("usage errors exit 2", () => {
