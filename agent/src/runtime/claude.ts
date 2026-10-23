@@ -46,7 +46,7 @@ export function setLiveClaudeConfig(patch: Partial<LiveClaudeConfig>): void {
  * they now flow entirely through `liveClaudeConfig.allowedTools` /
  * `extraAllowedTools`, sourced from the AgentTool DB table (seeded at agent
  * creation from the resolved Specialty manifest — see
- * specialties/coding/manifest.yaml and admin/src/agents-api.ts — and
+ * admin/src/agents-api.ts — and
  * backfilled for existing agents). This is the capability-narrowing step: an
  * agent with no AgentTool rows (or a 404'd config bundle) no longer gets
  * Bash/WebSearch/WebFetch/Agent for free.

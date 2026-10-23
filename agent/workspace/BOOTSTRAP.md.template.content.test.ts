@@ -3,7 +3,7 @@
  *
  * Verifies the first-run bootstrap template's cron-walkthrough step describes
  * the shipwright-loop-driven, explicit-target-only pipeline model (mirrors
- * CLAUDE.md.template.content.test.ts / DPF-1.1), not the stale "every 30 min,
+ * the former CLAUDE template content test / DPF-1.1), not the stale "every 30 min,
  * self-discovering pickup of approved todos" model it replaced.
  *
  * Content-assertion only: readFileSync, no I/O beyond local file reads.

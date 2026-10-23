@@ -3,3 +3,5 @@
 # runs through its own entry point.
 [test]
 pathIgnorePatterns = ["**/admin/e2e/**", "**/*.canary.test.ts"]
+# Points the specialty lookup at the minimal fixture specialty (see the preload).
+preload = ["./scripts/test-env-preload.ts"]

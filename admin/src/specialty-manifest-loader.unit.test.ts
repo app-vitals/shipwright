@@ -46,6 +46,7 @@ voice: true
 describe("SpecialtyRegistry", () => {
   it("resolves a known typeName to its parsed manifest", () => {
     const registry = new SpecialtyRegistry({
+      defaultTypeName: DEFAULT_SPECIALTY_NAME,
       read: (t) => manifestYaml(t),
     });
     const manifest = registry.getManifest("coding");
@@ -56,6 +57,7 @@ describe("SpecialtyRegistry", () => {
   it("falls back to the coding manifest with a warning for an unknown typeName", () => {
     const warnings: string[] = [];
     const registry = new SpecialtyRegistry({
+      defaultTypeName: DEFAULT_SPECIALTY_NAME,
       read: (t) => {
         if (t === DEFAULT_SPECIALTY_NAME) return manifestYaml("coding");
         throw new Error(`ENOENT: no manifest for ${t}`);
@@ -73,6 +75,7 @@ describe("SpecialtyRegistry", () => {
 
   it("throws (does not silently no-op) when the coding fallback itself cannot load", () => {
     const registry = new SpecialtyRegistry({
+      defaultTypeName: DEFAULT_SPECIALTY_NAME,
       read: () => {
         throw new Error("ENOENT: coding manifest missing");
       },
@@ -84,9 +87,35 @@ describe("SpecialtyRegistry", () => {
     expect(() => registry.getManifest("coding")).toThrow();
   });
 
+  it("names SHIPWRIGHT_SPECIALTIES_DIR and SHIPWRIGHT_DEFAULT_AGENT_TYPE when the default specialty is missing", () => {
+    const registry = new SpecialtyRegistry({
+      read: () => {
+        throw new Error("ENOENT: no manifest");
+      },
+      warn: () => {},
+      typesDir: "/nonexistent/specialties",
+      defaultTypeName: "absent",
+    });
+
+    for (const typeName of ["absent", "some-other-type"]) {
+      let message = "";
+      try {
+        registry.getManifest(typeName);
+      } catch (err) {
+        message = (err as Error).message;
+      }
+      expect(message).toContain('default specialty "absent"');
+      expect(message).toContain("/nonexistent/specialties");
+      expect(message).toContain("SHIPWRIGHT_SPECIALTIES_DIR");
+      expect(message).toContain("SHIPWRIGHT_DEFAULT_AGENT_TYPE");
+      expect(message).not.toContain("startup-time bug");
+    }
+  });
+
   it("caches a resolved manifest — the reader is called once per type", () => {
     let reads = 0;
     const registry = new SpecialtyRegistry({
+      defaultTypeName: DEFAULT_SPECIALTY_NAME,
       read: (t) => {
         reads++;
         return manifestYaml(t);
@@ -109,6 +138,7 @@ describe("SpecialtyRegistry", () => {
 
   it("tryGetManifest resolves a known typeName to its parsed manifest", () => {
     const registry = new SpecialtyRegistry({
+      defaultTypeName: DEFAULT_SPECIALTY_NAME,
       read: (t) => manifestYaml(t),
     });
     const manifest = registry.tryGetManifest("coding");
@@ -118,6 +148,7 @@ describe("SpecialtyRegistry", () => {
   it("tryGetManifest returns undefined for an unknown typeName — no fallback, no warning", () => {
     const warnings: string[] = [];
     const registry = new SpecialtyRegistry({
+      defaultTypeName: DEFAULT_SPECIALTY_NAME,
       read: (t) => {
         if (t === DEFAULT_SPECIALTY_NAME) return manifestYaml("coding");
         throw new Error(`ENOENT: no manifest for ${t}`);
@@ -134,6 +165,7 @@ describe("SpecialtyRegistry", () => {
   it("tryGetManifest shares the cache with getManifest — reader called once per type", () => {
     let reads = 0;
     const registry = new SpecialtyRegistry({
+      defaultTypeName: DEFAULT_SPECIALTY_NAME,
       read: (t) => {
         reads++;
         return manifestYaml(t);
@@ -155,6 +187,7 @@ describe("SpecialtyRegistry", () => {
 
   it("listTypes lists every discovered type as {name, displayName}", () => {
     const registry = new SpecialtyRegistry({
+      defaultTypeName: DEFAULT_SPECIALTY_NAME,
       list: () => ["coding"],
       read: (t) => manifestYaml(t),
     });
@@ -166,6 +199,7 @@ describe("SpecialtyRegistry", () => {
 
   it("listTypes resolves displayName from each manifest's metadata.displayName", () => {
     const registry = new SpecialtyRegistry({
+      defaultTypeName: DEFAULT_SPECIALTY_NAME,
       list: () => ["coding"],
       read: () => `apiVersion: shipwright.dev/v1alpha1
 kind: Specialty
@@ -197,6 +231,7 @@ voice: true
 
   it("listTypes lists multiple discovered types", () => {
     const registry = new SpecialtyRegistry({
+      defaultTypeName: DEFAULT_SPECIALTY_NAME,
       list: () => ["coding", "research"],
       read: (t) => manifestYaml(t),
     });
@@ -212,6 +247,7 @@ voice: true
   it("listTypes skips a directory whose manifest fails to load or parse", () => {
     const warnings: string[] = [];
     const registry = new SpecialtyRegistry({
+      defaultTypeName: DEFAULT_SPECIALTY_NAME,
       list: () => ["coding", "broken"],
       read: (t) => {
         if (t === "broken") throw new Error("ENOENT: broken manifest");
@@ -227,6 +263,7 @@ voice: true
 
   it("listTypes returns an empty array when no type directories are discovered", () => {
     const registry = new SpecialtyRegistry({
+      defaultTypeName: DEFAULT_SPECIALTY_NAME,
       list: () => [],
       read: (t) => manifestYaml(t),
     });

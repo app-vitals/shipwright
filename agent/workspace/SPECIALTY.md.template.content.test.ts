@@ -4,7 +4,7 @@
  * Verifies the coding specialty's "Shipwright" section describes the
  * shipwright-loop-driven, explicit-target-only pipeline model (WLS-6.1), not
  * the stale self-discovering-cron model it replaced. Relocated from
- * CLAUDE.md.template.content.test.ts when the template was layered (ARD-6.2).
+ * the former CLAUDE template content test when the template was layered (ARD-6.2).
  *
  * Content-assertion only: readFileSync, no I/O beyond local file reads.
  */

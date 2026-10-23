@@ -20,6 +20,7 @@ import type {
 import type { AgentTokenService } from "./agent-tokens.ts";
 import type { SpecialtyManifest } from "./specialty-registry.ts";
 import type { AdminDeps } from "./agents-api.ts";
+import { getSelfServeSpecialty } from "./account-agent-create.ts";
 import { createAdminApp, parseAdminApiKeys } from "./agents-api.ts";
 import { identityCrypto } from "./token-crypto.ts";
 
@@ -62,7 +63,12 @@ const CODING_MANIFEST: SpecialtyManifest = {
 };
 
 function fakeSpecialtyRegistry(
-  byType: Record<string, SpecialtyManifest> = { coding: CODING_MANIFEST },
+  // The self-serve specialty is registered too: account users are forced to it
+  // (the platform test run points it at the fixture specialty, not "coding").
+  byType: Record<string, SpecialtyManifest> = {
+    coding: CODING_MANIFEST,
+    [getSelfServeSpecialty()]: CODING_MANIFEST,
+  },
 ): AdminDeps["specialtyRegistry"] {
   return {
     getManifest(typeName: string) {
@@ -5171,7 +5177,7 @@ describe("admin API — account users create and delete agents (SSP-4.2)", () =>
       },
     });
 
-  it("account user creates an agent stamped with their own accountId and typeName coding", async () => {
+  it("account user creates an agent stamped with their own accountId and the self-serve typeName", async () => {
     const { deps, created } = makeAccountDeps("acct-a");
     const res = await post(
       createAdminApp(deps),
@@ -5182,7 +5188,7 @@ describe("admin API — account users create and delete agents (SSP-4.2)", () =>
     expect(created).toHaveLength(1);
     expect(created[0]).toMatchObject({
       accountId: "acct-a",
-      typeName: "coding",
+      typeName: getSelfServeSpecialty(),
     });
   });
 
@@ -5196,7 +5202,7 @@ describe("admin API — account users create and delete agents (SSP-4.2)", () =>
     expect(res.status).toBe(200);
     expect(created[0]).toMatchObject({
       accountId: "acct-a",
-      typeName: "coding",
+      typeName: getSelfServeSpecialty(),
     });
   });
 
