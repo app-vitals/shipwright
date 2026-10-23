@@ -19,6 +19,7 @@ As you read on, you'll run into two categorically different systems. The **deliv
 - **[Multi-org GitHub App](./github-multi-org.md)** — one App installed on several orgs: discovery, per-owner token routing, setup, status card, troubleshooting.
 - **[Test system](./test-readiness/test-system.md)** — the full authoritative test blueprint (source for [Testing](./testing.md)).
 - **[Platform manifest](./platform-manifest.md)** — the copy-paste-readiness gate: which files form the extractable platform set, the `lib` module tags, and how to extend the manifest.
+- **[Finding suppressions](./suppressions.md)** — `.shipwright/suppressions.yml`: match keys, `false_positive` vs `accepted_risk` expiry, which scan/fix skills honor it, and the hitl proposal flow.
 - **[Configuration](./configuration.md)** — all configuration options: plugin env vars, agent env vars, and policy fields.
 
 ## Command reference
