@@ -84,6 +84,7 @@ beforeAll(() => {
     "agent/src/runtime/boot.ts",
     `import { util } from "../../../lib/util";\nexport const boot = util;\n`,
   );
+  put(src, "bun.lock", "{}\n");
   put(src, "lib/util.ts", `export const util = 1;\n`);
   put(src, "lib/package.json", `{"name":"@app-vitals/agent-lib"}\n`);
   put(src, "agent/src/runtime/browser.ts", `export const browser = 1;\n`);
@@ -187,6 +188,7 @@ describe("rehearse()", () => {
 describe("planStages", () => {
   test("covers every verification the cut depends on, in order", () => {
     expect(planStages().map((s) => s.name)).toEqual([
+      "lock-prune",
       "install",
       "typecheck",
       "lint",
@@ -200,7 +202,7 @@ describe("planStages", () => {
   });
 
   test("installs with a frozen lockfile", () => {
-    expect(planStages()[0]?.cmd).toEqual([
+    expect(planStages()[1]?.cmd).toEqual([
       "bun",
       "install",
       "--frozen-lockfile",

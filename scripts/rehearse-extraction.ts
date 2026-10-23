@@ -58,6 +58,12 @@ const TAIL_LINES = 40;
 /** Verification stages run in the extracted tree, in order. */
 export function planStages(): Stage[] {
   return [
+    // The extraction carries no bun.lock (its workspace set differs from the
+    // source's), so the source lockfile is seeded and pruned to the extracted
+    // workspaces first — this keeps pinned versions (and the patched
+    // @slack/socket-mode) instead of re-resolving to latest. The frozen install
+    // then proves the pruned lockfile is self-consistent.
+    { name: "lock-prune", cmd: ["bun", "install"] },
     { name: "install", cmd: ["bun", "install", "--frozen-lockfile"] },
     { name: "typecheck", cmd: ["bun", "run", "typecheck"] },
     { name: "lint", cmd: ["bun", "run", "lint"] },
@@ -116,6 +122,19 @@ function tail(text: string): string {
   return text.trimEnd().split("\n").slice(-TAIL_LINES).join("\n");
 }
 
+// Agent-runtime config the host process may carry (e.g. when the rehearsal runs
+// inside a Shipwright agent). Tests read these at import time, so they must not
+// leak into the extracted tree's stages — CI never has them set.
+const HOST_ENV_PREFIXES = ["AGENT_", "ANTHROPIC_", "SHIPWRIGHT_"];
+
+function cleanEnv(): Record<string, string | undefined> {
+  return Object.fromEntries(
+    Object.entries(process.env).filter(
+      ([k]) => !HOST_ENV_PREFIXES.some((prefix) => k.startsWith(prefix)),
+    ),
+  );
+}
+
 function runStage(
   stage: Stage,
   cwd: string,
@@ -124,7 +143,7 @@ function runStage(
   try {
     p = Bun.spawnSync(stage.cmd, {
       cwd,
-      env: { ...process.env, ...stage.env },
+      env: { ...cleanEnv(), ...stage.env },
       stdout: "pipe",
       stderr: "pipe",
     });
@@ -145,6 +164,16 @@ function plantViolation(tree: string): void {
   );
 }
 
+function seedLockfile(opts: RehearsalOptions, tree: string): void {
+  const p = Bun.spawnSync(
+    ["git", "-C", opts.source, "show", `${opts.ref}:bun.lock`],
+    { stdout: "pipe", stderr: "pipe" },
+  );
+  if (!p.success)
+    throw new Error(`cannot read bun.lock: ${p.stderr.toString()}`);
+  writeFileSync(join(tree, "bun.lock"), p.stdout);
+}
+
 export function rehearse(opts: RehearsalOptions): RehearsalFailure | null {
   let dockerPass = true;
   for (const mode of opts.modes) {
@@ -162,10 +191,20 @@ export function rehearse(opts: RehearsalOptions): RehearsalFailure | null {
     } catch (err) {
       return { mode, stage: "extract", output: (err as Error).message };
     }
+    try {
+      seedLockfile(opts, out);
+    } catch (err) {
+      return { mode, stage: "lock-seed", output: (err as Error).message };
+    }
     if (opts.plantViolation) plantViolation(out);
 
     for (const stage of planStages()) {
-      if (opts.only && !opts.only.includes(stage.name)) continue;
+      if (
+        opts.only &&
+        !opts.only.includes(stage.name) &&
+        !(stage.name === "lock-prune" && opts.only.includes("install"))
+      )
+        continue;
       const skip = skipReason(stage, opts, dockerPass);
       if (skip) {
         console.log(`- ${stage.name}: skipped (${skip})`);
