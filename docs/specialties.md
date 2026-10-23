@@ -1,14 +1,14 @@
-# Agent Type authoring guide
+# Specialty authoring guide
 
-> The public-facing spec for authoring **Agent Type manifests** — the `shipwright.dev/v1alpha1` / `AgentType` YAML documents that declare an agent type's identity, crons, plugins, tools, env contract, membership, repos, and chat/voice toggles.
+> The public-facing spec for authoring **Specialty manifests** — the `shipwright.dev/v1alpha1` / `Specialty` YAML documents that declare a specialty's identity, crons, plugins, tools, env contract, membership, repos, and chat/voice toggles.
 
-This guide is written against the settled schema (`admin/src/agent-type-registry.ts`'s `AgentTypeManifestSchema`, ATS-1.1) and the worked coding-agent example (`agent-types/coding/manifest.yaml`, ATS-2.1). If this doc and the schema ever disagree, the schema wins — regenerate `docs/schemas/agent-type.schema.json` (see [Generated JSON Schema](agent-types-sources.md#generated-json-schema)) and update this doc to match.
+This guide is written against the settled schema (`admin/src/specialty-registry.ts`'s `SpecialtyManifestSchema`, ATS-1.1) and the worked coding-agent example (`specialties/coding/manifest.yaml`, ATS-2.1). If this doc and the schema ever disagree, the schema wins — regenerate `docs/schemas/specialty.schema.json` (see [Generated JSON Schema](specialties-sources.md#generated-json-schema)) and update this doc to match.
 
 ## Concept
 
-An Agent Type is **one shared image, config-only specialization.** Every agent — regardless of type — runs the same `agent/` container image and the same admin-managed runtime. What makes a "coding agent" different from a future "support agent" or "research agent" is entirely expressed in a manifest: which crons it runs, which plugins and tools it's granted, what env contract it declares, and whether chat/voice are enabled. There is no per-type forked binary and no per-type Dockerfile — an Agent Type is pure declarative config layered onto one runtime.
+A Specialty is **one shared image, config-only specialization.** Every agent — regardless of type — runs the same `agent/` container image and the same admin-managed runtime. What makes a "coding agent" different from a future "support agent" or "research agent" is entirely expressed in a manifest: which crons it runs, which plugins and tools it's granted, what env contract it declares, and whether chat/voice are enabled. There is no per-type forked binary and no per-type Dockerfile — a Specialty is pure declarative config layered onto one runtime.
 
-This has a direct consequence for authoring: a manifest is a **declaration of intent and contract**, not a bundle of executable code or secret material. It says *what* an agent type needs (tools, env keys, scheduled prompts) — the runtime is responsible for actually granting/injecting those things, and does so under rules that manifests cannot override (see [Rules](#rules)).
+This has a direct consequence for authoring: a manifest is a **declaration of intent and contract**, not a bundle of executable code or secret material. It says *what* a specialty needs (tools, env keys, scheduled prompts) — the runtime is responsible for actually granting/injecting those things, and does so under rules that manifests cannot override (see [Rules](#rules)).
 
 Manifests are also a **trust boundary**: they may originate from third-party contributors, so the schema is `.strict()` everywhere (unknown keys are rejected outright, not silently dropped) and env entries are deliberately keys-only.
 
@@ -21,7 +21,7 @@ Types below use the same shorthand as [`docs/configuration.md`](./configuration.
 | Name | Type | Default | Description |
 |---|---|---|---|
 | `apiVersion` | `string` (literal) | — | Must be exactly `shipwright.dev/v1alpha1`. |
-| `kind` | `string` (literal) | — | Must be exactly `AgentType`. |
+| `kind` | `string` (literal) | — | Must be exactly `Specialty`. |
 | `metadata` | object ([Metadata](#metadata)) | — | Identity/catalog info: name, display name, description, version, skills. |
 | `identity` | object ([Identity](#identity)) | — | Where this type's workspace templates live. |
 | `crons` | array ([Cron entry](#crons)) | — | Scheduled prompts this type ships. Can be an empty array. |
@@ -44,7 +44,7 @@ A top-level `.superRefine()` check also applies: every `crons[].parentCron` must
 |---|---|---|---|
 | `name` | `string` | — | RFC1123 label (`^[a-z0-9]([-a-z0-9]*[a-z0-9])?$`) — lowercase alphanumeric and hyphens, no leading/trailing hyphen. This is the type's unique id (e.g. `coding`). |
 | `displayName` | `string` | — | Human-readable name shown in UIs (e.g. `Coding Agent`). Min length 1. |
-| `description` | `string` | — | Prose description of what this agent type does. Min length 1. |
+| `description` | `string` | — | Prose description of what this specialty does. Min length 1. |
 | `version` | `string` | — | Free-form version string for this manifest (e.g. `1.0.0`). Min length 1. |
 | `skills` | array ([Skill entry](#metadataskills)) | — | A2A-aligned capability catalog for this type. Can be an empty array. |
 
@@ -119,15 +119,15 @@ All three fields are optional and independent — a manifest may override just o
 
 ## Blank template
 
-Copy-paste this as a starting point. It's the minimal valid manifest — every required field present with placeholder values, every optional section omitted. It validates against `AgentTypeManifestSchema` as-is.
+Copy-paste this as a starting point. It's the minimal valid manifest — every required field present with placeholder values, every optional section omitted. It validates against `SpecialtyManifestSchema` as-is.
 
 ```yaml
 apiVersion: shipwright.dev/v1alpha1
-kind: AgentType
+kind: Specialty
 metadata:
-  name: my-agent-type
-  displayName: My Agent Type
-  description: One-sentence description of what this agent type does.
+  name: my-specialty
+  displayName: My Specialty
+  description: One-sentence description of what this specialty does.
   version: 0.1.0
   skills: []
 identity:
@@ -147,7 +147,7 @@ voice: false
 To add `resources`, append a top-level `resources:` key with `requests:`/`limits:` sub-objects as shown in the [Resources](#resources-optional) reference above — omit it entirely (as this template does) to use the runtime default.
 ## Worked examples and Specialist type
 
-Annotated manifest excerpts (crons, env contract, plugins, members, tools, repos) and the shipped `specialist` type live in [agent-types-examples.md](agent-types-examples.md).
+Annotated manifest excerpts (crons, env contract, plugins, members, tools, repos) and the shipped `specialist` type live in [specialties-examples.md](specialties-examples.md).
 
 ## Rules
 
@@ -163,20 +163,20 @@ The env contract (`env.required[]` / `env.optional[]`) is deliberately **keys-on
 
 ### New crons in published types ship `enabled: false`
 
-Per the plugin constitution (`plugins/shipwright/CLAUDE.md`'s "System Cron Changes" section): any new cron added to a published Agent Type must ship with `enabled: false`. This avoids a new cron firing unexpectedly on existing agents of that type before they've opted in. Enable it per-agent once verified. The exception is a cron explicitly replacing a prior one — even then, add the replacement disabled, verify it, then flip it on and disable the old one, rather than swapping both in the same change.
+Per the plugin constitution (`plugins/shipwright/CLAUDE.md`'s "System Cron Changes" section): any new cron added to a published Specialty must ship with `enabled: false`. This avoids a new cron firing unexpectedly on existing agents of that type before they've opted in. Enable it per-agent once verified. The exception is a cron explicitly replacing a prior one — even then, add the replacement disabled, verify it, then flip it on and disable the old one, rather than swapping both in the same change.
 
 The core shipwright loop has five phases — `dev-task`, `plan`, `review`, `patch`, and `deploy`. Three of them (`dev-task`, `review`, `patch`) are a deliberate exception to "new crons ship disabled" — as pre-existing core phases (not new additions), they ship `enabled: true` by default in the reference coding manifest. `deploy` ships `enabled: false` as an explicit opt-in even though it's also a core phase, and `plan` (PDR-4.1, the newest phase) ships `enabled: false` under the rule itself — it is a new addition, so it gets no exception, and it is additionally gated at the code level by `SHIPWRIGHT_AGENT_AUTONOMOUS_PLAN_SESSION_ENABLED`. A brand-new maintenance cron (docs freshness, entropy patrol, etc.) always ships `enabled: false`.
 
 ### Resolution model
 
-The schema, YAML parser (`parseAgentTypeManifest`), and JSON Schema generator (`buildAgentTypeJsonSchema`) live in `admin/src/agent-type-registry.ts`. Disk-loading and runtime resolution are implemented separately in `admin/src/agent-type-manifest-loader.ts`'s `AgentTypeRegistry` class, which resolves a `typeName` to `agent-types/{typeName}/manifest.yaml` (relative to the repo root) and validates it via `parseAgentTypeManifest`:
+The schema, YAML parser (`parseSpecialtyManifest`), and JSON Schema generator (`buildSpecialtyJsonSchema`) live in `admin/src/specialty-registry.ts`. Disk-loading and runtime resolution are implemented separately in `admin/src/specialty-manifest-loader.ts`'s `SpecialtyRegistry` class, which resolves a `typeName` to `specialties/{typeName}/manifest.yaml` (relative to the repo root) and validates it via `parseSpecialtyManifest`:
 
 - **`getManifest(typeName)`** — falls back to the `coding` manifest with a logged warning for an unknown `typeName`; if the `coding` fallback itself can't load, that's treated as a startup-time bug and the error propagates. Cron reconciliation no longer uses it (see `tryGetManifest` below).
 - **`tryGetManifest(typeName)`** — also used by cron reconciliation (`AgentCronJobService.reconcileSystemCrons()` in `admin/src/agent-cron-jobs.ts`): a non-`coding` type with no loadable manifest logs an error and reconciles nothing (no coding crons seeded, existing crons untouched); an unloadable `coding` manifest throws. Used by the agent-creation form `POST /admin/agents` (`admin/src/admin-ui.ts`) to validate a requested `type`. Returns `undefined` for an unknown type (no fallback, no warning) so the route can reject the submission instead of silently seeding a `coding` agent under a different label.
-- **`listTypes()`** — discovers every directory under `agent-types/` and resolves each to `{name, displayName}` for the new-agent type picker (called from the `GET /admin/agents/new` handler in `admin/src/admin-ui.ts`, which passes the resolved types into `renderNewLocalAgentPage()` in `admin/src/admin-ui-pages.ts`). A directory whose manifest fails to load or parse is skipped rather than 500ing the whole page.
+- **`listTypes()`** — discovers every directory under `specialties/` and resolves each to `{name, displayName}` for the new-specialty picker (called from the `GET /admin/agents/new` handler in `admin/src/admin-ui.ts`, which passes the resolved types into `renderNewLocalAgentPage()` in `admin/src/admin-ui-pages.ts`). A directory whose manifest fails to load or parse is skipped rather than 500ing the whole page.
 
-There is currently **no built-in-vs-custom distinction or shadow-rejection check** — every `typeName` is resolved the same way, by directory lookup under `agent-types/` on disk. The registry does not yet support loading a manifest from anywhere other than the local `agent-types/` directory (e.g. a [GitHub source reference](agent-types-sources.md#github-source-references)), so the question of a custom manifest colliding with a shipped type's name does not yet arise in practice. Revisit this section once GitHub source references land and introduce a second manifest source.
+There is currently **no built-in-vs-custom distinction or shadow-rejection check** — every `typeName` is resolved the same way, by directory lookup under `specialties/` on disk. The registry does not yet support loading a manifest from anywhere other than the local `specialties/` directory (e.g. a [GitHub source reference](specialties-sources.md#github-source-references)), so the question of a custom manifest colliding with a shipped type's name does not yet arise in practice. Revisit this section once GitHub source references land and introduce a second manifest source.
 
 ## GitHub source references and Generated JSON Schema
 
-The specified-not-implemented GitHub source reference design and the generated JSON Schema (including the regeneration command) live in [agent-types-sources.md](agent-types-sources.md).
+The specified-not-implemented GitHub source reference design and the generated JSON Schema (including the regeneration command) live in [specialties-sources.md](specialties-sources.md).

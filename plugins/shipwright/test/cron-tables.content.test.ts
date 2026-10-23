@@ -3,7 +3,7 @@
  *
  * site/src/content/docs/the-agent.mdx and site/src/content/docs/cron-jobs.mdx used to both
  * carry a "Default system crons" table, and they had drifted out of sync with each other and
- * with agent-types/coding/manifest.yaml's `crons:` array (the actual source of truth).
+ * with specialties/coding/manifest.yaml's `crons:` array (the actual source of truth).
  *
  * cron-jobs.mdx is now the single source of truth for this table. This test guards against
  * re-drift:
@@ -24,7 +24,7 @@ const repoRoot = resolve(import.meta.dir, "..", "..", "..");
 
 const cronJobsDocPath = join(repoRoot, "site", "src", "content", "docs", "cron-jobs.mdx");
 const theAgentDocPath = join(repoRoot, "site", "src", "content", "docs", "the-agent.mdx");
-const manifestPath = join(repoRoot, "agent-types", "coding", "manifest.yaml");
+const manifestPath = join(repoRoot, "specialties", "coding", "manifest.yaml");
 
 function readCronJobsDoc(): string {
   return readFileSync(cronJobsDocPath, "utf8");
@@ -82,7 +82,7 @@ function getManifestCronNames(): string[] {
 // ── Files exist ───────────────────────────────────────────────────────────────
 
 describe("cron table docs — files", () => {
-  it("agent-types/coding/manifest.yaml exists", () => {
+  it("specialties/coding/manifest.yaml exists", () => {
     expect(existsSync(manifestPath)).toBe(true);
   });
 

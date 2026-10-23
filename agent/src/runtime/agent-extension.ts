@@ -2,7 +2,7 @@
  * agent/src/runtime/agent-extension.ts
  *
  * The extension seam between the generic agent runtime (boot.ts, config
- * sync, cron scheduling) and agent-type-specific behavior (today: the coding
+ * sync, cron scheduling) and specialty-specific behavior (today: the coding
  * agent's PR/task reconcilers and shipwright-loop orchestrator).
  *
  * The runtime calls an AgentExtension at fixed points:
@@ -119,7 +119,7 @@ export type AgentExtensionFactory = (
 /**
  * Folds the extensions a consumer passed to startAgent into the single
  * extension the runtime talks to. No extensions reproduces an agent with no
- * agent-type behavior; one extension is returned as-is. With several, notify
+ * specialty behavior; one extension is returned as-is. With several, notify
  * hooks (onConfigSync, onCronJobs) fan out to all, periodic passes concatenate
  * in order, and the first extension defining classifyCronJobs / dispatchLoop
  * owns it — those two decide a single outcome, so they cannot be merged.

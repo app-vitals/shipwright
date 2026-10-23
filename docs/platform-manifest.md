@@ -21,7 +21,7 @@ The gate is behavior-preserving. It adds no runtime code and does not touch the 
 - `agent/src/runtime/**` and the agent test fixtures in `agent/src/fixtures/**`.
 - The thin entry `agent/src/entrypoint-main.ts`, `agent/Dockerfile`, and the runtime workspace templates in `agent/workspace/` (the coding variants `CLAUDE.md.template` and `CLAUDE-HITL.md.template` are excluded).
 - `admin/**` except `admin/src/coding/**` (the coding admin extension and its tests) and the generated Prisma client.
-- The AgentType schema artifact (`docs/schemas/agent-type.schema.json`) and the neutral default type, `agent-types/specialist/**`. The `coding` manifest stays with Shipwright.
+- The Specialty schema artifact (`docs/schemas/specialty.schema.json`) and the neutral default type, `specialties/specialist/**`. The `coding` manifest stays with Shipwright.
 - The `lib` modules the set imports, each with a tag.
 
 ### Composition roots

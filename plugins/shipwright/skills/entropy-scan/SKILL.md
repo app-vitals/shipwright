@@ -17,7 +17,7 @@ this priority order:
 
 1. **Precheck-driven (preferred).** The `entropy-patrol-maintenance` cron's `preCheck`
    (`shipwright:check-patrol-scope.ts`) already resolved the agent's configured repos and
-   its stdout — which became this prompt (per the agent type manifest's cron `preCheck`
+   its stdout — which became this prompt (per the specialty manifest's cron `preCheck`
    contract: "When a preCheck script is set, its stdout becomes the actual prompt sent to
    Claude") — lists exactly which repo(s) are in scope, one repo name (`org/repo`) and its
    local clone directory per section. Parse the repo names and directories out of the
@@ -138,6 +138,34 @@ Within each category, process high-severity rules before medium before low.
 
 ---
 
+## Step 3.5: Apply Suppressions
+
+Runs once per repo, after Step 3 has produced its raw findings and before Step 4. Suppressions
+are human-reviewed entries in `.shipwright/suppressions.yml` in the **scanned repo** (schema:
+`references/suppressions-schema.md`; per-principle match keys: `references/suppressions.md`).
+
+1. **Build the candidate list.** For each finding emit one object
+   `{rule: "entropy", file, symbol, rule_id, line}`. `file` and `symbol` are the match key —
+   `symbol` follows the per-principle convention in `references/suppressions.md` (never a line
+   number; matching is exact, no wildcards).
+2. **Filter.** Write the candidates to a temp JSON array and run the shared script from the
+   repo being scanned:
+   ```bash
+   bun "$CLAUDE_PLUGIN_ROOT/scripts/suppressions.ts" --filter .shipwright/suppressions.yml candidates.json
+   ```
+   It prints `{kept, suppressed, expired}`. A missing suppressions file is valid (nothing
+   suppressed). A non-zero exit means the file is invalid — print the error, treat it as "no
+   suppressions applied", and note it in the summary; never abort the scan.
+3. **Drop suppressed findings here.** Every finding in `suppressed` is removed before Step 4:
+   it never appears in `entropy-report.md` and is not counted in the summary or the quality
+   log's `totalViolations`, `bySeverity` or `byRule`.
+4. **Track the counts** for Steps 4-6: `suppressed_count` = `suppressed.length`, and the
+   `expired` entries (rule, match key, `expires`) — keep only those with `rule == "entropy"`;
+   the file is shared with osv/grype/posture, whose expired entries are not this scan's to report. Expired entries stop suppressing, so their
+   findings stay in `kept` and surface normally.
+
+---
+
 ## Step 4: Write the Report
 
 If `--summary` flag was passed, skip to Step 5.
@@ -150,6 +178,7 @@ Write `entropy-report.md` to the project root (overwrite if it exists). Format:
 **Generated:** {YYYY-MM-DD HH:MM} {timezone}
 **Config:** {project override path | "plugin default"}
 **Rules scanned:** {count scannable entries} / {count total entries}
+**Suppressed:** {suppressed_count} (.shipwright/suppressions.yml)
 
 ## Summary
 
@@ -180,6 +209,12 @@ Write `entropy-report.md` to the project root (overwrite if it exists). Format:
 ---
 
 {Repeat section for each category that has findings}
+
+{If any expired entries:}
+## Expired Suppressions
+
+Expired entries no longer suppress — their findings are reported again above.
+- `{file}` · `{symbol}` — expired {expires}
 
 ## No Violations
 
@@ -213,6 +248,11 @@ ENTROPY SCAN COMPLETE
   LOW      {N} findings
   ─────────────────────
   TOTAL    {N} findings across {N} rules
+  Suppressed: {N}   (.shipwright/suppressions.yml)
+
+{If any expired entries:}
+  Expired suppressions (no longer suppressing — their findings are reported again):
+    - {file} {symbol} — expired {expires}
 
 TOP ISSUES
 ──────────
@@ -253,6 +293,7 @@ If `--summary` flag was NOT passed (i.e., a full scan with report write):
        "<rule_id>": <count>
        // Only include rules with at least 1 finding
      },
+     "suppressed": <suppressed_count>,   // optional; omit when 0 or no suppressions file
      "reportPath": "entropy-report.md"
    }
    ```
@@ -272,6 +313,7 @@ Schema reference: `skills/entropy-scan/references/quality-log-schema.md`
 - **No PR creation.** `entropy-scan` never creates PRs or tasks — queueing PR-worthy findings as task-store tasks belongs to `/entropy-fix`.
 - **No network calls.** All detection is local file inspection.
 - **Respect the project override.** If a project's `.claude/shipwright/principles.md` omits an entry present in the plugin default, treat it as not scanned — not even "just to check."
+- **Never report a finding suppressed in `.shipwright/suppressions.yml`.** Step 3.5 drops matching findings before the report, summary and quality log — they must not appear in `entropy-report.md` or the log counts. Expired entries are not suppressions: list them in the summary and report, and let their findings through.
 - **One scan, one report.** Each run fully overwrites `entropy-report.md`. Previous results are not preserved.
 - **Quality log is append-only.** Never overwrite or truncate `.entropy-patrol/quality-log.jsonl`. Appends only.
 - **`--summary` skips log.** When `--summary` is passed, no log entry is written (no report = no log entry).

@@ -1,10 +1,10 @@
-# Agent Type worked examples
+# Specialty worked examples
 
-> Companion to the [Agent Type authoring guide](agent-types.md): annotated manifest excerpts and the shipped `specialist` type.
+> Companion to the [Specialty authoring guide](specialties.md): annotated manifest excerpts and the shipped `specialist` type.
 
 ## Worked examples
 
-Each surface below is pulled directly from the live coding-agent manifest, [`agent-types/coding/manifest.yaml`](../agent-types/coding/manifest.yaml) — the reference type shipped with Shipwright itself. Use it as a second, fuller reference alongside the [blank template](agent-types.md#blank-template).
+Each surface below is pulled directly from the live coding-agent manifest, [`specialties/coding/manifest.yaml`](../specialties/coding/manifest.yaml) — the reference type shipped with Shipwright itself. Use it as a second, fuller reference alongside the [blank template](specialties.md#blank-template).
 
 ### Crons
 
@@ -26,7 +26,7 @@ crons:
     enabled: false
 ```
 
-`shipwright-dev-task` is a phase dispatched by `shipwright-loop` (its `parentCron`), so it doesn't need its own `preCheck` — the orchestrator handles candidate selection. `shipwright-docs-freshness` is a standalone scheduled scan with a `preCheck` gate and ships `enabled: false` (see [crons ship disabled](agent-types.md#new-crons-in-published-types-ship-enabled-false)).
+`shipwright-dev-task` is a phase dispatched by `shipwright-loop` (its `parentCron`), so it doesn't need its own `preCheck` — the orchestrator handles candidate selection. `shipwright-docs-freshness` is a standalone scheduled scan with a `preCheck` gate and ships `enabled: false` (see [crons ship disabled](specialties.md#new-crons-in-published-types-ship-enabled-false)).
 
 ### Env contract
 
@@ -53,7 +53,7 @@ env:
       secret: false
 ```
 
-Note there is no `value:` anywhere — see [manifests never contain secret values](agent-types.md#manifests-never-contain-secret-values).
+Note there is no `value:` anywhere — see [manifests never contain secret values](specialties.md#manifests-never-contain-secret-values).
 
 ### Plugins
 
@@ -89,7 +89,7 @@ tools:
   - Monitor
 ```
 
-This list is **additive on top of the floor set** — see [FLOOR_TOOLS are outside manifest authority](agent-types.md#floor_tools-are-outside-manifest-authority). Listing `Read`/`Write`/`Edit`/`Glob`/`Grep`/`Skill` here is harmless (they're already floor-granted) but redundant; the fields that actually matter to declare are the high-privilege ones — `Bash`, `WebSearch`, `WebFetch`, `Agent`, `Monitor` — since those are never floor-granted.
+This list is **additive on top of the floor set** — see [FLOOR_TOOLS are outside manifest authority](specialties.md#floor_tools-are-outside-manifest-authority). Listing `Read`/`Write`/`Edit`/`Glob`/`Grep`/`Skill` here is harmless (they're already floor-granted) but redundant; the fields that actually matter to declare are the high-privilege ones — `Bash`, `WebSearch`, `WebFetch`, `Agent`, `Monitor` — since those are never floor-granted.
 
 ### Repos
 
@@ -101,10 +101,10 @@ Default `org/repo`-formatted repos for agents of this type — like `members`, u
 
 ## Specialist type
 
-`agent-types/specialist/manifest.yaml` is a generic, non-coding Agent Type for agents that are not delivery agents. It uses existing manifest fields only — no schema or loader changes — and appears in the new-agent type picker automatically via `listTypes()`.
+`specialties/specialist/manifest.yaml` is a generic, non-coding Specialty for agents that are not delivery agents. It uses existing manifest fields only — no schema or loader changes — and appears in the new-specialty picker automatically via `listTypes()`.
 
 It differs from `coding` in what it does *not* grant: `crons: []` (no system crons — `learn-dream` is excluded because it needs the `shipwright` plugin), `plugins: []` (no `shipwright` plugin), `repos: []` and `GH_TOKEN` optional only (no GitHub or task-store scope), and a smaller additive tool set (`Bash`, `WebSearch`, `WebFetch`, `Agent` on top of the floor tools; no `Monitor`). The env contract is otherwise the same as `coding`.
 
 Specialties layer their own plugins, crons and env on top after creation, via the admin API.
 
-**Workspace templates:** `identity.templatesDir` points at `agent-types/specialist/templates/`, which provides the persona templates (`CLAUDE.md`, `SOUL.md`, `IDENTITY.md`, all `*.template`) with no coding-only sections, plus an optional `SPECIALTY.md.template`. Files the directory omits (`VOICE.md`, `mise.toml`, `requirements.txt`, `BOOTSTRAP.md`) fall back per file to `agent/workspace/`; the three persona templates are required or the type falls back to `agent/workspace/` entirely.
+**Workspace templates:** `identity.templatesDir` points at `specialties/specialist/templates/`, which provides the persona templates (`CLAUDE.md`, `SOUL.md`, `IDENTITY.md`, all `*.template`) with no coding-only sections, plus an optional `SPECIALTY.md.template`. Files the directory omits (`VOICE.md`, `mise.toml`, `requirements.txt`, `BOOTSTRAP.md`) fall back per file to `agent/workspace/`; the three persona templates are required or the type falls back to `agent/workspace/` entirely.

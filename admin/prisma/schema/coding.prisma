@@ -27,7 +27,7 @@ model AgentWorkQueueSnapshot {
 
 // ─── Agent Phase Methodology ──────────────────────────────────────────────────
 // Per-phase subagent-type override. Each row records which subagent type
-// (e.g. a custom Agent Type name) should handle one pipeline phase — prd,
+// (e.g. a custom Specialty name) should handle one pipeline phase — prd,
 // plan-session, review, patch, deploy, or dev-task — for a given agent,
 // overriding that phase's default methodology. `subagentType` is nullable:
 // a row with a null value (or the absence of a row) means "use the default".

@@ -63,7 +63,7 @@ export interface BlastReport {
 const LOWER_BOUND_NOTE =
   "Lower bound: derived from prose references, so mentions spelled in ways the scan does not recognise are not counted.";
 
-const MANIFEST_RE = /(?:^|\/)agent-types\/[^/]+\/manifest\.yaml$/;
+const MANIFEST_RE = /(?:^|\/)specialties\/[^/]+\/manifest\.yaml$/;
 const CONTENT_TEST_RE = /\.content\.test\.[cm]?[jt]sx?$/;
 const SOURCE_MAP_PATH = "site/docs-source-map.json";
 const SKIP_SEGMENTS = new Set(["node_modules", ".git"]);

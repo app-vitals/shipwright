@@ -36,7 +36,7 @@ import type { PrismaClient } from "../prisma/client/client.ts";
 import {
   ACCOUNT_CREATE_ERROR_MESSAGES,
   accountIdFromScope,
-  getSelfServeAgentType,
+  getSelfServeSpecialty,
   isAccountCreateErrorCode,
 } from "./account-agent-create.ts";
 import { reconcileAgentAfterAccountChange } from "./agent-account-assignment.ts";
@@ -56,7 +56,7 @@ import type { AgentPluginService } from "./agent-plugins.ts";
 import type { AgentProvisioner } from "./agent-provisioner.ts";
 import type { AgentTokenService } from "./agent-tokens.ts";
 import type { AgentToolService } from "./agent-tools.ts";
-import type { AgentTypeManifestResolver } from "./agent-type-manifest-loader.ts";
+import type { SpecialtyManifestResolver } from "./specialty-manifest-loader.ts";
 import type { AgentService } from "./agents.ts";
 import {
   createAgent,
@@ -186,14 +186,14 @@ export interface AdminDeps {
   /** Account-aware caller-scope resolver (SSP-2.1); defaults to AgentMember-only. */
   callerScopeResolver?: CallerScopeResolver;
   /**
-   * Resolves an agent-type name to its parsed Agent Type manifest. Consumed
+   * Resolves a specialty name to its parsed Specialty manifest. Consumed
    * by POST /agents (createAgentRoute, APA-2.1) to seed AgentTool/AgentPlugin
    * rows from the resolved manifest during agent creation — the same
    * createAgent() call admin-ui.ts's POST /admin/agents form handler makes
-   * with its own independently-constructed agentTypeRegistry instance.
+   * with its own independently-constructed specialtyRegistry instance.
    * Required (not optional) because the route needs it unconditionally.
    */
-  agentTypeRegistry: AgentTypeManifestResolver;
+  specialtyRegistry: SpecialtyManifestResolver;
   agentChatTokenService: Pick<
     AgentChatTokenService,
     "upsertDailyByModel" | "queryStats"
@@ -679,7 +679,7 @@ const reconcileCronsRoute = createRoute({
   path: "/agents/{id}/crons/reconcile",
   summary: "Reconcile system crons",
   description:
-    "Reconciles the agent's system crons against the cron list declared by its Agent Type manifest. Runs in three passes within a single transaction: create-or-update matched-by-name system crons (preserving IDs so run history survives), link/unlink parent-child cron relationships, and delete orphaned system crons no longer in the manifest. Called automatically on agent startup; returns created/updated/deleted counts.",
+    "Reconciles the agent's system crons against the cron list declared by its Specialty manifest. Runs in three passes within a single transaction: create-or-update matched-by-name system crons (preserving IDs so run history survives), link/unlink parent-child cron relationships, and delete orphaned system crons no longer in the manifest. Called automatically on agent startup; returns created/updated/deleted counts.",
   request: { params: AgentIdParamSchema },
   responses: {
     200: {
@@ -1328,7 +1328,7 @@ export function createAdminApp(deps: AdminDeps): OpenAPIHono<AdminAuthEnv> {
     agentTokenService,
     agentPluginService,
     agentMemberService,
-    agentTypeRegistry,
+    specialtyRegistry,
     agentChatTokenService,
     agentGitHubInstallationsService,
     prisma,
@@ -1656,13 +1656,13 @@ export function createAdminApp(deps: AdminDeps): OpenAPIHono<AdminAuthEnv> {
         agentEnvService,
         agentCronJobService,
         provisioner,
-        agentTypeRegistry,
+        specialtyRegistry,
         anthropicFederationEnabled: deps.anthropicFederationEnabled,
       },
       {
         name: body.name,
         typeName:
-          accountId !== undefined ? getSelfServeAgentType() : body.typeName,
+          accountId !== undefined ? getSelfServeSpecialty() : body.typeName,
         ...(accountId !== undefined ? { accountId } : {}),
         // PAI-1.2: owner comes from the authenticated caller only; the body
         // schema has no owner field, so a client-supplied one is stripped.

@@ -1,13 +1,13 @@
 /**
- * admin/src/agent-type-manifest-loader.integration.test.ts
- * Integration tests for AgentTypeRegistry's real-disk-backed default reader
+ * admin/src/specialty-manifest-loader.integration.test.ts
+ * Integration tests for SpecialtyRegistry's real-disk-backed default reader
  * and lister.
  *
- * Unlike agent-type-manifest-loader.unit.test.ts (which injects a fake
+ * Unlike specialty-manifest-loader.unit.test.ts (which injects a fake
  * read/list and never touches the filesystem), these cases construct
- * `AgentTypeRegistry` with no injected dependencies, so it falls through to
+ * `SpecialtyRegistry` with no injected dependencies, so it falls through to
  * `defaultManifestReader`/`defaultTypeDirLister` and reads the real,
- * committed agent-types/ directory from disk. This is a genuine I/O-boundary
+ * committed specialties/ directory from disk. This is a genuine I/O-boundary
  * crossing — see docs/testing.md for the integration-layer contract.
  */
 
@@ -15,29 +15,29 @@ import { afterAll, describe, expect, it } from "bun:test";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { AgentTypeRegistry } from "./agent-type-manifest-loader.ts";
+import { SpecialtyRegistry } from "./specialty-manifest-loader.ts";
 
-describe("AgentTypeRegistry", () => {
+describe("SpecialtyRegistry", () => {
   it("loads the real committed coding manifest from disk via the default reader", () => {
     // No injected reader — exercises defaultManifestReader against the real
-    // agent-types/coding/manifest.yaml so a broken repo-root path is caught.
-    const registry = new AgentTypeRegistry();
+    // specialties/coding/manifest.yaml so a broken repo-root path is caught.
+    const registry = new SpecialtyRegistry();
     const manifest = registry.getManifest("coding");
     expect(manifest.metadata.name).toBe("coding");
     expect(manifest.crons.length).toBeGreaterThan(0);
   });
 
-  it("listTypes discovers the real committed agent-types/ dir via the default list fn", () => {
+  it("listTypes discovers the real committed specialties/ dir via the default list fn", () => {
     // No injected list/read — exercises the real disk-backed discovery so a
     // broken repo-root path or missing coding manifest is caught.
-    const registry = new AgentTypeRegistry();
+    const registry = new SpecialtyRegistry();
     const types = registry.listTypes();
     expect(types.length).toBeGreaterThan(0);
     expect(types.some((t) => t.name === "coding")).toBe(true);
   });
 
   it("lists and loads the real committed specialist manifest without falling back to coding", () => {
-    const registry = new AgentTypeRegistry();
+    const registry = new SpecialtyRegistry();
     expect(registry.listTypes().some((t) => t.name === "specialist")).toBe(
       true,
     );
@@ -47,15 +47,15 @@ describe("AgentTypeRegistry", () => {
   });
 });
 
-describe("AgentTypeRegistry with a fixture agent-types dir", () => {
-  const dir = mkdtempSync(join(tmpdir(), "agent-types-"));
+describe("SpecialtyRegistry with a fixture specialties dir", () => {
+  const dir = mkdtempSync(join(tmpdir(), "specialties-"));
   afterAll(() => rmSync(dir, { recursive: true, force: true }));
 
-  const real = new AgentTypeRegistry().getManifest("coding");
+  const real = new SpecialtyRegistry().getManifest("coding");
   const writeType = (name: string) => {
     mkdirSync(join(dir, name));
     const yaml = `apiVersion: shipwright.dev/v1alpha1
-kind: AgentType
+kind: Specialty
 metadata:
   name: ${name}
   displayName: Fixture ${name}
@@ -82,7 +82,7 @@ voice: true
 
   it("reads, lists and falls back within the fixture dir", () => {
     expect(real.metadata.name).toBe("coding");
-    const registry = new AgentTypeRegistry({
+    const registry = new SpecialtyRegistry({
       typesDir: dir,
       defaultTypeName: "beta",
       warn: () => {},

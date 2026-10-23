@@ -57,7 +57,7 @@ const ALL_PHASES_ON: CronJobLike[] = [
 
 /**
  * Builds a CronJobLike fixture representing a child phase row exactly as
- * reconcileSystemCrons() (agent-types/coding/manifest.yaml, LPC-1.2) produces
+ * reconcileSystemCrons() (specialties/coding/manifest.yaml, LPC-1.2) produces
  * it — parentCronId set to the loop row's own id. Distinct from the local job()
  * helper above (which defaults parentCronId to the CBD-2.1 test's fixed
  * "shipwright-loop" id) since this section's tests use their own explicit
@@ -283,7 +283,7 @@ describe("loop-orchestrator + child AgentCronJob rows (LPC-2.1)", () => {
   /**
    * A realistic reconciled cron-job set: a parent loop row plus four child
    * phase rows (parentCronId: PARENT_LOOP_ID), mirroring exactly what
-   * reconcileSystemCrons() produces per agent-types/coding/manifest.yaml's
+   * reconcileSystemCrons() produces per specialties/coding/manifest.yaml's
    * parentCron: "shipwright-loop" declarations. Only the dev-task child's
    * enabled flag varies between fixtures below.
    */

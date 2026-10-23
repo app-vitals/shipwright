@@ -110,7 +110,9 @@ describe("SKILL.md — Step 3.1 gitleaks .gitleaksignore auto-discovery", () => 
   it("documents that suppression entries are added only via human HITL confirmation", () => {
     const text = content.toLowerCase();
     const hasHITL =
-      text.includes("hitl") || text.includes("human") || text.includes("closing");
+      text.includes("hitl") ||
+      text.includes("human") ||
+      text.includes("closing");
     const hasNeverAuto =
       text.includes("never automatically") ||
       text.includes("not automatically") ||
@@ -242,7 +244,8 @@ describe("SKILL.md — environment-artifact noise filtering (Tier 1 scan targets
     const hasRationale =
       text.includes("false-positive") || text.includes("false positive");
     const mentionsArtifacts =
-      text.includes("environment artifact") || text.includes("scan-environment noise");
+      text.includes("environment artifact") ||
+      text.includes("scan-environment noise");
     expect(hasRationale).toBe(true);
     expect(mentionsArtifacts).toBe(true);
   });
@@ -266,9 +269,13 @@ describe("SKILL.md — Tier 1 tool binaries staged outside the scan target", () 
       const sectionHeader = `### 3.${["gitleaks", "osv-scanner", "grype", "syft", "zizmor"].indexOf(tool) + 1} ${tool}`;
       const startIndex = content.indexOf(sectionHeader);
       expect(startIndex).toBeGreaterThan(-1);
-      const nextHeaderMatch = content.slice(startIndex + 1).search(/\n### 3\.\d/);
+      const nextHeaderMatch = content
+        .slice(startIndex + 1)
+        .search(/\n### 3\.\d/);
       const endIndex =
-        nextHeaderMatch === -1 ? content.length : startIndex + 1 + nextHeaderMatch;
+        nextHeaderMatch === -1
+          ? content.length
+          : startIndex + 1 + nextHeaderMatch;
       const section = content.slice(startIndex, endIndex);
       expect(section).toContain("$TOOLS_DIR");
       // The curl -o destination must not be a bare filename in the repo root.
@@ -373,8 +380,7 @@ describe("SKILL.md — Step 3.5a zizmor.yml suppression filter", () => {
 
   it("explains zizmor's own line-based ignore matching is unreliable due to line drift", () => {
     const text = content.toLowerCase();
-    const hasDrift =
-      text.includes("line drift") || text.includes("line-based");
+    const hasDrift = text.includes("line drift") || text.includes("line-based");
     const hasUnreliable =
       text.includes("unreliable") || text.includes("fragile");
     expect(hasDrift).toBe(true);
@@ -511,5 +517,44 @@ describe("SKILL.md — ledger classification with repo-namespaced keys", () => {
 
   it("documents repo-slug derivation (last path segment, lowercased)", () => {
     expect(content).toContain("repo-slug");
+  });
+});
+
+describe("SKILL.md — suppressions (.shipwright/suppressions.yml)", () => {
+  it("has a step applying suppressions before the finding-record step", () => {
+    const step = content.indexOf("## Step 5.5: Apply Suppressions");
+    expect(step).toBeGreaterThan(-1);
+    expect(step).toBeLessThan(
+      content.indexOf("## Step 6: Finding-Record Shape"),
+    );
+  });
+
+  it("reads .shipwright/suppressions.yml via the shared script", () => {
+    expect(content).toContain(".shipwright/suppressions.yml");
+    expect(content).toContain('suppressions.ts" --filter');
+  });
+
+  it("maps scanner rules to suppression rules", () => {
+    expect(content).toContain("osv-cve");
+    expect(content).toContain("`osv`");
+    expect(content).toContain("`grype`");
+    expect(content).toContain("`posture`");
+  });
+
+  it("drops suppressed findings before report and ledger", () => {
+    expect(content).toMatch(/never appears in `security-report\.md`/);
+  });
+
+  it("prints the suppressed count in the summary", () => {
+    expect(content).toContain("Suppressed:");
+  });
+
+  it("lists expired entries as no longer suppressing", () => {
+    expect(content).toContain("no longer suppressing");
+  });
+
+  it("keeps the existing zizmor/.gitleaksignore handling", () => {
+    expect(content).toContain("3.5a");
+    expect(content).toContain(".gitleaksignore");
   });
 });

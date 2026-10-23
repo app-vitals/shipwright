@@ -11,10 +11,10 @@
 import type { CallerScope } from "./caller-scope.ts";
 
 /**
- * The only agent type account users may create: SHIPWRIGHT_SELF_SERVE_AGENT_TYPE
+ * The only specialty account users may create: SHIPWRIGHT_SELF_SERVE_AGENT_TYPE
  * when set, else "coding".
  */
-export function getSelfServeAgentType(
+export function getSelfServeSpecialty(
   env: Record<string, string | undefined> = process.env,
 ): string {
   return env.SHIPWRIGHT_SELF_SERVE_AGENT_TYPE || "coding";

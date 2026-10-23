@@ -16,7 +16,7 @@ unaffected — the new gate only runs when the cron ticks.
 and dispatched a bare prompt with no repo argument, leaving the agent to improvise which
 repo(s) under `repos/` to scan. Both now declare
 `preCheck: shipwright:check-patrol-scope.ts` in
-[`agent-types/coding/manifest.yaml`](../agent-types/coding/manifest.yaml), which resolves the
+[`specialties/coding/manifest.yaml`](../specialties/coding/manifest.yaml), which resolves the
 agent's configured repos and emits the in-scope repo list as the cron's actual prompt.
 
 **What changed on upgrade**: `reconcileSystemCrons()` runs on every agent boot and keeps system
@@ -124,9 +124,9 @@ of the same seeding/provisioning logic that had to be kept in sync by hand.
   `paths["/agents"]["post"]` member — a **type-level** break for TypeScript clients generated
   from that file. A drift-guard check in `admin/src/admin-spec.smoke.test.ts` keeps the spec and
   the generated types in sync going forward.
-- `AdminDeps.agentTypeRegistry` is now unused by `agents-api.ts` and is retained only as an
+- `AdminDeps.specialtyRegistry` is now unused by `agents-api.ts` and is retained only as an
   optional field for backward-compatible construction; the admin UI carries its own
-  `agentTypeRegistry` dependency for manifest-driven seeding.
+  `specialtyRegistry` dependency for manifest-driven seeding.
 - `scripts/hitl.ts` (the `task hitl` bootstrap) now creates the local dev `hitl` agent via
   `POST /admin/agents` instead of `POST /agents`, minting an admin session through the dev
   auto-login route first.
@@ -141,7 +141,7 @@ of the same seeding/provisioning logic that had to be kept in sync by hand.
      production you can mint one via `GET /admin/dev-login` (dev-auth only); in production,
      drive it from a signed-in admin browser session.
   2. **Body** is `application/x-www-form-urlencoded`, not JSON. Field names:
-     `name`, `type` (agent type, required — no implicit `"coding"` default), `runtime`
+     `name`, `type` (specialty, required — no implicit `"coding"` default), `runtime`
      (`in-cluster` for a managed/provisioned agent; absent/anything else means self-hosted, the
      inverse of the old `selfHosted` boolean), `repos` / `authorAllowlist` /
      `patchAuthorAllowlist` / `memberEmails` (newline-separated lists), and
@@ -156,7 +156,7 @@ of the same seeding/provisioning logic that had to be kept in sync by hand.
 - **Seeding parity**: the form seeds `AgentTool`/`AgentPlugin` rows from the selected Agent
   Type manifest and rolls the agent row back on failure, exactly as the JSON route did. It does
   *not* seed `AgentMember` rows or merge `manifest.repos` into `repos` — those come from the
-  form's own `memberEmails`/`repos` fields. No shipped agent type declares non-empty
+  form's own `memberEmails`/`repos` fields. No shipped specialty declares non-empty
   `members`/`repos`, so this is a no-op difference today.
 - **Deploy order**: no constraint — the change is confined to the admin service, and the only
   in-repo caller (`scripts/hitl.ts`) ships in the same change.

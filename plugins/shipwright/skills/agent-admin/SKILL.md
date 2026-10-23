@@ -75,8 +75,8 @@ take effect without a restart.
 
 ### System crons vs. custom crons
 
-System crons (`"system": true` in the list output) are seeded from the agent type manifest's
-`crons` array (`agent-types/{typeName}/manifest.yaml`, resolved via the `AgentTypeRegistry`).
+System crons (`"system": true` in the list output) are seeded from the specialty manifest's
+`crons` array (`specialties/{typeName}/manifest.yaml`, resolved via the `SpecialtyRegistry`).
 Important rules:
 
 - **Cannot be deleted via the API** — the server returns 403. They are recreated on the
@@ -84,7 +84,7 @@ Important rules:
 - **Can be enabled/disabled via `PATCH {"enabled": bool}`** — the enabled-only toggle works
   for both custom and system crons. The enabled state persists across reconcile calls.
 - **Content updates go through code** — submit a PR to change the manifest's `crons` array
-  (`agent-types/{typeName}/manifest.yaml`), then call `POST .../crons/reconcile` to apply the
+  (`specialties/{typeName}/manifest.yaml`), then call `POST .../crons/reconcile` to apply the
   new definition.
 
 Custom crons (user-created, `"system": false`) can be freely created, updated, and deleted.
@@ -186,7 +186,7 @@ curl -sf -X DELETE \
   -H "Authorization: Bearer $SHIPWRIGHT_AGENT_API_KEY" \
   "$SHIPWRIGHT_API_URL/agents/$SHIPWRIGHT_AGENT_ID/crons/{cronId}"
 
-# Reconcile system crons — re-seeds from the agent type manifest, preserving per-agent enabled state
+# Reconcile system crons — re-seeds from the specialty manifest, preserving per-agent enabled state
 # Run after a shipwright plugin update that changes system cron definitions
 curl -sf -X POST \
   -H "Authorization: Bearer $SHIPWRIGHT_AGENT_API_KEY" \
@@ -364,7 +364,7 @@ curl -sf -X DELETE \
 Two callers, one implementation: `POST /agents` (JSON admin API) and the web UI form at
 `/admin/agents/new` (`POST /admin/agents`, an HTML form endpoint) both delegate to the same
 `createAgent()` function — validate name/typeName, create the Agent row, seed
-AgentTool/AgentPlugin from the selected Agent Type manifest, attach repos/allowlists/members,
+AgentTool/AgentPlugin from the selected Specialty manifest, attach repos/allowlists/members,
 patch Claude credentials, and (for `runtime: "in-cluster"`) provision the Kubernetes workload.
 Creation is transactional: any failure leaves zero rows behind, never a partial-success 200.
 (`/admin/provision` still works as a legacy redirect to the form.)
@@ -393,7 +393,7 @@ with a 4xx status — `<code>` is one of `missing_fields`, `invalid_type`,
 `invalid_author_allowlist_format`, or `provision_failed`.
 
 The web UI form at `/admin/agents/new` remains the friendlier path for a human: it covers
-both runtime modes, agent type selection, Slack app connection, GitHub auth, AI credentials,
+both runtime modes, specialty selection, Slack app connection, GitHub auth, AI credentials,
 repos, member emails, and author allowlists in one guided flow.
 
 After the agent is created, set env vars, add tool patterns, install plugins, and seed

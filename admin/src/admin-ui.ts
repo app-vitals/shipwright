@@ -31,7 +31,7 @@ import { deleteCookie, getCookie, setCookie } from "hono/cookie";
 import { sign, verify } from "hono/jwt";
 import {
   accountIdFromScope,
-  getSelfServeAgentType,
+  getSelfServeSpecialty,
 } from "./account-agent-create.ts";
 import type { AccountCreatedNotifier } from "./account-created-notifier.ts";
 import { fireAccountCreatedNotification } from "./account-created-notifier.ts";
@@ -75,9 +75,9 @@ import type { AgentProvisioner } from "./agent-provisioner.ts";
 import type { AgentTokenService } from "./agent-tokens.ts";
 import type { AgentToolService } from "./agent-tools.ts";
 import {
-  type AgentTypeManifestResolver,
-  AgentTypeRegistry,
-} from "./agent-type-manifest-loader.ts";
+  type SpecialtyManifestResolver,
+  SpecialtyRegistry,
+} from "./specialty-manifest-loader.ts";
 import type { AgentService } from "./agents.ts";
 import { createAgent, describeRepoNameCollision } from "./agents.ts";
 import { AnthropicCredentialsBlockedError } from "./anthropic-credential-guard.ts";
@@ -345,12 +345,12 @@ export interface AdminUIDeps {
   /** WIF-2.1: Anthropic federation is enabled; defaults to false. */
   anthropicFederationEnabled?: boolean;
   /**
-   * Resolves an agent's typeName to its parsed Agent Type manifest and lists
-   * the registry's discoverable types (for the new-agent type picker).
-   * Defaults to a disk-backed AgentTypeRegistry, matching the DI pattern
+   * Resolves an agent's typeName to its parsed Specialty manifest and lists
+   * the registry's discoverable types (for the new-specialty picker).
+   * Defaults to a disk-backed SpecialtyRegistry, matching the DI pattern
    * already used by agents-api.ts's AdminDeps.
    */
-  agentTypeRegistry?: AgentTypeManifestResolver;
+  specialtyRegistry?: SpecialtyManifestResolver;
   /**
    * Cleanup deps for the full delete-agent orchestration (POST
    * /admin/agents/:id/delete → deleteAgentFully()). Matches
@@ -683,7 +683,7 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
     accountOnboarding,
     accountCreatedNotifier,
     accountServices,
-    agentTypeRegistry = new AgentTypeRegistry(),
+    specialtyRegistry = new SpecialtyRegistry(),
     callerScopeResolver = memberOnlyCallerScopeResolver(agentMemberService),
     serviceIntegrations,
     chatService,
@@ -1277,7 +1277,7 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
       "Repo must be in org/repo format (e.g. my-org/my-repo).",
     invalid_author_allowlist_format:
       "Author allowlist entries must be valid GitHub logins.",
-    invalid_type: "Select a valid agent type.",
+    invalid_type: "Select a valid specialty.",
     provisioning_disabled:
       "In-cluster provisioning is not enabled on this admin service — create a self-hosted agent instead.",
     provision_failed:
@@ -1325,7 +1325,7 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
     }
     const rawError = c.req.query("error") ?? undefined;
     const error = rawError ? (ERROR_MESSAGES[rawError] ?? rawError) : undefined;
-    const types = agentTypeRegistry.listTypes();
+    const types = specialtyRegistry.listTypes();
     return html(
       renderNewLocalAgentPage(c.var.userEmail, types, {
         error,
@@ -1407,7 +1407,7 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
     const connectSlack = connectSlackRaw === "true";
     // SSP-4.2: account users always create "coding" agents in their own
     // account — any submitted type/accountId is ignored.
-    if (accountId !== null) typeName = getSelfServeAgentType();
+    if (accountId !== null) typeName = getSelfServeSpecialty();
     // Absent/unrecognized runtime means self-hosted — the historical behavior
     // of this form. createAgent() below re-derives this same value itself
     // (it owns the runtime/provisioning validation); it's recomputed here
@@ -1454,7 +1454,7 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
         agentEnvService,
         agentCronJobService,
         provisioner,
-        agentTypeRegistry,
+        specialtyRegistry,
         anthropicFederationEnabled: deps.anthropicFederationEnabled,
       },
       {

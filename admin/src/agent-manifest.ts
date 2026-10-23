@@ -70,12 +70,12 @@ const DEFAULT_TENANT_CPU_LIMIT = "2";
  * from `buildAgentDeploymentManifest` with `opts.resources` — omitted or
  * partial overrides fall back field-by-field to the default below.
  *
- * Precedence (highest wins): agent-type override > env override > default.
+ * Precedence (highest wins): specialty override > env override > default.
  * `overrides` here is the ENV layer (populated in admin/src/main.ts's
  * buildProvisioner from SHIPWRIGHT_K8S_AGENT_* vars). The per-type
- * AgentTypeResourcesSchema in agent-type-registry.ts is already parsed as
- * part of AgentTypeManifestSchema.resources but is NOT consumed here or by
- * any provisioner — it stays inert until a future task wires agent-type-level
+ * SpecialtyResourcesSchema in specialty-registry.ts is already parsed as
+ * part of SpecialtyManifestSchema.resources but is NOT consumed here or by
+ * any provisioner — it stays inert until a future task wires specialty-level
  * resource resolution in ahead of this function's env layer.
  *
  * Defaults: requests mirror the GKE Autopilot defaults the agent ran with

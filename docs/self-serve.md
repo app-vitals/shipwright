@@ -76,4 +76,4 @@ Known limits:
 - A public shared Slack app and GitHub App (multi-workspace OAuth, per-install token storage, event routing and tenancy).
 - Namespace-per-account isolation, which also enables real per-account ResourceQuotas — required before public signup beyond trusted users.
 - Payments and per-agent pricing (hooks: `Account.plan`, `maxAgents`).
-- Okta-based self-serve signup, multiple accounts per email, and agent types other than `coding`.
+- Okta-based self-serve signup, multiple accounts per email, and specialties other than `coding`.

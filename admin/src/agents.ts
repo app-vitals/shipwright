@@ -20,9 +20,9 @@ import type { AgentPluginService } from "./agent-plugins.ts";
 import type { AgentProvisioner } from "./agent-provisioner.ts";
 import type { AgentToolService } from "./agent-tools.ts";
 import {
-  type AgentTypeManifestResolver,
-  AgentTypeRegistry,
-} from "./agent-type-manifest-loader.ts";
+  type SpecialtyManifestResolver,
+  SpecialtyRegistry,
+} from "./specialty-manifest-loader.ts";
 import { ANTHROPIC_CREDENTIALS_BLOCKED_CODE } from "./anthropic-credential-guard.ts";
 import type { PrismaTransactionClient } from "./prisma-tx.ts";
 
@@ -32,7 +32,7 @@ interface CreateAgentInput {
   name: string;
   slackId?: string | null;
   selfHosted?: boolean;
-  /** Agent Type name. Omitted means Prisma's column default ("coding") applies. */
+  /** Specialty name. Omitted means Prisma's column default ("coding") applies. */
   typeName?: string;
   /** Initial repos[] — the manifest repos merged with any request-supplied repos. */
   repos?: string[];
@@ -194,7 +194,7 @@ interface AgentIdAndRepos {
    */
   accountStatus?: string | null;
   /**
-   * ARD-6.1: the agent's Agent Type name, surfaced on the runtime config
+   * ARD-6.1: the agent's Specialty name, surfaced on the runtime config
    * response so the agent process can pick its workspace template directory.
    * Optional for the same fixture-compat reason as trialExpiresAt.
    */
@@ -294,7 +294,7 @@ const DETAIL_SELECT = {
 export class AgentService {
   constructor(
     private prisma: PrismaClient,
-    private agentTypeRegistry: AgentTypeManifestResolver = new AgentTypeRegistry(),
+    private specialtyRegistry: SpecialtyManifestResolver = new SpecialtyRegistry(),
     private agentMemberService: Pick<
       AgentMemberService,
       "listByAgentId"
@@ -408,7 +408,7 @@ export class AgentService {
     typeName: string,
     client: PrismaTransactionClient = this.prisma,
   ): Promise<string[]> {
-    const requiredKeys = this.agentTypeRegistry
+    const requiredKeys = this.specialtyRegistry
       .getManifest(typeName)
       .env.required.map((entry) => entry.key);
 
@@ -761,7 +761,7 @@ export interface CreateAgentDeps {
   agentEnvService: Pick<AgentEnvService, "patch">;
   agentCronJobService: Pick<AgentCronJobService, "reconcileSystemCrons">;
   provisioner: Pick<AgentProvisioner, "canProvision" | "provision">;
-  agentTypeRegistry: Pick<AgentTypeManifestResolver, "tryGetManifest">;
+  specialtyRegistry: Pick<SpecialtyManifestResolver, "tryGetManifest">;
   /** WIF-2.1: Anthropic federation is enabled; defaults to false. */
   anthropicFederationEnabled?: boolean;
 }
@@ -854,7 +854,7 @@ export async function createAgent(
   // captured (not discarded) so its tools/plugins can be seeded below.
   const typeName = input.typeName;
   const manifest = typeName
-    ? deps.agentTypeRegistry.tryGetManifest(typeName)
+    ? deps.specialtyRegistry.tryGetManifest(typeName)
     : undefined;
   if (!typeName || !manifest) {
     return { ok: false, errorCode: "invalid_type" };
@@ -916,7 +916,7 @@ export async function createAgent(
       // doesn't collide with a half-seeded agent. Members/repos are NOT
       // seeded from the manifest here — they have their own dedicated
       // handling below, and the manifest's members/repos arrays are empty
-      // for every agent type that exists today.
+      // for every specialty that exists today.
       try {
         for (const pattern of manifest.tools) {
           await deps.agentToolService.add(agent.id, pattern, tx);

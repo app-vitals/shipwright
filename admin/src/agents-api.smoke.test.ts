@@ -18,20 +18,20 @@ import type {
   ReconcileTarget,
 } from "./agent-provisioner.ts";
 import type { AgentTokenService } from "./agent-tokens.ts";
-import type { AgentTypeManifest } from "./agent-type-registry.ts";
+import type { SpecialtyManifest } from "./specialty-registry.ts";
 import type { AdminDeps } from "./agents-api.ts";
 import { createAdminApp, parseAdminApiKeys } from "./agents-api.ts";
 import { identityCrypto } from "./token-crypto.ts";
 
-// ─── Fake AgentTypeManifestResolver ────────────────────────────────────────
+// ─── Fake SpecialtyManifestResolver ────────────────────────────────────────
 //
 // Mirrors the shape used by agent-cron-jobs.unit.test.ts's fakeRegistry —
 // resolves a fixed set of manifests by typeName, with tryGetManifest()
 // returning undefined (no fallback) for anything not in the map.
 
-const CODING_MANIFEST: AgentTypeManifest = {
+const CODING_MANIFEST: SpecialtyManifest = {
   apiVersion: "shipwright.dev/v1alpha1",
-  kind: "AgentType",
+  kind: "Specialty",
   metadata: {
     name: "coding",
     displayName: "Coding Agent",
@@ -61,12 +61,12 @@ const CODING_MANIFEST: AgentTypeManifest = {
   voice: true,
 };
 
-function fakeAgentTypeRegistry(
-  byType: Record<string, AgentTypeManifest> = { coding: CODING_MANIFEST },
-): AdminDeps["agentTypeRegistry"] {
+function fakeSpecialtyRegistry(
+  byType: Record<string, SpecialtyManifest> = { coding: CODING_MANIFEST },
+): AdminDeps["specialtyRegistry"] {
   return {
     getManifest(typeName: string) {
-      return byType[typeName] ?? (byType.coding as AgentTypeManifest);
+      return byType[typeName] ?? (byType.coding as SpecialtyManifest);
     },
     tryGetManifest(typeName: string) {
       return byType[typeName];
@@ -555,7 +555,7 @@ function makeMockDeps(): AdminDeps {
         },
       ],
     },
-    agentTypeRegistry: fakeAgentTypeRegistry(),
+    specialtyRegistry: fakeSpecialtyRegistry(),
     agentChatTokenService: {
       upsertDailyByModel: async (
         _agentId: string,

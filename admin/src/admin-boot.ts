@@ -80,7 +80,7 @@ import { AgentMemberService } from "./agent-members.ts";
 import { AgentPluginService } from "./agent-plugins.ts";
 import { AgentTokenService } from "./agent-tokens.ts";
 import { AgentToolService } from "./agent-tools.ts";
-import { AgentTypeRegistry } from "./agent-type-manifest-loader.ts";
+import { SpecialtyRegistry } from "./specialty-manifest-loader.ts";
 import { AgentService } from "./agents.ts";
 import { createAdminApp, parseAdminApiKeys } from "./agents-api.ts";
 import { createAgentRuntimeApp } from "./api.ts";
@@ -400,7 +400,7 @@ export async function startAdmin(
     agentPluginService,
     agentMemberService,
     callerScopeResolver,
-    agentTypeRegistry: new AgentTypeRegistry(),
+    specialtyRegistry: new SpecialtyRegistry(),
     agentChatTokenService,
     agentGitHubInstallationsService,
     prisma,

@@ -3,7 +3,7 @@
  *
  * The extension seam between the generic admin platform (admin-boot.ts:
  * agents, envs, crons, tokens, plugins, accounts, provisioning, the admin UI
- * shell and its sweepers) and agent-type-specific admin behavior (Shipwright:
+ * shell and its sweepers) and specialty-specific admin behavior (Shipwright:
  * the coding extension). Mirrors the agent's seam in
  * agent/src/runtime/agent-extension.ts.
  *

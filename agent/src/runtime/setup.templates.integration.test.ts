@@ -42,13 +42,13 @@ afterEach(() => {
   rmSync(root, { recursive: true, force: true });
 });
 
-/** A fake repo root with one agent type whose templatesDir is `templatesDir`. */
+/** A fake repo root with one specialty whose templatesDir is `templatesDir`. */
 function fakeRepo(typeName: string, templatesDir: string): string {
   const repo = join(root, "repo");
-  mkdirSync(join(repo, "agent-types", typeName), { recursive: true });
+  mkdirSync(join(repo, "specialties", typeName), { recursive: true });
   writeFileSync(
-    join(repo, "agent-types", typeName, "manifest.yaml"),
-    `apiVersion: shipwright.dev/v1alpha1\nkind: AgentType\nidentity:\n  templatesDir: ${templatesDir}\n`,
+    join(repo, "specialties", typeName, "manifest.yaml"),
+    `apiVersion: shipwright.dev/v1alpha1\nkind: Specialty\nidentity:\n  templatesDir: ${templatesDir}\n`,
   );
   return repo;
 }
@@ -134,7 +134,7 @@ describe("resolveTemplatesDir fallback", () => {
   it("falls back with a warning on an unparseable manifest", () => {
     const repo = fakeRepo("broken", "x");
     writeFileSync(
-      join(repo, "agent-types", "broken", "manifest.yaml"),
+      join(repo, "specialties", "broken", "manifest.yaml"),
       "identity: [unclosed",
     );
     const warnings: string[] = [];

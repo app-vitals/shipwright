@@ -1,6 +1,6 @@
 /**
- * admin/src/agent-type-manifest-loader.unit.test.ts
- * Unit tests for AgentTypeRegistry — the disk-backed resolver from an agent's
+ * admin/src/specialty-manifest-loader.unit.test.ts
+ * Unit tests for SpecialtyRegistry — the disk-backed resolver from an agent's
  * typeName to its parsed manifest, with the unknown-type "coding" fallback.
  *
  * Pure logic against an injected reader/warner — no filesystem, no DB. See
@@ -9,16 +9,16 @@
 
 import { describe, expect, it } from "bun:test";
 import {
-  AgentTypeRegistry,
-  DEFAULT_AGENT_TYPE_NAME,
-  resolveAgentTypesDir,
-  resolveDefaultAgentTypeName,
-} from "./agent-type-manifest-loader.ts";
+  SpecialtyRegistry,
+  DEFAULT_SPECIALTY_NAME,
+  resolveSpecialtiesDir,
+  resolveDefaultSpecialtyName,
+} from "./specialty-manifest-loader.ts";
 
-/** A minimal valid AgentType manifest YAML for a given type name. */
+/** A minimal valid Specialty manifest YAML for a given type name. */
 function manifestYaml(name: string): string {
   return `apiVersion: shipwright.dev/v1alpha1
-kind: AgentType
+kind: Specialty
 metadata:
   name: ${name}
   displayName: ${name}
@@ -43,9 +43,9 @@ voice: true
 `;
 }
 
-describe("AgentTypeRegistry", () => {
+describe("SpecialtyRegistry", () => {
   it("resolves a known typeName to its parsed manifest", () => {
-    const registry = new AgentTypeRegistry({
+    const registry = new SpecialtyRegistry({
       read: (t) => manifestYaml(t),
     });
     const manifest = registry.getManifest("coding");
@@ -55,9 +55,9 @@ describe("AgentTypeRegistry", () => {
 
   it("falls back to the coding manifest with a warning for an unknown typeName", () => {
     const warnings: string[] = [];
-    const registry = new AgentTypeRegistry({
+    const registry = new SpecialtyRegistry({
       read: (t) => {
-        if (t === DEFAULT_AGENT_TYPE_NAME) return manifestYaml("coding");
+        if (t === DEFAULT_SPECIALTY_NAME) return manifestYaml("coding");
         throw new Error(`ENOENT: no manifest for ${t}`);
       },
       warn: (m) => warnings.push(m),
@@ -72,7 +72,7 @@ describe("AgentTypeRegistry", () => {
   });
 
   it("throws (does not silently no-op) when the coding fallback itself cannot load", () => {
-    const registry = new AgentTypeRegistry({
+    const registry = new SpecialtyRegistry({
       read: () => {
         throw new Error("ENOENT: coding manifest missing");
       },
@@ -86,7 +86,7 @@ describe("AgentTypeRegistry", () => {
 
   it("caches a resolved manifest — the reader is called once per type", () => {
     let reads = 0;
-    const registry = new AgentTypeRegistry({
+    const registry = new SpecialtyRegistry({
       read: (t) => {
         reads++;
         return manifestYaml(t);
@@ -108,7 +108,7 @@ describe("AgentTypeRegistry", () => {
   // deliberately does not need to distinguish.
 
   it("tryGetManifest resolves a known typeName to its parsed manifest", () => {
-    const registry = new AgentTypeRegistry({
+    const registry = new SpecialtyRegistry({
       read: (t) => manifestYaml(t),
     });
     const manifest = registry.tryGetManifest("coding");
@@ -117,9 +117,9 @@ describe("AgentTypeRegistry", () => {
 
   it("tryGetManifest returns undefined for an unknown typeName — no fallback, no warning", () => {
     const warnings: string[] = [];
-    const registry = new AgentTypeRegistry({
+    const registry = new SpecialtyRegistry({
       read: (t) => {
-        if (t === DEFAULT_AGENT_TYPE_NAME) return manifestYaml("coding");
+        if (t === DEFAULT_SPECIALTY_NAME) return manifestYaml("coding");
         throw new Error(`ENOENT: no manifest for ${t}`);
       },
       warn: (m) => warnings.push(m),
@@ -133,7 +133,7 @@ describe("AgentTypeRegistry", () => {
 
   it("tryGetManifest shares the cache with getManifest — reader called once per type", () => {
     let reads = 0;
-    const registry = new AgentTypeRegistry({
+    const registry = new SpecialtyRegistry({
       read: (t) => {
         reads++;
         return manifestYaml(t);
@@ -146,15 +146,15 @@ describe("AgentTypeRegistry", () => {
     expect(reads).toBe(1);
   });
 
-  // ─── listTypes — populates the new-agent type picker ─────────────────────
+  // ─── listTypes — populates the new-specialty picker ─────────────────────
   //
-  // Discovers every directory under agent-types/ via the injected `list` fn,
+  // Discovers every directory under specialties/ via the injected `list` fn,
   // then resolves each one's manifest via the existing `read` path — so
   // listTypes() shares the same disk-free-in-tests DI contract as
   // getManifest()/tryGetManifest().
 
   it("listTypes lists every discovered type as {name, displayName}", () => {
-    const registry = new AgentTypeRegistry({
+    const registry = new SpecialtyRegistry({
       list: () => ["coding"],
       read: (t) => manifestYaml(t),
     });
@@ -165,10 +165,10 @@ describe("AgentTypeRegistry", () => {
   });
 
   it("listTypes resolves displayName from each manifest's metadata.displayName", () => {
-    const registry = new AgentTypeRegistry({
+    const registry = new SpecialtyRegistry({
       list: () => ["coding"],
       read: () => `apiVersion: shipwright.dev/v1alpha1
-kind: AgentType
+kind: Specialty
 metadata:
   name: coding
   displayName: Coding Agent
@@ -196,7 +196,7 @@ voice: true
   });
 
   it("listTypes lists multiple discovered types", () => {
-    const registry = new AgentTypeRegistry({
+    const registry = new SpecialtyRegistry({
       list: () => ["coding", "research"],
       read: (t) => manifestYaml(t),
     });
@@ -211,7 +211,7 @@ voice: true
 
   it("listTypes skips a directory whose manifest fails to load or parse", () => {
     const warnings: string[] = [];
-    const registry = new AgentTypeRegistry({
+    const registry = new SpecialtyRegistry({
       list: () => ["coding", "broken"],
       read: (t) => {
         if (t === "broken") throw new Error("ENOENT: broken manifest");
@@ -226,7 +226,7 @@ voice: true
   });
 
   it("listTypes returns an empty array when no type directories are discovered", () => {
-    const registry = new AgentTypeRegistry({
+    const registry = new SpecialtyRegistry({
       list: () => [],
       read: (t) => manifestYaml(t),
     });
@@ -235,23 +235,23 @@ voice: true
   });
 });
 
-describe("agent-types option resolution", () => {
-  it("defaults to coding and the repo-root agent-types/ with no env set", () => {
-    expect(resolveDefaultAgentTypeName({})).toBe("coding");
-    expect(resolveAgentTypesDir({})).toMatch(/agent-types$/);
+describe("specialties option resolution", () => {
+  it("defaults to coding and the repo-root specialties/ with no env set", () => {
+    expect(resolveDefaultSpecialtyName({})).toBe("coding");
+    expect(resolveSpecialtiesDir({})).toMatch(/specialties$/);
   });
 
-  it("honours SHIPWRIGHT_DEFAULT_AGENT_TYPE and SHIPWRIGHT_AGENT_TYPES_DIR", () => {
+  it("honours SHIPWRIGHT_DEFAULT_AGENT_TYPE and SHIPWRIGHT_SPECIALTIES_DIR", () => {
     expect(
-      resolveDefaultAgentTypeName({ SHIPWRIGHT_DEFAULT_AGENT_TYPE: "base" }),
+      resolveDefaultSpecialtyName({ SHIPWRIGHT_DEFAULT_AGENT_TYPE: "base" }),
     ).toBe("base");
     expect(
-      resolveAgentTypesDir({ SHIPWRIGHT_AGENT_TYPES_DIR: "/tmp/types" }),
+      resolveSpecialtiesDir({ SHIPWRIGHT_SPECIALTIES_DIR: "/tmp/types" }),
     ).toBe("/tmp/types");
   });
 
   it("falls back to the configured defaultTypeName for an unknown type", () => {
-    const registry = new AgentTypeRegistry({
+    const registry = new SpecialtyRegistry({
       read: (name) => {
         if (name === "base") return manifestYaml("base");
         throw new Error("ENOENT");

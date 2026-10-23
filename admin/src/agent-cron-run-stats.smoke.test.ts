@@ -421,7 +421,7 @@ function makeMockDeps(): AdminDeps {
       }),
       listByAgentId: async () => [],
     },
-    agentTypeRegistry: {
+    specialtyRegistry: {
       getManifest: () => {
         throw new Error("not implemented");
       },
