@@ -63,7 +63,7 @@ metadata:
   version: 1.0.0
   skills: []
 identity:
-  templatesDir: agent/workspace/
+  templatesDir: workspace/
 crons: []
 plugins: []
 tools: []

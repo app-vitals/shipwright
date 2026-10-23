@@ -73,7 +73,7 @@ const CODING_MANIFEST: SpecialtyManifest = {
     version: "1.0.0",
     skills: [],
   },
-  identity: { templatesDir: "agent/workspace/" },
+  identity: { templatesDir: "workspace/" },
   crons: [],
   plugins: ["shipwright"],
   tools: ["Read", "Write", "Edit"],

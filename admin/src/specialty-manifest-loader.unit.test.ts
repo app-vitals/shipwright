@@ -26,7 +26,7 @@ metadata:
   version: 1.0.0
   skills: []
 identity:
-  templatesDir: agent/workspace/
+  templatesDir: workspace/
 crons:
   - name: ${name}-cron
     schedule: "* * * * *"
@@ -176,7 +176,7 @@ metadata:
   version: 1.0.0
   skills: []
 identity:
-  templatesDir: agent/workspace/
+  templatesDir: workspace/
 crons: []
 plugins: []
 tools: []

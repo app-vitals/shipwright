@@ -27,8 +27,15 @@ import type { AgentPlugin } from "@app-vitals/agent-admin";
 // Template loading
 // ---------------------------------------------------------------------------
 
-// Templates live at agent/workspace/ alongside this source file.
-const WORKSPACE_TEMPLATE_DIR = join(import.meta.dir, "..", "..", "workspace");
+// Templates live in a `workspace/` directory next to the runtime source: two
+// levels up in the monorepo (agent/src/runtime -> agent/workspace) and beside
+// this file in the extracted layout (runtime/workspace). Probe for whichever exists.
+const WORKSPACE_TEMPLATE_DIR =
+  [
+    join(import.meta.dir, "workspace"),
+    join(import.meta.dir, "..", "..", "workspace"),
+  ].find((dir) => existsSync(dir)) ??
+  join(import.meta.dir, "..", "..", "workspace");
 
 // Repo root — two levels up from agent/src/. In Docker this is /app; on the Pi
 // it resolves to the checkout root. Uses a local marketplace so plugins are always
@@ -42,12 +49,12 @@ const SHIPWRIGHT_MARKETPLACE = "shipwright";
 const DEFAULT_PLUGINS: readonly string[] = ["shipwright"];
 
 // The universal fallback type — mirrors admin's DEFAULT_SPECIALTY_NAME. Its
-// templates are agent/workspace/, so it never needs a manifest lookup.
+// templates are the built-in workspace/ dir, so it never needs a manifest lookup.
 const DEFAULT_SPECIALTY_NAME = "coding";
 
 // The persona templates a type's templatesDir must provide or it is not usable.
 // Everything else (VOICE, mise, requirements, BOOTSTRAP) falls back per file to
-// agent/workspace/, and SPECIALTY.md.template is optional (ARD-6.2).
+// the built-in workspace/ dir, and SPECIALTY.md.template is optional (ARD-6.2).
 const REQUIRED_TEMPLATES: readonly string[] = [
   "CLAUDE.md.template",
   "SOUL.md.template",
@@ -59,7 +66,7 @@ const REQUIRED_TEMPLATES: readonly string[] = [
  *
  * Reads `identity.templatesDir` from `<repoRoot>/specialties/<typeName>/manifest.yaml`
  * (relative paths resolve against the repo root, matching how the manifests
- * spell them). Returns the built-in agent/workspace/ for `coding`, an absent
+ * spell them). Returns the built-in workspace/ dir for `coding`, an absent
  * type, and any type that does not resolve (no manifest, unparseable, or the
  * directory is missing or lacks a required template) — logging a warning for the latter. Never throws:
  * a template lookup must not fail boot.
@@ -111,7 +118,7 @@ export function resolveTemplatesDir(
 }
 
 /**
- * Reads a template file from `dir` (agent/workspace/ by default).
+ * Reads a template file from `dir` (the built-in workspace/ dir by default).
  * Throws clearly if the file is missing so deployment failures are loud.
  */
 function readTemplate(
@@ -126,7 +133,7 @@ function readTemplate(
   }
 }
 
-/** Reads `name` from `dir`, falling back to agent/workspace/ when `dir` lacks it. */
+/** Reads `name` from `dir`, falling back to the built-in workspace/ dir when `dir` lacks it. */
 function readOptionalTemplate(name: string, dir: string): string {
   return readTemplate(
     name,
