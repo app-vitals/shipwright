@@ -19,8 +19,8 @@
  */
 
 import { describe, expect, it, spyOn } from "bun:test";
-import { callerLabel } from "@shipwright/lib/request-context";
-import type { ErrorCapturingClient } from "@shipwright/lib/sentry";
+import { callerLabel } from "@app-vitals/agent-lib/request-context";
+import type { ErrorCapturingClient } from "@app-vitals/agent-lib/sentry";
 import type { AgentEnvService } from "./agent-envs.ts";
 import type { AgentProvisioner, ProvisionResult } from "./agent-provisioner.ts";
 import type { AdminDeps } from "./agents-api.ts";

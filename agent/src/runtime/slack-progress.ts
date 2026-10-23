@@ -90,8 +90,8 @@
  * so it awaits the promise directly inside its own try/catch instead.
  */
 
-import type { ProgressPhase } from "@shipwright/lib/progress-phases";
-import { PROGRESS_LABELS } from "@shipwright/lib/progress-phases";
+import type { ProgressPhase } from "@app-vitals/agent-lib/progress-phases";
+import { PROGRESS_LABELS } from "@app-vitals/agent-lib/progress-phases";
 import type { ModelUsage } from "./claude.ts";
 
 // biome-ignore lint/suspicious/noExplicitAny: Bolt client type is complex

@@ -6,8 +6,8 @@
  */
 
 import { describe, expect, it, spyOn } from "bun:test";
-import type { PoolLike } from "@shipwright/lib/pool-observability";
-import type { ErrorCapturingClient } from "@shipwright/lib/sentry";
+import type { PoolLike } from "@app-vitals/agent-lib/pool-observability";
+import type { ErrorCapturingClient } from "@app-vitals/agent-lib/sentry";
 import { createTaskStoreApp } from "./app.ts";
 import type { SessionServiceLike } from "./session-service.ts";
 import type { TaskServiceLike } from "./task-service.ts";

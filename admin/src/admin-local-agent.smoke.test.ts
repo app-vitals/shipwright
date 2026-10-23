@@ -12,7 +12,7 @@
  */
 
 import { beforeAll, describe, expect, it } from "bun:test";
-import { DEFAULT_AGENT_ENV } from "@shipwright/lib/default-agent-env";
+import { DEFAULT_AGENT_ENV } from "@app-vitals/agent-lib/default-agent-env";
 import { sign } from "hono/jwt";
 import type {
   AdminUIDeps,

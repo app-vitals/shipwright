@@ -1,6 +1,6 @@
-import { DEFAULT_ANTHROPIC_MODEL } from "@shipwright/lib/default-agent-env";
-import type { ProgressPhase } from "@shipwright/lib/progress-phases";
-import type { ErrorCapturingClient } from "@shipwright/lib/sentry";
+import { DEFAULT_ANTHROPIC_MODEL } from "@app-vitals/agent-lib/default-agent-env";
+import type { ProgressPhase } from "@app-vitals/agent-lib/progress-phases";
+import type { ErrorCapturingClient } from "@app-vitals/agent-lib/sentry";
 import {
   createRunCgroup,
   killTree,
@@ -128,7 +128,7 @@ export interface ClaudeRunResult {
  * The passed map is a fresh snapshot — safe to retain without it mutating.
  *
  * The optional second argument is a generic progress phase (see
- * `@shipwright/lib/progress-phases`) derived from the tool_use/thinking/text
+ * `@app-vitals/agent-lib/progress-phases`) derived from the tool_use/thinking/text
  * blocks in `message.content` — fired whenever the phase changes from the
  * last one fired for this run (see `_consumeStream`'s phase-collapse logic).
  * Purely additive: existing single-arg callbacks keep typechecking unchanged.

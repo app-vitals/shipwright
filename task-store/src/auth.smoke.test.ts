@@ -21,16 +21,16 @@
  */
 
 import { describe, expect, it } from "bun:test";
+import { DEFAULT_ACCOUNT_ID } from "@app-vitals/agent-lib/default-account";
+import type { Caller } from "@app-vitals/agent-lib/request-context";
 import { Hono } from "hono";
-import type { Caller } from "@shipwright/lib/request-context";
-import { DEFAULT_ACCOUNT_ID } from "@shipwright/lib/default-account";
 import { resolveAccountScope, resolveWriteAccountId } from "./account-scope.ts";
-import { NO_ACCESS_ACCOUNT_ID, createBearerAuthMiddleware } from "./auth.ts";
 import type {
   ScopeResolution,
   ScopeResolver,
   TaskStoreAuthEnv,
 } from "./auth.ts";
+import { createBearerAuthMiddleware, NO_ACCESS_ACCOUNT_ID } from "./auth.ts";
 import type { TokenServiceLike } from "./token-service.ts";
 
 // ─── Fakes ────────────────────────────────────────────────────────────────────

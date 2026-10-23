@@ -8,7 +8,7 @@
  * does NOT fall through to the cookie path.
  */
 
-import type { Caller } from "@shipwright/lib/request-context";
+import type { Caller } from "@app-vitals/agent-lib/request-context";
 import type { MiddlewareHandler } from "hono";
 import { getCookie } from "hono/cookie";
 import { verify } from "hono/jwt";

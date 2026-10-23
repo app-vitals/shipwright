@@ -1,6 +1,7 @@
-// Re-exports for backward compatibility — shared toolbar now lives in @shipwright/lib.
+// Re-exports for backward compatibility — shared toolbar now lives in @app-vitals/agent-lib.
+
+export type { ShipwrightToolbarOptions as ToolbarOptions } from "@app-vitals/agent-lib/web/toolbar.ts";
 export {
   baseStyles,
   renderShipwrightToolbar as renderToolbar,
-} from "@shipwright/lib/web/toolbar.ts";
-export type { ShipwrightToolbarOptions as ToolbarOptions } from "@shipwright/lib/web/toolbar.ts";
+} from "@app-vitals/agent-lib/web/toolbar.ts";

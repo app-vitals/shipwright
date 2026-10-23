@@ -19,7 +19,7 @@ import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { ErrorCapturingClient } from "@shipwright/lib/sentry";
+import type { ErrorCapturingClient } from "@app-vitals/agent-lib/sentry";
 import type { WebClient } from "@slack/web-api";
 import type { Server } from "bun";
 import type { ModelUsage, TokenUsage } from "./claude.ts";

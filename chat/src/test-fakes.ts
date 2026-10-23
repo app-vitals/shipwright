@@ -4,7 +4,7 @@
  * Do not import from production code paths.
  */
 
-import { PROGRESS_PHASES } from "@shipwright/lib/progress-phases";
+import { PROGRESS_PHASES } from "@app-vitals/agent-lib/progress-phases";
 import type { Prisma } from "../prisma/client/client.ts";
 import { BadRequestError } from "./errors.ts";
 import type { Message, MessageServiceLike } from "./message-service.ts";

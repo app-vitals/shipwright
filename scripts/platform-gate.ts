@@ -10,7 +10,7 @@
  * `require("x")` and `mock.module("x")`, in any file of the set (tests
  * included). Relative specifiers and `@shipwright/*` workspace specifiers must
  * resolve to a file inside the set. npm packages and `node:`/`bun:` builtins
- * are not edges. `@shipwright/lib/*` modules are the one allowed way out of
+ * are not edges. `@app-vitals/agent-lib/*` modules are the one allowed way out of
  * admin/agent directories, and only if listed in the manifest's `lib` table.
  *
  * Exports are pure/fs-light so platform-gate.unit.test.ts can drive them with
@@ -258,10 +258,11 @@ export function collectSetFiles(root: string, m: PlatformManifest): string[] {
 
 /** Maps a workspace specifier to the repo-relative path it resolves to, or null if not a workspace specifier. */
 function workspaceTarget(spec: string): string | null {
+  const libMatch = /^@app-vitals\/agent-lib(?:\/(.*))?$/.exec(spec);
+  if (libMatch) return libMatch[1] ? `lib/${libMatch[1]}` : "lib";
   const m = /^@shipwright\/([^/]+)(?:\/(.*))?$/.exec(spec);
   if (!m) return null;
   const [, pkg, rest] = m;
-  if (pkg === "lib") return rest ? `lib/${rest}` : "lib";
   const dir = pkg === "plugin" ? "plugins/shipwright" : pkg;
   const src =
     pkg === "admin" ||

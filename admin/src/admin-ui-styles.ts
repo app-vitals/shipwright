@@ -1,9 +1,9 @@
-import { shouldShowAccountNav } from "./admin-ui-account-nav.ts";
 import {
   escapeHtml,
   renderShipwrightToolbar,
   baseStyles as toolbarBaseStyles,
-} from "@shipwright/lib/web/toolbar.ts";
+} from "@app-vitals/agent-lib/web/toolbar.ts";
+import { shouldShowAccountNav } from "./admin-ui-account-nav.ts";
 
 export { escapeHtml };
 

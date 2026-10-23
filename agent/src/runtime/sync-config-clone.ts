@@ -43,7 +43,7 @@ import { join } from "node:path";
 import {
   computeMissingClones,
   findRepoNameCollisions,
-} from "@shipwright/lib/clone-plan";
+} from "@app-vitals/agent-lib/clone-plan";
 
 export interface SyncConfigCloneDeps {
   /**

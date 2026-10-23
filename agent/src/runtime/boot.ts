@@ -18,8 +18,8 @@
  */
 
 import { join } from "node:path";
+import { initSentry } from "@app-vitals/agent-lib/sentry";
 import * as Sentry from "@sentry/bun";
-import { initSentry } from "@shipwright/lib/sentry";
 import { WebClient } from "@slack/web-api";
 import nodeCron from "node-cron";
 import { agentAccountStatusRef } from "./agent-account-status-ref.ts";

@@ -12,7 +12,7 @@
  */
 
 import { join } from "node:path";
-import { registerGracefulShutdown } from "@shipwright/lib/graceful-shutdown";
+import { registerGracefulShutdown } from "@app-vitals/agent-lib/graceful-shutdown";
 import { createChatServiceApp } from "./app.ts";
 import { createScopeResolver } from "./auth.ts";
 import { MessageService } from "./message-service.ts";

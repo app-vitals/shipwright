@@ -22,15 +22,15 @@
  * Cookie name: admin_session.
  */
 
-import { createRoute, OpenAPIHono, z } from "@hono/zod-openapi";
-import { callerLabel } from "@shipwright/lib/request-context";
 import {
   isPoolTimeoutError,
   type PoolLike,
   poolErrorContext,
   routeContextMiddleware,
-} from "@shipwright/lib/pool-observability";
-import type { ErrorCapturingClient } from "@shipwright/lib/sentry";
+} from "@app-vitals/agent-lib/pool-observability";
+import { callerLabel } from "@app-vitals/agent-lib/request-context";
+import type { ErrorCapturingClient } from "@app-vitals/agent-lib/sentry";
+import { createRoute, OpenAPIHono, z } from "@hono/zod-openapi";
 import { HTTPException } from "hono/http-exception";
 import type { PrismaClient } from "../prisma/client/client.ts";
 import {

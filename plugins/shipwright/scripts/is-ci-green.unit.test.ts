@@ -5,7 +5,7 @@
 // plugins/shipwright/commands/dev-task.md's Step 9b.2 CI Gate logic, and by
 // any other command that needs a shared, self-contained CI-green check
 // (plugins/shipwright must stay installable standalone — no
-// @shipwright/lib import).
+// @app-vitals/agent-lib import).
 
 import { describe, expect, it } from "bun:test";
 import { isCiGreen, type WorkflowRun } from "./is-ci-green";

@@ -32,7 +32,7 @@
  * error is already tagged.
  */
 
-import type { ErrorCapturingClient } from "@shipwright/lib/sentry";
+import type { ErrorCapturingClient } from "@app-vitals/agent-lib/sentry";
 import { reportClaudeError } from "./claude.ts";
 import type { Clock } from "./clock.ts";
 import type { CronRunReporter } from "./cron-run-reporter.ts";

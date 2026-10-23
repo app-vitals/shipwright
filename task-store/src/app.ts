@@ -19,19 +19,19 @@
  */
 
 import { hostname } from "node:os";
-import { sentry } from "@sentry/hono/bun";
 import {
   currentRouteContext,
   isPoolTimeoutError,
   type PoolLike,
   poolErrorContext,
   routeContextMiddleware,
-} from "@shipwright/lib/pool-observability";
-import { callerLabel } from "@shipwright/lib/request-context";
+} from "@app-vitals/agent-lib/pool-observability";
+import { callerLabel } from "@app-vitals/agent-lib/request-context";
 import {
   buildSentryInitOptions,
   type ErrorCapturingClient,
-} from "@shipwright/lib/sentry";
+} from "@app-vitals/agent-lib/sentry";
+import { sentry } from "@sentry/hono/bun";
 import { Hono } from "hono";
 import { HTTPException } from "hono/http-exception";
 import {

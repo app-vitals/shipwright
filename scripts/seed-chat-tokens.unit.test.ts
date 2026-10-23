@@ -14,7 +14,7 @@
  */
 
 import { describe, expect, test } from "bun:test";
-import { parseFlags } from "../lib/cli-flags.ts";
+import { parseFlags } from "@app-vitals/agent-lib/cli-flags";
 import { hashRawToken, seedChatTokens } from "./seed-chat-tokens.ts";
 
 const SEED_CHAT_FLAGS = [

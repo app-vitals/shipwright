@@ -103,7 +103,7 @@ The repo is a Bun-workspaces monorepo with **go-task** (`Taskfile.yml`) as the s
 
 ```
 shipwright/
-├── lib/                  shared utilities: admin-types, org-repo, pricing, sentry, web helpers (@shipwright/lib)
+├── lib/                  shared utilities: admin-types, org-repo, pricing, sentry, web helpers (@app-vitals/agent-lib)
 ├── plugins/shipwright/   A — the plugin (commands, skills, agents, scripts)
 ├── metrics/              B — provider-agnostic Hono service (fixtures / taskstore)
 ├── agent/                C — Shipwright agent runtime (entrypoint, cron, Slack, GitHub auth)

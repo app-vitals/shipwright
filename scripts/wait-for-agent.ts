@@ -19,7 +19,7 @@
  *   bun run scripts/wait-for-agent.ts [--db-url <url>]
  */
 
-import { parseFlags } from "../lib/cli-flags.ts";
+import { parseFlags } from "@app-vitals/agent-lib/cli-flags";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 

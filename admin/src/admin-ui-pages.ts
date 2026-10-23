@@ -10,7 +10,7 @@
  * coding/ (AEP-3.2) and are mounted by the coding AdminExtension.
  */
 
-import { PROGRESS_LABELS } from "@shipwright/lib/progress-phases";
+import { PROGRESS_LABELS } from "@app-vitals/agent-lib/progress-phases";
 import { renderAdminPage } from "./admin-ui-layout.ts";
 import {
   BREAKPOINT_MOBILE_MAX,

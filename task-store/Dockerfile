@@ -46,7 +46,7 @@ ENV NODE_ENV=production
 # Copy hoisted + workspace-local node_modules from the deps stage. bun workspaces
 # install package-specific deps under the workspace dir (/app/task-store/node_modules),
 # NOT the hoisted root — both are required at runtime. lib/node_modules is also
-# required: task-store imports @shipwright/lib/sentry, which itself imports
+# required: task-store imports @app-vitals/agent-lib/sentry, which itself imports
 # @sentry/bun — bun nested that package under lib/node_modules (and separately
 # under task-store/node_modules) instead of hoisting it to root, so resolution
 # from lib/sentry.ts fails at runtime unless lib's own node_modules is present.

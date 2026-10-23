@@ -17,7 +17,7 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { ErrorCapturingClient } from "@shipwright/lib/sentry";
+import type { ErrorCapturingClient } from "@app-vitals/agent-lib/sentry";
 import { TEST_AGENT_HOME } from "./test-env.ts";
 
 const MODEL = "claude-opus-4-6";

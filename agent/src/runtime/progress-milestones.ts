@@ -1,7 +1,7 @@
 /**
  * agent/src/runtime/progress-milestones.ts
  * Maps a single `content` block from an `assistant` `stream-json` message to
- * a generic `ProgressPhase` (see `@shipwright/lib/progress-phases`).
+ * a generic `ProgressPhase` (see `@app-vitals/agent-lib/progress-phases`).
  *
  * LOAD-BEARING INVARIANT: `block.input` is never read here — not logged, not
  * inspected, not passed to any function. Tool inputs can carry absolute
@@ -11,7 +11,7 @@
  * here that touches `block.input`.
  */
 
-import type { ProgressPhase } from "@shipwright/lib/progress-phases";
+import type { ProgressPhase } from "@app-vitals/agent-lib/progress-phases";
 
 /**
  * The shape of one entry in an `assistant` message's `content` array, as

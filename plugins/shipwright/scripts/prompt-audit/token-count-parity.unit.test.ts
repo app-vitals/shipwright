@@ -5,7 +5,7 @@
  */
 
 import { describe, expect, test } from "bun:test";
-import { CONTEXT_WINDOW as PRICING_WINDOW } from "../../../../lib/pricing.ts";
+import { CONTEXT_WINDOW as PRICING_WINDOW } from "@app-vitals/agent-lib/pricing";
 import { CONTEXT_WINDOW as LOCAL_WINDOW } from "./token-count.ts";
 
 describe("CONTEXT_WINDOW parity", () => {

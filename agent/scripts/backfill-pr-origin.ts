@@ -41,7 +41,7 @@
  * module doc comment in agent/src/coding/pr-origin-backfill.ts.
  */
 
-import { parseFlags } from "../../lib/cli-flags.ts";
+import { parseFlags } from "@app-vitals/agent-lib/cli-flags";
 import { ghJson } from "../src/coding/check-helpers.ts";
 import type { CensusEntry, CensusTaskRecord } from "../src/coding/pr-census.ts";
 import {

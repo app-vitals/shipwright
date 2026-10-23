@@ -23,9 +23,9 @@
  */
 
 import { join } from "node:path";
-import { isGithubLogin } from "@shipwright/lib/github-login";
-import { isOrgRepo } from "@shipwright/lib/org-repo";
-import { SECRET_ENV_VARS } from "@shipwright/lib/secret-env-vars";
+import { isGithubLogin } from "@app-vitals/agent-lib/github-login";
+import { isOrgRepo } from "@app-vitals/agent-lib/org-repo";
+import { SECRET_ENV_VARS } from "@app-vitals/agent-lib/secret-env-vars";
 import { type Context, Hono, type MiddlewareHandler } from "hono";
 import { deleteCookie, getCookie, setCookie } from "hono/cookie";
 import { sign, verify } from "hono/jwt";

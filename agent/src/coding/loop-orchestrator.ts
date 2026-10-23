@@ -70,7 +70,7 @@
 import { randomUUID } from "node:crypto";
 import { existsSync } from "node:fs";
 import { join } from "node:path";
-import type { ErrorCapturingClient } from "@shipwright/lib/sentry";
+import type { ErrorCapturingClient } from "@app-vitals/agent-lib/sentry";
 import {
   ClaudeRunError,
   type ClaudeRunResult,

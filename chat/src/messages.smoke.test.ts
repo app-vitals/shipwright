@@ -18,7 +18,7 @@
  */
 
 import { describe, expect, it } from "bun:test";
-import type { ReplyNotificationEvent } from "@shipwright/lib/chat-notify";
+import type { ReplyNotificationEvent } from "@app-vitals/agent-lib/chat-notify";
 import { createChatServiceApp } from "./app.ts";
 import type { Message } from "./message-service.ts";
 import {

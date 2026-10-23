@@ -13,7 +13,7 @@ import { AsyncLocalStorage } from "node:async_hooks";
 import type {
   ErrorCapturingClient,
   ScopeTagSetter,
-} from "@shipwright/lib/sentry";
+} from "@app-vitals/agent-lib/sentry";
 import {
   ClaudeRunError,
   type ClaudeRunResult,

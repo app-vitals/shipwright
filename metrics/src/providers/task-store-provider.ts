@@ -20,7 +20,7 @@ import {
   calculateCost,
   normalizeModelToRateKey,
   OPUS_MODEL,
-} from "@shipwright/lib/pricing";
+} from "@app-vitals/agent-lib/pricing";
 import { resolveQueryRange } from "../formatters.ts";
 import {
   type AdminMetricsClient,

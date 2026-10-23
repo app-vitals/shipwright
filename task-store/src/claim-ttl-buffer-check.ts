@@ -15,7 +15,7 @@
  * behavior, zero new required config).
  */
 
-import { CLAIM_TTL_BUFFER_MS } from "@shipwright/lib/claim-ttl";
+import { CLAIM_TTL_BUFFER_MS } from "@app-vitals/agent-lib/claim-ttl";
 
 /**
  * Returns a warning message when the resolved claim TTL doesn't cover the

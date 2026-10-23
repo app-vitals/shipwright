@@ -6,7 +6,7 @@
  */
 
 import { describe, expect, it } from "bun:test";
-import { DEFAULT_AGENT_ENV } from "@shipwright/lib/default-agent-env";
+import { DEFAULT_AGENT_ENV } from "@app-vitals/agent-lib/default-agent-env";
 import type { AgentTypeManifestResolver } from "./agent-type-manifest-loader.ts";
 import type { AgentTypeManifest } from "./agent-type-registry.ts";
 import type {
@@ -1389,8 +1389,9 @@ describe("createAgent()", () => {
             : [{ status: "active", maxAgents: 1 }],
         agent: { count: async () => 1 },
       };
-      deps.agentService.runTransaction = (async (fn: (tx: unknown) => unknown) =>
-        fn(fakeTx)) as typeof deps.agentService.runTransaction;
+      deps.agentService.runTransaction = (async (
+        fn: (tx: unknown) => unknown,
+      ) => fn(fakeTx)) as typeof deps.agentService.runTransaction;
 
       const result = await createAgent(
         deps,

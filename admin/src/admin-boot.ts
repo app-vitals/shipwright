@@ -30,14 +30,17 @@
  */
 
 import { join } from "node:path";
-import * as Sentry from "@sentry/bun";
-import { sentry } from "@sentry/hono/bun";
-import { registerGracefulShutdown } from "@shipwright/lib/graceful-shutdown";
+import { registerGracefulShutdown } from "@app-vitals/agent-lib/graceful-shutdown";
 import {
   type PoolLike,
   routeContextMiddleware,
-} from "@shipwright/lib/pool-observability";
-import { buildSentryInitOptions, initSentry } from "@shipwright/lib/sentry";
+} from "@app-vitals/agent-lib/pool-observability";
+import {
+  buildSentryInitOptions,
+  initSentry,
+} from "@app-vitals/agent-lib/sentry";
+import * as Sentry from "@sentry/bun";
+import { sentry } from "@sentry/hono/bun";
 import { Hono } from "hono";
 import { createAccountCreatedNotifier } from "./account-created-notifier.ts";
 import { AccountInviteService } from "./account-invites.ts";

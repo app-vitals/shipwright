@@ -12,9 +12,9 @@
  */
 
 import { join } from "node:path";
+import { registerGracefulShutdown } from "@app-vitals/agent-lib/graceful-shutdown";
+import { initSentry } from "@app-vitals/agent-lib/sentry";
 import * as Sentry from "@sentry/bun";
-import { registerGracefulShutdown } from "@shipwright/lib/graceful-shutdown";
-import { initSentry } from "@shipwright/lib/sentry";
 import { createTaskStoreApp } from "./app.ts";
 import { createScopeResolver } from "./auth.ts";
 import { checkClaimTtlBuffer } from "./claim-ttl-buffer-check.ts";

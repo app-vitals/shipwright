@@ -25,9 +25,9 @@
  * pre-conversion plain-Hono implementation.
  */
 
-import { OpenAPIHono, createRoute, z } from "@hono/zod-openapi";
-import type { ReplyNotificationEvent } from "@shipwright/lib/chat-notify";
-import { readJson } from "@shipwright/lib/http";
+import type { ReplyNotificationEvent } from "@app-vitals/agent-lib/chat-notify";
+import { readJson } from "@app-vitals/agent-lib/http";
+import { createRoute, OpenAPIHono, z } from "@hono/zod-openapi";
 import type { ChatAuthEnv } from "../auth.ts";
 import {
   BadRequestError,

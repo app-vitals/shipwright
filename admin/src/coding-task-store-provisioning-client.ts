@@ -9,7 +9,7 @@
  * omitting the client from KubernetesAgentProvisionerConfig).
  */
 
-import type { components } from "@shipwright/lib/task-store-types";
+import type { components } from "@app-vitals/agent-lib/task-store-types";
 
 // ─── Interface ───────────────────────────────────────────────────────────────
 

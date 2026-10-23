@@ -31,21 +31,21 @@
  *                          visibility carve-out for this write.
  */
 
-import { OpenAPIHono, createRoute } from "@hono/zod-openapi";
-import { DEFAULT_ACCOUNT_ID } from "@shipwright/lib/default-account";
-import { readJson } from "@shipwright/lib/http";
+import { DEFAULT_ACCOUNT_ID } from "@app-vitals/agent-lib/default-account";
+import { readJson } from "@app-vitals/agent-lib/http";
+import { createRoute, OpenAPIHono } from "@hono/zod-openapi";
 import type { Context } from "hono";
 import { resolveAccountScope } from "../account-scope.ts";
 import type { TaskStoreAuthEnv } from "../auth.ts";
 import { BadRequestError, ForbiddenError, NotFoundError } from "../errors.ts";
 import {
   ErrorSchema,
+  SessionAccountQuerySchema,
   SessionListQuerySchema,
   SessionListResponseSchema,
   SessionPatchBodySchema,
   SessionSchema,
   SessionSlugParamSchema,
-  SessionAccountQuerySchema,
 } from "../openapi-schemas.ts";
 import type {
   SessionListFilters,

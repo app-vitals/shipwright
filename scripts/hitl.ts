@@ -39,7 +39,7 @@ import {
 import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { format } from "node:util";
-
+import { computeMissingClones } from "@app-vitals/agent-lib/clone-plan";
 import {
   createTaskStoreClient,
   getCurrentUser,
@@ -70,7 +70,6 @@ import {
 } from "../agent/src/coding/work-selector.ts";
 import { FLOOR_TOOLS } from "../agent/src/runtime/claude.ts";
 import { installPlugins } from "../agent/src/runtime/setup.ts";
-import { computeMissingClones } from "../lib/clone-plan.ts";
 import {
   type ConsoleMethod,
   type LogFileTeeTarget,
@@ -519,10 +518,7 @@ export function buildCloneSteps(
 export function buildMigrationSteps(cfg: HitlConfig): HitlStep[] {
   // admin's schema is a Prisma multi-file schema folder (prisma/schema/);
   // task-store still uses a single prisma/schema.prisma file.
-  const prismaArgs = (
-    cmd: "generate" | "deploy",
-    schema: string,
-  ): string[] =>
+  const prismaArgs = (cmd: "generate" | "deploy", schema: string): string[] =>
     cmd === "generate"
       ? ["bunx", "prisma", "generate", `--schema=${schema}`]
       : ["bunx", "prisma", "migrate", "deploy", `--schema=${schema}`];

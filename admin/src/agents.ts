@@ -6,11 +6,11 @@
  * etc.) so route handlers never call prisma.agent.* directly.
  */
 
-import { findRepoNameCollisions } from "@shipwright/lib/clone-plan";
-import { DEFAULT_AGENT_ENV } from "@shipwright/lib/default-agent-env";
-import { isGithubLogin } from "@shipwright/lib/github-login";
-import { isOrgRepo } from "@shipwright/lib/org-repo";
-import { SECRET_ENV_VARS } from "@shipwright/lib/secret-env-vars";
+import { findRepoNameCollisions } from "@app-vitals/agent-lib/clone-plan";
+import { DEFAULT_AGENT_ENV } from "@app-vitals/agent-lib/default-agent-env";
+import { isGithubLogin } from "@app-vitals/agent-lib/github-login";
+import { isOrgRepo } from "@app-vitals/agent-lib/org-repo";
+import { SECRET_ENV_VARS } from "@app-vitals/agent-lib/secret-env-vars";
 import type { PrismaClient } from "../prisma/client/client.ts";
 import type { AgentAnthropicIdentity } from "./agent-anthropic-identity.ts";
 import type { AgentCronJobService } from "./agent-cron-jobs.ts";

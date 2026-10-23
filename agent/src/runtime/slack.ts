@@ -10,7 +10,7 @@ import { existsSync } from "node:fs";
 import { readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { ErrorCapturingClient } from "@shipwright/lib/sentry";
+import type { ErrorCapturingClient } from "@app-vitals/agent-lib/sentry";
 import type { App } from "@slack/bolt";
 import type { WebAPIPlatformError } from "@slack/web-api";
 import {
