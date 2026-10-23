@@ -846,7 +846,7 @@ describe("message handler — DM routing", () => {
     expect((capturedErrors[0] as Error).message).toBe("boom");
   });
 
-  test("VITALS-OS-46: a ceiling-reason ClaudeTimeoutError reports via captureMessage, not captureException", async () => {
+  test("SENTRY-46: a ceiling-reason ClaudeTimeoutError reports via captureMessage, not captureException", async () => {
     mockRunClaude.mockRejectedValueOnce(
       new ClaudeTimeoutError(3_600_000, "ceiling"),
     );
@@ -1544,7 +1544,7 @@ describe("app_mention handler", () => {
     expect((capturedErrors[0] as Error).message).toBe("oops");
   });
 
-  test("VITALS-OS-46: a ceiling-reason ClaudeTimeoutError reports via captureMessage, not captureException (mention)", async () => {
+  test("SENTRY-46: a ceiling-reason ClaudeTimeoutError reports via captureMessage, not captureException (mention)", async () => {
     mockRunClaude.mockRejectedValueOnce(
       new ClaudeTimeoutError(3_600_000, "ceiling"),
     );

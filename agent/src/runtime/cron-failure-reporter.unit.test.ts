@@ -142,7 +142,7 @@ describe("reportCronFailure", () => {
     expect(capturedErrors[0]).toBe(err);
   });
 
-  it("VITALS-OS-46: reports a ceiling-reason ClaudeTimeoutError via captureMessage, not captureException", async () => {
+  it("SENTRY-46: reports a ceiling-reason ClaudeTimeoutError via captureMessage, not captureException", async () => {
     const { reporter } = createFakeCronRunReporter();
     const { client, capturedErrors, capturedMessages } =
       createFakeErrorCapturingClient();

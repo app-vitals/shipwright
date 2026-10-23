@@ -1247,7 +1247,7 @@ describe("POST /cron HTTP endpoint", () => {
     expect((capturedErrors[0] as Error).message).toBe("claude down");
   });
 
-  test("VITALS-OS-46: a ceiling-reason ClaudeTimeoutError reports via captureMessage, not captureException", async () => {
+  test("SENTRY-46: a ceiling-reason ClaudeTimeoutError reports via captureMessage, not captureException", async () => {
     mockRunner.mockRejectedValueOnce(
       new ClaudeTimeoutError(3_600_000, "ceiling"),
     );

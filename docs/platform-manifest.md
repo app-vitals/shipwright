@@ -122,6 +122,25 @@ A template file ending in `.tmpl` is copied without the suffix. `biome.json` is 
 
 History mode needs [`git-filter-repo`](https://github.com/newren/git-filter-repo) (`pip install git-filter-repo`). `--no-history` does not. The history integration test skips when it is missing.
 
+## Pre-publication audit
+
+Public repositories keep every ref forever, so before the extracted tree is pushed, run `scripts/audit-extraction.ts` (AGR-2.1) against it. It exits `1` on any finding, `0` when clean, `2` on a usage error.
+
+```bash
+bun scripts/extract-platform.ts --out /tmp/agent-extract --clean
+bun scripts/audit-extraction.ts /tmp/agent-extract                 # or: task audit-extraction -- /tmp/agent-extract
+bun scripts/audit-extraction.ts /tmp/agent-extract --history-banned --report audit.json
+```
+
+| Check | What it looks for |
+|---|---|
+| Secrets | `gitleaks detect --log-opts=--all` when `gitleaks` is on PATH (a notice is printed otherwise), plus a built-in scanner over the working tree and every added line of `git log --all -p`: AWS keys, GitHub tokens, Slack tokens, private-key blocks, Anthropic keys and high-entropy `api_key = "..."` assignments. |
+| Banned strings | `BANNED_RULES` (internal product name, private `app-vitals/*` repos, internal hostnames, GCP identifiers, internal env-var prefix) over every working-tree file, docs and test fixtures included; `--history-banned` adds history. `BANNED_ALLOWLIST` (public `app-vitals/*` repos, `example.*` / `.test` hosts) suppresses a match only when it lies inside an allowed span. Add a rule or allow entry in `scripts/audit-extraction.ts` with a unit-test fixture. |
+| License | `LICENSE` at the root is the MIT text, root `package.json` has `"license": "MIT"`, no other `package.json` declares a different license. |
+| Artifacts | `node_modules`, `dist`/`build`, `*.tsbuildinfo`, `coverage`, `.env*` (not `.env.example`), `worktrees/` and nested `.git` in the tree and anywhere in history (`git log --all --name-only`). |
+
+Each finding is `{ rule, file, commit, line?, excerpt }`; `commit` is a sha or `working-tree`, and secret values are always redacted in `excerpt`. A tree without `.git` (a `--no-history` extraction) is audited as a working tree only, with a notice. Run it against the history-mode extraction for the real pre-publication gate.
+
 ## Self-contained without the coding specialty
 
 The extracted tree excludes `specialties/coding/` and the coding workspace templates (`agent/workspace/CLAUDE.md.template`, `CLAUDE-HITL.md.template`), yet the runtime defaults to the `coding` specialty. So the platform tests must not need either one (AGR-1.9).

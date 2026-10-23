@@ -215,7 +215,7 @@ export class ClaudeRunError extends Error {
 /**
  * Substring match against the Claude CLI's own error text for a transient
  * network drop between the CLI process and the Anthropic API mid-stream
- * (Sentry issue 7616867192 / VITALS-OS-47, e.g. "API Error: Connection lost
+ * (Sentry issue 7616867192 / SENTRY-47, e.g. "API Error: Connection lost
  * mid-response. The response above may be incomplete.") — distinct from
  * other `is_error` failures (auth, rate limits, etc.), which are not
  * eligible for `_spawn`'s single connection-lost retry.
@@ -810,7 +810,7 @@ export function createRunClaude(
    * Thin wrapper around `_spawnOnce` that retries exactly once on a
    * connection-lost-mid-response failure — a transient network drop between
    * the Claude Code CLI process and the Anthropic API, external to this
-   * codebase (Sentry issue 7616867192 / VITALS-OS-47). Human decision (Dave,
+   * codebase (Sentry issue 7616867192 / SENTRY-47). Human decision (Dave,
    * 2026-09-08): retry ONCE, discarding the partial response and re-running
    * the whole spawn from scratch (never resuming it) — no further retries.
    * Accepts the small duplicate-side-effect risk; logs the retry via Sentry
