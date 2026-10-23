@@ -1,0 +1,5 @@
+# admin/e2e/ holds Playwright *.e2e.ts tests that run via `bunx playwright test`,
+# not the Bun runner. *.canary.test.ts is reserved for a future canary suite that
+# runs through its own entry point.
+[test]
+pathIgnorePatterns = ["**/admin/e2e/**", "**/*.canary.test.ts"]

@@ -1,0 +1,21 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "strict": true,
+    "skipLibCheck": true,
+    "declaration": true,
+    "allowImportingTsExtensions": true,
+    "noEmit": true,
+    "types": ["bun-types"]
+  },
+  "include": [
+    "runtime",
+    "admin/src",
+    "admin/prisma.config.ts",
+    "lib",
+    "scripts"
+  ],
+  "exclude": ["**/node_modules", "**/dist", "admin/e2e", "admin/prisma/client"]
+}

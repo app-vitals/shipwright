@@ -1,0 +1,41 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": ["config:recommended"],
+  "dependencyDashboard": true,
+  "semanticCommits": "enabled",
+  "semanticCommitType": "chore",
+  "semanticCommitScope": "deps",
+  "labels": ["dependencies"],
+  "schedule": ["before 6am on monday"],
+  "prConcurrentLimit": 5,
+  "prHourlyLimit": 2,
+  "osvVulnerabilityAlerts": true,
+  "vulnerabilityAlerts": {
+    "enabled": true,
+    "schedule": ["at any time"],
+    "labels": ["security"]
+  },
+  "customManagers": [
+    {
+      "customType": "regex",
+      "description": "Track the pinned Claude Code CLI in runtime/Dockerfile",
+      "managerFilePatterns": ["/(^|/)Dockerfile$/"],
+      "matchStrings": [
+        "# renovate: datasource=(?<datasource>[a-z-]+) depName=(?<depName>[^\\s]+)\\s*\\nARG CLAUDE_CODE_VERSION=(?<currentValue>[\\d.]+)"
+      ]
+    }
+  ],
+  "packageRules": [
+    {
+      "description": "Group routine (non-security) minor/patch bumps to cut down PR noise",
+      "matchUpdateTypes": ["minor", "patch"],
+      "groupName": "routine dependency updates"
+    },
+    {
+      "description": "zod 4 and @hono/zod-openapi 1.x are a coupled pair; keep their updates in one PR",
+      "matchPackageNames": ["zod", "@hono/zod-openapi"],
+      "groupName": "zod + zod-openapi",
+      "separateMajorMinor": false
+    }
+  ]
+}

@@ -1,0 +1,10 @@
+# Dependencies are installed inside the image; a host node_modules would clobber them.
+node_modules
+**/node_modules
+.git
+.github
+dist
+**/dist
+coverage
+**/coverage
+admin/e2e

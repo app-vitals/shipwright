@@ -9,7 +9,11 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
-import { extractPlatform } from "./extract-platform";
+import {
+  applyTemplate,
+  extractPlatform,
+  TEMPLATE_DIR,
+} from "./extract-platform";
 
 const hasFilterRepo = Bun.spawnSync(["git", "filter-repo", "--version"], {
   stdout: "ignore",
@@ -82,6 +86,16 @@ beforeAll(() => {
 
 afterAll(() => rmSync(scratch, { recursive: true, force: true }));
 
+/** Paths the standalone-repo template adds to every extraction. */
+const TEMPLATE_PATHS = applyTemplate(
+  mkdtempSync(join(tmpdir(), "extract-it-template-")),
+).map((p) => `./${p}`);
+
+/** Everything in `root` except the template's files. */
+function extracted(root: string): string[] {
+  return listed(root).filter((p) => !TEMPLATE_PATHS.includes(p));
+}
+
 function listed(root: string): string[] {
   return Bun.spawnSync(
     ["find", ".", "-type", "f", "-not", "-path", "./.git/*"],
@@ -108,7 +122,7 @@ describe("extractPlatform", () => {
     });
     expect(r.head).toBeNull();
     expect(existsSync(join(out, ".git"))).toBe(false);
-    expect(listed(out)).toEqual([
+    expect(extracted(out)).toEqual([
       "./admin/src/a.ts",
       "./lib/util.ts",
       "./runtime/boot.ts",
@@ -116,6 +130,18 @@ describe("extractPlatform", () => {
     ]);
     expect(readFileSync(join(out, "runtime/boot.ts"), "utf8")).toContain(
       `from "./fixtures/f"`,
+    );
+  });
+
+  test("--no-history copies the template, and it wins over a renamed file", () => {
+    const out = join(scratch, "nohist");
+    for (const path of TEMPLATE_PATHS)
+      expect(existsSync(join(out, path))).toBe(true);
+    expect(
+      JSON.parse(readFileSync(join(out, "package.json"), "utf8")).workspaces,
+    ).toEqual(["lib", "runtime", "admin"]);
+    expect(readFileSync(join(out, "runtime/Dockerfile"), "utf8")).toBe(
+      readFileSync(join(TEMPLATE_DIR, "runtime/Dockerfile"), "utf8"),
     );
   });
 
@@ -142,7 +168,7 @@ describe("extractPlatform", () => {
         git(b, "rev-parse", "HEAD^{tree}"),
       );
       expect(listed(a)).toEqual(listed(b));
-      expect(listed(a)).toEqual([
+      expect(extracted(a)).toEqual([
         "./admin/src/a.ts",
         "./lib/util.ts",
         "./runtime/boot.ts",
@@ -161,6 +187,9 @@ describe("extractPlatform", () => {
       expect(subjects).toContain("first");
       expect(subjects).toContain("second");
       expect(git(a, "rev-list", "--count", "HEAD")).toBe("3");
+      for (const path of TEMPLATE_PATHS) {
+        expect(existsSync(join(a, path))).toBe(true);
+      }
       expect(git(a, "remote")).toBe("");
       expect(git(a, "status", "--porcelain")).toBe("");
     },

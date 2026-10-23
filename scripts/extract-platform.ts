@@ -9,6 +9,12 @@
  *   admin/**                                                          -> admin/
  *   lib/<listed modules>                                              -> lib/
  *   specialties/specialist/**, docs/schemas/specialty.schema.json     -> agent-types/
+ *   scripts/extract-platform/template/** (AGR-1.6)                    -> the tree root
+ *
+ * The template holds the files the new repository needs that have no source
+ * in this one (root package.json, CI, LICENSE, standalone Dockerfiles, ...).
+ * It is copied last and wins over an extracted file at the same path (the
+ * standalone runtime/Dockerfile replaces the renamed agent/Dockerfile).
  *
  * History mode (default) runs `git filter-repo` over the manifest paths with
  * `--paths-from-file` renames, so history is preserved, then commits the
@@ -26,6 +32,7 @@
  */
 
 import {
+  cpSync,
   existsSync,
   mkdirSync,
   mkdtempSync,
@@ -35,7 +42,7 @@ import {
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
-import { dirname, join, posix, resolve } from "node:path";
+import { dirname, join, posix, relative, resolve, sep } from "node:path";
 import {
   collectSetFiles,
   extractSpecifiers,
@@ -55,6 +62,23 @@ export const PATH_RENAMES: ReadonlyArray<readonly [string, string]> = [
 
 /** Files the extracted tree needs that the manifest globs do not name. */
 export const EXTRA_FILES: readonly string[] = ["lib/package.json"];
+
+/** Directory of static files copied over the extracted tree (relative to this script). */
+export const TEMPLATE_DIR = join(
+  import.meta.dir,
+  "extract-platform",
+  "template",
+);
+
+/**
+ * Absolute container paths in string literals that move with the layout.
+ * Specifier rewriting cannot see these (they are not module specifiers), but
+ * the base-image contract smoke test addresses the image by path.
+ */
+export const STRING_REWRITES: ReadonlyArray<readonly [string, string]> = [
+  ["/app/agent/src/runtime/", "/app/runtime/"],
+  ["/app/agent/src/entrypoint-main.ts", "/app/runtime/entrypoint-main.ts"],
+];
 
 /** Top-level source paths exported from the commit; everything the manifest can match lives under one of them. */
 const SOURCE_ROOTS = [
@@ -103,6 +127,7 @@ function rewriteSpecifier(spec: string, fromFile: string): string {
 /** Rewrites relative and workspace module specifiers in a TS/JS source file. `fromFile` is the repo-relative source path. */
 export function rewriteSource(source: string, fromFile: string): string {
   let out = source;
+  for (const [from, to] of STRING_REWRITES) out = out.split(from).join(to);
   for (const spec of new Set(extractSpecifiers(source))) {
     const next = rewriteSpecifier(spec, fromFile);
     if (next === spec) continue;
@@ -276,6 +301,31 @@ function writeRewritten(
   return changed;
 }
 
+/** Copies the standalone-repo template over `out`. Returns the repo-relative paths written. */
+export function applyTemplate(
+  out: string,
+  templateDir = TEMPLATE_DIR,
+): string[] {
+  const written: string[] = [];
+  const walk = (dir: string) => {
+    for (const entry of readdirSync(dir, { withFileTypes: true })) {
+      const full = join(dir, entry.name);
+      if (entry.isDirectory()) walk(full);
+      else written.push(relative(templateDir, full).split(sep).join("/"));
+    }
+  };
+  walk(templateDir);
+  // Files that would act as live config inside this repository (a nested
+  // biome.json is an error) are stored with a ".tmpl" suffix.
+  const targets = written.map((p) => p.replace(/\.tmpl$/, ""));
+  written.forEach((p, i) => {
+    const dest = join(out, targets[i]);
+    mkdirSync(dirname(dest), { recursive: true });
+    cpSync(join(templateDir, p), dest);
+  });
+  return targets.sort();
+}
+
 export interface ExtractOptions {
   /** Repository to extract from. */
   source: string;
@@ -321,7 +371,8 @@ export function extractPlatform(opts: ExtractOptions): ExtractResult {
 
     if (!opts.history) {
       writeRewritten(exported, files, out);
-      return { sha, files: files.length, head: null };
+      const templated = applyTemplate(out);
+      return { sha, files: files.length + templated.length, head: null };
     }
 
     run(["git", "init", "-q", "-b", "main", out]);
@@ -351,11 +402,12 @@ export function extractPlatform(opts: ExtractOptions): ExtractResult {
     // filter-repo preserves file content as of each commit; rewrite the tip
     // in one fixed-identity commit so the result is reproducible.
     const changed = writeRewritten(exported, files, out);
+    const templated = applyTemplate(out);
     run(["git", "add", "-A"], { cwd: out });
     const dirty = Bun.spawnSync(["git", "diff", "--cached", "--quiet"], {
       cwd: out,
     }).exitCode;
-    if (changed > 0 || dirty !== 0) {
+    if (changed > 0 || templated.length > 0 || dirty !== 0) {
       const date = run(["git", "show", "-s", "--format=%cI", sha], {
         cwd: source,
       });
@@ -374,14 +426,14 @@ export function extractPlatform(opts: ExtractOptions): ExtractResult {
           "-q",
           "--no-gpg-sign",
           "-m",
-          `chore: rewrite specifiers for the extracted layout\n\nSource commit: ${sha}`,
+          `chore: rewrite specifiers and add the repository template\n\nSource commit: ${sha}`,
         ],
         { cwd: out, env: ident },
       );
     }
     return {
       sha,
-      files: files.length,
+      files: files.length + templated.length,
       head: run(["git", "rev-parse", "HEAD"], { cwd: out }),
     };
   } finally {
