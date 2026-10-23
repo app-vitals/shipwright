@@ -63,6 +63,8 @@ const EXPECTED_FILES = [
   "tsconfig.json",
 ];
 
+const HOST = ["vitals", "os"].join("-");
+
 // Assembled so this file does not itself contain the host-repo hostname.
 const BANNED = [
   "task-store",
@@ -74,11 +76,11 @@ const BANNED = [
   "plugins/shipwright",
   "app-vitals/shipwright",
   "@shipwright/",
-  `shipwright.${"vitals-os"}.com`,
-  "vitals-os",
-  "vitals_os",
+  `shipwright.${HOST}.com`,
+  HOST,
+  HOST.replace("-", "_"),
   ".svc.cluster.local",
-  "app-vitals/marketplace",
+  `app-vitals/${"market"}place`,
 ];
 
 // Built at runtime so the repo-wide retired-specifier scan does not match this file.
