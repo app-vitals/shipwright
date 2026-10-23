@@ -229,7 +229,7 @@ describe("import-boundary gate", () => {
       [
         'import "../../outside";',
         'import "../task-store/src/index.ts";',
-        'import "@shipwright/admin";',
+        'import "@other-scope/unknown";',
         'import "@app-vitals/agent-lib/missing";',
         'const x = await import("./nope.ts");',
       ].join("\n"),
@@ -242,7 +242,7 @@ describe("import-boundary gate", () => {
       [
         "../../outside",
         "../task-store/src/index.ts",
-        "@shipwright/admin",
+        "@other-scope/unknown",
         "@app-vitals/agent-lib/missing",
         "./nope.ts",
       ].sort(),
