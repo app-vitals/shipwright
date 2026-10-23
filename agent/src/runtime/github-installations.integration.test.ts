@@ -6,7 +6,8 @@
  */
 
 import { describe, expect, it } from "bun:test";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
+import { join } from "node:path";
 import {
   discoverInstallations,
   selectInstallations,
@@ -19,10 +20,10 @@ interface CassetteEntry {
 
 const cassette: Record<string, CassetteEntry> = JSON.parse(
   readFileSync(
-    new URL(
-      "../fixtures/github-installations/installations.json",
-      import.meta.url,
-    ).pathname,
+    // Beside the runtime source when extracted, one level up in the monorepo.
+    [join(import.meta.dir, "fixtures"), join(import.meta.dir, "..", "fixtures")]
+      .map((dir) => join(dir, "github-installations", "installations.json"))
+      .find((path) => existsSync(path)) as string,
     "utf-8",
   ),
 );

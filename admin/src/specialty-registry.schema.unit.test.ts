@@ -8,19 +8,16 @@
  * re-committed) whenever SpecialtyManifestSchema changes.
  */
 
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "bun:test";
 import { buildSpecialtyJsonSchema } from "./specialty-registry.ts";
 
-const committedSchemaPath = join(
-  import.meta.dir,
-  "..",
-  "..",
-  "docs",
-  "schemas",
-  "specialty.schema.json",
-);
+// docs/schemas/ in the monorepo, agent-types/ in the extracted layout.
+const committedSchemaPath = [
+  join(import.meta.dir, "..", "..", "docs", "schemas", "specialty.schema.json"),
+  join(import.meta.dir, "..", "..", "agent-types", "specialty.schema.json"),
+].find((candidate) => existsSync(candidate)) as string;
 
 describe("docs/schemas/specialty.schema.json", () => {
   it("matches the JSON Schema regenerated from SpecialtyManifestSchema", () => {

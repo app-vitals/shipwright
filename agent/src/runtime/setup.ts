@@ -20,7 +20,7 @@ import {
   unlinkSync,
   writeFileSync,
 } from "node:fs";
-import { join, resolve } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import type { AgentPlugin } from "@app-vitals/agent-admin";
 
 // ---------------------------------------------------------------------------
@@ -97,7 +97,13 @@ export function resolveTemplatesDir(
     if (typeof templatesDir !== "string" || templatesDir === "") {
       throw new Error("manifest has no identity.templatesDir");
     }
-    const dir = resolve(repoRoot, templatesDir);
+    // Manifests written for the monorepo spell templatesDir relative to the
+    // repo root; a self-contained specialty (e.g. the platform test fixture)
+    // spells it relative to its own directory.
+    const fromRepoRoot = resolve(repoRoot, templatesDir);
+    const dir = existsSync(fromRepoRoot)
+      ? fromRepoRoot
+      : resolve(dirname(manifestPath), templatesDir);
     if (!statSync(dir).isDirectory()) {
       throw new Error(`${dir} is not a directory`);
     }
@@ -129,7 +135,12 @@ function readTemplate(
   try {
     return readFileSync(path, "utf8");
   } catch {
-    throw new Error(`Missing workspace template: ${path}`);
+    throw new Error(
+      `Missing workspace template: ${path}. The runtime ships no product ` +
+        "templates of its own: set SHIPWRIGHT_SPECIALTIES_DIR to a directory " +
+        "of specialties and SHIPWRIGHT_DEFAULT_AGENT_TYPE to the specialty " +
+        "whose identity.templatesDir provides it.",
+    );
   }
 }
 

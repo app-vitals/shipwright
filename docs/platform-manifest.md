@@ -22,6 +22,8 @@ The gate is behavior-preserving. It adds no runtime code and does not touch the 
 - The thin entry `agent/src/entrypoint-main.ts`, `agent/Dockerfile`, and the runtime workspace templates in `agent/workspace/` (the coding variants `CLAUDE.md.template` and `CLAUDE-HITL.md.template` are excluded).
 - `admin/**` except `admin/src/coding/**` (the coding admin extension and its tests) and the generated Prisma client.
 - The Specialty schema artifact (`docs/schemas/specialty.schema.json`) and the neutral default type, `specialties/specialist/**`. The `coding` manifest stays with Shipwright.
+- The platform ships no coding content. Its tests run against a minimal fixture specialty (see [Self-contained without the coding specialty](#self-contained-without-the-coding-specialty)).
+- Tests that assert genuinely coding behavior stay in Shipwright: they sit in `exclude` (or, for tests of Shipwright's composition, `compositionRoots`), are not extracted, and keep running in the monorepo.
 - The `lib` modules the set imports, each with a tag.
 
 ### Composition roots
@@ -112,13 +114,22 @@ The rewrite only sees module specifiers and JSON path values, plus the absolute 
 | Workflows (`.github/workflows/`) | `ci.yml` (lint, typecheck, import-boundary gate, tests, admin and runtime docker builds, browser-launch check, base-image contract smoke), `pr-title-lint.yml`, `release.yml` (semantic-release) |
 | Images | `runtime/Dockerfile` (`ghcr.io/app-vitals/agent`) and `admin/Dockerfile` (`ghcr.io/app-vitals/agent-admin`); neither copies `task-store/`, `chat/`, `plugins/`, `metrics/` or `mcp-server/`. The runtime image keeps the module-resolution guard and the base-image contract (`/opt/shipwright/marketplaces/`, `installPlugins()`, `/app/runtime/entrypoint-main.ts`). |
 | Composition roots | `index.ts` (`startAgent([])`, the process `runtime/entrypoint.ts` spawns) and `admin/src/main.ts` (`startAdmin([])`), replacing the excluded Shipwright roots |
-| Scripts | `scripts/check-import-boundary.ts` (the gate ported from `platform-gate.ts`, run by `bun run check:boundary`), `scripts/verify-browser-launch.ts`, `scripts/bin/git-credential-shipwright.sh` |
+| Scripts | `scripts/check-import-boundary.ts` (the gate ported from `platform-gate.ts`, run by `bun run check:boundary`), `scripts/test-env-preload.ts` (points tests at the fixture specialty), `scripts/verify-browser-launch.ts`, `scripts/bin/git-credential-shipwright.sh` |
 
 A template file ending in `.tmpl` is copied without the suffix. `biome.json` is stored as `biome.json.tmpl` because Biome rejects a nested root configuration. The template directory is excluded from Renovate in this repository, and it holds no `*.test.ts` files, so root `bun test` does not pick it up. `scripts/extract-platform/template.unit.test.ts` pins the file set, bans internal strings from it, checks every `COPY` source of both Dockerfiles against a real extraction and runs the boundary gate on that tree.
 
 ### Dev dependency
 
 History mode needs [`git-filter-repo`](https://github.com/newren/git-filter-repo) (`pip install git-filter-repo`). `--no-history` does not. The history integration test skips when it is missing.
+
+## Self-contained without the coding specialty
+
+The extracted tree excludes `specialties/coding/` and the coding workspace templates (`agent/workspace/CLAUDE.md.template`, `CLAUDE-HITL.md.template`), yet the runtime defaults to the `coding` specialty. So the platform tests must not need either one (AGR-1.9).
+
+- **Fixture specialty.** `agent/src/fixtures/specialties/fixture/` (extracted to `runtime/fixtures/specialties/fixture/`) holds a minimal manifest and the three persona templates (`CLAUDE`, `SOUL`, `IDENTITY`) under `templates/`. Its `identity.templatesDir` is `templates/`: a relative path is tried against the repo root first, then against the manifest's own directory, so the specialty works wherever it is mounted.
+- **Test environment.** The extracted tree's `bunfig.toml` preloads `scripts/test-env-preload.ts` (from `scripts/extract-platform/template/`), which sets `SHIPWRIGHT_SPECIALTIES_DIR` to the fixture directory and `SHIPWRIGHT_DEFAULT_AGENT_TYPE` to `fixture` unless already set. The monorepo leaves both unset, so it still defaults to `coding`. Tests that need "the default type" read it from the environment (for example `getSelfServeSpecialty()` now falls back to `SHIPWRIGHT_DEFAULT_AGENT_TYPE`) rather than hard-coding `coding`.
+- **Coding-behavior tests stay home.** These are listed in `exclude`, so they are not extracted, and still run and pass in the monorepo: `setup.templates.integration.test.ts` and `setup.layered.integration.test.ts` (golden coding seeding, the coding template split), `specialty-manifest-loader.integration.test.ts` (loads the committed `coding` manifest) and `specialties/specialist/manifest.content.test.ts` (compares against `coding`). `admin/src/main.composition.unit.test.ts` is a composition-root entry. Their platform-neutral replacements are `setup.fixture.integration.test.ts` and `specialty-manifest-loader.fixture.integration.test.ts`.
+- **Missing default.** When the default specialty cannot be loaded, `SpecialtyRegistry` throws an error naming the directory it looked in and `SHIPWRIGHT_SPECIALTIES_DIR` / `SHIPWRIGHT_DEFAULT_AGENT_TYPE`. The workspace seeder's `Missing workspace template` error names them too.
 
 ## Extending the manifest
 

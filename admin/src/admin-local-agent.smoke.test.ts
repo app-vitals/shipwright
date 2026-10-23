@@ -20,7 +20,15 @@ import type {
   AdminUISlackClient,
 } from "./admin-ui.ts";
 import { createAdminUIApp } from "./admin-ui.ts";
+import { SpecialtyRegistry } from "./specialty-manifest-loader.ts";
 import type { GoogleAuthClient } from "./google-auth-client.ts";
+
+// The configured default specialty (the fixture under the platform test run,
+// "coding" in the monorepo).
+const TYPE_META = new SpecialtyRegistry().getManifest(
+  process.env.SHIPWRIGHT_DEFAULT_AGENT_TYPE || "coding",
+).metadata;
+const TYPE = TYPE_META.name;
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -239,7 +247,7 @@ function makeMockDeps(overrides?: Partial<AdminUIDeps>): AdminUIDeps {
         reviewAuthorAllowlist: [],
         patchAuthorAllowlist: [],
         restrictSlackToMembers: false,
-        typeName: "coding",
+        typeName: TYPE,
         createdAt: new Date("2024-01-01"),
         updatedAt: new Date("2024-01-01"),
         missingRequiredEnv: [],
@@ -254,7 +262,7 @@ function makeMockDeps(overrides?: Partial<AdminUIDeps>): AdminUIDeps {
         reviewAuthorAllowlist: [],
         patchAuthorAllowlist: [],
         restrictSlackToMembers: false,
-        typeName: "coding",
+        typeName: TYPE,
         createdAt: new Date("2024-01-01"),
         updatedAt: new Date("2024-01-01"),
         missingRequiredEnv: [],
@@ -268,7 +276,7 @@ function makeMockDeps(overrides?: Partial<AdminUIDeps>): AdminUIDeps {
         reviewAuthorAllowlist: [],
         patchAuthorAllowlist: [],
         restrictSlackToMembers: false,
-        typeName: "coding",
+        typeName: TYPE,
         createdAt: new Date("2024-01-01"),
         updatedAt: new Date("2024-01-01"),
         missingRequiredEnv: [],
@@ -365,7 +373,9 @@ describe("admin UI — new local agent create flow", () => {
     expect(res.status).toBe(200);
     const html = await res.text();
     expect(html).toMatch(/<select[^>]*name="type"[^>]*required/);
-    expect(html).toContain('<option value="coding">Coding Agent</option>');
+    expect(html).toContain(
+      `<option value="${TYPE}">${TYPE_META.displayName}</option>`,
+    );
   });
 
   it("GET /admin/agents/new — non-admin session returns 403", async () => {
@@ -401,7 +411,7 @@ describe("admin UI — new local agent create flow", () => {
             reviewAuthorAllowlist: [],
             patchAuthorAllowlist: [],
             restrictSlackToMembers: false,
-            typeName: "coding",
+            typeName: TYPE,
             createdAt: new Date("2024-01-01"),
             updatedAt: new Date("2024-01-01"),
             missingRequiredEnv: [],
@@ -412,7 +422,7 @@ describe("admin UI — new local agent create flow", () => {
     const app = createAdminUIApp(deps);
     const body = new URLSearchParams({
       name: "My Local Agent",
-      type: "coding",
+      type: TYPE,
     });
     const res = await app.request("/admin/agents", {
       method: "POST",
@@ -435,7 +445,7 @@ describe("admin UI — new local agent create flow", () => {
     const app = createAdminUIApp(makeMockDeps());
     const body = new URLSearchParams({
       name: "My Local Agent",
-      type: "coding",
+      type: TYPE,
     });
     const res = await app.request("/admin/agents", {
       method: "POST",
@@ -462,7 +472,7 @@ describe("admin UI — new local agent create flow", () => {
           reviewAuthorAllowlist: [],
           patchAuthorAllowlist: [],
           restrictSlackToMembers: false,
-          typeName: "coding",
+          typeName: TYPE,
           createdAt: new Date("2024-01-01"),
           updatedAt: new Date("2024-01-01"),
           missingRequiredEnv: [],
@@ -478,7 +488,7 @@ describe("admin UI — new local agent create flow", () => {
             reviewAuthorAllowlist: [],
             patchAuthorAllowlist: [],
             restrictSlackToMembers: false,
-            typeName: "coding",
+            typeName: TYPE,
             createdAt: new Date("2024-01-01"),
             updatedAt: new Date("2024-01-01"),
             missingRequiredEnv: [],
@@ -489,7 +499,7 @@ describe("admin UI — new local agent create flow", () => {
     const app = createAdminUIApp(deps);
     const body = new URLSearchParams({
       name: "My Local Agent",
-      type: "coding",
+      type: TYPE,
       repos: "my-org/repo-one\nmy-org/repo-two",
     });
     const res = await app.request("/admin/agents", {
@@ -532,7 +542,7 @@ describe("admin UI — new local agent create flow", () => {
     const app = createAdminUIApp(deps);
     const body = new URLSearchParams({
       name: "My Local Agent",
-      type: "coding",
+      type: TYPE,
       restrictSlackToMembers: "true",
       memberEmails: "a@example.com\nb@example.com",
     });
@@ -565,7 +575,7 @@ describe("admin UI — new local agent create flow", () => {
     const app = createAdminUIApp(deps);
     const body = new URLSearchParams({
       name: "My Local Agent",
-      type: "coding",
+      type: TYPE,
       restrictSlackToMembers: "true",
       memberEmails: "dup@example.com\ndup@example.com",
     });
@@ -593,7 +603,7 @@ describe("admin UI — new local agent create flow", () => {
     const app = createAdminUIApp(deps);
     const body = new URLSearchParams({
       name: "My Local Agent",
-      type: "coding",
+      type: TYPE,
       restrictSlackToMembers: "true",
       memberEmails: "",
     });
@@ -647,7 +657,7 @@ describe("admin UI — new local agent create flow", () => {
             reviewAuthorAllowlist: [],
             patchAuthorAllowlist: [],
             restrictSlackToMembers: false,
-            typeName: "coding",
+            typeName: TYPE,
             createdAt: new Date("2024-01-01"),
             updatedAt: new Date("2024-01-01"),
             missingRequiredEnv: [],
@@ -688,7 +698,7 @@ describe("admin UI — new local agent create flow", () => {
             reviewAuthorAllowlist: [],
             patchAuthorAllowlist: [],
             restrictSlackToMembers: false,
-            typeName: "coding",
+            typeName: TYPE,
             createdAt: new Date("2024-01-01"),
             updatedAt: new Date("2024-01-01"),
             missingRequiredEnv: [],
@@ -730,7 +740,7 @@ describe("admin UI — new local agent create flow", () => {
           reviewAuthorAllowlist: [],
           patchAuthorAllowlist: [],
           restrictSlackToMembers: false,
-          typeName: "coding",
+          typeName: TYPE,
           createdAt: new Date("2024-01-01"),
           updatedAt: new Date("2024-01-01"),
           missingRequiredEnv: [],
@@ -743,7 +753,7 @@ describe("admin UI — new local agent create flow", () => {
     const app = createAdminUIApp(deps);
     const body = new URLSearchParams({
       name: "My Local Agent",
-      type: "coding",
+      type: TYPE,
       repos: "not-valid-repo",
     });
     const res = await app.request("/admin/agents", {
@@ -837,7 +847,7 @@ describe("admin UI — new local agent create flow", () => {
             reviewAuthorAllowlist: [],
             patchAuthorAllowlist: [],
             restrictSlackToMembers: false,
-            typeName: "coding",
+            typeName: TYPE,
             createdAt: new Date("2024-01-01"),
             updatedAt: new Date("2024-01-01"),
             missingRequiredEnv: [],
@@ -901,7 +911,7 @@ describe("admin UI — new local agent create flow", () => {
     const { deps, calls } = makeProvisioningDeps();
     const res = await postAgent(deps, {
       name: "minikube-agent",
-      type: "coding",
+      type: TYPE,
       runtime: "in-cluster",
     });
     expect(res.status).toBe(302);
@@ -918,7 +928,7 @@ describe("admin UI — new local agent create flow", () => {
     const { deps, calls } = makeProvisioningDeps();
     const res = await postAgent(deps, {
       name: "docker-agent",
-      type: "coding",
+      type: TYPE,
       runtime: "self-hosted",
     });
     expect(res.status).toBe(302);
@@ -928,7 +938,7 @@ describe("admin UI — new local agent create flow", () => {
 
   it("omitted runtime defaults to self-hosted", async () => {
     const { deps, calls } = makeProvisioningDeps();
-    await postAgent(deps, { name: "no-runtime-field", type: "coding" });
+    await postAgent(deps, { name: "no-runtime-field", type: TYPE });
     expect(calls.created?.selfHosted).toBe(true);
     expect(calls.provisioned).toEqual([]);
   });
@@ -937,7 +947,7 @@ describe("admin UI — new local agent create flow", () => {
     const { deps, calls } = makeProvisioningDeps({ canProvision: false });
     const res = await postAgent(deps, {
       name: "nope",
-      type: "coding",
+      type: TYPE,
       runtime: "in-cluster",
     });
     expect(res.status).toBe(302);
@@ -954,7 +964,7 @@ describe("admin UI — new local agent create flow", () => {
     });
     const res = await postAgent(deps, {
       name: "doomed",
-      type: "coding",
+      type: TYPE,
       runtime: "in-cluster",
     });
     expect(res.status).toBe(302);
@@ -972,7 +982,7 @@ describe("admin UI — new local agent create flow", () => {
     });
     const res = await postAgent(deps, {
       name: "doubly-doomed",
-      type: "coding",
+      type: TYPE,
       runtime: "in-cluster",
     });
     expect(res.status).toBe(302);
@@ -992,7 +1002,7 @@ describe("admin UI — new local agent create flow", () => {
     });
     const res = await postAgent(deps, {
       name: "crons-broke",
-      type: "coding",
+      type: TYPE,
       runtime: "in-cluster",
     });
     expect(res.status).toBe(302);
@@ -1004,7 +1014,7 @@ describe("admin UI — new local agent create flow", () => {
     const { deps, calls } = makeProvisioningDeps();
     await postAgent(deps, {
       name: "with-creds",
-      type: "coding",
+      type: TYPE,
       runtime: "in-cluster",
       claudeCodeOauthToken: "sk-ant-oat01-example",
     });
@@ -1019,7 +1029,7 @@ describe("admin UI — new local agent create flow", () => {
     const { deps, calls } = makeProvisioningDeps();
     await postAgent(deps, {
       name: "no-creds",
-      type: "coding",
+      type: TYPE,
       runtime: "in-cluster",
     });
     expectOnlyDefaultEnv(calls.envPatches);
@@ -1031,7 +1041,7 @@ describe("admin UI — new local agent create flow", () => {
     const { deps, calls } = makeProvisioningDeps();
     await postAgent(deps, {
       name: "with-anthropic-key",
-      type: "coding",
+      type: TYPE,
       claudeCodeOauthToken: "sk-ant-oat01-example",
       anthropicApiKey: "sk-ant-api03-example",
     });
@@ -1047,7 +1057,7 @@ describe("admin UI — new local agent create flow", () => {
     const { deps, calls } = makeProvisioningDeps();
     await postAgent(deps, {
       name: "anthropic-only",
-      type: "coding",
+      type: TYPE,
       anthropicApiKey: "sk-ant-api03-only",
     });
     expect(calls.envPatches).toHaveLength(1);
@@ -1060,7 +1070,7 @@ describe("admin UI — new local agent create flow", () => {
     const { deps, calls } = makeProvisioningDeps();
     const res = await postAgent(deps, {
       name: "plain-agent",
-      type: "coding",
+      type: TYPE,
     });
     expect(res.status).toBe(302);
     expect(res.headers.get("Location")).toBe(`/admin/agents/${NEW_AGENT_ID}`);
@@ -1081,7 +1091,7 @@ describe("admin UI — new local agent create flow", () => {
           reviewAuthorAllowlist: [],
           patchAuthorAllowlist: [],
           restrictSlackToMembers: false,
-          typeName: "coding",
+          typeName: TYPE,
           createdAt: new Date("2024-01-01"),
           updatedAt: new Date("2024-01-01"),
           missingRequiredEnv: [],
@@ -1091,7 +1101,7 @@ describe("admin UI — new local agent create flow", () => {
     });
     const res = await postAgent(deps, {
       name: "slack-agent",
-      type: "coding",
+      type: TYPE,
       runtime: "in-cluster",
       connectSlack: "true",
       xoxpToken: "xoxe.xoxp-test-token",
@@ -1112,7 +1122,7 @@ describe("admin UI — new local agent create flow", () => {
     });
     const res = await postAgent(deps, {
       name: "slack-bad-token",
-      type: "coding",
+      type: TYPE,
       runtime: "in-cluster",
       connectSlack: "true",
       xoxpToken: "not-a-valid-token",
@@ -1129,7 +1139,7 @@ describe("admin UI — new local agent create flow", () => {
     });
     const res = await postAgent(deps, {
       name: "gh-app-agent",
-      type: "coding",
+      type: TYPE,
       runtime: "in-cluster",
       ghAuthMode: "app",
       githubOrg: "my-org",
@@ -1146,7 +1156,7 @@ describe("admin UI — new local agent create flow", () => {
     const { deps, calls } = makeProvisioningDeps();
     const res = await postAgent(deps, {
       name: "gh-app-bad-org",
-      type: "coding",
+      type: TYPE,
       runtime: "in-cluster",
       ghAuthMode: "app",
       githubOrg: "not a valid org!!",
@@ -1161,7 +1171,7 @@ describe("admin UI — new local agent create flow", () => {
     const { deps, calls } = makeProvisioningDeps();
     const res = await postAgent(deps, {
       name: "gh-pat-agent",
-      type: "coding",
+      type: TYPE,
       runtime: "in-cluster",
       ghAuthMode: "pat",
       ghPat: "ghp_exampletoken",
@@ -1178,7 +1188,7 @@ describe("admin UI — new local agent create flow", () => {
     const { deps, calls } = makeProvisioningDeps();
     const res = await postAgent(deps, {
       name: "gh-pat-missing",
-      type: "coding",
+      type: TYPE,
       runtime: "in-cluster",
       ghAuthMode: "pat",
     });
@@ -1196,7 +1206,7 @@ describe("admin UI — new local agent create flow", () => {
       "-----BEGIN RSA PRIVATE KEY-----\nfaketestkeydata\n-----END RSA PRIVATE KEY-----";
     const form = new FormData();
     form.append("name", "gh-app-manual-agent");
-    form.append("type", "coding");
+    form.append("type", TYPE);
     form.append("runtime", "in-cluster");
     form.append("ghAuthMode", "app");
     form.append("ghAppMode", "manual");
@@ -1233,7 +1243,7 @@ describe("admin UI — new local agent create flow", () => {
     const { deps, calls } = makeProvisioningDeps();
     const form = new FormData();
     form.append("name", "gh-app-manual-bad-id");
-    form.append("type", "coding");
+    form.append("type", TYPE);
     form.append("runtime", "in-cluster");
     form.append("ghAuthMode", "app");
     form.append("ghAppMode", "manual");
@@ -1266,7 +1276,7 @@ describe("admin UI — new local agent create flow", () => {
     });
     const res = await postAgent(deps, {
       name: "gh-app-default-auto",
-      type: "coding",
+      type: TYPE,
       runtime: "in-cluster",
       ghAuthMode: "app",
       githubOrg: "my-org",
@@ -1280,7 +1290,7 @@ describe("admin UI — new local agent create flow", () => {
     const { deps, calls } = makeProvisioningDeps();
     const res = await postAgent(deps, {
       name: "gh-skip-agent",
-      type: "coding",
+      type: TYPE,
       runtime: "in-cluster",
       ghAuthMode: "skip",
     });
@@ -1293,7 +1303,7 @@ describe("admin UI — new local agent create flow", () => {
     const { deps, calls } = makeProvisioningDeps();
     const res = await postAgent(deps, {
       name: "slack-and-gh-pat",
-      type: "coding",
+      type: TYPE,
       runtime: "in-cluster",
       connectSlack: "true",
       xoxpToken: "xoxe.xoxp-test-token",
@@ -1316,7 +1326,7 @@ describe("admin UI — new local agent create flow", () => {
     // flow, but the GitHub failure must be surfaced rather than swallowed.
     const res = await postAgent(deps, {
       name: "slack-ok-gh-pat-fail",
-      type: "coding",
+      type: TYPE,
       runtime: "in-cluster",
       connectSlack: "true",
       xoxpToken: "xoxe.xoxp-test-token",
@@ -1356,7 +1366,7 @@ describe("admin UI — new local agent create flow", () => {
     const { deps, calls } = makeProvisioningDeps();
     const res = await postAgent(deps, {
       name: "self-hosted-slack",
-      type: "coding",
+      type: TYPE,
       runtime: "self-hosted",
       connectSlack: "true",
       xoxpToken: "xoxe.xoxp-test-token",
@@ -1376,7 +1386,7 @@ describe("admin UI — new local agent create flow", () => {
     const { deps, calls } = makeProvisioningDeps();
     const res = await postAgent(deps, {
       name: "self-hosted-gh-app",
-      type: "coding",
+      type: TYPE,
       runtime: "self-hosted",
       ghAuthMode: "app",
       githubOrg: "my-org",
@@ -1393,7 +1403,7 @@ describe("admin UI — new local agent create flow", () => {
     const { deps, calls } = makeProvisioningDeps();
     const res = await postAgent(deps, {
       name: "self-hosted-gh-pat",
-      type: "coding",
+      type: TYPE,
       runtime: "self-hosted",
       ghAuthMode: "pat",
       ghPat: "ghp_shouldnotbestored",
@@ -1408,7 +1418,7 @@ describe("admin UI — new local agent create flow", () => {
     const { deps, calls } = makeProvisioningDeps();
     const res = await postAgent(deps, {
       name: "self-hosted-both",
-      type: "coding",
+      type: TYPE,
       runtime: "self-hosted",
       connectSlack: "true",
       xoxpToken: "xoxe.xoxp-test-token",
@@ -1523,7 +1533,7 @@ describe("admin UI — account users create / delete agents (SSP-4.2)", () => {
     expect(created).toHaveLength(1);
     expect(created[0]).toMatchObject({
       accountId: "acct-a",
-      typeName: "coding",
+      typeName: TYPE,
     });
   });
 
@@ -1531,7 +1541,7 @@ describe("admin UI — account users create / delete agents (SSP-4.2)", () => {
     const { deps, created } = depsCapturingCreate(null);
     const res = await createAdminUIApp(deps).request(
       "/admin/agents",
-      form(accountCookie, { name: "nope", type: "coding" }),
+      form(accountCookie, { name: "nope", type: TYPE }),
     );
     expect(res.status).toBe(403);
     expect(created).toHaveLength(0);
@@ -1547,10 +1557,7 @@ describe("admin UI — account users create / delete agents (SSP-4.2)", () => {
         runTransaction: async () =>
           ({ ok: false, errorCode: "quota_exceeded" }) as never,
       },
-    }).request(
-      "/admin/agents",
-      form(accountCookie, { name: "x", type: "coding" }),
-    );
+    }).request("/admin/agents", form(accountCookie, { name: "x", type: TYPE }));
     expect(res.status).toBe(302);
     expect(res.headers.get("Location")).toBe(
       `/admin/agents/new?error=${encodeURIComponent("quota_exceeded")}`,

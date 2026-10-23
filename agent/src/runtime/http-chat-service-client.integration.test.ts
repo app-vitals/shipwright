@@ -16,7 +16,8 @@
  */
 
 import { describe, expect, it } from "bun:test";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
+import { join } from "node:path";
 import {
   ChatServiceClientError,
   HttpChatServiceClient,
@@ -32,8 +33,13 @@ interface CassetteEntry {
 }
 
 function loadCassette(filename: string): Record<string, CassetteEntry> {
-  const path = new URL(`../fixtures/chat-service/${filename}`, import.meta.url)
-    .pathname;
+  // Beside the runtime source when extracted, one level up in the monorepo.
+  const path = [
+    join(import.meta.dir, "fixtures"),
+    join(import.meta.dir, "..", "fixtures"),
+  ]
+    .map((dir) => join(dir, "chat-service", filename))
+    .find((candidate) => existsSync(candidate)) as string;
   return JSON.parse(readFileSync(path, "utf-8"));
 }
 

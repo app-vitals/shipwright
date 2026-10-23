@@ -59,6 +59,7 @@ const EXPECTED_FILES = [
   "runtime/Dockerfile",
   "scripts/bin/git-credential-shipwright.sh",
   "scripts/check-import-boundary.ts",
+  "scripts/test-env-preload.ts",
   "scripts/verify-browser-launch.ts",
   "tsconfig.json",
 ];

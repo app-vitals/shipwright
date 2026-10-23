@@ -7,8 +7,11 @@
  */
 
 import { beforeAll, describe, expect, it } from "bun:test";
+import { existsSync } from "node:fs";
+import { join } from "node:path";
 import { sign } from "hono/jwt";
 import { createAdminUIApp } from "./admin-ui.ts";
+import { SpecialtyRegistry } from "./specialty-manifest-loader.ts";
 import {
   AGENT_ID,
   CRON_ID,
@@ -25,6 +28,14 @@ import {
 } from "./admin-ui.fixtures.ts";
 import { AnthropicCredentialsBlockedError } from "./anthropic-credential-guard.ts";
 import type { PushService } from "./push-service.ts";
+
+// The specialty the create-agent flows use: the configured default type (the
+// platform test run points it at the fixture specialty; the monorepo falls
+// back to "coding").
+const TYPE_MANIFEST = new SpecialtyRegistry().getManifest(
+  process.env.SHIPWRIGHT_DEFAULT_AGENT_TYPE || "coding",
+);
+const TYPE = TYPE_MANIFEST.metadata.name;
 
 // ─── Auth redirect tests ──────────────────────────────────────────────────────
 
@@ -1020,7 +1031,9 @@ describe("admin UI — authenticated pages", () => {
     expect(html).toContain(
       '<select id="type" name="type" class="form-input" required>',
     );
-    expect(html).toContain('<option value="coding">Coding Agent</option>');
+    expect(html).toContain(
+      `<option value="${TYPE}">${TYPE_MANIFEST.metadata.displayName}</option>`,
+    );
   });
 
   it("nests shipwright-loop phase crons under the loop row instead of listing them flat", async () => {
@@ -1213,7 +1226,7 @@ describe("admin UI — authenticated pages", () => {
               name: "Managed Agent",
               slackId: "U0AALR8M69X",
               selfHosted: false,
-              typeName: "coding",
+              typeName: TYPE,
               createdAt: new Date("2024-01-01"),
               updatedAt: new Date("2024-01-01"),
               repos: [],
@@ -1302,7 +1315,7 @@ describe("admin UI — authenticated pages", () => {
               name: "Self-Hosted Agent",
               slackId: null,
               selfHosted: true,
-              typeName: "coding",
+              typeName: TYPE,
               createdAt: new Date("2024-01-01"),
               updatedAt: new Date("2024-01-01"),
               repos: [],
@@ -1332,7 +1345,7 @@ describe("admin UI — authenticated pages", () => {
               name: "Self-Hosted Agent",
               slackId: null,
               selfHosted: true,
-              typeName: "coding",
+              typeName: TYPE,
               createdAt: new Date("2024-01-01"),
               updatedAt: new Date("2024-01-01"),
               repos: [],
@@ -1373,7 +1386,7 @@ describe("admin UI — authenticated pages", () => {
               name: "Self-Hosted Agent",
               slackId: null,
               selfHosted: true,
-              typeName: "coding",
+              typeName: TYPE,
               createdAt: new Date("2024-01-01"),
               updatedAt: new Date("2024-01-01"),
               repos: [],
@@ -1432,7 +1445,7 @@ describe("admin UI — authenticated pages", () => {
               name: "Self-Hosted Agent",
               slackId: null,
               selfHosted: true,
-              typeName: "coding",
+              typeName: TYPE,
               createdAt: new Date("2024-01-01"),
               updatedAt: new Date("2024-01-01"),
               repos: [],
@@ -1845,7 +1858,7 @@ describe("admin UI — owner and Anthropic identity section (PAI-2.5)", () => {
           name: "Test Agent",
           slackId: "U123456",
           selfHosted: false,
-          typeName: "coding",
+          typeName: TYPE,
           createdAt: new Date("2024-01-01"),
           updatedAt: new Date("2024-01-01"),
           repos: [],
@@ -1978,7 +1991,7 @@ describe("admin UI — agent policy fields", () => {
             name: "Test Agent",
             slackId: "U123456",
             selfHosted: false,
-            typeName: "coding",
+            typeName: TYPE,
             createdAt: new Date("2024-01-01"),
             updatedAt: new Date("2024-01-01"),
             repos: [],
@@ -2063,7 +2076,7 @@ describe("admin UI — agent policy fields", () => {
               name: "Test Agent",
               slackId: "U123456",
               selfHosted: false,
-              typeName: "coding",
+              typeName: TYPE,
               createdAt: new Date("2024-01-01"),
               updatedAt: new Date("2024-01-01"),
               repos: [],
@@ -2108,7 +2121,7 @@ describe("admin UI — agent policy fields", () => {
               name: "Test Agent",
               slackId: "U123456",
               selfHosted: false,
-              typeName: "coding",
+              typeName: TYPE,
               createdAt: new Date("2024-01-01"),
               updatedAt: new Date("2024-01-01"),
               repos: [],
@@ -2149,7 +2162,7 @@ describe("admin UI — agent policy fields", () => {
               name: "Test Agent",
               slackId: "U123456",
               selfHosted: false,
-              typeName: "coding",
+              typeName: TYPE,
               createdAt: new Date("2024-01-01"),
               updatedAt: new Date("2024-01-01"),
               repos: [],
@@ -2202,7 +2215,7 @@ describe("admin UI — agent policy fields", () => {
               name: "Test Agent",
               slackId: "U123456",
               selfHosted: false,
-              typeName: "coding",
+              typeName: TYPE,
               createdAt: new Date("2024-01-01"),
               updatedAt: new Date("2024-01-01"),
               repos: [],
@@ -2248,7 +2261,7 @@ describe("admin UI — agent policy fields", () => {
               name: "Test Agent",
               slackId: "U123456",
               selfHosted: false,
-              typeName: "coding",
+              typeName: TYPE,
               createdAt: new Date("2024-01-01"),
               updatedAt: new Date("2024-01-01"),
               repos: [],
@@ -2293,7 +2306,7 @@ describe("admin UI — agent policy fields", () => {
               name: "Test Agent",
               slackId: "U123456",
               selfHosted: false,
-              typeName: "coding",
+              typeName: TYPE,
               createdAt: new Date("2024-01-01"),
               updatedAt: new Date("2024-01-01"),
               repos: [],
@@ -2338,7 +2351,7 @@ describe("admin UI — agent policy fields", () => {
               name: "Test Agent",
               slackId: "U123456",
               selfHosted: false,
-              typeName: "coding",
+              typeName: TYPE,
               createdAt: new Date("2024-01-01"),
               updatedAt: new Date("2024-01-01"),
               repos: [],
@@ -2650,7 +2663,7 @@ describe("admin UI — member access control", () => {
             name: "My Agent",
             slackId: "U1",
             selfHosted: false,
-            typeName: "coding",
+            typeName: TYPE,
             createdAt: new Date("2024-01-01"),
             updatedAt: new Date("2024-01-01"),
           },
@@ -2659,7 +2672,7 @@ describe("admin UI — member access control", () => {
             name: "Other Agent",
             slackId: "U2",
             selfHosted: false,
-            typeName: "coding",
+            typeName: TYPE,
             createdAt: new Date("2024-01-01"),
             updatedAt: new Date("2024-01-01"),
           },
@@ -2671,7 +2684,7 @@ describe("admin UI — member access control", () => {
               name: "My Agent",
               slackId: "U1",
               selfHosted: false,
-              typeName: "coding",
+              typeName: TYPE,
               createdAt: new Date("2024-01-01"),
               updatedAt: new Date("2024-01-01"),
             },
@@ -2680,7 +2693,7 @@ describe("admin UI — member access control", () => {
               name: "Other Agent",
               slackId: "U2",
               selfHosted: false,
-              typeName: "coding",
+              typeName: TYPE,
               createdAt: new Date("2024-01-01"),
               updatedAt: new Date("2024-01-01"),
             },
@@ -3834,7 +3847,7 @@ describe("admin UI — GET /admin/agents/:id/connect-slack/callback", () => {
       name: "Test Agent",
       slackId: null,
       selfHosted: false,
-      typeName: "coding",
+      typeName: TYPE,
       createdAt: new Date("2024-01-01"),
       updatedAt: new Date("2024-01-01"),
       repos: [],
@@ -4906,7 +4919,7 @@ describe("admin UI — create agent with author allowlist", () => {
           name: "Test Agent",
           slackId: null,
           selfHosted: true,
-          typeName: "coding",
+          typeName: TYPE,
           createdAt: new Date("2024-01-01"),
           updatedAt: new Date("2024-01-01"),
           repos: [],
@@ -4920,7 +4933,7 @@ describe("admin UI — create agent with author allowlist", () => {
     const app = createAdminUIApp(deps);
     const body = new URLSearchParams({
       name: "Test Agent",
-      type: "coding",
+      type: TYPE,
       authorAllowlist: "octocat\nanother-user\noctocat",
     });
     const res = await app.request("/admin/agents", {
@@ -4958,7 +4971,7 @@ describe("admin UI — create agent with author allowlist", () => {
       method: "POST",
       body: new URLSearchParams({
         name: "Test Agent",
-        type: "coding",
+        type: TYPE,
         ownerEmail: "attacker@evil.example",
       }).toString(),
       headers: {
@@ -5022,7 +5035,7 @@ describe("admin UI — create agent with author allowlist", () => {
       method: "POST",
       body: new URLSearchParams({
         name: "Test Agent",
-        type: "coding",
+        type: TYPE,
         repos: "octocat/hello-world",
       }).toString(),
       headers,
@@ -5037,7 +5050,7 @@ describe("admin UI — create agent with author allowlist", () => {
       method: "POST",
       body: new URLSearchParams({
         name: "Test Agent",
-        type: "coding",
+        type: TYPE,
         repos: "not-an-org-repo",
       }).toString(),
       headers,
@@ -5061,7 +5074,7 @@ describe("admin UI — create agent with author allowlist", () => {
     const app = createAdminUIApp(deps);
     const body = new URLSearchParams({
       name: "Test Agent",
-      type: "coding",
+      type: TYPE,
       authorAllowlist: "octocat\nnot a valid login!",
     });
     const res = await app.request("/admin/agents", {
@@ -5102,7 +5115,7 @@ describe("admin UI — create agent with patch author allowlist", () => {
           name: "Test Agent",
           slackId: null,
           selfHosted: true,
-          typeName: "coding",
+          typeName: TYPE,
           createdAt: new Date("2024-01-01"),
           updatedAt: new Date("2024-01-01"),
           repos: [],
@@ -5117,7 +5130,7 @@ describe("admin UI — create agent with patch author allowlist", () => {
     const app = createAdminUIApp(deps);
     const body = new URLSearchParams({
       name: "Test Agent",
-      type: "coding",
+      type: TYPE,
       patchAuthorAllowlist: "octocat\nanother-user\noctocat",
     });
     const res = await app.request("/admin/agents", {
@@ -5146,7 +5159,7 @@ describe("admin UI — create agent with patch author allowlist", () => {
     const app = createAdminUIApp(deps);
     const body = new URLSearchParams({
       name: "Test Agent",
-      type: "coding",
+      type: TYPE,
       patchAuthorAllowlist: "octocat\nnot a valid login!",
     });
     const res = await app.request("/admin/agents", {
@@ -5172,7 +5185,7 @@ describe("admin UI — create agent seeds manifest tools and plugins", () => {
     cookie = await makeSessionCookie();
   });
 
-  it("POST /admin/agents with type=coding seeds AgentTool rows for every manifest tool (including Bash) and an AgentPlugin row named shipwright", async () => {
+  it("POST /admin/agents with the default type seeds an AgentTool row for every manifest tool and an AgentPlugin row for every manifest plugin", async () => {
     const seededTools: string[] = [];
     const seededPlugins: string[] = [];
     const deps = makeMockDeps();
@@ -5199,7 +5212,7 @@ describe("admin UI — create agent seeds manifest tools and plugins", () => {
       },
     };
     const app = createAdminUIApp(deps);
-    const body = new URLSearchParams({ name: "Test Agent", type: "coding" });
+    const body = new URLSearchParams({ name: "Test Agent", type: TYPE });
     const res = await app.request("/admin/agents", {
       method: "POST",
       body: body.toString(),
@@ -5210,21 +5223,76 @@ describe("admin UI — create agent seeds manifest tools and plugins", () => {
     });
     expect(res.status).toBe(302);
     expect(res.headers.get("Location")).toBe(`/admin/agents/${AGENT_ID}`);
-    expect(seededTools).toEqual([
-      "Read",
-      "Write",
-      "Edit",
-      "Glob",
-      "Grep",
-      "Bash",
-      "WebSearch",
-      "WebFetch",
-      "Skill",
-      "Agent",
-      "Monitor",
-    ]);
+    expect(seededTools).toEqual(TYPE_MANIFEST.tools);
     expect(seededTools).toContain("Bash");
-    expect(seededPlugins).toEqual(["shipwright"]);
+    expect(seededPlugins).toEqual(TYPE_MANIFEST.plugins);
+  });
+
+  it("POST /admin/agents with the fixture specialty (AGR-1.9) seeds from its manifest and needs no product specialty", async () => {
+    const fixtureDir = [
+      join(
+        import.meta.dir,
+        "..",
+        "..",
+        "agent",
+        "src",
+        "fixtures",
+        "specialties",
+      ),
+      join(import.meta.dir, "..", "..", "runtime", "fixtures", "specialties"),
+    ].find((dir) => existsSync(dir)) as string;
+    const registry = new SpecialtyRegistry({
+      typesDir: fixtureDir,
+      defaultTypeName: "fixture",
+    });
+    const seededTools: string[] = [];
+    const seededPlugins: string[] = [];
+    const deps = makeMockDeps();
+    deps.specialtyRegistry = registry;
+    deps.agentToolService = {
+      ...deps.agentToolService,
+      add: async (agentId: string, pattern: string) => {
+        seededTools.push(pattern);
+        return { ...MOCK_TOOL, agentId, pattern };
+      },
+    };
+    deps.agentPluginService = {
+      ...deps.agentPluginService,
+      add: async (agentId: string, name: string) => {
+        seededPlugins.push(name);
+        return {
+          id: "p1",
+          agentId,
+          name,
+          version: null,
+          enabled: true,
+          createdAt: new Date("2024-01-01"),
+          updatedAt: new Date("2024-01-01"),
+        };
+      },
+    };
+    const app = createAdminUIApp(deps);
+    const form = await app.request("/admin/agents/new", {
+      headers: { Cookie: `admin_session=${cookie}` },
+    });
+    expect(await form.text()).toContain(
+      '<option value="fixture">Fixture Agent</option>',
+    );
+    const res = await app.request("/admin/agents", {
+      method: "POST",
+      body: new URLSearchParams({
+        name: "Fixture Agent",
+        type: "fixture",
+      }).toString(),
+      headers: {
+        "Content-Type": "application/x-www-form-urlencoded",
+        Cookie: `admin_session=${cookie}`,
+      },
+    });
+    expect(res.status).toBe(302);
+    expect(res.headers.get("Location")).toBe(`/admin/agents/${AGENT_ID}`);
+    expect(seededTools).toEqual(registry.getManifest("fixture").tools);
+    expect(seededPlugins).toEqual(["fixture-plugin"]);
   });
 
   it("POST /admin/agents rolls back the agent and redirects with error when tool seeding fails", async () => {
@@ -5243,7 +5311,7 @@ describe("admin UI — create agent seeds manifest tools and plugins", () => {
       },
     };
     const app = createAdminUIApp(deps);
-    const body = new URLSearchParams({ name: "Test Agent", type: "coding" });
+    const body = new URLSearchParams({ name: "Test Agent", type: TYPE });
     const res = await app.request("/admin/agents", {
       method: "POST",
       body: body.toString(),
@@ -5275,7 +5343,7 @@ describe("admin UI — create agent seeds manifest tools and plugins", () => {
       },
     };
     const app = createAdminUIApp(deps);
-    const body = new URLSearchParams({ name: "Test Agent", type: "coding" });
+    const body = new URLSearchParams({ name: "Test Agent", type: TYPE });
     const res = await app.request("/admin/agents", {
       method: "POST",
       body: body.toString(),
@@ -5363,7 +5431,7 @@ describe("admin UI — repos mutation routes", () => {
       method: "POST",
       body: new URLSearchParams({
         name: "Test Agent",
-        type: "coding",
+        type: TYPE,
         repos: "acme/api\nglobex/api",
       }).toString(),
       headers: {
@@ -5426,7 +5494,7 @@ describe("admin UI — repos mutation routes", () => {
         name: "Test Agent",
         slackId: "U123456",
         selfHosted: false,
-        typeName: "coding",
+        typeName: TYPE,
         createdAt: new Date("2024-01-01"),
         updatedAt: new Date("2024-01-01"),
         repos: ["my-org/my-repo"],
@@ -5442,7 +5510,7 @@ describe("admin UI — repos mutation routes", () => {
           name: "Test Agent",
           slackId: "U123456",
           selfHosted: false,
-          typeName: "coding",
+          typeName: TYPE,
           createdAt: new Date("2024-01-01"),
           updatedAt: new Date("2024-01-01"),
           repos: capturedRepos ?? [],
@@ -5587,7 +5655,7 @@ describe("admin UI — author allowlist mutation routes", () => {
         name: "Test Agent",
         slackId: "U123456",
         selfHosted: false,
-        typeName: "coding",
+        typeName: TYPE,
         createdAt: new Date("2024-01-01"),
         updatedAt: new Date("2024-01-01"),
         repos: [],
@@ -5606,7 +5674,7 @@ describe("admin UI — author allowlist mutation routes", () => {
           name: "Test Agent",
           slackId: "U123456",
           selfHosted: false,
-          typeName: "coding",
+          typeName: TYPE,
           createdAt: new Date("2024-01-01"),
           updatedAt: new Date("2024-01-01"),
           repos: [],
@@ -5648,7 +5716,7 @@ describe("admin UI — author allowlist mutation routes", () => {
         name: "Test Agent",
         slackId: "U123456",
         selfHosted: false,
-        typeName: "coding",
+        typeName: TYPE,
         createdAt: new Date("2024-01-01"),
         updatedAt: new Date("2024-01-01"),
         repos: [],
@@ -5664,7 +5732,7 @@ describe("admin UI — author allowlist mutation routes", () => {
           name: "Test Agent",
           slackId: "U123456",
           selfHosted: false,
-          typeName: "coding",
+          typeName: TYPE,
           createdAt: new Date("2024-01-01"),
           updatedAt: new Date("2024-01-01"),
           repos: [],
@@ -5845,7 +5913,7 @@ describe("admin UI — patch author allowlist mutation routes", () => {
         name: "Test Agent",
         slackId: "U123456",
         selfHosted: false,
-        typeName: "coding",
+        typeName: TYPE,
         createdAt: new Date("2024-01-01"),
         updatedAt: new Date("2024-01-01"),
         repos: [],
@@ -5864,7 +5932,7 @@ describe("admin UI — patch author allowlist mutation routes", () => {
           name: "Test Agent",
           slackId: "U123456",
           selfHosted: false,
-          typeName: "coding",
+          typeName: TYPE,
           createdAt: new Date("2024-01-01"),
           updatedAt: new Date("2024-01-01"),
           repos: [],
@@ -5906,7 +5974,7 @@ describe("admin UI — patch author allowlist mutation routes", () => {
         name: "Test Agent",
         slackId: "U123456",
         selfHosted: false,
-        typeName: "coding",
+        typeName: TYPE,
         createdAt: new Date("2024-01-01"),
         updatedAt: new Date("2024-01-01"),
         repos: [],
@@ -5922,7 +5990,7 @@ describe("admin UI — patch author allowlist mutation routes", () => {
           name: "Test Agent",
           slackId: "U123456",
           selfHosted: false,
-          typeName: "coding",
+          typeName: TYPE,
           createdAt: new Date("2024-01-01"),
           updatedAt: new Date("2024-01-01"),
           repos: [],
@@ -5978,7 +6046,7 @@ describe("admin UI — patch author allowlist mutation routes", () => {
         name: "Test Agent",
         slackId: "U123456",
         selfHosted: false,
-        typeName: "coding",
+        typeName: TYPE,
         createdAt: new Date("2024-01-01"),
         updatedAt: new Date("2024-01-01"),
         repos: [],
@@ -5994,7 +6062,7 @@ describe("admin UI — patch author allowlist mutation routes", () => {
           name: "Test Agent",
           slackId: "U123456",
           selfHosted: false,
-          typeName: "coding",
+          typeName: TYPE,
           createdAt: new Date("2024-01-01"),
           updatedAt: new Date("2024-01-01"),
           repos: [],
@@ -6088,7 +6156,7 @@ describe("admin UI — Slack access settings route (restrictSlackToMembers)", ()
         name: "Test Agent",
         slackId: "U123456",
         selfHosted: false,
-        typeName: "coding",
+        typeName: TYPE,
         createdAt: new Date("2024-01-01"),
         updatedAt: new Date("2024-01-01"),
         repos: [],
@@ -6130,7 +6198,7 @@ describe("admin UI — Slack access settings route (restrictSlackToMembers)", ()
         name: "Test Agent",
         slackId: "U123456",
         selfHosted: false,
-        typeName: "coding",
+        typeName: TYPE,
         createdAt: new Date("2024-01-01"),
         updatedAt: new Date("2024-01-01"),
         repos: [],
@@ -6301,7 +6369,7 @@ describe("admin UI — Okta-authenticated access control", () => {
     const createApp = createAdminUIApp(makeMockDeps());
     const body = new URLSearchParams({
       name: "Okta Created Agent",
-      type: "coding",
+      type: TYPE,
     });
     const createRes = await createApp.request("/admin/agents", {
       method: "POST",
@@ -6427,7 +6495,7 @@ describe("admin UI — Okta-authenticated access control", () => {
             name: "My Okta Agent",
             slackId: "U1",
             selfHosted: false,
-            typeName: "coding",
+            typeName: TYPE,
             createdAt: new Date("2024-01-01"),
             updatedAt: new Date("2024-01-01"),
           },
@@ -6436,7 +6504,7 @@ describe("admin UI — Okta-authenticated access control", () => {
             name: "Other Okta Agent",
             slackId: "U2",
             selfHosted: false,
-            typeName: "coding",
+            typeName: TYPE,
             createdAt: new Date("2024-01-01"),
             updatedAt: new Date("2024-01-01"),
           },
@@ -6448,7 +6516,7 @@ describe("admin UI — Okta-authenticated access control", () => {
               name: "My Okta Agent",
               slackId: "U1",
               selfHosted: false,
-              typeName: "coding",
+              typeName: TYPE,
               createdAt: new Date("2024-01-01"),
               updatedAt: new Date("2024-01-01"),
             },
@@ -6457,7 +6525,7 @@ describe("admin UI — Okta-authenticated access control", () => {
               name: "Other Okta Agent",
               slackId: "U2",
               selfHosted: false,
-              typeName: "coding",
+              typeName: TYPE,
               createdAt: new Date("2024-01-01"),
               updatedAt: new Date("2024-01-01"),
             },

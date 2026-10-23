@@ -3,7 +3,7 @@
  *
  * Verifies the runtime-owned workspace file tells Slack-mediated agents not to
  * use AskUserQuestion and warns about background Agent dispatch. Relocated from
- * CLAUDE.md.template.content.test.ts when the template was layered (ARD-6.2).
+ * the former CLAUDE template content test when the template was layered (ARD-6.2).
  *
  * Content-assertion only: readFileSync, no I/O beyond local file reads.
  */

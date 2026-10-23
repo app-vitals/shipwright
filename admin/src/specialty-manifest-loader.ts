@@ -17,8 +17,8 @@
  * whose type was renamed or removed.
  *
  * Hard-failure contract: if the "coding" manifest itself (the universal
- * fallback) cannot be loaded or fails validation, that is a startup-time bug
- * and the error propagates — we never silently degrade the fallback into a
+ * fallback) cannot be loaded or fails validation, that is a configuration error
+ * (it names SHIPWRIGHT_SPECIALTIES_DIR / SHIPWRIGHT_DEFAULT_AGENT_TYPE) and the error propagates — we never silently degrade the fallback into a
  * no-op that would strip every agent's system crons.
  *
  * The class takes an injectable reader/warner so unit tests can drive it
@@ -75,6 +75,24 @@ export function resolveSpecialtiesDir(
  * The universal fallback type: SHIPWRIGHT_DEFAULT_AGENT_TYPE when set, else
  * "coding".
  */
+/**
+ * The actionable error for a default specialty that cannot be loaded. The
+ * platform ships no specialty of its own, so this is a configuration problem:
+ * the operator must point the two env vars at a real specialties directory.
+ */
+export function missingDefaultSpecialtyError(
+  defaultTypeName: string,
+  typesDir: string,
+  cause?: unknown,
+): Error {
+  const detail = cause instanceof Error ? ` (${cause.message})` : "";
+  return new Error(
+    `SpecialtyRegistry: the default specialty "${defaultTypeName}" could not be loaded from "${typesDir}"${detail}. ` +
+      "Set SHIPWRIGHT_SPECIALTIES_DIR to a directory containing <type>/manifest.yaml and " +
+      "SHIPWRIGHT_DEFAULT_AGENT_TYPE to the name of a specialty in it.",
+  );
+}
+
 export function resolveDefaultSpecialtyName(
   env: Record<string, string | undefined> = process.env,
 ): string {
@@ -134,6 +152,7 @@ export class SpecialtyRegistry implements SpecialtyManifestResolver {
   private readonly warn: WarnFn;
   private readonly list: TypeDirLister;
   private readonly defaultTypeName: string;
+  private readonly typesDir: string;
   private readonly cache = new Map<string, SpecialtyManifest>();
 
   /**
@@ -151,6 +170,7 @@ export class SpecialtyRegistry implements SpecialtyManifestResolver {
     } = {},
   ) {
     const typesDir = opts.typesDir ?? resolveSpecialtiesDir();
+    this.typesDir = typesDir;
     this.read = opts.read ?? ((name) => defaultManifestReader(name, typesDir));
     this.warn = opts.warn ?? ((m) => console.warn(m));
     this.list = opts.list ?? (() => defaultTypeDirLister(typesDir));
@@ -171,11 +191,17 @@ export class SpecialtyRegistry implements SpecialtyManifestResolver {
     );
     if (typeName === this.defaultTypeName) {
       // Guard against infinite intent: the default itself failed to load.
-      throw new Error(
-        `SpecialtyRegistry: the default "${this.defaultTypeName}" manifest failed to load — this is a startup-time bug`,
+      throw missingDefaultSpecialtyError(this.defaultTypeName, this.typesDir);
+    }
+    try {
+      return this.loadOrThrow(this.defaultTypeName);
+    } catch (err) {
+      throw missingDefaultSpecialtyError(
+        this.defaultTypeName,
+        this.typesDir,
+        err,
       );
     }
-    return this.loadOrThrow(this.defaultTypeName);
   }
 
   /**

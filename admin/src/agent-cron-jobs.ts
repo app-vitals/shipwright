@@ -11,7 +11,9 @@ import type { AgentCronJob, PrismaClient } from "../prisma/client/client.ts";
 import {
   type SpecialtyManifestResolver,
   SpecialtyRegistry,
-  DEFAULT_SPECIALTY_NAME,
+  missingDefaultSpecialtyError,
+  resolveDefaultSpecialtyName,
+  resolveSpecialtiesDir,
 } from "./specialty-manifest-loader.ts";
 import type { SpecialtyManifest } from "./specialty-registry.ts";
 import { type Clock, SystemClock } from "./clock.ts";
@@ -493,9 +495,12 @@ export class AgentCronJobService {
     }
     const manifest = this.specialtyRegistry.tryGetManifest(agent.typeName);
     if (!manifest) {
-      if (agent.typeName === DEFAULT_SPECIALTY_NAME) {
-        throw new Error(
-          `reconcileSystemCrons: the default "${DEFAULT_SPECIALTY_NAME}" manifest failed to load for agent ${agentId} — this is a startup-time bug`,
+      const defaultName = resolveDefaultSpecialtyName();
+      if (agent.typeName === defaultName) {
+        throw missingDefaultSpecialtyError(
+          defaultName,
+          resolveSpecialtiesDir(),
+          new Error(`reconcileSystemCrons for agent ${agentId}`),
         );
       }
       console.error(

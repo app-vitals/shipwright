@@ -71,15 +71,6 @@ describe("admin-boot.ts boot sequence", () => {
 });
 
 describe("main.ts composition root", () => {
-  it("composes the platform with the coding extension and nothing else", () => {
-    expect(entrySource).toContain('from "./admin-boot.ts"');
-    expect(entrySource).toContain('from "./coding/coding-admin-extension.ts"');
-    expect(entrySource).toContain("startAdmin(adminExtensions)");
-    expect(entrySource).toContain(
-      "export const adminExtensions: readonly AdminExtension[] = [\n  codingAdminExtension,\n];",
-    );
-  });
-
   it("builds no services, routes or sweepers itself", () => {
     for (const forbidden of [
       "new Hono(",

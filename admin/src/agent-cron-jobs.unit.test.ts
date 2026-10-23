@@ -11,7 +11,10 @@
 import { describe, expect, test } from "bun:test";
 import type { AgentCronJob, PrismaClient } from "../prisma/client/client.ts";
 import { AgentCronJobService, isValidCron } from "./agent-cron-jobs.ts";
-import type { SpecialtyManifestResolver } from "./specialty-manifest-loader.ts";
+import {
+  type SpecialtyManifestResolver,
+  resolveDefaultSpecialtyName,
+} from "./specialty-manifest-loader.ts";
 import type { SpecialtyManifest } from "./specialty-registry.ts";
 
 describe("isValidCron", () => {
@@ -135,7 +138,9 @@ function makeFakePrisma(opts: {
     },
     async create({
       data,
-    }: { data: Partial<FakeCronRow> }): Promise<FakeCronRow> {
+    }: {
+      data: Partial<FakeCronRow>;
+    }): Promise<FakeCronRow> {
       const id = `created-${nextId++}`;
       const row = {
         id,
@@ -365,9 +370,11 @@ describe("reconcileSystemCrons (unit, injected registry)", () => {
     expect(String(errors[0]?.[0])).toContain("agent-1");
   });
 
-  test("a coding manifest that cannot load still throws", async () => {
+  test("the default manifest that cannot load still throws", async () => {
     const registry = fakeRegistry({});
-    const { prisma } = makeFakePrisma({ typeName: "coding" });
+    const { prisma } = makeFakePrisma({
+      typeName: resolveDefaultSpecialtyName(),
+    });
     const service = new AgentCronJobService(
       prisma as unknown as PrismaClient,
       undefined,
@@ -375,7 +382,23 @@ describe("reconcileSystemCrons (unit, injected registry)", () => {
     );
 
     await expect(service.reconcileSystemCrons("agent-1")).rejects.toThrow(
-      /coding/,
+      resolveDefaultSpecialtyName(),
+    );
+  });
+
+  test("the default-manifest failure names the env vars that configure it", async () => {
+    const registry = fakeRegistry({});
+    const { prisma } = makeFakePrisma({
+      typeName: resolveDefaultSpecialtyName(),
+    });
+    const service = new AgentCronJobService(
+      prisma as unknown as PrismaClient,
+      undefined,
+      registry,
+    );
+
+    await expect(service.reconcileSystemCrons("agent-1")).rejects.toThrow(
+      /SHIPWRIGHT_SPECIALTIES_DIR.*SHIPWRIGHT_DEFAULT_AGENT_TYPE/s,
     );
   });
 

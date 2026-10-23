@@ -9,15 +9,19 @@
  */
 
 import type { CallerScope } from "./caller-scope.ts";
+import { resolveDefaultSpecialtyName } from "./specialty-manifest-loader.ts";
 
 /**
  * The only specialty account users may create: SHIPWRIGHT_SELF_SERVE_AGENT_TYPE
- * when set, else "coding".
+ * when set, else the platform's default specialty (SHIPWRIGHT_DEFAULT_AGENT_TYPE,
+ * "coding" when unset).
  */
 export function getSelfServeSpecialty(
   env: Record<string, string | undefined> = process.env,
 ): string {
-  return env.SHIPWRIGHT_SELF_SERVE_AGENT_TYPE || "coding";
+  return (
+    env.SHIPWRIGHT_SELF_SERVE_AGENT_TYPE || resolveDefaultSpecialtyName(env)
+  );
 }
 
 /** Account the caller may create agents in, or null when they have none. */
