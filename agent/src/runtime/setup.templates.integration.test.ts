@@ -16,7 +16,11 @@ import {
 import { join } from "node:path";
 import { ensureAgentHome, resolveTemplatesDir } from "./setup.ts";
 
-const CODING_TEMPLATES = join(import.meta.dir, "..", "..", "workspace");
+// Beside the runtime source in the extracted layout, two levels up in the monorepo.
+const CODING_TEMPLATES = [
+  join(import.meta.dir, "workspace"),
+  join(import.meta.dir, "..", "..", "workspace"),
+].find((dir) => existsSync(dir)) as string;
 
 // seeded file -> template it comes from
 const SEEDED: Record<string, string> = {
@@ -62,7 +66,7 @@ function writeTemplates(dir: string, marker: string): void {
 
 describe("golden: coding agent seeds byte-identical files", () => {
   for (const typeName of [undefined, "coding"]) {
-    it(`typeName=${typeName ?? "undefined"} seeds every file from agent/workspace/`, () => {
+    it(`typeName=${typeName ?? "undefined"} seeds every file from the built-in workspace/`, () => {
       ensureAgentHome(home, typeName);
       for (const [file, template] of Object.entries(SEEDED)) {
         expect(

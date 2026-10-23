@@ -9,17 +9,13 @@
  */
 import { describe, expect, it } from "bun:test";
 import { readFileSync } from "node:fs";
-import { join, resolve } from "node:path";
+import { join } from "node:path";
 
-// agent/workspace/ → repo root
-const repoRoot = resolve(import.meta.dir, "..", "..");
-
-function repoPath(...parts: string[]): string {
-  return join(repoRoot, ...parts);
-}
+// The template sits beside this test, so this works in any repo layout.
+const TEMPLATE_PATH = join(import.meta.dir, "RUNTIME.md.template");
 
 function readTemplate(): string {
-  return readFileSync(repoPath("agent/workspace/RUNTIME.md.template"), "utf8");
+  return readFileSync(TEMPLATE_PATH, "utf8");
 }
 
 describe("RUNTIME.md.template — Slack AskUserQuestion note", () => {
