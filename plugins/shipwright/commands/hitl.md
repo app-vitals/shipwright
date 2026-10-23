@@ -152,13 +152,13 @@ lifecycle — do not mark the task `done`. Instead, warn the human:
   candidacy, but we'll leave the task status as-is so it re-enters the queue.
 ```
 
-Then proceed to Step 6b below, but **only PATCH `hitl: false`** (skip the status:"done"
+Then proceed to Step 6c below, but **only PATCH `hitl: false`** (skip the status:"done"
 update — leave status as-is). The task will re-enter normal candidacy once hitl is cleared.
 
 If `TASK_PR` is empty (purely standalone infra work), proceed normally with both steps below.
 
-1. First run **Step 6a** below if it applies to this task.
-2. Then mark the task done in the task store as described further down (**Step 6b**), which
+1. First run **Step 6a** or **Step 6b** below if either applies to this task (they are mutually exclusive: 6a gates on credential rules, 6b on scanner-finding rules).
+2. Then mark the task done in the task store as described further down (**Step 6c**), which
    also includes an optional outcome-note prompt.
 
 ### 6a. Offer Gitleaksignore Suppression
@@ -249,7 +249,63 @@ false positives to suppress), **skip suppression** and go straight to marking th
 than false-positive), skip straight to marking the task done — do not block on this
 sub-step.
 
-### 6b. Mark Task Done
+### 6b. Offer Findings Suppression (false positive / accepted risk)
+
+**Gate:** parse `TASK_DESC` for the `Rule:` trailer written by `security-fix` (`Rule: {rule} | Severity: ...`)
+or `entropy-fix` (`Rule: {rule.id} | Severity: ... | Domain: ... | HITL: ...`). Map it to a
+suppression rule per `references/suppressions-schema.md`:
+
+| Task trailer | Suppression `rule` | `match` key |
+|---|---|---|
+| `osv-cve` | `osv` | `cve` + `package` |
+| `grype-cve` | `grype` | `cve` + `package` |
+| `posture-*` | `posture` | `path` |
+| entropy-fix trailer (has `Domain:`) | `entropy` | `file` + `symbol` |
+
+- No `Rule:` line, an unmapped rule (including `gitleaks-secret` / `hardcoded-credential`, which Step 6a
+  handles), or a close-out that is **not** a false positive or accepted risk (fixed, rotated, deferred,
+  still deciding): **skip this sub-step entirely** and proceed to 6c unchanged.
+
+**Ask the human** which disposition applies: `false_positive` (scanner error; never expires) or
+`accepted_risk` (real but tolerated), and for which findings listed in `TASK_DESC`. The human's close-out
+note (or a short prompt) supplies the required `reason`.
+
+**Draft the entry** from the finding and close-out note, using a stable match key with **no line numbers**:
+
+```yaml
+- rule: osv
+  match: { cve: CVE-2024-1234, package: lodash }
+  status: accepted_risk
+  reason: {close-out note}
+  addedBy: {human's handle}
+  date: {YYYY-MM-DD today}
+  expires: {date + 90 days}   # accepted_risk only; omit for false_positive
+```
+
+`accepted_risk` gets a default `expires` of 90 days from `date` (`defaultExpiry` in
+`scripts/suppressions.ts`); the human may choose a different date. `false_positive` never carries `expires`.
+
+**Confirm with the human before anything is written**: print the drafted entry and wait for an explicit
+yes. If they decline or edit, revise or skip; never open a PR without confirmation.
+
+**After confirmation:**
+
+1. Create a worktree for the scanned repo with branch `chore/suppress-{TASK_ID}` (absolute path, naming
+   `{repo}-{branch}`, as in Step 6a).
+2. Append the entry under `suppressions:` in the repo's `.shipwright/suppressions.yml` (create the file with a
+   `suppressions:` list if absent).
+3. **Validate** with the shared script; fix and re-run until it exits 0:
+   ```bash
+   bun plugins/shipwright/scripts/suppressions.ts .shipwright/suppressions.yml
+   ```
+   If the scanned repo does not carry the script, run it from the shipwright plugin install path.
+4. Commit, push, and open a small PR (`chore: suppress {false positive|accepted risk} finding ({TASK_ID})`)
+   whose body states the rule, match key, status, reason and expiry. PR review is the approval step.
+5. Then proceed to 6c as normal.
+
+If the human declines, skip to 6c. This sub-step is additive, never required.
+
+### 6c. Mark Task Done
 
 Ask a brief optional follow-up: "Any outcome note for the record (e.g. 'fixed', 'false
 positive — no change needed')? Press enter to skip." If the human provides one, capture it
