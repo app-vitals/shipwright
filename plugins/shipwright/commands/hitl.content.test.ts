@@ -25,10 +25,55 @@ function extractSuppressionSubStep(md: string): string {
 }
 
 function extractMarkTaskDoneSubStep(md: string): string {
-  const match = md.match(/### 6b\. Mark Task Done[\s\S]*$/);
+  const match = md.match(/### 6c\. Mark Task Done[\s\S]*$/);
   expect(match).not.toBeNull();
   return match?.[0] ?? "";
 }
+
+function extractFindingsSuppressionSubStep(md: string): string {
+  const match = md.match(
+    /### 6b\. Offer Findings Suppression[\s\S]*?(?=\n### 6c\.)/,
+  );
+  expect(match).not.toBeNull();
+  return match?.[0] ?? "";
+}
+
+describe("hitl.md — findings suppression close-out step (FPS-2.1)", () => {
+  it("has a 6b step between 6a and 6c", () => {
+    expect(content).toContain("### 6b. Offer Findings Suppression");
+  });
+
+  it("drafts false_positive and accepted_risk entries for osv/grype/posture/entropy rules", () => {
+    const s = extractFindingsSuppressionSubStep(content);
+    for (const t of ["false_positive", "accepted_risk", "osv-cve", "grype-cve", "posture-", "entropy"]) {
+      expect(s).toContain(t);
+    }
+    expect(s).toContain(".shipwright/suppressions.yml");
+  });
+
+  it("defaults accepted_risk to a 90-day expiry and never expires false_positive", () => {
+    const s = extractFindingsSuppressionSubStep(content);
+    expect(s).toContain("90 days");
+    expect(s).toContain("never expires");
+  });
+
+  it("validates with the FPS-1.1 script and confirms with the human before opening a PR", () => {
+    const s = extractFindingsSuppressionSubStep(content);
+    expect(s).toContain("scripts/suppressions.ts");
+    expect(s.toLowerCase()).toContain("confirm with the human");
+    expect(s).toContain("open a small PR");
+  });
+
+  it("skips entirely for other close-out outcomes, leaving them unchanged", () => {
+    const s = extractFindingsSuppressionSubStep(content);
+    expect(s).toContain("skip this sub-step entirely");
+    expect(s).toContain("fixed");
+  });
+
+  it("does not use line numbers in match keys", () => {
+    expect(extractFindingsSuppressionSubStep(content)).toContain("no line numbers");
+  });
+});
 
 describe("hitl.md — gitleaksignore suppression sub-step exists (GLB-2.2 AC1)", () => {
   it("contains a Step 6a suppression sub-step section", () => {
@@ -165,7 +210,7 @@ describe("hitl.md — suppression is additive, not required (GLB-2.2)", () => {
 });
 
 describe("hitl.md — clear hitl flag when marking done (HSR-2.1 AC1)", () => {
-  it("Step 6b PATCHes hitl:false alongside status:done in the code block", () => {
+  it("Step 6c PATCHes hitl:false alongside status:done in the code block", () => {
     const section = extractMarkTaskDoneSubStep(content);
     // Check that both status:done and hitl:false appear in the section
     expect(section).toContain("hitl");
@@ -180,7 +225,7 @@ describe("hitl.md — clear hitl flag when marking done (HSR-2.1 AC1)", () => {
     expect(code).toContain("status");
   });
 
-  it("Step 6b includes hitl:false in multiple branches (with and without OUTCOME_NOTE)", () => {
+  it("Step 6c includes hitl:false in multiple branches (with and without OUTCOME_NOTE)", () => {
     const section = extractMarkTaskDoneSubStep(content);
     // Count occurrences of hitl to ensure both branches are covered
     const hitlCount = (section.match(/hitl/g) || []).length;
