@@ -465,6 +465,30 @@ export class GithubProvisioningService {
     installationId: string | undefined,
     expectedAgentId?: string,
   ): Promise<CompleteInstalledResult> {
+    // Additional-org installs ("Add another org") set no provision-state
+    // cookie, so once an installation ID is stored the callback needs no
+    // session: validate the ID and acknowledge without consulting the cookie
+    // or writing anything. First installs still require the state cookie.
+    if (expectedAgentId !== undefined) {
+      const existing = (
+        await this.deps.agentEnvService.getByAgentId(expectedAgentId)
+      )?.env.GH_APP_INSTALLATION_ID;
+      if (existing) {
+        if (!isNumericId(installationId)) {
+          return {
+            outcome: "invalid_installation_id",
+            error:
+              "GitHub did not return a valid installation ID. Please restart the provisioning flow from the beginning.",
+          };
+        }
+        return {
+          outcome: "success",
+          agentId: expectedAgentId,
+          alreadyStored: true,
+        };
+      }
+    }
+
     const stateResult = await this.readProvisionState(rawStateCookie);
     if (!stateResult.ok) {
       return { outcome: "invalid_state", error: stateResult.error };

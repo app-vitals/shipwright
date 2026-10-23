@@ -42,6 +42,8 @@ A private App can only be installed on its owning account. To make it installabl
 2. Pick the target org, then choose all repositories or the specific ones the agent needs. The person installing must be an owner of the org, or request approval from one.
 3. Wait up to 60 seconds. The next config-sync tick discovers the installation; no restart or env change is needed, provided the org's repos are in the agent's scope.
 
+Once the first install exists, no admin provisioning session is needed to complete an additional-org install.
+
 ## Admin status card
 
 The agent detail page shows a **GitHub Installations** card with one row per installation: owner, state, and last error. The agent reports its state to admin (`PUT /agents/:id/github-installations`, see [`agent-api-resources.md`](./agent-api-resources.md#github-installations-snapshot)) when it changes and on a 30-minute heartbeat. Reports never include tokens or keys. Admin only displays the snapshot; it never calls GitHub or the agent.

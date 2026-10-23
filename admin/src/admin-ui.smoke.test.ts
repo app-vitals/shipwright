@@ -4828,8 +4828,18 @@ describe("admin UI — GET /admin/agents/:id/connect-github/installed", () => {
     expect(patched).toBe(false);
   });
 
-  it("missing state cookie → renders an error page", async () => {
-    const app = createAdminUIApp(makeMockDeps());
+  it("no stored GH_APP_INSTALLATION_ID + missing state cookie → renders an error page", async () => {
+    const app = createAdminUIApp(
+      makeMockDeps({
+        agentEnvService: {
+          getByAgentId: async () => ({ env: {}, secretKeys: [] }),
+          upsert: async () => {},
+          patch: async () => {},
+          deleteKey: async () => {},
+          getConfigBundle: async () => null,
+        },
+      }),
+    );
     const res = await app.request(
       `/admin/agents/${AGENT_ID}/connect-github/installed?installation_id=123`,
       {
@@ -4839,6 +4849,68 @@ describe("admin UI — GET /admin/agents/:id/connect-github/installed", () => {
     expect(res.status).toBe(200);
     const html = await res.text();
     expect(html.toLowerCase()).toContain("error");
+  });
+
+  describe("additional-org install (stored GH_APP_INSTALLATION_ID, no state cookie)", () => {
+    function storedIdDeps(patchCalls: Array<Record<string, string>>) {
+      return makeMockDeps({
+        agentEnvService: {
+          getByAgentId: async () => ({
+            env: { GH_APP_INSTALLATION_ID: "111" },
+            secretKeys: [],
+          }),
+          upsert: async () => {},
+          patch: async (_id: string, env: Record<string, string>) => {
+            patchCalls.push(env);
+          },
+          deleteKey: async () => {},
+          getConfigBundle: async () => null,
+        },
+      });
+    }
+
+    it("numeric installation_id → renders Install received, env untouched", async () => {
+      const patchCalls: Array<Record<string, string>> = [];
+      const app = createAdminUIApp(storedIdDeps(patchCalls));
+      const res = await app.request(
+        `/admin/agents/${AGENT_ID}/connect-github/installed?installation_id=778899`,
+        { headers: { Cookie: `admin_session=${adminCookie}` } },
+      );
+      expect(res.status).toBe(200);
+      const html = await res.text();
+      expect(html).toContain("alert-success");
+      expect(html).toContain("Install received");
+      expect(patchCalls).toHaveLength(0);
+    });
+
+    it("non-numeric installation_id → still rejected, env untouched", async () => {
+      const patchCalls: Array<Record<string, string>> = [];
+      const app = createAdminUIApp(storedIdDeps(patchCalls));
+      const res = await app.request(
+        `/admin/agents/${AGENT_ID}/connect-github/installed?installation_id=not-a-number`,
+        { headers: { Cookie: `admin_session=${adminCookie}` } },
+      );
+      expect(res.status).toBe(200);
+      const html = await res.text();
+      expect(html).not.toContain("Install received");
+      expect(html.toLowerCase()).toContain("error");
+      expect(patchCalls).toHaveLength(0);
+    });
+
+    it("user without agent access → 403", async () => {
+      const outsiderCookie = await makeSessionCookie(
+        SESSION_SECRET,
+        "google-sub-outsider",
+        "outsider@example.com",
+        false,
+      );
+      const app = createAdminUIApp(storedIdDeps([]));
+      const res = await app.request(
+        `/admin/agents/${AGENT_ID}/connect-github/installed?installation_id=778899`,
+        { headers: { Cookie: `admin_session=${outsiderCookie}` } },
+      );
+      expect(res.status).toBe(403);
+    });
   });
 });
 
