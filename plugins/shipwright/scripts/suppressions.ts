@@ -258,10 +258,60 @@ export function findSuppression(
   );
 }
 
+/** Result of applying suppressions to a batch of findings. */
+export interface FilterResult<F extends Finding = Finding> {
+  kept: F[];
+  suppressed: F[];
+  /** Expired entries, reported once each so the scan can flag them as no longer suppressing. */
+  expired: Suppression[];
+}
+
+/** Drop findings matched by an active entry; report every expired entry. */
+export function filterFindings<F extends Finding>(
+  entries: Suppression[],
+  findings: F[],
+  clock: Clock = SystemClock(),
+): FilterResult<F> {
+  const kept: F[] = [];
+  const suppressed: F[] = [];
+  for (const f of findings)
+    (findSuppression(entries, f, clock) ? suppressed : kept).push(f);
+  return {
+    kept,
+    suppressed,
+    expired: entries.filter((e) => evaluateExpiry(e, clock).expired),
+  };
+}
+
 // ─── CLI ──────────────────────────────────────────────────────────────────────
 
-/** `bun suppressions.ts <suppressions.yml>` — validate and print a summary. */
-if (import.meta.main) {
+/**
+ * `bun suppressions.ts <suppressions.yml>` — validate and print a summary.
+ * `bun suppressions.ts --filter <suppressions.yml> <findings.json>` — print
+ * `{kept, suppressed, expired}` for a JSON array of findings.
+ */
+if (import.meta.main && process.argv[2] === "--filter") {
+  const [, , , file, findingsFile] = process.argv;
+  if (!file || !findingsFile) {
+    console.error(
+      "usage: suppressions.ts --filter <suppressions.yml> <findings.json>",
+    );
+    process.exit(2);
+  }
+  try {
+    const sf = Bun.file(file);
+    const entries = (await sf.exists())
+      ? parseSuppressions(await sf.text())
+      : [];
+    const findings = JSON.parse(
+      await Bun.file(findingsFile).text(),
+    ) as Finding[];
+    console.log(JSON.stringify(filterFindings(entries, findings)));
+  } catch (e) {
+    console.error((e as Error).message);
+    process.exit(1);
+  }
+} else if (import.meta.main) {
   const file = process.argv[2] ?? ".shipwright/suppressions.yml";
   const f = Bun.file(file);
   if (!(await f.exists())) {
