@@ -40,6 +40,8 @@ import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { format } from "node:util";
 import { computeMissingClones } from "@app-vitals/agent-lib/clone-plan";
+import { FLOOR_TOOLS } from "@app-vitals/agent-runtime/claude";
+import { installPlugins } from "@app-vitals/agent-runtime/setup";
 import {
   createTaskStoreClient,
   getCurrentUser,
@@ -68,8 +70,6 @@ import {
   type WorkPrCandidate,
   type WorkTaskCandidate,
 } from "../agent/src/coding/work-selector.ts";
-import { FLOOR_TOOLS } from "../agent/src/runtime/claude.ts";
-import { installPlugins } from "../agent/src/runtime/setup.ts";
 import {
   type ConsoleMethod,
   type LogFileTeeTarget,

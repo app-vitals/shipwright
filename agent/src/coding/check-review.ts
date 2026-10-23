@@ -36,8 +36,8 @@
  * pr.createdAt rather than disqualifying the PR.
  */
 
+import { agentReposRef } from "@app-vitals/agent-runtime/agent-repos-ref";
 import { canonicalLogin } from "../../../plugins/shipwright/scripts/login-identity.ts";
-import { agentReposRef } from "../runtime/agent-repos-ref.ts";
 import type { LinkedTaskInfo } from "./check-helpers.ts";
 import {
   candidateId,

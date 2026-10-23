@@ -53,8 +53,8 @@
  * already-discussed, accepted gap tracked elsewhere).
  */
 
-import type { Clock } from "../runtime/clock.ts";
-import { SystemClock } from "../runtime/clock.ts";
+import type { Clock } from "@app-vitals/agent-runtime/clock";
+import { SystemClock } from "@app-vitals/agent-runtime/clock";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 

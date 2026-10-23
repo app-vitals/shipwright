@@ -8,6 +8,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@app-vitals/agent-runtime": "workspace:*",
     "js-yaml": "^5.0.0"
   },
   "devDependencies": {

@@ -25,7 +25,7 @@ import {
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { DEFAULT_CLAIM_TTL_MS } from "@app-vitals/agent-lib/claim-ttl";
-import { type Clock, FixedClock } from "../runtime/clock.ts";
+import { type Clock, FixedClock } from "@app-vitals/agent-runtime/clock";
 import type { PrReviewData, ReviewNode, ReviewThread } from "./check-patch.ts";
 import {
   __resetPrOpenTasksCursorForTests,

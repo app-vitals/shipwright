@@ -16,7 +16,7 @@
  */
 
 import { describe, expect, test } from "bun:test";
-import { FixedClock } from "../runtime/clock.ts";
+import { FixedClock } from "@app-vitals/agent-runtime/clock";
 import {
   type CheckDevTaskDeps,
   getDevTaskCandidates,

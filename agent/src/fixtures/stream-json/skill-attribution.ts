@@ -23,7 +23,7 @@
  *  - one terminal `result`/success line
  */
 
-import type { RunTelemetry } from "../../runtime/run-telemetry.ts";
+import type { RunTelemetry } from "@app-vitals/agent-runtime/run-telemetry";
 
 const SONNET = "claude-sonnet-4-6";
 const SESSION_ID = "sess-skill-attribution";

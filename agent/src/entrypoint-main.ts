@@ -13,17 +13,17 @@
  */
 
 import { join } from "node:path";
-import { applyEnvToProcess } from "./runtime/anthropic-federation-guard.ts";
-import { parseCliArgs } from "./runtime/cli-args.ts";
-import { runEntrypoint } from "./runtime/entrypoint.ts";
-import { buildGitHubAuthDeps } from "./runtime/github-auth-deps.ts";
+import { applyEnvToProcess } from "@app-vitals/agent-runtime/anthropic-federation-guard";
+import { parseCliArgs } from "@app-vitals/agent-runtime/cli-args";
+import { runEntrypoint } from "@app-vitals/agent-runtime/entrypoint";
+import { buildGitHubAuthDeps } from "@app-vitals/agent-runtime/github-auth-deps";
 import {
   ensureDotClaudeSymlink,
   installPlugins,
   runMiseStartup,
-} from "./runtime/setup.ts";
-import { setupGitHubAuth } from "./runtime/setup-github-auth.ts";
-import { HttpShipwrightRuntimeClient } from "./runtime/shipwright-runtime-client.ts";
+} from "@app-vitals/agent-runtime/setup";
+import { setupGitHubAuth } from "@app-vitals/agent-runtime/setup-github-auth";
+import { HttpShipwrightRuntimeClient } from "@app-vitals/agent-runtime/shipwright-runtime-client";
 
 const { agentId, apiUrl, apiKey } = parseCliArgs(
   process.argv.slice(2),

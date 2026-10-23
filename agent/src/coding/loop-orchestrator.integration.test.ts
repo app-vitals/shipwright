@@ -27,12 +27,12 @@ import {
   ClaudeTimeoutError,
   type ModelUsage,
   type ProgressCallback,
-} from "../runtime/claude.ts";
-import { FixedClock } from "../runtime/clock.ts";
+} from "@app-vitals/agent-runtime/claude";
+import { FixedClock } from "@app-vitals/agent-runtime/clock";
 import type {
   CronRunReporter,
   ModelBreakdownEntry,
-} from "../runtime/cron-run-reporter.ts";
+} from "@app-vitals/agent-runtime/cron-run-reporter";
 import { createTaskStoreClient } from "./check-helpers.ts";
 import type { CheckPatchDeps } from "./check-patch.ts";
 import type { CronJobLike } from "./loop-cron-classifier.ts";

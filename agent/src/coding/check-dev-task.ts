@@ -22,7 +22,7 @@
  * (WL-3.3, out of scope for this port).
  */
 
-import { type Clock, SystemClock } from "../runtime/clock.ts";
+import { type Clock, SystemClock } from "@app-vitals/agent-runtime/clock";
 import type { Task } from "./check-helpers.ts";
 import { createTaskStoreClient } from "./check-helpers.ts";
 import type { WorkTaskCandidate } from "./work-selector.ts";

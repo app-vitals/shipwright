@@ -26,6 +26,7 @@ COPY agent/package.json ./agent/
 COPY metrics/package.json ./metrics/
 COPY plugins/shipwright/package.json ./plugins/shipwright/
 COPY lib/package.json ./lib/
+COPY agent/src/runtime/package.json ./agent/src/runtime/
 COPY mcp-server/package.json ./mcp-server/
 COPY patches/ ./patches/
 

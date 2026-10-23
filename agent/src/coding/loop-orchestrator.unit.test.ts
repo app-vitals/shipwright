@@ -21,14 +21,14 @@ import {
   type EarlySessionIdCallback,
   type ModelUsage,
   type ProgressCallback,
-} from "../runtime/claude.ts";
-import { FixedClock } from "../runtime/clock.ts";
-import type { RunContextStamp } from "../runtime/context-stamp.ts";
+} from "@app-vitals/agent-runtime/claude";
+import { FixedClock } from "@app-vitals/agent-runtime/clock";
+import type { RunContextStamp } from "@app-vitals/agent-runtime/context-stamp";
 import type {
   CronRunReporter,
   ModelBreakdownEntry,
-} from "../runtime/cron-run-reporter.ts";
-import type { RunTelemetry } from "../runtime/run-telemetry.ts";
+} from "@app-vitals/agent-runtime/cron-run-reporter";
+import type { RunTelemetry } from "@app-vitals/agent-runtime/run-telemetry";
 import type { CronJobLike } from "./loop-cron-classifier.ts";
 import {
   buildClaimPrRequest,
@@ -62,7 +62,7 @@ interface CompleteCall {
   cronId: string;
   runId: string | null;
   outcome: "completed" | "failed";
-  opts?: import("../runtime/cron-run-reporter.ts").RunReportOpts;
+  opts?: import("@app-vitals/agent-runtime/cron-run-reporter").RunReportOpts;
   phaseId?: string;
   itemType?: string;
   itemId?: string;
@@ -71,7 +71,7 @@ interface SkipCall {
   cronId: string;
   runId: string | null;
   skipReason: string;
-  opts?: import("../runtime/cron-run-reporter.ts").RunReportOpts;
+  opts?: import("@app-vitals/agent-runtime/cron-run-reporter").RunReportOpts;
   phaseId?: string;
   itemType?: string;
   itemId?: string;
@@ -3062,7 +3062,7 @@ describe("createLoopOrchestrator", () => {
 
   /** A Clock whose now() can be advanced between calls, for backoff tests. */
   function makeMutableClockForBackoff(initialIso: string): {
-    clock: import("../runtime/clock.ts").Clock;
+    clock: import("@app-vitals/agent-runtime/clock").Clock;
     advanceMs: (ms: number) => void;
   } {
     let current = new Date(initialIso);
@@ -4201,7 +4201,7 @@ describe("createLoopOrchestrator", () => {
 
   /** A Clock whose now() can be advanced between calls, for cooldown tests. */
   function makeMutableClock(initialIso: string): {
-    clock: import("../runtime/clock.ts").Clock;
+    clock: import("@app-vitals/agent-runtime/clock").Clock;
     advanceMs: (ms: number) => void;
   } {
     let current = new Date(initialIso);
@@ -4358,7 +4358,7 @@ describe("createLoopOrchestrator", () => {
 
   /** A mutable clock whose now() can be advanced between calls. */
   function makeMutableClockForProgress(initialIso: string): {
-    clock: import("../runtime/clock.ts").Clock;
+    clock: import("@app-vitals/agent-runtime/clock").Clock;
     advanceMs: (ms: number) => void;
   } {
     let current = new Date(initialIso);

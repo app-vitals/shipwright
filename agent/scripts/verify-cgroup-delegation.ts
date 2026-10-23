@@ -27,7 +27,7 @@ import {
   CGROUP_MOUNT_ROOT,
   probeCgroupDelegation,
   resolveCgroupBase,
-} from "../src/runtime/process-tree-kill.ts";
+} from "@app-vitals/agent-runtime/process-tree-kill";
 
 try {
   const base = resolveCgroupBase();
