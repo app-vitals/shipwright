@@ -1,13 +1,13 @@
 /**
- * docs/agent-types.content.test.ts
+ * docs/specialties.content.test.ts
  *
- * Content-layer tests for docs/agent-types.md — the public authoring guide
- * for AgentType manifests (ATS-5.1). No real I/O boundary beyond reading the
+ * Content-layer tests for docs/specialties.md — the public authoring guide
+ * for Specialty manifests (ATS-5.1). No real I/O boundary beyond reading the
  * doc + walking the live Zod schema; this is a content-assertion test, not
  * integration.
  *
  * Acceptance criteria covered:
- *   1. Every field exported by AgentTypeManifestSchema appears in the doc's
+ *   1. Every field exported by SpecialtyManifestSchema appears in the doc's
  *      field reference (schema field-key list cross-referenced against the
  *      doc's field-reference tables).
  *   2. The blank template in the doc validates against the schema.
@@ -21,18 +21,18 @@ import { describe, expect, it } from "bun:test";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import {
-  AgentTypeManifestSchema,
-  parseAgentTypeManifest,
-} from "../admin/src/agent-type-registry.ts";
+  SpecialtyManifestSchema,
+  parseSpecialtyManifest,
+} from "../admin/src/specialty-registry.ts";
 
-const DOC_PATH = join(import.meta.dir, "agent-types.md");
+const DOC_PATH = join(import.meta.dir, "specialties.md");
 const content = readFileSync(DOC_PATH, "utf-8");
 const examplesContent = readFileSync(
-  join(import.meta.dir, "agent-types-examples.md"),
+  join(import.meta.dir, "specialties-examples.md"),
   "utf-8",
 );
 const sourcesContent = readFileSync(
-  join(import.meta.dir, "agent-types-sources.md"),
+  join(import.meta.dir, "specialties-sources.md"),
   "utf-8",
 );
 
@@ -44,8 +44,8 @@ const sourcesContent = readFileSync(
  * a direct `zod` import matters here: this test lives under docs/, which is
  * not a Bun workspace with `zod` as a direct dependency, so Bun's
  * node_modules resolution (which walks up from the *importing file's*
- * directory) can't find it — mirrors why agent-types/coding/manifest.content.test.ts
- * only imports `parseAgentTypeManifest`, never `zod` itself.
+ * directory) can't find it — mirrors why specialties/coding/manifest.content.test.ts
+ * only imports `parseSpecialtyManifest`, never `zod` itself.
  */
 interface ZodLike {
   _zod: {
@@ -89,14 +89,14 @@ function collectFieldKeys(
 }
 
 const schemaFieldKeys = collectFieldKeys(
-  AgentTypeManifestSchema as unknown as ZodLike,
+  SpecialtyManifestSchema as unknown as ZodLike,
 );
 
 // ─── Required sections ──────────────────────────────────────────────────────
 
-describe("docs/agent-types.md — required sections", () => {
+describe("docs/specialties.md — required sections", () => {
   const requiredHeadings = [
-    "# Agent Type",
+    "# Specialty",
     "## Concept",
     "## Field reference",
     "## Blank template",
@@ -111,13 +111,13 @@ describe("docs/agent-types.md — required sections", () => {
   }
 
   it("links to the generated JSON Schema artifact", () => {
-    expect(content).toContain("docs/schemas/agent-type.schema.json");
+    expect(content).toContain("docs/schemas/specialty.schema.json");
   });
 });
 
 // ─── Field reference coverage (acceptance criterion 1) ─────────────────────
 
-describe("docs/agent-types.md — field reference coverage", () => {
+describe("docs/specialties.md — field reference coverage", () => {
   it("schema field-key walker finds fields at every nesting level (sanity check on the fixture itself)", () => {
     // Guards against the walker silently returning an empty/tiny set if the
     // schema shape ever changes in a way that breaks unwrap().
@@ -153,7 +153,7 @@ function extractFencedCodeBlocks(markdown: string, lang: string): string[] {
   return blocks;
 }
 
-describe("docs/agent-types.md — blank template validity", () => {
+describe("docs/specialties.md — blank template validity", () => {
   const blankTemplateStart = content.indexOf("## Blank template");
   const workedExamplesStart = content.indexOf("## Worked examples");
   it("has a Blank template section before Worked examples", () => {
@@ -171,26 +171,26 @@ describe("docs/agent-types.md — blank template validity", () => {
     expect(yamlBlocks).toHaveLength(1);
   });
 
-  it("the blank template parses and validates against AgentTypeManifestSchema", () => {
+  it("the blank template parses and validates against SpecialtyManifestSchema", () => {
     const template = yamlBlocks[0];
     expect(template).toBeDefined();
     if (!template) return;
-    expect(() => parseAgentTypeManifest(template)).not.toThrow();
+    expect(() => parseSpecialtyManifest(template)).not.toThrow();
   });
 
-  it("the blank template has apiVersion/kind shipwright.dev/v1alpha1/AgentType", () => {
+  it("the blank template has apiVersion/kind shipwright.dev/v1alpha1/Specialty", () => {
     const template = yamlBlocks[0];
     expect(template).toBeDefined();
     if (!template) return;
-    const manifest = parseAgentTypeManifest(template);
+    const manifest = parseSpecialtyManifest(template);
     expect(manifest.apiVersion).toBe("shipwright.dev/v1alpha1");
-    expect(manifest.kind).toBe("AgentType");
+    expect(manifest.kind).toBe("Specialty");
   });
 });
 
 // ─── Worked examples per configurable surface ──────────────────────────────
 
-describe("docs/agent-types-examples.md — worked examples per configurable surface", () => {
+describe("docs/specialties-examples.md — worked examples per configurable surface", () => {
   const workedExamplesStart = examplesContent.indexOf("## Worked examples");
   const workedExamplesSection = examplesContent.slice(workedExamplesStart);
 
@@ -201,14 +201,14 @@ describe("docs/agent-types-examples.md — worked examples per configurable surf
     });
   }
 
-  it("pulls examples from the agent-types/coding/manifest.yaml worked example", () => {
-    expect(workedExamplesSection).toContain("agent-types/coding/manifest.yaml");
+  it("pulls examples from the specialties/coding/manifest.yaml worked example", () => {
+    expect(workedExamplesSection).toContain("specialties/coding/manifest.yaml");
   });
 });
 
 // ─── Rules section (acceptance criterion 3) ────────────────────────────────
 
-describe("docs/agent-types.md — Rules section", () => {
+describe("docs/specialties.md — Rules section", () => {
   const rulesStart = content.indexOf("## Rules");
   const rulesSection = content.slice(rulesStart);
 
@@ -238,7 +238,7 @@ describe("docs/agent-types.md — Rules section", () => {
 
 // ─── GitHub source references (ATS-5.2, paper spec) ────────────────────────
 
-describe("docs/agent-types-sources.md — GitHub source references section", () => {
+describe("docs/specialties-sources.md — GitHub source references section", () => {
   const sectionHeading = "## GitHub source references";
   const sectionStart = sourcesContent.indexOf(sectionHeading);
   const generatedSchemaStart = sourcesContent.indexOf(
@@ -314,11 +314,11 @@ describe("docs/agent-types-sources.md — GitHub source references section", () 
 
 // ─── CLAUDE.md Reference index ─────────────────────────────────────────────
 
-describe("CLAUDE.md — Reference index includes docs/agent-types.md", () => {
+describe("CLAUDE.md — Reference index includes docs/specialties.md", () => {
   const claudeMdPath = join(import.meta.dir, "..", "CLAUDE.md");
   const claudeMdContent = readFileSync(claudeMdPath, "utf-8");
 
-  it("has a docs/agent-types.md bullet in the Reference section", () => {
-    expect(claudeMdContent).toContain("docs/agent-types.md");
+  it("has a docs/specialties.md bullet in the Reference section", () => {
+    expect(claudeMdContent).toContain("docs/specialties.md");
   });
 });

@@ -631,7 +631,7 @@ export interface paths {
         put?: never;
         /**
          * Reconcile system crons
-         * @description Reconciles the agent's system crons against the cron list declared by its Agent Type manifest. Runs in three passes within a single transaction: create-or-update matched-by-name system crons (preserving IDs so run history survives), link/unlink parent-child cron relationships, and delete orphaned system crons no longer in the manifest. Called automatically on agent startup; returns created/updated/deleted counts.
+         * @description Reconciles the agent's system crons against the cron list declared by its Specialty manifest. Runs in three passes within a single transaction: create-or-update matched-by-name system crons (preserving IDs so run history survives), link/unlink parent-child cron relationships, and delete orphaned system crons no longer in the manifest. Called automatically on agent startup; returns created/updated/deleted counts.
          */
         post: {
             parameters: {

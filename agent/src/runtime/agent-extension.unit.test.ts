@@ -76,7 +76,7 @@ describe("runPeriodicPasses", () => {
 });
 
 describe("composeExtensions", () => {
-  it("with no extensions behaves like an agent with no agent-type behavior", async () => {
+  it("with no extensions behaves like an agent with no specialty behavior", async () => {
     const extension = composeExtensions([]);
     expect(() => extension.onConfigSync?.({})).not.toThrow();
     expect(extension.periodicPasses).toEqual([]);

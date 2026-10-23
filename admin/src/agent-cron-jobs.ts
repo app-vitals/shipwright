@@ -9,20 +9,20 @@
 
 import type { AgentCronJob, PrismaClient } from "../prisma/client/client.ts";
 import {
-  type AgentTypeManifestResolver,
-  AgentTypeRegistry,
-  DEFAULT_AGENT_TYPE_NAME,
-} from "./agent-type-manifest-loader.ts";
-import type { AgentTypeManifest } from "./agent-type-registry.ts";
+  type SpecialtyManifestResolver,
+  SpecialtyRegistry,
+  DEFAULT_SPECIALTY_NAME,
+} from "./specialty-manifest-loader.ts";
+import type { SpecialtyManifest } from "./specialty-registry.ts";
 import { type Clock, SystemClock } from "./clock.ts";
 import { NotFoundError, UnprocessableEntityError } from "./errors.ts";
 
 /**
- * The shape of a single cron template resolved from an agent type's manifest.
+ * The shape of a single cron template resolved from a specialty's manifest.
  * Structurally identical to the former SYSTEM_CRONS SystemCron entries — the
- * manifest is now the source of truth (see agent-type-manifest-loader.ts).
+ * manifest is now the source of truth (see specialty-manifest-loader.ts).
  */
-type ManifestCron = AgentTypeManifest["crons"][number];
+type ManifestCron = SpecialtyManifest["crons"][number];
 
 export type { AgentCronJob };
 
@@ -84,7 +84,7 @@ export class AgentCronJobService {
   constructor(
     private prisma: PrismaClient,
     private clock: Clock = SystemClock(),
-    private agentTypeRegistry: AgentTypeManifestResolver = new AgentTypeRegistry(),
+    private specialtyRegistry: SpecialtyManifestResolver = new SpecialtyRegistry(),
   ) {}
 
   /**
@@ -439,8 +439,8 @@ export class AgentCronJobService {
    * Reconcile system crons for the given agent.
    *
    * The cron list is resolved from the agent's type manifest — the agent's
-   * stored `typeName` is looked up via the injected AgentTypeRegistry's
-   * `tryGetManifest()` (the parsed `agent-types/{typeName}/manifest.yaml`),
+   * stored `typeName` is looked up via the injected SpecialtyRegistry's
+   * `tryGetManifest()` (the parsed `specialties/{typeName}/manifest.yaml`),
    * deliberately WITHOUT the "coding" fallback: a non-default type with no
    * loadable manifest logs an error and reconciles nothing (no seeding of
    * coding crons, no deletion of existing system crons), while a "coding"
@@ -491,11 +491,11 @@ export class AgentCronJobService {
     if (!agent) {
       throw new NotFoundError(`agent ${agentId} not found`);
     }
-    const manifest = this.agentTypeRegistry.tryGetManifest(agent.typeName);
+    const manifest = this.specialtyRegistry.tryGetManifest(agent.typeName);
     if (!manifest) {
-      if (agent.typeName === DEFAULT_AGENT_TYPE_NAME) {
+      if (agent.typeName === DEFAULT_SPECIALTY_NAME) {
         throw new Error(
-          `reconcileSystemCrons: the default "${DEFAULT_AGENT_TYPE_NAME}" manifest failed to load for agent ${agentId} — this is a startup-time bug`,
+          `reconcileSystemCrons: the default "${DEFAULT_SPECIALTY_NAME}" manifest failed to load for agent ${agentId} — this is a startup-time bug`,
         );
       }
       console.error(

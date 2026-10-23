@@ -18,7 +18,7 @@ import {
   renderAdminToolbar,
 } from "./admin-ui-styles.ts";
 import type { ManualStep } from "./agent-deletion-checklist.ts";
-import type { AgentTypeOption } from "./agent-type-manifest-loader.ts";
+import type { SpecialtyOption } from "./specialty-manifest-loader.ts";
 import { isAudioFilename } from "./attachment-validation.ts";
 import { parseChatMarkers } from "./chat-markers.ts";
 import type {
@@ -478,7 +478,7 @@ function runtimeSectionsOnchange(display: "" | "none"): string {
 
 export function renderNewLocalAgentPage(
   userName: string,
-  types: AgentTypeOption[],
+  types: SpecialtyOption[],
   opts?: {
     error?: string;
     canProvision?: boolean;
@@ -568,7 +568,7 @@ export function renderNewLocalAgentPage(
   const typeFieldHtml = selfServe
     ? `<input type="hidden" name="type" value="coding" />`
     : `<div class="form-group">
-          <label class="form-label" for="type">Agent type <span style="color:#ef4444">*</span></label>
+          <label class="form-label" for="type">Specialty <span style="color:#ef4444">*</span></label>
           <select id="type" name="type" class="form-input" required>
             ${typeOptions}
           </select>

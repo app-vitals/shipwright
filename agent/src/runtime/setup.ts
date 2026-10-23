@@ -41,9 +41,9 @@ const SHIPWRIGHT_MARKETPLACE = "shipwright";
 // Default plugin installed on all Shipwright agents.
 const DEFAULT_PLUGINS: readonly string[] = ["shipwright"];
 
-// The universal fallback type — mirrors admin's DEFAULT_AGENT_TYPE_NAME. Its
+// The universal fallback type — mirrors admin's DEFAULT_SPECIALTY_NAME. Its
 // templates are agent/workspace/, so it never needs a manifest lookup.
-const DEFAULT_AGENT_TYPE_NAME = "coding";
+const DEFAULT_SPECIALTY_NAME = "coding";
 
 // The persona templates a type's templatesDir must provide or it is not usable.
 // Everything else (VOICE, mise, requirements, BOOTSTRAP) falls back per file to
@@ -55,9 +55,9 @@ const REQUIRED_TEMPLATES: readonly string[] = [
 ];
 
 /**
- * Resolves the workspace template directory for an agent type (ARD-6.1).
+ * Resolves the workspace template directory for a specialty (ARD-6.1).
  *
- * Reads `identity.templatesDir` from `<repoRoot>/agent-types/<typeName>/manifest.yaml`
+ * Reads `identity.templatesDir` from `<repoRoot>/specialties/<typeName>/manifest.yaml`
  * (relative paths resolve against the repo root, matching how the manifests
  * spell them). Returns the built-in agent/workspace/ for `coding`, an absent
  * type, and any type that does not resolve (no manifest, unparseable, or the
@@ -73,13 +73,13 @@ export function resolveTemplatesDir(
   const typeName =
     requestedType ||
     env.SHIPWRIGHT_DEFAULT_AGENT_TYPE ||
-    DEFAULT_AGENT_TYPE_NAME;
-  if (typeName === DEFAULT_AGENT_TYPE_NAME) {
+    DEFAULT_SPECIALTY_NAME;
+  if (typeName === DEFAULT_SPECIALTY_NAME) {
     return WORKSPACE_TEMPLATE_DIR;
   }
   try {
     const manifestPath = join(
-      env.SHIPWRIGHT_AGENT_TYPES_DIR || join(repoRoot, "agent-types"),
+      env.SHIPWRIGHT_SPECIALTIES_DIR || join(repoRoot, "specialties"),
       typeName,
       "manifest.yaml",
     );
@@ -103,8 +103,8 @@ export function resolveTemplatesDir(
     return dir;
   } catch (err) {
     warn(
-      `[setup] could not resolve workspace templates for agent type "${typeName}" ` +
-        `(${(err as Error).message}) — falling back to "${DEFAULT_AGENT_TYPE_NAME}" templates`,
+      `[setup] could not resolve workspace templates for specialty "${typeName}" ` +
+        `(${(err as Error).message}) — falling back to "${DEFAULT_SPECIALTY_NAME}" templates`,
     );
     return WORKSPACE_TEMPLATE_DIR;
   }

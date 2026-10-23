@@ -7,8 +7,8 @@
 
 import { describe, expect, it } from "bun:test";
 import { DEFAULT_AGENT_ENV } from "@shipwright/lib/default-agent-env";
-import type { AgentTypeManifestResolver } from "./agent-type-manifest-loader.ts";
-import type { AgentTypeManifest } from "./agent-type-registry.ts";
+import type { SpecialtyManifestResolver } from "./specialty-manifest-loader.ts";
+import type { SpecialtyManifest } from "./specialty-registry.ts";
 import type {
   AgentDetail,
   CreateAgentDeps,
@@ -255,9 +255,9 @@ type FakePrisma = ReturnType<typeof makeFakePrisma>;
  * fakeRegistry() pattern in agent-cron-jobs.unit.test.ts. */
 function fakeRegistry(
   requiredEnvByType: Record<string, string[]>,
-): AgentTypeManifestResolver {
+): SpecialtyManifestResolver {
   return {
-    getManifest(typeName: string): AgentTypeManifest {
+    getManifest(typeName: string): SpecialtyManifest {
       const required = requiredEnvByType[typeName] ?? [];
       return {
         env: {
@@ -268,9 +268,9 @@ function fakeRegistry(
           })),
           optional: [],
         },
-      } as unknown as AgentTypeManifest;
+      } as unknown as SpecialtyManifest;
     },
-    tryGetManifest(typeName: string): AgentTypeManifest | undefined {
+    tryGetManifest(typeName: string): SpecialtyManifest | undefined {
       if (!(typeName in requiredEnvByType)) return undefined;
       return this.getManifest(typeName);
     },
@@ -1109,9 +1109,9 @@ describe("AgentService.updateFields", () => {
 // criterion this whole task is about) is covered separately by
 // agents.integration.test.ts against a real DB.
 
-const CODING_MANIFEST: AgentTypeManifest = {
+const CODING_MANIFEST: SpecialtyManifest = {
   apiVersion: "shipwright.dev/v1alpha1",
-  kind: "AgentType",
+  kind: "Specialty",
   metadata: {
     name: "coding",
     displayName: "Coding Agent",
@@ -1128,11 +1128,11 @@ const CODING_MANIFEST: AgentTypeManifest = {
   repos: [],
   chat: true,
   voice: true,
-} as unknown as AgentTypeManifest;
+} as unknown as SpecialtyManifest;
 
-function fakeCreateAgentTypeRegistry(
-  byType: Record<string, AgentTypeManifest> = { coding: CODING_MANIFEST },
-): Pick<AgentTypeManifestResolver, "tryGetManifest"> {
+function fakeCreateSpecialtyRegistry(
+  byType: Record<string, SpecialtyManifest> = { coding: CODING_MANIFEST },
+): Pick<SpecialtyManifestResolver, "tryGetManifest"> {
   return {
     tryGetManifest: (typeName: string) => byType[typeName],
   };
@@ -1156,7 +1156,7 @@ interface CreateAgentHarnessCalls {
 
 function makeCreateAgentHarness(
   opts: {
-    manifests?: Record<string, AgentTypeManifest>;
+    manifests?: Record<string, SpecialtyManifest>;
     canProvision?: boolean;
     provisionImpl?: (agentId: string) => Promise<unknown>;
     toolAddImpl?: (agentId: string, pattern: string) => Promise<unknown>;
@@ -1273,7 +1273,7 @@ function makeCreateAgentHarness(
     },
   };
 
-  const agentTypeRegistry = fakeCreateAgentTypeRegistry(opts.manifests);
+  const specialtyRegistry = fakeCreateSpecialtyRegistry(opts.manifests);
 
   return {
     deps: {
@@ -1284,7 +1284,7 @@ function makeCreateAgentHarness(
       agentEnvService,
       agentCronJobService,
       provisioner,
-      agentTypeRegistry,
+      specialtyRegistry,
     },
     calls,
     agents,

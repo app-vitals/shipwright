@@ -52,7 +52,7 @@ type MergedWorkItem<T extends { type: string; id: string }> = T & {
 
 /**
  * Minimal fleet-agent shape the eligibility index needs — a subset of the
- * full Agent type in admin/src/agents-api.ts.
+ * full Specialty in admin/src/agents-api.ts.
  */
 export interface AgentForEligibility {
   id: string;

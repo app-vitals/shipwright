@@ -49,8 +49,8 @@ describe("platform manifest (copy-paste-readiness gate)", () => {
       "admin/Dockerfile",
       "agent/src/entrypoint-main.ts",
       "agent/workspace/RUNTIME.md.template",
-      "agent-types/specialist/manifest.yaml",
-      "docs/schemas/agent-type.schema.json",
+      "specialties/specialist/manifest.yaml",
+      "docs/schemas/specialty.schema.json",
     ]) {
       expect(files, `set is missing ${required}`).toContain(required);
     }

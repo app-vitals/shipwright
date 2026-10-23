@@ -81,7 +81,7 @@ const FIXTURE: Record<string, string> = {
     "",
   ].join("\n"),
   "plugins/p/commands/lonely.md": "---\ndescription: nobody\n---\nAlone.\n",
-  "agent-types/coding/manifest.yaml": MANIFEST,
+  "specialties/coding/manifest.yaml": MANIFEST,
   "site/docs-source-map.json": JSON.stringify({
     _comment: "x",
     "dev.mdx": ["plugins/p/commands/dev-task.md"],

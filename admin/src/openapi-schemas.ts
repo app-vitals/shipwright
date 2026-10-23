@@ -1098,7 +1098,7 @@ export const AgentConfigResponseSchema = z
       .optional()
       .openapi({ example: "active" }),
     /**
-     * ARD-6.1: the agent's Agent Type name. Optional (additive) — the runtime
+     * ARD-6.1: the agent's Specialty name. Optional (additive) — the runtime
      * falls back to "coding" templates when absent.
      */
     typeName: z.string().optional().openapi({ example: "coding" }),

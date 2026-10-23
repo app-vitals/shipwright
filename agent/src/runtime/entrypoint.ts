@@ -114,7 +114,7 @@ export async function runEntrypoint(deps: EntrypointDeps): Promise<void> {
 
     // Step 3: Apply env vars
     applyEnv(config.env);
-    // ARD-6.1: hand the agent type to the server process (inherits our env) so
+    // ARD-6.1: hand the specialty to the server process (inherits our env) so
     // ensureAgentHome() can pick type-specific workspace templates.
     if (config.typeName) {
       applyEnv({ SHIPWRIGHT_AGENT_TYPE: config.typeName });

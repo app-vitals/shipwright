@@ -1,12 +1,12 @@
 /**
- * admin/src/agent-type-registry.ts
+ * admin/src/specialty-registry.ts
  *
- * Agent Type manifest schema — the single source of truth for the
- * `shipwright.dev/v1alpha1` / `AgentType` YAML manifest that declares an
- * agent type's identity, crons, plugins, tools, env contract, membership,
+ * Specialty manifest schema — the single source of truth for the
+ * `shipwright.dev/v1alpha1` / `Specialty` YAML manifest that declares an
+ * specialty's identity, crons, plugins, tools, env contract, membership,
  * repos, and chat/voice toggles.
  *
- * Named "agent-type-registry" (not "manifest") to avoid colliding with the
+ * Named "specialty-registry" (not "manifest") to avoid colliding with the
  * two existing "manifest" concepts in this repo: the Kubernetes manifests in
  * ./agent-manifest.ts and the Slack app manifest. This module is unrelated
  * to either — it's a declarative spec fed into scripts/CLI tooling, not a
@@ -31,12 +31,12 @@ const RFC1123_NAME = /^[a-z0-9]([-a-z0-9]*[a-z0-9])?$/;
 // ─── metadata.skills[] (A2A-aligned) ───────────────────────────────────────
 
 /**
- * Minimal A2A (Agent2Agent) "skill" shape: what the agent type can do, as a
+ * Minimal A2A (Agent2Agent) "skill" shape: what the specialty can do, as a
  * small catalog entry. Kept intentionally narrow — id/name/description plus
  * optional free-form tags — since this repo has no existing A2A convention
  * to align with beyond the general shape of an agent capability card.
  */
-const AgentTypeSkillSchema = z
+const SpecialtySkillSchema = z
   .object({
     id: z.string().min(1),
     name: z.string().min(1),
@@ -47,7 +47,7 @@ const AgentTypeSkillSchema = z
 
 // ─── metadata ───────────────────────────────────────────────────────────────
 
-const AgentTypeMetadataSchema = z
+const SpecialtyMetadataSchema = z
   .object({
     name: z
       .string()
@@ -55,13 +55,13 @@ const AgentTypeMetadataSchema = z
     displayName: z.string().min(1),
     description: z.string().min(1),
     version: z.string().min(1),
-    skills: z.array(AgentTypeSkillSchema),
+    skills: z.array(SpecialtySkillSchema),
   })
   .strict();
 
 // ─── identity ───────────────────────────────────────────────────────────────
 
-const AgentTypeIdentitySchema = z
+const SpecialtyIdentitySchema = z
   .object({
     templatesDir: z.string().min(1),
   })
@@ -70,7 +70,7 @@ const AgentTypeIdentitySchema = z
 // ─── crons[] ────────────────────────────────────────────────────────────────
 
 /**
- * A single cron template declared inside an AgentType manifest. Distinct
+ * A single cron template declared inside a Specialty manifest. Distinct
  * from the runtime, DB-backed AgentCronJobSchema (admin/src/openapi-schemas.ts)
  * and CreateAgentCronJobInput (admin/src/agent-cron-jobs.ts) — those describe
  * per-agent-instance rows already created in Postgres; this describes a
@@ -78,7 +78,7 @@ const AgentTypeIdentitySchema = z
  * resolved within this manifest's own crons[] array (validated by the
  * top-level schema's superRefine below), not a DB id reference.
  */
-const AgentTypeCronSchema = z
+const SpecialtyCronSchema = z
   .object({
     name: z.string().min(1),
     schedule: z.string().min(1),
@@ -98,7 +98,7 @@ const AgentTypeCronSchema = z
  * `default`. `.strict()` ensures an unexpected `value` key is rejected, not
  * silently stripped, since manifests are potential third-party input.
  */
-const AgentTypeEnvEntrySchema = z
+const SpecialtyEnvEntrySchema = z
   .object({
     key: z.string().min(1),
     description: z.string().min(1),
@@ -106,10 +106,10 @@ const AgentTypeEnvEntrySchema = z
   })
   .strict();
 
-const AgentTypeEnvSchema = z
+const SpecialtyEnvSchema = z
   .object({
-    required: z.array(AgentTypeEnvEntrySchema),
-    optional: z.array(AgentTypeEnvEntrySchema),
+    required: z.array(SpecialtyEnvEntrySchema),
+    optional: z.array(SpecialtyEnvEntrySchema),
   })
   .strict();
 
@@ -121,11 +121,11 @@ const AgentTypeEnvSchema = z
  * optional — a manifest may override just one of requests/limits.
  *
  * Not yet wired to any provisioner — parsed as part of
- * AgentTypeManifestSchema.resources but inert until a future task consumes it
+ * SpecialtyManifestSchema.resources but inert until a future task consumes it
  * ahead of resolveAgentContainerResources's env-override layer (see that
  * function's precedence-rule doc comment).
  */
-const AgentTypeResourceListSchema = z
+const SpecialtyResourceListSchema = z
   .object({
     cpu: z.string().optional(),
     memory: z.string().optional(),
@@ -133,25 +133,25 @@ const AgentTypeResourceListSchema = z
   })
   .strict();
 
-const AgentTypeResourcesSchema = z
+const SpecialtyResourcesSchema = z
   .object({
-    requests: AgentTypeResourceListSchema.optional(),
-    limits: AgentTypeResourceListSchema.optional(),
+    requests: SpecialtyResourceListSchema.optional(),
+    limits: SpecialtyResourceListSchema.optional(),
   })
   .strict();
 
-// ─── Top-level AgentType manifest ──────────────────────────────────────────
+// ─── Top-level Specialty manifest ──────────────────────────────────────────
 
-export const AgentTypeManifestSchema = z
+export const SpecialtyManifestSchema = z
   .object({
     apiVersion: z.literal("shipwright.dev/v1alpha1"),
-    kind: z.literal("AgentType"),
-    metadata: AgentTypeMetadataSchema,
-    identity: AgentTypeIdentitySchema,
-    crons: z.array(AgentTypeCronSchema),
+    kind: z.literal("Specialty"),
+    metadata: SpecialtyMetadataSchema,
+    identity: SpecialtyIdentitySchema,
+    crons: z.array(SpecialtyCronSchema),
     plugins: z.array(z.string()),
     tools: z.array(z.string()),
-    env: AgentTypeEnvSchema,
+    env: SpecialtyEnvSchema,
     members: z.array(z.string()),
     repos: z.array(
       z.string().refine(isOrgRepo, {
@@ -160,7 +160,7 @@ export const AgentTypeManifestSchema = z
     ),
     chat: z.boolean(),
     voice: z.boolean(),
-    resources: AgentTypeResourcesSchema.optional(),
+    resources: SpecialtyResourcesSchema.optional(),
   })
   .strict()
   .superRefine((manifest, ctx) => {
@@ -185,26 +185,26 @@ export const AgentTypeManifestSchema = z
     });
   });
 
-export type AgentTypeManifest = z.infer<typeof AgentTypeManifestSchema>;
+export type SpecialtyManifest = z.infer<typeof SpecialtyManifestSchema>;
 
 // ─── Parsing ────────────────────────────────────────────────────────────────
 
 /**
- * Parse and validate a YAML AgentType manifest string.
+ * Parse and validate a YAML Specialty manifest string.
  *
  * Pure — no I/O. `content` is the already-read YAML text; throws a
  * descriptive Error (with the underlying ZodError's field-path issues
  * embedded in `message`, and the ZodError itself reachable via `cause`) if
  * the manifest fails schema validation.
  */
-export function parseAgentTypeManifest(content: string): AgentTypeManifest {
+export function parseSpecialtyManifest(content: string): SpecialtyManifest {
   const raw: unknown = parseYaml(content);
-  const result = AgentTypeManifestSchema.safeParse(raw);
+  const result = SpecialtyManifestSchema.safeParse(raw);
   if (!result.success) {
     const details = result.error.issues
       .map((issue) => `${issue.path.join(".")}: ${issue.message}`)
       .join("; ");
-    throw new Error(`invalid AgentType manifest — ${details}`, {
+    throw new Error(`invalid Specialty manifest — ${details}`, {
       cause: result.error,
     });
   }
@@ -214,23 +214,23 @@ export function parseAgentTypeManifest(content: string): AgentTypeManifest {
 // ─── JSON Schema generation ─────────────────────────────────────────────────
 
 /**
- * Build the JSON-serializable JSON Schema object for AgentTypeManifestSchema.
+ * Build the JSON-serializable JSON Schema object for SpecialtyManifestSchema.
  *
- * Pure — no file I/O — so both scripts/generate-agent-type-schema.ts's CLI
+ * Pure — no file I/O — so both scripts/generate-specialty-schema.ts's CLI
  * entrypoint and its content test can call this directly instead of shelling
  * out. Uses zod 4's built-in `z.toJSONSchema` (draft-07 target, to stay
  * contract-compatible with the previous zod-to-json-schema output).
  */
-export function buildAgentTypeJsonSchema(): Record<string, unknown> {
-  const { $schema, ...definition } = z.toJSONSchema(AgentTypeManifestSchema, {
+export function buildSpecialtyJsonSchema(): Record<string, unknown> {
+  const { $schema, ...definition } = z.toJSONSchema(SpecialtyManifestSchema, {
     target: "draft-7",
     io: "input",
   });
   // Wrap as a named definition (`$ref` + `definitions`) — the shape the
   // previous zod-to-json-schema output used, so consumers see no change.
   return {
-    $ref: "#/definitions/AgentTypeManifest",
-    definitions: { AgentTypeManifest: definition },
+    $ref: "#/definitions/SpecialtyManifest",
+    definitions: { SpecialtyManifest: definition },
     $schema,
   };
 }

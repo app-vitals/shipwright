@@ -246,7 +246,7 @@ function makeBaseDeps(
       add: async () => ({}) as never,
       listByAgentId: async () => [],
     },
-    agentTypeRegistry: {
+    specialtyRegistry: {
       getManifest: () => {
         throw new Error("not implemented");
       },

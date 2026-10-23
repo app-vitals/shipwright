@@ -1,17 +1,17 @@
 /**
- * admin/src/agent-type-manifest-loader.ts
+ * admin/src/specialty-manifest-loader.ts
  *
- * AgentTypeRegistry — resolves an agent's stored `typeName` to its parsed
- * AgentType manifest by loading `agent-types/{typeName}/manifest.yaml` from
+ * SpecialtyRegistry — resolves an agent's stored `typeName` to its parsed
+ * Specialty manifest by loading `specialties/{typeName}/manifest.yaml` from
  * disk (relative to the repo root) and validating it via
- * parseAgentTypeManifest().
+ * parseSpecialtyManifest().
  *
  * This is the runtime source of truth for an agent's default system crons
  * (and, in time, its default plugins/tools/env contract). It replaces the
  * former hardcoded SYSTEM_CRONS array in admin/src/system-crons.ts.
  *
  * Fallback contract: an unknown `typeName` (a value with no matching
- * directory under agent-types/) resolves to the "coding" manifest with a
+ * directory under specialties/) resolves to the "coding" manifest with a
  * logged warning — never throws. This keeps the boot-path
  * POST /agents/:id/crons/reconcile route from beginning to 5xx for an agent
  * whose type was renamed or removed.
@@ -28,12 +28,12 @@
 import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import {
-  type AgentTypeManifest,
-  parseAgentTypeManifest,
-} from "./agent-type-registry.ts";
+  type SpecialtyManifest,
+  parseSpecialtyManifest,
+} from "./specialty-registry.ts";
 
 /** The universal fallback type — every agent degrades to this manifest. */
-export const DEFAULT_AGENT_TYPE_NAME = "coding";
+export const DEFAULT_SPECIALTY_NAME = "coding";
 
 /** Reads a manifest's raw YAML text for a type; throws if it does not exist. */
 type ManifestReader = (typeName: string) => string;
@@ -42,56 +42,56 @@ type ManifestReader = (typeName: string) => string;
 type WarnFn = (message: string) => void;
 
 /**
- * Lists the typeName of every discoverable agent type directory (e.g. the
- * names of the subdirectories under agent-types/). Used by listTypes() to
+ * Lists the typeName of every discoverable specialty directory (e.g. the
+ * names of the subdirectories under specialties/). Used by listTypes() to
  * discover candidates before resolving each one's manifest via `read`.
  */
 type TypeDirLister = () => string[];
 
-/** A discovered agent type, as surfaced to the new-agent type picker. */
-export interface AgentTypeOption {
+/** A discovered specialty, as surfaced to the new-specialty picker. */
+export interface SpecialtyOption {
   name: string;
   displayName: string;
 }
 
 /**
  * Repo root resolved relative to this module (admin/src/ → ../../). The
- * agent-types/ directory lives at the repo root alongside admin/.
+ * specialties/ directory lives at the repo root alongside admin/.
  */
 const REPO_ROOT = join(import.meta.dir, "..", "..");
-const BUILT_IN_AGENT_TYPES_DIR = join(REPO_ROOT, "agent-types");
+const BUILT_IN_SPECIALTIES_DIR = join(REPO_ROOT, "specialties");
 
 /**
- * The agent-types directory: SHIPWRIGHT_AGENT_TYPES_DIR when set, else the
- * repo-root agent-types/ (today's location).
+ * The specialties directory: SHIPWRIGHT_SPECIALTIES_DIR when set, else the
+ * repo-root specialties/ (today's location).
  */
-export function resolveAgentTypesDir(
+export function resolveSpecialtiesDir(
   env: Record<string, string | undefined> = process.env,
 ): string {
-  return env.SHIPWRIGHT_AGENT_TYPES_DIR || BUILT_IN_AGENT_TYPES_DIR;
+  return env.SHIPWRIGHT_SPECIALTIES_DIR || BUILT_IN_SPECIALTIES_DIR;
 }
 
 /**
  * The universal fallback type: SHIPWRIGHT_DEFAULT_AGENT_TYPE when set, else
  * "coding".
  */
-export function resolveDefaultAgentTypeName(
+export function resolveDefaultSpecialtyName(
   env: Record<string, string | undefined> = process.env,
 ): string {
-  return env.SHIPWRIGHT_DEFAULT_AGENT_TYPE || DEFAULT_AGENT_TYPE_NAME;
+  return env.SHIPWRIGHT_DEFAULT_AGENT_TYPE || DEFAULT_SPECIALTY_NAME;
 }
 
 /** Default reader: loads {typesDir}/{typeName}/manifest.yaml from disk. */
 export function defaultManifestReader(
   typeName: string,
-  typesDir: string = resolveAgentTypesDir(),
+  typesDir: string = resolveSpecialtiesDir(),
 ): string {
   return readFileSync(join(typesDir, typeName, "manifest.yaml"), "utf-8");
 }
 
-/** Default lister: the directory names under the agent-types dir on disk. */
+/** Default lister: the directory names under the specialties dir on disk. */
 export function defaultTypeDirLister(
-  typesDir: string = resolveAgentTypesDir(),
+  typesDir: string = resolveSpecialtiesDir(),
 ): string[] {
   return readdirSync(typesDir, { withFileTypes: true })
     .filter((entry) => entry.isDirectory())
@@ -102,13 +102,13 @@ export function defaultTypeDirLister(
  * Interface the reconcile path depends on — kept narrow so tests can supply a
  * trivial double without constructing the real disk-backed registry.
  */
-export interface AgentTypeManifestResolver {
+export interface SpecialtyManifestResolver {
   /**
    * Resolve `typeName` to its parsed manifest. Falls back to the "coding"
    * manifest (with a warning) when the type is unknown. Never throws for an
    * unknown type — only if the "coding" fallback itself fails to load.
    */
-  getManifest(typeName: string): AgentTypeManifest;
+  getManifest(typeName: string): SpecialtyManifest;
   /**
    * Resolve `typeName` to its parsed manifest WITHOUT falling back to
    * "coding" — returns undefined for an unknown type instead. No warning is
@@ -117,28 +117,28 @@ export interface AgentTypeManifestResolver {
    * unknown requested `type` with 400 rather than silently seeding a
    * "coding" agent under a different label.
    */
-  tryGetManifest(typeName: string): AgentTypeManifest | undefined;
+  tryGetManifest(typeName: string): SpecialtyManifest | undefined;
   /**
-   * Discover every agent type directory (via the injected `list` fn) and
+   * Discover every specialty directory (via the injected `list` fn) and
    * resolve each to its {name, displayName} for populating the new-agent
    * type picker. A directory whose manifest fails to load or parse is
    * skipped (not thrown) — the picker still renders every other valid type
    * rather than 500ing the whole /admin/agents/new page over one bad
    * manifest. Order matches the underlying `list` fn's order.
    */
-  listTypes(): AgentTypeOption[];
+  listTypes(): SpecialtyOption[];
 }
 
-export class AgentTypeRegistry implements AgentTypeManifestResolver {
+export class SpecialtyRegistry implements SpecialtyManifestResolver {
   private readonly read: ManifestReader;
   private readonly warn: WarnFn;
   private readonly list: TypeDirLister;
   private readonly defaultTypeName: string;
-  private readonly cache = new Map<string, AgentTypeManifest>();
+  private readonly cache = new Map<string, SpecialtyManifest>();
 
   /**
-   * `typesDir` and `defaultTypeName` default to SHIPWRIGHT_AGENT_TYPES_DIR /
-   * SHIPWRIGHT_DEFAULT_AGENT_TYPE, then to today's repo-root agent-types/
+   * `typesDir` and `defaultTypeName` default to SHIPWRIGHT_SPECIALTIES_DIR /
+   * SHIPWRIGHT_DEFAULT_AGENT_TYPE, then to today's repo-root specialties/
    * and "coding". An injected `read`/`list` takes precedence over `typesDir`.
    */
   constructor(
@@ -150,15 +150,15 @@ export class AgentTypeRegistry implements AgentTypeManifestResolver {
       defaultTypeName?: string;
     } = {},
   ) {
-    const typesDir = opts.typesDir ?? resolveAgentTypesDir();
+    const typesDir = opts.typesDir ?? resolveSpecialtiesDir();
     this.read = opts.read ?? ((name) => defaultManifestReader(name, typesDir));
     this.warn = opts.warn ?? ((m) => console.warn(m));
     this.list = opts.list ?? (() => defaultTypeDirLister(typesDir));
     this.defaultTypeName =
-      opts.defaultTypeName ?? resolveDefaultAgentTypeName();
+      opts.defaultTypeName ?? resolveDefaultSpecialtyName();
   }
 
-  getManifest(typeName: string): AgentTypeManifest {
+  getManifest(typeName: string): SpecialtyManifest {
     const resolved = this.tryLoad(typeName);
     if (resolved) return resolved;
 
@@ -166,13 +166,13 @@ export class AgentTypeRegistry implements AgentTypeManifestResolver {
     // deliberately NOT wrapped in tryLoad: if "coding" can't load, that's a
     // hard startup bug and must surface, not silently become a no-op.
     this.warn(
-      `AgentTypeRegistry: unknown agent typeName "${typeName}" — ` +
+      `SpecialtyRegistry: unknown agent typeName "${typeName}" — ` +
         `falling back to "${this.defaultTypeName}" manifest`,
     );
     if (typeName === this.defaultTypeName) {
       // Guard against infinite intent: the default itself failed to load.
       throw new Error(
-        `AgentTypeRegistry: the default "${this.defaultTypeName}" manifest failed to load — this is a startup-time bug`,
+        `SpecialtyRegistry: the default "${this.defaultTypeName}" manifest failed to load — this is a startup-time bug`,
       );
     }
     return this.loadOrThrow(this.defaultTypeName);
@@ -183,13 +183,13 @@ export class AgentTypeRegistry implements AgentTypeManifestResolver {
    * doc comment. Thin public wrapper around the existing tryLoad() used
    * internally by getManifest().
    */
-  tryGetManifest(typeName: string): AgentTypeManifest | undefined {
+  tryGetManifest(typeName: string): SpecialtyManifest | undefined {
     return this.tryLoad(typeName);
   }
 
-  listTypes(): AgentTypeOption[] {
+  listTypes(): SpecialtyOption[] {
     const typeNames = this.list();
-    const options: AgentTypeOption[] = [];
+    const options: SpecialtyOption[] = [];
     for (const typeName of typeNames) {
       const manifest = this.tryLoad(typeName);
       if (!manifest) continue;
@@ -202,7 +202,7 @@ export class AgentTypeRegistry implements AgentTypeManifestResolver {
   }
 
   /** Load + cache a manifest, returning undefined only if the file is missing. */
-  private tryLoad(typeName: string): AgentTypeManifest | undefined {
+  private tryLoad(typeName: string): SpecialtyManifest | undefined {
     const cached = this.cache.get(typeName);
     if (cached) return cached;
     let raw: string;
@@ -215,14 +215,14 @@ export class AgentTypeRegistry implements AgentTypeManifestResolver {
   }
 
   /** Load + cache a manifest, propagating any read/parse error. */
-  private loadOrThrow(typeName: string): AgentTypeManifest {
+  private loadOrThrow(typeName: string): SpecialtyManifest {
     const cached = this.cache.get(typeName);
     if (cached) return cached;
     return this.parseAndCache(typeName, this.read(typeName));
   }
 
-  private parseAndCache(typeName: string, raw: string): AgentTypeManifest {
-    const manifest = parseAgentTypeManifest(raw);
+  private parseAndCache(typeName: string, raw: string): SpecialtyManifest {
+    const manifest = parseSpecialtyManifest(raw);
     this.cache.set(typeName, manifest);
     return manifest;
   }

@@ -8,8 +8,8 @@
     "agent/Dockerfile",
     "agent/workspace/**",
     "admin/**",
-    "agent-types/specialist/**",
-    "docs/schemas/agent-type.schema.json"
+    "specialties/specialist/**",
+    "docs/schemas/specialty.schema.json"
   ],
   "exclude": [
     "admin/src/coding/**",

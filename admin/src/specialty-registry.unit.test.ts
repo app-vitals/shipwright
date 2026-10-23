@@ -1,16 +1,16 @@
 /**
- * admin/src/agent-type-registry.unit.test.ts
- * Unit tests for the pure Agent Type manifest schema + parser. No I/O, no
- * network, no fs — parseAgentTypeManifest takes a YAML string in memory and
+ * admin/src/specialty-registry.unit.test.ts
+ * Unit tests for the pure Specialty manifest schema + parser. No I/O, no
+ * network, no fs — parseSpecialtyManifest takes a YAML string in memory and
  * returns/throws in-process.
  */
 
 import { describe, expect, it } from "bun:test";
 import { stringify as stringifyYaml } from "yaml";
 import {
-  AgentTypeManifestSchema,
-  parseAgentTypeManifest,
-} from "./agent-type-registry.ts";
+  SpecialtyManifestSchema,
+  parseSpecialtyManifest,
+} from "./specialty-registry.ts";
 
 // ─── Fixtures ───────────────────────────────────────────────────────────────
 
@@ -18,7 +18,7 @@ import {
 function baseManifest(overrides: Record<string, unknown> = {}) {
   return {
     apiVersion: "shipwright.dev/v1alpha1",
-    kind: "AgentType",
+    kind: "Specialty",
     metadata: {
       name: "dude-agent",
       displayName: "The Dude",
@@ -41,14 +41,14 @@ function baseManifest(overrides: Record<string, unknown> = {}) {
 
 /** Round-trips a manifest object through YAML so tests exercise the real parse path. */
 function parseManifestYaml(manifest: Record<string, unknown>) {
-  return parseAgentTypeManifest(stringifyYaml(manifest));
+  return parseSpecialtyManifest(stringifyYaml(manifest));
 }
 
 function expectThrowsWithMessage(manifest: Record<string, unknown>, ...fragments: string[]) {
   expect(() => parseManifestYaml(manifest)).toThrow();
   try {
     parseManifestYaml(manifest);
-    throw new Error("expected parseAgentTypeManifest to throw");
+    throw new Error("expected parseSpecialtyManifest to throw");
   } catch (err) {
     const message = (err as Error).message;
     for (const fragment of fragments) {
@@ -59,7 +59,7 @@ function expectThrowsWithMessage(manifest: Record<string, unknown>, ...fragments
 
 // ─── Valid manifest ─────────────────────────────────────────────────────────
 
-describe("parseAgentTypeManifest — valid manifest", () => {
+describe("parseSpecialtyManifest — valid manifest", () => {
   it("parses a valid minimal manifest successfully", () => {
     const manifest = parseManifestYaml(
       baseManifest({
@@ -107,7 +107,7 @@ describe("parseAgentTypeManifest — valid manifest", () => {
       }),
     );
     expect(manifest.apiVersion).toBe("shipwright.dev/v1alpha1");
-    expect(manifest.kind).toBe("AgentType");
+    expect(manifest.kind).toBe("Specialty");
     expect(manifest.metadata.name).toBe("dude-agent");
     expect(manifest.identity.templatesDir).toBe("templates/dude");
     expect(manifest.crons).toHaveLength(1);
@@ -139,7 +139,7 @@ describe("parseAgentTypeManifest — valid manifest", () => {
 
 // ─── Acceptance criterion 1 — failure cases ────────────────────────────────
 
-describe("parseAgentTypeManifest — invalid manifests fail with field-path errors", () => {
+describe("parseSpecialtyManifest — invalid manifests fail with field-path errors", () => {
   it("rejects a cron missing its required schedule field", () => {
     expectThrowsWithMessage(
       baseManifest({
@@ -212,9 +212,9 @@ describe("parseAgentTypeManifest — invalid manifests fail with field-path erro
 
 // ─── Schema-level checks (direct safeParse, matching repo convention) ──────
 
-describe("AgentTypeManifestSchema.safeParse", () => {
+describe("SpecialtyManifestSchema.safeParse", () => {
   it("rejects a self-referencing parentCron", () => {
-    const result = AgentTypeManifestSchema.safeParse(
+    const result = SpecialtyManifestSchema.safeParse(
       baseManifest({
         crons: [
           {
@@ -230,7 +230,7 @@ describe("AgentTypeManifestSchema.safeParse", () => {
   });
 
   it("defaults silent/enabled on a cron entry when omitted", () => {
-    const result = AgentTypeManifestSchema.safeParse(
+    const result = SpecialtyManifestSchema.safeParse(
       baseManifest({
         crons: [
           { name: "morning-brief", schedule: "0 9 * * 1-5", prompt: "Prompt." },
@@ -245,21 +245,21 @@ describe("AgentTypeManifestSchema.safeParse", () => {
   });
 
   it("rejects a bad apiVersion literal", () => {
-    const result = AgentTypeManifestSchema.safeParse(
+    const result = SpecialtyManifestSchema.safeParse(
       baseManifest({ apiVersion: "shipwright.dev/v1" }),
     );
     expect(result.success).toBe(false);
   });
 
   it("rejects a repos entry not in org/repo format", () => {
-    const result = AgentTypeManifestSchema.safeParse(
+    const result = SpecialtyManifestSchema.safeParse(
       baseManifest({ repos: ["not-a-valid-repo"] }),
     );
     expect(result.success).toBe(false);
   });
 
   it("accepts an optional resources override", () => {
-    const result = AgentTypeManifestSchema.safeParse(
+    const result = SpecialtyManifestSchema.safeParse(
       baseManifest({
         resources: {
           requests: { cpu: "500m", memory: "2Gi", "ephemeral-storage": "1Gi" },
