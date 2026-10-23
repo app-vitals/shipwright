@@ -18,7 +18,7 @@
  * 1 with a clear stderr message on any failure.
  */
 
-import { launchBrowser } from "../src/runtime/browser.ts";
+import { launchBrowser } from "@app-vitals/agent-runtime/browser";
 
 try {
   const browser = await launchBrowser();

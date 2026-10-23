@@ -12,6 +12,7 @@
     "@sentry/bun": "^10.63.0",
     "@shipwright/admin": "workspace:*",
     "@app-vitals/agent-lib": "workspace:*",
+    "@app-vitals/agent-runtime": "workspace:*",
     "@slack/bolt": "^5.0.0",
     "@slack/web-api": "^8.1.0",
     "hono": "^4.13.1",

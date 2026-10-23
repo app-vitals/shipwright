@@ -46,12 +46,12 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 import { computeMissingClones } from "@app-vitals/agent-lib/clone-plan";
 import { SECRET_ENV_VARS } from "@app-vitals/agent-lib/secret-env-vars";
-import type { AgentConfigResponse, AgentPlugin } from "@shipwright/admin";
 import {
   ensureAgentHome,
   installPlugins as realInstallPlugins,
-} from "../agent/src/runtime/setup.ts";
-import { HttpShipwrightRuntimeClient } from "../agent/src/runtime/shipwright-runtime-client.ts";
+} from "@app-vitals/agent-runtime/setup";
+import { HttpShipwrightRuntimeClient } from "@app-vitals/agent-runtime/shipwright-runtime-client";
+import type { AgentConfigResponse, AgentPlugin } from "@shipwright/admin";
 
 // ---------------------------------------------------------------------------
 // Agent summary (GET /agents list-summary shape — no `repos` field, mirrors

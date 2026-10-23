@@ -20,6 +20,7 @@
  * before calling this function if needed.
  */
 
+import { agentReposRef } from "@app-vitals/agent-runtime/agent-repos-ref";
 // CIG-1.2: CI-green classification is delegated to the shared classifier
 // (CIG-1.1) instead of a local latestRunPerName/isCiGreen pair, so
 // check-deploy.ts, check-patch.ts's cancelled-retry logic, and the
@@ -29,7 +30,6 @@
 // plugins/shipwright/scripts/compute-unaddressed-findings.ts.
 import { isCiGreen } from "../../../plugins/shipwright/scripts/is-ci-green.ts";
 import { canonicalLogin } from "../../../plugins/shipwright/scripts/login-identity.ts";
-import { agentReposRef } from "../runtime/agent-repos-ref.ts";
 import type { LinkedTaskInfo } from "./check-helpers.ts";
 import {
   candidateId,

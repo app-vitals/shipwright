@@ -38,6 +38,7 @@
 //   bun run plugins/shipwright/scripts/diagnose-review-candidacy.ts org/repo#123
 //   bun run plugins/shipwright/scripts/diagnose-review-candidacy.ts ok-wow/ok-wow-agency#66
 
+import { ghGraphql, ghJson } from "@app-vitals/agent-runtime/gh-helpers";
 import type { LinkedTaskInfo } from "../../../agent/src/coding/check-helpers.ts";
 import type { PrReviewData } from "../../../agent/src/coding/check-patch.ts";
 import {
@@ -47,7 +48,6 @@ import {
   type ReviewCandidacyTrace,
   traceReviewCandidacyDecision,
 } from "../../../agent/src/coding/check-review.ts";
-import { ghGraphql, ghJson } from "../../../agent/src/runtime/gh-helpers.ts";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 

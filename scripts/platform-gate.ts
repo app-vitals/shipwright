@@ -8,8 +8,9 @@
  * What counts as an edge: every module specifier in `import`, `import type`,
  * `export ... from`, side-effect `import "x"`, dynamic `import("x")`,
  * `require("x")` and `mock.module("x")`, in any file of the set (tests
- * included). Relative specifiers and `@shipwright/*` workspace specifiers must
- * resolve to a file inside the set. npm packages and `node:`/`bun:` builtins
+ * included). Relative specifiers, `@shipwright/*` workspace specifiers and
+ * `@app-vitals/agent-runtime/*` (agent/src/runtime) must resolve to a file
+ * inside the set. npm packages and `node:`/`bun:` builtins
  * are not edges. `@app-vitals/agent-lib/*` modules are the one allowed way out of
  * admin/agent directories, and only if listed in the manifest's `lib` table.
  *
@@ -260,6 +261,12 @@ export function collectSetFiles(root: string, m: PlatformManifest): string[] {
 function workspaceTarget(spec: string): string | null {
   const libMatch = /^@app-vitals\/agent-lib(?:\/(.*))?$/.exec(spec);
   if (libMatch) return libMatch[1] ? `lib/${libMatch[1]}` : "lib";
+  const runtimeMatch = /^@app-vitals\/agent-runtime(?:\/(.*))?$/.exec(spec);
+  if (runtimeMatch) {
+    return runtimeMatch[1]
+      ? `agent/src/runtime/${runtimeMatch[1]}`
+      : "agent/src/runtime";
+  }
   const m = /^@shipwright\/([^/]+)(?:\/(.*))?$/.exec(spec);
   if (!m) return null;
   const [, pkg, rest] = m;

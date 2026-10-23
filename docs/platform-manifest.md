@@ -47,7 +47,7 @@ The gate only records which modules are shared. Whether they are copied, publish
 
 For every file in the set (tests included), the walker reads each module specifier: `import`, `import type`, `export ... from`, side-effect `import "x"`, dynamic `import("x")`, `require("x")` and `mock.module("x")`. Comments and string contents are ignored.
 
-- Relative specifiers (`./x`, `../../y`) and `@shipwright/*` workspace specifiers must resolve to a file inside the set.
+- Relative specifiers (`./x`, `../../y`), `@shipwright/*` workspace specifiers and `@app-vitals/agent-runtime/*` (resolved to `agent/src/runtime/*`) must resolve to a file inside the set.
 - `@app-vitals/agent-lib/*` (or a relative path into `lib/`) must name a listed `lib` module.
 - Imports of a path matching `generated` (the git-ignored Prisma client) count as inside the set.
 - npm packages and `node:`/`bun:` builtins are not edges.

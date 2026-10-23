@@ -1232,15 +1232,15 @@ export async function mapReposTolerant<T>(
 
 // ─── Re-exports (moved to runtime-side modules in ARD-4.1) ───────────────────
 
-export { readCleanupAfterDays } from "../runtime/cleanup-after-days-ref.ts";
-export { readCleanupMergedWorktrees } from "../runtime/cleanup-merged-worktrees-ref.ts";
+export { readCleanupAfterDays } from "@app-vitals/agent-runtime/cleanup-after-days-ref";
+export { readCleanupMergedWorktrees } from "@app-vitals/agent-runtime/cleanup-merged-worktrees-ref";
 export {
   getCurrentUser,
   ghGraphql,
   ghJson,
   ghRun,
-} from "../runtime/gh-helpers.ts";
+} from "@app-vitals/agent-runtime/gh-helpers";
 export {
   resolveWorkspacePath,
   splitOrgRepo,
-} from "../runtime/workspace-paths.ts";
+} from "@app-vitals/agent-runtime/workspace-paths";

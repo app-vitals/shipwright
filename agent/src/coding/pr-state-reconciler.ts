@@ -142,8 +142,8 @@
 import { existsSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { DEFAULT_CLAIM_TTL_MS } from "@app-vitals/agent-lib/claim-ttl";
-import type { Clock } from "../runtime/clock.ts";
-import { SystemClock } from "../runtime/clock.ts";
+import type { Clock } from "@app-vitals/agent-runtime/clock";
+import { SystemClock } from "@app-vitals/agent-runtime/clock";
 import {
   classifyReviewState,
   hasAnyReviewAtHead,

@@ -78,18 +78,18 @@ import {
   type EarlySessionIdCallback,
   type ProgressCallback,
   reportClaudeError,
-} from "../runtime/claude.ts";
-import { type Clock, SystemClock } from "../runtime/clock.ts";
-import type { RunContextStamp } from "../runtime/context-stamp.ts";
-import { markCronRunFailureReported } from "../runtime/cron-failure-reporter.ts";
+} from "@app-vitals/agent-runtime/claude";
+import { type Clock, SystemClock } from "@app-vitals/agent-runtime/clock";
+import type { RunContextStamp } from "@app-vitals/agent-runtime/context-stamp";
+import { markCronRunFailureReported } from "@app-vitals/agent-runtime/cron-failure-reporter";
 import {
   buildTokenPayload,
   formatCronMessage,
   type TokenPayloadExtras,
-} from "../runtime/cron-handler.ts";
-import type { CronRunReporter } from "../runtime/cron-run-reporter.ts";
-import { parseMarkers } from "../runtime/markers.ts";
-import type { RunTelemetry } from "../runtime/run-telemetry.ts";
+} from "@app-vitals/agent-runtime/cron-handler";
+import type { CronRunReporter } from "@app-vitals/agent-runtime/cron-run-reporter";
+import { parseMarkers } from "@app-vitals/agent-runtime/markers";
+import type { RunTelemetry } from "@app-vitals/agent-runtime/run-telemetry";
 import {
   buildProductionDeps as buildDeployDeps,
   getDeployCandidates,

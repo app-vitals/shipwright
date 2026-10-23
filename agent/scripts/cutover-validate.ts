@@ -20,8 +20,8 @@
 import {
   type CheckResult,
   validateCutover,
-} from "../src/runtime/cutover-validate.ts";
-import { HttpShipwrightRuntimeClient } from "../src/runtime/shipwright-runtime-client.ts";
+} from "@app-vitals/agent-runtime/cutover-validate";
+import { HttpShipwrightRuntimeClient } from "@app-vitals/agent-runtime/shipwright-runtime-client";
 
 const USAGE = `Usage: SHIPWRIGHT_API_URL=<url> SHIPWRIGHT_AGENT_API_KEY=<key> AGENT_ID=<id> bun cutover-validate.ts
 

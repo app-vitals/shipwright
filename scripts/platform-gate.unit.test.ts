@@ -174,6 +174,41 @@ describe("analyzeClosure", () => {
     ]);
   });
 
+  it("resolves @app-vitals/agent-runtime specifiers to agent/src/runtime", () => {
+    write("agent/src/runtime/clock.ts");
+    write(
+      "admin/src/r.ts",
+      `import { c } from "@app-vitals/agent-runtime/clock";\n`,
+    );
+    const inside = analyzeClosure(
+      root,
+      manifest({ include: ["runtime/**", "admin/src/**", "agent/src/**"] }),
+    );
+    expect(inside.violations).toEqual([]);
+    // Outside the set, a runtime specifier is a leak like any other path.
+    expect(analyzeClosure(root, manifest()).violations).toEqual([
+      {
+        from: "admin/src/r.ts",
+        specifier: "@app-vitals/agent-runtime/clock",
+        target: "agent/src/runtime/clock.ts",
+        reason: "outside-set",
+      },
+    ]);
+  });
+
+  it("fails on an @app-vitals/agent-runtime specifier that resolves to no file", () => {
+    write(
+      "admin/src/r.ts",
+      `import { g } from "@app-vitals/agent-runtime/ghost";\n`,
+    );
+    expect(analyzeClosure(root, manifest()).violations).toEqual([
+      expect.objectContaining({
+        target: "agent/src/runtime/ghost",
+        reason: "unresolved",
+      }),
+    ]);
+  });
+
   it("fails on a lib module the set imports but the manifest does not list", () => {
     write("runtime/b.ts", `import { o } from "@app-vitals/agent-lib/other";\n`);
     const { violations } = analyzeClosure(root, manifest());

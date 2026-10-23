@@ -13,7 +13,7 @@ import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { createCleanupMergedWorktreesRef } from "../runtime/cleanup-merged-worktrees-ref.ts";
+import { createCleanupMergedWorktreesRef } from "@app-vitals/agent-runtime/cleanup-merged-worktrees-ref";
 import { createAllowSelfReviewRef } from "./allow-self-review-ref.ts";
 import * as checkHelpers from "./check-helpers.ts";
 import {

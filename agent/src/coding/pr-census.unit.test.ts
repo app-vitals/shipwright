@@ -16,7 +16,7 @@
  */
 
 import { beforeEach, describe, expect, test } from "bun:test";
-import { FixedClock } from "../runtime/clock.ts";
+import { FixedClock } from "@app-vitals/agent-runtime/clock";
 import {
   __resetPrCensusThrottleForTests,
   buildCensusEntry,

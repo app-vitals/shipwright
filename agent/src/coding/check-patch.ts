@@ -27,6 +27,7 @@
  * to pr.createdAt rather than disqualifying the PR.
  */
 
+import { agentReposRef } from "@app-vitals/agent-runtime/agent-repos-ref";
 import {
   ciRef,
   hasUnaddressedFindings,
@@ -35,7 +36,6 @@ import {
   isSelfCleanApprove,
 } from "../../../plugins/shipwright/scripts/compute-unaddressed-findings.ts";
 import { isCiGreen } from "../../../plugins/shipwright/scripts/is-ci-green.ts";
-import { agentReposRef } from "../runtime/agent-repos-ref.ts";
 import { hasSelfApproveReview } from "./check-deploy.ts";
 import type { CommitInfo, LinkedTaskInfo } from "./check-helpers.ts";
 import {

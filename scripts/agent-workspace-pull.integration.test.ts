@@ -14,7 +14,7 @@
  */
 
 import { describe, expect, test } from "bun:test";
-import { HttpShipwrightRuntimeClient } from "../agent/src/runtime/shipwright-runtime-client.ts";
+import { HttpShipwrightRuntimeClient } from "@app-vitals/agent-runtime/shipwright-runtime-client";
 import {
   fetchAgentList,
   type PullAgentWorkspaceDeps,

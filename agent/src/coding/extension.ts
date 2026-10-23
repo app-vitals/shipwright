@@ -7,20 +7,20 @@
  * inline lives behind this one factory.
  */
 
-import type { AgentConfigResponse } from "@shipwright/admin";
 import type {
   AgentExtension,
   AgentExtensionContext,
   PeriodicPass,
-} from "../runtime/agent-extension.ts";
-import { agentReposRef } from "../runtime/agent-repos-ref.ts";
+} from "@app-vitals/agent-runtime/agent-extension";
+import { agentReposRef } from "@app-vitals/agent-runtime/agent-repos-ref";
 import type {
   EarlySessionIdCallback,
   ProgressCallback,
-} from "../runtime/claude.ts";
-import { cleanupMergedWorktreesRef } from "../runtime/cleanup-merged-worktrees-ref.ts";
-import { NoopCronRunReporter } from "../runtime/cron-run-reporter.ts";
-import { ghGraphql, ghJson } from "../runtime/gh-helpers.ts";
+} from "@app-vitals/agent-runtime/claude";
+import { cleanupMergedWorktreesRef } from "@app-vitals/agent-runtime/cleanup-merged-worktrees-ref";
+import { NoopCronRunReporter } from "@app-vitals/agent-runtime/cron-run-reporter";
+import { ghGraphql, ghJson } from "@app-vitals/agent-runtime/gh-helpers";
+import type { AgentConfigResponse } from "@shipwright/admin";
 import { allowSelfReviewRef } from "./allow-self-review-ref.ts";
 import {
   buildProductionDeps as buildClaimInvariantReconcilerDeps,

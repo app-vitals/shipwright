@@ -11,7 +11,7 @@
 
 import { execFileSync } from "node:child_process";
 import { parseFlags } from "@app-vitals/agent-lib/cli-flags";
-import { resolveGhOwner } from "../src/runtime/gh-owner-resolver.ts";
+import { resolveGhOwner } from "@app-vitals/agent-runtime/gh-owner-resolver";
 
 const argv = process.argv.slice(2);
 const sep = argv.indexOf("--");

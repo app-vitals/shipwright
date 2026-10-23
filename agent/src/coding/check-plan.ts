@@ -31,7 +31,7 @@
  * loop ticks can never double-process the same PRD task.
  */
 
-import { type Clock, SystemClock } from "../runtime/clock.ts";
+import { type Clock, SystemClock } from "@app-vitals/agent-runtime/clock";
 import type { Task } from "./check-helpers.ts";
 import {
   createTaskStoreClient,
