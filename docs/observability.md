@@ -48,14 +48,14 @@ Every agent call site reporting a `claude` CLI runner error — `agent/src/runti
 
 `reportClaudeError` classifies the error before reporting it:
 
-- A `ClaudeTimeoutError` with `reason: "ceiling"` — the intentional 1hr hard-ceiling backstop firing on a legitimately long-running session, not a defect — is downgraded to `sentryClient.captureMessage()`. This keeps the event visible in Sentry without creating an actionable Issue that error-patrol would otherwise keep re-flagging as "regressed" even though nothing is broken (VITALS-OS-46).
+- A `ClaudeTimeoutError` with `reason: "ceiling"` — the intentional 1hr hard-ceiling backstop firing on a legitimately long-running session, not a defect — is downgraded to `sentryClient.captureMessage()`. This keeps the event visible in Sentry without creating an actionable Issue that error-patrol would otherwise keep re-flagging as "regressed" even though nothing is broken (SENTRY-46).
 - Every other error, including a `ClaudeTimeoutError` with `reason: "idle"` (a genuine hang), is reported unchanged via `sentryClient.captureException(err)`.
 
 Any new call site that can receive a thrown `ClaudeTimeoutError` should report through `reportClaudeError` rather than calling `captureException` directly, to keep this classification consistent.
 
 ### Task-store pool observability
 
-The task-store instruments its `pg` pool to diagnose pool starvation (Sentry VITALS-OS-5T). It is observability only — pool size and queries are unchanged.
+The task-store instruments its `pg` pool to diagnose pool starvation (Sentry SENTRY-5T). It is observability only — pool size and queries are unchanged.
 
 - **Route context** — a middleware records each request's method and matched route pattern, so pool events can be attributed to a route.
 - **Connection holds** — a connection held longer than `SHIPWRIGHT_TASK_STORE_POOL_HOLD_THRESHOLD_MS` (default 2000) logs `pg connection held past threshold` with the route, duration, and pool stats.

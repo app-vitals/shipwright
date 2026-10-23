@@ -1,6 +1,6 @@
 /**
  * lib/pool-observability.ts
- * Observability helpers for diagnosing pg pool starvation (Sentry VITALS-OS-5T).
+ * Observability helpers for diagnosing pg pool starvation (Sentry SENTRY-5T).
  *
  * Observability only: nothing here changes pool or client behavior. Types are
  * structural so this module needs no direct dependency on `pg` or `hono`.

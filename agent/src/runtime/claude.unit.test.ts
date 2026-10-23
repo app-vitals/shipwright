@@ -1467,7 +1467,7 @@ describe("resume retry", () => {
 //
 // A transient network drop between the Claude Code CLI and the Anthropic API
 // mid-response throws a ClaudeRunError whose result text contains "Connection
-// lost mid-response" (Sentry issue 7616867192 / VITALS-OS-47). Per human
+// lost mid-response" (Sentry issue 7616867192 / SENTRY-47). Per human
 // decision (Dave, 2026-09-08), `_spawn` retries this specific failure exactly
 // once — discarding the partial response and re-running the whole spawn from
 // scratch — regardless of whether a session exists to resume. This is
@@ -2886,7 +2886,7 @@ describe("liveClaudeConfig", () => {
 
 // ─── reportClaudeError ──────────────────────────────────────────────────────
 //
-// VITALS-OS-46: a ClaudeTimeoutError with reason:"ceiling" is the intentional
+// SENTRY-46: a ClaudeTimeoutError with reason:"ceiling" is the intentional
 // 1hr hard-ceiling backstop firing on a legitimately long-running session —
 // expected, not a defect — so it must be downgraded to captureMessage rather
 // than captureException (which creates an actionable Sentry Issue that keeps
