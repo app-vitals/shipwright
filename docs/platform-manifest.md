@@ -95,10 +95,26 @@ Layout of the output:
 | `admin/**` | `admin/` |
 | the listed `lib` modules and `lib/package.json` | `lib/` |
 | `specialties/specialist/**`, `docs/schemas/specialty.schema.json` | `agent-types/` |
+| `scripts/extract-platform/template/**` | the tree root (see below) |
 
 The file list is the gate's own (`collectSetFiles`), read from the exported commit rather than the working tree, so untracked files, `worktrees/` and the generated Prisma client never appear. In history mode the script runs `git filter-repo` over those paths with `--path-rename`, then commits the rewrite of relative specifiers, the `@shipwright/` scope and tsconfig/package.json path values as one commit with a fixed author and date. The same source commit therefore gives the same tree and the same commit hashes.
 
-The rewrite only sees module specifiers and JSON path values. Paths inside strings (for example `/app/agent/src/runtime/setup.ts` in a test) are not rewritten.
+The rewrite only sees module specifiers and JSON path values, plus the absolute container paths listed in `STRING_REWRITES` (`/app/agent/src/runtime/` and `/app/agent/src/entrypoint-main.ts`, which the base-image contract smoke test addresses). Other paths inside strings are not rewritten.
+
+### The standalone-repo template
+
+`scripts/extract-platform/template/` holds the files the new repository needs that have no source here. `extract-platform.ts` copies it over the extracted tree after the rewrite, in both modes; in history mode it lands in the same fixed-identity commit, so the result stays deterministic. A template file wins over an extracted file at the same path.
+
+| Group | Files |
+|---|---|
+| Root config | `package.json` (workspaces `runtime`, `admin`, `lib`), `tsconfig.json`, `biome.json`, `bunfig.toml`, `.gitignore`, `.dockerignore`, `.releaserc.json`, `renovate.json`, `patches/` |
+| Docs and license | `LICENSE` (MIT), `README.md`, `CONTRIBUTING.md`, `SECURITY.md`, `CLAUDE.md` |
+| Workflows (`.github/workflows/`) | `ci.yml` (lint, typecheck, import-boundary gate, tests, admin and runtime docker builds, browser-launch check, base-image contract smoke), `pr-title-lint.yml`, `release.yml` (semantic-release) |
+| Images | `runtime/Dockerfile` (`ghcr.io/app-vitals/agent`) and `admin/Dockerfile` (`ghcr.io/app-vitals/agent-admin`); neither copies `task-store/`, `chat/`, `plugins/`, `metrics/` or `mcp-server/`. The runtime image keeps the module-resolution guard and the base-image contract (`/opt/shipwright/marketplaces/`, `installPlugins()`, `/app/runtime/entrypoint-main.ts`). |
+| Composition roots | `index.ts` (`startAgent([])`, the process `runtime/entrypoint.ts` spawns) and `admin/src/main.ts` (`startAdmin([])`), replacing the excluded Shipwright roots |
+| Scripts | `scripts/check-import-boundary.ts` (the gate ported from `platform-gate.ts`, run by `bun run check:boundary`), `scripts/verify-browser-launch.ts`, `scripts/bin/git-credential-shipwright.sh` |
+
+A template file ending in `.tmpl` is copied without the suffix. `biome.json` is stored as `biome.json.tmpl` because Biome rejects a nested root configuration. The template directory is excluded from Renovate in this repository, and it holds no `*.test.ts` files, so root `bun test` does not pick it up. `scripts/extract-platform/template.unit.test.ts` pins the file set, bans internal strings from it, checks every `COPY` source of both Dockerfiles against a real extraction and runs the boundary gate on that tree.
 
 ### Dev dependency
 

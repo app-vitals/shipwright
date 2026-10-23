@@ -51,6 +51,16 @@ describe("rewriteSource", () => {
     );
   });
 
+  test("rewrites absolute container paths in string literals", () => {
+    const out = rewriteSource(
+      `const a = "/app/agent/src/runtime/setup.ts";\nconst b = "/app/agent/src/entrypoint-main.ts";\nconst c = "/app/agent/voices/";\n`,
+      "agent/src/runtime/base-image-contract.smoke.test.ts",
+    );
+    expect(out).toBe(
+      `const a = "/app/runtime/setup.ts";\nconst b = "/app/runtime/entrypoint-main.ts";\nconst c = "/app/agent/voices/";\n`,
+    );
+  });
+
   test("handles entrypoint-main moving next to runtime", () => {
     const out = rewriteSource(
       `import { r } from "./runtime/boot";`,
