@@ -70,6 +70,40 @@ A failure prints one line per edge, for example:
 agent/src/runtime/clock.ts -> ../../../task-store/src/index.ts (task-store/src/index.ts) [outside-set]
 ```
 
+## Extracting the set
+
+`scripts/extract-platform.ts` turns the manifest into the `app-vitals/agent` tree in an output directory. It is re-runnable by design: the pipeline keeps merging, so a one-shot cut is stale within hours. It never pushes and never modifies the source repository.
+
+```bash
+bun scripts/extract-platform.ts --out /tmp/agent-extract              # history mode (default)
+bun scripts/extract-platform.ts --out /tmp/agent-extract --no-history # copy only, fast rehearsal
+```
+
+| Flag | Meaning |
+|---|---|
+| `--out <dir>` | Output directory (required). Refuses a non-empty directory unless `--clean`. |
+| `--no-history` | Copy the files only, no git repository. |
+| `--ref <rev>` | Source commit to extract (default `HEAD`). |
+| `--source <repo>` | Source repository (default: this one). |
+| `--clean` | Delete the output directory first. |
+
+Layout of the output:
+
+| Source | Extracted |
+|---|---|
+| `agent/src/runtime/**`, `agent/src/fixtures/**` (to `runtime/fixtures/`), `agent/src/entrypoint-main.ts`, `agent/Dockerfile`, `agent/workspace/**` | `runtime/` |
+| `admin/**` | `admin/` |
+| the listed `lib` modules and `lib/package.json` | `lib/` |
+| `specialties/specialist/**`, `docs/schemas/specialty.schema.json` | `agent-types/` |
+
+The file list is the gate's own (`collectSetFiles`), read from the exported commit rather than the working tree, so untracked files, `worktrees/` and the generated Prisma client never appear. In history mode the script runs `git filter-repo` over those paths with `--path-rename`, then commits the rewrite of relative specifiers, the `@shipwright/` scope and tsconfig/package.json path values as one commit with a fixed author and date. The same source commit therefore gives the same tree and the same commit hashes.
+
+The rewrite only sees module specifiers and JSON path values. Paths inside strings (for example `/app/agent/src/runtime/setup.ts` in a test) are not rewritten.
+
+### Dev dependency
+
+History mode needs [`git-filter-repo`](https://github.com/newren/git-filter-repo) (`pip install git-filter-repo`). `--no-history` does not. The history integration test skips when it is missing.
+
 ## Extending the manifest
 
 - **New platform file under an included directory:** nothing to do. It is picked up by the globs and checked.
