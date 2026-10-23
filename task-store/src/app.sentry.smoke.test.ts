@@ -16,8 +16,8 @@
  */
 
 import { describe, expect, it, spyOn } from "bun:test";
-import { callerLabel } from "@shipwright/lib/request-context";
-import type { ErrorCapturingClient } from "@shipwright/lib/sentry";
+import { callerLabel } from "@app-vitals/agent-lib/request-context";
+import type { ErrorCapturingClient } from "@app-vitals/agent-lib/sentry";
 import { createTaskStoreApp } from "./app.ts";
 import { NotFoundError } from "./errors.ts";
 import type { SessionServiceLike } from "./session-service.ts";

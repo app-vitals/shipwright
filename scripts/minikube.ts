@@ -1,7 +1,7 @@
 #!/usr/bin/env bun
 import { mkdirSync, openSync, readFileSync, unlinkSync } from "node:fs";
 import { dirname } from "node:path";
-import { parseFlags } from "../lib/cli-flags.ts";
+import { parseFlags } from "@app-vitals/agent-lib/cli-flags";
 
 /**
  * scripts/minikube.ts — bring the full Shipwright stack up on Minikube.

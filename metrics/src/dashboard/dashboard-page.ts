@@ -7,7 +7,7 @@
 import {
   baseStyles,
   renderShipwrightToolbar,
-} from "@shipwright/lib/web/toolbar.ts";
+} from "@app-vitals/agent-lib/web/toolbar.ts";
 
 export interface DashboardPageOptions {
   userName: string;

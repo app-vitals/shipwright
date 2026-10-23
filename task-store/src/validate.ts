@@ -1,4 +1,4 @@
-export { isOrgRepo } from "@shipwright/lib/org-repo";
+export { isOrgRepo } from "@app-vitals/agent-lib/org-repo";
 
 // Task.pr is Postgres INT4.
 const PR_MAX = 2147483647;

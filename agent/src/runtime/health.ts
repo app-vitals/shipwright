@@ -1,4 +1,4 @@
-import type { ErrorCapturingClient } from "@shipwright/lib/sentry";
+import type { ErrorCapturingClient } from "@app-vitals/agent-lib/sentry";
 import type { Server } from "bun";
 import { Hono } from "hono";
 import { reportClaudeError } from "./claude.ts";

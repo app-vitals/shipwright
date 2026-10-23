@@ -33,8 +33,8 @@
  * (the composition root) is the only file that wires a concrete extension in.
  */
 
-import type { PoolLike } from "@shipwright/lib/pool-observability";
-import type { ErrorCapturingClient } from "@shipwright/lib/sentry";
+import type { PoolLike } from "@app-vitals/agent-lib/pool-observability";
+import type { ErrorCapturingClient } from "@app-vitals/agent-lib/sentry";
 import type { Hono } from "hono";
 import type { PrismaClient } from "../prisma/client/client.ts";
 import type { AccountService } from "./accounts.ts";

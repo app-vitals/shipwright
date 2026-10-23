@@ -6,8 +6,8 @@
  * (dependency injection, not a global/module mock).
  */
 
-import { DEFAULT_CLAIM_TTL_MS } from "@shipwright/lib/claim-ttl";
 import { afterEach, describe, expect, it } from "bun:test";
+import { DEFAULT_CLAIM_TTL_MS } from "@app-vitals/agent-lib/claim-ttl";
 import { type ReadyTaskLike, resolveReadyTasks } from "./ready.ts";
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -86,49 +86,86 @@ describe("resolveReadyTasks", () => {
   it("includes a task when dependency status is merged (terminal)", async () => {
     const dep = makeTask({ id: "dep-1", status: "merged" });
     const task = makeTask({ id: "t1", dependencies: ["dep-1"] });
-    const result = await resolveReadyTasks([task, dep], isPrMergedShouldNotBeCalled);
+    const result = await resolveReadyTasks(
+      [task, dep],
+      isPrMergedShouldNotBeCalled,
+    );
     expect(result).toEqual([task]);
   });
 
   it("includes a task when dependency status is done (terminal)", async () => {
     const dep = makeTask({ id: "dep-1", status: "done" });
     const task = makeTask({ id: "t1", dependencies: ["dep-1"] });
-    const result = await resolveReadyTasks([task, dep], isPrMergedShouldNotBeCalled);
+    const result = await resolveReadyTasks(
+      [task, dep],
+      isPrMergedShouldNotBeCalled,
+    );
     expect(result).toEqual([task]);
   });
 
   it("includes a task when dependency status is deploying (terminal)", async () => {
     const dep = makeTask({ id: "dep-1", status: "deploying" });
     const task = makeTask({ id: "t1", dependencies: ["dep-1"] });
-    const result = await resolveReadyTasks([task, dep], isPrMergedShouldNotBeCalled);
+    const result = await resolveReadyTasks(
+      [task, dep],
+      isPrMergedShouldNotBeCalled,
+    );
     expect(result).toEqual([task]);
   });
 
   it("includes a task when dependency status is deployed (terminal)", async () => {
     const dep = makeTask({ id: "dep-1", status: "deployed" });
     const task = makeTask({ id: "t1", dependencies: ["dep-1"] });
-    const result = await resolveReadyTasks([task, dep], isPrMergedShouldNotBeCalled);
+    const result = await resolveReadyTasks(
+      [task, dep],
+      isPrMergedShouldNotBeCalled,
+    );
     expect(result).toEqual([task]);
   });
 
   it("includes a task when dependency status is cancelled (terminal)", async () => {
     const dep = makeTask({ id: "dep-1", status: "cancelled" });
     const task = makeTask({ id: "t1", dependencies: ["dep-1"] });
-    const result = await resolveReadyTasks([task, dep], isPrMergedShouldNotBeCalled);
+    const result = await resolveReadyTasks(
+      [task, dep],
+      isPrMergedShouldNotBeCalled,
+    );
     expect(result).toEqual([task]);
   });
 
   it("includes a task when same-branch dependency has pr_open status (bundled)", async () => {
-    const dep = makeTask({ id: "dep-1", status: "pr_open", branch: "feat/shared" });
-    const task = makeTask({ id: "t1", dependencies: ["dep-1"], branch: "feat/shared" });
-    const result = await resolveReadyTasks([task, dep], isPrMergedShouldNotBeCalled);
+    const dep = makeTask({
+      id: "dep-1",
+      status: "pr_open",
+      branch: "feat/shared",
+    });
+    const task = makeTask({
+      id: "t1",
+      dependencies: ["dep-1"],
+      branch: "feat/shared",
+    });
+    const result = await resolveReadyTasks(
+      [task, dep],
+      isPrMergedShouldNotBeCalled,
+    );
     expect(result).toEqual([task]);
   });
 
   it("includes a task when same-branch dependency has approved status (bundled)", async () => {
-    const dep = makeTask({ id: "dep-1", status: "approved", branch: "feat/shared" });
-    const task = makeTask({ id: "t1", dependencies: ["dep-1"], branch: "feat/shared" });
-    const result = await resolveReadyTasks([task, dep], isPrMergedShouldNotBeCalled);
+    const dep = makeTask({
+      id: "dep-1",
+      status: "approved",
+      branch: "feat/shared",
+    });
+    const task = makeTask({
+      id: "t1",
+      dependencies: ["dep-1"],
+      branch: "feat/shared",
+    });
+    const result = await resolveReadyTasks(
+      [task, dep],
+      isPrMergedShouldNotBeCalled,
+    );
     expect(result).toEqual([task]);
   });
 
@@ -136,15 +173,35 @@ describe("resolveReadyTasks", () => {
     // dep-1 is itself "pending" with no deps of its own, so it resolves as
     // ready independently — assert on t1's exclusion specifically, not on
     // the full result set being empty.
-    const dep = makeTask({ id: "dep-1", status: "pending", branch: "feat/shared" });
-    const task = makeTask({ id: "t1", dependencies: ["dep-1"], branch: "feat/shared" });
-    const result = await resolveReadyTasks([task, dep], isPrMergedShouldNotBeCalled);
+    const dep = makeTask({
+      id: "dep-1",
+      status: "pending",
+      branch: "feat/shared",
+    });
+    const task = makeTask({
+      id: "t1",
+      dependencies: ["dep-1"],
+      branch: "feat/shared",
+    });
+    const result = await resolveReadyTasks(
+      [task, dep],
+      isPrMergedShouldNotBeCalled,
+    );
     expect(result.map((t) => t.id)).not.toContain("t1");
   });
 
   it("includes a task when cross-branch pr_open dependency's PR is merged", async () => {
-    const dep = makeTask({ id: "dep-1", status: "pr_open", branch: "feat/other", pr: 42 });
-    const task = makeTask({ id: "t1", dependencies: ["dep-1"], branch: "feat/main" });
+    const dep = makeTask({
+      id: "dep-1",
+      status: "pr_open",
+      branch: "feat/other",
+      pr: 42,
+    });
+    const task = makeTask({
+      id: "t1",
+      dependencies: ["dep-1"],
+      branch: "feat/main",
+    });
     const isPrMerged = async (prNumber: number) => {
       expect(prNumber).toBe(42);
       return true;
@@ -154,23 +211,47 @@ describe("resolveReadyTasks", () => {
   });
 
   it("excludes a task when cross-branch pr_open dependency's PR is not merged", async () => {
-    const dep = makeTask({ id: "dep-1", status: "pr_open", branch: "feat/other", pr: 42 });
-    const task = makeTask({ id: "t1", dependencies: ["dep-1"], branch: "feat/main" });
+    const dep = makeTask({
+      id: "dep-1",
+      status: "pr_open",
+      branch: "feat/other",
+      pr: 42,
+    });
+    const task = makeTask({
+      id: "t1",
+      dependencies: ["dep-1"],
+      branch: "feat/main",
+    });
     const result = await resolveReadyTasks([task, dep], isPrMergedAlwaysFalse);
     expect(result).toEqual([]);
   });
 
   it("excludes a task when pr_open dependency has no pr set, without calling isPrMerged", async () => {
-    const dep = makeTask({ id: "dep-1", status: "pr_open", branch: "feat/other", pr: null });
-    const task = makeTask({ id: "t1", dependencies: ["dep-1"], branch: "feat/main" });
-    const result = await resolveReadyTasks([task, dep], isPrMergedShouldNotBeCalled);
+    const dep = makeTask({
+      id: "dep-1",
+      status: "pr_open",
+      branch: "feat/other",
+      pr: null,
+    });
+    const task = makeTask({
+      id: "t1",
+      dependencies: ["dep-1"],
+      branch: "feat/main",
+    });
+    const result = await resolveReadyTasks(
+      [task, dep],
+      isPrMergedShouldNotBeCalled,
+    );
     expect(result).toEqual([]);
   });
 
   it("excludes a task when dependency has an arbitrary non-satisfying status", async () => {
     const dep = makeTask({ id: "dep-1", status: "blocked" });
     const task = makeTask({ id: "t1", dependencies: ["dep-1"] });
-    const result = await resolveReadyTasks([task, dep], isPrMergedShouldNotBeCalled);
+    const result = await resolveReadyTasks(
+      [task, dep],
+      isPrMergedShouldNotBeCalled,
+    );
     expect(result).toEqual([]);
   });
 
@@ -184,7 +265,13 @@ describe("resolveReadyTasks", () => {
       dependencies: ["missing"],
     });
 
-    const tasks = [readyTask1, notPending, hitlBlocked, readyTask2, unsatisfiedDep];
+    const tasks = [
+      readyTask1,
+      notPending,
+      hitlBlocked,
+      readyTask2,
+      unsatisfiedDep,
+    ];
     const result = await resolveReadyTasks(tasks, isPrMergedShouldNotBeCalled);
 
     expect(result).toEqual([readyTask1, readyTask2]);
@@ -319,7 +406,10 @@ describe("resolveReadyTasks", () => {
       // No in_progress siblings at all — this exercises the default
       // `now: () => new Date()` parameter path without needing determinism.
       const task = makeTask({ id: "t1", branch: "feat/shared" });
-      const result = await resolveReadyTasks([task], isPrMergedShouldNotBeCalled);
+      const result = await resolveReadyTasks(
+        [task],
+        isPrMergedShouldNotBeCalled,
+      );
       expect(result).toEqual([task]);
     });
 

@@ -1,7 +1,7 @@
-export type { TokenUsage } from "@shipwright/lib/pricing";
+export type { TokenUsage } from "@app-vitals/agent-lib/pricing";
 export {
   calculateCost,
   normalizeModelToRateKey,
   OPUS_MODEL,
   RATES,
-} from "@shipwright/lib/pricing";
+} from "@app-vitals/agent-lib/pricing";

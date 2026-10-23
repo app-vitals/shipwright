@@ -10,7 +10,7 @@
 // heuristic here — the same classifier review.md's Unresolved Comment Check
 // already uses.
 //
-// Deliberately has no dependency on @shipwright/lib or any other workspace
+// Deliberately has no dependency on @app-vitals/agent-lib or any other workspace
 // package — plugins/shipwright must stay installable standalone into other
 // repos (see plugins/shipwright/CLAUDE.md).
 //

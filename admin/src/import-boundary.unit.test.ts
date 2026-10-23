@@ -7,7 +7,7 @@
  * exempt from the check (it wires the coding extension into the platform).
  *
  * Also asserts nothing under admin/src (outside coding/) imports from outside
- * admin/ other than @shipwright/lib/* and npm packages, so the platform set
+ * admin/ other than @app-vitals/agent-lib/* and npm packages, so the platform set
  * can be copied into its own repo. coding/ is exempt (plugins/task-store/brand).
  *
  * Runs under `bun test`, so CI (task ci -> test:coverage) enforces it.
@@ -69,7 +69,8 @@ export function findImportsOutside(
 }
 
 const platformFiles = listTsFiles(SRC).filter(
-  (file) => !isInside(CODING_DIR, file) && file !== COMPOSITION_ROOT && file !== SELF,
+  (file) =>
+    !isInside(CODING_DIR, file) && file !== COMPOSITION_ROOT && file !== SELF,
 );
 
 function rel(file: string): string {
@@ -86,7 +87,7 @@ describe("admin import boundary (coding -> platform only)", () => {
     expect(violations).toEqual([]);
   });
 
-  it("no platform file imports outside admin/ (only @shipwright/lib/* and npm)", () => {
+  it("no platform file imports outside admin/ (only @app-vitals/agent-lib/* and npm)", () => {
     const violations = platformFiles.flatMap((file) =>
       findImportsOutside(file, readFileSync(file, "utf8"), ADMIN_DIR).map(
         (spec) => `${rel(file)} -> ${spec}`,

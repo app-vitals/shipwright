@@ -7,7 +7,7 @@
 // standalone function, plus a CLI entrypoint that takes the same JSON shape
 // returned by `gh api repos/{owner}/{repo}/actions/runs?head_sha=...`.
 //
-// Deliberately has no dependency on @shipwright/lib or any other workspace
+// Deliberately has no dependency on @app-vitals/agent-lib or any other workspace
 // package — plugins/shipwright must stay installable standalone into other
 // repos (see plugins/shipwright/CLAUDE.md).
 //

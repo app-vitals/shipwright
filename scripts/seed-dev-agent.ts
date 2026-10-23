@@ -22,8 +22,8 @@
 
 import * as fs from "node:fs";
 import * as path from "node:path";
+import { parseFlags } from "@app-vitals/agent-lib/cli-flags";
 import type { SpecialtyManifestResolver } from "../admin/src/specialty-manifest-loader.ts";
-import { parseFlags } from "../lib/cli-flags.ts";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 

@@ -23,9 +23,9 @@
  */
 
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
-import { DEFAULT_ACCOUNT_ID } from "@shipwright/lib/default-account";
-import { type PrismaClient, createPrismaClient } from "./prisma-client.ts";
+import { DEFAULT_ACCOUNT_ID } from "@app-vitals/agent-lib/default-account";
 import { ConflictError, WebhookDeliveryError } from "./errors.ts";
+import { createPrismaClient, type PrismaClient } from "./prisma-client.ts";
 import { SessionService } from "./session-service.ts";
 import { TaskService } from "./task-service.ts";
 import type { WebhookDispatcher } from "./webhook-dispatcher.ts";

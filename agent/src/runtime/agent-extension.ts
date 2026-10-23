@@ -19,7 +19,7 @@
  * a concrete extension in.
  */
 
-import type { ErrorCapturingClient } from "@shipwright/lib/sentry";
+import type { ErrorCapturingClient } from "@app-vitals/agent-lib/sentry";
 import type { createRunClaude } from "./claude.ts";
 import type { createConfig } from "./config.ts";
 import type { createContextStampReader } from "./context-stamp.ts";

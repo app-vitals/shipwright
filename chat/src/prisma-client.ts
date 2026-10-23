@@ -11,8 +11,8 @@
  * integration suites all go through it.
  */
 
+import { pinPgSslMode } from "@app-vitals/agent-lib/pg-sslmode";
 import { PrismaPg } from "@prisma/adapter-pg";
-import { pinPgSslMode } from "@shipwright/lib/pg-sslmode";
 import pg from "pg";
 import { PrismaClient } from "../prisma/client/client.ts";
 

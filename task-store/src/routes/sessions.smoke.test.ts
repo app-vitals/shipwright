@@ -15,8 +15,8 @@
  */
 
 import { describe, expect, it } from "bun:test";
+import { DEFAULT_ACCOUNT_ID } from "@app-vitals/agent-lib/default-account";
 import { OpenAPIHono } from "@hono/zod-openapi";
-import { DEFAULT_ACCOUNT_ID } from "@shipwright/lib/default-account";
 import type { TaskStoreAuthEnv } from "../auth.ts";
 import { ApiError, NotFoundError } from "../errors.ts";
 import type {

@@ -16,8 +16,8 @@
  */
 
 import { timingSafeEqual } from "node:crypto";
+import type { Caller } from "@app-vitals/agent-lib/request-context";
 import type { RouteConfig, RouteHandler } from "@hono/zod-openapi";
-import type { Caller } from "@shipwright/lib/request-context";
 import type { Context } from "hono";
 import { createMiddleware } from "hono/factory";
 import type { AccountsClient } from "./accounts-client.ts";

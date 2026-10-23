@@ -13,12 +13,12 @@
  *   const tasks = await client.listTasks({ from, to });
  */
 
-import type { components } from "@shipwright/lib/task-store-types";
+import type { components } from "@app-vitals/agent-lib/task-store-types";
 
 // ─── Record types derived from the generated task-store schema ───────────────
 //
 // TaskRecord/PrRecord are Pick<>'d from the OpenAPI-generated
-// components["schemas"]["Task"] / ["PullRequest"] types (@shipwright/lib/
+// components["schemas"]["Task"] / ["PullRequest"] types (@app-vitals/agent-lib/
 // task-store-types) rather than hand-rolled — the field list below is exactly
 // the subset the metrics provider reads. The generated schema marks several
 // of these fields as required (e.g. Task.status/createdAt,

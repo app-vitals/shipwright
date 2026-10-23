@@ -33,7 +33,7 @@
  */
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
-import { PROGRESS_LABELS } from "@shipwright/lib/progress-phases";
+import { PROGRESS_LABELS } from "@app-vitals/agent-lib/progress-phases";
 import { SlackProgress } from "./slack-progress.ts";
 
 // ─── Mock Slack client ────────────────────────────────────────────────────────

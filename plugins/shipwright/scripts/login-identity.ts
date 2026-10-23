@@ -10,7 +10,7 @@
  *
  * canonicalLogin() collapses all three (and PAT logins) to one comparable value.
  *
- * Standalone by design: no @shipwright/lib import, so the plugin stays
+ * Standalone by design: no @app-vitals/agent-lib import, so the plugin stays
  * installable from the plugin cache.
  */
 
@@ -47,9 +47,8 @@ export function getOwnCanonicalLogin(
   runGh: GhRunner = defaultGhRunner,
 ): string {
   const out = runGh(["api", "graphql", "-f", `query=${VIEWER_QUERY}`]);
-  const login = (
-    JSON.parse(out) as { data?: { viewer?: { login?: string } } }
-  ).data?.viewer?.login;
+  const login = (JSON.parse(out) as { data?: { viewer?: { login?: string } } })
+    .data?.viewer?.login;
   if (!login) throw new Error("GraphQL viewer returned no login");
   return canonicalLogin(login);
 }

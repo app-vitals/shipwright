@@ -24,9 +24,9 @@
  * document byte-identical to the pre-split one.
  */
 
+import type { PoolLike } from "@app-vitals/agent-lib/pool-observability";
+import type { ErrorCapturingClient } from "@app-vitals/agent-lib/sentry";
 import { createRoute, type OpenAPIHono, z } from "@hono/zod-openapi";
-import type { PoolLike } from "@shipwright/lib/pool-observability";
-import type { ErrorCapturingClient } from "@shipwright/lib/sentry";
 import type { MiddlewareHandler } from "hono";
 import type { AdminOpenApiContribution } from "../admin-extension.ts";
 import type { AgentMemberService } from "../agent-members.ts";

@@ -21,9 +21,9 @@
  * carrying a real value.
  */
 
+import { isOrgRepo } from "@app-vitals/agent-lib/org-repo";
 import { parse as parseYaml } from "yaml";
 import { z } from "zod";
-import { isOrgRepo } from "@shipwright/lib/org-repo";
 
 /** RFC1123 label pattern (see admin/src/agent-manifest.ts's sanitizeAgentName). */
 const RFC1123_NAME = /^[a-z0-9]([-a-z0-9]*[a-z0-9])?$/;

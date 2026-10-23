@@ -6,9 +6,9 @@
  * Import z from "@hono/zod-openapi" so .openapi() metadata is available.
  */
 
+import { isGithubLogin } from "@app-vitals/agent-lib/github-login";
+import { isOrgRepo } from "@app-vitals/agent-lib/org-repo";
 import { z } from "@hono/zod-openapi";
-import { isGithubLogin } from "@shipwright/lib/github-login";
-import { isOrgRepo } from "@shipwright/lib/org-repo";
 
 // ─── Common ───────────────────────────────────────────────────────────────────
 

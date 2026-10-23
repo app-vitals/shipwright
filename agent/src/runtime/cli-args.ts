@@ -8,7 +8,7 @@
  * Pure — no I/O, no process.env reads at module level.
  */
 
-import { parseFlags } from "@shipwright/lib/cli-flags";
+import { parseFlags } from "@app-vitals/agent-lib/cli-flags";
 
 interface CliArgs {
   agentId: string | undefined;

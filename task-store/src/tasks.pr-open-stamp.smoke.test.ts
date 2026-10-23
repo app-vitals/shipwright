@@ -30,8 +30,8 @@
  *     PATCH) never calls stampOrigin, even if the row is already pr_open
  */
 
-import { DEFAULT_ACCOUNT_ID } from "@shipwright/lib/default-account";
 import { describe, expect, it } from "bun:test";
+import { DEFAULT_ACCOUNT_ID } from "@app-vitals/agent-lib/default-account";
 import { createTaskStoreApp } from "./app.ts";
 import { FixedClock } from "./clock.ts";
 import type { SessionServiceLike } from "./session-service.ts";

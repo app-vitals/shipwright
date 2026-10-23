@@ -1,6 +1,6 @@
 import { join } from "node:path";
-import { DEFAULT_CLAUDE_TIMEOUT_MS } from "@shipwright/lib/claude-timeout";
-import { DEFAULT_ANTHROPIC_MODEL } from "@shipwright/lib/default-agent-env";
+import { DEFAULT_CLAUDE_TIMEOUT_MS } from "@app-vitals/agent-lib/claude-timeout";
+import { DEFAULT_ANTHROPIC_MODEL } from "@app-vitals/agent-lib/default-agent-env";
 
 /**
  * Idle-reset timeout default (25min) — cleared/restarted on every stdout line
@@ -8,7 +8,7 @@ import { DEFAULT_ANTHROPIC_MODEL } from "@shipwright/lib/default-agent-env";
  * the primary timeout in practice; calibrated from a 900-session log analysis
  * (p99 inter-line gap 713s, largest legitimate single gap 1303s from an
  * `Agent()` subagent delegation). `DEFAULT_CLAUDE_TIMEOUT_MS` (1hr, in
- * `@shipwright/lib/claude-timeout`) is the hard ceiling backstop, not primary.
+ * `@app-vitals/agent-lib/claude-timeout`) is the hard ceiling backstop, not primary.
  */
 const DEFAULT_CLAUDE_IDLE_TIMEOUT_MS = 1_500_000;
 

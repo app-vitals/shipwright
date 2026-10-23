@@ -7,7 +7,7 @@
  */
 
 import { describe, expect, it } from "bun:test";
-import type { Caller } from "@shipwright/lib/request-context";
+import type { Caller } from "@app-vitals/agent-lib/request-context";
 import { Hono } from "hono";
 import { sign } from "hono/jwt";
 import type { AgentTokenService, AgentTokenValidated } from "./agent-tokens.ts";

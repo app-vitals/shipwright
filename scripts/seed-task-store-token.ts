@@ -22,7 +22,7 @@
  */
 
 import { createHash } from "node:crypto";
-import { parseFlags } from "../lib/cli-flags.ts";
+import { parseFlags } from "@app-vitals/agent-lib/cli-flags";
 
 /**
  * SHA-256 hex digest of a raw token. Mirrors the (private) hashToken in
@@ -57,7 +57,11 @@ export async function seedTaskStoreAdminToken(opts: {
   const hashed = hashRawToken(opts.rawToken);
   await opts.prisma.taskToken.upsert({
     where: { token: hashed },
-    create: { token: hashed, label: opts.label ?? null, agentId: opts.agentId ?? null },
+    create: {
+      token: hashed,
+      label: opts.label ?? null,
+      agentId: opts.agentId ?? null,
+    },
     update: {},
   });
 }

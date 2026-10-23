@@ -7,7 +7,7 @@
  * coding AdminExtension's admin UI routes (admin-ui-coding.ts).
  */
 
-import { DEFAULT_CLAIM_TTL_MS } from "@shipwright/lib/claim-ttl";
+import { DEFAULT_CLAIM_TTL_MS } from "@app-vitals/agent-lib/claim-ttl";
 import { renderAdminPage } from "../admin-ui-layout.ts";
 import { relativeTime, renderMarkdown } from "../admin-ui-pages.ts";
 import { escapeHtml, renderAdminToolbar } from "../admin-ui-styles.ts";

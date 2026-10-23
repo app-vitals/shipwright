@@ -11,7 +11,7 @@
     "@octokit/auth-app": "^8.2.0",
     "@sentry/bun": "^10.63.0",
     "@shipwright/admin": "workspace:*",
-    "@shipwright/lib": "workspace:*",
+    "@app-vitals/agent-lib": "workspace:*",
     "@slack/bolt": "^5.0.0",
     "@slack/web-api": "^8.1.0",
     "hono": "^4.13.1",

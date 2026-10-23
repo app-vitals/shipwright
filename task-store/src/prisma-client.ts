@@ -14,12 +14,12 @@
  * exactly one place.
  */
 
-import { PrismaPg } from "@prisma/adapter-pg";
-import { pinPgSslMode } from "@shipwright/lib/pg-sslmode";
+import { pinPgSslMode } from "@app-vitals/agent-lib/pg-sslmode";
 import {
   startPoolMonitor,
   trackConnectionHold,
-} from "@shipwright/lib/pool-observability";
+} from "@app-vitals/agent-lib/pool-observability";
+import { PrismaPg } from "@prisma/adapter-pg";
 import pg from "pg";
 import { PrismaClient } from "../prisma/client/client.ts";
 

@@ -26,7 +26,7 @@
  */
 
 import { createHash } from "node:crypto";
-import { parseFlags } from "../lib/cli-flags.ts";
+import { parseFlags } from "@app-vitals/agent-lib/cli-flags";
 
 /**
  * SHA-256 hex digest of a raw token. Mirrors the (private) hashToken in

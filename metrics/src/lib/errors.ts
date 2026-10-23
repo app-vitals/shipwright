@@ -3,8 +3,8 @@
  * Typed HTTP error classes for use across all service handlers.
  */
 
-import { callerLabel } from "@shipwright/lib/request-context";
-import type { ErrorCapturingClient } from "@shipwright/lib/sentry";
+import { callerLabel } from "@app-vitals/agent-lib/request-context";
+import type { ErrorCapturingClient } from "@app-vitals/agent-lib/sentry";
 import type { Context } from "hono";
 import { HTTPException } from "hono/http-exception";
 import type { AuthEnv } from "./api-auth.ts";

@@ -183,9 +183,9 @@ RUN bun install --frozen-lockfile
 
 # Copy the rest of the agent source
 COPY agent/ ./agent/
-# Copy the shared lib source — @shipwright/lib is a workspace symlink; only its
+# Copy the shared lib source — @app-vitals/agent-lib is a workspace symlink; only its
 # package.json was copied above (for install caching), so without this the
-# symlink resolves but re-exports like @shipwright/lib/pricing are missing.
+# symlink resolves but re-exports like @app-vitals/agent-lib/pricing are missing.
 COPY lib/ ./lib/
 # Copy the plugin source so the local marketplace is available at runtime
 COPY plugins/ ./plugins/
@@ -244,7 +244,7 @@ ENV PATH="/home/bun/.local/share/mise/shims:/app/agent/scripts/bin:${PATH}"
 # the root node_modules holds bun's content-addressed store they point into.)
 COPY --from=build --chown=1000:1000 /app/node_modules ./node_modules
 COPY --from=build --chown=1000:1000 /app/agent ./agent
-# agent/node_modules/@shipwright/lib is a relative symlink to /app/lib — the
+# agent/node_modules/@app-vitals/agent-lib is a relative symlink to /app/lib — the
 # workspace source itself, not just its package.json, must exist here too.
 COPY --from=build --chown=1000:1000 /app/lib ./lib
 # Plugin source + marketplace manifest — needed for local `claude plugin marketplace add`

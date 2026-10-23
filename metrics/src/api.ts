@@ -6,12 +6,12 @@
  */
 
 import { join } from "node:path";
-import { createRoute, OpenAPIHono } from "@hono/zod-openapi";
-import { sentry } from "@sentry/hono/bun";
 import {
   buildSentryInitOptions,
   type ErrorCapturingClient,
-} from "@shipwright/lib/sentry";
+} from "@app-vitals/agent-lib/sentry";
+import { createRoute, OpenAPIHono } from "@hono/zod-openapi";
+import { sentry } from "@sentry/hono/bun";
 import { getCookie } from "hono/cookie";
 import { createMiddleware } from "hono/factory";
 import { verify } from "hono/jwt";

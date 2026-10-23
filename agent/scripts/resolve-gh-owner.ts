@@ -10,7 +10,7 @@
  */
 
 import { execFileSync } from "node:child_process";
-import { parseFlags } from "../../lib/cli-flags.ts";
+import { parseFlags } from "@app-vitals/agent-lib/cli-flags";
 import { resolveGhOwner } from "../src/runtime/gh-owner-resolver.ts";
 
 const argv = process.argv.slice(2);
