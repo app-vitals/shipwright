@@ -1,12 +1,8 @@
 {
   "extends": "../tsconfig.json",
   "compilerOptions": {
-    "outDir": "dist",
-    "paths": {
-      "@shipwright/admin": ["../admin/src/server.ts"],
-      "@shipwright/admin/*": ["../admin/src/*"]
-    }
+    "outDir": "dist"
   },
-  "include": ["src", "test", "scripts", "../admin/src"],
+  "include": ["src", "test", "scripts"],
   "exclude": ["node_modules", "dist"]
 }

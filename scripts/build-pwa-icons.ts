@@ -25,15 +25,22 @@
 import { existsSync, mkdirSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-// Resolved via admin's node_modules (Playwright is an admin/ devDependency,
-// the repo's existing headless-Chromium tooling for e2e tests) rather than
-// adding a root-level Playwright dependency for a one-time script.
-import { chromium } from "../admin/node_modules/@playwright/test/index.mjs";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = join(__dirname, "..");
 const SVG_PATH = join(REPO_ROOT, "assets", "logo", "shipwright-icon.svg");
-const OUTPUT_DIR = join(REPO_ROOT, "admin", "pwa-assets", "icons");
+// The @app-vitals/agent-admin package directory (admin/ in this repo).
+const ADMIN_DIR = dirname(
+  Bun.resolveSync("@app-vitals/agent-admin/package.json", import.meta.dir),
+);
+const OUTPUT_DIR = join(ADMIN_DIR, "pwa-assets", "icons");
+
+// Resolved from the admin package (Playwright is an admin devDependency, the
+// repo's existing headless-Chromium tooling for e2e tests) rather than adding a
+// root-level Playwright dependency for a one-time script.
+const { chromium } = await import(
+  Bun.resolveSync("@playwright/test", ADMIN_DIR)
+);
 
 // The source SVG's own dark navy background (see rect fill in
 // shipwright-icon.svg) — used as the opaque backdrop for the apple-touch-icon

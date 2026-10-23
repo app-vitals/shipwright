@@ -15,11 +15,14 @@ export interface paths {
         put?: never;
         /**
          * Reconcile all agents' K8s state
-         * @description Admin-only. Reconciles Kubernetes Deployment state against all managed (non-self-hosted) agents in the DB, returning counts of recreated/updated deployments plus any orphaned deployments or per-agent failures.
+         * @description Admin-only. Reconciles Kubernetes Deployment state against all managed (non-self-hosted) agents in the DB, returning the recreated/updated deployments plus any orphaned deployments or per-agent failures. In perAgent Anthropic identity mode it also creates the missing identity of each existing agent that has an owner and moves its Deployment off the shared ServiceAccount (`migrated`); agents with no owner are listed in `noOwner` and left alone. Pass `dryRun=true` to only report: nothing is created, saved or patched.
          */
         post: {
             parameters: {
-                query?: never;
+                query?: {
+                    /** @description Defaults to false (reconcile for real). Pass true to report what would be recreated, updated and moved to per-agent identity without changing anything. */
+                    dryRun?: "true" | "false";
+                };
                 header?: never;
                 path?: never;
                 cookie?: never;
@@ -33,6 +36,66 @@ export interface paths {
                     };
                     content: {
                         "application/json": components["schemas"]["ReconcileAgentsResult"];
+                    };
+                };
+                /** @description Forbidden */
+                403: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/agents/federation/strip-credentials": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Strip Anthropic credentials from agents' saved env bundles
+         * @description Admin-only, one-off migration (WIF-2.2) for moving a deployment to Anthropic workload identity federation. Deletes CLAUDE_CODE_OAUTH_TOKEN, ANTHROPIC_API_KEY and ANTHROPIC_AUTH_TOKEN from every non-self-hosted agent's stored env bundle. `dryRun` defaults to true: nothing is deleted and the response lists what would be. Only agents holding at least one of the keys are listed, so a second applied call returns an empty list. Values are never returned or logged.
+         */
+        post: {
+            parameters: {
+                query?: {
+                    /** @description Defaults to true (report only). Pass false to delete the keys. */
+                    dryRun?: "true" | "false";
+                };
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Agents (and key names) removed, or that would be removed */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["StripCredentialsResult"];
+                    };
+                };
+                /** @description Unauthorized */
+                401: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
                     };
                 };
                 /** @description Forbidden */
@@ -216,7 +279,7 @@ export interface paths {
         head?: never;
         /**
          * Update an agent
-         * @description Admin-only. Updates `selfHosted`, `repos`, `reviewAuthorAllowlist`, `patchAuthorAllowlist`, `restrictSlackToMembers`, `slackId`, and/or `trialExpiresAt`. `typeName` and `trialExpiryWarnedAt` are not updatable via this route. Returns the updated agent, including a `warning` field when `restrictSlackToMembers` is set true on an agent with zero members.
+         * @description Admin-only. Updates `selfHosted`, `repos`, `reviewAuthorAllowlist`, `patchAuthorAllowlist`, `restrictSlackToMembers`, `slackId`, `trialExpiresAt`, and/or `accountId` (platform admin only — 403 for session members; `null` clears it; reconciles the workload of in-cluster agents; does not move historical task-store rows). `typeName` and `trialExpiryWarnedAt` are not updatable via this route. Returns the updated agent, including a `warning` field when `restrictSlackToMembers` is set true on an agent with zero members.
          */
         patch: {
             parameters: {
@@ -1389,120 +1452,6 @@ export interface paths {
         };
         trace?: never;
     };
-    "/agents/{id}/phase-methodology": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * List phase-methodology overrides
-         * @description Returns every phase-methodology override configured for the agent — which subagent type handles each pipeline phase (prd, plan-session, review, patch, deploy, dev-task). A phase with no explicit override is simply absent from this list; see GET /agents/:id/config's `phaseMethodology` map for the full six-phase view with defaults filled in.
-         */
-        get: {
-            parameters: {
-                query?: never;
-                header?: never;
-                path: {
-                    id: string;
-                };
-                cookie?: never;
-            };
-            requestBody?: never;
-            responses: {
-                /** @description List of phase-methodology overrides */
-                200: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": components["schemas"]["PhaseMethodologyListWrapper"];
-                    };
-                };
-                /** @description Agent not found */
-                404: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": components["schemas"]["Error"];
-                    };
-                };
-            };
-        };
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/agents/{id}/phase-methodology/{phase}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        /**
-         * Set a phase's subagent-type override
-         * @description Upserts the `subagentType` override for one pipeline phase. Passing `subagentType: null` clears the override (the phase falls back to its default methodology). `phase` must be one of prd, plan-session, review, patch, deploy, dev-task.
-         */
-        put: {
-            parameters: {
-                query?: never;
-                header?: never;
-                path: {
-                    id: string;
-                    phase: "prd" | "plan-session" | "review" | "patch" | "deploy" | "dev-task";
-                };
-                cookie?: never;
-            };
-            requestBody?: {
-                content: {
-                    "application/json": components["schemas"]["PutAgentPhaseMethodologyBody"];
-                };
-            };
-            responses: {
-                /** @description Phase-methodology override upserted */
-                200: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": components["schemas"]["PhaseMethodologyWrapper"];
-                    };
-                };
-                /** @description Bad request — invalid phase */
-                400: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": components["schemas"]["Error"];
-                    };
-                };
-                /** @description Agent not found */
-                404: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": components["schemas"]["Error"];
-                    };
-                };
-            };
-        };
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/agents/all/cron-runs/stats": {
         parameters: {
             query?: never;
@@ -1623,6 +1572,130 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/agents/{id}/cron-runs/stats": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get aggregated cron-run token stats for one agent
+         * @description Same shape as GET /agents/all/cron-runs/stats, scoped to the given agent's runs. An agent's own bearer token may read its own stats; other agents' tokens are rejected. Optional `from`/`to` ISO datetime query params bound the range.
+         */
+        get: {
+            parameters: {
+                query?: {
+                    from?: string;
+                    to?: string;
+                };
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Aggregated cron-run token stats for the agent */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["CronRunTokenStats"];
+                    };
+                };
+                /** @description Unauthorized */
+                401: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+                /** @description Forbidden */
+                403: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/agents/{id}/cron-runs/outcomes": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get cron-run outcomes per phase and context fingerprint for one agent
+         * @description Same shape as GET /agents/all/cron-runs/outcomes, scoped to the given agent's runs. An agent's own bearer token may read its own outcomes; other agents' tokens are rejected. Optional `from`/`to` ISO datetime query params bound the range on startedAt.
+         */
+        get: {
+            parameters: {
+                query?: {
+                    from?: string;
+                    to?: string;
+                };
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Outcome series per (phase, contextFingerprint) for the agent */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["CronRunOutcomes"];
+                    };
+                };
+                /** @description Unauthorized */
+                401: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+                /** @description Forbidden */
+                403: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/agents/chat-tokens/daily/stats": {
         parameters: {
             query?: never;
@@ -1665,6 +1738,68 @@ export interface paths {
                     };
                 };
                 /** @description Forbidden — requires admin scope */
+                403: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/agents/{id}/chat-tokens/daily/stats": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get this agent's chat token daily stats
+         * @description Self-serve variant of the fleet-wide chat token daily stats, scoped to the agent in the path. Access is gated by the generic agent-route auth (an agent's own bearer token, an admin, or a member session) — no admin scope required. Same response shape and optional `from`/`to` params as GET /agents/chat-tokens/daily/stats.
+         */
+        get: {
+            parameters: {
+                query?: {
+                    from?: string;
+                    to?: string;
+                };
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Chat token daily stats for this agent only */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ChatTokenStats"];
+                    };
+                };
+                /** @description Unauthorized */
+                401: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+                /** @description Forbidden */
                 403: {
                     headers: {
                         [name: string]: unknown;
@@ -1731,94 +1866,6 @@ export interface paths {
                 };
                 /** @description Agent not found */
                 404: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": components["schemas"]["Error"];
-                    };
-                };
-            };
-        };
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/agents/{id}/work-queue": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * Get the latest work-queue snapshot
-         * @description Returns the most recently pushed work-queue snapshot, or 404 if the agent has never pushed one.
-         */
-        get: {
-            parameters: {
-                query?: never;
-                header?: never;
-                path: {
-                    id: string;
-                };
-                cookie?: never;
-            };
-            requestBody?: never;
-            responses: {
-                /** @description Latest work-queue snapshot */
-                200: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": components["schemas"]["WorkQueueSnapshotWrapper"];
-                    };
-                };
-                /** @description No snapshot pushed yet */
-                404: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": components["schemas"]["Error"];
-                    };
-                };
-            };
-        };
-        put?: never;
-        /**
-         * Push a work-queue snapshot
-         * @description Upserts the agent's single ranked work-queue snapshot (tasks/PRs across pipeline phases), overwriting any prior snapshot — there is no history.
-         */
-        post: {
-            parameters: {
-                query?: never;
-                header?: never;
-                path: {
-                    id: string;
-                };
-                cookie?: never;
-            };
-            requestBody?: {
-                content: {
-                    "application/json": components["schemas"]["PushWorkQueueSnapshotBody"];
-                };
-            };
-            responses: {
-                /** @description Snapshot upserted (overwrites any prior snapshot for this agent) */
-                200: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": components["schemas"]["WorkQueueSnapshotWrapper"];
-                    };
-                };
-                /** @description Bad request */
-                400: {
                     headers: {
                         [name: string]: unknown;
                     };
@@ -2029,10 +2076,22 @@ export interface components {
                 agentId: string;
                 error: string;
             }[];
+            /** @description perAgent identity mode: agents moved (or, in a dry run, that would be moved) onto their own newly created identity */
+            migrated: string[];
+            /** @description perAgent identity mode: agents skipped because they have no owner; left unmodified */
+            noOwner: string[];
+            dryRun: boolean;
         };
         Error: {
             /** @example not found */
             error: string;
+        };
+        StripCredentialsResult: {
+            dryRun: boolean;
+            agents: {
+                agentId: string;
+                keys: string[];
+            }[];
         };
         ProvisionAgentResult: {
             resourceName: string;
@@ -2077,6 +2136,14 @@ export interface components {
             cleanupMergedWorktrees: boolean;
             /** @example 14 */
             cleanupAfterDays: number;
+            /** @example jane.doe@example.com */
+            ownerEmail: string | null;
+            /** @example shipwright-my-agent */
+            anthropicIdentityName: string | null;
+            /** @example svac_01ABC */
+            anthropicServiceAccountId: string | null;
+            /** @example fdrl_01XYZ */
+            anthropicFederationRuleId: string | null;
         };
         PatchAgentBody: {
             /** @example U0AALR8M69X */
@@ -2103,6 +2170,8 @@ export interface components {
             patchAuthorAllowlist?: string[];
             /** @example false */
             restrictSlackToMembers?: boolean;
+            /** @example acct_123 */
+            accountId?: string | null;
             /**
              * Format: date-time
              * @example 2026-12-01T00:00:00.000Z
@@ -2695,34 +2764,6 @@ export interface components {
             /** @example 1.3.0 */
             version?: string | null;
         };
-        PhaseMethodologyListWrapper: {
-            phaseMethodology: components["schemas"]["AgentPhaseMethodology"][];
-        };
-        AgentPhaseMethodology: {
-            /** @example clx1234567890 */
-            id: string;
-            /** @example clx1234567890 */
-            agentId: string;
-            /**
-             * @example review
-             * @enum {string}
-             */
-            phase: "prd" | "plan-session" | "review" | "patch" | "deploy" | "dev-task";
-            /** @example shipwright:code-reviewer */
-            subagentType: string | null;
-            /**
-             * Format: date-time
-             * @example 2026-01-01T00:00:00.000Z
-             */
-            updatedAt: string;
-        };
-        PhaseMethodologyWrapper: {
-            phaseMethodology: components["schemas"]["AgentPhaseMethodology"];
-        };
-        PutAgentPhaseMethodologyBody: {
-            /** @example shipwright:code-reviewer */
-            subagentType: string | null;
-        };
         CronRunTokenStats: {
             totals: components["schemas"]["TokenAggregate"];
             byAgent: components["schemas"]["KeyedTokenAggregate"][];
@@ -2822,9 +2863,11 @@ export interface components {
             completed: number;
             failed: number;
             skipped: number;
-            /** @example {
+            /**
+             * @example {
              *       "no-ready-task": 3
-             *     } */
+             *     }
+             */
             skipReasons: {
                 [key: string]: number;
             };
@@ -2889,55 +2932,6 @@ export interface components {
             cacheCreationTokens: number;
             /** @example 0.0012 */
             costUsd: number;
-        };
-        WorkQueueSnapshotWrapper: {
-            snapshot: components["schemas"]["AgentWorkQueueSnapshot"];
-        };
-        AgentWorkQueueSnapshot: {
-            /** @example clx1234567890 */
-            id: string;
-            /** @example clx1234567890 */
-            agentId: string;
-            /**
-             * Format: date-time
-             * @example 2026-01-01T00:00:00.000Z
-             */
-            computedAt: string;
-            items: components["schemas"]["RankedWorkItem"][];
-            /**
-             * Format: date-time
-             * @example 2026-01-01T00:00:00.000Z
-             */
-            createdAt: string;
-        };
-        RankedWorkItem: {
-            /**
-             * @example task
-             * @enum {string}
-             */
-            type: "task" | "pr";
-            /** @example WLS-2.2 */
-            id: string;
-            /** @example Add work queue snapshot endpoints */
-            title?: string;
-            /**
-             * @example dev-task
-             * @enum {string}
-             */
-            phase: "dev-task" | "plan" | "review" | "patch" | "deploy";
-            /**
-             * @description ISO timestamp
-             * @example 2026-01-01T00:00:00.000Z
-             */
-            age: string;
-        };
-        PushWorkQueueSnapshotBody: {
-            /**
-             * Format: date-time
-             * @example 2026-01-01T00:00:00.000Z
-             */
-            computedAt: string;
-            items: components["schemas"]["RankedWorkItem"][];
         };
         GitHubInstallationsSnapshotWrapper: {
             snapshot: components["schemas"]["AgentGitHubInstallationsSnapshot"];

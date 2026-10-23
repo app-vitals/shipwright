@@ -1,0 +1,571 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "Shipwright Admin API (coding extension)",
+    "version": "0.1.0",
+    "description": "The coding admin extension's routes alone — the part of admin/openapi.json not served by the platform admin."
+  },
+  "paths": {
+    "/agents/{id}/phase-methodology": {
+      "get": {
+        "summary": "List phase-methodology overrides",
+        "description": "Returns every phase-methodology override configured for the agent — which subagent type handles each pipeline phase (prd, plan-session, review, patch, deploy, dev-task). A phase with no explicit override is simply absent from this list; see GET /agents/:id/config's `phaseMethodology` map for the full six-phase view with defaults filled in.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "example": "clx1234567890"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "List of phase-methodology overrides",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PhaseMethodologyListWrapper"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Agent not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/agents/{id}/phase-methodology/{phase}": {
+      "put": {
+        "summary": "Set a phase's subagent-type override",
+        "description": "Upserts the `subagentType` override for one pipeline phase. Passing `subagentType: null` clears the override (the phase falls back to its default methodology). `phase` must be one of prd, plan-session, review, patch, deploy, dev-task.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "example": "clx1234567890"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "prd",
+                "plan-session",
+                "review",
+                "patch",
+                "deploy",
+                "dev-task"
+              ],
+              "example": "review"
+            },
+            "required": true,
+            "name": "phase",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PutAgentPhaseMethodologyBody"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Phase-methodology override upserted",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PhaseMethodologyWrapper"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad request — invalid phase",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Agent not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/agents/all/cron-runs/dev-task-adherence": {
+      "get": {
+        "summary": "Get dev-task adherence report",
+        "description": "Admin-only. Per dev-task run, compares skill-usage subagent dispatches against the required-steps table and reports per-step ran/skipped, with per-step adherence rates overall, per variant (contextFingerprint) and per commandVariant (default vs alternate). Rates cover task-bearing runs only (dispatched against a work item); `counts` separates them from silent no-ready-task ticks. A dispatch proves a step started, not that it was done well. Optional `from`/`to` ISO datetime params bound startedAt.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "date-time",
+              "example": "2026-01-01T00:00:00Z"
+            },
+            "required": false,
+            "name": "from",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "date-time",
+              "example": "2026-02-01T00:00:00Z"
+            },
+            "required": false,
+            "name": "to",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Dev-task adherence report",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": {}
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden — requires admin scope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Adherence reporting not configured",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/agents/{id}/dev-task-adherence": {
+      "get": {
+        "summary": "Get this agent's dev-task adherence report",
+        "description": "Self-serve variant of the fleet-wide dev-task adherence report, scoped to the agent in the path. Access is gated by the generic agent-route auth (an agent's own bearer token, an admin, or a member session) — no admin scope required. Same report shape and optional `from`/`to` params as GET /agents/all/cron-runs/dev-task-adherence.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "example": "clx1234567890"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "date-time",
+              "example": "2026-01-01T00:00:00Z"
+            },
+            "required": false,
+            "name": "from",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "date-time",
+              "example": "2026-02-01T00:00:00Z"
+            },
+            "required": false,
+            "name": "to",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Dev-task adherence report for this agent's runs only",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": {}
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Adherence reporting not configured",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/agents/{id}/work-queue": {
+      "post": {
+        "summary": "Push a work-queue snapshot",
+        "description": "Upserts the agent's single ranked work-queue snapshot (tasks/PRs across pipeline phases), overwriting any prior snapshot — there is no history.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "example": "clx1234567890"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PushWorkQueueSnapshotBody"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Snapshot upserted (overwrites any prior snapshot for this agent)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkQueueSnapshotWrapper"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      },
+      "get": {
+        "summary": "Get the latest work-queue snapshot",
+        "description": "Returns the most recently pushed work-queue snapshot, or 404 if the agent has never pushed one.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "example": "clx1234567890"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Latest work-queue snapshot",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkQueueSnapshotWrapper"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No snapshot pushed yet",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "PhaseMethodologyListWrapper": {
+        "type": "object",
+        "properties": {
+          "phaseMethodology": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AgentPhaseMethodology"
+            }
+          }
+        },
+        "required": [
+          "phaseMethodology"
+        ]
+      },
+      "AgentPhaseMethodology": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "example": "clx1234567890"
+          },
+          "agentId": {
+            "type": "string",
+            "example": "clx1234567890"
+          },
+          "phase": {
+            "type": "string",
+            "enum": [
+              "prd",
+              "plan-session",
+              "review",
+              "patch",
+              "deploy",
+              "dev-task"
+            ],
+            "example": "review"
+          },
+          "subagentType": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "example": "shipwright:code-reviewer"
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time",
+            "example": "2026-01-01T00:00:00.000Z"
+          }
+        },
+        "required": [
+          "id",
+          "agentId",
+          "phase",
+          "subagentType",
+          "updatedAt"
+        ]
+      },
+      "Error": {
+        "type": "object",
+        "properties": {
+          "error": {
+            "type": "string",
+            "example": "not found"
+          }
+        },
+        "required": [
+          "error"
+        ]
+      },
+      "PhaseMethodologyWrapper": {
+        "type": "object",
+        "properties": {
+          "phaseMethodology": {
+            "$ref": "#/components/schemas/AgentPhaseMethodology"
+          }
+        },
+        "required": [
+          "phaseMethodology"
+        ]
+      },
+      "PutAgentPhaseMethodologyBody": {
+        "type": "object",
+        "properties": {
+          "subagentType": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "minLength": 1,
+            "example": "shipwright:code-reviewer"
+          }
+        },
+        "required": [
+          "subagentType"
+        ]
+      },
+      "WorkQueueSnapshotWrapper": {
+        "type": "object",
+        "properties": {
+          "snapshot": {
+            "$ref": "#/components/schemas/AgentWorkQueueSnapshot"
+          }
+        },
+        "required": [
+          "snapshot"
+        ]
+      },
+      "AgentWorkQueueSnapshot": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "example": "clx1234567890"
+          },
+          "agentId": {
+            "type": "string",
+            "example": "clx1234567890"
+          },
+          "computedAt": {
+            "type": "string",
+            "format": "date-time",
+            "example": "2026-01-01T00:00:00.000Z"
+          },
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/RankedWorkItem"
+            }
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time",
+            "example": "2026-01-01T00:00:00.000Z"
+          }
+        },
+        "required": [
+          "id",
+          "agentId",
+          "computedAt",
+          "items",
+          "createdAt"
+        ]
+      },
+      "RankedWorkItem": {
+        "type": "object",
+        "properties": {
+          "type": {
+            "type": "string",
+            "enum": [
+              "task",
+              "pr"
+            ],
+            "example": "task"
+          },
+          "id": {
+            "type": "string",
+            "example": "WLS-2.2"
+          },
+          "title": {
+            "type": "string",
+            "example": "Add work queue snapshot endpoints"
+          },
+          "phase": {
+            "type": "string",
+            "enum": [
+              "dev-task",
+              "plan",
+              "review",
+              "patch",
+              "deploy"
+            ],
+            "example": "dev-task"
+          },
+          "age": {
+            "type": "string",
+            "example": "2026-01-01T00:00:00.000Z",
+            "description": "ISO timestamp"
+          }
+        },
+        "required": [
+          "type",
+          "id",
+          "phase",
+          "age"
+        ]
+      },
+      "PushWorkQueueSnapshotBody": {
+        "type": "object",
+        "properties": {
+          "computedAt": {
+            "type": "string",
+            "format": "date-time",
+            "example": "2026-01-01T00:00:00.000Z"
+          },
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/RankedWorkItem"
+            }
+          }
+        },
+        "required": [
+          "computedAt",
+          "items"
+        ]
+      }
+    }
+  }
+}

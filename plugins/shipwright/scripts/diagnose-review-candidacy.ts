@@ -22,8 +22,7 @@
 // — AC2 of this task explicitly requires calling the same function, not a
 // copy. plugins/shipwright/tsconfig.json's `include` array is extended with
 // `../../agent/src` to make this cross-package relative import satisfy TS's
-// rootDir constraint (mirrors agent/tsconfig.json's existing
-// `../admin/src` precedent for @shipwright/admin).
+// rootDir constraint.
 //
 // Note: this only covers the "later" exclusion checks that
 // traceReviewCandidacyDecision itself covers (live-review dedup,

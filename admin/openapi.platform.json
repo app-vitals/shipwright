@@ -1,0 +1,4789 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "Shipwright Admin API",
+    "version": "0.1.0",
+    "description": "REST API for the Shipwright admin service — CRUD for agents, env vars, cron jobs, tokens, tools, and plugins, plus the agent runtime polling endpoints."
+  },
+  "servers": [
+    {
+      "url": "http://localhost:3457",
+      "description": "Local dev"
+    }
+  ],
+  "components": {
+    "schemas": {
+      "ReconcileAgentsResult": {
+        "type": "object",
+        "properties": {
+          "recreated": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "updated": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "orphans": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "failed": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "agentId": {
+                  "type": "string"
+                },
+                "error": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "agentId",
+                "error"
+              ]
+            }
+          },
+          "migrated": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "perAgent identity mode: agents moved (or, in a dry run, that would be moved) onto their own newly created identity"
+          },
+          "noOwner": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "perAgent identity mode: agents skipped because they have no owner; left unmodified"
+          },
+          "dryRun": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "recreated",
+          "updated",
+          "orphans",
+          "failed",
+          "migrated",
+          "noOwner",
+          "dryRun"
+        ]
+      },
+      "Error": {
+        "type": "object",
+        "properties": {
+          "error": {
+            "type": "string",
+            "example": "not found"
+          }
+        },
+        "required": [
+          "error"
+        ]
+      },
+      "StripCredentialsResult": {
+        "type": "object",
+        "properties": {
+          "dryRun": {
+            "type": "boolean"
+          },
+          "agents": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "agentId": {
+                  "type": "string"
+                },
+                "keys": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                }
+              },
+              "required": [
+                "agentId",
+                "keys"
+              ]
+            }
+          }
+        },
+        "required": [
+          "dryRun",
+          "agents"
+        ]
+      },
+      "ProvisionAgentResult": {
+        "type": "object",
+        "properties": {
+          "resourceName": {
+            "type": "string"
+          },
+          "secretName": {
+            "type": "string"
+          },
+          "deploymentName": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "resourceName",
+          "secretName",
+          "deploymentName"
+        ]
+      },
+      "ProvisionSkippedResult": {
+        "type": "object",
+        "properties": {
+          "skipped": {
+            "type": "boolean",
+            "enum": [
+              true
+            ]
+          },
+          "reason": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "skipped",
+          "reason"
+        ]
+      },
+      "GetAgentResult": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "slackId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "selfHosted": {
+            "type": "boolean"
+          },
+          "repos": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "reviewAuthorAllowlist": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "patchAuthorAllowlist": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "restrictSlackToMembers": {
+            "type": "boolean"
+          },
+          "typeName": {
+            "type": "string"
+          },
+          "accountId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "missingRequiredEnv": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "warning": {
+            "type": "string"
+          },
+          "trialExpiresAt": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "trialExpiryWarnedAt": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "autoPostReviews": {
+            "type": "boolean",
+            "example": true
+          },
+          "allowSelfReview": {
+            "type": "boolean",
+            "example": false
+          },
+          "minConfidence": {
+            "type": "integer",
+            "example": 75
+          },
+          "maxFindings": {
+            "type": "integer",
+            "example": 5
+          },
+          "cleanupMergedWorktrees": {
+            "type": "boolean",
+            "example": true
+          },
+          "cleanupAfterDays": {
+            "type": "integer",
+            "example": 14
+          },
+          "ownerEmail": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "example": "jane.doe@example.com"
+          },
+          "anthropicIdentityName": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "example": "shipwright-my-agent"
+          },
+          "anthropicServiceAccountId": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "example": "svac_01ABC"
+          },
+          "anthropicFederationRuleId": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "example": "fdrl_01XYZ"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "selfHosted",
+          "repos",
+          "reviewAuthorAllowlist",
+          "patchAuthorAllowlist",
+          "restrictSlackToMembers",
+          "typeName",
+          "accountId",
+          "createdAt",
+          "updatedAt",
+          "missingRequiredEnv",
+          "autoPostReviews",
+          "allowSelfReview",
+          "minConfidence",
+          "maxFindings",
+          "cleanupMergedWorktrees",
+          "cleanupAfterDays",
+          "ownerEmail",
+          "anthropicIdentityName",
+          "anthropicServiceAccountId",
+          "anthropicFederationRuleId"
+        ]
+      },
+      "PatchAgentBody": {
+        "type": "object",
+        "properties": {
+          "slackId": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "example": "U0AALR8M69X"
+          },
+          "selfHosted": {
+            "type": "boolean",
+            "example": false
+          },
+          "repos": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "example": [
+              "my-org/my-repo"
+            ]
+          },
+          "reviewAuthorAllowlist": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "example": [
+              "octocat"
+            ]
+          },
+          "patchAuthorAllowlist": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "example": [
+              "octocat"
+            ]
+          },
+          "restrictSlackToMembers": {
+            "type": "boolean",
+            "example": false
+          },
+          "accountId": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "minLength": 1,
+            "example": "acct_123"
+          },
+          "trialExpiresAt": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time",
+            "example": "2026-12-01T00:00:00.000Z"
+          },
+          "autoPostReviews": {
+            "type": "boolean",
+            "example": true
+          },
+          "allowSelfReview": {
+            "type": "boolean",
+            "example": false
+          },
+          "minConfidence": {
+            "type": "integer",
+            "example": 75
+          },
+          "maxFindings": {
+            "type": "integer",
+            "example": 5
+          },
+          "cleanupMergedWorktrees": {
+            "type": "boolean",
+            "example": true
+          },
+          "cleanupAfterDays": {
+            "type": "integer",
+            "example": 14
+          }
+        }
+      },
+      "DeleteAgentResult": {
+        "type": "object",
+        "properties": {
+          "agentDeleted": {
+            "type": "boolean",
+            "example": true
+          },
+          "completed": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "example": [
+              "k8s",
+              "task-store-tokens",
+              "chat-service-tokens-and-threads"
+            ]
+          },
+          "failed": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/FailedStep"
+            }
+          },
+          "manualStepsRequired": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ManualStep"
+            }
+          }
+        },
+        "required": [
+          "agentDeleted",
+          "completed",
+          "failed",
+          "manualStepsRequired"
+        ]
+      },
+      "FailedStep": {
+        "type": "object",
+        "properties": {
+          "step": {
+            "type": "string",
+            "example": "k8s"
+          },
+          "error": {
+            "type": "string",
+            "example": "k8s API timeout"
+          }
+        },
+        "required": [
+          "step",
+          "error"
+        ]
+      },
+      "ManualStep": {
+        "type": "object",
+        "properties": {
+          "key": {
+            "type": "string",
+            "example": "GH_TOKEN"
+          },
+          "message": {
+            "type": "string",
+            "example": "GH_TOKEN was not automatically revoked — rotate or revoke it manually."
+          }
+        },
+        "required": [
+          "key",
+          "message"
+        ]
+      },
+      "DeleteAgentBody": {
+        "type": "object",
+        "properties": {
+          "xoxpToken": {
+            "type": "string",
+            "example": "xoxp-user-token"
+          }
+        }
+      },
+      "AgentSummary": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "example": "clx1234567890"
+          },
+          "name": {
+            "type": "string",
+            "example": "Bodhi"
+          },
+          "selfHosted": {
+            "type": "boolean",
+            "example": false
+          },
+          "typeName": {
+            "type": "string",
+            "example": "coding"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "selfHosted",
+          "typeName"
+        ]
+      },
+      "CreateAgentBody": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "example": "Bodhi"
+          },
+          "typeName": {
+            "type": "string",
+            "minLength": 1,
+            "example": "coding"
+          },
+          "runtime": {
+            "type": "string",
+            "example": "in-cluster"
+          },
+          "reposRaw": {
+            "type": "string",
+            "example": "my-org/my-repo"
+          },
+          "authorAllowlistRaw": {
+            "type": "string",
+            "example": "octocat"
+          },
+          "patchAuthorAllowlistRaw": {
+            "type": "string",
+            "example": "octocat"
+          },
+          "memberEmailsRaw": {
+            "type": "string",
+            "example": "dev@example.com"
+          },
+          "restrictSlackToMembersRaw": {
+            "type": "string",
+            "example": "true"
+          },
+          "claudeCodeOauthToken": {
+            "type": "string"
+          },
+          "anthropicApiKey": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "typeName"
+        ]
+      },
+      "Ok": {
+        "type": "object",
+        "properties": {
+          "ok": {
+            "type": "boolean",
+            "enum": [
+              true
+            ]
+          }
+        },
+        "required": [
+          "ok"
+        ]
+      },
+      "AgentEnvBody": {
+        "type": "object",
+        "additionalProperties": {
+          "type": "string"
+        }
+      },
+      "AgentEnvResponse": {
+        "type": "object",
+        "properties": {
+          "env": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "string"
+            },
+            "example": {
+              "MY_VAR": "value"
+            }
+          },
+          "secretKeys": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "example": [
+              "MY_SECRET"
+            ]
+          }
+        },
+        "required": [
+          "env",
+          "secretKeys"
+        ]
+      },
+      "AgentEnvPatchBody": {
+        "type": "object",
+        "properties": {
+          "env": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "string"
+            },
+            "example": {
+              "MY_VAR": "value"
+            }
+          },
+          "secretKeys": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "example": [
+              "MY_SECRET"
+            ]
+          }
+        },
+        "required": [
+          "env"
+        ]
+      },
+      "CronWrapper": {
+        "type": "object",
+        "properties": {
+          "cron": {
+            "$ref": "#/components/schemas/AgentCronJob"
+          }
+        },
+        "required": [
+          "cron"
+        ]
+      },
+      "AgentCronJob": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "example": "clx1234567890"
+          },
+          "agentId": {
+            "type": "string",
+            "example": "clx1234567890"
+          },
+          "schedule": {
+            "type": "string",
+            "example": "0 9 * * 1-5"
+          },
+          "prompt": {
+            "type": "string",
+            "example": "Run the morning brief."
+          },
+          "channel": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "example": "C01234567"
+          },
+          "user": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "example": "U0AALR8M69X"
+          },
+          "silent": {
+            "type": "boolean",
+            "example": false
+          },
+          "enabled": {
+            "type": "boolean",
+            "example": true
+          },
+          "preCheck": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "example": "shipwright:check-dev-task.ts"
+          },
+          "name": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "example": "morning-brief"
+          },
+          "system": {
+            "type": "boolean",
+            "example": false
+          },
+          "parentCronId": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "example": null
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time",
+            "example": "2026-01-01T00:00:00.000Z"
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time",
+            "example": "2026-01-01T00:00:00.000Z"
+          }
+        },
+        "required": [
+          "id",
+          "agentId",
+          "schedule",
+          "prompt",
+          "channel",
+          "user",
+          "silent",
+          "enabled",
+          "preCheck",
+          "name",
+          "system",
+          "parentCronId",
+          "createdAt",
+          "updatedAt"
+        ]
+      },
+      "CreateAgentCronJobBody": {
+        "type": "object",
+        "properties": {
+          "schedule": {
+            "type": "string",
+            "example": "0 9 * * 1-5"
+          },
+          "prompt": {
+            "type": "string",
+            "example": "Run the morning brief."
+          },
+          "channel": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "example": "C01234567"
+          },
+          "user": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "example": "U0AALR8M69X"
+          },
+          "silent": {
+            "type": "boolean",
+            "example": false
+          },
+          "enabled": {
+            "type": "boolean",
+            "example": true
+          },
+          "preCheck": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "example": "shipwright:check-dev-task.ts"
+          },
+          "name": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "example": "morning-brief"
+          }
+        },
+        "required": [
+          "schedule",
+          "prompt"
+        ]
+      },
+      "ReconcileCronResult": {
+        "type": "object",
+        "properties": {
+          "created": {
+            "type": "integer"
+          },
+          "updated": {
+            "type": "integer"
+          },
+          "deleted": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "created",
+          "updated",
+          "deleted"
+        ]
+      },
+      "PatchAgentCronJobBody": {
+        "type": "object",
+        "properties": {
+          "schedule": {
+            "type": "string",
+            "example": "0 9 * * 1-5"
+          },
+          "prompt": {
+            "type": "string",
+            "example": "Run the morning brief."
+          },
+          "channel": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "example": "C01234567"
+          },
+          "user": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "example": "U0AALR8M69X"
+          },
+          "silent": {
+            "type": "boolean",
+            "example": false
+          },
+          "preCheck": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "example": "shipwright:check-dev-task.ts"
+          },
+          "enabled": {
+            "type": "boolean",
+            "example": true
+          }
+        }
+      },
+      "CronsWithSummaryWrapper": {
+        "type": "object",
+        "properties": {
+          "crons": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AgentCronJobWithRunSummary"
+            }
+          }
+        },
+        "required": [
+          "crons"
+        ]
+      },
+      "AgentCronJobWithRunSummary": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/AgentCronJob"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "lastRun": {
+                "$ref": "#/components/schemas/CronRunLastRun"
+              },
+              "runCountToday": {
+                "type": "integer",
+                "example": 3
+              }
+            },
+            "required": [
+              "lastRun",
+              "runCountToday"
+            ]
+          }
+        ]
+      },
+      "CronRunLastRun": {
+        "type": [
+          "object",
+          "null"
+        ],
+        "properties": {
+          "startedAt": {
+            "type": "string",
+            "format": "date-time",
+            "example": "2026-01-01T08:00:00.000Z"
+          },
+          "completedAt": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time",
+            "example": null
+          },
+          "skipped": {
+            "type": "boolean",
+            "example": false
+          },
+          "outcome": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "example": "success"
+          }
+        },
+        "required": [
+          "startedAt",
+          "completedAt",
+          "skipped",
+          "outcome"
+        ],
+        "example": null
+      },
+      "CronRunWrapper": {
+        "type": "object",
+        "properties": {
+          "run": {
+            "$ref": "#/components/schemas/AgentCronRun"
+          }
+        },
+        "required": [
+          "run"
+        ]
+      },
+      "AgentCronRun": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "example": "clx1234567890"
+          },
+          "cronId": {
+            "type": "string",
+            "example": "clx0987654321"
+          },
+          "agentId": {
+            "type": "string",
+            "example": "clx1234567890"
+          },
+          "startedAt": {
+            "type": "string",
+            "format": "date-time",
+            "example": "2026-01-01T08:00:00.000Z"
+          },
+          "completedAt": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time",
+            "example": "2026-01-01T08:00:05.000Z"
+          },
+          "skipped": {
+            "type": "boolean",
+            "example": false
+          },
+          "skipReason": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "example": "pre-check returned false"
+          },
+          "outcome": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "example": "success"
+          },
+          "error": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "example": null
+          },
+          "phaseId": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "example": "clx0987654321",
+            "description": "Child AgentCronJob id (FK) of the pipeline phase this run served (dev-task/review/patch/deploy). Null for legacy five-job crons or ticks with no phase attribution."
+          },
+          "itemType": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "example": "task",
+            "description": "Work item type this run was dispatched against (\"task\" | \"pr\"). Null when the tick had no dispatch (skipped tick, empty queue)."
+          },
+          "itemId": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "example": "WLS-2.2",
+            "description": "Work item id this run was dispatched against (e.g. \"WLS-2.2\" or \"acme/x#123\"). Null when the tick had no dispatch."
+          },
+          "commandVariant": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "example": "default",
+            "description": "Slash-command variant this dispatch ran (\"default\" | \"alternate\"). Null when the run had no variant attribution."
+          },
+          "inputTokens": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "example": 1234
+          },
+          "outputTokens": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "example": 567
+          },
+          "cacheReadTokens": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "example": 89
+          },
+          "cacheCreationTokens": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "example": 10
+          },
+          "sessionId": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "example": "session-abc-123",
+            "description": "Agent session id this run was executed under. Null for runs with no recorded session."
+          },
+          "lastHeartbeatAt": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time",
+            "example": "2026-01-01T08:00:03.000Z",
+            "description": "Most recent debounced progress-push (recordProgress()) timestamp, sourced from the agent's injected Clock. Null for runs that never reported progress (short/legacy runs)."
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time",
+            "example": "2026-01-01T08:00:00.000Z"
+          },
+          "modelBreakdown": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ModelBreakdownEntry"
+            }
+          },
+          "contextBaseline": {
+            "type": [
+              "object",
+              "null"
+            ],
+            "properties": {
+              "model": {
+                "type": "string",
+                "example": "claude-sonnet-4-6"
+              },
+              "contextTokens": {
+                "type": "integer",
+                "example": 79188
+              },
+              "inputTokens": {
+                "type": "integer",
+                "example": 2
+              },
+              "cacheCreationTokens": {
+                "type": "integer",
+                "example": 41415
+              },
+              "cacheReadTokens": {
+                "type": "integer",
+                "example": 37771
+              }
+            },
+            "required": [
+              "model",
+              "contextTokens",
+              "inputTokens",
+              "cacheCreationTokens",
+              "cacheReadTokens"
+            ],
+            "description": "First-turn context baseline (null for resumed sessions and runs from older agent builds)."
+          },
+          "turns": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "example": 12
+          },
+          "toolCalls": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "example": 7
+          },
+          "contextFingerprint": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "example": "abc123def456"
+          },
+          "pluginVersion": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "example": "1.363.0"
+          },
+          "claudeCodeVersion": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "example": "2.1.285"
+          }
+        },
+        "required": [
+          "id",
+          "cronId",
+          "agentId",
+          "startedAt",
+          "completedAt",
+          "skipped",
+          "skipReason",
+          "outcome",
+          "error",
+          "phaseId",
+          "itemType",
+          "itemId",
+          "commandVariant",
+          "inputTokens",
+          "outputTokens",
+          "cacheReadTokens",
+          "cacheCreationTokens",
+          "sessionId",
+          "lastHeartbeatAt",
+          "createdAt"
+        ]
+      },
+      "ModelBreakdownEntry": {
+        "type": "object",
+        "properties": {
+          "model": {
+            "type": "string",
+            "example": "claude-sonnet-4-5"
+          },
+          "inputTokens": {
+            "type": "integer",
+            "default": 0,
+            "example": 200
+          },
+          "outputTokens": {
+            "type": "integer",
+            "default": 0,
+            "example": 100
+          },
+          "cacheReadTokens": {
+            "type": "integer",
+            "default": 0,
+            "example": 8
+          },
+          "cacheCreationTokens": {
+            "type": "integer",
+            "default": 0,
+            "example": 4
+          },
+          "costUsd": {
+            "type": "number",
+            "default": 0,
+            "example": 0.002
+          }
+        },
+        "required": [
+          "model"
+        ]
+      },
+      "CreateAgentCronRunBody": {
+        "type": "object",
+        "properties": {
+          "startedAt": {
+            "type": "string",
+            "format": "date-time",
+            "example": "2026-01-01T08:00:00.000Z"
+          },
+          "completedAt": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time",
+            "example": null
+          },
+          "skipped": {
+            "type": "boolean",
+            "example": false
+          },
+          "skipReason": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "example": "pre-check returned false"
+          },
+          "outcome": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "example": "success"
+          },
+          "error": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "example": null
+          },
+          "phaseId": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "example": "clx0987654321",
+            "description": "Child AgentCronJob id (FK) of the pipeline phase this run served (dev-task/review/patch/deploy)"
+          },
+          "itemType": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "example": "task",
+            "description": "Work item type this run was dispatched against (\"task\" | \"pr\")"
+          },
+          "itemId": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "example": "WLS-2.2",
+            "description": "Work item id this run was dispatched against (e.g. \"WLS-2.2\" or \"acme/x#123\")"
+          },
+          "commandVariant": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "example": "alternate",
+            "description": "Slash-command variant this dispatch ran (\"default\" | \"alternate\")"
+          }
+        },
+        "required": [
+          "startedAt"
+        ]
+      },
+      "CronRunsList": {
+        "type": "object",
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AgentCronRun"
+            }
+          },
+          "total": {
+            "type": "integer",
+            "example": 42
+          },
+          "limit": {
+            "type": "integer",
+            "example": 20
+          },
+          "offset": {
+            "type": "integer",
+            "example": 0
+          }
+        },
+        "required": [
+          "items",
+          "total",
+          "limit",
+          "offset"
+        ]
+      },
+      "PatchCronRunWrapper": {
+        "type": "object",
+        "properties": {
+          "run": {
+            "$ref": "#/components/schemas/AgentCronRun"
+          }
+        },
+        "required": [
+          "run"
+        ]
+      },
+      "PatchAgentCronRunBody": {
+        "type": "object",
+        "properties": {
+          "completedAt": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time",
+            "example": "2026-01-01T08:05:00.000Z"
+          },
+          "outcome": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "example": "success"
+          },
+          "error": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "example": null
+          },
+          "skipped": {
+            "type": "boolean",
+            "example": false
+          },
+          "skipReason": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "example": "pre-check returned false"
+          },
+          "inputTokens": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "example": 1234
+          },
+          "outputTokens": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "example": 567
+          },
+          "cacheReadTokens": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "example": 89
+          },
+          "cacheCreationTokens": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "example": 10
+          },
+          "sessionId": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "example": "session-abc-123",
+            "description": "Agent session id this run was executed under."
+          },
+          "lastHeartbeatAt": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time",
+            "example": "2026-01-01T08:00:03.000Z",
+            "description": "Most recent debounced progress-push (recordProgress()) timestamp, sourced from the agent's injected Clock."
+          },
+          "modelBreakdown": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ModelBreakdownEntry"
+            },
+            "description": "Per-model token breakdown for this run"
+          },
+          "contextBaseline": {
+            "$ref": "#/components/schemas/ContextBaselineEntry"
+          },
+          "turns": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "example": 12,
+            "description": "Distinct usage-bearing assistant turns in the run."
+          },
+          "toolCalls": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "example": 7,
+            "description": "Distinct tool_use blocks in the run."
+          },
+          "contextFingerprint": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "example": "abc123def456",
+            "description": "sha256[:12] over the workspace's always-loaded markdown (CLAUDE.md, its @imports, no-`paths` rules) + plugin version. Groups runs by what the model was given."
+          },
+          "pluginVersion": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "example": "1.363.0"
+          },
+          "claudeCodeVersion": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "example": "2.1.285"
+          },
+          "skillUsage": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SkillUsageEntry"
+            },
+            "description": "Per-skill / per-subagent token attribution rows for this run; upserted per [kind, name]."
+          }
+        }
+      },
+      "ContextBaselineEntry": {
+        "type": "object",
+        "properties": {
+          "model": {
+            "type": "string",
+            "example": "claude-sonnet-4-6"
+          },
+          "contextTokens": {
+            "type": "integer",
+            "example": 79188
+          },
+          "inputTokens": {
+            "type": "integer",
+            "example": 2
+          },
+          "cacheCreationTokens": {
+            "type": "integer",
+            "example": 41415
+          },
+          "cacheReadTokens": {
+            "type": "integer",
+            "example": 37771
+          }
+        },
+        "required": [
+          "model",
+          "contextTokens",
+          "inputTokens",
+          "cacheCreationTokens",
+          "cacheReadTokens"
+        ],
+        "description": "First-turn context baseline: usage of the run's first assistant message. contextTokens = input + cacheCreation + cacheRead — the full always-loaded context independent of cache warmth. Omitted for resumed sessions."
+      },
+      "SkillUsageEntry": {
+        "type": "object",
+        "properties": {
+          "kind": {
+            "type": "string",
+            "enum": [
+              "skill",
+              "agent",
+              "root"
+            ],
+            "example": "skill"
+          },
+          "name": {
+            "type": "string",
+            "example": "shipwright:task-store"
+          },
+          "invocations": {
+            "type": "integer",
+            "example": 1
+          },
+          "turns": {
+            "type": "integer",
+            "example": 3
+          },
+          "inputTokens": {
+            "type": "integer",
+            "example": 12
+          },
+          "outputTokens": {
+            "type": "integer",
+            "example": 100
+          },
+          "cacheReadTokens": {
+            "type": "integer",
+            "example": 219200
+          },
+          "cacheCreationTokens": {
+            "type": "integer",
+            "example": 9300
+          },
+          "invokeContextDelta": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "example": 9103,
+            "description": "input + cacheCreation of the first usage-bearing turn after the skill's first invoke — the new context admitted when its body loaded. Null for root/agent rows."
+          }
+        },
+        "required": [
+          "kind",
+          "name",
+          "invocations",
+          "turns",
+          "inputTokens",
+          "outputTokens",
+          "cacheReadTokens",
+          "cacheCreationTokens"
+        ]
+      },
+      "ToolWrapper": {
+        "type": "object",
+        "properties": {
+          "tool": {
+            "$ref": "#/components/schemas/AgentTool"
+          }
+        },
+        "required": [
+          "tool"
+        ]
+      },
+      "AgentTool": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "example": "clx1234567890"
+          },
+          "agentId": {
+            "type": "string",
+            "example": "clx1234567890"
+          },
+          "pattern": {
+            "type": "string",
+            "example": "Read"
+          },
+          "enabled": {
+            "type": "boolean",
+            "example": true
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time",
+            "example": "2026-01-01T00:00:00.000Z"
+          }
+        },
+        "required": [
+          "id",
+          "agentId",
+          "pattern",
+          "enabled",
+          "createdAt"
+        ]
+      },
+      "CreateAgentToolBody": {
+        "type": "object",
+        "properties": {
+          "pattern": {
+            "type": "string",
+            "minLength": 1,
+            "example": "Bash"
+          }
+        },
+        "required": [
+          "pattern"
+        ]
+      },
+      "ToolsWrapper": {
+        "type": "object",
+        "properties": {
+          "tools": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AgentTool"
+            }
+          }
+        },
+        "required": [
+          "tools"
+        ]
+      },
+      "PatchAgentToolBody": {
+        "type": "object",
+        "properties": {
+          "enabled": {
+            "type": "boolean",
+            "example": false
+          }
+        },
+        "required": [
+          "enabled"
+        ]
+      },
+      "CreateAgentTokenResponse": {
+        "type": "object",
+        "properties": {
+          "token": {
+            "$ref": "#/components/schemas/AgentToken"
+          },
+          "rawToken": {
+            "type": "string",
+            "example": "swt_v1_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+          }
+        },
+        "required": [
+          "token",
+          "rawToken"
+        ]
+      },
+      "AgentToken": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "example": "clx1234567890"
+          },
+          "agentId": {
+            "type": "string",
+            "example": "clx1234567890"
+          },
+          "label": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "example": "ci-runner"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time",
+            "example": "2026-01-01T00:00:00.000Z"
+          },
+          "revokedAt": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time",
+            "example": null
+          }
+        },
+        "required": [
+          "id",
+          "agentId",
+          "createdAt"
+        ]
+      },
+      "CreateAgentTokenBody": {
+        "type": "object",
+        "properties": {
+          "label": {
+            "type": "string",
+            "example": "ci-runner"
+          }
+        }
+      },
+      "TokensWrapper": {
+        "type": "object",
+        "properties": {
+          "tokens": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AgentToken"
+            }
+          }
+        },
+        "required": [
+          "tokens"
+        ]
+      },
+      "PluginWrapper": {
+        "type": "object",
+        "properties": {
+          "plugin": {
+            "$ref": "#/components/schemas/AgentPlugin"
+          }
+        },
+        "required": [
+          "plugin"
+        ]
+      },
+      "AgentPlugin": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "example": "clx1234567890"
+          },
+          "agentId": {
+            "type": "string",
+            "example": "clx1234567890"
+          },
+          "name": {
+            "type": "string",
+            "example": "@shipwright/plugin"
+          },
+          "version": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "example": "1.2.3"
+          },
+          "enabled": {
+            "type": "boolean",
+            "example": true
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time",
+            "example": "2026-01-01T00:00:00.000Z"
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time",
+            "example": "2026-01-01T00:00:00.000Z"
+          }
+        },
+        "required": [
+          "id",
+          "agentId",
+          "name",
+          "enabled",
+          "createdAt",
+          "updatedAt"
+        ]
+      },
+      "CreateAgentPluginBody": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "example": "@shipwright/plugin"
+          },
+          "version": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "example": "1.2.3"
+          }
+        },
+        "required": [
+          "name"
+        ]
+      },
+      "PluginsWrapper": {
+        "type": "object",
+        "properties": {
+          "plugins": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AgentPlugin"
+            }
+          }
+        },
+        "required": [
+          "plugins"
+        ]
+      },
+      "PatchAgentPluginBody": {
+        "type": "object",
+        "properties": {
+          "version": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "example": "1.3.0"
+          }
+        }
+      },
+      "CronRunTokenStats": {
+        "type": "object",
+        "properties": {
+          "totals": {
+            "$ref": "#/components/schemas/TokenAggregate"
+          },
+          "byAgent": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/KeyedTokenAggregate"
+            }
+          },
+          "byCron": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/DoubleKeyedTokenAggregate"
+            }
+          },
+          "byModel": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/DoubleKeyedTokenAggregate"
+            }
+          },
+          "daily": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/DailyTokenAggregate"
+            }
+          },
+          "byCronModel": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/DoubleKeyedTokenAggregate"
+            }
+          },
+          "byPhase": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/KeyedTokenAggregate"
+            }
+          },
+          "bySkill": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SkillUsageAggregate"
+            }
+          },
+          "baselines": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ContextBaselineAggregate"
+            }
+          }
+        },
+        "required": [
+          "totals",
+          "byAgent",
+          "byCron",
+          "byModel",
+          "daily",
+          "byCronModel",
+          "byPhase"
+        ]
+      },
+      "TokenAggregate": {
+        "type": "object",
+        "properties": {
+          "input": {
+            "type": "integer",
+            "example": 600
+          },
+          "output": {
+            "type": "integer",
+            "example": 300
+          },
+          "cacheRead": {
+            "type": "integer",
+            "example": 60
+          },
+          "cacheCreation": {
+            "type": "integer",
+            "example": 30
+          },
+          "total": {
+            "type": "integer",
+            "example": 990
+          },
+          "costUsd": {
+            "type": "number",
+            "example": 0.006
+          }
+        },
+        "required": [
+          "input",
+          "output",
+          "cacheRead",
+          "cacheCreation",
+          "total"
+        ]
+      },
+      "KeyedTokenAggregate": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/TokenAggregate"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "key": {
+                "type": "string",
+                "example": "agent-id-123"
+              }
+            },
+            "required": [
+              "key"
+            ]
+          }
+        ]
+      },
+      "DoubleKeyedTokenAggregate": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/TokenAggregate"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "key1": {
+                "type": "string",
+                "example": "agent-id-123"
+              },
+              "key2": {
+                "type": "string",
+                "example": "morning-brief"
+              },
+              "phase": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "example": "dev-task"
+              }
+            },
+            "required": [
+              "key1",
+              "key2"
+            ]
+          }
+        ]
+      },
+      "DailyTokenAggregate": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/TokenAggregate"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "period": {
+                "type": "string",
+                "example": "2026-01-10"
+              }
+            },
+            "required": [
+              "period"
+            ]
+          }
+        ]
+      },
+      "SkillUsageAggregate": {
+        "type": "object",
+        "properties": {
+          "kind": {
+            "type": "string",
+            "example": "skill"
+          },
+          "name": {
+            "type": "string",
+            "example": "shipwright:dev-task"
+          },
+          "runs": {
+            "type": "integer",
+            "example": 4
+          },
+          "invocations": {
+            "type": "integer",
+            "example": 5
+          },
+          "turns": {
+            "type": "integer",
+            "example": 40
+          },
+          "input": {
+            "type": "integer",
+            "example": 600
+          },
+          "output": {
+            "type": "integer",
+            "example": 300
+          },
+          "cacheRead": {
+            "type": "integer",
+            "example": 60
+          },
+          "cacheCreation": {
+            "type": "integer",
+            "example": 30
+          },
+          "avgInvokeContextDelta": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "example": 1200
+          }
+        },
+        "required": [
+          "kind",
+          "name",
+          "runs",
+          "invocations",
+          "turns",
+          "input",
+          "output",
+          "cacheRead",
+          "cacheCreation",
+          "avgInvokeContextDelta"
+        ]
+      },
+      "ContextBaselineAggregate": {
+        "type": "object",
+        "properties": {
+          "contextFingerprint": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "example": "a1b2c3"
+          },
+          "baselineModel": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "example": "claude-sonnet-5-5"
+          },
+          "phase": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "example": "dev-task"
+          },
+          "runs": {
+            "type": "integer",
+            "example": 12
+          },
+          "avgContextTokens": {
+            "type": "number",
+            "example": 24000
+          },
+          "minContextTokens": {
+            "type": "integer",
+            "example": 23000
+          },
+          "maxContextTokens": {
+            "type": "integer",
+            "example": 25000
+          },
+          "avgTurns": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "example": 30
+          },
+          "avgToolCalls": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "example": 55
+          },
+          "firstSeen": {
+            "type": "string",
+            "example": "2026-01-10T09:00:00.000Z"
+          },
+          "lastSeen": {
+            "type": "string",
+            "example": "2026-01-15T09:00:00.000Z"
+          }
+        },
+        "required": [
+          "contextFingerprint",
+          "baselineModel",
+          "phase",
+          "runs",
+          "avgContextTokens",
+          "minContextTokens",
+          "maxContextTokens",
+          "avgTurns",
+          "avgToolCalls",
+          "firstSeen",
+          "lastSeen"
+        ]
+      },
+      "CronRunOutcomes": {
+        "type": "object",
+        "properties": {
+          "series": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CronRunOutcomeSeries"
+            }
+          }
+        },
+        "required": [
+          "series"
+        ]
+      },
+      "CronRunOutcomeSeries": {
+        "type": "object",
+        "properties": {
+          "phase": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "example": "dev-task"
+          },
+          "contextFingerprint": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "example": "a1b2c3d4e5f6"
+          },
+          "runs": {
+            "type": "integer"
+          },
+          "completed": {
+            "type": "integer"
+          },
+          "failed": {
+            "type": "integer"
+          },
+          "skipped": {
+            "type": "integer"
+          },
+          "skipReasons": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "example": {
+              "no-ready-task": 3
+            }
+          },
+          "avgDurationMs": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "p50DurationMs": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "avgTurns": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "avgToolCalls": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "avgContextTokens": {
+            "type": [
+              "number",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "phase",
+          "contextFingerprint",
+          "runs",
+          "completed",
+          "failed",
+          "skipped",
+          "skipReasons",
+          "avgDurationMs",
+          "p50DurationMs",
+          "avgTurns",
+          "avgToolCalls",
+          "avgContextTokens"
+        ]
+      },
+      "ChatTokenStats": {
+        "type": "object",
+        "properties": {
+          "totals": {
+            "$ref": "#/components/schemas/TokenAggregate"
+          },
+          "byAgent": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/KeyedTokenAggregate"
+            }
+          },
+          "byModel": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/DoubleKeyedTokenAggregate"
+            }
+          },
+          "daily": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/DailyTokenAggregate"
+            }
+          }
+        },
+        "required": [
+          "totals",
+          "byAgent",
+          "byModel",
+          "daily"
+        ]
+      },
+      "AgentChatTokenUsageDailyByModel": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "example": "clx1234567890"
+          },
+          "agentId": {
+            "type": "string",
+            "example": "clx1234567890"
+          },
+          "date": {
+            "type": "string",
+            "example": "2026-01-15"
+          },
+          "model": {
+            "type": "string",
+            "example": "claude-sonnet-4-5"
+          },
+          "inputTokens": {
+            "type": "integer",
+            "example": 100
+          },
+          "outputTokens": {
+            "type": "integer",
+            "example": 50
+          },
+          "cacheReadTokens": {
+            "type": "integer",
+            "example": 10
+          },
+          "cacheCreationTokens": {
+            "type": "integer",
+            "example": 5
+          },
+          "costUsd": {
+            "type": "number",
+            "example": 0.0012
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time",
+            "example": "2026-01-15T00:00:00.000Z"
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time",
+            "example": "2026-01-15T12:00:00.000Z"
+          }
+        },
+        "required": [
+          "id",
+          "agentId",
+          "date",
+          "model",
+          "inputTokens",
+          "outputTokens",
+          "cacheReadTokens",
+          "cacheCreationTokens",
+          "costUsd",
+          "createdAt",
+          "updatedAt"
+        ]
+      },
+      "UpsertChatTokenDailyBody": {
+        "type": "object",
+        "properties": {
+          "date": {
+            "type": "string",
+            "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+            "example": "2026-01-15"
+          },
+          "modelBreakdown": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ChatTokenModelEntry"
+            },
+            "minItems": 1,
+            "description": "Per-model token usage increments"
+          }
+        },
+        "required": [
+          "date",
+          "modelBreakdown"
+        ]
+      },
+      "ChatTokenModelEntry": {
+        "type": "object",
+        "properties": {
+          "model": {
+            "type": "string",
+            "example": "claude-sonnet-4-5"
+          },
+          "inputTokens": {
+            "type": "integer",
+            "minimum": 0,
+            "example": 100
+          },
+          "outputTokens": {
+            "type": "integer",
+            "minimum": 0,
+            "example": 50
+          },
+          "cacheReadTokens": {
+            "type": "integer",
+            "minimum": 0,
+            "example": 10
+          },
+          "cacheCreationTokens": {
+            "type": "integer",
+            "minimum": 0,
+            "example": 5
+          },
+          "costUsd": {
+            "type": "number",
+            "minimum": 0,
+            "example": 0.0012
+          }
+        },
+        "required": [
+          "model",
+          "inputTokens",
+          "outputTokens",
+          "cacheReadTokens",
+          "cacheCreationTokens",
+          "costUsd"
+        ]
+      },
+      "GitHubInstallationsSnapshotWrapper": {
+        "type": "object",
+        "properties": {
+          "snapshot": {
+            "$ref": "#/components/schemas/AgentGitHubInstallationsSnapshot"
+          }
+        },
+        "required": [
+          "snapshot"
+        ]
+      },
+      "AgentGitHubInstallationsSnapshot": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "example": "clx1234567890"
+          },
+          "agentId": {
+            "type": "string",
+            "example": "clx1234567890"
+          },
+          "reportedAt": {
+            "type": "string",
+            "format": "date-time",
+            "example": "2026-01-01T00:00:00.000Z"
+          },
+          "installations": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/GitHubInstallation"
+            }
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time",
+            "example": "2026-01-01T00:00:00.000Z"
+          }
+        },
+        "required": [
+          "id",
+          "agentId",
+          "reportedAt",
+          "installations",
+          "createdAt"
+        ]
+      },
+      "GitHubInstallation": {
+        "type": "object",
+        "properties": {
+          "owner": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200,
+            "example": "app-vitals"
+          },
+          "installationId": {
+            "type": "integer",
+            "exclusiveMinimum": 0,
+            "example": 12345678
+          },
+          "state": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 50,
+            "example": "active"
+          },
+          "lastError": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 500,
+            "description": "Sanitized last error message (max 500 chars). Must not contain credentials.",
+            "example": "installation suspended"
+          }
+        },
+        "required": [
+          "owner",
+          "installationId",
+          "state"
+        ],
+        "additionalProperties": false
+      },
+      "PutGitHubInstallationsBody": {
+        "type": "object",
+        "properties": {
+          "reportedAt": {
+            "type": "string",
+            "format": "date-time",
+            "example": "2026-01-01T00:00:00.000Z"
+          },
+          "installations": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/GitHubInstallation"
+            }
+          }
+        },
+        "required": [
+          "reportedAt",
+          "installations"
+        ],
+        "additionalProperties": false
+      },
+      "AgentConfigResponse": {
+        "type": "object",
+        "properties": {
+          "env": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "string"
+            },
+            "example": {
+              "SLACK_BOT_TOKEN": "xoxb-..."
+            }
+          },
+          "allowedTools": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "example": [
+              "Read",
+              "Write"
+            ]
+          },
+          "plugins": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AgentConfigPlugin"
+            }
+          },
+          "repos": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "example": [
+              "org/repo1",
+              "org/repo2"
+            ]
+          },
+          "reviewAuthorAllowlist": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "example": [
+              "octocat"
+            ]
+          },
+          "patchAuthorAllowlist": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "example": [
+              "octocat"
+            ]
+          },
+          "autoPostReviews": {
+            "type": "boolean",
+            "example": true
+          },
+          "allowSelfReview": {
+            "type": "boolean",
+            "example": false
+          },
+          "minConfidence": {
+            "type": "integer",
+            "example": 75
+          },
+          "maxFindings": {
+            "type": "integer",
+            "example": 5
+          },
+          "cleanupMergedWorktrees": {
+            "type": "boolean",
+            "example": true
+          },
+          "cleanupAfterDays": {
+            "type": "integer",
+            "example": 14
+          },
+          "restrictSlackToMembers": {
+            "type": "boolean",
+            "example": false
+          },
+          "memberEmails": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "example": [
+              "dev@example.com"
+            ]
+          },
+          "trialExpiresAt": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time",
+            "example": "2026-12-01T00:00:00.000Z"
+          },
+          "accountStatus": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "example": "active"
+          },
+          "typeName": {
+            "type": "string",
+            "example": "coding"
+          },
+          "phaseMethodology": {
+            "type": "object",
+            "additionalProperties": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "example": {
+              "prd": null,
+              "plan-session": null,
+              "review": "shipwright:code-reviewer",
+              "patch": null,
+              "deploy": null,
+              "dev-task": null
+            }
+          }
+        },
+        "required": [
+          "env",
+          "allowedTools",
+          "plugins",
+          "repos",
+          "reviewAuthorAllowlist",
+          "patchAuthorAllowlist",
+          "autoPostReviews",
+          "allowSelfReview",
+          "minConfidence",
+          "maxFindings",
+          "cleanupMergedWorktrees",
+          "cleanupAfterDays",
+          "restrictSlackToMembers",
+          "memberEmails",
+          "phaseMethodology"
+        ]
+      },
+      "AgentConfigPlugin": {
+        "type": "object",
+        "properties": {
+          "marketplace": {
+            "type": "string",
+            "example": "shipwright"
+          },
+          "plugin": {
+            "type": "string",
+            "example": "shipwright"
+          }
+        },
+        "required": [
+          "marketplace",
+          "plugin"
+        ]
+      },
+      "RuntimeError": {
+        "type": "object",
+        "properties": {
+          "error": {
+            "type": "string",
+            "example": "Not found"
+          }
+        },
+        "required": [
+          "error"
+        ]
+      }
+    },
+    "parameters": {}
+  },
+  "paths": {
+    "/agents/reconcile": {
+      "post": {
+        "summary": "Reconcile all agents' K8s state",
+        "description": "Admin-only. Reconciles Kubernetes Deployment state against all managed (non-self-hosted) agents in the DB, returning the recreated/updated deployments plus any orphaned deployments or per-agent failures. In perAgent Anthropic identity mode it also creates the missing identity of each existing agent that has an owner and moves its Deployment off the shared ServiceAccount (`migrated`); agents with no owner are listed in `noOwner` and left alone. Pass `dryRun=true` to only report: nothing is created, saved or patched.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "true",
+                "false"
+              ],
+              "default": "false",
+              "description": "Defaults to false (reconcile for real). Pass true to report what would be recreated, updated and moved to per-agent identity without changing anything."
+            },
+            "required": false,
+            "description": "Defaults to false (reconcile for real). Pass true to report what would be recreated, updated and moved to per-agent identity without changing anything.",
+            "name": "dryRun",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Reconciliation summary",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReconcileAgentsResult"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/agents/federation/strip-credentials": {
+      "post": {
+        "summary": "Strip Anthropic credentials from agents' saved env bundles",
+        "description": "Admin-only, one-off migration (WIF-2.2) for moving a deployment to Anthropic workload identity federation. Deletes CLAUDE_CODE_OAUTH_TOKEN, ANTHROPIC_API_KEY and ANTHROPIC_AUTH_TOKEN from every non-self-hosted agent's stored env bundle. `dryRun` defaults to true: nothing is deleted and the response lists what would be. Only agents holding at least one of the keys are listed, so a second applied call returns an empty list. Values are never returned or logged.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "true",
+                "false"
+              ],
+              "default": "true",
+              "description": "Defaults to true (report only). Pass false to delete the keys."
+            },
+            "required": false,
+            "description": "Defaults to true (report only). Pass false to delete the keys.",
+            "name": "dryRun",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Agents (and key names) removed, or that would be removed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StripCredentialsResult"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/agents/{id}/provision": {
+      "post": {
+        "summary": "Provision an agent's K8s workload",
+        "description": "Admin-only. Provisions or re-provisions the Kubernetes workload for a single managed agent — idempotent, safe to call on an already-provisioned agent. For self-hosted agents, returns `{ skipped: true, reason: \"self-hosted\" }` with no K8s changes.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "example": "clx1234567890"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Agent provisioned (or already-provisioned — idempotent), or skipped for self-hosted agents",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/ProvisionAgentResult"
+                    },
+                    {
+                      "$ref": "#/components/schemas/ProvisionSkippedResult"
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Agent not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/agents/{id}": {
+      "get": {
+        "summary": "Get an agent",
+        "description": "Admin-only. Returns the full agent record including `selfHosted`, `repos`, `reviewAuthorAllowlist`, `patchAuthorAllowlist`, `restrictSlackToMembers`, `typeName`, `accountId` (null for unassigned agents), and `missingRequiredEnv` — required env keys declared by the agent's type manifest with no corresponding AgentEnv row yet (informational only).",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "example": "clx1234567890"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Full agent record",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GetAgentResult"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Agent not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      },
+      "patch": {
+        "summary": "Update an agent",
+        "description": "Admin-only. Updates `selfHosted`, `repos`, `reviewAuthorAllowlist`, `patchAuthorAllowlist`, `restrictSlackToMembers`, `slackId`, `trialExpiresAt`, and/or `accountId` (platform admin only — 403 for session members; `null` clears it; reconciles the workload of in-cluster agents; does not move historical task-store rows). `typeName` and `trialExpiryWarnedAt` are not updatable via this route. Returns the updated agent, including a `warning` field when `restrictSlackToMembers` is set true on an agent with zero members.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "example": "clx1234567890"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PatchAgentBody"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Agent updated",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GetAgentResult"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Agent not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "summary": "Delete an agent",
+        "description": "Admin-only. Runs the full deleteAgentFully() teardown: deprovisions the K8s workload, removes the agent's per-agent Anthropic identity when it has one (federation rule, then Anthropic service account, then Kubernetes ServiceAccount), revokes task-store and chat-service tokens, deletes chat threads, and — if an `xoxpToken` is supplied — deletes the Slack app. The Agent row (and its cascade-deleted child records) is deleted last, only if every automatable step succeeded; `agentDeleted: false` means the row was preserved and the call is safe to retry.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "example": "clx1234567890"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DeleteAgentBody"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Delete outcome — agentDeleted is false when a cleanup step failed; the Agent row is preserved for retry",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DeleteAgentResult"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Agent not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/agents": {
+      "get": {
+        "summary": "List all agents",
+        "description": "Admin-only. Returns every agent's `id`, `name`, `selfHosted`, and `typeName` — used for metrics name resolution.",
+        "responses": {
+          "200": {
+            "description": "List of agents",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/AgentSummary"
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "summary": "Create an agent",
+        "description": "Admin-only. Validates name/typeName, creates the Agent row, seeds AgentTool/AgentPlugin rows from the resolved type manifest, attaches repos/allowlists/members, patches Claude credentials, and provisions Kubernetes when `runtime` is \"in-cluster\" — the same createAgent() implementation (APA-1.1) the web UI form at /admin/agents/new uses. Transactional: on any failure zero rows persist, and this route never returns a partial-success 200. Returns the created agent in the same shape as GET /agents/:id.",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateAgentBody"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Agent created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GetAgentResult"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/agents/{id}/envs": {
+      "post": {
+        "summary": "Replace all env vars",
+        "description": "Bulk-replaces all env vars for the agent atomically. Values are stored encrypted (AES-256-GCM).",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "example": "clx1234567890"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AgentEnvBody"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Env vars replaced",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Ok"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      },
+      "get": {
+        "summary": "Get env vars",
+        "description": "Returns the agent's env vars. Non-secret values are decrypted; values flagged secret are masked as `***` and their keys listed in `secretKeys`.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "example": "clx1234567890"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Decrypted env vars",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentEnvResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "patch": {
+        "summary": "Update specific env vars",
+        "description": "Updates only the specified keys, leaving other existing env vars untouched.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "example": "clx1234567890"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AgentEnvPatchBody"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Env vars updated",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Ok"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/agents/{id}/envs/{key}": {
+      "delete": {
+        "summary": "Delete an env var",
+        "description": "Deletes a single env var by key.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "example": "clx1234567890"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "example": "MY_VAR"
+            },
+            "required": true,
+            "name": "key",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Key deleted"
+          }
+        }
+      }
+    },
+    "/agents/{id}/crons": {
+      "post": {
+        "summary": "Create a cron job",
+        "description": "Creates a cron job for the agent. `channel` and `user` are mutually exclusive delivery targets. Returns the created job including system-managed read-only fields (`id`, `system`, `parentCronId`, `createdAt`, `updatedAt`) — `parentCronId` is never settable by the caller.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "example": "clx1234567890"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateAgentCronJobBody"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Cron job created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CronWrapper"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      },
+      "get": {
+        "tags": [
+          "runtime"
+        ],
+        "summary": "List agent cron jobs",
+        "description": "Returns the agent's cron jobs as a plain array (not wrapped), used by the agent harness's scheduler. Returns 404 if the agent doesn't exist.",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "example": "clx1234567890"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Array of cron jobs",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/AgentCronJob"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RuntimeError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Agent not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RuntimeError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/agents/{id}/crons/reconcile": {
+      "post": {
+        "summary": "Reconcile system crons",
+        "description": "Reconciles the agent's system crons against the cron list declared by its Specialty manifest. Runs in three passes within a single transaction: create-or-update matched-by-name system crons (preserving IDs so run history survives), link/unlink parent-child cron relationships, and delete orphaned system crons no longer in the manifest. Called automatically on agent startup; returns created/updated/deleted counts.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "example": "clx1234567890"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Reconciliation summary",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReconcileCronResult"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/agents/{id}/crons/{cronId}": {
+      "patch": {
+        "summary": "Update a cron job",
+        "description": "Updates a cron job. `schedule` and `prompt` must be provided together for a content update; `enabled` and `preCheck` are orthogonal and may be sent alone or combined with any other field. At least one field must be present — an empty body returns 400. System crons (`system: true`) reject `schedule`, `prompt`, and/or `preCheck` changes with 403; an enabled-only body is allowed and toggles the cron via the same path used for non-system crons.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "example": "clx1234567890"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "example": "clx0987654321"
+            },
+            "required": true,
+            "name": "cronId",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PatchAgentCronJobBody"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Cron job updated",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CronWrapper"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "summary": "Delete a cron job",
+        "description": "Deletes a cron job. System crons (`system: true`) cannot be deleted and return 403.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "example": "clx1234567890"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "example": "clx0987654321"
+            },
+            "required": true,
+            "name": "cronId",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Cron job deleted"
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/agents/{id}/crons/summary": {
+      "get": {
+        "summary": "List cron jobs with run summary",
+        "description": "Returns each cron job's last-run timestamp, outcome, and today's run count alongside its config — without full prompt text. Useful for dashboards.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "example": "clx1234567890"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "List of cron jobs with run summary",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CronsWithSummaryWrapper"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/agents/{id}/crons/{cronId}/runs": {
+      "post": {
+        "summary": "Create a cron run record",
+        "description": "Records the start of a cron job execution, including optional skip/outcome data and dispatch attribution (`itemType`/`itemId`, write-once at creation).",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "example": "clx1234567890"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "example": "clx0987654321"
+            },
+            "required": true,
+            "name": "cronId",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateAgentCronRunBody"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Run record created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CronRunWrapper"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Cron job not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      },
+      "get": {
+        "summary": "List cron runs",
+        "description": "Returns a paginated list of runs for a cron job (`limit` default 20, `offset` default 0). `itemId` and `phaseId` are optional server-side filters that combine with AND when both are supplied.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "example": "clx1234567890"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "example": "clx0987654321"
+            },
+            "required": true,
+            "name": "cronId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "example": "20"
+            },
+            "required": false,
+            "name": "limit",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "example": "0"
+            },
+            "required": false,
+            "name": "offset",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "example": "acme/x#123"
+            },
+            "required": false,
+            "name": "itemId",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "example": "clx1234567890"
+            },
+            "required": false,
+            "name": "phaseId",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Paginated list of cron runs",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CronRunsList"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Cron job not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/agents/{id}/crons/{cronId}/runs/{runId}": {
+      "patch": {
+        "summary": "Update a cron run record",
+        "description": "Records completion data after a run finishes — `completedAt`, `outcome`, `error`, `skipped`, `skipReason`, `sessionId`, and `modelBreakdown` (per-model token/cost entries, upserted per `[cronRunId, model]`). At least one field must be provided.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "example": "clx1234567890"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "example": "clx0987654321"
+            },
+            "required": true,
+            "name": "cronId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "example": "clx1111111111"
+            },
+            "required": true,
+            "name": "runId",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PatchAgentCronRunBody"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Run record updated",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PatchCronRunWrapper"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Run not found or not owned by agent",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/agents/{id}/tools": {
+      "post": {
+        "summary": "Add a tool pattern",
+        "description": "Adds an allowed-tool entry — a glob or exact Claude Code tool name (e.g. \"Read\", \"Bash\", \"mcp__*\") the agent can call.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "example": "clx1234567890"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateAgentToolBody"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Tool added",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ToolWrapper"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      },
+      "get": {
+        "summary": "List tool patterns",
+        "description": "Returns every allowed-tool entry for the agent, each with `id`, `pattern`, and `enabled`.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "example": "clx1234567890"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "List of tool patterns",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ToolsWrapper"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/agents/{id}/tools/{toolId}": {
+      "patch": {
+        "summary": "Enable or disable a tool pattern",
+        "description": "Updates a tool entry's `pattern` and/or `enabled` state.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "example": "clx1234567890"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "example": "clx0987654321"
+            },
+            "required": true,
+            "name": "toolId",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PatchAgentToolBody"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Tool toggled",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ToolWrapper"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "summary": "Remove a tool pattern",
+        "description": "Deletes a tool entry from the agent's allowed-tools list.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "example": "clx1234567890"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "example": "clx0987654321"
+            },
+            "required": true,
+            "name": "toolId",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Tool removed"
+          }
+        }
+      }
+    },
+    "/agents/{id}/tokens": {
+      "post": {
+        "summary": "Create an API token",
+        "description": "Creates a per-agent bearer token for scoped API access. The raw token value is returned once in this response — only its SHA-256 hash is persisted, so it must be saved immediately.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "example": "clx1234567890"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateAgentTokenBody"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Token created (raw value returned once)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CreateAgentTokenResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "get": {
+        "summary": "List API tokens",
+        "description": "Returns token metadata (hash excluded) for the agent — raw token values are never returned after creation.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "example": "clx1234567890"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "List of token metadata",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TokensWrapper"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/agents/{id}/tokens/{tokenId}": {
+      "delete": {
+        "summary": "Revoke an API token",
+        "description": "Soft-deletes the token by setting `revokedAt`.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "example": "clx1234567890"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "example": "clx0987654321"
+            },
+            "required": true,
+            "name": "tokenId",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Token revoked"
+          }
+        }
+      }
+    },
+    "/agents/{id}/plugins": {
+      "post": {
+        "summary": "Install a plugin",
+        "description": "Adds a Claude Code marketplace plugin for the agent.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "example": "clx1234567890"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateAgentPluginBody"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Plugin added",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PluginWrapper"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      },
+      "get": {
+        "summary": "List plugins",
+        "description": "Returns every plugin installed for the agent.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "example": "clx1234567890"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "List of plugins",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PluginsWrapper"
+                }
+              }
+            }
+          }
+        }
+      },
+      "patch": {
+        "summary": "Update a plugin",
+        "description": "Re-upserts the plugin identified by the required `name` query param with a new `version` and/or `enabled` state. Uses a query param rather than a path segment because a canonical plugin spec like \"my-plugin@org/my-marketplace\" can contain a literal \"/\" that would break path matching.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "example": "clx1234567890"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "example": "@shipwright/plugin"
+            },
+            "required": true,
+            "name": "name",
+            "in": "query"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PatchAgentPluginBody"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Plugin version updated",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PluginWrapper"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "summary": "Remove a plugin",
+        "description": "Removes the plugin identified by the required `name` query param.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "example": "clx1234567890"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "example": "@shipwright/plugin"
+            },
+            "required": true,
+            "name": "name",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Plugin removed"
+          },
+          "400": {
+            "description": "Bad request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/agents/all/cron-runs/stats": {
+      "get": {
+        "summary": "Get aggregated cron-run token stats",
+        "description": "Admin-only. Returns token usage and cost aggregated across all agents' cron runs, broken down by agent, cron, model, day, and pipeline phase. Optional `from`/`to` ISO datetime query params bound the range.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "date-time",
+              "example": "2026-01-01T00:00:00Z"
+            },
+            "required": false,
+            "name": "from",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "date-time",
+              "example": "2026-02-01T00:00:00Z"
+            },
+            "required": false,
+            "name": "to",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Aggregated cron-run token stats across all agents",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CronRunTokenStats"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden — requires admin scope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/agents/all/cron-runs/outcomes": {
+      "get": {
+        "summary": "Get cron-run outcomes per phase and context fingerprint",
+        "description": "Admin-only. Returns, per (phase, contextFingerprint): run, completed, failed, and skipped counts, a skipReasons histogram, avg and p50 duration, avg turns, avg tool calls, and avg first-turn context tokens. Optional `from`/`to` ISO datetime query params bound the range on startedAt.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "date-time",
+              "example": "2026-01-01T00:00:00Z"
+            },
+            "required": false,
+            "name": "from",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "date-time",
+              "example": "2026-02-01T00:00:00Z"
+            },
+            "required": false,
+            "name": "to",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Outcome series per (phase, contextFingerprint)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CronRunOutcomes"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden — requires admin scope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/agents/{id}/cron-runs/stats": {
+      "get": {
+        "summary": "Get aggregated cron-run token stats for one agent",
+        "description": "Same shape as GET /agents/all/cron-runs/stats, scoped to the given agent's runs. An agent's own bearer token may read its own stats; other agents' tokens are rejected. Optional `from`/`to` ISO datetime query params bound the range.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "date-time",
+              "example": "2026-01-01T00:00:00Z"
+            },
+            "required": false,
+            "name": "from",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "date-time",
+              "example": "2026-02-01T00:00:00Z"
+            },
+            "required": false,
+            "name": "to",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Aggregated cron-run token stats for the agent",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CronRunTokenStats"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/agents/{id}/cron-runs/outcomes": {
+      "get": {
+        "summary": "Get cron-run outcomes per phase and context fingerprint for one agent",
+        "description": "Same shape as GET /agents/all/cron-runs/outcomes, scoped to the given agent's runs. An agent's own bearer token may read its own outcomes; other agents' tokens are rejected. Optional `from`/`to` ISO datetime query params bound the range on startedAt.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "date-time",
+              "example": "2026-01-01T00:00:00Z"
+            },
+            "required": false,
+            "name": "from",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "date-time",
+              "example": "2026-02-01T00:00:00Z"
+            },
+            "required": false,
+            "name": "to",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Outcome series per (phase, contextFingerprint) for the agent",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CronRunOutcomes"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/agents/chat-tokens/daily/stats": {
+      "get": {
+        "summary": "Get aggregated chat token daily stats",
+        "description": "Admin-only. Returns Slack chat token usage aggregated across all agents, broken down by agent, model, and day. Optional `from`/`to` YYYY-MM-DD query params bound the range.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "date",
+              "example": "2026-01-01"
+            },
+            "required": false,
+            "name": "from",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "date",
+              "example": "2026-02-01"
+            },
+            "required": false,
+            "name": "to",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Aggregated chat token daily stats across all agents",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChatTokenStats"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden — requires admin scope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/agents/{id}/chat-tokens/daily/stats": {
+      "get": {
+        "summary": "Get this agent's chat token daily stats",
+        "description": "Self-serve variant of the fleet-wide chat token daily stats, scoped to the agent in the path. Access is gated by the generic agent-route auth (an agent's own bearer token, an admin, or a member session) — no admin scope required. Same response shape and optional `from`/`to` params as GET /agents/chat-tokens/daily/stats.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "example": "clx1234567890"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "date",
+              "example": "2026-01-01"
+            },
+            "required": false,
+            "name": "from",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "date",
+              "example": "2026-02-01"
+            },
+            "required": false,
+            "name": "to",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Chat token daily stats for this agent only",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChatTokenStats"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/agents/{id}/chat-tokens/daily": {
+      "post": {
+        "summary": "Record daily chat token usage",
+        "description": "Atomically accumulates Slack chat token usage into the existing rows for each `(agentId, date, model)` tuple, creating them if absent. Supply a `modelBreakdown` array to split a single day's usage across multiple models. Returns the updated daily rows, one per model.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "example": "clx1234567890"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpsertChatTokenDailyBody"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Updated daily chat token usage rows (one per model)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/AgentChatTokenUsageDailyByModel"
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Agent not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/agents/{id}/github-installations": {
+      "put": {
+        "summary": "Replace the agent's GitHub installations snapshot",
+        "description": "Upserts the agent's single GitHub App installations snapshot (owner, installation id, state, sanitized lastError), replacing the prior list wholesale — an installation absent from the body is dropped. The body schema is closed: unknown fields (e.g. tokens) are rejected with 400.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "example": "clx1234567890"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PutGitHubInstallationsBody"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Snapshot replaced",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GitHubInstallationsSnapshotWrapper"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden — token does not own this agent",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      },
+      "get": {
+        "summary": "Get the latest GitHub installations snapshot",
+        "description": "Returns the most recently reported GitHub installations snapshot, or 404 if the agent has never reported one.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "example": "clx1234567890"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Latest GitHub installations snapshot",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GitHubInstallationsSnapshotWrapper"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden — token does not own this agent",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No snapshot reported yet",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/agents/{id}/config": {
+      "get": {
+        "tags": [
+          "runtime"
+        ],
+        "summary": "Get agent config bundle",
+        "description": "Returns the agent's full runtime config bundle — decrypted env vars, allowed-tools patterns, installed plugins (with derived marketplace), scoped repos, review/patch author allowlists, and Slack membership-restriction settings. Polled by the agent harness on startup and during its config sync loop. Returns 404 if the agent doesn't exist.",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "example": "clx1234567890"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Agent config bundle",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentConfigResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RuntimeError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Agent not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RuntimeError"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "webhooks": {}
+}

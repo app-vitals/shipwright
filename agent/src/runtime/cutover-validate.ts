@@ -11,7 +11,10 @@
  *  - At least one cron job configured
  */
 
-import type { AgentConfigResponse, AgentCronJob } from "@shipwright/admin";
+import type {
+  AgentConfigResponse,
+  AgentCronJob,
+} from "@app-vitals/agent-admin";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
