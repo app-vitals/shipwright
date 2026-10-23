@@ -60,7 +60,7 @@ broken preCheck script doesn’t fail invisibly forever.</li>
 <p>System crons — the ones seeded automatically for every agent — are created and kept in sync by a
 reconcile pass (<code>POST /agents/:id/crons/reconcile</code>), which runs at agent startup and can also be
 triggered on demand. Reconcile is a two-pass strategy over the cron list declared by the agent’s
-type manifest (<code>agent-types/{typeName}/manifest.yaml</code>):</p>
+type manifest (<code>specialties/{typeName}/manifest.yaml</code>):</p>
 <ol>
 <li><strong>Pass 1</strong> creates or updates each manifest cron entry by name. If a matching row already
 exists, it’s updated in place — schedule, prompt, <code>silent</code>, and <code>preCheck</code> are refreshed, but
@@ -76,7 +76,7 @@ cleared back to <code>null</code>.</li>
 manifest, so removed crons clean themselves up on the next reconcile.</p>
 <p>Because of this, <strong>system crons can’t be edited directly</strong> via the admin API or console — they’re
 read-only after creation except for the <code>enabled</code> toggle. Anything else (schedule, prompt,
-preCheck) is owned by the agent type manifest and only changes when the manifest changes and a
+preCheck) is owned by the specialty manifest and only changes when the manifest changes and a
 reconcile runs.</p>
 <h3 id="loop-driven-vs-standalone-crons">Loop-driven vs standalone crons</h3>
 <p>Not every cron discovers its own work. The five pipeline crons — <code>shipwright-plan</code>,
