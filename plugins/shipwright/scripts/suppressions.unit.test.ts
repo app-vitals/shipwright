@@ -11,6 +11,7 @@ import {
   DEFAULT_ACCEPTED_RISK_DAYS,
   defaultExpiry,
   evaluateExpiry,
+  filterFindings,
   findSuppression,
   parseSuppressions,
   type Suppression,
@@ -357,5 +358,34 @@ describe("expiry", () => {
     expect(DEFAULT_ACCEPTED_RISK_DAYS).toBe(90);
     expect(defaultExpiry("2026-01-01")).toBe("2026-04-01");
     expect(defaultExpiry("2026-01-01", 30)).toBe("2026-01-31");
+  });
+});
+
+describe("filterFindings", () => {
+  const entries = parseSuppressions(VALID);
+  const clock = clockAt("2026-02-01T00:00:00Z");
+
+  test("drops matching findings and counts them as suppressed", () => {
+    const findings = [
+      { rule: "osv", cve: "CVE-2024-1234", package: "lodash", line: 3 },
+      { rule: "osv", cve: "CVE-2024-9999", package: "lodash" },
+    ];
+    const r = filterFindings(entries, findings, clock);
+    expect(r.suppressed).toHaveLength(1);
+    expect(r.kept).toEqual([findings[1]]);
+    expect(r.expired).toEqual([]);
+  });
+
+  test("expired entries stop suppressing and are reported", () => {
+    const findings = [{ rule: "osv", cve: "CVE-2024-1234", package: "lodash" }];
+    const r = filterFindings(
+      entries,
+      findings,
+      clockAt("2026-05-01T00:00:00Z"),
+    );
+    expect(r.kept).toEqual(findings);
+    expect(r.suppressed).toEqual([]);
+    expect(r.expired).toHaveLength(1);
+    expect(r.expired[0].match.cve).toBe("CVE-2024-1234");
   });
 });
