@@ -5,7 +5,7 @@
     "name": "app-vitals",
     "url": "https://github.com/app-vitals"
   },
-  "version": "1.424.2",
+  "version": "1.424.3",
   "plugins": [
     {
       "name": "shipwright",
