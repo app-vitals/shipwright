@@ -120,6 +120,32 @@ of truth `security-fix` reads.
 
 ---
 
+## Step 3.5: Re-check Suppressions (defense in depth)
+
+`security-scan` already drops suppressed findings, but a stale `security-report.md` written
+before a suppression landed can still list them. Before dedup, re-check every surviving
+finding against `.shipwright/suppressions.yml` in the **repo being fixed** (schema:
+`references/suppressions-schema.md`) so a stale report cannot refile it.
+
+1. **Build candidates** for `osv-cve`, `grype-cve` and `posture-*` findings only, parsing the
+   match key from the finding description (never a line number): `{rule: "osv"|"grype", cve,
+   package}` or `{rule: "posture", path}`. Other rules have no suppression schema and pass
+   through unchanged.
+2. **Filter** with the shared script, from the repo being fixed:
+   ```bash
+   bun "$CLAUDE_PLUGIN_ROOT/scripts/suppressions.ts" --filter .shipwright/suppressions.yml candidates.json
+   ```
+   A missing file is valid (nothing suppressed). A non-zero exit means the file is invalid —
+   print the error and treat it as "no suppressions applied"; never abort. `expired` entries do
+   not suppress.
+3. **Skip each `suppressed` finding** — remove it before dedup and task-building, and print:
+   `Skipping {rule} — suppressed in .shipwright/suppressions.yml ({status}: {reason})`
+   This message is distinct from the "task already active" and "recently closed" messages in
+   6q.1. If a rule group is left empty, drop the group; if no groups remain, print the Step 3
+   "No PR-worthy findings" message and stop.
+
+---
+
 ## Step 4: Dry-Run Output (if --dry-run)
 
 If `--dry-run` was passed, print a preview and stop without querying or writing to the task
@@ -409,6 +435,10 @@ Skipped (already active):
 
 Skipped (recently closed, within 14-day dedup window):
   {rule} — closed {date} as {outcome}
+
+{If any suppressed:}
+Skipped (suppressed in .shipwright/suppressions.yml):
+  {rule} — {status}: {reason}
 
 Run /shipwright:dev-task to execute autonomous tasks. HITL tasks (credential rotation,
 per-finding authz calls marked hitl:true) are picked up via /shipwright:hitl.
