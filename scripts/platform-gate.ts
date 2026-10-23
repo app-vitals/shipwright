@@ -8,9 +8,10 @@
  * What counts as an edge: every module specifier in `import`, `import type`,
  * `export ... from`, side-effect `import "x"`, dynamic `import("x")`,
  * `require("x")` and `mock.module("x")`, in any file of the set (tests
- * included). Relative specifiers, `@shipwright/*` workspace specifiers and
- * `@app-vitals/agent-runtime/*` (agent/src/runtime) must resolve to a file
- * inside the set. npm packages and `node:`/`bun:` builtins
+ * included). Relative specifiers, `@shipwright/*` workspace specifiers,
+ * `@app-vitals/agent-runtime/*` (agent/src/runtime) and
+ * `@app-vitals/agent-admin[/*]` (admin, per its exports map) must resolve to a
+ * file inside the set. npm packages and `node:`/`bun:` builtins
  * are not edges. `@app-vitals/agent-lib/*` modules are the one allowed way out of
  * admin/agent directories, and only if listed in the manifest's `lib` table.
  *
@@ -267,22 +268,32 @@ function workspaceTarget(spec: string): string | null {
       ? `agent/src/runtime/${runtimeMatch[1]}`
       : "agent/src/runtime";
   }
+  const adminMatch = /^@app-vitals\/agent-admin(?:\/(.*))?$/.exec(spec);
+  if (adminMatch) return adminTarget(adminMatch[1]);
   const m = /^@shipwright\/([^/]+)(?:\/(.*))?$/.exec(spec);
   if (!m) return null;
   const [, pkg, rest] = m;
   const dir = pkg === "plugin" ? "plugins/shipwright" : pkg;
-  const src =
-    pkg === "admin" ||
-    pkg === "task-store" ||
-    pkg === "chat" ||
-    pkg === "mcp-server";
-  if (!rest)
-    return pkg === "admin"
-      ? "admin/src/server.ts"
-      : src
-        ? `${dir}/src/index.ts`
-        : dir;
+  const src = pkg === "task-store" || pkg === "chat" || pkg === "mcp-server";
+  if (!rest) return src ? `${dir}/src/index.ts` : dir;
   return src ? `${dir}/src/${rest}` : `${dir}/${rest}`;
+}
+
+/**
+ * Mirrors admin/package.json's exports map: the root is src/server.ts, the
+ * package-root files (specs, prisma schema/migrations/config, package.json)
+ * map to admin/, every other subpath (modules, coding/*) to admin/src/.
+ */
+function adminTarget(rest: string | undefined): string {
+  if (!rest) return "admin/src/server.ts";
+  if (
+    /^(?:prisma\/|prisma\.config$|openapi[^/]*\.json$|package\.json$)/.test(
+      rest,
+    )
+  ) {
+    return `admin/${rest}`;
+  }
+  return `admin/src/${rest}`;
 }
 
 function isFile(path: string): boolean {

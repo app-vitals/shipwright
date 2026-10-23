@@ -9,17 +9,18 @@
  *
  * Lives here rather than under admin/ because this package owns the
  * task-store app, its Prisma client and the test DB wiring; the fetcher
- * module is dependency-free, so the relative import pulls in nothing else.
- * That import reaches outside this package's `rootDir`, so the file is
- * type-checked by its own tsconfig.cross-package.json (same pattern as
- * admin/tsconfig.type-parity.json) and excluded from tsconfig.json.
+ * module is dependency-free, so the import pulls in nothing else. It goes
+ * through the `@app-vitals/agent-admin` package specifier (a task-store
+ * devDependency); the module it resolves to sits outside this package's
+ * `rootDir`, so the file is type-checked by its own
+ * tsconfig.cross-package.json and excluded from tsconfig.json.
  *
  * Requires DATABASE_URL_SHIPWRIGHT_TASK_STORE_TEST; the suite skips otherwise.
  */
 
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
+import { createTaskStoreFetchers } from "@app-vitals/agent-admin/coding/task-store-fetchers";
 import { DEFAULT_ACCOUNT_ID } from "@app-vitals/agent-lib/default-account";
-import { createTaskStoreFetchers } from "../../admin/src/coding/task-store-fetchers.ts";
 import { createTaskStoreApp } from "./app.ts";
 import { createPrismaClient, type PrismaClient } from "./prisma-client.ts";
 import { PullRequestService } from "./pull-request-service.ts";

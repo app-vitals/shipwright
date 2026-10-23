@@ -21,9 +21,9 @@ import { describe, expect, it } from "bun:test";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import {
-  SpecialtyManifestSchema,
   parseSpecialtyManifest,
-} from "../admin/src/specialty-registry.ts";
+  SpecialtyManifestSchema,
+} from "@app-vitals/agent-admin/specialty-registry";
 
 const DOC_PATH = join(import.meta.dir, "specialties.md");
 const content = readFileSync(DOC_PATH, "utf-8");

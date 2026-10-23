@@ -17,7 +17,7 @@
 import { describe, expect, it } from "bun:test";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { parseSpecialtyManifest } from "../../admin/src/specialty-registry.ts";
+import { parseSpecialtyManifest } from "@app-vitals/agent-admin/specialty-registry";
 
 const MANIFEST_PATH = join(import.meta.dir, "manifest.yaml");
 const rawContent = readFileSync(MANIFEST_PATH, "utf-8");

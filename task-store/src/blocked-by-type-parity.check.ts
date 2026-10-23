@@ -13,7 +13,8 @@
  * It lives on the task-store side so admin never reaches outside admin/: it is
  * type-checked via `tsconfig.cross-package.json` (see task-store/package.json's
  * `typecheck` script), purely for this type-level comparison, with zero runtime
- * import and zero package.json dependency between the two packages.
+ * import. It reaches admin through the `@app-vitals/agent-admin` package
+ * specifier (a task-store devDependency), never a relative path.
  *
  * Intentionally NOT a strict two-way "every field on every variant matches"
  * check: task-store's `{ type: "hitl" }` variant has no `notified` field,
@@ -28,7 +29,7 @@
  * check below fails to compile.
  */
 
-import type { BlockedByEntry as AdminBlockedByEntry } from "../../admin/src/coding/admin-ui-work-item-pages.ts";
+import type { BlockedByEntry as AdminBlockedByEntry } from "@app-vitals/agent-admin/coding/admin-ui-work-item-pages";
 import type { BlockedByEntry as RealBlockedByEntry } from "./blocked-by.ts";
 
 // Every `type` discriminant present in task-store's real union.

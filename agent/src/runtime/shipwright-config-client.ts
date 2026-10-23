@@ -9,7 +9,7 @@
  * configClient adapter in entrypoint-main.ts.
  */
 
-import type { AgentConfigResponse } from "@shipwright/admin";
+import type { AgentConfigResponse } from "@app-vitals/agent-admin";
 
 // ─── Interface ────────────────────────────────────────────────────────────────
 

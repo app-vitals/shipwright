@@ -1,181 +1,92 @@
 /**
  * scripts/generate-admin-spec.ts
- * Generate the OpenAPI 3.1 spec for the Shipwright admin service.
+ * Generate the OpenAPI 3.1 specs for the Shipwright admin service.
  *
- * Instantiates both the admin CRUD app and the agent runtime app in-process
- * using minimal stubs (no real DB, no real services), then:
- *   1. Calls getOpenAPI31Document() on each sub-app independently.
- *   2. Rewrites the runtime app's Hono-style path params (`:id`) to OpenAPI
- *      style (`{id}`) and prefixes them with `/agents`.
- *   3. Merges both specs' paths and component schemas into a single document.
- *   4. Folds in the static OpenAPI contributions of the admin extensions
+ *   1. Builds the platform-only document (buildPlatformAdminSpec from the
+ *      @app-vitals/agent-admin package: the admin CRUD app and the agent
+ *      runtime app merged, no extension routes) and writes it to
+ *      admin/openapi.platform.json. It feeds the platform half of the admin
+ *      types (lib/admin-types.ts).
+ *   2. Folds in the static OpenAPI contributions of the admin extensions
  *      main.ts composes (AEP-2.1): the coding extension's routes, each placed
- *      at its historical position (AEP-3.2), so the output is unchanged.
- *   5. Writes the result to admin/openapi.json.
+ *      at its historical position (AEP-3.2), and writes the composed document
+ *      to admin/openapi.json (unchanged by the split).
+ *   3. Writes the coding extension's contributions alone as a standalone
+ *      document to admin/src/coding/openapi.coding.json. It feeds the coding
+ *      half of the admin types (admin/src/coding/admin-types.ts), kept by
+ *      Shipwright.
  *
  * Usage:
  *   bun run generate:admin-spec
  */
 
 import { writeFileSync } from "node:fs";
-import { resolve } from "node:path";
+import { dirname, join } from "node:path";
 import {
   applyOpenApiContributions,
   collectOpenApiContributions,
-} from "../admin/src/admin-extension.ts";
-import { NoopAgentProvisioner } from "../admin/src/agent-provisioner.ts";
-import { createAdminApp, parseAdminApiKeys } from "../admin/src/agents-api.ts";
-import { createAgentRuntimeApp } from "../admin/src/api.ts";
-import { adminExtensions } from "../admin/src/main.ts";
+} from "@app-vitals/agent-admin/admin-extension";
+import { buildPlatformAdminSpec } from "@app-vitals/agent-admin/admin-spec";
+import { adminExtensions } from "@app-vitals/agent-admin/main";
 
-// ─── Stub deps — only route definitions matter for spec generation ────────────
-
-const SESSION_SECRET = "dummy-secret-32chars-for-spec-gen";
-const adminApiKeys = parseAdminApiKeys("codegen:codegen-key:*");
-
-const runtimeApp = createAgentRuntimeApp({
-  agentEnvService: {
-    async getConfigBundle() {
-      return null;
-    },
-  },
-  agentCronJobService: {
-    async list() {
-      return [];
-    },
-  },
-  agentPluginService: {
-    async listEnabled() {
-      return [];
-    },
-  },
-  adminApiKeys,
-  agentTokenService: { validate: async () => null },
-  sessionSecret: SESSION_SECRET,
-});
-
-const adminApp = createAdminApp({
-  agentEnvService: {
-    upsert: async () => {},
-    patch: async () => {},
-    getByAgentId: async () => ({}),
-    deleteKey: async () => {},
-  },
-  agentCronJobService: {
-    list: async () => [],
-    create: async () => ({}) as never,
-    update: async () => ({}) as never,
-    delete: async () => {},
-    get: async () => ({}) as never,
-    setEnabled: async () => ({}) as never,
-    updatePreCheck: async () => ({}) as never,
-    reconcileSystemCrons: async () => ({ created: 0, updated: 0, deleted: 0 }),
-  },
-  agentToolService: {
-    list: async () => [],
-    add: async () => ({}) as never,
-    remove: async () => {},
-    toggle: async () => ({}) as never,
-  },
-  agentTokenService: {
-    create: async () => ({}) as never,
-    listForAgent: async () => [],
-    revoke: async () => ({}) as never,
-    validate: async () => null,
-  },
-  agentPluginService: {
-    list: async () => [],
-    add: async () => ({}) as never,
-    remove: async () => {},
-    removeByName: async () => {},
-  },
-  prisma: {
-    agent: {
-      create: async () => ({}) as never,
-      findUnique: async () => null,
-      findMany: async () => [],
-      delete: async () => ({}) as never,
-    },
-  } as never,
-  provisioner: new NoopAgentProvisioner(),
-  sessionSecret: SESSION_SECRET,
-  adminApiKeys,
-});
-
-// ─── Generate specs ───────────────────────────────────────────────────────────
-
-const docInfo = {
-  openapi: "3.1.0" as const,
-  info: {
-    title: "Shipwright Admin API",
-    version: "0.1.0",
-    description:
-      "REST API for the Shipwright admin service — CRUD for agents, env vars, cron jobs, tokens, tools, and plugins, plus the agent runtime polling endpoints.",
-  },
-  servers: [{ url: "http://localhost:3457", description: "Local dev" }],
-} as const;
-
-// Admin app spec (uses OpenAPI {id} path notation)
-const adminSpec = adminApp.getOpenAPI31Document(docInfo);
-
-// Runtime app spec (uses Hono :id notation — paths are relative to sub-app root)
-const runtimeSpec = runtimeApp.getOpenAPI31Document({
-  openapi: "3.1.0",
-  info: { title: "runtime (internal)", version: "0.1.0" },
-});
-
-// ─── Merge specs ─────────────────────────────────────────────────────────────
-//
-// The runtime app's routes are defined as `/:id/config` and `/:id/crons`.
-// When the spec is generated standalone, these appear as `/:id/config` etc.
-// We rewrite Hono colon params to OpenAPI curly brace params, then prefix
-// with `/agents` to match the root-mounted path.
-
-// Build runtime paths with OpenAPI notation and /agents prefix.
-// Merge at the method level so paths shared between admin and runtime
-// (e.g. /agents/{id}/crons has both POST from admin and GET from runtime)
-// keep all their HTTP methods.
-const adminPaths = (adminSpec.paths ?? {}) as Record<
-  string,
-  Record<string, unknown>
->;
-const mergedPaths: Record<string, Record<string, unknown>> = {
-  ...adminPaths,
-};
-
-for (const [path, def] of Object.entries(runtimeSpec.paths ?? {})) {
-  const openApiPath = `/agents${path.replace(/:(\w+)/g, "{$1}")}`;
-  if (mergedPaths[openApiPath]) {
-    // Merge methods — runtime GET on /agents/{id}/crons must coexist with
-    // admin POST on the same path.
-    mergedPaths[openApiPath] = {
-      ...mergedPaths[openApiPath],
-      ...(def as Record<string, unknown>),
-    };
-  } else {
-    mergedPaths[openApiPath] = def as Record<string, unknown>;
-  }
-}
-
-const platformSpec = {
-  ...adminSpec,
-  paths: mergedPaths,
-  components: {
-    ...(adminSpec.components ?? {}),
-    schemas: {
-      ...(adminSpec.components?.schemas ?? {}),
-      ...(runtimeSpec.components?.schemas ?? {}),
-    },
-  },
-};
-
-const mergedSpec = applyOpenApiContributions(
-  platformSpec,
-  collectOpenApiContributions(adminExtensions),
+/** The admin package directory (admin/ in this repo). */
+export const ADMIN_DIR = dirname(
+  Bun.resolveSync("@app-vitals/agent-admin/package.json", import.meta.dir),
 );
 
-// ─── Write output ─────────────────────────────────────────────────────────────
+export interface AdminSpecArtifacts {
+  /** admin/openapi.platform.json — platform routes only. */
+  platform: ReturnType<typeof buildPlatformAdminSpec>;
+  /** admin/openapi.json — platform plus every composed extension. */
+  composed: ReturnType<typeof buildPlatformAdminSpec>;
+  /** admin/src/coding/openapi.coding.json — the extensions' routes alone. */
+  coding: {
+    openapi: "3.1.0";
+    info: { title: string; version: string; description: string };
+    paths: Record<string, Record<string, unknown>>;
+    components: { schemas: Record<string, unknown> };
+  };
+}
 
-const outPath = resolve(import.meta.dir, "../admin/openapi.json");
-writeFileSync(outPath, `${JSON.stringify(mergedSpec, null, 2)}\n`);
-console.log(`Written to ${outPath}`);
+/** Builds the three admin spec documents; pure apart from app construction. */
+export function buildAdminSpecArtifacts(): AdminSpecArtifacts {
+  const platform = buildPlatformAdminSpec();
+  const contributions = collectOpenApiContributions(adminExtensions);
+  return {
+    platform,
+    composed: applyOpenApiContributions(platform, contributions),
+    coding: {
+      openapi: "3.1.0",
+      info: {
+        title: "Shipwright Admin API (coding extension)",
+        version: platform.info.version,
+        description:
+          "The coding admin extension's routes alone — the part of admin/openapi.json not served by the platform admin.",
+      },
+      paths: contributions.paths,
+      components: { schemas: contributions.schemas },
+    },
+  };
+}
+
+/** Repo-relative output path of each artifact, keyed like AdminSpecArtifacts. */
+export const ADMIN_SPEC_OUTPUTS: Record<keyof AdminSpecArtifacts, string> = {
+  platform: join(ADMIN_DIR, "openapi.platform.json"),
+  composed: join(ADMIN_DIR, "openapi.json"),
+  coding: join(ADMIN_DIR, "src", "coding", "openapi.coding.json"),
+};
+
+/** The exact bytes written for a spec document. */
+export function serializeSpec(doc: unknown): string {
+  return `${JSON.stringify(doc, null, 2)}\n`;
+}
+
+if (import.meta.main) {
+  const artifacts = buildAdminSpecArtifacts();
+  for (const key of Object.keys(ADMIN_SPEC_OUTPUTS) as Array<
+    keyof AdminSpecArtifacts
+  >) {
+    writeFileSync(ADMIN_SPEC_OUTPUTS[key], serializeSpec(artifacts[key]));
+    console.log(`Written to ${ADMIN_SPEC_OUTPUTS[key]}`);
+  }
+}

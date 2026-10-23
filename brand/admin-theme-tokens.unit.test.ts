@@ -4,7 +4,7 @@
  */
 
 import { describe, expect, it } from "bun:test";
-import adminTokens from "../admin/src/theme-tokens.json";
+import adminTokens from "@app-vitals/agent-admin/theme-tokens.json";
 import brandTokens from "./tokens.json";
 
 type Tree = { [key: string]: string | Tree };

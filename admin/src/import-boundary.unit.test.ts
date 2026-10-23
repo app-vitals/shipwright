@@ -10,6 +10,12 @@
  * admin/ other than @app-vitals/agent-lib/* and npm packages, so the platform set
  * can be copied into its own repo. coding/ is exempt (plugins/task-store/brand).
  *
+ * Consumers reach admin through the package specifier only: admin is the
+ * `@app-vitals/agent-admin` workspace package (AGR-1.4), so no file outside
+ * admin/ — the agent runtime, root scripts, task-store, plugins, brand,
+ * specialties — may import it with a relative path or the retired
+ * `@shipwright/admin` name.
+ *
  * Runs under `bun test`, so CI (task ci -> test:coverage) enforces it.
  */
 
@@ -23,6 +29,20 @@ const CODING_DIR = join(SRC, "coding");
 const COMPOSITION_ROOT = join(SRC, "main.ts");
 // This file's self-test fixtures contain violating import strings.
 const SELF = join(SRC, "import-boundary.unit.test.ts");
+const REPO_ROOT = resolve(ADMIN_DIR, "..");
+
+// Directory names never scanned by the repo-wide walk: dependencies, build
+// output, the self-contained Astro site, and dot-dirs (.git, .claude, ...).
+const REPO_SCAN_SKIP_DIRS = new Set(["node_modules", "dist", "site"]);
+
+// Files whose admin-looking specifiers are fixture strings written into a
+// temp tree, not imports: the platform gate's own unit test.
+const REPO_SCAN_FIXTURE_FILES = new Set([
+  join(REPO_ROOT, "scripts", "platform-gate.unit.test.ts"),
+]);
+
+// The retired workspace name, in any module specifier.
+const RETIRED_SPECIFIER = /["'](@shipwright\/admin(?:\/[^"']*)?)["']/g;
 
 // Keywords inside a quoted string (e.g. an assertion on source text) are not
 // imports, so the keyword must not directly follow a quote or backtick.
@@ -36,6 +56,25 @@ function listTsFiles(dir: string): string[] {
     if (entry.isDirectory()) return listTsFiles(full);
     return entry.name.endsWith(".ts") ? [full] : [];
   });
+}
+
+/** Every .ts file in the repo outside `excludeDir` (and the skip dirs). */
+function listRepoTsFiles(dir: string, excludeDir: string): string[] {
+  return readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
+    const full = join(dir, entry.name);
+    if (entry.isDirectory()) {
+      if (entry.name.startsWith(".") || REPO_SCAN_SKIP_DIRS.has(entry.name)) {
+        return [];
+      }
+      return full === excludeDir ? [] : listRepoTsFiles(full, excludeDir);
+    }
+    return entry.name.endsWith(".ts") ? [full] : [];
+  });
+}
+
+/** `@shipwright/admin[/...]` specifiers in `source`. */
+export function findRetiredSpecifiers(source: string): string[] {
+  return [...source.matchAll(RETIRED_SPECIFIER)].map((m) => m[1]);
 }
 
 function isInside(dir: string, path: string): boolean {
@@ -140,5 +179,62 @@ describe("admin import boundary (coding -> platform only)", () => {
         ADMIN_DIR,
       ),
     ).toEqual([]);
+  });
+});
+
+describe("admin package boundary (@app-vitals/agent-admin only)", () => {
+  const outsideFiles = listRepoTsFiles(REPO_ROOT, ADMIN_DIR).filter(
+    (file) => !REPO_SCAN_FIXTURE_FILES.has(file),
+  );
+  const repoRel = (file: string) => file.slice(REPO_ROOT.length + 1);
+
+  it("no file outside admin/ relatively imports an admin file", () => {
+    const violations = outsideFiles.flatMap((file) =>
+      findImportsInto(file, readFileSync(file, "utf8"), ADMIN_DIR).map(
+        (spec) => `${repoRel(file)} -> ${spec}`,
+      ),
+    );
+    expect(violations).toEqual([]);
+  });
+
+  it("no file outside admin/ imports the retired @shipwright/admin name", () => {
+    const violations = outsideFiles.flatMap((file) =>
+      findRetiredSpecifiers(readFileSync(file, "utf8")).map(
+        (spec) => `${repoRel(file)} -> ${spec}`,
+      ),
+    );
+    expect(violations).toEqual([]);
+  });
+
+  it("detects relative and retired admin imports (checker self-test)", () => {
+    const script = join(REPO_ROOT, "scripts", "example.ts");
+    expect(
+      findImportsInto(
+        script,
+        `import { adminExtensions } from "../admin/src/main.ts";`,
+        ADMIN_DIR,
+      ),
+    ).toEqual(["../admin/src/main.ts"]);
+    expect(
+      findImportsInto(
+        join(REPO_ROOT, "task-store", "src", "example.ts"),
+        `const m = await import("../../admin/src/coding/x.ts");`,
+        ADMIN_DIR,
+      ),
+    ).toEqual(["../../admin/src/coding/x.ts"]);
+    expect(
+      findImportsInto(
+        script,
+        `import { x } from "@app-vitals/agent-admin/admin-boot";`,
+        ADMIN_DIR,
+      ),
+    ).toEqual([]);
+    expect(
+      findRetiredSpecifiers(
+        `import type { AgentPlugin } from "@shipwright/admin";\n` +
+          `import { y } from "@shipwright/admin/api.ts";\n` +
+          `import { z } from "@app-vitals/agent-admin";`,
+      ),
+    ).toEqual(["@shipwright/admin", "@shipwright/admin/api.ts"]);
   });
 });

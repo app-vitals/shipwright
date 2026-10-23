@@ -7,6 +7,7 @@
  * inline lives behind this one factory.
  */
 
+import type { AgentConfigResponse } from "@app-vitals/agent-admin";
 import type {
   AgentExtension,
   AgentExtensionContext,
@@ -20,7 +21,6 @@ import type {
 import { cleanupMergedWorktreesRef } from "@app-vitals/agent-runtime/cleanup-merged-worktrees-ref";
 import { NoopCronRunReporter } from "@app-vitals/agent-runtime/cron-run-reporter";
 import { ghGraphql, ghJson } from "@app-vitals/agent-runtime/gh-helpers";
-import type { AgentConfigResponse } from "@shipwright/admin";
 import { allowSelfReviewRef } from "./allow-self-review-ref.ts";
 import {
   buildProductionDeps as buildClaimInvariantReconcilerDeps,
