@@ -160,7 +160,8 @@ are human-reviewed entries in `.shipwright/suppressions.yml` in the **scanned re
    it never appears in `entropy-report.md` and is not counted in the summary or the quality
    log's `totalViolations`, `bySeverity` or `byRule`.
 4. **Track the counts** for Steps 4-6: `suppressed_count` = `suppressed.length`, and the
-   `expired` entries (rule, match key, `expires`). Expired entries stop suppressing, so their
+   `expired` entries (rule, match key, `expires`) — keep only those with `rule == "entropy"`;
+   the file is shared with osv/grype/posture, whose expired entries are not this scan's to report. Expired entries stop suppressing, so their
    findings stay in `kept` and surface normally.
 
 ---

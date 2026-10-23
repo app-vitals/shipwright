@@ -102,6 +102,10 @@ describe("SKILL.md — suppressions (.shipwright/suppressions.yml)", () => {
     expect(content).toContain("no longer suppressing");
   });
 
+  it("limits expired entries to the entropy rule", () => {
+    expect(content).toContain('`rule == "entropy"`');
+  });
+
   it("keeps suppressed findings out of the report and quality log", () => {
     expect(content).toMatch(/Never report a finding suppressed/);
     expect(content).toContain("totalViolations");
