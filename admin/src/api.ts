@@ -66,7 +66,7 @@ export interface AgentConfigResponse {
    */
   accountStatus?: string | null;
   /**
-   * ARD-6.1: the agent's Agent Type name (e.g. "coding"). Additive and
+   * ARD-6.1: the agent's Specialty name (e.g. "coding"). Additive and
    * optional — fixtures/doubles built before this field keep compiling, and
    * the agent runtime treats an absent value as "coding".
    */

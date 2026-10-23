@@ -807,7 +807,7 @@ interface AgentRecord {
 /** Injectable fetch type so tests can supply a double instead of real network calls. */
 type FetchLike = typeof fetch;
 
-/** Agent Type the hitl agent is created as — mirrors the retired JSON API's default. */
+/** Specialty the hitl agent is created as — mirrors the retired JSON API's default. */
 const HITL_AGENT_TYPE = "coding";
 
 /**

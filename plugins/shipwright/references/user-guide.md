@@ -230,7 +230,7 @@ Full reference (schemas, status lifecycle, all endpoints):
 
 ### Maintenance crons + why
 
-Beyond the five pipeline phases, an agent type manifest can enable standalone maintenance
+Beyond the five pipeline phases, a specialty manifest can enable standalone maintenance
 crons — each fully self-contained, doing its own discovery with no dependency on
 `shipwright-loop`:
 

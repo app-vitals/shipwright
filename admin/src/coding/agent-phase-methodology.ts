@@ -2,7 +2,7 @@
  * agent/src/agent-phase-methodology.ts
  * AgentPhaseMethodologyService — CRUD for per-phase subagent-type overrides.
  *
- * Each row records which subagent type (e.g. a custom Agent Type name) should
+ * Each row records which subagent type (e.g. a custom Specialty name) should
  * handle one pipeline phase — prd, plan-session, review, patch, deploy, or
  * dev-task — for a given agent, overriding that phase's default methodology.
  * A row with `subagentType: null` (or the absence of a row) means "use the

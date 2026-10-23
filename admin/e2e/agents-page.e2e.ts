@@ -234,7 +234,7 @@ test.describe("GET /admin/agents/:id — authenticated", () => {
     expect(docScrollWidth).toBeLessThanOrEqual(innerWidth + 1);
   });
 
-  test("agent type name is visible on the detail page", async ({
+  test("specialty name is visible on the detail page", async ({
     page,
     context,
   }) => {
@@ -276,7 +276,7 @@ test.describe("GET /admin/agents/:id — authenticated", () => {
   });
 });
 
-// ─── New-agent type picker (ATS-4.1) ──────────────────────────────────────────
+// ─── New-specialty picker (ATS-4.1) ──────────────────────────────────────────
 
 async function loadNewAgentPage(
   page: Page,

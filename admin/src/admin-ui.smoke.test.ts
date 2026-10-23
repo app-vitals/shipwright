@@ -1005,7 +1005,7 @@ describe("admin UI — authenticated pages", () => {
     });
   });
 
-  it("authenticated GET /admin/agents/new returns 200 with a required type select listing the agent types", async () => {
+  it("authenticated GET /admin/agents/new returns 200 with a required type select listing the specialties", async () => {
     const app = createAdminUIApp(makeMockDeps());
     const res = await app.request("/admin/agents/new", {
       headers: { Cookie: `admin_session=${cookie}` },
@@ -1014,7 +1014,7 @@ describe("admin UI — authenticated pages", () => {
     const html = await res.text();
     // Regression coverage for a bug where a consumer wiring up AdminUIDeps
     // without the required `provisioner` field (it has no default, unlike
-    // agentTypeRegistry) caused this route to throw on `provisioner.canProvision`
+    // specialtyRegistry) caused this route to throw on `provisioner.canProvision`
     // — a 500 that left the type picker (and its "required" select[name=type])
     // missing entirely rather than merely disabled.
     expect(html).toContain(

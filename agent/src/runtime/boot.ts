@@ -3,8 +3,8 @@
  * Agent runtime boot sequence, exported as startAgent(extensions).
  *
  * A consumer entry (agent/src/index.ts for the coding agent) calls startAgent
- * with the extension factories for its agent type — the runtime itself imports
- * no agent-type module, so it can be extracted and shared.
+ * with the extension factories for its specialty — the runtime itself imports
+ * no specialty module, so it can be extracted and shared.
  *
  * Boot order:
  *  1. ensureAgentHome
@@ -277,7 +277,7 @@ export async function startAgent(
     contextStamp,
   };
 
-  // ARD-3.1: the agent-type extension seam (agent-extension.ts). The consumer
+  // ARD-3.1: the specialty extension seam (agent-extension.ts). The consumer
   // entry (index.ts for the coding agent) passes the extension factories; they
   // are built here (after every dep they need exists, before config sync / cron
   // sync call their hooks) and composed into the single extension the rest of
@@ -495,7 +495,7 @@ export async function startAgent(
           );
         }
 
-        // Agent-type extension: the coding extension syncs the PR-policy refs
+        // Specialty extension: the coding extension syncs the PR-policy refs
         // (review/patch author allowlists, allow-self-review, cleanup-merged-
         // worktrees) here.
         extension.onConfigSync?.(bundle);

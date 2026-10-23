@@ -9,7 +9,7 @@
 >
 > **Seventh pass (2026-10-20, `cc8f30e5c..192e514e3`).** Artifacts refreshed at `192e514e3`. The delta is dominated by the `agent/src/` split into `runtime/` and `coding/` (path moves with tests moving alongside; bucket assignments carry over) plus a new import-boundary unit check, the anthropic-identity admin module (paired unit and integration tests), `lib/pg-sslmode`, and a base-image contract smoke test in the agent image CI job. The removed agent-policy backfill took its tests with it. No new tasks minted: `T-086`, `T-087` and `T-088` carried forward unchanged (premises re-verified: `anthropic-credential-guard.ts` and `account-agent-create.ts` still have no own sibling test; `check-helpers.unit.test.ts` still assigns `globalThis.fetch` 7 times; task-store highest existing `test-t-*-shipwright` is `test-t-085`, `086`-`088` return 404 so remain unfiled). Coverage Gate figures are carried forward and were not re-measured.
 >
-> **Sixth pass (2026-10-18, `07e79159e..cc8f30e5c`).** Artifacts refreshed at `cc8f30e5c`. The delta (SAT-1.1 `specialist` agent type manifest, `reconcileSystemCrons` no-coding-fallback fix) landed with paired, correctly-layered tests (`agent-types/specialist/manifest.content.test.ts`, updated `agent-cron-jobs.{unit,integration}.test.ts`); 30 unit/content tests pass locally. No new tasks minted: `T-086`, `T-087` and `T-088` carried forward unchanged.
+> **Sixth pass (2026-10-18, `07e79159e..cc8f30e5c`).** Artifacts refreshed at `cc8f30e5c`. The delta (SAT-1.1 `specialist` specialty manifest, `reconcileSystemCrons` no-coding-fallback fix) landed with paired, correctly-layered tests (`specialties/specialist/manifest.content.test.ts`, updated `agent-cron-jobs.{unit,integration}.test.ts`); 30 unit/content tests pass locally. No new tasks minted: `T-086`, `T-087` and `T-088` carried forward unchanged.
 >
 > **Fifth pass (2026-10-16, `addbdffcb..07e79159e`).** Artifacts refreshed at `07e79159e`. The WIF-2.1 delta (Anthropic credential guards, federated agent pod identity token) landed with paired tests except `admin/src/anthropic-credential-guard.ts`, which only has indirect coverage; one new task **T-088** added. All existing T-NNN rows carried forward unchanged.
 >
@@ -104,10 +104,10 @@ Re-verified the status of every previously-tracked ID (not assumed from the old 
 
 | Task | Status | Title |
 |---|---|---|
-| `test-t-076-shipwright` | **deployed** (unchanged) | Split `agent-type-manifest-loader.unit.test.ts`'s real-disk cases into a new `.integration.test.ts` file |
+| `test-t-076-shipwright` | **deployed** (unchanged) | Split `specialty-manifest-loader.unit.test.ts`'s real-disk cases into a new `.integration.test.ts` file |
 | `test-t-077-shipwright` | **deployed** (unchanged) | `check-review.ts`'s `isBundleComplete` fail-open catch-path test |
 | `test-t-078-shipwright` | **deployed** (unchanged) | Make `isAuthorAllowed`'s ref dependency injectable + never-synced equivalence test |
-| `test-t-079-shipwright` | **deployed** (unchanged) | `scripts/generate-agent-type-schema.ts` test-coverage class-level decision |
+| `test-t-079-shipwright` | **deployed** (unchanged) | `scripts/generate-specialty-schema.ts` test-coverage class-level decision |
 | `test-t-080-shipwright` | **deployed** (unchanged) | HITL dev-loop bootstrap's full clone→seed→boot→poll sequence, injected `gh` exec fake |
 | `test-t-081-shipwright` | **done** (unchanged) | `TaskService.claim()`'s concurrent-race close (real Postgres) |
 | `test-t-082-shipwright` | **deployed** (unchanged) | `traceReviewCandidacyDecision`'s exclusion checks proven correct in 3+-condition combination |

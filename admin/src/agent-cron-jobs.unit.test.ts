@@ -2,7 +2,7 @@
  * Unit tests for agent-cron-jobs.ts:
  *   - the pure cron-expression validator (isValidCron)
  *   - reconcileSystemCrons()'s create/update/orphan/parent-link logic, driven
- *     by an injected AgentTypeManifestResolver double and an in-memory prisma
+ *     by an injected SpecialtyManifestResolver double and an in-memory prisma
  *     test double (no real DB, no filesystem).
  *
  * Pure logic against injected doubles — see docs/testing.md for the unit-layer
@@ -11,8 +11,8 @@
 import { describe, expect, test } from "bun:test";
 import type { AgentCronJob, PrismaClient } from "../prisma/client/client.ts";
 import { AgentCronJobService, isValidCron } from "./agent-cron-jobs.ts";
-import type { AgentTypeManifestResolver } from "./agent-type-manifest-loader.ts";
-import type { AgentTypeManifest } from "./agent-type-registry.ts";
+import type { SpecialtyManifestResolver } from "./specialty-manifest-loader.ts";
+import type { SpecialtyManifest } from "./specialty-registry.ts";
 
 describe("isValidCron", () => {
   test("accepts standard 5-field schedules", () => {
@@ -51,28 +51,28 @@ describe("isValidCron", () => {
 
 // ─── reconcileSystemCrons() with injected registry + fake prisma ────────────
 
-type ManifestCron = AgentTypeManifest["crons"][number];
+type ManifestCron = SpecialtyManifest["crons"][number];
 
 /** Build a minimal valid-enough manifest carrying just the crons we care about. */
-function manifestWithCrons(crons: ManifestCron[]): AgentTypeManifest {
-  return { crons } as unknown as AgentTypeManifest;
+function manifestWithCrons(crons: ManifestCron[]): SpecialtyManifest {
+  return { crons } as unknown as SpecialtyManifest;
 }
 
 /** A registry double that always returns a fixed manifest and records lookups. */
 function fakeRegistry(
   byType: Record<string, ManifestCron[]>,
   fallbackType = "coding",
-): AgentTypeManifestResolver & { lookups: string[] } {
+): SpecialtyManifestResolver & { lookups: string[] } {
   const lookups: string[] = [];
   return {
     lookups,
-    getManifest(typeName: string): AgentTypeManifest {
+    getManifest(typeName: string): SpecialtyManifest {
       lookups.push(typeName);
       const crons = byType[typeName] ?? byType[fallbackType];
       if (!crons) throw new Error(`no manifest for ${typeName}`);
       return manifestWithCrons(crons);
     },
-    tryGetManifest(typeName: string): AgentTypeManifest | undefined {
+    tryGetManifest(typeName: string): SpecialtyManifest | undefined {
       lookups.push(typeName);
       const crons = byType[typeName];
       return crons ? manifestWithCrons(crons) : undefined;

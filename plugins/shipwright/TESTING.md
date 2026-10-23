@@ -521,7 +521,7 @@ Run these across ALL scenarios to verify genericization:
 - [ ] Step 11b.2 detects check failure after `--watch` completes
 - [ ] Step 11b.3 collects failure logs via `gh run list` and `gh run view --log`
 - [ ] Step 11b.4 prints `CI FIX: attempt 1/3` banner
-- [ ] Fix subagent is launched as `general-purpose` Agent type
+- [ ] Fix subagent is launched as `general-purpose` agent type
 - [ ] Subagent receives: task context, failure logs, PR diff
 - [ ] Subagent fixes the issue, commits with `fix:` prefix, pushes
 - [ ] Loop returns to 11b.1 (updates from main again)

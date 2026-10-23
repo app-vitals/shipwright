@@ -265,7 +265,7 @@ describe("resolveTemplatesDir option resolution (AEP-1.2)", () => {
     expect(dir).toMatch(/workspace$/);
   });
 
-  it("looks up SHIPWRIGHT_DEFAULT_AGENT_TYPE under SHIPWRIGHT_AGENT_TYPES_DIR for an absent type", async () => {
+  it("looks up SHIPWRIGHT_DEFAULT_AGENT_TYPE under SHIPWRIGHT_SPECIALTIES_DIR for an absent type", async () => {
     const { resolveTemplatesDir } = await import("./setup.ts");
     const warnings: string[] = [];
     const dir = resolveTemplatesDir(
@@ -274,7 +274,7 @@ describe("resolveTemplatesDir option resolution (AEP-1.2)", () => {
       (m) => warnings.push(m),
       {
         SHIPWRIGHT_DEFAULT_AGENT_TYPE: "base",
-        SHIPWRIGHT_AGENT_TYPES_DIR: "/fixture/types",
+        SHIPWRIGHT_SPECIALTIES_DIR: "/fixture/types",
       },
     );
     // Missing fixture manifest → warns naming the type, falls back built-in.

@@ -630,12 +630,12 @@ describe("renderAgentDetailPage — overview", () => {
     expect(html).toContain('href="/admin/agents"');
   });
 
-  test("agent type name is displayed", () => {
+  test("specialty name is displayed", () => {
     const html = render();
     expect(html).toContain("coding");
   });
 
-  test("XSS: agent type name is escaped", () => {
+  test("XSS: specialty name is escaped", () => {
     const xssAgent: AgentDetail = {
       ...AGENT,
       typeName: '<script>alert("xss")</script>',

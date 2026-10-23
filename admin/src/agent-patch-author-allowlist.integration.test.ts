@@ -27,8 +27,8 @@ import { AgentPluginService } from "./agent-plugins.ts";
 import { NoopAgentProvisioner } from "./agent-provisioner.ts";
 import { AgentTokenService } from "./agent-tokens.ts";
 import { AgentToolService } from "./agent-tools.ts";
-import type { AgentTypeManifestResolver } from "./agent-type-manifest-loader.ts";
-import type { AgentTypeManifest } from "./agent-type-registry.ts";
+import type { SpecialtyManifestResolver } from "./specialty-manifest-loader.ts";
+import type { SpecialtyManifest } from "./specialty-registry.ts";
 import { AgentService } from "./agents.ts";
 import type { AdminDeps } from "./agents-api.ts";
 import { createAdminApp } from "./agents-api.ts";
@@ -63,9 +63,9 @@ function makePrisma(): PrismaClient {
   return createAdminPrismaClient(TEST_DB as string);
 }
 
-const CODING_MANIFEST: AgentTypeManifest = {
+const CODING_MANIFEST: SpecialtyManifest = {
   apiVersion: "shipwright.dev/v1alpha1",
-  kind: "AgentType",
+  kind: "Specialty",
   metadata: {
     name: "coding",
     displayName: "Coding Agent",
@@ -84,13 +84,13 @@ const CODING_MANIFEST: AgentTypeManifest = {
   voice: true,
 };
 
-function fakeAgentTypeRegistry(): AgentTypeManifestResolver {
-  const byType: Record<string, AgentTypeManifest> = { coding: CODING_MANIFEST };
+function fakeSpecialtyRegistry(): SpecialtyManifestResolver {
+  const byType: Record<string, SpecialtyManifest> = { coding: CODING_MANIFEST };
   return {
-    getManifest(typeName: string): AgentTypeManifest {
-      return byType[typeName] ?? (byType.coding as AgentTypeManifest);
+    getManifest(typeName: string): SpecialtyManifest {
+      return byType[typeName] ?? (byType.coding as SpecialtyManifest);
     },
-    tryGetManifest(typeName: string): AgentTypeManifest | undefined {
+    tryGetManifest(typeName: string): SpecialtyManifest | undefined {
       return byType[typeName];
     },
     listTypes() {
@@ -122,7 +122,7 @@ function makeDeps(prisma: PrismaClient): AdminDeps {
     agentTokenService: new AgentTokenService(prisma),
     agentPluginService: new AgentPluginService(prisma),
     agentMemberService: new AgentMemberService(prisma),
-    agentTypeRegistry: fakeAgentTypeRegistry(),
+    specialtyRegistry: fakeSpecialtyRegistry(),
     agentChatTokenService: new AgentChatTokenService(prisma),
     agentGitHubInstallationsService: new AgentGitHubInstallationsService(
       prisma,

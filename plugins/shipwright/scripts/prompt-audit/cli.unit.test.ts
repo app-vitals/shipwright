@@ -30,7 +30,7 @@ const REPO: Record<string, string> = {
     'expect(c).toContain("Build it");\n',
   "plugins/p/skills/helper/SKILL.md":
     "---\nname: helper\n---\nSee plugins/p/commands/dev-task.md.\n",
-  "agent-types/coding/manifest.yaml": [
+  "specialties/coding/manifest.yaml": [
     "crons:",
     "  - name: shipwright-dev-task",
     "    prompt: /shipwright:dev-task",

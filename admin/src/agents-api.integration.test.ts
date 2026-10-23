@@ -25,8 +25,8 @@ import type { AgentProvisioner } from "./agent-provisioner.ts";
 import { NoopAgentProvisioner } from "./agent-provisioner.ts";
 import { AgentTokenService } from "./agent-tokens.ts";
 import { AgentToolService } from "./agent-tools.ts";
-import type { AgentTypeManifestResolver } from "./agent-type-manifest-loader.ts";
-import type { AgentTypeManifest } from "./agent-type-registry.ts";
+import type { SpecialtyManifestResolver } from "./specialty-manifest-loader.ts";
+import type { SpecialtyManifest } from "./specialty-registry.ts";
 import { AgentService } from "./agents.ts";
 import type { AdminDeps } from "./agents-api.ts";
 import { createAdminApp } from "./agents-api.ts";
@@ -70,9 +70,9 @@ async function createAgent(
 }
 
 /** A minimal valid "coding" manifest used to drive seeding assertions below. */
-const CODING_MANIFEST: AgentTypeManifest = {
+const CODING_MANIFEST: SpecialtyManifest = {
   apiVersion: "shipwright.dev/v1alpha1",
-  kind: "AgentType",
+  kind: "Specialty",
   metadata: {
     name: "coding",
     displayName: "Coding Agent",
@@ -103,18 +103,18 @@ const CODING_MANIFEST: AgentTypeManifest = {
 };
 
 /**
- * Fake AgentTypeManifestResolver — resolves a fixed map of manifests by
+ * Fake SpecialtyManifestResolver — resolves a fixed map of manifests by
  * typeName. tryGetManifest() returns undefined (no fallback) for anything
- * not in the map, mirroring AgentTypeRegistry's real contract.
+ * not in the map, mirroring SpecialtyRegistry's real contract.
  */
-function fakeAgentTypeRegistry(
-  byType: Record<string, AgentTypeManifest> = { coding: CODING_MANIFEST },
-): AgentTypeManifestResolver {
+function fakeSpecialtyRegistry(
+  byType: Record<string, SpecialtyManifest> = { coding: CODING_MANIFEST },
+): SpecialtyManifestResolver {
   return {
-    getManifest(typeName: string): AgentTypeManifest {
-      return byType[typeName] ?? (byType.coding as AgentTypeManifest);
+    getManifest(typeName: string): SpecialtyManifest {
+      return byType[typeName] ?? (byType.coding as SpecialtyManifest);
     },
-    tryGetManifest(typeName: string): AgentTypeManifest | undefined {
+    tryGetManifest(typeName: string): SpecialtyManifest | undefined {
       return byType[typeName];
     },
     listTypes() {
@@ -129,7 +129,7 @@ function fakeAgentTypeRegistry(
 function makeDeps(
   prisma: PrismaClient,
   provisioner: AgentProvisioner = new NoopAgentProvisioner(),
-  agentTypeRegistry: AgentTypeManifestResolver = fakeAgentTypeRegistry(),
+  specialtyRegistry: SpecialtyManifestResolver = fakeSpecialtyRegistry(),
 ): AdminDeps {
   const savedKey = process.env.SHIPWRIGHT_ENCRYPTION_KEY;
   process.env.SHIPWRIGHT_ENCRYPTION_KEY = REAL_KEY;
@@ -150,7 +150,7 @@ function makeDeps(
     agentTokenService: new AgentTokenService(prisma),
     agentPluginService: new AgentPluginService(prisma),
     agentMemberService: new AgentMemberService(prisma),
-    agentTypeRegistry,
+    specialtyRegistry,
     agentChatTokenService: new AgentChatTokenService(prisma),
     agentGitHubInstallationsService: new AgentGitHubInstallationsService(
       prisma,

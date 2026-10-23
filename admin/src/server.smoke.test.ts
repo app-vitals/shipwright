@@ -76,7 +76,7 @@ function buildComposedApp() {
       updateFields: notImplemented,
       runTransaction: notImplemented,
     },
-    agentTypeRegistry: {
+    specialtyRegistry: {
       getManifest: notImplemented,
       tryGetManifest: notImplemented,
       listTypes: notImplemented,

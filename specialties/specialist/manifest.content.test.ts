@@ -1,35 +1,35 @@
 /**
- * agent-types/specialist/manifest.content.test.ts
+ * specialties/specialist/manifest.content.test.ts
  *
- * Content-layer tests for agent-types/specialist/manifest.yaml — the generic,
- * non-coding AgentType (SAT-1.1). Content assertions over a static source
+ * Content-layer tests for specialties/specialist/manifest.yaml — the generic,
+ * non-coding Specialty (SAT-1.1). Content assertions over a static source
  * file, not integration.
  */
 
 import { describe, expect, it } from "bun:test";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { parseAgentTypeManifest } from "../../admin/src/agent-type-registry.ts";
+import { parseSpecialtyManifest } from "../../admin/src/specialty-registry.ts";
 
 const rawContent = readFileSync(
   join(import.meta.dir, "manifest.yaml"),
   "utf-8",
 );
 
-describe("agent-types/specialist/manifest.yaml — parses via AgentTypeRegistry", () => {
+describe("specialties/specialist/manifest.yaml — parses via SpecialtyRegistry", () => {
   it("parses without throwing", () => {
-    expect(() => parseAgentTypeManifest(rawContent)).not.toThrow();
+    expect(() => parseSpecialtyManifest(rawContent)).not.toThrow();
   });
 
   it("has the expected apiVersion and kind", () => {
-    const manifest = parseAgentTypeManifest(rawContent);
+    const manifest = parseSpecialtyManifest(rawContent);
     expect(manifest.apiVersion).toBe("shipwright.dev/v1alpha1");
-    expect(manifest.kind).toBe("AgentType");
+    expect(manifest.kind).toBe("Specialty");
   });
 });
 
-describe("agent-types/specialist/manifest.yaml — required top-level sections", () => {
-  const manifest = parseAgentTypeManifest(rawContent);
+describe("specialties/specialist/manifest.yaml — required top-level sections", () => {
+  const manifest = parseSpecialtyManifest(rawContent);
 
   it("has specialist metadata with no skills", () => {
     expect(manifest.metadata.name).toBe("specialist");
@@ -38,9 +38,9 @@ describe("agent-types/specialist/manifest.yaml — required top-level sections",
     expect(manifest.metadata.skills).toEqual([]);
   });
 
-  it("has an identity section with templatesDir agent-types/specialist/templates/", () => {
+  it("has an identity section with templatesDir specialties/specialist/templates/", () => {
     expect(manifest.identity.templatesDir).toBe(
-      "agent-types/specialist/templates/",
+      "specialties/specialist/templates/",
     );
   });
 
@@ -64,14 +64,14 @@ describe("agent-types/specialist/manifest.yaml — required top-level sections",
   });
 });
 
-describe("agent-types/specialist/manifest.yaml — tools set", () => {
+describe("specialties/specialist/manifest.yaml — tools set", () => {
   it("declares Bash, WebSearch, WebFetch, Agent (no Monitor)", () => {
-    const manifest = parseAgentTypeManifest(rawContent);
+    const manifest = parseSpecialtyManifest(rawContent);
     expect(manifest.tools).toEqual(["Bash", "WebSearch", "WebFetch", "Agent"]);
   });
 });
 
-describe("agent-types/specialist/manifest.yaml — no secret values (public repo)", () => {
+describe("specialties/specialist/manifest.yaml — no secret values (public repo)", () => {
   it("has no `value:` key anywhere in the raw YAML", () => {
     expect(rawContent).not.toMatch(/^\s*value:/m);
   });
@@ -81,7 +81,7 @@ describe("agent-types/specialist/manifest.yaml — no secret values (public repo
   });
 
   it("every env entry has key/description/secret only", () => {
-    const manifest = parseAgentTypeManifest(rawContent);
+    const manifest = parseSpecialtyManifest(rawContent);
     for (const entry of [...manifest.env.required, ...manifest.env.optional]) {
       expect(Object.keys(entry).sort()).toEqual([
         "description",
@@ -105,8 +105,8 @@ describe("agent-types/specialist/manifest.yaml — no secret values (public repo
   });
 });
 
-describe("agent-types/specialist/manifest.yaml — env contract", () => {
-  const manifest = parseAgentTypeManifest(rawContent);
+describe("specialties/specialist/manifest.yaml — env contract", () => {
+  const manifest = parseSpecialtyManifest(rawContent);
 
   it("requires only CLAUDE_CODE_OAUTH_TOKEN, as a secret", () => {
     expect(manifest.env.required).toHaveLength(1);
@@ -115,7 +115,7 @@ describe("agent-types/specialist/manifest.yaml — env contract", () => {
   });
 
   it("lists the same optional keys as the coding manifest", () => {
-    const coding = parseAgentTypeManifest(
+    const coding = parseSpecialtyManifest(
       readFileSync(join(import.meta.dir, "../coding/manifest.yaml"), "utf-8"),
     );
     expect(manifest.env.optional).toEqual(coding.env.optional);

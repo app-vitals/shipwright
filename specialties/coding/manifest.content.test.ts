@@ -1,15 +1,15 @@
 /**
- * agent-types/coding/manifest.content.test.ts
+ * specialties/coding/manifest.content.test.ts
  *
- * Content-layer tests for agent-types/coding/manifest.yaml — the AgentType
- * manifest expressing today's coding agent defaults in the Agent Type format
+ * Content-layer tests for specialties/coding/manifest.yaml — the Specialty
+ * manifest expressing today's coding agent defaults in the Specialty format
  * (ATS-2.1). No real I/O boundary beyond reading the two static source files
  * being compared; this is a content-assertion test, not integration.
  *
  * ATS-3.2 note: this test previously compared the manifest's crons[] against
  * the hardcoded admin/src/system-crons.ts SYSTEM_CRONS array as a temporary
  * parity check. ATS-3.2 cut cron reconciliation over to read this manifest
- * (via AgentTypeRegistry) and deleted the TS array, so that parity assertion
+ * (via SpecialtyRegistry) and deleted the TS array, so that parity assertion
  * has been retired. The manifest→row golden regression now lives in
  * admin/src/agent-cron-jobs.integration.test.ts (GOLDEN_CODING_CRONS).
  */
@@ -17,34 +17,34 @@
 import { describe, expect, it } from "bun:test";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { parseAgentTypeManifest } from "../../admin/src/agent-type-registry.ts";
+import { parseSpecialtyManifest } from "../../admin/src/specialty-registry.ts";
 
 const MANIFEST_PATH = join(import.meta.dir, "manifest.yaml");
 const rawContent = readFileSync(MANIFEST_PATH, "utf-8");
 
 // ─── Acceptance criterion 1 — schema-clean load ────────────────────────────
 
-describe("agent-types/coding/manifest.yaml — parses via AgentTypeRegistry", () => {
+describe("specialties/coding/manifest.yaml — parses via SpecialtyRegistry", () => {
   it("parses without throwing", () => {
-    expect(() => parseAgentTypeManifest(rawContent)).not.toThrow();
+    expect(() => parseSpecialtyManifest(rawContent)).not.toThrow();
   });
 
   it("produces a manifest object", () => {
-    const manifest = parseAgentTypeManifest(rawContent);
+    const manifest = parseSpecialtyManifest(rawContent);
     expect(manifest).toBeDefined();
   });
 
   it("has the expected apiVersion and kind", () => {
-    const manifest = parseAgentTypeManifest(rawContent);
+    const manifest = parseSpecialtyManifest(rawContent);
     expect(manifest.apiVersion).toBe("shipwright.dev/v1alpha1");
-    expect(manifest.kind).toBe("AgentType");
+    expect(manifest.kind).toBe("Specialty");
   });
 });
 
 // ─── Acceptance criterion 4 — required top-level sections present ─────────
 
-describe("agent-types/coding/manifest.yaml — required top-level sections", () => {
-  const manifest = parseAgentTypeManifest(rawContent);
+describe("specialties/coding/manifest.yaml — required top-level sections", () => {
+  const manifest = parseSpecialtyManifest(rawContent);
 
   it("has a metadata section", () => {
     expect(manifest.metadata).toBeDefined();
@@ -90,17 +90,17 @@ describe("agent-types/coding/manifest.yaml — required top-level sections", () 
 
 // ─── Acceptance criterion 2 — exactly 14 cron entries ──────────────────────
 
-describe("agent-types/coding/manifest.yaml — cron count", () => {
+describe("specialties/coding/manifest.yaml — cron count", () => {
   it("has exactly 14 cron entries", () => {
-    const manifest = parseAgentTypeManifest(rawContent);
+    const manifest = parseSpecialtyManifest(rawContent);
     expect(manifest.crons).toHaveLength(14);
   });
 });
 
 // ─── PDR-4.1 — the autonomous plan-session phase cron ──────────────────────
 
-describe("agent-types/coding/manifest.yaml — shipwright-plan phase cron", () => {
-  const manifest = parseAgentTypeManifest(rawContent);
+describe("specialties/coding/manifest.yaml — shipwright-plan phase cron", () => {
+  const manifest = parseSpecialtyManifest(rawContent);
   const planCron = manifest.crons.find((c) => c.name === "shipwright-plan");
 
   it("declares a shipwright-plan cron", () => {
@@ -127,12 +127,12 @@ describe("agent-types/coding/manifest.yaml — shipwright-plan phase cron", () =
 // set as of ATS-3.3 — the former hardcoded tools constant module has been
 // deleted; both admin/src/admin-ui.ts (POST /admin/agents) and
 // scripts/seed-dev-agent.ts now resolve tools from this manifest via
-// AgentTypeRegistry instead. This test pins the expected tool set directly
+// SpecialtyRegistry instead. This test pins the expected tool set directly
 // so a regression here fails loudly rather than silently drifting.
 
-describe("agent-types/coding/manifest.yaml — tools set", () => {
+describe("specialties/coding/manifest.yaml — tools set", () => {
   it("declares the expected full tool set", () => {
-    const manifest = parseAgentTypeManifest(rawContent);
+    const manifest = parseSpecialtyManifest(rawContent);
     expect(manifest.tools).toEqual([
       "Read",
       "Write",
@@ -151,7 +151,7 @@ describe("agent-types/coding/manifest.yaml — tools set", () => {
 
 // ─── Acceptance criterion 3 — zero secret values anywhere in the file ──────
 
-describe("agent-types/coding/manifest.yaml — no secret values (public repo)", () => {
+describe("specialties/coding/manifest.yaml — no secret values (public repo)", () => {
   it("has no `value:` key anywhere in the raw YAML", () => {
     expect(rawContent).not.toMatch(/^\s*value:/m);
   });
@@ -163,7 +163,7 @@ describe("agent-types/coding/manifest.yaml — no secret values (public repo)", 
   });
 
   it("every required env entry has key/description/secret only — no value", () => {
-    const manifest = parseAgentTypeManifest(rawContent);
+    const manifest = parseSpecialtyManifest(rawContent);
     for (const entry of manifest.env.required) {
       expect(Object.keys(entry).sort()).toEqual(
         ["description", "key", "secret"].sort(),
@@ -172,7 +172,7 @@ describe("agent-types/coding/manifest.yaml — no secret values (public repo)", 
   });
 
   it("every optional env entry has key/description/secret only — no value", () => {
-    const manifest = parseAgentTypeManifest(rawContent);
+    const manifest = parseSpecialtyManifest(rawContent);
     for (const entry of manifest.env.optional) {
       expect(Object.keys(entry).sort()).toEqual(
         ["description", "key", "secret"].sort(),
@@ -196,8 +196,8 @@ describe("agent-types/coding/manifest.yaml — no secret values (public repo)", 
 
 // ─── env contract shape (CLAUDE_CODE_OAUTH_TOKEN required; GH_TOKEN + voice/chat optional) ─
 
-describe("agent-types/coding/manifest.yaml — env contract", () => {
-  const manifest = parseAgentTypeManifest(rawContent);
+describe("specialties/coding/manifest.yaml — env contract", () => {
+  const manifest = parseSpecialtyManifest(rawContent);
 
   it("requires CLAUDE_CODE_OAUTH_TOKEN as a secret", () => {
     const entry = manifest.env.required.find(
@@ -230,9 +230,9 @@ describe("agent-types/coding/manifest.yaml — env contract", () => {
 
 // ─── error-patrol-maintenance cron — chaining instruction ──────────────────
 
-describe("agent-types/coding/manifest.yaml — error-patrol-maintenance chaining", () => {
+describe("specialties/coding/manifest.yaml — error-patrol-maintenance chaining", () => {
   it("error-patrol-maintenance prompt contains explicit chaining instruction", () => {
-    const manifest = parseAgentTypeManifest(rawContent);
+    const manifest = parseSpecialtyManifest(rawContent);
     const errorPatrol = manifest.crons.find(
       (c) => c.name === "error-patrol-maintenance",
     );
@@ -256,8 +256,8 @@ describe("agent-types/coding/manifest.yaml — error-patrol-maintenance chaining
 
 // ─── PAU-3.11 — prompt-audit-maintenance cron ──────────────────────────────
 
-describe("agent-types/coding/manifest.yaml — prompt-audit-maintenance cron", () => {
-  const manifest = parseAgentTypeManifest(rawContent);
+describe("specialties/coding/manifest.yaml — prompt-audit-maintenance cron", () => {
+  const manifest = parseSpecialtyManifest(rawContent);
   const cron = manifest.crons.find(
     (c) => c.name === "prompt-audit-maintenance",
   );

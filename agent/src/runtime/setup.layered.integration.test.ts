@@ -13,7 +13,7 @@ const REPO_ROOT = join(import.meta.dir, "..", "..", "..");
 const CODING_TEMPLATES = join(REPO_ROOT, "agent", "workspace");
 const SPECIALIST_TEMPLATES = join(
   REPO_ROOT,
-  "agent-types",
+  "specialties",
   "specialist",
   "templates",
 );

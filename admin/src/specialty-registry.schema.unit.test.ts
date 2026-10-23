@@ -1,17 +1,17 @@
 /**
- * admin/src/agent-type-registry.schema.unit.test.ts
- * Regenerates the AgentType JSON Schema in-memory from its Zod source and
+ * admin/src/specialty-registry.schema.unit.test.ts
+ * Regenerates the Specialty JSON Schema in-memory from its Zod source and
  * diffs it (deep-equal, not string-equal) against the committed
- * docs/schemas/agent-type.schema.json artifact. This guarantees the
+ * docs/schemas/specialty.schema.json artifact. This guarantees the
  * committed artifact can never silently drift from the Zod source —
- * `scripts/generate-agent-type-schema.ts` must be re-run (and its output
- * re-committed) whenever AgentTypeManifestSchema changes.
+ * `scripts/generate-specialty-schema.ts` must be re-run (and its output
+ * re-committed) whenever SpecialtyManifestSchema changes.
  */
 
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "bun:test";
-import { buildAgentTypeJsonSchema } from "./agent-type-registry.ts";
+import { buildSpecialtyJsonSchema } from "./specialty-registry.ts";
 
 const committedSchemaPath = join(
   import.meta.dir,
@@ -19,12 +19,12 @@ const committedSchemaPath = join(
   "..",
   "docs",
   "schemas",
-  "agent-type.schema.json",
+  "specialty.schema.json",
 );
 
-describe("docs/schemas/agent-type.schema.json", () => {
-  it("matches the JSON Schema regenerated from AgentTypeManifestSchema", () => {
-    const regenerated = buildAgentTypeJsonSchema();
+describe("docs/schemas/specialty.schema.json", () => {
+  it("matches the JSON Schema regenerated from SpecialtyManifestSchema", () => {
+    const regenerated = buildSpecialtyJsonSchema();
     const committedRaw = readFileSync(committedSchemaPath, "utf-8");
     const committed = JSON.parse(committedRaw);
     expect(regenerated).toEqual(committed);

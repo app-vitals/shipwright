@@ -1,19 +1,19 @@
-# agent-types/specialist/manifest.yaml
+# specialties/specialist/manifest.yaml
 #
-# AgentType manifest for the "specialist" agent type — a generic, non-coding
+# Specialty manifest for the "specialist" specialty — a generic, non-coding
 # agent. Unlike "coding" it ships no system crons, no bundled shipwright
 # plugin, and no GitHub/task-store scope by default; specialties layer their
 # own plugins, crons and env on top via the admin API after creation.
 #
-# Validated against admin/src/agent-type-registry.ts's AgentTypeManifestSchema
-# (see agent-types/specialist/manifest.content.test.ts).
+# Validated against admin/src/specialty-registry.ts's SpecialtyManifestSchema
+# (see specialties/specialist/manifest.content.test.ts).
 #
 # NOTE: identity.templatesDir is read by the agent runtime when seeding a new
 # workspace. It points at the specialist template set (CLAUDE.md, SOUL.md,
 # IDENTITY.md and an optional SPECIALTY.md, all *.template) with no
 # coding-only sections; files it omits fall back to agent/workspace/.
 apiVersion: shipwright.dev/v1alpha1
-kind: AgentType
+kind: Specialty
 metadata:
   name: specialist
   displayName: Specialist Agent
@@ -24,7 +24,7 @@ metadata:
   version: 1.0.0
   skills: []
 identity:
-  templatesDir: agent-types/specialist/templates/
+  templatesDir: specialties/specialist/templates/
 crons: []
 plugins: []
 tools:

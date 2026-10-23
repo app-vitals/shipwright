@@ -4,8 +4,8 @@
  *
  * Upserts a dev agent (id: "dev-agent") into the admin Prisma DB with its
  * AgentEnv (CLAUDE_CODE_OAUTH_TOKEN, optional GH_TOKEN), and its
- * AgentPlugin/AgentTool rows resolved from the "coding" Agent Type manifest
- * (agent-types/coding/manifest.yaml) via AgentTypeRegistry — the same
+ * AgentPlugin/AgentTool rows resolved from the "coding" Specialty manifest
+ * (specialties/coding/manifest.yaml) via SpecialtyRegistry — the same
  * manifest-driven source of truth used by the admin console's agent-creation
  * form, POST /admin/agents (ATS-3.3).
  *
@@ -22,7 +22,7 @@
 
 import * as fs from "node:fs";
 import * as path from "node:path";
-import type { AgentTypeManifestResolver } from "../admin/src/agent-type-manifest-loader.ts";
+import type { SpecialtyManifestResolver } from "../admin/src/specialty-manifest-loader.ts";
 import { parseFlags } from "../lib/cli-flags.ts";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -80,11 +80,11 @@ export interface SeedDeps {
   /** Read the env file contents — throws on missing file. */
   readEnvFile: () => string;
   /**
-   * Resolves the "coding" Agent Type manifest for its tools[]/plugins[] —
+   * Resolves the "coding" Specialty manifest for its tools[]/plugins[] —
    * the single source of truth this script and the admin console's
    * POST /admin/agents create form both seed from. Injectable for testability (see seed-dev-agent.unit.test.ts).
    */
-  agentTypeRegistry: AgentTypeManifestResolver;
+  specialtyRegistry: SpecialtyManifestResolver;
   /** Called when the script should exit with an error. The implementation should throw. */
   exit: (code: number, message: string) => never;
 }
@@ -119,11 +119,11 @@ export function parseEnvFile(content: string): Record<string, string> {
  * Accepts injected deps for testability.
  */
 export async function seedDevAgent(deps: SeedDeps): Promise<void> {
-  const { prisma, readEnvFile, agentTypeRegistry, exit } = deps;
+  const { prisma, readEnvFile, specialtyRegistry, exit } = deps;
 
   // Resolve the "coding" manifest up front — its tools[]/plugins[] are this
   // script's single source of truth (mirrors POST /admin/agents' seeding).
-  const manifest = agentTypeRegistry.getManifest(DEV_AGENT_TYPE);
+  const manifest = specialtyRegistry.getManifest(DEV_AGENT_TYPE);
 
   // 1. Read and parse the env file
   let envVars: Record<string, string>;
@@ -228,8 +228,8 @@ if (import.meta.main) {
   const { createAdminPrismaClient } = await import(
     "../admin/src/prisma-client.ts"
   );
-  const { AgentTypeRegistry } = await import(
-    "../admin/src/agent-type-manifest-loader.ts"
+  const { SpecialtyRegistry } = await import(
+    "../admin/src/specialty-manifest-loader.ts"
   );
 
   const argv = process.argv.slice(2);
@@ -252,7 +252,7 @@ if (import.meta.main) {
     await seedDevAgent({
       prisma,
       readEnvFile: () => fs.readFileSync(envFilePath, "utf8"),
-      agentTypeRegistry: new AgentTypeRegistry(),
+      specialtyRegistry: new SpecialtyRegistry(),
       exit: (code, message) => {
         console.error(message);
         process.exit(code);

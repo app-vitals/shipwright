@@ -26,8 +26,8 @@ import { AgentMemberService } from "./agent-members.ts";
 import { AgentPluginService } from "./agent-plugins.ts";
 import type { AgentProvisioner, ProvisionResult } from "./agent-provisioner.ts";
 import { AgentToolService } from "./agent-tools.ts";
-import type { AgentTypeManifestResolver } from "./agent-type-manifest-loader.ts";
-import type { AgentTypeManifest } from "./agent-type-registry.ts";
+import type { SpecialtyManifestResolver } from "./specialty-manifest-loader.ts";
+import type { SpecialtyManifest } from "./specialty-registry.ts";
 import type { CreateAgentDeps } from "./agents.ts";
 import { AgentService, createAgent } from "./agents.ts";
 import { createAdminPrismaClient } from "./prisma-client.ts";
@@ -42,9 +42,9 @@ function makePrisma(): PrismaClient {
 }
 
 /** A minimal valid "coding" manifest, matching agents-api.integration.test.ts's fixture. */
-const CODING_MANIFEST: AgentTypeManifest = {
+const CODING_MANIFEST: SpecialtyManifest = {
   apiVersion: "shipwright.dev/v1alpha1",
-  kind: "AgentType",
+  kind: "Specialty",
   metadata: {
     name: "coding",
     displayName: "Coding Agent",
@@ -63,14 +63,14 @@ const CODING_MANIFEST: AgentTypeManifest = {
   voice: true,
 };
 
-function fakeAgentTypeRegistry(
-  byType: Record<string, AgentTypeManifest> = { coding: CODING_MANIFEST },
-): AgentTypeManifestResolver {
+function fakeSpecialtyRegistry(
+  byType: Record<string, SpecialtyManifest> = { coding: CODING_MANIFEST },
+): SpecialtyManifestResolver {
   return {
-    getManifest(typeName: string): AgentTypeManifest {
-      return byType[typeName] ?? (byType.coding as AgentTypeManifest);
+    getManifest(typeName: string): SpecialtyManifest {
+      return byType[typeName] ?? (byType.coding as SpecialtyManifest);
     },
-    tryGetManifest(typeName: string): AgentTypeManifest | undefined {
+    tryGetManifest(typeName: string): SpecialtyManifest | undefined {
       return byType[typeName];
     },
     listTypes() {
@@ -130,7 +130,7 @@ describeOrSkip("createAgent() — integration (real Postgres)", () => {
 
   beforeEach(async () => {
     prisma = makePrisma();
-    agentService = new AgentService(prisma, fakeAgentTypeRegistry());
+    agentService = new AgentService(prisma, fakeSpecialtyRegistry());
     agentToolService = new AgentToolService(prisma);
     agentPluginService = new AgentPluginService(prisma);
     agentMemberService = new AgentMemberService(prisma);
@@ -141,7 +141,7 @@ describeOrSkip("createAgent() — integration (real Postgres)", () => {
     agentCronJobService = new AgentCronJobService(
       prisma,
       undefined,
-      fakeAgentTypeRegistry(),
+      fakeSpecialtyRegistry(),
     );
 
     // Truncate between tests — this suite shares a DB with every other
@@ -171,7 +171,7 @@ describeOrSkip("createAgent() — integration (real Postgres)", () => {
       agentEnvService,
       agentCronJobService,
       provisioner: makeProvisioner(),
-      agentTypeRegistry: fakeAgentTypeRegistry(),
+      specialtyRegistry: fakeSpecialtyRegistry(),
       ...overrides,
     };
   }

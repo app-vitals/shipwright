@@ -17,7 +17,7 @@ this priority order:
 
 1. **Precheck-driven (preferred).** The `entropy-patrol-maintenance` cron's `preCheck`
    (`shipwright:check-patrol-scope.ts`) already resolved the agent's configured repos and
-   its stdout — which became this prompt (per the agent type manifest's cron `preCheck`
+   its stdout — which became this prompt (per the specialty manifest's cron `preCheck`
    contract: "When a preCheck script is set, its stdout becomes the actual prompt sent to
    Claude") — lists exactly which repo(s) are in scope, one repo name (`org/repo`) and its
    local clone directory per section. Parse the repo names and directories out of the

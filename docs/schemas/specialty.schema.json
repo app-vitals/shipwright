@@ -1,7 +1,7 @@
 {
-  "$ref": "#/definitions/AgentTypeManifest",
+  "$ref": "#/definitions/SpecialtyManifest",
   "definitions": {
-    "AgentTypeManifest": {
+    "SpecialtyManifest": {
       "type": "object",
       "properties": {
         "apiVersion": {
@@ -10,7 +10,7 @@
         },
         "kind": {
           "type": "string",
-          "const": "AgentType"
+          "const": "Specialty"
         },
         "metadata": {
           "type": "object",

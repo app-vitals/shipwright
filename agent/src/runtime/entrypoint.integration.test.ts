@@ -136,7 +136,7 @@ function makeDeps(
 // ─── Tests ────────────────────────────────────────────────────────────────────
 
 describe("runEntrypoint — happy path", () => {
-  it("exports the agent type to the server process when the config carries one (ARD-6.1)", async () => {
+  it("exports the specialty to the server process when the config carries one (ARD-6.1)", async () => {
     const configClient = new RecordedShipwrightConfigClient({
       ...SAMPLE_CONFIG,
       typeName: "specialist",
