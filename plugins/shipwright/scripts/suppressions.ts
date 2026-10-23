@@ -178,11 +178,7 @@ export function parseSuppressions(text: string): Suppression[] {
       if (x === null) errors.push(`${at}: expires must be YYYY-MM-DD`);
       else expires = x;
     }
-    if (
-      status === "accepted_risk" &&
-      expires === undefined &&
-      e.expires == null
-    ) {
+    if (status === "accepted_risk" && e.expires == null) {
       errors.push(
         `${at}: expires is required for accepted_risk (suggested: ${date ? defaultExpiry(date) : "date + 90 days"})`,
       );
