@@ -91,6 +91,32 @@ Load the same principles file that the scan used, filtered the same way:
 
 ---
 
+## Step 3.5: Re-check Suppressions (defense in depth)
+
+`entropy-scan` already drops suppressed findings, but a stale `entropy-report.md` written
+before a suppression landed can still list them. Before dedup, re-check every surviving
+finding against `.shipwright/suppressions.yml` in the **repo being fixed** (schema:
+`references/suppressions-schema.md`; per-principle `symbol` convention:
+`entropy-scan/references/suppressions.md`) so a stale report cannot refile it.
+
+1. **Build candidates**, one `{rule: "entropy", file, symbol, rule_id, line}` per finding. `file`
+   comes from the finding's path; derive `symbol` per the per-principle convention (never a line
+   number; matching is exact).
+2. **Filter** with the shared script, from the repo being fixed:
+   ```bash
+   bun "$CLAUDE_PLUGIN_ROOT/scripts/suppressions.ts" --filter .shipwright/suppressions.yml candidates.json
+   ```
+   A missing file is valid (nothing suppressed). A non-zero exit means the file is invalid —
+   print the error and treat it as "no suppressions applied"; never abort. `expired` entries do
+   not suppress.
+3. **Skip each `suppressed` finding** — remove it before dedup and task-building, and print:
+   `Skipping {rule_id} {file}:{symbol} — suppressed in .shipwright/suppressions.yml ({status}: {reason})`
+   This message is distinct from the "task already active" message in 6q.1. If a rule group is
+   left empty, drop the group; if no groups remain, print the Step 3 "No PR-worthy findings"
+   message and stop.
+
+---
+
 ## Step 4: Dry-Run Output (if --dry-run)
 
 If `--dry-run` was passed, print a preview and stop without querying or writing to the task store:
@@ -311,6 +337,10 @@ Tasks queued:
 {If any skipped:}
 Skipped (already active):
   {rule_id} — task already in queue or in progress
+
+{If any suppressed:}
+Skipped (suppressed in .shipwright/suppressions.yml):
+  {file}:{symbol} — {status}: {reason}
 
 {If any deferred by cross-check:}
 Deferred (referenced by existing task):
