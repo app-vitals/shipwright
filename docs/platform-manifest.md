@@ -122,6 +122,18 @@ A template file ending in `.tmpl` is copied without the suffix. `biome.json` is 
 
 History mode needs [`git-filter-repo`](https://github.com/newren/git-filter-repo) (`pip install git-filter-repo`). `--no-history` does not. The history integration test skips when it is missing.
 
+## Extraction rehearsal
+
+`scripts/rehearse-extraction.ts` (AGR-1.7) proves the extracted tree is a working repository. It runs `extract-platform.ts` into a scratch directory in `no-history` and `history` mode, then runs these stages in the extracted tree: frozen install, typecheck, lint, `bun test`, the import-boundary gate, both Dockerfile builds and the base-image contract smoke test. Docker stages run once, in the first mode, because the two trees differ only in git history.
+
+```bash
+bun scripts/rehearse-extraction.ts --mode no-history --skip-docker   # fast local run
+```
+
+Flags: `--mode no-history|history|both`, `--source <repo>`, `--ref <rev>`, `--scratch <dir>`, `--keep`, `--skip-docker`, `--only <stage,stage>`, `--plant-violation` (writes an out-of-repository import into the tree to prove the boundary gate fails the rehearsal).
+
+`.github/workflows/rehearse-extraction.yml` runs it daily at 08:00 UTC and on manual dispatch, not on every PR. A failing run fails the workflow and pages through GitHub's failed-workflow notification. It needs `git-filter-repo` and a Postgres service for the admin tests.
+
 ## Pre-publication audit
 
 Public repositories keep every ref forever, so before the extracted tree is pushed, run `scripts/audit-extraction.ts` (AGR-2.1) against it. It exits `1` on any finding, `0` when clean, `2` on a usage error.
