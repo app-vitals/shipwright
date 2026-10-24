@@ -44,7 +44,7 @@ A finding entry is the rule output (`Finding` in `finding.ts`: `class`, `rule`, 
 | `runsSeen` | number | Runs in which the fingerprint was observed. Incremented on every match, never decremented. |
 | `consecutiveRuns` | number | Class (d) only: consecutive runs the dated-model finding reproduced. Reset to `0` on a miss. |
 | `taskId` | string (optional) | `prompt-fix` task filed for the finding. |
-| `measured` | object (optional) | Before/after measurement recorded by `cli.ts measure --record`. |
+| `measured` | object (optional) | Before/after measurement recorded by `cli.ts measure --record` or `prompt-eval` (`kind` names the eval kind; `prompt-eval` writes it only for a gated quality result, never for a cost-only or refused run). |
 | `history` | `{ at, event, status }[]` | Append-only trail of status changes. Never truncated. |
 
 ---
@@ -81,7 +81,7 @@ class `d`.
   never by `prompt-scan`. `prompt-fix` sets `queued` and records `taskId` (the
   `prompt-{class}-{fp8}-shipwright-{YYYY-Www}` task it filed) plus a `queued` history event,
   only for `proposed` findings whose task the store accepted; stale, deferred, duplicate and
-  decision-suppressed findings stay `proposed`. `measure --record` sets `measured`. `watch`
+  decision-suppressed findings stay `proposed`. `measure --record` and `prompt-eval` set `measured`. `watch`
   sets `regressed` when the post-merge series regresses; a `regressed` finding is never
   reverted automatically.
 
