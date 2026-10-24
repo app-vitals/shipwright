@@ -569,17 +569,25 @@ describe("runMiseStartup", () => {
   });
 
   afterEach(() => {
-    // Restore env vars modified by runMiseStartup (and the tests below)
-    process.env.MISE_DATA_DIR = originalMiseDataDir;
-    process.env.MISE_CACHE_DIR = originalMiseCacheDir;
-    process.env.XDG_CACHE_HOME = originalXdgCacheHome;
-    process.env.XDG_DATA_HOME = originalXdgDataHome;
-    process.env.GOPATH = originalGoPath;
-    process.env.GOMODCACHE = originalGoModCache;
-    process.env.npm_config_cache = originalNpmCache;
-    process.env.BUN_INSTALL_CACHE_DIR = originalBunCache;
-    process.env.HOME = originalHome;
-    process.env.PATH = originalPath;
+    // Restore env vars modified by runMiseStartup (and the tests below). A
+    // variable that was unset must be deleted: Bun >= 1.4 turns
+    // `process.env.KEY = undefined` into the string "undefined", which later
+    // tests in the same process then read (e.g. Playwright's cache directory
+    // resolving to "undefined/ms-playwright").
+    const restore = (name: string, original: string | undefined) => {
+      if (original === undefined) delete process.env[name];
+      else process.env[name] = original;
+    };
+    restore("MISE_DATA_DIR", originalMiseDataDir);
+    restore("MISE_CACHE_DIR", originalMiseCacheDir);
+    restore("XDG_CACHE_HOME", originalXdgCacheHome);
+    restore("XDG_DATA_HOME", originalXdgDataHome);
+    restore("GOPATH", originalGoPath);
+    restore("GOMODCACHE", originalGoModCache);
+    restore("npm_config_cache", originalNpmCache);
+    restore("BUN_INSTALL_CACHE_DIR", originalBunCache);
+    restore("HOME", originalHome);
+    restore("PATH", originalPath);
   });
 
   it("sets MISE_DATA_DIR to the PVC path", async () => {
