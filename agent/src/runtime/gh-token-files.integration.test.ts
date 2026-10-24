@@ -1,6 +1,5 @@
 import { afterEach, beforeEach, describe, expect, spyOn, test } from "bun:test";
 import {
-  existsSync,
   mkdtempSync,
   readdirSync,
   readFileSync,
@@ -18,11 +17,11 @@ beforeEach(() => {
 afterEach(() => rmSync(home, { recursive: true, force: true }));
 
 describe("writeTokenFiles", () => {
-  test("single installation writes only gh-token", () => {
+  test("single installation writes gh-token and its per-owner file", () => {
     writeTokenFiles(home, { defaultToken: "t1", ownerTokens: { Acme: "t1" } });
     expect(readFileSync(join(home, "gh-token"), "utf8")).toBe("t1");
-    expect(existsSync(join(home, "gh-token.d"))).toBe(false);
-    expect(readdirSync(home)).toEqual(["gh-token"]);
+    expect(readFileSync(join(home, "gh-token.d", "acme"), "utf8")).toBe("t1");
+    expect(readdirSync(home).sort()).toEqual(["gh-token", "gh-token.d"]);
   });
 
   test("files are mode 0600", () => {
@@ -44,7 +43,7 @@ describe("writeTokenFiles", () => {
     );
   });
 
-  test("stale per-owner files are removed, then the directory", () => {
+  test("stale per-owner files are removed; the directory is kept", () => {
     writeTokenFiles(home, {
       defaultToken: "a",
       ownerTokens: { acme: "a", other: "b", third: "c" },
@@ -58,10 +57,10 @@ describe("writeTokenFiles", () => {
       "other",
     ]);
     writeTokenFiles(home, { defaultToken: "a", ownerTokens: { acme: "a" } });
-    expect(existsSync(join(home, "gh-token.d"))).toBe(false);
+    expect(readdirSync(join(home, "gh-token.d"))).toEqual(["acme"]);
   });
 
-  test("failedOwners keep their last good file and count toward the two-owner threshold", () => {
+  test("failedOwners keep their last good file", () => {
     writeTokenFiles(home, {
       defaultToken: "a",
       ownerTokens: { acme: "a", other: "b" },
@@ -76,7 +75,7 @@ describe("writeTokenFiles", () => {
     expect(readFileSync(join(home, "gh-token.d", "other"), "utf8")).toBe("b");
   });
 
-  test("owners neither minted nor failed are still cleaned up; fewer than 2 tracked removes the dir", () => {
+  test("owners neither minted nor failed are still cleaned up; the dir is kept with one owner", () => {
     writeTokenFiles(home, {
       defaultToken: "a",
       ownerTokens: { acme: "a", other: "b", third: "c" },
@@ -91,26 +90,21 @@ describe("writeTokenFiles", () => {
       "other",
     ]);
     writeTokenFiles(home, { defaultToken: "a", ownerTokens: { acme: "a" } });
-    expect(existsSync(join(home, "gh-token.d"))).toBe(false);
+    expect(readdirSync(join(home, "gh-token.d"))).toEqual(["acme"]);
   });
 
-  test("removing a previously existing gh-token.d logs once without token values; silent when it never existed", () => {
+  test("never logs a removal or token values when the owner set shrinks", () => {
     const logSpy = spyOn(console, "log").mockImplementation(() => {});
     try {
-      writeTokenFiles(home, { defaultToken: "secret-a" });
       writeTokenFiles(home, {
         defaultToken: "secret-a",
         ownerTokens: { acme: "secret-a", other: "secret-b" },
       });
-      expect(logSpy).not.toHaveBeenCalled();
       writeTokenFiles(home, {
         defaultToken: "secret-a",
         ownerTokens: { acme: "secret-a" },
       });
-      expect(logSpy).toHaveBeenCalledTimes(1);
-      const line = String(logSpy.mock.calls[0].join(" "));
-      expect(line).toContain("gh-token.d removed");
-      expect(line).not.toContain("secret");
+      expect(logSpy).not.toHaveBeenCalled();
     } finally {
       logSpy.mockRestore();
     }

@@ -2,13 +2,13 @@
 
 One GitHub App, installed on several GitHub orgs, lets a single agent work across all of them as one bot identity. This page covers how it works, operator setup, the org-admin install steps, the admin status card, and troubleshooting. Env var reference: [`configuration-agent.md`](./configuration-agent.md); file map: [`agent-key-files.md`](./agent-key-files.md).
 
-With a single installation, behavior is identical to a one-org setup. Multi-org behavior only engages once the agent has two or more usable installations in scope.
+With a single installation, behavior is identical to a one-org setup. Per-owner token files are always written under App auth, even with one installation; PAT auth writes none.
 
 ## How it works
 
 - **Discovery.** The agent signs an App JWT from `GH_APP_ID` + `GH_APP_PRIVATE_KEY` and lists the App's installations. It keeps those whose owner appears in the agent's repo scope (`org/repo` entries). `GH_APP_INSTALLATION_ID`, if set, is an optional pin: it is always used, and wins over a discovered installation for the same owner.
 - **Default installation.** The pin if set, otherwise the lowest selected installation id. Its token is written to the `gh-token` file, so single-installation behavior is unchanged.
-- **Per-owner tokens.** When two or more installations are usable, each owner's token is also written to `gh-token.d/<lowercase-owner>` next to `GH_TOKEN_FILE` (atomic write, mode 0600). With fewer than two, that directory is removed.
+- **Per-owner tokens.** Under App auth, each usable installation's owner token is also written to `gh-token.d/<lowercase-owner>` next to `GH_TOKEN_FILE` (atomic write, mode 0600). The directory is kept even with a single installation; owners that are no longer usable are pruned. Under a PAT nothing is written there.
 - **Routing.** The git credential helper reads the owner from the request path and uses that owner's token file. The `gh` wrapper resolves the target owner in this order: the explicit `SHIPWRIGHT_GH_OWNER` hint, `-R`/`--repo`, a `repos/<owner>/...` API path, the `gh repo clone` argument, the working directory's `origin` remote, then the default installation. `gh api graphql` calls carry no repo in their arguments, so they route by the `SHIPWRIGHT_GH_OWNER` hint (set per call by the agent's and plugin's `ghGraphql` helpers via their `owner` option); without a hint they fall through to the working directory and then the default installation. An invalid hint falls back to the default installation. An owner with no token fails with a message naming the org; it never falls back to another org's token.
 - **Re-sync.** Discovery re-runs on the agent's config-sync tick (every 60 seconds), so scope changes and new installs are picked up without a restart.
 - **Broken installations.** An installation is marked broken when GitHub reports it suspended or rejects the token mint (403, 404 or 422). Transient errors (5xx, network) are logged and retried, not marked broken.
