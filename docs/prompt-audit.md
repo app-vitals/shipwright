@@ -86,6 +86,8 @@ The eval harness (`scripts/prompt-audit/eval-*.ts`) emits cases in the layout `c
 
 **Run isolation.** Plugin-eval runs get a temporary home and only an env allowlist plus `EVAL_*` variables, so `SHIPWRIGHT_TASK_STORE_*` and `gh` auth do not reach the run. `dev-task`, `review` and `patch` are therefore side-effect-free under plugin eval, but also inert past their first task-store or `gh` call. Historical replay would need `case.yaml` `execution.env` pointed at a local task store plus a `scaffold_script`; that is out of scope and remains a PAU-5.4 limitation.
 
+The model-run eval tier is gated by [`docs/prompt-audit-calibration.md`](./prompt-audit-calibration.md). The 2026-10-24 calibration **failed** (it detects a broken trigger and nothing else, and its minimum detectable effect is above the changes the audit expects), so the tier is off: findings are cost-only and the production series is the only quality signal until a later calibration passes.
+
 ## Model cutover decision (2026-10-24)
 
 **Decision: keep `claude-sonnet-5-5` as the fleet default** (PAU-2.4). The `prompt-fix` cutover freeze lifts with this note.
