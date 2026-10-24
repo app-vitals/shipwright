@@ -319,6 +319,11 @@ export async function isMergeOnlyUpdate(
 
 // ─── Task store HTTP client ───────────────────────────────────────────────────
 
+type FetchFn = (
+  url: RequestInfo | URL,
+  init?: RequestInit,
+) => Promise<Response>;
+
 /**
  * Reads SHIPWRIGHT_TASK_STORE_URL and SHIPWRIGHT_TASK_STORE_TOKEN from the
  * environment, validates they are present, and returns a minimal fetch client
@@ -327,7 +332,7 @@ export async function isMergeOnlyUpdate(
  * Exits with code 1 if either variable is missing so callers (precheck scripts)
  * get a clean error rather than a confusing undefined/TypeError at call-time.
  */
-export function createTaskStoreClient(): {
+export function createTaskStoreClient(opts?: { fetchFn?: FetchFn }): {
   query(params: URLSearchParams): Promise<Task[]>;
   update(id: string, fields: Record<string, unknown>): Promise<Task>;
 } {
@@ -342,6 +347,7 @@ export function createTaskStoreClient(): {
     process.exit(1);
   }
   const baseUrl = taskStoreUrl.replace(/\/$/, "");
+  const doFetch: FetchFn = opts?.fetchFn ?? fetch;
   const headers = {
     Authorization: `Bearer ${taskStoreToken}`,
     "Content-Type": "application/json",
@@ -349,7 +355,7 @@ export function createTaskStoreClient(): {
 
   return {
     async query(params: URLSearchParams): Promise<Task[]> {
-      const res = await fetch(`${baseUrl}/tasks?${params}`, { headers });
+      const res = await doFetch(`${baseUrl}/tasks?${params}`, { headers });
       if (!res.ok)
         throw new Error(`task-store GET /tasks?${params} → ${res.status}`);
       const data = (await res.json()) as unknown;
@@ -366,7 +372,7 @@ export function createTaskStoreClient(): {
       );
     },
     async update(id: string, fields: Record<string, unknown>): Promise<Task> {
-      const res = await fetch(`${baseUrl}/tasks/${id}`, {
+      const res = await doFetch(`${baseUrl}/tasks/${id}`, {
         method: "PATCH",
         headers,
         body: JSON.stringify(fields),
