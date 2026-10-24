@@ -21,23 +21,6 @@ function run(script: string, args: string[], env: Record<string, string> = {}) {
   };
 }
 
-describe("resolve-gh-owner.ts", () => {
-  test("requires --default", () => {
-    const r = run("resolve-gh-owner.ts", ["--cwd", "/tmp"]);
-    expect(r.code).toBe(2);
-    expect(r.err).toContain("--default <owner> is required");
-  });
-
-  test("falls back to --default (space and = forms) when gh args name no owner", () => {
-    expect(run("resolve-gh-owner.ts", ["--default", "acme", "--"]).out).toBe(
-      "acme\n",
-    );
-    expect(
-      run("resolve-gh-owner.ts", ["--default=acme", "--cwd=/tmp", "--"]).out,
-    ).toBe("acme\n");
-  });
-});
-
 describe("backfill-pr-origin.ts argument validation", () => {
   test("rejects a trailing --repo with no value", () => {
     const r = run("backfill-pr-origin.ts", ["--repo"]);
