@@ -419,6 +419,18 @@ metrics:
       existingSecret: ""
       # -- Key in the secret for METRICS_INTERNAL_API_KEY.
       key: METRICS_INTERNAL_API_KEY
+  # -- Bearer API key registry for the authenticated /metrics/* routes
+  # (METRICS_API_KEYS). Format: comma-separated `name:token:scope` tuples, scope
+  # `*` = admin (full access), any other scope is rejected with 403 on metrics
+  # routes. Same format as the admin's SHIPWRIGHT_ADMIN_API_KEYS, so to accept the
+  # admin bearer point existingSecret at the Secret the admin reads that registry
+  # from (admin.extraEnv). Leave empty to omit the env var (session-cookie access
+  # only).
+  apiKeys:
+    # -- Name of an existing Secret holding the key registry.
+    existingSecret: ""
+    # -- Key in the secret for METRICS_API_KEYS.
+    existingSecretKey: METRICS_API_KEYS
   # -- Public read-only proof surface. When enabled, the metrics service mounts an
   # unauthenticated, repo-scoped /public/* surface (read-only dashboard + JSON)
   # ALONGSIDE the authenticated routes — it does not relax auth on existing routes.

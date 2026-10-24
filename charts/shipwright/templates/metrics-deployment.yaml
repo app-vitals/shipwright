@@ -127,6 +127,14 @@ spec:
                   name: {{ .Values.metrics.provider.internalKey.existingSecret }}
                   key: {{ .Values.metrics.provider.internalKey.key }}
             {{- end }}
+            {{- if .Values.metrics.apiKeys.existingSecret }}
+            # Bearer registry for /metrics/*; without it only session cookies work.
+            - name: METRICS_API_KEYS
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.metrics.apiKeys.existingSecret }}
+                  key: {{ .Values.metrics.apiKeys.existingSecretKey | default "METRICS_API_KEYS" }}
+            {{- end }}
             {{- if .Values.metrics.public.enabled }}
             # Public read-only proof surface: mount the unauthenticated, repo-scoped
             # /public/* routes alongside the authenticated dashboard. repo is required
