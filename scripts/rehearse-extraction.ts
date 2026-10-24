@@ -30,6 +30,8 @@ export type Mode = "no-history" | "history";
 export interface Stage {
   name: string;
   cmd: string[];
+  /** Directory to run in, relative to the extracted tree root (default: the root). */
+  cwd?: string;
   env?: Record<string, string>;
   docker?: boolean;
 }
@@ -68,10 +70,13 @@ export function planStages(): Stage[] {
     { name: "typecheck", cmd: ["bun", "run", "typecheck"] },
     { name: "lint", cmd: ["bun", "run", "lint"] },
     { name: "boundary", cmd: ["bun", "run", "check:boundary"] },
-    // Mirrors the extracted CI job: the admin tests need the schema applied.
+    // Mirrors the extracted CI job (`cd admin && bunx prisma migrate deploy`):
+    // the admin tests need the schema applied, and the schema path is relative
+    // to admin/.
     {
       name: "db-sync",
       cmd: ["bunx", "prisma", "migrate", "deploy", "--schema=prisma/schema"],
+      cwd: "admin",
     },
     { name: "test", cmd: ["bun", "test"], env: { NODE_ENV: "test" } },
     {
@@ -142,7 +147,7 @@ function runStage(
   let p: ReturnType<typeof Bun.spawnSync>;
   try {
     p = Bun.spawnSync(stage.cmd, {
-      cwd,
+      cwd: stage.cwd ? join(cwd, stage.cwd) : cwd,
       env: { ...cleanEnv(), ...stage.env },
       stdout: "pipe",
       stderr: "pipe",

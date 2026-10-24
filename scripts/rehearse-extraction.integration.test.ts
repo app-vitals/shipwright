@@ -6,7 +6,13 @@ import {
   setDefaultTimeout,
   test,
 } from "bun:test";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import {
@@ -199,6 +205,16 @@ describe("planStages", () => {
       "docker-runtime",
       "contract-smoke",
     ]);
+  });
+
+  test("db-sync runs from admin/, where the extracted CI runs it", () => {
+    const stage = planStages().find((s) => s.name === "db-sync");
+    expect(stage?.cwd).toBe("admin");
+    expect(stage?.cmd).toContain("--schema=prisma/schema");
+    // The schema the command points at is relative to that directory.
+    expect(
+      existsSync(join(import.meta.dir, "..", "admin", "prisma", "schema")),
+    ).toBe(true);
   });
 
   test("installs with a frozen lockfile", () => {
