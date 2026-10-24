@@ -22,7 +22,6 @@ import {
 import { type Clock, SystemClock } from "./clock.ts";
 import type { RunContextStamp } from "./context-stamp.ts";
 import { markCronRunFailureReported } from "./cron-failure-reporter.ts";
-import { buildSpawnEnv } from "./spawn-env.ts";
 import type {
   ContextBaselineEntry,
   CronRunReporter,
@@ -33,6 +32,7 @@ import { markdownToSlack } from "./format.ts";
 import { parseMarkers } from "./markers.ts";
 import type { RunTelemetry } from "./run-telemetry.ts";
 import { dispatchMarkers, type SynthesizeSpeechFn } from "./slack.ts";
+import { buildSpawnEnv } from "./spawn-env.ts";
 import type { VoiceConfig } from "./voice.ts";
 
 /**

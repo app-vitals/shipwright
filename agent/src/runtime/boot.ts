@@ -68,7 +68,6 @@ import {
   reconcileGitHubInstallations,
   startGitHubAuthIfPossible,
 } from "./github-auth-startup.ts";
-import { defaultOwnerOf } from "./spawn-env.ts";
 import {
   HttpGitHubInstallationsReporter,
   NoopGitHubInstallationsReporter,
@@ -97,6 +96,7 @@ import {
   slackClientRef,
   startSlackIfPossible,
 } from "./slack-startup.ts";
+import { defaultOwnerOf } from "./spawn-env.ts";
 import { sendBackOnlineDm } from "./startup-dm.ts";
 import {
   buildProductionDeps as buildSyncConfigCloneDeps,
