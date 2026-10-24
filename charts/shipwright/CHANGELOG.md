@@ -10,6 +10,12 @@ independent of `appVersion`. CI enforces this with
 `ct lint --check-version-increment`. Each release here must mirror the
 `artifacthub.io/changes` annotation in `Chart.yaml`.
 
+## [1.26.62] - 2026-10-24
+
+### Added
+
+- `metrics.apiKeys.existingSecret` / `existingSecretKey` render `METRICS_API_KEYS` so `/metrics/*` accepts a bearer registry
+
 ## [1.26.61] - 2026-10-24
 
 ### Changed
