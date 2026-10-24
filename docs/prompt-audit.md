@@ -68,6 +68,34 @@ Task shape: `id: prompt-{class}-{fp8}-shipwright-{YYYY-Www}`, `title: "Prompt au
 
 `cli.ts` also provides `measure` (same-model token delta between two refs), `blast` (reverse-reference blast radius of a file) and `watch` (post-merge regression check comparing before/after context fingerprints per phase). Run telemetry (per-run context baseline, per-skill attribution, outcome metrics) is exposed through the admin cron-run stats endpoints; see [`docs/agent-api-ops.md`](./agent-api-ops.md).
 
+## Model cutover decision (2026-10-24)
+
+**Decision: keep `claude-sonnet-5-5` as the fleet default** (PAU-2.4). The `prompt-fix` cutover freeze lifts with this note.
+
+**What was actually measured.** PAU-2.x was written as a Sonnet 4.6 → 5.5 bump. Run telemetry (PAU-1.x) began on 2026-10-08, by which point the fleet was already on 5.5; the previous default was `claude-sonnet-5`, retired during the week of 2026-09-29 (`claude-sonnet-4-6` was a minor model, ~1.6% of lifetime spend, last used before 2026-10-05). PAU-2.3's agent audit on 2026-10-13 found every phase-running agent on 5.5 and made no env writes; two agents are intentionally on Opus 5.5 and run no phases. So this is a `claude-sonnet-5` → `claude-sonnet-5-5` production series over pre-telemetry run records, not an A/B with per-run baselines on both sides.
+
+**Windows.** Sonnet 5: 2026-09-08 → 09-29 (21 days). Sonnet 5.5: 2026-10-06 → 10-25 (19 days). Sources: `GET /agents/all/cron-runs/outcomes` and `/stats` with `from`/`to`, and the task-store `/prs` records for this repo (bot authors excluded). The ≥20 runs per phase gate is met on 5.5 for deploy, dev-task, patch and review; `plan` has 3 runs (the phase ships disabled) and is excluded.
+
+| Phase | Completed runs | Cost / completed run | Output tokens / completed run | Cache-read tokens / completed run | Mean duration | Skip rate |
+|-------|----------------|----------------------|-------------------------------|-----------------------------------|---------------|-----------|
+| deploy | 424 → 591 | $0.84 → $0.32 | 8.0K → 3.0K | 1.38M → 0.45M | 427s → 366s | 7.6% → 13.0% |
+| dev-task | 529 → 567 | $4.77 → $0.97 | 47.9K → 16.2K | 12.1M → 2.2M | 1,297s → 463s | 7.7% → 1.5% |
+| patch | 496 → 340 | $3.18 → $0.67 | 27.6K → 5.5K | 5.2M → 1.1M | 746s → 218s | 8.0% → 19.0% |
+| review | 1,042 → 1,191 | $3.06 → $0.54 | 35.8K → 5.4K | 5.1M → 0.8M | 285s → 68s | 5.2% → 19.7% |
+
+First-turn context on 5.5 (no Sonnet 5 comparator exists; the tokenizer caveat below applies to any future cross-model read): deploy 33.0K, dev-task 32.5K, patch 34.2K, review 33.7K tokens; mean turns 8.0 / 25.3 / 12.0 / 10.9.
+
+PR outcomes for merged agent PRs on this repo: 285 → 420 merged; review cycles 1.26 → 0.79; patch cycles 0.54 → 0.20; merged with zero patch cycles 67% → 88%; `reviewState: approved` at merge 76.5% → 63.8%. That last number means part of the cycle drop is fewer reviews completing before merge, not only cleaner first drafts.
+
+**Caveats.**
+
+- Recorded USD uses the rate table in effect when each run was recorded, and 5.5 is priced lower per token. The token and duration columns are price-independent and point the same way: 3–7× fewer output tokens and 2–6× fewer cache-read tokens per completed run.
+- Failure rate is not a model signal in this series. The Sonnet 5 window is dominated by one incident week (2026-09-22: 666 review failures; the week of 09-08 had 0). Since 2026-10-06 phase runs report 0 failures while review/patch skip rates rose from ~5–8% to ~19%, because the deferral markers (DBV-1.1) now classify already-reviewed-at-head and no-op-at-dispatch runs as skips.
+- The plugin changed continuously across both windows (~700 PRs merged), so this is a window correlation, the same `attribution: "window-correlation"` caveat `GET /metrics/pr-outcomes` carries, not attribution to the model.
+- No quality claim is made. The eval tier is uncalibrated (PAU-5.4); this is the cost-only-plus-production-series reading that PAU-5.4's fail path prescribes anyway.
+
+**Revisit if** PAU-5.4's calibration passes and a with/without eval shows a regression attributable to the model, or the failure accounting above turns out to hide real failures. A revert would target `claude-sonnet-5`, which has no per-run telemetry, so it would be a move to an unmeasured state.
+
 ## Risks and gates
 
 - **API spend:** `count_tokens` is near-free; evals are capped by `--max-cost-usd` and never run from the cron.
