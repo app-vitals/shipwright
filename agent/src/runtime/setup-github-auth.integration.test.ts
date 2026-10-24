@@ -393,13 +393,17 @@ function makeInstallationsHarness(
   const intervals: { fn: () => void; cleared: boolean }[] = [];
   const created: GitHubInstallationsManager[] = [];
   const activated: unknown[] = [];
+  let nowYear = 2029;
+  const failMintIds = new Set<number>();
 
   const auth = async (p?: { type: string; installationId?: number }) => {
     if (p?.type === "app")
       return { token: "jwt", expiresAt: "", type: "app", tokenType: "app" };
+    if (p?.installationId !== undefined && failMintIds.has(p.installationId))
+      throw new Error("mint failed");
     return {
-      token: `ghs_inst_${p?.installationId}`,
-      expiresAt: new Date(Date.UTC(2030, 0, 1)).toISOString(),
+      token: `ghs_inst_${p?.installationId}${nowYear > 2029 ? `_r${nowYear}` : ""}`,
+      expiresAt: new Date(Date.UTC(nowYear + 1, 0, 1)).toISOString(),
       type: "token",
       tokenType: "installation",
     };
@@ -429,7 +433,7 @@ function makeInstallationsHarness(
       const m = new GitHubInstallationsManager({
         auth,
         fetchFn,
-        clock: { now: () => new Date(Date.UTC(2029, 0, 1)) },
+        clock: { now: () => new Date(Date.UTC(nowYear, 0, 1)) },
         setIntervalFn,
         clearIntervalFn,
         pinnedId: opts.pin ?? null,
@@ -460,6 +464,12 @@ function makeInstallationsHarness(
     created,
     activated,
     tokenPath: join(home, "gh-token"),
+    /** Expires every cached token and makes the given installations fail to re-mint. */
+    expireTokens: (failIds: number[] = []) => {
+      nowYear += 2;
+      failMintIds.clear();
+      for (const id of failIds) failMintIds.add(id);
+    },
     setInstalls: (i: RawInstall[]) => {
       installs = i;
     },
@@ -594,6 +604,91 @@ describe("setupGitHubAuth — installations manager", () => {
     );
     expect(h.intervals).toHaveLength(1);
     expect(h.activated).toHaveLength(1);
+  });
+
+  test("a transient mint failure for one of two installations keeps its last good file; the other still refreshes", async () => {
+    const h = harness({
+      installs: [
+        { id: 11, owner: "acme" },
+        { id: 22, owner: "other" },
+      ],
+      scopeOwners: ["acme", "other"],
+    });
+    await setupGitHubAuth({
+      env: h.env,
+      createTokenManager: mock(() => makeTokenManager()),
+      getBotIdentity: makeBotIdentity(),
+      spawnSync: makeSpawnSync(),
+      writeToken: neverCalledWriteToken(),
+      tokenPath: h.tokenPath,
+      credentialHelperPath: TEST_HELPER_PATH,
+      installations: h.installations,
+    });
+    h.expireTokens([22]);
+    await h.intervals[0].fn();
+    await flush();
+
+    expect(readFileSync(h.tokenPath, "utf8")).toBe("ghs_inst_11_r2031");
+    expect(readFileSync(join(h.home, "gh-token.d", "acme"), "utf8")).toBe(
+      "ghs_inst_11_r2031",
+    );
+    expect(readFileSync(join(h.home, "gh-token.d", "other"), "utf8")).toBe(
+      "ghs_inst_22",
+    );
+  });
+
+  test("when the default installation's mint fails, gh-token keeps its last good value", async () => {
+    const h = harness({
+      installs: [
+        { id: 11, owner: "acme" },
+        { id: 22, owner: "other" },
+      ],
+      scopeOwners: ["acme", "other"],
+    });
+    await setupGitHubAuth({
+      env: h.env,
+      createTokenManager: mock(() => makeTokenManager()),
+      getBotIdentity: makeBotIdentity(),
+      spawnSync: makeSpawnSync(),
+      writeToken: neverCalledWriteToken(),
+      tokenPath: h.tokenPath,
+      credentialHelperPath: TEST_HELPER_PATH,
+      installations: h.installations,
+    });
+    h.expireTokens([11]);
+    await h.intervals[0].fn();
+    await flush();
+
+    expect(readFileSync(h.tokenPath, "utf8")).toBe("ghs_inst_11");
+    expect(readFileSync(join(h.home, "gh-token.d", "acme"), "utf8")).toBe(
+      "ghs_inst_11",
+    );
+    expect(readFileSync(join(h.home, "gh-token.d", "other"), "utf8")).toBe(
+      "ghs_inst_22_r2031",
+    );
+  });
+
+  test("initial boot is unchanged: a failed non-default mint is dropped and the default is written", async () => {
+    const h = harness({
+      installs: [
+        { id: 11, owner: "acme" },
+        { id: 22, owner: "other" },
+      ],
+      scopeOwners: ["acme", "other"],
+    });
+    h.expireTokens([22]);
+    await setupGitHubAuth({
+      env: h.env,
+      createTokenManager: mock(() => makeTokenManager()),
+      getBotIdentity: makeBotIdentity(),
+      spawnSync: makeSpawnSync(),
+      writeToken: neverCalledWriteToken(),
+      tokenPath: h.tokenPath,
+      credentialHelperPath: TEST_HELPER_PATH,
+      installations: h.installations,
+    });
+    expect(readFileSync(h.tokenPath, "utf8")).toBe("ghs_inst_11_r2031");
+    expect(existsSync(join(h.home, "gh-token.d"))).toBe(false);
   });
 
   test("App id + key + PAT with zero installations stays on the PAT path", async () => {

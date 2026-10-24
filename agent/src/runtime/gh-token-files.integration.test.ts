@@ -61,6 +61,45 @@ describe("writeTokenFiles", () => {
     expect(existsSync(join(home, "gh-token.d"))).toBe(false);
   });
 
+  test("failedOwners keep their last good file and count toward the two-owner threshold", () => {
+    writeTokenFiles(home, {
+      defaultToken: "a",
+      ownerTokens: { acme: "a", other: "b" },
+    });
+    writeTokenFiles(home, {
+      defaultToken: "a2",
+      ownerTokens: { acme: "a2" },
+      failedOwners: ["Other"],
+    });
+    expect(readFileSync(join(home, "gh-token"), "utf8")).toBe("a2");
+    expect(readFileSync(join(home, "gh-token.d", "acme"), "utf8")).toBe("a2");
+    expect(readFileSync(join(home, "gh-token.d", "other"), "utf8")).toBe("b");
+  });
+
+  test("owners neither minted nor failed are still cleaned up; fewer than 2 tracked removes the dir", () => {
+    writeTokenFiles(home, {
+      defaultToken: "a",
+      ownerTokens: { acme: "a", other: "b", third: "c" },
+    });
+    writeTokenFiles(home, {
+      defaultToken: "a",
+      ownerTokens: { acme: "a" },
+      failedOwners: ["other"],
+    });
+    expect(readdirSync(join(home, "gh-token.d")).sort()).toEqual([
+      "acme",
+      "other",
+    ]);
+    writeTokenFiles(home, { defaultToken: "a", ownerTokens: { acme: "a" } });
+    expect(existsSync(join(home, "gh-token.d"))).toBe(false);
+  });
+
+  test("absent defaultToken leaves gh-token untouched", () => {
+    writeTokenFiles(home, { defaultToken: "keep" });
+    writeTokenFiles(home, { ownerTokens: { acme: "a", other: "b" } });
+    expect(readFileSync(join(home, "gh-token"), "utf8")).toBe("keep");
+  });
+
   test("path-traversal owner is rejected before anything is written", () => {
     expect(() =>
       writeTokenFiles(home, {

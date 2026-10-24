@@ -254,6 +254,7 @@ async function writeInstallationTokens(
     const { installations, defaultId } = manager.getState();
     const ownerTokens: Record<string, string> = {};
     const tokenById = new Map<number, string>();
+    const failedOwners: string[] = [];
     for (const i of installations) {
       if (i.health === "broken") continue;
       try {
@@ -261,14 +262,29 @@ async function writeInstallationTokens(
         tokenById.set(i.id, token);
         if (i.owner) ownerTokens[i.owner] = token;
       } catch {
-        // a broken/unmintable installation never blocks the others
+        // a failed mint never blocks the others; refresh keeps its last good file
+        if (i.owner) failedOwners.push(i.owner);
       }
     }
-    const defaultToken =
-      (defaultId !== null ? tokenById.get(defaultId) : undefined) ??
-      tokenById.values().next().value;
-    if (defaultToken === undefined) return false;
-    inst.writeTokenFiles({ defaultToken, ownerTokens });
+    const defaultMinted =
+      defaultId !== null ? tokenById.get(defaultId) : undefined;
+    // Boot falls back to any minted token; refresh never substitutes another
+    // installation's token for the default.
+    const defaultToken = throwOnError
+      ? (defaultMinted ?? tokenById.values().next().value)
+      : defaultMinted;
+    if (throwOnError) {
+      if (defaultToken === undefined) return false;
+      inst.writeTokenFiles({ defaultToken, ownerTokens });
+      return true;
+    }
+    if (defaultToken === undefined && tokenById.size === 0) return false;
+    for (const owner of failedOwners) {
+      console.log(
+        `[github-auth] mint failed for ${owner} — keeping last good token file`,
+      );
+    }
+    inst.writeTokenFiles({ defaultToken, ownerTokens, failedOwners });
     return true;
   } catch (err) {
     if (throwOnError) throw err;
