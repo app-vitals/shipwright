@@ -6,6 +6,7 @@
  * Usage:
  *   bun agent/scripts/resolve-gh-owner.ts --default <owner> [--cwd <dir>] -- <gh args...>
  *
+ * Honours SHIPWRIGHT_GH_OWNER as the highest-priority owner hint.
  * Prints the resolved owner on stdout. Always exits 0 once --default is given.
  */
 
@@ -28,6 +29,7 @@ if (!defaultOwner) {
 
 const owner = resolveGhOwner(ghArgs, {
   defaultOwner,
+  ownerHint: process.env.SHIPWRIGHT_GH_OWNER,
   cwd: flags["--cwd"] ?? process.cwd(),
   exec: (cmd, args, cwd) =>
     execFileSync(cmd, args, {

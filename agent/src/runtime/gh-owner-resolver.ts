@@ -6,14 +6,15 @@
  * I/O (reading the cwd git remote) is injected as `exec`.
  *
  * Resolution order (first hit wins):
+ *   0. `ownerHint` (SHIPWRIGHT_GH_OWNER) — an operator-pinned owner
  *   1. -R / --repo / --repo=  (OWNER/REPO, HOST/OWNER/REPO, or URL)
  *   2. `gh api` path: repos/<owner>/..., /repos/<owner>/..., or the full API URL
  *   3. `gh repo clone` positional argument (OWNER/REPO or URL)
  *   4. cwd `origin` remote (repo-scoped commands only)
  *   5. the default owner
  *
- * A matched-but-invalid owner string falls back to the default rather than
- * continuing down the order — an explicit target we cannot trust must not be
+ * A matched-but-invalid owner string (including an invalid hint) falls back to
+ * the default rather than continuing down the order — an explicit target we cannot trust must not be
  * silently replaced by a different owner's token.
  *
  * Kept in agent/src (not agent/scripts): the Dockerfile copies lib/ and src
@@ -25,6 +26,8 @@ export type ExecFn = (cmd: string, args: string[], cwd: string) => string;
 
 interface ResolveGhOwnerOptions {
   defaultOwner: string;
+  /** Operator-pinned owner; outranks every other source. Empty means unset. */
+  ownerHint?: string;
   cwd?: string;
   exec?: ExecFn;
 }
@@ -106,6 +109,8 @@ export function resolveGhOwner(
   const fallback = opts.defaultOwner;
   const check = (owner: string | undefined): string =>
     isValidOwner(owner) ? owner : fallback;
+
+  if (opts.ownerHint) return check(opts.ownerHint);
 
   const flag = repoFlagValue(args);
   if (flag !== undefined) return check(ownerFromRepoRef(flag));
