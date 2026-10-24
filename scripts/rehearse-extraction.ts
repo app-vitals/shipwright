@@ -127,6 +127,44 @@ function tail(text: string): string {
   return text.trimEnd().split("\n").slice(-TAIL_LINES).join("\n");
 }
 
+/**
+ * The error output printed above each `(fail)` line of a `bun test` run, which
+ * the final tail would otherwise cut off (it keeps only the summary). Each
+ * block runs from the previous test result line to its own `(fail)` line, and
+ * is capped so a mass failure stays readable.
+ */
+export function failureBlocks(
+  output: string,
+  maxFailures = 12,
+  maxLines = 25,
+): string {
+  const lines = output.split("\n");
+  const blocks: string[] = [];
+  let start = 0;
+  for (let i = 0; i < lines.length && blocks.length < maxFailures; i++) {
+    const line = lines[i] ?? "";
+    if (/^\((?:pass|skip|todo)\) /.test(line)) {
+      start = i + 1;
+    } else if (line.startsWith("(fail) ")) {
+      blocks.push(
+        lines
+          .slice(Math.max(start, i - maxLines), i + 1)
+          .join("\n")
+          .trim(),
+      );
+      start = i + 1;
+    }
+  }
+  return blocks.join("\n\n");
+}
+
+function failureOutput(text: string): string {
+  const blocks = failureBlocks(text);
+  return blocks
+    ? `${blocks}\n\n--- last ${TAIL_LINES} lines ---\n${tail(text)}`
+    : tail(text);
+}
+
 // Agent-runtime config the host process may carry (e.g. when the rehearsal runs
 // inside a Shipwright agent). Tests read these at import time, so they must not
 // leak into the extracted tree's stages — CI never has them set.
@@ -156,7 +194,7 @@ function runStage(
     return `could not run ${stage.cmd[0]}: ${(err as Error).message}`;
   }
   if (p.success) return null;
-  return tail(`${p.stdout.toString()}\n${p.stderr.toString()}`);
+  return failureOutput(`${p.stdout.toString()}\n${p.stderr.toString()}`);
 }
 
 /** A file whose import leaves the repository, which the boundary gate must reject. */
