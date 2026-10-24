@@ -66,6 +66,8 @@ Manual test scenarios for each command across different project types.
 | 53 | `/prompt-fix` | 2 `prompt-` tasks already open or merged this ISO week | Weekly cap | Prints `Refusing to file: 2 prompt-fix tasks already open or merged in {YYYY-Www} (weekly cap 2)` and files nothing |
 | 54 | `/prompt-fix` | `proposed` finding whose `file:line` no longer matches | Pre-filing verification | Skipped with a printed stale reason; ledger entry stays `proposed`; no task filed |
 | 55 | `/prompt-fix` | Decisions file with `**Autonomy:**` entry citing 5+ accepted proposals; class c low-fanout fix | Deterministic hitl | `hitl-policy.ts` yields `hitl: false` only when file is low-fanout, unpinned, no description change, <= 20 lines, single lever; flipping any one yields `hitl: true`; quality-claimed always `true` |
+| 56 | `/prompt-eval --finding <fp> --kind ab` | `docs/prompt-audit-calibration.md` with a signed **FAIL** record, no `--max-cost-usd` | Calibration and cost gates | Prints the cost-only consequence, the estimated cost, and the no-cap refusal; no model arm runs and the ledger is unchanged |
+| 57 | `/prompt-eval --finding <fp> --kind trigger --max-cost-usd 2` | Calibration file missing or unsigned | No calibration record | Refuses any quality result and says why; nothing runs, nothing written |
 | 49 | `prompt-audit-maintenance` cron preCheck | Any | `check-prompt-audit.ts` gating | Missing ledger or `lastRun` 7+ days old exits 0; fresh ledger with no `proposed` findings exits 1 |
 
 ---

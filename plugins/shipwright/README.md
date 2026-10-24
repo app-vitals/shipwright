@@ -50,6 +50,7 @@ Every feature moves through the same stages. One `planning/{folder}/` directory 
 | `/research-docs [module|--auto]` | Analyze codebase and generate or update project documentation. `--auto` runs unattended (no prompts) for cron/scheduled use |
 | `/prompt-scan [--summary|--dry-run|--with-doctor]` | Audit the plugin's prompts for token cost, staleness, structure and instruction-density problems. Report only — no prompt edits; see [docs/prompt-audit.md](../../docs/prompt-audit.md) |
 | `/prompt-fix [--dry-run|--class <a-f>|--finding <fp>]` | Queue `proposed` prompt-audit findings as propose-only task-store tasks (`hitl: true` until a human promotes a rule), with measurement plan, blast-radius report and PR must-prove list. Refuses during the model cutover window and past 2 tasks per ISO week; see [docs/prompt-audit.md](../../docs/prompt-audit.md) |
+| `/prompt-eval --finding <fp> --kind with-without\|ab\|trigger\|production-series [--max-cost-usd <n>\|--model <id>\|--runs <n>]` | Run the calibration-gated eval tier for one prompt-audit finding. Prints the estimated cost first and refuses without a cap; refuses quality results without a signed passing record in `docs/prompt-audit-calibration.md` (cost-only on a failed record). Runs only inside a fix task or by a human, never from the cron; see [docs/prompt-audit.md](../../docs/prompt-audit.md) |
 
 Pipeline analytics (cycle time, FTQ rate, CI gate, cost) live outside the command
 surface — the metrics service exposes them as read-only `/metrics/*` JSON endpoints

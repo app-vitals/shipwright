@@ -8,7 +8,7 @@ Prompt files grow by accretion. Every always-loaded line is paid for on every ru
 
 1. **Detection** — `prompt-scan` runs deterministic rules over a prompt inventory, adds two judgment passes the rules cannot make, and writes a report. It never edits a prompt.
 2. **Decision** — `.claude/shipwright/prompt-audit-decisions.md` is a human-edited registry of findings that were reviewed and deliberately accepted. The scan re-reads it live every run and suppresses matches.
-3. **Action** — `prompt-fix` turns proposed findings into propose-only task-store tasks with measurement plans, and a later `prompt-eval` skill runs the eval tier. `prompt-eval` is specified in the design doc but not shipped yet.
+3. **Action** — `prompt-fix` turns proposed findings into propose-only task-store tasks with measurement plans, and `prompt-eval` runs the eval tier for one finding (`--finding`, `--kind with-without|ab|trigger|production-series`, `--max-cost-usd` default 5, `--model`, `--runs` default 3). It prints the estimated cost before running, refuses without a cap, and emits a PR-citable block. Evals run only inside a fix task or by a human, never from the cron.
 
 Every finding is labelled **cost-only** (the proof is a same-model token delta; quality is unmeasured and the report says so) or **quality-claimed** (the change could alter what the model reads, so it always carries an eval). Size alone has no measured adherence effect, so every "shorten" finding is cost-only unless an eval says otherwise.
 
@@ -85,6 +85,8 @@ The eval harness (`scripts/prompt-audit/eval-*.ts`) emits cases in the layout `c
 `runPluginEval` takes an eval-dir name (cases live under `<pluginDir>/<evalDir>/`), writes `--json` to a scratch file and parses the `schemaVersion: 1` document: seeds come from `cases[].arms.with[].passed`, and a `partial: true` result throws. It passes `--ablation none` unless the caller asks for `with-without` (which adds a no-plugin baseline arm, doubling cost, and excludes `tool_used: Skill` graders from the score; read `aggregates.meanDelta`), and `--threshold 0` so imperfect cases do not make the CLI exit non-zero.
 
 **Run isolation.** Plugin-eval runs get a temporary home and only an env allowlist plus `EVAL_*` variables, so `SHIPWRIGHT_TASK_STORE_*` and `gh` auth do not reach the run. `dev-task`, `review` and `patch` are therefore side-effect-free under plugin eval, but also inert past their first task-store or `gh` call. Historical replay would need `case.yaml` `execution.env` pointed at a local task store plus a `scaffold_script`; that is out of scope and remains a PAU-5.4 limitation.
+
+**`prompt-eval` calibration gate.** The skill reads [`docs/prompt-audit-calibration.md`](./prompt-audit-calibration.md) first. With no signed record it refuses any quality result and says why; with a signed **FAIL** record it reports cost-only output and runs no model arm; only a signed **PASS** allows quality results. Every result prints its minimum detectable effect (MDE) with the `no-regression-detected-within-MDE` verdict wording, and the skill never states that quality is unchanged. `production-series` runs no model and is not gated by the record.
 
 The model-run eval tier is gated by [`docs/prompt-audit-calibration.md`](./prompt-audit-calibration.md). The 2026-10-24 calibration **failed** (it detects a broken trigger and nothing else, and its minimum detectable effect is above the changes the audit expects), so the tier is off: findings are cost-only and the production series is the only quality signal until a later calibration passes.
 
