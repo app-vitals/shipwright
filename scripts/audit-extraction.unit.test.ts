@@ -30,9 +30,36 @@ describe("matchBannedStrings", () => {
     expect(ids(`deploy to ${PRODUCT} now`)).toContain(
       "banned/internal-product",
     );
-    expect(ids(`Sentry ${PRODUCT.toUpperCase()}-5T`)).toContain(
+    expect(ids(`${PRODUCT.toUpperCase()} dashboard`)).toContain(
       "banned/internal-product",
     );
+  });
+
+  test("allows the reviewed fixture tokens (AGR-2.3)", () => {
+    const upper = PRODUCT.toUpperCase();
+    for (const line of [
+      `// Sentry issue 7616867192 / ${upper}-47`,
+      `see Sentry ${upper}-5T`,
+      `pvcName: (name) => \`${PRODUCT}-agent-\${name}-home\``,
+      `const REDIRECT = "https://shipwright.${PRODUCT}.com/admin/provision/complete"`,
+      `makePlugin(ID, "@${PRODUCT}/plugin")`,
+      `{ marketplace: "${PRODUCT}", plugin: "@${PRODUCT}/plugin" }`,
+      `# Mirrors the ${PRODUCT} runtime image.`,
+      `# matching ${PRODUCT}.`,
+      `SHIPWRIGHT_TASK_STORE_URL: "http://${["internal", "svc", "cluster", "local"].join(".")}:3002"`,
+    ]) {
+      expect(ids(line)).toEqual([]);
+    }
+  });
+
+  test("the reviewed allowances do not shield other uses of the product name", () => {
+    const upper = PRODUCT.toUpperCase();
+    expect(ids(`deploy ${PRODUCT} ${upper}-5T`)).toEqual([
+      "banned/internal-product",
+    ]);
+    expect(ids(`${upper}-5T and ${PRODUCT}.com/admin`)).toEqual([
+      "banned/internal-product",
+    ]);
   });
 
   test("denies private app-vitals repositories, allows public ones", () => {
