@@ -4,7 +4,6 @@
  * Builds the extraEnv for a Claude spawn, adding the SHIPWRIGHT_GH_OWNER hint
  * the `gh` wrapper uses to pick the matching App installation token (GOR-1.3).
  *
- *
  *   - "loop": owner of the dispatched task or PR's repo
  *   - "cron": the default org (pinned installation, else lowest installation id)
  *   - "dm":   deliberately NO hint — a Slack DM is not tied to an org
