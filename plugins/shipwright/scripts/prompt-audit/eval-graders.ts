@@ -1,10 +1,15 @@
 /**
  * plugins/shipwright/scripts/prompt-audit/eval-graders.ts
  *
- * Grader specs and their on-disk form (evals/<case>/graders/*.md). Mechanical
- * (code) graders come first: tool_used, tests_pass, task_store_state and
- * transcript_contains. An LLM judge is allowed only from a different model
- * family than the generator.
+ * Grader specs and their on-disk form (evals/<case>/graders/*.md), in the
+ * format `claude plugin eval` loads: a markdown file with YAML frontmatter
+ * (`type: regex|tool_used|llm|...`). Mechanical (code) graders come first:
+ * tool_used and transcript_contains map to `tool_used` and `regex` graders.
+ * `tests_pass` and `task_store_state` have no mechanical equivalent in plugin
+ * eval (runs are isolated from the task store and `gh`, and there is no repo
+ * to run tests in), so they are DROPPED when cases are written, with a logged
+ * reason (see `unsupportedReason`). An LLM judge is allowed only from a
+ * different model family than the generator.
  */
 
 export type Grader =
@@ -47,17 +52,39 @@ export function isMechanical(g: Grader): boolean {
   return g.type !== "llm_judge";
 }
 
+/** Graders `claude plugin eval` cannot express; dropped at write time. */
+export function unsupportedReason(g: Grader): string | undefined {
+  switch (g.type) {
+    case "tests_pass":
+      return "tests_pass has no plugin-eval equivalent (no repo checkout to run tests in)";
+    case "task_store_state":
+      return "task_store_state has no plugin-eval equivalent (runs are isolated from the task store)";
+    default:
+      return undefined;
+  }
+}
+
+export const escapeRegex = (s: string) =>
+  s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
+/** YAML single-quoted scalar: only `'` needs escaping, backslashes are literal. */
+const yq = (s: string) => `'${s.replace(/'/g, "''")}'`;
+
 export function renderGrader(g: Grader): string {
   switch (g.type) {
-    case "tool_used":
-      return `# Grader: tool_used\n\ntool_used: ${g.tool}\nskill: ${g.skill}\nexpect: ${g.expect}\n`;
-    case "tests_pass":
-      return `# Grader: tests_pass\n\ncommand: ${g.command}\nexpect: exit 0\n`;
-    case "task_store_state":
-      return `# Grader: task_store_state\n\ntask: ${g.taskId}\nfield: ${g.field}\nexpected: ${g.expected}\n`;
+    case "tool_used": {
+      const match = `"skill"\\s*:\\s*"(?:shipwright:)?${escapeRegex(g.skill)}"`;
+      const count = g.expect === "present" ? "min: 1" : "min: 0\nmax: 0";
+      return `---\ntype: tool_used\ntool: ${g.tool}\ninput_match: ${yq(match)}\n${count}\n---\n\nSkill ${g.skill} must be ${g.expect === "present" ? "invoked" : "not invoked"}.\n`;
+    }
     case "transcript_contains":
-      return `# Grader: transcript_contains\n\nrequired step in transcript: ${g.text}\n`;
+      // last_message, not trace: the trace includes the user prompt, which
+      // names the step, so a trace regex would pass vacuously.
+      return `---\ntype: regex\ntarget: last_message\npattern: ${yq(escapeRegex(g.text))}\n---\n\nFinal message mentions the step "${g.text.replace(/\s+/g, " ")}".\n`;
     case "llm_judge":
-      return `# Grader: llm_judge\n\nmodel: ${g.model}\nrubric: ${g.rubric}\n`;
+      return `---\ntype: llm\nweight: 1\n---\n\n${g.rubric}\n`;
+    case "tests_pass":
+    case "task_store_state":
+      throw new Error(`cannot render ${g.type}: ${unsupportedReason(g)}`);
   }
 }

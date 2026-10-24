@@ -6,6 +6,11 @@
  * `productionSeries` compares two context fingerprints from the admin
  * /outcomes and /stats endpoints. Each produces a ledger `Measured` record.
  *
+ * Cases live under `<pluginDir>/<evalDir>/` (selected with `--eval-dir`) in the
+ * plugin-eval format written by eval-cases.ts. A/B and A/A runs pass
+ * `--ablation none`; the default for a path target would add a no-plugin
+ * baseline arm and exclude `tool_used: Skill` graders from the score.
+ *
  * `claude plugin eval` loads only the plugin under test, so findings in
  * CLAUDE.md-class files cannot be A/B'd by checkout: use `productionSeries`
  * or a with/without run via `appendSystemPrompt`.
@@ -23,6 +28,7 @@ export interface RunnerDeps {
   exec(cwd: string, cmd: string[]): string;
   /** Create a scratch directory and return its path. */
   mkTmp(prefix: string): string;
+  readFile(path: string): string;
   now(): Date;
 }
 
@@ -31,87 +37,113 @@ interface PluginEvalRun extends EvalResult {
   /** Pass rate over all case x seed results, 0..1. */
   score: number;
   costUsd: number;
+  /** `aggregates.meanDelta`; only present for with-without runs. */
+  meanDelta?: number;
 }
 
 interface PluginEvalOptions {
   /** Required cap passed through as --max-cost-usd. */
   maxCostUsd: number;
+  /** Runs per case (--runs); the case's own default when omitted. */
+  runs?: number;
+  /**
+   * `none` (default) runs only the plugin arm. `with-without` adds a
+   * no-plugin baseline arm (double cost) and drops `tool_used: Skill`
+   * graders from the score.
+   */
+  ablation?: "none" | "with-without";
   /** With/without runs for CLAUDE.md-class findings. */
   appendSystemPrompt?: string;
 }
 
-/** Accepts the per-case result shapes the eval JSON may carry. */
-interface RawCase {
-  id?: string;
-  name?: string;
-  passed?: boolean;
-  pass?: boolean;
-  seeds?: boolean[];
-  results?: boolean[];
-}
-
-function caseResults(c: RawCase): boolean[] {
-  if (Array.isArray(c.seeds)) return c.seeds;
-  if (Array.isArray(c.results)) return c.results;
-  const single = c.passed ?? c.pass;
-  return typeof single === "boolean" ? [single] : [];
+/** The parts of a v1 `claude plugin eval --json` document that we read. */
+interface PluginEvalDoc {
+  schemaVersion?: number;
+  partial?: boolean;
+  partialReason?: string;
+  costUsd?: number;
+  aggregates?: { meanDelta?: number };
+  cases?: {
+    name?: string;
+    arms?: { with?: { passed?: boolean }[] };
+  }[];
 }
 
 export function parsePluginEvalJson(arm: string, raw: string): PluginEvalRun {
-  const parsed = JSON.parse(raw) as {
-    cases?: RawCase[];
-    costUsd?: number;
-    cost_usd?: number;
-    totalCostUsd?: number;
-  };
+  const parsed = JSON.parse(raw) as PluginEvalDoc | null;
   if (!parsed || !Array.isArray(parsed.cases)) {
     throw new Error(`plugin eval output for ${arm} has no cases array`);
   }
+  if (parsed.schemaVersion !== 1) {
+    throw new Error(
+      `plugin eval output for ${arm} has unsupported schemaVersion ${parsed.schemaVersion}`,
+    );
+  }
+  if (parsed.partial) {
+    throw new Error(
+      `plugin eval for ${arm} is partial (${parsed.partialReason ?? "no reason given"}); refusing to score it`,
+    );
+  }
   const cases: Record<string, boolean[]> = {};
   for (const c of parsed.cases) {
-    const id = c.id ?? c.name;
-    if (!id) throw new Error(`plugin eval case without id in ${arm}`);
-    cases[id] = caseResults(c);
+    if (!c.name) throw new Error(`plugin eval case without name in ${arm}`);
+    cases[c.name] = (c.arms?.with ?? []).map((r) => r.passed === true);
   }
   const all = Object.values(cases).flat();
   if (all.length === 0)
     throw new Error(`plugin eval for ${arm} has no results`);
-  const costUsd = parsed.costUsd ?? parsed.cost_usd ?? parsed.totalCostUsd ?? 0;
   return {
     arm,
     cases,
     score: all.filter(Boolean).length / all.length,
-    costUsd,
+    costUsd: parsed.costUsd ?? 0,
+    ...(parsed.aggregates?.meanDelta !== undefined && {
+      meanDelta: parsed.aggregates.meanDelta,
+    }),
   };
 }
 
+/**
+ * Run `claude plugin eval` on the cases under `<pluginDir>/<evalDir>/` and
+ * parse the result JSON, which is written to a scratch file rather than read
+ * from stdout.
+ */
 export function runPluginEval(
   arm: string,
   pluginDir: string,
-  casesPath: string,
+  evalDir: string,
   opts: PluginEvalOptions,
-  deps: Pick<RunnerDeps, "exec">,
+  deps: Pick<RunnerDeps, "exec" | "mkTmp" | "readFile">,
 ): PluginEvalRun {
   if (!(opts.maxCostUsd > 0)) {
     throw new Error("runPluginEval requires a positive maxCostUsd");
   }
+  const jsonPath = `${deps.mkTmp("prompt-eval-result-")}/result.json`;
   const cmd = [
     "claude",
     "plugin",
     "eval",
     pluginDir,
-    "--cases",
-    casesPath,
+    "--eval-dir",
+    evalDir,
+    "--ablation",
+    opts.ablation ?? "none",
+    // Default threshold 1.0 exits 1 on any imperfect case; we score ourselves.
+    "--threshold",
+    "0",
     "--json",
+    jsonPath,
     "--trust-plugin",
     "--no-publish",
     "--max-cost-usd",
     String(opts.maxCostUsd),
   ];
+  if (opts.runs !== undefined) cmd.push("--runs", String(opts.runs));
   if (opts.appendSystemPrompt !== undefined) {
     cmd.push("--append-system-prompt", opts.appendSystemPrompt);
   }
-  return parsePluginEvalJson(arm, deps.exec(pluginDir, cmd));
+  deps.exec(pluginDir, cmd);
+  return parsePluginEvalJson(arm, deps.readFile(jsonPath));
 }
 
 interface AbOptions {
@@ -120,8 +152,8 @@ interface AbOptions {
   headRef: string;
   /** Plugin directory relative to the repo root. */
   pluginRel: string;
-  /** Frozen cases file, relative to the repo root; identical for both arms. */
-  casesRel: string;
+  /** Eval dir name below the plugin (default `evals`); identical for both arms. */
+  evalDir?: string;
   /** Total cap; split evenly between the two arms. */
   maxCostUsd: number;
 }
@@ -150,18 +182,22 @@ export function abOnTwoCheckouts(
   try {
     const baseDir = checkout("base", opts.baseRef);
     const headDir = checkout("head", opts.headRef);
-    const perArm = { maxCostUsd: opts.maxCostUsd / 2 };
+    const evalDir = opts.evalDir ?? "evals";
+    const perArm = {
+      maxCostUsd: opts.maxCostUsd / 2,
+      ablation: "none" as const,
+    };
     const base = run(
       "base",
       `${baseDir}/${opts.pluginRel}`,
-      `${baseDir}/${opts.casesRel}`,
+      evalDir,
       perArm,
       deps,
     );
     const head = run(
       "head",
       `${headDir}/${opts.pluginRel}`,
-      `${headDir}/${opts.casesRel}`,
+      evalDir,
       perArm,
       deps,
     );
@@ -178,7 +214,7 @@ export function abOnTwoCheckouts(
         mde: diff.mde,
         pairs: diff.pairs,
       },
-      artifacts: [opts.casesRel],
+      artifacts: [`${opts.pluginRel}/${evalDir}`],
       runAt: deps.now().toISOString(),
     };
     return { measured, diff, base, head };
