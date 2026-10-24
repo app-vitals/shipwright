@@ -1708,7 +1708,7 @@ export function buildProductionDeps(opts: {
  * are unrelated to `reconcilePrState()`'s (`state=open` list + `gh pr view`).
  */
 export function buildReviewStateProductionDeps(opts: {
-  ghGraphql: <T>(query: string) => Promise<T>;
+  ghGraphql: <T>(query: string, opts?: { owner?: string }) => Promise<T>;
   fetchFn?: (url: RequestInfo | URL, init?: RequestInit) => Promise<Response>;
   clock?: Clock;
   getScopedRepos: () => string[];
@@ -1824,7 +1824,9 @@ export function buildReviewStateProductionDeps(opts: {
     }
   }
 }`;
-      const response = await ghGraphql<ReviewGraphqlResponse>(query);
+      const response = await ghGraphql<ReviewGraphqlResponse>(query, {
+        owner: org,
+      });
       return response.data.repository.pullRequest;
     },
     delay: (ms: number) => new Promise((resolve) => setTimeout(resolve, ms)),

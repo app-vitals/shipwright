@@ -2418,6 +2418,24 @@ describe("buildProductionDeps", () => {
     expect(seenQuery).toContain("pullRequest(number: 42)");
   });
 
+  test("fetchPrReviews passes the queried repo's owner to ghGraphql", async () => {
+    let seenOwner: string | undefined;
+    const deps = await buildProductionDeps({
+      ghJson: async <T>() => [] as unknown as T,
+      ghGraphql: async <T>(_query: string, opts?: { owner?: string }) => {
+        seenOwner = opts?.owner;
+        return {
+          data: { repository: { pullRequest: {} } },
+        } as T;
+      },
+      getCurrentUser: async () => "the-agent",
+    });
+
+    await deps.fetchPrReviews("acme", "widgets", 42);
+
+    expect(seenOwner).toBe("acme");
+  });
+
   test("fetchCiStatus reports hasFailing/hasCancelled from workflow_runs and picks the highest run_number cancelled run", async () => {
     const deps = await buildProductionDeps({
       ghJson: async <T>(args: string[]) => {

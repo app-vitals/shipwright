@@ -57,15 +57,21 @@ const GH_TRANSIENT_STDERR = /HTTP 50[234]\b|timed? ?out/i;
  * (HTTP 502/503/504 or a timeout). Any other failure — auth, query errors —
  * throws immediately. After exhausting retries the last error is thrown in
  * the same format as a non-retried failure.
+ *
+ * `opts.owner` pins the repo owner for the `gh` wrapper's token routing by
+ * setting SHIPWRIGHT_GH_OWNER in the spawned env; omitted, the env is untouched.
  */
 export async function ghGraphql<T>(
   query: string,
-  opts: { baseDelayMs?: number } = {},
+  opts: { baseDelayMs?: number; owner?: string } = {},
 ): Promise<T> {
   const baseDelayMs = opts.baseDelayMs ?? GH_GRAPHQL_BASE_DELAY_MS;
+  const env = opts.owner
+    ? { ...process.env, SHIPWRIGHT_GH_OWNER: opts.owner }
+    : process.env;
   for (let attempt = 1; ; attempt++) {
     const proc = Bun.spawn(["gh", "api", "graphql", "-f", `query=${query}`], {
-      env: process.env,
+      env,
       stdout: "pipe",
       stderr: "pipe",
     });

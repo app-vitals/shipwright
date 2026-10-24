@@ -763,7 +763,7 @@ export async function buildProductionDeps(opts: {
    * shared ghGraphql) so existing callers/tests that only pass ghJson keep
    * working unchanged.
    */
-  ghGraphql?: <T>(query: string) => Promise<T>;
+  ghGraphql?: <T>(query: string, opts?: { owner?: string }) => Promise<T>;
   fetchFn?: typeof fetch;
   getScopedRepos?: () => string[];
   /**
@@ -884,7 +884,7 @@ export async function buildProductionDeps(opts: {
 }`;
       const response = await ghGraphqlFn<{
         data: { repository: { pullRequest: PrReviewData } };
-      }>(query);
+      }>(query, { owner: org });
       return response.data.repository.pullRequest;
     },
   };

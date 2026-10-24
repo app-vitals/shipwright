@@ -3264,6 +3264,24 @@ describe("buildProductionDeps — updatedSince filtering (PSR-1.1 / RPS-1.1)", (
   });
 });
 
+describe("buildReviewStateProductionDeps — fetchPrReviews owner hint", () => {
+  test("passes the queried repo's owner to ghGraphql", async () => {
+    let seenOwner: string | undefined;
+    const deps = buildReviewStateProductionDeps({
+      ghGraphql: async <T>(_query: string, opts?: { owner?: string }) => {
+        seenOwner = opts?.owner;
+        return { data: { repository: { pullRequest: {} } } } as T;
+      },
+      getScopedRepos: () => [],
+      workspacePath: "/nonexistent/workspace-for-unit-test",
+    });
+
+    await deps.fetchPrReviews("acme", "widgets", 42);
+
+    expect(seenOwner).toBe("acme");
+  });
+});
+
 describe("buildReviewStateProductionDeps — updatedSince filtering (PSR-1.1)", () => {
   function makeFakePrsFetch(): {
     fetchFn: (url: RequestInfo | URL, init?: RequestInit) => Promise<Response>;
