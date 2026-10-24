@@ -55,6 +55,7 @@
 
 import type { Clock } from "@app-vitals/agent-runtime/clock";
 import { SystemClock } from "@app-vitals/agent-runtime/clock";
+import { ownerOfRepo } from "@app-vitals/agent-runtime/gh-helpers";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -267,7 +268,7 @@ export interface PrCensusDeps {
    */
   getScopedRepos: () => string[];
   /** `gh` CLI wrapper (agent/src/coding/check-helpers.ts's ghJson) — issues the one `gh pr list --search` call per repo per tick. */
-  ghJson: <T>(args: string[]) => Promise<T>;
+  ghJson: <T>(args: string[], owner: string) => Promise<T>;
   /** GET /prs/census/cursor?repo=<repo> — returns the incremental search-window cursor, or null on a repo's first run. */
   getCensusCursor: (repo: string) => Promise<string | null>;
   /** All task-store tasks for a repo with a non-null `pr` field (client-side filtered by the production implementation). */
@@ -465,18 +466,21 @@ async function processRepoCensus(
     return;
   }
 
-  const prs = await deps.ghJson<GhCensusPr[]>([
-    "pr",
-    "list",
-    "--state",
-    "merged",
-    "--search",
-    `merged:>=${cursor}`,
-    "--json",
-    "number,title,author,headRefName,createdAt,mergedAt,commits,labels",
-    "--repo",
-    repo,
-  ]);
+  const prs = await deps.ghJson<GhCensusPr[]>(
+    [
+      "pr",
+      "list",
+      "--state",
+      "merged",
+      "--search",
+      `merged:>=${cursor}`,
+      "--json",
+      "number,title,author,headRefName,createdAt,mergedAt,commits,labels",
+      "--repo",
+      repo,
+    ],
+    ownerOfRepo(repo),
+  );
 
   if (prs.length === 0) return; // nothing new — zero POSTs
 
@@ -550,7 +554,7 @@ const DEFAULT_TASK_PAGE_LIMIT = 50;
  * template this one follows.
  */
 export function buildProductionDeps(opts: {
-  ghJson: <T>(args: string[]) => Promise<T>;
+  ghJson: <T>(args: string[], owner: string) => Promise<T>;
   getScopedRepos: () => string[];
   fetchFn?: (url: RequestInfo | URL, init?: RequestInit) => Promise<Response>;
   clock?: Clock;

@@ -50,7 +50,7 @@ interface MakeDepsOptions {
 
 function makeDeps(opts: MakeDepsOptions = {}): {
   deps: PrCensusDeps;
-  ghCalls: Array<{ repo: string; args: string[] }>;
+  ghCalls: Array<{ repo: string; args: string[]; owner: string }>;
   postCalls: Array<{ repo: string; entries: CensusEntry[] }>;
 } {
   const {
@@ -65,15 +65,15 @@ function makeDeps(opts: MakeDepsOptions = {}): {
     now = new Date("2026-09-16T00:00:00.000Z"),
   } = opts;
 
-  const ghCalls: Array<{ repo: string; args: string[] }> = [];
+  const ghCalls: Array<{ repo: string; args: string[]; owner: string }> = [];
   const postCalls: Array<{ repo: string; entries: CensusEntry[] }> = [];
 
   const deps: PrCensusDeps = {
     getScopedRepos: () => scopedRepos,
-    ghJson: async <T>(args: string[]): Promise<T> => {
+    ghJson: async <T>(args: string[], owner: string): Promise<T> => {
       const repoIdx = args.indexOf("--repo");
       const repo = repoIdx >= 0 ? args[repoIdx + 1] : "";
-      ghCalls.push({ repo, args });
+      ghCalls.push({ repo, args, owner });
       const err = ghErrors[repo];
       if (err) throw err;
       return (mergedPrsByRepo[repo] ?? []) as unknown as T;
@@ -683,6 +683,23 @@ describe("runPrCensus", () => {
     expect(ghCalls[0].args).toContain("merged:>=2026-09-01T00:00:00.000Z");
     expect(ghCalls[0].args).toContain("--state");
     expect(ghCalls[0].args).toContain("merged");
+  });
+
+  test("passes the repo's org as the gh owner for each scoped repo", async () => {
+    const { deps, ghCalls } = makeDeps({
+      scopedRepos: ["org-a/repo-a", "org-b/repo-b"],
+      cursorsByRepo: {
+        "org-a/repo-a": "2026-09-01T00:00:00.000Z",
+        "org-b/repo-b": "2026-09-01T00:00:00.000Z",
+      },
+    });
+
+    await runPrCensus(deps);
+
+    expect(ghCalls.map((c) => [c.repo, c.owner])).toEqual([
+      ["org-a/repo-a", "org-a"],
+      ["org-b/repo-b", "org-b"],
+    ]);
   });
 
   test("no stored cursor (first run): issues zero gh pr list --search calls and zero POSTs for that repo", async () => {

@@ -1239,6 +1239,7 @@ export {
   ghGraphql,
   ghJson,
   ghRun,
+  ownerOfRepo,
 } from "@app-vitals/agent-runtime/gh-helpers";
 export {
   resolveWorkspacePath,

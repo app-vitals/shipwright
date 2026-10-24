@@ -2269,9 +2269,12 @@ describe("buildProductionDeps", () => {
       process.env.WORKSPACE_PATH = scratchDir;
 
       const seenArgs: string[][] = [];
+      const seenOwners: string[] = [];
+      const seenUserOwners: string[] = [];
       const deps = await buildProductionDeps({
-        ghJson: async <T>(args: string[]) => {
+        ghJson: async <T>(args: string[], owner: string) => {
           seenArgs.push(args);
+          seenOwners.push(owner);
           return [
             {
               number: 5,
@@ -2283,7 +2286,10 @@ describe("buildProductionDeps", () => {
           ] as unknown as T;
         },
         ghGraphql: async <T>() => ({}) as unknown as T,
-        getCurrentUser: async () => "agent-login",
+        getCurrentUser: async (owner: string) => {
+          seenUserOwners.push(owner);
+          return "agent-login";
+        },
         // Explicit override so this test is deterministic regardless of the
         // shared agentReposRef singleton's live state in this Bun test
         // process (RSF-1.1: scoping now happens inside this closure, before
@@ -2304,6 +2310,8 @@ describe("buildProductionDeps", () => {
           repo: "acme/example-repo",
         },
       ]);
+      expect(seenOwners).toEqual(["acme"]);
+      expect(seenUserOwners).toEqual(["acme"]);
       expect(seenArgs).toHaveLength(1);
       expect(seenArgs[0]).toEqual([
         "pr",
@@ -2422,8 +2430,8 @@ describe("buildProductionDeps", () => {
     let seenOwner: string | undefined;
     const deps = await buildProductionDeps({
       ghJson: async <T>() => [] as unknown as T,
-      ghGraphql: async <T>(_query: string, opts?: { owner?: string }) => {
-        seenOwner = opts?.owner;
+      ghGraphql: async <T>(_query: string, owner: string) => {
+        seenOwner = owner;
         return {
           data: { repository: { pullRequest: {} } },
         } as T;
@@ -2595,7 +2603,7 @@ describe("buildProductionDeps", () => {
       getCurrentUser: async () => "specific-agent-login",
     });
 
-    expect(await deps.getCurrentUser()).toBe("specific-agent-login");
+    expect(await deps.getCurrentUser("acme")).toBe("specific-agent-login");
   });
 
   test("getScopedRepos defaults to the shared agentReposRef when not overridden", async () => {

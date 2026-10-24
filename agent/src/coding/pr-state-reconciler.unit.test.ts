@@ -3268,8 +3268,8 @@ describe("buildReviewStateProductionDeps — fetchPrReviews owner hint", () => {
   test("passes the queried repo's owner to ghGraphql", async () => {
     let seenOwner: string | undefined;
     const deps = buildReviewStateProductionDeps({
-      ghGraphql: async <T>(_query: string, opts?: { owner?: string }) => {
-        seenOwner = opts?.owner;
+      ghGraphql: async <T>(_query: string, owner: string) => {
+        seenOwner = owner;
         return { data: { repository: { pullRequest: {} } } } as T;
       },
       getScopedRepos: () => [],

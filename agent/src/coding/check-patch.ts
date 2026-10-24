@@ -49,6 +49,7 @@ import {
   isPrRecordBlockedForDispatch,
   isTaskBlockedForDispatch,
   mapReposTolerant,
+  ownerOfRepo,
   readAllowSelfReview,
   resolveAllRepos,
   resolveWorkspacePath,
@@ -267,7 +268,7 @@ export interface CheckPatchDeps {
     pr: number,
   ) => Promise<MergeStatusInfo>;
   listPrCommits: (prNumber: number, repo?: string) => Promise<CommitInfo[]>;
-  getCurrentUser: () => Promise<string>;
+  getCurrentUser: (owner: string) => Promise<string>;
   /**
    * Whether the agent may count its own clean-APPROVE review as approval of
    * its own PR (same policy check-deploy.ts uses). Optional; absent = false.
@@ -523,9 +524,13 @@ export async function isBehindReady(
 export async function getPatchCandidates(
   deps: CheckPatchDeps,
 ): Promise<WorkPrCandidate[]> {
-  const currentUser = await deps.getCurrentUser();
-
   const scopedRepos = new Set(deps.getScopedRepos());
+  // Nothing in scope means nothing to patch (and no org to route gh by).
+  // The viewer identity is the same under any installation token; the owner
+  // only routes the token, so use the first scoped repo's org.
+  const [firstScopedRepo] = scopedRepos;
+  if (firstScopedRepo === undefined) return [];
+  const currentUser = await deps.getCurrentUser(ownerOfRepo(firstScopedRepo));
   const allOwnPrs = await deps.listOwnOpenPrs("default");
   // Additive allowlisted-author source (DBR-1.4) — merged with allOwnPrs and
   // deduplicated by (repo, PR number) via candidateId before scope-filtering.
@@ -730,9 +735,13 @@ interface GraphqlResponse {
 }
 
 export async function buildProductionDeps(opts: {
-  ghJson: <T>(args: string[]) => Promise<T>;
-  ghGraphql: <T>(query: string, opts?: { owner?: string }) => Promise<T>;
-  getCurrentUser: () => Promise<string>;
+  ghJson: <T>(args: string[], owner: string) => Promise<T>;
+  ghGraphql: <T>(
+    query: string,
+    owner: string,
+    opts?: { baseDelayMs?: number },
+  ) => Promise<T>;
+  getCurrentUser: (owner: string) => Promise<string>;
   fetchFn?: typeof fetch;
   getScopedRepos?: () => string[];
   /**
@@ -769,21 +778,25 @@ export async function buildProductionDeps(opts: {
     getScopedRepos: opts.getScopedRepos ?? agentReposRef.get,
     isSelfReviewAllowed: () => readAllowSelfReview(workspacePath),
     listOwnOpenPrs: async (_repo: string) => {
-      const user = await getUser();
       const repos = getScopedAllRepos();
+      if (repos.length === 0) return [];
+      const user = await getUser(ownerOfRepo(repos[0]));
       return mapReposTolerant(repos, "check-patch", async (repo) => {
-        const items = await ghJson<GhPrListItem[]>([
-          "pr",
-          "list",
-          "--state",
-          "open",
-          "--repo",
-          repo,
-          "--author",
-          user,
-          "--json",
-          "number,title,headRefName,headRefOid,createdAt",
-        ]);
+        const items = await ghJson<GhPrListItem[]>(
+          [
+            "pr",
+            "list",
+            "--state",
+            "open",
+            "--repo",
+            repo,
+            "--author",
+            user,
+            "--json",
+            "number,title,headRefName,headRefOid,createdAt",
+          ],
+          ownerOfRepo(repo),
+        );
         return items.map((item) => ({ ...item, repo }));
       });
     },
@@ -798,18 +811,21 @@ export async function buildProductionDeps(opts: {
       return mapReposTolerant(repos, "check-patch", async (repo) => {
         const results: OwnPr[] = [];
         for (const login of logins) {
-          const items = await ghJson<GhPrListItem[]>([
-            "pr",
-            "list",
-            "--state",
-            "open",
-            "--repo",
-            repo,
-            "--author",
-            login,
-            "--json",
-            "number,title,headRefName,headRefOid,createdAt",
-          ]);
+          const items = await ghJson<GhPrListItem[]>(
+            [
+              "pr",
+              "list",
+              "--state",
+              "open",
+              "--repo",
+              repo,
+              "--author",
+              login,
+              "--json",
+              "number,title,headRefName,headRefOid,createdAt",
+            ],
+            ownerOfRepo(repo),
+          );
           // Attach the login we queried with as the PR's author — the `gh pr
           // list --author {login}` filter guarantees it, and
           // getPatchCandidates needs it to thread a real `prAuthor` into the
@@ -858,7 +874,7 @@ export async function buildProductionDeps(opts: {
     }
   }
 }`;
-      const response = await ghGraphql<GraphqlResponse>(query, { owner: org });
+      const response = await ghGraphql<GraphqlResponse>(query, org);
       return response.data.repository.pullRequest;
     },
     fetchCiStatus: async (
@@ -877,10 +893,10 @@ export async function buildProductionDeps(opts: {
         }[];
       };
       try {
-        const data = await ghJson<ApiResponse>([
-          "api",
-          `repos/${org}/${repo}/actions/runs?head_sha=${sha}`,
-        ]);
+        const data = await ghJson<ApiResponse>(
+          ["api", `repos/${org}/${repo}/actions/runs?head_sha=${sha}`],
+          org,
+        );
         const hasFailing = hasFailingCi(data.workflow_runs);
         const cancelledRuns = findCancelledRuns(data.workflow_runs);
         // Highest run_number wins when more than one workflow's latest run
@@ -904,10 +920,13 @@ export async function buildProductionDeps(opts: {
             try {
               const jobs = await ghJson<{
                 jobs: { name: string; conclusion: string | null }[];
-              }>([
-                "api",
-                `repos/${org}/${repo}/actions/runs/${latestFailed.id}/jobs`,
-              ]);
+              }>(
+                [
+                  "api",
+                  `repos/${org}/${repo}/actions/runs/${latestFailed.id}/jobs`,
+                ],
+                org,
+              );
               ciFailureSignature = ciFailureSignatureFromJobs(jobs.jobs);
             } catch {
               // fall through with ""
@@ -933,15 +952,18 @@ export async function buildProductionDeps(opts: {
         const data = await ghJson<{
           mergeStateStatus: string;
           reviewDecision?: string | null;
-        }>([
-          "pr",
-          "view",
-          String(pr),
-          "--repo",
-          `${org}/${repo}`,
-          "--json",
-          "mergeStateStatus,reviewDecision",
-        ]);
+        }>(
+          [
+            "pr",
+            "view",
+            String(pr),
+            "--repo",
+            `${org}/${repo}`,
+            "--json",
+            "mergeStateStatus,reviewDecision",
+          ],
+          org,
+        );
         return {
           isDirty: data.mergeStateStatus === "DIRTY",
           isBehind: data.mergeStateStatus === "BEHIND",
@@ -956,11 +978,10 @@ export async function buildProductionDeps(opts: {
     },
     listPrCommits: async (prNumber: number, repo?: string) => {
       const targetRepo = repo ?? resolveAllRepos(workspacePath)[0];
-      return await ghJson<CommitInfo[]>([
-        "api",
-        `repos/${targetRepo}/pulls/${prNumber}/commits`,
-        "--paginate",
-      ]);
+      return await ghJson<CommitInfo[]>(
+        ["api", `repos/${targetRepo}/pulls/${prNumber}/commits`, "--paginate"],
+        ownerOfRepo(targetRepo),
+      );
     },
     getCurrentUser: getUser,
     queryPrRecord: createPrRecordQuery<PrRecord>({ fetchFn: opts.fetchFn }),

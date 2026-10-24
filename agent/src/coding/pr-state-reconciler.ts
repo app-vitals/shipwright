@@ -147,6 +147,7 @@ import { SystemClock } from "@app-vitals/agent-runtime/clock";
 import {
   classifyReviewState,
   hasAnyReviewAtHead,
+  ownerOfRepo,
   readCleanupAfterDays,
   readCleanupMergedWorktrees,
   resolveAllRepos,
@@ -1489,7 +1490,7 @@ export function isWorktreeStale(
 }
 
 export function buildProductionDeps(opts: {
-  ghJson: <T>(args: string[]) => Promise<T>;
+  ghJson: <T>(args: string[], owner: string) => Promise<T>;
   fetchFn?: (url: RequestInfo | URL, init?: RequestInit) => Promise<Response>;
   getScopedRepos: () => string[];
   /**
@@ -1610,18 +1611,21 @@ export function buildProductionDeps(opts: {
     },
     patchPrRecord: makePatchPrRecord({ baseUrl, headers, doFetch }),
     ghViewPr: async (repo: string, prNumber: number) => {
-      return await ghJson<GhPrView>([
-        "pr",
-        "view",
-        String(prNumber),
-        "--repo",
-        repo,
-        "--json",
-        // headRefName (WTR-1.3) piggybacks on this same call — see
-        // GhPrView's doc comment and reconcileRecord()'s worktree-removal
-        // side effect above.
-        "state,mergedAt,headRefName",
-      ]);
+      return await ghJson<GhPrView>(
+        [
+          "pr",
+          "view",
+          String(prNumber),
+          "--repo",
+          repo,
+          "--json",
+          // headRefName (WTR-1.3) piggybacks on this same call — see
+          // GhPrView's doc comment and reconcileRecord()'s worktree-removal
+          // side effect above.
+          "state,mergedAt,headRefName",
+        ],
+        ownerOfRepo(repo),
+      );
     },
     listPrOpenTasks: (limit: number, offset: number) =>
       listTasksByStatus("pr_open", limit, offset),
@@ -1636,18 +1640,21 @@ export function buildProductionDeps(opts: {
       }
     },
     ghListMergedPrsForBranch: async (repo: string, branch: string) => {
-      return await ghJson<Array<{ number: number }>>([
-        "pr",
-        "list",
-        "--head",
-        branch,
-        "--state",
-        "merged",
-        "--repo",
-        repo,
-        "--json",
-        "number",
-      ]);
+      return await ghJson<Array<{ number: number }>>(
+        [
+          "pr",
+          "list",
+          "--head",
+          branch,
+          "--state",
+          "merged",
+          "--repo",
+          repo,
+          "--json",
+          "number",
+        ],
+        ownerOfRepo(repo),
+      );
     },
     listAllTasksForBranch: listAllTasksForBranchImpl,
     now: () => new Date().toISOString(),
@@ -1708,7 +1715,11 @@ export function buildProductionDeps(opts: {
  * are unrelated to `reconcilePrState()`'s (`state=open` list + `gh pr view`).
  */
 export function buildReviewStateProductionDeps(opts: {
-  ghGraphql: <T>(query: string, opts?: { owner?: string }) => Promise<T>;
+  ghGraphql: <T>(
+    query: string,
+    owner: string,
+    opts?: { baseDelayMs?: number },
+  ) => Promise<T>;
   fetchFn?: (url: RequestInfo | URL, init?: RequestInit) => Promise<Response>;
   clock?: Clock;
   getScopedRepos: () => string[];
@@ -1824,9 +1835,7 @@ export function buildReviewStateProductionDeps(opts: {
     }
   }
 }`;
-      const response = await ghGraphql<ReviewGraphqlResponse>(query, {
-        owner: org,
-      });
+      const response = await ghGraphql<ReviewGraphqlResponse>(query, org);
       return response.data.repository.pullRequest;
     },
     delay: (ms: number) => new Promise((resolve) => setTimeout(resolve, ms)),

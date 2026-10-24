@@ -41,6 +41,7 @@ import {
   isPrRecordBlockedForDispatch,
   isTaskBlockedForDispatch,
   mapReposTolerant,
+  ownerOfRepo,
   readAllowSelfReview,
   resolveAllRepos,
   resolveWorkspacePath,
@@ -98,7 +99,7 @@ export interface PrRecord {
 }
 
 export interface CheckDeployDeps {
-  getCurrentUser: () => Promise<string>;
+  getCurrentUser: (owner: string) => Promise<string>;
   /**
    * Whether self-review is allowed (the `allow_self_review` policy field,
    * synced DB ref -> hardcoded default, APM-1.4). A getter, invoked
@@ -220,10 +221,13 @@ export async function getDeployCandidates(
     }),
   );
 
-  const currentUser = await deps.getCurrentUser();
   const candidates: WorkPrCandidate[] = [];
 
   const openRepos = repos.filter((repo) => !busyRepos.has(repo));
+  if (openRepos.length === 0) return candidates;
+  // The viewer identity is the same under any installation token; the owner
+  // only routes the token, so use the first open repo's org.
+  const currentUser = await deps.getCurrentUser(ownerOfRepo(openRepos[0]));
   const openPrs = await mapReposTolerant<GhPr & { repo: string }>(
     openRepos,
     "check-deploy",
@@ -372,7 +376,7 @@ interface GhWorkflowRunsJson {
 }
 
 export async function buildProductionDeps(opts: {
-  ghJson: <T>(args: string[]) => Promise<T>;
+  ghJson: <T>(args: string[], owner: string) => Promise<T>;
   fetchFn?: typeof fetch;
   getScopedRepos?: () => string[];
 }): Promise<CheckDeployDeps> {
@@ -387,14 +391,17 @@ export async function buildProductionDeps(opts: {
     getScopedRepos: opts.getScopedRepos ?? agentReposRef.get,
     clock,
     fetchActiveDeployRuns: async (org: string, repo: string) => {
-      const inProgress = await ghJson<GhWorkflowRunsJson>([
-        "api",
-        `repos/${org}/${repo}/actions/runs?status=in_progress&per_page=10`,
-      ]);
-      const queued = await ghJson<GhWorkflowRunsJson>([
-        "api",
-        `repos/${org}/${repo}/actions/runs?status=queued&per_page=10`,
-      ]);
+      const inProgress = await ghJson<GhWorkflowRunsJson>(
+        [
+          "api",
+          `repos/${org}/${repo}/actions/runs?status=in_progress&per_page=10`,
+        ],
+        org,
+      );
+      const queued = await ghJson<GhWorkflowRunsJson>(
+        ["api", `repos/${org}/${repo}/actions/runs?status=queued&per_page=10`],
+        org,
+      );
       return [...inProgress.workflow_runs, ...queued.workflow_runs]
         .filter((r) => r.name.toLowerCase() === "deploy")
         .map((r) => ({
@@ -404,23 +411,26 @@ export async function buildProductionDeps(opts: {
         }));
     },
     listOpenPrs: async (repo: string) => {
-      return await ghJson<GhPrListJson[]>([
-        "pr",
-        "list",
-        "--state",
-        "open",
-        "--repo",
-        repo,
-        "--json",
-        "number,title,headRefOid,headRefName,author,reviewDecision,createdAt,mergeStateStatus",
-      ]);
+      return await ghJson<GhPrListJson[]>(
+        [
+          "pr",
+          "list",
+          "--state",
+          "open",
+          "--repo",
+          repo,
+          "--json",
+          "number,title,headRefOid,headRefName,author,reviewDecision,createdAt,mergeStateStatus",
+        ],
+        ownerOfRepo(repo),
+      );
     },
     fetchCiRuns: async (org: string, repo: string, headSha: string) => {
       try {
-        const data = await ghJson<GhWorkflowRunsJson>([
-          "api",
-          `repos/${org}/${repo}/actions/runs?head_sha=${headSha}`,
-        ]);
+        const data = await ghJson<GhWorkflowRunsJson>(
+          ["api", `repos/${org}/${repo}/actions/runs?head_sha=${headSha}`],
+          org,
+        );
         return data.workflow_runs.map((r) => ({
           name: r.name,
           status: r.status,
@@ -437,15 +447,18 @@ export async function buildProductionDeps(opts: {
       }
     },
     fetchPrReviews: async (org: string, repo: string, pr: number) => {
-      const data = await ghJson<GhPrReviewsJson>([
-        "pr",
-        "view",
-        String(pr),
-        "--repo",
-        `${org}/${repo}`,
-        "--json",
-        "reviews",
-      ]);
+      const data = await ghJson<GhPrReviewsJson>(
+        [
+          "pr",
+          "view",
+          String(pr),
+          "--repo",
+          `${org}/${repo}`,
+          "--json",
+          "reviews",
+        ],
+        org,
+      );
       return data.reviews;
     },
     isBundleComplete: createBundleCompleteQuery({ fetchFn: opts.fetchFn }),
