@@ -13,6 +13,7 @@ import {
   extractSteps,
   mcnemarExact,
   prepareEvals,
+  renderGrader,
   runEvalDiff,
   writeEvalCases,
 } from "./eval-harness.ts";
@@ -113,8 +114,85 @@ describe("buildEvalCases", () => {
     expect(g.length).toBe(c.graders.length);
     const t = cases.find((x) => x.kind === "trigger-should");
     expect(written[`evals/${t?.id}/graders/01-tool_used.md`]).toContain(
-      "tool_used: Skill",
+      "type: tool_used\ntool: Skill\n",
     );
+  });
+  test("prompt.md carries frontmatter and the prompt as body", () => {
+    const { written, d } = deps();
+    const c = buildEvalCases(finding, "/r", d)[0];
+    writeEvalCases([c], "/r", d);
+    expect(written[`evals/${c.id}/prompt.md`]).toBe(
+      `---\nmax_turns: 10\nallowed_tools: [Read, Glob, Grep, Skill]\n---\n\n${c.prompt}\n`,
+    );
+  });
+  test("historical tests_pass / task_store_state graders are dropped with a logged reason", () => {
+    const { written, d } = deps();
+    const logs: string[] = [];
+    const cases = buildEvalCases(finding, "/r", {
+      ...d,
+      historical: [
+        {
+          id: "T-1",
+          prompt: "do it",
+          preTaskCommit: "abc",
+          testCommand: "bun test",
+          expectedState: { field: "status", expected: "pr_open" },
+        },
+      ],
+    });
+    writeEvalCases(cases, "/r", { ...d, log: (m) => logs.push(m) });
+    const h = cases.find((c) => c.kind === "historical");
+    expect(logs).toHaveLength(2);
+    expect(logs[0]).toContain("dropped tests_pass");
+    expect(logs[1]).toContain("dropped task_store_state");
+    const files = Object.keys(written).filter((k) =>
+      k.startsWith(`evals/${h?.id}/graders/`),
+    );
+    expect(files).toEqual([`evals/${h?.id}/graders/01-tool_used.md`]);
+  });
+});
+
+describe("renderGrader", () => {
+  test("tool_used present", () => {
+    expect(
+      renderGrader({
+        type: "tool_used",
+        tool: "Skill",
+        skill: "dev-task",
+        expect: "present",
+      }),
+    ).toStartWith(
+      `---\ntype: tool_used\ntool: Skill\ninput_match: '"skill"\\s*:\\s*"(?:shipwright:)?dev-task"'\nmin: 1\n---\n`,
+    );
+  });
+  test("tool_used absent caps at zero and regex-escapes the skill", () => {
+    const out = renderGrader({
+      type: "tool_used",
+      tool: "Skill",
+      skill: "a.b",
+      expect: "absent",
+    });
+    expect(out).toContain("a\\.b");
+    expect(out).toContain("min: 0\nmax: 0\n---");
+  });
+  test("transcript_contains is a regex over the last message, escaped", () => {
+    const out = renderGrader({
+      type: "transcript_contains",
+      text: "1: Step (it's) [x]",
+    });
+    expect(out).toStartWith(
+      `---\ntype: regex\ntarget: last_message\npattern: '1: Step \\(it''s\\) \\[x\\]'\n---\n`,
+    );
+  });
+  test("llm_judge puts the rubric in the body", () => {
+    expect(
+      renderGrader({ type: "llm_judge", model: "gpt-5", rubric: "Be good." }),
+    ).toBe("---\ntype: llm\nweight: 1\n---\n\nBe good.\n");
+  });
+  test("rejects graders plugin eval cannot express", () => {
+    expect(() =>
+      renderGrader({ type: "tests_pass", command: "bun test" }),
+    ).toThrow(/no plugin-eval equivalent/);
   });
   test("prepareEvals writes nothing when the gate refuses", () => {
     const { written, d } = deps();

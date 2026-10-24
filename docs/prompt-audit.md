@@ -68,6 +68,24 @@ Task shape: `id: prompt-{class}-{fp8}-shipwright-{YYYY-Www}`, `title: "Prompt au
 
 `cli.ts` also provides `measure` (same-model token delta between two refs), `blast` (reverse-reference blast radius of a file) and `watch` (post-merge regression check comparing before/after context fingerprints per phase). Run telemetry (per-run context baseline, per-skill attribution, outcome metrics) is exposed through the admin cron-run stats endpoints; see [`docs/agent-api-ops.md`](./agent-api-ops.md).
 
+### Eval case format and runner
+
+The eval harness (`scripts/prompt-audit/eval-*.ts`) emits cases in the layout `claude plugin eval` loads: `evals/<case>/prompt.md` (frontmatter `max_turns`, `allowed_tools: [Read, Glob, Grep, Skill]`, prompt as body) plus `evals/<case>/graders/NN-<kind>.md` with YAML frontmatter.
+
+| Harness grader | Plugin-eval grader |
+|----------------|--------------------|
+| `tool_used` present | `type: tool_used`, `tool: Skill`, `input_match: '"skill"\s*:\s*"(?:shipwright:)?<skill>"'`, `min: 1` |
+| `tool_used` absent | same, `min: 0`, `max: 0` |
+| `transcript_contains` | `type: regex`, `target: last_message`, `pattern: <escaped text>` |
+| `llm_judge` | `type: llm`, rubric as the body (judge model chosen with `--judge-model`) |
+| `tests_pass`, `task_store_state` | **dropped**, with a logged reason per case |
+
+`transcript_contains` targets `last_message`, not `trace`: the trace includes the user prompt, which names the step, so a trace regex would pass vacuously. `tests_pass` and `task_store_state` are dropped rather than faked because plugin eval has no repo checkout to run tests in and runs cannot reach the task store; historical cases keep their `tool_used` grader only.
+
+`runPluginEval` takes an eval-dir name (cases live under `<pluginDir>/<evalDir>/`), writes `--json` to a scratch file and parses the `schemaVersion: 1` document: seeds come from `cases[].arms.with[].passed`, and a `partial: true` result throws. It passes `--ablation none` unless the caller asks for `with-without` (which adds a no-plugin baseline arm, doubling cost, and excludes `tool_used: Skill` graders from the score; read `aggregates.meanDelta`), and `--threshold 0` so imperfect cases do not make the CLI exit non-zero.
+
+**Run isolation.** Plugin-eval runs get a temporary home and only an env allowlist plus `EVAL_*` variables, so `SHIPWRIGHT_TASK_STORE_*` and `gh` auth do not reach the run. `dev-task`, `review` and `patch` are therefore side-effect-free under plugin eval, but also inert past their first task-store or `gh` call. Historical replay would need `case.yaml` `execution.env` pointed at a local task store plus a `scaffold_script`; that is out of scope and remains a PAU-5.4 limitation.
+
 ## Model cutover decision (2026-10-24)
 
 **Decision: keep `claude-sonnet-5-5` as the fleet default** (PAU-2.4). The `prompt-fix` cutover freeze lifts with this note.

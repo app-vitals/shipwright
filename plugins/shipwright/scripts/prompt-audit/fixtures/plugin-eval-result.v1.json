@@ -1,0 +1,245 @@
+{
+  "schemaVersion": 1,
+  "claudeVersion": "2.1.310",
+  "startedAt": "2026-10-24T18:00:00.000Z",
+  "durationSeconds": 58,
+  "costUsd": 1.02,
+  "partial": false,
+  "suite": {
+    "root": "<scratch>/plugin",
+    "ablation": "none",
+    "threshold": 0,
+    "concurrency": 1,
+    "plugins": [
+      {
+        "name": "shipwright",
+        "version": "0.0.0",
+        "path": "<scratch>/plugin"
+      }
+    ]
+  },
+  "cases": [
+    {
+      "name": "trigger-should-step-a",
+      "dir": "evals/trigger-should-step-a",
+      "source": "prose",
+      "promptMarkdown": "Please run the /dev-task step.",
+      "runsPerCase": 3,
+      "timeoutSeconds": 300,
+      "maxTurns": 10,
+      "graders": [],
+      "arms": {
+        "with": [
+          {
+            "score": 1,
+            "passed": true,
+            "turns": 4,
+            "costUsd": 0.17,
+            "judgeCostUsd": 0,
+            "durationSeconds": 9,
+            "startedAt": "2026-10-24T18:00:00.000Z",
+            "error": null,
+            "tracePath": "<scratch>/out/trace.jsonl",
+            "skippedPaidGraders": false,
+            "graders": [
+              {
+                "name": "01-tool_used",
+                "passed": true,
+                "weight": 1,
+                "explanation": "Skill called 1x (expected 1..\u221e)",
+                "withOnly": false,
+                "scored": true
+              },
+              {
+                "name": "02-transcript_contains",
+                "passed": true,
+                "weight": 1,
+                "explanation": "pattern found in last_message",
+                "withOnly": false,
+                "scored": true
+              }
+            ]
+          },
+          {
+            "score": 1,
+            "passed": true,
+            "turns": 4,
+            "costUsd": 0.17,
+            "judgeCostUsd": 0,
+            "durationSeconds": 9,
+            "startedAt": "2026-10-24T18:00:00.000Z",
+            "error": null,
+            "tracePath": "<scratch>/out/trace.jsonl",
+            "skippedPaidGraders": false,
+            "graders": [
+              {
+                "name": "01-tool_used",
+                "passed": true,
+                "weight": 1,
+                "explanation": "Skill called 1x (expected 1..\u221e)",
+                "withOnly": false,
+                "scored": true
+              },
+              {
+                "name": "02-transcript_contains",
+                "passed": true,
+                "weight": 1,
+                "explanation": "pattern found in last_message",
+                "withOnly": false,
+                "scored": true
+              }
+            ]
+          },
+          {
+            "score": 0.5,
+            "passed": false,
+            "turns": 4,
+            "costUsd": 0.17,
+            "judgeCostUsd": 0,
+            "durationSeconds": 9,
+            "startedAt": "2026-10-24T18:00:00.000Z",
+            "error": null,
+            "tracePath": "<scratch>/out/trace.jsonl",
+            "skippedPaidGraders": false,
+            "graders": [
+              {
+                "name": "01-tool_used",
+                "passed": true,
+                "weight": 1,
+                "explanation": "Skill called 1x (expected 1..\u221e)",
+                "withOnly": false,
+                "scored": true
+              },
+              {
+                "name": "02-transcript_contains",
+                "passed": false,
+                "weight": 1,
+                "explanation": "pattern not found in last_message",
+                "withOnly": false,
+                "scored": true
+              }
+            ]
+          }
+        ]
+      },
+      "aggregates": {
+        "score": 0.8333,
+        "passRate": 0.6667
+      }
+    },
+    {
+      "name": "trigger-shouldnt-b",
+      "dir": "evals/trigger-shouldnt-b",
+      "source": "prose",
+      "promptMarkdown": "Please run the /dev-task step.",
+      "runsPerCase": 3,
+      "timeoutSeconds": 300,
+      "maxTurns": 10,
+      "graders": [],
+      "arms": {
+        "with": [
+          {
+            "score": 1,
+            "passed": true,
+            "turns": 4,
+            "costUsd": 0.17,
+            "judgeCostUsd": 0,
+            "durationSeconds": 9,
+            "startedAt": "2026-10-24T18:00:00.000Z",
+            "error": null,
+            "tracePath": "<scratch>/out/trace.jsonl",
+            "skippedPaidGraders": false,
+            "graders": [
+              {
+                "name": "01-tool_used",
+                "passed": true,
+                "weight": 1,
+                "explanation": "Skill called 1x (expected 1..\u221e)",
+                "withOnly": false,
+                "scored": true
+              },
+              {
+                "name": "02-transcript_contains",
+                "passed": true,
+                "weight": 1,
+                "explanation": "pattern found in last_message",
+                "withOnly": false,
+                "scored": true
+              }
+            ]
+          },
+          {
+            "score": 1,
+            "passed": true,
+            "turns": 4,
+            "costUsd": 0.17,
+            "judgeCostUsd": 0,
+            "durationSeconds": 9,
+            "startedAt": "2026-10-24T18:00:00.000Z",
+            "error": null,
+            "tracePath": "<scratch>/out/trace.jsonl",
+            "skippedPaidGraders": false,
+            "graders": [
+              {
+                "name": "01-tool_used",
+                "passed": true,
+                "weight": 1,
+                "explanation": "Skill called 1x (expected 1..\u221e)",
+                "withOnly": false,
+                "scored": true
+              },
+              {
+                "name": "02-transcript_contains",
+                "passed": true,
+                "weight": 1,
+                "explanation": "pattern found in last_message",
+                "withOnly": false,
+                "scored": true
+              }
+            ]
+          },
+          {
+            "score": 1,
+            "passed": true,
+            "turns": 4,
+            "costUsd": 0.17,
+            "judgeCostUsd": 0,
+            "durationSeconds": 9,
+            "startedAt": "2026-10-24T18:00:00.000Z",
+            "error": null,
+            "tracePath": "<scratch>/out/trace.jsonl",
+            "skippedPaidGraders": false,
+            "graders": [
+              {
+                "name": "01-tool_used",
+                "passed": true,
+                "weight": 1,
+                "explanation": "Skill called 1x (expected 1..\u221e)",
+                "withOnly": false,
+                "scored": true
+              },
+              {
+                "name": "02-transcript_contains",
+                "passed": true,
+                "weight": 1,
+                "explanation": "pattern found in last_message",
+                "withOnly": false,
+                "scored": true
+              }
+            ]
+          }
+        ]
+      },
+      "aggregates": {
+        "score": 1.0,
+        "passRate": 1.0
+      }
+    }
+  ],
+  "aggregates": {
+    "casesTotal": 2,
+    "casesPassed": 2,
+    "overallScore": 0.9167,
+    "overallPassRate": 0.8333
+  }
+}

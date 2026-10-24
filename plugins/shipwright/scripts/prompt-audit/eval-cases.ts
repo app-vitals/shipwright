@@ -15,11 +15,13 @@ import {
   type Grader,
   graderName,
   renderGrader,
+  unsupportedReason,
 } from "./eval-graders.ts";
 import type { Finding } from "./finding.ts";
 
 const MIN_CASES = 20;
 const MAX_CASES = 30;
+const MAX_TURNS = 10;
 
 interface HistoricalTask {
   id: string;
@@ -45,6 +47,8 @@ interface EvalCase {
 export interface CaseDeps {
   fs: { read(root: string, rel: string): string };
   write(root: string, rel: string, content: string): void;
+  /** Receives a line for every grader dropped as unsupported by plugin eval. */
+  log?(message: string): void;
   historical?: HistoricalTask[];
   judge?: { generator: string; model: string; rubric: string };
 }
@@ -203,16 +207,29 @@ export function buildEvalCases(
   return uniq;
 }
 
-/** Write evals/<case>/prompt.md and evals/<case>/graders/*.md. */
+/**
+ * Write evals/<case>/prompt.md and evals/<case>/graders/*.md in the
+ * `claude plugin eval` format. Graders plugin eval cannot express are dropped
+ * and reported through `deps.log`.
+ */
 export function writeEvalCases(
   cases: EvalCase[],
   repoDir: string,
-  deps: Pick<CaseDeps, "write">,
+  deps: Pick<CaseDeps, "write" | "log">,
 ): void {
   for (const c of cases) {
     const dir = `evals/${c.id}`;
-    deps.write(repoDir, `${dir}/prompt.md`, `${c.prompt}\n`);
-    c.graders.forEach((g, i) => {
+    deps.write(
+      repoDir,
+      `${dir}/prompt.md`,
+      `---\nmax_turns: ${MAX_TURNS}\nallowed_tools: [Read, Glob, Grep, Skill]\n---\n\n${c.prompt}\n`,
+    );
+    const kept = c.graders.filter((g) => {
+      const reason = unsupportedReason(g);
+      if (reason) deps.log?.(`${c.id}: dropped ${g.type} grader: ${reason}`);
+      return !reason;
+    });
+    kept.forEach((g, i) => {
       deps.write(
         repoDir,
         `${dir}/graders/${graderName(g, i)}`,

@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test";
+import { readFileSync } from "node:fs";
 import {
   abOnTwoCheckouts,
   parsePluginEvalJson,
@@ -9,10 +10,23 @@ import {
 } from "./eval-runner.ts";
 import { emptyLedger, type Ledger, recordMeasurement } from "./ledger.ts";
 
-const evalJson = (passes: boolean[][], costUsd: number) =>
+const FIXTURE = readFileSync(
+  new URL("./fixtures/plugin-eval-result.v1.json", import.meta.url),
+  "utf8",
+);
+
+/** A minimal v1 result document; each case is a list of per-run `passed`. */
+const evalJson = (passes: boolean[][], costUsd: number, extra = {}) =>
   JSON.stringify({
+    schemaVersion: 1,
     costUsd,
-    cases: passes.map((seeds, i) => ({ id: `c${i}`, seeds })),
+    partial: false,
+    cases: passes.map((runs, i) => ({
+      name: `c${i}`,
+      arms: { with: runs.map((passed) => ({ passed })) },
+    })),
+    aggregates: { casesTotal: passes.length },
+    ...extra,
   });
 
 const NOW = new Date("2026-10-08T00:00:00Z");
@@ -22,66 +36,137 @@ function deps(outputs: Record<string, string>, calls: string[][] = []) {
     exec: (cwd, cmd) => {
       calls.push([cwd, ...cmd]);
       if (cmd[0] === "claude") {
+        // the result is written to --json <path>; remember which arm's it is
         const key = cwd.includes("/base/") ? "base" : "head";
-        return outputs[key];
+        written[cmd[cmd.indexOf("--json") + 1]] = outputs[key];
       }
       return "";
     },
-    mkTmp: () => "/tmp/ab",
+    mkTmp: (prefix) =>
+      prefix.startsWith("prompt-eval-ab") ? "/tmp/ab" : `/tmp/${prefix}${n++}`,
+    readFile: (p) => written[p],
     now: () => NOW,
   };
   return d;
 }
+const written: Record<string, string> = {};
+let n = 0;
 
 describe("runPluginEval", () => {
-  test("passes required flags and parses score and cost", () => {
+  const run = (
+    opts: Parameters<typeof runPluginEval>[3],
+    out = evalJson([[true]], 0),
+  ) => {
     const calls: string[][] = [];
-    const run = runPluginEval(
-      "a",
-      "/p",
-      "/p/cases.json",
-      { maxCostUsd: 5 },
-      {
-        exec: (cwd, cmd) => {
-          calls.push([cwd, ...cmd]);
-          return evalJson([[true, true, false]], 1.5);
-        },
+    const result = runPluginEval("a", "/p", "evals", opts, {
+      exec: (cwd, cmd) => {
+        calls.push([cwd, ...cmd]);
+        written["/tmp/r/result.json"] = out;
+        return "";
       },
+      mkTmp: () => "/tmp/r",
+      readFile: (p) => written[p],
+    });
+    return { calls, cmd: calls[0], result };
+  };
+
+  test("builds the real command line and parses score and cost", () => {
+    const { cmd, result } = run(
+      { maxCostUsd: 5, runs: 1 },
+      evalJson([[true, true, false]], 1.5),
     );
-    expect(run.score).toBeCloseTo(2 / 3);
-    expect(run.costUsd).toBe(1.5);
-    const cmd = calls[0];
-    for (const f of ["--json", "--trust-plugin", "--no-publish"]) {
+    expect(result.score).toBeCloseTo(2 / 3);
+    expect(result.costUsd).toBe(1.5);
+    expect(cmd.slice(0, 5)).toEqual(["/p", "claude", "plugin", "eval", "/p"]);
+    const arg = (f: string) => cmd[cmd.indexOf(f) + 1];
+    expect(arg("--eval-dir")).toBe("evals");
+    expect(arg("--ablation")).toBe("none");
+    expect(arg("--runs")).toBe("1");
+    expect(arg("--threshold")).toBe("0");
+    expect(arg("--json")).toBe("/tmp/r/result.json");
+    expect(arg("--max-cost-usd")).toBe("5");
+    for (const f of ["--trust-plugin", "--no-publish"]) {
       expect(cmd).toContain(f);
     }
-    expect(cmd[cmd.indexOf("--max-cost-usd") + 1]).toBe("5");
+    expect(cmd).not.toContain("--cases");
+  });
+
+  test("with-without is opt-in and exposes meanDelta", () => {
+    const { cmd, result } = run(
+      { maxCostUsd: 1, ablation: "with-without" },
+      evalJson([[true]], 0, { aggregates: { meanDelta: 0.25 } }),
+    );
+    expect(cmd[cmd.indexOf("--ablation") + 1]).toBe("with-without");
+    expect(cmd).not.toContain("--runs");
+    expect(result.meanDelta).toBe(0.25);
   });
 
   test("passes append-system-prompt for with/without runs", () => {
-    const calls: string[][] = [];
-    runPluginEval(
-      "a",
-      "/p",
-      "/c",
-      { maxCostUsd: 1, appendSystemPrompt: "RULE" },
-      {
-        exec: (_cwd, cmd) => {
-          calls.push(cmd);
-          return evalJson([[true]], 0);
-        },
-      },
+    expect(run({ maxCostUsd: 1, appendSystemPrompt: "RULE" }).cmd).toContain(
+      "RULE",
     );
-    expect(calls[0]).toContain("RULE");
   });
 
   test("requires a positive cost cap", () => {
     expect(() =>
-      runPluginEval("a", "/p", "/c", { maxCostUsd: 0 }, { exec: () => "" }),
+      runPluginEval(
+        "a",
+        "/p",
+        "evals",
+        { maxCostUsd: 0 },
+        {
+          exec: () => "",
+          mkTmp: () => "/t",
+          readFile: () => "",
+        },
+      ),
     ).toThrow(/maxCostUsd/);
   });
+});
 
-  test("rejects malformed output", () => {
+describe("parsePluginEvalJson", () => {
+  test("parses a real v1 result into seeds from arms.with[].passed", () => {
+    const r = parsePluginEvalJson("a", FIXTURE);
+    expect(r.cases).toEqual({
+      "trigger-should-step-a": [true, true, false],
+      "trigger-shouldnt-b": [true, true, true],
+    });
+    expect(r.score).toBeCloseTo(5 / 6);
+    expect(r.costUsd).toBe(1.02);
+    expect(r.meanDelta).toBeUndefined();
+  });
+
+  test("round-trips a 30-case document", () => {
+    const doc = JSON.parse(FIXTURE);
+    doc.cases = Array.from({ length: 30 }, (_, i) => ({
+      ...doc.cases[0],
+      name: `case-${i}`,
+    }));
+    doc.aggregates.casesTotal = 30;
+    expect(
+      Object.keys(parsePluginEvalJson("a", JSON.stringify(doc)).cases),
+    ).toHaveLength(30);
+  });
+
+  test("throws on a partial run", () => {
+    const doc = {
+      ...JSON.parse(FIXTURE),
+      partial: true,
+      partialReason: "cost_cap",
+    };
+    expect(() => parsePluginEvalJson("a", JSON.stringify(doc))).toThrow(
+      /partial \(cost_cap\)/,
+    );
+  });
+
+  test("rejects malformed or unsupported output", () => {
     expect(() => parsePluginEvalJson("a", "{}")).toThrow(/no cases/);
+    expect(() =>
+      parsePluginEvalJson("a", '{"schemaVersion":2,"cases":[]}'),
+    ).toThrow(/schemaVersion 2/);
+    expect(() =>
+      parsePluginEvalJson("a", '{"schemaVersion":1,"cases":[]}'),
+    ).toThrow(/no results/);
   });
 });
 
@@ -91,7 +176,7 @@ describe("abOnTwoCheckouts", () => {
     baseRef: "main",
     headRef: "feat",
     pluginRel: "plugins/x",
-    casesRel: "cases.json",
+    evalDir: "evals",
     maxCostUsd: 10,
   };
 
@@ -113,8 +198,10 @@ describe("abOnTwoCheckouts", () => {
     expect(out.measured.runAt).toBe(NOW.toISOString());
     const evals = calls.filter((c) => c[1] === "claude");
     expect(evals).toHaveLength(2);
-    expect(evals[0]).toContain("/tmp/ab/base/cases.json");
-    expect(evals[1]).toContain("/tmp/ab/head/cases.json");
+    expect(evals[0][0]).toBe("/tmp/ab/base/plugins/x");
+    expect(evals[1][0]).toBe("/tmp/ab/head/plugins/x");
+    expect(evals[0]).not.toContain("with-without");
+    expect(evals[0][evals[0].indexOf("--ablation") + 1]).toBe("none");
     // cap is split per arm
     expect(evals[0][evals[0].indexOf("--max-cost-usd") + 1]).toBe("5");
   });
@@ -136,12 +223,7 @@ describe("abOnTwoCheckouts", () => {
 });
 
 describe("productionSeries", () => {
-  const row = (
-    fp: string,
-    runs: number,
-    completed: number,
-    skipped = 0,
-  ) => ({
+  const row = (fp: string, runs: number, completed: number, skipped = 0) => ({
     phase: "dev-task",
     contextFingerprint: fp,
     runs,
