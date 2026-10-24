@@ -1,6 +1,10 @@
 /**
- * agent/src/agent-cron-jobs.integration.test.ts
+ * admin/src/agent-cron-jobs.integration.test.ts
  * Integration tests for AgentCronJobService against a real PostgreSQL DB.
+ *
+ * The reconcile tests inject a small fixture specialty, so they do not depend
+ * on any shipped specialty. The golden row set for the "coding" specialty
+ * lives in agent-cron-jobs.coding.integration.test.ts.
  *
  * Requires DATABASE_URL_ADMIN_TEST to be set; skips otherwise.
  */
@@ -10,6 +14,8 @@ import type { PrismaClient } from "../prisma/client/client.ts";
 import { AgentCronJobService } from "./agent-cron-jobs.ts";
 import { NotFoundError, UnprocessableEntityError } from "./errors.ts";
 import { createAdminPrismaClient } from "./prisma-client.ts";
+import type { SpecialtyManifestResolver } from "./specialty-manifest-loader.ts";
+import type { SpecialtyManifest } from "./specialty-registry.ts";
 
 const TEST_DB = process.env.DATABASE_URL_ADMIN_TEST;
 
@@ -20,166 +26,72 @@ function makePrisma(): PrismaClient {
   return createAdminPrismaClient(TEST_DB as string);
 }
 
+// A fixture specialty with a parent cron, two children, and a standalone
+// cron, covering every field reconcile maps into a row.
+const FIXTURE_TYPE = "fixture";
+
+type ManifestCron = SpecialtyManifest["crons"][number];
+
+const FIXTURE_CRONS: ManifestCron[] = [
+  {
+    name: "fixture-loop",
+    schedule: "*/30 * * * *",
+    prompt: "/fixture:loop",
+    silent: true,
+    enabled: true,
+    preCheck: "fixture:check-loop.ts",
+  },
+  {
+    name: "fixture-child-a",
+    schedule: "0,30 * * * *",
+    prompt: "/fixture:a",
+    silent: true,
+    enabled: false,
+    parentCron: "fixture-loop",
+  },
+  {
+    name: "fixture-child-b",
+    schedule: "15,45 * * * *",
+    prompt: "/fixture:b",
+    silent: true,
+    enabled: false,
+    parentCron: "fixture-loop",
+  },
+  {
+    name: "fixture-standalone",
+    schedule: "0 7 * * 1",
+    prompt: "/fixture:standalone\n/fixture:follow-up",
+    silent: false,
+    enabled: true,
+  },
+];
+
+const fixtureManifest = {
+  crons: FIXTURE_CRONS,
+} as unknown as SpecialtyManifest;
+
+/** Resolves only FIXTURE_TYPE; every other type is unknown. */
+const fixtureResolver: SpecialtyManifestResolver = {
+  getManifest(typeName: string): SpecialtyManifest {
+    if (typeName !== FIXTURE_TYPE) throw new Error(`no manifest: ${typeName}`);
+    return fixtureManifest;
+  },
+  tryGetManifest(typeName: string): SpecialtyManifest | undefined {
+    return typeName === FIXTURE_TYPE ? fixtureManifest : undefined;
+  },
+  listTypes() {
+    return [{ name: FIXTURE_TYPE, displayName: FIXTURE_TYPE }];
+  },
+};
+
 async function createAgent(
   prisma: PrismaClient,
   name = "Test Agent",
-  typeName = "coding",
+  typeName = FIXTURE_TYPE,
 ): Promise<string> {
   const agent = await prisma.agent.create({ data: { name, typeName } });
   return agent.id;
 }
-
-/**
- * Golden expected row set for a typeName="coding" agent, hardcoded here (per
- * ATS-3.2 acceptance criterion 1) rather than derived from the manifest at
- * runtime — so this test catches a regression in EITHER the manifest content
- * OR the reconcile logic that maps it into rows. This is the exact set that
- * the deleted admin/src/system-crons.ts SYSTEM_CRONS array produced.
- */
-interface GoldenCron {
-  name: string;
-  schedule: string;
-  prompt: string;
-  silent: boolean;
-  preCheck: string | null;
-  enabled: boolean;
-  parentCron: string | null;
-}
-
-const GOLDEN_CODING_CRONS: GoldenCron[] = [
-  {
-    name: "shipwright-plan",
-    schedule: "* * * * *",
-    prompt: "/shipwright:plan-session",
-    silent: true,
-    preCheck: null,
-    enabled: false,
-    parentCron: "shipwright-loop",
-  },
-  {
-    name: "shipwright-dev-task",
-    schedule: "* * * * *",
-    prompt: "/shipwright:dev-task",
-    silent: true,
-    preCheck: null,
-    enabled: true,
-    parentCron: "shipwright-loop",
-  },
-  {
-    name: "shipwright-patch",
-    schedule: "* * * * *",
-    prompt: "/shipwright:patch",
-    silent: true,
-    preCheck: null,
-    enabled: true,
-    parentCron: "shipwright-loop",
-  },
-  {
-    name: "shipwright-review",
-    schedule: "* * * * *",
-    prompt: "/shipwright:review",
-    silent: true,
-    preCheck: null,
-    enabled: true,
-    parentCron: "shipwright-loop",
-  },
-  {
-    name: "shipwright-deploy",
-    schedule: "* * * * *",
-    prompt: "/shipwright:deploy",
-    silent: true,
-    preCheck: null,
-    enabled: false,
-    parentCron: "shipwright-loop",
-  },
-  {
-    name: "shipwright-loop",
-    schedule: "* * * * *",
-    prompt:
-      "internal: dispatched via handleLoopCronRequest, not run through Claude",
-    silent: true,
-    preCheck: null,
-    enabled: false,
-    parentCron: null,
-  },
-  {
-    name: "shipwright-test-readiness",
-    schedule: "0 6 * * *",
-    prompt: "/shipwright:test-readiness --full --publish",
-    silent: true,
-    preCheck: "shipwright:check-test-readiness.ts",
-    enabled: false,
-    parentCron: null,
-  },
-  {
-    name: "shipwright-docs-freshness",
-    schedule: "0 7 * * *",
-    prompt: "/shipwright:research-docs --auto",
-    silent: true,
-    preCheck: "shipwright:check-docs-freshness.ts",
-    enabled: false,
-    parentCron: null,
-  },
-  {
-    name: "learn-dream",
-    schedule: "0 3 * * *",
-    prompt: "/shipwright:learn-dream --since 1d --review",
-    silent: true,
-    preCheck: "shipwright:check-learn-dream.ts",
-    enabled: false,
-    parentCron: null,
-  },
-  {
-    name: "entropy-patrol-maintenance",
-    schedule: "0 4 * * 1",
-    prompt:
-      '/shipwright:entropy-scan\n/shipwright:entropy-fix\nAfter the fix run completes, write state/entropy-patrol-last-run.json: {"lastRun": "<ISO timestamp>"}. Use [silent] if no pr_worthy findings are found.',
-    silent: true,
-    preCheck: "shipwright:check-patrol-scope.ts",
-    enabled: false,
-    parentCron: null,
-  },
-  {
-    name: "error-patrol-maintenance",
-    schedule: "0 4 * * *",
-    prompt:
-      "/shipwright:error-scan\n/shipwright:error-fix\n/shipwright:error-resolve\nThese three commands are not independent suggestions -- invoke each one immediately after the previous one finishes, in this same session, using the Skill tool. Do not stop after a command's own output tells you to 'run /X next' (e.g. error-scan's summary) -- that phrasing is written for a standalone manual invocation, not this chained cron session. Continue automatically through all three commands before doing anything else.\n" +
-      'After the chain completes, write state/error-patrol-ledger.json\'s lastRun field: "<ISO timestamp>". Use [silent] if no new or regressed issues are found.',
-    silent: true,
-    preCheck: "shipwright:check-error-patrol.ts",
-    enabled: false,
-    parentCron: null,
-  },
-  {
-    name: "security-patrol-maintenance",
-    schedule: "0 6 * * 1",
-    prompt:
-      '/shipwright:security-scan\n/shipwright:security-fix\nAfter the fix run completes, write state/security-patrol-last-run.json: {"lastRun": "<ISO timestamp>"}. Use [silent] if no pr_worthy findings are found.',
-    silent: true,
-    preCheck: "shipwright:check-patrol-scope.ts",
-    enabled: false,
-    parentCron: null,
-  },
-  {
-    name: "consolidation-patrol-maintenance",
-    schedule: "0 5 * * 1",
-    prompt:
-      '/shipwright:consolidation-scan\n/shipwright:consolidation-fix\nAfter the chain completes, write state/consolidation-ledger.json\'s lastRun field: "<ISO timestamp>". Use [silent] if no ready_to_propose findings are found.',
-    silent: true,
-    preCheck: "shipwright:check-consolidation-patrol.ts",
-    enabled: false,
-    parentCron: null,
-  },
-  {
-    name: "prompt-audit-maintenance",
-    schedule: "0 7 * * 1",
-    prompt: "/shipwright:prompt-scan --with-doctor\n/shipwright:prompt-fix",
-    silent: true,
-    preCheck: "shipwright:check-prompt-audit.ts",
-    enabled: false,
-    parentCron: null,
-  },
-];
 
 describeOrSkip("AgentCronJobService (integration)", () => {
   let prisma: PrismaClient;
@@ -192,7 +104,7 @@ describeOrSkip("AgentCronJobService (integration)", () => {
     await prisma.agentTool.deleteMany();
     await prisma.agentEnv.deleteMany();
     await prisma.agent.deleteMany();
-    service = new AgentCronJobService(prisma);
+    service = new AgentCronJobService(prisma, undefined, fixtureResolver);
   });
 
   afterEach(async () => {
@@ -432,31 +344,32 @@ describeOrSkip("AgentCronJobService (integration)", () => {
 
   // ─── reconcileSystemCrons ───────────────────────────────────────────────────
 
-  it("reconcileSystemCrons() creates system crons for a new agent", async () => {
+  it("reconcileSystemCrons() creates the specialty's system crons for a new agent", async () => {
     const agentId = await createAgent(prisma);
     const result = await service.reconcileSystemCrons(agentId);
-    expect(result.created).toBeGreaterThan(0);
-    expect(result.updated).toBe(0);
-    expect(result.deleted).toBe(0);
+    expect(result).toEqual({
+      created: FIXTURE_CRONS.length,
+      updated: 0,
+      deleted: 0,
+    });
 
-    const jobs = await service.list(agentId);
-    const systemJobs = jobs.filter((j) => j.system);
-    expect(systemJobs.length).toBe(result.created);
+    const systemJobs = (await service.list(agentId)).filter((j) => j.system);
+    expect(systemJobs.length).toBe(FIXTURE_CRONS.length);
   });
 
-  it("reconcileSystemCrons() updates existing system crons", async () => {
+  it("reconcileSystemCrons() updates existing system crons in place", async () => {
     const agentId = await createAgent(prisma);
-    // First reconcile seeds all system crons
     await service.reconcileSystemCrons(agentId);
-    // Second reconcile should update them (not create new ones)
     const result = await service.reconcileSystemCrons(agentId);
-    expect(result.updated).toBeGreaterThan(0);
-    expect(result.created).toBe(0);
+    expect(result).toEqual({
+      created: 0,
+      updated: FIXTURE_CRONS.length,
+      deleted: 0,
+    });
   });
 
   it("reconcileSystemCrons() preserves cron id and AgentCronRun history across a reconcile", async () => {
     const agentId = await createAgent(prisma);
-    // First reconcile seeds all system crons
     await service.reconcileSystemCrons(agentId);
 
     const jobs = await service.list(agentId);
@@ -481,7 +394,7 @@ describeOrSkip("AgentCronJobService (integration)", () => {
     // Reconciling again (e.g. on agent restart) must not wipe history: it
     // should update the existing row in place rather than delete+recreate it.
     const result = await service.reconcileSystemCrons(agentId);
-    expect(result.updated).toBeGreaterThan(0);
+    expect(result.updated).toBe(FIXTURE_CRONS.length);
     expect(result.created).toBe(0);
 
     const jobsAfter = await service.list(agentId);
@@ -496,41 +409,34 @@ describeOrSkip("AgentCronJobService (integration)", () => {
     expect(survivingRun?.cronId).toBe(originalId);
   });
 
-  it("reconcileSystemCrons() links the four legacy phase crons to shipwright-loop as parent on a fresh agent's first reconcile", async () => {
+  it("reconcileSystemCrons() links children to their parent on a fresh agent's first reconcile", async () => {
     const agentId = await createAgent(prisma);
-    // Fresh agent: no shipwright-loop row exists yet before this call, so the
-    // parent id must be resolved within the same reconcile that creates it.
+    // Fresh agent: no parent row exists yet before this call, so the parent
+    // id must be resolved within the same reconcile that creates it.
     await service.reconcileSystemCrons(agentId);
 
     const jobs = await service.list(agentId);
-    const loopCron = jobs.find((j) => j.name === "shipwright-loop");
-    expect(loopCron).toBeDefined();
+    const parent = jobs.find((j) => j.name === "fixture-loop");
+    expect(parent).toBeDefined();
 
-    const legacyNames = [
-      "shipwright-dev-task",
-      "shipwright-patch",
-      "shipwright-review",
-      "shipwright-deploy",
-    ];
-    for (const name of legacyNames) {
+    for (const name of ["fixture-child-a", "fixture-child-b"]) {
       const cron = jobs.find((j) => j.name === name);
       expect(cron).toBeDefined();
-      expect(cron?.parentCronId).toBe(loopCron?.id as string);
+      expect(cron?.parentCronId).toBe(parent?.id as string);
     }
 
-    // Other system crons (not part of the phase pipeline) must not be linked.
-    const loopSelf = jobs.find((j) => j.name === "shipwright-loop");
-    expect(loopSelf?.parentCronId).toBeNull();
-    const unrelated = jobs.find((j) => j.name === "shipwright-test-readiness");
-    expect(unrelated?.parentCronId).toBeNull();
+    // Crons that declare no parent must not be linked, the parent included.
+    expect(parent?.parentCronId).toBeNull();
+    const standalone = jobs.find((j) => j.name === "fixture-standalone");
+    expect(standalone?.parentCronId).toBeNull();
   });
 
   it("reconcileSystemCrons() self-heals the parentCronId link on a subsequent reconcile", async () => {
     const agentId = await createAgent(prisma);
     await service.reconcileSystemCrons(agentId);
 
-    // Simulate a pre-LPC-1.2 agent state: clear the parent link as if these
-    // rows were seeded before parentCron was introduced.
+    // Simulate an agent seeded before parentCron was introduced: clear the
+    // parent links on every system row.
     await prisma.agentCronJob.updateMany({
       where: { agentId, system: true },
       data: { parentCronId: null },
@@ -539,17 +445,12 @@ describeOrSkip("AgentCronJobService (integration)", () => {
     await service.reconcileSystemCrons(agentId);
 
     const jobs = await service.list(agentId);
-    const loopCron = jobs.find((j) => j.name === "shipwright-loop");
-    expect(loopCron).toBeDefined();
+    const parent = jobs.find((j) => j.name === "fixture-loop");
+    expect(parent).toBeDefined();
 
-    for (const name of [
-      "shipwright-dev-task",
-      "shipwright-patch",
-      "shipwright-review",
-      "shipwright-deploy",
-    ]) {
+    for (const name of ["fixture-child-a", "fixture-child-b"]) {
       const cron = jobs.find((j) => j.name === name);
-      expect(cron?.parentCronId).toBe(loopCron?.id as string);
+      expect(cron?.parentCronId).toBe(parent?.id as string);
     }
   });
 
@@ -558,96 +459,121 @@ describeOrSkip("AgentCronJobService (integration)", () => {
     await service.reconcileSystemCrons(agentId);
 
     const jobs = await service.list(agentId);
-    const loopCron = jobs.find((j) => j.name === "shipwright-loop");
-    const unrelated = jobs.find((j) => j.name === "shipwright-test-readiness");
-    expect(loopCron).toBeDefined();
-    expect(unrelated).toBeDefined();
+    const parent = jobs.find((j) => j.name === "fixture-loop");
+    const standalone = jobs.find((j) => j.name === "fixture-standalone");
+    expect(parent).toBeDefined();
+    expect(standalone).toBeDefined();
 
-    // Simulate a stale link: SYSTEM_CRONS never declares parentCron for
-    // "shipwright-test-readiness", but its row has a non-null parentCronId
-    // — e.g. left over from a since-removed parentCron declaration, or from
-    // a name that used to resolve and no longer does.
+    // Simulate a stale link: the manifest never declares a parentCron for
+    // "fixture-standalone", but its row has a non-null parentCronId — e.g.
+    // left over from a since-removed parentCron declaration.
     await prisma.agentCronJob.update({
-      where: { id: unrelated?.id as string },
-      data: { parentCronId: loopCron?.id as string },
+      where: { id: standalone?.id as string },
+      data: { parentCronId: parent?.id as string },
     });
 
     const result = await service.reconcileSystemCrons(agentId);
     expect(result.created).toBe(0);
 
     const jobsAfter = await service.list(agentId);
-    const unrelatedAfter = jobsAfter.find(
-      (j) => j.name === "shipwright-test-readiness",
+    const standaloneAfter = jobsAfter.find(
+      (j) => j.name === "fixture-standalone",
     );
-    expect(unrelatedAfter?.parentCronId).toBeNull();
+    expect(standaloneAfter?.parentCronId).toBeNull();
   });
 
-  // ─── Golden equivalence (ATS-3.2) ─────────────────────────────────────────
-  //
-  // t10 — critical boot path. Reconcile for a typeName="coding" agent must
-  // produce the EXACT row set that the (now-deleted) SYSTEM_CRONS array
-  // produced: names, schedules, prompts, preChecks, silent flags, enabled
-  // defaults, and parentCron links. Expected values are hardcoded in
-  // GOLDEN_CODING_CRONS above (NOT derived from the manifest at runtime), so a
-  // regression in either the manifest content or the manifest→row mapping is
-  // caught here rather than silently accepted.
-
-  it("reconcileSystemCrons() for a coding agent produces the exact golden row set", async () => {
-    const agentId = await createAgent(prisma, "Coding Agent", "coding");
+  // The expected rows are hardcoded here (NOT derived from the manifest at
+  // runtime), so a regression in either the manifest→row mapping or the
+  // fixture itself is caught rather than silently accepted.
+  it("reconcileSystemCrons() produces the exact row set the manifest declares", async () => {
+    const agentId = await createAgent(prisma);
     await service.reconcileSystemCrons(agentId);
 
-    const jobs = await service.list(agentId);
-    const systemJobs = jobs.filter((j) => j.system);
+    const systemJobs = (await service.list(agentId)).filter((j) => j.system);
+    expect(systemJobs.length).toBe(4);
 
-    // Exactly the golden count — no extra, no missing.
-    expect(systemJobs.length).toBe(GOLDEN_CODING_CRONS.length);
-
-    // Resolve name → id so we can assert parentCron links by name.
     const idByName = new Map<string, string>();
     for (const j of systemJobs) {
       if (j.name) idByName.set(j.name, j.id);
     }
 
-    for (const golden of GOLDEN_CODING_CRONS) {
-      const row = systemJobs.find((j) => j.name === golden.name);
-      expect(row, `missing golden cron ${golden.name}`).toBeDefined();
+    const expected = [
+      {
+        name: "fixture-loop",
+        schedule: "*/30 * * * *",
+        prompt: "/fixture:loop",
+        silent: true,
+        preCheck: "fixture:check-loop.ts",
+        enabled: true,
+        parent: null,
+      },
+      {
+        name: "fixture-child-a",
+        schedule: "0,30 * * * *",
+        prompt: "/fixture:a",
+        silent: true,
+        preCheck: null,
+        enabled: false,
+        parent: "fixture-loop",
+      },
+      {
+        name: "fixture-child-b",
+        schedule: "15,45 * * * *",
+        prompt: "/fixture:b",
+        silent: true,
+        preCheck: null,
+        enabled: false,
+        parent: "fixture-loop",
+      },
+      {
+        name: "fixture-standalone",
+        schedule: "0 7 * * 1",
+        prompt: "/fixture:standalone\n/fixture:follow-up",
+        silent: false,
+        preCheck: null,
+        enabled: true,
+        parent: null,
+      },
+    ];
+
+    for (const want of expected) {
+      const row = systemJobs.find((j) => j.name === want.name);
+      expect(row, `missing cron ${want.name}`).toBeDefined();
       if (!row) continue;
 
-      expect(row.schedule).toBe(golden.schedule);
-      expect(row.prompt).toBe(golden.prompt);
-      expect(row.silent).toBe(golden.silent);
-      expect(row.preCheck).toBe(golden.preCheck);
-      expect(row.enabled).toBe(golden.enabled);
+      expect(row.schedule).toBe(want.schedule);
+      expect(row.prompt).toBe(want.prompt);
+      expect(row.silent).toBe(want.silent);
+      expect(row.preCheck).toBe(want.preCheck);
+      expect(row.enabled).toBe(want.enabled);
       expect(row.system).toBe(true);
       expect(row.channel).toBeNull();
       expect(row.user).toBeNull();
-
-      const expectedParentId = golden.parentCron
-        ? (idByName.get(golden.parentCron) ?? null)
-        : null;
-      expect(row.parentCronId).toBe(expectedParentId as string | null);
+      expect(row.parentCronId).toBe(
+        want.parent ? (idByName.get(want.parent) ?? null) : null,
+      );
     }
   });
 
-  it("reconcileSystemCrons() for a coding agent is idempotent — a second reconcile reproduces the same golden set with no orphans", async () => {
-    const agentId = await createAgent(prisma, "Coding Agent", "coding");
+  it("reconcileSystemCrons() is idempotent — a second reconcile reproduces the same rows with no orphans", async () => {
+    const agentId = await createAgent(prisma);
     await service.reconcileSystemCrons(agentId);
     const second = await service.reconcileSystemCrons(agentId);
 
     // Second pass updates every row in place; creates and deletes nothing.
-    expect(second.created).toBe(0);
-    expect(second.deleted).toBe(0);
-    expect(second.updated).toBe(GOLDEN_CODING_CRONS.length);
-
-    const jobs = await service.list(agentId);
-    const systemJobs = jobs.filter((j) => j.system);
-    expect(systemJobs.length).toBe(GOLDEN_CODING_CRONS.length);
+    expect(second).toEqual({
+      created: 0,
+      updated: FIXTURE_CRONS.length,
+      deleted: 0,
+    });
+    const systemJobs = (await service.list(agentId)).filter((j) => j.system);
+    expect(systemJobs.length).toBe(FIXTURE_CRONS.length);
   });
 
-  it("reconcileSystemCrons() for an unknown non-coding typeName changes nothing (no coding fallback)", async () => {
+  it("reconcileSystemCrons() for an unknown typeName changes nothing (no fallback)", async () => {
     const agentId = await createAgent(prisma, "Renamed Agent", "renamed-type");
 
-    // Must not throw, and must not seed the coding crons on a non-coding agent.
+    // Must not throw, and must not seed another specialty's crons.
     const result = await service.reconcileSystemCrons(agentId);
 
     expect(result).toEqual({ created: 0, updated: 0, deleted: 0 });
