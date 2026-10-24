@@ -415,11 +415,14 @@ export function ghRun(args: string[]): void {
 
 /**
  * Run a gh API graphql command and return the raw response.
+ *
+ * `owner` pins the repo owner for the `gh` wrapper's token routing by setting
+ * SHIPWRIGHT_GH_OWNER in the spawned env; omitted, the env is untouched.
  */
-export function ghGraphql<T>(query: string): T {
+export function ghGraphql<T>(query: string, owner?: string): T {
   const result = spawnSync("gh", ["api", "graphql", "-f", `query=${query}`], {
     encoding: "utf-8",
-    env: process.env,
+    env: owner ? { ...process.env, SHIPWRIGHT_GH_OWNER: owner } : process.env,
   });
   if (result.status !== 0) {
     throw new Error(
