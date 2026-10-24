@@ -109,6 +109,13 @@ The agent syncs its cron schedule every 60 seconds — changes are picked up
 automatically without restarts. Do NOT use CronCreate — those are session-only
 and disappear when the session ends.
 
+### GitHub Owner Hint
+
+When `SHIPWRIGHT_GH_OWNER` is not set (for example in a Slack DM), `gh` and
+`git` need `SHIPWRIGHT_GH_OWNER=<org>` prefixed on each command, e.g.
+`SHIPWRIGHT_GH_OWNER=acme gh pr list -R acme/api`. Loop and cron runs already
+have it set.
+
 ### Agent Configuration
 
 Agent env vars and allowed tools are stored in the accounts service and
