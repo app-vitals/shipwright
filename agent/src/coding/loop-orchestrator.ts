@@ -88,8 +88,10 @@ import {
   type TokenPayloadExtras,
 } from "@app-vitals/agent-runtime/cron-handler";
 import type { CronRunReporter } from "@app-vitals/agent-runtime/cron-run-reporter";
+import { ownerOfRepo } from "@app-vitals/agent-runtime/gh-helpers";
 import { parseMarkers } from "@app-vitals/agent-runtime/markers";
 import type { RunTelemetry } from "@app-vitals/agent-runtime/run-telemetry";
+import { buildSpawnEnv } from "@app-vitals/agent-runtime/spawn-env";
 import {
   buildProductionDeps as buildDeployDeps,
   getDeployCandidates,
@@ -251,12 +253,15 @@ export interface LoopOrchestratorDeps {
    *   - `onEarlySessionId` — fires as soon as a session id is known (even for
    *     a call that started fresh), wired to cronRunReporter.recordSessionId
    *     so the cron-run log carries it before the run reaches a terminal state.
+   *   - `extraEnv` (GOR-1.3) — carries SHIPWRIGHT_GH_OWNER, the org of the
+   *     dispatched task or PR's repo.
    */
   runner: (
     message: string,
     onProgress?: ProgressCallback,
     sessionKey?: string,
     onEarlySessionId?: EarlySessionIdCallback,
+    extraEnv?: Record<string, string>,
   ) => Promise<ClaudeRunResult>;
   /**
    * DTW-1.3 — fetches a task's live state from the task store, used by the
@@ -1001,6 +1006,12 @@ export function createLoopOrchestrator(
    * still-held pre-claim needs releasing.
    */
   const silentPatchItems = new Set<string>();
+  /**
+   * GOR-1.3: repo ("org/repo") of the task being dispatched, keyed by itemId.
+   * Set by the drain loop around dispatch() so dispatchItem() can derive the
+   * gh owner hint; a PR item's repo is already in its "org/repo#n" itemId.
+   */
+  const taskRepoByItem = new Map<string, string>();
 
   async function dispatchItem(
     phase: LoopPhase,
@@ -1186,6 +1197,18 @@ export function createLoopOrchestrator(
         contextStamp: stamp,
       });
 
+      // GOR-1.3: the dispatched item's org, as the gh owner hint. Undefined
+      // (and warned about once per dispatch) when the repo is missing/unparseable.
+      let owner: string | undefined;
+      try {
+        const repo =
+          itemType === "pr" ? itemId.split("#")[0] : taskRepoByItem.get(itemId);
+        owner = repo ? ownerOfRepo(repo) : undefined;
+      } catch {
+        owner = undefined;
+      }
+      const spawnEnv = buildSpawnEnv({ kind: "loop", id: itemId, owner });
+
       let runResult: ClaudeRunResult;
       try {
         runResult = await runner(
@@ -1193,6 +1216,7 @@ export function createLoopOrchestrator(
           onProgress,
           sessionKey,
           onEarlySessionId,
+          spawnEnv,
         );
         if (runResult.streamIncomplete) {
           // Clean process exit, but the stream never emitted a terminal
@@ -2179,6 +2203,9 @@ export function createLoopOrchestrator(
         // tick. Logged so repeated dispatch failures stay observable
         // (Sentry-eligible) instead of being silently swallowed, matching
         // the CBD-2.1 pre-claim catch blocks' style/wording above.
+        if (item.type === "task" && item.task.repo) {
+          taskRepoByItem.set(itemId, item.task.repo.trim());
+        }
         try {
           await dispatch(
             phase,
@@ -2207,6 +2234,8 @@ export function createLoopOrchestrator(
               `${err instanceof Error ? err.message : String(err)}`,
           );
           continue;
+        } finally {
+          taskRepoByItem.delete(itemId);
         }
         // Not re-marking candidatesSeenThisTick here — a successful dispatch
         // is only reachable after this iteration already found tasks/prs
@@ -2272,6 +2301,7 @@ interface LoopOrchestratorGetterDeps {
     onProgress?: ProgressCallback,
     sessionKey?: string,
     onEarlySessionId?: EarlySessionIdCallback,
+    extraEnv?: Record<string, string>,
   ) => Promise<ClaudeRunResult>;
   cronRunReporter: CronRunReporter;
   workQueueReporter: WorkQueueReporter;
@@ -2344,6 +2374,7 @@ export interface LoopOrchestratorProductionOptions {
     onProgress?: ProgressCallback,
     sessionKey?: string,
     onEarlySessionId?: EarlySessionIdCallback,
+    extraEnv?: Record<string, string>,
   ) => Promise<ClaudeRunResult>;
   cronRunReporter: CronRunReporter;
   workQueueReporter: WorkQueueReporter;

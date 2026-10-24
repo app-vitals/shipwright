@@ -29,6 +29,7 @@
     "./setup": "./setup.ts",
     "./setup-github-auth": "./setup-github-auth.ts",
     "./shipwright-runtime-client": "./shipwright-runtime-client.ts",
+    "./spawn-env": "./spawn-env.ts",
     "./workspace-paths": "./workspace-paths.ts"
   }
 }

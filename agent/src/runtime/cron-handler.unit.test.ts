@@ -736,6 +736,51 @@ describe("handleCronRequest — SLACK_CHANNEL_ID extraEnv (STC-1.3)", () => {
   });
 });
 
+// ─── SHIPWRIGHT_GH_OWNER hint (GOR-1.3) ────────────────────────────────────
+
+describe("handleCronRequest — SHIPWRIGHT_GH_OWNER hint (GOR-1.3)", () => {
+  test("repo-less cron carries the default org, merged with SLACK_CHANNEL_ID", async () => {
+    await handleCronRequest(
+      { jobId: "gor-1", prompt: "hello", channel: "C-TEST" },
+      { ...deps, getDefaultOwner: () => "default-org" },
+    );
+    const call = mockRunner.mock.calls[0] as unknown as [
+      string,
+      unknown,
+      Record<string, string> | undefined,
+    ];
+    expect(call[2]).toEqual({
+      SLACK_CHANNEL_ID: "C-TEST",
+      SHIPWRIGHT_GH_OWNER: "default-org",
+    });
+  });
+
+  test("no resolvable default org → one warn naming cron + job id, no hint", async () => {
+    const warnMessages: string[] = [];
+    const originalWarn = console.warn;
+    console.warn = (...args: unknown[]) => {
+      warnMessages.push(args.map(String).join(" "));
+    };
+    try {
+      await handleCronRequest(
+        { jobId: "gor-2", prompt: "hello", channel: "C-TEST" },
+        { ...deps, getDefaultOwner: () => null },
+      );
+    } finally {
+      console.warn = originalWarn;
+    }
+    const call = mockRunner.mock.calls[0] as unknown as [
+      string,
+      unknown,
+      Record<string, string> | undefined,
+    ];
+    expect(call[2]).toEqual({ SLACK_CHANNEL_ID: "C-TEST" });
+    const owned = warnMessages.filter((m) => m.includes("gor-2"));
+    expect(owned).toHaveLength(1);
+    expect(owned[0]).toContain("cron");
+  });
+});
+
 // ─── onEarlySessionId wiring (CES-1.1) ──────────────────────────────────────
 //
 // The generic cron path (this file) has no session-id visibility on its

@@ -68,6 +68,7 @@ import {
   reconcileGitHubInstallations,
   startGitHubAuthIfPossible,
 } from "./github-auth-startup.ts";
+import { defaultOwnerOf } from "./spawn-env.ts";
 import {
   HttpGitHubInstallationsReporter,
   NoopGitHubInstallationsReporter,
@@ -275,6 +276,9 @@ export async function startAgent(
     cronRunReporter,
     agentId: config.shipwright.agentId,
     contextStamp,
+    // GOR-1.3: cron spawns carry the default installation's org as the gh hint.
+    getDefaultOwner: () =>
+      defaultOwnerOf(githubInstallationsManagerRef.get()?.getState?.()),
   };
 
   // ARD-3.1: the specialty extension seam (agent-extension.ts). The consumer

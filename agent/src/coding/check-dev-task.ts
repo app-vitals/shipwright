@@ -43,6 +43,8 @@ function toWorkTaskCandidate(task: Task): WorkTaskCandidate {
     id: task.id,
     createdAt: task.createdAt ?? "",
     title: task.title,
+    // GOR-1.3: carried so the loop can derive the gh owner hint for the spawn.
+    repo: task.repo,
   };
 }
 

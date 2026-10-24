@@ -47,6 +47,7 @@ import { join } from "node:path";
 import type { AgentConfigResponse, AgentPlugin } from "@app-vitals/agent-admin";
 import { computeMissingClones } from "@app-vitals/agent-lib/clone-plan";
 import { SECRET_ENV_VARS } from "@app-vitals/agent-lib/secret-env-vars";
+import { ownerOfRepo } from "@app-vitals/agent-runtime/gh-helpers";
 import {
   ensureAgentHome,
   installPlugins as realInstallPlugins,
@@ -282,15 +283,26 @@ export async function pullAgentWorkspace(
 // Main entrypoint
 // ---------------------------------------------------------------------------
 
-async function realCloneRepo(repo: string, dest: string): Promise<void> {
-  const result = Bun.spawnSync(["gh", "repo", "clone", repo, dest], {
-    stdout: "inherit",
-    stderr: "inherit",
-  });
-  if (result.exitCode !== 0) {
-    throw new Error(`gh repo clone failed for ${repo}`);
-  }
+/**
+ * Real `gh repo clone` shell-out. The repo scope entry's org is passed as
+ * SHIPWRIGHT_GH_OWNER (GOR-1.3). Spawner injectable for tests.
+ */
+export function makeRealCloneRepo(
+  spawnSync: typeof Bun.spawnSync = Bun.spawnSync,
+): (repo: string, dest: string) => Promise<void> {
+  return async (repo, dest) => {
+    const result = spawnSync(["gh", "repo", "clone", repo, dest], {
+      env: { ...process.env, SHIPWRIGHT_GH_OWNER: ownerOfRepo(repo) },
+      stdout: "inherit",
+      stderr: "inherit",
+    });
+    if (result.exitCode !== 0) {
+      throw new Error(`gh repo clone failed for ${repo}`);
+    }
+  };
 }
+
+const realCloneRepo = makeRealCloneRepo();
 
 if (import.meta.main) {
   const idOrName = process.argv[2];

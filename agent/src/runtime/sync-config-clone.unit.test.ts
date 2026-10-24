@@ -272,8 +272,42 @@ describe("makeCloneRepo", () => {
     expect(calls[0].opts.stdout).toBe("inherit");
     expect(calls[0].opts.stderr).toBe("inherit");
     // Live process.env — not Bun's startup snapshot — so a GH_TOKEN synced by
-    // this very tick reaches `gh`.
-    expect(calls[0].opts.env).toBe(process.env);
+    // this very tick reaches `gh`; plus the GOR-1.3 owner hint.
+    expect(calls[0].opts.env).toEqual({
+      ...process.env,
+      SHIPWRIGHT_GH_OWNER: "app-vitals",
+    });
+  });
+
+  test("an ambient SHIPWRIGHT_GH_OWNER is overridden by the repo's org", async () => {
+    const saved = process.env.SHIPWRIGHT_GH_OWNER;
+    process.env.SHIPWRIGHT_GH_OWNER = "ambient";
+    try {
+      const { spawn, calls } = fakeSpawner(0);
+      await makeCloneRepo(spawn)("acme/x", join(REPOS_DIR, "x"));
+      expect(
+        (calls[0].opts.env as Record<string, string>).SHIPWRIGHT_GH_OWNER,
+      ).toBe("acme");
+    } finally {
+      if (saved === undefined) delete process.env.SHIPWRIGHT_GH_OWNER;
+      else process.env.SHIPWRIGHT_GH_OWNER = saved;
+    }
+  });
+
+  test("syncClonedRepos with an injected spawn passes each repo's own org (GOR-1.3)", async () => {
+    const { spawn, calls } = fakeSpawner(0);
+    const { deps } = makeDeps({ scopedRepos: ["org-a/one", "org-b/two"] });
+    await syncClonedRepos({ ...deps, cloneRepo: makeCloneRepo(spawn) });
+
+    expect(
+      calls.map((c) => [
+        c.cmd[3],
+        (c.opts.env as Record<string, string>).SHIPWRIGHT_GH_OWNER,
+      ]),
+    ).toEqual([
+      ["org-a/one", "org-a"],
+      ["org-b/two", "org-b"],
+    ]);
   });
 
   test("throws with the exit code when `gh repo clone` fails", async () => {

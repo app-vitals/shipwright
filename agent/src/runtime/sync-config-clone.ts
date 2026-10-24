@@ -44,6 +44,7 @@ import {
   computeMissingClones,
   findRepoNameCollisions,
 } from "@app-vitals/agent-lib/clone-plan";
+import { ownerOfRepo } from "./gh-helpers.ts";
 
 export interface SyncConfigCloneDeps {
   /**
@@ -182,8 +183,9 @@ export function makeCloneRepo(
       // syncConfig()'s tick, right after Object.assign(process.env,
       // bundle.env), so without this a freshly-synced/rotated GH_TOKEN never
       // reaches `gh`. Mirrors setup.ts's defaultExec and cron-handler.ts,
-      // which document the same gotcha.
-      env: process.env,
+      // which document the same gotcha. SHIPWRIGHT_GH_OWNER (GOR-1.3) is the
+      // repo scope entry's org, layered over a fresh copy of process.env.
+      env: { ...process.env, SHIPWRIGHT_GH_OWNER: ownerOfRepo(repo) },
       stdout: "inherit",
       stderr: "inherit",
     });

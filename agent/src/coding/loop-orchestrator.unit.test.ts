@@ -4342,6 +4342,97 @@ describe("createLoopOrchestrator", () => {
     );
   });
 
+  // ─── SHIPWRIGHT_GH_OWNER hint (GOR-1.3) ───────────────────────────────────
+
+  describe("SHIPWRIGHT_GH_OWNER spawn hint (GOR-1.3)", () => {
+    function captureEnvRunner() {
+      const envs: Array<Record<string, string> | undefined> = [];
+      const runner = async (
+        _message: string,
+        _onProgress?: ProgressCallback,
+        _sessionKey?: string,
+        _onEarlySessionId?: unknown,
+        extraEnv?: Record<string, string>,
+      ): Promise<ClaudeRunResult> => {
+        envs.push(extraEnv);
+        return { result: "done" };
+      };
+      return { runner, envs };
+    }
+
+    async function withWarns<T>(fn: () => Promise<T>): Promise<string[]> {
+      const warns: string[] = [];
+      const original = console.warn;
+      console.warn = (...args: unknown[]) => {
+        warns.push(args.map(String).join(" "));
+      };
+      try {
+        await fn();
+      } finally {
+        console.warn = original;
+      }
+      return warns;
+    }
+
+    test("a dispatched PR carries the org of its repo; nothing is logged", async () => {
+      const consumed = new Set<string>();
+      const prCandidate = pr(
+        "acme-org/widgets#7",
+        "2026-01-01T00:00:00Z",
+        "review",
+      );
+      const { runner, envs } = captureEnvRunner();
+      const deps = makeDeps({
+        reviewCandidates: [prCandidate],
+        runner,
+        consumed,
+        claimPr: async (p: WorkPrCandidate) => {
+          consumed.add(p.id);
+          return { id: "rec", commitSha: "sha" };
+        },
+      });
+      const warns = await withWarns(() =>
+        createLoopOrchestrator(deps)([job("shipwright-review", true)]),
+      );
+      expect(envs).toEqual([{ SHIPWRIGHT_GH_OWNER: "acme-org" }]);
+      expect(warns.filter((w) => w.includes("[spawn-env]"))).toEqual([]);
+    });
+
+    test("a dispatched task carries the org of its repo", async () => {
+      const consumed = new Set<string>();
+      const { runner, envs } = captureEnvRunner();
+      const deps = makeDeps({
+        devTaskCandidates: [
+          task("GOR-T-1", "2026-01-01T00:00:00Z", { repo: "task-org/svc" }),
+        ],
+        claimTask: consumingClaimTask(consumed),
+        consumed,
+        runner,
+      });
+      await createLoopOrchestrator(deps)([job("shipwright-dev-task", true)]);
+      expect(envs).toEqual([{ SHIPWRIGHT_GH_OWNER: "task-org" }]);
+    });
+
+    test("a dispatched task with no repo has no hint and warns once naming loop + task id", async () => {
+      const consumed = new Set<string>();
+      const { runner, envs } = captureEnvRunner();
+      const deps = makeDeps({
+        devTaskCandidates: [task("GOR-T-2", "2026-01-01T00:00:00Z")],
+        claimTask: consumingClaimTask(consumed),
+        consumed,
+        runner,
+      });
+      const warns = await withWarns(() =>
+        createLoopOrchestrator(deps)([job("shipwright-dev-task", true)]),
+      );
+      expect(envs).toEqual([undefined]);
+      const spawnWarns = warns.filter((w) => w.includes("[spawn-env]"));
+      expect(spawnWarns).toHaveLength(1);
+      expect(spawnWarns[0]).toContain("loop");
+      expect(spawnWarns[0]).toContain("GOR-T-2");
+    });
+  });
+
   // ─── Progress push + partial-usage-on-failure tests (CSU-3.1) ─────────────
 
   function usage(inputTokens = 100): ModelUsage {
