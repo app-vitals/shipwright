@@ -1,18 +1,15 @@
 #!/usr/bin/env bash
-# gh — wrapper that injects a fresh GH_TOKEN from the file at
-# $GH_TOKEN_FILE before exec'ing the real `gh`. If $GH_TOKEN_FILE is
-# unset or the file is missing, the wrapper passes through without
-# touching GH_TOKEN.
+# gh — wrapper that injects a fresh GH_TOKEN before exec'ing the real `gh`.
 #
-# Multi-installation: when the gh-token.d directory next to $GH_TOKEN_FILE
-# exists, the target owner is resolved (resolve-gh-owner.ts) and GH_TOKEN comes
-# from gh-token.d/<owner>; owners the resolver cannot determine use the default
-# token. An owner with no token file fails naming the org. No bun process is
-# spawned when gh-token.d is absent.
+# GitHub App auth ($GH_TOKEN_FILE points at an existing file): several orgs
+# share the agent and each has its own installation token, so the caller must
+# say which org a command targets via $SHIPWRIGHT_GH_OWNER. The token is read
+# from the gh-token.d/<lowercase-owner> file next to $GH_TOKEN_FILE. An unset
+# hint fails with a teaching error; a hint with no token file fails naming the
+# org. Neither case ever falls back to another org's token or the default one.
 #
-# $SHIPWRIGHT_GH_OWNER pins the owner (highest priority). If it is set but
-# gh-token.d is absent, routing is degraded to the default token and a one-line
-# warning is printed to stderr.
+# PAT auth (no $GH_TOKEN_FILE, or the file is missing): pass through without
+# touching GH_TOKEN; the hint is ignored.
 
 set -euo pipefail
 
@@ -25,21 +22,24 @@ done
 self_dir=$(cd -P "$(dirname "$source")" && pwd)
 
 if [[ -n "${GH_TOKEN_FILE:-}" && -f "$GH_TOKEN_FILE" ]]; then
-  token_file=$GH_TOKEN_FILE
+  if [[ -z "${SHIPWRIGHT_GH_OWNER:-}" ]]; then
+    cat >&2 <<'MSG'
+gh wrapper: SHIPWRIGHT_GH_OWNER is not set.
+This agent serves several GitHub orgs and each org has its own token, so every
+gh command must say which org it targets via SHIPWRIGHT_GH_OWNER (the org that
+owns the repo, e.g. app-vitals).
+Retry with: SHIPWRIGHT_GH_OWNER=<org> gh ...
+Prefix each command with it, because shell state does not persist between
+commands.
+MSG
+    exit 1
+  fi
+  owner=${SHIPWRIGHT_GH_OWNER,,}
   owner_dir="$(dirname "$GH_TOKEN_FILE")/gh-token.d"
-  if [[ -d "$owner_dir" ]]; then
-    # Sentinel is not a valid owner, so the resolver echoes it when nothing matched.
-    owner=$(bun "$self_dir/../resolve-gh-owner.ts" --default __default__ -- "$@")
-    if [[ "$owner" != "__default__" ]]; then
-      owner=${owner,,}
-      token_file="$owner_dir/$owner"
-      if [[ ! -f "$token_file" ]]; then
-        echo "gh wrapper: no GitHub App installation token for org '$owner'" >&2
-        exit 1
-      fi
-    fi
-  elif [[ -n "${SHIPWRIGHT_GH_OWNER:-}" ]]; then
-    echo "gh wrapper: SHIPWRIGHT_GH_OWNER is set but $owner_dir is absent; using the default token" >&2
+  token_file="$owner_dir/$owner"
+  if [[ ! "$owner" =~ ^[a-z0-9][a-z0-9-]*$ || ! -f "$token_file" ]]; then
+    echo "gh wrapper: no GitHub App installation token for org '$owner': the installation is missing, broken or not in this agent's scope. Check the GitHub Installations card in the admin UI." >&2
+    exit 1
   fi
   GH_TOKEN=$(cat "$token_file")
   export GH_TOKEN

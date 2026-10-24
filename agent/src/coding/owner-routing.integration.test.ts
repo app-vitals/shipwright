@@ -1,9 +1,9 @@
-// Integration tests for owner-aware routing in scripts/bin/git-credential-shipwright.sh
-// and scripts/bin/gh (MGI-3.2). Real subprocesses: the scripts' whole job is
-// shell + process plumbing (stdin protocol, PATH stripping, exec), so
-// fixtures/mocks would miss the behavior under test. The only stubs are the
-// real `gh` (a recording script) and a `bun` shim used to prove no bun process
-// is spawned on the single-installation path.
+// Integration tests for the owner-hint requirement in
+// scripts/bin/git-credential-shipwright.sh and scripts/bin/gh (GOR-1.4). Real
+// subprocesses: the scripts' whole job is shell + process plumbing (stdin
+// protocol, PATH stripping, exec), so fixtures/mocks would miss the behavior
+// under test. The only stub is the real `gh` (a recording script) and a `bun`
+// shim used to prove the wrapper never spawns bun.
 
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { spawnSync } from "node:child_process";
@@ -12,16 +12,28 @@ import {
   existsSync,
   mkdirSync,
   mkdtempSync,
+  readFileSync,
   rmSync,
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
-import { dirname, join } from "node:path";
+import { join } from "node:path";
 
 const BIN = join(import.meta.dir, "..", "..", "scripts", "bin");
 const HELPER = join(BIN, "git-credential-shipwright.sh");
 const GH_WRAPPER = join(BIN, "gh");
-const BUN_DIR = dirname(process.execPath);
+const TEMPLATE_HELPER = join(
+  import.meta.dir,
+  "..",
+  "..",
+  "..",
+  "scripts",
+  "extract-platform",
+  "template",
+  "scripts",
+  "bin",
+  "git-credential-shipwright.sh",
+);
 
 let root: string;
 let home: string;
@@ -32,6 +44,7 @@ function writeExec(path: string, body: string): void {
   chmodSync(path, 0o755);
 }
 
+/** App auth: default token plus per-owner files. PAT auth: default token only. */
 function setTokens(owners: Record<string, string> | null): void {
   writeFileSync(join(home, "gh-token"), "default-token");
   if (owners === null) return;
@@ -41,37 +54,26 @@ function setTokens(owners: Record<string, string> | null): void {
   }
 }
 
-function runHelper(stdin: string, tokenFile = join(home, "gh-token")) {
-  return spawnSync(HELPER, ["get"], {
+function runHelper(stdin: string, ownerHint?: string, helper = HELPER) {
+  return spawnSync(helper, ["get"], {
     input: stdin,
     encoding: "utf8",
-    env: { PATH: process.env.PATH ?? "", GH_TOKEN_FILE: tokenFile },
+    env: {
+      PATH: process.env.PATH ?? "",
+      GH_TOKEN_FILE: join(home, "gh-token"),
+      ...(ownerHint === undefined ? {} : { SHIPWRIGHT_GH_OWNER: ownerHint }),
+    },
   });
 }
 
-function git(cwd: string, ...args: string[]): void {
-  spawnSync("git", args, { cwd });
-}
-
-function runGh(
-  args: string[],
-  opts: { cwd?: string; binInPath?: boolean; ownerHint?: string } = {},
-) {
-  const path = [
-    stubDir,
-    ...(opts.binInPath === false ? [] : [BUN_DIR]),
-    "/usr/bin",
-    "/bin",
-  ];
+function runGh(args: string[], ownerHint?: string, extraPath: string[] = []) {
   return spawnSync(GH_WRAPPER, args, {
-    cwd: opts.cwd ?? root,
+    cwd: root,
     encoding: "utf8",
     env: {
-      PATH: path.join(":"),
+      PATH: [...extraPath, stubDir, "/usr/bin", "/bin"].join(":"),
       GH_TOKEN_FILE: join(home, "gh-token"),
-      ...(opts.ownerHint === undefined
-        ? {}
-        : { SHIPWRIGHT_GH_OWNER: opts.ownerHint }),
+      ...(ownerHint === undefined ? {} : { SHIPWRIGHT_GH_OWNER: ownerHint }),
     },
   });
 }
@@ -93,193 +95,120 @@ afterEach(() => {
   rmSync(root, { recursive: true, force: true });
 });
 
-describe("git-credential-shipwright.sh — owner routing", () => {
-  const stdinFor = (path: string) =>
-    `protocol=https\nhost=github.com\npath=${path}\n\n`;
+describe("git-credential-shipwright.sh — owner hint", () => {
+  const stdin = "protocol=https\nhost=github.com\npath=other-org/repo.git\n\n";
 
-  test("returns the matching owner's token, with and without .git", () => {
+  test("both copies are byte-identical", () => {
+    expect(readFileSync(TEMPLATE_HELPER, "utf8")).toBe(
+      readFileSync(HELPER, "utf8"),
+    );
+  });
+
+  test("uses the hinted owner's token, case-insensitively, ignoring the request path", () => {
     setTokens({ acme: "acme-token", "other-org": "other-token" });
-    for (const [path, want] of [
-      ["acme/repo.git", "acme-token"],
-      ["acme/repo", "acme-token"],
-      ["other-org/thing.git", "other-token"],
-      ["other-org/thing", "other-token"],
-      ["ACME/Repo.git", "acme-token"],
-    ] as const) {
-      const r = runHelper(stdinFor(path));
+    for (const hint of ["acme", "ACME"]) {
+      const r = runHelper(stdin, hint);
       expect(r.status).toBe(0);
-      expect(r.stdout).toContain(`password=${want}\n`);
+      expect(r.stdout).toContain("password=acme-token\n");
     }
   });
 
-  test("an owner with no token file gets no credentials, never another owner's", () => {
-    setTokens({ acme: "acme-token", "other-org": "other-token" });
-    const r = runHelper(stdinFor("stranger/repo.git"));
-    expect(r.status).toBe(0);
-    expect(r.stdout).toBe("");
-    expect(r.stderr).toContain("stranger");
-  });
-
-  test("falls back to the default token when git sends no path", () => {
-    setTokens({ acme: "acme-token", "other-org": "other-token" });
-    const r = runHelper("protocol=https\nhost=github.com\n\n");
-    expect(r.stdout).toContain("password=default-token\n");
-  });
-});
-
-describe("gh wrapper — owner routing", () => {
-  beforeEach(() =>
-    setTokens({ acme: "acme-token", "other-org": "other-token" }),
-  );
-
-  test("-R selects the owner's token", () => {
-    expect(runGh(["pr", "list", "-R", "other-org/x"]).stdout).toBe(
-      "TOKEN=other-token ARGS=pr list -R other-org/x\n",
-    );
-    expect(runGh(["pr", "list", "--repo=acme/x"]).stdout).toContain(
-      "TOKEN=acme-token",
-    );
-  });
-
-  test("gh api repos/<owner>/... selects the owner's token", () => {
-    expect(runGh(["api", "repos/other-org/x/issues"]).stdout).toContain(
-      "TOKEN=other-token",
-    );
-  });
-
-  test("cwd origin remote selects the owner for repo-scoped commands", () => {
-    const repo = join(root, "checkout");
-    mkdirSync(repo);
-    git(repo, "init", "-q");
-    git(repo, "remote", "add", "origin", "https://github.com/other-org/x.git");
-    expect(runGh(["pr", "status"], { cwd: repo }).stdout).toContain(
-      "TOKEN=other-token",
-    );
-  });
-
-  test("gh api graphql (no owner signal) uses the default token", () => {
-    const repo = join(root, "checkout");
-    mkdirSync(repo);
-    git(repo, "init", "-q");
-    git(repo, "remote", "add", "origin", "https://github.com/other-org/x.git");
-    expect(
-      runGh(["api", "graphql", "-f", "query=x"], { cwd: repo }).stdout,
-    ).toContain("TOKEN=default-token");
-  });
-
-  test("an owner with no token fails naming the org, without running gh", () => {
-    const r = runGh(["pr", "list", "-R", "stranger/x"]);
-    expect(r.status).toBe(1);
-    expect(r.stderr).toContain("stranger");
-    expect(r.stdout).toBe("");
-  });
-});
-
-describe("gh wrapper — SHIPWRIGHT_GH_OWNER hint", () => {
-  test("hint selects the matching owner's token over -R", () => {
-    setTokens({ acme: "acme-token", "other-org": "other-token" });
-    expect(
-      runGh(["pr", "list", "-R", "acme/x"], { ownerHint: "other-org" }).stdout,
-    ).toContain("TOKEN=other-token");
-  });
-
-  test("a hint for an owner with no token file fails naming the org", () => {
+  test("unset hint prints the teaching error to stderr and returns no credentials", () => {
     setTokens({ acme: "acme-token" });
-    const r = runGh(["pr", "list"], { ownerHint: "stranger" });
-    expect(r.status).toBe(1);
+    const r = runHelper(stdin);
+    expect(r.status).toBe(0);
+    expect(r.stdout).toBe("");
+    expect(r.stderr).toContain("SHIPWRIGHT_GH_OWNER");
+    expect(r.stderr).toContain("each org has its own token");
+    expect(r.stderr).toContain("SHIPWRIGHT_GH_OWNER=<org> git");
+    expect(r.stderr).toContain("shell state does not persist");
+  });
+
+  test("hint with no token file gets no credentials, never another owner's", () => {
+    setTokens({ acme: "acme-token" });
+    const r = runHelper(stdin, "stranger");
+    expect(r.status).toBe(0);
+    expect(r.stdout).toBe("");
     expect(r.stderr).toContain("stranger");
+    expect(r.stderr).toContain("GitHub Installations card");
+  });
+
+  test("a path-traversal hint is rejected", () => {
+    setTokens({ acme: "acme-token" });
+    const r = runHelper(stdin, "../gh-token");
     expect(r.stdout).toBe("");
   });
 
-  test("hint set but gh-token.d absent warns on stderr and uses the default token", () => {
+  test("PAT mode (no gh-token.d) uses the single token and ignores the hint", () => {
     setTokens(null);
-    const r = runGh(["pr", "list"], { ownerHint: "acme" });
-    expect(r.status).toBe(0);
-    expect(r.stdout).toContain("TOKEN=default-token");
-    const lines = r.stderr.trim().split("\n");
-    expect(lines).toHaveLength(1);
-    expect(lines[0]).toContain("SHIPWRIGHT_GH_OWNER");
-  });
-
-  test("no warning when the hint is unset and gh-token.d is absent", () => {
-    setTokens(null);
-    expect(runGh(["pr", "list"]).stderr).toBe("");
+    for (const hint of [undefined, "acme"]) {
+      const r = runHelper(stdin, hint);
+      expect(r.stdout).toContain("password=default-token\n");
+      expect(r.stderr).toBe("");
+    }
   });
 });
 
-describe("single-installation behavior is unchanged", () => {
-  const origScript = (name: string) => {
-    const out = spawnSync(
-      "git",
-      ["show", `origin/main:agent/scripts/bin/${name}`],
-      {
-        cwd: import.meta.dir,
-        encoding: "utf8",
+describe("gh wrapper — owner hint", () => {
+  test("unset hint under app auth exits non-zero with the teaching error and does not run gh", () => {
+    setTokens({ acme: "acme-token" });
+    const r = runGh(["pr", "list", "-R", "acme/x"]);
+    expect(r.status).toBe(1);
+    expect(r.stdout).toBe("");
+    expect(r.stderr).toContain("SHIPWRIGHT_GH_OWNER");
+    expect(r.stderr).toContain("each org has its own token");
+    expect(r.stderr).toContain("SHIPWRIGHT_GH_OWNER=<org> gh");
+    expect(r.stderr).toContain("shell state does not persist");
+  });
+
+  test("hint with a matching file uses that owner's token, regardless of -R", () => {
+    setTokens({ acme: "acme-token", "other-org": "other-token" });
+    expect(runGh(["pr", "list", "-R", "acme/x"], "other-org").stdout).toContain(
+      "TOKEN=other-token ARGS=pr list -R acme/x",
+    );
+    expect(runGh(["pr", "list"], "ACME").stdout).toContain("TOKEN=acme-token");
+  });
+
+  test("hint with no token file fails naming the org and points at the Installations card", () => {
+    setTokens({ acme: "acme-token" });
+    const r = runGh(["pr", "list"], "stranger");
+    expect(r.status).toBe(1);
+    expect(r.stdout).toBe("");
+    expect(r.stderr).toContain("stranger");
+    expect(r.stderr).toContain("installation is missing, broken or not in");
+    expect(r.stderr).toContain("GitHub Installations card");
+  });
+
+  test("hint with no token file never falls back to the default token", () => {
+    setTokens(null);
+    const r = runGh(["pr", "list"], "acme");
+    expect(r.status).toBe(1);
+    expect(r.stdout).not.toContain("default-token");
+  });
+
+  test("PAT mode passes through with the hint ignored", () => {
+    // No GH_TOKEN_FILE at all: the wrapper must not touch GH_TOKEN.
+    const r = spawnSync(GH_WRAPPER, ["pr", "list"], {
+      encoding: "utf8",
+      env: {
+        PATH: `${stubDir}:/usr/bin:/bin`,
+        SHIPWRIGHT_GH_OWNER: "acme",
+        GH_TOKEN: "pat-token",
       },
-    );
-    return out.status === 0 ? out.stdout : null;
-  };
-
-  test("helper output is byte-identical to the pre-routing script", () => {
-    setTokens(null);
-    const old = origScript("git-credential-shipwright.sh");
-    if (old === null) return; // no origin/main ref (shallow checkout) — skip golden
-    const oldPath = join(root, "old-helper.sh");
-    writeExec(oldPath, old);
-    const input = "protocol=https\nhost=github.com\npath=acme/repo.git\n\n";
-    const run = (script: string) =>
-      spawnSync(script, ["get"], {
-        input,
-        encoding: "utf8",
-        env: {
-          PATH: process.env.PATH ?? "",
-          GH_TOKEN_FILE: join(home, "gh-token"),
-        },
-      });
-    const [a, b] = [run(oldPath), run(HELPER)];
-    expect(b.stdout).toBe(a.stdout);
-    expect(b.stdout).toBe(
-      "protocol=https\nhost=github.com\nusername=x-access-token\npassword=default-token\n",
-    );
-    expect(b.stderr).toBe(a.stderr);
-    expect(b.status).toBe(a.status);
+    });
+    expect(r.status).toBe(0);
+    expect(r.stdout).toContain("TOKEN=pat-token");
+    expect(r.stderr).toBe("");
   });
 
-  test("wrapper output is byte-identical to the pre-routing script", () => {
-    setTokens(null);
-    const old = origScript("gh");
-    if (old === null) return;
-    const oldDir = join(root, "old-bin");
-    mkdirSync(oldDir);
-    writeExec(join(oldDir, "gh"), old);
-    const run = (wrapper: string) =>
-      spawnSync(wrapper, ["pr", "list", "-R", "acme/x"], {
-        encoding: "utf8",
-        env: {
-          PATH: `${stubDir}:/usr/bin:/bin`,
-          GH_TOKEN_FILE: join(home, "gh-token"),
-        },
-      });
-    const [a, b] = [run(join(oldDir, "gh")), run(GH_WRAPPER)];
-    expect(b.stdout).toBe(a.stdout);
-    expect(b.stdout).toBe("TOKEN=default-token ARGS=pr list -R acme/x\n");
-    expect(b.status).toBe(a.status);
-  });
-
-  test("wrapper spawns no bun process when gh-token.d is absent", () => {
-    setTokens(null);
+  test("spawns no bun process", () => {
+    setTokens({ acme: "acme-token" });
     const marker = join(root, "bun-invoked");
     const shimDir = join(root, "shim");
     mkdirSync(shimDir);
     writeExec(join(shimDir, "bun"), `#!/usr/bin/env bash\ntouch ${marker}\n`);
-    const r = spawnSync(GH_WRAPPER, ["pr", "list", "-R", "acme/x"], {
-      encoding: "utf8",
-      env: {
-        PATH: `${shimDir}:${stubDir}:/usr/bin:/bin`,
-        GH_TOKEN_FILE: join(home, "gh-token"),
-      },
-    });
-    expect(r.stdout).toContain("TOKEN=default-token");
+    const r = runGh(["pr", "list", "-R", "acme/x"], "acme", [shimDir]);
+    expect(r.stdout).toContain("TOKEN=acme-token");
     expect(existsSync(marker)).toBe(false);
   });
 });

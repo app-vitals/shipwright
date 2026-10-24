@@ -21,7 +21,6 @@
     "./cutover-validate": "./cutover-validate.ts",
     "./entrypoint": "./entrypoint.ts",
     "./gh-helpers": "./gh-helpers.ts",
-    "./gh-owner-resolver": "./gh-owner-resolver.ts",
     "./github-auth-deps": "./github-auth-deps.ts",
     "./markers": "./markers.ts",
     "./process-tree-kill": "./process-tree-kill.ts",
