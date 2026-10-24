@@ -153,6 +153,9 @@ For example, the chat admin token that powers the admin console's Chat tab is
 wired via `chat.adminToken.existingSecret` (see
 [Chat service (opt-in)](./deploy-kubernetes-networking.md#chat-service-opt-in)), and the task-store bearer token consumed by
 the metrics dashboard is wired via `metrics.provider.taskStoreToken.existingSecret`.
+The bearer registry for `/metrics/*` (`METRICS_API_KEYS`, `name:token:scope` tuples) is wired via
+`metrics.apiKeys.existingSecret` / `existingSecretKey`; point it at the Secret the admin's
+`SHIPWRIGHT_ADMIN_API_KEYS` comes from so the same bearer works on both services (unset: session cookies only).
 The Minikube example values file below leaves the task-store token unset (see
 its comments) since the chart has no equivalent seed-token wiring for
 task-store yet — the metrics dashboard falls back to admin-only data until

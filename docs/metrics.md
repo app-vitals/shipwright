@@ -153,7 +153,7 @@ A task-row match (or Shipwright label) always wins, even over a bot-looking `aut
 
 The `/metrics/*` endpoints accept **either** credential:
 
-- **Bearer API key** — tokens parsed from `METRICS_API_KEYS`. Scoped tokens (scope `!== "*"`) are rejected with `403` on metrics routes.
+- **Bearer API key** — tokens parsed from `METRICS_API_KEYS`, a comma-separated `name:token:scope` registry (same format as the admin's `SHIPWRIGHT_ADMIN_API_KEYS`; scope `*` = admin). On a chart deploy it is only set when `metrics.apiKeys.existingSecret` is configured — point it at the Secret the admin reads its registry from so the admin bearer works on both services; unset, only session-cookie access works and bearers get `401`. Scoped tokens (scope `!== "*"`) are rejected with `403` on metrics routes.
 - **Session cookie** (`admin_session`) — when `METRICS_REQUIRE_OWNER_ROLE=true` and an accounts client is configured, the caller's role is checked and non-`OWNER` users get `403`.
 
 The **dashboard** is protected by the session cookie middleware; an invalid/absent session redirects to `/admin/login`. In offline mode (`METRICS_OFFLINE=true`), session auth is skipped entirely and `/dashboard` is served as "Offline User".
@@ -175,7 +175,7 @@ The `/public/*` endpoints require **no authentication**. Access is controlled by
 | `METRICS_OFFLINE` | | `false` | When `true`, injects fixture (cassette-backed) data and bypasses dashboard session auth. |
 | `METRICS_BASE_PATH` | | — | URL path prefix the app is mounted at (e.g. `/sw`). All routes including `/dashboard` and `/metrics/*` are served under this prefix. |
 | `METRICS_API_PORT` | | `3460` | Listen port. |
-| `METRICS_API_KEYS` | | — | Comma-parsed Bearer API keys for `/metrics/*`. |
+| `METRICS_API_KEYS` | | — | Bearer API key registry for `/metrics/*`: comma-separated `name:token:scope` (scope `*` = admin). Chart: `metrics.apiKeys.existingSecret` / `existingSecretKey`; share the admin's registry Secret to accept the admin bearer. |
 | `SHIPWRIGHT_SESSION_SECRET` | | — | HS256 secret for verifying the `admin_session` cookie. |
 | `METRICS_REQUIRE_OWNER_ROLE` | | `false` | When `true`, gate dashboard/API on `OWNER` role via the accounts client. |
 | `METRICS_ADMIN_URL` | ✅ (taskstore mode) | `http://localhost:3000` | Shipwright admin service base URL (agent name lookups + token-aggregation stats). With `METRICS_TASK_STORE_URL` also set to http(s), selects taskstore mode. |
