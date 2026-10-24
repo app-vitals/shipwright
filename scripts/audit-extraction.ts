@@ -229,6 +229,37 @@ export const BANNED_ALLOWLIST: readonly AllowRule[] = [
     pattern:
       /\b[a-z0-9.-]*(?:example\.(?:com|org|net|test)|\.test|\.invalid|\.localhost)\b/gi,
   },
+  // Reviewed (AGR-2.3): these already sit in shipwright's public history.
+  {
+    id: "allow/sentry-issue-ids",
+    description: "Sentry short issue ids cited in comments and test names",
+    pattern: /\bVITALS[-]OS-[0-9A-Z]{1,4}\b/g,
+  },
+  {
+    id: "allow/k8s-name-prefix",
+    description: "agent resource-name prefix used as a provisioner test fixture",
+    pattern: /\bvitals[-]os-agent-/gi,
+  },
+  {
+    id: "allow/public-site-host",
+    description: "the public shipwright site host used as a redirect fixture",
+    pattern: /\bshipwright\.vitals[-]os\.com\b/gi,
+  },
+  {
+    id: "allow/plugin-fixtures",
+    description: "plugin and marketplace names used as install-test fixtures",
+    pattern: /@vitals[-]os\/plugin\b|marketplace: "vitals[-]os"/gi,
+  },
+  {
+    id: "allow/image-lineage-comments",
+    description: "Dockerfile comments naming the image the runtime mirrors",
+    pattern: /\b(?:mirrors|matching) the vitals[-]os\b|\bmatching vitals[-]os\b/gi,
+  },
+  {
+    id: "allow/placeholder-cluster-host",
+    description: "placeholder in-cluster hostname used as a config fixture",
+    pattern: /\binternal\.svc\.cluster\.local\b/g,
+  },
 ];
 
 /**

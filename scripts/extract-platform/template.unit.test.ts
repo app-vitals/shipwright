@@ -42,6 +42,7 @@ const EXPECTED_FILES = [
   ".github/workflows/pr-title-lint.yml",
   ".github/workflows/release.yml",
   ".gitignore",
+  ".gitleaks.toml",
   ".releaserc.json",
   "CLAUDE.md",
   "CONTRIBUTING.md",
