@@ -153,6 +153,41 @@ bun scripts/audit-extraction.ts /tmp/agent-extract --json --report audit.json
 
 Each finding is `{ rule, file, commit, line?, excerpt }`; `commit` is a sha or `working-tree`, and secret values are always redacted in `excerpt`. The audit fails closed: a tree without `.git` (a `--no-history` extraction) is a `coverage/no-git-history` finding unless `--working-tree-only` is passed, in which case only a notice is printed. Run it against the history-mode extraction for the real pre-publication gate.
 
+## Drift prevention during cutover (AGR-2.4)
+
+Between the extraction push (AGR-2.3) and the cutover to the extracted tree (AGR-4.x), the platform code lives in both this repository and `app-vitals/agent`. A GitHub workflow enforces that the two copies cannot drift by rejecting any PR that touches the frozen paths.
+
+### How the freeze guard works
+
+`.github/workflows/platform-freeze-guard.yml` (AGR-2.4) runs on every PR (`opened`, `synchronize`, `reopened`, `labeled`, `unlabeled`). It uses `scripts/platform-freeze-guard.ts` to:
+
+1. **Read the changed files:** `git diff --name-only {base}...{head}`.
+2. **Compute frozen paths:** From `platform-manifest.json`, take the `include` set minus `exclude` minus `compositionRoots` (files that stay with the consumer and are tested separately).
+3. **Fail if any changed file matches a frozen path** — preventing edits that would cause the monorepo copy to diverge from `app-vitals/agent`.
+4. **Allow bypass via `platform-cutover` label:** When present, the guard passes even if frozen paths are changed. Use this label for AGR-4.x cutover PRs that update the monorepo's copy before switching over.
+
+The frozen set is identical to the extractable platform set: same globs, same composition roots, same boundary semantics.
+
+### Scope of the guard
+
+Frozen paths are a precise subset:
+
+- `agent/src/runtime/**` and `agent/src/fixtures/**`
+- `agent/src/entrypoint-main.ts`, `agent/Dockerfile`, `agent/workspace/**` (templates)
+- `admin/**` except `admin/src/coding/**` and generated Prisma client
+- `specialties/specialist/**` and `docs/schemas/specialty.schema.json`
+- The `lib` modules listed in the manifest
+
+**Allowed changes** (not frozen):
+- `admin/src/coding/**` (the coding extension)
+- `compositionRoots` (`agent/src/index.ts`, `admin/src/main.ts`, and tests that wire the platform to the coding extension)
+- `coding/` specialty and workspace templates (`CLAUDE.md.template`, `CLAUDE-HITL.md.template`)
+- Any other file outside the extractable set
+
+### Lifetime
+
+The guard is installed at AGR-2.3 (extraction push) and removed at AGR-4.4 (cutover completion), making it a temporary enforcement during a specific phase of the extraction. It has no `exemptions` field and allows no standing overrides — every bypass must be explicit via the `platform-cutover` label per PR.
+
 ## Self-contained without the coding specialty
 
 The extracted tree excludes `specialties/coding/` and the coding workspace templates (`agent/workspace/CLAUDE.md.template`, `CLAUDE-HITL.md.template`), yet the runtime defaults to the `coding` specialty. So the platform tests must not need either one (AGR-1.9).
