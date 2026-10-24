@@ -363,7 +363,7 @@ For each PR, issue a single GraphQL query to get all reviews, all inline review 
 and all PR-level comments:
 
 ```bash
-gh api graphql -f query='
+SHIPWRIGHT_GH_OWNER={org} gh api graphql -f query='
 {
   repository(owner: "{org}", name: "{repo}") {
     pullRequest(number: {pr}) {
@@ -1206,7 +1206,7 @@ cycle and re-fire this same escalation indefinitely — the exact loop this chec
 close. Use the same mutation as Step 5a.7:
 
 ```bash
-gh api graphql -f query='
+SHIPWRIGHT_GH_OWNER={org} gh api graphql -f query='
 mutation {
   resolveReviewThread(input: {threadId: "{thread.id}"}) {
     thread { isResolved }
@@ -1337,7 +1337,7 @@ and re-fire this same escalation indefinitely — the exact loop this step exist
 Use the same mutation as Step 5b [D]/[E]:
 
 ```bash
-gh api graphql -f query='
+SHIPWRIGHT_GH_OWNER={org} gh api graphql -f query='
 mutation {
   resolveReviewThread(input: {threadId: "{thread.id}"}) {
     thread { isResolved }
@@ -1602,7 +1602,7 @@ INSTRUCTIONS — follow in order:
     maps any `file:line` finding to an inline comment), also resolve the inline threads for
     the REJECTed findings now, right after posting the rebuttal comment:
     ```bash
-    gh api graphql -f query='
+    SHIPWRIGHT_GH_OWNER={org} gh api graphql -f query='
     mutation {
       resolveReviewThread(input: {threadId: "{thread.id}"}) {
         thread { isResolved }
@@ -1620,7 +1620,7 @@ INSTRUCTIONS — follow in order:
   threads" above) whose finding was ACCEPTED or MODIFIED and fixed in [B], mark it
   resolved:
   ```bash
-  gh api graphql -f query='
+  SHIPWRIGHT_GH_OWNER={org} gh api graphql -f query='
   mutation {
     resolveReviewThread(input: {threadId: "{thread.id}"}) {
       thread { isResolved }
@@ -1882,7 +1882,7 @@ order, matching Step 6d.5's already-existing `ciFailureSignature` field on the t
 `POST /prs/:id/patch` (CSD-1.1):
 
 ```bash
-CI_FAILURE_SIGNATURE=$(gh run view "$RUN_ID" --json jobs \
+CI_FAILURE_SIGNATURE=$(gh run view "$RUN_ID" --repo {org}/{repo} --json jobs \
   --jq '[.jobs[] | select(.conclusion=="failure") | .name] | sort | join(",")')
 ```
 

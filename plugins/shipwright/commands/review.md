@@ -285,7 +285,7 @@ configured. Step 7 below dispatches whichever `subagent_type` this resolves to.
    review objects only — blind to inline diff-line review comments and their `isResolved`
    state):
    ```bash
-   RESPONSE=$(gh api graphql -f query='
+   RESPONSE=$(SHIPWRIGHT_GH_OWNER={org} gh api graphql -f query='
    {
      repository(owner: "{org}", name: "{repo}") {
        pullRequest(number: {pr}) {
@@ -1475,7 +1475,7 @@ CURRENT_USER={the login resolved in Step 3}
 ```
 
 ```bash
-precheck=$(gh api graphql -f query='
+precheck=$(SHIPWRIGHT_GH_OWNER={org} gh api graphql -f query='
 {
   repository(owner: "{org}", name: "{repo}") {
     pullRequest(number: {pr}) {
