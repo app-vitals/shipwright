@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, spyOn, test } from "bun:test";
 import {
   existsSync,
   mkdtempSync,
@@ -92,6 +92,28 @@ describe("writeTokenFiles", () => {
     ]);
     writeTokenFiles(home, { defaultToken: "a", ownerTokens: { acme: "a" } });
     expect(existsSync(join(home, "gh-token.d"))).toBe(false);
+  });
+
+  test("removing a previously existing gh-token.d logs once without token values; silent when it never existed", () => {
+    const logSpy = spyOn(console, "log").mockImplementation(() => {});
+    try {
+      writeTokenFiles(home, { defaultToken: "secret-a" });
+      writeTokenFiles(home, {
+        defaultToken: "secret-a",
+        ownerTokens: { acme: "secret-a", other: "secret-b" },
+      });
+      expect(logSpy).not.toHaveBeenCalled();
+      writeTokenFiles(home, {
+        defaultToken: "secret-a",
+        ownerTokens: { acme: "secret-a" },
+      });
+      expect(logSpy).toHaveBeenCalledTimes(1);
+      const line = String(logSpy.mock.calls[0].join(" "));
+      expect(line).toContain("gh-token.d removed");
+      expect(line).not.toContain("secret");
+    } finally {
+      logSpy.mockRestore();
+    }
   });
 
   test("absent defaultToken leaves gh-token untouched", () => {

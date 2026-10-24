@@ -635,6 +635,12 @@ describe("setupGitHubAuth — installations manager", () => {
     expect(readFileSync(join(h.home, "gh-token.d", "other"), "utf8")).toBe(
       "ghs_inst_22",
     );
+    const lines = logSpy.mock.calls.map((c: unknown[]) => c.join(" "));
+    // one line per token-file write; a refresh can trigger more than one write
+    expect(lines).toContain(
+      "[github-auth] mint failed for other — keeping last good token file",
+    );
+    expect(lines.join("\n")).not.toContain("ghs_inst_");
   });
 
   test("when the default installation's mint fails, gh-token keeps its last good value", async () => {

@@ -10,6 +10,7 @@
 
 import {
   chmodSync,
+  existsSync,
   mkdirSync,
   readdirSync,
   renameSync,
@@ -73,6 +74,11 @@ export function writeTokenFiles(
   }
 
   if (new Set([...owners.map(([owner]) => owner), ...failed]).size < 2) {
+    if (existsSync(dir)) {
+      console.log(
+        "[github-auth] gh-token.d removed — fewer than two installations usable, gh calls use the default token",
+      );
+    }
     rmSync(dir, { recursive: true, force: true });
     return;
   }
