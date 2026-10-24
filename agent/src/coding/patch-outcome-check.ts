@@ -101,7 +101,7 @@ export function createPatchStateSnapshotter(
     const repoFull = candidateId.slice(0, hash);
     const [org, repo] = splitOrgRepo(repoFull);
     try {
-      const currentUser = await deps.getCurrentUser();
+      const currentUser = await deps.getCurrentUser(org);
       const record = deps.queryPrRecord
         ? await deps.queryPrRecord(repoFull, prNumber).catch(() => null)
         : null;

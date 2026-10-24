@@ -3088,8 +3088,8 @@ describe("buildProductionDeps fetchPrReviews owner hint", () => {
     let seenOwner: string | undefined;
     const deps = await buildProductionDeps({
       ghJson: async <T>(): Promise<T> => [] as unknown as T,
-      ghGraphql: async <T>(_query: string, opts?: { owner?: string }) => {
-        seenOwner = opts?.owner;
+      ghGraphql: async <T>(_query: string, owner: string) => {
+        seenOwner = owner;
         return { data: { repository: { pullRequest: {} } } } as T;
       },
       workspacePath: "/tmp/gqh-1.2-stub-workspace",

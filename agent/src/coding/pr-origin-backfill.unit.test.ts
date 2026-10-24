@@ -46,7 +46,7 @@ interface MakeDepsOptions {
 
 function makeDeps(opts: MakeDepsOptions = {}): {
   deps: BackfillDeps;
-  ghCalls: Array<{ repo: string; args: string[] }>;
+  ghCalls: Array<{ repo: string; args: string[]; owner: string }>;
   postCalls: Array<{ repo: string; entries: CensusEntry[] }>;
 } {
   const {
@@ -56,14 +56,14 @@ function makeDeps(opts: MakeDepsOptions = {}): {
     postErrors = {},
   } = opts;
 
-  const ghCalls: Array<{ repo: string; args: string[] }> = [];
+  const ghCalls: Array<{ repo: string; args: string[]; owner: string }> = [];
   const postCalls: Array<{ repo: string; entries: CensusEntry[] }> = [];
 
   const deps: BackfillDeps = {
-    ghJson: async <T>(args: string[]): Promise<T> => {
+    ghJson: async <T>(args: string[], owner: string): Promise<T> => {
       const repoIdx = args.indexOf("--repo");
       const repo = repoIdx >= 0 ? args[repoIdx + 1] : "";
-      ghCalls.push({ repo, args });
+      ghCalls.push({ repo, args, owner });
       const err = ghErrors[repo];
       if (err) throw err;
       return (mergedPrsByRepo[repo] ?? []) as unknown as T;
@@ -218,6 +218,14 @@ describe("runBackfillForRepo", () => {
     expect(summary.batchesPosted).toBe(1);
     expect(postCalls).toHaveLength(1);
     expect(postCalls[0].entries.map((e) => e.prNumber)).toEqual([1, 2]);
+  });
+
+  test("passes the repo's org as the gh owner", async () => {
+    const { deps, ghCalls } = makeDeps({});
+
+    await runBackfillForRepo(deps, "other-org/repo-a", CUTOFF);
+
+    expect(ghCalls[0].owner).toBe("other-org");
   });
 
   test("requests commits in its own --json field list, so backfilled entries carry real commit counts instead of false zeros", async () => {

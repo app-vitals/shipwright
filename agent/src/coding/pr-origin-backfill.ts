@@ -53,6 +53,7 @@
  * logging to console.error.
  */
 
+import { ownerOfRepo } from "@app-vitals/agent-runtime/gh-helpers";
 import {
   buildCensusEntry,
   CENSUS_CHUNK_SIZE,
@@ -66,7 +67,7 @@ import {
 
 export interface BackfillDeps {
   /** `gh` CLI wrapper (agent/src/coding/check-helpers.ts's `ghJson` in production) — issues the one plain `gh pr list --state merged` call per repo. */
-  ghJson: <T>(args: string[]) => Promise<T>;
+  ghJson: <T>(args: string[], owner: string) => Promise<T>;
   /** All task-store tasks for a repo with a non-null `pr` field. */
   listTasksWithPr: (repo: string) => Promise<CensusTaskRecord[]>;
   /** POST /prs/census with one chunk (<= CENSUS_CHUNK_SIZE) of classified entries for a repo. */
@@ -157,22 +158,25 @@ export async function runBackfillForRepo(
   let batchesPosted = 0;
 
   try {
-    const prs = await deps.ghJson<GhCensusPr[]>([
-      "pr",
-      "list",
-      "--state",
-      "merged",
-      "--limit",
-      String(GH_PR_LIST_LIMIT),
-      "--json",
-      // `commits` is required by GhCensusPr / buildCensusEntry() — dropping it
-      // would silently stamp false-zero commit counts (see the module doc).
-      // `labels` (POF-1.2) feeds classifyPrOrigin()'s hasAutomatedLabel/
-      // hasShipwrightLabel inputs via the same buildCensusEntry() reuse.
-      "number,title,author,headRefName,createdAt,mergedAt,commits,labels",
-      "--repo",
-      repo,
-    ]);
+    const prs = await deps.ghJson<GhCensusPr[]>(
+      [
+        "pr",
+        "list",
+        "--state",
+        "merged",
+        "--limit",
+        String(GH_PR_LIST_LIMIT),
+        "--json",
+        // `commits` is required by GhCensusPr / buildCensusEntry() — dropping it
+        // would silently stamp false-zero commit counts (see the module doc).
+        // `labels` (POF-1.2) feeds classifyPrOrigin()'s hasAutomatedLabel/
+        // hasShipwrightLabel inputs via the same buildCensusEntry() reuse.
+        "number,title,author,headRefName,createdAt,mergedAt,commits,labels",
+        "--repo",
+        repo,
+      ],
+      ownerOfRepo(repo),
+    );
     fetchedCount = prs.length;
 
     const tasks = await deps.listTasksWithPr(repo);

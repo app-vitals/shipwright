@@ -189,15 +189,18 @@ export async function fetchPrInfoViaGh(
   repo: string,
   prNumber: number,
 ): Promise<PrInfo> {
-  const pr = await ghJsonFn<PrInfo>([
-    "pr",
-    "view",
-    "--repo",
-    `${org}/${repo}`,
-    String(prNumber),
-    "--json",
-    "number,title,author,headRefName,headRefOid,isDraft,labels,createdAt,reviewRequests",
-  ]);
+  const pr = await ghJsonFn<PrInfo>(
+    [
+      "pr",
+      "view",
+      "--repo",
+      `${org}/${repo}`,
+      String(prNumber),
+      "--json",
+      "number,title,author,headRefName,headRefOid,isDraft,labels,createdAt,reviewRequests",
+    ],
+    org,
+  );
   return { ...pr, repo: `${org}/${repo}` };
 }
 

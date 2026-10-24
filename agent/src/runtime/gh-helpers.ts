@@ -7,12 +7,35 @@
  */
 
 /**
+ * Spawn env for a gh call. The agent process has no ambient org, so every
+ * helper requires `owner` (the org of the task or PR being handled) and
+ * passes it to the `gh` wrapper via SHIPWRIGHT_GH_OWNER.
+ */
+function ghEnv(owner: string): Record<string, string | undefined> {
+  return { ...process.env, SHIPWRIGHT_GH_OWNER: owner };
+}
+
+/**
+ * The owner (org) half of an `org/repo` slug. Throws when the slug has no
+ * org: callers must not guess one.
+ */
+export function ownerOfRepo(repo: string): string {
+  const idx = repo.indexOf("/");
+  if (idx < 1) {
+    throw new Error(
+      `Cannot derive GitHub owner from repo "${repo}" (expected org/repo)`,
+    );
+  }
+  return repo.slice(0, idx);
+}
+
+/**
  * Run a gh CLI command and return the parsed JSON output.
  * Throws on non-zero exit.
  */
-export async function ghJson<T>(args: string[]): Promise<T> {
+export async function ghJson<T>(args: string[], owner: string): Promise<T> {
   const proc = Bun.spawn(["gh", ...args], {
-    env: process.env,
+    env: ghEnv(owner),
     stdout: "pipe",
     stderr: "pipe",
   });
@@ -31,9 +54,9 @@ export async function ghJson<T>(args: string[]): Promise<T> {
  * Run a gh CLI command without parsing output.
  * Throws on non-zero exit.
  */
-export async function ghRun(args: string[]): Promise<void> {
+export async function ghRun(args: string[], owner: string): Promise<void> {
   const proc = Bun.spawn(["gh", ...args], {
-    env: process.env,
+    env: ghEnv(owner),
     stdout: "pipe",
     stderr: "pipe",
   });
@@ -58,17 +81,16 @@ const GH_TRANSIENT_STDERR = /HTTP 50[234]\b|timed? ?out/i;
  * throws immediately. After exhausting retries the last error is thrown in
  * the same format as a non-retried failure.
  *
- * `opts.owner` pins the repo owner for the `gh` wrapper's token routing by
- * setting SHIPWRIGHT_GH_OWNER in the spawned env; omitted, the env is untouched.
+ * `owner` is required and set as SHIPWRIGHT_GH_OWNER in the spawned env for
+ * the `gh` wrapper's token routing.
  */
 export async function ghGraphql<T>(
   query: string,
-  opts: { baseDelayMs?: number; owner?: string } = {},
+  owner: string,
+  opts: { baseDelayMs?: number } = {},
 ): Promise<T> {
   const baseDelayMs = opts.baseDelayMs ?? GH_GRAPHQL_BASE_DELAY_MS;
-  const env = opts.owner
-    ? { ...process.env, SHIPWRIGHT_GH_OWNER: opts.owner }
-    : process.env;
+  const env = ghEnv(owner);
   for (let attempt = 1; ; attempt++) {
     const proc = Bun.spawn(["gh", "api", "graphql", "-f", `query=${query}`], {
       env,
@@ -103,10 +125,14 @@ export async function ghGraphql<T>(
  * Normalises the bot identity format: GraphQL returns "name[bot]" but
  * pr.author.login (and gh pr list --author) use "app/name", so we convert
  * here once so every call-site sees a consistent format.
+ *
+ * `owner` is only the token-routing hint: the viewer identity is the same
+ * under any installation token, so the caller passes whichever org it has.
  */
-export async function getCurrentUser(): Promise<string> {
+export async function getCurrentUser(owner: string): Promise<string> {
   const result = await ghGraphql<{ data: { viewer: { login: string } } }>(
     "query { viewer { login } }",
+    owner,
   );
   const login = result.data.viewer.login;
   return login.endsWith("[bot]") ? `app/${login.slice(0, -5)}` : login;

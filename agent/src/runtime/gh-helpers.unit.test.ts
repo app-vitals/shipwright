@@ -1,7 +1,7 @@
 /**
  * agent/src/runtime/gh-helpers.unit.test.ts
  *
- * Unit tests for getCurrentUser() and ghGraphql() in gh-helpers.ts
+ * Unit tests for getCurrentUser("acme") and ghGraphql() in gh-helpers.ts
  * (relocated from check-helpers.unit.test.ts, ARD-4.1).
  */
 
@@ -15,7 +15,13 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { getCurrentUser, ghGraphql } from "./gh-helpers.ts";
+import {
+  getCurrentUser,
+  ghGraphql,
+  ghJson,
+  ghRun,
+  ownerOfRepo,
+} from "./gh-helpers.ts";
 
 /**
  * Write a fake `gh` binary into dir that returns the given GraphQL viewer
@@ -66,28 +72,30 @@ describe("getCurrentUser", () => {
   test("returns login as-is for a regular PAT user", async () => {
     writeFakeGhBinary(tmpDir, "dmcaulay");
     process.env.PATH = `${tmpDir}:${savedPath}`;
-    const result = await getCurrentUser();
+    const result = await getCurrentUser("acme");
     expect(result).toBe("dmcaulay");
   });
 
   test("normalises [bot] suffix to app/ prefix for GitHub App identity", async () => {
     writeFakeGhBinary(tmpDir, "my-app[bot]");
     process.env.PATH = `${tmpDir}:${savedPath}`;
-    const result = await getCurrentUser();
+    const result = await getCurrentUser("acme");
     expect(result).toBe("app/my-app");
   });
 
   test("handles hyphenated app name in [bot] normalisation", async () => {
     writeFakeGhBinary(tmpDir, "example-repo-agent[bot]");
     process.env.PATH = `${tmpDir}:${savedPath}`;
-    const result = await getCurrentUser();
+    const result = await getCurrentUser("acme");
     expect(result).toBe("app/example-repo-agent");
   });
 
   test("throws when gh exits non-zero", async () => {
     writeFailingGhBinary(tmpDir, 1, "not authenticated");
     process.env.PATH = `${tmpDir}:${savedPath}`;
-    await expect(getCurrentUser()).rejects.toThrow("gh api graphql failed");
+    await expect(getCurrentUser("acme")).rejects.toThrow(
+      "gh api graphql failed",
+    );
   });
 });
 
@@ -128,7 +136,7 @@ printf '%s\\n' '{"ok":true}'
 
   test("retries a transient 504 and succeeds", async () => {
     const counter = writeFlakyGh(2, "gh: HTTP 504");
-    const result = await ghGraphql<{ ok: boolean }>("query {}", {
+    const result = await ghGraphql<{ ok: boolean }>("query {}", "acme", {
       baseDelayMs: 1,
     });
     expect(result).toEqual({ ok: true });
@@ -137,17 +145,17 @@ printf '%s\\n' '{"ok":true}'
 
   test("throws the standard error after exhausting retries", async () => {
     const counter = writeFlakyGh(99, "gh: HTTP 504");
-    await expect(ghGraphql("query {}", { baseDelayMs: 1 })).rejects.toThrow(
-      "gh api graphql failed (exit 1): gh: HTTP 504",
-    );
+    await expect(
+      ghGraphql("query {}", "acme", { baseDelayMs: 1 }),
+    ).rejects.toThrow("gh api graphql failed (exit 1): gh: HTTP 504");
     expect(calls(counter)).toBe(3);
   });
 
   test("does not retry a non-transient failure", async () => {
     const counter = writeFlakyGh(99, "gh: HTTP 401 bad credentials");
-    await expect(ghGraphql("query {}", { baseDelayMs: 1 })).rejects.toThrow(
-      "gh api graphql failed",
-    );
+    await expect(
+      ghGraphql("query {}", "acme", { baseDelayMs: 1 }),
+    ).rejects.toThrow("gh api graphql failed");
     expect(calls(counter)).toBe(1);
   });
 });
@@ -178,26 +186,68 @@ describe("ghGraphql owner hint", () => {
     rmSync(tmpDir, { recursive: true, force: true });
   });
 
-  test("owner sets SHIPWRIGHT_GH_OWNER in the spawned env", async () => {
-    const result = await ghGraphql<{ owner: string }>("query {}", {
-      owner: "acme",
-    });
+  test("ghGraphql sets SHIPWRIGHT_GH_OWNER in the spawned env", async () => {
+    const result = await ghGraphql<{ owner: string }>("query {}", "acme");
     expect(result.owner).toBe("acme");
   });
 
-  test("omitted owner leaves the env unchanged", async () => {
-    const result = await ghGraphql<{ owner: string }>("query {}");
-    expect(result.owner).toBe("");
+  test("ghJson sets SHIPWRIGHT_GH_OWNER in the spawned env", async () => {
+    const result = await ghJson<{ owner: string }>(["api", "x"], "acme");
+    expect(result.owner).toBe("acme");
   });
 
-  test("omitted owner passes through an ambient SHIPWRIGHT_GH_OWNER", async () => {
+  test("ghRun sets SHIPWRIGHT_GH_OWNER in the spawned env", async () => {
+    const out = join(tmpDir, "run-owner");
+    writeFileSync(
+      join(tmpDir, "gh"),
+      `#!/bin/sh\nprintf '%s' "$SHIPWRIGHT_GH_OWNER" > "${out}"\n`,
+    );
+    chmodSync(join(tmpDir, "gh"), 0o755);
+    await ghRun(["api", "x"], "acme");
+    expect(readFileSync(out, "utf8")).toBe("acme");
+  });
+
+  test("the explicit owner overrides an ambient SHIPWRIGHT_GH_OWNER", async () => {
     process.env.SHIPWRIGHT_GH_OWNER = "ambient";
-    const result = await ghGraphql<{ owner: string }>("query {}");
-    expect(result.owner).toBe("ambient");
+    const result = await ghGraphql<{ owner: string }>("query {}", "acme");
+    expect(result.owner).toBe("acme");
+  });
+
+  test("getCurrentUser forwards its owner to the gh env", async () => {
+    writeFileSync(
+      join(tmpDir, "gh"),
+      `#!/bin/sh\nprintf '{"data":{"viewer":{"login":"%s"}}}\\n' "$SHIPWRIGHT_GH_OWNER"\n`,
+    );
+    chmodSync(join(tmpDir, "gh"), 0o755);
+    expect(await getCurrentUser("acme")).toBe("acme");
   });
 
   test("does not mutate the parent process env", async () => {
-    await ghGraphql("query {}", { owner: "acme" });
+    await ghGraphql("query {}", "acme");
     expect(process.env.SHIPWRIGHT_GH_OWNER).toBeUndefined();
+  });
+
+  test("owner is required at the type level", () => {
+    const never = async () => {
+      // @ts-expect-error owner is required
+      await ghJson<unknown>(["api", "x"]);
+      // @ts-expect-error owner is required
+      await ghRun(["api", "x"]);
+      // @ts-expect-error owner is required
+      await ghGraphql("query {}");
+      // @ts-expect-error owner is required
+      await getCurrentUser();
+    };
+    expect(typeof never).toBe("function");
+  });
+});
+
+describe("ownerOfRepo", () => {
+  test("returns the org half of org/repo", () => {
+    expect(ownerOfRepo("acme/widgets")).toBe("acme");
+  });
+
+  test("throws rather than guessing when there is no org", () => {
+    expect(() => ownerOfRepo("widgets")).toThrow("Cannot derive GitHub owner");
   });
 });

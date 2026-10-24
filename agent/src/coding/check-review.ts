@@ -53,6 +53,7 @@ import {
   isPrRecordBlockedForDispatch,
   isTaskBlockedForDispatch,
   mapReposTolerant,
+  ownerOfRepo,
   readAllowSelfReview,
   resolveAllRepos,
   resolveWorkspacePath,
@@ -411,7 +412,7 @@ function logSkippedCandidacy(
 }
 
 export interface CheckReviewDeps {
-  getCurrentUser: () => Promise<string>;
+  getCurrentUser: (owner: string) => Promise<string>;
   /**
    * Whether self-review is allowed (the `allow_self_review` policy field,
    * synced DB ref -> hardcoded default, APM-1.4). A getter, invoked
@@ -493,9 +494,14 @@ export interface CheckReviewDeps {
 export async function getReviewCandidates(
   deps: CheckReviewDeps,
 ): Promise<WorkPrCandidate[]> {
-  const currentUser = await deps.getCurrentUser();
-
   const scopedRepos = new Set(deps.getScopedRepos());
+  // Nothing in scope means nothing to review (and no org to route gh by).
+  // The viewer identity is the same under any installation token; the owner
+  // only routes the token, so use the first scoped repo's org.
+  const [firstScopedRepo] = scopedRepos;
+  if (firstScopedRepo === undefined) return [];
+  const currentUser = await deps.getCurrentUser(ownerOfRepo(firstScopedRepo));
+
   const allPrs = await deps.listOpenPrs("default");
   const prs = allPrs.filter((pr) => scopedRepos.has(pr.repo ?? ""));
   const candidates: WorkPrCandidate[] = [];
@@ -755,7 +761,7 @@ export async function getReviewCandidates(
 // ─── Production deps ──────────────────────────────────────────────────────────
 
 export async function buildProductionDeps(opts: {
-  ghJson: <T>(args: string[]) => Promise<T>;
+  ghJson: <T>(args: string[], owner: string) => Promise<T>;
   /**
    * Optional override for the GraphQL client backing fetchPrReviews
    * (RVD-1.1) — mirrors check-patch.ts's buildProductionDeps's required
@@ -763,7 +769,11 @@ export async function buildProductionDeps(opts: {
    * shared ghGraphql) so existing callers/tests that only pass ghJson keep
    * working unchanged.
    */
-  ghGraphql?: <T>(query: string, opts?: { owner?: string }) => Promise<T>;
+  ghGraphql?: <T>(
+    query: string,
+    owner: string,
+    opts?: { baseDelayMs?: number },
+  ) => Promise<T>;
   fetchFn?: typeof fetch;
   getScopedRepos?: () => string[];
   /**
@@ -829,16 +839,19 @@ export async function buildProductionDeps(opts: {
         scopedRepos.has(repo),
       );
       return mapReposTolerant(repos, "check-review", async (repo) => {
-        const repoPrs = await ghJsonFn<PrInfo[]>([
-          "pr",
-          "list",
-          "--state",
-          "open",
-          "--repo",
-          repo,
-          "--json",
-          "number,title,author,headRefName,headRefOid,isDraft,labels,createdAt,reviewRequests",
-        ]);
+        const repoPrs = await ghJsonFn<PrInfo[]>(
+          [
+            "pr",
+            "list",
+            "--state",
+            "open",
+            "--repo",
+            repo,
+            "--json",
+            "number,title,author,headRefName,headRefOid,isDraft,labels,createdAt,reviewRequests",
+          ],
+          ownerOfRepo(repo),
+        );
         return repoPrs.map((pr) => ({ ...pr, repo }));
       });
     },
@@ -884,7 +897,7 @@ export async function buildProductionDeps(opts: {
 }`;
       const response = await ghGraphqlFn<{
         data: { repository: { pullRequest: PrReviewData } };
-      }>(query, { owner: org });
+      }>(query, org);
       return response.data.repository.pullRequest;
     },
   };
