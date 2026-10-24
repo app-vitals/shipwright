@@ -1955,7 +1955,7 @@ describe("patch.md — capture and report CI failure signature (CSD-1.2)", () =>
 
   it("Step 6b computes the failing-job-name signature via gh run view --json jobs --jq, sorted and comma-joined", () => {
     const section = getStep6bSection();
-    expect(section).toContain('gh run view "$RUN_ID" --json jobs');
+    expect(section).toContain('gh run view "$RUN_ID" --repo {org}/{repo} --json jobs');
     expect(section).toContain("--jq");
     expect(section).toContain('select(.conclusion=="failure")');
     expect(section).toContain(".name");
