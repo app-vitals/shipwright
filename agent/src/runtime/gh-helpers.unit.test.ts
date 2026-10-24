@@ -151,3 +151,53 @@ printf '%s\\n' '{"ok":true}'
     expect(calls(counter)).toBe(1);
   });
 });
+
+describe("ghGraphql owner hint", () => {
+  let tmpDir: string;
+  let savedPath: string | undefined;
+  let savedOwner: string | undefined;
+
+  beforeEach(() => {
+    tmpDir = mkdtempSync(join(tmpdir(), "gh-graphql-owner-test-"));
+    savedPath = process.env.PATH;
+    savedOwner = process.env.SHIPWRIGHT_GH_OWNER;
+    delete process.env.SHIPWRIGHT_GH_OWNER;
+    process.env.PATH = `${tmpDir}:${savedPath}`;
+    // Fake gh echoing the owner hint it was spawned with.
+    writeFileSync(
+      join(tmpDir, "gh"),
+      `#!/bin/sh\nprintf '{"owner":"%s"}\\n' "$SHIPWRIGHT_GH_OWNER"\n`,
+    );
+    chmodSync(join(tmpDir, "gh"), 0o755);
+  });
+
+  afterEach(() => {
+    if (savedPath !== undefined) process.env.PATH = savedPath;
+    if (savedOwner === undefined) delete process.env.SHIPWRIGHT_GH_OWNER;
+    else process.env.SHIPWRIGHT_GH_OWNER = savedOwner;
+    rmSync(tmpDir, { recursive: true, force: true });
+  });
+
+  test("owner sets SHIPWRIGHT_GH_OWNER in the spawned env", async () => {
+    const result = await ghGraphql<{ owner: string }>("query {}", {
+      owner: "acme",
+    });
+    expect(result.owner).toBe("acme");
+  });
+
+  test("omitted owner leaves the env unchanged", async () => {
+    const result = await ghGraphql<{ owner: string }>("query {}");
+    expect(result.owner).toBe("");
+  });
+
+  test("omitted owner passes through an ambient SHIPWRIGHT_GH_OWNER", async () => {
+    process.env.SHIPWRIGHT_GH_OWNER = "ambient";
+    const result = await ghGraphql<{ owner: string }>("query {}");
+    expect(result.owner).toBe("ambient");
+  });
+
+  test("does not mutate the parent process env", async () => {
+    await ghGraphql("query {}", { owner: "acme" });
+    expect(process.env.SHIPWRIGHT_GH_OWNER).toBeUndefined();
+  });
+});

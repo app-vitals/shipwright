@@ -731,7 +731,7 @@ interface GraphqlResponse {
 
 export async function buildProductionDeps(opts: {
   ghJson: <T>(args: string[]) => Promise<T>;
-  ghGraphql: <T>(query: string) => Promise<T>;
+  ghGraphql: <T>(query: string, opts?: { owner?: string }) => Promise<T>;
   getCurrentUser: () => Promise<string>;
   fetchFn?: typeof fetch;
   getScopedRepos?: () => string[];
@@ -858,7 +858,7 @@ export async function buildProductionDeps(opts: {
     }
   }
 }`;
-      const response = await ghGraphql<GraphqlResponse>(query);
+      const response = await ghGraphql<GraphqlResponse>(query, { owner: org });
       return response.data.repository.pullRequest;
     },
     fetchCiStatus: async (

@@ -1106,7 +1106,7 @@ describe("review.md — Step 5.5 fetches reviewThreads via GraphQL (RUC-1.1)", (
     const itemBlock = step5Section.slice(itemIdx, itemIdx + 3000);
 
     // The graphql call's response must be captured so the extraction below can read it.
-    expect(itemBlock).toContain("RESPONSE=$(gh api graphql -f query=");
+    expect(itemBlock).toContain("RESPONSE=$(SHIPWRIGHT_GH_OWNER={org} gh api graphql -f query=");
 
     // Each JSON variable must be built by example from the literal jq extraction, not left
     // to prose inference -- and must hold the full connection object, not the bare inner

@@ -19,6 +19,7 @@ import * as checkHelpers from "./check-helpers.ts";
 import {
   createTaskStoreClient,
   getCurrentUser,
+  ghGraphql,
   resolveAllRepos,
   resolveRepoDirs,
   resolveRepos,
@@ -671,5 +672,48 @@ describe("removed exports", () => {
     expect(
       (checkHelpers as Record<string, unknown>).isCleanApproveBody,
     ).toBeUndefined();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// ghGraphql owner hint
+// ---------------------------------------------------------------------------
+
+describe("ghGraphql owner hint", () => {
+  let tmpDir: string;
+  let savedPath: string | undefined;
+  let savedOwner: string | undefined;
+
+  beforeEach(() => {
+    tmpDir = mkdtempSync(join(tmpdir(), "gh-graphql-owner-test-"));
+    savedPath = process.env.PATH;
+    savedOwner = process.env.SHIPWRIGHT_GH_OWNER;
+    delete process.env.SHIPWRIGHT_GH_OWNER;
+    // Fake gh that echoes the SHIPWRIGHT_GH_OWNER it was spawned with.
+    writeFileSync(
+      join(tmpDir, "gh"),
+      `#!/bin/sh\nprintf '{"owner":"%s"}\\n' "$SHIPWRIGHT_GH_OWNER"\n`,
+    );
+    chmodSync(join(tmpDir, "gh"), 0o755);
+    process.env.PATH = `${tmpDir}:${savedPath}`;
+  });
+
+  afterEach(() => {
+    process.env.PATH = savedPath;
+    if (savedOwner === undefined) delete process.env.SHIPWRIGHT_GH_OWNER;
+    else process.env.SHIPWRIGHT_GH_OWNER = savedOwner;
+    rmSync(tmpDir, { recursive: true, force: true });
+  });
+
+  test("with owner, the spawned env carries SHIPWRIGHT_GH_OWNER", () => {
+    expect(ghGraphql<{ owner: string }>("query { x }", "acme").owner).toBe(
+      "acme",
+    );
+  });
+
+  test("without owner, the spawned env is unchanged", () => {
+    expect(ghGraphql<{ owner: string }>("query { x }").owner).toBe("");
+    process.env.SHIPWRIGHT_GH_OWNER = "inherited";
+    expect(ghGraphql<{ owner: string }>("query { x }").owner).toBe("inherited");
   });
 });

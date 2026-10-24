@@ -155,3 +155,45 @@ describe("resolveGhOwner — defaults and invalid owners", () => {
     expect(resolve(["api", "repos/bad$owner/x/pulls"])).toBe(DEFAULT);
   });
 });
+
+describe("resolveGhOwner — ownerHint", () => {
+  const withHint = (args: string[], ownerHint: string, exec?: ExecFn) =>
+    resolveGhOwner(args, {
+      defaultOwner: DEFAULT,
+      cwd: "/work",
+      exec,
+      ownerHint,
+    });
+
+  it("valid hint wins over -R/--repo", () => {
+    expect(withHint(["pr", "list", "-R", "acme/widgets"], "pinned")).toBe(
+      "pinned",
+    );
+  });
+  it("valid hint wins over api path", () => {
+    expect(withHint(["api", "repos/acme/widgets/pulls"], "pinned")).toBe(
+      "pinned",
+    );
+  });
+  it("valid hint wins over clone argument", () => {
+    expect(withHint(["repo", "clone", "acme/widgets"], "pinned")).toBe(
+      "pinned",
+    );
+  });
+  it("valid hint wins over cwd remote", () => {
+    expect(
+      withHint(["pr", "status"], "pinned", remote("git@github.com:acme/x.git")),
+    ).toBe("pinned");
+  });
+  it("invalid hint returns the default owner, not another source", () => {
+    expect(withHint(["pr", "list", "-R", "acme/widgets"], "-bad/owner")).toBe(
+      DEFAULT,
+    );
+  });
+  it("empty hint is treated as unset", () => {
+    expect(withHint(["pr", "list", "-R", "acme/widgets"], "")).toBe("acme");
+  });
+  it("no hint leaves existing behaviour unchanged", () => {
+    expect(resolve(["pr", "list", "-R", "acme/widgets"])).toBe("acme");
+  });
+});

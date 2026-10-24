@@ -10,6 +10,7 @@
 
 import {
   chmodSync,
+  existsSync,
   mkdirSync,
   readdirSync,
   renameSync,
@@ -42,10 +43,15 @@ export function writeFileAtomic(path: string, content: string): void {
 }
 
 export interface TokenFilesInput {
-  /** Default installation's token — always written to `gh-token`. */
-  defaultToken: string;
+  /** Default installation's token, written to `gh-token`. Absent → `gh-token` is left as is. */
+  defaultToken?: string;
   /** Per-owner tokens for every usable installation (including the default's owner). */
   ownerTokens?: Record<string, string>;
+  /**
+   * Owners whose mint failed transiently. Their existing per-owner files are
+   * left untouched and they count toward the two-installation threshold.
+   */
+  failedOwners?: string[];
 }
 
 /**
@@ -61,9 +67,18 @@ export function writeTokenFiles(
     ([owner, token]) => [validateOwner(owner), token] as const,
   );
 
-  writeFileAtomic(join(agentHome, "gh-token"), input.defaultToken);
+  const failed = (input.failedOwners ?? []).map(validateOwner);
 
-  if (owners.length < 2) {
+  if (input.defaultToken !== undefined) {
+    writeFileAtomic(join(agentHome, "gh-token"), input.defaultToken);
+  }
+
+  if (new Set([...owners.map(([owner]) => owner), ...failed]).size < 2) {
+    if (existsSync(dir)) {
+      console.log(
+        "[github-auth] gh-token.d removed — fewer than two installations usable, gh calls use the default token",
+      );
+    }
     rmSync(dir, { recursive: true, force: true });
     return;
   }
@@ -71,7 +86,7 @@ export function writeTokenFiles(
   mkdirSync(dir, { recursive: true, mode: 0o700 });
   for (const [owner, token] of owners) writeFileAtomic(join(dir, owner), token);
 
-  const keep = new Set(owners.map(([owner]) => owner));
+  const keep = new Set([...owners.map(([owner]) => owner), ...failed]);
   for (const name of readdirSync(dir)) {
     if (!keep.has(name) && !name.endsWith(".tmp")) {
       rmSync(join(dir, name), { force: true });

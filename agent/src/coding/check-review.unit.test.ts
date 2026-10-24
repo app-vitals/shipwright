@@ -3083,6 +3083,24 @@ describe("getReviewCandidates skip-block auto-clear (PSL-3.2)", () => {
   });
 });
 
+describe("buildProductionDeps fetchPrReviews owner hint", () => {
+  test("passes the queried repo's owner to ghGraphql", async () => {
+    let seenOwner: string | undefined;
+    const deps = await buildProductionDeps({
+      ghJson: async <T>(): Promise<T> => [] as unknown as T,
+      ghGraphql: async <T>(_query: string, opts?: { owner?: string }) => {
+        seenOwner = opts?.owner;
+        return { data: { repository: { pullRequest: {} } } } as T;
+      },
+      workspacePath: "/tmp/gqh-1.2-stub-workspace",
+    });
+
+    await deps.fetchPrReviews?.("acme", "widgets", 42);
+
+    expect(seenOwner).toBe("acme");
+  });
+});
+
 describe("buildProductionDeps isAuthorAllowed default (AAL-2.2)", () => {
   beforeEach(() => {
     reviewAuthorAllowlistRef.set([]);

@@ -9,6 +9,10 @@
 # from gh-token.d/<owner>; owners the resolver cannot determine use the default
 # token. An owner with no token file fails naming the org. No bun process is
 # spawned when gh-token.d is absent.
+#
+# $SHIPWRIGHT_GH_OWNER pins the owner (highest priority). If it is set but
+# gh-token.d is absent, routing is degraded to the default token and a one-line
+# warning is printed to stderr.
 
 set -euo pipefail
 
@@ -34,6 +38,8 @@ if [[ -n "${GH_TOKEN_FILE:-}" && -f "$GH_TOKEN_FILE" ]]; then
         exit 1
       fi
     fi
+  elif [[ -n "${SHIPWRIGHT_GH_OWNER:-}" ]]; then
+    echo "gh wrapper: SHIPWRIGHT_GH_OWNER is set but $owner_dir is absent; using the default token" >&2
   fi
   GH_TOKEN=$(cat "$token_file")
   export GH_TOKEN

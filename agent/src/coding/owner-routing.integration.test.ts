@@ -55,7 +55,7 @@ function git(cwd: string, ...args: string[]): void {
 
 function runGh(
   args: string[],
-  opts: { cwd?: string; binInPath?: boolean } = {},
+  opts: { cwd?: string; binInPath?: boolean; ownerHint?: string } = {},
 ) {
   const path = [
     stubDir,
@@ -66,7 +66,13 @@ function runGh(
   return spawnSync(GH_WRAPPER, args, {
     cwd: opts.cwd ?? root,
     encoding: "utf8",
-    env: { PATH: path.join(":"), GH_TOKEN_FILE: join(home, "gh-token") },
+    env: {
+      PATH: path.join(":"),
+      GH_TOKEN_FILE: join(home, "gh-token"),
+      ...(opts.ownerHint === undefined
+        ? {}
+        : { SHIPWRIGHT_GH_OWNER: opts.ownerHint }),
+    },
   });
 }
 
@@ -166,6 +172,38 @@ describe("gh wrapper — owner routing", () => {
     expect(r.status).toBe(1);
     expect(r.stderr).toContain("stranger");
     expect(r.stdout).toBe("");
+  });
+});
+
+describe("gh wrapper — SHIPWRIGHT_GH_OWNER hint", () => {
+  test("hint selects the matching owner's token over -R", () => {
+    setTokens({ acme: "acme-token", "other-org": "other-token" });
+    expect(
+      runGh(["pr", "list", "-R", "acme/x"], { ownerHint: "other-org" }).stdout,
+    ).toContain("TOKEN=other-token");
+  });
+
+  test("a hint for an owner with no token file fails naming the org", () => {
+    setTokens({ acme: "acme-token" });
+    const r = runGh(["pr", "list"], { ownerHint: "stranger" });
+    expect(r.status).toBe(1);
+    expect(r.stderr).toContain("stranger");
+    expect(r.stdout).toBe("");
+  });
+
+  test("hint set but gh-token.d absent warns on stderr and uses the default token", () => {
+    setTokens(null);
+    const r = runGh(["pr", "list"], { ownerHint: "acme" });
+    expect(r.status).toBe(0);
+    expect(r.stdout).toContain("TOKEN=default-token");
+    const lines = r.stderr.trim().split("\n");
+    expect(lines).toHaveLength(1);
+    expect(lines[0]).toContain("SHIPWRIGHT_GH_OWNER");
+  });
+
+  test("no warning when the hint is unset and gh-token.d is absent", () => {
+    setTokens(null);
+    expect(runGh(["pr", "list"]).stderr).toBe("");
   });
 });
 

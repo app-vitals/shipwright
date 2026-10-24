@@ -73,6 +73,7 @@ Provide either the GitHub App vars (recommended) or `GH_TOKEN` (PAT). App auth i
 | `GH_APP_CLIENT_SECRET` | `string` | — | OAuth client secret for the GitHub App, persisted from the manifest-flow exchange. Env-var-only (secret). |
 | `GH_APP_SLUG` | `string` | — | URL slug of the agent's GitHub App, persisted from the manifest-flow exchange so the install link (`https://github.com/apps/<slug>/installations/new`) can be rebuilt later — needed for multi-org installs of a public App. Env-var-only (not secret). |
 | `GH_TOKEN` | `string` | — | Personal Access Token. Settable via the admin UI agent detail page's "Add GitHub PAT" action (UAP-2.3) or as an env var. Used only when GitHub App vars are absent. Env-var-only (secret). |
+| `SHIPWRIGHT_GH_OWNER` | `string` | — | Owner hint for GitHub routing in multi-org setups. When set, this org owner is used as the highest-priority hint when resolving which GitHub installation's token to use for a `gh` command. Used by `agent/scripts/resolve-gh-owner.ts` (order: `SHIPWRIGHT_GH_OWNER`, `-R/--repo`, repo path, `gh repo clone` arg, origin remote, default owner). Also passed to `ghGraphql` helper calls in `check-patch.ts`, `check-review.ts`, and `pr-state-reconciler.ts` via the `owner` option to route GraphQL queries to the correct org's installation token. When `gh-token.d/` is absent but the var is set, the `gh` wrapper prints a warning to stderr and falls back to the default token. An invalid hint falls back to the default installation. Env-var-only. |
 
 ### Shipwright platform
 
