@@ -571,7 +571,6 @@ describe("createTaskStoreClient query()", () => {
   };
 
   let savedEnv: { url?: string; token?: string };
-  let savedFetch: typeof globalThis.fetch;
 
   beforeEach(() => {
     savedEnv = {
@@ -580,11 +579,9 @@ describe("createTaskStoreClient query()", () => {
     };
     process.env.SHIPWRIGHT_TASK_STORE_URL = "https://task-store.example.com";
     process.env.SHIPWRIGHT_TASK_STORE_TOKEN = "test-token";
-    savedFetch = globalThis.fetch;
   });
 
   afterEach(() => {
-    globalThis.fetch = savedFetch;
     if (savedEnv.url !== undefined) {
       process.env.SHIPWRIGHT_TASK_STORE_URL = savedEnv.url;
     } else {
@@ -599,19 +596,19 @@ describe("createTaskStoreClient query()", () => {
   });
 
   test("unwraps { tasks } envelope from ?ready=true", async () => {
-    globalThis.fetch = (async () =>
+    const fetchFn = (async () =>
       ({
         ok: true,
         json: async () => ({ tasks: [FAKE_TASK], total: 1 }),
       }) as Response) as unknown as typeof fetch;
 
-    const client = createTaskStoreClient();
+    const client = createTaskStoreClient({ fetchFn });
     const result = await client.query(new URLSearchParams({ ready: "true" }));
     expect(result).toEqual([FAKE_TASK]);
   });
 
   test("unwraps paginated { tasks } envelope (returned by ?status=...)", async () => {
-    globalThis.fetch = (async () =>
+    const fetchFn = (async () =>
       ({
         ok: true,
         json: async () => ({
@@ -622,7 +619,7 @@ describe("createTaskStoreClient query()", () => {
         }),
       }) as Response) as unknown as typeof fetch;
 
-    const client = createTaskStoreClient();
+    const client = createTaskStoreClient({ fetchFn });
     const result = await client.query(
       new URLSearchParams({ status: "in_progress" }),
     );
@@ -630,13 +627,13 @@ describe("createTaskStoreClient query()", () => {
   });
 
   test("returns empty array when paginated envelope has empty tasks list", async () => {
-    globalThis.fetch = (async () =>
+    const fetchFn = (async () =>
       ({
         ok: true,
         json: async () => ({ tasks: [], total: 0, limit: 50, offset: 0 }),
       }) as Response) as unknown as typeof fetch;
 
-    const client = createTaskStoreClient();
+    const client = createTaskStoreClient({ fetchFn });
     const result = await client.query(
       new URLSearchParams({ status: "in_progress" }),
     );
@@ -644,13 +641,13 @@ describe("createTaskStoreClient query()", () => {
   });
 
   test("throws on unrecognised response shape", async () => {
-    globalThis.fetch = (async () =>
+    const fetchFn = (async () =>
       ({
         ok: true,
         json: async () => ({ unexpected: true }),
       }) as Response) as unknown as typeof fetch;
 
-    const client = createTaskStoreClient();
+    const client = createTaskStoreClient({ fetchFn });
     await expect(
       client.query(new URLSearchParams({ status: "in_progress" })),
     ).rejects.toThrow("Unexpected task-store response format");
