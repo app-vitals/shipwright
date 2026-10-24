@@ -77,7 +77,7 @@ The eval harness (`scripts/prompt-audit/eval-*.ts`) emits cases in the layout `c
 | `tool_used` present | `type: tool_used`, `tool: Skill`, `input_match: '"skill"\s*:\s*"(?:shipwright:)?<skill>"'`, `min: 1` |
 | `tool_used` absent | same, `min: 0`, `max: 0` |
 | `transcript_contains` | `type: regex`, `target: last_message`, `pattern: <escaped text>` |
-| `llm_judge` | `type: llm`, rubric as the body (judge model chosen with `--judge-model`) |
+| `llm_judge` | `type: llm`, rubric as the body (judge model specified at eval runtime) |
 | `tests_pass`, `task_store_state` | **dropped**, with a logged reason per case |
 
 `transcript_contains` targets `last_message`, not `trace`: the trace includes the user prompt, which names the step, so a trace regex would pass vacuously. `tests_pass` and `task_store_state` are dropped rather than faked because plugin eval has no repo checkout to run tests in and runs cannot reach the task store; historical cases keep their `tool_used` grader only.
