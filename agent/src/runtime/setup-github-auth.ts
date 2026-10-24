@@ -6,8 +6,8 @@
  * - GitHub App path (GH_APP_ID + GH_APP_PRIVATE_KEY): engages only if the
  *   GH_APP_INSTALLATION_ID pin is set or installation discovery finds at
  *   least one usable in-scope installation. Mints the default installation's
- *   token into the token file (plus per-owner files when two or more are
- *   usable), configures the git credential helper + author identity, and
+ *   token into the token file (plus a per-owner file for every
+ *   usable installation, even a single one), configures the git credential helper + author identity, and
  *   starts exactly one background refresh.
  * - PAT path: runs `gh auth setup-git` (legacy flow preserved) whenever App
  *   auth did not engage.

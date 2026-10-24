@@ -550,11 +550,33 @@ describe("setupGitHubAuth — installations manager", () => {
     expect(readFileSync(h.tokenPath, "utf8")).toBe(
       readFileSync(legacy.tokenPath, "utf8"),
     );
-    expect(existsSync(join(h.home, "gh-token.d"))).toBe(false);
+    expect(readdirSync(join(h.home, "gh-token.d"))).toEqual(["acme"]);
     expect(h.env.GH_TOKEN_FILE).toBe(h.tokenPath);
     expect(createTokenManager).not.toHaveBeenCalled();
     expect(h.intervals).toHaveLength(1);
     expect(h.activated).toEqual([h.created[0]]);
+  });
+
+  test("a single in-scope installation writes gh-token.d/<owner>", async () => {
+    const h = harness({
+      installs: [{ id: 11, owner: "Acme" }],
+      scopeOwners: ["acme"],
+    });
+    await setupGitHubAuth({
+      env: h.env,
+      createTokenManager: mock(() => makeTokenManager()),
+      getBotIdentity: makeBotIdentity(),
+      spawnSync: makeSpawnSync(),
+      writeToken: neverCalledWriteToken(),
+      tokenPath: h.tokenPath,
+      credentialHelperPath: TEST_HELPER_PATH,
+      installations: h.installations,
+    });
+    expect(readFileSync(h.tokenPath, "utf8")).toBe("ghs_inst_11");
+    expect(readdirSync(join(h.home, "gh-token.d"))).toEqual(["acme"]);
+    expect(readFileSync(join(h.home, "gh-token.d", "acme"), "utf8")).toBe(
+      "ghs_inst_11",
+    );
   });
 
   test("App id + key with two in-scope installations activates and writes per-owner token files", async () => {
@@ -694,7 +716,7 @@ describe("setupGitHubAuth — installations manager", () => {
       installations: h.installations,
     });
     expect(readFileSync(h.tokenPath, "utf8")).toBe("ghs_inst_11_r2031");
-    expect(existsSync(join(h.home, "gh-token.d"))).toBe(false);
+    expect(readdirSync(join(h.home, "gh-token.d"))).toEqual(["acme"]);
   });
 
   test("App id + key + PAT with zero installations stays on the PAT path", async () => {
@@ -722,6 +744,7 @@ describe("setupGitHubAuth — installations manager", () => {
     expect(spawnSync).toHaveBeenCalledTimes(2);
     expect(h.env.GH_TOKEN_FILE).toBeUndefined();
     expect(existsSync(h.tokenPath)).toBe(false);
+    expect(existsSync(join(h.home, "gh-token.d"))).toBe(false);
     expect(h.intervals).toHaveLength(0);
     expect(h.activated).toHaveLength(0);
   });
@@ -817,7 +840,7 @@ describe("setupGitHubAuth — installations manager", () => {
     for (let i = 0; i < 5; i++) expect(await tick()).toBe(false);
     expect(h.intervals).toHaveLength(1);
     expect(h.intervals[0].cleared).toBe(false);
-    expect(existsSync(join(h.home, "gh-token.d"))).toBe(false);
+    expect(readdirSync(join(h.home, "gh-token.d"))).toEqual(["acme"]);
 
     // A second in-scope installation is picked up by a later tick's reconcile.
     h.setInstalls([

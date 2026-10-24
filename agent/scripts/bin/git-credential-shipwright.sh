@@ -3,11 +3,12 @@
 # the file path in $GH_TOKEN_FILE and answers `get` requests for
 # https://github.com/. `store` and `erase` are no-ops.
 #
-# Multi-installation: when the gh-token.d directory next to $GH_TOKEN_FILE
+# Per-owner tokens: when the gh-token.d directory next to $GH_TOKEN_FILE
 # exists, the owner is taken from the `path=` git sends (credential.useHttpPath,
 # with or without a trailing .git) and that owner's token file is used. An
 # owner with no token file gets no credentials rather than another owner's.
-# Without gh-token.d the behavior is unchanged.
+# gh-token.d is written under GitHub App auth (even with one installation);
+# without it (PAT auth) the behavior is unchanged.
 
 set -euo pipefail
 

@@ -2,8 +2,9 @@
  * agent/src/runtime/gh-token-files.ts
  *
  * Atomic token-file layer. `gh-token` always holds the default installation's
- * token; `gh-token.d/<lowercase-owner>` holds per-owner tokens only while two
- * or more installations are usable. Two processes (entrypoint-main and
+ * token; `gh-token.d/<lowercase-owner>` always holds per-owner tokens for
+ * every usable installation, even when only one is usable (App auth only —
+ * PAT auth never reaches this module). Two processes (entrypoint-main and
  * index.ts) write the same files, so every write is temp file + rename —
  * readers never observe a torn file.
  */
@@ -49,14 +50,15 @@ export interface TokenFilesInput {
   ownerTokens?: Record<string, string>;
   /**
    * Owners whose mint failed transiently. Their existing per-owner files are
-   * left untouched and they count toward the two-installation threshold.
+   * left untouched and are not pruned.
    */
   failedOwners?: string[];
 }
 
 /**
- * Write `gh-token` and, when two or more installations are usable, the
- * per-owner files. Otherwise remove stale per-owner entries and the directory.
+ * Write `gh-token` and the per-owner files (dir mode 0700, files 0600), then
+ * prune per-owner entries that are neither minted nor failed. The directory is
+ * kept even when only one installation remains.
  */
 export function writeTokenFiles(
   agentHome: string,
@@ -73,17 +75,12 @@ export function writeTokenFiles(
     writeFileAtomic(join(agentHome, "gh-token"), input.defaultToken);
   }
 
-  if (new Set([...owners.map(([owner]) => owner), ...failed]).size < 2) {
-    if (existsSync(dir)) {
-      console.log(
-        "[github-auth] gh-token.d removed — fewer than two installations usable, gh calls use the default token",
-      );
-    }
-    rmSync(dir, { recursive: true, force: true });
-    return;
-  }
+  // Nothing to track (e.g. a default-token-only write): don't create an empty
+  // directory, which would make the credential helper deny every owner.
+  if (owners.length === 0 && failed.length === 0 && !existsSync(dir)) return;
 
   mkdirSync(dir, { recursive: true, mode: 0o700 });
+  chmodSync(dir, 0o700);
   for (const [owner, token] of owners) writeFileAtomic(join(dir, owner), token);
 
   const keep = new Set([...owners.map(([owner]) => owner), ...failed]);
