@@ -11,6 +11,8 @@ With per-owner tokens in `gh-token.d/`, the `gh` wrapper picks a token via `gh-o
 - **Runtime helper:** `ghGraphql(query, { owner?, baseDelayMs? })` sets the hint in the spawned env when `owner` is given; otherwise behaviour is unchanged. The injected `ghGraphql` signature becomes `<T>(query, opts?: { owner?: string })`; callers that build `repository(owner:, name:)` queries pass that owner.
 - **Plugin helper:** same `owner` param. It runs behind the same wrapper; outside the agent, with no `gh-token.d/`, the env var is inert.
 - `getCurrentUser()` (`viewer`) deliberately uses the default token.
+- **Inline calls:** the 7 plain-bash `gh api graphql` calls in `patch.md` and `review.md` are prefixed with `SHIPWRIGHT_GH_OWNER={org}` (GQH-1.5).
+- **Visible degradation:** `bin/gh` warns on stderr when a hint is set but `gh-token.d/` is absent (GQH-1.1).
 - **Not doing:** pinning `GH_APP_INSTALLATION_ID` (moves the failure); parsing query text for owners (brittle).
 
 ## Tasks
@@ -19,9 +21,12 @@ With per-owner tokens in `gh-token.d/`, the `gh` wrapper picks a token via `gh-o
 | GQH-1.1 | - | 1.2, 1.3 |
 | GQH-1.2 | 1.1 | 1.4 |
 | GQH-1.3 | 1.1 | 1.4 |
-| GQH-1.4 | 1.2, 1.3 | - |
+| GQH-1.4 | 1.2, 1.3, 1.5 | - |
+| GQH-1.5 | 1.1 | 1.4 |
 
-All four share branch `feat/gqh-graphql-owner-hint` (one PR). Every task is additive (optional param, inert env var): safe to deploy standalone.
+All five share branch `feat/gqh-graphql-owner-hint` (one PR). Every task is additive (optional param, inert env var): safe to deploy standalone.
+
+Token-file hardening (keeping last-good per-owner files when a mint fails) is deliberately not planned: it is unverified against the incident and kept out to stay simple.
 
 Rollout (image release, deployment roll, log verification) is out of scope for this effort.
 
