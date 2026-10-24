@@ -3,7 +3,6 @@
  *
  * Builds the extraEnv for a Claude spawn, adding the SHIPWRIGHT_GH_OWNER hint
  * the `gh` wrapper uses to pick the matching App installation token (GOR-1.3).
- * Additive: nothing enforces the hint yet.
  *
  *   - "loop": owner of the dispatched task or PR's repo
  *   - "cron": the default org (pinned installation, else lowest installation id)

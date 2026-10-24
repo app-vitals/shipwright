@@ -57,3 +57,19 @@ describe("RUNTIME.md.template — Agent tool background-dispatch warning", () =>
     expect(readTemplate().toLowerCase()).toContain("concurrently");
   });
 });
+
+describe("RUNTIME.md.template — GitHub owner hint", () => {
+  it("has a section teaching the SHIPWRIGHT_GH_OWNER=<org> prefix", () => {
+    const template = readTemplate();
+    const start = template.indexOf("### GitHub Owner Hint");
+    expect(start).toBeGreaterThan(-1);
+    const section = template.slice(
+      start,
+      template.indexOf("\n### ", start + 1),
+    );
+    expect(section).toContain("SHIPWRIGHT_GH_OWNER=<org>");
+    expect(section.toLowerCase()).toContain("not set");
+    expect(section).toContain("gh");
+    expect(section).toContain("git");
+  });
+});

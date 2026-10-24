@@ -10,6 +10,7 @@ With a single installation, behavior is identical to a one-org setup. Per-owner 
 - **Default installation.** The pin if set, otherwise the lowest selected installation id. Its token is written to the `gh-token` file, so single-installation behavior is unchanged.
 - **Per-owner tokens.** Under App auth, each usable installation's owner token is also written to `gh-token.d/<lowercase-owner>` next to `GH_TOKEN_FILE` (atomic write, mode 0600). The directory is kept even with a single installation; owners that are no longer usable are pruned. Under a PAT nothing is written there.
 - **Routing.** Under GitHub App auth every `gh` and git command must carry `SHIPWRIGHT_GH_OWNER=<org>`; the `gh` wrapper and the git credential helper read `gh-token.d/<lowercase-owner>` for that org. The hint is not inferred from `-R`, API paths, clone arguments, the request path or the working directory. An unset hint fails with a message explaining the variable and the retry form (stderr only; expected for DMs). A hint with no token file fails naming the org and pointing at the admin GitHub Installations card; it never falls back to another org's token or the default one. Under PAT auth the hint is ignored.
+- **Where the hint comes from.** Loop dispatches (dev-task, review, patch, deploy) carry the owner of the task or PR's repo. Cron runs carry the default org (the pinned installation, else the lowest installation id). Slack DMs carry no hint, because a DM is not tied to an org: prefix each command with `SHIPWRIGHT_GH_OWNER=<org>` yourself. That prefix is also the per-command override for any run. [`RUNTIME.md.template`](../agent/workspace/RUNTIME.md.template) teaches the agent this rule.
 - **Re-sync.** Discovery re-runs on the agent's config-sync tick (every 60 seconds), so scope changes and new installs are picked up without a restart.
 - **Broken installations.** An installation is marked broken when GitHub reports it suspended or rejects the token mint (403, 404 or 422). Transient errors (5xx, network) are logged and retried, not marked broken.
 - **Repo name collisions.** Repos clone to `repos/<repo>` regardless of owner, so two scoped repos with the same name under different orgs collide. Admin rejects such a repo list with a 400; the clone sync skips the later repo.
@@ -59,6 +60,7 @@ A stale warning appears when the last report is more than 90 minutes old (three 
 
 ## Troubleshooting
 
+- **`SHIPWRIGHT_GH_OWNER is not set` from `gh` or git.** Expected in DMs. Retry with the hint prefixed, e.g. `SHIPWRIGHT_GH_OWNER=<org> gh pr list -R <org>/<repo>`. If a loop or cron run hits it, check the agent logs for a `[spawn-env]` warning: no owner could be resolved for that spawn.
 - **A new org does not show up.** Allow 60 seconds. Confirm the org's repos are in the agent's scope and the App is installed on that org (not just authorized).
 - **"discovered, not in scope".** Add at least one repo from that org to the agent's repo scope.
 - **`gh wrapper: no GitHub App installation token for org '<org>'`.** The installation is missing, broken, or not yet picked up. Check the card, then the install on GitHub.
