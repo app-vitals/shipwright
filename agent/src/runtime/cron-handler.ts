@@ -32,6 +32,7 @@ import { markdownToSlack } from "./format.ts";
 import { parseMarkers } from "./markers.ts";
 import type { RunTelemetry } from "./run-telemetry.ts";
 import { dispatchMarkers, type SynthesizeSpeechFn } from "./slack.ts";
+import { buildSpawnEnv } from "./spawn-env.ts";
 import type { VoiceConfig } from "./voice.ts";
 
 /**
@@ -202,6 +203,12 @@ export interface CronHandlerDeps {
    */
   contextStamp?: () => RunContextStamp | null;
   /**
+   * The default GitHub org (pinned installation, else lowest installation id),
+   * or null when unknown. Cron jobs carry no repo, so this is the owner hint
+   * (SHIPWRIGHT_GH_OWNER) their spawn gets (GOR-1.3).
+   */
+  getDefaultOwner?: () => string | null;
+  /**
    * Spawner used to run the preCheck script. Defaults to the real
    * Bun.spawn — overridable in tests to inject a fake process instead of
    * spawning ~15 real bun child processes per test run (CPS-1.1).
@@ -235,6 +242,7 @@ export async function handleCronRequest(
     agentId: _agentId,
     clock = SystemClock(),
     contextStamp,
+    getDefaultOwner,
     spawner = Bun.spawn,
   } = deps;
 
@@ -427,6 +435,15 @@ export async function handleCronRequest(
       );
     }
   }
+
+  // GOR-1.3: a cron has no repo, so its spawn carries the default org as the
+  // gh owner hint (merged with SLACK_CHANNEL_ID). Warns once if none resolves.
+  extraEnv = buildSpawnEnv({
+    kind: "cron",
+    id: jobId,
+    owner: getDefaultOwner?.(),
+    extraEnv,
+  });
 
   // ── Runner scope ─────────────────────────────────────────────────────────
   // Errors here record a genuine failure and re-throw so the caller sees them.

@@ -46,10 +46,10 @@ export interface WorkTaskCandidate {
   phase?: "dev-task" | "plan";
   /**
    * The task's `repo` ("org/repo"), carried through from the task-store
-   * record. Only populated (and only required) for `phase: "plan"`
-   * candidates, whose dispatched command is
-   * `/shipwright:plan-session {repo} {session} --autonomous {id}` rather than
-   * dev-task's bare `{id}`.
+   * record. Required for `phase: "plan"` candidates, whose dispatched command
+   * is `/shipwright:plan-session {repo} {session} --autonomous {id}` rather
+   * than dev-task's bare `{id}`. Also populated for dev-task candidates (when
+   * the task has one) so the loop can derive the gh owner hint (GOR-1.3).
    */
   repo?: string;
   /** The task's planning-session slug. See `repo` above. */

@@ -73,6 +73,7 @@ describe("getDevTaskCandidates", () => {
       id: "SWC-1.1",
       title: "Test task",
       createdAt: "2026-05-01T00:00:00.000Z",
+      repo: "acme/example-repo",
     });
   });
 

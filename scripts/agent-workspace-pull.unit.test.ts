@@ -13,6 +13,7 @@ import { join } from "node:path";
 import {
   buildWorkspaceRoot,
   detectSecretEnvKeys,
+  makeRealCloneRepo,
   resolveAgent,
   resolvePullRoot,
 } from "./agent-workspace-pull.ts";
@@ -165,5 +166,40 @@ describe("detectSecretEnvKeys", () => {
       ["GH_TOKEN", "ANTHROPIC_API_KEY"],
     );
     expect(keys).toEqual(["GH_TOKEN", "ANTHROPIC_API_KEY"]);
+  });
+});
+
+describe("makeRealCloneRepo (GOR-1.3)", () => {
+  test("passes the repo scope entry's org as SHIPWRIGHT_GH_OWNER to gh repo clone", async () => {
+    const calls: Array<{ cmd: string[]; env: Record<string, string> }> = [];
+    const spawnSync = ((
+      cmd: string[],
+      opts: { env: Record<string, string> },
+    ) => {
+      calls.push({ cmd, env: opts.env });
+      return { exitCode: 0 };
+    }) as unknown as typeof Bun.spawnSync;
+
+    const clone = makeRealCloneRepo(spawnSync);
+    await clone("org-a/one", "/tmp/one");
+    await clone("org-b/two", "/tmp/two");
+
+    expect(calls.map((c) => c.cmd.slice(0, 4))).toEqual([
+      ["gh", "repo", "clone", "org-a/one"],
+      ["gh", "repo", "clone", "org-b/two"],
+    ]);
+    expect(calls.map((c) => c.env.SHIPWRIGHT_GH_OWNER)).toEqual([
+      "org-a",
+      "org-b",
+    ]);
+  });
+
+  test("throws when gh repo clone exits non-zero", async () => {
+    const spawnSync = (() => ({
+      exitCode: 1,
+    })) as unknown as typeof Bun.spawnSync;
+    await expect(makeRealCloneRepo(spawnSync)("a/b", "/tmp/b")).rejects.toThrow(
+      "gh repo clone failed for a/b",
+    );
   });
 });

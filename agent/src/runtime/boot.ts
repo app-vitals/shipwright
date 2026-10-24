@@ -96,6 +96,7 @@ import {
   slackClientRef,
   startSlackIfPossible,
 } from "./slack-startup.ts";
+import { defaultOwnerOf } from "./spawn-env.ts";
 import { sendBackOnlineDm } from "./startup-dm.ts";
 import {
   buildProductionDeps as buildSyncConfigCloneDeps,
@@ -275,6 +276,9 @@ export async function startAgent(
     cronRunReporter,
     agentId: config.shipwright.agentId,
     contextStamp,
+    // GOR-1.3: cron spawns carry the default installation's org as the gh hint.
+    getDefaultOwner: () =>
+      defaultOwnerOf(githubInstallationsManagerRef.get()?.getState?.()),
   };
 
   // ARD-3.1: the specialty extension seam (agent-extension.ts). The consumer

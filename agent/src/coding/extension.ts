@@ -147,20 +147,21 @@ export function createCodingExtension(
     // `dev-task:{taskId}` session key for dev-task dispatches and a
     // per-dispatch nonce `{phase}:{itemId}:{uuid}` key for review/patch/deploy
     // (nothing for plan), plus an onEarlySessionId callback — see
-    // loop-orchestrator.ts's sessionKey doc comment. The loop never passes
-    // extraEnv.
+    // loop-orchestrator.ts's sessionKey doc comment. GOR-1.3: extraEnv carries
+    // SHIPWRIGHT_GH_OWNER for the dispatched item's org.
     runner: (
       message: string,
       onProgress?: ProgressCallback,
       sessionKey?: string,
       onEarlySessionId?: EarlySessionIdCallback,
+      extraEnv?: Record<string, string>,
     ) =>
       runner(
         message,
         sessionKey,
         onProgress,
         undefined,
-        undefined,
+        extraEnv,
         onEarlySessionId,
       ),
     cronRunReporter: cronRunReporter ?? new NoopCronRunReporter(),

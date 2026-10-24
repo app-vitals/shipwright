@@ -43,6 +43,7 @@
  */
 
 import type { AgentReposRef } from "./agent-repos-ref.ts";
+import type { InstallationsSnapshot } from "./github-installations.ts";
 
 /**
  * True iff the GitHub App id and private key are present. The installation
@@ -59,6 +60,8 @@ export function hasGitHubAppCredentials(
 /** The slice of GitHubInstallationsManager the config-sync tick needs. */
 interface ReconcilableInstallations {
   reconcile(scopeOwners: string[] | null): Promise<void>;
+  /** Current installations (the real manager has it); used for the default owner. */
+  getState?(): InstallationsSnapshot;
 }
 
 interface GitHubInstallationsManagerRef {
