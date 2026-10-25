@@ -2,8 +2,9 @@
  * scripts/check-config-docs.ts
  *
  * CI validation script — checks that every process.env.* reference in
- * agent/src/ and plugins/shipwright/scripts/ is documented in docs/configuration.md
- * or docs/configuration-agent.md.
+ * agent/src/ and plugins/shipwright/scripts/ is documented in docs/configuration.md,
+ * docs/configuration-agent.md (the coding half) or the vendored platform snapshot
+ * docs/platform/configuration-agent.md (env vars that moved with the runtime).
  *
  * Usage (CLI):
  *   bun scripts/check-config-docs.ts
@@ -13,6 +14,7 @@
  *   extractDocumentedVars(markdownContent: string): string[] — pure string-parsing, no I/O
  *   collectTsFiles(dir: string, out: string[]): void         — real filesystem walk, exported for testing
  *   collectDocumentedVars(paths: string[]): Set<string>      — reads + unions documented vars across files
+ *   configDocPaths(projectRoot: string): string[]            — the docs a var may be documented in
  *
  * Exit codes:
  *   0 — all env vars are documented (or in the allowlist)
@@ -184,15 +186,25 @@ export function collectTsFiles(dir: string, out: string[]): void {
 // CLI entry point
 // ---------------------------------------------------------------------------
 
+/**
+ * The docs an env var may be documented in. The platform configuration doc is
+ * the read-only snapshot vendored from app-vitals/agent (docs/platform/); vars
+ * that moved with the runtime are documented there, not in the coding half.
+ */
+export function configDocPaths(projectRoot: string): string[] {
+  return [
+    join(projectRoot, "docs", "configuration.md"),
+    join(projectRoot, "docs", "configuration-agent.md"),
+    join(projectRoot, "docs", "platform", "configuration-agent.md"),
+  ];
+}
+
 function main(): void {
   const scriptDir = import.meta.dirname ?? process.cwd();
   // scripts/ → project root
   const projectRoot = join(scriptDir, "..");
 
-  const docsPaths = [
-    join(projectRoot, "docs", "configuration.md"),
-    join(projectRoot, "docs", "configuration-agent.md"),
-  ];
+  const docsPaths = configDocPaths(projectRoot);
 
   // 1. Read and parse documented vars
   let documentedVars: Set<string>;
@@ -254,7 +266,7 @@ function main(): void {
     console.error(`  ${v}`);
   }
   console.error(
-    "\nAdd these vars to docs/configuration.md, docs/configuration-agent.md, or the ALLOWLIST in scripts/check-config-docs.ts.",
+    "\nAdd these vars to docs/configuration.md, docs/configuration-agent.md (platform vars belong in app-vitals/agent's docs/configuration-agent.md), or the ALLOWLIST in scripts/check-config-docs.ts.",
   );
   process.exit(1);
 }
