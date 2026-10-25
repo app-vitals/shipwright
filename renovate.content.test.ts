@@ -29,6 +29,8 @@ type PackageRule = {
   matchUpdateTypes?: string[];
   separateMajorMinor?: boolean;
   schedule?: unknown;
+  rangeStrategy?: string;
+  addLabels?: string[];
 };
 
 type RenovateConfig = {
@@ -146,5 +148,73 @@ describe("renovate.json zod / @hono/zod-openapi group rule (ZOD-1.1)", () => {
     const types = rule.matchUpdateTypes;
     expect(types === undefined || types.includes("major")).toBe(true);
     expect(rule.separateMajorMinor).toBe(false);
+  });
+});
+
+describe("renovate.json app-vitals agent platform group rule (AGR-4.1)", () => {
+  const PLATFORM_GROUP = "app-vitals agent platform";
+  const rules = () => loadConfig().packageRules ?? [];
+  const platformRuleIndex = () =>
+    rules().findIndex((r) => r.groupName === PLATFORM_GROUP);
+  const matches = (name: string) =>
+    (rules()[platformRuleIndex()].matchPackageNames ?? []).some((p) =>
+      p.startsWith("/") ? fromRenovatePattern(p).test(name) : p === name,
+    );
+
+  it("groups every @app-vitals/agent-* package and nothing else", () => {
+    expect(platformRuleIndex()).toBeGreaterThanOrEqual(0);
+    for (const name of [
+      "@app-vitals/agent-lib",
+      "@app-vitals/agent-admin",
+      "@app-vitals/agent-runtime",
+    ]) {
+      expect(matches(name), name).toBe(true);
+    }
+    for (const name of [
+      "@app-vitals/agentic",
+      "agent-lib",
+      "@shipwright/lib",
+    ]) {
+      expect(matches(name), name).toBe(false);
+    }
+  });
+
+  it("covers every registry @app-vitals/agent-* dependency the repo declares", () => {
+    for (const file of [
+      "package.json",
+      "admin/package.json",
+      "agent/package.json",
+      "chat/package.json",
+      "lib/package.json",
+      "metrics/package.json",
+      "task-store/package.json",
+    ]) {
+      const pkg = JSON.parse(readFileSync(join(repoRoot, file), "utf8"));
+      for (const [name, value] of Object.entries<string>(
+        pkg.dependencies ?? {},
+      )) {
+        if (!name.startsWith("@app-vitals/agent-")) continue;
+        if (value.startsWith("workspace:")) continue;
+        expect(matches(name), `${file}: ${name}`).toBe(true);
+        // Exact pins: the receiver workflow and Renovate both keep them exact.
+        expect(value, `${file}: ${name}`).toMatch(/^\d+\.\d+\.\d+$/);
+      }
+    }
+  });
+
+  it("is declared after the generic grouping rule so it is not folded into it", () => {
+    const genericIndex = rules().findIndex(
+      (r) => r.groupName === GENERIC_GROUP,
+    );
+    expect(genericIndex).toBeGreaterThanOrEqual(0);
+    expect(platformRuleIndex()).toBeGreaterThan(genericIndex);
+  });
+
+  it("keeps majors in the same PR, pins exactly and labels it for the freeze guard", () => {
+    const rule = rules()[platformRuleIndex()];
+    expect(rule.matchUpdateTypes).toBeUndefined();
+    expect(rule.separateMajorMinor).toBe(false);
+    expect(rule.rangeStrategy).toBe("pin");
+    expect(rule.addLabels).toEqual(["platform-cutover"]);
   });
 });
