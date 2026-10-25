@@ -55,7 +55,7 @@ model Thread {
 model Message {
   id                 String    @id @default(cuid())
   threadId           String
-  role               String // "user" | "assistant"
+  role               String    // "user" | "assistant"
   body               String
   tokens             Json?
   costUsd            Float?
