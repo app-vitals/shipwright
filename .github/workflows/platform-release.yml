@@ -14,6 +14,12 @@ name: Platform Release Bump
 # "app-vitals agent platform" group (renovate.json) is the fallback if a
 # dispatch is missed.
 #
+# The same PR refreshes the read-only platform docs snapshot (docs/platform/,
+# PLD-2.1): the workflow checks out app-vitals/agent at the release tag and
+# scripts/platform-docs-snapshot.ts copies its docs/*.md in with a generated
+# source header. platform-docs-guard.yml blocks hand edits to that directory
+# from any other PR.
+#
 # Failures are loud: the job fails, and a failure step opens (or comments on)
 # a "platform release bump failed" issue, because a stalled release chain
 # otherwise goes unnoticed for days.
@@ -82,29 +88,44 @@ jobs:
       - name: Pin @app-vitals/agent-* to the released version
         run: bun scripts/platform-release-bump.ts "$VERSION"
 
+      - name: Checkout platform repo at the release tag
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: app-vitals/agent
+          token: ${{ secrets.DISPATCH_TOKEN }}
+          ref: refs/tags/v${{ env.VERSION }}
+          path: .platform-src
+          persist-credentials: false
+
+      - name: Refresh the platform docs snapshot
+        run: bun scripts/platform-docs-snapshot.ts "$VERSION" .platform-src
+
       - name: Refresh bun.lock
         run: bun install
 
       - name: Detect changes
         id: diff
         run: |
-          if git diff --quiet; then
+          rm -rf .platform-src
+          if [ -z "$(git status --porcelain)" ]; then
             echo "changed=false" >> "$GITHUB_OUTPUT"
             echo "::notice::Already on @app-vitals/agent-* ${VERSION}; no PR needed."
           else
             echo "changed=true" >> "$GITHUB_OUTPUT"
-            git diff --stat
+            git status --short
           fi
 
       - name: Commit and push
         if: steps.diff.outputs.changed == 'true'
         run: |
           git checkout -B "$BRANCH"
+          git add -A -- docs/platform
           git add -u -- bun.lock '*package.json'
-          # Anything else changing means the bump did more than re-pin: stop.
-          if ! git diff --quiet; then
-            echo "ERROR: unexpected changes outside package.json/bun.lock:" >&2
-            git diff --name-only >&2
+          # Anything else changing means the bump did more than re-pin and
+          # re-snapshot: stop.
+          if [ -n "$(git status --porcelain | grep -v '^[MADR] ')" ]; then
+            echo "ERROR: unexpected changes outside package.json/bun.lock/docs/platform:" >&2
+            git status --porcelain >&2
             exit 1
           fi
           git commit -m "chore(deps): bump @app-vitals/agent-* to ${VERSION}"
@@ -123,7 +144,7 @@ jobs:
           BODY=$(cat <<EOF
           ## Platform release ${VERSION}
 
-          Re-pins every registry \`@app-vitals/agent-*\` dependency to \`${VERSION}\` and refreshes \`bun.lock\`.
+          Re-pins every registry \`@app-vitals/agent-*\` dependency to \`${VERSION}\`, refreshes \`bun.lock\` and refreshes the read-only platform docs snapshot in \`docs/platform/\`.
 
           Triggered by the \`platform-release\` dispatch from app-vitals/agent (or a manual run).
 
