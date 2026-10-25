@@ -33,13 +33,17 @@ model ChatToken {
 // A conversation thread between an agent and a member.
 
 model Thread {
-  id        String    @id @default(cuid())
-  agentId   String
-  memberId  String?
-  title     String?
-  createdAt DateTime  @default(now())
-  updatedAt DateTime  @updatedAt
-  messages  Message[]
+  id             String    @id @default(cuid())
+  agentId        String
+  memberId       String?
+  title          String?
+  // Admin-only; only value today is "ask" (agent-to-agent ask thread).
+  kind           String?
+  askFromAgentId String?
+  askDepth       Int?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+  messages       Message[]
 
   @@index([agentId, updatedAt(sort: Desc)])
   @@index([memberId])

@@ -47,6 +47,9 @@ const CreateThreadBodySchema = z
     agentId: z.string().openapi({ example: "agent-id-123" }),
     memberId: z.string().optional().openapi({ example: "member-id-123" }),
     title: z.string().optional().openapi({ example: "Deployment question" }),
+    kind: z.string().optional().openapi({ example: "ask" }),
+    askFromAgentId: z.string().optional().openapi({ example: "agent-id-456" }),
+    askDepth: z.number().int().optional().openapi({ example: 1 }),
   })
   .openapi("CreateThreadBody");
 
@@ -64,6 +67,9 @@ const UpdateThreadBodySchema = z
 const ThreadIdParamSchema = z.object({
   id: z.string().openapi({ example: "clxthread123456" }),
 });
+
+/** Admin-only, create-time-only fields. */
+const ASK_FIELDS = ["kind", "askFromAgentId", "askDepth"] as const;
 
 // ─── Route definitions ────────────────────────────────────────────────────────
 
@@ -92,7 +98,7 @@ const createThreadRoute = createRoute({
   tags: ["threads"],
   summary: "Create a thread",
   description:
-    "Body: `{ agentId: string, memberId?: string, title?: string }`. `agentId` is required — returns 400 if missing. Agent tokens may only create threads for their own agentId; a mismatched agentId returns 403. Returns 201 with the created thread.",
+    'Body: `{ agentId: string, memberId?: string, title?: string, kind?: "ask", askFromAgentId?: string, askDepth?: number }`. `agentId` is required — returns 400 if missing. Agent tokens may only create threads for their own agentId; a mismatched agentId returns 403. `kind`, `askFromAgentId` and `askDepth` are admin-only — an agent token sending any of them returns 403. Returns 201 with the created thread.',
   security: [{ bearerAuth: [] }],
   request: {
     body: {
@@ -110,7 +116,8 @@ const createThreadRoute = createRoute({
       content: { "application/json": { schema: ErrorSchema } },
     },
     403: {
-      description: "Forbidden — agent token may only create threads for itself",
+      description:
+        "Forbidden — agent token may only create threads for itself, and may not set kind/askFromAgentId/askDepth",
       content: { "application/json": { schema: ErrorSchema } },
     },
   },
@@ -176,7 +183,7 @@ const updateThreadRoute = createRoute({
   tags: ["threads"],
   summary: "Update thread title and/or memberId",
   description:
-    "Body: `{ title?: string | null, memberId?: string | null }`. 403 if an agent token doesn't own the thread; 404 if not found. Returns the updated thread with 200.",
+    "Body: `{ title?: string | null, memberId?: string | null }`. `kind`, `askFromAgentId` and `askDepth` are immutable — sending any of them returns 400. 403 if an agent token doesn't own the thread; 404 if not found. Returns the updated thread with 200.",
   security: [{ bearerAuth: [] }],
   request: {
     params: ThreadIdParamSchema,
@@ -189,6 +196,10 @@ const updateThreadRoute = createRoute({
     200: {
       description: "Updated thread",
       content: { "application/json": { schema: ThreadSchema } },
+    },
+    400: {
+      description: "Bad request — kind/askFromAgentId/askDepth are immutable",
+      content: { "application/json": { schema: ErrorSchema } },
     },
     403: {
       description: "Forbidden — agent token may not access this thread",
@@ -278,11 +289,33 @@ export function createThreadsRoutes(
       );
     }
 
+    if (callerAgentId !== null && ASK_FIELDS.some((k) => k in body)) {
+      throw new ForbiddenError("kind is admin-only");
+    }
+
+    if (body.kind !== undefined && body.kind !== "ask") {
+      throw new BadRequestError('kind must be "ask"');
+    }
+
     const memberId =
       typeof body.memberId === "string" ? body.memberId : undefined;
     const title = typeof body.title === "string" ? body.title : undefined;
+    const kind = typeof body.kind === "string" ? body.kind : undefined;
+    const askFromAgentId =
+      typeof body.askFromAgentId === "string" ? body.askFromAgentId : undefined;
+    const askDepth =
+      typeof body.askDepth === "number" && Number.isInteger(body.askDepth)
+        ? body.askDepth
+        : undefined;
 
-    const thread = await threadService.create({ agentId, memberId, title });
+    const thread = await threadService.create({
+      agentId,
+      memberId,
+      title,
+      kind,
+      askFromAgentId,
+      askDepth,
+    });
     return c.json(thread, 201);
   });
 
@@ -314,6 +347,12 @@ export function createThreadsRoutes(
       body = (await c.req.json()) as Record<string, unknown>;
     } catch {
       // empty body → no-op update
+    }
+
+    if (ASK_FIELDS.some((k) => k in body)) {
+      throw new BadRequestError(
+        "kind, askFromAgentId and askDepth cannot be changed",
+      );
     }
 
     const title = "title" in body ? (body.title as string | null) : undefined;

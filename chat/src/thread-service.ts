@@ -20,6 +20,9 @@ export interface ThreadServiceLike {
     agentId: string;
     memberId?: string;
     title?: string;
+    kind?: string;
+    askFromAgentId?: string;
+    askDepth?: number;
   }): Promise<Thread>;
 
   findById(id: string): Promise<Thread | null>;
@@ -51,12 +54,18 @@ export class ThreadService implements ThreadServiceLike {
     agentId: string;
     memberId?: string;
     title?: string;
+    kind?: string;
+    askFromAgentId?: string;
+    askDepth?: number;
   }): Promise<Thread> {
     return this.prisma.thread.create({
       data: {
         agentId: data.agentId,
         memberId: data.memberId ?? null,
         title: data.title ?? null,
+        kind: data.kind ?? null,
+        askFromAgentId: data.askFromAgentId ?? null,
+        askDepth: data.askDepth ?? null,
       },
     });
   }

@@ -134,6 +134,78 @@ describe("GET /threads", () => {
   });
 });
 
+describe("POST /threads — ask fields", () => {
+  it("admin creates a thread with kind/askFromAgentId/askDepth and reads them back", async () => {
+    const ts = fakeThreadService();
+    const app = adminApp(ts);
+    const res = await app.request("/threads", {
+      method: "POST",
+      headers: HP(),
+      body: JSON.stringify({
+        agentId: "agent-x",
+        kind: "ask",
+        askFromAgentId: "agent-y",
+        askDepth: 1,
+      }),
+    });
+    expect(res.status).toBe(201);
+    const created = (await res.json()) as Thread;
+    expect(created.kind).toBe("ask");
+    expect(created.askFromAgentId).toBe("agent-y");
+    expect(created.askDepth).toBe(1);
+
+    const getRes = await app.request(`/threads/${created.id}`, {
+      headers: HA(),
+    });
+    const got = (await getRes.json()) as Thread;
+    expect(got.kind).toBe("ask");
+    expect(got.askDepth).toBe(1);
+
+    const listRes = await app.request("/threads", { headers: HA() });
+    const list = (await listRes.json()) as { threads: Thread[] };
+    expect(list.threads[0]?.kind).toBe("ask");
+  });
+
+  it("returns null ask fields for a thread created without them", async () => {
+    const app = adminApp();
+    const res = await app.request("/threads", {
+      method: "POST",
+      headers: HP(),
+      body: JSON.stringify({ agentId: "agent-x" }),
+    });
+    const body = (await res.json()) as Thread;
+    expect(body.kind).toBeNull();
+    expect(body.askFromAgentId).toBeNull();
+    expect(body.askDepth).toBeNull();
+  });
+
+  it("admin sending an unknown kind gets 400", async () => {
+    const res = await adminApp().request("/threads", {
+      method: "POST",
+      headers: HP(),
+      body: JSON.stringify({ agentId: "agent-x", kind: "bogus" }),
+    });
+    expect(res.status).toBe(400);
+  });
+
+  for (const field of [
+    { kind: "ask" },
+    { askFromAgentId: "agent-y" },
+    { askDepth: 1 },
+  ]) {
+    it(`agent token sending ${Object.keys(field)[0]} gets 403`, async () => {
+      const app = agentApp();
+      const res = await app.request("/threads", {
+        method: "POST",
+        headers: HP(AGENT_TOKEN),
+        body: JSON.stringify({ agentId: AGENT_ID, ...field }),
+      });
+      expect(res.status).toBe(403);
+      expect(await res.json()).toEqual({ error: "kind is admin-only" });
+    });
+  }
+});
+
 // ─── Get ──────────────────────────────────────────────────────────────────────
 
 describe("GET /threads/:id", () => {
@@ -193,6 +265,26 @@ describe("PATCH /threads/:id", () => {
     });
     expect(res.status).toBe(404);
   });
+});
+
+describe("PATCH /threads/:id — ask fields immutable", () => {
+  for (const field of [
+    { kind: "ask" },
+    { askFromAgentId: "agent-y" },
+    { askDepth: 2 },
+  ]) {
+    it(`rejects ${Object.keys(field)[0]} with 400`, async () => {
+      const ts = fakeThreadService();
+      const thread = await ts.create({ agentId: "a1" });
+      const app = adminApp(ts);
+      const res = await app.request(`/threads/${thread.id}`, {
+        method: "PATCH",
+        headers: HP(),
+        body: JSON.stringify({ title: "x", ...field }),
+      });
+      expect(res.status).toBe(400);
+    });
+  }
 });
 
 // ─── Stats ────────────────────────────────────────────────────────────────────
