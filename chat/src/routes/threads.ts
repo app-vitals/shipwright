@@ -98,7 +98,7 @@ const createThreadRoute = createRoute({
   tags: ["threads"],
   summary: "Create a thread",
   description:
-    "Body: `{ agentId: string, memberId?: string, title?: string, kind?: \"ask\", askFromAgentId?: string, askDepth?: number }`. `agentId` is required — returns 400 if missing. Agent tokens may only create threads for their own agentId; a mismatched agentId returns 403. `kind`, `askFromAgentId` and `askDepth` are admin-only — an agent token sending any of them returns 403. Returns 201 with the created thread.",
+    'Body: `{ agentId: string, memberId?: string, title?: string, kind?: "ask", askFromAgentId?: string, askDepth?: number }`. `agentId` is required — returns 400 if missing. Agent tokens may only create threads for their own agentId; a mismatched agentId returns 403. `kind`, `askFromAgentId` and `askDepth` are admin-only — an agent token sending any of them returns 403. Returns 201 with the created thread.',
   security: [{ bearerAuth: [] }],
   request: {
     body: {
@@ -291,6 +291,10 @@ export function createThreadsRoutes(
 
     if (callerAgentId !== null && ASK_FIELDS.some((k) => k in body)) {
       throw new ForbiddenError("kind is admin-only");
+    }
+
+    if (body.kind !== undefined && body.kind !== "ask") {
+      throw new BadRequestError('kind must be "ask"');
     }
 
     const memberId =

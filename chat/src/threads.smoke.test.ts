@@ -179,6 +179,15 @@ describe("POST /threads — ask fields", () => {
     expect(body.askDepth).toBeNull();
   });
 
+  it("admin sending an unknown kind gets 400", async () => {
+    const res = await adminApp().request("/threads", {
+      method: "POST",
+      headers: HP(),
+      body: JSON.stringify({ agentId: "agent-x", kind: "bogus" }),
+    });
+    expect(res.status).toBe(400);
+  });
+
   for (const field of [
     { kind: "ask" },
     { askFromAgentId: "agent-y" },
