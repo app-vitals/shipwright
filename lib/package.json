@@ -10,6 +10,6 @@
     "./http": "./http.ts"
   },
   "dependencies": {
-    "@app-vitals/agent-lib": "0.1.0"
+    "@app-vitals/agent-lib": "0.1.1"
   }
 }
