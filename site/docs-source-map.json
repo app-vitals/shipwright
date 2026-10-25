@@ -3,9 +3,12 @@
   "_notes": {},
   "admin-console.mdx": [
     "docs/agent-web-ui.md",
-    "docs/agent-api.md",
+    "docs/platform/agent-web-ui.md",
+    "docs/platform/agent-api.md",
     "docs/agent.md",
-    "docs/agent-key-files.md"
+    "docs/platform/agent.md",
+    "docs/agent-key-files.md",
+    "docs/platform/agent-key-files.md"
   ],
   "agent-skills.mdx": [
     "plugins/shipwright/skills"
@@ -15,14 +18,17 @@
   ],
   "configuring-autonomy.mdx": [
     "docs/agent-ops.md",
+    "docs/platform/agent-ops.md",
     "docs/configuration.md"
   ],
   "cron-jobs.mdx": [
     "docs/agent-ops.md",
+    "docs/platform/agent-ops.md",
     "plugins/shipwright/skills/investigate-cron/SKILL.md"
   ],
   "day-to-day-operations.mdx": [
     "docs/agent-web-ui.md",
+    "docs/platform/agent-web-ui.md",
     "docs/task-store.md",
     "plugins/shipwright/commands/hitl.md"
   ],
@@ -45,7 +51,8 @@
   ],
   "reference.mdx": [
     "docs/configuration.md",
-    "docs/configuration-agent.md"
+    "docs/configuration-agent.md",
+    "docs/platform/configuration-agent.md"
   ],
   "running-locally.mdx": [
     "docs/quickstart.md"
@@ -55,23 +62,32 @@
     "docs/deploy-kubernetes-networking.md",
     "docs/deploy-kubernetes-provisioning.md",
     "docs/observability.md",
+    "docs/platform/observability.md",
     "docs/agent-ops.md",
+    "docs/platform/agent-ops.md",
     "docs/configuration.md",
     "docs/configuration-agent.md",
-    "docs/agent-key-files.md"
+    "docs/platform/configuration-agent.md",
+    "docs/agent-key-files.md",
+    "docs/platform/agent-key-files.md"
   ],
   "slack-integration.mdx": [
     "docs/configuration-agent.md",
+    "docs/platform/configuration-agent.md",
     "docs/agent.md",
-    "docs/agent-key-files.md"
+    "docs/platform/agent.md",
+    "docs/agent-key-files.md",
+    "docs/platform/agent-key-files.md"
   ],
   "task-store-api.mdx": [
     "docs/task-store.md"
   ],
   "the-agent.mdx": [
     "docs/agent.md",
-    "docs/agent-api.md",
-    "docs/agent-key-files.md"
+    "docs/platform/agent.md",
+    "docs/platform/agent-api.md",
+    "docs/agent-key-files.md",
+    "docs/platform/agent-key-files.md"
   ],
   "the-plugin.mdx": [
     "docs/architecture.md",
@@ -80,7 +96,9 @@
   ],
   "the-shipwright-loop.mdx": [
     "docs/agent-ops.md",
+    "docs/platform/agent-ops.md",
     "docs/architecture.md",
-    "docs/agent-key-files.md"
+    "docs/agent-key-files.md",
+    "docs/platform/agent-key-files.md"
   ]
 }
