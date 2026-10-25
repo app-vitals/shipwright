@@ -66,6 +66,9 @@ Three Prisma models, defined in `chat/prisma/schema.prisma` and owned exclusivel
 | `agentId` | `String` | Owning agent |
 | `memberId` | `String?` | Human member ID, if known |
 | `title` | `String?` | |
+| `kind` | `String?` | Admin-only, create-time-only; only value today is `"ask"` (agent-to-agent ask thread). Immutable after creation. |
+| `askFromAgentId` | `String?` | When `kind: "ask"`, the agent ID of the agent that initiated the ask request. Admin-only, create-time-only, immutable. |
+| `askDepth` | `Int?` | When `kind: "ask"`, the ask depth (nesting level). Admin-only, create-time-only, immutable. |
 | `createdAt` | `DateTime` | |
 | `updatedAt` | `DateTime` | Bumped on `PATCH /threads/:id` |
 
